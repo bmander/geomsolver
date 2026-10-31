@@ -314,47 +314,39 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
 fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
     use crate::brep::geom::{Curve, Offset};
     let (b, mm, _) = r.body.brep();
-    let tol = r.body.tolerance() * mm;
     let first = &b.faces[*r.faces.first()?];
-    let one = r.faces.iter().all(|&fi| b.faces[fi].reversed == first.reversed
-        && crate::brep::ssi::same(&b.faces[fi].surface, &first.surface, tol));
-    if !one {
-        return None;
-    }
     // the side is the surface's signed distance, turned where the face is: within by `d` is the
     // surface's offset to `∓d` (in the boundary's millimetres)
     let level = if first.reversed { d } else { -d } * mm;
-    let at = |q: V| r.body.back(q);
+    let onto = first.surface.offset(level, r.body.tolerance() * mm)?;
+    if matches!(onto, Offset::Surface(_)) || r.surfaces().0.len() != 1 {
+        return None;
+    }
     let plane = |o: V, n: V| Cond { f: Arc::new(move |x: V| (dot(n, sub(x, o)), n)), eq: true };
-    let square = |a: V| {
-        let (e1, e2) = crate::space::across(a);
-        [e1, e2]
-    };
-    Some(match first.surface.offset(level, tol)? {
-        Offset::Surface(_) => return None,
+    Some(match onto {
         Offset::Point(c) => {
-            let o = at(c);
+            let o = r.body.back(c);
             vec![plane(o, [1.0, 0.0, 0.0]), plane(o, [0.0, 1.0, 0.0]), plane(o, [0.0, 0.0, 1.0])]
         }
         Offset::Curve(Curve::Line { p, d: a }) => {
-            let o = at(p);
-            square(a).map(|e| plane(o, e)).to_vec()
+            let (o, (e1, e2)) = (r.body.back(p), crate::space::across(a));
+            vec![plane(o, e1), plane(o, e2)]
         }
         Offset::Curve(Curve::Circle(f, big)) => {
-            let (o, a, big) = (at(f.o), f.z, big / mm);
+            let (o, a, big) = (r.body.back(f.o), f.z, big / mm);
             // in its plane, and as far from its axis as its radius
             let round = Cond {
                 f: Arc::new(move |x: V| {
                     let w = sub(x, o);
                     let radial = sub(w, scale(a, dot(w, a)));
                     let rho = norm(radial);
-                    (rho - big, if rho > 0.0 { scale(radial, 1.0 / rho) } else { square(a)[0] })
+                    (rho - big, if rho > 0.0 { scale(radial, 1.0 / rho) } else { crate::space::across(a).0 })
                 }),
                 eq: true,
             };
             vec![plane(o, a), round]
         }
-        Offset::Curve(_) => return None,
+        _ => return None,
     })
 }
 

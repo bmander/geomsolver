@@ -79,7 +79,7 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
     // a ball's centre stands off each face along its normal: a surface with no closed-form offset
     // (a swept spline, a fitted sheet) is not rounded yet
     for f in [face_a,face_b] {
-        if f.surface.offset(0.,tol).is_none() {
+        if !f.surface.has_offset() {
             return Err(format!("`{}` ({}) has no offset in closed form, so no ball rolls on it yet: planes, \
                 cylinders, cones, spheres and tori are rounded (rung 2)",f.name,f.surface.kind()));
         }
@@ -166,17 +166,17 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> { roll_acro
 /// `wedge` (each a point and a normal, the wedge what stands on every normal's side): the stretch
 /// of the run a piece beyond that seam's normal surface takes, cut away from this one (#422).
 pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rolled,String> {
-    let Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,into:[da,db],theta,concave,sides,surfaces,
-        names,..} = meeting(b,at,tol)?;
-    let names = || names.clone();
+    let m = meeting(b,at,tol)?;
     // the ball's centre is where the faces' offsets by its radius meet: along a curve, or — where
     // one closes onto what its surface is drawn about, a ball as wide as a cylinder — at a point
-    let (oa,ob) = match [0,1].map(|k| surfaces[k].offset(sides[k]*r,tol)) {
+    let (oa,ob) = match [0,1].map(|k| m.surfaces[k].offset(m.sides[k]*r,tol)) {
         [Some(Offset::Surface(oa)),Some(Offset::Surface(ob))] => (oa,ob),
-        [Some(oa),Some(ob)] => return standing(b,&uses,&sides_faces,&chain,&stops,p,[da,db],theta,concave,
-            [face_a.reversed,face_b.reversed],sides,&surfaces,[oa,ob],r,tol,wedge,&names()),
-        _ => return Err(format!("the ball between {} is larger than one of them can hold",names())),
+        [Some(oa),Some(ob)] => return standing(b,&m,[oa,ob],r,tol,wedge),
+        _ => return Err(format!("the ball between {} is larger than one of them can hold",m.names)),
     };
+    let Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,into:[da,db],theta,concave,sides,surfaces,
+        names,..} = m;
+    let names = || names.clone();
     // the spine: the offsets' meeting through the ball's centre in the corner at `p`
     let onto = super::geom::Traced {a:oa,b:ob,pts:Vec::new(),closed:false};
     let (oa,ob) = (&onto.a,&onto.b);
@@ -298,17 +298,7 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     };
     let c_at = |u: f64| frame_at(u).0;
     let canal = |u: f64,v: f64| { let (c,e) = frame_at(u); add(c,scale(slerp(e[0],e[1],v),r)) };
-    // the corner's angle all the way round: no fold, no ball wedged flat
-    let mut reach: f64 = 0.;
-    for k in 0..=256 {
-        let (_,e) = frame_at(k as f64/256.);
-        let w = dot(e[0],e[1]).clamp(-1.,1.).dacos();
-        if !(w > MIN_TURN && w < std::f64::consts::PI-MIN_TURN) {
-            return Err(format!("the ball between {} wedges flat somewhere along their meeting",names()));
-        }
-        // the corner stands `r / cos(w / 2)` from the centre, `w` the angle between the contacts
-        reach = reach.max(r/(0.5*w).dcos());
-    }
+    let reach = corner_reach(&frame_at,r,&names())?;
     holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_at,&surfaces,sides,r,tol,&names(),wedge)?;
     // fitted to the bar asked, or as near it as the densest net comes, no worse than a ten-millionth
     // of the boundary: its contacts are read at what was measured (`Edge::tol`)
@@ -362,10 +352,8 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
 /// surface. Refused where both close, where one closes onto a point (the ball is that face's own
 /// sphere), where the ball would roll along the curve it closes onto, where the meeting is a stretch
 /// of the loop, and where the ball is larger than a face holds (`holds_ball`).
-#[allow(clippy::too_many_arguments)]
-fn standing(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],stops: &[u32],
-    p: V,into: [V;2],theta: f64,concave: bool,face_reversed: [bool;2],sides: [f64;2],surfaces: &[Surface;2],
-    offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V,V)],names: &str) -> Result<Rolled,String> {
+fn standing(b: &Brep,m: &Meeting,offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rolled,String> {
+    let Meeting {uses,faces,sides_faces,chain,stops,p,into,theta,concave,sides,surfaces,names,..} = m;
     // the face whose offset closes onto a curve, and the other's offset
     let (k,closed,other) = match offsets {
         [Offset::Curve(c),Offset::Surface(s)] => (0,c,s),
@@ -383,7 +371,7 @@ fn standing(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>
     // the centre: where the curve meets the other offset, the meeting nearest the ball in the corner
     let (lo,hi) = b.bounds();
     let span = closed.period().map_or([f64::NEG_INFINITY,f64::INFINITY],|pd| [0.,pd]);
-    let guess = add(p,scale(unit(add(into[0],into[1])),r/(0.5*theta).dsin()));
+    let guess = add(*p,scale(unit(add(into[0],into[1])),r/(0.5*theta).dsin()));
     let centre = match super::query::curve_surface_within(&closed,span,&other,tol,(lo,hi),4.*r) {
         super::query::Meets::Along => {
             return Err(format!("the ball between {names} rolls along what `{}` closes onto, filling it",b.faces[sides_faces[k][0]].name))
@@ -409,17 +397,8 @@ fn standing(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>
         e[k] = round(u.clamp(0.,1.));
         (centre,e)
     };
-    // the corner's angle all the way round, as a rolled ball's
-    let mut reach: f64 = 0.;
-    for i in 0..=256 {
-        let (_,e) = frame_at(i as f64/256.);
-        let w = dot(e[0],e[1]).clamp(-1.,1.).dacos();
-        if !(w > MIN_TURN && w < std::f64::consts::PI-MIN_TURN) {
-            return Err(format!("the ball between {names} wedges flat somewhere along their meeting"));
-        }
-        reach = reach.max(r/(0.5*w).dcos());
-    }
-    holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,sides,r,tol,names,wedge)?;
+    let reach = corner_reach(&frame_at,r,names)?;
+    holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,*sides,r,tol,names,wedge)?;
     // the piece: the loop, the circle, and the hemisphere over the circle — up its seam, round its
     // pole, back down — its loop counter-clockwise in its parameters (u round, v up from the circle)
     let mut out = Brep::default();
@@ -442,16 +421,15 @@ fn standing(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>
     out.faces.push(Face {surface:sphere,reversed:true,loops:vec![l],name:"round".into()});
     for side in [k,o] {
         let contact: &[usize] = if side == k { &[circle] } else { &[] };
-        let face = strip(&mut out,contact,&edge_of,&surfaces[side],face_reversed[side] != concave,["a","b"][side])?;
-        out.faces.push(face);
+        strip(&mut out,contact,&edge_of,&surfaces[side],faces[side].reversed != *concave,["a","b"][side])?;
     }
     out.measure_tolerances();
     out.check(10.*tol)?;
     // the spine and the other's contact a point held still, the first's contact the circle
     let still = |q: V| BSpline::new(1,vec![0.,0.,1.,1.],vec![q,q]);
-    let mut contacts = [still(touch)?,still(touch)?];
-    contacts[k] = circle_spline(&ring,r)?;
-    Ok(Rolled {piece:out,chain:chain.to_vec(),spine:still(centre)?,contacts,concave,r,reach,trims:Vec::new()})
+    let mut contacts = [circle_spline(&ring,r)?,still(touch)?];
+    if k == 1 { contacts.swap(0,1); }
+    Ok(Rolled {piece:out,chain:chain.to_vec(),spine:still(centre)?,contacts,concave:*concave,r,reach,trims:Vec::new()})
 }
 
 /// The circle of radius `r` about `f`'s origin in its `x`–`y` plane, exactly: a rational quadratic
@@ -464,6 +442,22 @@ fn circle_spline(f: &Frame,r: f64) -> Result<BSpline,String> {
     }).collect();
     let weights = (0..9).map(|i| if i % 2 == 1 { 0.5*corner } else { 1. }).collect();
     BSpline::rational(2,vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],poles,weights)
+}
+
+/// How far the corner stands from the ball's centre at most, all the way round `frame_at` (the
+/// centre and the directions to its contacts): `r / cos(w / 2)`, `w` the angle between the
+/// contacts — refused where the corner folds or wedges the ball flat.
+fn corner_reach(frame_at: &dyn Fn(f64) -> (V,[V;2]),r: f64,names: &str) -> Result<f64,String> {
+    let mut reach: f64 = 0.;
+    for k in 0..=256 {
+        let (_,e) = frame_at(k as f64/256.);
+        let w = dot(e[0],e[1]).clamp(-1.,1.).dacos();
+        if !(w > MIN_TURN && w < std::f64::consts::PI-MIN_TURN) {
+            return Err(format!("the ball between {names} wedges flat somewhere along their meeting"));
+        }
+        reach = reach.max(r/(0.5*w).dcos());
+    }
+    Ok(reach)
 }
 
 /// **A ball no larger than each face holds**: the band of a face it rolls on — where it stands
@@ -555,8 +549,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
     }).ok_or_else(|| format!("{names} meet nowhere near their edge"))?;
     // each leg: face `k`'s surface met with the other's offset by `legs[k]` toward the region
     let leg = |k: usize| -> Result<super::geom::Traced,String> {
-        let off = surfaces[1-k].offset(sides[1-k]*legs[k],tol).and_then(Offset::surface)
-            .ok_or_else(|| format!("the flat of {names} is wider than a face holds"))?;
+        let off = surfaces[1-k].offset_surface(sides[1-k]*legs[k],tol,&format!("the flat of {names}"),"a face")?;
         Ok(super::geom::Traced {a:surfaces[k].clone(),b:off,pts:Vec::new(),closed:false})
     };
     let leg_meetings = [leg(0)?,leg(1)?];
@@ -1042,8 +1035,7 @@ fn build_with(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_rev
         // the strip's surface: the face's own, its material away from the piece at a concave edge
         // (a split contact walked from where it is split, where its seam reaches it)
         let walk: Vec<usize> = contact[k].iter().rev().map(|&e| e as usize).collect();
-        let face = strip(&mut out,&walk,&edge_of,&surfaces[k],face_reversed[k] != concave,["a","b"][k])?;
-        out.faces.push(face);
+        strip(&mut out,&walk,&edge_of,&surfaces[k],face_reversed[k] != concave,["a","b"][k])?;
     }
     out.measure_tolerances();
     // a contact is the canal's iso line, off its face's surface by the fit at most — which a
@@ -1056,8 +1048,9 @@ fn build_with(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_rev
 /// A fillet's strip on `s` (`reversed` its side), between the loop `edge_of` and the contact
 /// `walk`, both edges of `out` — or, where the contact is a point (`walk` empty: a ball standing
 /// still touching the face once), all of the face inside the loop, which must not wind round the
-/// surface. A hole and its rim, or two loops round the surface's period joined by a seam.
-fn strip(out: &mut Brep,walk: &[usize],edge_of: &[usize],s: &Surface,reversed: bool,name: &str) -> Result<Face,String> {
+/// surface. A hole and its rim, or two loops round the surface's period joined by a seam; the face
+/// pushed onto `out`.
+fn strip(out: &mut Brep,walk: &[usize],edge_of: &[usize],s: &Surface,reversed: bool,name: &str) -> Result<(),String> {
     let mut loops = if walk.is_empty() { vec![closed_loop(out,edge_of,s)?] }
         else { vec![closed_loop(out,walk,s)?,closed_loop(out,edge_of,s)?] };
     let periods = s.periods();
@@ -1078,7 +1071,8 @@ fn strip(out: &mut Brep,walk: &[usize],edge_of: &[usize],s: &Surface,reversed: b
     } else {
         return Err(format!("the strip of the fillet's `{name}` side winds round its surface on one edge and not the other"));
     };
-    Ok(Face {surface:s.clone(),reversed,loops:face_loops,name:name.into()})
+    out.faces.push(Face {surface:s.clone(),reversed,loops:face_loops,name:name.into()});
+    Ok(())
 }
 
 /// A closed walk of edges on a surface: its uses, in order, the turn its parameters make over the

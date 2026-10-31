@@ -62,12 +62,14 @@ vertex (a round's contact on the face it rolls on; a cube's edges touching its m
 twelve touches, and the sphere's pieces a hole meeting an outer cycle at no vertex:
 `roots::sampled_roots_place_a_touch_where_the_derivative_turns`,
 `brep::a_cube_trimmed_by_its_midsphere_is_pinched_at_each_edges_middle`, `midsphere_common.sv`).
-A surface offset by a distance is a surface, or what it closes onto where the distance takes its
-radius to nothing — a cylinder's axis, a sphere's centre, a torus's middle circle — and nothing only
-past that (`Surface::offset`, `geom::Offset`;
-`brep::a_surface_offset_moves_its_signed_distance_by_the_offset`): a caller that wants a surface
-says so (`Offset::surface`), and none reads a collapse as no offset at all (a ball as wide as its
-cylinder, [rounds.md](rounds.md)).
+A surface offset by a distance is a surface (a cone shrunk past its apex the cone of its own
+apex), or what it closes onto where the distance takes its radius to nothing — a cylinder's axis, a
+sphere's centre, a torus's middle circle — and nothing only past that (`Surface::offset`,
+`geom::Offset`; `brep::a_surface_offset_moves_its_signed_distance_by_the_offset`); whether a kind
+has an offset in closed form at all is its own question (`Surface::has_offset`). A caller that
+wants a surface says so (`Offset::surface`, or `Surface::offset_surface`, which refuses a closing
+offset as that), and none reads a collapse as no offset at all (a ball as wide as its cylinder,
+[rounds.md](rounds.md)).
 A minimum is a `util::roots::Least`, its place and its value named, never a pair.
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges

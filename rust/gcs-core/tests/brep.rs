@@ -1540,6 +1540,10 @@ fn a_surface_offset_moves_its_signed_distance_by_the_offset() {
     assert!(matches!(Surface::Torus(f,6.,2.).offset(-2.,1e-9),Some(Offset::Curve(Curve::Circle(g,big))) if g == f && big == 6.));
     assert!(Surface::Cylinder(f,4.).offset(-4.1,1e-9).is_none());
     assert!(Surface::Torus(f,6.,2.).offset(-3.,1e-9).is_none());
+    // a cone shrunk past its apex is the same sheet placed at its own apex, its radius nothing there
+    let cone = Surface::Cone(f,3.,0.4);
+    let Some(Offset::Surface(o @ Surface::Cone(_,0.,_))) = cone.offset(-5.,1e-9) else { panic!("a cone of its own apex") };
+    for p in points { close(o.implicit(p),cone.implicit(p)+5.); }
 }
 
 /// The main pipe of a tee, radius 10 along x with its seam along +z, and its branch, radius 6

@@ -197,6 +197,30 @@ fn a_rim_rounded_to_its_cylinders_radius_is_a_dome() {
     assert!(field.side([0.0, 0.0, 9.9]) < 0.0 && field.side([3.0, 0.0, 9.5]) > 0.0);
 }
 
+/// The dome under a top tilted 20° off square (a plane through (0, 0, 10) about the y axis): the
+/// rim is an ellipse, which no ring carries, so the ball is rolled (`brep::fillet::roll`) — and,
+/// as wide as the post, stands still on its axis 5 under the top along the top's normal,
+/// `z = 10 − 5 / cos 20°`, touching the top off its pole. The post to that height under the dome.
+#[test]
+fn a_rim_tilted_off_square_rounded_to_its_cylinders_radius_is_a_dome() {
+    let e = solved("unit mm\nuse std\nuse std.rounds (round)\n\
+        in std.top {\n  o := point\n  fix((0, 0)) o\n  rim := circle(center: o) hint(r: 5)\n  radius(5mm) rim\n}\n\
+        post := solid(face(rim), from: 0mm, to: 14mm)\n\
+        across := axis hint(dir: (0, 1, 0))\nacross parallel std.y\n\
+        u := axis hint(dir: (0.94, 0, -0.34))\nu perpendicular across\nu angle(20deg, about: std.y) std.x\n\
+        slant := plane(u: u, v: across)\nfix(origin == (0mm, 0mm, 10mm)) slant\n\
+        in slant {\n  a := point\n  b := point\n  c := point\n  d := point\n\
+        fix((-20, -20)) a\n  fix((20, -20)) b\n  fix((20, 20)) c\n  fix((-20, 20)) d\n\
+        (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
+        lid := solid(face(ab, bc, cd, da), from: 0mm, to: 30mm)\n\
+        drum := solid(post)\nlid cut drum\ndrum.lid round(r: 5mm) drum.post\n");
+    let b = exported(&e, "drum");
+    let z = 10.0 - 5.0 / 20f64.to_radians().cos();
+    close(props::volume(&b), PI * 25.0 * z + 2.0 / 3.0 * PI * 125.0);
+    close(b.faces.iter().map(|f| props::area(&b, f)).sum::<f64>(), PI * 25.0 + 2.0 * PI * 5.0 * z + 2.0 * PI * 25.0);
+    assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 1), ("sphere", 1)].into());
+}
+
 /// **A run-out** (#110): a run cut off by a face its edge ends on at a slant. The block's east side
 /// leans in (its top 10 short of its foot) and its west side leans out (5 past), and only its near
 /// face's south edge is rounded. The run is carried on past each end of its edge and cut off there

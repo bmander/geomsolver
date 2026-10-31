@@ -311,13 +311,17 @@ great circle square to the curve and the second at a point; its canal is the hal
 on the point's side, exact, and the piece that hemisphere, the first face's strip down to the
 circle and all of the second face inside the loop (`fillet::strip`, the one strip rule a rolled
 canal's piece uses too). Cut, it is the dome, square to the axis or not — a top tilted 20° is
-touched off the dome's pole, `z = 10 − 5 / cos 20°` — and upside down it fills a bore's floor
-into a hemisphere (`brep::a_cylinders_rim_rounded_to_its_own_radius_is_a_dome`). Past a closing
-offset the band a ball needs is the whole of the face on the region's side (`holds_ball`), so a
-cylinder shorter than the radius is refused as too small to hold it. Refused by name too: both
-offsets closing, one closing onto a point (the ball is that face's sphere), the centre running
-along the curve it closes onto, and a stretch of a loop. A cone shrunk past its apex is still no
-offset (`None`): its offset is a cone of its own apex, not written yet.
+touched off the dome's pole, `z = 10 − 5 / cos 20°`, its rim an ellipse the lowering rolls a
+ball along (`round_lowering::a_rim_tilted_off_square_rounded_to_its_cylinders_radius_is_a_dome`)
+— and upside down it fills a bore's floor into a hemisphere
+(`brep::a_cylinders_rim_rounded_to_its_own_radius_is_a_dome`). Past a closing offset the band a
+ball needs is the whole of the face on the region's side (`holds_ball`), so a cylinder shorter
+than the radius is refused as too small to hold it. Refused by name too: both offsets closing, one
+closing onto a point (the ball is that face's sphere), the centre running along the curve it
+closes onto, and a stretch of a loop; and where only a surface will do — a chamfer's leg, a ball
+beyond a seam — an offset that closes is refused as that, not as too wide
+(`Surface::offset_surface`). A cone shrunk past its apex is the same sheet placed at its own apex,
+never none.
 
 **The closing case** (#197, `rust/examples/conrod/`): a forged rod, every round and chamfer a
 statement over the faces its solids gave it, built exactly (pockets drawn as prisms, so their walls

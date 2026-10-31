@@ -742,6 +742,20 @@ impl Reading {
         self.nearest(p).map_or((f64::INFINITY, [0.0, 0.0, 1.0]), |fi| self.body.side_grad(fi, p))
     }
 
+    /// The surfaces the faces lie on, each by the first face on it (the same way out), and which of
+    /// those each face is on, in the faces' order.
+    pub fn surfaces(&self) -> (Vec<usize>, Vec<usize>) {
+        let b = &self.body.loc.b;
+        let mut pieces: Vec<usize> = Vec::new();
+        let group = self.faces.iter().map(|&fi| {
+            let (f, tol) = (&b.faces[fi], self.body.loc.tol);
+            pieces.iter().position(|&q| b.faces[q].reversed == f.reversed
+                && crate::brep::ssi::same(&b.faces[q].surface, &f.surface, tol))
+                .unwrap_or_else(|| { pieces.push(fi); pieces.len() - 1 })
+        }).collect();
+        (pieces, group)
+    }
+
     /// Where the faces lie on more than one surface and every crease between those is convex (a
     /// drafted side's pieces either side of its parting plane, #245): one face on each surface.
     /// Within such faces the material is within every surface's side, and a point within them at
@@ -754,15 +768,7 @@ impl Reading {
         if self.faces.first().is_some_and(|&f0| self.faces.iter().any(|&fi| shell[fi] != shell[f0])) {
             return None;
         }
-        let b = &self.body.loc.b;
-        // each face's surface, by the first face on it
-        let mut pieces: Vec<usize> = Vec::new();
-        let group: Vec<usize> = self.faces.iter().map(|&fi| {
-            let (f, tol) = (&b.faces[fi], self.body.loc.tol);
-            pieces.iter().position(|&q| b.faces[q].reversed == f.reversed
-                && crate::brep::ssi::same(&b.faces[q].surface, &f.surface, tol))
-                .unwrap_or_else(|| { pieces.push(fi); pieces.len() - 1 })
-        }).collect();
+        let (pieces, group) = self.surfaces();
         if pieces.len() < 2 {
             return None;
         }
