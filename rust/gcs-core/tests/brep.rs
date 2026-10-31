@@ -117,6 +117,71 @@ fn a_partial_turn_is_its_share_of_the_whole_with_two_caps() {
     close(volume(&b),PI*PI*3./2.);
 }
 
+/// The sphere, the cone and the torus by their numbers: each valid, of the faces its revolution
+/// has, its volume and area the closed forms', wherever it stands and however its axis leans.
+#[test]
+fn the_sphere_the_cone_and_the_torus_are_their_closed_forms() {
+    use gcs_core::brep::build::{cone,sphere,torus};
+    use gcs_core::brep::topo::Brep;
+    let area = |b: &Brep| b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum::<f64>();
+    let shape = |b: &Brep| (b.faces.len(),b.edges.len(),b.vertices.len());
+    for (o,axis) in [([0.;3],XY),([1.,-2.,3.],[0.3,-0.4,0.8])] {
+        let r = 2.5;
+        let b = sphere(o,axis,r).unwrap();
+        b.check(1e-9).unwrap();
+        // its seam and a degenerate edge at each pole
+        assert_eq!(shape(&b),(1,3,2));
+        close(volume(&b),4./3.*PI*r*r*r);
+        close(area(&b),4.*PI*r*r);
+        // a frustum, a cone either way up, and a cylinder; each base and top a disc, the side
+        // its slant height times the mean circumference
+        let h = 3.;
+        for (r0,r1,faces) in [(2.,0.5,3),(2.,0.,2),(0.,2.,2),(1.5,1.5,3)] {
+            let b = cone(o,axis,r0,r1,h).unwrap();
+            b.check(1e-9).unwrap();
+            assert_eq!(b.faces.len(),faces,"r0 {r0}, r1 {r1}");
+            close(volume(&b),PI*h*(r0*r0+r0*r1+r1*r1)/3.);
+            close(area(&b),PI*(r0+r1)*(h*h+(r0-r1)*(r0-r1)).sqrt()+PI*(r0*r0+r1*r1));
+        }
+        let (big,small) = (4.,1.25);
+        let b = torus(o,axis,big,small).unwrap();
+        b.check(1e-9).unwrap();
+        assert_eq!((b.faces.len(),b.edges.len()),(1,2));
+        close(volume(&b),2.*PI*PI*big*small*small);
+        close(area(&b),4.*PI*PI*big*small);
+    }
+    // each stands where it was put: its box the closed form's
+    let (lo,hi) = sphere([1.,2.,3.],XY,2.).unwrap().bounds();
+    for k in 0..3 { assert!((lo[k]-([1.,2.,3.][k]-2.)).abs() < 1e-9 && (hi[k]-([1.,2.,3.][k]+2.)).abs() < 1e-9); }
+    let (lo,hi) = torus([0.;3],XY,4.,1.).unwrap().bounds();
+    assert!((lo[0]+5.).abs() < 1e-9 && (hi[0]-5.).abs() < 1e-9 && (lo[2]+1.).abs() < 1e-9 && (hi[2]-1.).abs() < 1e-9);
+    let (lo,hi) = cone([0.;3],[0.,0.,-1.],2.,0.,3.).unwrap().bounds();
+    assert!((lo[2]+3.).abs() < 1e-9 && hi[2].abs() < 1e-9,"a cone runs along its axis: {lo:?} {hi:?}");
+    // what is no such solid is refused, never built
+    assert!(sphere([0.;3],XY,0.).is_err());
+    assert!(sphere([0.;3],[0.;3],1.).is_err());
+    assert!(sphere([0.;3],XY,f64::NAN).is_err());
+    assert!(cone([0.;3],XY,0.,0.,1.).is_err());
+    assert!(cone([0.;3],XY,1.,-0.5,1.).is_err());
+    assert!(cone([0.;3],XY,1.,0.5,0.).is_err());
+    assert!(torus([0.;3],XY,1.,1.).is_err());
+    assert!(torus([0.;3],XY,1.,2.).is_err());
+    assert!(torus([0.;3],XY,3.,0.).is_err());
+}
+
+/// The sphere as an operand: the hemisphere a block keeps of it, its poles off the cutting plane.
+#[test]
+fn a_sphere_cut_by_a_plane_is_its_half() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::{sphere,square};
+    let r = 5.;
+    let ball = sphere([0.;3],[0.3,0.2,1.],r).unwrap();
+    let above = prism(&square([0.;3],XY,10.),0.,10.).unwrap();
+    let half = combined(&ball,&above,Op::Common,0.).unwrap();
+    half.check(1e-9).unwrap();
+    close(volume(&half),2./3.*PI*r*r*r);
+}
+
 #[test]
 fn a_moved_solid_is_the_same_solid() {
     let p = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![arc([3.,0.,1.],1.,XZ,[1.,0.,0.],None)]]};

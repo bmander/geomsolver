@@ -15,7 +15,12 @@ alone, and it is measured beside other kernels on https://github.com/bmander/bre
 `gcs_core::brep`:
 `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`
 intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `check`, `pinches`),
-`build` (prisms, drafted prisms, revolutions and canals of line/arc/circle/spline profiles),
+`build` (prisms, drafted prisms, revolutions and canals of line/arc/circle/spline profiles; the
+sphere, the cone and the torus by their numbers as OCCT's `MakeSphere`/`MakeCone`/`MakeTorus` take
+them, each its meridian turned — `sphere(c, axis, r)`, `cone(o, axis, r0, r1, h)`,
+`torus(c, axis, major, minor)` — and what is no such solid refused by name: the kernel's API
+speaks the vocabulary its other users bring, which the language need not, `std.sets.Sphere`
+staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_torus_…`),
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
 seam curves), `recipe`. A traced pair is seeded where edges cross faces; between analytic

@@ -1,7 +1,8 @@
 //! The primitives, built with their topology whole: a profile swept along its normal (a prism,
 //! drafted or not), turned about a line in its plane (a revolution), or a ball's disc screwed along
 //! a helix (a canal), from the loops of lines, arcs, circles and B-splines the CAD recipe carries
-//! (`solid::cad::recipe`).
+//! (`solid::cad::recipe`); and the sphere, the cone and the torus by their numbers (`sphere`,
+//! `cone`, `torus`), each its meridian turned.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::geom::{tolerance,BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
@@ -550,7 +551,7 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
     // the centre's velocity at the start, square to the radial line
     let rate = add(scale(cross(a,radial),angle),scale(a,advance));
     // a centre that does not move sweeps the ball itself
-    if norm(rate) <= 1e-12*r.max(1.) { return Ok(named(ball(c,a,r)?,name)) }
+    if norm(rate) <= 1e-12*r.max(1.) { return Ok(named(sphere(c,a,r)?,name)) }
     let t = unit(rate);
     // where the disc's circle starts, so where the tube's seams run: turned off the radial line by
     // an angle no design's symmetry gives (on it, the arc the seam's vertex sweeps lies in the plane
@@ -620,13 +621,57 @@ fn poles(t: V,x: V) -> V {
 /// fraction of a turn, which no symmetry of a design's makes.
 const SEAM: f64 = 0.6180339887498949;
 
-/// The ball of radius `r` about `c`: a half disc turned once about the diameter along the unit `w`,
-/// its poles where `w` meets the sphere.
-fn ball(c: V,w: V,r: f64) -> Result<Brep,String> {
-    let f = Frame::about(c,w);
+/// **The ball** of radius `r` about `c`: a half disc turned once about the diameter along `axis`,
+/// its poles where `axis` meets the sphere and its seam the half circle through them on the side
+/// `Frame::about(c, axis)`'s `x` points to. One face, bounded by its seam and a degenerate edge at
+/// each pole. A plane through a pole is a meeting this kernel's Booleans do not split, so a caller
+/// lays `axis` off the planes the ball will meet.
+pub fn sphere(c: V,axis: V,r: f64) -> Result<Brep,String> {
+    if !(r > 0. && r.is_finite()) { return Err(format!("a sphere's radius must be positive, not {r}")) }
+    if !(norm(axis) > 0.) { return Err("a sphere's axis has no direction".into()) }
+    let f = Frame::about(c,axis);
     let arc = ProfileEdge::Arc {frame:Frame::new(c,f.y,f.z),r,span:Some([0.,std::f64::consts::PI])};
     let shut = ProfileEdge::Line {a:f.at([0.,0.,-r]),b:f.at([0.,0.,r])};
     revolve(&Profile {origin:c,normal:f.y,loops:vec![vec![arc,shut]],names:Vec::new()},c,f.z,TAU)
+}
+
+/// **The cone** on the line through `o` along `axis`: radius `r0` at `o` and `r1` a height `h` along
+/// `axis` from it, its meridian turned once (OCCT's `MakeCone`). Either radius may be nothing, an
+/// apex there; equal radii make a cylinder. Its side's seam lies in the half plane
+/// `Frame::about(o, axis)`'s `x` points to.
+pub fn cone(o: V,axis: V,r0: f64,r1: f64,h: f64) -> Result<Brep,String> {
+    if !(r0 >= 0. && r1 >= 0. && r0.is_finite() && r1.is_finite()) {
+        return Err(format!("a cone's radii must be positive or nothing, not {r0} and {r1}"))
+    }
+    if !(r0.max(r1) > 0.) { return Err("a cone with no radius at either end has no volume".into()) }
+    if !(h > 0. && h.is_finite()) { return Err(format!("a cone's height must be positive, not {h}")) }
+    if !(norm(axis) > 0.) { return Err("a cone's axis has no direction".into()) }
+    let f = Frame::about(o,axis);
+    // the meridian in the plane of the axis and `x`: down the axis, out along the base, up the
+    // side, back along the top; an end of no radius is its apex, on the axis
+    let mut corners = vec![o];
+    if r0 > 0. { corners.push(f.at([r0,0.,0.])); }
+    if r1 > 0. { corners.push(f.at([r1,0.,h])); }
+    corners.push(f.at([0.,0.,h]));
+    let n = corners.len();
+    let edges = (0..n).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%n]}).collect();
+    revolve(&Profile {origin:o,normal:f.y,loops:vec![edges],names:Vec::new()},o,f.z,TAU)
+}
+
+/// **The torus** about the line through `c` along `axis`: its tube's middle circle of radius
+/// `major` about `c` square to `axis`, its tube of radius `minor` (OCCT's `MakeTorus`). A ring
+/// torus only: `minor` under `major`, so the tube clears the axis. One face, its two seams the
+/// tube's circle on the side `Frame::about(c, axis)`'s `x` points to and the outer equator.
+pub fn torus(c: V,axis: V,major: f64,minor: f64) -> Result<Brep,String> {
+    if !(minor > 0. && minor.is_finite()) { return Err(format!("a torus's tube's radius must be positive, not {minor}")) }
+    if !(major > minor && major.is_finite()) {
+        return Err(format!("a torus's middle radius {major} must exceed its tube's {minor}: the tube would cross the axis"))
+    }
+    if !(norm(axis) > 0.) { return Err("a torus's axis has no direction".into()) }
+    let f = Frame::about(c,axis);
+    let centre = f.at([major,0.,0.]);
+    let section = ProfileEdge::Arc {frame:Frame::new(centre,f.y,f.x),r:minor,span:None};
+    revolve(&Profile {origin:centre,normal:f.y,loops:vec![vec![section]],names:Vec::new()},c,f.z,TAU)
 }
 
 /// The half of the ball of radius `r` about `c` on the side the unit `n` points to: the ball turned
@@ -635,7 +680,7 @@ fn ball(c: V,w: V,r: f64) -> Result<Brep,String> {
 /// centre along the path — which lies in the path's plane, as a face of the design often does,
 /// and a plane through a pole is a meeting this kernel's Booleans do not split.
 fn half_ball(c: V,n: V,w: V,r: f64) -> Result<Brep,String> {
-    kept(&ball(c,w,r)?,c,n,0.)
+    kept(&sphere(c,w,r)?,c,n,0.)
 }
 
 /// The screw about the line through `c` along the unit `a`: a turn by `angle` and a step of `advance`

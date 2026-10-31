@@ -19,8 +19,9 @@ the home and geomsolver depends on it.
   rational and polynomial B-spline curves and surfaces, and traced intersection curves. Surfaces are
   parameterised as STEP and OCCT do, with closed-form inverses and signed distances.
 - **Topology:** oriented edge uses with p-curves, seams, degenerate poles, and a validity check.
-- **Construction:** prisms (drafted too), revolutions, and canals (a ball swept along a helix).
-  Profiles are made of lines, arcs and splines.
+- **Construction:** spheres, cones (frustums and cylinders too) and tori by their numbers,
+  prisms (drafted too), revolutions, and canals (a ball swept along a helix). Profiles are made of
+  lines, arcs and splines.
 - **Booleans:** union, cut and common. Intersections between analytic surfaces are closed forms
   wherever one exists, and traced otherwise. A meeting the kernel cannot resolve is refused, never
   read as none.
