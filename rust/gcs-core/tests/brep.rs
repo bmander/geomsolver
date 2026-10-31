@@ -740,6 +740,59 @@ fn a_trace_leaving_a_sheet_ends_where_its_edge_crosses() {
     }
 }
 
+/// **A trace is fitted through one seed a place**: two seeds a hair apart on a meeting — a crossing
+/// seeded again by another face's edge, 4e-14 off it on a ring groove's floor — are one vertex.
+/// Each seed is placed along the trace only to its search's width (1e-8 of a step), and two placed
+/// apart were both interpolated: a hair apart in space beside gaps a tenth of a millimetre long, the
+/// cubic magnified their rounding into a swing out along the curve and back, on both surfaces all
+/// the way (0.17 mm past the groove's corner, where its face's boundary then ran through its own
+/// points). So a second seed within the tolerance of one leaves the fit as the one alone makes it,
+/// and the fit runs one way along the meeting, read in every span of it however short.
+#[test]
+fn a_trace_is_fitted_through_one_seed_a_place() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::space::distance;
+    // the sheet and the plane of `a_trace_leaving_a_sheet_ends_where_its_edge_crosses`: the
+    // meeting runs from the sheet's edge at v = 0 to its edge at v = 1, y = 10 v along it
+    let f = |u: f64,v: f64| [10.*u,10.*v,(2.*u).sin()+v*v];
+    let (net,_) = gcs_core::brep::nurbs::fit_net(&f,3,3,16,16,1e-10).unwrap();
+    let sheet = Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),
+        std::sync::Arc::new(net.clone()));
+    let plane = Surface::Plane(Frame::about([4.,0.,0.],[1.,0.,0.]));
+    let tol = 1e-6;
+    let fit = |seeds: &[V]| {
+        let curves = gcs_core::brep::ssi::trace(&plane,&sheet,seeds,[-1.;3],[11.;3],tol).unwrap();
+        assert_eq!(curves.len(),1);
+        let Curve::BSpline(b) = &curves[0] else { panic!("a fit, not a {}",curves[0].kind()) };
+        (**b).clone()
+    };
+    for v in [0.3,0.5,0.8] {
+        let alone = fit(&[net.point(0.4,v)]);
+        for hair in [4e-15,1e-12,1e-10,1e-9,1e-8,5e-8] {
+            let b = fit(&[net.point(0.4,v),net.point(0.4,v-hair)]);
+            // the same fit, to the rounding a sheet's foot is found to from where the last was
+            let same = b.poles.iter().zip(&alone.poles).all(|(p,q)| distance(*p,*q) <= 1e-9);
+            let (n,m) = (b.knots.len(),alone.knots.len());
+            assert!(n == m && same,"{v} {hair:e}: the second seed moved the fit: {n} knots against {m}");
+            let ps: Vec<V> = b.knots.windows(2).filter(|w| w[1] > w[0])
+                .flat_map(|w| (0..32).map(move |k| w[0]+(w[1]-w[0])*k as f64/32.))
+                .chain([b.domain()[1]]).map(|t| b.point(t)).collect();
+            for p in &ps {
+                let off = plane.implicit(*p).abs().max(sheet.implicit(*p).abs());
+                assert!(off <= 16.*tol,"{v} {hair:e}: {p:?} is {off:e} off");
+            }
+            // one way along it: y never turns back by more than the tolerance
+            let rising = ps[ps.len()-1][1] > ps[0][1];
+            let mut reach = ps[0][1];
+            for p in &ps {
+                let back = if rising { reach-p[1] } else { p[1]-reach };
+                assert!(back <= tol,"{v} {hair:e}: the fit turns back {back:e} at {p:?}");
+                reach = if rising { reach.max(p[1]) } else { reach.min(p[1]) };
+            }
+        }
+    }
+}
+
 /// **A trace keeps a sharp turn at its end** (#684 E): a sheet whose ridge turns at a radius of
 /// 0.009 mm, cut by a plane in a V 3 mm long whose apex (of radius 0.003 mm, turning 143°) stands
 /// 0.03 mm from where it leaves the sheet's edge, while the march's step `h0`, read off the sheet's
@@ -1171,6 +1224,39 @@ fn a_grid_interpolated_passes_through_it_and_makes_a_sheet() {
     }
 }
 
+/// A grid creased along a row (`nurbs::interpolate_creased`, #684 O): a floor 6 wide (z = 0) bent
+/// up a right angle into a wall (x = 6), rows across the bend and columns along y, creased at the
+/// bend's row. The net passes through every point at its `net_parameters`, its knot at the crease
+/// stands three times over, and each side is its own stretch's fit: the floor lies in its plane and
+/// the wall in its own to rounding, where one smooth fit through the bend rings out of both. Cut at
+/// the crease (`build::grid_sheet`), the two faces share its row as an edge.
+#[test]
+fn a_grid_creased_along_a_row_is_its_stretches_fits_joined_there() {
+    use gcs_core::brep::nurbs::{interpolate_creased,interpolate_net,net_parameters,Parametrization};
+    let (rows,cols,crease) = (11,5,6);
+    let pts: Vec<V> = (0..rows).flat_map(|i| (0..cols).map(move |j| {
+        let y = j as f64*2.;
+        if i <= crease { [i as f64,y,0.] } else { [6.,y,(i-crease) as f64] }
+    })).collect();
+    let kind = Parametrization::ChordLength;
+    let net = interpolate_creased(&pts,rows,cols,kind,&[crease]).unwrap();
+    let (tu,tv) = net_parameters(&pts,rows,cols,kind).unwrap();
+    assert_eq!(net.uknots.iter().filter(|&&k| k == tu[crease]).count(),3);
+    for i in 0..rows { for j in 0..cols {
+        assert!(gcs_core::space::distance(net.point(tu[i],tv[j]),pts[i*cols+j]) < 1e-12,"row {i}, column {j}");
+    } }
+    // each side in its own plane, read between the rows and the columns
+    let off = |net: &gcs_core::brep::nurbs::Net| (0..=200).flat_map(|a| (0..=20).map(move |b| (a,b))).map(|(a,b)| {
+        let (u,v) = (a as f64/200.,b as f64/20.);
+        let p = net.point(u,v);
+        if u <= tu[crease] { p[2].abs() } else { (p[0]-6.).abs() }
+    }).fold(0_f64,f64::max);
+    assert!(off(&net) < 1e-12,"{}",off(&net));
+    assert!(off(&interpolate_net(&pts,rows,cols,kind).unwrap()) > 1e-2);
+    let sheet = gcs_core::brep::build::grid_sheet(&net,&[0.,tu[crease],1.],&[0.,1.],&["floor".into(),"wall".into()],[false,false]).unwrap();
+    assert_eq!((sheet.faces.len(),sheet.edges.len(),sheet.vertices.len()),(2,7,6));
+}
+
 /// A net closed round an axis is cut into a ring of faces (`build::grid_sheet`, #684 N): a cylinder of
 /// radius 3 sampled once round, its last column its first, cut in two along it and in four round
 /// it. Neighbours share their edges and corners and the last round closes on the first's, so only
@@ -1187,7 +1273,7 @@ fn a_net_closed_round_an_axis_is_a_ring_of_faces() {
     let net = interpolate_net(&pts,rows,cols,Parametrization::ChordLength).unwrap();
     let [[a,z],[c,d]] = net.domain();
     let vs: Vec<f64> = (0..=4).map(|k| c+(d-c)*k as f64/4.).collect();
-    let sheet = gcs_core::brep::build::grid_sheet(&net,&[a,(a+z)/2.,z],&vs,&["low".into(),"high".into()],true).unwrap();
+    let sheet = gcs_core::brep::build::grid_sheet(&net,&[a,(a+z)/2.,z],&vs,&["low".into(),"high".into()],[false,true]).unwrap();
     assert_eq!((sheet.faces.len(),sheet.edges.len(),sheet.vertices.len()),(8,20,12));
     assert_eq!(sheet.faces.iter().filter(|f| f.name == "high").count(),4);
     let mut uses = vec![0;sheet.edges.len()];
@@ -1209,6 +1295,79 @@ fn a_net_closed_round_an_axis_is_a_ring_of_faces() {
     let core = PI*9.*4.;
     assert_eq!(cells.len(),2,"{cells:?}");
     assert!((cells[0]-core).abs() < 1e-5*core && (cells[1]-(256.-core)).abs() < 1e-5*core,"{cells:?} against {core}");
+}
+
+/// A net closed the other way, along its rows, is cut into a tube of faces (`build::grid_sheet`,
+/// #684 W): the same cylinder, its rows now once round, the last its first, as a sheet along a
+/// characteristic that closes on itself is, and its columns up it; cut four round and in two up it.
+/// Each face's edges are its neighbours' and the last round closes on the first's, so only the
+/// rims' edges are used once; each use's pcurve lies on its edge; and the block it splits leaves
+/// the core, π r² h, and the rest.
+#[test]
+fn a_net_closed_along_its_rows_is_a_tube_of_faces() {
+    use gcs_core::brep::nurbs::{interpolate_net,Parametrization};
+    let (rows,cols) = (37,7);
+    let pts: Vec<V> = (0..rows).flat_map(|i| (0..cols).map(move |j| {
+        let a = TAU*(i%(rows-1)) as f64/(rows-1) as f64;
+        [3.*a.cos(),3.*a.sin(),-5.+10.*j as f64/(cols-1) as f64]
+    })).collect();
+    let net = interpolate_net(&pts,rows,cols,Parametrization::ChordLength).unwrap();
+    let [[a,z],[c,d]] = net.domain();
+    let us: Vec<f64> = (0..=4).map(|k| a+(z-a)*k as f64/4.).collect();
+    let names: Vec<String> = (0..4).map(|k| format!("quarter {k}")).collect();
+    let sheet = gcs_core::brep::build::grid_sheet(&net,&us,&[c,(c+d)/2.,d],&names,[true,false]).unwrap();
+    assert_eq!((sheet.faces.len(),sheet.edges.len(),sheet.vertices.len()),(8,20,12));
+    assert!(gcs_core::brep::build::grid_sheet(&net,&[a,z],&[c,d],&names[..1],[true,false]).is_err(),"one face round is refused");
+    let mut uses = vec![0;sheet.edges.len()];
+    for f in &sheet.faces {
+        for c in &f.loops[0] {
+            uses[c.edge as usize] += 1;
+            let e = &sheet.edges[c.edge as usize];
+            for t in [0.,0.3,0.7,1.] {
+                let x = e.t[0]+(e.t[1]-e.t[0])*t;
+                let uv = c.pcurve.at(x,e,&f.surface,&sheet.vertices);
+                assert!(gcs_core::space::distance(f.surface.point(uv),e.point(x,&sheet.vertices)) < 1e-9);
+            }
+        }
+    }
+    assert_eq!((uses.iter().filter(|&&n| n == 1).count(),uses.iter().filter(|&&n| n == 2).count()),(8,12));
+    let block = prism(&gcs_core::brep::build::square([0.;3],[0.,0.,1.],4.),-2.,2.).unwrap();
+    let mut cells: Vec<f64> = gcs_core::brep::boolean::split(&block,&sheet,1e-6).unwrap().iter().map(volume).collect();
+    cells.sort_by(f64::total_cmp);
+    let core = PI*9.*4.;
+    assert_eq!(cells.len(),2,"{cells:?}");
+    assert!((cells[0]-core).abs() < 1e-5*core && (cells[1]-(256.-core)).abs() < 1e-5*core,"{cells:?} against {core}");
+}
+
+/// **A tube is one cylinder's faces round it, open at its ends** (`build::tube`, #684 X): four faces
+/// of the one cylinder, each a quarter of it between two lines along it, so only the eight arcs at
+/// its ends are used once; each use's pcurve lies on its edge; and the block it splits leaves the
+/// core, π r² h, to rounding, and the rest. Two faces round at least.
+#[test]
+fn a_tube_is_one_cylinders_faces_open_at_its_ends() {
+    let tube = gcs_core::brep::build::tube([1.,0.5,-5.],[0.,0.,1.],3.,10.,4).unwrap();
+    assert_eq!((tube.faces.len(),tube.edges.len(),tube.vertices.len()),(4,12,8));
+    assert!(tube.faces.iter().all(|f| matches!(f.surface,gcs_core::brep::geom::Surface::Cylinder(_,r) if r == 3.)));
+    assert!(gcs_core::brep::build::tube([0.;3],[0.,0.,1.],3.,10.,1).is_err(),"one face round is refused");
+    let mut uses = vec![0;tube.edges.len()];
+    for f in &tube.faces {
+        for c in &f.loops[0] {
+            uses[c.edge as usize] += 1;
+            let e = &tube.edges[c.edge as usize];
+            for t in [0.,0.3,0.7,1.] {
+                let x = e.t[0]+(e.t[1]-e.t[0])*t;
+                let uv = c.pcurve.at(x,e,&f.surface,&tube.vertices);
+                assert!(gcs_core::space::distance(f.surface.point(uv),e.point(x,&tube.vertices)) < 1e-9);
+            }
+        }
+    }
+    assert_eq!((uses.iter().filter(|&&n| n == 1).count(),uses.iter().filter(|&&n| n == 2).count()),(8,4));
+    let block = prism(&gcs_core::brep::build::square([0.;3],[0.,0.,1.],4.5),-2.,2.).unwrap();
+    let mut cells: Vec<f64> = gcs_core::brep::boolean::split(&block,&tube,1e-6).unwrap().iter().map(volume).collect();
+    cells.sort_by(f64::total_cmp);
+    let core = PI*9.*4.;
+    assert_eq!(cells.len(),2,"{cells:?}");
+    assert!((cells[0]-core).abs() < 1e-12*core && (cells[1]-(324.-core)).abs() < 1e-12*core,"{cells:?} against {core}");
 }
 
 /// An interpolation of many points (solved in its band, past the dense solve's size) passes through

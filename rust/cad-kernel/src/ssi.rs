@@ -726,22 +726,29 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
     }
     // each fitted through the seeds on it, exactly: they are where the faces' boundaries cross, the
     // vertices its edges will end at (a fit within `tol` of the traced points may pass farther from
-    // a vertex between them, where a swept surface's curve runs on into its tangent)
+    // a vertex between them, where a swept surface's curve runs on into its tangent). **One seed a
+    // place**: a seed within `tol` of one taken is that vertex again (a crossing seeded once more
+    // by another face's edge, 4e-14 off it): placed along the trace only to the search's width below
+    // (1e-8 of a step), two such were placed apart and interpolated a hair apart in space, and the
+    // cubic magnified their rounding into a swing out along the curve and back, on both surfaces
+    // all the way (a ring groove's floor ran 0.17 mm past its corner)
     for c in distinct(traced_so_far,tol) {
         let Curve::Traced(t) = &c else { unreachable!() };
-        let through: Vec<(f64,V)> = projected.iter().filter_map(|&p| {
+        let mut through: Vec<(f64,V)> = Vec::new();
+        for &p in &projected {
+            if through.iter().any(|&(_,q)| distance(q,p) <= tol) { continue }
             let x = c.inverse(p);
-            if crate::util::space::distance(c.point(x),p) > 8.*tol { return None }
+            if distance(c.point(x),p) > 8.*tol { continue }
             // where along the trace, closely: a seed placed a little past its neighbour in the
             // trace's order doubles the fit back on itself there
             let (mut a,mut b) = ((x-1.).max(0.),(x+1.).min((t.pts.len()-1) as f64));
-            let d = |x: f64| crate::util::space::distance(t.at(x),p);
+            let d = |x: f64| distance(t.at(x),p);
             for _ in 0..40 {
                 let (m1,m2) = (a+(b-a)*0.382,a+(b-a)*0.618);
                 if d(m1) < d(m2) { b = m2 } else { a = m1 }
             }
-            Some(((a+b)/2.,p))
-        }).collect();
+            through.push(((a+b)/2.,p));
+        }
         curves.push(fitted(t,tol/4.,&through).unwrap_or(c));
     }
     Ok(curves)

@@ -20,7 +20,7 @@ tip := 4mm           // how far from the rod's axis the rim dips
 depth := 2.5mm       // how deep the V is, from the rim to the wheel's bore
 flank := 30deg       // each flank's angle from the wheel's plane
 lean := 20deg        // how far the wheel's axis leans from upright, across the turn: upright, both
-                     // flanks would meet the rim at one point, a sharp edge not built
+                     // flanks meet the rim at one point, the wall creased along its circle (#684 V)
 
 in std.front {
   construction centerline ax := line(std.origin, hint((0, 1)))

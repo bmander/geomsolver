@@ -4,9 +4,9 @@
 // (the points of it moving along its own surface) is carried round: that curve laid in a
 // half-plane through the axis and revolved (docs/generating-sweeps.md, the constant-twist class,
 // #684). Leaning across the turn, the cutter's axis runs skew to the block's, and the wall is
-// none of the torus's own circles. Keep `lean` clear of the front plane's tilt (a cutter whose
-// axis meets the block's has a ring in contact all round, and is refused), and the roll clear of
-// the block at both ends.
+// none of the torus's own circles. (Leaned toward the block's axis instead, the cutter's axis
+// meets it, and a ring of the torus touches all round, sweeping a zone of the sphere about where
+// they meet: `spoke.sv`, #684 X.) Keep the roll clear of the block at both ends.
 unit mm
 use std
 use std.place (coords)

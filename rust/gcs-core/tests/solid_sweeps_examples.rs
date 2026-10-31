@@ -9,7 +9,7 @@ use gcs_core::solid::admission::{self,Class,Options};
 use std::f64::consts::{PI,TAU};
 
 use crate::round_lowering::lens;
-use crate::turns_and_slides::{exported,measure,near,reaches,turned_away,turned_torus,Lean};
+use crate::turns_and_slides::{exported,exported_at,measure,near,reaches,turned_away,turned_torus,Lean};
 
 /// The text of the example `name` of the series.
 pub(crate) fn text(name: &str) -> String {
@@ -286,6 +286,134 @@ fn the_square_tool_leaves_a_groove_widening_outward() {
     let turned = r*r/2.*(r0/r).acos()-r0/2.*(r*r-r0*r0).sqrt();
     let groove = TAU*l/lead*(w*(r*r-r0*r0)/2.+lead/PI*turned);
     near(exported(&e,"rod"),PI*r*r*l-groove,1e-5);
+}
+
+/// `flat_end.sv` (#684 AE): the bar's flat end faces down toward the axis, so the turn carries its
+/// contact line round into the floor, its inner side's into the wall, and the rim between them
+/// joins the two round its fan. The block loses what the bar's shadow covers, read slice by slice
+/// from the bar's half-spaces (`prism_twists::Bar::removed`, the same bar as `flat_end(20, 5)`),
+/// within 2e-5 at 0.001 mm (at 0.01 the fitted sheet's bias over the floor is 9e-5 of the part).
+#[test]
+fn the_flat_end_cuts_a_floor() {
+    let e = example("flat_end.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a turn");
+    assert_eq!(found.fans(),["the rim where `bar.inner_side` meets `bar.start`"]);
+    near(exported_at(&e,"block",0.001),PI/3.*80.-crate::prism_twists::flat_end(20.,5.).removed(),2e-5);
+}
+
+/// `creased.sv` (#684 AG): the bar's inner side's halves each touch along a line crossing its
+/// rulings, and the crease where they meet joins the two round its fan. The block loses what the
+/// bar's shadow covers, read slice by slice from its ten half-planes (`prism_twists::Bar::removed`,
+/// the same bar as `parted(20, 2)`), within 2e-5 at 0.001 mm.
+#[test]
+fn the_creased_bar_crosses_its_crease() {
+    let e = example("creased.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a turn");
+    assert_eq!(found.fans(),["the crease across `bar.inner_side`"]);
+    near(exported_at(&e,"block",0.001),PI/3.*80.-crate::prism_twists::parted(20.,2.).removed(),2e-5);
+}
+
+/// `facing.sv` (#684 AF): the bar's inner side faces the axis squarely, so each of its rulings'
+/// contact is the same all along it, and it touches along the one ruling in the plane through the
+/// axis, all along it; the turn carries that line round into the wall, a cone `reach + z tan(tilt)`
+/// from the axis at height z, and the block loses, within its 60°, `π/6 ∫ (12² − r²) dz` over its
+/// heights, in closed form.
+#[test]
+fn the_facing_side_cuts_a_cone() {
+    let e = example("facing.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a turn");
+    assert_eq!(found.lined(),["`bar.inner_side`"]);
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    let t = 20f64.to_radians().tan();
+    near(exported(&e,"block"),PI/3.*80.-PI/6.*(88.-2./3.*t*t),1e-5);
+}
+
+/// `slot.sv` (#684 O): the end mill's flat bottom, which the slide keeps in its own plane, touches
+/// all over and sweeps the slot's floor, the strip its diameter square to the slide carries; its
+/// side's two lines square to the slide are the walls, each meeting the floor in a sharp edge where
+/// the walk runs onto and off the bottom's line. The block loses `4 × 3` along its 20, in closed form.
+#[test]
+fn the_end_mill_cuts_a_slot() {
+    let e = example("slot.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide(),"read as a slide");
+    assert_eq!(found.flats(),["`mill.bottom`"]);
+    assert_eq!(found.creases().len(),2);
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    near(exported(&e,"block"),2000.-4.*3.*20.,1e-6);
+}
+
+/// `vgroove.sv` (#684 V): the V wheel slid square to its axis, each flank touching along its
+/// meridian square to the slide, the two meeting the rim at one point where every normal of the
+/// rim's fan is in contact: the walk steps from the one flank straight onto the other and the
+/// sheet is creased along that point's path, the groove's root. The walls are planes, and the
+/// block loses the V's section, `depth² tan(flank)`, along its 20, in closed form.
+#[test]
+fn the_v_wheel_slid_square_cuts_a_v_groove() {
+    let e = example("vgroove.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide(),"read as a slide");
+    assert_eq!(found.sharp(),["the corner of `vwheel.upper` and `vwheel.lower`"]);
+    assert_eq!(found.creases().len(),1);
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    near(exported(&e,"block"),2000.-4.*(PI/6.).tan()*20.,1e-6);
+}
+
+/// `punch.sv` (#684 W): a drum pushed edge first wholly through a plate, its characteristic closed
+/// on itself: along its side's line one side of the push, across a flat end, which the push keeps in
+/// its own plane, back along the other side's line and across the other end, a rectangle carried up
+/// as a tube, creased at its four corners and begun at one. The plate loses the drum's shadow along
+/// the push, `drum × 2 radius`, through its thickness, in closed form.
+#[test]
+fn the_drum_punches_its_shadow_through_a_plate() {
+    let e = example("punch.sv");
+    let Class::ConstantTwist(found) = class(&e,"plate") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide() && found.closed,"a slide, its characteristic closed on itself");
+    let mut flats = found.flats();
+    flats.sort();
+    assert_eq!(flats,["`tool.far_face`","`tool.near_face`"]);
+    assert_eq!(found.creases().len(),4);
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    near(exported(&e,"plate"),20.*10.*4.-8.*4.*4.,1e-6);
+}
+
+/// `drill.sv` (#684 X): a drill pushed down along its own axis wholly through a plate. Every ring of
+/// it meets the slide at one angle all round, so it touches nowhere or all round, and its ring of
+/// greatest radius sweeps the cylinder of that radius; its shadow along the slide is its whole disc,
+/// so the sweep within the plate is that cylinder's, written exactly: the plate loses `π 2² 4`,
+/// whatever the drill's point.
+#[test]
+fn the_drill_bores_its_radius_through_a_plate() {
+    let e = example("drill.sv");
+    let Class::ConstantTwist(found) = class(&e,"plate") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide() && found.closed,"a slide, its characteristic closed on itself");
+    assert_eq!(found.rounds(),["the ring of the tool's greatest radius"]);
+    assert!(found.creases().is_empty() && found.fans().is_empty() && found.flats().is_empty());
+    let (_,_,radius) = found.cylinder().expect("its sheet the cylinder its ring sweeps");
+    assert_eq!(radius,2.);
+    near(exported(&e,"plate"),20.*10.*4.-PI*4.*4.,1e-12);
+}
+
+/// `spoke.sv` (#684 X): a pin lying along a radius of the turn, its axis meeting the block's at the
+/// centre, swung across the curved block. Its rings touch at their two points in the plane of the
+/// two axes, its side along its top and bottom lines, the slot's roof and floor; on its end's rim
+/// the ring whose normals pass through the centre touches all round and sweeps a zone of the sphere
+/// about it, the slot's end wall, the walk turning onto it from the fan beside the side, where the
+/// fan stands at the top line's end, half round, and back down the fan onto the bottom line. The
+/// branch beyond it, across the end face, lies within the zone. The slot is the band |z| ≤ 0.5 from
+/// the block's inner wall at 8 out to the sphere of radius √(11² + 0.5²), turned through 60°:
+/// `π/6 (57.25 − 1/12)` in closed form, within 1e-5 (2.9e-6, alike at 0.001 mm: the fit's).
+#[test]
+fn the_spoke_swings_a_slot_ended_by_a_zone_of_a_sphere() {
+    let e = example("spoke.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_turn() && !found.closed,"a turn, its characteristic open");
+    assert_eq!(found.rounds(),["a ring of the corner of `pin.side` and `pin.tip` in contact all round"]);
+    assert_eq!(found.sharp(),["the corner of `pin.side` and `pin.tip`"]);
+    near(exported(&e,"block"),PI/3.*80.-PI/6.*(57.25-1./12.),1e-5);
 }
 
 /// Every document in the folder is held by a test here, and the README names each.
