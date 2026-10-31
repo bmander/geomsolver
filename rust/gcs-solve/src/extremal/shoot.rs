@@ -783,7 +783,7 @@ fn nearest(lag: &Lagrangian, sh: &Shape, p: &Stop) -> f64 {
     };
     let best = (0..=N).map(|i| (d(i as f64 / N as f64), i)).min_by(|a, b| a.0.total_cmp(&b.0)).map_or(0, |b| b.1);
     let (lo, hi) = (((best as f64 - 1.0) / N as f64).max(0.0), ((best as f64 + 1.0) / N as f64).min(1.0));
-    crate::roots::brent(&d, lo, hi, 1e-13, 100, |_, _| false).1
+    crate::roots::brent(&d, lo, hi, 1e-13, 100, |_, _| false).at
 }
 
 /// A length over the chord whose arc seed lies near its answer: a gentle sag.

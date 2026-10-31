@@ -258,7 +258,7 @@ impl Removed {
         let inside = loops.iter().filter(|c| crate::envelope::swept_region::parity(&c.points,x)).count()%2 == 1;
         let (mut gap,l,k,f0) = best?;
         let dist = |f: f64| region.point(l,k,f).map_or(f64::INFINITY,|p| (p[0]-x[0]).dhypot(p[1]-x[1]));
-        let (_,fm) = crate::roots::brent(&dist,(f0-2./64.).max(0.),(f0+2./64.).min(1.),1e-13,100,|_,_| false);
+        let fm = crate::roots::brent(&dist,(f0-2./64.).max(0.),(f0+2./64.).min(1.),1e-13,100,|_,_| false).at;
         let foot = region.point(l,k,fm)?;
         gap = gap.min(dist(fm));
         let h = 1e-6;
@@ -361,7 +361,7 @@ impl Planar {
         let k = self.chords[i].piece;
         let len = env.pieces[k].len().max(2) as f64;
         let dist = |f: f64| env.point(k,f).map_or(f64::INFINITY,|x| (x[0]-a[0]).dhypot(x[1]-a[1]));
-        let (_,fm) = crate::roots::brent(&dist,(f0-2./len).max(0.),(f0+2./len).min(1.),1e-13,100,|_,_| false);
+        let fm = crate::roots::brent(&dist,(f0-2./len).max(0.),(f0+2./len).min(1.),1e-13,100,|_,_| false).at;
         if let Some(x) = env.point(k,fm) { let d = (x[0]-a[0]).dhypot(x[1]-a[1]); if d <= gap { gap = d; foot = x; } }
         // inside the envelope by the chords' ray parity
         let inside = self.chords.iter().filter(|c| {

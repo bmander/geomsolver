@@ -6,7 +6,8 @@ use crate::util::fmath::Det;
 use super::geom::{Curve,Surface,Uv,V};
 use super::topo::{unwrap,Brep,EdgeCurve,Face};
 use super::plane2::{chord,Chord,Touch};
-use crate::util::space::{add,distance,norm,scale};
+use crate::util::roots::sampled_roots;
+use crate::util::space::{add,distance,dot,norm,scale};
 
 /// Where a point stands against a face or a solid.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -175,9 +176,9 @@ fn tangential(carrier: &Curve,other: &Curve,over: [f64;2],mut found: Vec<(f64,V)
     out
 }
 
-/// Where `curve` over `[t0, t1]` meets `surface`, to `tol`: every sign change of the surface's
-/// signed distance along it refined to a root, every sampled minimum of its size that comes within
-/// `tol` refined to a touching point, and an end on the surface a root there.
+/// Where `curve` over `[t0, t1]` meets `surface`, to `tol`: the surface's signed distance along it
+/// sampled, its roots and touches found by `util::roots::sampled_roots` (a touch where its rate
+/// along the curve turns), an end on the surface a root there.
 pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Meets {
     if let (&Curve::Line {p,d},Surface::Cylinder(c,r)) = (curve,surface) { return line_cylinder(p,d,[t0,t1],c,*r,tol) }
     if let (&Curve::Line {p,d},Surface::Sphere(c,r)) = (curve,surface) { return line_sphere(p,d,[t0,t1],c.o,*r,tol) }
@@ -190,30 +191,13 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
     let ts: Vec<f64> = (0..=n).map(|i| t0+(t1-t0)*i as f64/n as f64).collect();
     let fs: Vec<f64> = ts.iter().map(|&t| f(t)).collect();
     if fs.iter().all(|v| v.abs() <= tol) { return Meets::Along }
+    // the distance's rate along the curve, whose roots place a touch (`sampled_roots`)
+    let df = |t: f64| { let (p,d) = curve.d1(t); dot(surface.gradient(p),d) };
     let mut roots: Vec<(f64,bool)> = Vec::new();
-    let push = |t: f64,touch: bool,roots: &mut Vec<(f64,bool)>| {
-        if let Some(last) = roots.last() { if (t-last.0).abs()*curve.speed() <= tol { return } }
-        roots.push((t,touch));
-    };
-    if fs[0].abs() <= tol { push(t0,false,&mut roots); }
-    for i in 0..n {
-        let (a,b) = (fs[i],fs[i+1]);
-        if a.abs() > tol && b.abs() > tol && (a < 0.) != (b < 0.) {
-            let t = crate::util::roots::bracketed_root(|t| Some(f(t)),ts[i],a,ts[i+1],b,1e-15*(t1-t0).abs().max(1.));
-            push(t,false,&mut roots);
-        } else if i+1 < n && b.abs() > tol && b.abs() < a.abs() && b.abs() < fs[i+2].abs() && (a < 0.) == (b < 0.)
-            && (b < 0.) == (fs[i+2] < 0.) {
-            // a sampled minimum of |f| on one side: does it come down to the surface?
-            let (t,v) = crate::util::roots::brent(&|t| f(t).abs(),ts[i],ts[i+2],1e-15*(t1-t0).abs().max(1.),200,|_,_| false);
-            if v <= tol { push(t,true,&mut roots); }
-        } else if b.abs() <= tol && i+1 < n {
-            // a sample on the surface: a crossing there, or a touch
-            let (before,after) = (a,fs[i+2]);
-            let touch = before.abs() > tol && after.abs() > tol && (before < 0.) == (after < 0.);
-            push(ts[i+1],touch,&mut roots);
-        }
+    for r in sampled_roots(f,df,&ts,&fs,tol,1e-15*(t1-t0).abs().max(1.)) {
+        if roots.last().is_some_and(|last| (r.at-last.0).abs()*curve.speed() <= tol) { continue }
+        roots.push((r.at,r.touch));
     }
-    if fs[n].abs() <= tol { push(t1,false,&mut roots); }
     // a swept curve's implicit runs on past its ends along their tangents (and steps across the
     // normal there): a root off the surface itself is that extension's, not the surface's
     if matches!(surface,Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)) {
@@ -229,7 +213,7 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
 /// `c`'s axis, in closed form: across the axis it is a chord of the circle (`plane2::chord`, one touch at the foot where it is
 /// tangent). A line along the axis lies in the surface or misses it.
 fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f64) -> Meets {
-    use crate::util::space::{dot,sub};
+    use crate::util::space::sub;
     let across = |v: V| sub(v,scale(c.z,dot(v,c.z)));
     let (w,e) = (across(sub(p,c.o)),across(d));
     let ee = dot(e,e);
@@ -251,7 +235,7 @@ fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f
 /// is placed only to the square root of their rounding (a cube's edge touching its midsphere), too
 /// loosely for the circles that meet there to find it.
 fn line_sphere(p: V,d: V,[t0,t1]: [f64;2],o: V,r: f64,tol: f64) -> Meets {
-    use crate::util::space::{dot,sub};
+    use crate::util::space::sub;
     let (w,dd) = (sub(p,o),dot(d,d));
     if dd <= 1e-24 { return Meets::At(Vec::new()) }
     let foot = -dot(w,d)/dd;

@@ -140,8 +140,7 @@ impl Seg {
         let d2 = |t: f64| { let q = sub(self.point(t),p); dot(q,q) };
         let k = (0..=N).min_by(|&i,&j| d2(i as f64/N as f64).total_cmp(&d2(j as f64/N as f64))).unwrap();
         let (lo,hi) = ((k.max(1)-1) as f64/N as f64,(k+1).min(N) as f64/N as f64);
-        let (_,t) = crate::util::roots::brent(&d2,lo,hi,1e-15,200,|_,_| false);
-        t
+        crate::util::roots::brent(&d2,lo,hi,1e-15,200,|_,_| false).at
     }
 }
 
@@ -158,6 +157,20 @@ impl Seg {
                 let f = l1*l1-4.*w*w*l0*l2;
                 let g: P = std::array::from_fn(|i| 2.*l1*g1[i]-4.*w*w*(l2*g0[i]+l0*g2[i]));
                 -f/norm(g).max(1e-300)
+            }
+        }
+    }
+    /// The gradient of `implicit` at `p`: exact for a line and an arc; for a conic its form's
+    /// gradient made unit, exact on the conic (where a touch is) and to first order off it.
+    fn gradient(&self,p: P) -> P {
+        match *self {
+            Seg::Line {a,b} => { let d = sub(b,a); let l = norm(d).max(1e-300); [-d[1]/l,d[0]/l] }
+            Seg::Arc {c,..} => { let q = sub(p,c); let l = norm(q); if l > 0. { [q[0]/l,q[1]/l] } else { [1.,0.] } }
+            Seg::Conic {a,m,b,w} => {
+                let ([l0,l1,l2],[g0,g1,g2]) = barycentric(a,m,b,p);
+                let g: P = std::array::from_fn(|i| 2.*l1*g1[i]-4.*w*w*(l2*g0[i]+l0*g2[i]));
+                let l = norm(g).max(1e-300);
+                [-g[0]/l,-g[1]/l]
             }
         }
     }
@@ -225,6 +238,17 @@ impl Step {
         Some(Step {seg,..*self})
     }
     fn implicit(&self,p: P) -> f64 { match self.chart { None => self.seg.implicit(p),Some(c) => self.seg.implicit(c.to(p)) } }
+    /// The gradient of `implicit` at `p`, through the chart's `(r, z)` where it has one.
+    fn gradient(&self,p: P) -> P {
+        match self.chart {
+            None => self.seg.gradient(p),
+            Some(c) => {
+                let q = c.to(p);
+                let g = self.seg.gradient(q);
+                [if q[0] > 0. { g[0]*(p[0]+c.beta)/q[0] } else { 0. },g[1]*c.sign]
+            }
+        }
+    }
     /// The outward normal at `t` in the step's own plane (`(r, z)` of its chart; its material on
     /// the left of its plain travel), unit.
     pub fn own_normal(&self,t: f64) -> P {
@@ -255,19 +279,10 @@ fn meets_steps(s: &Step,q: &Step,tol: f64) -> (Vec<f64>,Vec<f64>) {
     for (a,b) in [(s,q),(q,s)] {
         const N: usize = 96;
         let g = |t: f64| b.implicit(a.point(t));
+        let rate = |t: f64| dot(b.gradient(a.point(t)),a.tangent(t));
         let ts: Vec<f64> = (0..=N).map(|i| i as f64/N as f64).collect();
         let gs: Vec<f64> = ts.iter().map(|&t| g(t)).collect();
-        for i in 0..N {
-            let (ga,gb) = (gs[i],gs[i+1]);
-            if (ga < 0.) != (gb < 0.) {
-                let t = crate::util::roots::bracketed_root(|t| Some(g(t)),ts[i],ga,ts[i+1],gb,1e-15);
-                keep(a.point(t),&mut on_s,&mut on_q);
-            } else if i+1 < N && gb.abs() < ga.abs() && gb.abs() < gs[i+2].abs() {
-                // a sampled minimum on one side: a touch where it comes down to the curve
-                let (t,v) = crate::util::roots::brent(&|t| g(t).abs(),ts[i],ts[i+2],1e-15,200,|_,_| false);
-                if v <= tol { keep(a.point(t),&mut on_s,&mut on_q); }
-            }
-        }
+        for r in crate::util::roots::sampled_roots(g,rate,&ts,&gs,tol,1e-15) { keep(a.point(r.at),&mut on_s,&mut on_q); }
     }
     (on_s,on_q)
 }

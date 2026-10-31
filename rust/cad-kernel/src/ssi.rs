@@ -47,6 +47,19 @@ impl Meridian {
             Meridian::Spline(..) => unreachable!("a spline meridian has no closed-form distance"),
         }
     }
+    /// The gradient of `implicit` in `(ρ, z)`.
+    fn gradient(&self,[r,z]: [f64;2]) -> [f64;2] {
+        match *self {
+            Meridian::Level(_) => [0.,1.],
+            Meridian::Line {d,..} => [d[1],-d[0]],
+            Meridian::Circle {c,..} => {
+                let (x,y) = (r-c[0],z-c[1]);
+                let l = x.dhypot(y);
+                if l > 0. { [x/l,y/l] } else { [1.,0.] }
+            }
+            Meridian::Spline(..) => unreachable!("a spline meridian has no closed-form distance"),
+        }
+    }
 }
 
 /// Where a spline meridian crosses or touches another (not a spline), in `(ρ, z)`: every sign
@@ -55,30 +68,29 @@ impl Meridian {
 fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
     let rz = |t: f64| { let q = sub(s.point(t),o); let h = dot(q,z); [norm(sub(q,scale(z,h))),h] };
     let at = |t: f64| { let [r,h] = rz(t); [r,h,0.] };
-    spline_roots(s,&|t| other.implicit(rz(t)),&at,tol).into_iter().map(rz).collect()
+    // the distance's rate along the spline: the gradient in (ρ, z) against how fast ρ and z run
+    let rate = |t: f64| {
+        let (p,d) = s.d1(t);
+        let q = sub(p,o);
+        let across = sub(q,scale(z,dot(q,z)));
+        let r = norm(across);
+        let g = other.gradient([r,dot(q,z)]);
+        g[0]*(if r > 0. { dot(across,d)/r } else { 0. })+g[1]*dot(d,z)
+    };
+    spline_roots(s,&|t| other.implicit(rz(t)),&rate,&at,tol).into_iter().map(rz).collect()
 }
 
-/// The parameters at which `g` along the spline `s` changes sign, refined, and at which a sampled
-/// minimum of its size comes within `tol` (a touch): one each where `at` puts them within `tol` of
-/// each other.
-fn spline_roots(s: &super::nurbs::BSpline,g: &dyn Fn(f64) -> f64,at: &dyn Fn(f64) -> V,tol: f64) -> Vec<f64> {
+/// The parameters at which `g` along the spline `s`, its rate `dg`, comes to zero within `tol`
+/// (`util::roots::sampled_roots`: a crossing, or a touch where `dg` turns): one each where `at`
+/// puts them within `tol` of each other.
+fn spline_roots(s: &super::nurbs::BSpline,g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,at: &dyn Fn(f64) -> V,tol: f64) -> Vec<f64> {
     let [a,b] = s.domain();
     let ts = spline_samples(s);
     let gs: Vec<f64> = ts.iter().map(|&t| g(t)).collect();
     let mut out: Vec<f64> = Vec::new();
-    let push = |t: f64,out: &mut Vec<f64>| if !out.iter().any(|&u| distance(at(u),at(t)) <= tol) { out.push(t) };
-    for i in 0..ts.len()-1 {
-        let (x,y) = (gs[i],gs[i+1]);
-        if x.abs() <= tol { push(ts[i],&mut out); }
-        if x.abs() > tol && y.abs() > tol && (x < 0.) != (y < 0.) {
-            let t = crate::util::roots::bracketed_root(|t| Some(g(t)),ts[i],x,ts[i+1],y,1e-15*(b-a));
-            push(t,&mut out);
-        } else if i+2 < ts.len() && y.abs() < x.abs() && y.abs() < gs[i+2].abs() && (x < 0.) == (y < 0.) && y.abs() > tol {
-            let (t,v) = crate::util::roots::brent(&|t| g(t).abs(),ts[i],ts[i+2],1e-15*(b-a),200,|_,_| false);
-            if v <= tol { push(t,&mut out); }
-        }
+    for r in crate::util::roots::sampled_roots(g,dg,&ts,&gs,tol,1e-15*(b-a)) {
+        if !out.iter().any(|&u| distance(at(u),at(r.at)) <= tol) { out.push(r.at) }
     }
-    if gs[ts.len()-1].abs() <= tol { push(b,&mut out); }
     out
 }
 
@@ -128,7 +140,7 @@ fn extruded(f: &Frame,c: &Curve,s: &Surface,tol: f64) -> Option<Vec<Curve>> {
         let g = gap(x);
         if g.abs() <= tol || g*gap(w[0]) <= 0. && g*gap(w[1]) <= 0. { return None }
     }
-    let roots = spline_roots(sp,&gap,&|t| sp.point(t),tol);
+    let roots = spline_roots(sp,&gap,&rate,&|t| sp.point(t),tol);
     roots.iter().all(|&t| steep(t,sp.point(t)))
         .then(|| roots.into_iter().map(|t| Curve::Line {p:sp.point(t),d:f.z}).collect())
 }
