@@ -1589,22 +1589,22 @@ fn a_canal_touching_its_operands_along_an_edge_is_unioned_with_them() {
     assert!(whole.faces.len() > tee.faces.len());
 }
 
-/// A box from the origin to (20, 10, 6), its four sides named, as a chamfer reads faces of one name
-/// as pieces of one face.
+/// A box from the origin to `hi`, its four sides named (a prism's sides come first, in the walk's
+/// order), as a chamfer reads faces of one name as pieces of one face.
 fn named_box(hi: V) -> gcs_core::brep::topo::Brep {
-    let p = Profile {names:vec![["front","right","back","left"].map(String::from).to_vec()],origin:[0.;3],normal:XY,
-        loops:vec![poly(&[[0.,0.,0.],[hi[0],0.,0.],[hi[0],hi[1],0.],[0.,hi[1],0.]])]};
-    prism(&p,0.,hi[2]).unwrap()
+    let mut b = block([0.;3],hi);
+    for (f,name) in b.faces.iter_mut().zip(["front","right","back","left"]) { f.name = name.into(); }
+    b
 }
 
-/// `b` less the flat `fillet::flat_along` cuts along its edge through `at`, `legs[0]` on the face
-/// `on_a` stands beside.
-fn chamfered(b: &gcs_core::brep::topo::Brep,at: V,legs: [f64;2],on_a: Option<V>) -> gcs_core::brep::topo::Brep {
-    use gcs_core::brep::boolean::{combined,Op};
+/// `b` with the piece `fillet::flat_along` cuts along its edge through `at` taken off by `op` (cut
+/// at a convex edge, filled at a concave one), `legs[0]` on the face `on_a` stands beside.
+fn chamfered(b: &gcs_core::brep::topo::Brep,at: V,legs: [f64;2],on_a: Option<V>,op: gcs_core::brep::boolean::Op)
+    -> gcs_core::brep::topo::Brep {
     let tol = gcs_core::brep::geom::tolerance(b.size());
     let piece = gcs_core::brep::fillet::flat_along(b,at,legs,on_a,tol).unwrap();
     piece.check(1e-8).unwrap();
-    combined(b,&piece,Op::Cut,0.).unwrap()
+    gcs_core::brep::boolean::combined(b,&piece,op,0.).unwrap()
 }
 
 /// **A box's top edges chamfered unequally** (brep-bench's chamfer/box-top-asymmetric): each of the
@@ -1615,10 +1615,11 @@ fn chamfered(b: &gcs_core::brep::topo::Brep,at: V,legs: [f64;2],on_a: Option<V>)
 /// forms' volume 3428/3 and area 584 + 56√5.
 #[test]
 fn a_box_top_chamfered_unequally_is_ten_planes() {
+    use gcs_core::brep::boolean::Op;
     let (l,w,h) = (20.,10.,6.);
     let top = [l/2.,w/2.,h];
     let mut b = named_box([l,w,h]);
-    for at in [[l/2.,0.,h],[l,w/2.,h],[l/2.,w,h],[0.,w/2.,h]] { b = chamfered(&b,at,[1.,2.],Some(top)); }
+    for at in [[l/2.,0.,h],[l,w/2.,h],[l/2.,w,h],[0.,w/2.,h]] { b = chamfered(&b,at,[1.,2.],Some(top),Op::Cut); }
     b.check(1e-8).unwrap();
     assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(10,20,12));
     assert!(b.faces.iter().all(|f| f.surface.kind() == "plane"),"{:?}",b.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>());
@@ -1635,10 +1636,10 @@ fn a_box_top_chamfered_unequally_is_ten_planes() {
 /// edge wider than both faces beside it (chamfer/l-block-inside-consumed): their flats planes.
 #[test]
 fn chamfers_between_planes_are_planes() {
-    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::boolean::Op;
     // a block 10 by 4 by 6, its top's two long edges chamfered 2: the top goes, a ridge at z = 4
     let b = named_box([10.,4.,6.]);
-    let b = chamfered(&chamfered(&b,[5.,0.,6.],[2.,2.],None),[5.,4.,6.],[2.,2.],None);
+    let b = chamfered(&chamfered(&b,[5.,0.,6.],[2.,2.],None,Op::Cut),[5.,4.,6.],[2.,2.],None,Op::Cut);
     b.check(1e-8).unwrap();
     assert!(b.faces.iter().all(|f| f.surface.kind() == "plane"));
     close(volume(&b),10.*4.*6.-2.*10.*2.);
@@ -1646,10 +1647,7 @@ fn chamfers_between_planes_are_planes() {
     let names = ["bottom","end","floor","wall","top","back"].map(String::from).to_vec();
     let l = Profile {names:vec![names],origin:[0.;3],normal:[0.,-1.,0.],
         loops:vec![poly(&[[0.,0.,0.],[10.,0.,0.],[10.,0.,3.],[3.,0.,3.],[3.,0.,10.],[0.,0.,10.]])]};
-    let block = prism(&l,-10.,0.).unwrap();
-    let tol = gcs_core::brep::geom::tolerance(block.size());
-    let piece = gcs_core::brep::fillet::flat_along(&block,[3.,5.,3.],[7.,7.],None,tol).unwrap();
-    let filled = combined(&block,&piece,Op::Union,0.).unwrap();
+    let filled = chamfered(&prism(&l,-10.,0.).unwrap(),[3.,5.,3.],[7.,7.],None,Op::Union);
     filled.check(1e-8).unwrap();
     assert!(filled.faces.iter().all(|f| f.surface.kind() == "plane"));
     close(volume(&filled),10.*(51.+49./2.));
