@@ -294,7 +294,34 @@ periodic surface's seam (`rail`, `post`, `frustum`): asked of the same solid wit
 (`seams_turned`). `tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
 `tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`, `groove.sv`, `bores.sv`,
-`frustum.sv`, `crotch.sv`, `bullnose.sv`).
+`frustum.sv`, `crotch.sv`, `bullnose.sv`, `dome.sv`).
+
+**A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
+radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
+(`Surface::offset` → `Offset`: a cylinder's axis, a sphere's centre, a torus's middle circle; `None`
+only past it, where no point stands that far off). So a rim rounded to its cylinder's own radius
+has its ball's centres on the axis alone, and the top shrinks to a point: the round is a
+hemisphere. In the lowering it is a ring like any other, its section's arc centred on the axis,
+which `build::revolve` turns into a sphere (`dome.sv`, the cylinder to half its height under the
+dome: the closed forms' volume and area to 1e-9, a cylinder, a sphere and a plane), and the field
+reads the centres as that axis (`conditions::closed_onto`, [sets.md](sets.md)). `fillet::roll`
+meets the two offsets as they are: where one closes onto a curve and meets the other's in a point,
+the ball's centre **stands still** there (`fillet::standing`), touching the first face round the
+great circle square to the curve and the second at a point; its canal is the half of its sphere
+on the point's side, exact, and the piece that hemisphere, the first face's strip down to the
+circle and all of the second face inside the loop (`fillet::strip`, the one strip rule a rolled
+canal's piece uses too). Cut, it is the dome, square to the axis or not — a top tilted 20° is
+touched off the dome's pole, `z = 10 − 5 / cos 20°`, its rim an ellipse the lowering rolls a
+ball along (`round_lowering::a_rim_tilted_off_square_rounded_to_its_cylinders_radius_is_a_dome`)
+— and upside down it fills a bore's floor into a hemisphere
+(`brep::a_cylinders_rim_rounded_to_its_own_radius_is_a_dome`). Past a closing offset the band a
+ball needs is the whole of the face on the region's side (`holds_ball`), so a cylinder shorter
+than the radius is refused as too small to hold it. Refused by name too: both offsets closing, one
+closing onto a point (the ball is that face's sphere), the centre running along the curve it
+closes onto, and a stretch of a loop; and where only a surface will do — a chamfer's leg, a ball
+beyond a seam — an offset that closes is refused as that, not as too wide
+(`Surface::offset_surface`). A cone shrunk past its apex is the same sheet placed at its own apex,
+never none.
 
 **The closing case** (#197, `rust/examples/conrod/`): a forged rod, every round and chamfer a
 statement over the faces its solids gave it, built exactly (pockets drawn as prisms, so their walls

@@ -251,7 +251,14 @@ and the point held when the solid is built (`regions::fill_sets`). Read by
 `solid::conditions::SetDistance`: points on two faces' patches are the boundary's shared edges, on
 three its vertices, on one its patch; any other conjunction (a face's side, `|side|` bounds, `on
 F.surface`, a distance from a point) is the nearest point by sequential projection onto the
-conditions linearised (each step a ≤3-active QP, exact). `d(p, E) <= d(p, M)` with `E` on the
+conditions linearised (each step a ≤3-active QP, exact). Within faces and at least their one
+surface's radius off it (`q inside F` with `q distance(>= d) F.surface`, a round's ball centres
+where the ball is as wide as a cylinder: `rounds/dome.sv`) is what the surface's offset closes
+onto (`Surface::offset`'s `Offset`), held as conditions with a gradient everywhere on it
+(`conditions::closed_onto`): two planes through an axis, three through a centre, a plane and a
+cylinder about a torus's middle circle — the side's own turns over on the axis, and the steps
+toward it would never settle (the axis alone is exercised: no closed loop rounds with its
+centres on a sphere's centre or a torus's middle circle). `d(p, E) <= d(p, M)` with `E` on the
 patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face

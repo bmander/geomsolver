@@ -213,9 +213,9 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     // the chain — each where the face meets the other's offset, crossing the section's plane, from
     // the edge's point stepped out along each face
     let leg_meetings = [
-        Traced { a: b.chain.clone(), b: b.wall.offset(sw * lc).ok_or("a leg wider than the wall holds")?, pts: Vec::new(),
+        Traced { a: b.chain.clone(), b: b.wall.offset_surface(sw * lc, tol, "a leg", "the wall")?, pts: Vec::new(),
             closed: false },
-        Traced { a: b.wall.clone(), b: b.chain.offset(sc * lw).ok_or("a leg wider than the chain holds")?, pts: Vec::new(),
+        Traced { a: b.wall.clone(), b: b.chain.offset_surface(sc * lw, tol, "a leg", "the chain")?, pts: Vec::new(),
             closed: false },
     ];
     let legs_at = |u: f64| -> (V, [V; 2]) {
@@ -356,8 +356,8 @@ pub fn round_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     // the ball's centre in the section at `u`: where the wall's offset meets the torus's, from the
     // edge's point stepped off both faces
     let spine = Traced {
-        a: b.wall.offset(sw * r).ok_or("a ball larger than the wall holds")?,
-        b: b.chain.offset(sc * r).ok_or("a ball larger than the chain's face holds")?,
+        a: b.wall.offset_surface(sw * r, tol, "a ball", "the wall")?,
+        b: b.chain.offset_surface(sc * r, tol, "a ball", "the chain's face")?,
         pts: Vec::new(), closed: false,
     };
     let toward = |s: &Surface, side: f64, p: V| scale(unit(s.gradient(p)), -side);

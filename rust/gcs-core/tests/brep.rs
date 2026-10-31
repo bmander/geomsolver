@@ -1805,20 +1805,29 @@ fn a_ring_on_a_coincident_wall_joins_it() {
 
 #[test]
 fn a_surface_offset_moves_its_signed_distance_by_the_offset() {
-    use gcs_core::brep::geom::Surface;
+    use gcs_core::brep::geom::{Curve,Offset,Surface};
     let f = Frame::new([1.,-2.,0.5],[0.3,0.4,1.],[1.,0.,0.]);
     let surfaces = [Surface::Plane(f),Surface::Cylinder(f,4.),Surface::Cone(f,3.,0.4),Surface::Sphere(f,5.),
         Surface::Torus(f,6.,2.)];
     let points = [[0.,0.,0.],[3.,1.,-2.],[-4.,6.,3.],[7.,-1.,4.]];
     for s in &surfaces {
         for d in [-1.5,0.25,2.] {
-            let o = s.offset(d).unwrap_or_else(|| panic!("a {} offset by {d}",s.kind()));
+            let o = s.offset(d,1e-9).and_then(Offset::surface).unwrap_or_else(|| panic!("a {} offset by {d}",s.kind()));
             for p in points { close(o.implicit(p),s.implicit(p)-d); }
         }
     }
-    // past its axis or its centre a surface offset inward is no surface
-    assert!(Surface::Cylinder(f,4.).offset(-4.).is_none());
-    assert!(Surface::Torus(f,6.,2.).offset(-3.).is_none());
+    // offset inward by its radius a surface closes onto what it is drawn about: a cylinder its
+    // axis, a sphere its centre, a torus's tube the circle at its middle; past that, nothing
+    let Some(Offset::Curve(Curve::Line {p,d})) = Surface::Cylinder(f,4.).offset(-4.,1e-9) else { panic!("an axis") };
+    assert!(p == f.o && d == f.z);
+    assert!(matches!(Surface::Sphere(f,5.).offset(-5.+1e-12,1e-9),Some(Offset::Point(c)) if c == f.o));
+    assert!(matches!(Surface::Torus(f,6.,2.).offset(-2.,1e-9),Some(Offset::Curve(Curve::Circle(g,big))) if g == f && big == 6.));
+    assert!(Surface::Cylinder(f,4.).offset(-4.1,1e-9).is_none());
+    assert!(Surface::Torus(f,6.,2.).offset(-3.,1e-9).is_none());
+    // a cone shrunk past its apex is the same sheet placed at its own apex, its radius nothing there
+    let cone = Surface::Cone(f,3.,0.4);
+    let Some(Offset::Surface(o @ Surface::Cone(_,0.,_))) = cone.offset(-5.,1e-9) else { panic!("a cone of its own apex") };
+    for p in points { close(o.implicit(p),cone.implicit(p)+5.); }
 }
 
 /// The main pipe of a tee, radius 10 along x with its seam along +z, and its branch, radius 6
@@ -1871,6 +1880,63 @@ fn a_canal_touching_its_operands_along_an_edge_is_unioned_with_them() {
     assert!((got-want).abs() <= 1e-9*want,"{got} against {want}");
     // the pipes' faces it rounds are kept, cut back to the contacts: nothing is left of the edge
     assert!(whole.faces.len() > tee.faces.len());
+}
+
+/// **A cylinder's rim rounded into a dome** (brep-bench's fillet/cylinder-rim-to-dome): a ball as
+/// wide as the cylinder has its centre on the axis, the cylinder offset by its radius being the
+/// axis itself, so the top shrinks to a point and the round is a hemisphere. The piece is that
+/// hemisphere over the circle where it touches the side, a strip of the side and the whole top;
+/// cut, the solid is the cylinder to half its height under the dome — `π5²·5 + (2/3)π5³` and
+/// `π5² + 2π·5·5 + 2π5²` — of three faces, its top the dome's pole. Its top tilted off square,
+/// the ball still stands on the axis and the dome touches the top at a point off its pole. Upside
+/// down, the same ball fills a bore's floor (a concave rim) into a hemisphere; a cylinder shorter
+/// than the ball's radius cannot hold it.
+#[test]
+fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::disc;
+    use gcs_core::brep::fillet::roll;
+    use gcs_core::brep::props::area;
+    // as the bench builds it: the disc swept up, the rim picked by a point on it
+    let mut section = disc([0.;3],[0.,0.,1.],5.);
+    section.names = vec![vec!["side".into()]];
+    let cylinder = prism(&section,0.,10.).unwrap();
+    let round = roll(&cylinder,[0.,5.,10.],5.,1e-9*cylinder.size()).unwrap();
+    assert!(!round.concave);
+    round.piece.check(1e-9).unwrap();
+    close(volume(&round.piece),PI*25.*5.-2./3.*PI*125.);
+    let domed = combined(&cylinder,&round.piece,Op::Cut,0.).unwrap();
+    domed.check(1e-9).unwrap();
+    let total = |b: &gcs_core::brep::topo::Brep| b.faces.iter().map(|f| area(b,f)).sum::<f64>();
+    close(volume(&domed),625.*PI/3.);
+    close(total(&domed),125.*PI);
+    let mut kinds: Vec<&str> = domed.faces.iter().map(|f| f.surface.kind()).collect();
+    kinds.sort();
+    assert_eq!(kinds,["cylinder","plane","sphere"]);
+    // a bore 5 in radius and 8 deep into a block, its floor's rim filled to the bore's radius
+    let bored = combined(&block([-10.,-10.,0.],[10.,10.,12.]),&rod([0.;3],5.,[4.,12.]),Op::Cut,0.).unwrap();
+    let fill = roll(&bored,[5.,0.,4.],5.,1e-9*bored.size()).unwrap();
+    assert!(fill.concave);
+    let filled = combined(&bored,&fill.piece,Op::Union,0.).unwrap();
+    filled.check(1e-9).unwrap();
+    close(volume(&filled),20.*20.*12.-PI*25.*3.-2./3.*PI*125.);
+    // a top tilted 20° off square: the ball's centre is on the axis 5 under the top along its
+    // normal, `z = 10 − 5 / cos 20°`; the dome touches the tilted top at one point off its pole,
+    // the whole top cut away, and the cylinder stands to the dome's circle under it
+    let tilt = 20f64.to_radians();
+    let above = block([-20.,-20.,10.],[20.,20.,40.]).moved(&Rigid::turn([0.,0.,10.],[0.,1.,0.],tilt));
+    let slanted = combined(&prism(&disc([0.;3],[0.,0.,1.],5.),0.,14.).unwrap(),&above,Op::Cut,0.).unwrap();
+    let round = roll(&slanted,[0.,5.,10.],5.,1e-9*slanted.size()).unwrap();
+    let domed = combined(&slanted,&round.piece,Op::Cut,0.).unwrap();
+    domed.check(1e-9).unwrap();
+    let z = 10.-5./tilt.cos();
+    close(volume(&domed),PI*25.*z+2./3.*PI*125.);
+    close(total(&domed),PI*25.+TAU*5.*z+TAU*25.);
+    assert_eq!(domed.faces.len(),3);
+    // the ball reaches past a cylinder 4 high
+    let short = prism(&disc([0.;3],[0.,0.,1.],5.),0.,4.).unwrap();
+    let why = roll(&short,[0.,5.,4.],5.,1e-9*short.size()).unwrap_err();
+    assert!(why.contains("larger than"),"{why}");
 }
 
 /// A box from the origin to `hi`, its four sides named (a prism's sides come first, in the walk's

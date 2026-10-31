@@ -233,6 +233,12 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
                     // at least a distance off faces on several surfaces meeting convex, within them:
                     // off each (outside them, another piece's surface runs on past the crease)
                     let split = t.cmp == Cmp::Ge && within.contains(&patch(f));
+                    // within them by as far as their surface's radius: on what it closes onto
+                    if split && c > 0.0 {
+                        if let Some(on) = closed_onto(&r, (lo + grow) / c) {
+                            return Ok(Some(on));
+                        }
+                    }
                     return Ok(Some(sides(r, split).into_iter().flat_map(|side| held(Arc::new(move |x| {
                         let (s, g) = side(x);
                         (c * s.abs(), scale(g, c * s.signum()))
@@ -293,6 +299,55 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
             }))
         }
     }
+}
+
+/// **Within faces and at least their surface's radius off it** (`side ≤ −d`, `d` the radius of the
+/// one surface the faces `r` reads lie on: `q inside F` with `q distance(>= d) F.surface`, a round's
+/// ball centres): the surface offset inward by `d` closes onto what it is drawn about
+/// (`Surface::offset`) — a cylinder its axis, a sphere its centre, a torus's tube its middle
+/// circle — so the points within the faces by `d` are that curve or point alone, the centres of a
+/// ball as wide as a cylinder rolled inside it.  Held to it as conditions with a gradient
+/// everywhere on it: two planes through a line, three through a point, a plane and a cylinder
+/// about a circle's axis — where the side's own turns over at the axis, and the nearest point's
+/// steps toward it never settle.  `None` where the faces lie on several surfaces or the offset is
+/// still a surface (or nothing).
+fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
+    use crate::brep::geom::{Curve, Offset};
+    let (b, mm, _) = r.body.brep();
+    let first = &b.faces[*r.faces.first()?];
+    // the side is the surface's signed distance, turned where the face is: within by `d` is the
+    // surface's offset to `∓d` (in the boundary's millimetres)
+    let level = if first.reversed { d } else { -d } * mm;
+    let onto = first.surface.offset(level, r.body.tolerance() * mm)?;
+    if matches!(onto, Offset::Surface(_)) || r.surfaces().0.len() != 1 {
+        return None;
+    }
+    let plane = |o: V, n: V| Cond { f: Arc::new(move |x: V| (dot(n, sub(x, o)), n)), eq: true };
+    Some(match onto {
+        Offset::Point(c) => {
+            let o = r.body.back(c);
+            vec![plane(o, [1.0, 0.0, 0.0]), plane(o, [0.0, 1.0, 0.0]), plane(o, [0.0, 0.0, 1.0])]
+        }
+        Offset::Curve(Curve::Line { p, d: a }) => {
+            let (o, (e1, e2)) = (r.body.back(p), crate::space::across(a));
+            vec![plane(o, e1), plane(o, e2)]
+        }
+        Offset::Curve(Curve::Circle(f, big)) => {
+            let (o, a, big) = (r.body.back(f.o), f.z, big / mm);
+            // in its plane, and as far from its axis as its radius
+            let round = Cond {
+                f: Arc::new(move |x: V| {
+                    let w = sub(x, o);
+                    let radial = sub(w, scale(a, dot(w, a)));
+                    let rho = norm(radial);
+                    (rho - big, if rho > 0.0 { scale(radial, 1.0 / rho) } else { crate::space::across(a).0 })
+                }),
+                eq: true,
+            };
+            vec![plane(o, a), round]
+        }
+        _ => return None,
+    })
 }
 
 /// The point satisfying every condition nearest `p`: from `p`, each step the nearest point of the
