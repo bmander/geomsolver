@@ -89,6 +89,12 @@ principled way.
 
 ### 2. Solvent borrows the generality of math
 
+Borrowing math's generality also brings its aesthetics, and one of those is terseness, which is
+a reason in itself to adopt them. In set notation an offset is one line:
+`component Offset(S: set, d: Length) := { p | p distance(d, side: outside) S }`. A document should
+read the same way, saying what the thing is and little else. Length that carries no design is
+ceremony, and ceremony is a defect (#46, #145).
+
 #### Solvent's primitives are sets, from which geometry is derived in a standard library
 
 Solvent expresses geometric concepts, and CAD concepts, as set math. A statement means the set of
@@ -218,6 +224,14 @@ design is encoded in the document, and the solver produces the geometry.
 - **Properties the design should have are claims.** A theorem, a clearance or a symmetry that the
   design is expected to satisfy is checked against the solved geometry. It is never added as a
   constraint (#7, `d7dae876`).
+- **Requirements are stated in the document.** A deflection limit, a payload delta-v or a rule of
+  a building code is written beside the geometry it governs. Whether the implementation checks a
+  requirement as a claim, drives the geometry to meet it, or holds it as a bound is a choice of
+  mechanism, and the designer never restates a requirement to suit one (#510).
+- **Dragging geometry explores the design without changing it.** Dragging a point, a curve or a
+  frame in the IDE moves the drawing to another solution of the same statements. It edits no
+  statement, and the only text it writes back is seeds, which do not affect the solution set
+  (#2, #12). Changing a dimension is an edit, and the IDE makes it as one.
 
 #### Solvent is declarative, not imperative
 
