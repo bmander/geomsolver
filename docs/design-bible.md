@@ -39,3 +39,27 @@ and what it cannot build yet is the kernel's gap, not a rule of the language.
 - **The language has its own principles.** See [solvent-spec.md §1.1](../solvent-spec.md), P1–P5:
   aliasing is not constraint, bodies are unordered, hints are inert, components are
   decomposition, symmetry is a claim.
+
+## Solvent and its kernels
+
+- **Lowering is evaluation, not translation.** Every B-rep defines a set, but most sets have no
+  finite B-rep with closed-form faces (a gyroid, or the envelope of a moving tool). A lowering
+  recognises a set by its definition, never by the name of the word that wrote it: a round
+  written by hand, bounded by the same two faces and the same ball of centres as `std.rounds`'
+  `round`, is built the same way. Its B-rep is checked against direct evaluation of the set, which
+  tests membership point by point. Lowering changes how a set is computed, never which points
+  belong to it.
+- **The kernel and the language have different primitives.** In the kernel, `sphere` is a
+  primitive and `distance` is a query; in Solvent, `distance` is the primitive and `sphere` is a
+  derived term, a one-line definition in `std.sets`. Solvent is lowered to the kernel, never the
+  reverse: `cad-kernel`'s `sphere()` does not give Solvent a `sphere` keyword, and no kernel
+  feature enters the language because the kernel has it.
+- **The kernel knows nothing of sets.** A gap in the kernel limits exact B-rep output, never the
+  shapes a Solvent document can define: a region the kernel cannot build is still displayed,
+  meshed and measured, and only its STEP export is refused.
+- **The B-rep stays for topology, exact geometry, exchange formats such as STEP, and fast
+  repeated queries.** Topology here means named faces and edges, such as the ones a round refers
+  to. The kernel is required, but it does not decide what a statement means.
+- **A shape with no lowering is fully supported.** It is displayed, meshed, measured and
+  analysed by direct evaluation, and that path gets the engineering work to stay a practical
+  choice.
