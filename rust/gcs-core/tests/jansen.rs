@@ -120,8 +120,8 @@ fn toe_with(deg: f64, l: f64, h: f64) -> P {
 /// The lowest the toe goes within 15° of crank angle `around` (a dip of the stride — near the
 /// holy numbers there are two), by Brent's method: the angle and the height.
 fn dip(l: f64, h: f64, around: f64) -> (f64, f64) {
-    let (y, at) = brent(&|d: f64| toe_with(d, l, h).1, around - 15.0, around + 15.0, 1e-11, 200, |_, _| false);
-    (at, y)
+    let least = brent(&|d: f64| toe_with(d, l, h).1, around - 15.0, around + 15.0, 1e-11, 200, |_, _| false);
+    (least.at, least.value)
 }
 
 /// The lowest the toe goes in a whole turn: sampled, then the dip about the lowest sample (the
@@ -129,7 +129,7 @@ fn dip(l: f64, h: f64, around: f64) -> (f64, f64) {
 fn lowest(l: f64, h: f64) -> f64 {
     let y = |d: f64| toe_with(d, l, h).1;
     let k = (0..720).min_by(|&a, &b| y(a as f64 / 2.0).total_cmp(&y(b as f64 / 2.0))).unwrap();
-    brent(&y, k as f64 / 2.0 - 0.5, k as f64 / 2.0 + 0.5, 1e-11, 200, |_, _| false).0
+    brent(&y, k as f64 / 2.0 - 0.5, k as f64 / 2.0 + 0.5, 1e-11, 200, |_, _| false).value
 }
 
 /// The number in `(lo, hi)` at which `keep` stops holding, by bisection to 1e-12.

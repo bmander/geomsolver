@@ -386,9 +386,9 @@ impl MaterialField {
                 // A time given is a continuation's, near where the least now is: a narrow window
                 // about it, widened each time the least is found at its edge.
                 let found = super::swept::follow(&value,a,b,op.time(),q.accuracy);
-                let inverse = pose(found.1)?;
+                let inverse = pose(found.at)?;
                 let r = read(inverse.point(p))?;
-                Some(Reading {gradient:inverse.gradient(r.gradient),operand:r.operand.map(|o| o.at_time(Some(found.1))),..r})
+                Some(Reading {gradient:inverse.gradient(r.gradient),operand:r.operand.map(|o| o.at_time(Some(found.at))),..r})
             }
             Kind::Transformed {source,pose} => Self::operand_at(plan,*source,pose.inverse_point_mid(p),op,q,first)
                 .map(|r| Reading {gradient:pose.gradient_mid(r.gradient),..r}),

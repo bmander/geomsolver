@@ -50,6 +50,19 @@ boundary that way is refused naming its face and the other's it touches. A fixed
 circle once cut its chords short by more than a narrow strip beside it is wide, and read the strip
 at the hole next to it (a turned rim's chamfer
 from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly`).
+A line meets a cylinder or a sphere in closed form (`query::line_cylinder`, `line_sphere`, one
+chord, `line_chord`): one touch exactly at the foot where it is tangent, in one evaluation where a
+sampled search takes thousands. Any other curve's meeting with a surface, a spline
+meridian's with another and a planar step's with another are read by one search
+(`util::roots::sampled_roots`): sign changes of the distance between samples are crossings, and a
+**touch is a root of the distance's rate**, bracketed where it changes sign beside a sampled
+minimum of the distance's size (ties included) — never a least `|f|`, which a double root places
+only to the square root of `f`'s rounding, too loosely for the curves meeting there to share its
+vertex (a round's contact on the face it rolls on; a cube's edges touching its midsphere lost their
+twelve touches, and the sphere's pieces a hole meeting an outer cycle at no vertex:
+`roots::sampled_roots_place_a_touch_where_the_derivative_turns`,
+`brep::a_cube_trimmed_by_its_midsphere_is_pinched_at_each_edges_middle`, `midsphere_common.sv`).
+A minimum is a `util::roots::Least`, its place and its value named, never a pair.
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's

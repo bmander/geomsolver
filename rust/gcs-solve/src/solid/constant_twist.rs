@@ -44,6 +44,7 @@ use super::admission::Condition;
 use super::{RevolvedSurface,SweepContacts};
 use crate::envelope::{self,Motion};
 use crate::motion::{Family,Screw};
+use crate::roots::{brent,Least};
 use crate::space::{sub,dot,cross,norm,scale,distance};
 
 type V = [f64;3];
@@ -908,7 +909,7 @@ fn along_axis(contacts: &SweepContacts,pieces: &[Piece],screw: &Screw,motion: Mo
     if let Some((k,i)) = best {
         let step = 1./ROUND_READS as f64;
         let u = i as f64*step;
-        let (least,v) = crate::roots::brent(&|v| point(faces[k],v).map_or(f64::INFINITY,|p| -off(p)),(u-step).max(0.),(u+step).min(1.),
+        let Least {at:v,value:least} = brent(&|v| point(faces[k],v).map_or(f64::INFINITY,|p| -off(p)),(u-step).max(0.),(u+step).min(1.),
             1e-14,100,|_,_| false);
         if -least > most { (most,at) = (-least,point(faces[k],v).expect("read on the tool")) }
     }
@@ -1369,7 +1370,7 @@ fn all_round(piece: &Piece,motion: Motion,(u0,x): (f64,(f64,f64,f64)),(u1,y): (f
     if x.0*y.0+x.1*y.1 >= 0. { return None }
     let size = |(a,b,c): (f64,f64,f64)| a.dhypot(b).dhypot(c);
     let at = |u: f64| piece.coefficients(u,motion).map_or(f64::INFINITY,size);
-    let (least,u) = crate::roots::brent(&at,u0.min(u1),u0.max(u1),1e-14,100,|_,_| false);
+    let Least {at:u,value:least} = brent(&at,u0.min(u1),u0.max(u1),1e-14,100,|_,_| false);
     (least <= 1e-6*size(x).max(size(y))).then_some(u)
 }
 
@@ -2135,7 +2136,7 @@ fn rulings(pieces: &[Piece],rows: usize,motion: Motion,enters: &dyn Fn(V) -> Opt
         for i in 0..rows {
             let (Some([a0,a1]),Some([b0,b1])) = (read[i],read[i+1]) else { continue };
             if a0*b0 > 0. || a1*b1 > 0. { continue }
-            let (least,u) = crate::roots::brent(&size,station(i),station(i+1),1e-12,80,|_,_| false);
+            let Least {at:u,value:least} = brent(&size,station(i),station(i+1),1e-12,80,|_,_| false);
             let mut candidates = Vec::new();
             for k in [i,i+1] { if read[k] == Some([0.,0.]) && !std::mem::replace(&mut asked[k],true) { candidates.push(station(k)) } }
             if least == 0. && !candidates.contains(&u) { candidates.push(u) }

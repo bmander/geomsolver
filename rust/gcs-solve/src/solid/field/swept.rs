@@ -2,7 +2,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::{SpatialField,Error,I,V,Query,Reading,Source,Want,memo::{self,Grid,Memo}};
-use crate::{interval::minimum::{self,Minimum,Options,Stop},motion::{Family,MotionBounds},roots::brent};
+use crate::{interval::minimum::{self,Minimum,Options,Stop},motion::{Family,MotionBounds},roots::{brent,Least}};
 use std::{collections::{BTreeMap,BinaryHeap},sync::{Arc,OnceLock}};
 
 pub type SweepError = minimum::Error<Error>;
@@ -143,25 +143,25 @@ fn at_edge(t: f64,lo: f64,hi: f64,open_lo: bool,open_hi: bool,margin: f64) -> bo
 /// The least of `value` over the roll `[a, b]` near `time`: Brent's search in a narrow window about
 /// it, the window moved on and widened (to a sixty-fourth of the roll) each time the least is
 /// found at its edge, so a continuation follows its minimum past the window. Without a time the
-/// window is about the least of a coarse sampling, a sixty-fourth of the roll wide. `(value, time)`.
-/// A reading, not a bound: a deeper minimum away from the window is not looked for.
-pub(super) fn follow(value: &impl Fn(f64) -> f64,a: f64,b: f64,time: Option<f64>,accuracy: f64) -> (f64,f64) {
+/// window is about the least of a coarse sampling, a sixty-fourth of the roll wide. A reading,
+/// not a bound: a deeper minimum away from the window is not looked for.
+pub(super) fn follow(value: &impl Fn(f64) -> f64,a: f64,b: f64,time: Option<f64>,accuracy: f64) -> Least {
     let mut width = if time.is_some_and(f64::is_finite) { (b-a)/1024. } else { (b-a)/64. };
     let mut centre = time.filter(|t| t.is_finite()).unwrap_or_else(|| (0..=256)
         .map(|k| a+(b-a)*k as f64/256.).min_by(|x,y| value(*x).total_cmp(&value(*y))).unwrap_or(a));
-    let mut found = (value(centre),centre);
+    let mut found = Least {at:centre,value:value(centre)};
     for _ in 0..16 {
         let (lo,hi) = ((centre-0.5*width).max(a),(centre+0.5*width).min(b));
         // Brent to the accuracy asked, read off the parabola through its best points
         found = brent(value,lo,hi,1e-12*(1.+hi.abs()),60,|_,slack| slack <= 0.25*accuracy);
         // a least value at the roll's own end is no parabola's: read the end itself
         for end in [a,b] {
-            if end >= lo && end <= hi { let v = value(end); if v < found.0 { found = (v,end); } }
+            if end >= lo && end <= hi { let v = value(end); if v < found.value { found = Least {at:end,value:v}; } }
         }
         // At the window's edge, and not the roll's: the minimum lies beyond; follow it.
         let margin = 0.02*width;
-        if !at_edge(found.1,lo,hi,lo > a,hi < b,margin) { break; }
-        centre = found.1+if found.1-lo < margin { -0.45*width } else { 0.45*width };
+        if !at_edge(found.at,lo,hi,lo > a,hi < b,margin) { break; }
+        centre = found.at+if found.at-lo < margin { -0.45*width } else { 0.45*width };
         width = (2.*width).min((b-a)/64.);
     }
     found
@@ -228,7 +228,7 @@ struct RollSearch<'r,'f> {
     tied: bool,
     /// The window a warm start searched already (`minimum_hinted`): stretches inside it are
     /// skipped, and its minimum is a basin of its own.
-    window: Option<(u64,u64,(f64,f64))>,
+    window: Option<(u64,u64,Least)>,
 }
 
 impl<'r,'f> RollSearch<'r,'f> {
@@ -372,14 +372,14 @@ impl<'r,'f> RollSearch<'r,'f> {
                 if let Some(&(_,v)) = readings.iter().find(|r| r.1 < 0.) { self.best = v; return; }
                 let (lo,hi) = (roll.time(w0),roll.time(w1));
                 // settled once a reading is inside, or the least the minimum can be is outside
-                let (found,_) = brent(&|t| roll.at_time(t),lo,hi,1e-6*(hi-lo),60,|v,slack| v < 0. || v-slack > tolerance);
+                let found = brent(&|t| roll.at_time(t),lo,hi,1e-6*(hi-lo),60,|v,slack| v < 0. || v-slack > tolerance).value;
                 self.best = self.best.min(found);
                 if found < 0. { self.best = found; return; }
             },
             Goal::Minimum {accuracy,relative,tie} => {
                 // the accuracy the loop pruned by, as coarse as the best reading allows
                 let accuracy = accuracy.max(if self.best.is_finite() { relative*self.best.abs() } else { 0. });
-                let mut minima: Vec<(f64,f64)> = basins(open).into_iter()
+                let mut minima: Vec<Least> = basins(open).into_iter()
                     .map(|(_,w0,w1)| minimum_between(roll,roll.time(w0),roll.time(w1),accuracy)).collect();
                 // The window's minimum is a basin too. A run's beside it is the same basin carried
                 // on past the window's edge (the contact moved further than the window reaches),
@@ -389,15 +389,15 @@ impl<'r,'f> RollSearch<'r,'f> {
                     let mut basin_min = found;
                     let mut others = Vec::new();
                     for m in minima {
-                        if (m.1-found.1).abs() <= reach { if m.0 < basin_min.0 { basin_min = m; } }
+                        if (m.at-found.at).abs() <= reach { if m.value < basin_min.value { basin_min = m; } }
                         else { others.push(m); }
                     }
                     minima = others;
                     minima.push(basin_min);
                 }
-                minima.sort_by(|x,y| x.0.total_cmp(&y.0));
-                if let Some(&(v,t)) = minima.first() { if v < self.best { self.best = v; self.best_t = t; } }
-                self.tied = minima.len() > 1 && minima[1].0-minima[0].0 <= tie;
+                minima.sort_by(|x,y| x.value.total_cmp(&y.value));
+                if let Some(&Least {at,value}) = minima.first() { if value < self.best { self.best = value; self.best_t = at; } }
+                self.tied = minima.len() > 1 && minima[1].value-minima[0].value <= tie;
             }
             Goal::AtLeast {..} | Goal::Floor {..} => unreachable!("the bound searches split to the grid"),
         }
@@ -411,7 +411,7 @@ const AT_LEAST_BUDGET: u64 = 16;
 /// The minimum in a bracket of the roll, by Brent's search, to `stop` of its value — the accuracy
 /// asked, a thousandth of the value itself for a reading far from the boundary — or to 10⁻⁸ of the
 /// bracket, where the value is within 10⁻¹⁶ of the bracket's rise, whichever comes first.
-fn minimum_between(roll: &Roll,lo: f64,hi: f64,stop: f64) -> (f64,f64) {
+fn minimum_between(roll: &Roll,lo: f64,hi: f64,stop: f64) -> Least {
     brent(&|t| roll.at_time(t),lo,hi,(1e-8*(hi-lo)).max(1e-15*(1.+hi.abs())),80,|_,slack| slack <= stop)
 }
 
@@ -657,12 +657,12 @@ impl SweptField {
             let centre = ((t-a)/(b-a)*last as f64).round().clamp(0.,last as f64) as u64;
             let (w0,w1) = (centre.saturating_sub(basin/2),(centre+basin/2).min(last));
             let found = minimum_between(&roll,roll.time(w0),roll.time(w1),accuracy);
-            if found.0 < search.best { (search.best,search.best_t) = found; }
+            if found.value < search.best { (search.best,search.best_t) = (found.value,found.at); }
             search.window = Some((w0,w1,found));
             if local {
                 let (lo,hi) = (roll.time(w0),roll.time(w1));
-                if !at_edge(found.1,lo,hi,w0 > 0,w1 < last,0.02*(hi-lo)) {
-                    return SweptMinimum {value:found.0,time:found.1,tied:false};
+                if !at_edge(found.at,lo,hi,w0 > 0,w1 < last,0.02*(hi-lo)) {
+                    return SweptMinimum {value:found.value,time:found.at,tied:false};
                 }
             }
         }
