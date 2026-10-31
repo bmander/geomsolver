@@ -338,8 +338,17 @@ those of the same `A cos θ + B sin θ + C = 0` with the fan normal's coefficien
 (`RingFrame::coefficients`, which a face's ring is read by too), solved as a face's ring is
 (`RingFrame::roots`, `sinusoid_roots`). Under any constant twist (a screw,
 a turn or a slide) the walk, at a face's end where the next face's ring has no root at the same
-point, runs onto the fan and round it to the next face (`step`); the rows S1–S4 are asked of the
-fan's nodes as of any. Where both faces' characteristics meet a convex corner at one point, every
+point, runs onto the fan and round it to the next face (`Walker::step`); the rows S1–S4 are asked of the
+fan's nodes as of any. Where each piece meets the next is read once from the pieces, before any
+pass (`constant_twist::Junctions`, #721 F3): at each end of each piece the pieces it may go on
+onto and the end of each (`Junction`: the next face across an edge with the fan between, a rim's
+side or a cap's line, a flat's line, the arms of a ring in contact all round, or why the walk ends),
+and along each piece the rings in contact all round of it and the rims its side's root crosses
+onto (`Along`). `Walker::step` goes on along its piece or across a junction, a pass's rings saying
+only which root beyond is the point it stands at. A ring with no roots says why by its kind
+(`Unrooted`: in contact all round, an apex, a pole, a double point, …), which the walk reads (a
+smooth join to a flat, #684 O) and words only where it ends. This changes no admission: the whole
+suite holds it. Where both faces' characteristics meet a convex corner at one point, every
 fan normal is in contact there and the sweep has a sharp edge along that point's path: the walk
 steps straight across and the sheet is creased there (#684 V, below); S1 refuses a concave
 corner's jump. The sheet's rows are laid by length along the
@@ -509,12 +518,14 @@ side its plane to 1e-12); and `object_builder::a_flat_face_kept_in_its_plane_bui
 **A sharp edge along one point's path in a constant-twist sheet (#684 V):** where both faces'
 characteristics meet a convex corner at one point (a face's root at its end within 1e-7 of the
 tool's size of the next face's there, the corner's fan a piece: `corners`, `prism`'s ribs), every
-fan normal, a positive mix of the faces', is in contact there, and `step` steps straight onto the
-next face (`Step::Sharp`, naming the fan) rather than round the fan; a fan the walk runs round whose
-nodes all stand within 1e-7 of the tool's size of the point it runs onto it at (a rim's, a
-crease's, a corner's) is dropped between the faces' nodes either side. Each is a crease at the node
-at that point (`Characteristic::sharp`, which names the fans; `Characteristic::creases`, with #684
-O's), built as O's is: `helical_sheet`'s exact row, no turn counted, no withheld side contact, the
+fan normal, a positive mix of the faces', is in contact there, and `Walker::step` steps straight onto the
+next face (`Step::Sharp`, naming the fan) rather than round the fan, and the nodes read that step as
+the fan standing at the point in no steps; a fan the walk runs round whose nodes all stand within
+1e-7 of the tool's size of the point it runs onto it at (a rim's, a crease's, a corner's) is dropped
+between the faces' nodes either side, by the one rule for both. Each is a crease at the node at that
+point, a mark on the node naming the fan that moves with it wherever nodes are dropped or begun
+again (`Node::sharp`; `Characteristic::sharp`, which names the fans; `Characteristic::creases`, with
+#684 O's), built as O's is: `helical_sheet`'s exact row, no turn counted, no withheld side contact, the
 creased fit (`nurbs::interpolate_creased`), no fold read across its knot, the sheet cut into faces
 there. S2 counts a reaching root of a fan stepped across at the crease's point as on the walk; S3
 is not read at the crease's node. A standing fan among the walk's last `MARGIN` rings is where the
@@ -541,7 +552,8 @@ the characteristic closes on itself within the blank's reach, a tool passed whol
 `Pass::order` is the loop, its last root its first, and `Characteristic::closed` says so. The loop
 is begun at a root within one piece's stretch on no fan, so the nodes neither start on a crossing
 nor at a fan they drop, and the nodes are then begun again at their first crease (`creases`), the
-last node that node again, `sharp`'s indices moved with them; `reach` is every node. S1 refuses a
+last node that node again, each node's crease mark moving with it (the first's carried on the first
+alone); `reach` is every node. S1 refuses a
 loop with no crease (`SMOOTH_LOOP`: its sheet would close where it is smooth; no case reaches it)
 and one under a whole turn (`WHOLE_LOOP`: a sheet closed both ways, no edge). S2's ring rule and
 every-root rule, S1's spread and S3 are asked as of any stretch (S3 not at the crease node 0);
