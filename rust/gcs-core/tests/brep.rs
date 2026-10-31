@@ -571,6 +571,66 @@ fn a_cube_trimmed_by_its_midsphere_is_pinched_at_each_edges_middle() {
     close(area,PI*(300.*SQRT_2-250.));
 }
 
+/// A block on the square |x|, |y| ≤ 12 under a barrel vault (brep-bench's nurbs/groin-vault): its
+/// section across y at x = −12 — floor, sides and the rational quadratic arc through (y, z) =
+/// (−12, 10), (0, 26), (12, 10), weighing 1, 3/5, 1, the arc of radius 15 about (0, 1) — swept
+/// along x; turned a quarter turn about z where `turned`.
+fn barrel_vault(turned: bool) -> gcs_core::brep::topo::Brep {
+    use gcs_core::brep::nurbs::BSpline;
+    let at = |y: f64,z: f64| [-12.,y,z];
+    let arch = BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],vec![at(-12.,10.),at(0.,26.),at(12.,10.)],vec![1.,0.6,1.]).unwrap();
+    let section = Profile {origin:at(0.,0.),normal:[1.,0.,0.],loops:vec![vec![
+        ProfileEdge::Line {a:at(-12.,0.),b:at(12.,0.)},
+        ProfileEdge::Line {a:at(12.,0.),b:at(12.,10.)},
+        ProfileEdge::Spline(std::sync::Arc::new(arch)),
+        ProfileEdge::Line {a:at(-12.,10.),b:at(-12.,0.)},
+    ]],names:Vec::new()};
+    let b = prism(&section,0.,24.).unwrap();
+    if turned { b.moved(&Rigid::turn([0.;3],[0.,0.,1.],PI/2.)) } else { b }
+}
+
+/// **A march stepping across a touch ends there** (`ssi::trace_beside`): two barrel vaults crossed
+/// at right angles meet in two arches crossing at the crown, where the two are tangent, and a step
+/// of the meeting's length scale lands either side of the little disc where they stand nearer
+/// parallel than a trace follows. `∇a × ∇b` turns about across such a step; marched on, the two
+/// arches were one curve each through the crown, met there at no vertex, and one of them, its
+/// middle within 1e-6 of the touch, was dropped as touching. Ended there, the meeting is the four
+/// half-arches from the corners, each ending at the crown.
+#[test]
+fn a_trace_stepping_across_a_touch_ends_there() {
+    use gcs_core::brep::geom::Curve;
+    let vault = |turned: bool| barrel_vault(turned).faces.into_iter().find(|f| f.surface.kind() == "extrusion").unwrap().surface;
+    let (a,b) = (vault(false),vault(true));
+    let corners: Vec<V> = [[-12.,12.],[12.,12.],[-12.,-12.],[12.,-12.]].iter().map(|&[x,y]| [x,y,10.]).collect();
+    let curves = gcs_core::brep::ssi::trace(&a,&b,&corners,[-12.;3],[12.,12.,17.],1e-9).unwrap();
+    assert_eq!(curves.len(),4);
+    for c in &curves {
+        let [t0,t1] = match c { Curve::BSpline(s) => s.domain(),other => span(other) };
+        let ends = [c.point(t0),c.point(t1)];
+        let at_crown = ends.iter().filter(|p| gcs_core::space::distance(**p,[0.,0.,16.]) <= 1e-9).count();
+        let at_corner = ends.iter().filter(|p| corners.iter().any(|q| gcs_core::space::distance(**p,*q) <= 1e-9)).count();
+        assert_eq!((at_crown,at_corner),(1,1),"{ends:?}");
+    }
+}
+
+/// **A groin vault** (brep-bench's nurbs/groin-vault): the common of two barrel-vaulted blocks, the
+/// second the first turned a quarter turn, keeps the lower vault over every point of the square —
+/// four pieces of vault meeting along the diagonals' arches, whose four halves end at the crown,
+/// where the two vaults touch — on the floor and four sides 24 × 10, each a block's flat side in
+/// the plane of the other's arched one. Its volume and area are the closed forms', to the traced
+/// arches' fit.
+#[test]
+fn a_groin_vault_is_four_vaults_meeting_at_the_crown() {
+    use gcs_core::brep::boolean::{combined,Op};
+    let r = combined(&barrel_vault(false),&barrel_vault(true),Op::Common,0.).unwrap();
+    r.check(1e-8).unwrap();
+    assert_eq!((r.faces.len(),r.edges.len(),r.vertices.len()),(9,16,9));
+    assert!(r.vertices.iter().any(|v| gcs_core::space::distance(v.p,[0.,0.,16.]) <= 1e-9));
+    // 24²·10 + 8∫₀¹² x(√(225 − x²) − 9) dx, and 24² + 4·24·10 + 8∫₀¹² 15x / √(225 − x²) dx
+    let (v,a) = (volume(&r),r.faces.iter().map(|f| gcs_core::brep::props::area(&r,f)).sum::<f64>());
+    assert!((v-7632.).abs() <= 1e-9*7632. && (a-2256.).abs() <= 1e-9*2256.,"volume {v}, area {a}");
+}
+
 /// A traced curve's parameter span: a fit's domain, or a trace's steps.
 fn span(c: &gcs_core::brep::geom::Curve) -> [f64;2] {
     use gcs_core::brep::geom::Curve;

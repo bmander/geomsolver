@@ -318,3 +318,25 @@ fn a_cube_trimmed_by_its_midsphere_is_built_exactly() {
     let stl = export::stl(&sk,body,&exact,None,&say).unwrap();
     gcs_core::mesh::stl_shells(&stl).unwrap();
 }
+
+/// **A groin vault** (`groin_vault.sv`, brep-bench's nurbs/groin-vault): two blocks under weighted
+/// spline vaults crossed at right angles, built exactly — four pieces of vault meeting along the
+/// diagonals in arches that end at the crown, where the vaults touch, on the floor and four sides —
+/// to the closed forms' volume and area, written and meshed closed.
+#[test]
+fn a_groin_vault_is_built_exactly() {
+    use crate::common::{close,dof,solid_named,solved};
+    let e = fixtures::example("groin_vault.sv").unwrap();
+    let sk = solved(&e);
+    assert_eq!(dof(&mut sk.clone()),0);
+    let vault = solid_named(&e,"vault");
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    let exact = export::exact(&sk,vault,None,None,&say).unwrap();
+    exact.solid.check(1e-6).unwrap();
+    let b = &exact.solid;
+    assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(9,16,9));
+    close(props::volume(b),7632.);
+    close(b.faces.iter().map(|f| props::area(b,f)).sum(),2256.);
+    let stl = export::stl(&sk,vault,&exact,None,&say).unwrap();
+    gcs_core::mesh::stl_shells(&stl).unwrap();
+}

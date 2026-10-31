@@ -36,6 +36,19 @@ farther, else the one whose longest step is shorter (`distinct`).
 `brep::a_trace_keeps_a_sharp_turn_at_its_end` (a V of apex radius 0.003 mm, 0.03 mm from the sheet's
 edge, against an `h0` of 0.2) and `object_builder::a_sharp_rims_fan_builds_at_the_displays_samples`
 (`vthread.sv` at the page's samples, which each of the three builds alone) are the gate.
+**A march stepping across a touch ends there** (brep-bench's nurbs/groin-vault): where two
+surfaces touch and their meeting's branches cross, a step of the meeting's scale lands either side
+of the little disc where they stand nearer parallel than a trace follows, and `∇a × ∇b` turns about
+between its ends. A touch found there along the march's branch (`touch_near` from the chord's point
+where the two sines' sizes say it vanished) ends the march as one arriving at a touch does, and the
+branches no curve has arrived along are traced from it. The Boolean pools where traced curves of
+one meeting end at one another (`boolean::ends_met`), the touch a vertex its half-branches share.
+Marched on, two vaults' groins were each one curve through the crown, crossing the other at no
+vertex, and one, its middle 1e-6 from the touch, was dropped as touching. `touch_near` is settled
+by a step a thousandth of `tol`, or one within a tenth of it no longer shrinking, its differences'
+rounding (the crown at a `tol` of 1e-9 cycled through steps of 1.3e-11).
+`brep::a_trace_stepping_across_a_touch_ends_there`, `a_groin_vault_is_four_vaults_meeting_at_the_crown`
+and `brep_export::a_groin_vault_is_built_exactly` (`groin_vault.sv`) are the gate.
 **A point is read against a face by one drawing of its boundary** (`query::Outline`): each edge
 cut in chords until every chord's middle lies within a bar of the edge in space, carrying its
 `sag`, how far a chord strays at most. Its winding says inside only for a point clear of every
