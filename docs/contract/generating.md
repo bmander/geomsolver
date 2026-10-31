@@ -338,7 +338,7 @@ those of the same `A cos θ + B sin θ + C = 0` with the fan normal's coefficien
 (`RingFrame::coefficients`, which a face's ring is read by too), solved as a face's ring is
 (`RingFrame::roots`, `sinusoid_roots`). Under any constant twist (a screw,
 a turn or a slide) the walk, at a face's end where the next face's ring has no root at the same
-point, runs onto the fan and round it to the next face (`step`); the rows S1–S4 are asked of the
+point, runs onto the fan and round it to the next face (`Walker::step`); the rows S1–S4 are asked of the
 fan's nodes as of any. Where each piece meets the next is read once from the pieces, before any
 pass (`constant_twist::Junctions`, #721 F3): at each end of each piece the pieces it may go on
 onto and the end of each (`Junction`: the next face across an edge with the fan between, a rim's
@@ -518,7 +518,7 @@ side its plane to 1e-12); and `object_builder::a_flat_face_kept_in_its_plane_bui
 **A sharp edge along one point's path in a constant-twist sheet (#684 V):** where both faces'
 characteristics meet a convex corner at one point (a face's root at its end within 1e-7 of the
 tool's size of the next face's there, the corner's fan a piece: `corners`, `prism`'s ribs), every
-fan normal, a positive mix of the faces', is in contact there, and `step` steps straight onto the
+fan normal, a positive mix of the faces', is in contact there, and `Walker::step` steps straight onto the
 next face (`Step::Sharp`, naming the fan) rather than round the fan, and the nodes read that step as
 the fan standing at the point in no steps; a fan the walk runs round whose nodes all stand within
 1e-7 of the tool's size of the point it runs onto it at (a rim's, a crease's, a corner's) is dropped
