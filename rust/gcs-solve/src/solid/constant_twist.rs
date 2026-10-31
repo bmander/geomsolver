@@ -27,6 +27,7 @@ use super::admission::Condition;
 use super::{RevolvedSurface,SweepContacts};
 use crate::envelope::{self,Motion};
 use crate::motion::{Family,Screw};
+use crate::roots::{brent,Least};
 use crate::space::{sub,dot,cross,norm,distance};
 
 type V = [f64;3];
@@ -388,7 +389,7 @@ fn stationary(pieces: &[Piece],stations: &[Vec<f64>],order: &[(usize,usize,usize
         let size = |(a,b,c): (f64,f64,f64)| a.dhypot(b).dhypot(c);
         let scale = size((a0,b0,c0)).max(size((a1,b1,c1)));
         let at = |u: f64| coefficients(k,u).map_or(f64::INFINITY,size);
-        let crate::roots::Least {at:u,value:least} = crate::roots::brent(&at,u0.min(u1),u0.max(u1),1e-12*(u1-u0).abs(),80,|_,_| false);
+        let Least {at:u,value:least} = brent(&at,u0.min(u1),u0.max(u1),1e-12*(u1-u0).abs(),80,|_,_| false);
         if !(least <= 1e-6*scale) { continue }
         let entering = (0..64).filter_map(|m| pieces[k].around(u,m as f64/64.))
             .find_map(|p| reach(family,screw,p,ask).map(|t| (t,p)));
@@ -924,7 +925,7 @@ fn rulings(pieces: &[Piece],rows: usize,motion: Motion,enters: &dyn Fn(V) -> Opt
         for i in 0..rows {
             let (Some([a0,a1]),Some([b0,b1])) = (read[i],read[i+1]) else { continue };
             if a0*b0 > 0. || a1*b1 > 0. { continue }
-            let crate::roots::Least {at:u,value:least} = crate::roots::brent(&size,station(i),station(i+1),1e-12,80,|_,_| false);
+            let Least {at:u,value:least} = brent(&size,station(i),station(i+1),1e-12,80,|_,_| false);
             let mut candidates = Vec::new();
             for k in [i,i+1] { if read[k] == Some([0.,0.]) && !std::mem::replace(&mut asked[k],true) { candidates.push(station(k)) } }
             if least == 0. && !candidates.contains(&u) { candidates.push(u) }

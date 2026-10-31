@@ -111,39 +111,34 @@ pub struct Root { pub at: f64,pub touch: bool }
 /// of `f`'s rounding (1e-7 on a ball of radius 7, wider than the tolerance its vertex is pooled
 /// to), and a sample within `tol` of it may stand farther still; a simple root of `df` is placed
 /// to `df`'s rounding. A touch found at a sample is moved to the turn beside it where `f` there is
-/// within `tol` too. `df` is read only beside a sampled minimum of `|f|`.
+/// within `tol` too. `df` is read only at a sample within `tol` or beside a sampled minimum of
+/// `|f|`, so a curve clear of the surface costs nothing more than its samples.
 pub fn sampled_roots(f: impl Fn(f64) -> f64,df: impl Fn(f64) -> f64,ts: &[f64],fs: &[f64],tol: f64,width: f64) -> Vec<Root> {
     let n = ts.len();
     let near = |v: f64| v.abs() <= tol;
-    let mut ds: Vec<Option<f64>> = vec![None;n];
-    let mut d = |i: usize| *ds[i].get_or_insert_with(|| df(ts[i]));
     // where `df` changes sign between samples `i` and `i + 1`, refined
-    let mut turn = |i: usize| -> Option<f64> {
-        let (a,b) = (d(i),d(i+1));
-        if (a < 0.) == (b < 0.) { return None }
-        Some(bracketed_root(|t| Some(df(t)),ts[i],a,ts[i+1],b,width))
+    let turn = |i: usize| -> Option<f64> {
+        let (a,b) = (df(ts[i]),df(ts[i+1]));
+        ((a < 0.) != (b < 0.)).then(|| bracketed_root(|t| Some(df(t)),ts[i],a,ts[i+1],b,width))
     };
     // a crossing between `t0` and `t1`, where `f` is `f0` and `f1` of opposite signs
     let crossing = |t0: f64,f0: f64,t1: f64,f1: f64| Root {at:bracketed_root(|t| Some(f(t)),t0,f0,t1,f1,width),touch:false};
-    // on one side of zero at samples `j` and `k`, and clear of it
-    let clear = |j: usize,k: usize| !near(fs[j]) && !near(fs[k]) && (fs[j] < 0.) == (fs[k] < 0.);
+    // whether samples `j` and `k`, both clear of zero, are on one side of it (None where either is not)
+    let side = |j: usize,k: usize| (!near(fs[j]) && !near(fs[k])).then(|| (fs[j] < 0.) == (fs[k] < 0.));
     // a sampled minimum of `|f|`, ties included
     let least = |k: usize| k > 0 && k+1 < n && fs[k].abs() <= fs[k-1].abs() && fs[k].abs() <= fs[k+1].abs();
     let mut out: Vec<Root> = Vec::new();
     for i in 0..n {
         if near(fs[i]) {
-            let inner = i > 0 && i+1 < n;
-            if !(inner && clear(i-1,i+1)) {
-                // a crossing: refined between the sample's neighbours where they are clear on
-                // either side of zero
-                let across = inner && !near(fs[i-1]) && !near(fs[i+1]) && (fs[i-1] < 0.) != (fs[i+1] < 0.);
-                out.push(if across { crossing(ts[i-1],fs[i-1],ts[i+1],fs[i+1]) } else { Root {at:ts[i],touch:false} });
-                continue
-            }
-            // a touch: at the turn beside the sample nearest it, where `f` is within `tol` there
-            let at = [turn(i-1),turn(i)].into_iter().flatten().filter(|&x| near(f(x)))
-                .min_by(|x,y| (x-ts[i]).abs().total_cmp(&(y-ts[i]).abs())).unwrap_or(ts[i]);
-            out.push(Root {at,touch:true});
+            let around = if i > 0 && i+1 < n { side(i-1,i+1) } else { None };
+            out.push(match around {
+                // a touch: at the turn beside the sample nearest it, where `f` is within `tol` there
+                Some(true) => Root {at:[turn(i-1),turn(i)].into_iter().flatten().filter(|&x| near(f(x)))
+                    .min_by(|x,y| (x-ts[i]).abs().total_cmp(&(y-ts[i]).abs())).unwrap_or(ts[i]),touch:true},
+                // a crossing, refined between the sample's neighbours where they are clear either side
+                Some(false) => crossing(ts[i-1],fs[i-1],ts[i+1],fs[i+1]),
+                None => Root {at:ts[i],touch:false},
+            });
             continue
         }
         if i+1 == n || near(fs[i+1]) { continue }

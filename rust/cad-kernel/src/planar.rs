@@ -14,7 +14,7 @@ use std::f64::consts::{PI,TAU};
 
 pub use super::plane2::P;
 
-use super::plane2::{self,Carrier,Touch,sub,dot,cross,norm,dist};
+use super::plane2::{self,Carrier,Touch,sub,dot,cross,norm,dist,left,scale,unit};
 
 /// A step of a loop: a line from `a` to `b`, the arc about `c` of radius `r` from angle `a0`
 /// through the signed `sweep`, or a conic's arc from `a` to `b`: the rational quadratic Bézier
@@ -152,28 +152,25 @@ impl Seg {
             Seg::Arc {c,r,..} => dist(p,c)-r,
             // `λ₁² − 4w²λ₀λ₂` over its gradient's length: zero on the conic, a length off it to
             // first order, positive on the side away from the middle control point
-            Seg::Conic {a,m,b,w} => {
-                let ([l0,l1,l2],[g0,g1,g2]) = barycentric(a,m,b,p);
-                let f = l1*l1-4.*w*w*l0*l2;
-                let g: P = std::array::from_fn(|i| 2.*l1*g1[i]-4.*w*w*(l2*g0[i]+l0*g2[i]));
-                -f/norm(g).max(1e-300)
-            }
+            Seg::Conic {a,m,b,w} => { let (f,g) = conic_form(a,m,b,w,p); -f/norm(g).max(1e-300) }
         }
     }
     /// The gradient of `implicit` at `p`: exact for a line and an arc; for a conic its form's
     /// gradient made unit, exact on the conic (where a touch is) and to first order off it.
     fn gradient(&self,p: P) -> P {
         match *self {
-            Seg::Line {a,b} => { let d = sub(b,a); let l = norm(d).max(1e-300); [-d[1]/l,d[0]/l] }
-            Seg::Arc {c,..} => { let q = sub(p,c); let l = norm(q); if l > 0. { [q[0]/l,q[1]/l] } else { [1.,0.] } }
-            Seg::Conic {a,m,b,w} => {
-                let ([l0,l1,l2],[g0,g1,g2]) = barycentric(a,m,b,p);
-                let g: P = std::array::from_fn(|i| 2.*l1*g1[i]-4.*w*w*(l2*g0[i]+l0*g2[i]));
-                let l = norm(g).max(1e-300);
-                [-g[0]/l,-g[1]/l]
-            }
+            Seg::Line {a,b} => { let d = sub(b,a); scale(left(d),1./norm(d).max(1e-300)) }
+            Seg::Arc {c,..} => { let q = sub(p,c); if norm(q) > 0. { unit(q) } else { [1.,0.] } }
+            Seg::Conic {a,m,b,w} => { let (_,g) = conic_form(a,m,b,w,p); scale(g,-1./norm(g).max(1e-300)) }
         }
     }
+}
+
+/// A conic's form `λ₁² − 4w²λ₀λ₂` at `p` over its control points' barycentric coordinates, and its
+/// gradient (`Seg::implicit`, `Seg::gradient`).
+fn conic_form(a: P,m: P,b: P,w: f64,p: P) -> (f64,P) {
+    let ([l0,l1,l2],[g0,g1,g2]) = barycentric(a,m,b,p);
+    (l1*l1-4.*w*w*l0*l2,std::array::from_fn(|i| 2.*l1*g1[i]-4.*w*w*(l2*g0[i]+l0*g2[i])))
 }
 
 /// A plane's coordinates `(r, z)` about a line parallel to the one a half-plane turns about, read

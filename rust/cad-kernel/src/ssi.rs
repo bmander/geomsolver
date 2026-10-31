@@ -62,19 +62,19 @@ impl Meridian {
     }
 }
 
-/// Where a spline meridian crosses or touches another (not a spline), in `(ρ, z)`: every sign
-/// change of the other's distance along it, refined, and every sampled minimum of its size that
-/// comes within `tol`.
+/// Where a spline meridian crosses or touches another (not a spline), in `(ρ, z)`: the other's
+/// distance along it, its roots and touches found by `spline_roots`.
 fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
-    let rz = |t: f64| { let q = sub(s.point(t),o); let h = dot(q,z); [norm(sub(q,scale(z,h))),h] };
+    // a point's part across the axis, and its height along it
+    let split = |p: V| { let q = sub(p,o); let h = dot(q,z); (sub(q,scale(z,h)),h) };
+    let rz = |t: f64| { let (across,h) = split(s.point(t)); [norm(across),h] };
     let at = |t: f64| { let [r,h] = rz(t); [r,h,0.] };
     // the distance's rate along the spline: the gradient in (ρ, z) against how fast ρ and z run
     let rate = |t: f64| {
         let (p,d) = s.d1(t);
-        let q = sub(p,o);
-        let across = sub(q,scale(z,dot(q,z)));
+        let (across,h) = split(p);
         let r = norm(across);
-        let g = other.gradient([r,dot(q,z)]);
+        let g = other.gradient([r,h]);
         g[0]*(if r > 0. { dot(across,d)/r } else { 0. })+g[1]*dot(d,z)
     };
     spline_roots(s,&|t| other.implicit(rz(t)),&rate,&at,tol).into_iter().map(rz).collect()

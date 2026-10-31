@@ -180,8 +180,11 @@ fn tangential(carrier: &Curve,other: &Curve,over: [f64;2],mut found: Vec<(f64,V)
 /// sampled, its roots and touches found by `util::roots::sampled_roots` (a touch where its rate
 /// along the curve turns), an end on the surface a root there.
 pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Meets {
-    if let (&Curve::Line {p,d},Surface::Cylinder(c,r)) = (curve,surface) { return line_cylinder(p,d,[t0,t1],c,*r,tol) }
-    if let (&Curve::Line {p,d},Surface::Sphere(c,r)) = (curve,surface) { return line_sphere(p,d,[t0,t1],c.o,*r,tol) }
+    match (curve,surface) {
+        (&Curve::Line {p,d},Surface::Cylinder(c,r)) => return line_cylinder(p,d,[t0,t1],c,*r,tol),
+        (&Curve::Line {p,d},Surface::Sphere(c,r)) => return line_sphere(p,d,[t0,t1],c.o,*r,tol),
+        _ => {}
+    }
     let f = |t: f64| surface.implicit(curve.point(t));
     let length = (t1-t0)*curve.speed();
     let (lo,hi) = curve.bounds([t0,t1]);
@@ -193,11 +196,9 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
     if fs.iter().all(|v| v.abs() <= tol) { return Meets::Along }
     // the distance's rate along the curve, whose roots place a touch (`sampled_roots`)
     let df = |t: f64| { let (p,d) = curve.d1(t); dot(surface.gradient(p),d) };
-    let mut roots: Vec<(f64,bool)> = Vec::new();
-    for r in sampled_roots(f,df,&ts,&fs,tol,1e-15*(t1-t0).abs().max(1.)) {
-        if roots.last().is_some_and(|last| (r.at-last.0).abs()*curve.speed() <= tol) { continue }
-        roots.push((r.at,r.touch));
-    }
+    let mut roots: Vec<(f64,bool)> = sampled_roots(f,df,&ts,&fs,tol,1e-15*(t1-t0).abs().max(1.))
+        .into_iter().map(|r| (r.at,r.touch)).collect();
+    roots.dedup_by(|b,a| (b.0-a.0).abs()*curve.speed() <= tol);
     // a swept curve's implicit runs on past its ends along their tangents (and steps across the
     // normal there): a root off the surface itself is that extension's, not the surface's
     if matches!(surface,Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)) {
@@ -210,39 +211,34 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
 }
 
 /// A line through `p` along the unit `d`, over `[t0, t1]`, against the cylinder of radius `r` about
-/// `c`'s axis, in closed form: across the axis it is a chord of the circle (`plane2::chord`, one touch at the foot where it is
-/// tangent). A line along the axis lies in the surface or misses it.
-fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f64) -> Meets {
+/// `c`'s axis, in closed form: across the axis it is a chord of the circle (`line_chord`). A line
+/// along the axis lies in the surface or misses it.
+fn line_cylinder(p: V,d: V,t: [f64;2],c: &super::geom::Frame,r: f64,tol: f64) -> Meets {
     use crate::util::space::sub;
     let across = |v: V| sub(v,scale(c.z,dot(v,c.z)));
     let (w,e) = (across(sub(p,c.o)),across(d));
-    let ee = dot(e,e);
-    if ee <= 1e-24 {
+    if dot(e,e) <= 1e-24 {
         return if (norm(w)-r).abs() <= tol { Meets::Along } else { Meets::At(Vec::new()) }
     }
+    line_chord(w,e,r,t,tol)
+}
+
+/// A line through `p` along `d`, over `[t0, t1]`, against the sphere of radius `r` about `o`, in
+/// closed form: a chord of the great circle in the plane through it and the centre (`line_chord`).
+fn line_sphere(p: V,d: V,t: [f64;2],o: V,r: f64,tol: f64) -> Meets { line_chord(crate::util::space::sub(p,o),d,r,t,tol) }
+
+/// The line `w + t e` (`w` from a centre) against the circle of radius `r` about that centre in the
+/// plane through them, over `[t0, t1]`: a chord's two roots, or one touch exactly at the foot where
+/// it is tangent (`plane2::chord`), each clamped to the stretch. Exact, where a sampled search
+/// places a touch only to its distance's rate's rounding, and over one evaluation, not thousands.
+fn line_chord(w: V,e: V,r: f64,[t0,t1]: [f64;2],tol: f64) -> Meets {
+    let ee = dot(e,e);
+    if ee <= 1e-24 { return Meets::At(Vec::new()) }
     let foot = -dot(w,e)/ee;
     let roots = match chord(norm(add(w,scale(e,foot))),r,Touch::Gap(tol)) {
         Chord::Miss => Vec::new(),
         Chord::Touch => vec![(foot,true)],
         Chord::Cross(half) => { let half = half/ee.sqrt(); vec![(foot-half,false),(foot+half,false)] }
-    };
-    Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-tol && t <= t1+tol).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
-}
-
-/// A line through `p` along `d`, over `[t0, t1]`, against the sphere of radius `r` about `o`, in
-/// closed form: a chord of the great circle in the plane through it and the centre
-/// (`plane2::chord`, one touch at the foot where it is tangent). A touch read off sampled distances
-/// is placed only to the square root of their rounding (a cube's edge touching its midsphere), too
-/// loosely for the circles that meet there to find it.
-fn line_sphere(p: V,d: V,[t0,t1]: [f64;2],o: V,r: f64,tol: f64) -> Meets {
-    use crate::util::space::sub;
-    let (w,dd) = (sub(p,o),dot(d,d));
-    if dd <= 1e-24 { return Meets::At(Vec::new()) }
-    let foot = -dot(w,d)/dd;
-    let roots = match chord(norm(add(w,scale(d,foot))),r,Touch::Gap(tol)) {
-        Chord::Miss => Vec::new(),
-        Chord::Touch => vec![(foot,true)],
-        Chord::Cross(half) => { let half = half/dd.sqrt(); vec![(foot-half,false),(foot+half,false)] }
     };
     Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-tol && t <= t1+tol).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
 }

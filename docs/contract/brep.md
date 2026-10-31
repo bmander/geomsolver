@@ -50,8 +50,9 @@ boundary that way is refused naming its face and the other's it touches. A fixed
 circle once cut its chords short by more than a narrow strip beside it is wide, and read the strip
 at the hole next to it (a turned rim's chamfer
 from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly`).
-A line meets a cylinder or a sphere in closed form (`query::line_cylinder`, `line_sphere`): one
-touch exactly at the foot where it is tangent. Any other curve's meeting with a surface, a spline
+A line meets a cylinder or a sphere in closed form (`query::line_cylinder`, `line_sphere`, one
+chord, `line_chord`): one touch exactly at the foot where it is tangent, in one evaluation where a
+sampled search takes thousands. Any other curve's meeting with a surface, a spline
 meridian's with another and a planar step's with another are read by one search
 (`util::roots::sampled_roots`): sign changes of the distance between samples are crossings, and a
 **touch is a root of the distance's rate**, bracketed where it changes sign beside a sampled
