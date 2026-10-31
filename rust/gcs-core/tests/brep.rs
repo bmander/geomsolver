@@ -615,6 +615,59 @@ fn a_trace_leaving_a_sheet_ends_where_its_edge_crosses() {
     }
 }
 
+/// **A trace is fitted through one seed a place**: two seeds a hair apart on a meeting — a crossing
+/// seeded again by another face's edge, 4e-14 off it on a ring groove's floor — are one vertex.
+/// Each seed is placed along the trace only to its search's width (1e-8 of a step), and two placed
+/// apart were both interpolated: a hair apart in space beside gaps a tenth of a millimetre long, the
+/// cubic magnified their rounding into a swing out along the curve and back, on both surfaces all
+/// the way (0.17 mm past the groove's corner, where its face's boundary then ran through its own
+/// points). So a second seed within the tolerance of one leaves the fit as the one alone makes it,
+/// and the fit runs one way along the meeting, read in every span of it however short.
+#[test]
+fn a_trace_is_fitted_through_one_seed_a_place() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::space::distance;
+    // the sheet and the plane of `a_trace_leaving_a_sheet_ends_where_its_edge_crosses`: the
+    // meeting runs from the sheet's edge at v = 0 to its edge at v = 1, y = 10 v along it
+    let f = |u: f64,v: f64| [10.*u,10.*v,(2.*u).sin()+v*v];
+    let (net,_) = gcs_core::brep::nurbs::fit_net(&f,3,3,16,16,1e-10).unwrap();
+    let sheet = Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),
+        std::sync::Arc::new(net.clone()));
+    let plane = Surface::Plane(Frame::about([4.,0.,0.],[1.,0.,0.]));
+    let tol = 1e-6;
+    let fit = |seeds: &[V]| {
+        let curves = gcs_core::brep::ssi::trace(&plane,&sheet,seeds,[-1.;3],[11.;3],tol).unwrap();
+        assert_eq!(curves.len(),1);
+        let Curve::BSpline(b) = &curves[0] else { panic!("a fit, not a {}",curves[0].kind()) };
+        (**b).clone()
+    };
+    for v in [0.3,0.5,0.8] {
+        let alone = fit(&[net.point(0.4,v)]);
+        for hair in [4e-15,1e-12,1e-10,1e-9,1e-8,5e-8] {
+            let b = fit(&[net.point(0.4,v),net.point(0.4,v-hair)]);
+            // the same fit, to the rounding a sheet's foot is found to from where the last was
+            let same = b.poles.iter().zip(&alone.poles).all(|(p,q)| distance(*p,*q) <= 1e-9);
+            let (n,m) = (b.knots.len(),alone.knots.len());
+            assert!(n == m && same,"{v} {hair:e}: the second seed moved the fit: {n} knots against {m}");
+            let ps: Vec<V> = b.knots.windows(2).filter(|w| w[1] > w[0])
+                .flat_map(|w| (0..32).map(move |k| w[0]+(w[1]-w[0])*k as f64/32.))
+                .chain([b.domain()[1]]).map(|t| b.point(t)).collect();
+            for p in &ps {
+                let off = plane.implicit(*p).abs().max(sheet.implicit(*p).abs());
+                assert!(off <= 16.*tol,"{v} {hair:e}: {p:?} is {off:e} off");
+            }
+            // one way along it: y never turns back by more than the tolerance
+            let rising = ps[ps.len()-1][1] > ps[0][1];
+            let mut reach = ps[0][1];
+            for p in &ps {
+                let back = if rising { reach-p[1] } else { p[1]-reach };
+                assert!(back <= tol,"{v} {hair:e}: the fit turns back {back:e} at {p:?}");
+                reach = if rising { reach.max(p[1]) } else { reach.min(p[1]) };
+            }
+        }
+    }
+}
+
 /// **A trace keeps a sharp turn at its end** (#684 E): a sheet whose ridge turns at a radius of
 /// 0.009 mm, cut by a plane in a V 3 mm long whose apex (of radius 0.003 mm, turning 143°) stands
 /// 0.03 mm from where it leaves the sheet's edge, while the march's step `h0`, read off the sheet's

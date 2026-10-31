@@ -32,7 +32,13 @@ them; where it does not (a gap narrower than the trace's noise, whose splitting 
 points and makes it wiggle the more) the fit with the fewest is kept (`fitted`). Of two traces, one
 lying along the other — its ends within two marches' slack — is that meeting traced again from a
 seed the first left unrecognised, and only one is kept, before either is fitted: the one reaching
-farther, else the one whose longest step is shorter (`distinct`).
+farther, else the one whose longest step is shorter (`distinct`). **It is fitted through one seed a
+place**: a seed within `tol` of one taken is that vertex again and is passed by. Each is placed
+along the trace only to its search's width (1e-8 of a step), and two a hair apart placed apart
+were both interpolated, the cubic magnifying their rounding into a swing out along the meeting and
+back, on both surfaces all the way (a ring groove's floor ran 0.17 mm past its corner, a crossing
+seeded again 4e-14 off it by another face's edge: `brep::a_trace_is_fitted_through_one_seed_a_place`
+and `flat_faces::an_end_mill_turned_cuts_a_ring_groove` are its gate).
 `brep::a_trace_keeps_a_sharp_turn_at_its_end` (a V of apex radius 0.003 mm, 0.03 mm from the sheet's
 edge, against an `h0` of 0.2) and `object_builder::a_sharp_rims_fan_builds_at_the_displays_samples`
 (`vthread.sv` at the page's samples, which each of the three builds alone) are the gate.
