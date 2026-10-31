@@ -763,18 +763,29 @@ impl Surface {
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => unreachable!(),
         }
     }
-    /// The surface standing `d` off this one along its own normal (`S_u × S_v`), where its signed
-    /// distance (`implicit`) is `d`: in closed form for the analytic kinds — a plane moved, a radius
-    /// grown or shrunk — and `None` for the swept and fitted kinds, or an offset through an axis.
-    pub fn offset(&self,d: f64) -> Option<Surface> {
-        let positive = |r: f64| (r > 0.).then_some(r);
+    /// What stands `d` off this surface along its own normal (`S_u × S_v`), where its signed
+    /// distance (`implicit`) is `d`, in closed form for the analytic kinds: a surface — a plane
+    /// moved, a radius grown or shrunk — or, where `d` takes a radius to nothing (within `tol`),
+    /// what the surface is drawn about, which the offset closes onto (`Offset`): a cylinder's
+    /// axis, a sphere's centre, a torus's middle circle.  `None` past that, where no point stands
+    /// `d` off it, and for the swept and fitted kinds, which have no offset in closed form; and
+    /// for a cone shrunk past its apex, whose offset is a cone of its own apex not written yet.
+    pub fn offset(&self,d: f64,tol: f64) -> Option<Offset> {
+        // a radius grown or shrunk by `d`: the surface, what it closes onto, or nothing
+        let radius = |r: f64,closed: &dyn Fn() -> Offset| -> Option<Result<f64,Offset>> {
+            if (r+d).abs() <= tol { Some(Err(closed())) } else { (r+d > 0.).then_some(Ok(r+d)) }
+        };
+        let surface = |r: Result<f64,Offset>,made: &dyn Fn(f64) -> Surface| r.map_or_else(|o| o,|r| Offset::Surface(made(r)));
         Some(match *self {
-            Surface::Plane(f) => Surface::Plane(Frame {o:add(f.o,scale(f.z,d)),..f}),
-            Surface::Cylinder(f,r) => Surface::Cylinder(f,positive(r+d)?),
+            Surface::Plane(f) => Offset::Surface(Surface::Plane(Frame {o:add(f.o,scale(f.z,d)),..f})),
+            Surface::Cylinder(f,r) => surface(radius(r,&|| Offset::Curve(Curve::Line {p:f.o,d:f.z}))?,&|r| Surface::Cylinder(f,r)),
             // implicit (ρ − r) cos α − z sin α = d is the cone of radius r + d / cos α at `o`
-            Surface::Cone(f,r,a) => Surface::Cone(f,positive(r+d/a.dcos())?,a),
-            Surface::Sphere(f,r) => Surface::Sphere(f,positive(r+d)?),
-            Surface::Torus(f,big,r) => Surface::Torus(f,big,positive(r+d)?),
+            Surface::Cone(f,r,a) => {
+                let r = r+d/a.dcos();
+                Offset::Surface(Surface::Cone(f,(r > 0.).then_some(r)?,a))
+            }
+            Surface::Sphere(f,r) => surface(radius(r,&|| Offset::Point(f.o))?,&|r| Surface::Sphere(f,r)),
+            Surface::Torus(f,big,r) => surface(radius(r,&|| Offset::Curve(Curve::Circle(f,big)))?,&|r| Surface::Torus(f,big,r)),
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => return None,
         })
     }
@@ -1013,6 +1024,18 @@ impl Traced {
         let (a,b) = (self.at(lo),self.at(hi));
         (self.at(t),scale(sub(b,a),1./(hi-lo)))
     }
+}
+
+/// What a surface offset by a distance is (`Surface::offset`): a surface, or — where the distance
+/// takes the surface's radius to nothing — the curve or the point it closes onto: a cylinder's
+/// axis, a torus's middle circle (each a `Curve`), a sphere's centre.  A ball as wide as a
+/// cylinder rolled inside it has its centre on the axis, nowhere else.
+#[derive(Clone,Debug)]
+pub enum Offset { Surface(Surface),Curve(Curve),Point(V) }
+
+impl Offset {
+    /// The offset where it is a surface.
+    pub fn surface(self) -> Option<Surface> { match self { Offset::Surface(s) => Some(s),_ => None } }
 }
 
 /// A curve and its parameterisation `C(t)`.

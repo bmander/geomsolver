@@ -22,7 +22,7 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::fillet::{column, crossing_plane, face_out};
-use super::geom::{Curve, Frame, Surface, Traced, V};
+use super::geom::{Curve, Frame, Offset, Surface, Traced, V};
 use super::nurbs::{fit_curve, fit_net};
 use super::topo::{Brep, EdgeCurve};
 use crate::util::space::{add, cross, distance, dot, norm, scale, sub, unit};
@@ -212,10 +212,11 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     // each leg in the section at `u`: the chain's point `lc` from the wall, the wall's `lw` from
     // the chain — each where the face meets the other's offset, crossing the section's plane, from
     // the edge's point stepped out along each face
+    let leg = |s: &Surface, d: f64, why: &'static str| s.offset(d, tol).and_then(Offset::surface).ok_or(why);
     let leg_meetings = [
-        Traced { a: b.chain.clone(), b: b.wall.offset(sw * lc).ok_or("a leg wider than the wall holds")?, pts: Vec::new(),
+        Traced { a: b.chain.clone(), b: leg(&b.wall, sw * lc, "a leg wider than the wall holds")?, pts: Vec::new(),
             closed: false },
-        Traced { a: b.wall.clone(), b: b.chain.offset(sc * lw).ok_or("a leg wider than the chain holds")?, pts: Vec::new(),
+        Traced { a: b.wall.clone(), b: leg(&b.chain, sc * lw, "a leg wider than the chain holds")?, pts: Vec::new(),
             closed: false },
     ];
     let legs_at = |u: f64| -> (V, [V; 2]) {
@@ -356,8 +357,8 @@ pub fn round_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     // the ball's centre in the section at `u`: where the wall's offset meets the torus's, from the
     // edge's point stepped off both faces
     let spine = Traced {
-        a: b.wall.offset(sw * r).ok_or("a ball larger than the wall holds")?,
-        b: b.chain.offset(sc * r).ok_or("a ball larger than the chain's face holds")?,
+        a: b.wall.offset(sw * r, tol).and_then(Offset::surface).ok_or("a ball larger than the wall holds")?,
+        b: b.chain.offset(sc * r, tol).and_then(Offset::surface).ok_or("a ball larger than the chain's face holds")?,
         pts: Vec::new(), closed: false,
     };
     let toward = |s: &Surface, side: f64, p: V| scale(unit(s.gradient(p)), -side);

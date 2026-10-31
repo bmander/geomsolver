@@ -296,20 +296,28 @@ periodic surface's seam (`rail`, `post`, `frustum`): asked of the same solid wit
 `tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`, `groove.sv`, `bores.sv`,
 `frustum.sv`, `crotch.sv`, `bullnose.sv`, `dome.sv`).
 
-**A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): a rim where a plane
-square to a cylinder's axis meets it, rounded to the cylinder's own radius, has its ball's centres
-on the axis alone — the cylinder offset by the radius is its axis, `Surface::offset` none — so the
-top shrinks to a point and the round is a hemisphere touching it at its pole. In the lowering it is
-a ring like any other, its section's arc centred on the axis, which `build::revolve` turns into a
-sphere (`dome.sv`, the cylinder to half its height under the dome: the closed forms' volume and
-area to 1e-9, a cylinder, a sphere and a plane); the field reads its centres by the steps that
-never settle there (`conditions::nearest`, [sets.md](sets.md)). `fillet::roll` asked of it builds
-the same piece (`fillet::collapsed`): the meridian's section — down the cylinder to where the ball
-touches it, round the ball's quarter arc to the axis, back along the plane — turned, the spine and
-the plane's contact a point; cut, it is the dome, and upside down it fills a bore's floor into a
-hemisphere (`brep::a_cylinders_rim_rounded_to_its_own_radius_is_a_dome`). Refused by name where the
-plane's face holds an edge inside the circle, the cylinder's one nearer the plane than the radius,
-or the meeting is a stretch of the circle.
+**A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
+radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
+(`Surface::offset` → `Offset`: a cylinder's axis, a sphere's centre, a torus's middle circle; `None`
+only past it, where no point stands that far off). So a rim rounded to its cylinder's own radius
+has its ball's centres on the axis alone, and the top shrinks to a point: the round is a
+hemisphere. In the lowering it is a ring like any other, its section's arc centred on the axis,
+which `build::revolve` turns into a sphere (`dome.sv`, the cylinder to half its height under the
+dome: the closed forms' volume and area to 1e-9, a cylinder, a sphere and a plane), and the field
+reads the centres as that axis (`conditions::closed_onto`, [sets.md](sets.md)). `fillet::roll`
+meets the two offsets as they are: where one closes onto a curve and meets the other's in a point,
+the ball's centre **stands still** there (`fillet::standing`), touching the first face round the
+great circle square to the curve and the second at a point; its canal is the half of its sphere
+on the point's side, exact, and the piece that hemisphere, the first face's strip down to the
+circle and all of the second face inside the loop (`fillet::strip`, the one strip rule a rolled
+canal's piece uses too). Cut, it is the dome, square to the axis or not — a top tilted 20° is
+touched off the dome's pole, `z = 10 − 5 / cos 20°` — and upside down it fills a bore's floor
+into a hemisphere (`brep::a_cylinders_rim_rounded_to_its_own_radius_is_a_dome`). Past a closing
+offset the band a ball needs is the whole of the face on the region's side (`holds_ball`), so a
+cylinder shorter than the radius is refused as too small to hold it. Refused by name too: both
+offsets closing, one closing onto a point (the ball is that face's sphere), the centre running
+along the curve it closes onto, and a stretch of a loop. A cone shrunk past its apex is still no
+offset (`None`): its offset is a cone of its own apex, not written yet.
 
 **The closing case** (#197, `rust/examples/conrod/`): a forged rod, every round and chamfer a
 statement over the faces its solids gave it, built exactly (pockets drawn as prisms, so their walls

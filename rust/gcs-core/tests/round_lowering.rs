@@ -181,9 +181,9 @@ fn a_bosss_root_is_a_ring_exactly() {
 }
 
 /// `dome.sv` (brep-bench's fillet/cylinder-rim-to-dome): a cylinder's rim rounded to its own
-/// radius, so the ball's centres are the axis alone — the field reads the nearest of them where
-/// its steps toward that line never settle (`conditions::nearest`), and the ring's section turned
-/// is a hemisphere touching the top at its pole. The cylinder to half its height under the dome:
+/// radius, so the ball's centres are the axis alone — what the cylinder's offset closes onto, which
+/// the field holds them to (`conditions::closed_onto`) — and the ring's section turned is a
+/// hemisphere touching the top at its pole. The cylinder to half its height under the dome:
 /// `π5²·5 + (2/3)π5³`, `π5² + 2π·5·5 + 2π5²`.
 #[test]
 fn a_rim_rounded_to_its_cylinders_radius_is_a_dome() {
