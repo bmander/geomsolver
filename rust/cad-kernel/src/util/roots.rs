@@ -29,16 +29,20 @@ pub fn bracketed_root(mut f: impl FnMut(f64) -> Option<f64>,mut a: f64,mut fa: f
     0.5*(a+b)
 }
 
+/// Where a function of one variable is least (`brent`), and its value there: named, never a pair,
+/// since both are numbers and a pair read the wrong way round reads the value as the argument.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Least { pub at: f64,pub value: f64 }
+
 /// The least of `f` on [lo, hi] by Brent's method — parabolic steps through the three best points,
 /// golden section where a parabola is not to be trusted — until the bracket is within `xtol` or
-/// `stop` accepts a value and how far below it the minimum may lie: `(value, argument)`. The
-/// minimum of a smooth function is found in a few steps where golden section alone takes one per
-/// 0.62 of the bracket.
+/// `stop` accepts a value and how far below it the minimum may lie. The minimum of a smooth
+/// function is found in a few steps where golden section alone takes one per 0.62 of the bracket.
 ///
 /// How far below the best value the minimum may lie is read off the parabola through the three
 /// best points: its curvature times the bracket's width squared, over two — infinite until three
 /// points make a parabola that holds water. A reading, like golden section's, not a bound.
-pub fn brent(f: &impl Fn(f64) -> f64,lo: f64,hi: f64,xtol: f64,steps: usize,stop: impl Fn(f64,f64) -> bool) -> (f64,f64) {
+pub fn brent(f: &impl Fn(f64) -> f64,lo: f64,hi: f64,xtol: f64,steps: usize,stop: impl Fn(f64,f64) -> bool) -> Least {
     const GOLD: f64 = 0.381_966_011_250_105_1;
     let (mut a,mut b) = (lo,hi);
     let mut x = a+GOLD*(b-a);
@@ -85,7 +89,72 @@ pub fn brent(f: &impl Fn(f64) -> f64,lo: f64,hi: f64,xtol: f64,steps: usize,stop
             else if fu <= fv || v == x || v == w { (v,fv) = (u,fu); }
         }
     }
-    (fx,x)
+    Least {at:x,value:fx}
+}
+
+/// A zero of a function sampled along an interval (`sampled_roots`): where it crosses, or where it
+/// only touches — comes within the tolerance of zero and turns back.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Root { pub at: f64,pub touch: bool }
+
+/// Where `f`, sampled at the ascending `ts` as `fs` and with derivative `df`, comes to zero within
+/// `tol`, in order: a sign change between two samples bracketed and refined, a crossing; a sample
+/// within `tol` a touch where its neighbours are both clear on one side, else a crossing, refined
+/// between them where they are clear on either side and at the sample where they are not; and
+/// a turn of `f` between samples clear on one side — beside a sampled minimum of its size, ties
+/// included, `df` changing sign — refined as a root of `df`, a touch where `f` there is within
+/// `tol`, two crossings either side where it is past zero. `width` is the bracket a refinement
+/// stops at.
+///
+/// **A touch is placed as a root of `df`, never as a least `|f|`**: it is a double root of `f`,
+/// flat as the square of the distance from it, so a least `|f|` is placed only to the square root
+/// of `f`'s rounding (1e-7 on a ball of radius 7, wider than the tolerance its vertex is pooled
+/// to), and a sample within `tol` of it may stand farther still; a simple root of `df` is placed
+/// to `df`'s rounding. A touch found at a sample is moved to the turn beside it where `f` there is
+/// within `tol` too. `df` is read only at a sample within `tol` or beside a sampled minimum of
+/// `|f|`, so a curve clear of the surface costs nothing more than its samples.
+pub fn sampled_roots(f: impl Fn(f64) -> f64,df: impl Fn(f64) -> f64,ts: &[f64],fs: &[f64],tol: f64,width: f64) -> Vec<Root> {
+    let n = ts.len();
+    let near = |v: f64| v.abs() <= tol;
+    // where `df` changes sign between samples `i` and `i + 1`, refined
+    let turn = |i: usize| -> Option<f64> {
+        let (a,b) = (df(ts[i]),df(ts[i+1]));
+        ((a < 0.) != (b < 0.)).then(|| bracketed_root(|t| Some(df(t)),ts[i],a,ts[i+1],b,width))
+    };
+    // a crossing between `t0` and `t1`, where `f` is `f0` and `f1` of opposite signs
+    let crossing = |t0: f64,f0: f64,t1: f64,f1: f64| Root {at:bracketed_root(|t| Some(f(t)),t0,f0,t1,f1,width),touch:false};
+    // whether samples `j` and `k`, both clear of zero, are on one side of it (None where either is not)
+    let side = |j: usize,k: usize| (!near(fs[j]) && !near(fs[k])).then(|| (fs[j] < 0.) == (fs[k] < 0.));
+    // a sampled minimum of `|f|`, ties included
+    let least = |k: usize| k > 0 && k+1 < n && fs[k].abs() <= fs[k-1].abs() && fs[k].abs() <= fs[k+1].abs();
+    let mut out: Vec<Root> = Vec::new();
+    for i in 0..n {
+        if near(fs[i]) {
+            let around = if i > 0 && i+1 < n { side(i-1,i+1) } else { None };
+            out.push(match around {
+                // a touch: at the turn beside the sample nearest it, where `f` is within `tol` there
+                Some(true) => Root {at:[turn(i-1),turn(i)].into_iter().flatten().filter(|&x| near(f(x)))
+                    .min_by(|x,y| (x-ts[i]).abs().total_cmp(&(y-ts[i]).abs())).unwrap_or(ts[i]),touch:true},
+                // a crossing, refined between the sample's neighbours where they are clear either side
+                Some(false) => crossing(ts[i-1],fs[i-1],ts[i+1],fs[i+1]),
+                None => Root {at:ts[i],touch:false},
+            });
+            continue
+        }
+        if i+1 == n || near(fs[i+1]) { continue }
+        let (a,b) = (fs[i],fs[i+1]);
+        if (a < 0.) != (b < 0.) { out.push(crossing(ts[i],a,ts[i+1],b)); continue }
+        // a turn toward zero is beside a sampled minimum of `|f|`
+        if !(least(i) || least(i+1)) { continue }
+        let Some(x) = turn(i) else { continue };
+        let v = f(x);
+        if near(v) { out.push(Root {at:x,touch:true}) }
+        else if (v < 0.) != (a < 0.) {
+            out.push(crossing(ts[i],a,x,v));
+            out.push(crossing(x,v,ts[i+1],b));
+        }
+    }
+    out
 }
 
 /// The real roots of `a t² + b t + c`, ascending, without cancellation (the larger root by the
