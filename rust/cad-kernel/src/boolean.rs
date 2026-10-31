@@ -844,8 +844,8 @@ impl<'a> Arrangement<'a> {
                     Ssi::Same => { found.same_pairs.push(faces); continue }
                     Ssi::Traced => {
                         let traced = self.traced_meeting(faces,crossings)?;
-                        let none = vec![Vec::new();traced.len()];
-                        (traced,none)
+                        let met = ends_met(&traced,self.tol);
+                        (traced,met)
                     }
                 };
                 self.say.curves(faces,surfaces,curves.len());
@@ -1466,6 +1466,21 @@ fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],
         }
     }
     crossed
+}
+
+/// Where traced curves of one meeting (`curves`) end at one another, each such end listed against
+/// its curve: the branches of a meeting through a point where the two surfaces touch end there
+/// (`ssi::trace_beside`), each at a vertex they share, which no edge crossing need make.
+fn ends_met(curves: &[super::geom::Curve],tol: f64) -> Vec<Vec<V>> {
+    use super::geom::Curve;
+    let ends = |c: &Curve| match c {
+        Curve::BSpline(b) if c.period().is_none() => { let [t0,t1] = b.domain(); vec![c.point(t0),c.point(t1)] }
+        Curve::Traced(t) if !t.closed => vec![t.pts[0],t.pts[t.pts.len()-1]],
+        _ => Vec::new(),
+    };
+    let all: Vec<Vec<V>> = curves.iter().map(ends).collect();
+    (0..curves.len()).map(|i| all[i].iter().copied().filter(|&p|
+        all.iter().enumerate().any(|(j,es)| j != i && es.iter().any(|&q| distance(p,q) <= 8.*tol))).collect()).collect()
 }
 
 /// The B-rep of `faces`, their edges among `out` (vertices in `pool`), with the vertices and edges
