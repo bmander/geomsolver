@@ -521,6 +521,21 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
         }
         (lo,hi-lo)
     };
+    // **between two planes the flat is a plane**: the prism on the section's triangle over the run
+    // carried on past each end, cut off there, exact — a fitted flat is a B-spline face, which a run
+    // chamfered after it and ending on it cannot be cut off at. (Not where a face goes on tangent
+    // from either: the piece taking on from that section is fitted.)
+    let planes = surfaces.iter().all(|s| matches!(s,Surface::Plane(_)));
+    if planes && !ends.is_empty() && !ends.iter().flat_map(|e| &e.trim.cuts).any(|c| matches!(c,Cut::Section {..})) {
+        let (e,t) = way_at(t0);
+        let [pa,pb] = legs_at(e,t);
+        let section = super::build::Profile {origin:e,normal:t,
+            loops:vec![[[e,pa],[pa,pb],[pb,e]].map(|[a,b]| super::build::ProfileEdge::Line {a,b}).to_vec()],
+            names:vec![["a","flat","b"].map(String::from).to_vec()]};
+        let piece = super::build::prism(&section,0.,dot(sub(edge.point(t0+span),e),t))?;
+        let trims: Vec<Trim> = ends.into_iter().map(|x| x.trim).collect();
+        return trimmed(piece,&trims)
+    }
     // the meeting read along a smooth guide, as `roll` reads its spine
     let guide = smooth_guide(&edge,t0,span).ok_or("the meeting could not be read smoothly")?;
     let frames = std::cell::RefCell::new(std::collections::BTreeMap::<u64,(V,V,[V;2])>::new());
