@@ -1692,6 +1692,38 @@ fn a_box_top_chamfered_unequally_is_ten_planes() {
     }
 }
 
+/// A cube's twelve edges chamfered 2 one after another: the cube cut by the twelve planes, each
+/// corner mitred where three meet (no corner triangle; that is chamfering the three together),
+/// `1000 − 12·20 + 24·8/3 − 8·2` by inclusion and exclusion, at every step the cube cut by the
+/// planes so far (`build::kept`). A top edge ends where a vertical flat and the bottom's, taken off
+/// before it, meet: its section stood beyond each of the two between its corners before it stood
+/// beyond either, and carried on no further it left the middle of its flat behind.
+#[test]
+fn a_cubes_edges_chamfered_one_after_another_are_mitred() {
+    use gcs_core::brep::boolean::Op;
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    // each edge by its middle, a point on its flat's plane and the way into the cube from it
+    let mut edges: Vec<(V,V,V)> = Vec::new();
+    for (x,y) in [(0.,0.),(10.,0.),(10.,10.),(0.,10.)] {
+        let (dx,dy) = (if x == 0. { 1. } else { -1. },if y == 0. { 1. } else { -1. });
+        edges.push(([x,y,5.],[x+2.*dx,y,5.],[dx*s,dy*s,0.]));
+    }
+    for z in [0.,10.] {
+        let dz = if z == 0. { s } else { -s };
+        edges.extend([([5.,0.,z],[5.,2.,z],[0.,s,dz]),([10.,5.,z],[8.,5.,z],[-s,0.,dz]),
+            ([5.,10.,z],[5.,8.,z],[0.,-s,dz]),([0.,5.,z],[2.,5.,z],[s,0.,dz])]);
+    }
+    let (mut b,mut planes) = (named_box([10.;3]),block([0.;3],[10.;3]));
+    for (at,o,n) in edges {
+        b = chamfered(&b,at,[2.,2.],None,Op::Cut);
+        planes = gcs_core::brep::build::kept(&planes,o,n,0.).unwrap();
+        close(volume(&b),volume(&planes));
+    }
+    b.check(1e-8).unwrap();
+    close(volume(&b),808.);
+    assert!(b.faces.iter().all(|f| f.surface.kind() == "plane"));
+}
+
 /// Two chamfers meeting in a ridge (brep-bench's chamfer/block-ridge), and one filling a concave
 /// edge wider than both faces beside it (chamfer/l-block-inside-consumed): their flats planes.
 #[test]
@@ -1878,3 +1910,4 @@ fn an_edge_used_twice_each_way_touches_and_one_used_once_is_open() {
     assert_eq!(e.kind,Kind::Open,"{e}");
     assert!(e.msg.starts_with("not closed: "),"{e}");
 }
+

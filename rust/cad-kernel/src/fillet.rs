@@ -265,7 +265,8 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
             let c = spine.point(t);
             let ends = [toward(0,c),toward(1,c)];
             let corner = across(c,ends,r);
-            (0..=8).map(|k| add(c,scale(slerp(ends[0],ends[1],k as f64/8.),r))).chain([c,corner]).all(|x| e.beyond(x,0.1*r))
+            let xs: Vec<V> = (0..=8).map(|k| add(c,scale(slerp(ends[0],ends[1],k as f64/8.),r))).chain([c,corner]).collect();
+            e.beyond(&xs,0.1*r)
         };
         let room = |lo: f64,hi: f64| lo >= floor && hi <= ceiling && spine.period().is_none_or(|p| hi-lo < p);
         while !past(lo,&ends[0].trim) { lo -= step; if !room(lo,hi) { break } }
@@ -510,7 +511,8 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
         let wide = legs[0].max(legs[1]);
         let past = |t: f64,e: &Trim| {
             let (q,d) = way_at(t);
-            std::iter::once(q).chain(legs_at(q,d)).all(|x| e.beyond(x,0.1*wide))
+            let [a,z] = legs_at(q,d);
+            e.beyond(&[q,a,z],0.1*wide)
         };
         let room = |lo: f64,hi: f64| lo >= floor && hi <= ceiling && edge.period().is_none_or(|pd| hi-lo < pd);
         while !past(lo,&ends[0].trim) { lo -= step; if !room(lo,hi) { break } }
@@ -712,8 +714,11 @@ impl Cut {
 pub struct Trim { pub vertex: u32,pub o: V,pub cuts: Vec<Cut> }
 
 impl Trim {
-    /// Whether `x` stands beyond the run's end there by more than `margin`: beyond one of its cuts.
-    fn beyond(&self,x: V,margin: f64) -> bool { self.cuts.iter().any(|c| c.kept(x) < -margin) }
+    /// Whether every point of a section `xs` stands beyond the run's end there by more than
+    /// `margin`, beyond one and the same cut: each cut is a side kept, so a section whose points
+    /// stand beyond two cuts between them (an end where two faces meet) still reaches into what
+    /// both keep between its points, and the run must go on.
+    fn beyond(&self,xs: &[V],margin: f64) -> bool { self.cuts.iter().any(|c| xs.iter().all(|&x| c.kept(x) < -margin)) }
 }
 
 /// An end of a run that ends: where it is cut off, the spine's parameter at the ball over its

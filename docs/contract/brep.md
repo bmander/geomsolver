@@ -83,6 +83,12 @@ spline: a box's top edges chamfered one after another, each cut off by the plane
 (`brep::a_box_top_chamfered_unequally_is_ten_planes`, brep-bench's chamfer/box-top-asymmetric;
 `brep::chamfers_between_planes_are_planes`). A run going on tangent into a curved face at an end
 is still fitted, as the piece that takes on from its section is.
+**A run is carried on until its section lies wholly beyond one cut** (`fillet::Trim::beyond`, a
+rolled round's and a flat's): each cut keeps a side, so at an end where two faces meet a section
+whose points stand beyond the two between them still reaches into what both keep. Read point by
+point against either cut, a cube's top edge ending where two flats taken off before it meet
+stopped short and left the middle of its flat (`brep::a_cubes_edges_chamfered_one_after_another_are_mitred`:
+the cube cut by its twelve planes at every step, 808).
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
