@@ -471,6 +471,42 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
         let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names,&section)?;
         ends.push(Stop {trim,t:edge.inverse(q),faces});
     }
+    // **between two planes the flat is a plane**: the prism on the section's triangle, carried on
+    // past each end and cut off there, exact — a fitted flat is a B-spline face, which a run
+    // chamfered after it and ending on it cannot be cut off at. (Not where a face goes on tangent
+    // from either: the piece taking on from that section is fitted.)
+    let planes = surfaces.iter().all(|s| matches!(s,Surface::Plane(_)));
+    if planes && !ends.is_empty() && ends.iter().flat_map(|e| &e.trim.cuts).all(|c| !matches!(c,Cut::Section {..})) {
+        let (e,t) = way_at(edge.inverse(seed));
+        let [pa,pb] = legs_at(e,t);
+        let wide = legs[0].max(legs[1]);
+        let s =ends.iter().map(|x| dot(sub(b.vertices[x.trim.vertex as usize].p,e),t)).collect::<Vec<f64>>();
+        // each end's way out along the edge, and how far past it the whole section lies beyond
+        let past = |h: f64,x: &Trim| [e,pa,pb].iter().all(|&q| x.beyond(add(q,scale(t,h)),0.1*wide));
+        let reach = 1e3*(b.size()+wide);
+        let mut span = [0.;2];
+        for j in 0..2 {
+            let out = if s[j] >= s[1-j] { 1. } else { -1. };
+            let mut d = wide;
+            while !past(s[j]+out*d,&ends[j].trim) {
+                d *= 2.;
+                if d > reach {
+                    return Err(format!("the flat of {names} cannot be cut on past where `{}` cuts it off",
+                        b.faces[ends[j].faces[0]].name));
+                }
+            }
+            span[j] = s[j]+out*d;
+        }
+        let section = super::build::Profile {origin:e,normal:t,
+            loops:vec![[[e,pa],[pa,pb],[pb,e]].map(|[a,b]| super::build::ProfileEdge::Line {a,b}).to_vec()],
+            names:vec![["a","flat","b"].map(String::from).to_vec()]};
+        let mut piece = super::build::prism(&section,span[0].min(span[1]),span[0].max(span[1]))?;
+        for f in &mut piece.faces {
+            if f.name == "far" { f.name = "start".into() } else if f.name == "near" { f.name = "end".into() }
+        }
+        let trims: Vec<Trim> = ends.iter().map(|x| x.trim.clone()).collect();
+        return trimmed(piece,&trims)
+    }
     let winding = [0,1].map(|k| ends.is_empty() && winds(&strips[k],&loop_pts));
     let (t0,span) = if ends.is_empty() {
         let Some(period) = edge.period() else { return Err(format!("the meeting of {names} does not close")) };

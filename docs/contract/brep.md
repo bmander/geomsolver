@@ -63,6 +63,13 @@ twelve touches, and the sphere's pieces a hole meeting an outer cycle at no vert
 `roots::sampled_roots_place_a_touch_where_the_derivative_turns`,
 `brep::a_cube_trimmed_by_its_midsphere_is_pinched_at_each_edges_middle`, `midsphere_common.sv`).
 A minimum is a `util::roots::Least`, its place and its value named, never a pair.
+**A flat between two planes is a plane** (`fillet::flat_along`): the prism on its section's
+triangle, carried on past each end and cut off there, no net fitted. A fitted flat is a B-spline
+face, and a run chamfered after it that ends on it was refused, nothing cutting a run off at a
+spline: a box's top edges chamfered one after another, each cut off by the plane of the one before
+(`brep::a_box_top_chamfered_unequally_is_ten_planes`, brep-bench's chamfer/box-top-asymmetric;
+`brep::chamfers_between_planes_are_planes`). A run going on tangent into a curved face at an end
+is still fitted, as the piece that takes on from its section is.
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
