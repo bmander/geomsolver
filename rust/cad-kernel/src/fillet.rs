@@ -480,7 +480,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
         let (e,t) = way_at(edge.inverse(seed));
         let [pa,pb] = legs_at(e,t);
         let wide = legs[0].max(legs[1]);
-        let s =ends.iter().map(|x| dot(sub(b.vertices[x.trim.vertex as usize].p,e),t)).collect::<Vec<f64>>();
+        let s = ends.iter().map(|x| dot(sub(b.vertices[x.trim.vertex as usize].p,e),t)).collect::<Vec<f64>>();
         // each end's way out along the edge, and how far past it the whole section lies beyond
         let past = |h: f64,x: &Trim| [e,pa,pb].iter().all(|&q| x.beyond(add(q,scale(t,h)),0.1*wide));
         let reach = 1e3*(b.size()+wide);
