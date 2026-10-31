@@ -2,6 +2,10 @@
 
 A geometric constraint solver, and **Solvent**, the language a drawing in it is written as.
 
+**The [Design Bible](docs/design-bible.md) governs every decision**: take the principled move
+whatever it costs, and never let a CAD kernel's shape drive Solvent, which expresses geometry as
+set math. Where a rule below or in a contract file conflicts with it, the rule is the defect.
+
 **Start here.** Asked to *draw* something — a sketch, constraints, why a figure will not solve —
 read [`docs/solvent-primer.md`](docs/solvent-primer.md) first: the language as the implementation
 accepts it. `solvent-spec.md` is the normative specification but specifies constructs that do not
