@@ -54,37 +54,7 @@ in holder {{
 }}
 construction bar := solid(face(lower, upper, outer, under), from: 0mm, to: 2 * {half}mm{drafted})
 
-in std.front {{
-  construction centerline ax := line(std.origin, hint((0, 1)))
-  fix((0, 1)) ax.p2
-  private q0 := point
-  private q1 := point
-  private q2 := point
-  private q3 := point
-  q0 coords(du: 8mm, dv: -1mm) std.front
-  q1 coords(du: 12mm, dv: -1mm) std.front
-  q2 coords(du: 12mm, dv: 1mm) std.front
-  q3 coords(du: 8mm, dv: 1mm) std.front
-  private wall_in := line(q3, q0)
-  private underside := line(q0, q1)
-  private wall_out := line(q1, q2)
-  private topside := line(q2, q3)
-}}
-ring := solid(face(wall_in, underside, wall_out, topside), about: ax)
-in std.top {{
-  private w0 := point
-  private w1 := point
-  private w2 := point
-  fix((0, 0)) w0
-  w1 coords(du: 24mm, dv: 0mm) std.top
-  w2 coords(du: 24mm * cos(60deg), dv: 24mm * sin(60deg)) std.top
-  private wa := line(w0, w1)
-  private wb := line(w1, w2)
-  private wc := line(w2, w0)
-}}
-construction wedge := solid(face(wa, wb, wc), from: -2mm, to: 2mm)
-wedge common ring
-part := solid(ring)
+{BLOCK}
 
 swing := frame
 swing turns(1) ax
@@ -452,8 +422,8 @@ groove cut part
     }
 }
 
-/// `turned_bar`'s block, the ring sector it cuts: radii 8 and 12, heights ±1, 60° round.
-const BLOCK: &str = "in std.front {
+/// `turned_bar`'s block, the ring sector it cuts (`turn.sv`'s): radii 8 and 12, heights ±1, 60° round.
+pub(crate) const BLOCK: &str = "in std.front {
   construction centerline ax := line(std.origin, hint((0, 1)))
   fix((0, 1)) ax.p2
   private q0 := point

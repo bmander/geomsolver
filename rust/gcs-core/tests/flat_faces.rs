@@ -79,41 +79,13 @@ slot cut part
 /// to radius `top` 4 above (a cone, or where `top` is `r` a cylinder), turned about z over the roll
 /// from −140° to 140°, clear of the block at both ends.
 pub(crate) fn turned_mill(r: f64,top: f64,d: f64,z: f64) -> String {
+    let block = crate::prism_twists::BLOCK;
     format!("unit mm
 use std
 use std.place (coords)
 use std.motion (turns)
 
-in std.front {{
-  construction centerline ax := line(std.origin, hint((0, 1)))
-  fix((0, 1)) ax.p2
-  private q0 := point
-  private q1 := point
-  private q2 := point
-  private q3 := point
-  q0 coords(du: 8mm, dv: -1mm) std.front
-  q1 coords(du: 12mm, dv: -1mm) std.front
-  q2 coords(du: 12mm, dv: 1mm) std.front
-  q3 coords(du: 8mm, dv: 1mm) std.front
-  private wall_in := line(q3, q0)
-  private underside := line(q0, q1)
-  private wall_out := line(q1, q2)
-  private topside := line(q2, q3)
-}}
-part := solid(face(wall_in, underside, wall_out, topside), about: ax)
-in std.top {{
-  private w0 := point
-  private w1 := point
-  private w2 := point
-  fix((0, 0)) w0
-  w1 coords(du: 24mm, dv: 0mm) std.top
-  w2 coords(du: 24mm * cos(60deg), dv: 24mm * sin(60deg)) std.top
-  private wa := line(w0, w1)
-  private wb := line(w1, w2)
-  private wc := line(w2, w0)
-}}
-construction wedge := solid(face(wa, wb, wc), from: -2mm, to: 2mm)
-wedge common part
+{block}
 
 private across := axis
 fix(dir == (1, 0, 0)) across

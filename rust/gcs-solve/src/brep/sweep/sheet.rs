@@ -293,8 +293,7 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
         let Some(Surface::BSpline(_,net)) = face.faces.first().map(|f| &f.surface) else { return false };
         let [[a,z],_] = net.domain();
         let (u0,u1) = (a+(z-a)*i as f64/(nu-1) as f64,a+(z-a)*(i+1) as f64/(nu-1) as f64);
-        net.uknots.iter().filter(|&&k| k >= u0 && k <= u1 && k > a && k < z)
-            .any(|&k| net.uknots.iter().filter(|&&x| x == k).count() >= net.du)
+        crate::brep::nurbs::distinct(&net.uknots).into_iter().any(|(k,m)| m >= net.du && k >= u0 && k <= u1 && k > a && k < z)
     };
     let folds = |face: &Brep,grid: Vec<(V,V)>| -> Result<Vec<(V,V)>,ExportRefusal> {
         let (mut fold,mut folded) = (0_f64,[0.;3]);
