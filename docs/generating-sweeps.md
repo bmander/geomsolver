@@ -102,7 +102,7 @@ One refusal is the limits' own:
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| S1 | No ring the walk passes between two of its stations is in contact all round where its path enters the blank. | Such a ring is all characteristic, and the boundary leaves the walked branch along it. A turn about an axis the tool's own axis meets has one, every normal of it through the point where the axes meet; a slide square to the tool's axis has one wherever the normal lies along that axis, in a plane holding the slide (a slide along the tool's axis is read whole, below, #684 X). The roots either side need not move (the ring's two roots stay in the plane of the two axes), so a sampled station never sees it: the contact equation's amplitude turns right round instead, and where it turns more than a quarter turn between two walked stations, the least of the ring's three coefficients between them is sought (Brent's method). The field gate found the first one, on a torus leaning toward the turn's axis, before this row did. | The face, and a point of the ring in the blank. |
+| S1 | No ring the walk passes between two of its stations is in contact all round where its path enters the blank. | Such a ring is all characteristic, and the boundary leaves the walked branch along it. A turn about an axis the tool's own axis meets has one, every normal of it through the point where the axes meet (found before the walk and walked onto, below, #684 X); a slide square to the tool's axis, or a turn about an axis parallel to it, has one wherever the normal lies along that axis, in a plane the motion keeps (a slide along the tool's axis is read whole, below). The roots either side need not move (the ring's two roots stay in the plane of the two axes), so a sampled station never sees it: the contact equation's amplitude turns right round instead, and where it turns more than a quarter turn between two walked stations, the least of the ring's three coefficients between them is sought (Brent's method). The field gate found the first one, on a torus leaning toward the turn's axis, before this row did. | The face, and a point of the ring in the blank. |
 
 E1 holds as for a screw, so a slide passes the tool right through the blank and a turn swings it
 across from clear to clear, unless the turn is a whole one (below). A flat face the motion keeps
@@ -110,7 +110,9 @@ in its own plane (a disc square to the turn, a face along the slide) is walked a
 where it reaches the blank (below, #684 O), and a characteristic that closes on itself within the
 blank's reach, a tool passed wholly through it, is built as a tube (below, #684 W); a tool slid
 along its own axis, whose rings touch nowhere or all round, bores the cylinder of its greatest
-radius (below, #684 X). Still refused: a ring in contact all round at a sampled station (S1). A prism tool is read along its rulings
+radius, and a tool turned about an axis its own meets is walked onto its ring in contact all round
+and off it (below, #684 X). Still refused: a ring in contact all round in a plane the motion keeps
+(S1). A prism tool is read along its rulings
 (below, #684 M). A ball under
 a turn or a slide is still its tube (`solid::canal`, below), never asked these rows.
 `tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate: a torus slid up a
@@ -563,7 +565,7 @@ cells and agreement are the class's, the sheet an annulus as a whole turn's is. 
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| S1 | A characteristic that closes on itself passes a crease. | Its sheet is closed where its first and last rows meet, which the fit leaves continuous but not smooth; at a crease it is creased there anyway. No case of the class has closed smoothly: the loops met on revolutions without a crease turn back on a ring, or meet one in contact all round, each refused at S1 first. | The face the walk began on, and a point of it in the blank. |
+| S1 | A characteristic that closes on itself passes a crease. | Its sheet is closed where its first and last rows meet, which the fit leaves continuous but not smooth; at a crease it is creased there anyway. The loops met on revolutions without a crease turn back on a ring, or meet one in contact all round, each refused at S1 first, but for a torus leaning toward a turn's axis wholly within the blank (#684 X), whose loop joins its rings in contact all round smoothly. | The face the walk began on, and a point of it in the blank. |
 | S1 | A characteristic that closes on itself is not carried round a whole turn. | The sheet would close round the turn too, a ring with no edge, which the split does not cut a blank by. | The same. |
 
 The rows are sampled, as every row is. `rust/examples/solid_sweeps/punch.sv` is the case: a drum of
@@ -586,7 +588,8 @@ the prism to run over a cap (S1, #684 AE's row); and a small bar turned wholly w
 a ruling of its outer rim in contact all along it (S1, #684 AF's row) — a prism turned wholly
 within stands farthest from the axis at a vertex, where three faces meet. (Pushed square to its length the bar
 keeps its section's plane and is the planar subtraction class's.) The row for a loop with no
-crease has met no case. `tests/object_builder.rs` builds `punch.sv` at the page's samples.
+crease met its first case in #684 X: a small torus leaning toward the turn's axis wholly within the
+sector, its tube circles' outer halves joined smoothly to its two rings in contact all round. `tests/object_builder.rs` builds `punch.sv` at the page's samples.
 
 ### A ring in contact all round (issue #684 X)
 
@@ -601,14 +604,15 @@ along it, none), so three motions have such rings:
   cylinder of that radius;
 - **a turn about an axis the tool's own axis meets** at a point P: the ring whose normals all pass
   through P lies on a sphere about P, which the turn keeps, and sweeps a zone of it. Every other
-  ring touches at its two points in the plane of the two axes, so the walked branch is the tool's
-  profile in that plane, and it passes through the ring at its highest and lowest points;
+  ring touches at its two points in the plane of the two axes (there the normal lies in that plane
+  and the velocity is square to it), so the walked branch is the tool's profile in that plane, and
+  it passes through the ring at its highest and lowest points about the turn's axis;
 - **a slide square to the tool's axis**, or a turn about an axis parallel to it: the ring whose
   normal lies along the tool's axis, in a plane the motion keeps (the tube's top and bottom of a
   torus slid square to its axis), which sweeps a strip of that plane.
 
-The first is built; the other two are refused at S1 (`stationary`, above), saying a ring of which
-face is in contact all round.
+The first two are built; the third is refused at S1, saying the face is in contact all round a
+ring (read at the walk's station, or between two by `stationary`).
 
 **A slide along the tool's own axis** (`constant_twist::along_axis`): where every face of the tool
 is a revolution about one line along the slide (a screw about that line is read the same, its turn
@@ -634,9 +638,67 @@ as it turns about its axis, a screw, to the same hole, and a lemon, whose greate
 ring within its one arc, read and refined there, to the same (each within 1e-9); each STL agrees
 with the field. Refused there: a torus slid along its axis, its shadow a ring (S2), and the drill
 beside a post taller than its travel (E1, a conservative refusal: the hole is the cylinder's
-there too). `tests/object_builder.rs` builds `drill.sv` at the page's samples. The torus slid square
-to its axis through the rod's middle (`turns_and_slides::the_turn_and_slide_rows_refuse_by_name`)
-is the third motion's, and is still refused.
+there too). `tests/object_builder.rs` builds `drill.sv` at the page's samples.
+
+**A turn about an axis the tool's own meets** (`constant_twist::rounds`): before the walk, each
+revolved face and convex corner is read at 400 stations for a ring whose contact coefficients are
+all nought (its amplitude turning right round between two stations, their least sought between
+them by `roots::brent`, as `stationary` seeks one) and whose normals meet the tool's axis at a
+point P of the turn's. Each is a piece, a `Round` walked half round, from its highest point about
+the turn's axis (in the plane of the two axes) to its lowest, through which every other ring's
+roots pass. Read about P in a half-plane through the turn's axis, the ring is an arc of the circle
+about P, and each branch through either end of it goes on two ways: one leaves the arc's angles
+from the axis (rising past its highest end, falling past its lowest), the other runs back within
+them. The boundary is the arc and the branches that leave it, where the tool lies on one side of
+the sphere through the ring there (within it if the ring's normals point away from P, without if
+toward; a convex corner's fan always does, a face read a thousandth of the way along it either
+side). So the walk (`step`), coming to the ring along a face or a fan, turns onto it at the end it
+is at, runs half round, and steps off its other end onto the branch that leaves the arc there
+(`Walker::sides`, read in the coarse pass where each branch first moves off the end, `Round::lean`,
+and taken again by the fine; a fan that stands at the ring's end is walked, not stepped across, and
+dropped as #684 V's, a crease). The branches the other way, which the ring trims, are walked from
+each end to another ring's end, their own end, or `MARGIN` rings past the blank, and the walk does
+not begin on them. The rows:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| S1 | A ring in contact all round the walk comes to has the tool on one side of its sphere there. | Where the tool crosses the sphere, the ring's zone lies within what it sweeps, and the branch walked runs on across the ring; the class does not build that (no case has reached it). | The face or corner, and a point of the walk in the blank. |
+| S1 | The walk comes onto such a ring along the branch that leaves its zone, and both branches through each end are read. | The branch the other way runs within the zone; coming along it, the walk has strayed from the boundary. | The same. |
+| S2 | Every root of a trimmed branch that reaches the blank lies within the zone of a ring that trims it: nearer P than the ring where the tool lies within the sphere, farther where without, its normal facing the zone, and the line from it straight away from P to the zone ends within the zone's angles and crosses no other part of the characteristic's section. | Behind the root is the tool's material, and before it, up to the zone, what the tool sweeps just under the zone, with nothing of the boundary between: the root's sweep lies within the sweep, no part of its boundary. | The root, and its point in the blank. |
+| S2 | A ring's two roots both in the blank both lie on the walk with a ring in contact all round (or a flat face's line) between them, or one lies on a trimmed branch; and every root in the blank is on the walk or a trimmed branch. | One sheet, its branches trimmed. Where the turn's axis meets a revolved face's, every ring's two roots lie in the plane of the two axes, so the walk is let run before this is asked. | The second root. |
+| S1 | The walk meets no pole: a revolved face reaching the tool's axis square to it (a disc's centre, a dome's top). | There the characteristic runs on across the axis to each ring's other root, which the walk does not cross to; under a turn about an axis the tool's meets every face that reaches the axis is crossed so. A ring of no radius is read as a pole (or an apex), not a ring in contact all round. | The face, and a point of the walk in the blank. |
+
+S3 is not read at a ring's ends, where the characteristic turns along the motion's path: the
+zone's edge, which is no fold. The rows are sampled, as every row is. The sheet is the walk's
+characteristic carried as any constant twist's (`brep::sweep::helical`), the arc its section's
+stretch along the zone; the native path refuses it by name. `rust/examples/solid_sweeps/spoke.sv`
+is the case: a pin of radius 0.5 lying along a radius of the turn from 6 to 11, swung across
+`turn.sv`'s ring sector; its side's top and bottom lines sweep the slot's roof and floor, and the
+ring of its end's rim whose normals pass through the centre the zone of the sphere of radius
+`√(11² + 0.5²)` that ends it, the walk running from the top line up the rim's fan (standing at the
+line's end) onto the ring, half round, and down the fan onto the bottom line, the branch across the
+pin's end trimmed. The block loses `π/6 (57.25 − 1/12)` in closed form, within 1e-5
+(`tests/solid_sweeps_examples.rs`: 2.9e-6, alike at 0.001 mm). `tests/rings_all_round.rs` holds the
+torus leaning 25° toward the turn's axis (`turns_and_slides`'s, the field gate's first find,
+refused at S1 before) to Pappus over its shadow read from its centre circle within 2e-5 (2.3e-6),
+its far ring's zone the groove's floor and outer side and its tube circle's inner half trimmed, and
+turned a whole turn round the ring (#684 N) to six times that (7.5e-7); each STL agrees with the
+field. Refused there: the pin with its end domed, its characteristic over the dome's pole, and the
+pin set wholly within the block, its loop through its base's centre (S1, pole); and the upright
+torus turned across a taller block, its tube's top ring, along both axes, in contact all round in a
+plane the turn keeps (S1, the third motion's); and a small leaning torus wholly within the block,
+its loop closing smoothly (S1, #684 W's row). `turns_and_slides::the_turn_and_slide_rows_refuse_by_name`'s
+torus slid square to its axis through the rod's middle is the third motion's too, and is still
+refused. `tests/object_builder.rs` builds `spoke.sv` at the page's samples.
+
+Still refused, and why: the third motion's ring, kept in a plane the motion keeps, whose strip
+would be walked as a flat face's line is (#684 O) but is a curve, not a face; a characteristic
+crossing a pole (a whole tool passed wholly through under a turn about a meeting axis always
+crosses two, its profile reaching its axis), which would step to the ring's other root across the
+axis; a closed loop with no crease (W's `SMOOTH_LOOP`: a torus leaning toward the turn's axis wholly
+within the blank, its two zones joining its tube circles' outer halves smoothly, a sheet closing
+where it is smooth, whose fit the class does not close); a ring the tool crosses (no case); and a prism's corner whose fan holds the turn's axis, a ruling in contact all along it
+(#684 AF's T), which is no ring and is not walked this way.
 
 ### A rack (issue #61)
 

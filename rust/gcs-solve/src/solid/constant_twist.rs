@@ -30,7 +30,10 @@
 //! stretch is the whole loop, begun again at a crease (`Characteristic::closed`, #684 W). Under a
 //! slide along the tool's own axis every ring touches nowhere or all round, and the characteristic
 //! is the ring of greatest radius alone, closed, its sheet the cylinder it sweeps
-//! (`along_axis`, #684 X). It asks
+//! (`along_axis`, #684 X); under a turn about an axis the tool's own meets, the ring whose normals
+//! pass through where they meet touches all round and sweeps a zone of the sphere there, and the
+//! walk turns onto it half round and off onto the branch that leaves the zone, the other branch
+//! trimmed (`rounds`, `Walker::sides`, `Walker::under`, #684 X). It asks
 //! the class's rows of that stretch as it goes: regular (S1), one stretch and one root a ring (S2),
 //! no fold (S3), and no crossing within a lead (S4). The sheet is built from the same walk
 //! (`brep::sweep::helical`). Like the generating class's checks, these are **sampled**: rings
@@ -85,11 +88,23 @@ const WHOLE_LOOP: &str = "which the class does not split a blank by (not built)"
 const APEX: &str = "meets the tool's axis at an apex of its profile, where every normal of the cone round it is in \
     contact and the sweep has a sharp edge along the apex's path (not built)";
 
-/// Whether revolved face `s` meets its axis at station `u` at an apex: its ring there no circle, and
-/// its normal beside it (a millionth of the meridian in) not along the axis (where it is, at a
-/// smooth pole, no normal but the axis's is the tool's).
-fn apex(s: &RevolvedSurface,u: f64) -> bool {
-    if s.ring(u).is_ok() { return false }
+/// Why the walk ends where a revolution's face meets the tool's axis square to it, at a pole (a disc's
+/// centre): the ring there is a point, and the characteristic would run on across the axis, onto
+/// the other root of the rings beside it, which the walk does not step to (#684 X: under a turn
+/// about an axis the tool's meets, every ring's two roots lie in the plane of the two axes, and a
+/// face's characteristic runs through its pole).
+const POLE: &str = "meets the tool's axis at a pole of its profile, where its characteristic runs on across the axis to \
+    the other root of each ring beside it, which the walk does not cross to (not built)";
+
+/// Whether revolved face `s` meets its axis at station `u`: its ring there no circle, or one of no
+/// radius to `tolerance`.
+fn at_axis(s: &RevolvedSurface,u: f64,tolerance: f64) -> bool { s.ring(u).map_or(true,|r| r.radius <= tolerance) }
+
+/// Whether revolved face `s` meets its axis at station `u` at an apex (`at_axis`), its normal beside
+/// it (a millionth of the meridian in) not along the axis (where it is, at a smooth pole, no normal
+/// but the axis's is the tool's).
+fn apex(s: &RevolvedSurface,u: f64,tolerance: f64) -> bool {
+    if !at_axis(s,u,tolerance) { return false }
     let beside = if u > 0.5 { u-1e-6 } else { u+1e-6 };
     let Some(n) = s.at(beside,0.).ok().and_then(|p| envelope::contact(p,Motion::identity()).ok()).map(|c| c.normal) else { return false };
     dot(n,s.axis_direction()).abs() < 1.-1e-9
@@ -153,7 +168,7 @@ pub struct Ask<'a> {
 /// What every pass of the walk reads: the sweep, the ask, the screw and the twist the rings are
 /// solved under, the tool's material, its size and the roots' tolerance.
 struct Walker<'a> { contacts: &'a SweepContacts,pieces: Vec<Piece>,ask: &'a Ask<'a>,screw: Screw,motion: Motion,
-    tool: &'a super::SpatialField,scale: f64,tolerance: f64 }
+    tool: &'a super::SpatialField,scale: f64,tolerance: f64,meets: bool }
 
 /// One pass of the walk: the stations each face was sampled at, its rings there, the stretch
 /// walked through the blank (face, ring, root), in order along the characteristic, and the steps
@@ -161,8 +176,9 @@ struct Walker<'a> { contacts: &'a SweepContacts,pieces: Vec<Piece>,ask: &'a Ask<
 /// roots either side and the fan.
 /// Where the characteristic closes on itself (`closed`, #684 W), `order` is the loop, its last root
 /// its first.
+/// `sides` are which way the boundary goes on from each end of each ring in contact all round (#684 X).
 struct Pass { stations: Vec<Vec<f64>>,rings: Vec<Vec<Ring>>,order: Vec<(usize,usize,usize)>,sharp: Vec<([(usize,usize,usize);2],usize)>,
-    closed: bool }
+    closed: bool,sides: Sides }
 
 impl Pass {
     fn root(&self,x: (usize,usize,usize)) -> &Root { root(&self.rings,x) }
@@ -173,10 +189,142 @@ impl Walker<'_> {
     /// Whether the tool has a flat face the motion keeps in its own plane, read across (#684 O).
     fn flats(&self) -> bool { self.pieces.iter().any(|p| matches!(p,Piece::Flat(Flat {line:Ok(_),..}))) }
 
+    /// Whether the tool has a ring in contact all round under a turn, walked half round, or the turn's
+    /// axis meets a revolved face's, so that every ring's two roots lie in the plane of the two axes
+    /// and the walk runs from the one to the other round the profile (#684 X).
+    fn rounds(&self) -> bool { self.meets || self.pieces.iter().any(|p| matches!(p,Piece::Round(Round {of:Some(_),..}))) }
+
+    /// Which way from each end of each ring in contact all round under a turn the boundary goes on
+    /// (#684 X), by the ring's piece and its end: the way along the piece it is a ring of. The ring
+    /// sweeps a zone of the sphere about the pole, which the turn keeps; read in a half-plane through
+    /// the turn's axis, each branch through an end goes on one way (`arm`, read where it has moved
+    /// off the end, `moved`), and the boundary's is the one that leaves the zone's angles from the
+    /// axis (`Round::lean`): from its highest end the one that rises more for its change of distance
+    /// from the pole, from its lowest the one that falls more. The other runs back within them, under
+    /// the zone, and the ring trims it.
+    fn sides(&self,stations: &[Vec<f64>],rings: &[Vec<Ring>]) -> Sides {
+        let mut sides = Sides::new();
+        for (r,piece) in self.pieces.iter().enumerate() {
+            let Piece::Round(round @ Round {of:Some(_),..}) = piece else { continue };
+            for end in 0..2 {
+                let leaning: Vec<(isize,f64)> = [-1,1].into_iter().filter_map(|dir| {
+                    let start = arm(stations,rings,round,end,dir)?;
+                    Some((dir,round.lean(self.moved(stations,rings,start,round.at(end as f64).0)?,end)))
+                }).collect();
+                if let [(a,x),(b,y)] = leaning[..] { sides.insert((r,end),if (x < y) == (end == 0) { a } else { b }); }
+            }
+        }
+        sides
+    }
+
+    /// Where the walk from `start` first stands off `q`: a branch through an end of a ring in contact
+    /// all round, which stands there along a corner's fan until it runs onto a face.
+    fn moved(&self,stations: &[Vec<f64>],rings: &[Vec<Ring>],(mut at,mut dir): ((usize,usize,usize),isize),q: V) -> Option<V> {
+        for _ in 0..4*self.ask.rows {
+            let p = root(rings,at).position;
+            if distance(p,q) > 1e-6*self.scale { return Some(p) }
+            match step(self.contacts,&self.pieces,stations,rings,at,dir,self.scale,&Arms::new()) {
+                Step::Next(next,d) | Step::Sharp(next,d,_) => { at = next; dir = d }
+                Step::End(_) => return None,
+            }
+        }
+        None
+    }
+
+    /// From each end of each ring in contact all round, the root the walk steps onto the way `sides`
+    /// says and the way on; and each branch the other way, which the ring trims, with the ring: walked
+    /// from that end until it comes to an end of such a ring (once off its own), ends, or runs `MARGIN`
+    /// rings past the blank.
+    fn arms(&self,stations: &[Vec<f64>],rings: &[Vec<Ring>],sides: &Sides) -> (Arms,Vec<(usize,Vec<(usize,usize,usize)>)>) {
+        let (mut arms,mut trimmed) = (Arms::new(),Vec::new());
+        let ends: Vec<V> = self.pieces.iter().filter_map(|p| match p { Piece::Round(r @ Round {of:Some(_),..}) => Some([r.at(0.).0,r.at(1.).0]),
+            _ => None }).flatten().collect();
+        let near = |p: V,q: V| distance(p,q) <= 1e-7*self.scale;
+        for (&(r,end),&dir) in sides {
+            let Piece::Round(round) = &self.pieces[r] else { continue };
+            if let Some(a) = arm(stations,rings,round,end,dir) { arms.insert((r,end),a); }
+            let Some((mut at,mut d)) = arm(stations,rings,round,end,-dir) else { continue };
+            let q = round.at(end as f64).0;
+            let (mut walked,mut since,mut off) = (Vec::new(),0,false);
+            for _ in 0..rings.iter().map(Vec::len).sum::<usize>() {
+                let p = root(rings,at).position;
+                off |= !near(p,q);
+                if walked.contains(&at) || (off && ends.iter().any(|&e| near(p,e))) { break }
+                walked.push(at);
+                if root(rings,at).reach.is_some() { since = 0 } else { since += 1; if since == MARGIN { break } }
+                match step(self.contacts,&self.pieces,stations,rings,at,d,self.scale,&Arms::new()) {
+                    Step::Next(next,dd) | Step::Sharp(next,dd,_) => { at = next; d = dd }
+                    Step::End(_) => break,
+                }
+            }
+            trimmed.push((r,walked));
+        }
+        (arms,trimmed)
+    }
+
+    /// S2 of the branches the rings in contact all round trim (#684 X): each root of one that reaches
+    /// the blank (off its ring's ends), read in a half-plane through the turn's axis, lies within the
+    /// zone of a ring that trims it — nearer the pole than the ring where the tool lies within the
+    /// sphere there, farther where without — its normal facing the zone, and the line from it to the
+    /// zone, straight away from the pole and ending within the zone's angles, crosses no other part of
+    /// the characteristic's section. The tool's material lies behind it, and before it what the tool
+    /// sweeps just under the zone, nothing of the boundary between: the branch is within the sweep.
+    fn under(&self,order: &[(usize,usize,usize)],rings: &[Vec<Ring>],trimmed: &[(usize,Vec<(usize,usize,usize)>)]) -> Result<(),Failure> {
+        let (screw,family) = (&self.screw,self.contacts.motion());
+        let flat = |p: V| [screw.radius(p),screw.height(p)];
+        let round = |k: usize| matches!(self.pieces[k],Piece::Round(_));
+        let segments = |walked: &[(usize,usize,usize)]| walked.windows(2).map(|w| [flat(root(rings,w[0]).position),flat(root(rings,w[1]).position)])
+            .collect::<Vec<_>>();
+        // the walk's section but along a ring all round (whose section the zone is), and each trimmed branch's
+        let walked: Vec<[[f64;2];2]> = order.windows(2).filter(|w| !(round(w[0].0) && round(w[1].0)))
+            .map(|w| [flat(root(rings,w[0]).position),flat(root(rings,w[1]).position)]).collect();
+        let branches: Vec<Vec<[[f64;2];2]>> = trimmed.iter().map(|(_,w)| segments(w)).collect();
+        let crosses = |a: [f64;2],b: [f64;2],[c,d]: [[f64;2];2]| {
+            let side = |p: [f64;2],q: [f64;2],x: [f64;2]| (q[0]-p[0])*(x[1]-p[1])-(q[1]-p[1])*(x[0]-p[0]);
+            side(a,b,c)*side(a,b,d) < 0. && side(c,d,a)*side(c,d,b) < 0.
+        };
+        // whether branch `b`'s ring holds its root `w` within its zone
+        let holds = |b: usize,w: usize| -> bool {
+            let (r,walked_b) = (&trimmed[b].0,&trimmed[b].1);
+            let Piece::Round(ring) = &self.pieces[*r] else { return false };
+            let t = root(rings,walked_b[w]);
+            let (top,bottom) = (ring.at(0.).0,ring.at(1.).0);
+            let far = distance(top,ring.pole);
+            let pole = flat(ring.pole);
+            let heights = { let (a,b) = (screw.height(top),screw.height(bottom)); [a.min(b),a.max(b)] };
+            let s = flat(t.position);
+            let d = (s[0]-pole[0]).dhypot(s[1]-pole[1]);
+            let out = [(s[0]-pole[0])/d,(s[1]-pole[1])/d];
+            // the normal's parts away from the turn's axis and along it
+            let q = sub(t.position,screw.origin);
+            let radial = crate::space::unit(sub(q,scale(screw.axis,dot(q,screw.axis))));
+            let m = [dot(t.normal,radial),dot(t.normal,screw.axis)];
+            let inside = ring.support == Some(true);
+            let g = [pole[0]+far*out[0],pole[1]+far*out[1]];
+            (d < far) == inside && (m[0]*out[0]+m[1]*out[1] > 0.) == inside && g[1] >= heights[0] && g[1] <= heights[1]
+                && !walked.iter().any(|&line| crosses(s,g,line))
+                && !branches.iter().enumerate().any(|(c,lines)| lines.iter().enumerate().any(|(l,&line)| !(c == b && (l+1 == w || l == w))
+                    && crosses(s,g,line)))
+        };
+        let ends: Vec<V> = trimmed.iter().filter_map(|(r,_)| match &self.pieces[*r] { Piece::Round(ring) => Some([ring.at(0.).0,ring.at(1.).0]),
+            _ => None }).flatten().collect();
+        for (b,(_,walked_b)) in trimmed.iter().enumerate() { for &x in walked_b {
+            let t = root(rings,x);
+            if t.reach.is_none() || ends.iter().any(|&e| distance(t.position,e) <= 1e-7*self.scale) { continue }
+            // held by a ring that trims it: this branch's, or another's that runs through it too
+            let by = trimmed.iter().enumerate().filter_map(|(c,(_,other))| other.iter().position(|&y| y == x).map(|v| (c,v)));
+            if by.clone().any(|(c,v)| holds(c,v)) { continue }
+            let Piece::Round(ring) = &self.pieces[trimmed[b].0] else { continue };
+            return Err((Condition::Once,format!("the characteristic on {} runs on where {} trims it, and the class does not \
+                read it within the zone the ring sweeps",self.pieces[x.0].named(),ring.named),witness(family,t.reach,t.position)))
+        } }
+        Ok(())
+    }
+
     /// Sample each face's rings at its stations, and walk the stretch that reaches the blank from
     /// its first point to `MARGIN` rings past its last each way: S2 asked of every ring and of the
     /// stretch, and the walk's own end (a double point, a jump at a corner) refused as S1.
-    fn pass(&self,stations: Vec<Vec<f64>>) -> Result<Pass,Failure> {
+    fn pass(&self,stations: Vec<Vec<f64>>,sides: Option<&Sides>) -> Result<Pass,Failure> {
         let (contacts,ask,screw,family) = (self.contacts,self.ask,&self.screw,self.contacts.motion());
         let pieces = &self.pieces;
         let outward = |p: V,n: V| outward(self.tool,p,n);
@@ -205,7 +353,7 @@ impl Walker<'_> {
             let reaching: Vec<usize> = (0..roots.len()).filter(|&j| roots[j].reach.is_some()).collect();
             if reaching.len() > 1 {
                 let r = &roots[reaching[1]];
-                if !self.flats() { return Err((Condition::Once,format!("both of a ring's characteristic points on {} reach the blank",
+                if !self.flats() && !self.rounds() { return Err((Condition::Once,format!("both of a ring's characteristic points on {} reach the blank",
                     pieces[k].named()),witness(family,r.reach,r.position))) }
                 doubled.push((k,i,[reaching[0],reaching[1]]));
             }
@@ -213,7 +361,13 @@ impl Walker<'_> {
         let reaching: Vec<(usize,usize,usize)> = rings.iter().enumerate().flat_map(|(k,face)| face.iter().enumerate()
             .flat_map(move |(i,ring)| match ring { Ring::Roots(roots) => roots.iter().enumerate()
                 .filter(|(_,r)| r.reach.is_some()).map(|(j,_)| (k,i,j)).collect::<Vec<_>>(),_ => Vec::new() })).collect();
-        let Some(&seed) = reaching.first() else {
+        // each ring in contact all round under a turn (#684 X): which way on from each of its ends is
+        // the boundary's (the coarse pass's, read again by the fine), the root that way, and the
+        // branch the other way, which the ring trims and the walk does not begin on
+        let sides = match sides { Some(sides) => sides.clone(),None => self.sides(&stations,&rings) };
+        let (arms,trimmed) = self.arms(&stations,&rings,&sides);
+        let cut = |x: &(usize,usize,usize)| trimmed.iter().any(|(_,walked)| walked.contains(x));
+        let Some(&seed) = reaching.iter().find(|x| !cut(x)) else {
             return Err((Condition::Reach,"no point of the tool's characteristic passes through the blank in the roll".into(),None))
         };
         let root = |x| root(&rings,x);
@@ -227,7 +381,7 @@ impl Walker<'_> {
             let (mut at,mut dir) = (seed,dir);
             let mut since = 0;
             loop {
-                let taken = step(contacts,pieces,&stations,&rings,at,dir,self.scale);
+                let taken = step(contacts,pieces,&stations,&rings,at,dir,self.scale,&arms);
                 if let Step::Sharp(next,_,fan) = taken { sharp.push(([at,next],fan)) }
                 match taken {
                     Step::Next(next,d) | Step::Sharp(next,d,_) => {
@@ -265,11 +419,12 @@ impl Walker<'_> {
                 None => (back.into_iter().rev().chain(std::iter::once(seed)).chain(ahead).collect(),false),
             }
         };
-        // S2: a ring's two roots in the blank both on the walk, a flat face's line between them
+        // S2: a ring's two roots in the blank both on the walk, a flat face's line or a ring in contact
+        // all round between them (#684 X), or either on a branch such a ring trims
         for &(k,i,[a,b]) in &doubled {
             let (x,y) = (order.iter().position(|&w| w == (k,i,a)),order.iter().position(|&w| w == (k,i,b)));
-            let across = match (x,y) { (Some(x),Some(y)) => order[x.min(y)..x.max(y)].iter().any(|w| matches!(pieces[w.0],Piece::Flat(_))),
-                _ => false };
+            let across = match (x,y) { (Some(x),Some(y)) => order[x.min(y)..x.max(y)].iter()
+                .any(|w| matches!(pieces[w.0],Piece::Flat(_) | Piece::Round(_))),_ => cut(&(k,i,a)) || cut(&(k,i,b)) };
             if !across {
                 let r = root((k,i,b));
                 return Err((Condition::Once,format!("both of a ring's characteristic points on {} reach the blank",pieces[k].named()),
@@ -280,11 +435,13 @@ impl Walker<'_> {
         // the walk stepped straight across where it stands at one point, that point (#684 V)
         let stood = |x: &(usize,usize,usize)| sharp.iter().any(|&([a,_],fan)| x.0 == fan
             && distance(root(*x).position,root(a).position) <= 1e-7*self.scale);
-        if let Some(&other) = reaching.iter().find(|x| !order.contains(x) && !stood(x)) {
+        if let Some(&other) = reaching.iter().find(|x| !order.contains(x) && !stood(x) && !cut(x)) {
             return Err((Condition::Once,format!("the characteristic reaches the blank in more than one stretch (again on {})",
                 pieces[other.0].named()),witness(family,root(other).reach,root(other).position)))
         }
-        Ok(Pass {stations,rings,order,sharp,closed})
+        // S2: what the rings in contact all round trim lies within what they sweep (#684 X)
+        self.under(&order,&rings,&trimmed)?;
+        Ok(Pass {stations,rings,order,sharp,closed,sides})
     }
 }
 
@@ -324,7 +481,19 @@ impl Characteristic {
         let flats: Vec<usize> = pieces.iter().filter_map(|p| match p { Piece::Flat(f) => Some(f.patch),_ => None }).collect();
         pieces.extend(corners(contacts,tool,motion,&flats).into_iter().map(Piece::Corner));
         pieces.extend(prism(contacts,tool,motion,&screw,speed,ask.caps,&enters)?);
-        let walker = Walker {contacts,pieces,ask,screw,motion,tool,scale,tolerance};
+        // the rings in contact all round under a turn about an axis the tool's meets (#684 X)
+        let found = rounds(&pieces,motion,&screw,tool,scale);
+        pieces.extend(found.into_iter().map(Piece::Round));
+        // whether the turn's axis meets a revolved face's own (#684 X)
+        let meets = screw.is_turn() && pieces.iter().any(|p| match p {
+            Piece::Face(_,s) => s.ring(0.5).is_ok_and(|ring| {
+                let (a,w) = (ring.axis,screw.axis);
+                let across = cross(a,w);
+                norm(across) > 1e-9 && dot(sub(ring.center,screw.origin),across).abs() <= 1e-9*scale*norm(across)
+            }),
+            _ => false,
+        });
+        let walker = Walker {contacts,pieces,ask,screw,motion,tool,scale,tolerance,meets};
         let pieces = &walker.pieces;
         let n = ask.rows;
         // a slide along the tool's own axis: its ring of greatest radius in contact all round, the
@@ -333,7 +502,7 @@ impl Characteristic {
         // S1 of a prism: no ruling in contact all along it where its path enters the blank
         rulings(pieces,n,motion,&enters,family)?;
         let coarse = walker.pass((0..pieces.len()).map(|k| crossed(&pieces[k],(0..=n).map(|i| i as f64/n as f64).collect()))
-            .collect())?;
+            .collect(),None)?;
         let mut samples = coarse.samples();
         let reached = coarse.order.iter().filter(|&&x| coarse.root(x).reach.is_some()).count();
         let fine = if reached >= n { coarse } else {
@@ -360,11 +529,11 @@ impl Characteristic {
                     (0..=count).map(|i| lo+(hi-lo)*i as f64/count as f64).collect()
                 }
             }).enumerate().map(|(k,stations)| crossed(&pieces[k],stations)).collect();
-            let fine = walker.pass(stations)?;
+            let fine = walker.pass(stations,Some(&coarse.sides))?;
             samples += fine.samples();
             fine
         };
-        let Pass {stations,rings,mut order,sharp: stepped,closed} = fine;
+        let Pass {stations,rings,mut order,sharp: stepped,closed,..} = fine;
         // S1: no ring the walk passes is in contact all round between its stations
         stationary(pieces,&stations,&order,motion,family,&screw,ask)?;
         let root = |x| root(&rings,x);
@@ -487,6 +656,10 @@ impl Characteristic {
             // sweep has a sharp edge, its normal turned there from the one face's to the other's,
             // whose sides are read either side (#684 O, V)
             if creased.contains(&w) { continue }
+            // at a ring in contact all round's ends the characteristic turns along the motion's path,
+            // the edge of the zone the ring sweeps, which is no fold (#684 X)
+            let round = |w: usize| matches!(pieces[nodes[w].patch],Piece::Round(_));
+            if round(w-1) != round(w) || round(w) != round(w+1) { continue }
             let tangent = sub(nodes[w+1].position,nodes[w-1].position);
             let velocity = screw.velocity(nodes[w].position);
             let factor = dot(cross(tangent,velocity),nodes[w].normal)/(norm(tangent)*norm(velocity));
@@ -668,10 +841,11 @@ fn creases(nodes: &[Node],pieces: &[Piece],sharp: &[(usize,usize)]) -> Vec<usize
 
 /// S1 between the walk's stations: a ring in contact all round, every point of it on the
 /// boundary, is where a characteristic branches. Under a turn about an axis that the tool's own
-/// axis meets, the ring whose normals all pass through the point where they meet is one; under a
-/// slide square to the tool's axis, a ring whose normals all lie along it, in a plane holding the
-/// slide (a slide along the tool's axis touches only on such rings, read whole by `along_axis`,
-/// #684 X). Either way the
+/// axis meets, the ring whose normals all pass through the point where they meet is one (found
+/// before the walk and walked onto, `rounds`, #684 X: this row refuses one it missed); under a
+/// slide square to the tool's axis, or a turn about one parallel to it, a ring whose normals all lie
+/// along it, in a plane the motion keeps (a slide along the tool's axis touches only on such rings,
+/// read whole by `along_axis`). Either way the
 /// contact equation's amplitude turns right round as the walk passes it while its constant term
 /// stays nought, and the roots it walks need not move, so a station need not fall on it: where
 /// the amplitude turns more than a quarter turn between two of the walk's stations on a face, the
@@ -786,7 +960,7 @@ fn along_axis(contacts: &SweepContacts,pieces: &[Piece],screw: &Screw,motion: Mo
     // the ring of greatest radius, from where it was read, round the axis
     let foot: V = { let q = sub(at,centre); std::array::from_fn(|k| centre[k]+axis[k]*dot(q,axis)) };
     let round = Round {named:"the ring of the tool's greatest radius".into(),centre:foot,axis,radial:crate::space::unit(sub(at,foot)),
-        radius:most,normal:[1.,0.],turn:std::f64::consts::TAU};
+        radius:most,normal:[1.,0.],turn:std::f64::consts::TAU,of:None,pole:foot,about:axis,support:Some(true)};
     let n = ask.rows.max(8);
     let patch = pieces.len();
     let mut nodes: Vec<Node> = (0..=n).map(|i| {
@@ -870,15 +1044,19 @@ fn ring(piece: &Piece,u: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V)
     // a revolution's ring, `a cos + b sin + c`: its roots, each with its point and outward normal
     let round = |found: &dyn Fn((f64,f64,f64)) -> Result<Vec<(V,V)>,envelope::Error>| -> Ring {
         let (a,b,c) = match piece.coefficients(u,motion) { Ok(k) => k,Err(e) => return Ring::Degenerate(match piece {
-            Piece::Face(_,surface) if apex(surface,u) => APEX.into(),
+            Piece::Face(_,surface) if apex(surface,u,tolerance) => APEX.into(),
+            Piece::Face(_,surface) if at_axis(surface,u,tolerance) => POLE.into(),
             _ => format!("{e:?}"),
         }) };
         let amplitude = a.dhypot(b);
         let spread = (1.-(c/amplitude).dpowi(2)).max(0.).sqrt();
         match found((a,b,c)) {
             Ok(found) => Ring::Roots(found.into_iter().map(|(position,normal)| root(position,normal,spread)).collect()),
-            Err(envelope::Error::Degenerate) => Ring::Degenerate(if amplitude <= tolerance && c.abs() <= tolerance {
-                ALL_ROUND.into() } else { "has a double point on a ring".into() }),
+            // (a ring of no radius, where a face meets its axis, is no ring in contact all round)
+            Err(envelope::Error::Degenerate) => Ring::Degenerate(if amplitude <= tolerance && c.abs() <= tolerance { match piece {
+                Piece::Face(_,surface) if at_axis(surface,u,tolerance) => if apex(surface,u,tolerance) { APEX } else { POLE },
+                _ => ALL_ROUND,
+            }.into() } else { "has a double point on a ring".into() }),
             Err(e) => Ring::Degenerate(format!("{e:?}")),
         }
     };
@@ -959,8 +1137,30 @@ enum Step { Next((usize,usize,usize),isize),Sharp((usize,usize,usize),isize,usiz
 /// rim or a crease steps onto that fan there, partway along the side, and off the fan's far end
 /// onto the cap's contact line or the other half's side (#684 AE, AG).
 fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &[Vec<Ring>],(k,i,j): (usize,usize,usize),dir: isize,
-    scale: f64) -> Step {
+    scale: f64,arms: &Arms) -> Step {
     let here = *root(rings,(k,i,j));
+    // a ring of this piece in contact all round under a turn between this station and the next (#684
+    // X): onto it at the end this root is at, half round to its other end, where it comes along the
+    // branch the boundary takes there (`Walker::sides`); off its far end onto the boundary's branch
+    // there (below)
+    let ahead = usize::try_from(i as isize+dir).ok().filter(|&q| q < stations[k].len());
+    if let Some((r,round)) = ahead.and_then(|q| { let (u0,u1) = (stations[k][i],stations[k][q]);
+        pieces.iter().enumerate().find_map(|(r,p)| match p {
+            Piece::Round(round @ Round {of:Some((of,u)),..}) if *of == k && *u != u0 && (u-u0)*(u-u1) <= 0. => Some((r,round)),
+            _ => None,
+        }) }) {
+        let end = if distance(round.at(0.).0,here.position) <= distance(round.at(1.).0,here.position) { 0 } else { 1 };
+        if round.support.is_none() { return Step::End(CROSSED.into()) }
+        return match arms.get(&(r,end)) {
+            None => Step::End(UNREAD_ARMS.into()),
+            Some(&(_,way)) if way != -dir => Step::End(TRIMMED.into()),
+            Some(_) => {
+                let at = if end == 0 { 0 } else { stations[r].len().wrapping_sub(1) };
+                if stations[r].get(at) != Some(&(end as f64)) { return Step::End("crosses onto a face the coarse pass did not reach".into()) }
+                Step::Next((r,at,0),if end == 0 { 1 } else { -1 })
+            }
+        }
+    }
     let at_here = |roots: &[Root]| roots.iter().position(|r| distance(r.position,here.position) <= 1e-7*scale);
     // the root of `other`'s ring at `their` end at this same point, and the way on along it; none
     // where the characteristic jumps there
@@ -1073,6 +1273,8 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
         Piece::Line(Line {cap:Some(c),..}) => return first(&mut pieces.iter().enumerate()
             .filter(|(_,p)| matches!(p,Piece::Ruled(Ruled {ruling:Ruling::Rim {across:Across::Cap(d),..},..}) if d == c)).map(|(r,_)| (r,1.)))
             .unwrap_or_else(|| Step::End(OFF_CAP.into())),
+        // a ring in contact all round: off either end onto the branch the boundary takes there (#684 X)
+        Piece::Round(_) => return arms.get(&(k,end as usize)).map(|&(x,d)| Step::Next(x,d)).unwrap_or_else(|| Step::End(UNREAD_ARMS.into())),
         // a flat face's line: off either end onto a face beside it whose characteristic meets the
         // flat's edge there, at that face's end (#684 O)
         Piece::Flat(Flat {patch,..}) => {
@@ -1103,7 +1305,9 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
         // both faces' characteristics meet the corner's circle at one point: every normal of its
         // fan is in contact there, and the sweep has a sharp edge along that point's path, the
         // sheet creased there (#684 V)
-        (Some(Step::Next(next,d)),Some(fan)) => Step::Sharp(next,d,fan),
+        // (but where the fan holds a ring in contact all round, it is walked onto that ring, #684 X)
+        (Some(Step::Next(next,d)),Some(fan)) if !pieces.iter().any(|p| matches!(p,Piece::Round(Round {of:Some((f,_)),..}) if *f == fan))
+            => Step::Sharp(next,d,fan),
         // the faces' points differ where they meet: the characteristic runs round the corner's fan
         (_,Some(fan)) => onto(fan,s as f64).unwrap_or_else(jumps),
         (Some(next),None) => next,
@@ -1122,10 +1326,17 @@ enum Piece { Face(usize,RevolvedSurface),Corner(Corner),Ruled(Ruled),Line(Line),
 
 /// A ring of a revolution in contact all round, every point of it on the boundary (#684 X): under a
 /// slide along the tool's own axis, the ring of its greatest radius, whose normals all lie square
-/// to the slide. A station on it is the fraction of `turn` round it from `radial`, about `axis`;
-/// its normal there is `normal`'s parts away from the axis and along it, the same all round.
+/// to the slide; under a turn about an axis the tool's own axis meets, a ring whose normals all pass
+/// through `pole`, where the axes meet, at station `of.1` of piece `of.0` (`rounds`). A station on
+/// it is the fraction of `turn` round it from `radial`, about `axis`; its normal there is
+/// `normal`'s parts away from the axis and along it, the same all round. Under a turn it is walked
+/// half round, from its highest point about the turn's axis `about` (station 0, `radial` toward the
+/// turn's axis's way) to its lowest (1), both in the plane of the two axes, through which every
+/// other ring's two roots pass; `support` says whether the tool lies within the sphere about `pole`
+/// through it there (`Some(true)`), without it (`Some(false)`), or neither.
 #[derive(Clone,Debug)]
-struct Round { named: String,centre: V,axis: V,radial: V,radius: f64,normal: [f64;2],turn: f64 }
+struct Round { named: String,centre: V,axis: V,radial: V,radius: f64,normal: [f64;2],turn: f64,of: Option<(usize,f64)>,pole: V,about: V,
+    support: Option<bool> }
 
 impl Round {
     /// The ring's point at station `u`, and its normal there.
@@ -1134,6 +1345,106 @@ impl Round {
         let e: V = std::array::from_fn(|k| c*self.radial[k]+s*cross(self.axis,self.radial)[k]);
         (std::array::from_fn(|k| self.centre[k]+self.radius*e[k]),std::array::from_fn(|k| self.normal[0]*e[k]+self.normal[1]*self.axis[k]))
     }
+
+    /// How a point `p` beside the end `end` of the ring leans from it, read about the pole in a
+    /// half-plane through the turn's axis: the angle of its step from the end, in angle from the
+    /// axis's way against in distance from the pole. The boundary goes on from the highest end (0)
+    /// along the branch that leans least, from the lowest (1) along the one that leans most.
+    fn lean(&self,p: V,end: usize) -> f64 {
+        let q = self.at(end as f64).0;
+        let from = |x: V| { let d = sub(x,self.pole); (dot(d,self.about)/norm(d)).clamp(-1.,1.).dacos() };
+        (from(p)-from(q)).datan2((distance(p,self.pole)-distance(q,self.pole)).abs())
+    }
+}
+
+/// Where the walk goes on from each end of each ring in contact all round under a turn (#684 X), by
+/// the ring's piece and its end: the way along the piece it is a ring of (`Sides`), and the root it
+/// steps onto that way and the way on (`Arms`).
+type Sides = std::collections::BTreeMap<(usize,usize),isize>;
+type Arms = std::collections::BTreeMap<(usize,usize),((usize,usize,usize),isize)>;
+
+/// Why the walk ends at a ring in contact all round that the tool crosses there, lying both within
+/// and without the sphere about the pole through it: the ring's zone lies within what the tool
+/// sweeps, and the branch walked crosses it.
+const CROSSED: &str = "meets a ring in contact all round that the tool crosses, lying both within and without the sphere \
+    through it about the point where the turn's axis meets the tool's, where the characteristic runs on across the ring (not \
+    built)";
+/// Why it ends where it comes onto such a ring along the branch the ring trims.
+const TRIMMED: &str = "comes onto a ring in contact all round along the branch the ring trims, which runs within the zone \
+    the ring sweeps (not built)";
+/// Why it ends where the branches through an end of such a ring cannot be read either way.
+const UNREAD_ARMS: &str = "meets a ring in contact all round where the branches through its ends cannot both be read \
+    beside it (not built)";
+
+/// The rings in contact all round of `pieces` under a turn about an axis the tool's own axis meets
+/// (#684 X): where a revolved face's or a convex corner's ring has the coefficients of its contact
+/// equation all nought, its amplitude turning right round between two of `ROUND_READS` stations
+/// along the piece and their least sought between them (`roots::brent`) as S1 `stationary` seeks
+/// one, and its normals meeting the tool's axis at a point of the turn's. Each is a `Round` walked
+/// half round, between its points in the plane of the two axes; `support` reads the face a
+/// thousandth of the way along it either side of the ring (a corner's fan is always within its
+/// tangent plane, so on the side of the sphere its normal says).
+fn rounds(pieces: &[Piece],motion: Motion,screw: &Screw,tool: &super::SpatialField,size: f64) -> Vec<Round> {
+    if !screw.is_turn() { return Vec::new() }
+    let mut found = Vec::new();
+    for (k,piece) in pieces.iter().enumerate() {
+        if !matches!(piece,Piece::Face(..) | Piece::Corner(_)) { continue }
+        let coefficients = |u: f64| piece.coefficients(u,motion).ok();
+        let size_of = |(a,b,c): (f64,f64,f64)| a.dhypot(b).dhypot(c);
+        let read: Vec<Option<(f64,f64,f64)>> = (0..=ROUND_READS).map(|i| coefficients(i as f64/ROUND_READS as f64)).collect();
+        for i in 0..ROUND_READS {
+            let (Some(x),Some(y)) = (read[i],read[i+1]) else { continue };
+            if x.0*y.0+x.1*y.1 >= 0. { continue }
+            let (u0,u1) = (i as f64/ROUND_READS as f64,(i+1) as f64/ROUND_READS as f64);
+            let (least,u) = crate::roots::brent(&|u| coefficients(u).map_or(f64::INFINITY,size_of),u0,u1,1e-14,100,|_,_| false);
+            if !(least <= 1e-6*size_of(x).max(size_of(y))) { continue }
+            // the ring there and its outward normal's parts away from its axis and along it
+            let (ring,[nr,nz]) = match piece {
+                Piece::Face(_,s) => {
+                    let (Ok(ring),Ok(at)) = (s.ring(u),s.at(u,0.)) else { continue };
+                    let Ok(c) = envelope::contact(at,Motion::identity()) else { continue };
+                    let n = outward(tool,at.position,c.normal);
+                    (ring,[dot(n,ring.radial),dot(n,ring.axis)])
+                }
+                Piece::Corner(c) => (c.ring,c.normal(u)),
+                _ => continue,
+            };
+            // where its normals meet its axis, on the turn's; and the way along the turn's axis
+            // square to the ring's, toward its highest point (none where the axes lie along each other)
+            if nr.abs() <= 1e-9 { continue }
+            let pole: V = std::array::from_fn(|m| ring.center[m]-ring.radius*nz/nr*ring.axis[m]);
+            if screw.radius(pole) > 1e-7*size { continue }
+            let across = sub(screw.axis,scale(ring.axis,dot(screw.axis,ring.axis)));
+            if norm(across) <= 1e-9 { continue }
+            let mut round = Round {named:format!("a ring of {} in contact all round",piece.named()),centre:ring.center,axis:ring.axis,
+                radial:crate::space::unit(across),radius:ring.radius,normal:[nr,nz],turn:std::f64::consts::PI,of:Some((k,u)),pole,
+                about:screw.axis,support:None};
+            let (q,n) = round.at(0.);
+            let away = dot(n,sub(q,pole)) > 0.;
+            round.support = match piece {
+                Piece::Face(_,s) => {
+                    let far = distance(q,pole);
+                    let beside: Vec<f64> = [u-1e-3,u+1e-3].into_iter().filter(|w| (0. ..=1.).contains(w))
+                        .filter_map(|w| s.at(w,0.).ok().map(|p| distance(p.position,pole)-far)).collect();
+                    (!beside.is_empty() && beside.iter().all(|&d| (d < 0.) == away && d != 0.)).then_some(away)
+                }
+                _ => Some(away),
+            };
+            found.push(round);
+        }
+    }
+    found
+}
+
+/// The root of `round`'s piece at its station next beyond the ring from the ring's end `end` going
+/// `dir` along the piece, the one at that end, and the way on: where a branch through that end goes.
+fn arm(stations: &[Vec<f64>],rings: &[Vec<Ring>],round: &Round,end: usize,dir: isize) -> Option<((usize,usize,usize),isize)> {
+    let (k,u) = round.of?;
+    let q = round.at(end as f64).0;
+    let i = if dir > 0 { stations[k].iter().position(|&s| s > u)? } else { stations[k].iter().rposition(|&s| s < u)? };
+    let Ring::Roots(roots) = &rings[k][i] else { return None };
+    let j = (0..roots.len()).min_by(|&a,&b| distance(roots[a].position,q).total_cmp(&distance(roots[b].position,q)))?;
+    Some(((k,i,j),dir))
 }
 
 /// A flat face the motion keeps in its own plane (#684 O): a revolution's disc square to its axis

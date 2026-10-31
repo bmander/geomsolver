@@ -22,7 +22,10 @@
 //! along the characteristic, so only its columns' ends must leave the blank. A tool slid along its
 //! own axis wholly through the blank touches along its ring of greatest radius all round (#684 X):
 //! the characteristic is that ring, closed with no crease, and the sheet the cylinder it sweeps,
-//! written exactly (`build::tube`), not fitted, in faces round it.
+//! written exactly (`build::tube`), not fitted, in faces round it. Under a turn about an axis the
+//! tool's own meets, the characteristic runs half round a ring in contact all round (#684 X), and
+//! the sheet is laid over it as over any stretch: its section there an arc of the circle about where
+//! the axes meet, the zone of the sphere the ring sweeps.
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::sheet::{Fitted,SweptCut,settle};

@@ -397,6 +397,25 @@ fn the_drill_bores_its_radius_through_a_plate() {
     near(exported(&e,"plate"),20.*10.*4.-PI*4.*4.,1e-12);
 }
 
+/// `spoke.sv` (#684 X): a pin lying along a radius of the turn, its axis meeting the block's at the
+/// centre, swung across the curved block. Its rings touch at their two points in the plane of the
+/// two axes, its side along its top and bottom lines, the slot's roof and floor; on its end's rim
+/// the ring whose normals pass through the centre touches all round and sweeps a zone of the sphere
+/// about it, the slot's end wall, the walk turning onto it from the fan beside the side, where the
+/// fan stands at the top line's end, half round, and back down the fan onto the bottom line. The
+/// branch beyond it, across the end face, lies within the zone. The slot is the band |z| ≤ 0.5 from
+/// the block's inner wall at 8 out to the sphere of radius √(11² + 0.5²), turned through 60°:
+/// `π/6 (57.25 − 1/12)` in closed form, within 1e-5 (2.9e-6, alike at 0.001 mm: the fit's).
+#[test]
+fn the_spoke_swings_a_slot_ended_by_a_zone_of_a_sphere() {
+    let e = example("spoke.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_turn() && !found.closed,"a turn, its characteristic open");
+    assert_eq!(found.rounds(),["a ring of the corner of `pin.side` and `pin.tip` in contact all round"]);
+    assert_eq!(found.sharp(),["the corner of `pin.side` and `pin.tip`"]);
+    near(exported(&e,"block"),PI/3.*80.-PI/6.*(57.25-1./12.),1e-5);
+}
+
 /// Every document in the folder is held by a test here, and the README names each.
 #[test]
 fn every_example_is_held_and_named() {

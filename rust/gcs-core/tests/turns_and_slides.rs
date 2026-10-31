@@ -331,10 +331,10 @@ impl Lean {
 /// wedge's in common with the ring), and a torus about the line through (5, 0, 0) leaning so,
 /// its tube of radius 2 centred 2.5 out from it, turned about z over the roll from `from` to `to`
 /// degrees.
-fn turned(lean: Lean,from: f64,to: f64) -> String { turned_in(lean,from,to,true) }
+pub(crate) fn turned(lean: Lean,from: f64,to: f64) -> String { turned_in(lean,from,to,true) }
 
 /// `turned`'s torus and roll over the whole ring (no wedge), or its sector.
-fn turned_in(lean: Lean,from: f64,to: f64,sector: bool) -> String {
+pub(crate) fn turned_in(lean: Lean,from: f64,to: f64,sector: bool) -> String {
     let (a,o) = lean.axes();
     // the wedge the ring's sector is its common with
     let wedge = if !sector { String::new() } else { format!("\
@@ -466,10 +466,9 @@ fn a_whole_turn_grooves_the_whole_ring() {
 }
 
 /// Each row a turn or a slide meets refuses by name: a roll that leaves the torus in the ring is not clear at its ends (E1);
-/// a torus leaning toward the turn's axis, so that its own meets it, has a ring in contact all
-/// round, every normal of it through where the axes meet, at which its characteristic branches
-/// between two of the walk's stations (S1: the boundary leaves the walked branch there, which
-/// the field gate saw before this row did); and a torus slid through the rod's middle touches it
+/// (a torus leaning toward the turn's axis, so that its own meets it, has a ring in contact all
+/// round, every normal of it through where the axes meet, refused at S1 until #684 X walked onto it,
+/// `rings_all_round::a_torus_leaning_toward_the_turns_axis_grooves_its_shadow`); and a torus slid through the rod's middle touches it
 /// all round its tube, a characteristic that closes on itself (refused so until #684 W), but at the
 /// tube's top and bottom its rings are in contact all round, square to the slide, where the
 /// characteristic branches into the groove's flat sides (S1). An engraving bit slid square
@@ -481,9 +480,6 @@ fn a_whole_turn_grooves_the_whole_ring() {
 fn the_turn_and_slide_rows_refuse_by_name() {
     let short = refused(admit(&turned(Lean::Across(0.),-130.,30.)));
     assert_eq!(short.condition,Condition::Clearance);
-    let branching = refused(admit(&turned(Lean::Toward(25.),-140.,140.)));
-    assert_eq!(branching.condition,Condition::Regular,"{branching}");
-    assert!(branching.message.contains("in contact all round"),"{}",branching.message);
     let closed = refused(admit(&slid(0.,0.,Wheel::Torus)));
     assert_eq!(closed.condition,Condition::Regular,"{closed}");
     assert!(closed.message.contains("`wheel.tube` is in contact all round a ring"),"{}",closed.message);

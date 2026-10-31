@@ -271,9 +271,10 @@ the stretch of the roll each reader asks is `Screw::passing`. A turn of a whole 
 read as one whole turn (below), and S1 also refuses
 a ring in contact all round between two walked stations whose path enters the blank
 (`constant_twist::stationary`: the amplitude turning right round, its three coefficients' least
-sought by `roots::brent`) — a turn about an axis the tool's meets, or a slide square to the tool's
-axis, its ring along it — where the boundary leaves the walked branch with no root moving (a slide
-along the tool's axis is read whole, #684 X below). A turn or a slide of one
+sought by `roots::brent`) — a slide square to the tool's axis or a turn about one parallel to it,
+its ring along it, or a turn about an axis the tool's meets whose ring `rounds` missed — where the
+boundary leaves the walked branch with no root moving (a slide along the tool's axis is read whole,
+and a turn about an axis the tool's meets walked onto its ring, #684 X below). A turn or a slide of one
 ball is still its tube. The accuracy meter reads a turn's characteristic over the whole roll.
 `tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate (volumes computed
 apart: the lens, a circular segment, Pappus, and a tilted torus's shadow from its centre circle;
@@ -580,8 +581,35 @@ characteristic. The gate is `solid_sweeps_examples::the_drill_bores_its_radius_t
 turns, a screw; a lemon whose greatest radius lies within its arc; each within 1e-9), each STL
 agreeing with the field; the refusals `rings_all_round::what_a_slide_along_the_tools_axis_still_refuses`
 (a torus, S2; beside a taller post, E1); and
-`object_builder::a_ring_in_contact_all_round_builds_at_the_displays_samples`. A turn about an axis
-the tool's meets and a slide square to it stay refused at S1 (`stationary`).
+`object_builder::a_ring_in_contact_all_round_builds_at_the_displays_samples`. Under a turn about an
+axis a revolved face's own meets at P, `constant_twist::rounds` reads each face and convex corner
+at `ROUND_READS` stations for a ring with its three coefficients nought (the amplitude turning
+right round, the least sought by `roots::brent`) whose normals meet the tool's axis at a point of
+the turn's, each a `Piece::Round` walked half round from its highest point about the turn's axis
+to its lowest (both in the plane of the two axes, where every other ring's two roots lie), with
+`support` (the tool within the sphere about P there, without, or neither: a face read 1e-3 along
+it either side, a corner's fan by its normal). `Walker::sides` reads, in the coarse pass, which way
+from each end the boundary goes on (`arm`, `moved`, `Round::lean`: the branch leaving the arc's
+angles from the turn's axis about P), the fine pass taking it again; `Walker::arms` gives the root
+that way and walks each branch the other way, which the ring trims, and the walk is not begun on
+those. `step` turns onto a ring between two stations of its piece at the end it is at (S1 refuses
+`CROSSED`, a ring with no support; `TRIMMED`, coming along the trimmed branch; `UNREAD_ARMS`), off
+its far end by `arms`, and walks a fan holding one rather than stepping across it (dropped as V's
+standing fan, a crease). S2's ring rule is deferred where the axes meet (`Walker::meets`) and lets
+two roots stand either side of a ring in contact all round or on a trimmed branch; its every-root
+rule passes trimmed roots; `Walker::under` asks each trimmed root in the blank to lie within the
+zone of a ring trimming it, its normal facing it and the line to the zone crossing nothing of the
+section. S3 is not read at a ring's ends. A ring of no radius is a pole (`POLE`) or an apex
+(`at_axis`), never `ALL_ROUND`. The native path refuses a characteristic with a ring by name. The
+gate is `solid_sweeps_examples::the_spoke_swings_a_slot_ended_by_a_zone_of_a_sphere`
+(`solid_sweeps/spoke.sv`, `π/6 (57.25 − 1/12)` within 1e-5) and
+`rings_all_round::a_torus_leaning_toward_the_turns_axis_grooves_its_shadow` (Pappus over the shadow,
+2e-5, over a sector and a whole turn), each STL agreeing with the field; the refusals
+`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses` (a domed pin and a pin
+wholly within, S1 `POLE`; an upright torus across a taller block, S1, its ring kept in a plane; a
+small leaning torus wholly within, S1 `SMOOTH_LOOP`); and
+`object_builder::a_ring_in_contact_all_round_turned_builds_at_the_displays_samples`. A slide square
+to the tool's axis, or a turn about an axis parallel to it, stays refused at S1.
 
 **A drafted prism tool (#684 G):** a drafted prism is in the generating class where each corner
 joins two lines or goes on tangent: then each side (each half of it, either side of the parting
