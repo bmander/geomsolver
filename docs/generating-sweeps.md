@@ -498,8 +498,9 @@ runs along the turn (#684 AF, refused before).
 The walk does not go round such a fan: at the first face's end, where the next face's root is the
 same point (within 1e-7 of the tool's size), it steps straight onto it (`step`, `Step::Sharp`),
 and a fan it runs round whose nodes all stand at the point it runs onto it at is dropped, the walk
-going from the face before to the face after. Either way the node at the point is a crease
-(`Characteristic::sharp`, `Characteristic::creases`), and the sheet is built over it as over #684
+going from the face before to the face after; the step straight across is read as that fan
+standing there in no steps, so one rule drops both. Either way the node at the point is a crease,
+marked on the node (`Node::sharp`, `Characteristic::sharp`, `Characteristic::creases`), and the sheet is built over it as over #684
 O's: an exact row there at every refinement, fitted along the rows stretch by stretch and joined
 by a knot three times over (`nurbs::interpolate_creased`), each side its own face's fit; no turn of
 the normal counted across it, no withheld contact on it, no fold read across it, and the sheet cut
