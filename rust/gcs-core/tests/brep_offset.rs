@@ -246,3 +246,47 @@ fn a_tee_tangent_at_a_point_unites() {
     let l = (6f64.sqrt()/2.).asinh();
     assert!((volume(&tee)-(1020.*PI-96.*15f64.sqrt()+128.*l)).abs() < 1e-6*2964.68,"{}",volume(&tee));
 }
+
+/// Edges chamfered one after another, each run carried on past its ends until its section is
+/// wholly past one cut there (brep-bench's chamfer/cube-all-edges-mitred and the octahedron's):
+/// where two chamfers before it mitre at its end, each point of its section beyond one of the two
+/// was taken for past, and the cube kept 13/30 of a corner too much at each of its last four edges
+/// (809.73 against 808).  A leg is measured from the other face's plane: on the octahedron, the
+/// line z = 2 of the face x + y + z = 10 stands 4/√3 off its neighbour's.
+#[test]
+fn edges_chamfered_one_after_another_mitre_at_their_corners() {
+    use gcs_core::brep::fillet::flat_along;
+    use gcs_core::brep::geom::tolerance;
+    let chamfered = |mut b: Brep,edges: &[V],leg: f64| -> Brep {
+        for &at in edges {
+            for (i,f) in b.faces.iter_mut().enumerate() { f.name = format!("face {i}"); }
+            let flat = flat_along(&b,at,[leg,leg],None,tolerance(b.size())).unwrap();
+            b = combined(&b,&flat,Op::Cut,0.).unwrap();
+        }
+        b
+    };
+    let mut cube_edges = Vec::new();
+    for axis in 0..3 { for a in [0.,10.] { for c in [0.,10.] {
+        let mut at = [0.;3];
+        (at[axis],at[(axis+1)%3],at[(axis+2)%3]) = (5.,a,c);
+        cube_edges.push(at);
+    } } }
+    let cube = chamfered(block([0.;3],[10.;3]),&cube_edges,2.);
+    cube.check(1e-7).unwrap();
+    assert_eq!(cube.faces.len(),18);
+    close("cube",volume(&cube),1000.-6.*10.*4.+6.*8.);
+    let mut octahedron = block([-10.;3],[10.;3]);
+    let k = 1./3f64.sqrt();
+    for sx in [-1.,1.] { for sy in [-1.,1.] { for sz in [-1.,1.] {
+        octahedron = kept(&octahedron,[sx*10.,0.,0.],[-sx*k,-sy*k,-sz*k],0.).unwrap();
+    } } }
+    let mut edges = Vec::new();
+    for (i,j) in [(0,1),(1,2),(2,0)] { for si in [-1.,1.] { for sj in [-1.,1.] {
+        let mut at = [0.;3];
+        (at[i],at[j]) = (si*5.,sj*5.);
+        edges.push(at);
+    } } }
+    let octahedron = chamfered(octahedron,&edges,4.*k);
+    assert_eq!(octahedron.faces.len(),20);
+    close("octahedron",volume(&octahedron),4000./3.-8.*(52.-8.));
+}

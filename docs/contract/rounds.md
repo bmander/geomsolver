@@ -214,7 +214,10 @@ revolution's; between two circles a Cartesian oval, refused) — carried on past
 ends on cut it off (#195's meaning: a square one is the prism's end, one at a slant a half-space it
 is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a
 cylinder or a sphere it ends on carried into until every line of its section's hull has crossed
-it, and kept within or outside that solid (#218, `Run::kept`, `Kept` over a `Surf`, the recipe's
+it, and kept within or outside that solid; where several faces meet the run's end (two chamfers
+before it mitred there), carried on until its whole section lies past one and the same of their
+cuts (`fillet::Trim::past`) — each point past some cut is not past the region all of them keep, and
+the run took too little off (`brep_offset::edges_chamfered_one_after_another_mitre_at_their_corners`) (#218, `Run::kept`, `Kept` over a `Surf`, the recipe's
 `"kept"` read by `recipe::surface_of` and built by `build::kept_by_solid`; one `ends_at` sorts a
 piece's ends: `post.sv`, a D's flat, a quarter ball); a face along the edge or
 another curved end refused, `unbuilt`), `Ring` (a circle where a
