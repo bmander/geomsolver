@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.2.0] - 2026-11-01
+
 - Offsets (`offset`): a solid grown or shrunk by a distance (`grown`, `shrunk`), hollowed to a
   wall open at some faces, inside or out (`shelled`), and a sheet thickened over a range of its
   normals (`thickened`; `sheet_of` lifts faces off a solid), each the union of its faces' normal
