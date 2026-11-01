@@ -343,6 +343,18 @@ sheets cross and are trimmed (X3; `an_l_shaped_prism_turned_is_its_blocks_sweeps
 blocks' arcs united, to 1e-7), each agreeing with membership.  A screw and a curved tool are refused
 by what they are (`Unbuilt`).
 
+**K2's chart, contacts read at each instant (#721 K2, `brep::swept::instant`):** under a motion no
+constant twist takes, a face of revolution's contact on each ring is still `A cos θ + B sin θ + C = 0`
+against the instant's twist read on the tool (`Twist::body`, `Surface::ring_contact`), so it sweeps a
+chart over `(t, h, ±)` (`ring_chart`): each ring's two roots at each roll, told apart by the sign of
+the contact's rate round the ring, each carried by the pose; and the branch locus where they meet,
+`A² + B² = C²` (`branch_locus`), the curve in `(t, h)` the patch is cut at.  Held to what the chart
+does not compute (`tests/swept_instant.rs`): every root grazes in the world, read by the world's twist
+(`Twist::spatial`, `every_root_of_the_chart_grazes_in_the_world`); a screw's roots stand still on the
+tool; the roots meet on the locus; and a ball's contacts under a tumble (a turn seen from a turn
+across it) bound what it sweeps, a hair inside a member and a hair outside not, by the kernel's
+membership (`a_balls_contacts_bound_what_it_sweeps`).  Sampled where it samples.
+
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:
 a turn, or a turn seen from a turn, a sinusoid in the roll; a slide seen from a turn, a rack, a

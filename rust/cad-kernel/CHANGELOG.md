@@ -8,6 +8,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A face of revolution's contacts under any rigid motion, read at each instant (`swept::instant`):
+  its chart over roll, ring height and branch (`ring_chart`), and the branch locus where a ring's
+  two roots meet (`branch_locus`).
 - A polyhedral tool leaning to the axis turned part of a turn closes into its swept solid
   (`swept::closed::closed`), by the arrangement.
 - A plane meets a surface of revolution whose meridian is a conic symmetric about its axis (a

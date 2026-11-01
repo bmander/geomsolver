@@ -234,7 +234,10 @@ it. It stays as the fast path where #699 D says so.
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
 7. **The generating and canal classes' sheets as patches**, then **K2's** chart over
-   `(t, h, ±)`.
+   `(t, h, ±)`. *K2's chart built* (`swept::instant`): each ring's roots against the instant's
+   twist, carried by the pose, told apart by the contact's rate round the ring, and the branch
+   locus `A² + B² = C²` found in `(t, h)`; a ball's contacts under a tumble bound its sweep by
+   membership (`tests/swept_instant.rs`). Its patches in the arrangement follow the patch type.
 8. **The blank-scoped path** as the optimisation of X6 (#699 D).
 
 Every step meets the epic's bar: rows in `docs/contract/generating.md` naming the gate test, field

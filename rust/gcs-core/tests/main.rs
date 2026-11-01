@@ -281,6 +281,7 @@ mod style;
 mod sundial;
 mod surface_contact;
 mod swept_closed;
+mod swept_instant;
 mod swept_member;
 mod surfaces;
 mod swept_faces;
