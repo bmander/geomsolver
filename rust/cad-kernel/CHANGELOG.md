@@ -8,6 +8,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- The generating class's rows asked of one placement (`swept::admission`): M2, E1–E4 and T1–T3 for
+  a tool under a relative rotation (`check`), T2, E1 and S1–S4 under a constant twist
+  (`check_screw`), sampled (`Sampling`), returning what they found (`Found`, `Capped`) and the
+  blank's reads (`Reads`); `constant_twist::Row` gains the generating class's rows.
 - The planar classes' readings: a closed curve's inner envelope under a planar motion
   (`swept::planar`, its curve a `Section` and its material a `Region`, read in a `View`) and the
   region a planar tool's section sweeps (`swept::region`), each refused by a typed row with a

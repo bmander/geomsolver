@@ -63,8 +63,12 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   envelope under a planar motion (`swept::planar`) and the region a planar tool sweeps
   (`swept::region`), each refusing by a typed row; `envelope::planar` and `envelope::swept_region`
   read the curve, the section and their material (`PlanarField`) off the drawing and say the
-  refusals.  The rest of the generating class (its admission rows and its sector's build), the
-  planar classes' builds, the trims and the closed solid move
+  refusals.  So are the generating class's rows asked of one placement (`swept::admission`:
+  `check` for a relative rotation, `check_screw` for a constant twist, failing by
+  `constant_twist::Row`); `solid::admission::admit_body` reads the body's sweeps, placements and
+  blank off the drawing, hands each placement to the kernel and says its rows as `Condition`s.
+  The rest of the generating class (its sheets and its sector's build), the planar classes'
+  builds, the trims and the closed solid move
   with no change in behaviour; until each has, it is held where it is, and no new walk is built
   in the solver.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint

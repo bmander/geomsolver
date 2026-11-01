@@ -194,7 +194,9 @@ in the slow tier each member built as its stated roll built it).
 **Generating sweeps and the native export** ([docs/generating-sweeps.md](../generating-sweeps.md)):
 `solventc --step/--stl` builds swept cuts only for the bevel/hypoid generating class, the
 constant-twist class (screws, turns and slides) and the planar classes (below).
-`solid::admission::admit_body` checks rows T1–E4 (revolved line/arc tools, rotation with changing
+`solid::admission::admit_body` checks rows T1–E4 (asked of each placement by the kernel,
+`brep::swept::admission::check` and `check_screw`, #721 F2c; the solver says each `Row` as a
+`Condition`) (revolved line/arc tools, rotation with changing
 contact, clear at both limits, one contact per point, no fold, no self-crossing) and T3 where a
 prism's cap reaches the blank, sampled, refusing
 with row and witness; it checks a placement once when the blank reads alike at every point
