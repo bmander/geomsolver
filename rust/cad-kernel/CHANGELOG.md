@@ -8,6 +8,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- The cubic B-spline basis, its knots, Piegl and Tiller's interpolation and a sampled stretch's fit
+  (`cubic`); the planar classes' builds (`swept::planar::InnerEnvelope::prism`,
+  `swept::region::profiles`, `swept::region::lofted`) and the generating class's traced sheet
+  (`swept::trace::traced_sheet`).
 - The generating class's rows asked of one placement (`swept::admission`): M2, E1–E4 and T1–T3 for
   a tool under a relative rotation (`check`), T2, E1 and S1–S4 under a constant twist
   (`check_screw`), sampled (`Sampling`), returning what they found (`Found`, `Capped`) and the

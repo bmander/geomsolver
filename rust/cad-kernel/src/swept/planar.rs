@@ -534,3 +534,40 @@ fn close(setting: &Setting,chains: Vec<Vec<Contact>>,corners: Vec<P>,ds: f64,sca
     }
     Ok(out)
 }
+
+impl InnerEnvelope {
+    /// **The envelope's prism** (#65): one cubic B-spline a piece, from its corner to the next,
+    /// fitted within `fit` (model units) through the envelope's own contacts solved exactly
+    /// (`point`), the loop extruded along the plane's normal through `heights` (model units, the
+    /// blank's reach along it) and a hair past each way; millimetres, `scale` of them a model unit,
+    /// refused naming the sweep `name`.
+    pub fn prism(&self,heights: [f64;2],fit: f64,scale: f64,name: &str) -> Result<crate::topo::Brep,String> {
+        let n = self.normal();
+        let lift = |p: (f64,f64)| self.world([p.0,p.1]).map(|x| x*scale);
+        // one B-spline a piece, from its corner to the next
+        let edges = (0..self.pieces.len()).map(|piece| {
+            let ends = [self.point(piece,0.),self.point(piece,1.)];
+            let (Some(a),Some(b)) = (ends[0],ends[1]) else {
+                return Err(format!("`{name}`: the envelope's piece {piece} has no ends"))
+            };
+            let sweep = |lo: f64,hi: f64,m: usize| -> Vec<(f64,f64)> { (0..=m).map(|j| {
+                let p = self.point(piece,lo+(hi-lo)*j as f64/m as f64).unwrap_or([f64::NAN;2]);
+                (p[0],p[1])
+            }).collect() };
+            let (poles,knots,err) = crate::cubic::fit_sampled(&sweep,(0.,1.),Some(((a[0],a[1]),(b[0],b[1]))),fit)
+                .ok_or_else(|| format!("`{name}`: the envelope's piece {piece} could not be fitted within \
+                    {:.1e} mm",fit*scale))?;
+            Ok(crate::cubic::bspline_edge(&poles,&knots,err*scale,&lift))
+        }).collect::<Result<Vec<_>,_>>()?;
+        let origin = self.world([0.,0.]);
+        use crate::util::json::{object,Json};
+        let vec = |v: [f64;3]| Json::Arr(v.iter().map(|&x| x.into()).collect());
+        let profile = object([("loops",Json::Arr(vec![Json::Arr(edges)])),("origin",vec(origin.map(|x| x*scale))),("normal",vec(n))]);
+        // through the blank, a hair past it each way
+        let at = crate::util::space::dot(origin,n);
+        let [h0,h1] = heights;
+        let pad = 1e-3*(h1-h0)+1e-6;
+        crate::build::prism(&crate::build::Profile::from_json(&profile)?,
+            (h0-pad-at)*scale,(h1+pad-at)*scale)
+    }
+}
