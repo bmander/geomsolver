@@ -1,6 +1,7 @@
 //! The generating geometry comes from a solved Solvent component, including its fillets: the
 //! spiral bevel's crown tooth section as it was drawn (`fixtures/crown_section.sv`), revolved in
 //! its preview.
+use gcs_core::solid::ReadRevolved;
 use super::*;
 use gcs_core::{diagnose,model::EntRef,modules,program,solid::RevolvedSurface,solve};
 

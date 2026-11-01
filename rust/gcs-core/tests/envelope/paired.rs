@@ -1,6 +1,7 @@
 //! The generating-system checks: the pair's members built at one tooth space each (`hypoid.sv`),
 //! each face the space leaves held to the analytic envelope its name says (#212) — the crown face
 //! that made it, under its member's generating roll — with independent contact and indexing checks.
+use gcs_core::solid::ReadRevolved;
 use super::*;
 use gcs_core::{diagnose,modules,program,solid::RevolvedSurface,solve,space};
 use std::f64::consts::{FRAC_PI_2,PI,TAU};

@@ -1,6 +1,7 @@
 //! Seams, corners, edges and face boundaries made of their parts (#364): the post-solve B-rep
 //! vocabulary is Rust API, built over the envelopes and surfaces a drawing names, as the spiral
 //! bevel's checks build it (`envelope/paired.rs`).
+use gcs_core::solid::{ReadRevolved,ReadProjector};
 use gcs_core::{envelope::{Error,GeneratedEnvelope},patch::TrimmedPatch,program,
     seam::{EnvelopeSeam,SeamIntersectionOptions,SeamTolerance},
     solid::{RevolvedRegion,RevolvedSurface,SurfaceProjector}};

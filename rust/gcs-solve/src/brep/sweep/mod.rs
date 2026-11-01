@@ -22,6 +22,15 @@ use crate::solid::{Millimetres,SpatialField};
 /// How the pipeline speaks: a line of progress, and the stage just passed.
 pub struct Say<'a> { pub stage: &'a (dyn Fn(&str)+Sync),pub mark: &'a (dyn Fn(Stage)+Sync) }
 
+impl Say<'_> {
+    /// `f` handed this voice as the kernel's sheet speaks (`brep::swept::sheet::Say`), its stages
+    /// marked as the export's.
+    pub fn kernel<R>(&self,f: impl FnOnce(&crate::brep::swept::sheet::Say) -> R) -> R {
+        let mark = |s: crate::brep::swept::sheet::Stage| (self.mark)(s.into());
+        f(&crate::brep::swept::sheet::Say {stage:self.stage,mark:&mark})
+    }
+}
+
 /// A swept body built: as one sector, and the sector patterned into the whole (its B-rep, its mesh),
 /// or whole where a sector's premises do not hold.
 pub enum Built { Sector { sector: sector::Sector,pattern: Patterned },Whole(crate::brep::topo::Brep) }

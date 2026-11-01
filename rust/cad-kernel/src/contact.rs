@@ -20,8 +20,8 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::geom::{Curve,Surface,Uv,V};
-use crate::trajectory::Twist;
-use crate::util::space::{cross,dot,normalised};
+use crate::trajectory::{Error,Motion,Twist,normalized};
+use crate::util::space::{add,cross,dot,length,normalised,scale,sub};
 
 const TAU: f64 = std::f64::consts::TAU;
 
@@ -185,5 +185,122 @@ impl Surface {
         }
         if let Some((x,0.)) = last { out.push(x) }
         out
+    }
+}
+
+/// A smooth surface and its two exact first derivatives at one parameter pair.
+#[derive(Clone, Copy, Debug)]
+pub struct SurfacePoint {
+    pub position: V,
+    pub du: V,
+    pub dv: V,
+}
+
+/// Boundary checks allow zero tolerance, but never negative or nonfinite controls.
+pub fn check_tolerance(tolerance: f64) -> Result<(),Error> {
+    if tolerance.is_finite() && tolerance >= 0. { Ok(()) } else { Err(Error::InvalidOptions) }
+}
+
+/// A moving surface point. `normal_velocity = 0` is the envelope equation.
+#[derive(Clone, Copy, Debug)]
+pub struct Contact {
+    pub position: V,
+    pub normal: V,
+    pub velocity: V,
+    pub normal_velocity: f64,
+}
+
+/// The surface point carried by `motion`: where it stands, its unit normal (of `du × dv`) and its
+/// velocity, and the envelope's equation there, `n · v`.
+pub fn contact(surface: SurfacePoint, motion: Motion) -> Result<Contact, Error> {
+    // Normalize each tangent first: units or parameterization must not turn a small,
+    // perfectly regular surface into a singular one (nor overflow the cross product).
+    let u = normalized(surface.du).ok_or(Error::Degenerate)?;
+    let v = normalized(surface.dv).ok_or(Error::Degenerate)?;
+    let n = cross(u, v);
+    if length(n) < 1e-12 { return Err(Error::Degenerate); }
+    let normal = motion.vector(normalized(n).ok_or(Error::Degenerate)?);
+    let position = motion.point(surface.position);
+    let velocity = motion.velocity(surface.position);
+    let normal_velocity = dot(normal, velocity);
+    if !position.iter().chain(&normal).chain(&velocity)
+        .chain(std::iter::once(&normal_velocity)).all(|x| x.is_finite()) {
+        return Err(Error::NonFinite);
+    }
+    Ok(Contact { position, normal, velocity, normal_velocity })
+}
+
+/// A circle turned about an axis, and the frame a ring's contact is written in on it: `radial` at
+/// angle 0, `axis × radial` at a quarter turn. A face of revolution's ring, or the circle a convex
+/// corner of its profile turns to, whose fan carries every normal between its faces'.
+#[derive(Clone,Copy,Debug)]
+pub struct RingFrame { pub center: V,pub radius: f64,pub radial: V,pub axis: V }
+
+impl RingFrame {
+    /// The point at angle `theta` about the axis, and the direction away from the axis there.
+    pub fn at(&self,theta: f64) -> (V,V) {
+        let (s,c) = theta.dsin_cos();
+        let e = add(scale(self.radial,c),scale(cross(self.axis,self.radial),s));
+        (add(self.center,scale(e,self.radius)),e)
+    }
+
+    /// The angles about the ring of the roots of its contact `k` (`Sinusoid::roots_over`, the
+    /// ring once round): none, two, or `Degenerate` where the ring is in contact all round or the
+    /// two roots meet.
+    pub fn roots(&self,k: Sinusoid,tolerance: f64) -> Result<Vec<f64>,Error> {
+        Ok(k.roots_over(TAU,[0.,1.],tolerance)?.into_iter().map(|(_,v)| TAU*v).collect())
+    }
+
+    /// The ring's contact `A cos θ + B sin θ + C` under `motion`'s instantaneous twist, of the
+    /// normal `nr` away from the axis and `nz` along it, the same at every angle: a face's normal at
+    /// the ring, or any of the fan a convex corner carries. With `V` the velocity of the centre and
+    /// `ω` the turn, both read on what the motion carries (the twist `Twist::body` is), the normal
+    /// `nr e + nz a` dotted with `V + ω × R e` is `e · (nr V + nz R (a × ω)) + nz a · V`. (`V` and
+    /// `ω` are read off the motion's velocity field itself, its points' velocities taken back into
+    /// the carried frame, as the constant-twist walk has always read them.)
+    pub fn coefficients(&self,nr: f64,nz: f64,motion: Motion) -> Sinusoid {
+        let (e,axis,radius) = (self.radial,self.axis,self.radius);
+        let f = cross(axis,e);
+        // the carried frame's angular velocity is the axial vector of R^T R'
+        let inverse = motion.inverse();
+        let velocity = |p| inverse.vector(motion.velocity(p));
+        let v0 = velocity([0.;3]);
+        let columns: [V;3] = std::array::from_fn(|i| {
+            let mut p = [0.;3]; p[i] = 1.; sub(velocity(p),v0)
+        });
+        let omega = [0.5*(columns[1][2]-columns[2][1]),
+            0.5*(columns[2][0]-columns[0][2]),0.5*(columns[0][1]-columns[1][0])];
+        let center_velocity = velocity(self.center);
+        let h = add(scale(center_velocity,nr),scale(cross(axis,omega),radius*nz));
+        Sinusoid {a:dot(h,e),b:dot(h,f),c:nz*dot(center_velocity,axis)}
+    }
+}
+
+impl Sinusoid {
+    /// Its isolated roots on a chart `v` of the ring that runs over `domain` of a span of `sweep`
+    /// radians from its angle 0 (negative clockwise), `v` being the angle over `sweep`: each with
+    /// its branch, 0 the root before the phase and 1 the one after, as the two analytic roots are
+    /// labelled (never by a sort by `v`, which would exchange them at a seam). None where none lies
+    /// in `domain`; `Degenerate` where the ring is in contact all round or its two roots meet, and
+    /// `NonFinite` where the contact is no number. `tolerance` is `roots`'.
+    pub fn roots_over(&self,sweep: f64,domain: [f64;2],tolerance: f64) -> Result<Vec<(usize,f64)>,Error> {
+        let (a,b,c) = (self.a,self.b,self.c);
+        let amplitude = a.dhypot(b);
+        if ![a,b,c,amplitude].iter().all(|v| v.is_finite()) { return Err(Error::NonFinite); }
+        if c.abs() > amplitude+tolerance { return Ok(Vec::new()); }
+        if amplitude <= tolerance || (c.abs()-amplitude).abs() <= tolerance {
+            return Err(Error::Degenerate);
+        }
+        let phase = b.datan2(a); let spread = (-c/amplitude).dacos();
+        let mut roots = Vec::new();
+        for (branch,theta) in [phase-spread,phase+spread].into_iter().enumerate() {
+            let v = (theta*sweep.signum()).rem_euclid(TAU)/sweep.abs();
+            // the endpoint at 1 stands for the seam at 0 of a full turn too
+            let period = TAU/sweep.abs();
+            let Some(v) = [v,v-period,v+period].into_iter().find(|v|
+                *v >= domain[0] && *v <= domain[1]) else { continue };
+            roots.push((branch,v));
+        }
+        Ok(roots)
     }
 }

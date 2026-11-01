@@ -7,6 +7,7 @@
 //! section's tip bound does; and a crown tooth region — two cones, two levels, its tip rounded —
 //! admitted to the generating class and swept through a region blank, built exactly and written
 //! within 10 µm.
+use gcs_core::solid::ReadRevolved;
 use gcs_core::brep::geom::Surface;
 use gcs_core::brep::{export, props, sweep::Say};
 use gcs_core::program::Elaborated;

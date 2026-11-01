@@ -45,7 +45,7 @@ fn kinds(t: &Trajectory,met: &mut std::collections::BTreeMap<&'static str,usize>
 #[test]
 fn a_motion_lowers_to_the_kernels_trajectory() {
     let mut met = std::collections::BTreeMap::<&str,usize>::new();
-    let mut read = 0;
+    let (mut read,mut twists) = (0,0);
     for name in fixtures::example_names() {
         if !["solid_sweeps/","generation/","mechanisms/","paths/"].iter().any(|d| name.starts_with(d)) { continue }
         let Some(e) = fixtures::example(&name) else { continue };
@@ -63,13 +63,20 @@ fn a_motion_lowers_to_the_kernels_trajectory() {
                 let (Ok(want),got) = (family.at(t),lowered.at(t)) else { continue };
                 let got = got.unwrap_or_else(|m| panic!("{name}: `{}` at {t}: {m}",family.name));
                 same_motion(got,want,&format!("{name}: `{}` at {t}",family.name));
+                // a constant twist's pose is `pose_at`'s to the bit (`Screw::at` reads its unit axis
+                // as it is): the walk's witnesses and reaches stood where they stood before the move
+                if lowered.screw().is_some() {
+                    let pose = family.pose_at(t).unwrap();
+                    for p in PROBES { assert_eq!(got.point(p),pose.point(p),"{name}: `{}` at {t}, a point by `pose_at`",family.name) }
+                    twists += 1;
+                }
                 read += 1;
             }
         }
     }
     eprintln!("{read} poses; kinds met {met:?}");
     for kind in ["twist","relative","paced","general"] { assert!(met.contains_key(kind),"no {kind} met: {met:?}") }
-    assert!(read > 200,"{read}");
+    assert!(read > 200 && twists > 50,"{read} poses, {twists} of a constant twist");
 }
 
 #[test]

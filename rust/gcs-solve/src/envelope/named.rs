@@ -1,4 +1,5 @@
 //! A named implicit envelope of an analytic surface under a solved rigid-motion family.
+use crate::solid::ReadRevolved;
 use super::{Contact,Error,Intersection,IntersectionOptions};
 use crate::{model::Sketch,motion::Family,solid::RevolvedSurface};
 

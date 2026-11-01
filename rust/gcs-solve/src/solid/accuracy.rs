@@ -37,6 +37,7 @@
 //! the tabulated cells) and says so: a sample farther than `reach` from every face is unmatched.
 //! Signs follow the field's: positive outside the material.
 #[allow(unused_imports)]
+use super::ReadRevolved;
 use crate::fmath::Det;
 use super::{cad,RevolvedSurface,SpatialField,SurfaceProjector,SweepContacts,MaterialField};
 use crate::envelope::Motion;

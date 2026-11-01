@@ -8,6 +8,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- Sweeps of a constant twist (`swept`): a tool read as its faces (`swept::tool::Tool`, faces of
+  revolution in `swept::surface`) carried by a screw, a turn or a slide, the characteristic walked
+  through a blank with its rows typed (`swept::constant_twist`), and its sheet fitted and judged to
+  a tolerance (`swept::sheet`, `swept::helical`).
+- A ring's contact under a motion (`contact::RingFrame`) and its roots on a chart of the ring
+  (`contact::Sinusoid::roots_over`), and a moving surface point (`contact::SurfacePoint`,
+  `contact::contact`).
+
 ## [0.1.0] - 2026-11-01
 
 The first release: the kernel as geomsolver builds and tests it.

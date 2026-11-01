@@ -1,5 +1,6 @@
 //! Trimmed patches made of their parts (#364): a source surface or envelope the drawing names,
 //! kept within some solids' material and outside others'.
+use gcs_core::solid::ReadRevolved;
 use gcs_core::{envelope::{Error,GeneratedEnvelope,IntersectionOptions},patch::TrimmedPatch,program,
     solid::{RevolvedRegion,RevolvedSurface}};
 use crate::common::parsed::determined as solved;

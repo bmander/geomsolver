@@ -33,16 +33,8 @@ enum Step {
     Followed {ride:std::sync::Arc<Ride>,back:bool},
 }
 
-/// The joint's own number at the roll `angle` and its rate a radian of the roll: the law's where
-/// it is driven, the roll itself otherwise.
-fn driven(law: &Option<Law>,angle: f64) -> Result<(f64,f64),String> {
-    match law {
-        None => Ok((angle,1.)),
-        Some(l) => l.jet(angle).map(|[v,r]| (v,r)),
-    }
-}
-
-/// `driven`'s value alone, for a reading that needs no rate.
+/// The joint's own number at the roll `angle`: the law's where it is driven, the roll itself
+/// otherwise (its rate is the lowered trajectory's, `Trajectory::Paced`).
 fn driven_value(law: &Option<Law>,angle: f64) -> Result<f64,String> {
     match law { None => Ok(angle), Some(l) => l.value(angle) }
 }
@@ -165,6 +157,9 @@ impl Isa {
 pub struct Family {
     pub name: String,
     steps: Vec<Step>,
+    /// The motion lowered to the kernel's trajectory (`trajectory`), once: what its pose, its rate,
+    /// its constant twist and its instantaneous screw are read off, or why it could not be.
+    lowered: Result<Trajectory,String>,
 }
 
 impl Family {
@@ -340,12 +335,13 @@ impl Family {
     /// The **constant twist** this motion is (#684): a screw (`screw`), a turn about one axis with
     /// no advance, or a slide along one line turning not at all, each at a constant rate. Every
     /// point it carries then moves the same way relative to what carries it at every time, which
-    /// is what `solid::constant_twist` builds a swept boundary from. A slide is read as a screw
-    /// turning at no ratio about the line along its direction through the world's origin; a
-    /// relative motion, a driven one and one along a path are none.
+    /// is what `solid::constant_twist` builds a swept boundary from. It is the lowered trajectory's
+    /// (`Trajectory::screw`, #721 F2b): a slide is read as a screw turning at no ratio about the line
+    /// along its direction through the world's origin, and a turn of no ratio as the slide it is; a
+    /// relative motion, a driven one, one along a path and one that moves nothing are none.
     pub fn twist(&self) -> Option<Screw> {
-        self.turning().or_else(|| self.sliding().filter(|&(_,advance)| advance != 0.)
-            .map(|(axis,advance)| Screw {origin:[0.;3],axis,ratio:0.,advance}))
+        // (one that moves nothing, a turn of no ratio and no advance, has no characteristic)
+        self.lowered.as_ref().ok()?.screw().filter(|s| s.ratio != 0. || s.advance != 0.)
     }
 
     /// The slide this motion is, where it is one translation: its unit direction and its advance a
@@ -373,7 +369,10 @@ impl Family {
     /// (`Relative`), and a frame along a path or one the drawing moves as what it evaluates to at
     /// each time (`General`). Its pose at every time is `at`'s; where `twist` reads a constant twist
     /// it is that one (`a_motion_lowers_to_the_kernels_trajectory`).
-    pub fn trajectory(&self) -> Result<Trajectory,String> { self.lowered(self.steps.len().checked_sub(1).ok_or("a motion with no step")?) }
+    pub fn trajectory(&self) -> Result<Trajectory,String> { self.path().cloned() }
+
+    /// The lowered trajectory (`trajectory`), as it is held.
+    pub fn path(&self) -> Result<&Trajectory,String> { self.lowered.as_ref().map_err(Clone::clone) }
 
     fn lowered(&self,k: usize) -> Result<Trajectory,String> {
         let paced = |path: Trajectory,law: &Option<Law>| match law {
@@ -398,41 +397,22 @@ impl Family {
     /// screw or a slide about a fixed line, or one such seen from another (`relative_to:`), whose
     /// twist is the source's less the observer's.  A slide alone, or two turns that cancel, turn
     /// nothing and have none; a relative of a relative is not constant and is refused, saying so.
+    /// The twists are the lowered trajectory's (`Screw::twist`, #721 F2b).
     pub fn instantaneous(&self) -> Result<Isa,String> {
-        let one = |s: &Step| -> Result<([f64;3],[f64;3]),String> {
-            let tau = std::f64::consts::TAU;
-            if s.is_driven() {
-                return Err(format!("`{}` is driven by a law, whose screw moves as it runs: a \
-                    screw is read of turns, screws and slides at a constant rate",self.name));
-            }
-            match *s {
-                Step::Rotation {origin,axis,ratio,advance,..} => {
-                    let d = unit(axis).ok_or("a turn's axis has no direction")?;
-                    let w = d.map(|x| x*ratio);
-                    let v = crate::space::cross(origin,w);
-                    Ok((w,std::array::from_fn(|k| v[k]+d[k]*advance/tau)))
+        use crate::brep::trajectory::Twist;
+        let root = self.steps.last().ok_or("a motion with no step")?;
+        // a step's twist where it is the same at every time in the fixed frame: a turn, a screw or a
+        // slide about a fixed line, at a constant rate
+        let constant = |t: &Trajectory| match t { Trajectory::Twist(s) => Some(s.twist()),_ => None };
+        let Twist {omega:w,v0} = match self.path()? {
+            Trajectory::Relative {source,observer} => match (constant(source),constant(observer)) {
+                (Some(s),Some(o)) => Twist {omega:crate::space::sub(s.omega,o.omega),v0:crate::space::sub(s.v0,o.v0)},
+                (s,_) => {
+                    let Step::Relative {source,observer} = *root else { unreachable!("a relative lowers from a relative") };
+                    return Err(self.unsteady(&self.steps[if s.is_none() { source } else { observer }]))
                 }
-                Step::Translation {axis,advance,..} => {
-                    let d = unit(axis).ok_or("a slide's line has no direction")?;
-                    Ok(([0.;3],d.map(|x| x*advance/tau)))
-                }
-                Step::Guided {..} => Err(format!("`{}` rides along a path, whose screw moves as it \
-                    runs: a screw is read of turns, screws and slides at a constant rate",
-                    self.name)),
-                Step::Followed {..} => Err(format!("`{}` stands where the drawing puts it as its \
-                    parameter runs, whose screw moves as it runs: a screw is read of turns, screws \
-                    and slides at a constant rate",self.name)),
-                Step::Relative {..} => Err(format!("`{}` is a motion relative to a relative one, whose \
-                    screw moves as it runs: a screw is read of turns, screws and slides about fixed \
-                    lines, and of one relative to another",self.name)),
-            }
-        };
-        let (w,v0) = match self.steps.last().ok_or("a motion with no step")? {
-            Step::Relative {source,observer} => {
-                let (s,o) = (one(&self.steps[*source])?,one(&self.steps[*observer])?);
-                (crate::space::sub(s.0,o.0),crate::space::sub(s.1,o.1))
-            }
-            s => one(s)?,
+            },
+            t => constant(t).ok_or_else(|| self.unsteady(root))?,
         };
         let ww = crate::space::dot(w,w);
         if !(ww > 0.) {
@@ -440,6 +420,25 @@ impl Family {
         }
         let point = crate::space::cross(w,v0).map(|x| x/ww);
         Ok(Isa {point,direction:unit(w).expect("a turn"),pitch:crate::space::dot(w,v0)/ww,omega:w,v0})
+    }
+
+    /// Why step `s` has no screw the same at every time (`instantaneous`), as the drawing says it.
+    fn unsteady(&self,s: &Step) -> String {
+        if s.is_driven() {
+            return format!("`{}` is driven by a law, whose screw moves as it runs: a \
+                screw is read of turns, screws and slides at a constant rate",self.name)
+        }
+        match s {
+            Step::Guided {..} => format!("`{}` rides along a path, whose screw moves as it \
+                runs: a screw is read of turns, screws and slides at a constant rate",
+                self.name),
+            Step::Followed {..} => format!("`{}` stands where the drawing puts it as its \
+                parameter runs, whose screw moves as it runs: a screw is read of turns, screws \
+                and slides at a constant rate",self.name),
+            _ => format!("`{}` is a motion relative to a relative one, whose \
+                screw moves as it runs: a screw is read of turns, screws and slides about fixed \
+                lines, and of one relative to another",self.name),
+        }
     }
 
     /// How this motion carries the plane through `point` with unit `normal`, when it carries it
@@ -620,58 +619,18 @@ impl Family {
             if height > 64 { return Err("motion dependencies exceed 64 levels".into()); }
             heights.push(height);
         }
-        Ok(Self {name,steps})
+        let mut family = Self {name,steps,lowered:Err(String::new())};
+        family.lowered = family.steps.len().checked_sub(1).ok_or_else(|| "a motion with no step".to_string())
+            .and_then(|root| family.lowered(root));
+        Ok(family)
     }
 
     /// Exact pose and derivative per radian of the shared angle. Relative motion is
-    /// observer^-1 * source, including the derivative of the moving inverse.
+    /// observer^-1 * source, including the derivative of the moving inverse. It is the lowered
+    /// trajectory's (`Trajectory::at`, #721 F2b).
     pub fn at(&self, angle: f64) -> Result<Motion,String> {
         if !angle.is_finite() { return Err("a motion angle must be finite".into()); }
-        // the steps' values on the stack for a family of up to eight steps, as `pose_at` keeps
-        // them: an envelope's root search reads a pose and its rate many thousand times
-        let mut fixed = [Motion::identity();8];
-        let mut spilled;
-        let values: &mut [Motion] = if self.steps.len() <= fixed.len() { &mut fixed[..self.steps.len()] }
-            else { spilled = vec![Motion::identity();self.steps.len()]; &mut spilled };
-        for (n,step) in self.steps.iter().enumerate() {
-            let value = match *step {
-                Step::Rotation {origin,axis,ratio,advance,ref law} => {
-                    // a drive's value and its rate by the chain rule (#391 S5)
-                    let (a,da) = driven(law,angle)?;
-                    let rotation = Motion::rotation(axis,ratio*a,ratio*da)
-                        .map_err(|_| "a motion angle overflowed")?;
-                    let pose = Motion::translation(origin.map(|v| -v),[0.;3]).unwrap()
-                        .then(rotation).then(Motion::translation(origin,[0.;3]).unwrap());
-                    if advance == 0. { pose } else {
-                        let direction = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
-                        let rate = advance/std::f64::consts::TAU;
-                        pose.then(Motion::translation(direction.map(|v| v*rate*a),direction.map(|v| v*rate*da))
-                            .map_err(|_| "a motion advance overflowed")?)
-                    }
-                }
-                Step::Translation {axis,advance,ref law} => {
-                    let (a,da) = driven(law,angle)?;
-                    let direction = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
-                    let rate = advance/std::f64::consts::TAU;
-                    Motion::translation(direction.map(|v| v*rate*a),direction.map(|v| v*rate*da))
-                        .map_err(|_| "a motion advance overflowed")?
-                }
-                Step::Relative {source,observer} => values[source].then(values[observer].inverse()),
-                // the path's parameter is what the motion is read at (#398 C)
-                Step::Guided {ref guide,back} => {
-                    let m = guide.motion(angle)?;
-                    if back { m.inverse() } else { m }
-                }
-                // the roll is the drawing's parameter (#398 F)
-                Step::Followed {ref ride,back} => {
-                    let m = ride.motion(angle)?;
-                    if back { m.inverse() } else { m }
-                }
-            };
-            if !value.is_finite() { return Err("a motion pose or derivative overflowed".into()); }
-            values[n] = value;
-        }
-        values.last().copied().ok_or_else(|| "a motion family has a root".into())
+        self.path()?.at(angle).map_err(|e| e.msg)
     }
 }
 

@@ -19,59 +19,20 @@ pub mod screw;
 pub mod swept_region;
 pub use named::GeneratedEnvelope;
 
-use crate::plane::{cross, dot};
-
 type V3 = [f64; 3];
 
-use crate::space::length;
 /// A rigid pose and its rate, and why one could not be read, are the kernel's (#721 F2): the
 /// trajectory a sweep is carried along is read in them.
 pub use crate::brep::trajectory::{Motion, Error};
 pub(crate) use crate::brep::trajectory::normalized;
 
-/// A smooth surface and its two exact first derivatives at one parameter pair.
-#[derive(Clone, Copy, Debug)]
-pub struct SurfacePoint {
-    pub position: V3,
-    pub du: V3,
-    pub dv: V3,
-}
-
-/// Boundary checks allow zero tolerance, but never negative or nonfinite controls.
-pub fn check_tolerance(tolerance: f64) -> Result<(),Error> {
-    if tolerance.is_finite() && tolerance >= 0. { Ok(()) } else { Err(Error::InvalidOptions) }
-}
+/// A surface point with its two first derivatives, a point moving under a motion and the
+/// envelope's equation at it, and the bar on a tolerance, are the kernel's (#721 F2b).
+pub use crate::brep::contact::{SurfacePoint,Contact,contact,check_tolerance};
 
 pub fn check_iterations(max_iterations: u32) -> Result<(),Error> {
     if max_iterations == 0 || max_iterations > i32::MAX as u32/4 { Err(Error::InvalidOptions) }
     else { Ok(()) }
-}
-
-/// A moving surface point. `normal_velocity = 0` is the envelope equation.
-#[derive(Clone, Copy, Debug)]
-pub struct Contact {
-    pub position: V3,
-    pub normal: V3,
-    pub velocity: V3,
-    pub normal_velocity: f64,
-}
-
-pub fn contact(surface: SurfacePoint, motion: Motion) -> Result<Contact, Error> {
-    // Normalize each tangent first: units or parameterization must not turn a small,
-    // perfectly regular surface into a singular one (nor overflow the cross product).
-    let u = normalized(surface.du).ok_or(Error::Degenerate)?;
-    let v = normalized(surface.dv).ok_or(Error::Degenerate)?;
-    let n = cross(u, v);
-    if length(n) < 1e-12 { return Err(Error::Degenerate); }
-    let normal = motion.vector(normalized(n).ok_or(Error::Degenerate)?);
-    let position = motion.point(surface.position);
-    let velocity = motion.velocity(surface.position);
-    let normal_velocity = dot(normal, velocity);
-    if !position.iter().chain(&normal).chain(&velocity)
-        .chain(std::iter::once(&normal_velocity)).all(|x| x.is_finite()) {
-        return Err(Error::NonFinite);
-    }
-    Ok(Contact { position, normal, velocity, normal_velocity })
 }
 
 /// Parameter scales condition the three unknowns [u,v,t]. Residual tolerances are in

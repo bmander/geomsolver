@@ -14,6 +14,7 @@
 //! tooth's eight half-planes, every side's material below the plane and above it. Drafted outward
 //! both ways, the crease is concave, and an arc meeting a side at an angle moves its corner along a
 //! curve: both are refused at T1 by name.
+use gcs_core::solid::ReadExtruded;
 use gcs_core::solid::admission::{self,Class,Condition,Options};
 use gcs_core::solid::{ExtrudedSurface,SweepContacts,ToolSurface};
 use gcs_core::space::{cross,dot,unit};
