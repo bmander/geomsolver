@@ -57,8 +57,10 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   (`swept::generating`), the cutter sectioned at its stations (`swept::cutter`) and its contact
   curves traced into a sheet (`swept::trace`); `Family::normal_velocity` says the kernel's
   `Uncharted` in the drawing's words, and `SweepContacts::chart` hands the tracer the lowered
-  motion and the roll.  The rest of the generating class (its admission rows and its sector's
-  build), the canal and planar classes' readings and sheets, the trims and the closed solid move
+  motion and the roll.  So is a ball's tube (`swept::canal`), its rows typed (`canal::Row`,
+  `Seen`); `solid::canal` reads the ball off the tool's recipe, gates the tube against the sweep's
+  field and says its refusals.  The rest of the generating class (its admission rows and its
+  sector's build), the planar classes' readings and sheets, the trims and the closed solid move
   with no change in behaviour; until each has, it is held where it is, and no new walk is built
   in the solver.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint

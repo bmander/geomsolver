@@ -128,7 +128,8 @@ prism cutter's sheet the same way: `brep::sweep::extruded` (edges as lines/arcs,
 points over their fans, `generate::cut_at`, Hermite spans, extruded; `Family::in_frame`), else
 traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cut.rs`.
 
-**A ball swept is its tube** (#238, #684 D, `solid::canal`): a sweep whose tool's recipe is one
+**A ball swept is its tube** (#238, #684 D, `solid::canal`; the tube is the kernel's,
+`brep::swept::canal`, #721 F2c): a sweep whose tool's recipe is one
 ball (`brep::recipe::ball_of`), under any motion, is the points within the radius of its centre's
 path — the ball's disc square to the path carried along it, united with the half ball beyond each
 end: exact, its end poses the construction's own, so no clearance (E1) is asked and a sweep may
@@ -139,11 +140,11 @@ or to its slid image along `Carry::Line` (a cylinder; a slide is a screw of no t
 the constant twist's or the field's) where the centre stands within the radius of the axis or a
 helix past a turn climbs no more than the diameter a turn. Under any other motion — a relative
 roll, a frame along a path or one the drawing moves, a driven joint — the path is read off the
-motion (`canal::along`): the disc a face family's one closed `Run::Round` wall over the roll, its
+motion (`brep::swept::canal::along`): the disc a face family's one closed `Run::Round` wall over the roll, its
 stations the centre's point and the radius vectors of the frame square to the path, carried from
-the start by double reflection (`motion::reflected`) once, over 4096 steps of the roll, any other
-roll one step from its nearest (`canal::Carried`), its pieces of the roll (Gauss–Lobatto,
-`family::weights`) each held to the disc read near both its ends within a face family's `EXACT` of
+the start by double reflection (`brep::trajectory::reflected`) once, over 4096 steps of the roll, any other
+roll one step from its nearest (`Carried`), its pieces of the roll (Gauss–Lobatto,
+`brep::family::weights`) each held to the disc read near both its ends within a face family's `EXACT` (`brep::family::EXACT`) of
 the diameter, so the wall is fitted, and lies on a cylinder or a torus where its
 numbers do (`brep::family`'s `analytic`); built as the family and the end half balls united
 (`build::capped`). Its rows, sampled at points an eighth of the radius apart along the path
@@ -151,7 +152,10 @@ numbers do (`brep::family`'s `analytic`); built as the family and the end half b
 (`admission::Asked::Canal`, asked first by `admit_body` where no other class reads the motion):
 **B1** the path never stops and turns nowhere tighter than the radius; **B2** it comes back within
 the diameter (and the points' spacing) of itself nowhere half a turn of a circle of the radius
-along it from (`canal::refusal`). The recipe's `"canal"` node (`centre`, `radius`, the ball's
+along it from (`canal::refusal`).  The kernel refuses by `Row` (B1 `Curvature`, B2 `Return`) and
+what it saw (`Seen`: where the path stops, the radius it turns on, how near it comes back), with a
+point of the path and how many points it read; `solid::canal` says that as the rows always said it
+and reads the tool's recipe as a ball, lowers the motion and gates what the kernel builds. The recipe's `"canal"` node (`centre`, `radius`, the ball's
 `face` naming every face, and either the axis `origin`/`axis`, `angle`, `advance` or the face
 family's node as `tube`; native OCCT refuses it by name); gated by agreement with the sweep's
 field (`Caches::canal`, which remembers the refusal too); `cad::contains_sweep`, `swept_cut` and

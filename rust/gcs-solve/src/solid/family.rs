@@ -439,12 +439,8 @@ fn carry(sk: &mut Sketch, (sa, xa): (f64, &[f64]), (sb, xb): (f64, &[f64]), s: f
     }
 }
 
-/// The Lagrange weights of the stations at `at` read at `s`: the polynomial through them.
-pub(super) fn weights(at: &[f64], s: f64) -> Vec<f64> {
-    (0..at.len()).map(|i| {
-        (0..at.len()).filter(|&j| j != i).map(|j| (s - at[j]) / (at[i] - at[j])).product()
-    }).collect()
-}
+/// The Lagrange weights of a piece's stations are the kernel's (`brep::family::weights`).
+pub(super) use crate::brep::family::weights;
 
 /// The polynomial through stations `from`, read at `s`, of what `pick` reads of each.
 fn mix(from: &[&Station], w: &[f64], pick: &dyn Fn(&Station) -> V) -> V {
@@ -1157,12 +1153,9 @@ impl Family {
     }
 }
 
-/// How near the walls' polynomials in `s` must pass a station solved between their nodes, as a
-/// part of the section's size: the exact surface's error, well under the kernel's tolerance.
-pub(super) const EXACT: f64 = 1e-10;
-
-/// The longest piece of the interval the walls' polynomials span, as a fraction of it.
-pub(super) const LONGEST_PIECE: f64 = 0.25;
+/// How near the walls' polynomials must pass what they are fitted to, and the longest piece they
+/// span, are the kernel's (`brep::family::EXACT`, `LONGEST_PIECE`).
+pub(super) use crate::brep::family::{EXACT, LONGEST_PIECE};
 
 /// Where between a piece's nodes the station is solved again to check its polynomials, as a
 /// fraction of the piece: beyond the fifth node, where interpolation on Gauss–Lobatto points errs

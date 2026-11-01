@@ -438,3 +438,26 @@ impl Trajectory {
         Ok(Trajectory::Pieces(Pieces(pieces)))
     }
 }
+
+/// `r` reflected in the plane square to `v`.
+fn reflect(r: V3, v: V3, vv: f64) -> V3 {
+    sub(r, scale(v, 2.0 * dot(v, r) / vv))
+}
+
+/// **One step of the rotation-minimising frame** (double reflection, Wang et al. 2008): the frame
+/// `f` (a tangent and two directions square to it) at the point `x0` carried to the point `x1`
+/// with tangent `t1`.  A step that does not move keeps the frame.
+pub fn reflected(f: &[V3; 3], x0: V3, x1: V3, t1: V3) -> [V3; 3] {
+    let v1 = sub(x1, x0);
+    let c1 = dot(v1, v1);
+    if c1 == 0.0 {
+        return *f;
+    }
+    let (rl, tl) = (reflect(f[1], v1, c1), reflect(f[0], v1, c1));
+    let v2 = sub(t1, tl);
+    let c2 = dot(v2, v2);
+    let u = if c2 == 0.0 { rl } else { reflect(rl, v2, c2) };
+    // held square to the tangent and unit, the rounding of every step not carried on
+    let u = crate::util::space::normalised(sub(u, scale(t1, dot(u, t1)))).unwrap_or(u);
+    [t1, u, cross(t1, u)]
+}

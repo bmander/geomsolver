@@ -8,6 +8,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A ball's tube along a trajectory (`swept::canal`): in closed form along a constant twist, a face
+  family fitted to its disc along any other, refused by rows typed with what they saw where it
+  would meet itself. The rotation-minimising frame's step (`trajectory::reflected`) and a face
+  family's tolerance, longest piece and Lagrange weights (`family::EXACT`, `LONGEST_PIECE`,
+  `weights`).
 - Generating sweeps' contact times (`swept::generating`): a tool point's contact chart along a
   trajectory that turns it, its form read once (`Form`: a sinusoid in the roll under a turn or a
   turn seen from a turn, a line under a slide seen from a turn), its roots
