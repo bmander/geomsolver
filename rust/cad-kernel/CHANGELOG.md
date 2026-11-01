@@ -8,6 +8,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A point's, line's or circle's cut under a planar motion (`swept::planar_cut`: a program of turns,
+  slides and relatives, `PlanarStep`, its cut and derivative along the roll in closed form) and the
+  extruded cutter's sheet built from it (`swept::extruded::sheet`).
 - An indexed body's sector (`swept::sector`): its indexing, the side through the gaps its cuts
   leave, the slicings a recipe suggests, the cells a sector is split into and the blank turned to
   its seam.

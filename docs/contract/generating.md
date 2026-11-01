@@ -124,7 +124,9 @@ too; its `envelope` under a motion keeping the prism's view is built with the dr
 marked `CurveE::extrusion`, the face in a view that stands where drawn. `p coincident
 flank` from any view is `CKind::PointOnExtrusion` (`FamilyKernel::Extrusion`, consts
 `kernels::EXTRUSION_FRAME` then the contact's; `Sketch::extrusion_frame`). The export builds a
-prism cutter's sheet the same way: `brep::sweep::extruded` (edges as lines/arcs, convex corners as
+prism cutter's sheet the same way: `brep::sweep::extruded` (the kernel's `brep::swept::extruded`,
+#721 F2c, its cuts in closed form, `brep::swept::planar_cut`, held to `generate::cut_at`'s to
+rounding by `generation::the_kernels_planar_cut_is_the_generated_profiles`; edges as lines/arcs, convex corners as
 points over their fans, `generate::cut_at`, Hermite spans, extruded; `Family::in_frame`), else
 traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cut.rs`.
 

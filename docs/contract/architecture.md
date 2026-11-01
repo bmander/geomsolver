@@ -73,7 +73,10 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   the generating class's traced sheet (`swept::trace::traced_sheet`), and the sector an indexed
   body is built as: its indexing, the side through its cuts' gaps and the cells it is split into
   (`swept::sector`), which `brep::sweep::sector` judges by the body's material field, the
-  semantic reference.  The rest of the generating class (the extruded cutter's sheet), the trims and the closed solid move
+  semantic reference.  So is the extruded cutter's sheet (`swept::extruded`), its profile's cuts
+  under a motion of its plane read in closed form (`swept::planar_cut`, the drawing's generated
+  profiles' `generate` held to it); `brep::sweep::extruded` reads the cutter and the motion in
+  the profile's plane (`Family::in_frame`). the trims and the closed solid move
   with no change in behaviour; until each has, it is held where it is, and no new walk is built
   in the solver.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint

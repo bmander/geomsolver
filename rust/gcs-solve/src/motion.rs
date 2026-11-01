@@ -138,12 +138,7 @@ pub enum PlaneRigid {
 /// One step of a motion read in a plane it carries within itself (`Family::in_frame`): a turn
 /// about a point at a ratio, a slide along a unit direction by an advance a
 /// turn, and the relative of the two steps before it.
-#[derive(Clone,Copy,Debug,PartialEq)]
-pub enum PlanarStep {
-    Turn { centre: [f64;2], ratio: f64 },
-    Slide { direction: [f64;2], advance: f64 },
-    Relative,
-}
+pub use crate::brep::swept::planar_cut::PlanarStep;
 
 /// A screw read off a motion (`Family::twist`), the kernel's constant twist (#721 F2): it turns
 /// `ratio` radians a radian about the line through `origin` along the unit `axis`, and slides
