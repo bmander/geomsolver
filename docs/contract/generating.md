@@ -310,10 +310,25 @@ precision before and after, the same to the bit.  (Read through `Twist::body` an
 instead, the walk moves by an ulp, and that alone turns three triangles of the whole turn's mesh over
 (`the_wheel_turned_once_leaves_its_shadow_all_round`): the mesher's, F4's to mend.)
 
-**The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**,
-for review and not yet built: every candidate sheet a patch over an explicit domain cut at its
-branch and fold loci, a box holding the sweep split by all of them (`boolean::split`), each cell
-classified by the kernel's membership test, the kept cells the closed solid; X1–X5 its cases.
+**The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
+every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding
+the sweep split by all of them, each cell classified by the kernel's membership test
+(`brep::swept::member`, the definition read without the drawing: the point carried back lies in the
+tool at some roll, by branch and bound over the trajectory's speed bound, `Unsettled` near the
+boundary rather than guessed), the kept cells the closed solid; X1–X5 its cases.  Built
+(`brep::swept::closed`): a polyhedral tool slid (a box aslant its zonotope to 1e-9, an L prism its
+blocks' sweeps united), or turned where its edges run along the axis or square to it (a bar a quarter
+turn beside the axis its polar integral to 2e-15), by the arrangement; and a **convex polyhedral tool
+turned whole, however it leans, as its solid of revolution with no Boolean** — each slice convex, so
+its radii one span `[ρ_min(z), ρ_max(z)]`, `ρ_max` reached on an edge (a hyperbola, its meridian a
+rational quadratic) and `ρ_min` on the axis, a face's contact line or an edge, which one fixed
+between the heights where two reach as far (`ρ²` quadratics equal or touching) or the axis crosses a
+face; the profile cut there and turned once (`tests/swept_closed.rs`:
+`a_block_leaning_to_the_axis_turned_whole_…`,
+`a_block_straddling_the_axis_tipped_two_ways_turned_whole_…`, each the integral of its slices' radial
+spans to 1e-6 and agreeing with membership).  A leaning tool turned part of a turn, a screw and a
+curved tool are refused by what they are (`Unbuilt`): the arrangement past planes and cylinders waits
+on the Booleans meeting tangent surfaces (F4, #699 E).
 
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:

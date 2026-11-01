@@ -26,7 +26,11 @@
 //! throat (where it touches the cylinder of that radius). The arrangement cuts by the separators,
 //! then the planes, then the curved candidates (a plane by `kept` on each side, a solid of
 //! revolution in common and cut away), and a cell is kept where its deepest interior point
-//! (`query::interior`) is a member. A tool leaning to the axis splits and classifies, but its cells'
+//! (`query::interior`) is a member.
+//!
+//! **A convex polyhedral tool turned whole, however it leans, is built by another road**
+//! (`turned_whole`): its solid of revolution, the radii each slice holds turned once, with no
+//! Boolean. A tool leaning to the axis turned part of a turn splits and classifies, but its cells'
 //! union does not yet hold where a hyperboloid's traced meeting with a leaning plane ends: the
 //! Booleans' robustness (F4, #699 E). Anything else — a curved face, a screw, another motion — is
 //! refused by what it is (`Unbuilt`); those are the design's later steps.
@@ -171,6 +175,11 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
         }
     } else if screw.is_turn() {
         let (c,axis) = (screw.origin,screw.axis);
+        // a convex tool turned whole is the solid of revolution of its radial profile, built in
+        // closed form with no Boolean
+        let whole = (screw.ratio*(b-a)).abs() >= std::f64::consts::TAU*(1.-1e-12);
+        let convex = faces.iter().all(|&(o,n)| tool.vertices.iter().all(|v| dot(sub(v.p,o),n) <= eps));
+        if whole && convex { return turned_whole(&faces,&edges,c,axis,eps,tol) }
         // a line turned whole: a cylinder about the axis where it runs along it, a plane square to
         // the axis where it runs square to it, else a hyperboloid (a double cone where it meets the
         // axis)
@@ -364,9 +373,8 @@ fn meridian(o: V,axis: V,p: V,e: V) -> (f64,f64,f64) {
 /// **The solid the line through `p` along unit `e` bounds turned about the unit `axis` through `o`
 /// over the heights `span`**, held exactly: its meridian, `√(throat² + k² (z − height)²)`, closed
 /// down the axis at both heights and turned once. A hyperboloid's meridian is one rational
-/// quadratic (the conic through its ends, its end tangents' meeting and its shoulder, the
-/// shoulder's weight `u / (1 − u)`); a cone's a line, a solid on either side of its apex where the
-/// span holds it.
+/// quadratic (`meridian_arc`); a cone's a line, a solid on either side of its apex where the span
+/// holds it.
 fn revolved(o: V,axis: V,p: V,e: V,[z0,z1]: [f64;2],eps: f64) -> Result<Vec<Brep>,String> {
     let (throat,height,k) = meridian(o,axis,p,e);
     let f = Frame::about(o,axis);
@@ -402,12 +410,197 @@ fn revolved(o: V,axis: V,p: V,e: V,[z0,z1]: [f64;2],eps: f64) -> Result<Vec<Brep
         }
         return Ok(out)
     }
-    let slope = |z: f64| k*k*(z-height)/rho(z);
     let (a,b) = ([rho(z0),z0],[rho(z1),z1]);
-    let (ta,tb) = ([slope(z0),1.],[slope(z1),1.]);
+    Ok(vec![turn(meridian_arc(&at,(throat,height,k),a,b)?,a,b)?])
+}
+
+/// How the nearest or farthest of a convex tool's slice about the axis runs with the height `z`
+/// along it: through the slice's corner on an edge (`ρ² = throat² + k² (z − height)²`, the edge's
+/// meridian), along the slice's side on a face (`ρ = α z + β`, the distance from the axis to the
+/// face's line in the slice, the face's contact line), or on the axis itself (the slice holds it).
+#[derive(Clone,Copy,Debug,PartialEq)]
+enum Reach { Edge(usize),Face(usize),Axis }
+
+/// **The closed solid a convex polyhedral tool sweeps turned whole about the unit `axis` through
+/// `c`**: its solid of revolution. Each slice square to the axis is convex, so the radii it holds
+/// are one span `[ρ_min(z), ρ_max(z)]`, and the sweep is that profile turned once. `ρ_max` is
+/// reached at a slice's corner, on an edge: a hyperbola in `(ρ, z)` (the edge's meridian), a line
+/// where the edge meets the axis or runs along it. `ρ_min` is zero where the slice holds the axis,
+/// else reached on a side (the face's contact line, a line) or at a corner. Which one reaches is
+/// fixed between the heights where two of them reach as far (their `ρ²`, each quadratic in `z`,
+/// equal: a corner passing the foot of a side's perpendicular among them, where the two touch) or
+/// the axis crosses a face, so the profile is cut there, each stretch read at its middle, and
+/// turned whole (`build::revolve`): exact, its hyperbolas rational quadratics.
+fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,tol: f64) -> Result<Brep,Unbuilt> {
+    let height = |p: V| dot(sub(p,c),axis);
+    let mut heights: Vec<f64> = edges.iter().flat_map(|&(p,q,_)| [height(p),height(q)]).collect();
+    heights.sort_by(f64::total_cmp);
+    heights.dedup_by(|x,y| (*x-*y).abs() <= eps);
+    if heights.len() < 2 { return Err(Unbuilt::Failed("the tool has no height along the axis".into())) }
+    // each edge's meridian (a line along the axis: a cylinder, its lean none)
+    let meridians: Vec<(f64,f64,f64)> = edges.iter().map(|&(p,q,_)| {
+        let e = unit(sub(q,p));
+        if norm(cross(e,axis)) <= 1e-12 {
+            let r = sub(p,c);
+            (norm(sub(r,scale(axis,dot(r,axis)))),0.,0.)
+        } else { meridian(c,axis,p,e) }
+    }).collect();
+    // each face's signed distance from the axis to its line in a slice, `α z + β` (positive where the
+    // axis stands outside the face), none for a face square to the axis
+    let lines: Vec<Option<(f64,f64)>> = faces.iter().map(|&(o,n)| {
+        let across = norm(sub(n,scale(axis,dot(n,axis))));
+        (across > 1e-12).then(|| (dot(n,axis)/across,dot(n,sub(c,o))/across))
+    }).collect();
+    // `ρ²` as a quadratic in `z`: its coefficients of `z²`, `z` and one
+    let squared = |r: Reach| -> [f64;3] { match r {
+        Reach::Edge(i) => { let (t,h,k) = meridians[i]; [k*k,-2.*k*k*h,t*t+k*k*h*h] }
+        Reach::Face(f) => { let (al,be) = lines[f].unwrap(); [al*al,2.*al*be,be*be] }
+        Reach::Axis => [0.;3],
+    } };
+    let rho = |r: Reach,z: f64| -> f64 { match r {
+        Reach::Edge(i) => { let (t,h,k) = meridians[i]; (t*t+k*k*(z-h)*(z-h)).sqrt() }
+        Reach::Face(f) => { let (al,be) = lines[f].unwrap(); (al*z+be).abs() }
+        Reach::Axis => 0.,
+    } };
+    // each stretch of height with what reaches farthest and what nearest over it
+    let mut stretches: Vec<([f64;2],Reach,Reach)> = Vec::new();
+    for w in heights.windows(2) {
+        let (z0,z1) = (w[0],w[1]);
+        let mid = 0.5*(z0+z1);
+        // the edges the slab's slices cut (their corners) and the faces (their sides, each between
+        // two of those edges)
+        let cut: Vec<usize> = (0..edges.len()).filter(|&i| {
+            let (h0,h1) = (height(edges[i].0),height(edges[i].1));
+            h0.min(h1) < mid && h0.max(h1) > mid
+        }).collect();
+        let sides: Vec<(usize,[usize;2])> = (0..faces.len()).filter(|&f| lines[f].is_some()).filter_map(|f| {
+            let on: Vec<usize> = cut.iter().copied().filter(|&i| edges[i].2.contains(&f)).collect();
+            (on.len() == 2).then(|| (f,[on[0],on[1]]))
+        }).collect();
+        // where the reach may change: two candidates' `ρ²` equal (a root, or where they touch), or
+        // the axis crossing a face's line
+        let mut cuts = vec![z0,z1];
+        let candidates: Vec<Reach> = cut.iter().map(|&i| Reach::Edge(i)).chain(sides.iter().map(|&(f,_)| Reach::Face(f))).collect();
+        let inside = |z: f64| z > z0+eps && z < z1-eps;
+        for (i,&r) in candidates.iter().enumerate() {
+            if let Reach::Face(f) = r { let (al,be) = lines[f].unwrap(); if al != 0. { cuts.push(-be/al) } }
+            if let Reach::Edge(e) = r { let (t,h,_) = meridians[e]; if t <= eps { cuts.push(h) } }
+            for &s in &candidates[i+1..] {
+                let ([a1,b1,c1],[a2,b2,c2]) = (squared(r),squared(s));
+                let (qa,qb,qc) = (a1-a2,b1-b2,c1-c2);
+                let scale_of = qa.abs().max(qb.abs()).max(qc.abs());
+                if qa.abs() <= 1e-14*scale_of {
+                    if qb != 0. { cuts.push(-qc/qb) }
+                    continue
+                }
+                // the touch (a double root) and either root
+                cuts.push(-qb/(2.*qa));
+                let disc = qb*qb-4.*qa*qc;
+                if disc > 0. {
+                    let q = -0.5*(qb+qb.signum()*disc.sqrt());
+                    cuts.extend([q/qa,qc/q]);
+                }
+            }
+        }
+        cuts.retain(|&z| z.is_finite() && (z == z0 || z == z1 || inside(z)));
+        cuts.sort_by(f64::total_cmp);
+        cuts.dedup_by(|x,y| (*x-*y).abs() <= eps);
+        for v in cuts.windows(2) {
+            let z = 0.5*(v[0]+v[1]);
+            // the corners and sides of the slice at `z`
+            let corner = |i: usize| -> [f64;2] {
+                let (p,q,_) = edges[i];
+                let (hp,hq) = (height(p),height(q));
+                let x = add(p,scale(sub(q,p),(z-hp)/(hq-hp)));
+                let f = Frame::about(c,axis);
+                let r = sub(x,c);
+                [dot(r,f.x),dot(r,f.y)]
+            };
+            let far = cut.iter().copied().max_by(|&i,&j| rho(Reach::Edge(i),z).total_cmp(&rho(Reach::Edge(j),z)))
+                .ok_or_else(|| Unbuilt::Failed("a slab of the tool cuts no edge".into()))?;
+            let holds = sides.iter().all(|&(f,_)| { let (al,be) = lines[f].unwrap(); al*z+be <= 0. });
+            let near = if holds { Reach::Axis } else {
+                // the nearest feature of the slice: a side where the axis's foot falls within it, else
+                // a corner
+                let mut best = (f64::INFINITY,Reach::Axis);
+                for &(f,[i,j]) in &sides {
+                    let (u,v) = (corner(i),corner(j));
+                    let d = [v[0]-u[0],v[1]-u[1]];
+                    let t = -(u[0]*d[0]+u[1]*d[1])/(d[0]*d[0]+d[1]*d[1]);
+                    let (r,reach) = if t <= 0. { (rho(Reach::Edge(i),z),Reach::Edge(i)) }
+                        else if t >= 1. { (rho(Reach::Edge(j),z),Reach::Edge(j)) }
+                        else { (rho(Reach::Face(f),z),Reach::Face(f)) };
+                    if r < best.0 { best = (r,reach) }
+                }
+                best.1
+            };
+            stretches.push(([v[0],v[1]],Reach::Edge(far),near));
+        }
+    }
+    // each side's stretches run together where one candidate reaches over them
+    let runs = |pick: &dyn Fn(&([f64;2],Reach,Reach)) -> Reach| -> Vec<([f64;2],Reach)> {
+        let mut out: Vec<([f64;2],Reach)> = Vec::new();
+        for s in &stretches {
+            let r = pick(s);
+            match out.last_mut() {
+                Some((span,last)) if *last == r => span[1] = s.0[1],
+                _ => out.push((s.0,r)),
+            }
+        }
+        out
+    };
+    let (outer,inner) = (runs(&|s| s.1),runs(&|s| s.2));
+    let f = Frame::about(c,axis);
+    let at = |r: f64,z: f64| add(add(c,scale(f.x,r)),scale(axis,z));
+    // the profile's corners: where two runs meet, the radius both reach (their mean, rounding apart)
+    let joints = |runs: &[([f64;2],Reach)]| -> Vec<[f64;2]> {
+        let mut out = vec![[rho(runs[0].1,runs[0].0[0]),runs[0].0[0]]];
+        for w in runs.windows(2) {
+            let z = w[0].0[1];
+            out.push([0.5*(rho(w[0].1,z)+rho(w[1].1,z)),z]);
+        }
+        let last = runs[runs.len()-1];
+        out.push([rho(last.1,last.0[1]),last.0[1]]);
+        out
+    };
+    let (mut po,mut pi) = (joints(&outer),joints(&inner));
+    // the profile closes at its bottom and top: where the farthest and nearest meet, one point
+    for k in [0,po.len()-1] {
+        let j = if k == 0 { 0 } else { pi.len()-1 };
+        if (po[k][0]-pi[j][0]).abs() <= eps { pi[j] = po[k] }
+    }
+    for p in po.iter_mut().chain(pi.iter_mut()) { if p[0] <= eps { p[0] = 0. } }
+    let mut loop_: Vec<ProfileEdge> = Vec::new();
+    let mut piece = |r: Reach,a: [f64;2],b: [f64;2]| -> Result<(),Unbuilt> {
+        if (a[0]-b[0]).abs() <= eps && (a[1]-b[1]).abs() <= eps { return Ok(()) }
+        loop_.push(match r {
+            Reach::Edge(i) => meridian_arc(&at,meridians[i],a,b)?,
+            _ => ProfileEdge::Line {a:at(a[0],a[1]),b:at(b[0],b[1])},
+        });
+        Ok(())
+    };
+    for (k,&(_,r)) in outer.iter().enumerate() { piece(r,po[k],po[k+1])? }
+    piece(Reach::Axis,po[po.len()-1],pi[pi.len()-1])?;
+    for (k,&(_,r)) in inner.iter().enumerate().rev() { piece(r,pi[k+1],pi[k])? }
+    piece(Reach::Axis,pi[0],po[0])?;
+    let profile = Profile {origin:c,normal:f.y,names:Vec::new(),loops:vec![loop_]};
+    let out = crate::build::revolve(&profile,c,axis,std::f64::consts::TAU)?;
+    out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
+    Ok(out)
+}
+
+/// The meridian `ρ = √(throat² + k² (z − height)²)` from `a` to `b` (each `[ρ, z]`) as a profile
+/// edge in the plane `at` maps `(ρ, z)` into: a line where it runs straight (a cylinder's, a cone's,
+/// or its tangents parallel), else one rational quadratic, the conic through its ends, its end
+/// tangents' meeting and its shoulder (the shoulder's weight `u / (1 − u)`).
+fn meridian_arc(at: &dyn Fn(f64,f64) -> V,(throat,height,k): (f64,f64,f64),a: [f64;2],b: [f64;2]) -> Result<ProfileEdge,String> {
+    let line = ProfileEdge::Line {a:at(a[0],a[1]),b:at(b[0],b[1])};
+    if k == 0. || throat <= 1e-12*(1.+a[0].max(b[0])) { return Ok(line) }
+    let rho = |z: f64| (throat*throat+k*k*(z-height)*(z-height)).sqrt();
+    let slope = |z: f64| k*k*(z-height)/rho(z);
+    let (ta,tb) = ([slope(a[1]),1.],[slope(b[1]),1.]);
     let det = -ta[0]*tb[1]+ta[1]*tb[0];
-    // a span the meridian runs straight over (its tangents parallel) is the chord itself
-    if det.abs() <= 1e-12 { return Ok(vec![turn(ProfileEdge::Line {a:at(a[0],a[1]),b:at(b[0],b[1])},a,b)?]) }
+    if det.abs() <= 1e-12 { return Ok(line) }
     let t = (-(b[0]-a[0])*tb[1]+(b[1]-a[1])*tb[0])/det;
     let m = [a[0]+t*ta[0],a[1]+t*ta[1]];
     // the shoulder: where the line from the chord's middle to `m` meets the meridian, `u` along it
@@ -420,5 +613,5 @@ fn revolved(o: V,axis: V,p: V,e: V,[z0,z1]: [f64;2],eps: f64) -> Result<Vec<Brep
         .fold(f64::NAN,|x,y| if x.is_nan() { y } else { x.min(y) });
     if !(u > 0. && u < 1.) { return Err("a hyperboloid's meridian's shoulder is not between its chord and its tangents".into()) }
     let conic = crate::nurbs::BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],vec![at(a[0],a[1]),at(m[0],m[1]),at(b[0],b[1])],vec![1.,u/(1.-u),1.])?;
-    Ok(vec![turn(ProfileEdge::Spline(std::sync::Arc::new(conic)),a,b)?])
+    Ok(ProfileEdge::Spline(std::sync::Arc::new(conic)))
 }

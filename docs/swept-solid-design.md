@@ -186,8 +186,18 @@ it. It stays as the fast path where #699 D says so.
    keeps (extended through a touch, a cylinder and a hyperboloid leave cusp-shaped cells between
    them); and the plane square to the axis at a hyperboloid's throat parts it from the cylinder of
    its throat's radius. What is left is the cells' union: a vertex lands off its curve where a
-   hyperboloid's traced meeting with a leaning plane ends (`a_block_leaning_to_the_axis_turned_whole_…`,
-   ignored with that reason) — the Booleans' robustness.
+   hyperboloid's traced meeting with a leaning plane ends — the Booleans' robustness.
+   *Built for a whole turn of a convex tool, by another road*: no arrangement at all. Turned
+   whole, a tool sweeps the solid of revolution of the radii its slices hold; a convex tool's slice
+   is convex, so those radii are one span `[ρ_min(z), ρ_max(z)]`. The farthest is reached at a
+   slice's corner (an edge's meridian, a hyperbola), the nearest on the axis, on a side (a face's
+   contact line, a line) or at a corner; which one reaches is fixed between the heights where two
+   reach as far (their `ρ²`, quadratics in `z`, equal or touching — a corner passing the foot of a
+   side's perpendicular is a touch) or the axis crosses a face. The profile is cut there, each
+   stretch read at its middle, and turned once (`build::revolve`): exact, and with no Boolean, so
+   none of the touches above arise. A leaning block, and a block straddling the axis tipped two
+   ways, are each the integral of their slices' spans (`tests/swept_closed.rs`). A part turn of a
+   leaning tool still waits on the arrangement's unions.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.

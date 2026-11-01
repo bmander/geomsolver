@@ -128,6 +128,12 @@ fn spans(tool: &Brep,z: f64) -> Option<(f64,f64)> {
     let mut ring = pts.clone();
     ring.sort_by(|a,b| (a[1]-c[1]).atan2(a[0]-c[0]).total_cmp(&(b[1]-c[1]).atan2(b[0]-c[0])));
     let far = ring.iter().map(|p| p[0].hypot(p[1])).fold(0.,f64::max);
+    // the slice holds the axis where the origin is left of every side of the ring
+    let holds = (0..ring.len()).all(|k| {
+        let (a,b) = (ring[k],ring[(k+1)%ring.len()]);
+        (b[0]-a[0])*(-a[1])-(b[1]-a[1])*(-a[0]) >= 0.
+    });
+    if holds { return Some((0.,far)) }
     let near = (0..ring.len()).map(|k| {
         let (a,b) = (ring[k],ring[(k+1)%ring.len()]);
         let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
@@ -144,10 +150,25 @@ fn spans(tool: &Brep,z: f64) -> Option<(f64,f64)> {
 /// slices' radial spans, `∫ π (ρ_max² − ρ_min²) dz`, integrated here from its slices apart from the
 /// build (Simpson's rule between the heights its vertices stand at).
 #[test]
-#[ignore = "not yet built: the arrangement splits and classifies (#721 X6), but the cells' union leaves a vertex \
-    off its curve where a hyperboloid's traced meeting with a leaning plane ends: the Booleans' robustness, F4 / #699 E"]
 fn a_block_leaning_to_the_axis_turned_whole_is_its_solid_of_revolution() {
-    let tool = leaning(0.35,3.);
+    turned_whole_is_its_solid_of_revolution(&leaning(0.35,3.));
+}
+
+/// **A block straddling the axis, tipped two ways, turned whole is its solid of revolution**: its
+/// slices hold the axis over some heights and not others, the nearest of a slice reached on a side
+/// over some and at a corner over others, each stretch of the profile its own curve.
+#[test]
+fn a_block_straddling_the_axis_tipped_two_ways_turned_whole_is_its_solid_of_revolution() {
+    use gcs_core::brep::geom::Rigid;
+    let m = Rigid::turn([0.;3],[1.,0.,0.],0.6).then(&Rigid::turn([0.;3],[0.,1.,0.],0.45))
+        .then(&Rigid {t:[0.3,-0.2,0.1],..Rigid::identity()});
+    turned_whole_is_its_solid_of_revolution(&block([-0.5,-0.4,-1.],[0.7,0.6,1.]).moved(&m));
+}
+
+/// `tool` turned a whole turn about the world's `z` axis, held to the volume of its slices' radial
+/// spans and to membership.
+fn turned_whole_is_its_solid_of_revolution(tool: &Brep) {
+    let tool = tool.clone();
     let path = turn([0.;3],[0.,0.,1.],std::f64::consts::TAU);
     let built = gcs_core::brep::swept::closed::closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
     let mut heights: Vec<f64> = tool.vertices.iter().map(|v| v.p[2]).collect();

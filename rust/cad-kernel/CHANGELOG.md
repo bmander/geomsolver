@@ -8,6 +8,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A convex polyhedral tool turned a whole turn, however it leans to the axis, closes into its
+  solid of revolution (`swept::closed::closed`): its slices' radial spans as a profile of
+  hyperbola arcs (rational quadratics) and lines, cut where what reaches farthest or nearest
+  changes, turned once with no Boolean.
 - A plane through a cone's apex leaning to its axis by its half-angle meets it in the generator it
   touches along, in closed form (`ssi::intersect`), where it was traced and refused as nearly
   touching.
