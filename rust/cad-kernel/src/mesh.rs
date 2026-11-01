@@ -609,9 +609,23 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         }
         let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
         for p in raw.iter().flatten() { for k in 0..2 { lo[k] = lo[k].min(p.0[k]); hi[k] = hi[k].max(p.0[k]); } }
+        // each parameter scaled by the surface's speed along it at the box's middle — unless the
+        // chart nearly collapses there (a horn torus's pinch, where every `u` is one point), where
+        // that speed would shrink the parameter to nothing everywhere else: then by its mean speed
+        // over the face's box, so a stretch of the scaled parameters is about as long in space
+        // wherever the face is read
         let mid = [(lo[0]+hi[0])/2.,(lo[1]+hi[1])/2.];
         let (_,su,sv) = f.surface.d1(mid);
-        let (ku,kv) = (norm(su).max(least),norm(sv).max(least));
+        const GRID: usize = 9;
+        let (mut mu,mut mv) = (0.,0.);
+        for i in 0..GRID { for j in 0..GRID {
+            let at = |k: usize,n: usize| lo[k]+(hi[k]-lo[k])*(n as f64+0.5)/GRID as f64;
+            let (_,su,sv) = f.surface.d1([at(0,i),at(1,j)]);
+            mu += norm(su); mv += norm(sv);
+        } }
+        let cells = (GRID*GRID) as f64;
+        let scaled = |at_mid: f64,mean: f64| if at_mid >= 0.25*mean { at_mid } else { mean };
+        let (ku,kv) = (scaled(norm(su),mu/cells).max(least),scaled(norm(sv),mv/cells).max(least));
         // a surface straight along one parameter sags nothing along it: that parameter's scale
         // shrunk, the triangulation joins neighbouring rulings across the face's whole run of it,
         // where refining it as a plane would cut it as finely along the rulings as across them

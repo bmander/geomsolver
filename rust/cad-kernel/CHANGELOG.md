@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- Offsets (`offset`): a solid grown or shrunk by a distance (`grown`, `shrunk`), hollowed to a
+  wall open at some faces, inside or out (`shelled`), and a sheet thickened over a range of its
+  normals (`thickened`; `sheet_of` lifts faces off a solid), each the union of its faces' normal
+  sweeps (`normal_sweep`) and the tubes and balls of the distance set (`Join::Round`) or the kites
+  and parallelepipeds of faces extended until they meet (`Join::Sharp`).
+- A plane square to a rational spline's sweep meets it in the spline with its weights kept, and a
+  closed clamped spline meeting with one point on it is one edge round, not dropped (an elliptic
+  bore cut through a plate was the plate untouched).
+- A face whose chart collapses at the middle of its box (a horn torus) is meshed by its mean
+  speed, not shrunk to slivers.
+
 - Generating sweeps' contact times (`swept::generating`): a tool point's contact chart along a
   trajectory that turns it, its form read once (`Form`: a sinusoid in the roll under a turn or a
   turn seen from a turn, a line under a slide seen from a turn), its roots

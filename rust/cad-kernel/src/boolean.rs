@@ -856,7 +856,7 @@ impl<'a> Arrangement<'a> {
                     // meridians) leaves nothing on them
                     if far(&c,lo,hi) { continue }
                     let mut ts = self.points_on(&c,surfaces,&crossings.on_face[Side::B][fb],&crossings.on_face[Side::A][fa],crossed);
-                    let closed = c.period().is_some();
+                    let closed = c.period().is_some() || closed_domain(&c,self.tol).is_some() && ts.len() <= 1;
                     let spans = spans(&c,&mut ts,&mut self.pool);
                     self.say.points_on(&c,&ts,&self.pool);
                     for (t,v) in spans {
@@ -1088,10 +1088,34 @@ fn spans(c: &Curve,ts: &mut [(f64,u32)],pool: &mut Pool) -> Vec<([f64;2],[u32;2]
         }
         None => {
             ts.sort_by(|x,y| x.0.total_cmp(&y.0));
+            // a clamped B-spline whose ends meet (a rational ellipse's rim cut square to its sweep)
+            // is closed with no period: round it as a closed curve, its stretches split where its
+            // parameter starts again, at the vertex both its ends are
+            // (with two or more points on it, its stretches run between them as an open curve's,
+            // as a fitted meeting through a point it starts and ends at is read)
+            if let Some([lo,hi]) = closed_domain(c,pool.tol).filter(|_| ts.len() <= 1) {
+                let start = pool.at(c.point(lo));
+                let mut at: Vec<(f64,u32)> = ts.iter().map(|&(t,v)| (if v == start { lo } else { t },v)).collect();
+                if at.first().map_or(true,|x| x.1 != start) { at.insert(0,(lo,start)); }
+                at.push((hi,start));
+                for w in at.windows(2) { if w[1].0 > w[0].0 { spans.push(([w[0].0,w[1].0],[w[0].1,w[1].1])); } }
+                return spans
+            }
             for w in ts.windows(2) { spans.push(([w[0].0,w[1].0],[w[0].1,w[1].1])); }
         }
     }
     spans
+}
+
+/// A clamped B-spline's parameter domain where its two ends are one point (within `tol`) and it
+/// runs round a loop far wider than that: a closed curve with no period, whose parameter does not
+/// run round — not a fitted meeting shrunk to a point, all of it within a few tolerances of its ends.
+fn closed_domain(c: &Curve,tol: f64) -> Option<[f64;2]> {
+    let Curve::BSpline(b) = c else { return None };
+    let (lo,hi) = (b.knots[b.degree],b.knots[b.poles.len()]);
+    let start = c.point(lo);
+    let wide = (1..16).any(|k| distance(c.point(lo+(hi-lo)*k as f64/16.),start) > 64.*tol);
+    (wide && distance(start,c.point(hi)) <= tol).then_some([lo,hi])
 }
 
 /// The curve in a face's parameters, from `ua` to `ub`, of a piece of one of its edges, whose

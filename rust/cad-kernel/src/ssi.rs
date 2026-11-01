@@ -335,10 +335,10 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let Surface::Extrusion(e,c) = ex else { unreachable!() };
             let lift = |p: V| add(p,scale(e.z,dot(pl.z,sub(pl.o,p))/dot(pl.z,e.z)));
             match &**c {
-                Curve::BSpline(sp) => match super::nurbs::BSpline::new(sp.degree,sp.knots.clone(),sp.poles.iter().map(|&p| lift(p)).collect()) {
-                    Ok(moved) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(moved))]),
-                    Err(_) => Ssi::Traced,
-                },
+                // carried along the sweep, a translation: its weights and knots kept, so a rational
+                // curve (an ellipse's rim) stays the curve the plane cuts
+                Curve::BSpline(sp) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline {
+                    poles:sp.poles.iter().map(|&p| lift(p)).collect(),..(**sp).clone()}))]),
                 Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:*d}]),
                 Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
                 _ => Ssi::Traced,
