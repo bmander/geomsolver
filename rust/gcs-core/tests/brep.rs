@@ -11,7 +11,7 @@ fn line(a: V,b: V) -> ProfileEdge { ProfileEdge::Line {a,b} }
 fn arc(c: V,r: f64,n: V,x: V,span: Option<[f64;2]>) -> ProfileEdge {
     ProfileEdge::Arc {frame:Frame::new(c,n,x),r,span}
 }
-fn poly(pts: &[V]) -> Vec<ProfileEdge> { (0..pts.len()).map(|i| line(pts[i],pts[(i+1)%pts.len()])).collect() }
+pub(crate) fn poly(pts: &[V]) -> Vec<ProfileEdge> { (0..pts.len()).map(|i| line(pts[i],pts[(i+1)%pts.len()])).collect() }
 
 fn close(a: f64,b: f64) { assert!((a-b).abs() <= 1e-11*b.abs().max(1.),"{a} against {b} ({:e})",(a-b)/b); }
 
@@ -374,7 +374,7 @@ fn an_extruded_spline_meets_surfaces_along_it_in_closed_form() {
 
 fn scale3(a: V,s: f64) -> V { [a[0]*s,a[1]*s,a[2]*s] }
 
-fn block(lo: V,hi: V) -> gcs_core::brep::topo::Brep {
+pub(crate) fn block(lo: V,hi: V) -> gcs_core::brep::topo::Brep {
     let p = Profile {names:vec![],origin:[0.,0.,0.],normal:XY,loops:vec![poly(&[[lo[0],lo[1],0.],[hi[0],lo[1],0.],[hi[0],hi[1],0.],[lo[0],hi[1],0.]])]};
     prism(&p,lo[2],hi[2]).unwrap()
 }
@@ -873,7 +873,7 @@ fn a_trace_keeps_a_sharp_turn_at_its_end() {
 }
 
 /// The volume a mesh encloses: the signed tetrahedra from the origin to each triangle.
-fn mesh_volume(m: &gcs_core::brep::mesh::Mesh) -> f64 {
+pub(crate) fn mesh_volume(m: &gcs_core::brep::mesh::Mesh) -> f64 {
     m.tris.iter().map(|t| {
         let [a,b,c] = t.map(|i| m.pts[i as usize]);
         (a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0]))/6.
@@ -1934,7 +1934,6 @@ fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
     use gcs_core::brep::boolean::{combined,Op};
     use gcs_core::brep::build::disc;
     use gcs_core::brep::fillet::roll;
-    use gcs_core::brep::props::area;
     // as the bench builds it: the disc swept up, the rim picked by a point on it
     let mut section = disc([0.;3],[0.,0.,1.],5.);
     section.names = vec![vec!["side".into()]];
@@ -1945,12 +1944,9 @@ fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
     close(volume(&round.piece),PI*25.*5.-2./3.*PI*125.);
     let domed = combined(&cylinder,&round.piece,Op::Cut,0.).unwrap();
     domed.check(1e-9).unwrap();
-    let total = |b: &gcs_core::brep::topo::Brep| b.faces.iter().map(|f| area(b,f)).sum::<f64>();
     close(volume(&domed),625.*PI/3.);
-    close(total(&domed),125.*PI);
-    let mut kinds: Vec<&str> = domed.faces.iter().map(|f| f.surface.kind()).collect();
-    kinds.sort();
-    assert_eq!(kinds,["cylinder","plane","sphere"]);
+    close(total_area(&domed),125.*PI);
+    assert_eq!(face_kinds(&domed),["cylinder","plane","sphere"]);
     // a bore 5 in radius and 8 deep into a block, its floor's rim filled to the bore's radius
     let bored = combined(&block([-10.,-10.,0.],[10.,10.,12.]),&rod([0.;3],5.,[4.,12.]),Op::Cut,0.).unwrap();
     let fill = roll(&bored,[5.,0.,4.],5.,1e-9*bored.size()).unwrap();
@@ -1969,12 +1965,121 @@ fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
     domed.check(1e-9).unwrap();
     let z = 10.-5./tilt.cos();
     close(volume(&domed),PI*25.*z+2./3.*PI*125.);
-    close(total(&domed),PI*25.+TAU*5.*z+TAU*25.);
+    close(total_area(&domed),PI*25.+TAU*5.*z+TAU*25.);
     assert_eq!(domed.faces.len(),3);
     // the ball reaches past a cylinder 4 high
     let short = prism(&disc([0.;3],[0.,0.,1.],5.),0.,4.).unwrap();
     let why = roll(&short,[0.,5.,4.],5.,1e-9*short.size()).unwrap_err();
     assert!(why.contains("larger than"),"{why}");
+}
+
+/// **A cylinder's rim chamfered to a point** (brep-bench's chamfer/cylinder-rim-to-point): legs of
+/// 5 on a cylinder of radius 5, its own radius. The leg across the top is where the top meets the
+/// side offset by 5 — the axis, not a surface — so the top shrinks to the point (0, 0, 10) and every
+/// section of the flat ends there (`fillet::Leg::At`). Between a plane square to a cylinder's axis
+/// the flat is the section's triangle turned, exact: a cone of half-angle 45° with its apex on the
+/// axis. Cut, the solid is the cylinder to half its height under that cone — `500π/3` and
+/// `75π + 25√2π` — of three faces, the top gone into the apex.
+#[test]
+fn a_cylinders_rim_chamfered_to_its_own_radius_is_a_cone() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::disc;
+    use gcs_core::brep::fillet::flat_along;
+    // as the bench builds it: the disc swept up, the rim picked by a point on it
+    let mut section = disc([0.;3],[0.,0.,1.],5.);
+    section.names = vec![vec!["side".into()]];
+    let cylinder = prism(&section,0.,10.).unwrap();
+    let tol = gcs_core::brep::geom::tolerance(cylinder.size());
+    let piece = flat_along(&cylinder,[0.,5.,10.],[5.,5.],None,tol).unwrap();
+    piece.check(1e-9).unwrap();
+    close(volume(&piece),PI*25.*5.-PI*25.*5./3.);
+    let pointed = combined(&cylinder,&piece,Op::Cut,0.).unwrap();
+    pointed.check(1e-9).unwrap();
+    close(volume(&pointed),500.*PI/3.);
+    close(total_area(&pointed),75.*PI+25.*2f64.sqrt()*PI);
+    assert_eq!(face_kinds(&pointed),["cone","cylinder","plane"]);
+    // the legs unequal, 5 across the top and 2 down the side: the top still shrinks to its centre,
+    // the cone steeper, `π5²·8 + π5²·2/3`
+    let piece = flat_along(&cylinder,[0.,5.,10.],[5.,2.],Some([0.,0.,10.]),tol).unwrap();
+    let steep = combined(&cylinder,&piece,Op::Cut,0.).unwrap();
+    steep.check(1e-9).unwrap();
+    close(volume(&steep),PI*25.*8.+PI*25.*2./3.);
+    // a bore 5 in radius and 8 deep into a block, its floor's rim filled the same: a drill's point,
+    // the cone of the bore's radius standing 5 on its floor filled in under it
+    let bored = combined(&block([-10.,-10.,0.],[10.,10.,12.]),&rod([0.;3],5.,[4.,12.]),Op::Cut,0.).unwrap();
+    let tol = gcs_core::brep::geom::tolerance(bored.size());
+    let fill = flat_along(&bored,[5.,0.,4.],[5.,5.],None,tol).unwrap();
+    let drilled = combined(&bored,&fill,Op::Union,0.).unwrap();
+    drilled.check(1e-9).unwrap();
+    close(volume(&drilled),20.*20.*12.-PI*25.*8.+PI*25.*5.*2./3.);
+}
+
+/// The top tilted 20° off square (a plane through (0, 0, 10) about the y axis), its rim an ellipse
+/// chamfered 5 on both faces: the leg across the top still shrinks it to where the axis crosses
+/// it, but no cone of revolution holds the flat — the points whose distance `ρ` from the axis is
+/// their distance `d` below the top — so it is fitted as a net whose column on the top stands
+/// still at that point, a degenerate edge as a sphere's pole is, the whole top the flat's. The
+/// solid under it is `∫(10 − (ρ + x sin α) / cos α) dA` over the disc, `250π (1 − 1 / (3 cos α))`.
+/// A top holding another edge inside the loop (a bore down its middle) is refused, the flat
+/// taking it; and a stretch of a rim closing to a point is not cut off yet.
+#[test]
+fn a_tilted_rim_chamfered_to_its_cylinders_radius_closes_onto_the_axis() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::disc;
+    use gcs_core::brep::fillet::flat_along;
+    let tilt = 20f64.to_radians();
+    let above = block([-20.,-20.,10.],[20.,20.,40.]).moved(&Rigid::turn([0.,0.,10.],[0.,1.,0.],tilt));
+    let slanted = combined(&prism(&disc([0.;3],[0.,0.,1.],5.),0.,14.).unwrap(),&above,Op::Cut,0.).unwrap();
+    let tol = gcs_core::brep::geom::tolerance(slanted.size());
+    let piece = flat_along(&slanted,[0.,5.,10.],[5.,5.],None,tol).unwrap();
+    piece.check(1e-8).unwrap();
+    assert!(piece.edges.iter().any(|e| matches!(e.curve,gcs_core::brep::topo::EdgeCurve::Degenerate)));
+    let pointed = combined(&slanted,&piece,Op::Cut,0.).unwrap();
+    pointed.check(1e-8).unwrap();
+    let want = 250.*PI*(1.-1./(3.*tilt.cos()));
+    close(volume(&pointed),want);
+    assert_eq!(pointed.faces.len(),3);
+    // a bore of radius 1 down the top's middle: the top holds its rim inside the loop
+    let holed = combined(&prism(&disc([0.;3],[0.,0.,1.],5.),0.,10.).unwrap(),&rod([0.;3],1.,[6.,11.]),Op::Cut,0.).unwrap();
+    let why = flat_along(&holed,[0.,5.,10.],[5.,5.],None,tol).unwrap_err();
+    assert!(why.contains("holds another edge"),"{why}");
+    // a leg past the radius: no point of the top stands that far in from the side
+    let cylinder = prism(&disc([0.;3],[0.,0.,1.],5.),0.,10.).unwrap();
+    let why = flat_along(&cylinder,[0.,5.,10.],[6.,6.],None,tol).unwrap_err();
+    assert!(why.contains("wider than"),"{why}");
+}
+
+/// A hemisphere of radius 5 on its base, the rim chamfered 5 across the base and 3 up the sphere:
+/// the sphere offset in by 5 closes onto its centre, which lies on the base, so the base shrinks to
+/// the centre (`fillet::Leg::At` from a point). The flat, `(5 − R)/5 + z/3 = 1`, is the cone
+/// `ρ = 4z/3` from the centre to the circle at z = 3 — no surface turned about an axis with straight
+/// meridians holds a sphere's distance, so it is fitted, standing still at the centre — and what is
+/// left is the spherical sector of half-angle `acos(3/5)`, `(2π/3)·5³·(1 − 3/5) = 100π/3`, to the
+/// fit's bar.
+#[test]
+fn a_hemispheres_rim_chamfered_to_its_radius_is_a_spherical_sector() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::fillet::flat_along;
+    let ball = gcs_core::brep::build::sphere([0.;3],[0.,0.,1.],5.).unwrap();
+    let dome = combined(&ball,&block([-10.,-10.,-10.],[10.,10.,0.]),Op::Cut,0.).unwrap();
+    let tol = gcs_core::brep::geom::tolerance(dome.size());
+    let piece = flat_along(&dome,[5.,0.,0.],[5.,3.],Some([0.,0.,0.]),tol).unwrap();
+    piece.check(1e-8).unwrap();
+    let sector = combined(&dome,&piece,Op::Cut,0.).unwrap();
+    sector.check(1e-8).unwrap();
+    // (the flat fitted within the bar, a billionth of the boundary)
+    crate::common::close(volume(&sector),100.*PI/3.);
+    assert_eq!(sector.faces.len(),2);
+}
+
+/// The area of every face of `b`.
+pub(crate) fn total_area(b: &gcs_core::brep::topo::Brep) -> f64 { b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum() }
+
+/// The kinds of `b`'s faces' surfaces, sorted.
+fn face_kinds(b: &gcs_core::brep::topo::Brep) -> Vec<&'static str> {
+    let mut kinds: Vec<&'static str> = b.faces.iter().map(|f| f.surface.kind()).collect();
+    kinds.sort();
+    kinds
 }
 
 /// A box from the origin to `hi`, its four sides named (a prism's sides come first, in the walk's

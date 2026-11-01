@@ -290,7 +290,7 @@ enum Section {
 /// A support-surface projection and an actual point on the finite source patch.
 #[derive(Clone,Copy,Debug)]
 pub struct SurfaceProjection {
-    /// Parameters on the continued supporting surface. They may be outside [0,1].
+    /// Parameters on the continued supporting surface. They may be outside `[0, 1]`.
     pub parameters: [f64;2],
     /// Oriented meridian line/circle residual in length units. This is a local signed
     /// distance near a regular interior point, not a global closest-distance claim.

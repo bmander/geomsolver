@@ -294,7 +294,7 @@ periodic surface's seam (`rail`, `post`, `frustum`): asked of the same solid wit
 (`seams_turned`). `tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
 `tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`, `groove.sv`, `bores.sv`,
-`frustum.sv`, `crotch.sv`, `bullnose.sv`, `dome.sv`).
+`frustum.sv`, `crotch.sv`, `bullnose.sv`, `dome.sv`, `point.sv`).
 
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
@@ -320,8 +320,33 @@ than the radius is refused as too small to hold it. Refused by name too: both of
 closing onto a point (the ball is that face's sphere), the centre running along the curve it
 closes onto, and a stretch of a loop; and where only a surface will do — a chamfer's leg, a ball
 beyond a seam — an offset that closes is refused as that, not as too wide
-(`Surface::offset_surface`). A cone shrunk past its apex is the same sheet placed at its own apex,
-never none.
+(`Surface::offset_surface`: a spill's legs and balls). A cone shrunk past its apex is the same sheet
+placed at its own apex, never none.
+
+**A flat as wide as its cylinder** (brep-bench's chamfer/cylinder-rim-to-point): a chamfer's leg is
+a set like the offset it is read from (`fillet::Leg`) — face `k`'s surface met with the other's
+offset by the leg, a curve, or, where that offset closes onto a curve (a cylinder's axis) or a point
+(a sphere's centre), the point where it crosses face `k`'s surface. There the face shrinks to the
+point: every section of the flat ends at it, the flat closes onto it as a cone onto its apex, and
+nothing about it is a special case — the flat's contact with that face is a degenerate edge, as a
+sphere's pole is, and its strip all of the face inside the loop (`fillet::strip` with no walk, the
+rule a standing ball's point of contact uses). Between surfaces turned about one axis with straight
+meridians (a plane square to it, cylinders and cones about it) each distance is affine in the radius
+and the height, so the flat is the section's triangle turned once, exact (`fillet::coaxial`; a cone,
+its apex on the axis where a leg shrinks a face). Otherwise the flat is fitted, its column on the
+shrunk face standing still: a rim tilted 20° off square chamfered to its cylinder's radius closes
+onto where the axis crosses the top, `250π (1 − 1 / (3 cos 20°))` to 1e-11
+(`brep::a_cylinders_rim_chamfered_to_its_own_radius_is_a_cone` — square, unequal legs and a bore's
+floor filled to a drill's point — `brep::a_tilted_rim_chamfered_to_its_cylinders_radius_closes_onto_the_axis`;
+a hemisphere's base shrunk to its centre, the sphere's offset closing onto a point, a spherical
+sector to the fit's bar, `brep::a_hemispheres_rim_chamfered_to_its_radius_is_a_spherical_sector`;
+`point.sv` through the ring and the tilted rim through the lowering's run,
+`round_lowering::a_rim_chamfered_to_its_cylinders_radius_is_a_cone`,
+`round_lowering::a_rim_tilted_off_square_chamfered_to_its_cylinders_radius_closes_onto_the_axis`).
+Refused by name: both faces shrinking to points, a shrunk face holding another edge inside the loop
+(the flat would take it), a loop winding round the shrunk face's surface, what the offset closes onto
+missing that surface or lying in it, a stretch of a loop (no stretch closing to a point is cut off
+yet), and a leg past the radius (`None`: no point stands that far in).
 
 **The closing case** (#197, `rust/examples/conrod/`): a forged rod, every round and chamfer a
 statement over the faces its solids gave it, built exactly (pockets drawn as prisms, so their walls

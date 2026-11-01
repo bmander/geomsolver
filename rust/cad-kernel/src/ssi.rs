@@ -26,7 +26,7 @@ pub enum Ssi {
 /// A meridian: a surface of revolution's section in the half-plane `ρ ≥ 0` of its axis, in
 /// `(ρ, z)` with `z` measured along the shared axis from a shared origin.
 #[derive(Clone,Debug)]
-enum Meridian {
+pub(super) enum Meridian {
     /// `z := h`: a plane square to the axis.
     Level(f64),
     /// The ray from `p` along the unit `d` (`d[1] > 0` or a vertical line `ρ = r`), both ways.
@@ -188,7 +188,7 @@ fn lifted(sp: &super::nurbs::BSpline,g: &Frame,r: f64,a: f64,tol: f64,steep: &dy
 
 /// A surface's meridian about the axis through `o` along the unit `z`, where it is a surface of
 /// revolution about that axis (to `tol`).
-fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
+pub(super) fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
     let f = s.frame();
     let height = |p: V| dot(sub(p,o),z);
     let on_axis = |p: V| norm(cross(sub(p,o),z)) <= tol;
@@ -351,10 +351,10 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let Surface::Extrusion(e,c) = ex else { unreachable!() };
             let lift = |p: V| add(p,scale(e.z,dot(pl.z,sub(pl.o,p))/dot(pl.z,e.z)));
             match &**c {
-                Curve::BSpline(sp) => match super::nurbs::BSpline::new(sp.degree,sp.knots.clone(),sp.poles.iter().map(|&p| lift(p)).collect()) {
-                    Ok(moved) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(moved))]),
-                    Err(_) => Ssi::Traced,
-                },
+                // carried along the sweep, a translation: its weights and knots kept, so a rational
+                // curve (an ellipse's rim) stays the curve the plane cuts
+                Curve::BSpline(sp) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline {
+                    degree:sp.degree,knots:sp.knots.clone(),weights:sp.weights.clone(),poles:sp.poles.iter().map(|&p| lift(p)).collect()}))]),
                 Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:*d}]),
                 Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
                 _ => Ssi::Traced,

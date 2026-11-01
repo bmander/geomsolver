@@ -369,16 +369,10 @@ fn standing(b: &Brep,m: &Meeting,offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V
             no stretch of its dome is cut off yet"));
     }
     // the centre: where the curve meets the other offset, the meeting nearest the ball in the corner
-    let (lo,hi) = b.bounds();
-    let span = closed.period().map_or([f64::NEG_INFINITY,f64::INFINITY],|pd| [0.,pd]);
     let guess = add(*p,scale(unit(add(into[0],into[1])),r/(0.5*theta).dsin()));
-    let centre = match super::query::curve_surface_within(&closed,span,&other,tol,(lo,hi),4.*r) {
-        super::query::Meets::Along => {
-            return Err(format!("the ball between {names} rolls along what `{}` closes onto, filling it",b.faces[sides_faces[k][0]].name))
-        }
-        super::query::Meets::At(roots) => roots.into_iter().map(|(t,_)| closed.point(t))
-            .min_by(|x,y| distance(*x,guess).total_cmp(&distance(*y,guess))),
-    }.ok_or_else(|| format!("the ball between {names} rolls nowhere"))?;
+    let centre = nearest_crossing(&closed,&other,tol,b.bounds(),4.*r,guess).ok_or_else(|| {
+        format!("the ball between {names} rolls along what `{}` closes onto, filling it",b.faces[sides_faces[k][0]].name)
+    })?.ok_or_else(|| format!("the ball between {names} rolls nowhere"))?;
     // it touches the first face round the circle square to the curve through its centre, from the
     // meridian through the loop's first vertex, and the other at the foot of its normal
     let axis = unit(closed.tangent(closed.inverse(centre)));
@@ -460,6 +454,26 @@ fn corner_reach(frame_at: &dyn Fn(f64) -> (V,[V;2]),r: f64,names: &str) -> Resul
     Ok(reach)
 }
 
+/// The edges of the faces `side` besides the run `chain`, each with the face it bounds and its
+/// curve: none a seam of that face, none between two of the side's faces (a face split at its seam
+/// is one face to a piece), none on a face of `ending` (an end's face, which cuts the piece off),
+/// and none degenerate — the edges a piece's band on that side must keep off.
+fn others<'b>(b: &'b Brep,uses: &'b [Vec<(usize,usize,usize)>],side: &'b [usize],chain: &'b [usize],
+    ending: &'b std::collections::BTreeSet<usize>) -> impl Iterator<Item=(usize,usize,&'b Curve)> + 'b {
+    let skip = move |e: usize| match uses[e].as_slice() {
+        [x,y] => ending.contains(&x.0) || ending.contains(&y.0) || side.contains(&x.0) && side.contains(&y.0),
+        _ => false,
+    };
+    side.iter().flat_map(move |&fi| {
+        let seams = b.faces[fi].seams();
+        b.faces[fi].loops.iter().flatten().filter_map(move |c| {
+            let e = c.edge as usize;
+            if chain.contains(&e) || seams.contains(&c.edge) || skip(e) { return None }
+            match &b.edges[e].curve { EdgeCurve::Curve(gc) => Some((fi,e,gc)),EdgeCurve::Degenerate => None }
+        })
+    })
+}
+
 /// **A ball no larger than each face holds**: the band of a face it rolls on — where it stands
 /// nearer the other face's surface than its contact does — crossed by none of the face's other
 /// edges. Read against the other surface offset to the band's height (`curve_surface`); `frame_at`
@@ -488,28 +502,18 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
             let out = |f: usize| { let g = unit(b.faces[f].surface.gradient(p)); if b.faces[f].reversed { scale(g,-1.) } else { g } };
             norm(sub(out(x),out(y))) < 1e-6
         };
-        let skip = |e: usize| match uses[e].as_slice() {
-            [x,y] => ending.contains(&x.0) || ending.contains(&y.0) || sides_faces[k].contains(&x.0) && sides_faces[k].contains(&y.0),
-            _ => false,
-        };
         let seam = |e: usize| !wedge.is_empty() && matches!(uses[e].as_slice(),[x,y] if tangent(e,x.0,y.0));
-        for &fi in &sides_faces[k] {
-            let face = &b.faces[fi];
-            let seams = face.seams();
-            for c in face.loops.iter().flatten() {
-                if chain.contains(&(c.edge as usize)) || seams.contains(&c.edge) || skip(c.edge as usize) { continue }
-                let g = &b.edges[c.edge as usize];
-                let EdgeCurve::Curve(gc) = &g.curve else { continue };
-                let crossed = seam(c.edge as usize);
-                let start = gc.point(g.t[0]);
-                let at_start = if crossed && in_wedge(start) { 0. } else { sides[o]*surfaces[o].implicit(start) };
-                let crosses = level.as_ref().is_some_and(|level| match super::query::curve_surface(gc,g.t,level,tol) {
-                    super::query::Meets::At(roots) => roots.iter().any(|&(t,_)| !(crossed && in_wedge(gc.point(t)))),
-                    super::query::Meets::Along => true,
-                });
-                if crosses || (at_start > tol && at_start < height) {
-                    return Err(format!("the ball of {} is larger than `{}` can hold",names(),face.name));
-                }
+        for (fi,e,gc) in others(b,uses,&sides_faces[k],chain,&ending) {
+            let g = &b.edges[e];
+            let crossed = seam(e);
+            let start = gc.point(g.t[0]);
+            let at_start = if crossed && in_wedge(start) { 0. } else { sides[o]*surfaces[o].implicit(start) };
+            let crosses = level.as_ref().is_some_and(|level| match super::query::curve_surface(gc,g.t,level,tol) {
+                super::query::Meets::At(roots) => roots.iter().any(|&(t,_)| !(crossed && in_wedge(gc.point(t)))),
+                super::query::Meets::Along => true,
+            });
+            if crosses || (at_start > tol && at_start < height) {
+                return Err(format!("the ball of {} is larger than `{}` can hold",names(),b.faces[fi].name));
             }
         }
     }
@@ -526,7 +530,11 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
 /// and the two strips of the faces between the loop and the legs (`build`). `on_a` is a point
 /// beside the face whose leg is `legs[0]`, nearer its surface than the other's (none where the legs
 /// are alike). A run that ends is cut on past each end and cut off by the plane of the faces there,
-/// as a rolled one is.
+/// as a rolled one is. A leg is a set like the offset it is read from (`Leg`): where the other
+/// face's offset closes onto its axis or centre, the leg is the point that crosses the face, every
+/// section ends there, the flat's contact with the face is a degenerate edge and its strip all of
+/// the face inside the loop. Between two planes the flat is a plane, and about one axis
+/// (`coaxial`) it is the section's triangle turned: both exact, no net fitted.
 pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Result<Brep,String> {
     let Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,sides,surfaces,concave,names,..} = meeting(b,at,tol)?;
     // which face is `a`
@@ -547,12 +555,40 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
         let off = |c: &Curve| distance(c.point(c.inverse(seed)),seed);
         off(x).total_cmp(&off(y))
     }).ok_or_else(|| format!("{names} meet nowhere near their edge"))?;
-    // each leg: face `k`'s surface met with the other's offset by `legs[k]` toward the region
-    let leg = |k: usize| -> Result<super::geom::Traced,String> {
-        let off = surfaces[1-k].offset_surface(sides[1-k]*legs[k],tol,&format!("the flat of {names}"),"a face")?;
-        Ok(super::geom::Traced {a:surfaces[k].clone(),b:off,pts:Vec::new(),closed:false})
-    };
-    let leg_meetings = [leg(0)?,leg(1)?];
+    // each leg: face `k`'s surface met with the other's offset by `legs[k]` toward the region — a
+    // curve, or the point the face shrinks to where that offset closes (`Leg`)
+    let (reach,bounds) = (4.*legs[0].max(legs[1]),b.bounds());
+    let what = format!("the flat of {names}");
+    let leg_meetings = [0,1].map(|k| Leg::of(&surfaces[k],&surfaces[1-k],sides[1-k]*legs[k],bounds,p,reach,tol,&what));
+    let [leg_a,leg_b] = leg_meetings;
+    let leg_meetings = [leg_a?,leg_b?];
+    let at = leg_meetings.each_ref().map(|l| matches!(l,Leg::At(_)));
+    if at == [true,true] { return Err(format!("{what} shrinks both faces to points: no flat lies between two points")) }
+    // each strip's surface, its seam turned away from the loop
+    let loop_pts: Vec<V> = chain.iter().flat_map(|&e| { let ed = &b.edges[e];
+        (0..16).map(move |k| ed.point(ed.t[0]+(ed.t[1]-ed.t[0])*k as f64/16.,&b.vertices)) }).collect();
+    let strips = [0,1].map(|k| reframed(&surfaces[k],&loop_pts));
+    // the face a leg shrinks to a point, if one does: the whole of it inside the loop is the
+    // flat's, so the loop is all it may hold, and its strip (the face inside the loop) cannot
+    // wind round its surface
+    let point = (0..2).find(|&k| at[k]);
+    if let Some(k) = point {
+        let shrunk = &b.faces[sides_faces[k][0]].name;
+        if !stops.is_empty() {
+            return Err(format!("{what} shrinks `{shrunk}` to a point, and their meeting is a stretch of a loop: no \
+                stretch of a flat closing to a point is cut off yet"))
+        }
+        if let Some((_,e,_)) = others(b,&uses,&sides_faces[k],&chain,&Default::default()).next() {
+            let ed = &b.edges[e];
+            let q = ed.point(0.5*(ed.t[0]+ed.t[1]),&b.vertices);
+            return Err(format!("{what} shrinks `{shrunk}` to a point, and `{shrunk}` holds another edge inside the loop \
+                (through {q:.3?}): the flat would take it"))
+        }
+        if winds(&strips[k],&loop_pts) {
+            return Err(format!("{what} shrinks `{shrunk}` to a point, but the loop winds round its surface: no face \
+                inside it closing there is built yet"))
+        }
+    }
     // the section through a point `e` of the meeting square to it (`t` its way): each leg's point
     // in it, from the edge along the face toward where the other's distance grows
     let legs_at = |e: V,t: V| -> [V;2] {
@@ -561,7 +597,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
             let g = scale(unit(surfaces[1-k].gradient(e)),sides[1-k]);
             let w = unit(sub(g,scale(n,dot(g,n))));
             let guess = add(e,scale(w,legs[k]/dot(w,g).max(0.1)));
-            crossing_plane(&leg_meetings[k],e,t,guess)
+            leg_meetings[k].crossing(e,t,guess)
         })
     };
     let way_at = |t: f64| -> (V,V) {
@@ -569,10 +605,24 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
         let d = cross(surfaces[0].gradient(e),surfaces[1].gradient(e));
         (e,if dot(d,edge.tangent(t)) < 0. { scale(unit(d),-1.) } else { unit(d) })
     };
-    // each strip's surface, its seam turned away from the loop
-    let loop_pts: Vec<V> = chain.iter().flat_map(|&e| { let ed = &b.edges[e];
-        (0..16).map(move |k| ed.point(ed.t[0]+(ed.t[1]-ed.t[0])*k as f64/16.,&b.vertices)) }).collect();
-    let strips = [0,1].map(|k| reframed(&surfaces[k],&loop_pts));
+    // the section's triangle at `t` of the meeting: the edge's point and the two legs, the faces
+    // named `a` and `b` and the flat `flat` — what an exact flat is swept from
+    let triangle = |t: f64| {
+        let (e,n) = way_at(t);
+        let [pa,pb] = legs_at(e,n);
+        super::build::Profile {origin:e,normal:n,
+            loops:vec![[[e,pa],[pa,pb],[pb,e]].map(|[a,b]| super::build::ProfileEdge::Line {a,b}).to_vec()],
+            names:vec![["a","flat","b"].map(String::from).to_vec()]}
+    };
+    // **about one axis the flat is turned**: between surfaces turned about one axis with straight
+    // meridians — a plane square to it, a cylinder or a cone about it — each one's distance is
+    // affine in the radius and the height, so the flat's sum is too, and the flat is the section's
+    // triangle turned once, exact: a cone (a cylinder or a plane where the sum leaves one out). A
+    // leg shrunk to a point is the triangle's corner on the axis, the cone's apex. (Any section
+    // will do: the turn is whole.)
+    if let Some((o,z)) = coaxial(&surfaces,tol).filter(|_| stops.is_empty()) {
+        return super::build::revolve(&triangle(edge.inverse(seed)),o,z,TAU)
+    }
     // **a run that ends**: cut off at each end by the plane of the faces there, the flat carried on
     // past it until its whole section has crossed that plane
     let mut ends: Vec<Stop> = Vec::new();
@@ -583,7 +633,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
             let (e,t) = (meet.project(q),unit(cross(surfaces[0].gradient(q),surfaces[1].gradient(q))));
             let keep = if dot(t,leaving) < 0. { scale(t,-1.) } else { t };
             seam_aligned(b,&uses,&sides_faces[k],f,v,legs_at(e,keep)[k],tol,&names)?;
-            Ok(Cut::Section {o:e,keep,reach:4.*legs[0].max(legs[1])})
+            Ok(Cut::Section {o:e,keep,reach})
         };
         let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names,&section)?;
         ends.push(Stop {trim,t:edge.inverse(q),faces});
@@ -644,12 +694,8 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
     // from either: the piece taking on from that section is fitted.)
     let planes = surfaces.iter().all(|s| matches!(s,Surface::Plane(_)));
     if planes && !ends.is_empty() && !ends.iter().flat_map(|e| &e.trim.cuts).any(|c| matches!(c,Cut::Section {..})) {
-        let (e,t) = way_at(t0);
-        let [pa,pb] = legs_at(e,t);
-        let section = super::build::Profile {origin:e,normal:t,
-            loops:vec![[[e,pa],[pa,pb],[pb,e]].map(|[a,b]| super::build::ProfileEdge::Line {a,b}).to_vec()],
-            names:vec![["a","flat","b"].map(String::from).to_vec()]};
-        let piece = super::build::prism(&section,0.,dot(sub(edge.point(t0+span),e),t))?;
+        let section = triangle(t0);
+        let piece = super::build::prism(&section,0.,dot(sub(edge.point(t0+span),section.origin),section.normal))?;
         let trims: Vec<Trim> = ends.into_iter().map(|x| x.trim).collect();
         return trimmed(piece,&trims)
     }
@@ -706,7 +752,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
                 .ok_or_else(|| format!("the flat of {names}: its second leg never crosses its strip's seam"))?)
                 .filter(|&u| u > 1e-9 && u < 1.-1e-9)
         } else { None };
-        return build_with(b,&chain,&net,&strips,reversed,concave,tol,net_err,Some(middle),split)
+        return build_with(b,&chain,&net,&strips,reversed,concave,tol,net_err,Some(middle),split,point)
     }
     let trims: Vec<Trim> = ends.iter().map(|e| e.trim.clone()).collect();
     let section = |u: f64| { let (e,t,_) = frame_at(u); (e,t) };
@@ -714,6 +760,63 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
     let run = build_open(b,&chain,&net,&strips,&meet,&section,&corner,[ends[0].trim.vertex,ends[1].trim.vertex],reversed,concave,
         tol,net_err,Some(middle))?;
     trimmed(run,&trims)
+}
+
+/// **A chamfer's leg** on a face: where the face's surface meets the other face's surface offset
+/// by the leg toward the region, a set like any other — a curve, the two surfaces' meeting
+/// (`Along`); or, where that offset closes onto what its surface is drawn about (`Offset`: a
+/// cylinder's axis, a sphere's centre, the leg as wide as the surface's radius), the point where
+/// that crosses the face's surface (`At`). There the face shrinks to the point: every section of
+/// the flat ends at it, and the flat closes onto it as a cone onto its apex.
+enum Leg { Along(super::geom::Traced),At(V) }
+
+impl Leg {
+    /// The leg on `on`: where it meets `off` offset by `d`, the crossing nearest the edge's middle
+    /// `p` within `reach` of the boundary's `bounds`; refused (as `what`) where no point stands that
+    /// far off `off`, or where what its offset closes onto misses `on` or lies in it.
+    #[allow(clippy::too_many_arguments)]
+    fn of(on: &Surface,off: &Surface,d: f64,bounds: (V,V),p: V,reach: f64,tol: f64,what: &str) -> Result<Leg,String> {
+        match off.offset(d,tol) {
+            Some(Offset::Surface(s)) => Ok(Leg::Along(super::geom::Traced {a:on.clone(),b:s,pts:Vec::new(),closed:false})),
+            Some(Offset::Curve(c)) => match nearest_crossing(&c,on,tol,bounds,reach,p) {
+                None => Err(format!("{what} shrinks the {} to what the {} closes onto, which lies in it: no one point \
+                    ends its sections",on.kind(),off.kind())),
+                Some(q) => q.map(Leg::At).ok_or_else(|| format!("{what}: the {} offset by its leg closes onto a curve the \
+                    {} never crosses",off.kind(),on.kind())),
+            },
+            Some(Offset::Point(q)) if on.implicit(q).abs() <= 1e3*tol => Ok(Leg::At(q)),
+            Some(Offset::Point(q)) => Err(format!("{what}: the {} offset by its leg closes onto its centre {q:.3?}, off the \
+                {}",off.kind(),on.kind())),
+            None => Err(format!("{what} is wider than a face holds")),
+        }
+    }
+
+    /// Where the leg crosses the plane through `o` square to `n`, from `guess`: the point itself
+    /// where it is one.
+    fn crossing(&self,o: V,n: V,guess: V) -> V {
+        match self { Leg::Along(m) => crossing_plane(m,o,n,guess),Leg::At(q) => *q }
+    }
+}
+
+/// Where the curve `c` (over its period where it closes) crosses `s` within `grow` of the box
+/// `bx`, the crossing nearest `near`: none where it never does, and `None` where it lies along
+/// `s` — a standing ball's centre, a leg shrunk to a point.
+fn nearest_crossing(c: &Curve,s: &Surface,tol: f64,bx: (V,V),grow: f64,near: V) -> Option<Option<V>> {
+    let span = c.period().map_or([f64::NEG_INFINITY,f64::INFINITY],|pd| [0.,pd]);
+    match super::query::curve_surface_within(c,span,s,tol,bx,grow) {
+        super::query::Meets::Along => None,
+        super::query::Meets::At(roots) => Some(roots.into_iter().map(|(t,_)| c.point(t))
+            .min_by(|x,y| distance(*x,near).total_cmp(&distance(*y,near)))),
+    }
+}
+
+/// The axis two surfaces are both turned about with straight meridians, if they are — cylinders
+/// and cones about one line, a plane square to it (two planes have none) — as a point on it and
+/// its way (`ssi::meridian`).
+fn coaxial(surfaces: &[Surface;2],tol: f64) -> Option<(V,V)> {
+    use super::ssi::{meridian,Meridian};
+    let (o,z) = surfaces.iter().find_map(|s| match *s { Surface::Cylinder(f,_) | Surface::Cone(f,_,_) => Some((f.o,f.z)),_ => None })?;
+    surfaces.iter().all(|s| matches!(meridian(s,o,z,tol),Some(Meridian::Level(_) | Meridian::Line {..}))).then_some((o,z))
 }
 
 /// Where a run of `b`'s edges `chain` between the faces `sides_faces` ends, at its vertex `v`: the
@@ -1019,30 +1122,37 @@ pub(super) fn face_out(out: &mut Brep,s: Surface,outward: V,es: &[usize],name: &
 /// The piece: the canal face over `net` (seamed along its first column), and on each surface the
 /// strip between the loop `chain` (edges of `b`) and the canal's contact with it.
 fn build(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_reversed: [bool;2],concave: bool,tol: f64,fit: f64,
-    split: Option<f64>) -> Result<Brep,String> { build_with(b,chain,net,surfaces,face_reversed,concave,tol,fit,None,split) }
+    split: Option<f64>) -> Result<Brep,String> { build_with(b,chain,net,surfaces,face_reversed,concave,tol,fit,None,split,None) }
 
 /// `build` over a fitted face `surface_face` orients by `edge`, the contact on the second face
 /// split at `split` (its `u`) where a strip winding round its surface too has its seam (#218's 7:
-/// the loop winding round both).
+/// the loop winding round both). Where the contact on face `point` is a point — a flat's leg where
+/// the other's offset closes onto a curve, the net's column there standing still — that contact
+/// is a degenerate edge at it, as a sphere's pole is, and the face's strip all of it inside the
+/// loop (`strip` with no walk).
 #[allow(clippy::too_many_arguments)]
 fn build_with(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_reversed: [bool;2],concave: bool,tol: f64,fit: f64,
-    edge: Option<V>,split: Option<f64>) -> Result<Brep,String> {
+    edge: Option<V>,split: Option<f64>,point: Option<usize>) -> Result<Brep,String> {
     let [[u0,u1],[v0,v1]] = net.domain();
     let mut out = Brep::default();
     let last_v = net.poles[0].len()-1;
     let (va,vb) = (out.vertex(net.point(u0,v0)),out.vertex(net.point(u0,v1)));
-    // the contacts, each one closed edge (the second in two where it is split), and the canal's
-    // seam between them
-    let first = out.edge(EdgeCurve::Curve(column(net,0)),[u0,u1],[va,va]);
+    // the contacts, each one closed edge (the second in two where it is split; one standing at a
+    // point degenerate), and the canal's seam between them
+    let closed = |out: &mut Brep,k: usize,v: u32| if point == Some(k) { out.edge(EdgeCurve::Degenerate,[u0,u1],[v,v]) }
+        else { out.edge(EdgeCurve::Curve(column(net,[0,last_v][k])),[u0,u1],[v,v]) };
+    let first = closed(&mut out,0,va);
     let second: Vec<(u32,[f64;2])> = match split {
-        None => vec![(out.edge(EdgeCurve::Curve(column(net,last_v)),[u0,u1],[vb,vb]),[u0,u1])],
+        None => vec![(closed(&mut out,1,vb),[u0,u1])],
         Some(us) => {
             let vs = out.vertex(net.point(us,v1));
             vec![(out.edge(EdgeCurve::Curve(column(net,last_v)),[u0,us],[vb,vs]),[u0,us]),
                 (out.edge(EdgeCurve::Curve(column(net,last_v)),[us,u1],[vs,vb]),[us,u1])]
         }
     };
+    // (a contact standing at a point is no edge a strip walks, nor one the fit is off its face by)
     let contact: [Vec<u32>;2] = [vec![first],second.iter().map(|&(e,_)| e).collect()];
+    let contact = [0,1].map(|k| if point == Some(k) { Vec::new() } else { contact[k].clone() });
     let seam = out.edge(EdgeCurve::Curve(row(net,0)),[v0,v1],[va,vb]);
     surface_face_of(&mut out,net,[&[(first,[u0,u1])],&second],[seam,seam],edge);
     let (_,edge_of) = copy_run(b,chain,&mut out);

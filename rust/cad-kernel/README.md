@@ -24,6 +24,9 @@ it to crates.io; what changes in each release is in [CHANGELOG.md](CHANGELOG.md)
 - **Booleans:** union, cut and common. Intersections between analytic surfaces are closed forms
   wherever one exists, and traced otherwise. A meeting the kernel cannot resolve is refused, never
   read as none.
+- **Offsets:** a solid grown or shrunk by a distance, hollowed to a wall (open at some faces,
+  inside or out), and a sheet thickened, with rounded or sharp joins, each built exactly as the
+  union of its faces' normal sweeps and the tubes and balls between them.
 - **Measures:** exact volume (by Green's theorem over each face) and area.
 - **Meshing:** a constrained Delaunay mesh refined until it is within a measured sag of the surface.
 - **Output:** STEP AP214 with p-curves and seam curves, and STL.
@@ -36,8 +39,11 @@ It is clean-room: Open CASCADE's behaviour and conventions were studied, never i
 
 ## On brep-bench
 
-The first run passed 29 of 33 cases. The 4 others are refusals, none wrong: edge fillets and a
-flat-ended helical sweep, which the public API does not offer yet. See the live scoreboard at
+It passes 168 of the bench's 192 cases, none wrong: primitives, Booleans, sweeps, lofts, NURBS,
+offsets, shells and thickened sheets among them. The rest are refusals, each saying what is
+missing — fillets and chamfers where three edges meet or a face is consumed, variable-radius
+rounds, solid sweeps along general motions, ellipsoids, a near-tangent plane, and offsets of
+B-spline faces — or cases with no implementation yet. See the live scoreboard at
 https://bmander.github.io/brep-bench/.
 
 ## Using it
@@ -66,7 +72,7 @@ assert!((volume(&drilled) - (1000. - 90. * std::f64::consts::PI)).abs() < 1e-6);
 
 - A public API designed for strangers: builders, and the recipe JSON kept as one front end among
   several.
-- Edge fillets and chamfers, shelling and offsets, and a sweep of any section along any path.
+- Edge fillets and chamfers, offsets of B-spline faces, and a sweep of any section along any path.
 - STEP import.
 - The kernel's own test suite moved into the crate, out of geomsolver's.
 
