@@ -310,6 +310,11 @@ precision before and after, the same to the bit.  (Read through `Twist::body` an
 instead, the walk moves by an ulp, and that alone turns three triangles of the whole turn's mesh over
 (`the_wheel_turned_once_leaves_its_shadow_all_round`): the mesher's, F4's to mend.)
 
+**The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**,
+for review and not yet built: every candidate sheet a patch over an explicit domain cut at its
+branch and fold loci, a box holding the sweep split by all of them (`boolean::split`), each cell
+classified by the kernel's membership test, the kept cells the closed solid; X1–X5 its cases.
+
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:
 a turn, or a turn seen from a turn, a sinusoid in the roll; a slide seen from a turn, a rack, a
