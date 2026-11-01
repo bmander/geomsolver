@@ -39,8 +39,11 @@ It is clean-room: Open CASCADE's behaviour and conventions were studied, never i
 
 ## On brep-bench
 
-The first run passed 29 of 33 cases. The 4 others are refusals, none wrong: edge fillets and a
-flat-ended helical sweep, which the public API does not offer yet. See the live scoreboard at
+It passes 168 of the bench's 192 cases, none wrong: primitives, Booleans, sweeps, lofts, NURBS,
+offsets, shells and thickened sheets among them. The rest are refusals, each saying what is
+missing — fillets and chamfers where three edges meet or a face is consumed, variable-radius
+rounds, solid sweeps along general motions, ellipsoids, a near-tangent plane, and offsets of
+B-spline faces — or cases with no implementation yet. See the live scoreboard at
 https://bmander.github.io/brep-bench/.
 
 ## Using it
