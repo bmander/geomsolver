@@ -229,7 +229,10 @@ it. It stays as the fast path where #699 D says so.
    `ρ dρ dψ dζ`, so the sweep's volume is each helix's intervals of the tool, lengthened by the turn
    and united, integrated over `ρ` and one period of `ζ` (for that bar, `1 + Θ (3 + k)`). So the
    screw's next step is a closed piece of sheet the arrangement can cut by, as the turn's
-   solids of revolution are.
+   solids of revolution are. A box tight along the axis (a square prism as tall as the sweep) lets
+   the far-reaching tube leave it within a turn, so each plane meets each sheet once; the cut then
+   failed where a fitted plane–sheet meeting crosses an edge of a cell on the box's face. What the
+   screw waits on is the Booleans meeting a fitted curve at a cell's edge exactly (F4).
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
