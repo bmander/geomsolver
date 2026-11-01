@@ -70,8 +70,10 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   So are the planar classes' builds (an envelope's prism, `InnerEnvelope::prism`; a swept
   region's profiles and lofts, `swept::region::profiles` and `lofted`), on the cubic B-spline
   basis and its fit (`cubic`: what a drawing's curves are read by, `curve` re-exporting it), and
-  the generating class's traced sheet (`swept::trace::traced_sheet`).  The rest of the generating
-  class (the extruded cutter's sheet and its sector's build), the trims and the closed solid move
+  the generating class's traced sheet (`swept::trace::traced_sheet`), and the sector an indexed
+  body is built as: its indexing, the side through its cuts' gaps and the cells it is split into
+  (`swept::sector`), which `brep::sweep::sector` judges by the body's material field, the
+  semantic reference.  The rest of the generating class (the extruded cutter's sheet), the trims and the closed solid move
   with no change in behaviour; until each has, it is held where it is, and no new walk is built
   in the solver.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint

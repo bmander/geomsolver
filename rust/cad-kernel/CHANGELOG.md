@@ -8,6 +8,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- An indexed body's sector (`swept::sector`): its indexing, the side through the gaps its cuts
+  leave, the slicings a recipe suggests, the cells a sector is split into and the blank turned to
+  its seam.
 - The cubic B-spline basis, its knots, Piegl and Tiller's interpolation and a sampled stretch's fit
   (`cubic`); the planar classes' builds (`swept::planar::InnerEnvelope::prism`,
   `swept::region::profiles`, `swept::region::lofted`) and the generating class's traced sheet
