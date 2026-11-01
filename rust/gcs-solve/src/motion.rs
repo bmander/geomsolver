@@ -100,18 +100,18 @@ impl crate::brep::trajectory::Pace for Paced {
 }
 
 /// A frame along a path or one the drawing moves as the kernel's evaluated path
-/// (`Trajectory::General`): its pose and rate at each time, as `Family::at` reads the step.
+/// (`Trajectory::General`): its pose and rate at each time, undone where it is `back`, as
+/// `Family::at` reads the step.
 #[derive(Debug)]
-struct Evaluated(Step);
+struct Evaluated { carrier: Carrier,back: bool }
+
+#[derive(Debug)]
+enum Carrier { Guide(std::sync::Arc<Guide>),Ride(std::sync::Arc<Ride>) }
 
 impl crate::brep::trajectory::Path for Evaluated {
     fn at(&self,t: f64) -> Result<Motion,crate::brep::KernelError> {
-        let (m,back) = match self.0 {
-            Step::Guided {ref guide,back} => (guide.motion(t)?,back),
-            Step::Followed {ref ride,back} => (ride.motion(t)?,back),
-            _ => unreachable!("only a path's step is evaluated"),
-        };
-        Ok(if back { m.inverse() } else { m })
+        let m = match &self.carrier { Carrier::Guide(g) => g.motion(t)?, Carrier::Ride(r) => r.motion(t)? };
+        Ok(if self.back { m.inverse() } else { m })
     }
 }
 
@@ -380,19 +380,17 @@ impl Family {
             None => path,
             Some(l) => Trajectory::Paced {path:Box::new(path),pace:std::sync::Arc::new(Paced(l.clone()))},
         };
-        Ok(match self.steps[k] {
-            Step::Rotation {origin,axis,ratio,advance,ref law} => {
-                let axis = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
-                paced(Trajectory::Twist(Screw {origin,axis,ratio,advance}),law)
-            }
-            Step::Translation {axis,advance,ref law} => {
-                let axis = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
-                paced(Trajectory::Twist(Screw {origin:[0.;3],axis,ratio:0.,advance}),law)
-            }
-            Step::Relative {source,observer} => Trajectory::Relative {source:Box::new(self.lowered(source)?),
-                observer:Box::new(self.lowered(observer)?)},
-            ref s @ (Step::Guided {..} | Step::Followed {..}) => Trajectory::General(std::sync::Arc::new(Evaluated(s.clone()))),
-        })
+        // a slide is a screw about the line through the origin along it, turning not at all
+        let (origin,axis,ratio,advance,law) = match self.steps[k] {
+            Step::Rotation {origin,axis,ratio,advance,ref law} => (origin,axis,ratio,advance,law),
+            Step::Translation {axis,advance,ref law} => ([0.;3],axis,0.,advance,law),
+            Step::Relative {source,observer} => return Ok(Trajectory::Relative {source:Box::new(self.lowered(source)?),
+                observer:Box::new(self.lowered(observer)?)}),
+            Step::Guided {ref guide,back} => return Ok(Trajectory::General(std::sync::Arc::new(Evaluated {carrier:Carrier::Guide(guide.clone()),back}))),
+            Step::Followed {ref ride,back} => return Ok(Trajectory::General(std::sync::Arc::new(Evaluated {carrier:Carrier::Ride(ride.clone()),back}))),
+        };
+        let axis = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
+        Ok(paced(Trajectory::Twist(Screw {origin,axis,ratio,advance}),law))
     }
 
     /// The **instantaneous screw** of this motion (#326): the axis every point moves along at the

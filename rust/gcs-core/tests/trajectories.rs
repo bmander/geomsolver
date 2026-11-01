@@ -30,14 +30,15 @@ fn same_motion(a: Motion,b: Motion,what: &str) {
     }
 }
 
-/// The trajectory's kinds, outermost first, as they nest.
-fn kinds(t: &Trajectory,out: &mut Vec<&'static str>) {
+/// Each kind of the trajectory's structure counted in `met`, as they nest.
+fn kinds(t: &Trajectory,met: &mut std::collections::BTreeMap<&'static str,usize>) {
+    let mut count = |k| *met.entry(k).or_default() += 1;
     match t {
-        Trajectory::Twist(_) => out.push("twist"),
-        Trajectory::Relative {source,observer} => { out.push("relative"); kinds(source,out); kinds(observer,out) }
-        Trajectory::Paced {path,..} => { out.push("paced"); kinds(path,out) }
-        Trajectory::Pieces(p) => { out.push("pieces"); for p in p { kinds(&p.path,out) } }
-        Trajectory::General(_) => out.push("general"),
+        Trajectory::Twist(_) => count("twist"),
+        Trajectory::Relative {source,observer} => { count("relative"); kinds(source,met); kinds(observer,met) }
+        Trajectory::Paced {path,..} => { count("paced"); kinds(path,met) }
+        Trajectory::Pieces(p) => { count("pieces"); for p in p.pieces() { kinds(&p.path,met) } }
+        Trajectory::General(_) => count("general"),
     }
 }
 
@@ -56,9 +57,7 @@ fn a_motion_lowers_to_the_kernels_trajectory() {
         for i in 0..sk.motions.len() {
             let Ok(family) = Family::read(&sk,i) else { continue };
             let lowered = family.trajectory().unwrap_or_else(|m| panic!("{name}: `{}` does not lower: {m}",family.name));
-            let mut k = Vec::new();
-            kinds(&lowered,&mut k);
-            for k in k { *met.entry(k).or_default() += 1 }
+            kinds(&lowered,&mut met);
             assert_eq!(lowered.screw(),family.twist(),"{name}: `{}`'s constant twist",family.name);
             for t in [-2.1,-0.4,0.,0.3,1.,2.7,5.9] {
                 let (Ok(want),got) = (family.at(t),lowered.at(t)) else { continue };
@@ -81,11 +80,10 @@ fn a_screws_twist_is_its_poses_at_every_time() {
         Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:-30.},
     ];
     for s in screws {
-        let path = Trajectory::Twist(s);
+        let (path,w) = (Trajectory::Twist(s),s.twist());
         assert_eq!(path.screw(),Some(s));
         for t in [-3.,0.,0.8,4.4] {
             let m = path.at(t).unwrap();
-            let w = s.twist();
             for (name,read) in [("in the world",Twist::spatial(m)),("on what it carries",Twist::body(m))] {
                 agree(read.omega,w.omega,&format!("{} {name} at {t}",s.kind()));
                 agree(read.v0,w.v0,&format!("{} {name} at {t}",s.kind()));
@@ -96,9 +94,9 @@ fn a_screws_twist_is_its_poses_at_every_time() {
                 agree(m.point(p),s.carry(p,t),&format!("{} carrying {p:?} for {t}",s.kind()));
             }
         }
-        if let Some((point,direction,pitch)) = s.twist().axis() {
+        if let Some((point,direction,pitch)) = w.axis() {
             agree(direction,s.axis.map(|a| a*s.ratio.signum()),"the twist's axis, the way it turns");
-            agree(s.twist().velocity(point),s.twist().omega.map(|w| w*pitch),"along the axis by its pitch a radian");
+            agree(w.velocity(point),w.omega.map(|w| w*pitch),"along the axis by its pitch a radian");
         } else { assert!(s.is_slide()) }
     }
 }
@@ -149,8 +147,7 @@ fn a_path_of_pieces_meets_or_is_refused() {
     let turn = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:0.};
     let piece = |over,path| Piece {over,path};
     // a turn, then (where it stands at no turn) a slide read by evaluating it from there
-    let shifted = Trajectory::Relative {source:Box::new(Trajectory::General(Arc::new(Evaluated))),
-        observer:Box::new(Trajectory::Twist(Screw {origin:[0.;3],axis:[1.,0.,0.],ratio:0.,advance:0.}))};
+    let shifted = Trajectory::General(Arc::new(Evaluated));
     let whole = Trajectory::pieces(vec![piece([-1.,0.],Trajectory::Twist(turn)),piece([0.,2.],shifted.clone())],1e-12,100.).unwrap();
     same_motion(whole.at(-0.5).unwrap(),turn.at(-0.5).unwrap(),"the first piece");
     same_motion(whole.at(1.5).unwrap(),Evaluated.at(1.5).unwrap(),"the second piece");

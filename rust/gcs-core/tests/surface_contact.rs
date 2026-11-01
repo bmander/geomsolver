@@ -15,8 +15,6 @@ use gcs_core::space::{cross,dot,unit};
 use std::f64::consts::{PI,TAU};
 use std::sync::Arc;
 
-type V = [f64;3];
-
 /// A frame placed off the world's, turned and moved, so that nothing reads a world axis.
 fn frame(rng: &mut Rng) -> Frame {
     let z = unit([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)]);
@@ -64,9 +62,9 @@ fn each_closed_form_is_the_contact_function() {
                     let Some(g) = s.normal_velocity([u,v],&w) else { continue };
                     if let Some(ring) = s.ring_contact(v,&w) { agree(ring.at(u),g,&format!("{name}'s ring at {v}")); read[0] += 1 }
                     if let Some(ruling) = s.ruling_contact(u,&w) {
-                        // past a cone's apex its own normal is the other way: the ruling's is the one at v = 0
-                        let flip = if let Surface::Cone(_,r,a) = s { if r+v*a.sin() < 0. { -1. } else { 1. } } else { 1. };
-                        agree(flip*ruling.at(v),g,&format!("{name}'s ruling at {u}"));
+                        // the ruling's normal is the surface's up to its sign, which turns past an apex
+                        let own = s.normal([u,0.]).or_else(|| s.normal([u,1.])).unwrap();
+                        agree(dot(own,s.normal([u,v]).unwrap()).signum()*ruling.at(v),g,&format!("{name}'s ruling at {u}"));
                         read[1] += 1
                     }
                     if let Some([a,b,c]) = s.plane_contact(&w) { agree(a+b*u+c*v,g,&format!("{name} at ({u}, {v})")); read[2] += 1 }
@@ -202,7 +200,7 @@ fn a_carried_surfaces_contact_is_read_on_the_surface_as_written() {
         agree(own,world.normal_velocity,"the body twist's contact");
         // and the world's twist moves the carried point as the pose's rate does
         let spatial = Twist::spatial(m).velocity(m.point(position));
-        let rate: V = m.velocity(position);
+        let rate = m.velocity(position);
         for k in 0..3 { agree(spatial[k],rate[k],"the spatial twist") }
         assert!(dot(world.normal,world.normal) > 0.5);
     }

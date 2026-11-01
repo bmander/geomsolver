@@ -19,9 +19,9 @@
 //! the twist that carries the tool, read on the tool (`Twist::body`).
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use crate::geom::{Curve,Surface,Uv};
+use crate::geom::{Curve,Surface,Uv,V};
 use crate::trajectory::Twist;
-use crate::util::space::{cross,dot};
+use crate::util::space::{cross,dot,normalised};
 
 const TAU: f64 = std::f64::consts::TAU;
 
@@ -116,8 +116,14 @@ impl Surface {
     /// **The contact function** at `uv` under `twist`: the unit normal (`normal`, of `S_u × S_v`)
     /// dotted with the velocity there. Nothing where the normal is not defined (a pole, an apex).
     pub fn normal_velocity(&self,uv: Uv,twist: &Twist) -> Option<f64> {
-        let n = self.normal(uv)?;
-        Some(dot(n,twist.velocity(self.point(uv))))
+        let (p,n) = self.point_normal(uv)?;
+        Some(dot(n,twist.velocity(p)))
+    }
+
+    /// The point at `uv` and its unit normal (`normal`'s), read in one evaluation.
+    fn point_normal(&self,uv: Uv) -> Option<(V,V)> {
+        let (p,su,sv) = self.d1(uv);
+        Some((p,normalised(cross(su,sv))?))
     }
 
     /// The ring at `v`'s contact, `A cos u + B sin u + C`, where its surface is turned about its
@@ -128,8 +134,8 @@ impl Surface {
     pub fn ring_contact(&self,v: f64,twist: &Twist) -> Option<Sinusoid> {
         if !matches!(self.contact_form(),Form::Rings {..}) { return None }
         let f = self.frame();
-        let q = f.local(self.point([0.,v]));
-        let m = f.dir_local(self.normal([0.,v])?);
+        let (q,m) = self.point_normal([0.,v])?;
+        let (q,m) = (f.local(q),f.dir_local(m));
         let k = cross(q,m);
         let big = f.dir_local(twist.velocity(f.o));
         let w = f.dir_local(twist.omega);
@@ -143,16 +149,13 @@ impl Surface {
     /// The ruling at `u`'s contact, `a + b v`, where the surface is a line along `v` whose normal
     /// stands still along it (`Form::Rings {rulings: true}`, `Form::Rulings`, `Form::Linear`): with
     /// its point `P` and direction `d` at `v = 0` and its normal `n`, `n · v = n · v(P) + v n · (ω × d)`.
-    /// The normal is read at `v = 0`, or at `v = 1` where it is not defined there (a cone's apex);
-    /// past a cone's apex the surface's own normal is the other way, and the root the same.
-    /// Nothing for any other surface.
+    /// `n` is **the ruling's normal**, read at `v = 0`, or at `v = 1` where it is not defined there
+    /// (a cone's apex): the surface's own up to its sign, which turns where the ruling crosses an
+    /// apex or the axis it is turned about, the root the same. Nothing for any other surface.
     pub fn ruling_contact(&self,u: f64,twist: &Twist) -> Option<Affine> {
-        match self.contact_form() {
-            Form::Linear | Form::Rulings | Form::Rings {rulings:true} => {}
-            Form::Rings {rulings:false} | Form::Numeric => return None,
-        }
-        let (p,_,d) = self.d1([u,0.]);
-        let n = self.normal([u,0.]).or_else(|| self.normal([u,1.]))?;
+        if !matches!(self.contact_form(),Form::Linear | Form::Rulings | Form::Rings {rulings:true}) { return None }
+        let (p,su,d) = self.d1([u,0.]);
+        let n = normalised(cross(su,d)).or_else(|| self.normal([u,1.]))?;
         Some(Affine {a:dot(n,twist.velocity(p)),b:dot(n,cross(twist.omega,d))})
     }
 
@@ -173,16 +176,14 @@ impl Surface {
     pub fn contact_along(&self,a: Uv,b: Uv,twist: &Twist,samples: usize,width: f64) -> Vec<f64> {
         let at = |x: f64| self.normal_velocity([a[0]+(b[0]-a[0])*x,a[1]+(b[1]-a[1])*x],twist);
         let samples = samples.max(1);
-        let read: Vec<(f64,f64)> = (0..=samples).filter_map(|i| { let x = i as f64/samples as f64; at(x).map(|g| (x,g)) }).collect();
-        let mut out = Vec::new();
-        for w in read.windows(2) {
-            let ((x0,g0),(x1,g1)) = (w[0],w[1]);
-            if g0 == 0. { out.push(x0); continue }
-            if (g0 < 0.) != (g1 < 0.) && g1 != 0. {
-                out.push(crate::util::roots::bracketed_root(at,x0,g0,x1,g1,width));
-            }
+        let mut read = (0..=samples).filter_map(|i| { let x = i as f64/samples as f64; at(x).map(|g| (x,g)) });
+        let (mut out,mut last) = (Vec::new(),read.next());
+        for (x1,g1) in read {
+            let Some((x0,g0)) = last.replace((x1,g1)) else { continue };
+            if g0 == 0. { out.push(x0) }
+            else if (g0 < 0.) != (g1 < 0.) && g1 != 0. { out.push(crate::util::roots::bracketed_root(at,x0,g0,x1,g1,width)) }
         }
-        if let Some(&(x,g)) = read.last() { if g == 0. { out.push(x) } }
+        if let Some((x,0.)) = last { out.push(x) }
         out
     }
 }
