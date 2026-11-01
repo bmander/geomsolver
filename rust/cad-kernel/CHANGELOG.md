@@ -21,6 +21,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   point were refused).
 - A face whose chart collapses at the middle of its box (a horn torus) is meshed by its mean
   speed, not shrunk to slivers.
+- A chamfer or a round run on past its ends (`fillet::flat_along`, `fillet::roll`) goes on until
+  its section is wholly past one cut there, not each of its points past some cut: where two
+  chamfers before it mitre at its end, a third took too little off (a cube chamfered edge by edge
+  was 809.73 against 808).
 
 - Generating sweeps' contact times (`swept::generating`): a tool point's contact chart along a
   trajectory that turns it, its form read once (`Form`: a sinusoid in the roll under a turn or a
