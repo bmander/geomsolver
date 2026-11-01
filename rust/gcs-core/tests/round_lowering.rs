@@ -248,6 +248,47 @@ fn a_rim_tilted_off_square_rounded_to_its_cylinders_radius_is_a_dome() {
     assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 1), ("sphere", 1)].into());
 }
 
+/// `point.sv` (brep-bench's chamfer/cylinder-rim-to-point): a cylinder's rim chamfered to its own
+/// radius on both faces, so the leg across the top is the axis — what the side's offset closes onto
+/// — and the top shrinks to its centre: the ring's section is a triangle with a corner on the axis,
+/// turned into a cone. The cylinder to half its height under the cone: `500π/3`,
+/// `75π + 25√2π`.
+#[test]
+fn a_rim_chamfered_to_its_cylinders_radius_is_a_cone() {
+    let e = solved(include_str!("../../examples/rounds/point.sv"));
+    let b = exported(&e, "drum");
+    close(props::volume(&b), 500.0 * PI / 3.0);
+    close(b.faces.iter().map(|f| props::area(&b, f)).sum::<f64>(), 75.0 * PI + 25.0 * 2f64.sqrt() * PI);
+    assert_eq!(kinds(&b), [("cone", 1), ("cylinder", 1), ("plane", 1)].into());
+    // under the cone near its apex is material; beside it, under the old top, none
+    let field = MaterialField::read(&e.sketch, ent(&e, "drum").i(), 1e-10).unwrap();
+    assert!(field.side([0.0, 0.0, 9.9]) < 0.0 && field.side([3.0, 0.0, 9.5]) > 0.0);
+}
+
+/// The same chamfer under a top tilted 20° off square: the rim is an ellipse, which no ring
+/// carries, so the flat is cut along the run (`brep::fillet::flat_along`) — and, the leg across the
+/// top as wide as the post, every section of it ends where the axis crosses the top: the flat
+/// closes onto that point (`fillet::Leg::At`), fitted with its column there standing still, and
+/// the whole top is taken. The solid is `∫(10 − (ρ + x sin α) / cos α) dA` over the disc,
+/// `250π (1 − 1 / (3 cos α))`.
+#[test]
+fn a_rim_tilted_off_square_chamfered_to_its_cylinders_radius_closes_onto_the_axis() {
+    let e = solved("unit mm\nuse std\nuse std.rounds (chamfer)\n\
+        in std.top {\n  o := point\n  fix((0, 0)) o\n  rim := circle(center: o) hint(r: 5)\n  radius(5mm) rim\n}\n\
+        post := solid(face(rim), from: 0mm, to: 14mm)\n\
+        across := axis hint(dir: (0, 1, 0))\nacross parallel std.y\n\
+        u := axis hint(dir: (0.94, 0, -0.34))\nu perpendicular across\nu angle(20deg, about: std.y) std.x\n\
+        slant := plane(u: u, v: across)\nfix(origin == (0mm, 0mm, 10mm)) slant\n\
+        in slant {\n  a := point\n  b := point\n  c := point\n  d := point\n\
+        fix((-20, -20)) a\n  fix((20, -20)) b\n  fix((20, 20)) c\n  fix((-20, 20)) d\n\
+        (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
+        lid := solid(face(ab, bc, cd, da), from: 0mm, to: 30mm)\n\
+        drum := solid(post)\nlid cut drum\ndrum.lid chamfer(d: 5mm) drum.post\n");
+    let b = exported(&e, "drum");
+    close(props::volume(&b), 250.0 * PI * (1.0 - 1.0 / (3.0 * 20f64.to_radians().cos())));
+    assert_eq!(b.faces.len(), 3);
+}
+
 /// **A run-out** (#110): a run cut off by a face its edge ends on at a slant. The block's east side
 /// leans in (its top 10 short of its foot) and its west side leans out (5 past), and only its near
 /// face's south edge is rounded. The run is carried on past each end of its edge and cut off there
