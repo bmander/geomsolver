@@ -104,7 +104,65 @@ fn a_bar_turned_about_a_line_along_it_closes_into_its_swept_region() {
 fn what_the_closed_build_cannot_yet_build_it_names() {
     use gcs_core::brep::swept::closed::{Unbuilt,closed};
     let tool = block([2.,0.,0.],[3.,1.,1.]);
-    assert_eq!(closed(&tool,&turn([0.;3],[0.,1.,1.],1.),[0.,1.],0.01,1e-7).unwrap_err(),Unbuilt::Skew);
     let screw = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:2.});
     assert_eq!(closed(&tool,&screw,[0.,1.],0.01,1e-7).unwrap_err(),Unbuilt::Motion);
+}
+
+/// A block leaning to the axis: `block` turned `lean` about the world's `x` and moved out `off`.
+fn leaning(lean: f64,off: f64) -> Brep {
+    let m = gcs_core::brep::geom::Rigid::turn([0.;3],[1.,0.,0.],lean).then(&gcs_core::brep::geom::Rigid {t:[off,0.,0.],..gcs_core::brep::geom::Rigid::identity()});
+    block([0.,-0.5,-0.75],[1.,0.5,0.75]).moved(&m)
+}
+
+/// The radii a convex tool's slice at height `z` spans about the world's `z` axis: the nearest of
+/// it and the farthest, its edges cut by the slice.
+fn spans(tool: &Brep,z: f64) -> Option<(f64,f64)> {
+    let pts: Vec<[f64;2]> = tool.edges.iter().filter_map(|e| {
+        let (p,q) = (e.point(e.t[0],&tool.vertices),e.point(e.t[1],&tool.vertices));
+        if (p[2]-z)*(q[2]-z) > 0. || p[2] == q[2] { return None }
+        let t = (z-p[2])/(q[2]-p[2]);
+        Some([p[0]+t*(q[0]-p[0]),p[1]+t*(q[1]-p[1])])
+    }).collect();
+    if pts.len() < 3 { return None }
+    let c = [pts.iter().map(|p| p[0]).sum::<f64>()/pts.len() as f64,pts.iter().map(|p| p[1]).sum::<f64>()/pts.len() as f64];
+    let mut ring = pts.clone();
+    ring.sort_by(|a,b| (a[1]-c[1]).atan2(a[0]-c[0]).total_cmp(&(b[1]-c[1]).atan2(b[0]-c[0])));
+    let far = ring.iter().map(|p| p[0].hypot(p[1])).fold(0.,f64::max);
+    let near = (0..ring.len()).map(|k| {
+        let (a,b) = (ring[k],ring[(k+1)%ring.len()]);
+        let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
+        let t = (-(a[0]*dx+a[1]*dy)/(dx*dx+dy*dy)).clamp(0.,1.);
+        (a[0]+t*dx).hypot(a[1]+t*dy)
+    }).fold(f64::INFINITY,f64::min);
+    Some((near,far))
+}
+
+/// **A block leaning to the axis turned whole is its solid of revolution**: its leaning edges turn
+/// into hyperboloids and its leaning faces' contact lines (which meet the axis) into double cones,
+/// each held exactly, its faces at the end poses touching those cones along a line (a plane tangent
+/// to a cone, met in closed form). Turned a whole turn it sweeps the solid of revolution of its
+/// slices' radial spans, `∫ π (ρ_max² − ρ_min²) dz`, integrated here from its slices apart from the
+/// build (Simpson's rule between the heights its vertices stand at).
+#[test]
+#[ignore = "not yet built: the arrangement splits and classifies (#721 X6), but the cells' union leaves a vertex \
+    off its curve where a hyperboloid's traced meeting with a leaning plane ends: the Booleans' robustness, F4 / #699 E"]
+fn a_block_leaning_to_the_axis_turned_whole_is_its_solid_of_revolution() {
+    let tool = leaning(0.35,3.);
+    let path = turn([0.;3],[0.,0.,1.],std::f64::consts::TAU);
+    let built = gcs_core::brep::swept::closed::closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let mut heights: Vec<f64> = tool.vertices.iter().map(|v| v.p[2]).collect();
+    heights.sort_by(f64::total_cmp);
+    heights.dedup_by(|a,b| (*a-*b).abs() < 1e-12);
+    let area = |z: f64| spans(&tool,z).map_or(0.,|(near,far)| std::f64::consts::PI*(far*far-near*near));
+    let mut expected = 0.;
+    for w in heights.windows(2) {
+        let n = 4000;
+        let h = (w[1]-w[0])/n as f64;
+        expected += h/3.*(0..=n).map(|k| {
+            let z = (w[0]+h*k as f64).clamp(w[0]+1e-12,w[1]-1e-12);
+            area(z)*if k == 0 || k == n { 1. } else if k%2 == 1 { 4. } else { 2. }
+        }).sum::<f64>();
+    }
+    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
 }

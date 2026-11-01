@@ -178,9 +178,16 @@ it. It stays as the fast path where #699 D says so.
    work, not more candidates, that the leaning tool, the screw and the curved tool all need next.
    *Begun*: a plane tangent to a cone along a generator is met in closed form, the tangent line
    (`ssi::intersect`; `brep::surfaces_meet_in_curves_on_both`), where it was traced and refused.
-   With it a leaning block's whole turn builds past the refusal, but the cells' union still comes
-   out short or not a manifold near the touches: the Booleans' topology at a touch along a line is
-   what is left.
+   With it a leaning block's whole turn builds past the refusal. Three rules then made its
+   arrangement split and classify: candidates are read where they can carry boundary, at their
+   source's points carried over the roll (a box-wide grid missed a narrow band near the tool's top
+   and bottom), inside the source and the roll (a site at a source's own edge reads its neighbour's
+   boundary); each surface of revolution is built over the heights its source spans, which the turn
+   keeps (extended through a touch, a cylinder and a hyperboloid leave cusp-shaped cells between
+   them); and the plane square to the axis at a hyperboloid's throat parts it from the cylinder of
+   its throat's radius. What is left is the cells' union: a vertex lands off its curve where a
+   hyperboloid's traced meeting with a leaning plane ends (`a_block_leaning_to_the_axis_turned_whole_…`,
+   ignored with that reason) — the Booleans' robustness.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
