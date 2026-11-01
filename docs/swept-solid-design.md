@@ -164,6 +164,18 @@ it. It stays as the fast path where #699 D says so.
    axis and that line is added as a separator, parting the two sides of the touch into two cells.
    A bar turned a quarter turn beside the axis is its polar integral to 2e-15. Edges leaning to the
    axis (hyperboloids), screws, curved tools and K2 are the steps after.
+
+   *Tried and set aside, for the next step:* a block leaning to the axis. Two findings. A face's
+   contact line under a turn always meets the axis (it lies in the plane through the axis and the
+   face's normal), so a leaning face turns into a double cone, and only a skew edge into a
+   hyperboloid. A hyperboloid's solid is exact as a rational quadratic meridian turned, and a cone's
+   two nappes as triangles turned. But a face at an end pose touches its own contact cone along a
+   line, and the kernel's Booleans refuse a plane and a cone meeting at that angle ("nearly
+   touching: their meeting is ill-conditioned there, not built yet"). The cells' unions near such
+   touches come out not closed or not a manifold, even on a rounding-level change in how a
+   separator is written. **So the arrangement past planes and cylinders waits on the Booleans
+   meeting tangent and near-tangent surfaces robustly**: F4's kernel side, #699 E. It is that
+   work, not more candidates, that the leaning tool, the screw and the curved tool all need next.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
