@@ -8,6 +8,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A trajectory's pose alone (`Trajectory::pose`, `Pose`) and an interval bound on the speed it
+  carries a point or a box back at (`Trajectory::inverse_point_speed_bound`, `_over`), read through
+  a pace's value and enclosure (`Pace::value`, `Pace::enclose`) and a path's pose and stretch
+  (`Path::pose`, `Path::stretch`, `Path::speed_over`, `Stretch`).
 - A ball's tube along a trajectory (`swept::canal`): in closed form along a constant twist, a face
   family fitted to its disc along any other, refused by rows typed with what they saw where it
   would meet itself. The rotation-minimising frame's step (`trajectory::reflected`) and a face

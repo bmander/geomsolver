@@ -302,17 +302,8 @@ impl Extremes {
     }
 }
 
-/// A frame along a path over a stretch of its parameter, enclosed (`Guide::stretch`): the
-/// path's point, the turn's entries, the path's speed and the frame's angular speed bounded, and
-/// the point at the home the turn is about.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Stretch {
-    pub(crate) point: [I; 3],
-    pub(crate) turn: [[I; 3]; 3],
-    pub(crate) speed: f64,
-    pub(crate) spin: f64,
-    pub(crate) origin: V,
-}
+/// What a motion does over a stretch of its parameter, enclosed, is the kernel's.
+pub(crate) use crate::brep::trajectory::Stretch;
 
 /// The path's own frame at `u`, or why it has none.
 fn frenet_at(name: &str, u: f64, x: [V; 4]) -> Result<Frame, String> {

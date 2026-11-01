@@ -17,6 +17,7 @@
 use crate::util::fmath::Det;
 use crate::util::space::{add,cross,dot,length,scale,sub};
 use crate::{Kind,KernelError};
+use crate::util::interval::{Error as IntervalError,Interval};
 use std::sync::Arc;
 
 type V3 = [f64;3];
@@ -319,11 +320,120 @@ pub trait Pace: Send + Sync + std::fmt::Debug {
     /// The least and the greatest value the pace takes over `[a, b]`: being continuous, it takes
     /// every value between.
     fn range(&self, roll: [f64; 2]) -> Result<[f64; 2], KernelError>;
+    /// The path's parameter at `t` alone (a pose read without its rate): `jet`'s value, unless the
+    /// pace reads its value another way.
+    fn value(&self, t: f64) -> Result<f64, KernelError> { Ok(self.jet(t)?[0]) }
+    /// An enclosure of the pace's value and of its rate for every `t` in `roll`, or none.
+    fn enclose(&self, roll: Interval) -> Result<[Interval; 2], IntervalError> {
+        let _ = roll;
+        Err(IntervalError::InvalidBounds)
+    }
 }
 
 /// A rigid motion read only by evaluating it: its pose and its rate at each time (K2).
 pub trait Path: Send + Sync + std::fmt::Debug {
     fn at(&self, t: f64) -> Result<Motion, KernelError>;
+    /// The pose at `t` alone: `at`'s, unless the path reads it more cheaply.
+    fn pose(&self, t: f64) -> Result<Pose, KernelError> { let m = self.at(t)?; Ok(Pose { r: m.r, p: m.p }) }
+    /// What the motion does over `[a, b]` of the parameter, enclosed (`Stretch`), or `None` where it
+    /// has no bound.
+    fn stretch(&self, a: f64, b: f64) -> Option<Stretch> { let _ = (a, b); None }
+    /// How fast the box `b` is carried, forward or back, over `[lo, hi]` of the parameter, a unit of
+    /// it, given the stretch `g` the path encloses there: the stretch's speed and its spin about
+    /// the farthest the box stands from the path (`Stretch::speed_of`), unless the path bounds it
+    /// more closely.
+    fn speed_over(&self, b: [Interval; 3], lo: f64, hi: f64, g: &Stretch) -> Result<Interval, IntervalError> {
+        let _ = (lo, hi);
+        g.speed_of(b)
+    }
+}
+
+/// **What a motion does over a stretch of its parameter, enclosed**: the path's point (a box), the
+/// turn's entries (each an interval), bounds on the path's speed and the frame's angular speed, and
+/// where its frame stands at home (`origin`).
+#[derive(Clone, Copy, Debug)]
+pub struct Stretch {
+    pub point: [Interval; 3],
+    pub turn: [[Interval; 3]; 3],
+    pub speed: f64,
+    pub spin: f64,
+    pub origin: V3,
+}
+
+impl Stretch {
+    /// The farthest the box `b` stands from the path over the stretch, or from the home.
+    pub fn far(&self, b: [Interval; 3]) -> Result<Interval, IntervalError> {
+        let home = [Interval::point(self.origin[0])?, Interval::point(self.origin[1])?, Interval::point(self.origin[2])?];
+        let reach = |c: [Interval; 3]| -> Result<f64, IntervalError> {
+            let d: [Interval; 3] = [b[0].sub(c[0])?, b[1].sub(c[1])?, b[2].sub(c[2])?];
+            let s = d.iter().map(|x| { let [l, h] = x.bounds(); l.abs().max(h.abs()) })
+                .map(|m| m*m).sum::<f64>();
+            Ok(s.sqrt()*(1.+1e-12))
+        };
+        Interval::point(reach(self.point)?.max(reach(home)?))
+    }
+
+    /// A point of the box `b` carried along the stretch moves as fast as the path runs, and turns
+    /// about it at the frame's angular speed, the same forward and inverse.
+    pub fn speed_of(&self, b: [Interval; 3]) -> Result<Interval, IntervalError> {
+        Interval::point(self.spin)?.mul(self.far(b)?)?.add(Interval::point(self.speed)?)
+    }
+}
+
+/// A rigid pose without its rate: `x ↦ r·x + p`.
+#[derive(Clone, Copy, Debug)]
+pub struct Pose { pub r: M3, pub p: V3 }
+
+impl Pose {
+    /// A gradient read at `self.point(x)` turned into the gradient at `x`: the rotation's
+    /// transpose applied.
+    #[inline]
+    pub fn gradient(&self, g: V3) -> V3 {
+        std::array::from_fn(|i| self.r[0][i]*g[0]+self.r[1][i]*g[1]+self.r[2][i]*g[2])
+    }
+    #[inline]
+    pub fn point(&self, x: V3) -> V3 {
+        std::array::from_fn(|i| self.r[i][0]*x[0]+self.r[i][1]*x[1]+self.r[i][2]*x[2]+self.p[i])
+    }
+    /// A direction turned by the pose.
+    #[inline]
+    pub fn vector(&self, v: V3) -> V3 {
+        std::array::from_fn(|i| self.r[i][0]*v[0]+self.r[i][1]*v[1]+self.r[i][2]*v[2])
+    }
+    /// Apply this pose, then `next`.
+    #[inline]
+    pub fn then(self, next: Pose) -> Pose {
+        Pose {r:std::array::from_fn(|i| std::array::from_fn(|j| next.r[i][0]*self.r[0][j]+next.r[i][1]*self.r[1][j]+next.r[i][2]*self.r[2][j])),
+            p:next.point(self.p)}
+    }
+    #[inline]
+    pub fn inverse(self) -> Pose {
+        let r: M3 = std::array::from_fn(|i| std::array::from_fn(|j| self.r[j][i]));
+        let p = std::array::from_fn(|i| -(r[i][0]*self.p[0]+r[i][1]*self.p[1]+r[i][2]*self.p[2]));
+        Pose {r,p}
+    }
+}
+
+impl Screw {
+    /// The pose alone at `t`: turned `ratio · t` about the axis (Rodrigues), risen
+    /// `advance · t / τ` along it; a slide only risen.
+    pub fn pose(&self, t: f64) -> Pose {
+        let a = self.axis;
+        let rate = self.advance/std::f64::consts::TAU;
+        if self.is_slide() {
+            return Pose {r:[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],p:a.map(|v| v*rate*t)}
+        }
+        let (s,c) = (self.ratio*t).dsin_cos();
+        let k = [[0.,-a[2],a[1]],[a[2],0.,-a[0]],[-a[1],a[0],0.]];
+        let r: M3 = std::array::from_fn(|i| std::array::from_fn(|j|
+            c*if i == j { 1. } else { 0. }+(1.-c)*a[i]*a[j]+s*k[i][j]));
+        let turned = Pose {r,p:[0.;3]}.point(self.origin);
+        let mut p: V3 = std::array::from_fn(|i| self.origin[i]-turned[i]);
+        if self.advance != 0. {
+            for i in 0..3 { p[i] += a[i]*rate*t; }
+        }
+        Pose {r,p}
+    }
 }
 
 /// One piece of a path made of pieces: its own trajectory over `over`, a stretch of the parameter.
@@ -395,6 +505,51 @@ impl Trajectory {
         })
     }
 
+    /// **The pose at `t` alone**, without its rate: what a reading of many poses that needs no
+    /// velocity asks (a field read point by point).
+    pub fn pose(&self, t: f64) -> Result<Pose, KernelError> {
+        if !t.is_finite() { return Err("a motion angle must be finite".into()) }
+        let pose = self.pose_unchecked(t)?;
+        if !pose.r.iter().flatten().chain(&pose.p).all(|v| v.is_finite()) { return Err("a motion pose overflowed".into()) }
+        Ok(pose)
+    }
+
+    fn pose_unchecked(&self, t: f64) -> Result<Pose, KernelError> {
+        Ok(match self {
+            Trajectory::Twist(s) => s.pose(t),
+            Trajectory::Relative {source, observer} => source.pose_unchecked(t)?.then(observer.pose_unchecked(t)?.inverse()),
+            Trajectory::Paced {path, pace} => path.pose_unchecked(pace.value(t)?)?,
+            Trajectory::Pieces(pieces) => {
+                let all = pieces.pieces();
+                pieces.at(t).ok_or_else(|| KernelError::new(Kind::Refused, format!("a path of pieces over \
+                    [{}, {}] has no pose at {t}", all[0].over[0], all[all.len()-1].over[1])))?.path.pose_unchecked(t)?
+            }
+            Trajectory::General(p) => p.pose(t)?,
+        })
+    }
+
+    /// **An upper bound on the speed of `inverse(M(t)) · x` per unit of `t`**, for every `x` in the
+    /// box `point` and every `t` in `domain`: a bound on the mathematical motion, not on the
+    /// roundoff in `at`. Per node: a turn or screw moves a point at `|ratio| · distance(point,
+    /// axis) + |advance|/τ`, a slide at `|advance|/τ`, the same forward and inverse, a pace's
+    /// enclosed rate times that; a path evaluated by its stretch (`Path::speed_over`); a relative
+    /// motion `observer⁻¹ ∘ source` moves it at most as fast as the source moves it plus as fast as
+    /// the observer moves the source's image, and its inverse the other way round, the images
+    /// enclosed by each node over the whole domain. A point on an axis does not move and resolves
+    /// at once. A translation's reach grows with the domain, which is why the domain is an input.
+    pub fn inverse_point_speed_bound_over(&self, point: [Interval; 3], domain: Interval) -> Result<f64, IntervalError> {
+        let mut bound = Bound {tau:Interval::point(std::f64::consts::TAU)?,
+            reach:{ let [lo,hi] = domain.bounds(); Interval::point(lo.abs().max(hi.abs()))? },domain,read:Vec::new()};
+        bound.read_all(self)?;
+        Ok(bound.speed(self,point,false)?.bounds()[1])
+    }
+
+    /// `inverse_point_speed_bound_over` at one point.
+    pub fn inverse_point_speed_bound(&self, point: V3, domain: Interval) -> Result<f64, IntervalError> {
+        let point = [Interval::point(point[0])?,Interval::point(point[1])?,Interval::point(point[2])?];
+        self.inverse_point_speed_bound_over(point,domain)
+    }
+
     /// The constant twist this trajectory is, where it is one.
     pub fn screw(&self) -> Option<Screw> {
         match self { Trajectory::Twist(s) => Some(*s), _ => None }
@@ -460,4 +615,125 @@ pub fn reflected(f: &[V3; 3], x0: V3, x1: V3, t1: V3) -> [V3; 3] {
     // held square to the tangent and unit, the rounding of every step not carried on
     let u = crate::util::space::normalised(sub(u, scale(t1, dot(u, t1)))).unwrap_or(u);
     [t1, u, cross(t1, u)]
+}
+
+/// What a speed bound reads at every node: a turn in the units of the interval, the domain, how
+/// far the roll reaches from zero over it, and what each leaf reads over the whole domain, read
+/// once (`read_all`).
+struct Bound { tau: Interval,reach: Interval,domain: Interval,read: Vec<(*const Trajectory,Leaf)> }
+
+/// A leaf of a trajectory over a speed bound's domain: a constant twist taken at its own number,
+/// with how far that number reaches and how fast it runs a unit of the roll; or a path's stretch.
+#[derive(Clone,Copy)]
+enum Leaf { Twist(Screw,Interval,Interval),Path(Stretch) }
+
+impl Bound {
+    /// Every leaf under `node` read over the domain, in order, before any box is carried: a
+    /// constant twist at the roll's own reach and rate 1, or a pace enclosed over the domain, so a
+    /// cam's throw and its speed bound what it carries; a path's stretch, or no bound at all.
+    fn read_all(&mut self,node: &Trajectory) -> Result<(),IntervalError> {
+        let magnitude = |x: Interval| { let [lo,hi] = x.bounds(); Interval::point(lo.abs().max(hi.abs())) };
+        let leaf = match node {
+            Trajectory::Relative {source,observer} => { self.read_all(source)?; return self.read_all(observer) }
+            Trajectory::Twist(s) => Leaf::Twist(*s,self.reach,Interval::ONE),
+            Trajectory::Paced {path,pace} => {
+                let Trajectory::Twist(s) = **path else { return Err(IntervalError::InvalidBounds) };
+                let [v,r] = pace.enclose(self.domain)?;
+                Leaf::Twist(s,magnitude(v)?,magnitude(r)?)
+            }
+            Trajectory::General(p) => {
+                let [lo,hi] = self.domain.bounds();
+                Leaf::Path(p.stretch(lo,hi).ok_or(IntervalError::InvalidBounds)?)
+            }
+            Trajectory::Pieces(_) => return Err(IntervalError::InvalidBounds),
+        };
+        self.read.push((node as *const Trajectory,leaf));
+        Ok(())
+    }
+
+    /// What `node`, a leaf, read (`read_all`).
+    fn leaf(&self,node: &Trajectory) -> Result<Leaf,IntervalError> {
+        self.read.iter().find(|(n,_)| std::ptr::eq(*n,node)).map(|(_,l)| *l).ok_or(IntervalError::InvalidBounds)
+    }
+
+    /// The box's foot on a screw's axis and its farthest distance from it.
+    fn about(s: &Screw,b: [Interval;3]) -> Result<([Interval;3],Interval),IntervalError> {
+        let (origin,a) = (s.origin,s.axis);
+        let i = Interval::point;
+        let d: [Interval;3] = [b[0].sub(i(origin[0])?)?,b[1].sub(i(origin[1])?)?,b[2].sub(i(origin[2])?)?];
+        let along = d[0].mul(i(a[0])?)?.add(d[1].mul(i(a[1])?)?)?.add(d[2].mul(i(a[2])?)?)?;
+        let square = d[0].square()?.add(d[1].square()?)?.add(d[2].square()?)?.sub(along.square()?)?;
+        let radius = Interval::new(square.bounds()[0].max(0.),square.bounds()[1].max(0.))?.sqrt()?;
+        let foot: [Interval;3] = [i(origin[0])?.add(along.mul(i(a[0])?)?)?,i(origin[1])?.add(along.mul(i(a[1])?)?)?,
+            i(origin[2])?.add(along.mul(i(a[2])?)?)?];
+        Ok((foot,radius))
+    }
+
+    /// A leaf's own speed on a box, the same forward and inverse.
+    fn own(&self,node: &Trajectory,b: [Interval;3]) -> Result<Interval,IntervalError> {
+        let (s,rate) = match (node,self.leaf(node)?) {
+            (Trajectory::General(p),Leaf::Path(g)) => {
+                let [lo,hi] = self.domain.bounds();
+                return p.speed_over(b,lo,hi,&g)
+            }
+            (_,Leaf::Twist(s,_,rate)) => (s,rate),
+            _ => return Err(IntervalError::InvalidBounds),
+        };
+        if s.is_slide() { return Interval::point(s.advance.abs())?.div(self.tau)?.mul(rate) }
+        let (_,radius) = Self::about(&s,b)?;
+        Interval::point(s.ratio.abs())?.mul(radius)?.add(Interval::point(s.advance.abs())?.div(self.tau)?)?.mul(rate)
+    }
+
+    /// Where a node carries a box over the whole domain, forward or inverse: within the box's
+    /// farthest distance of its foot on the axis and the advance's reach along it; a slide's box
+    /// widened by its reach along it; a path's within the box's farthest reach of its stretch,
+    /// forward, and of the home, inverse. No angle enters, so no interval trigonometry limits the
+    /// domain.
+    fn image(&self,node: &Trajectory,b: [Interval;3]) -> Result<[Interval;3],IntervalError> {
+        let (s,reach) = match self.leaf(node)? { Leaf::Twist(s,reach,_) => (s,reach),Leaf::Path(g) => {
+            let r = g.far(b)?.bounds()[1];
+            let around = |k: usize| {
+                let [lo,hi] = g.point[k].bounds();
+                Interval::new(lo.min(g.origin[k])-r,hi.max(g.origin[k])+r)
+            };
+            return Ok([around(0)?,around(1)?,around(2)?])
+        } };
+        let slide = Interval::point(s.advance.abs())?.div(self.tau)?.mul(reach)?;
+        if s.is_slide() {
+            let a = s.axis;
+            let slide = slide.bounds()[1];
+            let widened = |k: usize| b[k].add(Interval::new(-slide*a[k].abs(),slide*a[k].abs())?);
+            return Ok([widened(0)?,widened(1)?,widened(2)?])
+        }
+        let (foot,radius) = Self::about(&s,b)?;
+        let spread = radius.add(slide)?.bounds()[1];
+        let around = |k: usize| foot[k].add(Interval::new(-spread,spread)?);
+        Ok([around(0)?,around(1)?,around(2)?])
+    }
+
+    /// Where `node` carries `b`, forward (`x ↦ O⁻¹(S x)` for a relative) or inverse.
+    fn image_of(&self,node: &Trajectory,b: [Interval;3],forward: bool) -> Result<[Interval;3],IntervalError> {
+        match node {
+            Trajectory::Relative {source,observer} => {
+                let (first,second) = if forward { (source,observer) } else { (observer,source) };
+                let moved = self.image_of(first,b,true)?;
+                self.image_of(second,moved,false)
+            }
+            _ => self.image(node,b),
+        }
+    }
+
+    /// How fast `node` carries `b`, forward or inverse.
+    fn speed(&self,node: &Trajectory,b: [Interval;3],forward: bool) -> Result<Interval,IntervalError> {
+        match node {
+            Trajectory::Relative {source,observer} => {
+                let (first,second) = if forward { (source,observer) } else { (observer,source) };
+                let moved = self.speed(first,b,true)?;
+                let carried = self.image_of(first,b,true)?;
+                moved.add(self.speed(second,carried,false)?)
+            }
+            Trajectory::Pieces(_) => Err(IntervalError::InvalidBounds),
+            _ => self.own(node,b),
+        }
+    }
 }

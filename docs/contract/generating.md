@@ -293,7 +293,14 @@ read the lowered trajectory (`Family::path`, lowered once when the family is rea
 a ring's contact and its roots are `brep::contact`'s (`RingFrame::coefficients`, a `Sinusoid`; its
 roots on a chart of the ring `Sinusoid::roots_over`), read off the motion's velocity field as the
 walk always read them.  `Screw::at` reads its unit axis as it is, so a constant twist's pose is
-`Family::pose_at`'s to the bit (`a_motion_lowers_to_the_kernels_trajectory`).  The move was held
+`Family::pose_at`'s to the bit (`a_motion_lowers_to_the_kernels_trajectory`).  The pose alone and
+the speed bound are the trajectory's too (#721 F2c): `Trajectory::pose` (a pace's `Pace::value`, a
+path's `Path::pose`) and `Trajectory::inverse_point_speed_bound(_over)` (a pace enclosed,
+`Pace::enclose`; a path by its `Stretch`, `Path::stretch` and `Path::speed_over`), each read off
+the tree the motion lowers to with the step-by-step reading's arithmetic, so `Family::pose_at` and
+`Family::inverse_point_speed_bound` read the lowered trajectory and their step-by-step copies went.
+Held as the moves are: every pose (2,862,428 distinct readings) and every point's speed bound
+(1,763,988) the core suite reads, before and after, the same to the bit.  The move was held
 walk by walk, as F3 was: every walk and every screw's sheet the suite makes written down at full
 precision before and after, the same to the bit.  (Read through `Twist::body` and `Sinusoid::roots`
 instead, the walk moves by an ulp, and that alone turns three triangles of the whole turn's mesh over

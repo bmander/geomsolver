@@ -32,12 +32,6 @@ enum Step {
     Followed {ride:std::sync::Arc<Ride>,back:bool},
 }
 
-/// The joint's own number at the roll `angle`: the law's where it is driven, the roll itself
-/// otherwise (its rate is the lowered trajectory's, `Trajectory::Paced`).
-fn driven_value(law: &Option<Law>,angle: f64) -> Result<f64,String> {
-    match law { None => Ok(angle), Some(l) => l.value(angle) }
-}
-
 impl Step {
     /// The step that undoes this one at every time: a turn, screw or slide run backwards, and the
     /// relative `observer⁻¹·source` undone as `source⁻¹·observer`.
@@ -88,6 +82,10 @@ struct Paced(Law);
 impl crate::brep::trajectory::Pace for Paced {
     fn jet(&self,t: f64) -> Result<[f64;2],crate::brep::KernelError> { Ok(self.0.jet(t)?) }
     fn range(&self,roll: [f64;2]) -> Result<[f64;2],crate::brep::KernelError> { Ok(self.0.range(roll)?) }
+    fn value(&self,t: f64) -> Result<f64,crate::brep::KernelError> { Ok(self.0.value(t)?) }
+    fn enclose(&self,roll: crate::interval::Interval) -> Result<[crate::interval::Interval;2],crate::interval::Error> {
+        self.0.enclose(roll)
+    }
 }
 
 /// A frame along a path or one the drawing moves as the kernel's evaluated path
@@ -103,6 +101,21 @@ impl crate::brep::trajectory::Path for Evaluated {
     fn at(&self,t: f64) -> Result<Motion,crate::brep::KernelError> {
         let m = match &self.carrier { Carrier::Guide(g) => g.motion(t)?, Carrier::Ride(r) => r.motion(t)? };
         Ok(if self.back { m.inverse() } else { m })
+    }
+    fn pose(&self,t: f64) -> Result<Pose,crate::brep::KernelError> {
+        let p = match &self.carrier { Carrier::Guide(g) => g.pose(t)?, Carrier::Ride(r) => r.pose(t)? };
+        Ok(if self.back { p.inverse() } else { p })
+    }
+    fn stretch(&self,a: f64,b: f64) -> Option<Stretch> {
+        match &self.carrier { Carrier::Guide(g) => g.stretch(a,b), Carrier::Ride(r) => r.stretch(a,b) }
+    }
+    /// A frame the drawing moves, span by span (#398 F); a frame along a path by its stretch.
+    fn speed_over(&self,b: [crate::interval::Interval;3],lo: f64,hi: f64,g: &Stretch)
+        -> Result<crate::interval::Interval,crate::interval::Error> {
+        match &self.carrier {
+            Carrier::Guide(_) => g.speed_of(b),
+            Carrier::Ride(r) => crate::interval::Interval::point(r.speed_over(b,lo,hi).ok_or(crate::interval::Error::InvalidBounds)?),
+        }
     }
 }
 
@@ -173,9 +186,7 @@ impl Family {
     /// why the domain is an input.
     pub fn inverse_point_speed_bound(&self,point: [f64;3],domain: crate::interval::Interval)
         -> Result<f64,crate::interval::Error> {
-        use crate::interval::Interval as I;
-        let point = [I::point(point[0])?,I::point(point[1])?,I::point(point[2])?];
-        self.inverse_point_speed_bound_over(point,domain)
+        self.path().map_err(|_| crate::interval::Error::InvalidBounds)?.inverse_point_speed_bound(point,domain)
     }
 
     /// The same bound over a whole point box, per step: a rotation or screw
@@ -190,133 +201,7 @@ impl Family {
     /// on a gear cutter whose contact moves at tens.
     pub fn inverse_point_speed_bound_over(&self,point: [crate::interval::Interval;3],domain: crate::interval::Interval)
         -> Result<f64,crate::interval::Error> {
-        use crate::interval::{Error,Interval as I};
-        let tau = I::point(std::f64::consts::TAU)?;
-        let reach = { let [lo,hi] = domain.bounds(); I::point(lo.abs().max(hi.abs()))? };
-        // the box's foot on a step's axis and its farthest distance from it
-        let about = |origin: [f64;3],axis: [f64;3],b: [I;3]| -> Result<([I;3],I),Error> {
-            let a = unit(axis).ok_or(Error::InvalidBounds)?;
-            let d: [I;3] = [b[0].sub(I::point(origin[0])?)?,b[1].sub(I::point(origin[1])?)?,b[2].sub(I::point(origin[2])?)?];
-            let along = d[0].mul(I::point(a[0])?)?.add(d[1].mul(I::point(a[1])?)?)?.add(d[2].mul(I::point(a[2])?)?)?;
-            let square = d[0].square()?.add(d[1].square()?)?.add(d[2].square()?)?.sub(along.square()?)?;
-            let radius = I::new(square.bounds()[0].max(0.),square.bounds()[1].max(0.))?.sqrt()?;
-            let foot: [I;3] = [I::point(origin[0])?.add(along.mul(I::point(a[0])?)?)?,I::point(origin[1])?.add(along.mul(I::point(a[1])?)?)?,
-                I::point(origin[2])?.add(along.mul(I::point(a[2])?)?)?];
-            Ok((foot,radius))
-        };
-        // how far each step's own number reaches over the domain and how fast it runs a radian
-        // of it, once for every box: the roll's own reach at rate 1, or a drive's law enclosed
-        // over the domain (#391 S5), so a cam's throw and its speed bound what it carries
-        let magnitude = |x: I| { let [lo,hi] = x.bounds(); I::point(lo.abs().max(hi.abs())) };
-        let numbers = self.steps.iter().map(|step| match step {
-            Step::Rotation {law:Some(l),..} | Step::Translation {law:Some(l),..} => {
-                let [v,r] = l.enclose(domain)?;
-                Ok((magnitude(v)?,magnitude(r)?))
-            }
-            _ => Ok((reach,I::ONE)),
-        }).collect::<Result<Vec<(I,I)>,Error>>()?;
-        // a frame along a path over the domain of its parameter, enclosed (#398 C): its path's
-        // point, its speed and its frame's angular speed, or no bound at all
-        let (lo,hi) = { let [a,b] = domain.bounds(); (a,b) };
-        let guided = self.steps.iter().map(|step| match step {
-            Step::Guided {..} | Step::Followed {..} =>
-                step.stretch(lo,hi).ok_or(Error::InvalidBounds).map(Some),
-            _ => Ok(None),
-        }).collect::<Result<Vec<Option<Stretch>>,Error>>()?;
-        // the farthest a box stands from the path over the stretch, or from the home
-        let far = |g: &Stretch,b: [I;3]| -> Result<I,Error> {
-            let home = [I::point(g.origin[0])?,I::point(g.origin[1])?,I::point(g.origin[2])?];
-            let reach = |c: [I;3]| -> Result<f64,Error> {
-                let d: [I;3] = [b[0].sub(c[0])?,b[1].sub(c[1])?,b[2].sub(c[2])?];
-                let s = d.iter().map(|x| { let [l,h] = x.bounds(); l.abs().max(h.abs()) })
-                    .map(|m| m*m).sum::<f64>();
-                Ok(s.sqrt()*(1.+1e-12))
-            };
-            I::point(reach(g.point)?.max(reach(home)?))
-        };
-        // a step's own speed on a box, the same forward and inverse
-        let own = |i: usize,b: [I;3]| -> Result<I,Error> {
-            let (_,rate) = numbers[i];
-            match self.steps[i] {
-                Step::Rotation {origin,axis,ratio,advance,..} => {
-                    let (_,radius) = about(origin,axis,b)?;
-                    I::point(ratio.abs())?.mul(radius)?.add(I::point(advance.abs())?.div(tau)?)?
-                        .mul(rate)
-                }
-                Step::Translation {advance,..} => I::point(advance.abs())?.div(tau)?.mul(rate),
-                // a point carried along a path moves as fast as the path runs, and turns about
-                // it at the frame's angular speed, the same forward and inverse
-                Step::Guided {..} => {
-                    let g = guided[i].as_ref().ok_or(Error::InvalidBounds)?;
-                    I::point(g.spin)?.mul(far(g,b)?)?.add(I::point(g.speed)?)
-                }
-                // a frame the drawing moves, span by span (#398 F)
-                Step::Followed {ref ride,..} =>
-                    I::point(ride.speed_over(b,lo,hi).ok_or(Error::InvalidBounds)?),
-                Step::Relative {..} => unreachable!("composed below"),
-            }
-        };
-        // where a step carries a box over the whole domain, forward or
-        // inverse: within the box's farthest distance of its foot on the
-        // axis, and the advance's reach along it; no angle enters, so no
-        // interval trigonometry limits the domain
-        let image = |i: usize,b: [I;3]| -> Result<[I;3],Error> {
-            let (reach,_) = numbers[i];
-            match self.steps[i] {
-                Step::Rotation {origin,axis,advance,..} => {
-                    let a = unit(axis).ok_or(Error::InvalidBounds)?;
-                    let (foot,radius) = about(origin,axis,b)?;
-                    let slide = I::point(advance.abs())?.div(tau)?.mul(reach)?;
-                    let spread = radius.add(slide)?;
-                    let _ = a;
-                    Ok([foot[0].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?,foot[1].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?,
-                        foot[2].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?])
-                }
-                Step::Translation {axis,advance,..} => {
-                    let a = unit(axis).ok_or(Error::InvalidBounds)?;
-                    let slide = I::point(advance.abs())?.div(tau)?.mul(reach)?.bounds()[1];
-                    Ok([b[0].add(I::new(-slide*a[0].abs(),slide*a[0].abs())?)?,b[1].add(I::new(-slide*a[1].abs(),slide*a[1].abs())?)?,
-                        b[2].add(I::new(-slide*a[2].abs(),slide*a[2].abs())?)?])
-                }
-                // carried along a path, a box stands within its farthest reach of the path's
-                // stretch, forward, and of the home, inverse
-                Step::Guided {..} | Step::Followed {..} => {
-                    let g = guided[i].as_ref().ok_or(Error::InvalidBounds)?;
-                    let r = far(g,b)?.bounds()[1];
-                    let around = |k: usize| {
-                        let [lo,hi] = g.point[k].bounds();
-                        I::new(lo.min(g.origin[k])-r,hi.max(g.origin[k])+r)
-                    };
-                    Ok([around(0)?,around(1)?,around(2)?])
-                }
-                Step::Relative {..} => unreachable!("composed below"),
-            }
-        };
-        fn image_of(family: &Family,image: &dyn Fn(usize,[I;3]) -> Result<[I;3],Error>,i: usize,b: [I;3],forward: bool) -> Result<[I;3],Error> {
-            match family.steps[i] {
-                Step::Relative {source,observer} => {
-                    // forward: x ↦ O⁻¹(S x); inverse: x ↦ S⁻¹(O x)
-                    let (first,second) = if forward { (source,observer) } else { (observer,source) };
-                    let moved = image_of(family,image,first,b,true)?;
-                    image_of(family,image,second,moved,false)
-                }
-                _ => image(i,b),
-            }
-        }
-        fn speed(family: &Family,own: &dyn Fn(usize,[I;3]) -> Result<I,Error>,image: &dyn Fn(usize,[I;3]) -> Result<[I;3],Error>,
-            i: usize,b: [I;3],forward: bool) -> Result<I,Error> {
-            match family.steps[i] {
-                Step::Relative {source,observer} => {
-                    let (first,second) = if forward { (source,observer) } else { (observer,source) };
-                    let moved = speed(family,own,image,first,b,true)?;
-                    let carried = image_of(family,image,first,b,true)?;
-                    moved.add(speed(family,own,image,second,carried,false)?)
-                }
-                _ => own(i,b),
-            }
-        }
-        let root = self.steps.len()-1;
-        Ok(speed(self,&own,&image,root,point,false)?.bounds()[1])
+        self.path().map_err(|_| crate::interval::Error::InvalidBounds)?.inverse_point_speed_bound_over(point,domain)
     }
 
     /// The screw this motion is, when it is one: a single rotation that slides along its axis as
@@ -633,9 +518,8 @@ impl Family {
     }
 }
 
-/// A rigid pose without its derivative: `x ↦ r·x + p`.
-#[derive(Clone,Copy,Debug)]
-pub struct Pose { pub r: [[f64;3];3], pub p: [f64;3] }
+/// A rigid pose without its derivative, `x ↦ r·x + p`, is the kernel's.
+pub use crate::brep::trajectory::Pose;
 
 /// A frame's chart as a pose, as `sk` stands: its axes and normal the columns, its origin the
 /// offset.
@@ -645,81 +529,12 @@ pub(crate) fn chart_pose(sk: &Sketch, f: usize) -> Pose {
     Pose { r: std::array::from_fn(|i| [b.u[i], b.v[i], n[i]]), p: b.o }
 }
 
-impl Pose {
-    /// A gradient read at `self.point(x)` turned into the gradient at `x`: the rotation's
-    /// transpose applied.
-    pub fn gradient(&self,g: [f64;3]) -> [f64;3] {
-        std::array::from_fn(|i| self.r[0][i]*g[0]+self.r[1][i]*g[1]+self.r[2][i]*g[2])
-    }
-    pub fn point(&self,x: [f64;3]) -> [f64;3] {
-        std::array::from_fn(|i| self.r[i][0]*x[0]+self.r[i][1]*x[1]+self.r[i][2]*x[2]+self.p[i])
-    }
-    /// A direction turned by the pose.
-    pub fn vector(&self,v: [f64;3]) -> [f64;3] {
-        std::array::from_fn(|i| self.r[i][0]*v[0]+self.r[i][1]*v[1]+self.r[i][2]*v[2])
-    }
-    /// Apply this pose, then `next`.
-    pub(crate) fn then(self,next: Pose) -> Pose {
-        Pose {r:std::array::from_fn(|i| std::array::from_fn(|j| next.r[i][0]*self.r[0][j]+next.r[i][1]*self.r[1][j]+next.r[i][2]*self.r[2][j])),
-            p:next.point(self.p)}
-    }
-    pub fn inverse(self) -> Pose {
-        let r: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j| self.r[j][i]));
-        let p = std::array::from_fn(|i| -(r[i][0]*self.p[0]+r[i][1]*self.p[1]+r[i][2]*self.p[2]));
-        Pose {r,p}
-    }
-}
-
 impl Family {
-    /// The pose alone at `angle`, as `at` gives it without the derivative and without allocating
-    /// for a family of up to eight steps: for a caller evaluating many poses that needs no
-    /// velocity (a floating-point field reading).
+    /// The pose alone at `angle`, as `at` gives it without the derivative: for a caller evaluating
+    /// many poses that needs no velocity (a floating-point field reading). It is the lowered
+    /// trajectory's (`Trajectory::pose`, #721 F2c).
     pub fn pose_at(&self,angle: f64) -> Result<Pose,String> {
-        if !angle.is_finite() { return Err("a motion angle must be finite".into()); }
-        let identity = Pose {r:[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],p:[0.;3]};
-        let mut fixed = [identity;8];
-        let mut spilled: Vec<Pose> = Vec::new();
-        let many = self.steps.len() > fixed.len();
-        for (n,step) in self.steps.iter().enumerate() {
-            let get = |k: usize,fixed: &[Pose;8],spilled: &Vec<Pose>| if many { spilled[k] } else { fixed[k] };
-            let value = match *step {
-                Step::Rotation {origin,axis,ratio,advance,ref law} => {
-                    let angle = driven_value(law,angle)?;
-                    let a = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
-                    let (s,c) = (ratio*angle).dsin_cos();
-                    let k = [[0.,-a[2],a[1]],[a[2],0.,-a[0]],[-a[1],a[0],0.]];
-                    let r: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j|
-                        c*if i == j { 1. } else { 0. }+(1.-c)*a[i]*a[j]+s*k[i][j]));
-                    let turned = Pose {r,p:[0.;3]}.point(origin);
-                    let mut p: [f64;3] = std::array::from_fn(|i| origin[i]-turned[i]);
-                    if advance != 0. {
-                        let rate = advance/std::f64::consts::TAU;
-                        for i in 0..3 { p[i] += a[i]*rate*angle; }
-                    }
-                    Pose {r,p}
-                }
-                Step::Translation {axis,advance,ref law} => {
-                    let angle = driven_value(law,angle)?;
-                    let a = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
-                    let rate = advance/std::f64::consts::TAU;
-                    Pose {p:a.map(|v| v*rate*angle),..identity}
-                }
-                Step::Relative {source,observer} => get(source,&fixed,&spilled).then(get(observer,&fixed,&spilled).inverse()),
-                Step::Guided {ref guide,back} => {
-                    let p = guide.pose(angle)?;
-                    if back { p.inverse() } else { p }
-                }
-                Step::Followed {ref ride,back} => {
-                    let p = ride.pose(angle)?;
-                    if back { p.inverse() } else { p }
-                }
-            };
-            if many { spilled.push(value) } else { fixed[n] = value }
-        }
-        let last = self.steps.len().checked_sub(1).ok_or("a motion family has a root")?;
-        let pose = if many { spilled[last] } else { fixed[last] };
-        if !pose.r.iter().flatten().chain(&pose.p).all(|v| v.is_finite()) { return Err("a motion pose overflowed".into()); }
-        Ok(pose)
+        self.path()?.pose(angle).map_err(|e| e.msg)
     }
 }
 
