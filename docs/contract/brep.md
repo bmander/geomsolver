@@ -107,7 +107,9 @@ face, and a run chamfered after it that ends on it was refused, nothing cutting 
 spline: a box's top edges chamfered one after another, each cut off by the plane of the one before
 (`brep::a_box_top_chamfered_unequally_is_ten_planes`, brep-bench's chamfer/box-top-asymmetric;
 `brep::chamfers_between_planes_are_planes`). A run going on tangent into a curved face at an end
-is still fitted, as the piece that takes on from its section is.
+is still fitted, as the piece that takes on from its section is. About one axis the flat is turned: between a plane square
+to it, cylinders and cones about it, a closed loop's flat is the section's triangle revolved, a cone
+exact (`fillet::coaxial`; a leg shrunk to a point its apex, [rounds.md](rounds.md)).
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's

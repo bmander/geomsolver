@@ -26,7 +26,7 @@ pub enum Ssi {
 /// A meridian: a surface of revolution's section in the half-plane `ρ ≥ 0` of its axis, in
 /// `(ρ, z)` with `z` measured along the shared axis from a shared origin.
 #[derive(Clone,Debug)]
-enum Meridian {
+pub(super) enum Meridian {
     /// `z := h`: a plane square to the axis.
     Level(f64),
     /// The ray from `p` along the unit `d` (`d[1] > 0` or a vertical line `ρ = r`), both ways.
@@ -188,7 +188,7 @@ fn lifted(sp: &super::nurbs::BSpline,g: &Frame,r: f64,a: f64,tol: f64,steep: &dy
 
 /// A surface's meridian about the axis through `o` along the unit `z`, where it is a surface of
 /// revolution about that axis (to `tol`).
-fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
+pub(super) fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
     let f = s.frame();
     let height = |p: V| dot(sub(p,o),z);
     let on_axis = |p: V| norm(cross(sub(p,o),z)) <= tol;
