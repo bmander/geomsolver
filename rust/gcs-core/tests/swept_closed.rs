@@ -187,3 +187,116 @@ fn turned_whole_is_its_solid_of_revolution(tool: &Brep) {
     assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
 }
+
+/// The volume `tool` sweeps turned by `angle` about the world's `z` axis, apart from the build:
+/// each slice's swept area `∫ L(ρ) ρ dρ`, `L` the angle the circle of radius `ρ` sweeps (its arcs
+/// within the slice, each carried through the turn, united), by Gauss–Legendre between the radii
+/// where `L` turns (the slice's corners' and its sides' feet), cut `pieces` times more; and the
+/// areas by Simpson's rule on `n` steps between the heights the tool's vertices stand at.
+fn turned_volume(tool: &Brep,angle: f64,n: usize,pieces: usize) -> f64 {
+    use std::f64::consts::TAU;
+    // the 8-point Gauss–Legendre rule on [−1, 1]
+    const X: [f64;4] = [0.1834346424956498,0.5255324099163290,0.7966664774136267,0.9602898564975363];
+    const W: [f64;4] = [0.3626837833783620,0.3137066458778873,0.2223810344533745,0.1012285362903763];
+    let covered = |ring: &[[f64;2]],r: f64| -> f64 {
+        let inside = |phi: f64| { let p = [r*phi.cos(),r*phi.sin()]; (0..ring.len()).all(|k| {
+            let (a,b) = (ring[k],ring[(k+1)%ring.len()]);
+            (b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0]) >= 0. }) };
+        // the circle's crossings with the slice's sides, by angle
+        let mut cuts: Vec<f64> = Vec::new();
+        for k in 0..ring.len() {
+            let (a,b) = (ring[k],ring[(k+1)%ring.len()]);
+            let d = [b[0]-a[0],b[1]-a[1]];
+            let (qa,qb,qc) = (d[0]*d[0]+d[1]*d[1],2.*(a[0]*d[0]+a[1]*d[1]),a[0]*a[0]+a[1]*a[1]-r*r);
+            let disc = qb*qb-4.*qa*qc;
+            if disc < 0. { continue }
+            for s in [-1.,1.] {
+                let t = (-qb+s*disc.sqrt())/(2.*qa);
+                if (0. ..1.).contains(&t) { cuts.push((a[1]+t*d[1]).atan2(a[0]+t*d[0])) }
+            }
+        }
+        if cuts.is_empty() { return if inside(0.) { TAU } else { 0. } }
+        cuts.sort_by(f64::total_cmp);
+        let mut arcs: Vec<[f64;2]> = Vec::new();
+        for k in 0..cuts.len() {
+            let (a,b) = (cuts[k],if k+1 < cuts.len() { cuts[k+1] } else { cuts[0]+TAU });
+            if inside(0.5*(a+b)) { arcs.push([a,b+angle]) }
+        }
+        // united on the circle, unrolled from the start of the first: a turn's worth
+        let base = arcs.iter().map(|a| a[0]).fold(f64::INFINITY,f64::min);
+        let mut spans: Vec<[f64;2]> = arcs.iter().flat_map(|a| [[a[0]-base,a[1]-base],[a[0]-base-TAU,a[1]-base-TAU]]).collect();
+        spans.sort_by(|x,y| x[0].total_cmp(&y[0]));
+        let (mut total,mut reach) = (0.,f64::NEG_INFINITY);
+        for s in spans {
+            let (a,b) = (s[0].max(reach).max(0.),s[1].min(TAU));
+            if b > a { total += b-a }
+            reach = reach.max(s[1]);
+        }
+        total
+    };
+    let area = |z: f64| -> f64 {
+        let Some(ring) = slice(tool,z) else { return 0. };
+        let mut radii: Vec<f64> = vec![0.];
+        for k in 0..ring.len() {
+            let (a,b) = (ring[k],ring[(k+1)%ring.len()]);
+            radii.push(a[0].hypot(a[1]));
+            let d = [b[0]-a[0],b[1]-a[1]];
+            let t = -(a[0]*d[0]+a[1]*d[1])/(d[0]*d[0]+d[1]*d[1]);
+            if t > 0. && t < 1. { radii.push((a[0]+t*d[0]).hypot(a[1]+t*d[1])) }
+        }
+        radii.sort_by(f64::total_cmp);
+        let mut total = 0.;
+        for w in radii.windows(2) {
+            for p in 0..pieces {
+                let (r0,r1) = (w[0]+(w[1]-w[0])*p as f64/pieces as f64,w[0]+(w[1]-w[0])*(p+1) as f64/pieces as f64);
+                let (m,h) = (0.5*(r0+r1),0.5*(r1-r0));
+                for (x,wt) in X.iter().zip(W) { for r in [m-h*x,m+h*x] { total += wt*h*covered(&ring,r)*r } }
+            }
+        }
+        total
+    };
+    let mut heights: Vec<f64> = tool.vertices.iter().map(|v| v.p[2]).collect();
+    heights.sort_by(f64::total_cmp);
+    heights.dedup_by(|a,b| (*a-*b).abs() < 1e-12);
+    let mut volume = 0.;
+    for w in heights.windows(2) {
+        let h = (w[1]-w[0])/n as f64;
+        volume += h/3.*(0..=n).map(|k| {
+            let z = (w[0]+h*k as f64).clamp(w[0]+1e-12,w[1]-1e-12);
+            area(z)*if k == 0 || k == n { 1. } else if k%2 == 1 { 4. } else { 2. }
+        }).sum::<f64>();
+    }
+    volume
+}
+
+/// `tool`'s slice at height `z`, a convex ring counter-clockwise.
+fn slice(tool: &Brep,z: f64) -> Option<Vec<[f64;2]>> {
+    let pts: Vec<[f64;2]> = tool.edges.iter().filter_map(|e| {
+        let (p,q) = (e.point(e.t[0],&tool.vertices),e.point(e.t[1],&tool.vertices));
+        if (p[2]-z)*(q[2]-z) > 0. || p[2] == q[2] { return None }
+        let t = (z-p[2])/(q[2]-p[2]);
+        Some([p[0]+t*(q[0]-p[0]),p[1]+t*(q[1]-p[1])])
+    }).collect();
+    if pts.len() < 3 { return None }
+    let c = [pts.iter().map(|p| p[0]).sum::<f64>()/pts.len() as f64,pts.iter().map(|p| p[1]).sum::<f64>()/pts.len() as f64];
+    let mut ring = pts;
+    ring.sort_by(|a,b| (a[1]-c[1]).atan2(a[0]-c[0]).total_cmp(&(b[1]-c[1]).atan2(b[0]-c[0])));
+    Some(ring)
+}
+
+/// **A block leaning to the axis turned part of a turn is its slices swept**: its arrangement —
+/// the faces at both end poses, its edges' hyperboloids, its faces' contact cones and cylinders,
+/// the planes parting their touches — split, classified and united, the hyperboloids met by the
+/// planes in closed form. Held to the volume its slices sweep, worked apart from the build: at each
+/// height and radius the circle's arcs within the slice, each carried through the turn, united
+/// (`turned_volume`), to 1e-6; and to membership.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 26 s: a leaning block's part turn, its arrangement of 800 cells")]
+fn a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept() {
+    let tool = leaning(0.35,3.);
+    let path = turn([0.;3],[0.,0.,1.],2.);
+    let built = gcs_core::brep::swept::closed::closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = turned_volume(&tool,2.,200,8);
+    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}

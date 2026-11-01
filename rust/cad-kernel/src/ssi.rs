@@ -412,8 +412,149 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             }
             Ssi::Curves(out)
         }
+        (Surface::Plane(pl),Surface::Revolution(rf,c)) | (Surface::Revolution(rf,c),Surface::Plane(pl)) =>
+            match plane_quadric(&pl,&rf,&c,tol) { Some(curves) => Ssi::Curves(curves),None => Ssi::Traced },
         _ => Ssi::Traced,
     }
+}
+
+/// **A plane and a quadric of revolution, met in closed form**: a surface of revolution whose
+/// meridian is a conic symmetric about the axis, `ρ² + β z² + γ z + δ = 0` in its frame (the
+/// hyperboloid a line turns into, `build`'s and the swept solid's, #721 X6), is a quadric, which a
+/// plane meets in a conic: in the plane's coordinates `Q(u, v) = 0`, quadratic, read about its
+/// centre on its principal axes as `λ₁ s² + λ₂ t² + F = 0`. An ellipse where `λ₁ λ₂ > 0` (its arcs
+/// within the meridian's heights, where it runs past them); where
+/// `λ₁ λ₂ < 0` a hyperbola, or its two asymptotes where it stands within `tol` of them (a plane
+/// holding a ruling, as a face holding the edge the hyperboloid was turned from does), each branch
+/// held to the heights the meridian spans; arcs written exactly as rational quadratics (a stretch
+/// `[τa, τb]` of `(a cosh τ, b sinh τ)` its ends and `(a cosh τm, b sinh τm) / cosh δ` weighed
+/// `cosh δ`, `δ` its half). `None` — traced — where the meridian is no such conic, or the plane
+/// meets it in a parabola or two parallel lines.
+fn plane_quadric(pl: &Frame,rf: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
+    let Curve::BSpline(m) = c else { return None };
+    let cosh = |x: f64| { let e = x.dexp(); 0.5*(e+1./e) };
+    let sinh = |x: f64| { let e = x.dexp(); 0.5*(e-1./e) };
+    let [t0,t1] = m.domain();
+    let local = |t: f64| { let l = rf.local(m.point(t)); [l[0],l[2]] };
+    // β, γ, δ through three of the meridian's points, held at more
+    let three: Vec<[f64;2]> = [0.1,0.5,0.9].iter().map(|&f| local(t0+(t1-t0)*f)).collect();
+    let [beta,gamma,delta] = solve3([0,1,2].map(|i| [three[i][1]*three[i][1],three[i][1],1.]),[0,1,2].map(|i| -three[i][0]*three[i][0]));
+    if !(beta.is_finite() && gamma.is_finite() && delta.is_finite()) { return None }
+    let samples: Vec<[f64;2]> = (0..=16).map(|k| local(t0+(t1-t0)*k as f64/16.)).collect();
+    let size = samples.iter().fold(1_f64,|r,p| r.max(p[0].abs()).max(p[1].abs()));
+    for &[r,z] in &samples {
+        let g = r*r+beta*z*z+gamma*z+delta;
+        let grad = (4.*r*r+(2.*beta*z+gamma).powi(2)).sqrt();
+        if !(g.abs() <= 1e-9*size*grad.max(1e-300)) { return None }
+    }
+    let (zlo,zhi) = samples.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),p| (a.min(p[1]),b.max(p[1])));
+    let (zlo,zhi) = (zlo-tol,zhi+tol);
+    // the plane in the quadric's frame, and Q's coefficients over it
+    let (x0,a,b) = (rf.local(pl.o),rf.dir_local(pl.x),rf.dir_local(pl.y));
+    let mm = |v: V| [v[0],v[1],beta*v[2]];
+    let g: V = add(mm(x0),[0.,0.,0.5*gamma]);
+    let (cuu,cuv,cvv) = (dot(a,mm(a)),dot(a,mm(b)),dot(b,mm(b)));
+    let (cu,cv,c0) = (dot(a,g),dot(b,g),dot(x0,mm(x0))+gamma*x0[2]+delta);
+    let det = cuu*cvv-cuv*cuv;
+    let theta = 0.5*(2.*cuv).datan2(cuu-cvv);
+    let (sn,cs) = theta.dsin_cos();
+    let mut l1 = cuu*cs*cs+2.*cuv*sn*cs+cvv*sn*sn;
+    let mut l2 = cuu*sn*sn-2.*cuv*sn*cs+cvv*cs*cs;
+    let scale_of = l1.abs().max(l2.abs());
+    if !(l1.abs().min(l2.abs()) > 1e-12*scale_of) || !(det.abs() > 0.) { return None }
+    // the centre and the constant there
+    let w = [-(cvv*cu-cuv*cv)/det,-(cuu*cv-cuv*cu)/det];
+    let f = c0+cu*w[0]+cv*w[1];
+    let centre = pl.at([w[0],w[1],0.]);
+    let (mut e1,mut e2) = (add(scale(pl.x,cs),scale(pl.y,sn)),add(scale(pl.x,-sn),scale(pl.y,cs)));
+    if l1*l2 > 0. {
+        // an ellipse, a point or nothing
+        if f*l1 >= 0. { return Some(vec![]) }
+        let (ea,eb) = ((-f/l1).sqrt(),(-f/l2).sqrt());
+        let ellipse = Frame::new(centre,pl.z,e1);
+        // its height `h₀ + P cos φ + Q sin φ`: whole where that stays within the meridian's, else
+        // its arcs within them, each a rational quadratic a quarter turn at most
+        let h0 = rf.local(centre)[2];
+        let (p,q) = (ea*dot(rf.z,ellipse.x),eb*dot(rf.z,ellipse.y));
+        let amp = p.dhypot(q);
+        if h0-amp >= zlo && h0+amp <= zhi { return Some(vec![Curve::Ellipse(ellipse,ea,eb)]) }
+        if h0+amp < zlo || h0-amp > zhi { return Some(vec![]) }
+        let phase = q.datan2(p);
+        let mut cuts: Vec<f64> = Vec::new();
+        for zb in [zlo,zhi] {
+            let c = (zb-h0)/amp;
+            if c.abs() < 1. { let d = c.dacos(); cuts.extend([phase-d,phase+d]) }
+        }
+        let tau = std::f64::consts::TAU;
+        let mut cuts: Vec<f64> = cuts.into_iter().map(|x| x.rem_euclid(tau)).collect();
+        cuts.sort_by(f64::total_cmp);
+        let at = |phi: f64,w: f64| ellipse.at([ea*phi.dcos()/w,eb*phi.dsin()/w,0.]);
+        let mut out = Vec::new();
+        for i in 0..cuts.len() {
+            let (a0,a1) = (cuts[i],if i+1 < cuts.len() { cuts[i+1] } else { cuts[0]+tau });
+            let mid = 0.5*(a0+a1);
+            let hm = h0+p*mid.dcos()+q*mid.dsin();
+            if !(a1-a0 > 1e-12) || hm < zlo || hm > zhi { continue }
+            let n = ((a1-a0)/std::f64::consts::FRAC_PI_2).ceil().max(1.) as usize;
+            let (mut poles,mut weights,mut knots) = (vec![at(a0,1.)],vec![1.],vec![0.;3]);
+            for k in 0..n {
+                let (b0,b1) = (a0+(a1-a0)*k as f64/n as f64,a0+(a1-a0)*(k+1) as f64/n as f64);
+                let (bm,half) = (0.5*(b0+b1),0.5*(b1-b0));
+                poles.extend([at(bm,half.dcos()),at(b1,1.)]);
+                weights.extend([half.dcos(),1.]);
+                knots.extend(if k+1 == n { vec![(k+1) as f64;3] } else { vec![(k+1) as f64;2] });
+            }
+            out.push(Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline::rational(2,knots,poles,weights).ok()?)));
+        }
+        return Some(out)
+    }
+    // the hyperbola's branches open along `e1`: `−F/λ₁ > 0`
+    if -f/l1 < 0. { std::mem::swap(&mut l1,&mut l2); std::mem::swap(&mut e1,&mut e2) }
+    if (f.abs()/l1.abs().min(l2.abs())).sqrt() <= tol {
+        let r = (-l1/l2).sqrt();
+        return Some([1.,-1.].map(|k| Curve::Line {p:centre,d:unit(add(e1,scale(e2,k*r)))}).to_vec())
+    }
+    let (ha,hb) = ((-f/l1).sqrt(),(f/l2).sqrt());
+    let height = |p: V| rf.local(p)[2];
+    let mut out = Vec::new();
+    for sigma in [1.,-1.] {
+        let at = |tau: f64| add(centre,add(scale(e1,sigma*ha*cosh(tau)),scale(e2,hb*sinh(tau))));
+        // the height along the branch, `h₀ + P cosh τ + Q sinh τ`; where it is each bound, as roots
+        // in `e^τ` of a quadratic
+        let h0 = height(centre);
+        let (p,q) = (sigma*ha*dot(rf.z,e1),hb*dot(rf.z,e2));
+        let mut taus: Vec<f64> = Vec::new();
+        for zb in [zlo,zhi] {
+            let (qa,qb,qc) = (0.5*(p+q),h0-zb,0.5*(p-q));
+            let roots: Vec<f64> = if qa.abs() <= 1e-15*(qb.abs()+qc.abs()) { vec![-qc/qb] } else {
+                let disc = qb*qb-4.*qa*qc;
+                if disc < 0. { vec![] } else { let r = disc.sqrt(); vec![(-qb-r)/(2.*qa),(-qb+r)/(2.*qa)] }
+            };
+            taus.extend(roots.into_iter().filter(|x| *x > 0. && x.is_finite()).map(|x| x.dln()));
+        }
+        taus.sort_by(f64::total_cmp);
+        let inside = |tau: f64| { let h = height(at(tau)); h >= zlo && h <= zhi };
+        // a branch running on within the heights for ever is no stretch: traced
+        if inside(taus.first().map_or(0.,|t| t-1.)) || inside(taus.last().map_or(0.,|t| t+1.)) { return None }
+        for wnd in taus.windows(2) {
+            let (ta,tb) = (wnd[0],wnd[1]);
+            if !(tb-ta > 1e-12) || !inside(0.5*(ta+tb)) { continue }
+            // stretches short enough that each weight stays modest
+            let n = ((tb-ta)/2.).ceil().max(1.) as usize;
+            let (mut poles,mut weights,mut knots) = (vec![at(ta)],vec![1.],vec![0.;3]);
+            for k in 0..n {
+                let (a0,a1) = (ta+(tb-ta)*k as f64/n as f64,ta+(tb-ta)*(k+1) as f64/n as f64);
+                let (tm,half) = (0.5*(a0+a1),0.5*(a1-a0));
+                let ch = cosh(half);
+                poles.push(add(centre,add(scale(e1,sigma*ha*cosh(tm)/ch),scale(e2,hb*sinh(tm)/ch))));
+                poles.push(at(a1));
+                weights.extend([ch,1.]);
+                knots.extend(if k+1 == n { vec![(k+1) as f64;3] } else { vec![(k+1) as f64;2] });
+            }
+            out.push(Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline::rational(2,knots,poles,weights).ok()?)));
+        }
+    }
+    Some(out)
 }
 
 /// A plane `n·x = h` and a cylinder: lines where the plane runs along the axis (one where it

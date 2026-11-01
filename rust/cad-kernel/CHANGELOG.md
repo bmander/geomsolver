@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A polyhedral tool leaning to the axis turned part of a turn closes into its swept solid
+  (`swept::closed::closed`), by the arrangement.
+- A plane meets a surface of revolution whose meridian is a conic symmetric about its axis (a
+  hyperboloid, a cone, an ellipsoid as a rational quadratic) in closed form (`ssi::intersect`): an
+  ellipse, a hyperbola's branches or two lines, held to the meridian's heights, where it was traced.
+- A Boolean drops a face piece with no inside (a sliver cut off along an edge a surface touches)
+  rather than refusing; whether what is left closes is the result's check.
 - A convex polyhedral tool turned a whole turn, however it leans to the axis, closes into its
   solid of revolution (`swept::closed::closed`): its slices' radial spans as a profile of
   hyperbola arcs (rational quadratics) and lines, cut where what reaches farthest or nearest

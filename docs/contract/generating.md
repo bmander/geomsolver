@@ -326,9 +326,16 @@ between the heights where two reach as far (`ρ²` quadratics equal or touching)
 face; the profile cut there and turned once (`tests/swept_closed.rs`:
 `a_block_leaning_to_the_axis_turned_whole_…`,
 `a_block_straddling_the_axis_tipped_two_ways_turned_whole_…`, each the integral of its slices' radial
-spans to 1e-6 and agreeing with membership).  A leaning tool turned part of a turn, a screw and a
-curved tool are refused by what they are (`Unbuilt`): the arrangement past planes and cylinders waits
-on the Booleans meeting tangent surfaces (F4, #699 E).
+spans to 1e-6 and agreeing with membership).  **A leaning tool turned part of a turn** builds by the
+arrangement, its edges' hyperboloids and faces' contact cones among the candidates, where three
+rules hold its touches: a plane meets a hyperboloid of revolution in closed form (`brep::ssi`: an
+ellipse or a hyperbola's branches held to the meridian's heights, as rational quadratics, or the two
+rulings a plane holding one meets it in; `brep::surfaces_meet_in_curves_on_both`), a Boolean drops a
+piece with no inside (the sliver a surface touching a solid along its edge cuts off), and a kept cell
+touching the cells united so far only along a circle waits for its neighbour
+(`a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept`, slow tier: the volume its
+slices sweep, each circle's arcs within a slice carried through the turn and united, to 1e-6, and
+membership).  A screw and a curved tool are refused by what they are (`Unbuilt`).
 
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:

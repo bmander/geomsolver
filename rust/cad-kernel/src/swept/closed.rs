@@ -4,8 +4,8 @@
 //! membership (`member::Swept::member`, the definition read without the drawing), and the kept
 //! cells are united.
 //!
-//! **Built here: a polyhedral tool** (every face a plane, every edge a line) **under a slide, or
-//! under a turn when its edges run along the axis or square to it.** Under a turn, every line turns
+//! **Built here: a polyhedral tool** (every face a plane, every edge a line) **under a slide or a
+//! turn**, however its edges lean to the axis. Under a turn, every line turns
 //! into a surface of revolution held exactly over the heights its source spans (heights along the
 //! axis are kept by the turn): a cylinder (a line along the axis), a plane square to the axis (a
 //! line square to it), a hyperboloid (a line passing the axis by, its meridian a rational quadratic)
@@ -25,15 +25,19 @@
 //! (the face touches its contact surface there), and the plane square to the axis at a hyperboloid's
 //! throat (where it touches the cylinder of that radius). The arrangement cuts by the separators,
 //! then the planes, then the curved candidates (a plane by `kept` on each side, a solid of
-//! revolution in common and cut away), and a cell is kept where its deepest interior point
-//! (`query::interior`) is a member.
+//! revolution in common and cut away, skipped where it leaves the cell whole: `clear`), and a cell
+//! is kept where its deepest interior point (`query::interior`) is a member. Three things make a
+//! leaning tool's arrangement hold, each where two of its surfaces touch: a plane meets a
+//! hyperboloid in closed form (`ssi`: a conic, or the two rulings a face holding the edge meets it
+//! in); a piece a surface cuts off only along an edge it touches, with no inside, bounds nothing and
+//! is dropped (`boolean`); and a kept cell touching those united so far only along a circle (a
+//! cusp between two surfaces of revolution that touch there) waits for its neighbour before it is
+//! united.
 //!
-//! **A convex polyhedral tool turned whole, however it leans, is built by another road**
-//! (`turned_whole`): its solid of revolution, the radii each slice holds turned once, with no
-//! Boolean. A tool leaning to the axis turned part of a turn splits and classifies, but its cells'
-//! union does not yet hold where a hyperboloid's traced meeting with a leaning plane ends: the
-//! Booleans' robustness (F4, #699 E). Anything else — a curved face, a screw, another motion — is
-//! refused by what it is (`Unbuilt`); those are the design's later steps.
+//! **A convex polyhedral tool turned whole is built by another road** (`turned_whole`): its solid
+//! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — a curved
+//! face, a screw, another motion — is refused by what it is (`Unbuilt`); those are the design's
+//! later steps.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::boolean::{Op,combined};
@@ -288,6 +292,12 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
                         if !piece.faces.is_empty() { next.push(piece) }
                     }
                 }
+                Cutter::Revolved {o,axis,p,e,span} if clear(&cell,o,axis,span,tol,&|[z0,z1]| {
+                    let (throat,height,k) = meridian(o,axis,p,e);
+                    let z = height.clamp(z0,z1);
+                    (throat*throat+k*k*(z-height)*(z-height)).sqrt()
+                }) => next.push(cell),
+                Cutter::Cylinder {o,axis,r,span} if clear(&cell,o,axis,span,tol,&|_| r) => next.push(cell),
                 Cutter::Revolved {o,axis,p,e,span} => {
                     // the solid the line's image over its span bounds, the cell split by each piece
                     let solids = revolved(o,axis,p,e,span,eps)?;
@@ -318,19 +328,79 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
         }
         cells = next;
     }
-    // each cell classified by membership at its deepest point, the members united
-    let mut out: Option<Brep> = None;
-    for cell in &cells {
-        let Some(&(x,_)) = crate::query::interior(cell,1)?.first() else { continue };
+    // each cell classified by membership at its deepest point
+    let mut members: Vec<Brep> = Vec::new();
+    for cell in cells {
+        let Some(&(x,_)) = crate::query::interior(&cell,1)?.first() else { continue };
         match swept.member(x) {
-            Ok(true) => out = Some(match out { None => cell.clone(),Some(acc) => combined(&acc,cell,Op::Union,tol).map_err(|e| e.msg)? }),
+            Ok(true) => members.push(cell),
             Ok(false) => {}
             Err(_) => return Err(Unbuilt::Unsettled {at:x}),
         }
     }
-    let out = out.ok_or_else(|| Unbuilt::Failed("no cell of the arrangement is swept".into()))?;
+    // the members united. A member touching those united so far only along a curve (a cusp-shaped
+    // cell between two surfaces of revolution that touch along a circle) unites into no manifold,
+    // though with its neighbour beside it the whole is one: it waits for a later pass, and the
+    // union is refused only when a whole pass unites none
+    if members.is_empty() { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
+    let mut out = members.remove(0);
+    while !members.is_empty() {
+        let (before,mut waiting,mut last) = (members.len(),Vec::new(),String::new());
+        for cell in members {
+            match combined(&out,&cell,Op::Union,tol) {
+                Ok(united) => out = united,
+                Err(e) => { last = e.msg; waiting.push(cell) }
+            }
+        }
+        if waiting.len() == before { return Err(Unbuilt::Failed(last)) }
+        members = waiting;
+    }
     out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
     Ok(out)
+}
+
+/// Whether a surface of revolution about the unit `axis` through `o`, closed by its disks at the
+/// heights `span`, leaves `cell` whole, so that the two Booleans that would say so need not run:
+/// the cell stands wholly past the span's heights, or wholly nearer the axis than the surface
+/// (`least`, its least radius over a stretch of heights within the span) with neither disk passing
+/// strictly through it. Here every cell is bounded by planes and surfaces of revolution about the
+/// axis, whose radius (convex, and monotone or convex along a meridian) is greatest on their edges,
+/// so the cell's reach is read on its edges: a line's at its ends, a circle's about the axis
+/// anywhere on it, any other curve sampled, each sample's radius within half a step of every point
+/// between (it is 1-Lipschitz). Its heights are its box's.
+fn clear(cell: &Brep,o: V,axis: V,[s0,s1]: [f64;2],tol: f64,least: &dyn Fn([f64;2]) -> f64) -> bool {
+    const STEPS: usize = 64;
+    // the heights the cell's box spans (its corners', the height being linear): exact where the
+    // axis runs along a coordinate, and never short
+    let (lo,hi) = cell.bounds();
+    let (z0,z1) = (0..8).map(|k| dot(sub(std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] }),o),axis))
+        .fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),h| (a.min(h),b.max(h)));
+    let mut far = 0_f64;
+    let mut read = |p: V,slack: f64| {
+        let r = sub(p,o);
+        far = far.max(norm(sub(r,scale(axis,dot(r,axis))))+slack);
+    };
+    for v in &cell.vertices { read(v.p,0.) }
+    for e in &cell.edges {
+        // a line's height and radius are greatest at its ends, a circle's about the axis constant
+        let exact = match &e.curve {
+            EdgeCurve::Curve(Curve::Line {..}) => true,
+            EdgeCurve::Curve(Curve::Circle(f,_)) => norm(cross(f.z,axis)) <= 1e-12 && norm(cross(sub(f.o,o),axis)) <= tol,
+            _ => false,
+        };
+        if exact {
+            for t in [e.t[0],0.5*(e.t[0]+e.t[1]),e.t[1]] { read(e.point(t,&cell.vertices),0.) }
+            continue
+        }
+        let at = |j: usize| e.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/STEPS as f64,&cell.vertices);
+        let pts: Vec<V> = (0..=STEPS).map(at).collect();
+        let step = pts.windows(2).map(|w| norm(sub(w[1],w[0]))).fold(0.,f64::max);
+        for p in pts { read(p,0.5*step) }
+    }
+    let m = 10.*tol;
+    if z1 < s0+m || z0 > s1-m { return true }
+    let caps = [s0,s1].iter().any(|&z| z > z0+m && z < z1-m);
+    !caps && far+m < least([z0.max(s0),z1.min(s1)])
 }
 
 /// How many steps a candidate's source is read at each way (along it, and across the roll) for

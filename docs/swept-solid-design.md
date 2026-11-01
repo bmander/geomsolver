@@ -196,8 +196,19 @@ it. It stays as the fast path where #699 D says so.
    side's perpendicular is a touch) or the axis crosses a face. The profile is cut there, each
    stretch read at its middle, and turned once (`build::revolve`): exact, and with no Boolean, so
    none of the touches above arise. A leaning block, and a block straddling the axis tipped two
-   ways, are each the integral of their slices' spans (`tests/swept_closed.rs`). A part turn of a
-   leaning tool still waits on the arrangement's unions.
+   ways, are each the integral of their slices' spans (`tests/swept_closed.rs`).
+   *Built for a part turn of a leaning tool*, by the arrangement, once three of its touches were
+   met. A face at an end pose holds the edge whose hyperboloid is a candidate, so it meets that
+   hyperboloid in two rulings; traced, the meeting would not close. A plane meets a quadric of
+   revolution in a conic, now in closed form (`ssi`), held to the meridian's heights. A cell lying
+   inside a hyperboloid and touching it along its own edge leaves the Boolean a piece of the
+   hyperboloid with no inside; such a piece bounds nothing and is dropped. And a cusp cell between
+   two surfaces of revolution touching along a circle, united before its neighbour, makes a union
+   that is no manifold for a moment; it waits a pass. One rule tried and set aside: extending each
+   surface of revolution a little past its source's heights, so its disks stand clear of the
+   vertices' heights, leaves a thin cusp around each vertex's circle that is no member, a few
+   parts in a million of the volume, which only an independent volume (the slices' arcs carried
+   and united, to 1e-8) found.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
