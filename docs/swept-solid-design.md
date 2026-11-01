@@ -212,6 +212,24 @@ it. It stays as the fast path where #699 D says so.
    through all but its width meets itself and is trimmed (X5, X1), an L-shaped prism's concave
    edge is trimmed under a turn as under a slide (X3), each held to its slices' arcs carried and
    united.
+
+   *Tried and set aside, for the screw*: a bar beside the axis under a screw. Its edges along the
+   axis and its side faces' contact lines still turn into cylinders, but its level edges screw into
+   helicoidal sheets, which close into no solid as a line turned does. A level triangle on the line
+   screwed is a valid tube (a level plane crosses a screw's velocity everywhere, by its advance, and
+   a helix crosses each level once), and the kernel builds it exactly (`ruled`'s `Blend`s). But a
+   small tube is a thin twisted layer, and inside or outside it is not the sheet's two sides: a cell
+   reaches round its ends and is classified whole. A triangle and a roll reaching far past the box
+   make the tube's boundary within the box the sheet alone, but a sheet of several turns meets
+   each plane of the arrangement in a dozen pieces, and the Booleans lost one. Met in closed form
+   along the way: two coaxial screwed lines' sheets meet along helices (`Curve::Iso`), a screwed
+   line's sheet and a coaxial cylinder likewise, a level line's sheet and a level plane in one
+   ruling, and any plane explicitly (`u(v)` along each ruling). And an independent volume: in
+   helical coordinates `(ρ, ψ, ζ = z − kψ)` the screw is a shift in `ψ`, the volume element
+   `ρ dρ dψ dζ`, so the sweep's volume is each helix's intervals of the tool, lengthened by the turn
+   and united, integrated over `ρ` and one period of `ζ` (for that bar, `1 + Θ (3 + k)`). So the
+   screw's next step is a closed piece of sheet the arrangement can cut by, as the turn's
+   solids of revolution are.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
