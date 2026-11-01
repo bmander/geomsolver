@@ -39,7 +39,17 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   Gauss rule).  `gcs-solve` re-exports it as `brep` (beside `brep::sweep` and `brep::export`,
   which read the model and stay the solver's) and each `util` module under its old name, so
   `crate::fmath`, `gcs_core::brep::geom` and the rest name what they always did.  Nothing in it
-  can name the solver or the language.  The solver is usable
+  can name the solver or the language.  **The sweep is the kernel's** (#721 F2): the trajectory a
+  solid is carried along, each face's contact under it, the walk of the characteristic, the sheets,
+  the trims and the closed swept solid belong in `cad-kernel`, which chooses its method from the
+  trajectory's structure; `gcs-solve` keeps the drawing's reading — a motion lowered to the
+  kernel's `trajectory::Trajectory` (`Family::trajectory`), the tool and the blank read off the
+  model — and puts the kernel's refusals, typed by geometry with a witness, into words.  The
+  trajectory (`trajectory`: the pose and its rate `Motion`, the constant twist `Screw`, the
+  instantaneous `Twist`) and each surface's contact under a twist (`contact`) are there now, and
+  `envelope::Motion`, `envelope::Error` and `motion::Screw` are their re-exports.  The walk and
+  its sheet (`solid::constant_twist`, `brep::sweep`) move into the kernel with no change in
+  behaviour; until each has, it is held where it is, and no new walk is built in the solver.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint
   records, solved and diagnosed through the ABI with no document
   (`gcs-ffi/tests/without_a_document.rs`).  What the two share is defined below both: the words

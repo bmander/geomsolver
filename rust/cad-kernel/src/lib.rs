@@ -29,6 +29,8 @@ pub mod section;
 pub mod fillet;
 pub mod spill;
 pub mod family;
+pub mod trajectory;
+pub mod contact;
 
 use crate::util::json::Json;
 use std::sync::OnceLock;

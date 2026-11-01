@@ -1,7 +1,8 @@
 # Motions, generation and swept export
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch `motion.rs`,
-`generate.rs`, `solid/admission.rs`, `brep/sweep`, or the native export. An issue number (#n) or a
+`generate.rs`, `solid/admission.rs`, `brep/sweep`, the kernel's `trajectory.rs` or `contact.rs`,
+or the native export. An issue number (#n) or a
 spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says where a rule came
 from.
 
@@ -242,6 +243,36 @@ reproduction). `tests/formate.rs` (the cutter and motion, admission);
 `pair_check`'s `the_exported_formate_pair_is_conjugate` (ignored) reads
 `build/exports/formate-{pinion,gear}.stl` and holds the pair to an unvarying clearance and to
 line contact through the mean section.
+
+**The trajectory and the contact are the kernel's (#721 F2):** a motion reaches the kernel as a
+`brep::trajectory::Trajectory` that keeps its structure as data — a constant twist exactly
+(`Twist`, a `Screw`: a screw, a turn or a slide), one motion seen from another (`Relative`,
+`observer⁻¹ · source`), a path taken at a pace (`Paced`, whose sweep is its path's over the pace's
+range, `Trajectory::unpaced`, #684 L), a path of pieces each over its stretch of the parameter
+(`Pieces`, refused by `Trajectory::pieces` where two do not meet, K1), and any other rigid motion
+evaluated as a pose and its rate (`General`, K2).  `Family::trajectory` lowers a family step by
+step: a turn, a screw or a slide to its constant twist, a driven joint to that twist taken at its
+law (`Pace`), a relative to its two, a frame along a path or one the drawing moves to what it
+evaluates to; its pose and rate are `Family::at`'s at every time, and its constant twist is
+`Family::twist`'s wherever that reads one (`tests/trajectories.rs`,
+`a_motion_lowers_to_the_kernels_trajectory`, over every motion of the sweeps', the generation's,
+the mechanisms' and the paths' examples).  At each time a trajectory's twist is `Twist`, the field
+`v(x) = v₀ + ω × x`, read in the world (`Twist::spatial`) or on what it carries (`Twist::body`, in
+which a carried surface's contact is the world's envelope equation,
+`a_carried_surfaces_contact_is_read_on_the_surface_as_written`); a screw's is the same at every
+time (`a_screws_twist_is_its_poses_at_every_time`).  **Every kernel `Surface` answers its contact
+under a twist** (`brep::contact`): the contact function `n̂ · v` (`Surface::normal_velocity`), and
+in closed form where one exists (`Surface::contact_form`) — on each ring of a surface turned about
+its frame's `z` (cylinder, cone, sphere, torus, revolution) `A cos u + B sin u + C`
+(`ring_contact`, two roots, a double one, none or all round: `RingRoots`), along each ruling whose
+normal stands still (plane, cylinder, cone, extrusion, a revolved line) `a + b v` (`ruling_contact`,
+`RulingRoot`), and across a plane `a + b u + c v` (`plane_contact`); a blend, a B-spline and a face
+family's wall are read numerically, the contact function's crossings along a line of parameters
+(`contact_along`).  Each closed form is the contact function rearranged, held to it at sampled
+parameters under seeded twists, each ring's roots to the numerical reading of the ring, and the
+degenerate contacts the walk is built round (a ring in contact all round, a ruling all along, a flat
+kept in its plane) to the root kind that names them (`tests/surface_contact.rs`).  Sampled.  Nothing
+reads either yet: the constant-twist walk and its sheet move onto them in F2's next step.
 
 **Screws, the constant-twist class (#64):** a sweep under a screw (`f screws(a) l`) is admitted by
 rows S1–S4 (`solid::constant_twist`, docs/generating-sweeps.md): the tool's characteristic (each

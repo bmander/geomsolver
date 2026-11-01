@@ -19,25 +19,15 @@ pub mod screw;
 pub mod swept_region;
 pub use named::GeneratedEnvelope;
 
-use crate::plane::{cross, dot, scaled};
+use crate::plane::{cross, dot};
 
 type V3 = [f64; 3];
-type M3 = [[f64; 3]; 3];
 
-use crate::space::{add, length};
-fn mv(a: M3, b: V3) -> V3 { a.map(|r| dot(r, b)) }
-// (written out: the sum of an iterator is -0.0 plus its terms in order, the same number, and was not
-// inlined, the hottest thing in a motion's pose)
-fn mm(a: M3, b: M3) -> M3 {
-    std::array::from_fn(|i| std::array::from_fn(|j| a[i][0]*b[0][j]+a[i][1]*b[1][j]+a[i][2]*b[2][j]))
-}
-fn ma(a: M3, b: M3) -> M3 {
-    std::array::from_fn(|i| add(a[i], b[i]))
-}
-pub(crate) fn normalized(a: V3) -> Option<V3> {
-    let n = length(a);
-    (n > 0.0 && n.is_finite()).then(|| a.map(|v| v/n))
-}
+use crate::space::length;
+/// A rigid pose and its rate, and why one could not be read, are the kernel's (#721 F2): the
+/// trajectory a sweep is carried along is read in them.
+pub use crate::brep::trajectory::{Motion, Error};
+pub(crate) use crate::brep::trajectory::normalized;
 
 /// A smooth surface and its two exact first derivatives at one parameter pair.
 #[derive(Clone, Copy, Debug)]
@@ -45,86 +35,6 @@ pub struct SurfacePoint {
     pub position: V3,
     pub du: V3,
     pub dv: V3,
-}
-
-/// A rigid pose and its derivative with respect to a shared motion parameter.
-/// Composition differentiates both moving frames by the product rule.
-#[derive(Clone, Copy, Debug)]
-pub struct Motion {
-    r: M3,
-    dr: M3,
-    p: V3,
-    dp: V3,
-}
-
-impl Motion {
-    pub fn identity() -> Self {
-        Self { r: [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]], dr: [[0.;3];3],
-            p: [0.;3], dp: [0.;3] }
-    }
-
-    /// Right-handed rotation about an axis through the origin. Angle is in radians;
-    /// rate is radians per unit of the motion parameter. The axis need not be a unit vector.
-    pub fn rotation(axis: V3, angle: f64, rate: f64) -> Result<Self, Error> {
-        if !angle.is_finite() || !rate.is_finite() { return Err(Error::NonFinite); }
-        let a = normalized(axis).ok_or(Error::Degenerate)?;
-        let (s, c) = angle.dsin_cos();
-        let k = [[0.,-a[2],a[1]], [a[2],0.,-a[0]], [-a[1],a[0],0.]];
-        let r = std::array::from_fn(|i| std::array::from_fn(|j|
-            c * if i == j { 1. } else { 0. } + (1.-c)*a[i]*a[j] + s*k[i][j]));
-        let dr = mm(k, r).map(|row| scaled(row, rate));
-        Ok(Self { r, dr, ..Self::identity() })
-    }
-
-    pub fn translation(offset: V3, velocity: V3) -> Result<Self, Error> {
-        if !offset.iter().chain(&velocity).all(|x| x.is_finite()) {
-            return Err(Error::NonFinite);
-        }
-        Ok(Self { p: offset, dp: velocity, ..Self::identity() })
-    }
-
-    /// A pose `x ↦ r·x + p` and its rate, `dr` and `dp`, given outright: a frame read off a path
-    /// (`motion::guide`, #398 C), whose turn is no rotation about one axis.
-    pub(crate) fn of_parts(r: M3, dr: M3, p: V3, dp: V3) -> Self {
-        Self { r, dr, p, dp }
-    }
-
-    /// Apply this motion, then `next`: the resulting matrix is `next * self`.
-    pub fn then(self, next: Self) -> Self {
-        Self {
-            r: mm(next.r, self.r),
-            dr: ma(mm(next.dr, self.r), mm(next.r, self.dr)),
-            p: add(mv(next.r, self.p), next.p),
-            dp: add(add(mv(next.dr, self.p), mv(next.r, self.dp)), next.dp),
-        }
-    }
-
-    pub(crate) fn is_finite(&self) -> bool {
-        self.r.iter().flatten().chain(self.dr.iter().flatten()).chain(&self.p).chain(&self.dp)
-            .all(|v| v.is_finite())
-    }
-
-    pub fn point(self, p: V3) -> V3 { add(mv(self.r, p), self.p) }
-    pub fn vector(self, v: V3) -> V3 { mv(self.r, v) }
-    pub fn velocity(self, p: V3) -> V3 { add(mv(self.dr, p), self.dp) }
-
-    /// The moving inverse frame, including the derivative of its translated origin.
-    pub fn inverse(self) -> Self {
-        let r = std::array::from_fn(|i| std::array::from_fn(|j| self.r[j][i]));
-        let dr = std::array::from_fn(|i| std::array::from_fn(|j| self.dr[j][i]));
-        Self { r, dr, p: scaled(mv(r, self.p), -1.),
-            dp: scaled(add(mv(dr, self.p), mv(r, self.dp)), -1.) }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Error {
-    InvalidOptions,
-    OutsideDomain,
-    NonFinite,
-    Degenerate,
-    SingularIntersection,
-    NotConverged,
 }
 
 /// Boundary checks allow zero tolerance, but never negative or nonfinite controls.

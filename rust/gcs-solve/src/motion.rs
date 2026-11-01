@@ -15,6 +15,7 @@ pub use track::Track;
 pub(crate) use track::{window, Ride};
 
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
+pub use crate::brep::trajectory::Trajectory;
 
 /// `advance` is the length travelled along the unit axis per full turn of the
 /// shared parameter, so a rotation with a nonzero advance is a screw.  A joint **driven** by a law
@@ -89,6 +90,31 @@ impl Step {
     }
 }
 
+/// A law as the kernel's pace (`Trajectory::Paced`): its value and rate, and its range over a roll.
+#[derive(Debug)]
+struct Paced(Law);
+
+impl crate::brep::trajectory::Pace for Paced {
+    fn jet(&self,t: f64) -> Result<[f64;2],crate::brep::KernelError> { Ok(self.0.jet(t)?) }
+    fn range(&self,roll: [f64;2]) -> Result<[f64;2],crate::brep::KernelError> { Ok(self.0.range(roll)?) }
+}
+
+/// A frame along a path or one the drawing moves as the kernel's evaluated path
+/// (`Trajectory::General`): its pose and rate at each time, as `Family::at` reads the step.
+#[derive(Debug)]
+struct Evaluated(Step);
+
+impl crate::brep::trajectory::Path for Evaluated {
+    fn at(&self,t: f64) -> Result<Motion,crate::brep::KernelError> {
+        let (m,back) = match self.0 {
+            Step::Guided {ref guide,back} => (guide.motion(t)?,back),
+            Step::Followed {ref ride,back} => (ride.motion(t)?,back),
+            _ => unreachable!("only a path's step is evaluated"),
+        };
+        Ok(if back { m.inverse() } else { m })
+    }
+}
+
 fn unit(axis: [f64;3]) -> Option<[f64;3]> {
     // sqrt of the sum and not `hypot`: evaluated at every pose, and axes are of drawing size
     let n = crate::space::norm(axis);
@@ -115,91 +141,10 @@ pub enum PlanarStep {
     Relative,
 }
 
-/// A screw read off a motion (`Family::twist`): it turns `ratio` radians a radian about the line
-/// through `origin` along the unit `axis`, and slides `advance` along it a turn of the parameter.
-/// A turn (`advance` zero) and a slide (`ratio` zero) are its two limits.
-#[derive(Clone,Copy,Debug,PartialEq)]
-pub struct Screw { pub origin: [f64;3], pub axis: [f64;3], pub ratio: f64, pub advance: f64 }
-
-impl Screw {
-    /// Whether it turns without advancing: a turn, whose sections (`station`) are half-planes
-    /// about its axis, where a screw's and a slide's are planes square to it.
-    pub fn is_turn(&self) -> bool { self.advance == 0. }
-    /// Whether it advances without turning: a slide, whose path has no period.
-    pub fn is_slide(&self) -> bool { self.ratio == 0. }
-    /// Which of the three it is, as a refusal or a report says it.
-    pub fn kind(&self) -> &'static str { if self.is_turn() { "a turn" } else if self.is_slide() { "a slide" } else { "a screw" } }
-    /// How far round its axis `p` stands, from the axis's own frame's `x` (`Frame::about`): a
-    /// turn carries it round at the same height and radius.
-    pub fn angle(&self,p: [f64;3]) -> f64 {
-        let l = crate::brep::geom::Frame::about(self.origin,self.axis).local(p);
-        l[1].datan2(l[0])
-    }
-    /// How far `p` stands from the axis, which none of the motions changes.
-    pub fn radius(&self,p: [f64;3]) -> f64 {
-        let q = crate::space::sub(p,self.origin);
-        crate::space::norm(crate::space::sub(q,crate::space::scale(self.axis,crate::space::dot(q,self.axis))))
-    }
-    /// Where `p` stands across the motion's sections: its height along the axis for a screw or a
-    /// slide, which carry it from one plane square to the axis to the next, or its angle about
-    /// the axis for a turn, which carries it from one half-plane through the axis to the next.
-    pub fn station(&self,p: [f64;3]) -> f64 { if self.is_turn() { self.angle(p) } else { self.height(p) } }
-    /// How much of the roll carries it once round its axis (infinite for a slide).
-    pub fn period(&self) -> f64 { std::f64::consts::TAU/self.ratio.abs() }
-    /// The time at which the motion carries `p` to `station` (`station`'s kind): for a turn, which
-    /// reaches it once a turn, the one nearest `near`.
-    pub fn time_to_station(&self,p: [f64;3],station: f64,near: f64) -> f64 {
-        if !self.is_turn() { return self.time_to(p,station) }
-        let period = self.period();
-        let t = (station-self.angle(p))/self.ratio;
-        t+((near-t)/period).round()*period
-    }
-    /// The times, from now, at which the motion holds `p` between the heights `band` along its
-    /// axis: a screw or a slide carries it through them once, and a turn keeps it at its own
-    /// height, so holds it there always or never (`None`).
-    pub fn passing(&self,p: [f64;3],[lo,hi]: [f64;2]) -> Option<[f64;2]> {
-        if self.is_turn() {
-            let h = self.height(p);
-            return (h >= lo.min(hi) && h <= lo.max(hi)).then_some([f64::NEG_INFINITY,f64::INFINITY])
-        }
-        let (x,y) = (self.time_to(p,lo),self.time_to(p,hi));
-        Some([x.min(y),x.max(y)])
-    }
-    /// The velocity per radian of the point at `p` of what the screw carries, in the carried frame
-    /// as in the world's: the same at every time, since a screw carries its own axis into itself.
-    pub fn velocity(&self,p: [f64;3]) -> [f64;3] {
-        let turn = crate::space::cross(self.axis,crate::space::sub(p,self.origin));
-        std::array::from_fn(|k| self.ratio*turn[k]+self.advance/std::f64::consts::TAU*self.axis[k])
-    }
-    /// How far along the axis `p` stands from the origin.
-    pub fn height(&self,p: [f64;3]) -> f64 { crate::space::dot(crate::space::sub(p,self.origin),self.axis) }
-    /// The time at which the screw carries `p` to `height` along its axis.
-    pub fn time_to(&self,p: [f64;3],height: f64) -> f64 { (height-self.height(p))*std::f64::consts::TAU/self.advance }
-    /// How far along the axis the box from `lo` to `hi` reaches (read in the screw's frame through
-    /// `back`), and how far from the axis.
-    pub fn extent(&self,lo: [f64;3],hi: [f64;3],back: crate::envelope::Motion) -> ([f64;2],f64) {
-        (0..8).map(|k| back.point(std::array::from_fn(|i| if k>>i & 1 == 0 { lo[i] } else { hi[i] })))
-            .fold(([f64::INFINITY,f64::NEG_INFINITY],0_f64),|([a,b],r),p| {
-                let h = self.height(p);
-                ([a.min(h),b.max(h)],r.max(self.radius(p)))
-            })
-    }
-    /// `p` carried along its own path for a time `t`: turned `ratio·t` about the axis and slid
-    /// along it, as the screw's pose at `s + t` is its pose at `s` followed by this one (turns and
-    /// slides about one axis commute).
-    pub fn carry(&self,p: [f64;3],t: f64) -> [f64;3] {
-        let q = self.turn(crate::space::sub(p,self.origin),t);
-        std::array::from_fn(|k| self.origin[k]+q[k]+self.advance*t/std::f64::consts::TAU*self.axis[k])
-    }
-    /// A direction turned as `carry` turns what it carries.
-    pub fn turn(&self,v: [f64;3],t: f64) -> [f64;3] {
-        let (s,c) = (self.ratio*t).dsin_cos();
-        let a = self.axis;
-        let along = crate::space::dot(a,v);
-        let across = crate::space::cross(a,v);
-        std::array::from_fn(|k| v[k]*c+across[k]*s+a[k]*along*(1.-c))
-    }
-}
+/// A screw read off a motion (`Family::twist`), the kernel's constant twist (#721 F2): it turns
+/// `ratio` radians a radian about the line through `origin` along the unit `axis`, and slides
+/// `advance` along it a turn of the parameter.
+pub use crate::brep::trajectory::Screw;
 
 /// A motion's instantaneous screw axis (`Family::instantaneous`, #326): the line through `point`
 /// (its nearest the origin) along the unit `direction`, along which every point moves by `pitch` a
@@ -420,6 +365,34 @@ impl Family {
             Step::Rotation {origin,axis,ratio,advance,law:None} if ratio != 0. => Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
             _ => None,
         }
+    }
+
+    /// **The motion lowered to the kernel's trajectory** (#721 F2), its structure kept: a turn, a
+    /// screw or a slide as the constant twist it is (`Trajectory::Twist`), a joint driven by a law as
+    /// that joint taken at the law's pace (`Paced`), one motion seen from another as the two
+    /// (`Relative`), and a frame along a path or one the drawing moves as what it evaluates to at
+    /// each time (`General`). Its pose at every time is `at`'s; where `twist` reads a constant twist
+    /// it is that one (`a_motion_lowers_to_the_kernels_trajectory`).
+    pub fn trajectory(&self) -> Result<Trajectory,String> { self.lowered(self.steps.len().checked_sub(1).ok_or("a motion with no step")?) }
+
+    fn lowered(&self,k: usize) -> Result<Trajectory,String> {
+        let paced = |path: Trajectory,law: &Option<Law>| match law {
+            None => path,
+            Some(l) => Trajectory::Paced {path:Box::new(path),pace:std::sync::Arc::new(Paced(l.clone()))},
+        };
+        Ok(match self.steps[k] {
+            Step::Rotation {origin,axis,ratio,advance,ref law} => {
+                let axis = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
+                paced(Trajectory::Twist(Screw {origin,axis,ratio,advance}),law)
+            }
+            Step::Translation {axis,advance,ref law} => {
+                let axis = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
+                paced(Trajectory::Twist(Screw {origin:[0.;3],axis,ratio:0.,advance}),law)
+            }
+            Step::Relative {source,observer} => Trajectory::Relative {source:Box::new(self.lowered(source)?),
+                observer:Box::new(self.lowered(observer)?)},
+            ref s @ (Step::Guided {..} | Step::Followed {..}) => Trajectory::General(std::sync::Arc::new(Evaluated(s.clone()))),
+        })
     }
 
     /// The **instantaneous screw** of this motion (#326): the axis every point moves along at the
