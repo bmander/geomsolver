@@ -150,7 +150,13 @@ it. It stays as the fast path where #699 D says so.
    behaviour change; each class's sheet becomes one patch.
 3. **End faces** with entry and exit trimming (X1).
 4. **X6 for a constant twist**: a box slid (a known prism), turned (a known solid of revolution)
-   and screwed. Each is held to its closed form's volume and to `member`.
+   and screwed. Each is held to its closed form's volume and to `member`. *Built for a slide*
+   (`swept::closed::slid`): a polyhedral tool's candidate planes, extended to the whole plane so
+   the kernel's split takes them, cut a box half-space by half-space (`build::kept`); each cell
+   kept by membership; a box slid aslant is its zonotope to 1e-9, an L-shaped prism's sweep its
+   blocks' united, its concave edges resolved by the arrangement as X3 says
+   (`tests/swept_closed.rs`). A turn's candidates are surfaces of revolution (an edge's line, a
+   face's contact line, turned whole), next.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
