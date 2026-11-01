@@ -11,7 +11,7 @@ failure.
 | while editing | the module of the area in hand | `cargo test --manifest-path rust/Cargo.toml chain::` | seconds |
 | before a push | the modules the change can reach, and a smoke set | `make test-changed` | a minute or two |
 | every push, every PR from a fork | the whole fast suite, every crate, both release artefacts, the web suite | CI: `.github/workflows/test.yml` | minutes |
-| a kernel release, tag `cad-kernel-v*` | the fast suite as on a push (the tag's push skips `test.yml`, which this calls), and the kernel's package alone: its smoke test outside the workspace, its docs, its wasm build, semver against crates.io | CI: `.github/workflows/cad-kernel.yml` | minutes |
+| a kernel release, tag `cad-kernel-v*` | the fast suite as on a push (the tag's push skips `test.yml`, which this calls), and the kernel's package alone: its smoke test outside the workspace, its docs, semver against crates.io | CI: `.github/workflows/cad-kernel.yml` | minutes |
 | every night, on main | the slow tier, and the fast suite again in the slow build | CI: `.github/workflows/slow.yml` | hours |
 | by hand | the CalculiX oracle, OCCT's native tooth space, the tools behind `#[ignore = "a tool: …"]` | `make test-ccx`, `make test-slow OCCT=1`, `-- --ignored` | anything |
 

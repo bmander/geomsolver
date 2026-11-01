@@ -1,18 +1,13 @@
 # Release the B-rep kernel, rust/cad-kernel, to crates.io; docs/contract/brep.md says what a
 # release is.
 #
-# On a branch, record each change under the changelog's Unreleased heading
-# (rust/cad-kernel/CHANGELOG.md).  To release:
-#
-#     scripts/release-cad-kernel.sh prepare 0.2.0    # on a branch; open a pull request
-#     scripts/release-cad-kernel.sh tag              # on main, once it merges
-#     git push origin cad-kernel-v0.2.0
-#
-# The tag runs the whole fast suite at its commit (test.yml, called) and checks the crate as it
-# ships, then publishes it to crates.io and makes a GitHub release of the tag whose notes are the
-# changelog's section.  That release is never marked latest: `releases/latest` stays solventc's,
-# what scripts/install-solventc.sh fetches.  Run by hand (Actions -> cad-kernel -> Run workflow)
-# it checks the branch's crate at its manifest's version and publishes nothing.
+# A tag `cad-kernel-vX.Y.Z`, made and pushed as scripts/release-cad-kernel.sh says, runs the
+# whole fast suite at its commit (test.yml, called; its `make release` builds the kernel for wasm)
+# and checks the crate as it ships, then publishes it to crates.io and makes a GitHub release of
+# the tag whose notes are the changelog's section.  That release is never marked latest:
+# `releases/latest` stays solventc's, what scripts/install-solventc.sh fetches.  Run by hand
+# (Actions -> cad-kernel -> Run workflow) it checks the branch's crate at its manifest's version
+# and publishes nothing.
 #
 # Once, before the first release, crates.io needs to know this workflow.  A crate that does not
 # exist yet cannot have a trusted publisher, so the first release publishes with a token:
@@ -63,26 +58,19 @@ jobs:
       - name: The version
         id: version
         run: |
-          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
-            v=${GITHUB_REF_NAME#cad-kernel-v}
-          else
-            v=$(sed -n 's/^version = "\(.*\)"$/\1/p' rust/cad-kernel/Cargo.toml | head -1)
-          fi
+          v=$(scripts/release-cad-kernel.sh version)
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "cad-kernel $v"
 
       - name: The tag names the crate's version, on main, with its changelog
         if: github.ref_type == 'tag'
-        run: |
-          scripts/release-cad-kernel.sh check "${{ steps.version.outputs.version }}"
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main ||
-            { echo "::error::$GITHUB_REF_NAME is not a commit on main"; exit 1; }
+        run: scripts/release-cad-kernel.sh check "${GITHUB_REF_NAME#cad-kernel-v}"
 
-      # the package as crates.io receives it, built from its own tarball
+      # the package as crates.io receives it; the next step builds it
       - name: Package
-        run: cargo package --manifest-path rust/Cargo.toml -p cad-kernel --locked
+        run: cargo package --manifest-path rust/Cargo.toml -p cad-kernel --locked --no-verify
 
-      # and outside this workspace, where nothing of geomsolver's is near it
+      # from its own tarball, outside this workspace, where nothing of geomsolver's is near it
       - name: The package's smoke test, alone
         run: |
           v=${{ steps.version.outputs.version }}
@@ -95,12 +83,6 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --manifest-path rust/Cargo.toml -p cad-kernel --no-deps --locked
-
-      - name: WebAssembly
-        run: |
-          rustup target add wasm32-unknown-unknown
-          cargo build --manifest-path rust/Cargo.toml -p cad-kernel --locked \
-              --target wasm32-unknown-unknown
 
       # against the newest version on crates.io, once there is one: a patch release breaks
       # nothing, and under 0.x a minor release may
@@ -140,10 +122,11 @@ jobs:
       - uses: rust-lang/crates-io-auth-action@v1
         if: env.HAS_TOKEN != 'true'
         id: auth
+      # the `crate` job built and tested this package
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
-        run: cargo publish --manifest-path rust/Cargo.toml -p cad-kernel --locked
+        run: cargo publish --manifest-path rust/Cargo.toml -p cad-kernel --locked --no-verify
 
   release:
     needs: [crate, publish]
