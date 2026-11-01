@@ -2,14 +2,14 @@
 //! point carrying a normal along a trajectory that turns it, in closed form — under a turn, or a
 //! turn seen from another, `n·v` is one sinusoid in the roll; under a slide seen from a turn (a rack
 //! against the blank it cuts) a line in it — and its isolated roots, each a contact time
-//! (`Chart`). The generating class reads each tool point by its contact times; what the chart is
-//! not read of is refused by what the trajectory is (`Uncharted`), and the solver says that in the
-//! drawing's words.
+//! (`Form`, `Chart`). The generating class reads each tool point by its contact times; a trajectory
+//! with no chart is refused by what it is (`Uncharted`), and the solver says that in the drawing's
+//! words.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::contact::{SurfacePoint,Contact,contact,check_tolerance};
 use crate::trajectory::{Error,Motion,Screw,Trajectory,normalized};
-use crate::util::space::{cross,dot};
+use crate::util::space::{cross,dot,scale,sub};
 use std::f64::consts::TAU;
 
 /// Normal velocity at one fixed source point under a charted trajectory: under a rotation, or one
@@ -31,7 +31,7 @@ pub struct ContactTime {
     pub turn: i64,
 }
 
-/// Why a trajectory's contact chart is not read (`chart`), by what the trajectory is.
+/// Why a trajectory has no contact chart (`Form::of`), by what the trajectory is.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub enum Uncharted {
     /// Neither a turn, nor a turn or a slide seen from a turn about a fixed axis: a slide or a screw
@@ -44,89 +44,96 @@ pub enum Uncharted {
     /// A rigid motion evaluated (a frame along a path, one the drawing moves), whose twist moves as
     /// it runs.
     Evaluated,
-    /// The chart's coefficients overflowed.
-    Overflow,
-    /// The point's normal could not be read.
-    Contact(Error),
 }
 
 impl std::fmt::Display for Uncharted {
     fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Uncharted::Motion => f.write_str("temporal contacts require a rotation, or a rotation or \
-                a translation seen from a rotation, without advance"),
-            Uncharted::Paced => f.write_str("temporal contacts are read of constant rates, and a path \
-                taken at a pace runs at its own"),
-            Uncharted::Evaluated => f.write_str("temporal contacts are read of constant rates, and a \
-                motion evaluated turns as it runs"),
-            Uncharted::Overflow => f.write_str("normal-velocity coefficients overflowed"),
-            Uncharted::Contact(e) => write!(f,"{e:?}"),
+        f.write_str(match self {
+            Uncharted::Motion => "temporal contacts require a rotation, or a rotation or a translation \
+                seen from a rotation, without advance",
+            Uncharted::Paced => "temporal contacts are read of constant rates, and a path taken at a \
+                pace runs at its own",
+            Uncharted::Evaluated => "temporal contacts are read of constant rates, and a motion \
+                evaluated turns as it runs",
+        })
+    }
+}
+
+/// **What a trajectory's contact chart is**, read once of its structure: a turn without advance,
+/// alone or seen from one (`Turned`), or a slide seen from such a turn, a rack (`Rack`). A turn of no
+/// ratio is the slide it is, and an observer of no ratio is a frame at rest. Each screw's axis is
+/// read as the unit axis the trajectory holds.
+#[derive(Clone,Copy,Debug)]
+pub enum Form { Turned { source: Screw,observer: Option<Screw> },Rack { slide: Screw,observer: Screw } }
+
+impl Form {
+    /// The form `path`'s chart takes, or why it has none. Nested relative motions can contain
+    /// additional harmonics and are refused, as are paced and evaluated ones (`Uncharted`).
+    pub fn of(path: &Trajectory) -> Result<Form,Uncharted> {
+        let (source,observer) = match path {
+            Trajectory::Relative {source,observer} => (&**source,Some(&**observer)),
+            t => (t,None),
+        };
+        let twist = |t: &Trajectory| match t {
+            Trajectory::Twist(s) => Ok(*s),
+            Trajectory::Paced {..} => Err(Uncharted::Paced),
+            Trajectory::General(_) => Err(Uncharted::Evaluated),
+            Trajectory::Relative {..} | Trajectory::Pieces(_) => Err(Uncharted::Motion),
+        };
+        let (source,observer) = (twist(source)?,observer.map(twist).transpose()?);
+        match observer {
+            Some(o) if !o.is_turn() => Err(Uncharted::Motion),
+            _ if source.is_turn() && !source.is_slide() => Ok(Form::Turned {source,observer}),
+            Some(observer) if source.is_slide() => Ok(Form::Rack {slide:source,observer}),
+            _ => Err(Uncharted::Motion),
+        }
+    }
+
+    /// **The contact chart of `surface`'s point** (`NormalVelocity`). For M = B⁻¹A with fixed-axis
+    /// rotations, the observer's rotation cancels from n·v. In the shared world frame, with
+    /// x = p − origin_A,
+    /// f = rate_A n·(axis_A × x) − ω_B·R_A(x × n) − (ω_B × (origin_A − origin_B))·R_A n.
+    /// Rodrigues' formula makes this a single sinusoid in A's angle. Different axis origins and
+    /// signed rates are retained; roll 0 is as drawn, so neither turn has a phase. A slide seen from
+    /// a turn is affine in the roll (`rack`).
+    pub fn normal_velocity(&self,surface: SurfacePoint) -> Result<NormalVelocity,PointContactError> {
+        let n = contact(surface,Motion::identity()).map_err(|e| PointContactError::Failed(format!("{e:?}")))?.normal;
+        match *self {
+            Form::Turned {source,observer} => turned(surface.position,n,source,observer),
+            Form::Rack {slide,observer} => rack(surface.position,n,slide,observer),
         }
     }
 }
 
-/// **The contact chart of `surface`'s point under `path`** (`NormalVelocity`). For M = B⁻¹A with
-/// fixed-axis rotations, the observer's rotation cancels from n·v. In the shared world frame, with
-/// x = p − origin_A,
-/// f = rate_A n·(axis_A × x) − ω_B·R_A(x × n) − (ω_B × (origin_A − origin_B))·R_A n.
-/// Rodrigues' formula makes this a single sinusoid in A's angle. Different axis origins and signed
-/// rates are retained; roll 0 is as drawn, so neither turn has a phase. A slide seen from a turn is
-/// affine in the roll (`rack`). Nested relative motions can contain additional harmonics and are
-/// refused, as are paced and evaluated ones (`Uncharted`). Each screw's axis is read as the unit
-/// axis the trajectory holds.
-pub fn chart(path: &Trajectory,surface: SurfacePoint) -> Result<NormalVelocity,Uncharted> {
-    let (source,observer) = match path {
-        Trajectory::Relative {source,observer} => (&**source,Some(&**observer)),
-        t => (t,None),
-    };
-    let twist = |t: &Trajectory| match t {
-        Trajectory::Twist(s) => Ok(*s),
-        Trajectory::Paced {..} => Err(Uncharted::Paced),
-        Trajectory::General(_) => Err(Uncharted::Evaluated),
-        Trajectory::Relative {..} | Trajectory::Pieces(_) => Err(Uncharted::Motion),
-    };
-    let (source,observer) = (twist(source)?,observer.map(twist).transpose()?);
-    // a turn without advance, alone or seen from one; a slide (a turn of no ratio is the slide it
-    // is) seen from one, a rack; an observer of no ratio is a frame at rest
-    match observer {
-        Some(o) if o.advance != 0. => Err(Uncharted::Motion),
-        _ if source.ratio != 0. && source.advance == 0. => turned(surface,source,observer),
-        Some(o) if source.ratio == 0. => rack(surface,source,o),
-        _ => Err(Uncharted::Motion),
-    }
-}
-
-/// A turn `source` (no advance) seen from `observer`, a turn about a fixed axis, or alone.
-fn turned(surface: SurfacePoint,source: Screw,observer: Option<Screw>) -> Result<NormalVelocity,Uncharted> {
+/// A turn `source` (no advance) seen from `observer`, a turn about a fixed axis, or alone: the chart
+/// of the point at `p` with unit normal `n`.
+fn turned(p: [f64;3],n: [f64;3],source: Screw,observer: Option<Screw>) -> Result<NormalVelocity,PointContactError> {
     let Screw {origin,axis,ratio,..} = source;
     let (omega,offset) = match observer {
         None => ([0.;3],[0.;3]),
-        Some(o) => (o.axis.map(|v| v*o.ratio),std::array::from_fn(|k| origin[k]-o.origin[k])),
+        Some(o) => (scale(o.axis,o.ratio),sub(origin,o.origin)),
     };
-    let n = contact(surface,Motion::identity()).map_err(Uncharted::Contact)?.normal;
-    let x = std::array::from_fn(|k| surface.position[k]-origin[k]);
+    let x = sub(p,origin);
     let mut coefficients = [ratio*dot(n,cross(axis,x)),0.,0.];
     for (v,w) in [(omega,cross(x,n)),(cross(omega,offset),n)] {
-        let parallel = axis.map(|a| a*dot(axis,w));
-        let perpendicular = std::array::from_fn(|k| w[k]-parallel[k]);
+        let parallel = scale(axis,dot(axis,w));
+        let perpendicular = sub(w,parallel);
         coefficients[0] -= dot(v,parallel);
         coefficients[1] -= dot(v,perpendicular);
         coefficients[2] -= dot(v,cross(axis,w));
     }
-    if !coefficients.iter().all(|v| v.is_finite()) { return Err(Uncharted::Overflow); }
+    if !coefficients.iter().all(|v| v.is_finite()) { return Err(PointContactError::Overflow); }
     Ok(NormalVelocity::Sinusoid {constant:coefficients[0],cosine:coefficients[1],sine:coefficients[2],rate:ratio})
 }
 
 /// For M = B⁻¹ A with A a slide along unit `d` at `s` a radian and B a turn of rate vector ω about a
 /// line through `o`: the normal is carried unturned, the source moves at `s d`, and the observer's
 /// frame turns under it, so f(t) = s n·d − n·(ω × (p − o)) − s t n·(ω × d) — affine in the roll.
-fn rack(surface: SurfacePoint,slide: Screw,observer: Screw) -> Result<NormalVelocity,Uncharted> {
-    let (d,w) = (slide.axis,observer.axis);
-    let (s,omega) = (slide.advance/TAU,w.map(|v| v*observer.ratio));
-    let n = contact(surface,Motion::identity()).map_err(Uncharted::Contact)?.normal;
-    let x = std::array::from_fn(|k| surface.position[k]-observer.origin[k]);
+fn rack(p: [f64;3],n: [f64;3],slide: Screw,observer: Screw) -> Result<NormalVelocity,PointContactError> {
+    let (d,s,omega) = (slide.axis,slide.advance/TAU,scale(observer.axis,observer.ratio));
+    let x = sub(p,observer.origin);
     let (constant,slope) = (s*dot(n,d)-dot(n,cross(omega,x)),-s*dot(n,cross(omega,d)));
-    if !constant.is_finite() || !slope.is_finite() { return Err(Uncharted::Overflow); }
+    if !constant.is_finite() || !slope.is_finite() { return Err(PointContactError::Overflow); }
     Ok(NormalVelocity::Affine {constant,slope})
 }
 
@@ -136,6 +143,7 @@ impl NormalVelocity {
     /// and sine coefficients; an affine form's `0` and its constant and slope, both of which a
     /// point in contact at every time has zero (admission's M2 looks for that zero between samples
     /// by the winding of `(a, b)`).
+    #[inline]
     pub fn variation(&self) -> [f64;3] {
         match *self {
             NormalVelocity::Sinusoid {constant,cosine,sine,..} => [constant,cosine,sine],
@@ -143,6 +151,7 @@ impl NormalVelocity {
         }
     }
 
+    #[inline]
     pub fn at(&self,time: f64) -> Result<f64,Error> {
         let value = match *self {
             NormalVelocity::Sinusoid {constant,cosine,sine,rate} => {
@@ -231,10 +240,10 @@ pub struct TimedContact {
 
 /// Why a point carrying a normal has no contact times: its normal is no direction, its contact
 /// equation is degenerate (in contact at every time, or only grazing, which the root finder
-/// cannot tell apart), the trajectory has no chart (`Uncharted`), a root found fails the contact
-/// equation it was found of (`Unsatisfied`), or something failed that says nothing about the point.
+/// cannot tell apart), its chart's coefficients overflow, a root found fails the contact equation it
+/// was found of (`Unsatisfied`), or something failed that says nothing about the point.
 #[derive(Clone,Debug,PartialEq)]
-pub enum PointContactError { DegenerateNormal,Degenerate,Uncharted(Uncharted),Unsatisfied,Failed(String) }
+pub enum PointContactError { DegenerateNormal,Degenerate,Overflow,Unsatisfied,Failed(String) }
 
 impl PointContactError {
     fn of(e: Error) -> Self {
@@ -247,20 +256,25 @@ impl std::fmt::Display for PointContactError {
         match self {
             PointContactError::DegenerateNormal => f.write_str("degenerate normal"),
             PointContactError::Degenerate => f.write_str("Degenerate"),
-            PointContactError::Uncharted(u) => write!(f,"{u}"),
+            PointContactError::Overflow => f.write_str("normal-velocity coefficients overflowed"),
             PointContactError::Unsatisfied => f.write_str("point-normal contact failed the normal-velocity equation"),
             PointContactError::Failed(m) => f.write_str(m),
         }
     }
 }
 
-/// **A generating sweep's contact times**: the trajectory a tool is carried along and the roll it
-/// is swept over (`domain`), each tool point read by when it is in contact.
+/// **A generating sweep's contact times**: the trajectory a tool is carried along, the form of its
+/// chart (`Form`, read once) and the roll it is swept over (`domain`), each tool point read by when
+/// it is in contact.
 #[derive(Clone,Copy,Debug)]
-pub struct Chart<'a> { pub path: &'a Trajectory,pub roll: [f64;2] }
+pub struct Chart<'a> { pub path: &'a Trajectory,form: Form,roll: [f64;2] }
 
-impl Chart<'_> {
+impl<'a> Chart<'a> {
+    /// The chart of `path` over `roll`, or why it has none.
+    pub fn new(path: &'a Trajectory,roll: [f64;2]) -> Result<Self,Uncharted> { Ok(Chart {path,form:Form::of(path)?,roll}) }
+
     /// The roll the contacts are read over.
+    #[inline]
     pub fn domain(&self) -> [f64;2] { self.roll }
 
     /// Contact times of a point carrying a given unit normal, over a motion interval. This is the
@@ -282,8 +296,7 @@ impl Chart<'_> {
     /// material classification decides what is exposed.
     pub fn at_surface(&self,surface: SurfacePoint,interval: [f64;2],tolerance: f64)
         -> Result<Vec<TimedContact>,PointContactError> {
-        let roots = chart(self.path,surface).map_err(PointContactError::Uncharted)?
-            .roots(interval,tolerance,4096).map_err(PointContactError::of)?;
+        let roots = self.form.normal_velocity(surface)?.roots(interval,tolerance,4096).map_err(PointContactError::of)?;
         roots.into_iter().map(|root| {
             let at = self.path.at(root.time).map_err(|e| PointContactError::Failed(e.msg))?;
             let contact = contact(surface,at).map_err(PointContactError::of)?;

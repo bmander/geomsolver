@@ -1,26 +1,25 @@
 //! A motion's contact chart, the kernel's (`brep::swept::generating`, #721 F2c), said in the
 //! drawing's words where the kernel refuses it.
 use super::{Family,Step};
-use crate::brep::swept::generating::{self,Uncharted};
+use crate::brep::swept::generating::Form;
 use crate::envelope::SurfacePoint;
 
-pub use generating::{NormalVelocity,ContactTime};
+pub use crate::brep::swept::generating::NormalVelocity;
 
 impl Family {
-    /// The contact chart of `surface`'s point under this motion (`generating::chart`): a sinusoid in
+    /// The contact chart of `surface`'s point under this motion (`generating::Form`): a sinusoid in
     /// the roll under a turn or two relative turns, a line under a slide seen from a turn. Nested
     /// relative motions can contain additional harmonics and are refused, as are a drive's and a
     /// path's, by what the drawing says the motion is.
     pub fn normal_velocity(&self,surface: SurfacePoint) -> Result<NormalVelocity,String> {
-        generating::chart(self.path()?,surface).map_err(|e| self.uncharted(e))
+        Form::of(self.path()?).map_err(|_| self.uncharted())?.normal_velocity(surface).map_err(|e| e.to_string())
     }
 
-    /// Why this motion has no contact chart (`e`), as the drawing says it: what its root step is,
-    /// then whether a step is driven by a law, then which step is no turn.
-    pub(crate) fn uncharted(&self,e: Uncharted) -> String {
-        if matches!(e,Uncharted::Overflow | Uncharted::Contact(_)) { return e.to_string() }
-        let (source,observer) = match *self.steps.last().expect("motion root") {
-            Step::Rotation {..} => (self.steps.last().unwrap(),None),
+    /// Why this motion has no contact chart (the kernel's `Uncharted`), as the drawing says it: what
+    /// its root step is, then whether a step is driven by a law, then which step is no turn.
+    pub(crate) fn uncharted(&self) -> String {
+        let (source,observer) = match *self.root() {
+            Step::Rotation {..} => (self.root(),None),
             Step::Relative {source,observer} => (&self.steps[source],Some(&self.steps[observer])),
             Step::Translation {..} => return "temporal contacts require a rotation or two relative rotations".into(),
             Step::Guided {..} => return "temporal contacts are read of constant rates, and a \

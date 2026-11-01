@@ -226,8 +226,7 @@ impl Tracer<'_> {
                     construction needs one contact time per point",sample.position.map(|x| (x*1e4).round()/1e4),
                     sample.normal.map(|x| (x*1e4).round()/1e4))),
                 PointContactError::DegenerateNormal => TraceError::Degenerate(e.to_string()),
-                PointContactError::Uncharted(_) | PointContactError::Unsatisfied => TraceError::Failed(e.to_string()),
-                PointContactError::Failed(m) => TraceError::Failed(m),
+                _ => TraceError::Failed(e.to_string()),
             })?;
         Ok(roots.iter().map(|r| Found {position:scaled(r.contact.position,scale),normal:r.contact.normal,
             time:r.root.time,branch:r.root.branch}).collect())

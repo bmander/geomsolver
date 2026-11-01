@@ -319,11 +319,6 @@ impl SweepContacts {
     pub fn at_point_normal_over(&self,position: [f64;3],normal: [f64;3],interval: [f64;2],tolerance: f64)
         -> Result<Vec<TimedContact>,PointContactError> {
         self.chart().map_err(PointContactError::Failed)?.at_point_normal(position,normal,interval,tolerance)
-            .map_err(|e| match e {
-                PointContactError::Uncharted(u) => PointContactError::Failed(self.motion.uncharted(u)),
-                PointContactError::Unsatisfied => PointContactError::Failed(e.to_string()),
-                e => e,
-            })
     }
 
     /// The same chart over a caller-supplied motion interval. Contacts outside the
@@ -335,13 +330,14 @@ impl SweepContacts {
         let surface = self.tool.faces.get(patch).ok_or("no such sweep patch")?.at(u,v)
             .map_err(|e| format!("{e:?}"))?;
         self.chart()?.at_surface(surface,interval,tolerance).map_err(|e| match e {
-            PointContactError::Uncharted(u) => self.motion.uncharted(u),
             PointContactError::Unsatisfied => "temporal contact failed the original normal-velocity equation".into(),
             e => e.to_string(),
         })
     }
 
     /// The sweep's contact times as the kernel reads them: the lowered motion and the roll
-    /// (`domain`).
-    pub fn chart(&self) -> Result<Chart<'_>,String> { Ok(Chart {path:self.motion.path()?,roll:self.roll}) }
+    /// (`domain`), or why the motion has none, in the drawing's words.
+    pub fn chart(&self) -> Result<Chart<'_>,String> {
+        Chart::new(self.motion.path()?,self.roll).map_err(|_| self.motion.uncharted())
+    }
 }

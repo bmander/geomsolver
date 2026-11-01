@@ -296,18 +296,20 @@ instead, the walk moves by an ulp, and that alone turns three triangles of the w
 (`the_wheel_turned_once_leaves_its_shadow_all_round`): the mesher's, F4's to mend.)
 
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
-the trajectory (`brep::swept::generating::chart`: a turn, or a turn seen from a turn, a sinusoid in
-the roll; a slide seen from a turn, a rack, a line in it — `NormalVelocity`, its roots
-`ContactTime`) and its contact times over the roll (`Chart`, the lowered trajectory and the roll:
+the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:
+a turn, or a turn seen from a turn, a sinusoid in the roll; a slide seen from a turn, a rack, a
+line in it — `Form::normal_velocity`, a `NormalVelocity`, its roots `ContactTime`) and its
+contact times over the roll (`Chart::new`, the lowered trajectory, its form and the roll:
 `Chart::at_point_normal` for a point carrying a normal, `Chart::at_surface` for a surface's point,
 each a `TimedContact`), the cutter sectioned at its stations (`brep::swept::cutter`) and its
 stations' contact curves traced into the candidate sheet (`brep::swept::trace`) are in
 `cad-kernel`; `contact_trace::…` and `cutter::…` below name `brep::swept::trace` and
 `brep::swept::cutter`.  The chart reads each screw's axis as the unit axis the trajectory holds.
-What it is not read of the kernel refuses by what the trajectory is (`Uncharted`: a motion that is
-no turn and no turn or slide seen from one, one at a pace, one evaluated, coefficients that
-overflow, a point with no normal), and `Family::normal_velocity` says that as the drawing's steps
-say it, the words unchanged.  The chart is held on trajectories built by hand, seeded, to the
+A trajectory with no chart the kernel refuses by what it is (`Uncharted`: a motion that is no turn
+and no turn or slide seen from one, one at a pace, one evaluated), and `Family::normal_velocity` and
+`SweepContacts::chart` say that as the drawing's steps say it (`Family::uncharted`), the words
+unchanged; a point's own failures (no normal, coefficients that overflow) are its
+`PointContactError`.  The chart is held on trajectories built by hand, seeded, to the
 contact function of the trajectory's own pose and rate, each contact time it finds to being in
 contact, and each refusal to its kind (`tests/surface_contact.rs`,
 `a_generating_sweeps_chart_is_read_off_the_trajectory`; sampled).  A turn of no ratio is the

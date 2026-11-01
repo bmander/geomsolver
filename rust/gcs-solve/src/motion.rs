@@ -4,7 +4,7 @@ use crate::fmath::Det;
 mod bounds;
 pub use bounds::MotionBounds;
 mod contact;
-pub use contact::{NormalVelocity,ContactTime};
+pub use contact::NormalVelocity;
 mod law;
 pub use law::{Law, unread_drive};
 mod guide;

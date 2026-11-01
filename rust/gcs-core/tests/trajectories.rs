@@ -110,7 +110,7 @@ fn a_screws_twist_is_its_poses_at_every_time() {
 
 /// A pace that rises and comes back over `[0, 2]`: `3 t (2 − t)`, its greatest 3 at 1.
 #[derive(Debug)]
-struct Arch;
+pub(crate) struct Arch;
 
 impl Pace for Arch {
     fn jet(&self,t: f64) -> Result<[f64;2],KernelError> { Ok([3.*t*(2.-t),6.-6.*t]) }
@@ -143,7 +143,7 @@ fn a_paced_path_sweeps_its_path() {
 
 /// A slide along `x` evaluated only, as a frame along a path is.
 #[derive(Debug)]
-struct Evaluated;
+pub(crate) struct Evaluated;
 
 impl Path for Evaluated {
     fn at(&self,t: f64) -> Result<Motion,KernelError> { Ok(Motion::translation([2.*t,0.,0.],[2.,0.,0.]).unwrap()) }
