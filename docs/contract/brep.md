@@ -8,10 +8,16 @@ says where a rule came from.
 MIT: its code is never translated, only its behaviour and conventions studied.  It is its own
 crate, `cad-kernel` (`rust/cad-kernel/`, MIT OR Apache-2.0), which names neither the solver nor the
 language; `gcs-solve` re-exports it as `brep` and adds what reads the model (`brep::sweep`,
-`brep::export`), so its paths below are `gcs_core::brep`'s as before.  Its own repository
-(https://github.com/bmander/cad-kernel) is this directory's history, published by
-`scripts/sync-cad-kernel.sh`; there it builds and runs its smoke test (`rust/cad-kernel/tests/`)
-alone, and it is measured beside other kernels on https://github.com/bmander/brep-bench.
+`brep::export`), so its paths below are `gcs_core::brep`'s as before.  **It lives here and is
+released from here**, to crates.io, by a tag `cad-kernel-vX.Y.Z` on main
+(`.github/workflows/cad-kernel.yml`, prepared and tagged by `scripts/release-cad-kernel.sh`); no
+other repository holds a copy.  A release is the commit the whole fast suite passed at, whose
+`rust/cad-kernel/Cargo.toml` names the tag's version and whose `rust/cad-kernel/CHANGELOG.md`
+has its section; its package builds alone and runs its smoke test (`rust/cad-kernel/tests/`),
+documents without a warning, builds for wasm, and keeps semver against the version before it
+(`cargo semver-checks`: under 0.x a breaking change is a minor bump).  What builds on the kernel
+from outside pins a released version: it is measured beside other kernels on
+https://github.com/bmander/brep-bench at the version that names.
 `gcs_core::brep`:
 `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`
 intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `check`, `pinches`),

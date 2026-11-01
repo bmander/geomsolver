@@ -19,12 +19,18 @@ name: test
 
 on:
   push:
+    # every branch and every tag but a kernel release's, whose workflow (cad-kernel.yml) calls
+    # this one and waits on it
+    branches: ['**']
+    tags-ignore: ['cad-kernel-v*']
   pull_request:
+  workflow_call:
   workflow_dispatch:
 
 # A newer push to the same branch supersedes the run in progress; on main every run finishes.
+# Called, `github.workflow` is the caller's, so a release's run never queues behind a push's.
 concurrency:
-  group: test-${{ github.ref }}
+  group: test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
