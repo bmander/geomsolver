@@ -338,7 +338,7 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 // carried along the sweep, a translation: its weights and knots kept, so a rational
                 // curve (an ellipse's rim) stays the curve the plane cuts
                 Curve::BSpline(sp) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline {
-                    poles:sp.poles.iter().map(|&p| lift(p)).collect(),..(**sp).clone()}))]),
+                    degree:sp.degree,knots:sp.knots.clone(),weights:sp.weights.clone(),poles:sp.poles.iter().map(|&p| lift(p)).collect()}))]),
                 Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:*d}]),
                 Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
                 _ => Ssi::Traced,

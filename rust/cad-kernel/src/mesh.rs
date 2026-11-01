@@ -616,16 +616,21 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         // wherever the face is read
         let mid = [(lo[0]+hi[0])/2.,(lo[1]+hi[1])/2.];
         let (_,su,sv) = f.surface.d1(mid);
-        const GRID: usize = 9;
-        let (mut mu,mut mv) = (0.,0.);
-        for i in 0..GRID { for j in 0..GRID {
+        let (mut ku,mut kv) = (norm(su),norm(sv));
+        // (a plane's and a cylinder's speeds are the same everywhere: no chart of theirs collapses)
+        if !matches!(f.surface,super::geom::Surface::Plane(_) | super::geom::Surface::Cylinder(..)) {
+            const GRID: usize = 9;
             let at = |k: usize,n: usize| lo[k]+(hi[k]-lo[k])*(n as f64+0.5)/GRID as f64;
-            let (_,su,sv) = f.surface.d1([at(0,i),at(1,j)]);
-            mu += norm(su); mv += norm(sv);
-        } }
-        let cells = (GRID*GRID) as f64;
-        let scaled = |at_mid: f64,mean: f64| if at_mid >= 0.25*mean { at_mid } else { mean };
-        let (ku,kv) = (scaled(norm(su),mu/cells).max(least),scaled(norm(sv),mv/cells).max(least));
+            let (mut mu,mut mv) = (0.,0.);
+            for i in 0..GRID { for j in 0..GRID {
+                let (_,su,sv) = f.surface.d1([at(0,i),at(1,j)]);
+                mu += norm(su); mv += norm(sv);
+            } }
+            let cells = (GRID*GRID) as f64;
+            if ku < 0.25*mu/cells { ku = mu/cells; }
+            if kv < 0.25*mv/cells { kv = mv/cells; }
+        }
+        let (ku,kv) = (ku.max(least),kv.max(least));
         // a surface straight along one parameter sags nothing along it: that parameter's scale
         // shrunk, the triangulation joins neighbouring rulings across the face's whole run of it,
         // where refining it as a plane would cut it as finely along the rulings as across them

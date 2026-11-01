@@ -9,36 +9,21 @@ use gcs_core::brep::build::{cone,disc,kept,prism,sphere,torus,Profile,ProfileEdg
 use gcs_core::brep::geom::{Frame,V};
 use gcs_core::brep::nurbs::BSpline;
 use gcs_core::brep::offset::{grown,sheet_of,shelled,shrunk,thickened,Join,Side};
-use gcs_core::brep::props::{area,volume};
+use gcs_core::brep::props::volume;
 use gcs_core::brep::query::{Located,Place};
 use gcs_core::brep::topo::Brep;
 use std::f64::consts::{FRAC_1_SQRT_2,PI};
 use std::sync::Arc;
+use crate::brep::{block,mesh_volume,poly,total_area};
+use gcs_core::space::{cross,dot,scale,sub,unit};
 
 fn close(what: &str,a: f64,b: f64) { assert!((a-b).abs() <= 1e-9*b.abs().max(1.),"{what}: {a} against {b} ({:e})",(a-b)/b); }
 
-/// The closed polygon through `pts` as a profile, its normal by Newell's rule.
-fn polygon(pts: &[V]) -> Profile {
-    let n = pts.len();
-    let mut normal = [0.;3];
-    for k in 0..n {
-        let (a,b) = (pts[k],pts[(k+1)%n]);
-        normal = [normal[0]+a[1]*b[2]-a[2]*b[1],normal[1]+a[2]*b[0]-a[0]*b[2],normal[2]+a[0]*b[1]-a[1]*b[0]];
-    }
-    let l = (normal[0]*normal[0]+normal[1]*normal[1]+normal[2]*normal[2]).sqrt();
-    Profile {origin:pts[0],normal:normal.map(|x| x/l),loops:vec![(0..n).map(|k| ProfileEdge::Line {a:pts[k],b:pts[(k+1)%n]}).collect()],
-        names:Vec::new()}
-}
-
-fn block(lo: V,hi: V) -> Brep {
-    prism(&polygon(&[lo,[hi[0],lo[1],lo[2]],[hi[0],hi[1],lo[2]],[lo[0],hi[1],lo[2]]]),0.,hi[2]-lo[2]).unwrap()
-}
-
 fn l_block() -> Brep {
-    prism(&polygon(&[[0.,0.,0.],[20.,0.,0.],[20.,5.,0.],[5.,5.,0.],[5.,15.,0.],[0.,15.,0.]]),0.,8.).unwrap()
+    let section = Profile {names:vec![],origin:[0.;3],normal:[0.,0.,1.],
+        loops:vec![poly(&[[0.,0.,0.],[20.,0.,0.],[20.,5.,0.],[5.,5.,0.],[5.,15.,0.],[0.,15.,0.]])]};
+    prism(&section,0.,8.).unwrap()
 }
-
-fn total_area(b: &Brep) -> f64 { b.faces.iter().map(|f| area(b,f)).sum() }
 
 /// The faces of `b` the points `on` lie inside, one each.
 fn faces_through(b: &Brep,on: &[V]) -> Vec<usize> {
@@ -87,12 +72,8 @@ fn a_tetrahedron_grown_rounds_its_oblique_edges_and_corners() {
     let mut t = block([-4.,-4.,-4.],[4.,4.,4.]);
     for k in 0..4 {
         let [a,b,c] = [corners[(k+1)%4],corners[(k+2)%4],corners[(k+3)%4]];
-        let (u,v) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
-        let mut n = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
-        let w = [corners[k][0]-a[0],corners[k][1]-a[1],corners[k][2]-a[2]];
-        if n[0]*w[0]+n[1]*w[1]+n[2]*w[2] < 0. { n = n.map(|x| -x); }
-        let l = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
-        t = kept(&t,a,n.map(|x| x/l),0.).unwrap();
+        let n = unit(cross(sub(b,a),sub(c,a)));
+        t = kept(&t,a,if dot(n,sub(corners[k],a)) < 0. { scale(n,-1.) } else { n },0.).unwrap();
     }
     let e = 6.*2f64.sqrt();
     let want = 72.+72.*3f64.sqrt()+3.*e*(PI-(1f64/3.).acos())+4.*PI/3.;
@@ -243,14 +224,25 @@ fn a_horn_torus_meshes_within_its_sag() {
         loops:vec![vec![ProfileEdge::Arc {frame:Frame::new(centre,[0.,-1.,0.],[1.,0.,0.]),r:5.,span:None}]]};
     let horn = gcs_core::brep::build::revolve(&section,[0.;3],[0.,0.,1.],std::f64::consts::TAU).unwrap();
     let m = gcs_core::brep::mesh::mesh(&horn,1e-2,0.1).unwrap();
-    let (mut a,mut v) = (0.,0.);
-    for t in &m.tris {
+    let a: f64 = m.tris.iter().map(|t| {
         let [p,q,r] = t.map(|i| m.pts[i as usize]);
-        let (u,w) = ([q[0]-p[0],q[1]-p[1],q[2]-p[2]],[r[0]-p[0],r[1]-p[1],r[2]-p[2]]);
-        let n = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
-        a += 0.5*(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
-        v += (p[0]*(q[1]*r[2]-q[2]*r[1])-p[1]*(q[0]*r[2]-q[2]*r[0])+p[2]*(q[0]*r[1]-q[1]*r[0]))/6.;
-    }
+        0.5*gcs_core::space::norm(cross(sub(q,p),sub(r,p)))
+    }).sum();
+    let v = mesh_volume(&m);
     assert!((a-100.*PI*PI).abs() < 1e-2*100.*PI*PI,"meshed area {a} against {}",100.*PI*PI);
     assert!((v-250.*PI*PI).abs() < 1e-2*250.*PI*PI,"meshed volume {v} against {}",250.*PI*PI);
+}
+
+/// Two cylinders tangent inside at one point (brep-bench's tangent/tangent-tee-union): their
+/// meeting is two closed fitted splines through that point, each with more points on it, and
+/// each is split as a closed curve — its last stretch running round to its first — not dropped
+/// past its last point, which left one use of the main's seam unmatched.
+#[test]
+fn a_tee_tangent_at_a_point_unites() {
+    let main = prism(&gcs_core::brep::build::disc([-15.,0.,0.],[1.,0.,0.],5.),0.,30.).unwrap();
+    let branch = prism(&gcs_core::brep::build::disc([0.,-15.,2.],[0.,1.,0.],3.),0.,30.).unwrap();
+    let tee = combined(&main,&branch,Op::Union,0.).unwrap();
+    tee.check(1e-7).unwrap();
+    let l = (6f64.sqrt()/2.).asinh();
+    assert!((volume(&tee)-(1020.*PI-96.*15f64.sqrt()+128.*l)).abs() < 1e-6*2964.68,"{}",volume(&tee));
 }

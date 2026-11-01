@@ -14,8 +14,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   sweeps (`normal_sweep`) and the tubes and balls of the distance set (`Join::Round`) or the kites
   and parallelepipeds of faces extended until they meet (`Join::Sharp`).
 - A plane square to a rational spline's sweep meets it in the spline with its weights kept, and a
-  closed clamped spline meeting with one point on it is one edge round, not dropped (an elliptic
-  bore cut through a plate was the plate untouched).
+  closed clamped spline meeting runs round from its last point to its first, not dropped there (an
+  elliptic bore cut through a plate was the plate untouched; two cylinders tangent inside at a
+  point were refused).
 - A face whose chart collapses at the middle of its box (a horn torus) is meshed by its mean
   speed, not shrunk to slivers.
 

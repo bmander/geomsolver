@@ -357,9 +357,11 @@ the far side of it: for a sweep in its own right that part mirrored and turned h
 added (a bend thickened past its radius); for an offset's piece it is cut away
 (`Reach::cut_at_axis`), since a point there is nearer the surface on the axis's far side and not
 this face's.  A surface with no offset in closed form, or a curved face not bounded by its own
-parameter lines, is refused naming the face and a point on it — never approximated.  A ball's poles
-lie along its corner's mean normal, in the middle of what the ball keeps and off every circle a tube
-ends on.  `tests/brep_offset.rs` is the gate: a box, an L, a tetrahedron, a cone, tori past their
+parameter lines, is refused naming the face and a point on it — never approximated.  A known limit of
+the Booleans, not a rule of offsets: a meeting through a sphere's pole is read less exactly than one
+clear of it (a pole near a corner ball's kept boundary put a grown tetrahedron 9e-7 off), so a
+corner's ball is built with its poles along the corner's mean normal, clear of the circles the
+tubes end on; the deeper fix splits a meeting at a chart's degenerate point.  `tests/brep_offset.rs` is the gate: a box, an L, a tetrahedron, a cone, tori past their
 hole and shrunk, a groove filled and a flange taken away, boxes and caps shelled, an open box and a
 bend thickened, each to its closed form to 1e-9; a spline sheet refused.
 
@@ -367,8 +369,10 @@ bend thickened, each to its closed form to 1e-9; a spline sheet refused.
 to a spline's sweep meets it in the spline carried along the sweep, its weights and knots kept
 (`ssi::intersect`; a rational rim carried without its weights is another curve, on neither
 surface), and a clamped spline whose ends meet, running round a loop far wider than the tolerance,
-with at most one point on it, is split as a closed curve is (`boolean::closed_domain`), not dropped
-as an open one with no two points to run between — which left the bore out of its plate.
+is split as a closed curve is (`boolean::closed_domain`), its last stretch running round to its
+first — not dropped as an open one's past its last point, which left an elliptic bore out of its
+plate and one use of a cylinder's seam unmatched where a branch touches it inside at one point
+(`a_tee_tangent_at_a_point_unites`).
 **A face's parameters are scaled by its speed at their box's middle unless the chart nearly
 collapses there** (`brep::mesh`): a horn torus's pinch, every `u` one point, would shrink `u` to
 nothing over the whole face; there the mean speed over the box is taken.
