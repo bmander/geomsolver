@@ -224,23 +224,30 @@ fn a_rim_rounded_to_its_cylinders_radius_is_a_dome() {
     assert!(field.side([0.0, 0.0, 9.9]) < 0.0 && field.side([3.0, 0.0, 9.5]) > 0.0);
 }
 
+/// A post of radius 5 standing 14 high, cut by a lid whose plane through (0, 0, 10) is tilted 20°
+/// about the y axis, and the rim where its side meets the lid's far face finished by `word` (a
+/// word of `std.rounds` the document imports as `import`).
+fn tilted_post(import: &str, word: &str) -> String {
+    format!("unit mm\nuse std\nuse std.rounds ({import})\n\
+        in std.top {{\n  o := point\n  fix((0, 0)) o\n  rim := circle(center: o) hint(r: 5)\n  radius(5mm) rim\n}}\n\
+        post := solid(face(rim), from: 0mm, to: 14mm)\n\
+        across := axis hint(dir: (0, 1, 0))\nacross parallel std.y\n\
+        u := axis hint(dir: (0.94, 0, -0.34))\nu perpendicular across\nu angle(20deg, about: std.y) std.x\n\
+        slant := plane(u: u, v: across)\nfix(origin == (0mm, 0mm, 10mm)) slant\n\
+        in slant {{\n  a := point\n  b := point\n  c := point\n  d := point\n\
+        fix((-20, -20)) a\n  fix((20, -20)) b\n  fix((20, 20)) c\n  fix((-20, 20)) d\n\
+        (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}}\n\
+        lid := solid(face(ab, bc, cd, da), from: 0mm, to: 30mm)\n\
+        drum := solid(post)\nlid cut drum\ndrum.lid {word} drum.post\n")
+}
+
 /// The dome under a top tilted 20° off square (a plane through (0, 0, 10) about the y axis): the
 /// rim is an ellipse, which no ring carries, so the ball is rolled (`brep::fillet::roll`) — and,
 /// as wide as the post, stands still on its axis 5 under the top along the top's normal,
 /// `z = 10 − 5 / cos 20°`, touching the top off its pole. The post to that height under the dome.
 #[test]
 fn a_rim_tilted_off_square_rounded_to_its_cylinders_radius_is_a_dome() {
-    let e = solved("unit mm\nuse std\nuse std.rounds (round)\n\
-        in std.top {\n  o := point\n  fix((0, 0)) o\n  rim := circle(center: o) hint(r: 5)\n  radius(5mm) rim\n}\n\
-        post := solid(face(rim), from: 0mm, to: 14mm)\n\
-        across := axis hint(dir: (0, 1, 0))\nacross parallel std.y\n\
-        u := axis hint(dir: (0.94, 0, -0.34))\nu perpendicular across\nu angle(20deg, about: std.y) std.x\n\
-        slant := plane(u: u, v: across)\nfix(origin == (0mm, 0mm, 10mm)) slant\n\
-        in slant {\n  a := point\n  b := point\n  c := point\n  d := point\n\
-        fix((-20, -20)) a\n  fix((20, -20)) b\n  fix((20, 20)) c\n  fix((-20, 20)) d\n\
-        (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
-        lid := solid(face(ab, bc, cd, da), from: 0mm, to: 30mm)\n\
-        drum := solid(post)\nlid cut drum\ndrum.lid round(r: 5mm) drum.post\n");
+    let e = solved(&tilted_post("round", "round(r: 5mm)"));
     let b = exported(&e, "drum");
     let z = 10.0 - 5.0 / 20f64.to_radians().cos();
     close(props::volume(&b), PI * 25.0 * z + 2.0 / 3.0 * PI * 125.0);
@@ -273,17 +280,7 @@ fn a_rim_chamfered_to_its_cylinders_radius_is_a_cone() {
 /// `250π (1 − 1 / (3 cos α))`.
 #[test]
 fn a_rim_tilted_off_square_chamfered_to_its_cylinders_radius_closes_onto_the_axis() {
-    let e = solved("unit mm\nuse std\nuse std.rounds (chamfer)\n\
-        in std.top {\n  o := point\n  fix((0, 0)) o\n  rim := circle(center: o) hint(r: 5)\n  radius(5mm) rim\n}\n\
-        post := solid(face(rim), from: 0mm, to: 14mm)\n\
-        across := axis hint(dir: (0, 1, 0))\nacross parallel std.y\n\
-        u := axis hint(dir: (0.94, 0, -0.34))\nu perpendicular across\nu angle(20deg, about: std.y) std.x\n\
-        slant := plane(u: u, v: across)\nfix(origin == (0mm, 0mm, 10mm)) slant\n\
-        in slant {\n  a := point\n  b := point\n  c := point\n  d := point\n\
-        fix((-20, -20)) a\n  fix((20, -20)) b\n  fix((20, 20)) c\n  fix((-20, 20)) d\n\
-        (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
-        lid := solid(face(ab, bc, cd, da), from: 0mm, to: 30mm)\n\
-        drum := solid(post)\nlid cut drum\ndrum.lid chamfer(d: 5mm) drum.post\n");
+    let e = solved(&tilted_post("chamfer", "chamfer(d: 5mm)"));
     let b = exported(&e, "drum");
     close(props::volume(&b), 250.0 * PI * (1.0 - 1.0 / (3.0 * 20f64.to_radians().cos())));
     assert_eq!(b.faces.len(), 3);

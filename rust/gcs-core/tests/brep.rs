@@ -1896,7 +1896,6 @@ fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
     use gcs_core::brep::boolean::{combined,Op};
     use gcs_core::brep::build::disc;
     use gcs_core::brep::fillet::roll;
-    use gcs_core::brep::props::area;
     // as the bench builds it: the disc swept up, the rim picked by a point on it
     let mut section = disc([0.;3],[0.,0.,1.],5.);
     section.names = vec![vec!["side".into()]];
@@ -1907,12 +1906,9 @@ fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
     close(volume(&round.piece),PI*25.*5.-2./3.*PI*125.);
     let domed = combined(&cylinder,&round.piece,Op::Cut,0.).unwrap();
     domed.check(1e-9).unwrap();
-    let total = |b: &gcs_core::brep::topo::Brep| b.faces.iter().map(|f| area(b,f)).sum::<f64>();
     close(volume(&domed),625.*PI/3.);
-    close(total(&domed),125.*PI);
-    let mut kinds: Vec<&str> = domed.faces.iter().map(|f| f.surface.kind()).collect();
-    kinds.sort();
-    assert_eq!(kinds,["cylinder","plane","sphere"]);
+    close(total_area(&domed),125.*PI);
+    assert_eq!(face_kinds(&domed),["cylinder","plane","sphere"]);
     // a bore 5 in radius and 8 deep into a block, its floor's rim filled to the bore's radius
     let bored = combined(&block([-10.,-10.,0.],[10.,10.,12.]),&rod([0.;3],5.,[4.,12.]),Op::Cut,0.).unwrap();
     let fill = roll(&bored,[5.,0.,4.],5.,1e-9*bored.size()).unwrap();
@@ -1931,7 +1927,7 @@ fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
     domed.check(1e-9).unwrap();
     let z = 10.-5./tilt.cos();
     close(volume(&domed),PI*25.*z+2./3.*PI*125.);
-    close(total(&domed),PI*25.+TAU*5.*z+TAU*25.);
+    close(total_area(&domed),PI*25.+TAU*5.*z+TAU*25.);
     assert_eq!(domed.faces.len(),3);
     // the ball reaches past a cylinder 4 high
     let short = prism(&disc([0.;3],[0.,0.,1.],5.),0.,4.).unwrap();
@@ -1951,7 +1947,6 @@ fn a_cylinders_rim_chamfered_to_its_own_radius_is_a_cone() {
     use gcs_core::brep::boolean::{combined,Op};
     use gcs_core::brep::build::disc;
     use gcs_core::brep::fillet::flat_along;
-    use gcs_core::brep::props::area;
     // as the bench builds it: the disc swept up, the rim picked by a point on it
     let mut section = disc([0.;3],[0.,0.,1.],5.);
     section.names = vec![vec!["side".into()]];
@@ -1962,12 +1957,9 @@ fn a_cylinders_rim_chamfered_to_its_own_radius_is_a_cone() {
     close(volume(&piece),PI*25.*5.-PI*25.*5./3.);
     let pointed = combined(&cylinder,&piece,Op::Cut,0.).unwrap();
     pointed.check(1e-9).unwrap();
-    let total = |b: &gcs_core::brep::topo::Brep| b.faces.iter().map(|f| area(b,f)).sum::<f64>();
     close(volume(&pointed),500.*PI/3.);
-    close(total(&pointed),75.*PI+25.*2f64.sqrt()*PI);
-    let mut kinds: Vec<&str> = pointed.faces.iter().map(|f| f.surface.kind()).collect();
-    kinds.sort();
-    assert_eq!(kinds,["cone","cylinder","plane"]);
+    close(total_area(&pointed),75.*PI+25.*2f64.sqrt()*PI);
+    assert_eq!(face_kinds(&pointed),["cone","cylinder","plane"]);
     // the legs unequal, 5 across the top and 2 down the side: the top still shrinks to its centre,
     // the cone steeper, `π5²·8 + π5²·2/3`
     let piece = flat_along(&cylinder,[0.,5.,10.],[5.,2.],Some([0.,0.,10.]),tol).unwrap();
@@ -2038,9 +2030,18 @@ fn a_hemispheres_rim_chamfered_to_its_radius_is_a_spherical_sector() {
     let sector = combined(&dome,&piece,Op::Cut,0.).unwrap();
     sector.check(1e-8).unwrap();
     // (the flat fitted within the bar, a billionth of the boundary)
-    let (got,want) = (volume(&sector),100.*PI/3.);
-    assert!((got-want).abs() <= 1e-9*want,"{got} against {want} ({:e})",(got-want)/want);
+    crate::common::close(volume(&sector),100.*PI/3.);
     assert_eq!(sector.faces.len(),2);
+}
+
+/// The area of every face of `b`.
+fn total_area(b: &gcs_core::brep::topo::Brep) -> f64 { b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum() }
+
+/// The kinds of `b`'s faces' surfaces, sorted.
+fn face_kinds(b: &gcs_core::brep::topo::Brep) -> Vec<&'static str> {
+    let mut kinds: Vec<&'static str> = b.faces.iter().map(|f| f.surface.kind()).collect();
+    kinds.sort();
+    kinds
 }
 
 /// A box from the origin to `hi`, its four sides named (a prism's sides come first, in the walk's
