@@ -4,7 +4,6 @@
 //! (`sector`), and that sector patterned round its axis (`brep::pattern`). What a native host did
 //! with its kernel's shapes is done here with this kernel's, so the export needs no native kernel,
 //! and runs where the core does — in the browser's worker too.
-pub mod cutter;
 pub mod extruded;
 pub mod helical;
 pub mod planar;
