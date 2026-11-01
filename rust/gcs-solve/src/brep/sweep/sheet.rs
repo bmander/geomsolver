@@ -1,15 +1,15 @@
 //! A swept cut's sheet: its contacts traced at the cutter's stations over the band its declared
-//! roll reaches the blank in (`solid::contact_trace`), laid out on a grid widened until its edges
+//! roll reaches the blank in (`brep::swept::trace`), laid out on a grid widened until its edges
 //! leave the blank, interpolated as a B-spline surface (`nurbs::interpolate_net`), and judged at the
 //! contacts withheld from the fit — held to a tolerance, refined where it misses until it fits.
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::cutter::Cutter;
+use crate::brep::swept::cutter::Cutter;
 use super::Say;
 use crate::brep::swept::sheet::{FIT_DISTANCE,carry_out,settle};
 use crate::model::{Sketch,SolidDef};
 use crate::motion::Family;
-use crate::solid::contact_trace::{Band,Columns,Grid,Inside,Layout,Rows,Sheet,Station,TraceError,Tracer,Withheld};
+use crate::brep::swept::trace::{Band,Columns,Grid,Inside,Layout,Rows,Sheet,Station,TraceError,Tracer,Withheld};
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use crate::solid::{cad,SweepContacts};
 /// A sheet fitted, judged and cut into faces is the kernel's (`brep::swept::sheet`, #721 F2b); what
@@ -80,8 +80,8 @@ pub fn capped_sheet(cut: &SweptCut,capped: &crate::solid::admission::Capped,insi
 fn traced_sheet(cut: &SweptCut,cutter: &Cutter,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,say: &Say)
     -> Result<Fitted,ExportRefusal> {
     let (scale,name) = (cut.scale,&cut.name);
-    let sweep = cut.contacts.as_ref().map_err(Clone::clone).at(Stage::Reach)?;
-    let tracer = Tracer {sweep,scale,inside,debug:false};
+    let chart = cut.contacts.as_ref().map_err(Clone::clone).and_then(SweepContacts::chart).at(Stage::Reach)?;
+    let tracer = Tracer {chart,scale,inside,debug:false};
     let started = crate::clock::Instant::now();
     let reach = cutter.reach(&tracer).at(Stage::Reach)?;
     let width = reach.stations[1]-reach.stations[0];
@@ -122,7 +122,7 @@ fn traced_sheet(cut: &SweptCut,cutter: &Cutter,inside: Inside,near: &(dyn Fn(V) 
                 // an edge point in the blank at a time within the declared roll is where the sheet is
                 // too small; one at a time outside it is the sheet extended past the roll, which
                 // widening only carries further, and that needs a sheet trimmed at the roll's limits
-                let declared = sweep.domain();
+                let declared = chart.domain();
                 let (mut late,mut early) = (None,0);
                 for r in 0..sheet.rows { for c in 0..sheet.columns {
                     if !(r == 0 || r+1 == sheet.rows || c == 0 || c+1 == sheet.columns) { continue }

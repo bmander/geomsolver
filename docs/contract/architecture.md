@@ -52,9 +52,15 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   of its characteristic (`swept::constant_twist`), the sheet fitted and judged (`swept::sheet`) and
   the screw's sheet (`swept::helical`); `solid::constant_twist` and `brep::sweep::helical` hand
   them what the drawing says, and the readers of a tool's faces off a drawing are the solver's
-  extension traits (`solid::ReadRevolved` and the rest).  The other classes' readings and sheets,
-  the trims and the closed solid (F2c) move with no change in behaviour; until each has, it is held
-  where it is, and no new walk is built in the solver.  The solver is usable
+  extension traits (`solid::ReadRevolved` and the rest).  So is the generating class's reading
+  (F2c): a tool point's contact chart and its contact times along the trajectory
+  (`swept::generating`), the cutter sectioned at its stations (`swept::cutter`) and its contact
+  curves traced into a sheet (`swept::trace`); `Family::normal_velocity` says the kernel's
+  `Uncharted` in the drawing's words, and `SweepContacts::chart` hands the tracer the lowered
+  motion and the roll.  The rest of the generating class (its admission rows and its sector's
+  build), the canal and planar classes' readings and sheets, the trims and the closed solid move
+  with no change in behaviour; until each has, it is held where it is, and no new walk is built
+  in the solver.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint
   records, solved and diagnosed through the ABI with no document
   (`gcs-ffi/tests/without_a_document.rs`).  What the two share is defined below both: the words

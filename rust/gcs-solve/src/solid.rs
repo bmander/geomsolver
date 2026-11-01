@@ -99,7 +99,6 @@ pub mod accuracy;
 pub mod contracts;
 pub mod sector;
 pub mod export;
-pub mod contact_trace;
 pub mod blank_features;
 pub use sweep_contacts::{CapSurface,ExtrudedSurface,Material,ReadCap,ReadExtruded,SweepContacts,TimedContact,PatchEdge,PointContactError,Tool,
     ToolSurface};

@@ -10,7 +10,7 @@
 //! fit's bars of the envelope at its quarter points, and extruded linearly over the prism's length.
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::cutter::Cutter;
+use crate::brep::swept::cutter::Cutter;
 use super::sheet::{Fitted,SweptCut};
 use super::Say;
 use crate::brep::build::Seg;
@@ -18,7 +18,7 @@ use crate::brep::geom::{Curve,Frame};
 use crate::brep::nurbs::Net;
 use crate::generate::{self,Generated,Tool};
 use crate::motion::PlanarStep;
-use crate::solid::contact_trace::{Inside,Sheet,UNNAMED};
+use crate::brep::swept::trace::{Inside,Sheet,UNNAMED};
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use std::f64::consts::{PI,TAU};
 

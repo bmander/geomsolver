@@ -205,3 +205,75 @@ fn a_carried_surfaces_contact_is_read_on_the_surface_as_written() {
         assert!(dot(world.normal,world.normal) > 0.5);
     }
 }
+
+/// A seeded unit axis, a point and a rate: one turn, screw or slide's numbers.
+fn screw(rng: &mut Rng,ratio: f64,advance: f64) -> gcs_core::brep::trajectory::Screw {
+    gcs_core::brep::trajectory::Screw {origin:[rng.uniform(-5.,5.),rng.uniform(-5.,5.),rng.uniform(-5.,5.)],
+        axis:unit([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)]),ratio,advance}
+}
+
+#[derive(Debug)]
+struct Still;
+impl gcs_core::brep::trajectory::Pace for Still {
+    fn jet(&self,t: f64) -> Result<[f64;2],gcs_core::brep::KernelError> { Ok([t,1.]) }
+    fn range(&self,roll: [f64;2]) -> Result<[f64;2],gcs_core::brep::KernelError> { Ok(roll) }
+}
+impl gcs_core::brep::trajectory::Path for Still {
+    fn at(&self,_: f64) -> Result<Motion,gcs_core::brep::KernelError> { Ok(Motion::identity()) }
+}
+
+/// **A generating sweep's contact chart is the kernel's, read off the trajectory** (#721 F2c,
+/// `brep::swept::generating`): under a turn, a turn seen from a turn and a slide seen from a turn
+/// (a rack) — each built here by hand, its axes seeded — the chart is the contact function `n · v`
+/// of the trajectory's own pose and rate at every sampled time, a sinusoid of the roll for the
+/// turns and a line for the rack; each contact time `Chart::at_point_normal` finds is in contact;
+/// and what is no such motion is refused by what it is (`Uncharted`): a screw alone or seen, a slide
+/// alone, a relative of a relative, a path at a pace, one evaluated. Sampled.
+#[test]
+fn a_generating_sweeps_chart_is_read_off_the_trajectory() {
+    use gcs_core::brep::swept::generating::{chart,Chart,NormalVelocity,Uncharted};
+    use gcs_core::brep::trajectory::Trajectory;
+    let relative = |s: Trajectory,o: Trajectory| Trajectory::Relative {source:Box::new(s),observer:Box::new(o)};
+    let mut rng = Rng::new(721);
+    let mut contacts = 0;
+    for _ in 0..24 {
+        let (a,b,lead) = (rng.uniform(0.3,2.),rng.uniform(-2.,-0.3),rng.uniform(2.,9.));
+        let (turn,other,slide) = (screw(&mut rng,a,0.),screw(&mut rng,b,0.),screw(&mut rng,0.,lead));
+        for (name,path) in [("a turn",Trajectory::Twist(turn)),
+            ("a turn seen from a turn",relative(Trajectory::Twist(turn),Trajectory::Twist(other))),
+            ("a rack",relative(Trajectory::Twist(slide),Trajectory::Twist(other)))] {
+            for _ in 0..8 {
+                let position = [rng.uniform(-5.,5.),rng.uniform(-5.,5.),rng.uniform(-5.,5.)];
+                let n = unit([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)]);
+                let du = unit(cross(n,[0.3,-0.4,0.86]));
+                let surface = SurfacePoint {position,du,dv:cross(n,du)};
+                let form = chart(&path,surface).unwrap();
+                assert_eq!(matches!(form,NormalVelocity::Affine {..}),name == "a rack","{name}");
+                for k in -12..=12 {
+                    let t = k as f64/5.;
+                    let actual = envelope::contact(surface,path.at(t).unwrap()).unwrap().normal_velocity;
+                    agree(form.at(t).unwrap(),actual,name);
+                }
+                let roll = Chart {path:&path,roll:[-PI,PI]};
+                let Ok(found) = roll.at_point_normal(position,n,roll.domain(),1e-9) else { continue };
+                for c in found {
+                    assert!(c.contact.normal_velocity.abs() <= 1e-9,"{name} at {}",c.root.time);
+                    contacts += 1;
+                }
+            }
+        }
+    }
+    assert!(contacts > 100,"{contacts} contacts read");
+    let s = SurfacePoint {position:[1.,2.,3.],du:[1.,0.,0.],dv:[0.,1.,0.]};
+    let (turn,a_screw,slide) = (screw(&mut rng,1.,0.),screw(&mut rng,1.,4.),screw(&mut rng,0.,4.));
+    let refused = |path: Trajectory| chart(&path,s).unwrap_err();
+    assert_eq!(refused(Trajectory::Twist(a_screw)),Uncharted::Motion);
+    assert_eq!(refused(Trajectory::Twist(slide)),Uncharted::Motion);
+    assert_eq!(refused(relative(Trajectory::Twist(a_screw),Trajectory::Twist(turn))),Uncharted::Motion);
+    assert_eq!(refused(relative(Trajectory::Twist(turn),Trajectory::Twist(a_screw))),Uncharted::Motion);
+    let nested = relative(relative(Trajectory::Twist(turn),Trajectory::Twist(turn)),Trajectory::Twist(turn));
+    assert_eq!(refused(nested),Uncharted::Motion);
+    let paced = Trajectory::Paced {path:Box::new(Trajectory::Twist(turn)),pace:Arc::new(Still)};
+    assert_eq!(refused(paced),Uncharted::Paced);
+    assert_eq!(refused(relative(Trajectory::Twist(turn),Trajectory::General(Arc::new(Still)))),Uncharted::Evaluated);
+}

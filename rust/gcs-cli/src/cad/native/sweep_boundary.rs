@@ -18,9 +18,9 @@ use super::*;
 use super::kernel::{Cell,Patterned};
 use gcs_core::{model::{Sketch,SolidDef},motion::Family,
     solid::{admission::Admission,cad,contracts,MaterialField,Millimetres,ProbeState,SpatialField,SweepContacts}};
-use gcs_core::solid::contact_trace::{Band,Columns,Layout,Sample,Station,TraceError,Tracer,Withheld,marked};
-pub(crate) use gcs_core::solid::contact_trace::{Inside,Sheet};
-use gcs_core::solid::contact_trace::Rows;
+use gcs_core::brep::swept::trace::{Band,Columns,Layout,Sample,Station,TraceError,Tracer,Withheld,marked};
+pub(crate) use gcs_core::brep::swept::trace::{Inside,Sheet};
+use gcs_core::brep::swept::trace::Rows;
 use gcs_core::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use gcs_core::space::{sub,dot,cross,norm,scale as scaled,distance};
 use std::f64::consts::TAU;
@@ -123,7 +123,7 @@ use gcs_core::brep::sweep::sheet::{MOST_COLUMNS,MOST_REFINEMENTS,MOST_ROWS};
 
 /// The candidate sheet grid of one swept solid whose contacts enter the blank
 /// `inside` describes, widened until its boundary lies outside: the core traces
-/// (`solid::contact_trace`), the native cutter's sections are what it traces. Each row
+/// (`brep::swept::trace`), the native cutter's sections are what it traces. Each row
 /// placement in turn is handed to `fitted`; the first it accepts is the sheet, and a sheet it
 /// refuses at the withheld contacts (a fit that misses or folds) passes to the next placement.
 /// Held to a `tolerance`, a sheet also withholds the middles of its cells' sides, and one that
@@ -132,8 +132,8 @@ use gcs_core::brep::sweep::sheet::{MOST_COLUMNS,MOST_REFINEMENTS,MOST_ROWS};
 fn swept_sheets(session: &Session,cut: &SweptCut,cutter: &Cutter,inside: Inside,placements: &[Rows],
     tolerance: Option<Tolerance>,fitted: &mut dyn FnMut(&Sheet) -> Result<Judged,ExportRefusal>) -> Result<Fitted,ExportRefusal> {
     let (scale,name) = (cut.scale,&cut.name);
-    let sweep = cut.contacts.as_ref().map_err(Clone::clone).at(Stage::Reach)?;
-    let tracer = Tracer {sweep,scale,inside,debug:tracing()};
+    let chart = cut.contacts.as_ref().map_err(Clone::clone).and_then(SweepContacts::chart).at(Stage::Reach)?;
+    let tracer = Tracer {chart,scale,inside,debug:tracing()};
     let started = std::time::Instant::now();
     let reach = session.reach(&cutter,&tracer).at(Stage::Reach)?;
     stage(&format!("`{name}`: contacts reach the blank over {:.1} degrees of stations and {} profile faces ({:?}: \

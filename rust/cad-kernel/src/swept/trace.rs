@@ -1,5 +1,5 @@
-//! A cutter's contact curves under a generating sweep, and the candidate sheet they make: the
-//! numerics of the native swept construction (docs/generating-sweeps.md), which a host feeds
+//! **A cutter's contact curves under a generating sweep, and the candidate sheet they make** (#721
+//! F2c): the numerics of the swept construction (docs/generating-sweeps.md), which a host feeds
 //! with sections of its own cutter. A **station** is one section of the cutter by a meridian
 //! half-plane, walked by augmented length (position length plus turning across convex corners;
 //! the host's own measure of position length, a drafted prism's its profile's); the host samples
@@ -10,16 +10,15 @@
 //! middles of its sides, for a sheet held to a tolerance and refined where its fit misses:
 //! `Layout`, `Grid`, `marked`). Positions are native millimetres, `scale` of them a model unit;
 //! the contact math runs in model units.
-use super::SweepContacts;
-use super::sweep_contacts::PointContactError;
-use crate::space::{scale as scaled,distance};
+use super::generating::{Chart,PointContactError};
+use crate::util::space::{scale as scaled,distance};
 use std::{cell::RefCell,collections::BTreeMap,f64::consts::TAU,fmt,sync::{Arc,Mutex}};
 
 type V = [f64;3];
 
 /// Whether points lie inside the blank, a sheet's grid and its contacts, and which a sheet
-/// withholds, are the kernel's (`brep::swept::sheet`, #721 F2b): what is here traces them.
-pub use crate::brep::swept::sheet::{Grid,Inside,Sheet,UNNAMED,Withheld,marked};
+/// withholds (`sheet`): what is here traces them.
+pub use super::sheet::{Grid,Inside,Sheet,UNNAMED,Withheld,marked};
 
 /// How far a contact's time may move in one step along a traced contact curve and still be
 /// the same root (radians of the motion's parameter).
@@ -194,11 +193,12 @@ impl Walked {
     }
 }
 
-/// The sweep, the blank and the units every station of one cutter is traced against.
+/// The sweep's contact times (`Chart`), the blank and the units every station of one cutter is
+/// traced against.
 /// `debug` prints where a station's contact curve ends, leaves the root window or runs away:
 /// the instruments that located the faults of the traced construction, kept for the next one.
 pub struct Tracer<'a> {
-    pub sweep: &'a SweepContacts,
+    pub chart: Chart<'a>,
     pub scale: f64,
     pub inside: Inside<'a>,
     pub debug: bool,
@@ -210,13 +210,13 @@ impl Tracer<'_> {
     /// sheet must still continue (those contacts lie on the envelope of a longer motion, and the
     /// classification decides what is exposed); a fixed window cut such curves off where their
     /// time crossed it, leaving a station ending inside the blank.
-    pub fn wide(&self) -> [f64;2] { let d = self.sweep.domain(); [d[0]-TAU,d[1]+TAU] }
+    pub fn wide(&self) -> [f64;2] { let d = self.chart.domain(); [d[0]-TAU,d[1]+TAU] }
 
     /// Every root of a cutter point's contact equation over `interval`, as native positions
     /// with their normals, times and which root each is.
     pub fn contacts(&self,sample: Sample,interval: [f64;2]) -> Result<Vec<Found>,TraceError> {
         let scale = self.scale;
-        let roots = self.sweep.at_point_normal_over(scaled(sample.position,1./scale),sample.normal,interval,1e-9)
+        let roots = self.chart.at_point_normal(scaled(sample.position,1./scale),sample.normal,interval,1e-9)
             .map_err(|e| match e {
                 // Constant zero (in contact at every time: a pole on the spin axis, or a revolution
                 // about the motion's own axis) and a double root (a point grazing at one time) are
@@ -226,6 +226,7 @@ impl Tracer<'_> {
                     construction needs one contact time per point",sample.position.map(|x| (x*1e4).round()/1e4),
                     sample.normal.map(|x| (x*1e4).round()/1e4))),
                 PointContactError::DegenerateNormal => TraceError::Degenerate(e.to_string()),
+                PointContactError::Uncharted(_) | PointContactError::Unsatisfied => TraceError::Failed(e.to_string()),
                 PointContactError::Failed(m) => TraceError::Failed(m),
             })?;
         Ok(roots.iter().map(|r| Found {position:scaled(r.contact.position,scale),normal:r.contact.normal,
@@ -252,7 +253,7 @@ impl Tracer<'_> {
     /// their walk lengths, and the anchor's place in it.
     pub fn trace(&self,station: &Station,margin: f64,extent: Extent) -> Result<Traced,TraceError> {
         let inside = self.inside;
-        let declared = self.sweep.domain();
+        let declared = self.chart.domain();
         let window = station.window;
         let wide = self.wide();
         let h = ROW_SPACING/4.;
@@ -439,7 +440,7 @@ impl Tracer<'_> {
     /// Whether any contact of the station, within the declared roll, lies in the blank.
     fn reaches(&self,station: &Station) -> Result<bool,TraceError> {
         let h = ROW_SPACING/4.;
-        let declared = self.sweep.domain();
+        let declared = self.chart.domain();
         let mut held = Vec::new();
         for i in 0..(station.length/h).ceil() as usize {
             let sample = (station.sample)(i as f64*h)?;
@@ -492,10 +493,10 @@ impl Tracer<'_> {
         // Pass 1: each station reaching the blank traced until it has left it by the margin; the
         // union of their spans of unfolded walk length is the sheet's row range. The columns are
         // sectioned and traced side by side, and what each says taken in their order.
-        let stations: Vec<Station> = crate::par::indices(columns,|c| station_at(angle_of(c as f64)))
+        let stations: Vec<Station> = crate::util::par::indices(columns,|c| station_at(angle_of(c as f64)))
             .into_iter().collect::<Result<_,_>>()?;
         let mut first: Vec<Option<Traced>> = Vec::with_capacity(columns);
-        for traced in crate::par::map(&stations,|station| self.trace(station,margin,Extent::Blank)) {
+        for traced in crate::util::par::map(&stations,|station| self.trace(station,margin,Extent::Blank)) {
             match traced {
                 Ok(t) => first.push(Some(t)),
                 Err(TraceError::Missed) => first.push(None),
@@ -510,7 +511,7 @@ impl Tracer<'_> {
         // their nearest reaching neighbour.
         let nearest = |c: usize| *reached.iter().min_by_key(|&&k| k.abs_diff(c)).unwrap();
         let beside = |c: usize| { let t = first[nearest(c)].as_ref().unwrap(); let p = t.curve[t.anchor]; (p.s,p.found.time) };
-        let traces: Vec<Traced> = crate::par::indices(columns,|c| {
+        let traces: Vec<Traced> = crate::util::par::indices(columns,|c| {
             let extent = Extent::Span {lo:lo_tau,hi:hi_tau,beside:if first[c].is_some() { None } else { Some(beside(c)) }};
             self.trace(&stations[c],margin,extent)
         }).into_iter().collect::<Result<_,_>>()?;
@@ -529,7 +530,7 @@ impl Tracer<'_> {
         }
         let rows = (((hi_tau-lo_tau)/ROW_SPACING).ceil() as usize).clamp(24,240);
         let taus: Vec<f64> = (0..rows).map(|r| lo_tau+(hi_tau-lo_tau)*r as f64/(rows-1) as f64).collect();
-        let columns_data: Vec<Vec<Found>> = crate::par::indices(columns,|c| self.along(&stations[c],&traces[c].curve,&taus))
+        let columns_data: Vec<Vec<Found>> = crate::util::par::indices(columns,|c| self.along(&stations[c],&traces[c].curve,&taus))
             .into_iter().collect::<Result<_,_>>()?;
         // The rows run on outside the blank only while every column is still one chart: the fit's
         // chord-length parameters are averaged over the columns, so one column's margin leaping to
@@ -580,7 +581,7 @@ impl<'t,'s> Columns<'t,'s> {
         let (row_coordinates,row_mids) = match placement {
             Rows::Walk => (taus[first_row..=last].to_vec(),self.middles.clone()),
             Rows::Length => {
-                let longest = crate::par::indices(columns,|c| tracer.length(&self.stations[c].0,&self.stations[c].1.curve,lo_tau,hi_tau))
+                let longest = crate::util::par::indices(columns,|c| tracer.length(&self.stations[c].0,&self.stations[c].1.curve,lo_tau,hi_tau))
                     .into_iter().collect::<Result<Vec<f64>,_>>()?.into_iter().fold(0_f64,f64::max);
                 let rows = ((longest/ROW_SPACING).ceil() as usize).clamp(24,240);
                 ((0..rows).map(|r| r as f64/(rows-1) as f64).collect(),(0..rows-1).map(|r| (r as f64+0.5)/(rows-1) as f64).collect())
@@ -768,7 +769,7 @@ impl<'s> Layout<'_,'s> {
             .chain(grid.column_mids.iter().map(|&a| (a,if withheld == Withheld::Sides {
                 vec![&grid.row_mids[..],&grid.rows[..]] } else { vec![&grid.row_mids[..]] })))
             .collect();
-        crate::par::map(&asks,|(angle,coordinates)| {
+        crate::util::par::map(&asks,|(angle,coordinates)| {
             let Ok(Some(entry)) = self.station(*angle) else { return };
             for c in coordinates { if self.at(*angle,&entry,c).is_err() { return } }
         });

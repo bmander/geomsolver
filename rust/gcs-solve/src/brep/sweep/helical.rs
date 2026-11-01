@@ -3,7 +3,7 @@
 use super::sheet::{Fitted,SweptCut};
 use super::Say;
 use crate::solid::constant_twist::Characteristic;
-use crate::solid::contact_trace::Inside;
+use crate::brep::swept::trace::Inside;
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 
 type V = [f64;3];

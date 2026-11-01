@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- Generating sweeps' contact times (`swept::generating`): a tool point's contact chart along a
+  trajectory that turns it (`chart`: a sinusoid in the roll under a turn or a turn seen from a
+  turn, a line under a slide seen from a turn), its roots (`NormalVelocity::roots`), the contact
+  times of a point or a surface over the roll (`Chart`), and what is not charted refused by what the
+  trajectory is (`Uncharted`).
+- A cutter sectioned at its stations (`swept::cutter`) and its stations' contact curves traced into
+  a candidate sheet (`swept::trace`).
 - Sweeps of a constant twist (`swept`): a tool read as its faces (`swept::tool::Tool`, faces of
   revolution in `swept::surface`) carried by a screw, a turn or a slide, the characteristic walked
   through a blank with its rows typed (`swept::constant_twist`), and its sheet fitted and judged to

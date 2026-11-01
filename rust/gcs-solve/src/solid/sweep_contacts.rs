@@ -3,7 +3,7 @@
 use super::ReadRevolved;
 use crate::fmath::Det;
 use super::{SpatialField,RevolvedSurface};
-use crate::{envelope::{self,Contact,Error,Motion},model::{EntRef,Sketch,SolidDef,EntKind},motion::Family};
+use crate::{envelope::Motion,model::{EntRef,Sketch,SolidDef,EntKind},motion::Family};
 use crate::space::{add,scale,sub};
 use std::{collections::BTreeSet,f64::consts::TAU};
 
@@ -179,33 +179,9 @@ pub struct SweepContacts {
     pub(super) whole: bool,
 }
 
-/// Why a point carrying a normal has no contact times: its normal is no direction, its contact
-/// equation is degenerate (in contact at every time, or only grazing, which the root finder
-/// cannot tell apart), or something failed that says nothing about the point.
-#[derive(Clone,Debug,PartialEq)]
-pub enum PointContactError { DegenerateNormal, Degenerate, Failed(String) }
-
-impl PointContactError {
-    fn of(e: Error) -> Self {
-        if e == Error::Degenerate { PointContactError::Degenerate } else { PointContactError::Failed(format!("{e:?}")) }
-    }
-}
-
-impl std::fmt::Display for PointContactError {
-    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            PointContactError::DegenerateNormal => f.write_str("degenerate normal"),
-            PointContactError::Degenerate => f.write_str("Degenerate"),
-            PointContactError::Failed(m) => f.write_str(m),
-        }
-    }
-}
-
-#[derive(Clone,Copy,Debug)]
-pub struct TimedContact {
-    pub root: crate::motion::ContactTime,
-    pub contact: Contact,
-}
+/// A point's contact times, and why it has none, are the kernel's (`brep::swept::generating`, #721
+/// F2c).
+pub use crate::brep::swept::generating::{Chart,PointContactError,TimedContact};
 
 impl SweepContacts {
     pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
@@ -342,21 +318,12 @@ impl SweepContacts {
     /// supplies the normal; nothing here checks that the edge actually carries it.
     pub fn at_point_normal_over(&self,position: [f64;3],normal: [f64;3],interval: [f64;2],tolerance: f64)
         -> Result<Vec<TimedContact>,PointContactError> {
-        let n = envelope::normalized(normal).ok_or(PointContactError::DegenerateNormal)?;
-        let seed = if n[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
-        let du = envelope::normalized(crate::plane::cross(seed,n)).ok_or(PointContactError::DegenerateNormal)?;
-        let dv = crate::plane::cross(n,du);
-        let surface = envelope::SurfacePoint {position,du,dv};
-        let roots = self.motion.normal_velocity(surface).map_err(PointContactError::Failed)?
-            .roots(interval,tolerance,4096).map_err(PointContactError::of)?;
-        roots.into_iter().map(|root| {
-            let contact = envelope::contact(surface,self.motion.at(root.time).map_err(PointContactError::Failed)?)
-                .map_err(PointContactError::of)?;
-            if contact.normal_velocity.abs() > tolerance {
-                return Err(PointContactError::Failed("point-normal contact failed the normal-velocity equation".into()));
-            }
-            Ok(TimedContact {root,contact})
-        }).collect()
+        self.chart().map_err(PointContactError::Failed)?.at_point_normal(position,normal,interval,tolerance)
+            .map_err(|e| match e {
+                PointContactError::Uncharted(u) => PointContactError::Failed(self.motion.uncharted(u)),
+                PointContactError::Unsatisfied => PointContactError::Failed(e.to_string()),
+                e => e,
+            })
     }
 
     /// The same chart over a caller-supplied motion interval. Contacts outside the
@@ -367,15 +334,14 @@ impl SweepContacts {
         -> Result<Vec<TimedContact>,String> {
         let surface = self.tool.faces.get(patch).ok_or("no such sweep patch")?.at(u,v)
             .map_err(|e| format!("{e:?}"))?;
-        let roots = self.motion.normal_velocity(surface)?.roots(interval,tolerance,4096)
-            .map_err(|e| format!("{e:?}"))?;
-        roots.into_iter().map(|root| {
-            let contact = envelope::contact(surface,self.motion.at(root.time)?)
-                .map_err(|e| format!("{e:?}"))?;
-            if contact.normal_velocity.abs() > tolerance {
-                return Err("temporal contact failed the original normal-velocity equation".into());
-            }
-            Ok(TimedContact {root,contact})
-        }).collect()
+        self.chart()?.at_surface(surface,interval,tolerance).map_err(|e| match e {
+            PointContactError::Uncharted(u) => self.motion.uncharted(u),
+            PointContactError::Unsatisfied => "temporal contact failed the original normal-velocity equation".into(),
+            e => e.to_string(),
+        })
     }
+
+    /// The sweep's contact times as the kernel reads them: the lowered motion and the roll
+    /// (`domain`).
+    pub fn chart(&self) -> Result<Chart<'_>,String> { Ok(Chart {path:self.motion.path()?,roll:self.roll}) }
 }

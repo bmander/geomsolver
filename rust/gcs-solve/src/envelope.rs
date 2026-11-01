@@ -24,7 +24,6 @@ type V3 = [f64; 3];
 /// A rigid pose and its rate, and why one could not be read, are the kernel's (#721 F2): the
 /// trajectory a sweep is carried along is read in them.
 pub use crate::brep::trajectory::{Motion, Error};
-pub(crate) use crate::brep::trajectory::normalized;
 
 /// A surface point with its two first derivatives, a point moving under a motion and the
 /// envelope's equation at it, and the bar on a tolerance, are the kernel's (#721 F2b).
