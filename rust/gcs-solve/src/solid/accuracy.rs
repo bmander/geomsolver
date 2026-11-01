@@ -597,7 +597,7 @@ impl Meter {
         let [cut] = cuts.as_slice() else { return refuse("with one cut") };
         let [stock] = statics.as_slice() else { return refuse("whose blank is one prism") };
         let pocket = super::planar_class::pocket(sk,cut.swept).map_err(|(_,m,_)| m)?;
-        let envelope = crate::envelope::planar::InnerEnvelope::read(sk,pocket.curve,pocket.motion,pocket.roll)
+        let envelope = <crate::envelope::planar::InnerEnvelope as crate::envelope::planar::ReadEnvelope>::read(sk,pocket.curve,pocket.motion,pocket.roll)
             .map_err(|e| e.to_string())?;
         let normal = envelope.normal();
         let Ok(slab) = super::planar_class::prism(sk,*stock as usize,normal) else {

@@ -18,7 +18,7 @@
 use crate::fmath::Det;
 use super::admission::{Basis,Class,Condition,Equivalence,Options,SweepEvidence};
 use crate::envelope::Motion;
-use crate::envelope::planar::InnerEnvelope;
+use crate::envelope::planar::{InnerEnvelope,ReadEnvelope};
 use crate::model::{EntKind,Sketch,SolidDef};
 use crate::space::{cross,dot,norm};
 

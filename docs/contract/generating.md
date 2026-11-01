@@ -842,7 +842,9 @@ curve over whole turns of its motion is closed (`Sketch::curve_closed`), a face'
 at its middle for the recipe. The rotor is a cut: its blank less the housing's wall swept over the
 period (`common` with a sweep keeps the union's, another set). A pocketed prism under a planar motion
 is admitted by rows P1–P5 (`solid::planar_class`): the pocket's inner envelope over a whole period
-(`envelope::planar::InnerEnvelope`, over a formula or generated source: contact roots per sample,
+(`envelope::planar::InnerEnvelope`, the kernel's `brep::swept::planar`, #721 F2c, its curve a
+`Section` and its material a `Region` the solver reads off the drawing, its refusals typed
+`Seen`/`Row` and said by `envelope::planar`; over a formula or generated source: contact roots per sample,
 kept where inside every pose, corners where an image recurs), built as the blank in common with
 its prism (`brep::sweep::planar`), metered as envelope × slab (`accuracy::Planar`). `claim over
 MOTION` advances the placements under it (`Sweep::motion`). A profile field's walls are boxed
@@ -859,7 +861,9 @@ is still built by its sheet (`extruded`), and a rack tooth with a cap in the bla
 itself, by its region (`rack_cut::a_rack_with_a_cap_in_the_blank_cuts_the_slab_it_spans`,
 `the_tooth_united_with_itself_cuts_as_the_tooth_does`: the two classes agree to 1e-5). The slabs are the blank cut at every member's cap within
 it, two next to each other with one section (every member undrafted, the same faces joined alike,
-`Subtraction::key`) read as one. In each, `envelope::swept_region` reads the region `R = ∪ₜ
+`Subtraction::key`) read as one. In each, `envelope::swept_region` reads the region (the kernel's `brep::swept::region`, #721
+F2c: the section's material its members' `PlanarField`s joined, `swept_region::section`, its
+refusals typed and said by `swept_region::said`) `R = ∪ₜ
 poseₜ(section)` within a box about the blank's shadow at every placement: its candidates are
 each line's contact (the foot of the perpendicular from the instant centre, `ν·(ωJx + b) = 0` in the
 tool's frame), each side of an arc's (`e ∥ ωc − Jb`), each corner's path while the line from the

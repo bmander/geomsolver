@@ -141,17 +141,9 @@ fn period(tool: &SpatialField, support: [I; 3], family: &crate::motion::Family) 
     }))
 }
 
-/// How many turns a period is looked for through.
-pub const PERIOD_TURNS: f64 = 12.0;
-
-/// The least roll after `from`, a `STEP` at a time within `turns` turns, at which `alike` says the
-/// tool stands where it stood at `from` — none where it does a step on (a tool the motion does not
-/// move, a ball on its axis, has no period).  Every period the core names is found by it
-/// (`period`, `swept_region::Setting::period`).
-pub fn first_alike(from: f64, turns: f64, alike: impl Fn(f64) -> bool) -> Option<f64> {
-    if alike(from + STEP) { return None; }
-    (2..=(turns * 360.0) as u32).map(|k| from + f64::from(k) * STEP).find(|&t| alike(t))
-}
+/// How many turns a period is looked for through, and the least roll after another at which a
+/// tool stands again where it stood, are the kernel's (`brep::swept::region`).
+pub use crate::brep::swept::region::{first_alike, PERIOD_TURNS};
 
 /// What a refusal says to state for a roll from `from` through a whole period to `to` (radians):
 /// the words every such refusal uses.

@@ -8,6 +8,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- The planar classes' readings: a closed curve's inner envelope under a planar motion
+  (`swept::planar`, its curve a `Section` and its material a `Region`, read in a `View`) and the
+  region a planar tool's section sweeps (`swept::region`), each refused by a typed row with a
+  witness. A planar profile edge (`plane2::Edge`: a line, an arc, a conic) and its readers.
 - A trajectory's pose alone (`Trajectory::pose`, `Pose`) and an interval bound on the speed it
   carries a point or a box back at (`Trajectory::inverse_point_speed_bound`, `_over`), read through
   a pace's value and enclosure (`Pace::value`, `Pace::enclose`) and a path's pose and stretch

@@ -59,8 +59,12 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `Uncharted` in the drawing's words, and `SweepContacts::chart` hands the tracer the lowered
   motion and the roll.  So is a ball's tube (`swept::canal`), its rows typed (`canal::Row`,
   `Seen`); `solid::canal` reads the ball off the tool's recipe, gates the tube against the sweep's
-  field and says its refusals.  The rest of the generating class (its admission rows and its
-  sector's build), the planar classes' readings and sheets, the trims and the closed solid move
+  field and says its refusals.  So are the planar classes' readings: a closed curve's inner
+  envelope under a planar motion (`swept::planar`) and the region a planar tool sweeps
+  (`swept::region`), each refusing by a typed row; `envelope::planar` and `envelope::swept_region`
+  read the curve, the section and their material (`PlanarField`) off the drawing and say the
+  refusals.  The rest of the generating class (its admission rows and its sector's build), the
+  planar classes' builds, the trims and the closed solid move
   with no change in behaviour; until each has, it is held where it is, and no new walk is built
   in the solver.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint

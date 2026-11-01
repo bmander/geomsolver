@@ -23,7 +23,7 @@
 use crate::fmath::Det;
 use super::admission::{Basis,Class,Condition,Equivalence,SweepEvidence};
 use crate::envelope::Motion;
-use crate::envelope::swept_region::{Plane,Section,Setting,SweptRegion,Tree};
+use crate::envelope::swept_region::{Plane,Setting,SweptRegion,Tree};
 use crate::model::{Sketch,SolidDef};
 use crate::solid::surface::Edge;
 use crate::space::{cross,dot,norm};
@@ -187,9 +187,10 @@ impl Subtraction {
     /// What the swept region at height `h` of the slab whose middle is `within` is read from: the
     /// section there, the motion, the plane and the roll.
     fn setting(&self,h: f64,within: f64) -> Result<Setting,Failure> {
-        let section = Section::new(self.members.iter().map(|m| m.at(h,within)).collect(),&self.tree)
+        let section = crate::envelope::swept_region::section(self.members.iter().map(|m| m.at(h,within)).collect(),&self.tree)
             .map_err(|e| (Condition::Members,format!("`{}`'s section: {e}",self.tool),None))?;
-        Ok(Setting {section,family:self.family.clone(),plane:self.plane,roll:self.roll,scale:self.scale})
+        let path = self.family.trajectory().map_err(|e| (Condition::Plane,e,None))?;
+        Ok(Setting {section,path,plane:self.plane,roll:self.roll,scale:self.scale})
     }
 
     /// Whether any member reaches height `h`.
@@ -261,6 +262,7 @@ impl Subtraction {
             let drafted = self.members.iter().any(|m| m.drafted.is_some() && m.reaches(h));
             let reach = [slab[0]-if slab[0] == heights[0] { past } else { 0. },slab[1]+if slab[1] == heights[1] { past } else { 0. }];
             let read = |z: f64,bounds: [P;2]| SweptRegion::read(if drafted { self.setting(z,h)? } else { setting.clone() },bounds,whole)
+                .map_err(|r| crate::envelope::swept_region::said(r,&self.family.name))
                 .map_err(|r| (r.row,r.message,r.witness.map(|p| poses[0].point(pl.world(p,z)))));
             let stations = if drafted { self.drafted(reach,h,&read,&boxed)? } else { vec![(h,read(h,boxed(1.))?)] };
             found.push(Slab {heights:slab,reach,stations});

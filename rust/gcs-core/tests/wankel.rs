@@ -5,7 +5,7 @@
 //! and built exactly — each held to its closed form.
 use crate::bore::seen;
 use crate::planar_envelope::{off_flank,rotor_area};
-use gcs_core::envelope::planar::InnerEnvelope;
+use gcs_core::envelope::planar::{InnerEnvelope,ReadEnvelope};
 use gcs_core::{brep,solid::admission};
 use std::f64::consts::PI;
 

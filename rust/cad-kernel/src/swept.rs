@@ -13,3 +13,5 @@ pub mod generating;
 pub mod trace;
 pub mod cutter;
 pub mod canal;
+pub mod planar;
+pub mod region;
