@@ -8,6 +8,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A plane through a cone's apex leaning to its axis by its half-angle meets it in the generator it
+  touches along, in closed form (`ssi::intersect`), where it was traced and refused as nearly
+  touching.
 - The closed swept solid of a polyhedral tool under a slide, or under a turn when its edges run
   along the axis or square to it (`swept::closed::closed`, `slid`): the candidate
   planes split a box holding the sweep, each cell kept by membership, the kept cells united;

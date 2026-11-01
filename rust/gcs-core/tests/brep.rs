@@ -253,6 +253,18 @@ fn surfaces_meet_in_curves_on_both() {
             }
         }
     }
+    // a plane through a cone's apex leaning to its axis by its half-angle touches it along one
+    // generator, its meeting that line (#721 X6: a swept face at an end pose against the cone its
+    // contact line turns into); on the cone's one nappe, from the apex on
+    let (sa,ca) = 0.4f64.sin_cos();
+    let cone = Surface::Cone(f([0.,0.,0.],z,x),1.,0.4);
+    let touching = Surface::Plane(f([0.,0.,-ca/sa],[ca,0.,-sa],y));
+    let Ssi::Curves(cs) = intersect(&cone,&touching,1e-9) else { panic!("a plane touching a cone: traced") };
+    let [c] = &cs[..] else { panic!("{cs:?}: one line") };
+    for t in (0..=10).map(|i| -1./sa+0.5*i as f64) {
+        let p = c.point(t);
+        assert!(cone.implicit(p).abs() < 1e-9 && touching.implicit(p).abs() < 1e-9,"{c:?} at {t}");
+    }
     // perpendicular cylinders of two radii, or of one with axes passing apart, have no closed form
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.5,0.],x,y),2.),1e-9),Ssi::Traced);
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,0.],x,y),1.),1e-9),Ssi::Traced);

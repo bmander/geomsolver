@@ -322,9 +322,25 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             // a plane through the axis: the two lines through the apex, its meridian either side
             let (pl,co) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cone(c,r,half) = co else { unreachable!() };
+            let (sa,ca) = half.dsin_cos();
+            // a plane through the apex leaning to the axis by the cone's own half-angle touches it
+            // along one generator, its meeting that line (twice over): the tangent line, where a
+            // swept face at an end pose meets the cone its contact line turns into (#721 X6). Judged
+            // by the gap, as a plane touching a cylinder is
+            if sa > 1e-12 && ca > 1e-12 {
+                let apex = sub(c.o,scale(c.z,r*ca/sa));
+                let lean = dot(pl.z,c.z).abs()-sa;
+                let radial = sub(pl.z,scale(c.z,dot(pl.z,c.z)));
+                if dot(pl.z,sub(apex,pl.o)).abs() <= tol && lean.abs() <= 1e-9 && norm(radial) > 1e-12 {
+                    let w = unit(radial);
+                    let line = |w: V| unit(add(scale(w,sa),scale(c.z,ca)));
+                    // of the two generators in the plane's normal's meridian, the one the plane holds
+                    let w = if dot(pl.z,line(w)).abs() <= dot(pl.z,line(scale(w,-1.))).abs() { w } else { scale(w,-1.) };
+                    return Ssi::Curves(vec![Curve::Line {p:add(c.o,scale(w,r)),d:line(w)}])
+                }
+            }
             if dot(pl.z,c.z).abs() > 1e-12 || dot(pl.z,sub(c.o,pl.o)).abs() > tol { return Ssi::Traced }
             let w = unit(cross(pl.z,c.z));
-            let (sa,ca) = half.dsin_cos();
             Ssi::Curves([w,scale(w,-1.)].into_iter()
                 .map(|w| Curve::Line {p:add(c.o,scale(w,r)),d:unit(add(scale(w,sa),scale(c.z,ca)))}).collect())
         }

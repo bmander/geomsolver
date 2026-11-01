@@ -176,6 +176,11 @@ it. It stays as the fast path where #699 D says so.
    separator is written. **So the arrangement past planes and cylinders waits on the Booleans
    meeting tangent and near-tangent surfaces robustly**: F4's kernel side, #699 E. It is that
    work, not more candidates, that the leaning tool, the screw and the curved tool all need next.
+   *Begun*: a plane tangent to a cone along a generator is met in closed form, the tangent line
+   (`ssi::intersect`; `brep::surfaces_meet_in_curves_on_both`), where it was traced and refused.
+   With it a leaning block's whole turn builds past the refusal, but the cells' union still comes
+   out short or not a manifold near the touches: the Booleans' topology at a touch along a line is
+   what is left.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
