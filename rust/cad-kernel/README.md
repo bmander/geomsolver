@@ -9,9 +9,8 @@ writes STEP. It has no dependencies, and native and WebAssembly builds produce i
 fabrication-grade STEP and STL for every solid that solver's language defines. There it is the
 default for every export, held to Open CASCADE as an oracle. It now stands as its own crate so it can
 be measured against other kernels on [brep-bench](https://github.com/bmander/brep-bench) and become
-a common kernel others can build on. Development happens in geomsolver (`rust/cad-kernel/`), and
-this repository is synced from there. Once the public API below settles, this repository becomes
-the home and geomsolver depends on it.
+a common kernel others can build on. It lives in geomsolver (`rust/cad-kernel/`), which releases
+it to crates.io; what changes in each release is in [CHANGELOG.md](CHANGELOG.md).
 
 ## What it does
 
@@ -45,8 +44,11 @@ https://bmander.github.io/brep-bench/.
 
 ```toml
 [dependencies]
-cad-kernel = { git = "https://github.com/bmander/cad-kernel" }
+cad-kernel = "0.1"
 ```
+
+Until the public API settles, a 0.x minor release may break it (a patch release never does), so
+pin the minor version you build against.
 
 ```rust
 use cad_kernel::boolean::{combined, Op};
@@ -66,7 +68,7 @@ assert!((volume(&drilled) - (1000. - 90. * std::f64::consts::PI)).abs() < 1e-6);
   several.
 - Edge fillets and chamfers, shelling and offsets, and a sweep of any section along any path.
 - STEP import.
-- The kernel's own test suite moved here from geomsolver.
+- The kernel's own test suite moved into the crate, out of geomsolver's.
 
 ## Licence
 

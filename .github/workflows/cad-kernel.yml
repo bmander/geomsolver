@@ -1,0 +1,164 @@
+# Release the B-rep kernel, rust/cad-kernel, to crates.io; docs/contract/brep.md says what a
+# release is.
+#
+# On a branch, record each change under the changelog's Unreleased heading
+# (rust/cad-kernel/CHANGELOG.md).  To release:
+#
+#     scripts/release-cad-kernel.sh prepare 0.2.0    # on a branch; open a pull request
+#     scripts/release-cad-kernel.sh tag              # on main, once it merges
+#     git push origin cad-kernel-v0.2.0
+#
+# The tag runs the whole fast suite at its commit (test.yml, called) and checks the crate as it
+# ships, then publishes it to crates.io and makes a GitHub release of the tag whose notes are the
+# changelog's section.  That release is never marked latest: `releases/latest` stays solventc's,
+# what scripts/install-solventc.sh fetches.  Run by hand (Actions -> cad-kernel -> Run workflow)
+# it checks the branch's crate at its manifest's version and publishes nothing.
+#
+# Once, before the first release, crates.io needs to know this workflow.  A crate that does not
+# exist yet cannot have a trusted publisher, so the first release publishes with a token:
+#   1. On crates.io, make an API token with the publish-new scope for the crate `cad-kernel`, and
+#      store it as the secret CARGO_REGISTRY_TOKEN of this repository's environment `crates-io`
+#      (Settings -> Environments; the first run makes the environment if it is not there).
+#   2. After the release, on crates.io: cad-kernel -> Settings -> Trusted Publishing -> GitHub,
+#      owner bmander, repository geomsolver, workflow cad-kernel.yml, environment crates-io.
+#   3. Delete the secret and revoke the token.  Every release after is published with a
+#      short-lived token from the run's OIDC identity, and no secret is stored.
+# The environment may also require a reviewer, or allow only tags `cad-kernel-v*` to deploy.
+name: cad-kernel
+
+on:
+  push:
+    tags: ['cad-kernel-v*']
+  workflow_dispatch:
+
+concurrency:
+  group: cad-kernel-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  # the gate every push has, at the tagged commit
+  test:
+    uses: ./.github/workflows/test.yml
+
+  crate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # main's history, to find the tagged commit on it
+
+      - name: The version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            v=${GITHUB_REF_NAME#cad-kernel-v}
+          else
+            v=$(sed -n 's/^version = "\(.*\)"$/\1/p' rust/cad-kernel/Cargo.toml | head -1)
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "cad-kernel $v"
+
+      - name: The tag names the crate's version, on main, with its changelog
+        if: github.ref_type == 'tag'
+        run: |
+          scripts/release-cad-kernel.sh check "${{ steps.version.outputs.version }}"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main ||
+            { echo "::error::$GITHUB_REF_NAME is not a commit on main"; exit 1; }
+
+      # the package as crates.io receives it, built from its own tarball
+      - name: Package
+        run: cargo package --manifest-path rust/Cargo.toml -p cad-kernel --locked
+
+      # and outside this workspace, where nothing of geomsolver's is near it
+      - name: The package's smoke test, alone
+        run: |
+          v=${{ steps.version.outputs.version }}
+          tar xzf "rust/target/package/cad-kernel-$v.crate" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/cad-kernel-$v"
+          cargo test
+
+      # docs.rs builds the same
+      - name: Documentation, without a warning
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --manifest-path rust/Cargo.toml -p cad-kernel --no-deps --locked
+
+      - name: WebAssembly
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --manifest-path rust/Cargo.toml -p cad-kernel --locked \
+              --target wasm32-unknown-unknown
+
+      # against the newest version on crates.io, once there is one: a patch release breaks
+      # nothing, and under 0.x a minor release may
+      - name: Is there a version to keep semver against
+        id: baseline
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+              -A "geomsolver release (github.com/bmander/geomsolver)" \
+              https://crates.io/api/v1/crates/cad-kernel)
+          case "$code" in
+            200) echo "published=true" >> "$GITHUB_OUTPUT" ;;
+            404) echo "published=false" >> "$GITHUB_OUTPUT"; echo "the first release" ;;
+            *) echo "::error::crates.io answered $code"; exit 1 ;;
+          esac
+      - uses: taiki-e/install-action@v2
+        if: steps.baseline.outputs.published == 'true'
+        with:
+          tool: cargo-semver-checks
+      - name: Semver
+        if: steps.baseline.outputs.published == 'true'
+        run: cargo semver-checks --manifest-path rust/Cargo.toml -p cad-kernel
+
+  publish:
+    needs: [test, crate]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write  # the OIDC identity crates.io trusts
+    env:
+      HAS_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      # the first release's token if one is stored (see the top), else trusted publishing
+      - uses: rust-lang/crates-io-auth-action@v1
+        if: env.HAS_TOKEN != 'true'
+        id: auth
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+        run: cargo publish --manifest-path rust/Cargo.toml -p cad-kernel --locked
+
+  release:
+    needs: [crate, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: The GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.crate.outputs.version }}
+        run: |
+          scripts/release-cad-kernel.sh notes "$VERSION" > notes.md
+          printf '\nhttps://crates.io/crates/cad-kernel/%s\n' "$VERSION" >> notes.md
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "cad-kernel $VERSION" --notes-file notes.md --latest=false
