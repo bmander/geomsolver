@@ -101,8 +101,17 @@ jobs:
         working-directory: dist
         run: sha256sum solventc-* | tee SHA256SUMS
 
+      # the notes run from the `v*` tag before this one, never from a kernel's `cad-kernel-v*`
+      # (cad-kernel.yml), which shares this repository's tags; and this release is the latest
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY"
-          --title "solventc $GITHUB_REF_NAME" --generate-notes --verify-tag
+        run: |
+          since=()
+          prev=$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" \
+              --jq '.[].ref | ltrimstr("refs/tags/")' |
+              sort -V | awk -v t="$GITHUB_REF_NAME" '$0 == t { q = p } { p = $0 } END { print q }')
+          [[ -n "$prev" ]] && since=(--notes-start-tag "$prev")
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
+              --title "solventc $GITHUB_REF_NAME" --generate-notes "${since[@]}" --verify-tag \
+              --latest
