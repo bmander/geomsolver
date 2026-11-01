@@ -323,6 +323,8 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let (pl,co) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cone(c,r,half) = co else { unreachable!() };
             let (sa,ca) = half.dsin_cos();
+            // the generator through the cone's point at the radial direction `w`
+            let line = |w: V| unit(add(scale(w,sa),scale(c.z,ca)));
             // a plane through the apex leaning to the axis by the cone's own half-angle touches it
             // along one generator, its meeting that line (twice over): the tangent line, where a
             // swept face at an end pose meets the cone its contact line turns into (#721 X6). Judged
@@ -333,7 +335,6 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 let radial = sub(pl.z,scale(c.z,dot(pl.z,c.z)));
                 if dot(pl.z,sub(apex,pl.o)).abs() <= tol && lean.abs() <= 1e-9 && norm(radial) > 1e-12 {
                     let w = unit(radial);
-                    let line = |w: V| unit(add(scale(w,sa),scale(c.z,ca)));
                     // of the two generators in the plane's normal's meridian, the one the plane holds
                     let w = if dot(pl.z,line(w)).abs() <= dot(pl.z,line(scale(w,-1.))).abs() { w } else { scale(w,-1.) };
                     return Ssi::Curves(vec![Curve::Line {p:add(c.o,scale(w,r)),d:line(w)}])
@@ -342,7 +343,7 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             if dot(pl.z,c.z).abs() > 1e-12 || dot(pl.z,sub(c.o,pl.o)).abs() > tol { return Ssi::Traced }
             let w = unit(cross(pl.z,c.z));
             Ssi::Curves([w,scale(w,-1.)].into_iter()
-                .map(|w| Curve::Line {p:add(c.o,scale(w,r)),d:unit(add(scale(w,sa),scale(c.z,ca)))}).collect())
+                .map(|w| Curve::Line {p:add(c.o,scale(w,r)),d:line(w)}).collect())
         }
         (Surface::Plane(_),Surface::Extrusion(..)) | (Surface::Extrusion(..),Surface::Plane(_))
             if norm(cross(f.z,g.z)) <= 1e-12 => {
@@ -418,6 +419,22 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
     }
 }
 
+/// A central conic's arc over `span` of its parameter as one rational quadratic B-spline of `n`
+/// equal stretches: each its ends on the curve (`at`) and its middle pole the curve's point at its
+/// middle pushed out from the `centre` by `1 / w(h)`, weighed `w(h)` (`h` the stretch's half; an
+/// ellipse's `cos h`, a hyperbola's `cosh h`), exact.
+fn conic_arc(centre: V,[a,b]: [f64;2],n: usize,at: &dyn Fn(f64) -> V,w: &dyn Fn(f64) -> f64) -> Option<Curve> {
+    let (mut poles,mut weights,mut knots) = (vec![at(a)],vec![1.],vec![0.;3]);
+    for k in 0..n {
+        let (s0,s1) = (a+(b-a)*k as f64/n as f64,a+(b-a)*(k+1) as f64/n as f64);
+        let wk = w(0.5*(s1-s0));
+        poles.extend([add(centre,scale(sub(at(0.5*(s0+s1)),centre),1./wk)),at(s1)]);
+        weights.extend([wk,1.]);
+        knots.extend(vec![(k+1) as f64;if k+1 == n { 3 } else { 2 }]);
+    }
+    Some(Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline::rational(2,knots,poles,weights).ok()?)))
+}
+
 /// **A plane and a quadric of revolution, met in closed form**: a surface of revolution whose
 /// meridian is a conic symmetric about the axis, `ρ² + β z² + γ z + δ = 0` in its frame (the
 /// hyperboloid a line turns into, `build`'s and the swept solid's, #721 X6), is a quadric, which a
@@ -488,7 +505,7 @@ fn plane_quadric(pl: &Frame,rf: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>>
         let tau = std::f64::consts::TAU;
         let mut cuts: Vec<f64> = cuts.into_iter().map(|x| x.rem_euclid(tau)).collect();
         cuts.sort_by(f64::total_cmp);
-        let at = |phi: f64,w: f64| ellipse.at([ea*phi.dcos()/w,eb*phi.dsin()/w,0.]);
+        let at = |phi: f64| ellipse.at([ea*phi.dcos(),eb*phi.dsin(),0.]);
         let mut out = Vec::new();
         for i in 0..cuts.len() {
             let (a0,a1) = (cuts[i],if i+1 < cuts.len() { cuts[i+1] } else { cuts[0]+tau });
@@ -496,15 +513,7 @@ fn plane_quadric(pl: &Frame,rf: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>>
             let hm = h0+p*mid.dcos()+q*mid.dsin();
             if !(a1-a0 > 1e-12) || hm < zlo || hm > zhi { continue }
             let n = ((a1-a0)/std::f64::consts::FRAC_PI_2).ceil().max(1.) as usize;
-            let (mut poles,mut weights,mut knots) = (vec![at(a0,1.)],vec![1.],vec![0.;3]);
-            for k in 0..n {
-                let (b0,b1) = (a0+(a1-a0)*k as f64/n as f64,a0+(a1-a0)*(k+1) as f64/n as f64);
-                let (bm,half) = (0.5*(b0+b1),0.5*(b1-b0));
-                poles.extend([at(bm,half.dcos()),at(b1,1.)]);
-                weights.extend([half.dcos(),1.]);
-                knots.extend(if k+1 == n { vec![(k+1) as f64;3] } else { vec![(k+1) as f64;2] });
-            }
-            out.push(Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline::rational(2,knots,poles,weights).ok()?)));
+            out.push(conic_arc(centre,[a0,a1],n,&at,&|h: f64| h.dcos())?);
         }
         return Some(out)
     }
@@ -516,20 +525,16 @@ fn plane_quadric(pl: &Frame,rf: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>>
     }
     let (ha,hb) = ((-f/l1).sqrt(),(f/l2).sqrt());
     let height = |p: V| rf.local(p)[2];
+    let h0 = height(centre);
     let mut out = Vec::new();
     for sigma in [1.,-1.] {
         let at = |tau: f64| add(centre,add(scale(e1,sigma*ha*cosh(tau)),scale(e2,hb*sinh(tau))));
         // the height along the branch, `h₀ + P cosh τ + Q sinh τ`; where it is each bound, as roots
         // in `e^τ` of a quadratic
-        let h0 = height(centre);
         let (p,q) = (sigma*ha*dot(rf.z,e1),hb*dot(rf.z,e2));
         let mut taus: Vec<f64> = Vec::new();
         for zb in [zlo,zhi] {
-            let (qa,qb,qc) = (0.5*(p+q),h0-zb,0.5*(p-q));
-            let roots: Vec<f64> = if qa.abs() <= 1e-15*(qb.abs()+qc.abs()) { vec![-qc/qb] } else {
-                let disc = qb*qb-4.*qa*qc;
-                if disc < 0. { vec![] } else { let r = disc.sqrt(); vec![(-qb-r)/(2.*qa),(-qb+r)/(2.*qa)] }
-            };
+            let roots = crate::util::roots::quadratic(0.5*(p+q),h0-zb,0.5*(p-q));
             taus.extend(roots.into_iter().filter(|x| *x > 0. && x.is_finite()).map(|x| x.dln()));
         }
         taus.sort_by(f64::total_cmp);
@@ -541,17 +546,7 @@ fn plane_quadric(pl: &Frame,rf: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>>
             if !(tb-ta > 1e-12) || !inside(0.5*(ta+tb)) { continue }
             // stretches short enough that each weight stays modest
             let n = ((tb-ta)/2.).ceil().max(1.) as usize;
-            let (mut poles,mut weights,mut knots) = (vec![at(ta)],vec![1.],vec![0.;3]);
-            for k in 0..n {
-                let (a0,a1) = (ta+(tb-ta)*k as f64/n as f64,ta+(tb-ta)*(k+1) as f64/n as f64);
-                let (tm,half) = (0.5*(a0+a1),0.5*(a1-a0));
-                let ch = cosh(half);
-                poles.push(add(centre,add(scale(e1,sigma*ha*cosh(tm)/ch),scale(e2,hb*sinh(tm)/ch))));
-                poles.push(at(a1));
-                weights.extend([ch,1.]);
-                knots.extend(if k+1 == n { vec![(k+1) as f64;3] } else { vec![(k+1) as f64;2] });
-            }
-            out.push(Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline::rational(2,knots,poles,weights).ok()?)));
+            out.push(conic_arc(centre,[ta,tb],n,&at,&cosh)?);
         }
     }
     Some(out)

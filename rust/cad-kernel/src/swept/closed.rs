@@ -38,10 +38,8 @@
 //! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — a curved
 //! face, a screw, another motion — is refused by what it is (`Unbuilt`); those are the design's
 //! later steps.
-#[allow(unused_imports)]
-use crate::util::fmath::Det;
 use crate::boolean::{Op,combined};
-use crate::build::{Profile,ProfileEdge,kept,prism,square};
+use crate::build::{Profile,ProfileEdge,disc,kept,prism,square};
 use crate::geom::{Curve,Frame,Surface};
 use crate::topo::{Brep,EdgeCurve};
 use crate::trajectory::Trajectory;
@@ -58,8 +56,6 @@ pub enum Unbuilt {
     Curved,
     /// The motion is no slide and no turn: the design's later steps.
     Motion,
-    /// Reserved: what a turn of a polyhedral tool cannot yet be built of.
-    Skew,
     /// A cell's membership could not be settled: its deepest point stands within the mesh's sag
     /// of the swept boundary.
     Unsettled { at: V },
@@ -281,48 +277,40 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
     let mut cells = vec![prism(&square(base,[0.,0.,1.],half),0.,2.*half)?];
     for cutter in cutters {
         let mut next = Vec::with_capacity(cells.len()*2);
+        // a curved cutter's solids, built once for every cell it may split, and its least radius
+        // over a stretch of heights (what `clear` asks)
+        let curved: Option<(V,V,[f64;2],Box<dyn Fn([f64;2]) -> f64>,Vec<Brep>)> = match cutter {
+            Cutter::Plane(_) => None,
+            Cutter::Revolved {o,axis,p,e,span} => {
+                let m = meridian(o,axis,p,e);
+                Some((o,axis,span,Box::new(move |[z0,z1]: [f64;2]| radius(m,m.1.clamp(z0,z1))),revolved(o,axis,p,e,span,eps)?))
+            }
+            Cutter::Cylinder {o,axis,r,span} =>
+                Some((o,axis,span,Box::new(move |_| r),vec![prism(&disc(add(o,scale(axis,span[0])),axis,r),0.,span[1]-span[0])?])),
+        };
         for cell in cells {
-            match cutter {
-                Cutter::Plane((o,n)) => {
-                    let side = |v: &crate::topo::Vertex| dot(sub(v.p,o),n);
-                    let (low,high) = cell.vertices.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),v| (l.min(side(v)),h.max(side(v))));
-                    if low >= -tol || high <= tol { next.push(cell); continue }
-                    for keep in [n,scale(n,-1.)] {
-                        let piece = kept(&cell,o,keep,tol)?;
-                        if !piece.faces.is_empty() { next.push(piece) }
-                    }
-                }
-                Cutter::Revolved {o,axis,p,e,span} if clear(&cell,o,axis,span,tol,&|[z0,z1]| {
-                    let (throat,height,k) = meridian(o,axis,p,e);
-                    let z = height.clamp(z0,z1);
-                    (throat*throat+k*k*(z-height)*(z-height)).sqrt()
-                }) => next.push(cell),
-                Cutter::Cylinder {o,axis,r,span} if clear(&cell,o,axis,span,tol,&|_| r) => next.push(cell),
-                Cutter::Revolved {o,axis,p,e,span} => {
-                    // the solid the line's image over its span bounds, the cell split by each piece
-                    let solids = revolved(o,axis,p,e,span,eps)?;
-                    let mut pieces = vec![cell];
-                    for solid in solids {
-                        let mut split = Vec::new();
-                        for piece in pieces {
-                            for op in [Op::Common,Op::Cut] {
-                                let part = combined(&piece,&solid,op,tol).map_err(|e| e.msg)?;
-                                if !part.faces.is_empty() { split.push(part) }
-                            }
+            if let Some((o,axis,span,least,solids)) = &curved {
+                if clear(&cell,*o,*axis,*span,tol,least) { next.push(cell); continue }
+                // the cell split by each solid, in common and cut away
+                let mut pieces = vec![cell];
+                for solid in solids {
+                    let mut split = Vec::new();
+                    for piece in pieces {
+                        for op in [Op::Common,Op::Cut] {
+                            let part = combined(&piece,solid,op,tol).map_err(|e| e.msg)?;
+                            if !part.faces.is_empty() { split.push(part) }
                         }
-                        pieces = split;
                     }
-                    next.extend(pieces);
+                    pieces = split;
                 }
-                Cutter::Cylinder {o,axis,r,span} => {
-                    let foot = add(o,scale(axis,span[0]));
-                    let disc = Profile {origin:foot,normal:axis,loops:vec![vec![ProfileEdge::Arc {frame:Frame::about(foot,axis),r,span:None}]],
-                        names:Vec::new()};
-                    let solid = prism(&disc,0.,span[1]-span[0])?;
-                    for op in [Op::Common,Op::Cut] {
-                        let piece = combined(&cell,&solid,op,tol).map_err(|e| e.msg)?;
-                        if !piece.faces.is_empty() { next.push(piece) }
-                    }
+                next.extend(pieces);
+            } else if let Cutter::Plane((o,n)) = cutter {
+                let side = |v: &crate::topo::Vertex| dot(sub(v.p,o),n);
+                let (low,high) = cell.vertices.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),v| (l.min(side(v)),h.max(side(v))));
+                if low >= -tol || high <= tol { next.push(cell); continue }
+                for keep in [n,scale(n,-1.)] {
+                    let piece = kept(&cell,o,keep,tol)?;
+                    if !piece.faces.is_empty() { next.push(piece) }
                 }
             }
         }
@@ -446,43 +434,31 @@ fn meridian(o: V,axis: V,p: V,e: V) -> (f64,f64,f64) {
 /// quadratic (`meridian_arc`); a cone's a line, a solid on either side of its apex where the span
 /// holds it.
 fn revolved(o: V,axis: V,p: V,e: V,[z0,z1]: [f64;2],eps: f64) -> Result<Vec<Brep>,String> {
-    let (throat,height,k) = meridian(o,axis,p,e);
-    let f = Frame::about(o,axis);
-    let at = |r: f64,z: f64| add(add(o,scale(f.x,r)),scale(axis,z));
-    let turn = |meridian: ProfileEdge,a: [f64;2],b: [f64;2]| {
-        let profile = Profile {origin:o,normal:f.y,names:Vec::new(),loops:vec![vec![
-            ProfileEdge::Line {a:at(0.,a[1]),b:at(a[0],a[1])},meridian,
-            ProfileEdge::Line {a:at(b[0],b[1]),b:at(0.,b[1])},ProfileEdge::Line {a:at(0.,b[1]),b:at(0.,a[1])}]]};
-        crate::build::revolve(&profile,o,axis,std::f64::consts::TAU)
-    };
-    let rho = |z: f64| (throat*throat+k*k*(z-height)*(z-height)).sqrt();
+    let m = meridian(o,axis,p,e);
+    let (throat,height,_) = m;
     if throat <= eps {
-        // a cone: a frustum on each side of the apex the span reaches
+        // a cone: a frustum on each side of the apex the span reaches (its end there a point)
         let mut out = Vec::new();
         for (lo,hi) in [(z0,z1.min(height)),(z0.max(height),z1)] {
             if !(hi-lo > eps) { continue }
-            let (a,b) = ([rho(lo),lo],[rho(hi),hi]);
-            if a[0] <= eps && b[0] <= eps { continue }
-            // a frustum's end at the apex is a point: its side's line closes onto the axis there
-            if a[0] <= eps {
-                let profile = Profile {origin:o,normal:f.y,names:Vec::new(),loops:vec![vec![
-                    ProfileEdge::Line {a:at(0.,lo),b:at(b[0],hi)},ProfileEdge::Line {a:at(b[0],hi),b:at(0.,hi)},
-                    ProfileEdge::Line {a:at(0.,hi),b:at(0.,lo)}]]};
-                out.push(crate::build::revolve(&profile,o,axis,std::f64::consts::TAU)?);
-            } else if b[0] <= eps {
-                let profile = Profile {origin:o,normal:f.y,names:Vec::new(),loops:vec![vec![
-                    ProfileEdge::Line {a:at(0.,lo),b:at(a[0],lo)},ProfileEdge::Line {a:at(a[0],lo),b:at(0.,hi)},
-                    ProfileEdge::Line {a:at(0.,hi),b:at(0.,lo)}]]};
-                out.push(crate::build::revolve(&profile,o,axis,std::f64::consts::TAU)?);
-            } else {
-                out.push(turn(ProfileEdge::Line {a:at(a[0],a[1]),b:at(b[0],b[1])},a,b)?);
-            }
+            let snap = |r: f64| if r <= eps { 0. } else { r };
+            let (a,b) = (snap(radius(m,lo)),snap(radius(m,hi)));
+            if a == 0. && b == 0. { continue }
+            out.push(crate::build::cone(add(o,scale(axis,lo)),axis,a,b,hi-lo)?);
         }
         return Ok(out)
     }
-    let (a,b) = ([rho(z0),z0],[rho(z1),z1]);
-    Ok(vec![turn(meridian_arc(&at,(throat,height,k),a,b)?,a,b)?])
+    let f = Frame::about(o,axis);
+    let at = |r: f64,z: f64| add(add(o,scale(f.x,r)),scale(axis,z));
+    let (a,b) = ([radius(m,z0),z0],[radius(m,z1),z1]);
+    let profile = Profile {origin:o,normal:f.y,names:Vec::new(),loops:vec![vec![
+        ProfileEdge::Line {a:at(0.,a[1]),b:at(a[0],a[1])},meridian_arc(&at,m,a,b)?,
+        ProfileEdge::Line {a:at(b[0],b[1]),b:at(0.,b[1])},ProfileEdge::Line {a:at(0.,b[1]),b:at(0.,a[1])}]]};
+    Ok(vec![crate::build::revolve(&profile,o,axis,std::f64::consts::TAU)?])
 }
+
+/// The radius `√(throat² + k² (z − height)²)` of the meridian `(throat, height, k)` at height `z`.
+fn radius((throat,height,k): (f64,f64,f64),z: f64) -> f64 { (throat*throat+k*k*(z-height)*(z-height)).sqrt() }
 
 /// How the nearest or farthest of a convex tool's slice about the axis runs with the height `z`
 /// along it: through the slice's corner on an edge (`ρ² = throat² + k² (z − height)²`, the edge's
@@ -502,6 +478,7 @@ enum Reach { Edge(usize),Face(usize),Axis }
 /// the axis crosses a face, so the profile is cut there, each stretch read at its middle, and
 /// turned whole (`build::revolve`): exact, its hyperbolas rational quadratics.
 fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,tol: f64) -> Result<Brep,Unbuilt> {
+    let f = Frame::about(c,axis);
     let height = |p: V| dot(sub(p,c),axis);
     let mut heights: Vec<f64> = edges.iter().flat_map(|&(p,q,_)| [height(p),height(q)]).collect();
     heights.sort_by(f64::total_cmp);
@@ -528,7 +505,7 @@ fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,
         Reach::Axis => [0.;3],
     } };
     let rho = |r: Reach,z: f64| -> f64 { match r {
-        Reach::Edge(i) => { let (t,h,k) = meridians[i]; (t*t+k*k*(z-h)*(z-h)).sqrt() }
+        Reach::Edge(i) => radius(meridians[i],z),
         Reach::Face(f) => { let (al,be) = lines[f].unwrap(); (al*z+be).abs() }
         Reach::Axis => 0.,
     } };
@@ -558,18 +535,9 @@ fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,
             for &s in &candidates[i+1..] {
                 let ([a1,b1,c1],[a2,b2,c2]) = (squared(r),squared(s));
                 let (qa,qb,qc) = (a1-a2,b1-b2,c1-c2);
-                let scale_of = qa.abs().max(qb.abs()).max(qc.abs());
-                if qa.abs() <= 1e-14*scale_of {
-                    if qb != 0. { cuts.push(-qc/qb) }
-                    continue
-                }
-                // the touch (a double root) and either root
-                cuts.push(-qb/(2.*qa));
-                let disc = qb*qb-4.*qa*qc;
-                if disc > 0. {
-                    let q = -0.5*(qb+qb.signum()*disc.sqrt());
-                    cuts.extend([q/qa,qc/q]);
-                }
+                // either root, and where they touch (a double root)
+                if qa.abs() > 1e-14*(qb.abs()+qc.abs()) { cuts.push(-qb/(2.*qa)) }
+                cuts.extend(crate::util::roots::quadratic(qa,qb,qc));
             }
         }
         cuts.retain(|&z| z.is_finite() && (z == z0 || z == z1 || inside(z)));
@@ -582,7 +550,6 @@ fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,
                 let (p,q,_) = edges[i];
                 let (hp,hq) = (height(p),height(q));
                 let x = add(p,scale(sub(q,p),(z-hp)/(hq-hp)));
-                let f = Frame::about(c,axis);
                 let r = sub(x,c);
                 [dot(r,f.x),dot(r,f.y)]
             };
@@ -620,7 +587,6 @@ fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,
         out
     };
     let (outer,inner) = (runs(&|s| s.1),runs(&|s| s.2));
-    let f = Frame::about(c,axis);
     let at = |r: f64,z: f64| add(add(c,scale(f.x,r)),scale(axis,z));
     // the profile's corners: where two runs meet, the radius both reach (their mean, rounding apart)
     let joints = |runs: &[([f64;2],Reach)]| -> Vec<[f64;2]> {
@@ -635,8 +601,7 @@ fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,
     };
     let (mut po,mut pi) = (joints(&outer),joints(&inner));
     // the profile closes at its bottom and top: where the farthest and nearest meet, one point
-    for k in [0,po.len()-1] {
-        let j = if k == 0 { 0 } else { pi.len()-1 };
+    for (k,j) in [(0,0),(po.len()-1,pi.len()-1)] {
         if (po[k][0]-pi[j][0]).abs() <= eps { pi[j] = po[k] }
     }
     for p in po.iter_mut().chain(pi.iter_mut()) { if p[0] <= eps { p[0] = 0. } }
@@ -666,8 +631,7 @@ fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,
 fn meridian_arc(at: &dyn Fn(f64,f64) -> V,(throat,height,k): (f64,f64,f64),a: [f64;2],b: [f64;2]) -> Result<ProfileEdge,String> {
     let line = ProfileEdge::Line {a:at(a[0],a[1]),b:at(b[0],b[1])};
     if k == 0. || throat <= 1e-12*(1.+a[0].max(b[0])) { return Ok(line) }
-    let rho = |z: f64| (throat*throat+k*k*(z-height)*(z-height)).sqrt();
-    let slope = |z: f64| k*k*(z-height)/rho(z);
+    let slope = |z: f64| k*k*(z-height)/radius((throat,height,k),z);
     let (ta,tb) = ([slope(a[1]),1.],[slope(b[1]),1.]);
     let det = -ta[0]*tb[1]+ta[1]*tb[0];
     if det.abs() <= 1e-12 { return Ok(line) }
@@ -677,11 +641,9 @@ fn meridian_arc(at: &dyn Fn(f64,f64) -> V,(throat,height,k): (f64,f64,f64),a: [f
     let mid = [0.5*(a[0]+b[0]),0.5*(a[1]+b[1])];
     let (dr,dz,zr) = (m[0]-mid[0],m[1]-mid[1],mid[1]-height);
     let (qa,qb,qc) = (dr*dr-k*k*dz*dz,2.*(mid[0]*dr-k*k*zr*dz),mid[0]*mid[0]-throat*throat-k*k*zr*zr);
-    let disc = qb*qb-4.*qa*qc;
-    if !(disc >= 0.) { return Err("a hyperboloid's meridian has no shoulder".into()) }
-    let u = [(-qb-disc.sqrt())/(2.*qa),(-qb+disc.sqrt())/(2.*qa)].into_iter().filter(|u| *u > 0. && *u < 1.)
-        .fold(f64::NAN,|x,y| if x.is_nan() { y } else { x.min(y) });
-    if !(u > 0. && u < 1.) { return Err("a hyperboloid's meridian's shoulder is not between its chord and its tangents".into()) }
+    let Some(u) = crate::util::roots::quadratic(qa,qb,qc).into_iter().find(|u| *u > 0. && *u < 1.) else {
+        return Err("a hyperboloid's meridian has no shoulder between its chord and its tangents".into())
+    };
     let conic = crate::nurbs::BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],vec![at(a[0],a[1]),at(m[0],m[1]),at(b[0],b[1])],vec![1.,u/(1.-u),1.])?;
     Ok(ProfileEdge::Spline(std::sync::Arc::new(conic)))
 }

@@ -17,7 +17,7 @@ use crate::topo::Brep;
 use crate::trajectory::Trajectory;
 use crate::util::bvh::{Bounds,Bvh};
 use crate::util::interval::Interval;
-use crate::util::space::{add,cross,dot,norm,scale,sub};
+use crate::util::space::{closest_on_triangle,cross,distance,dot,norm,sub};
 
 type V = [f64;3];
 
@@ -51,9 +51,9 @@ impl Solid {
     /// The distance from `p` to the meshed boundary.
     pub fn distance(&self,p: V) -> f64 {
         let best = std::cell::Cell::new(f64::INFINITY);
-        self.tree.query_nearest(|b| box_gap(b,p),|| best.get(),|i| {
+        self.tree.query_nearest(|b| b.gap(Bounds {lo:p,hi:p}),|| best.get(),|i| {
             let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
-            let d = norm(sub(p,closest(p,a,b,c)));
+            let d = distance(p,closest_on_triangle(p,a,b,c).0);
             if d < best.get() { best.set(d) }
         });
         best.get()
@@ -77,33 +77,6 @@ impl Solid {
         let d = self.distance(p);
         if self.winding(p) > 0.5 { -d } else { d }
     }
-}
-
-/// How far a box stands from `p`.
-fn box_gap(b: Bounds<3>,p: V) -> f64 {
-    let d: V = std::array::from_fn(|k| (b.lo[k]-p[k]).max(p[k]-b.hi[k]).max(0.));
-    norm(d)
-}
-
-/// The point of triangle `abc` nearest `p` (Ericson, Real-Time Collision Detection, 5.1.5).
-fn closest(p: V,a: V,b: V,c: V) -> V {
-    let (ab,ac,ap) = (sub(b,a),sub(c,a),sub(p,a));
-    let (d1,d2) = (dot(ab,ap),dot(ac,ap));
-    if d1 <= 0. && d2 <= 0. { return a }
-    let bp = sub(p,b);
-    let (d3,d4) = (dot(ab,bp),dot(ac,bp));
-    if d3 >= 0. && d4 <= d3 { return b }
-    let vc = d1*d4-d3*d2;
-    if vc <= 0. && d1 >= 0. && d3 <= 0. { return add(a,scale(ab,d1/(d1-d3))) }
-    let cp = sub(p,c);
-    let (d5,d6) = (dot(ab,cp),dot(ac,cp));
-    if d6 >= 0. && d5 <= d6 { return c }
-    let vb = d5*d2-d1*d6;
-    if vb <= 0. && d2 >= 0. && d6 <= 0. { return add(a,scale(ac,d2/(d2-d6))) }
-    let va = d3*d6-d5*d4;
-    if va <= 0. && d4-d3 >= 0. && d5-d6 >= 0. { return add(b,scale(sub(c,b),(d4-d3)/((d4-d3)+(d5-d6)))) }
-    let denom = 1./(va+vb+vc);
-    add(a,add(scale(ab,vb*denom),scale(ac,vc*denom)))
 }
 
 /// Why a point's membership is not settled: it stands within the mesh's sag of the swept boundary
@@ -130,7 +103,10 @@ impl Swept<'_> {
             if reads > MOST_READS { return Err(near.map_or(Unsettled::Unbounded,|at| Unsettled::Near {at})) }
             let m = 0.5*(lo+hi);
             let pose = self.path.pose(m).map_err(|e| Unsettled::Unread(e.msg))?;
-            let d = self.tool.signed_distance(pose.inverse().point(x));
+            // the side, by the winding number, only where the distance can settle either way
+            let back = pose.inverse().point(x);
+            let mut d = self.tool.distance(back);
+            if d > sag && self.tool.winding(back) > 0.5 { d = -d }
             if d < -sag { return Ok(true) }
             let h = 0.5*(hi-lo);
             if d-sag > speed*h { continue }

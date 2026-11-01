@@ -8,22 +8,14 @@
 //! an L-shaped prism's sweep is its two blocks' sweeps united (`sweep(A ∪ B) = sweep(A) ∪
 //! sweep(B)`), each built alone; and every built solid's points agree with membership at seeded
 //! points. Sampled where it samples.
-use gcs_core::brep::build::{Profile,ProfileEdge,prism};
+use crate::brep::{block,simpson};
 use gcs_core::brep::boolean::{Op,combined};
 use gcs_core::brep::props::volume;
-use gcs_core::brep::swept::closed::slid;
+use gcs_core::brep::swept::closed::{closed,slid};
 use gcs_core::brep::swept::member::{Solid,Swept};
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::{Screw,Trajectory};
 use gcs_core::space::{norm,unit};
-
-/// The block with corners `lo` and `hi`.
-fn block(lo: [f64;3],hi: [f64;3]) -> Brep {
-    let at = |x: f64,y: f64| [x,y,lo[2]];
-    let c = [at(lo[0],lo[1]),at(hi[0],lo[1]),at(hi[0],hi[1]),at(lo[0],hi[1])];
-    let edges = (0..4).map(|k| ProfileEdge::Line {a:c[k],b:c[(k+1)%4]}).collect();
-    prism(&Profile {origin:lo,normal:[0.,0.,1.],loops:vec![edges],names:Vec::new()},0.,hi[2]-lo[2]).unwrap()
-}
 
 /// The slide carrying a tool by `d` over the roll `[0, 1]`.
 fn slide(d: [f64;3]) -> Trajectory {
@@ -88,7 +80,7 @@ fn a_bar_turned_about_a_line_along_it_closes_into_its_swept_region() {
     let (x,y,h,theta) = ([2.,4.],[-0.25,0.25],1.,std::f64::consts::FRAC_PI_2);
     let tool = block([x[0],y[0],0.],[x[1],y[1],h]);
     let path = turn([0.;3],[0.,0.,1.],theta);
-    let built = gcs_core::brep::swept::closed::closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
     let (rmin,rmax) = (x[0],x[1].hypot(y[1]));
     agrees(&built,&tool,&path);
     // past the far face, `r > x₁`, a circle meets the block in two arcs, one at each far corner, and
@@ -100,11 +92,11 @@ fn a_bar_turned_about_a_line_along_it_closes_into_its_swept_region() {
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
 }
 
-/// What the build refuses it refuses by what the tool and the motion are: a block leaning to the
-/// axis (its edges turn into hyperboloids) and a screw, the design's later steps.
+/// What the build refuses it refuses by what the tool and the motion are: a screw, the design's
+/// later step.
 #[test]
 fn what_the_closed_build_cannot_yet_build_it_names() {
-    use gcs_core::brep::swept::closed::{Unbuilt,closed};
+    use gcs_core::brep::swept::closed::Unbuilt;
     let tool = block([2.,0.,0.],[3.,1.,1.]);
     let screw = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:2.});
     assert_eq!(closed(&tool,&screw,[0.,1.],0.01,1e-7).unwrap_err(),Unbuilt::Motion);
@@ -119,16 +111,7 @@ fn leaning(lean: f64,off: f64) -> Brep {
 /// The radii a convex tool's slice at height `z` spans about the world's `z` axis: the nearest of
 /// it and the farthest, its edges cut by the slice.
 fn spans(tool: &Brep,z: f64) -> Option<(f64,f64)> {
-    let pts: Vec<[f64;2]> = tool.edges.iter().filter_map(|e| {
-        let (p,q) = (e.point(e.t[0],&tool.vertices),e.point(e.t[1],&tool.vertices));
-        if (p[2]-z)*(q[2]-z) > 0. || p[2] == q[2] { return None }
-        let t = (z-p[2])/(q[2]-p[2]);
-        Some([p[0]+t*(q[0]-p[0]),p[1]+t*(q[1]-p[1])])
-    }).collect();
-    if pts.len() < 3 { return None }
-    let c = [pts.iter().map(|p| p[0]).sum::<f64>()/pts.len() as f64,pts.iter().map(|p| p[1]).sum::<f64>()/pts.len() as f64];
-    let mut ring = pts.clone();
-    ring.sort_by(|a,b| (a[1]-c[1]).atan2(a[0]-c[0]).total_cmp(&(b[1]-c[1]).atan2(b[0]-c[0])));
+    let ring = slice(tool,z)?;
     let far = ring.iter().map(|p| p[0].hypot(p[1])).fold(0.,f64::max);
     // the slice holds the axis where the origin is left of every side of the ring
     let holds = (0..ring.len()).all(|k| {
@@ -170,40 +153,31 @@ fn a_block_straddling_the_axis_tipped_two_ways_turned_whole_is_its_solid_of_revo
 /// `tool` turned a whole turn about the world's `z` axis, held to the volume of its slices' radial
 /// spans and to membership.
 fn turned_whole_is_its_solid_of_revolution(tool: &Brep) {
-    let tool = tool.clone();
     let path = turn([0.;3],[0.,0.,1.],std::f64::consts::TAU);
-    let built = gcs_core::brep::swept::closed::closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
-    let mut heights: Vec<f64> = tool.vertices.iter().map(|v| v.p[2]).collect();
+    let built = closed(tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = between_vertices(&[tool],4000,&|z| spans(tool,z).map_or(0.,|(near,far)| std::f64::consts::PI*(far*far-near*near)));
+    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    agrees(&built,tool,&path);
+}
+
+/// `∫ area(z) dz` over the heights the `parts`' vertices stand at, by Simpson's rule on `n` steps
+/// between each two (the slices' combinatorics, so `area`'s kinks, change only there).
+fn between_vertices(parts: &[&Brep],n: usize,area: &dyn Fn(f64) -> f64) -> f64 {
+    let mut heights: Vec<f64> = parts.iter().flat_map(|t| t.vertices.iter().map(|v| v.p[2])).collect();
     heights.sort_by(f64::total_cmp);
     heights.dedup_by(|a,b| (*a-*b).abs() < 1e-12);
-    let area = |z: f64| spans(&tool,z).map_or(0.,|(near,far)| std::f64::consts::PI*(far*far-near*near));
-    let mut expected = 0.;
-    for w in heights.windows(2) {
-        let n = 4000;
-        let h = (w[1]-w[0])/n as f64;
-        expected += h/3.*(0..=n).map(|k| {
-            let z = (w[0]+h*k as f64).clamp(w[0]+1e-12,w[1]-1e-12);
-            area(z)*if k == 0 || k == n { 1. } else if k%2 == 1 { 4. } else { 2. }
-        }).sum::<f64>();
-    }
-    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
-    agrees(&built,&tool,&path);
+    heights.windows(2).map(|w| simpson(w[0],w[1],n,|z| area(z.clamp(w[0]+1e-12,w[1]-1e-12)))).sum()
 }
 
 /// The volume `tool` sweeps turned by `angle` about the world's `z` axis, apart from the build:
 /// each slice's swept area `∫ L(ρ) ρ dρ`, `L` the angle the circle of radius `ρ` sweeps (its arcs
 /// within the slice, each carried through the turn, united), by Gauss–Legendre between the radii
 /// where `L` turns (the slice's corners' and its sides' feet), cut `pieces` times more; and the
-/// areas by Simpson's rule on `n` steps between the heights the tool's vertices stand at.
-fn turned_volume(tool: &Brep,angle: f64,n: usize,pieces: usize) -> f64 { turned_volume_of(&[tool],angle,n,pieces) }
-
-/// `turned_volume` of the tool that is the union of the convex `parts`: on each circle the arcs of
+/// areas by Simpson's rule on `n` steps between the heights the tool's vertices stand at
+/// (`between_vertices`). The tool is the union of the convex `parts`: on each circle the arcs of
 /// every part's slice, each carried through the turn, united.
-fn turned_volume_of(parts: &[&Brep],angle: f64,n: usize,pieces: usize) -> f64 {
+fn turned_volume(parts: &[&Brep],angle: f64,n: usize,pieces: usize) -> f64 {
     use std::f64::consts::TAU;
-    // the 8-point Gauss–Legendre rule on [−1, 1]
-    const X: [f64;4] = [0.1834346424956498,0.5255324099163290,0.7966664774136267,0.9602898564975363];
-    const W: [f64;4] = [0.3626837833783620,0.3137066458778873,0.2223810344533745,0.1012285362903763];
     // the arcs of the circle of radius `r` within a convex slice, by angle
     let arcs = |ring: &[[f64;2]],r: f64| -> Vec<[f64;2]> {
         let inside = |phi: f64| { let p = [r*phi.cos(),r*phi.sin()]; (0..ring.len()).all(|k| {
@@ -263,26 +237,16 @@ fn turned_volume_of(parts: &[&Brep],angle: f64,n: usize,pieces: usize) -> f64 {
             for p in 0..pieces {
                 let (r0,r1) = (w[0]+(w[1]-w[0])*p as f64/pieces as f64,w[0]+(w[1]-w[0])*(p+1) as f64/pieces as f64);
                 let (m,h) = (0.5*(r0+r1),0.5*(r1-r0));
-                for (x,wt) in X.iter().zip(W) { for r in [m-h*x,m+h*x] {
+                for (x,wt) in gcs_core::integral::GAUSS8 {
+                    let r = m+h*x;
                     let all: Vec<[f64;2]> = rings.iter().flat_map(|ring| arcs(ring,r)).collect();
                     total += wt*h*covered(&all)*r
-                } }
+                }
             }
         }
         total
     };
-    let mut heights: Vec<f64> = parts.iter().flat_map(|t| t.vertices.iter().map(|v| v.p[2])).collect();
-    heights.sort_by(f64::total_cmp);
-    heights.dedup_by(|a,b| (*a-*b).abs() < 1e-12);
-    let mut volume = 0.;
-    for w in heights.windows(2) {
-        let h = (w[1]-w[0])/n as f64;
-        volume += h/3.*(0..=n).map(|k| {
-            let z = (w[0]+h*k as f64).clamp(w[0]+1e-12,w[1]-1e-12);
-            area(z)*if k == 0 || k == n { 1. } else if k%2 == 1 { 4. } else { 2. }
-        }).sum::<f64>();
-    }
-    volume
+    between_vertices(parts,n,&area)
 }
 
 /// `tool`'s slice at height `z`, a convex ring counter-clockwise.
@@ -311,8 +275,8 @@ fn slice(tool: &Brep,z: f64) -> Option<Vec<[f64;2]>> {
 fn a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept() {
     let tool = leaning(0.35,3.);
     let path = turn([0.;3],[0.,0.,1.],2.);
-    let built = gcs_core::brep::swept::closed::closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
-    let expected = turned_volume(&tool,2.,200,8);
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = turned_volume(&[&tool],2.,200,8);
     assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
 }
@@ -326,23 +290,23 @@ fn a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept() {
 fn a_bar_turned_through_all_but_its_width_meets_itself() {
     let bar = block([2.,0.,0.],[3.,1.,1.]);
     let path = turn([0.;3],[0.,0.,1.],6.);
-    let built = gcs_core::brep::swept::closed::closed(&bar,&path,[0.,1.],0.002,1e-7).unwrap();
-    let expected = turned_volume(&bar,6.,4,256);
+    let built = closed(&bar,&path,[0.,1.],0.002,1e-7).unwrap();
+    let expected = turned_volume(&[&bar],6.,4,256);
     assert!((volume(&built)-expected).abs() <= 1e-8*expected,"{} against {expected}",volume(&built));
     agrees(&built,&bar,&path);
 }
 
 /// **An L-shaped prism turned is its blocks' sweeps united** (X3 under a turn): its concave edge's
 /// faces' sheets cross, the arrangement splits them where they do and membership drops what is
-/// buried. Held to the volume the two blocks' slices sweep together (`turned_volume_of`, each
+/// buried. Held to the volume the two blocks' slices sweep together (`turned_volume`, each
 /// circle's arcs of both carried and united) and to membership.
 #[test]
 fn an_l_shaped_prism_turned_is_its_blocks_sweeps_united() {
     let (a,b) = (block([2.,0.,0.],[4.,1.,1.]),block([2.,1.,0.],[3.,3.,1.]));
     let tool = combined(&a,&b,Op::Union,0.).unwrap();
     let path = turn([0.;3],[0.,0.,1.],1.);
-    let built = gcs_core::brep::swept::closed::closed(&tool,&path,[0.,1.],0.002,1e-7).unwrap();
-    let expected = turned_volume_of(&[&a,&b],1.,4,64);
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-7).unwrap();
+    let expected = turned_volume(&[&a,&b],1.,4,64);
     assert!((volume(&built)-expected).abs() <= 1e-7*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
 }

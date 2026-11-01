@@ -29,11 +29,11 @@ pub struct RingChart {
     pub roots: Vec<[Option<(f64,V,V)>;2]>,
 }
 
-/// The ring at height `h` of `face`, at roll `t` of `path`: its contact's coefficients `[A, B, C]`.
-fn coefficients(face: &Surface,path: &Trajectory,t: f64,h: f64) -> Result<Option<[f64;3]>,String> {
-    let twist = Twist::body(path.at(t).map_err(|e| e.msg)?);
-    Ok(face.ring_contact(h,&twist).map(|k| [k.a,k.b,k.c]))
-}
+/// `n ≥ 2` points evenly over `[a, b]`, its ends included.
+fn grid([a,b]: [f64;2],n: usize) -> Vec<f64> { let n = n.max(2); (0..n).map(|i| a+(b-a)*i as f64/(n-1) as f64).collect() }
+
+/// The trajectory's twist at roll `t`, read on what it carries.
+fn twist_at(path: &Trajectory,t: f64) -> Result<Twist,String> { Ok(Twist::body(path.at(t).map_err(|e| e.msg)?)) }
 
 /// **The face's chart** over `nt × nh` nodes of `roll × heights` (each end included), its roots
 /// read to `tolerance` (a velocity along the normal, as `Sinusoid::roots` reads it). Refused where
@@ -41,12 +41,11 @@ fn coefficients(face: &Surface,path: &Trajectory,t: f64,h: f64) -> Result<Option
 pub fn ring_chart(face: &Surface,path: &Trajectory,roll: [f64;2],heights: [f64;2],nt: usize,nh: usize,tolerance: f64)
     -> Result<RingChart,String> {
     if !matches!(face.contact_form(),crate::contact::Form::Rings {..}) { return Err(format!("a {} has no rings",face.kind())) }
-    let grid = |[a,b]: [f64;2],n: usize| -> Vec<f64> { (0..n.max(2)).map(|i| a+(b-a)*i as f64/(n.max(2)-1) as f64).collect() };
     let (times,hs) = (grid(roll,nt),grid(heights,nh));
     let mut roots = Vec::with_capacity(times.len()*hs.len());
     for &t in &times {
         let pose = path.pose(t).map_err(|e| e.msg)?;
-        let twist = Twist::body(path.at(t).map_err(|e| e.msg)?);
+        let twist = twist_at(path,t)?;
         for &h in &hs {
             let Some(k) = face.ring_contact(h,&twist) else { roots.push([None,None]); continue };
             let both = match k.roots(tolerance) {
@@ -56,9 +55,7 @@ pub fn ring_chart(face: &Surface,path: &Trajectory,roll: [f64;2],heights: [f64;2
             };
             let mut node = [None,None];
             for u in both {
-                let (p,su,sv) = face.d1([u,h]);
-                let n = crate::util::space::normalised(crate::util::space::cross(su,sv));
-                let Some(n) = n else { continue };
+                let (Some(n),p) = (face.normal([u,h]),face.d1([u,h]).0) else { continue };
                 // which root: the contact rising (`+`) or falling through it round the ring
                 let (s,c) = u.dsin_cos();
                 let rate = -k.a*s+k.b*c;
@@ -73,27 +70,21 @@ pub fn ring_chart(face: &Surface,path: &Trajectory,roll: [f64;2],heights: [f64;2
 
 /// **The branch locus** of `face`'s chart: at each of `nt` rolls over `roll`, the heights within
 /// `heights` where its ring's two roots meet, `A² + B² = C²`, found where `A² + B² − C²` changes
-/// sign between `nh` heights and settled by bisection, as `(t, h)` pairs.
+/// sign between `nh` heights and settled within that bracket (`roots::bracketed_root`), as
+/// `(t, h)` pairs.
 pub fn branch_locus(face: &Surface,path: &Trajectory,roll: [f64;2],heights: [f64;2],nt: usize,nh: usize)
     -> Result<Vec<(f64,f64)>,String> {
-    let gap = |t: f64,h: f64| -> Result<Option<f64>,String> {
-        Ok(coefficients(face,path,t,h)?.map(|[a,b,c]| a*a+b*b-c*c))
-    };
+    let hs = grid(heights,nh);
     let mut out = Vec::new();
-    for i in 0..nt.max(2) {
-        let t = roll[0]+(roll[1]-roll[0])*i as f64/(nt.max(2)-1) as f64;
-        let hs: Vec<f64> = (0..nh.max(2)).map(|j| heights[0]+(heights[1]-heights[0])*j as f64/(nh.max(2)-1) as f64).collect();
-        for w in hs.windows(2) {
-            let (Some(g0),Some(g1)) = (gap(t,w[0])?,gap(t,w[1])?) else { continue };
-            if g0 == 0. { out.push((t,w[0])); continue }
+    for t in grid(roll,nt) {
+        let twist = twist_at(path,t)?;
+        let gap = |h: f64| face.ring_contact(h,&twist).map(|k| k.a*k.a+k.b*k.b-k.c*k.c);
+        let gaps: Vec<Option<f64>> = hs.iter().map(|&h| gap(h)).collect();
+        for j in 0..hs.len()-1 {
+            let (Some(g0),Some(g1)) = (gaps[j],gaps[j+1]) else { continue };
+            if g0 == 0. { out.push((t,hs[j])); continue }
             if g0*g1 >= 0. { continue }
-            let (mut lo,mut hi,mut glo) = (w[0],w[1],g0);
-            for _ in 0..80 {
-                let m = 0.5*(lo+hi);
-                let Some(gm) = gap(t,m)? else { break };
-                if gm*glo > 0. { lo = m; glo = gm } else { hi = m }
-            }
-            out.push((t,0.5*(lo+hi)));
+            out.push((t,crate::util::roots::bracketed_root(gap,hs[j],g0,hs[j+1],g1,1e-14*(1.+hs[j].abs()))));
         }
     }
     Ok(out)
