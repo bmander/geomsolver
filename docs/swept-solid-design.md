@@ -208,7 +208,10 @@ it. It stays as the fast path where #699 D says so.
    surface of revolution a little past its source's heights, so its disks stand clear of the
    vertices' heights, leaves a thin cusp around each vertex's circle that is no member, a few
    parts in a million of the volume, which only an independent volume (the slices' arcs carried
-   and united, to 1e-8) found.
+   and united, to 1e-8) found. X1–X5 then come as §5 says, cases and not rows: a bar turned
+   through all but its width meets itself and is trimmed (X5, X1), an L-shaped prism's concave
+   edge is trimmed under a turn as under a slide (X3), each held to its slices' arcs carried and
+   united.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.

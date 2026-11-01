@@ -1,7 +1,9 @@
 //! **The swept solid, closed** (#721 X6, `brep::swept::closed`, docs/swept-solid-design.md): a
-//! polyhedral tool under a slide, built as one B-rep by the design's pipeline — the candidate
-//! planes (faces entering at the start, leaving at the end, the silhouette edges swept), a box
-//! split by them, each cell kept by the kernel's membership. Held to what is known apart from it: a
+//! polyhedral tool under a slide or a turn, built as one B-rep by the design's pipeline — the
+//! candidate faces (faces at the end poses, silhouette edges and contact lines swept), a box split
+//! by them, each cell kept by the kernel's membership — or, turned whole, as its solid of
+//! revolution. Under a turn each is held to the volume its slices sweep (`turned_volume`). Held to
+//! what is known apart from it: a
 //! box slid on a slant is a zonotope, its volume `lx ly lz + |Dx| ly lz + |Dy| lx lz + |Dz| lx ly`;
 //! an L-shaped prism's sweep is its two blocks' sweeps united (`sweep(A ∪ B) = sweep(A) ∪
 //! sweep(B)`), each built alone; and every built solid's points agree with membership at seeded
@@ -193,16 +195,20 @@ fn turned_whole_is_its_solid_of_revolution(tool: &Brep) {
 /// within the slice, each carried through the turn, united), by Gauss–Legendre between the radii
 /// where `L` turns (the slice's corners' and its sides' feet), cut `pieces` times more; and the
 /// areas by Simpson's rule on `n` steps between the heights the tool's vertices stand at.
-fn turned_volume(tool: &Brep,angle: f64,n: usize,pieces: usize) -> f64 {
+fn turned_volume(tool: &Brep,angle: f64,n: usize,pieces: usize) -> f64 { turned_volume_of(&[tool],angle,n,pieces) }
+
+/// `turned_volume` of the tool that is the union of the convex `parts`: on each circle the arcs of
+/// every part's slice, each carried through the turn, united.
+fn turned_volume_of(parts: &[&Brep],angle: f64,n: usize,pieces: usize) -> f64 {
     use std::f64::consts::TAU;
     // the 8-point Gauss–Legendre rule on [−1, 1]
     const X: [f64;4] = [0.1834346424956498,0.5255324099163290,0.7966664774136267,0.9602898564975363];
     const W: [f64;4] = [0.3626837833783620,0.3137066458778873,0.2223810344533745,0.1012285362903763];
-    let covered = |ring: &[[f64;2]],r: f64| -> f64 {
+    // the arcs of the circle of radius `r` within a convex slice, by angle
+    let arcs = |ring: &[[f64;2]],r: f64| -> Vec<[f64;2]> {
         let inside = |phi: f64| { let p = [r*phi.cos(),r*phi.sin()]; (0..ring.len()).all(|k| {
             let (a,b) = (ring[k],ring[(k+1)%ring.len()]);
             (b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0]) >= 0. }) };
-        // the circle's crossings with the slice's sides, by angle
         let mut cuts: Vec<f64> = Vec::new();
         for k in 0..ring.len() {
             let (a,b) = (ring[k],ring[(k+1)%ring.len()]);
@@ -215,16 +221,20 @@ fn turned_volume(tool: &Brep,angle: f64,n: usize,pieces: usize) -> f64 {
                 if (0. ..1.).contains(&t) { cuts.push((a[1]+t*d[1]).atan2(a[0]+t*d[0])) }
             }
         }
-        if cuts.is_empty() { return if inside(0.) { TAU } else { 0. } }
+        if cuts.is_empty() { return if inside(0.) { vec![[0.,TAU]] } else { vec![] } }
         cuts.sort_by(f64::total_cmp);
-        let mut arcs: Vec<[f64;2]> = Vec::new();
-        for k in 0..cuts.len() {
+        (0..cuts.len()).filter_map(|k| {
             let (a,b) = (cuts[k],if k+1 < cuts.len() { cuts[k+1] } else { cuts[0]+TAU });
-            if inside(0.5*(a+b)) { arcs.push([a,b+angle]) }
-        }
-        // united on the circle, unrolled from the start of the first: a turn's worth
+            inside(0.5*(a+b)).then_some([a,b])
+        }).collect()
+    };
+    // the angle a set of arcs covers carried through the turn: united on the circle, unrolled from
+    // the start of the first
+    let covered = |arcs: &[[f64;2]]| -> f64 {
+        if arcs.is_empty() { return 0. }
+        if arcs.iter().any(|a| a[1]-a[0] >= TAU) { return TAU }
         let base = arcs.iter().map(|a| a[0]).fold(f64::INFINITY,f64::min);
-        let mut spans: Vec<[f64;2]> = arcs.iter().flat_map(|a| [[a[0]-base,a[1]-base],[a[0]-base-TAU,a[1]-base-TAU]]).collect();
+        let mut spans: Vec<[f64;2]> = arcs.iter().flat_map(|a| [[a[0]-base,a[1]+angle-base],[a[0]-base-TAU,a[1]+angle-base-TAU]]).collect();
         spans.sort_by(|x,y| x[0].total_cmp(&y[0]));
         let (mut total,mut reach) = (0.,f64::NEG_INFINITY);
         for s in spans {
@@ -235,14 +245,17 @@ fn turned_volume(tool: &Brep,angle: f64,n: usize,pieces: usize) -> f64 {
         total
     };
     let area = |z: f64| -> f64 {
-        let Some(ring) = slice(tool,z) else { return 0. };
+        let rings: Vec<Vec<[f64;2]>> = parts.iter().filter_map(|t| slice(t,z)).collect();
+        if rings.is_empty() { return 0. }
         let mut radii: Vec<f64> = vec![0.];
-        for k in 0..ring.len() {
-            let (a,b) = (ring[k],ring[(k+1)%ring.len()]);
-            radii.push(a[0].hypot(a[1]));
-            let d = [b[0]-a[0],b[1]-a[1]];
-            let t = -(a[0]*d[0]+a[1]*d[1])/(d[0]*d[0]+d[1]*d[1]);
-            if t > 0. && t < 1. { radii.push((a[0]+t*d[0]).hypot(a[1]+t*d[1])) }
+        for ring in &rings {
+            for k in 0..ring.len() {
+                let (a,b) = (ring[k],ring[(k+1)%ring.len()]);
+                radii.push(a[0].hypot(a[1]));
+                let d = [b[0]-a[0],b[1]-a[1]];
+                let t = -(a[0]*d[0]+a[1]*d[1])/(d[0]*d[0]+d[1]*d[1]);
+                if t > 0. && t < 1. { radii.push((a[0]+t*d[0]).hypot(a[1]+t*d[1])) }
+            }
         }
         radii.sort_by(f64::total_cmp);
         let mut total = 0.;
@@ -250,12 +263,15 @@ fn turned_volume(tool: &Brep,angle: f64,n: usize,pieces: usize) -> f64 {
             for p in 0..pieces {
                 let (r0,r1) = (w[0]+(w[1]-w[0])*p as f64/pieces as f64,w[0]+(w[1]-w[0])*(p+1) as f64/pieces as f64);
                 let (m,h) = (0.5*(r0+r1),0.5*(r1-r0));
-                for (x,wt) in X.iter().zip(W) { for r in [m-h*x,m+h*x] { total += wt*h*covered(&ring,r)*r } }
+                for (x,wt) in X.iter().zip(W) { for r in [m-h*x,m+h*x] {
+                    let all: Vec<[f64;2]> = rings.iter().flat_map(|ring| arcs(ring,r)).collect();
+                    total += wt*h*covered(&all)*r
+                } }
             }
         }
         total
     };
-    let mut heights: Vec<f64> = tool.vertices.iter().map(|v| v.p[2]).collect();
+    let mut heights: Vec<f64> = parts.iter().flat_map(|t| t.vertices.iter().map(|v| v.p[2])).collect();
     heights.sort_by(f64::total_cmp);
     heights.dedup_by(|a,b| (*a-*b).abs() < 1e-12);
     let mut volume = 0.;
@@ -298,5 +314,35 @@ fn a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept() {
     let built = gcs_core::brep::swept::closed::closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
     let expected = turned_volume(&tool,2.,200,8);
     assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// **A bar turned through all but its own width meets itself, and the pipeline trims it** (X5 and
+/// X1 under a turn): turned 6 radians, its end pose overlaps its start, and the faces at the two
+/// poses and the cylinders its edges along the axis turn into bury one another where they meet,
+/// which membership drops. Held to the volume its slices sweep, each circle's arc carried through
+/// the turn and united round the circle (`turned_volume`), and to membership.
+#[test]
+fn a_bar_turned_through_all_but_its_width_meets_itself() {
+    let bar = block([2.,0.,0.],[3.,1.,1.]);
+    let path = turn([0.;3],[0.,0.,1.],6.);
+    let built = gcs_core::brep::swept::closed::closed(&bar,&path,[0.,1.],0.002,1e-7).unwrap();
+    let expected = turned_volume(&bar,6.,4,256);
+    assert!((volume(&built)-expected).abs() <= 1e-8*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&bar,&path);
+}
+
+/// **An L-shaped prism turned is its blocks' sweeps united** (X3 under a turn): its concave edge's
+/// faces' sheets cross, the arrangement splits them where they do and membership drops what is
+/// buried. Held to the volume the two blocks' slices sweep together (`turned_volume_of`, each
+/// circle's arcs of both carried and united) and to membership.
+#[test]
+fn an_l_shaped_prism_turned_is_its_blocks_sweeps_united() {
+    let (a,b) = (block([2.,0.,0.],[4.,1.,1.]),block([2.,1.,0.],[3.,3.,1.]));
+    let tool = combined(&a,&b,Op::Union,0.).unwrap();
+    let path = turn([0.;3],[0.,0.,1.],1.);
+    let built = gcs_core::brep::swept::closed::closed(&tool,&path,[0.,1.],0.002,1e-7).unwrap();
+    let expected = turned_volume_of(&[&a,&b],1.,4,64);
+    assert!((volume(&built)-expected).abs() <= 1e-7*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
 }
