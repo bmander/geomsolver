@@ -280,6 +280,7 @@ mod step_assembly;
 mod style;
 mod sundial;
 mod surface_contact;
+mod swept_member;
 mod surfaces;
 mod swept_faces;
 mod swept_over_parameters;

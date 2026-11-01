@@ -19,3 +19,4 @@ pub mod admission;
 pub mod sector;
 pub mod planar_cut;
 pub mod extruded;
+pub mod member;

@@ -142,7 +142,9 @@ it. It stays as the fast path where #699 D says so.
 ## 8. The order to build it in, each step gated
 
 1. **`swept::member`**, the kernel's membership test, held to `MaterialField` at sampled points of
-   every example sweep (agreement, zero disagreement away from the boundary).
+   every example sweep (agreement, zero disagreement away from the boundary). *Built*: the tool's
+   mesh read by its generalised winding number and nearest triangle, the roll by branch and bound
+   (`tests/swept_member.rs`, `a_swept_solids_membership_is_the_material_fields`).
 2. **The patch type** `Patch { domain, map, loci }`, wrapping the sheets the kernel builds today:
    the constant twist's characteristic sheet, the traced sheet and the extruded sheet. No
    behaviour change; each class's sheet becomes one patch.
