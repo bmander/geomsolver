@@ -415,52 +415,12 @@ fn fit_stretch(sk: &Sketch,i: usize,(a,b): (f64,f64),ends: Option<((f64,f64),(f6
     fit_sampled(&|lo,hi,n| sk.curve_sweep(i,lo,hi,n),(a,b),ends,tol)
 }
 
-/// A planar stretch read by `sweep` (`n` chords over `[lo, hi]`, `lo < hi`) over `(a, b)`
-/// (decreasing where the stretch runs against the parameter) as a cubic B-spline within `tol`,
-/// its ends put exactly at `ends` where given: its poles, knots and the error measured.
-pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,tol: f64)
-    -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
-    use crate::brep::nurbs::BSpline;
-    let (lo,hi) = (a.min(b),a.max(b));
-    let mut n = 8;
-    loop {
-        let mut fine = sweep(lo,hi,2*n);
-        if a > b { fine.reverse(); }
-        let mut through: Vec<(f64,f64)> = fine.iter().step_by(2).copied().collect();
-        let last = through.len()-1;
-        if let Some(ends) = ends {
-            (through[0],through[last]) = ends;
-        }
-        let fractions = (0..=n).map(|k| k as f64/n as f64).collect();
-        let (ctrl,knots,t) = crate::curve::interpolating_ctrl_at(&through,fractions)?;
-        let s = BSpline::new(crate::curve::DEGREE,knots.clone(),ctrl.iter().map(|&(x,y)| [x,y,0.]).collect()).ok()?;
-        // each halfway sample's distance to the fit, from the fit's own halfway parameter
-        let err = (0..n).map(|k| {
-            let q = [fine[2*k+1].0,fine[2*k+1].1,0.];
-            let mut u = (t[k]+t[k+1])/2.;
-            for _ in 0..8 {
-                let (x,d,dd) = s.d2(u);
-                let e = crate::space::sub(x,q);
-                let h = crate::space::dot(d,d)+crate::space::dot(e,dd);
-                if !(h > 0.) { break }
-                u = (u-crate::space::dot(e,d)/h).clamp(t[k],t[k+1]);
-            }
-            crate::space::distance(s.point(u),q)
-        }).fold(0.,f64::max);
-        if err <= tol { return Some((ctrl,knots,err)) }
-        n *= 2;
-        if n > 2048 { return None }
-    }
-}
+/// A planar stretch sampled, fitted as a cubic B-spline within a tolerance, is the kernel's
+/// (`brep::cubic::fit_sampled`).
+pub use crate::brep::cubic::fit_sampled;
 
-/// A profile's cubic B-spline edge as a recipe writes it: its knots, its poles lifted into space
-/// (millimetres) and the fit it was measured within (mm).
-pub(crate) fn bspline_edge(poles: &[(f64,f64)],knots: &[f64],fit_mm: f64,lift: &dyn Fn((f64,f64)) -> [f64;3]) -> Json {
-    object([("kind","bspline".into()),("degree",crate::curve::DEGREE.into()),
-        ("knots",Json::Arr(knots.iter().map(|&k| k.into()).collect())),
-        ("poles",Json::Arr(poles.iter().map(|&c| vector(lift(c))).collect())),
-        ("fit",fit_mm.into())])
-}
+/// A profile's cubic B-spline edge as a recipe writes it is the kernel's (`brep::cubic::bspline_edge`).
+pub(crate) use crate::brep::cubic::bspline_edge;
 
 fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String> {
     let face = &sk.faces[index];

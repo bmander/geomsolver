@@ -38,6 +38,21 @@ use std::sync::Arc;
 /// The six Gauss–Lobatto points of degree five on `[−1, 1]`: where a piece's stations are solved.
 pub const NODES: [f64;6] = [-1.,-0.7650553239294647,-0.2852315164806451,0.2852315164806451,0.7650553239294647,1.];
 
+/// How near a face family's wall polynomials in `s` must pass the section they are fitted to,
+/// read between their nodes, as a part of the section's size: the exact surface's error, well under
+/// the kernel's tolerance.
+pub const EXACT: f64 = 1e-10;
+
+/// The longest piece of a face family's interval its walls' polynomials span, as a fraction of it.
+pub const LONGEST_PIECE: f64 = 0.25;
+
+/// The Lagrange weights of the stations at `at` read at `s`: the polynomial through them.
+pub fn weights(at: &[f64], s: f64) -> Vec<f64> {
+    (0..at.len()).map(|i| {
+        (0..at.len()).filter(|&j| j != i).map(|j| (s - at[j]) / (at[i] - at[j])).product()
+    }).collect()
+}
+
 /// What an edge of the section is, so how its numbers make it.
 #[derive(Clone,Debug,PartialEq)]
 pub enum Run {

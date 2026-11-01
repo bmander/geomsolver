@@ -8,6 +8,58 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A face of revolution's contacts under any rigid motion, read at each instant (`swept::instant`):
+  its chart over roll, ring height and branch (`ring_chart`), and the branch locus where a ring's
+  two roots meet (`branch_locus`).
+- A polyhedral tool leaning to the axis turned part of a turn closes into its swept solid
+  (`swept::closed::closed`), by the arrangement.
+- A plane meets a surface of revolution whose meridian is a conic symmetric about its axis (a
+  hyperboloid, a cone, an ellipsoid as a rational quadratic) in closed form (`ssi::intersect`): an
+  ellipse, a hyperbola's branches or two lines, held to the meridian's heights, where it was traced.
+- A Boolean drops a face piece with no inside (a sliver cut off along an edge a surface touches)
+  rather than refusing; whether what is left closes is the result's check.
+- A convex polyhedral tool turned a whole turn, however it leans to the axis, closes into its
+  solid of revolution (`swept::closed::closed`): its slices' radial spans as a profile of
+  hyperbola arcs (rational quadratics) and lines, cut where what reaches farthest or nearest
+  changes, turned once with no Boolean.
+- A plane through a cone's apex leaning to its axis by its half-angle meets it in the generator it
+  touches along, in closed form (`ssi::intersect`), where it was traced and refused as nearly
+  touching.
+- The closed swept solid of a polyhedral tool under a slide, or under a turn when its edges run
+  along the axis or square to it (`swept::closed::closed`, `slid`): the candidate
+  planes split a box holding the sweep, each cell kept by membership, the kept cells united;
+  anything else refused by what it is (`Unbuilt`).
+- Whether a point is in a swept solid (`swept::member`): the tool's B-rep meshed, its signed
+  distance by the generalised winding number (`Solid`), branch and bound over the roll with the
+  trajectory's speed bound (`Swept::member`), unsettled near the boundary rather than guessed.
+- A point's, line's or circle's cut under a planar motion (`swept::planar_cut`: a program of turns,
+  slides and relatives, `PlanarStep`, its cut and derivative along the roll in closed form) and the
+  extruded cutter's sheet built from it (`swept::extruded::sheet`).
+- An indexed body's sector (`swept::sector`): its indexing, the side through the gaps its cuts
+  leave, the slicings a recipe suggests, the cells a sector is split into and the blank turned to
+  its seam.
+- The cubic B-spline basis, its knots, Piegl and Tiller's interpolation and a sampled stretch's fit
+  (`cubic`); the planar classes' builds (`swept::planar::InnerEnvelope::prism`,
+  `swept::region::profiles`, `swept::region::lofted`) and the generating class's traced sheet
+  (`swept::trace::traced_sheet`).
+- The generating class's rows asked of one placement (`swept::admission`): M2, E1–E4 and T1–T3 for
+  a tool under a relative rotation (`check`), T2, E1 and S1–S4 under a constant twist
+  (`check_screw`), sampled (`Sampling`), returning what they found (`Found`, `Capped`) and the
+  blank's reads (`Reads`); `constant_twist::Row` gains the generating class's rows.
+- The planar classes' readings: a closed curve's inner envelope under a planar motion
+  (`swept::planar`, its curve a `Section` and its material a `Region`, read in a `View`) and the
+  region a planar tool's section sweeps (`swept::region`), each refused by a typed row with a
+  witness. A planar profile edge (`plane2::Edge`: a line, an arc, a conic) and its readers.
+- A trajectory's pose alone (`Trajectory::pose`, `Pose`) and an interval bound on the speed it
+  carries a point or a box back at (`Trajectory::inverse_point_speed_bound`, `_over`), read through
+  a pace's value and enclosure (`Pace::value`, `Pace::enclose`) and a path's pose and stretch
+  (`Path::pose`, `Path::stretch`, `Path::speed_over`, `Stretch`).
+- A ball's tube along a trajectory (`swept::canal`): in closed form along a constant twist, a face
+  family fitted to its disc along any other, refused by rows typed with what they saw where it
+  would meet itself. The rotation-minimising frame's step (`trajectory::reflected`) and a face
+  family's tolerance, longest piece and Lagrange weights (`family::EXACT`, `LONGEST_PIECE`,
+  `weights`).
+
 ## [0.2.0] - 2026-11-01
 
 - Offsets (`offset`): a solid grown or shrunk by a distance (`grown`, `shrunk`), hollowed to a

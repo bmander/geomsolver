@@ -62,7 +62,9 @@ type V = [f64;3];
 /// the motion's path, where its sweep folds (S3), its section crossing itself (S4), the tool not
 /// passing wholly through the blank (E1), or the tool no tool the class walks (T1).
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Row { Motion,Reach,Regular,Once,Edgewise,Lead,Clearance,Tool }
+pub enum Row { Motion,Reach,Regular,Once,Edgewise,Lead,Clearance,Tool,
+    /// The generating class's own (`admission`): T2, M2, E2, E3, E4 and T3.
+    Corner,Stationary,Single,Fold,Crossing,Sections }
 
 /// A row of the class that fails, what was seen and where: in the sweep's frame, at a time the
 /// tool point is in the blank.

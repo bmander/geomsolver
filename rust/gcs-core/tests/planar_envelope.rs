@@ -2,7 +2,7 @@
 //! planar generating class reads of a pocket): the Wankel rotor's flanks are the inner envelope of
 //! the housing's bore seen from the rotor, against the closed form (Yamamoto).
 use crate::bore::{seen,solved,wankel};
-use gcs_core::envelope::planar::{Condition,InnerEnvelope};
+use gcs_core::envelope::planar::{Condition,InnerEnvelope,ReadEnvelope};
 
 /// The rotor's flank in its own frame, about its centre, apex at angle 0: for s ∈ [0, 2π/3],
 /// `e^{is}·(R + 2ie·sin(3s/2)·e^{iα})` with `cos α = −(3e/R)·cos(3s/2)`, `α ∈ (0, π)`; the

@@ -124,11 +124,14 @@ too; its `envelope` under a motion keeping the prism's view is built with the dr
 marked `CurveE::extrusion`, the face in a view that stands where drawn. `p coincident
 flank` from any view is `CKind::PointOnExtrusion` (`FamilyKernel::Extrusion`, consts
 `kernels::EXTRUSION_FRAME` then the contact's; `Sketch::extrusion_frame`). The export builds a
-prism cutter's sheet the same way: `brep::sweep::extruded` (edges as lines/arcs, convex corners as
+prism cutter's sheet the same way: `brep::sweep::extruded` (the kernel's `brep::swept::extruded`,
+#721 F2c, its cuts in closed form, `brep::swept::planar_cut`, held to `generate::cut_at`'s to
+rounding by `generation::the_kernels_planar_cut_is_the_generated_profiles`; edges as lines/arcs, convex corners as
 points over their fans, `generate::cut_at`, Hermite spans, extruded; `Family::in_frame`), else
 traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cut.rs`.
 
-**A ball swept is its tube** (#238, #684 D, `solid::canal`): a sweep whose tool's recipe is one
+**A ball swept is its tube** (#238, #684 D, `solid::canal`; the tube is the kernel's,
+`brep::swept::canal`, #721 F2c): a sweep whose tool's recipe is one
 ball (`brep::recipe::ball_of`), under any motion, is the points within the radius of its centre's
 path — the ball's disc square to the path carried along it, united with the half ball beyond each
 end: exact, its end poses the construction's own, so no clearance (E1) is asked and a sweep may
@@ -139,11 +142,11 @@ or to its slid image along `Carry::Line` (a cylinder; a slide is a screw of no t
 the constant twist's or the field's) where the centre stands within the radius of the axis or a
 helix past a turn climbs no more than the diameter a turn. Under any other motion — a relative
 roll, a frame along a path or one the drawing moves, a driven joint — the path is read off the
-motion (`canal::along`): the disc a face family's one closed `Run::Round` wall over the roll, its
+motion (`brep::swept::canal::along`): the disc a face family's one closed `Run::Round` wall over the roll, its
 stations the centre's point and the radius vectors of the frame square to the path, carried from
-the start by double reflection (`motion::reflected`) once, over 4096 steps of the roll, any other
-roll one step from its nearest (`canal::Carried`), its pieces of the roll (Gauss–Lobatto,
-`family::weights`) each held to the disc read near both its ends within a face family's `EXACT` of
+the start by double reflection (`brep::trajectory::reflected`) once, over 4096 steps of the roll, any other
+roll one step from its nearest (`Carried`), its pieces of the roll (Gauss–Lobatto,
+`brep::family::weights`) each held to the disc read near both its ends within a face family's `EXACT` (`brep::family::EXACT`) of
 the diameter, so the wall is fitted, and lies on a cylinder or a torus where its
 numbers do (`brep::family`'s `analytic`); built as the family and the end half balls united
 (`build::capped`). Its rows, sampled at points an eighth of the radius apart along the path
@@ -151,7 +154,10 @@ numbers do (`brep::family`'s `analytic`); built as the family and the end half b
 (`admission::Asked::Canal`, asked first by `admit_body` where no other class reads the motion):
 **B1** the path never stops and turns nowhere tighter than the radius; **B2** it comes back within
 the diameter (and the points' spacing) of itself nowhere half a turn of a circle of the radius
-along it from (`canal::refusal`). The recipe's `"canal"` node (`centre`, `radius`, the ball's
+along it from (`canal::refusal`).  The kernel refuses by `Row` (B1 `Curvature`, B2 `Return`) and
+what it saw (`Seen`: where the path stops, the radius it turns on, how near it comes back), with a
+point of the path and how many points it read; `solid::canal` says that as the rows always said it
+and reads the tool's recipe as a ball, lowers the motion and gates what the kernel builds. The recipe's `"canal"` node (`centre`, `radius`, the ball's
 `face` naming every face, and either the axis `origin`/`axis`, `angle`, `advance` or the face
 family's node as `tube`; native OCCT refuses it by name); gated by agreement with the sweep's
 field (`Caches::canal`, which remembers the refusal too); `cad::contains_sweep`, `swept_cut` and
@@ -190,7 +196,9 @@ in the slow tier each member built as its stated roll built it).
 **Generating sweeps and the native export** ([docs/generating-sweeps.md](../generating-sweeps.md)):
 `solventc --step/--stl` builds swept cuts only for the bevel/hypoid generating class, the
 constant-twist class (screws, turns and slides) and the planar classes (below).
-`solid::admission::admit_body` checks rows T1–E4 (revolved line/arc tools, rotation with changing
+`solid::admission::admit_body` checks rows T1–E4 (asked of each placement by the kernel,
+`brep::swept::admission::check` and `check_screw`, #721 F2c; the solver says each `Row` as a
+`Condition`) (revolved line/arc tools, rotation with changing
 contact, clear at both limits, one contact per point, no fold, no self-crossing) and T3 where a
 prism's cap reaches the blank, sampled, refusing
 with row and witness; it checks a placement once when the blank reads alike at every point
@@ -289,11 +297,63 @@ read the lowered trajectory (`Family::path`, lowered once when the family is rea
 a ring's contact and its roots are `brep::contact`'s (`RingFrame::coefficients`, a `Sinusoid`; its
 roots on a chart of the ring `Sinusoid::roots_over`), read off the motion's velocity field as the
 walk always read them.  `Screw::at` reads its unit axis as it is, so a constant twist's pose is
-`Family::pose_at`'s to the bit (`a_motion_lowers_to_the_kernels_trajectory`).  The move was held
+`Family::pose_at`'s to the bit (`a_motion_lowers_to_the_kernels_trajectory`).  The pose alone and
+the speed bound are the trajectory's too (#721 F2c): `Trajectory::pose` (a pace's `Pace::value`, a
+path's `Path::pose`) and `Trajectory::inverse_point_speed_bound(_over)` (a pace enclosed,
+`Pace::enclose`; a path by its `Stretch`, `Path::stretch` and `Path::speed_over`), each read off
+the tree the motion lowers to with the step-by-step reading's arithmetic, so `Family::pose_at` and
+`Family::inverse_point_speed_bound` read the lowered trajectory and their step-by-step copies went.
+Held as the moves are: every pose (2,862,428 distinct readings) and every point's speed bound
+(1,763,988) the core suite reads, before and after, the same to the bit.  The move was held
 walk by walk, as F3 was: every walk and every screw's sheet the suite makes written down at full
 precision before and after, the same to the bit.  (Read through `Twist::body` and `Sinusoid::roots`
 instead, the walk moves by an ulp, and that alone turns three triangles of the whole turn's mesh over
 (`the_wheel_turned_once_leaves_its_shadow_all_round`): the mesher's, F4's to mend.)
+
+**The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
+every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding
+the sweep split by all of them, each cell classified by the kernel's membership test
+(`brep::swept::member`, the definition read without the drawing: the point carried back lies in the
+tool at some roll, by branch and bound over the trajectory's speed bound, `Unsettled` near the
+boundary rather than guessed), the kept cells the closed solid; X1–X5 its cases.  Built
+(`brep::swept::closed`): a polyhedral tool slid (a box aslant its zonotope to 1e-9, an L prism its
+blocks' sweeps united), or turned where its edges run along the axis or square to it (a bar a quarter
+turn beside the axis its polar integral to 2e-15), by the arrangement; and a **convex polyhedral tool
+turned whole, however it leans, as its solid of revolution with no Boolean** — each slice convex, so
+its radii one span `[ρ_min(z), ρ_max(z)]`, `ρ_max` reached on an edge (a hyperbola, its meridian a
+rational quadratic) and `ρ_min` on the axis, a face's contact line or an edge, which one fixed
+between the heights where two reach as far (`ρ²` quadratics equal or touching) or the axis crosses a
+face; the profile cut there and turned once (`tests/swept_closed.rs`:
+`a_block_leaning_to_the_axis_turned_whole_…`,
+`a_block_straddling_the_axis_tipped_two_ways_turned_whole_…`, each the integral of its slices' radial
+spans to 1e-6 and agreeing with membership).  **A leaning tool turned part of a turn** builds by the
+arrangement, its edges' hyperboloids and faces' contact cones among the candidates, where three
+rules hold its touches: a plane meets a hyperboloid of revolution in closed form (`brep::ssi`: an
+ellipse or a hyperbola's branches held to the meridian's heights, as rational quadratics, or the two
+rulings a plane holding one meets it in; `brep::surfaces_meet_in_curves_on_both`), a Boolean drops a
+piece with no inside (the sliver a surface touching a solid along its edge cuts off), and a kept cell
+touching the cells united so far only along a circle waits for its neighbour
+(`a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept`, slow tier: the volume its
+slices sweep, each circle's arcs within a slice carried through the turn and united, to 1e-6, and
+membership).  X1–X5 are the pipeline's cases, not rows of their own: under a turn, a bar turned
+through all but its own width meets itself, its end poses' faces and its edges' cylinders burying
+one another where they meet (X5, X1; `a_bar_turned_through_all_but_its_width_meets_itself`, its
+slices' arcs carried and united round the circle, to 1e-8), and an L-shaped prism's concave edge's
+sheets cross and are trimmed (X3; `an_l_shaped_prism_turned_is_its_blocks_sweeps_united`, its two
+blocks' arcs united, to 1e-7), each agreeing with membership.  A screw and a curved tool are refused
+by what they are (`Unbuilt`).
+
+**K2's chart, contacts read at each instant (#721 K2, `brep::swept::instant`):** under a motion no
+constant twist takes, a face of revolution's contact on each ring is still `A cos θ + B sin θ + C = 0`
+against the instant's twist read on the tool (`Twist::body`, `Surface::ring_contact`), so it sweeps a
+chart over `(t, h, ±)` (`ring_chart`): each ring's two roots at each roll, told apart by the sign of
+the contact's rate round the ring, each carried by the pose; and the branch locus where they meet,
+`A² + B² = C²` (`branch_locus`), the curve in `(t, h)` the patch is cut at.  Held to what the chart
+does not compute (`tests/swept_instant.rs`): every root grazes in the world, read by the world's twist
+(`Twist::spatial`, `every_root_of_the_chart_grazes_in_the_world`); a screw's roots stand still on the
+tool; the roots meet on the locus; and a ball's contacts under a tumble (a turn seen from a turn
+across it) bound what it sweeps, a hair inside a member and a hair outside not, by the kernel's
+membership (`a_balls_contacts_bound_what_it_sweeps`).  Sampled where it samples.
 
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:
@@ -831,7 +891,9 @@ curve over whole turns of its motion is closed (`Sketch::curve_closed`), a face'
 at its middle for the recipe. The rotor is a cut: its blank less the housing's wall swept over the
 period (`common` with a sweep keeps the union's, another set). A pocketed prism under a planar motion
 is admitted by rows P1–P5 (`solid::planar_class`): the pocket's inner envelope over a whole period
-(`envelope::planar::InnerEnvelope`, over a formula or generated source: contact roots per sample,
+(`envelope::planar::InnerEnvelope`, the kernel's `brep::swept::planar`, #721 F2c, its curve a
+`Section` and its material a `Region` the solver reads off the drawing, its refusals typed
+`Seen`/`Row` and said by `envelope::planar`; over a formula or generated source: contact roots per sample,
 kept where inside every pose, corners where an image recurs), built as the blank in common with
 its prism (`brep::sweep::planar`), metered as envelope × slab (`accuracy::Planar`). `claim over
 MOTION` advances the placements under it (`Sweep::motion`). A profile field's walls are boxed
@@ -848,7 +910,9 @@ is still built by its sheet (`extruded`), and a rack tooth with a cap in the bla
 itself, by its region (`rack_cut::a_rack_with_a_cap_in_the_blank_cuts_the_slab_it_spans`,
 `the_tooth_united_with_itself_cuts_as_the_tooth_does`: the two classes agree to 1e-5). The slabs are the blank cut at every member's cap within
 it, two next to each other with one section (every member undrafted, the same faces joined alike,
-`Subtraction::key`) read as one. In each, `envelope::swept_region` reads the region `R = ∪ₜ
+`Subtraction::key`) read as one. In each, `envelope::swept_region` reads the region (the kernel's `brep::swept::region`, #721
+F2c: the section's material its members' `PlanarField`s joined, `swept_region::section`, its
+refusals typed and said by `swept_region::said`) `R = ∪ₜ
 poseₜ(section)` within a box about the blank's shadow at every placement: its candidates are
 each line's contact (the foot of the perpendicular from the instant centre, `ν·(ωJx + b) = 0` in the
 tool's frame), each side of an arc's (`e ∥ ωc − Jb`), each corner's path while the line from the

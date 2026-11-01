@@ -521,7 +521,10 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
         // points not on the other's boundary (a piece may touch it tangentially), or one on
         // it where the other has a face on this surface
         let mut inner = reading::inside(&piece,f,&out,&pool).map(|q| q.point()).peekable();
-        let Some(&first) = inner.peek() else { return Err(format!("a piece of a {} has no inside",f.surface.kind())) };
+        // a piece with no inside bounds nothing: the sliver a surface touching the other solid
+        // along an edge of it cuts off there (#721 X6), dropped; whether what is left closes is
+        // the result's check
+        let Some(&first) = inner.peek() else { continue };
         let other = s.other();
         let (p,place) = inner.map(|p| (p,located[other].solid_place(p)))
             .find(|&(p,place)| place != Place::On || (0..solids[other].faces.len()).any(|g|

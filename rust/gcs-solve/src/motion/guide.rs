@@ -49,27 +49,8 @@ fn frenet([_, d1, d2, _]: [V; 4]) -> Option<Frame> {
     Some([t, cross(b, t), b])
 }
 
-/// `r` reflected in the plane square to `v`.
-fn reflect(r: V, v: V, vv: f64) -> V {
-    sub(r, scale(v, 2.0 * dot(v, r) / vv))
-}
-
-/// **One step of the rotation-minimising frame** (double reflection): the frame `f` at the point
-/// `x0` carried to the point `x1` with tangent `t1`.  A step that does not move keeps the frame.
-pub(crate) fn reflected(f: &Frame, x0: V, x1: V, t1: V) -> Frame {
-    let v1 = sub(x1, x0);
-    let c1 = dot(v1, v1);
-    if c1 == 0.0 {
-        return *f;
-    }
-    let (rl, tl) = (reflect(f[1], v1, c1), reflect(f[0], v1, c1));
-    let v2 = sub(t1, tl);
-    let c2 = dot(v2, v2);
-    let u = if c2 == 0.0 { rl } else { reflect(rl, v2, c2) };
-    // held square to the tangent and unit, the rounding of every step not carried on
-    let u = crate::space::normalised(sub(u, scale(t1, dot(u, t1)))).unwrap_or(u);
-    [t1, u, cross(t1, u)]
-}
+/// One step of the rotation-minimising frame is the kernel's (`brep::trajectory::reflected`).
+use crate::brep::trajectory::reflected;
 
 /// `a · bᵀ` summed over the columns: the turn taking frame `b` to frame `a`.
 fn turn(a: &Frame, b: &Frame) -> M {
@@ -321,17 +302,8 @@ impl Extremes {
     }
 }
 
-/// A frame along a path over a stretch of its parameter, enclosed (`Guide::stretch`): the
-/// path's point, the turn's entries, the path's speed and the frame's angular speed bounded, and
-/// the point at the home the turn is about.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Stretch {
-    pub(crate) point: [I; 3],
-    pub(crate) turn: [[I; 3]; 3],
-    pub(crate) speed: f64,
-    pub(crate) spin: f64,
-    pub(crate) origin: V,
-}
+/// What a motion does over a stretch of its parameter, enclosed, is the kernel's.
+pub(crate) use crate::brep::trajectory::Stretch;
 
 /// The path's own frame at `u`, or why it has none.
 fn frenet_at(name: &str, u: f64, x: [V; 4]) -> Result<Frame, String> {

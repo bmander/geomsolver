@@ -719,3 +719,60 @@ fn the_planar_envelope_is_the_swept_solids_boundary() {
     }
     assert!(checked >= 4, "only {checked} rolls in the involute stretch");
 }
+
+/// **The kernel's planar cut is the generated profile's** (#721 F2c, `brep::swept::planar_cut`):
+/// a point, a line and a circle on each side, carried by turns, slides and relatives of them
+/// (seeded), cut at the same point with the same derivative along the roll and at the same
+/// parameter as the generated profile reads them in Taylor arithmetic (`generate::cut_at`), to
+/// rounding. The closed form is what an extruded cutter's sheet is built from. Sampled.
+#[test]
+fn the_kernels_planar_cut_is_the_generated_profiles() {
+    use gcs_core::brep::swept::planar_cut::{cut_at,Cutting,PlanarStep};
+    use gcs_core::generate::{self,Tool};
+    let mut rng = gcs_core::rng::Rng::new(70);
+    let mut u = |lo: f64,hi: f64| rng.uniform(lo,hi);
+    let (mut compared,mut agreed) = (0,0);
+    for round in 0..40 {
+        let turn = |u: &mut dyn FnMut(f64,f64) -> f64| PlanarStep::Turn {centre:[u(-5.,5.),u(-5.,5.)],ratio:u(0.3,2.)*if u(0.,1.) < 0.5 { -1. } else { 1. }};
+        let slide = |u: &mut dyn FnMut(f64,f64) -> f64| { let a = u(0.,std::f64::consts::TAU); PlanarStep::Slide {direction:[a.cos(),a.sin()],advance:u(2.,20.)} };
+        let program: Vec<PlanarStep> = match round%4 {
+            0 => vec![turn(&mut u)],
+            1 => vec![slide(&mut u),turn(&mut u),PlanarStep::Relative],
+            2 => vec![turn(&mut u),turn(&mut u),PlanarStep::Relative],
+            _ => vec![turn(&mut u),slide(&mut u),PlanarStep::Relative],
+        };
+        let (p,a,b,c,r) = ([u(-3.,3.),u(-3.,3.)],[u(-3.,3.),u(-3.,3.)],[u(-3.,3.),u(-3.,3.)],[u(-3.,3.),u(-3.,3.)],u(0.5,2.));
+        let tools = [(Tool::Point,vec![p[0],p[1]],1.,Cutting::Point(p)),
+            (Tool::Line,vec![a[0],a[1],b[0],b[1]],1.,Cutting::Line {a,b}),
+            (Tool::Arc,vec![c[0],c[1],0.,0.,0.,0.,r],1.,Cutting::Circle {centre:c,radius:r,side:1.}),
+            (Tool::Arc,vec![c[0],c[1],0.,0.,0.,0.,r],-1.,Cutting::Circle {centre:c,radius:r,side:-1.})];
+        for (tool,columns,side,cutting) in tools {
+            let (generated,outer) = generate::planar(tool,&columns,side,&program);
+            for k in 0..12 {
+                let t = -60.+10.*k as f64;
+                let mut outer = outer.clone();
+                outer[0] = t;
+                let theirs = generate::cut_at(&generated.flat,&outer,t);
+                let ours = cut_at(cutting,&program,t);
+                compared += 1;
+                let (Some(theirs),Some(ours)) = (theirs,ours) else {
+                    assert_eq!(theirs.is_some(),ours.is_some(),"round {round}, {tool:?} at {t}: one cut and the other not");
+                    continue
+                };
+                let size = 1.+theirs.c[0].hypot(theirs.c[1]);
+                for k in 0..2 {
+                    assert!((ours.c[k]-theirs.c[k]).abs() <= 1e-11*size,"round {round}, {tool:?} at {t}: {:?} against {:?}",ours.c,theirs.c);
+                    assert!((ours.dc[k]-theirs.dc[k]).abs() <= 1e-9*(1.+theirs.dc[0].hypot(theirs.dc[1])),
+                        "round {round}, {tool:?} at {t}: C′ {:?} against {:?}",ours.dc,theirs.dc);
+                }
+                if tool != Tool::Point {
+                    let ds = (ours.s-theirs.s).abs();
+                    let ds = if tool == Tool::Arc { ds.min((ds-std::f64::consts::TAU).abs()) } else { ds };
+                    assert!(ds <= 1e-9*(1.+theirs.s.abs()),"round {round}, {tool:?} at {t}: s {} against {}",ours.s,theirs.s);
+                }
+                agreed += 1;
+            }
+        }
+    }
+    assert!(agreed > compared*3/4,"{agreed} of {compared} cuts read");
+}

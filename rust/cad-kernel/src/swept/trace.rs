@@ -19,6 +19,8 @@ type V = [f64;3];
 /// Whether points lie inside the blank, a sheet's grid and its contacts, and which a sheet
 /// withholds (`sheet`): what is here traces them.
 pub use super::sheet::{Grid,Inside,Sheet,UNNAMED,Withheld,marked};
+use super::sheet::{AtStage,FIT_DISTANCE,Fitted,Refused,Say,Stage,Tolerance,carry_out,settle};
+use super::cutter::Cutter;
 
 /// How far a contact's time may move in one step along a traced contact curve and still be
 /// the same root (radians of the motion's parameter).
@@ -805,3 +807,101 @@ impl<'s> Layout<'_,'s> {
         Ok(sheet)
     }
 }
+
+/// **A swept cut's sheet, traced** (#721 F2c): the cut `name`'s cutter's contacts under `chart`
+/// reach the blank `inside` describes over a band of its stations (`Cutter::reach`); its grid is
+/// laid out by each row placement in turn (`Rows`) and widened until its edges leave the blank, and
+/// the first placement whose fit holds (`sheet::settle`) is the sheet, its bands named by the
+/// cutter's faces (`face_name` of a station's tag) and carried out of the blank
+/// (`sheet::carry_out`); held to a tolerance, a fit that misses is refined where it misses.
+/// Positions are millimetres, `scale` of them a model unit.
+pub fn traced_sheet(name: &str,scale: f64,cutter: &Cutter,chart: Chart,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
+    tolerance: Option<Tolerance>,face_name: &dyn Fn(u32) -> String,say: &Say) -> Result<Fitted,Refused> {
+    let tracer = Tracer {chart,scale,inside,debug:false};
+    let started = crate::util::clock::Instant::now();
+    let reach = cutter.reach(&tracer).at(Stage::Reach)?;
+    let width = reach.stations[1]-reach.stations[0];
+    let band = if cutter.revolved() { format!("{:.1} degrees",width.to_degrees()) } else { format!("{width:.2} mm") };
+    (say.stage)(&format!("`{name}`: contacts reach the blank over {band} of stations and {} profile faces ({:?}: \
+        sections {:.1} s, contacts {:.1} s, {} blank queries {:.1} s)",reach.faces,
+        started.elapsed(),reach.spent[0],reach.spent[1],reach.queried,reach.spent[2]));
+    (say.mark)(Stage::Reach);
+    // a station: the section loop carrying the reach's walk, and the window between its anchors
+    let station_at = |angle: f64| -> Result<Station,TraceError> {
+        let loops = cutter.profile(angle)?;
+        let profile = loops.into_iter().find(|l| l.index_of(reach.start.face).is_some() && l.index_of(reach.end.face).is_some())
+            .ok_or("no section loop carries the profile at a station of the band")?;
+        let window = Cutter::range(&profile,&reach,0.)?;
+        let cutter = &cutter;
+        let starts = profile.starts();
+        Ok(Station {length:profile.augmented_length(),window,sample:Box::new(move |s| cutter.sample(&profile,s)),starts})
+    };
+    let band = Band {stations:reach.stations,radius:reach.radius,limit:cutter.station_limit()};
+    let columns: std::cell::RefCell<Option<((f64,f64),Columns)>> = std::cell::RefCell::new(None);
+    let widened = |placement: Rows| -> Result<(Layout,Sheet),String> {
+        let (mut margin,mut station_margin) = (1.,(reach.stations[1]-reach.stations[0])*0.15);
+        for _ in 0..6 {
+            let layout = {
+                let mut traced = columns.borrow_mut();
+                if !traced.as_ref().is_some_and(|(at,_)| *at == (margin,station_margin)) {
+                    *traced = Some(((margin,station_margin),tracer.columns(&station_at,band,margin,station_margin)?));
+                }
+                traced.as_ref().expect("traced").1.layout(placement)?
+            };
+            let sheet = layout.sheet(&layout.grid,Withheld::Centres)?;
+            let edges = [(0..sheet.columns).map(|c| sheet.points[c]).collect::<Vec<_>>(),
+                (0..sheet.columns).map(|c| sheet.points[(sheet.rows-1)*sheet.columns+c]).collect(),
+                (0..sheet.rows).map(|r| sheet.points[r*sheet.columns]).collect(),
+                (0..sheet.rows).map(|r| sheet.points[r*sheet.columns+sheet.columns-1]).collect()];
+            let within: Vec<usize> = edges.iter().map(|e| inside(e).map(|v| v.iter().filter(|b| **b).count())).collect::<Result<_,_>>()?;
+            if within.iter().any(|&n| n > 0) {
+                // an edge point in the blank at a time within the declared roll is where the sheet is
+                // too small; one at a time outside it is the sheet extended past the roll, which
+                // widening only carries further, and that needs a sheet trimmed at the roll's limits
+                let declared = chart.domain();
+                let (mut late,mut early) = (None,0);
+                for r in 0..sheet.rows { for c in 0..sheet.columns {
+                    if !(r == 0 || r+1 == sheet.rows || c == 0 || c+1 == sheet.columns) { continue }
+                    let k = r*sheet.columns+c;
+                    if !inside(&[sheet.points[k]])?[0] { continue }
+                    let t = sheet.times[k];
+                    if t < declared[0] || t > declared[1] { late.get_or_insert((t,sheet.points[k])); } else { early += 1; }
+                } }
+                if early == 0 { if let Some((t,p)) = late {
+                    return Err(format!("`{name}`: the sheet, extended past the declared roll, comes back into the blank at {:?} \
+                        (time {:.1} degrees, the roll being {:.1} to {:.1}); it needs trimming at the roll's limits",
+                        p.map(|x| (x*1e4).round()/1e4),t.to_degrees(),declared[0].to_degrees(),declared[1].to_degrees()))
+                } }
+                (say.stage)(&format!("`{name}`: the sheet's edge is in the blank (first row {}, last row {}, first column {}, last column {} \
+                    points); widening its margins",within[0],within[1],within[2],within[3]));
+                margin *= 1.6; station_margin *= 1.6; continue
+            }
+            if let Some(fault) = sheet.chart_fault(inside)? { return Err(format!("`{name}`: the sheet is not one regular chart: {fault}")) }
+            (say.stage)(&format!("`{name}`: sheet {}x{}, one chart",sheet.rows,sheet.columns));
+            return Ok((layout,sheet))
+        }
+        Err(format!("`{name}`: the candidate sheet cannot be widened out of the blank"))
+    };
+    let mut refused: Option<Refused> = None;
+    for placement in [Rows::Walk,Rows::Length] {
+        let by = match placement { Rows::Walk => "walk length",Rows::Length => "length in space" };
+        if let Some(refusal) = &refused { (say.stage)(&format!("{}; placing the sheet's rows by {by} instead",refusal.message)); }
+        let (layout,first) = widened(placement).at(Stage::Sheet)?;
+        (say.mark)(Stage::Sheet);
+        let lay = |grid: &Grid| layout.sheet(grid,Withheld::Sides).map_err(String::from);
+        let settled = settle(name,scale,first,&layout.grid,&lay,inside,near,tolerance,&format!("rows by {by}"),say)?;
+        match settled {
+            Ok((mut fitted,kind)) => {
+                // each band named by the cutter's face that made it
+                fitted.faces = fitted.named(kind,face_name,None,false).at(Stage::Fit)?;
+                carry_out(name,&mut fitted,inside,near,tolerance.map_or(FIT_DISTANCE,|t| t.fit()),say).at(Stage::Sheet)?;
+                (say.stage)(&format!("`{name}`: the sheet's faces, by the cutter's: {}",
+                    fitted.faces.faces.iter().map(|f| if f.name.is_empty() { "(unnamed)" } else { f.name.as_str() }).collect::<Vec<_>>().join(", ")));
+                return Ok(fitted)
+            }
+            Err(refusal) => refused = Some(refusal),
+        }
+    }
+    Err(refused.unwrap_or_else(|| Refused::at(Stage::Sheet,format!("`{name}`: no row placement was offered"))))
+}
+

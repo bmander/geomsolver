@@ -253,6 +253,44 @@ fn surfaces_meet_in_curves_on_both() {
             }
         }
     }
+    // a plane through a cone's apex leaning to its axis by its half-angle touches it along one
+    // generator, its meeting that line (#721 X6: a swept face at an end pose against the cone its
+    // contact line turns into); on the cone's one nappe, from the apex on
+    let (sa,ca) = 0.4f64.sin_cos();
+    let cone = Surface::Cone(f([0.,0.,0.],z,x),1.,0.4);
+    let touching = Surface::Plane(f([0.,0.,-ca/sa],[ca,0.,-sa],y));
+    let Ssi::Curves(cs) = intersect(&cone,&touching,1e-9) else { panic!("a plane touching a cone: traced") };
+    let [c] = &cs[..] else { panic!("{cs:?}: one line") };
+    for t in (0..=10).map(|i| -1./sa+0.5*i as f64) {
+        let p = c.point(t);
+        assert!(cone.implicit(p).abs() < 1e-9 && touching.implicit(p).abs() < 1e-9,"{c:?} at {t}");
+    }
+    // a plane and a hyperboloid of one sheet (the swept solid's line turned about an axis, #721
+    // X6), its meridian `ρ² = 4 + z²/4` a rational quadratic over `z ∈ [−3, 3]`: a plane holding two
+    // of its rulings meets it in them, a plane through its axis in its meridian either side, a plane
+    // within its throat in a hyperbola's two branches held to those heights (one past it meets it
+    // only beyond them: nothing), a plane across it in an ellipse, all closed forms on both surfaces
+    let (t,k) = (2f64,0.5f64);
+    let tau = (3.*k/t).asinh();
+    let meridian = gcs_core::brep::nurbs::BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],
+        vec![[t*tau.cosh(),0.,-3.],[t/tau.cosh(),0.,0.],[t*tau.cosh(),0.,3.]],vec![1.,tau.cosh(),1.]).unwrap();
+    let hyperboloid = Surface::Revolution(f([0.;3],z,x),std::sync::Arc::new(Curve::BSpline(std::sync::Arc::new(meridian))));
+    let on = |p: V| p[0]*p[0]+p[1]*p[1]-k*k*p[2]*p[2]-t*t;
+    for (plane,n,lines) in [(Surface::Plane(f([2.,0.,0.],x,y)),2,true),(Surface::Plane(f([0.;3],y,x)),2,false),
+        (Surface::Plane(f([1.5,0.,0.],x,y)),2,false),(Surface::Plane(f([3.,0.,0.],x,y)),0,false),
+        (Surface::Plane(f([0.,0.,1.],tilted,x)),1,false)] {
+        let Ssi::Curves(cs) = intersect(&plane,&hyperboloid,1e-9) else { panic!("{plane:?} and a hyperboloid: traced") };
+        assert_eq!(cs.len(),n,"{plane:?}: {cs:?}");
+        for c in cs {
+            assert_eq!(matches!(c,Curve::Line {..}),lines,"{plane:?}: {c:?}");
+            let span = match &c { Curve::BSpline(b) => b.domain(),Curve::Line {..} => [-3.,3.],_ => [0.,TAU] };
+            for i in 0..=16 {
+                let p = c.point(span[0]+(span[1]-span[0])*i as f64/16.);
+                assert!(plane.implicit(p).abs() < 1e-9 && on(p).abs() < 1e-9,"{plane:?} {c:?}: {p:?}");
+                if !lines { assert!(p[2].abs() <= 3.+1e-6,"{plane:?}: {p:?} past the heights") }
+            }
+        }
+    }
     // perpendicular cylinders of two radii, or of one with axes passing apart, have no closed form
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.5,0.],x,y),2.),1e-9),Ssi::Traced);
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,0.],x,y),1.),1e-9),Ssi::Traced);

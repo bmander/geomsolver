@@ -76,7 +76,11 @@ piece): a middle of a level line's span across the piece's outline read so, the 
 finer while none is; then, where every middle is on the other's boundary along no face of its
 own on that surface, a point either side of the middles (a boss tangent to a side at its middle,
 #597, `brep::a_boss_tangent_to_a_face_inside_it`). A piece no point of which leaves the other's
-boundary that way is refused naming its face and the other's it touches. A fixed polygon of a
+boundary that way is refused naming its face and the other's it touches. A piece with no `Inner`
+point at all, its outline drawn as fine as it goes, has no inside: the sliver a surface touching
+the other solid only along an edge of it cuts off (a hyperboloid along the ruling a face of the
+other holds, #721 X6). It bounds nothing and is dropped; whether what is left closes is the
+result's check (`swept_closed::a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept`). A fixed polygon of a
 circle once cut its chords short by more than a narrow strip beside it is wide, and read the strip
 at the hole next to it (a turned rim's chamfer
 from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly`).

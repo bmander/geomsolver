@@ -57,8 +57,26 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   (`swept::generating`), the cutter sectioned at its stations (`swept::cutter`) and its contact
   curves traced into a sheet (`swept::trace`); `Family::normal_velocity` says the kernel's
   `Uncharted` in the drawing's words, and `SweepContacts::chart` hands the tracer the lowered
-  motion and the roll.  The rest of the generating class (its admission rows and its sector's
-  build), the canal and planar classes' readings and sheets, the trims and the closed solid move
+  motion and the roll.  So is a ball's tube (`swept::canal`), its rows typed (`canal::Row`,
+  `Seen`); `solid::canal` reads the ball off the tool's recipe, gates the tube against the sweep's
+  field and says its refusals.  So are the planar classes' readings: a closed curve's inner
+  envelope under a planar motion (`swept::planar`) and the region a planar tool sweeps
+  (`swept::region`), each refusing by a typed row; `envelope::planar` and `envelope::swept_region`
+  read the curve, the section and their material (`PlanarField`) off the drawing and say the
+  refusals.  So are the generating class's rows asked of one placement (`swept::admission`:
+  `check` for a relative rotation, `check_screw` for a constant twist, failing by
+  `constant_twist::Row`); `solid::admission::admit_body` reads the body's sweeps, placements and
+  blank off the drawing, hands each placement to the kernel and says its rows as `Condition`s.
+  So are the planar classes' builds (an envelope's prism, `InnerEnvelope::prism`; a swept
+  region's profiles and lofts, `swept::region::profiles` and `lofted`), on the cubic B-spline
+  basis and its fit (`cubic`: what a drawing's curves are read by, `curve` re-exporting it), and
+  the generating class's traced sheet (`swept::trace::traced_sheet`), and the sector an indexed
+  body is built as: its indexing, the side through its cuts' gaps and the cells it is split into
+  (`swept::sector`), which `brep::sweep::sector` judges by the body's material field, the
+  semantic reference.  So is the extruded cutter's sheet (`swept::extruded`), its profile's cuts
+  under a motion of its plane read in closed form (`swept::planar_cut`, the drawing's generated
+  profiles' `generate` held to it); `brep::sweep::extruded` reads the cutter and the motion in
+  the profile's plane (`Family::in_frame`). the trims and the closed solid move
   with no change in behaviour; until each has, it is held where it is, and no new walk is built
   in the solver.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint

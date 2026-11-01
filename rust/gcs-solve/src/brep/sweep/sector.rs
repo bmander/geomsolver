@@ -7,20 +7,20 @@
 use crate::fmath::Det;
 use super::Say;
 use super::sheet::{Fitted,surface_grid};
-use crate::brep::boolean::{overlap,split};
-use crate::brep::geom::{Box3,Rigid};
+use crate::brep::boolean::split;
+use crate::brep::geom::Rigid;
 use crate::brep::props::volume;
 use crate::brep::query::interior;
 use crate::brep::topo::Brep;
 use crate::envelope::Motion;
-use crate::brep::recipe::{Node,Recipe,Stroke};
+use crate::brep::recipe::Recipe;
 use crate::brep::Kind;
 use crate::model::Sketch;
 use crate::solid::cad::{self,StaticRecipe};
 use crate::solid::contracts;
-use crate::solid::sector::{self,Boundary,Frame,Slices};
+use crate::solid::sector::{self,Boundary,Frame,Slices,SPLIT_TOL,blank_from,keyed,sphere_centres,split_by};
 use crate::solid::{MaterialField,Millimetres,ProbeState,SpatialField};
-use crate::space::{cross,distance,dot,norm,scale,sub};
+use crate::space::{distance,dot,norm,scale,sub};
 
 type V = [f64;3];
 
@@ -32,100 +32,13 @@ pub const READ_BACK: usize = 4;
 pub const MARGIN: f64 = 0.05;
 /// The most points of the side the material field is asked about.
 pub const PROBES: usize = 160;
-/// The tolerance the split works to (mm).
-const SPLIT_TOL: f64 = 1e-6;
 
 /// The sector: its material, and the turn that patterns it (`count` copies a `pitch` apart about
 /// the line through `origin`, mm, along `axis`).
 pub struct Sector { pub piece: Brep,pub origin: V,pub axis: V,pub count: usize,pub pitch: f64 }
 
-/// The centres of the spheres the recipe's revolutions make where they are on the axis: the
-/// slicings a bevel gear's end spheres suggest (mm).
-pub fn sphere_centres(recipe: &Recipe,frame: Frame,size: f64) -> Vec<V> {
-    let on_axis = |p: V| { let d = sub(p,frame.origin); norm(sub(d,scale(frame.axis,dot(d,frame.axis)))) <= 1e-6*size };
-    let mut centres: Vec<V> = Vec::new();
-    for named in &recipe.nodes {
-        let &Node::Revolve {ref profile,origin: o,axis: a,..} = &named.node else { continue };
-        // a circle about a point of the revolution's own axis turns into a sphere about it
-        let on_revolution = |p: V| norm(cross(sub(p,o),a)) <= 1e-6*size*norm(a);
-        for edge in profile.loops.iter().flatten() {
-            let Stroke::Circle {center: c,..} = edge.shape else { continue };
-            if on_revolution(c) && on_axis(c) && !centres.iter().any(|&k| distance(k,c) <= 1e-6*size) { centres.push(c); }
-        }
-    }
-    centres
-}
-
 /// A placement's rigid motion in millimetres.
 pub(crate) fn placed(pose: Motion,scale: f64) -> Rigid { Rigid::from_rows(&cad::placement_matrix(pose,scale)) }
-
-/// A placed sheet's faces under the key of the cut that places it (`cad::SweptCut::key`), each
-/// still named by the cutter's face that made it (#212): `indexed` and `flank`, as `solid::exact`
-/// names a placed copy's.
-fn keyed(mut sheet: Brep,key: &str) -> Brep {
-    for f in &mut sheet.faces { f.name = crate::brep::recipe::name_under(key,&f.name); }
-    sheet
-}
-
-/// `cells` split by every sheet of `tools` (each with its box) a batch at a time, each sheet in the
-/// first batch whose boxes all stand more than `gap` from its own: a batch's sheets meet none of
-/// each other, so one split by all of them at once is the splits by each in turn, and a cell is
-/// arranged against a batch where it was against a sheet. The cells, and the most sheets a split
-/// took at once.
-fn split_by(mut cells: Vec<Brep>,tools: &[(Brep,Box3)],gap: f64) -> Result<(Vec<Brep>,usize),String> {
-    let mut batches: Vec<Vec<usize>> = Vec::new();
-    for k in 0..tools.len() {
-        match batches.iter_mut().find(|b| b.iter().all(|&j| !overlap(&tools[k].1,&tools[j].1,gap))) {
-            Some(b) => b.push(k),
-            None => batches.push(vec![k]),
-        }
-    }
-    for batch in &batches {
-        let mut sheet = tools[batch[0]].0.clone();
-        for &k in &batch[1..] { sheet.join(&tools[k].0); }
-        let parts = crate::par::map(&cells,|c| split(c,&sheet,SPLIT_TOL));
-        cells = parts.into_iter().collect::<Result<Vec<_>,_>>()?.into_iter().flatten().collect();
-    }
-    Ok((cells,batches.iter().map(Vec::len).max().unwrap_or(0)))
-}
-
-/// The blank of `recipe` as its meridian region turned once from the half-plane along `seam`, or
-/// by its Booleans turned about the axis till its seams lie there.
-fn blank_from(recipe: &Recipe,origin: V,axis: V,seam: V) -> Result<Brep,String> {
-    match recipe.meridian(seam) {
-        Ok((b,o,a)) => {
-            if norm(cross(a,axis)) > 1e-9 || norm(cross(sub(o,origin),axis)) > 1e-6 {
-                return Err("the blank's meridian is about another line than the indexing's".into())
-            }
-            Ok(b)
-        }
-        Err(e) if e.kind == Kind::Refused => turned_to(&recipe.build()?,origin,axis,seam),
-        Err(e) => Err(e.into()),
-    }
-}
-
-/// A solid of revolution about the line through `origin` along `axis` turned about it until its
-/// faces' seams lie in the half-plane along `seam`; refused where its seams are not in one.
-fn turned_to(b: &Brep,origin: V,axis: V,seam: V) -> Result<Brep,String> {
-    let mut found: Option<V> = None;
-    for f in &b.faces {
-        let uses: Vec<u32> = f.loops.iter().flatten().map(|c| c.edge).collect();
-        for (k,&e) in uses.iter().enumerate() {
-            if !uses[k+1..].contains(&e) { continue }
-            let edge = &b.edges[e as usize];
-            let crate::brep::topo::EdgeCurve::Curve(_) = &edge.curve else { continue };
-            let p = edge.point((edge.t[0]+edge.t[1])/2.,&b.vertices);
-            let r = sub(p,origin);
-            let r = sub(r,scale(axis,dot(r,axis)));
-            let l = norm(r);
-            if l < 1e-9 { continue }
-            let r = r.map(|x| x/l);
-            match found { None => found = Some(r),Some(q) if dot(q,r) < 1.-1e-12 => return Err("the blank's seams are not in one half-plane".into()),_ => {} }
-        }
-    }
-    let Some(r) = found else { return Ok(b.clone()) };
-    Ok(b.moved(&Rigid::turn(origin,axis,dot(axis,cross(r,seam)).datan2(dot(r,seam)))))
-}
 
 /// One cell judged: its volume, its deepest interior sample, its index.
 struct Cell { index: usize,point: V,volume: f64 }

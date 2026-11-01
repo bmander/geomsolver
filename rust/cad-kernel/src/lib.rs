@@ -31,6 +31,7 @@ pub mod spill;
 pub mod family;
 pub mod trajectory;
 pub mod contact;
+pub mod cubic;
 pub mod swept;
 pub mod offset;
 

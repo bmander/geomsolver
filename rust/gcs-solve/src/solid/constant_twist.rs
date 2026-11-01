@@ -23,6 +23,8 @@ impl From<Row> for Condition {
             Row::Motion => Condition::Motion,Row::Reach => Condition::Reach,Row::Regular => Condition::Regular,
             Row::Once => Condition::Once,Row::Edgewise => Condition::Edgewise,Row::Lead => Condition::Lead,
             Row::Clearance => Condition::Clearance,Row::Tool => Condition::Tool,
+            Row::Corner => Condition::Corner,Row::Stationary => Condition::Stationary,Row::Single => Condition::Single,
+            Row::Fold => Condition::Fold,Row::Crossing => Condition::Crossing,Row::Sections => Condition::Sections,
         }
     }
 }

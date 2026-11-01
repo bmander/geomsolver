@@ -7,7 +7,6 @@
 use super::{Prepared,Say};
 use crate::brep::boolean::Op;
 use crate::brep::topo::Brep;
-use crate::json::{object,Json};
 use crate::model::Sketch;
 use crate::solid::admission::Class;
 use crate::solid::cad::{self,StaticRecipe};
@@ -28,32 +27,7 @@ pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tol
         };
         let clock = crate::clock::Instant::now();
         let env = &found.envelope;
-        let n = env.normal();
-        let lift = |p: (f64,f64)| env.world([p.0,p.1]).map(|x| x*scale);
-        // one B-spline a piece, from its corner to the next
-        let edges = (0..env.pieces.len()).map(|piece| {
-            let ends = [env.point(piece,0.),env.point(piece,1.)];
-            let (Some(a),Some(b)) = (ends[0],ends[1]) else {
-                return Err(ExportRefusal::at(Stage::Reach,format!("`{}`: the envelope's piece {piece} has no ends",sk.solids[swept].name)))
-            };
-            let sweep = |lo: f64,hi: f64,m: usize| -> Vec<(f64,f64)> { (0..=m).map(|j| {
-                let p = env.point(piece,lo+(hi-lo)*j as f64/m as f64).unwrap_or([f64::NAN;2]);
-                (p[0],p[1])
-            }).collect() };
-            let (poles,knots,err) = cad::fit_sampled(&sweep,(0.,1.),Some(((a[0],a[1]),(b[0],b[1]))),fit)
-                .ok_or_else(|| ExportRefusal::at(Stage::Reach,format!("`{}`: the envelope's piece {piece} could not be fitted within \
-                    {:.1e} mm",sk.solids[swept].name,fit*scale)))?;
-            Ok(cad::bspline_edge(&poles,&knots,err*scale,&lift))
-        }).collect::<Result<Vec<_>,_>>()?;
-        let origin = env.world([0.,0.]);
-        let vec = |v: [f64;3]| Json::Arr(v.iter().map(|&x| x.into()).collect());
-        let profile = object([("loops",Json::Arr(vec![Json::Arr(edges)])),("origin",vec(origin.map(|x| x*scale))),("normal",vec(n))]);
-        // through the blank, a hair past it each way
-        let at = crate::space::dot(origin,n);
-        let [h0,h1] = found.heights;
-        let pad = 1e-3*(h1-h0)+1e-6;
-        let prism = crate::brep::build::prism(&crate::brep::build::Profile::from_json(&profile).at(Stage::Reach)?,
-            (h0-pad-at)*scale,(h1+pad-at)*scale).at(Stage::Reach)?;
+        let prism = env.prism(found.heights,fit,scale,&sk.solids[swept].name).at(Stage::Reach)?;
         (say.stage)(&format!("`{}`: its inner envelope fitted, {} pieces, and carried through the blank ({:?})",sk.solids[swept].name,
             env.pieces.len(),clock.elapsed()));
         (say.mark)(Stage::Reach);
