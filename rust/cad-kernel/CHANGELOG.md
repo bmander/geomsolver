@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.1.0] - 2026-11-01
+
 The first release: the kernel as geomsolver builds and tests it.
 
 - Geometry: planes, cylinders, cones, spheres, tori, extrusions and revolutions of curves,
