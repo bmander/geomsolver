@@ -155,8 +155,15 @@ it. It stays as the fast path where #699 D says so.
    the kernel's split takes them, cut a box half-space by half-space (`build::kept`); each cell
    kept by membership; a box slid aslant is its zonotope to 1e-9, an L-shaped prism's sweep its
    blocks' united, its concave edges resolved by the arrangement as X3 says
-   (`tests/swept_closed.rs`). A turn's candidates are surfaces of revolution (an edge's line, a
-   face's contact line, turned whole), next.
+   (`tests/swept_closed.rs`). *Built for a turn* where the tool's edges run along the axis or
+   square to it: its candidates are planes and coaxial cylinders (a cell split by a solid cylinder,
+   in common and cut away). Two rules the turn taught, now the pipeline's: only candidates that
+   carry some of the boundary are kept (membership differing on their two sides, sampled), since a
+   superset candidate touching another along a line leaves cells that topology cannot hold; and a
+   face along the axis touches its own contact cylinder at each end pose, so the plane through the
+   axis and that line is added as a separator, parting the two sides of the touch into two cells.
+   A bar turned a quarter turn beside the axis is its polar integral to 2e-15. Edges leaning to the
+   axis (hyperboloids), screws, curved tools and K2 are the steps after.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.

@@ -27,8 +27,8 @@ const FINEST: f64 = 1e-9;
 const MOST_READS: usize = 1 << 16;
 
 /// A tool read for membership: its boundary meshed, scaled to the trajectory's units, a box
-/// about each triangle, and how far the mesh may stand off the exact boundary (its sag, plus the
-/// bar's rounding).
+/// about each triangle, and how far the mesh may stand off the exact boundary (its measured sag,
+/// and rounding's).
 pub struct Solid { pts: Vec<V>,tris: Vec<[u32;3]>,tree: Bvh<3>,pub sag: f64 }
 
 impl Solid {
@@ -42,7 +42,9 @@ impl Solid {
             let [a,b,c] = t.map(|i| pts[i as usize]);
             Bounds {lo:std::array::from_fn(|k| a[k].min(b[k]).min(c[k])),hi:std::array::from_fn(|k| a[k].max(b[k]).max(c[k]))}
         }));
-        let sag = (m.sag.max(bar))/scale;
+        // the sag measured on the mesh (none where every face is flat), and rounding's at its size
+        let size = pts.iter().fold(0_f64,|r,p| r.max(norm(*p)));
+        let sag = m.sag/scale+1e-12*(1.+size);
         Ok(Solid {pts,tris:m.tris,tree,sag})
     }
 

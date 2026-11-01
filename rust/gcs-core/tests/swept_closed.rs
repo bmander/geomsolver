@@ -68,3 +68,43 @@ fn an_l_shaped_prism_slid_is_its_blocks_sweeps_united() {
     assert!((volume(&built)-volume(&united)).abs() <= 1e-8*volume(&united),"{} against {}",volume(&built),volume(&united));
     agrees(&built,&tool,&path);
 }
+
+/// The turn about the line through `o` along `axis` by `angle` radians over the roll `[0, 1]`.
+fn turn(o: [f64;3],axis: [f64;3],angle: f64) -> Trajectory {
+    Trajectory::Twist(Screw {origin:o,axis:unit(axis),ratio:angle,advance:0.})
+}
+
+/// **A bar turned about a line along it closes into the region it sweeps, extruded**: a block
+/// standing along the axis, beside it, turned a quarter turn. Its section's swept area is the polar
+/// integral of what each circle about the axis covers: the arc it meets the block in, carried
+/// through the turn, `A + θ (r_max² − r_min²) / 2`, and past the far face the gap between the two
+/// arcs it meets there, which the turn covers too; the solid that times its height — closed form,
+/// apart from the build. Its inner face and its far face touch their own contact cylinders at each
+/// end pose, so this is also where the touch is parted.
+#[test]
+fn a_bar_turned_about_a_line_along_it_closes_into_its_swept_region() {
+    let (x,y,h,theta) = ([2.,4.],[-0.25,0.25],1.,std::f64::consts::FRAC_PI_2);
+    let tool = block([x[0],y[0],0.],[x[1],y[1],h]);
+    let path = turn([0.;3],[0.,0.,1.],theta);
+    let built = gcs_core::brep::swept::closed::closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let (rmin,rmax) = (x[0],x[1].hypot(y[1]));
+    agrees(&built,&tool,&path);
+    // past the far face, `r > x₁`, a circle meets the block in two arcs, one at each far corner, and
+    // the turn carries the lower one over the gap between them: `∫ 2 r acos(x₁ / r) dr` more,
+    // `r² acos(c / r) − c √(r² − c²)` from `c = x₁` to `r_max`
+    let c = x[1];
+    let gap = rmax*rmax*(c/rmax).acos()-c*(rmax*rmax-c*c).sqrt();
+    let expected = h*((x[1]-x[0])*(y[1]-y[0])+theta*(rmax*rmax-rmin*rmin)/2.+gap);
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+}
+
+/// What the build refuses it refuses by what the tool and the motion are: a block leaning to the
+/// axis (its edges turn into hyperboloids) and a screw, the design's later steps.
+#[test]
+fn what_the_closed_build_cannot_yet_build_it_names() {
+    use gcs_core::brep::swept::closed::{Unbuilt,closed};
+    let tool = block([2.,0.,0.],[3.,1.,1.]);
+    assert_eq!(closed(&tool,&turn([0.;3],[0.,1.,1.],1.),[0.,1.],0.01,1e-7).unwrap_err(),Unbuilt::Skew);
+    let screw = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:2.});
+    assert_eq!(closed(&tool,&screw,[0.,1.],0.01,1e-7).unwrap_err(),Unbuilt::Motion);
+}

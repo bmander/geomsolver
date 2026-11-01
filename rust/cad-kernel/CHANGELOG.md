@@ -8,7 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
-- The closed swept solid of a polyhedral tool under a slide (`swept::closed::slid`): the candidate
+- The closed swept solid of a polyhedral tool under a slide, or under a turn when its edges run
+  along the axis or square to it (`swept::closed::closed`, `slid`): the candidate
   planes split a box holding the sweep, each cell kept by membership, the kept cells united;
   anything else refused by what it is (`Unbuilt`).
 - Whether a point is in a swept solid (`swept::member`): the tool's B-rep meshed, its signed
