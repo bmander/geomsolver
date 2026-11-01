@@ -4,6 +4,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::*;
+use crate::space::add;
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 
 type P = [f64;2];
@@ -209,13 +210,13 @@ impl RevolvedRegion {
             .collect::<Result<Vec<_>,_>>())
             .collect::<Result<Vec<_>,_>>()?;
         let first = &patches.first().and_then(|p| p.first()).ok_or("empty profile")?.0;
-        let origin = first.origin; let axis = first.axis;
+        let origin = first.origin(); let axis = first.axis_direction();
         let basis = face.plane.map(|p| sk.basis(p as usize)).unwrap_or(Basis::page());
         let normal = plane::cross(basis.u,basis.v);
         let radial = plane::cross(axis,normal);
         let coords = |p| [plane::dot(p,radial),plane::dot(p,axis)];
         let mut loops = patches.iter().map(|patches| patches.iter().map(|(p,e)| {
-            Ok(match p.meridian {
+            Ok(match *p.meridian() {
                 Meridian::Line {start,delta} => {
                     let a = coords(sub(start,origin));
                     let b = coords(sub(add(start,delta),origin));

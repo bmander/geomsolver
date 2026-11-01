@@ -1,54 +1,30 @@
 //! The contacts of a continuous sweep's tool, read from an ordinary swept-solid definition.
 #[allow(unused_imports)]
+use super::ReadRevolved;
 use crate::fmath::Det;
 use super::{SpatialField,RevolvedSurface};
-use crate::{envelope::{self,Contact,Error,Motion,SurfacePoint},model::{EntRef,Sketch,SolidDef,EntKind},motion::Family};
-use crate::space::{add,lerp,scale,sub};
+use crate::{envelope::{self,Contact,Error,Motion},model::{EntRef,Sketch,SolidDef,EntKind},motion::Family};
+use crate::space::{add,scale,sub};
 use std::{collections::BTreeSet,f64::consts::TAU};
 
 type V = [f64;3];
 
-/// One face of a sweep's tool: a revolution of a profile edge (`u` along the edge, `v` round the
-/// turn, periodic), a side of a prism, drafted or not (`u` along the edge, `v` along the
-/// extrusion, from one cap to the other), or a prism's cap (`u` and `v` across the box its profile
-/// lies in).
-#[derive(Clone,Debug)]
-pub enum ToolSurface { Revolved(RevolvedSurface),Extruded(ExtrudedSurface),Cap(CapSurface) }
+/// A face of a sweep's tool, its kinds and the edges between them are the kernel's (#721 F2b): what
+/// is read here is the drawing they are read off.
+pub use crate::brep::swept::tool::{CapSurface,Edge,ExtrudedSurface,Material,PatchEdge,Side,Tool,ToolSurface};
 
-impl ToolSurface {
-    pub fn at(&self,u: f64,v: f64) -> Result<SurfacePoint,Error> {
-        match self { ToolSurface::Revolved(s) => s.at(u,v),ToolSurface::Extruded(s) => s.at(u,v),ToolSurface::Cap(s) => s.at(u,v) }
-    }
-    pub fn name(&self) -> &str {
-        match self { ToolSurface::Revolved(s) => &s.name,ToolSurface::Extruded(s) => &s.name,ToolSurface::Cap(s) => &s.name }
-    }
-    /// The source parameters' domain.
-    pub fn domain(&self) -> [[f64;2];2] {
-        match self { ToolSurface::Revolved(s) => s.domain(),ToolSurface::Extruded(_) | ToolSurface::Cap(_) => [[0.,1.],[0.,1.]] }
-    }
-    /// Whether `v` runs round a turn and comes back (a full revolution) rather than from one cap
-    /// to another.
-    pub fn periodic(&self) -> bool { matches!(self,ToolSurface::Revolved(_)) }
-    /// The revolution, where this face is one — what a revolution's closed forms are asked of.
-    pub fn revolved(&self) -> Option<&RevolvedSurface> {
-        match self { ToolSurface::Revolved(s) => Some(s),_ => None }
-    }
-    /// Which of its prism's caps this face is (0 its `start`, at `from`, where its sides' `v` is 0;
-    /// 1 its `end`), none where it is no cap: admission asks a cap only where it reaches the blank
-    /// (#684 F).
-    pub fn cap(&self) -> Option<usize> { match self { ToolSurface::Cap(s) => Some(s.end as usize),_ => None } }
+impl Material for SpatialField {
+    fn value(&self,p: V) -> f64 { SpatialField::value(self,p) }
 }
 
-/// A prism's cap: the plane of its profile at its `from` (`start`) or its `to` (`end`), read over
-/// the box the profile lies in, `u` and `v` along the box's sides, so `du × dv` is the cap's outward
-/// normal. A point of the box outside the profile is no point of the tool, and a sample there is
-/// passed over as the material field says (`admission`'s `on_tool`), as a revolution's off a trim.
-#[derive(Clone,Debug)]
-pub struct CapSurface { pub name: String,end: bool,corner: V,du: V,dv: V }
-
-impl CapSurface {
+/// A prism's caps read off the drawing.
+pub trait ReadCap: Sized {
     /// Prism `solid`'s caps, its `start` then its `end`.
-    pub fn read(sk: &Sketch,solid: usize) -> Result<[Self;2],String> {
+    fn read(sk: &Sketch,solid: usize) -> Result<[Self;2],String>;
+}
+
+impl ReadCap for CapSurface {
+    fn read(sk: &Sketch,solid: usize) -> Result<[Self;2],String> {
         let s = sk.solids.get(solid).ok_or("no such solid")?;
         let SolidDef::Prism {face,from,to,draft:None} = &s.def else { return Err("a cap is read of a prism with square sides".into()) };
         let p = super::face_poly(sk,*face as usize,super::REPORT_UNIT).ok_or("invalid prism profile")?;
@@ -65,71 +41,33 @@ impl CapSurface {
         // `v` runs back
         let cap = |h: f64,other: f64,end: bool| {
             let farther = h >= other;
-            CapSurface {name:format!("{}.{}",s.name,if end { "end" } else { "start" }),end,
-                corner:if farther { at(h) } else { add(at(h),v) },du:u,dv:if farther { v } else { scale(v,-1.) }}
+            CapSurface::new(format!("{}.{}",s.name,if end { "end" } else { "start" }),end,
+                if farther { at(h) } else { add(at(h),v) },u,if farther { v } else { scale(v,-1.) })
         };
         Ok([cap(from.value,to.value,false),cap(to.value,from.value,true)])
     }
 
-    pub fn at(&self,u: f64,v: f64) -> Result<SurfacePoint,Error> {
-        if !u.is_finite() || !v.is_finite() { return Err(Error::NonFinite); }
-        if !(0. ..=1.).contains(&u) || !(0. ..=1.).contains(&v) { return Err(Error::OutsideDomain); }
-        Ok(SurfacePoint {position:add(self.corner,add(scale(self.du,u),scale(self.dv,v))),du:self.du,dv:self.dv})
-    }
-
-    fn placed(&self,pose: Motion) -> Self {
-        CapSurface {name:self.name.clone(),end:self.end,corner:pose.point(self.corner),du:pose.vector(self.du),dv:pose.vector(self.dv)}
-    }
 }
 
-/// A prism's side: a line, arc or circle of its profile carried along the profile's normal from
-/// the prism's `from` to its `to`.  `at(u, v)` is the edge at `u` (its own direction, `p1` to `p2`
-/// or round the arc) moved `v` of the way along. A drafted prism's side (#684 G) leans: `at(u, v)`
-/// is the point `v` of the way from the edge at `u` to its edge in the section at `to` at `u` — a
-/// plane where the edge is a line, a cone where it is an arc. Running both ways from its parting
-/// plane (#684 P), it is two such sides, one each side of the plane, which meet there in a crease
-/// (`SweepContacts::creases`).
-#[derive(Clone,Debug)]
-pub struct ExtrudedSurface { pub name: String,edge: Edge,side: Side }
-
-#[derive(Clone,Copy,Debug)]
-enum Edge { Line { start: V,delta: V },Round { center: V,a: V,b: V,sweep: f64 } }
-
-/// How a side runs from its edge at `from` to `to`: along the extrusion, or to its edge there.
-#[derive(Clone,Copy,Debug)]
-enum Side { Straight(V),Leaning(Edge) }
-
-impl Edge {
-    /// The arc about `center` of radius `r` from angle `start` through `sweep` (negative clockwise),
-    /// in the plane whose axes `vector` lifts a pair of coordinates along.
-    fn round(center: V,r: f64,start: f64,sweep: f64,vector: impl Fn(f64,f64) -> V) -> Edge {
-        let (sn,cs) = start.dsin_cos();
-        let turn = sweep.signum();
-        Edge::Round {center,a:vector(r*cs,r*sn),b:vector(-turn*r*sn,turn*r*cs),sweep:sweep.abs()}
-    }
-
-    /// The edge's point at fraction `u` of it, and its derivative in `u`.
-    fn at(&self,u: f64) -> (V,V) {
-        match *self {
-            Edge::Line {start,delta} => (add(start,scale(delta,u)),delta),
-            Edge::Round {center,a,b,sweep} => {
-                let (sn,cs) = (u*sweep).dsin_cos();
-                (add(center,add(scale(a,cs),scale(b,sn))),scale(add(scale(a,-sn),scale(b,cs)),sweep))
-            }
-        }
-    }
-
-    fn placed(&self,pose: Motion) -> Edge {
-        match *self {
-            Edge::Line {start,delta} => Edge::Line {start:pose.point(start),delta:pose.vector(delta)},
-            Edge::Round {center,a,b,sweep} => Edge::Round {center:pose.point(center),a:pose.vector(a),b:pose.vector(b),sweep},
-        }
-    }
-}
-
-impl ExtrudedSurface {
+/// A prism's sides read off the drawing.
+pub trait ReadExtruded: Sized {
     /// Edge `edge` of prism `solid`'s profile, its face's lifted as the prism's recipe lifts it.
-    pub fn read(sk: &Sketch,solid: usize,edge: EntRef) -> Result<Self,String> {
+    fn read(sk: &Sketch,solid: usize,edge: EntRef) -> Result<Self,String>;
+    /// The sides of drafted prism `solid` (#684 G), half by half and loop by loop, each loop walked
+    /// with its material on its left: each side the ruled surface between its edge in the section at
+    /// one end of its half and in the section at the other, each section the profile moved `|h| tan
+    /// draft` into its material (`field::Sections`, the section `build::drafted` builds). That is the
+    /// side exactly where every point at a fixed fraction of its edge moves along a line as the draft
+    /// deepens: where each corner joins two lines or goes on tangent (`Sections::linear`). A prism on
+    /// one side of its parting plane is one half, from `from` to `to`; one running both ways from it
+    /// (#684 P) two, from `from` to the plane and from the plane to `to`, side `k` of loop `l` of the
+    /// first meeting the second's at the profile itself, a convex crease across the side whose fan
+    /// turns its normal from the one half's to the other's. Refused otherwise, saying why.
+    fn drafted(sk: &Sketch,solid: usize) -> Result<Vec<Vec<Vec<Self>>>,String>;
+}
+
+impl ReadExtruded for ExtrudedSurface {
+    fn read(sk: &Sketch,solid: usize,edge: EntRef) -> Result<Self,String> {
         let solid = sk.solids.get(solid).ok_or("no such solid")?;
         let SolidDef::Prism {face,from,to,draft:None} = &solid.def else { return Err("an extruded patch requires a prism with square sides".into()) };
         let profile = sk.faces.get(*face as usize).ok_or("no such profile")?;
@@ -166,20 +104,10 @@ impl ExtrudedSurface {
         };
         let depth = scale(normal,to.value-from.value);
         if !(depth[0].dhypot(depth[1]).dhypot(depth[2]) > 0.) { return Err("a prism of no depth".into()) }
-        Ok(ExtrudedSurface {name:format!("{}.{}",solid.name,name),edge,side:Side::Straight(depth)})
+        Ok(ExtrudedSurface::new(format!("{}.{}",solid.name,name),edge,Side::Straight(depth)))
     }
 
-    /// The sides of drafted prism `solid` (#684 G), half by half and loop by loop, each loop walked
-    /// with its material on its left: each side the ruled surface between its edge in the section at
-    /// one end of its half and in the section at the other, each section the profile moved `|h| tan
-    /// draft` into its material (`field::Sections`, the section `build::drafted` builds). That is the
-    /// side exactly where every point at a fixed fraction of its edge moves along a line as the draft
-    /// deepens: where each corner joins two lines or goes on tangent (`Sections::linear`). A prism on
-    /// one side of its parting plane is one half, from `from` to `to`; one running both ways from it
-    /// (#684 P) two, from `from` to the plane and from the plane to `to`, side `k` of loop `l` of the
-    /// first meeting the second's at the profile itself, a convex crease across the side whose fan
-    /// turns its normal from the one half's to the other's. Refused otherwise, saying why.
-    pub fn drafted(sk: &Sketch,solid: usize) -> Result<Vec<Vec<Vec<Self>>>,String> {
+    fn drafted(sk: &Sketch,solid: usize) -> Result<Vec<Vec<Vec<Self>>>,String> {
         use super::surface::Edge as Drawn;
         let solid = sk.solids.get(solid).ok_or("no such solid")?;
         let SolidDef::Prism {face,from,to,draft:Some(draft)} = &solid.def else {
@@ -228,39 +156,11 @@ impl ExtrudedSurface {
             let (near,far) = (sections.section_at(h0)?,sections.section_at(h1)?);
             sections.loops().iter().enumerate().map(|(l,lp)| lp.iter().enumerate().map(|(k,e)| {
                 let name = name(e).ok_or("a drafted side is no drawn edge of its profile")?;
-                Ok(ExtrudedSurface {name:format!("{}.{}",solid.name,name),edge:edge(&near[l][k],h0),
-                    side:Side::Leaning(edge(&far[l][k],h1))})
+                Ok(ExtrudedSurface::new(format!("{}.{}",solid.name,name),edge(&near[l][k],h0),Side::Leaning(edge(&far[l][k],h1))))
             }).collect()).collect()
         }).collect()
     }
 
-    pub fn at(&self,u: f64,v: f64) -> Result<SurfacePoint,Error> {
-        if !u.is_finite() || !v.is_finite() { return Err(Error::NonFinite); }
-        if !(0. ..=1.).contains(&u) || !(0. ..=1.).contains(&v) { return Err(Error::OutsideDomain); }
-        let (p,d) = self.edge.at(u);
-        Ok(match self.side {
-            Side::Straight(depth) => SurfacePoint {position:add(p,scale(depth,v)),du:d,dv:depth},
-            Side::Leaning(far) => {
-                let (q,e) = far.at(u);
-                SurfacePoint {position:lerp(p,q,v),du:lerp(d,e,v),dv:sub(q,p)}
-            }
-        })
-    }
-
-    /// Whether its edge is a line at both its ends (a plane side), so its ends at the caps, and a
-    /// drafted half's at its parting plane, are lines too: what the constant twist walks across
-    /// (#684 AE, AG).
-    pub fn straight(&self) -> bool {
-        matches!((self.edge,self.side),(Edge::Line {..},Side::Straight(_) | Side::Leaning(Edge::Line {..})))
-    }
-
-    fn placed(&self,pose: Motion) -> Self {
-        let side = match self.side {
-            Side::Straight(depth) => Side::Straight(pose.vector(depth)),
-            Side::Leaning(far) => Side::Leaning(far.placed(pose)),
-        };
-        ExtrudedSurface {name:self.name.clone(),edge:self.edge.placed(pose),side}
-    }
 }
 
 /// The revolved faces of a continuous sweep's tool and the edges between its faces, with the
@@ -268,13 +168,10 @@ impl ExtrudedSurface {
 /// Booleans; the source material is what rejects hidden portions.
 #[derive(Clone,Debug)]
 pub struct SweepContacts {
-    pub(super) source: SpatialField,
-    pub(super) patches: Vec<ToolSurface>,
-    /// Where adjacent patches of a profile loop meet.
-    pub(super) edges: Vec<PatchEdge>,
-    /// Where a drafted prism's sides fold at its parting plane (#684 P): the side below it at its
-    /// `v = 1`, then the side above at its `v = 0`, one point at each `u`.
-    pub(super) creases: Vec<[usize;2]>,
+    pub(super) source: std::sync::Arc<SpatialField>,
+    /// The tool as the kernel reads it: its faces, where adjacent faces of a profile loop meet, where
+    /// a drafted prism's sides fold, and its material, `source`.
+    pub(super) tool: Tool,
     pub(super) motion: Family,
     /// The roll it is read over: the sweep's, or a whole turn's once round (`whole`).
     pub(super) roll: [f64;2],
@@ -302,14 +199,6 @@ impl std::fmt::Display for PointContactError {
             PointContactError::Failed(m) => f.write_str(m),
         }
     }
-}
-
-/// The edge two adjacent patches of a profile loop share: the end `ends[i]` (0 or 1, in `u`) of
-/// patch `patches[i]`, swept — a circle round a revolution, a line along a prism.
-#[derive(Clone,Copy,Debug)]
-pub struct PatchEdge {
-    pub patches: [usize;2],
-    pub ends: [f64;2],
 }
 
 #[derive(Clone,Copy,Debug)]
@@ -426,26 +315,19 @@ impl SweepContacts {
         // reader of its contacts reads it once round
         let (motion,roll) = (Family::read(sk,*motion as usize)?,super::roll::interval(sk,solid)?);
         let once = motion.twist().and_then(|screw| super::constant_twist::once_round(&screw,roll));
-        Ok(Self {source:source_field,patches,edges,creases,motion,roll:once.unwrap_or(roll),whole:once.is_some()})
+        let source = std::sync::Arc::new(source_field);
+        let tool = Tool {faces:patches,edges,creases,material:source.clone()};
+        Ok(Self {source,tool,motion,roll:once.unwrap_or(roll),whole:once.is_some()})
     }
-    pub fn edges(&self) -> &[PatchEdge] { &self.edges }
-    /// Where `edge`'s two faces meet, and a point just inside each face beside it, on a
-    /// revolution's charts' start (`v = 0`) and halfway along a prism's sides, clear of its caps:
-    /// the probe a corner is told by — the chord between the two points in the tool's material at a
-    /// convex corner, out of it at a concave one. (At a cap the chord lies on the tool's boundary,
-    /// where the material reads nought either way.)
-    pub fn corner(&self,edge: &PatchEdge) -> Option<(V,[V;2])> {
-        let ([a,b],[ua,ub]) = (edge.patches,edge.ends);
-        let (pa,pb) = (self.patches.get(a)?,self.patches.get(b)?);
-        let h = 1e-4;
-        let inward = |u: f64| if u < 0.5 { u+h } else { u-h };
-        let v = if pa.periodic() { 0. } else { 0.5 };
-        Some((pa.at(ua,v).ok()?.position,[pa.at(inward(ua),v).ok()?.position,pb.at(inward(ub),v).ok()?.position]))
-    }
-    pub fn patches(&self) -> &[ToolSurface] { &self.patches }
+    pub fn edges(&self) -> &[PatchEdge] { &self.tool.edges }
+    /// The tool as the kernel reads it.
+    pub fn tool(&self) -> &Tool { &self.tool }
+    /// Where `edge`'s two faces meet, and a point just inside each face beside it (`Tool::corner`).
+    pub fn corner(&self,edge: &PatchEdge) -> Option<(V,[V;2])> { self.tool.corner(edge) }
+    pub fn patches(&self) -> &[ToolSurface] { &self.tool.faces }
     /// Where a drafted prism's sides fold at its parting plane (#684 P): each pair the side below
     /// it, ending there at `v = 1`, and the side above, starting there at `v = 0`.
-    pub fn creases(&self) -> &[[usize;2]] { &self.creases }
+    pub fn creases(&self) -> &[[usize;2]] { &self.tool.creases }
     pub fn motion(&self) -> &Family { &self.motion }
     pub fn source_material(&self) -> &SpatialField { &self.source }
     /// The roll the contacts are read over: the sweep's, or a whole turn's once round from its start.
@@ -483,7 +365,7 @@ impl SweepContacts {
     /// separate material classification decides what is exposed.
     pub fn at_source_over(&self,patch: usize,u: f64,v: f64,interval: [f64;2],tolerance: f64)
         -> Result<Vec<TimedContact>,String> {
-        let surface = self.patches.get(patch).ok_or("no such sweep patch")?.at(u,v)
+        let surface = self.tool.faces.get(patch).ok_or("no such sweep patch")?.at(u,v)
             .map_err(|e| format!("{e:?}"))?;
         let roots = self.motion.normal_velocity(surface)?.roots(interval,tolerance,4096)
             .map_err(|e| format!("{e:?}"))?;

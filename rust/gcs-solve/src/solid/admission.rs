@@ -9,6 +9,7 @@
 //! between them. Material evaluation answers membership for every sweep, admitted or not; only
 //! boundary construction is restricted.
 #[allow(unused_imports)]
+use super::ReadExtruded;
 use crate::fmath::Det;
 use super::{SpatialField,SweepContacts,TimedContact,cad};
 use crate::{envelope::{Motion,SurfacePoint},model::{EntKind,Sketch,SolidDef}};
@@ -1139,7 +1140,7 @@ fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),extent: Optio
     let read = |p: V| { let i = inside(p); reads.lock().unwrap_or_else(|e| e.into_inner()).push(p,i); i };
     let ask = super::constant_twist::Ask {rows:options.rows,root_tolerance:options.root_tolerance,least_factor:options.least_factor,
         roll:c.domain(),heights:extent.map(|e| e.0),radius:extent.map(|e| e.1),inside:&read,caps:lone.is_some()};
-    let found = super::constant_twist::Characteristic::walk(c,&ask)?;
+    let found = super::constant_twist::walk(c,&ask)?;
     let [first,last] = found.reach;
     let mut gaps: Vec<f64> = (first..last).map(|w| crate::space::distance(found.nodes[w].position,found.nodes[w+1].position)).collect();
     gaps.sort_by(f64::total_cmp);

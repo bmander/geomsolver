@@ -64,7 +64,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
     // a prism's side is read in the drawing, where its envelope stands for it (`extruded_envelopes`)
     let prism = |i: usize| matches!(sk.solids[sk.surfaces[i].solid as usize].def, crate::model::SolidDef::Prism { .. });
     for i in (0..sk.surfaces.len()).filter(|&i| !prism(i)) {
-        if let Err(message) = crate::solid::RevolvedSurface::named(sk,i) {
+        if let Err(message) = <crate::solid::RevolvedSurface as crate::solid::ReadRevolved>::named(sk,i) {
             diags.push(refuse(EntRef::new(crate::model::EntKind::Surface, i), message));
         }
     }

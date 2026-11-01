@@ -101,8 +101,9 @@ pub mod sector;
 pub mod export;
 pub mod contact_trace;
 pub mod blank_features;
-pub use sweep_contacts::{ExtrudedSurface,SweepContacts,TimedContact,PatchEdge,PointContactError,ToolSurface};
-pub use surface::{RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
+pub use sweep_contacts::{CapSurface,ExtrudedSurface,Material,ReadCap,ReadExtruded,SweepContacts,TimedContact,PatchEdge,PointContactError,Tool,
+    ToolSurface};
+pub use surface::{ReadProjector,ReadRevolved,RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
     SurfaceProjection,SurfaceProjector,RevolvedContact};
 pub(crate) use raycast::RayIndex;
 use section::face_polys;

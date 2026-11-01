@@ -1,5 +1,6 @@
 //! Parameters and entities: their numbers, their styles, and the spatial ones sampled.
 
+use gcs_core::solid::{ReadRevolved,ReadProjector};
 use super::*;
 use gcs_core::style::Presented;
 

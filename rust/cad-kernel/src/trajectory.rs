@@ -67,13 +67,17 @@ impl Motion {
     /// rate is radians per unit of the motion parameter. The axis need not be a unit vector.
     pub fn rotation(axis: V3, angle: f64, rate: f64) -> Result<Self, Error> {
         if !angle.is_finite() || !rate.is_finite() { return Err(Error::NonFinite); }
-        let a = normalized(axis).ok_or(Error::Degenerate)?;
+        Ok(Self::turn(normalized(axis).ok_or(Error::Degenerate)?, angle, rate))
+    }
+
+    /// `rotation` about the unit axis `a`, read as it is.
+    fn turn(a: V3, angle: f64, rate: f64) -> Self {
         let (s, c) = angle.dsin_cos();
         let k = [[0.,-a[2],a[1]], [a[2],0.,-a[0]], [-a[1],a[0],0.]];
         let r = std::array::from_fn(|i| std::array::from_fn(|j|
             c * if i == j { 1. } else { 0. } + (1.-c)*a[i]*a[j] + s*k[i][j]));
         let dr = mm(k, r).map(|row| scale(row, rate));
-        Ok(Self { r, dr, ..Self::identity() })
+        Self { r, dr, ..Self::identity() }
     }
 
     #[inline]
@@ -289,11 +293,18 @@ impl Screw {
 
     /// Its pose at `t` and its rate: turned `ratio · t` about its axis and slid `advance · t / τ`
     /// along it, a slide (no `ratio`) by its step alone.
-    pub fn at(&self, t: f64) -> Result<Motion, Error> {
-        let rate = self.advance/std::f64::consts::TAU;
-        let slide = Motion::translation(self.axis.map(|v| v*rate*t), self.axis.map(|v| v*rate))?;
+    pub fn at(&self, t: f64) -> Result<Motion, Error> { self.at_rate(t, 1.) }
+
+    /// Its pose at `t`, its rate taken `rate` times as fast: where a pace running at `rate` takes it
+    /// (`Trajectory::Paced`), each step's rate its own times the pace's. Its axis is unit, read as it
+    /// is.
+    pub fn at_rate(&self, t: f64, rate: f64) -> Result<Motion, Error> {
+        let advance = self.advance/std::f64::consts::TAU;
+        let slide = Motion::translation(self.axis.map(|v| v*advance*t), self.axis.map(|v| v*advance*rate))?;
         if self.ratio == 0. { return Ok(slide) }
-        let rotation = Motion::rotation(self.axis, self.ratio*t, self.ratio)?;
+        let (angle, turning) = (self.ratio*t, self.ratio*rate);
+        if !angle.is_finite() || !turning.is_finite() { return Err(Error::NonFinite) }
+        let rotation = Motion::turn(self.axis, angle, turning);
         let pose = Motion::translation(self.origin.map(|v| -v), [0.;3])?
             .then(rotation).then(Motion::translation(self.origin, [0.;3])?);
         Ok(if self.advance == 0. { pose } else { pose.then(slide) })
@@ -370,7 +381,10 @@ impl Trajectory {
             Trajectory::Relative {source, observer} => source.unchecked(t)?.then(observer.unchecked(t)?.inverse()),
             Trajectory::Paced {path, pace} => {
                 let [s, rate] = pace.jet(t)?;
-                path.unchecked(s)?.paced(rate)
+                match **path {
+                    Trajectory::Twist(screw) => screw.at_rate(s, rate).map_err(|e| read(e, s))?,
+                    _ => path.unchecked(s)?.paced(rate),
+                }
             }
             Trajectory::Pieces(pieces) => {
                 let all = pieces.pieces();

@@ -3,6 +3,7 @@
 //! space; a line or a plane touching it, a line along its normal and a circle osculating it at a
 //! point held there.  Each is held here to something worked out apart from `envelope::held`: the
 //! after-the-solve snapshot (`GeneratedEnvelope`), `motion::Family`'s poses, and closed forms.
+use gcs_core::solid::ReadRevolved;
 use crate::common::build;
 use gcs_core::constraints::CKind;
 use gcs_core::envelope::held::{self, Contact, Parts};

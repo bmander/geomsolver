@@ -271,8 +271,29 @@ family's wall are read numerically, the contact function's crossings along a lin
 (`contact_along`).  Each closed form is the contact function rearranged, held to it at sampled
 parameters under seeded twists, each ring's roots to the numerical reading of the ring, and the
 degenerate contacts the walk is built round (a ring in contact all round, a ruling all along, a flat
-kept in its plane) to the root kind that names them (`tests/surface_contact.rs`).  Sampled.  Nothing
-reads either yet: the constant-twist walk and its sheet move onto them in F2's next step.
+kept in its plane) to the root kind that names them (`tests/surface_contact.rs`).  Sampled.
+
+**The constant twist is the kernel's (#721 F2b):** the walk of the characteristic and its rows
+(`brep::swept::constant_twist`), the sheet fitted and judged (`brep::swept::sheet`: `Sheet`, `Grid`,
+`settle`, `Fitted`, `Tolerance`) and the screw's sheet carried along (`brep::swept::helical`) are
+in `cad-kernel`, on the tool as the kernel reads it (`brep::swept::tool::Tool`: its faces, a face of
+revolution being `brep::swept::surface::RevolvedSurface`, its edges, creases and `Material`) and the
+lowered trajectory; `constant_twist::…`, `helical::…` and `sheet::settle` below name them there.
+`solid::constant_twist::walk` hands the kernel the tool and the motion `SweepContacts` read off the
+drawing and says the kernel's `Row` as admission's `Condition`; `brep::sweep::helical` hands it the
+cut's name, scale, trajectory and roll.  The readers of a tool's faces off a drawing are the
+solver's, as extension traits (`ReadRevolved`, `ReadExtruded`, `ReadCap`, `ReadProjector`).  With
+the move the solver's duplicates went: `Family::at`, `Family::twist` and `Family::instantaneous`
+read the lowered trajectory (`Family::path`, lowered once when the family is read; `twist` its
+`Trajectory::screw`, a turn of no ratio being the slide it is and one that moves nothing none), and
+a ring's contact and its roots are `brep::contact`'s (`RingFrame::coefficients`, a `Sinusoid`; its
+roots on a chart of the ring `Sinusoid::roots_over`), read off the motion's velocity field as the
+walk always read them.  `Screw::at` reads its unit axis as it is, so a constant twist's pose is
+`Family::pose_at`'s to the bit (`a_motion_lowers_to_the_kernels_trajectory`).  The move was held
+walk by walk, as F3 was: every walk and every screw's sheet the suite makes written down at full
+precision before and after, the same to the bit.  (Read through `Twist::body` and `Sinusoid::roots`
+instead, the walk moves by an ulp, and that alone turns three triangles of the whole turn's mesh over
+(`the_wheel_turned_once_leaves_its_shadow_all_round`): the mesher's, F4's to mend.)
 
 **Screws, the constant-twist class (#64):** a sweep under a screw (`f screws(a) l`) is admitted by
 rows S1–S4 (`solid::constant_twist`, docs/generating-sweeps.md): the tool's characteristic (each

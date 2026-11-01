@@ -46,10 +46,15 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   kernel's `trajectory::Trajectory` (`Family::trajectory`), the tool and the blank read off the
   model — and puts the kernel's refusals, typed by geometry with a witness, into words.  The
   trajectory (`trajectory`: the pose and its rate `Motion`, the constant twist `Screw`, the
-  instantaneous `Twist`) and each surface's contact under a twist (`contact`) are there now, and
-  `envelope::Motion`, `envelope::Error` and `motion::Screw` are their re-exports.  The walk and
-  its sheet (`solid::constant_twist`, `brep::sweep`) move into the kernel with no change in
-  behaviour; until each has, it is held where it is, and no new walk is built in the solver.  The solver is usable
+  instantaneous `Twist`) and each surface's contact under a twist (`contact`) are there, and
+  `envelope::Motion`, `envelope::Error` and `motion::Screw` are their re-exports.  So is the
+  constant twist (F2b, `swept`): the tool as its faces (`swept::tool`, `swept::surface`), the walk
+  of its characteristic (`swept::constant_twist`), the sheet fitted and judged (`swept::sheet`) and
+  the screw's sheet (`swept::helical`); `solid::constant_twist` and `brep::sweep::helical` hand
+  them what the drawing says, and the readers of a tool's faces off a drawing are the solver's
+  extension traits (`solid::ReadRevolved` and the rest).  The other classes' readings and sheets,
+  the trims and the closed solid (F2c) move with no change in behaviour; until each has, it is held
+  where it is, and no new walk is built in the solver.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint
   records, solved and diagnosed through the ABI with no document
   (`gcs-ffi/tests/without_a_document.rs`).  What the two share is defined below both: the words

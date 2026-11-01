@@ -1,3 +1,4 @@
+use gcs_core::solid::ReadRevolved;
 use gcs_core::{graft,model::{EntKind,EntRef},solid::RevolvedSurface,syntax};
 use crate::common::parsed::{build, determined as solved};
 

@@ -1,6 +1,7 @@
 //! **A face's name, and what it is analytically** (#188, #212): the path a body names a face by
 //! (`FacePath`), the faces of a solid by their paths read off the definitions (`face_paths`), and
 //! the analytic surface a path reads back to (`face_source`).
+use crate::solid::ReadRevolved;
 use crate::model::{Sketch, SolidDef};
 
 /// **A face's name, as a body names it** (#188): the route through the body's operands to the

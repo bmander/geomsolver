@@ -1,3 +1,4 @@
+use gcs_core::solid::ReadRevolved;
 use super::*;
 use gcs_core::{envelope::{self,Motion,Error},solid::{SweepContacts,RevolvedSurface,RevolvedContact}};
 use std::f64::consts::PI;
