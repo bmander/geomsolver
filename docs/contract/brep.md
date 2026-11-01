@@ -324,3 +324,56 @@ signed area in its parameters agreeing with its face's sense), and `gcs-cli/test
 in the native slow tier (`OCCT=1`) holds it to OCCT's `gp_Trsf::SetMirror`
 (`solvent_cad_mirror`): the body built by OCCT where it was solved, mirrored there and dumped back,
 its volume, its faces by kind and every vertex ours.
+
+**Offsets are the union of the pieces their points are nearest** (`brep::offset`; brep-bench's
+offset, shell and thicken cases).  A point outside a solid within `d` of it is nearest a point
+inside a face, on an edge or at a vertex, so the solid grown by `d` (`offset::grown`) is the solid
+with each face's **normal sweep** (`normal_sweep`: every `q + s n(q)`, `s` over `[0, d]`), the tube
+of radius `d` about each crease the faces part at, and the ball about each corner nearest which
+some point is — a corner where two or more such creases meet and none turns the other way, or a
+corner of no crease whose faces' normals differ there (a cone's apex; `smooth_at` reads each face
+just inside it, so a sphere's pole is smooth) — every piece within `d` of the solid and every such
+point in a piece, united by the Booleans.  Shrunk (`offset::shrunk`) is the dual, the solid less
+the inward sweeps and the tubes and balls of its concave creases and corners.  Nothing is
+classified by shape: where moved faces meet (a groove grown shut, a flange shrunk away, a torus
+grown past its hole into an apple) the union decides, as the definition does.  **Sharp joins**
+(`Join::Sharp`) are the other set an offset is asked for, its faces moved and extended until they
+meet: along a line between two planes the prism of the kite between the edge, its moved copies and
+the line the moved planes meet in; at a corner of three planes the parallelepiped the moved planes
+and the faces' own bound; anything else refused by name.  **A shell** (`offset::shelled`) is the
+wall within `t` of the faces not left open — inside, the solid in common with the pieces of those
+faces; outside, the pieces less the solid, cut off at each opening's plane.  Inside, a moved wall
+runs on across a face left open until it meets it (a curved face's sweep carried across that side
+of its box of parameters to the end of its surface's range, `Reach::across`), which the solid then
+trims: in a ball's cap the cavity is the inner ball whether the opening reaches it or not.  **A
+sheet** (`offset::sheet_of` lifts faces off a solid) **thickened** (`offset::thickened`) is the
+union of its faces' sweeps over `[s0, s1]`, its creases joined only by the wedge of the tube between
+the two moved faces and its corners by the ball's sector their normals span, its rims swept straight.
+**A sweep** is exact: a plane's the prism of its loops (an arc's frame turned to the profile's
+normal); a cylinder's, cone's, sphere's or torus's bounded by its own parameter lines the section
+between its meridian and its moved copies, turned through its span (a whole tube's the tube of the
+far radius less the near one's, each cut at the axis).  Past a surface's axis the section stands on
+the far side of it: for a sweep in its own right that part mirrored and turned half a turn on is
+added (a bend thickened past its radius); for an offset's piece it is cut away
+(`Reach::cut_at_axis`), since a point there is nearer the surface on the axis's far side and not
+this face's.  A surface with no offset in closed form, or a curved face not bounded by its own
+parameter lines, is refused naming the face and a point on it — never approximated.  A known limit of
+the Booleans, not a rule of offsets: a meeting through a sphere's pole is read less exactly than one
+clear of it (a pole near a corner ball's kept boundary put a grown tetrahedron 9e-7 off), so a
+corner's ball is built with its poles along the corner's mean normal, clear of the circles the
+tubes end on; the deeper fix splits a meeting at a chart's degenerate point.  `tests/brep_offset.rs` is the gate: a box, an L, a tetrahedron, a cone, tori past their
+hole and shrunk, a groove filled and a flange taken away, boxes and caps shelled, an open box and a
+bend thickened, each to its closed form to 1e-9; a spline sheet refused.
+
+**A closed spline meeting is one edge round** (brep-bench's geometry/elliptic-hole): a plane square
+to a spline's sweep meets it in the spline carried along the sweep, its weights and knots kept
+(`ssi::intersect`; a rational rim carried without its weights is another curve, on neither
+surface), and a clamped spline whose ends meet, running round a loop far wider than the tolerance,
+is split as a closed curve is (`boolean::closed_domain`), its last stretch running round to its
+first — not dropped as an open one's past its last point, which left an elliptic bore out of its
+plate and one use of a cylinder's seam unmatched where a branch touches it inside at one point
+(`a_tee_tangent_at_a_point_unites`).
+**A face's parameters are scaled by its speed at their box's middle unless the chart nearly
+collapses there** (`brep::mesh`): a horn torus's pinch, every `u` one point, would shrink `u` to
+nothing over the whole face; there the mean speed over the box is taken.
+`brep_offset::an_elliptic_bore_cuts_through_its_plate`, `a_horn_torus_meshes_within_its_sag`.

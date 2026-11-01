@@ -11,7 +11,7 @@ fn line(a: V,b: V) -> ProfileEdge { ProfileEdge::Line {a,b} }
 fn arc(c: V,r: f64,n: V,x: V,span: Option<[f64;2]>) -> ProfileEdge {
     ProfileEdge::Arc {frame:Frame::new(c,n,x),r,span}
 }
-fn poly(pts: &[V]) -> Vec<ProfileEdge> { (0..pts.len()).map(|i| line(pts[i],pts[(i+1)%pts.len()])).collect() }
+pub(crate) fn poly(pts: &[V]) -> Vec<ProfileEdge> { (0..pts.len()).map(|i| line(pts[i],pts[(i+1)%pts.len()])).collect() }
 
 fn close(a: f64,b: f64) { assert!((a-b).abs() <= 1e-11*b.abs().max(1.),"{a} against {b} ({:e})",(a-b)/b); }
 
@@ -336,7 +336,7 @@ fn an_extruded_spline_meets_surfaces_along_it_in_closed_form() {
 
 fn scale3(a: V,s: f64) -> V { [a[0]*s,a[1]*s,a[2]*s] }
 
-fn block(lo: V,hi: V) -> gcs_core::brep::topo::Brep {
+pub(crate) fn block(lo: V,hi: V) -> gcs_core::brep::topo::Brep {
     let p = Profile {names:vec![],origin:[0.,0.,0.],normal:XY,loops:vec![poly(&[[lo[0],lo[1],0.],[hi[0],lo[1],0.],[hi[0],hi[1],0.],[lo[0],hi[1],0.]])]};
     prism(&p,lo[2],hi[2]).unwrap()
 }
@@ -835,7 +835,7 @@ fn a_trace_keeps_a_sharp_turn_at_its_end() {
 }
 
 /// The volume a mesh encloses: the signed tetrahedra from the origin to each triangle.
-fn mesh_volume(m: &gcs_core::brep::mesh::Mesh) -> f64 {
+pub(crate) fn mesh_volume(m: &gcs_core::brep::mesh::Mesh) -> f64 {
     m.tris.iter().map(|t| {
         let [a,b,c] = t.map(|i| m.pts[i as usize]);
         (a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0]))/6.
@@ -2035,7 +2035,7 @@ fn a_hemispheres_rim_chamfered_to_its_radius_is_a_spherical_sector() {
 }
 
 /// The area of every face of `b`.
-fn total_area(b: &gcs_core::brep::topo::Brep) -> f64 { b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum() }
+pub(crate) fn total_area(b: &gcs_core::brep::topo::Brep) -> f64 { b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum() }
 
 /// The kinds of `b`'s faces' surfaces, sorted.
 fn face_kinds(b: &gcs_core::brep::topo::Brep) -> Vec<&'static str> {

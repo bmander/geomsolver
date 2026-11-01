@@ -24,6 +24,9 @@ it to crates.io; what changes in each release is in [CHANGELOG.md](CHANGELOG.md)
 - **Booleans:** union, cut and common. Intersections between analytic surfaces are closed forms
   wherever one exists, and traced otherwise. A meeting the kernel cannot resolve is refused, never
   read as none.
+- **Offsets:** a solid grown or shrunk by a distance, hollowed to a wall (open at some faces,
+  inside or out), and a sheet thickened, with rounded or sharp joins, each built exactly as the
+  union of its faces' normal sweeps and the tubes and balls between them.
 - **Measures:** exact volume (by Green's theorem over each face) and area.
 - **Meshing:** a constrained Delaunay mesh refined until it is within a measured sag of the surface.
 - **Output:** STEP AP214 with p-curves and seam curves, and STL.
@@ -66,7 +69,7 @@ assert!((volume(&drilled) - (1000. - 90. * std::f64::consts::PI)).abs() < 1e-6);
 
 - A public API designed for strangers: builders, and the recipe JSON kept as one front end among
   several.
-- Edge fillets and chamfers, shelling and offsets, and a sweep of any section along any path.
+- Edge fillets and chamfers, offsets of B-spline faces, and a sweep of any section along any path.
 - STEP import.
 - The kernel's own test suite moved into the crate, out of geomsolver's.
 
