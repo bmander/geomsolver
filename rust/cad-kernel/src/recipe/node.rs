@@ -40,6 +40,33 @@ pub struct Recipe { pub root: i64,pub nodes: Vec<Named> }
 #[derive(Clone,Debug)]
 pub struct Named { pub id: i64,pub name: String,pub step: String,pub node: Node }
 
+/// A body a `through` prism is applied to: the nodes `sources` its material is made of, and the
+/// row-major 3x4 `matrix` the copy cut from it is placed by (the profile where it is written, none).
+#[derive(Clone,Debug)]
+pub struct Use { pub sources: Vec<i64>,pub matrix: Option<[f64;12]> }
+
+impl Use {
+    fn read(n: &Json) -> Read<Use> {
+        let matrix = match n.get("matrix") {
+            None => None,
+            Some(m) if m.arr().len() == 12 => Some(std::array::from_fn(|k| m.arr()[k].as_f64())),
+            Some(_) => return Err(unread("recipe: a use's `matrix` is not three rows of four".into())),
+        };
+        Ok(Use {sources:ids(n,"sources")?,matrix})
+    }
+
+    /// Where the use puts a profile through `origin` square to `normal`: its origin and normal.
+    pub fn frame(&self,origin: V,normal: V) -> (V,V) {
+        match &self.matrix {
+            None => (origin,normal),
+            Some(m) => {
+                let r = crate::geom::Rigid::from_rows(m);
+                (r.point(origin),r.vector(normal))
+            }
+        }
+    }
+}
+
 /// What a node makes.
 #[derive(Clone,Debug)]
 pub enum Node {
@@ -50,8 +77,10 @@ pub enum Node {
     Revolve { profile: Section,origin: V,axis: V,angle: f64 },
     /// The node `source` moved by the row-major 3x4 `matrix`.
     Placed { source: i64,matrix: [f64;12] },
-    /// A prism spanning the material of the nodes `sources` along its profile's normal.
-    Through { profile: Section,sources: Vec<i64> },
+    /// A prism through everything spanning, along its profile's normal, the material of each of
+    /// its `uses`: the bodies it is cut from or kept in common with (#737), each read from where
+    /// that use's placement puts the profile.
+    Through { profile: Section,uses: Vec<Use> },
     /// The body rule over nodes built before it.
     Body(Body),
     /// A ball swept (`solid::canal`, #238, #684 D): the ball of `radius` about `centre` carried
@@ -177,7 +206,7 @@ impl Node {
                 if m.len() != 12 { return Err(unread("recipe: a placement's `matrix` is not three rows of four".into())) }
                 Node::Placed {source:field(n,"source")?.as_i64(),matrix:std::array::from_fn(|k| m[k].as_f64())}
             }
-            "through" => Node::Through {profile:profile()?,sources:ids(n,"sources")?},
+            "through" => Node::Through {profile:profile()?,uses:each(listed(n,"uses"),Use::read)?},
             "body" => Node::Body(Body::read(n)?),
             "canal" => Node::Canal {centre:point(n,"centre")?,radius:number(n,"radius")?,
                 spine:match n.get("tube") {

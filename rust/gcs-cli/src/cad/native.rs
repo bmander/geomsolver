@@ -165,19 +165,26 @@ impl Session {
             Node::Prism {draft:Some(_),..} => return Err("native CAD export does not build a drafted prism; the core's kernel \
                 builds it (`--kernel rust`)".into()),
             Node::Prism {profile,from,to,..} => (profile,*from,*to),
-            Node::Through {profile,sources} => {
-                let ids: Vec<_> = sources.iter().map(|i| shapes[i]).collect();
-                let mut bounds = [0.;6];
-                self.result(unsafe { solvent_cad_bounds(self.0,ids.as_ptr(),ids.len() as c_int,bounds.as_mut_ptr()) })?;
-                let (n,origin) = (profile.normal,profile.origin);
-                let (mut lo,mut hi,mut diagonal) = (0.,0.,0.);
-                for k in 0..3 {
-                    let (a,b) = (n[k]*(bounds[k]-origin[k]),n[k]*(bounds[k+3]-origin[k]));
-                    lo += a.min(b); hi += a.max(b);
-                    diagonal += (bounds[k+3]-bounds[k]).powi(2);
+            // across the material of every body it is applied to, each read from where that
+            // use's placement puts the profile (#737)
+            Node::Through {profile,uses} => {
+                let (mut from,mut to) = (f64::INFINITY,f64::NEG_INFINITY);
+                for u in uses {
+                    let ids: Vec<_> = u.sources.iter().map(|i| shapes[i]).collect();
+                    let mut bounds = [0.;6];
+                    self.result(unsafe { solvent_cad_bounds(self.0,ids.as_ptr(),ids.len() as c_int,bounds.as_mut_ptr()) })?;
+                    let (origin,n) = u.frame(profile.origin,profile.normal);
+                    let (mut lo,mut hi,mut diagonal) = (0.,0.,0.);
+                    for k in 0..3 {
+                        let (a,b) = (n[k]*(bounds[k]-origin[k]),n[k]*(bounds[k+3]-origin[k]));
+                        lo += a.min(b); hi += a.max(b);
+                        diagonal += (bounds[k+3]-bounds[k]).powi(2);
+                    }
+                    let pad = diagonal.sqrt()*4e-5;
+                    from = f64::min(from,lo-pad); to = f64::max(to,hi+pad);
                 }
-                let pad = diagonal.sqrt()*4e-5;
-                (profile,lo-pad,hi+pad)
+                if !(from <= to) { return Err("a `through` prism applied to no material".into()) }
+                (profile,from,to)
             }
             Node::Revolve {profile,..} => (profile,0.,0.),
             _ => return Err("unsupported CAD primitive".into()),

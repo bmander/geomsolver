@@ -254,14 +254,16 @@ impl Extent {
 
 /// **How far a sweep rolls** (§6.9, #271): an interval of the shared roll stated (`over t in (a,
 /// b)`, a `Running`, #391 S1, named as written, S2: degrees as written, `radians` what is read),
-/// or `through: body` — the roll about 0 during which the tool meets the body's material, its
-/// stock and additions (never its cuts, so a sweep cutting the body it rolls through is no cycle), found
-/// after the solve (`solid::roll`).  Every reader asks `solid::roll::interval`,
-/// never the extents, so the exact construction, admission and the field read one interval.
+/// or the whole roll (#737, `solid({ p | p inside(under: m) tool })`) — which names no body: the
+/// roll about 0 during which the tool meets the material of every body it, or a copy of it, is
+/// cut from or kept in common with (`solid::uses`), their stock and additions (never their cuts,
+/// so a sweep cutting the body it rolls through is no cycle), found after the solve
+/// (`solid::roll`).  Every reader asks `solid::roll::interval`, never the extents, so the exact
+/// construction, admission and the field read one interval.
 #[derive(Clone, Debug)]
 pub enum Roll {
     Stated(super::Running),
-    Through { body: u32 },
+    Through,
 }
 
 /// Which way a partial revolution turns — a word, never a sign (§9.2).
@@ -297,8 +299,11 @@ pub enum SolidDef {
     /// stays a plane and a circle's a cone; the faces keep the prism's names, a side crossing the
     /// plane in two pieces of one name.
     Prism { face: u32, from: Extent, to: Extent, draft: Option<Extent> },
-    /// A prism spanning the target's additive material, evaluated after solving.
-    Through { face: u32, body: u32 },
+    /// A face's prism through everything (#737, `std.solids.Through`), unbounded along its normal
+    /// and so naming no body: evaluated after solving as the prism spanning the additive material
+    /// of every body it, or a copy of it, is cut from or kept in common with (`solid::uses`),
+    /// each where the copy's placement puts the face — exact against each of them.
+    Through { face: u32 },
     /// A face swept about a line or an axis **in its own plane**, through `sweep` (a full turn
     /// where the document writes none), right-handed about the line's own `p1 → p2` (an axis's
     /// own direction) unless `sense: cw`.  Read through `Sketch::revolve_axis`.
@@ -893,16 +898,14 @@ impl SolidDef {
                 source: solid(*source)?,
                 motion: motion(*m)?,
                 roll: match roll {
-                    Roll::Through { body } => Roll::Through { body: solid(*body)? },
+                    Roll::Through => Roll::Through,
                     Roll::Stated(r) => Roll::Stated(r.clone()),
                 },
             },
             SolidDef::Prism { face: f, from, to, draft } => SolidDef::Prism {
                 face: face(*f)?, from: from.clone(), to: to.clone(), draft: draft.clone(),
             },
-            SolidDef::Through { face: f, body } => {
-                SolidDef::Through { face: face(*f)?, body: solid(*body)? }
-            }
+            SolidDef::Through { face: f } => SolidDef::Through { face: face(*f)? },
             SolidDef::Revolve { face: f, axis, sweep, sense } => SolidDef::Revolve {
                 face: face(*f)?, axis: map(*axis)?, sweep: sweep.clone(), sense: *sense,
             },

@@ -169,12 +169,14 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                 v.extend([6.,*source as f64,*motion as f64,from,to]);
                 motion_reads(sk,*motion,&mut v);
             }
-            // a roll through a body reads its material, never its cuts (`material_sources`)
-            SolidDef::Swept { source, motion, roll: Roll::Through { body } } => {
+            // a roll through everything reads the material of the bodies it is cut from, never
+            // their cuts (`applied_material`)
+            SolidDef::Swept { source, motion, roll: Roll::Through } => {
                 poses.world();
-                v.extend([8.,*source as f64,*motion as f64,*body as f64]);
+                v.extend([8.,*source as f64,*motion as f64]);
+                v.extend(super::applied_to(sk, s as usize).into_iter().map(f64::from));
                 motion_reads(sk,*motion,&mut v);
-                match material_sources(sk, *body) {
+                match super::document::applied_material(sk, s as usize) {
                     Ok(sources) => stack.extend(sources.into_iter().map(|o| (o, by))),
                     Err(_) => v.push(f64::MAX),
                 }
@@ -307,11 +309,21 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                 v.push(draft.as_ref().map_or(0.0, |d| d.value));
                 face_reads(sk, *face, &mut v, poses);
             }
-            SolidDef::Through { face, body } => {
-                v.extend([3.0, *body as f64]);
+            // through everything (#737): each body it is applied to, where the copies put it, and
+            // their material, including changes to additions and placement
+            SolidDef::Through { face } => {
+                v.push(3.0);
                 face_reads(sk, *face, &mut v, poses);
-                // Read the material graph too, including changes to additions and placement.
-                stack.push((*body, by));
+                let uses = super::uses(sk, s as usize);
+                v.push(uses.len() as f64);
+                for u in uses {
+                    v.push(f64::from(u.body));
+                    v.extend(frame_of(u.pose).into_iter().flatten());
+                    match material_sources(sk, u.body) {
+                        Ok(sources) => stack.extend(sources.into_iter().map(|o| (o, by))),
+                        Err(_) => v.push(UNREAD),
+                    }
+                }
             }
             SolidDef::Revolve { face, axis, sweep, sense } => {
                 v.extend([1.0, axis.kind as u8 as f64, axis.i() as f64]);

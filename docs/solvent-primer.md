@@ -2059,7 +2059,7 @@ body's are (`body.bore.hole`).
 - **A swept solid takes features directly**: `bore cut stock` makes `stock` the body, keeping its
   face names. Write `body := solid(stock)` only when the bare sweep and the part both need names.
 - **A cutter through the body**: `pinhole := solid(std.solids.Through(face(hole)))` then
-  `pinhole cut body`. `Through` only makes the cutter; the body it is cut from bounds it.
+  `pinhole cut body`. `Through` only makes the cutter; every body it is cut from bounds it.
 - **`tip common body`** keeps only what the body has in common with `tip`. Union comes first;
   `cut` and `common` commute.
 - **A pattern of solids.** A solid declared inside a `ring` is one solid a copy, each
@@ -2366,7 +2366,7 @@ statements.
 | `solid(sec, depth: 3mm)` | E001 — "a solid is the points of a set, and `solid(…)` takes no labels (#737): write `solid(std.solids.Prism(sec, from: -3mm, to: 0))`, with `use std.solids`" |
 | `sweep(ball over t in (0deg, 90deg), under: turn)` | E001 — "`sweep(…)` is retired (#737): a solid is the points of a set, and what this sweeps is `solid({ p \| p inside(under: turn, over t in (0deg, 90deg)) ball })`" |
 | `solid(std.solids.Revolution(sec, about: std.y))`, face on `std.front` | E080 — "a face swept by a turn is read point by point where the line it turns about lies in the face's plane" |
-| `pin := solid(std.solids.Through(sec))`, cut from nothing | E080 — "`pin` is a prism through everything, which only the body it is cut from bounds: cut it from one (`pin cut body`), or bound it by two ordinates" |
+| `pin := solid(std.solids.Through(sec))`, cut from nothing | E080 — "`pin` is a prism through everything, which only the bodies it is cut from bound: cut it from one (`pin cut body`), or bound it by two ordinates" |
 | `solid(std.solids.Prism(sec, from: 5mm, to: 0mm))` | E080 — "no point is at least `5mm` and at most `0mm` along the section's normal, so the prism's set is empty: write the lesser ordinate `from:`" |
 | `x cut y` and `y cut x` | E041 at the second — "`x` would be made of itself" |
 | `x coincident y`, two solids | refused: material is added with `union` |
@@ -2693,10 +2693,10 @@ Station(g).f })` over a declared `s` (1.14), `trace(leg.toe over theta in (0, 36
 (`solid_indexed_pattern.sv`); `solid({ p | p inside(under: turn, over t in (-75deg, 75deg)) tool })`
 is the union of the tool over the whole interval, a continuous sweep meshed from its material field
 (`swept_torus.sv`). With no `over` at all, `space := solid({ p | p inside(under: crown, seen_from:
-blank) tool })` is what the tool occupies at *any* roll, which only the body it is cut from bounds:
+blank) tool })` is what the tool occupies at *any* roll, which only the bodies it is cut from bound:
 `space cut body` rolls it over the whole roll about 0 during which it meets `body`'s stock and
-additions (never its cuts, so it may cut `body`), found after the solve and clear of the body at
-both ends — a generating cut states no roll limit (`spiral_bevel/hypoid.sv`'s `Generated`). Cut from
+additions, and those of every other body it is cut from (never their cuts, so it may cut `body`),
+found after the solve and clear of them at both ends — a generating cut states no roll limit (`spiral_bevel/hypoid.sv`'s `Generated`). Cut from
 nothing it is E080 at its declaration, and a tool always in mesh is E080 asking for a whole period,
 `over t in (0deg, 360deg)`. Through 0.198 these were `sweep(tool over t in (a, b), under: m)` and
 `sweep(tool, through: body, under: m)`, now E001 naming the set. A sweep of a sweep is refused, and

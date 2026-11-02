@@ -171,28 +171,27 @@ fn extruded(sk: &Sketch,face: usize,range: [f64;2],draft: f64) -> Result<Extrude
     }
 }
 
-// The ordinates along a face's normal spanned by every material source's support:
-// where a through cut has to reach. Padded as the faceted kernel pads its own.
-fn through_range(basis: &Basis,supports: &[Option<V>]) -> Result<[f64;2],String> {
-    let mut lo = [f64::INFINITY;3]; let mut hi = [f64::NEG_INFINITY;3];
-    for support in supports {
-        let support = support.ok_or("a through extent needs every material source bounded")?;
-        for k in 0..3 {
-            lo[k] = lo[k].min(support[k].bounds()[0]); hi[k] = hi[k].max(support[k].bounds()[1]);
+/// The ordinates a prism through everything (#737) spans along its section's normal: across the
+/// supports of the material of every body it is applied to, each read from where that use puts the
+/// section (`document::through_span`).  Refused where a source has no bounded support, or nothing
+/// is applied to.
+fn through_range(sk: &Sketch,tool: usize,basis: &Basis,
+                 support: &dyn Fn(u32) -> Result<Option<V>,crate::interval::Error>)
+    -> Result<[f64;2],String> {
+    let mut boxes = Vec::new();
+    for u in crate::solid::uses(sk,tool) {
+        let mut bounds = crate::solid::Box3::empty();
+        for o in crate::solid::document::material_sources(sk,u.body)? {
+            let b = support(o).map_err(|e| format!("material field: {e:?}"))?
+                .ok_or("a through extent needs every material source bounded")?;
+            bounds.add(b.map(|x| x.bounds()[0]));
+            bounds.add(b.map(|x| x.bounds()[1]));
         }
+        boxes.push((u.pose,bounds));
     }
-    if lo.iter().any(|v| !v.is_finite()) {
-        return Err("a through extent needs a material source".into());
-    }
-    let n = basis.normal();
-    let (mut a,mut b) = (0_f64,0_f64);
-    for k in 0..3 {
-        let (p,q) = (n[k]*(lo[k]-basis.o[k]),n[k]*(hi[k]-basis.o[k]));
-        a += p.min(q); b += p.max(q);
-    }
-    let diagonal = (0..3).map(|k| (hi[k]-lo[k]).dpowi(2)).sum::<f64>().sqrt();
-    let pad = diagonal*crate::solid::EPS*4.;
-    Ok([a-pad,b+pad])
+    let (a,b) = crate::solid::document::through_span(basis.o,basis.normal(),boxes)
+        .ok_or("a through extent needs a material source")?;
+    Ok([a,b])
 }
 
 /// **An operand built exactly is read by its own boundary** (#419): a body some of whose terms
@@ -255,12 +254,9 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
                 SolidDef::Prism {face,from,to,draft} => Snapshot::Static(extruded(sk,*face as usize,
                     [from.value,to.value],draft.as_ref().map_or(0.,|d| d.value))?.into()),
-                SolidDef::Through {face,..} => {
-                    let supports = crate::solid::document::evaluation_operands(sk,i)?.into_iter()
-                        .map(|o| get(o).support_bounds()).collect::<Result<Vec<_>,_>>()
-                        .map_err(error)?;
+                SolidDef::Through {face} => {
                     let (basis,_) = face_loops(sk,*face as usize)?;
-                    let range = through_range(&basis,&supports)?;
+                    let range = through_range(sk,i,&basis,&|o| get(o).support_bounds())?;
                     Snapshot::Static(extruded(sk,*face as usize,range,0.)?.into())
                 }
                 SolidDef::Placed {source,motion,at} => get(*source)

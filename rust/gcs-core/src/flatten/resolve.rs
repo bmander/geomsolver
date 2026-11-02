@@ -937,10 +937,7 @@ fn rewrite_decl(
     }
     // a revolution's axis is a line of the body like any other name it writes
     for r in d.sweep.as_mut().map(|s| s.references_mut()).unwrap_or_default() {
-        // the whole roll's body is the one it is cut from, joined where the word joins it (#737)
-        if r.root.text != crate::syntax::ROLLED {
-            fix(r, bad);
-        }
+        fix(r, bad);
     }
     // a meshing's ease names a point and a line (#345)
     let ease = d.angular_span.as_mut().and_then(|s| s.ease.as_mut());

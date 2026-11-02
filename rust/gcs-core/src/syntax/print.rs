@@ -618,7 +618,7 @@ fn over_text(over: &super::RunsOver, from: &Arg, to: &Arg) -> String {
 }
 
 /// `sweep(…)` (#391 S2): a face family's instance written in place and its formal's interval,
-/// or the tool a motion sweeps over an interval of the roll or through a body, and the frames.
+/// or the tool a motion sweeps over an interval of the roll or the whole of it, and the frames.
 pub(crate) fn sweep_text(d: &Decl, sweep: &Sweep) -> String {
     // **what the set says** (#737): the points the tool occupies under its motion at some instant
     // of the roll, or the face of the station at some instant of its parameter
@@ -713,7 +713,7 @@ pub(crate) fn solid_word(s: &Sweep, face: &str) -> Option<String> {
     match s {
         Sweep::Prism { from, to, draft } => prism(dim(from), dim(to), draft.as_ref()),
         Sweep::Depth { depth, draft } => prism(negated(&dim(depth)), "0".into(), draft.as_ref()),
-        Sweep::Through { .. } => word("Through", Vec::new()),
+        Sweep::Through => word("Through", Vec::new()),
         Sweep::Revolve { axis, sweep, sense } => {
             let mut labels = vec![format!("about: {}", super::ref_text(axis))];
             let turn = sweep.as_ref().map_or_else(|| "360deg".to_string(), dim);
@@ -760,11 +760,8 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             text.push_str(&format!(" over {}", f.swept.text));
             vec![text]
         }
-        Sweep::Through { body } => {
-            let mut text = String::from("through: ");
-            write_ref(&mut text, body);
-            vec![text]
-        },
+        // a prism through everything is the set `solid_word` writes: it names no body
+        Sweep::Through => Vec::new(),
         Sweep::Prism { from, to, .. } => vec![format!("from: {}", dim(from)), format!("to: {}", dim(to))],
         Sweep::Depth { depth, .. } => vec![format!("depth: {}", dim(depth))],
         Sweep::Revolve { axis, sweep, sense } => {

@@ -223,8 +223,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   billionth of a degree); a face's patch swept by a turn about a line in its plane
   (`MotionDef::Rotation`/`Joint`, no advance) over an interval one end of which is nothing is
   `SolidDef::Revolve` (an end below nothing `Sense::Cw`; a whole turn exactly `TAU`); an unbounded
-  section cut from a body `B` is `SolidDef::Through { body: B }` (`program/solids.rs`'s body rule,
-  `unbounded_section`).  So the same set written by hand builds identically — the same exactness,
+  section is `SolidDef::Through { face }` (by hand, `program/solids.rs`'s body rule,
+  `unbounded_section`; `std.solids.Through` read so by `flatten/said.rs` below), which **names
+  no body** (#746): the evaluator — the faceted term (`solid::document`), the field
+  (`solid/field/document.rs`), the exact recipe's `through` node and the native host — bounds it
+  by its context, spanning along its normal the material of every body it, or a copy of it placed
+  at a roll, is cut from or kept in common with (`solid::uses`), each read from where that copy's
+  placement puts the section (`document::through_span`; the recipe's `uses`, a `matrix` each),
+  so one pin goes through any number of bodies and a pattern's copies each through their own;
+  cut from none it is E080 at its declaration.  So the same set written by hand builds identically — the same exactness,
   face names, volume, STEP and STL bytes.  A number a term reads from an unknown is no stated
   ordinate.  A set none of these recognises stays a region (`solid::region`, [sets.md](sets.md)),
   read point by point — shown, meshed, measured — its exact export refused by the region's own
@@ -235,13 +242,13 @@ placement carries inside the blank; CLI test readers zero the offset.
   they say** (`flatten/said.rs`, the precedent the developables' `sheet_body` set): a set's body —
   a family's with its formals bound to the call's arguments as written (`said::binding`) — that is
   a section between two ordinates, the drafted lean, a face's patch turned about a line formal, or a
-  section alone (through the body it is cut from, `syntax::ROLLED`) is written out as
-  `syntax::Sweep::Prism`/`Revolve`/`Through`, so every reader of a solid's text before it is built
+  section alone (naming no body) is written out as `syntax::Sweep::Prism`/`Revolve`/`Through`, so every reader of a solid's text before it is built
   reads it as one: a prism's sides for an envelope (`generated.rs`), a revolution's named side
   (`envelopes.rs`), a sketch's carriers on a face (`flatten/faces.rs`), the gestures' resizing
   (`edit::solids::reworded`); and no probe is made, so the solve is the old spelling's to the bit.
   `defined.rs` is what recognises any other set saying the same.  `tests/solids_as_sets.rs` is the gate (each word against its
-  set by hand, a through prism bounded by what it cuts, the retired labels naming the set).
+  set by hand, a through prism bounded by what it cuts — two bodies at different heights, a copy
+  through its own — the retired labels naming the set).
 - **The sheet is a report** (Solvent §6.12, `hidden::generated`; issue #48).
   `dimensions(body) in views.right` asks for the callouts that *follow from the object*: overall
   extents in that view and the diameter of every round feature seen square on.  They go through

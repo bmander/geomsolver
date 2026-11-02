@@ -15,7 +15,7 @@ type Built = Result<Brep,KernelError>;
 
 mod node;
 mod writer;
-pub use node::{Body,Corner,Edge,Family,FamilyWall,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Spine,Stroke};
+pub use node::{Body,Corner,Edge,Family,FamilyWall,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Spine,Stroke,Use};
 pub use writer::Writer;
 
 /// Between a face's solid and its own name while a recipe is built (`build`, `meridian`,
@@ -53,7 +53,7 @@ impl Node {
                 let source = built.get(source).ok_or("recipe: `source` not built before its user")?;
                 Ok(source.moved(&Rigid::from_rows(matrix)))
             }
-            Node::Through {profile,sources} => through_node(profile,sources,built),
+            Node::Through {profile,uses} => through_node(profile,uses,built),
             Node::Body(b) => body(b,built,built_names,floor),
             // a ball swept (`solid::canal`, #238): the tube about its centre's path, a screw's or
             // one no closed form carries (#684 D), its disc a face family's wall
@@ -83,22 +83,29 @@ fn family_node(f: &Family) -> Built {
 
 /// A `through` node: a prism spanning its sources' material along the profile's normal (their
 /// `bounds` enclose it, issue #59), padded as the native host pads it.
-fn through_node(profile: &Section,sources: &[i64],built: &BTreeMap<i64,Brep>) -> Built {
+fn through_node(profile: &Section,uses: &[Use],built: &BTreeMap<i64,Brep>) -> Built {
     let profile = Profile::of(profile)?;
-    let mut bounds = EMPTY;
-    for s in sources {
-        widen(&mut bounds,built.get(s).ok_or("recipe: a `through` source not built before it")?.bounds());
+    let (mut from,mut to) = (f64::INFINITY,f64::NEG_INFINITY);
+    for u in uses {
+        let mut bounds = EMPTY;
+        for s in &u.sources {
+            widen(&mut bounds,built.get(s).ok_or("recipe: a `through` source not built before it")?.bounds());
+        }
+        let (lo,hi) = bounds;
+        if (0..3).any(|k| !(lo[k] <= hi[k])) { continue }
+        let (o,n) = u.frame(profile.origin,profile.normal);
+        let nrm = crate::util::space::scale(n,1./crate::util::space::norm(n));
+        let (mut a,mut b,mut diagonal) = (0.,0.,0.);
+        for k in 0..3 {
+            let (p,q) = (nrm[k]*(lo[k]-o[k]),nrm[k]*(hi[k]-o[k]));
+            a += p.min(q); b += p.max(q);
+            diagonal += (hi[k]-lo[k]).dpowi(2);
+        }
+        let pad = diagonal.sqrt()*4e-5;
+        from = f64::min(from,a-pad); to = f64::max(to,b+pad);
     }
-    let (lo,hi) = bounds;
-    let (nrm,o) = (crate::util::space::scale(profile.normal,1./crate::util::space::norm(profile.normal)),profile.origin);
-    let (mut from,mut to,mut diagonal) = (0.,0.,0.);
-    for k in 0..3 {
-        let (a,z) = (nrm[k]*(lo[k]-o[k]),nrm[k]*(hi[k]-o[k]));
-        from += a.min(z); to += a.max(z);
-        diagonal += (hi[k]-lo[k]).dpowi(2);
-    }
-    let pad = diagonal.sqrt()*4e-5;
-    Ok(prism(&profile,from-pad,to+pad)?)
+    if !(from <= to) { return Err("recipe: a `through` prism applied to no material".into()) }
+    Ok(prism(&profile,from,to)?)
 }
 
 /// A `region` node, a region in general position (`solid::bounded`, #238): the common of the

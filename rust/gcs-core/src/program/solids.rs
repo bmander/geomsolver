@@ -189,6 +189,17 @@ fn body_rule(
             }
         }
     }
+    // **a section unbounded along its normal** (#737), the set written by hand (`std.solids.Through`
+    // is read so before it is built, `flatten::said`, and needs no probe): the prism over it
+    // through everything, which names no body — the evaluator bounds
+    // it, as it does a body under a motion over its whole roll, by the material of every body it,
+    // or a copy of it placed at a roll (a pattern's), is cut from or kept in common with
+    // (`solid::uses`), so one tool reaches through any number of them
+    for i in 0..sk.solids.len() {
+        if let Some(face) = unbounded_section(sk, i) {
+            sk.solids[i].def = SolidDef::Through { face };
+        }
+    }
     for (k, (st, word, at, a, b)) in stated.into_iter().enumerate() {
         // the stock taken, and a body already refused as empty, join nothing more
         if taken.contains(&k) || empty.contains(&b.i()) {
@@ -201,30 +212,6 @@ fn body_rule(
         if let Some(stock) = sk.as_body(b.i()) {
             map.also_made(b, EntRef::solid(stock));
         }
-        // **a section unbounded along its normal** (#737, `std.solids.Through`): the prism over
-        // it through everything, which the evaluator bounds by the material of the body it is
-        // cut from or kept in common with
-        // — and a body under a motion over its whole roll, the roll through that material —
-        // where it, or a copy of it placed at a roll (a pattern's), is cut
-        if word != crate::syntax::BodyWord::Union {
-            let mut tool = a.i();
-            loop {
-                if let Some(face) = unbounded_section(sk, tool) {
-                    sk.solids[tool].def = SolidDef::Through { face, body: UNBOUND };
-                }
-                match &mut sk.solids[tool].def {
-                    SolidDef::Swept { roll: crate::model::Roll::Through { body }, .. }
-                    | SolidDef::Through { body, .. } => {
-                        if *body == UNBOUND {
-                            *body = b.idx;
-                        }
-                        break;
-                    }
-                    SolidDef::Placed { source, .. } => tool = *source as usize,
-                    _ => break,
-                }
-            }
-        }
         // **the statement that would close a cycle is the one refused**, where it is written —
         // so a gesture writing it is refused at the gesture (#162 F4) — and the body is left as
         // the statements before it made it
@@ -232,18 +219,20 @@ fn body_rule(
             diags.push(Diag::within(Code::E041, at, st.id, why));
         }
     }
-    // a body swept over its whole roll, or a section through everything, that nothing bounds:
-    // refused where it is declared
+    // a body swept over its whole roll, or a section through everything, that nothing bounds —
+    // cut from no body, nor kept in common with one, itself or by a copy: refused where it is
+    // declared
     for i in 0..sk.solids.len() {
         let name = sk.solids[i].name.clone();
+        let unbounded = || crate::solid::applied_to(sk, i).is_empty();
         let why = match sk.solids[i].def {
-            SolidDef::Through { body: UNBOUND, .. } => format!(
-                "`{name}` is a prism through everything, which only the body it is cut from \
-                 bounds: cut it from one (`{name} cut body`), or bound it by two ordinates"),
-            SolidDef::Swept { roll: crate::model::Roll::Through { body: UNBOUND }, .. } => format!(
-                "`{name}` is what a body occupies under a motion at any roll, which only the body \
-                 it is cut from bounds: cut it from one (`{name} cut body`), or bound the roll, \
-                 `over t in (a, b)`"),
+            SolidDef::Through { .. } if unbounded() => format!(
+                "`{name}` is a prism through everything, which only the bodies it is cut from \
+                 bound: cut it from one (`{name} cut body`), or bound it by two ordinates"),
+            SolidDef::Swept { roll: crate::model::Roll::Through, .. } if unbounded() => format!(
+                "`{name}` is what a body occupies under a motion at any roll, which only the \
+                 bodies it is cut from bound: cut it from one (`{name} cut body`), or bound the \
+                 roll, `over t in (a, b)`"),
             _ => continue,
         };
         diags.push(Diag::new(Code::E080, declared_at(body, &name), None, why));
@@ -251,10 +240,6 @@ fn body_rule(
                                             bound: Vec::new() };
     }
 }
-
-/// The body a section through everything, or a body over its whole roll, is bounded by before a
-/// body word joins it to the body it is cut from (#737): none yet.
-pub(super) const UNBOUND: u32 = u32::MAX;
 
 /// The face of a region solid whose one term is a drawn face read through its plane — the points
 /// whose foot is in it, nothing bounding them along its normal (#737) — where it is one.

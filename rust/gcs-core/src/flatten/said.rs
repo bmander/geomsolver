@@ -12,7 +12,7 @@
 //! | `p inside F`, `p distance(>= a, along: n) F`, `p distance(<= b, along: n) F` | `Sweep::Prism { from: a, to: b }` |
 //! | the two ordinates, `x := { q \| q outside F }`, `y := { q \| q inside F }`, `distance(p, x) - distance(p, y) >= tan(θ) * distance(p, F)` | `Sweep::Prism { …, draft: θ }` |
 //! | `p coincident(under: l, over t in (a, b)) F`, `l` a line, one end nothing | `Sweep::Revolve { axis: l, … }` |
-//! | `p inside F` alone | `Sweep::Through`, through the body it is cut from |
+//! | `p inside F` alone | `Sweep::Through`, naming no body: bounded by every body it is cut from |
 use crate::syntax::{Arg, Cmp, Component, InstVal, Instance, OpArg, Ref, SetLit, Span,
                     StmtKind, Sweep, Written};
 
@@ -135,10 +135,10 @@ pub(super) fn said(lit: &SetLit, bind: &dyn Fn(&str) -> Option<Bound>) -> Option
         }
         return crate::syntax::revolve_between(axis, Some(&from), Some(&to)).map(|s| (s, f));
     }
-    // a section unbounded along its normal: the prism through the body it is cut from, joined
-    // where the body word joins it (`syntax::ROLLED`)
+    // a section unbounded along its normal: the prism through everything, naming no body — the
+    // evaluator bounds it by every body it is cut from (`solid::uses`)
     if let (Some(f), None, None, true, None) = (&inside, &lo, &hi, sets.is_empty(), lean) {
-        return Some((Sweep::Through { body: Ref::new(crate::syntax::ROLLED) }, f.clone()));
+        return Some((Sweep::Through, f.clone()));
     }
     let ((fa, from), (fb, to)) = (lo?, hi?);
     if fa.root.text != fb.root.text {

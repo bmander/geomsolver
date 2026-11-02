@@ -1,8 +1,10 @@
-//! **How far a sweep rolls** (§6.9, #271): `sweep(tool, through: body, under: m)` rolls the tool
-//! over the whole roll about 0 during which it meets `body`'s material — its stock and additions,
-//! never its cuts, as a `through:` prism spans them — so a roll is no number a document guesses
-//! at and admission checks afterwards: within the window the class admits, the cut does not
-//! depend on it, and clear of the blank at both limits (E1) is how the interval is found.
+//! **How far a sweep rolls** (§6.9, #271): a body under a motion at any roll, `solid({ p | p
+//! inside(under: m) tool })` (#737), rolls the tool over the whole roll about 0 during which it
+//! meets the material of every body it is cut from or kept in common with (`solid::applied_to`,
+//! none of them named by the sweep) — their stock and additions, never their cuts, as a prism
+//! through everything spans them — so a roll is no number a document guesses at and admission
+//! checks afterwards: within the window the class admits, the cut does not depend on it, and
+//! clear of the blank at both limits (E1) is how the interval is found.
 //!
 //! Found by marching out from 0 each way a `STEP` at a time until the tool, over a whole step, is
 //! proved clear of the body: the tool's support split into boxes, each one the tool's own field
@@ -39,13 +41,19 @@ pub fn interval(sk: &Sketch, swept: usize) -> Result<[f64; 2], String> {
     let SolidDef::Swept { source, motion, roll } = &s.def else {
         return Err(format!("`{}` is not a continuous motion sweep", s.name));
     };
-    let body = match roll {
-        Roll::Stated(r) => return Ok(r.radians()),
-        Roll::Through { body } => *body as usize,
-    };
+    if let Roll::Stated(r) = roll {
+        return Ok(r.radians());
+    }
     sk.caches.roll.get_or(swept, super::MemoKey::of(sk, swept), || {
-        through(sk, *source as usize, *motion as usize, body)
-            .map_err(|m| format!("`{}` rolls through `{}`: {m}", s.name, sk.solids[body].name))
+        let bodies = super::applied_to(sk, swept);
+        let named = bodies.iter().map(|&b| format!("`{}`", sk.solids[b as usize].name))
+            .collect::<Vec<_>>().join(", ");
+        if bodies.is_empty() {
+            return Err(format!("`{}` rolls through everything, and is cut from no body to bound \
+                                it", s.name));
+        }
+        through(sk, *source as usize, *motion as usize, swept)
+            .map_err(|m| format!("`{}` rolls through {named}: {m}", s.name))
     })
 }
 
@@ -58,8 +66,10 @@ fn fault(e: crate::interval::Error) -> String { format!("{e:?}") }
 fn side(x: I) -> f64 { x.bounds()[1] - x.bounds()[0] }
 fn widest(b: &[I; 3]) -> f64 { b.iter().map(|&x| side(x)).fold(0.0, f64::max) }
 
-/// The roll about 0 during which `source` under `motion` meets `body`'s material.
-fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f64; 2], String> {
+/// The roll about 0 during which `source` under `motion` meets the material of the bodies the
+/// sweep `swept` is applied to, as they stand: one blank of them all, so the roll is the one
+/// through each, and a pattern's copies of the sweep cut from one body read that body once.
+fn through(sk: &Sketch, source: usize, motion: usize, swept: usize) -> Result<[f64; 2], String> {
     let tolerance = super::cad::AXIS_TOLERANCE;
     let tool = SpatialField::read(sk, source, tolerance)?;
     let Some(support) = tool.support_bounds().map_err(fault)? else {
@@ -67,7 +77,7 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
                             clear", sk.solids[source].name));
     };
     let mut blank: Option<SpatialField> = None;
-    for s in super::document::material_sources(sk, body as u32)? {
+    for s in super::document::applied_material(sk, swept)? {
         let f = SpatialField::read(sk, s as usize, tolerance)?;
         blank = Some(match blank { Some(b) => b.union(f).map_err(fault)?, None => f });
     }

@@ -224,9 +224,9 @@ the field with its reason.  Where such a set is written in place in `solid(…)`
 statement saying a sweep, the parser reads it as the sweep of the same points
 (`syntax/parser/statements.rs::swept_set`/`swept_tokens`): `solid({ p | p inside(under: m,
 seen_from: g, over t in (a, b)) tool })` the motion sweep (`SolidDef::Swept`, a stated roll), `over
-t` a declared parameter's, and no `over` at all the whole roll, `Sweep::Rolled` through
-`syntax::ROLLED` — bounded by the body the solid, or a copy of it placed at a roll (`tool at(under:
-m) θ`), is cut from, joined in `program/solids.rs`'s body rule; never cut it is E080 at its
+t` a declared parameter's, and no `over` at all the whole roll, `Sweep::Rolled`, naming no body
+(#746) — bounded by every body the solid, or a copy of it placed at a roll (`tool at(under: m)
+θ`), is cut from or kept in common with (`solid::uses`); cut from none it is E080 at its
 declaration; `solid({ p | p coincident(over s) Station(…).f })` a face family and `solid({ p | p
 coincident(over s) sec })` a face of the drawing over a declared parameter.  The developables'
 `coincident(t in (0, 1))` (a contact's place on a curve, [developables.md](developables.md)) is

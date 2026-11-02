@@ -9,7 +9,7 @@ use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
     Input, Name, OpArg, OpenJoint, ParamDecl, Ref, SetLit, SolidRel, Source, Span, Stmt, StmtKind,
-    SynErr, Ty, Use, ROLLED,
+    SynErr, Ty, Use,
 };
 
 /// `part Name(…) { … }`, retired (#562): every braced definition is held to what `part`
@@ -1592,12 +1592,14 @@ impl<'a> P<'a> {
         }
         let list_span = Span::new(open, self.prev_hi());
         use crate::syntax::Sweep;
+        // over an interval, or the whole roll: the retired `through:` a body named is what the
+        // whole roll is cut from (#737), and names nothing the sweep is
         let sweep = match (over, through) {
             (Some((over, from, to)), None) => Sweep::Swept { motion: under, from, to, over },
-            (None, Some(body)) => Sweep::Rolled { motion: under, body },
-            _ => {
+            (None, _) => Sweep::Rolled { motion: under },
+            (Some(_), Some(_)) => {
                 self.fail("a sweep runs its tool over an interval of the roll, `sweep(tool over t \
-                           in (a, b))`, or through a body, `sweep(tool, through: body)`");
+                           in (a, b))`, or over the whole of it, not both");
                 return None;
             }
         };
@@ -2074,13 +2076,9 @@ impl<'a> P<'a> {
             }
             // a body under a motion: over an interval, a declared parameter, or the whole roll
             ("inside", over) => {
-                match over {
-                    Some((a, b)) => made.extend(toks(a, b)),
-                    None => {
-                        let sp = span(k + 1);
-                        made.extend([(Tok::P(','), sp), (Tok::Ident("through".into()), sp),
-                                     (Tok::P(':'), sp), (Tok::Ident(ROLLED.into()), sp)]);
-                    }
+                // the whole roll where no interval is written (`Sweep::Rolled`)
+                if let Some((a, b)) = over {
+                    made.extend(toks(a, b));
                 }
                 for &(a, b) in &labels {
                     made.push((Tok::P(','), span(a)));

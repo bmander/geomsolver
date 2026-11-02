@@ -67,12 +67,12 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
         return Err("`draft:` tapers a prism's sides from its face's plane: say `from:`/`to:` or \
                     `depth:`, and nothing else".into());
     }
-    if let Some(body) = p.through {
+    if p.through.is_some() {
         if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
             || p.sweep.is_some() || p.sense.is_some() {
             return Err("`through:` cannot be combined with other sweep extents".into());
         }
-        return Ok(Sweep::Through { body });
+        return Ok(Sweep::Through);
     }
     let turn = p.sense.unwrap_or_default();
     match (p.from, p.to, p.depth, p.about) {
@@ -236,11 +236,11 @@ impl<'a> P<'a> {
                 // **a solid is the points of a set** (#737): a face swept by a constructor's
                 // labels is refused, naming the word of `std.solids` whose set it says
                 Ok(sw) if matches!(sw, Sweep::Prism { .. } | Sweep::Depth { .. }
-                    | Sweep::Revolve { .. } | Sweep::Through { .. }) => {
+                    | Sweep::Revolve { .. } | Sweep::Through) => {
                     let face = children.first().map(|k| k.iter().map(crate::syntax::print::kid_text)
                         .collect::<Vec<_>>().join(", ")).unwrap_or_default();
                     let word = crate::syntax::print::solid_word(&sw, &face).unwrap_or_default();
-                    let cut = if matches!(sw, Sweep::Through { .. }) {
+                    let cut = if matches!(sw, Sweep::Through) {
                         ", cut from the body it goes through"
                     } else {
                         ""
