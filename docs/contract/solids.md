@@ -215,7 +215,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   `rust/lib/std/solids.sv`** (`use std.solids`): `Prism(section, from, to)`, `Drafted(section,
   from, to, draft)`, `Revolution(section, about, from = 0deg, to = 360deg)` (`p coincident(under: about,
   over t in (from, to)) section`: a line named `under:` is the turn about it,
-  `relations::turn_about`, a motion minted once a line and holding nothing) and
+  `motions::turn_about`, a motion minted once a line and holding nothing, frames.md) and
   `Through(section)` (`{ p | p inside section }`).  **They are recognised by their terms, never by
   a word's name** (`gcs-solve/src/solid/defined.rs`, `recognised`, called from
   `program/solids/build.rs`'s `region`): a section between two stated ordinates along its own
