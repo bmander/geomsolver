@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.3.0] - 2026-11-02
+
 - A traced meeting dropped as an edge one face already has (#735 A2) is laid across the other face
   where it lies inside it (`boolean::combined` and every selection): a torus cut by the plane
   through its axis that holds its seam is half the torus again, not an open boundary — a regression
