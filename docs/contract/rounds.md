@@ -326,6 +326,26 @@ beyond a seam — an offset that closes is refused as that, not as too wide
 (`Surface::offset_surface`: a spill's legs and balls). A cone shrunk past its apex is the same sheet
 placed at its own apex, never none.
 
+**A ball that takes the whole of a face** (brep-bench's fillet/slab-half-round,
+l-block-inside-consumed, hole-waist, sliver-strip, boss-s-curve): the band a ball's contact
+bounds on the face it rolls on — the points of the face nearer the other face's surface than the
+contact — must be entered by none of the face's other edges (`fillet::holds_ball`), but an edge
+*on* the contact, or beyond it, is the face's far boundary reached, not an edge in the band: the
+strip runs to it, and the face goes (a slab's top rounded from both edges to half its width, two
+rounds tangent along its middle; an L's inside edge filled as wide as both faces beside it, the
+quarter cylinder meeting the faces past them square) or what is left goes on beyond the contact (a
+strip 0.0002 tall between two rounds of 0.9999). Within ten of the boundary's tolerances, or of
+the edge's own where it is wider (a fitted contact of an earlier round), an edge is on the contact
+(`fillet::face_consumed`). A conservative band, the other surface offset 1% past the contact's
+greatest height, finds the edges that may enter; each is then read exactly (`Band::enters`): a
+crossing of the level under the contact's lowest height found by `curve_surface`, and elsewhere
+each point against the contact's height at the point of it nearest, sampled and refined where the
+edge stands deepest in. A ball any wider reaches inside the face — past an L's far edge, across a
+round's contact — and is refused as larger than the face can hold, as before (rung 3: a ball
+rolling against the edge it overflows, or across the face beyond). `tests/brep.rs`'s
+`rounds_that_take_the_whole_of_a_face` is the gate (each against its closed form to 1e-9, and each
+one wider refused).
+
 **A flat as wide as its cylinder** (brep-bench's chamfer/cylinder-rim-to-point): a chamfer's leg is
 a set like the offset it is read from (`fillet::Leg`) — face `k`'s surface met with the other's
 offset by the leg, a curve, or, where that offset closes onto a curve (a cylinder's axis) or a point

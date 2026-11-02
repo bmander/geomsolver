@@ -8,6 +8,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Rounds that take the whole of a face** (`fillet::roll`): a ball whose contact lands on another
+  edge of the face it rolls on, or short of it by less than the face can hold, is rolled rather
+  than refused — the face goes (a slab's top rounded from both edges to half its width, an L's
+  inside edge filled as wide as both faces beside it, a hole's rims rounded to meet at its waist),
+  or a strip of it stays between the rounds. Only an edge reaching inside the ball's band refuses
+  it: the band is read against the contact's own height rather than 1% past its greatest.
 - **Affine maps of solids** (`Brep::mapped`, `affine::Affine`): any invertible `p ↦ M p + t`
   carries a solid onto its exact image, its topology and pcurves its own. A kind whose image is
   its own kind is written so (`Surface::mapped`, `Curve::mapped`: a similarity scales, a plane is
