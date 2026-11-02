@@ -2132,17 +2132,36 @@ fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
     assert!(why.contains("larger than"),"{why}");
 }
 
-/// `b` with the edge through `at` rounded to `r` by `fillet::roll`: its piece cut off a convex
-/// edge, filled in at a concave one.
-fn rounded(b: &gcs_core::brep::topo::Brep,at: V,r: f64) -> Result<gcs_core::brep::topo::Brep,String> {
+/// `b` with the edges through `ats` rounded to `r` in turn by `fillet::roll`: each piece cut off a
+/// convex edge, filled in at a concave one.
+fn rounded(b: &gcs_core::brep::topo::Brep,ats: &[V],r: f64) -> Result<gcs_core::brep::topo::Brep,String> {
     use gcs_core::brep::boolean::{combined,Op};
-    let round = gcs_core::brep::fillet::roll(b,at,r,gcs_core::brep::geom::tolerance(b.size()))?;
-    round.piece.check(1e-8)?;
-    combined(b,&round.piece,if round.concave { Op::Union } else { Op::Cut },0.).map_err(|e| e.to_string())
+    ats.iter().try_fold(b.clone(),|b,&at| {
+        let round = gcs_core::brep::fillet::roll(&b,at,r,gcs_core::brep::geom::tolerance(b.size()))?;
+        round.piece.check(1e-8)?;
+        combined(&b,&round.piece,if round.concave { Op::Union } else { Op::Cut },0.).map_err(|e| e.to_string())
+    })
 }
 
-/// `a` within `rel` of `b`: a fitted canal's measures are as near as its fit.
-fn near(a: f64,b: f64,rel: f64) { assert!((a-b).abs() <= rel*b.abs(),"{a} against {b} ({:e})",(a-b)/b); }
+/// A round refused as larger than its face can hold.
+fn too_large(round: Result<gcs_core::brep::topo::Brep,String>) {
+    let why = round.unwrap_err();
+    assert!(why.contains("larger than"),"{why}");
+}
+
+/// A box to `hi` whose face's two edges through `ats`, along x, are rounded to `r`: its section
+/// in y and z the rectangle less two square runs, `L (WH − 2(1 − π/4)r²)`, and its area two of
+/// those and its length times the section's perimeter, `24 − 4r + πr` on a face 2 tall.
+fn both_edges_rounded(hi: V,ats: [V;2],r: f64) -> gcs_core::brep::topo::Brep {
+    use crate::common::{close,rounds::square_run};
+    let b = rounded(&named_box(hi),&ats,r).unwrap();
+    b.check(1e-8).unwrap();
+    let [l,w,h] = hi;
+    let section = w*h-2.*square_run(r);
+    close(volume(&b),l*section);
+    close(total_area(&b),2.*section+l*(2.*(w+h)-4.*r+PI*r));
+    b
+}
 
 /// **Rounds that take the whole of a face** (brep-bench's fillet/slab-half-round): a ball whose
 /// contact lands on another edge of the face it rolls on reaches the face's far boundary, and its
@@ -2152,14 +2171,9 @@ fn near(a: f64,b: f64,rel: f64) { assert!((a-b).abs() <= rel*b.abs(),"{a} agains
 /// and is refused as larger than the face can hold.
 #[test]
 fn a_slabs_top_rounded_from_both_edges_to_half_its_width_is_a_half_cylinder() {
-    let slab = named_box([10.,4.,6.]);
-    let both = rounded(&rounded(&slab,[5.,0.,6.],2.).unwrap(),[5.,4.,6.],2.).unwrap();
-    both.check(1e-8).unwrap();
-    near(volume(&both),160.+20.*PI,1e-9);
-    near(total_area(&both),152.+24.*PI,1e-9);
+    let both = both_edges_rounded([10.,4.,6.],[[5.,0.,6.],[5.,4.,6.]],2.);
     assert_eq!(face_kinds(&both),["bspline","bspline","plane","plane","plane","plane","plane"]);
-    let why = rounded(&rounded(&slab,[5.,0.,6.],2.1).unwrap(),[5.,4.,6.],2.1).unwrap_err();
-    assert!(why.contains("larger than"),"{why}");
+    too_large(rounded(&named_box([10.,4.,6.]),&[[5.,0.,6.],[5.,4.,6.]],2.1));
 }
 
 /// **A round as wide as both faces beside it** (brep-bench's fillet/l-block-inside-consumed): an
@@ -2168,17 +2182,17 @@ fn a_slabs_top_rounded_from_both_edges_to_half_its_width_is_a_half_cylinder() {
 /// 7.5 would touch past them, and is refused.
 #[test]
 fn an_l_blocks_inside_edge_filled_as_wide_as_its_faces_takes_both() {
+    use crate::common::close;
     let names = ["bottom","end","floor","wall","top","back"].map(String::from).to_vec();
     let l = Profile {names:vec![names],origin:[0.;3],normal:[0.,-1.,0.],
         loops:vec![poly(&[[0.,0.,0.],[10.,0.,0.],[10.,0.,3.],[3.,0.,3.],[3.,0.,10.],[0.,0.,10.]])]};
     let l = prism(&l,-10.,0.).unwrap();
-    let filled = rounded(&l,[3.,5.,3.],7.).unwrap();
+    let filled = rounded(&l,&[[3.,5.,3.]],7.).unwrap();
     filled.check(1e-8).unwrap();
-    near(volume(&filled),10.*(100.-49.*PI/4.),1e-9);
-    near(total_area(&filled),460.+21.*PI/2.,1e-9);
+    close(volume(&filled),10.*(100.-49.*PI/4.));
+    close(total_area(&filled),460.+21.*PI/2.);
     assert!(filled.faces.iter().all(|f| f.name != "floor" && f.name != "wall"),"the faces it fills are gone");
-    let why = rounded(&l,[3.,5.,3.],7.5).unwrap_err();
-    assert!(why.contains("larger than"),"{why}");
+    too_large(rounded(&l,&[[3.,5.,3.]],7.5));
 }
 
 /// **A hole's rims rounded to meet at its waist** (brep-bench's fillet/hole-waist): a plate 2 thick
@@ -2187,12 +2201,13 @@ fn an_l_blocks_inside_edge_filled_as_wide_as_its_faces_takes_both() {
 /// `800 − π (100/3 − 4π)` and `960 − 36π + 8π²`.
 #[test]
 fn a_holes_rims_rounded_to_half_the_plates_thickness_meet_at_its_waist() {
+    use crate::common::close;
     use gcs_core::brep::boolean::{combined,Op};
     let plate = combined(&block([-10.,-10.,0.],[10.,10.,2.]),&rod([0.;3],3.,[-1.,3.]),Op::Cut,0.).unwrap();
-    let waisted = rounded(&rounded(&plate,[0.,3.,2.],1.).unwrap(),[0.,3.,0.],1.).unwrap();
+    let waisted = rounded(&plate,&[[0.,3.,2.],[0.,3.,0.]],1.).unwrap();
     waisted.check(1e-8).unwrap();
-    near(volume(&waisted),800.-PI*(100./3.-4.*PI),1e-9);
-    near(total_area(&waisted),960.-36.*PI+8.*PI*PI,1e-9);
+    close(volume(&waisted),800.-PI*(100./3.-4.*PI));
+    close(total_area(&waisted),960.-36.*PI+8.*PI*PI);
     assert!(waisted.faces.iter().all(|f| f.surface.kind() != "cylinder"),"the hole's wall is gone");
 }
 
@@ -2202,16 +2217,10 @@ fn a_holes_rims_rounded_to_half_the_plates_thickness_meet_at_its_waist() {
 /// is refused.
 #[test]
 fn a_face_rounded_from_both_edges_short_of_its_middle_keeps_a_sliver() {
-    let plate = named_box([20.,10.,2.]);
-    let r = 0.9999;
-    let strip = rounded(&rounded(&plate,[10.,10.,0.],r).unwrap(),[10.,10.,2.],r).unwrap();
-    strip.check(1e-8).unwrap();
-    let (section,perimeter) = (20.-2.*r*r*(1.-PI/4.),24.-4.*r+PI*r);
-    near(volume(&strip),20.*section,1e-9);
-    near(total_area(&strip),2.*section+20.*perimeter,1e-9);
+    let ats = [[10.,10.,0.],[10.,10.,2.]];
+    let strip = both_edges_rounded([20.,10.,2.],ats,0.9999);
     assert_eq!(face_kinds(&strip).iter().filter(|&&k| k == "plane").count(),6,"the strip is kept");
-    let why = rounded(&rounded(&plate,[10.,10.,0.],1.0001).unwrap(),[10.,10.,2.],1.0001).unwrap_err();
-    assert!(why.contains("larger than"),"{why}");
+    too_large(rounded(&named_box([20.,10.,2.]),&ats,1.0001));
 }
 
 /// **A cylinder's rim chamfered to a point** (brep-bench's chamfer/cylinder-rim-to-point): legs of

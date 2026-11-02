@@ -336,11 +336,11 @@ rounds tangent along its middle; an L's inside edge filled as wide as both faces
 quarter cylinder meeting the faces past them square) or what is left goes on beyond the contact (a
 strip 0.0002 tall between two rounds of 0.9999). Within ten of the boundary's tolerances, or of
 the edge's own where it is wider (a fitted contact of an earlier round), an edge is on the contact
-(`fillet::face_consumed`). A conservative band, the other surface offset 1% past the contact's
-greatest height, finds the edges that may enter; each is then read exactly (`Band::enters`): a
-crossing of the level under the contact's lowest height found by `curve_surface`, and elsewhere
-each point against the contact's height at the point of it nearest, sampled and refined where the
-edge stands deepest in. A ball any wider reaches inside the face — past an L's far edge, across a
+(`fillet::face_consumed`). An edge under the contact's greatest height nowhere is clear of the
+band at once; any other is read against the contact (`Band::enters`): a crossing of the level
+under the contact's lowest height is inside, found exactly by `curve_surface`, and between the
+two each point against the contact's height at the point of it nearest, sampled and refined where
+the edge may stand inside. A ball any wider reaches inside the face — past an L's far edge, across a
 round's contact — and is refused as larger than the face can hold, as before (rung 3: a ball
 rolling against the edge it overflows, or across the face beyond). `tests/brep.rs`'s
 `rounds_that_take_the_whole_of_a_face` is the gate (each against its closed form to 1e-9, and each
