@@ -1038,6 +1038,30 @@ pub fn sheet(net: crate::nurbs::Net) -> Result<Brep,String> {
     Ok(b)
 }
 
+/// A face: the profile's region of its plane, alone, its material normal the profile's normal —
+/// a sheet of one planar face, bounded by the profile's edges exactly, to be sewn to others
+/// (`sew::sewn`) as a disc closes a cone's side.
+pub fn face(p: &Profile) -> Result<Brep,String> {
+    let n = unit(p.normal);
+    if !n.iter().all(|x| x.is_finite()) { return Err("a face's profile has no normal".into()) }
+    let plane = Frame::about(p.origin,n);
+    let walks = walks(p,&|q| { let l = plane.local(q); [l[0],l[1]] })?;
+    let mut b = Brep::default();
+    let mut loops = Vec::new();
+    for walk in &walks {
+        let m = walk.len();
+        let vs: Vec<u32> = walk.iter().map(|s| b.vertex(s.start())).collect();
+        loops.push((0..m).map(|k| {
+            let s = &walk[k];
+            let ends = [vs[k],vs[(k+1)%m]];
+            let e = b.edge(EdgeCurve::Curve(s.curve.clone()),s.span(),if s.forward() { ends } else { [ends[1],ends[0]] });
+            use_of(e,s,true,on_plane())
+        }).collect::<Vec<_>>());
+    }
+    b.faces.push(Face {surface:Surface::Plane(plane),reversed:false,loops,name:String::new()});
+    Ok(b)
+}
+
 /// The square on the plane through `o` square to the unit `n`, `half` from `o` along each of its
 /// frame's axes (`Frame::about`): a block's section.
 pub fn square(o: V,n: V,half: f64) -> Profile {

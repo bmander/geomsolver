@@ -470,3 +470,29 @@ plate and one use of a cylinder's seam unmatched where a branch touches it insid
 collapses there** (`brep::mesh`): a horn torus's pinch, every `u` one point, would shrink `u` to
 nothing over the whole face; there the mean speed over the box is taken.
 `brep_offset::an_elliptic_bore_cuts_through_its_plate`, `a_horn_torus_meshes_within_its_sag`.
+
+**Faces built apart are sewn into a solid by tolerant topology** (`sew::sewn`; brep-bench's
+geometry/nurbs-cone): a rational net whose last row is nine copies of its apex (`build::sheet`)
+and the disc closing its base (`build::face`, a profile's region of its plane alone), or any
+shell's faces, joined where their boundaries are one curve, nothing intersected. The rules are
+`tolerant`'s, against the tolerance the pieces were built to, in one order: an edge whose curve
+lies within it of its start is a pole, a degenerate edge its face uses once (a B-spline's by its
+poles, which hold it); vertices merged by the pool; a boundary edge cut at another's vertex
+(`tolerant::on_stretch`, by `boolean::cut_with`, as a Boolean cuts its edges), so a side held in
+pieces pairs one to one; two boundary edges between the same vertices one edge where the middle of
+one lies on the other (`tolerant::same_edge`, a Boolean's own test) — a third along them
+`NotManifold`, none `Open`. The curve kept is the one bounding the face hardest to invert onto
+(`Surface::inversion`: searched over a closed form, a closed form over a plane), the face given
+first where they are alike, so its pcurve stays as built and the other side's is its own
+where the curves are one parametrisation, else the kept curve inverted. Each edge's tolerance is
+measured and one standing past `ON_CURVE` off a face refused, never widened: what holds the rest of
+two curves matched by their middles. The faces are turned
+to agree across every edge — a one-sided shell refused — each connected set a shell turned
+outward, a void (inside an odd number of the others) inward. The cone is its closed forms to
+rounding, its edges' tolerances 0: `brep::a_nurbs_cone_is_its_side_sewn_to_its_base` and
+`brep::faces_sewn_are_a_solid_by_tolerant_topology` (a box's faces facing any way, its top in
+halves, a void, faces a hair apart, a face missing, four faces along an edge) and
+`brep::curved_faces_sewn_across_curves_parametrised_apart` (two nets and a cylinder end to end and
+two discs, every circle begun at another angle and one run at another pace, so each is cut at the
+other's vertex and the dropped halves inverted onto a net and onto the cylinder across its seam)
+are the gate.
