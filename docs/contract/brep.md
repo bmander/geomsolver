@@ -234,8 +234,21 @@ heights, which a revolution's inverse puts on its rim); a traced meeting along a
 has is that edge (`along_an_edge`); two meetings crossing on a face with no closed form for it are
 crossed by search (`meeting::crossings`) and the point polished onto all three surfaces
 (`shared_point`); and a cell too thin to mesh is read inside at its faces' points stepped in
-(`Complex::inside_points`). The closed swept solid on one arrangement is not yet right (the
-design's §8, step 4);
+(`Complex::inside_points`). **Points along a shallow meeting are one by its reach** (A3): a
+crossing with a meeting is read to that meeting's `on_meeting` reach at the point, not the pool's
+(a meeting traced between surfaces meeting at a few degrees is known no better); a triple point
+whose three surfaces' Newton cannot settle because two of them touch there is the third's root
+along the touching pair's closed-form curve where it crosses that steeply (`touch_point`), else the
+vertex either tangent meeting already has within the stretch they stay within reach of each other
+(`crossing_in_touch`); an edge touching a surface where a face of its own touches that surface
+along a curve touches it at its crossing with that curve (`touch_root`), not at a double root
+placed to the square root of the tolerance; two closed-form curves of one meeting are crossed open
+or closed, over their stretch within the faces' box (`crossings_among`: a plane tangent to a
+hyperboloid at its throat meets it in two rulings, cut where they cross); and the faces round an
+edge are ordered where their ways in stand farthest apart along it, not at its middle beside a
+touch. `arrangement::a_plane_crossing_where_two_surfaces_touch_…`, `a_plane_tangent_to_a_hyperboloid_…`
+and `a_plane_crossing_a_shallow_meeting_…` are the gates, at 1e-6 and 1e-7. **The closed swept
+solid is one arrangement and one selection** (`swept::closed`, generating.md);
 `arrangement::three_blocks_arranged_at_once_…`, `every_cells_membership_…`,
 `the_arrangement_is_the_same_in_any_order_…` and `coincident_faces_are_one_face_…` are its own.
 **A Boolean's work is where its solids meet** (#589): a face of one whose box misses the box the

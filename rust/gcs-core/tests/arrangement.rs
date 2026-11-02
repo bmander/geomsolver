@@ -158,3 +158,102 @@ fn a_split_is_the_same_narrated_or_not_on_any_thread() {
 #[test]
 #[ignore = "a tool: the narrated run of a_split_is_the_same_narrated_or_not_on_any_thread"]
 fn the_split_narrated() { println!("fingerprint: {}",split_fingerprint()); }
+
+/// A solid of revolution about z whose meridian is the rational quadratic through `poles` (middle
+/// weight `w`), closed down the axis at both ends: the hyperboloids a leaning edge turns into
+/// (`swept::closed`), as built there.
+fn turned_conic(poles: [[f64;3];3],w: f64) -> Brep {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    let s = gcs_core::brep::nurbs::BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],poles.to_vec(),vec![1.,w,1.]).unwrap();
+    let (a,b) = (poles[0],poles[2]);
+    let profile = Profile {origin:[0.;3],normal:[0.,1.,0.],names:vec![],loops:vec![vec![
+        ProfileEdge::Line {a:[0.,0.,a[2]],b:a},ProfileEdge::Spline(std::sync::Arc::new(s)),
+        ProfileEdge::Line {a:b,b:[0.,0.,b[2]]},ProfileEdge::Line {a:[0.,0.,b[2]],b:[0.,0.,a[2]]}]]};
+    revolve(&profile,[0.;3],[0.,0.,1.],std::f64::consts::TAU).unwrap()
+}
+
+/// A block standing on the plane through `o` with unit normal `n`, far wider than `domain`.
+fn half_space(o: [f64;3],n: [f64;3]) -> Brep { prism(&gcs_core::brep::build::square(o,n,20.),0.,20.).unwrap() }
+
+/// The box the leaning block's part turn is arranged in, and its waisted hyperboloid: the throat
+/// of radius 3 at the height where the cylinder of that radius touches it round a circle.
+fn waisted() -> (Brep,Brep) {
+    (block([-6.,-6.,-5.],[6.,6.,5.]),turned_conic([[3.0867985099372675,0.,0.5330806309078084],
+        [2.974760969788629,0.,0.7067599136694217],[3.0075175436766224,0.,0.8759784383632598]],1.012095400943987))
+}
+
+/// `operands` arranged within `domain` at `tol`, each operand's cells (`members`) its common with
+/// the domain (`combined`), by volume: no cell joined across a face it should part.
+fn arranged_exactly(domain: &Brep,operands: &[&Brep],tol: f64) {
+    let complex = gcs_core::brep::boolean::arrangement_within(domain,operands,tol).unwrap();
+    complex.check(tol).unwrap();
+    let cells = complex.cells().unwrap();
+    let all: Vec<&Brep> = std::iter::once(domain).chain(operands.iter().copied()).collect();
+    let inside = members(&complex,&all,tol).unwrap();
+    for k in 1..all.len() {
+        let mine: f64 = (1..cells.len()).filter(|&c| inside[c][k]).map(|c| cells[c].volume).sum();
+        close(mine,volume(&combined(domain,all[k],Op::Common,tol).unwrap()),1e-6);
+    }
+}
+
+/// **A plane crossing where two surfaces touch crosses there once** (#735 A3): a cylinder of radius
+/// 3 and the hyperboloid whose throat it touches round a circle, cut by a leaning plane through
+/// the circle. On the plane the two meetings it lays (an ellipse, a conic) are tangent where it
+/// crosses the circle, so their crossing is placed where the hyperboloid crosses the cylinder's
+/// meeting with the plane's — or, where the three touch, at the vertex already there — not a
+/// hair along the stretch the two tangent curves stay within reach of each other. Through the
+/// seams (the plane through them) and off them.
+#[test]
+fn a_plane_crossing_where_two_surfaces_touch_crosses_there_once() {
+    let (domain,waist) = waisted();
+    let cylinder = prism(&disc([0.,0.,-0.8759784383632598],[0.,0.,1.],3.),0.,2.*0.8759784383632598).unwrap();
+    let through = half_space([0.,-0.2571733555915885,0.704529534635534],[0.,-0.34289780745545134,0.9393727128473789]);
+    let off = half_space([-0.4270845953111909,-0.19545849139507201,0.1714489037277257],[-0.8541691906223818,-0.39091698279014403,0.3428978074554514]);
+    for tol in [1e-6,1e-7] {
+        arranged_exactly(&domain,&[&cylinder,&through,&waist],tol);
+        arranged_exactly(&domain,&[&off,&cylinder,&waist],tol);
+    }
+}
+
+/// **A plane tangent to a hyperboloid at its throat crosses it in two rulings, cut where they
+/// cross** (a singular point of a meeting, #735 A2): their crossing, the point the plane touches,
+/// a vertex of both. At a tenth of the tolerance the hyperboloid's own rounding shows: the meeting
+/// is a hyperbola's two branches passing close by the throat, and the faces round each branch are
+/// read where they stand apart, not at its middle beside the throat, where all are nearly tangent.
+#[test]
+fn a_plane_tangent_to_a_hyperboloid_at_its_throat_is_cut_along_its_rulings() {
+    let (domain,waist) = waisted();
+    let o = [-1.2484405096414273,2.727892280477045,0.];
+    for n in [[0.4161468365471424,-0.9092974268256817,0.],[-0.4161468365471424,0.9092974268256817,0.]] {
+        arranged_exactly(&domain,&[&half_space(o,n),&waist],1e-6);
+    }
+    let wide = turned_conic([[4.065504278801209,0.,0.5330806309078084],[3.9809075908084663,0.,0.705801157314606],
+        [4.005641243986119,0.,0.8759784383632598]],1.0068425080938888);
+    let o = [-1.6645873461885696,3.637189707302727,0.];
+    for n in [[-0.4161468365471424,0.9092974268256817,0.],[0.4161468365471424,-0.9092974268256817,0.]] {
+        for tol in [1e-6,1e-7] { arranged_exactly(&domain,&[&half_space(o,n),&wide],tol); }
+    }
+}
+
+/// **Two hyperboloids meeting at a shallow angle, crossed by a plane, are cut where all three meet**
+/// (#735 A3): mirror images of each other, they meet round a circle at a few degrees, a meeting
+/// traced only to the tolerance over that angle's sine — the reach a crossing with it is read to
+/// (`on_meeting`), then placed on all three surfaces. At a tenth of the tolerance too.
+#[test]
+fn a_plane_crossing_a_shallow_meeting_is_cut_where_the_three_meet() { crossing_a_shallow_meeting(1e-6) }
+
+/// The same at a tenth of the tolerance, where the traced meeting stands farther than a vertex's
+/// reach off the exact one.
+#[test]
+fn a_plane_crossing_a_shallow_meeting_is_cut_where_the_three_meet_at_a_tenth_of_the_tolerance() { crossing_a_shallow_meeting(1e-7) }
+
+/// `a_plane_crossing_a_shallow_meeting_…` at `tol`.
+fn crossing_a_shallow_meeting(tol: f64) {
+    let domain = block([-6.,-6.,-5.],[6.,6.,5.]);
+    let plane = half_space([0.,-0.2571733555915885,0.704529534635534],[0.,-0.34289780745545134,0.9393727128473789]);
+    let lower = turned_conic([[4.005641243986119,0.,-0.8759784383632598],[4.019183976272764,0.,-0.1766743424143582],
+        [4.065504278801209,0.,0.5330806309078084]],1.0020367458049737);
+    let upper = turned_conic([[4.065504278801209,0.,-0.5330806309078084],[4.019183976272764,0.,0.17667434241435764],
+        [4.005641243986119,0.,0.8759784383632598]],1.0020367458049662);
+    arranged_exactly(&domain,&[&plane,&lower,&upper],tol);
+}

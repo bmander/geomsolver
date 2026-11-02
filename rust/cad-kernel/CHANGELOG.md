@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- The closed swept solid (`swept::closed`) is one arrangement of its box and every candidate and one
+  selection by membership: no separator planes, cut order, per-cell Booleans or deferred unions.
+- Points along a shallow meeting are one vertex (#735 A3): crossings with a meeting read to its own
+  reach; a triple point where two surfaces touch placed on the third's root along their curve; an
+  edge touching a surface its own face touches placed at their touch curve; two closed-form curves
+  of one meeting crossed whether open or closed (a plane tangent to a hyperboloid's throat, cut
+  along its two rulings); the faces round an edge ordered where they stand farthest apart.
 - **Affine maps of solids** (`Brep::mapped`, `affine::Affine`): any invertible `p ↦ M p + t`
   carries a solid onto its exact image, its topology and pcurves its own. A kind whose image is
   its own kind is written so (`Surface::mapped`, `Curve::mapped`: a similarity scales, a plane is

@@ -20,26 +20,26 @@
 //!
 //! Only the candidates that carry some of the boundary are kept (`carries`): read at their source's
 //! points carried over the roll, inside the source and the roll, where membership a hair to each
-//! side differs. Two candidates touching along a line or a circle would join a cell across the touch,
-//! so separators part them: the plane through the axis and a face's contact line at each end pose
-//! (the face touches its contact surface there), and the plane square to the axis at a hyperboloid's
-//! throat (where it touches the cylinder of that radius). The arrangement cuts by the separators,
-//! then the planes, then the curved candidates (a plane by `kept` on each side, a solid of
-//! revolution in common and cut away, skipped where it leaves the cell whole: `clear`), and a cell
-//! is kept where its deepest interior point (`query::interior`) is a member. Three things make a
-//! leaning tool's arrangement hold, each where two of its surfaces touch: a plane meets a
-//! hyperboloid in closed form (`ssi`: a conic, or the two rulings a face holding the edge meets it
-//! in); a piece a surface cuts off only along an edge it touches, with no inside, bounds nothing and
-//! is dropped (`boolean`); and a kept cell touching those united so far only along a circle (a
-//! cusp between two surfaces of revolution that touch there) waits for its neighbour before it is
-//! united.
+//! side differs. **The box is split by every candidate at once** (#735,
+//! `boolean::arrangement_within`): each candidate a solid one of whose faces lies on it across the
+//! box — a plane a block standing on it, far wider than the box; a surface of revolution its solid
+//! over the heights its source spans — their pieces outside the box left out; each cell of the
+//! complex is kept where the deepest of its points whose membership settles is a member, and the
+//! closed solid is the boundary between the kept cells and the rest (`Complex::select`): one
+//! arrangement and one selection, with no separator, no order of cuts, no Boolean a cell and no
+//! union. The candidates' touches are the arrangement's to hold: a face at an end pose touching its
+//! own contact surface along a line, or holding the ruling of a hyperboloid it is tangent to at its
+//! throat; a hyperboloid touching the cylinder of its throat's radius round a circle; a plane
+//! crossing that circle, where the two meetings it lays are tangent — each laid as an edge, or cut
+//! at the one vertex the tolerant rules make of it (`boolean`'s `touch_point`, `touch_root`,
+//! `crossing_in_touch`).
 //!
 //! **A convex polyhedral tool turned whole is built by another road** (`turned_whole`): its solid
 //! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — a curved
 //! face, a screw, another motion — is refused by what it is (`Unbuilt`); those are the design's
 //! later steps.
-use crate::boolean::{Op,combined};
-use crate::build::{Profile,ProfileEdge,disc,kept,prism,square};
+use crate::boolean::arrangement_within;
+use crate::build::{Profile,ProfileEdge,disc,prism,square};
 use crate::geom::{Curve,Frame,Surface};
 use crate::topo::{Brep,EdgeCurve};
 use crate::trajectory::Trajectory;
@@ -113,9 +113,6 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
     // each candidate with the sites it is read at for whether it carries any of the boundary: the
     // points of its source carried over the roll, each with the candidate's normal there
     let mut cutters: Vec<(Cutter,Vec<(V,V)>)> = Vec::new();
-    // planes that carry none of the boundary but part what a touch between two candidates would
-    // join into one cell, kept whatever they carry
-    let mut separators: Vec<Plane> = Vec::new();
     let mut add_cutter = |c: Cutter,sites: Vec<(V,V)>| {
         let same = |k: &Cutter| match (*k,c) {
             (Cutter::Plane((p,m)),Cutter::Plane((o,n))) => norm(cross(n,m)) <= 1e-9 && dot(sub(o,p),m).abs() <= eps,
@@ -230,10 +227,6 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
             let (t0,t1) = ts.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),&t| (l.min(t),h.max(t)));
             let (from,to) = (add(x0,scale(e,t0)),add(x0,scale(e,t1)));
             if let Some(cutter) = turned(from,e,to) { add_cutter(cutter,line_sites(from,to,cutter)) }
-            // the face at each end pose touches that surface along the contact line: the plane
-            // through the line square to the face parts the two sides of the touch. It holds the
-            // axis and the face's normal, so its own normal is `axis × n`
-            for pose in [&start,&end] { separators.push((c,unit(cross(axis,pose.vector(n))))) }
         }
         for &(p,q,_) in &edges {
             if let Some(cutter) = turned(p,sub(q,p),q) { add_cutter(cutter,line_sites(p,q,cutter)) }
@@ -259,136 +252,45 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
     let solid = Solid::new(tool,bar,1.)?;
     let swept = Swept {tool:&solid,path,roll};
     let carrying: Vec<Cutter> = cutters.into_iter().filter(|(_,sites)| carries(&swept,sites,half)).map(|(c,_)| c).collect();
-    // the separators first, then the planes, then the curved candidates: a curved candidate touching
-    // a plane along a line then meets it along an edge the cells already have, which the Booleans
-    // know (`ssi::trace_beside`)
-    // a hyperboloid touches the cylinder of its own throat's radius along its throat circle (an
-    // edge passing nearest the axis on the face whose contact line turns into that cylinder): the
-    // plane square to the axis through the throat parts the two sides of that touch too
+    // **the box split by every candidate at once** (#735 A4, `boolean::arrangement_within`): each
+    // candidate a solid one of whose faces lies on it across the box — a plane a block standing on
+    // it, far wider than the box; a surface of revolution its solid over the heights its source
+    // spans — their pieces outside the box left out. Where two candidates touch (a face at an end
+    // pose and its own contact surface along a line, a hyperboloid and the cylinder of its throat's
+    // radius round a circle) the arrangement lays the touch as an edge of both, so the cells on its
+    // two sides are two
+    let reach = 4.*half;
+    let mut solids: Vec<Brep> = Vec::new();
     for c in &carrying {
-        if let Cutter::Revolved {o,axis,p,e,..} = *c {
-            let (throat,height,_) = meridian(o,axis,p,e);
-            if throat > eps { separators.push((add(o,scale(axis,height)),axis)) }
-        }
-    }
-    let mut cutters: Vec<Cutter> = separators.into_iter().map(Cutter::Plane).collect();
-    cutters.extend(carrying.iter().copied().filter(|c| matches!(c,Cutter::Plane(_))));
-    cutters.extend(carrying.iter().copied().filter(|c| !matches!(c,Cutter::Plane(_))));
-    let mut cells = vec![prism(&square(base,[0.,0.,1.],half),0.,2.*half)?];
-    for cutter in cutters {
-        let mut next = Vec::with_capacity(cells.len()*2);
-        // a curved cutter's solids, built once for every cell it may split, and its least radius
-        // over a stretch of heights (what `clear` asks)
-        let curved: Option<(V,V,[f64;2],Box<dyn Fn([f64;2]) -> f64>,Vec<Brep>)> = match cutter {
-            Cutter::Plane(_) => None,
-            Cutter::Revolved {o,axis,p,e,span} => {
-                let m = meridian(o,axis,p,e);
-                Some((o,axis,span,Box::new(move |[z0,z1]: [f64;2]| radius(m,m.1.clamp(z0,z1))),revolved(o,axis,p,e,span,eps)?))
+        match *c {
+            Cutter::Plane((o,n)) => {
+                let foot = sub(centre,scale(n,dot(sub(centre,o),n)));
+                solids.push(prism(&square(foot,n,reach),0.,reach)?)
             }
-            Cutter::Cylinder {o,axis,r,span} =>
-                Some((o,axis,span,Box::new(move |_| r),vec![prism(&disc(add(o,scale(axis,span[0])),axis,r),0.,span[1]-span[0])?])),
-        };
-        for cell in cells {
-            if let Some((o,axis,span,least,solids)) = &curved {
-                if clear(&cell,*o,*axis,*span,tol,least) { next.push(cell); continue }
-                // the cell split by each solid, in common and cut away
-                let mut pieces = vec![cell];
-                for solid in solids {
-                    let mut split = Vec::new();
-                    for piece in pieces {
-                        for op in [Op::Common,Op::Cut] {
-                            let part = combined(&piece,solid,op,tol).map_err(|e| e.msg)?;
-                            if !part.faces.is_empty() { split.push(part) }
-                        }
-                    }
-                    pieces = split;
-                }
-                next.extend(pieces);
-            } else if let Cutter::Plane((o,n)) = cutter {
-                let side = |v: &crate::topo::Vertex| dot(sub(v.p,o),n);
-                let (low,high) = cell.vertices.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),v| (l.min(side(v)),h.max(side(v))));
-                if low >= -tol || high <= tol { next.push(cell); continue }
-                for keep in [n,scale(n,-1.)] {
-                    let piece = kept(&cell,o,keep,tol)?;
-                    if !piece.faces.is_empty() { next.push(piece) }
-                }
-            }
-        }
-        cells = next;
-    }
-    // each cell classified by membership at its deepest point
-    let mut members: Vec<Brep> = Vec::new();
-    for cell in cells {
-        let Some(&(x,_)) = crate::query::interior(&cell,1)?.first() else { continue };
-        match swept.member(x) {
-            Ok(true) => members.push(cell),
-            Ok(false) => {}
-            Err(_) => return Err(Unbuilt::Unsettled {at:x}),
+            Cutter::Cylinder {o,axis,r,span} => solids.push(prism(&disc(add(o,scale(axis,span[0])),axis,r),0.,span[1]-span[0])?),
+            Cutter::Revolved {o,axis,p,e,span} => solids.extend(revolved(o,axis,p,e,span,eps)?),
         }
     }
-    // the members united. A member touching those united so far only along a curve (a cusp-shaped
-    // cell between two surfaces of revolution that touch along a circle) unites into no manifold,
-    // though with its neighbour beside it the whole is one: it waits for a later pass, and the
-    // union is refused only when a whole pass unites none
-    if members.is_empty() { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
-    let mut out = members.remove(0);
-    while !members.is_empty() {
-        let (before,mut waiting,mut last) = (members.len(),Vec::new(),String::new());
-        for cell in members {
-            match combined(&out,&cell,Op::Union,tol) {
-                Ok(united) => out = united,
-                Err(e) => { last = e.msg; waiting.push(cell) }
-            }
+    let domain = prism(&square(base,[0.,0.,1.],half),0.,2.*half)?;
+    let refs: Vec<&Brep> = solids.iter().collect();
+    let complex = arrangement_within(&domain,&refs,tol)?;
+    // each cell classified by membership at the deepest of its points that settles (a cusp-thin
+    // cell's stand near the swept boundary, and the first may not), and the boundary between the
+    // members and the rest the closed solid: one selection, no union
+    let cells = complex.cells()?.len();
+    let mut keep = vec![false;cells];
+    for (c,kept) in keep.iter_mut().enumerate().skip(1) {
+        let points = complex.inside_points(c,4)?;
+        let Some(&first) = points.first() else { continue };
+        match points.iter().find_map(|&x| swept.member(x).ok()) {
+            Some(m) => *kept = m,
+            None => return Err(Unbuilt::Unsettled {at:first}),
         }
-        if waiting.len() == before { return Err(Unbuilt::Failed(last)) }
-        members = waiting;
     }
+    if !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
+    let out = complex.select(&|c| keep[c])?.brep;
     out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
     Ok(out)
-}
-
-/// Whether a surface of revolution about the unit `axis` through `o`, closed by its disks at the
-/// heights `span`, leaves `cell` whole, so that the two Booleans that would say so need not run:
-/// the cell stands wholly past the span's heights, or wholly nearer the axis than the surface
-/// (`least`, its least radius over a stretch of heights within the span) with neither disk passing
-/// strictly through it. Here every cell is bounded by planes and surfaces of revolution about the
-/// axis, whose radius (convex, and monotone or convex along a meridian) is greatest on their edges,
-/// so the cell's reach is read on its edges: a line's at its ends, a circle's about the axis
-/// anywhere on it, any other curve sampled, each sample's radius within half a step of every point
-/// between (it is 1-Lipschitz). Its heights are its box's.
-fn clear(cell: &Brep,o: V,axis: V,[s0,s1]: [f64;2],tol: f64,least: &dyn Fn([f64;2]) -> f64) -> bool {
-    const STEPS: usize = 64;
-    // the heights the cell's box spans (its corners', the height being linear): exact where the
-    // axis runs along a coordinate, and never short
-    let (lo,hi) = cell.bounds();
-    let (z0,z1) = (0..8).map(|k| dot(sub(std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] }),o),axis))
-        .fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),h| (a.min(h),b.max(h)));
-    let mut far = 0_f64;
-    let mut read = |p: V,slack: f64| {
-        let r = sub(p,o);
-        far = far.max(norm(sub(r,scale(axis,dot(r,axis))))+slack);
-    };
-    for v in &cell.vertices { read(v.p,0.) }
-    for e in &cell.edges {
-        // a line's height and radius are greatest at its ends, a circle's about the axis constant
-        let exact = match &e.curve {
-            EdgeCurve::Curve(Curve::Line {..}) => true,
-            EdgeCurve::Curve(Curve::Circle(f,_)) => norm(cross(f.z,axis)) <= 1e-12 && norm(cross(sub(f.o,o),axis)) <= tol,
-            _ => false,
-        };
-        if exact {
-            for t in [e.t[0],0.5*(e.t[0]+e.t[1]),e.t[1]] { read(e.point(t,&cell.vertices),0.) }
-            continue
-        }
-        let at = |j: usize| e.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/STEPS as f64,&cell.vertices);
-        let pts: Vec<V> = (0..=STEPS).map(at).collect();
-        let step = pts.windows(2).map(|w| norm(sub(w[1],w[0]))).fold(0.,f64::max);
-        for p in pts { read(p,0.5*step) }
-    }
-    let m = 10.*tol;
-    if z1 < s0+m || z0 > s1-m { return true }
-    let caps = [s0,s1].iter().any(|&z| z > z0+m && z < z1-m);
-    !caps && far+m < least([z0.max(s0),z1.min(s1)])
 }
 
 /// How many steps a candidate's source is read at each way (along it, and across the roll) for

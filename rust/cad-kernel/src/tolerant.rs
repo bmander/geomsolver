@@ -20,7 +20,13 @@
 //! - **an edge onto an edge** (`same_edge`): two pieces between the same vertices, the middle of one
 //!   within `8 tol` of the other's curve inside its stretch, are one edge;
 //! - **a sliver into its edge**: a piece of a face with no inside — no point of it read inside its
-//!   outline drawn as fine as it goes — bounds nothing, and goes.
+//!   outline drawn as fine as it goes — bounds nothing, and goes;
+//! - **a crossing onto a shallow meeting**: two meetings on a face are crossed where they come
+//!   within the reach of the shallower (`on_meeting` at the point), and where two of the three
+//!   surfaces touch there, at the third's root along their curve or the vertex already in the
+//!   stretch the two tangent meetings stay within reach of each other (`boolean`'s `touch_point`,
+//!   `crossing_in_touch`); an edge touching a surface its own face touches, at its crossing with
+//!   their touch curve (`touch_root`).
 //!
 //! Each is applied once, in that order, so the same two features are never merged by one rule in
 //! one call and parted by another in the next.
