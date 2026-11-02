@@ -284,6 +284,22 @@ fn a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept() {
     agrees(&built,&tool,&path);
 }
 
+/// **The same part turn at a tenth of the tolerance** (#735's regression gate): the one
+/// arrangement held at 1e-7, where a face at an end pose holding a hyperboloid's ruling is met in
+/// that ruling and its partner whatever the tolerance (`ssi`: a constant at the centre that is
+/// nothing but rounding), and crossings a hair from vertices leave pieces shorter than a vertex's
+/// reach (collapsed, `tolerant`).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 90 s: a leaning block's part turn at 1e-7")]
+fn a_block_leaning_to_the_axis_turned_part_of_a_turn_holds_at_a_tenth_of_the_tolerance() {
+    let tool = leaning(0.35,3.);
+    let path = turn([0.;3],[0.,0.,1.],2.);
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-7).unwrap();
+    let expected = turned_volume(&[&tool],2.,200,8);
+    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
 /// **A bar turned through all but its own width meets itself, and the pipeline trims it** (X5 and
 /// X1 under a turn): turned 6 radians, its end pose overlaps its start, and the faces at the two
 /// poses and the cylinders its edges along the axis turn into bury one another where they meet,
