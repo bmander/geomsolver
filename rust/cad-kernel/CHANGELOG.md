@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Faces sewn into a solid** (`sew::sewn`): sheets built apart — a B-spline net with a pole, a
+  plane face, any shell's faces — joined where their boundaries are one curve by tolerant topology:
+  poles made degenerate edges, vertices merged, an edge cut at another's vertex, edges along one
+  another made one; the faces turned to agree, each shell outward and a void inward; refused as
+  `Open`, `NotManifold` or `Refused` by what it is. A profile's region of its plane as a face of its
+  own (`build::face`).
+- Tolerant topology's vertex-onto-edge and edge-onto-edge rules as predicates (`tolerant::on_stretch`,
+  `tolerant::same_edge`), which the Booleans and sewing both call; each edge's uses
+  (`Brep::uses`); how hard a surface is to invert onto (`Surface::inversion`).
 - **The surface arrangement** (#735). A cell complex (`complex::Complex`): faces each parting two
   cells, an edge bounding any number of faces in order round it (tangent faces by their curvature),
   touches along edges and at points held; `select` the boundary between kept cells and the rest,

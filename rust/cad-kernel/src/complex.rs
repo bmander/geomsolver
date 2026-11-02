@@ -160,12 +160,7 @@ impl Complex {
         // curvatures' difference times its square: far past the tolerance, well inside the scale
         // (measured only where an edge has more than two uses)
         let mut step = None;
-        let mut uses: Vec<Vec<(usize,usize,usize)>> = vec![Vec::new();b.edges.len()];
-        for (fi,f) in b.faces.iter().enumerate() {
-            for (li,l) in f.loops.iter().enumerate() {
-                for (ci,c) in l.iter().enumerate() { uses[c.edge as usize].push((fi,li,ci)); }
-            }
-        }
+        let uses = b.uses();
         let mut sides_joined = crate::util::union_find::UnionFind::new(2*nf);
         let mut radial: Vec<Vec<Use>> = vec![Vec::new();b.edges.len()];
         // each sorted use's side facing the wedge ahead of it

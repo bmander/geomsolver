@@ -21,6 +21,9 @@ it to crates.io; what changes in each release is in [CHANGELOG.md](CHANGELOG.md)
 - **Construction:** spheres, cones (frustums and cylinders too) and tori by their numbers,
   prisms (drafted too), revolutions, and canals (a ball swept along a helix). Profiles are made of
   lines, arcs and splines.
+- **Sewing:** faces built apart (a B-spline sheet, a planar face, any shell's faces) joined into
+  a solid where their boundaries are one curve: poles, vertices and edges merged by tolerant
+  topology, each shell turned outward and each void inward.
 - **Booleans:** union, cut and common. Intersections between analytic surfaces are closed forms
   wherever one exists, and traced otherwise. A meeting the kernel cannot resolve is refused, never
   read as none.
