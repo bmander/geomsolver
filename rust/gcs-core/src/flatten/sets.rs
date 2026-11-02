@@ -418,6 +418,12 @@ impl<'a> Walk<'a> {
                     next.extend(made);
                     continue;
                 }
+                // outside a set no bound of its own turns round (#737): a point of its own
+                if let Some(made) = self.complement(&st, &path, &sc, &alias) {
+                    any = true;
+                    next.extend(made);
+                    continue;
+                }
                 let Some((rel, found)) = self.set_use(&st, &sc, &alias) else {
                     next.push((st, path, sc));
                     continue;
@@ -468,6 +474,82 @@ impl<'a> Walk<'a> {
                 return;
             }
         }
+    }
+
+    /// **Outside a set** (#737 P3): `p outside S` where `S`'s body is several statements, an
+    /// interval or several numbers — so no one bound of it turns round — is outside the set as
+    /// its own point says it: a hidden point, keyed by the statement (`#{stmt}.c`), where `S`'s
+    /// body is applied (`inner coincident S`), and the statement made `p outside inner`, which the
+    /// elaborator reads at a region solid's point as the complement of what holds at `inner`
+    /// (`model::RegionShape::Outside`).  So the outside of a conjunction is the union of its
+    /// statements' outsides: `{ p | p outside { q | q outside a; q outside b } }` is `a` and `b`
+    /// together.  `None` for any other statement.
+    fn complement(
+        &mut self,
+        st: &Stmt,
+        path: &[PathStep],
+        sc: &Scope,
+        alias: &BTreeMap<String, String>,
+    ) -> Option<Vec<(Stmt, Vec<PathStep>, Scope)>> {
+        let StmtKind::Relation(r) = &st.kind else { return None };
+        let w = r.form.written()?;
+        // as written, or as a set's body holds it (`Written::lower_side`)
+        let outside = match (w.word.text.as_str(), w.args.as_slice()) {
+            ("outside", []) => true,
+            ("coincident", [crate::syntax::OpArg::Bound { cmp: Cmp::Ge, hi: None, grow: None, .. }]) => true,
+            _ => false,
+        };
+        if !outside || r.along.is_some() || sc.twin().is_some() {
+            return None;
+        }
+        let [_, s] = w.ops.as_slice() else { return None };
+        let (abs, rest) = self.look(alias).raw(s, sc)?;
+        if !rest.is_empty() {
+            return None;
+        }
+        let site = self.sets.made.get(&abs)?.clone();
+        // a set whose one bound turns round is outside in place, as ever
+        let mut body = site.lit.body.clone();
+        if region_body(&mut body, &site.shape, crate::syntax::Cmp::Ge, "outside", w.word.span,
+                       &abs).is_ok() {
+            return None;
+        }
+        let id = sc.pred.written.unwrap_or(st.id).0;
+        let local = keys::outside(id);
+        let key = format!("{}{local}", sc.prefix());
+        self.names.insert(key.clone());
+        self.sets.probes.push(key.clone());
+        let at = st.span;
+        let mut out = Vec::new();
+        let point = probe(key, Span::at(at.lo as usize));
+        out.push((Stmt { kind: StmtKind::Decl(point), ..st.clone() }, path.to_vec(), sc.clone()));
+        let on = crate::syntax::Written {
+            word: Name { text: "coincident".to_string(), span: at },
+            fixity: Infix,
+            ops: vec![Ref::new(&local), Ref { span: at, ..s.clone() }],
+            args: Vec::new(),
+            span: at,
+            rates: Vec::new(),
+        };
+        let mut usc = sc.clone();
+        usc.pred.held = true;
+        usc.prefixes.insert(0, keys::outside_prefix(sc.prefix(), id));
+        if !usc.prefixes.iter().any(|p| p.is_empty()) {
+            usc.prefixes.push(String::new());
+        }
+        let rel = Relation::of(RelationForm::Written(on));
+        out.push((Stmt { kind: StmtKind::Relation(rel), ..st.clone() }, path.to_vec(), usc));
+        let mut st = st.clone();
+        if let StmtKind::Relation(r) = &mut st.kind {
+            if let Some(w) = r.form.written_mut() {
+                let at = w.ops[1].span;
+                w.ops[1] = Ref { root: Name { text: local, span: at }, path: Vec::new(), span: at };
+                w.word.text = "outside".to_string();
+                w.args.clear();
+            }
+        }
+        out.push((st, path.to_vec(), sc.clone()));
+        Some(out)
     }
 
     /// **A set measured from** (#183 F2): `distance(p, S)` in a bound on measurements, and `p

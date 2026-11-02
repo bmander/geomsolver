@@ -542,24 +542,88 @@ fn over_text(over: &super::RunsOver, from: &Arg, to: &Arg) -> String {
 
 /// `sweep(…)` (#391 S2): a face family's instance written in place and its formal's interval,
 /// or the tool a motion sweeps over an interval of the roll or through a body, and the frames.
-fn sweep_text(d: &Decl, sweep: &Sweep) -> String {
+pub(crate) fn sweep_text(d: &Decl, sweep: &Sweep) -> String {
+    // **what the set says** (#737): the points the tool occupies under its motion at some instant
+    // of the roll, or the face of the station at some instant of its parameter
     let tool = || match d.children.first().and_then(|k| k.first()) {
         Some(Kid::Ref(r)) => super::ref_text(r),
         _ => String::new(),
     };
-    let mut parts = match sweep {
-        Sweep::Family(_) => sweep_parts(sweep),
-        Sweep::Swept { from, to, over, .. } => {
-            vec![format!("{}{}", tool(), over_text(over, from, to))]
-        }
-        Sweep::Rolled { body, .. } => vec![tool(), format!("through: {}", super::ref_text(body))],
-        _ => Vec::new(),
-    };
+    if let Sweep::Family(f) = sweep {
+        let mut text = String::new();
+        write_instance_call(&mut text, &f.instance);
+        text.push('.');
+        write_ref(&mut text, &f.face);
+        return format!("solid({{ p | p coincident(over {}) {text} }})", f.swept.text);
+    }
+    let mut parts: Vec<String> = Vec::new();
     if let Sweep::Swept { motion, .. } | Sweep::Rolled { motion, .. } = sweep {
         parts.extend(motion.iter().map(under));
         parts.extend(d.seen_from.iter().map(|g| format!("seen_from: {}", super::ref_text(g))));
     }
-    format!("sweep({})", parts.join(", "))
+    match sweep {
+        // a face of the drawing over a declared parameter
+        Sweep::Swept { motion: None, over, .. } if over.declared && d.seen_from.is_none() => {
+            return format!("solid({{ p | p coincident(over {}) {} }})", over.name.text, tool());
+        }
+        Sweep::Swept { from, to, over, .. } => parts.push(over_text(over, from, to).trim().to_string()),
+        _ => {}
+    }
+    format!("solid({{ p | p inside({}) {} }})", parts.join(", "), tool())
+}
+
+/// The face a solid's brackets name, as written: a name, or a face written in place.
+pub(crate) fn kid_text(k: &Kid) -> String {
+    let mut s = String::new();
+    match k {
+        Kid::Ref(r) => write_ref(&mut s, r),
+        Kid::Hint(k) => s.push_str(&kid_seed_text(k)),
+        Kid::Face { decl, .. } => write_decl(&mut s, decl),
+        Kid::Trim { curve, .. } => write_ref(&mut s, curve),
+    }
+    s
+}
+
+/// **A sweep of a face, as the set it is** (#737): the word of `std.solids` whose set it says,
+/// over the face written `face` — a prism, drafted or not, a revolution, a prism through
+/// everything.  `None` for any other.
+pub(crate) fn solid_word(s: &Sweep, face: &str) -> Option<String> {
+    let negated = |t: &str| {
+        let t = t.trim();
+        let plain = t.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.');
+        match t.strip_prefix('-') {
+            Some(rest) if rest.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') => {
+                rest.to_string()
+            }
+            _ if plain => format!("-{t}"),
+            _ => format!("-({t})"),
+        }
+    };
+    let word = |name: &str, labels: Vec<String>| {
+        Some(format!("std.solids.{name}({})", std::iter::once(face.to_string()).chain(labels)
+            .collect::<Vec<_>>().join(", ")))
+    };
+    let prism = |from: String, to: String, draft: Option<&Arg>| match draft {
+        Some(d) => word("Drafted", vec![format!("from: {from}"), format!("to: {to}"),
+                                        format!("draft: {}", dim(d))]),
+        None => word("Prism", vec![format!("from: {from}"), format!("to: {to}")]),
+    };
+    match s {
+        Sweep::Prism { from, to, draft } => prism(dim(from), dim(to), draft.as_ref()),
+        Sweep::Depth { depth, draft } => prism(negated(&dim(depth)), "0".into(), draft.as_ref()),
+        Sweep::Through { .. } => word("Through", Vec::new()),
+        Sweep::Revolve { axis, sweep, sense } => {
+            let mut labels = vec![format!("about: {}", super::ref_text(axis))];
+            let turn = sweep.as_ref().map_or_else(|| "360deg".to_string(), dim);
+            match sense {
+                Sense::Cw => labels.extend([format!("from: {}", negated(&turn)), "to: 0deg".into()]),
+                Sense::Ccw if sweep.is_some() => labels.push(format!("to: {turn}")),
+                Sense::Ccw => {}
+            }
+            word("Revolution", labels)
+        }
+        _ => None,
+    }
 }
 
 /// A document expression, kept as written rather than converted to a seed.
@@ -679,7 +743,10 @@ pub(crate) fn decl_args(d: &Decl) -> String {
         }
     }
     if let Some(sweep) = &d.sweep {
-        parts.extend(sweep_parts(sweep));
+        match solid_word(sweep, &parts.join(", ")) {
+            Some(set) => parts = vec![set],
+            None => parts.extend(sweep_parts(sweep)),
+        }
     }
     if let Some(n) = &d.normal {
         parts.push(format!("normal: {}", super::ref_text(n)));

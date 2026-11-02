@@ -23,7 +23,54 @@ use crate::vocab::Cmp;
 /// The sweep a region's terms define, where an entry recognises them; `None` otherwise.  Every
 /// number recognised is stated: a term reading an unknown of the drawing stays the region's.
 pub fn recognised(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
-    prism(sk, terms).or_else(|| revolution(sk, terms))
+    prism(sk, terms).or_else(|| revolution(sk, terms)).or_else(|| boolean(terms))
+}
+
+/// The solid whose whole material a term is within (`Cmp::Le`) or outside (`Cmp::Ge`) — `p
+/// inside A`, `p outside A`, `A` a solid named bare — where it is one.
+fn whole(t: &RegionTerm) -> Option<(u32, Cmp)> {
+    let RegionShape::FaceSide { face } = &t.shape else { return None };
+    let bare = face.path.is_empty() && !face.surface && !face.smooth;
+    (bare && t.hi.is_none() && t.cmp != Cmp::In && stated(t)? == 0.0).then_some((face.solid, t.cmp))
+}
+
+/// **A Boolean of solids** (#737 P3): the points inside a solid `A` and every solid in common with
+/// it, outside every solid cut from it — or, for `A`'s place, outside what is outside each of
+/// several (`{ q | q outside a; q outside b }`): their union.  Built as the body term over the
+/// same solids (`SolidDef::Body`): the stock, what is in union with it, what cuts it, what it is in
+/// common with — so `solid({ p | p inside plate; p outside bore })` is `plate` with `bore` cut
+/// from it, whichever is written.
+fn boolean(terms: &[RegionTerm]) -> Option<SolidDef> {
+    let (mut united, mut within, mut cut) = (Vec::new(), Vec::new(), Vec::new());
+    for t in terms {
+        if let RegionShape::Outside { set } = &t.shape {
+            let crate::model::Target::Set { terms: inner, .. } = set.as_ref() else { return None };
+            if t.cmp != Cmp::Le || stated(t)? != 0.0 || !united.is_empty() || inner.len() < 2 {
+                return None;
+            }
+            for u in inner {
+                let (s, Cmp::Ge) = whole(u)? else { return None };
+                united.push(s);
+            }
+            continue;
+        }
+        match whole(t)? {
+            (s, Cmp::Le) => within.push(s),
+            (s, _) => cut.push(s),
+        }
+    }
+    // the stock: the first of a union, else the first solid it is within
+    let (stock, on, bound) = match united.split_first() {
+        Some((&s, rest)) => (s, rest.to_vec(), within),
+        None => {
+            let (&s, rest) = within.split_first()?;
+            if rest.is_empty() && cut.is_empty() {
+                return None;
+            }
+            (s, Vec::new(), rest.to_vec())
+        }
+    };
+    Some(SolidDef::Body { stock, on, through: cut, bound })
 }
 
 /// **A revolution**: a face's patch swept by a turn about a line in its plane, over an interval

@@ -61,7 +61,7 @@ fn face_refs<'t>(terms: &'t [RegionTerm], out: &mut Vec<&'t FaceRef>) {
             RegionShape::FaceSide { face } => out.push(face),
             RegionShape::Angle { a, b } => out.extend([a, b]),
             RegionShape::Measured { of } => of.iter().for_each(|(t, _)| target(t, out)),
-            RegionShape::Ends { edge } => target(edge, out),
+            RegionShape::Ends { edge } | RegionShape::Outside { set: edge } => target(edge, out),
             RegionShape::Ball { .. } | RegionShape::Cylinder { .. } | RegionShape::Cone { .. }
             | RegionShape::Plane { .. } | RegionShape::Sheet { .. }
             | RegionShape::Section { .. } | RegionShape::Swept { .. } => {}

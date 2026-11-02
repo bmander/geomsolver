@@ -16,11 +16,20 @@ type V = [f64; 3];
 /// planes every term lies within — a ball's six, a cylinder's four about its line, a cone's four
 /// about its axis, a half-space's own — and refused where they close nothing.
 pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionField, String> {
-    use crate::solid::field::region::{polytope_box, Measure, Term};
     let s = sk.solids.get(solid).ok_or("no such solid")?;
     let SolidDef::Region { terms, .. } = &s.def else {
         return Err(format!("`{}` is not a region", s.name));
     };
+    field_of(sk, &s.name, terms, true)
+}
+
+/// The field of `terms` taken together, the region of solid `name`'s; `bounded` where it must
+/// have an end (a solid's), and not where it is a set a complement reads (#737).
+fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool)
+    -> Result<crate::solid::field::RegionField, String> {
+    use crate::solid::field::region::{polytope_box, Measure, Term};
+    struct Named<'a> { name: &'a str }
+    let s = Named { name };
     let point = |i: u32| sk.world_point(i as usize);
     use crate::solid::field::region::Signed;
     let mut out = Vec::new();
@@ -200,6 +209,40 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                 };
                 Measure::Signed(Signed(std::sync::Arc::new(at)))
             }
+            // outside a set (#737 P3): where its terms do not all hold, the negated field of the
+            // set taken together — so within the union of what each of them turned holds, the box
+            // about each of those its support
+            RegionShape::Outside { ref set } => {
+                let crate::model::Target::Set { terms: inner, .. } = set.as_ref() else {
+                    return Err(named("outside is read of a set".to_string()));
+                };
+                let f = field_of(sk, name, inner, false)?;
+                if within {
+                    let mut boxed = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+                    let mut every = !inner.is_empty();
+                    for u in inner {
+                        let Some(cmp) = u.cmp.turned() else { every = false; break };
+                        let turned = RegionTerm { cmp, ..u.clone() };
+                        match field_of(sk, name, std::slice::from_ref(&turned), false)
+                            .ok().and_then(|g| g.support()) {
+                            Some(b) => for k in 0..3 {
+                                boxed[k] = [boxed[k][0].min(b[k][0]), boxed[k][1].max(b[k][1])];
+                            },
+                            None => { every = false; break; }
+                        }
+                    }
+                    if every {
+                        for k in 0..3 {
+                            let mut n = [0.0; 3];
+                            n[k] = 1.0;
+                            planes.push((n, boxed[k][1]));
+                            n[k] = -1.0;
+                            planes.push((n, -boxed[k][0]));
+                        }
+                    }
+                }
+                Measure::Signed(Signed(std::sync::Arc::new(move |p| -f.value(p))))
+            }
             ref shape => {
                 let m = measure_of(sk, shape)?.ok_or("a region bounds distances, angles and planes")?;
                 match m {
@@ -246,7 +289,7 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
             }
             b.iter().all(|r| r[0] < r[1]).then_some(b)
         }
-        None if reads_faces => None,
+        None if reads_faces || !bounded => None,
         None => {
             return Err(format!("`{}` has no end: bound it all round (a ball, two planes, …)", s.name))
         }

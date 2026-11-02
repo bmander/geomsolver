@@ -48,6 +48,12 @@ pub enum RegionShape {
     /// `p coincident(under: m, t in (a, b)) sec`, the existential over the roll.  Held when its
     /// point is in it, a bound at nothing on its signed distance.
     Swept { motion: u32, roll: [f64; 2], face: u32 },
+    /// **Outside a set** (#737 P3): where the set's conditions do not all hold — `p outside S` of
+    /// a set whose body is several statements, an interval or several numbers, the set's point
+    /// its own (`Target::Set`).  The complement of a conjunction is the union of its terms'
+    /// complements, so `{ p | p outside { q | q outside a; q outside b } }` is `a` and `b`
+    /// together: a union is the outside of what is outside both.  Held at nothing.
+    Outside { set: Box<Target> },
 }
 
 impl RegionShape {
@@ -89,6 +95,7 @@ impl RegionShape {
             }
             RegionShape::Section { face } => vec![EntRef::face(face as usize)],
             RegionShape::Swept { face, .. } => vec![EntRef::face(face as usize)],
+            RegionShape::Outside { ref set } => set.entities(),
         }
     }
 
@@ -127,6 +134,9 @@ impl RegionShape {
             }
             RegionShape::Swept { motion, roll, face } => {
                 RegionShape::Swept { motion, roll, face: i(EntKind::Face, face)? }
+            }
+            RegionShape::Outside { ref set } => {
+                RegionShape::Outside { set: Box::new(set.remapped(map)?) }
             }
         })
     }

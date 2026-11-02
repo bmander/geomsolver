@@ -295,7 +295,7 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// order each may end it.
 pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u32> {
     // a face swept by a motion over an interval of its roll, at a region solid's point (#737)
-    if swept_patch(cx, r, st) {
+    if swept_patch(cx, r, st) || outside_set(cx, r) {
         return None;
     }
     // a point a frame carries (#383): its `under:` and `seen_from:` read as the one motion node
@@ -763,6 +763,24 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &m
         left_out[s] = false;
     }
     Ok(kind)
+}
+
+/// **Outside a set** (#737 P3): `p outside q`, both a region solid's points — `q` the point of
+/// the set `p` is outside of, which the flattener made (`sets::complement`) — the complement of
+/// what holds at `q` (`RegionShape::Outside`), filled when the solid is built.  Whether it was one.
+fn outside_set(cx: &mut Elab<'_>, r: &Relation) -> bool {
+    let Some(w) = r.form.written().filter(|w| w.word.text == "outside" && w.args.is_empty())
+        else { return false };
+    let [p, q] = w.ops.as_slice() else { return false };
+    let probe = |r: &crate::syntax::Ref| cx.res.entity(&cx.sk, r)
+        .filter(|e| e.kind == EntKind::Point && cx.probes.terms.contains_key(&e.i()));
+    let (Some(p), Some(q)) = (probe(p), probe(q)) else { return false };
+    let set = crate::model::Target::Set { probe: q.i() as u32, terms: Vec::new() };
+    let shape = crate::model::RegionShape::Outside { set: Box::new(set) };
+    let term = crate::model::RegionTerm::new(shape, crate::syntax::Cmp::Le,
+                                             crate::model::TermNumber::stated(0.0));
+    cx.probes.terms.get_mut(&p.i()).expect("a probe's terms").push(term);
+    true
 }
 
 /// **What a face occupies under a motion over an interval of its roll** (#737), `p

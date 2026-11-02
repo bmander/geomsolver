@@ -570,7 +570,7 @@ pub(super) fn fill_sets(sk: &mut Sketch, terms: &mut [crate::model::RegionTerm],
                     fill(target, sk)?;
                 }
             }
-            RegionShape::Ends { edge } => fill(edge, sk)?,
+            RegionShape::Ends { edge } | RegionShape::Outside { set: edge } => fill(edge, sk)?,
             _ => {}
         }
     }

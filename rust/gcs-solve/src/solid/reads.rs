@@ -225,6 +225,24 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                         face_reads(sk, face, &mut v, poses);
                         continue;
                     }
+                    // outside a set: what the set's own terms read, each with its numbers
+                    if let crate::model::RegionShape::Outside { set } = &t.shape {
+                        v.push(13.0);
+                        if let crate::model::Target::Set { terms, .. } = set.as_ref() {
+                            for u in terms {
+                                v.extend([u.cmp as u8 as f64, u.lo.read(sk).unwrap_or(UNREAD)]);
+                            }
+                        }
+                        for e in set.entities() {
+                            match e.kind {
+                                crate::model::EntKind::Point => v.extend(sk.world_point(e.i())),
+                                crate::model::EntKind::Solid => stack.push((e.i() as u32, by)),
+                                crate::model::EntKind::Face => face_reads(sk, e.i() as u32, &mut v, poses),
+                                _ => v.extend(sk.entity_params(e).iter().map(|&p| sk.params[p as usize].value)),
+                            }
+                        }
+                        continue;
+                    }
                     // and its patch swept by a motion: the motion's pose wherever it reads
                     if let crate::model::RegionShape::Swept { motion, roll, face } = t.shape {
                         v.extend([12.0, motion as f64, roll[0], roll[1]]);

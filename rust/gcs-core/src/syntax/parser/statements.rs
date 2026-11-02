@@ -996,7 +996,16 @@ impl<'a> P<'a> {
             // `duct := sweep(Station(g).f over s)` — a face of a component as one of
             // its formals runs, one dimension up from a curve (#243 L1) — and `s := sweep(tool
             // over t in (a, b))`, a solid a motion sweeps (#391 S2)
-            Some("sweep") if call => StmtKind::Decl(self.sweep_decl(DeclName::Written(name))?),
+            // `sweep(…)` is retired (#737) for the set it says, named from what was written
+            Some("sweep") if call => {
+                let at = self.here();
+                let d = self.sweep_decl(DeclName::Written(name))?;
+                let set = d.sweep.as_ref().map(|s| crate::syntax::print::sweep_text(&d, s))
+                    .unwrap_or_default();
+                self.fail_at(at, &format!("`sweep(…)` is retired (#737): a solid is the points \
+                    of a set, and what this sweeps is `{set}`"));
+                return None;
+            }
             // `solid(… over s in (a, b))` is retired (#391 S2) for the sweep
             Some("solid") if call && self.family_ahead() => {
                 self.fail("a face family is `sweep(Component(…).face over s)` (#391, #398): \

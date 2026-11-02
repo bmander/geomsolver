@@ -437,6 +437,11 @@ fn face_planes(sk: &Sketch, terms: &mut [crate::model::RegionTerm]) -> Result<()
                 *along = EntRef::frame(p);
                 *from = origin;
             }
+            RegionShape::Outside { set } => {
+                if let Target::Set { terms, .. } = set.as_mut() {
+                    face_planes(sk, terms)?;
+                }
+            }
             RegionShape::Measured { of } => {
                 for (target, _) in of.iter_mut() {
                     match target {

@@ -66,6 +66,7 @@ fn reads_body(shape: &RegionShape, body: usize) -> bool {
         RegionShape::FaceSide { face } => face.solid as usize == body,
         RegionShape::Angle { a, b } => a.solid as usize == body || b.solid as usize == body,
         RegionShape::Ends { edge } => target_reads_body(edge, body),
+        RegionShape::Outside { set } => target_reads_body(set, body),
     }
 }
 
