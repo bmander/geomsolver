@@ -661,13 +661,12 @@ pub(crate) fn negated(t: &str) -> String {
     }
 }
 
-/// **A turn between two rolls, as the sweep it is** (#737): `std.solids.Revolution`'s `from:`
-/// and `to:` as written (left out, `0deg` and `360deg`) — one end nothing, the turn from the face
-/// the way the other end runs, a whole turn no `sweep:` at all.  `None` where neither end is
-/// nothing, or both are: a turn that starts off its face, or none.
-pub(crate) fn revolve_between(axis: Ref, from: Option<&Arg>, to: Option<&Arg>) -> Option<Sweep> {
-    let text = |a: Option<&Arg>, or: &str| a.map_or_else(|| or.to_string(), dim);
-    let (from, to) = (text(from, "0deg"), text(to, "360deg"));
+/// **A turn between two rolls, as the sweep it is** (#737): a revolution's `from:` and `to:` as
+/// written — one end nothing, the turn from the face the way the other end runs, a whole turn no
+/// `sweep:` at all.  `None` where neither end is nothing, or both are: a turn that starts off its
+/// face, or none.
+pub(crate) fn revolve_between(axis: Ref, from: &Arg, to: &Arg) -> Option<Sweep> {
+    let (from, to) = (dim(from), dim(to));
     let zero = |t: &str| matches!(t.trim(), "0" | "0deg" | "0 deg");
     let whole = |t: &str| matches!(t.trim(), "360deg" | "360 deg");
     let sweep = |t: String| (!whole(&t)).then(|| Arg::Dim { text: t, span: Span::default() });
