@@ -32,16 +32,23 @@ struct SweptAt {
     close: usize,
 }
 
-/// The statements a hoist made (`P::hoist_in_place`), held in the text of statement `host` now it
-/// is minted (#745): those it made directly, which wait as `Chained::Link`; a face a call holds
-/// says the call already.
-fn hosted(held: Vec<Stmt>, host: crate::syntax::StmtId) -> Vec<Stmt> {
-    held.into_iter().map(|mut st| {
-        if st.chained == Chained::Link {
-            st.chained = Chained::InPlace(host);
-        }
-        st
-    }).collect()
+/// What `P::hoist_in_place` made (#745): the reference its host reads it by, the faces a call
+/// holds (each held by the call already), and the statement itself, minted but held by nothing
+/// until its host is minted (`hosted`).
+struct InPlace {
+    by: Ref,
+    faces: Vec<Stmt>,
+    id: crate::syntax::StmtId,
+    kind: StmtKind,
+    span: Span,
+}
+
+impl InPlace {
+    /// Its statements, held in the text of statement `host`: the faces, then itself.
+    fn hosted(self, host: crate::syntax::StmtId) -> impl Iterator<Item = Stmt> {
+        let InPlace { faces, id, kind, span, .. } = self;
+        faces.into_iter().chain([Stmt { id, kind, span, chained: Chained::InPlace(host) }])
+    }
 }
 
 /// Mark every relation of an `initially` body a row of the home alone (#339 D3), through a
@@ -927,14 +934,15 @@ impl<'a> P<'a> {
         // points of, written in place (#737): its own statement under a key the source cannot
         // write, made before the solid is read (`hoist_in_place`) and held in the solid's text,
         // the solid's operand that key (#745)
-        let mut held = Vec::new();
+        let mut held = None;
         self.hoisted = None;
         if solid && swept.is_none() && self.solid_set_ahead() {
             let start = self.i;
             self.i += 2; // `solid(`
             let at = self.i;
-            let by = self.hoist_in_place(next_id, &mut held)?;
-            self.hoisted = Some(super::Hoisted { at, past: self.i, by });
+            let made = self.hoist_in_place(next_id)?;
+            self.hoisted = Some(super::Hoisted { at, past: self.i, by: made.by.clone() });
+            held = Some(made);
             self.i = start;
         }
         let kind = match word.as_deref() {
@@ -1083,14 +1091,17 @@ impl<'a> P<'a> {
             _ if self.chain_starts() => {
                 let mark = out.len();
                 let got = self.chain(next_id, out, Some(name));
-                self.hoisted = None;
-                // the declaration the chain made is the solid's, whose text holds its operand
-                let host = out[mark..].iter().find(|st| matches!(st.kind, StmtKind::Decl(_)));
-                if let (Some(host), true) = (host.map(|st| st.id), got.is_some()) {
-                    let tail = out.split_off(mark);
-                    out.extend(hosted(held, host));
-                    out.extend(tail);
-                }
+                let Some(made) = held.filter(|_| got.is_some()) else { return got };
+                // the solid's declaration holds its operand: the one that reads it by its key
+                debug_assert!(self.hoisted.is_none(), "a hoisted operand its solid never read");
+                let reads = |d: &Decl| d.children.iter().flatten()
+                    .any(|k| k.as_ref().is_some_and(|r| r.root.text == made.by.root.text));
+                let host = out[mark..].iter()
+                    .find(|st| matches!(&st.kind, StmtKind::Decl(d) if reads(d)));
+                let Some(host) = host.map(|st| st.id) else { return got };
+                let tail = out.split_off(mark);
+                out.extend(made.hosted(host));
+                out.extend(tail);
                 return got;
             }
             Some(w) if call
@@ -1103,10 +1114,10 @@ impl<'a> P<'a> {
             // anything else is a number worked out while elaborating: a param
             _ => self.param(name)?,
         };
-        self.hoisted = None;
         let span = Span::new(lo, self.prev_hi());
         let id = self.mint_stmt(next_id, span)?;
-        out.extend(hosted(held, id));
+        // a solid's operand is hoisted only for a declaration, which the chain reads above
+        debug_assert!(held.is_none(), "a hoisted operand read by no chain");
         out.push(Stmt { id, kind, span, chained: Chained::No });
         Some(())
     }
@@ -1508,14 +1519,7 @@ impl<'a> P<'a> {
             );
             return None;
         }
-        let component = self.component_name()?;
-        let lo = component.span.lo as usize;
-        let args = self.inst_args()?;
-        if !self.eat_p('.') {
-            self.fail("the face a family sweeps follows the instance: `Component(…).face`");
-            return None;
-        }
-        let face = self.refr()?;
+        let (component, args, face) = self.family_face()?;
         if !self.eat_word("over") {
             self.fail("a face family says the parameter it runs over: `over s`, a `param s: \
                        Scalar over (a, b)` of the document");
@@ -1533,15 +1537,26 @@ impl<'a> P<'a> {
             return None;
         }
         let list_span = Span::new(open, self.prev_hi());
-        self.family_solid(name, component, args, face, swept, list_span, lo)
+        self.family_solid(name, component, args, face, swept, list_span)
+    }
+
+    /// `Component(args).face`, the face of an instance written in place a face family sweeps.
+    fn family_face(&mut self) -> Option<(Name, Vec<InstArg>, Ref)> {
+        let component = self.component_name()?;
+        let args = self.inst_args()?;
+        if !self.eat_p('.') {
+            self.fail("the face a family sweeps follows the instance: `Component(…).face`");
+            return None;
+        }
+        Some((component, args, self.refr()?))
     }
 
     /// A face family's solid (#391 S2, #398 B), its parts read — `sweep(Station(…).f over s)`
     /// retired, or the set that says it, `solid({ p | p coincident(over s) Station(…).f })` — and
     /// its trailing clauses read here.
-    #[allow(clippy::too_many_arguments)]
     fn family_solid(&mut self, name: DeclName, component: Name, args: Vec<InstArg>, face: Ref,
-                    swept: Name, list_span: Span, lo: usize) -> Option<crate::syntax::Decl> {
+                    swept: Name, list_span: Span) -> Option<crate::syntax::Decl> {
+        let lo = component.span.lo as usize;
         let (a, b) = (String::new(), String::new());
         // keyed by its count and not its offset: what it builds reads its running number's name
         // (`solid::reads`), and a write-back above it moves the offset and not the drawing
@@ -2020,13 +2035,13 @@ impl<'a> P<'a> {
         let lo = self.here().lo as usize;
         let left = self.refr()?;
         let word = self.ident()?;
-        let mut held = Vec::new();
-        let right = self.hoist_in_place(next_id, &mut held)?;
+        let right = self.hoist_in_place(next_id)?;
         let infix = crate::constraints::Fixity::Infix;
-        let rel = self.relation_tail(word, infix, vec![left, right], Vec::new(), lo)?;
+        let ops = vec![left, right.by.clone()];
+        let rel = self.relation_tail(word, infix, ops, Vec::new(), lo)?;
         let span = Span::new(lo, self.prev_hi());
         let id = self.mint_stmt(next_id, span)?;
-        out.extend(hosted(held, id));
+        out.extend(right.hosted(id));
         out.push(Stmt { id, kind: StmtKind::Relation(rel), span, chained: Chained::No });
         Some(())
     }
@@ -2034,10 +2049,9 @@ impl<'a> P<'a> {
     /// **A set or a call written in place** where a name could stand (#103, #737), at the token
     /// here: its own statement under a key the source cannot write — a set, or an instance whose
     /// `face(…)` arguments are each an anonymous face of their own, held in the call's text —
-    /// pushed to `held` before the statement that holds it is minted (`hosted` says which that
-    /// is, #745).  Returned is the reference that statement reads it by.  The source is read
-    /// where it stands: no token is rewritten.
-    fn hoist_in_place(&mut self, next_id: &mut u32, held: &mut Vec<Stmt>) -> Option<Ref> {
+    /// minted before the statement that holds it, which says it holds it once it is minted
+    /// (`InPlace::hosted`, #745).  The source is read where it stands: no token is rewritten.
+    fn hoist_in_place(&mut self, next_id: &mut u32) -> Option<InPlace> {
         let at = self.here().lo as usize;
         let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::at(at) };
         let mut faces = Vec::new();
@@ -2055,7 +2069,7 @@ impl<'a> P<'a> {
             // each face minted before the call that holds it, as it is written first
             for (decl, span) in read {
                 let id = self.mint_stmt(next_id, span)?;
-                faces.push(Stmt { id, kind: StmtKind::Decl(decl), span, chained: Chained::Link });
+                faces.push((id, StmtKind::Decl(decl), span));
             }
             let inst = Instance {
                 annotations: Default::default(),
@@ -2071,9 +2085,11 @@ impl<'a> P<'a> {
         };
         let span = Span::new(at, self.prev_hi());
         let id = self.mint_stmt(next_id, span)?;
-        held.extend(hosted(faces, id));
-        held.push(Stmt { id, kind, span, chained: Chained::Link });
-        Some(Ref { root: Name { text: name.text, span }, path: Vec::new(), span })
+        let faces = faces.into_iter()
+            .map(|(f, kind, span)| Stmt { id: f, kind, span, chained: Chained::InPlace(id) })
+            .collect();
+        let by = Ref { root: Name { text: name.text, span }, path: Vec::new(), span };
+        Some(InPlace { by, faces, id, kind, span })
     }
 
     /// **A set that says a sweep** (#737), written in place in `solid(…)` here: where its parts
@@ -2171,19 +2187,12 @@ impl<'a> P<'a> {
         self.i = s.operand.0;
         if !s.inside && self.call_at(self.i).is_some() {
             // a face family: the station's face, at every instant of the declared parameter
-            let component = self.component_name()?;
-            let lo = component.span.lo as usize;
-            let args = self.inst_args()?;
-            if !self.eat_p('.') {
-                self.fail("the face a family sweeps follows the instance: `Component(…).face`");
-                return None;
-            }
-            let face = self.refr()?;
+            let (component, args, face) = self.family_face()?;
             ends(self, s.operand.1, '}')?;
             let (a, _) = s.over?;
             let swept = Name { text: self.word_at(a + 1)?.to_string(), span: self.t[a + 1].1 };
             self.i = s.close + 1;
-            return self.family_solid(name, component, args, face, swept, list_span, lo);
+            return self.family_solid(name, component, args, face, swept, list_span);
         }
         let tool = self.refr()?;
         ends(self, s.operand.1, '}')?;
@@ -2196,27 +2205,22 @@ impl<'a> P<'a> {
             }
             None => None,
         };
-        let (mut under, mut seen_from) = (None, None);
+        // `under:` and `seen_from:`, read as a solid's sweep labels are
+        let mut parts = crate::syntax::SweepParts::default();
         for &(a, b) in &s.labels {
             self.i = a;
-            let label = self.slot_label();
-            let slot = if label.as_deref() == Some("under") { &mut under } else { &mut seen_from };
-            if slot.is_some() {
-                self.fail(&format!("`{}` is given twice", label.unwrap_or_default()));
-                return None;
-            }
-            *slot = Some(self.refr()?);
+            let label = self.slot_label().unwrap_or_default();
+            self.sweep_arg(&label, &mut parts)?;
             ends(self, b, ')')?;
         }
+        let (under, seen_from) = (parts.under, parts.seen_from);
         self.i = s.close + 1;
         use crate::syntax::Sweep;
         let sweep = match over {
             Some((over, from, to)) => Sweep::Swept { motion: under, from, to, over },
             // no interval: the whole roll, bounded by the body the solid is cut from
             None => {
-                let at = self.t[s.operand.0].1;
-                let body = Ref { root: Name { text: ROLLED.into(), span: at }, path: Vec::new(),
-                                 span: at };
+                let body = Ref::dotted(ROLLED, self.t[s.operand.0].1);
                 Sweep::Rolled { motion: under, body }
             }
         };
@@ -2559,7 +2563,9 @@ impl<'a> P<'a> {
             let decl = decl?;
             let span = Span::new(at, self.prev_hi());
             let key = Name { text: decl.name.key().text.clone(), span };
-            self.faces.get_or_insert_default().push((decl, span));
+            if let Some(faces) = self.faces.as_mut() {
+                faces.push((decl, span));
+            }
             let value = InstVal::Ref(Ref { root: key, path: Vec::new(), span });
             return Some(InstArg { label, value, span: Span::new(lo, self.prev_hi()) });
         }

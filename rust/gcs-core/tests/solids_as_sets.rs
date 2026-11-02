@@ -271,6 +271,19 @@ fn what_is_written_in_place_names_its_host() {
     assert!(errs.is_empty(), "{errs:?}");
     assert_eq!(held(&again), (call.to_string(), "face(ab, bc, cd, da)".to_string()));
 
+    // two faces alike in one call are two statements, each printed where its key was read
+    let (mut p, errs) = parse(&format!("{RECT}twin := solid(Pair(face(ab, bc), face(ab, bc)))\n"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let printed = render_flat(&mut p).unwrap().to_string();
+    assert!(printed.contains("twin := solid(Pair(face(ab, bc), face(ab, bc)))"), "{printed}");
+    let faces: Vec<_> = p.root().body.iter()
+        .filter(|st| matches!(st.chained, Chained::InPlace(_))
+            && matches!(st.kind, StmtKind::Decl(_)))
+        .map(|st| st.span).collect();
+    assert_eq!(faces.len(), 2);
+    assert_ne!(faces[0], faces[1]);
+    assert!(faces.iter().all(|f| f.slice(p.text()) == "face(ab, bc)"));
+
     // a set on a relation's right is held by the relation
     let (p, errs) = parse("a := point\nq := point\nq inside { p | p distance(3mm) a }\n");
     assert!(errs.is_empty(), "{errs:?}");

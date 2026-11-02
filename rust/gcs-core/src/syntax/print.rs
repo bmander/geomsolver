@@ -30,80 +30,53 @@ impl std::error::Error for PrintError {}
 /// **What a statement holds in place, printed in it** (#737, #745): a family's call or a face
 /// written in place is a statement of its own under a key the source cannot write, and says which
 /// statement's text holds it (`Chained::InPlace`, set by the parser's hoist).  Printed, each is its
-/// text again where its host reads its key, and nowhere of its own.  A set literal written in
-/// place stays a statement of its own, which the flat subset refuses.
+/// text again where its host reads its key (`filled`), and nowhere of its own.  A set literal
+/// written in place stays a statement of its own, which the flat subset refuses.
 ///
-/// Keyed by the statement: the key it is read by, and its text, a face's within a call's.
-fn in_place(body: &[super::Stmt]) -> BTreeMap<StmtId, (String, String)> {
-    use super::Chained;
-    let mut held: Vec<&super::Stmt> =
-        body.iter().filter(|st| matches!(st.chained, Chained::InPlace(_))).collect();
-    // what a statement holds is minted before it, so a call's faces are printed before the call
-    held.sort_by_key(|st| st.id);
-    let mut texts: BTreeMap<StmtId, (String, String)> = BTreeMap::new();
-    let mut keys: BTreeMap<String, String> = BTreeMap::new();
-    for st in held {
-        let (key, text) = match &st.kind {
+/// By host: each statement it holds, the key it is read by, and its text as it stands.
+type Held = BTreeMap<StmtId, Vec<(StmtId, String, String)>>;
+
+fn in_place(body: &[super::Stmt]) -> Held {
+    let mut held = Held::new();
+    for st in body {
+        let super::Chained::InPlace(host) = st.chained else { continue };
+        let mut text = String::new();
+        let key = match &st.kind {
             StmtKind::Decl(d) if d.kind == EntKind::Face => {
-                let mut s = String::new();
-                write_decl(&mut s, &inlined_decl(d, &keys));
-                (d.name.key().text.clone(), s)
+                write_decl(&mut text, d);
+                d.name.key().text.clone()
             }
             StmtKind::Instance(i) => {
-                let mut s = String::new();
-                write_instance_call(&mut s, &inlined_call(i, &keys));
-                (i.name.text.clone(), s)
+                write_instance_call(&mut text, i);
+                i.name.text.clone()
             }
             _ => continue,
         };
-        keys.insert(key.clone(), text.clone());
-        texts.insert(st.id, (key, text));
+        held.entry(host).or_default().push((st.id, key, text));
     }
-    texts
+    held
 }
 
-/// A reference to a statement held in place, spelled as that statement's text.
-fn inline(texts: &BTreeMap<String, String>, r: &mut Ref) {
-    if let Some(t) = texts.get(&r.root.text) {
-        r.root.text = t.clone();
+/// Statement `of`'s `text` written to `out`, each key it reads of a statement it holds in place
+/// replaced by that statement's text, filled in turn — and where each landed.  A key is one
+/// no source can write, so where it stands is where the statement is read.
+fn filled(text: &str, of: StmtId, held: &Held, out: &mut String,
+          landed: &mut Vec<(StmtId, Span)>) {
+    let key_at = |key: &str| text.match_indices(key).map(|(i, _)| i).find(|&i| {
+        !text[i + key.len()..].starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+    });
+    let mut at: Vec<(usize, &(StmtId, String, String))> = held.get(&of).into_iter().flatten()
+        .filter_map(|h| key_at(&h.1).map(|i| (i, h))).collect();
+    at.sort_by_key(|&(i, _)| i);
+    let mut from = 0;
+    for (i, (id, key, inner)) in at {
+        out.push_str(&text[from..i]);
+        let lo = out.len();
+        filled(inner, *id, held, out, landed);
+        landed.push((*id, Span::new(lo, out.len())));
+        from = i + key.len();
     }
-}
-
-fn inlined_decl(d: &Decl, texts: &BTreeMap<String, String>) -> Decl {
-    let mut d = d.clone();
-    for k in d.children.iter_mut().flatten() {
-        if let Kid::Ref(r) = k {
-            inline(texts, r);
-        }
-    }
-    d
-}
-
-fn inlined_call(i: &Instance, texts: &BTreeMap<String, String>) -> Instance {
-    let mut i = i.clone();
-    for a in &mut i.args {
-        if let InstVal::Ref(r) = &mut a.value {
-            inline(texts, r);
-        }
-    }
-    i
-}
-
-/// A host's statement as printed: each reference to what it holds in place spelled as its text —
-/// a copy, at print time, so the program keeps its statements.
-fn inlined(k: &StmtKind, texts: &BTreeMap<String, String>) -> StmtKind {
-    let mut k = k.clone();
-    match &mut k {
-        StmtKind::Decl(d) => *d = inlined_decl(d, texts),
-        StmtKind::Relation(r) => {
-            for o in r.form.written_mut().into_iter().flat_map(|w| w.ops.iter_mut()) {
-                inline(texts, o);
-            }
-        }
-        StmtKind::Instance(i) => *i = inlined_call(i, texts),
-        _ => {}
-    }
-    k
+    out.push_str(&text[from..]);
 }
 
 /// Export the flat subset and update component and statement spans.
@@ -128,14 +101,18 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     if p.interfaces.iter().any(|f| f.module.is_none()) {
         return Err(PrintError { construct: "interface definitions" });
     }
+    // what each of the program's own components holds in place, found once
+    let mut helds: Vec<(Held, BTreeSet<StmtId>)> = Vec::new();
     for c in p.components.iter().filter(|c| own(c)) {
         let held = in_place(&c.body);
-        for st in c.body.iter().filter(|st| !held.contains_key(&st.id)) {
+        let folded: BTreeSet<StmtId> = held.values().flatten().map(|h| h.0).collect();
+        for st in c.body.iter().filter(|st| !folded.contains(&st.id)) {
             printable(&st.kind)?;
             if matches!(st.kind, StmtKind::Instance(_)) {
                 return Err(PrintError { construct: "component instances" });
             }
         }
+        helds.push((held, folded));
     }
     let mut out = String::new();
     for u in &mut p.uses {
@@ -148,21 +125,20 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
         u.span = Span::new(start, out.len());
         out.push('\n');
     }
-    for comp in p.components.iter_mut().filter(|c| c.module.is_none()) {
+    let mine = p.components.iter_mut().filter(|c| c.module.is_none());
+    for (comp, (held, folded)) in mine.zip(helds) {
         let lo = out.len();
-        let held = in_place(&comp.body);
-        let texts: BTreeMap<String, String> = held.values().cloned().collect();
-        let hosts: BTreeSet<StmtId> = comp.body.iter().filter_map(|st| match st.chained {
-            super::Chained::InPlace(h) if held.contains_key(&st.id) => Some(h),
-            _ => None,
-        }).collect();
-        let write = |out: &mut String, st: &mut super::Stmt| match hosts.contains(&st.id) {
-            true => {
-                let mut copy = super::Stmt { kind: inlined(&st.kind, &texts), ..st.clone() };
-                write_flat(out, &mut copy);
-                st.span = copy.span;
+        let mut landed: Vec<(StmtId, Span)> = Vec::new();
+        // a host is written as it stands, then filled with what it holds
+        let mut write = |out: &mut String, st: &mut super::Stmt| {
+            if !held.contains_key(&st.id) {
+                return write_flat(out, st);
             }
-            false => write_flat(out, st),
+            let mut own = String::new();
+            write_flat(&mut own, st);
+            let lo = out.len();
+            filled(&own, st.id, &held, out, &mut landed);
+            st.span = Span::new(lo, out.len());
         };
         // a claim's statements are written in its block, after the rest (#460): the body is a
         // set, so the order printed is the order kept
@@ -170,7 +146,7 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
         let loose = comp.body.len() - blocks.iter().sum::<usize>();
         // Separate declarations from the relations that follow them.
         let mut said_decl = false;
-        for st in comp.body[..loose].iter_mut().filter(|st| !held.contains_key(&st.id)) {
+        for st in comp.body[..loose].iter_mut().filter(|st| !folded.contains(&st.id)) {
             let is_decl = matches!(st.kind, StmtKind::Decl(_));
             if said_decl && !is_decl {
                 out.push('\n');
@@ -182,7 +158,7 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
         let mut at = loose;
         for n in blocks {
             out.push_str("claim {\n");
-            for st in comp.body[at..at + n].iter_mut().filter(|st| !held.contains_key(&st.id)) {
+            for st in comp.body[at..at + n].iter_mut().filter(|st| !folded.contains(&st.id)) {
                 out.push_str("  ");
                 write(&mut out, st);
                 out.push('\n');
@@ -190,26 +166,10 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
             out.push_str("}\n");
             at += n;
         }
-        // each statement held in place where its text landed in its host's, a call's before the
-        // faces it holds
-        let mut spans: BTreeMap<StmtId, Span> = comp.body.iter()
-            .filter(|st| !held.contains_key(&st.id)).map(|st| (st.id, st.span)).collect();
-        let mut inner: Vec<(StmtId, StmtId)> = comp.body.iter().filter_map(|st| match st.chained {
-            super::Chained::InPlace(h) if held.contains_key(&st.id) => Some((st.id, h)),
-            _ => None,
-        }).collect();
-        inner.sort_by_key(|&(id, _)| std::cmp::Reverse(id));
-        for (id, host) in inner {
-            let (Some(&within), Some((_, text))) = (spans.get(&host), held.get(&id)) else {
-                continue;
-            };
-            let (a, b) = (within.lo as usize, within.hi as usize);
-            if let Some(k) = out.get(a..b).and_then(|t| t.find(text.as_str())) {
-                spans.insert(id, Span::new(a + k, a + k + text.len()));
-            }
-        }
+        // each statement held in place where its text landed in its host's
+        let landed: BTreeMap<StmtId, Span> = landed.into_iter().collect();
         for st in comp.body.iter_mut() {
-            if let Some(&sp) = spans.get(&st.id) {
+            if let Some(&sp) = landed.get(&st.id) {
                 st.span = sp;
             }
         }

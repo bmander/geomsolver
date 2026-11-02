@@ -930,7 +930,7 @@ impl<'a> P<'a> {
 
     /// One of a solid's sweep arguments, the label already eaten: `from: EXPR`, `to: EXPR`,
     /// `depth: EXPR`, `about: REF`, `sweep: EXPR`, `sense: cw|ccw`.
-    fn sweep_arg(&mut self, label: &str, parts: &mut SweepParts) -> Option<()> {
+    pub(super) fn sweep_arg(&mut self, label: &str, parts: &mut SweepParts) -> Option<()> {
         let twice = |s: &mut Self| {
             s.fail(&format!("`{label}` is given twice"));
             None
