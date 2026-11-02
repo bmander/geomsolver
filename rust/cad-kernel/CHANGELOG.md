@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A traced meeting dropped as an edge one face already has (#735 A2) is laid across the other face
+  where it lies inside it (`boolean::combined` and every selection): a torus cut by the plane
+  through its axis that holds its seam is half the torus again, not an open boundary — a regression
+  of the surface arrangement (brep-bench's shell/half-torus-open-ends).
+- A sheet's net whose first or last row of poles collapses to a point is a pole
+  (`build::grid_sheet`): one vertex and a degenerate edge in each face, so the standard NURBS
+  sphere is a closed boundary `check` holds.
 - A plane through a quadric's asymptotic cone is tangent where the constant at the hyperbola's
   centre is rounding (`ssi::intersect`): a plane holding a hyperboloid's ruling meets it in two
   lines at any tolerance, where at a tolerance under some 1e-7 it came out as a hyperbola's

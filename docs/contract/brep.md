@@ -20,7 +20,9 @@ from outside pins a released version: it is measured beside other kernels on
 https://github.com/bmander/brep-bench at the version that names.
 `gcs_core::brep`:
 `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`
-intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `check`, `pinches`),
+intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles — a sheet's net whose row of poles
+collapses to a point one too, `build::grid_sheet` as `sew::sewn`,
+`brep::a_net_closed_round_onto_two_poles_is_a_ball`; `check`, `pinches`),
 `build` (prisms, drafted prisms, revolutions and canals of line/arc/circle/spline profiles; the
 sphere, the cone and the torus by their numbers as OCCT's `MakeSphere`/`MakeCone`/`MakeTorus` take
 them, each its meridian turned — `sphere(c, axis, r)`, `cone(o, axis, r0, r1, h)`,
@@ -221,7 +223,9 @@ narration, so a split is the same bits with `SOLVENT_BREP_DEBUG` set and unset a
 split by all the others at once — where three faces of three operands meet at a point no edge
 passes, the two meetings on each face cut there (`triple_points`) — a span two faces only touch along
 laid as an edge, every piece a face of the complex but a sliver, coincident pieces one face naming
-each operand; each cell's membership in each operand read off a face of it bounding the cell, else at
+each operand; a traced meeting along an edge one face already has is that edge, laid once (`along_an_edge`),
+and laid across the other face too wherever it lies inside it (`Meetings::along_edges`: a torus's
+seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_seam_is_half_of_it`); each cell's membership in each operand read off a face of it bounding the cell, else at
 a point deep inside. **A Boolean is a selection over it**: each piece's two sides' membership read
 as before, the complex formed, each shell kept as the operation keeps its sides (which agree round
 it, else each face by its own), and the result touching itself along an edge given an edge for each
