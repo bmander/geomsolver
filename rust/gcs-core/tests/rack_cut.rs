@@ -10,7 +10,7 @@
 //! (`o coincident turn.axis; turn.axis parallel(sense: same) std.front.normal; fix(ratio == 1, advance == 0mm) turn`).  What is removed is checked against
 //! arithmetic (`space_area`), not a second kernel.
 
-use gcs_core::solid::admission::{admit_body, Condition, Error, Options};
+use gcs_core::solid::admission::{admit_body, Error, Options};
 
 use crate::common::build;
 use std::f64::consts::{PI, TAU};

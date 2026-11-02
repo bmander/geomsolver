@@ -118,11 +118,11 @@ fn solids_under_a_line_are_solids_under_its_turn() {
     // the patch's volume is Pappus's: a quarter turn of 24 mm² about a centroid 12 from the line
     let pappus = std::f64::consts::FRAC_PI_2 * 12.0 * 24.0;
     assert!(near(measured(&line, "patch").0, pappus), "{:?}", measured(&line, "patch"));
-    // nothing read under the line is a frame or an unknown: the readings add what they add under
-    // the frame (the region solids' points), and no frame — counted as elaborated
-    let (bare, framed) = (read(RING), read(&format!("{RING}turn := frame\nturn turns(1) ax\n")));
+    // nothing read under the line is a frame or an unknown — counted as elaborated.  The patch's
+    // set under the line says a revolution about it (#744, `flatten::said`), so it is that sweep
+    // and has no probe, where under the frame it is the region it reads point by point
+    let bare = read(RING);
     assert_eq!(line.sketch.frames.len(), bare.sketch.frames.len());
-    assert_eq!(line.sketch.params.len() - bare.sketch.params.len(),
-               frame.sketch.params.len() - framed.sketch.params.len());
+    assert_eq!(line.sketch.params.len(), bare.sketch.params.len());
     assert_eq!(line.sketch.motions.iter().filter(|m| m.about).count(), 1);
 }
