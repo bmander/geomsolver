@@ -201,7 +201,11 @@ a point is a state it holds, not a check failure; `select` keeps the faces betwe
 cells, each wedge of a kept cell round an edge where the result touches itself given an edge of its
 own, and says where (`Touch`). `complex::two_blocks_meeting_along_an_edge_…`, `…_at_a_corner_…`,
 `a_void_is_a_shell_…`, `faces_tangent_along_an_edge_…`, `a_ball_in_a_cylinder_of_its_radius_…` and
-`a_block_tangent_to_a_cone_along_a_generator_…` are the gates. **A2, the meeting** (`brep::meeting`):
+`a_block_tangent_to_a_cone_along_a_generator_…` are the gates. Ways into faces from an edge within
+`TANGENT` (1e-4 rad) of one another are ordered a step in: a fitted surface — a round's net — is
+tangent to the faces it joins only as closely as its fit, some 1e-5, and read to first order that
+error put a round's strip on the wrong side of it, every cell one shell (the round-lowering cases,
+each a Boolean's selection with none falling back). **A2, the meeting** (`brep::meeting`):
 two surfaces' meeting over boxes of their parameters as branches (each crossing or touching all
 along), singular points (a touch alone, or branches crossing) and coincidence, complete — boundary
 crossings, every critical point of one's distance across the other's parameters (a closed branch
@@ -227,8 +231,9 @@ each operand; a traced meeting along an edge one face already has is that edge, 
 and laid across the other face too wherever it lies inside it (`Meetings::along_edges`: a torus's
 seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_seam_is_half_of_it`); each cell's membership in each operand read off a face of it bounding the cell, else at
 a point deep inside. **A Boolean is a selection over it**: each piece's two sides' membership read
-as before, the complex formed, each shell kept as the operation keeps its sides (which agree round
-it, else each face by its own), and the result touching itself along an edge given an edge for each
+as before, the complex formed, each shell kept as the operation keeps its sides — which agree round
+it, with no face kept by its own sides instead: a shell kept on one side and dropped on another is
+refused, two cells joined round an edge — and the result touching itself along an edge given an edge for each
 wedge; `split` is the complex's shells inside the solid. **A Boolean lays its touches as edges and
 heals them out of its result** (`heal`): a span two faces only touch along is laid in its complex
 as an arrangement lays it, so the cells either side are classified apart; then, in the result, a
