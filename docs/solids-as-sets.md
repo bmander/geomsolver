@@ -57,7 +57,48 @@ term over the same solids. Defining the words themselves in `std` needs a primit
 
 ## Measurements
 
-The corpus (`rust/examples/**/*.sv`, 274 documents) was run through `solventc` before and after
-the rewrite — its report, its STEP assembly and its STL — and each output hashed
-(`scripts/solids_as_sets.py` rewrote it). The figures are in the pull request that landed this
-and are restated here once the run is final.
+The corpus (`rust/examples/**/*.sv`, 274 documents) was run through `solventc` before the epic
+(`edd4d70`, the old spellings) and after it (the rewritten corpus,
+`scripts/solids_as_sets.py`): each document's report, its STEP assembly (`--step-assembly`) and its
+STL (`--stl`), every output hashed and timed, the two runs in turn on one idle 4-core machine.
+
+| output | identical bytes |
+|---|---|
+| report | 272 of 274 |
+| STEP assembly | 272 of 274 |
+| STL | 274 of 274 |
+
+What differs, and why:
+
+- `solid_sweeps/slot.sv`: a warning's line number, one further down for the `use std.solids` line.
+- `engine.sv`: the report prints hidden statement keys (`camshaft_i.#1073742761.0.ghost.spine`),
+  renumbered because the new module and the statements written in place take statement ids; the
+  numbers are the same.
+- `engine.sv` and `engine/crankshaft.sv`'s STEP: the crankshaft's ring gear, a generating cut,
+  differs in the last digit of some coordinates (`-3.2338681033288323` against
+  `-3.233868103328894`) — the same renumbering reaching the order the generating sweep reads its
+  pieces in. Its STL is identical.
+
+Every other document's solve, report and exports are the old spelling's to the bit: the
+flattener writes a `std.solids` word out as the sweep it says (`flatten/said.rs`), so nothing is
+added to the solve — no probe point, and no frame for a revolution (`under:` names its line).
+
+**Cost.** 1260.4 s before, 1245.8 s after (−1.2%: the report 424.9 → 427.0 s, the STEP 469.3 →
+471.1 s, the STL 366.2 → 347.8 s), within the run-to-run spread of these documents. The largest
+regression of one document is `sized_conrod.sv`, 558.8 → 575.0 s (+2.9%), and the largest gain
+`engine/conrod.sv`, 90.2 → 80.2 s; none is attributable to the rewrite beyond that spread. A set
+written by hand rather than with a word adds the region solid's probe point (three fixed
+parameters) and is recognised by the elaborator (`solid/defined.rs`); `tests/solids_as_sets.rs`
+holds it to the word's bytes.
+
+## What is not done
+
+- **Sketching on the faces of a revolution, a face family or a motion's sweep**, and on a drafted
+  side, is still E040: the carriers a drawn point or plane stands on are written for a prism's caps
+  and straight sides only (`flatten/faces.rs`). It is now said as the evaluator's limit, not a rule
+  of the language.
+- **A union of regions** (`outside` of what is outside several) is read point by point; the
+  meridian fold takes no complement yet, so two coaxial balls' union is not exported exactly.
+  A union of whole solids is the body term, exactly.
+- **`cut`, `union` and `common`** keep their built-in statement form; their meaning is now the set
+  their statements say, but they are not defined as words of `std` over a lower primitive.
