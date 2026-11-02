@@ -785,6 +785,13 @@ fn turn_about(sk: &mut Sketch, l: EntRef) -> usize {
     sk.motions.len() - 1
 }
 
+/// `shape` a term of the region solid whose point `probe` is, held where it is at most nothing.
+fn held_term(cx: &mut Elab<'_>, probe: EntRef, shape: crate::model::RegionShape) {
+    let term = crate::model::RegionTerm::new(shape, crate::syntax::Cmp::Le,
+                                             crate::model::TermNumber::stated(0.0));
+    cx.probes.terms.get_mut(&probe.i()).expect("a probe's terms").push(term);
+}
+
 /// **Outside a set** (#737 P3): `p outside q`, both a region solid's points — `q` the point of
 /// the set `p` is outside of, which the flattener made (`sets::complement`) — the complement of
 /// what holds at `q` (`RegionShape::Outside`), filled when the solid is built.  Whether it was one.
@@ -797,9 +804,7 @@ fn outside_set(cx: &mut Elab<'_>, r: &Relation) -> bool {
     let (Some(p), Some(q)) = (probe(p), probe(q)) else { return false };
     let set = crate::model::Target::Set { probe: q.i() as u32, terms: Vec::new() };
     let shape = crate::model::RegionShape::Outside { set: Box::new(set) };
-    let term = crate::model::RegionTerm::new(shape, crate::syntax::Cmp::Le,
-                                             crate::model::TermNumber::stated(0.0));
-    cx.probes.terms.get_mut(&p.i()).expect("a probe's terms").push(term);
+    held_term(cx, p, shape);
     true
 }
 
@@ -867,9 +872,7 @@ fn swept_patch(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> bool {
         }
     };
     let shape = crate::model::RegionShape::Swept { motion: m as u32, roll: [a, b], face: face.i() as u32 };
-    let term = crate::model::RegionTerm::new(shape, crate::syntax::Cmp::Le,
-                                             crate::model::TermNumber::stated(0.0));
-    cx.probes.terms.get_mut(&point.i()).expect("a probe's terms").push(term);
+    held_term(cx, point, shape);
     true
 }
 
@@ -1485,16 +1488,13 @@ pub(in crate::program) fn shape(sk: &Sketch, res: &Resolver, w: &crate::syntax::
     let Ok(of) = res.operand(sk, f) else { return Shape::Other };
     // a side as written or as a set's body carries it (`Written::side`, #192)
     let side = w.side().is_some();
+    // the words a region's point is read against a face by
+    let reads = matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident");
     match of {
         Operand::Ends(edge) if side => Shape::Ends { point, edge },
         Operand::Ent(e) if side && e.kind == EntKind::Frame => Shape::PlaneSide,
-        Operand::Ent(e) if e.kind == EntKind::Face
-            && matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident") => {
-            Shape::Section { point, face: e }
-        }
-        _ if matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident") => {
-            of.faces().map_or(Shape::Other, |face| Shape::Face { point, face })
-        }
+        Operand::Ent(e) if reads && e.kind == EntKind::Face => Shape::Section { point, face: e },
+        _ if reads => of.faces().map_or(Shape::Other, |face| Shape::Face { point, face }),
         _ => Shape::Other,
     }
 }

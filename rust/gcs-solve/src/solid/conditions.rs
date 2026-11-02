@@ -174,8 +174,8 @@ impl SetDistance {
                 (if *beyond { -v } else { v }).max(0.0)
             }
             SetDistance::Section { at, region, beyond } => {
-                let d = sub(p, at.o);
-                let v = region.value([crate::space::dot(d, at.u), crate::space::dot(d, at.v)]);
+                let (x, y) = at.view_coords(p);
+                let v = region.value([x, y]);
                 (if *beyond { -v } else { v }).max(0.0)
             }
         }

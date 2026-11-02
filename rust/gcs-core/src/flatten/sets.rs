@@ -494,11 +494,7 @@ impl<'a> Walk<'a> {
         let StmtKind::Relation(r) = &st.kind else { return None };
         let w = r.form.written()?;
         // as written, or as a set's body holds it (`Written::lower_side`)
-        let outside = match (w.word.text.as_str(), w.args.as_slice()) {
-            ("outside", []) => true,
-            ("coincident", [crate::syntax::OpArg::Bound { cmp: Cmp::Ge, hi: None, grow: None, .. }]) => true,
-            _ => false,
-        };
+        let outside = matches!(w.side(), Some((Cmp::Ge, None)));
         if !outside || r.along.is_some() || sc.twin().is_some() {
             return None;
         }
@@ -514,7 +510,7 @@ impl<'a> Walk<'a> {
         if !rest.is_empty() {
             return None;
         }
-        let site = self.sets.made.get(&abs)?.clone();
+        let site = self.sets.made.get(&abs)?;
         // a set whose one bound turns round is outside in place, as ever
         let mut body = site.lit.body.clone();
         if region_body(&mut body, &site.shape, crate::syntax::Cmp::Ge, "outside", w.word.span,

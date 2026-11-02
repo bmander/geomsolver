@@ -13,7 +13,7 @@
 //! | the two ordinates, `x := { q \| q outside F }`, `y := { q \| q inside F }`, `distance(p, x) - distance(p, y) >= tan(θ) * distance(p, F)` | `Sweep::Prism { …, draft: θ }` |
 //! | `p coincident(under: l, over t in (a, b)) F`, `l` a line, one end nothing | `Sweep::Revolve { axis: l, … }` |
 //! | `p inside F` alone | `Sweep::Through`, through the body it is cut from |
-use crate::syntax::{Arg, Cmp, Component, InstVal, Instance, OpArg, Ref, SetLit, Sense, Span,
+use crate::syntax::{Arg, Cmp, Component, InstVal, Instance, OpArg, Ref, SetLit, Span,
                     StmtKind, Sweep, Written};
 
 /// What a name of the body is bound to: a reference, or a number's text as written.
@@ -30,24 +30,24 @@ pub(super) enum Bound {
 pub(super) fn binding<'a>(comp: &'a Component, inst: &'a Instance)
     -> impl Fn(&str) -> Option<Bound> + 'a {
     let formals = &comp.formals;
+    let positional: Vec<_> = inst.args.iter().filter(|a| a.label.is_none()).collect();
     move |name: &str| {
         let k = formals.iter().position(|f| f.name.text == name)?;
         let given = inst.args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.text == name))
-            .or_else(|| {
-                let positional: Vec<_> = inst.args.iter().filter(|a| a.label.is_none()).collect();
-                positional.get(k).copied().filter(|_| k < positional.len())
-            });
-        match given.map(|a| &a.value) {
-            Some(InstVal::Ref(r)) => {
+            .or_else(|| positional.get(k).copied());
+        let Some(a) = given else {
+            return formals[k].default.clone().map(|(t, s)| Bound::Text(t, s));
+        };
+        match &a.value {
+            InstVal::Ref(r) => {
                 let kind = match formals[k].ty {
                     crate::syntax::Ty::Ent(e) => Some(e),
                     _ => None,
                 };
                 Some(Bound::Ref(r.clone(), kind))
             }
-            Some(InstVal::Expr(t)) => Some(Bound::Text(t.clone(), given.map_or(Span::default(), |a| a.span))),
-            Some(_) => None,
-            None => formals[k].default.clone().map(|(t, s)| Bound::Text(t, s)),
+            InstVal::Expr(t) => Some(Bound::Text(t.clone(), a.span)),
+            _ => None,
         }
     }
 }
@@ -92,23 +92,17 @@ pub(super) fn said(lit: &SetLit, bind: &dyn Fn(&str) -> Option<Bound>) -> Option
                 let f = face(&w.ops[1])?;
                 match (w.word.text.as_str(), w.args.as_slice()) {
                     ("inside", []) if inside.is_none() => inside = Some(f),
+                    // an ordinate along the face's normal, bounded one way
                     ("distance", args) => {
-                        let along_n = args.iter().any(|a| matches!(a,
-                            OpArg::Named(n, Arg::Word(d)) if n.text == "along" && d == "n"));
-                        let cmp = args.iter().find_map(|a| match a {
-                            OpArg::Bound { cmp, hi: None, grow: None, .. } => Some(*cmp),
-                            _ => None,
-                        });
-                        let dim = args.iter().find_map(|a| match a {
-                            OpArg::Dim(t, s) => Some((t.clone(), *s)),
-                            _ => None,
-                        });
-                        let (true, Some(cmp), Some((t, s))) = (along_n, cmp, dim) else { return None };
-                        if args.len() != 3 {
+                        let along_n = w.sel("along").as_deref() == Some("n");
+                        let (Some((cmp, None)), Some((t, s))) = (w.bound(), w.dim()) else {
+                            return None;
+                        };
+                        if !along_n || w.grow().is_some() || args.len() != 3 {
                             return None;
                         }
                         let slot = match cmp { Cmp::Ge => &mut lo, Cmp::Le => &mut hi, Cmp::In => return None };
-                        if slot.replace((f, number(&t, s))).is_some() {
+                        if slot.replace((f, number(t, s))).is_some() {
                             return None;
                         }
                     }
@@ -139,26 +133,7 @@ pub(super) fn said(lit: &SetLit, bind: &dyn Fn(&str) -> Option<Bound>) -> Option
         if inside.is_some() || lo.is_some() || hi.is_some() || !sets.is_empty() || lean.is_some() {
             return None;
         }
-        let text = |a: &Arg| match a { Arg::Dim { text, .. } => text.trim().to_string(), _ => String::new() };
-        let zero = |a: &Arg| matches!(text(a).as_str(), "0" | "0deg" | "0 deg");
-        let whole = |t: &str| matches!(t, "360deg" | "360 deg");
-        let (sweep, sense) = match (zero(&from), zero(&to)) {
-            (true, false) if whole(&text(&to)) => (None, Sense::Ccw),
-            (true, false) => (Some(to), Sense::Ccw),
-            (false, true) => {
-                let t = text(&from);
-                let span = match &from { Arg::Dim { span, .. } => *span, _ => Span::default() };
-                match t.strip_prefix('-').map(str::trim) {
-                    Some(w) if whole(w) => (None, Sense::Cw),
-                    Some(w) if w.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') => {
-                        (Some(Arg::Dim { text: w.to_string(), span }), Sense::Cw)
-                    }
-                    _ => (Some(Arg::Dim { text: format!("-({t})"), span }), Sense::Cw),
-                }
-            }
-            _ => return None,
-        };
-        return Some((Sweep::Revolve { axis, sweep, sense }, f));
+        return crate::syntax::revolve_between(axis, Some(&from), Some(&to)).map(|s| (s, f));
     }
     // a section unbounded along its normal: the prism through the body it is cut from, joined
     // where the body word joins it (`syntax::ROLLED`)
@@ -172,7 +147,7 @@ pub(super) fn said(lit: &SetLit, bind: &dyn Fn(&str) -> Option<Bound>) -> Option
     // undrafted: the section is the set's own; drafted: what the lean says
     let draft = match (inside, lean) {
         (Some(f), None) if f.root.text == fa.root.text && sets.is_empty() => None,
-        (None, Some(m)) => Some(lean_of(m, &sets, &fa, p, &number)?),
+        (None, Some(m)) => Some(lean_of(m, &sets, p, &number)?),
         _ => return None,
     };
     Some((Sweep::Prism { from, to, draft }, fa))
@@ -180,7 +155,7 @@ pub(super) fn said(lit: &SetLit, bind: &dyn Fn(&str) -> Option<Bound>) -> Option
 
 /// The draft a lean states, `distance(p, x) - distance(p, y) >= tan(θ) * distance(p, F)` over `x
 /// := { q | q outside F }` and `y := { q | q inside F }`: `θ`, bound.
-fn lean_of(m: &crate::syntax::Measured, sets: &[(String, &SetLit)], f: &Ref, p: &str,
+fn lean_of(m: &crate::syntax::Measured, sets: &[(String, &SetLit)], p: &str,
            number: &dyn Fn(&str, Span) -> Arg) -> Option<Arg> {
     let side = |lit: &SetLit| -> Option<&'static str> {
         let [st] = lit.body.as_slice() else { return None };
@@ -207,7 +182,6 @@ fn lean_of(m: &crate::syntax::Measured, sets: &[(String, &SetLit)], f: &Ref, p: 
     let inner = rhs.strip_prefix("tan(")?;
     let close = inner.rfind(") * distance(")?;
     let (theta, rest) = (&inner[..close], &inner[close..]);
-    let _ = f;
     if !rest.replace(' ', "").starts_with(&format!(")*distance({p},")) {
         return None;
     }

@@ -26,80 +26,66 @@ impl std::fmt::Display for PrintError {
 
 impl std::error::Error for PrintError {}
 
-/// **What a solid's brackets hold in place, folded back into them** (#737): a set, a family's call
-/// or a face written in place is a statement of its own under a key the source cannot write, a
-/// link of the statement it stands in (`parser::statements::solid_set_in_place`, `faces_in_place`);
-/// printed, each is its text again where its key is read, and its own statement goes.
+/// **What a solid's brackets hold in place, folded back into them** (#737): a family's call or a
+/// face written in place is a statement of its own under a key the source cannot write, a link of
+/// the statement it stands in (`parser::statements::solid_set_in_place`, `faces_in_place`);
+/// printed, each is its text again where its key is read, and its own statement goes.  A set
+/// literal written in place stays a statement of its own, which the flat subset refuses.
 fn fold_in_place(p: &mut Program) {
     use super::{Chained, InstVal, Kid};
     for comp in p.components.iter_mut().filter(|c| c.module.is_none()) {
         let mut texts: std::collections::BTreeMap<String, String> = Default::default();
-        // the faces first: a call reads them
-        for pass in 0..2 {
-            for st in &comp.body {
-                if st.chained != Chained::Link {
-                    continue;
+        let links = || comp.body.iter().filter(|st| st.chained == Chained::Link);
+        // the faces first, since a call reads them
+        for st in links() {
+            if let StmtKind::Decl(d) = &st.kind {
+                if d.kind == crate::model::EntKind::Face && d.name.key().text.starts_with("#a") {
+                    let mut s = String::new();
+                    write_decl(&mut s, d);
+                    texts.insert(d.name.key().text.clone(), s);
                 }
-                match (&st.kind, pass) {
-                    (StmtKind::Decl(d), 0) if d.kind == crate::model::EntKind::Face
-                        && d.name.key().text.starts_with("#a") => {
-                        let mut s = String::new();
-                        write_decl(&mut s, d);
-                        texts.insert(d.name.key().text.clone(), s);
-                    }
-                    (StmtKind::Instance(i), 1) if i.name.text.starts_with("#i") => {
-                        let mut i = i.clone();
-                        for a in &mut i.args {
-                            if let InstVal::Ref(r) = &mut a.value {
-                                if let Some(t) = texts.get(&r.root.text) {
-                                    r.root.text = t.clone();
-                                }
-                            }
-                        }
-                        let mut s = String::new();
-                        write_instance_call(&mut s, &i);
-                        texts.insert(i.name.text.clone(), s);
-                    }
-                    (StmtKind::Set(set), 1) if set.name.text.starts_with("#s") => {
-                        let mut s = String::new();
-                        if write_stmt_to(&mut s, &st.kind).is_ok() {
-                            if let Some((_, lit)) = s.split_once(":= ") {
-                                texts.insert(set.name.text.clone(), lit.to_string());
-                            }
+            }
+        }
+        let subst = |texts: &std::collections::BTreeMap<String, String>, r: &mut Ref| {
+            if let Some(t) = texts.get(&r.root.text) {
+                r.root.text = t.clone();
+            }
+        };
+        for st in links() {
+            if let StmtKind::Instance(i) = &st.kind {
+                if i.name.text.starts_with("#i") {
+                    let mut i = i.clone();
+                    for a in &mut i.args {
+                        if let InstVal::Ref(r) = &mut a.value {
+                            subst(&texts, r);
                         }
                     }
-                    _ => {}
+                    let mut s = String::new();
+                    write_instance_call(&mut s, &i);
+                    texts.insert(i.name.text.clone(), s);
                 }
             }
         }
         if texts.is_empty() {
             continue;
         }
-        let folded = |st: &super::Stmt| st.chained == Chained::Link && match &st.kind {
-            StmtKind::Decl(d) => texts.contains_key(&d.name.key().text),
-            StmtKind::Instance(i) => texts.contains_key(&i.name.text),
-            StmtKind::Set(s) => texts.contains_key(&s.name.text),
-            _ => false,
-        };
-        comp.body.retain(|st| !folded(st));
+        comp.body.retain(|st| st.chained != Chained::Link || match &st.kind {
+            StmtKind::Decl(d) => !texts.contains_key(&d.name.key().text),
+            StmtKind::Instance(i) => !texts.contains_key(&i.name.text),
+            _ => true,
+        });
         for st in &mut comp.body {
             match &mut st.kind {
                 StmtKind::Decl(d) => {
                     for k in d.children.iter_mut().flatten() {
                         if let Kid::Ref(r) = k {
-                            if let Some(t) = texts.get(&r.root.text) {
-                                r.root.text = t.clone();
-                            }
+                            subst(&texts, r);
                         }
                     }
                 }
                 StmtKind::Relation(r) => {
-                    if let Some(w) = r.form.written_mut() {
-                        for o in &mut w.ops {
-                            if let Some(t) = texts.get(&o.root.text) {
-                                o.root.text = t.clone();
-                            }
-                        }
+                    for o in r.form.written_mut().into_iter().flat_map(|w| w.ops.iter_mut()) {
+                        subst(&texts, o);
                     }
                 }
                 _ => {}
@@ -112,7 +98,15 @@ fn fold_in_place(p: &mut Program) {
 /// This is canonical export, not source formatting; use `Program::text` to retain source.
 /// Unsupported structure leaves the program unchanged.
 pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
-    fold_in_place(p);
+    let mut folded = p.clone();
+    fold_in_place(&mut folded);
+    render_folded(&mut folded)?;
+    *p = folded;
+    Ok(p.text())
+}
+
+/// `render_flat` of a program whose in-place statements are folded (`fold_in_place`).
+fn render_folded(p: &mut Program) -> Result<&str, PrintError> {
     if p.preview.is_some() {
         return Err(PrintError { construct: "preview blocks" });
     }
@@ -655,14 +649,50 @@ pub(crate) fn sweep_text(d: &Decl, sweep: &Sweep) -> String {
     format!("solid({{ p | p inside({}) {} }})", parts.join(", "), tool())
 }
 
-/// The face a solid's brackets name, as written: a name, or a face written in place.
+/// A number's text negated as a person writes it (#737): `-30mm` for `30mm`, `30mm` for `-30mm`,
+/// and `-(a + b)` for anything that is more than one name or number.
+pub(crate) fn negated(t: &str) -> String {
+    let plain = |s: &str| s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.');
+    let t = t.trim();
+    match t.strip_prefix('-').map(str::trim) {
+        Some(rest) if plain(rest) => rest.to_string(),
+        _ if plain(t) => format!("-{t}"),
+        _ => format!("-({t})"),
+    }
+}
+
+/// **A turn between two rolls, as the sweep it is** (#737): `std.solids.Revolution`'s `from:`
+/// and `to:` as written (left out, `0deg` and `360deg`) — one end nothing, the turn from the face
+/// the way the other end runs, a whole turn no `sweep:` at all.  `None` where neither end is
+/// nothing, or both are: a turn that starts off its face, or none.
+pub(crate) fn revolve_between(axis: Ref, from: Option<&Arg>, to: Option<&Arg>) -> Option<Sweep> {
+    let text = |a: Option<&Arg>, or: &str| a.map_or_else(|| or.to_string(), dim);
+    let (from, to) = (text(from, "0deg"), text(to, "360deg"));
+    let zero = |t: &str| matches!(t.trim(), "0" | "0deg" | "0 deg");
+    let whole = |t: &str| matches!(t.trim(), "360deg" | "360 deg");
+    let sweep = |t: String| (!whole(&t)).then(|| Arg::Dim { text: t, span: Span::default() });
+    match (zero(&from), zero(&to)) {
+        (true, false) => Some(Sweep::Revolve { axis, sweep: sweep(to), sense: Sense::Ccw }),
+        (false, true) => Some(Sweep::Revolve { axis, sweep: sweep(negated(&from)), sense: Sense::Cw }),
+        _ => None,
+    }
+}
+
+/// One item of a declaration's bracket list as written: a name, a seed, a face written in place,
+/// or a stretch of a curve.
 pub(crate) fn kid_text(k: &Kid) -> String {
     let mut s = String::new();
     match k {
         Kid::Ref(r) => write_ref(&mut s, r),
         Kid::Hint(k) => s.push_str(&kid_seed_text(k)),
         Kid::Face { decl, .. } => write_decl(&mut s, decl),
-        Kid::Trim { curve, .. } => write_ref(&mut s, curve),
+        Kid::Trim { curve, from, to, .. } => {
+            write_ref(&mut s, curve);
+            s.push_str(" from ");
+            write_ref(&mut s, from);
+            s.push_str(" to ");
+            write_ref(&mut s, to);
+        }
     }
     s
 }
@@ -671,17 +701,6 @@ pub(crate) fn kid_text(k: &Kid) -> String {
 /// over the face written `face` — a prism, drafted or not, a revolution, a prism through
 /// everything.  `None` for any other.
 pub(crate) fn solid_word(s: &Sweep, face: &str) -> Option<String> {
-    let negated = |t: &str| {
-        let t = t.trim();
-        let plain = t.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.');
-        match t.strip_prefix('-') {
-            Some(rest) if rest.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') => {
-                rest.to_string()
-            }
-            _ if plain => format!("-{t}"),
-            _ => format!("-({t})"),
-        }
-    };
     let word = |name: &str, labels: Vec<String>| {
         Some(format!("std.solids.{name}({})", std::iter::once(face.to_string()).chain(labels)
             .collect::<Vec<_>>().join(", ")))
@@ -805,18 +824,7 @@ pub(crate) fn decl_args(d: &Decl) -> String {
                         s.push_str(name);
                         s.push_str(": ");
                     }
-                    match k {
-                        Kid::Ref(r) => write_ref(&mut s, r),
-                        Kid::Hint(k) => s.push_str(&kid_seed_text(k)),
-                        Kid::Face { decl, .. } => write_decl(&mut s, decl),
-                        Kid::Trim { curve, from, to, .. } => {
-                            write_ref(&mut s, curve);
-                            s.push_str(" from ");
-                            write_ref(&mut s, from);
-                            s.push_str(" to ");
-                            write_ref(&mut s, to);
-                        }
-                    }
+                    s.push_str(&kid_text(k));
                     parts.push(s);
                 }
             }

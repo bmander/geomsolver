@@ -204,29 +204,18 @@ fn body_rule(
         // **a section unbounded along its normal** (#737, `std.solids.Through`): the prism over
         // it through everything, which the evaluator bounds by the material of the body it is
         // cut from or kept in common with
+        // — and a body under a motion over its whole roll, the roll through that material —
+        // where it, or a copy of it placed at a roll (a pattern's), is cut
         if word != crate::syntax::BodyWord::Union {
-            if let Some(face) = unbounded_section(sk, a.i()) {
-                sk.solids[a.i()].def = SolidDef::Through { face, body: b.idx };
-            }
-            if let SolidDef::Through { body, .. } = &mut sk.solids[a.i()].def {
-                if *body == u32::MAX {
-                    *body = b.idx;
-                }
-            }
-            // and a body under a motion over its whole roll, the roll through that material —
-            // where it, or a copy of it placed at a roll, is cut; so a section through
-            // everything a copy of which is cut (a pattern's)
             let mut tool = a.i();
             loop {
-                if tool != a.i() {
-                    if let Some(face) = unbounded_section(sk, tool) {
-                        sk.solids[tool].def = SolidDef::Through { face, body: u32::MAX };
-                    }
+                if let Some(face) = unbounded_section(sk, tool) {
+                    sk.solids[tool].def = SolidDef::Through { face, body: UNBOUND };
                 }
                 match &mut sk.solids[tool].def {
                     SolidDef::Swept { roll: crate::model::Roll::Through { body }, .. }
                     | SolidDef::Through { body, .. } => {
-                        if *body == u32::MAX {
+                        if *body == UNBOUND {
                             *body = b.idx;
                         }
                         break;
@@ -246,29 +235,26 @@ fn body_rule(
     // a body swept over its whole roll, or a section through everything, that nothing bounds:
     // refused where it is declared
     for i in 0..sk.solids.len() {
-        if matches!(sk.solids[i].def, SolidDef::Through { body: u32::MAX, .. }) {
-            let name = sk.solids[i].name.clone();
-            diags.push(Diag::new(Code::E080, declared_at(body, &name), None, format!(
-                "`{name}` is a prism through everything, which only the body it is cut from \
-                 bounds: cut it from one (`{name} cut body`), or bound it by two ordinates")));
-            sk.solids[i].def = SolidDef::Body { stock: i as u32, on: Vec::new(),
-                                                through: Vec::new(), bound: Vec::new() };
-            continue;
-        }
-        let SolidDef::Swept { roll: crate::model::Roll::Through { body: through }, .. } =
-            sk.solids[i].def else { continue };
-        if through != u32::MAX {
-            continue;
-        }
         let name = sk.solids[i].name.clone();
-        diags.push(Diag::new(Code::E080, declared_at(body, &name), None, format!(
-            "`{name}` is what a body occupies under a motion at any roll, which only the body it \
-             is cut from bounds: cut it from one (`{name} cut body`), or bound the roll, `over t \
-             in (a, b)`")));
+        let why = match sk.solids[i].def {
+            SolidDef::Through { body: UNBOUND, .. } => format!(
+                "`{name}` is a prism through everything, which only the body it is cut from \
+                 bounds: cut it from one (`{name} cut body`), or bound it by two ordinates"),
+            SolidDef::Swept { roll: crate::model::Roll::Through { body: UNBOUND }, .. } => format!(
+                "`{name}` is what a body occupies under a motion at any roll, which only the body \
+                 it is cut from bounds: cut it from one (`{name} cut body`), or bound the roll, \
+                 `over t in (a, b)`"),
+            _ => continue,
+        };
+        diags.push(Diag::new(Code::E080, declared_at(body, &name), None, why));
         sk.solids[i].def = SolidDef::Body { stock: i as u32, on: Vec::new(), through: Vec::new(),
                                             bound: Vec::new() };
     }
 }
+
+/// The body a section through everything, or a body over its whole roll, is bounded by before a
+/// body word joins it to the body it is cut from (#737): none yet.
+pub(super) const UNBOUND: u32 = u32::MAX;
 
 /// The face of a region solid whose one term is a drawn face read through its plane — the points
 /// whose foot is in it, nothing bounding them along its normal (#737) — where it is one.

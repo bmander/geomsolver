@@ -371,6 +371,15 @@ pub(super) fn measured_term(
     probes.terms.get_mut(&p).expect("a probe's terms").push(term);
 }
 
+/// A length a region's term states, written `text`: stated, or affine in one unknown.
+fn length_term(sk: &Sketch, res: &Resolver, text: &str, span: Span)
+    -> Result<crate::model::TermNumber, String> {
+    let arg = Arg::Dim { text: text.to_string(), span };
+    to_arg(sk, res, SpecKind::Length, &arg).ok().as_ref()
+        .and_then(|a| term_number(a, sk, SpecKind::Length))
+        .ok_or_else(|| format!("`{text}` is no length"))
+}
+
 /// `p inside F`, `p outside F`, `p distance(<= d) F`, `p coincident F.surface` … (`Shape::Face`):
 /// the term of the region solid whose point `p` is, or why not.
 pub(super) fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written, point: EntRef,
@@ -389,12 +398,7 @@ pub(super) fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written,
     let word = w.word.text.as_str();
     // a side as written or as a set's body carries it (`Written::side`, #192)
     let side = w.side();
-    let number = |text: &str, span: Span| -> Result<TermNumber, String> {
-        let arg = Arg::Dim { text: text.to_string(), span };
-        to_arg(sk, res, SpecKind::Length, &arg).ok().as_ref()
-            .and_then(|a| term_number(a, sk, SpecKind::Length))
-            .ok_or_else(|| format!("`{text}` is no length"))
-    };
+    let number = |text: &str, span: Span| length_term(sk, res, text, span);
     let dim = w.args.iter().find_map(|a| match a {
         OpArg::Dim(t, sp) => Some((t.clone(), *sp)),
         _ => None,
@@ -463,12 +467,7 @@ pub(super) fn section_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Writt
         ));
     }
     let probe = point.i();
-    let number = |text: &str, span: Span| -> Result<TermNumber, String> {
-        let arg = Arg::Dim { text: text.to_string(), span };
-        to_arg(sk, res, SpecKind::Length, &arg).ok().as_ref()
-            .and_then(|a| term_number(a, sk, SpecKind::Length))
-            .ok_or_else(|| format!("`{text}` is no length"))
-    };
+    let number = |text: &str, span: Span| length_term(sk, res, text, span);
     let term = |shape, cmp, lo, hi| RegionTerm { hi, ..RegionTerm::new(shape, cmp, lo) };
     let section = RegionShape::Section { face: face.i() as u32 };
     // a side as written or as a set's body carries it (`Written::side`, #192): within the loops,

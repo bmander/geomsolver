@@ -121,7 +121,7 @@ fn stated(t: &RegionTerm) -> Option<f64> {
 }
 
 /// The face plane's frame and the frame's origin point, where the face is drawn in a plane.
-fn face_plane(sk: &Sketch, face: u32) -> Option<(usize, u32)> {
+pub fn face_plane(sk: &Sketch, face: u32) -> Option<(usize, u32)> {
     let p = sk.faces.get(face as usize)?.plane? as usize;
     let origin = sk.frames.get(p)?.chart.as_ref()?.origin;
     Some((p, origin))
@@ -146,11 +146,11 @@ fn prism(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
             }
             RegionShape::Plane { .. } => {}
             RegionShape::Measured { of } if leaning.is_none() && t.cmp == Cmp::Ge => {
-                let (f, k) = lean(of)?;
+                let (f, k, plane) = lean(of)?;
                 if stated(t)? != 0.0 || !one(&mut face, f) {
                     return None;
                 }
-                leaning = Some(k);
+                leaning = Some((k, plane));
             }
             _ => return None,
         }
@@ -158,16 +158,8 @@ fn prism(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
     let face = face?;
     let (frame, origin) = face_plane(sk, face)?;
     // the drawn plane a lean is measured from is the face's own
-    if let Some((_, plane)) = leaning.zip(terms.iter().find_map(|t| match &t.shape {
-        RegionShape::Measured { of } => of.iter().find_map(|(x, _)| match x {
-            crate::model::Target::Ent(e) => Some(*e),
-            _ => None,
-        }),
-        _ => None,
-    })) {
-        if plane != EntRef::frame(frame) {
-            return None;
-        }
+    if leaning.is_some_and(|(_, plane)| plane != EntRef::frame(frame)) {
+        return None;
     }
     for t in terms {
         let RegionShape::Plane { along, from, sign } = t.shape else { continue };
@@ -191,7 +183,7 @@ fn prism(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
     let (from, to) = (lo?, hi?);
     // undrafted, the section is the set's own; drafted, it is the lean's, and a section kept as
     // well holds only where the lean takes it in
-    let draft = match leaning {
+    let draft = match leaning.map(|(k, _)| k) {
         None if inside => None,
         None => return None,
         Some(k) if inside && k < 0.0 => return None,
@@ -211,7 +203,7 @@ fn prism(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
 /// `beyond := { q | q outside sec }`, `within := { q | q inside sec }` and `sec`'s plane `P`: the
 /// face and `k`, the draft's tangent — the signed distance into the section at least `k` times
 /// the ordinate's size.  `None` for any other sum.
-fn lean(of: &[(crate::model::Target, f64)]) -> Option<(u32, f64)> {
+fn lean(of: &[(crate::model::Target, f64)]) -> Option<(u32, f64, EntRef)> {
     use crate::model::Target;
     let mut face = None;
     let (mut out, mut into, mut plane) = (None, None, None);
@@ -229,20 +221,15 @@ fn lean(of: &[(crate::model::Target, f64)]) -> Option<(u32, f64)> {
                 }
             }
             Target::Ent(e) if e.kind == EntKind::Frame => {
-                if plane.replace(*c).is_some() {
+                if plane.replace((*e, *c)).is_some() {
                     return None;
                 }
             }
             _ => return None,
         }
     }
-    let (a, b, c) = (out?, into?, plane?);
-    (a > 0.0 && b == -a).then(|| (face.expect("a set"), -c / a))
-}
-
-/// Whether `e` is a face's entity (an ordinate written along a face before its plane is known).
-pub fn along_face(e: EntRef) -> bool {
-    e.kind == EntKind::Face
+    let (a, b, (e, c)) = (out?, into?, plane?);
+    (a > 0.0 && b == -a).then(|| (face.expect("a set"), -c / a, e))
 }
 
 /// **A turn**: motion `m` as a rotation about a fixed line with no advance — the line it turns

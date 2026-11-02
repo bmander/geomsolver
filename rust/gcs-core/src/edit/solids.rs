@@ -332,17 +332,14 @@ fn reworded(prog: &Program, d: &syntax::Decl,
         _ => None,
     })?;
     let word = inst.component.text.strip_prefix("std.solids.")?;
-    let label = |l: &str| inst.args.iter().find(|a| a.label.as_ref().is_some_and(|n| n.text == l))
-        .map(|a| match &a.value {
-            syntax::InstVal::Ref(r) => syntax::ref_text(r),
-            syntax::InstVal::Expr(t) | syntax::InstVal::Hint(t, _) => t.clone(),
-            syntax::InstVal::Group(_) => String::new(),
-        });
-    let face = inst.args.iter().find(|a| a.label.is_none()).map(|a| match &a.value {
+    let text = |a: &syntax::InstArg| match &a.value {
         syntax::InstVal::Ref(r) => syntax::ref_text(r),
-        syntax::InstVal::Expr(t) => t.clone(),
-        _ => String::new(),
-    })?;
+        syntax::InstVal::Expr(t) | syntax::InstVal::Hint(t, _) => t.clone(),
+        syntax::InstVal::Group(_) => String::new(),
+    };
+    let label = |l: &str| inst.args.iter()
+        .find(|a| a.label.as_ref().is_some_and(|n| n.text == l)).map(text);
+    let face = inst.args.iter().find(|a| a.label.is_none()).map(text)?;
     // a face written in place in the call (`face(ab, bc, cd, da)`) is the parser's anonymous
     // face, named by a key no document can write: the call is rewritten with it as written
     let face = prog.root().body.iter().find_map(|st| match &st.kind {
@@ -353,25 +350,17 @@ fn reworded(prog: &Program, d: &syntax::Decl,
         _ => None,
     }).unwrap_or(face);
     let dim = |t: String| syntax::Arg::Dim { text: t, span: Span::default() };
-    let zero = |t: &Option<String>| t.as_deref().is_none_or(|t| matches!(t.trim(), "0" | "0deg"));
     let was = match word {
         "Prism" | "Drafted" => syntax::Sweep::Prism {
             from: dim(label("from")?), to: dim(label("to")?), draft: label("draft").map(dim),
         },
         "Revolution" => {
-            let (from, to) = (label("from"), label("to"));
+            let (from, to) = (label("from").map(dim), label("to").map(dim));
             let axis = syntax::Ref::new(label("about")?);
-            match (zero(&from), zero(&to)) {
-                (true, _) => syntax::Sweep::Revolve { axis, sweep: to.filter(|t| t.trim() != "360deg")
-                    .map(dim), sense: syntax::Sense::Ccw },
-                (false, true) => {
-                    let f = from?;
-                    let f = f.trim().strip_prefix('-').map_or(format!("-({f})"), |t| t.to_string());
-                    syntax::Sweep::Revolve { axis, sweep: (f != "360deg").then(|| dim(f)),
-                                             sense: syntax::Sense::Cw }
-                }
-                _ => return Some(Err("that revolution starts off its face: change it where it \
-                                      is written".into())),
+            match syntax::revolve_between(axis, from.as_ref(), to.as_ref()) {
+                Some(s) => s,
+                None => return Some(Err("that revolution starts off its face: change it where it \
+                                         is written".into())),
             }
         }
         _ => return Some(Err("that solid is a prism through everything, which nothing sizes".into())),

@@ -68,7 +68,7 @@ pub(super) fn build_solid(
         }
         // through everything (#737): bounded by the body it is cut from, joined there
         Sweep::Through { body } if body.root.text == crate::syntax::ROLLED => {
-            SolidDef::Through { face: one_face(&ops, st, &mut say)?, body: u32::MAX }
+            SolidDef::Through { face: one_face(&ops, st, &mut say)?, body: super::UNBOUND }
         }
         Sweep::Through { body } => {
             let face = one_face(&ops, st, &mut say)?;
@@ -437,11 +437,10 @@ fn face_planes(sk: &Sketch, terms: &mut [crate::model::RegionTerm]) -> Result<()
     use crate::model::{RegionShape, Target};
     for t in terms {
         match &mut t.shape {
-            RegionShape::Plane { along, from, .. } if crate::solid::defined::along_face(*along) => {
+            // an ordinate written along a face before its plane was known
+            RegionShape::Plane { along, from, .. } if along.kind == EntKind::Face => {
                 let f = sk.faces.get(along.i()).ok_or("a region's face is not built")?;
-                let plane = f.plane.map(|p| p as usize)
-                    .and_then(|p| Some((p, sk.frames.get(p)?.chart.as_ref()?.origin)));
-                let Some((p, origin)) = plane else {
+                let Some((p, origin)) = crate::solid::defined::face_plane(sk, along.idx) else {
                     return Err(format!("`{}` is drawn in no plane, so it has no normal for an \
                                         ordinate along it", f.name));
                 };
@@ -561,7 +560,7 @@ fn under_motion(
         // the roll through a body's material (#271): found after the solve
         // the whole roll (#737): bounded by the body it is cut from, joined there
         Sweep::Rolled {body,..} if body.root.text == crate::syntax::ROLLED => {
-            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Through {body:u32::MAX}}
+            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Through {body:super::UNBOUND}}
         }
         Sweep::Rolled {body,..} => {
             let Some(target) = res.lookup(body) else {

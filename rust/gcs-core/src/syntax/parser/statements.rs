@@ -9,13 +9,11 @@ use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
     Input, Name, OpArg, OpenJoint, ParamDecl, Ref, SetLit, SolidRel, Source, Span, Stmt, StmtKind,
-    SynErr, Ty, Use,
+    SynErr, Ty, Use, ROLLED,
 };
 
 /// `part Name(…) { … }`, retired (#562): every braced definition is held to what `part`
 /// promised.
-use crate::syntax::ROLLED;
-
 const PART_RETIRED: &str = "`part` is retired (#562): every definition is held to being a \
     function of what it is given, so write `component Name(…) { … }`";
 

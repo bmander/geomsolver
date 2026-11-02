@@ -36,7 +36,7 @@ use crate::constraints::{CKind, Fixity};
 use crate::model::EntKind;
 use crate::style::{Classes, Style};
 pub(crate) use names::{build_rank, decl_head, ref_text, under_root};
-pub(crate) use print::solid_word;
+pub(crate) use print::{revolve_between, solid_word};
 pub(crate) use print::{decl_args, hint_clause, hint_numbers, said, said_text, Said};
 
 /// A component point traced over a numeric formal, with domain endpoints kept as expressions.

@@ -199,7 +199,7 @@ fn a_slot_rounded_at_its_joints_is_the_slot_written_longhand() {
 #[test]
 fn a_drafted_prism_sweeps_the_rounds_as_cones() {
     let draft = |src: &str| src.replace("pocket := solid(std.solids.Prism(mouth, from: -6mm, to: 1mm))",
-                                        "pocket := solid(std.solids.Drafted(mouth, from: 1mm, to: -6mm, draft: 4deg))");
+                                        "pocket := solid(std.solids.Drafted(mouth, from: -6mm, to: 1mm, draft: 4deg))");
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"),
                                               "/../examples/rounds/slot.sv")).unwrap();
     let longhand = gestures::build(&draft(&src));

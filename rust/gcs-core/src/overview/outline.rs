@@ -109,6 +109,8 @@ pub fn outline(e: &Elaborated) -> Vec<Node> {
 pub fn outline_with(e: &Elaborated, sk: &Sketch) -> Vec<Node> {
     let mut made_pos: BTreeMap<EntRef, usize> = BTreeMap::new();
     let mut ents: Vec<Placed> = Vec::new();
+    // the statement each statement's rows stand under, asked once a statement
+    let mut under: BTreeMap<StmtId, StmtId> = BTreeMap::new();
     for (&r, site) in &e.map.of_entity {
         // a twin is its point drawn again, called by the point's name: one row is the point's
         if e.map.twin_of.contains_key(&r) {
@@ -119,7 +121,7 @@ pub fn outline_with(e: &Elaborated, sk: &Sketch) -> Vec<Node> {
                 made_pos.entry(m).or_insert(k);
             }
         }
-        let stmt = solid_written_in(e, site.stmt);
+        let stmt = *under.entry(site.stmt).or_insert_with(|| solid_written_in(e, site.stmt));
         ents.push(Placed { e: r, stmt, path: site.path.0.clone(), at: site.span.lo });
     }
     let reader = Reader { e, made_pos, stmts: RefCell::new(BTreeMap::new()) };

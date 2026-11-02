@@ -504,7 +504,8 @@ impl<'a> Walk<'a> {
             }
         }
         // a solid of a set that says a sweep is that sweep (#737, `said`)
-        if d2.kind == crate::model::EntKind::Solid && matches!(d2.sweep, Some(crate::syntax::Sweep::Body)) {
+        if !self.said.is_empty() && d2.kind == crate::model::EntKind::Solid
+            && matches!(d2.sweep, Some(crate::syntax::Sweep::Body)) {
             if let Some((_, abs, _)) = self.set_named(&d2, 0, scope) {
                 if let Some((sweep, face)) = self.said.get(&abs).cloned() {
                     d2.sweep = Some(sweep);
