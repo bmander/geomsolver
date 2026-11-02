@@ -593,7 +593,7 @@ pub struct SurfaceE {
 /// One shared angular parameter drives every kind. `advance` is a length (model
 /// units) travelled along the axis per full turn of that parameter: zero makes a
 /// rotation, nonzero a screw, and a translation moves without turning.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MotionDef {
     Rotation { axis: u32, ratio: f64, advance: f64 },
     /// A turn in a view about a point of it (`std.Spin`): a rotation about the line through
@@ -650,6 +650,12 @@ pub struct MotionE {
     /// for `def`'s own (`MotionE::rotation`), and a column of every row reading the motion
     /// (`envelope::held`).  `None` for a motion whose numbers are stated.
     pub numbers: Option<[u32; 2]>,
+    /// **The turn about a line** (#748): a radian a radian of the roll about the line (a
+    /// `Rotation`) or axis (a `Joint`) its `def` names, minted where `under:` names that line
+    /// rather than a frame — so it holds nothing and adds no unknown.  What it is found again by
+    /// (`program::motions::turn_about`), never its name; `false` for a frame's joint and every
+    /// node read off one.
+    pub about: bool,
 }
 
 impl MotionE {
@@ -715,11 +721,12 @@ impl crate::model::Sketch {
             None => {
                 let inverse = self.motions.len();
                 self.motions.push(MotionE { def: MotionDef::Inverse { of: outer as u32 },
-                    name: format!("{name}⁻"), class: class.clone(), numbers: None });
+                    name: format!("{name}⁻"), class: class.clone(), numbers: None, about: false });
                 MotionDef::Relative { source: inner as u32, observer: inverse as u32 }
             }
         };
-        self.motions.push(MotionE { def, name: name.to_string(), class, numbers: None });
+        self.motions.push(MotionE { def, name: name.to_string(), class, numbers: None,
+                                    about: false });
         Ok(self.motions.len() - 1)
     }
 }
@@ -867,9 +874,9 @@ impl MotionE {
     /// A joint's numbers the solve finds are its frame's, and are renumbered with the frame's
     /// joint (`graft`), so they are not this value's to carry.
     pub fn remapped(&self, map: &Remap) -> Option<MotionE> {
-        let MotionE { def, name, class, numbers: _ } = self;
+        let MotionE { def, name, class, numbers: _, about } = self;
         Some(MotionE { def: def.remapped(map)?, name: name.clone(), class: class.clone(),
-                       numbers: None })
+                       numbers: None, about: *about })
     }
 }
 

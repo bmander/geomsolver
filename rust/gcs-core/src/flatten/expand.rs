@@ -503,15 +503,19 @@ impl<'a> Walk<'a> {
                 *slot = faces;
             }
         }
-        // a solid of a set that says a sweep is that sweep (#737, `said`)
-        if !self.said.is_empty() && d2.kind == crate::model::EntKind::Solid
-            && matches!(d2.sweep, Some(crate::syntax::Sweep::Body)) {
-            if let Some((_, abs, _)) = self.set_named(&d2, 0, scope) {
-                if let Some((sweep, face)) = self.said.get(&abs).cloned()
-                    .filter(|(s, _)| !self.off_its_face(s, vals)) {
-                    d2.sweep = Some(sweep);
-                    d2.children = vec![vec![Kid::Ref(face)]];
-                }
+        // a region solid's set, read once (nothing below changes what it names); and a solid of
+        // a set that says a sweep is that sweep (#737, #744, `said`): a family's instance, read
+        // where it was bound, or a set written by hand, read here — and then no region's; a turn
+        // off its face stays the region it is (#747, `off_its_face`)
+        let mut set = self.region_set(&d2, scope);
+        if let Some((_, said_abs, _)) = &set {
+            let said = self.said.get(said_abs).cloned()
+                .or_else(|| self.said_by_hand(said_abs, scope))
+                .filter(|(s, _)| !self.off_its_face(s, vals));
+            if let Some((sweep, face)) = said {
+                d2.sweep = Some(sweep);
+                d2.children = vec![vec![Kid::Ref(face)]];
+                set = None;
             }
         }
         self.declared_interval(&mut d2, scope);
@@ -530,9 +534,8 @@ impl<'a> Walk<'a> {
             }
         }
         self.stamp_scope_plane(&mut d2, scope);
-        // a region solid's set, read once: a copy's solid of a set that is one already a copy's
-        // solid is that solid (#415), and any other makes its region of it
-        let set = self.region_set(&d2, scope);
+        // a copy's solid of a set that is one already a copy's solid is that solid (#415), and
+        // any other makes its region of it
         if self.same_solid(&d2, &abs, set.as_ref(), scope) {
             return;
         }
@@ -1998,6 +2001,44 @@ impl Walk<'_> {
             return None;
         }
         self.set_named(d, 0, sc)
+    }
+
+    /// **The sweep a set written by hand says** (#744), where the solid naming it stands in the
+    /// scope the set was written in: its names read as what they name there — a face, a line, an
+    /// axis, by what declared them — and its numbers as written, so it is read as a family's
+    /// instance is (`said`).  A family's instance is read where it is bound, in its own scope,
+    /// never here.
+    fn said_by_hand(&self, abs: &str, sc: &Scope) -> Option<(crate::syntax::Sweep, Ref)> {
+        use crate::model::EntKind;
+        let site = self.sets.made.get(abs)?;
+        if site.scope().prefix() != sc.prefix() {
+            return None;
+        }
+        let alias = super::resolve::Lazy::new(self);
+        // each name looked up once: a face is named by several of a set's statements
+        let known = std::cell::RefCell::new(BTreeMap::<String, Option<EntKind>>::new());
+        let declared = |name: &str| -> Option<EntKind> {
+            let (key, rest) = self.look(&alias).find(&Ref::new(name), sc)?;
+            if !rest.is_empty() {
+                return None;
+            }
+            self.out.iter().rev().find_map(|(st, _, _)| match &st.kind {
+                StmtKind::Decl(d) if d.name.key().text == key => Some(d.kind),
+                StmtKind::Chain(c) if c.closed && c.name.key().text == key => Some(EntKind::Face),
+                _ => None,
+            })
+        };
+        let kind = |name: &str| -> Option<super::said::Bound> {
+            let cached = known.borrow().get(name).copied();
+            let kind = cached.unwrap_or_else(|| {
+                let k = declared(name);
+                known.borrow_mut().insert(name.to_string(), k);
+                k
+            })?;
+            matches!(kind, EntKind::Face | EntKind::Line | EntKind::Axis)
+                .then_some(super::said::Bound::Own(kind))
+        };
+        super::said::said(site.lit(), &kind)
     }
 
     /// The set a declaration's `i`th operand names, where it names one.
