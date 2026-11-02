@@ -244,7 +244,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   flattener decides nothing on text: it keeps the set only where the same number evaluator reads
   both ends and neither is nothing (`Walk::off_its_face`) — a turn off its face, which no sweep of
   the evaluator's is, so it stays the region it was.  `tests/revolve.rs`'s
-  `an_interval_is_read_by_its_numbers_not_its_text` is the gate.  So every reader of a solid's text before it is built
+  `an_interval_is_read_by_its_numbers_not_its_text` is the gate.  (An evaluator's revolution that
+  carries the interval itself, turned `from` and swept `to − from`, would build such a turn exactly
+  and retire the exception.)  So every reader of a solid's text before it is built
   reads it as one: a prism's sides for an envelope (`generated.rs`), a revolution's named side
   (`envelopes.rs`), a sketch's carriers on a face (`flatten/faces.rs`), the gestures' resizing
   (`edit::solids::reworded`); and no probe is made, so the solve is the old spelling's to the bit.

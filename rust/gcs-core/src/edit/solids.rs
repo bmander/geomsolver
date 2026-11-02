@@ -284,15 +284,17 @@ fn turn_edit(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Resul
 }
 
 /// Which way revolution `solid` turns now: what its ends came to where they were evaluated
-/// (#747), never their text — the elaborated solid's sense, or, where the ABI has handed the
-/// sketch to a handle of its own, the program's elaborated again.  `None` for a turn off its face,
-/// which is built as the region it is.
+/// (#747), never their text — the elaborated solid's sense.  Where the ABI has handed the sketch to
+/// a handle of its own, the program is elaborated again rather than that handle read: a drag's
+/// preview (`Sketch::set_turn`) turns the live solid whichever way the drag went, and the way the
+/// source says is wanted.  Only a typed expression asks.  `None` for a turn off its face, which
+/// is built as the region it is.
 fn turning(e: &Elaborated, prog: &Program, solid: usize) -> Option<crate::model::Sense> {
     let sense = |sk: &crate::model::Sketch| match sk.solids.get(solid).map(|s| &s.def) {
         Some(crate::model::SolidDef::Revolve { sense, .. }) => Some(*sense),
         _ => None,
     };
-    match e.sketch.solids.is_empty() {
+    match e.taken {
         true => sense(&crate::program::elaborate(prog).sketch),
         false => sense(&e.sketch),
     }

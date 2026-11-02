@@ -44,7 +44,7 @@ pub(super) fn build_solid(
                                               than a right angle", e.text));
             return None;
         }
-        Some(Ok(e)) => (e.value != 0.0).then(|| Extent { text: e.text, value: e.value.to_radians() }),
+        Some(Ok(e)) => (e.value != 0.0).then(|| radians(e)),
     };
     let def = match sweep {
         // a region: the bounds its set put on the probe, gathered as they were stated (§6.21)
@@ -390,6 +390,12 @@ fn extent(
     Ok(Extent { text: text.trim().to_string(), value: v.c })
 }
 
+/// An angle's extent as the evaluator keeps it: read in degrees, kept in radians, its text as
+/// written.
+fn radians(e: Extent) -> Extent {
+    Extent { text: e.text, value: e.value.to_radians() }
+}
+
 /// A region solid: the bounds its set put on the probe, gathered as they were stated (§6.21), and
 /// the probe held.
 fn region(
@@ -520,8 +526,7 @@ fn under_motion(
             return None;
         }
     };
-    let angle = |a,what| extent(sk.units,a,what,crate::units::Dim::ANGLE)
-        .map(|e| Extent {text:e.text,value:e.value.to_radians()});
+    let angle = |a,what| extent(sk.units,a,what,crate::units::Dim::ANGLE).map(radians);
     Some(match sweep {
         // the value worked out where the drawing stands: a parameter it reads at its instant
         Sweep::Placed {..} if drawn_in => {
@@ -624,28 +629,24 @@ fn revolve(
     // **the interval, read as numbers** (#747): `from:` and `to:` as written, left out `0deg`
     // and `360deg` — one end nothing, and how far and which way are what the ends evaluate to,
     // never what their text looks like
-    let end = |a: Option<&crate::syntax::Arg>, what: &str, or: f64| match a {
-        None => Ok(Extent { text: String::new(), value: or }),
-        Some(a) => extent(sk.units, a, what, crate::units::Dim::ANGLE)
-            .map(|e| Extent { text: e.text, value: e.value.to_radians() }),
+    let end = |a: Option<&Arg>, what: &str, or: Extent| match a {
+        None => Ok(or),
+        Some(a) => extent(sk.units, a, what, crate::units::Dim::ANGLE).map(radians),
     };
-    let (a, b) = match (end(from, "from", 0.0), end(to, "to", std::f64::consts::TAU)) {
+    let ends = (end(from, "from", Extent { text: "0deg".into(), value: 0.0 }),
+                end(to, "to", Extent { text: "360deg".into(), value: std::f64::consts::TAU }));
+    let (a, b) = match ends {
         (Ok(a), Ok(b)) => (a, b),
         (Err(m), _) | (_, Err(m)) => {
             say(Code::E103, st.span, m);
             return None;
         }
     };
-    let written = |e: &Extent, or: &str| match e.text.is_empty() {
-        true => or.to_string(),
-        false => e.text.clone(),
-    };
-    let (wa, wb) = (written(&a, "0deg"), written(&b, "360deg"));
     // a turn is an interval of the roll (#737): none runs from the greater to the lesser
     if a.value > b.value {
-        say(Code::E040, st.span, format!("no roll is at least `{wa}` and at most `{wb}`: a turn \
+        say(Code::E040, st.span, format!("no roll is at least `{}` and at most `{}`: a turn \
             runs `from:` the lesser roll `to:` the greater, so one the other way round from its \
-            face is `from: -90deg, to: 0deg`"));
+            face is `from: -90deg, to: 0deg`", a.text, b.text));
         return None;
     }
     if a.value == b.value {
@@ -653,14 +654,18 @@ fn revolve(
         return None;
     }
     let Some((value, sense)) = crate::model::turn_between(a.value, b.value) else {
-        say(Code::E080, st.span, format!("a revolution turns from its face, and neither `{wa}` \
-            nor `{wb}` is nothing: one end of `from:`/`to:` is 0deg"));
+        say(Code::E080, st.span, format!("a revolution turns from its face, and neither `{}` \
+            nor `{}` is nothing: one end of `from:`/`to:` is 0deg", a.text, b.text));
         return None;
     };
-    // the end that is not nothing, as written; a whole turn none
-    let far = if sense == Sense::Cw { a } else { b };
-    let text = if value == std::f64::consts::TAU { String::new() } else { far.text };
-    Some(SolidDef::Revolve { face, axis: ax, sweep: Extent { text, value }, sense })
+    // how far, as the end that is not nothing says it — a magnitude, so an end below nothing
+    // negated — and a whole turn as none
+    let sweep = match (value == std::f64::consts::TAU, sense) {
+        (true, _) => Extent::whole(),
+        (false, Sense::Cw) => Extent { text: crate::syntax::negated(&a.text), value },
+        (false, Sense::Ccw) => Extent { text: b.text, value },
+    };
+    Some(SolidDef::Revolve { face, axis: ax, sweep, sense })
 }
 
 /// A body over other solids: the first its stock, the rest in `union` with it.  **An empty body**,

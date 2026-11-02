@@ -283,6 +283,7 @@ ring := solid(std.solids.Revolution(\
     let mut taken = ring_in("about: std.z, from: -turns * 360deg, to: 0deg");
     let ring = taken.map.ent_named("ring").unwrap().i();
     drop(std::mem::take(&mut taken.sketch));
+    taken.taken = true;
     let out = edit::set_turn(&taken, &taken.program, ring, "45deg * 2");
     assert!(out.text.contains("about: std.z, from: -(45deg * 2), to: 0deg))\n"), "{}", out.text);
     // an interval runs from the lesser roll, and one of nothing is no solid

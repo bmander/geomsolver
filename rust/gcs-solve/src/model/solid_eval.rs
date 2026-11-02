@@ -575,7 +575,7 @@ impl Sketch {
         let set = self.redefine(i, |d| match d {
             SolidDef::Revolve { sweep, sense: s, .. } => {
                 *sweep = match how_far {
-                    None => Extent { text: String::new(), value: std::f64::consts::TAU },
+                    None => Extent::whole(),
                     Some(d) => Extent { text: crate::vocab::num(d), value: d.to_radians() },
                 };
                 *s = sense;

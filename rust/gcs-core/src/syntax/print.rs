@@ -740,7 +740,7 @@ fn under(m: &Ref) -> String {
 
 /// Sweep arguments are document expressions, preserved through canonical printing.
 fn sweep_parts(s: &Sweep) -> Vec<String> {
-    let mut parts = match s {
+    match s {
         // a reading at an instant or over an interval is no `solid(…)`'s (#391 S2): `write_decl`
         // writes it whole
         Sweep::Swept { .. } | Sweep::Rolled { .. } | Sweep::Placed { .. } => Vec::new(),
@@ -755,23 +755,10 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             text.push_str(&format!(" over {}", f.swept.text));
             vec![text]
         }
-        Sweep::Through { body } => {
-            let mut text = String::from("through: ");
-            write_ref(&mut text, body);
-            vec![text]
-        },
-        Sweep::Prism { from, to, .. } => vec![format!("from: {}", dim(from)), format!("to: {}", dim(to))],
-        Sweep::Depth { depth, .. } => vec![format!("depth: {}", dim(depth))],
-        Sweep::Revolve { axis, from, to } => {
-            let mut about = String::from("about: ");
-            write_ref(&mut about, axis);
-            let ends = [("from", from), ("to", to)].into_iter()
-                .filter_map(|(l, a)| a.as_ref().map(|a| format!("{l}: {}", dim(a))));
-            std::iter::once(about).chain(ends).collect()
-        }
-    };
-    parts.extend(s.draft().map(|d| format!("draft: {}", dim(d))));
-    parts
+        // a sweep of a face is a word of `std.solids` (#737), which `solid_word` writes
+        Sweep::Through { .. } | Sweep::Prism { .. } | Sweep::Depth { .. }
+            | Sweep::Revolve { .. } => Vec::new(),
+    }
 }
 
 /// One property of a style, as a `style` block writes it.

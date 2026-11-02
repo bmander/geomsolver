@@ -101,10 +101,7 @@ fn revolution(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
     if sweep > TAU {
         return None;
     }
-    let sweep = match sweep == TAU {
-        true => Extent { text: String::new(), value: TAU },
-        false => Extent::at(sweep),
-    };
+    let sweep = if sweep == TAU { Extent::whole() } else { Extent::at(sweep) };
     Some(SolidDef::Revolve { face, axis, sweep, sense })
 }
 
