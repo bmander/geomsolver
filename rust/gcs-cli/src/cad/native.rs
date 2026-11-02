@@ -165,19 +165,20 @@ impl Session {
             Node::Prism {draft:Some(_),..} => return Err("native CAD export does not build a drafted prism; the core's kernel \
                 builds it (`--kernel rust`)".into()),
             Node::Prism {profile,from,to,..} => (profile,*from,*to),
-            Node::Through {profile,sources} => {
-                let ids: Vec<_> = sources.iter().map(|i| shapes[i]).collect();
-                let mut bounds = [0.;6];
-                self.result(unsafe { solvent_cad_bounds(self.0,ids.as_ptr(),ids.len() as c_int,bounds.as_mut_ptr()) })?;
-                let (n,origin) = (profile.normal,profile.origin);
-                let (mut lo,mut hi,mut diagonal) = (0.,0.,0.);
-                for k in 0..3 {
-                    let (a,b) = (n[k]*(bounds[k]-origin[k]),n[k]*(bounds[k+3]-origin[k]));
-                    lo += a.min(b); hi += a.max(b);
-                    diagonal += (bounds[k+3]-bounds[k]).powi(2);
+            // across the material of every body it is applied to, each read from where that
+            // use's placement puts the profile (#737)
+            Node::Through {profile,uses} => {
+                let mut spans = Vec::with_capacity(uses.len());
+                for u in uses {
+                    let ids: Vec<_> = u.sources.iter().map(|i| shapes[i]).collect();
+                    let mut b = [0.;6];
+                    self.result(unsafe { solvent_cad_bounds(self.0,ids.as_ptr(),ids.len() as c_int,b.as_mut_ptr()) })?;
+                    let (origin,n) = u.frame(profile.origin,profile.normal);
+                    spans.push((origin,n,([b[0],b[1],b[2]],[b[3],b[4],b[5]])));
                 }
-                let pad = diagonal.sqrt()*4e-5;
-                (profile,lo-pad,hi+pad)
+                let (from,to) = gcs_core::brep::geom::through_span(spans)
+                    .ok_or("a `through` prism applied to no material")?;
+                (profile,from,to)
             }
             Node::Revolve {profile,..} => (profile,0.,0.),
             _ => return Err("unsupported CAD primitive".into()),

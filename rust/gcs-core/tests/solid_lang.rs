@@ -955,7 +955,7 @@ fn through_extent_spans_additions_but_only_cut_subtracts() {
         body := solid(stock)\nboss union body\n\
         bore := solid(std.solids.Through(hole_f))\n");
     // uncut, nothing bounds it: refused, and the body is the stock and the boss
-    refused(&src, Code::E080, "only the body it is cut from bounds");
+    refused(&src, Code::E080, "only the bodies it is cut from bound");
     let uncut = read(&src.replace("bore := solid(std.solids.Through(hole_f))\n", ""));
     assert_volume(volume(&uncut, "body"), 36000.0);
     let cut = read(&format!("{src}bore cut body\n"));
@@ -1048,7 +1048,7 @@ fn through_extent_refuses_mixed_labels_bad_targets_and_real_cycles() {
     // joined to a body it bounds nothing
     refused(&format!("{RECT}stock := solid(std.solids.Prism(sec, from: -10mm, to: 0))\n\
                       s := solid(std.solids.Through(sec))\nbody := solid(stock)\ns union body\n"),
-            Code::E080, "only the body it is cut from bounds");
+            Code::E080, "only the bodies it is cut from bound");
     refused(&format!("{RECT}a1 := solid(std.solids.Through(sec))\n\
                       b1 := solid(std.solids.Through(sec))\na1 cut b1\nb1 cut a1\n"),
             Code::E041, "made of itself");

@@ -60,7 +60,7 @@ motion is what its tool rides on, seen from the frame `seen_from:` names (`motio
 - a meshing: the second flank's carriers seen from the first's (`motions::meshing`), an
   envelope flank riding on its observer;
 - a solid read at an instant (`tool at θ`), swept over an interval (`solid({ p | p inside(over t
-  in (a, b)) tool })`) or rolled through the body it is cut from (`solid({ p | p inside(seen_from:
+  in (a, b)) tool })`) or rolled through the bodies it is cut from (`solid({ p | p inside(seen_from:
   g) tool })`, [0.199]; through 0.198 `sweep(tool over t in (a, b))` and `sweep(tool, through:
   body)`, now E001 naming the set).
 

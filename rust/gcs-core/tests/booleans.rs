@@ -152,7 +152,7 @@ fn a_tool_through_the_body_reads_its_material_and_closes_no_cycle() {
     let src = format!("{PARTS}drill := solid(std.solids.Through(face(hole)))\n");
     let (_, said) = crate::common::lenient::read(&src);
     assert!(said.iter().any(|m| m.starts_with("E080")
-        && m.contains("only the body it is cut from bounds")), "{said:?}");
+        && m.contains("only the bodies it is cut from bound")), "{said:?}");
     let text = written(&src, BodyWord::Cut, &["drill"], "plate");
     near(volume(&read(&text), "plate"), PLATE - BORE_IN, "written");
 }

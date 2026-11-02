@@ -176,19 +176,26 @@ of the interval — is read by the parser as the motion sweep of the same points
 (`syntax/parser/statements.rs::swept_set`/`swept_tokens`, its body one statement saying a sweep)
 and built as `SolidDef::Swept` with a stated roll; `over t` reads a declared parameter's interval.
 With no `over` at all, `solid({ p | p inside(under: m) tool })` is what the tool occupies at *any*
-roll, the whole roll (`syntax::ROLLED`): bounded by the body the solid — or a copy of it placed at a
-roll, `tool at(under: m) θ` — is cut from, that body joined in `program/solids.rs`'s body rule
-(`program/solids/build.rs` makes `Roll::Through` and the body rule fills it in); never cut, it is
-E080 at its declaration, and a tool always in mesh with the body is E080 asking for a whole period.
+roll, the whole roll (`Sweep::Rolled`, `Roll::Through`), which **names no body** (#746): the
+evaluator bounds it by its context, the material of every body it — or a copy of it placed at a
+roll, `tool at(under: m) θ` — is cut from or kept in common with (`solid::applied_to`, the walk
+`solid::uses`), so one sweep rolls through any number of bodies, and a pattern's copies cut from
+one body read it once; cut from none, it is E080 at its declaration (`program/solids.rs`'s body
+rule), and a tool always in mesh with the bodies is E080 asking for a whole period.
 `sweep(…)` is retired (E001), the message naming the set it sweeps; the canonical printer
 (`syntax/print.rs::sweep_text`) writes the set.  `tests/solids_as_sets.rs` is the gate.
 
 **A sweep's roll through what it cuts** (#271, §6.9 [0.88]): the whole roll (through 0.198
-`sweep(tool, through: body, under: m)`) is `SolidDef::Swept { roll: model::Roll::Through { body } }`
+`sweep(tool, through: body, under: m)`) is `SolidDef::Swept { roll: model::Roll::Through }`
 (`Roll::Stated` is `over t in (a, b)`, an interval of the shared roll, `Running::roll`:
-[parameters.md](parameters.md)), the roll about 0
-during which the tool meets the body's material (`document::material_sources`: stock and additions,
-never cuts, so `removal` cutting `body` is no cycle; `evaluation_operands` reads them). **Every
+[parameters.md](parameters.md)), the roll about 0 during which the tool meets the material of the
+bodies it is applied to, as they stand, one blank of them all (`document::applied_material`:
+their stock and additions, never cuts, so `removal` cutting `body` is no cycle;
+`evaluation_operands` reads them; a body cutting a member's sweep a union's is distributed into
+cuts the union's, `distributed::union_of`, so the lowered copy reads the roll the drawing found).
+The bodies are read as they stand, not carried back through a copy's placement as a prism through
+everything's span is: right for a pattern turned about an axis its blank is round about, and a
+gap for a copy placed elsewhere (the field has no inverse placement yet). **Every
 reader asks `solid::roll::interval`**, never the extents (admission's `SweepContacts`, the field's
 `SweptField`, `SweptCut` here and in the CLI, `faces::face_source`, `canal`, `planar_class`),
 memoised against `solid::reads` (`Caches::roll`). Found by marching out from 0 a `STEP` (1°) at a

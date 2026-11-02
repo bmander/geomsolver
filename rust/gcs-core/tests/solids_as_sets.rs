@@ -144,22 +144,93 @@ fn a_revolution_by_hand_is_the_words() {
 }
 
 /// **A prism through everything**: a section unbounded along its normal, cut from a body, is the
-/// prism through that body's material — `std.solids.Through` and the set by hand alike, and the
-/// plate less the bore its closed form.
+/// prism through that body's material — `std.solids.Through` and the set by hand alike, each
+/// naming no body (#746) — and the plate less the bore its closed form.
 #[test]
 fn a_prism_through_everything_is_bounded_by_what_it_cuts() {
     let e = solved(&format!("{RECT}plate := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n\
         drill := solid(std.solids.Through(face(hole)))\n\
         bore := solid({{ p | p inside hole_f }})\n\
         body := solid(plate)\ndrill cut body\nother := solid(plate)\nbore cut other\n"));
-    let SolidDef::Through { body, .. } = def(&e, "drill") else {
-        panic!("a prism through: {:?}", def(&e, "drill"))
-    };
-    assert_eq!(*body as usize, ent(&e, "body").i());
+    for (tool, body) in [("drill", "body"), ("bore", "other")] {
+        assert!(matches!(def(&e, tool), SolidDef::Through { .. }), "{tool}: {:?}", def(&e, tool));
+        assert_eq!(gcs_core::solid::applied_to(&e.sketch, ent(&e, tool).i()),
+                   [ent(&e, body).i() as u32], "{tool}");
+    }
     let want = 72_000.0 - PI * 25.0 * 30.0;
     for b in ["body", "other"] {
         assert!((volume(&e, b) - want).abs() < 1e-9 * want, "{b}: {}", volume(&e, b));
     }
+}
+
+/// Two plates of radius 20 on the top plane's axis, `low` from -5 to 0 and `high` from 40 to 50,
+/// a third `far` from 100 to 110, a pin of radius 2 through everything on the same axis, and
+/// `feed` sliding 100 a turn up it.
+const STACK: &str = "unit mm\nuse std\nuse std.solids\nuse std.motion (slides)\n\
+    in std.front {\n  construction centerline shaft := line(std.origin, hint((0, 1)))\n\
+    fix((0, 1)) shaft.p2\n}\nfeed := frame\nfeed slides(100mm) shaft\nin std.top {\n\
+    rim := radius(20mm) circle(center: std.top.origin)\n\
+    hole := radius(2mm) circle(center: std.top.origin)\n\
+    low := solid(std.solids.Prism(face(rim), from: -5mm, to: 0))\n\
+    high := solid(std.solids.Prism(face(rim), from: 40mm, to: 50mm))\n\
+    far := solid(std.solids.Prism(face(rim), from: 100mm, to: 110mm))\n\
+    construction pin := solid(std.solids.Through(face(hole)))\n}\n";
+
+/// A plate of radius 20 and `depth` less the pin's bore of radius 2.
+fn bored(depth: f64) -> f64 { PI * (400.0 - 4.0) * depth }
+
+/// Whether the material field of body `name` holds no material at `p`.
+fn hollow_at(e: &Elaborated, name: &str, p: [f64; 3]) -> bool {
+    use gcs_core::interval::{minimum::Options, Interval as I};
+    let field = MaterialField::read(&e.sketch, ent(e, name).i(), 1e-10).unwrap();
+    let answer = field.evaluator(256).bounds(p.map(|x| I::point(x).unwrap()),
+        Options { value_tolerance: 1e-6, max_evaluations: 50000 }).unwrap();
+    answer.value.bounds()[0] > 0.0
+}
+
+/// **One tool through any number of bodies** (#746): a prism through everything names no body,
+/// so cut from two plates at different heights it reaches through each — exactly, faceted and as
+/// a field — where once the first body it was cut from bounded it alone and the second kept its
+/// material above the first.
+#[test]
+fn a_prism_through_everything_cut_from_two_bodies_goes_through_each() {
+    let e = solved(&format!("{STACK}a := solid(low)\nb := solid(high)\npin cut a\npin cut b\n"));
+    let pin = ent(&e, "pin").i();
+    assert_eq!(gcs_core::solid::applied_to(&e.sketch, pin),
+               [ent(&e, "a").i() as u32, ent(&e, "b").i() as u32]);
+    for (body, depth, z) in [("a", 5.0, -2.5), ("b", 10.0, 45.0)] {
+        let exact = volume(&e, body);
+        assert!((exact - bored(depth)).abs() < 1e-9 * bored(depth), "{body}: {exact}");
+        // the faceted body is the plate's facets less the bore's: the plate cut by a prism
+        // bounded by hand past both is the same solid
+        let faceted = |e: &Elaborated, name: &str| e.sketch.evaluated_solid(ent(e, name).i(),
+            gcs_core::solid::ApproximationPolicy::Report).unwrap().volume();
+        let unpinned = STACK.replace("construction pin := solid(std.solids.Through(face(hole)))\n", "");
+        let by_hand = solved(&format!("{unpinned}x := solid(std.solids.Prism(face(hole), from: -10mm, \
+            to: 60mm))\n{body} := solid({})\nx cut {body}\n", if body == "a" { "low" } else { "high" }));
+        let (ours, theirs) = (faceted(&e, body), faceted(&by_hand, body));
+        assert!((ours - theirs).abs() < 1e-9 * theirs, "{body}: {ours} against {theirs}");
+        assert!(hollow_at(&e, body, [0.0, 0.0, z]), "{body}: the bore at {z}");
+        assert!(!hollow_at(&e, body, [10.0, 0.0, z]), "{body}: the plate at {z}");
+    }
+}
+
+/// **A copy is bounded by its own body** (#746): a pin cut from one plate, and a copy of it slid a
+/// hundred up the axis cut from another there, each go through their own — the pin's span is read
+/// from where each copy puts its section, so it reaches no further than the two need.
+#[test]
+fn a_placed_copy_of_a_prism_through_everything_goes_through_its_own_body() {
+    let e = solved(&format!("{STACK}a := solid(low)\nc := solid(far)\n\
+        lifted := pin at(under: feed) 360deg\npin cut a\nlifted cut c\n"));
+    for (body, depth, z) in [("a", 5.0, -2.5), ("c", 10.0, 105.0)] {
+        let exact = volume(&e, body);
+        assert!((exact - bored(depth)).abs() < 1e-9 * bored(depth), "{body}: {exact}");
+        assert!(hollow_at(&e, body, [0.0, 0.0, z]), "{body}: the bore at {z}");
+    }
+    // the pin spans the low plate and, read from the copy's section, the far one: -5 to 10
+    let csg = gcs_core::solid::resolve(&e.sketch, ent(&e, "pin").i(), gcs_core::solid::REPORT_UNIT);
+    let b = csg.bbox();
+    assert!((b.lo[2] + 5.0).abs() < 1e-2 && (b.hi[2] - 10.0).abs() < 1e-2, "{b:?}");
 }
 
 /// **Booleans as sets**: the points inside a solid and outside another are the body term over
