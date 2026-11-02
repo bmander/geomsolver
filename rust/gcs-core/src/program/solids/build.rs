@@ -60,7 +60,7 @@ pub(super) fn build_solid(
             .is_some_and(|p| p.dim != crate::units::Dim::ANGLE) => {
             say(Code::E103, over.name.span, format!("`{}` is no angle: a reading over the roll \
                 runs over an angle, and a face of the drawing swept over it is a face family, \
-                `sweep(face over {})`", over.name.text, over.name.text));
+                `solid({{ p | p coincident(over {}) face }})`", over.name.text, over.name.text));
             return None;
         }
         Sweep::Placed { .. } | Sweep::Swept { .. } | Sweep::Rolled { .. } => {
@@ -114,6 +114,13 @@ pub(super) fn build_solid(
             };
             if (a.value - b.value).abs() <= 0.0 {
                 say(Code::E080, st.span, "a prism swept nowhere is no solid".into());
+                return None;
+            }
+            // a prism is a set (#737): no point is at least the greater and at most the lesser
+            if a.value > b.value {
+                say(Code::E080, st.span, format!("no point is at least `{}` and at most `{}` along \
+                    the section's normal, so the prism's set is empty: write the lesser ordinate \
+                    `from:`", a.text, b.text));
                 return None;
             }
             SolidDef::Prism { face, from: a, to: b, draft }
@@ -484,7 +491,8 @@ fn under_motion(
         sweep else { unreachable!() };
     if ops.len() != 1 || ops[0].kind != EntKind::Solid {
         say(Code::E080,st.span,"a frame's motion moves one solid; a face swept as a parameter runs \
-            is a face family, `sweep(face over s)` over a declared `param s` (#398)".into());
+            is a face family, `solid({ p | p coincident(over s) face })` over a declared `param s` \
+            (#398, #737)".into());
         return None;
     }
     // drawn in a jointed frame (#391 S3), `tool in f`: placed by the frame's joint at its value,

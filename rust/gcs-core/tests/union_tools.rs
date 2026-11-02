@@ -65,12 +65,23 @@ fn a_placed_unions_sweep_places_each_members() {
     near(exported(&e,"rod"),PI*25.*20.-2.*beads_section()*20.,2e-6);
 }
 
+/// `text` with its groove swept from `tool` where it was swept from `was`, and `before` written
+/// ahead of it.
+fn regroove(text: &str,was: &str,before: &str,tool: &str) -> String {
+    let at = text.find("construction groove := solid(").expect("the groove");
+    let end = at+text[at..].find('\n').unwrap();
+    let line = &text[at..end];
+    let swept = format!(") {was} }})");
+    assert!(line.ends_with(&swept),"{line}");
+    format!("{}{before}{}) {tool} }}){}",&text[..at],&line[..line.len()-swept.len()],&text[end..])
+}
+
 /// A union placed whole is distributed as its members each placed so: the wheel turned about its
 /// own axis is the same wheel, and cuts the same groove.
 #[test]
 fn a_union_placed_whole_is_its_members_placed() {
-    let text = beads().replace("(slides)","(slides, turns)").replace("construction groove := sweep(wheel ","spin := frame\nspin turns(1) wheel_axis\n\
-        construction turned := wheel at(under: spin) 30deg\nconstruction groove := sweep(turned ");
+    let text = regroove(&beads().replace("(slides)","(slides, turns)"),"wheel","spin := frame\nspin turns(1) wheel_axis\n\
+        construction turned := wheel at(under: spin) 30deg\n","turned");
     let e = fixtures::read(&text);
     assert_eq!(admit(&e,"rod").unwrap().sweeps().len(),2);
     near(exported(&e,"rod"),PI*25.*20.-beads_section()*20.,2e-6);
@@ -81,7 +92,7 @@ fn a_union_placed_whole_is_its_members_placed() {
 /// the two half tubes with half a ball at each end (Pappus).
 #[test]
 fn two_balls_swung_are_two_tubes() {
-    let text = text("ball.sv").replace("construction groove := sweep(cutter ","\
+    let text = regroove(&text("ball.sv"),"cutter","\
 in std.front {
   private centre2 := point
   centre2 coords(du: 6mm, dv: 0mm) std.front
@@ -96,7 +107,7 @@ in std.front {
 construction small := solid(std.solids.Revolution(face(meridian2, diameter2), about: diameter2))
 construction pair := solid(cutter)
 small union pair
-construction groove := sweep(pair ");
+","pair");
     let e = fixtures::read(&text);
     let a = admit(&e,"block").unwrap();
     assert!(a.sweeps().is_empty(),"each member's sweep is a ball's tube, static material");
@@ -117,7 +128,7 @@ fn a_member_is_refused_by_its_own_row_naming_it() {
 /// A union within an intersection is not distributed: refused at T1, saying so.
 #[test]
 fn a_union_within_an_intersection_is_refused() {
-    let text = beads().replace("construction groove := sweep(wheel ","\
+    let text = regroove(&beads(),"wheel","\
 in bench {
   private k0 := point
   private k1 := point
@@ -135,7 +146,7 @@ in bench {
 construction slab := solid(std.solids.Prism(face(kb, kw, kt, ka), from: -20mm, to: 20mm))
 construction trimmed := solid(wheel)
 slab common trimmed
-construction groove := sweep(trimmed ");
+","trimmed");
     let r = refused(admit(&fixtures::read(&text),"rod"));
     assert_eq!(r.condition,Condition::Tool);
     assert!(r.message.contains("within an intersection"),"{}",r.message);
@@ -157,9 +168,10 @@ construction bead := solid(std.solids.Revolution(face(ring2), about: taxis))
 construction lump := solid(tool)
 bead union lump
 ",fixtures::tools::torus(2.));
-    let reading = "over t in (-75deg, 75deg), under: spin, seen_from: observer";
-    let sweeps = if long { format!("construction removal := sweep(tool {reading})\nconstruction removal2 := sweep(bead {reading})\n\
-        removal2 cut part\n") } else { format!("construction removal := sweep(lump {reading})\n") };
+    let reading = "under: spin, seen_from: observer, over t in (-75deg, 75deg)";
+    let sweeps = if long { format!("construction removal := solid({{ p | p inside({reading}) tool }})\n\
+        construction removal2 := solid({{ p | p inside({reading}) bead }})\nremoval2 cut part\n") }
+        else { format!("construction removal := solid({{ p | p inside({reading}) lump }})\n") };
     format!("{tools}{}{sweeps}{}",fixtures::motions::cradle_roll(0.25,fixtures::motions::Observer::Skew),fixtures::tools::skew_post(4.))
 }
 
@@ -205,7 +217,7 @@ fn stepped_as_exported(text: &str,body: &str) {
 /// operand of a body built from it.
 #[test]
 fn the_page_builds_a_unions_cut_by_stages() {
-    let balls = text("ball.sv").replace("construction groove := sweep(cutter ","\
+    let balls = regroove(&text("ball.sv"),"cutter","\
 in std.front {
   private centre2 := point
   centre2 coords(du: 6mm, dv: 0mm) std.front
@@ -220,7 +232,7 @@ in std.front {
 construction small := solid(std.solids.Revolution(face(meridian2, diameter2), about: diameter2))
 construction pair := solid(cutter)
 small union pair
-construction groove := sweep(pair ");
+","pair");
     for (text,body) in [(beads(),"rod"),(balls,"block")] {
         stepped_as_exported(&text,body);
         stepped_as_exported(&format!("{text}made := solid({body})\n"),"made");

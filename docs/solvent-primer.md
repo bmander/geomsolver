@@ -2366,7 +2366,8 @@ statements.
 | `solid(sec, depth: 3mm)` | E001 — "a solid is the points of a set, and `solid(…)` takes no labels (#737): write `solid(std.solids.Prism(sec, from: -3mm, to: 0))`, with `use std.solids`" |
 | `sweep(ball over t in (0deg, 90deg), under: turn)` | E001 — "`sweep(…)` is retired (#737): a solid is the points of a set, and what this sweeps is `solid({ p \| p inside(under: turn, over t in (0deg, 90deg)) ball })`" |
 | `solid(std.solids.Revolution(sec, about: std.y))`, face on `std.front` | E080 — "a face swept by a turn is read point by point where the line it turns about lies in the face's plane" |
-| `pin := solid(std.solids.Through(sec))`, cut from nothing | E080 — "`pin` has no end: bound it all round (a ball, two planes, …)" |
+| `pin := solid(std.solids.Through(sec))`, cut from nothing | E080 — "`pin` is a prism through everything, which only the body it is cut from bounds: cut it from one (`pin cut body`), or bound it by two ordinates" |
+| `solid(std.solids.Prism(sec, from: 5mm, to: 0mm))` | E080 — "no point is at least `5mm` and at most `0mm` along the section's normal, so the prism's set is empty: write the lesser ordinate `from:`" |
 | `x cut y` and `y cut x` | E041 at the second — "`x` would be made of itself" |
 | `x coincident y`, two solids | refused: material is added with `union` |
 

@@ -415,8 +415,13 @@ fn the_rack_cut_gear_example_is_admitted() {
 /// alone the generating class cuts, by its sheet.  What the two remove agrees to the fits'.
 #[test]
 fn the_tooth_united_with_itself_cuts_as_the_tooth_does() {
-    let twin = SPACE.replace("construction space := sweep(rack_tooth",
-        "construction twin := solid(rack_tooth)\nconstruction both := solid(rack_tooth)\ntwin union both\nconstruction space := sweep(both");
+    let space = "construction space := solid({ p | p inside(under: rack, seen_from: turn, \
+                 over t in (-60deg, 60deg)) rack_tooth })";
+    assert!(SPACE.contains(space));
+    let twin = SPACE.replace(space, "construction twin := solid(rack_tooth)\n\
+        construction both := solid(rack_tooth)\ntwin union both\n\
+        construction space := solid({ p | p inside(under: rack, seen_from: turn, \
+        over t in (-60deg, 60deg)) both })");
     let (sheet, region) = (removed(SPACE), removed(&twin));
     assert!((sheet - region).abs() < 1e-5 * sheet, "the sheet removes {sheet:.6} mm³, the region {region:.6}");
 }
@@ -428,9 +433,12 @@ fn the_tooth_united_with_itself_cuts_as_the_tooth_does() {
 /// extruded as the tooth's is, and what the two remove agrees to the fits'.
 #[test]
 fn a_placed_tooth_cuts_as_the_tooth_does() {
-    let placed = SPACE.replace("construction space := sweep(rack_tooth over t in (-60deg, 60deg)",
-        "construction next := rack_tooth at(under: rack) 90deg\nconstruction space := sweep(next over t in (-150deg, -30deg)");
-    assert!(placed.contains("sweep(next"), "the placed tooth is swept");
+    let placed = SPACE.replace("construction space := solid({ p | p inside(under: rack, seen_from: turn, \
+                                over t in (-60deg, 60deg)) rack_tooth })",
+        "construction next := rack_tooth at(under: rack) 90deg\n\
+         construction space := solid({ p | p inside(under: rack, seen_from: turn, \
+         over t in (-150deg, -30deg)) next })");
+    assert!(placed.contains(") next })"), "the placed tooth is swept");
     let a = admit(&placed).unwrap_or_else(|r| panic!("{r}"));
     assert!(matches!(a.sweeps()[0].class, gcs_core::solid::admission::Class::Generating), "the generating class");
     let (tooth, next) = (removed(SPACE), removed(&placed));

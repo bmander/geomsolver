@@ -132,7 +132,7 @@ fn analytic_branch_labels_do_not_swap_at_the_periodic_seam() {
 fn clockwise_source_revolution_keeps_the_same_contact_set() {
     let a = swept("");
     let b = read(&format!("{}\nswept := solid({{ p | p inside(under: generating, over t in (-60deg, 60deg)) tool }})\n",
-        SOURCE.replace("about: diameter)","about: diameter,sense: cw)")));
+        SOURCE.replace("about: diameter)","about: diameter, from: -360deg, to: 0deg)")));
     let read = |e: &program::Elaborated| SweepContacts::read(&e.sketch,
         e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
     let (a,b) = (read(&a),read(&b));

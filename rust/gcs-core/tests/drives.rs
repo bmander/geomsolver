@@ -219,7 +219,8 @@ fn a_roll_through_a_body_under_a_drive_is_conservative() {
         k1 := point\n  k2 := point\n  fix((0, {a})) k1\n  fix((0, {b})) k2\n  \
         kd := line(k1, k2)\n  km := arc(center: k0, start: k1, end: k2)\n  radius(3mm) km\n}}\n\
         blank := solid(std.solids.Revolution(face(km, kd), about: kd))\n\
-        rolled := solid({{ p | p inside(under: follower, seen_from: cam) ball }})\n",
+        rolled := solid({{ p | p inside(under: follower, seen_from: cam) ball }})\n\
+        rolled cut blank\n",
         a = BASE - 3.0, b = BASE + 3.0);
     let e = solved(&cam(&blank));
     let i = e.map.ent_named("rolled").unwrap().i();

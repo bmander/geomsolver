@@ -157,7 +157,7 @@ fn angular_surface_spans_keep_source_parameters_and_finite_incidence() {
 
 #[test]
 fn surface_spans_follow_sweep_sense_and_component_angles() {
-    let source = MODEL.replace("about: ax)","about: ax, sweep: 90deg, sense: cw)");
+    let source = MODEL.replace("about: ax)","about: ax, from: -90deg, to: 0deg)");
     let source = format!("component Portion(s: solid,e: circle,start: Angle,end: Angle) {{\n\
         part := surface(s,e,from: start,to: end)\n}}\n\
         portion := Portion(ring,meridian,start: 30deg,end: 60deg)\n{source}");
@@ -226,7 +226,7 @@ fn analytic_projection_preserves_orientation_and_distinguishes_finite_patches() 
             }
         }
     }
-    let partial = solved(&MODEL.replace("about: ax)","about: ax,sweep: 90deg)"));
+    let partial = solved(&MODEL.replace("about: ax)","about: ax, to: 90deg)"));
     let patch = RevolvedSurface::named(&partial.sketch,0).unwrap().projector().unwrap();
     let off = patch.project([0.,-4.,0.]).unwrap();
     assert!(off.signed_residual.abs() < 1e-10,"the point lies on the continued torus");

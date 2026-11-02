@@ -1,9 +1,9 @@
 //! **A material as a model value** (#510 P3): `steel := material(E: 200GPa, nu: 0.3, rho:
-//! 7850kg / 1m^3, yield: 250MPa)` and `arm := solid(sec, depth: 4mm) of steel`.  The gates: a
-//! material is held in SI whatever the document's unit, each property is checked for its
-//! dimension and its range where it is written, a solid's `of` names a material and nothing
-//! else, the members read as numbers as any group's do, and a material survives the printer, a
-//! lifted program, the document JSON, a rebuild and a paste.
+//! 7850kg / 1m^3, yield: 250MPa)` and `arm := solid(std.solids.Prism(sec, from: -4mm, to: 0)) of
+//! steel`.  The gates: a material is held in SI whatever the document's unit, each property is
+//! checked for its dimension and its range where it is written, a solid's `of` names a material
+//! and nothing else, the members read as numbers as any group's do, and a material survives the
+//! printer, a lifted program, the document JSON, a rebuild and a paste.
 
 use gcs_core::io;
 use gcs_core::model::{EntKind, EntRef, Material, Property, Sketch};
@@ -194,7 +194,7 @@ fn a_material_prints_as_written() {
     assert!(errs.is_empty(), "{errs:?}");
     let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(printed.contains(STEEL), "{printed}");
-    assert!(printed.contains("depth: 5mm) of steel"), "{printed}");
+    assert!(printed.contains("from: -(5mm), to: 0)) of steel"), "{printed}");
     let again = built(&printed);
     let before = built(&src);
     assert_eq!(again.sketch.materials, before.sketch.materials);

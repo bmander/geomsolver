@@ -72,7 +72,7 @@ in std.front {
 }
 plate := solid(std.solids.Prism(top, from: -10mm, to: 0))
 boss := solid(std.solids.Prism(outline, from: 0mm, to: 8mm))
-pocket := solid(std.solids.Prism(mouth, from: 1mm, to: -6mm))
+pocket := solid(std.solids.Prism(mouth, from: -6mm, to: 1mm))
 part := solid(plate)
 boss union part
 pocket cut part

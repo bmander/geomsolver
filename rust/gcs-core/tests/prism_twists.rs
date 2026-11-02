@@ -26,7 +26,8 @@ use gcs_core::space::cross;
 /// x set `half` back along the length, and extruded from it twice that, drafted `draft` degrees.
 pub(crate) fn turned_bar(lean: f64,corners: [[f64;2];4],half: f64,draft: f64) -> String {
     let [c0,c1,c2,c3] = corners.map(|[u,v]| format!("du: {u}mm, dv: {v}mm"));
-    let drafted = if draft == 0. { String::new() } else { format!(", draft: {draft}deg") };
+    let (word,drafted) = if draft == 0. { ("Prism",String::new()) }
+        else { ("Drafted",format!(", draft: {draft}deg")) };
     format!("unit mm
 use std
 use std.solids
@@ -53,7 +54,7 @@ in holder {{
   private outer := line(c2, c3)
   private under := line(c3, c0)
 }}
-construction bar := solid(std.solids.Prism(face(lower, upper, outer, under), from: 0mm, to: 2 * {half}mm{drafted}))
+construction bar := solid(std.solids.{word}(face(lower, upper, outer, under), from: 0mm, to: 2 * {half}mm{drafted}))
 
 {BLOCK}
 
@@ -268,7 +269,8 @@ impl Bar {
         let points: String = self.corners.iter().enumerate().map(|(k,[u,v])| format!("  private c{k} := point\n  \
             c{k} coords(du: {u}mm, dv: {v}mm) holder\n")).collect();
         let lines: String = (0..n).map(|k| format!("  private {} := line(c{k}, c{})\n",self.names[k],(k+1)%n)).collect();
-        let drafted = if self.draft == 0. { String::new() } else { format!(", draft: {}deg",self.draft) };
+        let (word,drafted) = if self.draft == 0. { ("Prism",String::new()) }
+            else { ("Drafted",format!(", draft: {}deg",self.draft)) };
         let (motion,roll) = if self.lead == 0. { ("turns(1)".to_string(),140) } else { (format!("screws({}mm)",self.lead),280) };
         format!("unit mm
 use std
@@ -284,7 +286,7 @@ holder := plane(u: across, v: along)
 fix(origin == ({}, {}, {})) holder
 in holder {{
 {points}{lines}}}
-construction bar := solid(std.solids.Prism(face({}), from: {}mm, to: {}mm{drafted}))
+construction bar := solid(std.solids.{word}(face({}), from: {}mm, to: {}mm{drafted}))
 {BLOCK}
 swing := frame
 swing {motion} ax
@@ -488,10 +490,12 @@ pub(crate) fn parted(lean: f64,draft: f64) -> Bar {
 /// block is refused at T1, under a turn as under a relative rotation (#684 F).
 #[test]
 fn a_cap_of_a_tool_no_lone_prism_turned_is_refused() {
-    let text = flat_end(20.,5.).text().replace("construction groove := sweep(bar","in std.top {\n  private k0 := point\n  \
+    let text = flat_end(20.,5.).text().replace("construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) bar })","in std.top {\n  private k0 := point\n  \
         private k1 := point\n  private k2 := point\n  private k3 := point\n  fix((0, -20)) k0\n  fix((30, -20)) k1\n  \
         fix((30, 20)) k2\n  fix((0, 20)) k3\n}\nconstruction keep := solid(std.solids.Prism(face(k0, k1, k2, k3, -> close), from: -20mm, to: 20mm))\n\
-        construction tool := solid(bar)\nkeep common tool\nconstruction groove := sweep(tool");
+        construction tool := solid(bar)\nkeep common tool\n\
+        construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) tool })");
+    assert!(text.contains("keep common tool"));
     let r = refused(admit(&text));
     assert_eq!(r.condition,Condition::Tool);
     assert!(r.message.contains("standing alone"),"{}",r.message);

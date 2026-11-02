@@ -56,7 +56,7 @@ fn a_face_and_its_depth_are_two_statements() {
         let out = edit::add_solid(&prog_of(&text), "f0", &depth(written), None);
         assert_eq!(out.names, vec!["b0"]);
         let solid = taken(out);
-        assert!(solid.ends_with(&format!("f0 := face(ab, bc, cd, da)\nb0 := solid(std.solids.Prism(f0, from: -({written}), to: 0))\n")),
+        assert!(solid.ends_with(&format!("f0 := face(ab, bc, cd, da)\nb0 := solid(std.solids.Prism(f0, from: -{written}, to: 0))\n")),
             "{solid}");
         assert!((volume(&read(&solid), "b0") - 2400.0 * d).abs() < 1e-7, "{written}");
     }
@@ -83,7 +83,7 @@ fn every_sweep_a_gesture_makes_is_written_as_the_language_spells_it() {
         (SolidSweep { from: Some("-2".into()), to: Some("3".into()), ..Default::default() },
             "b0 := solid(std.solids.Prism(sec, from: -2, to: 3))"),
         (SolidSweep { through: Some("body".into()), ..Default::default() },
-            "b0 := solid(std.solids.Through(sec))"),
+            "b0 := solid(std.solids.Through(sec))\nb0 cut body"),
         (SolidSweep { about: Some("da".into()), ..Default::default() }, "b0 := solid(std.solids.Revolution(sec, about: da))"),
         (SolidSweep { about: Some("da".into()), sweep: Some("90deg".into()), sense: Some(Sense::Cw),
             ..Default::default() }, "b0 := solid(std.solids.Revolution(sec, about: da, from: -90deg, to: 0deg))"),

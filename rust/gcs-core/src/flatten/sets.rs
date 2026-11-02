@@ -502,7 +502,14 @@ impl<'a> Walk<'a> {
         if !outside || r.along.is_some() || sc.twin().is_some() {
             return None;
         }
-        let [_, s] = w.ops.as_slice() else { return None };
+        let [p, s] = w.ops.as_slice() else { return None };
+        // the point a region solid reads (its probe, or one a complement made): a drawn point
+        // outside such a set is refused as ever, since no one root of it is outside
+        let read = self.look(alias).raw(p, sc)
+            .is_some_and(|(p, rest)| rest.is_empty() && self.sets.probes.contains(&p));
+        if !read {
+            return None;
+        }
         let (abs, rest) = self.look(alias).raw(s, sc)?;
         if !rest.is_empty() {
             return None;

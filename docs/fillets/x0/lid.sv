@@ -58,7 +58,7 @@ block.near round(3mm) block
 
 // The pocket's floor: where the floor meets the pocket's walls. The upright corners stay sharp.
 plate := solid(std.solids.Prism(top, from: -10mm, to: 0))
-pocket := solid(std.solids.Prism(mouth, from: 1mm, to: -6mm))
+pocket := solid(std.solids.Prism(mouth, from: -6mm, to: 1mm))
 tray := solid(plate)
 pocket cut tray
 tray.pocket.far round(2mm) tray.pocket

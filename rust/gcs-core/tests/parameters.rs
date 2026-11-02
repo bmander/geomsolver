@@ -261,8 +261,8 @@ fn a_point_read_at_an_instant_is_held_where_its_frame_carries_it() {
 /// printed as written; a parameter of another type, or a name nothing declares, is E103.
 #[test]
 fn a_reading_over_a_declared_parameter_reads_its_interval() {
-    let inline = "construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, \
-                  seen_from: observer)";
+    let inline = "construction removal := solid({ p | p inside(under: spin, seen_from: observer, \
+                  over t in (-75deg, 75deg)) tool })";
     assert!(SWEPT_TORUS.contains(inline));
     let declared = SWEPT_TORUS.replace(inline, "param t: Angle over (-75deg, 75deg)\n\
         construction removal := solid({ p | p inside(under: spin, seen_from: observer, over t) tool })");
@@ -316,7 +316,8 @@ fn the_retired_reading_spellings_name_their_replacements() {
     syntax("s := solid(tool, under: screw, at: 40deg)", "`s := tool at θ`");
     syntax("s := solid(tool, under: screw, from: 0deg, to: 40deg)",
            "`solid({ p | p inside(under: m, seen_from: g, over t in (a, b)) tool })`");
-    syntax("s := solid(tool, under: screw, through: body)", "`sweep(tool, through: body");
+    syntax("s := solid(tool, under: screw, through: body)",
+           "`solid({ p | p inside(under: m, seen_from: g) tool })`, cut from the body");
     syntax("e := envelope(tool, under: screw, from: 0deg, to: 40deg)",
            "`envelope(tool over t in (a, b), …)`");
     syntax("m := meshing(f1, f2, under: screw, from: 0deg, to: 40deg)",
@@ -398,8 +399,8 @@ fn what_is_drawn_in_a_jointed_frame_stands_where_its_value_puts_it() {
         };
         (at.value.to_bits(), e.sketch.motions[*motion as usize].name.clone())
     };
-    let sweep = "construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, \
-                 seen_from: observer)";
+    let sweep = "construction removal := solid({ p | p inside(under: spin, seen_from: observer, \
+                 over t in (-75deg, 75deg)) tool })";
     assert!(SWEPT_TORUS.contains(sweep));
     let drawn = placed(&SWEPT_TORUS.replace(sweep, "fix(value == 30deg) spin\n\
         construction removal := tool in spin"));

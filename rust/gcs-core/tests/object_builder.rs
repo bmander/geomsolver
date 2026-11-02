@@ -367,7 +367,7 @@ fn the_placements_of_one_binding_are_one_job() {
 /// writes the drawing back into its source (`edit::reconcile`, which here drops the seeds the
 /// fixed frame points do not need) and hands a worker that text with its values.  The family's
 /// key reads its running number's name, so that name is the family's count and not where it
-/// stands: the worker names the job as the page did, though the write-back moved the `sweep`.
+/// stands: the worker names the job as the page did, though the write-back moved the family.
 #[test]
 fn a_face_familys_job_keeps_its_key_through_the_write_back() {
     let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"),"/../examples/paths/coil.sv")).unwrap();
@@ -379,7 +379,7 @@ fn a_face_familys_job_keeps_its_key_through_the_write_back() {
     let sk = std::mem::take(&mut page.sketch);
     let written = gcs_core::edit::reconcile(&mut page,&sk);
     assert_eq!(written.refused,None);
-    let sweep = |t: &str| t.find("coil := sweep").unwrap();
+    let sweep = |t: &str| t.find("coil := solid(").unwrap();
     assert_ne!(sweep(&written.text),sweep(&text),"the write-back moved the family:\n{}",written.text);
     let mut worker = document(&written.text);
     assert!(worker.set_x(&sk.get_x()));

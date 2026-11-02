@@ -74,8 +74,10 @@ fn torus_membership_and_distance_follow_analytic_circles_including_ray_tangencie
 
 #[test]
 fn holes_are_voids_and_source_axis_direction_does_not_change_material() {
-    let source = RING.replace("body := solid(face(rim)",
-        "hole := circle(center: c)\nradius(0.4mm) hole\nbody := solid(face(rim, holes: hole)");
+    assert!(RING.contains("body := solid(std.solids.Revolution(face(rim)"));
+    let source = RING.replace("body := solid(std.solids.Revolution(face(rim)",
+        "hole := circle(center: c)\nradius(0.4mm) hole\n\
+         body := solid(std.solids.Revolution(face(rim, holes: hole)");
     for source in [source.clone(),source.replace("ax := line(o,q)","ax := line(q,o)")] {
         let e = solved(&source);
         let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
@@ -154,6 +156,6 @@ fn material_queries_are_snapshots_and_refuse_unsupported_or_nonfinite_geometry()
     assert_eq!(region.classify([f64::NAN,0.,0.],0.).unwrap_err(),Error::NonFinite);
     assert!(region.classify([0.;3],-1.).is_err());
     assert!(region.classify([0.;3],f64::INFINITY).is_err());
-    let e = solved(&RING.replace("about: ax","depth: 2mm"));
+    let e = solved(&RING.replace("Revolution(face(rim), about: ax)","Prism(face(rim), from: -2mm, to: 0)"));
     assert!(RevolvedRegion::read(&e.sketch,0,1e-12).unwrap_err().contains("unmodified revolution"));
 }

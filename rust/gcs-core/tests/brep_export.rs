@@ -149,7 +149,8 @@ fn float32_rounding_is_spent_from_the_tolerance_of_the_written_stl() {
 }
 
 /// Issue #59's stock: a 10 mm disc 2 mm thick about z, its plane's axes `u`, `v` (turned 11.25°
-/// where written so), cut by a 2 mm strip swept along x `through:` it — or from −11 to 11 mm.
+/// where written so), cut by a 2 mm strip `cutter` (a `std.solids` word over its face `a, b, c, d`)
+/// along x through it — `std.solids.Through` — or from −11 to 11 mm.
 fn strip_cut(frame: [[f64; 3]; 2], cutter: &str, cut: bool) -> String {
     let [u, v] = frame;
     format!("unit mm
@@ -176,7 +177,7 @@ in tool_plane {{
   fix((1, -1)) b
   fix((1, 3)) c
   fix((-1, 3)) d
-  cutter := solid(face(a, b, c, d, -> close), {cutter})
+  cutter := solid({cutter})
 }}
 body := solid(stock)
 {}
@@ -206,7 +207,9 @@ fn a_through_cut_crosses_its_stock_whichever_way_the_stocks_circle_starts() {
         let shells = gcs_core::mesh::stl_shells(&export::stl(&sk,body,&exact,None,&say).unwrap()).unwrap().len();
         (exact.solid,shells)
     };
-    for (frame,cutter) in [(turned,"through: body"),(aligned,"through: body"),(turned,"from: -11mm, to: 11mm")] {
+    const THROUGH: &str = "std.solids.Through(face(a, b, c, d, -> close))";
+    const BETWEEN: &str = "std.solids.Prism(face(a, b, c, d, -> close), from: -11mm, to: 11mm)";
+    for (frame,cutter) in [(turned,THROUGH),(aligned,THROUGH),(turned,BETWEEN)] {
         let (solid,shells) = built(&strip_cut(frame,cutter,true));
         let volume = props::volume(&solid);
         assert!((volume-want).abs() < 1e-9*want,"{frame:?}, {cutter}: {volume} against {want}");
@@ -215,7 +218,7 @@ fn a_through_cut_crosses_its_stock_whichever_way_the_stocks_circle_starts() {
         assert_eq!(at.solid_place([9.95,0.,1.]),gcs_core::brep::query::Place::Out,"{frame:?}, {cutter}");
     }
     // uncut, the turned frame changes nothing
-    let (solid,shells) = built(&strip_cut(turned,"through: body",false));
+    let (solid,shells) = built(&strip_cut(turned,BETWEEN,false));
     let volume = props::volume(&solid);
     assert!((volume-200.*std::f64::consts::PI).abs() < 1e-9*volume,"{volume}");
     assert_eq!(shells,1);

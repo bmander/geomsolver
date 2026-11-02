@@ -823,8 +823,12 @@ fn notch(depth: f64, draft: f64, r: f64) -> f64 {
 fn a_round_across_seams_between_arcs_on_a_drafted_prism_is_glued() {
     let src = include_str!("../../examples/rounds/notch.sv");
     for (draft, r) in [(3.0_f64, 1.0), (0.0, 1.0), (1.0, 1.0), (6.0, 0.5), (6.0, 1.5), (7.0, 1.0)] {
-        let drafted = if draft > 0.0 { format!(", draft: {draft}deg") } else { String::new() };
-        let text = src.replace(", draft: 3deg", &drafted)
+        // undrafted, the plate is a plain prism
+        let (word, drafted) = if draft > 0.0 { ("Drafted", format!(", draft: {draft}deg")) }
+            else { ("Prism", String::new()) };
+        assert!(src.contains("std.solids.Drafted(outline, from: -5mm, to: 0, draft: 3deg)"));
+        let text = src.replace("std.solids.Drafted(", &format!("std.solids.{word}("))
+            .replace(", draft: 3deg", &drafted)
             .replace("round(r: 1mm)", &format!("round(r: {r}mm)"));
         let e = solved(&text);
         let b = exported(&e, "body");
@@ -1201,7 +1205,7 @@ fn chamfers_that_run_out_onto_a_face_are_cut_off() {
 /// `runout.sv`'s vent with only its hole and its rim, the hole at `(hx, hy)`, and `more` after.
 fn vent(hx: f64, hy: f64, more: &str) -> String {
     let src = include_str!("../../examples/rounds/runout.sv");
-    let lug = src.find("wedge := solid(side_f").expect("the wedge");
+    let lug = src.find("wedge := solid(std.solids.Prism(side_f").expect("the wedge");
     let mut out = src[..lug].replace("fix((98, -12)) hc", &format!("fix(({hx}, {hy})) hc"));
     out.push_str("block := solid(std.solids.Prism(other_f, from: 0mm, to: 24mm))\nhole := solid(std.solids.Prism(face(hole_k), from: -1mm, to: 30mm))\n\
         vent := solid(block)\nhole cut vent\n");

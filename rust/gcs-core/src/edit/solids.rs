@@ -71,7 +71,8 @@ pub struct SolidSweep {
     pub sense: Option<syntax::Sense>,
 }
 
-/// A solid swept from `face`: `b0 := solid(f0, depth: 20)`.  A mixture of sweeps is refused in
+/// A solid swept from `face`: `b0 := solid(std.solids.Prism(f0, from: -20, to: 0))`, and through
+/// a body `b0 := solid(std.solids.Through(f0))` cut from it.  A mixture of sweeps is refused in
 /// the parser's own words (`sweep_of`), and a sweep the elaborator refuses (E080, E081) in its.
 pub fn add_solid(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) -> Edit {
     Edit::refused_or(prog, solid_edit(prog, face, how, name))
@@ -80,7 +81,18 @@ pub fn add_solid(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str
 fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) -> Result<Edit, String> {
     let sweep = how.sweep()?;
     let name = chosen_name(&mut taken_names(prog), name, EntKind::Solid)?;
-    append_solids(prog, &[solid_stmt(&name, face, sweep)], vec![name])
+    let mut stmts = vec![solid_stmt(&name, face, sweep)];
+    // a prism through everything (#737, `std.solids.Through`) is bounded by the body it is cut
+    // from: through a body, it is cut from that body
+    if let Some(body) = &how.through {
+        stmts.push(StmtKind::SolidRel(syntax::SolidRel {
+            word: syntax::BodyWord::Cut,
+            what: syntax::Ref::new(name.clone()),
+            body: syntax::Ref::new(body.clone()),
+            span: Span::default(),
+        }));
+    }
+    append_solids(prog, &stmts, vec![name])
 }
 
 /// `stmts` appended, each a statement the canonical printer writes over the words of `std.solids`
@@ -331,6 +343,15 @@ fn reworded(prog: &Program, d: &syntax::Decl,
         syntax::InstVal::Expr(t) => t.clone(),
         _ => String::new(),
     })?;
+    // a face written in place in the call (`face(ab, bc, cd, da)`) is the parser's anonymous
+    // face, named by a key no document can write: the call is rewritten with it as written
+    let face = prog.root().body.iter().find_map(|st| match &st.kind {
+        StmtKind::Decl(f) if f.kind == EntKind::Face && f.name.key().text == face
+            && face.starts_with('#') => {
+            prog.text().get(st.span.lo as usize..st.span.hi as usize).map(str::to_string)
+        }
+        _ => None,
+    }).unwrap_or(face);
     let dim = |t: String| syntax::Arg::Dim { text: t, span: Span::default() };
     let zero = |t: &Option<String>| t.as_deref().is_none_or(|t| matches!(t.trim(), "0" | "0deg"));
     let was = match word {

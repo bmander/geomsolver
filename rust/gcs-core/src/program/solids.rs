@@ -214,11 +214,18 @@ fn body_rule(
                 }
             }
             // and a body under a motion over its whole roll, the roll through that material —
-            // where it, or a copy of it placed at a roll, is cut
+            // where it, or a copy of it placed at a roll, is cut; so a section through
+            // everything a copy of which is cut (a pattern's)
             let mut tool = a.i();
             loop {
+                if tool != a.i() {
+                    if let Some(face) = unbounded_section(sk, tool) {
+                        sk.solids[tool].def = SolidDef::Through { face, body: u32::MAX };
+                    }
+                }
                 match &mut sk.solids[tool].def {
-                    SolidDef::Swept { roll: crate::model::Roll::Through { body }, .. } => {
+                    SolidDef::Swept { roll: crate::model::Roll::Through { body }, .. }
+                    | SolidDef::Through { body, .. } => {
                         if *body == u32::MAX {
                             *body = b.idx;
                         }

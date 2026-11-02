@@ -31,10 +31,12 @@ fn extrude(e: &Elaborated, outer: &[String], holes: &[Vec<String>],
     edit::extrude(&e.program, &e.sketch, outer, holes, with, through)
 }
 
-/// The depth a fresh extrusion is written at, read back off its statement.
+/// The depth a fresh extrusion is written at, read back off its statement: the prism runs `from:`
+/// that far behind its face `to: 0`.
 fn depth_written(text: &str, solid: &str) -> f64 {
     let line = text.lines().find(|l| l.starts_with(&format!("{solid} := solid("))).unwrap();
-    line.split("depth: ").nth(1).unwrap().trim_end_matches(')').parse().unwrap()
+    let from = line.split("from: -").nth(1).unwrap().split(',').next().unwrap();
+    from.trim_start_matches('(').trim_end_matches(')').parse().unwrap()
 }
 
 #[test]
@@ -45,7 +47,7 @@ fn a_click_writes_the_face_and_the_solid_as_one_splice() {
     assert_eq!(out.names, vec!["b0", "f0"]);
     let d = depth_written(&out.text, "b0");
     assert!(d > 0.0, "{}", out.text);
-    assert!(out.text.ends_with(&format!("f0 := face(pq, qr, rs, sp)\nb0 := solid(std.solids.Prism(f0, from: -({}), to: 0))\n",
+    assert!(out.text.ends_with(&format!("f0 := face(pq, qr, rs, sp)\nb0 := solid(std.solids.Prism(f0, from: -{}, to: 0))\n",
         gcs_core::syntax::num(d))), "{}", out.text);
     assert!(near(volume(&build(&out.text), "b0"), 100.0 * d, 1e-9));
 }
@@ -188,7 +190,7 @@ fn an_offset_planes_arrow_runs_along_the_normal_it_is_set_off_by() {
 #[test]
 fn a_thickness_is_written_the_way_it_runs() {
     let cases = [
-        (Way::Behind, "12", "depth: 12", 12.0),
+        (Way::Behind, "12", "from: -12, to: 0", 12.0),
         (Way::Front, "12", "from: 0, to: 12", 12.0),
         (Way::Both, "12", "from: -6, to: 6", 12.0),
         (Way::Both, "2 * 3", "from: -(2 * 3) / 2, to: (2 * 3) / 2", 6.0),
@@ -198,7 +200,8 @@ fn a_thickness_is_written_the_way_it_runs() {
     for (way, thick, said, d) in cases {
         let out = edit::set_sweep(&e, &e.program, block, &SolidSweep::thick(way, thick));
         assert_eq!(out.refused, None, "{said}");
-        assert!(out.text.contains(&format!("block := solid(face(ab, bc, cd, da), {said})\n")),
+        assert!(out.text.contains(&format!("block := solid(std.solids.Prism(face(ab, bc, cd, da), \
+                                            {said}))\n")),
             "{}", out.text);
         assert!(near(volume(&build(&out.text), "block"), 2400.0 * d, 1e-9), "{said}");
     }

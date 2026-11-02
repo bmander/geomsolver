@@ -145,13 +145,16 @@ fn a_union_is_drilled_by_the_through_cutter_the_body_already_has() {
 
 #[test]
 fn a_tool_through_the_body_reads_its_material_and_closes_no_cycle() {
-    // `through: plate` reads the plate's sweep, which the statement moves to a stock: no cycle
+    // a prism through everything (#737) is bounded by the body it is cut from, so standing alone
+    // it is refused, and nothing is previewed on a drawing that does not elaborate; the gesture
+    // writes the cut, which reads the plate's sweep, which the statement moves to a stock: no
+    // cycle
     let src = format!("{PARTS}drill := solid(std.solids.Through(face(hole)))\n");
-    let e = read(&src);
-    let want = PLATE - BORE_IN;
-    near(previewed(&e, "plate", BodyWord::Cut, &["drill"]), want, "previewed");
+    let (_, said) = crate::common::lenient::read(&src);
+    assert!(said.iter().any(|m| m.starts_with("E080")
+        && m.contains("only the body it is cut from bounds")), "{said:?}");
     let text = written(&src, BodyWord::Cut, &["drill"], "plate");
-    near(volume(&read(&text), "plate"), want, "written");
+    near(volume(&read(&text), "plate"), PLATE - BORE_IN, "written");
 }
 
 #[test]

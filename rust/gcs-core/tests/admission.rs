@@ -10,8 +10,8 @@ use gcs_core::solid::admission::{self,Condition,Error,Options};
 /// A tool, a motion named `motion`, the removal over [from, to] and the post it is cut from.
 /// The tool swept by `motion` read as `reading` (`under: turn`, or a roll's `ROLLED`).
 fn document(tool: &str,motion: &str,reading: &str,from: f64,to: f64) -> String {
-    format!("{tool}{motion}construction removal := sweep(tool over t in ({from}deg, {to}deg), \
-        {reading})\n{}",centred_post())
+    format!("{tool}{motion}construction removal := solid({{ p | p inside({reading}, \
+        over t in ({from}deg, {to}deg)) tool }})\n{}",centred_post())
 }
 
 fn admit(source: &str) -> Result<admission::Admission,Error> {

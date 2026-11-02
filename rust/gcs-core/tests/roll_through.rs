@@ -1,14 +1,15 @@
-//! **A sweep rolls through what it cuts** (#271, §6.9, `solid::roll`): `sweep(tool, through:
-//! body, under: m)` rolls over the roll about 0 during which the tool meets the body's material,
-//! found after the solve. Held to a closed form (a ball turned past a ball: they part at
+//! **A sweep rolls through what it cuts** (#271, §6.9, `solid::roll`): `solid({ p | p inside(under:
+//! m) tool })` cut from a body rolls over the roll about 0 during which the tool meets the body's
+//! material, found after the solve. Held to a closed form (a ball turned past a ball: they part at
 //! `2 asin(r / R)`), never short of it and a small margin past; read alike by every reader; and the
 //! spiral bevel, which states no roll, admitted where its stated roll was refused (10:48).
 use gcs_core::model::{Roll, SolidDef};
 use gcs_core::{program, solid, solve, syntax};
 
 /// A ball of radius 1 three from the z axis, turned about it, and a ball of radius 1 where the
-/// tool starts (`at` its centre): the tool's roll through `part`, the blank's body.
-fn balls(at: &str, sweep: &str) -> String {
+/// tool starts (`at` its centre): the tool's roll through `part`, the blank's body, read as
+/// `reading` (`under: turn`).
+fn balls(at: &str, reading: &str) -> String {
     format!("\
 unit mm
 use std
@@ -29,7 +30,7 @@ fix((0, 0, 1)) top
 spindle := line(o, top)
 turn := frame
 turn turns(1) spindle
-construction removal := sweep(tool, {sweep})
+construction removal := solid({{ p | p inside({reading}) tool }})
 part := solid(blank)
 removal cut part
 ")
@@ -46,7 +47,7 @@ fn parting() -> f64 { 2.0 * (1.0f64 / 3.0).asin() }
 
 #[test]
 fn a_roll_through_a_body_ends_just_past_where_the_tool_clears_it() {
-    let e = read(&balls("(3, 0, 0)", "under: turn, through: part"));
+    let e = read(&balls("(3, 0, 0)", "under: turn"));
     let removal = crate::common::ent(&e, "removal").i();
     let SolidDef::Swept { roll: Roll::Through { body }, .. } = &e.sketch.solids[removal].def else {
         panic!("a sweep through a body")
@@ -82,7 +83,7 @@ fn a_roll_through_a_body_ends_just_past_where_the_tool_clears_it() {
 #[test]
 fn every_reader_reads_one_roll() {
     use gcs_core::interval::{minimum::Options, Interval as I};
-    let e = read(&balls("(3, 0, 0)", "under: turn, through: part"));
+    let e = read(&balls("(3, 0, 0)", "under: turn"));
     let removal = crate::common::ent(&e, "removal").i();
     let roll = solid::roll::interval(&e.sketch, removal).unwrap();
     let contacts = solid::SweepContacts::read(&e.sketch, removal, 1e-10).unwrap();
@@ -106,30 +107,32 @@ fn every_reader_reads_one_roll() {
 /// A tool that does not meet the body at 0, or one never clear of it, is refused naming why.
 #[test]
 fn a_roll_with_no_engagement_about_0_is_refused() {
-    let e = read(&balls("(-3, 0, 0)", "under: turn, through: part"));
+    let e = read(&balls("(-3, 0, 0)", "under: turn"));
     let removal = crate::common::ent(&e, "removal").i();
     let why = solid::roll::interval(&e.sketch, removal).unwrap_err();
     assert!(why.contains("`removal` rolls through `part`") && why.contains("does not meet it at 0"), "{why}");
     // a ball on the axis is never clear of a body it starts in
-    let e = read(&balls("(3, 0, 0)", "under: turn, through: part").replace("fix((3, 0, 0)) tool_c",
+    let e = read(&balls("(3, 0, 0)", "under: turn").replace("fix((3, 0, 0)) tool_c",
         "fix((0, 0, 0)) tool_c").replace("stock := std.sets.Sphere(blank_c, r: 1mm)", "stock := std.sets.Sphere(blank_c, r: 4mm)"));
     let why = solid::roll::interval(&e.sketch, crate::common::ent(&e, "removal").i()).unwrap_err();
     assert!(why.contains("not clear of it within two turns"), "{why}");
 }
 
-/// `through:` beside a stated roll is no sweep, it names a solid, and a body made of the sweep
-/// that rolls through it is E041.
+/// The retired `sweep(tool, through: body, under: m)` is refused naming the set it says, a roll
+/// cut from what is no solid is refused, and a body made of the sweep that rolls through it is
+/// E041.
 #[test]
 fn through_is_a_roll_of_its_own() {
-    let mixed = balls("(3, 0, 0)", "under: turn, through: part, from: 0deg, to: 10deg");
-    let (_, errors) = syntax::parse(&mixed);
-    assert!(errors.iter().any(|d| d.message.contains("a sweep takes its tool over an interval of \
-        the roll")), "{errors:?}");
-    // the roll names a solid
-    crate::common::refused(&balls("(3, 0, 0)", "under: turn, through: spindle"), "E080",
-        "`through:` requires a solid", "spindle");
+    let retired = balls("(3, 0, 0)", "under: turn").replace(
+        "solid({ p | p inside(under: turn) tool })", "sweep(tool, through: part, under: turn)");
+    let (_, errors) = syntax::parse(&retired);
+    assert!(errors.iter().any(|d| d.message.contains("`sweep(…)` is retired")
+        && d.message.contains("`solid({ p | p inside(under: turn) tool })`")), "{errors:?}");
+    // the roll is cut from a solid
+    crate::common::refused(&balls("(3, 0, 0)", "under: turn").replace("removal cut part",
+        "removal cut spindle"), "E080", "relates solids", "removal cut spindle");
     // a body made of the sweep that rolls through it
-    let cycle = balls("(3, 0, 0)", "under: turn, through: part").replace("part := solid(blank)\nremoval cut part\n",
+    let cycle = balls("(3, 0, 0)", "under: turn").replace("part := solid(blank)\n",
         "part := solid(removal)\n");
     let (prog, errs, _) = gcs_core::library::parse_linked(&cycle);
     assert!(errs.is_empty(), "{errs:?}");
@@ -141,7 +144,7 @@ fn through_is_a_roll_of_its_own() {
 /// Printed as written, and read back to the same roll.
 #[test]
 fn a_roll_through_prints_as_written() {
-    let src = balls("(3, 0, 0)", "under: turn, through: part");
+    let src = balls("(3, 0, 0)", "under: turn");
     let (p, errors) = syntax::parse(&src);
     assert!(errors.is_empty(), "{errors:?}");
     let stmt = p.root().body.iter()

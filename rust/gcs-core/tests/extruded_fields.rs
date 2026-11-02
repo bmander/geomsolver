@@ -233,7 +233,9 @@ fn through_bore_cut_agrees_with_the_faceted_kernel() {
     assert!(lo <= 8. && hi >= 8. && hi-lo < 1e-9,"the bore is void to its wall: {lo} {hi}");
     assert!(value(&body,[45.,15.,20.])[1] < 0.,"beside the bore is material");
     sign_agrees(&body,|p| boxed(p,60.,40.,30.).max(8.-(p[0]-30.).hypot(p[2]-20.)),&points);
-    let explicit = read(&format!("{BLOCK}{}",BORE.replace("through: body","from: -31mm, to: 1mm")));
+    assert!(BORE.contains("std.solids.Through(hole_f)"));
+    let explicit = read(&format!("{BLOCK}{}",BORE.replace("std.solids.Through(hole_f)",
+        "std.solids.Prism(hole_f, from: -31mm, to: 1mm)")));
     agrees_with_facets(&explicit,"body",&points,0.05);
 }
 

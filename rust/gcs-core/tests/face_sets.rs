@@ -27,20 +27,22 @@ fn solved(src: &str) -> Elaborated {
 }
 
 /// A point put on a cap stands at the cap's ordinate along the profile's normal (−y here):
-/// `depth: d` runs from −d to 0, so `far` is behind the profile and `near` is on it.
+/// `from: -d, to: 0` runs behind the profile, so `far` is behind it and `near` is on it.
 #[test]
 fn a_point_on_a_cap_stands_at_its_ordinate() {
     let y = |sweep: &str, face: &str| {
-        let e = solved(&format!("b0 := solid(f0, {sweep})\nm := point hint((5, 3, 5))\n\
+        let e = solved(&format!("b0 := solid(std.solids.Prism(f0, {sweep}))\n\
+                                 m := point hint((5, 3, 5))\n\
                                  m coincident b0.{face}.surface\n"));
         at(&e, "m")[1]
     };
-    assert!((y("depth: 20", "far") - 20.0).abs() < 1e-9);
-    assert!(y("depth: 20", "near").abs() < 1e-9);
+    assert!((y("from: -20, to: 0", "far") - 20.0).abs() < 1e-9);
+    assert!(y("from: -20, to: 0", "near").abs() < 1e-9);
     assert!((y("from: 5, to: 25", "near") + 25.0).abs() < 1e-9);
     assert!((y("from: 5, to: 25", "far") + 5.0).abs() < 1e-9);
-    // the ends written the other way round are still the nearer and the farther
-    assert!((y("from: 25, to: 5", "near") + 25.0).abs() < 1e-9);
+    // the ends written the other way round say no point at all: the prism's set is empty (#737)
+    let reversed = "b0 := solid(std.solids.Prism(f0, from: 25, to: 5))";
+    refused(&format!("{PROFILE}{reversed}\n"), "E080", "the prism's set is empty", reversed);
 }
 
 /// The carrier is written over the solid's own extent, so editing it moves what stands on it.

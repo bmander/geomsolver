@@ -53,14 +53,14 @@ fn an_unbuildable_operand_is_said_once_and_each_round_on_it_once() {
         assert_eq!(diags.len(), 1 + rounds, "{rounds} rounds: {diags:#?}");
         // the operand's own words, where the operand is
         let root = &diags[0];
-        assert_eq!((root.code, lines[0]), (Code::E080, 19), "{root:?}");
+        assert_eq!((root.code, lines[0]), (Code::E080, 20), "{root:?}");
         assert!(root.message.starts_with("`slot`: a draft of `8deg` takes the side"), "{root:?}");
         // each round once, at its own line, pointing back at the operand
         for (k, d) in diags.iter().enumerate().skip(1) {
             let at = (d.code, d.severity(), lines[k]);
-            assert_eq!(at, (Code::N080, Severity::Note, 20 + k as u32));
+            assert_eq!(at, (Code::N080, Severity::Note, 21 + k as u32));
             assert_eq!(d.cause, Some(root.span), "{d:?}");
-            assert_eq!(d.message, "not built: it is built on `body`, made of `slot` (19:1), which \
+            assert_eq!(d.message, "not built: it is built on `body`, made of `slot` (20:1), which \
                 could not be built");
         }
     }

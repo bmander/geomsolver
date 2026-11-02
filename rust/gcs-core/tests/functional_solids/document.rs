@@ -181,11 +181,11 @@ fn declarative_bevel_blank_reads_without_gear_names_or_coordinate_adapters() {
 
 #[test]
 fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
-    let e = read(&SPHERE.replace("about: ax)","about: ax,sweep: 90deg)"));
+    let e = read(&SPHERE.replace("about: ax)","about: ax, to: 90deg)"));
     assert!(SpatialField::read(&e.sketch,0,1e-10).unwrap_err().contains("full revolution"));
     assert!(SpatialField::read(&e.sketch,999,1e-10).is_err());
     // The same half disc extruded 2 behind the page is a prism on x >= 3, y in [0, 2].
-    let e = read(&SPHERE.replace("about: ax)","depth: 2)"));
+    let e = read(&SPHERE.replace("Revolution(face(rim,ax), about: ax)","Prism(face(rim,ax), from: -2, to: 0)"));
     let half = SpatialField::read(&e.sketch,0,1e-10).unwrap();
     for (p,inside) in [([3.5,1.,0.],true),([2.5,1.,0.],false),([3.5,3.,0.],false),([3.9,0.5,0.],true)] {
         let got = half.bounds(point(p)).unwrap().bounds();

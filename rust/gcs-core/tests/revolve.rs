@@ -50,13 +50,13 @@ fn a_face_turns_about_an_axis_in_its_own_plane() {
     let cases = [
         ("about: std.z", 12.0, 2.0 * PI),
         ("about: std.x", 4.0, 2.0 * PI),
-        ("about: std.z, sweep: 90deg", 12.0, PI / 2.0),
-        ("about: std.z, sweep: 90deg, sense: cw", 12.0, PI / 2.0),
+        ("about: std.z, to: 90deg", 12.0, PI / 2.0),
+        ("about: std.z, from: -90deg, to: 0deg", 12.0, PI / 2.0),
         ("about: up", 8.0, 2.0 * PI),
     ];
     for (how, r, turn) in cases {
         let src = format!("{DRAWN}up := axis\nfix(dir == (0, 0, 1), origin == (20, 0, 0)) up\n\
-            ring := solid(face(ab, bc, cd, da), {how})\n");
+            ring := solid(std.solids.Revolution(face(ab, bc, cd, da), {how}))\n");
         let e = build(&src);
         // faceted about the axis: the volume is good to the report's sagitta
         assert!(near(volume(&e, "ring"), pappus(r, turn), 2e-3), "{how}: {}", volume(&e, "ring"));
@@ -141,22 +141,24 @@ fn an_axis_off_the_plane_or_a_missing_one_refuses_the_gesture() {
 #[test]
 fn a_turn_is_resized_in_place_keeping_its_axis() {
     let ring_in =
-        |how: &str| build(&format!("{DRAWN}ring := solid(face(ab, bc, cd, da), {how})\n"));
+        |how: &str| build(&format!("{DRAWN}ring := solid(std.solids.Revolution(face(ab, bc, cd, \
+                                    da), {how}))\n"));
     // a number is signed, a whole turn is written as none; an expression keeps the way it turns
     let cases = [
-        ("about: std.z", "90", "about: std.z, sweep: 90", PI / 2.0),
-        ("about: std.z", "-90", "about: std.z, sweep: 90, sense: cw", PI / 2.0),
-        ("about: std.z", "-360", "about: std.z, sense: cw", 2.0 * PI),
-        ("about: std.z, sense: cw", "400", "about: std.z", 2.0 * PI),
-        ("about: std.z, sense: cw", "45deg * 2", "about: std.z, sweep: 45deg * 2, sense: cw",
-            PI / 2.0),
+        ("about: std.z", "90", "about: std.z, to: 90", PI / 2.0),
+        ("about: std.z", "-90", "about: std.z, from: -90, to: 0deg", PI / 2.0),
+        ("about: std.z", "-360", "about: std.z, from: -360deg, to: 0deg", 2.0 * PI),
+        ("about: std.z, from: -360deg, to: 0deg", "400", "about: std.z", 2.0 * PI),
+        ("about: std.z, from: -360deg, to: 0deg", "45deg * 2",
+            "about: std.z, from: -(45deg * 2), to: 0deg", PI / 2.0),
     ];
     for (was, angle, said, turn) in cases {
         let e = ring_in(was);
         let ring = e.map.ent_named("ring").unwrap().i();
         let out = edit::set_turn(&e, &e.program, ring, angle);
         assert_eq!(out.refused, None, "{said}");
-        assert!(out.text.contains(&format!("ring := solid(face(ab, bc, cd, da), {said})\n")),
+        assert!(out.text.contains(&format!("ring := solid(std.solids.Revolution(face(ab, bc, cd, \
+                                            da), {said}))\n")),
             "{}", out.text);
         assert!(near(volume(&build(&out.text), "ring"), pappus(12.0, turn), 2e-3), "{said}");
     }
@@ -189,7 +191,7 @@ fn a_revolution_previews_a_new_turn_before_the_source_says_it() {
 #[test]
 fn the_handle_runs_round_the_arc_and_reads_a_drag_back() {
     let mut e = build(&format!("{DRAWN}ring := solid(std.solids.Revolution(face(ab, bc, cd, da), \
-        sweep: 90deg, about: std.z))\n"));
+        about: std.z, to: 90deg))\n"));
     let ring = e.map.ent_named("ring").unwrap().i();
     let (az, el) = (0.6, 0.5);
     let proj = Projection::new(&e.sketch, az, el);
@@ -207,7 +209,8 @@ fn the_handle_runs_round_the_arc_and_reads_a_drag_back() {
     assert!((at([0.0, -12.0, 4.0], -80.0) + 90.0).abs() < 1e-9);
     assert!((at([0.0, -12.0, 4.0], 250.0) - 270.0).abs() < 1e-9);
     assert!((at([12.0, 0.0, 4.0], 700.0) - 360.0).abs() < 1e-9);
-    // `sense: cw` turns it the other way, and the handle says so
+    // a turn below nothing, `from: -90deg, to: 0deg`, turns it the other way, and the handle
+    // says so
     assert!(e.sketch.set_turn(ring, -90.0));
     let h = turn_handle(&e.sketch, &proj, ring).unwrap();
     assert!(close(h.tip.unwrap(), seen([0.0, -12.0, 4.0], az, el)) && (h.turn + 90.0).abs() < 1e-9);

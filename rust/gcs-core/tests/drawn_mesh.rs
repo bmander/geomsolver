@@ -38,7 +38,7 @@ in std.front {{
 
 /// The rounded plate of `rect_fillets.sv`, 10 deep.
 fn rounded() -> String {
-    include_str!("../../examples/rect_fillets.sv").to_string()
+    include_str!("../../examples/rect_fillets.sv").replacen("\nuse std\n", "\nuse std\nuse std.solids\n", 1)
         + "\nin std.front {\n  body := solid(std.solids.Prism(face(bottom, a_br, right, a_tr, top, a_tl, left, a_bl), from: 0, to: 10))\n}\n"
 }
 

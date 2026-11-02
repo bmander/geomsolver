@@ -1,5 +1,6 @@
 unit mm
 use std
+use std.solids
 front := plane hint(origin: (100000000, 0, 100000000))
 fix(origin == (100000000, 0, 100000000)) front
 fix(dir == (1, 0, 0)) front.u
@@ -13,5 +14,5 @@ fix((10, 10)) resultfp2
 resultfp3 := point in front
 fix((0, 10)) resultfp3
 resultf := face(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
-result := solid(resultf, from: -1mm, to: 0mm)
+result := solid(std.solids.Prism(resultf, from: -1mm, to: 0mm))
 view(result) in front

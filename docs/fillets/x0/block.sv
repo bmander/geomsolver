@@ -47,7 +47,7 @@ block := solid(std.solids.Prism(outline, from: -12mm, to: 0))
 round(3mm) block
 
 plate := solid(std.solids.Prism(top, from: -10mm, to: 0))
-pocket := solid(std.solids.Prism(mouth, from: 1mm, to: -6mm))
+pocket := solid(std.solids.Prism(mouth, from: -6mm, to: 1mm))
 tray := solid(plate)
 pocket cut tray
 // Every edge among the pocket's faces: its floor's four and its four upright corners, concave,

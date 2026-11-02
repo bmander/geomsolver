@@ -446,7 +446,6 @@ fn a_sweep_the_field_cannot_read_is_said_at_its_statement() {
     let mut e = crate::common::build("\
 unit mm
 use std
-use std.solids
 use std.place (vertical)
 use std.stations
 use std.motion (turns)
@@ -483,12 +482,13 @@ space := solid({ p | p inside(under: turn, over t in (0deg, 90deg)) pyramid })
 /// pitch line shifted +0.3 m) rolled across the blank on the pitch circle, from clear of the tip to
 /// clear of it; `cuts` cuts `space` (or its copies about the spindle) from `gear`.
 fn pinion(cuts: &str) -> String {
-    rolled_pinion("0.8mm", "tooth over t in (-window, window)", cuts)
+    rolled_pinion("0.8mm", ", over t in (-window, window)", cuts)
 }
 
-/// `pinion`, of module `m`, its `space` swept as
-/// `sweep({tool}, under: rack, seen_from: blank_turn)`.
-fn rolled_pinion(m: &str, tool: &str, cuts: &str) -> String {
+/// `pinion`, of module `m`, its `space` the tooth swept as
+/// `solid({ p | p inside(under: rack, seen_from: blank_turn{over}) tooth })` — `over` the roll's
+/// interval, `, over t in (a, b)`, or nothing for the roll through the body it is cut from.
+fn rolled_pinion(m: &str, over: &str, cuts: &str) -> String {
     format!("\
 unit mm
 use std
@@ -535,7 +535,7 @@ rack := frame
 rack slides(2 * pi * R) rack_line
 index := frame
 index turns(1) spindle
-space := sweep({tool}, under: rack, seen_from: blank_turn)
+space := solid({{ p | p inside(under: rack, seen_from: blank_turn{over}) tooth }})
 gear := solid(std.solids.Prism(face(tip, holes: hole), from: 0mm, to: 5mm))
 {cuts}
 ")
@@ -568,7 +568,7 @@ fn a_tooth_space_cut_at_a_turned_copy_is_the_space_turned() {
 /// The contact is the held flank's end however far the test finds it.  Over 60° the contact reaches
 /// the tooth's back corner 0.06° before the roll ends, and the held flank is kept from that corner
 /// a hair as long, 13.6 µm, joined to nothing: a spur, however far the test keeps it.  A cut over
-/// 56°, over 60°, and over the roll found `through:` the blank remove what the generous stated
+/// 56°, over 60°, and over the roll found through the blank remove what the generous stated
 /// window does.
 #[test]
 fn a_roll_ending_where_the_flank_grazes_its_held_edge_closes() {
@@ -576,14 +576,13 @@ fn a_roll_ending_where_the_flank_grazes_its_held_edge_closes() {
     // the tip circle's radius is 9 + 0.45 + 1.5 mm, the hole's 1 mm, the blank 5 mm thick
     let blank = PI * (10.95 * 10.95 - 1.) * 5.;
     let removed =
-        |tool: &str| blank - cut_body(&rolled_pinion("1.5mm", tool, turned), "gear", None);
-    let generous = removed("tooth over t in (-window, window)");
+        |over: &str| blank - cut_body(&rolled_pinion("1.5mm", over, turned), "gear", None);
+    let generous = removed(", over t in (-window, window)");
     assert!(generous > 10., "the space removes {generous:.5} mm³");
-    for tool in ["tooth over t in (-56deg, 56deg)", "tooth over t in (-60deg, 60deg)",
-                 "tooth, through: gear"] {
-        let r = removed(tool);
+    for over in [", over t in (-56deg, 56deg)", ", over t in (-60deg, 60deg)", ""] {
+        let r = removed(over);
         assert!((r - generous).abs() < 1e-4 * generous,
-                "`{tool}` removes {r:.6} mm³, the stated window {generous:.6}");
+                "`{over}` removes {r:.6} mm³, the stated window {generous:.6}");
     }
 }
 

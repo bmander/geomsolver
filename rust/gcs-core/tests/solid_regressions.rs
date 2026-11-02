@@ -195,27 +195,37 @@ fn acyclic_body_nesting_has_no_fake_cycle_or_empty_term_limit() {
     );
 }
 
+/// `depth:` is retired (#737), refused naming the prism it says — its ordinates the depth's
+/// negation and 0, as written — and a prism between two ordinates that are one, even as an
+/// expression, is swept nowhere.
 #[test]
-fn depth_is_a_positive_magnitude_even_when_it_is_an_expression() {
-    for depth in ["-5mm", "2mm - 7mm", "0mm"] {
-        let (p, _) = crate::common::parse(&source(12).replace("-5mm", depth));
-        let e = program::elaborate(&p);
-        assert!(
-            e.errors().any(|d| d.message.contains("positive magnitude")),
-            "{:?}",
-            e.diags
-        );
+fn a_depth_is_retired_naming_its_prism_and_a_prism_swept_nowhere_is_refused() {
+    let base = source(12);
+    let word = "std.solids.Prism(f, from: 5mm, to: 0)";
+    assert!(base.contains(word));
+    for (depth, from) in [("-5mm", "5mm"), ("2mm - 7mm", "-(2mm - 7mm)"), ("0mm", "-0mm")] {
+        let (_, errs) = crate::common::parse(&base.replace(word, &format!("f, depth: {depth}")));
+        let want = format!("write `solid(std.solids.Prism(f, from: {from}, to: 0))`");
+        assert!(errs.iter().any(|e| e.message.contains(&want)), "{want}: {errs:?}");
     }
     near(
-        positions(&source(12).replace("depth: -5mm", "from: 0mm, to: 5mm"))["result.volume"],
+        positions(&base.replace(word, "std.solids.Prism(f, from: 0mm, to: 5mm)"))["result.volume"],
         500.0,
         1e-12,
     );
-    let src = source(12)
-        .replace("unit mm", "unit mm\nd := -5mm")
-        .replace("depth: -5mm", "depth: d");
-    let (p, _) = crate::common::parse(&src);
-    assert!(!program::elaborate(&p).ok());
+    for src in [base.replace(word, "std.solids.Prism(f, from: 0mm, to: 0mm)"),
+                base.replace("unit mm", "unit mm\nd := 2mm - 2mm")
+                    .replace(word, "std.solids.Prism(f, from: 0mm, to: d)")] {
+        let (p, errs) = crate::common::parse(&src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let e = program::elaborate(&p);
+        assert!(e.errors().any(|d| d.message.contains("swept nowhere")), "{src}\n{:?}", e.diags);
+    }
+    // and the ordinates the other way round, `depth: -5mm` as it was, say an empty set
+    let (p, errs) = crate::common::parse(&base);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = program::elaborate(&p);
+    assert!(e.errors().any(|d| d.message.contains("the prism's set is empty")), "{:?}", e.diags);
 }
 
 #[test]
