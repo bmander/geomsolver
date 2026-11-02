@@ -51,6 +51,7 @@ fn a_pierced_spheres_two_rims_are_found_and_followed() {
 const BLOCK: &str = "\
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 use std.shapes
 in std.front {
@@ -59,7 +60,7 @@ std.origin vertical mid
 std.origin distance(6mm, along: down) mid
 private outline := std.shapes.CenteredRectangle(mid, w: 40mm, h: 12mm)
 }
-block := solid(outline.loop, from: -20mm, to: 20mm)
+block := solid(std.solids.Prism(outline.loop, from: -20mm, to: 20mm))
 ";
 
 #[test]

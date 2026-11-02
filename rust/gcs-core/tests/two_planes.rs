@@ -13,7 +13,7 @@ use crate::common::{ent, read, refused, text::solved};
 
 /// The top plane and a plane `G` square to it along the x axis: they meet on that axis.
 const FOLDED: &str =
-    "unit mm\nuse std\nG := plane(u: std.x, v: std.z)\nfix(origin == (0, 0, 0)) G\n";
+    "unit mm\nuse std\nuse std.solids\nG := plane(u: std.x, v: std.z)\nfix(origin == (0, 0, 0)) G\n";
 
 fn kinds(e: &Elaborated) -> Vec<CKind> {
     e.sketch.user_constraints().iter().map(|c| c.kind).collect()
@@ -55,7 +55,7 @@ fn a_solid_in_the_second_plane_turns_about_a_line_through_it() {
          T := point hint((0, 20))\n  a := point hint((5, 2))\n  c := point hint((10, 2))\n  \
          h := point hint((10, 12))\n  ax := line(O, T)\n}}\nfix((0, 20)) T\nfix((5, 2)) a\n\
          fix((10, 2)) c\nfix((10, 12)) h\nf := face(a, c, h, -> close)\n\
-         ring := solid(f, about: ax)\n"
+         ring := solid(std.solids.Revolution(f, about: ax))\n"
     ));
     assert_eq!(e.sketch.solids.len(), 1);
 }
@@ -66,7 +66,7 @@ fn a_solid_in_the_second_plane_turns_about_a_line_through_it() {
 /// east along the dial and one toward the noon sun, both from the dial's centre).
 #[test]
 fn a_plane_on_two_lines_through_the_point_stands_at_it_once() {
-    let src = "unit mm\nuse std\nO := point in std.top, std.side\nfix(y == 0) O\n\
+    let src = "unit mm\nuse std\nuse std.solids\nO := point in std.top, std.side\nfix(y == 0) O\n\
                in std.side {\n  T := point hint((40, 50))\n  style := line(O, T)\n}\n\
                fix((40, 50)) T\nS := point hint((-20, -30, 30))\nfix((-20, -30, 30)) S\n\
                ray := line(O, S)\nH := plane(u: style, v: ray)\n";
@@ -120,12 +120,12 @@ fn a_plane_built_through_the_point_says_nothing_more() {
     let folded = "F := plane(u: gen, v: hint(dir: (0, 0, -1)))\nstd.top perpendicular F.v\n\
                   std.top.origin project F.origin\n";
     let on = format!(
-        "unit mm\nuse std\nin std.top {{\n  o := point hint((0, 0))\n  M := point hint((40, 0))\n  \
+        "unit mm\nuse std\nuse std.solids\nin std.top {{\n  o := point hint((0, 0))\n  M := point hint((40, 0))\n  \
          gen := line(o, M)\n}}\nfix((0, 0)) o\nfix((40, 0)) M\n{folded}\
          O := point hint((20, 0)) in std.top, F\nO distance(15) M\nO coincident gen\n"
     );
     let end = format!(
-        "unit mm\nuse std\no := point hint((0, 0)) in std.top\nfix((0, 0)) o\n\
+        "unit mm\nuse std\nuse std.solids\no := point hint((0, 0)) in std.top\nfix((0, 0)) o\n\
          O := point hint((40, 0)) in std.top, F\nfix((40, 0)) O\ngen := line(o, O)\n{folded}"
     );
     for text in [on, end] {
@@ -315,7 +315,7 @@ fn a_point_its_instance_puts_in_a_view_keeps_the_row() {
 /// A plane the solve turns — `n.v` along a line to a point in space, which nothing places before
 /// the solve — so its seed, the front's attitude, says nothing about where it stands.
 fn turned(axis: &str) -> String {
-    format!("unit mm\nuse std\nq := point hint(x: 0, y: 5, z: 1)\nq coincident std.{axis}\n\
+    format!("unit mm\nuse std\nuse std.solids\nq := point hint(x: 0, y: 5, z: 1)\nq coincident std.{axis}\n\
              std.origin distance(5mm) q\nn := plane\nn.origin coincident std.origin\n\
              n.u parallel std.x\nn.v parallel (l := line(std.origin, q))\n\
              O := point hint((5, 0)) in n, std.front\nstd.origin distance(5mm, along: std.x) O\n")

@@ -25,7 +25,7 @@ await initCore();
 
 /** A component instance, a ring, an object made of two features and `use std` — the core's gate
  *  document (`tests/outline.rs`). */
-const DOC = 'unit mm\nuse std\n'
+const DOC = 'unit mm\nuse std\nuse std.solids\n'
   + 'component Pin(c: point) {\n  q := point hint((3, 0))\n  c distance(3) q\n  arm := line(c, q)\n'
   + '  horizontal arm\n}\n'
   + 'in std.front {\n  hub := point\n  fix((0, 0)) hub\n'
@@ -34,7 +34,7 @@ const DOC = 'unit mm\nuse std\n'
   + '  pin := Pin(hub)\n  o := point hint((40, 0))\n  fix((40, 0)) o\n'
   + '  rim := circle(center: o) hint(r: 20)\n  h := circle(center: o) hint(r: 5)\n  line(o, hub)\n'
   + '  seg := line(hint((0, -30)), hint((10, -30)))\n}\n'
-  + 'stock := solid(face(rim), depth: 8)\nbore := solid(face(h), depth: 8)\nbore cut stock\n';
+  + 'stock := solid(std.solids.Prism(face(rim), from: -8, to: 0))\nbore := solid(std.solids.Prism(face(h), from: -8, to: 0))\nbore cut stock\n';
 
 /** What the row carried by `path` made — by the outline's own name for it, `tip[1]` for a copy
  *  of a ring's, which the source map files as `#9.1.tip`. */

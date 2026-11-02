@@ -3,6 +3,7 @@
 // Keep `tube` below `ring`, so the torus has a hole.
 unit mm
 use std
+use std.solids
 use std.place (right_of)
 
 ring := 20mm       // from the axis to the tube's centre
@@ -16,4 +17,4 @@ in std.front {
   private section := circle(center: centre) hint(r: tube)
   radius(tube) section
 }
-torus := solid(face(section), about: spine)
+torus := solid(std.solids.Revolution(face(section), about: spine))

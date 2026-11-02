@@ -6,6 +6,7 @@
 // off the geometry: the root is concave, the top edges convex. Nothing says `union` or `cut`.
 unit mm
 use std
+use std.solids
 width := 60mm
 depth := 40mm
 thickness := 10mm
@@ -36,9 +37,9 @@ in std.front {
   radius(bore_radius) hole
 }
 
-plate := solid(outline.profile, depth: thickness)
-boss := solid(face(rim), from: 0mm, to: boss_height)
-bore := solid(face(hole), from: -thickness, to: boss_height)
+plate := solid(std.solids.Prism(outline.profile, from: -thickness, to: 0))
+boss := solid(std.solids.Prism(face(rim), from: 0mm, to: boss_height))
+bore := solid(std.solids.Prism(face(hole), from: -thickness, to: boss_height))
 pad := solid(plate)
 boss union pad
 bore cut pad

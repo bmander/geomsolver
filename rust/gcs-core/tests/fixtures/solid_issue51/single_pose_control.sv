@@ -1,5 +1,6 @@
 unit mm
 use std
+use std.solids
 param reach: Length
 in std.front {
   o := point
@@ -18,7 +19,7 @@ in std.front {
   resultfp3 := point
   fix((0, 1)) resultfp3
   resultf := face(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
-  result := solid(resultf, from: -1mm, to: 0mm)
+  result := solid(std.solids.Prism(resultf, from: -1mm, to: 0mm))
   otherfp0 := point
   fix((5, 0)) otherfp0
   otherfp1 := point
@@ -28,6 +29,6 @@ in std.front {
   otherfp3 := point
   fix((5, 1)) otherfp3
   otherf := face(otherfp0, otherfp1, otherfp2, otherfp3, -> close)
-  other := solid(otherf, from: -1mm, to: 0mm)
+  other := solid(std.solids.Prism(otherf, from: -1mm, to: 0mm))
   claim result clear(1mm) other
 }

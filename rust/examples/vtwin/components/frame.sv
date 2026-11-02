@@ -2,6 +2,7 @@
 // exhaust vents, and inlet hardware. One printed part, printed foot down.
 
 use std
+use std.solids
 use std.place (horizontal)
 use hardware (mplug_body_d, mplug_body_l, mplug_nose_d, mplug_nose_l)
 use components.dims (H, Ty, V, a, alphaL, alphaR, beta, boss, bossh, bossw, bossz, brgpocket, cpl,
@@ -78,11 +79,11 @@ component FrameBlank(o: point) {
   bcirc := circle(center: o) hint(r: rbrg + 3mm)
   radius(rbrg + 3mm) bcirc
 
-  stock := solid(face(bottom, edge_r, cham_r, topline, cham_l, edge_l), from: zb, to: zf)
-  foot := solid(ft.profile, from: zb - footd, to: zb)
-  bboss := solid(face(bcirc), from: zbb, to: zb)
-  bpkt := solid(face(bp), from: zbb, to: zpkt)
-  shaft := solid(face(sh), from: zpkt, to: zf)
+  stock := solid(std.solids.Prism(face(bottom, edge_r, cham_r, topline, cham_l, edge_l), from: zb, to: zf))
+  foot := solid(std.solids.Prism(ft.profile, from: zb - footd, to: zb))
+  bboss := solid(std.solids.Prism(face(bcirc), from: zbb, to: zb))
+  bpkt := solid(std.solids.Prism(face(bp), from: zbb, to: zpkt))
+  shaft := solid(std.solids.Prism(face(sh), from: zpkt, to: zf))
 }
 
 // A radial feed from the inset plenum to an intake port. The datum points from
@@ -93,7 +94,7 @@ component IntakePassage(f: group) {
   b := point hint(at: f.axes, (rpl, -wch / 2))
   c := point hint(at: f.axes, (rpl, wch / 2))
   d := point hint(at: f.axes, (rman, wch / 2))
-  body := solid(face(a, b, c, d, -> close), from: -wch / 2, to: wch / 2)
+  body := solid(std.solids.Prism(face(a, b, c, d, -> close), from: -wch / 2, to: wch / 2))
   ab := line(a, b)
   bc := line(b, c)
   cd := line(c, d)
@@ -137,7 +138,7 @@ component IntakeManifold(o: point, right: line, left: line) {
   o distance(>= 0, along: left) co0
   o distance(>= 0, along: right) co1
   claim radius(rman + wch / 2) ch_out
-  plenum := solid(face(ch_in, co1, ch_out, ci0), from: -wch / 2, to: wch / 2)
+  plenum := solid(std.solids.Prism(face(ch_in, co1, ch_out, ci0), from: -wch / 2, to: wch / 2))
   // what the frame cuts besides the plenum: each bank's feed
   feeds := {r: feedR.body, l: feedL.body}
 }
@@ -152,7 +153,7 @@ component ExhaustPassage(opening: point, boundary: line) {
   b := components.parts.At(outlet, dx: 0mm, dy: wch / 2)
   c := components.parts.At(outlet, dx: 0mm, dy: -wch / 2)
   d := components.parts.At(opening, dx: 0mm, dy: -wch / 2)
-  body := solid(face(a.p, b.p, c.p, d.p, -> close), from: -wch / 2, to: wch / 2)
+  body := solid(std.solids.Prism(face(a.p, b.p, c.p, d.p, -> close), from: -wch / 2, to: wch / 2))
 }
 
 // Inlet boss, coupling, plug outline, and the passage through the throttle bore.
@@ -184,10 +185,10 @@ component FrameInlet(o: point) {
   cph1 := components.parts.At(o, dx: 0mm, dy: bossh)
   cpax := line(cph0.p, cph1.p)
 
-  iboss := solid(boss.profile, from: -bossz / 2, to: bossz / 2)
-  passage_s := solid(passage.profile, from: -wch / 2, to: wch / 2)
-  cplh := solid(face(cph0.p, cph1.p, cplh.c, cplh.b, -> close), about: cpax)
-  tbore_s := solid(face(tbore), from: -bossz / 2, to: bossz / 2)
+  iboss := solid(std.solids.Prism(boss.profile, from: -bossz / 2, to: bossz / 2))
+  passage_s := solid(std.solids.Prism(passage.profile, from: -wch / 2, to: wch / 2))
+  cplh := solid(std.solids.Revolution(face(cph0.p, cph1.p, cplh.c, cplh.b, -> close), about: cpax))
+  tbore_s := solid(std.solids.Prism(face(tbore), from: -bossz / 2, to: bossz / 2))
 }
 
 // One mid-plane section supplies all solids. The part sheet chooses the projections.
@@ -210,13 +211,13 @@ component Frame(o: point, ref: line) {
   pivots := {r: r.piv, l: l.piv}
   thr := components.throttle.Throttle(inlet.tbore.center, ref, phi: throttle)
 
-  boltR := solid(face(r.bolt), from: zb, to: zf)
-  boltL := solid(face(l.bolt), from: zb, to: zf)
+  boltR := solid(std.solids.Prism(face(r.bolt), from: zb, to: zf))
+  boltL := solid(std.solids.Prism(face(l.bolt), from: zb, to: zf))
   // Intakes reach the plenum; exhausts reach the mid-plane vents.
-  portRi := solid(face(r.intake), from: zch0, to: zf)
-  portLi := solid(face(l.intake), from: zch0, to: zf)
-  portRe := solid(face(r.exhaust), from: 0mm, to: zf)
-  portLe := solid(face(l.exhaust), from: 0mm, to: zf)
+  portRi := solid(std.solids.Prism(face(r.intake), from: zch0, to: zf))
+  portLi := solid(std.solids.Prism(face(l.intake), from: zch0, to: zf))
+  portRe := solid(std.solids.Prism(face(r.exhaust), from: 0mm, to: zf))
+  portLe := solid(std.solids.Prism(face(l.exhaust), from: 0mm, to: zf))
 
   body := solid(blank.stock)
   blank.foot union body

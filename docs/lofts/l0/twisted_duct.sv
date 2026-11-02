@@ -46,6 +46,6 @@ in std.top {
   length(length) guide
 }
 param s: Scalar over (0, 1)
-duct := sweep(TwistedSquare(guide, std.z, square, o, x, twist: 90deg).f over s)
+duct := solid({ p | p coincident(over s) TwistedSquare(guide, std.z, square, o, x, twist: 90deg).f })
 // Three and a half turns: no pairing can say this.
-auger := sweep(TwistedSquare(guide, std.z, square, o, x, twist: 1260deg).f over s)
+auger := solid({ p | p coincident(over s) TwistedSquare(guide, std.z, square, o, x, twist: 1260deg).f })

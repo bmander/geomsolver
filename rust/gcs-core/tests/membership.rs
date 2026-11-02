@@ -138,9 +138,9 @@ fn a_written_pose_keeps_the_point_in_its_plane() {
 /// on it and a disc swept from it.
 fn disc(circle: &str) -> String {
     format!(
-        "unit mm\nuse std\nuse std.sets\no := point in std.front\nfix((0, 0)) o\n{circle}\n\
+        "unit mm\nuse std\nuse std.solids\nuse std.sets\no := point in std.front\nfix((0, 0)) o\n{circle}\n\
          q := point hint((20, 10)) in std.front\nq coincident k\n\
-         f := face(k)\ndisc := solid(f, depth: 4mm)\n"
+         f := face(k)\ndisc := solid(std.solids.Prism(f, from: -4mm, to: 0))\n"
     )
 }
 

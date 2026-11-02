@@ -6,6 +6,7 @@
 use engine.dims (rb, rn, stem)
 use engine.parts
 use std
+use std.solids
 
 // a valve's own sizes: its stem, the margin round its head and the seat face's width at 45°, the
 // neck where the head's tulip meets the stem, and the bucket — its radius and depth, the follower's
@@ -142,7 +143,7 @@ component Poppet(v: group) {
   m4 distance(stem - crown, side: left) v.hd
   m5 coincident v.ax
   m5 distance(stem - crown, side: left) v.hd
-  valve := solid(face(v.hc, v.h1, m1, m2, m3, m4, m5, -> close), about: v.ax)
+  valve := solid(std.solids.Revolution(face(v.hc, v.h1, m1, m2, m3, m4, m5, -> close), about: v.ax))
   // the bucket, down the axis from its face `v.flat`
   construction c1 := point hint(at: v.fc, toward: v.ax.p1,
                                 by: sqrt((rbucket - skirt) ^ 2 + dbucket ^ 2) / down,
@@ -157,7 +158,7 @@ component Poppet(v: group) {
   c2 distance(crown, side: right) v.flat
   c3 coincident v.ax
   c3 distance(crown, side: right) v.flat
-  bucket := solid(face(v.fc, v.f1, v.b1, c1, c2, c3, -> close), about: v.ax)
+  bucket := solid(std.solids.Revolution(face(v.fc, v.f1, v.b1, c1, c2, c3, -> close), about: v.ax))
 }
 
 // What the head is bored for one valve on the axis `ax` (its seat up to the cam's centre), its
@@ -204,7 +205,7 @@ component Bore(ax: line, head: Length) {
   t6 distance(reach + 1mm, side: left) cx
   t7 coincident ax
   t7 distance(reach + 1mm, side: left) cx
-  cutter := solid(face(t0, t1, t2, t3, t4, t5, t6, t7, -> close), about: ax)
+  cutter := solid(std.solids.Revolution(face(t0, t1, t2, t3, t4, t5, t6, t7, -> close), about: ax))
 }
 
 // Open this file to preview cylinder 1's intake valve and its lobe where the table's cycle puts

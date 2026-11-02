@@ -14,13 +14,13 @@ use crate::common::lenient::read;
 use crate::common::{ent, text::solved};
 
 /// A block 40 × 24 × 12 on the front plane: six faces, each meeting four.
-const BLOCK: &str = "unit mm\nuse std\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
     (west := line(b3, b0)) -> close\n\
     outline := face(south, east, north, west)\n}\n\
-    block := solid(outline, depth: 12mm)\n";
+    block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\n";
 
 /// How many points the elaboration named ending `.{last}`.
 fn made(e: &Elaborated, last: &str) -> usize {
@@ -56,7 +56,7 @@ fn faces_meet_where_they_share_an_edge_or_a_corner() {
 #[test]
 fn meets_is_between_two_faces() {
     let refused = |cond: &str, code: &str, words: &str| {
-        let src = format!("unit mm\nuse std\nin std.front {{\n\
+        let src = format!("unit mm\nuse std\nuse std.solids\nin std.front {{\n\
                            a := point\nfix((0, 0)) a\nb := point hint((3, 0))\n\
                            when {cond} {{\nq := point hint((8, 3))\n}}\n}}\n");
         let (e, d) = read(&src);
@@ -78,7 +78,7 @@ fn meets_is_between_two_faces() {
 
 /// The disc of #625: its web opened between r 8 and r 15 but for spokes, every edge among the
 /// opening's faces rounded.  `SPOKES` stands for how the spokes are drawn.
-const DISC: &str = "unit mm\nuse std\nuse std.place (vertical, coords)\nuse std.rounds (round)\nuse std.motion (turns)\n\
+const DISC: &str = "unit mm\nuse std\nuse std.solids\nuse std.place (vertical, coords)\nuse std.rounds (round)\nuse std.motion (turns)\n\
     in std.front {\n  spindle := vertical line(std.origin, hint((0, 10)))\n  length(10mm) spindle\n}\n\
     in std.top {\n\
       edge := circle(center: std.top.origin) hint(r: 20)\n  radius(20mm) edge\n\
@@ -90,9 +90,9 @@ const DISC: &str = "unit mm\nuse std\nuse std.place (vertical, coords)\nuse std.
       g coords(du: 1.2mm, dv: 20mm) std.top\n  h coords(du: -1.2mm, dv: 20mm) std.top\n\
       ACROSS\n}\n\
     index := frame\nindex turns(1) spindle\n\
-    disc := solid(face(edge), from: 0mm, to: 5mm)\n\
-    opening := solid(face(rim, holes: hub), from: -1mm, to: 6mm)\n\
-    spoke := solid(face(e, f, g, h, -> close), from: -2mm, to: 7mm)\n\
+    disc := solid(std.solids.Prism(face(edge), from: 0mm, to: 5mm))\n\
+    opening := solid(std.solids.Prism(face(rim, holes: hub), from: -1mm, to: 6mm))\n\
+    spoke := solid(std.solids.Prism(face(e, f, g, h, -> close), from: -2mm, to: 7mm))\n\
     SPOKES\n\
     opening cut disc\nround(r: 1.2mm) disc.opening\n";
 
@@ -117,7 +117,7 @@ fn a_round_over_four_turned_spokes_builds() {
         p coords(du: -20mm, dv: -1.2mm) std.top\n  q coords(du: 20mm, dv: -1.2mm) std.top\n  \
         s coords(du: 20mm, dv: 1.2mm) std.top\n  t coords(du: -20mm, dv: 1.2mm) std.top";
     let crossed = DISC.replace("V0", "-20").replace("ACROSS", across)
-        .replace("SPOKES", "bar := solid(face(p, q, s, t, -> close), from: -2mm, to: 7mm)\n\
+        .replace("SPOKES", "bar := solid(std.solids.Prism(face(p, q, s, t, -> close), from: -2mm, to: 7mm))\n\
                             spoke cut opening\nbar cut opening");
     let (a, b) = (solved(&turned), solved(&crossed));
     let (va, vb) = (volume(&a, "disc"), volume(&b, "disc"));
@@ -132,15 +132,15 @@ fn a_round_over_four_turned_spokes_builds() {
 /// where it stands, the same document builds.
 #[test]
 fn faces_read_apart_that_the_solve_brings_together_are_said() {
-    let doc = |at: &str| format!("unit mm\nuse std\nuse std.place (coords)\nuse std.rounds (round)\nin std.top {{\n\
+    let doc = |at: &str| format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords)\nuse std.rounds (round)\nin std.top {{\n\
         a := point hint((0, 0))\nb := point hint((20, 0))\nc := point hint((20, 20))\n\
         d := point hint((0, 20))\n\
         a coords(du: 0.5mm, dv: 0.5mm) std.top\nb coords(du: 20mm, dv: 0.5mm) std.top\n\
         c coords(du: 20mm, dv: 20mm) std.top\nd coords(du: 0.5mm, dv: 20mm) std.top\n\
         o := point hint(({at}))\no coords(du: 10mm, dv: 10mm) std.top\n\
         boss := circle(center: o) hint(r: 3)\nradius(3mm) boss\n}}\n\
-        plate := solid(face(a, b, c, d, -> close), from: 0mm, to: 5mm)\n\
-        pin := solid(face(boss), from: 0mm, to: 10mm)\npin union plate\nround(r: 1mm) plate\n");
+        plate := solid(std.solids.Prism(face(a, b, c, d, -> close), from: 0mm, to: 5mm))\n\
+        pin := solid(std.solids.Prism(face(boss), from: 0mm, to: 10mm))\npin union plate\nround(r: 1mm) plate\n");
     let said = |at: &str| {
         let e = solved(&doc(at));
         program::solid_diagnostics(&e.sketch, &e.map, &e.program)
@@ -156,7 +156,7 @@ fn faces_read_apart_that_the_solve_brings_together_are_said() {
 /// to it, and nothing is built of what was made: no E101 for a name the rest would have made.
 #[test]
 fn an_expansion_past_its_limit_is_said_once() {
-    let src = "unit mm\nuse std\nrepeat 1000 as i {\n  repeat 300 as j {\n    \
+    let src = "unit mm\nuse std\nuse std.solids\nrepeat 1000 as i {\n  repeat 300 as j {\n    \
                p := point hint((i, j))\n  }\n}\nq := point\n";
     let (e, d) = read(src);
     assert_eq!(d.len(), 1, "{d:?}");

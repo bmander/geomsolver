@@ -87,9 +87,8 @@ in std.top {
   length(length) guide3
 }
 param s: Scalar over (0, 1)
-taper := sweep(Section(guide, std.z, square, o1, x1, reach: reach, twist: 90deg,
-                       scale: 0.5).sec over s)
-cone := sweep(Section(guide2, std.z, round, o2, x2, reach: reach, twist: 0deg,
-                      scale: 0.5).sec over s)
-swell := sweep(Swell(guide3, std.z, round, o2, x2, reach: reach, scale: 1.3).sec
-               over s)
+taper := solid({ p | p coincident(over s) Section(guide, std.z, square, o1, x1, reach: reach, twist: 90deg,
+                       scale: 0.5).sec })
+cone := solid({ p | p coincident(over s) Section(guide2, std.z, round, o2, x2, reach: reach, twist: 0deg,
+                      scale: 0.5).sec })
+swell := solid({ p | p coincident(over s) Swell(guide3, std.z, round, o2, x2, reach: reach, scale: 1.3).sec })

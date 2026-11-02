@@ -122,9 +122,9 @@ fn preview_solves_only_when_its_file_is_opened() {
 /// parameter left out with the drawing, as the preview is — and nothing outside names it.
 #[test]
 fn a_modules_parameter_is_left_out_with_its_drawing() {
-    let part = "unit mm\nuse std\nsizes := {r: 10mm, h: 5mm}\ncomponent Disc(s: group) {\n  \
+    let part = "unit mm\nuse std\nuse std.solids\nsizes := {r: 10mm, h: 5mm}\ncomponent Disc(s: group) {\n  \
         in std.top {\n    rim := radius(s.r) circle(center: std.top.origin)\n  }\n  \
-        body := solid(face(rim), from: 0mm, to: s.h)\n}\n\
+        body := solid(std.solids.Prism(face(rim), from: 0mm, to: s.h))\n}\n\
         param spin: Angle over (0deg, 360deg)\nd := Disc(sizes)\n";
     let elaborated = |src: &str| {
         let (mut prog, errs) = parse(src);
@@ -393,8 +393,8 @@ fn the_library_resolves_the_shipped_engine() {
 fn the_standard_library_is_modules_under_std() {
     let under: Vec<&str> = gcs_core::library::MODULES.iter().map(|(n, _)| *n)
         .filter(|n| n.starts_with("std.")).collect();
-    assert_eq!(under, ["std.place", "std.shapes", "std.sets", "std.rounds", "std.panels",
-                       "std.stations", "std.motion"]);
+    assert_eq!(under, ["std.place", "std.shapes", "std.sets", "std.solids", "std.rounds",
+                       "std.panels", "std.stations", "std.motion"]);
     let mut named: BTreeMap<String, &str> = BTreeMap::new();
     for m in &under {
         let (prog, errs, linked) = gcs_core::library::parse_linked(&format!("use {m}\n"));

@@ -11,6 +11,7 @@ await initCore();
 test('a named envelope exposes its defining residual and enforces the declared roll domain', () => {
   const doc = Document.read(`unit mm
 use std
+use std.solids
 use std.motion (turns)
 in std.front {
 o := point
@@ -26,7 +27,7 @@ spin_axis := line(o,x)
 meridian := circle(center: c)
 radius(1mm) meridian
 }
-ring := solid(face(meridian),about: ax)
+ring := solid(std.solids.Revolution(face(meridian), about: ax))
 wall := surface(ring,meridian)
 roll := frame
 roll turns(1) spin_axis

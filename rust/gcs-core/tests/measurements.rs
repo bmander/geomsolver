@@ -13,6 +13,7 @@ use gcs_core::{graft,model::MotionDef,motion,program,
 const DRAWING: &str = "\
 unit mm
 use std
+use std.solids
 use std.motion (screws, slides, turns)
 big_len := 30mm
 small_len := 10mm
@@ -35,7 +36,7 @@ bc := line(b,c)
 cd := line(c,d)
 da := line(d,a)
 profile := face(ab,bc,cd,da)
-stock := solid(profile, from: 0mm, to: 2mm)
+stock := solid(std.solids.Prism(profile, from: 0mm, to: 2mm))
 r0 := point
 r1 := point hint((30, -4))
 fix((0, -4)) r0
@@ -243,6 +244,7 @@ fn a_ratio_inside_a_component_is_stated_from_the_instances_numbers() {
     let pair = |ratio: &str| format!("\
 unit mm
 use std
+use std.solids
 use std.motion (screws, slides, turns)
 component Pair(ax: line, big: Length, small: Length) {{
   r0 := point
@@ -286,7 +288,7 @@ fn a_measurement_read_before_the_solve_is_refused_with_the_stratum() {
     // a constraint's number is what the solve is solving for
     refused(&format!("{DRAWING}q := point hint((5, 5))\nq distance(length(big)) o\n"),"E107",mark);
     // a solid's extent is settled at elaboration
-    refused(&format!("{DRAWING}tall := solid(profile, depth: length(small))\n"),"E107",mark);
+    refused(&format!("{DRAWING}tall := solid(std.solids.Prism(profile, from: -(length(small)), to: 0))\n"),"E107",mark);
     // an attitude and a placement angle are both read before anything measures
     refused(&format!("{DRAWING}turn := frame\nturn turns(1) ax\n\
         moved := stock at(under: turn) angle(big, slope)\n"),"E107",mark);

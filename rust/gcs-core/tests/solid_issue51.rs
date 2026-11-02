@@ -50,7 +50,7 @@ fn crossing_bars_are_material_interference_even_without_contained_vertices() {
     );
     close(reversed.measured().unwrap(), v.measured().unwrap());
     let unrelated = read(
-        &(source("cross_clear") + "use std\nin std.front {\nremote := point\nfix((1000000000, 1000000000)) remote\n}\n"),
+        &(source("cross_clear") + "use std\nuse std.solids\nin std.front {\nremote := point\nfix((1000000000, 1000000000)) remote\n}\n"),
     );
     close(claim(&unrelated, SolidWord::Clear, 0.1).measured().unwrap(), -1.0);
     close(claim(&case("cross_clear_control"), SolidWord::Clear, 0.1).measured().unwrap(), 2.0);
@@ -176,7 +176,7 @@ fn input_edge_names_cannot_steal_sweep_cap_names() {
     let e = case("cap_collision_control");
     assert!(program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
     let src=source("cap_collision_control").replace("bottom","start")
-        .replace("result := solid(f,depth: 2mm)","in std.front {\nax0 := point\nfix((-1, 0)) ax0\nax1 := point\nfix((-1, 5)) ax1\nax := line(ax0,ax1)\n}\nresult := solid(f,about:ax,sweep:90deg)");
+        .replace("result := solid(std.solids.Prism(f, from: -2mm, to: 0))","in std.front {\nax0 := point\nfix((-1, 0)) ax0\nax1 := point\nfix((-1, 5)) ax1\nax := line(ax0,ax1)\n}\nresult := solid(std.solids.Revolution(f, about: ax, to: 90deg))");
     let e = read(&src);
     assert!(!program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
 }
@@ -300,7 +300,7 @@ fn box_source(name: &str, x: f64, y: f64, w: f64, h: f64, lo: f64, hi: f64) -> S
     }
     src += "}\n";
     src += &format!(
-        "{name} := solid(face({name}p0,{name}p1,{name}p2,{name}p3,-> close),from:{lo}mm,to:{hi}mm)\n"
+        "{name} := solid(std.solids.Prism(face({name}p0,{name}p1,{name}p2,{name}p3,-> close), from: {lo}mm, to: {hi}mm))\n"
     );
     src
 }
@@ -312,7 +312,7 @@ fn interference_checks_respect_voids_and_disconnected_material() {
     let v = claim(&e, SolidWord::Clear, 0.1);
     assert_eq!(v.holds(), Some(true));
     close(v.measured().unwrap(), 0.5);
-    let src = "unit mm\nuse std\n".to_string()
+    let src = "unit mm\nuse std\nuse std.solids\n".to_string()
         + &box_source("left", 0.0, 0.0, 1.0, 1.0, -1.0, 0.0)
         + &box_source("right", 8.0, 0.0, 1.0, 1.0, -1.0, 0.0)
         + "result := solid(left)\nright union result\nother := solid(result)\n";
@@ -342,6 +342,7 @@ fn negative_clearance_cannot_certify_uncertain_round_surface_contact() {
         "\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 fix((0, 0)) a
@@ -354,8 +355,8 @@ radius(1mm) bc
 }
 af := face(ac)
 bf := face(bc)
-result := solid(af,depth:1mm)
-other := solid(bf,depth:1mm)
+result := solid(std.solids.Prism(af, from: -1mm, to: 0))
+other := solid(std.solids.Prism(bf, from: -1mm, to: 0))
 ",
     );
     let v = claim(&e, SolidWord::Clear, -1.0);
@@ -373,7 +374,7 @@ other := solid(bf,depth:1mm)
 fn named_profiles_preserve_sweep_cap_collision_diagnostics() {
     let src = source("cap_collision")
         .replace("near := line(a,b)\nright := line(b,c)\ntop := line(c,d)\nleft := line(d,a)\nf := face(near,right,top,left)",
-            "use std\nin std.front {\nf := (near := line(a,b)) -> (right := line(b,c)) -> (top := line(c,d)) -> (left := line(d,a)) -> close\n}\n");
+            "use std\nuse std.solids\nin std.front {\nf := (near := line(a,b)) -> (right := line(b,c)) -> (top := line(c,d)) -> (left := line(d,a)) -> close\n}\n");
     let e = read(&src);
     assert!(program::solid_diagnostics(&e.sketch, &e.map, &e.program)
         .iter()

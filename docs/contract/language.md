@@ -737,11 +737,12 @@ components.dims.zB)`.
   (`std`: `std.StandardDatums`, `std.FrameDatums`, `std.Turned`), in the Makefile's `RUST_SRC`,
   and **the rest of it is modules under `std`** ([0.195]), `rust/lib/std/*.sv`, each linked by its
   own `use` and nothing more: `std.place` (the placement words), `std.shapes`, `std.sets`,
-  `std.rounds`, `std.panels`, `std.stations` and `std.motion`.  No name is defined in two of
-  them, and `library::home(under, name)` says which module under a path defines a name, by what a
-  `use` may import (`program::defines`), over the library linked once and kept — read only to
-  word a refusal: `std.Sphere` (`resolve_named`), `use std (horizontal)` (`program/words.rs`,
-  E101) and a word no used module defines (`no_word`, E102) each name the module that has it.
+  `std.rounds`, `std.panels`, `std.stations`, `std.motion` and ([0.199]) `std.solids`.  No name
+  is defined in two of them, and `library::home(under, name)` says which module under a path
+  defines a name, by what a `use` may import (`program::defines`), over the library linked once
+  and kept — read only to word a refusal: `std.Sphere` (`resolve_named`), `use std (horizontal)`
+  (`program/words.rs`, E101) and a word no used module defines (`no_word`, E102) each name the
+  module that has it.
   `program::reparse` relinks from the texts in hand (`modules::relink`), so an edit never asks the
   host; a module the program had not linked — a `use` the edit wrote, the Fillet tool's `use
   std.rounds (round)` — comes from `library::resolve`, and what its body refuses is said at that

@@ -103,34 +103,38 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   inside one another) its holes; a loop along an edge twice is refused.  `region::written` names
   it by the source.  `tests/regions.rs` is the gate.
 - **Extrude** (#162 F2): the `extrude` tool (`u`) washes the region under the pointer
-  (`SketchView.hoverRegion`, `regionAt`) and a click writes the face, the solid at a round
-  default depth (`set_off`) and — with a body selected — `union`, or with ⌥ `cut`, or with ⌥⇧
-  `through:` + `cut`, as one splice and one undo step (`edit::extrude`).  The new solid is then
-  **sized** (`SketchView.liveExtent`, carried across an edit by the solid's name): typed in the
-  number box at its arrow (`dimbox`'s `NumberBox`, which dimensions use too) or dragged by the
-  arrow the eye sees along its face's normal (`workspace::extrude_handle`, no tip seen down the
-  normal; `extent_at` reading the drag).  **Which way it runs is the core's** (`model::Way`:
-  behind, `depth: d`; front, `from: 0, to: d`; both, `from: -d/2, to: d/2`, ⇧): the drag previews
-  by `Sketch::set_prism(i, way, d)`, which bumps `shape_epoch` (the box re-cuts objects on it,
-  gesture or no), and writes once at release through `edit::set_sweep` with
-  `SolidSweep::thick(way, text)` (the bracket list replaced, `checked` as every gesture edit),
+  (`SketchView.hoverRegion`, `regionAt`) and a click writes the face, the solid at a round default
+  depth (`set_off`) and — with a body selected — `union`, or with ⌥ `cut`, or with ⌥⇧ a through
+  prism + `cut`, as one splice and one undo step (`edit::extrude`).  **[0.199]** Every solid a
+  gesture writes is spelled by the canonical printer (`syntax/print.rs::solid_word`, `sweep_text`,
+  #737) as a word of `std.solids` — `solid(std.solids.Prism(f, from: -d, to: 0))`,
+  `solid(std.solids.Through(f))`, `solid(std.solids.Revolution(f, about: ax))` — and a motion's
+  sweep as its set, so a gesture splices the language's own spelling and never a retired label.  The
+  new solid is then **sized** (`SketchView.liveExtent`, carried across an edit by the solid's name):
+  typed in the number box at its arrow (`dimbox`'s `NumberBox`, which dimensions use too) or dragged
+  by the arrow the eye sees along its face's normal (`workspace::extrude_handle`, no tip seen down
+  the normal; `extent_at` reading the drag).  **Which way it runs is the core's** (`model::Way`:
+  behind, `from: -d, to: 0`; front, `from: 0, to: d`; both, `from: -d/2, to: d/2`, ⇧): the drag
+  previews by `Sketch::set_prism(i, way, d)`, which bumps `shape_epoch` (the box re-cuts objects on
+  it, gesture or no), and writes once at release through `edit::set_sweep` with
+  `SolidSweep::thick(way, text)` (the word's arguments replaced, `checked` as every gesture edit),
   taken without an undo push so it joins the click's step.  `tests/extrude.rs` is the gate.
-- **Revolve** (#162 F3): `about:` takes an **axis** lying in the face's plane as well as a line
-  drawn there (`SolidDef::Revolve::axis` an `EntRef`; every reader goes through
+- **Revolve** (#162 F3): `Revolution`'s `about:` takes an **axis** lying in the face's plane as well
+  as a line drawn there (`SolidDef::Revolve::axis` an `EntRef`; every reader goes through
   `Sketch::revolve_axis`, the axis in the profile plane's coordinates, `None` off the plane, within
   `AXIS_IN_PLANE`).  `build_solid` refuses E081 only what it can judge (`axis_may_lie_in`: the
   plane's own axes pass; an axis and plane wholly held are read now); one the solve places is
   refused where evaluated.  The `revolve` tool (`q`) washes a region; its click waits
   (`SketchView.pendingRevolve`) for a click on a line or axis (lit under the pointer), or takes one
-  already selected, and writes face, `solid(f, about: …)` (a whole turn) and with a body `union`
-  (⌥ `cut`) as one splice (`edit::revolve`, shared with `extrude` by `region_solid`).  Its turn is
-  sized as an extrusion's thickness (`LiveExtent` kind `turn`, signed degrees, negative `cw`): the
-  arc its profile's middle turns through (`workspace::turn_handle`, no tip seen along the turning
-  plane), dragged by `turn_at` (the whole turns nearest the last, so back past the start turns it
-  the other way).  Signed degrees end to end, read once by `model::turn_of` (sense, and a whole
-  turn as no `sweep:`): previewed by `Sketch::set_turn`, written by `edit::set_turn` (the
-  statement's own `about:` kept; an expression written whole the way it already turns).
-  `tests/revolve.rs` is the gate.
+  already selected, and writes face, `solid(std.solids.Revolution(f, about: …))` (a whole turn) and
+  with a body `union` (⌥ `cut`) as one splice (`edit::revolve`, shared with `extrude` by
+  `region_solid`).  Its turn is sized as an extrusion's thickness (`LiveExtent` kind `turn`, signed
+  degrees, negative `cw`): the arc its profile's middle turns through (`workspace::turn_handle`, no
+  tip seen along the turning plane), dragged by `turn_at` (the whole turns nearest the last, so back
+  past the start turns it the other way).  Signed degrees end to end, read once by `model::turn_of`
+  (sense, and a whole turn as no interval; a partial one `to: θ`, a `cw` one `from: -θ, to: 0deg`):
+  previewed by `Sketch::set_turn`, written by `edit::set_turn` (the statement's own `about:` kept;
+  an expression written whole the way it already turns). `tests/revolve.rs` is the gate.
 - **Union, Cut, Intersect** (#162 F4): Boolean tools (`m`, `z`, `y`; `view.ts::combines`, Intersect
   is `common`) over **the solid selection, in click order**: the first body clicked is the target,
   each after it a tool (clicked again, let go), a click back on the target or Enter
@@ -139,7 +143,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   target.  **One step of the body rule**, `Sketch::join_body` (`as_body` moves a sweep to a
   stock past the last, the tool joins `word`'s set — a tool already in it joins nothing more, #415 —
   `solid::reaches` asked once it is in, since a
-  `through:` reads only what its body adds; a cycle popped and refused, E041 **at that
+  through prism reads only what its body adds; a cycle popped and refused, E041 **at that
   statement**), states each statement in `program/solids.rs` and each tool of the **preview**:
   `Sketch::preview_body` joins them on a clone (the caches' operands kept) and evaluates the
   target there, so it is what the statements make and refused where they are; a body with a

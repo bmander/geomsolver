@@ -14,6 +14,7 @@
 // rim runs all the way round.
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 in std.front {
@@ -54,15 +55,15 @@ in std.top {
   hole_k := circle(center: hc) hint(r: 4)
   radius(4mm) hole_k
 }
-wedge := solid(side_f, from: 0mm, to: 24mm)
-boss := solid(face(boss_k), from: 0mm, to: 30mm)
+wedge := solid(std.solids.Prism(side_f, from: 0mm, to: 24mm))
+boss := solid(std.solids.Prism(face(boss_k), from: 0mm, to: 30mm))
 lug := solid(wedge)
 boss union lug
 // the root, against the slope alone
 lug.boss round(r: 2mm) lug.wedge.wt
 
-block := solid(other_f, from: 0mm, to: 24mm)
-hole := solid(face(hole_k), from: -1mm, to: 30mm)
+block := solid(std.solids.Prism(other_f, from: 0mm, to: 24mm))
+hole := solid(std.solids.Prism(face(hole_k), from: -1mm, to: 30mm))
 vent := solid(block)
 hole cut vent
 // the rim, on the slope alone

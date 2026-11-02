@@ -13,7 +13,7 @@ use fixtures::{tools::{indexed_ring,sphere},motions::{Observer,cradle_roll}};
 use gcs_core::solid::{admission,cad};
 
 fn ring(count: usize) -> gcs_core::program::Elaborated {
-    fixtures::read(&format!("{}{}construction removal := sweep(tool over t in (-35deg, 35deg), under: spin, seen_from: observer)\n{}",sphere(2.),
+    fixtures::read(&format!("{}{}construction removal := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-35deg, 35deg)) tool }})\n{}",sphere(2.),
         cradle_roll(2.5,Observer::Parallel),indexed_ring(count,3.5,4.2,1.7,2.3)))
 }
 
@@ -101,7 +101,7 @@ fn a_blank_of_revolutions_is_its_meridian_section_turned_and_any_other_its_boole
         session.faces(booleans).unwrap().len(),meridian.origin,meridian.axis);
     assert!((a-b).abs() <= 1e-9*b,"{a} against {b}");
     assert_eq!(session.faces(turned).unwrap().len(),session.faces(booleans).unwrap().len());
-    let boxed = fixtures::read(&format!("{}{}construction removal := sweep(tool over t in (-35deg, 35deg), under: spin, seen_from: observer)\n{}\
+    let boxed = fixtures::read(&format!("{}{}construction removal := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-35deg, 35deg)) tool }})\n{}\
 in std.front {{
 private b0 := point
 private b1 := point
@@ -116,7 +116,7 @@ private bw := line(b1, b2)
 private bt := line(b2, b3)
 private ba := line(b3, b0)
 }}
-construction holder := solid(face(bb, bw, bt, ba), from: -5mm, to: 5mm)
+construction holder := solid(std.solids.Prism(face(bb, bw, bt, ba), from: -5mm, to: 5mm))
 holder common part
 ",sphere(2.),cradle_roll(2.5,Observer::Parallel),indexed_ring(6,3.5,4.2,1.7,2.3)));
     let recipe = cad::recipe_static(&boxed.sketch,fixtures::solid(&boxed,"part")).unwrap();

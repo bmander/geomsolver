@@ -117,7 +117,8 @@ fn the_sections_follow_their_guide() {
 /// where it is widest, 40 · ∫₀^½ (176 − 96 s) ds = 3040 mm³.
 #[test]
 fn a_running_section_is_a_boolean_operand() {
-    let src = format!("{REDUCER}
+    let reducer = REDUCER.replacen("use std\n", "use std\nuse std.solids\n", 1);
+    let src = format!("{reducer}
 in std.front {{
   q0 := point
   q1 := point
@@ -128,7 +129,7 @@ in std.front {{
   fix((50mm, 50mm)) q2
   fix((-50mm, 50mm)) q3
 }}
-cutter := solid(face(q0, q1, q2, q3, -> close), from: -60mm, to: -20mm)
+cutter := solid(std.solids.Prism(face(q0, q1, q2, q3, -> close), from: -60mm, to: -20mm))
 kept := solid(body)
 cutter cut kept
 ");
@@ -154,6 +155,7 @@ fn along_is_retired_saying_what_to_write() {
 fn tube(word: &str, kind: &str, guide: &str) -> String {
     format!("unit mm
 use std
+use std.solids
 use std.stations
 
 component Tube(g: {kind}, up: axis, s: Scalar) {{
@@ -189,7 +191,7 @@ in std.top {{
   curvy := spline(k0, k1, k2, k3)
 }}
 param s: Scalar over (0, 1)
-tube := sweep(Tube({guide}, std.z).f over s)
+tube := solid({{ p | p coincident(over s) Tube({guide}, std.z).f }})
 ")
 }
 

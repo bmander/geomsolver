@@ -28,23 +28,23 @@ await initCore();
 
 /** A line and a circle on the front, a fixed point and a free one, a dimension, an axis standing
  *  up beside them and a disc made of the circle — the core's gate (`tests/workspace.rs`). */
-const KINDS = 'unit mm\nuse std\nin std.front {\n'
+const KINDS = 'unit mm\nuse std\nuse std.solids\nin std.front {\n'
   + '  a := point hint((0, 0))\n  fix((0, 0)) a\n  b := point hint((40, 0))\n  ab := line(a, b)\n'
   + '  horizontal ab\n  a distance(40) b\n'
   + '  o := point hint((20, 30))\n  fix((20, 30)) o\n  rim := circle(center: o) hint(r: 10)\n}\n'
   + 't := axis hint(dir: (0, 0, 1))\nfix(dir == (0, 0, 1), origin == (80, 0, 0)) t\n'
-  + 'disc := solid(face(rim), depth: 5)\n';
+  + 'disc := solid(std.solids.Prism(face(rim), from: -5, to: 0))\n';
 
 /** An assembly: two blocks, each a part drawing its outline and a dimension to make its object,
  *  and the root's own rod on the front. */
-const ASSEMBLY = 'unit mm\nuse std\n'
+const ASSEMBLY = 'unit mm\nuse std\nuse std.solids\n'
   + 'component Block(x: Length) {\n'
   + '  a := point hint((x, 0))\n  b := point hint((x + 20mm, 0))\n'
   + '  c := point hint((x + 20mm, 10))\n  d := point hint((x, 10))\n'
   + '  fix((x, 0)) a\n  fix((x, 10)) d\n'
   + '  ab := line(a, b)\n  bc := line(b, c)\n  cd := line(c, d)\n  da := line(d, a)\n'
   + '  horizontal ab\n  vertical bc\n  a distance(20) b\n  b distance(10) c\n'
-  + '  sec := face(ab, bc, cd, da)\n  body := solid(sec, depth: 5)\n}\n'
+  + '  sec := face(ab, bc, cd, da)\n  body := solid(std.solids.Prism(sec, from: -5, to: 0))\n}\n'
   + 'in std.top {\n  left := Block(x: 0mm)\n  right := Block(x: 40mm)\n}\n'
   + 'in std.front {\n  o := point\n  fix((0, 0)) o\n  q := point hint((10, 10))\n'
   + '  rod := line(o, q)\n}\n';

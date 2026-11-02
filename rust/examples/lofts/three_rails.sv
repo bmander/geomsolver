@@ -59,4 +59,4 @@ in std.front {
 }
 prof := face(sq)
 param s: Scalar over (0, 1)
-body := sweep(Tri(ra, rb, rc, prof, o, x, y).sec over s)
+body := solid({ p | p coincident(over s) Tri(ra, rb, rc, prof, o, x, y).sec })

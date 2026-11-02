@@ -294,6 +294,10 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// applied as a gauge, taken as a region's term, or refused, and no id. The steps below, in the
 /// order each may end it.
 pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u32> {
+    // a face swept by a motion over an interval of its roll, at a region solid's point (#737)
+    if swept_patch(cx, r, st) || outside_set(cx, r) {
+        return None;
+    }
     // a point a frame carries (#383): its `under:` and `seen_from:` read as the one motion node
     // the carried point's slot names
     if let Some(carried) = carried_motion(cx, r, st) {
@@ -761,6 +765,117 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &m
     Ok(kind)
 }
 
+/// The motion that turns about line (or axis) `l` a radian a radian of the roll (#737): `under:
+/// l` names it, minted once a line, holding nothing.
+fn turn_about(sk: &mut Sketch, l: EntRef) -> usize {
+    use crate::model::{MotionDef, MotionE};
+    let def = match l.kind {
+        EntKind::Line => MotionDef::Rotation { axis: l.i() as u32, ratio: 1.0, advance: 0.0 },
+        _ => MotionDef::Joint { axis: l.i() as u32, ratio: 1.0, advance: 0.0 },
+    };
+    let same = |m: &MotionE| matches!((&m.def, &def),
+        (MotionDef::Rotation { axis: a, ratio: 1.0, advance: 0.0 }, MotionDef::Rotation { axis: b, .. })
+        | (MotionDef::Joint { axis: a, ratio: 1.0, advance: 0.0 }, MotionDef::Joint { axis: b, .. })
+            if a == b) && m.name.starts_with("#turn");
+    if let Some(m) = sk.motions.iter().position(same) {
+        return m;
+    }
+    sk.motions.push(MotionE { def, name: format!("#turn{}", sk.motions.len()),
+                              class: Default::default(), numbers: None });
+    sk.motions.len() - 1
+}
+
+/// `shape` a term of the region solid whose point `probe` is, held where it is at most nothing.
+fn held_term(cx: &mut Elab<'_>, probe: EntRef, shape: crate::model::RegionShape) {
+    let term = crate::model::RegionTerm::new(shape, crate::syntax::Cmp::Le,
+                                             crate::model::TermNumber::stated(0.0));
+    cx.probes.terms.get_mut(&probe.i()).expect("a probe's terms").push(term);
+}
+
+/// **Outside a set** (#737 P3): `p outside q`, both a region solid's points — `q` the point of
+/// the set `p` is outside of, which the flattener made (`sets::complement`) — the complement of
+/// what holds at `q` (`RegionShape::Outside`), filled when the solid is built.  Whether it was one.
+fn outside_set(cx: &mut Elab<'_>, r: &Relation) -> bool {
+    let Some(w) = r.form.written().filter(|w| w.word.text == "outside" && w.args.is_empty())
+        else { return false };
+    let [p, q] = w.ops.as_slice() else { return false };
+    let probe = |r: &crate::syntax::Ref| cx.res.entity(&cx.sk, r)
+        .filter(|e| e.kind == EntKind::Point && cx.probes.terms.contains_key(&e.i()));
+    let (Some(p), Some(q)) = (probe(p), probe(q)) else { return false };
+    let set = crate::model::Target::Set { probe: q.i() as u32, terms: Vec::new() };
+    let shape = crate::model::RegionShape::Outside { set: Box::new(set) };
+    held_term(cx, p, shape);
+    true
+}
+
+/// **What a face occupies under a motion over an interval of its roll** (#737), `p
+/// coincident(under: m, t in (a, b)) sec` with `p` a region solid's point: the existential over
+/// the roll, the region's term (`RegionShape::Swept`).  Whether the relation was one, taken or
+/// refused.
+fn swept_patch(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> bool {
+    use crate::syntax::OpArg;
+    let Some(w) = r.form.written() else { return false };
+    let Some((key, ends)) = w.args.iter().find_map(|a| match a {
+        OpArg::Over { key, ends } => Some((key, ends)),
+        _ => None,
+    }) else {
+        return false;
+    };
+    let named = |k: &str| w.args.iter().find_map(|a| match a {
+        OpArg::Named(n, Arg::Ref(r)) if n.text == k => Some(r.clone()),
+        _ => None,
+    });
+    let Some(under) = named("under") else { return false };
+    let seen = named("seen_from");
+    let mut refuse = |m: String| cx.diags.push(Diag::on(Code::E040, st, m));
+    let Some([lo, hi]) = ends else {
+        refuse(format!("a face swept by a motion is swept over an interval of its roll written \
+            in place: `over {} in (a, b)`", key.text));
+        return true;
+    };
+    let [p, x] = w.ops.as_slice() else { return false };
+    let point = cx.res.entity(&cx.sk, p).filter(|e| e.kind == EntKind::Point);
+    let Some(point) = point.filter(|e| cx.probes.terms.contains_key(&e.i())) else {
+        refuse(format!("`{}` is a drawn point: what a face occupies over an interval of a roll is \
+            read where a set is applied to a region solid's point (`solid(S)`); a drawn point is \
+            carried to one roll, `t == τ`", p.root.text));
+        return true;
+    };
+    let Some(face) = cx.res.entity(&cx.sk, x).filter(|e| e.kind == EntKind::Face) else {
+        refuse(format!("`{}` is no face: a set over an interval of a roll is of a face's patch, \
+            `p coincident(under: m, t in (a, b)) sec`", x.root.text));
+        return true;
+    };
+    let roll = |t: &(String, crate::syntax::Span)| -> Option<f64> {
+        let arg = Arg::Dim { text: t.0.clone(), span: t.1 };
+        to_arg(&cx.sk, &cx.res, SpecKind::Angle, &arg).ok().as_ref()
+            .and_then(|a| super::regions::settled_number(a, &cx.sk))
+    };
+    let (Some(a), Some(b)) = (roll(lo), roll(hi)) else {
+        refuse(format!("`({}, {})` is no interval of angles stated: a roll's ends are numbers \
+                        no unknown reads", lo.0, hi.0));
+        return true;
+    };
+    // a line is the turn about it, a radian a radian of the roll; a frame its joint
+    let line = cx.res.entity(&cx.sk, &under).filter(|e| matches!(e.kind, EntKind::Line | EntKind::Axis));
+    let m = match line {
+        Some(l) if seen.is_none() => turn_about(&mut cx.sk, l),
+        _ => {
+            let sole = super::motions::sole(&cx.sk);
+            match super::motions::reading(&mut cx.sk, &cx.res, &under, seen.as_ref(), sole.as_deref()) {
+                Ok(m) => m,
+                Err(message) => {
+                    cx.diags.push(Diag::within(Code::E040, under.span, st.id, message));
+                    return true;
+                }
+            }
+        }
+    };
+    let shape = crate::model::RegionShape::Swept { motion: m as u32, roll: [a, b], face: face.i() as u32 };
+    held_term(cx, point, shape);
+    true
+}
+
 /// **A region's point against a face** (#183 F1), or where an edge ends (F7): a term of the
 /// region, read off the body — whether the relation was one, taken or refused.
 fn face_or_ends(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, shape: &Shape) -> bool {
@@ -770,6 +885,9 @@ fn face_or_ends(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, shape: &Shape) -> bo
             Some(face_term(&cx.sk, &cx.res, w, *point, face, probes))
         }
         (Shape::Ends { point, edge }, Some(w)) => Some(ends_term(w, *point, *edge, probes)),
+        (Shape::Section { point, face }, Some(w)) => {
+            Some(super::regions::section_term(&cx.sk, &cx.res, w, *point, *face, probes))
+        }
         _ => None,
     };
     let Some(made) = term else { return false };
@@ -1356,6 +1474,8 @@ pub(in crate::program) enum Shape {
     Ends { point: EntRef, edge: EntRef },
     /// A point `inside` or `outside` a plane (§9.6): a bound.
     PlaneSide,
+    /// A point against a drawn face (#737 P1): `p inside sec`, `p distance(<= d, along: n) sec`.
+    Section { point: EntRef, face: EntRef },
     Other,
 }
 
@@ -1368,12 +1488,13 @@ pub(in crate::program) fn shape(sk: &Sketch, res: &Resolver, w: &crate::syntax::
     let Ok(of) = res.operand(sk, f) else { return Shape::Other };
     // a side as written or as a set's body carries it (`Written::side`, #192)
     let side = w.side().is_some();
+    // the words a region's point is read against a face by
+    let reads = matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident");
     match of {
         Operand::Ends(edge) if side => Shape::Ends { point, edge },
         Operand::Ent(e) if side && e.kind == EntKind::Frame => Shape::PlaneSide,
-        _ if matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident") => {
-            of.faces().map_or(Shape::Other, |face| Shape::Face { point, face })
-        }
+        Operand::Ent(e) if reads && e.kind == EntKind::Face => Shape::Section { point, face: e },
+        _ if reads => of.faces().map_or(Shape::Other, |face| Shape::Face { point, face }),
         _ => Shape::Other,
     }
 }

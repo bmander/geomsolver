@@ -25,7 +25,7 @@ const K: f64 = 25.0;
 /// The four-bar with a frame on its coupler, `coupler.axes` (its origin at `b`, `u` toward `c`),
 /// and a unit ball centred on the coupler's midpoint `m`; `extra` adds statements.
 fn four_bar(extra: &str) -> String {
-    format!("unit mm\nuse std\nparam t: Angle over (0deg, 360deg)\n\
+    format!("unit mm\nuse std\nuse std.solids\nparam t: Angle over (0deg, 360deg)\n\
         in std.front {{\n\
         \x20 a := point\n  d := point\n  b := point hint(({R}, 0))\n  c := point hint(({G}, {K}))\n\
         \x20 fix((0, 0)) a\n  fix(({G}, 0)) d\n\
@@ -40,7 +40,7 @@ fn four_bar(extra: &str) -> String {
         \x20 meridian := arc(center: m, start: bottom, end: top)\n  radius(1mm) meridian\n\
         }}\n\
         coupler := std.Turned(b, c) in std.front\n\
-        ball := solid(face(meridian, diameter), about: diameter)\n{extra}")
+        ball := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))\n{extra}")
 }
 
 /// The crank pin and the rocker pin at the crank's angle `t` (degrees), the coupler above the
@@ -76,7 +76,7 @@ fn point(e: &Elaborated, n: &str) -> [f64; 3] {
 
 #[test]
 fn a_frame_on_a_coupler_is_carried_where_the_coupler_goes() {
-    let e = solved(&four_bar("groove := sweep(ball over t, under: coupler.axes)\n"));
+    let e = solved(&four_bar("groove := solid({ p | p inside(under: coupler.axes, over t) ball })\n"));
     let family = swept(&e, "groove");
     // the midpoint where it is drawn, at `t = 0`, carried to where the coupler puts it
     let m0 = point(&e, "m");
@@ -120,7 +120,7 @@ fn a_frame_on_a_coupler_is_carried_where_the_coupler_goes() {
 
 #[test]
 fn a_coupler_frames_bounds_enclose_its_poses_and_its_speed() {
-    let e = solved(&four_bar("groove := sweep(ball over t, under: coupler.axes)\n"));
+    let e = solved(&four_bar("groove := solid({ p | p inside(under: coupler.axes, over t) ball })\n"));
     let family = swept(&e, "groove");
     let m0 = point(&e, "m");
     let boxed = m0.map(|v| I::point(v).unwrap());
@@ -183,8 +183,8 @@ fn a_ball_on_a_coupler_sweeps_the_tube_about_its_coupler_curve() {
     let blank = "in std.front {\n  p1 := point\n  p2 := point\n  p3 := point\n  p4 := point\n  \
         fix((-20, -20)) p1\n  fix((60, -20)) p2\n  fix((60, 50)) p3\n  fix((-20, 50)) p4\n  \
         rim := line(p1, p2) -> line(p2, p3) -> line(p3, p4) -> line(p4, p1) -> close\n}\n\
-        plate := solid(face(rim), from: -3mm, to: 3mm)\n\
-        groove := sweep(ball over t, under: coupler.axes)\n\
+        plate := solid(std.solids.Prism(face(rim), from: -3mm, to: 3mm))\n\
+        groove := solid({ p | p inside(under: coupler.axes, over t) ball })\n\
         groove cut plate\n";
     let e = solved(&four_bar(blank));
     // in the front view's (u, v), off it by `y`: on the curve, beside it, inside and outside it
@@ -264,13 +264,13 @@ fn a_frame_the_drawing_moves_refuses_what_it_cannot_mean() {
         in std.front {\n  p := point hint((30, 20))\n  p coincident cut\n}\n");
     assert!(s.len() == 1 && s[0].contains("reads no march"), "{s:?}");
     // a reading over an interval of the roll that names no parameter finds the frame at rest
-    let s = said("q := sweep(ball over r in (0deg, 90deg), under: coupler.axes)\n");
+    let s = said("q := solid({ p | p inside(under: coupler.axes, over r in (0deg, 90deg)) ball })\n");
     assert!(s.len() == 1 && s[0].contains("does not move") && s[0].contains("over t"), "{s:?}");
     // a point carried is a row, and a row reads no march
     let s = said("X := point\nX coincident m at(under: coupler.axes) 30deg\n");
     assert!(s.len() == 1 && s[0].starts_with("E080") && s[0].contains("reads no march"), "{s:?}");
     // the roll is an angle
-    let s = said("param s: Scalar over (0, 1)\nq := sweep(ball over s, under: coupler.axes)\n");
+    let s = said("param s: Scalar over (0, 1)\nq := solid({ p | p inside(under: coupler.axes, over s) ball })\n");
     assert!(s.len() == 1 && s[0].starts_with("E103") && s[0].contains("no angle"), "{s:?}");
 }
 
@@ -294,7 +294,7 @@ const R2: f64 = 35.0;
 const L2: f64 = 55.0;
 
 fn rssr() -> String {
-    format!("unit mm\nuse std\nparam t: Angle over (0deg, 360deg)\n\
+    format!("unit mm\nuse std\nuse std.solids\nparam t: Angle over (0deg, 360deg)\n\
         in std.top {{\n  a := point\n  e := point\n  b := point hint(({R1}, 0))\n  \
         fix((0, 0)) a\n  fix((1, 0)) e\n  ground := line(a, e)\n  crank := line(a, b)\n  \
         length({R1}) crank\n  ground angle(t) crank\n}}\n\

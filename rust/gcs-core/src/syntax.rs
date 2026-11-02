@@ -36,6 +36,7 @@ use crate::constraints::{CKind, Fixity};
 use crate::model::EntKind;
 use crate::style::{Classes, Style};
 pub(crate) use names::{build_rank, decl_head, ref_text, under_root};
+pub(crate) use print::{revolve_between, solid_word};
 pub(crate) use print::{decl_args, hint_clause, hint_numbers, said, said_text, Said};
 
 /// A component point traced over a numeric formal, with domain endpoints kept as expressions.
@@ -1433,6 +1434,10 @@ impl EaseSpec {
     }
 }
 
+
+/// The body a sweep over the whole roll is rolled through (#737), as its set says it: none named,
+/// the body it is cut from or kept in common with, read where the body word joins it.
+pub const ROLLED: &str = "#rolled";
 
 /// A prism, revolution, or body operation (§6.9). Numeric arguments remain
 /// expressions until elaboration.

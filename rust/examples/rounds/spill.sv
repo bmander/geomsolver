@@ -16,10 +16,11 @@
 // round, glued to it there.
 unit mm
 use std
+use std.solids
 use std.rounds (round, chamfer)
 
 rim := circle(center: std.front.origin) hint(r: 33.54) in std.front
-plate := solid(face(rim), depth: 20mm)
+plate := solid(std.solids.Prism(face(rim), from: -20mm, to: 0))
 plate.rim round(r: 3mm) plate.far
 
 // the boss's plane, on the far face and tangent to it there
@@ -29,7 +30,7 @@ stand tangent(at: stand.origin) plate.far.surface
 
 centre := point hint((-8.4, -6.7)) in stand
 foot := circle(center: centre) hint(r: 21.7) in stand
-boss := solid(face(foot), depth: 10mm)
+boss := solid(std.solids.Prism(face(foot), from: -10mm, to: 0))
 plate union boss
 
 boss.plate.far chamfer(d: 2mm) boss.foot

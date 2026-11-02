@@ -8,6 +8,7 @@
 // beside the carrier's web, a hole drawn in the plan and swept straight up.
 
 use std
+use std.solids
 use std.place (below, horizontal)
 use motor.dims (axle_half, cable_d, cable_to, d_core, d_end, d_seat, exit_at, exit_d, flats,
                 flats_from, hub_r, key_h, key_l, key_t1, key_w, step_end, step_seat)
@@ -52,11 +53,11 @@ component Axle(f: Datums, to: point) {
     fl_up := motor.parts.Box(f.so, x0: -ah - 1mm, y0: flats / 2, x1: -flats_from, y1: re + 1mm)
     fl_dn := motor.parts.Box(f.so, x0: -ah - 1mm, y0: -re - 1mm, x1: -flats_from, y1: -flats / 2)
   }
-  body := solid(profile, about: f.ax)
-  private flat_ru := solid(fr_up.profile, through: body)
-  private flat_rd := solid(fr_dn.profile, through: body)
-  private flat_lu := solid(fl_up.profile, through: body)
-  private flat_ld := solid(fl_dn.profile, through: body)
+  body := solid(std.solids.Revolution(profile, about: f.ax))
+  private flat_ru := solid(std.solids.Through(fr_up.profile))
+  private flat_rd := solid(std.solids.Through(fr_dn.profile))
+  private flat_lu := solid(std.solids.Through(fl_up.profile))
+  private flat_ld := solid(std.solids.Through(fl_dn.profile))
   flat_ru cut body
   flat_rd cut body
   flat_lu cut body
@@ -67,8 +68,8 @@ component Axle(f: Datums, to: point) {
     seat := motor.parts.Box(f.o, x0: -key_w / 2, y0: -rc - 1mm, x1: key_w / 2, y1: -rc + key_t1)
     k_sec := motor.parts.Box(f.o, x0: -key_w / 2, y0: -rc + key_t1 - key_h,
                              x1: key_w / 2, y1: -rc + key_t1)
-    private keyway := solid(seat.profile, from: -key_l / 2, to: key_l / 2)
-    key := solid(k_sec.profile, from: -key_l / 2, to: key_l / 2)
+    private keyway := solid(std.solids.Prism(seat.profile, from: -key_l / 2, to: key_l / 2))
+    key := solid(std.solids.Prism(k_sec.profile, from: -key_l / 2, to: key_l / 2))
   }
   keyway cut body
 
@@ -78,7 +79,7 @@ component Axle(f: Datums, to: point) {
     outlet below(d: exit_at) to
     exit_c := circle(center: outlet) hint(r: exit_d / 2)
     radius(exit_d / 2) exit_c
-    exit := solid(face(exit_c), from: 0mm, to: hub_r + 1mm)
+    exit := solid(std.solids.Prism(face(exit_c), from: 0mm, to: hub_r + 1mm))
   }
   exit cut body
 }

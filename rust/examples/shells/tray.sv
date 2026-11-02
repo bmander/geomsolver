@@ -7,6 +7,7 @@
 // 11712 mm³: 48000 less the cavity's 56 × 36 × 18. Edit `wall` and apply (⌘↵).
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 2mm
@@ -23,6 +24,6 @@ in std.top {
   (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> (west := line(b3, b0)) -> close
   outline := face(south, east, north, west)
 }
-tray := solid(outline, from: 0mm, to: 20mm)
+tray := solid(std.solids.Prism(outline, from: 0mm, to: 20mm))
 
 tray.near shell(t: wall) tray

@@ -26,6 +26,7 @@ fn read(src: &str) -> Elaborated {
 const RECT: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 b := point hint((60, 0))
@@ -46,7 +47,7 @@ const UNIT: f64 = 0.05;
 #[test]
 fn projection_inputs_exclude_unrelated_geometry_and_include_solid_extents() {
     let mut e = read(&format!("{RECT}in std.front {{\nstray := point hint((20, 20))\n}}\n\
-        block := solid(sec, depth: 30mm)\nview(block) in std.side\n"));
+        block := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nview(block) in std.side\n"));
     let original = hidden::inputs(&e.sketch);
     let picture = gcs_core::report::derived_json(&e.sketch, UNIT);
     let stray = e.map.ent_named("stray").unwrap().i();
@@ -64,7 +65,7 @@ fn projection_inputs_exclude_unrelated_geometry_and_include_solid_extents() {
 
 #[test]
 fn projection_inputs_follow_view_poses_and_cutting_planes() {
-    let mut e = read(&format!("{RECT}block := solid(sec, depth: 30mm)\n\
+    let mut e = read(&format!("{RECT}block := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n\
         slice := plane\nfix(origin == (0, -10, 0)) slice\nfix(dir == (1, 0, 0)) slice.u\nfix(dir == (0, 0, 1)) slice.v\n\
         view(block) in std.side\nsection(block, at: slice) in std.front\n"));
     let before = hidden::inputs(&e.sketch);
@@ -107,7 +108,7 @@ fn a_view_in_the_plane_a_face_was_drawn_in_is_the_face_itself() {
     // normal and look at it square on, and the outline that comes back is the outline that was
     // drawn — the same four corners, at the same coordinates in the plane.  Nothing here compares one
     // kernel against another; it compares the kernel against the drawing it was written over.
-    let e = read(&format!("{RECT}block := solid(sec, depth: 30mm)\nview(block) in std.front\n"));
+    let e = read(&format!("{RECT}block := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nview(block) in std.front\n"));
     let v = strokes(&e);
     let tol = 1e-6;
     for (p, q) in [
@@ -129,7 +130,7 @@ fn a_bore_along_the_eye_is_two_hidden_lines_in_the_view_beside_it() {
         "{RECT}in std.front {{\no := point hint((30, 20))\n\
          a distance(30, along: u) o\na distance(20, along: v) o\n\
          hole := circle(center: o) hint(r: 8)\nradius(8) hole\n}}\nhole_f := face(hole)\n\
-         stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
+         stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nbore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))\n\
          body := solid(stock)\nbore cut body\nview(body) in std.side\n"
     );
     let e = read(&src);
@@ -156,7 +157,7 @@ fn a_cylinder_is_two_lines_at_every_zoom() {
         "{RECT}in std.front {{\no := point hint((30, 20))\n\
          a distance(30, along: u) o\na distance(20, along: v) o\n\
          rim := circle(center: o) hint(r: 10)\nradius(10) rim\n}}\nrf := face(rim)\n\
-         cyl := solid(rf, depth: 25mm)\nview(cyl) in std.side\n"
+         cyl := solid(std.solids.Prism(rf, from: -25mm, to: 0))\nview(cyl) in std.side\n"
     );
     let e = read(&src);
     for unit in [2.0, 0.5, 0.05] {
@@ -174,7 +175,7 @@ fn a_section_shows_the_cut() {
         "{RECT}in std.front {{\no := point hint((30, 20))\n\
          a distance(30, along: u) o\na distance(20, along: v) o\n\
          hole := circle(center: o) hint(r: 8)\nradius(8) hole\n}}\nhole_f := face(hole)\n\
-         stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
+         stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nbore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))\n\
          body := solid(stock)\nbore cut body\nsection(body, at: std.front) in std.front\n"
     );
     let e = read(&src);
@@ -190,7 +191,7 @@ fn a_section_shows_the_cut() {
 #[test]
 fn a_section_is_drawn_in_a_view_parallel_to_its_cut() {
     let src = format!(
-        "{RECT}block := solid(sec, depth: 30mm)\nsection(block, at: std.front) in std.side\n"
+        "{RECT}block := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nsection(block, at: std.front) in std.side\n"
     );
     let (prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
@@ -207,7 +208,7 @@ fn a_part_carries_no_views_and_a_sheet_asks_for_them() {
     // statement.  No `Int` draw flag, no second copy of the geometry, no `project` to keep in
     // step — which is the sixty lines `vtwin/cylinder.sv` spent on its two extra views
     let e = read(&format!(
-        "{RECT}block := solid(sec, depth: 30mm)\nview(block) in std.front\nview(block) in std.side\n"
+        "{RECT}block := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nview(block) in std.front\nview(block) in std.side\n"
     ));
     assert_eq!(e.sketch.derived.len(), 2, "two pictures of one solid");
     assert_eq!(e.sketch.solids.len(), 1, "written once");

@@ -9,7 +9,7 @@ use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
     Input, Name, OpArg, OpenJoint, ParamDecl, Ref, SetLit, SolidRel, Source, Span, Stmt, StmtKind,
-    SynErr, Ty, Use,
+    SynErr, Ty, Use, ROLLED,
 };
 
 /// `part Name(…) { … }`, retired (#562): every braced definition is held to what `part`
@@ -898,7 +898,17 @@ impl<'a> P<'a> {
         let word = self.word_at(self.i).map(str::to_string);
         let call = matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')));
         let dotted_call = self.call_at(self.i) == Some(true);
+        // `block := solid(std.solids.Prism(sec, from: -30mm, to: 0mm))` — the set a solid is the
+        // points of, written in place (#737): its own statement under a key the source cannot
+        // write, the solid's operand that key
+        let swept = word.as_deref() == Some("solid") && call && self.swept_set();
+        if word.as_deref() == Some("solid") && call && !swept && self.solid_set_ahead() {
+            self.solid_set_in_place(next_id, out)?;
+        }
         let kind = match word.as_deref() {
+            // what a body occupies under a motion, or a face over a running parameter, at some
+            // instant (#737): the set read as the sweep it says, `swept_set`'s
+            Some("solid") if swept => StmtKind::Decl(self.sweep_decl(DeclName::Written(name))?),
             // `ball := { p | p distance(12mm) c }` — a set, the points its body holds (§6.21)
             None if self.set_ahead() => {
                 let lit = self.set_lit(next_id)?;
@@ -984,11 +994,20 @@ impl<'a> P<'a> {
             // `duct := sweep(Station(g).f over s)` — a face of a component as one of
             // its formals runs, one dimension up from a curve (#243 L1) — and `s := sweep(tool
             // over t in (a, b))`, a solid a motion sweeps (#391 S2)
-            Some("sweep") if call => StmtKind::Decl(self.sweep_decl(DeclName::Written(name))?),
+            // `sweep(…)` is retired (#737) for the set it says, named from what was written
+            Some("sweep") if call => {
+                let at = self.here();
+                let d = self.sweep_decl(DeclName::Written(name))?;
+                let set = d.sweep.as_ref().map(|s| crate::syntax::print::sweep_text(&d, s))
+                    .unwrap_or_default();
+                self.fail_at(at, &format!("`sweep(…)` is retired (#737): a solid is the points \
+                    of a set, and what this sweeps is `{set}`"));
+                return None;
+            }
             // `solid(… over s in (a, b))` is retired (#391 S2) for the sweep
             Some("solid") if call && self.family_ahead() => {
-                self.fail("a face family is `sweep(Component(…).face over s)` (#391, #398): \
-                           `solid(… over …)` is retired");
+                self.fail("a face family is `solid({ p | p coincident(over s) \
+                           Component(…).face })` (#391, #398, #737): `solid(… over …)` is retired");
                 return None;
             }
             // `k := trace(leg.toe over theta in (0, 360))` — a point of a component as one of
@@ -1967,6 +1986,208 @@ impl<'a> P<'a> {
         let span = Span::new(lo, self.prev_hi());
         let id = self.mint_stmt(next_id, span)?;
         out.push(Stmt { id, kind: StmtKind::Relation(rel), span, chained: Chained::No });
+        Some(())
+    }
+
+    /// **A set that says a sweep** (#737), written in place in `solid(…)` here: its tokens made
+    /// the sweep's, so the solid is read as that sweep — whether it was one.  Two bodies of one
+    /// statement say one:
+    ///
+    /// * `{ p | p inside(under: m, seen_from: g, over t in (a, b)) tool }`, what the body `tool`
+    ///   occupies under the motion at some roll of the interval (`over t`, a declared parameter's;
+    ///   no `over` at all, the whole roll, bounded by the body it is cut from);
+    /// * `{ p | p coincident(over s) Station(…).f }`, what the face `f` of the station occupies at
+    ///   some instant of the declared parameter `s` — a face family — or `{ p | p coincident(over
+    ///   s) sec }`, a face of the drawing as `s` runs.
+    fn swept_set(&mut self) -> bool {
+        let Some(made) = self.swept_tokens() else { return false };
+        let close = made.1;
+        self.t.splice(self.i..=close, made.0);
+        true
+    }
+
+    /// The tokens of the sweep the set written in place at `solid(` here says, and the index of
+    /// the `)` closing `solid(` — `None` where it says none.
+    fn swept_tokens(&self) -> Option<(Vec<(Tok, Span)>, usize)> {
+        let at = |k: usize| self.t.get(k).map(|t| &t.0);
+        let word = |k: usize| match at(k) { Some(Tok::Ident(w)) => Some(w.as_str()), _ => None };
+        let span = |k: usize| self.t[k].1;
+        let skip = |mut k: usize| { while at(k) == Some(&Tok::Nl) { k += 1; } k };
+        let mut k = skip(self.i + 2);
+        if at(k) != Some(&Tok::P('{')) { return None; }
+        k = skip(k + 1);
+        let bound = word(k)?;
+        k = skip(k + 1);
+        if at(k) != Some(&Tok::P('|')) { return None; }
+        k = skip(k + 1);
+        if word(k) != Some(bound) { return None; }
+        let verb = word(k + 1)?;
+        if !matches!(verb, "inside" | "coincident") || at(k + 2) != Some(&Tok::P('(')) { return None; }
+        // the parentheses' items, split at their commas
+        let mut items: Vec<(usize, usize)> = Vec::new();
+        let (mut depth, mut from, mut j) = (0usize, k + 3, k + 2);
+        loop {
+            j += 1;
+            match at(j)? {
+                Tok::P('(') => depth += 1,
+                Tok::P(')') if depth == 0 => { items.push((from, j)); break; }
+                Tok::P(')') => depth -= 1,
+                Tok::P(',') if depth == 0 => { items.push((from, j)); from = j + 1; }
+                Tok::Nl => return None,
+                _ => {}
+            }
+        }
+        // the operand, to the set's closing brace, then `)` closing `solid(`
+        let (operand_lo, mut e) = (j + 1, j + 1);
+        let mut depth = 0usize;
+        loop {
+            match at(e)? {
+                Tok::P('(') | Tok::P('[') => depth += 1,
+                Tok::P(')') | Tok::P(']') => depth = depth.checked_sub(1)?,
+                Tok::P('{') => return None,
+                Tok::P('}') if depth == 0 => break,
+                Tok::Nl if depth == 0 => break,
+                _ => {}
+            }
+            e += 1;
+        }
+        let operand_hi = e;
+        let brace = skip(e);
+        if at(brace) != Some(&Tok::P('}')) || at(brace + 1) != Some(&Tok::P(')')) { return None; }
+        if operand_lo == operand_hi { return None; }
+        let close = brace + 1;
+        let over = items.iter().find(|&&(a, _)| word(a) == Some("over")).copied();
+        let labels: Vec<(usize, usize)> = items.iter().filter(|&&(a, _)| word(a) != Some("over"))
+            .copied().collect();
+        let labelled = |&(a, b): &(usize, usize)| {
+            b > a + 2 && matches!(word(a), Some("under" | "seen_from")) && at(a + 1) == Some(&Tok::P(':'))
+        };
+        if !labels.iter().all(labelled) { return None; }
+        let toks = |a: usize, b: usize| self.t[a..b].iter().cloned();
+        let mut made: Vec<(Tok, Span)> = vec![(Tok::Ident("sweep".into()), span(self.i)),
+                                              (Tok::P('('), span(self.i + 1))];
+        made.extend(toks(operand_lo, operand_hi));
+        match (verb, over) {
+            // a face of a station, or of the drawing, at some instant of a declared parameter
+            ("coincident", Some((a, b))) if labels.is_empty() && b == a + 2 => {
+                made.extend(toks(a, b));
+            }
+            // a body under a motion: over an interval, a declared parameter, or the whole roll
+            ("inside", over) => {
+                match over {
+                    Some((a, b)) => made.extend(toks(a, b)),
+                    None => {
+                        let sp = span(k + 1);
+                        made.extend([(Tok::P(','), sp), (Tok::Ident("through".into()), sp),
+                                     (Tok::P(':'), sp), (Tok::Ident(ROLLED.into()), sp)]);
+                    }
+                }
+                for &(a, b) in &labels {
+                    made.push((Tok::P(','), span(a)));
+                    made.extend(toks(a, b));
+                }
+            }
+            _ => return None,
+        }
+        made.push((Tok::P(')'), span(close)));
+        Some((made, close))
+    }
+
+    /// Whether `solid(` here is followed by a set written in place (#737): a set literal, or a
+    /// call that is no word of the language's own (`face(…)` is a section, `hint(…)` a seed).
+    fn solid_set_ahead(&self) -> bool {
+        let at = self.i + 2;
+        if self.set_at(at) {
+            return true;
+        }
+        self.call_at(at).is_some_and(|dotted| {
+            dotted || self.word_at(at).is_some_and(|w| w != "face"
+                && !crate::syntax::reserved_word(w) && !crate::constraints::is_operator(w)
+                && crate::model::EntKind::parse(w).is_none())
+        })
+    }
+
+    /// The set `solid(…)` is written over in place (#737), made its own statement — a set or an
+    /// instance under a key the source cannot write, a link of the solid's text as an inline
+    /// set's is of a relation's — and its tokens made the one name of that key, so the solid
+    /// reads it as a set named.
+    fn solid_set_in_place(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        let start = self.i;
+        self.i += 2; // `solid(`
+        let first = self.i;
+        let at = self.here().lo as usize;
+        let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::at(at) };
+        let (name, kind) = if self.set_ahead() {
+            let name = key("s");
+            let lit = self.set_lit(next_id)?;
+            (name.clone(), StmtKind::Set(crate::syntax::SetDecl { name, lit }))
+        } else {
+            let name = key("i");
+            self.faces_in_place(next_id, out)?;
+            let component = self.component_name()?;
+            let args = self.inst_args()?;
+            let inst = Instance {
+                annotations: Default::default(),
+                name: name.clone(),
+                component,
+                args,
+                span: Span::new(at, self.prev_hi()),
+                membership: Membership::default(),
+                class: Classes::default(),
+                mirror: None,
+            };
+            (name, StmtKind::Instance(inst))
+        };
+        let span = Span::new(at, self.prev_hi());
+        let id = self.mint_stmt(next_id, span)?;
+        out.push(Stmt { id, kind, span, chained: Chained::Link });
+        let past = self.i;
+        self.t.splice(first..past, std::iter::once((Tok::Ident(name.text), span)));
+        self.i = start;
+        Some(())
+    }
+
+    /// Each `face(…)` written in place as an argument of the call that opens here (#737:
+    /// `std.solids.Prism(face(a, b, c, -> close), from: 0mm, to: 5mm)`), made its own anonymous
+    /// face, a link of the statement, and its tokens made the one name of its key — so the call
+    /// passes a face as it passes one named.
+    fn faces_in_place(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        let start = self.i;
+        loop {
+            // the call's own brackets, and an argument `face(` directly within them
+            let open = (start..self.t.len()).find(|&k| self.t[k].0 == Tok::P('('))?;
+            let mut depth = 0usize;
+            let mut found = None;
+            for k in open..self.t.len() {
+                match &self.t[k].0 {
+                    Tok::P('(') => depth += 1,
+                    Tok::P(')') => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    Tok::Ident(w) if depth == 1 && w == "face"
+                        && self.t.get(k + 1).map(|t| &t.0) == Some(&Tok::P('(')) => {
+                        found = Some(k);
+                        break;
+                    }
+                    Tok::Nl if depth == 0 => break,
+                    _ => {}
+                }
+            }
+            let Some(k) = found else { break };
+            self.i = k + 1;
+            let lo = self.t[k].1.lo as usize;
+            let decl = self.decl(EntKind::Face, None)?;
+            let span = Span::new(lo, self.prev_hi());
+            let key = decl.name.key().text.clone();
+            let id = self.mint_stmt(next_id, span)?;
+            out.push(Stmt { id, kind: StmtKind::Decl(decl), span, chained: Chained::Link });
+            let past = self.i;
+            self.t.splice(k..past, std::iter::once((Tok::Ident(key), span)));
+        }
+        self.i = start;
         Some(())
     }
 

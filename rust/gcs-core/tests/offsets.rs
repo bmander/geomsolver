@@ -278,17 +278,26 @@ fn a_side_grown_is_a_distance() {
 }
 
 /// The outside of an interval is either side of it, and of a conjunction any one failing: a
-/// union each, which no bound says — refused at the use, a grown interval's as a plain one's.
+/// union each, which no one bound says — read at a region solid's point as the complement of
+/// what holds there (#737 P3).  Within a ball of 4, outside the shell from 1 to 2 about its
+/// centre is the ball of 1 and the shell from 2 to 4; outside the lens two balls of 1.5 make,
+/// whichever of them a point is not in.
 #[test]
-fn the_outside_of_an_interval_is_refused() {
-    for (set, why) in [
-        ("band := { q | q distance(in: (1, 2)) c }", "either side of it"),
-        ("band := { q | q distance(<= 1, side: outside) tube; q inside lid }",
-         "several things hold"),
-    ] {
-        refused(&format!("{FRAME}{set}\nbad := {{ p | p inside tube; p outside band }}\n\
-                          b := solid(bad)\n"),
-                "E040", why, "bad");
+fn the_outside_of_an_interval_or_a_conjunction_is_its_complement() {
+    let e = solved(&format!("{FRAME}ball := std.sets.Sphere(c, r: 4)\n\
+                             band := {{ q | q distance(in: (1, 2)) c }}\n\
+                             lens := {{ q | q distance(<= 1.5) c; q distance(<= 1.5) t }}\n\
+                             banded := {{ p | p inside ball; p outside band }}\n\
+                             lensed := {{ p | p inside ball; p outside lens }}\n\
+                             b := solid(banded)\nl := solid(lensed)\n"));
+    for (name, at) in [("b", [(0.5, true), (1.5, false), (3.0, true), (4.5, false)]),
+                       ("l", [(0.5, false), (-1.0, true), (2.0, true), (4.5, false)])] {
+        let field = MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10)
+            .unwrap_or_else(|m| panic!("`{name}`: {m}"));
+        for (z, inside) in at {
+            let side = field.side([0.0, 0.0, z]);
+            assert_eq!(side < 0.0, inside, "`{name}` at z = {z}: {side}");
+        }
     }
 }
 

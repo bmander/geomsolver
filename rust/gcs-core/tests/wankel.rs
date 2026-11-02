@@ -79,11 +79,11 @@ fn each_planar_row_names_what_it_refuses() {
     };
     let edit = |from: &str,to: &str| { assert!(source.contains(from),"{from}"); source.replace(from,to) };
     // P2: a case that does not stand through the blank
-    let r = refused(&edit("solid(face(rim), from: -1mm,","solid(face(rim), from: 10mm,"),&[]);
+    let r = refused(&edit("Prism(face(rim), from: -1mm,","Prism(face(rim), from: 10mm,"),&[]);
     assert_eq!(r.condition,admission::Condition::Prisms,"{r}");
     // P3: two turns of the shaft are no period
-    let r = refused(&edit("sweep(housing over t in (0deg, 1080deg),",
-                          "sweep(housing over t in (0deg, 720deg),"),&[]);
+    let r = refused(&edit("over t in (0deg, 1080deg)) housing",
+                          "over t in (0deg, 720deg)) housing"),&[]);
     assert_eq!(r.condition,admission::Condition::Period,"{r}");
     // P5: a case too small, its wall reaching the blank as it turns
     let r = refused(&edit("radius(R + 4 * e) rim","radius(R + e) rim"),&[]);

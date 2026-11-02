@@ -53,4 +53,4 @@ component Tube(a: Length, b: Length, r: Length, up: axis, phi: Angle) {
 }
 
 param phi: Angle over (0deg, 720deg)
-tube := sweep(Tube(a: 10mm, b: 5mm / (2 * pi), r: 1.5mm, up: std.z).sec over phi)
+tube := solid({ p | p coincident(over phi) Tube(a: 10mm, b: 5mm / (2 * pi), r: 1.5mm, up: std.z).sec })

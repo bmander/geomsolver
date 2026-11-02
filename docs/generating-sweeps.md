@@ -33,8 +33,8 @@ general project spent its effort.
 
 ## The class
 
-A sweep `removal := sweep(tool over t in (a, b), under: generating)`, or `sweep(tool, through:
-body, …)` over the
+A sweep `removal := solid({ p | p inside(under: generating, over t in (a, b)) tool })`, or `solid({
+p | p inside(under: generating) tool })` cut from a body, over the
 roll it takes through the body's material (`solid::roll::interval`, the one interval every reader
 asks), is **admitted** when all of
 the following hold. Each condition is a predicate evaluated on the solved model, and each
@@ -902,9 +902,9 @@ face, refused before any row is read.
 
 ### Prisms cut under a planar motion: the planar subtraction class
 
-A conjugate wheel (#590) is what a tool would cut if it were a gear shaper: `space :=
-sweep(star over t in (0deg, 540deg), under: handle_turn, seen_from: wheel_turn)`, `space cut
-wheel`. Its tool is always in mesh (E1), its arms' straight sides touch twice in a passage (E2),
+A conjugate wheel (#590) is what a tool would cut if it were a gear shaper: `space := solid({ p
+| p inside(under: handle_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })`, `space
+cut wheel`. Its tool is always in mesh (E1), its arms' straight sides touch twice in a passage (E2),
 and a stepped handle is no single revolution or prism (T1). Each of those rows exists so
 that no sheet needs trimming; under a motion that keeps the tool's plane the trimming is cheap and
 exact in the plane. Within a slab of the blank that every member spans or misses, the section is
@@ -949,7 +949,7 @@ A sweep distributes over union: under one motion over one roll, `sweep(A ∪ B) 
 sweep(B)`, so `blank − sweep(A ∪ B)` is `blank − sweep(A) − sweep(B)`. A body cutting the sweep
 of a union is admitted and built from a copy of the drawing with that cut written as one cut a
 member (`solid::distributed::lowered`): each member's sweep under the union's motion, over the
-union's roll (a `through:` roll is the union's, found once), placed wherever the union's sweep
+union's roll (a whole roll is the union's, found once), placed wherever the union's sweep
 is, and its faces named by their routes in the union (`removal.tool.ring`). Each member's sweep
 is then whatever it is alone, and is asked that class's rows: a ball's under any motion is its tube
 (`canal`), a revolution's under a screw, a turn or a slide the constant twist's, under a relative

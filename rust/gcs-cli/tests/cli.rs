@@ -387,13 +387,14 @@ fn explicit_native_stl_never_falls_back_when_occt_is_unavailable() {
     std::fs::write(&model,"\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point
 fix((0, 0)) o
 c := circle(center: o)
 radius(2) c
 }
-body := solid(face(c), depth: 3)
+body := solid(std.solids.Prism(face(c), from: -3, to: 0))
 ").unwrap();
     std::fs::write(&output,"old STL").unwrap();
     let result = run(&[model.to_str().unwrap(),"--stl",output.to_str().unwrap(),
@@ -568,22 +569,24 @@ fn a_solid_at_an_unsolved_pose_does_not_hide_the_diagnosis() {
     let dir = std::env::temp_dir().join(format!("solventc-unbuilt-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("a place to write");
     let path = dir.join("hidden.sv");
-    std::fs::write(&path, "unit mm\nuse std\nin std.front {\n  p0 := point\n\
+    std::fs::write(&path, "unit mm\nuse std\nuse std.solids\nin std.front {\n  p0 := point\n\
         \x20 p1 := point hint((12, 0))\n  p2 := point hint((12, 5))\n  p3 := point hint((2, 5))\n\
         \x20 fix((2, 0)) p0\n\
         \x20 sec := horizontal (e0 := line(p0, p1)) -> vertical (e1 := line(p1, p2)) ->\n\
         \x20        horizontal (e2 := line(p2, p3)) -> vertical (e3 := line(p3, p0)) -> close\n\
         \x20 p0 distance(10) p1\n  p1 distance(5) p2\n  std.origin distance(-6mm, along: u) p1\n}\n\
-        ring := solid(sec, about: std.z)\n").expect("write");
+        ring := solid(std.solids.Revolution(sec, about: std.z))\n").expect("write");
     let path = path.to_string_lossy().into_owned();
     let out = run(&[&path]);
     let (text, err) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     assert_eq!(out.status.code(), Some(2), "did not solve, whatever the solid does: {text}{err}");
     assert!(text.contains("hidden.sv: did not solve"), "{text}");
-    assert!(text.contains("  conflict: std.origin distance(-6mm, along: u) p1"), "{text}");
+    // either of the two that conflict is said
+    assert!(text.contains("  conflict: std.origin distance(-6mm, along: u) p1")
+            || text.contains("  conflict: p0 distance(10) p1"), "{text}");
     let not_built = text.find(gcs_core::program::NOT_BUILT).expect("the solid said as unbuilt");
     assert!(text.find("conflict:").unwrap() < not_built, "under the diagnosis: {text}");
-    assert!(text.contains("hidden.sv:15:1: note[E080]: `ring`:"), "{text}");
+    assert!(text.contains("hidden.sv:16:1: note[E080]: `ring`:"), "{text}");
     assert_eq!(text.matches("the revolution axis crosses the profile").count(), 1, "once: {text}");
     assert!(!err.contains("error["), "no error of the document: {err}");
     // told an unsolved drawing is no failure, its solids are none either
@@ -870,6 +873,7 @@ fn a_step_assembly_is_written_in_the_drawings_colours() {
 const PLATES: &str = "\
 unit mm
 use std
+use std.solids
 use std.place (offset)
 component Plate(w: Length, d: Length, h: Length) {
   in std.front {
@@ -885,7 +889,7 @@ component Plate(w: Length, d: Length, h: Length) {
     bc := line(b, c)
     ce := line(c, e)
     ea := line(e, a)
-    body := solid(face(ab, bc, ce, ea), from: 0mm, to: h)
+    body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: h))
   }
 }
 in (f := frame) { one := Plate(w: 30mm, d: 20mm, h: 5mm) }
@@ -904,6 +908,7 @@ fix(origin == (0, 0, -50)) h
 const BORED: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point
 b := point
@@ -918,8 +923,8 @@ fix((5, 3)) m
 c := circle(center: m) hint(r: 1)
 radius(1) c
 }
-block := solid(face(o, b, a, d, -> close), depth: 3)
-bore := solid(face(c), from: -5, to: 5)
+block := solid(std.solids.Prism(face(o, b, a, d, -> close), from: -3, to: 0))
+bore := solid(std.solids.Prism(face(c), from: -5, to: 5))
 body := solid(block)
 bore cut body
 ";
@@ -1000,8 +1005,8 @@ fn clearance_document(tag: &str) -> (PathBuf,String) {
          d{t} := point hint(({x}, 10))\n(p{t} := line(a{t}, b{t})) -> (q{t} := line(b{t}, c{t})) -> \
          (r{t} := line(c{t}, d{t})) -> (s{t} := line(d{t}, a{t})) -> close\nhorizontal p{t}\nvertical q{t}\n\
          horizontal r{t}\nvertical s{t}\na{t} distance(10) b{t}\na{t} distance(10) d{t}\nfix(({x}, 0)) a{t}\n}}\n\
-         f{t} := face(p{t}, q{t}, r{t}, s{t})\ns{t}_ := solid(f{t}, from: -5mm, to: 0mm)\n",x+10.,x+10.);
-    let text = format!("unit mm\nuse std\n{}{}claim sA_ clear(2mm) sB_\n",block("A",0.),block("B",13.));
+         f{t} := face(p{t}, q{t}, r{t}, s{t})\ns{t}_ := solid(std.solids.Prism(f{t}, from: -5mm, to: 0mm))\n",x+10.,x+10.);
+    let text = format!("unit mm\nuse std\nuse std.solids\n{}{}claim sA_ clear(2mm) sB_\n",block("A",0.),block("B",13.));
     let path = dir.join("blocks.sv");
     std::fs::write(&path,&text).unwrap();
     (path,text)
@@ -1075,6 +1080,7 @@ fn a_scenarios_words_are_said() {
     std::fs::write(&source,"\
 unit mm
 use std
+use std.solids
 in std.front {
   b0 := point
   b1 := point
@@ -1092,7 +1098,7 @@ in std.front {
 (riser := line(b3, b4)) -> (top := line(b4, b5)) -> (west := line(b5, b0)) -> close
   outline := face(south, east, ledge, riser, top, west)
 }
-plate := solid(outline, depth: 4mm)
+plate := solid(std.solids.Prism(outline, from: -4mm, to: 0))
 scenario lift {
   pinned b0
   claim safety(plate) >= 2
@@ -1305,6 +1311,7 @@ fn a_swept_bodys_empty_common_reads_volume_zero() {
     std::fs::write(&source,"\
 unit mm
 use std
+use std.solids
 use std.place (vertical, coords)
 use std.motion (turns)
 in std.front {
@@ -1330,13 +1337,13 @@ in std.top {
   rim := circle(center: wo) hint(r: 40)
   radius(40mm) rim
 }
-star := solid(plus, from: -10mm, to: 0mm)
+star := solid(std.solids.Prism(plus, from: -10mm, to: 0mm))
 tool_turn := frame
 tool_turn turns(1) stem
 wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
-blank := solid(face(rim), from: -8mm, to: -2mm)
-space := sweep(star over t in (0deg, 540deg), under: tool_turn, seen_from: wheel_turn)
+blank := solid(std.solids.Prism(face(rim), from: -8mm, to: -2mm))
+space := solid({ p | p inside(under: tool_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })
 wheel := solid(blank)
 space cut wheel
 overlap := solid(wheel)
@@ -1474,13 +1481,14 @@ fn middle((w, h, rgb): &(usize, usize, Vec<u8>)) -> [u8; 3] {
 const NESTED: &str = "\
 unit mm
 use std
+use std.solids
 in std.top {
   hub := point
   fix((0mm, 0mm)) hub
   wide_rim := radius(30mm) circle(center: hub)
   narrow_rim := radius(8mm) circle(center: hub)
-  wide := solid(face(wide_rim), from: -5mm, to: 5mm)
-  narrow := solid(face(narrow_rim), from: 0mm, to: 20mm)
+  wide := solid(std.solids.Prism(face(wide_rim), from: -5mm, to: 5mm))
+  narrow := solid(std.solids.Prism(face(narrow_rim), from: 0mm, to: 20mm))
 }
 ";
 
@@ -1685,6 +1693,7 @@ fn a_slab_keeps_a_thickness_either_side() {
 const STAR_WHEEL: &str = "\
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 use std.shapes
 use std.motion (turns)
@@ -1747,18 +1756,18 @@ fix(origin == (0mm, 0mm, -1.1mm)) top
 fix(dir == (1, 0, 0)) top.u
 fix(dir == (0, 1, 0)) top.v
 plan := StarOutline(top, s: {span: 74.2mm, waist: 25.8mm, tip_r: 3.25mm, fillet_r: 4mm})
-star := solid(plan.outline, from: -16mm, to: 0mm)
+star := solid(std.solids.Prism(plan.outline, from: -16mm, to: 0mm))
 handle_turn := frame
 handle_turn turns(1) stem
 wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
-space := sweep(star over t in (0deg, 540deg), under: handle_turn, seen_from: wheel_turn)
+space := solid({ p | p inside(under: handle_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })
 in std.top {
   bc := point hint((-60, 70))
   fix((-60mm, 70mm)) bc
   bsq := std.shapes.CenteredRectangle(bc, w: 10mm, h: 10mm)
 }
-block := solid(face(bsq.loop), from: 0mm, to: 10mm)
+block := solid(std.solids.Prism(face(bsq.loop), from: 0mm, to: 10mm))
 ";
 
 /// The wheel the star's sweep cuts, of the planar subtraction class: its field fails the mesher
@@ -1769,7 +1778,7 @@ in std.top {
   wo coincident wc
   rim := radius(46.1mm) circle(center: wo)
 }
-wheel := solid(face(rim), from: -15.6mm, to: -0.6mm)
+wheel := solid(std.solids.Prism(face(rim), from: -15.6mm, to: -0.6mm))
 space cut wheel
 ";
 

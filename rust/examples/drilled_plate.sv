@@ -7,6 +7,7 @@
 // mesh is made where the drawing stands when the row is compiled.
 unit mm
 use std
+use std.solids
 
 L := 160mm
 h := 60mm
@@ -36,7 +37,7 @@ in std.front {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-web := solid(plate, from: -t / 2, to: t / 2) of alloy
+web := solid(std.solids.Prism(plate, from: -t / 2, to: t / 2)) of alloy
 
 scenario hung {
   plane stress web

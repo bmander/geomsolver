@@ -38,4 +38,4 @@ in std.top {
   radius(bend_radius) guide
 }
 param s: Scalar over (0, 1)
-body := sweep(Bend(guide, std.z, inlet: inlet_half, outlet: outlet_half, wall: wall).sec.profile over s)
+body := solid({ p | p coincident(over s) Bend(guide, std.z, inlet: inlet_half, outlet: outlet_half, wall: wall).sec.profile })

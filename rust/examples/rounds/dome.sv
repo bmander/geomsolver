@@ -10,6 +10,7 @@
 // closes on the axis into the sphere, and over 5 no ball fits inside the cylinder: refused.
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 5mm   // the rim's radius
@@ -20,5 +21,5 @@ in std.top {
   rim := circle(center: o) hint(r: 5)
   radius(5mm) rim
 }
-drum := solid(face(rim), from: 0mm, to: 10mm)
+drum := solid(std.solids.Prism(face(rim), from: 0mm, to: 10mm))
 drum.near round(r: r) drum.rim

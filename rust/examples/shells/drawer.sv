@@ -6,6 +6,7 @@
 // Built exactly: 11520 less 36 × 8 × 22, 5184 mm³.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 2mm
@@ -22,6 +23,6 @@ in std.front {
   (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> (west := line(b3, b0)) -> close
   outline := face(south, east, north, west)
 }
-drawer := solid(outline, depth: 12mm)
+drawer := solid(std.solids.Prism(outline, from: -12mm, to: 0))
 
 drawer.north shell(t: wall) drawer

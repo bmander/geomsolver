@@ -424,6 +424,7 @@ fn the_box_shows_the_object_and_not_its_features() {
     let src = "\
 unit mm
 use std
+use std.solids
 in std.front {
   a := point
   b := point hint((60, 0))
@@ -443,8 +444,8 @@ in std.front {
 }
 sec := face(ab, bc, cd, da)
 hole_f := face(hole)
-stock := solid(sec, depth: 30mm)
-bore := solid(hole_f, depth: 30mm)
+stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))
+bore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))
 body := solid(stock)
 bore cut body
 ";
@@ -484,6 +485,7 @@ bore cut body
 fn an_object_that_does_not_evaluate_is_reported_with_its_reason() {
     let src = "\
 use std
+use std.solids
 in std.front {
   a := point hint((-0.4, 0))
   b := point hint((0.28, -0.4))
@@ -493,9 +495,9 @@ in std.front {
   ca := line(c, a)
 }
 f0 := face(ab, bc, ca)
-b0 := solid(f0, about: bc, sweep: 271)
+b0 := solid(std.solids.Revolution(f0, about: bc, to: 271))
 f1 := face(ab, bc, ca)
-b1 := solid(f1, about: std.x)
+b1 := solid(std.solids.Revolution(f1, about: std.x))
 ";
     let (prog, errs, _) = gcs_core::library::parse_linked(src);
     assert!(errs.is_empty(), "{errs:?}");

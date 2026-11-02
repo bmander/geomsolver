@@ -33,7 +33,7 @@ component Plate(w: Length, d: Length, h: Length) {
     ea := line(e, a)
     rim := circle(center: a) hint(r: 0.5mm)
     radius(0.5mm) rim
-    body := solid(face(ab, bc, ce, ea), from: 0mm, to: h)
+    body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: h))
   }
 }
 ";
@@ -64,13 +64,13 @@ component Turned(s0: Length) {
     profile := (l1 := line(p1, p2)) -> (l2 := line(p2, p3)) -> (l3 := line(p3, p4)) ->
                (round := arc(center: k, start: p4, end: p5)) -> (l5 := line(p5, p6)) ->
                (l6 := line(p6, p1)) -> close
-    body := solid(profile, about: ax)
+    body := solid(std.solids.Revolution(profile, about: ax))
   }
 }
 ";
 
 fn doc(defs: &str, body: &str) -> String {
-    format!("unit mm\nuse std\nuse std.place (offset, horizontal)\n{defs}\n{body}")
+    format!("unit mm\nuse std\nuse std.solids\nuse std.place (offset, horizontal)\n{defs}\n{body}")
 }
 
 /// The solids built while `work` runs, by index.

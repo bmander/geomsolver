@@ -825,6 +825,7 @@ volume(200 * 1cm^3) arm
     let plate = "\
 unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
 param r: Length hint(9mm)
@@ -852,7 +853,7 @@ in std.front {
   hole := radius(r) circle(center: o) hint(r: 9)
   region := face(low, end, round, top, back, holes: hole)
 }
-plate := solid(region, from: -2mm, to: 2mm) of steel
+plate := solid(std.solids.Prism(region, from: -2mm, to: 2mm)) of steel
 mass(0.17584kg) plate
 ";
     // a solid that is no prism, filled, its boundary moved by its sheets (#567)
@@ -947,6 +948,7 @@ fn envelope_contacts_agree_with_finite_differences() {
     const SRC: &str = "\
 unit mm
 use std
+use std.solids
 use std.sets
 use std.motion (slides, spins, turns)
 o := point hint((0, 0, 0))
@@ -985,8 +987,8 @@ in std.front {
   rq := point hint((0, 10))
   rax := line(ro, rq)
 }
-blade := solid(face(l1, l2, l3, l4), about: std.z)
-ring := solid(face(rim), about: rax)
+blade := solid(std.solids.Revolution(face(l1, l2, l3, l4), about: std.z))
+ring := solid(std.solids.Revolution(face(rim), about: rax))
 side := surface(blade, l1)
 round := surface(ring, rim)
 f3 := envelope(side over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
@@ -1056,6 +1058,7 @@ fn meshing_contacts_agree_with_finite_differences() {
     const SRC: &str = "\
 unit mm
 use std
+use std.solids
 use std.sets
 use std.motion (slides, spins, turns)
 o := point hint((0, 0, 0))
@@ -1086,7 +1089,7 @@ in std.front {
   rq := point hint((0, 10))
   rax := line(ro, rq)
 }
-ring := solid(face(rim), about: rax)
+ring := solid(std.solids.Revolution(face(rim), about: rax))
 round := surface(ring, rim)
 formed := meshing(pinion_flank, cone over t in (-20deg, 20deg), under: gear_turn, seen_from: spin)
 rounded := meshing(pinion_flank, round over t in (-20deg, 20deg), under: gear_turn, seen_from: spin)
@@ -1548,6 +1551,7 @@ fn a_regions_deflection_agrees_with_finite_differences() {
     let holed = "\
 unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 use std.motion (slides, spins, turns)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
@@ -1578,7 +1582,7 @@ in std.front {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-plate := solid(region, from: -2mm, to: 2mm) of steel
+plate := solid(std.solids.Prism(region, from: -2mm, to: 2mm)) of steel
 scenario s {
   plane strain plate
   fixed plate.back
@@ -1626,6 +1630,7 @@ fn a_solids_deflection_agrees_with_finite_differences() {
     let holed = "\
 unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 use std.motion (slides, spins, turns)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
@@ -1656,7 +1661,7 @@ in std.front {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-plate := solid(region, from: -4mm, to: 4mm) of steel
+plate := solid(std.solids.Prism(region, from: -4mm, to: 4mm)) of steel
 scenario s {
   fixed plate.back
   pressure plate.round 30MPa

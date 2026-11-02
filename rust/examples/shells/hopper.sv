@@ -13,6 +13,7 @@
 // trapezoid less the eroded one between the floor and the rim.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 2mm
@@ -42,8 +43,8 @@ in std.front {
   (floor := line(t0, t1)) -> (right := line(t1, t2)) -> (rim := line(t2, t3)) -> (left := line(t3, t0)) -> close
   trapezoid := face(floor, right, rim, left)
 }
-hopper := solid(section, depth: 12mm)
-flared := solid(trapezoid, depth: 20mm)
+hopper := solid(std.solids.Prism(section, from: -12mm, to: 0))
+flared := solid(std.solids.Prism(trapezoid, from: -20mm, to: 0))
 
 hopper.top shell(t: wall) hopper
 flared.rim shell(t: wall) flared

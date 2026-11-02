@@ -120,13 +120,15 @@ in REF { statement* }                   every declaration inside is drawn in REF
 NAME := { p | statement* }              a set: the points satisfying the body        (1.13)
 NAME := CHAIN                           a chain joined by `->`, named as a traversal (1.7)
 NAME := face(EDGE, ..., holes: LOOP)    a planar region                              (1.14)
-NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:, about:
-NAME := sweep(Comp(ARGS).FACE over F in (E, E))   a face family: the face as the formal F runs
-NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a region
+NAME := solid(SET)                      the points of a set: `{ p | … }` or a call     (1.14)
+NAME := solid(std.solids.Prism(FACE, from: E, to: E))   a prism; `Drafted`, `Revolution`,
+                                        `Through` likewise, `use std.solids`         (1.14)
+NAME := solid({ p | p coincident(over S) Comp(ARGS).FACE })   a face family: S declared
+NAME := solid(SOLID)                    a body over a stock                          (1.14)
 NAME := solid()                         an empty body: what is in `union` with it (1.14)
 NAME := REF at[(under: M, seen_from: G)] E   a frame, a solid or a point read at an instant (1.15)
 NAME := REF in F                        the same, drawn in the jointed frame F at its value (1.15)
-NAME := sweep(SOLID over t in (E, E) | SOLID, through: BODY[, under: M, seen_from: G])
+NAME := solid({ p | p inside(under: M, seen_from: G[, over t in (E, E)]) SOLID })
                                         a solid a frame's motion sweeps                (1.15)
 REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
 NAME := envelope | meshing | surface(...)                                           (1.15)
@@ -368,15 +370,15 @@ nothing declares is E101**, so a misspelling is never a degree of freedom. `para
 top of a document (or its `preview`); a component's unknowns are the formals a call leaves unbound
 (1.8). To equate two angles, prefer `l1 angle(l3, l4) l2`.
 
-**Parameters that run.** `param t: Angle over (0deg, 360deg)` declares a number that runs
-over an interval: neither a value nor an unknown, so it has no `:=` and no `hint(…)`, and it says
-what it is (`Length`, `Angle` or `Scalar`). Its ends are numbers of that type and increase (E103
-otherwise). It is the one notion a face family's running number (`over s`, a declared `s`, 1.14), a
-traced body's formals (1.10) and the roll a reading runs over (`over t in (a, b)`, 1.15) are uses
-of. **A reading over the roll reads it**: `envelope(tool over t)`, `sweep(tool over t)`
-and `meshing(f1, f2 over t)` take a declared `Angle`'s interval for their own, as `over t in (a,
-b)` states one in place (a parameter of another type, or a name nothing declares, is E103; a
-component, which sees no parameter, states its interval).
+**Parameters that run.** `param t: Angle over (0deg, 360deg)` declares a number that runs over an
+interval: neither a value nor an unknown, so it has no `:=` and no `hint(…)`, and it says what it is
+(`Length`, `Angle` or `Scalar`). Its ends are numbers of that type and increase (E103 otherwise). It
+is the one notion a face family's running number (`over s`, a declared `s`, 1.14), a traced body's
+formals (1.10) and the roll a reading runs over (`over t in (a, b)`, 1.15) are uses of. **A reading
+over the roll reads it**: `envelope(tool over t)`, `p inside(under: m, over t) tool` and
+`meshing(f1, f2 over t)` take a declared `Angle`'s interval for their own, as `over t in (a, b)`
+states one in place (a parameter of another type, or a name nothing declares, is E103; a component,
+which sees no parameter, states its interval).
 
 **A relation over a parameter holds for every value of it.** A dimension of the document's
 own relations may read `t`, and the drawing is then a function of `t`: drawn at the interval's
@@ -828,7 +830,7 @@ component BoltPattern(body: solid, center: point, ref: line,
   private construction layout := std.shapes.Polygon(center, ref, n: n, r: pitch_r, phase: phase)
   repeat n as i {
     hole := radius(hole_r) circle(center: layout.v[i])
-    private drill := solid(face(hole), through: body)
+    private drill := solid(std.solids.Through(face(hole)))
     drill cut body
   }
 }
@@ -951,7 +953,7 @@ component Magnet(theta: Angle) {                 // hub_motor/motor/rotor.sv
     length(Rr + 2mm) mc
     datum angle(theta) mc
     …
-    body := solid(face(inner, side_r, outer, side_l), from: -L / 2, to: L / 2)
+    body := solid(std.solids.Prism(face(inner, side_r, outer, side_l), from: -L / 2, to: L / 2))
   }
 }
 ```
@@ -1001,6 +1003,7 @@ use std.place (horizontal, vertical)   // and import those two words bare
 | `std.sets` | `Sphere`, `Cylinder`, `Cone`, `ConeThrough`, `HalfSpace`, `Offset` (1.13); the word `on_sphere` |
 | `std.rounds` | the words `round`, `chamfer`, `shell`; `Rounded`, `Chamfered`, `Grown` and the sets the words make (1.14) |
 | `std.panels` | `Developable`, `Development` (1.14) |
+| `std.solids` | `Prism`, `Drafted`, `Revolution`, `Through`: solids as sets (1.14) |
 | `std.stations` | `OnLine`, `OnArc`, `OnSpline`, `On`, `Helix`, `OnHelix`, `Minimal`, `Frenet`, `Along`, `AlongFrenet`, `Across`, `Ruled`, `Apex`, `Affine`, `Similar`, `Twisted`; the words `scaled`, `scaled_radius` (1.14) |
 | `std.motion` | the words `turns`, `screws`, `spins`, `slides`, `rolls`, `reciprocal`; `Screw` (1.15) |
 
@@ -1639,7 +1642,9 @@ to the drawing; it means what its uses say:
   a call is E103.
 - Statements in one body are a conjunction (an intersection): `{ p | p coincident ball; p
   coincident std.front }` is the circle the front cuts from `ball`, and a point drawn in the front
-  meets the plane's statement by being there. A union is a choice of root, not a body. A culprit
+  meets the plane's statement by being there. A union is the outside of what is outside each
+  (`{ p | p outside { q | q outside a; q outside b } }`, below); for a drawn point it is a choice
+  of root, not a body. A culprit
   reads as the use (`l tangent shaft`), never the body's rows.
 - A set's body is read in space wherever its point is drawn, so `side:` or `sense:` in one is an
   error.
@@ -1672,8 +1677,11 @@ unbound as an unknown (`r: hint(10mm)`; the solve writes it back):
 `q inside S` / `q outside S` put a point in or out of any set, reading its one number as at most /
 at least: `q inside std.sets.Sphere(c, r: 5)`, `q inside std.sets.Cone(l, half: 30deg)`. Regions
 meet by conjunction, and `outside` makes a difference: `{ p | p inside heel; p outside toe }`.
-Refused: `outside` a conjunction or interval, a set of several numbers, a tangency to a region. A
-point in a region is a bound, so a choice of root.
+**Outside a set of several statements** (0.199) — a conjunction, an interval, several numbers — is
+where any of them fails: the set's complement, read at a point of its own. So a **union** is the
+outside of what is outside each, `both := { p | p outside { q | q outside a; q outside b } }`,
+read point by point (shown, meshed, measured; two balls' union is not built exactly yet). Refused:
+a tangency to a region. A point in a region is a bound, so a choice of root.
 
 **Offsets.** `p distance(4mm, side: outside) k` puts `p` 4mm off `k`'s surface (`side:` required);
 a bound on it, `p distance(<= 2mm, side: outside) pitch`, is within 2mm outside it (`side: inside`,
@@ -1699,11 +1707,13 @@ needs no bound; a round's radius may read an unknown of the drawing (`r: 0.3 * m
 
 ### 1.14 Faces and solids
 
-**A solid is a term, never a step.** A solid is a face swept, or a stock **plus everything in
-`union` with it, minus everything that `cut`s it, within everything it is in `common` with**. The
-order lives inside the term, never between statements: `bore cut body` may be written fifty lines
-above `body := solid(…)`. **Nothing about a solid is solved for**: it owns no parameters, numeric
-extents are worked out at elaboration, and the geometry swept is the drawing, solved as usual.
+**A solid is a term, never a step.** A solid is the points of a set, `solid(S)`, or a stock
+**plus everything in `union` with it, minus everything that `cut`s it, within everything it is in
+`common` with**. The order lives inside the term, never between statements: `bore cut body` may be
+written fifty lines above `body := solid(…)`. **Nothing about a solid is solved for**: it owns no
+parameters, numeric extents are worked out at elaboration, and the geometry its set reads is the
+drawing, solved as usual. A prism, a draft and a revolution are words of `std.solids` (below),
+written over the language's own words: `use std.solids` beside `use std`.
 
 #### Faces
 
@@ -1714,6 +1724,7 @@ itself (`face(hole)`).
 ```
 unit mm
 use std
+use std.solids
 
 in std.front {
   a := point
@@ -1731,7 +1742,7 @@ in std.front {
   fix((0, 0)) a
 
   sec := face(ab, bc, cd, da)
-  block := solid(sec, depth: 30mm)
+  block := solid(std.solids.Prism(sec, from: -30mm, to: 0mm))
 }
 ```
 
@@ -1744,9 +1755,10 @@ block.sv: solved
 
 The face and solid added nothing to the rectangle's six unknowns and six equations.
 
-- **Inline or named.** `solid(face(ab, bc, cd, da), depth: 30mm)` writes the face where one sweep
-  uses it. A named chain needs no face: `block := solid(profile, depth: 30mm)`, edges still `ab`;
-  an open chain closes with `face(trail, -> close)`.
+- **Inline or named.** `solid(std.solids.Prism(face(ab, bc, cd, da), from: -30mm, to: 0mm))`
+  writes the face where one solid uses it. A named chain needs no face: `block :=
+  solid(std.solids.Prism(profile, from: -30mm, to: 0mm))`, edges still `ab`; an open chain closes
+  with `face(trail, -> close)`.
 - **Holes**: `face(barrel, holes: core)` or `holes: first, second` — circles, closed loops or faces
   strictly inside on the same plane. A hole of loose edges is a face first, `h := face(e, f, g, k)`.
   A hole *through a part* is usually better as a solid that `cut`s the body, which names the bore's
@@ -1763,6 +1775,7 @@ The face and solid added nothing to the rectangle's six unknowns and six equatio
 ```
 unit mm
 use std
+use std.solids
 component Par(o: point, u: Length) {
   p := point(x: o.x + u, y: o.y + u * u / 1mm)
 }
@@ -1775,7 +1788,7 @@ in std.front {
   b coincident k hint(t: 1)
   fix(x == -1mm) a
   fix(x == 1mm) b
-  cap := solid(face(k from a to b, -> close), depth: 3mm)
+  cap := solid(std.solids.Prism(face(k from a to b, -> close), from: -3mm, to: 0mm))
 }
 k := trace(Par(o).p over u in (-2mm, 2mm))
 ```
@@ -1783,28 +1796,98 @@ k := trace(Par(o).p over u in (-2mm, 2mm))
 `4 params, 4 equations; DOF 0`, and `cap` is the parabolic cap, 4/3 mm² × 3 mm = 4 mm³
 (`examples/solid_tooth.sv` is an involute tooth so).
 
-#### Sweeps
+#### Solids as sets: `std.solids`
 
-- **Prism**, along the face's normal: `depth: 30mm` is the material *behind* the visible face,
-  `from: -30mm, to: 0mm`; write `from:`/`to:` when the face is not at an end. `through: body` spans
-  the target's stock and additions both ways and follows the solve.
-- **Draft**: `draft: 3deg` beside `from:`/`to:` or `depth:` tapers the sides from the face's own
-  plane (the parting plane, ordinate 0): the section at `h` is the face moved `|h| tan 3°` into its
-  material, so the sides lean away from that plane on both sides of it, a hole widening as the
-  outside narrows. Lines' sides stay planes and circles' become cones; faces keep their names, a
-  side crossing the plane two pieces of one name. An arc meeting a side at an angle (not tangent)
-  is refused by the exact kernel. `conrod/rod.sv` drafts its eyes and shank.
-- **Revolution**, about a line or axis **in the face's own plane**: `about: ax` is a full turn,
-  `sweep: 90deg` a partial one (caps `start` and `end`), `sense: cw` reverses it. An axis lies in
-  the plane when it is one of the plane's own (`about: std.z` on `std.front`) or the solve puts it
-  there (else E081).
+**`solid(S)` is the one constructor** (0.199): the points inside the set `S`, named or written in
+its brackets — a set literal, `solid({ p | p inside sec; … })`, on one line or several, or a call of a family,
+`solid(std.solids.Prism(sec, from: -30mm, to: 0mm))`. A `face(…)` may stand in place as such a
+call's argument (`std.solids.Through(face(hole))`). `solid()` is the empty body (Bodies, below). The
+words of `std.solids` (`rust/lib/std/solids.sv`) are sets written in the language's own words:
+
+| written | the points |
+|---|---|
+| `std.solids.Prism(sec, from: -30mm, to: 0mm)` | whose foot on `sec`'s plane lies within it, between the two ordinates along its normal — `from: -d, to: 0mm` the material *behind* the face the view shows |
+| `std.solids.Drafted(sec, from: -4mm, to: 4mm, draft: 3deg)` | the prism's, the section at ordinate `h` the face moved `\|h\| tan 3°` into its material |
+| `std.solids.Revolution(sec, about: ax)` | the face occupies turned about `ax`, a line or axis in its own plane, through some angle from `from:` (default `0deg`) to `to:` (default `360deg`) |
+| `std.solids.Through(sec)` | whose foot lies within `sec`, unbounded along its normal: a cutter |
+
+- **Prism.** The ordinates are signed and both written; `from: -30mm, to: 0mm` is what was `depth:
+  30mm`. Write the face where it is not at an end.
+- **Draft.** The sides lean from the face's own plane (the parting plane, ordinate 0), away from it
+  on both sides, a hole widening as the outside narrows; lines' sides stay planes and circles'
+  become cones. An arc meeting a side at an angle (not tangent) is refused by the exact kernel.
+  `conrod/rod.sv` drafts its eyes and shank.
+- **Revolution.** Right-handed about the line's own direction; `to: 90deg` a quarter, `from:
+  -90deg, to: 0deg` the quarter the other way (what `sense: cw` said). An axis lies in the plane
+  when it is one of the plane's own (`about: std.z` on `std.front`) or the solve puts it there.
+  `under: ax`, a line, is the turn about it, so the word adds no unknown: the ring below is `10
+  params`, as a revolution always was.
+- **Through.** Cut from a body (`pin cut body`), or kept in common with one, it is the prism
+  through that body's material both ways, however the drawing moves it — what `through: body` was.
+  It is never anything's stock: alone it has no end (E080).
+- **Face names** are one rule, `std`'s words and a hand-written set alike: a section's sides by the
+  edges they are swept from (`block.ab`); of two ordinates the greater bounds `near` and the lesser
+  `far`; a turn short of a whole one is capped `start` where it begins and `end` where it ends.
 - **Face family**: a loft, or a sweep along a path, is a face of an instance as a declared
   parameter runs (below).
+
+**A face is a set** where a region solid's point reads it: `p inside sec` (or `outside`) is the
+region of the face's plane within its loops, read at the point's foot on that plane, so off the
+plane it is the prism over the face, unbounded along the normal; `p distance(<= d, side: outside)
+sec` grows it in its plane by `d`; `p distance(>= a, along: n) sec` bounds the point's ordinate
+along the face's normal (the word `n`) from the plane it lies in. A drawn point against a face is
+E040: draw on a plane.
+
+**The same set written by hand is built the same.** The evaluator recognises a set by what its
+statements say, never by a word's name: a section between two stated ordinates along its own
+plane's normal is a prism; with the lean term, a drafted one; a face swept by a turn about a line
+in its plane over an interval with one end at nothing, a revolution; a section with no ordinate
+cut from a body, a through prism. So
+
+```
+slab := { p |
+  p inside sec
+  p distance(>= -30mm, along: n) sec
+  p distance(<= 0mm, along: n) sec
+}
+same := solid(slab)
+```
+
+is `block` exactly — its volume, its faces' names and areas, its exact boundary. A set none of them
+recognises stays a region (1.13), read point by point: shown, meshed and measured, its exact export
+refused in the region's own words (`std.solids.Revolution(sec, about: ax, from: 10deg, to: 90deg)`
+is one: neither end of its interval is nothing).
+
+**There is a roll at which.** `p coincident(under: m, over t in (a, b)) sec` and `p inside(under: m,
+over t in (a, b)) tool` say that at some roll `t` of the interval the point is where the face (or
+the body) stands under the motion `m` — the interval written in place, or `over s` a declared `param
+s … over (a, b)`. That is the revolution's body above, and a motion's sweep and a face family are
+written so (Face families, below; 1.15): a set in `solid(…)` whose body is one such statement is
+read as the sweep of the same points. Written by hand, the turn is the line's, or a frame's joint:
+
+```
+hand := solid({ p | p coincident(under: ax, over t in (0deg, 90deg)) sec })
+turn := frame
+turn turns(ratio: 1) ax                     // use std.motion (turns)
+same := solid({ p | p coincident(under: turn, over t in (0deg, 90deg)) sec })
+```
+
+is the quarter ring, capped `hand.start` and `hand.end`. The developables' `coincident(t in (0,
+1))` — a contact's place on a curve — is another word, unchanged.
+
+**The labels are retired.** `solid(sec, depth: 30mm)` and every label of the old constructor
+(`from:`, `to:`, `depth:`, `draft:`, `about:`, `sweep:`, `sense:`, `through:`) are E001, saying the
+replacement in the document's own arguments: "a solid is the points of a set, and `solid(…)` takes
+no labels (#737): write `solid(std.solids.Prism(sec, from: -30mm, to: 0))`, with `use std.solids`".
+`scripts/solids_as_sets.py FILE…` rewrites a document.
+
+A ring, a rectangle turned whole about a line in its plane:
 
 ```
 unit mm
 use std
 use std.place (horizontal)
+use std.solids
 
 in std.front {
   p0 := point hint((10, 0))
@@ -1828,7 +1911,7 @@ in std.front {
   p1 distance(6) p2
 
   sec := face(e0, e1, e2, e3)
-  ring := solid(sec, about: ax)
+  ring := solid(std.solids.Revolution(sec, about: ax))
 }
 ```
 
@@ -1840,16 +1923,18 @@ ring.sv: solved
 ```
 
 Pappus gives `2π · 12 · 24 = 1809.557`: a static solid's volume is its exact boundary's. With
-`sweep: 90deg` it is `452.389`.
+`to: 90deg` it is `452.389`.
 
 #### Face families: lofts and sweeps along a path
 
 **A face family is a face of an instance as a formal runs.** With `param s: Scalar over (0, 1)`
-declared, `body := sweep(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall:
-2mm).sec.profile over s)` is the face `sec.profile` of the instance as its formal `s` runs over the
-parameter's interval (`solid_loft`, `solid_elbow`, `solid_bend`, `solid_twist`). The formal that
-runs is the one named as the parameter, or the one the call gives it (`Tube(hose, std.x, r: r, s:
-s2).f over s2`, `paths/cable.sv`). A family stands in the document (a component sees no
+declared, `body := solid({ p | p coincident(over s) Reducer(guide, std.z, inlet: 24mm, outlet:
+12mm, wall: 2mm).sec.profile })` — the points where the face `sec.profile` of the instance stands
+at some value of `s` — is that face as its formal `s` runs over the parameter's interval
+(`solid_loft`, `solid_elbow`, `solid_bend`, `solid_twist`). The formal that runs is the one named
+as the parameter, or the one the call gives it (`p coincident(over s2) Tube(hose, std.x, r: r, s:
+s2).f`, `paths/cable.sv`). Through 0.198 it was `sweep(Reducer(…).sec.profile over s)`, now E001
+naming the set. A family stands in the document (a component sees no
 parameter). The instance is written in place, leaves `s` unbound and is never drawn; it is solved
 at every station, `s` a number there, so its body may use any expression in `s` and read a number
 of the geometry it was given (`rim.r`).
@@ -1893,10 +1978,10 @@ square to the helix of radius `r`, for a coil's wire. A negative pitch winds lef
 (`rust/gcs-core/tests/helix.rs`). A family whose station a motion carries this way is exported as
 that motion's sweep, exactly (`lofts/spring.sv` and `swept_spring.sv` are one tube).
 
-**A named open chain of lines and arcs is one path.** `sweep(Tube(route, std.z, r: 4mm).f over s)`
-over `param s: Scalar over (0, 5)` runs the station over `route`'s five links one after the next,
-link `k` while `s` is in `(k, k + 1)`; a law in `s` reads the chain's whole `s`, and the walls keep
-their names across the links (`docs/lofts/l0/pipe.sv`).
+**A named open chain of lines and arcs is one path.** `solid({ p | p coincident(over s) Tube(route,
+std.z, r: 4mm).f })` over `param s: Scalar over (0, 5)` runs the station over `route`'s five links
+one after the next, link `k` while `s` is in `(k, k + 1)`; a law in `s` reads the chain's whole `s`,
+and the walls keep their names across the links (`docs/lofts/l0/pipe.sv`).
 
 **Several sections** are joined by **rails**, one a corresponding corner — its places in order, one
 a section — the station's corner where its rail meets the plane: `rim := point in st.n, front` and
@@ -1913,12 +1998,12 @@ std.stations.Similar(prof, from, to, st.n, l, r)` — `from` and `to` carried to
 `std.stations.Affine(prof, from, to, third, st.n, a, b, c)` on three (`docs/lofts/l0/two_faces.sv`,
 `rust/gcs-core/tests/correspondence.rs`).
 
-**Two faces drawn apart** are lofted by `sweep(std.stations.Ruled(inlet, outlet).f over s)`: corner
-`k` of each walk joined to corner `k` of the other by a straight rail, the ends the faces
-themselves. The pairing is the written order — start a walk at another corner to connect it
-differently, and name a point on an edge (`m coincident(t == 0.5) half`, `face(t0, t1, t2, m, ->
-close)`) to give a triangle a fourth corner for a square; keep the first three corners out of line.
-`std.stations.Apex(base, tip).f` lofts a face to a point.
+**Two faces drawn apart** are lofted by `solid({ p | p coincident(over s) std.stations.Ruled(inlet,
+outlet).f })`: corner `k` of each walk joined to corner `k` of the other by a straight rail, the
+ends the faces themselves. The pairing is the written order — start a walk at another corner to
+connect it differently, and name a point on an edge (`m coincident(t == 0.5) half`, `face(t0, t1,
+t2, m, -> close)`) to give a triangle a fourth corner for a square; keep the first three corners out
+of line. `std.stations.Apex(base, tip).f` lofts a face to a point.
 
 **A frame that does not twist.** Along a path that leaves its plane (a helix), `st :=
 std.stations.OnHelix(…)` turns with the path's Frenet frame; `rm := std.stations.Minimal(st.n, up:
@@ -1955,18 +2040,26 @@ hole := circle(center: o) hint(r: 5)
 radius(5) hole
 hole_f := face(hole)
 
-stock := solid(sec, depth: 30mm)
-bore := solid(hole_f, depth: 30mm)
+stock := solid(std.solids.Prism(sec, from: -30mm, to: 0mm))
+bore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0mm))
 body := solid(stock)
 bore cut body
 ```
 
 `body.volume` is `69643.8` (`72000 − π · 5² · 30`), whichever order the last two lines are in.
 
+**The body words say a set** (0.199): the body is the points inside its stock or anything in
+`union` with it, outside everything that `cut`s it and inside everything it is in `common` with —
+a formula over sets, not an order of steps. The same Boolean written as a set builds as the same
+body: `solid({ p | p inside stock; p outside bore })` is `body` above to the byte, and `solid({ p
+| p outside { q | q outside stock; q outside boss } })` is `stock` with `boss` in union. Every
+solid in such a set is named whole (`p inside stock`), and the faces are named through them as a
+body's are (`body.bore.hole`).
+
 - **A swept solid takes features directly**: `bore cut stock` makes `stock` the body, keeping its
   face names. Write `body := solid(stock)` only when the bare sweep and the part both need names.
-- **`cut` with `through:`**: `pinhole := solid(face(hole), through: body)` then `pinhole cut body`.
-  `through:` only makes the cutter.
+- **A cutter through the body**: `pinhole := solid(std.solids.Through(face(hole)))` then
+  `pinhole cut body`. `Through` only makes the cutter; the body it is cut from bounds it.
 - **`tip common body`** keeps only what the body has in common with `tip`. Union comes first;
   `cut` and `common` commute.
 - **A pattern of solids.** A solid declared inside a `ring` is one solid a copy, each
@@ -1976,7 +2069,7 @@ bore cut body
   ```
   ring 6 about std.origin {
     …                                     // c on a circle, hole := circle(center: c) …
-    peg := solid(face(hole), from: 0mm, to: 10mm)
+    peg := solid(std.solids.Prism(face(hole), from: 0mm, to: 10mm))
   }
   pegs := solid()
   repeat 6 as i {
@@ -1992,9 +2085,9 @@ bore cut body
   boss. Name the pocketed shell, then add the boss to it:
 
   ```
-  stock := solid(sec, depth: 30mm)
-  pocket := solid(rim_f, depth: 10mm)
-  boss := solid(stud_f, from: -10mm, to: -4mm)
+  stock := solid(std.solids.Prism(sec, from: -30mm, to: 0mm))
+  pocket := solid(std.solids.Prism(rim_f, from: -10mm, to: 0mm))
+  boss := solid(std.solids.Prism(stud_f, from: -10mm, to: -4mm))
 
   shell := solid(stock)
   pocket cut shell
@@ -2003,7 +2096,10 @@ bore cut body
   boss union body
   ```
 
-  `shell` is what a history calls "the body as of step 2", named.
+  `shell` is what a history calls "the body as of step 2", named — and it is the set it means:
+  `shell := solid({ p | p inside stock; p outside pocket })`, then `body := solid({ p | p outside {
+  q | q outside shell; q outside boss } })`. A Boolean nested inside another's set, with no
+  intermediate named, is read point by point.
 
 **A region is a solid**: `solid(R)`, `R` a set, is the points inside it.
 
@@ -2084,7 +2180,7 @@ A material is declared once and named by the solids made of it:
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
 in std.top {
   rim := radius(20mm) circle(center: std.top.origin)
-  disc := solid(face(rim), depth: 5mm) of steel
+  disc := solid(std.solids.Prism(face(rim), from: -5mm, to: 0mm)) of steel
 }
 ```
 
@@ -2111,24 +2207,26 @@ extent) and `b0.ab` (the side swept from edge `ab`), reached through a body as `
 plane lies on a face by touching its surface at its own origin:
 
 ```
-b0 := solid(f0, depth: 20)
+b0 := solid(std.solids.Prism(f0, from: -20, to: 0))
 v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (10, 20, 10))
 v1.origin coincident b0.far.surface
 v1 tangent(at: v1.origin) b0.far.surface
 ```
 
-Draw on `v1` (`in v1 { … }`) and extrude again; change `depth: 20` and everything on `v1` follows.
+Draw on `v1` (`in v1 { … }`) and extrude again; change `from: -20` and everything on `v1` follows.
 `v1` keeps four freedoms (where its origin sits, how its axes turn); hold them as anything else.
 Double-clicking a face in the workspace writes these statements, or picks a plane already lying
-there. Refused (E040): the bare face (write `.surface`), a curved side, a `through:` solid's caps,
-an edge with no name, the faces of a revolution, loft or sweep.
+there. Refused (E040): the bare face (write `.surface`), a curved side, a `Through` cutter's
+caps (its ends are known only once the drawing is solved), an edge with no name; and, because the
+evaluator reads the surface of a prism's face alone yet, the faces of a revolution, a face family
+or a motion's sweep.
 
 #### Rounds and chamfers
 
 `use std.rounds (round, chamfer)`:
 
 ```sv
-block := solid(outline, depth: 12mm)
+block := solid(std.solids.Prism(outline, from: -12mm, to: 0mm))
 block.near round(r: 2mm) block       // every edge where the near face meets another of block's
 block.far chamfer(d: 1mm) block      // the far rim, a flat 1 along each face
 round(r: 1.5mm) dish.pocket          // every edge among the pocket's faces
@@ -2264,11 +2362,12 @@ statements.
 | `face(a, bc, d, -> close)` | E080 — "`bc` meets neither of its neighbours" |
 | `face(ab, hole)` | E080 — "a circle is a whole loop: it stands in a face by itself" |
 | `face(a, b)` | E080 — a loop that does not come back closes with `-> close` |
-| `solid(ab, depth: 3mm)`, `solid(sec)` | E080 — a sweep is over a face; a body is made of solids |
-| `solid(sec, from: 0mm, to: 0mm)` | E080 — "a prism swept nowhere is no solid" |
-| `solid(sec, about: ax, sweep: -90deg)` | E040 — "a sweep is a magnitude: which way it turns is `sense: cw`" |
-| `solid(sec, about: std.y)`, face on `std.front` | E081 — "`std.y` does not lie in the face's own plane" |
-| `solid(sec, depth: 3mm, about: ax)` | E001 — swept along its normal or turned, not both |
+| `solid(sec)` | E080 — "a body is made of solids, and this is a face" |
+| `solid(sec, depth: 3mm)` | E001 — "a solid is the points of a set, and `solid(…)` takes no labels (#737): write `solid(std.solids.Prism(sec, from: -3mm, to: 0))`, with `use std.solids`" |
+| `sweep(ball over t in (0deg, 90deg), under: turn)` | E001 — "`sweep(…)` is retired (#737): a solid is the points of a set, and what this sweeps is `solid({ p \| p inside(under: turn, over t in (0deg, 90deg)) ball })`" |
+| `solid(std.solids.Revolution(sec, about: std.y))`, face on `std.front` | E080 — "a face swept by a turn is read point by point where the line it turns about lies in the face's plane" |
+| `pin := solid(std.solids.Through(sec))`, cut from nothing | E080 — "`pin` is a prism through everything, which only the body it is cut from bounds: cut it from one (`pin cut body`), or bound it by two ordinates" |
+| `solid(std.solids.Prism(sec, from: 5mm, to: 0mm))` | E080 — "no point is at least `5mm` and at most `0mm` along the section's normal, so the prism's set is empty: write the lesser ordinate `from:`" |
 | `x cut y` and `y cut x` | E041 at the second — "`x` would be made of itself" |
 | `x coincident y`, two solids | refused: material is added with `union` |
 
@@ -2378,9 +2477,10 @@ scenario tip_load {
 
 #### Solids read in their plane
 
-A prism — a face swept square to its plane, `solid(F, from: a, to: b)` — is read over its face
-when a scenario says so: `plane stress plate` for a thin plate (free across its thickness),
-`plane strain dam` for a long one (held along its length). Its depth is the thickness.
+A prism — a face swept square to its plane, `solid(std.solids.Prism(F, from: a, to: b))`, or the
+same set written by hand — is read over its face when a scenario says so: `plane stress plate` for a
+thin plate (free across its thickness), `plane strain dam` for a long one (held along its length).
+Its depth is the thickness.
 
 ```
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
@@ -2389,7 +2489,7 @@ in std.front {
   hole := arc(center: o, start: m, end: s) hint(r: 10mm)
   quarter := face(cut_x, pulled, side, cut_y, hole)
 }
-plate := solid(quarter, from: -1mm, to: 1mm) of steel
+plate := solid(std.solids.Prism(quarter, from: -1mm, to: 1mm)) of steel
 scenario pull {
   plane stress plate
   pinned plate.cut_x along: std.z            // a wall of the prism is a side of the face
@@ -2440,7 +2540,7 @@ in std.front {
   side := (foot := line(a, c)) -> (right := line(c, d)) -> (head := line(d, e)) ->
           (left := line(e, a)) -> close
 }
-strut := solid(side, from: -10mm, to: 10mm) of steel
+strut := solid(std.solids.Prism(side, from: -10mm, to: 10mm)) of steel
 scenario press {
   fixed strut.foot
   pressure strut.head 10MPa
@@ -2560,13 +2660,14 @@ planet spins(-3) c                                  // its axis where it is draw
 X coincident(t == 60deg) x                          // (10, 17.3205): the arm's turn, then the planet's
 ```
 
-At rest everything stands as drawn, so a relation naming no roll never sees riding. A reading at
-a roll that leaves `under:` out reads what its tool rides on: `envelope(flank over t in (a, b),
+At rest everything stands as drawn, so a relation naming no roll never sees riding. A reading at a
+roll that leaves `under:` out reads what its tool rides on: `envelope(flank over t in (a, b),
 seen_from: blank)` with `flank` drawn in the rack, `meshing(f1, f2 over t in (a, b))`, `tool at
-30deg`, `sweep(tool over t in (-20deg, 20deg))` and `sweep(tool, through: body)`. `under:` stays
-for a tool that rides on nothing; naming it for one that rides is an error, as is a tool whose
-ends ride on different frames. What a reading makes rides on its observer (the profile a rack cuts
-rides on the blank). Two views nested draw in the inner one, with a warning (W115).
+30deg`, `solid({ p | p inside(over t in (-20deg, 20deg)) tool })` and `solid({ p | p
+inside(seen_from: blank) tool })`. `under:` stays for a tool that rides on nothing; naming it for
+one that rides is an error, as is a tool whose ends ride on different frames. What a reading makes
+rides on its observer (the profile a rack cuts rides on the blank). Two views nested draw in the
+inner one, with a warning (W115).
 
 **Two operations on what moves**: every reading of a frame's motion is one of
 them. **At an instant**, `x at τ` is `x` where the roll `τ` puts it — one verb for a frame, a solid
@@ -2579,21 +2680,26 @@ X := x at(under: screw) 40deg                   // a point: one of its own, held
 P coincident x at(under: screw) 40deg           // ... or a point drawn elsewhere, held there
 ```
 
-**Over an interval**, `over t in (a, b)` names the interval of the roll a reading runs over, after
-the operand that runs: `sweep(tool over t in (-75deg, 75deg), under: turn)` is the solid the tool
-sweeps, `envelope(tool over t in (a, b), …)` what its boundary leaves, `meshing(f1, f2 over t in
-(a, b), …)` the contact as the first flank's phase runs. `over t` alone names a declared `param t:
-Angle over (a, b)` (1.6) and reads its interval. The same word is a face family's and a traced
-curve's: `sweep(Station(g).f over s)` over a declared `s` (1.14), `trace(leg.toe over theta in (0, 360))`
-(1.10).
+**Over an interval**, `over t in (a, b)` names the interval of the roll a reading runs over: after
+the operand that runs in `envelope(tool over t in (a, b), …)`, what its boundary leaves, and
+`meshing(f1, f2 over t in (a, b), …)`, the contact as the first flank's phase runs; in a relation's
+parentheses as the roll at which it holds, so `solid({ p | p inside(under: turn, over t in (-75deg,
+75deg)) tool })` is the points the tool occupies at some roll of the interval — the solid it sweeps
+(1.14). `over t` alone names a declared `param t: Angle over (a, b)` (1.6) and reads its interval.
+The same word is a face family's and a traced curve's: `solid({ p | p coincident(over s)
+Station(g).f })` over a declared `s` (1.14), `trace(leg.toe over theta in (0, 360))` (1.10).
 
-**A frame's motion moves a solid**: `tool at(under: indexing) 90deg` is one copy at a constant
-angle (`solid_indexed_pattern.sv`); `sweep(tool over t in (-75deg, 75deg), under: turn)` is the
-union of the tool over the whole interval, a continuous sweep meshed from its material field
-(`swept_torus.sv`). `sweep(tool, through: body, under: crown, seen_from: blank)` rolls the tool
-over the whole roll about 0 during which it meets `body`'s stock and additions (never its cuts, so
-it may cut `body`), found after the solve and clear of the body at both ends — a generating cut
-states no roll limit (`spiral_bevel/hypoid.sv`'s `Generated`). A sweep of a sweep is refused, and
+**A frame's motion moves a solid**: `tool at(under: indexing) 90deg` is one copy at a constant angle
+(`solid_indexed_pattern.sv`); `solid({ p | p inside(under: turn, over t in (-75deg, 75deg)) tool })`
+is the union of the tool over the whole interval, a continuous sweep meshed from its material field
+(`swept_torus.sv`). With no `over` at all, `space := solid({ p | p inside(under: crown, seen_from:
+blank) tool })` is what the tool occupies at *any* roll, which only the body it is cut from bounds:
+`space cut body` rolls it over the whole roll about 0 during which it meets `body`'s stock and
+additions (never its cuts, so it may cut `body`), found after the solve and clear of the body at
+both ends — a generating cut states no roll limit (`spiral_bevel/hypoid.sv`'s `Generated`). Cut from
+nothing it is E080 at its declaration, and a tool always in mesh is E080 asking for a whole period,
+`over t in (0deg, 360deg)`. Through 0.198 these were `sweep(tool over t in (a, b), under: m)` and
+`sweep(tool, through: body, under: m)`, now E001 naming the set. A sweep of a sweep is refused, and
 for an exact export a swept solid may only be `cut`. Exact exports cover the generating classes
 ([generating-sweeps](generating-sweeps.md)): revolved tools cutting gears (`lantern_generation.sv`,
 `spiral_bevel/`), a wheel carried along a screw (`twist_drill/`), a pocketed prism under a planar
@@ -2609,8 +2715,9 @@ circle cuts twice (a cam). A point's envelope is its path: `bore := envelope(ape
 face's loop by itself.
 
 **The rotor is a cut**: the largest rotor turning in a bore is the blank less everything the
-housing's wall sweeps through — `swept := sweep(housing over t in (0deg, 1080deg), under:
-housing_turn)`, `swept cut rotor` (`common` with a sweep keeps the union's inside, a different set).
+housing's wall sweeps through — `swept := solid({ p | p inside(under: housing_turn, over t in
+(0deg, 1080deg)) housing })`, `swept cut rotor` (`common` with a sweep keeps the union's inside, a
+different set).
 
 **A solid's side is a `surface`, and the word has two meanings, one per kind of solid.** Over a
 revolution, `surface(crown, edge: rack.outer[, from: 180deg, to: 360deg])` is the side one profile
@@ -2681,8 +2788,8 @@ holds for every `t` (1.6): what is drawn in the frame is a trajectory.
 **Drawn in a frame with a value**: what its `in` block draws stands where the
 value puts it. Each plane the block draws in is read as that plane drawn in the frame (`P in f`),
 and so is the plane a relation in the block names, so the block is the drawing at rest carried
-whole; a face of it is swept as a declared parameter runs with `sweep(sec over s)` — a face family
-whose station is the drawing itself (`lofts/thread.sv`'s thread):
+whole; a face of it is swept as a declared parameter runs with `solid({ p | p coincident(over s)
+sec })` — a face family whose station is the drawing itself (`lofts/thread.sv`'s thread):
 
 ```sv
 param s: Scalar over (0, 1)
@@ -2697,7 +2804,7 @@ in screw {
   sq := std.shapes.CenteredRectangle(c, w: size, h: size) in std.front
   sec := face(sq.loop)
 }
-thread := sweep(sec over s)
+thread := solid({ p | p coincident(over s) sec })
 ```
 
 Drawn in the valued frame and no plane of it is E080 (a value carries a plane); a frame declared
@@ -2722,7 +2829,7 @@ follower := frame
 follower slides(360mm) stem                        // its value in degrees is its rise in mm
 fix(value == 5deg * (1 - cos(t))) follower
 roller := r0 in follower                           // where the law puts it at the held `t`
-groove := sweep(ball over t, under: follower, seen_from: cam)
+groove := solid({ p | p inside(under: follower, seen_from: cam, over t) ball })
 ```
 
 A value reads one parameter. A point carried by a driven frame to a roll is held where the law
@@ -2754,7 +2861,7 @@ swept, placed and cuts a profile as one on a joint does:
 param t: Angle over (0deg, 360deg)
 // … a four-bar in std.front, its coupler b–c, a ball and a circle `roller` about a point of it
 coupler := std.Turned(b, c) in std.front          // a frame on the coupler
-groove := sweep(ball over t, under: coupler.axes)  // the tube about the coupler curve
+groove := solid({ p | p inside(under: coupler.axes, over t) ball })   // the tube about its path
 cut := envelope(roller over t, under: coupler.axes) // what the roller clears, in the plane
 held := ball at(under: coupler.axes) 90deg         // at an instant: the document's one parameter
 ```

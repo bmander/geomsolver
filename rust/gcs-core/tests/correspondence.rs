@@ -123,8 +123,7 @@ r1 := point
 port_rail := line(l0, l1)
 starboard_rail := line(r0, r1)
 param s: Scalar over (0, 1)
-blade := sweep(Blade(spine, std.z, port_rail, starboard_rail, profile, p0, p1).sec.f
-               over s)
+blade := solid({ p | p coincident(over s) Blade(spine, std.z, port_rail, starboard_rail, profile, p0, p1).sec.f })
 ";
 
 const RAILS_IN_PLAN: &str = "fix((-10mm, 0mm, 0mm)) l0
@@ -192,7 +191,7 @@ in std.front {
 }
 prof := face(sq)
 param s: Scalar over (0, 1)
-body := sweep(Tri(ra, rb, rc, prof, o, x, y).sec.f over s)
+body := solid({ p | p coincident(over s) Tri(ra, rb, rc, prof, o, x, y).sec.f })
 ";
 
 fn index(e: &Elaborated, name: &str) -> usize {
@@ -257,7 +256,7 @@ fn two_faces_drawn_apart_are_lofted_corner_to_corner() {
 fn a_connector_is_where_a_walk_starts() {
     let src = format!("{FRONT}{OUTLET}outlet := face(b1, b2, b3, b0, -> close)
 param s: Scalar over (0, 1)
-body := sweep(std.stations.Ruled(inlet, outlet).f over s)
+body := solid({{ p | p coincident(over s) std.stations.Ruled(inlet, outlet).f }})
 ");
     let e = determined(&src);
     let turned = [DIAMOND[1], DIAMOND[2], DIAMOND[3], DIAMOND[0]];
@@ -273,14 +272,14 @@ body := sweep(std.stations.Ruled(inlet, outlet).f over s)
 fn an_edge_split_in_the_walk_pairs_faces_of_different_counts() {
     let src = format!("{FRONT}{TRIANGLE}tri := face(t0, t1, t2, m, -> close)
 param s: Scalar over (0, 1)
-body := sweep(std.stations.Ruled(inlet, tri).f over s)
+body := solid({{ p | p coincident(over s) std.stations.Ruled(inlet, tri).f }})
 ");
     let e = determined(&src);
     let tri = [(-10.0, -10.0), (10.0, -10.0), (0.0, 10.0), (-5.0, 0.0)];
     near(volume(&e, "body"), prismatoid(40.0, &SQUARE, &tri), 1e-9, "triangle split");
     let src = format!("{FRONT}{TRIANGLE}tri := face(t0, t1, t2, -> close)
 param s: Scalar over (0, 1)
-body := sweep(std.stations.Ruled(inlet, tri).f over s)
+body := solid({{ p | p coincident(over s) std.stations.Ruled(inlet, tri).f }})
 ");
     refused(&src, "E080", "`inlet` walks 4 links and `tri` 3", "use std.stations");
 }
@@ -293,7 +292,7 @@ fn a_loft_to_a_point_is_a_pyramid() {
     let src = format!("{FRONT}tip := point
 fix((3mm, 30mm, 2mm)) tip
 param s: Scalar over (0, 1)
-body := sweep(std.stations.Apex(inlet, tip).f over s)
+body := solid({{ p | p coincident(over s) std.stations.Apex(inlet, tip).f }})
 ");
     let e = determined(&src);
     near(volume(&e, "body"), 400.0 * 30.0 / 3.0, 1e-9, "pyramid");
@@ -366,6 +365,7 @@ in std.front {
 fn a_face_of_a_blocks_copies() {
     let e = determined("unit mm
 use std
+use std.solids
 use std.place (coords)
 in std.front {
   c := point
@@ -377,7 +377,7 @@ in std.front {
   }
   hex := face(e)
 }
-prism := solid(hex, depth: 10mm)
+prism := solid(std.solids.Prism(hex, from: -10mm, to: 0))
 ");
     near(volume(&e, "prism"), 1.5 * 3f64.sqrt() * 100.0 * 10.0, 1e-9, "hexagonal prism");
 }

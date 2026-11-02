@@ -10,6 +10,7 @@ use gcs_core::space::{cross, dot, sub};
 const PLATE: &str = "\
 unit mm
 use std
+use std.solids
 in std.top {
   a := point
   b := point
@@ -26,7 +27,7 @@ in std.top {
   cd := line(c, d)
   da := line(d, a)
   hole := radius(5mm) circle(center: o)
-  plate := solid(face(ab, bc, cd, da, holes: hole), from: 0mm, to: 10mm)
+  plate := solid(std.solids.Prism(face(ab, bc, cd, da, holes: hole), from: 0mm, to: 10mm))
 }
 ";
 

@@ -226,9 +226,10 @@ fn a_traced_bodys_drawing_is_unchanged() {
 /// is still the predicate.
 #[test]
 fn an_orientation_word_defined_as_a_name_is_read_as_that_name() {
-    let disc = "unit mm\nuse std\ncomponent Disc(r: Length) {\n  in std.top {\n    rim := \
-                radius(r) circle(center: std.top.origin)\n  }\n  body := solid(face(rim), \
-                from: 0mm, to: 2mm)\n}\ncw := Disc(r: 5mm)\nccw := Disc(r: 3mm)\n";
+    let disc = "unit mm\nuse std\nuse std.solids\ncomponent Disc(r: Length) {\n  in std.top {\n    \
+                rim := radius(r) circle(center: std.top.origin)\n  }\n  \
+                body := solid(std.solids.Prism(face(rim), from: 0mm, to: 2mm))\n}\n\
+                cw := Disc(r: 5mm)\nccw := Disc(r: 3mm)\n";
     // the issue's claim: about the two discs, not `cw(…)` missing its brackets
     let e = read(&format!("{disc}claim cw.body clear(1mm) ccw.body\n"));
     assert_eq!(e.sketch.solid_claims.len(), 1);

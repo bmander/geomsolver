@@ -12,6 +12,7 @@
 // a 1 mm ball cannot reach at the chamfer's 135° edges. Edit a number and apply (⌘↵).
 unit mm
 use std
+use std.solids
 use std.rounds (round, chamfer)
 
 R := 30mm    // the disc's radius
@@ -24,7 +25,7 @@ in std.front {
   rim := circle(center: o) hint(r: 30)
   radius(R) rim
 }
-plate := solid(face(rim), depth: 20mm)
+plate := solid(std.solids.Prism(face(rim), from: -20mm, to: 0))
 
 plate.bevel round(r: rr) plate
 bevel := plate.rim chamfer(d: d) plate.far

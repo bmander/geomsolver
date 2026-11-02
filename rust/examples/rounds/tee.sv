@@ -9,6 +9,7 @@
 // nothing there. Orbit (right-drag) to see the crotch. Edit `r` or a pipe's radius and apply (⌘↵).
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 2mm   // the crotch's radius
@@ -25,8 +26,8 @@ in std.top {
   stem_k := circle(center: c2) hint(r: 6)
   radius(6mm) stem_k
 }
-main := solid(face(main_k), from: -30mm, to: 30mm)
-stem := solid(face(stem_k), from: 0mm, to: 25mm)
+main := solid(std.solids.Prism(face(main_k), from: -30mm, to: 30mm))
+stem := solid(std.solids.Prism(face(stem_k), from: 0mm, to: 25mm))
 tee := solid(main)
 stem union tee
 

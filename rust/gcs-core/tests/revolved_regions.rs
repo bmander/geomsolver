@@ -13,6 +13,7 @@ fn solved(source: &str) -> program::Elaborated {
 const RING: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point
 q := point
@@ -24,12 +25,13 @@ ax := line(o,q)
 rim := circle(center: c)
 radius(1mm) rim
 }
-body := solid(face(rim), about: ax)
+body := solid(std.solids.Revolution(face(rim), about: ax))
 ";
 
 const SPHERE: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point
 a := point
@@ -41,7 +43,7 @@ rim := arc(center: o, start: a, end: b)
 radius(2mm) rim
 ax := line(b,a)
 }
-body := solid(face(rim,ax), about: ax)
+body := solid(std.solids.Revolution(face(rim,ax), about: ax))
 ";
 
 fn check(region: &RevolvedRegion,p: [f64;3],expected: f64) {
@@ -72,8 +74,10 @@ fn torus_membership_and_distance_follow_analytic_circles_including_ray_tangencie
 
 #[test]
 fn holes_are_voids_and_source_axis_direction_does_not_change_material() {
-    let source = RING.replace("body := solid(face(rim)",
-        "hole := circle(center: c)\nradius(0.4mm) hole\nbody := solid(face(rim, holes: hole)");
+    assert!(RING.contains("body := solid(std.solids.Revolution(face(rim)"));
+    let source = RING.replace("body := solid(std.solids.Revolution(face(rim)",
+        "hole := circle(center: c)\nradius(0.4mm) hole\n\
+         body := solid(std.solids.Revolution(face(rim, holes: hole)");
     for source in [source.clone(),source.replace("ax := line(o,q)","ax := line(q,o)")] {
         let e = solved(&source);
         let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
@@ -112,6 +116,7 @@ fn finite_conical_material_includes_caps_and_refuses_support_continuations() {
     let e = solved("\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 b := point
@@ -124,7 +129,7 @@ fix((0, 3)) d
 ax := line(a,d)
 profile := (ab := line(a,b)) -> (bc := line(b,c)) -> (cd := line(c,d)) -> (da := line(d,a)) -> close
 }
-body := solid(profile,about: ax)
+body := solid(std.solids.Revolution(profile, about: ax))
 ");
     let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
     for (p,d) in [([0.,0.,2.],-1.),([1.,0.,2.],-std::f64::consts::FRAC_1_SQRT_2),
@@ -151,6 +156,6 @@ fn material_queries_are_snapshots_and_refuse_unsupported_or_nonfinite_geometry()
     assert_eq!(region.classify([f64::NAN,0.,0.],0.).unwrap_err(),Error::NonFinite);
     assert!(region.classify([0.;3],-1.).is_err());
     assert!(region.classify([0.;3],f64::INFINITY).is_err());
-    let e = solved(&RING.replace("about: ax","depth: 2mm"));
+    let e = solved(&RING.replace("Revolution(face(rim), about: ax)","Prism(face(rim), from: -2mm, to: 0)"));
     assert!(RevolvedRegion::read(&e.sketch,0,1e-12).unwrap_err().contains("unmodified revolution"));
 }

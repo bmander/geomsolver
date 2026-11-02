@@ -10,6 +10,7 @@
 // at each height the arithmetic `rack.sv`'s space is read by).
 unit mm
 use std
+use std.solids
 use std.motion (spins, slides)
 
 in std.top {
@@ -25,7 +26,7 @@ in std.top {
   fix((16, 10)) s1
   pitch_line := line(s0, s1)
 }
-disc := solid(face(rim), depth: 6mm)
+disc := solid(std.solids.Prism(face(rim), from: -6mm, to: 0))
 
 // the bar's section square to its length, standing through the disc's 6 mm with 3 mm to spare
 // above and below, so its top and bottom never reach the disc
@@ -39,12 +40,12 @@ in std.side {
   fix((2, 3)) b2
   fix((-2, 3)) b3
 }
-construction bar := solid(face(b0, b1, b2, b3, -> close), from: 18mm, to: 30mm)
+construction bar := solid(std.solids.Prism(face(b0, b1, b2, b3, -> close), from: 18mm, to: 30mm))
 
 turn := frame
 turn spins(1) o
 rack := frame
 rack slides(2 * pi * 16mm) pitch_line
-construction space := sweep(bar over t in (-60deg, 60deg), under: rack, seen_from: turn)
+construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) bar })
 part := solid(disc)
 space cut part

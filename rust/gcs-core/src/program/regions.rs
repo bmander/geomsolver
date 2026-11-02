@@ -326,7 +326,9 @@ pub(super) fn measured_term(
             to = Target::Set { probe: q as u32, terms: Vec::new() };
         }
         if let Target::Ent(e) = &to {
-            if !matches!(e.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Frame) {
+            // a drawn face measured from is its plane (#737), read once its face is built
+            if !matches!(e.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Frame
+                | EntKind::Face) {
                 return refuse(format!(
                     "a region's bound measures the distance from a point, a line, an axis, a \
                      plane, a face or a set, not {}",
@@ -369,6 +371,15 @@ pub(super) fn measured_term(
     probes.terms.get_mut(&p).expect("a probe's terms").push(term);
 }
 
+/// A length a region's term states, written `text`: stated, or affine in one unknown.
+fn length_term(sk: &Sketch, res: &Resolver, text: &str, span: Span)
+    -> Result<crate::model::TermNumber, String> {
+    let arg = Arg::Dim { text: text.to_string(), span };
+    to_arg(sk, res, SpecKind::Length, &arg).ok().as_ref()
+        .and_then(|a| term_number(a, sk, SpecKind::Length))
+        .ok_or_else(|| format!("`{text}` is no length"))
+}
+
 /// `p inside F`, `p outside F`, `p distance(<= d) F`, `p coincident F.surface` … (`Shape::Face`):
 /// the term of the region solid whose point `p` is, or why not.
 pub(super) fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written, point: EntRef,
@@ -387,12 +398,7 @@ pub(super) fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written,
     let word = w.word.text.as_str();
     // a side as written or as a set's body carries it (`Written::side`, #192)
     let side = w.side();
-    let number = |text: &str, span: Span| -> Result<TermNumber, String> {
-        let arg = Arg::Dim { text: text.to_string(), span };
-        to_arg(sk, res, SpecKind::Length, &arg).ok().as_ref()
-            .and_then(|a| term_number(a, sk, SpecKind::Length))
-            .ok_or_else(|| format!("`{text}` is no length"))
-    };
+    let number = |text: &str, span: Span| length_term(sk, res, text, span);
     let dim = w.args.iter().find_map(|a| match a {
         OpArg::Dim(t, sp) => Some((t.clone(), *sp)),
         _ => None,
@@ -438,6 +444,67 @@ pub(super) fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written,
         }
     })();
     made.map(|t| (probe, t))
+}
+
+/// **A drawn face read as a set** (#737 P1, `Shape::Section`): `p inside sec`, `p outside sec`,
+/// `p distance(<= d, side: outside) sec` — the region of the face's plane within its loops, read
+/// at the point's foot on that plane — and `p distance(<= d, along: n) sec`, the point's ordinate
+/// along the face's normal from the plane it lies in.  The term of the region solid whose point
+/// `p` is, or why not.  An ordinate's plane is the face's, known once its face is built: it is
+/// written along the face itself (`RegionShape::Plane { along: face, .. }`) and read so by the
+/// solid that takes it (`solids::build`'s `region`).
+pub(super) fn section_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written, point: EntRef,
+             face: EntRef, probes: &Probes)
+    -> Result<(usize, crate::model::RegionTerm), String> {
+    use crate::model::{RegionShape, RegionTerm, TermNumber};
+    use crate::syntax::{Arg as SArg, Cmp, OpArg};
+    if !probes.terms.contains_key(&point.i()) {
+        return Err(format!(
+            "`{}` is a drawn point: a face's region is read where a set is applied to a region \
+             solid's point (`solid(S)`); a drawn point is held in a face by the plane it is drawn \
+             in and its edges",
+            w.ops[0].root.text
+        ));
+    }
+    let probe = point.i();
+    let number = |text: &str, span: Span| length_term(sk, res, text, span);
+    let term = |shape, cmp, lo, hi| RegionTerm { hi, ..RegionTerm::new(shape, cmp, lo) };
+    let section = RegionShape::Section { face: face.i() as u32 };
+    // a side as written or as a set's body carries it (`Written::side`, #192): within the loops,
+    // or grown by a distance across the plane
+    if let Some((cmp, level)) = w.side() {
+        let lo = match level {
+            Some((t, sp)) => number(&t, sp)?,
+            None => TermNumber::stated(0.0),
+        };
+        return Ok((probe, term(section, cmp, lo, None)));
+    }
+    let word = w.word.text.as_str();
+    let along_n = w.args.iter().any(|a| matches!(a,
+        OpArg::Named(n, SArg::Word(d)) if n.text == "along" && d == "n"));
+    match word {
+        "distance" if along_n => {
+            let Some((t, sp)) = w.dim() else { return Err("an ordinate states a number".into()) };
+            let lo = number(t, sp)?;
+            let plane = RegionShape::Plane { along: face, from: u32::MAX, sign: 1.0 };
+            let made = match w.bound() {
+                Some((Cmp::In, Some((hi, sp)))) => {
+                    let hi = number(hi, *sp)?;
+                    term(plane, Cmp::In, lo, Some(hi.c))
+                }
+                Some((cmp, _)) => term(plane, cmp, lo, None),
+                None => {
+                    let at = lo.c;
+                    term(plane, Cmp::In, lo, Some(at))
+                }
+            };
+            Ok((probe, made))
+        }
+        "coincident" => Err("a region's point on a face is in its plane: `p inside sec` with \
+                             `p distance(0mm, along: n) sec`".to_string()),
+        _ => Err(format!("a region's point is `inside` or `outside` a face, or at an ordinate \
+                          from it `along: n`, not `{word}`")),
+    }
 }
 
 /// `p inside S.ends` (#183 F7, `Shape::Ends`), `S` a set measured from at its own point
@@ -502,7 +569,7 @@ pub(super) fn fill_sets(sk: &mut Sketch, terms: &mut [crate::model::RegionTerm],
                     fill(target, sk)?;
                 }
             }
-            RegionShape::Ends { edge } => fill(edge, sk)?,
+            RegionShape::Ends { edge } | RegionShape::Outside { set: edge } => fill(edge, sk)?,
             _ => {}
         }
     }

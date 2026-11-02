@@ -12,6 +12,7 @@
 // alone (`half.cutter round(r: r) half.cone.bc`).
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 1mm   // every edge's radius
@@ -38,8 +39,8 @@ in std.top {
   fix((-20, 0)) h
   (ef := line(e, f)) -> (fg := line(f, g)) -> (gh := line(g, h)) -> (he := line(h, e)) -> close
 }
-cone := solid(face(ab, bc, cd, da), about: std.z)
-cutter := solid(face(ef, fg, gh, he), from: -1mm, to: 13mm)
+cone := solid(std.solids.Revolution(face(ab, bc, cd, da), about: std.z))
+cutter := solid(std.solids.Prism(face(ef, fg, gh, he), from: -1mm, to: 13mm))
 half := solid(cone)
 cutter cut half
 

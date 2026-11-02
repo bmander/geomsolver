@@ -9,6 +9,7 @@
 // the housing's motion, drawn on the page as `flank`. The numbers are in `configuration.sv`.
 unit mm
 use std
+use std.solids
 use std.place (horizontal, right_of)
 use std.motion (spins)
 use configuration
@@ -54,8 +55,8 @@ in std.top {
   private rim := circle(center: centre) hint(r: 165)
   radius(R + 4 * e) rim
 }
-private case := solid(face(rim), from: -1mm, to: W + 1mm)
-private chamber := solid(face(bore), from: -2mm, to: W + 2mm)
+private case := solid(std.solids.Prism(face(rim), from: -1mm, to: W + 1mm))
+private chamber := solid(std.solids.Prism(face(bore), from: -2mm, to: W + 2mm))
 housing := solid(case)
 chamber cut housing
 
@@ -65,8 +66,8 @@ in std.top {
   private blank_rim := circle(center: hub) hint(r: 120)
   radius(R + e) blank_rim
 }
-private blank := solid(face(blank_rim), from: 0mm, to: W)
-construction swept := sweep(housing over t in (0deg, 1080deg), under: counter, seen_from: spin)
+private blank := solid(std.solids.Prism(face(blank_rim), from: 0mm, to: W))
+construction swept := solid({ p | p inside(under: counter, seen_from: spin, over t in (0deg, 1080deg)) housing })
 rotor := solid(blank)
 swept cut rotor
 
@@ -101,7 +102,7 @@ in std.top {
   tip[0] distance(clearance, along: u) apex
 }
 }
-arc_rotor := solid(face(flank[0], flank[1], flank[2]), from: 0mm, to: W)
+arc_rotor := solid(std.solids.Prism(face(flank[0], flank[1], flank[2]), from: 0mm, to: W))
 arc_rotor_at := arc_rotor at(seen_from: counter) 0deg
 claim over spin seen_from counter in (0deg, 1080deg) {
   arc_rotor_at clear(clearance / 2) housing

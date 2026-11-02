@@ -3,6 +3,7 @@
 // breaks out of the side rather than passing through.
 unit mm
 use std
+use std.solids
 use std.place (right_of)
 
 sphere_r := 20mm   // the sphere's radius
@@ -20,7 +21,7 @@ component Sphere(center: point, r: Length) {
   vertical diameter
   private meridian := arc(center: center, start: bottom, end: top) hint(r: r)
   radius(r) meridian
-  body := solid(face(meridian, diameter), about: diameter)
+  body := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))
 }
 
 // A round hole of radius `r` through `body`, its axis square to the page, level with `center`
@@ -29,7 +30,7 @@ component Hole(body: solid, center: point, r: Length, offset: Length) {
   private ax := point hint((center.x + offset, center.y))
   ax right_of(d: offset) center
   rim := radius(r) circle(center: ax) hint(r: r)
-  private drill := solid(face(rim), through: body)
+  private drill := solid(std.solids.Through(face(rim)))
   drill cut body
 }
 

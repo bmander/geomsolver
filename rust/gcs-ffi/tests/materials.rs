@@ -21,10 +21,11 @@ fn take(p: *mut u8) -> String {
 const DOC: &str = "\
 unit in
 use std
+use std.solids
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
 in std.top {
   rim := radius(1in) circle(center: std.top.origin)
-  disc := solid(face(rim), depth: 0.25in) of steel
+  disc := solid(std.solids.Prism(face(rim), from: -0.25in, to: 0)) of steel
 }
 ";
 

@@ -10,6 +10,7 @@
 // leaving 1953.812 mm³.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (slides)
 
@@ -35,7 +36,7 @@ in std.top {
   private far_side := line(b2, b3)
   private near_end := line(b3, b0)
 }
-block := solid(face(near_side, far_end, far_side, near_end), from: 0mm, to: height)
+block := solid(std.solids.Prism(face(near_side, far_end, far_side, near_end), from: 0mm, to: height))
 
 // the wheel, drawn in a plane through its axis, which lies across the block a little before it:
 // out from the axis downward, the rim toward the block, and along the axis
@@ -61,12 +62,12 @@ in bench {
   private bore := line(v1, v2)
   private upper := line(v2, v0)
 }
-construction vwheel := solid(face(lower, bore, upper), about: wheel_axis)
+construction vwheel := solid(std.solids.Revolution(face(lower, bore, upper), about: wheel_axis))
 
 // the slide along the block, 36 mm over the roll, from clear before it to clear past it
 private way := axis
 fix(dir == (1, 0, 0)) way
 feed := frame
 feed slides(36mm) way
-construction groove := sweep(vwheel over t in (0deg, 360deg), under: feed)
+construction groove := solid({ p | p inside(under: feed, over t in (0deg, 360deg)) vwheel })
 groove cut block

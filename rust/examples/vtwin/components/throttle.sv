@@ -4,6 +4,7 @@
 // The end-on sketch remains the assembly drawing and carries the part's dimensions.
 
 use std
+use std.solids
 use hardware (oring_squeeze, oring_groove_w)
 use components.dims (bossz, hubr, lev, levw, rbar, tback, tor, torz, tretain, wch)
 use components.parts
@@ -132,10 +133,10 @@ component Throttle(c: point, ref: line, phi: Angle) {
                  shoulder.p, hub_back.p, hub_front.p, front_axis.p, ax)
   }
 
-  turned := solid(profile, about: ax)
-  arm := solid(face(lv_a, lv2, lv_c, lv0), from: bossz / 2, to: bossz / 2 + levw)
-  knob_s := solid(face(knob), from: bossz / 2, to: bossz / 2 + levw)
-  cross := solid(face(x0, x1, x2, x3, -> close), about: hax)
+  turned := solid(std.solids.Revolution(profile, about: ax))
+  arm := solid(std.solids.Prism(face(lv_a, lv2, lv_c, lv0), from: bossz / 2, to: bossz / 2 + levw))
+  knob_s := solid(std.solids.Prism(face(knob), from: bossz / 2, to: bossz / 2 + levw))
+  cross := solid(std.solids.Revolution(face(x0, x1, x2, x3, -> close), about: hax))
   body := solid(turned)
   arm union body
   knob_s union body

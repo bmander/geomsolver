@@ -13,6 +13,7 @@
 // is refused, and the refusal says why.
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 in std.side {
@@ -35,8 +36,8 @@ in std.top {
   k := circle(center: q) hint(r: 4)
   radius(4mm) k
 }
-slab := solid(face(ab, bc, cd, da), from: -20mm, to: 20mm)
-boss := solid(face(k), from: 0mm, to: 20mm)
+slab := solid(std.solids.Prism(face(ab, bc, cd, da), from: -20mm, to: 20mm))
+boss := solid(std.solids.Prism(face(k), from: 0mm, to: 20mm))
 part := solid(slab)
 boss union part
 

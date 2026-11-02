@@ -16,6 +16,7 @@ fn model(w: &str) -> String {
     format!("
 unit mm
 use std
+use std.solids
 use std.place (offset, right_of)
 component Plate(w: Length) {{
   in std.front {{
@@ -31,7 +32,7 @@ component Plate(w: Length) {{
     bc := line(b, c)
     ce := line(c, e)
     ea := line(e, a)
-    body := solid(face(ab, bc, ce, ea), from: 0mm, to: 3mm)
+    body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: 3mm))
   }}
 }}
 component Peg(r: Length) {{
@@ -40,7 +41,7 @@ component Peg(r: Length) {{
     c right_of(d: 5mm) std.origin
     rim := circle(center: c) hint(r: r)
     radius(r) rim
-    body := solid(face(rim), from: 0mm, to: 8mm)
+    body := solid(std.solids.Prism(face(rim), from: 0mm, to: 8mm))
   }}
 }}
 in (f := frame) {{ one := Plate(w: {w}) }}

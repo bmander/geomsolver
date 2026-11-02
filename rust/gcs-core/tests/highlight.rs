@@ -15,10 +15,10 @@ fn the_spans_tile_the_text() {
     for src in [
         GEAR,
         "",
-        "use std\nin std.front {\np := point hint((0, 0))\n}\n",
+        "use std\nuse std.solids\nin std.front {\np := point hint((0, 0))\n}\n",
         "// nothing but a comment",
         "/* unclosed",
-        "use std\nin std.front {\nhorizontal (a := line(p1, p2)) -> tangent\n(k := arc(center: c) hint(r: 5)) -> close\n}\n",
+        "use std\nuse std.solids\nin std.front {\nhorizontal (a := line(p1, p2)) -> tangent\n(k := arc(center: c) hint(r: 5)) -> close\n}\n",
     ] {
         let mut end = 0usize;
         for (tint, s) in highlight(src) {
@@ -122,7 +122,7 @@ fn a_familys_symmetry_is_a_word() {
 #[test]
 fn a_material_and_its_of_are_words() {
     let src = "steel := material(E: 200GPa, nu: 0.3)
-arm := solid(sec, depth: 4mm) of steel
+arm := solid(std.solids.Prism(sec, from: -4mm, to: 0)) of steel
 ";
     assert_eq!(tint_of(src, "steel :="), Some(Tint::Def));
     assert_eq!(tint_of(src, "E:"), Some(Tint::Label));
@@ -168,7 +168,7 @@ fn the_gear_is_coloured() {
 /// `//` by line would get wrong, and the reason this is the core's scan and not a second one.
 #[test]
 fn a_block_comment_is_one_run() {
-    let src = "use std\nin std.front {\np := point\n/* two\n   lines */\nl := line(p, p)\n}\n";
+    let src = "use std\nuse std.solids\nin std.front {\np := point\n/* two\n   lines */\nl := line(p, p)\n}\n";
     let ts = highlight(src);
     let (tint, span) = ts.iter().find(|&&(t, _)| t == Tint::Comment).expect("a comment");
     assert_eq!(*tint, Tint::Comment);
@@ -209,6 +209,7 @@ ab := line(a, a) class centerline heavy
 fn an_operator_is_coloured_through_its_own_parentheses() {
     let src = "\
 use std
+use std.solids
 in std.front {
 p := point hint((0, 0))
 q := point hint((60, 0))
@@ -251,7 +252,7 @@ line -> tangent arc -> tangent line
     assert_eq!(tint_of(src, "class"), Some(Tint::Word), "an anonymous line's clause");
     assert_eq!(tint_of(src, "tangent arc"), Some(Tint::Relation), "a joint on an anonymous link");
     // a link named where it stands names itself, and the word after it is still a joint
-    let named = "use std\nin std.front {\n(ab := line) -> tangent arc\n}\n";
+    let named = "use std\nuse std.solids\nin std.front {\n(ab := line) -> tangent arc\n}\n";
     assert_eq!(tint_of(named, "ab"), Some(Tint::Def));
     assert_eq!(tint_of(named, "line"), Some(Tint::Word));
     assert_eq!(tint_of(named, "tangent"), Some(Tint::Relation));
@@ -335,7 +336,7 @@ flat l
     assert_eq!(tint_of(src, "d: 5"), Some(Tint::Label));
     assert_eq!(tint_of(src, "flat l\n"), Some(Tint::Relation));
     // an imported word, and the module it comes from
-    let src = "use std\nuse std.place (right_of)\ncentre right_of(d: ring) std.origin\nx := Turned(o, t)\n";
+    let src = "use std\nuse std.solids\nuse std.place (right_of)\ncentre right_of(d: ring) std.origin\nx := Turned(o, t)\n";
     assert_eq!(tint_of(src, "place ("), Some(Tint::Type));
     assert_eq!(tint_of(src, "right_of)"), None);
     assert_eq!(tint_of(src, "right_of(d"), Some(Tint::Relation));

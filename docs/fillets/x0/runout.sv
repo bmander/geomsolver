@@ -7,6 +7,7 @@
 // The stack named an intermediate for the hole (`drilled`, then `vent`); here it is one body.
 unit mm
 use std
+use std.solids
 in std.front {
   // a wedge 40 long and 24 deep, its top sloping from 20 high to 10
   w0 := point
@@ -45,15 +46,15 @@ in std.top {
   hole_k := circle(center: hc) hint(r: 4)
   radius(4) hole_k
 }
-wedge := solid(side_f, from: 0mm, to: 24mm)
-boss := solid(face(boss_k), from: 0mm, to: 30mm)
+wedge := solid(std.solids.Prism(side_f, from: 0mm, to: 24mm))
+boss := solid(std.solids.Prism(face(boss_k), from: 0mm, to: 30mm))
 lug := solid(wedge)
 boss union lug
 // Only against the slope: where the boss passes the wedge's near face it stays sharp.
 lug.boss round(2mm) lug.wedge.wt
 
-block := solid(other_f, from: 0mm, to: 24mm)
-hole := solid(face(hole_k), from: -1mm, to: 30mm)
+block := solid(std.solids.Prism(other_f, from: 0mm, to: 24mm))
+hole := solid(std.solids.Prism(face(hole_k), from: -1mm, to: 30mm))
 vent := solid(block)
 hole cut vent
 vent.block.vt round(1mm) vent.hole

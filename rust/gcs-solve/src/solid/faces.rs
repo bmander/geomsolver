@@ -59,12 +59,14 @@ fn reads_body(shape: &RegionShape, body: usize) -> bool {
     let solid = |e: &crate::model::EntRef| e.kind == crate::model::EntKind::Solid && e.i() == body;
     match shape {
         RegionShape::Ball { .. } | RegionShape::Cylinder { .. } | RegionShape::Cone { .. }
-        | RegionShape::Sheet { .. } => false,
+        | RegionShape::Sheet { .. } | RegionShape::Section { .. }
+        | RegionShape::Swept { .. } => false,
         RegionShape::Plane { along, .. } => solid(along),
         RegionShape::Measured { of } => of.iter().any(|(t, _)| target_reads_body(t, body)),
         RegionShape::FaceSide { face } => face.solid as usize == body,
         RegionShape::Angle { a, b } => a.solid as usize == body || b.solid as usize == body,
         RegionShape::Ends { edge } => target_reads_body(edge, body),
+        RegionShape::Outside { set } => target_reads_body(set, body),
     }
 }
 

@@ -5,6 +5,7 @@
 // 764Hz of a tine built in at its root, since the base the tines stand on gives with them.
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 
 L := 80mm
@@ -51,7 +52,7 @@ in std.front {
              line(f, g) -> line(g, h) -> line(h, i) -> line(i, j) -> line(j, k) -> line(k, l) ->
              line(l, a) -> close
 }
-fork := solid(outline, from: -t / 2, to: t / 2) of steel
+fork := solid(std.solids.Prism(outline, from: -t / 2, to: t / 2)) of steel
 
 scenario ring {
   plane stress fork

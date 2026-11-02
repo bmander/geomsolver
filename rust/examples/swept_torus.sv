@@ -4,6 +4,7 @@
 
 unit mm
 use std
+use std.solids
 use std.place (coords, on_u, on_v)
 use std.motion (turns)
 in std.front {
@@ -18,7 +19,7 @@ in std.front {
   fix((4, 2)) tc
   private ring := circle(center: tc) hint(r: 0.5)
   radius(0.5mm) ring
-  construction tool := solid(face(ring), about: taxis)
+  construction tool := solid(std.solids.Revolution(face(ring), about: taxis))
   private hub := point hint((2, 0))
   hub on_u(d: 2mm) std.front
   private hub_up := point hint((2, 5))
@@ -40,7 +41,7 @@ in flat {
 }
 private observer := frame
 observer turns(1) kaxis
-construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, seen_from: observer)
+construction removal := solid({ p | p inside(under: spin, seen_from: observer, over t in (-75deg, 75deg)) tool })
 in std.front {
   private q0 := point
   private q1 := point
@@ -55,6 +56,6 @@ in std.front {
   private qt := line(q2, q3)
   private qa := line(q3, q0)
 }
-construction stock_post := solid(face(qb, qw, qt, qa), about: qa)
+construction stock_post := solid(std.solids.Revolution(face(qb, qw, qt, qa), about: qa))
 part := solid(stock_post)
 removal cut part

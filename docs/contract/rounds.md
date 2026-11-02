@@ -270,7 +270,7 @@ each order of the faces it names, and `Corner(a, b, c)` and `Corner(b, a, c)` lo
 construction, built and meshed once and held to each region's own field. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
 (`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
 `boolean::glued`; the rest unioned — two runs crossing are a mitre), the first region standing for
-the rest; a region lowered to nothing is no operand, nor material a tool `through:` the body reads
+the rest; a region lowered to nothing is no operand, nor material a `Through` cutter reads
 (a convex edge's fill, `edit_rounds.rs`); a body's face readers go in `"on_late"` /
 `"cut_late"`, applied after `bound` (`faces::stratum`, the one split the field and the recipe
 share; the native host applies them so too). `sweeps_among` sends a lowered region to the exact path. Kernel rules the stack found and
@@ -395,7 +395,9 @@ and whether a body's boundary is the field's (`solid::has_sweep`, asked before e
 remembered one too) is remembered against `reads` (`Caches::swept`).
 `tests/conrod.rs` is the gate.
 
-**Draft (§6.9, 0.80, #245):** `solid(f, from:, to:, draft: θ)` (or `depth:`) is
+**Draft (§6.9, 0.80, #245):** `solid(std.solids.Drafted(f, from:, to:, draft: θ))` ([0.199], #737;
+through 0.198 `draft:` beside a prism's labels), or the same set written by hand — recognised by its
+lean term, the angle read to a billionth of a degree (`solid/defined.rs`) — is
 `SolidDef::Prism::draft` (radians; `None` undrafted): the section at ordinate `h` is `f` moved `|h|
 tan θ` into its material from its own plane, the parting plane (an outer loop in, a hole out). Every
 evaluator reads it: the facets (`primitive::prism`'s `taper`, `offset` by mitres, a side breaking at

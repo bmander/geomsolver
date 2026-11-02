@@ -5,6 +5,7 @@
 // thinner than it is wide its shear adds a little to that, and the panel claims its sag within 3%.
 unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 
 a := 400mm
@@ -36,7 +37,7 @@ in std.top {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-panel := solid(square, from: 0mm, to: t) of steel
+panel := solid(std.solids.Prism(square, from: 0mm, to: t)) of steel
 
 // what it is made of answers no load, so it is the drawing's, claimed of it
 claim mass(steel.rho * a^2 * t) panel

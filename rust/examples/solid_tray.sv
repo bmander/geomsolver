@@ -2,6 +2,7 @@
 // hollow the shell first, then add the bosses inside the pocket.
 unit mm
 use std
+use std.solids
 width := 72mm
 height := 48mm
 depth := 16mm
@@ -25,8 +26,8 @@ component Rectangle(center: point, w: Length, h: Length) {
 in std.front {
   outer := Rectangle(std.origin, w: width, h: height)
   inner := Rectangle(std.origin, w: width - 2 * wall, h: height - 2 * wall)
-  shell := solid(outer.profile, depth: depth)
-  pocket := solid(inner.profile, depth: depth - wall)
+  shell := solid(std.solids.Prism(outer.profile, from: -depth, to: 0))
+  pocket := solid(std.solids.Prism(inner.profile, from: -(depth - wall), to: 0))
   pocket cut shell
   body := solid(shell)
 
@@ -40,7 +41,7 @@ component Standoff(body: solid, c: point, r: Length, screw_r: Length, base_depth
     radius(r) rim
     radius(screw_r) screw
     // Annular bosses leave blind screw holes; the floor stays intact underneath.
-    boss := solid(face(rim, holes: screw), from: base_depth, to: base_depth + h)
+    boss := solid(std.solids.Prism(face(rim, holes: screw), from: base_depth, to: base_depth + h))
     boss union body
 }
 // The contour's corner references, rather than independently calculated coordinates.

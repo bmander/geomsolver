@@ -6,6 +6,7 @@
 // -60 to 60, so it cuts the bar's space turned a quarter turn round the disc: 183.21 mm³ again.
 unit mm
 use std
+use std.solids
 use std.motion (spins, slides)
 
 in std.top {
@@ -21,7 +22,7 @@ in std.top {
   fix((16, 10)) s1
   pitch_line := line(s0, s1)
 }
-disc := solid(face(rim), depth: 6mm)
+disc := solid(std.solids.Prism(face(rim), from: -6mm, to: 0))
 
 // the tooth as drawn, tapering through the disc's 6 mm with 3 mm to spare above and below
 in std.side {
@@ -34,7 +35,7 @@ in std.side {
   fix((2, 3)) b2
   fix((-2, 3)) b3
 }
-construction bar := solid(face(b0, b1, b2, b3, -> close), from: 18mm, to: 30mm)
+construction bar := solid(std.solids.Prism(face(b0, b1, b2, b3, -> close), from: 18mm, to: 30mm))
 
 turn := frame
 turn spins(1) o
@@ -42,6 +43,6 @@ rack := frame
 rack slides(2 * pi * 16mm) pitch_line
 // the next tooth, a quarter turn of the rack's roll along it
 construction tooth := bar at(under: rack) 90deg
-construction space := sweep(tooth over t in (-150deg, -30deg), under: rack, seen_from: turn)
+construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-150deg, -30deg)) tooth })
 part := solid(disc)
 space cut part

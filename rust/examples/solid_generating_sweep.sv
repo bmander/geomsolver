@@ -2,11 +2,12 @@
 // — a stretch of a torus with the ball at each end, built exactly.
 unit mm
 use std
+use std.solids
 use std.place (on_u)
 use std.motion (turns)
 
 component GeneratingCut(tool: solid, generating: frame, start: Angle, finish: Angle) {
-  body := sweep(tool over t in (start, finish), under: generating)
+  body := solid({ p | p inside(under: generating, over t in (start, finish)) tool })
 }
 
 in std.front {
@@ -23,7 +24,7 @@ in std.front {
   private meridian := arc(center: center, start: bottom, end: top)
   radius(1mm) meridian
 }
-construction tool := solid(face(meridian, diameter), about: diameter)
+construction tool := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))
 generating := frame
 generating turns(1) spindle
 in std.front {

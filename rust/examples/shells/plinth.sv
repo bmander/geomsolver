@@ -12,6 +12,7 @@
 // 8 × 8 × 4.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 1mm
@@ -38,8 +39,8 @@ in std.top {
   (ms := line(m0, m1)) -> (me := line(m1, m2)) -> (mn := line(m2, m3)) -> (mw := line(m3, m0)) -> close
   stud := face(ms, me, mn, mw)
 }
-plinth := solid(slab, from: 0mm, to: 10mm)
-boss := solid(stud, from: 9mm, to: 15mm)
+plinth := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))
+boss := solid(std.solids.Prism(stud, from: 9mm, to: 15mm))
 boss union plinth
 
 shell(t: wall) plinth

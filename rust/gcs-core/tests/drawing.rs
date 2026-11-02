@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 const MODEL: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point
 fix((0, 0)) o
@@ -13,7 +14,7 @@ param r := 10mm
 in std.front {
 radius(r) rim
 }
-stock := solid(face(rim), depth: 4mm)
+stock := solid(std.solids.Prism(face(rim), from: -4mm, to: 0))
 body := solid(stock)
 ";
 
@@ -90,7 +91,7 @@ fn drawing_references_are_checked_and_cannot_be_model_statements() {
     ] {
         assert!(drawing::render(&drawing::parse(text).unwrap(), &models, None).is_err(), "{text}");
     }
-    for text in ["use std\nin std.front {\np := point\n}\n", "sheet s { p := point }", "sheet s { scale 0 }",
+    for text in ["use std\nuse std.solids\nin std.front {\np := point\n}\n", "sheet s { p := point }", "sheet s { scale 0 }",
         "sheet s { view a(m.body) at (NaN,0) }", "model m from \"unfinished",
         "sheet s { style .visible { color: red } }"] {
         assert!(drawing::parse(text).is_err(), "{text}");
@@ -100,7 +101,7 @@ fn drawing_references_are_checked_and_cannot_be_model_statements() {
 #[test]
 fn model_sources_refuse_presentation_but_keep_geometry_and_claims() {
     for extra in ["style .hidden { width: 2 }", "view(body) in front",
-        "a := point class hidden", "extra := solid(face(rim) class hidden, depth: 2mm)",
+        "a := point class hidden", "extra := solid(std.solids.Prism(face(rim) class hidden, from: -2mm, to: 0))",
         "o distance(20) o at (1,2)"] {
         let (_, errs) = crate::common::parse(&format!("{MODEL}\n{extra}"));
         assert!(errs.iter().any(|e| e.message.contains(".svd")), "{errs:?}");
@@ -148,6 +149,7 @@ fn indexed_members_and_field_measurements_survive_reordering() {
     let model = "\
 unit mm
 use std
+use std.solids
 in std.front {
 repeat 3 as i {
   p := point
@@ -249,6 +251,7 @@ fn a_sketch_draws_the_plane_it_is_from_in_that_planes_coordinates() {
     let model = "\
 unit mm
 use std
+use std.solids
 in std.front {
   f := line
   fix((0, 0)) f.p1
@@ -321,7 +324,7 @@ fn a_model_is_shown_at_the_instant_its_drawing_states() {
 /// stands — its line up the page, and its arc as round as it is.
 #[test]
 fn a_sketch_draws_a_frame_lying_in_its_plane() {
-    let model = "unit mm\nuse std\nin std.front {\n  up := point\n  fix((0, 10)) up\n  \
+    let model = "unit mm\nuse std\nuse std.solids\nin std.front {\n  up := point\n  fix((0, 10)) up\n  \
                  axes := std.Turned(std.origin, up)\n}\nin axes.axes {\n  a := point hint((10, 0))\n  \
                  fix((10, 0)) a\n  stick := line(axes.axes.origin, a)\n  c := point hint((4, 0))\n  \
                  fix((4, 0)) c\n  s := point hint((6, 0))\n  e := point hint((4, 2))\n  \

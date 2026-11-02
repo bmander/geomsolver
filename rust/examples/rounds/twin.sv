@@ -8,6 +8,7 @@
 // to see the seams filled. Edit `r` or a rod's radius and apply (⌘↵).
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 2mm   // the seams' radius
@@ -22,8 +23,8 @@ in std.front {
   radius(10mm) big
   radius(8mm) small
 }
-left := solid(face(big), from: 0mm, to: 40mm)
-right := solid(face(small), from: 0mm, to: 40mm)
+left := solid(std.solids.Prism(face(big), from: 0mm, to: 40mm))
+right := solid(std.solids.Prism(face(small), from: 0mm, to: 40mm))
 bar := solid(left)
 right union bar
 

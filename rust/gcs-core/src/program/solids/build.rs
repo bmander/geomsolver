@@ -60,11 +60,15 @@ pub(super) fn build_solid(
             .is_some_and(|p| p.dim != crate::units::Dim::ANGLE) => {
             say(Code::E103, over.name.span, format!("`{}` is no angle: a reading over the roll \
                 runs over an angle, and a face of the drawing swept over it is a face family, \
-                `sweep(face over {})`", over.name.text, over.name.text));
+                `solid({{ p | p coincident(over {}) face }})`", over.name.text, over.name.text));
             return None;
         }
         Sweep::Placed { .. } | Sweep::Swept { .. } | Sweep::Rolled { .. } => {
             under_motion(sk, res, sweep, d.seen_from.as_ref(), &ops, st, &mut say)?
+        }
+        // through everything (#737): bounded by the body it is cut from, joined there
+        Sweep::Through { body } if body.root.text == crate::syntax::ROLLED => {
+            SolidDef::Through { face: one_face(&ops, st, &mut say)?, body: super::UNBOUND }
         }
         Sweep::Through { body } => {
             let face = one_face(&ops, st, &mut say)?;
@@ -110,6 +114,13 @@ pub(super) fn build_solid(
             };
             if (a.value - b.value).abs() <= 0.0 {
                 say(Code::E080, st.span, "a prism swept nowhere is no solid".into());
+                return None;
+            }
+            // a prism is a set (#737): no point is at least the greater and at most the lesser
+            if a.value > b.value {
+                say(Code::E080, st.span, format!("no point is at least `{}` and at most `{}` along \
+                    the section's normal, so the prism's set is empty: write the lesser ordinate \
+                    `from:`", a.text, b.text));
                 return None;
             }
             SolidDef::Prism { face, from: a, to: b, draft }
@@ -405,10 +416,63 @@ fn region(
         say(Code::E080, st.span, m.into());
         return None;
     }
+    if let Err(m) = face_planes(sk, &mut terms) {
+        say(Code::E040, st.span, m);
+        return None;
+    }
     for q in sk.own_params(p) {
         sk.params[q as usize].fixed = true;
     }
+    // a set that says what a sweep says is built as that sweep (#737), whoever wrote it
+    if let Some(def) = crate::solid::defined::recognised(sk, &terms) {
+        return Some(def);
+    }
     Some(SolidDef::Region { probe: p.idx, terms })
+}
+
+/// Each ordinate a region's set writes along a drawn face (#737 P1) made the ordinate along the
+/// normal of the plane the face lies in, from that plane's origin — known now its face is built —
+/// in the region's terms and in every set they measure from.
+fn face_planes(sk: &Sketch, terms: &mut [crate::model::RegionTerm]) -> Result<(), String> {
+    use crate::model::{RegionShape, Target};
+    for t in terms {
+        match &mut t.shape {
+            // an ordinate written along a face before its plane was known
+            RegionShape::Plane { along, from, .. } if along.kind == EntKind::Face => {
+                let f = sk.faces.get(along.i()).ok_or("a region's face is not built")?;
+                let Some((p, origin)) = crate::solid::defined::face_plane(sk, along.idx) else {
+                    return Err(format!("`{}` is drawn in no plane, so it has no normal for an \
+                                        ordinate along it", f.name));
+                };
+                *along = EntRef::frame(p);
+                *from = origin;
+            }
+            RegionShape::Outside { set } => {
+                if let Target::Set { terms, .. } = set.as_mut() {
+                    face_planes(sk, terms)?;
+                }
+            }
+            RegionShape::Measured { of } => {
+                for (target, _) in of.iter_mut() {
+                    match target {
+                        Target::Set { terms, .. } => face_planes(sk, terms)?,
+                        // the distance from a drawn face's plane
+                        Target::Ent(e) if e.kind == EntKind::Face => {
+                            let f = sk.faces.get(e.i()).ok_or("a region's face is not built")?;
+                            let Some(p) = f.plane else {
+                                return Err(format!("`{}` is drawn in no plane, so it has no \
+                                                    plane to measure from", f.name));
+                            };
+                            *e = EntRef::frame(p as usize);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// A solid under a named motion: placed at one pose (`at:`), swept over an interval, or rolled
@@ -426,7 +490,8 @@ fn under_motion(
         sweep else { unreachable!() };
     if ops.len() != 1 || ops[0].kind != EntKind::Solid {
         say(Code::E080,st.span,"a frame's motion moves one solid; a face swept as a parameter runs \
-            is a face family, `sweep(face over s)` over a declared `param s` (#398)".into());
+            is a face family, `solid({ p | p coincident(over s) face })` over a declared `param s` \
+            (#398, #737)".into());
         return None;
     }
     // drawn in a jointed frame (#391 S3), `tool in f`: placed by the frame's joint at its value,
@@ -493,6 +558,10 @@ fn under_motion(
             SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Stated(roll)}
         }
         // the roll through a body's material (#271): found after the solve
+        // the whole roll (#737): bounded by the body it is cut from, joined there
+        Sweep::Rolled {body,..} if body.root.text == crate::syntax::ROLLED => {
+            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Through {body:super::UNBOUND}}
+        }
         Sweep::Rolled {body,..} => {
             let Some(target) = res.lookup(body) else {
                 say(Code::E101, body.span, format!("no such entity: `{}`", body.root.text));

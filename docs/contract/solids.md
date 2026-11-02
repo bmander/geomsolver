@@ -1,7 +1,8 @@
 # Solids
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch `solid.rs`,
-`csg.rs`, `mesh.rs`, `hidden.rs`, `gltf.rs`, `program/refused.rs`, or `hypoid.sv`. An issue number
+`csg.rs`, `mesh.rs`, `hidden.rs`, `gltf.rs`, `program/refused.rs`, `solid/defined.rs`,
+`rust/lib/std/solids.sv`, or `hypoid.sv`. An issue number
 (#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says where a
 rule came from.
 
@@ -203,6 +204,44 @@ placement carries inside the blank; CLI test readers zero the offset.
   `w·h·d`, a bore takes exactly its faceted polygon, a flush bore and one drilled past are one
   solid, a boss's shared face counts once, a revolution is Pappus.  `tests/solid_lang.rs` holds
   the language, `tests/derived.rs` the pictures.
+- **Solids as sets** (#737, [0.199], Solvent §6.9).  `solid(S)` is the one constructor, the points
+  inside a set, and `solid()` the empty body; the language has no prism, draft or revolution of its
+  own.  A set may be written in place in the brackets — a set literal, or a family's call, its
+  argument a `face(…)` written in place (`std.solids.Through(face(hole))`) — made its own
+  statement under a key the source cannot write (`parser/statements.rs::solid_set_in_place`).  The
+  old labels (`depth: from: to: draft: about: sweep: sense: through:`) are E001, the message
+  naming the replacement written from the document's own arguments, and `sweep(…)` is retired the
+  same way (`syntax::print::solid_word`/`sweep_text` spell them).  **The words are
+  `rust/lib/std/solids.sv`** (`use std.solids`): `Prism(section, from, to)`, `Drafted(section,
+  from, to, draft)`, `Revolution(section, about, from = 0deg, to = 360deg)` (`p coincident(under: about,
+  over t in (from, to)) section`: a line named `under:` is the turn about it,
+  `relations::turn_about`, a motion minted once a line and holding nothing) and
+  `Through(section)` (`{ p | p inside section }`).  **They are recognised by their terms, never by
+  a word's name** (`gcs-solve/src/solid/defined.rs`, `recognised`, called from
+  `program/solids/build.rs`'s `region`): a section between two stated ordinates along its own
+  plane's normal is `SolidDef::Prism`; with the lean term a drafted prism (the angle read to a
+  billionth of a degree); a face's patch swept by a turn about a line in its plane
+  (`MotionDef::Rotation`/`Joint`, no advance) over an interval one end of which is nothing is
+  `SolidDef::Revolve` (an end below nothing `Sense::Cw`; a whole turn exactly `TAU`); an unbounded
+  section cut from a body `B` is `SolidDef::Through { body: B }` (`program/solids.rs`'s body rule,
+  `unbounded_section`).  So the same set written by hand builds identically — the same exactness,
+  face names, volume, STEP and STL bytes.  A number a term reads from an unknown is no stated
+  ordinate.  A set none of these recognises stays a region (`solid::region`, [sets.md](sets.md)),
+  read point by point — shown, meshed, measured — its exact export refused by the region's own
+  routes.  **The faces are named by what bounds them**, one rule (`defined.rs`'s module doc) for
+  `std`'s words and a set written by hand: a section's sides by the edges they are swept from; of
+  two ordinates the greater bounds `near`, the lesser `far`; a turn short of a whole one is capped
+  `start` and `end`.  **Before the solid is built, the flattener reads the same sets as the sweep
+  they say** (`flatten/said.rs`, the precedent the developables' `sheet_body` set): a set's body —
+  a family's with its formals bound to the call's arguments as written (`said::binding`) — that is
+  a section between two ordinates, the drafted lean, a face's patch turned about a line formal, or a
+  section alone (through the body it is cut from, `syntax::ROLLED`) is written out as
+  `syntax::Sweep::Prism`/`Revolve`/`Through`, so every reader of a solid's text before it is built
+  reads it as one: a prism's sides for an envelope (`generated.rs`), a revolution's named side
+  (`envelopes.rs`), a sketch's carriers on a face (`flatten/faces.rs`), the gestures' resizing
+  (`edit::solids::reworded`); and no probe is made, so the solve is the old spelling's to the bit.
+  `defined.rs` is what recognises any other set saying the same.  `tests/solids_as_sets.rs` is the gate (each word against its
+  set by hand, a through prism bounded by what it cuts, the retired labels naming the set).
 - **The sheet is a report** (Solvent §6.12, `hidden::generated`; issue #48).
   `dimensions(body) in views.right` asks for the callouts that *follow from the object*: overall
   extents in that view and the diameter of every round feature seen square on.  They go through
@@ -426,8 +465,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   (`planar_subtraction::a_sweep_the_field_cannot_read_is_said_at_its_statement`).
 
 - **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
-  `sweep(I(…).f over s)` parses to `Sweep::Family(FamilySpec)` (`parser::family`, by an `over`
-  inside `solid(`'s own brackets, `family_ahead`), `s` a declared parameter whose interval it
+  `solid({ p | p coincident(over s) I(…).f })` ([0.199], #737; through 0.198 `sweep(I(…).f over
+  s)`) is read by the parser as the family's tokens (`parser/statements.rs::swept_set`) and parses
+  to `Sweep::Family(FamilySpec)` (`parser::family`, by an `over` inside the brackets,
+  `family_ahead`), `s` a declared parameter whose interval it
   runs over (#398 B, [0.145]: `Walk::family_parameter`, the formal the call gives it or the one
   named as it, `Held::formals`; `over s in (a, b)` is refused); the flattener walks the instance
   **drawn**, under a key the source cannot write (`#f<offset>.`, so its declarations are

@@ -10,6 +10,7 @@
 // 4 × 3 × 20 = 240 mm³ of its 2000, leaving 1760 mm³.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (slides)
 
@@ -34,7 +35,7 @@ in std.top {
   private far_side := line(b2, b3)
   private near_end := line(b3, b0)
 }
-block := solid(face(near_side, far_end, far_side, near_end), from: 0mm, to: height)
+block := solid(std.solids.Prism(face(near_side, far_end, far_side, near_end), from: 0mm, to: height))
 
 // the cutter, drawn in a plane through its axis, which stands upright a little before the block
 private across := axis
@@ -57,12 +58,12 @@ in bench {
   private top := line(e2, e3)
   private spindle := line(e3, e0)
 }
-construction mill := solid(face(bottom, side, top, spindle), about: spindle)
+construction mill := solid(std.solids.Revolution(face(bottom, side, top, spindle), about: spindle))
 
 // the slide along the block, 30 mm over the roll, from clear before it to clear past it
 private way := axis
 fix(dir == (1, 0, 0)) way
 feed := frame
 feed slides(30mm) way
-construction slot := sweep(mill over t in (0deg, 360deg), under: feed)
+construction slot := solid({ p | p inside(under: feed, over t in (0deg, 360deg)) mill })
 slot cut block

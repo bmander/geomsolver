@@ -4,6 +4,7 @@
 // it in the glass box. Keep `tube` below `ring`, so the torus has a hole.
 unit mm
 use std
+use std.solids
 use std.place (above, coords, on_u, on_v)
 use std.motion (turns)
 
@@ -23,7 +24,7 @@ in std.front {
   tc distance(2mm, along: v) std.front
   private section_c := circle(center: tc) hint(r: tube)
   radius(tube) section_c
-  construction torus := solid(face(section_c), about: taxis)
+  construction torus := solid(std.solids.Revolution(face(section_c), about: taxis))
 
   // The motion: a quarter turn about an upright axis for every turn of a frame about a tilted one.
   private hub := point hint((2, 0))
@@ -47,4 +48,4 @@ in tilted {
 }
 private observer := frame
 observer turns(1) kaxis
-tumbled := sweep(torus over t in (-roll, roll), under: spin, seen_from: observer)
+tumbled := solid({ p | p inside(under: spin, seen_from: observer, over t in (-roll, roll)) torus })

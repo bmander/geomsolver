@@ -7,6 +7,7 @@
 // pressure lays on its head.
 unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 
 L := 600mm
@@ -31,7 +32,7 @@ in std.front {
   side := (foot := line(a, c)) -> (flank := line(c, d)) -> (head := line(d, e)) ->
           (back := line(e, a)) -> close
 }
-bar := solid(side, from: -t / 2, to: t / 2) of steel
+bar := solid(std.solids.Prism(side, from: -t / 2, to: t / 2)) of steel
 
 scenario press {
   fixed bar.foot

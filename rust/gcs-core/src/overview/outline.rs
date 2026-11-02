@@ -109,6 +109,8 @@ pub fn outline(e: &Elaborated) -> Vec<Node> {
 pub fn outline_with(e: &Elaborated, sk: &Sketch) -> Vec<Node> {
     let mut made_pos: BTreeMap<EntRef, usize> = BTreeMap::new();
     let mut ents: Vec<Placed> = Vec::new();
+    // the statement each statement's rows stand under, asked once a statement
+    let mut under: BTreeMap<StmtId, StmtId> = BTreeMap::new();
     for (&r, site) in &e.map.of_entity {
         // a twin is its point drawn again, called by the point's name: one row is the point's
         if e.map.twin_of.contains_key(&r) {
@@ -119,7 +121,8 @@ pub fn outline_with(e: &Elaborated, sk: &Sketch) -> Vec<Node> {
                 made_pos.entry(m).or_insert(k);
             }
         }
-        ents.push(Placed { e: r, stmt: site.stmt, path: site.path.0.clone(), at: site.span.lo });
+        let stmt = *under.entry(site.stmt).or_insert_with(|| solid_written_in(e, site.stmt));
+        ents.push(Placed { e: r, stmt, path: site.path.0.clone(), at: site.span.lo });
     }
     let reader = Reader { e, made_pos, stmts: RefCell::new(BTreeMap::new()) };
     // what a module made at the root, beside no instance of the document's, is its datums
@@ -141,6 +144,23 @@ pub fn outline_with(e: &Elaborated, sk: &Sketch) -> Vec<Node> {
         rows.push(g);
     }
     with_operands(rows, sk)
+}
+
+/// The statement a row of statement `s` stands under: a face written in place in a solid's call
+/// (#737, `solid(std.solids.Prism(face(rim), …))`) is the parser's own statement, a link of the
+/// solid's, and its row is the solid's, as a face written in a solid's brackets is.
+fn solid_written_in(e: &Elaborated, s: StmtId) -> StmtId {
+    let p = &e.program;
+    let Some(st) = p.document_stmt(s) else { return s };
+    match &st.kind {
+        StmtKind::Decl(d) if st.chained == crate::syntax::Chained::Link && d.kind == EntKind::Face
+            && d.name.shown().is_none() => {}
+        _ => return s,
+    }
+    p.stmts()
+        .find(|t| t.id != s && t.span.lo <= st.span.lo && st.span.hi <= t.span.hi
+              && matches!(&t.kind, StmtKind::Decl(d) if d.kind == EntKind::Solid))
+        .map_or(s, |t| t.id)
 }
 
 /// An entity and where it was made.

@@ -61,4 +61,4 @@ component Wire(g: path, up: axis, w: Length, s: Scalar) {
 
 helix := trace(Helix(o, xl, yl, zl, r: r, pitch: pitch, turns: turns).p over u in (0, 1))
 param s: Scalar over (0, 1)
-coil := sweep(Wire(helix, std.z, w: wire).f over s)
+coil := solid({ p | p coincident(over s) Wire(helix, std.z, w: wire).f })

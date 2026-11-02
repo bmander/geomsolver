@@ -16,22 +16,29 @@ type V = [f64; 3];
 /// planes every term lies within — a ball's six, a cylinder's four about its line, a cone's four
 /// about its axis, a half-space's own — and refused where they close nothing.
 pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionField, String> {
-    use crate::solid::field::region::{polytope_box, Measure, Term};
     let s = sk.solids.get(solid).ok_or("no such solid")?;
     let SolidDef::Region { terms, .. } = &s.def else {
         return Err(format!("`{}` is not a region", s.name));
     };
+    field_of(sk, &s.name, terms, true, &mut Vec::new())
+}
+
+/// The field of `terms` taken together, the region of solid `name`'s; `bounded` where it must
+/// have an end (a solid's), and not where it is a set a complement reads (#737).  `read` holds the
+/// bodies whose faces are read, each once across a complement's sets too.
+fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
+            read: &mut crate::solid::faces::Read)
+    -> Result<crate::solid::field::RegionField, String> {
+    use crate::solid::field::region::{polytope_box, Measure, Term};
     let point = |i: u32| sk.world_point(i as usize);
     use crate::solid::field::region::Signed;
     let mut out = Vec::new();
     let mut planes: Vec<(V, f64)> = Vec::new();
-    // the bodies whose faces it reads, each read once
-    let mut read = Vec::new();
     let mut reads_faces = false;
     // the longest length a term says (a radius, a leg), where a region of a body's faces finds
     // its support from the bodies it reads
     let mut reach_of_faces = 0.0f64;
-    let named = |m: String| format!("{}: {m}", s.name);
+    let named = |m: String| format!("{name}: {m}");
     // the six planes of the cube about `c` reaching `r`
     let cube = |planes: &mut Vec<(V, f64)>, c: V, r: f64| {
         for k in 0..3 {
@@ -66,14 +73,14 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                 let sets: Vec<Option<Result<crate::solid::conditions::SetDistance, String>>> = of.iter()
                     .map(|(t, _)| match t {
                         crate::model::Target::Set { terms, .. } => {
-                            Some(crate::solid::conditions::SetDistance::of(sk, terms, &mut read))
+                            Some(crate::solid::conditions::SetDistance::of(sk, terms, read))
                         }
                         _ => None,
                     }).collect();
                 if t.cmp != Cmp::In && never(of, &sets, t.cmp) {
                     return Ok(crate::solid::field::RegionField::empty());
                 }
-                let m = measured(sk, of, &sets, &mut read)?;
+                let m = measured(sk, of, &sets, read)?;
                 // a sum of distances, each from a point, with no number below nothing, is within
                 // the ball about each point whose distance alone reaches the bound
                 if t.cmp == Cmp::Le && of.iter().all(|&(_, c)| c > 0.0) {
@@ -93,7 +100,7 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                 continue;
             }
             RegionShape::FaceSide { ref face } => {
-                let r = crate::solid::faces::reading(sk, face, &mut read).map_err(named)?;
+                let r = crate::solid::faces::reading(sk, face, read).map_err(named)?;
                 if let Some((n, d)) = r.half_space() {
                     slab(&mut planes, t, n, d, if t.cmp == Cmp::In { lo } else { lo + grow });
                 }
@@ -101,8 +108,8 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                 Measure::Signed(Signed(std::sync::Arc::new(move |p| r.side(p))))
             }
             RegionShape::Angle { ref a, ref b } => {
-                let ra = crate::solid::faces::reading(sk, a, &mut read).map_err(named)?;
-                let rb = crate::solid::faces::reading(sk, b, &mut read).map_err(named)?;
+                let ra = crate::solid::faces::reading(sk, a, read).map_err(named)?;
+                let rb = crate::solid::faces::reading(sk, b, read).map_err(named)?;
                 let edges = ra.body.edges_between(&ra.faces, &rb.faces);
                 let body = ra.body.clone();
                 let (cmp, lo, hi) = (t.cmp, lo, t.hi.unwrap_or(lo));
@@ -127,15 +134,112 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
             }
             RegionShape::Ends { ref edge } => {
                 let crate::model::Target::Set { terms: inner, .. } = edge.as_ref() else {
-                    return Err(format!("{}: where an edge ends is read of a set", s.name));
+                    return Err(format!("{name}: where an edge ends is read of a set"));
                 };
-                let set = crate::solid::conditions::SetDistance::of(sk, inner, &mut read).map_err(named)?;
+                let set = crate::solid::conditions::SetDistance::of(sk, inner, read).map_err(named)?;
                 let within = crate::solid::conditions::ends(&set).map_err(named)?;
                 reads_faces = true;
                 // a run that ends nowhere is cut off by nothing
                 let f = move |p: V| { let v = within(p); if v == f64::NEG_INFINITY { -GATE } else { v } };
                 out.push(signed(std::sync::Arc::new(f)));
                 continue;
+            }
+            // a drawn face read as a set (#737 P1): its region's signed distance at the point's
+            // foot on its plane, within the square about the plane's origin its loops are in
+            RegionShape::Section { face } => {
+                let (b, region, reach) =
+                    crate::solid::field::section(sk, face as usize).map_err(named)?;
+                if within {
+                    if let Some(r) = reach {
+                        for e in [b.u, b.v, scale(b.u, -1.0), scale(b.v, -1.0)] {
+                            planes.push((e, dot(e, b.o) + r + lo.max(0.0)));
+                        }
+                    }
+                }
+                let at = move |p: V| {
+                    let (x, y) = b.view_coords(p);
+                    region.value([x, y])
+                };
+                Measure::Signed(Signed(std::sync::Arc::new(at)))
+            }
+            // a face's patch swept by a turn about a line in its plane (#737): within its meridian
+            // in the section's half-plane turned through the roll, read on each side of the line
+            RegionShape::Swept { motion, roll, face } => {
+                let (b, region, reach) =
+                    crate::solid::field::section(sk, face as usize).map_err(named)?;
+                let Some((_, a, d, ratio)) = crate::solid::defined::turn_of(sk, motion) else {
+                    return Err(named("a face swept by a motion is read point by point where the \
+                        motion is a turn about a line: a slide, a screw or a motion of several \
+                        steps is not read yet".to_string()));
+                };
+                if !crate::solid::defined::lies_in(&b, a, d) {
+                    return Err(named("a face swept by a turn is read point by point where the \
+                        line it turns about lies in the face's plane".to_string()));
+                }
+                let (t0, t1) = (ratio * roll[0].min(roll[1]), ratio * roll[0].max(roll[1]));
+                let whole = t1 - t0 >= std::f64::consts::TAU - 1e-12;
+                let e0 = crate::space::cross(b.normal(), d);
+                let e1 = crate::space::cross(d, e0);
+                if let Some(r) = reach {
+                    cube(&mut planes, a, crate::space::norm(sub(b.o, a)) + r);
+                }
+                let at = move |p: V| {
+                    let q = sub(p, a);
+                    let z = dot(q, d);
+                    let (x, y) = (dot(q, e0), dot(q, e1));
+                    let rho = x.hypot(y);
+                    let phi = if whole { 0.0 } else { y.atan2(x) };
+                    let mut best = f64::INFINITY;
+                    for (side, offset) in [(1.0, 0.0), (-1.0, std::f64::consts::PI)] {
+                        let m = crate::space::add(a, crate::space::add(scale(d, z), scale(e0, side * rho)));
+                        let (u, v) = b.view_coords(m);
+                        let inside = region.value([u, v]);
+                        let wedge = if whole { f64::NEG_INFINITY } else {
+                            // the roll this side of the line is turned to, within the interval
+                            let tau = std::f64::consts::TAU;
+                            let th = (phi - offset - t0).rem_euclid(tau) + t0;
+                            if th <= t1 { -rho * (th - t0).min(t1 - th).min(FRAC_PI_2).sin() }
+                            else { rho * (th - t1).min(t0 + tau - th).min(FRAC_PI_2).sin() }
+                        };
+                        best = best.min(inside.max(wedge));
+                    }
+                    best
+                };
+                Measure::Signed(Signed(std::sync::Arc::new(at)))
+            }
+            // outside a set (#737 P3): where its terms do not all hold, the negated field of the
+            // set taken together — so within the union of what each of them turned holds, the box
+            // about each of those its support
+            RegionShape::Outside { ref set } => {
+                let crate::model::Target::Set { terms: inner, .. } = set.as_ref() else {
+                    return Err(named("outside is read of a set".to_string()));
+                };
+                let f = field_of(sk, name, inner, false, read)?;
+                if within {
+                    let mut boxed = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+                    let mut every = !inner.is_empty();
+                    for u in inner {
+                        let Some(cmp) = u.cmp.turned() else { every = false; break };
+                        let turned = RegionTerm { cmp, ..u.clone() };
+                        match field_of(sk, name, std::slice::from_ref(&turned), false, read)
+                            .ok().and_then(|g| g.support()) {
+                            Some(b) => for k in 0..3 {
+                                boxed[k] = [boxed[k][0].min(b[k][0]), boxed[k][1].max(b[k][1])];
+                            },
+                            None => { every = false; break; }
+                        }
+                    }
+                    if every {
+                        for k in 0..3 {
+                            let mut n = [0.0; 3];
+                            n[k] = 1.0;
+                            planes.push((n, boxed[k][1]));
+                            n[k] = -1.0;
+                            planes.push((n, -boxed[k][0]));
+                        }
+                    }
+                }
+                Measure::Signed(Signed(std::sync::Arc::new(move |p| -f.value(p))))
             }
             ref shape => {
                 let m = measure_of(sk, shape)?.ok_or("a region bounds distances, angles and planes")?;
@@ -175,7 +279,7 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
         None if reads_faces && reach_of_faces > 0.0 && !read.is_empty() => {
             let grow = SUPPORT_REACH * reach_of_faces;
             let mut b = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
-            for (_, body) in &read {
+            for (_, body) in read.iter() {
                 let (lo, hi) = body.bounds();
                 for k in 0..3 {
                     b[k] = [b[k][0].min(lo[k] - grow), b[k][1].max(hi[k] + grow)];
@@ -183,9 +287,9 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
             }
             b.iter().all(|r| r[0] < r[1]).then_some(b)
         }
-        None if reads_faces => None,
+        None if reads_faces || !bounded => None,
         None => {
-            return Err(format!("`{}` has no end: bound it all round (a ball, two planes, …)", s.name))
+            return Err(format!("`{name}` has no end: bound it all round (a ball, two planes, …)"))
         }
     };
     Ok(crate::solid::field::RegionField::new(out, support))

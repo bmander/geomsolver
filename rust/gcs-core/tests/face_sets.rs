@@ -11,7 +11,8 @@ use gcs_core::space::{cross, dot};
 use crate::common::{at, ent, read, refused};
 
 /// A 40 × 30 rectangle on the front plane (normal −y), a corner held at the origin.
-const PROFILE: &str = "use std\n\
+const PROFILE: &str = "use std
+use std.solids\n\
     in std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 30))\n  d := point hint((0, 30))\n  ab := line(a, b)\n  \
     bc := line(b, c)\n  cd := line(c, d)\n  da := line(d, a)\n}\n\
@@ -26,26 +27,28 @@ fn solved(src: &str) -> Elaborated {
 }
 
 /// A point put on a cap stands at the cap's ordinate along the profile's normal (−y here):
-/// `depth: d` runs from −d to 0, so `far` is behind the profile and `near` is on it.
+/// `from: -d, to: 0` runs behind the profile, so `far` is behind it and `near` is on it.
 #[test]
 fn a_point_on_a_cap_stands_at_its_ordinate() {
     let y = |sweep: &str, face: &str| {
-        let e = solved(&format!("b0 := solid(f0, {sweep})\nm := point hint((5, 3, 5))\n\
+        let e = solved(&format!("b0 := solid(std.solids.Prism(f0, {sweep}))\n\
+                                 m := point hint((5, 3, 5))\n\
                                  m coincident b0.{face}.surface\n"));
         at(&e, "m")[1]
     };
-    assert!((y("depth: 20", "far") - 20.0).abs() < 1e-9);
-    assert!(y("depth: 20", "near").abs() < 1e-9);
+    assert!((y("from: -20, to: 0", "far") - 20.0).abs() < 1e-9);
+    assert!(y("from: -20, to: 0", "near").abs() < 1e-9);
     assert!((y("from: 5, to: 25", "near") + 25.0).abs() < 1e-9);
     assert!((y("from: 5, to: 25", "far") + 5.0).abs() < 1e-9);
-    // the ends written the other way round are still the nearer and the farther
-    assert!((y("from: 25, to: 5", "near") + 25.0).abs() < 1e-9);
+    // the ends written the other way round say no point at all: the prism's set is empty (#737)
+    let reversed = "b0 := solid(std.solids.Prism(f0, from: 25, to: 5))";
+    refused(&format!("{PROFILE}{reversed}\n"), "E080", "the prism's set is empty", reversed);
 }
 
 /// The carrier is written over the solid's own extent, so editing it moves what stands on it.
 #[test]
 fn the_carrier_follows_the_extent() {
-    let doc = "h := 20\nb0 := solid(f0, depth: h)\nm := point hint((5, 3, 5))\n\
+    let doc = "h := 20\nb0 := solid(std.solids.Prism(f0, from: -h, to: 0))\nm := point hint((5, 3, 5))\n\
                m coincident b0.far.surface\n";
     assert!((at(&solved(doc), "m")[1] - 20.0).abs() < 1e-9);
     let edited = doc.replace("h := 20", "h := 35");
@@ -57,7 +60,7 @@ fn the_carrier_follows_the_extent() {
 /// with nothing implied or over.
 #[test]
 fn a_plane_touching_a_cap_at_its_origin_lies_on_it() {
-    let mut e = solved("b0 := solid(f0, depth: 20)\n\
+    let mut e = solved("b0 := solid(std.solids.Prism(f0, from: -20, to: 0))\n\
         v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (10, 18, 10))\n\
         v1.origin coincident b0.far.surface\nv1 tangent(at: v1.origin) b0.far.surface\n");
     let n = e.sketch.basis(ent(&e, "v1").i()).normal();
@@ -72,7 +75,7 @@ fn a_plane_touching_a_cap_at_its_origin_lies_on_it() {
 /// bottom edge `ab` runs along x at z = 0, so a plane on `b0.ab` faces along z.
 #[test]
 fn a_plane_on_a_side_holds_the_edge_and_the_normal() {
-    let mut e = solved("b0 := solid(f0, depth: 20)\n\
+    let mut e = solved("b0 := solid(std.solids.Prism(f0, from: -20, to: 0))\n\
         v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) hint(origin: (10, 8, 1))\n\
         v1.origin coincident b0.ab.surface\nv1 tangent(at: v1.origin) b0.ab.surface\n");
     let n = e.sketch.basis(ent(&e, "v1").i()).normal();
@@ -83,7 +86,7 @@ fn a_plane_on_a_side_holds_the_edge_and_the_normal() {
     assert_eq!(d.dof, 4, "{:?}", d.warnings);
     // a slanted edge: the side's normal is square to it and to the profile's normal
     let slant = PROFILE.replace("vertical bc\n", "").replace("b distance(30) c\n", "");
-    let mut e = read(&format!("{slant}b0 := solid(f0, depth: 20)\nfix((50, 30)) c\n\
+    let mut e = read(&format!("{slant}b0 := solid(std.solids.Prism(f0, from: -20, to: 0))\nfix((50, 30)) c\n\
         v1 := plane(u: hint(dir: (0, 0, 1)), v: hint(dir: (0, 1, 0))) hint(origin: (45, 8, 15))\n\
         v1.origin coincident b0.bc.surface\nv1 tangent(at: v1.origin) b0.bc.surface\n"));
     assert!(solve(&mut e.sketch, SolveOpts::default()).success);
@@ -98,11 +101,11 @@ fn a_plane_on_a_side_holds_the_edge_and_the_normal() {
 #[test]
 fn a_face_is_reached_through_bodies() {
     let y = |src: &str| at(&solved(src), "m")[1];
-    let stock = "b0 := solid(f0, depth: 20)\nbody := solid(b0)\nm := point hint((5, 3, 5))\n";
+    let stock = "b0 := solid(std.solids.Prism(f0, from: -20, to: 0))\nbody := solid(b0)\nm := point hint((5, 3, 5))\n";
     assert!((y(&format!("{stock}m coincident body.b0.far.surface\n")) - 20.0).abs() < 1e-9);
-    let cut = "b0 := solid(f0, depth: 20)\n\
+    let cut = "b0 := solid(std.solids.Prism(f0, from: -20, to: 0))\n\
                in std.front {\n  e := point hint((10, 10))\n  r := circle(center: e) hint(r: 3)\n}\n\
-               fix((10, 10)) e\nradius(3) r\ng0 := face(r)\nbore := solid(g0, depth: 30)\n\
+               fix((10, 10)) e\nradius(3) r\ng0 := face(r)\nbore := solid(std.solids.Prism(g0, from: -30, to: 0))\n\
                bore cut b0\nm := point hint((5, 3, 5))\nm coincident b0.far.surface\n";
     assert!((y(cut) - 20.0).abs() < 1e-9);
 }
@@ -110,11 +113,11 @@ fn a_face_is_reached_through_bodies() {
 /// What has no carrier yet is refused at the use, in its words.
 #[test]
 fn a_face_with_no_carrier_is_refused_where_it_is_named() {
-    let src = |s: &str| format!("{PROFILE}b0 := solid(f0, depth: 20)\nm := point hint((5, 3, 5))\n{s}\n");
+    let src = |s: &str| format!("{PROFILE}b0 := solid(std.solids.Prism(f0, from: -20, to: 0))\nm := point hint((5, 3, 5))\n{s}\n");
     refused(&src("m coincident b0.top.surface"), "E040", "names no face", "b0.top.surface");
-    refused(&src("t := solid(f0, through: b0)\nm coincident t.near.surface"), "E040",
+    refused(&src("t := solid(std.solids.Through(f0))\nm coincident t.near.surface"), "E040",
             "known only once", "t.near.surface");
-    refused(&src("r0 := solid(f0, about: da)\nm coincident r0.end.surface"), "E040",
+    refused(&src("r0 := solid(std.solids.Revolution(f0, about: da))\nm coincident r0.end.surface"), "E040",
             "only a prism's faces", "r0.end.surface");
     refused(&src("body := solid(b0)\nm coincident body.near.surface"), "E040", "is a body",
             "body.near.surface");
@@ -126,7 +129,7 @@ fn a_face_with_no_carrier_is_refused_where_it_is_named() {
 #[test]
 fn a_drawn_point_is_put_on_a_faces_surface() {
     let src = |s: &str| {
-        format!("{PROFILE}b0 := solid(f0, depth: 20)\nm := point hint((5, 3, 5))\n{s}\n")
+        format!("{PROFILE}b0 := solid(std.solids.Prism(f0, from: -20, to: 0))\nm := point hint((5, 3, 5))\n{s}\n")
     };
     refused(&src("m coincident b0.far"), "E040", "`b0.far.surface`", "b0.far");
     refused(&src("m coincident b0.surface"), "E040", "every face of `b0`", "b0.surface");
@@ -135,8 +138,9 @@ fn a_drawn_point_is_put_on_a_faces_surface() {
 /// A curved side is no set yet.
 #[test]
 fn a_curved_side_is_refused() {
-    let src = "use std\nin std.front {\n  o := point hint((0, 0))\n  k := circle(center: o) hint(r: 5)\n}\n\
-               fix((0, 0)) o\nradius(5) k\ng0 := face(k)\nb0 := solid(g0, depth: 10)\n\
+    let src = "use std
+use std.solids\nin std.front {\n  o := point hint((0, 0))\n  k := circle(center: o) hint(r: 5)\n}\n\
+               fix((0, 0)) o\nradius(5) k\ng0 := face(k)\nb0 := solid(std.solids.Prism(g0, from: -10, to: 0))\n\
                m := point hint((5, 3, 5))\nm coincident b0.k.surface\n";
     refused(src, "E040", "curved side", "b0.k.surface");
 }
@@ -145,7 +149,7 @@ fn a_curved_side_is_refused() {
 #[test]
 fn a_face_written_in_place_is_a_set_too() {
     let inline = PROFILE.replace("f0 := face(ab, bc, cd, da)\n", "");
-    let mut e = read(&format!("{inline}b0 := solid(face(ab, bc, cd, da), depth: 20)\n\
+    let mut e = read(&format!("{inline}b0 := solid(std.solids.Prism(face(ab, bc, cd, da), from: -20, to: 0))\n\
         m := point hint((5, 3, 5))\nm coincident b0.far.surface\n\
         q := point hint((5, 3, 25))\nq coincident b0.cd.surface\n"));
     assert!(solve(&mut e.sketch, SolveOpts::default()).success);

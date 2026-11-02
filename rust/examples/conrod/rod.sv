@@ -15,6 +15,7 @@
 // number and apply (⌘↵); rod.svd is the drawing.
 unit mm
 use std
+use std.solids
 use std.rounds (round, chamfer)
 
 L := 140mm       // centre to centre
@@ -81,15 +82,15 @@ in std.front {
   pocket := face(pr, kt, pl, kb)
 }
 
-big_end := solid(face(big), from: -wB / 2, to: wB / 2, draft: dr)
-small_end := solid(face(small), from: -wS / 2, to: wS / 2, draft: dr)
-shank := solid(face(foot, right, head, left), from: -fl / 2, to: fl / 2, draft: dr)
-big_hole := solid(face(big_bore), from: -wB, to: wB)
-small_hole := solid(face(small_bore), from: -wS, to: wS)
+big_end := solid(std.solids.Drafted(face(big), from: -wB / 2, to: wB / 2, draft: dr))
+small_end := solid(std.solids.Drafted(face(small), from: -wS / 2, to: wS / 2, draft: dr))
+shank := solid(std.solids.Drafted(face(foot, right, head, left), from: -fl / 2, to: fl / 2, draft: dr))
+big_hole := solid(std.solids.Prism(face(big_bore), from: -wB, to: wB))
+small_hole := solid(std.solids.Prism(face(small_bore), from: -wS, to: wS))
 // beyond half the web from the plane of swing, each side: a prism of the outline, so its walls
 // are planes and cylinders the rounds are built exactly against
-front_pocket := solid(pocket, from: wt / 2, to: fl)
-back_pocket := solid(pocket, from: -fl, to: -wt / 2)
+front_pocket := solid(std.solids.Prism(pocket, from: wt / 2, to: fl))
+back_pocket := solid(std.solids.Prism(pocket, from: -fl, to: -wt / 2))
 
 // square to the rod halfway along: where the drawing cuts its section through the I
 across := plane

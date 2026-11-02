@@ -7,6 +7,7 @@
 // it` — while the deflection and the mass still answer.
 unit mm
 use std
+use std.solids
 
 H := 120mm
 reach := 100mm
@@ -46,7 +47,7 @@ in std.front {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-bracket := solid(section, from: -t / 2, to: t / 2) of steel
+bracket := solid(std.solids.Prism(section, from: -t / 2, to: t / 2)) of steel
 
 // what it is made of answers no load, so it is the drawing's, claimed of it
 claim mass(>= 0.999 * steel.rho * t * area) bracket

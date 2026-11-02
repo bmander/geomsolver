@@ -15,6 +15,7 @@ use gcs_core::syntax::{parse, StmtKind};
 const PLATE: &str = "\
 unit mm
 use std
+use std.solids
 t := 4mm
 param u: Length hint(50mm)
 in std.front {
@@ -34,7 +35,7 @@ in std.front {
   b0 distance(u) tip
 }
 down := axis hint(dir: (0, -1, 0))
-plate := solid(outline, depth: t)
+plate := solid(std.solids.Prism(outline, from: -t, to: 0))
 ";
 
 /// The issue's three scenarios, over the plate.

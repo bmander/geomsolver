@@ -59,9 +59,10 @@ motion is what its tool rides on, seen from the frame `seen_from:` names (`motio
   on nothing);
 - a meshing: the second flank's carriers seen from the first's (`motions::meshing`), an
   envelope flank riding on its observer;
-- a solid read at an instant (`tool at θ`), swept over an interval (`sweep(tool over t in (a,
-  b))`) or rolled through a body (`sweep(tool, through: body)`) — over a solid that rides, a
-  `solid(…)`'s `from:`/`to:` and `through:` are refused naming those (`build_solid`, #391 S2).
+- a solid read at an instant (`tool at θ`), swept over an interval (`solid({ p | p inside(over t
+  in (a, b)) tool })`) or rolled through the body it is cut from (`solid({ p | p inside(seen_from:
+  g) tool })`, [0.199]; through 0.198 `sweep(tool over t in (a, b))` and `sweep(tool, through:
+  body)`, now E001 naming the set).
 
 `under:` names the frame of an operand that rides on none: naming one for a tool drawn riding is
 refused (`motions::under_riding`, over `Sketch::drawn_carriers`, its points' paths alone) — what a

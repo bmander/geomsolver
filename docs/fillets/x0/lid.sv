@@ -5,6 +5,7 @@
 // (X2 checks that). Does not parse yet.
 unit mm
 use std
+use std.solids
 in std.front {
   // a block 40 × 24 × 12
   b0 := point
@@ -52,17 +53,17 @@ in std.front {
 }
 // The block's near cap's rim: where the near cap meets the block's other faces. The upright edges
 // are block against block too, but not against the near cap, so they stay sharp.
-block := solid(outline, depth: 12mm)
+block := solid(std.solids.Prism(outline, from: -12mm, to: 0))
 block.near round(3mm) block
 
 // The pocket's floor: where the floor meets the pocket's walls. The upright corners stay sharp.
-plate := solid(top, depth: 10mm)
-pocket := solid(mouth, from: 1mm, to: -6mm)
+plate := solid(std.solids.Prism(top, from: -10mm, to: 0))
+pocket := solid(std.solids.Prism(mouth, from: -6mm, to: 1mm))
 tray := solid(plate)
 pocket cut tray
 tray.pocket.far round(2mm) tray.pocket
 
 // A triangular prism's near cap, 10 deep: at the obtuse corner each run carries on past the
 // vertex to the other's side; at the acute ones each crosses the other's edge in the cap.
-prism := solid(tri, depth: 10mm)
+prism := solid(std.solids.Prism(tri, from: -10mm, to: 0))
 prism.near round(2mm) prism

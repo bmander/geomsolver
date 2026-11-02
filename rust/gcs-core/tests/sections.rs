@@ -27,6 +27,7 @@ use crate::common::parsed::determined;
 /// whose rim reaches any rail.
 const BOTTLE: &str = "unit mm
 use std
+use std.solids
 use std.stations
 
 component Ring(g: path, up: axis, front: plane, rail: path, s: Scalar) {
@@ -65,6 +66,7 @@ in std.front {
 /// the plane through three of them (`std.stations.Across`).
 const SQUARES: &str = "unit mm
 use std
+use std.solids
 use std.stations
 
 component Quad(ra: path, rb: path, rc: path, rd: path, s: Scalar) {
@@ -304,6 +306,7 @@ fn a_spline_through_a_chain_is_the_cubic_through_its_corners() {
     // natural ends, over four corners and over two; the chain written after the spline
     let e = determined("unit mm
 use std
+use std.solids
 use std.stations
 in std.front {
   a := point
@@ -343,10 +346,10 @@ in std.front {
 fn a_ruled_loft_through_three_sections_is_its_frusta() {
     let e = with(BOTTLE, "
 param s: Scalar over (0, 2)
-ruled := sweep(Ring(axis, std.y, std.front, rims).f over s)
-smooth := sweep(Ring(axis, std.y, std.front, rail).f over s)
+ruled := solid({ p | p coincident(over s) Ring(axis, std.y, std.front, rims).f })
+smooth := solid({ p | p coincident(over s) Ring(axis, std.y, std.front, rail).f })
 param s2: Scalar over (0, 1)
-single := sweep(Ring(whole, std.y, std.front, rail, s: s2).f over s2)");
+single := solid({ p | p coincident(over s2) Ring(whole, std.y, std.front, rail, s: s2).f })");
     near(volume(&e, "ruled"), frustum(60.0, 30.0, 28.0) + frustum(30.0, 28.0, 12.0), 1e-9,
          "the ruled bottle");
     near(volume(&e, "smooth"), volume(&e, "single"), 1e-9, "the smooth bottle, cut or whole");
@@ -368,7 +371,7 @@ single := sweep(Ring(whole, std.y, std.front, rail, s: s2).f over s2)");
 /// of them, level wherever the rails are, so each piece is the prismatoid of its two squares.
 #[test]
 fn a_loft_with_no_guide_is_its_prismatoids() {
-    let e = with(SQUARES, "param s: Scalar over (0, 2)\nbody := sweep(Quad(ra, rb, rc, rd).f over s)");
+    let e = with(SQUARES, "param s: Scalar over (0, 2)\nbody := solid({ p | p coincident(over s) Quad(ra, rb, rc, rd).f })");
     near(volume(&e, "body"), prismatoid(40.0, 20.0, 12.0) + prismatoid(20.0, 12.0, 16.0), 1e-9,
          "the squares");
     let x = exact(&e, "body");
@@ -393,8 +396,8 @@ fn a_smooth_loft_meets_the_faces_at_its_ends() {
   lid := line(r3, t3)
   shaft := line(t3, top)
   seat := line(top, r2)
-  neck := solid(face(slope, lid, shaft, seat), about: whole)");
-    let e = with(&neck, "param s: Scalar over (0, 1)\nbottle := sweep(Ring(whole, std.y, std.front, rail).f over s)");
+  neck := solid(std.solids.Revolution(face(slope, lid, shaft, seat), about: whole))");
+    let e = with(&neck, "param s: Scalar over (0, 1)\nbottle := solid({ p | p coincident(over s) Ring(whole, std.y, std.front, rail).f })");
     // π∫ x² dy over each span of the rail, five Gauss–Legendre points exact for degree 8
     let (sk, i) = (&e.sketch, index(&e, "rail"));
     let want: f64 = (0..2).map(|span| gauss5(|t| {
@@ -445,6 +448,7 @@ fn a_smooth_loft_with_no_guide_is_its_quadrature() {
 ", 10.0 * x, 14.0 * x, 8.0 * x);
     let src = format!("unit mm
 use std
+use std.solids
 use std.stations
 
 component Tri(ra: path, rb: path, rc: path, side: plane, front: plane, s: Scalar) {{
@@ -459,7 +463,7 @@ component Tri(ra: path, rb: path, rc: path, side: plane, front: plane, s: Scalar
 }}
 {}{}{}
 param s: Scalar over (0, 2)
-body := sweep(Tri(ra, rb, rc, std.side, std.front).f over s)
+body := solid({{ p | p coincident(over s) Tri(ra, rb, rc, std.side, std.front).f }})
 ", rail("a", "side", 1.0), rail("b", "front", -1.0), rail("c", "front", 1.0));
     let e = determined(&src);
     let (sk, i) = (&e.sketch, index(&e, "ra"));
@@ -493,7 +497,7 @@ in std.front {{
   ring := line(r1, r2) -> line(r2, r4) -> line(r4, r1) -> close
 }}
 ");
-    let bad = "param s: Scalar over (0, 2)\nbad := sweep(Ring(axis, std.y, std.front, long).f over s)";
+    let bad = "param s: Scalar over (0, 2)\nbad := solid({ p | p coincident(over s) Ring(axis, std.y, std.front, long).f })";
     let said = refused(&format!("{src}{bad}"));
     assert!(said.iter().any(|m| m.contains("runs the chains it is given in step")
         && m.contains("`long` has 3 links")), "{said:?}");

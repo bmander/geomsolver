@@ -29,6 +29,7 @@ use crate::common::build;
 /// length (`P` to `N`) so the block stays regular where the flank passes through `P`.
 pub const RACK: &str = "\
 use std
+use std.solids
 use std.motion (slides, spins, turns)
 component RackFlank(pitch: circle, datum: line, alpha: Angle, s0: Length, u: Angle) {
   P := point hint((pitch.center.x + pitch.r * cos(u), pitch.center.y + pitch.r * sin(u)))
@@ -306,6 +307,7 @@ g coincident cut hint(t: 5)
 fn a_roller_cuts_its_cam() {
     let src = "\
 use std
+use std.solids
 use std.motion (slides, spins, turns)
 in std.front {
 o := point
@@ -359,6 +361,7 @@ fn a_tooth_cuts_its_conjugate() {
     // pitch radii 20 and 40, 20° pressure angle: base radii 20 cos 20° and 40 cos 20°
     let src = "\
 use std
+use std.solids
 use std.motion (slides, spins, turns)
 component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
@@ -470,6 +473,7 @@ fn a_line_is_tangent_to_an_envelope() {
 /// is the gear's, generated *by the tooth* — the tooth is the tool.
 const SPUR: &str = "\
 use std
+use std.solids
 use std.motion (slides, spins, turns)
 in std.front {
 o1 := point
@@ -564,6 +568,7 @@ fn a_rack_cut_tooth_cuts_its_mate() {
 fn a_cam_cuts_its_conjugate_cam() {
     let src = "\
 use std
+use std.solids
 use std.motion (slides, spins, turns)
 component Lobe(c: point, a: Length, b: Length, u: Angle) {
   p := point(x: c.x + a * cos(u), y: c.y + b * sin(u))
@@ -678,8 +683,8 @@ fn the_planar_envelope_is_the_swept_solids_boundary() {
          fix((26.25, 1.6525446)) t0\nfix((26.25, 3.6351146)) t1\n\
          fix((36, 7.1838203)) t2\nfix((36, -1.8962057)) t3\n}}\n\
          tooth := face(t0, t1, t2, t3, -> close)\n\
-         construction rack_tooth := solid(tooth, depth: 4)\n\
-         construction removal := sweep(rack_tooth over t in (-60deg, 60deg), under: rack, seen_from: blank)\n"
+         construction rack_tooth := solid(std.solids.Prism(tooth, from: -4, to: 0))\n\
+         construction removal := solid({{ p | p inside(under: rack, seen_from: blank, over t in (-60deg, 60deg)) rack_tooth }})\n"
     );
     let mut e = build(&src);
     let r = solve(&mut e.sketch, SolveOpts::default());

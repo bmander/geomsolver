@@ -10,6 +10,7 @@
 //   cut's.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 in std.top {
@@ -71,12 +72,12 @@ in std.front {
     (ln := line(l4, l5)) -> (lw := line(l5, l0)) -> close
   ell := face(ls, le, lt, lr, ln, lw)
 }
-plinth := solid(slab, from: 0mm, to: 10mm)
-boss := solid(stud, from: 9mm, to: 15mm)
+plinth := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))
+boss := solid(std.solids.Prism(stud, from: 9mm, to: 15mm))
 boss union plinth
-step := solid(ell, depth: 30mm)
-tray := solid(dish, from: 0mm, to: 10mm)
-pocket := solid(opening, from: 6mm, to: 11mm)
+step := solid(std.solids.Prism(ell, from: -30mm, to: 0))
+tray := solid(std.solids.Prism(dish, from: 0mm, to: 10mm))
+pocket := solid(std.solids.Prism(opening, from: 6mm, to: 11mm))
 pocket cut tray
 
 plinth.near shell(t: 1mm) plinth

@@ -1,6 +1,7 @@
 // What every view draws with.
 
 use std
+use std.solids
 use std.place (horizontal, vertical, above, offset)
 use components.dims (grub, nutT, nutaf, nutin)
 
@@ -120,7 +121,7 @@ component Grub(f: group, rin: Length, rout: Length) {
   exit := line(h1, h3)
   a0 midpoint entry
   a1 midpoint exit
-  bore := solid(bore_f, about: ax)
+  bore := solid(std.solids.Revolution(bore_f, about: ax))
   claim h0 distance(grub) h2
   claim n0 distance(nutT) n1
   claim n0 distance(nutaf) n3

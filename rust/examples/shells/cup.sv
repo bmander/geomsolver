@@ -4,6 +4,7 @@
 // Built exactly: 2928π mm³, the cylinder less the cavity's 18² π × 28.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 2mm
@@ -13,6 +14,6 @@ in std.top {
   fix((0, 0)) o
   rim := radius(20mm) circle(center: o)
 }
-cup := solid(face(rim), from: 0mm, to: 30mm)
+cup := solid(std.solids.Prism(face(rim), from: 0mm, to: 30mm))
 
 cup.near shell(t: wall) cup

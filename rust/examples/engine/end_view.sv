@@ -7,6 +7,7 @@
 use engine.dims (deck, front, rcamj, rcp)
 use engine.parts
 use std
+use std.solids
 use std.place (coords)
 use std.motion (slides, turns)
 use std
@@ -87,7 +88,7 @@ component Pulley(o: point, n: Int, bore: Length, up: Scalar, flanged: Int) {
   // the tooth, from its tip to past the pulley's tips (a point of it outside them never reaches
   // the blank), and through the pulley either way
   tooth := face(t0, t1, t2, t3, -> close)
-  construction belt_tooth := solid(tooth, from: xp0 - 2mm, to: xp1 + 2mm)
+  construction belt_tooth := solid(std.solids.Prism(tooth, from: xp0 - 2mm, to: xp1 + 2mm))
 
   // The blank turns about its spindle, the line out of the view through its centre, and the belt
   // runs along the pitch line a pitch circle a turn, the way the pitch point turns.  Each axis
@@ -100,10 +101,10 @@ component Pulley(o: point, n: Int, bore: Length, up: Scalar, flanged: Int) {
   turn := frame
   turn turns(1) spindle
   belt slides(2 * pi * rp) line_of_pitch
-  construction space := sweep(belt_tooth, through: pulley, seen_from: turn)
+  construction space := solid({ p | p inside(seen_from: turn) belt_tooth })
 
-  construction blank := solid(face(tip), from: xp0 + flanged * wf, to: xp1 - flanged * wf)
-  construction bored := solid(face(hole), from: xp0 - 2mm, to: xp1 + 2mm)
+  construction blank := solid(std.solids.Prism(face(tip), from: xp0 + flanged * wf, to: xp1 - flanged * wf))
+  construction bored := solid(std.solids.Prism(face(hole), from: xp0 - 2mm, to: xp1 + 2mm))
   pulley := solid(blank)
   bored cut pulley
   repeat n as i {
@@ -118,8 +119,8 @@ component Pulley(o: point, n: Int, bore: Length, up: Scalar, flanged: Int) {
       rim := circle(center: o) hint(r: rp - pld + bt + 2mm)
       radius(rp - pld + bt + 2mm) rim
     }
-    construction near := solid(face(rim), from: xp0, to: xp0 + wf)
-    construction far := solid(face(rim), from: xp1 - wf, to: xp1)
+    construction near := solid(std.solids.Prism(face(rim), from: xp0, to: xp0 + wf))
+    construction far := solid(std.solids.Prism(face(rim), from: xp1 - wf, to: xp1))
     flanges := solid(near)
     far union flanges
     bored cut flanges
@@ -184,10 +185,9 @@ component Drive(o: point, cam_i: point, cam_e: point) {
     vi tangent(at: end) bi
   }
   construction inside := face(si, wi, sk, wk, st, we, se, wc)
-  belt := solid(face(bi, vi, bk, vk, bm, ve, be, vc, holes: inside), from: xp0 + wf + 1mm,
-                to: xp1 - wf - 1mm)
+  belt := solid(std.solids.Prism(face(bi, vi, bk, vk, bm, ve, be, vc, holes: inside), from: xp0 + wf + 1mm, to: xp1 - wf - 1mm))
 
-  tensioner := solid(face(roller, holes: pin), from: xp0 + wf, to: xp1 - wf)
+  tensioner := solid(std.solids.Prism(face(roller, holes: pin), from: xp0 + wf, to: xp1 - wf))
 }
 
 component EndSection(o: point) {

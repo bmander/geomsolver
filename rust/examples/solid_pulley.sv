@@ -1,6 +1,7 @@
 // Turn a stepped radial section through a full revolution, then cut a V-belt groove.
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 bore_radius := 6mm
 rim_radius := 28mm
@@ -36,7 +37,7 @@ in std.front {
   bc equal fg
   b vertical g
   std.origin distance(half_width, side: left) cd
-  body := solid(profile, about: spindle)
+  body := solid(std.solids.Revolution(profile, about: spindle))
 
   // The triangular cutter extends outside the rim so the groove opens cleanly.
   lo := point hint((rim_radius + 1mm, -groove_half_width))
@@ -48,5 +49,5 @@ in std.front {
   lo symmetry(mid_axis) hi
   lo distance(2 * groove_half_width) hi
 }
-groove := solid(face(lo, root, hi, -> close), about: spindle)
+groove := solid(std.solids.Revolution(face(lo, root, hi, -> close), about: spindle))
 groove cut body

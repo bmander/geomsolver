@@ -7,6 +7,7 @@
 // disc shrunk by the quarter circle, turned) and its inner disc of radius 4, 7 tall.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 1mm
@@ -36,10 +37,10 @@ in std.top {
   fix((45, 20)) n0
   pin := radius(5mm) circle(center: n0)
 }
-plate := solid(slab, from: 0mm, to: 10mm)
-boss := solid(stud, from: 9mm, to: 16mm)
+plate := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))
+boss := solid(std.solids.Prism(stud, from: 9mm, to: 16mm))
 boss union plate
-post := solid(face(pin), from: 9mm, to: 18mm)
+post := solid(std.solids.Prism(face(pin), from: 9mm, to: 18mm))
 post union plate
 
 shell(t: wall) plate

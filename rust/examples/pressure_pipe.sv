@@ -6,6 +6,7 @@
 // are planes of symmetry, each held square to itself; the pressure pushes into the bore's wall.
 unit mm
 use std
+use std.solids
 
 a := 150mm
 c := 200mm
@@ -36,7 +37,7 @@ in std.front {
   bore := arc(center: o, start: m, end: s) hint(r: a)
   section := face(cut_x, outside, cut_y, bore)
 }
-pipe := solid(section, depth: length) of iron
+pipe := solid(std.solids.Prism(section, from: -length, to: 0)) of iron
 
 scenario pressurised {
   plane strain pipe

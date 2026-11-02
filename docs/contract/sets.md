@@ -1,7 +1,8 @@
 # Sets and regions
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch
-`flatten/sets.rs`, `solid/region.rs`, `solid/faces.rs`, or a set in `std.sets`. An issue number (#n)
+`flatten/sets.rs`, `solid/region.rs`, `solid/faces.rs`, a set in `std.sets`, or a drawn face read
+as a set (`RegionShape::Section`, an `over` in a relation's parentheses). An issue number (#n)
 or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says where a rule
 came from.
 
@@ -195,6 +196,41 @@ of them under `inside`. Elaborated
 by `regions::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
 axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
 (`region::general::measured`, divided by Σ|cᵢ|), never the meridian.
+
+**A drawn face is a set operand** (#737 P1, [0.199]): at a region solid's point, `p inside sec`
+/ `p outside sec`, `sec` a drawn `face(…)` (or one written in place as a family's argument), is
+`RegionShape::Section { face }` (`model/region.rs`), elaborated by `program::regions::section_term`
+through `relations::Shape::Section`: the region of the face's plane within its loops, read at the
+point's foot on that plane, so off the plane the prism over it, unbounded along the normal; `p
+distance(<= d, side: outside) sec` grows it in its plane (the term's `grow`).  `p distance(>= a,
+along: n) sec` is the point's ordinate along the face's normal from the plane it lies in: written
+along the face, and made the plane's ordinate by `program/solids/build.rs::face_planes` once the
+faces are built.  The field reads a section by `solid::field::section` (the face's `PlanarField`
+in its plane's basis), a `Signed` leaf in `solid/region/general.rs`; a distance from `{ q | q
+inside sec }` or `{ q | q outside sec }` is `solid::conditions::SetDistance::Section`, the distance
+in the plane from the point's foot to the region (what `std.solids.Drafted`'s lean reads).  A
+section is not a solid's face (`FaceRef`, below): it is the region the face bounds, never a side of
+material.  A drawn point against a face is E040 — a face is read only at a region solid's point.
+`tests/solids_as_sets.rs` (`a_face_is_a_set_where_no_sweep_says_it`) is the gate.
+
+**There is a roll at which** (#737 P4, [0.199]): `over t in (a, b)` (the interval written in
+place) or `over s` (a declared `param`) in a relation's parentheses is `syntax::OpArg::Over`,
+parsed by `parser/relations.rs::op_args` for `coincident` and `inside` and settled by the
+flattener like any dimension.  `p coincident(under: m, over t in (a, b)) sec` at a region solid's
+point is what the face occupies under the motion at some roll of the interval:
+`program::relations::swept_patch` makes it `RegionShape::Swept { motion, roll, face }`, read point
+by point about a line in the face's plane; any other motion, or a line off the plane, is refused by
+the field with its reason.  Where such a set is written in place in `solid(…)` and its body is one
+statement saying a sweep, the parser reads it as the sweep of the same points
+(`syntax/parser/statements.rs::swept_set`/`swept_tokens`): `solid({ p | p inside(under: m,
+seen_from: g, over t in (a, b)) tool })` the motion sweep (`SolidDef::Swept`, a stated roll), `over
+t` a declared parameter's, and no `over` at all the whole roll, `Sweep::Rolled` through
+`syntax::ROLLED` — bounded by the body the solid, or a copy of it placed at a roll (`tool at(under:
+m) θ`), is cut from, joined in `program/solids.rs`'s body rule; never cut it is E080 at its
+declaration; `solid({ p | p coincident(over s) Station(…).f })` a face family and `solid({ p | p
+coincident(over s) sec })` a face of the drawing over a declared parameter.  The developables'
+`coincident(t in (0, 1))` (a contact's place on a curve, [developables.md](developables.md)) is
+another clause, unchanged.  `tests/solids_as_sets.rs` is the gate.
 
 **Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
 reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.boss` every face
@@ -448,7 +484,7 @@ painted. A non-plane or no `at:`, E040; a labelled reference fills its slot
   level(M) e.p1 }` over a hidden axis `M` square to the edge, parallel to the plane.  `f0#plane`
   is a name the source cannot write, bound by the elaborator to the plane the face's edges are
   drawn in before the constraints (`planes::face_planes`, `Expansion::face_planes`, which seeds
-  `M` too).  Refused at the use (E040): a curved side, a `through:` solid's caps, a non-prism.
+  `M` too).  Refused at the use (E040): a curved side, a through prism's caps, a non-prism.
   **Sketching on a face** is `v1.origin coincident b0.near.surface` + `v1 tangent(at:
   v1.origin) b0.near.surface` (`at:` takes a path), written by `edit::sketch_on_face` seeded on the numeric twin
   `solid::carrier` where the eye's ray met it (`SolidHit::at`); `edit::face_plane` finds a plane
@@ -469,3 +505,20 @@ the side said, `<=`, `d` a stated length more than nothing, else E040; its term 
 sheet used as a set any other way — a distance off a probe, an equality — is E040 naming the band's
 spelling. Every set the document makes that is a sheet is recorded for the report
 (`Expansion::panels`, `Sketch::panels`).
+
+**Outside a set, and Booleans as sets** (#737 P3, [0.199]): `p outside S`, `S` a set no one bound
+of which turns round in place (a conjunction, an interval, several numbers: `region_body` refuses
+it), is outside the set as its own point says it — `sets::complement` gives `S` a hidden point,
+keyed `#{stmt}.c` (`keys::outside`), applies `inner coincident S` there under a prefix of its own,
+and rewrites the statement `p outside inner`, which `relations::outside_set` reads at a region
+solid's point as `RegionShape::Outside { set: Target::Set { probe: inner } }`, filled when the
+solid is built (`regions::fill_sets`).  The field reads it as the negated field of the set's terms
+taken together (`region::general::field_of`, unbounded allowed), its support the union of the
+boxes of each term turned round; so the outside of a conjunction is the union of its terms'
+outsides.  A set whose terms are solids named whole (`FaceSide` of a bare solid at nothing) —
+within one, within or outside others, or one `Outside` of several outsides — is built as
+`SolidDef::Body` over them (`solid::defined`'s `boolean`): the stock, what is in union with it,
+what cuts it, what it is in common with — so `{ p | p inside plate; p outside bore }` is the body
+`bore cut` makes, to the byte.  A union of regions is read point by point (the meridian fold takes
+no complement yet).  `tests/solids_as_sets.rs::a_boolean_of_solids_is_the_body_term` and
+`outside_a_conjunction_is_a_union` are the gates.

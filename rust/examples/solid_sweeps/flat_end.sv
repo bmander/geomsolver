@@ -11,6 +11,7 @@
 // point at radius r and height z where some point of the bar stands, read slice by slice.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (turns)
 
@@ -46,7 +47,7 @@ in holder {
   private upper := line(b2, b3)
   private inner_side := line(b3, b0)
 }
-construction bar := solid(face(lower, outer_side, upper, inner_side), from: 0mm, to: length)
+construction bar := solid(std.solids.Prism(face(lower, outer_side, upper, inner_side), from: 0mm, to: length))
 
 // the block: a ring about z in common with a wedge `sector` round from x
 in std.front {
@@ -65,7 +66,7 @@ in std.front {
   private wall_out := line(q1, q2)
   private topside := line(q2, q3)
 }
-block := solid(face(wall_in, underside, wall_out, topside), about: ax)
+block := solid(std.solids.Revolution(face(wall_in, underside, wall_out, topside), about: ax))
 in std.top {
   private w0 := point
   private w1 := point
@@ -77,11 +78,11 @@ in std.top {
   private wb := line(w1, w2)
   private wc := line(w2, w0)
 }
-construction wedge := solid(face(wa, wb, wc), from: -2 * half, to: 2 * half)
+construction wedge := solid(std.solids.Prism(face(wa, wb, wc), from: -2 * half, to: 2 * half))
 wedge common block
 
 // the turn about the block's axis, and the floor and wall it sweeps
 swing := frame
 swing turns(1) ax
-construction groove := sweep(bar over t in (-140deg, 140deg), under: swing)
+construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) bar })
 groove cut block

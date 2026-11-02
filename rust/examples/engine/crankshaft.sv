@@ -21,6 +21,7 @@
 use engine.dims (P, R, back, front, pinlen, rflange, rfw, rj, rp, rseal, wflange, wfw)
 use engine.parts
 use std
+use std.solids
 use std.place (horizontal, offset)
 use std.motion (slides, spins)
 
@@ -188,8 +189,7 @@ component StarterRing(o: point, arm: line, o_s: point, at: Length) {
       t3 distance(hb, side: right) arm
     }
   }
-  construction rack_tooth := solid(face(t0, t1, t2, t3, -> close), from: at - 2mm,
-                                   to: at + wring + 2mm)
+  construction rack_tooth := solid(std.solids.Prism(face(t0, t1, t2, t3, -> close), from: at - 2mm, to: at + wring + 2mm))
 
   // edge on: the band, the tips its outline, and the root lines across it
   in o_s.plane {
@@ -206,8 +206,8 @@ component StarterRing(o: point, arm: line, o_s: point, at: Length) {
   // build turns round needs; a blank turned from a section is built by its meridian, which the
   // build reads in the half-plane toward the world's x — no direction at all about the crank's
   // axis, which is the world's x.
-  construction blank := solid(face(tip), from: at, to: at + wring)
-  construction bored := solid(face(bore), from: at - 1mm, to: at + wring + 1mm)
+  construction blank := solid(std.solids.Prism(face(tip), from: at, to: at + wring))
+  construction bored := solid(std.solids.Prism(face(bore), from: at - 1mm, to: at + wring + 1mm))
   gear := solid(blank)
   bored cut gear
   // What the rack rolls through: the blank where its tooth goes, a block about the space it cuts
@@ -232,7 +232,7 @@ component StarterRing(o: point, arm: line, o_s: point, at: Length) {
     z2 distance(12mm, side: left) arm
     z3 distance(12mm, side: left) arm
   }
-  construction zone := solid(face(z0, z1, z2, z3, -> close), from: at, to: at + wring)
+  construction zone := solid(std.solids.Prism(face(z0, z1, z2, z3, -> close), from: at, to: at + wring))
 
   // The ring turns about the axis and the rack slides along its pitch line a pitch circle's turn
   // a turn: the rack rolls on the pitch circle.  Each joint's axis runs the way what it is held
@@ -241,7 +241,7 @@ component StarterRing(o: point, arm: line, o_s: point, at: Length) {
   turn := frame
   turn spins(1) o
   rack slides(2 * pi * rring) slide
-  construction space := sweep(rack_tooth, through: zone, seen_from: turn)
+  construction space := solid({ p | p inside(seen_from: turn) rack_tooth })
   repeat zr as i {
     construction indexed := space at(under: turn) i * 360deg / zr
     indexed cut gear
@@ -444,65 +444,59 @@ component Crankshaft(o: point, ax: line, o_s: point, theta: Angle) {
   // stretch the side section gives it (the end view's normal runs along the axis, from the front)
   shaft := solid()
   repeat 5 as j {
-    private journal_b := solid(face(main), from: front + 25mm + j * P - wj / 2,
-                               to: front + 25mm + j * P + wj / 2)
+    private journal_b := solid(std.solids.Prism(face(main), from: front + 25mm + j * P - wj / 2, to: front + 25mm + j * P + wj / 2))
     journal_b union shaft
   }
   repeat 4 as i {
     xw := front + 25mm + P / 2 + i * P
     // cylinders 1 and 4 on the first throw, 2 and 3 on the second
     when i * (3 - i) == 0 {
-      private pin_b := solid(face(t1.kp), from: xw - wpin / 2, to: xw + wpin / 2)
-      private web_l := solid(face(t1.eye, t1.fl, t1.rim, t1.fr), from: xw - P / 2 + wj / 2,
-                             to: xw - wpin / 2)
-      private web_r := solid(face(t1.eye, t1.fl, t1.rim, t1.fr), from: xw + wpin / 2,
-                             to: xw + P / 2 - wj / 2)
+      private pin_b := solid(std.solids.Prism(face(t1.kp), from: xw - wpin / 2, to: xw + wpin / 2))
+      private web_l := solid(std.solids.Prism(face(t1.eye, t1.fl, t1.rim, t1.fr), from: xw - P / 2 + wj / 2, to: xw - wpin / 2))
+      private web_r := solid(std.solids.Prism(face(t1.eye, t1.fl, t1.rim, t1.fr), from: xw + wpin / 2, to: xw + P / 2 - wj / 2))
     }
     when i * (3 - i) != 0 {
-      private pin_b := solid(face(t2.kp), from: xw - wpin / 2, to: xw + wpin / 2)
-      private web_l := solid(face(t2.eye, t2.fl, t2.rim, t2.fr), from: xw - P / 2 + wj / 2,
-                             to: xw - wpin / 2)
-      private web_r := solid(face(t2.eye, t2.fl, t2.rim, t2.fr), from: xw + wpin / 2,
-                             to: xw + P / 2 - wj / 2)
+      private pin_b := solid(std.solids.Prism(face(t2.kp), from: xw - wpin / 2, to: xw + wpin / 2))
+      private web_l := solid(std.solids.Prism(face(t2.eye, t2.fl, t2.rim, t2.fr), from: xw - P / 2 + wj / 2, to: xw - wpin / 2))
+      private web_r := solid(std.solids.Prism(face(t2.eye, t2.fl, t2.rim, t2.fr), from: xw + wpin / 2, to: xw + P / 2 - wj / 2))
     }
     pin_b union shaft
     web_l union shaft
     web_r union shaft
   }
-  nose_b := solid(face(nose_c), from: front - 70mm, to: front + 25mm - wj / 2)
-  seal_b := solid(face(seal_c), from: back - 25mm + wj / 2, to: back + 8mm)
-  flange_b := solid(face(flange_c), from: back + 8mm, to: xfw)
+  nose_b := solid(std.solids.Prism(face(nose_c), from: front - 70mm, to: front + 25mm - wj / 2))
+  seal_b := solid(std.solids.Prism(face(seal_c), from: back - 25mm + wj / 2, to: back + 8mm))
+  flange_b := solid(std.solids.Prism(face(flange_c), from: back + 8mm, to: xfw))
   nose_b union shaft
   seal_b union shaft
   flange_b union shaft
   // the flywheel: the seat the ring is shrunk on, the shoulder behind it, and what is turned in
-  seat_b := solid(face(seat_c), from: xfw, to: xfw + wring)
-  rim_b := solid(face(shoulder_c), from: xfw + wring, to: xfw + wfw)
+  seat_b := solid(std.solids.Prism(face(seat_c), from: xfw, to: xfw + wring))
+  rim_b := solid(std.solids.Prism(face(shoulder_c), from: xfw + wring, to: xfw + wfw))
   seat_b union shaft
   rim_b union shaft
-  dished := solid(face(dish_o, holes: dish_i), from: xfw - 1mm, to: xfw + dish)
-  cover_seat := solid(face(flywheel_c, holes: face_o), from: xfw + wfw - step, to: xfw + wfw + 1mm)
-  heads := solid(face(face_i), from: xfw + wfw - recess, to: xfw + wfw + 1mm)
-  hub := solid(face(hub_c), from: xfw, to: xfw + wfw + 1mm)
+  dished := solid(std.solids.Prism(face(dish_o, holes: dish_i), from: xfw - 1mm, to: xfw + dish))
+  cover_seat := solid(std.solids.Prism(face(flywheel_c, holes: face_o), from: xfw + wfw - step, to: xfw + wfw + 1mm))
+  heads := solid(std.solids.Prism(face(face_i), from: xfw + wfw - recess, to: xfw + wfw + 1mm))
+  hub := solid(std.solids.Prism(face(hub_c), from: xfw, to: xfw + wfw + 1mm))
   dished cut shaft
   cover_seat cut shaft
   heads cut shaft
   hub cut shaft
   repeat 6 as k {
-    private drill := solid(face(bolt[k]), from: back + 6mm, to: xfw + wfw + 1mm)
+    private drill := solid(std.solids.Prism(face(bolt[k]), from: back + 6mm, to: xfw + wfw + 1mm))
     drill cut shaft
   }
   repeat 4 as i {
-    private oilway := solid(face(oil_a[i], oil_b[i], oil_d[i], oil_c[i], -> close),
-                            about: drilling[i])
+    private oilway := solid(std.solids.Revolution(face(oil_a[i], oil_b[i], oil_d[i], oil_c[i], -> close), about: drilling[i]))
     oilway cut shaft
   }
   // the pilot bearing's bore in the flange, run out through the flywheel's bore as the gearbox
   // shaft enters it (a cutter stopping a millimetre into that bore's air left the mesh sagging
   // past the export's tolerance), and the nose's keyway and tapped bore
-  pilot := solid(face(pilot_c), from: xfw - dpilot, to: xfw + wfw + 1mm)
-  keyway := solid(face(k0, k1, k2, k3, -> close), from: front - 72mm, to: front - 28mm)
-  tapped := solid(face(tap_c), from: front - 72mm, to: front - 70mm + dtap)
+  pilot := solid(std.solids.Prism(face(pilot_c), from: xfw - dpilot, to: xfw + wfw + 1mm))
+  keyway := solid(std.solids.Prism(face(k0, k1, k2, k3, -> close), from: front - 72mm, to: front - 28mm))
+  tapped := solid(std.solids.Prism(face(tap_c), from: front - 72mm, to: front - 70mm + dtap))
   pilot cut shaft
   keyway cut shaft
   tapped cut shaft
