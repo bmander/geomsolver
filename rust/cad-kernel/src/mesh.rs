@@ -89,16 +89,11 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
     }
     cuts.push(edge.t[1]);
     // (cut in several pieces regardless, a short span fans slivers from the face's nearest point)
-    let each = |a: f64,z: f64| match c {
-        super::geom::Curve::Iso(b,_) => match b.carry {
-            super::geom::Carry::Screw {angle,..} => ((angle*(z-a)).abs()/std::f64::consts::FRAC_PI_2).ceil().min(1e4).max(1.) as usize,
-            super::geom::Carry::Line {..} => 1,
-        },
-        super::geom::Curve::SheetCut(s) => match s.blend.carry {
-            super::geom::Carry::Screw {angle,..} => ((angle*(z-a)).abs()/std::f64::consts::FRAC_PI_2).ceil().min(1e4).max(1.) as usize,
-            super::geom::Carry::Line {..} => 1,
-        },
-        super::geom::Curve::BSpline(_) => 1,
+    // a blend's curve, by the quarter turns its carry takes over the span
+    let carried = match c { super::geom::Curve::Iso(b,_) => Some(&b.carry),super::geom::Curve::SheetCut(s) => Some(&s.blend.carry),_ => None };
+    let each = |a: f64,z: f64| match (carried,c) {
+        (Some(super::geom::Carry::Screw {angle,..}),_) => ((angle*(z-a)).abs()/std::f64::consts::FRAC_PI_2).ceil().min(1e4).max(1.) as usize,
+        (Some(super::geom::Carry::Line {..}),_) | (None,super::geom::Curve::BSpline(_)) => 1,
         _ => if edge.closed() { 3 } else { 1 },
     };
     let mut stack: Vec<(f64,f64,u32)> = cuts.windows(2).flat_map(|w| { let n = each(w[0],w[1]); (0..n).map(move |k| {

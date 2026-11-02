@@ -308,23 +308,32 @@ impl Blend {
     /// than its turns stand apart, its nearest — with no search. `None` for any other patch, or `p`
     /// level with none of its rulings.
     fn from_level(&self,p: V) -> Option<Uv> {
-        let Carry::Screw {axis,advance,..} = self.carry else { return None };
-        let (Curve::Line {..},Curve::Line {..}) = (&self.a,&self.b) else { return None };
-        let k = unit(axis);
-        let rise = advance*dot(axis,k);
-        let (p0,p1) = (self.a.point(self.ta[0]),self.a.point(self.ta[1]));
-        let run = sub(p1,p0);
-        if !(rise.abs() > 0.) || dot(run,k).abs() > 1e-12*norm(run)
-            || crate::util::space::distance(self.b.point(self.tb[0]),p0) > 1e-9*(1.+norm(p0))
-            || crate::util::space::distance(self.b.point(self.tb[1]),p1) > 1e-9*(1.+norm(p1)) { return None }
-        let v = dot(sub(p,p0),k)/rise;
-        if !(0.0..=1.0).contains(&v) { return None }
-        let (s0,su,_) = self.d1([0.,v]);
-        let u = dot(sub(p,s0),su)/dot(su,su);
-        let start = [if self.closed { u } else { u.clamp(0.,1.) },v];
+        let start = self.screwed_line().filter(ScrewedLine::level).and_then(|line| self.level_uv(&line,p))?;
+        let start = [if self.closed { start[0] } else { start[0].clamp(0.,1.) },start[1]];
         let uv = self.newton(p,start);
         let far = |uv: Uv| crate::util::space::distance(self.d1(uv).0,p);
         (far(uv) <= far(start)*(1.+1e-12)+1e-300).then_some(uv)
+    }
+    /// **The line this patch screws, where it is one** (`build::screwed`'s sheet: a line and its
+    /// own image carried by a screw, so `S(u, v) = carry_v(p₀ + u Δ)`): the one reading every closed
+    /// form of such a sheet starts from. Its image is read as the line itself where the two ends
+    /// stand within rounding of its own.
+    pub fn screwed_line(&self) -> Option<ScrewedLine> {
+        let Carry::Screw {center,axis,angle,advance} = self.carry else { return None };
+        let (Curve::Line {..},Curve::Line {..}) = (&self.a,&self.b) else { return None };
+        let k = unit(axis);
+        let (p0,p1) = (self.a.point(self.ta[0]),self.a.point(self.ta[1]));
+        let same = |q: V,p: V| crate::util::space::distance(q,p) <= 1e-9*(1.+norm(p));
+        if angle == 0. || !same(self.b.point(self.tb[0]),p0) || !same(self.b.point(self.tb[1]),p1) { return None }
+        Some(ScrewedLine {centre:center,axis:k,angle,rise:advance*dot(axis,k),p0,run:sub(p1,p0)})
+    }
+    /// The parameters of the point of a level line's ruling level with `p` nearest it: `v` from its
+    /// height, `u` its foot along that ruling. `None` past the patch's `v`.
+    fn level_uv(&self,line: &ScrewedLine,p: V) -> Option<Uv> {
+        let v = line.v_at(p);
+        if !(0.0..=1.0).contains(&v) { return None }
+        let (s0,su,_) = self.d1([0.,v]);
+        Some([dot(sub(p,s0),su)/dot(su,su),v])
     }
     /// `inverse` from the nearest of the grid and the turned points.
     fn searched(&self,p: V) -> Uv {
@@ -1091,6 +1100,27 @@ impl Surface {
     }
 }
 
+/// **A line screwed** (`Blend::screwed_line`): the screw's centre and unit axis, its turn and its
+/// rise along that axis over the patch's `v`, and the line's point at `u = 0` and its run to `u = 1`.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct ScrewedLine { pub centre: V,pub axis: V,pub angle: f64,pub rise: f64,pub p0: V,pub run: V }
+
+impl ScrewedLine {
+    /// Whether the line runs square to the axis, so the screw lifts every point of it alike and a
+    /// point's ruling is the one level with it.
+    pub fn level(&self) -> bool { self.rise != 0. && dot(self.run,self.axis).abs() <= 1e-12*norm(self.run) }
+    /// The rise a radian of the turn.
+    pub fn pitch(&self) -> f64 { self.rise/self.angle }
+    /// The `v` of the ruling level with `p` (a level line's).
+    pub fn v_at(&self,p: V) -> f64 { dot(sub(p,self.p0),self.axis)/self.rise }
+    /// The line's point at `u = 0` turned to `v`, about the centre (its rise left off), and its run
+    /// turned likewise.
+    fn turned(&self,v: f64) -> (V,V) {
+        let t = self.angle*v;
+        (Carry::turn(self.axis,t,sub(self.p0,self.centre)),Carry::turn(self.axis,t,self.run))
+    }
+}
+
 /// **A plane's meeting with a sheet a line screws into** (`build::screwed`'s `Blend` of a line and
 /// itself carried by a screw, `S(u, v) = carry_v(A₀ + u Δ)`), in closed form: the sheet's ruling at
 /// `v` crosses the plane `n·x = h` where `α(v) + u β(v) = 0`, `α = n·S(0, v) − h` and
@@ -1101,63 +1131,58 @@ impl Surface {
 /// are read as their differences from it, each exact to rounding however near (`cos − 1` as
 /// `−2 sin²`), so the curve runs through that point as smoothly as anywhere.
 #[derive(Clone,Debug,PartialEq)]
-pub struct SheetCut { pub blend: Arc<Blend>,pub n: V,pub h: f64,pub held: Vec<f64> }
+pub struct SheetCut { pub blend: Arc<Blend>,pub n: V,pub h: f64,pub held: Vec<f64>,line: ScrewedLine }
 
 impl SheetCut {
-    /// The screw's centre, unit axis, turn and step over the sheet, and the line's point at `u = 0`
-    /// and its run to `u = 1`.
-    fn parts(&self) -> (V,V,f64,f64,V,V) {
-        let b = &self.blend;
-        let Carry::Screw {center,axis,angle,advance} = b.carry else { unreachable!("a sheet cut is of a screwed sheet") };
-        let p0 = b.a.point(b.ta[0]);
-        (center,axis,angle,advance,p0,sub(b.a.point(b.ta[1]),p0))
+    /// The cut of `blend`'s sheet by the plane `n·x = h`, holding the rulings at `held`; `None`
+    /// where the sheet is no screwed line's.
+    pub fn new(blend: Arc<Blend>,n: V,h: f64,held: Vec<f64>) -> Option<SheetCut> {
+        let line = blend.screwed_line()?;
+        Some(SheetCut {blend,n,h,held,line})
     }
     /// The held ruling nearest `v`.
     fn nearest(&self,v: f64) -> Option<f64> { self.held.iter().copied().min_by(|a,b| (a-v).abs().total_cmp(&(b-v).abs())) }
+    /// `α′` and `β′` at the ruling whose turned point and run are `(r, d)`.
+    fn rates(&self,(r,d): (V,V)) -> (f64,f64) {
+        let ScrewedLine {axis:k,angle,rise,..} = self.line;
+        (dot(self.n,add(scale(cross(k,r),angle),scale(k,rise))),angle*dot(self.n,cross(k,d)))
+    }
     /// `α`, `β` and their rates at `v`.
     pub fn coefficients(&self,v: f64) -> (f64,f64,f64,f64) {
-        let (c,k,angle,advance,p0,run) = self.parts();
+        let ScrewedLine {centre,axis:k,angle,rise,..} = self.line;
         let n = self.n;
-        // a vector's turn by `t` less itself: (cos t − 1) w⊥ + sin t (k × w)
-        let turned = |w: V,t: f64| {
-            let (s,half) = (t.dsin(),(0.5*t).dsin());
-            add(scale(sub(w,scale(k,dot(k,w))),-2.*half*half),scale(cross(k,w),s))
-        };
-        let (r,d) = (sub(sub(self.blend.carry.at(p0,v),c),scale(k,advance*v)),self.blend.carry.dir(run,v));
-        let rates = (dot(n,add(scale(cross(k,r),angle),scale(k,advance))),angle*dot(n,cross(k,d)));
+        let rd = self.line.turned(v);
+        let (da,db) = self.rates(rd);
         match self.nearest(v) {
             Some(at) => {
-                let (r0,d0) = (sub(sub(self.blend.carry.at(p0,at),c),scale(k,advance*at)),self.blend.carry.dir(run,at));
+                // a vector's turn by `t` less itself: (cos t − 1) w⊥ + sin t (k × w)
                 let t = angle*(v-at);
-                (dot(n,turned(r0,t))+dot(n,k)*advance*(v-at),dot(n,turned(d0,t)),rates.0,rates.1)
+                let (s,half) = (t.dsin(),(0.5*t).dsin());
+                let less = |w: V| add(scale(sub(w,scale(k,dot(k,w))),-2.*half*half),scale(cross(k,w),s));
+                let (r0,d0) = self.line.turned(at);
+                (dot(n,less(r0))+dot(n,k)*rise*(v-at),dot(n,less(d0)),da,db)
             }
-            None => (dot(n,self.blend.carry.at(p0,v))-self.h,dot(n,d),rates.0,rates.1),
+            None => (dot(n,add(add(centre,rd.0),scale(k,rise*v)))-self.h,dot(n,rd.1),da,db),
         }
     }
     /// `u(v) = −α/β` and its rate; at a held ruling, their limits.
     pub fn u(&self,v: f64) -> (f64,f64) {
-        let (a,b,da,db) = self.coefficients(v);
         if let Some(at) = self.nearest(v).filter(|&at| (v-at).abs() <= 1e-7) {
             // α ≈ α₁ δ + α₂ δ²/2, β likewise: u ≈ −(α₁ + α₂ δ/2) / (β₁ + β₂ δ/2)
-            let (c,k,angle,advance,p0,run) = self.parts();
-            let n = self.n;
-            let (r,d) = (sub(sub(self.blend.carry.at(p0,at),c),scale(k,advance*at)),self.blend.carry.dir(run,at));
-            let (a1,b1) = (dot(n,add(scale(cross(k,r),angle),scale(k,advance))),angle*dot(n,cross(k,d)));
-            let (a2,b2) = (angle*angle*dot(n,cross(k,cross(k,r))),angle*angle*dot(n,cross(k,cross(k,d))));
+            let ScrewedLine {axis:k,angle,..} = self.line;
+            let (r,d) = self.line.turned(at);
+            let (a1,b1) = self.rates((r,d));
+            let (a2,b2) = (angle*angle*dot(self.n,cross(k,cross(k,r))),angle*angle*dot(self.n,cross(k,cross(k,d))));
             let delta = v-at;
             return (-(a1+0.5*a2*delta)/(b1+0.5*b2*delta),-(a2*b1-a1*b2)/(2.*b1*b1))
         }
+        let (a,b,da,db) = self.coefficients(v);
         (-a/b,-(da*b-a*db)/(b*b))
     }
-    /// The sheet's `v` at `p`: where the line is square to the axis, its height over the step, in
-    /// closed form (the screw lifts every point of the line alike); else the sheet's own inverse.
-    fn v_of(&self,p: V) -> f64 {
-        let (_,k,_,advance,p0,run) = self.parts();
-        if advance != 0. && dot(run,k).abs() <= 1e-12*norm(run) { return dot(sub(p,p0),k)/advance }
-        self.blend.inverse(p)[1]
-    }
+    /// The sheet's `v` at `p`: a level line's, its height over the rise; else the sheet's inverse.
+    fn v_of(&self,p: V) -> f64 { if self.line.level() { self.line.v_at(p) } else { self.blend.inverse(p)[1] } }
     /// The length of the line's run, `|Δ|`.
-    pub fn run(&self) -> f64 { norm(self.parts().5) }
+    pub fn run(&self) -> f64 { norm(self.line.run) }
     /// The `u` at which the ruling through `q` (a point of the sheet) passes it.
     pub fn rule_at(&self,q: V) -> f64 {
         let v = self.v_of(q);
@@ -1171,6 +1196,12 @@ impl SheetCut {
         let (u,du) = self.u(v);
         let (q,su,sv) = self.blend.d1([u,v]);
         (q,add(scale(su,du),sv))
+    }
+    /// The curve moved by `m`.
+    fn moved(&self,m: &Rigid) -> SheetCut {
+        let n = m.vector(self.n);
+        let blend = Arc::new(self.blend.moved(m));
+        SheetCut {line:blend.screwed_line().expect("a screwed line moved is one"),blend,n,h:dot(n,m.point(scale(self.n,self.h))),held:self.held.clone()}
     }
 }
 
@@ -1331,11 +1362,13 @@ impl Curve {
             _ => vec![],
         }
     }
-    pub fn point(&self,t: f64) -> V { if let Curve::BSpline(b) = self { b.point(t) } else { self.d2(t).0 } }
+    pub fn point(&self,t: f64) -> V {
+        match self { Curve::BSpline(b) => b.point(t),Curve::SheetCut(c) => c.point(t),_ => self.d2(t).0 }
+    }
     pub fn tangent(&self,t: f64) -> V { self.d1(t).1 }
     /// `C`, `C'`: `d2`'s, a B-spline's second derivative not read.
     pub fn d1(&self,t: f64) -> (V,V) {
-        match self { Curve::BSpline(b) => b.d1(t),_ => { let (x,d,_) = self.d2(t); (x,d) } }
+        match self { Curve::BSpline(b) => b.d1(t),Curve::SheetCut(c) => c.d1(t),_ => { let (x,d,_) = self.d2(t); (x,d) } }
     }
     /// The parameter of the point of the curve nearest `p` (`t ∈ [0, 2π)` on a closed curve);
     /// exact for a point on a line or circle, and for an ellipse refined by Newton from its
@@ -1364,21 +1397,8 @@ impl Curve {
                 }
                 if c.closed { t.rem_euclid(c.segments() as f64) } else { t }
             }
-            Curve::SheetCut(ref c) => {
-                // from the sheet's own `v` at the point, Newton on (C − p)·C'
-                let mut v = c.v_of(p);
-                for _ in 0..20 {
-                    let (x,d,dd) = self.d2(v);
-                    let e = sub(x,p);
-                    let h = dot(d,d)+dot(e,dd);
-                    if !(h > 0.) { break }
-                    let next = v-dot(e,d)/h;
-                    if !next.is_finite() { break }
-                    if (next-v).abs() <= 1e-15 { v = next; break }
-                    v = next;
-                }
-                v
-            }
+            // from the sheet's own `v` at the point
+            Curve::SheetCut(ref c) => self.newton(p,c.v_of(p),None),
             Curve::Rail(ref w,u) => w.rail_inverse(u,p),
             Curve::Rim(ref w,s) => w.rim_inverse(s,p),
             Curve::Iso(ref b,u) => {
@@ -1388,17 +1408,7 @@ impl Curve {
                     let d = crate::util::space::distance(b.d1([u,v]).0,p);
                     if d < best.0 { best = (d,v); }
                 }
-                let mut v = best.1;
-                for _ in 0..20 {
-                    let (x,d,dd) = self.d2(v);
-                    let e = sub(x,p);
-                    let h = dot(d,d)+dot(e,dd);
-                    if !(h > 0.) { break }
-                    let next = (v-dot(e,d)/h).clamp(0.,1.);
-                    if (next-v).abs() <= 1e-15 { v = next; break }
-                    v = next;
-                }
-                v
+                self.newton(p,best.1,Some([0.,1.]))
             }
             // the nearest of samples across every knot span, then Newton: once a point
             Curve::BSpline(ref b) => nearest_held(b,p),
@@ -1422,6 +1432,21 @@ impl Curve {
             }
         }
     }
+    /// Newton on `(C − p)·C'` from `v`, held to `within` where given.
+    fn newton(&self,p: V,mut v: f64,within: Option<[f64;2]>) -> f64 {
+        for _ in 0..20 {
+            let (x,d,dd) = self.d2(v);
+            let e = sub(x,p);
+            let h = dot(d,d)+dot(e,dd);
+            if !(h > 0.) { break }
+            let next = v-dot(e,d)/h;
+            let next = match within { Some([a,b]) => next.clamp(a,b),None => next };
+            if !next.is_finite() { break }
+            if (next-v).abs() <= 1e-15 { v = next; break }
+            v = next;
+        }
+        v
+    }
     /// The curve's length per unit of parameter (its speed, where it is constant; an ellipse's
     /// greatest).
     pub fn speed(&self) -> f64 {
@@ -1434,8 +1459,10 @@ impl Curve {
             }
             Curve::Iso(ref b,u) => (0..=64).map(|j| norm(b.d1([u,j as f64/64.]).2)).fold(0.,f64::max),
             // read over the sheet, where the curve stands on its patch (off it, it runs to infinity)
-            Curve::SheetCut(ref c) => (0..=64).map(|j| j as f64/64.).filter(|&v| (-1.0..=2.).contains(&c.u(v).0))
-                .map(|v| norm(c.d1(v).1)).fold(0.,f64::max),
+            Curve::SheetCut(ref c) => (0..=64).map(|j| j as f64/64.).filter_map(|v| {
+                let (u,du) = c.u(v);
+                (-1.0..=2.).contains(&u).then(|| { let (_,su,sv) = c.blend.d1([u,v]); norm(add(scale(su,du),sv)) })
+            }).fold(0.,f64::max),
             Curve::Rail(ref w,u) => {
                 let [a,z] = w.span();
                 (0..=64).map(|j| norm(w.d1([u,a+(z-a)*j as f64/64.]).2)).fold(0.,f64::max)
@@ -1468,16 +1495,13 @@ impl Curve {
             // the line's stretch the curve reaches over `[t0, t1]` (sampled, and grown by a quarter;
             // the whole line where a ruling there runs parallel to the plane), screwed
             Curve::SheetCut(ref c) => {
-                let (centre,axis,_,advance,p0,run) = c.parts();
-                let us: Vec<f64> = (0..=64).map(|j| c.u(t0+(t1-t0)*j as f64/64.).0).collect();
-                let (lo,hi) = us.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),&u| (l.min(u),h.max(u)));
+                let ScrewedLine {centre,axis,rise,p0,run,..} = c.line;
+                let (lo,hi) = (0..=64).map(|j| c.u(t0+(t1-t0)*j as f64/64.).0)
+                    .fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),u| (l.min(u),h.max(u)));
                 let wide = 1e6*(1.+norm(p0)/norm(run).max(1e-300));
                 let (lo,hi) = if lo.is_finite() && hi.is_finite() && hi-lo <= wide { (lo-0.25*(hi-lo)-1e-9,hi+0.25*(hi-lo)+1e-9) } else { (-wide,wide) };
-                let line = hull([add(p0,scale(run,lo)),add(p0,scale(run,hi))]);
-                let step = |t: f64| { let d = scale(unit(axis),advance*t); (add(line.0,d),add(line.1,d)) };
-                let mut out = swept(centre,axis,step(t0));
-                widen(&mut out,swept(centre,axis,step(t1)));
-                out
+                let lift = scale(axis,rise*t0);
+                screwed(centre,axis,rise*(t1-t0),hull([add(p0,scale(run,lo)),add(p0,scale(run,hi))].map(|q| add(q,lift))))
             }
             // a rail within its wall's box over the stretch of stations, a rim within its edge's
             Curve::Rail(ref w,_) => w.bounds([t0,t1]),
@@ -1511,10 +1535,7 @@ impl Curve {
                 pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
             Curve::BSpline(ref b) => Curve::BSpline(Arc::new(BSpline {poles:b.poles.iter().map(|&p| m.point(p)).collect(),..(**b).clone()})),
             Curve::Iso(ref b,u) => Curve::Iso(Arc::new(b.moved(m)),u),
-            Curve::SheetCut(ref c) => {
-                let n = m.vector(c.n);
-                Curve::SheetCut(Arc::new(SheetCut {blend:Arc::new(c.blend.moved(m)),n,h:dot(n,m.point(scale(c.n,c.h))),held:c.held.clone()}))
-            }
+            Curve::SheetCut(ref c) => Curve::SheetCut(Arc::new(c.moved(m))),
             Curve::Rail(ref w,u) => Curve::Rail(Arc::new(w.moved(m)),u),
             Curve::Rim(ref w,s) => Curve::Rim(Arc::new(w.moved(m)),s),
             Curve::Affine(ref a) => Curve::Affine(Arc::new(super::affine::MappedCurve::new(

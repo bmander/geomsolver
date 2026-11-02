@@ -229,15 +229,11 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
                         let slope = dot(radial,sub(e,scale(axis,ez)))/(ez*rho.max(1e-300));
                         unit(sub(scale(radial,1./rho.max(1e-300)),scale(axis,slope)))
                     }
-                    // the sheet's normal: square to the line and to the screw's velocity there
-                    Cutter::Screwed {e,..} => return poses.iter().map(|m| {
-                        let at = m.point(x);
-                        let r = sub(at,c);
-                        let v = add(scale(cross(axis,r),screw.ratio),scale(axis,screw.advance/std::f64::consts::TAU));
-                        (at,unit(cross(m.vector(e),v)))
-                    }).collect::<Vec<_>>(),
+                    // the sheet's normal: square to the line and to the screw's velocity there (which
+                    // the screw carries as it carries the normal)
+                    Cutter::Screwed {e,..} => unit(cross(e,screw.velocity(x))),
                 };
-                poses.iter().map(move |m| (m.point(x),m.vector(normal))).collect()
+                poses.iter().map(move |m| (m.point(x),m.vector(normal)))
             }).collect()
         };
         for (k,&(o,n)) in faces.iter().enumerate() {
@@ -348,8 +344,7 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
             Cutter::Cylinder {o,axis,r,span} => solids.push(prism(&disc(add(o,scale(axis,span[0])),axis,r),0.,span[1]-span[0])?),
             Cutter::Revolved {o,axis,p,e,span} => solids.extend(revolved(o,axis,p,e,span,eps)?),
             Cutter::Screwed {p,e} => {
-                let Some(tall) = tall else { return Err(Unbuilt::Failed("a screwed sheet with no screw".into())) };
-                solids.push(screwed_sheet(&screw,&pose_at,p,e,tall,size)?)
+                solids.push(screwed_sheet(&screw,&pose_at,p,e,tall.expect("a level edge's sheet is a screw's, its box tall"),size)?)
             }
         }
     }
@@ -417,9 +412,8 @@ fn screwed_sheet(screw: &crate::trajectory::Screw,pose_at: &dyn Fn(f64) -> Resul
     let away = if norm(off) > 1e-9*(1.+size) { unit(off) } else { unit(cross(axis,e)) };
     let reach = 1.25*far+size;
     // the roll over which the line climbs from below the box to above it, a margin past each
-    let height = dot(sub(p,c),axis);
     let margin = 0.1*(z1-z0);
-    let (s0,s1) = { let (x,y) = ((z0-margin-height)/rate,(z1+margin-height)/rate); (x.min(y),x.max(y)) };
+    let (s0,s1) = { let (x,y) = (screw.time_to(p,z0-margin),screw.time_to(p,z1+margin)); (x.min(y),x.max(y)) };
     let first = pose_at(s0)?;
     let corners = [add(foot,scale(e,-reach)),add(foot,scale(e,reach)),add(foot,scale(away,reach))].map(|x| first.point(x));
     let triangle = Profile {origin:corners[0],normal:axis,names:vec![vec!["sheet".into(),String::new(),String::new()]],

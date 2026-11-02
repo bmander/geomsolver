@@ -18,7 +18,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   any other plane in its cut, `geom::Curve::SheetCut` (**new variant**, `geom::SheetCut`), with the
   rulings the plane holds; crossings of such curves on a sheet, or of two cuts on one plane, in
   closed form (`query::crossings_in`); a point's foot on such a sheet from the ruling level with it
-  (`Blend::inverse`). A profile screwed into a solid, public (`build::screwed`).
+  (`Blend::inverse`). Each reads the sheet through `Blend::screwed_line` (`geom::ScrewedLine`).
+  A profile screwed into a solid, public (`build::screwed`).
 - A plane through a quadric's asymptotic cone is tangent where the constant at the hyperbola's
   centre is rounding (`ssi::intersect`): a plane holding a hyperboloid's ruling meets it in two
   lines at any tolerance, where at a tolerance under some 1e-7 it came out as a hyperbola's

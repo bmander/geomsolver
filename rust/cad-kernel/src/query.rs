@@ -106,24 +106,22 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
 /// `−α/β` (`SheetCut`), a helix (`Iso`) its own `u` — cross where their rules agree; two planes'
 /// cuts of two sheets of one screw, on one plane, where the plane meets the helix the two sheets
 /// share, the first's rule against that helix's `u`. Each a root of the rules' difference over the
-/// stretch both reach (the first's alone for the second), bracketed at samples and settled by
-/// bisection; a sign change across a rule running off to infinity is no root, and is told by the
-/// two curves' points standing apart there. `None` where the two are none of these.
+/// stretch both reach (the first's alone for the second), bracketed at samples and settled
+/// (`bracketed_root`); a sign change across a rule running off to infinity is no root, and is told
+/// by the two curves' points standing apart there. `None` where the two are none of these.
 fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
     use super::geom::SheetCut;
-    let same = |x: &super::geom::Blend,y: &super::geom::Blend| std::ptr::eq(x,y) || x == y;
     // the cut whose rule is read, the other curve, and their stretches
-    let (cut,other,cut_is_a) = match (a,b) {
-        (Curve::SheetCut(x),o) => (x,o,true),
-        (o,Curve::SheetCut(x)) => (x,o,false),
+    let (cut,other,cut_is_a,cut_t,other_t) = match (a,b) {
+        (Curve::SheetCut(x),o) => (x,o,true,ta,tb),
+        (o,Curve::SheetCut(x)) => (x,o,false,tb,ta),
         _ => return None,
     };
-    let (cut_t,other_t) = if cut_is_a { (ta,tb) } else { (tb,ta) };
     // the other's rule — a cut's on the same sheet, or a helix's `u` on this one — and whether the
     // two parameters are one (both the sheet's `v`)
     let (second,one): (Result<&SheetCut,f64>,bool) = match other {
-        Curve::SheetCut(y) if same(&y.blend,&cut.blend) => (Ok(&**y),true),
-        Curve::Iso(y,u) if same(y,&cut.blend) => (Err(*u),true),
+        Curve::SheetCut(y) if y.blend == cut.blend => (Ok(&**y),true),
+        Curve::Iso(y,u) if *y == cut.blend => (Err(*u),true),
         Curve::Iso(_,_) => {
             // a helix of another sheet lying on this one: its `u` here, the same at both its ends
             let ends = other_t.map(|t| cut.rule_at(other.point(t)));
@@ -149,15 +147,8 @@ fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Op
     let gs: Vec<f64> = vs.iter().map(|&v| g(v)).collect();
     let mut roots: Vec<f64> = Vec::new();
     for k in 0..N {
-        let (mut x,mut y,gx) = (vs[k],vs[k+1],gs[k]);
-        if gx == 0. { roots.push(x); continue }
-        if !(gx*gs[k+1] < 0.) { continue }
-        for _ in 0..100 {
-            let m = 0.5*(x+y);
-            if m <= x || m >= y { break }
-            if (g(m) < 0.) == (gx < 0.) { x = m } else { y = m }
-        }
-        roots.push(0.5*(x+y));
+        if gs[k] == 0. { roots.push(vs[k]); continue }
+        if gs[k]*gs[k+1] < 0. { roots.push(crate::util::roots::bracketed_root(|v| Some(g(v)),vs[k],gs[k],vs[k+1],gs[k+1],1e-15*(1.+hi.abs()))) }
     }
     if gs[N] == 0. { roots.push(hi) }
     let mut out: Vec<(f64,V)> = Vec::new();
