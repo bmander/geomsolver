@@ -2132,6 +2132,97 @@ fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
     assert!(why.contains("larger than"),"{why}");
 }
 
+/// `b` with the edges through `ats` rounded to `r` in turn by `fillet::roll`: each piece cut off a
+/// convex edge, filled in at a concave one.
+fn rounded(b: &gcs_core::brep::topo::Brep,ats: &[V],r: f64) -> Result<gcs_core::brep::topo::Brep,String> {
+    use gcs_core::brep::boolean::{combined,Op};
+    ats.iter().try_fold(b.clone(),|b,&at| {
+        let round = gcs_core::brep::fillet::roll(&b,at,r,gcs_core::brep::geom::tolerance(b.size()))?;
+        round.piece.check(1e-8)?;
+        combined(&b,&round.piece,if round.concave { Op::Union } else { Op::Cut },0.).map_err(|e| e.to_string())
+    })
+}
+
+/// A round refused as larger than its face can hold.
+fn too_large(round: Result<gcs_core::brep::topo::Brep,String>) {
+    let why = round.unwrap_err();
+    assert!(why.contains("larger than"),"{why}");
+}
+
+/// A box to `hi` whose face's two edges through `ats`, along x, are rounded to `r`: its section
+/// in y and z the rectangle less two square runs, `L (WH − 2(1 − π/4)r²)`, and its area two of
+/// those and its length times the section's perimeter, `24 − 4r + πr` on a face 2 tall.
+fn both_edges_rounded(hi: V,ats: [V;2],r: f64) -> gcs_core::brep::topo::Brep {
+    use crate::common::{close,rounds::square_run};
+    let b = rounded(&named_box(hi),&ats,r).unwrap();
+    b.check(1e-8).unwrap();
+    let [l,w,h] = hi;
+    let section = w*h-2.*square_run(r);
+    close(volume(&b),l*section);
+    close(total_area(&b),2.*section+l*(2.*(w+h)-4.*r+PI*r));
+    b
+}
+
+/// **Rounds that take the whole of a face** (brep-bench's fillet/slab-half-round): a ball whose
+/// contact lands on another edge of the face it rolls on reaches the face's far boundary, and its
+/// strip is all of the face to that edge. A slab's top rounded 2 from both long edges, half its
+/// width, goes: the two rounds tangent along its middle, a half-cylinder, `160 + 20π` and
+/// `152 + 24π`. Wider than half the top, the second ball reaches inside the first round's contact
+/// and is refused as larger than the face can hold.
+#[test]
+fn a_slabs_top_rounded_from_both_edges_to_half_its_width_is_a_half_cylinder() {
+    let both = both_edges_rounded([10.,4.,6.],[[5.,0.,6.],[5.,4.,6.]],2.);
+    assert_eq!(face_kinds(&both),["bspline","bspline","plane","plane","plane","plane","plane"]);
+    too_large(rounded(&named_box([10.,4.,6.]),&[[5.,0.,6.],[5.,4.,6.]],2.1));
+}
+
+/// **A round as wide as both faces beside it** (brep-bench's fillet/l-block-inside-consumed): an
+/// L's inside edge filled 7, the ball touching both faces at their far edges, takes both: a quarter
+/// cylinder meeting the faces past them square, `10 (100 − 49π/4)` and `460 + 21π/2`. A ball of
+/// 7.5 would touch past them, and is refused.
+#[test]
+fn an_l_blocks_inside_edge_filled_as_wide_as_its_faces_takes_both() {
+    use crate::common::close;
+    let names = ["bottom","end","floor","wall","top","back"].map(String::from).to_vec();
+    let l = Profile {names:vec![names],origin:[0.;3],normal:[0.,-1.,0.],
+        loops:vec![poly(&[[0.,0.,0.],[10.,0.,0.],[10.,0.,3.],[3.,0.,3.],[3.,0.,10.],[0.,0.,10.]])]};
+    let l = prism(&l,-10.,0.).unwrap();
+    let filled = rounded(&l,&[[3.,5.,3.]],7.).unwrap();
+    filled.check(1e-8).unwrap();
+    close(volume(&filled),10.*(100.-49.*PI/4.));
+    close(total_area(&filled),460.+21.*PI/2.);
+    assert!(filled.faces.iter().all(|f| f.name != "floor" && f.name != "wall"),"the faces it fills are gone");
+    too_large(rounded(&l,&[[3.,5.,3.]],7.5));
+}
+
+/// **A hole's rims rounded to meet at its waist** (brep-bench's fillet/hole-waist): a plate 2 thick
+/// bored 3 in radius, both rims rounded 1, half its thickness. The second ball's contact lands on
+/// the first's, the hole's wall goes, and its surface is the inner half of a torus:
+/// `800 − π (100/3 − 4π)` and `960 − 36π + 8π²`.
+#[test]
+fn a_holes_rims_rounded_to_half_the_plates_thickness_meet_at_its_waist() {
+    use crate::common::close;
+    use gcs_core::brep::boolean::{combined,Op};
+    let plate = combined(&block([-10.,-10.,0.],[10.,10.,2.]),&rod([0.;3],3.,[-1.,3.]),Op::Cut,0.).unwrap();
+    let waisted = rounded(&plate,&[[0.,3.,2.],[0.,3.,0.]],1.).unwrap();
+    waisted.check(1e-8).unwrap();
+    close(volume(&waisted),800.-PI*(100./3.-4.*PI));
+    close(total_area(&waisted),960.-36.*PI+8.*PI*PI);
+    assert!(waisted.faces.iter().all(|f| f.surface.kind() != "cylinder"),"the hole's wall is gone");
+}
+
+/// **A sliver left between two rounds** (brep-bench's fillet/sliver-strip): a plate's face 2 tall
+/// rounded 0.9999 from both edges keeps a strip 0.0002 tall between them, the second ball's band
+/// read against its contact's own height and not past it. Rounds of 1.0001 overlap, and the second
+/// is refused.
+#[test]
+fn a_face_rounded_from_both_edges_short_of_its_middle_keeps_a_sliver() {
+    let ats = [[10.,10.,0.],[10.,10.,2.]];
+    let strip = both_edges_rounded([20.,10.,2.],ats,0.9999);
+    assert_eq!(face_kinds(&strip).iter().filter(|&&k| k == "plane").count(),6,"the strip is kept");
+    too_large(rounded(&named_box([20.,10.,2.]),&ats,1.0001));
+}
+
 /// **A cylinder's rim chamfered to a point** (brep-bench's chamfer/cylinder-rim-to-point): legs of
 /// 5 on a cylinder of radius 5, its own radius. The leg across the top is where the top meets the
 /// side offset by 5 — the axis, not a surface — so the top shrinks to the point (0, 0, 10) and every
