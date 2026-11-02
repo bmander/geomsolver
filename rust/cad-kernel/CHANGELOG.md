@@ -15,6 +15,26 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   edge touching a surface its own face touches placed at their touch curve; two closed-form curves
   of one meeting crossed whether open or closed (a plane tangent to a hyperboloid's throat, cut
   along its two rulings); the faces round an edge ordered where they stand farthest apart.
+- **Affine maps of solids** (`Brep::mapped`, `affine::Affine`): any invertible `p ↦ M p + t`
+  carries a solid onto its exact image, its topology and pcurves its own. A kind whose image is
+  its own kind is written so (`Surface::mapped`, `Curve::mapped`: a similarity scales, a plane is
+  a plane, a line a line, a conic an ellipse, a B-spline its poles); anything else is wrapped,
+  `geom::Surface::Affine` and `geom::Curve::Affine` (**new variants**), its foot found in space's
+  metric (exact for a sphere's and a cylinder's image) and its meetings read in the preimage's
+  closed forms and mapped back (`ssi::intersect`, `ssi::same`, `query::curve_surface`). Written to
+  STEP as each face's exact net with its poles mapped (`step::face_net`), pcurves fitted in the
+  net's parameters (`nurbs::arc_parameter`).
+- **The ellipsoid** by its numbers (`build::ellipsoid`): the unit ball stretched along a frame's
+  axes, one face on the sphere's image, its seam a half ellipse.
+- **Faces sewn into a solid** (`sew::sewn`): sheets built apart — a B-spline net with a pole, a
+  plane face, any shell's faces — joined where their boundaries are one curve by tolerant topology:
+  poles made degenerate edges, vertices merged, an edge cut at another's vertex, edges along one
+  another made one; the faces turned to agree, each shell outward and a void inward; refused as
+  `Open`, `NotManifold` or `Refused` by what it is. A profile's region of its plane as a face of its
+  own (`build::face`).
+- Tolerant topology's vertex-onto-edge and edge-onto-edge rules as predicates (`tolerant::on_stretch`,
+  `tolerant::same_edge`), which the Booleans and sewing both call; each edge's uses
+  (`Brep::uses`); how hard a surface is to invert onto (`Surface::inversion`).
 - **The surface arrangement** (#735). A cell complex (`complex::Complex`): faces each parting two
   cells, an edge bounding any number of faces in order round it (tangent faces by their curvature),
   touches along edges and at points held; `select` the boundary between kept cells and the rest,

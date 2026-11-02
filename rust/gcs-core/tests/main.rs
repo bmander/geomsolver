@@ -13,6 +13,7 @@ mod common;
 
 mod accuracy;
 mod admission;
+mod affine;
 mod analysis_corpus;
 mod analysis_words;
 mod angle_about;
@@ -99,6 +100,7 @@ mod edit_rounds;
 mod edit_solids;
 mod engine;
 mod ellipse;
+mod ellipsoid;
 mod envelope;
 mod evaluated_solid;
 mod every_example;

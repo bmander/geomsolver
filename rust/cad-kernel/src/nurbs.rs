@@ -331,9 +331,7 @@ fn collocated(s: BSpline,pts: &[V],t: &[f64]) -> Option<BSpline> {
 /// (Piegl and Tiller A7.1). Its parameter runs over `[a0, a1]`, meeting the angle at every knot.
 pub fn arc(f: &Frame,r: f64,[a0,a1]: [f64;2]) -> BSpline {
     use crate::util::fmath::Det;
-    let turn = (a1-a0).clamp(0.,std::f64::consts::TAU);
-    let n = ((turn/std::f64::consts::FRAC_PI_2-1e-12).ceil() as usize).max(1);
-    let d = turn/n as f64;
+    let (turn,n,d) = arc_spans([a0,a1]);
     let w = (d/2.).dcos();
     let at = |a: f64,rr: f64| -> V { let (s,c) = a.dsin_cos(); std::array::from_fn(|k| f.o[k]+rr*(c*f.x[k]+s*f.y[k])) };
     let (mut poles,mut weights,mut knots) = (vec![at(a0,r)],vec![1.],vec![a0;3]);
@@ -345,6 +343,29 @@ pub fn arc(f: &Frame,r: f64,[a0,a1]: [f64;2]) -> BSpline {
         knots.extend(std::iter::repeat_n(end,if k+1 == n { 3 } else { 2 }));
     }
     BSpline {degree:2,knots,poles,weights:Some(weights)}
+}
+
+/// The turn `arc` makes over `[a0, a1]` (at most a whole one), its spans (a quarter turn each or
+/// fewer) and the turn of each.
+fn arc_spans([a0,a1]: [f64;2]) -> (f64,usize,f64) {
+    let turn = (a1-a0).clamp(0.,std::f64::consts::TAU);
+    let n = ((turn/std::f64::consts::FRAC_PI_2-1e-12).ceil() as usize).max(1);
+    (turn,n,turn/n as f64)
+}
+
+/// Where the angle `a` falls on `arc`'s parameter over `[a0, a1]`, and the parameter's rate per
+/// unit of angle there, in closed form: within a span of turn `d` from the knot at `α`, a rational
+/// quadratic weighted `cos(d/2)` reaches the angle `α + θ` at the fraction `τ` of its span where
+/// `τ / (1 − τ) = sin(θ/2) / sin((d − θ)/2)`, whose rate is `sin(d/2) / (2 (sin(θ/2) + sin((d − θ)/2))²)`.
+/// `a` is held to `[a0, a1]`.
+pub fn arc_parameter([a0,a1]: [f64;2],a: f64) -> (f64,f64) {
+    use crate::util::fmath::Det;
+    let (turn,n,d) = arc_spans([a0,a1]);
+    let along = (a-a0).clamp(0.,turn);
+    let k = ((along/d).floor() as usize).min(n-1);
+    let theta = (along-k as f64*d).clamp(0.,d);
+    let (p,q) = ((theta/2.).dsin(),((d-theta)/2.).dsin());
+    (a0+d*(k as f64+p/(p+q)),d*(d/2.).dsin()/(2.*(p+q)*(p+q)))
 }
 
 /// Above this many points an interpolation is solved in its band: the dense factorisation below is

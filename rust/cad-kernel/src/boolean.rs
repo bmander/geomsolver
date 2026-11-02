@@ -410,20 +410,34 @@ pub fn planes_joined(b: &Brep,tol: f64) -> Result<Brep,String> {
 
 /// `s`'s edges cut at the points listed against each (on its curve, within its stretch; those
 /// within `tol` of one another one): each edge's pieces in order along it, the first keeping its
-/// index, and each use of it a use of each piece, its pcurve cut where the edge is. `None` where an
-/// edge so listed is a pole.
+/// index, and each use of it a use of each piece, its pcurve cut where the edge is (`cut_with`).
+/// `None` where an edge so listed is a pole.
 fn cut_at(s: &mut Brep,cuts: &BTreeMap<u32,Vec<V>>,tol: f64) -> Option<BTreeMap<u32,Vec<u32>>> {
-    let mut pieces = BTreeMap::new();
+    let mut at = BTreeMap::new();
     for (&e,ps) in cuts {
-        let edge = s.edges[e as usize].clone();
+        let edge = &s.edges[e as usize];
         let EdgeCurve::Curve(c) = &edge.curve else { return None };
         let mut ts: Vec<f64> = ps.iter().map(|&p| { let t = c.inverse(p); c.period().map_or(t,|period| around(t,edge.t[0],period)) })
             .filter(|&t| t > edge.t[0] && t < edge.t[1]).collect();
         ts.sort_by(f64::total_cmp);
         ts.dedup_by(|x,y| distance(c.point(*x),c.point(*y)) <= tol);
         if ts.is_empty() { continue }
-        let t: Vec<f64> = std::iter::once(edge.t[0]).chain(ts.iter().copied()).chain([edge.t[1]]).collect();
-        let v: Vec<u32> = std::iter::once(edge.v[0]).chain(ts.iter().map(|&t| s.vertex(c.point(t)))).chain([edge.v[1]]).collect();
+        let points: Vec<(f64,V)> = ts.iter().map(|&t| (t,c.point(t))).collect();
+        at.insert(e,points.into_iter().map(|(t,p)| (t,s.vertex(p))).collect());
+    }
+    Some(cut_with(s,&at))
+}
+
+/// `s`'s edges cut at the parameters listed against each, increasing and inside its stretch, each
+/// at the vertex given with it: each edge's pieces in order along it, the first keeping its index,
+/// the rest added, and each use of it a use of each piece in the use's direction, its pcurve cut
+/// where the edge is.
+pub(crate) fn cut_with(s: &mut Brep,cuts: &BTreeMap<u32,Vec<(f64,u32)>>) -> BTreeMap<u32,Vec<u32>> {
+    let mut pieces = BTreeMap::new();
+    for (&e,at) in cuts {
+        let edge = s.edges[e as usize].clone();
+        let t: Vec<f64> = std::iter::once(edge.t[0]).chain(at.iter().map(|c| c.0)).chain([edge.t[1]]).collect();
+        let v: Vec<u32> = std::iter::once(edge.v[0]).chain(at.iter().map(|c| c.1)).chain([edge.v[1]]).collect();
         let mut ids = vec![e];
         s.edges[e as usize].t = [t[0],t[1]];
         s.edges[e as usize].v = [v[0],v[1]];
@@ -454,7 +468,7 @@ fn cut_at(s: &mut Brep,cuts: &BTreeMap<u32,Vec<V>>,tol: f64) -> Option<BTreeMap<
         }
         pieces.insert(e,ids);
     }
-    Some(pieces)
+    pieces
 }
 
 /// One step of the body rule: `solid` combined with `operand` by `op`, to a tolerance of the two's
@@ -795,7 +809,7 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,lay_touches: boo
     // 3b. a piece shorter than a vertex's reach onto a curve, its ends one vertex (#735 A3)
     let gone = collapsed(&mut out,&mut arr.pool,tol);
     // 4. pieces that are one edge merged: the same ends and the same curve between
-    let rep = merged(&out,&arr.pool,tol);
+    let rep = merged(&out,tol);
     let split = Split {pieces_of,out,rep,gone};
     // 5. each face split by what lies on it, traced in its parameters
     let pieces = arr.faces_split(&meetings,&split)?;
@@ -1265,9 +1279,7 @@ impl<'a> Arrangement<'a> {
         // rim, which a face's place reads as on its boundary (a hyperboloid's rulings run on past
         // the heights it is built over, where a plane holding one meets it)
         // (planes, cylinders, cones, spheres and tori run on without end, and need no reading)
-        let bounded = |s: &Surface| matches!(s,Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..)
-            | Surface::BSpline(..) | Surface::Family(..));
-        if surfaces.iter().any(|s| bounded(s) && distance(s.point(s.inverse(m)),m) > 1e3*self.tol) { return false }
+        if surfaces.iter().any(|s| s.bounded() && distance(s.point(s.inverse(m)),m) > 1e3*self.tol) { return false }
         // where the two only touch (their normals parallel) nothing crosses from one
         // side to the other: no face is split there, but where the arrangement represents touches
         if !self.lay_touches && norm(crate::util::space::cross(surfaces[0].gradient(m),surfaces[1].gradient(m))) < 1e-7 { return false }
@@ -1302,9 +1314,8 @@ impl<'a> Arrangement<'a> {
         let (lo,hi) = self.shared(faces);
         let started = crate::util::clock::Instant::now();
         // a sheet's or a face family's wall: no closed form says where a meeting may lie
-        let patch = |s: &Surface| matches!(s,Surface::BSpline(..) | Surface::Family(..));
-        let grid = if patch(sb) { grid_seeds(b,fb,sa,tol) }
-            else if patch(sa) { grid_seeds(a,fa,sb,tol) } else { Vec::new() };
+        let grid = if sb.sheet() { grid_seeds(b,fb,sa,tol) }
+            else if sa.sheet() { grid_seeds(a,fa,sb,tol) } else { Vec::new() };
         self.say.seeded(started.elapsed().as_secs_f64());
         // (only where both faces may be: a seed beyond their shared box traces nothing on them)
         seeds.extend(grid.into_iter().filter(|p| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad))
@@ -1862,11 +1873,7 @@ fn vertices_inside(edges: &[WEdge],cuts: &[Vec<(f64,u32)>],pool: &Pool,gone: &st
             if v == e.v[0] || v == e.v[1] || gone.contains(&v) || cuts[we].iter().any(|&(_,w)| w == v) { return None }
             let p = pool.pts[v as usize];
             if (0..3).any(|k| p[k] < lo[k]-pad || p[k] > hi[k]+pad) { return None }
-            let mut t = c.inverse(p);
-            if let Some(period) = c.period() { t = around(t,e.t[0],period); }
-            // a vertex at the edge's end in all but the pool's labelling is its end
-            let near = |q: V| distance(q,p) <= ON_CURVE*tol;
-            (t > e.t[0] && t < e.t[1] && near(c.point(t)) && !near(c.point(e.t[0])) && !near(c.point(e.t[1]))).then_some((t,v))
+            super::tolerant::on_stretch(c,e.t,p,tol).map(|t| (t,v))
         }).collect()
     })
 }
@@ -1927,25 +1934,18 @@ fn collapsed(out: &mut [WEdge],pool: &mut Pool,tol: f64) -> Vec<bool> {
 
 /// Step 4: each piece's representative among `out` (the first piece with the same ends and the
 /// same curve between), and whether it runs the other way round.
-fn merged(out: &[WEdge],pool: &Pool,tol: f64) -> Vec<(u32,bool)> {
+fn merged(out: &[WEdge],tol: f64) -> Vec<(u32,bool)> {
     let mut rep: Vec<(u32,bool)> = (0..out.len() as u32).map(|i| (i,false)).collect();
     let mut by_ends: BTreeMap<(u32,u32),Vec<u32>> = BTreeMap::new();
     for (i,e) in out.iter().enumerate() { by_ends.entry((e.v[0].min(e.v[1]),e.v[0].max(e.v[1]))).or_default().push(i as u32); }
     for group in by_ends.values() {
         for (k,&i) in group.iter().enumerate() {
             let ei = &out[i as usize];
-            let mid = ei.point((ei.t[0]+ei.t[1])/2.,&pool);
             for &j in &group[..k] {
                 if rep[j as usize].0 != j { continue }
                 let ej = &out[j as usize];
                 let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&ei.curve,&ej.curve) else { continue };
-                let mut t = cj.inverse(mid);
-                if let Some(period) = cj.period() { t = around(t,ej.t[0],period); }
-                if t < ej.t[0]-1e-9 || t > ej.t[1]+1e-9 || distance(cj.point(t),mid) > ON_CURVE*tol { continue }
-                // the same way round: the same first vertex, or (closed) the same tangent
-                let along = if ei.v[0] != ei.v[1] { ei.v[0] == ej.v[0] } else {
-                    crate::util::space::dot(ci.tangent((ei.t[0]+ei.t[1])/2.),cj.tangent(t)) > 0.
-                };
+                let Some(along) = super::tolerant::same_edge(ci,ei.t,ei.v,cj,ej.t,ej.v,tol) else { continue };
                 rep[i as usize] = (j,!along);
                 break
             }
@@ -2400,7 +2400,7 @@ pub fn face_parameters(b: &Brep,fi: usize) -> [[f64;2];2] { parameters(b,fi,fals
 /// The box of face `fi`'s parameters its loops reach, sampled along each edge. `whole`: grown
 /// to hold the face though a pcurve bulges between samples — by a sixteenth of each side, or to a
 /// whole period where that comes near one.
-fn parameters(b: &Brep,fi: usize,whole: bool) -> [[f64;2];2] {
+pub(crate) fn parameters(b: &Brep,fi: usize,whole: bool) -> [[f64;2];2] {
     let f = &b.faces[fi];
     let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
     for c in f.loops.iter().flatten() {

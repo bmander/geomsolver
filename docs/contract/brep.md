@@ -24,12 +24,49 @@ intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `c
 `build` (prisms, drafted prisms, revolutions and canals of line/arc/circle/spline profiles; the
 sphere, the cone and the torus by their numbers as OCCT's `MakeSphere`/`MakeCone`/`MakeTorus` take
 them, each its meridian turned — `sphere(c, axis, r)`, `cone(o, axis, r0, r1, h)`,
-`torus(c, axis, major, minor)` — and what is no such solid refused by name: the kernel's API
+`torus(c, axis, major, minor)` — and the ellipsoid, `ellipsoid(c, axis, x, [a, b, c])`, the
+unit ball on that frame stretched — and what is no such solid refused by name: the kernel's API
 speaks the vocabulary its other users bring, which the language need not, `std.sets.Sphere`
 staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_torus_…`),
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
-seam curves), `recipe`. A traced pair is seeded where edges cross faces; between analytic
+seam curves), `recipe`.
+**An affine map carries a solid onto its image exactly** (`Brep::mapped`, `affine::Affine`, any
+invertible `p ↦ M p + t`): its topology and pcurves are the solid's own, because every surface's
+and curve's image keeps their parameters. A kind whose image is a kind of its own is written so
+(`Surface::mapped`, `Curve::mapped`, each saying what its parameters become): a rigid map moves
+it, a similarity scales it (a sphere stays a sphere, a cone a cone), a plane is a plane on its
+frame made orthonormal again (its pcurves carried by the 2D map of its parameters), a B-spline its
+poles mapped, a line a line at the speed the map gives it, a circle or an ellipse an ellipse about
+its principal axes started where the map takes its start, a traced curve its points and surfaces,
+a blend carried along a line the blend of its edges' images. Anything else is wrapped,
+`Surface::Affine` and `Curve::Affine`, `A(S(u, v))` over the preimage's own parameters: an
+ellipsoid is a sphere's image (`build::ellipsoid`, brep-bench's geometry/ellipsoid and
+ellipsoid-half), an elliptic cylinder a cylinder's, a sheared torus, revolution, extrusion, screwed
+blend or face family's wall theirs. **What is measure is measured in space; what is incidence is
+read in the preimage.** A wrapped surface's foot is the nearest point in space's own metric —
+exact for a sphere's or a cylinder's image (`Quadric`, its principal axes by `util::linalg::sym_eigen`, the
+foot by Eberly's bisection, `ellipsoid_foot`, `ellipse_foot`), by Newton from the preimage's foot
+otherwise — and its signed distance the distance there, on the side the preimage's says. Where it
+meets another surface is where its preimage meets that surface carried back, found in the
+preimage's closed forms at the tolerance shrunk by the map's greatest stretch and mapped back
+(`ssi::intersect`'s `pulled_back`: a plane meets a sphere's image in an ellipse, a box's sheared
+faces each other in lines); traced where the other, carried back, is still an image, or where the
+preimages have none. A line meets one likewise (`query::curve_surface`); two images are one where
+their preimages are, or their quadrics' forms agree (`ssi::same`). A map reversing space walks
+every loop the other way round, and a face's sense follows its normal's image (`M⁻ᵀ`, by the sign
+of `det M` and of its parameters' map). An image is not of revolution and has no offset in closed
+form. STEP has no image of a surface: each wrapped face is written as its preimage's exact net
+over the parameters it reaches, poles mapped (`step::face_net`, the net a sheet, a loft's face and a family's wall are written as too: one turn of a rational circle by
+a sphere's or a torus's meridian, a cylinder's or a cone's generator, a revolution's spline, an
+extrusion's spline by its step; a blend's or a family wall's fitted net), its pcurves fitted in the
+net's parameters (`nurbs::arc_parameter`, a quarter arc reaching the angle `θ` at the fraction `τ`
+where `τ / (1 − τ) = sin(θ/2) / sin((d − θ)/2)`) and measured on the net. `affine::every_kind_of_face_maps_to_its_image`
+(every kind under a shear, a skew stretch, a reversing map and a similarity: valid, `|det M|`
+times the volume, mapped back itself, its nets its surfaces, read back from STEP, meshed closed),
+`affine::a_boolean_of_images_is_the_image_of_the_boolean`, `face_family::a_family_mapped_is_its_image`
+and the `ellipsoid::` tests are the gate.
+A traced pair is seeded where edges cross faces; between analytic
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
@@ -446,3 +483,29 @@ plate and one use of a cylinder's seam unmatched where a branch touches it insid
 collapses there** (`brep::mesh`): a horn torus's pinch, every `u` one point, would shrink `u` to
 nothing over the whole face; there the mean speed over the box is taken.
 `brep_offset::an_elliptic_bore_cuts_through_its_plate`, `a_horn_torus_meshes_within_its_sag`.
+
+**Faces built apart are sewn into a solid by tolerant topology** (`sew::sewn`; brep-bench's
+geometry/nurbs-cone): a rational net whose last row is nine copies of its apex (`build::sheet`)
+and the disc closing its base (`build::face`, a profile's region of its plane alone), or any
+shell's faces, joined where their boundaries are one curve, nothing intersected. The rules are
+`tolerant`'s, against the tolerance the pieces were built to, in one order: an edge whose curve
+lies within it of its start is a pole, a degenerate edge its face uses once (a B-spline's by its
+poles, which hold it); vertices merged by the pool; a boundary edge cut at another's vertex
+(`tolerant::on_stretch`, by `boolean::cut_with`, as a Boolean cuts its edges), so a side held in
+pieces pairs one to one; two boundary edges between the same vertices one edge where the middle of
+one lies on the other (`tolerant::same_edge`, a Boolean's own test) — a third along them
+`NotManifold`, none `Open`. The curve kept is the one bounding the face hardest to invert onto
+(`Surface::inversion`: searched over a closed form, a closed form over a plane), the face given
+first where they are alike, so its pcurve stays as built and the other side's is its own
+where the curves are one parametrisation, else the kept curve inverted. Each edge's tolerance is
+measured and one standing past `ON_CURVE` off a face refused, never widened: what holds the rest of
+two curves matched by their middles. The faces are turned
+to agree across every edge — a one-sided shell refused — each connected set a shell turned
+outward, a void (inside an odd number of the others) inward. The cone is its closed forms to
+rounding, its edges' tolerances 0: `brep::a_nurbs_cone_is_its_side_sewn_to_its_base` and
+`brep::faces_sewn_are_a_solid_by_tolerant_topology` (a box's faces facing any way, its top in
+halves, a void, faces a hair apart, a face missing, four faces along an edge) and
+`brep::curved_faces_sewn_across_curves_parametrised_apart` (two nets and a cylinder end to end and
+two discs, every circle begun at another angle and one run at another pace, so each is cut at the
+other's vertex and the dropped halves inverted onto a net and onto the cylinder across its seam)
+are the gate.

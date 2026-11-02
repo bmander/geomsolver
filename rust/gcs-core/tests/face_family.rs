@@ -437,3 +437,31 @@ fn the_evaluated_family_is_its_exact_brep() {
     assert_eq!(s.volume(), volume(&e, "body").unwrap());
     assert!(s.surviving_faces().iter().any(|f| f.starts_with("body.") && !f.ends_with("start")));
 }
+
+/// **A family's walls under an affine map** (`Brep::mapped`): a shear wraps the square-to-circle
+/// transition's walls (`Surface::Family`) and the twisted duct's screwed sheets (`Surface::Blend`)
+/// as their images; each body stays a valid boundary of `|det M|` times its volume, mapped back it is
+/// itself again, and its STEP file — each wall the image of its fitted net — reads back face for face.
+#[test]
+fn a_family_mapped_is_its_image() {
+    use gcs_core::brep::affine::Affine;
+    use gcs_core::brep::geom::Surface;
+    for (src, name) in [(SQUARE_TO_CIRCLE, "transition"), (TWISTED, "duct")] {
+        let e = family(src);
+        let x = e.sketch.exact_solid(index(&e, name)).unwrap();
+        let b = &x.brep;
+        let whole = gcs_core::brep::props::volume(b);
+        let a = Affine::new([[1., 0.4, 0.2], [0., 1., -0.3], [0.1, 0., 1.]], [1., -2., 0.5]).unwrap();
+        let m = b.mapped(&a);
+        assert!(m.faces.iter().any(|f| matches!(&f.surface, Surface::Affine(w)
+            if matches!(w.of, Surface::Family(..) | Surface::Blend(..)))), "{name}: a wall wrapped");
+        m.check(1e-9 * m.size()).unwrap_or_else(|k| panic!("{name}: {}", k.msg));
+        near(gcs_core::brep::props::volume(&m), a.det().abs() * whole, 1e-9, name);
+        let back = m.mapped(&a.inverse());
+        back.check(1e-9 * back.size()).unwrap_or_else(|k| panic!("{name}: {}", k.msg));
+        near(gcs_core::brep::props::volume(&back), whole, 1e-9, name);
+        let text = gcs_core::brep::step::write(&m, name, 1e-3).unwrap();
+        gcs_core::brep::step_check::verify(&text, &gcs_core::brep::step_check::Solid::of(&m))
+            .unwrap_or_else(|k| panic!("{name}: {k}"));
+    }
+}

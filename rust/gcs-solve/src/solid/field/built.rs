@@ -11,7 +11,6 @@
 //! a cylinder, a cone, a sphere or a torus, whose feet are exact; a box's enclosure is the value
 //! at its centre widened by its half-diagonal, the distance being one-Lipschitz.
 use super::{Error, I, V};
-use crate::brep::geom::Surface;
 use crate::solid::faces::BodyFaces;
 use std::sync::Arc;
 
@@ -31,8 +30,7 @@ pub struct BuiltField {
 impl BuiltField {
     /// An exact boundary as a field, or `None` where it has a face no foot is exact on.
     pub fn new(exact: &crate::solid::Exact) -> Option<Self> {
-        let exact_feet = |f: &crate::brep::topo::Face| matches!(f.surface, Surface::Plane(_)
-            | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..));
+        let exact_feet = |f: &crate::brep::topo::Face| f.surface.nearest_foot();
         if exact.brep.faces.is_empty() || !exact.brep.faces.iter().all(exact_feet) {
             return None;
         }

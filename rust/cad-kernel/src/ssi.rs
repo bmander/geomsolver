@@ -205,7 +205,7 @@ pub(super) fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
         }
         Surface::Torus(_,big,r) => Some(Meridian::Circle {c:[big,height(f.o)],r}),
         Surface::Revolution(_,ref c) => match &**c { Curve::BSpline(b) => Some(Meridian::Spline(b.clone(),o,z)),_ => None },
-        Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
+        Surface::Affine(..) | Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
     }
 }
 
@@ -234,8 +234,12 @@ fn same_curve(c: &Curve,d: &Curve,tol: f64,seen: &dyn Fn(V) -> V) -> bool {
     }
 }
 
-/// Whether two surfaces are the same surface, to `tol`.
+/// Whether two surfaces are the same surface, to `tol`. An affine image is read in its preimage,
+/// the other surface carried back there and held to the tolerance shrunk by the map's greatest
+/// stretch; two images neither of which is plain there are the same quadric or not known to be
+/// one (`affine::Quadric::same`).
 pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
+    if let Some(met) = pulled_back(a,b,tol,false) { return matches!(met,Ssi::Same) }
     let (f,g) = (a.frame(),b.frame());
     let parallel = norm(cross(f.z,g.z)) <= 1e-12;
     let on_axis = norm(cross(sub(g.o,f.o),f.z)) <= tol;
@@ -267,6 +271,7 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
 
 /// Where two surfaces meet (`tol` a length).
 pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
+    if let Some(met) = pulled_back(a,b,tol,true) { return met }
     if same(a,b,tol) { return Ssi::Same }
     let (f,g) = (*a.frame(),*b.frame());
     // two planes
@@ -577,11 +582,35 @@ fn plane_cylinder(n: V,h: f64,c: &Frame,r: f64,tol: f64) -> Vec<Curve> {
     vec![Curve::Ellipse(Frame::new(centre,cross(major,minor),major),r/cos.abs(),r)]
 }
 
+/// **An affine image meets a surface where its preimage meets the surface carried back** (an
+/// affine map keeps incidence): a plane's meeting with a sphere's image the image of a circle, an
+/// ellipse; any surface's with an image of the same map the image of the two preimages' meeting.
+/// The preimages' closed forms are found at the tolerance shrunk by the map's greatest stretch, so
+/// a gap they read as a touch is no wider in space, and each curve is carried back
+/// (`Curve::mapped`). Where the other, carried back, is still an image (of another map), the two
+/// are one where their quadrics are (`affine::Quadric::same`) and traced otherwise. `None` where
+/// neither is an image; `Same` or `Traced` alone where only whether they are one is asked (`meet`
+/// false, `same`).
+fn pulled_back(a: &Surface,b: &Surface,tol: f64,meet: bool) -> Option<Ssi> {
+    let (m,other) = match (a,b) { (Surface::Affine(m),t) | (t,Surface::Affine(m)) => (m,t),_ => return None };
+    let back = other.mapped(&m.back).0;
+    if matches!(back,Surface::Affine(_)) {
+        let one = matches!(other,Surface::Affine(n) if matches!((m.quadric,n.quadric),(Some(p),Some(q)) if p.same(&q,tol)));
+        return Some(if one { Ssi::Same } else { Ssi::Traced })
+    }
+    let tol = tol/m.stretch[1];
+    if !meet { return Some(if same(&m.of,&back,tol) { Ssi::Same } else { Ssi::Traced }) }
+    Some(match intersect(&m.of,&back,tol) {
+        Ssi::Curves(cs) => Ssi::Curves(cs.iter().map(|c| c.mapped(&m.map).0).collect()),
+        met => met,
+    })
+}
+
 /// An axis both surfaces may turn about: a surface of revolution's own (a sphere lends the other's),
 /// or a plane's normal through the other's centre.
 fn axis_of(s: &Surface,t: &Surface) -> Option<(V,V)> {
     match (s,t) {
-        (Surface::Plane(_),_) | (Surface::Sphere(..),_) => None,
+        (Surface::Plane(_),_) | (Surface::Sphere(..),_) | (Surface::Affine(..),_) => None,
         _ => { let f = s.frame(); Some((f.o,f.z)) }
     }.or_else(|| match (s,t) {
         (Surface::Plane(p),Surface::Sphere(c,_)) => Some((c.o,p.z)),
@@ -999,6 +1028,8 @@ fn derivative_bounds(s: &Surface,[v0,v1]: [f64;2]) -> Option<[f64;5]> {
             Some([q,1.,q,sa.abs(),0.])
         }
         Surface::Sphere(_,r) => Some([r;5]),
+        // each derivative the preimage's mapped, no longer than its greatest stretch makes it
+        Surface::Affine(ref m) => derivative_bounds(&m.of,[v0,v1]).map(|b| b.map(|x| x*m.stretch[1])),
         Surface::Torus(_,big,r) => Some([big.abs()+r,r,big.abs()+r,r,r]),
         Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
     }
@@ -1014,6 +1045,11 @@ fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
     match *s {
         Surface::Plane(_) => Some(0.),
         Surface::Sphere(..) => over(rho.dhypot(z)-r),
+        // the level sets of a convex quadric's distance (an ellipsoid's, an elliptic cylinder's) are
+        // its parallels, which turn no faster than `1 / (ρ + d)` at a distance `d` off it, `ρ` its
+        // least radius of curvature (inside, a ball of that radius rolls freely, so its medial axis
+        // is no nearer); any other image's is not bounded here
+        Surface::Affine(ref m) => if m.quadric.is_some() { over(s.feature()+s.implicit(p)-r) } else { None },
         // a cone's implicit is cos α times ρ less a linear part: ρ's curvature at most
         Surface::Cylinder(..) | Surface::Cone(..) => over(rho-r),
         // the distance to the core circle in the meridian half-plane, which turns with ρ

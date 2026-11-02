@@ -7,8 +7,9 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
+use std::sync::Arc;
 use super::topo::{Brep,EdgeCurve};
-use crate::util::space::{distance,scale};
+use crate::util::space::{add,distance,scale};
 use std::fmt::Write;
 
 /// A real as STEP writes one: shortest round-trip digits, a decimal point, `E` for the exponent.
@@ -45,27 +46,6 @@ impl Out {
                 let v = self.add(format!("VECTOR('',#{d},1.)"));
                 return Ok(self.add(format!("SURFACE_OF_LINEAR_EXTRUSION('',#{c},#{v})")))
             }
-            Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => {
-                let net = match s { Surface::Blend(_,b) => blend_net(b)?,Surface::BSpline(_,n) => (**n).clone(),
-                    Surface::Family(_,w) => family_net(w)?,_ => unreachable!() };
-                let rows: Vec<String> = net.poles.iter().map(|col| {
-                    let ids: Vec<String> = col.iter().map(|&p| format!("#{}",self.point(p))).collect();
-                    format!("({})",ids.join(","))
-                }).collect();
-                let (uk,vk) = (super::nurbs::distinct(&net.uknots),super::nurbs::distinct(&net.vknots));
-                let list = |k: &[(f64,usize)],f: &dyn Fn(&(f64,usize)) -> String| k.iter().map(f).collect::<Vec<_>>().join(",");
-                if let Some(w) = &net.weights {
-                    let w: Vec<String> = w.iter().map(|r| format!("({})",r.iter().map(|&w| real(w)).collect::<Vec<_>>().join(","))).collect();
-                    return Ok(self.add(format!("( BOUNDED_SURFACE() B_SPLINE_SURFACE({},{},({}),.UNSPECIFIED.,.F.,.F.,.F.) \
-                        B_SPLINE_SURFACE_WITH_KNOTS(({}),({}),({}),({}),.UNSPECIFIED.) GEOMETRIC_REPRESENTATION_ITEM() \
-                        RATIONAL_B_SPLINE_SURFACE(({})) REPRESENTATION_ITEM('') SURFACE() )",
-                        net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
-                        list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0)),w.join(","))))
-                }
-                return Ok(self.add(format!("B_SPLINE_SURFACE_WITH_KNOTS('',{},{},({}),.UNSPECIFIED.,.F.,.F.,.F.,({}),({}),({}),({}),.UNSPECIFIED.)",
-                    net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
-                    list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0)))))
-            }
             Surface::Revolution(f,c) => {
                 let c = self.swept(c);
                 let (o,z) = (self.point(f.o),self.direction(f.z));
@@ -89,8 +69,30 @@ impl Out {
                 let a = self.placement(&f);
                 self.add(format!("TOROIDAL_SURFACE('',#{a},{},{})",real(big),real(r)))
             }
-            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => unreachable!("written above"),
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
+                | Surface::Affine(..) => unreachable!("written above, or as its face's net (`face_net`)"),
         })
+    }
+    /// A B-spline surface, rational where it has weights: the complex entity, its parts in the
+    /// alphabetical order the standard asks.
+    fn net(&mut self,net: &super::nurbs::Net) -> usize {
+        let rows: Vec<String> = net.poles.iter().map(|col| {
+            let ids: Vec<String> = col.iter().map(|&p| format!("#{}",self.point(p))).collect();
+            format!("({})",ids.join(","))
+        }).collect();
+        let (uk,vk) = (super::nurbs::distinct(&net.uknots),super::nurbs::distinct(&net.vknots));
+        let list = |k: &[(f64,usize)],f: &dyn Fn(&(f64,usize)) -> String| k.iter().map(f).collect::<Vec<_>>().join(",");
+        if let Some(w) = &net.weights {
+            let w: Vec<String> = w.iter().map(|r| format!("({})",r.iter().map(|&w| real(w)).collect::<Vec<_>>().join(","))).collect();
+            return self.add(format!("( BOUNDED_SURFACE() B_SPLINE_SURFACE({},{},({}),.UNSPECIFIED.,.F.,.F.,.F.) \
+                B_SPLINE_SURFACE_WITH_KNOTS(({}),({}),({}),({}),.UNSPECIFIED.) GEOMETRIC_REPRESENTATION_ITEM() \
+                RATIONAL_B_SPLINE_SURFACE(({})) REPRESENTATION_ITEM('') SURFACE() )",
+                net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
+                list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0)),w.join(",")))
+        }
+        self.add(format!("B_SPLINE_SURFACE_WITH_KNOTS('',{},{},({}),.UNSPECIFIED.,.F.,.F.,.F.,({}),({}),({}),({}),.UNSPECIFIED.)",
+            net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
+            list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0))))
     }
     /// The curve a swept surface sweeps (a B-spline, as a profile gives one).
     fn swept(&mut self,c: &Curve) -> usize {
@@ -203,7 +205,8 @@ fn bspline(o: &mut Out,pts: &[String],ts: &[f64]) -> usize {
 }
 
 /// A surface as the file writes it: its placement (origin, axis, reference direction) and its
-/// numbers — a cone opening against its axis written about the reversed one.
+/// numbers — a cone opening against its axis written about the reversed one, an affine image by
+/// its preimage's and its map's (what two faces are one surface by, `pattern`).
 pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
     match s.clone() {
         Surface::Plane(f) => (f,vec![]),
@@ -212,13 +215,109 @@ pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
         Surface::Sphere(f,r) => (f,vec![r]),
         Surface::Torus(f,big,r) => (f,vec![big,r]),
         Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) | Surface::Family(f,_) => (f,vec![]),
+        // its preimage's, and the map's numbers: one image is another only under one map
+        Surface::Affine(m) => {
+            let (g,mut numbers) = written(&m.of);
+            numbers.extend(g.o.iter().chain(&g.z).chain(&g.x).chain(m.map.m.iter().flatten()).chain(&m.map.t));
+            (m.frame,numbers)
+        }
     }
 }
 
 /// A face's parameters as STEP's surface reads them: the same, but on a cone written about its
-/// reversed axis, where both run the other way.
+/// reversed axis, where both run the other way (an affine image's are its net's, `OnNet::uv`).
 fn step_uv(s: &Surface,uv: super::geom::Uv) -> [f64;2] {
     match s { Surface::Cone(_,_,a) if *a < 0. => [-uv[0],-uv[1]],_ => uv }
+}
+
+/// **A face STEP writes as a B-spline net** (`face_net`): a sheet as its own, a loft's or a family
+/// wall's as the net fitted to it, and an affine image (STEP has no image of a surface) as its
+/// preimage's exact net over the parameters the face reaches, its poles mapped. How the face's
+/// parameters land on the net's: an angle at `nurbs::arc_parameter` over the turn it was built on,
+/// anything else as it is (`plain` where both are).
+pub struct OnNet { pub net: Arc<super::nurbs::Net>,arcs: [Option<[f64;2]>;2],pub surface: Surface }
+
+impl OnNet {
+    /// The net's parameters of the face's `uv`, and their rates along the face's own.
+    pub fn uv(&self,uv: super::geom::Uv) -> ([f64;2],[f64;2]) {
+        let at = |k: usize| match self.arcs[k] { Some(span) => super::nurbs::arc_parameter(span,uv[k]),None => (uv[k],1.) };
+        let ((s,ds),(t,dt)) = (at(0),at(1));
+        ([s,t],[ds,dt])
+    }
+    /// Whether the net's parameters are the face's own.
+    pub fn plain(&self) -> bool { self.arcs == [None,None] }
+}
+
+/// Face `fi`'s net where STEP writes it as one (`OnNet`), else none (an analytic surface or a swept
+/// curve, written as itself); refused where a loft's or a family's net cannot be fitted, or an
+/// affine image's preimage has no net (a revolution or an extrusion of anything but a spline).
+pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
+    use super::nurbs::{arc,Net};
+    use std::f64::consts::FRAC_PI_2;
+    let f = &b.faces[fi];
+    let net = |n: Result<Net,String>,arcs: [Option<[f64;2]>;2],frame: Frame| n.map(|n| {
+        let net = Arc::new(n);
+        OnNet {surface:Surface::BSpline(frame,net.clone()),net,arcs}
+    });
+    let m = match &f.surface {
+        Surface::BSpline(_,n) => return Some(Ok(OnNet {net:n.clone(),arcs:[None,None],surface:f.surface.clone()})),
+        Surface::Blend(g,bl) => return Some(net(blend_net(bl),[None,None],*g)),
+        Surface::Family(g,w) => return Some(net(family_net(w),[None,None],*g)),
+        Surface::Affine(m) => m,
+        _ => return None,
+    };
+    let [ur,vr] = super::boolean::parameters(b,fi,true);
+    let mapped = |n: Net| super::affine::net_mapped(&n,&|p| m.map.point(p));
+    // each of a whole turn's poles `c` (`nurbs::arc` over the face's `u`) by each of a meridian's
+    // `(ρ, z)` in the preimage's frame `g`, weights the products, poles carried by the map
+    let turned = |g: &Frame,meridian: &[[f64;2]],mw: &[f64],vknots: Vec<f64>,dv: usize| -> Net {
+        let round = arc(&Frame::WORLD,1.,ur);
+        let wu = round.weights.as_ref().expect("an arc is rational");
+        let poles = round.poles.iter().map(|c| meridian.iter().map(|&[rho,z]| m.map.point(g.at([rho*c[0],rho*c[1],z]))).collect()).collect();
+        let weights = wu.iter().map(|&a| mw.iter().map(|&b| a*b).collect()).collect();
+        Net {du:2,dv,uknots:round.knots.clone(),vknots,poles,weights:Some(weights)}
+    };
+    let built = match m.of {
+        // a tube's circle of radius `r` about `big` out from the axis, over the face's `v` (a
+        // sphere's, about none, held to its poles)
+        Surface::Sphere(..) | Surface::Torus(..) => {
+            let (g,big,r,span) = match m.of {
+                Surface::Sphere(g,r) => (g,0.,r,[vr[0].max(-FRAC_PI_2),vr[1].min(FRAC_PI_2)]),
+                Surface::Torus(g,big,r) => (g,big,r,vr),
+                _ => unreachable!(),
+            };
+            let a = arc(&Frame::WORLD,1.,span);
+            let meridian: Vec<[f64;2]> = a.poles.iter().map(|p| [big+r*p[0],r*p[1]]).collect();
+            Ok((turned(&g,&meridian,a.weights.as_ref().expect("an arc is rational"),a.knots.clone(),2),[Some(ur),Some(span)]))
+        }
+        // a cone's generator over the face's `v` (a cylinder's, of no half-angle)
+        Surface::Cylinder(..) | Surface::Cone(..) => {
+            let (g,r,h) = match m.of { Surface::Cylinder(g,r) => (g,r,0.),Surface::Cone(g,r,h) => (g,r,h),_ => unreachable!() };
+            let (s,c) = h.dsin_cos();
+            let ends = vr.map(|v| [r+v*s,v*c]);
+            Ok((turned(&g,&ends,&[1.,1.],vec![vr[0],vr[0],vr[1],vr[1]],1),[Some(ur),None]))
+        }
+        Surface::Revolution(g,ref c) => match &**c {
+            Curve::BSpline(bs) => {
+                let q: Vec<[f64;2]> = bs.poles.iter().map(|&p| { let l = g.local(p); [l[0],l[2]] }).collect();
+                let w = bs.weights.clone().unwrap_or_else(|| vec![1.;q.len()]);
+                Ok((turned(&g,&q,&w,bs.knots.clone(),bs.degree),[Some(ur),None]))
+            }
+            ref other => Err(format!("an affine image of a revolution of a {} has no net to write",other.kind())),
+        },
+        Surface::Extrusion(g,ref c) => match &**c {
+            Curve::BSpline(bs) => {
+                let poles = bs.poles.iter().map(|&p| vr.iter().map(|&v| m.map.point(add(p,scale(g.z,v)))).collect()).collect();
+                let weights = bs.weights.as_ref().map(|w| w.iter().map(|&w| vec![w,w]).collect());
+                Ok((Net {du:bs.degree,dv:1,uknots:bs.knots.clone(),vknots:vec![vr[0],vr[0],vr[1],vr[1]],poles,weights},[None,None]))
+            }
+            ref other => Err(format!("an affine image of an extrusion of a {} has no net to write",other.kind())),
+        },
+        Surface::Blend(_,ref bl) => blend_net(bl).map(|n| (mapped(n),[None,None])),
+        Surface::Family(_,ref w) => family_net(w).map(|n| (mapped(n),[None,None])),
+        ref other => Err(format!("an affine image of a {} has no net to write",other.kind())),
+    };
+    Some(built.and_then(|(n,arcs)| net(Ok(n),arcs,m.frame)))
 }
 
 /// The curve `uv(t)` over `[t0, t1]` as cubic Bézier pieces (a B-spline of degree 3 whose inner
@@ -268,12 +367,15 @@ fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super:
 /// A use's pcurve, as a STEP `PCURVE` on the face's surface: a line where it is one, a circle
 /// where a plane's edge is one turning the plane's way, otherwise the degree-one B-spline through
 /// its parameters at points chosen so each chord's middle maps within `tol` of the edge.
-fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,context2: usize,tol: f64) -> usize {
+fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,context2: usize,tol: f64,net: Option<&OnNet>) -> usize {
     use super::topo::Pcurve;
     let f = &b.faces[fi];
     let e = &b.edges[u.edge as usize];
     let EdgeCurve::Curve(c) = &e.curve else { unreachable!("a degenerate edge has no pcurve written") };
-    let at = |t: f64| step_uv(&f.surface,u.pcurve.at(t,e,&f.surface,&b.vertices));
+    let at = |t: f64| {
+        let uv = u.pcurve.at(t,e,&f.surface,&b.vertices);
+        match net { Some(n) => n.uv(uv).0,None => step_uv(&f.surface,uv) }
+    };
     let p2 = |o: &mut Out,p: [f64;2]| o.add(format!("CARTESIAN_POINT('',({},{}))",real(p[0]),real(p[1])));
     let line = |o: &mut Out,origin: [f64;2],d: [f64;2]| {
         let l = d[0].dhypot(d[1]);
@@ -299,7 +401,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
             line(o,[a[0]-d[0]*(e.t[0]-shift),a[1]-d[1]*(e.t[0]-shift)],d)
         }
         // a kernel's own curve in the face's parameters (`brep::json`): its poles, exactly
-        (Pcurve::Curve(pc),_,_) if matches!(**pc,Curve::BSpline(_)) => {
+        (Pcurve::Curve(pc),_,_) if matches!(**pc,Curve::BSpline(_)) && net.is_none_or(OnNet::plain) => {
             let Curve::BSpline(bs) = &**pc else { unreachable!() };
             let ids: Vec<String> = bs.poles.iter().map(|q| format!("#{}",p2(o,step_uv(&f.surface,[q[0],q[1]])))).collect();
             let knots: Vec<f64> = bs.knots.iter().map(|k| k-shift).collect();
@@ -324,10 +426,18 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
         // a cubic in the edge's parameter through its parameters at evenly spaced points, doubled
         // until it maps within a tenth of `FIT` of the edge between them (a chordal pcurve within
         // the file's tolerance trims a spline face that far off its edge, and a reader measures
-        // the face it trims: 1e-5 of a pinion read back)
-        _ if let Some((poles,knots)) = bezier_pcurve(&|t| u.pcurve.at(t,e,&f.surface,&b.vertices),
-            &|t| u.pcurve.derivative(t,e,&f.surface,&b.vertices),&f.surface,e.t,&c.breaks(e.t)) => {
-            let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,step_uv(&f.surface,q)))).collect();
+        // the face it trims: 1e-5 of a pinion read back): in the parameters the file writes, measured
+        // on the surface it writes — a net's, where they need be no affine image of the face's own
+        _ if let Some((poles,knots)) = match net {
+            Some(n) => bezier_pcurve(&at,&|t| {
+                let (uv,d) = u.pcurve.at_and_derivative(t,e,&f.surface,&b.vertices);
+                let rate = n.uv(uv).1;
+                [rate[0]*d[0],rate[1]*d[1]]
+            },&n.surface,e.t,&c.breaks(e.t)),
+            None => bezier_pcurve(&|t| u.pcurve.at(t,e,&f.surface,&b.vertices),&|t| u.pcurve.derivative(t,e,&f.surface,&b.vertices),
+                &f.surface,e.t,&c.breaks(e.t)).map(|(poles,knots)| (poles.iter().map(|&q| step_uv(&f.surface,q)).collect(),knots)),
+        } => {
+            let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,q))).collect();
             let knots: Vec<f64> = knots.iter().map(|k| k-shift).collect();
             spline(o,3,&ids,&knots,None)
         }
@@ -531,7 +641,11 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
     let vertices: Vec<usize> = b.vertices.iter().zip(&wanted).map(|(v,&w)| if w {
         let p = o.point(v.p); o.add(format!("VERTEX_POINT('',#{p})"))
     } else { 0 }).collect();
-    let surfaces: Vec<usize> = b.faces.iter().map(|f| o.surface(&f.surface)).collect::<Result<_,_>>()?;
+    let nets: Vec<Option<OnNet>> = (0..b.faces.len()).map(|fi| face_net(b,fi).transpose()).collect::<Result<_,_>>()?;
+    let surfaces: Vec<usize> = b.faces.iter().zip(&nets).map(|(f,n)| match n {
+        Some(n) => Ok(o.net(&n.net)),
+        None => o.surface(&f.surface),
+    }).collect::<Result<_,_>>()?;
     let context2 = o.add("( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('2D SPACE','') )".into());
     let edges: Vec<Option<usize>> = b.edges.iter().enumerate().map(|(ei,e)| -> Result<Option<usize>,String> {
         let EdgeCurve::Curve(c) = &e.curve else { return Ok(None) };
@@ -557,8 +671,9 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
                 let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
                 spline(o,fit.degree,&ids,&fit.knots,None)
             }
-            // a family's rail or rim likewise, its parameter the rail's or the rim's
-            Curve::Rail(..) | Curve::Rim(..) => {
+            // a family's rail or rim likewise, its parameter the rail's or the rim's; and an affine
+            // image of a curve (a rail under a shear)
+            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) => {
                 let [t0,t1] = e.t;
                 let fit = match super::nurbs::fit_curve(&|f| c.point(t0+(t1-t0)*f),3,8,FIT) {
                     Some((fit,err)) if err <= FIT => fit,
@@ -579,7 +694,7 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
         // the edge's curve in each face that uses it: a seam's two in one face, or one in each
         let uses: Vec<(usize,&super::topo::Coedge)> = b.faces.iter().enumerate()
             .flat_map(|(fi,f)| f.loops.iter().flatten().filter(|c| c.edge as usize == ei).map(move |c| (fi,c))).collect();
-        let pcurves: Vec<String> = uses.iter().map(|&(fi,u)| format!("#{}",pcurve(o,b,fi,u,surfaces[fi],context2,tol))).collect();
+        let pcurves: Vec<String> = uses.iter().map(|&(fi,u)| format!("#{}",pcurve(o,b,fi,u,surfaces[fi],context2,tol,nets[fi].as_ref()))).collect();
         let seam = uses.len() == 2 && uses[0].0 == uses[1].0;
         let geometry = o.add(format!("{}('',#{curve},({}),.PCURVE_S1.)",if seam { "SEAM_CURVE" } else { "SURFACE_CURVE" },pcurves.join(",")));
         Ok(Some(o.add(format!("EDGE_CURVE('',#{},#{},#{geometry},.T.)",vertices[e.v[0] as usize],vertices[e.v[1] as usize]))))

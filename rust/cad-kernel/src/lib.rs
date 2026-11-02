@@ -9,6 +9,7 @@
 #![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::type_complexity)]
 pub mod util;
 pub mod geom;
+pub mod affine;
 pub mod mesh;
 pub mod nurbs;
 pub mod topo;
@@ -17,6 +18,7 @@ pub mod complex;
 pub mod meeting;
 pub mod tolerant;
 pub mod build;
+pub mod sew;
 pub mod props;
 pub mod step;
 pub mod step_check;
