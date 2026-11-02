@@ -338,7 +338,8 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
             };
             let ts = samples(c,e.t,tol,&off);
             if super::debug() {
-                eprintln!("step: a {} on a {} as {} points, ends {a:?} {z:?}, middle {:?}",c.kind(),f.surface.kind(),ts.len(),at((e.t[0]+e.t[1])/2.));
+                let middle = crate::util::warm::kept(|| at((e.t[0]+e.t[1])/2.));
+                eprintln!("step: a {} on a {} as {} points, ends {a:?} {z:?}, middle {middle:?}",c.kind(),f.surface.kind(),ts.len());
             }
             let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",p2(o,at(t)))).collect();
             let knots: Vec<f64> = ts.iter().map(|t| t-shift).collect();

@@ -254,11 +254,6 @@ fn nearest_held(b: &Arc<BSpline>,p: V) -> f64 {
     t
 }
 
-thread_local! {
-    /// The last foot each thread found on each of the last few blends (by their addresses), as a
-    /// face family's wall keeps its own: only ever a start, held to settling near the point.
-    static LAST_BLEND_FOOT: std::cell::Cell<[(usize,Uv);4]> = const { std::cell::Cell::new([(0,[0.;2]);4]) };
-}
 
 /// A swept section's face between one of its edges and that edge's image in the section it is
 /// carried to (`build::ruled`): `S(u, v) = carry_v((1 − v) A(a₀ + u Δa) + v B(b₀ + u Δb))`, each
@@ -289,14 +284,10 @@ impl Blend {
     pub fn inverse(&self,p: V) -> Uv {
         let key = self as *const Blend as usize;
         let near = 1e-3*(1.+dot(p,p).sqrt());
-        let last = LAST_BLEND_FOOT.with(|c| c.get());
-        let warm = last.iter().find(|f| f.0 == key).map(|f| self.newton(p,f.1))
+        let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
             .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= near);
         let uv = warm.unwrap_or_else(|| self.searched(p));
-        let mut next = [(key,uv);4];
-        let mut k = 1;
-        for f in last { if f.0 != key && k < 4 { next[k] = f; k += 1; } }
-        LAST_BLEND_FOOT.with(|c| c.set(next));
+        crate::util::warm::put(crate::util::warm::Kind::Blend,key,uv);
         uv
     }
     /// `inverse` from the nearest of the grid and the turned points.
@@ -438,12 +429,6 @@ fn net_newton(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
     None
 }
 
-thread_local! {
-    /// The last foot each thread found on each of the last few sheets (by their nets' addresses): a
-    /// trace asks of one point after another a step apart, on two surfaces in turn, so the next foot is
-    /// a Newton step or two from the last.
-    static LAST_FOOT: std::cell::Cell<[(usize,Uv);4]> = const { std::cell::Cell::new([(0,[0.;2]);4]) };
-}
 
 /// The parameters of a B-spline sheet's point nearest `p`: Gauss–Newton from the last foot this
 /// thread found on it where `p` is near the sheet there (within a thousandth of its own size — off
@@ -453,8 +438,7 @@ thread_local! {
 fn net_inverse(n: &super::nurbs::Net,p: V) -> Uv {
     let key = n as *const _ as usize;
     let near = 1e-3*(1.+dot(p,p).sqrt());
-    let last = LAST_FOOT.with(|c| c.get());
-    let warm = last.iter().find(|s| s.0 == key).and_then(|s| net_newton(n,p,s.1))
+    let warm = crate::util::warm::get(crate::util::warm::Kind::Net,key).and_then(|s| net_newton(n,p,s))
         .filter(|&uv| crate::util::space::distance(n.point(uv[0],uv[1]),p) <= near);
     let uv = warm.unwrap_or_else(|| {
         let greville = |k: &[f64],d: usize,i: usize| k[i+1..=i+d].iter().sum::<f64>()/d as f64;
@@ -473,10 +457,7 @@ fn net_inverse(n: &super::nurbs::Net,p: V) -> Uv {
             .unwrap_or_else(|| net_grid_inverse(n,p))
     });
     // this sheet's foot first, the rest after it, the oldest dropped
-    let mut next = [(key,uv);4];
-    let mut k = 1;
-    for s in last { if s.0 != key && k < 4 { next[k] = s; k += 1; } }
-    LAST_FOOT.with(|c| c.set(next));
+    crate::util::warm::put(crate::util::warm::Kind::Net,key,uv);
     uv
 }
 

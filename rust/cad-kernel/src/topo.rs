@@ -11,9 +11,11 @@
 use super::geom::{include,widen,Box3,Curve,Rigid,Surface,Uv,V,EMPTY};
 use crate::util::space::{distance,dot,norm,sub};
 
-/// A point of the boundary.
+/// A point of the boundary, and the tolerance it was built to (#735 A3): the farthest any point
+/// merged into it stood, or any edge's curve ends from it (`Brep::measure_tolerances`); 0 for a
+/// vertex built exact. `check` reads an edge's end against it as against the edge's own.
 #[derive(Clone,Copy,Debug)]
-pub struct Vertex { pub p: V }
+pub struct Vertex { pub p: V,pub tol: f64 }
 
 /// What an edge lies on: a curve, or — for a surface's pole or apex, a point its face's
 /// parameters stretch into a line — nothing but its vertex.
@@ -121,9 +123,13 @@ impl Pcurve {
 /// `uv`: the edge's tangent by least squares in `[S_u S_v]` there.
 fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
+    in_parameters(surface,uv,c.tangent(t))
+}
+
+/// `d` in `surface`'s parameters at `uv`: the least-squares `[S_u S_v] x = d` (not finite where the
+/// two derivatives are parallel, a pole's).
+pub(crate) fn in_parameters(surface: &Surface,uv: Uv,d: V) -> Uv {
     let (_,su,sv) = surface.d1(uv);
-    let d = c.tangent(t);
-    // least squares [S_u S_v] x = C'
     let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
     let (b1,b2) = (dot(su,d),dot(sv,d));
     let det = a11*a22-a12*a12;
@@ -177,7 +183,7 @@ const OPEN: &str = "not closed: ";
 pub struct Brep { pub vertices: Vec<Vertex>,pub edges: Vec<Edge>,pub faces: Vec<Face> }
 
 impl Brep {
-    pub fn vertex(&mut self,p: V) -> u32 { self.vertices.push(Vertex {p}); (self.vertices.len()-1) as u32 }
+    pub fn vertex(&mut self,p: V) -> u32 { self.vertices.push(Vertex {p,tol:0.}); (self.vertices.len()-1) as u32 }
     /// The faces of `self` and of `other` as one B-rep, sharing nothing (two sheets to split by at once).
     pub fn joined(&self,other: &Brep) -> Brep {
         let mut c = self.clone();
@@ -314,8 +320,9 @@ impl Brep {
         for (i,e) in self.edges.iter().enumerate() {
             if let EdgeCurve::Curve(c) = &e.curve {
                 for k in 0..2 {
-                    let d = distance(c.point(e.t[k]),self.vertices[e.v[k] as usize].p);
-                    if d > tol.max(e.tol) { return Err(format!("edge {i}: its {} vertex is {d:e} off its curve",["first","last"][k]).into()) }
+                    let v = &self.vertices[e.v[k] as usize];
+                    let d = distance(c.point(e.t[k]),v.p);
+                    if d > tol.max(e.tol).max(v.tol) { return Err(format!("edge {i}: its {} vertex is {d:e} off its curve",["first","last"][k]).into()) }
                 }
                 if !(e.t[1] > e.t[0]) { return Err(format!("edge {i}: its parameters do not increase").into()) }
             }
@@ -337,7 +344,9 @@ impl Brep {
                     let (a,b) = (self.uv_ends(f,c)[1],self.uv_ends(f,next)[0]);
                     // each pcurve's end within twice its edge's tolerance of the vertex (its image to the
                     // curve, the curve's end to the vertex), so two ends within twice the sum
-                    let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol));
+                    // (or twice the vertex's own, the farthest a point merged into it stood)
+                    let at = self.vertices[self.ends(c)[1] as usize].tol;
+                    let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
                     if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
                         return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name).into())
                     }
@@ -506,7 +515,7 @@ impl Brep {
 
     /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image
     /// (sampled along it, its knots and ends included), and between its curve's ends and its
-    /// vertices.
+    /// vertices; and each vertex's, the largest gap between it and the ends of the curves there.
     pub fn measure_tolerances(&mut self) {
         let mut gaps = vec![0_f64;self.edges.len()];
         for f in &self.faces {
@@ -522,12 +531,18 @@ impl Brep {
                 }
             }
         }
+        let mut at_vertex = vec![0_f64;self.vertices.len()];
         for (e,gap) in self.edges.iter_mut().zip(gaps) {
             let ends = match &e.curve {
-                EdgeCurve::Curve(c) => (0..2).map(|k| distance(c.point(e.t[k]),self.vertices[e.v[k] as usize].p)).fold(0.,f64::max),
+                EdgeCurve::Curve(c) => (0..2).map(|k| {
+                    let d = distance(c.point(e.t[k]),self.vertices[e.v[k] as usize].p);
+                    at_vertex[e.v[k] as usize] = at_vertex[e.v[k] as usize].max(d);
+                    d
+                }).fold(0.,f64::max),
                 EdgeCurve::Degenerate => 0.,
             };
             e.tol = gap.max(ends);
         }
+        for (v,d) in self.vertices.iter_mut().zip(at_vertex) { v.tol = v.tol.max(d); }
     }
 }

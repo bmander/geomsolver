@@ -25,7 +25,11 @@ pub fn indices<R: Send>(n: usize,f: impl Fn(usize) -> R + Sync) -> Vec<R> {
 /// cache, say, whose contents change how fast `f` answers but never what.
 pub fn indices_with<S,R: Send>(n: usize,init: impl Fn() -> S + Sync,f: impl Fn(&mut S,usize) -> R + Sync) -> Vec<R> {
     let threads = threads().min(n);
-    if threads <= 1 { let mut state = init(); return (0..n).map(|i| f(&mut state,i)).collect(); }
+    if threads <= 1 {
+        let mut state = init();
+        // each item from no warm start, as on many threads (`util::warm`), and the caller's kept
+        return (0..n).map(|i| super::warm::fresh(|| f(&mut state,i))).collect()
+    }
     #[cfg(target_arch = "wasm32")]
     { unreachable!("one thread on wasm") }
     #[cfg(not(target_arch = "wasm32"))]
@@ -41,7 +45,8 @@ pub fn indices_with<S,R: Send>(n: usize,init: impl Fn() -> S + Sync,f: impl Fn(&
                     loop {
                         let i = next.fetch_add(1,Ordering::Relaxed);
                         if i >= n { break; }
-                        mine.push((i,f(&mut state,i)));
+                        // each item from no warm start, whichever thread took it (`util::warm`)
+                        mine.push((i,super::warm::fresh(|| f(&mut state,i))));
                     }
                     done.lock().unwrap_or_else(|e| e.into_inner()).extend(mine);
                 });

@@ -796,7 +796,9 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                     // a step too long for the projection to land: shorter, as a turn too sharp is
                     if h > h0*1e-4 { h /= 2.; continue }
                     if super::debug() {
-                        eprintln!("brep:   a step left the surfaces after {} points: {:.1e} and {:.1e} off, h {h:.1e}",pts.len(),a.implicit(q),b.implicit(q));
+                        // (asked of the surfaces' searches with their warm starts kept as they were)
+                        let off = crate::util::warm::kept(|| (a.implicit(q),b.implicit(q)));
+                        eprintln!("brep:   a step left the surfaces after {} points: {:.1e} and {:.1e} off, h {h:.1e}",pts.len(),off.0,off.1);
                     }
                     // **a trace leaving a patch ends on its edge**: a march standing on an edge
                     // crossing already (seeded there) ends there; else the last step's length is

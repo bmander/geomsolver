@@ -149,6 +149,58 @@ found, refined by Newton; each thread holds the last few feet by curve and point
 swept surface's distance and gradient at one point), the answer it would find again. A spline swept
 or turned is inverted near a hint (a pcurve's) by Newton on its curve where that lands on the
 surface, and globally otherwise, as a sheet is.
+**The surface arrangement** (#735): any set of surfaces divided into one consistent cell complex, a
+Boolean, a split and the closed swept solid each a selection over it. **A1, the complex**
+(`brep::complex::Complex`): every face once, each parting two cells, an edge bounding any number of
+faces taken in order round it — by the way into each at the edge's middle, and where two ways agree
+to `1e-6` (faces tangent along it) by where each stands a step into the face, its curvature's
+difference; an edge of one or two uses is ordered by its uses' senses alone, no geometry read. Its
+shells are the classes of face sides joined round edges; a shell bounding positive volume is a
+bounded cell's outer one, any other a void of the smallest such holding a point of it, or the
+unbounded cell's (found only when asked, `cells`). A touch along an edge (four faces round it) or at
+a point is a state it holds, not a check failure; `select` keeps the faces between kept and unkept
+cells, each wedge of a kept cell round an edge where the result touches itself given an edge of its
+own, and says where (`Touch`). `complex::two_blocks_meeting_along_an_edge_…`, `…_at_a_corner_…`,
+`a_void_is_a_shell_…`, `faces_tangent_along_an_edge_…`, `a_ball_in_a_cylinder_of_its_radius_…` and
+`a_block_tangent_to_a_cone_along_a_generator_…` are the gates. **A2, the meeting** (`brep::meeting`):
+two surfaces' meeting over boxes of their parameters as branches (each crossing or touching all
+along), singular points (a touch alone, or branches crossing) and coincidence, complete — boundary
+crossings, every critical point of one's distance across the other's parameters (a closed branch
+encloses one; one at zero is a touch), and between analytic surfaces `ssi::unseen`'s proved search
+for the rest; an arrangement computes each pair of surfaces' closed-form meeting once
+(`meeting::Shared`, surfaces the kernel holds the same one index) and hands it to every two faces on
+them. `meeting::a_*_meeting_with_every_kind_is_complete` (every pair of the kernel's surface kinds,
+seeded placements, against a dense sampling of one across the other) and the singular-point cases
+are the gates. **A3, tolerant topology** (`brep::tolerant`): every rule by which two features are
+the same in one place — a point onto a vertex within `tol` (`Pool`, each vertex keeping how far the
+farthest point merged into it stood: `topo::Vertex::tol`, which `check` reads an edge's end
+against), a vertex onto an edge and an edge onto an edge within `ON_CURVE` tolerances, a point onto
+a meeting within `on_meeting`, a flat root onto a crossing within `FLAT`, a sliver into its edge —
+applied once, in that order. A search's warm start (`util::warm`: a sheet's, a blend's, a wall's
+last foot) is forgotten at every arrangement and every parallel item and kept as it was across
+narration, so a split is the same bits with `SOLVENT_BREP_DEBUG` set and unset and on any thread
+(`arrangement::a_split_is_the_same_narrated_or_not_on_any_thread`). **A4, the arrangement**
+(`boolean::arrangement`, `arrangement_within`, `members`, `selected`): any number of solids' faces
+split by all the others at once — where three faces of three operands meet at a point no edge
+passes, the two meetings on each face cut there (`triple_points`) — a span two faces only touch along
+laid as an edge, every piece a face of the complex but a sliver, coincident pieces one face naming
+each operand; each cell's membership in each operand read off a face of it bounding the cell, else at
+a point deep inside. **A Boolean is a selection over it**: each piece's two sides' membership read
+as before, the complex formed, each shell kept as the operation keeps its sides (which agree round
+it, else each face by its own), and the result touching itself along an edge given an edge for each
+wedge; `split` is the complex's shells inside the solid. Every Boolean of the suite gives the same
+result through it as before (the agreement gate: the whole fast suite). What the arrangement holds
+that the pairwise Boolean never met: a cycle of a face's pieces whose outline is coarser than it is
+wide has its side read along its curves (`fine_area`, a cusp-thin strip between two curves tangent
+at its end); a meeting off either surface's patch is not laid (a hyperboloid's rulings past its
+heights, which a revolution's inverse puts on its rim); a traced meeting along an edge either face
+has is that edge (`along_an_edge`); two meetings crossing on a face with no closed form for it are
+crossed by search (`meeting::crossings`) and the point polished onto all three surfaces
+(`shared_point`); and a cell too thin to mesh is read inside at its faces' points stepped in
+(`Complex::inside_points`). The closed swept solid on one arrangement is not yet right (the
+design's §8, step 4);
+`arrangement::three_blocks_arranged_at_once_…`, `every_cells_membership_…`,
+`the_arrangement_is_the_same_in_any_order_…` and `coincident_faces_are_one_face_…` are its own.
 **A Boolean's work is where its solids meet** (#589): a face of one whose box misses the box the
 other's faces fill is clear of it (`boolean::Arranged::clear`) — nothing of the other meets it, so
 it is one piece, its own loops, outside the other: kept by a union and by a cut of the solid it

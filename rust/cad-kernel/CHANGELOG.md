@@ -8,6 +8,31 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The surface arrangement** (#735). A cell complex (`complex::Complex`): faces each parting two
+  cells, an edge bounding any number of faces in order round it (tangent faces by their curvature),
+  touches along edges and at points held; `select` the boundary between kept cells and the rest,
+  each wedge of a self-touch its own edge, and where it touches said (`Touch`).
+- Any number of solids arranged at once (`boolean::arrangement`, `arrangement_within`), every
+  meeting laid, touches as edges, coincident faces one face naming each operand; each cell's
+  membership in each (`members`); a Boolean of many solids in one pass (`selected`).
+- The Booleans (`combined`, `boolean`) and `split` are selections over the complex, with the same
+  results; a union touching itself along an edge now comes back a valid boundary (an edge for each
+  wedge) rather than one `check` refuses.
+- Where two surfaces meet as a topological answer (`meeting::meet`): branches crossing or touching,
+  singular points, coincidence, complete by boundary seeds, critical points and the proved search;
+  each pair of surfaces' closed-form meeting computed once in an arrangement (`meeting::Shared`).
+- Tolerant topology in one place (`tolerant`): the pool of vertices, each keeping its tolerance
+  (`topo::Vertex::tol`, **a new field**), and every rule by which two features merge.
+- A search's warm start (`util::warm`) is forgotten at every arrangement and parallel item and kept
+  across narration: a split is the same bits with `SOLVENT_BREP_DEBUG` set or not, on any thread.
+- Arrangements hold degeneracies they refused: a thin piece's side read along its curves where its
+  outline is coarser than it is wide; a meeting off a surface's patch (a hyperboloid's rulings past
+  its heights) not laid on it; a traced meeting along an edge either face has taken for that edge;
+  where two meetings cross on a face with no closed form for it, the crossing found by search
+  (`meeting::crossings`) and polished onto the three surfaces; a piece shorter than a vertex's reach
+  collapsed; a cell too thin to mesh read inside at points of its faces stepped in
+  (`Complex::inside_points`).
+
 - A face of revolution's contacts under any rigid motion, read at each instant (`swept::instant`):
   its chart over roll, ring height and branch (`ring_chart`), and the branch locus where a ring's
   two roots meet (`branch_locus`).

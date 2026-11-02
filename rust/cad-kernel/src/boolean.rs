@@ -7,7 +7,8 @@
 use crate::util::fmath::Det;
 use super::geom::{around,Box3,Curve,Surface,Uv,V};
 use super::query::{crossings_in,curve_surface_within,Located,Meets,Outline,Place};
-use super::ssi::{intersect,Ssi};
+use super::ssi::Ssi;
+use super::complex::{Complex,Origin};
 use super::topo::{reverse_loop,unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::util::space::{distance,norm};
 use std::cell::Cell;
@@ -19,57 +20,55 @@ const TAU: f64 = std::f64::consts::TAU;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Op { Union,Cut,Common }
 
-/// One of a Boolean's two solids: `A`, the first (the solid a run of Booleans hands on), or `B`.
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-enum Side { A,B }
+/// One of an arrangement's operands, by its place among them: `A`, the first (the solid a run of
+/// Booleans hands on), `B` the second, and so on (#735 A4: any number of them at once).
+#[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
+struct Side(usize);
 
 impl Side {
-    const BOTH: [Side;2] = [Side::A,Side::B];
-    fn other(self) -> Side { match self { Side::A => Side::B,Side::B => Side::A } }
-    fn name(self) -> &'static str { match self { Side::A => "A",Side::B => "B" } }
+    const A: Side = Side(0);
+    const B: Side = Side(1);
+    /// The other of a Boolean's two solids.
+    fn other(self) -> Side { Side(1-self.0) }
+    /// `A`, `B`, … as narrated.
+    fn name(self) -> String { if self.0 < 26 { ((b'A'+self.0 as u8) as char).to_string() } else { format!("#{}",self.0) } }
 }
 
-/// A value for each of a Boolean's two solids, read by its `Side`.
-#[derive(Clone,Copy,Debug)]
-struct Pair<T>([T;2]);
+/// A value for each operand, read by its `Side`.
+#[derive(Clone,Debug)]
+struct Sides<T>(Vec<T>);
 
-impl<T> Pair<T> {
-    /// Each side's value, A's made first.
-    fn new(mut f: impl FnMut(Side) -> T) -> Pair<T> { Pair([f(Side::A),f(Side::B)]) }
+impl<T> Sides<T> {
+    /// Each operand's value, the first's made first.
+    fn new(n: usize,mut f: impl FnMut(Side) -> T) -> Sides<T> { Sides((0..n).map(|i| f(Side(i))).collect()) }
+    /// Every operand, in order.
+    fn all(&self) -> impl Iterator<Item=Side> { (0..self.0.len()).map(Side) }
 }
 
-impl<T> std::ops::Index<Side> for Pair<T> {
+impl<T> std::ops::Index<Side> for Sides<T> {
     type Output = T;
-    fn index(&self,s: Side) -> &T { &self.0[s as usize] }
+    fn index(&self,s: Side) -> &T { &self.0[s.0] }
 }
 
-impl<T> std::ops::IndexMut<Side> for Pair<T> {
-    fn index_mut(&mut self,s: Side) -> &mut T { &mut self.0[s as usize] }
+impl<T> std::ops::IndexMut<Side> for Sides<T> {
+    fn index_mut(&mut self,s: Side) -> &mut T { &mut self.0[s.0] }
 }
 
-/// Points merged where they come within the tolerance of one another.
-struct Pool { pts: Vec<V>,tol: f64,grid: crate::util::space::Grid }
+/// Two faces of two operands met: each's operand and face, the lower operand first.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+struct Two { s: [Side;2],f: [usize;2] }
 
-impl Pool {
-    fn new(tol: f64) -> Pool { Pool {pts:Vec::new(),tol,grid:crate::util::space::Grid::new(4.*tol)} }
-    fn at(&mut self,p: V) -> u32 {
-        assert!(p.iter().all(|x| x.is_finite() && x.abs() < 1e12),"a vertex at {p:?}");
-        let mut found = None;
-        let pts = &self.pts;
-        let tol = self.tol;
-        self.grid.around(p,|i| if found.is_none() && distance(pts[i as usize],p) <= tol { found = Some(i) });
-        if let Some(i) = found { return i }
-        self.pts.push(p);
-        let i = (self.pts.len()-1) as u32;
-        self.grid.insert(p,i);
-        i
-    }
+impl Two {
+    /// Where operand `s`'s face `fi` is one of the two: 0 or 1.
+    fn holds(&self,s: Side,fi: usize) -> Option<usize> { (0..2).find(|&k| self.s[k] == s && self.f[k] == fi) }
 }
+
+use super::tolerant::{on_meeting,Pool,FLAT,ON_CURVE};
 
 /// A root an edge meets a face of the other solid at, by its distance from the face's surface:
 /// the working edge, the vertex the root minted, its parameter, the edge's solid and index there,
-/// and the face met.
-struct Loose { edge: usize,vertex: u32,t: f64,side: Side,index: usize,face: usize }
+/// and the operand and face met.
+struct Loose { edge: usize,vertex: u32,t: f64,side: Side,index: usize,against: Side,face: usize }
 
 /// An edge of the working set: a stretch of a curve (or a pole) between two pooled vertices.
 #[derive(Clone,Debug)]
@@ -111,14 +110,14 @@ fn iso_pcurve(surface: &super::geom::Surface,curve: &super::geom::Curve,t: [f64;
 /// Two B-reps' faces split by everything the other lays on them, nothing yet kept or dropped: the
 /// working edges and their pooled vertices, and each face's pieces (which solid, which face, its loops).
 struct Arranged<'a> {
-    solids: Pair<&'a Brep>,
-    located: Pair<Located<'a>>,
+    solids: Sides<&'a Brep>,
+    located: Sides<Located<'a>>,
     pool: Pool,
     out: Vec<WEdge>,
     pieces: Vec<(Side,usize,Vec<Vec<Half>>)>,
-    /// Each solid's faces clear of the other: whose boxes miss the box the other's faces fill, so
-    /// nothing of the other meets them and all of each lies outside it (#589).
-    clear: Pair<Vec<bool>>,
+    /// Each operand's faces clear of the others: whose boxes miss the box each other's faces fill,
+    /// so nothing of the others meets them and all of each lies outside them (#589).
+    clear: Sides<Vec<bool>>,
 }
 
 /// **Two solids sharing a face, joined there** (the pieces of a chain of fillets, each ending in
@@ -502,19 +501,35 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> { Ok(bo
 /// `boolean`, `a`'s faces known as `known` says, and what the result's are (`Known`): the boxes
 /// of those carried whole, and which of them were checked (`a`'s that were).
 fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Result<(Brep,Known),String> {
-    let Arranged {solids,located,pool,out,pieces,clear} = arrange(a,known,b,tol)?;
-    let mut kept: Vec<Face> = Vec::new();
-    let mut handed = Known::default();
+    let Arranged {solids,located,pool,out,pieces,clear} = arrange(&[a,b],known,tol)?;
+    // the faces of the complex the two part space into (#735 A4): every piece but those with no
+    // inside and those a coincident piece of A stands for, each with what it is known by — its box
+    // and whether it was checked, for a face carried whole — and whether each of its sides, behind
+    // it and in front of it, lies in A and in B
+    let mut faces: Vec<Face> = Vec::new();
+    let mut origins: Vec<Vec<Origin>> = Vec::new();
+    let mut member: Vec<[[bool;2];2]> = Vec::new();
+    let mut meta: Vec<(Option<Box3>,bool)> = Vec::new();
     for (s,fi,piece) in pieces {
         let f = &solids[s].faces[fi];
+        let other = s.other();
+        // the piece's own solid lies behind it; the other on both sides (`[true; 2]`), neither, or
+        // — a piece on a face of the other — behind it where the two face the same way
+        let mut add = |face: Face,theirs: [bool;2],box_: Option<Box3>,checked: bool,partner: Option<(usize,bool)>| {
+            let mut m = [[false;2];2];
+            for k in 0..2 { m[k][s.0] = k == 0; m[k][other.0] = theirs[k]; }
+            let mut from = vec![Origin {operand:s.0,face:fi,alike:true}];
+            if let Some((face,alike)) = partner { from.push(Origin {operand:other.0,face,alike}); }
+            faces.push(face);
+            origins.push(from);
+            member.push(m);
+            meta.push((box_,checked));
+        };
         // a face clear of the other solid is one piece, whole and outside it: no point of it need
         // be placed (a large solid's faces far from a small one, the most of them, #589)
         if clear[s][fi] {
-            if op == Op::Union || op == Op::Cut && s == Side::A {
-                kept.push(piece_face(f,&piece,false));
-                handed.boxes.push(Some(located[s].face_box(fi)));
-                handed.checked.push(s == Side::A && known.is_some_and(|k| k.checked.get(fi) == Some(&true)));
-            }
+            add(piece_face(f,&piece,false),[false;2],Some(located[s].face_box(fi)),
+                s == Side::A && known.is_some_and(|k| k.checked.get(fi) == Some(&true)),None);
             continue
         }
         // place a point inside the piece against the other solid: the first of its inner
@@ -522,52 +537,204 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
         // it where the other has a face on this surface
         let mut inner = reading::inside(&piece,f,&out,&pool).map(|q| q.point()).peekable();
         // a piece with no inside bounds nothing: the sliver a surface touching the other solid
-        // along an edge of it cuts off there (#721 X6), dropped; whether what is left closes is
-        // the result's check
+        // along an edge of it cuts off there (#721 X6), dropped — merged into its edge (#735 A3);
+        // whether what is left closes is the result's check
         let Some(&first) = inner.peek() else { continue };
-        let other = s.other();
         let (p,place) = inner.map(|p| (p,located[other].solid_place(p)))
             .find(|&(p,place)| place != Place::On || (0..solids[other].faces.len()).any(|g|
                 super::ssi::same(&f.surface,&solids[other].faces[g].surface,tol) && located[other].face_place(g,p) == Place::In))
             .unwrap_or((first,Place::On));
-        let keep = if place == Place::On {
-            // on a face of the other on the same surface: kept once, from A, where the two
-            // face the same way and the operation keeps that side
-            let partner = (0..solids[other].faces.len()).find(|&g| {
-                super::ssi::same(&f.surface,&solids[other].faces[g].surface,tol)
-                    && located[other].face_place(g,p) == Place::In
-            });
-            let Some(g) = partner else {
-                // every point read inside the piece on the other's boundary, and on no face of
-                // the other's on its surface: a contact the arrangement did not cut it along
-                let named = |f: &Face| match f.name.is_empty() {
-                    true => format!("a {}",f.surface.kind()),
-                    false => format!("`{}` (a {})",f.name,f.surface.kind()),
+        match place {
+            Place::In => add(piece_face(f,&piece,false),[true;2],None,false,None),
+            Place::Out => add(piece_face(f,&piece,false),[false;2],None,false,None),
+            Place::On => {
+                // on a face of the other on the same surface: one face of the complex, A's piece
+                // standing for both, the other's material behind it where the two face the same way
+                let partner = (0..solids[other].faces.len()).find(|&g| {
+                    super::ssi::same(&f.surface,&solids[other].faces[g].surface,tol)
+                        && located[other].face_place(g,p) == Place::In
+                });
+                let Some(g) = partner else {
+                    // every point read inside the piece on the other's boundary, and on no face of
+                    // the other's on its surface: a contact the arrangement did not cut it along
+                    let named = |f: &Face| match f.name.is_empty() {
+                        true => format!("a {}",f.surface.kind()),
+                        false => format!("`{}` (a {})",f.name,f.surface.kind()),
+                    };
+                    let near: Vec<String> = solids[other].faces.iter().enumerate()
+                        .filter(|&(g,h)| h.surface.implicit(p).abs() <= tol && located[other].face_place(g,p) != Place::Out)
+                        .map(|(_,h)| named(h)).collect();
+                    let near = if near.is_empty() { "the other solid's boundary".to_string() } else { near.join(" and ") };
+                    return Err(format!("a piece of {} touches {near} at {p:?} along no face of either: \
+                        move the one off the other's face, or into it",named(f)))
                 };
-                let near: Vec<String> = solids[other].faces.iter().enumerate()
-                    .filter(|&(g,h)| h.surface.implicit(p).abs() <= tol && located[other].face_place(g,p) != Place::Out)
-                    .map(|(_,h)| named(h)).collect();
-                let near = if near.is_empty() { "the other solid's boundary".to_string() } else { near.join(" and ") };
-                return Err(format!("a piece of {} touches {near} at {p:?} along no face of either: \
-                    move the one off the other's face, or into it",named(f)))
-            };
-            let normal = |face: &Face| {
-                let n = face.surface.normal_raw(face.surface.inverse(p));
-                if face.reversed { crate::util::space::scale(n,-1.) } else { n }
-            };
-            let alike = crate::util::space::dot(normal(f),normal(&solids[other].faces[g])) > 0.;
-            s == Side::A && match op { Op::Union | Op::Common => alike,Op::Cut => !alike }
-        } else { match (op,s,place) {
-            (Op::Union,_,Place::Out) | (Op::Cut,Side::A,Place::Out) | (Op::Cut,Side::B,Place::In) | (Op::Common,_,Place::In) => true,
-            _ => false,
-        } };
-        if !keep { continue }
-        let flip = op == Op::Cut && s == Side::B;
-        kept.push(piece_face(f,&piece,flip));
-        handed.boxes.push(None);
-        handed.checked.push(false);
+                if s != Side::A { continue }
+                let alike = facing_alike(f,&solids[other].faces[g],p);
+                add(piece_face(f,&piece,false),[alike,!alike],None,false,Some((g,alike)));
+            }
+        }
     }
-    Ok((assemble(&out,&pool,kept),handed))
+    let value = |m: [bool;2]| match op { Op::Union => m[0] || m[1],Op::Cut => m[0] && !m[1],Op::Common => m[0] && m[1] };
+    let say = super::debug();
+    // **the operation a selection of the complex's cells** (#735 A4): each shell kept as the
+    // operation keeps its sides, which agree round it; its boundary the result, touching itself
+    // where kept cells meet along an edge across cells not kept, each wedge there its own edge
+    let n = faces.len();
+    let (selected,faces) = match Complex::try_new(working_brep(&out,&pool,faces),origins,tol) {
+        Ok(c) => {
+            let mut keep: Vec<Option<bool>> = vec![None;c.shells.len()];
+            let mut agree = true;
+            for f in 0..n {
+                for k in 0..2 {
+                    let v = value(member[f][k]);
+                    match keep[c.shell_sides[f][k]] {
+                        None => keep[c.shell_sides[f][k]] = Some(v),
+                        Some(w) if w != v => agree = false,
+                        _ => {}
+                    }
+                }
+            }
+            if agree { (Some(c.select_parts(&|k| keep[k] == Some(true))),Vec::new()) }
+            else {
+                if say { eprintln!("boolean: a shell of the complex whose sides the operation keeps differently: each face kept by its own"); }
+                (None,c.b.faces)
+            }
+        }
+        Err((e,b)) => {
+            if say { eprintln!("boolean: no complex ({e}): each face kept by its own sides"); }
+            (None,b.faces)
+        }
+    };
+    let mut handed = Known::default();
+    let mut kept: Vec<Face> = Vec::new();
+    let mut edges = out;
+    match selected {
+        Some(parts) => {
+            edges.extend(parts.twins.into_iter().map(|e| WEdge {curve:e.curve,t:e.t,v:e.v}));
+            // a face given an edge of its own where the result touches itself is not the face it
+            // was: its box is read again
+            for (f,face,touched) in parts.faces {
+                handed.boxes.push(if touched { None } else { meta[f].0 });
+                handed.checked.push(meta[f].1);
+                kept.push(face);
+            }
+        }
+        None => {
+            // each face by its own two sides
+            for (f,face) in faces.into_iter().enumerate() {
+                let (behind,front) = (value(member[f][0]),value(member[f][1]));
+                if behind == front { continue }
+                handed.boxes.push(meta[f].0);
+                handed.checked.push(meta[f].1);
+                kept.push(if behind { face } else { super::complex::turned(&face) });
+            }
+        }
+    }
+    Ok((assemble(&edges,&pool,kept),handed))
+}
+
+/// `faces` as one boundary, their edges `out` and their vertices `pool`'s, numbered as there: what
+/// a complex of the arrangement is built on.
+fn working_brep(out: &[WEdge],pool: &Pool,faces: Vec<Face>) -> Brep {
+    let edges = out.iter().map(|w| super::topo::Edge {curve:w.curve.clone(),t:w.t,v:w.v,tol:0.}).collect();
+    Brep {vertices:pool.vertices(),edges,faces}
+}
+
+/// Whether two faces on one surface at `p` face the same way (their material normals agree).
+fn facing_alike(f: &Face,g: &Face,p: V) -> bool {
+    let normal = |face: &Face| {
+        let n = face.surface.normal_raw(face.surface.inverse(p));
+        if face.reversed { crate::util::space::scale(n,-1.) } else { n }
+    };
+    crate::util::space::dot(normal(f),normal(g)) > 0.
+}
+
+
+/// **The cell complex any number of solids and sheets part space into** (#735 A4): every face of
+/// every operand split by all the others at once, through one set of pooled vertices and merged
+/// edges (A3's one place), each piece a face of the complex — but a piece with no inside, the
+/// sliver a surface touching another only along an edge of it cuts off, merged into that edge; and
+/// where pieces of several operands lie on one surface over one region, the lowest operand's piece
+/// standing for all, each named among its origins with whether it faces the same way. Nothing is
+/// kept or dropped by any operation: that is a selection over it (`selected`, `Complex::select`).
+pub fn arrangement(operands: &[&Brep],tol: f64) -> Result<Complex,String> { arranged(operands,false,tol) }
+
+/// **The cell complex solids part a domain into** (`arrangement`, its first operand the domain):
+/// every piece of the others lying outside the domain left out, so the complex's bounded cells
+/// are the domain's, each bounded by the domain's faces and the others' pieces within it (#721's
+/// X6: a box holding a sweep, split by the sweep's candidate surfaces at once).
+pub fn arrangement_within(domain: &Brep,operands: &[&Brep],tol: f64) -> Result<Complex,String> {
+    let all: Vec<&Brep> = std::iter::once(domain).chain(operands.iter().copied()).collect();
+    arranged(&all,true,tol)
+}
+
+/// `arrangement`, the first operand's outside left out where `within`.
+fn arranged(operands: &[&Brep],within: bool,tol: f64) -> Result<Complex,String> {
+    let Arranged {solids,located,pool,out,pieces,..} = arrange_laying(operands,None,true,tol)?;
+    let mut faces: Vec<Face> = Vec::new();
+    let mut origins: Vec<Vec<Origin>> = Vec::new();
+    for (s,fi,piece) in pieces {
+        let f = &solids[s].faces[fi];
+        let Some(p) = reading::inside(&piece,f,&out,&pool).map(|q| q.point()).next() else {
+            if super::debug() { eprintln!("arrangement: a piece of {}{fi} ({}) has no inside: merged into its edges",s.name(),f.surface.kind()); }
+            continue
+        };
+        if within && s != Side::A && located[Side::A].solid_place(p) == Place::Out {
+            if super::debug() { eprintln!("arrangement: a piece of {}{fi} ({}) at {p:?} outside the domain",s.name(),f.surface.kind()); }
+            continue
+        }
+        let mut from = vec![Origin {operand:s.0,face:fi,alike:true}];
+        let mut stood_for = false;
+        for o in solids.all().filter(|&o| o != s) {
+            for (g,h) in solids[o].faces.iter().enumerate() {
+                if !super::ssi::same(&f.surface,&h.surface,tol) || located[o].face_place(g,p) != Place::In { continue }
+                if o < s { stood_for = true; }
+                from.push(Origin {operand:o.0,face:g,alike:facing_alike(f,h,p)});
+            }
+        }
+        if super::debug() { eprintln!("arrangement: a piece of {}{fi} ({}) at {p:?}: {from:?}{}",s.name(),f.surface.kind(),
+            if stood_for { ", stood for by a lower operand's" } else { "" }); }
+        if stood_for { continue }
+        faces.push(piece_face(f,&piece,false));
+        origins.push(from);
+    }
+    Complex::new(working_brep(&out,&pool,faces).compacted(),origins,tol)
+}
+
+/// **Whether each cell of an arrangement lies in each of its operands** (closed solids): read off a
+/// face of the operand bounding the cell where one does — behind it where the face faces the way
+/// the operand's did — else at a point deep inside the cell placed against the operand.
+pub fn members(complex: &Complex,operands: &[&Brep],tol: f64) -> Result<Vec<Vec<bool>>,String> {
+    let cells = complex.cells()?;
+    let located: Vec<Located> = operands.iter().map(|b| Located::new(b,tol)).collect();
+    let mut out = vec![vec![false;operands.len()];cells.len()];
+    for c in 1..cells.len() {
+        let sides = complex.cell_sides(cells,c);
+        let mut deep: Option<Option<V>> = None;
+        for k in 0..operands.len() {
+            let by_face = sides.iter().find_map(|&(f,front)| complex.origins[f].iter().find(|o| o.operand == k)
+                .map(|o| o.alike != front));
+            out[c][k] = match by_face {
+                Some(inside) => inside,
+                None => {
+                    let p = *deep.get_or_insert_with(|| complex.inside(c).ok().flatten());
+                    let Some(p) = p else { return Err(format!("cell {c} of the arrangement has no inside to read")) };
+                    located[k].solid_place(p) == Place::In
+                }
+            };
+        }
+    }
+    Ok(out)
+}
+
+/// **A Boolean of any number of solids at once**: their arrangement, each cell kept where `keep`
+/// says of whether it lies in each (`members`), and the boundary between kept cells and the rest
+/// (`Complex::select`), touching itself where kept cells meet along an edge or at a point and
+/// saying so.
+pub fn selected(operands: &[&Brep],keep: &dyn Fn(&[bool]) -> bool,tol: f64) -> Result<super::complex::Selected,String> {
+    let complex = arrangement(operands,tol)?;
+    let inside = members(&complex,operands,tol)?;
+    complex.select(&|c| c != 0 && keep(&inside[c]))
 }
 
 /// A piece of face `f` as a face of its own: its cycles as loops, each turned the other way round
@@ -584,8 +751,20 @@ fn piece_face(f: &Face,piece: &[Vec<Half>],flip: bool) -> Face {
 /// The faces of `a` and `b` split where the other crosses them (`Arranged`), phase by phase over
 /// the state they share (`Arrangement`).
 /// `a`'s faces' boxes are taken from `known` where it has them (`Known`).
-fn arrange<'a>(a: &'a Brep,known: Option<&Known>,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> {
-    let mut arr = Arrangement::new(a,known,b,tol);
+fn arrange<'a>(solids: &[&'a Brep],known: Option<&Known>,tol: f64) -> Result<Arranged<'a>,String> {
+    arrange_laying(solids,known,false,tol)
+}
+
+/// `arrange`, laying the spans two faces only touch along as edges where `lay_touches`.
+/// From no warm start, whatever the thread asked before, and its caller's left as they were: what
+/// an arrangement is depends on its operands alone (`util::warm`).
+fn arrange_laying<'a>(solids: &[&'a Brep],known: Option<&Known>,lay_touches: bool,tol: f64) -> Result<Arranged<'a>,String> {
+    crate::util::warm::fresh(|| arrange_phases(solids,known,lay_touches,tol))
+}
+
+/// `arrange_laying`'s phases.
+fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,lay_touches: bool,tol: f64) -> Result<Arranged<'a>,String> {
+    let mut arr = Arrangement::new(solids,known,lay_touches,tol);
     // 1. every edge against every face of the other solid: where it crosses, a vertex on both
     let mut crossings = arr.crossings();
     // a root met flatly that is a crossing found besides is that crossing (`flat_roots`)
@@ -593,6 +772,9 @@ fn arrange<'a>(a: &'a Brep,known: Option<&Known>,b: &'a Brep,tol: f64) -> Result
     arr.say.lap();
     // 2. every pair of faces: their surfaces' curves, kept where they lie in both faces
     let meetings = arr.meetings(&crossings)?;
+    // 2a. where three faces of three operands meet at a point no edge passes: two meetings laid
+    // on one face, with faces of two other operands, crossing there (#735 A4)
+    if arr.solids.0.len() > 2 { arr.triple_points(&meetings); }
     // 2b. every vertex, either solid's or a crossing's, cuts an edge it lies inside, the faces'
     // meetings among them: two edges running along one another (a shared circle, each solid
     // seamed at its own angle; a meeting traced along an edge already there) then share their
@@ -601,10 +783,12 @@ fn arrange<'a>(a: &'a Brep,known: Option<&Known>,b: &'a Brep,tol: f64) -> Result
     for (we,found) in inside.into_iter().enumerate() { arr.cuts[we].extend(found); }
     arr.say.lap();
     // 3. every original edge split where it was cut: its pieces, in order along it
-    let (pieces_of,out) = split_edges(&arr.edges,&arr.cuts);
+    let (pieces_of,mut out) = split_edges(&arr.edges,&arr.cuts);
+    // 3b. a piece shorter than a vertex's reach onto a curve, its ends one vertex (#735 A3)
+    let gone = collapsed(&mut out,&mut arr.pool,tol);
     // 4. pieces that are one edge merged: the same ends and the same curve between
     let rep = merged(&out,&arr.pool,tol);
-    let split = Split {pieces_of,out,rep};
+    let split = Split {pieces_of,out,rep,gone};
     // 5. each face split by what lies on it, traced in its parameters
     let pieces = arr.faces_split(&meetings,&split)?;
     arr.say.arranged();
@@ -616,32 +800,40 @@ fn arrange<'a>(a: &'a Brep,known: Option<&Known>,b: &'a Brep,tol: f64) -> Result
 /// vertices pooled, and the working edges — A's, then B's, then the meetings phase 2 lays on the
 /// faces — each with the points it is cut at, the two growing together (`add_edge`).
 struct Arrangement<'a> {
-    solids: Pair<&'a Brep>,
-    located: Pair<Located<'a>>,
+    solids: Sides<&'a Brep>,
+    located: Sides<Located<'a>>,
     pool: Pool,
     edges: Vec<WEdge>,
     /// where each working edge is cut, in step with `edges`: the parameter, and the vertex there
     cuts: Vec<Vec<(f64,u32)>>,
     /// where each solid's own edges begin among `edges`
-    first_edge: Pair<usize>,
+    first_edge: Sides<usize>,
     /// each face's box
-    boxes: Pair<Vec<Box3>>,
+    boxes: Sides<Vec<Box3>>,
     /// the box each solid's faces fill
-    reach: Pair<Box3>,
-    /// each solid's faces clear of the other (`Arranged::clear`)
-    clear: Pair<Vec<bool>>,
+    reach: Sides<Box3>,
+    /// each solid's faces clear of the others (`Arranged::clear`)
+    clear: Sides<Vec<bool>>,
     tol: f64,
     /// how far apart two boxes may stand and still be taken to meet
     pad: f64,
+    /// whether a span of a closed-form meeting along which two faces only touch is laid as an
+    /// edge (#735: a touch represented, the faces split along it), as an arrangement asks, or left
+    /// off, as a Boolean's result keeps a face whole there
+    lay_touches: bool,
+    /// each pair of surfaces' meeting, found once and shared by every two faces on them (#735 A2),
+    /// and each face's surface's index there, given the first time the face meets another
+    shared: super::meeting::Shared,
+    surface_of: BTreeMap<(Side,usize),usize>,
     say: Narration,
 }
 
 /// Phase 1's findings: every edge against every face of the other solid.
 struct Crossings {
-    /// each face's vertices where an edge of the other crosses it, or crosses its boundary
-    on_face: Pair<Vec<Vec<u32>>>,
-    /// each face's edges of the other solid lying in its surface (`Meets::Along`), working indices
-    along_face: Pair<Vec<Vec<usize>>>,
+    /// each face's vertices where an edge of another crosses it, or crosses its boundary
+    on_face: Sides<Vec<Vec<u32>>>,
+    /// each face's edges of another operand lying in its surface (`Meets::Along`), working indices
+    along_face: Sides<Vec<Vec<usize>>>,
     /// each root an edge meets a face at by its distance from the surface, at a vertex of its own
     loose: Vec<Loose>,
 }
@@ -649,9 +841,9 @@ struct Crossings {
 /// Phase 2's findings: every pair of faces.
 struct Meetings {
     /// the working edges laid where two faces meet, each with the two faces
-    ssi_edges: Vec<(usize,Pair<usize>)>,
-    /// faces of the two on one surface: each splits the other with its boundary
-    same_pairs: Vec<Pair<usize>>,
+    ssi_edges: Vec<(usize,Two)>,
+    /// faces of two operands on one surface: each splits the other with its boundary
+    same_pairs: Vec<Two>,
 }
 
 /// Phases 3 and 4: every working edge split where it was cut (`split_edges`), and the pieces that
@@ -662,29 +854,40 @@ struct Split {
     out: Vec<WEdge>,
     /// each piece's representative among `out`, and whether it runs the other way round
     rep: Vec<(u32,bool)>,
+    /// each piece collapsed into one vertex, shorter than the tolerance's reach (`collapsed`)
+    gone: Vec<bool>,
 }
 
 impl<'a> Arrangement<'a> {
-    /// Both solids' faces boxed and their edges pooled, nothing yet cut.
-    fn new(a: &'a Brep,known: Option<&Known>,b: &'a Brep,tol: f64) -> Arrangement<'a> {
-        let solids = Pair([a,b]);
-        let located = Pair([Located::boxed(a,tol,&|fi| known.and_then(|k| k.face_box(fi))),Located::new(b,tol)]);
+    /// Every operand's faces boxed and their edges pooled, nothing yet cut; the first's faces'
+    /// boxes taken from `known` where it has them.
+    fn new(operands: &[&'a Brep],known: Option<&Known>,lay_touches: bool,tol: f64) -> Arrangement<'a> {
+        let n = operands.len();
+        let solids = Sides(operands.to_vec());
+        let located = Sides::new(n,|s| if s == Side::A { Located::boxed(solids[s],tol,&|fi| known.and_then(|k| k.face_box(fi))) }
+            else { Located::new(solids[s],tol) });
         let mut pool = Pool::new(tol);
-        // the working edges: A's, then B's, their vertices pooled
+        // the working edges: A's, then B's, and so on, their vertices pooled
         let mut edges: Vec<WEdge> = Vec::new();
-        let mut first_edge = Pair([0usize;2]);
-        for s in Side::BOTH {
+        let mut first_edge = Sides(vec![0usize;n]);
+        for s in solids.all() {
             first_edge[s] = edges.len();
-            let ids: Vec<u32> = solids[s].vertices.iter().map(|v| pool.at(v.p)).collect();
+            // each vertex keeping the tolerance it was built to (#735 A3), through every Boolean after
+            let ids: Vec<u32> = solids[s].vertices.iter().map(|v| {
+                let i = pool.at(v.p);
+                pool.tols[i as usize] = pool.tols[i as usize].max(v.tol);
+                i
+            }).collect();
             for e in &solids[s].edges { edges.push(WEdge {curve:e.curve.clone(),t:e.t,v:[ids[e.v[0] as usize],ids[e.v[1] as usize]]}); }
         }
         let cuts = vec![Vec::new();edges.len()];
-        let boxes = Pair::new(|s| (0..solids[s].faces.len()).map(|i| located[s].face_box(i)).collect::<Vec<_>>());
+        let boxes = Sides::new(n,|s| (0..solids[s].faces.len()).map(|i| located[s].face_box(i)).collect::<Vec<_>>());
         let pad = 4.*tol;
-        // the box each solid's faces fill, and the faces of each clear of the other's (`Arranged::clear`)
-        let reach = Pair::new(|s| boxes[s].iter().fold(super::geom::EMPTY,|mut r,b| { super::geom::widen(&mut r,*b); r }));
-        let clear = Pair::new(|s| boxes[s].iter().map(|bx| !overlap(bx,&reach[s.other()],pad)).collect::<Vec<_>>());
-        Arrangement {solids,located,pool,edges,cuts,first_edge,boxes,reach,clear,tol,pad,say:Narration::new()}
+        // the box each solid's faces fill, and the faces of each clear of every other's (`Arranged::clear`)
+        let reach = Sides::new(n,|s| boxes[s].iter().fold(super::geom::EMPTY,|mut r,b| { super::geom::widen(&mut r,*b); r }));
+        let clear = Sides::new(n,|s| boxes[s].iter().map(|bx| solids.all().all(|o| o == s || !overlap(bx,&reach[o],pad))).collect::<Vec<_>>());
+        Arrangement {solids,located,pool,edges,cuts,first_edge,boxes,reach,clear,tol,pad,lay_touches,
+            shared:Default::default(),surface_of:BTreeMap::new(),say:Narration::new()}
     }
 
     /// Edge `i` of solid `s`'s index among the working edges.
@@ -697,9 +900,9 @@ impl<'a> Arrangement<'a> {
         self.edges.len()-1
     }
 
-    /// The box two faces' boxes share, one of each solid's.
-    fn shared(&self,faces: Pair<usize>) -> Box3 {
-        let (a,b) = (self.boxes[Side::A][faces[Side::A]],self.boxes[Side::B][faces[Side::B]]);
+    /// The box two faces' boxes share, of two operands.
+    fn shared(&self,faces: Two) -> Box3 {
+        let (a,b) = (self.boxes[faces.s[0]][faces.f[0]],self.boxes[faces.s[1]][faces.f[1]]);
         (std::array::from_fn(|k| a.0[k].max(b.0[k])),std::array::from_fn(|k| a.1[k].min(b.1[k])))
     }
 
@@ -708,13 +911,14 @@ impl<'a> Arrangement<'a> {
     /// the face's own edges.
     fn crossings(&mut self) -> Crossings {
         let (tol,pad) = (self.tol,self.pad);
+        let n = self.solids.0.len();
         let mut found = Crossings {
-            on_face: Pair::new(|s| vec![Vec::new();self.solids[s].faces.len()]),
-            along_face: Pair::new(|s| vec![Vec::new();self.solids[s].faces.len()]),
+            on_face: Sides::new(n,|s| vec![Vec::new();self.solids[s].faces.len()]),
+            along_face: Sides::new(n,|s| vec![Vec::new();self.solids[s].faces.len()]),
             loose: Vec::new(),
         };
         // the faces each edge bounds
-        let bounded: Pair<Vec<Vec<usize>>> = Pair::new(|s| {
+        let bounded: Sides<Vec<Vec<usize>>> = Sides::new(n,|s| {
             let sol = self.solids[s];
             let mut out = vec![Vec::new();sol.edges.len()];
             for (fi,f) in sol.faces.iter().enumerate() {
@@ -722,8 +926,8 @@ impl<'a> Arrangement<'a> {
             }
             out
         });
-        for s in Side::BOTH {
-            let other = s.other();
+        for s in self.solids.all() {
+          for other in self.solids.all().filter(|&o| o != s) {
             let theirs = self.solids[other];
             for (i,e) in self.solids[s].edges.iter().enumerate() {
                 let EdgeCurve::Curve(c) = &e.curve else { continue };
@@ -782,11 +986,12 @@ impl<'a> Arrangement<'a> {
                             let v = self.pool.at(q);
                             self.cuts[we].push((t,v));
                             found.on_face[other][fi].push(v);
-                            if v as usize >= fresh { found.loose.push(Loose {edge:we,vertex:v,t,side:s,index:i,face:fi}); }
+                            if v as usize >= fresh { found.loose.push(Loose {edge:we,vertex:v,t,side:s,index:i,against:other,face:fi}); }
                         },
                     }
                 }
             }
+          }
         }
         found
     }
@@ -805,8 +1010,8 @@ impl<'a> Arrangement<'a> {
             if self.cuts[l.edge].len() < 2 { continue }
             let e = &self.solids[l.side].edges[l.index];
             let EdgeCurve::Curve(c) = &e.curve else { continue };
-            let s = &self.solids[l.side.other()].faces[l.face].surface;
-            let near = |t: f64| s.implicit(c.point(t)).abs() <= 16.*tol.max(e.tol);
+            let s = &self.solids[l.against].faces[l.face].surface;
+            let near = |t: f64| s.implicit(c.point(t)).abs() <= FLAT*tol.max(e.tol);
             // out from the root each way, doubling, as far as the edge stays that near
             let reach = |dir: f64| {
                 let (mut d,mut last) = (1e-12*(e.t[1]-e.t[0]).abs().max(1e-300),l.t);
@@ -824,7 +1029,7 @@ impl<'a> Arrangement<'a> {
             let Some(w) = exact else { continue };
             self.say.flat_root(self.pool.pts[l.vertex as usize],self.pool.pts[w as usize]);
             self.cuts[l.edge].retain(|&(_,u)| u != l.vertex);
-            for u in crossings.on_face[l.side.other()][l.face].iter_mut() { if *u == l.vertex { *u = w } }
+            for u in crossings.on_face[l.against][l.face].iter_mut() { if *u == l.vertex { *u = w } }
             gone.insert(l.vertex);
         }
         gone
@@ -834,61 +1039,142 @@ impl<'a> Arrangement<'a> {
     /// form, or traced (`traced_meeting`) — cut at the points both faces put on it, its spans
     /// laid as working edges where they lie in both faces.
     fn meetings(&mut self,crossings: &Crossings) -> Result<Meetings,String> {
-        let (a,b) = (self.solids[Side::A],self.solids[Side::B]);
         let mut found = Meetings {ssi_edges:Vec::new(),same_pairs:Vec::new()};
-        for fa in 0..a.faces.len() {
-            for fb in 0..b.faces.len() {
-                let faces = Pair([fa,fb]);
-                if !overlap(&self.boxes[Side::A][fa],&self.boxes[Side::B][fb],self.pad) { continue }
-                let surfaces = Pair([&a.faces[fa].surface,&b.faces[fb].surface]);
-                // two curves of one meeting in closed form may cross one another (`crossings_among`)
-                let (curves,crossed) = match intersect(surfaces[Side::A],surfaces[Side::B],self.tol) {
-                    Ssi::Curves(cs) => { let x = crossings_among(surfaces[Side::A],&cs,self.tol); (cs,x) }
-                    Ssi::Same => { found.same_pairs.push(faces); continue }
-                    Ssi::Traced => {
-                        let traced = self.traced_meeting(faces,crossings)?;
-                        let met = ends_met(&traced,self.tol);
-                        (traced,met)
-                    }
-                };
-                self.say.curves(faces,surfaces,curves.len());
-                let (lo,hi) = self.shared(faces);
-                let (lo,hi): (V,V) = (lo.map(|x| x-self.pad),hi.map(|x| x+self.pad));
-                for (c,crossed) in curves.into_iter().zip(crossed) {
-                    // a curve that comes nowhere near both faces (a far crossing of two nearly parallel
-                    // meridians) leaves nothing on them
-                    if far(&c,lo,hi) { continue }
-                    let mut ts = self.points_on(&c,surfaces,&crossings.on_face[Side::B][fb],&crossings.on_face[Side::A][fa],crossed);
-                    let domain = closed_domain(&c,self.tol);
-                    let closed = c.period().is_some() || domain.is_some();
-                    let spans = spans(&c,domain,&mut ts,&mut self.pool);
-                    self.say.points_on(&c,&ts,&self.pool);
-                    for (t,v) in spans {
-                        if (t[1]-t[0])*c.speed() <= self.tol || (v[0] == v[1] && !closed) { continue }
-                        if !self.kept(&c,t,v,faces,surfaces) { continue }
-                        let we = self.add_edge(EdgeCurve::Curve(c.clone()),t,v);
-                        found.ssi_edges.push((we,faces));
-                    }
+        let sides: Vec<Side> = self.solids.all().collect();
+        // every two faces of two operands whose boxes meet, the lower operand first
+        let mut pairs: Vec<Two> = Vec::new();
+        for (k,&sa) in sides.iter().enumerate() { for &sb in &sides[k+1..] {
+            for fa in 0..self.solids[sa].faces.len() { for fb in 0..self.solids[sb].faces.len() {
+                if overlap(&self.boxes[sa][fa],&self.boxes[sb][fb],self.pad) { pairs.push(Two {s:[sa,sb],f:[fa,fb]}) }
+            } }
+        } }
+        for faces in pairs {
+            let ([sa,sb],[fa,fb]) = (faces.s,faces.f);
+            let (a,b) = (self.solids[sa],self.solids[sb]);
+            let surfaces = [&a.faces[fa].surface,&b.faces[fb].surface];
+            // the two surfaces' meeting, found once for every two faces on them
+            let ids = [0,1].map(|k| {
+                let key = (faces.s[k],faces.f[k]);
+                match self.surface_of.get(&key) {
+                    Some(&i) => i,
+                    None => { let i = self.shared.index(surfaces[k],self.tol); self.surface_of.insert(key,i); i }
+                }
+            });
+            // two curves of one meeting in closed form may cross one another (`crossings_among`)
+            let (curves,crossed) = match self.shared.meeting(ids[0],ids[1],self.tol) {
+                Ssi::Curves(cs) => { let x = crossings_among(surfaces[0],&cs,self.tol); (cs,x) }
+                Ssi::Same => { found.same_pairs.push(faces); continue }
+                Ssi::Traced => {
+                    let mut traced = self.traced_meeting(faces,crossings)?;
+                    // a traced meeting lying along an edge either face already has is that edge
+                    // (#735 A2: "this meeting is that existing edge"), laid once, not twice
+                    // a hair apart: two surfaces meeting along a circle both their caps end on
+                    traced.retain(|c| !self.along_an_edge(c,faces,surfaces));
+                    let met = ends_met(&traced,self.tol);
+                    (traced,met)
+                }
+            };
+            self.say.curves(faces,surfaces,curves.len());
+            let (lo,hi) = self.shared(faces);
+            let (lo,hi): (V,V) = (lo.map(|x| x-self.pad),hi.map(|x| x+self.pad));
+            for (c,crossed) in curves.into_iter().zip(crossed) {
+                // a curve that comes nowhere near both faces (a far crossing of two nearly parallel
+                // meridians) leaves nothing on them
+                if far(&c,lo,hi) { continue }
+                let mut ts = self.points_on(&c,surfaces,&crossings.on_face[sb][fb],&crossings.on_face[sa][fa],crossed);
+                let domain = closed_domain(&c,self.tol);
+                let closed = c.period().is_some() || domain.is_some();
+                let spans = spans(&c,domain,&mut ts,&mut self.pool);
+                self.say.points_on(&c,&ts,&self.pool);
+                for (t,v) in spans {
+                    if (t[1]-t[0])*c.speed() <= self.tol || (v[0] == v[1] && !closed) { continue }
+                    if !self.kept(&c,t,v,faces,surfaces) { continue }
+                    let we = self.add_edge(EdgeCurve::Curve(c.clone()),t,v);
+                    found.ssi_edges.push((we,faces));
                 }
             }
         }
         Ok(found)
     }
 
+    /// Whether the traced curve `c` lies along an edge of either of the two faces, over all of it:
+    /// each of its points within the reach a point of two surfaces meeting at its angle has
+    /// (`on_meeting`) of one edge's curve, inside the edge's stretch.
+    fn along_an_edge(&self,c: &Curve,faces: Two,surfaces: [&Surface;2]) -> bool {
+        let Curve::Traced(t) = c else { return false };
+        // each point with the reach a point of the two surfaces meeting at its angle has
+        let pts: Vec<(V,f64)> = (0..=32).map(|k| {
+            let p = t.pts[(k*(t.pts.len()-1))/32];
+            (p,on_meeting(self.tol,norm(crate::util::space::cross(surfaces[0].gradient(p),surfaces[1].gradient(p)))))
+        }).collect();
+        (0..2).any(|k| {
+            let sol = self.solids[faces.s[k]];
+            let f = &sol.faces[faces.f[k]];
+            f.loops.iter().flatten().any(|co| {
+                let e = &sol.edges[co.edge as usize];
+                let EdgeCurve::Curve(ec) = &e.curve else { return false };
+                pts.iter().all(|&(p,reach)| {
+                    let mut u = ec.inverse(p);
+                    if let Some(period) = ec.period() { u = around(u,e.t[0],period); }
+                    u >= e.t[0]-1e-9 && u <= e.t[1]+1e-9 && distance(ec.point(u),p) <= reach
+                })
+            })
+        })
+    }
+
+    /// **Where three faces of three operands meet** (an arrangement of more than two): on each
+    /// face, every two meetings laid across it with faces of two other operands, crossing — a
+    /// point no edge of any operand passes, so no crossing of phase 1 made it — cut at a vertex
+    /// they share.
+    fn triple_points(&mut self,meetings: &Meetings) {
+        let tol = self.tol;
+        let mut on: BTreeMap<(Side,usize),Vec<(usize,Side,usize)>> = BTreeMap::new();
+        for &(we,two) in &meetings.ssi_edges {
+            for k in 0..2 { on.entry((two.s[k],two.f[k])).or_default().push((we,two.s[1-k],two.f[1-k])); }
+        }
+        for ((s,fi),list) in on {
+            let surface = &self.solids[s].faces[fi].surface;
+            for i in 0..list.len() { for j in i+1..list.len() {
+                let ((ei,oi,gi),(ej,oj,gj)) = (list[i],list[j]);
+                if oi == oj { continue }
+                let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&self.edges[ei].curve,&self.edges[ej].curve) else { continue };
+                let (ti,tj) = (self.edges[ei].t,self.edges[ej].t);
+                if !overlap(&ci.bounds(ti),&cj.bounds(tj),self.pad) { continue }
+                // in closed form where `query` has one, else by search (`meeting::crossings`)
+                let found = crossings_in(surface,ci,ti,cj,tj,tol).unwrap_or_else(||
+                    super::meeting::crossings(ci,ti,cj,tj,ON_CURVE*tol).into_iter().map(|(t,_,q)| (t,q)).collect());
+                // each the point the three surfaces share, by Newton on their signed distances: what
+                // each of the three faces' searches finds again, so the pool takes it for one
+                let three = [surface,&self.solids[oi].faces[gi].surface,&self.solids[oj].faces[gj].surface];
+                for (_,q) in found {
+                    let q = shared_point(three,q,tol);
+                    let t = { let mut t = ci.inverse(q); if let Some(period) = ci.period() { t = around(t,ti[0],period); } t };
+                    if !(t >= ti[0]-1e-12 && t <= ti[1]+1e-12) || distance(ci.point(t),q) > ON_CURVE*tol { continue }
+                    let mut u = cj.inverse(q);
+                    if let Some(period) = cj.period() { u = around(u,tj[0],period); }
+                    if !(u >= tj[0]-1e-12 && u <= tj[1]+1e-12) || distance(cj.point(u),q) > 8.*tol { continue }
+                    let v = self.pool.at(q);
+                    if !self.cuts[ei].iter().any(|&(_,w)| w == v) { self.cuts[ei].push((t,v)); }
+                    if !self.cuts[ej].iter().any(|&(_,w)| w == v) { self.cuts[ej].push((u,v)); }
+                }
+            } }
+        }
+    }
+
     /// The vertices on curve `c`, where two faces' surfaces (`surfaces`) meet, each with its
     /// parameter along it: those on B's face and on A's (`on_b`, `on_a`: where the other solid's
     /// edges cross it) within reach of the curve, then those of `crossed`, where it crosses
     /// another curve of the same meeting, each pooled.
-    fn points_on(&mut self,c: &Curve,surfaces: Pair<&Surface>,on_b: &[u32],on_a: &[u32],crossed: Vec<V>) -> Vec<(f64,u32)> {
-        let (sa,sb) = (surfaces[Side::A],surfaces[Side::B]);
+    fn points_on(&mut self,c: &Curve,surfaces: [&Surface;2],on_b: &[u32],on_a: &[u32],crossed: Vec<V>) -> Vec<(f64,u32)> {
+        let (sa,sb) = (surfaces[0],surfaces[1]);
         let mut ts: Vec<(f64,u32)> = Vec::new();
         for &v in on_b.iter().chain(on_a) {
             let p = self.pool.pts[v as usize];
             let t = c.inverse(p);
             // a point within the tolerance of both surfaces is that over the sine of the angle
             // they meet at off their meeting
-            let sine = norm(crate::util::space::cross(sa.gradient(p),sb.gradient(p))).max(1e-4);
-            if distance(c.point(t),p) <= 8.*self.tol/sine && !ts.iter().any(|&(_,w)| w == v) { ts.push((t,v)); }
+            let sine = norm(crate::util::space::cross(sa.gradient(p),sb.gradient(p)));
+            if distance(c.point(t),p) <= on_meeting(self.tol,sine) && !ts.iter().any(|&(_,w)| w == v) { ts.push((t,v)); }
         }
         for q in crossed {
             let v = self.pool.at(q);
@@ -899,14 +1185,22 @@ impl<'a> Arrangement<'a> {
 
     /// Whether the span `t` of curve `c`, from vertex `v[0]` to `v[1]`, is kept as an edge where
     /// two faces meet: its middle in both, where the two cross rather than touch.
-    fn kept(&self,c: &Curve,t: [f64;2],v: [u32;2],faces: Pair<usize>,surfaces: Pair<&Surface>) -> bool {
+    fn kept(&self,c: &Curve,t: [f64;2],v: [u32;2],faces: Two,surfaces: [&Surface;2]) -> bool {
         let m = c.point((t[0]+t[1])/2.);
-        let places = Pair::new(|s| self.located[s].face_place(faces[s],m));
+        let places = [0,1].map(|k| self.located[faces.s[k]].face_place(faces.f[k],m));
         self.say.span(t,v,m,places,&self.pool);
-        if places[Side::A] == Place::Out || places[Side::B] == Place::Out { return false }
+        if places[0] == Place::Out || places[1] == Place::Out { return false }
+        // on each surface's patch, not only its extension: a surface over a curve's domain (a
+        // revolution's meridian, an extrusion's section, a sheet) inverts a point off it onto its
+        // rim, which a face's place reads as on its boundary (a hyperboloid's rulings run on past
+        // the heights it is built over, where a plane holding one meets it)
+        // (planes, cylinders, cones, spheres and tori run on without end, and need no reading)
+        let bounded = |s: &Surface| matches!(s,Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..)
+            | Surface::BSpline(..) | Surface::Family(..));
+        if surfaces.iter().any(|s| bounded(s) && distance(s.point(s.inverse(m)),m) > 1e3*self.tol) { return false }
         // where the two only touch (their normals parallel) nothing crosses from one
-        // side to the other: no face is split there
-        if norm(crate::util::space::cross(surfaces[Side::A].gradient(m),surfaces[Side::B].gradient(m))) < 1e-7 { return false }
+        // side to the other: no face is split there, but where the arrangement represents touches
+        if !self.lay_touches && norm(crate::util::space::cross(surfaces[0].gradient(m),surfaces[1].gradient(m))) < 1e-7 { return false }
         true
     }
 
@@ -917,18 +1211,18 @@ impl<'a> Arrangement<'a> {
     /// for what no curve yet passes, each found traced in turn, until the search shows nothing
     /// else is there. Where the two only touch is a meeting already known (`Touches`): no trace
     /// starts or passes there.
-    fn traced_meeting(&self,faces: Pair<usize>,crossings: &Crossings) -> Result<Vec<Curve>,String> {
+    fn traced_meeting(&self,faces: Two,crossings: &Crossings) -> Result<Vec<Curve>,String> {
         let (tol,pad) = (self.tol,self.pad);
-        let (fa,fb) = (faces[Side::A],faces[Side::B]);
-        let (a,b) = (self.solids[Side::A],self.solids[Side::B]);
-        let surfaces = Pair([&a.faces[fa].surface,&b.faces[fb].surface]);
-        let (sa,sb) = (surfaces[Side::A],surfaces[Side::B]);
+        let ([oa,ob],[fa,fb]) = (faces.s,faces.f);
+        let (a,b) = (self.solids[oa],self.solids[ob]);
+        let surfaces = [&a.faces[fa].surface,&b.faces[fb].surface];
+        let (sa,sb) = (surfaces[0],surfaces[1]);
         let on = &crossings.on_face;
-        let mut seeds: Vec<V> = on[Side::B][fb].iter().chain(&on[Side::A][fa]).map(|&v| self.pool.pts[v as usize])
+        let mut seeds: Vec<V> = on[ob][fb].iter().chain(&on[oa][fa]).map(|&v| self.pool.pts[v as usize])
             .filter(|&p| sa.implicit(p).abs() <= 8.*tol && sb.implicit(p).abs() <= 8.*tol).collect();
         // the edges either lies in that the other's face holds (`Meets::Along`), over their stretches
         let along = &crossings.along_face;
-        let stretches: Vec<(&Curve,[f64;2])> = along[Side::B][fb].iter().chain(&along[Side::A][fa])
+        let stretches: Vec<(&Curve,[f64;2])> = along[ob][fb].iter().chain(&along[oa][fa])
             .filter_map(|&we| match &self.edges[we].curve {
                 EdgeCurve::Curve(c) => Some((c,self.edges[we].t)),
                 EdgeCurve::Degenerate => None,
@@ -952,7 +1246,7 @@ impl<'a> Arrangement<'a> {
         // a closed curve inside both faces crosses no edge and has no seed
         if super::ssi::searchable(sa) && super::ssi::searchable(sb) {
             let size = |bx: &Box3| distance(bx.0,bx.1);
-            let (sol,fi,mine,theirs) = if size(&self.boxes[Side::B][fb]) < size(&self.boxes[Side::A][fa]) { (b,fb,sb,sa) } else { (a,fa,sa,sb) };
+            let (sol,fi,mine,theirs) = if size(&self.boxes[ob][fb]) < size(&self.boxes[oa][fa]) { (b,fb,sb,sa) } else { (a,fa,sa,sb) };
             let domain = parameters(sol,fi,true);
             // more separate loops than any face pair this kernel builds meets in
             const LOOPS: usize = 64;
@@ -982,7 +1276,7 @@ impl<'a> Arrangement<'a> {
     /// piece with its solid and face.
     fn faces_split(&self,meetings: &Meetings,split: &Split) -> Result<Vec<(Side,usize,Vec<Vec<Half>>)>,String> {
         let mut pieces: Vec<(Side,usize,Vec<Vec<Half>>)> = Vec::new();
-        for s in Side::BOTH {
+        for s in self.solids.all() {
             for (fi,f) in self.solids[s].faces.iter().enumerate() {
                 let (halves,loop_ends) = self.boundary_halves(s,fi,split);
                 // a face clear of the other is nothing but its loops, its edges' pieces in their order
@@ -996,15 +1290,16 @@ impl<'a> Arrangement<'a> {
                 }
                 let mut cut = FaceCut::new(f,fi,&self.located[s],&split.out,halves);
                 for &(e,on) in &meetings.ssi_edges {
-                    if on[s] != fi { continue }
-                    for &(piece,_) in &split.pieces_of[e] { cut.internal(split.rep[piece as usize].0); }
+                    if on.holds(s,fi).is_none() { continue }
+                    for &(piece,_) in &split.pieces_of[e] { if !split.gone[piece as usize] { cut.internal(split.rep[piece as usize].0); } }
                 }
                 // a face of the other on this one's surface: its boundary's pieces inside this face
                 for same in &meetings.same_pairs {
-                    if same[s] != fi { continue }
-                    let other = s.other();
-                    for l in &self.solids[other].faces[same[other]].loops { for c in l {
+                    let Some(k) = same.holds(s,fi) else { continue };
+                    let (other,face) = (same.s[1-k],same.f[1-k]);
+                    for l in &self.solids[other].faces[face].loops { for c in l {
                         for &(piece,_) in &split.pieces_of[self.working(other,c.edge as usize)] {
+                            if split.gone[piece as usize] { continue }
                             let r = split.rep[piece as usize].0;
                             let w = &split.out[r as usize];
                             if matches!(w.curve,EdgeCurve::Degenerate) { continue }
@@ -1012,7 +1307,7 @@ impl<'a> Arrangement<'a> {
                         }
                     } }
                 }
-                if s == Side::B { self.say.cut_network(fi,f,meetings,split,&self.pool); }
+                if s != Side::A { self.say.cut_network(s,fi,f,meetings,split,&self.pool); }
                 for piece in pieces_of_face(f,&cut.halves,&split.out,&self.pool)? { pieces.push((s,fi,piece)); }
             }
         }
@@ -1033,6 +1328,7 @@ impl<'a> Arrangement<'a> {
                 let mut ps = split.pieces_of[self.working(s,c.edge as usize)].clone();
                 if c.reversed { ps.reverse(); }
                 for (piece,[ta,tb]) in ps {
+                    if split.gone[piece as usize] { continue }
                     let (r,flip) = split.rep[piece as usize];
                     let at = |t: f64| c.pcurve.at(t,orig,&f.surface,&sol.vertices);
                     let (ua,ub) = (at(ta),at(tb));
@@ -1145,8 +1441,8 @@ fn piece_pcurve(own: &Pcurve,surface: &Surface,merged: Option<(&WEdge,bool)>,ua:
 /// beside which a trace ends (`ssi::trace_beside`).
 struct Touches<'s,'a> {
     arr: &'s Arrangement<'a>,
-    faces: Pair<usize>,
-    surfaces: Pair<&'s Surface>,
+    faces: Two,
+    surfaces: [&'s Surface;2],
     /// each edge they touch along, over its stretch
     stretches: &'s [(&'s Curve,[f64;2])],
     /// how far off such an edge a point near both may stand: a point within `tol` of two surfaces
@@ -1159,17 +1455,17 @@ struct Touches<'s,'a> {
 }
 
 impl<'s,'a> Touches<'s,'a> {
-    fn new(arr: &'s Arrangement<'a>,faces: Pair<usize>,stretches: &'s [(&'s Curve,[f64;2])]) -> Touches<'s,'a> {
-        let surfaces = Pair::new(|s| &arr.solids[s].faces[faces[s]].surface);
-        let size = |s: Side| { let bx = arr.boxes[s][faces[s]]; distance(bx.0,bx.1) };
-        let spread = 8.*(arr.tol*size(Side::A).max(size(Side::B))).sqrt();
-        let least = size(Side::A).min(size(Side::B));
+    fn new(arr: &'s Arrangement<'a>,faces: Two,stretches: &'s [(&'s Curve,[f64;2])]) -> Touches<'s,'a> {
+        let surfaces = [0,1].map(|k| &arr.solids[faces.s[k]].faces[faces.f[k]].surface);
+        let size = |k: usize| { let bx = arr.boxes[faces.s[k]][faces.f[k]]; distance(bx.0,bx.1) };
+        let spread = 8.*(arr.tol*size(0).max(size(1))).sqrt();
+        let least = size(0).min(size(1));
         Touches {arr,faces,surfaces,stretches,spread,least,read:Vec::new()}
     }
 
     /// Whether the two meet at `p` nearly tangent: too shallowly for a trace to follow.
     fn shallow(&self,p: V) -> bool {
-        norm(crate::util::space::cross(self.surfaces[Side::A].gradient(p),self.surfaces[Side::B].gradient(p))) < super::ssi::SHALLOW
+        norm(crate::util::space::cross(self.surfaces[0].gradient(p),self.surfaces[1].gradient(p))) < super::ssi::SHALLOW
     }
 
     /// Whether `p` lies on an edge they touch along, within its stretch.
@@ -1191,16 +1487,16 @@ impl<'s,'a> Touches<'s,'a> {
     /// into both is left to the trace, which refuses it. Each read is kept, as alone or not,
     /// within its radius.
     fn alone(&mut self,p: V) -> bool {
-        let (tol,(sa,sb)) = (self.arr.tol,(self.surfaces[Side::A],self.surfaces[Side::B]));
+        let (tol,(sa,sb)) = (self.arr.tol,(self.surfaces[0],self.surfaces[1]));
         let Some(at) = super::ssi::touch_near(sa,sb,p,tol) else { return false };
         let Some(t) = super::ssi::touch(sa,sb,at) else { return false };
         if t.radius > 0.05*self.least || distance(at,p) > t.radius { return false }
-        let place = |side: Side,d: V| {
-            let s = self.surfaces[side];
+        let place = |k: usize,d: V| {
+            let s = self.surfaces[k];
             let q = crate::util::space::add(at,crate::util::space::scale(d,2.*t.radius));
-            self.arr.located[side].face_place(self.faces[side],s.point(s.inverse(q)))
+            self.arr.located[self.faces.s[k]].face_place(self.faces.f[k],s.point(s.inverse(q)))
         };
-        let lone = !t.branches.iter().any(|&d| place(Side::A,d) != Place::Out && place(Side::B,d) != Place::Out);
+        let lone = !t.branches.iter().any(|&d| place(0,d) != Place::Out && place(1,d) != Place::Out);
         if lone { self.arr.say.touch_alone(self.faces,self.surfaces,&t); }
         self.read.push((t,lone));
         lone
@@ -1210,9 +1506,9 @@ impl<'s,'a> Touches<'s,'a> {
     /// fillet's canal run on past the face that cuts it off lies tangent to the face it rolls on
     /// beyond the contact's end).
     fn outside(&self,p: V) -> bool {
-        Side::BOTH.into_iter().any(|side| {
-            let s = self.surfaces[side];
-            self.arr.located[side].face_place(self.faces[side],s.point(s.inverse(p))) == Place::Out
+        (0..2).any(|k| {
+            let s = self.surfaces[k];
+            self.arr.located[self.faces.s[k]].face_place(self.faces.f[k],s.point(s.inverse(p))) == Place::Out
         })
     }
 
@@ -1285,9 +1581,9 @@ struct Narration {
     trace: Cell<f64>,
 }
 
-/// Two faces of a pair, one of each solid, by their indices and surfaces' kinds.
-fn named(faces: Pair<usize>,surfaces: Pair<&Surface>) -> String {
-    format!("A{} {} × B{} {}",faces[Side::A],surfaces[Side::A].kind(),faces[Side::B],surfaces[Side::B].kind())
+/// Two faces of a pair, of two operands, by their operands, indices and surfaces' kinds.
+fn named(faces: Two,surfaces: [&Surface;2]) -> String {
+    format!("{}{} {} × {}{} {}",faces.s[0].name(),faces.f[0],surfaces[0].kind(),faces.s[1].name(),faces.f[1],surfaces[1].kind())
 }
 
 impl Narration {
@@ -1333,7 +1629,7 @@ impl Narration {
     }
 
     /// Two faces found to touch alone at a point.
-    fn touch_alone(&self,faces: Pair<usize>,surfaces: Pair<&Surface>,t: &super::ssi::Touch) {
+    fn touch_alone(&self,faces: Two,surfaces: [&Surface;2],t: &super::ssi::Touch) {
         if self.debug { eprintln!("brep: {}: touch alone at {:?} ({} branches, radius {:.1e})",named(faces,surfaces),
             t.at,t.branches.len(),t.radius); }
     }
@@ -1342,32 +1638,32 @@ impl Narration {
     fn seeded(&self,took: f64) { self.grid.set(self.grid.get()+took); }
 
     /// Two faces' meeting about to be traced from `seeds`.
-    fn tracing(&self,faces: Pair<usize>,surfaces: Pair<&Surface>,seeds: &[V]) {
+    fn tracing(&self,faces: Two,surfaces: [&Surface;2],seeds: &[V]) {
         if self.debug { eprintln!("brep: {}: tracing from {} seed(s) {seeds:?}",named(faces,surfaces),seeds.len()); }
     }
 
     /// The search finding a meeting of two faces no edge crosses, at `p`.
-    fn unseen(&self,faces: Pair<usize>,surfaces: Pair<&Surface>,p: V) {
+    fn unseen(&self,faces: Two,surfaces: [&Surface;2],p: V) {
         if self.debug { eprintln!("brep: {}: a meeting no edge crosses, at {p:?}",named(faces,surfaces)); }
     }
 
     /// Two faces' meeting traced, as `traced`, from `seeds`, in `took` seconds.
-    fn traced(&self,faces: Pair<usize>,surfaces: Pair<&Surface>,traced: &[Curve],seeds: &[V],took: f64) {
+    fn traced(&self,faces: Two,surfaces: [&Surface;2],traced: &[Curve],seeds: &[V],took: f64) {
         self.trace.set(self.trace.get()+took);
         if took > 0.2 && self.timing {
             eprintln!("time: {}: traced {} curves from {} seeds in {took:.2} s",named(faces,surfaces),traced.len(),seeds.len());
         }
         if !self.debug { return }
-        for c in traced {
+        crate::util::warm::kept(|| for c in traced {
             if let Curve::Traced(t) = c {
                 eprintln!("brep:   traced {} points, closed {}, from {:?} to {:?}; seeds off it by {:?}",t.pts.len(),t.closed,
                     t.pts[0],t.pts[t.pts.len()-1],seeds.iter().map(|&p| distance(c.point(c.inverse(p)),p)).collect::<Vec<_>>());
             }
-        }
+        })
     }
 
     /// Two faces' surfaces meeting in `n` curves.
-    fn curves(&self,faces: Pair<usize>,surfaces: Pair<&Surface>,n: usize) {
+    fn curves(&self,faces: Two,surfaces: [&Surface;2],n: usize) {
         if self.debug && n > 0 { eprintln!("brep: {}: {n} curve(s)",named(faces,surfaces)); }
     }
 
@@ -1377,21 +1673,31 @@ impl Narration {
     }
 
     /// A span `t` of a meeting's curve, from vertex `v[0]` to `v[1]`, its middle `m` where `places` says in each face.
-    fn span(&self,t: [f64;2],v: [u32;2],m: V,places: Pair<Place>,pool: &Pool) {
+    fn span(&self,t: [f64;2],v: [u32;2],m: V,places: [Place;2],pool: &Pool) {
         if self.debug { eprintln!("brep:     span {t:?} from {:?} to {:?}: middle {m:?} {:?}",pool.pts[v[0] as usize],pool.pts[v[1] as usize],
-            (places[Side::A],places[Side::B])); }
+            (places[0],places[1])); }
     }
 
-    /// The cut network on face `fi` of B: each vertex's count of cut edges (an odd one is an open end).
-    fn cut_network(&self,fi: usize,f: &Face,meetings: &Meetings,split: &Split,pool: &Pool) {
+    /// The cut network on face `fi` of operand `s`: each vertex's count of cut edges (an odd one is
+    /// an open end).
+    fn cut_network(&self,s: Side,fi: usize,f: &Face,meetings: &Meetings,split: &Split,pool: &Pool) {
         if !self.debug { return }
         let mut degree: BTreeMap<u32,usize> = BTreeMap::new();
-        let cut: Vec<u32> = meetings.ssi_edges.iter().filter(|e| e.1[Side::B] == fi)
+        let cut: Vec<u32> = meetings.ssi_edges.iter().filter(|e| e.1.holds(s,fi).is_some())
             .flat_map(|&(e,_)| split.pieces_of[e].iter().map(|&(p,_)| split.rep[p as usize].0)).collect();
         for &e in &cut { for v in split.out[e as usize].v { *degree.entry(v).or_insert(0) += 1; } }
         let open: Vec<V> = degree.iter().filter(|(_,&d)| d % 2 == 1).map(|(&v,_)| pool.pts[v as usize]).collect();
-        eprintln!("arrange: face {fi} of B ({}): {} cut edges, open ends {:?}",f.surface.kind(),cut.len(),open);
+        eprintln!("arrange: face {fi} of {} ({}): {} cut edges, open ends {:?}",s.name(),f.surface.kind(),cut.len(),open);
     }
+}
+
+/// **The point three surfaces share near `q`**: Newton onto their three zero sets
+/// (`roots::newton_onto`), no step longer than `1e3 tol`; `q` where that does not settle (the three
+/// meet too near tangent there to say better).
+fn shared_point(surfaces: [&Surface;3],q: V,tol: f64) -> V {
+    crate::util::roots::newton_onto::<3>(q,1e3*tol,|x| Some(surfaces.map(|s| (s.gradient(x),s.implicit(x)))),
+        |at| at.iter().all(|r| r.1.abs() <= 1e-3*tol))
+        .filter(|&x| distance(x,q) <= 1e3*tol).unwrap_or(q)
 }
 
 /// Step 2b's vertices: for each working edge, the pooled vertices (none of `gone`) lying inside
@@ -1417,7 +1723,7 @@ fn vertices_inside(edges: &[WEdge],cuts: &[Vec<(f64,u32)>],pool: &Pool,gone: &st
             let mut t = c.inverse(p);
             if let Some(period) = c.period() { t = around(t,e.t[0],period); }
             // a vertex at the edge's end in all but the pool's labelling is its end
-            let near = |q: V| distance(q,p) <= 8.*tol;
+            let near = |q: V| distance(q,p) <= ON_CURVE*tol;
             (t > e.t[0] && t < e.t[1] && near(c.point(t)) && !near(c.point(e.t[0])) && !near(c.point(e.t[1]))).then_some((t,v))
         }).collect()
     })
@@ -1447,6 +1753,36 @@ fn split_edges(edges: &[WEdge],cuts: &[Vec<(f64,u32)>]) -> (Vec<Vec<(u32,[f64;2]
     (pieces_of,out)
 }
 
+/// **Step 3b** (#735 A3, `tolerant`): every piece shorter than a vertex's reach onto a curve
+/// (`ON_CURVE` tolerances, along it) collapsed, its two ends one vertex — the lower, its tolerance
+/// grown to the other's distance — so no edge is left whose length is noise beside what the other
+/// rules merge (a crossing a hair from a vertex, which the pool's own reach left apart). Which
+/// pieces went; every piece's ends renumbered.
+fn collapsed(out: &mut [WEdge],pool: &mut Pool,tol: f64) -> Vec<bool> {
+    let reach = ON_CURVE*tol;
+    let mut alias = crate::util::union_find::UnionFind::new(pool.pts.len());
+    let mut gone = vec![false;out.len()];
+    for (i,e) in out.iter().enumerate() {
+        if e.v[0] == e.v[1] { continue }
+        let EdgeCurve::Curve(c) = &e.curve else { continue };
+        // no shorter than its chord: most pieces are read no further than their ends
+        if distance(pool.pts[e.v[0] as usize],pool.pts[e.v[1] as usize]) > reach { continue }
+        let at = |k: usize| c.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/4.);
+        if (0..4).map(|k| distance(at(k),at(k+1))).sum::<f64>() > reach { continue }
+        gone[i] = true;
+        // the lower vertex the class's (the union keeps its first argument's root)
+        let (a,b) = (alias.find(e.v[0] as usize),alias.find(e.v[1] as usize));
+        alias.union(a.min(b),a.max(b));
+    }
+    if !gone.iter().any(|&g| g) { return gone }
+    for v in 0..pool.pts.len() {
+        let r = alias.find(v);
+        if r != v { let d = distance(pool.pts[r],pool.pts[v]); pool.tols[r] = pool.tols[r].max(d); }
+    }
+    for e in out.iter_mut() { e.v = e.v.map(|v| alias.find(v as usize) as u32); }
+    gone
+}
+
 /// Step 4: each piece's representative among `out` (the first piece with the same ends and the
 /// same curve between), and whether it runs the other way round.
 fn merged(out: &[WEdge],pool: &Pool,tol: f64) -> Vec<(u32,bool)> {
@@ -1463,7 +1799,7 @@ fn merged(out: &[WEdge],pool: &Pool,tol: f64) -> Vec<(u32,bool)> {
                 let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&ei.curve,&ej.curve) else { continue };
                 let mut t = cj.inverse(mid);
                 if let Some(period) = cj.period() { t = around(t,ej.t[0],period); }
-                if t < ej.t[0]-1e-9 || t > ej.t[1]+1e-9 || distance(cj.point(t),mid) > 8.*tol { continue }
+                if t < ej.t[0]-1e-9 || t > ej.t[1]+1e-9 || distance(cj.point(t),mid) > ON_CURVE*tol { continue }
                 // the same way round: the same first vertex, or (closed) the same tangent
                 let along = if ei.v[0] != ei.v[1] { ei.v[0] == ej.v[0] } else {
                     crate::util::space::dot(ci.tangent((ei.t[0]+ei.t[1])/2.),cj.tangent(t)) > 0.
@@ -1520,8 +1856,18 @@ fn assemble(out: &[WEdge],pool: &Pool,kept: Vec<Face>) -> Brep {
     for (i,e) in out.iter().enumerate() {
         if !used[i] { continue }
         let mut v = [0;2];
-        for k in 0..2 { v[k] = *vmap.entry(e.v[k]).or_insert_with(|| result.vertex(pool.pts[e.v[k] as usize])); }
-        emap.insert(i as u32,result.edge(e.curve.clone(),e.t,v));
+        for k in 0..2 { v[k] = *vmap.entry(e.v[k]).or_insert_with(|| {
+            result.vertices.push(super::topo::Vertex {p:pool.pts[e.v[k] as usize],tol:pool.tols[e.v[k] as usize]});
+            (result.vertices.len()-1) as u32
+        }); }
+        let id = result.edge(e.curve.clone(),e.t,v);
+        // the tolerance it was built to (#735 A3): how far its curve's ends stand from the vertices a
+        // merge onto a meeting put there, where that is past the pool's own reach
+        if let EdgeCurve::Curve(c) = &e.curve {
+            let gap = (0..2).map(|k| distance(c.point(e.t[k]),pool.pts[e.v[k] as usize])).fold(0.,f64::max);
+            if gap > pool.tol { result.edges[id as usize].tol = gap; }
+        }
+        emap.insert(i as u32,id);
     }
     for mut f in kept {
         for l in &mut f.loops { for c in l { c.edge = emap[&c.edge]; } }
@@ -1565,6 +1911,24 @@ fn uv_at(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V) -> Uv {
 
 /// The face's parameters mirrored where it is reversed, so the material is always on the left.
 fn oriented(f: &Face,uv: Uv) -> Uv { if f.reversed { [-uv[0],uv[1]] } else { uv } }
+
+/// A cycle's signed area in its face's parameters, the material on its left: the trapezoid rule
+/// along each half at 64 points, then twice as many, until two readings agree to a thousandth (or
+/// 4096 a half).
+fn fine_area(cycle: &[Half],f: &Face,out: &[WEdge],pool: &Pool) -> f64 {
+    let read = |n: usize| cycle.iter().map(|h| (0..n).map(|k| {
+        let (a,b) = (oriented(f,at(h,f,out,pool,k as f64/n as f64)),oriented(f,at(h,f,out,pool,(k+1) as f64/n as f64)));
+        a[0]*b[1]-a[1]*b[0]
+    }).sum::<f64>()).sum::<f64>()/2.;
+    let (mut n,mut last) = (64,read(64));
+    while n < 4096 {
+        n *= 2;
+        let next = read(n);
+        if (next-last).abs() <= 1e-3*next.abs() { return next }
+        last = next;
+    }
+    last
+}
 
 /// The face split into pieces by its halves: each piece its outer cycle and its holes.
 fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<Vec<Vec<Vec<Half>>>,String> {
@@ -1641,7 +2005,24 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
     let mut cycles: Vec<Vec<Half>> = cycles.iter().map(|c| c.iter().map(|&h| halves[h].clone()).collect()).collect();
     let bar = reading::bar(&cycles,out,pool);
     let drawn: Vec<Outline> = cycles.iter().map(|c| reading::outline(std::slice::from_ref(c),f,out,pool,bar)).collect();
-    let areas: Vec<f64> = drawn.iter().map(|o| if f.reversed { -o.area() } else { o.area() }).collect();
+    // each cycle's signed area, the material on its left: its outline's, where that stands clear of
+    // what the outline's chords may miss along its whole length; else, a piece thinner than its
+    // outline's sag (a cusp-thin strip between two curves tangent at its end), along its curves
+    // sampled ever finer until the area settles (#735 A3: a sliver's side read exactly, not by a
+    // drawing coarser than it is wide)
+    let areas: Vec<f64> = drawn.iter().zip(&cycles).map(|(o,c)| {
+        let area = if f.reversed { -o.area() } else { o.area() };
+        let (mut uv_len,mut space_len) = (0.,0.);
+        for l in o.loops() {
+            for k in 0..l.len() {
+                let (a,b) = (l[k],l[(k+1)%l.len()]);
+                uv_len += (b[0]-a[0]).hypot(b[1]-a[1]);
+                space_len += distance(f.surface.point(a),f.surface.point(b));
+            }
+        }
+        let sag_uv = o.sag()*if space_len > 0. { uv_len/space_len } else { 1. };
+        if area.abs() > 4.*sag_uv*uv_len { area } else { fine_area(c,f,out,pool) }
+    }).collect();
     let mut pieces: Vec<(usize,Vec<usize>)> = (0..cycles.len()).filter(|&i| areas[i] > 0.).map(|i| (i,vec![i])).collect();
     for i in (0..cycles.len()).filter(|&i| areas[i] <= 0.) {
         // a hole goes in the smallest outer cycle holding a point of it, read against that cycle
@@ -1802,7 +2183,7 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
     }
     let sheets = &sheets;
     let clock = crate::util::clock::Instant::now();
-    let Arranged {solids,located,pool,out,pieces,..} = arrange(solid,None,sheets,tol)?;
+    let Arranged {solids,located,pool,out,pieces,..} = arrange(&[solid,sheets],None,tol)?;
     let arranged = clock.elapsed().as_secs_f64();
     let face_of = |i: usize,flip: bool| -> Face {
         let (s,fi,piece) = &pieces[i];
@@ -1825,84 +2206,36 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
     if super::timing() {
         eprintln!("time: split: arranged {arranged:.2} s, the sheet's pieces placed {:.2} s",clock.elapsed().as_secs_f64()-arranged);
     }
-    // a side of a piece: 2i as it is, 2i + 1 turned round; the cells are classes of sides
-    let mut parent: Vec<usize> = (0..2*pieces.len()).collect();
-    fn root(p: &mut [usize],mut x: usize) -> usize { while p[x] != x { p[x] = p[p[x]]; x = p[x]; } x }
-    let mut at_edge: BTreeMap<u32,Vec<(usize,usize)>> = BTreeMap::new();
-    for &i in &kept { for (k,h) in pieces[i].2.iter().flatten().enumerate() { at_edge.entry(h.edge).or_default().push((i,k)); } }
+    // the complex the kept pieces part the solid into (#735 A1): its shells, of which those a face
+    // of the solid bounds from outside are the outside, left out, and each other a cell
+    let faces: Vec<Face> = kept.iter().map(|&i| face_of(i,false)).collect();
+    let origins: Vec<Vec<Origin>> = kept.iter().map(|&i| vec![Origin {operand:pieces[i].0.0,face:pieces[i].1,alike:true}]).collect();
+    let complex = Complex::new(working_brep(&out,&pool,faces),origins,tol)?;
+    let outside: std::collections::BTreeSet<usize> = kept.iter().enumerate().filter(|&(_,&i)| pieces[i].0 == Side::A)
+        .map(|(f,_)| complex.shell_sides[f][1]).collect();
     if super::debug() {
-        for (&e,uses) in &at_edge { if uses.len() == 1 {
-            let (i,_) = uses[0];
-            eprintln!("split: edge {e} meets only a piece of a {} (solid {}), at {:?}",solids[pieces[i].0].faces[pieces[i].1].surface.kind(),pieces[i].0.name(),
-                out[e as usize].point((out[e as usize].t[0]+out[e as usize].t[1])/2.,&pool));
-        } }
-    }
-    for (&e,uses) in &at_edge {
-        let w = &out[e as usize];
-        let EdgeCurve::Curve(c) = &w.curve else { continue };
-        let tm = (w.t[0]+w.t[1])/2.;
-        let t = crate::util::space::normalised(c.tangent(tm)).ok_or("an edge with no direction")?;
-        let m = c.point(tm);
-        let b1 = crate::util::space::normalised(crate::util::space::cross(t,if t[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] })).unwrap();
-        let b2 = crate::util::space::cross(t,b1);
-        // each use: the way into its piece, square to the edge, and its piece's normal as it is
-        let mut around: Vec<(f64,usize,V,V)> = Vec::new();
-        for &(i,k) in uses {
-            let (s,fi,piece) = &pieces[i];
-            let f = &solids[*s].faces[*fi];
-            let h = piece.iter().flatten().nth(k).unwrap();
-            let uv = at(h,f,&out,&pool,0.5);
-            let mut n = crate::util::space::normalised(f.surface.normal_raw(uv)).ok_or_else(|| format!("a {} with no normal at {m:?}",f.surface.kind()))?;
-            if f.reversed { n = crate::util::space::scale(n,-1.); }
-            let walk = if h.along { t } else { crate::util::space::scale(t,-1.) };
-            let d = crate::util::space::cross(n,walk);
-            let d = crate::util::space::sub(d,crate::util::space::scale(t,crate::util::space::dot(d,t)));
-            around.push((crate::util::space::dot(d,b2).datan2(crate::util::space::dot(d,b1)),i,d,n));
-        }
-        around.sort_by(|x,y| x.0.total_cmp(&y.0));
-        for k in 0..around.len() {
-            let (_,i,d,n) = around[k];
-            let (_,j,dj,nj) = around[(k+1)%around.len()];
-            // the gap from i's way in to j's, turning about the edge: i bounds it by the side facing
-            // away from the turn, j by the side facing along it
-            let r = crate::util::space::cross(t,d);
-            let rj = crate::util::space::cross(t,dj);
-            let side_i = 2*i+usize::from(crate::util::space::dot(n,r) > 0.);
-            let side_j = 2*j+usize::from(crate::util::space::dot(nj,rj) < 0.);
-            if super::debug() && pieces[i].0 == Side::A && pieces[j].0 == Side::A && (side_i%2) != (side_j%2) {
-                eprintln!("split: at edge {e} ({} uses, at {m:?}) a {} piece's {} meets a {} piece's {}",around.len(),
-                    solids[Side::A].faces[pieces[i].1].surface.kind(),["inside","outside"][side_i%2],solids[Side::A].faces[pieces[j].1].surface.kind(),["inside","outside"][side_j%2]);
+        let mut all: Vec<(usize,usize,bool)> = vec![(0,0,false);complex.shells.len()];
+        for (k,shell) in complex.shells.iter().enumerate() {
+            for &(f,front) in shell {
+                if pieces[kept[f]].0 == Side::A { all[k].0 += 1 } else { all[k].1 += 1 }
+                if pieces[kept[f]].0 == Side::A && front { all[k].2 = true; }
             }
-            let (x,y) = (root(&mut parent,side_i),root(&mut parent,side_j));
-            parent[x] = y;
         }
-    }
-    // the classes of sides: a cell, unless it holds a solid face turned round (the outside)
-    let outside: std::collections::BTreeSet<usize> = kept.iter().filter(|&&i| pieces[i].0 == Side::A).map(|&i| root(&mut parent,2*i+1)).collect();
-    let mut classes: BTreeMap<usize,Vec<usize>> = BTreeMap::new();
-    for &i in &kept { for side in [2*i,2*i+1] {
-        if pieces[i].0 == Side::A && side == 2*i+1 { continue }
-        let r = root(&mut parent,side);
-        if !outside.contains(&r) { classes.entry(r).or_default().push(side); }
-    } }
-    if super::debug() {
-        let mut all: BTreeMap<usize,(usize,usize,bool)> = BTreeMap::new();
-        for &i in &kept { for side in [2*i,2*i+1] {
-            let r = root(&mut parent,side);
-            let e = all.entry(r).or_insert((0,0,false));
-            if pieces[i].0 == Side::A { e.0 += 1 } else { e.1 += 1 }
-            if pieces[i].0 == Side::A && side == 2*i+1 { e.2 = true; }
-        } }
         eprintln!("split: {} solid pieces, {} sheet pieces kept; classes (solid sides, sheet sides, outside): {:?}",
-            kept.iter().filter(|&&i| pieces[i].0 == Side::A).count(),kept.iter().filter(|&&i| pieces[i].0 == Side::B).count(),all.values().collect::<Vec<_>>());
+            kept.iter().filter(|&&i| pieces[i].0 == Side::A).count(),kept.iter().filter(|&&i| pieces[i].0 == Side::B).count(),all);
     }
     let mut cells = Vec::new();
-    for sides in classes.into_values() {
-        let faces: Vec<Face> = sides.iter().map(|&side| face_of(side/2,side%2 == 1)).collect();
+    for (k,shell) in complex.shells.iter().enumerate() {
+        if outside.contains(&k) { continue }
+        let faces: Vec<Face> = shell.iter().filter(|&&(f,front)| !(front && pieces[kept[f]].0 == Side::A))
+            .map(|&(f,front)| face_of(kept[f],front)).collect();
         cells.push(assemble(&out,&pool,faces));
     }
     Ok(cells)
 }
+
+/// The box of parameters face `fi` of `b` reaches, sampled along its edges (`parameters`).
+pub fn face_parameters(b: &Brep,fi: usize) -> [[f64;2];2] { parameters(b,fi,false) }
 
 /// The box of face `fi`'s parameters its loops reach, sampled along each edge. `whole`: grown
 /// to hold the face though a pcurve bulges between samples — by a sixteenth of each side, or to a
