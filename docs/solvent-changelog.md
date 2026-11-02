@@ -48,7 +48,11 @@ written from the document's own arguments (`scripts/solids_as_sets.py` rewrites 
 | `sweep(tool, through: B, under: m)` | `solid({ p \| p inside(under: m) tool })`, cut from `B` |
 | `sweep(I(…).f over s)`, `sweep(sec over s)` | `solid({ p \| p coincident(over s) I(…).f })`, `… sec })` |
 
-A whole-roll sweep cut from nothing is E080 at its declaration. A line named `under:` is the turn
+A prism through everything and a whole-roll sweep name no body: each is bounded by its context,
+every body it — or a copy of it placed at a roll — is cut from or kept in common with, so `pin cut
+a` and `pin cut b` take the pin's whole extent from both, and a pattern's copies each reach
+through their own (#746; at first the first body it was cut from bounded it alone). One cut from
+nothing is E080 at its declaration. A line named `under:` is the turn
 about it, so a revolution adds no unknown. **Outside a set of several statements** (a conjunction,
 an interval, several numbers) is its complement, where any of them fails — through 0.198 refused as
 a choice of root — so a union is `{ p | p outside { q | q outside a; q outside b } }`; and a set of

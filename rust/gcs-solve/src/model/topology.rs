@@ -112,20 +112,17 @@ impl Sketch {
                 match &s.def {
                     SolidDef::Placed { motion, .. } | SolidDef::Swept { motion, .. } => {
                         v.push(EntRef::new(EntKind::Motion,*motion as usize));
-                        if let SolidDef::Swept { roll: crate::model::Roll::Through { body }, .. } = &s.def {
-                            v.push(EntRef::solid(*body as usize));
-                        }
                     }
-                    SolidDef::Prism { face, .. } => v.push(EntRef::face(*face as usize)),
+                    // a prism through everything names no body (#737): the bodies it is cut from
+                    // are written over it, never it over them
+                    SolidDef::Prism { face, .. } | SolidDef::Through { face } => {
+                        v.push(EntRef::face(*face as usize));
+                    }
                     // the station, every entity of it: deleting one takes the family with it
                     SolidDef::Family { face, station, legs, .. } => {
                         v.push(EntRef::face(*face as usize));
                         v.extend(legs.iter().skip(1).map(|l| EntRef::face(l.face as usize)));
                         v.extend(station.iter().copied());
-                    }
-                    SolidDef::Through { face, body } => {
-                        v.push(EntRef::face(*face as usize));
-                        v.push(EntRef::solid(*body as usize));
                     }
                     SolidDef::Revolve { face, axis, .. } => {
                         v.push(EntRef::face(*face as usize));

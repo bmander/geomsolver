@@ -114,6 +114,9 @@ struct Arranged<'a> {
     located: Sides<Located<'a>>,
     pool: Pool,
     out: Vec<WEdge>,
+    /// Each of `out`'s edges laid only where two faces touch (`Arrangement::touch`), every piece
+    /// merged into it so laid too.
+    touches: Vec<bool>,
     pieces: Vec<(Side,usize,Vec<Vec<Half>>)>,
     /// Each operand's faces clear of the others: whose boxes miss the box each other's faces fill,
     /// so nothing of the others meets them and all of each lies outside them (#589).
@@ -515,7 +518,9 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> { Ok(bo
 /// `boolean`, `a`'s faces known as `known` says, and what the result's are (`Known`): the boxes
 /// of those carried whole, and which of them were checked (`a`'s that were).
 fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Result<(Brep,Known),String> {
-    let Arranged {solids,located,pool,out,pieces,clear} = arrange(&[a,b],known,tol)?;
+    // the touches laid as edges, so the complex is split along them as any arrangement is, and
+    // taken back out of the result where a face is kept on both sides of one (`heal`)
+    let Arranged {solids,located,pool,out,touches,pieces,clear} = arrange_laying(&[a,b],known,true,tol)?;
     // the faces of the complex the two part space into (#735 A4): every piece but those with no
     // inside and those a coincident piece of A stands for, each with what it is known by — its box
     // and whether it was checked, for a face carried whole — and whether each of its sides, behind
@@ -594,6 +599,7 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
     // operation keeps its sides, which agree round it; its boundary the result, touching itself
     // where kept cells meet along an edge across cells not kept, each wedge there its own edge
     let n = faces.len();
+    let origin: Vec<(usize,usize)> = origins.iter().map(|o| (o[0].operand,o[0].face)).collect();
     let (selected,faces) = match Complex::try_new(working_brep(&out,&pool,faces),origins,tol) {
         Ok(c) => {
             let mut keep: Vec<Option<bool>> = vec![None;c.shells.len()];
@@ -621,9 +627,15 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
     };
     let mut handed = Known::default();
     let mut kept: Vec<Face> = Vec::new();
+    let mut kept_origin: Vec<(usize,usize)> = Vec::new();
+    // each edge's touch it was laid along, where it was laid along one: itself, or for a twin the
+    // edge it is a twin of
+    let mut laid: Vec<Option<u32>> = (0..out.len()).map(|e| touches[e].then_some(e as u32)).collect();
     let mut edges = out;
     match selected {
         Some(parts) => {
+            let twins: Vec<Option<u32>> = parts.twin_of.iter().map(|&e| laid[e]).collect();
+            laid.extend(twins);
             edges.extend(parts.twins.into_iter().map(|e| WEdge {curve:e.curve,t:e.t,v:e.v}));
             // a face given an edge of its own where the result touches itself is not the face it
             // was: its box is read again
@@ -631,6 +643,7 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
                 handed.boxes.push(if touched { None } else { meta[f].0 });
                 handed.checked.push(meta[f].1);
                 kept.push(face);
+                kept_origin.push(origin[f]);
             }
         }
         None => {
@@ -641,10 +654,105 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
                 handed.boxes.push(meta[f].0);
                 handed.checked.push(meta[f].1);
                 kept.push(if behind { face } else { super::complex::turned(&face) });
+                kept_origin.push(origin[f]);
             }
         }
     }
-    Ok((assemble(&edges,&pool,kept),handed))
+    let split = heal(&mut kept,&mut handed,&kept_origin,&laid);
+    let mut result = assemble(&edges,&pool,kept);
+    // a loop a healed touch parted in two: the one enclosing the other its outer
+    for f in split {
+        let face = &result.faces[f];
+        let area = |l: &[Coedge]| result.loop_area(face,l).abs();
+        let outer = (0..face.loops.len()).max_by(|&i,&j| area(&face.loops[i]).total_cmp(&area(&face.loops[j]))).unwrap_or(0);
+        result.faces[f].loops.swap(0,outer);
+    }
+    Ok((result,handed))
+}
+
+/// **A Boolean's touches taken back out of its result** (#735): a touch laid as an edge (`laid`,
+/// each edge's touch, a twin's that of the edge it twins) is no edge of the result where one face
+/// of an operand (`origin`, each kept face's) is kept on both sides of it — the face's pieces
+/// either side joined again across it, and a slit it leaves inside the face (both its sides one
+/// face's) closed — so the result is the manifold B-rep it was before the touch was laid, its
+/// faces whole and touching where they touch. A touch bounding a face kept on one side only is an
+/// edge of the result, as any edge between two of its faces is. The faces gone (joined into
+/// another) are dropped with what is known of them; the faces whose loops were parted are returned
+/// (by their places after the drop), each loop's outer one for the caller to read again.
+fn heal(faces: &mut Vec<Face>,handed: &mut Known,origin: &[(usize,usize)],laid: &[Option<u32>]) -> Vec<usize> {
+    let touch = |e: u32| laid.get(e as usize).copied().flatten();
+    let mut gone = vec![false;faces.len()];
+    let mut parted = vec![false;faces.len()];
+    loop {
+        // the uses of each touch by each operand's face: (face, loop, place)
+        let mut uses: BTreeMap<(u32,(usize,usize)),Vec<(usize,usize,usize)>> = BTreeMap::new();
+        for (f,face) in faces.iter().enumerate() {
+            if gone[f] { continue }
+            for (l,lp) in face.loops.iter().enumerate() {
+                for (k,c) in lp.iter().enumerate() {
+                    if let Some(t) = touch(c.edge) { uses.entry((t,origin[f])).or_default().push((f,l,k)); }
+                }
+            }
+        }
+        let Some(&[(fa,la,ia),(fb,lb,ib)]) = uses.values().find(|u| u.len() == 2 && faces[u[0].0].reversed == faces[u[1].0].reversed)
+            .map(|u| &u[..]) else { break };
+        // the two loops spliced where the touch was: one runs on into the other past it
+        let la_loop = faces[fa].loops[la].clone();
+        if (fa,la) == (fb,lb) {
+            // one loop through both sides of it: parted into the stretch between and the rest
+            let (i,j) = (ia.min(ib),ia.max(ib));
+            let inner: Vec<Coedge> = la_loop[i+1..j].to_vec();
+            let rest: Vec<Coedge> = la_loop[j+1..].iter().chain(&la_loop[..i]).cloned().collect();
+            let face = &mut faces[fa];
+            face.loops.remove(la);
+            for l in [rest,inner] { if !l.is_empty() { face.loops.push(l) } }
+            parted[fa] = true;
+        } else {
+            let lb_loop = faces[fb].loops[lb].clone();
+            let joined: Vec<Coedge> = la_loop[..ia].iter().chain(&lb_loop[ib+1..]).chain(&lb_loop[..ib]).chain(&la_loop[ia+1..]).cloned().collect();
+            if fa == fb {
+                let face = &mut faces[fa];
+                face.loops[la] = joined;
+                face.loops.remove(lb);
+            } else {
+                let mut others: Vec<Vec<Coedge>> = std::mem::take(&mut faces[fb].loops);
+                others.remove(lb);
+                faces[fa].loops[la] = joined;
+                faces[fa].loops.extend(others);
+                gone[fb] = true;
+                parted[fa] |= parted[fb];
+            }
+        }
+        handed.boxes[fa] = None;
+        handed.checked[fa] = false;
+    }
+    // a touch left between two faces of different operands: one edge, its twin given up
+    let mut left: BTreeMap<u32,Vec<(usize,usize,usize)>> = BTreeMap::new();
+    for (f,face) in faces.iter().enumerate() {
+        if gone[f] { continue }
+        for (l,lp) in face.loops.iter().enumerate() {
+            for (k,c) in lp.iter().enumerate() { if let Some(t) = touch(c.edge) { left.entry(t).or_default().push((f,l,k)); } }
+        }
+    }
+    for u in left.values() {
+        if let [(fa,la,ia),(fb,lb,ib)] = u[..] {
+            let e = faces[fa].loops[la][ia].edge.min(faces[fb].loops[lb][ib].edge);
+            faces[fa].loops[la][ia].edge = e;
+            faces[fb].loops[lb][ib].edge = e;
+        }
+    }
+    let mut out = Vec::new();
+    let mut k = 0;
+    for f in 0..faces.len() {
+        if gone[f] { continue }
+        if parted[f] { out.push(k) }
+        k += 1;
+    }
+    fn kept<T>(v: &mut Vec<T>,gone: &[bool]) { let mut i = 0; v.retain(|_| { i += 1; !gone[i-1] }); }
+    kept(faces,&gone);
+    kept(&mut handed.boxes,&gone);
+    kept(&mut handed.checked,&gone);
+    out
 }
 
 /// `faces` as one boundary, their edges `out` and their vertices `pool`'s, numbered as there: what
@@ -771,7 +879,7 @@ fn piece_face(f: &Face,piece: &[Vec<Half>],flip: bool) -> Face {
 }
 
 /// The faces of `a` and `b` split where the other crosses them (`Arranged`), phase by phase over
-/// the state they share (`Arrangement`).
+/// the state they share (`Arrangement`), the spans they only touch along left off (a split's).
 /// `a`'s faces' boxes are taken from `known` where it has them (`Known`).
 fn arrange<'a>(solids: &[&'a Brep],known: Option<&Known>,tol: f64) -> Result<Arranged<'a>,String> {
     arrange_laying(solids,known,false,tol)
@@ -814,8 +922,18 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,lay_touches: boo
     // 5. each face split by what lies on it, traced in its parameters
     let pieces = arr.faces_split(&meetings,&split)?;
     arr.say.arranged();
+    // each piece of an edge a touch laid is one, where no other piece is merged into it
+    let mut touches: Vec<Option<bool>> = vec![None;split.out.len()];
+    for (we,pieces) in split.pieces_of.iter().enumerate() {
+        for &(p,_) in pieces {
+            if split.gone[p as usize] { continue }
+            let r = split.rep[p as usize].0 as usize;
+            touches[r] = Some(touches[r].unwrap_or(true) && arr.touch[we]);
+        }
+    }
+    let touches = touches.into_iter().map(|t| t == Some(true)).collect();
     let Arrangement {solids,located,pool,clear,..} = arr;
-    Ok(Arranged {solids,located,pool,out:split.out,pieces,clear})
+    Ok(Arranged {solids,located,pool,out:split.out,touches,pieces,clear})
 }
 
 /// **The working state `arrange`'s phases share**: the two solids and where each face lies, the
@@ -826,6 +944,8 @@ struct Arrangement<'a> {
     located: Sides<Located<'a>>,
     pool: Pool,
     edges: Vec<WEdge>,
+    /// whether each working edge, in step with `edges`, was laid where two faces only touch
+    touch: Vec<bool>,
     /// where each working edge is cut, in step with `edges`: the parameter, and the vertex there
     cuts: Vec<Vec<(f64,u32)>>,
     /// where each solid's own edges begin among `edges`
@@ -840,8 +960,8 @@ struct Arrangement<'a> {
     /// how far apart two boxes may stand and still be taken to meet
     pad: f64,
     /// whether a span of a closed-form meeting along which two faces only touch is laid as an
-    /// edge (#735: a touch represented, the faces split along it), as an arrangement asks, or left
-    /// off, as a Boolean's result keeps a face whole there
+    /// edge (#735: a touch represented, the faces split along it), as an arrangement and a Boolean
+    /// ask (a Boolean healing it out of its result, `heal`), or left off, as a split by sheets does
     lay_touches: bool,
     /// each pair of surfaces' meeting, found once and shared by every two faces on them (#735 A2),
     /// and each face's surface's index there, given the first time the face meets another
@@ -905,13 +1025,13 @@ impl<'a> Arrangement<'a> {
             }).collect();
             for e in &solids[s].edges { edges.push(WEdge {curve:e.curve.clone(),t:e.t,v:[ids[e.v[0] as usize],ids[e.v[1] as usize]]}); }
         }
-        let cuts = vec![Vec::new();edges.len()];
+        let (cuts,touch) = (vec![Vec::new();edges.len()],vec![false;edges.len()]);
         let boxes = Sides::new(n,|s| (0..solids[s].faces.len()).map(|i| located[s].face_box(i)).collect::<Vec<_>>());
         let pad = 4.*tol;
         // the box each solid's faces fill, and the faces of each clear of every other's (`Arranged::clear`)
         let reach = Sides::new(n,|s| boxes[s].iter().fold(super::geom::EMPTY,|mut r,b| { super::geom::widen(&mut r,*b); r }));
         let clear = Sides::new(n,|s| boxes[s].iter().map(|bx| solids.all().all(|o| o == s || !overlap(bx,&reach[o],pad))).collect::<Vec<_>>());
-        Arrangement {solids,located,pool,edges,cuts,first_edge,boxes,reach,clear,tol,pad,lay_touches,
+        Arrangement {solids,located,pool,edges,touch,cuts,first_edge,boxes,reach,clear,tol,pad,lay_touches,
             shared:Default::default(),surface_of:BTreeMap::new(),say:Narration::new()}
     }
 
@@ -922,6 +1042,7 @@ impl<'a> Arrangement<'a> {
     fn add_edge(&mut self,curve: EdgeCurve,t: [f64;2],v: [u32;2]) -> usize {
         self.edges.push(WEdge {curve,t,v});
         self.cuts.push(Vec::new());
+        self.touch.push(false);
         self.edges.len()-1
     }
 
@@ -1128,6 +1249,7 @@ impl<'a> Arrangement<'a> {
                     if (t[1]-t[0])*c.speed() <= self.tol || (v[0] == v[1] && !closed) { continue }
                     if !self.kept(&c,t,v,faces,surfaces) { continue }
                     let we = self.add_edge(EdgeCurve::Curve(c.clone()),t,v);
+                    self.touch[we] = touching(surfaces,c.point((t[0]+t[1])/2.));
                     found.ssi_edges.push((we,faces));
                 }
             }
@@ -1294,7 +1416,7 @@ impl<'a> Arrangement<'a> {
         if surfaces.iter().any(|s| s.bounded() && distance(s.point(s.inverse(m)),m) > 1e3*self.tol) { return false }
         // where the two only touch (their normals parallel) nothing crosses from one
         // side to the other: no face is split there, but where the arrangement represents touches
-        if !self.lay_touches && norm(crate::util::space::cross(surfaces[0].gradient(m),surfaces[1].gradient(m))) < 1e-7 { return false }
+        if !self.lay_touches && touching(surfaces,m) { return false }
         true
     }
 
@@ -1457,6 +1579,11 @@ fn far(c: &Curve,lo: V,hi: V) -> bool {
         _ => c.speed() > 1e3*(1.+norm(crate::util::space::sub(hi,lo)))
             && !(0..256).any(|j| { let q = c.point(TAU*j as f64/256.); (0..3).all(|k| q[k] >= lo[k] && q[k] <= hi[k]) }),
     }
+}
+
+/// Whether two surfaces only touch at `m`, their normals parallel there.
+fn touching(surfaces: [&Surface;2],m: V) -> bool {
+    norm(crate::util::space::cross(surfaces[0].gradient(m),surfaces[1].gradient(m))) < 1e-7
 }
 
 /// A curve's stretches between the points on it (`ts`, each a parameter and a vertex), which are

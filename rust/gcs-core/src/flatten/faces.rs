@@ -238,9 +238,9 @@ impl Walk<'_> {
             Some(Sweep::Depth { depth, draft }) =>
                 (format!("-({})", arg_text(depth)), "0".to_string(), draft.is_some()),
             Some(Sweep::Prism { from, to, draft }) => (arg_text(from), arg_text(to), draft.is_some()),
-            Some(Sweep::Through { .. }) => {
-                return Err(format!("`{said}`: a `through:` solid's ends are known only once the \
-                                    drawing is solved, so they are no set to draw on"));
+            Some(Sweep::Through) => {
+                return Err(format!("`{said}`: a prism through everything's ends are known only \
+                                    once the drawing is solved, so they are no set to draw on"));
             }
             _ => {
                 return Err(format!("`{said}`: only a prism's faces are sets yet — a revolution's, \

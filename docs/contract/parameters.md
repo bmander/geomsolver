@@ -95,7 +95,7 @@ where a rule came from.
     (`AngularSpan::running`, the name the model's `Running` takes).  **[0.199]** (#737) a solid
     under a motion is a set, `solid({ p | p inside(under:, seen_from:, over t in (a, b)) tool })`,
     which the parser reads as the sweep's tokens (`parser/statements.rs::swept_set`): so
-    `Sweep::Swept` (`P::sweep_decl`), with no `over` `Sweep::Rolled` over `syntax::ROLLED`, and
+    `Sweep::Swept` (`P::sweep_decl`), with no `over` `Sweep::Rolled`, naming no body (#746), and
     `solid({ p | p coincident(over s) Comp(…).f })` the face family (`P::family`, told by the
     instance written in place); `sweep(…)` itself is E001 naming the set
     (`parser/statements.rs`).  `trace(C(…).p over u in (a, b))` is the traced curve

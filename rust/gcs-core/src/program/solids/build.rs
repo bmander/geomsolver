@@ -17,20 +17,13 @@ pub(super) fn build_solid(
         diags.push(Diag::within(code, span, st.id, m));
     };
     let sweep = d.sweep.as_ref().unwrap_or(&Sweep::Body);
-    // a solid that rides, swept `from:`/`to:` or `through:` a body, is a prism's words over a
-    // solid: what its frames sweep is a reading over an interval (#391 S2), and `solid(…)`'s
-    // spelling of one is retired
+    // a solid that rides, swept `from:`/`to:`, is a prism's words over a solid: what its frames
+    // sweep is a reading over an interval (#391 S2), and `solid(…)`'s spelling of one is retired
     let rides = |sk: &Sketch| ops.len() == 1 && ops[0].kind == EntKind::Solid
         && sk.carriers(ops[0]).is_ok_and(|c| !c.is_empty());
-    match sweep {
-        Sweep::Prism { .. } | Sweep::Through { .. } if rides(sk) => {
-            let rolled = matches!(sweep, Sweep::Through { .. });
-            let m = if rolled { crate::syntax::ROLLED_RETIRED }
-                else { crate::syntax::SWEPT_RETIRED };
-            say(Code::E080, st.span, m.into());
-            return None;
-        }
-        _ => {}
+    if matches!(sweep, Sweep::Prism { .. }) && rides(sk) {
+        say(Code::E080, st.span, crate::syntax::SWEPT_RETIRED.into());
+        return None;
     }
     // every number a solid carries is settled here and is never an unknown (`Extent`)
     let units = sk.units;
@@ -66,22 +59,8 @@ pub(super) fn build_solid(
         Sweep::Placed { .. } | Sweep::Swept { .. } | Sweep::Rolled { .. } => {
             under_motion(sk, res, sweep, d.seen_from.as_ref(), &ops, st, &mut say)?
         }
-        // through everything (#737): bounded by the body it is cut from, joined there
-        Sweep::Through { body } if body.root.text == crate::syntax::ROLLED => {
-            SolidDef::Through { face: one_face(&ops, st, &mut say)?, body: super::UNBOUND }
-        }
-        Sweep::Through { body } => {
-            let face = one_face(&ops, st, &mut say)?;
-            let Some(target) = res.lookup(body) else {
-                say(Code::E101, body.span, format!("no such entity: `{}`", body.root.text));
-                return None;
-            };
-            if target.kind != EntKind::Solid {
-                say(Code::E080, body.span, "`through:` requires a solid target".into());
-                return None;
-            }
-            SolidDef::Through { face, body: target.idx }
-        }
+        // through everything (#737): bounded by no body of its own, but by each it is cut from
+        Sweep::Through => SolidDef::Through { face: one_face(&ops, st, &mut say)? },
         Sweep::Depth { depth, .. } => {
             let face = one_face(&ops, st, &mut say)?;
             let d = match ext(depth, "depth", crate::units::Dim::LENGTH) {
@@ -562,21 +541,9 @@ fn under_motion(
             }
             SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Stated(roll)}
         }
-        // the roll through a body's material (#271): found after the solve
-        // the whole roll (#737): bounded by the body it is cut from, joined there
-        Sweep::Rolled {body,..} if body.root.text == crate::syntax::ROLLED => {
-            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Through {body:super::UNBOUND}}
-        }
-        Sweep::Rolled {body,..} => {
-            let Some(target) = res.lookup(body) else {
-                say(Code::E101, body.span, format!("no such entity: `{}`", body.root.text));
-                return None;
-            };
-            if target.kind != EntKind::Solid {
-                say(Code::E080, body.span, "`through:` requires a solid to roll through".into());
-                return None;
-            }
-            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Through {body:target.idx}}
+        // the whole roll (#271, #737): found after the solve, through each body it is cut from
+        Sweep::Rolled {..} => {
+            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Through}
         }
         _ => unreachable!(),
     })

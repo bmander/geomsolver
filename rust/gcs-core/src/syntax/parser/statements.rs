@@ -9,7 +9,7 @@ use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
     Input, Name, OpArg, OpenJoint, ParamDecl, Ref, SetLit, SolidRel, Source, Span, Stmt, StmtKind,
-    SynErr, Ty, Use, ROLLED,
+    SynErr, Ty, Use,
 };
 
 /// `part Name(…) { … }`, retired (#562): every braced definition is held to what `part`
@@ -1622,9 +1622,9 @@ impl<'a> P<'a> {
 
     /// What follows a definition's `sweep` (#391 S2): a face family, `sweep(Component(args).face
     /// over s)` (`family`), or a solid a frame's motion sweeps — `sweep(tool over t in
-    /// (a, b))` over an interval of the roll, `sweep(tool, through: body)` over the roll during
-    /// which it meets a body — with `under:` the frame it is swept by where it rides on none and
-    /// `seen_from:` the one it is seen from.
+    /// (a, b))` over an interval of the roll, `sweep(tool)` over the whole of it (the retired
+    /// `through:` a body read and left: the bodies it is cut from bound it, #746) — with `under:`
+    /// the frame it is swept by where it rides on none and `seen_from:` the one it is seen from.
     fn sweep_decl(&mut self, name: DeclName) -> Option<crate::syntax::Decl> {
         if self.call_at(self.i + 2).is_some() {
             return self.family(name);
@@ -1664,14 +1664,12 @@ impl<'a> P<'a> {
         }
         let list_span = Span::new(open, self.prev_hi());
         use crate::syntax::Sweep;
-        let sweep = match (over, through) {
-            (Some((over, from, to)), None) => Sweep::Swept { motion: under, from, to, over },
-            (None, Some(body)) => Sweep::Rolled { motion: under, body },
-            _ => {
-                self.fail("a sweep runs its tool over an interval of the roll, `sweep(tool over t \
-                           in (a, b))`, or through a body, `sweep(tool, through: body)`");
-                return None;
-            }
+        // over an interval, or the whole roll: the body a retired `through:` named is no part of
+        // the sweep, which the bodies it is cut from bound (#746)
+        let _ = through;
+        let sweep = match over {
+            Some((over, from, to)) => Sweep::Swept { motion: under, from, to, over },
+            None => Sweep::Rolled { motion: under },
         };
         self.swept_solid(name, tool, sweep, seen_from, list_span)
     }
@@ -2218,11 +2216,8 @@ impl<'a> P<'a> {
         use crate::syntax::Sweep;
         let sweep = match over {
             Some((over, from, to)) => Sweep::Swept { motion: under, from, to, over },
-            // no interval: the whole roll, bounded by the body the solid is cut from
-            None => {
-                let body = Ref::dotted(ROLLED, self.t[s.operand.0].1);
-                Sweep::Rolled { motion: under, body }
-            }
+            // no interval: the whole roll, bounded by the bodies the solid is cut from (#746)
+            None => Sweep::Rolled { motion: under },
         };
         self.swept_solid(name, tool, sweep, seen_from, list_span)
     }

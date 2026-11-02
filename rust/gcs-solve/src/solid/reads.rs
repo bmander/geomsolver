@@ -3,7 +3,6 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::*;
-use super::document::material_sources;
 use crate::envelope::Motion;
 
 /// **Every number a solid was built from**, in one flat vector — the memo key.
@@ -169,12 +168,15 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                 v.extend([6.,*source as f64,*motion as f64,from,to]);
                 motion_reads(sk,*motion,&mut v);
             }
-            // a roll through a body reads its material, never its cuts (`material_sources`)
-            SolidDef::Swept { source, motion, roll: Roll::Through { body } } => {
+            // a roll through everything reads the material of the bodies it is cut from, never
+            // their cuts (`material_of`)
+            SolidDef::Swept { source, motion, roll: Roll::Through } => {
                 poses.world();
-                v.extend([8.,*source as f64,*motion as f64,*body as f64]);
+                v.extend([8.,*source as f64,*motion as f64]);
+                let bodies = super::applied_to(sk, s as usize);
+                v.extend(bodies.iter().map(|&b| f64::from(b)));
                 motion_reads(sk,*motion,&mut v);
-                match material_sources(sk, *body) {
+                match super::document::material_of(sk, &bodies) {
                     Ok(sources) => stack.extend(sources.into_iter().map(|o| (o, by))),
                     Err(_) => v.push(f64::MAX),
                 }
@@ -307,11 +309,24 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                 v.push(draft.as_ref().map_or(0.0, |d| d.value));
                 face_reads(sk, *face, &mut v, poses);
             }
-            SolidDef::Through { face, body } => {
-                v.extend([3.0, *body as f64]);
+            // through everything (#737): each body it is applied to, the placements its copies
+            // stand there at as they are written — each motion read once — and the bodies'
+            // material, including changes to additions and placement
+            SolidDef::Through { face } => {
+                v.push(3.0);
                 face_reads(sk, *face, &mut v, poses);
-                // Read the material graph too, including changes to additions and placement.
-                stack.push((*body, by));
+                let (mut bodies, mut motions) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
+                super::document::each_use(sk, s as usize, |body, chain| {
+                    v.extend([f64::from(body), chain.len() as f64]);
+                    v.extend(chain.iter().flat_map(|&(m, at)| [f64::from(m), at]));
+                    bodies.insert(body);
+                    motions.extend(chain.iter().map(|&(m, _)| m));
+                });
+                for m in motions { motion_reads(sk, m, &mut v); }
+                match super::document::material_of(sk, &bodies.into_iter().collect::<Vec<_>>()) {
+                    Ok(sources) => stack.extend(sources.into_iter().map(|o| (o, by))),
+                    Err(_) => v.push(UNREAD),
+                }
             }
             SolidDef::Revolve { face, axis, sweep, sense } => {
                 v.extend([1.0, axis.kind as u8 as f64, axis.i() as f64]);

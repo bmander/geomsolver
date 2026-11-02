@@ -366,7 +366,7 @@ fn reworded(prog: &Program, solid: syntax::StmtId,
         return Some(Err("that solid is a set no sweep of a face says: change it where it is \
                          written".into()));
     };
-    if matches!(was, syntax::Sweep::Through { .. }) {
+    if matches!(was, syntax::Sweep::Through) {
         return Some(Err("that solid is a prism through everything, which nothing sizes".into()));
     }
     let face = syntax::ref_text(&face);

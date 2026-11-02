@@ -163,7 +163,8 @@ fn every_node_the_kernel_builds_is_occts() {
                 // prism's depth is then a little different and nothing cut by it is
                 let swept = |b: &gcs_core::brep::topo::Brep| b.faces.iter().any(|f| matches!(f.surface,Surface::Extrusion(..) | Surface::Revolution(..)));
                 let through_splines = n.get("kind").unwrap().as_str() == "through"
-                    && n.get("sources").unwrap().arr().iter().any(|s| ours.get(&s.as_i64()).is_some_and(swept));
+                    && n.get("uses").unwrap().arr().iter().flat_map(|u| u.get("sources").unwrap().arr())
+                        .any(|s| ours.get(&s.as_i64()).is_some_and(swept));
                 // OCCT integrates a face swept from a spline (its adaptive rule asked for 1e-9) to a few
                 // parts in a million, where this kernel's Gauss rule is exact on each knot span: on
                 // `solid_tooth` fitted within 1e-7 mm this kernel meets the involute's closed form to

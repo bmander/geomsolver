@@ -22,7 +22,7 @@ pub(crate) use highlight::with_comments;
 pub use names::{entity_name, hidden, name_uses, NameUse};
 pub use crate::model::kind_initial;
 pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits};
-pub(crate) use parser::{reference_at, sweep_of, SweepParts, ROLLED_RETIRED, SWEPT_RETIRED};
+pub(crate) use parser::{reference_at, sweep_of, SweepParts, SWEPT_RETIRED};
 pub use print::{bounded, operator_text, render_flat, write_stmt_to, PrintError};
 pub(crate) use print::{sel_text, written_parts};
 pub use scenario::{Item, ItemKind, LoadText, RequirementText, Scenario};
@@ -1442,10 +1442,6 @@ impl EaseSpec {
 }
 
 
-/// The body a sweep over the whole roll is rolled through (#737), as its set says it: none named,
-/// the body it is cut from or kept in common with, read where the body word joins it.
-pub const ROLLED: &str = "#rolled";
-
 /// A prism, revolution, or body operation (§6.9). Numeric arguments remain
 /// expressions until elaboration.
 #[derive(Clone, Debug)]
@@ -1455,16 +1451,19 @@ pub enum Sweep {
     /// The continuous union of a solid under a finite motion interval: `sweep(tool over t in
     /// (a, b))` (#391 S2).
     Swept { motion: Option<Ref>, from: Arg, to: Arg, over: RunsOver },
-    /// The same over the roll about 0 during which it meets `body`'s material (#271): `under: m,
-    /// through: body`, the roll found after the solve as a `through:` prism's extent is.
-    Rolled { motion: Option<Ref>, body: Ref },
+    /// The same over the whole roll (#271, #737): `solid({ p | p inside(under: m) tool })`, the
+    /// roll found after the solve, as a prism through everything's extent is, through the bodies it
+    /// is cut from or kept in common with — none of which it names.
+    Rolled { motion: Option<Ref> },
     /// `from: a, to: b` — signed ordinates along the plane's normal; `draft: θ` tapers the sides
     /// from the face's own plane, the parting plane (#245).
     Prism { from: Arg, to: Arg, draft: Option<Arg> },
     /// A positive magnitude, kept until elaboration can validate its evaluated expression.
     Depth { depth: Arg, draft: Option<Arg> },
-    /// Span the target's stock and additions along the section normal.
-    Through { body: Ref },
+    /// A prism through everything (#737), `std.solids.Through(F)` read as the sweep it says
+    /// (`flatten::said`): it names no body, the evaluator bounding it by every body it is cut from
+    /// or kept in common with.  The retired `through:` label is refused for the set it says.
+    Through,
     /// `std.solids.Revolution(F, about: ax, from: a, to: b)` — a turn about a line in the face's
     /// own plane over the interval `(a, b)` of the roll, each end as written (`None` where it is
     /// left out: `0deg` and `360deg`).  Which end is nothing, how far and which way are numbers,
@@ -1518,7 +1517,7 @@ impl Sweep {
             Sweep::Prism { from, to, draft } => [from, to].into_iter().chain(draft).collect(),
             Sweep::Depth { depth, draft } => std::iter::once(depth).chain(draft).collect(),
             Sweep::Revolve { from, to, .. } => from.iter_mut().chain(to).collect(),
-            Sweep::Body | Sweep::Through { .. } | Sweep::Region { .. }
+            Sweep::Body | Sweep::Through | Sweep::Region { .. }
                 | Sweep::Rolled { .. } | Sweep::Family(_) => Vec::new(),
         }
     }
@@ -1539,29 +1538,26 @@ impl Sweep {
         }
     }
 
-    /// The revolution axis, the motion, the through-extent target: what it names, for walks
-    /// that rewrite references.
+    /// The revolution axis, the motion, a region's probe: what it names, for walks that rewrite
+    /// references.
     pub fn references_mut(&mut self) -> Vec<&mut Ref> {
         match self {
-            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } =>
+            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } | Sweep::Rolled { motion } =>
                 motion.iter_mut().collect(),
-            Sweep::Rolled { motion, body } => motion.iter_mut().chain([body]).collect(),
             Sweep::Revolve { axis, .. } => vec![axis],
-            Sweep::Through { body } => vec![body],
             Sweep::Region { probe } => vec![probe],
-            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body
+            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body | Sweep::Through
                 | Sweep::Family(_) => Vec::new(),
         }
     }
 
     pub fn references(&self) -> Vec<&Ref> {
         match self {
-            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => motion.iter().collect(),
-            Sweep::Rolled { motion, body } => motion.iter().chain([body]).collect(),
+            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } | Sweep::Rolled { motion } =>
+                motion.iter().collect(),
             Sweep::Revolve { axis, .. } => vec![axis],
-            Sweep::Through { body } => vec![body],
             Sweep::Region { probe } => vec![probe],
-            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body
+            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body | Sweep::Through
                 | Sweep::Family(_) => Vec::new(),
         }
     }

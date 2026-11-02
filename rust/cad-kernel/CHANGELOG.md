@@ -20,6 +20,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   closed form (`query::crossings_in`); a point's foot on such a sheet from the ruling level with it
   (`Blend::inverse`). Each reads the sheet through `Blend::screwed_line` (`geom::ScrewedLine`).
   A profile screwed into a solid, public (`build::screwed`).
+- **Booleans lay touches as edges** (`boolean::combined`, #735): a span two faces only touch along
+  is laid in the Boolean's complex, so the cells either side are classified apart, and healed out
+  of the result wherever one face of an operand is kept on both sides of it (its pieces joined, a
+  slit closed): results keep their faces whole where they are manifold. `complex::Parts::twin_of`
+  (**new field**): the edge each twin is of.
 
 ## [0.3.0] - 2026-11-02
 
