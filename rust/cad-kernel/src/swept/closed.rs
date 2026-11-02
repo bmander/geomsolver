@@ -5,7 +5,8 @@
 //! cells are united.
 //!
 //! **Built here: a polyhedral tool** (every face a plane, every edge a line) **under a slide or a
-//! turn**, however its edges lean to the axis. Under a turn, every line turns
+//! turn**, however its edges lean to the axis, **and under a screw where its edges run along the
+//! axis or square to it** (and so its faces). Under a turn, every line turns
 //! into a surface of revolution held exactly over the heights its source spans (heights along the
 //! axis are kept by the turn): a cylinder (a line along the axis), a plane square to the axis (a
 //! line square to it), a hyperboloid (a line passing the axis by, its meridian a rational quadratic)
@@ -17,13 +18,22 @@
 //! - under a turn: every face at both end poses; every edge turned; a face square to the axis, its
 //!   own plane (kept in itself, O); every other face's contact line (its points whose normal passes
 //!   through the axis; it meets the axis or runs along it) turned, over the stretch the face spans.
+//! - under a screw: every face at both end poses; an edge along the axis, and a face along it, its
+//!   contact line (its normal square to the screw's velocity there: its line nearest the axis, as
+//!   under a turn), a cylinder about the axis over the heights the source spans, run on by the
+//!   step the roll takes; an edge square to the axis, the helicoidal sheet it screws into
+//!   (`screwed_sheet`). A face square to the axis has no contact (its normal meets the velocity by
+//!   the step everywhere); an edge or a face leaning to the axis screws into a surface no closed
+//!   solid or sheet holds yet, and is refused (`Unbuilt::Leaning`).
 //!
 //! Only the candidates that carry some of the boundary are kept (`carries`): read at their source's
 //! points carried over the roll, inside the source and the roll, where membership a hair to each
 //! side differs. **The box is split by every candidate at once** (#735,
 //! `boolean::arrangement_within`): each candidate a solid one of whose faces lies on it across the
 //! box — a plane a block standing on it, far wider than the box; a surface of revolution its solid
-//! over the heights its source spans — their pieces outside the box left out; each cell of the
+//! over the heights its source spans; a screwed line's sheet itself, an open face reaching past
+//! the box (a box square to the axis, as tall as the sweep) — their pieces outside the box left
+//! out; each cell of the
 //! complex is kept where the deepest of its points whose membership settles is a member, and the
 //! closed solid is the boundary between the kept cells and the rest (`Complex::select`): one
 //! arrangement and one selection, with no separator, no order of cuts, no Boolean a cell and no
@@ -32,12 +42,16 @@
 //! throat; a hyperboloid touching the cylinder of its throat's radius round a circle; a plane
 //! crossing that circle, where the two meetings it lays are tangent — each laid as an edge, or cut
 //! at the one vertex the tolerant rules make of it (`boolean`'s `touch_point`, `touch_root`,
-//! `crossing_in_touch`).
+//! `crossing_in_touch`). Under a screw, a level edge's sheet touches the cylinder its foot (its
+//! point nearest the axis) runs on along that point's helix, and a face along the axis at an end
+//! pose holds a ruling of the sheet of its own level edge, touching it at that foot: all three
+//! meet in closed form (`ssi`'s screwed meetings, a plane's `Curve::SheetCut`), so the touch is a
+//! vertex of three exact curves.
 //!
 //! **A convex polyhedral tool turned whole is built by another road** (`turned_whole`): its solid
 //! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — a curved
-//! face, a screw, another motion — is refused by what it is (`Unbuilt`); those are the design's
-//! later steps.
+//! face, a leaning edge under a screw, another motion — is refused by what it is (`Unbuilt`);
+//! those are the design's later steps.
 use crate::boolean::arrangement_within;
 use crate::build::{Profile,ProfileEdge,disc,prism,square};
 use crate::geom::{Curve,Frame,Surface};
@@ -54,8 +68,11 @@ pub enum Unbuilt {
     /// The tool has a face that is no plane, or an edge that is no line: its envelope sheets are
     /// curved, the design's later steps.
     Curved,
-    /// The motion is no slide and no turn: the design's later steps.
+    /// The motion is no slide, turn or screw: the design's later steps.
     Motion,
+    /// Under a screw, an edge or a face leaning to the axis (neither along it nor square to it): its
+    /// sheet a screw surface no closed solid yet holds, the design's later steps.
+    Leaning,
     /// A cell's membership could not be settled: its deepest point stands within the mesh's sag
     /// of the swept boundary.
     Unsettled { at: V },
@@ -78,7 +95,10 @@ enum Cutter { Plane(Plane),
     /// The line through `p` along unit `e`, leaning to the unit `axis` through `o`, turned about it
     /// whole: a hyperboloid of one sheet, or where the line meets the axis a double cone; over the
     /// heights `span` along the axis from `o`.
-    Revolved { o: V,axis: V,p: V,e: V,span: [f64;2] } }
+    Revolved { o: V,axis: V,p: V,e: V,span: [f64;2] },
+    /// The line through `p` along unit `e`, square to the screw's axis, screwed whole: a helicoidal
+    /// sheet (a right helicoid where the line meets the axis).
+    Screwed { p: V,e: V } }
 
 /// **The closed solid `tool` sweeps under `path` over `roll`** (the module's cases), its tool,
 /// motion and solid in one set of units, built to `tol`; membership read on the tool meshed within
@@ -170,20 +190,23 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
             let sites = (0..=SITES).flat_map(|i| poses.iter().map(move |m| (m.point(add(p,scale(sub(q,p),within(i)))),n))).collect();
             add_cutter(Cutter::Plane((start.point(p),n)),sites);
         }
-    } else if screw.is_turn() {
+    } else {
         let (c,axis) = (screw.origin,screw.axis);
         // a convex tool turned whole is the solid of revolution of its radial profile, built in
         // closed form with no Boolean
         let whole = (screw.ratio*(b-a)).abs() >= std::f64::consts::TAU*(1.-1e-12);
         let convex = faces.iter().all(|&(o,n)| tool.vertices.iter().all(|v| dot(sub(v.p,o),n) <= eps));
-        if whole && convex { return turned_whole(&faces,&edges,c,axis,eps,tol) }
+        if screw.is_turn() && whole && convex { return turned_whole(&faces,&edges,c,axis,eps,tol) }
+        // under a screw the heights a source spans run on by the step it takes over the roll, the
+        // rest as under a turn (a cylinder about the axis keeps itself under both)
+        let lift = { let rate = screw.advance/std::f64::consts::TAU; [(rate*a).min(rate*b),(rate*a).max(rate*b)] };
         // a line turned whole: a cylinder about the axis where it runs along it, a plane square to
         // the axis where it runs square to it, else a hyperboloid (a double cone where it meets the
         // axis)
         let turned = |p: V,e: V,q: V| -> Option<Cutter> {
             let e = unit(e);
             let (h0,h1) = (dot(sub(p,c),axis),dot(sub(q,c),axis));
-            let span = [h0.min(h1),h0.max(h1)];
+            let span = [h0.min(h1)+lift[0],h0.max(h1)+lift[1]];
             if norm(cross(e,axis)) <= 1e-9 {
                 let r = { let r = sub(p,c); norm(sub(r,scale(axis,dot(r,axis)))) };
                 return (r > eps).then_some(Cutter::Cylinder {o:c,axis,r,span})
@@ -206,6 +229,9 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
                         let slope = dot(radial,sub(e,scale(axis,ez)))/(ez*rho.max(1e-300));
                         unit(sub(scale(radial,1./rho.max(1e-300)),scale(axis,slope)))
                     }
+                    // the sheet's normal: square to the line and to the screw's velocity there (which
+                    // the screw carries as it carries the normal)
+                    Cutter::Screwed {e,..} => unit(cross(e,screw.velocity(x))),
                 };
                 poses.iter().map(move |m| (m.point(x),m.vector(normal)))
             }).collect()
@@ -216,7 +242,15 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
                 add_cutter(Cutter::Plane((pose.point(o),pose.vector(n))),own.iter().map(|&x| (pose.point(x),pose.vector(n))).collect());
             }
             let m = cross(n,axis);
-            if norm(m) <= 1e-9 { add_cutter(Cutter::Plane((o,n)),poses.iter().flat_map(|pose| own.iter().map(|&x| (pose.point(x),n))).collect()); continue }
+            // a face square to the axis: under a turn its own plane (kept in itself), under a screw no
+            // contact at all (its normal meets the screw's velocity everywhere, by the step)
+            if norm(m) <= 1e-9 {
+                if screw.is_turn() { add_cutter(Cutter::Plane((o,n)),poses.iter().flat_map(|pose| own.iter().map(|&x| (pose.point(x),n))).collect()) }
+                continue
+            }
+            // under a screw a face along the axis touches along its line nearest the axis, as under a
+            // turn; a face leaning to it, along a line screwing into a sheet not yet held
+            if !screw.is_turn() && dot(n,axis).abs() > 1e-9 { return Err(Unbuilt::Leaning) }
             // the face's contact line: its plane's points whose normal passes through the axis, where
             // its plane meets the plane through the axis along `n × axis`; it meets the axis, or runs
             // along it
@@ -229,24 +263,63 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
             if let Some(cutter) = turned(from,e,to) { add_cutter(cutter,line_sites(from,to,cutter)) }
         }
         for &(p,q,_) in &edges {
+            let e = unit(sub(q,p));
+            if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 {
+                // under a screw an edge square to the axis sweeps a helicoidal sheet; one leaning to
+                // it, a screw surface not yet held
+                if dot(e,axis).abs() > 1e-9 { return Err(Unbuilt::Leaning) }
+                let cutter = Cutter::Screwed {p,e};
+                add_cutter(cutter,line_sites(p,q,cutter));
+                continue
+            }
             if let Some(cutter) = turned(p,sub(q,p),q) { add_cutter(cutter,line_sites(p,q,cutter)) }
         }
-    } else { return Err(Unbuilt::Motion) }
+    }
     // a box holding the sweep: the tool's box at the end poses and, under a turn, its reach about
-    // the axis
+    // the axis; under a screw, a box square to the axis and as tall along it as the sweep, a little
+    // more (`tall`: its heights along the axis and its farthest from it), so a sheet a level edge
+    // screws into leaves it within a turn where the sweep climbs less than a turn's step
     let (lo,hi) = tool.bounds();
     let corners: Vec<V> = (0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] })).collect();
-    let mut points: Vec<V> = corners.iter().flat_map(|&p| [start.point(p),end.point(p)]).collect();
-    if screw.is_turn() {
-        let reach = corners.iter().map(|&p| norm(sub(p,screw.origin))).fold(0.,f64::max);
-        points.extend([1.,-1.].iter().flat_map(|&s| (0..3).map(move |k| { let mut v = [0.;3]; v[k] = s*reach; v }))
-            .map(|v| add(screw.origin,v)));
-    }
-    let (blo,bhi) = points.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
-        (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
-    let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));
-    let half = (0..3).map(|k| bhi[k]-blo[k]).fold(0.,f64::max)*0.6+tol;
-    let base = add(centre,[0.,0.,-half]);
+    let (domain,centre,half,tall) = if screw.is_slide() || screw.is_turn() {
+        let mut points: Vec<V> = corners.iter().flat_map(|&p| [start.point(p),end.point(p)]).collect();
+        if screw.is_turn() {
+            let reach = corners.iter().map(|&p| norm(sub(p,screw.origin))).fold(0.,f64::max);
+            points.extend([1.,-1.].iter().flat_map(|&s| (0..3).map(move |k| { let mut v = [0.;3]; v[k] = s*reach; v }))
+                .map(|v| add(screw.origin,v)));
+        }
+        let (blo,bhi) = points.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
+            (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
+        let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));
+        let half = (0..3).map(|k| bhi[k]-blo[k]).fold(0.,f64::max)*0.6+tol;
+        (prism(&square(add(centre,[0.,0.,-half]),[0.,0.,1.],half),0.,2.*half)?,centre,half,None)
+    } else {
+        // the tool's box carried over the roll, read at enough poses that the arcs its corners run
+        // between them stand within the sagitta added
+        let f = Frame::about(screw.origin,screw.axis);
+        const STEPS: usize = 64;
+        let (mut l,mut h) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+        let mut reach = 0f64;
+        for k in 0..=STEPS {
+            let m = pose_at(a+(b-a)*k as f64/STEPS as f64)?;
+            for &p in &corners {
+                let x = f.local(m.point(p));
+                reach = reach.max(x[0].hypot(x[1]));
+                for i in 0..3 { l[i] = l[i].min(x[i]); h[i] = h[i].max(x[i]) }
+            }
+        }
+        let sag = reach*(1.-(0.5*(screw.ratio*(b-a)).abs()/STEPS as f64).cos());
+        let margin = 0.05*(0..3).map(|i| h[i]-l[i]).fold(0.,f64::max)+tol;
+        let pad = [sag+margin,sag+margin,margin];
+        for i in 0..3 { l[i] -= pad[i]; h[i] += pad[i] }
+        let at = |x: f64,y: f64| f.at([x,y,l[2]]);
+        let rim = [at(l[0],l[1]),at(h[0],l[1]),at(h[0],h[1]),at(l[0],h[1])];
+        let section = Profile {origin:rim[0],normal:screw.axis,names:Vec::new(),
+            loops:vec![(0..4).map(|k| ProfileEdge::Line {a:rim[k],b:rim[(k+1)%4]}).collect()]};
+        let half = 0.5*(0..3).map(|i| h[i]-l[i]).fold(0.,f64::max);
+        let far = l[0].abs().max(h[0].abs()).hypot(l[1].abs().max(h[1].abs()));
+        (prism(&section,0.,h[2]-l[2])?,f.at(std::array::from_fn(|i| 0.5*(l[i]+h[i]))),half,Some((l[2],h[2],far)))
+    };
     // only the candidates that carry some of the boundary: membership differing on their two sides
     // somewhere over the box (a candidate is kept where a point of it cannot be settled)
     let solid = Solid::new(tool,bar,1.)?;
@@ -255,7 +328,8 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
     // **the box split by every candidate at once** (#735 A4, `boolean::arrangement_within`): each
     // candidate a solid one of whose faces lies on it across the box — a plane a block standing on
     // it, far wider than the box; a surface of revolution its solid over the heights its source
-    // spans — their pieces outside the box left out. Where two candidates touch (a face at an end
+    // spans; a screwed line's sheet itself, reaching past the box — their pieces outside the box
+    // left out. Where two candidates touch (a face at an end
     // pose and its own contact surface along a line, a hyperboloid and the cylinder of its throat's
     // radius round a circle) the arrangement lays the touch as an edge of both, so the cells on its
     // two sides are two
@@ -269,9 +343,11 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
             }
             Cutter::Cylinder {o,axis,r,span} => solids.push(prism(&disc(add(o,scale(axis,span[0])),axis,r),0.,span[1]-span[0])?),
             Cutter::Revolved {o,axis,p,e,span} => solids.extend(revolved(o,axis,p,e,span,eps)?),
+            Cutter::Screwed {p,e} => {
+                solids.push(screwed_sheet(&screw,&pose_at,p,e,tall.expect("a level edge's sheet is a screw's, its box tall"),size)?)
+            }
         }
     }
-    let domain = prism(&square(base,[0.,0.,1.],half),0.,2.*half)?;
     let refs: Vec<&Brep> = solids.iter().collect();
     let complex = arrangement_within(&domain,&refs,tol)?;
     // each cell classified by membership at the deepest of its points that settles (a cusp-thin
@@ -315,6 +391,36 @@ fn carries(swept: &Swept,sites: &[(V,V)],half: f64) -> bool {
 pub fn slid(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
     if !path.screw().is_some_and(|s| s.is_slide()) { return Err(Unbuilt::Motion) }
     closed(tool,path,roll,bar,tol)
+}
+
+/// **The sheet the line through `p` along unit `e` (square to the axis) screws into, across the
+/// box** — the box standing over the heights `[z0, z1]` along the axis and reaching `far` from it
+/// (`tall`): one open face, the line's stretch reaching past the box both ways screwed over the
+/// roll that carries it from below the box to above it, a margin past each, so its rims (helices
+/// farther from the axis than the box reaches) and its ends (rulings below and above it) all lie
+/// outside, and within the box it parts each level along the line screwed there. A sheet has no
+/// inside to classify, so a cell reaching round its end is no question; it is the face of a level
+/// triangle on the line screwed (`build::screwed`), the triangle's other faces left off.
+fn screwed_sheet(screw: &crate::trajectory::Screw,pose_at: &dyn Fn(f64) -> Result<crate::trajectory::Pose,Unbuilt>,
+    p: V,e: V,(z0,z1,far): (f64,f64,f64),size: f64) -> Result<Brep,Unbuilt> {
+    let (c,axis) = (screw.origin,screw.axis);
+    let rate = screw.advance/std::f64::consts::TAU;
+    // the line's foot nearest the axis, and the way from the axis to it (square to the line where
+    // the line meets the axis)
+    let foot = sub(p,scale(e,dot(sub(p,c),e)));
+    let off = { let r = sub(foot,c); sub(r,scale(axis,dot(r,axis))) };
+    let away = if norm(off) > 1e-9*(1.+size) { unit(off) } else { unit(cross(axis,e)) };
+    let reach = 1.25*far+size;
+    // the roll over which the line climbs from below the box to above it, a margin past each
+    let margin = 0.1*(z1-z0);
+    let (s0,s1) = { let (x,y) = (screw.time_to(p,z0-margin),screw.time_to(p,z1+margin)); (x.min(y),x.max(y)) };
+    let first = pose_at(s0)?;
+    let corners = [add(foot,scale(e,-reach)),add(foot,scale(e,reach)),add(foot,scale(away,reach))].map(|x| first.point(x));
+    let triangle = Profile {origin:corners[0],normal:axis,names:vec![vec!["sheet".into(),String::new(),String::new()]],
+        loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
+    let mut sheet = crate::build::screwed(&triangle,c,axis,screw.ratio*(s1-s0),rate*(s1-s0))?;
+    sheet.faces.retain(|f| f.name == "sheet");
+    Ok(sheet.compacted())
 }
 
 /// The hyperboloid the line through `p` along unit `e` sweeps turned about the unit `axis` through

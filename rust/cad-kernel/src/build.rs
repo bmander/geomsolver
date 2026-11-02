@@ -230,7 +230,8 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                 Curve::Circle(f,r) => (Surface::Cylinder(f,r),!s.forward(),s.t[0],s.t[1]),
                 // C(u) + v n: the step's tangent turned clockwise about n is its normal
                 Curve::BSpline(_) => (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
-                Curve::Ellipse(..) | Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) =>
+                Curve::Ellipse(..) | Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..)
+                | Curve::SheetCut(..) =>
                     unreachable!("a profile has only lines, circles and splines"),
             };
             // the side's parameters along the walk step, for the step's edge parameter
@@ -568,6 +569,17 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
         else if angle == 0. { ruled(&disc,&disc.moved(&end),Carry::Line {delta:scale(a,advance)})? }
         else { ruled(&disc,&disc.moved(&end),Carry::Screw {center:origin,axis:a,angle,advance})? };
     ended(tube,half_ball(c,scale(t,-1.),w,r)?,half_ball(c,t,w,r)?.moved(&end),name)
+}
+
+/// **The solid `p` sweeps screwed about the line through `origin` along `axis`**: turned by `angle`
+/// about it and stepped `advance` along it, both together (a screw, neither none). Its faces are the
+/// section where it starts and where it ends and each edge's sheet between them, its rails the
+/// screw's iso-curves (`ruled`'s `Blend`s), exact. The caller's to know it meets itself nowhere: a
+/// section square to the axis never does, a helix crossing each level once.
+pub fn screwed(p: &Profile,origin: V,axis: V,angle: f64,advance: f64) -> Result<Brep,String> {
+    if angle == 0. || advance == 0. { return Err("a screw turns and steps both".into()) }
+    let a = unit(axis);
+    ruled(p,&p.moved(&screw(origin,a,angle,advance)),Carry::Screw {center:origin,axis:a,angle,advance})
 }
 
 /// **The tube a ball sweeps along a path no closed form carries** (#684 D): `tube`, the solid a face
@@ -916,7 +928,9 @@ pub fn sheets(nets: Vec<(crate::nurbs::Net,String)>) -> Result<Brep,String> {
 /// last iso-`u` curve is its first, as a sheet along a characteristic that closes on itself is
 /// (#684 W), and the last band closes on the first's edges, a tube; along `v`, its last iso-`v`
 /// curve is its first, as a sheet revolved a whole turn is, and the last faces along `v` close on
-/// the first's edges, a ring.
+/// the first's edges, a ring. An iso-`v` curve that collapses to a point — a row of poles all at
+/// one place, a sphere's pole — is that point: one vertex, and a degenerate edge in each face it
+/// bounds, as `sew::sewn` makes a pole.
 pub fn grid_sheet(net: &crate::nurbs::Net,us: &[f64],vs: &[f64],names: &[String],closed: [bool;2]) -> Result<Brep,String> {
     let (nu,nv) = (us.len().saturating_sub(1),vs.len().saturating_sub(1));
     if nu == 0 || nv == 0 || names.len() != nu { return Err("a sheet's grid of faces must have a face each way, and a name a band".into()) }
@@ -931,10 +945,24 @@ pub fn grid_sheet(net: &crate::nurbs::Net,us: &[f64],vs: &[f64],names: &[String]
     // `mu` distinct u (a closed way's last its first)
     let (mu,mv) = (if closed[0] { nu } else { nu+1 },if closed[1] { nv } else { nv+1 });
     let mut b = Brep::default();
-    let corners: Vec<Vec<u32>> = (0..mu).map(|i| (0..mv).map(|j| b.vertex(net.point(us[i],vs[j]))).collect()).collect();
+    // each iso-`v` curve's poles over the whole of `u`, and whether they are all one point
+    let iso_u = |i: usize,j: usize| if j < nv { nets[i][j].column(0) } else { let n = &nets[i][nv-1]; n.column(n.poles[0].len()-1) };
+    // (the tolerance of the net's size, read as the farthest a pole stands from its first, twice)
+    let tol = tolerance(2.*net.poles.iter().flatten().map(|&p| distance(p,net.poles[0][0])).fold(0.,f64::max));
+    let pole: Vec<bool> = (0..mv).map(|j| {
+        let at = net.point(us[0],vs[j]);
+        (0..nu).all(|i| iso_u(i,j).poles.iter().all(|&q| distance(q,at) <= tol))
+    }).collect();
+    let corners: Vec<Vec<u32>> = {
+        let mut corners = vec![vec![0;mv];mu];
+        for j in 0..mv { for i in 0..mu {
+            corners[i][j] = if pole[j] && i > 0 { corners[0][j] } else { b.vertex(net.point(us[i],vs[j])) };
+        } }
+        corners
+    };
     let along_u: Vec<Vec<u32>> = (0..nu).map(|i| (0..mv).map(|j| {
-        let iso = if j < nv { nets[i][j].column(0) } else { let n = &nets[i][nv-1]; n.column(n.poles[0].len()-1) };
-        b.edge(curve(iso),[us[i],us[i+1]],[corners[i][j],corners[(i+1)%mu][j]])
+        let ends = [corners[i][j],corners[(i+1)%mu][j]];
+        if pole[j] { b.edge(EdgeCurve::Degenerate,[us[i],us[i+1]],ends) } else { b.edge(curve(iso_u(i,j)),[us[i],us[i+1]],ends) }
     }).collect()).collect();
     let along_v: Vec<Vec<u32>> = (0..mu).map(|i| (0..nv).map(|j| {
         let iso = if i < nu { nets[i][j].row(0) } else { let n = &nets[nu-1][j]; n.row(n.poles.len()-1) };

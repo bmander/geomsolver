@@ -143,7 +143,7 @@ pub(super) fn motions(sk: &mut Sketch, res: &mut Resolver, map: &SourceMap, body
             sk.motions.push(MotionE { def: MotionDef::Guided { guide, frame: f as u32,
                                                                frenet: ratio == 1.0 },
                                       name: name.clone(), class: sk.frames[f].class.clone(),
-                                      numbers: None });
+                                      numbers: None, about: false });
             let m = sk.motions.len() - 1;
             if let Some(j) = sk.frames[f].joint.as_mut() {
                 j.motion = Some(m as u32);
@@ -165,7 +165,7 @@ pub(super) fn motions(sk: &mut Sketch, res: &mut Resolver, map: &SourceMap, body
         };
         let numbers = free.then_some([joint.ratio, joint.advance]);
         sk.motions.push(MotionE { def, name: name.clone(), class: sk.frames[f].class.clone(),
-                                  numbers });
+                                  numbers, about: false });
         let m = sk.motions.len() - 1;
         if let Some(j) = sk.frames[f].joint.as_mut() {
             j.motion = Some(m as u32);
@@ -177,7 +177,8 @@ pub(super) fn motions(sk: &mut Sketch, res: &mut Resolver, map: &SourceMap, body
         }) {
             sk.motions.push(MotionE { def: MotionDef::Driven { of: m as u32, law, over },
                                       name: format!("{name} driven"),
-                                      class: sk.frames[f].class.clone(), numbers: None });
+                                      class: sk.frames[f].class.clone(), numbers: None,
+                                      about: false });
         }
     }
 }
@@ -349,12 +350,12 @@ pub(super) fn value_of(sk: &Sketch, res: &Resolver, f: &Ref)
     Some(res.values.get(&f.i()).cloned().unwrap_or_else(|| ("0deg".into(), Default::default())))
 }
 
-/// **A reading's motion** (#383): the frame named `under:`, seen from the one named `seen_from:`
-/// where one is — its node, or the relative of the two (`n⁻¹·m`, minted once).  A frame seen from
-/// one with no joint is seen from the world; one with no joint itself carries nothing, and is
-/// refused naming how to turn it.  `over` is the declared parameter the reading runs over, where
-/// it runs over one: a frame with no joint is then where the drawing puts it as that runs (#398 F,
-/// `followed`).
+/// **A reading's motion** (#383): the frame named `under:` (or the turn about a line named there,
+/// #748), seen from the one named `seen_from:` where one is — its node, or the relative of the two
+/// (`n⁻¹·m`, minted once).  A frame seen from one with no joint is seen from the world; one with
+/// no joint itself carries nothing, and is refused naming how to turn it.  `over` is the declared
+/// parameter the reading runs over, where it runs over one: a frame with no joint is then where
+/// the drawing puts it as that runs (#398 F, `followed`).
 pub(super) fn reading(sk: &mut Sketch, res: &Resolver, under: &Ref, seen_from: Option<&Ref>,
                       over: Option<&str>) -> Result<usize, String> {
     let source = frame_motion(sk, res, under, over)?.ok_or_else(|| {
@@ -370,14 +371,20 @@ pub(super) fn reading(sk: &mut Sketch, res: &Resolver, under: &Ref, seen_from: O
 
 /// The motion node of the frame `r` names: its joint's after the joints of the frames it rides
 /// on (#383); for a frame with no joint riding on none, read over the declared parameter `over`,
-/// where the drawing puts it as `over` runs (#398 F) — and `None` for a frame nothing moves.
+/// where the drawing puts it as `over` runs (#398 F) — and `None` for a frame nothing moves.  A
+/// line or an axis named where a frame would be is the turn about it (#748, `turn_about`).
 pub(super) fn frame_motion(sk: &mut Sketch, res: &Resolver, r: &Ref, over: Option<&str>)
     -> Result<Option<usize>, String> {
     let e = res.lookup(r).and_then(|e| super::resolve::follow_building(sk, res, e, r).ok())
         .ok_or_else(|| format!("no such frame: `{}`", crate::syntax::ref_text(r)))?;
+    // a line or an axis is the turn about it (#748), which no frame of the drawing holds
+    if matches!(e.kind, EntKind::Line | EntKind::Axis) {
+        return Ok(Some(turn_about(sk, res, e)));
+    }
     if e.kind != EntKind::Frame {
-        return Err(format!("`{}` is {}, and a motion is read off a frame (`under: f`, `seen_from: \
-            g`)", crate::syntax::ref_text(r), e.kind.a()));
+        return Err(format!("`{}` is {}, and a motion is read off a frame or a line it turns \
+            about (`under: f`, `under: l`, `seen_from: g`)", crate::syntax::ref_text(r),
+            e.kind.a()));
     }
     let carriers = sk.carriers(e).unwrap_or_default();
     if carriers.is_empty() {
@@ -407,7 +414,7 @@ fn followed(sk: &mut Sketch, res: &Resolver, f: usize, over: &str) -> Option<usi
     let name = name_of(res, EntRef::frame(f));
     let class = sk.frames[f].class.clone();
     sk.motions.push(MotionE { def: MotionDef::Followed { frame: f as u32, over: over.to_string() },
-                              name, class, numbers: None });
+                              name, class, numbers: None, about: false });
     Some(sk.motions.len() - 1)
 }
 
@@ -471,7 +478,25 @@ pub(super) fn inverse(sk: &mut Sketch, m: usize) -> usize {
     }
     let name = format!("{}⁻", sk.motions[m].name);
     sk.motions.push(MotionE { def: MotionDef::Inverse { of }, name, class: Default::default(),
-                              numbers: None });
+                              numbers: None, about: false });
+    sk.motions.len() - 1
+}
+
+/// **The turn about line (or axis) `l`** (#748), a radian a radian of the roll, minted the first
+/// time a reading names `l` where a frame would be (`under: l`, `seen_from: l`): a rotation about
+/// a drawn line, a joint about an axis, holding nothing — no frame, so no unknown.  Found again by
+/// what it is (`MotionE::about`), named as the line is.
+fn turn_about(sk: &mut Sketch, res: &Resolver, l: EntRef) -> usize {
+    let axis = l.i() as u32;
+    let def = match l.kind {
+        EntKind::Line => MotionDef::Rotation { axis, ratio: 1.0, advance: 0.0 },
+        _ => MotionDef::Joint { axis, ratio: 1.0, advance: 0.0 },
+    };
+    if let Some(i) = sk.motions.iter().position(|m| m.about && m.def == def) {
+        return i;
+    }
+    sk.motions.push(MotionE { def, name: name_of(res, l), class: Default::default(),
+                              numbers: None, about: true });
     sk.motions.len() - 1
 }
 
@@ -615,6 +640,6 @@ pub(super) fn relative(sk: &mut Sketch, source: usize, observer: usize) -> usize
     }
     let name = format!("{} seen from {}", sk.motions[source].name, sk.motions[observer].name);
     sk.motions.push(MotionE { def: MotionDef::Relative { source: s, observer: o }, name,
-                              class: Default::default(), numbers: None });
+                              class: Default::default(), numbers: None, about: false });
     sk.motions.len() - 1
 }

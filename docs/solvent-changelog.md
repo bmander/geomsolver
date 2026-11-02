@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.200] A line is a motion** (#748). Wherever a reading names a frame, `under:` or
+`seen_from:`, it may name a line or an axis instead: the turn about it, a radian a radian of the
+roll (§6.14). Through 0.199 only a face's patch swept into a region solid read a line so (the body
+of `std.solids.Revolution`); a point carried to a roll (`X coincident(under: ax, t == τ) x`), a
+solid placed at an instant (`tool at(under: ax) θ`), swept or rolled (`solid({ p | p inside(under:
+ax, over t in (a, b)) tool })`), an envelope and a meshing refused it (E040, "a motion is read off
+a frame"). Each now reads it as it would a frame `f` with `f turns(1) ax`, with no frame declared
+and so no unknown added; every reading naming one line reads one turn. Nothing written before is
+read differently.
+
 **[0.199] Solids as sets** (#737). A solid is the points of a set and nothing else: `solid(S)` is
 the one constructor (§6.9), `solid()` the empty body. The set is named or written in the brackets —
 a set literal, `solid({ p | … })`, or a family's call, `solid(std.solids.Prism(sec, from: -30mm, to:

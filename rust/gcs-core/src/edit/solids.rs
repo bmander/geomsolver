@@ -98,7 +98,13 @@ fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) 
 /// `stmts` appended, each a statement the canonical printer writes over the words of `std.solids`
 /// (#737) — and `use std.solids` where the document has none — held to the elaborator.
 fn append_solids(prog: &Program, stmts: &[StmtKind], names: Vec<String>) -> Result<Edit, String> {
-    let mut splices = vec![appending(prog, stmts)?];
+    solids_checked(prog, appending(prog, stmts)?, names)
+}
+
+/// `splice`, which writes words of `std.solids`, made — and `use std.solids` where the document
+/// has none — held to the elaborator.
+fn solids_checked(prog: &Program, splice: Splice, names: Vec<String>) -> Result<Edit, String> {
+    let mut splices = vec![splice];
     if !prog.uses.iter().any(|u| u.name == "std.solids") {
         splices.push(use_line(prog, "use std.solids"));
     }
@@ -254,8 +260,8 @@ fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) ->
 
 /// Rewrite how far revolution `solid` turns, about what it turns about: `angle` the text written,
 /// in degrees.  A number is signed, positive right-handed about the axis, and read by
-/// `model::turn_of` — `-90` is `sweep: 90, sense: cw`, a whole turn or more no `sweep:` at all;
-/// an expression is written whole, the way the solid already turns.
+/// `model::turn_of` — `-90` is `from: -90, to: 0deg`, a whole turn or more no interval at all;
+/// an expression is written whole, the way the solid already turns (`turning`).
 pub fn set_turn(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Edit {
     Edit::refused_or(prog, turn_edit(e, prog, solid, angle))
 }
@@ -263,23 +269,41 @@ pub fn set_turn(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Ed
 fn turn_edit(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Result<Edit, String> {
     let angle = angle.trim();
     resweep(e, prog, solid, |was| {
-        let syntax::Sweep::Revolve { axis, sense, .. } = was else {
+        let syntax::Sweep::Revolve { axis, .. } = was else {
             return Err("that solid is not turned about anything".into());
         };
         let (sweep, sense) = match angle.parse::<f64>() {
             Ok(n) => {
                 let (how_far, sense) = crate::model::turn_of(n).ok_or("a turn turns some way")?;
-                let sense = match sense {
-                    crate::model::Sense::Cw => syntax::Sense::Cw,
-                    crate::model::Sense::Ccw => syntax::Sense::Ccw,
-                };
                 (how_far.map(num), sense)
             }
-            Err(_) => (Some(angle.to_string()), *sense),
+            Err(_) => (Some(angle.to_string()), turning(e, prog, solid)
+                .ok_or("that revolution starts off its face: change it where it is written")?),
+        };
+        let sense = match sense {
+            crate::model::Sense::Cw => syntax::Sense::Cw,
+            crate::model::Sense::Ccw => syntax::Sense::Ccw,
         };
         let sweep = sweep.map(|text| syntax::Arg::Dim { text, span: Span::default() });
-        Ok(syntax::Sweep::Revolve { axis: axis.clone(), sweep, sense })
+        Ok(syntax::turned(axis.clone(), sweep.as_ref(), sense))
     })
+}
+
+/// Which way revolution `solid` turns now: what its ends came to where they were evaluated
+/// (#747), never their text — the elaborated solid's sense.  Where the ABI has handed the sketch to
+/// a handle of its own, the program is elaborated again rather than that handle read: a drag's
+/// preview (`Sketch::set_turn`) turns the live solid whichever way the drag went, and the way the
+/// source says is wanted.  Only a typed expression asks.  `None` for a turn off its face, which
+/// is built as the region it is.
+fn turning(e: &Elaborated, prog: &Program, solid: usize) -> Option<crate::model::Sense> {
+    let sense = |sk: &crate::model::Sketch| match sk.solids.get(solid).map(|s| &s.def) {
+        Some(crate::model::SolidDef::Revolve { sense, .. }) => Some(*sense),
+        _ => None,
+    };
+    match e.taken {
+        true => sense(&crate::program::elaborate(prog).sketch),
+        false => sense(&e.sketch),
+    }
 }
 
 /// Solid `solid`'s own statement, its sweep replaced by what `with` makes of the one written —
@@ -318,11 +342,12 @@ fn resweep(
         Vec::new())
 }
 
-/// **A solid of a word of `std.solids` written in place** (#737), `solid(std.solids.Prism(f,
-/// from: a, to: b))`: the sweep the call says, as the gestures read one — the word's labels its
-/// extents — given to `with`, and the call rewritten as the word of what `with` makes; `None`
-/// where the solid is no such call.  A gesture edits the words a person wrote, so it reads them by
-/// name, as the printer writes them.
+/// **A solid of a set family's instance written in place** (#737, #744), `solid(std.solids.Prism(f,
+/// from: a, to: b))`: the sweep the family's set says, read off its statements with its formals
+/// bound to the call's arguments (`flatten::said`) — never off the word's name — given to `with`,
+/// and the call rewritten as the word of `std.solids` that says what `with` makes; `None` where
+/// the solid is no such call.  A call whose set says no sweep of a face is refused: nothing in it
+/// is an extent a gesture sizes.
 fn reworded(prog: &Program, d: &syntax::Decl,
             with: &impl Fn(&syntax::Sweep) -> Result<syntax::Sweep, String>)
     -> Option<Result<Edit, String>> {
@@ -331,15 +356,18 @@ fn reworded(prog: &Program, d: &syntax::Decl,
         StmtKind::Instance(i) if i.name.text == key.root.text => Some(i),
         _ => None,
     })?;
-    let word = inst.component.text.strip_prefix("std.solids.")?;
-    let text = |a: &syntax::InstArg| match &a.value {
-        syntax::InstVal::Ref(r) => syntax::ref_text(r),
-        syntax::InstVal::Expr(t) | syntax::InstVal::Hint(t, _) => t.clone(),
-        syntax::InstVal::Group(_) => String::new(),
+    use crate::flatten::said::{binding, said};
+    let said = prog.resolve_component(&inst.component.text, None).ok()
+        .and_then(|k| prog.components.get(k))
+        .and_then(|c| said(c.set.as_ref()?, &binding(c, inst)));
+    let Some((was, face)) = said else {
+        return Some(Err("that solid is a set no sweep of a face says: change it where it is \
+                         written".into()));
     };
-    let label = |l: &str| inst.args.iter()
-        .find(|a| a.label.as_ref().is_some_and(|n| n.text == l)).map(text);
-    let face = inst.args.iter().find(|a| a.label.is_none()).map(text)?;
+    if matches!(was, syntax::Sweep::Through) {
+        return Some(Err("that solid is a prism through everything, which nothing sizes".into()));
+    }
+    let face = syntax::ref_text(&face);
     // a face written in place in the call (`face(ab, bc, cd, da)`) is the parser's anonymous
     // face, named by a key no document can write: the call is rewritten with it as written
     let face = prog.root().body.iter().find_map(|st| match &st.kind {
@@ -349,29 +377,10 @@ fn reworded(prog: &Program, d: &syntax::Decl,
         }
         _ => None,
     }).unwrap_or(face);
-    let dim = |t: String| syntax::Arg::Dim { text: t, span: Span::default() };
-    let was = match word {
-        "Prism" | "Drafted" => syntax::Sweep::Prism {
-            from: dim(label("from")?), to: dim(label("to")?), draft: label("draft").map(dim),
-        },
-        "Revolution" => {
-            let (from, to) = (label("from").map(dim), label("to").map(dim));
-            let axis = syntax::Ref::new(label("about")?);
-            match syntax::revolve_between(axis, from.as_ref(), to.as_ref()) {
-                Some(s) => s,
-                None => return Some(Err("that revolution starts off its face: change it where it \
-                                         is written".into())),
-            }
-        }
-        _ => return Some(Err("that solid is a prism through everything, which nothing sizes".into())),
-    };
     Some((|| {
         let new = with(&was)?;
         let text = syntax::solid_word(&new, &face).ok_or("that solid is no sweep of a face")?;
-        let edit = Splice { at: inst.span, with: text };
-        let (text, landed) = splice_landing(prog.text(), vec![edit]);
-        checked(prog, text, landed[0].ok_or("that solid's statement is no place in the source")?,
-                Vec::new())
+        solids_checked(prog, Splice { at: inst.span, with: text }, Vec::new())
     })())
 }
 

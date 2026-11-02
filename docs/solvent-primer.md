@@ -2637,6 +2637,16 @@ the world. A component that reads a motion takes the frame (`m: frame`) and, whe
 the observer as a second (`seen_from: frame`); a frame formal a call leaves out is the instance's
 own frame at rest, the world.
 
+**A line is a motion.** Where a reading names a frame, `under:` or `seen_from:`, name a line (or an
+axis) instead for the turn about it, a radian a radian of the roll — what a frame that `turns(1)`
+it would give, with no frame and so no unknown:
+
+```sv
+X coincident(under: ax, t == 90deg) x          // x turned a quarter about ax
+placed := tool at(under: ax) 90deg             // the tool turned so
+swept := solid({ p | p inside(under: ax, over t in (0deg, 90deg)) tool })
+```
+
 **Riding.** Draw a part in the frame that carries it, and readings at a roll need no
 `under:`. `in` blocks nest; what is declared in nested blocks rides on every frame of the path and
 is drawn in the innermost one with axes (a view, usually), and a frame declared in a block rides

@@ -661,12 +661,12 @@ fn what_is_written_wrong_is_refused_where_it_is_written() {
         Code::E080,
         "swept nowhere",
     );
-    // **a selector is a word, never a sign**: a negative sweep is refused at the value
+    // a turn is an interval of the roll: one from the greater to the lesser is refused (#747)
     refused(
         &format!("{RECT}in std.front {{\nq0 := point\nq1 := point hint(y: 10)\nax := line(q0, q1)\n}}\n\
                   bad := solid(std.solids.Revolution(sec, about: ax, to: -90deg))\n"),
         Code::E040,
-        "which way it turns is `sense: cw`",
+        "`from:` the lesser roll `to:` the greater",
     );
     // a revolution about something that is not a line
     refused(&format!("{RECT}bad := solid(std.solids.Revolution(sec, about: a))\n"), Code::E081, "turns about a line");

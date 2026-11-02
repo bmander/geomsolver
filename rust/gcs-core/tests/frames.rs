@@ -226,10 +226,10 @@ t2 spins(2) c
     let separate = {
         let inverse = sk.motions.len();
         sk.motions.push(gcs_core::model::MotionE { def: MotionDef::Inverse { of: lead as u32 },
-            name: "lead⁻".into(), class: Default::default(), numbers: None });
+            name: "lead⁻".into(), class: Default::default(), numbers: None, about: false });
         sk.motions.push(gcs_core::model::MotionE {
             def: MotionDef::Relative { source: follow as u32, observer: inverse as u32 },
-            name: "unfolded".into(), class: Default::default(), numbers: None });
+            name: "unfolded".into(), class: Default::default(), numbers: None, about: false });
         sk.motions.len() - 1
     };
     let (a, b) = (Family::read(sk, folded).unwrap(), Family::read(sk, separate).unwrap());

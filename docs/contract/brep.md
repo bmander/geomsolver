@@ -20,7 +20,9 @@ from outside pins a released version: it is measured beside other kernels on
 https://github.com/bmander/brep-bench at the version that names.
 `gcs_core::brep`:
 `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`
-intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `check`, `pinches`),
+intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles — a sheet's net whose row of poles
+collapses to a point one too, `build::grid_sheet` as `sew::sewn`,
+`brep::a_net_closed_round_onto_two_poles_is_a_ball`; `check`, `pinches`),
 `build` (prisms, drafted prisms, revolutions and canals of line/arc/circle/spline profiles; the
 sphere, the cone and the torus by their numbers as OCCT's `MakeSphere`/`MakeCone`/`MakeTorus` take
 them, each its meridian turned — `sphere(c, axis, r)`, `cone(o, axis, r0, r1, h)`,
@@ -221,7 +223,9 @@ narration, so a split is the same bits with `SOLVENT_BREP_DEBUG` set and unset a
 split by all the others at once — where three faces of three operands meet at a point no edge
 passes, the two meetings on each face cut there (`triple_points`) — a span two faces only touch along
 laid as an edge, every piece a face of the complex but a sliver, coincident pieces one face naming
-each operand; each cell's membership in each operand read off a face of it bounding the cell, else at
+each operand; a traced meeting along an edge one face already has is that edge, laid once (`along_an_edge`),
+and laid across the other face too wherever it lies inside it (`Meetings::along_edges`: a torus's
+seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_seam_is_half_of_it`); each cell's membership in each operand read off a face of it bounding the cell, else at
 a point deep inside. **A Boolean is a selection over it**: each piece's two sides' membership read
 as before, the complex formed, each shell kept as the operation keeps its sides (which agree round
 it, else each face by its own), and the result touching itself along an edge given an edge for each
@@ -252,6 +256,22 @@ cancellation of the terms that constant sums — not its square root, the hyperb
 against the tolerance, which a plane holding a hyperboloid's ruling exactly (some 1e-14 left, a
 semi-axis of some 1e-7) failed at any tolerance finer, its rulings coming out as branches
 (`meeting::a_plane_holding_a_hyperboloids_ruling_meets_it_in_two_lines_at_any_tolerance`).
+**A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
+(`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
+in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it
+(the sheet touching it along the foot's helix, judged by the gap); another such sheet of the same
+pitch in the helix of the point where the two lines meet carried level, none where they run
+parallel there; a level plane in the one ruling at its height; any other plane in its cut
+`S(−α/β, v)` (`Curve::SheetCut`, **a new curve kind**: `α + u β` the ruling's reach to the plane),
+with the rulings it holds as lines, read about the nearest held ruling by differences so the cut
+runs through the point it touches the sheet at as exactly as anywhere. Two curves on one sheet,
+each a rule `u(v)`, cross where the rules agree, and two planes' cuts of two such sheets on one
+plane where the plane meets the sheets' helix (`query::crossings_in`); a point's foot on such a
+sheet starts from the ruling level with it (`Blend::inverse`), with no search
+(`meeting::a_screwed_lines_sheet_meets_what_keeps_the_screw_in_helices`,
+`a_plane_holding_a_screwed_sheets_ruling_meets_it_in_the_ruling_and_a_cut_through_the_touch`, at
+1e-6, 1e-7 and 1e-9). An open sheet reaching past the domain is an operand of `arrangement_within`
+as a solid is, its pieces within the domain parting cells.
 `arrangement::a_plane_crossing_where_two_surfaces_touch_…`, `a_plane_tangent_to_a_hyperboloid_…`
 and `a_plane_crossing_a_shallow_meeting_…` are the gates, at 1e-6 and 1e-7. **The closed swept
 solid is one arrangement and one selection** (`swept::closed`, generating.md);

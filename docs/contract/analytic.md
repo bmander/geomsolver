@@ -29,7 +29,8 @@ patches' finite incidence and refuses roots on undeclared continuations.
 motions, before any relation (`program::envelopes::held_envelopes`) — carrying what the solve reads
 of its source (`model::Held`): a revolution's side read off the declarations (`Held::Revolution`,
 its `about:` line or axis and its line, arc or circle edge — read off the declaration's sweep, which
-`flatten/said.rs` writes out for a `std.solids.Revolution` too, #737, [solids.md](solids.md); the side itself bound after
+`flatten/said.rs` writes out for a `std.solids.Revolution` and for its set turned about a line written by
+hand, #737, #744, [solids.md](solids.md); the side itself bound after
 the solids
 into `EnvelopeE::surface`), or a set's (`Held::Set`: the hidden point `{envelope}#probe` the
 flattener applied it to, held; its `SetShape` read off the one relation the body states there by

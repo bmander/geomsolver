@@ -661,20 +661,19 @@ pub(crate) fn negated(t: &str) -> String {
     }
 }
 
-/// **A turn between two rolls, as the sweep it is** (#737): `std.solids.Revolution`'s `from:`
-/// and `to:` as written (left out, `0deg` and `360deg`) — one end nothing, the turn from the face
-/// the way the other end runs, a whole turn no `sweep:` at all.  `None` where neither end is
-/// nothing, or both are: a turn that starts off its face, or none.
-pub(crate) fn revolve_between(axis: Ref, from: Option<&Arg>, to: Option<&Arg>) -> Option<Sweep> {
-    let text = |a: Option<&Arg>, or: &str| a.map_or_else(|| or.to_string(), dim);
-    let (from, to) = (text(from, "0deg"), text(to, "360deg"));
-    let zero = |t: &str| matches!(t.trim(), "0" | "0deg" | "0 deg");
-    let whole = |t: &str| matches!(t.trim(), "360deg" | "360 deg");
-    let sweep = |t: String| (!whole(&t)).then(|| Arg::Dim { text: t, span: Span::default() });
-    match (zero(&from), zero(&to)) {
-        (true, false) => Some(Sweep::Revolve { axis, sweep: sweep(to), sense: Sense::Ccw }),
-        (false, true) => Some(Sweep::Revolve { axis, sweep: sweep(negated(&from)), sense: Sense::Cw }),
-        _ => None,
+/// **A turn said as a magnitude and a way, as the interval it is** (#737): `sweep:` (left out, a
+/// whole turn) and `sense:` — the retired labels, and what a gesture says — written as
+/// `std.solids.Revolution`'s `from:` and `to:`: counter-clockwise `to:` the magnitude, a whole
+/// turn neither; clockwise `from:` its negation `to: 0deg`.  Writing, not reading: what the ends
+/// come to is the elaborator's to decide (`program::solids::build`).
+pub(crate) fn turned(axis: Ref, sweep: Option<&Arg>, sense: Sense) -> Sweep {
+    let text = |t: String| Some(Arg::Dim { text: t, span: Span::default() });
+    match sense {
+        Sense::Ccw => Sweep::Revolve { axis, from: None, to: sweep.cloned() },
+        Sense::Cw => {
+            let turn = sweep.map_or_else(|| "360deg".to_string(), dim);
+            Sweep::Revolve { axis, from: text(negated(&turn)), to: text("0deg".into()) }
+        }
     }
 }
 
@@ -714,14 +713,10 @@ pub(crate) fn solid_word(s: &Sweep, face: &str) -> Option<String> {
         Sweep::Prism { from, to, draft } => prism(dim(from), dim(to), draft.as_ref()),
         Sweep::Depth { depth, draft } => prism(negated(&dim(depth)), "0".into(), draft.as_ref()),
         Sweep::Through => word("Through", Vec::new()),
-        Sweep::Revolve { axis, sweep, sense } => {
+        Sweep::Revolve { axis, from, to } => {
             let mut labels = vec![format!("about: {}", super::ref_text(axis))];
-            let turn = sweep.as_ref().map_or_else(|| "360deg".to_string(), dim);
-            match sense {
-                Sense::Cw => labels.extend([format!("from: {}", negated(&turn)), "to: 0deg".into()]),
-                Sense::Ccw if sweep.is_some() => labels.push(format!("to: {turn}")),
-                Sense::Ccw => {}
-            }
+            labels.extend(from.iter().map(|a| format!("from: {}", dim(a))));
+            labels.extend(to.iter().map(|a| format!("to: {}", dim(a))));
             word("Revolution", labels)
         }
         _ => None,
@@ -745,13 +740,12 @@ fn under(m: &Ref) -> String {
 
 /// Sweep arguments are document expressions, preserved through canonical printing.
 fn sweep_parts(s: &Sweep) -> Vec<String> {
-    let mut parts = match s {
+    match s {
         // a reading at an instant or over an interval is no `solid(…)`'s (#391 S2): `write_decl`
         // writes it whole
         Sweep::Swept { .. } | Sweep::Rolled { .. } | Sweep::Placed { .. } => Vec::new(),
-        // a region's operand is the set the flattener applied to its probe, and a prism through
-        // everything is the set `solid_word` writes: nothing to print
-        Sweep::Body | Sweep::Region { .. } | Sweep::Through => Vec::new(),
+        // a region's operand is the set the flattener applied to its probe: nothing to print
+        Sweep::Body | Sweep::Region { .. } => Vec::new(),
         // the face family is the whole of the brackets: `Station(g).f over s`, `s` declared
         Sweep::Family(f) => {
             let mut text = String::new();
@@ -761,23 +755,10 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             text.push_str(&format!(" over {}", f.swept.text));
             vec![text]
         }
-        Sweep::Prism { from, to, .. } => vec![format!("from: {}", dim(from)), format!("to: {}", dim(to))],
-        Sweep::Depth { depth, .. } => vec![format!("depth: {}", dim(depth))],
-        Sweep::Revolve { axis, sweep, sense } => {
-            let mut about = String::from("about: ");
-            write_ref(&mut about, axis);
-            let mut parts = vec![about];
-            if let Some(sweep) = sweep {
-                parts.push(format!("sweep: {}", dim(sweep)));
-            }
-            if *sense == Sense::Cw {
-                parts.push("sense: cw".into());
-            }
-            parts
-        }
-    };
-    parts.extend(s.draft().map(|d| format!("draft: {}", dim(d))));
-    parts
+        // a sweep of a face is a word of `std.solids` (#737), which `solid_word` writes
+        Sweep::Through | Sweep::Prism { .. } | Sweep::Depth { .. }
+            | Sweep::Revolve { .. } => Vec::new(),
+    }
 }
 
 /// One property of a style, as a `style` block writes it.

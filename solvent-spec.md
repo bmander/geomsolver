@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.199 — November 2026**
+**Specification, Draft 0.200 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -910,7 +910,7 @@ by the region's own words. **The faces of a solid are named by what bounds them*
 `std`'s words and a set written by hand: a section's sides by the edges they are swept from; of two
 ordinates along its normal the greater bounds `.near` and the lesser `.far`; a turn short of a
 whole one is capped `.start` where its interval begins and `.end` where it ends. A line named
-`under:` is the turn about it, so a revolution adds no unknown.
+`under:` is the turn about it (§6.14 **[0.200]**), so a revolution adds no unknown.
 
 **A region is a solid** **[0.62]**. `solid(R)`, its one operand a set, is the solid of the points
 inside `R` (§6.21): `R`'s body applied to a point, each number it bounds there a bound of the
@@ -1455,6 +1455,15 @@ the frame it is seen from: **`under: m, seen_from: g`** is `inverse(g) · m`, `m
 frame sees it, both at the same roll, its derivative including `g`'s motion. `seen_from:` left
 out is the world. This is a relationship between frames, not a sequence of commands that changes
 entity coordinates.
+
+**A line is a motion [0.200].** Wherever a reading names a frame — `under:` or `seen_from:`, on a
+solid placed, swept or rolled, an envelope, a meshing, a point it carries, a face's patch swept
+(§6.21) — it MAY name a line or an axis instead: **the turn about it**, a radian a radian of the
+roll, right-handed about the line's own direction. `X coincident(under: ax, t == 90deg) x`, `tool
+at(under: ax) 90deg` and `solid({ p | p inside(under: ax, over t in (0deg, 90deg)) tool })` read
+as they would under a frame `f` with `f turns(1) ax`; but no frame is declared, so the reading
+adds no unknown, and every reading naming the same line reads the one turn. A point, or anything
+else that is neither a frame nor a line, is **E040** there.
 
 **Riding [0.136].** `in` blocks nest: `in (arm := frame) { in (planet := frame) { in std.top { x :=
 point } } }`. What is declared in nested blocks **rides** on every frame of its path, and is drawn
@@ -2206,8 +2215,9 @@ interval written in place, or `over s`, a parameter the document declares (§6.3
 holds of its subject where it holds at *some* value of `t` in the interval, `t` bound by the
 clause and nowhere else. `coincident` and `inside` take it; its ends are settled as a dimension's
 are. At a region solid's point, `p coincident(under: m, over t in (a, b)) sec`, `sec` a drawn face,
-is what the face occupies under the motion `m` (§6.14) at some roll of the interval — its patch
-swept — and `p inside(under: m, seen_from: g, over t in (a, b)) tool` what the solid `tool`
+is what the face occupies under the motion `m` (§6.14; `m` a frame, or a line it turns about,
+**[0.200]**) at some roll of the interval — its patch swept — and `p inside(under: m, seen_from:
+g, over t in (a, b)) tool` what the solid `tool`
 occupies. Where such a set stands in place in `solid(…)` and its body is that one statement, the
 solid is the sweep of the same points (§6.9, §6.14): of a solid under a motion over the interval,
 over a declared parameter's (`over t`), or — no `over` at all, `p inside(under: m) tool` — over the
