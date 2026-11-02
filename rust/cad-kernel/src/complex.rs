@@ -169,7 +169,6 @@ impl Complex {
             let edge = &b.edges[e];
             let EdgeCurve::Curve(curve) = &edge.curve else { continue };
             if uses[e].is_empty() { continue }
-            let tm = 0.5*(edge.t[0]+edge.t[1]);
             if uses[e].len() <= 2 {
                 // one use (a face hanging free there) joins its own two sides; two join back to
                 // back and front to front where they walk the edge opposite ways, back to front
@@ -188,31 +187,52 @@ impl Complex {
                 continue
             }
             let step = *step.get_or_insert_with(|| (1e-3*b.size().max(tol)).max(64.*tol));
-            let t = normalised(curve.tangent(tm)).ok_or_else(|| format!("edge {e} has no direction"))?;
-            let m = curve.point(tm);
-            let (b1,b2) = crate::util::space::across(t);
-            // each use: its way in at the edge (first order) and a step in (second order), its normal
-            let mut round: Vec<(f64,f64,usize,V,V)> = Vec::with_capacity(uses[e].len());
-            for &(fi,li,ci) in &uses[e] {
-                let f = &b.faces[fi];
-                let co = &f.loops[li][ci];
-                let uv = co.pcurve.at(tm,edge,&f.surface,&b.vertices);
-                let n = outward(f,uv).ok_or_else(|| format!("edge {e}: a {} with no normal at {m:?}",f.surface.kind()))?;
-                let walk = if co.reversed { scale(t,-1.) } else { t };
-                let d = cross(n,walk);
-                let d = sub(d,scale(t,dot(d,t)));
-                let angle = dot(d,b2).datan2(dot(d,b1));
-                let deep = match in_parameters(&f.surface,uv,d) {
-                    Some(x) => {
-                        let p = f.surface.point([uv[0]+step*x[0],uv[1]+step*x[1]]);
-                        let q = sub(p,m);
-                        let q = sub(q,scale(t,dot(q,t)));
-                        if norm(q) > 0. { dot(q,b2).datan2(dot(q,b1)) } else { angle }
-                    }
-                    None => angle,
-                };
-                round.push((angle,deep,round.len(),d,n));
+            // each use: its way in at the edge (first order) and a step in (second order), its
+            // normal, read at the edge's point a fraction `at` along it
+            let read = |at: f64| -> Result<(V,V,Vec<(f64,f64,usize,V,V)>),String> {
+                let tm = edge.t[0]+(edge.t[1]-edge.t[0])*at;
+                let t = normalised(curve.tangent(tm)).ok_or_else(|| format!("edge {e} has no direction"))?;
+                let m = curve.point(tm);
+                let (b1,b2) = crate::util::space::across(t);
+                let mut round: Vec<(f64,f64,usize,V,V)> = Vec::with_capacity(uses[e].len());
+                for &(fi,li,ci) in &uses[e] {
+                    let f = &b.faces[fi];
+                    let co = &f.loops[li][ci];
+                    let uv = co.pcurve.at(tm,edge,&f.surface,&b.vertices);
+                    let n = outward(f,uv).ok_or_else(|| format!("edge {e}: a {} with no normal at {m:?}",f.surface.kind()))?;
+                    let walk = if co.reversed { scale(t,-1.) } else { t };
+                    let d = cross(n,walk);
+                    let d = sub(d,scale(t,dot(d,t)));
+                    let angle = dot(d,b2).datan2(dot(d,b1));
+                    let deep = match in_parameters(&f.surface,uv,d) {
+                        Some(x) => {
+                            let p = f.surface.point([uv[0]+step*x[0],uv[1]+step*x[1]]);
+                            let q = sub(p,m);
+                            let q = sub(q,scale(t,dot(q,t)));
+                            if norm(q) > 0. { dot(q,b2).datan2(dot(q,b1)) } else { angle }
+                        }
+                        None => angle,
+                    };
+                    round.push((angle,deep,round.len(),d,n));
+                }
+                Ok((t,m,round))
+            };
+            // the order round an edge is the same all along it, so it is read where the ways in
+            // stand farthest apart — not beside a point where faces touch, near which they are
+            // all but tangent (a plane holding a hyperboloid's ruling, its edge's middle at the throat)
+            let least_gap = |r: &[(f64,f64,usize,V,V)]| {
+                let mut a: Vec<f64> = r.iter().map(|x| x.0).collect();
+                a.sort_by(f64::total_cmp);
+                (0..a.len()).map(|i| if i+1 == a.len() { a[0]+TAU-a[i] } else { a[i+1]-a[i] }).fold(f64::INFINITY,f64::min)
+            };
+            let mut best = read(0.5)?;
+            if least_gap(&best.2) < 1e3*TANGENT {
+                for at in [0.25,0.75] {
+                    let other = read(at)?;
+                    if least_gap(&other.2) > least_gap(&best.2) { best = other; }
+                }
             }
+            let (t,m,mut round) = best;
             round.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.2.cmp(&y.2)));
             // runs of ways in closer than `TANGENT` (wrapping round): ordered by the way a step in
             let k = round.len();

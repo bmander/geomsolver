@@ -650,8 +650,16 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
 /// `faces` as one boundary, their edges `out` and their vertices `pool`'s, numbered as there: what
 /// a complex of the arrangement is built on.
 fn working_brep(out: &[WEdge],pool: &Pool,faces: Vec<Face>) -> Brep {
-    let edges = out.iter().map(|w| super::topo::Edge {curve:w.curve.clone(),t:w.t,v:w.v,tol:0.}).collect();
+    let edges = out.iter().map(|w| super::topo::Edge {curve:w.curve.clone(),t:w.t,v:w.v,tol:built_tol(w,pool)}).collect();
     Brep {vertices:pool.vertices(),edges,faces}
+}
+
+/// **The tolerance a working edge was built to** (#735 A3): how far its curve's ends stand from the
+/// vertices a merge onto a meeting put there, where that is past the pool's own reach (0 within it).
+fn built_tol(w: &WEdge,pool: &Pool) -> f64 {
+    let EdgeCurve::Curve(c) = &w.curve else { return 0. };
+    let gap = (0..2).map(|k| distance(c.point(w.t[k]),pool.pts[w.v[k] as usize])).fold(0.,f64::max);
+    if gap > pool.tol { gap } else { 0. }
 }
 
 /// Whether two faces on one surface at `p` face the same way (their material normals agree).
@@ -992,6 +1000,11 @@ impl<'a> Arrangement<'a> {
                             }
                         }
                         Meets::At(roots) => for (t,touch) in roots {
+                            // a touch is a double root, placed only to the square root of the
+                            // tolerance: where a face of the edge's own touches the surface along a
+                            // curve, it is the edge's crossing with that curve, placed exactly
+                            let own: Vec<&Surface> = bounded[s][i].iter().map(|&g| &self.solids[s].faces[g].surface).collect();
+                            let t = if touch { touch_root(c,e.t,&own,&f.surface,t,tol).unwrap_or(t) } else { t };
                             let q = c.point(t);
                             let place = self.located[other].face_place(fi,q);
                             self.say.meets(s,i,c,fi,f,q,touch,place);
@@ -1076,7 +1089,7 @@ impl<'a> Arrangement<'a> {
             });
             // two curves of one meeting in closed form may cross one another (`crossings_among`)
             let (curves,crossed) = match self.shared.meeting(ids[0],ids[1],self.tol) {
-                Ssi::Curves(cs) => { let x = crossings_among(surfaces[0],&cs,self.tol); (cs,x) }
+                Ssi::Curves(cs) => { let x = crossings_among(surfaces[0],&cs,self.shared(faces),self.pad,self.tol); (cs,x) }
                 Ssi::Same => { found.same_pairs.push(faces); continue }
                 Ssi::Traced => {
                     let mut traced = self.traced_meeting(faces,crossings)?;
@@ -1154,25 +1167,82 @@ impl<'a> Arrangement<'a> {
                 let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&self.edges[ei].curve,&self.edges[ej].curve) else { continue };
                 let (ti,tj) = (self.edges[ei].t,self.edges[ej].t);
                 if !overlap(&ci.bounds(ti),&cj.bounds(tj),self.pad) { continue }
-                // in closed form where `query` has one, else by search (`meeting::crossings`)
-                let found = crossings_in(surface,ci,ti,cj,tj,tol).unwrap_or_else(||
-                    super::meeting::crossings(ci,ti,cj,tj,ON_CURVE*tol).into_iter().map(|(t,_,q)| (t,q)).collect());
+                // each meeting's reach at a point: a point of it within the tolerance of its two
+                // surfaces stands that over the sine of their angle off it (`on_meeting`), so a
+                // meeting traced between surfaces meeting shallowly is known only so well
+                let (si,sj) = (&self.solids[oi].faces[gi].surface,&self.solids[oj].faces[gj].surface);
+                let reach_of = |o: &Surface,p: V| on_meeting(tol,norm(crate::util::space::cross(
+                    crate::util::space::normalised(surface.gradient(p)).unwrap_or([0.;3]),
+                    crate::util::space::normalised(o.gradient(p)).unwrap_or([0.;3]))));
+                // in closed form where `query` has one, else by search (`meeting::crossings`), as far
+                // as the shallower of the two meetings anywhere along them is known, each candidate
+                // then held to the reach of the two at it
+                let widest = super::meeting::reach_along(&[(ci,ti,si),(cj,tj,sj)],&|o,p| reach_of(o,p));
+                let found: Vec<(f64,V)> = crossings_in(surface,ci,ti,cj,tj,tol).unwrap_or_else(||
+                    super::meeting::crossings(ci,ti,cj,tj,widest).into_iter()
+                        .filter(|&(t,u,_)| distance(ci.point(t),cj.point(u)) <= reach_of(si,ci.point(t)).max(reach_of(sj,cj.point(u))))
+                        .map(|(t,_,q)| (t,q)).collect());
                 // each the point the three surfaces share, by Newton on their signed distances: what
                 // each of the three faces' searches finds again, so the pool takes it for one
                 let three = [surface,&self.solids[oi].faces[gi].surface,&self.solids[oj].faces[gj].surface];
-                for (_,q) in found {
-                    let q = shared_point(three,q,tol);
+                for (t0,q) in found {
+                    let q0 = q;
+                    let q = match shared_point(three,q,tol).or_else(|| touch_point(three,q,tol)) {
+                        Some(q) => q,
+                        // two of the three touch there (their gradients parallel), so the two curves
+                        // are tangent and their crossing is known only as the stretch along which
+                        // they stay within reach of one another: a vertex either has in it already
+                        // is that crossing, else their nearest approach is (#735 A3)
+                        None => self.crossing_in_touch([ei,ej],t0,q),
+                    };
                     let t = { let mut t = ci.inverse(q); if let Some(period) = ci.period() { t = around(t,ti[0],period); } t };
-                    if !(t >= ti[0]-1e-12 && t <= ti[1]+1e-12) || distance(ci.point(t),q) > ON_CURVE*tol { continue }
+                    let near = |c: &Curve,x: f64,o: &Surface| distance(c.point(x),q) <= reach_of(o,q).max(distance(q,q0)+ON_CURVE*tol);
+                    if !(t >= ti[0]-1e-12 && t <= ti[1]+1e-12) || !near(ci,t,si) { continue }
                     let mut u = cj.inverse(q);
                     if let Some(period) = cj.period() { u = around(u,tj[0],period); }
-                    if !(u >= tj[0]-1e-12 && u <= tj[1]+1e-12) || distance(cj.point(u),q) > 8.*tol { continue }
+                    if !(u >= tj[0]-1e-12 && u <= tj[1]+1e-12) || !near(cj,u,sj) { continue }
                     let v = self.pool.at(q);
                     if !self.cuts[ei].iter().any(|&(_,w)| w == v) { self.cuts[ei].push((t,v)); }
                     if !self.cuts[ej].iter().any(|&(_,w)| w == v) { self.cuts[ej].push((u,v)); }
                 }
             } }
         }
+    }
+
+    /// **Where two meetings tangent at a crossing cross** (`triple_points`, its three surfaces'
+    /// Newton singular there): of working edges `e[0]` and `e[1]`, found near `q` at `t` along the
+    /// first, the stretch of the first within a vertex's reach onto a curve of the second (out from
+    /// `t` each way, doubling, as `flat_roots` reads a root met flatly); the vertex already on
+    /// either inside the stretch nearest `q` — one of their ends, or a cut — else the point of the
+    /// stretch nearest the second curve.
+    fn crossing_in_touch(&self,e: [usize;2],t: f64,q: V) -> V {
+        let reach = ON_CURVE*self.tol;
+        let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&self.edges[e[0]].curve,&self.edges[e[1]].curve) else { return q };
+        let span = self.edges[e[0]].t;
+        let off = |t: f64| { let p = ci.point(t); distance(cj.point(cj.inverse(p)),p) };
+        let out = |dir: f64| {
+            let (mut d,mut last) = (1e-12*(span[1]-span[0]).abs().max(1e-300),t);
+            loop {
+                let x = (t+dir*d).clamp(span[0],span[1]);
+                if off(x) > reach { return last }
+                last = x;
+                if x == span[0] || x == span[1] { return last }
+                d *= 2.;
+            }
+        };
+        let (lo,hi) = (out(-1.),out(1.));
+        let on_ci = |p: V| {
+            let mut u = ci.inverse(p);
+            if let Some(period) = ci.period() { u = around(u,span[0],period); }
+            (u >= lo && u <= hi && distance(ci.point(u),p) <= reach).then_some(u)
+        };
+        let known = e.iter().flat_map(|&k| self.edges[k].v.into_iter().chain(self.cuts[k].iter().map(|&(_,v)| v)))
+            .map(|v| self.pool.pts[v as usize]).filter(|&p| on_ci(p).is_some() && off(ci.inverse(p)) <= reach)
+            .min_by(|a,b| distance(*a,q).total_cmp(&distance(*b,q)));
+        if let Some(p) = known { return p }
+        const N: usize = 32;
+        let best = (0..=N).map(|k| lo+(hi-lo)*k as f64/N as f64).min_by(|&a,&b| off(a).total_cmp(&off(b))).unwrap_or(t);
+        ci.point(best)
     }
 
     /// The vertices on curve `c`, where two faces' surfaces (`surfaces`) meet, each with its
@@ -1703,12 +1773,84 @@ impl Narration {
 }
 
 /// **The point three surfaces share near `q`**: Newton onto their three zero sets
-/// (`roots::newton_onto`), no step longer than `1e3 tol`; `q` where that does not settle (the three
-/// meet too near tangent there to say better).
-fn shared_point(surfaces: [&Surface;3],q: V,tol: f64) -> V {
-    crate::util::roots::newton_onto::<3>(q,1e3*tol,|x| Some(surfaces.map(|s| (s.gradient(x),s.implicit(x)))),
-        |at| at.iter().all(|r| r.1.abs() <= 1e-3*tol))
-        .filter(|&x| distance(x,q) <= 1e3*tol).unwrap_or(q)
+/// (`roots::newton_onto`), no step longer than `1e3 tol`; `None` where that does not settle, or
+/// where two of the three meet there shallower than a trace can follow (`ssi::SHALLOW`): touching,
+/// every point near where they touch is within the tolerance of all three, and settling says
+/// nothing of which.
+fn shared_point(surfaces: [&Surface;3],q: V,tol: f64) -> Option<V> {
+    let x = crate::util::roots::newton_onto::<3>(q,1e3*tol,|x| Some(surfaces.map(|s| (s.gradient(x),s.implicit(x)))),
+        |at| at.iter().all(|r| r.1.abs() <= 1e-3*tol)).filter(|&x| distance(x,q) <= 1e3*tol)?;
+    let g = surfaces.map(|s| crate::util::space::normalised(s.gradient(x)).unwrap_or([0.;3]));
+    let steep = |a: V,b: V| norm(crate::util::space::cross(a,b)) >= super::ssi::SHALLOW;
+    (steep(g[0],g[1]) && steep(g[0],g[2]) && steep(g[1],g[2])).then_some(x)
+}
+
+/// **Where three surfaces meet, two of them touching there**: a touching pair (their normals
+/// nearer parallel at `q` than a trace can follow) meet along a curve their closed form gives, and
+/// where the third crosses that curve steeply the point is the third's root along it, by Newton on
+/// the curve's parameter from its foot of `q`: the same point whichever face's search came near it.
+/// Each touching pair is tried, the nearest parallel first, and the first whose third crosses its
+/// curve steeply (not, as where all three touch, at a double root placed only to the square root of
+/// the tolerance) is taken. `None` where none does, or the root does not settle within `1e4 tol`
+/// of `q`.
+fn touch_point(surfaces: [&Surface;3],q: V,tol: f64) -> Option<V> {
+    let unit = |s: &Surface,p: V| crate::util::space::normalised(s.gradient(p)).unwrap_or([0.;3]);
+    let sine = |a: usize,b: usize| norm(crate::util::space::cross(unit(surfaces[a],q),unit(surfaces[b],q)));
+    let mut pairs: Vec<(usize,usize,usize)> = [(0,1,2),(0,2,1),(1,2,0)].into_iter().filter(|&(a,b,_)| sine(a,b) < super::ssi::SHALLOW).collect();
+    pairs.sort_by(|x,y| sine(x.0,x.1).total_cmp(&sine(y.0,y.1)));
+    pairs.into_iter().find_map(|(a,b,c)| {
+        let Ssi::Curves(curves) = super::ssi::intersect(surfaces[a],surfaces[b],tol) else { return None };
+        let (curve,mut t) = curves.iter().map(|k| (k,k.inverse(q)))
+            .min_by(|x,y| distance(x.0.point(x.1),q).total_cmp(&distance(y.0.point(y.1),q)))?;
+        let third = surfaces[c];
+        for _ in 0..40 {
+            let (p,d) = curve.d1(t);
+            let f = third.implicit(p);
+            let slope = crate::util::space::dot(third.gradient(p),d);
+            if f.abs() <= 1e-3*tol {
+                let steep = slope.abs() >= super::ssi::SHALLOW*norm(d)*norm(third.gradient(p));
+                return (steep && distance(p,q) <= 1e4*tol).then_some(p)
+            }
+            if !(slope.abs() > 0.) { return None }
+            t -= f/slope;
+        }
+        None
+    })
+}
+
+/// **Where an edge touching a surface touches it** (a root of its distance that is also a root of
+/// its rate): where one of the surfaces of the edge's own faces (`own`) touches `other` there,
+/// along a curve their closed form gives, the edge's crossing with that curve — a crossing on
+/// the edge's face, steep where the edge leaves the touch, found by Gauss–Newton on the two
+/// curves' parameters from `t` and the curve's foot of the edge's point. The edge's parameter
+/// there; `None` where no face of its touches `other`, or the crossing does not settle within
+/// `1e4 tol` of the root.
+fn touch_root(c: &Curve,span: [f64;2],own: &[&Surface],other: &Surface,t: f64,tol: f64) -> Option<f64> {
+    let q = c.point(t);
+    let unit = |s: &Surface| crate::util::space::normalised(s.gradient(q)).unwrap_or([0.;3]);
+    own.iter().find_map(|&face| {
+        if norm(crate::util::space::cross(unit(face),unit(other))) >= super::ssi::SHALLOW { return None }
+        let Ssi::Curves(curves) = super::ssi::intersect(face,other,tol) else { return None };
+        let k = curves.iter().min_by(|a,b| distance(a.point(a.inverse(q)),q).total_cmp(&distance(b.point(b.inverse(q)),q)))?;
+        let (mut x,mut u) = (t,k.inverse(q));
+        for _ in 0..30 {
+            let ((p,dp),(r,dr)) = (c.d1(x),k.d1(u));
+            let res = crate::util::space::sub(p,r);
+            if norm(res) <= 1e-3*tol {
+                // the two crossing steeply, or the crossing is no better placed than the root
+                let steep = norm(crate::util::space::cross(dp,dr)) >= super::ssi::SHALLOW*norm(dp)*norm(dr);
+                return (steep && distance(p,q) <= 1e4*tol && x >= span[0]-1e-12 && x <= span[1]+1e-12).then_some(x)
+            }
+            // [dp, -dr] [dx, du] = -res, by its normal equations
+            let (a11,a12,a22) = (crate::util::space::dot(dp,dp),-crate::util::space::dot(dp,dr),crate::util::space::dot(dr,dr));
+            let (b1,b2) = (-crate::util::space::dot(dp,res),crate::util::space::dot(dr,res));
+            let det = a11*a22-a12*a12;
+            if !(det.abs() > 1e-300) { return None }
+            x += (a22*b1-a12*b2)/det;
+            u += (a11*b2-a12*b1)/det;
+        }
+        None
+    })
 }
 
 /// Step 2b's vertices: for each working edge, the pooled vertices (none of `gone`) lying inside
@@ -1812,22 +1954,45 @@ fn merged(out: &[WEdge],tol: f64) -> Vec<(u32,bool)> {
     rep
 }
 
-/// Where the closed curves two surfaces meet in (`curves`, in closed form) cross one another,
-/// each crossing listed against both: two curves of one meeting cross only where the surfaces
-/// touch (two cylinders of one radius whose axes cross meet in two ellipses, crossing where both
-/// touch), and there each is split as at an edge.
-fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],tol: f64) -> Vec<Vec<V>> {
+/// Where the curves two surfaces meet in (`curves`, in closed form) cross one another, over their
+/// stretches within the faces' shared box `bx` (grown by `pad`), each crossing listed against both:
+/// two curves of one meeting cross only where the surfaces touch — a singular point of the meeting
+/// (#735 A2): two cylinders of one radius whose axes cross meet in two ellipses crossing where both
+/// touch, a plane tangent to a hyperboloid in the two rulings through the point it touches at — and
+/// there each is split as at an edge.
+fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],bx: Box3,pad: f64,tol: f64) -> Vec<Vec<V>> {
     let mut crossed = vec![Vec::new();curves.len()];
+    let stretches: Vec<Option<[f64;2]>> = curves.iter().map(|c| stretch_in(c,bx,pad)).collect();
     for i in 0..curves.len() {
         for j in i+1..curves.len() {
-            let (Some(pi),Some(pj)) = (curves[i].period(),curves[j].period()) else { continue };
-            for (_,q) in crossings_in(surface,&curves[i],[0.,pi],&curves[j],[0.,pj],tol).unwrap_or_default() {
+            let (Some(ti),Some(tj)) = (stretches[i],stretches[j]) else { continue };
+            for (_,q) in crossings_in(surface,&curves[i],ti,&curves[j],tj,tol).unwrap_or_default() {
                 crossed[i].push(q);
                 crossed[j].push(q);
             }
         }
     }
     crossed
+}
+
+/// The stretch of a closed-form curve to read for crossings within the box `bx` grown by `pad`: a
+/// closed one's period, a line's run inside the box's slabs, a spline's domain; none for a line
+/// missing the box.
+fn stretch_in(c: &Curve,(lo,hi): Box3,pad: f64) -> Option<[f64;2]> {
+    if let Some(p) = c.period() { return Some([0.,p]) }
+    match *c {
+        Curve::Line {p,d} => {
+            let (mut t0,mut t1) = (f64::NEG_INFINITY,f64::INFINITY);
+            for k in 0..3 {
+                if d[k].abs() < 1e-300 { if p[k] < lo[k]-pad || p[k] > hi[k]+pad { return None } continue }
+                let (a,z) = ((lo[k]-pad-p[k])/d[k],(hi[k]+pad-p[k])/d[k]);
+                t0 = t0.max(a.min(z)); t1 = t1.min(a.max(z));
+            }
+            (t0 < t1).then_some([t0,t1])
+        }
+        Curve::BSpline(ref b) => Some(b.domain()),
+        _ => None,
+    }
 }
 
 /// Where traced curves of one meeting (`curves`) end at one another, each such end listed against
@@ -1861,12 +2026,7 @@ fn assemble(out: &[WEdge],pool: &Pool,kept: Vec<Face>) -> Brep {
             (result.vertices.len()-1) as u32
         }); }
         let id = result.edge(e.curve.clone(),e.t,v);
-        // the tolerance it was built to (#735 A3): how far its curve's ends stand from the vertices a
-        // merge onto a meeting put there, where that is past the pool's own reach
-        if let EdgeCurve::Curve(c) = &e.curve {
-            let gap = (0..2).map(|k| distance(c.point(e.t[k]),pool.pts[e.v[k] as usize])).fold(0.,f64::max);
-            if gap > pool.tol { result.edges[id as usize].tol = gap; }
-        }
+        result.edges[id as usize].tol = built_tol(e,pool);
         emap.insert(i as u32,id);
     }
     for mut f in kept {

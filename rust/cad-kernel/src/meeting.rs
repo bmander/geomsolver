@@ -363,3 +363,12 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
     }
     out
 }
+
+/// **The widest reach a meeting along any of `curves` has** (each a curve, its stretch, and the
+/// other surface whose meeting with the one they lie on it is): `reach` read at seventeen points
+/// along each, the largest — how far apart two of them may stand where they cross and still be
+/// crossing, the farthest any is known.
+pub fn reach_along(curves: &[(&Curve,[f64;2],&Surface)],reach: &dyn Fn(&Surface,V) -> f64) -> f64 {
+    curves.iter().flat_map(|&(c,t,o)| (0..=16).map(move |k| reach(o,c.point(t[0]+(t[1]-t[0])*k as f64/16.))))
+        .fold(0.,f64::max)
+}

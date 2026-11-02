@@ -327,15 +327,18 @@ face; the profile cut there and turned once (`tests/swept_closed.rs`:
 `a_block_leaning_to_the_axis_turned_whole_…`,
 `a_block_straddling_the_axis_tipped_two_ways_turned_whole_…`, each the integral of its slices' radial
 spans to 1e-6 and agreeing with membership).  **A leaning tool turned part of a turn** builds by the
-arrangement, its edges' hyperboloids and faces' contact cones among the candidates, where three
-rules hold its touches: a plane meets a hyperboloid of revolution in closed form (`brep::ssi`: an
+arrangement, its edges' hyperboloids and faces' contact cones among the candidates: **one
+arrangement of the box and every candidate, one selection by membership** (#735,
+`brep::boolean::arrangement_within`, `Complex::select`) — no separator, no order of cuts, no Boolean
+a cell, no union. A plane meets a hyperboloid of revolution in closed form (`brep::ssi`: an
 ellipse or a hyperbola's branches held to the meridian's heights, as rational quadratics, or the two
-rulings a plane holding one meets it in; `brep::surfaces_meet_in_curves_on_both`), a Boolean drops a
-piece with no inside (the sliver a surface touching a solid along its edge cuts off), and a kept cell
-touching the cells united so far only along a circle waits for its neighbour
-(`a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept`, slow tier: the volume its
-slices sweep, each circle's arcs within a slice carried through the turn and united, to 1e-6, and
-membership).  X1–X5 are the pipeline's cases, not rows of their own: under a turn, a bar turned
+rulings a plane holding one meets it in; `brep::surfaces_meet_in_curves_on_both`), and the
+candidates' touches are the arrangement's (brep.md's tolerant rules: a touch laid as an edge, a
+crossing where two meetings are tangent made one vertex, a piece with no inside merged into its
+edge) (`a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept`, slow tier: the volume
+its slices sweep, each circle's arcs within a slice carried through the turn and united, to 1e-6, and
+membership; built at 1e-6, and at 1e-7 in
+`a_block_leaning_to_the_axis_turned_part_of_a_turn_holds_at_a_tenth_of_the_tolerance`).  X1–X5 are the pipeline's cases, not rows of their own: under a turn, a bar turned
 through all but its own width meets itself, its end poses' faces and its edges' cylinders burying
 one another where they meet (X5, X1; `a_bar_turned_through_all_but_its_width_meets_itself`, its
 slices' arcs carried and united round the circle, to 1e-8), and an L-shaped prism's concave edge's

@@ -265,17 +265,36 @@ fn slice(tool: &Brep,z: f64) -> Option<Vec<[f64;2]>> {
 }
 
 /// **A block leaning to the axis turned part of a turn is its slices swept**: its arrangement —
-/// the faces at both end poses, its edges' hyperboloids, its faces' contact cones and cylinders,
-/// the planes parting their touches — split, classified and united, the hyperboloids met by the
-/// planes in closed form. Held to the volume its slices sweep, worked apart from the build: at each
-/// height and radius the circle's arcs within the slice, each carried through the turn, united
-/// (`turned_volume`), to 1e-6; and to membership.
+/// the faces at both end poses, its edges' hyperboloids, its faces' contact cones and cylinders —
+/// one split of the box by all of them at once, each cell classified, and the members' boundary
+/// selected (#735: no separator, no order of cuts, no Boolean a cell, no union). Its touches are
+/// the arrangement's: a face at an end pose holding the ruling of a hyperboloid it is tangent to, a
+/// hyperboloid touching the cylinder of its throat's radius round the throat, a plane crossing that
+/// circle where the two meetings it lays are tangent. Held to the volume its slices sweep, worked
+/// apart from the build: at each height and radius the circle's arcs within the slice, each carried
+/// through the turn, united (`turned_volume`), to 1e-6; and to membership.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 26 s: a leaning block's part turn, its arrangement of 800 cells")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 85 s: a leaning block's part turn, one arrangement of 17 candidates")]
 fn a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept() {
     let tool = leaning(0.35,3.);
     let path = turn([0.;3],[0.,0.,1.],2.);
     let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = turned_volume(&[&tool],2.,200,8);
+    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// **The same part turn at a tenth of the tolerance** (#735's regression gate): the one
+/// arrangement held at 1e-7, where a face at an end pose holding a hyperboloid's ruling is met in
+/// that ruling and its partner whatever the tolerance (`ssi`: a constant at the centre that is
+/// nothing but rounding), and crossings a hair from vertices leave pieces shorter than a vertex's
+/// reach (collapsed, `tolerant`).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 90 s: a leaning block's part turn at 1e-7")]
+fn a_block_leaning_to_the_axis_turned_part_of_a_turn_holds_at_a_tenth_of_the_tolerance() {
+    let tool = leaning(0.35,3.);
+    let path = turn([0.;3],[0.,0.,1.],2.);
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-7).unwrap();
     let expected = turned_volume(&[&tool],2.,200,8);
     assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
