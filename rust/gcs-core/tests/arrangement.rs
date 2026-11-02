@@ -6,6 +6,7 @@
 //! by validity; every cell's membership against the operands read directly; and the arrangement
 //! unchanged, cell for cell, whatever the operands' order (the determinism gate).
 use crate::brep::block;
+use crate::complex::volumes;
 use gcs_core::brep::boolean::{arrangement,combined,members,selected,Op};
 use gcs_core::brep::build::{disc,prism,sphere};
 use gcs_core::brep::props::volume;
@@ -13,13 +14,6 @@ use gcs_core::brep::query::{Located,Place};
 use gcs_core::brep::topo::Brep;
 
 fn close(a: f64,b: f64,rel: f64) { assert!((a-b).abs() <= rel*b.abs().max(1.),"{a} against {b}"); }
-
-/// The cells' volumes, smallest first.
-fn volumes(c: &gcs_core::brep::complex::Complex) -> Vec<f64> {
-    let mut v: Vec<f64> = c.cells().unwrap()[1..].iter().map(|k| k.volume).collect();
-    v.sort_by(f64::total_cmp);
-    v
-}
 
 /// Three blocks, each crossing the other two, where three faces of three operands meet at points
 /// no edge of any passes; and a ball and a rod crossing them.

@@ -3,16 +3,15 @@
 //! and faces tangent along an edge are states it holds, each held to arithmetic: its cells'
 //! volumes, its check, and the solid a selection of its cells is.
 use crate::brep::block;
+use crate::common::close;
 use gcs_core::brep::boolean::{arrangement,combined,Op};
 use gcs_core::brep::build::{disc,prism};
 use gcs_core::brep::complex::{Complex,Touch};
 use gcs_core::brep::props::volume;
 use std::f64::consts::PI;
 
-fn close(a: f64,b: f64) { assert!((a-b).abs() <= 1e-9*b.abs().max(1.),"{a} against {b}"); }
-
 /// The bounded cells' volumes, smallest first.
-fn volumes(c: &Complex) -> Vec<f64> {
+pub(crate) fn volumes(c: &Complex) -> Vec<f64> {
     let mut v: Vec<f64> = c.cells().unwrap()[1..].iter().map(|k| k.volume).collect();
     v.sort_by(f64::total_cmp);
     v

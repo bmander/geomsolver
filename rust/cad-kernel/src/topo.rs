@@ -123,9 +123,13 @@ impl Pcurve {
 /// `uv`: the edge's tangent by least squares in `[S_u S_v]` there.
 fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
+    in_parameters(surface,uv,c.tangent(t))
+}
+
+/// `d` in `surface`'s parameters at `uv`: the least-squares `[S_u S_v] x = d` (not finite where the
+/// two derivatives are parallel, a pole's).
+pub(crate) fn in_parameters(surface: &Surface,uv: Uv,d: V) -> Uv {
     let (_,su,sv) = surface.d1(uv);
-    let d = c.tangent(t);
-    // least squares [S_u S_v] x = C'
     let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
     let (b1,b2) = (dot(su,d),dot(sv,d));
     let det = a11*a22-a12*a12;

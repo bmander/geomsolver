@@ -28,7 +28,7 @@ pub fn indices_with<S,R: Send>(n: usize,init: impl Fn() -> S + Sync,f: impl Fn(&
     if threads <= 1 {
         let mut state = init();
         // each item from no warm start, as on many threads (`util::warm`), and the caller's kept
-        return super::warm::kept(|| (0..n).map(|i| { super::warm::forget(); f(&mut state,i) }).collect())
+        return (0..n).map(|i| super::warm::fresh(|| f(&mut state,i))).collect()
     }
     #[cfg(target_arch = "wasm32")]
     { unreachable!("one thread on wasm") }
@@ -46,8 +46,7 @@ pub fn indices_with<S,R: Send>(n: usize,init: impl Fn() -> S + Sync,f: impl Fn(&
                         let i = next.fetch_add(1,Ordering::Relaxed);
                         if i >= n { break; }
                         // each item from no warm start, whichever thread took it (`util::warm`)
-                        super::warm::forget();
-                        mine.push((i,f(&mut state,i)));
+                        mine.push((i,super::warm::fresh(|| f(&mut state,i))));
                     }
                     done.lock().unwrap_or_else(|e| e.into_inner()).extend(mine);
                 });

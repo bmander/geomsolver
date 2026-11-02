@@ -254,8 +254,6 @@ fn nearest_held(b: &Arc<BSpline>,p: V) -> f64 {
     t
 }
 
-// The last foot each thread found on each of the last few blends (by their addresses), as a face
-// family's wall keeps its own: only ever a start, held to settling near the point (`util::warm`).
 
 /// A swept section's face between one of its edges and that edge's image in the section it is
 /// carried to (`build::ruled`): `S(u, v) = carry_v((1 − v) A(a₀ + u Δa) + v B(b₀ + u Δb))`, each
@@ -431,9 +429,6 @@ fn net_newton(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
     None
 }
 
-// The last foot each thread found on each of the last few sheets (by their nets' addresses): a
-// trace asks of one point after another a step apart, on two surfaces in turn, so the next foot is
-// a Newton step or two from the last (`util::warm`).
 
 /// The parameters of a B-spline sheet's point nearest `p`: Gauss–Newton from the last foot this
 /// thread found on it where `p` is near the sheet there (within a thousandth of its own size — off

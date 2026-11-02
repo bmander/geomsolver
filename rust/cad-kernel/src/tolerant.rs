@@ -59,9 +59,8 @@ impl Pool {
         let mut found = None;
         let pts = &self.pts;
         let tol = self.tol;
-        self.grid.around(p,|i| if found.is_none() && distance(pts[i as usize],p) <= tol { found = Some(i) });
-        if let Some(i) = found {
-            let d = distance(self.pts[i as usize],p);
+        self.grid.around(p,|i| if found.is_none() { let d = distance(pts[i as usize],p); if d <= tol { found = Some((i,d)) } });
+        if let Some((i,d)) = found {
             let t = &mut self.tols[i as usize];
             *t = t.max(d);
             return i

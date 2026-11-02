@@ -189,9 +189,6 @@ pub struct Sheet {
     boxes: Vec<Box3>,
 }
 
-// The last foot each thread found on each of the last few walls (by their addresses), as a
-// B-spline sheet's (`geom::net_inverse`): only ever a start, held to settling near the point
-// (`util::warm`).
 
 /// Three numbers of `n` from `i`.
 fn v3(n: &[f64],i: usize) -> V { [n[i],n[i+1],n[i+2]] }

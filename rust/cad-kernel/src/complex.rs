@@ -93,11 +93,12 @@ pub enum Touch {
 /// A selection's faces before they are assembled (`Complex::select_parts`).
 #[derive(Clone,Debug)]
 pub struct Parts {
-    /// Each kept face: the complex's face it is, and it faced out of the kept shell.
-    pub faces: Vec<(usize,Face)>,
-    /// The complex's edges, then one for each kept wedge beyond the first round an edge it touches
-    /// itself along.
-    pub edges: Vec<super::topo::Edge>,
+    /// Each kept face: the complex's face it is, it faced out of the kept shell, and whether an
+    /// edge of it was given one of `twins` (it touches the result elsewhere along it).
+    pub faces: Vec<(usize,Face,bool)>,
+    /// One edge for each kept wedge beyond the first round an edge the result touches itself
+    /// along, numbered after the complex's edges.
+    pub twins: Vec<super::topo::Edge>,
     /// Where it touches itself along an edge.
     pub touches: Vec<Touch>,
 }
@@ -111,19 +112,18 @@ pub fn turned(f: &Face) -> Face {
     Face {surface:f.surface.clone(),reversed:!f.reversed,loops:f.loops.iter().cloned().map(reverse_loop).collect(),name:f.name.clone()}
 }
 
+/// `f` as it is, or turned where `turn`.
+pub fn faced(f: &Face,turn: bool) -> Face { if turn { turned(f) } else { f.clone() } }
+
 /// A face's outward normal at its parameters `uv`, unit; none where the surface has none.
 fn outward(f: &Face,uv: super::geom::Uv) -> Option<V> {
     let n = normalised(f.surface.normal_raw(uv))?;
     Some(if f.reversed { scale(n,-1.) } else { n })
 }
 
-/// `d` in the surface's parameters at `uv`: the least-squares `[S_u S_v] x = d`.
+/// `d` in the surface's parameters at `uv` (`topo::in_parameters`), where that is finite.
 fn in_parameters(s: &Surface,uv: super::geom::Uv,d: V) -> Option<super::geom::Uv> {
-    let (_,su,sv) = s.d1(uv);
-    let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
-    let (b1,b2) = (dot(su,d),dot(sv,d));
-    let det = a11*a22-a12*a12;
-    (det.abs() > 1e-300).then(|| [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det])
+    Some(super::topo::in_parameters(s,uv,d)).filter(|x| x.iter().all(|v| v.is_finite()))
 }
 
 /// `a` wrapped into `(-π, π]`.
@@ -139,8 +139,23 @@ impl Complex {
     /// joined into cells, to `tol`. Refused where two faces round an edge cannot be ordered (they
     /// coincide there, which the caller should have merged into one face).
     pub fn new(b: Brep,origins: Vec<Vec<Origin>>,tol: f64) -> Result<Complex,String> {
+        Complex::try_new(b,origins,tol).map_err(|(e,_)| e)
+    }
+
+    /// `new`, handing `b` back where it is refused: a caller with another road for the faces (a
+    /// Boolean keeping each by its own sides) takes them on without a copy.
+    pub(crate) fn try_new(b: Brep,origins: Vec<Vec<Origin>>,tol: f64) -> Result<Complex,(String,Brep)> {
+        assert_eq!(origins.len(),b.faces.len(),"one list of origins a face");
+        match Complex::ordered(&b,tol) {
+            Ok((shell_sides,shells,radial)) => Ok(Complex {b,shell_sides,shells,radial,origins,tol,cells:std::sync::OnceLock::new()}),
+            Err(e) => Err((e,b)),
+        }
+    }
+
+    /// `new`'s work: each face's two shells, the shells, and each edge's uses in order round it.
+    #[allow(clippy::type_complexity)]
+    fn ordered(b: &Brep,tol: f64) -> Result<(Vec<[usize;2]>,Vec<Vec<(usize,bool)>>,Vec<Vec<Use>>),String> {
         let nf = b.faces.len();
-        assert_eq!(origins.len(),nf,"one list of origins a face");
         // a step into each face, where two faces tangent along an edge have parted by their
         // curvatures' difference times its square: far past the tolerance, well inside the scale
         // (measured only where an edge has more than two uses)
@@ -151,8 +166,7 @@ impl Complex {
                 for (ci,c) in l.iter().enumerate() { uses[c.edge as usize].push((fi,li,ci)); }
             }
         }
-        let mut parent: Vec<usize> = (0..2*nf).collect();
-        fn root(p: &mut [usize],mut x: usize) -> usize { while p[x] != x { p[x] = p[p[x]]; x = p[x]; } x }
+        let mut sides_joined = crate::util::union_find::UnionFind::new(2*nf);
         let mut radial: Vec<Vec<Use>> = vec![Vec::new();b.edges.len()];
         // each sorted use's side facing the wedge ahead of it
         let mut wedges: Vec<Vec<usize>> = vec![Vec::new();b.edges.len()];
@@ -170,7 +184,7 @@ impl Complex {
                 let opposite = uses[e].len() == 1 || r(u) != r(w);
                 let pairs = if uses[e].len() == 1 { vec![(2*u.0,2*u.0+1)] }
                     else if opposite { vec![(2*u.0,2*w.0),(2*u.0+1,2*w.0+1)] } else { vec![(2*u.0,2*w.0+1),(2*u.0+1,2*w.0)] };
-                for (x,y) in pairs { let (x,y) = (root(&mut parent,x),root(&mut parent,y)); parent[x] = y; }
+                for (x,y) in pairs { sides_joined.union(x,y); }
                 // the wedge ahead of the first is behind one of its sides; which, no order says, so
                 // the first's back is taken to face it (a selection asks only where kept faces
                 // meet more than twice)
@@ -245,8 +259,7 @@ impl Complex {
                 let (fj,_,_) = uses[e][uj];
                 let side_i = 2*fi+usize::from(dot(n,r) > 0.);
                 let side_j = 2*fj+usize::from(dot(nj,rj) < 0.);
-                let (x,y) = (root(&mut parent,side_i),root(&mut parent,side_j));
-                parent[x] = y;
+                sides_joined.union(side_i,side_j);
                 sides.push(side_i);
             }
             radial[e] = round.iter().map(|&(angle,_,u,_,_)| {
@@ -260,7 +273,7 @@ impl Complex {
         let mut shells: Vec<Vec<(usize,bool)>> = Vec::new();
         let mut shell_of_side = vec![0usize;2*nf];
         for side in 0..2*nf {
-            let r = root(&mut parent,side);
+            let r = sides_joined.find(side);
             let c = *shell_of_root.entry(r).or_insert_with(|| { shells.push(Vec::new()); shells.len()-1 });
             shells[c].push((side/2,side%2 == 1));
             shell_of_side[side] = c;
@@ -271,7 +284,7 @@ impl Complex {
             for i in 0..k { let a = radial[e][(i+k-1)%k].ahead; radial[e][i].behind = a; }
         }
         let shell_sides = (0..nf).map(|f| [shell_of_side[2*f],shell_of_side[2*f+1]]).collect();
-        Ok(Complex {b,shell_sides,shells,radial,origins,tol,cells:std::sync::OnceLock::new()})
+        Ok((shell_sides,shells,radial))
     }
 
     /// Shell `k` as a solid's boundary: its sides' faces turned to face out of its cell.
@@ -279,9 +292,13 @@ impl Complex {
 
     /// The boundary of `sides`, each face turned where its front faces in.
     fn boundary_of(&self,sides: &[(usize,bool)]) -> Brep {
-        let mut s = self.b.clone();
-        s.faces = sides.iter().map(|&(f,front)| if front { turned(&self.b.faces[f]) } else { self.b.faces[f].clone() }).collect();
-        s.compacted()
+        let faces = sides.iter().map(|&(f,front)| faced(&self.b.faces[f],front)).collect();
+        Brep {vertices:self.b.vertices.clone(),edges:self.b.edges.clone(),faces}.compacted()
+    }
+
+    /// Bounded cell `c`'s sides, every shell's.
+    pub(crate) fn cell_sides(&self,cells: &[Cell],c: usize) -> Vec<(usize,bool)> {
+        cells[c].shells.iter().flat_map(|&k| self.shells[k].iter().copied()).collect()
     }
 
     /// **The cells the shells bound**, found once: each shell wound positively (its faces turned
@@ -294,6 +311,7 @@ impl Complex {
             let volumes: Vec<f64> = shells.iter().map(volume).collect();
             let floor = 1e-12*size*size*size;
             let outer: Vec<usize> = (0..shells.len()).filter(|&c| volumes[c] > floor).collect();
+            let is_outer: Vec<bool> = volumes.iter().map(|&v| v > floor).collect();
             // smallest first, so a void finds its tightest host first
             let mut order = outer.clone();
             order.sort_by(|&x,&y| volumes[x].total_cmp(&volumes[y]).then(x.cmp(&y)));
@@ -305,7 +323,7 @@ impl Complex {
             }
             let located: BTreeMap<usize,Located> = order.iter().map(|&c| (c,Located::new(&shells[c],self.tol))).collect();
             for c in 0..shells.len() {
-                if outer.contains(&c) { continue }
+                if is_outer[c] { continue }
                 // a void's points read at its edges' middles, one off every outer shell's boundary
                 // (a void touching its host at a point)
                 let probes: Vec<V> = shells[c].edges.iter().filter_map(|e| match &e.curve {
@@ -444,8 +462,8 @@ impl Complex {
     /// sides — as a Boolean does — without finding the cells.
     pub fn select_shells(&self,keep: &dyn Fn(usize) -> bool) -> Selected {
         let parts = self.select_parts(keep);
-        let mut b = Brep {vertices:self.b.vertices.clone(),edges:parts.edges,faces:parts.faces.into_iter().map(|(_,f)| f).collect()};
-        b = b.compacted();
+        let edges = self.b.edges.iter().cloned().chain(parts.twins).collect();
+        let b = Brep {vertices:self.b.vertices.clone(),edges,faces:parts.faces.into_iter().map(|(_,f,_)| f).collect()}.compacted();
         let mut touches = parts.touches;
         for p in b.pinches() {
             let along = touches.iter().any(|t| matches!(t,Touch::Along {ends,..}
@@ -456,18 +474,18 @@ impl Complex {
     }
 
     /// `select_shells`'s faces before they are assembled: each kept face with the complex's face
-    /// it is, the complex's edges with the edge each touch gives its kept wedges appended, and the
-    /// touches along edges (pinches at points are `select_shells`'s, read on the assembled boundary).
+    /// it is, the edges each touch gives its kept wedges, and the touches along edges (pinches at
+    /// points are `select_shells`'s, read on the assembled boundary).
     pub fn select_parts(&self,keep: &dyn Fn(usize) -> bool) -> Parts {
         let kept: Vec<bool> = (0..self.shells.len()).map(keep).collect();
-        let mut edges = self.b.edges.clone();
+        let mut twins: Vec<super::topo::Edge> = Vec::new();
         let mut at = vec![usize::MAX;self.b.faces.len()];
         let mut faces = Vec::new();
         for (f,face) in self.b.faces.iter().enumerate() {
             let [behind,front] = self.shell_sides[f];
             if kept[behind] == kept[front] { continue }
             at[f] = faces.len();
-            faces.push((f,if kept[behind] { face.clone() } else { turned(face) }));
+            faces.push((f,faced(face,!kept[behind]),false));
         }
         let mut touches = Vec::new();
         for (e,round) in self.radial.iter().enumerate() {
@@ -475,14 +493,14 @@ impl Complex {
             if mine.len() <= 2 { continue }
             let k = mine.len();
             let pairs: Vec<(&Use,&Use)> = (0..k).filter(|&i| kept[mine[i].ahead]).map(|i| (mine[i],mine[(i+1)%k])).collect();
-            let ends = edges[e].v.map(|v| self.b.vertices[v as usize].p);
+            let ends = self.b.edges[e].v.map(|v| self.b.vertices[v as usize].p);
             touches.push(Touch::Along {ends,faces:k});
             for &(x,y) in pairs.iter().skip(1) {
-                let twin = edges[e].clone();
-                edges.push(twin);
-                let new = (edges.len()-1) as u32;
+                twins.push(self.b.edges[e].clone());
+                let new = (self.b.edges.len()+twins.len()-1) as u32;
                 for u in [x,y] {
                     // the use's place in the kept face: its loop is the same, turned or not
+                    faces[at[u.face]].2 = true;
                     let face = &mut faces[at[u.face]].1;
                     let l = &mut face.loops[u.lp];
                     let n = l.len();
@@ -491,16 +509,13 @@ impl Complex {
                 }
             }
         }
-        Parts {faces,edges,touches}
+        Parts {faces,twins,touches}
     }
 
     /// The bounded cells, each its own solid: its shells' faces turned to face out of it.
     pub fn solids(&self) -> Result<Vec<Brep>,String> {
         let cells = self.cells()?;
-        Ok(cells[1..].iter().map(|c| {
-            let sides: Vec<(usize,bool)> = c.shells.iter().flat_map(|&k| self.shells[k].iter().copied()).collect();
-            self.boundary_of(&sides)
-        }).collect())
+        Ok((1..cells.len()).map(|c| self.boundary_of(&self.cell_sides(cells,c))).collect())
     }
 
     /// A point deep inside bounded cell `c`: the deepest of its points `inside_points` reads.
@@ -513,8 +528,7 @@ impl Complex {
     /// where the cell's own boundary reads it inside.
     pub fn inside_points(&self,c: usize,capacity: usize) -> Result<Vec<V>,String> {
         let cells = self.cells()?;
-        let sides: Vec<(usize,bool)> = cells[c].shells.iter().flat_map(|&k| self.shells[k].iter().copied()).collect();
-        let solid = self.boundary_of(&sides);
+        let solid = self.boundary_of(&self.cell_sides(cells,c));
         if let Ok(found) = super::query::interior(&solid,capacity) { if !found.is_empty() { return Ok(found.into_iter().map(|(p,_)| p).collect()) } }
         let located = Located::new(&solid,self.tol);
         let size = solid.size();

@@ -22,7 +22,7 @@
 //! are taken where they exist; the search still runs over them for the critical points.
 use super::geom::{Curve,Surface,Uv,V};
 use super::ssi::{intersect,Ssi};
-use crate::util::space::{add,cross,distance,norm,scale,sub};
+use crate::util::space::{cross,distance,norm,scale,sub};
 
 /// How two surfaces stand along a branch of their meeting.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -77,12 +77,8 @@ fn f(a: &Surface,b: &Surface,uv: Uv) -> f64 { b.implicit(a.point(uv)) }
 /// The box of a box of parameters' points in space, sampled and grown by a sixteenth of its
 /// diagonal (what a trace and a search keep to).
 fn reach(s: &Surface,d: [[f64;2];2]) -> (V,V) {
-    let mut lo = [f64::INFINITY;3];
-    let mut hi = [f64::NEG_INFINITY;3];
-    for i in 0..=16 { for j in 0..=16 {
-        let p = s.point([d[0][0]+(d[0][1]-d[0][0])*i as f64/16.,d[1][0]+(d[1][1]-d[1][0])*j as f64/16.]);
-        for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); }
-    } }
+    let (lo,hi) = super::geom::hull((0..=16).flat_map(|i| (0..=16).map(move |j|
+        s.point([d[0][0]+(d[0][1]-d[0][0])*i as f64/16.,d[1][0]+(d[1][1]-d[1][0])*j as f64/16.]))));
     let grow = norm(sub(hi,lo))/16.;
     (lo.map(|x| x-grow),hi.map(|x| x+grow))
 }
@@ -93,8 +89,8 @@ fn shared(a: (V,V),b: (V,V)) -> (V,V) {
 }
 
 /// **Where a box's boundary crosses the other surface**: along each of its four sides, the sign
-/// changes of `b`'s signed distance between samples, each found by bisection and pulled onto both.
-fn boundary_seeds(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Vec<V> {
+/// changes of `b`'s signed distance between samples, each bracketed root found (`roots::bracketed_root`).
+fn boundary_seeds(a: &Surface,d: [[f64;2];2],b: &Surface) -> Vec<V> {
     let mut out = Vec::new();
     let sides: [(Uv,Uv);4] = [([d[0][0],d[1][0]],[d[0][1],d[1][0]]),([d[0][1],d[1][0]],[d[0][1],d[1][1]]),
         ([d[0][1],d[1][1]],[d[0][0],d[1][1]]),([d[0][0],d[1][1]],[d[0][0],d[1][0]])];
@@ -106,14 +102,8 @@ fn boundary_seeds(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Vec<V> {
             let v = f(a,b,at(s));
             if v == 0. { out.push(a.point(at(s))); }
             else if (v < 0.) != (last.1 < 0.) && last.1 != 0. {
-                let (mut lo,mut hi,mut flo) = (last.0,s,last.1);
-                for _ in 0..60 {
-                    let m = 0.5*(lo+hi);
-                    let fm = f(a,b,at(m));
-                    if fm.abs() <= 1e-3*tol { lo = m; break }
-                    if (fm < 0.) == (flo < 0.) { lo = m; flo = fm; } else { hi = m; }
-                }
-                out.push(a.point(at(lo)));
+                let root = crate::util::roots::bracketed_root(|x| Some(f(a,b,at(x))),last.0,last.1,s,v,1e-12);
+                out.push(a.point(at(root)));
             }
             last = (s,v);
         }
@@ -248,8 +238,8 @@ pub fn meet(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f64) ->
         Ssi::Same => return Ok(Meeting {same:true,branches:Vec::new(),singular:Vec::new(),closed_form:true}),
         Ssi::Curves(cs) => (cs,true),
         Ssi::Traced => {
-            let mut seeds = boundary_seeds(a,da,b,tol);
-            seeds.extend(boundary_seeds(b,db,a,tol));
+            let mut seeds = boundary_seeds(a,da,b);
+            seeds.extend(boundary_seeds(b,db,a));
             for (s,d,o) in [(a,da,b),(b,db,a)] {
                 for (uv,value) in critical_points(s,d,o,tol) {
                     if value.abs() > 8.*tol { seeds.extend(descents(s,d,o,uv,tol)); }
@@ -288,16 +278,6 @@ pub fn meet(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f64) ->
     Ok(Meeting {same:false,branches,singular,closed_form})
 }
 
-impl Meeting {
-    /// Whether a branch lies along an existing edge (its curve within `tol` of the edge's points
-    /// at its ends and seventeen between): "this meeting is that edge", which a face split along
-    /// it already has.
-    pub fn along(&self,edge: &super::topo::Edge,vertices: &[super::topo::Vertex],tol: f64) -> Option<usize> {
-        let pts: Vec<V> = (0..=16).map(|j| edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*j as f64/16.,vertices)).collect();
-        self.branches.iter().position(|b| pts.iter().all(|&p| distance(b.curve.point(b.curve.inverse(p)),p) <= tol.max(edge.tol)))
-    }
-}
-
 /// **Meetings computed once and shared** (#735 A2): each distinct surface given an index, two faces
 /// on surfaces the kernel holds the same (`ssi::same`) the same one, and each pair of indices'
 /// closed-form meeting (`ssi::intersect`) found the first time any two faces on them are met and
@@ -305,6 +285,8 @@ impl Meeting {
 #[derive(Clone,Debug,Default)]
 pub struct Shared {
     surfaces: Vec<Surface>,
+    /// each kind's surfaces among them, which alone a surface of that kind is compared with
+    of_kind: std::collections::BTreeMap<&'static str,Vec<usize>>,
     meetings: std::collections::BTreeMap<(usize,usize),Ssi>,
 }
 
@@ -312,9 +294,11 @@ impl Shared {
     /// The index of `s` among the surfaces seen: an earlier one it is the same as (exactly, or
     /// within `tol` where both are of the same kind), else a new one.
     pub fn index(&mut self,s: &Surface,tol: f64) -> usize {
-        if let Some(i) = self.surfaces.iter().position(|t| t == s) { return i }
-        if let Some(i) = self.surfaces.iter().position(|t| t.kind() == s.kind() && super::ssi::same(t,s,tol)) { return i }
+        let mine = self.of_kind.entry(s.kind()).or_default();
+        if let Some(&i) = mine.iter().find(|&&i| self.surfaces[i] == *s) { return i }
+        if let Some(&i) = mine.iter().find(|&&i| super::ssi::same(&self.surfaces[i],s,tol)) { return i }
         self.surfaces.push(s.clone());
+        mine.push(self.surfaces.len()-1);
         self.surfaces.len()-1
     }
     /// The meeting of surfaces `i` and `j` (indices), found once: the first surface of each index
@@ -330,9 +314,6 @@ impl Shared {
 /// `v` made unit, or left as it is where it has no length.
 fn unit_or(v: V) -> V { crate::util::space::normalised(v).unwrap_or(v) }
 
-/// The point `p` moved by `d` times `s`.
-#[allow(dead_code)]
-fn along_by(p: V,d: V,s: f64) -> V { add(p,scale(d,s)) }
 
 /// **Where two curves cross, whatever they are** (#735 A2: where branches of meetings cross, a
 /// singular point of an arrangement), over their stretches `ta` and `tb`: each curve sampled
@@ -343,26 +324,30 @@ fn along_by(p: V,d: V,s: f64) -> V { add(p,scale(d,s)) }
 /// its point. What `query::crossings_in` leaves (`None`: a spline's or a trace's crossing with
 /// another), found by search, never assumed absent.
 pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<(f64,f64,V)> {
+    use super::geom::around;
+    use crate::util::bvh::{Bounds,Bvh};
     const N: usize = 512;
     let samples = |c: &Curve,t: [f64;2]| -> Vec<(f64,V)> { (0..=N).map(|k| { let s = t[0]+(t[1]-t[0])*k as f64/N as f64; (s,c.point(s)) }).collect() };
     let (sa,sb) = (samples(a,ta),samples(b,tb));
-    let boxed = |w: &[(f64,V)]| -> (V,V) { (std::array::from_fn(|k| w[0].1[k].min(w[1].1[k])),std::array::from_fn(|k| w[0].1[k].max(w[1].1[k]))) };
     let longest = |s: &[(f64,V)]| s.windows(2).map(|w| distance(w[0].1,w[1].1)).fold(0.,f64::max);
     let pad = reach+longest(&sa).max(longest(&sb));
-    let near = |p: &(V,V),q: &(V,V)| (0..3).all(|k| p.0[k] <= q.1[k]+pad && q.0[k] <= p.1[k]+pad);
-    let around = |c: &Curve,t: f64,span: [f64;2]| match c.period() { Some(p) => span[0]+(t-span[0]).rem_euclid(p),None => t };
+    // each chord's box, `b`'s grown by `pad` and filed in a hierarchy each of `a`'s is asked of
+    let chord = |w: &[(f64,V)],grow: f64| { let (lo,hi) = super::geom::hull([w[0].1,w[1].1]);
+        Bounds {lo:lo.map(|x| x-grow),hi:hi.map(|x| x+grow)} };
+    let boxes = Bvh::new(sb.windows(2).map(|w| chord(w,pad)));
+    let wrap = |c: &Curve,t: f64,span: [f64;2]| match c.period() { Some(p) => around(t,span[0],p),None => t };
     let mut out: Vec<(f64,f64,V)> = Vec::new();
-    let boxes_b: Vec<(V,V)> = sb.windows(2).map(boxed).collect();
     for wa in sa.windows(2) {
-        let ba = boxed(wa);
-        for (j,bb) in boxes_b.iter().enumerate() {
-            if !near(&ba,bb) { continue }
+        let mut near = Vec::new();
+        boxes.query_box(chord(wa,0.),|j| near.push(j));
+        near.sort_unstable();
+        for j in near {
             // the polish, from the chords' middles: each curve's foot of the other's point
             let (mut s,mut t) = ((wa[0].0+wa[1].0)/2.,(sb[j].0+sb[j+1].0)/2.);
             let mut last = f64::INFINITY;
             for _ in 0..60 {
-                t = around(b,b.inverse(a.point(s)),tb);
-                s = around(a,a.inverse(b.point(t)),ta);
+                t = wrap(b,b.inverse(a.point(s)),tb);
+                s = wrap(a,a.inverse(b.point(t)),ta);
                 let d = distance(a.point(s),b.point(t));
                 if !(d < last*(1.-1e-9)) { last = d; break }
                 last = d;

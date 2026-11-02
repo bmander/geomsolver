@@ -16,37 +16,44 @@ pub enum Kind { Net = 0,Blend = 1,Wall = 2 }
 /// How many starts a kind keeps, the newest first.
 const KEPT: usize = 4;
 
-type Starts = [[(usize,[f64;2]);KEPT];3];
+/// A kind's starts: each surface's address and its last foot.
+type Starts = [(usize,[f64;2]);KEPT];
+
+const NONE: Starts = [(0,[0.;2]);KEPT];
 
 thread_local! {
-    static STARTS: Cell<Starts> = const { Cell::new([[(0,[0.;2]);KEPT];3]) };
+    /// Each kind's starts, a cell a kind, so a search reads and writes only its own.
+    static STARTS: [Cell<Starts>;3] = const { [Cell::new(NONE),Cell::new(NONE),Cell::new(NONE)] };
 }
 
 /// The start kept for the surface at `key` of kind `k`, if any.
 pub fn get(k: Kind,key: usize) -> Option<[f64;2]> {
-    STARTS.with(|s| s.get()[k as usize].iter().find(|f| f.0 == key && key != 0).map(|f| f.1))
+    STARTS.with(|s| s[k as usize].get().iter().find(|f| f.0 == key).map(|f| f.1))
 }
 
 /// `uv` kept as the start for the surface at `key` of kind `k`, the oldest of its kind dropped.
 pub fn put(k: Kind,key: usize,uv: [f64;2]) {
     STARTS.with(|s| {
-        let mut all = s.get();
-        let last = all[k as usize];
+        let cell = &s[k as usize];
         let mut next = [(key,uv);KEPT];
         let mut i = 1;
-        for f in last { if f.0 != key && i < KEPT { next[i] = f; i += 1; } }
-        all[k as usize] = next;
-        s.set(all);
+        for f in cell.get() { if f.0 != key && i < KEPT { next[i] = f; i += 1; } }
+        cell.set(next);
     })
 }
 
 /// Every start this thread keeps forgotten.
-pub fn forget() { STARTS.with(|s| s.set([[(0,[0.;2]);KEPT];3])) }
+pub fn forget() { STARTS.with(|s| for c in s { c.set(NONE) }) }
 
 /// `f`'s answer, the starts as they were before it once it is done: what narration asks.
 pub fn kept<R>(f: impl FnOnce() -> R) -> R {
-    let before = STARTS.with(|s| s.get());
+    let before = STARTS.with(|s| s.each_ref().map(Cell::get));
     let r = f();
-    STARTS.with(|s| s.set(before));
+    STARTS.with(|s| for (c,b) in s.iter().zip(before) { c.set(b) });
     r
 }
+
+/// `f`'s answer from no start at all, the starts as they were before it once it is done: what a
+/// result that must depend on its inputs alone asks (an arrangement, a parallel item), leaving
+/// its caller's searches as it found them.
+pub fn fresh<R>(f: impl FnOnce() -> R) -> R { kept(|| { forget(); f() }) }
