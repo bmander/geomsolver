@@ -40,12 +40,12 @@ const BLOCK = `unit mm\nuse std\nuse std.solids\n${block()}`;
 const TWO = `unit mm\nuse std\nuse std.solids\n${block(40, 'one')}${block(30, 'two')}`;
 
 /** Two closed instances of one component, standing apart: one binding, placed twice. */
-const PAIR = 'unit mm\nuse std\nuse std.place (offset)\ncomponent Plate(w: Length) {\n  in std.front {\n'
+const PAIR = 'unit mm\nuse std\nuse std.solids\nuse std.place (offset)\ncomponent Plate(w: Length) {\n  in std.front {\n'
   + '    a := point hint((1, 1))\n    b := point hint((w, 1))\n    c := point hint((w, w))\n    e := point hint((1, w))\n'
   + '    a offset(dx: 1mm, dy: 1mm) std.origin\n    b offset(dx: w, dy: 1mm) std.origin\n'
   + '    c offset(dx: w, dy: w) std.origin\n    e offset(dx: 1mm, dy: w) std.origin\n    ab := line(a, b)\n'
   + '    bc := line(b, c)\n    ce := line(c, e)\n    ea := line(e, a)\n'
-  + '    body := solid(face(ab, bc, ce, ea), from: 0mm, to: 2mm)\n  }\n}\n'
+  + '    body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: 2mm))\n  }\n}\n'
   + 'in (f := frame) { one := Plate(w: 11mm) }\nfix(dir == (1, 0, 0)) f.u\nfix(dir == (0, 1, 0)) f.v\n'
   + 'fix(origin == (0, 0, 0)) f\n'
   + 'in (g := frame) { two := Plate(w: 11mm) }\nfix(dir == (1, 0, 0)) g.u\nfix(dir == (0, 1, 0)) g.v\n'

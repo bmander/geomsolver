@@ -1292,7 +1292,7 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
     'a distance(30, along: u) o', 'a distance(20, along: v) o',
     'hole := circle(center: o) hint(r: 8)', 'radius(8) hole', '}',
     'sec := face(ab, bc, cd, da)', 'hole_f := face(hole)',
-    'stock := solid(sec, depth: 30mm)', 'bore := solid(hole_f, through: body)',
+    'stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))', 'bore := solid(std.solids.Through(hole_f))',
     'body := solid(stock)', 'bore cut body', '',
   ].join('\n');
   const doc = Document.read(src);
@@ -1455,8 +1455,8 @@ test('a solid that does not evaluate is refused with the core\'s reason, its nei
   const src = [
     'use std', 'in std.front {', 'a := point hint((-0.4, 0))', 'b := point hint((0.28, -0.4))',
     'c := point hint((0.28, 0.38))', 'ab := line(a, b)', 'bc := line(b, c)', 'ca := line(c, a)', '}',
-    'f0 := face(ab, bc, ca)', 'b0 := solid(f0, about: bc, sweep: 271)',
-    'f1 := face(ab, bc, ca)', 'b1 := solid(f1, about: std.x)', '',
+    'f0 := face(ab, bc, ca)', 'b0 := solid(std.solids.Revolution(f0, about: bc, to: 271))',
+    'f1 := face(ab, bc, ca)', 'b1 := solid(std.solids.Revolution(f1, about: std.x))', '',
   ].join('\n');
   const doc = Document.read(src);
   assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
@@ -1472,7 +1472,7 @@ test('a named component chain reaches the browser as the same swept mesh', () =>
   const src = [
     'unit mm', 'use std', 'use components.parts', 'in std.front {', 'O := point', 'fix((0, 0)) O',
     'boss := components.parts.Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)', '}',
-    'block := solid(boss.profile, depth: 8mm)', '',
+    'block := solid(std.solids.Prism(boss.profile, from: -8mm, to: 0))', '',
   ].join('\n');
   const doc = Document.read(src);
   const old = Document.read(src.replace('boss.profile', 'face(boss.ab, boss.bc, boss.cd, boss.da)'));
@@ -1482,7 +1482,7 @@ test('a named component chain reaches the browser as the same swept mesh', () =>
   }
   assert.deepEqual(mesh(doc.sketch, doc.solids()[0].index, 2e-3),
     mesh(old.sketch, old.solids()[0].index, 2e-3));
-  const bad = Document.read('use std\nin std.front {\ntrail := line -> line\n}\nbad := solid(trail, depth: 8)\n');
+  const bad = Document.read('use std\nuse std.solids\nin std.front {\ntrail := line -> line\n}\nbad := solid(std.solids.Prism(trail, from: -8, to: 0))\n');
   assert.equal(bad.ok, false);
   assert.ok(bad.diagnostics.some((d) => d.message.includes('open chain')));
 });
@@ -1505,7 +1505,7 @@ test('a material reaches the binding in SI, with the solids made of it (#510 P3)
     'unit in', 'use std',
     'steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)',
     'in std.top {', '  rim := radius(1in) circle(center: std.top.origin)',
-    '  disc := solid(face(rim), depth: 0.25in) of steel', '}', ''].join('\n'));
+    '  disc := solid(std.solids.Prism(face(rim), from: -0.25in, to: 0)) of steel', '}', ''].join('\n'));
   assert.ok(doc.ok);
   const [m] = materials(doc.sketch);
   assert.equal(m.name, 'steel');
@@ -1982,7 +1982,7 @@ test('a name nothing defines is a free variable that ties the dimensions reading
 
 test('an ellipse is a curve of the library, and a point solves onto its rim', () => {
   const d = Document.read(
-    'use std\nuse std.shapes\n'
+    'use std\nuse std.solids\nuse std.shapes\n'
     + 'in std.front {\no := point\nfix((10, 5)) o\np := point hint((11, 9))\n}\n'
     + 'e := trace(std.shapes.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360))\np coincident e hint(t: 80)\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
@@ -2123,7 +2123,7 @@ test('the overview folds the views into the box, and is flat looked at square on
 });
 
 test('a face, its solid and the body rule are written through the edit API by name', () => {
-  const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
+  const d = Document.read('use std\nuse std.solids\nin std.front {\na := point hint((0, 0))\n'
                           + 'b := point hint((60, 0))\nc := point hint((60, 40))\n'
                           + 'd := point hint((0, 40))\nab := line(a, b)\nbc := line(b, c)\n'
                           + 'cd := line(c, d)\nda := line(d, a)\no := point hint((30, 20))\n'
@@ -2136,7 +2136,7 @@ test('a face, its solid and the body rule are written through the edit API by na
   const withFace = Document.read(face.text);
   const solid = withFace.addSolid({ face: 'f0', depth: '8' });
   assert.deepEqual(solid.names, ['b0']);
-  assert.ok(solid.text.endsWith('b0 := solid(f0, depth: 8)\n'), solid.text);
+  assert.ok(solid.text.endsWith('b0 := solid(std.solids.Prism(f0, from: -8, to: 0))\n'), solid.text);
   const withSolid = Document.read(solid.text);
   assert.ok(withSolid.ok, JSON.stringify(withSolid.diagnostics));
   assert.deepEqual(withSolid.solids().map((s) => s.name), ['b0']);
@@ -2155,15 +2155,15 @@ test('a face, its solid and the body rule are written through the edit API by na
 });
 
 test('a Boolean is previewed by the core before it is written, and written as one splice', () => {
-  const d = Document.read('use std\nin std.front {\na := point\nb := point\nc := point\n'
+  const d = Document.read('use std\nuse std.solids\nin std.front {\na := point\nb := point\nc := point\n'
                           + 'k := point\nab := line(a, b)\nbc := line(b, c)\nck := line(c, k)\n'
                           + 'ka := line(k, a)\np := point\nq := point\nr := point\ns := point\n'
                           + 'pq := line(p, q)\nqr := line(q, r)\nrs := line(r, s)\nsp := line(s, p)\n'
                           + 'fix((0, 0)) a\nfix((60, 0)) b\nfix((60, 40)) c\nfix((0, 40)) k\n'
                           + 'fix((35, 15)) p\nfix((45, 15)) q\nfix((45, 25)) r\nfix((35, 25)) s\n}\n'
-                          + 'plate := solid(face(ab, bc, ck, ka), depth: 4)\n'
-                          + 'boss := solid(face(pq, qr, rs, sp), from: -8, to: 4)\n'
-                          + 'pin := solid(face(pq, qr, rs, sp), from: 4, to: 6)\n');
+                          + 'plate := solid(std.solids.Prism(face(ab, bc, ck, ka), from: -4, to: 0))\n'
+                          + 'boss := solid(std.solids.Prism(face(pq, qr, rs, sp), from: -8, to: 4))\n'
+                          + 'pin := solid(std.solids.Prism(face(pq, qr, rs, sp), from: 4, to: 6))\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   assert.ok(solve(d.sketch).success);
   const at = (name: string) => d.solids().find((s) => s.name === name)!.index;
@@ -2188,7 +2188,7 @@ test('a Boolean is previewed by the core before it is written, and written as on
 });
 
 test('an extrusion is written by name through the edit API, and resized in place', () => {
-  const d = Document.read('use std\nin std.front {\na := point\nb := point\nc := point\n'
+  const d = Document.read('use std\nuse std.solids\nin std.front {\na := point\nb := point\nc := point\n'
                           + 'k := point\nab := line(a, b)\nbc := line(b, c)\nck := line(c, k)\n'
                           + 'ka := line(k, a)\nfix((0, 0)) a\nfix((60, 0)) b\nfix((60, 40)) c\n'
                           + 'fix((0, 40)) k\n}\n');
@@ -2201,7 +2201,7 @@ test('an extrusion is written by name through the edit API, and resized in place
   const next = Document.read(e.text);
   const b0 = next.solids().find((s) => s.name === 'b0')!.index;
   const wider = next.setSweep(b0, { from: '0', to: '7' });
-  assert.ok(wider.text.includes('b0 := solid(f0, from: 0, to: 7)'), wider.text);
+  assert.ok(wider.text.includes('b0 := solid(std.solids.Prism(f0, from: 0, to: 7))'), wider.text);
   assert.ok(next.setSweep(b0, { depth: '7', about: 'ab' }).refused);
   const epoch = next.sketch.shapeEpoch;
   assert.ok(next.sketch.setPrism(b0, 'both', 6));
@@ -2211,7 +2211,7 @@ test('an extrusion is written by name through the edit API, and resized in place
 });
 
 test('a revolution is written by name through the edit API, and re-turned in place', () => {
-  const d = Document.read('use std\nin std.front {\na := point\nb := point\nc := point\n'
+  const d = Document.read('use std\nuse std.solids\nin std.front {\na := point\nb := point\nc := point\n'
                           + 'k := point\nab := line(a, b)\nbc := line(b, c)\nck := line(c, k)\n'
                           + 'ka := line(k, a)\nfix((10, 2)) a\nfix((14, 2)) b\nfix((14, 6)) c\n'
                           + 'fix((10, 6)) k\n}\n');
@@ -2219,12 +2219,12 @@ test('a revolution is written by name through the edit API, and re-turned in pla
   const e = d.revolve(['ab', 'bc', 'ck', 'ka'], [], 'std.z');
   assert.equal(e.refused, null);
   assert.deepEqual(e.names, ['b0', 'f0']);
-  assert.ok(e.text.endsWith('f0 := face(ab, bc, ck, ka)\nb0 := solid(f0, about: std.z)\n'), e.text);
+  assert.ok(e.text.endsWith('f0 := face(ab, bc, ck, ka)\nb0 := solid(std.solids.Revolution(f0, about: std.z))\n'), e.text);
   const next = Document.read(e.text);
   assert.ok(next.ok, JSON.stringify(next.diagnostics));
   const b0 = next.solids().find((s) => s.name === 'b0')!.index;
   const quarter = next.setTurn(b0, '-90');
-  assert.ok(quarter.text.includes('b0 := solid(f0, about: std.z, sweep: 90, sense: cw)'),
+  assert.ok(quarter.text.includes('b0 := solid(std.solids.Revolution(f0, about: std.z, from: -90, to: 0deg))'),
             quarter.text);
   const epoch = next.sketch.shapeEpoch;
   assert.ok(next.sketch.setTurn(b0, -90));
@@ -2239,7 +2239,7 @@ test('a revolution is written by name through the edit API, and re-turned in pla
 });
 
 test('a datum is dropped by name through the edit API, and refused with the cause', () => {
-  const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
+  const d = Document.read('use std\nuse std.solids\nin std.front {\na := point hint((0, 0))\n'
                           + 'c := point hint((30, 40))\nfix((0, 0)) a\nfix((30, 40)) c\n}\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   const e = d.addDatum('axis', ['a', 'c'], undefined, 'hinge');
@@ -2260,7 +2260,7 @@ test('a datum is dropped by name through the edit API, and refused with the caus
 });
 
 test('the region around a place is named for a face, its holes beside it', () => {
-  const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
+  const d = Document.read('use std\nuse std.solids\nin std.front {\na := point hint((0, 0))\n'
                           + 'b := point hint((60, 0))\nc := point hint((60, 40))\n'
                           + 'd := point hint((0, 40))\nab := line(a, b)\nbc := line(b, c)\n'
                           + 'cd := line(c, d)\nda := line(d, a)\no := point hint((30, 20))\n'
@@ -2280,7 +2280,7 @@ test('the region around a place is named for a face, its holes beside it', () =>
 });
 
 test('a plane is written through the edit API over two lines, and its origin answers by name', () => {
-  const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
+  const d = Document.read('use std\nuse std.solids\nin std.front {\na := point hint((0, 0))\n'
                           + 'b := point hint((40, 0))\nc := point hint((0, 30))\n'
                           + 'ab := line(a, b)\nac := line(a, c)\n}\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
@@ -2410,6 +2410,7 @@ test('the gear is a program, and its flanks are involutes the language defines',
 const TRIANGLE = `\
 // a triangle, and this comment must survive every edit
 use std
+use std.solids
 param w := 140
 in std.front {
 a := point
@@ -2505,7 +2506,7 @@ test('an anonymous element is named the moment the source must say it', () => {
   // the name in a declaration is optional (issue #33): `line` alone draws, and stays unnamed
   // until a statement has to reference it — here a constraint applied the way the app applies
   // one, into the sketch and reconciled — at which point the core splices a real name in
-  const d = Document.read('use std\nin std.front {\nline\n}\n');
+  const d = Document.read('use std\nuse std.solids\nin std.front {\nline\n}\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   assert.equal(d.sketch.lines.length, 1);
   assert.equal(d.sketch.points.length, 2 + 5);
@@ -2526,7 +2527,7 @@ test('an anonymous element is named the moment the source must say it', () => {
 });
 
 test('the rect tool writes a component instance, and the component once', () => {
-  let d = Document.read('use std\n');
+  let d = Document.read('use std\nuse std.solids\n');
   const first = d.addRectangle(120, 60, 'std.front');
   assert.equal(first.kind, 'structural');
   assert.deepEqual(first.names, ['r0', 'p0']);
@@ -2675,7 +2676,7 @@ test('dragging the gear does not rewrite the gear', () => {
 });
 
 test('a rectangle joins the view it is drawn in, whole', () => {
-  const d = Document.read('use std\n');
+  const d = Document.read('use std\nuse std.solids\n');
   const e = d.addRectangle(30, 20, 'std.front');
   assert.ok(e.text.includes(' := Rectangle(p0, w: 30, h: 20) in std.front'), e.text);
   const d2 = Document.read(e.text);
@@ -2698,7 +2699,7 @@ test('a module the host hands over resolves a use before the library', async () 
   unresolved.dispose();
   // the host fetches: one name asked once, a module of the library (`std`) left to it
   const asked: string[] = [];
-  const got = await modules.link('use std\n' + doc, async (p) => {
+  const got = await modules.link('use std\nuse std.solids\n' + doc, async (p) => {
     asked.push(p);
     return p === 'demo/parts.sv' ? mod : null;
   });
@@ -2714,7 +2715,7 @@ test('a module the host hands over resolves a use before the library', async () 
 });
 
 test('related files include transitive libraries and host overrides without duplicates or cycles', () => {
-  const a = 'use demo.b\nuse std\n';
+  const a = 'use demo.b\nuse std\nuse std.solids\n';
   const b = 'use demo.a\nuse hardware\nuse missing\n';
   modules.provide('demo.a', a);
   modules.provide('demo.b', b);
@@ -2782,10 +2783,10 @@ test('a swept solid is refined in steps, and a deferring sketch draws only what 
 
 test('a sketch on a face is written by name through the edit API, and a plane already there is '
      + 'found', () => {
-  const d = Document.read('use std\nin std.front {\na := point\nb := point\nc := point\n'
+  const d = Document.read('use std\nuse std.solids\nin std.front {\na := point\nb := point\nc := point\n'
                           + 'k := point\nab := line(a, b)\nbc := line(b, c)\nck := line(c, k)\n'
                           + 'ka := line(k, a)\nfix((0, 0)) a\nfix((60, 0)) b\nfix((60, 40)) c\n'
-                          + 'fix((0, 40)) k\n}\nb0 := solid(face(ab, bc, ck, ka), depth: 10)\n');
+                          + 'fix((0, 40)) k\n}\nb0 := solid(std.solids.Prism(face(ab, bc, ck, ka), from: -10, to: 0))\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   const [b0] = d.solids();
   assert.equal(d.facePlane(b0.index, 'b0.near'), 'std.front', 'the cap on the profile');

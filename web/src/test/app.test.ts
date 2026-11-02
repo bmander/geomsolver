@@ -60,8 +60,8 @@ function viewOn(sk: Sketch): SketchView {
   return view;
 }
 
-const PROJECTED_CIRCLE = 'use std\nin std.front {\no := point\nrim := circle(center: o) hint(r: 10)\n}\n'
-  + 'body := solid(face(rim), depth: 8)\n';
+const PROJECTED_CIRCLE = 'use std\nuse std.solids\nin std.front {\no := point\nrim := circle(center: o) hint(r: 10)\n}\n'
+  + 'body := solid(std.solids.Prism(face(rim), from: -8, to: 0))\n';
 
 test('project file navigation isolates undo and clears pending model interactions', (t) => {
   const v = new SketchView(fakeCanvas(), Document.read('a := point hint(x: 10)\n'));
@@ -620,14 +620,13 @@ function fitThrough(view: SketchView, at: [number, number][]): void {
   view.finishSplineFit();
 }
 
-/** The points a drawing has of its own: not the standard datums' `use std
-use std.solids` brings. */
+/** The points a drawing has of its own: not the standard datums' `use std` brings. */
 function ownPoints(view: SketchView): Point[] {
   return view.sketch.points.filter((p) => !view.doc.nameOf(p)?.startsWith('std.'));
 }
 
 test('a curve fitted through free clicks leaves no points behind and no constraints', () => {
-  const view = docView('use std\n');
+  const view = docView('use std\nuse std.solids\n');
   fitThrough(view, [[100, 100], [200, 60], [300, 160], [400, 80], [500, 140]]);
   assert.equal(view.sketch.splines.length, 1);
   assert.equal(ownPoints(view).length, 5, 'the control polygon, and nothing else');
@@ -636,7 +635,7 @@ test('a curve fitted through free clicks leaves no points behind and no constrai
 });
 
 test('a fit click that lands on a point holds the curve to it', () => {
-  const view = docView('use std\n');
+  const view = docView('use std\nuse std.solids\n');
   // two points already in the sketch, drawn on the front at screen positions the tool will snap to
   const [ax, ay] = view.s2w(200, 60);
   const [bx, by] = view.s2w(400, 80);
@@ -661,7 +660,7 @@ test('a fit click that lands on a point holds the curve to it', () => {
 });
 
 test('an abandoned fit leaves the sketch untouched', () => {
-  const view = docView('use std\n');
+  const view = docView('use std\nuse std.solids\n');
   const before = io.dumps(view.sketch);
   const cv = canvasOf(view);
   view.setTool('splinefit');
@@ -966,8 +965,7 @@ test('a gesture is a source edit, and leaves everything else written', () => {
   }
   assert.ok(/\nl0 := line\(p0, p1\)/.test(view.source), view.source);
   // and the source is a document: reading it back gives the same drawing — the same points where
-  // they were, drawn where they were (renumbered: what was written comes before what `use std
-use std.solids`
+  // they were, drawn where they were (renumbered: what was written comes before what `use std`
   // brings, where the gesture's points came after it)
   const again = Document.read(view.source);
   assert.ok(again.ok, JSON.stringify(again.diagnostics));
@@ -1579,7 +1577,7 @@ test('Space selects nothing: the drawing\'s selection, the picture and the solid
   assert.ok(view.underlay, 'letting the picture go took it away');
   assert.equal(view.source, source, 'selecting nothing edited the document');
 
-  const solid = extruding('block := solid(face(ab, bc, cd, da), depth: 5)\n');
+  const solid = extruding('block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -5, to: 0))\n');
   solid.pickSolid({
     name: 'block', index: solid.doc.solids().find((s) => s.name === 'block')!.index, face: '',
   });
@@ -1733,8 +1731,7 @@ test('None in the chooser draws in space: what a tool mints stands in no plane, 
   assert.equal(view.planeName, 'std.front');
 });
 
-test('a standard plane the document does not have comes in with `use std
-use std.solids` on the first press', () => {
+test('a standard plane the document does not have comes in with `use std` on the first press', () => {
   const view = docView('w := 100\n');
   view.choosePlane('std.side');
   assert.equal(view.pendingPlane, 'std.side');
@@ -1744,7 +1741,7 @@ use std.solids` on the first press', () => {
   click(view, 10, 20);
   assert.equal(view.pendingPlane, null);
   assert.equal(view.doc.nameOf(view.plane!), 'std.side');
-  assert.ok(view.source.startsWith('use std\n'), view.source);
+  assert.ok(view.source.startsWith('use std\nuse std.solids\n'), view.source);
   // a second point: the first keeps its clause, and nothing of the library is copied in
   click(view, 30, 5);
   assert.equal(view.source.match(/ in std\.side/g)?.length, 2, view.source);
@@ -1757,7 +1754,7 @@ use std.solids` on the first press', () => {
 });
 
 test('double-clicking a pane draws on its plane', () => {
-  const view = docView('use std\nt := point in std.top hint((40, 40))\n');
+  const view = docView('use std\nuse std.solids\nt := point in std.top hint((40, 40))\n');
   const cv = canvasOf(view);
   const top = planeNamed(view, 'std.top');
   view.orbit = { az: -Math.PI / 3, el: 1.2 };       // from above, the front and side all but edge on
@@ -1826,7 +1823,7 @@ test('the right button turns the workspace and the middle one slides it; neither
 });
 
 test('a click picks what is seen under it, though another view lies there on the page', () => {
-  const view = docView('use std\nf := point hint((10, 10)) in std.front\nfix((10, 10)) f\n'
+  const view = docView('use std\nuse std.solids\nf := point hint((10, 10)) in std.front\nfix((10, 10)) f\n'
     + 's := point hint((10, 10)) in std.side\nfix((10, 10)) s\n');
   view.orbit = { az: -Math.PI / 4, el: Math.PI / 6 };
   const f = pointNamed(view, 'f'), s = pointNamed(view, 's');
@@ -1843,7 +1840,7 @@ test('a click picks what is seen under it, though another view lies there on the
 });
 
 test('a band takes whatever it touches, though neither end of a line is inside it', () => {
-  const view = docView('use std\nin std.front {\na := point hint((0, 0))\nfix((0, 0)) a\n'
+  const view = docView('use std\nuse std.solids\nin std.front {\na := point hint((0, 0))\nfix((0, 0)) a\n'
     + 'b := point hint((100, 0))\nfix((100, 0)) b\nab := line(a, b)\n'
     + 'c := point hint((0, 60))\nfix((0, 60)) c\nd := point hint((100, 60))\nfix((100, 60)) d\n'
     + 'cd := line(c, d)\n}\n');
@@ -1896,7 +1893,7 @@ test('a new document is one undo step, and takes nothing in flight with it', () 
   assert.ok(view.sketch.planes.length, 'the bracket');
   view.undo();
   assert.notEqual(view.source, before);
-  assert.equal(view.source, 'use std\n', 'back to the sheet it replaced');
+  assert.equal(view.source, 'use std\nuse std.solids\n', 'back to the sheet it replaced');
 });
 
 /** The spatial demos the menu offers as files: each opens and solves, and the one freedom the
@@ -1956,7 +1953,7 @@ test('a dimension over a param opens as written, and an edit of it goes into the
 });
 
 test('a point in space is drawn and picked where it stands, whichever way the eye looks', () => {
-  const view = docView('use std\np := point hint((10, 20, 30))\n'
+  const view = docView('use std\nuse std.solids\np := point hint((10, 20, 30))\n'
     + 'in std.front {\n  f := point\n  fix((10, 30)) f\n}\n'
     + 'in std.top {\n  t := point\n  fix((10, 20)) t\n}\n');
   const named = (n: string) => view.doc.entity(n) as Point;
@@ -2321,7 +2318,7 @@ test('the Extrude tool washes the region under the pointer, and a click drops a 
   assert.equal(view.hoverRegion, null, 'outside every loop');
   const before = view.source;
   click(view, 85, 5);
-  assert.ok(view.source.includes('f0 := face(pq, qr, rs, sp)\nb0 := solid(f0, depth: '),
+  assert.ok(view.source.includes('f0 := face(pq, qr, rs, sp)\nb0 := solid(std.solids.Prism(f0, from: -'),
             view.source);
   assert.deepEqual(view.selectedSolids.map((s) => s.name), ['b0']);
   assert.deepEqual(view.liveExtent && { ...view.liveExtent, d: 0 },
@@ -2342,7 +2339,7 @@ test('a thickness typed or dragged rewrites the solid in place, in the click\'s 
   const before = view.source;
   click(view, 85, 5);
   assert.equal(view.commitExtent('12'), null);
-  assert.ok(view.source.includes('b0 := solid(f0, depth: 12)'), view.source);
+  assert.ok(view.source.includes('b0 := solid(std.solids.Prism(f0, from: -12, to: 0))'), view.source);
   // dragged from three quarters: in front of the face (the front's −y), then both ways with ⇧
   view.orbit = { az: 0.6, el: 0.5 };
   const arrow = view.extentArrow();
@@ -2353,19 +2350,19 @@ test('a thickness typed or dragged rewrites the solid in place, in the click\'s 
   cv.fire('pointermove', pointer(...to));
   assert.ok(view.source.includes('depth: 12'), 'nothing is written while it is dragged');
   cv.fire('pointerup', pointer(...to));
-  assert.ok(view.source.includes('b0 := solid(f0, from: 0, to: 15)'), view.source);
+  assert.ok(view.source.includes('b0 := solid(std.solids.Prism(f0, from: 0, to: 15))'), view.source);
   const tip = view.extentArrow()!.tip!;
   cv.fire('pointerdown', pointer(...tip, { shiftKey: true }));
   cv.fire('pointermove', pointer(...to, { shiftKey: true }));
   cv.fire('pointerup', pointer(...to, { shiftKey: true }));
-  assert.ok(view.source.includes('b0 := solid(f0, from: -15, to: 15)'), view.source);
+  assert.ok(view.source.includes('b0 := solid(std.solids.Prism(f0, from: -15, to: 15))'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.undo();
   assert.equal(view.source, before, 'the sizing joined the extrusion\'s own undo step');
 });
 
 test('with a body selected an extrusion joins it, cuts it with ⌥, and cuts through with ⌥⇧', () => {
-  const view = extruding('block := solid(face(ab, bc, cd, da), depth: 5)\n');
+  const view = extruding('block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -5, to: 0))\n');
   const block = (): SolidPick => ({
     name: 'block', index: view.doc.solids().find((s) => s.name === 'block')!.index, face: '',
   });
@@ -2374,11 +2371,11 @@ test('with a body selected an extrusion joins it, cuts it with ⌥, and cuts thr
   assert.ok(view.source.includes('b0 union block'), view.source);
   view.pickSolid(block());
   clickWith(view, 30, 20, { altKey: true });
-  assert.ok(view.source.includes('b1 := solid(f1, depth: '), view.source);
+  assert.ok(view.source.includes('b1 := solid(std.solids.Prism(f1, from: -'), view.source);
   assert.ok(view.source.includes('b1 cut block'), view.source);
   view.pickSolid(block());
   clickWith(view, 30, 20, { altKey: true, shiftKey: true });
-  assert.ok(view.source.includes('b2 := solid(f2, through: block)\nb2 cut block'), view.source);
+  assert.ok(view.source.includes('b2 := solid(std.solids.Through(f2))\nb2 cut block'), view.source);
   assert.equal(view.liveExtent, null, 'a cut through all has no depth to size');
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   // a cut with nothing selected says what it wants
@@ -2444,7 +2441,7 @@ test('the Revolve tool takes a region, then the line to turn it about, as one un
   assert.ok(said.some((m) => /line .* or an axis/.test(m)), said.join('\n'));
   assert.equal(view.source, before);
   click(view, 20, 5);
-  assert.ok(view.source.endsWith('f0 := face(ab, bc, cd, da)\nb0 := solid(f0, about: ax)\n'),
+  assert.ok(view.source.endsWith('f0 := face(ab, bc, cd, da)\nb0 := solid(std.solids.Revolution(f0, about: ax))\n'),
             view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   assert.deepEqual(view.selectedSolids.map((s) => s.name), ['b0']);
@@ -2470,9 +2467,9 @@ test('about an axis already selected a click revolves at once, and its turn is t
   view.selected = [z];
   const before = view.source;
   click(view, 12, 4);
-  assert.ok(view.source.endsWith('b0 := solid(f0, about: std.z)\n'), view.source);
+  assert.ok(view.source.endsWith('b0 := solid(std.solids.Revolution(f0, about: std.z))\n'), view.source);
   assert.equal(view.commitExtent('90'), null);
-  assert.ok(view.source.includes('b0 := solid(f0, about: std.z, sweep: 90)'), view.source);
+  assert.ok(view.source.includes('b0 := solid(std.solids.Revolution(f0, about: std.z, to: 90))'), view.source);
   // dragged from three quarters: the square's middle (12, 0, 4) turns about z toward +y, so a
   // half turn is over at (−12, 0, 4)
   view.orbit = { az: 0.6, el: 0.5 };
@@ -2485,32 +2482,32 @@ test('about an axis already selected a click revolves at once, and its turn is t
   cv.fire('pointermove', pointer(...to));
   assert.ok(view.source.includes('sweep: 90)'), 'nothing is written while it is dragged');
   cv.fire('pointerup', pointer(...to));
-  assert.ok(view.source.includes('b0 := solid(f0, about: std.z, sweep: 180)'), view.source);
+  assert.ok(view.source.includes('b0 := solid(std.solids.Revolution(f0, about: std.z, to: 180))'), view.source);
   // a minus typed turns it the other way, and a whole turn is written as none
   assert.equal(view.commitExtent('-45'), null);
-  assert.ok(view.source.includes('b0 := solid(f0, about: std.z, sweep: 45, sense: cw)'),
+  assert.ok(view.source.includes('b0 := solid(std.solids.Revolution(f0, about: std.z, from: -45, to: 0deg))'),
             view.source);
   assert.deepEqual(view.liveExtent, { kind: 'turn', solid: 'b0', d: -45 });
   assert.equal(view.commitExtent('360'), null);
-  assert.ok(view.source.endsWith('b0 := solid(f0, about: std.z)\n'), view.source);
+  assert.ok(view.source.endsWith('b0 := solid(std.solids.Revolution(f0, about: std.z))\n'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.undo();
   assert.equal(view.source, before, 'the sizing joined the revolution\'s own undo step');
 });
 
 test('with a body selected a revolution joins it, or cuts it with ⌥', () => {
-  const view = revolving('block := solid(face(ab, bc, cd, da), depth: 5)\n');
+  const view = revolving('block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -5, to: 0))\n');
   const block = (): SolidPick => ({
     name: 'block', index: view.doc.solids().find((s) => s.name === 'block')!.index, face: '',
   });
   view.pickSolid(block());
   click(view, 12, 4);
   click(view, 20, 5);
-  assert.ok(view.source.endsWith('b0 := solid(f0, about: ax)\nb0 union block\n'), view.source);
+  assert.ok(view.source.endsWith('b0 := solid(std.solids.Revolution(f0, about: ax))\nb0 union block\n'), view.source);
   view.pickSolid(block());
   clickWith(view, 12, 4, { altKey: true });
   clickWith(view, 20, 5, { altKey: true });
-  assert.ok(view.source.endsWith('b1 := solid(f1, about: ax)\nb1 cut block\n'), view.source);
+  assert.ok(view.source.endsWith('b1 := solid(std.solids.Revolution(f1, about: ax))\nb1 cut block\n'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
 });
 
@@ -2520,7 +2517,7 @@ test('with a body selected a revolution joins it, or cuts it with ⌥', () => {
  *  10 out either side; and its square, beside it, as `side`.  Seen square on to the front. */
 function combining(more = ''): SketchView {
   const view = docView(`${EXTRUDING}block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -5, to: 0))\n`
-                       + 'peg := solid(face(hole), from: -10, to: 10)\n'
+                       + 'peg := solid(std.solids.Prism(face(hole), from: -10, to: 10))\n'
                        + `side := solid(std.solids.Prism(face(pq, qr, rs, sp), from: -5, to: 0))\n${more}`);
   view.orbit = { az: -Math.PI / 2, el: 0 };
   return view;
@@ -2646,7 +2643,7 @@ test('the Fillet tool picks edges a click at a time, and Enter writes them as st
   const statement = (e: SolidEdge) =>
     `${face(e.faces[0])} round(r: ${io.fmt(size!, 6)}) ${face(e.faces[1])}`;
   assert.ok(view.source.includes(`\n${statement(e1)}\n${statement(e2)}\n`), view.source);
-  assert.ok(view.source.includes('use std\nuse std.rounds (round)\n'), view.source);
+  assert.ok(view.source.includes('use std\nuse std.solids\nuse std.rounds (round)\n'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   assert.equal(view.rounding, null);
   assert.equal(asked.at(-1), null, 'the number\'s box is closed');
@@ -2891,7 +2888,7 @@ test('a ⌘-click lists everything under the pointer, and the one chosen is take
 });
 
 test('in orbit mode a drag turns the workspace, whatever tool is down, and draws nothing', () => {
-  const view = docView('use std\nin std.front {\na := point hint((0, 0))\n}\n');
+  const view = docView('use std\nuse std.solids\nin std.front {\na := point hint((0, 0))\n}\n');
   view.setTool('line');
   view.setOrbitMode(true);
   const before = { ...view.orbit };
@@ -3059,7 +3056,7 @@ test('choosing a scenario writes nothing, and draws its marks and how the drawin
   scene.paint(view);
   assert.ok(!scene.group.visible);
   view.chooseScenario('shelf');
-  assert.ok(view.load('use std\n'));
+  assert.ok(view.load('use std\nuse std.solids\n'));
   assert.equal(view.scenario, '');
   assert.deepEqual(view.scenarioNames(), []);
 });
