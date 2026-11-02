@@ -243,8 +243,19 @@ placement carries inside the blank; CLI test readers zero the offset.
   carriers on a face (`flatten/faces.rs`), the gestures' resizing (`edit::solids::reworded`, which
   reads the call's family's set through `said` and rewrites the call as the `std.solids` word
   saying the new sweep); and no probe is made, so the solve is the old spelling's to the bit,
-  whichever is written.  **Nothing recognises a sweep from a word's name or a statement's printed
-  text**: a section is within its face by its side (`Written::side`, so `inside` and its lowered
+  whichever is written.  **A revolution carries its interval as written** (#747), `Sweep::Revolve
+  { axis, from, to }`: which end is nothing, how far and which way are what the ends evaluate to,
+  decided in `program/solids/build.rs`'s `revolve` by `model::turn_between` (the reading
+  `defined.rs` shares), so `to: 2 * pi * 1rad` is `to: 360deg` and `from: 0rad` is no end at all; a
+  turn from the greater roll to the lesser is E040, one of nothing E080.  The flattener decides
+  nothing on text: it keeps the set only where the same number evaluator reads both ends and
+  neither is nothing (`Walk::off_its_face`) — a turn off its face, which no sweep of the
+  evaluator's is, so it stays the region it was; the turn gesture takes a number for it and sends
+  an expression to where it is written.  `tests/revolve.rs`'s
+  `an_interval_is_read_by_its_numbers_not_its_text` is the gate.  (An evaluator's revolution that
+  carries the interval itself, turned `from` and swept `to − from`, would build such a turn exactly
+  and retire the exception.)  **Nothing recognises a sweep from a word's name or a statement's
+  printed text**: a section is within its face by its side (`Written::side`, so `inside` and its lowered
   `coincident(<=)` alike), and the draft by the bound's tree — `Bin(Sub, distance(p, x),
   distance(p, y))` at least a product, either way round, of `distance(p, F)` and a number whose
   expression is the one call `tan(θ)` (`said::lean_of`).  A number that reads a formal under

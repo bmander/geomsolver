@@ -250,6 +250,11 @@ impl Extent {
     pub fn at(value: f64) -> Extent {
         Extent { text: crate::vocab::num(value), value }
     }
+
+    /// A revolution's whole turn, `TAU`: written as no end at all, so its text is none.
+    pub fn whole() -> Extent {
+        Extent { text: String::new(), value: std::f64::consts::TAU }
+    }
 }
 
 /// **How far a sweep rolls** (§6.9, #271): an interval of the shared roll stated (`over t in (a,

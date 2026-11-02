@@ -505,11 +505,13 @@ impl<'a> Walk<'a> {
         }
         // a region solid's set, read once (nothing below changes what it names); and a solid of
         // a set that says a sweep is that sweep (#737, #744, `said`): a family's instance, read
-        // where it was bound, or a set written by hand, read here — and then no region's
+        // where it was bound, or a set written by hand, read here — and then no region's; a turn
+        // off its face stays the region it is (#747, `off_its_face`)
         let mut set = self.region_set(&d2, scope);
         if let Some((_, said_abs, _)) = &set {
             let said = self.said.get(said_abs).cloned()
-                .or_else(|| self.said_by_hand(said_abs, scope));
+                .or_else(|| self.said_by_hand(said_abs, scope))
+                .filter(|(s, _)| !self.off_its_face(s, vals));
             if let Some((sweep, face)) = said {
                 d2.sweep = Some(sweep);
                 d2.children = vec![vec![Kid::Ref(face)]];
@@ -552,6 +554,22 @@ impl<'a> Walk<'a> {
             self.emit(StmtKind::Decl(probe), st, scope, path);
             self.emit(StmtKind::Relation(inside), st, scope, path);
         }
+    }
+
+    /// **A turn that starts off its face** (#747): a revolution's interval whose ends the number
+    /// evaluator reads, neither of them nothing (`model::turn_between`'s reading).  It is no sweep
+    /// of the evaluator's — whose turns start at the face — so it stays the set the region reads
+    /// point by point.  Any other turn is written out with its ends as written, for the
+    /// elaborator to read how far and which way (`program::solids::build`); an end that reads no
+    /// number here is read there.  `said` writes both ends, a formal's default where the call
+    /// gives none.
+    fn off_its_face(&self, s: &crate::syntax::Sweep, vals: &Vals) -> bool {
+        use crate::syntax::{Arg, Sweep};
+        let Sweep::Revolve { from: Some(Arg::Dim { text: a, .. }),
+                             to: Some(Arg::Dim { text: b, .. }), .. } = s else { return false };
+        let v = |t: &str| value_of(t, vals, self.units).ok();
+        let (Some(a), Some(b)) = (v(a), v(b)) else { return false };
+        crate::model::turn_between(a, b).is_none() && (a, b) != (0.0, 0.0)
     }
 
     /// **A reading over a declared parameter reads its interval** (#391 S2): `over t`, with no

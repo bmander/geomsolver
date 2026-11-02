@@ -260,8 +260,8 @@ fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) ->
 
 /// Rewrite how far revolution `solid` turns, about what it turns about: `angle` the text written,
 /// in degrees.  A number is signed, positive right-handed about the axis, and read by
-/// `model::turn_of` — `-90` is `sweep: 90, sense: cw`, a whole turn or more no `sweep:` at all;
-/// an expression is written whole, the way the solid already turns.
+/// `model::turn_of` — `-90` is `from: -90, to: 0deg`, a whole turn or more no interval at all;
+/// an expression is written whole, the way the solid already turns (`turning`).
 pub fn set_turn(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Edit {
     Edit::refused_or(prog, turn_edit(e, prog, solid, angle))
 }
@@ -269,23 +269,41 @@ pub fn set_turn(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Ed
 fn turn_edit(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Result<Edit, String> {
     let angle = angle.trim();
     resweep(e, prog, solid, |was| {
-        let syntax::Sweep::Revolve { axis, sense, .. } = was else {
+        let syntax::Sweep::Revolve { axis, .. } = was else {
             return Err("that solid is not turned about anything".into());
         };
         let (sweep, sense) = match angle.parse::<f64>() {
             Ok(n) => {
                 let (how_far, sense) = crate::model::turn_of(n).ok_or("a turn turns some way")?;
-                let sense = match sense {
-                    crate::model::Sense::Cw => syntax::Sense::Cw,
-                    crate::model::Sense::Ccw => syntax::Sense::Ccw,
-                };
                 (how_far.map(num), sense)
             }
-            Err(_) => (Some(angle.to_string()), *sense),
+            Err(_) => (Some(angle.to_string()), turning(e, prog, solid)
+                .ok_or("that revolution starts off its face: change it where it is written")?),
+        };
+        let sense = match sense {
+            crate::model::Sense::Cw => syntax::Sense::Cw,
+            crate::model::Sense::Ccw => syntax::Sense::Ccw,
         };
         let sweep = sweep.map(|text| syntax::Arg::Dim { text, span: Span::default() });
-        Ok(syntax::Sweep::Revolve { axis: axis.clone(), sweep, sense })
+        Ok(syntax::turned(axis.clone(), sweep.as_ref(), sense))
     })
+}
+
+/// Which way revolution `solid` turns now: what its ends came to where they were evaluated
+/// (#747), never their text — the elaborated solid's sense.  Where the ABI has handed the sketch to
+/// a handle of its own, the program is elaborated again rather than that handle read: a drag's
+/// preview (`Sketch::set_turn`) turns the live solid whichever way the drag went, and the way the
+/// source says is wanted.  Only a typed expression asks.  `None` for a turn off its face, which
+/// is built as the region it is.
+fn turning(e: &Elaborated, prog: &Program, solid: usize) -> Option<crate::model::Sense> {
+    let sense = |sk: &crate::model::Sketch| match sk.solids.get(solid).map(|s| &s.def) {
+        Some(crate::model::SolidDef::Revolve { sense, .. }) => Some(*sense),
+        _ => None,
+    };
+    match e.taken {
+        true => sense(&crate::program::elaborate(prog).sketch),
+        false => sense(&e.sketch),
+    }
 }
 
 /// Solid `solid`'s own statement, its sweep replaced by what `with` makes of the one written —

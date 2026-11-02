@@ -36,7 +36,7 @@ use crate::constraints::{CKind, Fixity};
 use crate::model::EntKind;
 use crate::style::{Classes, Style};
 pub(crate) use names::{build_rank, decl_head, ref_text, under_root};
-pub(crate) use print::{revolve_between, solid_word};
+pub(crate) use print::{negated, solid_word, turned};
 pub(crate) use print::{decl_args, hint_clause, hint_numbers, said, said_text, Said};
 
 /// A component point traced over a numeric formal, with domain endpoints kept as expressions.
@@ -1458,9 +1458,11 @@ pub enum Sweep {
     Depth { depth: Arg, draft: Option<Arg> },
     /// Span the target's stock and additions along the section normal.
     Through { body: Ref },
-    /// `about: ax` — a full turn about a line in the face's own plane, or `sweep:` of one,
-    /// `sense: cw` the other way round.
-    Revolve { axis: Ref, sweep: Option<Arg>, sense: Sense },
+    /// `std.solids.Revolution(F, about: ax, from: a, to: b)` — a turn about a line in the face's
+    /// own plane over the interval `(a, b)` of the roll, each end as written (`None` where it is
+    /// left out: `0deg` and `360deg`).  Which end is nothing, how far and which way are numbers,
+    /// decided where the ends are evaluated (`program::solids::build`), never on their text.
+    Revolve { axis: Ref, from: Option<Arg>, to: Option<Arg> },
     /// `body := solid(block)` — a stock, or a term: what it is made of is in the list, and the
     /// `union`/`cut`/`common` statements say the rest.
     Body,
@@ -1508,7 +1510,7 @@ impl Sweep {
             Sweep::Swept { from, to, .. } => vec![from,to],
             Sweep::Prism { from, to, draft } => [from, to].into_iter().chain(draft).collect(),
             Sweep::Depth { depth, draft } => std::iter::once(depth).chain(draft).collect(),
-            Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
+            Sweep::Revolve { from, to, .. } => from.iter_mut().chain(to).collect(),
             Sweep::Body | Sweep::Through { .. } | Sweep::Region { .. }
                 | Sweep::Rolled { .. } | Sweep::Family(_) => Vec::new(),
         }
