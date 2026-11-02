@@ -81,13 +81,12 @@ pub(crate) fn said(lit: &SetLit, bind: &dyn Fn(&str) -> Option<Bound>) -> Option
     // number of the call's, and the set is left to the elaborator, which reads it in its scope
     let number = |text: &str, span: Span| -> Option<Arg> {
         let text = text.trim();
-        let given = |b: &Option<Bound>| matches!(b, Some(Bound::Ref(..) | Bound::Text(..)));
         Some(match bind(text) {
             Some(Bound::Text(t, s)) => Arg::Dim { text: t, span: s },
             Some(Bound::Ref(r, _)) => Arg::Dim { text: crate::syntax::ref_text(&r), span: r.span },
             Some(Bound::Own(_)) | None => {
                 let read = crate::expr::parse(text).ok()?.body.deps();
-                if read.iter().any(|n| given(&bind(n))) {
+                if read.iter().any(|n| matches!(bind(n), Some(Bound::Ref(..) | Bound::Text(..)))) {
                     return None;
                 }
                 Arg::Dim { text: text.to_string(), span }
@@ -157,7 +156,7 @@ pub(crate) fn said(lit: &SetLit, bind: &dyn Fn(&str) -> Option<Bound>) -> Option
         if inside.is_some() || lo.is_some() || hi.is_some() || !sets.is_empty() || lean.is_some() {
             return None;
         }
-        return crate::syntax::revolve_between(axis, Some(&from), Some(&to)).map(|s| (s, f));
+        return crate::syntax::revolve_between(axis, &from, &to).map(|s| (s, f));
     }
     // a section unbounded along its normal: the prism through the body it is cut from, joined
     // where the body word joins it (`syntax::ROLLED`)
@@ -171,23 +170,18 @@ pub(crate) fn said(lit: &SetLit, bind: &dyn Fn(&str) -> Option<Bound>) -> Option
     // undrafted: the section is the set's own; drafted: what the lean says
     let draft = match (inside, lean) {
         (Some(f), None) if f.root.text == fa.root.text && sets.is_empty() => None,
-        (None, Some(m)) => {
-            let (theta, f) = lean_of(m, &sets, p, &face)?;
-            if f.root.text != fa.root.text {
-                return None;
-            }
-            Some(number(&theta.0, theta.1)?)
-        }
+        (None, Some(m)) => Some(lean_of(m, &sets, p, &fa, &face, &number)?),
         _ => return None,
     };
     Some((Sweep::Prism { from, to, draft }, fa))
 }
 
 /// The draft a lean states, `distance(p, x) - distance(p, y) >= tan(θ) * distance(p, F)` over `x
-/// := { q | q outside F }` and `y := { q | q inside F }`, read off the bound's tree: `θ` as
-/// written, and the face `F`.
-fn lean_of(m: &crate::syntax::Measured, sets: &[(String, &SetLit)], p: &str,
-           face: &dyn Fn(&Ref) -> Option<Ref>) -> Option<((String, Span), Ref)> {
+/// := { q | q outside F }` and `y := { q | q inside F }`, `F` the face `on`, read off the bound's
+/// tree: `θ`, bound.
+fn lean_of(m: &crate::syntax::Measured, sets: &[(String, &SetLit)], p: &str, on: &Ref,
+           face: &dyn Fn(&Ref) -> Option<Ref>, number: &dyn Fn(&str, Span) -> Option<Arg>)
+    -> Option<Arg> {
     use crate::expr::Op;
     // the face a set's one statement puts its point within or without
     let side = |lit: &SetLit| -> Option<(Cmp, Ref)> {
@@ -195,7 +189,7 @@ fn lean_of(m: &crate::syntax::Measured, sets: &[(String, &SetLit)], p: &str,
         let w = match &st.kind { StmtKind::Relation(r) => r.form.written()?, _ => return None };
         let of_q = w.ops.first().is_some_and(|o| o.root.text == lit.bound.text && o.path.is_empty());
         match w.side()? {
-            (cmp @ (Cmp::Le | Cmp::Ge), None) if of_q && w.ops.len() == 2 => Some((cmp, face(&w.ops[1])?)),
+            (cmp @ (Cmp::Le | Cmp::Ge), None) if of_q => Some((cmp, face(&w.ops[1])?)),
             _ => None,
         }
     };
@@ -213,17 +207,17 @@ fn lean_of(m: &crate::syntax::Measured, sets: &[(String, &SetLit)], p: &str,
     }
     // `tan(θ) * distance(p, F)`, either way round
     let Measuring::Bin(Op::Mul, l, r) = &m.rhs else { return None };
-    let (k, plane) = match (l.as_ref(), r.as_ref()) {
+    let (text, span, plane) = match (l.as_ref(), r.as_ref()) {
         (Measuring::Number { text, span }, d) | (d, Measuring::Number { text, span }) => {
-            ((text, *span), distance(d, p)?)
+            (text, *span, distance(d, p)?)
         }
         _ => return None,
     };
     let f = face(plane)?;
-    if fa.root.text != f.root.text || fb.root.text != f.root.text {
+    if [&fa, &fb, &f].iter().any(|g| g.root.text != on.root.text) {
         return None;
     }
-    Some(((tangent_of(k.0)?, k.1), f))
+    number(&tangent_of(text)?, span)
 }
 
 /// `distance(p, s)`, `s` named bare: what it is measured to.

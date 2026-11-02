@@ -98,7 +98,13 @@ fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) 
 /// `stmts` appended, each a statement the canonical printer writes over the words of `std.solids`
 /// (#737) — and `use std.solids` where the document has none — held to the elaborator.
 fn append_solids(prog: &Program, stmts: &[StmtKind], names: Vec<String>) -> Result<Edit, String> {
-    let mut splices = vec![appending(prog, stmts)?];
+    solids_checked(prog, appending(prog, stmts)?, names)
+}
+
+/// `splice`, which writes words of `std.solids`, made — and `use std.solids` where the document
+/// has none — held to the elaborator.
+fn solids_checked(prog: &Program, splice: Splice, names: Vec<String>) -> Result<Edit, String> {
+    let mut splices = vec![splice];
     if !prog.uses.iter().any(|u| u.name == "std.solids") {
         splices.push(use_line(prog, "use std.solids"));
     }
@@ -332,13 +338,14 @@ fn reworded(prog: &Program, d: &syntax::Decl,
         StmtKind::Instance(i) if i.name.text == key.root.text => Some(i),
         _ => None,
     })?;
-    let unread = "that solid is a set no sweep of a face says: change it where it is written";
-    let comp = prog.resolve_component(&inst.component.text, None).ok()
-        .and_then(|k| prog.components.get(k));
-    let said = comp.and_then(|c| {
-        crate::flatten::said::said(c.set.as_ref()?, &crate::flatten::said::binding(c, inst))
-    });
-    let Some((was, face)) = said else { return Some(Err(unread.into())) };
+    use crate::flatten::said::{binding, said};
+    let said = prog.resolve_component(&inst.component.text, None).ok()
+        .and_then(|k| prog.components.get(k))
+        .and_then(|c| said(c.set.as_ref()?, &binding(c, inst)));
+    let Some((was, face)) = said else {
+        return Some(Err("that solid is a set no sweep of a face says: change it where it is \
+                         written".into()));
+    };
     if matches!(was, syntax::Sweep::Through { .. }) {
         return Some(Err("that solid is a prism through everything, which nothing sizes".into()));
     }
@@ -355,15 +362,7 @@ fn reworded(prog: &Program, d: &syntax::Decl,
     Some((|| {
         let new = with(&was)?;
         let text = syntax::solid_word(&new, &face).ok_or("that solid is no sweep of a face")?;
-        let mut splices = vec![Splice { at: inst.span, with: text }];
-        if !prog.uses.iter().any(|u| u.name == "std.solids") {
-            splices.push(use_line(prog, "use std.solids"));
-        }
-        let (text, landed) = splice_landing(prog.text(), splices);
-        let regions: Vec<Span> = landed.into_iter()
-            .map(|l| l.ok_or("that solid's statement is no place in the source"))
-            .collect::<Result<_, _>>()?;
-        checked_in(prog, text, &regions, Vec::new())
+        solids_checked(prog, Splice { at: inst.span, with: text }, Vec::new())
     })())
 }
 
