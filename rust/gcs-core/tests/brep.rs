@@ -169,6 +169,104 @@ fn the_sphere_the_cone_and_the_torus_are_their_closed_forms() {
     assert!(torus([0.;3],XY,3.,0.).is_err());
 }
 
+/// **A cone bounded by a NURBS surface with a pole** (brep-bench's geometry/nurbs-cone): its side
+/// a rational 9 × 2 net — the base circle as nine rational quadratic poles, its second row nine
+/// copies of the apex — sewn to the disc closing its base (`sew::sewn`). The row at the apex is a
+/// degenerate edge, the net's first and last iso-u rails its seam, the circle the edge the two
+/// faces share; its volume and area the closed forms, whichever way the disc was built facing and
+/// in whichever order the faces were given.
+#[test]
+fn a_nurbs_cone_is_its_side_sewn_to_its_base() {
+    use gcs_core::brep::build::{disc,face,sheet};
+    use gcs_core::brep::nurbs::Net;
+    use gcs_core::brep::sew::sewn;
+    use gcs_core::brep::topo::EdgeCurve;
+    let (r,h) = (5.,10.);
+    let w = std::f64::consts::FRAC_1_SQRT_2;
+    let round = [[1.,0.],[1.,1.],[0.,1.],[-1.,1.],[-1.,0.],[-1.,-1.],[0.,-1.],[1.,-1.],[1.,0.]];
+    let net = Net {du:2,dv:1,uknots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],vknots:vec![0.,0.,1.,1.],
+        poles:round.iter().map(|c| vec![[r*c[0],r*c[1],0.],[0.,0.,h]]).collect(),
+        weights:Some((0..9).map(|i| { let wi = if i%2 == 1 { w } else { 1. }; vec![wi,wi] }).collect())};
+    net.check().unwrap();
+    let side = sheet(net).unwrap();
+    let area = |b: &gcs_core::brep::topo::Brep| b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum::<f64>();
+    for n in [[0.,0.,-1.],XY] {
+        let base = face(&disc([0.;3],n,r)).unwrap();
+        for pieces in [vec![side.clone(),base.clone()],vec![base.clone(),side.clone()]] {
+            let b = sewn(&pieces,1e-7).unwrap();
+            b.check(1e-9).unwrap();
+            assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(2,3,2));
+            assert_eq!(b.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Degenerate)).count(),1);
+            close(volume(&b),PI*r*r*h/3.);
+            close(area(&b),PI*r*r+PI*r*(r*r+h*h).sqrt());
+            let m = gcs_core::brep::mesh::mesh(&b,1e-3*b.size(),0.1).unwrap();
+            assert!((mesh_volume(&m)/(PI*r*r*h/3.)-1.).abs() < 1e-2);
+            let text = gcs_core::brep::step::write(&b,"nurbs-cone",1e-7).unwrap();
+            gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(&b)).unwrap();
+        }
+    }
+}
+
+/// The six faces of the box `lo`–`hi` apart, each a plane face facing along its axis's `+`
+/// whichever side it bounds; the top (`z = hi`) in two halves where `halved`.
+fn box_faces(lo: V,hi: V,halved: bool) -> Vec<gcs_core::brep::topo::Brep> {
+    use gcs_core::brep::build::face;
+    let rect = |n: V,pts: [V;4]| face(&Profile {names:vec![],origin:pts[0],normal:n,loops:vec![poly(&pts)]}).unwrap();
+    let [x0,y0,z0] = lo;
+    let [x1,y1,z1] = hi;
+    let mid = 0.5*(x0+x1);
+    let mut faces = vec![
+        rect(XY,[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0]]),
+        rect([1.,0.,0.],[[x0,y0,z0],[x0,y1,z0],[x0,y1,z1],[x0,y0,z1]]),
+        rect([1.,0.,0.],[[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1]]),
+        rect(XZ,[[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1]]),
+        rect(XZ,[[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]]),
+    ];
+    if halved {
+        faces.push(rect(XY,[[x0,y0,z1],[mid,y0,z1],[mid,y1,z1],[x0,y1,z1]]));
+        faces.push(rect(XY,[[mid,y0,z1],[x1,y0,z1],[x1,y1,z1],[mid,y1,z1]]));
+    } else {
+        faces.push(rect(XY,[[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]]));
+    }
+    faces
+}
+
+/// Faces sewn as tolerant topology has them (`sew::sewn`): a box's faces each built facing any way
+/// turned outward; its top in two halves cutting the sides' top edges where they meet; a box
+/// inside it a void, turned inward; faces a hair apart (well within the tolerance) one boundary.
+/// What is no solid is refused by what it is: a face missing leaves an edge bounding one face
+/// (`Open`), a third face along an edge no manifold.
+#[test]
+fn faces_sewn_are_a_solid_by_tolerant_topology() {
+    use gcs_core::brep::sew::sewn;
+    use gcs_core::brep::Kind;
+    let b = sewn(&box_faces([0.;3],[3.,2.,1.],false),1e-7).unwrap();
+    assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(6,12,8));
+    close(volume(&b),6.);
+    // the top in two: each long side's top edge cut where they meet
+    let b = sewn(&box_faces([0.;3],[3.,2.,1.],true),1e-7).unwrap();
+    assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(7,15,10));
+    close(volume(&b),6.);
+    // a void
+    let mut faces = box_faces([-2.;3],[2.;3],false);
+    faces.extend(box_faces([-1.;3],[1.;3],true));
+    let b = sewn(&faces,1e-7).unwrap();
+    close(volume(&b),56.);
+    // a hair apart
+    let mut faces = box_faces([0.;3],[1.;3],false);
+    faces[0] = faces[0].moved(&Rigid {t:[0.,0.,3e-8],..Rigid::identity()});
+    let b = sewn(&faces,1e-7).unwrap();
+    assert!((volume(&b)-1.).abs() < 1e-6);
+    // refused
+    let mut faces = box_faces([0.;3],[1.;3],false);
+    faces.pop();
+    assert_eq!(sewn(&faces,1e-7).unwrap_err().kind,Kind::Open);
+    // two boxes touching along an edge: four faces along it
+    let mut faces = box_faces([0.;3],[1.;3],false);
+    faces.extend(box_faces([1.,1.,0.],[2.,2.,1.],false));
+    assert_eq!(sewn(&faces,1e-7).unwrap_err().kind,Kind::NotManifold);
+}
+
 /// The sphere as an operand: the hemisphere a block keeps of it, its poles off the cutting plane.
 #[test]
 fn a_sphere_cut_by_a_plane_is_its_half() {

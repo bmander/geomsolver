@@ -3,7 +3,8 @@
 //! farthest any point merged into a vertex stood from it, the largest gap measured between an
 //! edge's curve, its pcurves' images and its vertices (`topo::Edge::tol`) — and features within
 //! each other's tolerance are merged in one place, by one rule, at one time: the rules below, which
-//! an arrangement (`boolean`) applies phase by phase and nowhere else.
+//! an arrangement (`boolean`) applies phase by phase, faces sewn (`sew`) in the same order, and
+//! nothing else.
 //!
 //! **The rules**, each against the arrangement's tolerance `tol` (a length) or a feature's own
 //! where that is larger:
