@@ -8,7 +8,6 @@
 // swept from; of two ordinates along its normal the greater bounds `near` and the lesser `far`;
 // a turn short of a whole one is capped `start` where it begins and `end` where it ends.
 
-use std.motion (turns)
 
 // A prism: the points whose foot on the section's plane lies within it, between the ordinates
 // `from` and `to` along its normal from that plane — `from: -30mm, to: 0mm` the material behind
@@ -32,9 +31,7 @@ component Prism(section: face, from: Length, to: Length) := { p |
 //   use std.solids
 //   ring := solid(std.solids.Revolution(sec, about: ax))
 component Revolution(section: face, about: line, from: Angle = 0deg, to: Angle = 360deg) := { p |
-  turn := frame
-  turn turns(ratio: 1) about
-  p coincident(under: turn, over t in (from, to)) section
+  p coincident(under: about, over t in (from, to)) section
 }
 
 // A drafted prism: `Prism`'s points, its section at each ordinate its own with every edge moved

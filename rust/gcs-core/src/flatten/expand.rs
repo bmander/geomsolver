@@ -199,6 +199,10 @@ impl<'a> Walk<'a> {
                 StmtKind::Set(set) => {
                     let abs = format!("{prefix}{}", set.name.text);
                     self.names.insert(abs.clone());
+                    // a set that says a sweep, read as one where a solid is of it (#737)
+                    if let Some(s) = super::said::said(&set.lit, &|_| None) {
+                        self.said.insert(abs.clone(), s);
+                    }
                     self.set_made(abs, &set.lit, scope, depth, Made { st, path, outer: scope });
                 }
                 // an energy: each integrand with the scope's numbers written in (#121)
@@ -501,6 +505,15 @@ impl<'a> Walk<'a> {
             }).collect();
             if let Some(slot) = d2.children.first_mut() {
                 *slot = faces;
+            }
+        }
+        // a solid of a set that says a sweep is that sweep (#737, `said`)
+        if d2.kind == crate::model::EntKind::Solid && matches!(d2.sweep, Some(crate::syntax::Sweep::Body)) {
+            if let Some((_, abs, _)) = self.set_named(&d2, 0, scope) {
+                if let Some((sweep, face)) = self.said.get(&abs).cloned() {
+                    d2.sweep = Some(sweep);
+                    d2.children = vec![vec![Kid::Ref(face)]];
+                }
             }
         }
         self.declared_interval(&mut d2, scope);
@@ -1028,6 +1041,12 @@ impl<'a> Walk<'a> {
         let own = match &comp.set {
             Some(lit) => {
                 let name = sc.prefix().trim_end_matches('.').to_string();
+                // a family whose body says a sweep, its formals the call's arguments (#737)
+                if let StmtKind::Instance(inst) = &st.kind {
+                    if let Some(s) = super::said::said(lit, &super::said::binding(comp, inst)) {
+                        self.said.insert(name.clone(), s);
+                    }
+                }
                 let (own, lit) = super::sets::instance_part(lit);
                 let made = Made { st, path, outer: scope };
                 self.set_made(name, &lit, &sc, depth + 1, made);

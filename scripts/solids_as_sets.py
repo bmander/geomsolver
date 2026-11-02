@@ -210,9 +210,11 @@ def rewrite_sv(text):
 
 
 STRING = re.compile(r'r(#*)"(.*?)"\1|"((?:[^"\\]|\\.)*)"', re.S)
+# a TypeScript test's template literals and quoted strings, in the same two groups
+TS_STRING = re.compile(r'()`((?:[^`\\]|\\.)*)`|"((?:[^"\\]|\\.)*)"', re.S)
 
 
-def rewrite_rs(text):
+def rewrite_rs(text, STRING=STRING):
     out, i, missing = [], 0, 0
     for m in STRING.finditer(text):
         body = m.group(2) if m.group(2) is not None else m.group(3)
@@ -233,14 +235,34 @@ def rewrite_rs(text):
         out.append(new)
         i = end
     out.append(text[i:])
-    return "".join(out), missing
+    text = "".join(out)
+    if missing:
+        # a fragment's `use std` is a prelude's: every literal of the file that has one, and none
+        # of `std.solids`, is given it
+        out, i, missing = [], 0, 0
+        for m in STRING.finditer(text):
+            body = m.group(2) if m.group(2) is not None else m.group(3)
+            if body is None or not re.search(r"(^|\n|\\n)use std(?=$|\n|\\n)", body):
+                continue
+            if USE.search(body.replace("\\n", "\n")):
+                continue
+            new = with_use(body)
+            start = m.start(2) if m.group(2) is not None else m.start(3)
+            end = m.end(2) if m.group(2) is not None else m.end(3)
+            out.append(text[i:start])
+            out.append(new)
+            i = end
+        out.append(text[i:])
+        text = "".join(out)
+        missing = 0 if i else 1
+    return text, missing
 
 
 def main(paths):
     for p in paths:
         text = open(p).read()
-        if p.endswith(".rs"):
-            new, missing = rewrite_rs(text)
+        if p.endswith(".rs") or p.endswith(".ts"):
+            new, missing = rewrite_rs(text, TS_STRING if p.endswith(".ts") else STRING)
             note = f" ({missing} literal(s) with no `use std` to add `use std.solids` beside)" if missing else ""
         else:
             new, note = rewrite_sv(text), ""

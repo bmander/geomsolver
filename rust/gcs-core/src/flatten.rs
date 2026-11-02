@@ -47,6 +47,7 @@ mod framed;
 mod bound;
 mod members;
 mod lists;
+mod said;
 
 pub use faces::{FaceAxis, FacePlane};
 pub use bound::Bound;
@@ -587,6 +588,9 @@ struct Walk<'a> {
     /// Those of them a solid's declaration makes: a reference past one may name one copy's faces
     /// (`flange.drill[1]`, `Lookup::face_of_copy`).
     solid_names: BTreeSet<String>,
+    /// Each set whose body says a sweep, by absolute name (#737, `said`): the sweep, and the face
+    /// it sweeps as the set's scope names it.
+    said: BTreeMap<String, (crate::syntax::Sweep, Ref)>,
     /// A formal bound to an actual: one name for what another names.  Resolved transitively,
     /// after the walk.
     aliases: Vec<(String, Ref, Scope)>,
@@ -901,6 +905,7 @@ impl<'a> Walk<'a> {
                 declared(standard.unwrap()).map(|(n, _)| format!("std.{n}")).collect()
             } else { BTreeSet::new() },
             solid_names: BTreeSet::new(),
+            said: BTreeMap::new(),
             aliases: Vec::new(),
             alias_keys: Default::default(),
             instances: Vec::new(),

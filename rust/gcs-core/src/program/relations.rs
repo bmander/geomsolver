@@ -765,6 +765,26 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &m
     Ok(kind)
 }
 
+/// The motion that turns about line (or axis) `l` a radian a radian of the roll (#737): `under:
+/// l` names it, minted once a line, holding nothing.
+fn turn_about(sk: &mut Sketch, l: EntRef) -> usize {
+    use crate::model::{MotionDef, MotionE};
+    let def = match l.kind {
+        EntKind::Line => MotionDef::Rotation { axis: l.i() as u32, ratio: 1.0, advance: 0.0 },
+        _ => MotionDef::Joint { axis: l.i() as u32, ratio: 1.0, advance: 0.0 },
+    };
+    let same = |m: &MotionE| matches!((&m.def, &def),
+        (MotionDef::Rotation { axis: a, ratio: 1.0, advance: 0.0 }, MotionDef::Rotation { axis: b, .. })
+        | (MotionDef::Joint { axis: a, ratio: 1.0, advance: 0.0 }, MotionDef::Joint { axis: b, .. })
+            if a == b) && m.name.starts_with("#turn");
+    if let Some(m) = sk.motions.iter().position(same) {
+        return m;
+    }
+    sk.motions.push(MotionE { def, name: format!("#turn{}", sk.motions.len()),
+                              class: Default::default(), numbers: None });
+    sk.motions.len() - 1
+}
+
 /// **Outside a set** (#737 P3): `p outside q`, both a region solid's points — `q` the point of
 /// the set `p` is outside of, which the flattener made (`sets::complement`) — the complement of
 /// what holds at `q` (`RegionShape::Outside`), filled when the solid is built.  Whether it was one.
@@ -831,13 +851,19 @@ fn swept_patch(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> bool {
                         no unknown reads", lo.0, hi.0));
         return true;
     };
-    let sole = super::motions::sole(&cx.sk);
-    let m = match super::motions::reading(&mut cx.sk, &cx.res, &under, seen.as_ref(),
-                                          sole.as_deref()) {
-        Ok(m) => m,
-        Err(message) => {
-            cx.diags.push(Diag::within(Code::E040, under.span, st.id, message));
-            return true;
+    // a line is the turn about it, a radian a radian of the roll; a frame its joint
+    let line = cx.res.entity(&cx.sk, &under).filter(|e| matches!(e.kind, EntKind::Line | EntKind::Axis));
+    let m = match line {
+        Some(l) if seen.is_none() => turn_about(&mut cx.sk, l),
+        _ => {
+            let sole = super::motions::sole(&cx.sk);
+            match super::motions::reading(&mut cx.sk, &cx.res, &under, seen.as_ref(), sole.as_deref()) {
+                Ok(m) => m,
+                Err(message) => {
+                    cx.diags.push(Diag::within(Code::E040, under.span, st.id, message));
+                    return true;
+                }
+            }
         }
     };
     let shape = crate::model::RegionShape::Swept { motion: m as u32, roll: [a, b], face: face.i() as u32 };
