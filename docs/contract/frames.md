@@ -64,6 +64,18 @@ motion is what its tool rides on, seen from the frame `seen_from:` names (`motio
   g) tool })`, [0.199]; through 0.198 `sweep(tool over t in (a, b))` and `sweep(tool, through:
   body)`, now E001 naming the set).
 
+**A line named where a frame would be is the turn about it** ([0.200], #748): `under: l` or
+`seen_from: l`, `l` a line or an axis, is a radian a radian of the roll about it — a
+`MotionDef::Rotation` about a line, a `Joint` about an axis, ratio 1 and no advance — minted once
+per line beside the inverse and the relative by `motions::turn_about`, which `frame_motion` calls,
+so every reader of `under:` takes it: a carried point, a solid placed, swept or rolled, an envelope,
+a meshing, a face's patch swept into a region solid (`relations::swept_term`).  It is found again
+by what it is, `MotionE::about`, never by its name (the line's), and holds nothing: no frame, no
+unknown.  `tests/turn_about_a_line.rs` holds a point
+carried under a line (and seen from another) to the turn's closed form and to a frame that
+`turns(1)` it, and a solid placed, swept and a face's patch swept under a line to the same under
+the frame, with the drawing's frames and unknowns those of the readings alone.
+
 `under:` names the frame of an operand that rides on none: naming one for a tool drawn riding is
 refused (`motions::under_riding`, over `Sketch::drawn_carriers`, its points' paths alone) — what a
 reading made rides on its observer and may still be read under another frame, a generating cut

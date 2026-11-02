@@ -97,6 +97,34 @@ fn a_region_the_source_cannot_name_or_a_missing_body_is_refused() {
     assert_eq!(out.text, e.program.text());
 }
 
+/// **A gesture reads a solid's set, not its word's name** (#744): a document's own family whose
+/// set says a prism is resized as `std.solids.Prism` is, the call rewritten as the word that says
+/// the new prism; one whose set reads its formal under arithmetic, or says no sweep, is refused.
+#[test]
+fn a_family_saying_a_prism_is_resized_by_its_set() {
+    let own = "component Slab(section: face, t: Length) := { p |\n  p inside section\n\
+        p distance(<= t, along: n) section\n  p distance(>= 0mm, along: n) section\n}\n";
+    let src = DRAWN.replace("block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -5, to: 0))",
+                            &format!("{own}block := solid(Slab(face(ab, bc, cd, da), t: 5))"));
+    let e = build(&src);
+    let block = e.map.ent_named("block").unwrap().i();
+    let how = SolidSweep { from: Some("0".into()), to: Some("7".into()), ..Default::default() };
+    let out = edit::set_sweep(&e, &e.program, block, &how);
+    assert_eq!(out.refused, None);
+    let line = "block := solid(std.solids.Prism(face(ab, bc, cd, da), from: 0, to: 7))";
+    assert!(out.text.contains(&format!("{line}\n")), "{}", out.text);
+    assert!(near(volume(&build(&out.text), "block"), 2400.0 * 7.0, 1e-9));
+    // a formal under arithmetic is read in the family's own scope, by the elaborator: no extent
+    // of the call's a gesture can rewrite
+    let negated = src.replace("p distance(<= t, along: n) section\n  p distance(>= 0mm",
+                              "p distance(<= 0mm, along: n) section\n  p distance(>= -t");
+    let e = build(&negated);
+    assert!(near(volume(&e, "block"), 2400.0 * 5.0, 1e-9));
+    let block = e.map.ent_named("block").unwrap().i();
+    let out = edit::set_sweep(&e, &e.program, block, &how);
+    assert!(out.refused.is_some_and(|m| m.contains("no sweep of a face says")), "{}", out.text);
+}
+
 #[test]
 fn a_solid_is_resized_in_place_and_the_file_is_otherwise_untouched() {
     let e = build(DRAWN);

@@ -215,7 +215,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   `rust/lib/std/solids.sv`** (`use std.solids`): `Prism(section, from, to)`, `Drafted(section,
   from, to, draft)`, `Revolution(section, about, from = 0deg, to = 360deg)` (`p coincident(under: about,
   over t in (from, to)) section`: a line named `under:` is the turn about it,
-  `relations::turn_about`, a motion minted once a line and holding nothing) and
+  `motions::turn_about`, a motion minted once a line and holding nothing, frames.md) and
   `Through(section)` (`{ p | p inside section }`).  **They are recognised by their terms, never by
   a word's name** (`gcs-solve/src/solid/defined.rs`, `recognised`, called from
   `program/solids/build.rs`'s `region`): a section between two stated ordinates along its own
@@ -233,15 +233,28 @@ placement carries inside the blank; CLI test readers zero the offset.
   two ordinates the greater bounds `near`, the lesser `far`; a turn short of a whole one is capped
   `start` and `end`.  **Before the solid is built, the flattener reads the same sets as the sweep
   they say** (`flatten/said.rs`, the precedent the developables' `sheet_body` set): a set's body —
-  a family's with its formals bound to the call's arguments as written (`said::binding`) — that is
-  a section between two ordinates, the drafted lean, a face's patch turned about a line formal, or a
-  section alone (through the body it is cut from, `syntax::ROLLED`) is written out as
-  `syntax::Sweep::Prism`/`Revolve`/`Through`, so every reader of a solid's text before it is built
-  reads it as one: a prism's sides for an envelope (`generated.rs`), a revolution's named side
-  (`envelopes.rs`), a sketch's carriers on a face (`flatten/faces.rs`), the gestures' resizing
-  (`edit::solids::reworded`); and no probe is made, so the solve is the old spelling's to the bit.
-  `defined.rs` is what recognises any other set saying the same.  `tests/solids_as_sets.rs` is the gate (each word against its
-  set by hand, a through prism bounded by what it cuts, the retired labels naming the set).
+  a family's with its formals bound to the call's arguments as written (`said::binding`), or one
+  written by hand in the solid's own scope, its names what they name there (`said::Bound::Own`,
+  `Walk::said_by_hand`, #744) — that is a section between two ordinates, the drafted lean, a face's
+  patch turned about a line, or a section alone (through the body it is cut from,
+  `syntax::ROLLED`) is written out as `syntax::Sweep::Prism`/`Revolve`/`Through`, so every reader
+  of a solid's text before it is built reads it as one: a prism's sides for an envelope
+  (`generated.rs`), a revolution's named side (`envelopes.rs`, `surface(S, e)`), a sketch's
+  carriers on a face (`flatten/faces.rs`), the gestures' resizing (`edit::solids::reworded`, which
+  reads the call's family's set through `said` and rewrites the call as the `std.solids` word
+  saying the new sweep); and no probe is made, so the solve is the old spelling's to the bit,
+  whichever is written.  **Nothing recognises a sweep from a word's name or a statement's printed
+  text**: a section is within its face by its side (`Written::side`, so `inside` and its lowered
+  `coincident(<=)` alike), and the draft by the bound's tree — `Bin(Sub, distance(p, x),
+  distance(p, y))` at least a product, either way round, of `distance(p, F)` and a number whose
+  expression is the one call `tan(θ)` (`said::lean_of`).  A number that reads a formal under
+  arithmetic (`-t`, `2 * t`) is no number of the call's, so such a set is left to the elaborator,
+  which reads it in its own scope.  `defined.rs` is what recognises any other set saying the same
+  (a turn under a frame's motion, `under: turn`, among them).  `tests/solids_as_sets.rs` is the
+  gate (each word against its set by hand, a set by hand adding nothing to the solve and sketched
+  on, a revolution by hand's named side, a draft read off its tree, a through prism bounded by
+  what it cuts, the retired labels naming the set), and `tests/extrude.rs`'s
+  `a_family_saying_a_prism_is_resized_by_its_set` the gestures'.
 - **The sheet is a report** (Solvent §6.12, `hidden::generated`; issue #48).
   `dimensions(body) in views.right` asks for the callouts that *follow from the object*: overall
   extents in that view and the diameter of every round feature seen square on.  They go through
