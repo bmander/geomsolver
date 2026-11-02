@@ -218,7 +218,9 @@ place) or `over s` (a declared `param`) in a relation's parentheses is `syntax::
 parsed by `parser/relations.rs::op_args` for `coincident` and `inside` and settled by the
 flattener like any dimension.  `p coincident(under: m, over t in (a, b)) sec` at a region solid's
 point is what the face occupies under the motion at some roll of the interval:
-`program::relations::swept_patch` makes it `RegionShape::Swept { motion, roll, face }`, read point
+`relations::shape` names it `Shape::Swept` and `face_or_ends` reads it with every other region
+term — `relations::swept_term` makes it `RegionShape::Swept { motion, roll, face }`, `m` a frame or
+a line it turns about (`motions::reading`, [0.200], frames.md) — read point
 by point about a line in the face's plane; any other motion, or a line off the plane, is refused by
 the field with its reason.  Where such a set is written in place in `solid(…)` and its body is one
 statement saying a sweep, the parser reads it as the sweep of the same points
@@ -510,8 +512,9 @@ spelling. Every set the document makes that is a sheet is recorded for the repor
 of which turns round in place (a conjunction, an interval, several numbers: `region_body` refuses
 it), is outside the set as its own point says it — `sets::complement` gives `S` a hidden point,
 keyed `#{stmt}.c` (`keys::outside`), applies `inner coincident S` there under a prefix of its own,
-and rewrites the statement `p outside inner`, which `relations::outside_set` reads at a region
-solid's point as `RegionShape::Outside { set: Target::Set { probe: inner } }`, filled when the
+and rewrites the statement `p outside inner`, which `relations::shape` names `Shape::Outside` and
+`face_or_ends` reads (`relations::outside_term`) at a region solid's point as
+`RegionShape::Outside { set: Target::Set { probe: inner } }`, filled when the
 solid is built (`regions::fill_sets`).  The field reads it as the negated field of the set's terms
 taken together (`region::general::field_of`, unbounded allowed), its support the union of the
 boxes of each term turned round; so the outside of a conjunction is the union of its terms'

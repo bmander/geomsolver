@@ -47,7 +47,7 @@ mod framed;
 mod bound;
 mod members;
 mod lists;
-mod said;
+pub(crate) mod said;
 
 pub use faces::{FaceAxis, FacePlane};
 pub use bound::Bound;

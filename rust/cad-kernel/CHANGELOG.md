@@ -8,6 +8,28 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The closed swept solid under a screw** (`swept::closed`): a polyhedral tool whose edges run
+  along the screw's axis or square to it, on one arrangement — its level edges' helicoidal sheets
+  open faces reaching past a box square to the axis (`arrangement_within` takes a sheet as it takes
+  a solid). An edge or a face leaning to a screw's axis is refused as `Unbuilt::Leaning` (**new
+  variant**), where every screw was `Unbuilt::Motion`.
+- A sheet a level line screws into meets a coaxial cylinder, another such sheet of its screw and a
+  level plane in closed form (`ssi::intersect`: helices as `Curve::Iso`, a ruling as a line), and
+  any other plane in its cut, `geom::Curve::SheetCut` (**new variant**, `geom::SheetCut`), with the
+  rulings the plane holds; crossings of such curves on a sheet, or of two cuts on one plane, in
+  closed form (`query::crossings_in`); a point's foot on such a sheet from the ruling level with it
+  (`Blend::inverse`). Each reads the sheet through `Blend::screwed_line` (`geom::ScrewedLine`).
+  A profile screwed into a solid, public (`build::screwed`).
+
+## [0.3.0] - 2026-11-02
+
+- A traced meeting dropped as an edge one face already has (#735 A2) is laid across the other face
+  where it lies inside it (`boolean::combined` and every selection): a torus cut by the plane
+  through its axis that holds its seam is half the torus again, not an open boundary — a regression
+  of the surface arrangement (brep-bench's shell/half-torus-open-ends).
+- A sheet's net whose first or last row of poles collapses to a point is a pole
+  (`build::grid_sheet`): one vertex and a degenerate edge in each face, so the standard NURBS
+  sphere is a closed boundary `check` holds.
 - A plane through a quadric's asymptotic cone is tangent where the constant at the hyperbola's
   centre is rounding (`ssi::intersect`): a plane holding a hyperboloid's ruling meets it in two
   lines at any tolerance, where at a tolerance under some 1e-7 it came out as a hyperbola's

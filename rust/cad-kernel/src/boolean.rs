@@ -866,6 +866,9 @@ struct Meetings {
     ssi_edges: Vec<(usize,Two)>,
     /// faces of two operands on one surface: each splits the other with its boundary
     same_pairs: Vec<Two>,
+    /// a traced meeting dropped as an edge one face has (`along_an_edge`): that edge (working), and
+    /// the operand and face it is laid across wherever it lies inside it
+    along_edges: Vec<(usize,Side,usize)>,
 }
 
 /// Phases 3 and 4: every working edge split where it was cut (`split_edges`), and the pieces that
@@ -1066,7 +1069,7 @@ impl<'a> Arrangement<'a> {
     /// form, or traced (`traced_meeting`) — cut at the points both faces put on it, its spans
     /// laid as working edges where they lie in both faces.
     fn meetings(&mut self,crossings: &Crossings) -> Result<Meetings,String> {
-        let mut found = Meetings {ssi_edges:Vec::new(),same_pairs:Vec::new()};
+        let mut found = Meetings {ssi_edges:Vec::new(),same_pairs:Vec::new(),along_edges:Vec::new()};
         let sides: Vec<Side> = self.solids.all().collect();
         // every two faces of two operands whose boxes meet, the lower operand first
         let mut pairs: Vec<Two> = Vec::new();
@@ -1095,8 +1098,16 @@ impl<'a> Arrangement<'a> {
                     let mut traced = self.traced_meeting(faces,crossings)?;
                     // a traced meeting lying along an edge either face already has is that edge
                     // (#735 A2: "this meeting is that existing edge"), laid once, not twice
-                    // a hair apart: two surfaces meeting along a circle both their caps end on
-                    traced.retain(|c| !self.along_an_edge(c,faces,surfaces));
+                    // a hair apart: two surfaces meeting along a circle both their caps end on;
+                    // the other face is cut by that edge where it lies inside it (a torus's seam
+                    // in a plane through its axis)
+                    traced.retain(|c| match self.along_an_edge(c,faces,surfaces) {
+                        Some((k,e)) => {
+                            found.along_edges.push((self.working(faces.s[k],e),faces.s[1-k],faces.f[1-k]));
+                            false
+                        }
+                        None => true,
+                    });
                     let met = ends_met(&traced,self.tol);
                     (traced,met)
                 }
@@ -1124,20 +1135,21 @@ impl<'a> Arrangement<'a> {
         Ok(found)
     }
 
-    /// Whether the traced curve `c` lies along an edge of either of the two faces, over all of it:
-    /// each of its points within the reach a point of two surfaces meeting at its angle has
-    /// (`on_meeting`) of one edge's curve, inside the edge's stretch.
-    fn along_an_edge(&self,c: &Curve,faces: Two,surfaces: [&Surface;2]) -> bool {
-        let Curve::Traced(t) = c else { return false };
+    /// The edge of either of the two faces the traced curve `c` lies along, over all of it — which
+    /// face's (0 or 1) and the edge, its own solid's: each of its points within the reach a point
+    /// of two surfaces meeting at its angle has (`on_meeting`) of the edge's curve, inside the
+    /// edge's stretch.
+    fn along_an_edge(&self,c: &Curve,faces: Two,surfaces: [&Surface;2]) -> Option<(usize,usize)> {
+        let Curve::Traced(t) = c else { return None };
         // each point with the reach a point of the two surfaces meeting at its angle has
         let pts: Vec<(V,f64)> = (0..=32).map(|k| {
             let p = t.pts[(k*(t.pts.len()-1))/32];
             (p,on_meeting(self.tol,norm(crate::util::space::cross(surfaces[0].gradient(p),surfaces[1].gradient(p)))))
         }).collect();
-        (0..2).any(|k| {
+        (0..2).find_map(|k| {
             let sol = self.solids[faces.s[k]];
             let f = &sol.faces[faces.f[k]];
-            f.loops.iter().flatten().any(|co| {
+            f.loops.iter().flatten().find(|co| {
                 let e = &sol.edges[co.edge as usize];
                 let EdgeCurve::Curve(ec) = &e.curve else { return false };
                 pts.iter().all(|&(p,reach)| {
@@ -1145,7 +1157,7 @@ impl<'a> Arrangement<'a> {
                     if let Some(period) = ec.period() { u = around(u,e.t[0],period); }
                     u >= e.t[0]-1e-9 && u <= e.t[1]+1e-9 && distance(ec.point(u),p) <= reach
                 })
-            })
+            }).map(|co| (k,co.edge as usize))
         })
     }
 
@@ -1374,20 +1386,22 @@ impl<'a> Arrangement<'a> {
                     if on.holds(s,fi).is_none() { continue }
                     for &(piece,_) in &split.pieces_of[e] { if !split.gone[piece as usize] { cut.internal(split.rep[piece as usize].0); } }
                 }
+                // an edge's pieces that lie inside this face
+                let inside = |we: usize,cut: &mut FaceCut| for &(piece,_) in &split.pieces_of[we] {
+                    if split.gone[piece as usize] { continue }
+                    let r = split.rep[piece as usize].0;
+                    let w = &split.out[r as usize];
+                    if matches!(w.curve,EdgeCurve::Degenerate) { continue }
+                    if self.located[s].face_place(fi,w.point((w.t[0]+w.t[1])/2.,&self.pool)) == Place::In { cut.internal(r); }
+                };
                 // a face of the other on this one's surface: its boundary's pieces inside this face
                 for same in &meetings.same_pairs {
                     let Some(k) = same.holds(s,fi) else { continue };
                     let (other,face) = (same.s[1-k],same.f[1-k]);
-                    for l in &self.solids[other].faces[face].loops { for c in l {
-                        for &(piece,_) in &split.pieces_of[self.working(other,c.edge as usize)] {
-                            if split.gone[piece as usize] { continue }
-                            let r = split.rep[piece as usize].0;
-                            let w = &split.out[r as usize];
-                            if matches!(w.curve,EdgeCurve::Degenerate) { continue }
-                            if self.located[s].face_place(fi,w.point((w.t[0]+w.t[1])/2.,&self.pool)) == Place::In { cut.internal(r); }
-                        }
-                    } }
+                    for c in self.solids[other].faces[face].loops.iter().flatten() { inside(self.working(other,c.edge as usize),&mut cut); }
                 }
+                // an edge of the other a traced meeting lay along
+                for &(we,_,_) in meetings.along_edges.iter().filter(|&&(_,o,face)| o == s && face == fi) { inside(we,&mut cut); }
                 if s != Side::A { self.say.cut_network(s,fi,f,meetings,split,&self.pool); }
                 for piece in pieces_of_face(f,&cut.halves,&split.out,&self.pool)? { pieces.push((s,fi,piece)); }
             }

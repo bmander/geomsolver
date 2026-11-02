@@ -143,7 +143,7 @@ fn envelope_formals_alias_forward_source_dependencies_and_private_members() {
 fn envelopes_reject_invalid_dependencies_and_domains() {
     for (tail,want) in [
         ("bad := envelope(ax over t in (-1deg, 1deg), roll)","a turn about a point"),
-        ("bad := envelope(wall over t in (-1deg, 1deg), ax)","a motion is read off a frame"),
+        ("bad := envelope(wall over t in (-1deg, 1deg), o)","a motion is read off a frame"),
         ("bad := envelope(wall over t in (1mm, 2mm), roll)","envelope bound"),
         ("bad := envelope(wall over t in (1deg, 1deg), roll)","increasing"),
         ("bad := envelope(wall over t in (1deg, -1deg), roll)","increasing"),

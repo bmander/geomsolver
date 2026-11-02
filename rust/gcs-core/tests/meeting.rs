@@ -181,3 +181,87 @@ fn a_plane_holding_a_hyperboloids_ruling_meets_it_in_two_lines_at_any_tolerance(
         assert!(curves.iter().any(on),"at {tol:e}");
     }
 }
+
+/// The sheet the level line through `p` along `e` screws into about the `z` axis — a turn of
+/// `angle` and a rise of `advance` over it, from the line screwed back by `from` of that turn —
+/// the face of a level triangle on the line screwed (`build::screwed`), its stretch of the line
+/// `2 reach` long.
+fn screwed_sheet(p: V,e: V,reach: f64,angle: f64,advance: f64,from: f64) -> Surface {
+    use gcs_core::brep::build::{screwed,Profile,ProfileEdge};
+    let off = [p[0]-e[0]*(p[0]*e[0]+p[1]*e[1]),p[1]-e[1]*(p[0]*e[0]+p[1]*e[1]),0.];
+    let away = if norm(off) > 1e-9 { unit(off) } else { cross([0.,0.,1.],e) };
+    let corners = [[p[0]-reach*e[0],p[1]-reach*e[1],p[2]],[p[0]+reach*e[0],p[1]+reach*e[1],p[2]],
+        [p[0]+reach*away[0],p[1]+reach*away[1],p[2]]];
+    let triangle = Profile {origin:corners[0],normal:[0.,0.,1.],names:vec![vec!["sheet".into(),String::new(),String::new()]],
+        loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
+    let back = gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],-from*angle)
+        .then(&gcs_core::brep::geom::Rigid {t:[0.,0.,-from*advance],..gcs_core::brep::geom::Rigid::identity()});
+    let b = screwed(&triangle.moved(&back),[0.;3],[0.,0.,1.],angle,advance).unwrap();
+    b.faces.iter().find(|f| f.name == "sheet").unwrap().surface.clone()
+}
+
+/// **A screwed line's sheet meets what keeps the screw in helices** (`ssi`'s screwed meetings,
+/// #735): a cylinder about the axis where the line passes it, twice, or once where the line passes
+/// at the cylinder's radius (the sheet touching it along the foot's helix, at any tolerance); a
+/// sheet of the same screw where its line meets this one carried to its height, once, and nowhere
+/// where the two run parallel at one height; a plane square to the axis in the one ruling at its
+/// height. Every point of each read on both surfaces.
+#[test]
+fn a_screwed_lines_sheet_meets_what_keeps_the_screw_in_helices() {
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    let (angle,advance) = (5.,1.6);
+    // the line x = 2 at z = 0 (its foot (2, 0, 0)), and a line through the axis higher up
+    let sheet = screwed_sheet([2.,0.5,0.],[0.,1.,0.],4.,angle,advance,0.);
+    let other = screwed_sheet([1.,1.,0.3],unit([1.,1.,0.]),6.,angle,advance,0.);
+    let apart = screwed_sheet([3.,0.5,0.],[0.,1.,0.],4.,angle,advance,0.);
+    // read where both patches reach (the other sheet starts higher up)
+    let on_both = |c: &Curve,a: &Surface,b: &Surface,what: &str| for k in 0..=16 {
+        let x = c.point(0.1+0.6*k as f64/16.);
+        assert!(a.implicit(x).abs() <= 1e-9 && b.implicit(x).abs() <= 1e-9,"{what}: {x:?} off them by {:e}, {:e}",a.implicit(x),b.implicit(x));
+    };
+    for tol in [1e-6,1e-7,1e-9] {
+        for (r,n) in [(3.,2),(2.,1),(1.5,0)] {
+            let cylinder = Surface::Cylinder(Frame::about([0.;3],[0.,0.,1.]),r);
+            let Ssi::Curves(curves) = intersect(&sheet,&cylinder,tol) else { panic!("radius {r} at {tol:e}: no closed form") };
+            assert_eq!(curves.len(),n,"radius {r} at {tol:e}");
+            for c in &curves { assert_eq!(c.kind(),"iso"); on_both(c,&sheet,&cylinder,"a cylinder's helix") }
+        }
+        let Ssi::Curves(helix) = intersect(&sheet,&other,tol) else { panic!("two sheets at {tol:e}: no closed form") };
+        assert_eq!(helix.len(),1,"two sheets at {tol:e}");
+        on_both(&helix[0],&sheet,&other,"two sheets' helix");
+        assert_eq!(intersect(&sheet,&apart,tol),Ssi::Curves(vec![]),"parallel at one height, at {tol:e}");
+        let level = Surface::Plane(Frame::about([0.,0.,0.7],[0.,0.,1.]));
+        let Ssi::Curves(ruling) = intersect(&sheet,&level,tol) else { panic!("a level plane at {tol:e}: no closed form") };
+        assert_eq!(ruling.iter().map(|c| c.kind()).collect::<Vec<_>>(),["line"],"a level plane at {tol:e}");
+        for k in 1..=15 { let x = ruling[0].point(k as f64*0.5); assert!(sheet.implicit(x).abs() <= 1e-9 && (x[2]-0.7).abs() <= 1e-12) }
+    }
+}
+
+/// **A plane holding a ruling of a screwed line's sheet meets it in that ruling and a curve crossing
+/// it where the two touch** (`Curve::SheetCut`, #735): a face along the axis holds its own level
+/// edge, a ruling of the edge's sheet, and touches the sheet at the edge's foot, so the meeting there
+/// is the ruling and the rest of the plane's cut, `S(−α/β, v)`, through the foot — read about the
+/// held ruling by differences, so it stays on both surfaces to rounding however near the foot it is
+/// read, and runs through the foot itself.
+#[test]
+fn a_plane_holding_a_screwed_sheets_ruling_meets_it_in_the_ruling_and_a_cut_through_the_touch() {
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    let (angle,advance) = (5.,1.6);
+    // from a fifth of a turn back, so the ruling the plane holds is inside the patch
+    let sheet = screwed_sheet([2.,0.5,0.],[0.,1.,0.],4.,angle,advance,0.2);
+    let plane = Surface::Plane(Frame::about([2.,0.,0.],[1.,0.,0.]));
+    for tol in [1e-6,1e-7,1e-9] {
+        let Ssi::Curves(curves) = intersect(&plane,&sheet,tol) else { panic!("at {tol:e}: no closed form") };
+        assert_eq!(curves.iter().map(|c| c.kind()).collect::<Vec<_>>(),["line","sheet cut"],"at {tol:e}");
+        let Curve::SheetCut(cut) = &curves[1] else { unreachable!() };
+        let [held] = cut.held[..] else { panic!("at {tol:e}: held {:?}",cut.held) };
+        // through the foot, and on both surfaces however near it
+        assert!(distance(cut.point(held),[2.,0.,0.]) <= 1e-12,"at {tol:e}: {:?}",cut.point(held));
+        for d in [0.,1e-12,1e-9,1e-7,1e-6,1e-4,1e-2,0.1] { for v in [held+d,held-d] {
+            let x = cut.point(v);
+            assert!((x[0]-2.).abs() <= 1e-12 && sheet.implicit(x).abs() <= 1e-10,"at {v}: {x:?}");
+        } }
+        // the ruling the plane holds is the line x = 2, z = 0
+        assert!((0..=4).all(|k| { let x = [2.,k as f64-2.,0.]; distance(curves[0].point(curves[0].inverse(x)),x) <= 1e-12 }));
+    }
+}

@@ -32,7 +32,7 @@ the edges they are swept from; of two ordinates along its normal the greater bou
 the lesser `far`; a turn short of a whole one is capped `start` where its interval begins and
 `end` where it ends. A hand-written set obeys it because the faces are named by what the set is
 recognised as, and recognition reads the set's terms (`solid/defined.rs`) or its statements
-(`flatten/said.rs`), never a word's name.
+(`flatten/said.rs`, a family's instance or a set written by hand alike, #744), never a word's name.
 
 **A union of regions.** The outside of a conjunction is given its meaning — where any of its
 statements fails — rather than adding syntax: `p outside S`, `S` a set no one bound of which
@@ -87,11 +87,21 @@ added to the solve — no probe point, and no frame for a revolution (`under:` n
 471.1 s, the STL 366.2 → 347.8 s), within the run-to-run spread of these documents. The largest
 regression of one document is `sized_conrod.sv`, 558.8 → 575.0 s (+2.9%), and the largest gain
 `engine/conrod.sv`, 90.2 → 80.2 s; none is attributable to the rewrite beyond that spread. A set
-written by hand rather than with a word adds the region solid's probe point (three fixed
-parameters) and is recognised by the elaborator (`solid/defined.rs`); `tests/solids_as_sets.rs`
-holds it to the word's bytes.
+written by hand that says a prism, a drafted prism, a revolution about a line or a prism through
+everything is read by the flattener as the word is (#744), so it adds nothing to the solve either;
+one only the elaborator recognises (a turn under a frame's motion, a number reading a formal under
+arithmetic) adds the region solid's probe point (three fixed parameters) and is recognised from
+its terms (`solid/defined.rs`). `tests/solids_as_sets.rs` holds each to the word's bytes. No
+document of the corpus writes such a set by hand, so #744 leaves the comparison above as it was.
 
 ## What is not done
+
+- **Two syntax-level recognisers remain** (#744's interim step): `flatten/said.rs`, which reads a
+  set's statements and trees, and the parser's `swept_set`, which rewrites a set saying what a body
+  occupies under a motion (`inside(under: …, over …)`) or a face over a running parameter
+  (`coincident(over s)`) into a `sweep(…)` before anything is parsed. Moving the latter into
+  `said` mints a set statement for each such solid, renumbering the statement ids the report
+  prints in hidden keys, so it waits on a corpus comparison of its own.
 
 - **Sketching on the faces of a revolution, a face family or a motion's sweep**, and on a drafted
   side, is still E040: the carriers a drawn point or plane stands on are written for a prism's caps

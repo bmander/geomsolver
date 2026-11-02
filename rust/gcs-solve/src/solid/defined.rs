@@ -78,7 +78,6 @@ fn boolean(terms: &[RegionTerm]) -> Option<SolidDef> {
 /// of the roll one end of which is nothing — turned `sweep` from where it is drawn, the way the
 /// interval runs (`sense: cw` for one below nothing).
 fn revolution(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
-    use crate::model::Sense;
     use std::f64::consts::TAU;
     let [t] = terms else { return None };
     let RegionShape::Swept { motion, roll, face } = t.shape else { return None };
@@ -98,20 +97,11 @@ fn revolution(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
             return None;
         }
     }
-    let (t0, t1) = (ratio * roll[0], ratio * roll[1]);
-    let (lo, hi) = (t0.min(t1), t0.max(t1));
-    let (sweep, sense) = match (lo == 0.0, hi == 0.0) {
-        (true, false) => (hi, Sense::Ccw),
-        (false, true) => (-lo, Sense::Cw),
-        _ => return None,
-    };
-    if sweep > TAU + 1e-12 {
+    let (sweep, sense) = crate::model::turn_between(ratio * roll[0], ratio * roll[1])?;
+    if sweep > TAU {
         return None;
     }
-    let sweep = match (sweep - TAU).abs() < 1e-12 {
-        true => Extent { text: String::new(), value: TAU },
-        false => Extent::at(sweep),
-    };
+    let sweep = if sweep == TAU { Extent::whole() } else { Extent::at(sweep) };
     Some(SolidDef::Revolve { face, axis, sweep, sense })
 }
 

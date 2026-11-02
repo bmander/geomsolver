@@ -319,3 +319,73 @@ fn a_swept_set_is_read_where_it_is_written() {
     assert!(errs.iter().any(|e| e.message.contains("`under` is given twice")), "{errs:?}");
     assert!(errs.iter().all(|e| !e.message.contains("sweep(")), "{errs:?}");
 }
+
+/// **A set written by hand is read before it is built as the word is** (#744): the flattener
+/// reads its statements, not a word's name, so a prism by hand adds nothing to the solve — no
+/// point its set is applied to — and is the word's to every reader of a solid before it is built.
+#[test]
+fn a_set_by_hand_adds_nothing_to_the_solve() {
+    let word = solved(&format!("{RECT}s := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n"));
+    let hand = solved(&format!("{RECT}s := solid({{ p | p inside sec\n\
+        p distance(>= -30mm, along: n) sec; p distance(<= 0mm, along: n) sec }})\n"));
+    assert_eq!(word.sketch.points.len(), hand.sketch.points.len());
+    assert_eq!(word.sketch.params.len(), hand.sketch.params.len());
+    alike(&hand, "s", "s");
+    assert!(matches!(def(&hand, "s"), SolidDef::Prism { draft: None, .. }));
+}
+
+/// **Sketching on the faces of a prism by hand**, as on the word's: a point on a cap stands at
+/// its ordinate, and a plane touching a straight side at its origin lies on it.
+#[test]
+fn a_prism_by_hand_is_sketched_on() {
+    let e = solved(&format!("{RECT}hand := solid({{ p | p inside sec\n\
+        p distance(>= -30mm, along: n) sec; p distance(<= 0mm, along: n) sec }})\n\
+        m := point hint((5, 10, 5))\nm coincident hand.far.surface\n\
+        v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) hint(origin: (10, 8, 1))\n\
+        v1.origin coincident hand.ab.surface\nv1 tangent(at: v1.origin) hand.ab.surface\n"));
+    // the front plane's normal is the world's −y: the far cap 30 behind it
+    let m = e.sketch.world_point(ent(&e, "m").i());
+    assert!((m[1] - 30.0).abs() < 1e-9, "{m:?}");
+    let n = e.sketch.basis(ent(&e, "v1").i()).normal();
+    assert!(n[0].abs() < 1e-9 && n[1].abs() < 1e-9, "{n:?}");
+}
+
+/// **A revolution by hand has named sides** the solve reads before it is built: `surface(S, e)`
+/// over the set turned about a line is the edge turned about it, as over the word.
+#[test]
+fn a_revolution_by_hand_has_named_sides() {
+    use gcs_core::model::Held;
+    let held = |solid: &str| {
+        let e = solved(&format!("{RING}rev := solid({solid})\nside := surface(rev, e1)\n\
+            gear := frame\nf := envelope(side over t in (-60deg, 60deg), under: turn, \
+            seen_from: gear)\n"));
+        let f = e.sketch.envelopes.iter().find(|x| x.name == "f").expect("an envelope");
+        let Held::Revolution { axis, edge } = f.held.clone() else {
+            panic!("`{solid}`: {:?}", f.held)
+        };
+        assert_eq!((axis, edge), (ent(&e, "ax"), ent(&e, "e1")));
+    };
+    held("std.solids.Revolution(sec, about: ax, to: 90deg)");
+    held("{ p | p coincident(under: ax, over t in (0deg, 90deg)) sec }");
+}
+
+/// **A draft is read off the bound's tree**, not its printed text: the lean written with its
+/// product the other way round and its spacing changed is the word's drafted prism, and the
+/// same bound over another face's plane is no draft of this one's.
+#[test]
+fn a_draft_is_read_off_its_tree() {
+    let word = "word := solid(std.solids.Drafted(sec, from: -5mm, to: 5mm, draft: 3deg))\n";
+    let hand = "hand := solid({ p | p distance(<= 5mm, along: n) sec\n\
+        p distance(>= -5mm, along: n) sec\n  into := { q | q inside sec }\n\
+        out := { q | q outside sec }\n\
+        distance(p,out)-distance( p, into ) >= distance(p, sec) * tan( 3deg ) })\n";
+    // read before it is built, as the word is: nothing added to the solve
+    let points = |s: &str| solved(&format!("{RECT}{s}")).sketch.points.len();
+    assert_eq!(points(word), points(hand));
+    let e = solved(&format!("{RECT}{word}{hand}"));
+    let SolidDef::Prism { draft: Some(d), .. } = def(&e, "hand") else {
+        panic!("a drafted prism: {:?}", def(&e, "hand"))
+    };
+    assert_eq!(d.value.to_bits(), 3f64.to_radians().to_bits());
+    alike(&e, "word", "hand");
+}
