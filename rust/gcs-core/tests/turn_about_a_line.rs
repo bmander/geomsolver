@@ -4,19 +4,12 @@
 //! `under:` takes it, so a point carried to a roll, a solid placed at an instant, a solid swept
 //! over an interval and a face's patch swept into a region solid are each read under `ax` as under
 //! a frame that `turns(1) ax` — with no frame, so no unknown — and `seen_from:` a line likewise.
-use crate::common::{at, ent, text::solved};
+use crate::common::{at, close, ent, read, text::solved};
+use crate::meshing::turned;
 use gcs_core::model::MotionDef;
 use gcs_core::program::Elaborated;
 use gcs_core::solid::ApproximationPolicy;
-use gcs_core::space::{add, cross, dot, norm, scale, sub, unit};
-
-/// `x` turned `angle` radians about the line through `o` along the unit `d`: Rodrigues, worked
-/// out here rather than asked of the core.
-fn turned(x: [f64; 3], o: [f64; 3], d: [f64; 3], angle: f64) -> [f64; 3] {
-    let w = sub(x, o);
-    let (s, c) = angle.sin_cos();
-    add(o, add(add(scale(w, c), scale(cross(d, w), s)), scale(d, dot(d, w) * (1.0 - c))))
-}
+use gcs_core::space::{norm, sub, unit};
 
 /// Two skew lines in space, `ax` and `bx`, and a point `x` off both.
 const SKEW: &str = "\
@@ -120,15 +113,14 @@ fn solids_under_a_line_are_solids_under_its_turn() {
     }
     // the prism turned a quarter about the line stands elsewhere, and is the prism still
     let (stock, placed) = (measured(&line, "stock"), measured(&line, "placed"));
-    assert!((stock.0 - placed.0).abs() < 1e-9 * stock.0);
+    close(placed.0, stock.0);
     assert!((0..3).any(|k| (stock.1[k] - placed.1[k]).abs() > 1.0), "{stock:?} {placed:?}");
     // the patch's volume is Pappus's: a quarter turn of 24 mm² about a centroid 12 from the line
     let pappus = std::f64::consts::FRAC_PI_2 * 12.0 * 24.0;
     assert!(near(measured(&line, "patch").0, pappus), "{:?}", measured(&line, "patch"));
     // nothing read under the line is a frame or an unknown: the readings add what they add under
-    // the frame (the region solids' points), and no frame
-    let bare = solved(RING);
-    let framed = solved(&format!("{RING}turn := frame\nturn turns(1) ax\n"));
+    // the frame (the region solids' points), and no frame — counted as elaborated
+    let (bare, framed) = (read(RING), read(&format!("{RING}turn := frame\nturn turns(1) ax\n")));
     assert_eq!(line.sketch.frames.len(), bare.sketch.frames.len());
     assert_eq!(line.sketch.params.len() - bare.sketch.params.len(),
                frame.sketch.params.len() - framed.sketch.params.len());

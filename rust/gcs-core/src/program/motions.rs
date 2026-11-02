@@ -486,18 +486,13 @@ pub(super) fn inverse(sk: &mut Sketch, m: usize) -> usize {
 /// time a reading names `l` where a frame would be (`under: l`, `seen_from: l`): a rotation about
 /// a drawn line, a joint about an axis, holding nothing — no frame, so no unknown.  Found again by
 /// what it is (`MotionE::about`), named as the line is.
-pub(super) fn turn_about(sk: &mut Sketch, res: &Resolver, l: EntRef) -> usize {
+fn turn_about(sk: &mut Sketch, res: &Resolver, l: EntRef) -> usize {
     let axis = l.i() as u32;
     let def = match l.kind {
         EntKind::Line => MotionDef::Rotation { axis, ratio: 1.0, advance: 0.0 },
         _ => MotionDef::Joint { axis, ratio: 1.0, advance: 0.0 },
     };
-    let found = sk.motions.iter().position(|m| m.about && match (&m.def, &def) {
-        (MotionDef::Rotation { axis: a, .. }, MotionDef::Rotation { axis: b, .. })
-        | (MotionDef::Joint { axis: a, .. }, MotionDef::Joint { axis: b, .. }) => a == b,
-        _ => false,
-    });
-    if let Some(i) = found {
+    if let Some(i) = sk.motions.iter().position(|m| m.about && m.def == def) {
         return i;
     }
     sk.motions.push(MotionE { def, name: name_of(res, l), class: Default::default(),

@@ -294,15 +294,10 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// applied as a gauge, taken as a region's term, or refused, and no id. The steps below, in the
 /// order each may end it.
 pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u32> {
-    // what the relation is, by what its operands resolve to (`shape`)
-    let shape = r.form.written().map_or(Shape::Other, |w| shape(&cx.sk, &cx.res, w));
     // a point a frame carries (#383): its `under:` and `seen_from:` read as the one motion node
-    // the carried point's slot names — but for a face swept over an interval of the roll, which
-    // carries no point but is a region's term (`face_or_ends`)
-    if !matches!(shape, Shape::Swept) {
-        if let Some(carried) = carried_motion(cx, r, st) {
-            return carried.and_then(|r| constrain(cx, &r, st));
-        }
+    // the carried point's slot names
+    if let Some(carried) = carried_motion(cx, r, st) {
+        return carried.and_then(|r| constrain(cx, &r, st));
     }
     // a rate's relation is no row of the drawing, but what its family integrates by (#339 D3) —
     // but for a rate of a contact, which is a row like any other (#365)
@@ -314,6 +309,8 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     let initially = r.initially;
     // the claim block it was written in, one claim per block and copy (#460)
     let witness = r.witness.map(|k| cx.witness_block(k, &st.path));
+    // what the relation is, by what its operands resolve to (`shape`)
+    let shape = r.form.written().map_or(Shape::Other, |w| shape(&cx.sk, &cx.res, w));
     if face_or_ends(cx, r, st, &shape) {
         return None;
     }
@@ -501,9 +498,13 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
 /// carried point over the motion node of `f` seen from `g` (`motions::reading`) — bound under a
 /// key no source can spell, `#motion{n}`, so the slot reads it as the motion it is.  `None` for a
 /// relation naming no `under:`, `Some(None)` where the reading was refused (said here), else the
-/// relation as the slot reads it.
+/// relation as the slot reads it.  A carried point is at one roll: a relation over an interval of
+/// it, `over t in (a, b)`, carries none (a face's patch swept is a region's term, `swept_term`).
 fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<Relation>> {
     let w = r.form.written()?;
+    if w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Over { .. })) {
+        return None;
+    }
     let named = |k: &str| w.args.iter().position(|a| matches!(a,
         crate::syntax::OpArg::Named(n, Arg::Ref(_)) if n.text == k));
     let seen = named("seen_from");
@@ -764,20 +765,24 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &m
     Ok(kind)
 }
 
+/// `shape` a term of a region solid, held where it is at most nothing.
+fn held(shape: crate::model::RegionShape) -> crate::model::RegionTerm {
+    crate::model::RegionTerm::new(shape, crate::syntax::Cmp::Le,
+                                  crate::model::TermNumber::stated(0.0))
+}
+
 /// **Outside a set** (#737 P3, `Shape::Outside`): `p outside q`, both a region solid's points —
 /// `q` the point of the set `p` is outside of, which the flattener made (`sets::complement`) —
 /// the complement of what holds at `q` (`RegionShape::Outside`), filled when the solid is built.
 /// `None` where either is a drawn point, which is read as written.
 fn outside_term(probes: &super::regions::Probes, point: EntRef, of: EntRef)
     -> Option<(usize, crate::model::RegionTerm)> {
-    use crate::model::{RegionShape, RegionTerm, Target, TermNumber};
+    use crate::model::{RegionShape, Target};
     if !probes.terms.contains_key(&point.i()) || !probes.terms.contains_key(&of.i()) {
         return None;
     }
     let set = Target::Set { probe: of.i() as u32, terms: Vec::new() };
-    let shape = RegionShape::Outside { set: Box::new(set) };
-    let term = RegionTerm::new(shape, crate::syntax::Cmp::Le, TermNumber::stated(0.0));
-    Some((point.i(), term))
+    Some((point.i(), held(RegionShape::Outside { set: Box::new(set) })))
 }
 
 /// **What a face occupies under a motion over an interval of its roll** (#737, `Shape::Swept`),
@@ -785,25 +790,13 @@ fn outside_term(probes: &super::regions::Probes, point: EntRef, of: EntRef)
 /// over the roll, the region's term (`RegionShape::Swept`).  `under:` names a frame, or a line it
 /// turns about (`motions::reading`).  The term, or why not and where — at `under:` where the
 /// reading is refused, else the statement.
-fn swept_term(cx: &mut Elab<'_>, w: &crate::syntax::Written)
+fn swept_term(cx: &mut Elab<'_>, s: &Swept)
     -> Result<(usize, crate::model::RegionTerm), (Option<Span>, String)> {
-    use crate::model::{RegionShape, RegionTerm, TermNumber};
-    use crate::syntax::OpArg;
-    let (key, ends) = w.args.iter().find_map(|a| match a {
-        OpArg::Over { key, ends } => Some((key, ends)),
-        _ => None,
-    }).expect("a swept face runs over an interval");
-    let named = |k: &str| w.args.iter().find_map(|a| match a {
-        OpArg::Named(n, Arg::Ref(r)) if n.text == k => Some(r.clone()),
-        _ => None,
-    });
-    let under = named("under").expect("a swept face names what it is under");
-    let seen = named("seen_from");
+    let Swept { point: p, face: x, under, seen, key, ends } = s;
     let Some([lo, hi]) = ends else {
         return Err((None, format!("a face swept by a motion is swept over an interval of its \
             roll written in place: `over {} in (a, b)`", key.text)));
     };
-    let [p, x] = w.ops.as_slice() else { unreachable!("a swept face's two operands") };
     let point = cx.res.entity(&cx.sk, p).filter(|e| e.kind == EntKind::Point);
     let Some(point) = point.filter(|e| cx.probes.terms.contains_key(&e.i())) else {
         return Err((None, format!("`{}` is a drawn point: what a face occupies over an interval \
@@ -824,10 +817,11 @@ fn swept_term(cx: &mut Elab<'_>, w: &crate::syntax::Written)
                                    numbers no unknown reads", lo.0, hi.0)));
     };
     let sole = super::motions::sole(&cx.sk);
-    let m = super::motions::reading(&mut cx.sk, &cx.res, &under, seen.as_ref(), sole.as_deref())
+    let m = super::motions::reading(&mut cx.sk, &cx.res, under, seen.as_ref(), sole.as_deref())
         .map_err(|message| (Some(under.span), message))?;
-    let shape = RegionShape::Swept { motion: m as u32, roll: [a, b], face: face.i() as u32 };
-    Ok((point.i(), RegionTerm::new(shape, crate::syntax::Cmp::Le, TermNumber::stated(0.0))))
+    let shape = crate::model::RegionShape::Swept { motion: m as u32, roll: [a, b],
+                                                   face: face.i() as u32 };
+    Ok((point.i(), held(shape)))
 }
 
 /// **A region's point against a face** (#183 F1), where an edge ends (F7), against a drawn face
@@ -835,22 +829,20 @@ fn swept_term(cx: &mut Elab<'_>, w: &crate::syntax::Written)
 /// the region, read off the body — whether the relation was one, taken or refused.
 fn face_or_ends(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, shape: &Shape) -> bool {
     let Some(w) = r.form.written() else { return false };
+    let probes = &cx.probes;
     let term = match shape {
-        Shape::Face { point, face } => {
-            face_term(&cx.sk, &cx.res, w, *point, face, &cx.probes).map_err(|m| (None, m))
+        Shape::Swept(s) => swept_term(cx, s),
+        Shape::Outside { point, of } => {
+            let Some(t) = outside_term(probes, *point, *of) else { return false };
+            Ok(t)
         }
-        Shape::Ends { point, edge } => {
-            ends_term(w, *point, *edge, &cx.probes).map_err(|m| (None, m))
-        }
+        Shape::Face { point, face } => face_term(&cx.sk, &cx.res, w, *point, face, probes)
+            .map_err(|m| (None, m)),
+        Shape::Ends { point, edge } => ends_term(w, *point, *edge, probes).map_err(|m| (None, m)),
         Shape::Section { point, face } => {
-            super::regions::section_term(&cx.sk, &cx.res, w, *point, *face, &cx.probes)
+            super::regions::section_term(&cx.sk, &cx.res, w, *point, *face, probes)
                 .map_err(|m| (None, m))
         }
-        Shape::Swept => swept_term(cx, w),
-        Shape::Outside { point, of } => match outside_term(&cx.probes, *point, *of) {
-            Some(t) => Ok(t),
-            None => return false,
-        },
         Shape::PlaneSide | Shape::Other => return false,
     };
     match term {
@@ -1438,26 +1430,51 @@ pub(in crate::program) enum Shape {
     /// A point against a drawn face (#737 P1): `p inside sec`, `p distance(<= d, along: n) sec`.
     Section { point: EntRef, face: EntRef },
     /// What a face occupies under a motion over an interval of its roll (#737): `p
-    /// coincident(under: m, over t in (a, b)) sec` — what its operands are is the term's to say
-    /// (`swept_term`), each refused there by what it is.
-    Swept,
+    /// coincident(under: m, over t in (a, b)) sec`, whatever its operands — what they are is the
+    /// term's to say (`swept_term`), each refused there by what it is.
+    Swept(Swept),
     /// A point outside the point of a set (#737 P3), `p outside q`: a region's term where both
     /// are a region solid's points (`sets::complement`), else read as written.
     Outside { point: EntRef, of: EntRef },
     Other,
 }
 
+/// What a face swept over an interval of a roll was written with (`Shape::Swept`): its two
+/// operands, what it is under and seen from, and the interval as written.
+pub(in crate::program) struct Swept {
+    point: Ref,
+    face: Ref,
+    under: Ref,
+    seen: Option<Ref>,
+    key: crate::syntax::Name,
+    ends: Option<[(String, Span); 2]>,
+}
+
+impl Swept {
+    /// `w` as a face swept over an interval of a roll, where it names one and what it is under.
+    fn of(w: &crate::syntax::Written) -> Option<Swept> {
+        use crate::syntax::OpArg;
+        let [point, face] = w.ops.as_slice() else { return None };
+        let named = |k: &str| w.args.iter().find_map(|a| match a {
+            OpArg::Named(n, Arg::Ref(r)) if n.text == k => Some(r.clone()),
+            _ => None,
+        });
+        let (key, ends) = w.args.iter().find_map(|a| match a {
+            OpArg::Over { key, ends } => Some((key.clone(), ends.clone())),
+            _ => None,
+        })?;
+        Some(Swept { point: point.clone(), face: face.clone(), under: named("under")?,
+                     seen: named("seen_from"), key, ends })
+    }
+}
+
 /// What `w` is (`Shape`): a face swept over an interval of a roll, whatever its operands; else a
 /// point first, then a solid's faces, where an edge ends, a plane or another point.
 pub(in crate::program) fn shape(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written) -> Shape {
-    use crate::syntax::OpArg;
-    let [p, f] = w.ops.as_slice() else { return Shape::Other };
-    let over = w.args.iter().any(|a| matches!(a, OpArg::Over { .. }));
-    let under = w.args.iter()
-        .any(|a| matches!(a, OpArg::Named(n, Arg::Ref(_)) if n.text == "under"));
-    if over && under {
-        return Shape::Swept;
+    if let Some(s) = Swept::of(w) {
+        return Shape::Swept(s);
     }
+    let [p, f] = w.ops.as_slice() else { return Shape::Other };
     let Some(point) = res.entity(sk, p).filter(|e| e.kind == EntKind::Point) else {
         return Shape::Other;
     };
