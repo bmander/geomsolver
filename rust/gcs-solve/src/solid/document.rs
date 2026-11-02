@@ -32,19 +32,20 @@ pub(crate) fn material_sources(sk: &Sketch, target: u32) -> Result<Vec<u32>, Str
 /// **A body an unbounded tool is applied to** (#737): a prism through everything, or a body over
 /// its whole roll, is bounded by no body of its own but by the context it is applied in — every
 /// body it, or a copy of it placed at a roll (a pattern's), is cut from or kept in common with.
-/// `pose` is where the copies' placements put the tool for that body, the identity where the tool
-/// itself is written there.
+/// `pose` is where the copies' placements put the tool for that body: none where the tool itself
+/// is written there.
 #[derive(Clone, Copy, Debug)]
 pub struct Use {
     pub body: u32,
-    pub pose: crate::envelope::Motion,
+    pub pose: Option<crate::envelope::Motion>,
 }
 
 /// Each place tool `tool` is applied to a body, in the order the bodies stand (cuts before
-/// commons): the body, and the placements from the copy written there down to the tool, the
-/// outermost first — none where the tool itself is written there.  A body cutting a member's
-/// sweep that a union's sweep is distributed into (`distributed::lowered`) cuts the union's.
-fn each_use(sk: &Sketch, tool: usize, mut each: impl FnMut(u32, &[(u32, f64)])) {
+/// commons): the body, and the placements `(motion, at)` from the copy written there down to the
+/// tool, the outermost first — none where the tool itself is written there.  A body cutting a
+/// member's sweep that a union's sweep is distributed into (`distributed::lowered`) cuts the
+/// union's.
+pub(crate) fn each_use(sk: &Sketch, tool: usize, mut each: impl FnMut(u32, &[(u32, f64)])) {
     let mut chain = Vec::new();
     for (b, s) in sk.solids.iter().enumerate() {
         let SolidDef::Body { through, bound, .. } = &s.def else { continue };
@@ -79,26 +80,31 @@ pub fn applied_to(sk: &Sketch, tool: usize) -> Vec<u32> {
 }
 
 /// **Every use of tool `tool`** (`Use`), each with the pose its copies' placements put the tool
-/// at; a copy whose placement does not read is no use, as it builds nothing.
+/// at; a copy whose placement does not read is no use, as it builds nothing.  Each motion is read
+/// once however many copies it places.
 pub fn uses(sk: &Sketch, tool: usize) -> Vec<Use> {
+    let mut families: BTreeMap<u32, Option<crate::motion::Family>> = BTreeMap::new();
     let mut out = Vec::new();
     each_use(sk, tool, |body, chain| {
-        let mut pose = crate::envelope::Motion::identity();
+        let mut pose: Option<crate::envelope::Motion> = None;
         // the outermost placement is applied last: each one below it goes first
         for &(motion, at) in chain.iter().rev() {
-            let Ok(local) = placement(sk, motion, at) else { return };
-            pose = pose.then(local);
+            let family = families.entry(motion)
+                .or_insert_with(|| crate::motion::Family::read(sk, motion as usize).ok());
+            let Some(local) = family.as_ref().and_then(|f| f.at(at).ok()) else { return };
+            pose = Some(pose.map_or(local, |p| p.then(local)));
         }
         out.push(Use { body, pose });
     });
     out
 }
 
-/// The material an unbounded tool is evaluated over: the stock and additions of every body it is
-/// applied to (`applied_to`), each source once, in the order the bodies give them.
-pub(crate) fn applied_material(sk: &Sketch, tool: usize) -> Result<Vec<u32>, String> {
+/// The material of `bodies`: the stock and additions of each (`material_sources`), each source
+/// once, in the order the bodies give them — what an unbounded tool applied to them is evaluated
+/// over.
+pub(crate) fn material_of(sk: &Sketch, bodies: &[u32]) -> Result<Vec<u32>, String> {
     let mut out: Vec<u32> = Vec::new();
-    for b in applied_to(sk, tool) {
+    for &b in bodies {
         for m in material_sources(sk, b)? {
             if !out.contains(&m) { out.push(m); }
         }
@@ -107,38 +113,34 @@ pub(crate) fn applied_material(sk: &Sketch, tool: usize) -> Result<Vec<u32>, Str
 }
 
 /// **The span of a prism through everything** (#737) along the normal `n` of its section through
-/// `o`: over each use, the box `bounds` about that use's body's material read from where the use
-/// puts the section (`pose`), the ordinates reaching across it, padded by a fraction of its
-/// diagonal; the hull of them all.  `None` for no use bounded.
-pub(crate) fn through_span(o: [f64; 3], n: [f64; 3],
-                           uses: impl IntoIterator<Item = (crate::envelope::Motion, Box3)>)
-    -> Option<(f64, f64)> {
-    let mut span: Option<(f64, f64)> = None;
-    for (pose, bounds) in uses {
-        if bounds.is_empty() { continue; }
-        let (o, n) = (pose.point(o), pose.vector(n));
-        let (lo, hi) = (0..3).fold((0.0, 0.0), |(lo, hi), k| {
-            let a = n[k] * (bounds.lo[k] - o[k]);
-            let b = n[k] * (bounds.hi[k] - o[k]);
-            (lo + a.min(b), hi + a.max(b))
-        });
-        let diagonal = (0..3).map(|k| (bounds.hi[k] - bounds.lo[k]).dpowi(2)).sum::<f64>().sqrt();
-        let pad = diagonal * EPS * 4.0;
-        let (lo, hi) = (lo - pad, hi + pad);
-        span = Some(span.map_or((lo, hi), |(a, b)| (a.min(lo), b.max(hi))));
+/// `o`: over each use of `tool`, the box `bounds_of` gives about that use's body's material (asked
+/// once a body), read from where the use puts the section (`brep::geom::through_span`).  `None`
+/// for no use bounded.
+pub(crate) fn through_span(sk: &Sketch, tool: usize, o: [f64; 3], n: [f64; 3],
+                           mut bounds_of: impl FnMut(u32) -> Result<Box3, String>)
+    -> Result<Option<(f64, f64)>, String> {
+    let mut boxes: BTreeMap<u32, Box3> = BTreeMap::new();
+    let mut spans = Vec::new();
+    for u in uses(sk, tool) {
+        if !boxes.contains_key(&u.body) {
+            boxes.insert(u.body, bounds_of(u.body)?);
+        }
+        let b = boxes[&u.body];
+        let (o, n) = u.pose.map_or((o, n), |p| (p.point(o), p.vector(n)));
+        spans.push((o, n, (b.lo, b.hi)));
     }
-    span
+    Ok(crate::brep::geom::through_span(spans))
 }
 
 /// Dependencies required to evaluate a solid, as distinct from its Boolean operands: an unbounded
-/// tool's the material of the bodies it is applied to (`applied_material`).
+/// tool's the material of the bodies it is applied to (`material_of`).
 pub fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, String> {
     let s = sk.solids.get(i).ok_or_else(|| format!("no solid at index {i}"))?;
     match s.def {
-        SolidDef::Through { .. } => applied_material(sk, i),
+        SolidDef::Through { .. } => material_of(sk, &applied_to(sk, i)),
         // a roll through everything reads its tool and that material (#271)
         SolidDef::Swept { source, roll: Roll::Through, .. } => {
-            Ok(std::iter::once(source).chain(applied_material(sk, i)?).collect())
+            Ok(std::iter::once(source).chain(material_of(sk, &applied_to(sk, i))?).collect())
         }
         _ => Ok(s.operands()),
     }
@@ -341,6 +343,20 @@ pub(super) fn placed_name(name: &str,path: &str) -> String {
     if path.is_empty() { name.to_string() } else { format!("{name}.{path}") }
 }
 
+/// `bounds` widened to hold the additive material of term `t`: placed composite sources can contain
+/// unions, and holes and other subtractions never enlarge an extent.
+fn additive_bounds(t: &Term, prims: &[Prim], bounds: &mut Box3) {
+    let mut pending = vec![t];
+    while let Some(t) = pending.pop() {
+        match t {
+            Term::Prim(pi) => { bounds.add(prims[*pi].bbox.lo); bounds.add(prims[*pi].bbox.hi); }
+            Term::Union(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+            Term::Diff(a, _) | Term::Inter(a, _) => pending.push(a),
+            Term::Empty => {}
+        }
+    }
+}
+
 fn build(
     sk: &Sketch,
     si: u32,
@@ -422,38 +438,23 @@ fn build(
     let Some(face) = sol.face() else { return Term::Empty };
     let Ok(polys) = face_polys(sk, face as usize, unit) else { return Term::Empty };
     // through everything (#737): across the material of every body it is applied to, read where
-    // each use puts the section
+    // each use puts the section — the terms stand `origin` off the world, and a pose moves the
+    // world, so the section and each box are read in the world
     let through_extent = if let SolidDef::Through { .. } = sol.def {
-        let mut boxes = Vec::new();
-        for u in uses(sk, si as usize) {
-            let mut bounds = Box3::empty();
-            let Ok(sources) = material_sources(sk, u.body) else { return Term::Empty };
-            for i in sources {
-                let Some(t) = names.get(&i) else { return Term::Empty };
-                // Placed composite sources can contain unions. Extents include only
-                // additive material; holes and other subtractions never enlarge them.
-                let mut pending = vec![t];
-                while let Some(t) = pending.pop() {
-                    match t {
-                        Term::Prim(pi) => { bounds.add(prims[*pi].bbox.lo); bounds.add(prims[*pi].bbox.hi); }
-                        Term::Union(a,b) => pending.extend([a.as_ref(),b.as_ref()]),
-                        Term::Diff(a,_) | Term::Inter(a,_) => pending.push(a),
-                        Term::Empty => {}
-                    }
-                }
-            }
-            boxes.push((u.pose, bounds));
-        }
-        // the terms stand `origin` off the world, and a pose moves the world: the section's
-        // origin is read in the world and each box there too
-        let shift = |b: Box3| Box3 { lo: std::array::from_fn(|k| b.lo[k] + origin[k]),
-                                     hi: std::array::from_fn(|k| b.hi[k] + origin[k]) };
         let basis = polys[0].basis;
-        let Some(span) = through_span(basis.o, basis.normal(),
-                                      boxes.into_iter().map(|(p, b)| (p, shift(b)))) else {
-            return Term::Empty;
+        let bounds = |body: u32| -> Result<Box3, String> {
+            let mut bounds = Box3::empty();
+            for i in material_sources(sk, body)? {
+                let t = names.get(&i).ok_or("a material source not built before its cutter")?;
+                additive_bounds(t, &prims, &mut bounds);
+            }
+            if bounds.is_empty() { return Ok(bounds); }
+            Ok(Box3::of([bounds.lo, bounds.hi].map(|p| std::array::from_fn(|k| p[k] + origin[k]))))
         };
-        Some(span)
+        match through_span(sk, si as usize, basis.o, basis.normal(), bounds) {
+            Ok(Some(span)) => Some(span),
+            _ => return Term::Empty,
+        }
     } else { None };
     let taper = match &sol.def { SolidDef::Prism { draft: Some(d), .. } => d.value.dtan(), _ => 0.0 };
     let mut term = Term::Empty;

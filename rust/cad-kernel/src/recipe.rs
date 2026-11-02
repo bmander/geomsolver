@@ -4,7 +4,7 @@
 use crate::util::fmath::Det;
 use super::boolean::{combined,Op};
 use super::build::{cut_before,drafted,kept,kept_by_solid,prism,revolve,Profile};
-use super::geom::{tolerance,tolerance_over,widen,Rigid,V,EMPTY};
+use super::geom::{through_span,tolerance,tolerance_over,widen,Rigid,V,EMPTY};
 use super::topo::Brep;
 use super::{KernelError,Kind};
 use crate::util::json::Json;
@@ -85,26 +85,16 @@ fn family_node(f: &Family) -> Built {
 /// `bounds` enclose it, issue #59), padded as the native host pads it.
 fn through_node(profile: &Section,uses: &[Use],built: &BTreeMap<i64,Brep>) -> Built {
     let profile = Profile::of(profile)?;
-    let (mut from,mut to) = (f64::INFINITY,f64::NEG_INFINITY);
+    let mut spans = Vec::with_capacity(uses.len());
     for u in uses {
         let mut bounds = EMPTY;
         for s in &u.sources {
             widen(&mut bounds,built.get(s).ok_or("recipe: a `through` source not built before it")?.bounds());
         }
-        let (lo,hi) = bounds;
-        if (0..3).any(|k| !(lo[k] <= hi[k])) { continue }
         let (o,n) = u.frame(profile.origin,profile.normal);
-        let nrm = crate::util::space::scale(n,1./crate::util::space::norm(n));
-        let (mut a,mut b,mut diagonal) = (0.,0.,0.);
-        for k in 0..3 {
-            let (p,q) = (nrm[k]*(lo[k]-o[k]),nrm[k]*(hi[k]-o[k]));
-            a += p.min(q); b += p.max(q);
-            diagonal += (hi[k]-lo[k]).dpowi(2);
-        }
-        let pad = diagonal.sqrt()*4e-5;
-        from = f64::min(from,a-pad); to = f64::max(to,b+pad);
+        spans.push((o,crate::util::space::scale(n,1./crate::util::space::norm(n)),bounds));
     }
-    if !(from <= to) { return Err("recipe: a `through` prism applied to no material".into()) }
+    let (from,to) = through_span(spans).ok_or("recipe: a `through` prism applied to no material")?;
     Ok(prism(&profile,from,to)?)
 }
 

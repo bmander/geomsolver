@@ -192,7 +192,10 @@ rule), and a tool always in mesh with the bodies is E080 asking for a whole peri
 bodies it is applied to, as they stand, one blank of them all (`document::applied_material`:
 their stock and additions, never cuts, so `removal` cutting `body` is no cycle;
 `evaluation_operands` reads them; a body cutting a member's sweep a union's is distributed into
-cuts the union's, `distributed::union_of`, so the lowered copy reads the roll the drawing found). **Every
+cuts the union's, `distributed::union_of`, so the lowered copy reads the roll the drawing found).
+The bodies are read as they stand, not carried back through a copy's placement as a prism through
+everything's span is: right for a pattern turned about an axis its blank is round about, and a
+gap for a copy placed elsewhere (the field has no inverse placement yet). **Every
 reader asks `solid::roll::interval`**, never the extents (admission's `SweepContacts`, the field's
 `SweptField`, `SweptCut` here and in the CLI, `faces::face_source`, `canal`, `planar_class`),
 memoised against `solid::reads` (`Caches::roll`). Found by marching out from 0 a `STEP` (1°) at a

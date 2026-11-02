@@ -9,7 +9,7 @@ mod relations;
 mod scenario;
 mod statements;
 
-pub(crate) use declarations::{sweep_of, SweepParts, ROLLED_RETIRED, SWEPT_RETIRED};
+pub(crate) use declarations::{sweep_of, SweepParts, SWEPT_RETIRED};
 
 use super::lexer::{lex, Tok};
 use super::words::{level_end, Brackets};

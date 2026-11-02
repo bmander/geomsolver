@@ -16,6 +16,7 @@
 //! | `p inside sec` (`Section`), an ordinate along `sec`'s normal at least `a` and one at most `b` | `Prism { face: sec, from: a, to: b }` |
 //! | the same, and `distance(p, beyond) − distance(p, within) ≥ tan θ · distance(p, sec's plane)` over `beyond := { q \| q outside sec }`, `within := { q \| q inside sec }` | `Prism { …, draft: θ }` |
 //! | `p coincident(under: m, over t in (a, b)) sec` (`Swept`: a face's patch), `m` a turn about a line in `sec`'s plane, one end of the interval nothing | `Revolve { face: sec, axis, sweep: b − a, sense }` |
+//! | `p inside sec` alone, unbounded along its normal | `Through { face: sec }`, naming no body: bounded by every body it is cut from (#746) |
 //! | `p inside A` and `p inside`/`p outside` other solids, or `p outside { q \| q outside a; q outside b }`, each solid named whole | `Body { stock, on, through, bound }` |
 
 use crate::model::{EntKind, EntRef, Extent, RegionShape, RegionTerm, Sketch, SolidDef};
@@ -24,7 +25,19 @@ use crate::vocab::Cmp;
 /// The sweep a region's terms define, where an entry recognises them; `None` otherwise.  Every
 /// number recognised is stated: a term reading an unknown of the drawing stays the region's.
 pub fn recognised(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
-    prism(sk, terms).or_else(|| revolution(sk, terms)).or_else(|| boolean(terms))
+    through(terms).or_else(|| prism(sk, terms)).or_else(|| revolution(sk, terms))
+        .or_else(|| boolean(terms))
+}
+
+/// **A prism through everything** (#737, #746): the points whose foot on a drawn face's plane is
+/// in it, nothing bounding them along its normal — the face's section alone.
+fn through(terms: &[RegionTerm]) -> Option<SolidDef> {
+    let [t] = terms else { return None };
+    match t.shape {
+        RegionShape::Section { face } if t.cmp == Cmp::Le && t.hi.is_none()
+            && stated(t)? == 0.0 => Some(SolidDef::Through { face }),
+        _ => None,
+    }
 }
 
 /// The solid whose whole material a term is within (`Cmp::Le`) or outside (`Cmp::Ge`) — `p

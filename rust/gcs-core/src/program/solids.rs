@@ -189,17 +189,6 @@ fn body_rule(
             }
         }
     }
-    // **a section unbounded along its normal** (#737), the set written by hand (`std.solids.Through`
-    // is read so before it is built, `flatten::said`, and needs no probe): the prism over it
-    // through everything, which names no body — the evaluator bounds
-    // it, as it does a body under a motion over its whole roll, by the material of every body it,
-    // or a copy of it placed at a roll (a pattern's), is cut from or kept in common with
-    // (`solid::uses`), so one tool reaches through any number of them
-    for i in 0..sk.solids.len() {
-        if let Some(face) = unbounded_section(sk, i) {
-            sk.solids[i].def = SolidDef::Through { face };
-        }
-    }
     for (k, (st, word, at, a, b)) in stated.into_iter().enumerate() {
         // the stock taken, and a body already refused as empty, join nothing more
         if taken.contains(&k) || empty.contains(&b.i()) {
@@ -238,22 +227,6 @@ fn body_rule(
         diags.push(Diag::new(Code::E080, declared_at(body, &name), None, why));
         sk.solids[i].def = SolidDef::Body { stock: i as u32, on: Vec::new(), through: Vec::new(),
                                             bound: Vec::new() };
-    }
-}
-
-/// The face of a region solid whose one term is a drawn face read through its plane — the points
-/// whose foot is in it, nothing bounding them along its normal (#737) — where it is one.
-fn unbounded_section(sk: &Sketch, i: usize) -> Option<u32> {
-    let SolidDef::Region { terms, .. } = &sk.solids[i].def else { return None };
-    match terms.as_slice() {
-        [t] => match t.shape {
-            crate::model::RegionShape::Section { face } if t.cmp == crate::syntax::Cmp::Le
-                && t.hi.is_none() && t.grow.is_none() && t.lo.free.is_none() && t.lo.c == 0.0 => {
-                Some(face)
-            }
-            _ => None,
-        },
-        _ => None,
     }
 }
 

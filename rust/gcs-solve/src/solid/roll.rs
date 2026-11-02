@@ -46,14 +46,15 @@ pub fn interval(sk: &Sketch, swept: usize) -> Result<[f64; 2], String> {
     }
     sk.caches.roll.get_or(swept, super::MemoKey::of(sk, swept), || {
         let bodies = super::applied_to(sk, swept);
-        let named = bodies.iter().map(|&b| format!("`{}`", sk.solids[b as usize].name))
-            .collect::<Vec<_>>().join(", ");
         if bodies.is_empty() {
             return Err(format!("`{}` rolls through everything, and is cut from no body to bound \
                                 it", s.name));
         }
-        through(sk, *source as usize, *motion as usize, swept)
-            .map_err(|m| format!("`{}` rolls through {named}: {m}", s.name))
+        through(sk, *source as usize, *motion as usize, &bodies).map_err(|m| {
+            let named = bodies.iter().map(|&b| format!("`{}`", sk.solids[b as usize].name))
+                .collect::<Vec<_>>().join(", ");
+            format!("`{}` rolls through {named}: {m}", s.name)
+        })
     })
 }
 
@@ -66,10 +67,10 @@ fn fault(e: crate::interval::Error) -> String { format!("{e:?}") }
 fn side(x: I) -> f64 { x.bounds()[1] - x.bounds()[0] }
 fn widest(b: &[I; 3]) -> f64 { b.iter().map(|&x| side(x)).fold(0.0, f64::max) }
 
-/// The roll about 0 during which `source` under `motion` meets the material of the bodies the
-/// sweep `swept` is applied to, as they stand: one blank of them all, so the roll is the one
+/// The roll about 0 during which `source` under `motion` meets the material of `bodies`, the
+/// bodies its sweep is applied to, as they stand: one blank of them all, so the roll is the one
 /// through each, and a pattern's copies of the sweep cut from one body read that body once.
-fn through(sk: &Sketch, source: usize, motion: usize, swept: usize) -> Result<[f64; 2], String> {
+fn through(sk: &Sketch, source: usize, motion: usize, bodies: &[u32]) -> Result<[f64; 2], String> {
     let tolerance = super::cad::AXIS_TOLERANCE;
     let tool = SpatialField::read(sk, source, tolerance)?;
     let Some(support) = tool.support_bounds().map_err(fault)? else {
@@ -77,7 +78,7 @@ fn through(sk: &Sketch, source: usize, motion: usize, swept: usize) -> Result<[f
                             clear", sk.solids[source].name));
     };
     let mut blank: Option<SpatialField> = None;
-    for s in super::document::applied_material(sk, swept)? {
+    for s in super::document::material_of(sk, bodies)? {
         let f = SpatialField::read(sk, s as usize, tolerance)?;
         blank = Some(match blank { Some(b) => b.union(f).map_err(fault)?, None => f });
     }

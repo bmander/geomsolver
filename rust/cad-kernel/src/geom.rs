@@ -30,6 +30,28 @@ pub fn include(b: &mut Box3,p: V) { for k in 0..3 { b.0[k] = b.0[k].min(p[k]); b
 pub fn widen(b: &mut Box3,other: Box3) { for k in 0..3 { b.0[k] = b.0[k].min(other.0[k]); b.1[k] = b.1[k].max(other.1[k]); } }
 pub(super) fn hull(pts: impl IntoIterator<Item=V>) -> Box3 { let mut b = EMPTY; for p in pts { include(&mut b,p); } b }
 
+/// **The span of a prism through everything** (#737, #746): over each use, the section through `o`
+/// square to `n` where that use puts it and the box `b` about its body's material, the ordinates
+/// along `n` (in lengths of `n`) reaching across the box, each end padded past it by `4e-5` of its
+/// diagonal; the hull of them all, `None` where every box is empty.  The one reading of the
+/// span: the faceted term's, the field's, this kernel's recipe and the native host's.
+pub fn through_span(uses: impl IntoIterator<Item=(V,V,Box3)>) -> Option<(f64,f64)> {
+    let mut span: Option<(f64,f64)> = None;
+    for (o,n,(lo,hi)) in uses {
+        if (0..3).any(|k| !(lo[k] <= hi[k])) { continue }
+        let (mut a,mut b,mut diagonal) = (0.,0.,0.);
+        for k in 0..3 {
+            let (p,q) = (n[k]*(lo[k]-o[k]),n[k]*(hi[k]-o[k]));
+            a += p.min(q); b += p.max(q);
+            diagonal += (hi[k]-lo[k]).dpowi(2);
+        }
+        let pad = diagonal.sqrt()*4e-5;
+        let (a,b) = (a-pad,b+pad);
+        span = Some(span.map_or((a,b),|(x,y)| (x.min(a),y.max(b))));
+    }
+    span
+}
+
 /// The box a turn about the axis through `c` along `a`, however far, keeps `b` within: the heights
 /// along the axis its corners reach and their greatest distance from it (one linear, the other
 /// convex, so both are a corner's), the ring between.

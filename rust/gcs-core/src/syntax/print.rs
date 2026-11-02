@@ -749,8 +749,9 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
         // a reading at an instant or over an interval is no `solid(…)`'s (#391 S2): `write_decl`
         // writes it whole
         Sweep::Swept { .. } | Sweep::Rolled { .. } | Sweep::Placed { .. } => Vec::new(),
-        // a region's operand is the set the flattener applied to its probe: nothing to print
-        Sweep::Body | Sweep::Region { .. } => Vec::new(),
+        // a region's operand is the set the flattener applied to its probe, and a prism through
+        // everything is the set `solid_word` writes: nothing to print
+        Sweep::Body | Sweep::Region { .. } | Sweep::Through => Vec::new(),
         // the face family is the whole of the brackets: `Station(g).f over s`, `s` declared
         Sweep::Family(f) => {
             let mut text = String::new();
@@ -760,8 +761,6 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             text.push_str(&format!(" over {}", f.swept.text));
             vec![text]
         }
-        // a prism through everything is the set `solid_word` writes: it names no body
-        Sweep::Through => Vec::new(),
         Sweep::Prism { from, to, .. } => vec![format!("from: {}", dim(from)), format!("to: {}", dim(to))],
         Sweep::Depth { depth, .. } => vec![format!("depth: {}", dim(depth))],
         Sweep::Revolve { axis, sweep, sense } => {

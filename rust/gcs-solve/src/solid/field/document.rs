@@ -178,18 +178,16 @@ fn extruded(sk: &Sketch,face: usize,range: [f64;2],draft: f64) -> Result<Extrude
 fn through_range(sk: &Sketch,tool: usize,basis: &Basis,
                  support: &dyn Fn(u32) -> Result<Option<V>,crate::interval::Error>)
     -> Result<[f64;2],String> {
-    let mut boxes = Vec::new();
-    for u in crate::solid::uses(sk,tool) {
-        let mut bounds = crate::solid::Box3::empty();
-        for o in crate::solid::document::material_sources(sk,u.body)? {
+    let bounds = |body: u32| -> Result<crate::solid::Box3,String> {
+        let mut corners = Vec::new();
+        for o in crate::solid::document::material_sources(sk,body)? {
             let b = support(o).map_err(|e| format!("material field: {e:?}"))?
                 .ok_or("a through extent needs every material source bounded")?;
-            bounds.add(b.map(|x| x.bounds()[0]));
-            bounds.add(b.map(|x| x.bounds()[1]));
+            corners.extend([b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1])]);
         }
-        boxes.push((u.pose,bounds));
-    }
-    let (a,b) = crate::solid::document::through_span(basis.o,basis.normal(),boxes)
+        Ok(crate::solid::Box3::of(corners))
+    };
+    let (a,b) = crate::solid::document::through_span(sk,tool,basis.o,basis.normal(),bounds)?
         .ok_or("a through extent needs a material source")?;
     Ok([a,b])
 }

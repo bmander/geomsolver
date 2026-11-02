@@ -17,20 +17,13 @@ pub(super) fn build_solid(
         diags.push(Diag::within(code, span, st.id, m));
     };
     let sweep = d.sweep.as_ref().unwrap_or(&Sweep::Body);
-    // a solid that rides, swept `from:`/`to:` or `through:` a body, is a prism's words over a
-    // solid: what its frames sweep is a reading over an interval (#391 S2), and `solid(…)`'s
-    // spelling of one is retired
+    // a solid that rides, swept `from:`/`to:`, is a prism's words over a solid: what its frames
+    // sweep is a reading over an interval (#391 S2), and `solid(…)`'s spelling of one is retired
     let rides = |sk: &Sketch| ops.len() == 1 && ops[0].kind == EntKind::Solid
         && sk.carriers(ops[0]).is_ok_and(|c| !c.is_empty());
-    match sweep {
-        Sweep::Prism { .. } | Sweep::Through if rides(sk) => {
-            let rolled = matches!(sweep, Sweep::Through);
-            let m = if rolled { crate::syntax::ROLLED_RETIRED }
-                else { crate::syntax::SWEPT_RETIRED };
-            say(Code::E080, st.span, m.into());
-            return None;
-        }
-        _ => {}
+    if matches!(sweep, Sweep::Prism { .. }) && rides(sk) {
+        say(Code::E080, st.span, crate::syntax::SWEPT_RETIRED.into());
+        return None;
     }
     // every number a solid carries is settled here and is never an unknown (`Extent`)
     let units = sk.units;

@@ -29,16 +29,6 @@ pub fn placement_matrix(pose: crate::envelope::Motion,scale: f64) -> [f64;12] {
     })
 }
 
-/// Whether `pose` moves nothing: a use of a tool written where it is applied, whose profile its
-/// recipe carries no placement for.
-fn is_identity(pose: crate::envelope::Motion) -> bool {
-    let id = crate::envelope::Motion::identity();
-    (0..3).all(|k| {
-        let mut e = [0.;3]; e[k] = 1.;
-        pose.vector(e) == id.vector(e)
-    }) && pose.point([0.;3]) == [0.;3]
-}
-
 /// An immutable, millimetre-valued DAG of the selected solid's current solved
 /// geometry. Unsupported operations fail before a host receives a partial recipe.
 /// Native construction must additionally validate its analytic profiles and solids.
@@ -374,8 +364,8 @@ impl<'a> Walk<'a> {
                     let sources: Vec<u32> = material.into_iter()
                         .filter(|o| dependencies.contains(o)).collect();
                     let mut node = object([("sources",ids(&sources))]);
-                    if !is_identity(u.pose) {
-                        node.set("matrix",w.matrix(placement_matrix(u.pose,scale)));
+                    if let Some(pose) = u.pose {
+                        node.set("matrix",w.matrix(placement_matrix(pose,scale)));
                     }
                     Ok(node)
                 }).collect::<Result<Vec<_>,String>>()?;

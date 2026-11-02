@@ -223,8 +223,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   billionth of a degree); a face's patch swept by a turn about a line in its plane
   (`MotionDef::Rotation`/`Joint`, no advance) over an interval one end of which is nothing is
   `SolidDef::Revolve` (an end below nothing `Sense::Cw`; a whole turn exactly `TAU`); an unbounded
-  section is `SolidDef::Through { face }` (by hand, `program/solids.rs`'s body rule,
-  `unbounded_section`; `std.solids.Through` read so by `flatten/said.rs` below), which **names
+  section alone is `SolidDef::Through { face }` (by hand, `defined.rs`'s `through`;
+  `std.solids.Through` read so by `flatten/said.rs` below), which **names
   no body** (#746): the evaluator — the faceted term (`solid::document`), the field
   (`solid/field/document.rs`), the exact recipe's `through` node and the native host — bounds it
   by its context, spanning along its normal the material of every body it, or a copy of it placed
