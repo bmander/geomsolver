@@ -220,8 +220,9 @@ fn pair_edges(b: &mut Brep,tol: f64) -> Result<(),KernelError> {
             taken[y] = true;
             let (i,j) = (group[x],group[y]);
             let face_of = |e: usize| { let (fi,_,_) = uses[e][0]; fi };
-            // the edge kept, the one bounding the face hardest to invert onto
-            let (keep,drop) = if hardness(&b.faces[face_of(j)].surface) > hardness(&b.faces[face_of(i)].surface) { (j,i) } else { (i,j) };
+            // the edge kept, the one bounding the face hardest to invert onto, else the face given first
+            let rank = |e: usize| (std::cmp::Reverse(hardness(&b.faces[face_of(e)].surface)),face_of(e));
+            let (keep,drop) = if rank(j) < rank(i) { (j,i) } else { (i,j) };
             joined(b,keep,drop,uses[drop][0],tol);
         }
     }

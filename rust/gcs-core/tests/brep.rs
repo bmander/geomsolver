@@ -267,6 +267,76 @@ fn faces_sewn_are_a_solid_by_tolerant_topology() {
     assert_eq!(sewn(&faces,1e-7).unwrap_err().kind,Kind::NotManifold);
 }
 
+/// The side of the tube of radius `r` about z from `z0` to `z1` as a rational 9 × 2 net: its
+/// circle the nine-pole rational quadratic, begun at the angle `start`, and reparametrised by `c`
+/// (each quarter's weights `(1, w, 1)` made `(1, w c, c²)` and scaled to meet the next: the same
+/// circle, run at another pace unless `c` is 1).
+fn rational_tube(r: f64,[z0,z1]: [f64;2],start: f64,c: f64) -> gcs_core::brep::nurbs::Net {
+    let w = std::f64::consts::FRAC_1_SQRT_2;
+    let (s,k) = start.sin_cos();
+    let round = [[1.,0.],[1.,1.],[0.,1.],[-1.,1.],[-1.,0.],[-1.,-1.],[0.,-1.],[1.,-1.],[1.,0.]];
+    gcs_core::brep::nurbs::Net {du:2,dv:1,uknots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],vknots:vec![0.,0.,1.,1.],
+        poles:round.iter().map(|p| { let (x,y) = (r*(k*p[0]-s*p[1]),r*(s*p[0]+k*p[1])); vec![[x,y,z0],[x,y,z1]] }).collect(),
+        weights:Some((0..9).map(|i| { let wi = c.powi(i as i32)*if i%2 == 1 { w } else { 1. }; vec![wi,wi] }).collect())}
+}
+
+/// **Curved faces sewn across curves parametrised apart** (`sew::sewn`): a column of three tubes
+/// end to end — a rational net whose circle begins at 0, one begun a quarter turn on and run at
+/// another pace, the analytic cylinder a prism's side begun at 2 rad — capped by discs whose
+/// circles begin at 1 rad and 3 rad, one built facing in. At each joint the two circles' vertices
+/// stand apart, so each closed circle is cut at the other's and the halves paired; where both
+/// faces are nets, the dropped half takes the kept curve inverted onto a net, where a net meets the
+/// cylinder, inverted onto the cylinder across its seam. The measures are the closed forms, and
+/// every edge lies on the faces it bounds; in either order of the pieces, which changes which
+/// net's curve is kept.
+#[test]
+fn curved_faces_sewn_across_curves_parametrised_apart() {
+    use gcs_core::brep::build::{face,sheet};
+    use gcs_core::brep::sew::sewn;
+    use gcs_core::brep::topo::Brep;
+    let (r,h) = (2.,1.5);
+    let circle = |z: f64,n: V,start: f64| face(&Profile {names:vec![],origin:[0.,0.,z],normal:n,
+        loops:vec![vec![arc([0.,0.,z],r,n,[start.cos(),start.sin(),0.],None)]]}).unwrap();
+    // the prism's side alone, its caps left out
+    let prism_side = {
+        let p = prism(&Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![vec![arc([0.;3],r,XY,[2_f64.cos(),2_f64.sin(),0.],None)]]},
+            2.*h,3.*h).unwrap();
+        Brep {faces:vec![p.faces[0].clone()],..p}
+    };
+    let pieces = vec![
+        circle(0.,XY,1.),
+        sheet(rational_tube(r,[0.,h],0.,1.)).unwrap(),
+        sheet(rational_tube(r,[h,2.*h],PI/2.,1.5)).unwrap(),
+        prism_side,
+        circle(3.*h,XY,3.),
+    ];
+    let area = |b: &Brep| b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum::<f64>();
+    for pieces in [pieces.clone(),pieces.into_iter().rev().collect()] {
+        let b = sewn(&pieces,1e-7).unwrap();
+        b.check(1e-9).unwrap();
+        // four circles each in two halves, three seams; two vertices a level
+        assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(5,11,8));
+        // the uses that take the kept curve inverted: the later net's two halves at its joint with
+        // the first's, and the cylinder's two at its joint with a net (each disc's on its plane)
+        use gcs_core::brep::geom::Surface;
+        let inverted = |f: &gcs_core::brep::topo::Face| f.loops[0].iter()
+            .filter(|c| matches!(c.pcurve,gcs_core::brep::topo::Pcurve::Inverse {..})).count();
+        let curved: Vec<(bool,usize)> = b.faces.iter().filter(|f| !matches!(f.surface,Surface::Plane(_)))
+            .map(|f| (matches!(f.surface,Surface::BSpline(..)),inverted(f))).collect();
+        let nets: Vec<usize> = curved.iter().filter(|c| c.0).map(|c| c.1).collect();
+        assert_eq!(nets,[0,2],"the first net given keeps its curve");
+        assert!(curved.iter().any(|&c| c == (false,2)));
+        let worst = b.edges.iter().map(|e| e.tol).fold(0.,f64::max);
+        assert!(worst < 1e-9,"an edge {worst:e} off a face it bounds");
+        close(volume(&b),PI*r*r*3.*h);
+        close(area(&b),2.*PI*r*3.*h+2.*PI*r*r);
+        let m = gcs_core::brep::mesh::mesh(&b,1e-3*b.size(),0.1).unwrap();
+        assert!((mesh_volume(&m)/(PI*r*r*3.*h)-1.).abs() < 1e-2);
+        let text = gcs_core::brep::step::write(&b,"column",1e-7).unwrap();
+        gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(&b)).unwrap();
+    }
+}
+
 /// The sphere as an operand: the hemisphere a block keeps of it, its poles off the cutting plane.
 #[test]
 fn a_sphere_cut_by_a_plane_is_its_half() {
