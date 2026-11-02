@@ -63,17 +63,24 @@ pub fn turns(p: f64,q: f64,[t0,t1]: [f64;2]) -> impl Iterator<Item=(f64,bool)> {
     [first,first+1.].into_iter().filter(move |&m| p.dhypot(q) > 0. && phi+m*PI <= t1).map(move |m| (phi+m*PI,m.rem_euclid(2.) == 0.))
 }
 
-/// `o + a cos t x + b sin t y` over `[t0, t1]`: its ends, and in each coordinate the turning
-/// points between (`o_k ± hypot(a x_k, b y_k)`), exactly.
-fn conic_bounds(f: &Frame,a: f64,b: f64,[t0,t1]: [f64;2],ends: [V;2]) -> Box3 {
-    let mut out = hull(ends);
+/// `o + cos t p + sin t q` over `[t0, t1]` (a conic by two conjugate semi-diameters, a circle's or
+/// an ellipse's its axes): its ends, and in each coordinate the turning points between
+/// (`o_k ± hypot(p_k, q_k)`), exactly.
+pub(crate) fn conjugate_bounds(o: V,p: V,q: V,[t0,t1]: [f64;2]) -> Box3 {
+    let at = |t: f64| { let (s,c) = t.dsin_cos(); add(o,add(scale(p,c),scale(q,s))) };
+    let mut out = hull([at(t0),at(t1)]);
     for k in 0..3 {
-        let (p,q) = (a*f.x[k],b*f.y[k]);
-        for (_,top) in turns(p,q,[t0,t1]) {
-            if top { out.1[k] = out.1[k].max(f.o[k]+p.dhypot(q)) } else { out.0[k] = out.0[k].min(f.o[k]-p.dhypot(q)) }
+        for (_,top) in turns(p[k],q[k],[t0,t1]) {
+            if top { out.1[k] = out.1[k].max(o[k]+p[k].dhypot(q[k])) } else { out.0[k] = out.0[k].min(o[k]-p[k].dhypot(q[k])) }
         }
     }
     out
+}
+
+/// The box about a box's image under `a`: its corners' images boxed.
+pub(crate) fn boxed(a: &super::affine::Affine,(lo,hi): Box3) -> Box3 {
+    if !lo[0].is_finite() { return (lo,hi) }
+    hull((0..8).map(|i| a.point(std::array::from_fn(|k| if (i>>k)&1 == 0 { lo[k] } else { hi[k] }))))
 }
 
 /// A right-handed orthonormal frame: an origin and three axes.
@@ -529,11 +536,10 @@ fn least_radius(c: &Curve) -> f64 {
 
 impl Surface {
     pub fn frame(&self) -> &Frame {
-        if let Surface::Affine(m) = self { return &m.frame }
         match self { Surface::Plane(f) | Surface::Cylinder(f,_) | Surface::Cone(f,_,_) | Surface::Sphere(f,_)
             | Surface::Torus(f,_,_) | Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_)
             | Surface::Family(f,_) => f,
-            Surface::Affine(_) => unreachable!("lent above") }
+            Surface::Affine(m) => &m.frame }
     }
     pub fn kind(&self) -> &'static str {
         match self { Surface::Plane(_) => "plane",Surface::Cylinder(..) => "cylinder",Surface::Cone(..) => "cone",
@@ -556,7 +562,7 @@ impl Surface {
     /// Whether every coordinate is affine along `v` (a plane, cylinder, cone, extrusion, or a blend
     /// carried along a line), so that over any face its extremes lie on the face's boundary: the
     /// line in `v` through an inner point leaves the face across it.
-    pub(crate) fn ruled(&self) -> bool {
+    fn ruled(&self) -> bool {
         match self {
             // an affine map keeps a coordinate affine along `v`
             Surface::Affine(m) => m.of.ruled(),
@@ -571,12 +577,11 @@ impl Surface {
     /// About its axis a coordinate of a sphere, torus or revolution is sinusoidal in `u`, so a
     /// face's inner extremes lie on the meridians where it turns (or anywhere, where it does not
     /// turn with `u`, or on the axis: the middle one): each within the range is boxed over its `v`.
-    /// An affine image likewise about its preimage's axis (`affine::Mapped::bounds_over`). A blend
-    /// screwed about an axis is boxed by the ring its sections turn in; a B-spline by the poles
-    /// reaching the range.
+    /// An affine image of one likewise (`turned_bounds`), else by its preimage's box carried over.
+    /// A blend screwed about an axis is boxed by the ring its sections turn in; a B-spline by the
+    /// poles reaching the range.
     pub fn bounds_over(&self,range: impl FnOnce() -> [[f64;2];2]) -> Box3 {
         if self.ruled() { return EMPTY }
-        if let Surface::Affine(m) = self { return m.bounds_over(range()) }
         if let Surface::Blend(_,b) = self {
             let mut sections = b.a.bounds(b.ta);
             widen(&mut sections,b.b.bounds(b.tb));
@@ -585,35 +590,50 @@ impl Surface {
                 Carry::Line {..} => unreachable!("a blend carried along a line is ruled"),
             }
         }
-        let [u,v] = range();
-        // a family's wall by the ranges its numbers keep to over the stations it reaches
-        if let Surface::Family(_,w) = self { return w.bounds(v) }
-        let meridians = |f: &Frame,at: &dyn Fn(f64) -> Box3| -> Box3 {
+        self.bounds_in(range())
+    }
+    /// `bounds_over` the parameters `[u, v]`, of a surface not ruled nor a blend.
+    fn bounds_in(&self,[u,v]: [[f64;2];2]) -> Box3 {
+        match self {
+            Surface::Affine(m) => m.of.turned_bounds(&m.map,[u,v]).unwrap_or_else(|| boxed(&m.map,m.of.bounds_over(|| [u,v]))),
+            // a family's wall by the ranges its numbers keep to over the stations it reaches
+            Surface::Family(_,w) => w.bounds(v),
+            Surface::BSpline(_,n) => hull(n.poles_over(u,v)),
+            _ => self.turned_bounds(&super::affine::Affine::IDENTITY,[u,v]).expect("a surface turned about its axis"),
+        }
+    }
+    /// A sphere's, a torus's or a revolution's box over `[u, v]` carried by `a` (the identity for the
+    /// surface itself, `bounds_over`): about its axis a coordinate is sinusoidal in `u`, its
+    /// coefficients the axes `a` makes of its frame's, so a face's inner extremes lie on the meridians
+    /// where it turns, each boxed as its own image (a circle's by its conjugate semi-diameters, a
+    /// spline's by its poles). None for any other kind.
+    pub(crate) fn turned_bounds(&self,a: &super::affine::Affine,[u,v]: [[f64;2];2]) -> Option<Box3> {
+        let f = *self.frame();
+        let (ax,ay) = (a.vector(f.x),a.vector(f.y));
+        let meridians = |at: &dyn Fn(f64) -> Box3| -> Box3 {
             let mut out = at((u[0]+u[1])/2.);
-            for k in 0..3 { for (t,_) in turns(f.x[k],f.y[k],u) { widen(&mut out,at(t)); } }
+            for k in 0..3 { for (t,_) in turns(ax[k],ay[k],u) { widen(&mut out,at(t)); } }
             out
         };
         // a sphere is a torus about no circle: its meridian the circle `r` about `big` out from `o`
-        let tube = |f: &Frame,big: f64,r: f64| meridians(f,&|t: f64| {
+        let tube = |big: f64,r: f64| meridians(&|t: f64| {
             let (s,c) = t.dsin_cos();
             let out = f.dir([c,s,0.]);
-            Curve::Circle(Frame {o:add(f.o,scale(out,big)),x:out,y:f.z,z:cross(out,f.z)},r).bounds(v)
+            conjugate_bounds(a.point(add(f.o,scale(out,big))),a.vector(scale(out,r)),a.vector(scale(f.z,r)),v)
         });
-        match self {
-            Surface::Sphere(f,r) => tube(f,0.,*r),
-            Surface::Torus(f,big,r) => tube(f,*big,*r),
-            Surface::Revolution(f,c) => match &**c {
+        Some(match self {
+            Surface::Sphere(_,r) => tube(0.,*r),
+            Surface::Torus(_,big,r) => tube(*big,*r),
+            Surface::Revolution(_,c) => match &**c {
                 // the poles reaching the range taken once, and turned to each meridian
                 Curve::BSpline(b) => {
                     let poles = b.poles_over(v);
-                    meridians(f,&|t| { let m = Rigid::turn(f.o,f.z,t); hull(poles.iter().map(|&p| m.point(p))) })
+                    meridians(&|t| { let m = Rigid::turn(f.o,f.z,t); hull(poles.iter().map(|&p| a.point(m.point(p)))) })
                 }
-                c => meridians(f,&|t| c.moved(&Rigid::turn(f.o,f.z,t)).bounds(v)),
+                c => meridians(&|t| boxed(a,c.moved(&Rigid::turn(f.o,f.z,t)).bounds(v))),
             },
-            Surface::BSpline(_,n) => hull(n.poles_over(u,v)),
-            Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Extrusion(..) | Surface::Blend(..)
-                | Surface::Family(..) | Surface::Affine(..) => unreachable!(),
-        }
+            _ => return None,
+        })
     }
     /// `S`, `S_u`, `S_v`.
     pub fn d1(&self,[u,v]: Uv) -> (V,V,V) {
@@ -676,7 +696,7 @@ impl Surface {
     /// nearest foot where the hint is nearest it), or none where it does not settle.
     pub fn foot_from(&self,p: V,hint: Uv) -> Option<Uv> {
         match self { Surface::BSpline(_,n) => net_newton(n,p,hint),Surface::Family(_,w) => Some(w.newton(p,hint)),
-            Surface::Affine(m) => Some(m.foot_from(p,hint)),_ => Some(self.inverse_near(p,hint)) }
+            Surface::Affine(m) => Some(m.foot(p,|| hint)),_ => Some(self.inverse_near(p,hint)) }
     }
     /// How far `p` stands from a patch's own points — a sheet's or a loft's, its foot held to its
     /// domain: past the domain's edge its signed distance, read along the normal at the edge, runs on
@@ -816,9 +836,9 @@ impl Surface {
     }
     /// A signed distance whose zero set is the surface (for a cone, the one sheet `ρ ≥ 0` its
     /// parameters reach), positive on the side its normal points to: exact for the plane,
-    /// cylinder, sphere and torus, and for an affine image of a sphere or a cylinder (the distance to its
-    /// foot, `affine::ellipsoid_foot`). A cone's is the distance to its generating line in the meridian
-    /// half-plane; any other affine image's the distance to its foot found by Newton; a swept curve's the distance to the tangent line at its foot, which runs on past
+    /// cylinder, sphere and torus, and for an affine image of a sphere or a cylinder (the distance
+    /// to its foot, `affine::ellipsoid_foot`). A cone's is the distance to its generating line in the
+    /// meridian half-plane; any other affine image's the distance to its foot found by Newton; a swept curve's the distance to the tangent line at its foot, which runs on past
     /// the curve's ends; a loft face's the distance along the normal at its nearest point, clamped
     /// to the patch. Off a finite patch those extensions have zeros of their own, which is why
     /// `query::curve_surface` keeps a swept surface's root only where the surface is.
@@ -877,6 +897,33 @@ impl Surface {
             }
             Surface::Affine(m) => Some(m.side(p)),
             _ => None,
+        }
+    }
+    /// `implicit` and `gradient` at `p`, read together: a numerical foot (a sheet's, an image's)
+    /// found once for both.
+    pub fn side(&self,p: V) -> (f64,V) { self.swept_side(p).unwrap_or_else(|| (self.implicit(p),self.gradient(p))) }
+    /// Whether the surface is a patch over a domain with an edge — a curve's swept or turned, a
+    /// loft's, a sheet, a family's wall, or an image of one — whose inverse takes a point off it
+    /// onto its rim, and whose signed distance runs on past that rim along its extension.
+    pub fn bounded(&self) -> bool {
+        match self {
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => true,
+            Surface::Affine(m) => m.of.bounded(),
+            _ => false,
+        }
+    }
+    /// Whether no closed form says where a meeting with it may lie: a sheet, a family's wall, or an
+    /// image of one.
+    pub fn sheet(&self) -> bool {
+        match self { Surface::BSpline(..) | Surface::Family(..) => true,Surface::Affine(m) => m.of.sheet(),_ => false }
+    }
+    /// Whether `inverse` is the nearest point, not only a foot of the normal: the plane, the
+    /// cylinder, the cone, the sphere and the torus, and a sphere's or a cylinder's image.
+    pub fn nearest_foot(&self) -> bool {
+        match self {
+            Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) => true,
+            Surface::Affine(m) => m.quadric.is_some(),
+            _ => false,
         }
     }
     /// The gradient of `implicit` (unit length wherever the surface's normal is defined).
@@ -1026,12 +1073,12 @@ impl Traced {
         let mut p = q;
         let mut best = (f64::INFINITY,q);
         for _ in 0..50 {
-            let (fa,fb) = (self.a.implicit(p),self.b.implicit(p));
+            let ((fa,ga),(fb,gb)) = (self.a.side(p),self.b.side(p));
             let off = fa.abs().max(fb.abs());
             if off >= best.0 { break }
             best = (off,p);
             if off <= settled { break }
-            let Some(step) = crate::util::roots::least_norm_step(&[self.a.gradient(p),self.b.gradient(p)],&[fa,fb]) else { break };
+            let Some(step) = crate::util::roots::least_norm_step(&[ga,gb],&[fa,fb]) else { break };
             p = sub(p,step);
             if crate::util::space::norm(step) <= settled { best.1 = p; break }
         }
@@ -1258,11 +1305,10 @@ impl Curve {
     /// than proved, since what bounds a trace's sag is the spacing it was traced at.
     pub fn bounds(&self,[t0,t1]: [f64;2]) -> Box3 {
         let (t0,t1) = (t0.min(t1),t0.max(t1));
-        let ends = || [self.point(t0),self.point(t1)];
         match *self {
             Curve::Line {p,d} => hull([add(p,scale(d,t0)),add(p,scale(d,t1))]),
-            Curve::Circle(ref f,r) => conic_bounds(f,r,r,[t0,t1],ends()),
-            Curve::Ellipse(ref f,a,b) => conic_bounds(f,a,b,[t0,t1],ends()),
+            Curve::Circle(ref f,r) => conjugate_bounds(f.o,scale(f.x,r),scale(f.y,r),[t0,t1]),
+            Curve::Ellipse(ref f,a,b) => conjugate_bounds(f.o,scale(f.x,a),scale(f.y,b),[t0,t1]),
             Curve::BSpline(ref b) => hull(b.poles_over([t0,t1]).iter().copied()),
             Curve::Iso(ref b,u) => match b.carry {
                 Carry::Line {..} => hull([t0,t1].map(|v| b.d1([u,v]).0)),

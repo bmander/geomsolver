@@ -239,13 +239,7 @@ fn same_curve(c: &Curve,d: &Curve,tol: f64,seen: &dyn Fn(V) -> V) -> bool {
 /// stretch; two images neither of which is plain there are the same quadric or not known to be
 /// one (`affine::Quadric::same`).
 pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
-    for (s,t) in [(a,b),(b,a)] {
-        let Surface::Affine(m) = s else { continue };
-        let back = t.mapped(&m.back).0;
-        if !matches!(back,Surface::Affine(_)) { return same(&m.of,&back,tol/m.stretch[1]) }
-        let Surface::Affine(n) = t else { return false };
-        return matches!((m.quadric,n.quadric),(Some(p),Some(q)) if p.same(&q,tol))
-    }
+    if let Some(met) = pulled_back(a,b,tol,false) { return matches!(met,Ssi::Same) }
     let (f,g) = (a.frame(),b.frame());
     let parallel = norm(cross(f.z,g.z)) <= 1e-12;
     let on_axis = norm(cross(sub(g.o,f.o),f.z)) <= tol;
@@ -277,8 +271,8 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
 
 /// Where two surfaces meet (`tol` a length).
 pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
+    if let Some(met) = pulled_back(a,b,tol,true) { return met }
     if same(a,b,tol) { return Ssi::Same }
-    if let Some(met) = pulled_back(a,b,tol) { return met }
     let (f,g) = (*a.frame(),*b.frame());
     // two planes
     if let (Surface::Plane(_),Surface::Plane(_)) = (a,b) {
@@ -593,13 +587,20 @@ fn plane_cylinder(n: V,h: f64,c: &Frame,r: f64,tol: f64) -> Vec<Curve> {
 /// ellipse; any surface's with an image of the same map the image of the two preimages' meeting.
 /// The preimages' closed forms are found at the tolerance shrunk by the map's greatest stretch, so
 /// a gap they read as a touch is no wider in space, and each curve is carried back
-/// (`Curve::mapped`). Traced where the other surface, carried back, is still an image (of another
-/// map), or where the preimages have no closed form. `None` where neither is an image.
-fn pulled_back(a: &Surface,b: &Surface,tol: f64) -> Option<Ssi> {
+/// (`Curve::mapped`). Where the other, carried back, is still an image (of another map), the two
+/// are one where their quadrics are (`affine::Quadric::same`) and traced otherwise. `None` where
+/// neither is an image; `Same` or `Traced` alone where only whether they are one is asked (`meet`
+/// false, `same`).
+fn pulled_back(a: &Surface,b: &Surface,tol: f64,meet: bool) -> Option<Ssi> {
     let (m,other) = match (a,b) { (Surface::Affine(m),t) | (t,Surface::Affine(m)) => (m,t),_ => return None };
     let back = other.mapped(&m.back).0;
-    if matches!(back,Surface::Affine(_)) { return Some(Ssi::Traced) }
-    Some(match intersect(&m.of,&back,tol/m.stretch[1]) {
+    if matches!(back,Surface::Affine(_)) {
+        let one = matches!(other,Surface::Affine(n) if matches!((m.quadric,n.quadric),(Some(p),Some(q)) if p.same(&q,tol)));
+        return Some(if one { Ssi::Same } else { Ssi::Traced })
+    }
+    let tol = tol/m.stretch[1];
+    if !meet { return Some(if same(&m.of,&back,tol) { Ssi::Same } else { Ssi::Traced }) }
+    Some(match intersect(&m.of,&back,tol) {
         Ssi::Curves(cs) => Ssi::Curves(cs.iter().map(|c| c.mapped(&m.map).0).collect()),
         met => met,
     })

@@ -1,21 +1,20 @@
 //! The ellipsoid as the affine image of a sphere (`geom::Surface::Affine` of a `Sphere`): the
 //! sphere's parameters, its foot found exactly (`affine::ellipsoid_foot`), a plane's meeting with
 //! it an ellipse in closed form (the image of a circle), its solid one face (`build::ellipsoid`, a
-//! ball stretched), and written to STEP as its exact rational net (`step::affine_net`) —
+//! ball stretched), and written to STEP as its exact rational net (`step::face_net`) —
 //! brep-bench's geometry/ellipsoid and geometry/ellipsoid-half, both with semi-axes 6, 4 and 3,
 //! held to their closed forms.
 use gcs_core::brep::boolean::{combined,Op};
 use gcs_core::brep::build::{ellipsoid,prism,square,ProfileEdge,Profile};
 use gcs_core::brep::affine::{ellipsoid_foot,Affine};
 use gcs_core::brep::geom::{Curve,Frame,Surface,V};
-use gcs_core::brep::props::{area,volume};
-use gcs_core::brep::topo::Brep;
+use gcs_core::brep::props::volume;
 use gcs_core::rng::Rng;
+use gcs_core::space::distance as dist;
+use crate::brep::total_area as whole_area;
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 
 fn close(a: f64,b: f64,tol: f64) { assert!((a-b).abs() <= tol*b.abs().max(1.),"{a} against {b} ({:e})",(a-b)/b.abs().max(1.)); }
-fn dist(a: V,b: V) -> f64 { ((a[0]-b[0]).powi(2)+(a[1]-b[1]).powi(2)+(a[2]-b[2]).powi(2)).sqrt() }
-fn whole_area(b: &Brep) -> f64 { b.faces.iter().map(|f| area(b,f)).sum() }
 
 /// brep-bench's: `x²/36 + y²/16 + z²/9 ≤ 1`.
 const SEMI: [f64;3] = [6.,4.,3.];
@@ -130,7 +129,7 @@ fn an_ellipsoids_closed_forms_agree() {
 #[test]
 fn an_ellipsoids_net_is_the_ellipsoid() {
     let b = ellipsoid([1.,2.,-1.],[0.2,-0.3,1.],[1.,0.4,0.],SEMI).unwrap();
-    let n = gcs_core::brep::step::affine_net(&b,0).expect("an affine face").unwrap();
+    let n = gcs_core::brep::step::face_net(&b,0).expect("a face written as a net").unwrap();
     n.net.check().unwrap();
     let s = &b.faces[0].surface;
     let mut rng = Rng::new(3);

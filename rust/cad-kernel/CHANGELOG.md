@@ -15,7 +15,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `geom::Surface::Affine` and `geom::Curve::Affine` (**new variants**), its foot found in space's
   metric (exact for a sphere's and a cylinder's image) and its meetings read in the preimage's
   closed forms and mapped back (`ssi::intersect`, `ssi::same`, `query::curve_surface`). Written to
-  STEP as each face's exact net with its poles mapped (`step::affine_net`), pcurves fitted in the
+  STEP as each face's exact net with its poles mapped (`step::face_net`), pcurves fitted in the
   net's parameters (`nurbs::arc_parameter`).
 - **The ellipsoid** by its numbers (`build::ellipsoid`): the unit ball stretched along a frame's
   axes, one face on the sphere's image, its seam a half ellipse.

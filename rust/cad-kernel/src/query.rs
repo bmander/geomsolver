@@ -180,20 +180,18 @@ fn tangential(carrier: &Curve,other: &Curve,over: [f64;2],mut found: Vec<(f64,V)
 /// sampled, its roots and touches found by `util::roots::sampled_roots` (a touch where its rate
 /// along the curve turns), an end on the surface a root there.
 pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Meets {
+    // an affine image's by its preimage's, the curve carried back (`Curve::mapped`) over the
+    // parameters its image runs, the tolerance shrunk by the map's greatest stretch
+    if let Surface::Affine(m) = surface {
+        let (back,[al,be]) = curve.mapped(&m.back);
+        return match curve_surface(&back,[al*t0+be,al*t1+be],&m.of,tol/m.stretch[1]) {
+            Meets::At(at) => Meets::At(at.into_iter().map(|(t,k)| (((t-be)/al).clamp(t0,t1),k)).collect()),
+            Meets::Along => Meets::Along,
+        }
+    }
     match (curve,surface) {
         (&Curve::Line {p,d},Surface::Cylinder(c,r)) => return line_cylinder(p,d,[t0,t1],c,*r,tol),
         (&Curve::Line {p,d},Surface::Sphere(c,r)) => return line_sphere(p,d,[t0,t1],c.o,*r,tol),
-        // an affine image's by its preimage's, the line carried back, its parameter scaled by the
-        // speed it carries back at, the tolerance shrunk by the map's greatest stretch
-        (&Curve::Line {p,d},Surface::Affine(m)) => {
-            let w = m.back.vector(d);
-            let l = norm(w);
-            let back = Curve::Line {p:m.back.point(p),d:scale(w,1./l)};
-            return match curve_surface(&back,[t0*l,t1*l],&m.of,tol/m.stretch[1]) {
-                Meets::At(at) => Meets::At(at.into_iter().map(|(t,k)| ((t/l).clamp(t0,t1),k)).collect()),
-                Meets::Along => Meets::Along,
-            }
-        }
         _ => {}
     }
     let f = |t: f64| surface.implicit(curve.point(t));
@@ -212,7 +210,7 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
     roots.dedup_by(|b,a| (b.0-a.0).abs()*curve.speed() <= tol);
     // a swept curve's implicit runs on past its ends along their tangents (and steps across the
     // normal there): a root off the surface itself is that extension's, not the surface's
-    if matches!(surface,Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)) {
+    if surface.bounded() {
         roots.retain(|&(t,_)| {
             let p = curve.point(t);
             distance(p,surface.point(surface.inverse(p))) <= tol.max(1e-9*(1.+norm(p)))

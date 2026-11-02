@@ -1,22 +1,12 @@
 //! **Affine maps of the boundary**: `p ↦ M p + t`, `M` any invertible matrix. An affine map carries
 //! every surface and curve onto one the kernel holds exactly, its parameters kept, so a solid
-//! mapped keeps its topology and its pcurves (`Brep::mapped`).
-//!
-//! Where a kind's image is a kind of its own, it is written so (`Surface::mapped`, `Curve::mapped`):
-//! a rigid motion moves it, a similarity scales it (a sphere's radius, a cone's apex), a plane is a
-//! plane, a B-spline its poles mapped, a line a line and a conic an ellipse about its principal
-//! axes, a blend carried along a line the blend of its mapped edges. Everything else is wrapped,
-//! `Surface::Affine` and `Curve::Affine`: the image of a surface (a cylinder sheared, a torus
-//! stretched, a revolution or a face family's wall under any map) is `A(S(u, v))`, its own
-//! parameters, and what is measured of it in space is measured there: the foot of a point in
-//! the true metric (exact for a sphere's image, an ellipsoid, and a cylinder's, an elliptic
-//! cylinder, by the ellipse's foot; by Newton from the preimage's foot otherwise), the signed
-//! distance along the normal there. What is incidence and not measure — where two surfaces meet,
-//! where a line meets one — is read in the preimage, where the closed forms are, and mapped back
-//! (`ssi::intersect`, `query::curve_surface`).
+//! mapped keeps its topology and its pcurves (`Brep::mapped`). A kind whose image is its own kind is
+//! written so (`Surface::mapped`, `Curve::mapped`); anything else is wrapped (`Mapped`,
+//! `MappedCurve`), measured in space (its foot in the true metric) and met in its preimage, where
+//! the closed forms are (`ssi::intersect`, `query::curve_surface`).
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use super::geom::{hull,include,Box3,Carry,Curve,Frame,Rigid,Surface,Traced,Uv,V,EMPTY};
+use super::geom::{conjugate_bounds,hull,Box3,Carry,Curve,Frame,Rigid,Surface,Traced,Uv,V};
 use super::topo::{reverse_loop,Brep,EdgeCurve,Pcurve};
 use crate::util::space::{add,cross,distance,dot,norm,scale,sub,unit};
 use std::sync::Arc;
@@ -48,8 +38,7 @@ impl Affine {
     /// The stretch by `s[k]` along each of `f`'s axes about its origin (a ball's frame stretched
     /// into an ellipsoid's).
     pub fn stretch(f: &Frame,s: [f64;3]) -> Result<Affine,String> {
-        let axes = [f.x,f.y,f.z];
-        let m = std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| s[k]*axes[k][i]*axes[k][j]).sum()));
+        let m = outer(&[f.x,f.y,f.z],&s);
         let lin = Affine {m,t:[0.;3]};
         Affine::new(m,sub(f.o,lin.vector(f.o)))
     }
@@ -57,19 +46,23 @@ impl Affine {
     pub fn vector(&self,v: V) -> V { [dot(self.m[0],v),dot(self.m[1],v),dot(self.m[2],v)] }
     fn column(&self,j: usize) -> V { [self.m[0][j],self.m[1][j],self.m[2][j]] }
     pub fn det(&self) -> f64 { dot(self.m[0],cross(self.m[1],self.m[2])) }
+    /// The rows of `M⁻¹`: the cofactors over the determinant.
+    fn inverse_rows(&self) -> [V;3] {
+        let d = self.det();
+        [cross(self.column(1),self.column(2)),cross(self.column(2),self.column(0)),cross(self.column(0),self.column(1))]
+            .map(|c| scale(c,1./d))
+    }
     /// `M⁻ᵀ n`: where a normal goes (the covector a plane's normal is), not unit.
     pub fn normal(&self,n: V) -> V {
-        // the cofactor matrix over the determinant is M⁻ᵀ
-        let c = [cross(self.column(1),self.column(2)),cross(self.column(2),self.column(0)),cross(self.column(0),self.column(1))];
-        let d = self.det();
-        std::array::from_fn(|i| (0..3).map(|k| c[k][i]*n[k]).sum::<f64>()/d)
+        let c = self.inverse_rows();
+        std::array::from_fn(|i| (0..3).map(|k| c[k][i]*n[k]).sum())
     }
+    /// A frame carried over and made orthonormal again: its origin and `x` mapped, its `z` where its
+    /// plane's normal goes.
+    pub fn frame(&self,f: &Frame) -> Frame { Frame::new(self.point(f.o),self.normal(f.z),self.vector(f.x)) }
     /// The inverse map.
     pub fn inverse(&self) -> Affine {
-        let d = self.det();
-        let c = [cross(self.column(1),self.column(2)),cross(self.column(2),self.column(0)),cross(self.column(0),self.column(1))];
-        // (M⁻¹)ᵢⱼ = Cᵢ[j] / det, the cofactors as rows
-        let m = std::array::from_fn(|i| std::array::from_fn(|j| c[i][j]/d));
+        let m = self.inverse_rows();
         let back = Affine {m,t:[0.;3]};
         Affine {m,t:scale(back.vector(self.t),-1.)}
     }
@@ -79,16 +72,11 @@ impl Affine {
         Affine {m,t:next.point(self.t)}
     }
     /// The singular values of `M`, least first: the least and greatest a length is stretched by.
-    pub fn stretches(&self) -> [f64;3] {
-        let mtm: [V;3] = std::array::from_fn(|i| std::array::from_fn(|j| dot(self.column(i),self.column(j))));
-        let (mut l,_) = sym3_eigen(mtm);
-        l.sort_by(f64::total_cmp);
-        l.map(|x| x.max(0.).sqrt())
-    }
+    pub fn stretches(&self) -> [f64;3] { eigen3(outer(&self.m,&[1.;3])).0.map(|x| x.max(0.).sqrt()) }
     /// `M = s R` with `R` orthogonal, to rounding: the scale and the rigid motion that, scaled by
     /// it about the origin, is the map (`p ↦ s (R p + t / s)`), and whether `R` is proper.
     pub fn similarity(&self) -> Option<(f64,Rigid,bool)> {
-        let mtm: [V;3] = std::array::from_fn(|i| std::array::from_fn(|j| dot(self.column(i),self.column(j))));
+        let mtm = outer(&self.m,&[1.;3]);
         let s2 = (mtm[0][0]+mtm[1][1]+mtm[2][2])/3.;
         let off = (0..3).flat_map(|i| (0..3).map(move |j| (i,j)))
             .map(|(i,j)| (mtm[i][j]-if i == j { s2 } else { 0. }).abs()).fold(0.,f64::max);
@@ -103,44 +91,18 @@ impl Affine {
     }
 }
 
-/// The eigenvalues of the symmetric `a` and a unit eigenvector for each, by cyclic Jacobi
-/// rotations to the last bit: deterministic, and orthonormal however near two eigenvalues are.
-pub fn sym3_eigen(mut a: [V;3]) -> ([f64;3],[V;3]) {
-    let mut v = [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]];
-    for _ in 0..64 {
-        let off = a[0][1].abs()+a[0][2].abs()+a[1][2].abs();
-        if off <= f64::MIN_POSITIVE { break }
-        let mut moved = false;
-        for (p,q) in [(0,1),(0,2),(1,2)] {
-            let apq = a[p][q];
-            if apq.abs() <= 1e-300 { continue }
-            if apq.abs() <= f64::EPSILON*1e-3*(a[p][p].abs()+a[q][q].abs()) { a[p][q] = 0.; a[q][p] = 0.; continue }
-            moved = true;
-            let theta = (a[q][q]-a[p][p])/(2.*apq);
-            let t = theta.signum()/(theta.abs()+(theta*theta+1.).sqrt());
-            let t = if theta == 0. { 1. } else { t };
-            let c = 1./(t*t+1.).sqrt();
-            let s = t*c;
-            // A ← Jᵀ A J, V ← V J
-            for k in 0..3 {
-                let (akp,akq) = (a[k][p],a[k][q]);
-                a[k][p] = c*akp-s*akq;
-                a[k][q] = s*akp+c*akq;
-            }
-            for k in 0..3 {
-                let (apk,aqk) = (a[p][k],a[q][k]);
-                a[p][k] = c*apk-s*aqk;
-                a[q][k] = s*apk+c*aqk;
-            }
-            for row in v.iter_mut() {
-                let (vp,vq) = (row[p],row[q]);
-                row[p] = c*vp-s*vq;
-                row[q] = s*vp+c*vq;
-            }
-        }
-        if !moved { break }
-    }
-    ([a[0][0],a[1][1],a[2][2]],std::array::from_fn(|k| [v[0][k],v[1][k],v[2][k]]))
+/// `Σ wₖ vₖ vₖᵀ`: a stretch along axes (`w` the stretches), a Gram matrix (`MᵀM`, the rows of `M`
+/// with weights one), a quadric's form (`w` the inverse squared semi-axes).
+fn outer(vs: &[V],w: &[f64]) -> [V;3] {
+    std::array::from_fn(|i| std::array::from_fn(|j| vs.iter().zip(w).map(|(v,w)| w*v[i]*v[j]).sum()))
+}
+
+/// The eigenvalues of the symmetric `a`, ascending, and a unit eigenvector for each
+/// (`util::linalg::sym_eigen`).
+fn eigen3(a: [V;3]) -> ([f64;3],[V;3]) {
+    use crate::util::linalg::{sym_eigen,Mat};
+    let (l,v) = sym_eigen(&Mat::from_vec(3,3,a.iter().flatten().copied().collect()));
+    ([l[0],l[1],l[2]],std::array::from_fn(|k| [v.at(0,k),v.at(1,k),v.at(2,k)]))
 }
 
 /// A map of a face's parameters, `uv ↦ m uv + t`: what a surface's own parameters become where its
@@ -194,21 +156,40 @@ pub struct Mapped {
 pub enum Quadric { Ellipsoid(Frame,[f64;3]),Cylinder(Frame,[f64;2]) }
 
 impl Quadric {
+    /// The point nearest `p` (Eberly's, `ellipsoid_foot`, `ellipse_foot`), the outward unit normal
+    /// there (the form's gradient, `xᵢ / eᵢ²`) and whether `p` is outside.
+    fn foot(&self,p: V) -> (V,V,bool) {
+        match *self {
+            Quadric::Ellipsoid(f,e) => {
+                let l = f.local(p);
+                let x = ellipsoid_foot(e,l);
+                let level: f64 = (0..3).map(|k| (l[k]/e[k])*(l[k]/e[k])).sum();
+                (f.at(x),unit(f.dir(std::array::from_fn(|k| x[k]/(e[k]*e[k])))),level >= 1.)
+            }
+            Quadric::Cylinder(f,e) => {
+                let l = f.local(p);
+                let [x,y] = ellipse_foot(e,[l[0],l[1]]);
+                let level = (l[0]/e[0])*(l[0]/e[0])+(l[1]/e[1])*(l[1]/e[1]);
+                (f.at([x,y,l[2]]),unit(f.dir([x/(e[0]*e[0]),y/(e[1]*e[1]),0.])),level >= 1.)
+            }
+        }
+    }
     /// Whether two are one quadric, to `tol`: the same centre (a cylinder's axis the same line)
     /// and the same quadratic form `Σ (aᵢ · x)² / eᵢ²` (so axes along each other where the
     /// semi-axes differ, any across them where two are equal), whose change `δ` along a direction
     /// moves a radius `r` there by `r³ δ / 2`.
     pub fn same(&self,other: &Quadric,tol: f64) -> bool {
-        let form = |axes: &[V],e: &[f64]| -> [V;3] {
-            std::array::from_fn(|i| std::array::from_fn(|j| axes.iter().zip(e).map(|(a,e)| a[i]*a[j]/(e*e)).sum()))
+        let form = |axes: &[V],e: &[f64]| outer(axes,&e.iter().map(|e| 1./(e*e)).collect::<Vec<_>>());
+        let near = |d: &[f64],e: &[f64],p: [V;3],q: [V;3]| {
+            let far = d.iter().chain(e).fold(0.,|m: f64,&x| m.max(x));
+            (0..3).all(|i| (0..3).all(|j| far*far*far*(p[i][j]-q[i][j]).abs() <= 2.*tol))
         };
-        let near = |p: [V;3],q: [V;3],far: f64| (0..3).all(|i| (0..3).all(|j| far*far*far*(p[i][j]-q[i][j]).abs() <= 2.*tol));
         match (self,other) {
             (Quadric::Ellipsoid(f,d),Quadric::Ellipsoid(g,e)) => distance(f.o,g.o) <= tol
-                && near(form(&[f.x,f.y,f.z],d),form(&[g.x,g.y,g.z],e),d.iter().chain(e).fold(0.,|m: f64,&x| m.max(x))),
+                && near(d,e,form(&[f.x,f.y,f.z],d),form(&[g.x,g.y,g.z],e)),
             (Quadric::Cylinder(f,d),Quadric::Cylinder(g,e)) => norm(cross(f.z,g.z)) <= 1e-12
                 && norm(cross(sub(g.o,f.o),f.z)) <= tol
-                && near(form(&[f.x,f.y],d),form(&[g.x,g.y],e),d.iter().chain(e).fold(0.,|m: f64,&x| m.max(x))),
+                && near(d,e,form(&[f.x,f.y],d),form(&[g.x,g.y],e)),
             _ => false,
         }
     }
@@ -218,14 +199,13 @@ impl Mapped {
     /// The image of `of` under `map`, `of` itself not an image.
     pub fn new(map: Affine,of: Surface) -> Mapped {
         debug_assert!(!matches!(of,Surface::Affine(_)),"an image of an image is the composite's");
-        let f = *of.frame();
-        let o = map.point(f.o);
-        let frame = Frame::new(o,map.normal(f.z),map.vector(f.x));
+        let frame = map.frame(of.frame());
+        let o = frame.o;
         let s = map.stretches();
         let quadric = match of {
             Surface::Sphere(g,r) => {
                 let l = [map.vector(scale(g.x,r)),map.vector(scale(g.y,r)),map.vector(scale(g.z,r))];
-                let (lam,u) = sym3_eigen(std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| l[k][i]*l[k][j]).sum())));
+                let (lam,u) = eigen3(outer(&l,&[1.;3]));
                 let z = if dot(cross(u[0],u[1]),u[2]) > 0. { u[2] } else { scale(u[2],-1.) };
                 Some(Quadric::Ellipsoid(Frame {o,x:u[0],y:u[1],z},lam.map(|x| x.max(0.).sqrt())))
             }
@@ -233,12 +213,10 @@ impl Mapped {
                 let d = unit(map.vector(g.z));
                 let across = |w: V| { let w = map.vector(scale(w,r)); sub(w,scale(d,dot(w,d))) };
                 let (p,q) = (across(g.x),across(g.y));
-                let (lam,u) = sym3_eigen(std::array::from_fn(|i| std::array::from_fn(|j| p[i]*p[j]+q[i]*q[j])));
-                // the two eigenvectors across the axis, the larger first
-                let mut k = [0,1,2];
-                k.sort_by(|&a,&b| lam[b].total_cmp(&lam[a]));
-                let x = unit(sub(u[k[0]],scale(d,dot(u[k[0]],d))));
-                Some(Quadric::Cylinder(Frame {o,x,y:cross(d,x),z:d},[lam[k[0]].max(0.).sqrt(),lam[k[1]].max(0.).sqrt()]))
+                // the two eigenvectors across the axis (the largest two), the larger first
+                let (lam,u) = eigen3(outer(&[p,q],&[1.;2]));
+                let x = unit(sub(u[2],scale(d,dot(u[2],d))));
+                Some(Quadric::Cylinder(Frame {o,x,y:cross(d,x),z:d},[lam[2].max(0.).sqrt(),lam[1].max(0.).sqrt()]))
             }
             _ => None,
         };
@@ -250,23 +228,21 @@ impl Mapped {
         (self.map.point(p),self.map.vector(su),self.map.vector(sv))
     }
     /// The parameters of the surface's point nearest `p`: a quadric's in closed form, any other's by
-    /// Newton in space's metric from `start` (the preimage's foot, or one near a hint).
-    fn foot(&self,p: V,start: Uv) -> Uv {
-        if let Some(q) = self.quadric {
-            let at = match q {
-                Quadric::Ellipsoid(f,e) => f.at(ellipsoid_foot(e,f.local(p))),
-                Quadric::Cylinder(f,e) => { let l = f.local(p); let [x,y] = ellipse_foot(e,[l[0],l[1]]); f.at([x,y,l[2]]) }
-            };
-            return self.of.inverse(self.back.point(at))
+    /// Newton in space's metric from `start` (the preimage's foot, or a hint), asked only there.
+    pub(crate) fn foot(&self,p: V,start: impl FnOnce() -> Uv) -> Uv {
+        match self.quadric {
+            Some(q) => self.of.inverse(self.back.point(q.foot(p).0)),
+            None => self.newton(p,start()),
         }
-        self.newton(p,start)
     }
-    /// Gauss–Newton on `|S(uv) − p|²` in space, from `uv`, never moving farther off.
+    /// Gauss–Newton on `|S(uv) − p|²` in space, from `uv`, never moving farther off: each accepted
+    /// point's derivatives carried into the next step, which is taken whole once it is at rounding.
     fn newton(&self,p: V,mut uv: Uv) -> Uv {
         let periods = self.of.periods();
-        let mut gap = distance(self.d1(uv).0,p);
+        let mut at = self.d1(uv);
+        let mut gap = distance(at.0,p);
         for _ in 0..40 {
-            let (x,su,sv) = self.d1(uv);
+            let (x,su,sv) = at;
             let e = sub(x,p);
             let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
             let (b1,b2) = (dot(su,e),dot(sv,e));
@@ -274,41 +250,46 @@ impl Mapped {
             if !(det > 1e-300*(a11*a22).max(1e-300)) { break }
             let step = [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det];
             let mut next = [uv[0]-step[0],uv[1]-step[1]];
-            let mut d = distance(self.d1(next).0,p);
+            if step[0].abs().max(step[1].abs()) <= 1e-15*(1.+uv[0].abs().max(uv[1].abs())) { uv = next; break }
+            let mut there = self.d1(next);
+            let mut d = distance(there.0,p);
             for _ in 0..8 {
                 if d <= gap { break }
                 next = [(uv[0]+next[0])/2.,(uv[1]+next[1])/2.];
-                d = distance(self.d1(next).0,p);
+                there = self.d1(next);
+                d = distance(there.0,p);
             }
             if d > gap { break }
-            let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs());
-            uv = next;
-            gap = d;
-            if moved <= 1e-15*(1.+uv[0].abs().max(uv[1].abs())) { break }
+            (uv,at,gap) = (next,there,d);
         }
         for k in 0..2 { if let Some(per) = periods[k] { uv[k] = uv[k].rem_euclid(per); if uv[k] >= per { uv[k] = 0. } } }
         uv
     }
-    pub fn inverse(&self,p: V) -> Uv { self.foot(p,self.of.inverse(self.back.point(p))) }
-    pub fn inverse_near(&self,p: V,hint: Uv) -> Uv { self.foot(p,self.of.inverse_near(self.back.point(p),hint)) }
-    pub fn foot_from(&self,p: V,hint: Uv) -> Uv { if self.quadric.is_some() { self.inverse(p) } else { self.newton(p,hint) } }
-    /// The signed distance — on the side the preimage's says, as the map carries a side to its own,
-    /// its normal turned where it reverses space — and the unit normal at the foot, its gradient.
+    pub fn inverse(&self,p: V) -> Uv { self.foot(p,|| self.of.inverse(self.back.point(p))) }
+    pub fn inverse_near(&self,p: V,hint: Uv) -> Uv { self.foot(p,|| self.of.inverse_near(self.back.point(p),hint)) }
+    /// The signed distance and the unit normal at the foot, its gradient, positive on the side of
+    /// `S_u × S_v` (outward from a quadric's image unless the map reverses space). A quadric's in
+    /// closed form; any other's on the side of the normal the point stands along, or, where it
+    /// stands along no normal (a foot Newton did not reach), the side the preimage's says.
     pub fn side(&self,p: V) -> (f64,V) {
-        let uv = self.inverse(p);
-        let (x,su,sv) = self.d1(uv);
         let flip = if self.map.det() < 0. { -1. } else { 1. };
+        if let Some(q) = self.quadric {
+            let (x,out,outside) = q.foot(p);
+            let d = distance(p,x);
+            return (if outside { flip*d } else { -flip*d },scale(out,flip))
+        }
+        let (x,su,sv) = self.d1(self.inverse(p));
         let q = self.back.point(p);
         let n = crate::util::space::normalised(cross(su,sv))
             .unwrap_or_else(|| unit(scale(self.map.normal(self.of.gradient(q)),flip)));
-        let d = distance(p,x);
-        let sign = flip*self.of.implicit(q);
+        let (e,d) = (sub(p,x),distance(p,x));
+        let along = dot(e,n);
+        let sign = if along.abs() >= 0.5*d { along } else { flip*self.of.implicit(q) };
         (if sign < 0. { -d } else { d },n)
     }
     /// How far `p` stands from the patch's own points, where its preimage has a domain's edge.
     pub fn off_patch(&self,p: V) -> Option<f64> {
-        self.of.off_patch(self.back.point(p))?;
-        Some(distance(p,self.d1(self.inverse(p)).0))
+        self.of.bounded().then(|| distance(p,self.d1(self.inverse(p)).0))
     }
     /// The length over which it turns appreciably: a quadric's least radius of curvature, else the
     /// preimage's shrunk by what a map can do to a curvature (`σ_min³ / σ_max²`).
@@ -322,40 +303,6 @@ impl Mapped {
             }
         }
     }
-    /// A box about where a face may reach beyond its boundary (`Surface::bounds_over`): about its
-    /// axis a turned surface's coordinate is sinusoidal in `u` still, its coefficients the axes the
-    /// map makes of its frame's, so it is boxed over the meridians where it turns, each the image of
-    /// its own (a circle's a conic by its conjugate semi-diameters, a spline's its poles); anything
-    /// else by its preimage's box carried over.
-    pub fn bounds_over(&self,[u,v]: [[f64;2];2]) -> Box3 {
-        if self.of.ruled() { return EMPTY }
-        let f = *self.of.frame();
-        let (ax,ay) = (self.map.vector(f.x),self.map.vector(f.y));
-        let meridians = |at: &dyn Fn(f64) -> Box3| -> Box3 {
-            let mut out = at((u[0]+u[1])/2.);
-            for k in 0..3 { for (t,_) in super::geom::turns(ax[k],ay[k],u) { super::geom::widen(&mut out,at(t)); } }
-            out
-        };
-        // the meridian circle of radius `r` about `big` out from the axis at `t`, carried over
-        let tube = |big: f64,r: f64| meridians(&|t: f64| {
-            let (s,c) = t.dsin_cos();
-            let out = f.dir([c,s,0.]);
-            let centre = self.map.point(add(f.o,scale(out,big)));
-            conjugate_bounds(centre,self.map.vector(scale(out,r)),self.map.vector(scale(f.z,r)),v)
-        });
-        match self.of {
-            Surface::Sphere(_,r) => tube(0.,r),
-            Surface::Torus(_,big,r) => tube(big,r),
-            Surface::Revolution(_,ref c) => match &**c {
-                Curve::BSpline(b) => {
-                    let poles = b.poles_over(v);
-                    meridians(&|t| { let m = Rigid::turn(f.o,f.z,t); hull(poles.iter().map(|&p| self.map.point(m.point(p)))) })
-                }
-                c => meridians(&|t| boxed(&self.map,c.moved(&Rigid::turn(f.o,f.z,t)).bounds(v))),
-            },
-            _ => boxed(&self.map,self.of.bounds_over(|| [u,v])),
-        }
-    }
 }
 
 /// A net's poles carried by `f`, its weights and knots kept (a rational net's image is the net of
@@ -364,38 +311,18 @@ pub(crate) fn net_mapped(n: &super::nurbs::Net,f: &dyn Fn(V) -> V) -> super::nur
     super::nurbs::Net {poles:n.poles.iter().map(|row| row.iter().map(|&p| f(p)).collect()).collect(),..n.clone()}
 }
 
-/// The box about a box's image.
-fn boxed(a: &Affine,(lo,hi): Box3) -> Box3 {
-    if !lo[0].is_finite() { return (lo,hi) }
-    let mut out = EMPTY;
-    for i in 0..8 { include(&mut out,a.point(std::array::from_fn(|k| if (i>>k)&1 == 0 { lo[k] } else { hi[k] }))); }
-    out
-}
-
-/// `o + cos t p + sin t q` over `[t0, t1]` boxed exactly: its ends and each coordinate's turning
-/// points between (`o_k ± hypot(p_k, q_k)`).
-fn conjugate_bounds(o: V,p: V,q: V,[t0,t1]: [f64;2]) -> Box3 {
-    let at = |t: f64| { let (s,c) = t.dsin_cos(); add(o,add(scale(p,c),scale(q,s))) };
-    let mut out = hull([at(t0),at(t1)]);
-    for k in 0..3 {
-        for (_,top) in super::geom::turns(p[k],q[k],[t0,t1]) {
-            if top { out.1[k] = out.1[k].max(o[k]+p[k].dhypot(q[k])) } else { out.0[k] = out.0[k].min(o[k]-p[k].dhypot(q[k])) }
-        }
-    }
-    out
-}
-
 /// **The image of a curve under an affine map** (`Curve::Affine`): `A(C((t − β) / α))`, the
 /// preimage's own parameter where `at = [α, β]` is `[1, 0]` (an edge's curve), or run so that a
 /// pcurve keeps reading its edge's parameter where the edge's curve was written anew.
 #[derive(Clone,Debug,PartialEq)]
-pub struct MappedCurve { pub map: Affine,pub back: Affine,pub of: Curve,pub at: [f64;2],pub stretch: [f64;2] }
+pub struct MappedCurve { pub map: Affine,pub back: Affine,pub of: Curve,pub at: [f64;2],
+    /// The greatest stretch of the map (`speed`).
+    pub stretch: f64 }
 
 impl MappedCurve {
     pub fn new(map: Affine,of: Curve,at: [f64;2]) -> MappedCurve {
         debug_assert!(!matches!(of,Curve::Affine(_)),"an image of an image is the composite's");
-        let s = map.stretches();
-        MappedCurve {back:map.inverse(),map,of,at,stretch:[s[0],s[2]]}
+        MappedCurve {back:map.inverse(),stretch:map.stretches()[2],map,of,at}
     }
     fn local(&self,t: f64) -> f64 { (t-self.at[1])/self.at[0] }
     fn global(&self,s: f64) -> f64 { self.at[0]*s+self.at[1] }
@@ -412,19 +339,19 @@ impl MappedCurve {
     /// by Newton on `(C − p) · C'` in space.
     pub fn inverse(&self,p: V) -> f64 {
         let mut t = self.global(self.of.inverse(self.back.point(p)));
-        let mut gap = distance(self.d2(t).0,p);
+        let mut at = self.d2(t);
+        let mut gap = distance(at.0,p);
         for _ in 0..12 {
-            let (x,d,dd) = self.d2(t);
+            let (x,d,dd) = at;
             let e = sub(x,p);
             let h = dot(d,d)+dot(e,dd);
             if !(h > 0.) { break }
             let next = t-dot(e,d)/h;
-            let g = distance(self.d2(next).0,p);
+            if (next-t).abs() <= 1e-15*(1.+t.abs()) { t = next; break }
+            let there = self.d2(next);
+            let g = distance(there.0,p);
             if !(g < gap) { break }
-            let moved = (next-t).abs();
-            t = next;
-            gap = g;
-            if moved <= 1e-15*(1.+t.abs()) { break }
+            (t,at,gap) = (next,there,g);
         }
         match self.period() { Some(per) => t.rem_euclid(per),None => t }
     }
@@ -432,7 +359,7 @@ impl MappedCurve {
     fn conic(&self,f: &Frame,a: f64,b: f64,span: [f64;2]) -> Box3 {
         conjugate_bounds(self.map.point(f.o),self.map.vector(scale(f.x,a)),self.map.vector(scale(f.y,b)),span)
     }
-    pub fn speed(&self) -> f64 { self.of.speed()*self.stretch[1]/self.at[0] }
+    pub fn speed(&self) -> f64 { self.of.speed()*self.stretch/self.at[0] }
     pub fn bounds(&self,[t0,t1]: [f64;2]) -> Box3 {
         let (s0,s1) = (self.local(t0),self.local(t1));
         match self.of {
@@ -440,7 +367,7 @@ impl MappedCurve {
             Curve::Circle(f,r) => self.conic(&f,r,r,[s0,s1]),
             Curve::Ellipse(f,a,b) => self.conic(&f,a,b,[s0,s1]),
             Curve::BSpline(ref b) => hull(b.poles_over([s0.min(s1),s0.max(s1)]).iter().map(|&p| self.map.point(p))),
-            _ => boxed(&self.map,self.of.bounds([s0,s1])),
+            _ => super::geom::boxed(&self.map,self.of.bounds([s0,s1])),
         }
     }
 }
@@ -473,7 +400,7 @@ impl Surface {
             }
             Surface::BSpline(f,n) => (Surface::BSpline(*f,Arc::new(net_mapped(n,&|p| a.point(p)))),UvMap::IDENTITY),
             Surface::Blend(f,b) => match b.mapped(a) {
-                Some(b) => (Surface::Blend(Frame::new(a.point(f.o),a.normal(f.z),a.vector(f.x)),Arc::new(b)),UvMap::IDENTITY),
+                Some(b) => (Surface::Blend(a.frame(f),Arc::new(b)),UvMap::IDENTITY),
                 None => wrapped(),
             },
             _ => wrapped(),
@@ -574,9 +501,9 @@ fn conic(a: &Affine,o: V,p: V,q: V) -> (Curve,[f64;2]) {
     let y = scale(minor,1./eb);
     let f = Frame {o:a.point(o),x,y,z:cross(x,y)};
     let c = if ea-eb <= 1e-14*ea { Curve::Circle(f,ea) } else { Curve::Ellipse(f,ea,eb) };
-    // `τ` held to a turn from where `t = 0` falls, so an edge's start stays within its first period
-    let start = -phi;
-    (c,[1.,start-TAU*(start/TAU).floor()])
+    // `τ` held to a turn from where `t = 0` falls (a blend's edge's run; an edge's own is held to
+    // its first period by `Brep::mapped`)
+    (c,[1.,(-phi).rem_euclid(TAU)])
 }
 
 impl Brep {
@@ -614,24 +541,29 @@ impl Brep {
                     c.pcurve = match &c.pcurve {
                         Pcurve::Line {a,b} => Pcurve::Line {a:phi.apply(*a),b:phi.apply(*b)},
                         Pcurve::Inverse {a,b} => Pcurve::Inverse {a:phi.apply(*a),b:phi.apply(*b)},
-                        Pcurve::Curve(pc) if phi.is_identity() && runs[c.edge as usize] == [1.,0.] => {
-                            Pcurve::Curve(pc.clone())
-                        }
-                        // read at the edge's new parameter, its points mapped as the face's are
-                        Pcurve::Curve(pc) => {
-                            let [al,be] = runs[c.edge as usize];
-                            let (inner,map,at) = match &**pc {
-                                Curve::Affine(m) => (m.of.clone(),m.map.then(&phi.spatial()),[al*m.at[0],al*m.at[1]+be]),
-                                other => (other.clone(),phi.spatial(),[al,be]),
-                            };
-                            Pcurve::Curve(Arc::new(Curve::Affine(Arc::new(MappedCurve::new(map,inner,at)))))
-                        }
+                        Pcurve::Curve(pc) => Pcurve::Curve(Arc::new(rerun(pc,&phi,runs[c.edge as usize]))),
                     };
                 }
                 if reversing { *l = reverse_loop(std::mem::take(l)); }
             }
         }
         b
+    }
+}
+
+/// A pcurve's curve with its points carried by `phi` and read at its edge's new parameter
+/// `α t + β`: `C'(α t + β) = φ(C(t))`. The image of its points (`Curve::mapped`) run anew, exactly
+/// where it is a spline (its knots moved) or needs no running anew, else wrapped.
+fn rerun(pc: &Curve,phi: &UvMap,[al,be]: [f64;2]) -> Curve {
+    let (c,[a1,b1]) = pc.mapped(&phi.spatial());
+    // `C'(t') = c(r₀ t' + r₁)`
+    let (r0,r1) = (a1/al,b1-a1*be/al);
+    if (r0-1.).abs() <= 1e-15 && r1.abs() <= 1e-15*(1.+be.abs()) { return c }
+    match c {
+        Curve::BSpline(ref b) => Curve::BSpline(Arc::new(super::nurbs::BSpline {knots:b.knots.iter().map(|k| (k-r1)/r0).collect(),..(**b).clone()})),
+        // `m.map(m.of((r₀ t' + r₁ − β₀) / α₀))`
+        Curve::Affine(ref m) => Curve::Affine(Arc::new(MappedCurve::new(m.map,m.of.clone(),[m.at[0]/r0,(m.at[1]-r1)/r0]))),
+        other => Curve::Affine(Arc::new(MappedCurve::new(Affine::IDENTITY,other,[1./r0,-r1/r0]))),
     }
 }
 
@@ -711,17 +643,39 @@ fn foot_planar([e0,e1]: [f64;2],[y0,y1]: [f64;2]) -> [f64;2] {
     [e0,0.]
 }
 
-/// The root `s > −1` of `Σ (rᵢ zᵢ / (s + rᵢ))² = 1` (the last `r` is 1, every `z` positive), `g` its
-/// left side less one at `s = 0`: bisected between `z_last − 1` and 0 or the norm of `rᵢ zᵢ` less
-/// one, the side `g` says, until the middle is an end.
+/// The root `s > −1` of `G(s) = Σ (rᵢ zᵢ / (s + rᵢ))² − 1 = 0` (the last `r` is 1, every `z`
+/// positive), `g` its value at `s = 0`: bracketed between `z_last − 1` and 0 or the norm of `rᵢ zᵢ`
+/// less one, the side `g` says. `G` falls and is convex there, so Newton from the bracket's left
+/// end climbs to the root without passing it, a step at a time; where a step stops climbing or
+/// leaves the bracket, the bracket is bisected to the last bit instead.
 fn foot_root(r: &[f64],z: &[f64],g: f64) -> f64 {
     let n = r.len();
-    let num: Vec<f64> = (0..n).map(|i| r[i]*z[i]).collect();
+    let mut num = [0.;3];
+    for i in 0..n { num[i] = r[i]*z[i]; }
+    let num = &num[..n];
     let (mut s0,mut s1) = (z[n-1]-1.,if g < 0. { 0. } else { num.iter().fold(0.,|m: f64,&v| m.dhypot(v))-1. });
+    let at = |s: f64| -> (f64,f64) {
+        let (mut h,mut dh) = (-1.,0.);
+        for i in 0..n { let q = num[i]/(s+r[i]); h += q*q; dh -= 2.*q*q/(s+r[i]); }
+        (h,dh)
+    };
+    let mut s = s0;
+    for _ in 0..64 {
+        let (h,dh) = at(s);
+        // at the root, or a rounding past it
+        if h <= 0. { return s }
+        if !(dh < 0.) { break }
+        let next = s-h/dh;
+        if !(next < s1) { break }
+        // settled: no step climbs further
+        if !(next > s) { return s }
+        s = next;
+    }
+    s0 = s;
     for _ in 0..2200 {
         let s = 0.5*(s0+s1);
         if s == s0 || s == s1 { return s }
-        let h: f64 = (0..n).map(|i| { let q = num[i]/(s+r[i]); q*q }).sum::<f64>()-1.;
+        let h = at(s).0;
         if h > 0. { s0 = s } else if h < 0. { s1 = s } else { return s }
     }
     0.5*(s0+s1)

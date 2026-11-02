@@ -630,7 +630,7 @@ const SEAM: f64 = 0.6180339887498949;
 pub fn sphere(c: V,axis: V,r: f64) -> Result<Brep,String> {
     if !(r > 0. && r.is_finite()) { return Err(format!("a sphere's radius must be positive, not {r}")) }
     if !(norm(axis) > 0.) { return Err("a sphere's axis has no direction".into()) }
-    Ok(ball(&Frame::about(c,axis),r)?)
+    ball(&Frame::about(c,axis),r)
 }
 
 /// The ball of radius `r` about `f`'s origin, its poles on `f.z` and its seam on `f.x`'s side.
@@ -1102,15 +1102,14 @@ pub fn cut_before(piece: &Brep,o: V,keep: V,reach: f64,floor: f64) -> Result<Bre
 /// past the piece either way (a cone short of its apex).
 pub fn kept_by_solid(piece: &Brep,surface: &Surface,inside: bool,floor: f64) -> Result<Brep,String> {
     let op = if inside { super::boolean::Op::Common } else { super::boolean::Op::Cut };
-    Ok(super::boolean::combined(piece,&bounded_by(piece,surface)?,op,floor)?)
+    Ok(super::boolean::combined(piece,&bounded_by(piece.bounds(),surface)?,op,floor)?)
 }
 
-/// The solid `surface` bounds, reaching past `piece` either way where it is unbounded: an affine
-/// image's the image of its preimage's, reaching past the piece carried back.
-fn bounded_by(piece: &Brep,surface: &Surface) -> Result<Brep,String> {
-    if let Surface::Affine(m) = surface { return Ok(bounded_by(&piece.mapped(&m.back),&m.of)?.mapped(&m.map)) }
-    let (lo,hi) = piece.bounds();
+/// The solid `surface` bounds, reaching past the box `(lo, hi)` either way where it is unbounded:
+/// an affine image's the image of its preimage's, reaching past the box carried back.
+fn bounded_by((lo,hi): super::geom::Box3,surface: &Surface) -> Result<Brep,String> {
     if !lo[0].is_finite() { return Err("a piece of nothing cut off at a curved face".into()) }
+    if let Surface::Affine(m) = surface { return Ok(bounded_by(super::geom::boxed(&m.back,(lo,hi)),&m.of)?.mapped(&m.map)) }
     let middle = scale(add(lo,hi),0.5);
     Ok(match *surface {
         Surface::Cylinder(f,radius) => {

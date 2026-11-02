@@ -249,25 +249,11 @@ impl Solid {
     pub fn of(b: &crate::topo::Brep) -> Solid {
         use crate::{geom::Surface,topo::EdgeCurve};
         let faces = b.faces.iter().enumerate().map(|(fi,f)| {
-            // a loft's face is written as the B-spline fitted to it
-            // (one the writer could not fit was refused there, and has no numbers here)
-            if let Surface::Blend(_,bl) = &f.surface {
-                let numbers = crate::step::blend_net(bl).map(|n| crate::step::net_numbers(&n)).unwrap_or_default();
-                return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
-            }
-            // a face family's wall likewise
-            if let Surface::Family(_,w) = &f.surface {
-                let numbers = crate::step::family_net(w).map(|n| crate::step::net_numbers(&n)).unwrap_or_default();
-                return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
-            }
-            // an affine image as its face's net
-            if let Some(net) = crate::step::affine_net(b,fi) {
+            // a sheet, a loft's face, a family's wall and an affine image are written as nets (one
+            // the writer could not fit was refused there, and has no numbers here)
+            if let Some(net) = crate::step::face_net(b,fi) {
                 let numbers = net.map(|n| crate::step::net_numbers(&n.net)).unwrap_or_default();
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
-            }
-            // a sheet is written as its own net
-            if let Surface::BSpline(_,net) = &f.surface {
-                return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers:crate::step::net_numbers(net)}
             }
             let (frame,scalars) = crate::step::written(&f.surface);
             let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,

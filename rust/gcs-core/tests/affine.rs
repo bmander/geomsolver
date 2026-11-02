@@ -2,7 +2,7 @@
 //! planes, cylinders, cones, spheres, tori, revolutions and extrusions of splines, a blend screwed
 //! about an axis (a canal) — under a shear, a stretch along skew axes, a map that
 //! reverses space, and a similarity. Each image is a valid closed boundary whose volume is the
-//! original's times `|det M|`; mapped back it is the original again; its affine faces' STEP nets
+//! original's times `|det M|`; mapped back it is the original again; its faces' STEP nets
 //! are their surfaces at the nets' parameters, and the file reads back face for face; it meshes
 //! closed; and a Boolean of the image is the image of the Boolean of the preimages — the map and the
 //! Boolean commute. Face families' walls are held likewise in `face_family.rs`.
@@ -14,11 +14,12 @@ use gcs_core::brep::nurbs::BSpline;
 use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::{Brep,EdgeCurve};
 use gcs_core::rng::Rng;
+use gcs_core::space::distance as dist;
+use crate::brep::mesh_volume;
 use std::f64::consts::{FRAC_1_SQRT_2,PI,TAU};
 use std::sync::Arc;
 
 fn close(a: f64,b: f64,tol: f64,what: &str) { assert!((a-b).abs() <= tol*b.abs().max(1.),"{what}: {a} against {b} ({:e})",(a-b)/b.abs().max(1.)); }
-fn dist(a: V,b: V) -> f64 { ((a[0]-b[0]).powi(2)+(a[1]-b[1]).powi(2)+(a[2]-b[2]).powi(2)).sqrt() }
 
 const Z: V = [0.,0.,1.];
 
@@ -133,14 +134,6 @@ fn an_elliptic_cylinders_foot_is_its_nearest_point() {
     }
 }
 
-/// The volume a mesh of `m` holds.
-fn mesh_volume(m: &gcs_core::brep::mesh::Mesh) -> f64 {
-    m.tris.iter().map(|t| {
-        let [a,b,c] = t.map(|i| m.pts[i as usize]);
-        (a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0]))/6.
-    }).sum()
-}
-
 /// **Every kind of face under every sort of map**: the image valid, its volume `|det M|` times
 /// the original's, mapped back the original; each affine face's net its surface at the net's
 /// parameters along every use; the STEP file read back face for face; meshed closed, holding the
@@ -161,12 +154,12 @@ fn every_kind_of_face_maps_to_its_image() {
             close(volume(&back),whole,1e-9,&format!("{what}, mapped back"));
             // each affine face's net is its surface where the face's uses run
             for (fi,f) in m.faces.iter().enumerate() {
-                let Some(net) = gcs_core::brep::step::affine_net(&m,fi) else { continue };
+                let Some(net) = gcs_core::brep::step::face_net(&m,fi) else { continue };
                 let net = net.unwrap_or_else(|e| panic!("{what}: {e}"));
-                // a loft's or a family's net is fitted within the file's tolerance, then mapped; any
-                // other's is exact
-                let Surface::Affine(w) = &f.surface else { unreachable!() };
-                let near = if matches!(w.of,Surface::Blend(..) | Surface::Family(..)) { 4.*gcs_core::brep::step::FIT*w.stretch[1] }
+                // a loft's or a family's net is fitted within the file's tolerance (then mapped, an
+                // image's); any other's is exact
+                let (of,stretch) = match &f.surface { Surface::Affine(w) => (&w.of,w.stretch[1]),s => (s,1.) };
+                let near = if matches!(of,Surface::Blend(..) | Surface::Family(..)) { 4.*gcs_core::brep::step::FIT*stretch }
                     else { 1e-9*m.size() };
                 for c in f.loops.iter().flatten() {
                     let e = &m.edges[c.edge as usize];
@@ -205,8 +198,9 @@ fn a_boolean_of_images_is_the_image_of_the_boolean() {
             let n = [0.21,-0.13,1.];
             let block = prism(&square(middle,n,reach),0.,reach).unwrap();
             let pre = combined(&b,&block.mapped(&a.inverse()),Op::Common,0.).unwrap_or_else(|e| panic!("{what}, its preimage: {e}"));
-            // a traced meeting is fitted to its trace's tolerance, which a cone's with a leaning plane
-            // reaches to a hundred times the construction's own (the preimage's alike)
+            // a leaning plane's meeting with a cone, a torus, an extruded spline or a canal has no
+            // closed form: it is traced and fitted to the trace's tolerance, which reaches to a
+            // hundred times the construction's own — the preimage's alike, no map involved
             pre.check(100.*tolerance(pre.size())).unwrap_or_else(|e| panic!("{what}, its preimage cut: {e}"));
             let image = combined(&m,&block,Op::Common,0.).unwrap_or_else(|e| panic!("{what}: {e}"));
             image.check(100.*tolerance(image.size())).unwrap_or_else(|e| panic!("{what}, cut: {e}"));

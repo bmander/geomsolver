@@ -1195,9 +1195,7 @@ impl<'a> Arrangement<'a> {
         // rim, which a face's place reads as on its boundary (a hyperboloid's rulings run on past
         // the heights it is built over, where a plane holding one meets it)
         // (planes, cylinders, cones, spheres and tori run on without end, and need no reading)
-        let bounded = |s: &Surface| matches!(s,Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..)
-            | Surface::BSpline(..) | Surface::Family(..));
-        if surfaces.iter().any(|s| bounded(s) && distance(s.point(s.inverse(m)),m) > 1e3*self.tol) { return false }
+        if surfaces.iter().any(|s| s.bounded() && distance(s.point(s.inverse(m)),m) > 1e3*self.tol) { return false }
         // where the two only touch (their normals parallel) nothing crosses from one
         // side to the other: no face is split there, but where the arrangement represents touches
         if !self.lay_touches && norm(crate::util::space::cross(surfaces[0].gradient(m),surfaces[1].gradient(m))) < 1e-7 { return false }
@@ -1232,9 +1230,8 @@ impl<'a> Arrangement<'a> {
         let (lo,hi) = self.shared(faces);
         let started = crate::util::clock::Instant::now();
         // a sheet's or a face family's wall: no closed form says where a meeting may lie
-        let patch = |s: &Surface| matches!(s,Surface::BSpline(..) | Surface::Family(..));
-        let grid = if patch(sb) { grid_seeds(b,fb,sa,tol) }
-            else if patch(sa) { grid_seeds(a,fa,sb,tol) } else { Vec::new() };
+        let grid = if sb.sheet() { grid_seeds(b,fb,sa,tol) }
+            else if sa.sheet() { grid_seeds(a,fa,sb,tol) } else { Vec::new() };
         self.say.seeded(started.elapsed().as_secs_f64());
         // (only where both faces may be: a seed beyond their shared box traces nothing on them)
         seeds.extend(grid.into_iter().filter(|p| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad))
@@ -2240,7 +2237,7 @@ pub fn face_parameters(b: &Brep,fi: usize) -> [[f64;2];2] { parameters(b,fi,fals
 /// The box of face `fi`'s parameters its loops reach, sampled along each edge. `whole`: grown
 /// to hold the face though a pcurve bulges between samples — by a sixteenth of each side, or to a
 /// whole period where that comes near one.
-fn parameters(b: &Brep,fi: usize,whole: bool) -> [[f64;2];2] {
+pub(crate) fn parameters(b: &Brep,fi: usize,whole: bool) -> [[f64;2];2] {
     let f = &b.faces[fi];
     let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
     for c in f.loops.iter().flatten() {

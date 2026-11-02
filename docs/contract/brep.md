@@ -45,7 +45,7 @@ ellipsoid is a sphere's image (`build::ellipsoid`, brep-bench's geometry/ellipso
 ellipsoid-half), an elliptic cylinder a cylinder's, a sheared torus, revolution, extrusion, screwed
 blend or face family's wall theirs. **What is measure is measured in space; what is incidence is
 read in the preimage.** A wrapped surface's foot is the nearest point in space's own metric —
-exact for a sphere's or a cylinder's image (`Quadric`, its principal axes by `sym3_eigen`, the
+exact for a sphere's or a cylinder's image (`Quadric`, its principal axes by `util::linalg::sym_eigen`, the
 foot by Eberly's bisection, `ellipsoid_foot`, `ellipse_foot`), by Newton from the preimage's foot
 otherwise — and its signed distance the distance there, on the side the preimage's says. Where it
 meets another surface is where its preimage meets that surface carried back, found in the
@@ -57,7 +57,7 @@ their preimages are, or their quadrics' forms agree (`ssi::same`). A map reversi
 every loop the other way round, and a face's sense follows its normal's image (`M⁻ᵀ`, by the sign
 of `det M` and of its parameters' map). An image is not of revolution and has no offset in closed
 form. STEP has no image of a surface: each wrapped face is written as its preimage's exact net
-over the parameters it reaches, poles mapped (`step::affine_net`: one turn of a rational circle by
+over the parameters it reaches, poles mapped (`step::face_net`, the net a sheet, a loft's face and a family's wall are written as too: one turn of a rational circle by
 a sphere's or a torus's meridian, a cylinder's or a cone's generator, a revolution's spline, an
 extrusion's spline by its step; a blend's or a family wall's fitted net), its pcurves fitted in the
 net's parameters (`nurbs::arc_parameter`, a quarter arc reaching the angle `θ` at the fraction `τ`
