@@ -14,11 +14,13 @@ it to crates.io; what changes in each release is in [CHANGELOG.md](CHANGELOG.md)
 
 ## What it does
 
-- **Geometry:** planes, cylinders, cones, spheres, tori, extrusions and revolutions of curves,
-  rational and polynomial B-spline curves and surfaces, and traced intersection curves. Surfaces are
-  parameterised as STEP and OCCT do, with closed-form inverses and signed distances.
+- **Geometry:** planes, cylinders, cones, spheres, ellipsoids, tori, extrusions and revolutions of
+  curves, rational and polynomial B-spline curves and surfaces, and traced intersection curves.
+  Surfaces are parameterised as STEP and OCCT do (the ellipsoid, which neither has, as the sphere
+  is, and written to STEP as its exact rational net), with closed-form inverses and signed
+  distances.
 - **Topology:** oriented edge uses with p-curves, seams, degenerate poles, and a validity check.
-- **Construction:** spheres, cones (frustums and cylinders too) and tori by their numbers,
+- **Construction:** spheres, ellipsoids, cones (frustums and cylinders too) and tori by their numbers,
   prisms (drafted too), revolutions, and canals (a ball swept along a helix). Profiles are made of
   lines, arcs and splines.
 - **Booleans:** union, cut and common. Intersections between analytic surfaces are closed forms
@@ -42,7 +44,7 @@ It is clean-room: Open CASCADE's behaviour and conventions were studied, never i
 It passes 168 of the bench's 192 cases, none wrong: primitives, Booleans, sweeps, lofts, NURBS,
 offsets, shells and thickened sheets among them. The rest are refusals, each saying what is
 missing — fillets and chamfers where three edges meet or a face is consumed, variable-radius
-rounds, solid sweeps along general motions, ellipsoids, a near-tangent plane, and offsets of
+rounds, solid sweeps along general motions, a near-tangent plane, and offsets of
 B-spline faces — or cases with no implementation yet. See the live scoreboard at
 https://bmander.github.io/brep-bench/.
 

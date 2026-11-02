@@ -24,12 +24,28 @@ intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `c
 `build` (prisms, drafted prisms, revolutions and canals of line/arc/circle/spline profiles; the
 sphere, the cone and the torus by their numbers as OCCT's `MakeSphere`/`MakeCone`/`MakeTorus` take
 them, each its meridian turned — `sphere(c, axis, r)`, `cone(o, axis, r0, r1, h)`,
-`torus(c, axis, major, minor)` — and what is no such solid refused by name: the kernel's API
+`torus(c, axis, major, minor)` — and the ellipsoid, `ellipsoid(c, axis, x, [a, b, c])`, the
+sphere's topology on its own surface — and what is no such solid refused by name: the kernel's API
 speaks the vocabulary its other users bring, which the language need not, `std.sets.Sphere`
 staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_torus_…`),
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
-seam curves), `recipe`. A traced pair is seeded where edges cross faces; between analytic
+seam curves), `recipe`.
+**The ellipsoid is a surface of its own** (`Surface::Ellipsoid`; brep-bench's geometry/ellipsoid and
+ellipsoid-half), not a ball stretched into a B-spline: three semi-axes along its frame's axes,
+parameterised as the sphere is, so a ball's topology and pcurves are its own; its foot the exact
+nearest point inside and out (`geom::ellipsoid_foot`, Eberly's bisection, never a radial
+projection), its signed distance the distance there and its gradient the normal there; not of
+revolution (`axis` none, even where two semi-axes are equal) and with no offset in closed form. A
+plane meets it in an ellipse in closed form, a touch judged by the gap to its support along the
+plane's normal, and a line in a chord; anything else is traced. STEP has no ellipsoid, so it is
+written as its exact rational biquadratic net (`nurbs::ellipsoid_net`), whose parameters are no
+affine image of its own: its pcurves are fitted in the net's (`nurbs::arc_parameter`, a quarter
+arc reaching the angle `θ` at the fraction `τ` where `τ / (1 − τ) = sin(θ/2) / sin((d − θ)/2)`)
+and measured on the net. `ellipsoid::an_ellipsoid_is_its_closed_form`,
+`an_ellipsoids_foot_is_its_nearest_point`, `an_ellipsoid_cut_at_its_equator_is_its_half` and
+`an_ellipsoid_is_written_to_step_as_its_net` are the gate.
+A traced pair is seeded where edges cross faces; between analytic
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).

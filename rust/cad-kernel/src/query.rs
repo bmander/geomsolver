@@ -183,6 +183,7 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
     match (curve,surface) {
         (&Curve::Line {p,d},Surface::Cylinder(c,r)) => return line_cylinder(p,d,[t0,t1],c,*r,tol),
         (&Curve::Line {p,d},Surface::Sphere(c,r)) => return line_sphere(p,d,[t0,t1],c.o,*r,tol),
+        (&Curve::Line {p,d},Surface::Ellipsoid(c,e)) => return line_ellipsoid(p,d,[t0,t1],c,*e,tol),
         _ => {}
     }
     let f = |t: f64| surface.implicit(curve.point(t));
@@ -226,6 +227,16 @@ fn line_cylinder(p: V,d: V,t: [f64;2],c: &super::geom::Frame,r: f64,tol: f64) ->
 /// A line through `p` along `d`, over `[t0, t1]`, against the sphere of radius `r` about `o`, in
 /// closed form: a chord of the great circle in the plane through it and the centre (`line_chord`).
 fn line_sphere(p: V,d: V,t: [f64;2],o: V,r: f64,tol: f64) -> Meets { line_chord(crate::util::space::sub(p,o),d,r,t,tol) }
+
+/// A line through `p` along the unit `d`, over `[t0, t1]`, against the ellipsoid of semi-axes `e`
+/// along `c`'s axes, in closed form: in the coordinates the ellipsoid is the unit sphere of, a
+/// chord of its great circle (`line_chord`) over the same parameter, the tolerance read there by the
+/// longest semi-axis (a gap no wider than `tol` anywhere a touch).
+fn line_ellipsoid(p: V,d: V,t: [f64;2],c: &super::geom::Frame,e: [f64;3],tol: f64) -> Meets {
+    let (w,v) = (c.local(p),c.dir_local(d));
+    let shrink = |q: V| [q[0]/e[0],q[1]/e[1],q[2]/e[2]];
+    line_chord(shrink(w),shrink(v),1.,t,tol/e[0].max(e[1]).max(e[2]))
+}
 
 /// The line `w + t e` (`w` from a centre) against the circle of radius `r` about that centre in the
 /// plane through them, over `[t0, t1]`: a chord's two roots, or one touch exactly at the foot where

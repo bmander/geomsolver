@@ -635,6 +635,49 @@ pub fn sphere(c: V,axis: V,r: f64) -> Result<Brep,String> {
     revolve(&Profile {origin:c,normal:f.y,loops:vec![vec![arc,shut]],names:Vec::new()},c,f.z,TAU)
 }
 
+/// **The ellipsoid** about `c` of semi-axes `semi`, along the axes of `Frame::new(c, axis, x)`: the
+/// first along `x` (made square to `axis`), the second along `axis × x`, the third along `axis`.
+/// One face on one `Surface::Ellipsoid`, its poles where `axis` meets it, each a degenerate edge,
+/// and its seam the half ellipse through them on the side `x` points to, written about its longer
+/// semi-axis; the sphere's own topology (`sphere`), stretched. As there, a plane through a pole is
+/// a meeting the Booleans do not split.
+pub fn ellipsoid(c: V,axis: V,x: V,semi: [f64;3]) -> Result<Brep,String> {
+    use std::f64::consts::{FRAC_PI_2,PI};
+    if !semi.iter().all(|e| *e > 0. && e.is_finite()) {
+        return Err(format!("an ellipsoid's semi-axes must be positive, not {semi:?}"))
+    }
+    if !(norm(axis) > 0.) { return Err("an ellipsoid's axis has no direction".into()) }
+    if !(norm(cross(axis,x)) > 1e-12*norm(axis)*norm(x)) {
+        return Err("an ellipsoid's first axis lies along its third".into())
+    }
+    let f = Frame::new(c,axis,x);
+    let [a,_,h] = semi;
+    let mut b = Brep::default();
+    let (north,south) = (b.vertex(f.at([0.,0.,h])),b.vertex(f.at([0.,0.,-h])));
+    // the seam `o + a cos v x + h sin v z` from the north pole to the south as its parameter runs,
+    // `v = phase − t`: about `−x` if that is its longer axis (t from π/2 to 3π/2), else about `z`
+    let (seam,span,phase) = if a >= h {
+        (Curve::Ellipse(Frame {o:c,x:scale(f.x,-1.),y:f.z,z:f.y},a,h),[FRAC_PI_2,3.*FRAC_PI_2],PI)
+    } else {
+        (Curve::Ellipse(Frame {o:c,x:f.z,y:f.x,z:f.y},h,a),[0.,PI],FRAC_PI_2)
+    };
+    let along = [phase-span[0],phase-span[1]];
+    let seam = b.edge(EdgeCurve::Curve(seam),span,[north,south]);
+    let top = b.edge(EdgeCurve::Degenerate,[0.,TAU],[north,north]);
+    let bottom = b.edge(EdgeCurve::Degenerate,[0.,TAU],[south,south]);
+    // counter-clockwise in (u, v), the material outside along `S_u × S_v`: along the south pole,
+    // up the seam at u = 2π, back along the north pole, down the seam at u = 0
+    let line = |a: Uv,b: Uv| Pcurve::Line {a,b};
+    let lp = vec![
+        Coedge {edge:bottom,reversed:false,pcurve:line([0.,-FRAC_PI_2],[TAU,-FRAC_PI_2])},
+        Coedge {edge:seam,reversed:true,pcurve:line([TAU,along[0]],[TAU,along[1]])},
+        Coedge {edge:top,reversed:true,pcurve:line([0.,FRAC_PI_2],[TAU,FRAC_PI_2])},
+        Coedge {edge:seam,reversed:false,pcurve:line([0.,along[0]],[0.,along[1]])},
+    ];
+    b.faces.push(Face {surface:Surface::Ellipsoid(f,semi),reversed:false,loops:vec![lp],name:String::new()});
+    Ok(b)
+}
+
 /// **The cone** on the line through `o` along `axis`: radius `r0` at `o` and `r1` a height `h` along
 /// `axis` from it, its meridian turned once (OCCT's `MakeCone`). Either radius may be nothing, an
 /// apex there; equal radii make a cylinder. Its side's seam lies in the half plane
@@ -1073,9 +1116,9 @@ pub fn cut_before(piece: &Brep,o: V,keep: V,reach: f64,floor: f64) -> Result<Bre
     Ok(super::boolean::combined(piece,&block,super::boolean::Op::Cut,floor)?)
 }
 
-/// `piece` kept within (`inside`) or outside the solid a cylinder, a cone or a sphere bounds: in
-/// common with it, or less it, the cylinder or the cone long enough to reach past the piece either
-/// way (a cone short of its apex).
+/// `piece` kept within (`inside`) or outside the solid a cylinder, a cone, a sphere or an
+/// ellipsoid bounds: in common with it, or less it, the cylinder or the cone long enough to reach
+/// past the piece either way (a cone short of its apex).
 pub fn kept_by_solid(piece: &Brep,surface: &Surface,inside: bool,floor: f64) -> Result<Brep,String> {
     let (lo,hi) = piece.bounds();
     if !lo[0].is_finite() { return Err("a piece of nothing cut off at a curved face".into()) }
@@ -1091,6 +1134,8 @@ pub fn kept_by_solid(piece: &Brep,surface: &Surface,inside: bool,floor: f64) -> 
             // a half disc turned once about a line through the centre
             revolve(&ball_section(&f,radius),f.o,f.y,TAU)?
         }
+        // its poles on its middle axis, off its own frame's planes as a ball's are
+        Surface::Ellipsoid(f,[a,b,c]) => ellipsoid(f.o,f.y,f.z,[c,a,b])?,
         Surface::Cone(f,radius,half) => {
             // a frustum of the cone's solid over the heights along its axis the piece reaches, and
             // as far again either way, short of the apex: its section in a meridian turned once

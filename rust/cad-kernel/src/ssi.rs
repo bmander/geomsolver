@@ -205,7 +205,7 @@ pub(super) fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
         }
         Surface::Torus(_,big,r) => Some(Meridian::Circle {c:[big,height(f.o)],r}),
         Surface::Revolution(_,ref c) => match &**c { Curve::BSpline(b) => Some(Meridian::Spline(b.clone(),o,z)),_ => None },
-        Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
+        Surface::Ellipsoid(..) | Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
     }
 }
 
@@ -243,6 +243,18 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
         (Surface::Plane(_),Surface::Plane(_)) => parallel && dot(sub(g.o,f.o),f.z).abs() <= tol,
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) => parallel && on_axis && (r-s).abs() <= tol,
         (Surface::Sphere(_,r),Surface::Sphere(_,s)) => norm(sub(g.o,f.o)) <= tol && (r-s).abs() <= tol,
+        // the same centre and the same quadratic form `Σ (aᵢ · x)² / eᵢ²` (so axes along each other
+        // where they differ, any across them where two are equal): a radius `r` along a direction
+        // moves by `r³ / 2` times the form's change there
+        (Surface::Ellipsoid(_,d),Surface::Ellipsoid(_,e)) => norm(sub(g.o,f.o)) <= tol && {
+            let form = |f: &Frame,e: [f64;3]| -> [V;3] {
+                let a = [f.x,f.y,f.z];
+                std::array::from_fn(|r| std::array::from_fn(|c| (0..3).map(|i| a[i][r]*a[i][c]/(e[i]*e[i])).sum()))
+            };
+            let (p,q) = (form(f,d),form(g,e));
+            let far = d.into_iter().chain(e).fold(0.,f64::max);
+            (0..3).all(|r| (0..3).all(|c| 2.*far*far*far*(p[r][c]-q[r][c]).abs() <= tol))
+        },
         (Surface::Torus(_,big,r),Surface::Torus(_,bog,s)) =>
             parallel && norm(sub(g.o,f.o)) <= tol && (big-bog).abs() <= tol && (r-s).abs() <= tol,
         (Surface::Cone(_,r,a1),Surface::Cone(_,s,a2)) => {
@@ -317,6 +329,11 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 return Ssi::Curves(vec![])
             };
             Ssi::Curves(vec![Curve::Circle(Frame::new(sub(c.o,scale(pl.z,dist)),pl.z,pl.x),rho)])
+        }
+        (Surface::Plane(_),Surface::Ellipsoid(..)) | (Surface::Ellipsoid(..),Surface::Plane(_)) => {
+            let (pl,el) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
+            let Surface::Ellipsoid(c,e) = el else { unreachable!() };
+            Ssi::Curves(plane_ellipsoid(&pl,&c,e,tol).into_iter().collect())
         }
         (Surface::Plane(_),Surface::Cone(..)) | (Surface::Cone(..),Surface::Plane(_)) => {
             // a plane through the axis: the two lines through the apex, its meridian either side
@@ -577,11 +594,45 @@ fn plane_cylinder(n: V,h: f64,c: &Frame,r: f64,tol: f64) -> Vec<Curve> {
     vec![Curve::Ellipse(Frame::new(centre,cross(major,minor),major),r/cos.abs(),r)]
 }
 
+/// **A plane meets an ellipsoid in an ellipse** (a circle where it cuts a circular section): the
+/// plane in the coordinates the ellipsoid is the unit sphere of, there a circle of that sphere,
+/// carried back as the two conjugate semi-diameters its own two radii become, turned to the ellipse's
+/// principal axes. None where it misses; none either where it touches, judged by the gap between
+/// the plane and the ellipsoid's support along its normal, a point and no curve.
+fn plane_ellipsoid(pl: &Frame,c: &Frame,e: [f64;3],tol: f64) -> Option<Curve> {
+    // the plane `n · l = h` in the ellipsoid's coordinates `l`; `l = E q` with `q` on the unit
+    // sphere puts it at `m · q = h`, `m = E n`, whose length is the support along `n`
+    let n = c.dir_local(pl.z);
+    let h = dot(n,c.local(pl.o));
+    let m = [e[0]*n[0],e[1]*n[1],e[2]*n[2]];
+    let support = norm(m);
+    let plane2::Chord::Cross(_) = plane2::chord(h,support,plane2::Touch::Gap(tol)) else { return None };
+    let w = scale(m,1./support);
+    let along = h/support;
+    let radius = (1.-along*along).max(0.).sqrt();
+    // two radii of the section's circle square to each other, stretched back
+    let f = Frame::about([0.;3],w);
+    let stretch = |q: V| [e[0]*q[0],e[1]*q[1],e[2]*q[2]];
+    let (p,q) = (scale(stretch(f.x),radius),scale(stretch(f.y),radius));
+    let centre = c.at(stretch(scale(w,along)));
+    // `p cos t + q sin t` turned by φ to its principal axes: `tan 2φ = 2 p·q / (p·p − q·q)`
+    let phi = 0.5*(2.*dot(p,q)).datan2(dot(p,p)-dot(q,q));
+    let (s,k) = phi.dsin_cos();
+    let major = add(scale(p,k),scale(q,s));
+    let minor = sub(scale(q,k),scale(p,s));
+    let (a,b) = (norm(major),norm(minor));
+    let x = c.dir(scale(major,1./a));
+    // the minor axis read off the plane's own normal, so the frame stands right-handed on it
+    let z = scale(pl.z,dot(pl.z,c.dir(cross(major,minor))).signum());
+    let frame = Frame {o:centre,x,y:cross(z,x),z};
+    Some(if (a-b).abs() <= tol { Curve::Circle(frame,a) } else { Curve::Ellipse(frame,a,b) })
+}
+
 /// An axis both surfaces may turn about: a surface of revolution's own (a sphere lends the other's),
 /// or a plane's normal through the other's centre.
 fn axis_of(s: &Surface,t: &Surface) -> Option<(V,V)> {
     match (s,t) {
-        (Surface::Plane(_),_) | (Surface::Sphere(..),_) => None,
+        (Surface::Plane(_),_) | (Surface::Sphere(..),_) | (Surface::Ellipsoid(..),_) => None,
         _ => { let f = s.frame(); Some((f.o,f.z)) }
     }.or_else(|| match (s,t) {
         (Surface::Plane(p),Surface::Sphere(c,_)) => Some((c.o,p.z)),
@@ -999,6 +1050,8 @@ fn derivative_bounds(s: &Surface,[v0,v1]: [f64;2]) -> Option<[f64;5]> {
             Some([q,1.,q,sa.abs(),0.])
         }
         Surface::Sphere(_,r) => Some([r;5]),
+        // each derivative a sum of the semi-axes' vectors times sines and cosines
+        Surface::Ellipsoid(_,e) => Some([e[0].max(e[1]).max(e[2]);5]),
         Surface::Torus(_,big,r) => Some([big.abs()+r,r,big.abs()+r,r,r]),
         Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
     }
@@ -1014,6 +1067,10 @@ fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
     match *s {
         Surface::Plane(_) => Some(0.),
         Surface::Sphere(..) => over(rho.dhypot(z)-r),
+        // the level sets of an ellipsoid's distance are its parallels, which turn no faster than
+        // `1 / (ρ + d)` at a distance `d` off it, `ρ` its least radius of curvature (inside, a ball
+        // of that radius rolls freely, so its medial axis is no nearer)
+        Surface::Ellipsoid(..) => over(s.feature()+s.implicit(p)-r),
         // a cone's implicit is cos α times ρ less a linear part: ρ's curvature at most
         Surface::Cylinder(..) | Surface::Cone(..) => over(rho-r),
         // the distance to the core circle in the meridian half-plane, which turns with ρ

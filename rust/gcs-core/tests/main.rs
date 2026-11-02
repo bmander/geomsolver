@@ -99,6 +99,7 @@ mod edit_rounds;
 mod edit_solids;
 mod engine;
 mod ellipse;
+mod ellipsoid;
 mod envelope;
 mod evaluated_solid;
 mod every_example;

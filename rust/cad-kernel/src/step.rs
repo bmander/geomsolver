@@ -45,9 +45,11 @@ impl Out {
                 let v = self.add(format!("VECTOR('',#{d},1.)"));
                 return Ok(self.add(format!("SURFACE_OF_LINEAR_EXTRUSION('',#{c},#{v})")))
             }
-            Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => {
+            // STEP has no ellipsoid: its exact rational net (`step_uv` carries its pcurves there)
+            Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Ellipsoid(..) => {
                 let net = match s { Surface::Blend(_,b) => blend_net(b)?,Surface::BSpline(_,n) => (**n).clone(),
-                    Surface::Family(_,w) => family_net(w)?,_ => unreachable!() };
+                    Surface::Family(_,w) => family_net(w)?,Surface::Ellipsoid(f,e) => super::nurbs::ellipsoid_net(f,*e),
+                    _ => unreachable!() };
                 let rows: Vec<String> = net.poles.iter().map(|col| {
                     let ids: Vec<String> = col.iter().map(|&p| format!("#{}",self.point(p))).collect();
                     format!("({})",ids.join(","))
@@ -89,7 +91,8 @@ impl Out {
                 let a = self.placement(&f);
                 self.add(format!("TOROIDAL_SURFACE('',#{a},{},{})",real(big),real(r)))
             }
-            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => unreachable!("written above"),
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
+                | Surface::Ellipsoid(..) => unreachable!("written above"),
         })
     }
     /// The curve a swept surface sweeps (a B-spline, as a profile gives one).
@@ -211,14 +214,28 @@ pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
         Surface::Cone(f,r,a) => (if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f },vec![r,a.abs()]),
         Surface::Sphere(f,r) => (f,vec![r]),
         Surface::Torus(f,big,r) => (f,vec![big,r]),
-        Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) | Surface::Family(f,_) => (f,vec![]),
+        Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) | Surface::Family(f,_)
+            | Surface::Ellipsoid(f,_) => (f,vec![]),
     }
 }
 
 /// A face's parameters as STEP's surface reads them: the same, but on a cone written about its
-/// reversed axis, where both run the other way.
+/// reversed axis, where both run the other way, and on an ellipsoid its net's
+/// (`nurbs::arc_parameter` of each angle).
 fn step_uv(s: &Surface,uv: super::geom::Uv) -> [f64;2] {
-    match s { Surface::Cone(_,_,a) if *a < 0. => [-uv[0],-uv[1]],_ => uv }
+    match s {
+        Surface::Cone(_,_,a) if *a < 0. => [-uv[0],-uv[1]],
+        Surface::Ellipsoid(..) => net_uv(uv).0,
+        _ => uv,
+    }
+}
+
+/// An ellipsoid's parameters on its net (`nurbs::ellipsoid_net`), and their rates along its own.
+fn net_uv([u,v]: super::geom::Uv) -> ([f64;2],[f64;2]) {
+    use std::f64::consts::{FRAC_PI_2,TAU};
+    let (s,ds) = super::nurbs::arc_parameter([0.,TAU],u);
+    let (t,dt) = super::nurbs::arc_parameter([-FRAC_PI_2,FRAC_PI_2],v);
+    ([s,t],[ds,dt])
 }
 
 /// The curve `uv(t)` over `[t0, t1]` as cubic Bézier pieces (a B-spline of degree 3 whose inner
@@ -298,8 +315,22 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
             let d = [(z[0]-a[0])/(e.t[1]-e.t[0]),(z[1]-a[1])/(e.t[1]-e.t[0])];
             line(o,[a[0]-d[0]*(e.t[0]-shift),a[1]-d[1]*(e.t[0]-shift)],d)
         }
+        // on an ellipsoid's net a cubic fitted in the net's own parameters, which are no affine
+        // image of the ellipsoid's, measured on the net
+        (_,Surface::Ellipsoid(ef,ee),_) if let Some((poles,knots)) = {
+            let net = Surface::BSpline(*ef,std::sync::Arc::new(super::nurbs::ellipsoid_net(ef,*ee)));
+            bezier_pcurve(&|t| at(t),&|t| {
+                let (uv,d) = u.pcurve.at_and_derivative(t,e,&f.surface,&b.vertices);
+                let rate = net_uv(uv).1;
+                [rate[0]*d[0],rate[1]*d[1]]
+            },&net,e.t,&c.breaks(e.t))
+        } => {
+            let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,q))).collect();
+            let knots: Vec<f64> = knots.iter().map(|k| k-shift).collect();
+            spline(o,3,&ids,&knots,None)
+        }
         // a kernel's own curve in the face's parameters (`brep::json`): its poles, exactly
-        (Pcurve::Curve(pc),_,_) if matches!(**pc,Curve::BSpline(_)) => {
+        (Pcurve::Curve(pc),_,_) if matches!(**pc,Curve::BSpline(_)) && !matches!(f.surface,Surface::Ellipsoid(..)) => {
             let Curve::BSpline(bs) = &**pc else { unreachable!() };
             let ids: Vec<String> = bs.poles.iter().map(|q| format!("#{}",p2(o,step_uv(&f.surface,[q[0],q[1]])))).collect();
             let knots: Vec<f64> = bs.knots.iter().map(|k| k-shift).collect();
@@ -324,9 +355,11 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
         // a cubic in the edge's parameter through its parameters at evenly spaced points, doubled
         // until it maps within a tenth of `FIT` of the edge between them (a chordal pcurve within
         // the file's tolerance trims a spline face that far off its edge, and a reader measures
-        // the face it trims: 1e-5 of a pinion read back)
-        _ if let Some((poles,knots)) = bezier_pcurve(&|t| u.pcurve.at(t,e,&f.surface,&b.vertices),
-            &|t| u.pcurve.derivative(t,e,&f.surface,&b.vertices),&f.surface,e.t,&c.breaks(e.t)) => {
+        // the face it trims: 1e-5 of a pinion read back); its poles carried by `step_uv`, which is
+        // affine but on an ellipsoid's net, fitted above or else chordal below
+        _ if let Some((poles,knots)) = (!matches!(f.surface,Surface::Ellipsoid(..))).then(||
+            bezier_pcurve(&|t| u.pcurve.at(t,e,&f.surface,&b.vertices),&|t| u.pcurve.derivative(t,e,&f.surface,&b.vertices),
+                &f.surface,e.t,&c.breaks(e.t))).flatten() => {
             let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,step_uv(&f.surface,q)))).collect();
             let knots: Vec<f64> = knots.iter().map(|k| k-shift).collect();
             spline(o,3,&ids,&knots,None)

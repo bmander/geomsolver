@@ -170,6 +170,10 @@ pub enum Surface {
     Cone(Frame,f64,f64),
     /// `o + r cos v (cos u x + sin u y) + r sin v z`, `v ∈ [−π/2, π/2]`.
     Sphere(Frame,f64),
+    /// `o + cos v (a cos u x + b sin u y) + c sin v z`, `v ∈ [−π/2, π/2]`: the sphere's
+    /// parameters, its semi-axes `[a, b, c]` along `x`, `y` and `z`, its poles on `z`. A quadric,
+    /// read as one: not a surface of revolution even where two of its semi-axes are equal.
+    Ellipsoid(Frame,[f64;3]),
     /// `o + (R + r cos v)(cos u x + sin u y) + r sin v z`.
     Torus(Frame,f64,f64),
     /// `C(u) + v z`: a curve lying in the plane through `o` square to `z`, swept along `z`.
@@ -503,6 +507,89 @@ fn plane_side(c: &Curve,t: f64,p: [f64;2],meridian: &dyn Fn(V) -> [f64;2],along:
 /// An angle in `[0, 2π)`.
 fn wrap(a: f64) -> f64 { let a = a.rem_euclid(TAU); if a >= TAU { 0. } else { a } }
 
+/// **The point of an ellipsoid nearest `q`** : `q` in the ellipsoid's own frame, `e`
+/// its semi-axes along that frame's axes, the foot in the same coordinates. Eberly's robust
+/// reduction ("Distance from a point to an ellipse, an ellipsoid, or a hyperellipsoid", 2013): the
+/// axes ordered longest first and the point folded into the first octant, where the foot is
+/// `xᵢ = rᵢ yᵢ / (s + rᵢ)` at the one root `s` of a function that falls monotonically over a
+/// bracket it is bisected in to the last bit; a point on a plane of symmetry the foot either in that
+/// plane or off it, as the root's bracket says, and on an axis likewise. The global nearest point,
+/// inside the solid as outside it, so the normal through it passes through `q`.
+pub fn ellipsoid_foot(e: [f64;3],q: V) -> V {
+    let mut order = [0usize,1,2];
+    order.sort_by(|&i,&j| e[j].total_cmp(&e[i]));
+    let x = foot_sorted(order.map(|k| e[k]),order.map(|k| q[k].abs()));
+    let mut out = [0.;3];
+    for (n,&k) in order.iter().enumerate() { out[k] = x[n].copysign(q[k]); }
+    out
+}
+
+/// `ellipsoid_foot` for semi-axes `e₀ ≥ e₁ ≥ e₂` and a point `y` in the first octant.
+fn foot_sorted([e0,e1,e2]: [f64;3],[y0,y1,y2]: [f64;3]) -> [f64;3] {
+    if y2 > 0. {
+        if y1 > 0. {
+            if y0 > 0. {
+                let z = [y0/e0,y1/e1,y2/e2];
+                let g = z[0]*z[0]+z[1]*z[1]+z[2]*z[2]-1.;
+                if g == 0. { return [y0,y1,y2] }
+                let r = [(e0/e2)*(e0/e2),(e1/e2)*(e1/e2),1.];
+                let s = foot_root(&r,&z,g);
+                return [r[0]*y0/(s+r[0]),r[1]*y1/(s+r[1]),y2/(s+1.)]
+            }
+            let [x1,x2] = foot_planar([e1,e2],[y1,y2]);
+            return [0.,x1,x2]
+        }
+        if y0 > 0. { let [x0,x2] = foot_planar([e0,e2],[y0,y2]); return [x0,0.,x2] }
+        return [0.,0.,e2]
+    }
+    // on the plane of the two longer axes: the foot off it where the point is near enough the
+    // middle that the normal from the shortest axis's side reaches it
+    let (d0,d1) = (e0*e0-e2*e2,e1*e1-e2*e2);
+    let (n0,n1) = (e0*y0,e1*y1);
+    if n0 < d0 && n1 < d1 {
+        let (a,b) = (n0/d0,n1/d1);
+        let disc = 1.-a*a-b*b;
+        if disc > 0. { return [e0*a,e1*b,e2*disc.sqrt()] }
+    }
+    let [x0,x1] = foot_planar([e0,e1],[y0,y1]);
+    [x0,x1,0.]
+}
+
+/// The nearest point of the ellipse of semi-axes `e₀ ≥ e₁` to `y` in its first quadrant.
+fn foot_planar([e0,e1]: [f64;2],[y0,y1]: [f64;2]) -> [f64;2] {
+    if y1 > 0. {
+        if y0 > 0. {
+            let z = [y0/e0,y1/e1];
+            let g = z[0]*z[0]+z[1]*z[1]-1.;
+            if g == 0. { return [y0,y1] }
+            let r = [(e0/e1)*(e0/e1),1.];
+            let s = foot_root(&r,&z,g);
+            return [r[0]*y0/(s+r[0]),y1/(s+1.)]
+        }
+        return [0.,e1]
+    }
+    let d0 = e0*e0-e1*e1;
+    let n0 = e0*y0;
+    if n0 < d0 { let a = n0/d0; return [e0*a,e1*(1.-a*a).max(0.).sqrt()] }
+    [e0,0.]
+}
+
+/// The root `s > −1` of `Σ (rᵢ zᵢ / (s + rᵢ))² = 1` (the last `r` is 1, every `z` positive), `g` its
+/// left side less one at `s = 0`: bisected between `z_last − 1` and 0 or the norm of `rᵢ zᵢ` less
+/// one, the side `g` says, until the middle is an end.
+fn foot_root(r: &[f64],z: &[f64],g: f64) -> f64 {
+    let n = r.len();
+    let num: Vec<f64> = (0..n).map(|i| r[i]*z[i]).collect();
+    let (mut s0,mut s1) = (z[n-1]-1.,if g < 0. { 0. } else { num.iter().fold(0.,|m: f64,&v| m.dhypot(v))-1. });
+    for _ in 0..2200 {
+        let s = 0.5*(s0+s1);
+        if s == s0 || s == s1 { return s }
+        let h: f64 = (0..n).map(|i| { let q = num[i]/(s+r[i]); q*q }).sum::<f64>()-1.;
+        if h > 0. { s0 = s } else if h < 0. { s1 = s } else { return s }
+    }
+    0.5*(s0+s1)
+}
+
 /// The least radius of curvature a planar curve has over its domain, sampled (infinite where it
 /// is straight), and never more than its extent.
 fn least_radius(c: &Curve) -> f64 {
@@ -526,11 +613,11 @@ fn least_radius(c: &Curve) -> f64 {
 impl Surface {
     pub fn frame(&self) -> &Frame {
         match self { Surface::Plane(f) | Surface::Cylinder(f,_) | Surface::Cone(f,_,_) | Surface::Sphere(f,_)
-            | Surface::Torus(f,_,_) | Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) | Surface::Family(f,_) => f }
+            | Surface::Ellipsoid(f,_) | Surface::Torus(f,_,_) | Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) | Surface::Family(f,_) => f }
     }
     pub fn kind(&self) -> &'static str {
         match self { Surface::Plane(_) => "plane",Surface::Cylinder(..) => "cylinder",Surface::Cone(..) => "cone",
-            Surface::Sphere(..) => "sphere",Surface::Torus(..) => "torus",Surface::Extrusion(..) => "extrusion",
+            Surface::Sphere(..) => "sphere",Surface::Ellipsoid(..) => "ellipsoid",Surface::Torus(..) => "torus",Surface::Extrusion(..) => "extrusion",
             Surface::Revolution(..) => "revolution",Surface::Blend(..) => "blend",Surface::BSpline(..) => "bspline",Surface::Family(..) => "family" }
     }
     /// The periods in `u` and `v` (none where the parameter is not periodic).
@@ -541,7 +628,7 @@ impl Surface {
             Surface::Blend(_,b) => [b.closed.then_some(1.),None],
             Surface::Family(_,w) => [w.period(),None],
             Surface::BSpline(..) => [None,None],
-            Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) => [Some(TAU),None],
+            Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Ellipsoid(..) => [Some(TAU),None],
             Surface::Torus(..) => [Some(TAU),Some(TAU)],
         }
     }
@@ -552,7 +639,8 @@ impl Surface {
         match self {
             Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Extrusion(..) => true,
             Surface::Blend(_,b) => matches!(b.carry,Carry::Line {..}),
-            Surface::Sphere(..) | Surface::Torus(..) | Surface::Revolution(..) | Surface::BSpline(..) | Surface::Family(..) => false,
+            Surface::Sphere(..) | Surface::Ellipsoid(..) | Surface::Torus(..) | Surface::Revolution(..) | Surface::BSpline(..)
+                | Surface::Family(..) => false,
         }
     }
     /// A box about where a face may reach beyond its boundary, never smaller; `range` the
@@ -560,8 +648,9 @@ impl Surface {
     /// About its axis a coordinate of a sphere, torus or revolution is sinusoidal in `u`, so a
     /// face's inner extremes lie on the meridians where it turns (or anywhere, where it does not
     /// turn with `u`, or on the axis: the middle one): each within the range is boxed over its `v`.
-    /// A blend screwed about an axis is boxed by the ring its sections turn in; a B-spline by the
-    /// poles reaching the range.
+    /// An ellipsoid's coordinate is sinusoidal in `u` along each parallel likewise, so it is boxed
+    /// over the half ellipses where it turns. A blend screwed about an axis is boxed by the ring its
+    /// sections turn in; a B-spline by the poles reaching the range.
     pub fn bounds_over(&self,range: impl FnOnce() -> [[f64;2];2]) -> Box3 {
         if self.ruled() { return EMPTY }
         if let Surface::Blend(_,b) = self {
@@ -588,6 +677,20 @@ impl Surface {
         });
         match self {
             Surface::Sphere(f,r) => tube(f,0.,*r),
+            // the half ellipse at `u`, `o + cos v d + c sin v z` for `d` the parallel's radius
+            // vector at `u`, `cos v` never negative: a coordinate turns in `u` where `a x_k cos u
+            // + b y_k sin u` does
+            Surface::Ellipsoid(f,[a,b,c]) => {
+                let at = |t: f64| {
+                    let (s,k) = t.dsin_cos();
+                    let d = f.dir([a*k,b*s,0.]);
+                    let x = unit(d);
+                    Curve::Ellipse(Frame {o:f.o,x,y:f.z,z:cross(x,f.z)},norm(d),*c).bounds(v)
+                };
+                let mut out = at((u[0]+u[1])/2.);
+                for k in 0..3 { for (t,_) in turns(a*f.x[k],b*f.y[k],u) { widen(&mut out,at(t)); } }
+                out
+            }
             Surface::Torus(f,big,r) => tube(f,*big,*r),
             Surface::Revolution(f,c) => match &**c {
                 // the poles reaching the range taken once, and turned to each meridian
@@ -635,6 +738,10 @@ impl Surface {
             Surface::Sphere(f,r) => {
                 let (sv,cv) = v.dsin_cos();
                 (f.at([r*cv*cu,r*cv*su,r*sv]),f.dir([-r*cv*su,r*cv*cu,0.]),f.dir([-r*sv*cu,-r*sv*su,r*cv]))
+            }
+            Surface::Ellipsoid(f,[a,b,c]) => {
+                let (sv,cv) = v.dsin_cos();
+                (f.at([a*cv*cu,b*cv*su,c*sv]),f.dir([-a*cv*su,b*cv*cu,0.]),f.dir([-a*sv*cu,-b*sv*su,c*cv]))
             }
             Surface::Torus(f,big,r) => {
                 let (sv,cv) = v.dsin_cos();
@@ -740,14 +847,20 @@ impl Surface {
                 [u,(rho-r)*sa+z*ca]
             }
             Surface::Sphere(..) => [u,z.datan2(rho)],
+            // the foot's parameters on the sphere it is the stretch of
+            Surface::Ellipsoid(_,e) => {
+                let q = ellipsoid_foot(e,[x,y,z]);
+                let (x,y,z) = (q[0]/e[0],q[1]/e[1],q[2]/e[2]);
+                [if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) },z.datan2(x.dhypot(y))]
+            }
             Surface::Torus(_,big,_) => [u,wrap(z.datan2(rho-big))],
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => unreachable!(),
         }
     }
     /// Whether the surface has an offset in closed form: the analytic kinds, not the swept and
-    /// fitted ones.
+    /// fitted ones nor the ellipsoid, whose offset is no quadric.
     pub fn has_offset(&self) -> bool {
-        !matches!(self,Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..))
+        !matches!(self,Surface::Ellipsoid(..) | Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..))
     }
     /// What stands `d` off this surface along its own normal (`S_u × S_v`), where its signed
     /// distance (`implicit`) is `d`, in closed form for the analytic kinds (`has_offset`): a
@@ -776,7 +889,7 @@ impl Surface {
             }
             Surface::Sphere(f,r) => grown(r,&|r| Surface::Sphere(f,r),Offset::Point(f.o)),
             Surface::Torus(f,big,r) => grown(r,&|r| Surface::Torus(f,big,r),Offset::Curve(Curve::Circle(f,big))),
-            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
+            Surface::Ellipsoid(..) | Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
         }
     }
     /// `offset` where only a surface will do (a leg's meeting, a ball's spine against a wall),
@@ -795,7 +908,7 @@ impl Surface {
     }
     /// A signed distance whose zero set is the surface (for a cone, the one sheet `ρ ≥ 0` its
     /// parameters reach), positive on the side its normal points to: exact for the plane,
-    /// cylinder, sphere and torus. A cone's is the distance to its generating line in the meridian
+    /// cylinder, sphere, ellipsoid (the distance to its foot, `ellipsoid_foot`) and torus. A cone's is the distance to its generating line in the meridian
     /// half-plane; a swept curve's the distance to the tangent line at its foot, which runs on past
     /// the curve's ends; a loft face's the distance along the normal at its nearest point, clamped
     /// to the patch. Off a finite patch those extensions have zeros of their own, which is why
@@ -809,6 +922,11 @@ impl Surface {
             Surface::Cylinder(_,r) => rho-r,
             Surface::Cone(_,r,a) => { let (sa,ca) = a.dsin_cos(); (rho-r)*ca-z*sa }
             Surface::Sphere(_,r) => rho.dhypot(z)-r,
+            Surface::Ellipsoid(_,e) => {
+                let q = ellipsoid_foot(e,[x,y,z]);
+                let d = (x-q[0]).dhypot(y-q[1]).dhypot(z-q[2]);
+                if (x/e[0]).dhypot(y/e[1]).dhypot(z/e[2]) < 1. { -d } else { d }
+            }
             Surface::Torus(_,big,r) => (rho-big).dhypot(z)-r,
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => unreachable!(),
         }
@@ -867,6 +985,11 @@ impl Surface {
             Surface::Cylinder(..) => radial,
             Surface::Cone(_,_,a) => { let (sa,ca) = a.dsin_cos(); [radial[0]*ca,radial[1]*ca,-sa] }
             Surface::Sphere(..) => { let d = rho.dhypot(z); if d > 0. { [x/d,y/d,z/d] } else { [0.,0.,1.] } }
+            // the outward normal at the foot, inside and out
+            Surface::Ellipsoid(_,e) => {
+                let q = ellipsoid_foot(e,[x,y,z]);
+                unit([q[0]/(e[0]*e[0]),q[1]/(e[1]*e[1]),q[2]/(e[2]*e[2])])
+            }
             Surface::Torus(_,big,_) => {
                 let (dr,dz) = (rho-big,z);
                 let d = dr.dhypot(dz);
@@ -882,6 +1005,8 @@ impl Surface {
         match *self {
             Surface::Plane(_) => f64::INFINITY,
             Surface::Cylinder(_,r) | Surface::Sphere(_,r) | Surface::Torus(_,_,r) => r,
+            // its least radius of curvature, at the ends of its longest axis
+            Surface::Ellipsoid(_,e) => { let lo = e[0].min(e[1]).min(e[2]); lo*lo/e[0].max(e[1]).max(e[2]) }
             Surface::Cone(_,r,_) => r.max(f64::MIN_POSITIVE),
             Surface::Extrusion(_,ref c) | Surface::Revolution(_,ref c) => least_radius(c),
             Surface::Blend(_,ref b) => b.feature(),
@@ -908,6 +1033,7 @@ impl Surface {
             Surface::Cylinder(f,r) => Surface::Cylinder(f.moved(m),r),
             Surface::Cone(f,r,a) => Surface::Cone(f.moved(m),r,a),
             Surface::Sphere(f,r) => Surface::Sphere(f.moved(m),r),
+            Surface::Ellipsoid(f,e) => Surface::Ellipsoid(f.moved(m),e),
             Surface::Torus(f,big,r) => Surface::Torus(f.moved(m),big,r),
             Surface::Extrusion(f,ref c) => Surface::Extrusion(f.moved(m),Arc::new(c.moved(m))),
             Surface::Revolution(f,ref c) => Surface::Revolution(f.moved(m),Arc::new(c.moved(m))),
@@ -930,6 +1056,8 @@ impl Surface {
             Surface::Cylinder(f,r) => { let (f,flip) = turned(f); (Surface::Cylinder(f,r),flip) }
             Surface::Cone(f,r,a) => { let (f,flip) = turned(f); (Surface::Cone(f,r,a),flip) }
             Surface::Sphere(f,r) => { let (f,flip) = turned(f); (Surface::Sphere(f,r),flip) }
+            // `y` reversed and `u` with it: the same points, its semi-axes where they were
+            Surface::Ellipsoid(f,e) => { let (f,flip) = turned(f); (Surface::Ellipsoid(f,e),flip) }
             Surface::Torus(f,big,r) => { let (f,flip) = turned(f); (Surface::Torus(f,big,r),flip) }
             Surface::Revolution(f,ref c) => {
                 let (f,flip) = turned(f);
@@ -969,10 +1097,10 @@ impl Surface {
         }
     }
     /// Whether the surface is one of revolution about its frame's `z` axis — every one but a swept
-    /// curve's extrusion, a loft face and the
+    /// curve's extrusion, a loft face, an ellipsoid and the
     /// plane, which is one about its normal through any point.
     pub fn axis(&self) -> Option<(V,V)> {
-        match self { Surface::Plane(_) | Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,_ => { let f = self.frame(); Some((f.o,f.z)) } }
+        match self { Surface::Plane(_) | Surface::Ellipsoid(..) | Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,_ => { let f = self.frame(); Some((f.o,f.z)) } }
     }
 }
 

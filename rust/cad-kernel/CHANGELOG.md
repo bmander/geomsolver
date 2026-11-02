@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The ellipsoid** (`geom::Surface::Ellipsoid`, **a new variant**): a quadric of three semi-axes
+  along its frame's axes, parameterised as the sphere is, its foot the exact nearest point
+  (`geom::ellipsoid_foot`, Eberly's bisection) and its signed distance and normal read there; a
+  plane meets it in an ellipse in closed form (`ssi::intersect`) and a line in a chord
+  (`query::curve_surface`). Its solid by its numbers (`build::ellipsoid`): one face, its seam a
+  half ellipse and a degenerate edge at each pole. Written to STEP, which has no ellipsoid, as its
+  exact rational biquadratic net (`nurbs::ellipsoid_net`), its pcurves carried onto the net's
+  parameters (`nurbs::arc_parameter`).
+
 - **The surface arrangement** (#735). A cell complex (`complex::Complex`): faces each parting two
   cells, an edge bounding any number of faces in order round it (tangent faces by their curvature),
   touches along edges and at points held; `select` the boundary between kept cells and the rest,

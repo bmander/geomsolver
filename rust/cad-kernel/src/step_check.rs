@@ -260,6 +260,11 @@ impl Solid {
                 let numbers = crate::step::family_net(w).map(|n| crate::step::net_numbers(&n)).unwrap_or_default();
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
             }
+            // an ellipsoid as its exact net
+            if let Surface::Ellipsoid(ef,e) = &f.surface {
+                let numbers = crate::step::net_numbers(&crate::nurbs::ellipsoid_net(ef,*e));
+                return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
+            }
             // a sheet is written as its own net
             if let Surface::BSpline(_,net) = &f.surface {
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers:crate::step::net_numbers(net)}
@@ -268,7 +273,7 @@ impl Solid {
             let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,
                 Surface::Cone(..) => CONE,Surface::Sphere(..) => SPHERE,Surface::Torus(..) => TORUS,
                 Surface::Revolution(..) => REVOLUTION,Surface::Extrusion(..) => EXTRUSION,
-                Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => BSPLINE };
+                Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Ellipsoid(..) => BSPLINE };
             let mut numbers: Vec<f64> = frame.o.iter().chain(&frame.z).chain(&frame.x).copied().collect();
             numbers.extend(scalars);
             Face {kind,reversed:f.reversed,indirect:false,numbers}
