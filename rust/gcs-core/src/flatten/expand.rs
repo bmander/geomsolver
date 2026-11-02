@@ -503,11 +503,13 @@ impl<'a> Walk<'a> {
                 *slot = faces;
             }
         }
-        // a solid of a set that says a sweep is that sweep (#737, `said`)
-        if !self.said.is_empty() && d2.kind == crate::model::EntKind::Solid
+        // a solid of a set that says a sweep is that sweep (#737, #744, `said`): a family's
+        // instance, read where it was bound, or a set written by hand, read here
+        if d2.kind == crate::model::EntKind::Solid
             && matches!(d2.sweep, Some(crate::syntax::Sweep::Body)) {
             if let Some((_, abs, _)) = self.set_named(&d2, 0, scope) {
-                if let Some((sweep, face)) = self.said.get(&abs).cloned() {
+                let said = self.said.get(&abs).cloned().or_else(|| self.said_by_hand(&abs, scope));
+                if let Some((sweep, face)) = said {
                     d2.sweep = Some(sweep);
                     d2.children = vec![vec![Kid::Ref(face)]];
                 }
@@ -1981,6 +1983,34 @@ impl Walk<'_> {
             return None;
         }
         self.set_named(d, 0, sc)
+    }
+
+    /// **The sweep a set written by hand says** (#744), where the solid naming it stands in the
+    /// scope the set was written in: its names read as what they name there — a face, a line, an
+    /// axis, by what declared them — and its numbers as written, so it is read as a family's
+    /// instance is (`said`).  A family's instance is read where it is bound, in its own scope,
+    /// never here.
+    fn said_by_hand(&self, abs: &str, sc: &Scope) -> Option<(crate::syntax::Sweep, Ref)> {
+        use crate::model::EntKind;
+        let site = self.sets.made.get(abs)?;
+        if site.scope().prefix() != sc.prefix() {
+            return None;
+        }
+        let alias = super::resolve::Lazy::new(self);
+        let kind = |name: &str| -> Option<super::said::Bound> {
+            let (key, rest) = self.look(&alias).find(&Ref::new(name), sc)?;
+            if !rest.is_empty() {
+                return None;
+            }
+            let kind = self.out.iter().rev().find_map(|(st, _, _)| match &st.kind {
+                StmtKind::Decl(d) if d.name.key().text == key => Some(d.kind),
+                StmtKind::Chain(c) if c.closed && c.name.key().text == key => Some(EntKind::Face),
+                _ => None,
+            })?;
+            matches!(kind, EntKind::Face | EntKind::Line | EntKind::Axis)
+                .then_some(super::said::Bound::Own(kind))
+        };
+        super::said::said(site.lit(), &kind)
     }
 
     /// The set a declaration's `i`th operand names, where it names one.

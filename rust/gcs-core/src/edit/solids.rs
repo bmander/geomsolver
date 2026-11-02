@@ -318,11 +318,12 @@ fn resweep(
         Vec::new())
 }
 
-/// **A solid of a word of `std.solids` written in place** (#737), `solid(std.solids.Prism(f,
-/// from: a, to: b))`: the sweep the call says, as the gestures read one — the word's labels its
-/// extents — given to `with`, and the call rewritten as the word of what `with` makes; `None`
-/// where the solid is no such call.  A gesture edits the words a person wrote, so it reads them by
-/// name, as the printer writes them.
+/// **A solid of a set family's instance written in place** (#737, #744), `solid(std.solids.Prism(f,
+/// from: a, to: b))`: the sweep the family's set says, read off its statements with its formals
+/// bound to the call's arguments (`flatten::said`) — never off the word's name — given to `with`,
+/// and the call rewritten as the word of `std.solids` that says what `with` makes; `None` where
+/// the solid is no such call.  A call whose set says no sweep of a face is refused: nothing in it
+/// is an extent a gesture sizes.
 fn reworded(prog: &Program, d: &syntax::Decl,
             with: &impl Fn(&syntax::Sweep) -> Result<syntax::Sweep, String>)
     -> Option<Result<Edit, String>> {
@@ -331,15 +332,17 @@ fn reworded(prog: &Program, d: &syntax::Decl,
         StmtKind::Instance(i) if i.name.text == key.root.text => Some(i),
         _ => None,
     })?;
-    let word = inst.component.text.strip_prefix("std.solids.")?;
-    let text = |a: &syntax::InstArg| match &a.value {
-        syntax::InstVal::Ref(r) => syntax::ref_text(r),
-        syntax::InstVal::Expr(t) | syntax::InstVal::Hint(t, _) => t.clone(),
-        syntax::InstVal::Group(_) => String::new(),
-    };
-    let label = |l: &str| inst.args.iter()
-        .find(|a| a.label.as_ref().is_some_and(|n| n.text == l)).map(text);
-    let face = inst.args.iter().find(|a| a.label.is_none()).map(text)?;
+    let unread = "that solid is a set no sweep of a face says: change it where it is written";
+    let comp = prog.resolve_component(&inst.component.text, None).ok()
+        .and_then(|k| prog.components.get(k));
+    let said = comp.and_then(|c| {
+        crate::flatten::said::said(c.set.as_ref()?, &crate::flatten::said::binding(c, inst))
+    });
+    let Some((was, face)) = said else { return Some(Err(unread.into())) };
+    if matches!(was, syntax::Sweep::Through { .. }) {
+        return Some(Err("that solid is a prism through everything, which nothing sizes".into()));
+    }
+    let face = syntax::ref_text(&face);
     // a face written in place in the call (`face(ab, bc, cd, da)`) is the parser's anonymous
     // face, named by a key no document can write: the call is rewritten with it as written
     let face = prog.root().body.iter().find_map(|st| match &st.kind {
@@ -349,29 +352,18 @@ fn reworded(prog: &Program, d: &syntax::Decl,
         }
         _ => None,
     }).unwrap_or(face);
-    let dim = |t: String| syntax::Arg::Dim { text: t, span: Span::default() };
-    let was = match word {
-        "Prism" | "Drafted" => syntax::Sweep::Prism {
-            from: dim(label("from")?), to: dim(label("to")?), draft: label("draft").map(dim),
-        },
-        "Revolution" => {
-            let (from, to) = (label("from").map(dim), label("to").map(dim));
-            let axis = syntax::Ref::new(label("about")?);
-            match syntax::revolve_between(axis, from.as_ref(), to.as_ref()) {
-                Some(s) => s,
-                None => return Some(Err("that revolution starts off its face: change it where it \
-                                         is written".into())),
-            }
-        }
-        _ => return Some(Err("that solid is a prism through everything, which nothing sizes".into())),
-    };
     Some((|| {
         let new = with(&was)?;
         let text = syntax::solid_word(&new, &face).ok_or("that solid is no sweep of a face")?;
-        let edit = Splice { at: inst.span, with: text };
-        let (text, landed) = splice_landing(prog.text(), vec![edit]);
-        checked(prog, text, landed[0].ok_or("that solid's statement is no place in the source")?,
-                Vec::new())
+        let mut splices = vec![Splice { at: inst.span, with: text }];
+        if !prog.uses.iter().any(|u| u.name == "std.solids") {
+            splices.push(use_line(prog, "use std.solids"));
+        }
+        let (text, landed) = splice_landing(prog.text(), splices);
+        let regions: Vec<Span> = landed.into_iter()
+            .map(|l| l.ok_or("that solid's statement is no place in the source"))
+            .collect::<Result<_, _>>()?;
+        checked_in(prog, text, &regions, Vec::new())
     })())
 }
 
