@@ -257,3 +257,52 @@ fn crossing_a_shallow_meeting(tol: f64) {
         [4.005641243986119,0.,0.8759784383632598]],1.0020367458049662);
     arranged_exactly(&domain,&[&plane,&lower,&upper],tol);
 }
+
+/// **A Boolean lays a touch as an edge and takes it back out where a face is kept on both sides of
+/// it** (#735, `boolean::combined`): a rod lying on a block's top touches it along a line, which
+/// the Boolean's complex is split along as any arrangement is; the block's top and the rod's side
+/// are each kept on both sides of it, so each is whole again in the result, the two faces touching
+/// there as they do. United, cut either way, each is its volume and its faces, a valid boundary.
+#[test]
+fn a_boolean_lays_a_touch_and_heals_it_where_a_face_is_kept_on_both_sides() {
+    use std::f64::consts::PI;
+    let top = block([-2.,-2.,-1.],[2.,2.,0.]);
+    let rod = prism(&disc([-1.,0.,1.],[1.,0.,0.],1.),0.,2.).unwrap();
+    for (a,b,op,v,faces) in [(&top,&rod,Op::Union,16.+2.*PI,9),(&rod,&top,Op::Union,16.+2.*PI,9),
+        (&top,&rod,Op::Cut,16.,6),(&rod,&top,Op::Cut,2.*PI,3)] {
+        let out = combined(a,b,op,0.).unwrap();
+        out.check(1e-9).unwrap();
+        close(volume(&out),v,1e-9);
+        assert_eq!(out.faces.len(),faces,"{op:?}");
+    }
+}
+
+/// **A hole whose end caps touch the bore and the rim** (the V-twin's crank disc, its set screw's
+/// hole along a radius from the bore to the rim): each flat cap is tangent to a cylinder of the
+/// disc along a line, laid in the Boolean's complex as an edge and inside the bore's face a slit —
+/// both its sides that face's — closed again in the result, at any angle round the disc. The
+/// volume the hole takes is its section's run from the bore's tangent plane to the rim,
+/// `∫∫ (√(R² − y²) − r) dy dz` over its disc, apart from the build.
+#[test]
+fn a_hole_whose_caps_touch_the_bore_and_the_rim_is_cut_whole() {
+    use std::f64::consts::{FRAC_PI_2,PI};
+    let (rim,bore,hole,depth) = (20.,4.,1.5,6.);
+    let plate = prism(&disc([0.,0.,-depth/2.],[0.,0.,1.],rim),0.,depth).unwrap();
+    let hub = prism(&disc([0.,0.,-depth/2.],[0.,0.,1.],bore),0.,depth).unwrap();
+    let body = combined(&plate,&hub,Op::Cut,0.).unwrap();
+    // y = hole sin θ across the hole's disc: its chord 2 hole cos θ
+    let taken = crate::brep::simpson(-FRAC_PI_2,FRAC_PI_2,400,|th: f64| {
+        let y = hole*th.sin();
+        2.*hole*hole*th.cos()*th.cos()*((rim*rim-y*y).sqrt()-bore)
+    });
+    let expected = PI*(rim*rim-bore*bore)*depth-taken;
+    for k in 0..12 {
+        let a = 0.3+0.47*k as f64;
+        let (c,s) = (a.cos(),a.sin());
+        let bored = prism(&disc([bore*c,bore*s,0.],[c,s,0.],hole),0.,rim-bore).unwrap();
+        let out = combined(&body,&bored,Op::Cut,0.).unwrap();
+        out.check(1e-9).unwrap();
+        close(volume(&out),expected,1e-9);
+        assert_eq!(out.faces.len(),6,"at {a}: the plate's two, the rim, the bore, the hole and its cap");
+    }
+}

@@ -49,10 +49,12 @@ fn parting() -> f64 { 2.0 * (1.0f64 / 3.0).asin() }
 fn a_roll_through_a_body_ends_just_past_where_the_tool_clears_it() {
     let e = read(&balls("(3, 0, 0)", "under: turn"));
     let removal = crate::common::ent(&e, "removal").i();
-    let SolidDef::Swept { roll: Roll::Through { body }, .. } = &e.sketch.solids[removal].def else {
-        panic!("a sweep through a body")
-    };
-    assert_eq!(e.sketch.solids[*body as usize].name, "part");
+    // the whole roll names no body: it rolls through the one it is cut from
+    assert!(matches!(e.sketch.solids[removal].def, SolidDef::Swept { roll: Roll::Through, .. }),
+            "a sweep over the whole roll");
+    let bodies = solid::applied_to(&e.sketch, removal);
+    assert_eq!(bodies.iter().map(|&b| e.sketch.solids[b as usize].name.as_str()).collect::<Vec<_>>(),
+               ["part"]);
     let [from, to] = solid::roll::interval(&e.sketch, removal).unwrap();
     // never short of where the balls part, at most a few steps past it, each way
     for end in [-from, to] {
@@ -102,6 +104,41 @@ fn every_reader_reads_one_roll() {
         let past = end + end.signum() * 0.5;
         assert!(material(past)[0] > 0.0, "{}: {:?}", past.to_degrees(), material(past));
     }
+}
+
+/// **A whole roll cut from two bodies rolls through each** (#746): the sweep names no body, so a
+/// second ball sixty degrees on, which the tool still meets where it clears the first, is rolled
+/// through too — its centre, which the tool's centre passes, is removed — where once the roll
+/// through the first body alone stopped short of it.
+#[test]
+fn a_whole_roll_cut_from_two_bodies_rolls_through_each() {
+    let (c, s) = (3.0 * 60f64.to_radians().cos(), 3.0 * 60f64.to_radians().sin());
+    let src = balls("(3, 0, 0)", "under: turn") + &format!("\
+other_c := point
+fix(({c}, {s}, 0)) other_c
+second := std.sets.Sphere(other_c, r: 1mm)
+other_blank := solid(second)
+other := solid(other_blank)
+removal cut other
+");
+    let e = read(&src);
+    let removal = crate::common::ent(&e, "removal").i();
+    assert_eq!(solid::applied_to(&e.sketch, removal).len(), 2);
+    let [from, to] = solid::roll::interval(&e.sketch, removal).unwrap();
+    assert!(-from >= parting() && -from <= parting() + 4.0 * solid::roll::STEP, "{from}");
+    let past = 60f64.to_radians() + parting();
+    assert!(to >= past && to <= past + 4.0 * solid::roll::STEP, "{} against {}",
+            to.to_degrees(), past.to_degrees());
+    // the second ball lies in the torus the tool's centre sweeps, and the roll passes all of it:
+    // its centre is gone, and so is a point by its surface, which the roll through the first
+    // ball alone left
+    use gcs_core::interval::{minimum::Options, Interval as I};
+    let field = solid::MaterialField::read(&e.sketch, crate::common::ent(&e, "other").i(), 1e-10)
+        .unwrap();
+    let material = |p: [f64; 3]| field.evaluator(256).bounds(p.map(|x| I::point(x).unwrap()),
+        Options { value_tolerance: 1e-6, max_evaluations: 50000 }).unwrap().value.bounds();
+    assert!(material([c, s, 0.0])[0] > 0.0, "{:?}", material([c, s, 0.0]));
+    assert!(material([c, s, 0.9])[0] > 0.0, "{:?}", material([c, s, 0.9]));
 }
 
 /// A tool that does not meet the body at 0, or one never clear of it, is refused naming why.
@@ -154,7 +191,7 @@ fn a_roll_through_prints_as_written() {
     assert!(printed.contains("solid({ p | p inside(under: turn) tool })"), "{printed}");
     let e = read(&src.replace(&src[stmt.span.lo as usize..stmt.span.hi as usize], &printed));
     let removal = crate::common::ent(&e, "removal").i();
-    assert!(matches!(e.sketch.solids[removal].def, SolidDef::Swept { roll: Roll::Through { .. }, .. }));
+    assert!(matches!(e.sketch.solids[removal].def, SolidDef::Swept { roll: Roll::Through, .. }));
 }
 
 /// **The issue's case** (#271): the spiral bevel at 10:48, the gear close to a crown gear, whose
@@ -172,14 +209,17 @@ fn the_pair_at_ten_teeth_is_admitted_with_no_roll_stated() {
     let sk = &e.sketch;
     for member in ["pinion", "gear"] {
         let removal = fixtures::solid(&e, &format!("pair.{member}.cut.removal"));
-        let SolidDef::Swept { motion, roll: Roll::Through { body }, .. } = &sk.solids[removal].def else {
+        let SolidDef::Swept { motion, roll: Roll::Through, .. } = &sk.solids[removal].def else {
             panic!("{member}: the cut rolls through its body")
+        };
+        let [body] = solid::applied_to(sk, removal)[..] else {
+            panic!("{member}: the cut rolls through one body")
         };
         let roll = solid::roll::interval(sk, removal).unwrap();
         // E1's reading: the tool's surface sampled, each point at a roll read against the blank
-        let blank = match &sk.solids[*body as usize].def {
+        let blank = match &sk.solids[body as usize].def {
             SolidDef::Body { stock, .. } => *stock as usize,
-            _ => *body as usize,
+            _ => body as usize,
         };
         let blank = solid::SpatialField::read(sk, blank, 1e-10).unwrap();
         let family = gcs_core::motion::Family::read(sk, *motion as usize).unwrap();

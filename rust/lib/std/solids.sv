@@ -50,9 +50,9 @@ component Drafted(section: face, from: Length, to: Length, draft: Angle) := { p 
 }
 
 // A prism through everything: the points whose foot on the section's plane lies within it,
-// unbounded along its normal.  It is a cutter: cut from a body (`pin cut body`) or kept in common
-// with one, it reaches through the body's material both ways, however the drawing moves it; its
-// sides are named by the section's edges.
+// unbounded along its normal.  It is a cutter, naming no body: cut from bodies (`pin cut body`) or
+// kept in common with them, it reaches through each one's material both ways, however the drawing
+// moves it; its sides are named by the section's edges.
 //
 //   pin := solid(std.solids.Through(hole))
 //   pin cut body
