@@ -99,6 +99,8 @@ pub struct Parts {
     /// One edge for each kept wedge beyond the first round an edge the result touches itself
     /// along, numbered after the complex's edges.
     pub twins: Vec<super::topo::Edge>,
+    /// The complex's edge each of `twins` is a twin of.
+    pub twin_of: Vec<usize>,
     /// Where it touches itself along an edge.
     pub touches: Vec<Touch>,
 }
@@ -493,7 +495,7 @@ impl Complex {
     /// points are `select_shells`'s, read on the assembled boundary).
     pub fn select_parts(&self,keep: &dyn Fn(usize) -> bool) -> Parts {
         let kept: Vec<bool> = (0..self.shells.len()).map(keep).collect();
-        let mut twins: Vec<super::topo::Edge> = Vec::new();
+        let (mut twins,mut twin_of): (Vec<super::topo::Edge>,Vec<usize>) = (Vec::new(),Vec::new());
         let mut at = vec![usize::MAX;self.b.faces.len()];
         let mut faces = Vec::new();
         for (f,face) in self.b.faces.iter().enumerate() {
@@ -512,6 +514,7 @@ impl Complex {
             touches.push(Touch::Along {ends,faces:k});
             for &(x,y) in pairs.iter().skip(1) {
                 twins.push(self.b.edges[e].clone());
+                twin_of.push(e);
                 let new = (self.b.edges.len()+twins.len()-1) as u32;
                 for u in [x,y] {
                     // the use's place in the kept face: its loop is the same, turned or not
@@ -524,7 +527,7 @@ impl Complex {
                 }
             }
         }
-        Parts {faces,twins,touches}
+        Parts {faces,twins,twin_of,touches}
     }
 
     /// The bounded cells, each its own solid: its shells' faces turned to face out of it.

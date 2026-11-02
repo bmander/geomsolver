@@ -229,7 +229,16 @@ seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_s
 a point deep inside. **A Boolean is a selection over it**: each piece's two sides' membership read
 as before, the complex formed, each shell kept as the operation keeps its sides (which agree round
 it, else each face by its own), and the result touching itself along an edge given an edge for each
-wedge; `split` is the complex's shells inside the solid. Every Boolean of the suite gives the same
+wedge; `split` is the complex's shells inside the solid. **A Boolean lays its touches as edges and
+heals them out of its result** (`heal`): a span two faces only touch along is laid in its complex
+as an arrangement lays it, so the cells either side are classified apart; then, in the result, a
+touch is no edge wherever one face of an operand is kept on both sides of it — that face's pieces
+joined again across it, and a slit left inside it closed — so the result is the manifold B-rep it
+was, its faces whole and touching where they touch, and a touch bounding a face kept on one side
+only stays an edge of it (`arrangement::a_boolean_lays_a_touch_and_heals_it_where_a_face_is_kept_on_both_sides`,
+a rod lying on a block united and cut either way; `a_hole_whose_caps_touch_the_bore_and_the_rim_is_cut_whole`,
+the V-twin disc's set-screw hole, its caps tangent to the bore and the rim, at twelve angles, to
+its section's run in closed form). Every Boolean of the suite gives the same
 result through it as before (the agreement gate: the whole fast suite). What the arrangement holds
 that the pairwise Boolean never met: a cycle of a face's pieces whose outline is coarser than it is
 wide has its side read along its curves (`fine_area`, a cusp-thin strip between two curves tangent
