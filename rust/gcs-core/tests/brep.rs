@@ -178,33 +178,31 @@ fn the_sphere_the_cone_and_the_torus_are_their_closed_forms() {
 #[test]
 fn a_nurbs_cone_is_its_side_sewn_to_its_base() {
     use gcs_core::brep::build::{disc,face,sheet};
-    use gcs_core::brep::nurbs::Net;
     use gcs_core::brep::sew::sewn;
     use gcs_core::brep::topo::EdgeCurve;
     let (r,h) = (5.,10.);
-    let w = std::f64::consts::FRAC_1_SQRT_2;
-    let round = [[1.,0.],[1.,1.],[0.,1.],[-1.,1.],[-1.,0.],[-1.,-1.],[0.,-1.],[1.,-1.],[1.,0.]];
-    let net = Net {du:2,dv:1,uknots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],vknots:vec![0.,0.,1.,1.],
-        poles:round.iter().map(|c| vec![[r*c[0],r*c[1],0.],[0.,0.,h]]).collect(),
-        weights:Some((0..9).map(|i| { let wi = if i%2 == 1 { w } else { 1. }; vec![wi,wi] }).collect())};
-    net.check().unwrap();
-    let side = sheet(net).unwrap();
-    let area = |b: &gcs_core::brep::topo::Brep| b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum::<f64>();
+    let side = sheet(rational_tube([r,0.],[0.,h],0.,1.)).unwrap();
     for n in [[0.,0.,-1.],XY] {
         let base = face(&disc([0.;3],n,r)).unwrap();
-        for pieces in [vec![side.clone(),base.clone()],vec![base.clone(),side.clone()]] {
+        for pieces in [vec![side.clone(),base.clone()],vec![base,side.clone()]] {
             let b = sewn(&pieces,1e-7).unwrap();
-            b.check(1e-9).unwrap();
             assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(2,3,2));
             assert_eq!(b.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Degenerate)).count(),1);
-            close(volume(&b),PI*r*r*h/3.);
-            close(area(&b),PI*r*r+PI*r*(r*r+h*h).sqrt());
-            let m = gcs_core::brep::mesh::mesh(&b,1e-3*b.size(),0.1).unwrap();
-            assert!((mesh_volume(&m)/(PI*r*r*h/3.)-1.).abs() < 1e-2);
-            let text = gcs_core::brep::step::write(&b,"nurbs-cone",1e-7).unwrap();
-            gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(&b)).unwrap();
+            sewn_holds(&b,PI*r*r*h/3.,PI*r*r+PI*r*(r*r+h*h).sqrt());
         }
     }
+}
+
+/// A sewn solid valid, its volume and area the closed forms, meshed to within its volume and
+/// written as STEP that reads back as it.
+fn sewn_holds(b: &gcs_core::brep::topo::Brep,v: f64,area: f64) {
+    b.check(1e-9).unwrap();
+    close(volume(b),v);
+    close(total_area(b),area);
+    let m = gcs_core::brep::mesh::mesh(b,1e-3*b.size(),0.1).unwrap();
+    assert!((mesh_volume(&m)/v-1.).abs() < 1e-2);
+    let text = gcs_core::brep::step::write(b,"sewn",1e-7).unwrap();
+    gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(b)).unwrap();
 }
 
 /// The six faces of the box `lo`–`hi` apart, each a plane face facing along its axis's `+`
@@ -267,17 +265,17 @@ fn faces_sewn_are_a_solid_by_tolerant_topology() {
     assert_eq!(sewn(&faces,1e-7).unwrap_err().kind,Kind::NotManifold);
 }
 
-/// The side of the tube of radius `r` about z from `z0` to `z1` as a rational 9 × 2 net: its
-/// circle the nine-pole rational quadratic, begun at the angle `start`, and reparametrised by `c`
-/// (each quarter's weights `(1, w, 1)` made `(1, w c, c²)` and scaled to meet the next: the same
-/// circle, run at another pace unless `c` is 1).
-fn rational_tube(r: f64,[z0,z1]: [f64;2],start: f64,c: f64) -> gcs_core::brep::nurbs::Net {
-    let w = std::f64::consts::FRAC_1_SQRT_2;
-    let (s,k) = start.sin_cos();
-    let round = [[1.,0.],[1.,1.],[0.,1.],[-1.,1.],[-1.,0.],[-1.,-1.],[0.,-1.],[1.,-1.],[1.,0.]];
-    gcs_core::brep::nurbs::Net {du:2,dv:1,uknots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],vknots:vec![0.,0.,1.,1.],
-        poles:round.iter().map(|p| { let (x,y) = (r*(k*p[0]-s*p[1]),r*(s*p[0]+k*p[1])); vec![[x,y,z0],[x,y,z1]] }).collect(),
-        weights:Some((0..9).map(|i| { let wi = c.powi(i as i32)*if i%2 == 1 { w } else { 1. }; vec![wi,wi] }).collect())}
+/// The side of the tube about z from `z0` to `z1` as a rational 9 × 2 net, of radius `r[0]` at
+/// `z0` and `r[1]` at `z1` (a cone where one is 0): its circle the nine-pole rational quadratic
+/// (`nurbs::arc`) begun at the angle `start`, over `[0, 1]`, and reparametrised by `c` (each
+/// quarter's weights `(1, w, 1)` made `(1, w c, c²)` and scaled to meet the next: the same circle,
+/// run at another pace unless `c` is 1).
+fn rational_tube(r: [f64;2],[z0,z1]: [f64;2],start: f64,c: f64) -> gcs_core::brep::nurbs::Net {
+    let ring = |r: f64,z: f64| gcs_core::brep::nurbs::arc(&Frame::new([0.,0.,z],XY,[start.cos(),start.sin(),0.]),r,[0.,TAU]);
+    let (low,high) = (ring(r[0],z0),ring(r[1],z1));
+    let weights = low.weights.as_ref().unwrap().iter().enumerate().map(|(i,&w)| { let w = w*c.powi(i as i32); vec![w,w] }).collect();
+    gcs_core::brep::nurbs::Net {du:2,dv:1,uknots:low.knots.iter().map(|k| k/TAU).collect(),vknots:vec![0.,0.,1.,1.],
+        poles:low.poles.iter().zip(&high.poles).map(|(&a,&b)| vec![a,b]).collect(),weights:Some(weights)}
 }
 
 /// **Curved faces sewn across curves parametrised apart** (`sew::sewn`): a column of three tubes
@@ -305,15 +303,13 @@ fn curved_faces_sewn_across_curves_parametrised_apart() {
     };
     let pieces = vec![
         circle(0.,XY,1.),
-        sheet(rational_tube(r,[0.,h],0.,1.)).unwrap(),
-        sheet(rational_tube(r,[h,2.*h],PI/2.,1.5)).unwrap(),
+        sheet(rational_tube([r,r],[0.,h],0.,1.)).unwrap(),
+        sheet(rational_tube([r,r],[h,2.*h],PI/2.,1.5)).unwrap(),
         prism_side,
         circle(3.*h,XY,3.),
     ];
-    let area = |b: &Brep| b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum::<f64>();
     for pieces in [pieces.clone(),pieces.into_iter().rev().collect()] {
         let b = sewn(&pieces,1e-7).unwrap();
-        b.check(1e-9).unwrap();
         // four circles each in two halves, three seams; two vertices a level
         assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(5,11,8));
         // the uses that take the kept curve inverted: the later net's two halves at its joint with
@@ -328,12 +324,7 @@ fn curved_faces_sewn_across_curves_parametrised_apart() {
         assert!(curved.iter().any(|&c| c == (false,2)));
         let worst = b.edges.iter().map(|e| e.tol).fold(0.,f64::max);
         assert!(worst < 1e-9,"an edge {worst:e} off a face it bounds");
-        close(volume(&b),PI*r*r*3.*h);
-        close(area(&b),2.*PI*r*3.*h+2.*PI*r*r);
-        let m = gcs_core::brep::mesh::mesh(&b,1e-3*b.size(),0.1).unwrap();
-        assert!((mesh_volume(&m)/(PI*r*r*3.*h)-1.).abs() < 1e-2);
-        let text = gcs_core::brep::step::write(&b,"column",1e-7).unwrap();
-        gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(&b)).unwrap();
+        sewn_holds(&b,PI*r*r*3.*h,2.*PI*r*3.*h+2.*PI*r*r);
     }
 }
 

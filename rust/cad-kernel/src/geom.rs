@@ -744,6 +744,16 @@ impl Surface {
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => unreachable!(),
         }
     }
+    /// How hard a point is to invert onto the surface: 0 a plane's (exact), 1 an analytic one's
+    /// (a closed form), 2 the swept and fitted ones' (searched). Of two curves for one edge, the
+    /// one a face on the harder surface was built on is kept (`sew`), so its pcurve stays as built.
+    pub fn inversion(&self) -> u8 {
+        match self {
+            Surface::Plane(_) => 0,
+            Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) => 1,
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => 2,
+        }
+    }
     /// Whether the surface has an offset in closed form: the analytic kinds, not the swept and
     /// fitted ones.
     pub fn has_offset(&self) -> bool {

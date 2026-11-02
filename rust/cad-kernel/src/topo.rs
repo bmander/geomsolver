@@ -197,6 +197,16 @@ impl Brep {
         self.edges.extend(other.edges.iter().cloned().map(|mut e| { e.v = e.v.map(|v| v+nv); e }));
         self.faces.extend(other.faces.iter().cloned().map(|mut f| { for co in f.loops.iter_mut().flatten() { co.edge += ne; } f }));
     }
+    /// Each edge's uses, as `(face, loop, use)` in the order the faces walk them.
+    pub fn uses(&self) -> Vec<Vec<(usize,usize,usize)>> {
+        let mut uses = vec![Vec::new();self.edges.len()];
+        for (fi,f) in self.faces.iter().enumerate() {
+            for (li,l) in f.loops.iter().enumerate() {
+                for (ci,c) in l.iter().enumerate() { uses[c.edge as usize].push((fi,li,ci)); }
+            }
+        }
+        uses
+    }
     pub fn edge(&mut self,curve: EdgeCurve,t: [f64;2],v: [u32;2]) -> u32 {
         self.edges.push(Edge {curve,t,v,tol:0.});
         (self.edges.len()-1) as u32
@@ -390,12 +400,7 @@ impl Brep {
     /// own. Its ends are then pinches (`pinches`). How many edges it split, or `Err` where four
     /// uses pair no way a solid can (faces meeting tangent there, or material on both sides of one).
     pub fn unpinched(&mut self) -> Result<usize,String> {
-        let mut uses: Vec<Vec<(usize,usize,usize)>> = vec![Vec::new();self.edges.len()];
-        for (fi,f) in self.faces.iter().enumerate() {
-            for (li,l) in f.loops.iter().enumerate() {
-                for (ci,c) in l.iter().enumerate() { uses[c.edge as usize].push((fi,li,ci)); }
-            }
-        }
+        let uses = self.uses();
         let mut split = 0;
         for e in 0..self.edges.len() {
             if uses[e].len() != 4 { continue }
