@@ -526,6 +526,14 @@ impl<'a> P<'a> {
     /// entity, seeds a point, or holds a solid's inline section — or a face's stretch of a
     /// curve.
     fn list_kid(&mut self, kind: EntKind, label: Option<&str>, positional: usize) -> Option<Kid> {
+        // a solid's operand written in place (#737), already its own statement (#745): read as
+        // the name it is made under, from where it stood to past it
+        if kind == EntKind::Solid {
+            if let Some(h) = self.hoisted.take_if(|h| h.at == self.i) {
+                self.i = h.past;
+                return Some(Kid::Ref(h.by));
+            }
+        }
         Some(match self.eat_hint_clause() {
             Some(lo) => {
                 // a plane's `u:` and `v:` are axes, seeded by their direction
@@ -922,7 +930,7 @@ impl<'a> P<'a> {
 
     /// One of a solid's sweep arguments, the label already eaten: `from: EXPR`, `to: EXPR`,
     /// `depth: EXPR`, `about: REF`, `sweep: EXPR`, `sense: cw|ccw`.
-    fn sweep_arg(&mut self, label: &str, parts: &mut SweepParts) -> Option<()> {
+    pub(super) fn sweep_arg(&mut self, label: &str, parts: &mut SweepParts) -> Option<()> {
         let twice = |s: &mut Self| {
             s.fail(&format!("`{label}` is given twice"));
             None

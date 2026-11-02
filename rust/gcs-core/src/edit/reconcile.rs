@@ -324,7 +324,7 @@ fn name_anonymous(
         // the sketch's own label (`c0`), which resolves to nothing (#142).
         let Some(d) = decl_of(prog, site) else {
             let st = prog.stmt(site.stmt);
-            let in_place = st.is_some_and(|s| matches!(s.chained, syntax::Chained::Link)
+            let in_place = st.is_some_and(|s| matches!(s.chained, syntax::Chained::InPlace(_))
                 && matches!(s.kind, StmtKind::Set(_) | StmtKind::Instance(_)));
             // a named call's geometry is writable and never reaches here: an unnamed one's is
             return Err(if in_place {

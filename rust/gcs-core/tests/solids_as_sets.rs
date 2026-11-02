@@ -306,6 +306,91 @@ fn the_sweep_labels_are_retired_naming_the_set() {
          "`solid({ p | p inside(under: turn, over t in (0deg, 90deg)) sec })`");
 }
 
+/// **What a statement holds in place is read where it is written** (#745): the family's call in
+/// `solid(…)`, the face given to the call and a set on a relation's right are each a statement of
+/// their own, and each names the statement whose text holds it — no token is rewritten, so each
+/// one's span is its own text.  Printed flat, each is written where its host reads it, and the
+/// program keeps them, their spans where they landed.
+#[test]
+fn what_is_written_in_place_names_its_host() {
+    use gcs_core::syntax::{parse, render_flat, Chained, Program, StmtKind};
+    let call = "std.solids.Prism(face(ab, bc, cd, da), from: 0mm, to: 5mm)";
+    let src = format!("{RECT}block := solid({call})\n");
+    // the solid, the call it holds and the face the call holds, as each is read
+    let held = |p: &Program| {
+        let body = &p.root().body;
+        let solid = body.iter().find(|st| matches!(&st.kind,
+            StmtKind::Decl(d) if d.name.shown().is_some_and(|n| n.text == "block"))).unwrap();
+        let inst = body.iter().find(|st| matches!(st.kind, StmtKind::Instance(_))).unwrap();
+        let face = body.iter().find(|st| st.chained == Chained::InPlace(inst.id)).unwrap();
+        assert_eq!(solid.chained, Chained::No);
+        assert_eq!(inst.chained, Chained::InPlace(solid.id));
+        let (StmtKind::Decl(d), StmtKind::Instance(i)) = (&solid.kind, &inst.kind) else {
+            unreachable!()
+        };
+        assert_eq!(d.children[0][0].as_ref().unwrap().root.text, i.name.text);
+        let text = |st: &gcs_core::syntax::Stmt| st.span.slice(p.text()).to_string();
+        (text(inst), text(face))
+    };
+    let (mut p, errs) = parse(&src);
+    assert!(errs.is_empty(), "{errs:?}");
+    assert_eq!(held(&p), (call.to_string(), "face(ab, bc, cd, da)".to_string()));
+    let printed = render_flat(&mut p).unwrap().to_string();
+    assert!(printed.contains(&format!("block := solid({call})")), "{printed}");
+    assert_eq!(held(&p), (call.to_string(), "face(ab, bc, cd, da)".to_string()));
+    let (again, errs) = parse(&printed);
+    assert!(errs.is_empty(), "{errs:?}");
+    assert_eq!(held(&again), (call.to_string(), "face(ab, bc, cd, da)".to_string()));
+
+    // two faces alike in one call are two statements, each printed where its key was read
+    let (mut p, errs) = parse(&format!("{RECT}twin := solid(Pair(face(ab, bc), face(ab, bc)))\n"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let printed = render_flat(&mut p).unwrap().to_string();
+    assert!(printed.contains("twin := solid(Pair(face(ab, bc), face(ab, bc)))"), "{printed}");
+    let faces: Vec<_> = p.root().body.iter()
+        .filter(|st| matches!(st.chained, Chained::InPlace(_))
+            && matches!(st.kind, StmtKind::Decl(_)))
+        .map(|st| st.span).collect();
+    assert_eq!(faces.len(), 2);
+    assert_ne!(faces[0], faces[1]);
+    assert!(faces.iter().all(|f| f.slice(p.text()) == "face(ab, bc)"));
+
+    // a set on a relation's right is held by the relation
+    let (p, errs) = parse("a := point\nq := point\nq inside { p | p distance(3mm) a }\n");
+    assert!(errs.is_empty(), "{errs:?}");
+    let body = &p.root().body;
+    let rel = body.iter().find(|st| matches!(st.kind, StmtKind::Relation(_))).unwrap();
+    let set = body.iter().find(|st| matches!(st.kind, StmtKind::Set(_))).unwrap();
+    assert_eq!(set.chained, Chained::InPlace(rel.id));
+    assert_eq!(set.span.slice(p.text()), "{ p | p distance(3mm) a }");
+
+    // a face sealed by `-> close` in the call is the face's, not a chain of the statement's
+    let (_, errs) = parse(&format!("{RECT}block := solid(std.solids.Prism(face(a, b, c, d, -> \
+        close), from: 0mm, to: 5mm))\n"));
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+/// **A set that says a sweep is read as written** (#745): its parts where they stand, so what is
+/// refused is said of the set, never of the retired `sweep(…)` it once was rewritten into.
+#[test]
+fn a_swept_set_is_read_where_it_is_written() {
+    use gcs_core::syntax::{parse, Sweep};
+    let (p, errs) = parse(&format!("{RING}s := solid({{ p | p inside(under: turn, over t in \
+        (0deg, 90deg)) sec }})\n"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let swept = p.root().body.iter().find_map(|st| match &st.kind {
+        gcs_core::syntax::StmtKind::Decl(d) if d.name.shown().is_some_and(|n| n.text == "s") => {
+            d.sweep.clone()
+        }
+        _ => None,
+    });
+    assert!(matches!(swept, Some(Sweep::Swept { motion: Some(_), .. })), "{swept:?}");
+    let (_, errs) = parse(&format!("{RING}s := solid({{ p | p inside(under: turn, under: turn) \
+        sec }})\n"));
+    assert!(errs.iter().any(|e| e.message.contains("`under` is given twice")), "{errs:?}");
+    assert!(errs.iter().all(|e| !e.message.contains("sweep(")), "{errs:?}");
+}
+
 /// **A set written by hand is read before it is built as the word is** (#744): the flattener
 /// reads its statements, not a word's name, so a prism by hand adds nothing to the solve — no
 /// point its set is applied to — and is the word's to every reader of a solid before it is built.

@@ -15,7 +15,7 @@
 use crate::ir::PathStep;
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::program::{public_path, Elaborated};
-use crate::syntax::{BlockKind, Span, StmtId, StmtKind};
+use crate::syntax::{BlockKind, Chained, Span, StmtId, StmtKind};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -147,20 +147,29 @@ pub fn outline_with(e: &Elaborated, sk: &Sketch) -> Vec<Node> {
 }
 
 /// The statement a row of statement `s` stands under: a face written in place in a solid's call
-/// (#737, `solid(std.solids.Prism(face(rim), …))`) is the parser's own statement, a link of the
-/// solid's, and its row is the solid's, as a face written in a solid's brackets is.
+/// (#737, `solid(std.solids.Prism(face(rim), …))`) is the parser's own statement, written in the
+/// call's text as the call is in the solid's, and its row is the solid's, as a face written in a
+/// solid's brackets is.  Each in-place statement names its host (`Chained::InPlace`), so the
+/// solid is found by following them out.
 fn solid_written_in(e: &Elaborated, s: StmtId) -> StmtId {
     let p = &e.program;
     let Some(st) = p.document_stmt(s) else { return s };
     match &st.kind {
-        StmtKind::Decl(d) if st.chained == crate::syntax::Chained::Link && d.kind == EntKind::Face
+        StmtKind::Decl(d) if matches!(st.chained, Chained::InPlace(_)) && d.kind == EntKind::Face
             && d.name.shown().is_none() => {}
         _ => return s,
     }
-    p.stmts()
-        .find(|t| t.id != s && t.span.lo <= st.span.lo && st.span.hi <= t.span.hi
-              && matches!(&t.kind, StmtKind::Decl(d) if d.kind == EntKind::Solid))
-        .map_or(s, |t| t.id)
+    let mut at = st;
+    while let Chained::InPlace(host) = at.chained {
+        match p.document_stmt(host) {
+            Some(h) => at = h,
+            None => return s,
+        }
+    }
+    match &at.kind {
+        StmtKind::Decl(d) if d.kind == EntKind::Solid => at.id,
+        _ => s,
+    }
 }
 
 /// An entity and where it was made.
