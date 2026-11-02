@@ -464,10 +464,14 @@ fn plane_quadric(pl: &Frame,rf: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>>
     if !(beta.is_finite() && gamma.is_finite() && delta.is_finite()) { return None }
     let samples: Vec<[f64;2]> = (0..=16).map(|k| local(t0+(t1-t0)*k as f64/16.)).collect();
     let size = samples.iter().fold(1_f64,|r,p| r.max(p[0].abs()).max(p[1].abs()));
+    // how far the quadric misses the meridian's own points, in its own units: what any value of it
+    // is known to
+    let mut misfit = 0_f64;
     for &[r,z] in &samples {
         let g = r*r+beta*z*z+gamma*z+delta;
         let grad = (4.*r*r+(2.*beta*z+gamma).powi(2)).sqrt();
         if !(g.abs() <= 1e-9*size*grad.max(1e-300)) { return None }
+        misfit = misfit.max(g.abs());
     }
     let (zlo,zhi) = samples.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),p| (a.min(p[1]),b.max(p[1])));
     let (zlo,zhi) = (zlo-tol,zhi+tol);
@@ -524,7 +528,13 @@ fn plane_quadric(pl: &Frame,rf: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>>
     }
     // the hyperbola's branches open along `e1`: `−F/λ₁ > 0`
     if -f/l1 < 0. { std::mem::swap(&mut l1,&mut l2); std::mem::swap(&mut e1,&mut e2) }
-    if (f.abs()/l1.abs().min(l2.abs())).sqrt() <= tol {
+    // a plane through the cone of the quadric's asymptotes — tangent to a hyperboloid, holding its
+    // rulings — is so where its constant at the centre is nothing but rounding: the quadric's own
+    // misfit, or the cancellation of the terms it sums (a plane holding a ruling exactly leaves
+    // `F` some 1e-14, whose square root, the hyperbola's semi-axis, is some 1e-7: no measure of
+    // the geometry, and no ground to call the branches apart at a tolerance finer than that, #735)
+    let rounding = (4.*misfit).max(1e3*f64::EPSILON*(c0.abs()+(cu*w[0]).abs()+(cv*w[1]).abs()));
+    if f.abs() <= rounding || (f.abs()/l1.abs().min(l2.abs())).sqrt() <= tol {
         let r = (-l1/l2).sqrt();
         return Some([1.,-1.].map(|k| Curve::Line {p:centre,d:unit(add(e1,scale(e2,k*r)))}).to_vec())
     }

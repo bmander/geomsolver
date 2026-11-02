@@ -157,3 +157,27 @@ fn a_plane_on_a_cylinders_side_touches_it_along_a_line() {
     assert_eq!(m.branches[0].contact,Contact::Touching);
     assert!(meet(&cylinder,[[0.,PI],[-1.,1.]],&cylinder.clone(),[[0.,TAU],[-2.,2.]],1e-9).unwrap().same);
 }
+
+/// **A plane holding a hyperboloid's ruling meets it in that ruling and its partner, whatever the
+/// tolerance** (`ssi::intersect`, #735): the face a leaning edge lies in, against the hyperboloid
+/// the edge turns into, is tangent to it at the throat, and the constant the closed form finds at
+/// the hyperbola's centre is rounding (some 1e-14) — read as nothing, not as a hyperbola whose
+/// semi-axis, its square root, is some 1e-7 and splits from the lines at any tolerance finer.
+#[test]
+fn a_plane_holding_a_hyperboloids_ruling_meets_it_in_two_lines_at_any_tolerance() {
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    let lean: f64 = 0.35;
+    // a line in the plane x = 4, leaning to the z axis, turned about it
+    let (p,e) = ([4.,0.,0.],[0.,-lean.sin(),lean.cos()]);
+    let solid = &gcs_core::brep::swept::closed::revolved([0.;3],[0.,0.,1.],p,e,[-0.8,0.8],1e-9).unwrap()[0];
+    let hyperboloid = solid.faces.iter().find(|f| matches!(f.surface,Surface::Revolution(..))).unwrap().surface.clone();
+    let plane = Surface::Plane(Frame::about(p,[1.,0.,0.]));
+    for tol in [1e-6,1e-7,1e-9] {
+        let Ssi::Curves(curves) = intersect(&plane,&hyperboloid,tol) else { panic!("at {tol:e}: no closed form") };
+        assert_eq!(curves.iter().map(|c| c.kind()).collect::<Vec<_>>(),["line","line"],"at {tol:e}");
+        // the ruling the plane holds is one of them
+        let on = |c: &Curve| (0..=8).all(|k| { let s = -0.8+0.2*k as f64; let x = [p[0]+s*e[0]/e[2],p[1]+s*e[1]/e[2],s];
+            distance(c.point(c.inverse(x)),x) <= 1e-9 });
+        assert!(curves.iter().any(on),"at {tol:e}");
+    }
+}

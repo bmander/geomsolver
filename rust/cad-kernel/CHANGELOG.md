@@ -8,6 +8,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A plane through a quadric's asymptotic cone is tangent where the constant at the hyperbola's
+  centre is rounding (`ssi::intersect`): a plane holding a hyperboloid's ruling meets it in two
+  lines at any tolerance, where at a tolerance under some 1e-7 it came out as a hyperbola's
+  branches. The closed swept solid of a leaning block's part turn builds at 1e-7.
+- The solid a line bounds turned about an axis, its meridian exact (`swept::closed::revolved`),
+  public.
 - The closed swept solid (`swept::closed`) is one arrangement of its box and every candidate and one
   selection by membership: no separator planes, cut order, per-cell Booleans or deferred unions.
 - Points along a shallow meeting are one vertex (#735 A3): crossings with a meeting read to its own

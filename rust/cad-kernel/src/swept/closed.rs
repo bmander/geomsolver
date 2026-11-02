@@ -335,7 +335,7 @@ fn meridian(o: V,axis: V,p: V,e: V) -> (f64,f64,f64) {
 /// down the axis at both heights and turned once. A hyperboloid's meridian is one rational
 /// quadratic (`meridian_arc`); a cone's a line, a solid on either side of its apex where the span
 /// holds it.
-fn revolved(o: V,axis: V,p: V,e: V,[z0,z1]: [f64;2],eps: f64) -> Result<Vec<Brep>,String> {
+pub fn revolved(o: V,axis: V,p: V,e: V,[z0,z1]: [f64;2],eps: f64) -> Result<Vec<Brep>,String> {
     let m = meridian(o,axis,p,e);
     let (throat,height,_) = m;
     if throat <= eps {

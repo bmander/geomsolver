@@ -242,11 +242,12 @@ it. It stays as the fast path where #699 D says so.
    vertex already there); an edge touching a surface its own face touches, at their touch curve;
    two rulings of one meeting cut where they cross; and the faces round an edge ordered away from
    a touch. It is slower than the separators' road (about 85 s against 26), all 17 candidate solids
-   met pairwise in one arrangement. *Not yet at a tolerance of 1e-7*: there the hyperboloid's own
-   rounding is the tolerance's size, and where an end pose's face, the plane through the axis
-   tangent at a throat and that hyperboloid all hold one ruling, the plane–hyperboloid meeting is
-   traced along the line the two planes meet in and not recognised as it — a meeting coinciding with
-   another meeting (A2), or the surface of revolution evaluated closer, is what that needs.
+   met pairwise in one arrangement. *And at a tolerance of 1e-7*, once a face holding a
+   hyperboloid's ruling was met in its two rulings at any tolerance: the closed form had read the
+   plane's constant at the hyperbola's centre (rounding, some 1e-14) as a hyperbola whose semi-axis
+   (its square root, some 1e-7) parted it from the lines at any tolerance finer, so the meeting came
+   out as branches running along the rulings the other candidates hold, never recognised as them.
+   The hyperboloid itself was never off: every edge lies on its own to 1e-15.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.

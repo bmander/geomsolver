@@ -246,7 +246,13 @@ placed to the square root of the tolerance; two closed-form curves of one meetin
 or closed, over their stretch within the faces' box (`crossings_among`: a plane tangent to a
 hyperboloid at its throat meets it in two rulings, cut where they cross); and the faces round an
 edge are ordered where their ways in stand farthest apart along it, not at its middle beside a
-touch. `arrangement::a_plane_crossing_where_two_surfaces_touch_…`, `a_plane_tangent_to_a_hyperboloid_…`
+touch. **A plane through a quadric's asymptotic cone is tangent where its constant at the centre is
+rounding** (`ssi`'s plane–quadric closed form): the quadric's misfit to its meridian, or the
+cancellation of the terms that constant sums — not its square root, the hyperbola's semi-axis,
+against the tolerance, which a plane holding a hyperboloid's ruling exactly (some 1e-14 left, a
+semi-axis of some 1e-7) failed at any tolerance finer, its rulings coming out as branches
+(`meeting::a_plane_holding_a_hyperboloids_ruling_meets_it_in_two_lines_at_any_tolerance`).
+`arrangement::a_plane_crossing_where_two_surfaces_touch_…`, `a_plane_tangent_to_a_hyperboloid_…`
 and `a_plane_crossing_a_shallow_meeting_…` are the gates, at 1e-6 and 1e-7. **The closed swept
 solid is one arrangement and one selection** (`swept::closed`, generating.md);
 `arrangement::three_blocks_arranged_at_once_…`, `every_cells_membership_…`,

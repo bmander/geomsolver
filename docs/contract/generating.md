@@ -337,7 +337,8 @@ candidates' touches are the arrangement's (brep.md's tolerant rules: a touch lai
 crossing where two meetings are tangent made one vertex, a piece with no inside merged into its
 edge) (`a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept`, slow tier: the volume
 its slices sweep, each circle's arcs within a slice carried through the turn and united, to 1e-6, and
-membership).  X1–X5 are the pipeline's cases, not rows of their own: under a turn, a bar turned
+membership; built at 1e-6, and at 1e-7 in
+`a_block_leaning_to_the_axis_turned_part_of_a_turn_holds_at_a_tenth_of_the_tolerance`).  X1–X5 are the pipeline's cases, not rows of their own: under a turn, a bar turned
 through all but its own width meets itself, its end poses' faces and its edges' cylinders burying
 one another where they meet (X5, X1; `a_bar_turned_through_all_but_its_width_meets_itself`, its
 slices' arcs carried and united round the circle, to 1e-8), and an L-shaped prism's concave edge's
