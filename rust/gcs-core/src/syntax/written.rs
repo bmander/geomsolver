@@ -33,6 +33,13 @@ pub enum OpArg {
     /// `key` held within `(lo, hi)` — on a line the segment between its ends.  Where on the curve,
     /// never a distance: no set it stands in is made a region by it.
     Within { key: Name, lo: (String, Span), hi: (String, Span) },
+    /// **Some instant of a running parameter** (#737): `over t in (a, b)` — the interval written
+    /// in place, its ends `ends` — or `over s`, a parameter the document declares (its own
+    /// interval), or a roll no interval bounds.  The existential over a running number in a set's
+    /// body: `p coincident(under: m, over t in (0deg, 90deg)) sec` is what the face occupies at
+    /// some roll of the interval, `p coincident(over s) Station(g, s: s).f` what the station's face
+    /// does at some `s` of its parameter.
+    Over { key: Name, ends: Option<[(String, Span); 2]> },
 }
 
 /// An operator spelling retained through resolution, with operands and arguments

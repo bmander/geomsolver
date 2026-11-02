@@ -1244,13 +1244,6 @@ impl<'a> Walk<'a> {
         -> Option<(crate::syntax::Name, (String, Span), (String, Span))> {
         let w = r2.form.written_mut()?;
         let k = w.args.iter().position(|a| matches!(a, crate::syntax::OpArg::Within { .. }))?;
-        // an interval of a motion's roll (#737): what a face occupies over it, kept whole for
-        // the elaborator, which reads it at a region solid's point
-        let rolled = w.args.iter().any(|a| matches!(a,
-            crate::syntax::OpArg::Named(n, _) if n.text == "under"));
-        if rolled {
-            return None;
-        }
         let crate::syntax::OpArg::Within { key, lo, hi } = w.args.remove(k) else { return None };
         if key.text != "t" || w.word.text != "coincident" {
             let m = format!("an interval is of a contact's place, `p coincident(t in (0, 1))                 line(m, n)`: `{}` is no contact's `t`", key.text);
@@ -1381,6 +1374,11 @@ impl<'a> Walk<'a> {
                     }
                     crate::syntax::OpArg::Within { lo, hi, .. } => {
                         for (text, span) in [lo, hi] {
+                            self.settle_dim(text, *span, vals, scope)
+                        }
+                    }
+                    crate::syntax::OpArg::Over { ends, .. } => {
+                        for (text, span) in ends.iter_mut().flatten() {
                             self.settle_dim(text, *span, vals, scope)
                         }
                     }

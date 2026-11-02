@@ -542,6 +542,10 @@ fn under_motion(
             SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Stated(roll)}
         }
         // the roll through a body's material (#271): found after the solve
+        // the whole roll (#737): bounded by the body it is cut from, joined there
+        Sweep::Rolled {body,..} if body.root.text == crate::syntax::ROLLED => {
+            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Through {body:u32::MAX}}
+        }
         Sweep::Rolled {body,..} => {
             let Some(target) = res.lookup(body) else {
                 say(Code::E101, body.span, format!("no such entity: `{}`", body.root.text));

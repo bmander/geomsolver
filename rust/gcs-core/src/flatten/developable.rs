@@ -27,8 +27,6 @@ pub(super) fn within_point(lit: &SetLit) -> bool {
         w.word.text == "coincident"
             && w.ops.first().is_some_and(|r| r.root.text == lit.bound.text && r.path.is_empty())
             && w.args.iter().any(|a| matches!(a, OpArg::Within { .. }))
-            // an interval of a motion's roll is over the motion, which is the instance's (#737)
-            && !w.args.iter().any(|a| matches!(a, OpArg::Named(n, _) if n.text == "under"))
     })
 }
 

@@ -14,6 +14,8 @@ use crate::syntax::{
 
 /// `part Name(…) { … }`, retired (#562): every braced definition is held to what `part`
 /// promised.
+use crate::syntax::ROLLED;
+
 const PART_RETIRED: &str = "`part` is retired (#562): every definition is held to being a \
     function of what it is given, so write `component Name(…) { … }`";
 
@@ -901,10 +903,14 @@ impl<'a> P<'a> {
         // `block := solid(std.solids.Prism(sec, from: -30mm, to: 0mm))` — the set a solid is the
         // points of, written in place (#737): its own statement under a key the source cannot
         // write, the solid's operand that key
-        if word.as_deref() == Some("solid") && call && self.solid_set_ahead() {
+        let swept = word.as_deref() == Some("solid") && call && self.swept_set();
+        if word.as_deref() == Some("solid") && call && !swept && self.solid_set_ahead() {
             self.solid_set_in_place(next_id, out)?;
         }
         let kind = match word.as_deref() {
+            // what a body occupies under a motion, or a face over a running parameter, at some
+            // instant (#737): the set read as the sweep it says, `swept_set`'s
+            Some("solid") if swept => StmtKind::Decl(self.sweep_decl(DeclName::Written(name))?),
             // `ball := { p | p distance(12mm) c }` — a set, the points its body holds (§6.21)
             None if self.set_ahead() => {
                 let lit = self.set_lit(next_id)?;
@@ -1974,6 +1980,110 @@ impl<'a> P<'a> {
         let id = self.mint_stmt(next_id, span)?;
         out.push(Stmt { id, kind: StmtKind::Relation(rel), span, chained: Chained::No });
         Some(())
+    }
+
+    /// **A set that says a sweep** (#737), written in place in `solid(…)` here: its tokens made
+    /// the sweep's, so the solid is read as that sweep — whether it was one.  Two bodies of one
+    /// statement say one:
+    ///
+    /// * `{ p | p inside(under: m, seen_from: g, over t in (a, b)) tool }`, what the body `tool`
+    ///   occupies under the motion at some roll of the interval (`over t`, a declared parameter's;
+    ///   no `over` at all, the whole roll, bounded by the body it is cut from);
+    /// * `{ p | p coincident(over s) Station(…).f }`, what the face `f` of the station occupies at
+    ///   some instant of the declared parameter `s` — a face family — or `{ p | p coincident(over
+    ///   s) sec }`, a face of the drawing as `s` runs.
+    fn swept_set(&mut self) -> bool {
+        let Some(made) = self.swept_tokens() else { return false };
+        let close = made.1;
+        self.t.splice(self.i..=close, made.0);
+        true
+    }
+
+    /// The tokens of the sweep the set written in place at `solid(` here says, and the index of
+    /// the `)` closing `solid(` — `None` where it says none.
+    fn swept_tokens(&self) -> Option<(Vec<(Tok, Span)>, usize)> {
+        let at = |k: usize| self.t.get(k).map(|t| &t.0);
+        let word = |k: usize| match at(k) { Some(Tok::Ident(w)) => Some(w.as_str()), _ => None };
+        let span = |k: usize| self.t[k].1;
+        let skip = |mut k: usize| { while at(k) == Some(&Tok::Nl) { k += 1; } k };
+        let mut k = skip(self.i + 2);
+        if at(k) != Some(&Tok::P('{')) { return None; }
+        k = skip(k + 1);
+        let bound = word(k)?;
+        k = skip(k + 1);
+        if at(k) != Some(&Tok::P('|')) { return None; }
+        k = skip(k + 1);
+        if word(k) != Some(bound) { return None; }
+        let verb = word(k + 1)?;
+        if !matches!(verb, "inside" | "coincident") || at(k + 2) != Some(&Tok::P('(')) { return None; }
+        // the parentheses' items, split at their commas
+        let mut items: Vec<(usize, usize)> = Vec::new();
+        let (mut depth, mut from, mut j) = (0usize, k + 3, k + 2);
+        loop {
+            j += 1;
+            match at(j)? {
+                Tok::P('(') => depth += 1,
+                Tok::P(')') if depth == 0 => { items.push((from, j)); break; }
+                Tok::P(')') => depth -= 1,
+                Tok::P(',') if depth == 0 => { items.push((from, j)); from = j + 1; }
+                Tok::Nl => return None,
+                _ => {}
+            }
+        }
+        // the operand, to the set's closing brace, then `)` closing `solid(`
+        let (operand_lo, mut e) = (j + 1, j + 1);
+        let mut depth = 0usize;
+        loop {
+            match at(e)? {
+                Tok::P('(') | Tok::P('[') => depth += 1,
+                Tok::P(')') | Tok::P(']') => depth = depth.checked_sub(1)?,
+                Tok::P('{') => return None,
+                Tok::P('}') if depth == 0 => break,
+                Tok::Nl if depth == 0 => break,
+                _ => {}
+            }
+            e += 1;
+        }
+        let operand_hi = e;
+        let brace = skip(e);
+        if at(brace) != Some(&Tok::P('}')) || at(brace + 1) != Some(&Tok::P(')')) { return None; }
+        if operand_lo == operand_hi { return None; }
+        let close = brace + 1;
+        let over = items.iter().find(|&&(a, _)| word(a) == Some("over")).copied();
+        let labels: Vec<(usize, usize)> = items.iter().filter(|&&(a, _)| word(a) != Some("over"))
+            .copied().collect();
+        let labelled = |&(a, b): &(usize, usize)| {
+            b > a + 2 && matches!(word(a), Some("under" | "seen_from")) && at(a + 1) == Some(&Tok::P(':'))
+        };
+        if !labels.iter().all(labelled) { return None; }
+        let toks = |a: usize, b: usize| self.t[a..b].iter().cloned();
+        let mut made: Vec<(Tok, Span)> = vec![(Tok::Ident("sweep".into()), span(self.i)),
+                                              (Tok::P('('), span(self.i + 1))];
+        made.extend(toks(operand_lo, operand_hi));
+        match (verb, over) {
+            // a face of a station, or of the drawing, at some instant of a declared parameter
+            ("coincident", Some((a, b))) if labels.is_empty() && b == a + 2 => {
+                made.extend(toks(a, b));
+            }
+            // a body under a motion: over an interval, a declared parameter, or the whole roll
+            ("inside", over) => {
+                match over {
+                    Some((a, b)) => made.extend(toks(a, b)),
+                    None => {
+                        let sp = span(k + 1);
+                        made.extend([(Tok::P(','), sp), (Tok::Ident("through".into()), sp),
+                                     (Tok::P(':'), sp), (Tok::Ident(ROLLED.into()), sp)]);
+                    }
+                }
+                for &(a, b) in &labels {
+                    made.push((Tok::P(','), span(a)));
+                    made.extend(toks(a, b));
+                }
+            }
+            _ => return None,
+        }
+        made.push((Tok::P(')'), span(close)));
+        Some((made, close))
     }
 
     /// Whether `solid(` here is followed by a set written in place (#737): a set literal, or a

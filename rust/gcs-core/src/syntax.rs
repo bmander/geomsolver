@@ -1434,6 +1434,10 @@ impl EaseSpec {
 }
 
 
+/// The body a sweep over the whole roll is rolled through (#737), as its set says it: none named,
+/// the body it is cut from or kept in common with, read where the body word joins it.
+pub const ROLLED: &str = "#rolled";
+
 /// A prism, revolution, or body operation (§6.9). Numeric arguments remain
 /// expressions until elaboration.
 #[derive(Clone, Debug)]

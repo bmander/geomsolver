@@ -34,7 +34,7 @@ component Prism(section: face, from: Length, to: Length) := { p |
 component Revolution(section: face, about: line, from: Angle = 0deg, to: Angle = 360deg) := { p |
   turn := frame
   turn turns(ratio: 1) about
-  p coincident(under: turn, t in (from, to)) section
+  p coincident(under: turn, over t in (from, to)) section
 }
 
 // A drafted prism: `Prism`'s points, its section at each ordinate its own with every edge moved

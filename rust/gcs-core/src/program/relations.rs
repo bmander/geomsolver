@@ -772,8 +772,8 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &m
 fn swept_patch(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> bool {
     use crate::syntax::OpArg;
     let Some(w) = r.form.written() else { return false };
-    let Some((key, lo, hi)) = w.args.iter().find_map(|a| match a {
-        OpArg::Within { key, lo, hi } => Some((key, lo, hi)),
+    let Some((key, ends)) = w.args.iter().find_map(|a| match a {
+        OpArg::Over { key, ends } => Some((key, ends)),
         _ => None,
     }) else {
         return false;
@@ -785,10 +785,11 @@ fn swept_patch(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> bool {
     let Some(under) = named("under") else { return false };
     let seen = named("seen_from");
     let mut refuse = |m: String| cx.diags.push(Diag::on(Code::E040, st, m));
-    if key.text != "t" {
-        refuse(format!("a motion's interval is of its roll, `t in (a, b)`: `{}` is no roll", key.text));
+    let Some([lo, hi]) = ends else {
+        refuse(format!("a face swept by a motion is swept over an interval of its roll written \
+            in place: `over {} in (a, b)`", key.text));
         return true;
-    }
+    };
     let [p, x] = w.ops.as_slice() else { return false };
     let point = cx.res.entity(&cx.sk, p).filter(|e| e.kind == EntKind::Point);
     let Some(point) = point.filter(|e| cx.probes.terms.contains_key(&e.i())) else {
