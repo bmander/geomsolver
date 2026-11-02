@@ -14,13 +14,14 @@ it to crates.io; what changes in each release is in [CHANGELOG.md](CHANGELOG.md)
 
 ## What it does
 
-- **Geometry:** planes, cylinders, cones, spheres, ellipsoids, tori, extrusions and revolutions of
-  curves, rational and polynomial B-spline curves and surfaces, and traced intersection curves.
-  Surfaces are parameterised as STEP and OCCT do (the ellipsoid, which neither has, as the sphere
-  is, and written to STEP as its exact rational net), with closed-form inverses and signed
-  distances.
+- **Geometry:** planes, cylinders, cones, spheres, tori, extrusions and revolutions of curves,
+  rational and polynomial B-spline curves and surfaces, traced intersection curves, and the image of
+  any of them under an affine map (an ellipsoid, an elliptic cylinder, a sheared torus). Surfaces
+  are parameterised as STEP and OCCT do, an image as its preimage is, with closed-form inverses and
+  signed distances.
 - **Topology:** oriented edge uses with p-curves, seams, degenerate poles, and a validity check.
 - **Construction:** spheres, ellipsoids, cones (frustums and cylinders too) and tori by their numbers,
+  any solid mapped by an invertible affine map (a shear, a stretch along any axes, a mirror),
   prisms (drafted too), revolutions, and canals (a ball swept along a helix). Profiles are made of
   lines, arcs and splines.
 - **Booleans:** union, cut and common. Intersections between analytic surfaces are closed forms

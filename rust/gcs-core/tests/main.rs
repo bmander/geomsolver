@@ -13,6 +13,7 @@ mod common;
 
 mod accuracy;
 mod admission;
+mod affine;
 mod analysis_corpus;
 mod analysis_words;
 mod angle_about;

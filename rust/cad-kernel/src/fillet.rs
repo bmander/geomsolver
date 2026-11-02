@@ -865,7 +865,7 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
         }
         let cut = match face.surface {
             Surface::Plane(fr) => Cut::Plane {o:p,keep:if dot(leaving,fr.z) > 0. { fr.z } else { scale(fr.z,-1.) }},
-            Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Ellipsoid(..) => Cut::Solid {surface:face.surface.clone(),inside:s < 0.},
+            Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Affine(..) => Cut::Solid {surface:face.surface.clone(),inside:s < 0.},
             _ => return Err(format!("the fillet of {} runs out onto `{}` ({}), which cuts nothing off yet",names(),face.name,
                 face.surface.kind())),
         };

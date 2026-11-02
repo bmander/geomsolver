@@ -1,11 +1,13 @@
-//! The ellipsoid as a surface of the kernel's own (`geom::Surface::Ellipsoid`): a quadric with the
-//! sphere's parameters, its foot found exactly (`geom::ellipsoid_foot`), a plane's meeting with it
-//! an ellipse in closed form, its solid one face (`build::ellipsoid`), and written to STEP as its
-//! exact rational net (`nurbs::ellipsoid_net`) — brep-bench's geometry/ellipsoid and
-//! geometry/ellipsoid-half, both with semi-axes 6, 4 and 3, held to their closed forms.
+//! The ellipsoid as the affine image of a sphere (`geom::Surface::Affine` of a `Sphere`): the
+//! sphere's parameters, its foot found exactly (`affine::ellipsoid_foot`), a plane's meeting with
+//! it an ellipse in closed form (the image of a circle), its solid one face (`build::ellipsoid`, a
+//! ball stretched), and written to STEP as its exact rational net (`step::affine_net`) —
+//! brep-bench's geometry/ellipsoid and geometry/ellipsoid-half, both with semi-axes 6, 4 and 3,
+//! held to their closed forms.
 use gcs_core::brep::boolean::{combined,Op};
 use gcs_core::brep::build::{ellipsoid,prism,square,ProfileEdge,Profile};
-use gcs_core::brep::geom::{ellipsoid_foot,Curve,Frame,Surface,V};
+use gcs_core::brep::affine::{ellipsoid_foot,Affine};
+use gcs_core::brep::geom::{Curve,Frame,Surface,V};
 use gcs_core::brep::props::{area,volume};
 use gcs_core::brep::topo::Brep;
 use gcs_core::rng::Rng;
@@ -20,6 +22,9 @@ const SEMI: [f64;3] = [6.,4.,3.];
 /// Its area by Legendre's closed form (the case's own number).
 const AREA: f64 = 231.24821501597344;
 
+/// The ellipsoid of semi-axes `SEMI` along `f`'s axes: the unit sphere on `f` stretched.
+fn ellipsoid_on(f: Frame) -> Surface { Surface::Sphere(f,1.).mapped(&Affine::stretch(&f,SEMI).unwrap()).0 }
+
 /// The solid is one face on its ellipsoid with the sphere's topology, valid, and its volume and
 /// area the closed forms; placed anywhere, turned any way, and with its seam about either of the
 /// half ellipse's axes, it stays so, its box the ellipsoid's own.
@@ -28,7 +33,7 @@ fn an_ellipsoid_is_its_closed_form() {
     let b = ellipsoid([0.;3],[0.,0.,1.],[1.,0.,0.],SEMI).unwrap();
     b.check(1e-9).unwrap();
     assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(1,3,2));
-    assert!(matches!(b.faces[0].surface,Surface::Ellipsoid(_,e) if e == SEMI));
+    assert!(matches!(&b.faces[0].surface,Surface::Affine(m) if matches!(m.of,Surface::Sphere(..))));
     close(volume(&b),96.*PI,1e-12);
     close(whole_area(&b),AREA,1e-10);
     let (lo,hi) = b.bounds();
@@ -93,7 +98,7 @@ fn an_ellipsoids_foot_is_its_nearest_point() {
 #[test]
 fn an_ellipsoids_closed_forms_agree() {
     let f = Frame::new([1.,2.,-1.],[0.2,-0.3,1.],[1.,0.4,0.]);
-    let s = Surface::Ellipsoid(f,SEMI);
+    let s = ellipsoid_on(f);
     let mut rng = Rng::new(11);
     for _ in 0..200 {
         let uv = [rng.uniform(0.,TAU),rng.uniform(-1.5,1.5)];
@@ -120,27 +125,28 @@ fn an_ellipsoids_closed_forms_agree() {
 }
 
 /// The net STEP writes is the ellipsoid: at the net's parameters of any `(u, v)` it is the
-/// ellipsoid's point there, its quarter turns where the two parameters agree.
+/// ellipsoid's point there, its quarter turns where the two parameters agree, and the rates of the
+/// net's parameters are their own.
 #[test]
 fn an_ellipsoids_net_is_the_ellipsoid() {
-    use gcs_core::brep::nurbs::{arc_parameter,ellipsoid_net};
-    let f = Frame::new([1.,2.,-1.],[0.2,-0.3,1.],[1.,0.4,0.]);
-    let (s,net) = (Surface::Ellipsoid(f,SEMI),ellipsoid_net(&f,SEMI));
-    net.check().unwrap();
+    let b = ellipsoid([1.,2.,-1.],[0.2,-0.3,1.],[1.,0.4,0.],SEMI).unwrap();
+    let n = gcs_core::brep::step::affine_net(&b,0).expect("an affine face").unwrap();
+    n.net.check().unwrap();
+    let s = &b.faces[0].surface;
     let mut rng = Rng::new(3);
     for k in 0..400 {
         // the quarter turns first, then anywhere
         let uv = if k < 25 { [FRAC_PI_2*(k%5) as f64,-FRAC_PI_2+FRAC_PI_2*(k/5) as f64/2.] }
             else { [rng.uniform(0.,TAU),rng.uniform(-FRAC_PI_2,FRAC_PI_2)] };
-        let (a,da) = arc_parameter([0.,TAU],uv[0]);
-        let (b,db) = arc_parameter([-FRAC_PI_2,FRAC_PI_2],uv[1]);
-        assert!(dist(net.point(a,b),s.point(uv)) <= 1e-12,"{uv:?} on the net at {a}, {b}");
-        // the rates are the parameters' own: a step in angle is the step the rate says on the net
+        let ([a,c],rate) = n.uv(uv);
+        assert!(dist(n.net.point(a,c),s.point(uv)) <= 1e-12,"{uv:?} on the net at {a}, {c}");
+        // a step in angle is the step the rate says on the net
         let h = 1e-6;
-        let (a1,_) = arc_parameter([0.,TAU],(uv[0]+h).min(TAU));
-        let (b1,_) = arc_parameter([-FRAC_PI_2,FRAC_PI_2],(uv[1]+h).min(FRAC_PI_2));
-        if uv[0]+h <= TAU { close((a1-a)/h,da,1e-5); }
-        if uv[1]+h <= FRAC_PI_2 { close((b1-b)/h,db,1e-5); }
+        if uv[0]+h <= TAU && uv[1]+h <= FRAC_PI_2 {
+            let (next,_) = n.uv([uv[0]+h,uv[1]+h]);
+            close((next[0]-a)/h,rate[0],1e-5);
+            close((next[1]-c)/h,rate[1],1e-5);
+        }
     }
 }
 
@@ -150,7 +156,7 @@ fn an_ellipsoids_net_is_the_ellipsoid() {
 fn a_plane_meets_an_ellipsoid_in_an_ellipse() {
     use gcs_core::brep::ssi::{intersect,Ssi};
     let f = Frame::new([1.,2.,-1.],[0.2,-0.3,1.],[1.,0.4,0.]);
-    let s = Surface::Ellipsoid(f,SEMI);
+    let s = ellipsoid_on(f);
     let mut rng = Rng::new(5);
     for _ in 0..50 {
         let n: V = std::array::from_fn(|_| rng.uniform(-1.,1.));

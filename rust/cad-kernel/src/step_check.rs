@@ -248,7 +248,7 @@ impl Solid {
     /// counts, and each face's surface as that writer writes it.
     pub fn of(b: &crate::topo::Brep) -> Solid {
         use crate::{geom::Surface,topo::EdgeCurve};
-        let faces = b.faces.iter().map(|f| {
+        let faces = b.faces.iter().enumerate().map(|(fi,f)| {
             // a loft's face is written as the B-spline fitted to it
             // (one the writer could not fit was refused there, and has no numbers here)
             if let Surface::Blend(_,bl) = &f.surface {
@@ -260,9 +260,9 @@ impl Solid {
                 let numbers = crate::step::family_net(w).map(|n| crate::step::net_numbers(&n)).unwrap_or_default();
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
             }
-            // an ellipsoid as its exact net
-            if let Surface::Ellipsoid(ef,e) = &f.surface {
-                let numbers = crate::step::net_numbers(&crate::nurbs::ellipsoid_net(ef,*e));
+            // an affine image as its face's net
+            if let Some(net) = crate::step::affine_net(b,fi) {
+                let numbers = net.map(|n| crate::step::net_numbers(&n.net)).unwrap_or_default();
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
             }
             // a sheet is written as its own net
@@ -273,7 +273,7 @@ impl Solid {
             let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,
                 Surface::Cone(..) => CONE,Surface::Sphere(..) => SPHERE,Surface::Torus(..) => TORUS,
                 Surface::Revolution(..) => REVOLUTION,Surface::Extrusion(..) => EXTRUSION,
-                Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Ellipsoid(..) => BSPLINE };
+                Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Affine(..) => BSPLINE };
             let mut numbers: Vec<f64> = frame.o.iter().chain(&frame.z).chain(&frame.x).copied().collect();
             numbers.extend(scalars);
             Face {kind,reversed:f.reversed,indirect:false,numbers}

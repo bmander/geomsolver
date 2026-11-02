@@ -8,14 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
-- **The ellipsoid** (`geom::Surface::Ellipsoid`, **a new variant**): a quadric of three semi-axes
-  along its frame's axes, parameterised as the sphere is, its foot the exact nearest point
-  (`geom::ellipsoid_foot`, Eberly's bisection) and its signed distance and normal read there; a
-  plane meets it in an ellipse in closed form (`ssi::intersect`) and a line in a chord
-  (`query::curve_surface`). Its solid by its numbers (`build::ellipsoid`): one face, its seam a
-  half ellipse and a degenerate edge at each pole. Written to STEP, which has no ellipsoid, as its
-  exact rational biquadratic net (`nurbs::ellipsoid_net`), its pcurves carried onto the net's
-  parameters (`nurbs::arc_parameter`).
+- **Affine maps of solids** (`Brep::mapped`, `affine::Affine`): any invertible `p ↦ M p + t`
+  carries a solid onto its exact image, its topology and pcurves its own. A kind whose image is
+  its own kind is written so (`Surface::mapped`, `Curve::mapped`: a similarity scales, a plane is
+  a plane, a line a line, a conic an ellipse, a B-spline its poles); anything else is wrapped,
+  `geom::Surface::Affine` and `geom::Curve::Affine` (**new variants**), its foot found in space's
+  metric (exact for a sphere's and a cylinder's image) and its meetings read in the preimage's
+  closed forms and mapped back (`ssi::intersect`, `ssi::same`, `query::curve_surface`). Written to
+  STEP as each face's exact net with its poles mapped (`step::affine_net`), pcurves fitted in the
+  net's parameters (`nurbs::arc_parameter`).
+- **The ellipsoid** by its numbers (`build::ellipsoid`): the unit ball stretched along a frame's
+  axes, one face on the sphere's image, its seam a half ellipse.
 
 - **The surface arrangement** (#735). A cell complex (`complex::Complex`): faces each parting two
   cells, an edge bounding any number of faces in order round it (tangent faces by their curvature),

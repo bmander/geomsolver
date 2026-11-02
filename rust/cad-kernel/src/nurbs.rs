@@ -364,26 +364,6 @@ pub fn arc_parameter([a0,a1]: [f64;2],a: f64) -> (f64,f64) {
     (a0+d*(k as f64+p/(p+q)),d*(d/2.).dsin()/(2.*(p+q)*(p+q)))
 }
 
-/// **The ellipsoid as a rational biquadratic net** (`geom::Surface::Ellipsoid`, its semi-axes `e`
-/// along `f`'s axes), exactly: the circle `arc` makes of a whole turn in `u` times the half circle it
-/// makes from pole to pole in `v`, each pole the product's stretched and placed and weighted the
-/// product of the two weights, its first and last rows of `v` each one point, a pole. Its
-/// parameters are the two arcs' (`arc_parameter`), meeting the ellipsoid's own `(u, v)` at each
-/// quarter turn and nowhere else between; what a reader with no ellipsoid reads one as.
-pub fn ellipsoid_net(f: &Frame,e: [f64;3]) -> Net {
-    use std::f64::consts::{FRAC_PI_2,TAU};
-    let round = arc(&Frame::WORLD,1.,[0.,TAU]);
-    let meridian = arc(&Frame::WORLD,1.,[-FRAC_PI_2,FRAC_PI_2]);
-    let wu = round.weights.as_ref().expect("an arc is rational");
-    let wv = meridian.weights.as_ref().expect("an arc is rational");
-    let poles = round.poles.iter().map(|c| meridian.poles.iter().map(|m| {
-        let l = [e[0]*m[0]*c[0],e[1]*m[0]*c[1],e[2]*m[1]];
-        std::array::from_fn(|k| f.o[k]+l[0]*f.x[k]+l[1]*f.y[k]+l[2]*f.z[k])
-    }).collect()).collect();
-    let weights = wu.iter().map(|&a| wv.iter().map(|&b| a*b).collect()).collect();
-    Net {du:2,dv:2,uknots:round.knots.clone(),vknots:meridian.knots.clone(),poles,weights:Some(weights)}
-}
-
 /// Above this many points an interpolation is solved in its band: the dense factorisation below is
 /// cubic in them, and a trace across a whole blank refined to thousands of points took minutes a
 /// round. Below it the dense solve stands, so every curve and sheet fitted before is fitted alike.

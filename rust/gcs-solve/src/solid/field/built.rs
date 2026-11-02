@@ -32,7 +32,8 @@ impl BuiltField {
     /// An exact boundary as a field, or `None` where it has a face no foot is exact on.
     pub fn new(exact: &crate::solid::Exact) -> Option<Self> {
         let exact_feet = |f: &crate::brep::topo::Face| matches!(f.surface, Surface::Plane(_)
-            | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Ellipsoid(..) | Surface::Torus(..));
+            | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..))
+            || matches!(&f.surface, Surface::Affine(m) if m.quadric.is_some());
         if exact.brep.faces.is_empty() || !exact.brep.faces.iter().all(exact_feet) {
             return None;
         }

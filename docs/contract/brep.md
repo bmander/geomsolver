@@ -25,26 +25,47 @@ intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `c
 sphere, the cone and the torus by their numbers as OCCT's `MakeSphere`/`MakeCone`/`MakeTorus` take
 them, each its meridian turned — `sphere(c, axis, r)`, `cone(o, axis, r0, r1, h)`,
 `torus(c, axis, major, minor)` — and the ellipsoid, `ellipsoid(c, axis, x, [a, b, c])`, the
-sphere's topology on its own surface — and what is no such solid refused by name: the kernel's API
+unit ball on that frame stretched — and what is no such solid refused by name: the kernel's API
 speaks the vocabulary its other users bring, which the language need not, `std.sets.Sphere`
 staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_torus_…`),
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
 seam curves), `recipe`.
-**The ellipsoid is a surface of its own** (`Surface::Ellipsoid`; brep-bench's geometry/ellipsoid and
-ellipsoid-half), not a ball stretched into a B-spline: three semi-axes along its frame's axes,
-parameterised as the sphere is, so a ball's topology and pcurves are its own; its foot the exact
-nearest point inside and out (`geom::ellipsoid_foot`, Eberly's bisection, never a radial
-projection), its signed distance the distance there and its gradient the normal there; not of
-revolution (`axis` none, even where two semi-axes are equal) and with no offset in closed form. A
-plane meets it in an ellipse in closed form, a touch judged by the gap to its support along the
-plane's normal, and a line in a chord; anything else is traced. STEP has no ellipsoid, so it is
-written as its exact rational biquadratic net (`nurbs::ellipsoid_net`), whose parameters are no
-affine image of its own: its pcurves are fitted in the net's (`nurbs::arc_parameter`, a quarter
-arc reaching the angle `θ` at the fraction `τ` where `τ / (1 − τ) = sin(θ/2) / sin((d − θ)/2)`)
-and measured on the net. `ellipsoid::an_ellipsoid_is_its_closed_form`,
-`an_ellipsoids_foot_is_its_nearest_point`, `an_ellipsoid_cut_at_its_equator_is_its_half` and
-`an_ellipsoid_is_written_to_step_as_its_net` are the gate.
+**An affine map carries a solid onto its image exactly** (`Brep::mapped`, `affine::Affine`, any
+invertible `p ↦ M p + t`): its topology and pcurves are the solid's own, because every surface's
+and curve's image keeps their parameters. A kind whose image is a kind of its own is written so
+(`Surface::mapped`, `Curve::mapped`, each saying what its parameters become): a rigid map moves
+it, a similarity scales it (a sphere stays a sphere, a cone a cone), a plane is a plane on its
+frame made orthonormal again (its pcurves carried by the 2D map of its parameters), a B-spline its
+poles mapped, a line a line at the speed the map gives it, a circle or an ellipse an ellipse about
+its principal axes started where the map takes its start, a traced curve its points and surfaces,
+a blend carried along a line the blend of its edges' images. Anything else is wrapped,
+`Surface::Affine` and `Curve::Affine`, `A(S(u, v))` over the preimage's own parameters: an
+ellipsoid is a sphere's image (`build::ellipsoid`, brep-bench's geometry/ellipsoid and
+ellipsoid-half), an elliptic cylinder a cylinder's, a sheared torus, revolution, extrusion, screwed
+blend or face family's wall theirs. **What is measure is measured in space; what is incidence is
+read in the preimage.** A wrapped surface's foot is the nearest point in space's own metric —
+exact for a sphere's or a cylinder's image (`Quadric`, its principal axes by `sym3_eigen`, the
+foot by Eberly's bisection, `ellipsoid_foot`, `ellipse_foot`), by Newton from the preimage's foot
+otherwise — and its signed distance the distance there, on the side the preimage's says. Where it
+meets another surface is where its preimage meets that surface carried back, found in the
+preimage's closed forms at the tolerance shrunk by the map's greatest stretch and mapped back
+(`ssi::intersect`'s `pulled_back`: a plane meets a sphere's image in an ellipse, a box's sheared
+faces each other in lines); traced where the other, carried back, is still an image, or where the
+preimages have none. A line meets one likewise (`query::curve_surface`); two images are one where
+their preimages are, or their quadrics' forms agree (`ssi::same`). A map reversing space walks
+every loop the other way round, and a face's sense follows its normal's image (`M⁻ᵀ`, by the sign
+of `det M` and of its parameters' map). An image is not of revolution and has no offset in closed
+form. STEP has no image of a surface: each wrapped face is written as its preimage's exact net
+over the parameters it reaches, poles mapped (`step::affine_net`: one turn of a rational circle by
+a sphere's or a torus's meridian, a cylinder's or a cone's generator, a revolution's spline, an
+extrusion's spline by its step; a blend's or a family wall's fitted net), its pcurves fitted in the
+net's parameters (`nurbs::arc_parameter`, a quarter arc reaching the angle `θ` at the fraction `τ`
+where `τ / (1 − τ) = sin(θ/2) / sin((d − θ)/2)`) and measured on the net. `affine::every_kind_of_face_maps_to_its_image`
+(every kind under a shear, a skew stretch, a reversing map and a similarity: valid, `|det M|`
+times the volume, mapped back itself, its nets its surfaces, read back from STEP, meshed closed),
+`affine::a_boolean_of_images_is_the_image_of_the_boolean`, `face_family::a_family_mapped_is_its_image`
+and the `ellipsoid::` tests are the gate.
 A traced pair is seeded where edges cross faces; between analytic
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),

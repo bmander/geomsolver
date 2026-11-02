@@ -871,3 +871,30 @@ fn sparse_cholesky_orders_are_permutations() {
         }
     }
 }
+
+/// The symmetric eigenproblem the quadrics' principal axes come from: `A V = V Λ`, `Vᵀ V = I`, and
+/// the eigenvalues the reference's (`nalgebra`).
+#[test]
+fn a_symmetric_three_by_three_is_diagonalised() {
+    let mut rng = gcs_core::rng::Rng::new(23);
+    for k in 0..200 {
+        let mut a: [[f64;3];3] = [[0.;3];3];
+        for i in 0..3 { for j in i..3 { let x = rng.uniform(-2.,2.); a[i][j] = x; a[j][i] = x; } }
+        // repeated eigenvalues too
+        if k % 10 == 0 { a = [[2.,0.,0.],[0.,2.,0.],[0.,0.,-1.]]; }
+        let (l,v) = gcs_core::brep::affine::sym3_eigen(a);
+        for i in 0..3 {
+            let av: [f64;3] = std::array::from_fn(|r| (0..3).map(|c| a[r][c]*v[i][c]).sum());
+            for r in 0..3 { assert!((av[r]-l[i]*v[i][r]).abs() <= 1e-13,"A v = λ v"); }
+            for j in 0..3 {
+                let d: f64 = (0..3).map(|r| v[i][r]*v[j][r]).sum();
+                assert!((d-if i == j { 1. } else { 0. }).abs() <= 1e-13,"VᵀV = I");
+            }
+        }
+        let reference = nalgebra::Matrix3::from_fn(|i,j| a[i][j]).symmetric_eigenvalues();
+        let (mut got,mut want) = (l.to_vec(),reference.iter().copied().collect::<Vec<_>>());
+        got.sort_by(f64::total_cmp);
+        want.sort_by(f64::total_cmp);
+        for (g,w) in got.iter().zip(&want) { assert!((g-w).abs() <= 1e-12,"{got:?} against {want:?}"); }
+    }
+}
