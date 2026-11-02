@@ -1283,7 +1283,7 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   // with it.  Both are in the buffers; this checks the *binding* reaches them, which is this
   // layer's business and not the geometry, whose test is `gcs-core/tests/mesh.rs`.
   const src = [
-    'unit mm', 'use std', 'in std.front {',
+    'unit mm', 'use std', 'use std.solids', 'in std.front {',
     'a := point', 'b := point hint((60, 0))',
     'c := point hint((60, 40))', 'd := point hint((0, 40))',
     '(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close',
@@ -1453,7 +1453,7 @@ test('a solid that does not evaluate is refused with the core\'s reason, its nei
   // the triangle turned about `std.x`, which crosses it: the box once threw on the null face
   // table on every paint, and the page stopped drawing
   const src = [
-    'use std', 'in std.front {', 'a := point hint((-0.4, 0))', 'b := point hint((0.28, -0.4))',
+    'use std', 'use std.solids', 'in std.front {', 'a := point hint((-0.4, 0))', 'b := point hint((0.28, -0.4))',
     'c := point hint((0.28, 0.38))', 'ab := line(a, b)', 'bc := line(b, c)', 'ca := line(c, a)', '}',
     'f0 := face(ab, bc, ca)', 'b0 := solid(std.solids.Revolution(f0, about: bc, to: 271))',
     'f1 := face(ab, bc, ca)', 'b1 := solid(std.solids.Revolution(f1, about: std.x))', '',
@@ -1470,7 +1470,8 @@ test('a solid that does not evaluate is refused with the core\'s reason, its nei
 
 test('a named component chain reaches the browser as the same swept mesh', () => {
   const src = [
-    'unit mm', 'use std', 'use components.parts', 'in std.front {', 'O := point', 'fix((0, 0)) O',
+    'unit mm', 'use std', 'use std.solids', 'use components.parts', 'in std.front {', 'O := point',
+    'fix((0, 0)) O',
     'boss := components.parts.Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)', '}',
     'block := solid(std.solids.Prism(boss.profile, from: -8mm, to: 0))', '',
   ].join('\n');
@@ -1502,7 +1503,7 @@ test('invalid solid exports surface the cores geometry diagnostic', async () => 
 
 test('a material reaches the binding in SI, with the solids made of it (#510 P3)', () => {
   const doc = Document.read([
-    'unit in', 'use std',
+    'unit in', 'use std', 'use std.solids',
     'steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)',
     'in std.top {', '  rim := radius(1in) circle(center: std.top.origin)',
     '  disc := solid(std.solids.Prism(face(rim), from: -0.25in, to: 0)) of steel', '}', ''].join('\n'));
@@ -2196,8 +2197,8 @@ test('an extrusion is written by name through the edit API, and resized in place
   const e = d.extrude(['ab', 'bc', 'ck', 'ka'], []);
   assert.equal(e.refused, null);
   assert.deepEqual(e.names, ['b0', 'f0']);
-  assert.ok(/f0 := face\(ab, bc, ck, ka\)\nb0 := solid\(f0, depth: [\d.]+\)\n$/.test(e.text),
-            e.text);
+  assert.ok(/f0 := face\(ab, bc, ck, ka\)\nb0 := solid\(std\.solids\.Prism\(f0, from: -[\d.]+, to: 0\)\)\n$/
+    .test(e.text), e.text);
   const next = Document.read(e.text);
   const b0 = next.solids().find((s) => s.name === 'b0')!.index;
   const wider = next.setSweep(b0, { from: '0', to: '7' });
@@ -2699,7 +2700,7 @@ test('a module the host hands over resolves a use before the library', async () 
   unresolved.dispose();
   // the host fetches: one name asked once, a module of the library (`std`) left to it
   const asked: string[] = [];
-  const got = await modules.link('use std\nuse std.solids\n' + doc, async (p) => {
+  const got = await modules.link('use std\n' + doc, async (p) => {
     asked.push(p);
     return p === 'demo/parts.sv' ? mod : null;
   });
@@ -2715,17 +2716,18 @@ test('a module the host hands over resolves a use before the library', async () 
 });
 
 test('related files include transitive libraries and host overrides without duplicates or cycles', () => {
-  const a = 'use demo.b\nuse std\nuse std.solids\n';
+  const a = 'use demo.b\nuse std\n';
   const b = 'use demo.a\nuse hardware\nuse missing\n';
   modules.provide('demo.a', a);
   modules.provide('demo.b', b);
   try {
     const files = modules.related('use demo.a\nuse demo.b\n');
-    // `hardware` brings `std.shapes` in, a module under `std` and a file of its own
+    // `hardware` brings `std.solids` and `std.shapes` in, modules under `std` and files of their
+    // own
     assert.deepEqual(files.map((f) => f.path),
-      ['demo/a.sv', 'demo/b.sv', 'std.sv', 'hardware.sv', 'std/shapes.sv']);
+      ['demo/a.sv', 'demo/b.sv', 'std.sv', 'hardware.sv', 'std/solids.sv', 'std/shapes.sv']);
     // what the host handed over is marked, and the library's own is not
-    assert.deepEqual(files.map((f) => f.provided), [true, true, false, false, false]);
+    assert.deepEqual(files.map((f) => f.provided), [true, true, false, false, false, false]);
     // installing a list replaces what was handed over with it
     modules.install([['demo.a', a]]);
     assert.ok(modules.provided('demo.a') && !modules.provided('demo.b'));

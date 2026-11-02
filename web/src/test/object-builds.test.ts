@@ -303,7 +303,7 @@ test('a store keeps builds between openings: the second asks no worker, and draw
   assert.equal(second.asked, 0, 'every build taken from the store');
   assert.deepEqual(second.triangles, first.triangles, 'the same faces');
   // a changed object is built again, the others taken from the store
-  const third = await open(TWO.replace(/(two := solid\(.*depth: )10/, '$112'));
+  const third = await open(TWO.replace(/(two := solid\(.*from: )-10/, '$1-12'));
   assert.equal(third.asked, 1);
   // bounded: past its limit the least recently used goes
   const small = new MemoryStore(1);

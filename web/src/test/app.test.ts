@@ -1741,7 +1741,7 @@ test('a standard plane the document does not have comes in with `use std` on the
   click(view, 10, 20);
   assert.equal(view.pendingPlane, null);
   assert.equal(view.doc.nameOf(view.plane!), 'std.side');
-  assert.ok(view.source.startsWith('use std\nuse std.solids\n'), view.source);
+  assert.ok(view.source.startsWith('use std\n'), view.source);
   // a second point: the first keeps its clause, and nothing of the library is copied in
   click(view, 30, 5);
   assert.equal(view.source.match(/ in std\.side/g)?.length, 2, view.source);
@@ -1893,7 +1893,7 @@ test('a new document is one undo step, and takes nothing in flight with it', () 
   assert.ok(view.sketch.planes.length, 'the bracket');
   view.undo();
   assert.notEqual(view.source, before);
-  assert.equal(view.source, 'use std\nuse std.solids\n', 'back to the sheet it replaced');
+  assert.equal(view.source, 'use std\n', 'back to the sheet it replaced');
 });
 
 /** The spatial demos the menu offers as files: each opens and solves, and the one freedom the
@@ -2348,7 +2348,8 @@ test('a thickness typed or dragged rewrites the solid in place, in the click\'s 
   const to = seenAt(view, [85, -15, 5]);
   cv.fire('pointerdown', pointer(...arrow.tip));
   cv.fire('pointermove', pointer(...to));
-  assert.ok(view.source.includes('depth: 12'), 'nothing is written while it is dragged');
+  assert.ok(view.source.includes('b0 := solid(std.solids.Prism(f0, from: -12, to: 0))'),
+            'nothing is written while it is dragged');
   cv.fire('pointerup', pointer(...to));
   assert.ok(view.source.includes('b0 := solid(std.solids.Prism(f0, from: 0, to: 15))'), view.source);
   const tip = view.extentArrow()!.tip!;
@@ -2480,7 +2481,8 @@ test('about an axis already selected a click revolves at once, and its turn is t
   cv.fire('pointerdown', pointer(...arrow.tip));
   cv.fire('pointermove', pointer(...seenAt(view, [-8.5, 8.5, 4])));
   cv.fire('pointermove', pointer(...to));
-  assert.ok(view.source.includes('sweep: 90)'), 'nothing is written while it is dragged');
+  assert.ok(view.source.includes('b0 := solid(std.solids.Revolution(f0, about: std.z, to: 90))'),
+            'nothing is written while it is dragged');
   cv.fire('pointerup', pointer(...to));
   assert.ok(view.source.includes('b0 := solid(std.solids.Revolution(f0, about: std.z, to: 180))'), view.source);
   // a minus typed turns it the other way, and a whole turn is written as none
