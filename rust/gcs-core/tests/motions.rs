@@ -53,7 +53,8 @@ fn seen(e: &Elaborated, under: &str, seen_from: &str) -> usize {
 fn push_relative(sk: &mut gcs_core::model::Sketch, source: usize, observer: usize) -> usize {
     sk.motions.push(MotionE {
         def: MotionDef::Relative {source: source as u32,observer: observer as u32},
-        name: format!("m{}",sk.motions.len()),class: Default::default(),numbers: None});
+        name: format!("m{}",sk.motions.len()),class: Default::default(),numbers: None,
+        about: false});
     sk.motions.len()-1
 }
 
@@ -180,7 +181,7 @@ fn motions_reject_wrong_units_missing_references_and_retired_spellings() {
         ("bad := frame\nbad turns(2mm) ax","ratio"),
         // a joint's number no `fix` states is the solve's (stage 5); one measured is no number
         ("bad := frame\nbad turns(length(ax) / 1mm) ax","measures the solved"),
-        ("bad := point\nbad coincident(under: ax,t == 0deg) x","a motion is read off a frame"),
+        ("bad := point\nbad coincident(under: o,t == 0deg) x","a motion is read off a frame"),
         ("still := frame\nbad := point\nbad coincident(under: still,t == 0deg) x","does not move"),
     ] {
         let e = build(&format!("{AXES}{tail}\n"));

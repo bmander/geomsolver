@@ -186,7 +186,7 @@ fn invalid_intervals_cycles_and_nested_sweeps_are_explicit() {
         "bad := solid({ p | p inside(under: generating, over t in (1mm, 2mm)) tool })",
         "bad := solid(tool,under: generating,from: 0deg,to: 1deg,at: 0deg)",
         "bad := solid(tool,under: generating,from: 0deg,to: 1deg,depth: 1mm)",
-        "bad := solid({ p | p inside(under: ax, over t in (0deg, 1deg)) tool })",
+        "bad := solid({ p | p inside(under: o, over t in (0deg, 1deg)) tool })",
         "bad := solid({ p | p inside(under: generating, over t in (0deg, 1deg)) bad })"] {
         let (p,errors) = crate::common::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);

@@ -129,7 +129,7 @@ fn indexed_pattern_stl_must_have_closed_encoded_topology() {
 fn malformed_placements_and_cycles_are_refused() {
     for bad in ["bad := solid(stock, under: turn)","bad := stock at 90deg",
         "bad := solid(stock, under: turn, at: 90deg, depth: 2mm)",
-        "bad := stock at(under: ax) 90deg","bad := stock at(under: turn) 2mm",
+        "bad := stock at(under: o) 90deg","bad := stock at(under: turn) 2mm",
         "bad := profile at(under: turn) 90deg","bad := bad at(under: turn) 90deg"] {
         let (p,errors) = crate::common::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);
