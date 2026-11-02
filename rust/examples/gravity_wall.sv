@@ -6,6 +6,7 @@
 // first mode in its plane is above 50Hz.
 unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 
 H := 6000mm
@@ -33,7 +34,7 @@ in std.front {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-wall := solid(section, from: -length / 2, to: length / 2) of concrete
+wall := solid(std.solids.Prism(section, from: -length / 2, to: length / 2)) of concrete
 
 // what it is made of answers no load, so it is the drawing's, claimed of it
 claim mass(>= 0.999999 * concrete.rho * (crest + foot) / 2 * H * length) wall

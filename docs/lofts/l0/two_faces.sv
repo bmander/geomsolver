@@ -38,4 +38,4 @@ in end_plane {
 inlet := face(a0, a1, a2, a3, -> close)
 outlet := face(b0, b1, b2, b3, -> close)
 param s: Scalar over (0, 1)
-body := sweep(std.stations.Ruled(inlet, outlet).f over s)
+body := solid({ p | p coincident(over s) std.stations.Ruled(inlet, outlet).f })

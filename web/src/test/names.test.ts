@@ -21,8 +21,8 @@ const RUNG = 'component Rung(a: point, b: point, len: Length) {\n'
   + 'p := point\nq := point\nt0 := Rung(p, q, len: 50)\nt1 := Rung(q, p, len: 40)\n'
   + 't0.mid distance(3) q\n';
 
-const BODY = 'use std\nin std.front {\no := point\nrim := circle(center: o) hint(r: 10)\n}\n'
-  + 'body := solid(face(rim), depth: 8)\n';
+const BODY = 'use std\nuse std.solids\nin std.front {\no := point\nrim := circle(center: o) hint(r: 10)\n}\n'
+  + 'body := solid(std.solids.Prism(face(rim), from: -8, to: 0))\n';
 
 function viewOf(text: string): SketchView {
   const v = new SketchView(fakeCanvas(), Document.read(text));

@@ -8,6 +8,7 @@
 // is less than the plate's, whose root holds its section from warping.
 unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 
 L := 300mm
@@ -33,7 +34,7 @@ in std.top {
   outline := (low := line(root_low, end_low)) -> (end := line(end_low, end_high)) ->
              (high := line(end_high, root_high)) -> (root := line(root_high, root_low)) -> close
 }
-tongue := solid(outline, from: 0mm, to: t) of steel
+tongue := solid(std.solids.Prism(outline, from: 0mm, to: t)) of steel
 
 scenario ring {
   fixed tongue.root

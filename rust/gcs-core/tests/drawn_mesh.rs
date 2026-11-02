@@ -16,6 +16,7 @@ fn plate(w: f64, d: f64, h: f64) -> String {
     format!("
 unit mm
 use std
+use std.solids
 use std.place (offset)
 in std.front {{
   a := point hint((0, 0))
@@ -30,15 +31,15 @@ in std.front {{
   bc := line(b, c)
   ce := line(c, e)
   ea := line(e, a)
-  body := solid(face(ab, bc, ce, ea), from: 0mm, to: {h}mm)
+  body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: {h}mm))
 }}
 ")
 }
 
 /// The rounded plate of `rect_fillets.sv`, 10 deep.
 fn rounded() -> String {
-    include_str!("../../examples/rect_fillets.sv").to_string()
-        + "\nin std.front {\n  body := solid(face(bottom, a_br, right, a_tr, top, a_tl, left, a_bl), from: 0, to: 10)\n}\n"
+    include_str!("../../examples/rect_fillets.sv").replacen("\nuse std\n", "\nuse std\nuse std.solids\n", 1)
+        + "\nin std.front {\n  body := solid(std.solids.Prism(face(bottom, a_br, right, a_tr, top, a_tl, left, a_bl), from: 0, to: 10))\n}\n"
 }
 
 fn only_object(sk: &Sketch) -> usize {
@@ -138,6 +139,7 @@ fn the_solids_of_one_binding_draw_from_one_geometry() {
     let src = "
 unit mm
 use std
+use std.solids
 use std.place (offset)
 component Plate(w: Length) {
   in std.front {
@@ -153,7 +155,7 @@ component Plate(w: Length) {
     bc := line(b, c)
     ce := line(c, e)
     ea := line(e, a)
-    body := solid(face(ab, bc, ce, ea), from: 0mm, to: 3mm)
+    body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: 3mm))
   }
 }
 in (f := frame) { one := Plate(w: 20mm) }

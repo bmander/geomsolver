@@ -10,6 +10,7 @@
 // the plate, and the side view there draws its outline.
 
 use std
+use std.solids
 use components.dims (dhub, rfw, wfw)
 use components.parts
 
@@ -31,8 +32,8 @@ component Flywheel(f: group) {
   }
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
-  plate := solid(face(rim), from: -wfw / 2, to: wfw / 2)
-  hub := solid(face(bore), from: -wfw / 2, to: wfw / 2)
+  plate := solid(std.solids.Prism(face(rim), from: -wfw / 2, to: wfw / 2))
+  hub := solid(std.solids.Prism(face(bore), from: -wfw / 2, to: wfw / 2))
   body := solid(plate)
   hub cut body
   gs.bore cut body

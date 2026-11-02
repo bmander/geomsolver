@@ -7,6 +7,7 @@
 
 unit mm
 use std
+use std.solids
 use std.place (coords, on_u)
 use std.motion (turns, rolls)
 wheel_pitch := 16mm
@@ -55,7 +56,7 @@ in std.front {
   std.origin midpoint ba
   b1 distance(wheel_pitch + addendum, side: right) spindle
   length(thickness) bo
-  construction blank := solid(blank_section, about: spindle)
+  construction blank := solid(std.solids.Revolution(blank_section, about: spindle))
 
   // The pin: a short cylinder on the pinion's radius, taller than the blank is thick.
   private pin_at := point hint((18, 0))
@@ -71,9 +72,9 @@ in std.front {
   length(pin_radius) qb
   length(thickness + 2mm) qo
 }
-construction pin := solid(pin_section, about: qa)
+construction pin := solid(std.solids.Revolution(pin_section, about: qa))
 
 // Everything the pin passes through while it meets the wheel's blank, found after the solve.
-construction space := sweep(pin, through: wheel, under: pinion_turn, seen_from: wheel_turn)
+construction space := solid({ p | p inside(under: pinion_turn, seen_from: wheel_turn) pin })
 wheel := solid(blank)
 space cut wheel

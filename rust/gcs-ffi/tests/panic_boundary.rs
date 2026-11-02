@@ -93,12 +93,12 @@ fn take(p: *mut u8) -> String {
 /// alike, by its neutral return with the reason.
 #[test]
 fn a_solid_index_out_of_range_names_no_solid() {
-    let src = "unit mm\nuse std\nin std.front {\n\
+    let src = "unit mm\nuse std\nuse std.solids\nin std.front {\n\
         a := point hint((0, 0))\nb := point hint((60, 0))\nc := point hint((60, 40))\n\
         d := point hint((0, 40))\nab := line(a, b)\nbc := line(b, c)\ncd := line(c, d)\n\
         da := line(d, a)\n\
         fix((0, 0)) a\nfix((60, 0)) b\nfix((60, 40)) c\nfix((0, 40)) d\n}\n\
-        block := solid(face(ab, bc, cd, da), depth: 5)\n";
+        block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -5, to: 0))\n";
     unsafe {
         let e = gcs_program_elaborate(src.as_ptr(), src.len());
         assert!(!e.is_null(), "{}", last_error());

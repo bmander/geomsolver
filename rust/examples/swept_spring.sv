@@ -5,6 +5,7 @@
 // the spring is read by its field instead).
 unit mm
 use std
+use std.solids
 use std.place (right_of)
 use std.motion (screws)
 
@@ -23,7 +24,7 @@ component Sphere(center: point, r: Length) {
   vertical diameter
   private meridian := arc(center: center, start: bottom, end: top) hint(r: r)
   radius(r) meridian
-  body := solid(face(meridian, diameter), about: diameter)
+  body := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))
 }
 
 in std.front {
@@ -36,4 +37,4 @@ in std.front {
 
 climb := frame
 climb screws(pitch) spindle
-spring := sweep(ball.body over t in (0deg, turns * 360deg), under: climb)
+spring := solid({ p | p inside(under: climb, over t in (0deg, turns * 360deg)) ball.body })

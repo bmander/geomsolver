@@ -18,6 +18,7 @@
 // #014, selected in `sv`; its groove is derived below. Print it crown down.
 
 use std
+use std.solids
 use std.place (vertical, on_u)
 use hardware (oring_squeeze, oring_groove_w)
 use components.dims (D, L, clr, groove, oring, ph, pinclr, reye, rt, rw)
@@ -133,11 +134,11 @@ component Piston(f: group) {
   // The rod and the eye are half `rw` either side of the plane of swing, which is where the
   // section is drawn and where the crank pin's washers hold it; the piston needs no such
   // statement, being a turn about a line that lies in that plane.
-  pist := solid(face(f.axes.origin, pL0, pL1, pL2, pL3, pL4, s0, -> close), about: rod)
+  pist := solid(std.solids.Revolution(face(f.axes.origin, pL0, pL1, pL2, pL3, pL4, s0, -> close), about: rod))
   // the rod between its flanks, closed across the skirt and across the eye
-  shank := solid(face(fl, rd, fr, ra), from: -rw / 2, to: rw / 2)
-  boss := solid(face(eye), from: -rw / 2, to: rw / 2)
-  pinhole := solid(face(hole), through: body)
+  shank := solid(std.solids.Prism(face(fl, rd, fr, ra), from: -rw / 2, to: rw / 2))
+  boss := solid(std.solids.Prism(face(eye), from: -rw / 2, to: rw / 2))
+  pinhole := solid(std.solids.Through(face(hole)))
   body := solid(pist)
   shank union body
   boss union body

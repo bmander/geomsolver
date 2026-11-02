@@ -208,6 +208,14 @@ impl<'a> P<'a> {
         None
     }
 
+    /// Whether the parentheses opening here read a motion or a running number — `inside(under:
+    /// m, over t in (a, b))` (#737), the one thing a side's parentheses may hold.
+    fn over_ahead(&self) -> bool {
+        self.t.get(self.i).map(|t| &t.0) == Some(&Tok::P('('))
+            && (self.i + 1..self.t.len()).take_while(|&k| self.t[k].0 != Tok::P(')'))
+                .any(|k| matches!(&self.t[k].0, Tok::Ident(w) if w == "over" || w == "under"))
+    }
+
     /// Read optional operator arguments. Slot pins stay in parentheses; seeds come
     /// from the separate hint clause.
     pub(super) fn op_args(&mut self, word: &str, fixity: Fixity) -> Option<Vec<OpArg>> {
@@ -217,7 +225,7 @@ impl<'a> P<'a> {
         }
         // a side takes nothing in its parentheses: one grown by a distance is that distance from
         // the surface (§6.21, #266), and the set grown is `std.sets.Offset`
-        if fixity == Fixity::Infix {
+        if fixity == Fixity::Infix && !self.over_ahead() {
             if let Some(cmp) = crate::constraints::plane_side_word(word) {
                 let side = if cmp == Cmp::Le { "outside" } else { "inside" };
                 self.fail(&format!("`{word}` takes nothing in its parentheses: a point at most \
@@ -280,6 +288,17 @@ impl<'a> P<'a> {
                     let [(a, a_span), hi] = self.pair()?;
                     out.push(OpArg::Bound { cmp: Cmp::In, span, hi: Some(hi), grow: None });
                     out.push(OpArg::Dim(a, a_span));
+                }
+                // some instant of a running number (#737): `over t in (a, b)`, or `over s`
+                (Some(Tok::Ident(n)), Some(Tok::Ident(_)))
+                    if n == "over" && matches!(word, "coincident" | "inside") => {
+                    self.i += 1;
+                    let key = self.ident()?;
+                    let ends = match self.eat_word("in") {
+                        true => Some(self.pair()?),
+                        false => None,
+                    };
+                    out.push(OpArg::Over { key, ends });
                 }
                 // a contact over an interval, `t in (0, 1)` (#645): where on the curve, bounded
                 (Some(Tok::Ident(n)), Some(Tok::Ident(w))) if word == "coincident" && w == "in" => {

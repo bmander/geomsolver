@@ -9,7 +9,7 @@ use std::f64::consts::{PI,TAU};
 type V = [f64;3];
 
 fn sweep() -> SweepContacts {
-    let source = format!("{}{}construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, seen_from: observer)\n{}",
+    let source = format!("{}{}construction removal := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-75deg, 75deg)) tool }})\n{}",
         torus(2.),cradle_roll(0.25,Observer::Skew),skew_post(4.));
     let e = fixtures::read(&source);
     SweepContacts::read(&e.sketch,fixtures::solid(&e,"removal"),1e-10).unwrap()

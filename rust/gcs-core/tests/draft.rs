@@ -1,5 +1,5 @@
-//! **Draft** (#245): `solid(f, from: a, to: b, draft: θ)` tapers a prism's sides from the plane its
-//! face is drawn in, the parting plane — each section the face moved `|h| tan θ` into its
+//! **Draft** (#245): `solid(std.solids.Drafted(f, from: a, to: b, draft: θ))` tapers a prism's
+//! sides from the plane its face is drawn in, the parting plane — each section the face moved `|h| tan θ` into its
 //! material, so the sides lean away from the plane either side of it, as a forging's come out of
 //! its die. A straight side stays a plane and a circle's a cone, so the exact kernel builds it
 //! (two lofts glued at the parting plane), and each face keeps the name it has undrafted. Held
@@ -14,11 +14,12 @@ use std::f64::consts::PI;
 
 use crate::common::{ent, text::solved};
 
-/// A 20 × 30 block in the front plane (x along u, z along v; its normal is −y), swept `sweep`,
-/// with whatever `more` adds.
+/// A 20 × 30 block `f` in the front plane (x along u, z along v; its normal is −y), its solid the
+/// `std.solids` word `sweep` over it, with whatever `more` adds.
 fn block(sweep: &str, more: &str) -> String {
     format!("unit mm
 use std
+use std.solids
 in std.front {{
   a := point
   b := point
@@ -34,7 +35,7 @@ in std.front {{
   da := line(d, a)
   f := face(ab, bc, cd, da)
 {more}}}
-blk := solid(f, {sweep})
+blk := solid({sweep})
 ")
 }
 
@@ -64,9 +65,9 @@ fn close(what: &str, got: f64, want: f64, rel: f64) {
 #[test]
 fn a_drafted_block_is_its_closed_form() {
     let t = 3f64.to_radians().tan();
-    for (sweep, h0, h1) in [("from: -5, to: 5, draft: 3deg", -5.0, 5.0),
-                            ("from: 2, to: 7, draft: 3deg", 2.0, 7.0),
-                            ("depth: 6, draft: 3deg", -6.0, 0.0)] {
+    for (sweep, h0, h1) in [("std.solids.Drafted(f, from: -5, to: 5, draft: 3deg)", -5.0, 5.0),
+                            ("std.solids.Drafted(f, from: 2, to: 7, draft: 3deg)", 2.0, 7.0),
+                            ("std.solids.Drafted(f, from: -6, to: 0, draft: 3deg)", -6.0, 0.0)] {
         let e = solved(&block(sweep, ""));
         let want = rectangle(20.0, 30.0, t, h0, h1);
         close(&format!("{sweep}, exactly"), props::volume(&exact(&e, "blk").unwrap()), want, 1e-9);
@@ -75,7 +76,7 @@ fn a_drafted_block_is_its_closed_form() {
     }
     // the field: at ordinate 3 along the front's normal (y = −3), the side `ab` (z = 0 at the
     // parting plane) has come in by 3 tan 3°, and the field there is its distance
-    let e = solved(&block("from: -5, to: 5, draft: 3deg", ""));
+    let e = solved(&block("std.solids.Drafted(f, from: -5, to: 5, draft: 3deg)", ""));
     // and the facet term, its sides planes, holds the same points on the same sides
     let field = MaterialField::read(&e.sketch, ent(&e, "blk").i(), 1e-10).unwrap();
     let facets = gcs_core::solid::resolve(&e.sketch, ent(&e, "blk").i(), gcs_core::solid::REPORT_UNIT);
@@ -93,7 +94,8 @@ fn a_drafted_block_is_its_closed_form() {
 /// the parting plane, none where it does not.
 #[test]
 fn a_drafted_prisms_faces_keep_their_names() {
-    for (sweep, pieces) in [("from: -5, to: 5, draft: 3deg", 2), ("from: 0, to: 5, draft: 3deg", 1)] {
+    for (sweep, pieces) in [("std.solids.Drafted(f, from: -5, to: 5, draft: 3deg)", 2),
+                            ("std.solids.Drafted(f, from: 0, to: 5, draft: 3deg)", 1)] {
         let e = solved(&block(sweep, ""));
         let b = exact(&e, "blk").unwrap();
         let named = |n: &str| b.faces.iter().filter(|f| f.name.ends_with(n)).count();
@@ -119,6 +121,7 @@ fn a_drafted_disc_is_two_frustums_and_its_bore_widens() {
     let cone = |r0: f64, h: f64, taper: f64| { let r1 = r0 + h * taper; PI * h * (r0 * r0 + r0 * r1 + r1 * r1) / 3.0 };
     let disc = |holes: &str| format!("unit mm
 use std
+use std.solids
 in std.front {{
   o := point
   fix((0, 0)) o
@@ -128,7 +131,7 @@ in std.front {{
   radius(6) bore
   f := face(rim{holes})
 }}
-disc := solid(f, from: -4, to: 3, draft: 5deg)
+disc := solid(std.solids.Drafted(f, from: -4, to: 3, draft: 5deg))
 ");
     let e = solved(&disc(""));
     let want = cone(20.0, 4.0, -t) + cone(20.0, 3.0, -t);
@@ -157,27 +160,34 @@ disc := solid(f, from: -4, to: 3, draft: 5deg)
     }
 }
 
-/// What a draft cannot say, and where it is said: on a turned solid (the parser), a right angle or
-/// more (the elaborator, E080), a draft taking a side to nothing within the prism's reach (where
-/// it is evaluated), an arc meeting a side at an angle (the exact kernel: its cone and the side's
+/// What a draft cannot say, and where it is said: on a turned solid (the word, which takes none), a
+/// right angle or more (the elaborator, E080), a draft taking a side to nothing within the prism's
+/// reach (where it is evaluated), an arc meeting a side at an angle (the exact kernel: its cone and the side's
 /// plane meet along a curve) and a side of a drafted prism sketched on.
 #[test]
 fn what_a_draft_cannot_say_is_refused() {
-    let (_, errs) = crate::common::parse(&block("about: ab, draft: 3deg", ""));
-    assert!(errs.iter().any(|e| e.message.contains("`draft:` tapers a prism's sides")), "{errs:?}");
-    let (p, errs) = crate::common::parse(&block("from: 0, to: 5, draft: 90deg", ""));
+    // a revolution has no draft to give: the word has no such parameter
+    let (p, errs) = crate::common::parse(&block("std.solids.Revolution(f, about: ab, draft: 3deg)",
+                                                ""));
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&p);
+    assert!(e.diags.iter().any(|d| d.message.contains("`std.solids.Revolution` has no such \
+                                                       parameter")), "{:?}", e.diags);
+    let (p, errs) = crate::common::parse(&block("std.solids.Drafted(f, from: 0, to: 5, \
+                                                 draft: 90deg)", ""));
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&p);
     assert!(e.diags.iter().any(|d| d.code.as_str() == "E080" && d.message.contains("right angle")),
             "{:?}", e.diags);
     // 20 wide, 2 × 10 tan 50° > 20: the bottom and top sides meet before the cap
-    let e = solved(&block("from: 0, to: 10, draft: 50deg", ""));
+    let e = solved(&block("std.solids.Drafted(f, from: 0, to: 10, draft: 50deg)", ""));
     let why = e.sketch.evaluated_solid(ent(&e, "blk").i(), Report).unwrap_err();
     assert!(why.contains("to nothing"), "{why}");
     // a slot's round end, meeting its sides tangent, is built: its cone touches each side's
     // plane along a line
     let e = solved("unit mm
 use std
+use std.solids
 in std.front {
   a := point
   b := point
@@ -195,7 +205,7 @@ in std.front {
   back := line(d, a)
   f := face(low, end, high, back)
 }
-s := solid(f, from: -2, to: 2, draft: 4deg)
+s := solid(std.solids.Drafted(f, from: -2, to: 2, draft: 4deg))
 ");
     let t = 4f64.to_radians().tan();
     // the section at `h`: the 20 × 10 rectangle less 2|h|t round its three straight sides, and
@@ -207,6 +217,7 @@ s := solid(f, from: -2, to: 2, draft: 4deg)
     // a quarter disc's arc meets its two radii square: refused by name
     let e = solved("unit mm
 use std
+use std.solids
 in std.front {
   o := point
   a := point
@@ -219,7 +230,7 @@ in std.front {
   l2 := line(o, a)
   f := face(q, l1, l2)
 }
-s := solid(f, from: -2, to: 2, draft: 4deg)
+s := solid(std.solids.Drafted(f, from: -2, to: 2, draft: 4deg))
 ");
     let why = exact(&e, "s").unwrap_err();
     assert!(why.contains("at an angle where one is an arc"), "{why}");
@@ -228,10 +239,10 @@ s := solid(f, from: -2, to: 2, draft: 4deg)
 /// A drafted side leans off its face's plane, so it is no set to sketch on; a cap still is.
 #[test]
 fn a_drafted_side_is_no_set_to_sketch_on() {
-    let src = block("from: -5, to: 5, draft: 3deg", "")
+    let src = block("std.solids.Drafted(f, from: -5, to: 5, draft: 3deg)", "")
         + "p := point\np coincident blk.near.surface\n";
     solved(&src);
-    let (p, _) = crate::common::parse(&(block("from: -5, to: 5, draft: 3deg", "")
+    let (p, _) = crate::common::parse(&(block("std.solids.Drafted(f, from: -5, to: 5, draft: 3deg)", "")
         + "p := point\np coincident blk.ab.surface\n"));
     let e = gcs_core::program::elaborate(&p);
     assert!(e.diags.iter().any(|d| d.message.contains("drafted side")), "{:?}", e.diags);
@@ -242,11 +253,11 @@ fn a_drafted_side_is_no_set_to_sketch_on() {
 #[test]
 fn resizing_a_drafted_prism_keeps_its_draft() {
     use gcs_core::edit::{self, SolidSweep};
-    let e = solved(&block("from: -5, to: 5, draft: 3deg", ""));
+    let e = solved(&block("std.solids.Drafted(f, from: -5, to: 5, draft: 3deg)", ""));
     let how = SolidSweep { depth: Some("4".into()), ..Default::default() };
     let out = edit::set_sweep(&e, &e.program, ent(&e, "blk").i(), &how);
     assert_eq!(out.refused, None);
-    assert!(out.text.contains("blk := solid(f, depth: 4, draft: 3deg)"), "{}", out.text);
+    assert!(out.text.contains("blk := solid(std.solids.Drafted(f, from: -4, to: 0, draft: 3deg))"), "{}", out.text);
     let e = solved(&out.text);
     let want = rectangle(20.0, 30.0, 3f64.to_radians().tan(), -4.0, 0.0);
     close("resized", props::volume(&exact(&e, "blk").unwrap()), want, 1e-9);

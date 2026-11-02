@@ -1,6 +1,7 @@
 // A bored mounting flange: one stepped radial section turned about its axis, then a bolt pattern.
 unit mm
 use std
+use std.solids
 use std.place (horizontal)
 use hardware
 outer_radius := 32mm
@@ -28,7 +29,7 @@ in std.front {
 top horizontal ef.p2
 deck coincident spindle
 deck horizontal bc.p2
-flange := solid(profile, about: spindle)
+flange := solid(std.solids.Revolution(profile, about: spindle))
 
 // The bolt circle is drawn on the top of the plate: a plane square to the section over a
 // reference running out along that face from the axis, standing at the axis, so it looks down

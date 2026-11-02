@@ -54,6 +54,7 @@ pub fn lowered(sk: &Sketch, body: usize) -> Option<Sketch> {
 }
 pub mod roll;
 pub mod lowering;
+pub mod defined;
 pub mod faces;
 pub mod conditions;
 pub mod carrier;

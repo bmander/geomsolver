@@ -8,6 +8,7 @@ use crate::common::parsed::determined as solved;
 const SOURCE: &str = "\
 unit mm
 use std
+use std.solids
 use std.motion (turns)
 in std.front {
 o := point
@@ -23,7 +24,7 @@ spin_axis := line(o,x)
 meridian := circle(center: c)
 radius(1mm) meridian
 }
-ring := solid(face(meridian),about: ax)
+ring := solid(std.solids.Revolution(face(meridian), about: ax))
 wall := surface(ring,meridian)
 roll := frame
 roll turns(1) spin_axis
@@ -35,7 +36,7 @@ component Sphere(o: point, size: Length) {
   fix(x == 0) top
   private rim := arc(center: o,start: bottom,end: top)
   private ax := line(top,bottom)
-  body := solid(face(rim,ax),about: ax)
+  body := solid(std.solids.Revolution(face(rim,ax), about: ax))
 }
 in std.front {
 inner := Sphere(o, size: 2.5mm)

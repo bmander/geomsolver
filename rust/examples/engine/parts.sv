@@ -5,6 +5,7 @@
 
 use engine.dims (D, ch, ph, rpin)
 use std
+use std.solids
 use std.place (above, below, left_of, offset, right_of)
 
 // A line tangent to two circles at both ends — a belt run, a crank web's flank, a cam's flank.
@@ -167,27 +168,25 @@ component Piston(small: point, pin: Int) {
     s5 offset(dx: -reach, dy: ch - deep) small
     s6 offset(dx: -sx, dy: ch - deep) small
 
-    turned := solid(face(hidden.dish_r, crown.p2, land1_r.p2, g1a_r.p2, g1_r.p2, g1b_r.p2,
+    turned := solid(std.solids.Revolution(face(hidden.dish_r, crown.p2, land1_r.p2, g1a_r.p2, g1_r.p2, g1b_r.p2,
                          land2_r.p2, g2a_r.p2, g2_r.p2, g2b_r.p2, land3_r.p2, g3a_r.p2, g3_r.p2,
-                         g3b_r.p2, q1, bore_axis), about: bore_axis)
+                         g3b_r.p2, q1, bore_axis), about: bore_axis))
     body := solid(turned)
-    hollow := solid(face(q3, hidden.belt_r.p2, hidden.belt_r.p1, hidden.wall_r.p2, q4, q5,
-                         -> close), about: bore_axis)
-    boss_r := solid(face(hidden.boss_face_r.p1, hidden.boss_face_r.p2, b1, b2, -> close),
-                    from: -rboss, to: rboss)
-    boss_l := solid(face(hidden.boss_face_l.p1, hidden.boss_face_l.p2, b3, b4, -> close),
-                    from: -rboss, to: rboss)
+    hollow := solid(std.solids.Revolution(face(q3, hidden.belt_r.p2, hidden.belt_r.p1, hidden.wall_r.p2, q4, q5,
+                         -> close), about: bore_axis))
+    boss_r := solid(std.solids.Prism(face(hidden.boss_face_r.p1, hidden.boss_face_r.p2, b1, b2, -> close), from: -rboss, to: rboss))
+    boss_l := solid(std.solids.Prism(face(hidden.boss_face_l.p1, hidden.boss_face_l.p2, b3, b4, -> close), from: -rboss, to: rboss))
     boss_r cut hollow
     boss_l cut hollow
     hollow cut body
-    bore := solid(face(pw, pe, b5, b6, -> close), about: pinline)
+    bore := solid(std.solids.Revolution(face(pw, pe, b5, b6, -> close), about: pinline))
     bore cut body
-    slip_r := solid(face(foot_r.p2, s1, s2, s3, -> close), from: -reach, to: reach)
-    slip_l := solid(face(foot_l.p1, s4, s5, s6, -> close), from: -reach, to: reach)
+    slip_r := solid(std.solids.Prism(face(foot_r.p2, s1, s2, s3, -> close), from: -reach, to: reach))
+    slip_l := solid(std.solids.Prism(face(foot_l.p1, s4, s5, s6, -> close), from: -reach, to: reach))
     slip_r cut body
     slip_l cut body
-    gudgeon := solid(face(hidden.pin_top.p1, hidden.pin_top.p2, hidden.bore_t.p2,
-                          hidden.bore_t.p1, -> close), about: pinline)
+    gudgeon := solid(std.solids.Revolution(face(hidden.pin_top.p1, hidden.pin_top.p2, hidden.bore_t.p2,
+                          hidden.bore_t.p1, -> close), about: pinline))
   }
 }
 

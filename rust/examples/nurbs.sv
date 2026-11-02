@@ -11,6 +11,7 @@
 // contact with it — a point on it, a line tangent to it, a circle of curvature — works unchanged.
 unit mm
 use std
+use std.solids
 
 r := 30mm
 // the inner control points stand where the end tangents of a quarter circle meet a cubic's thirds
@@ -59,4 +60,4 @@ in std.front {
   floor := line(o, k0)
   construction centerline upright := line(k3, o)
 }
-dome := solid(face(floor, quarter, upright), about: upright)
+dome := solid(std.solids.Revolution(face(floor, quarter, upright), about: upright))

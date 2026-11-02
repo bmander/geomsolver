@@ -46,4 +46,4 @@ in std.top {
   radius(bend) k3
 }
 param s: Scalar over (0, 5)
-pipe := sweep(Tube(route, std.z, r: r).f over s)
+pipe := solid({ p | p coincident(over s) Tube(route, std.z, r: r).f })

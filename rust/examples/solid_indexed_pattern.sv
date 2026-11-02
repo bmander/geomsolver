@@ -1,6 +1,7 @@
 // One source cutter, placed by a frame's turn at each index.
 unit mm
 use std
+use std.solids
 use std.place (on_u)
 use std.motion (turns)
 
@@ -19,11 +20,11 @@ turn := frame
 turn turns(1) shaft
 in std.top {
   rim := radius(20mm) circle(center: std.top.origin)
-  stock := solid(face(rim), depth: 5mm)
+  stock := solid(std.solids.Prism(face(rim), from: -5mm, to: 0))
   private hole_center := point
   hole_center on_u(d: 12mm) std.top
   hole := radius(2mm) circle(center: hole_center)
-  construction tool := solid(face(hole), through: body)
+  construction tool := solid(std.solids.Through(face(hole)))
 }
 body := solid(stock)
 pattern := IndexedCuts(tool, body, turn, count: 6)

@@ -8,6 +8,7 @@
 // concave blade and the radius it is cut at. See README.md.
 unit mm
 use std
+use std.solids
 use std.rounds
 use std.motion (reciprocal, turns)
 use hypoid (GearCone, ToothTrace, PinionCone, Blank, FaceMill, Tooth, Member, Gear)
@@ -232,7 +233,7 @@ component EasedBlade(mean: Contact, ax: line, flank: set, heading: line, profile
   turn_centre distance(-reach, along: ax) start
   turn_centre distance(reach, along: ax) finish
   turned_about := line(start, finish)
-  construction cutter := solid(face(profile_arc, lower, inner, upper), about: turned_about)
+  construction cutter := solid(std.solids.Revolution(face(profile_arc, lower, inner, upper), about: turned_about))
 }
 
 // -- the gear's space --------------------------------------------------------------------------

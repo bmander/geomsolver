@@ -54,4 +54,4 @@ component Tube(g: path, up: axis, r: Length, s: Scalar) {
 }
 
 param s: Scalar over (0, 5)
-tube := sweep(Tube(route, std.z, r: r).f over s)
+tube := solid({ p | p coincident(over s) Tube(route, std.z, r: r).f })

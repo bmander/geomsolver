@@ -87,6 +87,7 @@ fn a_cones_feature_is_read_in_the_box_it_is_asked_over() {
 const PLATE: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 b := point hint((60, 0))
@@ -122,8 +123,8 @@ fix((0, 0)) o
 fix((0, 10)) z
 ax := line(o, z)
 }
-plate := solid(face(ab, bc, cd, notch, ef, fa), depth: 8mm)
-bore := solid(face(hole), from: -10mm, to: 2mm)
+plate := solid(std.solids.Prism(face(ab, bc, cd, notch, ef, fa), from: -8mm, to: 0))
+bore := solid(std.solids.Prism(face(hole), from: -10mm, to: 2mm))
 bore cut plate
 turn := frame
 ax coincident(sense: same) turn.axis; fix(ratio == 1, advance == 0mm) turn
@@ -163,6 +164,7 @@ fn a_prism_of_whole_circles_is_the_turn_of_its_section() {
     let src = "\
 unit mm
 use std
+use std.solids
 use std.place (vertical, on_v, raised)
 use std.sets
 in std.front {
@@ -179,7 +181,7 @@ in std.top {
   bottom_at := point hint((0, 25))
   bottom_at on_v(d: 25mm) std.top
 }
-disc := solid(face(tip, holes: hole), from: 0mm, to: 6mm)
+disc := solid(std.solids.Prism(face(tip, holes: hole), from: 0mm, to: 6mm))
 top_q := point
 top_q raised(d: 6mm, along: std.z) top_at
 bottom_q := point
@@ -208,6 +210,7 @@ chamfers common disc
 const SPURS: &str = "\
 unit mm
 use std
+use std.solids
 use std.place (vertical, coords, on_v, raised, seats)
 use std.motion (turns, slides)
 component Spur(N: Int, m: Length, z1: Length) {
@@ -237,15 +240,15 @@ component Spur(N: Int, m: Length, z1: Length) {
     hole := circle(center: std.top.origin) hint(r: 3)
     radius(3mm) hole
   }
-  private construction tooth := solid(rack_tooth, from: -1mm, to: z1 + 1mm)
+  private construction tooth := solid(std.solids.Prism(rack_tooth, from: -1mm, to: z1 + 1mm))
   blank_turn := frame
   blank_turn turns(1) spindle
   rack := frame
   rack slides(2 * pi * R) rack_line
   index := frame
   index turns(1) spindle
-  construction gear := solid(face(tip, holes: hole), from: 0mm, to: z1)
-  private construction space := sweep(tooth over t in (-window, window), under: rack, seen_from: blank_turn)
+  construction gear := solid(std.solids.Prism(face(tip, holes: hole), from: 0mm, to: z1))
+  private construction space := solid({ p | p inside(under: rack, seen_from: blank_turn, over t in (-window, window)) tooth })
   space cut gear
   repeat N - 1 as j {
     turned := space at(under: index) ((j + 1) * 360deg / N)

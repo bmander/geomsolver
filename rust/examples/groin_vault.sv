@@ -15,6 +15,7 @@
 // 24²·10 + 8∫₀¹² x(√(225 − x²) − 9) dx = 7632, its area 576 + 960 + 8·90 = 2256.
 unit mm
 use std
+use std.solids
 
 half := 12mm     // the square is |x|, |y| ≤ half
 spring := 10mm   // where each vault rises from its flat sides
@@ -43,7 +44,7 @@ in std.side {
   east := line(b, c)
   arch := spline(c, d, d2, e) weights [1, heavy, heavy, 1]
   west := line(e, a)
-  along_x := solid(face(floor, east, arch, west), from: -half, to: half)
+  along_x := solid(std.solids.Prism(face(floor, east, arch, west), from: -half, to: half))
 }
 
 // the second: the same section across x, swept along y
@@ -64,7 +65,7 @@ in std.front {
   north := line(g, h)
   crossing := spline(h, i, i2, j) weights [1, heavy, heavy, 1]
   south := line(j, f)
-  along_y := solid(face(sole, north, crossing, south), from: -half, to: half)
+  along_y := solid(std.solids.Prism(face(sole, north, crossing, south), from: -half, to: half))
 }
 
 vault := solid(along_x)

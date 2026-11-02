@@ -2,6 +2,7 @@
 // clearance claim between the cut wheel and the star at the drawing's pose.
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 use std.motion (turns)
 
@@ -70,7 +71,7 @@ fix(origin == (0mm, 0mm, -1.1mm)) top
 fix(dir == (1, 0, 0)) top.u
 fix(dir == (0, 1, 0)) top.v
 plan := StarOutline(top, s: handle_dims)
-star := solid(plan.outline, from: -16mm, to: 0mm)
+star := solid(std.solids.Prism(plan.outline, from: -16mm, to: 0mm))
 in std.top {
   wo := point
   wo coincident wc
@@ -80,7 +81,7 @@ handle_turn := frame
 handle_turn turns(1) stem
 wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
-space := sweep(star over t in (0deg, 540deg), under: handle_turn, seen_from: wheel_turn)
-wheel := solid(face(rim), from: -15.6mm, to: -0.6mm)
+space := solid({ p | p inside(under: handle_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })
+wheel := solid(std.solids.Prism(face(rim), from: -15.6mm, to: -0.6mm))
 space cut wheel
 claim wheel clear(0.1mm) star

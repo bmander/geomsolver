@@ -5,6 +5,7 @@
 // Built exactly: 30000 less the hollow's 47 × 27 × 17, 8427 mm³.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 1.5mm
@@ -21,6 +22,6 @@ in std.top {
   (fs := line(f0, f1)) -> (fe := line(f1, f2)) -> (fn := line(f2, f3)) -> (fw := line(f3, f0)) -> close
   outline := face(fs, fe, fn, fw)
 }
-float := solid(outline, from: 0mm, to: 20mm)
+float := solid(std.solids.Prism(outline, from: 0mm, to: 20mm))
 
 shell(t: wall) float

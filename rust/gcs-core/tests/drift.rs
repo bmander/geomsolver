@@ -58,6 +58,7 @@ component Pair(a: point, b: point, d: Length, along: line) {
 fn a_component_call_standing_as_a_statement_is_said() {
     let src = "\
 use std
+use std.solids
 use std.place (horizontal)
 use std.sets
 use std.motion (spins)
@@ -81,6 +82,7 @@ q inside std.sets.Cylinder(ax, r: 8mm)
 fn a_component_that_makes_nothing_a_parent_reads_is_a_verb() {
     let src = "\
 use std
+use std.solids
 use std.place (horizontal)
 use std.motion (spins)
 component Level(a: point, b: point) {
@@ -195,7 +197,7 @@ fn a_group_a_solid_is_made_of_is_read() {
     let src = "\
 component Plate(c: point, m: group) {
   rim := circle(center: c) hint(r: 5)
-  body := solid(face(rim), depth: 2mm) of m
+  body := solid(std.solids.Prism(face(rim), from: -2mm, to: 0)) of m
 }
 ";
     assert!(of("W206", src).is_empty(), "{:?}", lint(src));

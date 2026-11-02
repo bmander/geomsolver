@@ -16,7 +16,7 @@ use crate::common::{close, ent, text::solved};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), standing 12 deep along y; an L of two
 /// steps whose inner edge, along y through (10, 110), is concave.
-const BLOCKS: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.front {\n\
+const BLOCKS: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -28,11 +28,11 @@ const BLOCKS: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.front {\n
     (ls := line(l0, l1)) -> (le := line(l1, l2)) -> (lt := line(l2, l3)) -> (lr := line(l3, l4)) -> \
     (ln := line(l4, l5)) -> (lw := line(l5, l0)) -> close\n\
     ell := face(ls, le, lt, lr, ln, lw)\n}\n\
-    block := solid(outline, depth: 12mm)\n\
-    step := solid(ell, depth: 12mm)\n";
+    block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\n\
+    step := solid(std.solids.Prism(ell, from: -12mm, to: 0))\n";
 
 /// On the top plane a plinth: a slab 40 square and 10 thick, a boss 10 square standing 5 on it.
-const PLINTH: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.top {\n\
+const PLINTH: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.top {\n\
     q0 := point\nq1 := point\nq2 := point\nq3 := point\n\
     fix((0, 0)) q0\nfix((40, 0)) q1\nfix((40, 40)) q2\nfix((0, 40)) q3\n\
     (qs := line(q0, q1)) -> (qe := line(q1, q2)) -> (qn := line(q2, q3)) -> (qw := line(q3, q0)) -> close\n\
@@ -41,12 +41,12 @@ const PLINTH: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.top {\n\
     fix((15, 15)) m0\nfix((25, 15)) m1\nfix((25, 25)) m2\nfix((15, 25)) m3\n\
     (ms := line(m0, m1)) -> (me := line(m1, m2)) -> (mn := line(m2, m3)) -> (mw := line(m3, m0)) -> close\n\
     stud := face(ms, me, mn, mw)\n}\n\
-    plinth := solid(slab, from: 0mm, to: 10mm)\n\
-    boss := solid(stud, from: 9mm, to: 15mm)\nboss union plinth\n";
+    plinth := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))\n\
+    boss := solid(std.solids.Prism(stud, from: 9mm, to: 15mm))\nboss union plinth\n";
 
 /// On the top plane a tray: a slab 40 square and 10 thick, a pocket 20 × 16 and 4 deep cut into
 /// its top.
-const STANDING: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.top {\n\
+const STANDING: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.top {\n\
     q0 := point\nq1 := point\nq2 := point\nq3 := point\n\
     fix((0, 0)) q0\nfix((40, 0)) q1\nfix((40, 40)) q2\nfix((0, 40)) q3\n\
     (qs := line(q0, q1)) -> (qe := line(q1, q2)) -> (qn := line(q2, q3)) -> (qw := line(q3, q0)) -> close\n\
@@ -55,28 +55,28 @@ const STANDING: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.top {\n
     fix((10, 12)) k0\nfix((30, 12)) k1\nfix((30, 28)) k2\nfix((10, 28)) k3\n\
     (ks := line(k0, k1)) -> (ke := line(k1, k2)) -> (kn := line(k2, k3)) -> (kw := line(k3, k0)) -> close\n\
     pocket := face(ks, ke, kn, kw)\n}\n\
-    tray := solid(slab, from: 0mm, to: 10mm)\n\
-    cavity := solid(pocket, from: 6mm, to: 11mm)\ncavity cut tray\n";
+    tray := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))\n\
+    cavity := solid(std.solids.Prism(pocket, from: 6mm, to: 11mm))\ncavity cut tray\n";
 
 /// On the top plane a plate 40 square and 5 thick with a bore of radius 6 through it.
-const BORED: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.top {\n\
+const BORED: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.top {\n\
     p0 := point\np1 := point\np2 := point\np3 := point\n\
     fix((80, -20)) p0\nfix((120, -20)) p1\nfix((120, 20)) p2\nfix((80, 20)) p3\n\
     (ps := line(p0, p1)) -> (pe := line(p1, p2)) -> (pn := line(p2, p3)) -> (pw := line(p3, p0)) -> close\n\
     plate := face(ps, pe, pn, pw)\n\
     bc := point\nfix((100, 0)) bc\nbore := radius(6mm) circle(center: bc)\nhole := face(bore)\n}\n\
-    slab := solid(plate, from: 0mm, to: 5mm)\n\
-    drill := solid(hole, from: -1mm, to: 6mm)\ndrill cut slab\n";
+    slab := solid(std.solids.Prism(plate, from: 0mm, to: 5mm))\n\
+    drill := solid(std.solids.Prism(hole, from: -1mm, to: 6mm))\ndrill cut slab\n";
 
 /// On the front plane a hopper's section, a pentagon whose west wall leans in at 45° under its top,
 /// standing 12 deep.
-const HOPPER: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.front {\n\
+const HOPPER: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.front {\n\
     h0 := point\nh1 := point\nh2 := point\nh3 := point\nh4 := point\n\
     fix((0, 0)) h0\nfix((30, 0)) h1\nfix((30, 20)) h2\nfix((10, 20)) h3\nfix((0, 10)) h4\n\
     (bottom := line(h0, h1)) -> (east := line(h1, h2)) -> (top := line(h2, h3)) -> (lean := line(h3, h4)) -> \
     (west := line(h4, h0)) -> close\n\
     section := face(bottom, east, top, lean, west)\n}\n\
-    hopper := solid(section, depth: 12mm)\n";
+    hopper := solid(std.solids.Prism(section, from: -12mm, to: 0))\n";
 
 /// Solid `name`'s field.
 fn field(e: &Elaborated, name: &str) -> MaterialField {
@@ -233,7 +233,7 @@ fn a_body_with_a_boss_is_shelled_exactly() {
     let pit = "in std.top {\nd0 := point\nd1 := point\nd2 := point\nd3 := point\n\
                fix((4, 4)) d0\nfix((12, 4)) d1\nfix((12, 12)) d2\nfix((4, 12)) d3\n\
                (ds := line(d0, d1)) -> (de := line(d1, d2)) -> (dn := line(d2, d3)) -> (dw := line(d3, d0)) -> close\n\
-               dimple := face(ds, de, dn, dw)\n}\npit := solid(dimple, from: 6mm, to: 11mm)\npit cut plinth\n";
+               dimple := face(ds, de, dn, dw)\n}\npit := solid(std.solids.Prism(dimple, from: 6mm, to: 11mm))\npit cut plinth\n";
     let e = solved(&format!("{PLINTH}{pit}shell(t: 1mm) plinth\n"));
     let grown = 3.0 * (96.0 + PI) + 64.0 + 8.0 * PI + 4.0 * PI / 6.0;
     close(exact_volume(&e, "plinth"), plinth - 256.0 - (38.0 * 38.0 * 8.0 + foot + 64.0 * 4.0 - grown));
@@ -314,8 +314,8 @@ fn a_wall_runs_on_round_a_concave_rim() {
 /// hollowed it too.
 #[test]
 fn what_stands_in_the_hollow_is_added_to_the_body_shelled() {
-    let e = solved(&format!("{PLINTH}pan := solid(slab, from: 0mm, to: 10mm)\npan.near shell(t: 1mm) pan\n\
-                             tray := solid(pan)\npost := solid(stud, from: 0.5mm, to: 6mm)\npost union tray\n"));
+    let e = solved(&format!("{PLINTH}pan := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))\npan.near shell(t: 1mm) pan\n\
+                             tray := solid(pan)\npost := solid(std.solids.Prism(stud, from: 0.5mm, to: 6mm))\npost union tray\n"));
     holds(&e, "tray", [-1.0, -1.0, -1.0], [41.0, 41.0, 11.0], 0.9, |p| {
         within(p, [0.0, 0.0, 0.0], [40.0, 40.0, 10.0]) && !within(p, [1.0, 1.0, 1.0], [39.0, 39.0, 11.0])
             || within(p, [15.0, 15.0, 0.5], [25.0, 25.0, 6.0])

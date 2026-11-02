@@ -676,6 +676,7 @@ fn a_flush_boss_tangent_to_a_blocks_side_builds_as_the_block() {
     let e = crate::common::text::solved("\
 unit mm
 use std
+use std.solids
 use std.shapes
 in std.top {
   c := point hint((0, 0))
@@ -686,8 +687,8 @@ in std.top {
   c level(v) o
   rim := radius(4mm) circle(center: o)
 }
-box := solid(face(sq.loop), from: 0mm, to: 10mm)
-boss := solid(face(rim), from: 0mm, to: 10mm)
+box := solid(std.solids.Prism(face(sq.loop), from: 0mm, to: 10mm))
+boss := solid(std.solids.Prism(face(rim), from: 0mm, to: 10mm))
 part := solid(box)
 boss union part
 ");
@@ -1494,6 +1495,52 @@ fn a_net_closed_round_an_axis_is_a_ring_of_faces() {
     assert!((cells[0]-core).abs() < 1e-5*core && (cells[1]-(256.-core)).abs() < 1e-5*core,"{cells:?} against {core}");
 }
 
+/// **A net whose first and last rows of poles each collapse to a point is a ball**
+/// (brep-bench's geometry/nurbs-sphere): the standard biquadratic NURBS sphere, a 9 × 5 rational
+/// net, cut by `build::grid_sheet` two round and two up. Each collapsed row is a pole — one vertex
+/// and a degenerate edge in each face it bounds, as a sphere's are — so the sheet is a closed
+/// boundary `check` holds: the ball, `500π/3` and `100π`.
+#[test]
+fn a_net_closed_round_onto_two_poles_is_a_ball() {
+    use gcs_core::brep::nurbs::Net;
+    use gcs_core::brep::topo::EdgeCurve;
+    let (r,h) = (5.,std::f64::consts::FRAC_1_SQRT_2);
+    let circle = [[1.,0.],[1.,1.],[0.,1.],[-1.,1.],[-1.,0.],[-1.,-1.],[0.,-1.],[1.,-1.],[1.,0.]];
+    let circle_w = [1.,h,1.,h,1.,h,1.,h,1.];
+    let meridian = [[0.,-r],[r,-r],[r,0.],[r,r],[0.,r]];
+    let meridian_w = [1.,h,1.,h,1.];
+    let net = Net {du:2,dv:2,uknots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],vknots:vec![0.,0.,0.,0.5,0.5,1.,1.,1.],
+        poles:circle.iter().map(|c| meridian.iter().map(|m| [m[0]*c[0],m[0]*c[1],m[1]]).collect()).collect(),
+        weights:Some(circle_w.iter().map(|wi| meridian_w.iter().map(|wj| wi*wj).collect()).collect())};
+    let ball = gcs_core::brep::build::grid_sheet(&net,&[0.,0.5,1.],&[0.,0.5,1.],&["east".into(),"west".into()],[true,false]).unwrap();
+    ball.check(1e-9).unwrap();
+    assert_eq!(ball.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Degenerate)).count(),4,"each face ends at a pole");
+    assert_eq!(ball.vertices.len(),4,"a vertex at each pole, two round the equator");
+    close(volume(&ball),500.*PI/3.);
+    close(total_area(&ball),100.*PI);
+}
+
+/// **A torus cut along its own seam** (brep-bench's shell/half-torus-open-ends): the plane through
+/// the axis that holds the torus's seam meets it in two circles, one of them that seam. The
+/// arrangement traces both, and drops the one along the seam as the edge it is (#735 A2) — which
+/// the plane must still be cut by: that edge is laid across the plane where it lies inside it. Kept
+/// either side, half the torus, `π²Rr²` and `2π²Rr + 2πr²`, its two section discs and one face of
+/// the torus.
+#[test]
+fn a_torus_cut_along_its_seam_is_half_of_it() {
+    use gcs_core::brep::build::{kept,torus};
+    let (big,r) = (6.,2.);
+    let whole = torus([0.;3],[0.,0.,1.],big,r).unwrap();
+    for n in [[0.,1.,0.],[0.,-1.,0.]] {
+        let half = kept(&whole,[0.;3],n,0.).unwrap();
+        half.check(1e-9).unwrap();
+        assert_eq!(face_kinds(&half),["plane","plane","torus"]);
+        assert!((volume(&half)-PI*PI*big*r*r).abs() <= 1e-9*PI*PI*big*r*r,"{}",volume(&half));
+        let area = 2.*PI*PI*big*r+2.*PI*r*r;
+        assert!((total_area(&half)-area).abs() <= 1e-9*area,"{}",total_area(&half));
+    }
+}
+
 /// A net closed the other way, along its rows, is cut into a tube of faces (`build::grid_sheet`,
 /// #684 W): the same cylinder, its rows now once round, the last its first, as a sheet along a
 /// characteristic that closes on itself is, and its columns up it; cut four round and in two up it.
@@ -2130,6 +2177,97 @@ fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
     let short = prism(&disc([0.;3],[0.,0.,1.],5.),0.,4.).unwrap();
     let why = roll(&short,[0.,5.,4.],5.,1e-9*short.size()).unwrap_err();
     assert!(why.contains("larger than"),"{why}");
+}
+
+/// `b` with the edges through `ats` rounded to `r` in turn by `fillet::roll`: each piece cut off a
+/// convex edge, filled in at a concave one.
+fn rounded(b: &gcs_core::brep::topo::Brep,ats: &[V],r: f64) -> Result<gcs_core::brep::topo::Brep,String> {
+    use gcs_core::brep::boolean::{combined,Op};
+    ats.iter().try_fold(b.clone(),|b,&at| {
+        let round = gcs_core::brep::fillet::roll(&b,at,r,gcs_core::brep::geom::tolerance(b.size()))?;
+        round.piece.check(1e-8)?;
+        combined(&b,&round.piece,if round.concave { Op::Union } else { Op::Cut },0.).map_err(|e| e.to_string())
+    })
+}
+
+/// A round refused as larger than its face can hold.
+fn too_large(round: Result<gcs_core::brep::topo::Brep,String>) {
+    let why = round.unwrap_err();
+    assert!(why.contains("larger than"),"{why}");
+}
+
+/// A box to `hi` whose face's two edges through `ats`, along x, are rounded to `r`: its section
+/// in y and z the rectangle less two square runs, `L (WH − 2(1 − π/4)r²)`, and its area two of
+/// those and its length times the section's perimeter, `24 − 4r + πr` on a face 2 tall.
+fn both_edges_rounded(hi: V,ats: [V;2],r: f64) -> gcs_core::brep::topo::Brep {
+    use crate::common::{close,rounds::square_run};
+    let b = rounded(&named_box(hi),&ats,r).unwrap();
+    b.check(1e-8).unwrap();
+    let [l,w,h] = hi;
+    let section = w*h-2.*square_run(r);
+    close(volume(&b),l*section);
+    close(total_area(&b),2.*section+l*(2.*(w+h)-4.*r+PI*r));
+    b
+}
+
+/// **Rounds that take the whole of a face** (brep-bench's fillet/slab-half-round): a ball whose
+/// contact lands on another edge of the face it rolls on reaches the face's far boundary, and its
+/// strip is all of the face to that edge. A slab's top rounded 2 from both long edges, half its
+/// width, goes: the two rounds tangent along its middle, a half-cylinder, `160 + 20π` and
+/// `152 + 24π`. Wider than half the top, the second ball reaches inside the first round's contact
+/// and is refused as larger than the face can hold.
+#[test]
+fn a_slabs_top_rounded_from_both_edges_to_half_its_width_is_a_half_cylinder() {
+    let both = both_edges_rounded([10.,4.,6.],[[5.,0.,6.],[5.,4.,6.]],2.);
+    assert_eq!(face_kinds(&both),["bspline","bspline","plane","plane","plane","plane","plane"]);
+    too_large(rounded(&named_box([10.,4.,6.]),&[[5.,0.,6.],[5.,4.,6.]],2.1));
+}
+
+/// **A round as wide as both faces beside it** (brep-bench's fillet/l-block-inside-consumed): an
+/// L's inside edge filled 7, the ball touching both faces at their far edges, takes both: a quarter
+/// cylinder meeting the faces past them square, `10 (100 − 49π/4)` and `460 + 21π/2`. A ball of
+/// 7.5 would touch past them, and is refused.
+#[test]
+fn an_l_blocks_inside_edge_filled_as_wide_as_its_faces_takes_both() {
+    use crate::common::close;
+    let names = ["bottom","end","floor","wall","top","back"].map(String::from).to_vec();
+    let l = Profile {names:vec![names],origin:[0.;3],normal:[0.,-1.,0.],
+        loops:vec![poly(&[[0.,0.,0.],[10.,0.,0.],[10.,0.,3.],[3.,0.,3.],[3.,0.,10.],[0.,0.,10.]])]};
+    let l = prism(&l,-10.,0.).unwrap();
+    let filled = rounded(&l,&[[3.,5.,3.]],7.).unwrap();
+    filled.check(1e-8).unwrap();
+    close(volume(&filled),10.*(100.-49.*PI/4.));
+    close(total_area(&filled),460.+21.*PI/2.);
+    assert!(filled.faces.iter().all(|f| f.name != "floor" && f.name != "wall"),"the faces it fills are gone");
+    too_large(rounded(&l,&[[3.,5.,3.]],7.5));
+}
+
+/// **A hole's rims rounded to meet at its waist** (brep-bench's fillet/hole-waist): a plate 2 thick
+/// bored 3 in radius, both rims rounded 1, half its thickness. The second ball's contact lands on
+/// the first's, the hole's wall goes, and its surface is the inner half of a torus:
+/// `800 − π (100/3 − 4π)` and `960 − 36π + 8π²`.
+#[test]
+fn a_holes_rims_rounded_to_half_the_plates_thickness_meet_at_its_waist() {
+    use crate::common::close;
+    use gcs_core::brep::boolean::{combined,Op};
+    let plate = combined(&block([-10.,-10.,0.],[10.,10.,2.]),&rod([0.;3],3.,[-1.,3.]),Op::Cut,0.).unwrap();
+    let waisted = rounded(&plate,&[[0.,3.,2.],[0.,3.,0.]],1.).unwrap();
+    waisted.check(1e-8).unwrap();
+    close(volume(&waisted),800.-PI*(100./3.-4.*PI));
+    close(total_area(&waisted),960.-36.*PI+8.*PI*PI);
+    assert!(waisted.faces.iter().all(|f| f.surface.kind() != "cylinder"),"the hole's wall is gone");
+}
+
+/// **A sliver left between two rounds** (brep-bench's fillet/sliver-strip): a plate's face 2 tall
+/// rounded 0.9999 from both edges keeps a strip 0.0002 tall between them, the second ball's band
+/// read against its contact's own height and not past it. Rounds of 1.0001 overlap, and the second
+/// is refused.
+#[test]
+fn a_face_rounded_from_both_edges_short_of_its_middle_keeps_a_sliver() {
+    let ats = [[10.,10.,0.],[10.,10.,2.]];
+    let strip = both_edges_rounded([20.,10.,2.],ats,0.9999);
+    assert_eq!(face_kinds(&strip).iter().filter(|&&k| k == "plane").count(),6,"the strip is kept");
+    too_large(rounded(&named_box([20.,10.,2.]),&ats,1.0001));
 }
 
 /// **A cylinder's rim chamfered to a point** (brep-bench's chamfer/cylinder-rim-to-point): legs of

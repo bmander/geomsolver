@@ -181,7 +181,7 @@ repeat teeth as i {
   indexed cut body
 }
 
-removal := sweep(tool over t in (-30deg, 30deg), under: generating)
+removal := solid({ p | p inside(under: generating, over t in (-30deg, 30deg)) tool })
 removal cut body
 ```
 

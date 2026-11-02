@@ -239,6 +239,7 @@ fn ell(rounded: bool) -> String {
     format!("\
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 in std.front {{
   b0 := point
@@ -257,7 +258,7 @@ in std.front {{
 (riser := line(b3, b4)) -> (top := line(b4, b5)) -> (west := line(b5, b0)) -> close
   outline := face(south, east, ledge, riser, top, west)
 }}
-plate := solid(outline, depth: 4mm)
+plate := solid(std.solids.Prism(outline, from: -4mm, to: 0))
 {}
 scenario lift {{
   fixed plate.west

@@ -5,6 +5,7 @@
 // `swing_r`, or the tube would meet itself about the axis.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (turns)
 
@@ -26,7 +27,7 @@ in std.front {
   private meridian := arc(center: centre, start: bottom, end: top) hint(r: 3)
   radius(ball) meridian
 }
-construction cutter := solid(face(meridian, diameter), about: diameter)
+construction cutter := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))
 
 // the block below the top face, wide enough to hold the whole groove
 in std.top {
@@ -43,10 +44,10 @@ in std.top {
   private s2 := line(b2, b3)
   private s3 := line(b3, b0)
 }
-block := solid(face(s0, s1, s2, s3), from: -8mm, to: 0mm)
+block := solid(std.solids.Prism(face(s0, s1, s2, s3), from: -8mm, to: 0mm))
 
 // the turn about the upright axis, and the groove the ball sweeps over `swing` of it
 swinging := frame
 swinging turns(1) ax
-construction groove := sweep(cutter over t in (0deg, swing), under: swinging)
+construction groove := solid({ p | p inside(under: swinging, over t in (0deg, swing)) cutter })
 groove cut block

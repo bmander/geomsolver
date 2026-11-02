@@ -8,6 +8,7 @@
 // least to the greatest value it reaches. Keep both clear of the block, as `turn.sv` says.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (turns)
 
@@ -42,7 +43,7 @@ in holder {
   private tip := circle(center: tc) hint(r: 2)
   radius(tube) tip
 }
-construction cutter := solid(face(tip), about: cutter_axis)
+construction cutter := solid(std.solids.Revolution(face(tip), about: cutter_axis))
 
 // the block: a ring about z in common with a wedge `sector` round from x
 in std.front {
@@ -61,7 +62,7 @@ in std.front {
   private wall_out := line(q1, q2)
   private topside := line(q2, q3)
 }
-block := solid(face(wall_in, underside, wall_out, topside), about: ax)
+block := solid(std.solids.Revolution(face(wall_in, underside, wall_out, topside), about: ax))
 in std.top {
   private w0 := point
   private w1 := point
@@ -73,12 +74,12 @@ in std.top {
   private wb := line(w1, w2)
   private wc := line(w2, w0)
 }
-construction wedge := solid(face(wa, wb, wc), from: -2 * half, to: 2 * half)
+construction wedge := solid(std.solids.Prism(face(wa, wb, wc), from: -2 * half, to: 2 * half))
 wedge common block
 
 // the turn about the block's axis, rocked out and back by the law, and the groove it sweeps
 swing := frame
 swing turns(1) ax
 fix(value == from + (to - from) * (1 - cos(t)) / 2) swing
-construction groove := sweep(cutter over t, under: swing)
+construction groove := solid({ p | p inside(under: swing, over t) cutter })
 groove cut block

@@ -10,6 +10,7 @@
 // filled.
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 1mm   // the rim's radius
@@ -26,8 +27,8 @@ in std.top {
   bore_k := circle(center: c2) hint(r: 6)
   radius(6mm) bore_k
 }
-main := solid(face(main_k), from: -30mm, to: 30mm)
-bore := solid(face(bore_k), from: 0mm, to: 25mm)
+main := solid(std.solids.Prism(face(main_k), from: -30mm, to: 30mm))
+bore := solid(std.solids.Prism(face(bore_k), from: 0mm, to: 25mm))
 pipe := solid(main)
 bore cut pipe
 

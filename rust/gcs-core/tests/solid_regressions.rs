@@ -158,10 +158,10 @@ fn invalid_solved_profiles_and_revolution_axes_are_diagnosed() {
     ] {
         let mut src = String::from("unit mm\n");
         for (i, (x, y)) in coords.iter().enumerate() {
-            src += &format!("use std\nin std.front {{\np{i} := point\nfix(({x}, {y})) p{i}\n}}\n");
+            src += &format!("use std\nuse std.solids\nin std.front {{\np{i} := point\nfix(({x}, {y})) p{i}\n}}\n");
         }
         src += &format!(
-            "f := face({}, -> close)\nresult := solid(f, depth: 5mm)\n",
+            "f := face({}, -> close)\nresult := solid(std.solids.Prism(f, from: -5mm, to: 0))\n",
             (0..coords.len())
                 .map(|i| format!("p{i}"))
                 .collect::<Vec<_>>()
@@ -195,33 +195,43 @@ fn acyclic_body_nesting_has_no_fake_cycle_or_empty_term_limit() {
     );
 }
 
+/// `depth:` is retired (#737), refused naming the prism it says — its ordinates the depth's
+/// negation and 0, as written — and a prism between two ordinates that are one, even as an
+/// expression, is swept nowhere.
 #[test]
-fn depth_is_a_positive_magnitude_even_when_it_is_an_expression() {
-    for depth in ["-5mm", "2mm - 7mm", "0mm"] {
-        let (p, _) = crate::common::parse(&source(12).replace("-5mm", depth));
-        let e = program::elaborate(&p);
-        assert!(
-            e.errors().any(|d| d.message.contains("positive magnitude")),
-            "{:?}",
-            e.diags
-        );
+fn a_depth_is_retired_naming_its_prism_and_a_prism_swept_nowhere_is_refused() {
+    let base = source(12);
+    let word = "std.solids.Prism(f, from: 5mm, to: 0)";
+    assert!(base.contains(word));
+    for (depth, from) in [("-5mm", "5mm"), ("2mm - 7mm", "-(2mm - 7mm)"), ("0mm", "-0mm")] {
+        let (_, errs) = crate::common::parse(&base.replace(word, &format!("f, depth: {depth}")));
+        let want = format!("write `solid(std.solids.Prism(f, from: {from}, to: 0))`");
+        assert!(errs.iter().any(|e| e.message.contains(&want)), "{want}: {errs:?}");
     }
     near(
-        positions(&source(12).replace("depth: -5mm", "from: 0mm, to: 5mm"))["result.volume"],
+        positions(&base.replace(word, "std.solids.Prism(f, from: 0mm, to: 5mm)"))["result.volume"],
         500.0,
         1e-12,
     );
-    let src = source(12)
-        .replace("unit mm", "unit mm\nd := -5mm")
-        .replace("depth: -5mm", "depth: d");
-    let (p, _) = crate::common::parse(&src);
-    assert!(!program::elaborate(&p).ok());
+    for src in [base.replace(word, "std.solids.Prism(f, from: 0mm, to: 0mm)"),
+                base.replace("unit mm", "unit mm\nd := 2mm - 2mm")
+                    .replace(word, "std.solids.Prism(f, from: 0mm, to: d)")] {
+        let (p, errs) = crate::common::parse(&src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let e = program::elaborate(&p);
+        assert!(e.errors().any(|d| d.message.contains("swept nowhere")), "{src}\n{:?}", e.diags);
+    }
+    // and the ordinates the other way round, `depth: -5mm` as it was, say an empty set
+    let (p, errs) = crate::common::parse(&base);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = program::elaborate(&p);
+    assert!(e.errors().any(|d| d.message.contains("the prism's set is empty")), "{:?}", e.diags);
 }
 
 #[test]
 fn geometry_validation_uses_the_solved_shape_instead_of_its_hint() {
     // p2 starts at p1. Its dimensions move it to the fourth corner before validation runs.
-    let e = read("unit mm\nuse std\nin std.front {\np0 := point\nfix((0, 0)) p0\np1 := point\nfix((10, 0)) p1\np2 := point hint((10, 0))\np3 := point\nfix((0, 10)) p3\np0 distance(10mm, along: u) p2\np0 distance(10mm, along: v) p2\n}\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(f, depth: 5mm)\n");
+    let e = read("unit mm\nuse std\nuse std.solids\nin std.front {\np0 := point\nfix((0, 0)) p0\np1 := point\nfix((10, 0)) p1\np2 := point hint((10, 0))\np3 := point\nfix((0, 10)) p3\np0 distance(10mm, along: u) p2\np0 distance(10mm, along: v) p2\n}\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(std.solids.Prism(f, from: -5mm, to: 0))\n");
     assert!(program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
     near(
         report::positions(&e.sketch, &e.map)

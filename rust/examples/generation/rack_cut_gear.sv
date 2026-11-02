@@ -18,6 +18,7 @@
 
 unit mm
 use std
+use std.solids
 use std.place (right_of)
 use std.motion (spins, slides)
 
@@ -36,8 +37,8 @@ in std.front {
   radius(rp + m) rim
   construction bore_c := circle(center: o) hint(r: 6)
   radius(bore_r) bore_c
-  blank := solid(face(rim), depth: width)
-  construction bore := solid(face(bore_c), from: -width - 2mm, to: 2mm)
+  blank := solid(std.solids.Prism(face(rim), from: -width, to: 0))
+  construction bore := solid(std.solids.Prism(face(bore_c), from: -width - 2mm, to: 2mm))
 
   // the rack's pitch line, tangent to the pitch circle at the pitch point
   s0 := point hint((20, 0))
@@ -66,7 +67,7 @@ in (rack := frame) {
   }
 }
 tooth := face(t0, t1, t2, t3, -> close)
-construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
+construction rack_tooth := solid(std.solids.Prism(tooth, from: -width - 2mm, to: 2mm))
 
 // The blank turns in the front view about its centre, and the rack slides along its pitch line
 // a pitch circle's turn a turn: the rack rolls on the pitch circle.  What it cuts is the tooth,
@@ -74,7 +75,7 @@ construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
 turn := frame
 turn spins(1) o
 rack slides(2 * pi * rp) slide
-construction space := sweep(rack_tooth, through: gear, seen_from: turn)
+construction space := solid({ p | p inside(seen_from: turn) rack_tooth })
 
 // The same motion draws on the sketch what it cuts in the solid: the envelope of the rack's flank
 // is the tooth's involute, and the envelope of its tip corner the root fillet, curves of the

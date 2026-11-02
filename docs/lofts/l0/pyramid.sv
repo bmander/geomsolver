@@ -20,4 +20,4 @@ in std.top {
   guide := line(o, e)
 }
 param s: Scalar over (0, 1)
-pyramid := sweep(Shrinking(guide, std.z, size: 20mm).f over s)
+pyramid := solid({ p | p coincident(over s) Shrinking(guide, std.z, size: 20mm).f })

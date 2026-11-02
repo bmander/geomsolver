@@ -17,7 +17,7 @@ use crate::common::{ent, text::solved};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), standing 12 deep along y; a second one
 /// 20 along x from it; an L of two steps whose inner edge is concave.
-const BLOCKS: &str = "unit mm\nuse std\nuse std.rounds\nin std.front {\n\
+const BLOCKS: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -33,14 +33,14 @@ const BLOCKS: &str = "unit mm\nuse std\nuse std.rounds\nin std.front {\n\
     (ls := line(l0, l1)) -> (le := line(l1, l2)) -> (lt := line(l2, l3)) -> (lr := line(l3, l4)) -> \
     (ln := line(l4, l5)) -> (lw := line(l5, l0)) -> close\n\
     ell := face(ls, le, lt, lr, ln, lw)\n}\n\
-    construction block := solid(outline, depth: 12mm)\n\
-    construction pair := solid(outline, depth: 12mm)\nother := solid(beside, depth: 12mm)\n\
+    construction block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\n\
+    construction pair := solid(std.solids.Prism(outline, from: -12mm, to: 0))\nother := solid(std.solids.Prism(beside, from: -12mm, to: 0))\n\
     other union pair\n\
-    construction step := solid(ell, depth: 12mm)\n";
+    construction step := solid(std.solids.Prism(ell, from: -12mm, to: 0))\n";
 
 /// On the top plane: a post of radius 5 and 10 tall; a hex bar 6 to its corners and 8 tall; a
 /// plate 40 square and 5 thick with a bore of radius 6 through it.
-const TURNED: &str = "unit mm\nuse std\nuse std.rounds\nuse std.shapes\nin std.top {\n\
+const TURNED: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds\nuse std.shapes\nin std.top {\n\
     o := point\nfix((0, 0)) o\nrim := radius(5mm) circle(center: o)\n\
     h := point\nfix((40, 0)) h\nhx := point\nfix((50, 0)) hx\nref := line(h, hx)\n\
     hexes := std.shapes.Polygon(h, ref, n: 6, r: 6mm, phase: 0deg)\n\
@@ -50,15 +50,15 @@ const TURNED: &str = "unit mm\nuse std\nuse std.rounds\nuse std.shapes\nin std.t
     (ps := line(p0, p1)) -> (pe := line(p1, p2)) -> (pn := line(p2, p3)) -> (pw := line(p3, p0)) -> close\n\
     plate := face(ps, pe, pn, pw)\n\
     bc := point\nfix((100, 0)) bc\nbore := radius(6mm) circle(center: bc)\nhole := face(bore)\n}\n\
-    construction post := solid(face(rim), from: 0mm, to: 10mm)\n\
-    construction bar := solid(hex, from: 0mm, to: 8mm)\n\
-    construction slab := solid(plate, from: 0mm, to: 5mm)\n\
-    drill := solid(hole, from: -1mm, to: 6mm)\ndrill cut slab\n";
+    construction post := solid(std.solids.Prism(face(rim), from: 0mm, to: 10mm))\n\
+    construction bar := solid(std.solids.Prism(hex, from: 0mm, to: 8mm))\n\
+    construction slab := solid(std.solids.Prism(plate, from: 0mm, to: 5mm))\n\
+    drill := solid(std.solids.Prism(hole, from: -1mm, to: 6mm))\ndrill cut slab\n";
 
 /// On the top plane, a slab 40 square and 10 thick four times over: a tray, a pocket 20 × 16 and
 /// 4 deep cut into its top; a plinth, a boss 10 square standing 5 on it; a base, a post of radius
 /// 5 standing 5 on it; a cup, a bore of radius 6 sunk 5 into it.
-const STANDING: &str = "unit mm\nuse std\nuse std.rounds\nin std.top {\n\
+const STANDING: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds\nin std.top {\n\
     q0 := point\nq1 := point\nq2 := point\nq3 := point\n\
     fix((0, 0)) q0\nfix((40, 0)) q1\nfix((40, 40)) q2\nfix((0, 40)) q3\n\
     (qs := line(q0, q1)) -> (qe := line(q1, q2)) -> (qn := line(q2, q3)) -> (qw := line(q3, q0)) -> close\n\
@@ -72,14 +72,14 @@ const STANDING: &str = "unit mm\nuse std\nuse std.rounds\nin std.top {\n\
     (ms := line(m0, m1)) -> (me := line(m1, m2)) -> (mn := line(m2, m3)) -> (mw := line(m3, m0)) -> close\n\
     stud := face(ms, me, mn, mw)\n\
     o := point\nfix((20, 20)) o\nrim := radius(5mm) circle(center: o)\nlip := radius(6mm) circle(center: o)\n}\n\
-    construction tray := solid(slab, from: 0mm, to: 10mm)\n\
-    cavity := solid(pocket, from: 6mm, to: 11mm)\ncavity cut tray\n\
-    construction plinth := solid(slab, from: 0mm, to: 10mm)\n\
-    boss := solid(stud, from: 9mm, to: 15mm)\nboss union plinth\n\
-    construction base := solid(slab, from: 0mm, to: 10mm)\n\
-    post := solid(face(rim), from: 9mm, to: 15mm)\npost union base\n\
-    construction cup := solid(slab, from: 0mm, to: 10mm)\n\
-    well := solid(face(lip), from: 5mm, to: 11mm)\nwell cut cup\n";
+    construction tray := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))\n\
+    cavity := solid(std.solids.Prism(pocket, from: 6mm, to: 11mm))\ncavity cut tray\n\
+    construction plinth := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))\n\
+    boss := solid(std.solids.Prism(stud, from: 9mm, to: 15mm))\nboss union plinth\n\
+    construction base := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))\n\
+    post := solid(std.solids.Prism(face(rim), from: 9mm, to: 15mm))\npost union base\n\
+    construction cup := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))\n\
+    well := solid(std.solids.Prism(face(lip), from: 5mm, to: 11mm))\nwell cut cup\n";
 
 /// `name` built as a body grown, exactly.
 fn exact(e: &Elaborated, name: &str) -> std::rc::Rc<Exact> {
@@ -258,11 +258,11 @@ fn what_is_not_built_is_said() {
 /// box carried by its frame), not within the disc about the origin reaching it.
 #[test]
 fn a_prism_far_from_its_planes_origin_has_its_own_box() {
-    let e = solved("unit mm\nuse std\nuse std.rounds\nin std.front {\n\
+    let e = solved("unit mm\nuse std\nuse std.solids\nuse std.rounds\nin std.front {\n\
         b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
         fix((1000, 1000)) b0\nfix((1040, 1000)) b1\nfix((1040, 1024)) b2\nfix((1000, 1024)) b3\n\
         (s := line(b0, b1)) -> (e := line(b1, b2)) -> (n := line(b2, b3)) -> (w := line(b3, b0)) -> close\n\
-        outline := face(s, e, n, w)\n}\nblock := solid(outline, depth: 12mm)\n");
+        outline := face(s, e, n, w)\n}\nblock := solid(std.solids.Prism(outline, from: -12mm, to: 0))\n");
     let field = MaterialField::read(&e.sketch, ent(&e, "block").i(), 1e-10).unwrap();
     let b = field.support_bounds().unwrap().expect("a box");
     let size: Vec<f64> = b.iter().map(|x| x.bounds()[1] - x.bounds()[0]).collect();

@@ -15,6 +15,7 @@
 use engine.dims (D, P, back, bulk, capd, deck, front, hw, kw, rail, rbay, rj, rmb, sump, wall, wmb)
 use engine.parts
 use std
+use std.solids
 use std.place (horizontal, offset, right_of)
 
 // the oil pan: a casting `pt` thick, hung from a flange `pf` thick under the block's rail, its
@@ -345,51 +346,48 @@ component EngineBlock() {
     bay2 offset(dx: rbay, dy: deck - wall) std.side.origin
     bay3 offset(dx: -rbay, dy: deck - wall) std.side.origin
   }
-  casting := solid(face(deckline, b_r, sk_r, kr, railline, kl, sk_l, b_l), from: front, to: back)
+  casting := solid(std.solids.Prism(face(deckline, b_r, sk_r, kr, railline, kl, sk_l, b_l), from: front, to: back))
   repeat 4 as i {
-    private cylinder := solid(face(bore[i]), from: deck - wall - 1mm, to: deck + 1mm)
+    private cylinder := solid(std.solids.Prism(face(bore[i]), from: deck - wall - 1mm, to: deck + 1mm))
     cylinder cut casting
   }
   repeat 4 as i {
-    private crankcase := solid(face(bay0, bay1, bay2, bay3, -> close),
-                               from: front + 25mm + bulk / 2 + i * P,
-                               to: front + 25mm - bulk / 2 + (i + 1) * P)
+    private crankcase := solid(std.solids.Prism(face(bay0, bay1, bay2, bay3, -> close), from: front + 25mm + bulk / 2 + i * P, to: front + 25mm - bulk / 2 + (i + 1) * P))
     crankcase cut casting
   }
-  mains := solid(face(shell), from: front - 1mm, to: back + 1mm)
+  mains := solid(std.solids.Prism(face(shell), from: front - 1mm, to: back + 1mm))
   mains cut casting
   // The features the casting adds, gathered into one body and cut from it at once: the water
   // jacket, the slot round the barrels from the deck down, so the deck is open round them; the
   // head bolts' tapped holes down from the deck; the pan's tapped up into the rail; the core
   // holes through each side into the jacket (the side view looks along -y, so its ordinates run
   // that way); and the seat each bearing cap stands in under its bulkhead
-  jacket := solid(jacket_rim, from: deck - jdepth, to: deck + 1mm)
+  jacket := solid(std.solids.Prism(jacket_rim, from: deck - jdepth, to: deck + 1mm))
   repeat 4 as i {
-    private barrel_of := solid(face(barrel[i]), from: deck - jdepth - 1mm, to: deck + 2mm)
+    private barrel_of := solid(std.solids.Prism(face(barrel[i]), from: deck - jdepth - 1mm, to: deck + 2mm))
     barrel_of cut jacket
   }
   drillings := solid(jacket)
   repeat 5 as j {
-    private bolt_n := solid(face(head_bolt_n[j]), from: deck - hdepth, to: deck + 1mm)
-    private bolt_s := solid(face(head_bolt_s[j]), from: deck - hdepth, to: deck + 1mm)
+    private bolt_n := solid(std.solids.Prism(face(head_bolt_n[j]), from: deck - hdepth, to: deck + 1mm))
+    private bolt_s := solid(std.solids.Prism(face(head_bolt_s[j]), from: deck - hdepth, to: deck + 1mm))
     bolt_n union drillings
     bolt_s union drillings
   }
   repeat 4 as k {
-    private tap_n := solid(face(pan_bolt_n[k]), from: rail - 1mm, to: rail + tap)
-    private tap_s := solid(face(pan_bolt_s[k]), from: rail - 1mm, to: rail + tap)
+    private tap_n := solid(std.solids.Prism(face(pan_bolt_n[k]), from: rail - 1mm, to: rail + tap))
+    private tap_s := solid(std.solids.Prism(face(pan_bolt_s[k]), from: rail - 1mm, to: rail + tap))
     tap_n union drillings
     tap_s union drillings
   }
   repeat 4 as i {
-    private core_n := solid(face(plug[i]), from: -hw - 1mm, to: -jw + 2mm)
-    private core_s := solid(face(plug[i]), from: jw - 2mm, to: hw + 1mm)
+    private core_n := solid(std.solids.Prism(face(plug[i]), from: -hw - 1mm, to: -jw + 2mm))
+    private core_s := solid(std.solids.Prism(face(plug[i]), from: jw - 2mm, to: hw + 1mm))
     core_n union drillings
     core_s union drillings
   }
   repeat 5 as j {
-    private seat := solid(face(cap, parting), from: front + 25mm + j * P - wmb / 2,
-                          to: front + 25mm + j * P + wmb / 2)
+    private seat := solid(std.solids.Prism(face(cap, parting), from: front + 25mm + j * P - wmb / 2, to: front + 25mm + j * P + wmb / 2))
     seat union drillings
   }
   drillings cut casting
@@ -399,17 +397,15 @@ component EngineBlock() {
   // shells; and the eight core plugs, pressed into their holes a millimetre below the sides.
   main_caps := solid()
   repeat 5 as j {
-    private main_cap := solid(face(cap, parting), from: front + 25mm + j * P - wmb / 2,
-                              to: front + 25mm + j * P + wmb / 2)
-    private cap_bore := solid(face(shell), from: front + 24mm + j * P - wmb / 2,
-                              to: front + 26mm + j * P + wmb / 2)
+    private main_cap := solid(std.solids.Prism(face(cap, parting), from: front + 25mm + j * P - wmb / 2, to: front + 25mm + j * P + wmb / 2))
+    private cap_bore := solid(std.solids.Prism(face(shell), from: front + 24mm + j * P - wmb / 2, to: front + 26mm + j * P + wmb / 2))
     cap_bore cut main_cap
     main_cap union main_caps
   }
   plugs := solid()
   repeat 4 as i {
-    private plug_n := solid(face(plug[i]), from: -hw + 1mm, to: -hw + 5mm)
-    private plug_s := solid(face(plug[i]), from: hw - 5mm, to: hw - 1mm)
+    private plug_n := solid(std.solids.Prism(face(plug[i]), from: -hw + 1mm, to: -hw + 5mm))
+    private plug_s := solid(std.solids.Prism(face(plug[i]), from: hw - 5mm, to: hw - 1mm))
     plug_n union plugs
     plug_s union plugs
   }
@@ -420,22 +416,20 @@ component EngineBlock() {
   // walls, straight at the sides and sloping at the ends.  Its inside is the same of the two
   // insides, open at the rail, so the wall is `pt` thick everywhere.  The drain boss stands
   // into the floor from below, and the plug's hole and the flange's bolt holes go through.
-  sump_body := solid(face(lip_r, flange_r, su_r, ss_r, sb, ss_l, su_l, flange_l, lip_l, -> close),
-                     from: front - 1mm, to: back + 1mm)
-  outline := solid(face(pe_f, pu_f, s1, s2, s3, s4, pu_b, pe_b, -> close),
-                   from: -kw - 1mm, to: kw + 1mm)
+  sump_body := solid(std.solids.Prism(face(lip_r, flange_r, su_r, ss_r, sb, ss_l, su_l, flange_l, lip_l, -> close), from: front - 1mm, to: back + 1mm))
+  outline := solid(std.solids.Prism(face(pe_f, pu_f, s1, s2, s3, s4, pu_b, pe_b, -> close), from: -kw - 1mm, to: kw + 1mm))
   outline common sump_body
-  cavity := solid(face(iu_r, is_r, ib, is_l, iu_l, -> close), from: front - 1mm, to: back + 1mm)
-  inside := solid(face(t1, t2, t3, t4, -> close), from: -kw - 1mm, to: kw + 1mm)
+  cavity := solid(std.solids.Prism(face(iu_r, is_r, ib, is_l, iu_l, -> close), from: front - 1mm, to: back + 1mm))
+  inside := solid(std.solids.Prism(face(t1, t2, t3, t4, -> close), from: -kw - 1mm, to: kw + 1mm))
   inside common cavity
-  boss := solid(face(drain_boss), from: sump - bh, to: sump + pt / 2)
+  boss := solid(std.solids.Prism(face(drain_boss), from: sump - bh, to: sump + pt / 2))
   pan := solid(sump_body)
   boss union pan
   cavity cut pan
-  holes := solid(face(drain), from: sump - bh - 1mm, to: sump + pt + 1mm)
+  holes := solid(std.solids.Prism(face(drain), from: sump - bh - 1mm, to: sump + pt + 1mm))
   repeat 4 as k {
-    private hole_n := solid(face(pan_bolt_n[k]), from: rail - pf - 1mm, to: rail + 1mm)
-    private hole_s := solid(face(pan_bolt_s[k]), from: rail - pf - 1mm, to: rail + 1mm)
+    private hole_n := solid(std.solids.Prism(face(pan_bolt_n[k]), from: rail - pf - 1mm, to: rail + 1mm))
+    private hole_s := solid(std.solids.Prism(face(pan_bolt_s[k]), from: rail - pf - 1mm, to: rail + 1mm))
     hole_n union holes
     hole_s union holes
   }

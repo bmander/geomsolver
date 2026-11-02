@@ -7,6 +7,7 @@
 // space at every tooth: `generation/rack_cut_gear.sv`.
 unit mm
 use std
+use std.solids
 use std.motion (spins, slides)
 
 in std.front {
@@ -33,14 +34,14 @@ in std.front {
   fix((24, 3.026666)) t2
   fix((24, -3.026666)) t3
 }
-blank := solid(face(rim), depth: 6mm)
-construction tooth := solid(face(t0, t1, t2, t3, -> close), from: -8mm, to: 2mm)
+blank := solid(std.solids.Prism(face(rim), from: -6mm, to: 0))
+construction tooth := solid(std.solids.Prism(face(t0, t1, t2, t3, -> close), from: -8mm, to: 2mm))
 
 // the blank turning about its centre, and the rack sliding a pitch circumference a turn
 turn := frame
 turn spins(1) o
 rack := frame
 rack slides(2 * pi * 20mm) pitch_line
-construction space := sweep(tooth over t in (-60deg, 60deg), under: rack, seen_from: turn)
+construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) tooth })
 gear := solid(blank)
 space cut gear

@@ -16,6 +16,7 @@
 // brake disc's six M5 bolts.
 
 use std
+use std.solids
 use std.place (horizontal)
 use motor.dims (brg_in, brg_od, brg_w, clear4, disc_bcd, disc_bolts, disc_depth, flange_r, flange_t,
                 half, lip, lip_r, pocket_in, Ro, Rr, screw_r, screws, spigot, spigot_r, spoke_d,
@@ -59,13 +60,13 @@ component Cover(boss_to: Length, boss_r: Length, spoke_phase: Angle, disc: Int) 
                step(u: lip_in) (pocket := line) ->
                step(v: lip_r) (lip_face := line) -> close
   }
-  body := solid(profile, about: f.ax)
+  body := solid(std.solids.Revolution(profile, about: f.ax))
 
   // the spoke holes, through the flange
   spokes := motor.parts.HoleCircle(f, n: motor.dims.spokes, r: spoke_r, d: spoke_d,
                                    phase: spoke_phase)
   repeat motor.dims.spokes as i {
-    private spoke := solid(face(spokes.hole[i]), through: body)
+    private spoke := solid(std.solids.Through(face(spokes.hole[i])))
     spoke cut body
   }
 
@@ -81,7 +82,7 @@ component Cover(boss_to: Length, boss_r: Length, spoke_phase: Angle, disc: Int) 
   }
   f.datum angle(180deg / screws) clear_radial[0]
   repeat screws as i {
-    private screw := solid(face(clear[i]), through: body)
+    private screw := solid(std.solids.Through(face(clear[i])))
     screw cut body
   }
 
@@ -90,7 +91,7 @@ component Cover(boss_to: Length, boss_r: Length, spoke_phase: Angle, disc: Int) 
   when disc == 1 {
     disc_holes := motor.parts.HoleCircle(f, n: disc_bolts, r: disc_bcd / 2, d: tap5, phase: 0deg)
     repeat disc_bolts as i {
-      private tapped := solid(face(disc_holes.hole[i]), from: -boss_to, to: disc_depth - boss_to)
+      private tapped := solid(std.solids.Prism(face(disc_holes.hole[i]), from: -boss_to, to: disc_depth - boss_to))
       tapped cut body
     }
   }

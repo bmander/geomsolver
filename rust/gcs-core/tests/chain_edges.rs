@@ -135,6 +135,7 @@ fn a_surface_per_edge_of_a_revolved_profile() {
     let src = "\
 unit mm
 use std
+use std.solids
 use std.place (horizontal)
 in std.front {
 o := point
@@ -160,7 +161,7 @@ component Rect(o: point, w: Length, h: Length) {
 }
 in std.front {
 r := Rect(o, w: 4mm, h: 3mm)
-ring := solid(r.profile, about: ax)
+ring := solid(std.solids.Revolution(r.profile, about: ax))
 repeat e in r.profile as i {
   s := surface(ring, edge: e)
 }

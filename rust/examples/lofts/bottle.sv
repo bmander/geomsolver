@@ -67,6 +67,6 @@ in std.front {
   rail := spline(through: rims2, start: whole, end: whole)
 }
 param s: Scalar over (0, 2)
-ruled := sweep(Ring(axis, rims).f over s)
+ruled := solid({ p | p coincident(over s) Ring(axis, rims).f })
 param s2: Scalar over (0, 1)
-smooth := sweep(Ring(whole, rail, s: s2).f over s2)
+smooth := solid({ p | p coincident(over s2) Ring(whole, rail, s: s2).f })

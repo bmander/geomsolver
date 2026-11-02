@@ -337,7 +337,7 @@ component Space(a: set, b: set, lo: set, hi: set, cap: set, step: frame, pitch: 
 // `index` at each of `n` teeth. A member is its blank less its crown's cut.
 component Generated(body: solid, tool: solid, under: frame, seen_from: frame, index: frame,
     n: Int) {
-  construction removal := sweep(tool, through: body, under: under, seen_from: seen_from)
+  construction removal := solid({ p | p inside(under: under, seen_from: seen_from) tool })
   repeat n as i {
     private construction indexed := removal at(under: index) i * 360deg / n
     indexed cut body

@@ -85,7 +85,7 @@ fn what_a_closed_characteristic_still_refuses() {
     let screwed = refused(admit(&screwed));
     assert_eq!(screwed.condition,Condition::Once);
     assert!(screwed.message.contains("both of a ring's characteristic points on `mill.side` reach the blank"),"{}",screwed.message);
-    let bar = punch().replace("construction tool := solid(face(near_face, side, far_face, spindle), about: spindle)","in std.side {
+    let bar = punch().replace("construction tool := solid(std.solids.Revolution(face(near_face, side, far_face, spindle), about: spindle))","in std.side {
   private c0 := point
   private c1 := point
   private c2 := point
@@ -99,7 +99,7 @@ fn what_a_closed_characteristic_still_refuses() {
   private outer := line(c2, c3)
   private under := line(c3, c0)
 }
-construction tool := solid(face(lower, upper, outer, under), from: 6mm, to: 14mm)");
+construction tool := solid(std.solids.Prism(face(lower, upper, outer, under), from: 6mm, to: 14mm))");
     // (pushed square to its length, the bar keeps its section's plane: planar subtraction's)
     assert!(matches!(class(&fixtures::read(&bar),"part"),Class::Subtraction(_)),"read by the planar subtraction class");
     let aslant = refused(admit(&bar.replace("fix(dir == (0, 0, 1)) up","fix(dir == (0.3, 0, 0.9539392014169457)) up")));

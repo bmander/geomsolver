@@ -16,13 +16,13 @@ use crate::common::rounds::{beside_cylinder, root_ring, square_run};
 use crate::common::rounds::meridian::{knob_neck, knob_rounded};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
-const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
     (west := line(b3, b0)) -> close\n\
     outline := face(south, east, north, west)\n}\n\
-    block := solid(outline, depth: 12mm)\n";
+    block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\n";
 
 /// Solid `name` of `e` built, written as STEP and as STL by this kernel (each read back and
 /// checked as `solventc` checks it), and its B-rep.
@@ -153,7 +153,7 @@ fn a_pocket_rounded_inside_is_filled_exactly() {
 /// south face's surface, `lb` along the south face from the near face's.
 #[test]
 fn a_flat_with_unequal_legs() {
-    let src = BLOCK.replace("use std\nuse std.rounds (round, chamfer)", "use std\nuse std.rounds");
+    let src = BLOCK.replace("use std\nuse std.solids\nuse std.rounds (round, chamfer)", "use std\nuse std.solids\nuse std.rounds");
     let e = solved(&format!("{src}flat := std.rounds.Flat(block.near, block.south, la: 1mm, lb: 3mm)\n\
         taken := solid(flat)\ntaken cut block\n"));
     let b = exported(&e, "block");
@@ -228,16 +228,16 @@ fn a_rim_rounded_to_its_cylinders_radius_is_a_dome() {
 /// about the y axis, and the rim where its side meets the lid's far face finished by `word` (a
 /// word of `std.rounds` the document imports as `import`).
 fn tilted_post(import: &str, word: &str) -> String {
-    format!("unit mm\nuse std\nuse std.rounds ({import})\n\
+    format!("unit mm\nuse std\nuse std.solids\nuse std.rounds ({import})\n\
         in std.top {{\n  o := point\n  fix((0, 0)) o\n  rim := circle(center: o) hint(r: 5)\n  radius(5mm) rim\n}}\n\
-        post := solid(face(rim), from: 0mm, to: 14mm)\n\
+        post := solid(std.solids.Prism(face(rim), from: 0mm, to: 14mm))\n\
         across := axis hint(dir: (0, 1, 0))\nacross parallel std.y\n\
         u := axis hint(dir: (0.94, 0, -0.34))\nu perpendicular across\nu angle(20deg, about: std.y) std.x\n\
         slant := plane(u: u, v: across)\nfix(origin == (0mm, 0mm, 10mm)) slant\n\
         in slant {{\n  a := point\n  b := point\n  c := point\n  d := point\n\
         fix((-20, -20)) a\n  fix((20, -20)) b\n  fix((20, 20)) c\n  fix((-20, 20)) d\n\
         (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}}\n\
-        lid := solid(face(ab, bc, cd, da), from: 0mm, to: 30mm)\n\
+        lid := solid(std.solids.Prism(face(ab, bc, cd, da), from: 0mm, to: 30mm))\n\
         drum := solid(post)\nlid cut drum\ndrum.lid {word} drum.post\n")
 }
 
@@ -400,15 +400,15 @@ fn a_seam_between_two_rods_is_filled_exactly() {
 /// bores.
 #[test]
 fn a_cusp_between_two_bores_is_rounded_away() {
-    let e = solved("unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n\
+    let e = solved("unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.front {\n\
         a := point\nb := point\nc := point\nd := point\n\
         fix((-20, -20)) a\nfix((30, -20)) b\nfix((30, 20)) c\nfix((-20, 20)) d\n\
         (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n\
         c1 := point\nc2 := point\nfix((0, 0)) c1\nfix((14, 0)) c2\n\
         big := circle(center: c1) hint(r: 10)\nsmall := circle(center: c2) hint(r: 8)\n\
         radius(10mm) big\nradius(8mm) small\n}\n\
-        block := solid(face(ab, bc, cd, da), from: 0mm, to: 40mm)\n\
-        left := solid(face(big), from: 0mm, to: 40mm)\nright := solid(face(small), from: 0mm, to: 40mm)\n\
+        block := solid(std.solids.Prism(face(ab, bc, cd, da), from: 0mm, to: 40mm))\n\
+        left := solid(std.solids.Prism(face(big), from: 0mm, to: 40mm))\nright := solid(std.solids.Prism(face(small), from: 0mm, to: 40mm))\n\
         left cut block\nright cut block\nblock.right.small round(r: 2mm) block.left.big\n");
     let b = exported(&e, "block");
     // at each cusp the material outside both bores that the ball cannot reach: the same figure
@@ -426,7 +426,7 @@ fn a_cusp_between_two_bores_is_rounded_away() {
 /// theorem over the three, each in closed form.
 #[test]
 fn a_chamfer_between_two_rods_is_an_ellipse() {
-    let src = include_str!("../../examples/rounds/twin.sv").replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds (chamfer)")
+    let src = include_str!("../../examples/rounds/twin.sv").replace("use std\nuse std.solids\nuse std.rounds (round)", "use std\nuse std.solids\nuse std.rounds (chamfer)")
         .replace("bar.right.small round(r: r) bar.left.big", "bar.right.small chamfer(d: 1mm) bar.left.big");
     let e = solved(&src);
     assert_eq!(lowered(&e).0, 1);
@@ -456,7 +456,7 @@ fn a_chamfer_between_two_rods_is_an_ellipse() {
 /// the lens is the spheroid out to where it meets each ball (`z₀ = 19/24`), the balls beyond.
 #[test]
 fn a_lenss_rim_chamfered_is_a_spheroid() {
-    let e = solved("unit mm\nuse std\nuse std.sets\nuse std.rounds\nc1 := point hint((0, 0, -6))\nfix((0, 0, -6)) c1\n\
+    let e = solved("unit mm\nuse std\nuse std.solids\nuse std.sets\nuse std.rounds\nc1 := point hint((0, 0, -6))\nfix((0, 0, -6)) c1\n\
         c2 := point hint((0, 0, 6))\nfix((0, 0, 6)) c2\n\
         a := std.sets.Sphere(c1, r: 10mm)\nb := std.sets.Sphere(c2, r: 10mm)\n\
         both := { p |\n  p inside a\n  p inside b\n  p inside std.rounds.Chamfered(a, b, la: 1mm, lb: 1mm)\n}\n\
@@ -475,14 +475,14 @@ fn a_lenss_rim_chamfered_is_a_spheroid() {
 /// one, their centroids `10 ± ρ̄`, so both together are the section turned at 10 twice (Pappus).
 #[test]
 fn a_torus_on_a_slab_is_filled_by_rings() {
-    let e = solved("unit mm\nuse std\nuse std.rounds (round)\nin std.top {\n\
+    let e = solved("unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.top {\n\
         a := point\nb := point\nc := point\nd := point\n\
         fix((-20, -20)) a\nfix((20, -20)) b\nfix((20, 20)) c\nfix((-20, 20)) d\n\
         (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
         in std.front {\n  o := point\n  fix((10, 0)) o\n  k := circle(center: o) hint(r: 4)\n  radius(4mm) k\n\
         \x20 lo := point\n  hi := point\n  fix((0, -5)) lo\n  fix((0, 5)) hi\n  spine := line(lo, hi)\n}\n\
-        slab := solid(face(ab, bc, cd, da), from: -20mm, to: 0mm)\n\
-        tube := solid(face(k), about: spine)\n\
+        slab := solid(std.solids.Prism(face(ab, bc, cd, da), from: -20mm, to: 0mm))\n\
+        tube := solid(std.solids.Revolution(face(k), about: spine))\n\
         body := solid(slab)\ntube union body\nbody.tube round(r: 1mm) body.slab\n");
     let (built, _) = lowered(&e);
     assert!(built >= 1);
@@ -498,7 +498,7 @@ fn a_torus_on_a_slab_is_filled_by_rings() {
 /// field still reads it.
 #[test]
 fn a_flat_no_rational_curve_holds_is_refused_by_name() {
-    let src = include_str!("../../examples/rounds/twin.sv").replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds")
+    let src = include_str!("../../examples/rounds/twin.sv").replace("use std\nuse std.solids\nuse std.rounds (round)", "use std\nuse std.solids\nuse std.rounds")
         .replace("bar.right.small round(r: r) bar.left.big", "A bevel(la, lb) B := {\n\
             \x20 repeat a in A {\n    repeat b in B {\n      when b != a {\n\
             \x20       fill := std.rounds.FlatFill(a, b, la: la, lb: lb)\n        filled := solid(fill)\n        filled union A.body\n\
@@ -520,7 +520,7 @@ fn a_flat_no_rational_curve_holds_is_refused_by_name() {
 /// Built as a prism over a rational quadratic, an extrusion face.
 #[test]
 fn a_chamfer_beside_a_rod_is_a_conic_prism() {
-    let src = include_str!("../../examples/rounds/rail.sv").replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds (round, chamfer)")
+    let src = include_str!("../../examples/rounds/rail.sv").replace("use std\nuse std.solids\nuse std.rounds (round)", "use std\nuse std.solids\nuse std.rounds (round, chamfer)")
         .replace("rail.rod round(r: r) rail.plate", "rail.rod chamfer(d: 2mm) rail.plate");
     let e = solved(&src);
     assert_eq!(lowered(&e).0, 1);
@@ -659,11 +659,11 @@ fn a_rings_stretch_cut_off_by_a_cylinder_at_its_ends() {
 /// is `[b√(A² − b²) + A² asin(b/A)]` from 0, `A² = 100 − a²`.
 #[test]
 fn a_run_cut_off_by_the_ball_it_lies_within() {
-    let e = solved("unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n\
+    let e = solved("unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.front {\n\
         a0 := point\na1 := point\nfix((0, -10)) a0\nfix((0, 10)) a1\nspindle := line(a0, a1)\n\
         c0 := point\nfix((0, 0)) c0\nshell := arc(center: c0, start: a0, end: a1) hint(r: 10)\n\
         shut := line(a1, a0)\n}\n\
-        wedge := solid(face(shell, shut), about: spindle, sweep: 90deg)\n\
+        wedge := solid(std.solids.Revolution(face(shell, shut), about: spindle, to: 90deg))\n\
         wedge.start round(r: 2mm) wedge.end\n");
     assert_eq!(lowered(&e).0, 1);
     let b = exported(&e, "wedge");
@@ -684,7 +684,7 @@ fn a_run_cut_off_by_the_ball_it_lies_within() {
 /// `∫∫ x ρ dρ dφ`.
 #[test]
 fn a_knobs_neck_chamfered_is_a_conic_turned() {
-    let src = include_str!("../../examples/rounds/knob.sv").replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds (chamfer)")
+    let src = include_str!("../../examples/rounds/knob.sv").replace("use std\nuse std.solids\nuse std.rounds (round)", "use std\nuse std.solids\nuse std.rounds (chamfer)")
         .replace("knob.rod round(r: 2mm) knob.disc", "knob.rod chamfer(d: 2mm) knob.disc")
         .replace("knob.rod round(r: 1.5mm) knob.ball", "knob.rod chamfer(d: 1.5mm) knob.ball");
     let e = solved(&src);
@@ -715,13 +715,13 @@ fn a_wide_turned_rim_is_chamfered_and_rounded_exactly() {
     for big in [32.0, 64.0] {
         for (word, cut) in [("chamfer(d: 0.5mm)", 2.0 * PI * (big - 0.5 / 3.0) * 0.125),
                             ("round(r: 0.5mm)", 2.0 * PI * (big - spandrel(0.5).1) * spandrel(0.5).0)] {
-            let e = solved(&format!("unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {{\n\
+            let e = solved(&format!("unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {{\n\
                 a0 := point\na1 := point\nfix((0, 0)) a0\nfix((0, 20)) a1\nspindle := line(a0, a1)\n\
                 p0 := point\np1 := point\np2 := point\np3 := point\n\
                 fix((8, 0)) p0\nfix(({big}, 0)) p1\nfix(({big}, 6)) p2\nfix((8, 6)) p3\n\
                 (bottom := line(p0, p1)) -> (rim := line(p1, p2)) -> (top := line(p2, p3)) -> \
                 (bore := line(p3, p0)) -> close\n}}\n\
-                washer := solid(face(bottom, rim, top, bore), about: spindle)\n\
+                washer := solid(std.solids.Revolution(face(bottom, rim, top, bore), about: spindle))\n\
                 washer.rim {word} washer.top\n"));
             let b = exported(&e, "washer");
             close(props::volume(&b), PI * (big * big - 64.0) * 6.0 - cut);
@@ -823,8 +823,12 @@ fn notch(depth: f64, draft: f64, r: f64) -> f64 {
 fn a_round_across_seams_between_arcs_on_a_drafted_prism_is_glued() {
     let src = include_str!("../../examples/rounds/notch.sv");
     for (draft, r) in [(3.0_f64, 1.0), (0.0, 1.0), (1.0, 1.0), (6.0, 0.5), (6.0, 1.5), (7.0, 1.0)] {
-        let drafted = if draft > 0.0 { format!(", draft: {draft}deg") } else { String::new() };
-        let text = src.replace(", draft: 3deg", &drafted)
+        // undrafted, the plate is a plain prism
+        let (word, drafted) = if draft > 0.0 { ("Drafted", format!(", draft: {draft}deg")) }
+            else { ("Prism", String::new()) };
+        assert!(src.contains("std.solids.Drafted(outline, from: -5mm, to: 0, draft: 3deg)"));
+        let text = src.replace("std.solids.Drafted(", &format!("std.solids.{word}("))
+            .replace(", draft: 3deg", &drafted)
             .replace("round(r: 1mm)", &format!("round(r: {r}mm)"));
         let e = solved(&text);
         let b = exported(&e, "body");
@@ -1162,7 +1166,7 @@ fn a_frustums_generators_are_rolled() {
 /// sections square to the edge (`common::rounds::{tee_flat, bore_flat}`) to 1e-6.
 #[test]
 fn chamfers_along_traced_edges_are_flats_fitted() {
-    let ex = |s: &str| s.replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds (chamfer)").replace("round(r: r)", "chamfer(d: 1mm)");
+    let ex = |s: &str| s.replace("use std\nuse std.solids\nuse std.rounds (round)", "use std\nuse std.solids\nuse std.rounds (chamfer)").replace("round(r: r)", "chamfer(d: 1mm)");
     let e = solved(include_str!("../../examples/rounds/crotch.sv"));
     assert_eq!(lowered(&e).0, 1);
     let want = PI * 100.0 * 60.0 + PI * 36.0 * 25.0 - inside_crossing(10.0, 6.0)
@@ -1181,7 +1185,7 @@ fn chamfers_along_traced_edges_are_flats_fitted() {
 #[test]
 fn chamfers_that_run_out_onto_a_face_are_cut_off() {
     use crate::common::rounds::{sloped_flat, RIM, ROOT};
-    let src = include_str!("../../examples/rounds/runout.sv").replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds (chamfer)")
+    let src = include_str!("../../examples/rounds/runout.sv").replace("use std\nuse std.solids\nuse std.rounds (round)", "use std\nuse std.solids\nuse std.rounds (chamfer)")
         .replace("round(r: 2mm)", "chamfer(d: 1mm)").replace("round(r: 1mm)", "chamfer(d: 1mm)");
     let e = solved(&src);
     assert_eq!(lowered(&e).0, 2);
@@ -1201,9 +1205,9 @@ fn chamfers_that_run_out_onto_a_face_are_cut_off() {
 /// `runout.sv`'s vent with only its hole and its rim, the hole at `(hx, hy)`, and `more` after.
 fn vent(hx: f64, hy: f64, more: &str) -> String {
     let src = include_str!("../../examples/rounds/runout.sv");
-    let lug = src.find("wedge := solid(side_f").expect("the wedge");
+    let lug = src.find("wedge := solid(std.solids.Prism(side_f").expect("the wedge");
     let mut out = src[..lug].replace("fix((98, -12)) hc", &format!("fix(({hx}, {hy})) hc"));
-    out.push_str("block := solid(other_f, from: 0mm, to: 24mm)\nhole := solid(face(hole_k), from: -1mm, to: 30mm)\n\
+    out.push_str("block := solid(std.solids.Prism(other_f, from: 0mm, to: 24mm))\nhole := solid(std.solids.Prism(face(hole_k), from: -1mm, to: 30mm))\n\
         vent := solid(block)\nhole cut vent\n");
     out.push_str(more);
     out.push_str("vent.block.vt round(r: 1mm) vent.hole\n");
@@ -1242,7 +1246,7 @@ fn a_rolled_run_is_cut_off_by_both_its_ends_faces() {
 #[test]
 fn a_rolled_run_onto_a_curved_face_is_cut_off_by_its_solid() {
     let drum = "in std.top {\n  dc := point\n  fix((40, -12)) dc\n  drum_k := circle(center: dc) hint(r: 60)\n  radius(60mm) drum_k\n}\n\
-        drum := solid(face(drum_k), from: -1mm, to: 40mm)\ndrum common vent\n";
+        drum := solid(std.solids.Prism(face(drum_k), from: -1mm, to: 40mm))\ndrum common vent\n";
     let e = solved(&vent(98.0, -12.0, drum));
     assert_eq!(lowered(&e).0, 1);
     let b = exported(&e, "vent");
@@ -1334,13 +1338,13 @@ fn a_rolled_rim_is_cut_only_near_its_corners() {
 /// ρ)` or the top — less the rim, #85's quadrature (`cone_bore_rim`), to 1e-6.
 #[test]
 fn a_rim_winding_round_both_faces_is_rolled() {
-    let src = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n\
+    let src = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.front {\n\
         a := point\nb := point\nc := point\nd := point\n\
         fix((0, 0)) a\nfix((10, 0)) b\nfix((2, 16)) c\nfix((0, 16)) d\n\
         (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
         in std.top {\n  o := point\n  fix((1, 0)) o\n  k := circle(center: o) hint(r: 3)\n  radius(3mm) k\n}\n\
-        cone := solid(face(ab, bc, cd, da), about: std.z)\n\
-        bore := solid(face(k), from: -1mm, to: 20mm)\n\
+        cone := solid(std.solids.Revolution(face(ab, bc, cd, da), about: std.z))\n\
+        bore := solid(std.solids.Prism(face(k), from: -1mm, to: 20mm))\n\
         part := solid(cone)\nbore cut part\npart.cone.bc round(r: 0.5mm) part.bore\n";
     let e = solved(src);
     assert_eq!(lowered(&e).0, 1);

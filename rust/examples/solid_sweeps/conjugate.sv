@@ -8,6 +8,7 @@
 // class, docs/generating-sweeps.md).
 unit mm
 use std
+use std.solids
 use std.place (vertical, coords)
 use std.motion (turns)
 
@@ -35,14 +36,14 @@ in std.top {
   rim := circle(center: wo) hint(r: 40)
   radius(40mm) rim
 }
-construction star := solid(plus, from: -10mm, to: 0mm)
+construction star := solid(std.solids.Prism(plus, from: -10mm, to: 0mm))
 
 // the plus turning about its stem, the wheel two thirds as fast the other way about its spindle
 tool_turn := frame
 tool_turn turns(1) stem
 wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
-blank := solid(face(rim), from: -8mm, to: -2mm)
+blank := solid(std.solids.Prism(face(rim), from: -8mm, to: -2mm))
 wheel := solid(blank)
-construction space := sweep(star over t in (0deg, 540deg), under: tool_turn, seen_from: wheel_turn)
+construction space := solid({ p | p inside(under: tool_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })
 space cut wheel

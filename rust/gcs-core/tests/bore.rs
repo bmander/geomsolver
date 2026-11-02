@@ -8,7 +8,7 @@ use gcs_core::{model::{EntKind,MotionDef},program};
 /// `counter`, turning the other way about the shaft, and the apex is `R` beyond the rotor's
 /// centre.  `seen_housing` reads the housing seen from the rotor, as the rotor's flanks are.
 pub fn wankel(r: f64, e: f64, extra: &str) -> String {
-    format!("unit mm\nuse std\nuse std.motion (spins)\n\
+    format!("unit mm\nuse std\nuse std.solids\nuse std.motion (spins)\n\
         centre := point in std.top\n\
         centre level(u) std.top\ncentre level(v) std.top\n\
         hub := point in std.top\n\
@@ -64,8 +64,8 @@ fn the_apex_under_the_rotors_motion_is_the_epitrochoid() {
 pub const HOUSING: &str = "bore := envelope(apex over t in (0deg, 1080deg), under: spin, seen_from: counter)
     rim := circle(center: centre) in std.top hint(r: 170)
     radius(170mm) rim
-    block := solid(face(rim), from: 0mm, to: 80mm)
-    pocket := solid(face(bore), from: -1mm, to: 81mm)
+    block := solid(std.solids.Prism(face(rim), from: 0mm, to: 80mm))
+    pocket := solid(std.solids.Prism(face(bore), from: -1mm, to: 81mm))
     housing := solid(block)
     pocket cut housing";
 

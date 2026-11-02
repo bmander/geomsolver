@@ -7,6 +7,7 @@
 // and the tip roundings; revolved about the cutter's axis the flanks are cones and the roundings
 // tori. Each flank stands a quarter of the backlash outside the line through its pitch point.
 use std
+use std.solids
 
 component RackSection(lp: point, rp: point, design: group, normal_module: Length) {
   // Seeds only, rough, in pitch widths (the `pitch` line's run, half a normal pitch, so a
@@ -68,7 +69,7 @@ preview {
     construction centerline ax := line(std.origin)
     fix((0, 1)) ax.p2
   }
-  crown := solid(rack.profile, about: ax)
+  crown := solid(std.solids.Revolution(rack.profile, about: ax))
   outer := surface(crown, rack.outer)
   outer_round := surface(crown, rack.outer_round)
   inner := surface(crown, rack.inner)

@@ -45,5 +45,5 @@ component Unturned(r: Length, pitch: Length, turns: Scalar, w: Length, h: Length
 }
 
 param s: Scalar over (0, 1)
-facing := sweep(Frenet(r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f over s)
-twisting := sweep(Unturned(r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f over s)
+facing := solid({ p | p coincident(over s) Frenet(r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f })
+twisting := solid({ p | p coincident(over s) Unturned(r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f })

@@ -8,6 +8,7 @@
 // axis.
 unit mm
 use std
+use std.solids
 
 a := 50mm
 c := 100mm
@@ -36,7 +37,7 @@ in std.front {
   bore := arc(center: o, start: m, end: s) hint(r: a)
   section := face(cut_x, outside, cut_y, bore)
 }
-tube := solid(section, from: -depth / 2, to: depth / 2) of steel
+tube := solid(std.solids.Prism(section, from: -depth / 2, to: depth / 2)) of steel
 
 scenario inflate {
   pinned tube.cut_x along: std.z

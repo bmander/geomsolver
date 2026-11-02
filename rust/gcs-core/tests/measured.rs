@@ -48,6 +48,7 @@ fn holed(lines: &str) -> String {
     format!("\
 unit mm
 use std
+use std.solids
 alloy := material(E: 70GPa, nu: 0.33, rho: 2700kg / 1m^3)
 param r: Length hint(18mm)
 in std.front {{
@@ -68,7 +69,7 @@ in std.front {{
   hole := radius(r) circle(center: o) hint(r: 18)
   plate := face(low, end, top, root, holes: hole)
 }}
-web := solid(plate, from: -2.5mm, to: 2.5mm) of alloy
+web := solid(std.solids.Prism(plate, from: -2.5mm, to: 2.5mm)) of alloy
 {lines}
 ")
 }
@@ -243,6 +244,7 @@ fn a_volume_sizes_a_hole() {
 /// unknown: no prism, so its exact boundary is refined and filled (#567).
 pub const TURNED: &str = "unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 r := 12mm
 rho := 4mm
@@ -278,7 +280,7 @@ in std.front {
   spine := line(k, o)
   section := face(base, barrel, step, round, neck, head, spine)
 }
-shaft := solid(section, about: std.z) of steel
+shaft := solid(std.solids.Revolution(section, about: std.z)) of steel
 ";
 
 /// **A volume sizes a turned shaft's radius** (#567, M3): a solid of revolution is no prism, its

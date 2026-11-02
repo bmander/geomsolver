@@ -6,6 +6,7 @@
 // thickness, which only scales its mass and its stiffness together).
 unit mm
 use std
+use std.solids
 
 thickness := 50mm
 fv32 := material(E: 200GPa, nu: 0.3, rho: 8000kg / 1m^3)
@@ -29,7 +30,7 @@ in std.front {
   outline := (lower := line(p0, p1)) -> (end := line(p1, p2)) -> (upper := line(p2, p3)) ->
              (root := line(p3, p0)) -> close
 }
-membrane := solid(outline, from: -thickness / 2, to: thickness / 2) of fv32
+membrane := solid(std.solids.Prism(outline, from: -thickness / 2, to: thickness / 2)) of fv32
 
 scenario fv32 {
   plane stress membrane

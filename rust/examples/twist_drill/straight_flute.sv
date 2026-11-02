@@ -7,6 +7,7 @@
 // are the twist drill's own (`configuration.sv`, `wheel.sv`); the end is left square.
 unit mm
 use std
+use std.solids
 use std.motion (slides, turns)
 use configuration
 use wheel
@@ -36,7 +37,7 @@ in std.front {
   private stock_end := line(f0, f1)
   private stock_wall := line(f1, f2)
   private stock_top := line(f2, f3)
-  stock := solid(face(stock_axis, stock_end, stock_wall, stock_top), about: stock_axis)
+  stock := solid(std.solids.Revolution(face(stock_axis, stock_end, stock_wall, stock_top), about: stock_axis))
 }
 
 // the slide the wheel rides up the drill, `travel` a turn of the roll, and the turn from one
@@ -53,7 +54,7 @@ param t: Angle over (start, finish)
 fluted := solid(stock)
 
 flute_wheel := wheel.GrindingWheel(side, setting: 0deg, wheel: configuration.flute_wheel)
-construction flute := sweep(flute_wheel.body over t, under: grind)
+construction flute := solid({ p | p inside(under: grind, over t) flute_wheel.body })
 
 repeat configuration.flutes as i {
   construction flute_at := flute at(under: index) i * 360deg / configuration.flutes

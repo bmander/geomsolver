@@ -14,6 +14,7 @@
 // captured between its head and the cotter and nothing is threaded into plastic.
 
 use std
+use std.solids
 use std.place (vertical, on_u)
 use components.dims (R, dhub, pinclr, pinhead, pinpocket, rdisc, tdisc)
 use components.parts
@@ -56,10 +57,10 @@ component Disc(f: group) {
   // thickness either way, and the pin's head sits in a pocket `pinpocket` deep in the back —
   // the face toward the plate, which a view from the right sees on its own right.
   // Each circle is a loop by itself.
-  plate := solid(face(rim), from: -tdisc / 2, to: tdisc / 2)
-  hub := solid(face(bore), from: -tdisc / 2, to: tdisc / 2)
-  pinhole := solid(face(ph), from: -tdisc / 2, to: tdisc / 2)
-  pinpkt := solid(face(pkt), from: -tdisc / 2, to: -tdisc / 2 + pinpocket)
+  plate := solid(std.solids.Prism(face(rim), from: -tdisc / 2, to: tdisc / 2))
+  hub := solid(std.solids.Prism(face(bore), from: -tdisc / 2, to: tdisc / 2))
+  pinhole := solid(std.solids.Prism(face(ph), from: -tdisc / 2, to: tdisc / 2))
+  pinpkt := solid(std.solids.Prism(face(pkt), from: -tdisc / 2, to: -tdisc / 2 + pinpocket))
   body := solid(plate)
   hub cut body
   pinhole cut body

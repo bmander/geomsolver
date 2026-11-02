@@ -5,6 +5,7 @@
 // either way: the first two factors are one, a repeated pair.
 unit mm
 use std
+use std.solids
 
 L := 800mm
 b := 20mm
@@ -26,7 +27,7 @@ in std.front {
   side := (foot := line(a, c)) -> (right := line(c, d)) -> (head := line(d, e)) ->
           (left := line(e, a)) -> close
 }
-strut := solid(side, from: -b / 2, to: b / 2) of steel
+strut := solid(std.solids.Prism(side, from: -b / 2, to: b / 2)) of steel
 
 scenario press {
   fixed strut.foot

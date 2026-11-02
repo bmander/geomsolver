@@ -17,6 +17,7 @@ fn field(e: &program::Elaborated,name: &str) -> SpatialField {
 const SPHERE: &str = "\
 unit mm
 use std
+use std.solids
 use std.motion (turns)
 in std.front {
 o := point
@@ -28,7 +29,7 @@ fix((3, 1)) b
 rim := arc(center: o,start: a,end: b)
 radius(1) rim
 ax := line(b,a)
-ball := solid(face(rim,ax),about: ax)
+ball := solid(std.solids.Revolution(face(rim,ax), about: ax))
 z := point
 q := point
 fix((0, 0)) z
@@ -77,6 +78,7 @@ fn source_bodies_holes_and_nested_placements_keep_material_and_finite_support() 
     let e = read("\
 unit mm
 use std
+use std.solids
 use std.motion (turns)
 in std.front {
 o := point
@@ -91,7 +93,7 @@ radius(1) outer
 inner := circle(center: c)
 radius(0.4) inner
 }
-body := solid(face(outer,holes: inner),about: ax)
+body := solid(std.solids.Revolution(face(outer,holes: inner), about: ax))
 ");
     let body = field(&e,"body");
     for x in 0..=40 {
@@ -124,6 +126,7 @@ fn major_arcs_and_reversed_edges_keep_their_finite_sector() {
     let source = "\
 unit mm
 use std
+use std.solids
 use std.motion (turns)
 in std.front {
 o := point
@@ -142,7 +145,7 @@ radius(1) round
 chord := line(a,b)
 }
 profile := face(round,chord)
-body := solid(profile,about: ax)
+body := solid(std.solids.Revolution(profile, about: ax))
 ";
     for source in [source.to_string(),source.replace("profile := face(round,chord)","profile := face(chord,round)"),
         source.replace("ax := line(o,z)","ax := line(z,o)")] {
@@ -178,11 +181,11 @@ fn declarative_bevel_blank_reads_without_gear_names_or_coordinate_adapters() {
 
 #[test]
 fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
-    let e = read(&SPHERE.replace("about: ax)","about: ax,sweep: 90deg)"));
+    let e = read(&SPHERE.replace("about: ax)","about: ax, to: 90deg)"));
     assert!(SpatialField::read(&e.sketch,0,1e-10).unwrap_err().contains("full revolution"));
     assert!(SpatialField::read(&e.sketch,999,1e-10).is_err());
     // The same half disc extruded 2 behind the page is a prism on x >= 3, y in [0, 2].
-    let e = read(&SPHERE.replace("about: ax)","depth: 2)"));
+    let e = read(&SPHERE.replace("Revolution(face(rim,ax), about: ax)","Prism(face(rim,ax), from: -2, to: 0)"));
     let half = SpatialField::read(&e.sketch,0,1e-10).unwrap();
     for (p,inside) in [([3.5,1.,0.],true),([2.5,1.,0.],false),([3.5,3.,0.],false),([3.9,0.5,0.],true)] {
         let got = half.bounds(point(p)).unwrap().bounds();
@@ -192,6 +195,7 @@ fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
     let e = read("\
 unit mm
 use std
+use std.solids
 use std.motion (turns)
 in std.front {
 o := point
@@ -211,7 +215,7 @@ fix((2, 1)) d
 fix((1, 3)) e
 }
 profile := face(a,b,c,d,e,-> close)
-body := solid(profile,about: ax)
+body := solid(std.solids.Revolution(profile, about: ax))
 ");
     let body = SpatialField::read(&e.sketch,0,1e-10).unwrap();
     for (p,inside) in [([3.,0.,0.5],true),([0.,1.4,2.],true),([2.2,0.,2.],false),([0.5,0.,1.],false)] {

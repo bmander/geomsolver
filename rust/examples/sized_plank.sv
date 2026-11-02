@@ -9,6 +9,7 @@
 // plank is a little stiffer than a beam, and narrower.
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 
 L := 300mm
@@ -34,7 +35,7 @@ in std.top {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-plank := solid(outline, from: 0mm, to: t) of steel
+plank := solid(std.solids.Prism(outline, from: 0mm, to: t)) of steel
 
 // what it is made of answers no load, so it is the drawing's, claimed of it
 claim mass(<= 1kg) plank

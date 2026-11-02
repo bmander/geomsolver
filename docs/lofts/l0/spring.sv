@@ -32,5 +32,5 @@ component Thread(base: plane, r: Length, size: Length, pitch: Length, turns: Sca
 }
 
 param s: Scalar over (0, 1)
-spring := sweep(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s)
-thread := sweep(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s)
+spring := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f })
+thread := solid({ p | p coincident(over s) Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f })

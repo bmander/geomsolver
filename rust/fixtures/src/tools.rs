@@ -6,6 +6,7 @@
 pub const CYLINDER: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -22,13 +23,14 @@ private wall := line(c1, c2)
 private top := line(c2, c3)
 private ax := line(c3, c0)
 }
-construction tool := solid(face(bottom, wall, top, ax), about: ax)
+construction tool := solid(std.solids.Revolution(face(bottom, wall, top, ax), about: ax))
 ";
 
 /// A box x in [2, 4], y in [-3, 0], z in [-1, 1] (a 2 x 3 profile extruded 2).
 pub const BOX: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -45,13 +47,14 @@ private e1 := line(b1, b2)
 private e2 := line(b2, b3)
 private e3 := line(b3, b0)
 }
-construction tool := solid(face(e0, e1, e2, e3), from: -1mm, to: 1mm)
+construction tool := solid(std.solids.Prism(face(e0, e1, e2, e3), from: -1mm, to: 1mm))
 ";
 
 /// A triangular prism with corners (3, -0.8), (4.5, 0), (3, 0.8), z in [-1.5, 1.5].
 pub const TRIANGLE_PRISM: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -65,7 +68,7 @@ private e0 := line(t0, t1)
 private e1 := line(t1, t2)
 private e2 := line(t2, t0)
 }
-construction tool := solid(face(e0, e1, e2), from: -1.5mm, to: 1.5mm)
+construction tool := solid(std.solids.Prism(face(e0, e1, e2), from: -1.5mm, to: 1.5mm))
 ";
 
 /// A dumbbell along z: a bar of radius 0.25 from z = -1 to 1 about the
@@ -73,6 +76,7 @@ construction tool := solid(face(e0, e1, e2), from: -1.5mm, to: 1.5mm)
 /// (two concave crease circles where the bar enters each ball).
 pub const DUMBBELL: &str = "unit mm
 use std
+use std.solids
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
 private c0 := point
@@ -87,7 +91,7 @@ private bottom := line(c0, c1)
 private wall := line(c1, c2)
 private top := line(c2, c3)
 private ax := line(c3, c0)
-construction bar := solid(face(bottom, wall, top, ax), about: ax)
+construction bar := solid(std.solids.Revolution(face(bottom, wall, top, ax), about: ax))
 construction tool := solid(bar)
 private ca := point hint((3, 1))
 ca distance(3mm, along: u) std.front
@@ -99,7 +103,7 @@ ca midpoint da
 da parallel spindle
 private ma := arc(center: ca, start: ba, end: ta)
 radius(0.5mm) ma
-construction ball_a := solid(face(ma, da), about: da)
+construction ball_a := solid(std.solids.Revolution(face(ma, da), about: da))
 ball_a on tool
 private cb := point hint((3, -1))
 cb distance(3mm, along: u) std.front
@@ -111,7 +115,7 @@ cb midpoint db
 db parallel spindle
 private mb := arc(center: cb, start: bb, end: tb)
 radius(0.5mm) mb
-construction ball_b := solid(face(mb, db), about: db)
+construction ball_b := solid(std.solids.Revolution(face(mb, db), about: db))
 ball_b on tool
 ";
 
@@ -126,6 +130,7 @@ pub fn tilted_cylinder(degrees: f64) -> String {
     crate::levelled(format!("\
 unit mm
 use std
+use std.solids
 in std.front {{
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -146,7 +151,7 @@ private wall := line(a1, a2)
 private top := line(a2, a3)
 private ax := line(a3, a0)
 }}
-construction tool := solid(face(bottom, wall, top, ax), about: ax)
+construction tool := solid(std.solids.Revolution(face(bottom, wall, top, ax), about: ax))
 ",ax=ax,ay=ay,bx=bx,by=by,a1x=ax+c,a1y=ay-s,a2x=bx+c,a2y=by-s))
 }
 
@@ -159,6 +164,7 @@ pub fn thin_plate(thick: f64) -> String {
     crate::levelled(format!("\
 unit mm
 use std
+use std.solids
 in std.front {{
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -179,7 +185,7 @@ private f1 := line(q1, q2)
 private f2 := line(q2, q3)
 private f3 := line(q3, q0)
 }}
-construction tool := solid(face(f0, f1, f2, f3), from: -1mm, to: 1mm)
+construction tool := solid(std.solids.Prism(face(f0, f1, f2, f3), from: -1mm, to: 1mm))
 ",x0=p0.0,y0=p0.1,x1=p1.0,y1=p1.1,x2=p2.0,y2=p2.1,x3=p3.0,y3=p3.1))
 }
 
@@ -188,6 +194,7 @@ pub fn sphere(h: f64) -> String {
     crate::levelled(format!("\
 unit mm
 use std
+use std.solids
 in std.front {{
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -203,7 +210,7 @@ length(2mm) diameter
 private meridian := arc(center: center, start: bottom, end: top)
 radius(1mm) meridian
 }}
-construction tool := solid(face(meridian, diameter), about: diameter)
+construction tool := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))
 ",b=h-1.,t=h+1.))
 }
 
@@ -213,6 +220,7 @@ pub fn torus(h: f64) -> String {
     format!("\
 unit mm
 use std
+use std.solids
 in std.front {{
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -226,7 +234,7 @@ fix((4, {h})) tc
 private ring := circle(center: tc) hint(r: 0.5)
 radius(0.5mm) ring
 }}
-construction tool := solid(face(ring), about: taxis)
+construction tool := solid(std.solids.Revolution(face(ring), about: taxis))
 ",b=h-1.,t=h+1.)
 }
 
@@ -238,6 +246,7 @@ pub fn ring_lens(h: f64) -> String {
     format!("\
 unit mm
 use std
+use std.solids
 in std.front {{
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -250,14 +259,14 @@ private tc := point
 fix((4, {lo})) tc
 private ring := circle(center: tc) hint(r: 0.5)
 radius(0.5mm) ring
-construction stock := solid(face(ring), about: taxis)
+construction stock := solid(std.solids.Revolution(face(ring), about: taxis))
 construction tool := solid(stock)
 private tc2 := point
 fix((4, {hi})) tc2
 private ring2 := circle(center: tc2) hint(r: 0.5)
 radius(0.5mm) ring2
 }}
-construction other := solid(face(ring2), about: taxis)
+construction other := solid(std.solids.Revolution(face(ring2), about: taxis))
 other common tool
 ",b=h-1.,t=h+1.,lo=h-0.2,hi=h+0.2)
 }
@@ -272,6 +281,7 @@ pub fn lens(h: f64,apart: f64,offset: bool) -> String {
     crate::levelled(format!("\
 unit mm
 use std
+use std.solids
 in std.front {{
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -285,7 +295,7 @@ center midpoint diameter
 diameter parallel spindle
 private meridian := arc(center: center, start: bottom, end: top)
 radius(1mm) meridian
-construction stock := solid(face(meridian, diameter), about: diameter)
+construction stock := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))
 construction tool := solid(stock)
 private center2 := point
 center2 distance({x2}mm, along: u) std.front
@@ -298,7 +308,7 @@ diameter2 parallel spindle
 private meridian2 := arc(center: center2, start: bottom2, end: top2)
 radius(1mm) meridian2
 }}
-construction other := solid(face(meridian2, diameter2), about: diameter2)
+construction other := solid(std.solids.Revolution(face(meridian2, diameter2), about: diameter2))
 other common tool
 ",b1=h1-1.,t1=h1+1.,b2=h2-1.,t2=h2+1.))
 }
@@ -309,6 +319,7 @@ pub fn post(cx: f64,radius: f64,low: f64,high: f64) -> String {
     let r = cx+radius;
     format!("\
 use std
+use std.solids
 in std.front {{
 private q0 := point
 private q1 := point
@@ -323,7 +334,7 @@ private qw := line(q1, q2)
 private qt := line(q2, q3)
 private qa := line(q3, q0)
 }}
-construction post := solid(face(qb, qw, qt, qa), about: qa)
+construction post := solid(std.solids.Revolution(face(qb, qw, qt, qa), about: qa))
 part := solid(post)
 removal cut part
 ")
@@ -343,6 +354,7 @@ pub fn skew_post(x: f64) -> String { post(x,0.4,0.5,2.) }
 pub fn indexed_ring(count: usize,inner: f64,outer: f64,low: f64,high: f64) -> String {
     format!("\
 use std
+use std.solids
 in std.front {{
 private q0 := point
 private q1 := point
@@ -357,7 +369,7 @@ private qw := line(q1, q2)
 private qt := line(q2, q3)
 private qa := line(q3, q0)
 }}
-construction ring_blank := solid(face(qb, qw, qt, qa), about: spindle)
+construction ring_blank := solid(std.solids.Revolution(face(qb, qw, qt, qa), about: spindle))
 part := solid(ring_blank)
 index := frame
 spindle coincident(sense: same) index.axis; fix(ratio == 1, advance == 0mm) index

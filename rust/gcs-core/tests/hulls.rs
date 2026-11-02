@@ -75,6 +75,7 @@ fn a_filled_bodys_mesh_moves_with_the_drawing() {
 /// hole driven.
 pub const LUG: &str = "unit mm
 use std
+use std.solids
 l := 80mm
 w := 40mm
 t := 10mm
@@ -97,8 +98,8 @@ in std.front {
   bore := radius(d / 2) circle(center: centre) hint(r: 8)
   hole := face(bore)
 }
-lug := solid(outline, from: -t / 2, to: t / 2) of steel
-pin := solid(hole, from: -t, to: t)
+lug := solid(std.solids.Prism(outline, from: -t / 2, to: t / 2)) of steel
+pin := solid(std.solids.Prism(hole, from: -t, to: t))
 pin cut lug
 scenario pull {
   fixed lug.root
@@ -127,6 +128,7 @@ scenario pull {{
 /// nothing of a narrowing.
 pub const BAR: &str = "unit mm
 use std
+use std.solids
 use std.place (horizontal)
 L := 100mm
 P := 10kN
@@ -146,7 +148,7 @@ in std.front {
   profile := (base := line(o, a)) -> (side := line(a, b)) -> (head := line(b, c)) ->
              (spine := line(c, o)) -> close
 }
-bar := solid(profile, about: std.z) of steel
+bar := solid(std.solids.Revolution(profile, about: std.z)) of steel
 scenario pull {
   pinned bar.base along: std.z
   pinned o along: std.x
@@ -186,8 +188,8 @@ fn a_turned_bars_radius_is_sized_by_its_stretch() {
 #[test]
 fn a_face_no_sheet_moves_is_said() {
     let src = LUG.replace("SAG", "0.015mm")
-        .replace("lug := solid(outline, from: -t / 2, to: t / 2) of steel",
-                 "lug := solid(outline, from: -t / 2, to: t / 2, draft: 2deg) of steel");
+        .replace("lug := solid(std.solids.Prism(outline, from: -t / 2, to: t / 2)) of steel",
+                 "lug := solid(std.solids.Drafted(outline, from: -t / 2, to: t / 2, draft: 2deg)) of steel");
     let (prog, errs) = crate::common::parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);

@@ -12,6 +12,7 @@ pub const MODULES: &[(&str, &str)] = &[
     ("std.place", include_str!("../../lib/std/place.sv")),
     ("std.shapes", include_str!("../../lib/std/shapes.sv")),
     ("std.sets", include_str!("../../lib/std/sets.sv")),
+    ("std.solids", include_str!("../../lib/std/solids.sv")),
     ("std.rounds", include_str!("../../lib/std/rounds.sv")),
     ("std.panels", include_str!("../../lib/std/panels.sv")),
     ("std.stations", include_str!("../../lib/std/stations.sv")),

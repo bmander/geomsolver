@@ -5,6 +5,7 @@ use crate::common::parsed::{build, determined as solved};
 const MODEL: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point
 q := point
@@ -16,7 +17,7 @@ ax := line(o,q)
 meridian := circle(center: c)
 radius(1mm) meridian
 }
-ring := solid(face(meridian), about: ax)
+ring := solid(std.solids.Revolution(face(meridian), about: ax))
 wall := surface(ring, meridian)
 ";
 
@@ -106,9 +107,9 @@ fn surface_references_survive_flat_printing_copy_paste_and_dependency_deletion()
 
 #[test]
 fn surfaces_pass_through_components_and_keep_private_names_private() {
-    let inner = MODEL.replace("unit mm\nuse std\n","").replace("in std.front", "in f")
+    let inner = MODEL.replace("unit mm\nuse std\nuse std.solids\n","").replace("in std.front", "in f")
         .replace("wall := surface", "private wall := surface");
-    let src = format!("unit mm\nuse std\ncomponent Part(f: plane) {{\n{inner}}}\np := Part(std.front)\n");
+    let src = format!("unit mm\nuse std\nuse std.solids\ncomponent Part(f: plane) {{\n{inner}}}\np := Part(std.front)\n");
     let e = solved(&src);
     assert!(e.map.entity_path(&e.sketch,"p.wall").is_none());
     let e = build(&format!("{src}forbidden := surface(p.wall.solid,p.wall.edge)\n"));
@@ -156,7 +157,7 @@ fn angular_surface_spans_keep_source_parameters_and_finite_incidence() {
 
 #[test]
 fn surface_spans_follow_sweep_sense_and_component_angles() {
-    let source = MODEL.replace("about: ax)","about: ax, sweep: 90deg, sense: cw)");
+    let source = MODEL.replace("about: ax)","about: ax, from: -90deg, to: 0deg)");
     let source = format!("component Portion(s: solid,e: circle,start: Angle,end: Angle) {{\n\
         part := surface(s,e,from: start,to: end)\n}}\n\
         portion := Portion(ring,meridian,start: 30deg,end: 60deg)\n{source}");
@@ -193,9 +194,9 @@ fn a_surface_refuses_wrong_solids_edges_and_planar_constraints() {
         ("bad := surface(meridian,meridian)","first argument is a solid"),
         ("bad := surface(ring,ax)","not a boundary"),
         // a prism's side is a surface (issue #70); a body over one is not
-        ("prism := solid(face(meridian),depth: 2mm)\nheld := solid(prism)\nbad := surface(held,meridian)",
+        ("prism := solid(std.solids.Prism(face(meridian), from: -2mm, to: 0))\nheld := solid(prism)\nbad := surface(held,meridian)",
             "unmodified revolution or prism"),
-        ("prism := solid(face(meridian),depth: 2mm)\nbad := surface(prism,meridian,from: 0deg,to: 90deg)",
+        ("prism := solid(std.solids.Prism(face(meridian), from: -2mm, to: 0))\nbad := surface(prism,meridian,from: 0deg,to: 90deg)",
             "no angular bounds"),
         ("bad := surface(missing,meridian)","no such entity"),
         ("fix((0, 0)) wall","a surface has no number of its own to fix"),
@@ -225,7 +226,7 @@ fn analytic_projection_preserves_orientation_and_distinguishes_finite_patches() 
             }
         }
     }
-    let partial = solved(&MODEL.replace("about: ax)","about: ax,sweep: 90deg)"));
+    let partial = solved(&MODEL.replace("about: ax)","about: ax, to: 90deg)"));
     let patch = RevolvedSurface::named(&partial.sketch,0).unwrap().projector().unwrap();
     let off = patch.project([0.,-4.,0.]).unwrap();
     assert!(off.signed_residual.abs() < 1e-10,"the point lies on the continued torus");
@@ -239,6 +240,7 @@ fn straight_meridian_sphere_sections_return_all_finite_roots() {
     let e = solved("\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 b := point
@@ -254,7 +256,7 @@ ax := line(d,c)
 bottom := line(d,a)
 }
 profile := face(side,top,ax,bottom)
-drum := solid(profile,about: ax)
+drum := solid(std.solids.Revolution(profile, about: ax))
 wall := surface(drum,side)
 ");
     let s = RevolvedSurface::named(&e.sketch,0).unwrap();

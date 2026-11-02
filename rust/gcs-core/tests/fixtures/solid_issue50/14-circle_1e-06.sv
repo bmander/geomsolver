@@ -1,5 +1,6 @@
 unit mm
 use std
+use std.solids
 in std.front {
   fp := point
   fix((0, 0)) fp
@@ -7,4 +8,4 @@ in std.front {
   radius(1e-06mm) fc
 }
 f := face(fc)
-result := solid(f, depth: 5mm)
+result := solid(std.solids.Prism(f, from: -5mm, to: 0))

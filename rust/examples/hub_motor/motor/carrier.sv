@@ -7,6 +7,7 @@
 // where it passes, so the wires leave the axle into the left-hand bay.
 
 use std
+use std.solids
 use std.place (horizontal)
 use motor.dims (d_core, hub_half, key_t2, key_w, L, Rb, web_half, window_d, window_r)
 use motor.parts (Datums)
@@ -36,12 +37,12 @@ component Carrier(f: Datums, exit: solid) {
                (rim_il := line(m.p, n.p)) -> (web_l := line(n.p, q.p)) ->
                (hub_ol := line(q.p, s.p)) -> (hub_l := line(s.p, a.p)) -> close
   }
-  body := solid(profile, about: f.ax)
+  body := solid(std.solids.Revolution(profile, about: f.ax))
 
   windows := motor.parts.HoleCircle(f, n: motor.dims.windows, r: window_r, d: window_d,
                                     phase: 30deg)
   repeat motor.dims.windows as i {
-    private window := solid(face(windows.hole[i]), through: body)
+    private window := solid(std.solids.Through(face(windows.hole[i])))
     window cut body
   }
 
@@ -50,7 +51,7 @@ component Carrier(f: Datums, exit: solid) {
     slot := motor.parts.Box(f.o, x0: -key_w / 2, y0: -d_core / 2 - key_t2,
                             x1: key_w / 2, y1: -d_core / 2 + 1mm)
   }
-  private keyway := solid(slot.profile, through: body)
+  private keyway := solid(std.solids.Through(slot.profile))
   keyway cut body
   exit cut body
 }

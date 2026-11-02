@@ -12,6 +12,7 @@
 // and `down` to cut 2 across the top and 1 down the sides.
 unit mm
 use std
+use std.solids
 use std.rounds
 
 across := 1mm   // the flat's leg across the top
@@ -41,6 +42,6 @@ in std.top {
   (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> (west := line(b3, b0)) -> close
   outline := face(south, east, north, west)
 }
-box := solid(outline, from: 0mm, to: 6mm)
+box := solid(std.solids.Prism(outline, from: 0mm, to: 6mm))
 
 box.near bevel(across: across, down: down) box

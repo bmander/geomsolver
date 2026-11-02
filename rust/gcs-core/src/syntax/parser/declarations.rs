@@ -40,13 +40,14 @@ const AT_RETIRED: &str = "`solid(tool, at: θ)` is retired (#391): a solid is re
     an instant, `s := tool at θ`, its frames on the `at` (`tool at(under: m, seen_from: g) θ`)";
 
 /// `solid(tool, under: m, from: a, to: b)`, retired (#391 S2) for the sweep over an interval.
-pub(crate) const SWEPT_RETIRED: &str = "a solid a motion sweeps is `sweep(tool over t in (a, \
-    b), under: m, seen_from: g)` (#391): `solid(tool, under: m, from: a, to: b)` is retired";
+pub(crate) const SWEPT_RETIRED: &str = "a solid a motion sweeps is the set of what the tool \
+    occupies under it, `solid({ p | p inside(under: m, seen_from: g, over t in (a, b)) tool })` \
+    (#391, #737): `solid(tool, under: m, from: a, to: b)` is retired";
 
 /// `solid(tool, under: m, through: body)`, retired (#391 S2) for the sweep through a body.
-pub(crate) const ROLLED_RETIRED: &str = "a solid a motion rolls through a body is `sweep(tool, \
-    through: body, under: m, seen_from: g)` (#391): `solid(tool, under: m, through: body)` is \
-    retired";
+pub(crate) const ROLLED_RETIRED: &str = "a solid a motion rolls through a body is the set of \
+    what the tool occupies under it at any roll, `solid({ p | p inside(under: m, seen_from: g) \
+    tool })`, cut from the body (#391, #737): `solid(tool, under: m, through: body)` is retired";
 
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.
@@ -232,6 +233,22 @@ impl<'a> P<'a> {
         };
         let sweep = if kind == EntKind::Solid {
             match sweep_of(swp) {
+                // **a solid is the points of a set** (#737): a face swept by a constructor's
+                // labels is refused, naming the word of `std.solids` whose set it says
+                Ok(sw) if matches!(sw, Sweep::Prism { .. } | Sweep::Depth { .. }
+                    | Sweep::Revolve { .. } | Sweep::Through { .. }) => {
+                    let face = children.first().map(|k| k.iter().map(crate::syntax::print::kid_text)
+                        .collect::<Vec<_>>().join(", ")).unwrap_or_default();
+                    let word = crate::syntax::print::solid_word(&sw, &face).unwrap_or_default();
+                    let cut = if matches!(sw, Sweep::Through { .. }) {
+                        ", cut from the body it goes through"
+                    } else {
+                        ""
+                    };
+                    self.fail(&format!("a solid is the points of a set, and `solid(…)` takes no \
+                        labels (#737): write `solid({word})`{cut}, with `use std.solids`"));
+                    return None;
+                }
                 Ok(sw) => Some(sw),
                 Err(m) => {
                     let head = decl_head(kind, &name);

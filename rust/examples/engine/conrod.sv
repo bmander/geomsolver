@@ -24,6 +24,7 @@
 use engine.dims (L, back, front, pinlen, rp, rpin)
 use engine.parts
 use std
+use std.solids
 use std.place (offset, vertical)
 
 // What a rod needs of the pin it rides: the pin in the end view, and in the side view.
@@ -51,8 +52,8 @@ component CapBolt(a: point, b: point, r: Length, rh: Length, h: Length) {
     a distance(h, along: stem) crown
     a level(stem) edge
   }
-  bolt := solid(face(a, b, tip, seat, crown, edge, -> close), about: stem)
-  construction hole := solid(face(a, b, tip, foot, -> close), about: stem)
+  bolt := solid(std.solids.Revolution(face(a, b, tip, seat, crown, edge, -> close), about: stem))
+  construction hole := solid(std.solids.Revolution(face(a, b, tip, foot, -> close), about: stem))
 }
 
 // Its web's thickness `wt` is the one dimension of its own a caller may give: an unknown of the
@@ -381,39 +382,38 @@ component ConRod(pin: CrankPin, bore: line, wt: Length = 5mm) {
   // eyes, runs along the crank axis; the side view's edge-on outline — big end, shank, small end
   // — runs across the engine either side of the bore axis; the rod is what the two have in common,
   // less a pocket each side of the web
-  whole := solid(face(eyeB, fbr, flank_r, fsr, eyeS, fsl, flank_l, fbl, holes: bigbore, smallbore),
-                 from: front, to: back)
+  whole := solid(std.solids.Prism(face(eyeB, fbr, flank_r, fsr, eyeS, fsl, flank_l, fbl, holes: bigbore, smallbore), from: front, to: back))
   edge_on := solid()
-  big_s := solid(face(b1, b2, b3, b4), from: -100mm, to: 100mm)
-  shank_s := solid(face(ka, kb, kc, kd, -> close), from: -100mm, to: 100mm)
-  small_s := solid(face(s1, s2, s3, s4), from: -100mm, to: 100mm)
+  big_s := solid(std.solids.Prism(face(b1, b2, b3, b4), from: -100mm, to: 100mm))
+  shank_s := solid(std.solids.Prism(face(ka, kb, kc, kd, -> close), from: -100mm, to: 100mm))
+  small_s := solid(std.solids.Prism(face(s1, s2, s3, s4), from: -100mm, to: 100mm))
   big_s union edge_on
   shank_s union edge_on
   small_s union edge_on
   edge_on common whole
   // the I: each side of the web, the pocket's outline as deep as the flanges, cut from the rod
-  pockets := solid(face(pocket_r, pocket_t, pocket_l, pocket_b), from: front, to: back)
-  web_s := solid(face(wa.p, wb.p, wc.p, wd.p, -> close), from: -100mm, to: 100mm)
+  pockets := solid(std.solids.Prism(face(pocket_r, pocket_t, pocket_l, pocket_b), from: front, to: back))
+  web_s := solid(std.solids.Prism(face(wa.p, wb.p, wc.p, wd.p, -> close), from: -100mm, to: 100mm))
   web_s cut pockets
   pockets cut whole
   // the oil passage drilled up the web from the big end's bore to the small end's
-  oilway := solid(face(sc0, sc1, se1, se0, -> close), about: oil_axis)
+  oilway := solid(std.solids.Revolution(face(sc0, sc1, se1, se0, -> close), about: oil_axis))
   oilway cut whole
   // the bolts' holes, and their heads' seats
   bolt_left.hole cut whole
   bolt_right.hole cut whole
-  seat_l := solid(face(sl0, sl1, sl2, sl3, -> close), from: front, to: back)
-  seat_r := solid(face(sr0, sr1, sr2, sr3, -> close), from: front, to: back)
+  seat_l := solid(std.solids.Prism(face(sl0, sl1, sl2, sl3, -> close), from: front, to: back))
+  seat_r := solid(std.solids.Prism(face(sr0, sr1, sr2, sr3, -> close), from: front, to: back))
   seat_l cut whole
   seat_r cut whole
   // split at the parting line: the rod, and its cap
-  split := solid(face(cap0, cap1, cap2, cap3, -> close), from: front, to: back)
+  split := solid(std.solids.Prism(face(cap0, cap1, cap2, cap3, -> close), from: front, to: back))
   body := solid(whole) of steel
   split cut body
   cap := solid(whole) of steel
   split common cap
   // the small end's bush: the ring between its bore and the pin's, as wide as the small end
-  bush := solid(face(smallbore, holes: pin_bore), from: front, to: back)
+  bush := solid(std.solids.Prism(face(smallbore, holes: pin_bore), from: front, to: back))
   small_s common bush
 }
 

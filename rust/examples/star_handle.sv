@@ -10,6 +10,7 @@
 // the rounds: across the tips' rounded ends and across the fillets, each at the arc's middle.
 unit mm
 use std
+use std.solids
 
 span := 74.2       // across the tips' rounded ends
 waist := 25.8      // across the fillets
@@ -42,4 +43,4 @@ in std.front {
     next_side[1], tip_round[1], side[2], fillet[2], next_side[2], tip_round[2], side[3],
     fillet[3], next_side[3], tip_round[3])
 }
-handle := solid(outline, depth: height, draft: draft)
+handle := solid(std.solids.Drafted(outline, from: -height, to: 0, draft: draft))

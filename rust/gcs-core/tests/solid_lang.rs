@@ -29,6 +29,7 @@ fn refused(src: &str, code: Code, needle: &str) {
 const RECT: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 b := point hint((60, 0))
@@ -63,7 +64,7 @@ fn solid_operands_follow_surface_children_before_surfaces_are_built() {
         "side.solid union body\nside.solid cut body\nbody := solid(side.solid)\n",
     ] {
         let e = read(&format!("{statements}{RECT}\nax := line(a,d)\n\
-            stock := solid(sec, about: ax)\nside := surface(stock, bc)\n"));
+            stock := solid(std.solids.Revolution(sec, about: ax))\nside := surface(stock, bc)\n"));
         let stock = e.map.ent_named("stock").unwrap().idx;
         let body = e.map.ent_named("body").unwrap().i();
         let gcs_core::model::SolidDef::Body {stock:s,on,through,..} = &e.sketch.solids[body].def
@@ -91,7 +92,7 @@ fn volume(e: &gcs_core::program::Elaborated, name: &str) -> f64 {
 
 #[test]
 fn a_part_written_once_reports_itself() {
-    let e = read(&format!("{RECT}block := solid(sec, depth: 30mm)\n"));
+    let e = read(&format!("{RECT}block := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n"));
     assert!((volume(&e, "block") - 72000.0).abs() < 1e-6);
     // and the report carries where its faces are, which is the only picture of an object no
     // view of the sheet shows whole (issue #48, item 3)
@@ -105,7 +106,7 @@ fn a_part_written_once_reports_itself() {
 /// to rounding, where its facets' would fall short by their sag.
 #[test]
 fn a_reported_area_is_the_exact_solids() {
-    let e = read(&format!("{RECT}{HOLE}pin := solid(hole_f, depth: 30mm)\n"));
+    let e = read(&format!("{RECT}{HOLE}pin := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))\n"));
     let area = gcs_core::report::positions(&e.sketch, &e.map).into_iter()
         .find(|(n, _)| n == "pin.area").expect("no `pin.area` in the report").1;
     let pi = std::f64::consts::PI;
@@ -115,7 +116,7 @@ fn a_reported_area_is_the_exact_solids() {
 
 #[test]
 fn an_extent_is_an_expression_and_never_an_unknown() {
-    let e = read(&format!("t := 30mm\n{RECT}block := solid(sec, depth: t)\n"));
+    let e = read(&format!("t := 30mm\n{RECT}block := solid(std.solids.Prism(sec, from: -t, to: 0))\n"));
     assert!((volume(&e, "block") - 72000.0).abs() < 1e-6);
     // P3's other half: nothing about the solid is a parameter, so no solve can move it
     let before = e.sketch.params.len();
@@ -126,13 +127,14 @@ fn an_extent_is_an_expression_and_never_an_unknown() {
 #[test]
 fn inline_sections_have_the_same_geometry_and_reports_as_named_sections() {
     for (boundary, sweep) in [
-        ("ab, bc, cd, da", "depth: 30mm"),
+        ("ab, bc, cd, da", "from: -30mm, to: 0"),
         ("a, bc, cd, -> close", "from: face, to: back"),
-        ("hole", "depth: 30mm"),
+        ("hole", "from: -30mm, to: 0"),
     ] {
         let base = format!("{RECT}{HOLE}face := -30mm\nback := 0mm\n");
-        let named = read(&format!("{base}section := face({boundary})\nblock := solid(section, {sweep})\n"));
-        let src = format!("{base}block := solid(face({boundary}), {sweep})\n");
+        let named = read(&format!("{base}section := face({boundary})\n\
+                                   block := solid(std.solids.Prism(section, {sweep}))\n"));
+        let src = format!("{base}block := solid(std.solids.Prism(face({boundary}), {sweep}))\n");
         let inline = read(&src);
         let report = |e: &Elaborated| gcs_core::report::positions(&e.sketch, &e.map)
             .into_iter().filter(|(n, _)| n.starts_with("block.")).collect::<Vec<_>>();
@@ -151,12 +153,14 @@ fn inline_sections_have_the_same_geometry_and_reports_as_named_sections() {
 
 #[test]
 fn inline_sections_preserve_depth_validation_when_printed() {
-    let src = format!("{RECT}block := solid(face(ab, bc, cd, da), depth: 2mm - 7mm)\n");
+    // ordinates that are one, as an expression: swept nowhere, whether written or printed
+    let src = format!("{RECT}block := solid(std.solids.Prism(face(ab, bc, cd, da), \
+                       from: 2mm - 2mm, to: 0))\n");
     let (mut p, errors) = parse(&src);
     assert!(errors.is_empty(), "{errors:?}");
     let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     for text in [&src, &printed] {
-        refused(text, Code::E080, "positive magnitude");
+        refused(text, Code::E080, "swept nowhere");
     }
 }
 
@@ -164,7 +168,7 @@ fn inline_sections_preserve_depth_validation_when_printed() {
 fn inline_sections_resolve_component_formals_and_repeated_instances() {
     let src = format!("{RECT}\n\
         component Slab(a: Point, b: Point, c: Point, d: Point, t: Length) {{\n\
-          block := solid(face(a, b, c, d, -> close), depth: t)\n\
+          block := solid(std.solids.Prism(face(a, b, c, d, -> close), from: -t, to: 0))\n\
         }}\n\
         first := Slab(a, b, c, d, t: 2mm)\n\
         second := Slab(a, b, c, d, t: 3mm)\n\
@@ -179,12 +183,12 @@ fn inline_sections_resolve_component_formals_and_repeated_instances() {
 
 #[test]
 fn inline_sections_inherit_the_boundary_plane_and_coexist_with_forward_faces() {
-    let src = "unit mm\nuse std\n\
+    let src = "unit mm\nuse std\nuse std.solids\n\
         back := plane hint(origin: (0, 0, 12))\nfix(origin == (0, 0, 12)) back\nfix(dir == (1, 0, 0)) back.u\nfix(dir == (0, 1, 0)) back.v\n\
         in back {\na := point hint((0, 0))\nb := point hint((60, 0))\n\
         c := point hint((60, 40))\nd := point hint((0, 40))\n}\n\
-        slab := solid(face(a, b, c, d, -> close), from: 0mm, to: 2mm)\n\
-        named := solid(sec, from: 0mm, to: 2mm)\nsec := face(a, b, c, d, -> close)\n";
+        slab := solid(std.solids.Prism(face(a, b, c, d, -> close), from: 0mm, to: 2mm))\n\
+        named := solid(std.solids.Prism(sec, from: 0mm, to: 2mm))\nsec := face(a, b, c, d, -> close)\n";
     let e = read(src);
     let back = e.map.ent_named("back").unwrap().i() as u32;
     assert!(e.sketch.faces.iter().all(|f| f.plane == Some(back)));
@@ -197,39 +201,45 @@ fn inline_sections_inherit_the_boundary_plane_and_coexist_with_forward_faces() {
 
 #[test]
 fn invalid_inline_sections_report_the_loop_and_leave_no_geometry() {
-    for (boundary, sweep, needle) in [
-        ("a, b, -> close", "depth: 2mm", "three corners"),
-        ("a, bc, d, -> close", "depth: 2mm", "meets neither"),
-        ("a, b, c, d, -> close", "depth: 0mm", "positive magnitude"),
-        ("a, b, c, d, -> close", "", "made of solids"),
-        ("a, b, c, d, -> close", "sec, depth: 2mm", "over one face"),
+    for (boundary, solid, needle) in [
+        ("a, b, -> close", "std.solids.Prism(F, from: -2mm, to: 0)", "three corners"),
+        ("a, bc, d, -> close", "std.solids.Prism(F, from: -2mm, to: 0)", "meets neither"),
+        ("a, b, c, d, -> close", "F", "made of solids"),
+        ("a, b, c, d, -> close", "F, sec", "made of solids"),
     ] {
-        let src = format!("{RECT}bad := solid(face({boundary}), {sweep})\ngood := solid(sec, depth: 2mm)\n");
+        let bad = solid.replace('F', &format!("face({boundary})"));
+        let src = format!("{RECT}bad := solid({bad})\n\
+                           good := solid(std.solids.Prism(sec, from: -2mm, to: 0))\n");
         refused(&src, Code::E080, needle);
         let (p, _) = parse(&src);
         let e = elaborate(&p);
-        assert_eq!(e.sketch.faces.len(), 1);
-        assert_eq!(e.sketch.lines.len(), 4);
+        assert_eq!(e.sketch.faces.len(), 1, "{bad}");
+        assert_eq!(e.sketch.lines.len(), 4, "{bad}");
         assert!((volume(&e, "good") - 4800.0).abs() < 1e-6);
         if needle == "three corners" {
             let d = e.diags.iter().find(|d| d.message.contains(needle)).unwrap();
-            assert_eq!(d.span.slice(&src), "(a, b, -> close)");
+            // the face written in place in the word's call is a statement of its own (#737)
+            assert_eq!(d.span.slice(&src), "face(a, b, -> close)");
         }
     }
-    refused(&format!("{RECT}bad := solid(face(missing), depth: 2mm)\n"), Code::E101, "missing");
+    // a face written in place in a word's call is a statement of its own (#737): a sound loop
+    // stands as a face, and the solid swept nowhere from it is refused
+    refused(&format!("{RECT}bad := solid(std.solids.Prism(face(a, b, c, d, -> close), from: 0mm, \
+                      to: 0mm))\n"), Code::E080, "swept nowhere");
+    refused(&format!("{RECT}bad := solid(std.solids.Prism(face(missing), from: -2mm, to: 0))\n"), Code::E101, "missing");
     refused("bad := face(face(a, b, c, -> close))\n", Code::E100, "a solid's section");
-    refused("bad := solid(face(a, -> close, b), depth: 2mm)\n", Code::E100, "last thing");
+    refused("bad := solid(std.solids.Prism(face(a, -> close, b), from: -2mm, to: 0))\n", Code::E100, "last thing");
 }
 
 #[test]
 fn the_body_rule_does_not_care_what_order_it_was_written_in() {
     // P2 at the language: `bore cut body` says what `body` *is*, wherever it stands
     let after = format!(
-        "{RECT}{HOLE}stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
+        "{RECT}{HOLE}stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nbore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))\n\
          body := solid(stock)\nbore cut body\n"
     );
     let before = format!(
-        "{RECT}{HOLE}stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
+        "{RECT}{HOLE}stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nbore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))\n\
          bore cut body\nbody := solid(stock)\n"
     );
     let (x, y) = (volume(&read(&after), "body"), volume(&read(&before), "body"));
@@ -241,12 +251,12 @@ fn the_body_rule_does_not_care_what_order_it_was_written_in() {
 fn a_swept_solid_takes_features_as_the_body_over_its_own_sweep() {
     // `bore cut stock` makes `stock` the body over its own sweep: the same object
     // `body := solid(stock)` names, with no second name for it
-    let parts = format!("{RECT}{HOLE}stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n");
+    let parts = format!("{RECT}{HOLE}stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nbore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))\n");
     let body = volume(&read(&format!("{parts}body := solid(stock)\nbore cut body\n")), "body");
     let e = read(&format!("{parts}bore cut stock\n"));
     assert_volume(volume(&e, "stock"), body);
-    assert_volume(volume(&read(&format!("{RECT}{HOLE}bore cut stock\nstock := solid(sec, depth: 30mm)\n\
-         bore := solid(hole_f, depth: 30mm)\n")), "stock"), body);
+    assert_volume(volume(&read(&format!("{RECT}{HOLE}bore cut stock\nstock := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n\
+         bore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))\n")), "stock"), body);
     // a face is called what it was before anything stood on it, and a feature's through it
     let p = gcs_core::report::positions(&e.sketch, &e.map);
     let has = |n: &str| p.iter().any(|(k, _)| k == n);
@@ -254,7 +264,7 @@ fn a_swept_solid_takes_features_as_the_body_over_its_own_sweep() {
     assert!(!has("stock.stock.near.area"), "the sweep adds no step to its own faces' names");
     // and the name means the whole object wherever it is read: a cutter through it, a body
     // over it
-    let through = read(&format!("{parts}pin := solid(hole_f, through: stock)\npin cut stock\n"));
+    let through = read(&format!("{parts}pin := solid(std.solids.Through(hole_f))\npin cut stock\n"));
     assert_volume(volume(&through, "stock"), body);
     let over = read(&format!("{parts}bore cut stock\nwhole := solid(stock)\n"));
     assert_volume(volume(&over, "whole"), body);
@@ -265,7 +275,7 @@ fn a_swept_solid_takes_features_as_the_body_over_its_own_sweep() {
 fn a_body_keeps_what_it_has_in_common_with_each_solid() {
     // `common` is the body rule's third side: the block in common with the bore is the bore's
     // own polygon (what `cut` takes out of it), and it is a set like the other two
-    let stock = format!("{RECT}{HOLE}stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n");
+    let stock = format!("{RECT}{HOLE}stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nbore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))\n");
     let within = volume(&read(&format!("{stock}body := solid(stock)\nbore common body\n")), "body");
     let before = volume(&read(&format!("{stock}bore common body\nbody := solid(stock)\n")), "body");
     let cut = volume(&read(&format!("{stock}body := solid(stock)\nbore cut body\n")), "body");
@@ -276,20 +286,20 @@ fn a_body_keeps_what_it_has_in_common_with_each_solid() {
     let both = format!(
         "{RECT}{HOLE}in std.front {{\nq := point hint((30, 20))\na distance(30, along: u) q\na distance(20, along: v) q\n\
          wide := circle(center: q) hint(r: 15)\nradius(15) wide\n}}\nwide_f := face(wide)\n\
-         stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\ndisc := solid(wide_f, depth: 30mm)\n\
+         stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nbore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))\ndisc := solid(std.solids.Prism(wide_f, from: -30mm, to: 0))\n\
          body := solid(stock)\ndisc common body\nbore cut body\n"
     );
     let disc = volume(&read(&both), "body");
     let annulus = volume(&read(&format!("{RECT}{HOLE}in std.front {{\nq := point hint((30, 20))\na distance(30, along: u) q\n\
          a distance(20, along: v) q\nwide := circle(center: q) hint(r: 15)\nradius(15) wide\n}}\nwide_f := face(wide)\n\
-         bore := solid(hole_f, depth: 30mm)\ndisc := solid(wide_f, depth: 30mm)\nbody := solid(disc)\nbore cut body\n")), "body");
+         bore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))\ndisc := solid(std.solids.Prism(wide_f, from: -30mm, to: 0))\nbody := solid(disc)\nbore cut body\n")), "body");
     assert!((disc - annulus).abs() < 1e-6, "in common then cut is the annulus: {disc} vs {annulus}");
     refused(
-        &format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\ny := solid(x)\nx common y\ny common x\n"),
+        &format!("{RECT}s := solid(std.solids.Prism(sec, from: -3mm, to: 0))\nx := solid(s)\ny := solid(x)\nx common y\ny common x\n"),
         Code::E041,
         "made of itself",
     );
-    refused(&format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\nx common x\n"), Code::E080, "`x common x` joins a solid to itself");
+    refused(&format!("{RECT}s := solid(std.solids.Prism(sec, from: -3mm, to: 0))\nx := solid(s)\nx common x\n"), Code::E080, "`x common x` joins a solid to itself");
     // through 0.84 the word was `bound`, which is also what a dimension's bound is (#270): the
     // old spelling is refused where it is written, naming the new
     refused(&format!("{stock}body := solid(stock)\nbore bound body\n"), Code::E100, "now `common`: write `X common B`");
@@ -299,6 +309,7 @@ fn a_body_keeps_what_it_has_in_common_with_each_solid() {
 const PEGS: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 construction datum := line(std.origin, hint((50, 0)))
 horizontal datum
@@ -309,12 +320,12 @@ std.origin distance(30mm) c
 hole := circle(center: c) hint(r: 4)
 radius(4mm) hole
 private construction radial := line(std.origin, c)
-peg := solid(face(hole), from: 0mm, to: 10mm)
+peg := solid(std.solids.Prism(face(hole), from: 0mm, to: 10mm))
 }
 radial[0] angle(0deg) datum
 plate := circle(center: std.origin) hint(r: 40)
 radius(40mm) plate
-disc := solid(face(plate), from: 0mm, to: 5mm)
+disc := solid(std.solids.Prism(face(plate), from: 0mm, to: 5mm))
 }
 ";
 
@@ -367,7 +378,7 @@ fn a_boss_is_united_with_its_body() {
          a distance(40, along: u) g\na distance(30, along: v) g\n\
          horizontal ef\nvertical fg\nhorizontal gh\nvertical he\n}}\n\
          boss_f := face(ef, fg, gh, he)\n\
-         block := solid(sec, depth: 30mm)\nboss := solid(boss_f, from: 0mm, to: 10mm)\n\
+         block := solid(std.solids.Prism(sec, from: -30mm, to: 0))\nboss := solid(std.solids.Prism(boss_f, from: 0mm, to: 10mm))\n\
          body := solid(block)\nboss union body\n"
     );
     let e = read(&src);
@@ -381,6 +392,7 @@ fn a_revolution_turns_about_a_line_in_its_own_plane() {
     let src = "\
 unit mm
 use std
+use std.solids
 use std.place (horizontal)
 in std.front {
 p0 := point hint((10, 0))
@@ -403,16 +415,17 @@ horizontal e2
 vertical e3
 }
 sec := face(e0, e1, e2, e3)
-ring := solid(sec, about: ax)
+ring := solid(std.solids.Revolution(sec, about: ax))
 ";
     let e = read(src);
     let want = std::f64::consts::TAU * 12.0 * 24.0;
     let got = volume(&e, "ring");
     assert!((got - want).abs() < 2e-3 * want, "Pappus from the source: want ≈ {want}, got {got}");
-    for sweep in ["", ", sweep: 90deg, sense: cw"] {
+    for sweep in ["", ", from: -90deg, to: 0deg"] {
         let named = src.replace("about: ax)", &format!("about: ax{sweep})"));
         let inline = named.replace("sec := face(e0, e1, e2, e3)\n", "")
-            .replace("ring := solid(sec,", "ring := solid(face(e0, e1, e2, e3),");
+            .replace("Revolution(sec,", "Revolution(face(e0, e1, e2, e3),");
+        assert!(inline.contains("Revolution(face(e0"));
         assert_eq!(volume(&read(&inline), "ring"), volume(&read(&named), "ring"));
         let (mut p, _) = parse(&inline);
         let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
@@ -427,9 +440,9 @@ fn a_face_written_with_its_corners_is_the_face_written_with_its_edges() {
     // `a` is a corner the loop goes straight to and straight on from; `bc` and `cd` are edges
     // the drawing already has, and `-> close` seals the run back to `a`.  Two straight runs are
     // minted — `a`→`b` and `d`→`a` — which is `ab` and `da` by another name.
-    let long = read(&format!("{RECT}block := solid(sec, depth: 30mm)\n"));
+    let long = read(&format!("{RECT}block := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n"));
     let short = read(&format!(
-        "{RECT}brief := face(a, bc, cd, -> close)\nblock := solid(brief, depth: 30mm)\n"
+        "{RECT}brief := face(a, bc, cd, -> close)\nblock := solid(std.solids.Prism(brief, from: -30mm, to: 0))\n"
     ));
     assert!((volume(&short, "block") - volume(&long, "block")).abs() < 1e-9);
     assert!((volume(&short, "block") - 72000.0).abs() < 1e-6);
@@ -460,7 +473,7 @@ fn a_face_written_with_its_corners_is_the_face_written_with_its_edges() {
 /// A loop of nothing but corners: the rectangle again, with no line drawn at all.
 #[test]
 fn a_face_may_be_written_as_its_corners_alone() {
-    let e = read(&format!("{RECT}quad := face(a, b, c, d, -> close)\nslab := solid(quad, depth: 2mm)\n"));
+    let e = read(&format!("{RECT}quad := face(a, b, c, d, -> close)\nslab := solid(std.solids.Prism(quad, from: -2mm, to: 0))\n"));
     assert!((volume(&e, "slab") - 4800.0).abs() < 1e-6, "{}", volume(&e, "slab"));
 }
 
@@ -468,7 +481,7 @@ fn a_face_may_be_written_as_its_corners_alone() {
 fn closing_lines_do_not_take_an_existing_edges_name() {
     let e = read(&format!(
         "{RECT}close0 := line(b, c)\nbrief := face(a, close0, cd, -> close)\n\
-         block := solid(brief, depth: 2mm)\n"
+         block := solid(std.solids.Prism(brief, from: -2mm, to: 0))\n"
     ));
     let positions = gcs_core::report::positions(&e.sketch, &e.map);
     for (name, want) in [("close0", 80.0), ("close1", 120.0), ("close2", 80.0)] {
@@ -481,9 +494,9 @@ fn closing_lines_do_not_take_an_existing_edges_name() {
 /// `-> close` on a loop that already meets says something true, and mints nothing.
 #[test]
 fn a_loop_that_already_meets_may_still_say_it_closes() {
-    let plain = read(&format!("{RECT}block := solid(sec, depth: 30mm)\n"));
+    let plain = read(&format!("{RECT}block := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n"));
     let said = read(&format!(
-        "{RECT}same := face(ab, bc, cd, da, -> close)\nblock := solid(same, depth: 30mm)\n"
+        "{RECT}same := face(ab, bc, cd, da, -> close)\nblock := solid(std.solids.Prism(same, from: -30mm, to: 0))\n"
     ));
     assert_eq!(said.sketch.lines.len(), plain.sketch.lines.len(), "nothing to mint");
     assert!((volume(&said, "block") - volume(&plain, "block")).abs() < 1e-9);
@@ -496,7 +509,7 @@ fn a_loop_that_already_meets_may_still_say_it_closes() {
 fn a_mixed_faces_seed_writeback_changes_only_the_points() {
     use gcs_core::edit::{self, Kind};
 
-    let src = format!("{RECT}brief := face(a, bc, cd, -> close)\nblock := solid(brief, depth: 2mm)\n");
+    let src = format!("{RECT}brief := face(a, bc, cd, -> close)\nblock := solid(std.solids.Prism(brief, from: -2mm, to: 0))\n");
     let mut e = read(&src);
     let mut sk = std::mem::take(&mut e.sketch);
     let unchanged = edit::commit_seeds(&e, &sk, &e.program);
@@ -524,15 +537,16 @@ fn closing_lines_stay_implicit_across_reconciliation_and_reload() {
 
     for src in [
         format!("{RECT}quad := face(a, b, c, d, -> close)\n"),
-        format!("{RECT}slab := solid(face(a, b, c, d, -> close), depth: 2mm)\n"),
+        format!("{RECT}slab := solid(std.solids.Prism(face(a, b, c, d, -> close), from: -2mm, to: 0))\n"),
         format!(
-            "unit mm\nuse std\ncomponent Patch(f: plane) {{\n{}\
-             slab := solid(face(a, bc, cd, -> close), depth: 2mm)\n}}\npart := Patch(std.front)\n",
-            RECT.trim_start_matches("unit mm\nuse std\n").replace("in std.front", "in f")
+            "unit mm\nuse std\nuse std.solids\ncomponent Patch(f: plane) {{\n{}\
+             slab := solid(std.solids.Prism(face(a, bc, cd, -> close), from: -2mm, to: 0))\n}}\npart := Patch(std.front)\n",
+            RECT.trim_start_matches("unit mm\nuse std\nuse std.solids\n").replace("in std.front", "in f")
                 .replace("vertical bc\n", "vertical bc\nhorizontal cd\nvertical da\n"),
         ),
         "\
 use std
+use std.solids
 component Patch() {
 a := point
 b := point
@@ -594,6 +608,7 @@ fn an_arc_and_its_chord_share_both_ends_and_still_form_a_loop() {
     let src = "\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point hint((0, 0))
 a := point hint((-5, 0))
@@ -604,7 +619,7 @@ chord := line(a, b)
 ";
     let mut volumes = Vec::new();
     for walk in ["rim, chord", "chord, rim", "a, rim, b, -> close", "b, rim, a, -> close"] {
-        let e = read(&format!("{src}half := face({walk})\nslab := solid(half, depth: 2mm)\n"));
+        let e = read(&format!("{src}half := face({walk})\nslab := solid(std.solids.Prism(half, from: -2mm, to: 0))\n"));
         let v = volume(&e, "slab");
         assert!((v - 25.0 * std::f64::consts::PI).abs() < 0.2, "{walk}: {v}");
         volumes.push(v);
@@ -637,33 +652,33 @@ fn what_is_written_wrong_is_refused_where_it_is_written() {
     refused(&format!("{RECT}bad := line(a, -> close)\n"), Code::E100, "not a loop");
     refused(&format!("{RECT}bad := face(a, -> close, ab)\n"), Code::E100, "last thing in the list");
     // a swept solid over something that is not a face
-    refused(&format!("{RECT}bad := solid(ab, depth: 3mm)\n"), Code::E080, "written over a face");
+    refused(&format!("{RECT}bad := solid(std.solids.Prism(ab, from: -3mm, to: 0))\n"), Code::E080, "written over a face");
     // a body made of what is not a solid
     refused(&format!("{RECT}bad := solid(sec)\n"), Code::E080, "made of solids");
     // a prism swept nowhere
     refused(
-        &format!("{RECT}bad := solid(sec, from: 0mm, to: 0mm)\n"),
+        &format!("{RECT}bad := solid(std.solids.Prism(sec, from: 0mm, to: 0mm))\n"),
         Code::E080,
         "swept nowhere",
     );
     // **a selector is a word, never a sign**: a negative sweep is refused at the value
     refused(
         &format!("{RECT}in std.front {{\nq0 := point\nq1 := point hint(y: 10)\nax := line(q0, q1)\n}}\n\
-                  bad := solid(sec, about: ax, sweep: -90deg)\n"),
+                  bad := solid(std.solids.Revolution(sec, about: ax, to: -90deg))\n"),
         Code::E040,
         "which way it turns is `sense: cw`",
     );
     // a revolution about something that is not a line
-    refused(&format!("{RECT}bad := solid(sec, about: a)\n"), Code::E081, "turns about a line");
+    refused(&format!("{RECT}bad := solid(std.solids.Revolution(sec, about: a))\n"), Code::E081, "turns about a line");
     // a body made of itself
     refused(
-        &format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\ny := solid(x)\nx cut y\ny cut x\n"),
+        &format!("{RECT}s := solid(std.solids.Prism(sec, from: -3mm, to: 0))\nx := solid(s)\ny := solid(x)\nx cut y\ny cut x\n"),
         Code::E041,
         "made of itself",
     );
     // two sweeps cutting each other are each made of the other
     refused(
-        &format!("{RECT}{HOLE}s := solid(sec, depth: 3mm)\nh := solid(hole_f, depth: 3mm)\nh cut s\ns cut h\n"),
+        &format!("{RECT}{HOLE}s := solid(std.solids.Prism(sec, from: -3mm, to: 0))\nh := solid(std.solids.Prism(hole_f, from: -3mm, to: 0))\nh cut s\ns cut h\n"),
         Code::E041,
         "made of itself",
     );
@@ -683,6 +698,7 @@ fn a_plane_may_be_stood_off_another() {
     let mut e = read("\
 unit mm
 use std
+use std.solids
 front := plane(u: std.x, v: std.z)
 back := plane hint(origin: (0, -12, 0))
 back.u parallel std.x
@@ -706,8 +722,8 @@ fn named_rect() -> String {
 
 #[test]
 fn named_chains_sweep_the_same_geometry_and_keep_edge_names() {
-    let old = read(&format!("{RECT}block := solid(sec, depth: 8mm)\n"));
-    let src = format!("{}block := solid(profile, depth: 8mm)\n", named_rect());
+    let old = read(&format!("{RECT}block := solid(std.solids.Prism(sec, from: -8mm, to: 0))\n"));
+    let src = format!("{}block := solid(std.solids.Prism(profile, from: -8mm, to: 0))\n", named_rect());
     let new = read(&src);
     assert_volume(volume(&new, "block"), 19200.0);
     assert_eq!(new.sketch.params.len(), old.sketch.params.len());
@@ -730,10 +746,11 @@ fn named_chains_sweep_the_same_geometry_and_keep_edge_names() {
 fn named_chains_support_anonymous_links_and_constraint_words() {
     let e = read("\
 use std
+use std.solids
 in std.front {
 profile := length(10) line -> equal line -> equal line -> close
 }
-block := solid(profile, depth: 8)
+block := solid(std.solids.Prism(profile, from: -8, to: 0))
 ");
     assert_eq!(e.sketch.points.len(), 3 + crate::common::STD_POINTS);
     assert_eq!(e.sketch.lines.len(), 3);
@@ -741,27 +758,28 @@ block := solid(profile, depth: 8)
     assert_eq!(e.sketch.user_constraints().len(), 3);
     assert!(e.map.ent_named("profile").is_some());
     // with no `->` there is no traversal: the definition names the line, which deletes whole
-    let single = read("use std\nin std.front {\ntrail := line\n}\n");
+    let single = read("use std\nuse std.solids\nin std.front {\ntrail := line\n}\n");
     assert_eq!(single.sketch.lines.len(), 1);
     assert_eq!(single.sketch.faces.len(), 0);
     assert!(single.map.ent_named("trail") == Some(gcs_core::model::EntRef::line(0)));
     let edit = gcs_core::edit::remove(&single, &single.program, &single.sketch,
         &[gcs_core::model::EntRef::line(0)], &[]);
     assert!(edit.refused.is_none());
-    assert_eq!(edit.text.trim(), "use std\nin std.front {\n}");
+    assert_eq!(edit.text.trim(), "use std\nuse std.solids\nin std.front {\n}");
 }
 
 #[test]
 fn anonymous_chain_sides_have_stable_names_without_hiding_named_sides() {
     let src = "\
 use std
+use std.solids
 in std.front {
 a := point hint((0, 0))
 b := point hint((10, 0))
 c := point hint((0, 10))
 profile := line(a, b) -> (edge0 := line(b, c)) -> line(c, a) -> close
 }
-part := solid(profile, depth: 8)
+part := solid(std.solids.Prism(profile, from: -8, to: 0))
 ";
     let old = read(src);
     let moved = read(&format!("// Moving source text must not rename surfaces.\n{src}"));
@@ -782,6 +800,7 @@ fn named_chains_are_component_members_and_resolve_forward_and_through_formals() 
     let src = "\
 unit mm
 use std
+use std.solids
 component Shape() {
 a := point hint((0, 0))
 b := point hint((10, 0))
@@ -794,16 +813,16 @@ fix((0, 20)) d
 profile := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 }
 component Slab(section: face, t: Length) {
-body := solid(section, depth: t)
+body := solid(std.solids.Prism(section, from: -t, to: 0))
 }
-first := solid(s.profile, depth: 2mm)
+first := solid(std.solids.Prism(s.profile, from: -2mm, to: 0))
 in std.front {
 x := Slab(s.profile, t: 3mm)
 repeat 2 as i {
 copy := Shape()
-prism := solid(copy.profile, depth: (i + 1) * 1mm)
+prism := solid(std.solids.Prism(copy.profile, from: -((i + 1) * 1mm), to: 0))
 }
-selected := solid(copy[1].profile, depth: 4mm)
+selected := solid(std.solids.Prism(copy[1].profile, from: -4mm, to: 0))
 s := Shape()
 }
 ";
@@ -822,23 +841,23 @@ fn named_open_chains_can_be_closed_explicitly_but_cannot_be_swept_directly() {
     let e = read(&src);
     assert_eq!(e.sketch.lines.len(), 3);
     assert_eq!(e.sketch.faces.len(), 0);
-    refused(&format!("{src}bad := solid(profile, depth: 8mm)\n"), Code::E080, "open chain");
+    refused(&format!("{src}bad := solid(std.solids.Prism(profile, from: -8mm, to: 0))\n"), Code::E080, "open chain");
     refused(&format!("{src}bad := face(profile)\n"), Code::E080, "share no point");
-    let e = read(&format!("{src}block := solid(face(profile, -> close), depth: 8mm)\n"));
+    let e = read(&format!("{src}block := solid(std.solids.Prism(face(profile, -> close), from: -8mm, to: 0))\n"));
     assert_eq!(e.sketch.lines.len(), 4);
     assert_volume(volume(&e, "block"), 19200.0);
-    let e = read(&format!("{src}sec := face(profile, a)\nblock := solid(sec, depth: 8mm)\n"));
+    let e = read(&format!("{src}sec := face(profile, a)\nblock := solid(std.solids.Prism(sec, from: -8mm, to: 0))\n"));
     assert_volume(volume(&e, "block"), 19200.0);
 }
 
 #[test]
 fn named_chains_inherit_planes_and_revolve_with_arcs() {
-    let src = "unit mm\nuse std\n\
+    let src = "unit mm\nuse std\nuse std.solids\n\
         back := plane hint(origin: (0, 0, 12))\nfix(origin == (0, 0, 12)) back\nfix(dir == (1, 0, 0)) back.u\nfix(dir == (0, 1, 0)) back.v\n\
         in back {\na := point hint((0, -5))\nb := point hint((0, 5))\n\
           c := point hint((0, 0))\n\
           profile := (rim := arc(center: c, start: a, end: b) hint(r: 5)) -> (ax := line(b, a)) -> close\n\
-          ball := solid(profile, about: ax)\n}\n";
+          ball := solid(std.solids.Revolution(profile, about: ax))\n}\n";
     let e = read(src);
     let back = e.map.ent_named("back").unwrap().i() as u32;
     assert_eq!(e.sketch.faces[0].plane, Some(back));
@@ -847,7 +866,9 @@ fn named_chains_inherit_planes_and_revolve_with_arcs() {
     assert!((volume(&e, "ball") / want - 1.0).abs() < 0.002,
         "sphere volume: {} versus {want}", volume(&e, "ball"));
     let old = src.replace("profile := ", "")
-        .replace("ball := solid(profile,", "sec := face(rim, ax)\nball := solid(sec,");
+        .replace("ball := solid(std.solids.Revolution(profile,",
+                 "sec := face(rim, ax)\nball := solid(std.solids.Revolution(sec,");
+    assert!(old.contains("Revolution(sec,"));
     assert_eq!(volume(&e, "ball"), volume(&read(&old), "ball"));
     assert!(gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
 }
@@ -857,10 +878,11 @@ fn named_chains_validate_names_links_and_plane_membership() {
     refused("profile := line equal line\n", Code::E100, "every pair");
     refused("component A() { profile := line -> }\na := A()\n",
         Code::E100, "must finish");
-    refused("use std\nin std.front {\nprofile := line\nprofile := point\n}\n", Code::E001, "declared twice");
-    refused("use std\nin std.front {\nprofile := point\nprofile := line\n}\n", Code::E001, "declared twice");
+    refused("use std\nuse std.solids\nin std.front {\nprofile := line\nprofile := point\n}\n", Code::E001, "declared twice");
+    refused("use std\nuse std.solids\nin std.front {\nprofile := point\nprofile := line\n}\n", Code::E001, "declared twice");
     refused("\
 use std
+use std.solids
 in std.front {
 p := point
 q := point
@@ -871,6 +893,7 @@ profile := (a := line(p, q)) -> c -> (b := line(q, p)) -> close
         Code::E080, "lines and arcs");
     refused("\
 use std
+use std.solids
 in std.front {
 p := point
 q := point
@@ -878,7 +901,7 @@ profile := (a := line(p, q)) -> profile.nope -> (b := line(q, p)) -> close
 }
 ",
         Code::E080, "lines and arcs");
-    refused(&format!("{}bad := solid(profile.typo, depth: 8mm)\n", named_rect()),
+    refused(&format!("{}bad := solid(std.solids.Prism(profile.typo, from: -8mm, to: 0))\n", named_rect()),
         Code::E080, "not a member");
     let src = named_rect();
     let src = format!("{}v := plane(u: std.x, v: std.y)\nin v {{\nd := point hint((0, 40))\n}}\n", src)
@@ -889,7 +912,7 @@ profile := (a := line(p, q)) -> profile.nope -> (b := line(q, p)) -> close
 
 #[test]
 fn named_chain_source_is_retained_and_its_binding_is_highlighted() {
-    let src = "use std\nin std.front {\nprofile := line -> line -> line -> close\n}\n";
+    let src = "use std\nuse std.solids\nin std.front {\nprofile := line -> line -> line -> close\n}\n";
     let (mut p, errors) = parse(src);
     assert!(errors.is_empty(), "{errors:?}");
     assert_eq!(gcs_core::syntax::render_flat(&mut p).unwrap_err().construct, "named chains");
@@ -914,7 +937,7 @@ fn named_chain_syntax_errors_point_to_the_offending_joint() {
 #[test]
 fn a_refused_named_loop_does_not_misnumber_later_sections() {
     let src = format!("broken := line -> line -> close\n{}\n\
-        block := solid(profile, depth: 8mm)\n", named_rect());
+        block := solid(std.solids.Prism(profile, from: -8mm, to: 0))\n", named_rect());
     let (p, errors) = parse(&src);
     assert!(errors.is_empty(), "{errors:?}");
     let e = elaborate(&p);
@@ -927,14 +950,19 @@ fn a_refused_named_loop_does_not_misnumber_later_sections() {
 #[test]
 fn through_extent_spans_additions_but_only_cut_subtracts() {
     let src = format!("{RECT}{HOLE}\n\
-        stock := solid(sec, depth: 10mm)\n\
-        boss := solid(sec, from: 0mm, to: 5mm)\n\
+        stock := solid(std.solids.Prism(sec, from: -10mm, to: 0))\n\
+        boss := solid(std.solids.Prism(sec, from: 0mm, to: 5mm))\n\
         body := solid(stock)\nboss union body\n\
-        bore := solid(hole_f, through: body)\n");
-    let uncut = read(&src);
+        bore := solid(std.solids.Through(hole_f))\n");
+    // uncut, nothing bounds it: refused, and the body is the stock and the boss
+    refused(&src, Code::E080, "only the body it is cut from bounds");
+    let uncut = read(&src.replace("bore := solid(std.solids.Through(hole_f))\n", ""));
     assert_volume(volume(&uncut, "body"), 36000.0);
     let cut = read(&format!("{src}bore cut body\n"));
-    let explicit = read(&format!("{}bore cut body\n", src.replace("through: body", "from: -11mm, to: 6mm")));
+    let explicit = read(&format!("{}bore cut body\n", src.replace("std.solids.Through(hole_f)",
+        "std.solids.Prism(hole_f, from: -11mm, to: 6mm)")));
+    assert!(explicit.sketch.solids.iter().all(|s| !matches!(s.def,
+        gcs_core::model::SolidDef::Through { .. })));
     assert!((volume(&cut, "body") - volume(&explicit, "body")).abs() < 1e-6);
     let i = cut.map.ent_named("bore").unwrap().i();
     let csg = gcs_core::solid::resolve(&cut.sketch, i, gcs_core::solid::REPORT_UNIT);
@@ -958,11 +986,11 @@ fn through_extent_spans_additions_but_only_cut_subtracts() {
 #[test]
 fn through_extent_is_order_independent_and_ignores_other_cutters() {
     let declarations = [
-        "stock := solid(sec, depth: 10mm)",
+        "stock := solid(std.solids.Prism(sec, from: -10mm, to: 0))",
         "body := solid(stock)",
-        "bore := solid(hole_f, through: body)",
+        "bore := solid(std.solids.Through(hole_f))",
         "bore cut body",
-        "huge := solid(hole_f, from: -1000mm, to: 1000mm)",
+        "huge := solid(std.solids.Prism(hole_f, from: -1000mm, to: 1000mm))",
         "huge cut body",
     ];
     let mut expected: Option<f64> = None;
@@ -984,14 +1012,15 @@ fn through_extent_is_order_independent_and_ignores_other_cutters() {
 fn through_targets_resolve_inside_components_and_round_trip() {
     let src = format!("{RECT}{HOLE}\n\
         component Drill(section: face, target: solid) {{\n\
-          tool := solid(section, through: target)\ntool cut target\n}}\n\
-        d := Drill(hole_f, body)\nbody := solid(stock)\nstock := solid(sec, depth: 10mm)\n");
+          tool := solid(std.solids.Through(section))\ntool cut target\n}}\n\
+        d := Drill(hole_f, body)\nbody := solid(stock)\nstock := solid(std.solids.Prism(sec, from: -10mm, to: 0))\n");
     let e = read(&src);
     assert!(volume(&e, "body") < 24000.0);
-    let flat = format!("{RECT}{HOLE}stock := solid(sec, depth: 10mm)\nbody := solid(stock)\ntool := solid(hole_f, through: body)\ntool cut body\n");
+    let flat = format!("{RECT}{HOLE}stock := solid(std.solids.Prism(sec, from: -10mm, to: 0))\nbody := solid(stock)\ntool := solid(std.solids.Through(hole_f))\ntool cut body\n");
     let (mut p, _) = parse(&flat);
     let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
-    assert!(printed.contains("through: body") && printed.contains("tool cut body"));
+    assert!(printed.contains("std.solids.Through(hole_f)") && printed.contains("tool cut body"),
+            "{printed}");
     assert!((volume(&read(&printed), "body") - volume(&e, "body")).abs() < 1e-6);
     let body = e.map.ent_named("body").unwrap();
     let copied = gcs_core::graft::copy(&e.sketch, &[body]);
@@ -1005,30 +1034,41 @@ fn through_targets_resolve_inside_components_and_round_trip() {
 
 #[test]
 fn through_extent_refuses_mixed_labels_bad_targets_and_real_cycles() {
+    // the retired label among others is refused as a mixture
     for label in ["depth: 3mm", "from: 0mm, to: 3mm", "about: ab", "sweep: 90deg", "sense: cw"] {
-        refused(&format!("{RECT}s := solid(sec, through: target, {label})\n"), Code::E100, "cannot be combined");
+        refused(&format!("{RECT}s := solid(sec, through: target, {label})\n"), Code::E100,
+                "cannot be combined");
     }
-    refused(&format!("{RECT}s := solid(sec, through: a)\n"), Code::E080, "solid target");
-    refused(&format!("{RECT}s := solid(sec, through: missing)\n"), Code::E101, "no such entity");
-    refused(&format!("{RECT}s := solid(sec, through: s)\n"), Code::E041, "made of itself");
-    refused(&format!("{RECT}s := solid(sec, through: body)\nbody := solid(s)\n"), Code::E041, "made of itself");
-    refused(&format!("{RECT}stock := solid(sec, depth: 10mm)\ns := solid(sec, through: body)\nbody := solid(stock)\ns union body\n"), Code::E041, "made of itself");
-    refused(&format!("{RECT}a1 := solid(sec, through: b1)\nb1 := solid(sec, through: a1)\n"), Code::E041, "made of itself");
-    refused(&format!("{RECT}stock := solid(sec, depth: 10mm)\nbody := solid(stock)\nstock through body\n"), Code::E100, "now `cut`");
+    // a prism through everything is cut from a solid, one that is there, and not itself
+    let through = format!("{RECT}s := solid(std.solids.Through(sec))\n");
+    refused(&format!("{through}s cut a\n"), Code::E080, "relates solids");
+    refused(&format!("{through}s cut missing\n"), Code::E101, "no such entity");
+    refused(&format!("{through}s cut s\n"), Code::E080, "joins a solid to itself");
+    refused(&format!("{through}body := solid(s)\ns cut body\n"), Code::E041, "made of itself");
+    // joined to a body it bounds nothing
+    refused(&format!("{RECT}stock := solid(std.solids.Prism(sec, from: -10mm, to: 0))\n\
+                      s := solid(std.solids.Through(sec))\nbody := solid(stock)\ns union body\n"),
+            Code::E080, "only the body it is cut from bounds");
+    refused(&format!("{RECT}a1 := solid(std.solids.Through(sec))\n\
+                      b1 := solid(std.solids.Through(sec))\na1 cut b1\nb1 cut a1\n"),
+            Code::E041, "made of itself");
+    refused(&format!("{RECT}stock := solid(std.solids.Prism(sec, from: -10mm, to: 0))\nbody := solid(stock)\nstock through body\n"), Code::E100, "now `cut`");
 }
 
 #[test]
 fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
-    let src = format!("unit mm\nuse std\n\
+    let src = format!("unit mm\nuse std\nuse std.solids\n\
         front := plane(u: std.x, v: std.y)\nfix(origin == (0, 0, 0)) front\n\
         side := plane hint(origin: (0, -80, 0))\nfix(origin == (0, -80, 0)) side\nfix(dir == (1, 0, 0)) side.u\nfix(dir == (0, 0, 1)) side.v\n\
         {}\n\
         in side {{\nhc := point hint((30, -5))\nh := circle(center: hc) hint(r: 2)\nhf := face(h)\n}}\n\
-        stock := solid(sec, depth: 10mm)\nbody := solid(stock)\n\
-        tool := solid(hf, through: body)\ntool cut body\n",
-        RECT.replace("unit mm\nuse std\n", "").replace("in std.front", "in front"));
+        stock := solid(std.solids.Prism(sec, from: -10mm, to: 0))\nbody := solid(stock)\n\
+        tool := solid(std.solids.Through(hf))\ntool cut body\n",
+        RECT.replace("unit mm\nuse std\nuse std.solids\n", "").replace("in std.front", "in front"));
     let mut e = read(&src);
-    let explicit = read(&src.replace("through: body", "from: -121mm, to: -79mm"));
+    assert!(src.contains("std.solids.Through(hf)"));
+    let explicit = read(&src.replace("std.solids.Through(hf)",
+                                     "std.solids.Prism(hf, from: -121mm, to: -79mm)"));
     let want = volume(&explicit, "body");
     assert!(want < 24000.0 && want > 23000.0, "cut body volume: {want}");
     assert!((volume(&e, "body") - want).abs() < 1e-6);
@@ -1068,12 +1108,12 @@ fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
     }
 }
 
-const ANNULUS: &str = "unit mm\nuse std\nin std.front {\ncenter := point hint((0, 0))\nouter := circle(center: center) hint(r: 10)\ninner := circle(center: center) hint(r: 5)\n}\nsection := face(outer, holes: inner)\n";
+const ANNULUS: &str = "unit mm\nuse std\nuse std.solids\nin std.front {\ncenter := point hint((0, 0))\nouter := circle(center: center) hint(r: 10)\ninner := circle(center: center) hint(r: 5)\n}\nsection := face(outer, holes: inner)\n";
 
 #[test]
 fn section_holes_sweep_and_cut_with_source_face_names() {
     use gcs_core::solid::{ApproximationPolicy::Report, WorldPoint};
-    let e = read(&format!("{ANNULUS}sleeve := solid(section, depth: 3mm)\nstock := solid(face(outer), depth: 6mm)\nbody := solid(stock)\nsleeve cut body\n"));
+    let e = read(&format!("{ANNULUS}sleeve := solid(std.solids.Prism(section, from: -3mm, to: 0))\nstock := solid(std.solids.Prism(face(outer), from: -6mm, to: 0))\nbody := solid(stock)\nsleeve cut body\n"));
     let ring = e.sketch.evaluated_solid(e.map.ent_named("sleeve").unwrap().i(), Report).unwrap();
     assert!((ring.volume() - 225.0 * std::f64::consts::PI).abs() < 0.6);
     assert!(!ring.contains_world(WorldPoint([0.0, 1.0, 0.0])));
@@ -1091,7 +1131,7 @@ fn section_holes_sweep_and_cut_with_source_face_names() {
 #[test]
 fn section_holes_round_trip_copy_delete_and_invalidate() {
     use gcs_core::{model::EntRef, solid::ApproximationPolicy::Report};
-    let src = format!("{ANNULUS}sleeve := solid(face(outer, holes: inner), from: 1mm, to: 4mm)\n");
+    let src = format!("{ANNULUS}sleeve := solid(std.solids.Prism(face(outer, holes: inner), from: 1mm, to: 4mm))\n");
     let (mut p, _) = parse(&src);
     let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(printed.contains("holes: inner"));
@@ -1112,7 +1152,7 @@ fn section_holes_round_trip_copy_delete_and_invalidate() {
 
 #[test]
 fn section_holes_work_in_through_cutters_and_their_targets() {
-    let e = read(&format!("{ANNULUS}stock := solid(section, depth: 8mm)\nbody := solid(stock)\ntool := solid(face(outer, holes: inner), through: body)\ntool cut body\n"));
+    let e = read(&format!("{ANNULUS}stock := solid(std.solids.Prism(section, from: -8mm, to: 0))\nbody := solid(stock)\ntool := solid(std.solids.Through(face(outer, holes: inner)))\ntool cut body\n"));
     assert!(volume(&e, "body").abs() < 1e-8);
     assert!(volume(&e, "tool") > volume(&e, "stock"));
 }
@@ -1128,8 +1168,8 @@ fn section_holes_accept_multiple_component_loops_and_revolutions() {
         profile := (a := line(p,q)) -> (b := line(q,r)) -> (c := line(r,s)) -> (d := line(s,p)) -> close\n}}\n\
         in std.front {{\nh0 := Hole(y: 5mm)\nh1 := Hole(y: 25mm)\n}}\n\
         section := face(ab, bc, cd, da, holes: h0.profile, h1.profile)\n\
-        slab := solid(section, depth: 3mm)\nturned := solid(section, about: da)\n\
-        quarter := solid(section, about: da, sweep: 90deg)\n");
+        slab := solid(std.solids.Prism(section, from: -3mm, to: 0))\nturned := solid(std.solids.Revolution(section, about: da))\n\
+        quarter := solid(std.solids.Revolution(section, about: da, to: 90deg))\n");
     let e = read(&src);
     let slab = e.sketch.evaluated_solid(e.map.ent_named("slab").unwrap().i(),
         gcs_core::solid::ApproximationPolicy::Report).unwrap();
@@ -1164,7 +1204,7 @@ fn a_face_is_a_hole_as_it_stands() {
     // a hole of loose lines is written as a face: the plate is 2400 − 100 over a depth of 3
     let e = read(&format!("{RECT}{SQUARE_HOLE}plate := face(ab, bc, cd, da, holes: h)
 \
-        slab := solid(plate, depth: 3mm)\n"));
+        slab := solid(std.solids.Prism(plate, from: -3mm, to: 0))\n"));
     let slab = e.sketch.evaluated_solid(e.map.ent_named("slab").unwrap().i(),
         gcs_core::solid::ApproximationPolicy::Report).unwrap();
     assert!((slab.volume() - 6900.0).abs() < 1e-7, "{}", slab.volume());
@@ -1192,26 +1232,26 @@ fn section_holes_refuse_invalid_boundaries() {
         (4, 3, ", second", "disjoint"),
         (7, 2, ", second", "disjoint"),
     ] {
-        let src = format!("unit mm\nuse std\nin std.front {{\no := point hint((0, 0))\nh := point hint(({x}, 0))\nouter := circle(center: o) hint(r: 10)\ninner := circle(center: h) hint(r: {r})\nsecond := circle(center: o) hint(r: 5)\n}}\nsleeve := solid(face(outer, holes: inner{extra}), depth: 3mm)\n");
+        let src = format!("unit mm\nuse std\nuse std.solids\nin std.front {{\no := point hint((0, 0))\nh := point hint(({x}, 0))\nouter := circle(center: o) hint(r: 10)\ninner := circle(center: h) hint(r: {r})\nsecond := circle(center: o) hint(r: 5)\n}}\nsleeve := solid(std.solids.Prism(face(outer, holes: inner{extra}), from: -3mm, to: 0))\n");
         let e = read(&src);
         let err = e.sketch.evaluated_solid(0, Report).err().expect("invalid section must be refused");
         assert!(err.contains(message), "{src}\n{err}");
     }
     refused(&format!("{ANNULUS}bad := line(center, center)\nbadface := face(outer, holes: bad)\n"), Code::E080, "a named closed loop or a face");
-    refused("unit mm\nuse std\nother := plane\nin std.front {\no := point\nouter := circle(center: o) hint(r: 10)\n}\nin other { h := point\ninner := circle(center: h) hint(r: 2) }\nbad := face(outer, holes: inner)\n", Code::E080, "one plane");
+    refused("unit mm\nuse std\nuse std.solids\nother := plane\nin std.front {\no := point\nouter := circle(center: o) hint(r: 10)\n}\nin other { h := point\ninner := circle(center: h) hint(r: 2) }\nbad := face(outer, holes: inner)\n", Code::E080, "one plane");
 }
 
 #[test]
 fn section_holes_check_source_arc_and_line_tangencies_on_a_placed_plane() {
     use gcs_core::solid::ApproximationPolicy::Report;
     for (x, valid) in [(1, false), (2, true), (4, false)] {
-        let src = format!("unit mm\nuse std\n\
+        let src = format!("unit mm\nuse std\nuse std.solids\n\
             back := plane hint(origin: (0, 0, 12))\nfix(origin == (0, 0, 12)) back\nfix(dir == (1, 0, 0)) back.u\nfix(dir == (0, 1, 0)) back.v\n\
             in back {{\nc := point hint((0, 0))\n\
             a := point hint((0, -5))\nb := point hint((0, 5))\n\
             outline := (rim := arc(center: c, start: a, end: b) hint(r: 5)) -> (side := line(b,a)) -> close\n\
             h := point hint(({x}, 0))\ninner := circle(center: h) hint(r: 1)\n\
-            sleeve := solid(face(outline, holes: inner), depth: 2mm)\n}}\n");
+            sleeve := solid(std.solids.Prism(face(outline, holes: inner), from: -2mm, to: 0))\n}}\n");
         let e = read(&src);
         let result = e.sketch.evaluated_solid(0, Report);
         assert_eq!(result.is_ok(), valid, "x={x}: {:?}", result.as_ref().err());
@@ -1227,6 +1267,7 @@ fn section_holes_keep_component_paths_in_named_and_inline_sections() {
     let e = read("\
 unit mm
 use std
+use std.solids
 component Bore(x: Length) {
 c := point hint((x, 0))
 bore := circle(center: c) hint(r: 1)
@@ -1241,8 +1282,8 @@ radius(10) outer
 left := Bore(x: -3mm)
 right := Bore(x: 3mm)
 section := face(outer, holes: left.bore, right.bore)
-named := solid(section, depth: 2mm)
-inline := solid(face(outer, holes: left.bore, right.bore), depth: 2mm)
+named := solid(std.solids.Prism(section, from: -2mm, to: 0))
+inline := solid(std.solids.Prism(face(outer, holes: left.bore, right.bore), from: -2mm, to: 0))
 }
 in std.front {
 p := Part()
@@ -1263,6 +1304,7 @@ fn section_holes_keep_repeat_paths_stable_when_statements_are_inserted() {
     let source = "\
 unit mm
 use std
+use std.solids
 in std.front {
 center := point
 outer := circle(center: center) hint(r: 10)
@@ -1271,7 +1313,7 @@ c := point hint(((i * 6 - 3) * 1mm, 0))
 bore := circle(center: c) hint(r: 1)
 }
 }
-sleeve := solid(face(outer, holes: bore[0], bore[1]), depth: 2mm)
+sleeve := solid(std.solids.Prism(face(outer, holes: bore[0], bore[1]), from: -2mm, to: 0))
 ";
     for src in [source.to_string(), format!("unrelated := point\n{source}")] {
         let e = read(&src);
@@ -1287,7 +1329,7 @@ sleeve := solid(face(outer, holes: bore[0], bore[1]), depth: 2mm)
 fn section_holes_preserve_explicit_closure_winding_and_failed_face_cleanup() {
     let (p, errors) = parse(&format!("{RECT}{HOLE}\n\
         bad := face(a,b,c,d, holes: ab, -> close)\n\
-        good := face(d,c,b,a, holes: hole, -> close)\nslab := solid(good, depth: 2mm)\n"));
+        good := face(d,c,b,a, holes: hole, -> close)\nslab := solid(std.solids.Prism(good, from: -2mm, to: 0))\n"));
     assert!(errors.is_empty());
     let e = elaborate(&p);
     assert!(e.diags.iter().any(|d| d.code == Code::E080));
@@ -1295,7 +1337,7 @@ fn section_holes_preserve_explicit_closure_winding_and_failed_face_cleanup() {
     assert_eq!(e.sketch.lines.len(), 8, "only the good face retains its four closing edges");
     let expected = (2400.0 - 25.0 * std::f64::consts::PI) * 2.0;
     assert!((volume(&e, "slab") - expected).abs() < 0.1);
-    let src = format!("{RECT}{HOLE}\nslab := solid(face(a,b,c,d, holes: hole, -> close), depth: 2mm)\n");
+    let src = format!("{RECT}{HOLE}\nslab := solid(std.solids.Prism(face(a,b,c,d, holes: hole, -> close), from: -2mm, to: 0))\n");
     let (mut p, _) = parse(&src);
     let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!((volume(&read(&printed), "slab") - volume(&e, "slab")).abs() < 1e-8);
@@ -1345,7 +1387,7 @@ fn vtwin_intake_passages_connect_without_opening_into_the_exhaust() {
 fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
     use gcs_core::solid::{ApproximationPolicy, WorldPoint};
     for (phi, height, page_x, page_y, offset) in [(0, 0, 0, 0, 0), (35, 72, 100, -80, 7)] {
-        let src = format!("unit mm\nuse std\nuse hardware\nuse components.dims\nuse components.parts\nuse components.throttle\n\
+        let src = format!("unit mm\nuse std\nuse std.solids\nuse hardware\nuse components.dims\nuse components.parts\nuse components.throttle\n\
             torgb := 2 * components.dims.rbar - 2 * (1 - hardware.oring_squeeze) * components.dims.tor\n\
             torw := hardware.oring_groove_w * components.dims.tor\n\
             front := plane hint(origin: ({page_x}, {back}, {page_y}))\n\
@@ -1355,12 +1397,12 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
             in front {{\nO := point\nfix((0, 0)) O\nc := components.parts.At(O, dx: 0mm, dy: {height}mm)\naxes := components.parts.Axes(O)\n\
             core := circle(center: c.p) hint(r: torgb / 2)\nradius(torgb / 2) core\n}}\n\
             thr := components.throttle.Throttle(c.p, axes.ax, phi: {phi}deg)\n\
-            old_barrel := solid(face(thr.barrel), from: -(components.dims.bossz / 2 + components.dims.tback), to: components.dims.bossz / 2)\n\
-            old_hub := solid(face(thr.hub), from: components.dims.bossz / 2, to: components.dims.bossz / 2 + components.dims.levw)\n\
+            old_barrel := solid(std.solids.Prism(face(thr.barrel), from: -(components.dims.bossz / 2 + components.dims.tback), to: components.dims.bossz / 2))\n\
+            old_hub := solid(std.solids.Prism(face(thr.hub), from: components.dims.bossz / 2, to: components.dims.bossz / 2 + components.dims.levw))\n\
             groove_section := face(thr.barrel, holes: core)\n\
-            groove0 := solid(groove_section, from: components.dims.torz - torw / 2, to: components.dims.torz + torw / 2)\n\
-            groove1 := solid(groove_section, from: -components.dims.torz - torw / 2, to: -components.dims.torz + torw / 2)\n\
-            groove2 := solid(groove_section, from: -(components.dims.bossz / 2 + components.dims.tretain) - torw / 2, to: -(components.dims.bossz / 2 + components.dims.tretain) + torw / 2)\n\
+            groove0 := solid(std.solids.Prism(groove_section, from: components.dims.torz - torw / 2, to: components.dims.torz + torw / 2))\n\
+            groove1 := solid(std.solids.Prism(groove_section, from: -components.dims.torz - torw / 2, to: -components.dims.torz + torw / 2))\n\
+            groove2 := solid(std.solids.Prism(groove_section, from: -(components.dims.bossz / 2 + components.dims.tretain) - torw / 2, to: -(components.dims.bossz / 2 + components.dims.tretain) + torw / 2))\n\
             reference := solid(old_barrel)\nold_hub union reference\nthr.arm union reference\nthr.knob_s union reference\n\
             thr.cross cut reference\ngroove0 cut reference\ngroove1 cut reference\ngroove2 cut reference\n",
             back = -offset);
@@ -1403,6 +1445,7 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
 const PARABOLA: &str = "\
 unit mm
 use std
+use std.solids
 component Par(o: point, u: Length) {
   p := point(x: o.x + u, y: o.y + u * u / 1mm)
 }
@@ -1426,7 +1469,7 @@ fix(x == 1mm) b
 #[test]
 fn a_face_runs_along_the_stretch_of_a_curve_between_two_points_held_on_it() {
     // the parabola from a to b and the chord back: 2 − 2/3 across, 3 deep
-    let e = read(&format!("{PARABOLA}s := solid(face(k from a to b, -> close), depth: 3mm)\n"));
+    let e = read(&format!("{PARABOLA}s := solid(std.solids.Prism(face(k from a to b, -> close), from: -3mm, to: 0))\n"));
     let v = volume(&e, "s");
     assert!((v - 4.0).abs() < 2e-3, "{v}");
     // the exact kernel reads the stretch as a B-spline fitted within `FIT_MM` of the curve
@@ -1439,7 +1482,7 @@ fn a_face_runs_along_the_stretch_of_a_curve_between_two_points_held_on_it() {
     let exact = gcs_core::brep::props::volume(&b);
     assert!((exact - 4.0).abs() <= 3.0 * 2.0 * 3.0 * gcs_core::solid::cad::FIT_MM, "{exact}");
     // either way round, and printed as written
-    let back = read(&format!("{PARABOLA}s := solid(face(k from b to a, -> close), depth: 3mm)\n"));
+    let back = read(&format!("{PARABOLA}s := solid(std.solids.Prism(face(k from b to a, -> close), from: -3mm, to: 0))\n"));
     assert!((volume(&back, "s") - 4.0).abs() < 2e-3);
     let (prog, _) = parse("f := face(k from a to b, -> close)\n");
     let mut text = String::new();

@@ -18,6 +18,7 @@
 // corners).
 unit mm
 use std
+use std.solids
 
 r := 3mm
 
@@ -57,6 +58,6 @@ in std.front {
   (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> (west := line(b3, b0)) -> close
   outline := face(south, east, north, west)
 }
-block := solid(outline, depth: 12mm)
+block := solid(std.solids.Prism(outline, from: -12mm, to: 0))
 
 block.near rolled(r: r) block.south

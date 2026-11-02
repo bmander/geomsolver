@@ -1,5 +1,6 @@
 unit mm
 use std
+use std.solids
 in std.front {
   stockfp0 := point
   fix((0, 0)) stockfp0
@@ -10,7 +11,7 @@ in std.front {
   stockfp3 := point
   fix((0, 10)) stockfp3
   stockf := face(stockfp0, stockfp1, stockfp2, stockfp3, -> close)
-  stock := solid(stockf, from: -5mm, to: 0mm)
+  stock := solid(std.solids.Prism(stockf, from: -5mm, to: 0mm))
   bossfp0 := point
   fix((2, 2)) bossfp0
   bossfp1 := point
@@ -21,6 +22,6 @@ in std.front {
   fix((2, 5)) bossfp3
 }
 bossf := face(bossfp0, bossfp1, bossfp2, bossfp3, -> close)
-boss := solid(bossf, from: 0mm, to: 2mm)
+boss := solid(std.solids.Prism(bossf, from: 0mm, to: 2mm))
 result := solid(stock)
 boss union result

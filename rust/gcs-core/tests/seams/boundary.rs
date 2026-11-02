@@ -9,7 +9,7 @@ component Sphere(origin: point, size: Length) {
   fix(x == 0) top
   private rim := arc(center: origin,start: bottom,end: top)
   private diameter := line(top,bottom)
-  private carrier := solid(face(rim,diameter),about: diameter)
+  private carrier := solid(std.solids.Revolution(face(rim,diameter), about: diameter))
   wall := surface(carrier,rim)
 }
 in std.front {

@@ -264,7 +264,7 @@ crown_roll := frame
 crown_roll turns(1) crown_ax
 gear_roll := frame
 gear_roll turns(-1.4142135623730951) gear_ax
-construction removal := sweep(tool over t in (-40deg, 40deg), under: crown_roll, seen_from: gear_roll)
+construction removal := solid({ p | p inside(under: crown_roll, seen_from: gear_roll, over t in (-40deg, 40deg)) tool })
 part := solid(blank)
 removal cut part
 ";

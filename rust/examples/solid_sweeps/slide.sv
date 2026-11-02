@@ -7,6 +7,7 @@
 // no circle of it, but still built exactly.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (slides)
 
@@ -33,7 +34,7 @@ in std.front {
   private rod_wall := line(r1, r2)
   private rod_top := line(r2, r3)
 }
-rod := solid(face(rod_axis, rod_end, rod_wall, rod_top), about: rod_axis)
+rod := solid(std.solids.Revolution(face(rod_axis, rod_end, rod_wall, rod_top), about: rod_axis))
 
 // the wheel, drawn in a plane through its axis, which runs across the rod below it
 private across := axis
@@ -53,10 +54,10 @@ in bench {
   private rim := circle(center: tc) hint(r: 2)
   radius(tube) rim
 }
-construction wheel := solid(face(rim), about: wheel_axis)
+construction wheel := solid(std.solids.Revolution(face(rim), about: wheel_axis))
 
 // the slide up the rod's axis, 40 mm a turn of the roll, and the groove it leaves
 feed := frame
 feed slides(40mm) ax
-construction groove := sweep(wheel over t in (0deg, 360deg), under: feed)
+construction groove := solid({ p | p inside(under: feed, over t in (0deg, 360deg)) wheel })
 groove cut rod

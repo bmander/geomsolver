@@ -65,6 +65,16 @@ pub(super) fn measured(stmt: u32, k: usize) -> String {
     format!("#{stmt}.m{k}")
 }
 
+/// The point of the set a statement is outside of (#737), `#{statement}.c`.
+pub(super) fn outside(stmt: u32) -> String {
+    format!("#{stmt}.c")
+}
+
+/// The prefix the set a statement is outside of is applied under, `{prefix}#{statement}.c.`.
+pub(super) fn outside_prefix(prefix: &str, stmt: u32) -> String {
+    format!("{prefix}{}.", outside(stmt))
+}
+
 /// The prefix the `k`th measured set's incidence is applied under, `{prefix}#{statement}.m{k}.`.
 pub(super) fn measured_prefix(prefix: &str, stmt: u32, k: usize) -> String {
     format!("{prefix}{}.", measured(stmt, k))

@@ -20,6 +20,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   closed form (`query::crossings_in`); a point's foot on such a sheet from the ruling level with it
   (`Blend::inverse`). Each reads the sheet through `Blend::screwed_line` (`geom::ScrewedLine`).
   A profile screwed into a solid, public (`build::screwed`).
+
+## [0.3.0] - 2026-11-02
+
+- A traced meeting dropped as an edge one face already has (#735 A2) is laid across the other face
+  where it lies inside it (`boolean::combined` and every selection): a torus cut by the plane
+  through its axis that holds its seam is half the torus again, not an open boundary — a regression
+  of the surface arrangement (brep-bench's shell/half-torus-open-ends).
+- A sheet's net whose first or last row of poles collapses to a point is a pole
+  (`build::grid_sheet`): one vertex and a degenerate edge in each face, so the standard NURBS
+  sphere is a closed boundary `check` holds.
 - A plane through a quadric's asymptotic cone is tangent where the constant at the hyperbola's
   centre is rounding (`ssi::intersect`): a plane holding a hyperboloid's ruling meets it in two
   lines at any tolerance, where at a tolerance under some 1e-7 it came out as a hyperbola's
@@ -33,6 +43,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   edge touching a surface its own face touches placed at their touch curve; two closed-form curves
   of one meeting crossed whether open or closed (a plane tangent to a hyperboloid's throat, cut
   along its two rulings); the faces round an edge ordered where they stand farthest apart.
+- **Rounds that take the whole of a face** (`fillet::roll`): a ball whose contact lands on another
+  edge of the face it rolls on, or short of it by less than the face can hold, is rolled rather
+  than refused — the face goes (a slab's top rounded from both edges to half its width, an L's
+  inside edge filled as wide as both faces beside it, a hole's rims rounded to meet at its waist),
+  or a strip of it stays between the rounds. Only an edge reaching inside the ball's band refuses
+  it: the band is read against the contact's own height rather than 1% past its greatest.
 - **Affine maps of solids** (`Brep::mapped`, `affine::Affine`): any invertible `p ↦ M p + t`
   carries a solid onto its exact image, its topology and pcurves its own. A kind whose image is
   its own kind is written so (`Surface::mapped`, `Curve::mapped`: a similarity scales, a plane is

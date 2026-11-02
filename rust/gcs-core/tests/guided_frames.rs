@@ -83,7 +83,7 @@ fn along(word: &str, guide: &str, args: &str) -> String {
     format!("al := std.stations.{word}({guide}{args})
 sec := Rect(al.f, w: 2mm, h: 1mm)
 f := face(sec.a, sec.b, sec.c, sec.d, -> close)
-along := sweep(f over s)
+along := solid({{ p | p coincident(over s) f }})
 ")
 }
 
@@ -127,7 +127,7 @@ fn motion(e: &Elaborated, name: &str) -> Family {
 #[test]
 fn a_tube_in_a_frame_along_a_spline_is_todays_stations() {
     for (guide, home) in [("curvy", "0"), ("cubic", "0.5")] {
-        let today = format!("today := sweep(Rider({guide}, std.z, w: 2mm, h: 1mm).f over s)\n");
+        let today = format!("today := solid({{ p | p coincident(over s) Rider({guide}, std.z, w: 2mm, h: 1mm).f }})\n");
         let src = format!("{PATHS}{}{today}", along("Along", guide, &format!(", up: std.z, home: {home}")));
         same_solid(&determined(&src), "along", "today", guide);
     }
@@ -138,7 +138,7 @@ fn a_tube_in_a_frame_along_a_spline_is_todays_stations() {
 /// volume.
 #[test]
 fn a_ribbon_in_a_frenet_frame_along_a_spline_is_todays_stations() {
-    let src = format!("{PATHS}{}today := sweep(Ribbon(cubic, w: 2mm, h: 1mm).f over s)\n",
+    let src = format!("{PATHS}{}today := solid({{ p | p coincident(over s) Ribbon(cubic, w: 2mm, h: 1mm).f }})\n",
                       along("AlongFrenet", "cubic", ", home: 0.25"));
     same_solid(&determined(&src), "along", "today", "the ribbon");
 }

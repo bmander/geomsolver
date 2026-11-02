@@ -30,9 +30,10 @@ over the standard library's `std` (`rust/lib/std.sv`), whose standard planes are
 principal views, all at the world origin; `engine.svd` places them on paper.
 
 Named chains (issue #49.3, Solvent §6.6) bind `profile = line -> … -> close` as an ordinary
-component member. A closed loop is a sweep section (`body := solid(part.profile, depth: 8mm)`);
-open chains can contribute their edges to `face(trail, -> close)`. Both retain the original
-edge identities. The V-twin frame's rectangle sweeps use the `Box` helpers' named profiles.
+component member. A closed loop is a sweep section (`body := solid(std.solids.Prism(part.profile,
+from: -8mm, to: 0mm))`); open chains can contribute their edges to `face(trail, -> close)`. Both
+retain the original edge identities. The V-twin frame's rectangle sweeps use the `Box` helpers'
+named profiles.
 
 The binding contains no algorithm.  It generates its constraint classes from the core's own
 registry, so a new constraint type appears in the browser with nothing to change on that side.

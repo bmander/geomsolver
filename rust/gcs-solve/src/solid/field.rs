@@ -7,7 +7,7 @@ use crate::fmath::Det;
 mod profile;
 mod sections;
 pub(crate) use sections::{oriented,Sections};
-pub(crate) use document::prism_loops;
+pub(crate) use document::{prism_loops,section};
 mod spatial;
 mod document;
 pub use document::CHORD_SLACK;
@@ -133,6 +133,8 @@ pub struct PlanarField { node:Node,depth:u8,uses:[bool;2],
     hull:Option<[[f64;2];2]> }
 
 impl PlanarField {
+    /// The radius about planar zero its material is within, where its construction says one.
+    pub(crate) fn reach(&self) -> Option<f64> { self.radius_bound().ok().flatten() }
     // A disk about planar zero enclosing closure({f<0}), if derivable from the
     // construction. Unknown does not mean unbounded; complementary half-planes
     // can bound a polygon without any finite primitive support.

@@ -11,13 +11,13 @@ use gcs_core::program::Elaborated;
 use crate::common::{close, ent, parse, read, text::solved};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
-const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
     (west := line(b3, b0)) -> close\n\
     outline := face(south, east, north, west)\n}\n\
-    block := solid(outline, depth: 12mm)\n";
+    block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\n";
 
 /// `std.rounds`' rounds and chamfers — the sets and the four words — said again with no `symmetric`
 /// and under names of their own (`ordered_round`, `ORun`, …): the words as they were before #415,

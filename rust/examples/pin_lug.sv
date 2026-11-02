@@ -7,6 +7,7 @@
 // average by more than its stress concentration.
 unit mm
 use std
+use std.solids
 
 l := 80mm
 w := 40mm
@@ -32,8 +33,8 @@ in std.front {
   bore := radius(d / 2) circle(center: centre) hint(r: 8)
   hole := face(bore)
 }
-lug := solid(outline, from: -t / 2, to: t / 2) of steel
-pin := solid(hole, from: -t, to: t)
+lug := solid(std.solids.Prism(outline, from: -t / 2, to: t / 2)) of steel
+pin := solid(std.solids.Prism(hole, from: -t, to: t))
 pin cut lug
 
 scenario pull {

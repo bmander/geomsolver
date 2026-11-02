@@ -41,6 +41,9 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
     // `braces` remembers which kind each open brace is.
     let mut depth = 0i32;
     let mut braces: Vec<bool> = Vec::new();
+    // the bracket depth each body of statements opened at, restored where it closes: a set
+    // written in place in brackets (`solid({ p | … })`, #737) breaks its lines as any body does
+    let mut bodies: Vec<i32> = Vec::new();
     while i < b.len() {
         // Decode UTF-8 before classifying; every arm must consume a whole character.
         let c = src[i..].chars().next().unwrap_or(' ');
@@ -115,9 +118,16 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                         braces.push(group);
                         if group {
                             depth += 1;
+                        } else {
+                            bodies.push(depth);
+                            depth = 0;
                         }
                     }
-                    '}' if braces.pop() == Some(true) => depth = (depth - 1).max(0),
+                    '}' => match braces.pop() {
+                        Some(true) => depth = (depth - 1).max(0),
+                        Some(false) => depth = bodies.pop().unwrap_or(0),
+                        None => {}
+                    },
                     _ => {}
                 }
                 toks.push((Tok::P(c), Span::new(lo, i)));

@@ -12,7 +12,7 @@ use super::geom::{around,tolerance,Curve,Frame,Offset,Surface,Uv,V};
 use super::nurbs::{fit_curve,fit_net,BSpline,Net};
 use super::query::Located;
 use super::topo::{reverse_loop,unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
-use crate::util::space::{add,cross,distance,dot,norm,scale,slerp,sub,unit};
+use crate::util::space::{add,cross,distance,distance_squared,dot,norm,scale,slerp,sub,unit};
 use std::sync::Arc;
 
 const TAU: f64 = std::f64::consts::TAU;
@@ -288,18 +288,19 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     // the ball's centre at `u` and the directions to its contacts, each projected once however
     // many points of the canal's arc there are read (the fit asks each `u` for its whole row)
     let frames = std::cell::RefCell::new(std::collections::BTreeMap::<u64,(V,[V;2])>::new());
+    let frame_of = |u: f64| -> (V,[V;2]) { let c = onto.project(guide.point(u.clamp(0.,1.))); (c,[toward(0,c),toward(1,c)]) };
     let frame_at = |u: f64| -> (V,[V;2]) {
         let u = u.clamp(0.,1.);
         if let Some(&f) = frames.borrow().get(&u.to_bits()) { return f }
-        let c = onto.project(guide.point(u));
-        let f = (c,[toward(0,c),toward(1,c)]);
+        let f = frame_of(u);
         frames.borrow_mut().insert(u.to_bits(),f);
         f
     };
     let c_at = |u: f64| frame_at(u).0;
     let canal = |u: f64,v: f64| { let (c,e) = frame_at(u); add(c,scale(slerp(e[0],e[1],v),r)) };
     let reach = corner_reach(&frame_at,r,&names())?;
-    holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_at,&surfaces,sides,r,tol,&names(),wedge)?;
+    // (read uncached: the band's probes are no stations the fit asks for)
+    holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_of,&surfaces,sides,r,tol,&names(),wedge)?;
     // fitted to the bar asked, or as near it as the densest net comes, no worse than a ten-millionth
     // of the boundary: its contacts are read at what was measured (`Edge::tol`)
     let bar = tol.max(1e-7*b.size());
@@ -475,22 +476,20 @@ fn others<'b>(b: &'b Brep,uses: &'b [Vec<(usize,usize,usize)>],side: &'b [usize]
 }
 
 /// **A ball no larger than each face holds**: the band of a face it rolls on — where it stands
-/// nearer the other face's surface than its contact does — crossed by none of the face's other
-/// edges. Read against the other surface offset to the band's height (`curve_surface`); `frame_at`
-/// the ball's centre and the directions to its contacts along the canal.
+/// nearer the other face's surface than its contact does — entered by none of the face's other
+/// edges. A face the ball takes the whole of is held: an edge on the contact, or beyond it, is
+/// the face's far boundary reached (`face_consumed`), and only an edge reaching inside it refuses
+/// the ball (`Band::enters`). `frame_at` the ball's centre and the directions to its contacts
+/// along the canal.
 #[allow(clippy::too_many_arguments)]
 fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],ends: &[Stop],
     frame_at: &dyn Fn(f64) -> (V,[V;2]),surfaces: &[Surface;2],sides: [f64;2],r: f64,tol: f64,names: &str,wedge: &[(V,V)])
     -> Result<(),String> {
-    let names = || names.to_string();
     let ending: std::collections::BTreeSet<usize> = ends.iter().flat_map(|s| s.faces.iter().copied()).collect();
     for k in 0..2 {
         let o = 1-k;
         let contact = |u: f64| { let (c,e) = frame_at(u); add(c,scale(e[k],r)) };
-        let height = (0..=256).map(|i| sides[o]*surfaces[o].implicit(contact(i as f64/256.))).fold(0_f64,f64::max)*1.01+tol;
-        // (past where the other's offset closes — a band higher than a cylinder's radius — the band
-        // is the whole of the face on the region's side: an edge lies in it or not, by its start)
-        let level = surfaces[o].offset(sides[o]*height,tol).and_then(Offset::surface);
+        let band = Band::along(&contact,&surfaces[o],sides[o],tol);
         // an end's face cuts the fillet off: the ball crosses its edges with these two; and an
         // edge between two faces of one side is no edge to it
         // (a seam where a face goes on tangent — their outward normals one at its middle — the ball
@@ -506,18 +505,109 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
         for (fi,e,gc) in others(b,uses,&sides_faces[k],chain,&ending) {
             let g = &b.edges[e];
             let crossed = seam(e);
-            let start = gc.point(g.t[0]);
-            let at_start = if crossed && in_wedge(start) { 0. } else { sides[o]*surfaces[o].implicit(start) };
-            let crosses = level.as_ref().is_some_and(|level| match super::query::curve_surface(gc,g.t,level,tol) {
-                super::query::Meets::At(roots) => roots.iter().any(|&(t,_)| !(crossed && in_wedge(gc.point(t)))),
-                super::query::Meets::Along => true,
-            });
-            if crosses || (at_start > tol && at_start < height) {
-                return Err(format!("the ball of {} is larger than `{}` can hold",names(),b.faces[fi].name));
+            let skip = |p: V| crossed && in_wedge(p);
+            if band.enters(gc,g.t,&skip,face_consumed(tol,g.tol)) {
+                return Err(format!("the ball of {names} is larger than `{}` can hold",b.faces[fi].name));
             }
         }
     }
     Ok(())
+}
+
+/// How near the contact an edge of the face may lie and be the face's far boundary reached — the
+/// face taken whole, or to that edge — rather than an edge the ball's band holds: ten of the
+/// boundary's tolerances, or of the edge's own where it is wider (a fitted contact of an earlier
+/// round). A contact that close to an edge leaves no face between them the boundary could hold.
+fn face_consumed(tol: f64,edge_tol: f64) -> f64 { 10.*tol.max(edge_tol) }
+
+/// The band a ball's contact bounds on a face: the contact along the canal, the other face's
+/// surface (`other`, its distance toward the ball signed by `side`), and the contact's points and
+/// their heights above it at `STATIONS` stations.
+struct Band<'a> {
+    contact: &'a dyn Fn(f64) -> V,
+    other: &'a Surface,
+    side: f64,
+    tol: f64,
+    stations: Vec<(V,f64)>,
+    lowest: f64,
+    highest: f64,
+}
+
+impl<'a> Band<'a> {
+    const STATIONS: usize = 256;
+    /// How many stretches an edge is sampled in, read against the band.
+    const SAMPLES: usize = 256;
+
+    fn along(contact: &'a dyn Fn(f64) -> V,other: &'a Surface,side: f64,tol: f64) -> Band<'a> {
+        let mut band = Band {contact,other,side,tol,stations:Vec::new(),lowest:f64::INFINITY,highest:0.};
+        band.stations = (0..=Self::STATIONS).map(|i| { let q = contact(i as f64/Self::STATIONS as f64); (q,band.height(q)) }).collect();
+        for &(_,h) in &band.stations { band.lowest = band.lowest.min(h); band.highest = band.highest.max(h); }
+        band
+    }
+
+    /// `p`'s height above the other surface, toward the ball.
+    fn height(&self,p: V) -> f64 { self.side*self.other.implicit(p) }
+
+    /// Whether `c` over `t` meets the other surface offset to height `h` at a point `hit` accepts
+    /// (and whether it is a touch); a stretch lying along it, by its start. None where that offset
+    /// closes: no point of the face stands that high.
+    fn meets(&self,c: &Curve,t: [f64;2],h: f64,hit: &dyn Fn(V,bool) -> bool) -> bool {
+        self.other.offset(self.side*h,self.tol).and_then(Offset::surface).is_some_and(|level| {
+            match super::query::curve_surface(c,t,&level,self.tol) {
+                super::query::Meets::At(roots) => roots.iter().any(|&(s,touch)| hit(c.point(s),touch)),
+                super::query::Meets::Along => hit(c.point(t[0]),false),
+            }
+        })
+    }
+
+    /// The contact's height at the point of it nearest `p`: the nearest station, refined by Brent's
+    /// method between its neighbours (a band of one height to the tolerance read once).
+    fn height_near(&self,p: V) -> f64 {
+        if self.highest-self.lowest <= self.tol { return self.lowest }
+        let n = Self::STATIONS;
+        let i = self.stations.iter().enumerate().map(|(i,s)| (distance_squared(s.0,p),i)).min_by(|x,y| x.0.total_cmp(&y.0))
+            .map_or(0,|(_,i)| i);
+        let (lo,hi) = (i.saturating_sub(1) as f64/n as f64,(i+1).min(n) as f64/n as f64);
+        let near = crate::util::roots::brent(&|u| distance_squared((self.contact)(u),p),lo,hi,1e-9,64,|_,_| false);
+        self.height((self.contact)(near.at))
+    }
+
+    /// Whether the curve `c` over `t` reaches inside the band: somewhere off the other surface by
+    /// more than the tolerance and nearer it than the contact by more than `slack` — a point on the
+    /// contact, or beyond it, is the face's far boundary reached, not inside. An edge under the
+    /// contact's greatest height nowhere is clear of it at once; one crossing the level under its
+    /// lowest is inside, found exactly; between, each point is read against the contact's point
+    /// nearest it, sampled and refined about each sample that may stand inside. `skip` the points
+    /// the ball may cross.
+    fn enters(&self,c: &Curve,t: [f64;2],skip: &dyn Fn(V) -> bool,slack: f64) -> bool {
+        let tol = self.tol;
+        // (past where the other's offset closes — a band higher than a cylinder's radius — the band
+        // is the whole of the face on the region's side: an edge lies in it or not, by its start)
+        let start = c.point(t[0]);
+        let top = self.highest+tol;
+        let under = !skip(start) && { let h = self.height(start); h > tol && h < top };
+        if !(under || self.meets(c,t,top,&|p,_| !skip(p))) { return false }
+        // how far inside the band `p` stands: positive inside, at most zero on the contact or past it
+        let depth = |p: V| {
+            let h = self.height(p);
+            if skip(p) || h <= tol { return f64::NEG_INFINITY }
+            self.height_near(p)-slack-h
+        };
+        // under the lowest contact: a crossing of that level is a point inside, exactly
+        let floor = self.lowest-slack;
+        if floor > tol && self.meets(c,t,floor,&|p,touch| !skip(p) && (!touch || depth(p) > 0.)) { return true }
+        // between: sampled, and refined about each sample deeper in than its neighbours, where the
+        // turn of its depth there could take it inside
+        let n = Self::SAMPLES;
+        let ts: Vec<f64> = (0..=n).map(|i| t[0]+(t[1]-t[0])*i as f64/n as f64).collect();
+        let ds: Vec<f64> = ts.iter().map(|&s| depth(c.point(s))).collect();
+        if ds.iter().any(|&d| d > 0.) { return true }
+        (1..n).filter(|&i| ds[i].is_finite() && ds[i] > ds[i-1] && ds[i] >= ds[i+1]
+            && ds[i]+(ds[i-1]-2.*ds[i]+ds[i+1]).abs() > 0.).any(|i| {
+            let deepest = crate::util::roots::brent(&|s| -depth(c.point(s)),ts[i-1],ts[i+1],1e-12,64,|_,_| false);
+            -deepest.value > 0.
+        })
+    }
 }
 
 /// **A chamfer's flat cut along a traced run** (#218's 6): where two analytic faces meet on a loop

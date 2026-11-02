@@ -10,6 +10,7 @@
 // through its thickness: 8 × 4 × 4 = 128 mm³ of its 800, leaving 672 mm³.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (slides)
 
@@ -33,7 +34,7 @@ in std.top {
   private far_side := line(b2, b3)
   private near_end := line(b3, b0)
 }
-plate := solid(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick)
+plate := solid(std.solids.Prism(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick))
 
 // the drum, drawn in a plane through its axis, which lies along the plate below its middle
 private across := axis
@@ -56,12 +57,12 @@ in bench {
   private far_face := line(e2, e3)
   private spindle := line(e3, e0)
 }
-construction tool := solid(face(near_face, side, far_face, spindle), about: spindle)
+construction tool := solid(std.solids.Revolution(face(near_face, side, far_face, spindle), about: spindle))
 
 // the push up through the plate, 16 mm over the roll, from clear below it to clear above
 private up := axis
 fix(dir == (0, 0, 1)) up
 ram := frame
 ram slides(16mm) up
-construction slot := sweep(tool over t in (0deg, 360deg), under: ram)
+construction slot := solid({ p | p inside(under: ram, over t in (0deg, 360deg)) tool })
 slot cut plate

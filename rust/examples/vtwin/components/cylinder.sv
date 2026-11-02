@@ -2,6 +2,7 @@
 // Instantiated by Bank in the assembly; the preview below sets up the part drawing.
 
 use std
+use std.solids
 use std.place (on_u)
 use std.shapes
 use components.dims (D, H, L, R, a, boltac, boltaf, dport, head, ph, trapfit, traph, trapz, wall)
@@ -122,11 +123,11 @@ component Cylinder(fw: Length) {
   }
 
   // Sweep the body, turn the bore, then cut the port, shank hole and head slot.
-  block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
-  bore := solid(face(m0, b_br, bore_r, hx, -> close), about: ax)
-  passage := solid(face(port), from: face, to: 0mm)
-  hole := solid(face(shank), from: face, to: face + trapz)
-  trap := solid(face(trap0, trap1, trap2, -> close), from: face + trapz, to: face + trapz + traph)
+  block := solid(std.solids.Prism(face(mouth, side_r, lid, side_l), from: face, to: back))
+  bore := solid(std.solids.Revolution(face(m0, b_br, bore_r, hx, -> close), about: ax))
+  passage := solid(std.solids.Prism(face(port), from: face, to: 0mm))
+  hole := solid(std.solids.Prism(face(shank), from: face, to: face + trapz))
+  trap := solid(std.solids.Prism(face(trap0, trap1, trap2, -> close), from: face + trapz, to: face + trapz + traph))
   body := solid(block)
   bore cut body
   passage cut body

@@ -17,6 +17,7 @@
 
 unit mm
 use std
+use std.solids
 use std.motion (spins, slides)
 
 base := 25    // the face's nearest approach to the cam's centre
@@ -55,9 +56,9 @@ fix(value == 360deg * (min(t / 180deg, 1) - sin(360deg * min(t / 180deg, 1)) / (
                        - max((t - 180deg) / 180deg, 0)
                        + sin(360deg * max((t - 180deg) / 180deg, 0)) / (2 * pi))) follower
 
-construction tappet := solid(face(flat, f1, f2, f3, -> close), from: -8mm, to: 8mm)
-plate := solid(face(rim), depth: 6mm)
-swept := sweep(tappet over t, under: follower, seen_from: cam)
+construction tappet := solid(std.solids.Prism(face(flat, f1, f2, f3, -> close), from: -8mm, to: 8mm))
+plate := solid(std.solids.Prism(face(rim), from: -6mm, to: 0))
+swept := solid({ p | p inside(under: follower, seen_from: cam, over t) tappet })
 swept cut plate
 
 // the plate's rising flank, a surface in space

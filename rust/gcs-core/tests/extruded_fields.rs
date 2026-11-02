@@ -7,6 +7,7 @@ use gcs_core::{interval::Interval as I,program,solid::{MaterialField,SpatialFiel
 const BLOCK: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 b := point hint((60, 0))
@@ -18,7 +19,7 @@ b distance(40) c
 fix((0, 0)) a
 }
 sec := face(ab, bc, cd, da)
-block := solid(sec, depth: 30mm)
+block := solid(std.solids.Prism(sec, from: -30mm, to: 0))
 ";
 
 const TURN: &str = "\
@@ -37,6 +38,7 @@ moved := block at(under: turn) 40deg
 
 const BORE: &str = "\
 use std
+use std.solids
 in std.front {
 h := point
 fix((30, 20)) h
@@ -45,13 +47,14 @@ radius(8) hole
 }
 hole_f := face(hole)
 body := solid(block)
-bore := solid(hole_f, through: body)
+bore := solid(std.solids.Through(hole_f))
 bore cut body
 ";
 
 const ELL: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 b := point hint((50, 0))
@@ -67,7 +70,7 @@ d distance(30) e
 fix((0, 0)) a
 }
 sec := face(ab, bc, cd, de, ef, fa)
-ell := solid(sec, depth: 12mm)
+ell := solid(std.solids.Prism(sec, from: -12mm, to: 0))
 ";
 
 // A block with a semicircular notch bitten out of its top edge: the arc turns
@@ -75,6 +78,7 @@ ell := solid(sec, depth: 12mm)
 const NOTCH: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 b := point hint((60, 0))
@@ -102,7 +106,7 @@ vertical fa
 radius(10) notch
 }
 sec := face(ab, bc, cd, notch, ef, fa)
-notched := solid(sec, depth: 8mm)
+notched := solid(std.solids.Prism(sec, from: -8mm, to: 0))
 ";
 
 fn read(source: &str) -> program::Elaborated {
@@ -229,7 +233,9 @@ fn through_bore_cut_agrees_with_the_faceted_kernel() {
     assert!(lo <= 8. && hi >= 8. && hi-lo < 1e-9,"the bore is void to its wall: {lo} {hi}");
     assert!(value(&body,[45.,15.,20.])[1] < 0.,"beside the bore is material");
     sign_agrees(&body,|p| boxed(p,60.,40.,30.).max(8.-(p[0]-30.).hypot(p[2]-20.)),&points);
-    let explicit = read(&format!("{BLOCK}{}",BORE.replace("through: body","from: -31mm, to: 1mm")));
+    assert!(BORE.contains("std.solids.Through(hole_f)"));
+    let explicit = read(&format!("{BLOCK}{}",BORE.replace("std.solids.Through(hole_f)",
+        "std.solids.Prism(hole_f, from: -31mm, to: 1mm)")));
     agrees_with_facets(&explicit,"body",&points,0.05);
 }
 

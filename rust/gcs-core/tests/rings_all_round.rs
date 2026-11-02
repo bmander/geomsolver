@@ -34,7 +34,7 @@ fn drill() -> String { text("drill.sv").replace("plate := solid","part := solid"
 fn drawn(edges: &str,face: &str) -> String {
     let text = drill();
     let (start,end) = (text.find("in bench {").unwrap(),text.find("// the push down").unwrap());
-    format!("{}in bench {{\n{edges}}}\nconstruction drill := solid(face({face}), about: spindle)\n\n{}",&text[..start],&text[end..])
+    format!("{}in bench {{\n{edges}}}\nconstruction drill := solid(std.solids.Revolution(face({face}), about: spindle))\n\n{}",&text[..start],&text[end..])
 }
 
 /// The drill fed down through the plate as it turns about its own axis, once over the roll: a screw
@@ -92,8 +92,8 @@ fn what_a_slide_along_the_tools_axis_still_refuses() {
     assert_eq!(torus.condition,Condition::Once);
     assert!(torus.message.contains("the tool's shadow along the slide is no whole disc: none of it stands between 0.0000 and 1.5000"),
         "{}",torus.message);
-    let post = drill().replace("part := solid(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick)",
-        "part := solid(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick)
+    let post = drill().replace("part := solid(std.solids.Prism(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick))",
+        "part := solid(std.solids.Prism(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick))
 in std.top {
   private p0 := point
   private p1 := point
@@ -108,7 +108,7 @@ in std.top {
   private q2 := line(p2, p3)
   private q3 := line(p3, p0)
 }
-post := solid(face(q0, q1, q2, q3), from: 0mm, to: 30mm)
+post := solid(std.solids.Prism(face(q0, q1, q2, q3), from: 0mm, to: 30mm))
 post union part");
     let post = refused(admit(&post));
     assert_eq!(post.condition,Condition::Clearance);

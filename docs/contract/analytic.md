@@ -28,7 +28,9 @@ patches' finite incidence and refuses roots on undeclared continuations.
 **Envelopes the solve sees (#283):** every envelope in space is built with the drawing — after the
 motions, before any relation (`program::envelopes::held_envelopes`) — carrying what the solve reads
 of its source (`model::Held`): a revolution's side read off the declarations (`Held::Revolution`,
-its `about:` line or axis and its line, arc or circle edge; the side itself bound after the solids
+its `about:` line or axis and its line, arc or circle edge — read off the declaration's sweep, which
+`flatten/said.rs` writes out for a `std.solids.Revolution` too, #737, [solids.md](solids.md); the side itself bound after
+the solids
 into `EnvelopeE::surface`), or a set's (`Held::Set`: the hidden point `{envelope}#probe` the
 flattener applied it to, held; its `SetShape` read off the one relation the body states there by
 `set_shape` — `Angle3` seen from a line's start a cone, `PointLine3` a cylinder, an `Ordinate`
@@ -311,9 +313,10 @@ must not expand exponentially or conflate transformed coordinates; spatial depth
 from planar. `solid::SweptField` owns a one-Lipschitz source, a motion and a roll domain; its
 `SweepEvaluator` has a capped pose cache. Evidence observers cannot define geometry or prune; do
 not reintroduce a callback-based oracle. `SpatialField::read` takes prisms
-(`depth:`/`from:`/`to:`/`through:`), full revolutions, bodies and placements; `SweptField::read`
+(stated ordinates, or through a body), full revolutions, bodies and placements; `SweptField::read`
 binds a solid and motion. `solid::ExtrudedField` is the prism leaf (interval Gram–Schmidt frame);
-`through:` spans `support_bounds` (unknown refuses). Profiles go through `PlanarField::from_loops`
+a through prism spans `support_bounds` (unknown refuses). Profiles go through
+`PlanarField::from_loops`
 (`solid/field/profile.rs`, exact, no tessellation): `ordered` joins within the larger of roundoff
 and axis tolerance, `turning` checks one turn and convexity; convex loops are half-planes and
 sectors, others `Node::Profile` (ray-parity sign only when the box clears every wall, else

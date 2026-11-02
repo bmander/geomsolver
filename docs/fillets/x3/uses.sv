@@ -3,6 +3,7 @@
 // feature in disguise, and does not go in the language (docs/fillets/README.md, X3).
 unit mm
 use std
+use std.solids
 
 // [F1] A face is a set: its patch, and its surface. A bolt hole's centre on a plate's top face,
 // a bracket standing on it, a dimension to it.
@@ -34,7 +35,7 @@ repeat f in box {
 // of. The library's own features written in Solvent: a bore at a point of a face, a counterbore,
 // a slot.
 bore(d, depth) f at(p) := {
-  hole := solid(face(circle(center: p) hint(r: d / 2)), depth: depth)
+  hole := solid(std.solids.Prism(face(circle(center: p) hint(r: d / 2)), from: -depth, to: 0))
   hole cut f.body
 }
 

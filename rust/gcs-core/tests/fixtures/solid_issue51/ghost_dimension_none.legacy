@@ -1,5 +1,6 @@
 unit mm
 use std
+use std.solids
 in std.front {
 stockfp0 := point
 fix((0, 0)) stockfp0
@@ -11,7 +12,7 @@ stockfp3 := point
 fix((0, 10)) stockfp3
 }
 stockf := face(stockfp0, stockfp1, stockfp2, stockfp3, -> close)
-stock := solid(stockf, from: -1mm, to: 0mm)
+stock := solid(std.solids.Prism(stockf, from: -1mm, to: 0mm))
 in std.front {
 fp := point
 fix((20, 20)) fp
@@ -19,6 +20,6 @@ fc := circle(center: fp) hint(r: 2)
 radius(2mm) fc
 }
 f := face(fc)
-tool := solid(f,depth:1mm)
+tool := solid(std.solids.Prism(f, from: -1mm, to: 0))
 result := solid(stock)
 dimensions(result) in std.front

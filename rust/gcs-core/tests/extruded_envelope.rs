@@ -34,7 +34,7 @@ const DRAWN: &str = "\
 const MADE: &str = "\
 fix((0, 0)) o
 radius(22mm) c
-blank := solid(face(c), depth: 6mm)
+blank := solid(std.solids.Prism(face(c), from: -6mm, to: 0))
 fix((20, 0)) s0
 fix((20, 10)) s1
 fix((18, -0.842856)) t0
@@ -42,19 +42,19 @@ fix((18, 0.842856)) t1
 fix((24, 3.026666)) t2
 fix((24, -3.026666)) t3
 tooth := face(t0, t1, rack_flank, t3, -> close)
-construction rack_tooth := solid(tooth, from: -8mm, to: 2mm)
+construction rack_tooth := solid(std.solids.Prism(tooth, from: -8mm, to: 2mm))
 turn := frame
 turn spins(1) o
 rack := frame
 rack slides(2 * pi * 20mm) slide
-construction space := sweep(rack_tooth over t in (-60deg, 60deg), under: rack, seen_from: turn)
+construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) rack_tooth })
 side := surface(rack_tooth, edge: rack_flank)
 flank := envelope(side over t in (-30deg, 30deg), under: rack, seen_from: turn)
 ";
 
 /// The tooth space drawn in `std.front`.
 fn rack() -> String {
-    format!("unit mm\nuse std\nuse std.motion (slides, spins)\nin std.front {{\n{DRAWN}}}\n{MADE}")
+    format!("unit mm\nuse std\nuse std.solids\nuse std.motion (slides, spins)\nin std.front {{\n{DRAWN}}}\n{MADE}")
 }
 
 /// A plane square to the front, through its horizontal 1.9 above `o` (its `u` the front's `x`,
@@ -122,7 +122,7 @@ fn a_side_generated_under_a_drive_reads_its_law() {
         assert!(solve(&mut e.sketch, SolveOpts::default()).success);
         e.sketch.lifted(ent(&e, "p").i())
     };
-    let src = across(3.).replacen("use std\nuse std.motion (slides, spins)\n", "use std\nuse std.motion (slides, spins)\nparam t: Angle over (-60deg, 60deg)\n", 1)
+    let src = across(3.).replacen("use std\nuse std.solids\nuse std.motion (slides, spins)\n", "use std\nuse std.solids\nuse std.motion (slides, spins)\nparam t: Angle over (-60deg, 60deg)\n", 1)
         + "fix(value == 2 * (t / 2)) rack\n";
     let mut e = build(&src);
     assert!(e.ok(), "{:?}", e.diags);

@@ -14,6 +14,7 @@
 // the block's 83.78, leaving 53.84 mm³.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (turns)
 
@@ -48,7 +49,7 @@ in holder {
   private tip := line(e2, e3)
   private spindle := line(e3, e0)
 }
-construction pin := solid(face(base, side, tip, spindle), about: spindle)
+construction pin := solid(std.solids.Revolution(face(base, side, tip, spindle), about: spindle))
 
 // the block: a ring about z in common with a wedge `sector` round from x
 in std.front {
@@ -67,7 +68,7 @@ in std.front {
   private wall_out := line(q1, q2)
   private topside := line(q2, q3)
 }
-block := solid(face(wall_in, underside, wall_out, topside), about: ax)
+block := solid(std.solids.Revolution(face(wall_in, underside, wall_out, topside), about: ax))
 in std.top {
   private w0 := point
   private w1 := point
@@ -79,11 +80,11 @@ in std.top {
   private wb := line(w1, w2)
   private wc := line(w2, w0)
 }
-construction wedge := solid(face(wa, wb, wc), from: -2 * half, to: 2 * half)
+construction wedge := solid(std.solids.Prism(face(wa, wb, wc), from: -2 * half, to: 2 * half))
 wedge common block
 
 // the turn about the block's axis, and the slot it sweeps
 swing := frame
 swing turns(1) ax
-construction slot := sweep(pin over t in (from, to), under: swing)
+construction slot := solid({ p | p inside(under: swing, over t in (from, to)) pin })
 slot cut block

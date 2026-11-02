@@ -7,6 +7,7 @@
 // cubic (`../nurbs.sv`'s quarter circle stretched, which a rational curve survives unchanged).
 unit mm
 use std
+use std.solids
 
 thickness := 100mm
 pull := 10MPa
@@ -40,7 +41,7 @@ in std.front {
   ab := line(b, a)
   quarter := face(dc, outer, ab, hole)
 }
-membrane := solid(quarter, from: -thickness / 2, to: thickness / 2) of le1
+membrane := solid(std.solids.Prism(quarter, from: -thickness / 2, to: thickness / 2)) of le1
 
 scenario le1 {
   plane stress membrane

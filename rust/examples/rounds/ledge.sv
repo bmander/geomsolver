@@ -12,6 +12,7 @@
 // the face. Edit the rib's wall or the leg and apply (⌘↵).
 unit mm
 use std
+use std.solids
 use std.rounds (round, chamfer)
 
 d := 2mm   // the chamfer's legs
@@ -38,10 +39,10 @@ in std.front {
   (rs := line(r0, r1)) -> (re := line(r1, r2)) -> (rn := line(r2, r3)) -> (rw := line(r3, r0)) -> close
   ribbed := face(rs, re, rn, rw)
 }
-block := solid(outline, depth: 12mm)
+block := solid(std.solids.Prism(outline, from: -12mm, to: 0))
 block.north round(r: 3mm) block.far
 
-rib := solid(ribbed, from: -18mm, to: -12mm)
+rib := solid(std.solids.Prism(ribbed, from: -18mm, to: -12mm))
 part := solid(block)
 rib union part
 

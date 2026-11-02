@@ -18,6 +18,7 @@ use gcs_core::model::Sketch;
 const DRAWING: &str = "
 unit mm
 use std
+use std.solids
 use std.place (offset, right_of)
 component Plate(w: Length, d: Length, h: Length) {
   in std.front {
@@ -33,7 +34,7 @@ component Plate(w: Length, d: Length, h: Length) {
     bc := line(b, c)
     ce := line(c, e)
     ea := line(e, a)
-    body := solid(face(ab, bc, ce, ea), from: 0mm, to: h)
+    body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: h))
   }
 }
 component Peg(r: Length) {
@@ -42,7 +43,7 @@ component Peg(r: Length) {
     c right_of(d: 20mm) std.origin
     rim := circle(center: c) hint(r: r)
     radius(r) rim
-    body := solid(face(rim), from: 0mm, to: 5mm)
+    body := solid(std.solids.Prism(face(rim), from: 0mm, to: 5mm))
   }
 }
 in (f := frame) { one := Plate(w: 30mm, d: 20mm, h: 5mm) mirrored(front) }

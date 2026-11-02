@@ -8,6 +8,7 @@
 // (right-drag) to see the rounds meet the post. Edit `r` and apply (⌘↵).
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 2mm   // the edge's radius
@@ -27,8 +28,8 @@ in std.top {
   k := circle(center: o) hint(r: 8)
   radius(8mm) k
 }
-plate := solid(face(ab, bc, cd, da), from: 0mm, to: 10mm)
-post := solid(face(k), from: 0mm, to: 30mm)
+plate := solid(std.solids.Prism(face(ab, bc, cd, da), from: 0mm, to: 10mm))
+post := solid(std.solids.Prism(face(k), from: 0mm, to: 30mm))
 stand := solid(plate)
 post union stand
 

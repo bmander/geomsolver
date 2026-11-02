@@ -6,6 +6,7 @@
 // part is a union of two regions, and a union is not a region (§6.21: "union is a choice").
 unit mm
 use std
+use std.solids
 in std.front {
   a0 := point
   a1 := point
@@ -33,8 +34,8 @@ in std.front {
   (cbot := line(q0, q1)) -> (slant := line(q1, q2)) -> (ctop := line(q2, q3)) ->
     (caxis := line(q3, q0)) -> close
 }
-plate := solid(face(pbot, pside, ptop, paxis), about: spindle)
-frustum := solid(face(cbot, slant, ctop, caxis), about: spindle)
+plate := solid(std.solids.Revolution(face(pbot, pside, ptop, paxis), about: spindle))
+frustum := solid(std.solids.Revolution(face(cbot, slant, ctop, caxis), about: spindle))
 body := solid(plate)
 frustum union body
 

@@ -20,6 +20,7 @@ await initCore();
  *  clear: one claim over the travel (37 poses) and one at the pose. */
 const SLIDING = `unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 in std.front {
 o := point
@@ -41,7 +42,7 @@ p vertical s
 p distance(4, along: v) s
 (e0 := line(p, q)) -> (e1 := line(q, r)) -> (e2 := line(r, s)) -> (e3 := line(s, p)) -> close
 arm_f := face(e0, e1, e2, e3)
-arm := solid(arm_f, depth: 3mm)
+arm := solid(std.solids.Prism(arm_f, from: -3mm, to: 0))
 w0 := point
 w1 := point hint((56, 0))
 w2 := point hint((56, 4))
@@ -56,7 +57,7 @@ w1 distance(4) w2
 horizontal g2
 vertical g3
 wall_f := face(g0, g1, g2, g3)
-wall := solid(wall_f, depth: 3mm)
+wall := solid(std.solids.Prism(wall_f, from: -3mm, to: 0))
 claim over reach in (10mm, 40mm) { arm clear(1mm) wall }
 claim arm clear(40mm) wall
 }
