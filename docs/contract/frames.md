@@ -74,7 +74,9 @@ by what it is, `MotionE::about`, never by its name (the line's), and holds nothi
 unknown.  `tests/turn_about_a_line.rs` holds a point
 carried under a line (and seen from another) to the turn's closed form and to a frame that
 `turns(1)` it, and a solid placed, swept and a face's patch swept under a line to the same under
-the frame, with the drawing's frames and unknowns those of the readings alone.
+the frame, adding no frame and no free unknown to the drawing either way (the patch's set under a
+line says a revolution about it, #744, so it is that sweep and makes no region point; under the
+frame it makes one, fixed where the region is built).
 
 `under:` names the frame of an operand that rides on none: naming one for a tool drawn riding is
 refused (`motions::under_riding`, over `Sketch::drawn_carriers`, its points' paths alone) — what a
