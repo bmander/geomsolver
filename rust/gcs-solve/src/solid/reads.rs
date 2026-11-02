@@ -219,6 +219,12 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                         }
                         continue;
                     }
+                    // a drawn face read as a set (#737): its loops, as a prism reads them
+                    if let crate::model::RegionShape::Section { face } = t.shape {
+                        v.push(11.0);
+                        face_reads(sk, face, &mut v, poses);
+                        continue;
+                    }
                     for e in t.shape.entities() {
                         match e.kind {
                             crate::model::EntKind::Point => v.extend(sk.world_point(e.i())),

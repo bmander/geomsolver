@@ -405,10 +405,49 @@ fn region(
         say(Code::E080, st.span, m.into());
         return None;
     }
+    if let Err(m) = face_planes(sk, &mut terms) {
+        say(Code::E040, st.span, m);
+        return None;
+    }
     for q in sk.own_params(p) {
         sk.params[q as usize].fixed = true;
     }
+    // a set that says what a sweep says is built as that sweep (#737), whoever wrote it
+    if let Some(def) = crate::solid::defined::recognised(sk, &terms) {
+        return Some(def);
+    }
     Some(SolidDef::Region { probe: p.idx, terms })
+}
+
+/// Each ordinate a region's set writes along a drawn face (#737 P1) made the ordinate along the
+/// normal of the plane the face lies in, from that plane's origin — known now its face is built —
+/// in the region's terms and in every set they measure from.
+fn face_planes(sk: &Sketch, terms: &mut [crate::model::RegionTerm]) -> Result<(), String> {
+    use crate::model::{RegionShape, Target};
+    for t in terms {
+        match &mut t.shape {
+            RegionShape::Plane { along, from, .. } if crate::solid::defined::along_face(*along) => {
+                let f = sk.faces.get(along.i()).ok_or("a region's face is not built")?;
+                let plane = f.plane.map(|p| p as usize)
+                    .and_then(|p| Some((p, sk.frames.get(p)?.chart.as_ref()?.origin)));
+                let Some((p, origin)) = plane else {
+                    return Err(format!("`{}` is drawn in no plane, so it has no normal for an \
+                                        ordinate along it", f.name));
+                };
+                *along = EntRef::frame(p);
+                *from = origin;
+            }
+            RegionShape::Measured { of } => {
+                for (target, _) in of.iter_mut() {
+                    if let Target::Set { terms, .. } = target {
+                        face_planes(sk, terms)?;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// A solid under a named motion: placed at one pose (`at:`), swept over an interval, or rolled

@@ -149,6 +149,16 @@ fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> 
 /// and arcs in that plane's coordinates (a curve's chords), the first its outer loop.
 pub(crate) fn prism_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> { face_loops(sk,face) }
 
+/// **A drawn face read as a set** (#737 P1): its plane, and the field of its region there in the
+/// plane's own view coordinates — negative within its loops — with the radius about the plane's
+/// origin its material is within, where its construction knows one.
+pub(crate) fn section(sk: &Sketch,face: usize) -> Result<(Basis,PlanarField,Option<f64>),String> {
+    let (basis,loops) = face_loops(sk,face)?;
+    let field = PlanarField::from_loops(&loops,0.)?;
+    let reach = field.reach();
+    Ok((basis,field,reach))
+}
+
 fn extruded(sk: &Sketch,face: usize,range: [f64;2],draft: f64) -> Result<ExtrudedField,String> {
     let (basis,loops) = face_loops(sk,face)?;
     let field = ExtrudedField::new(PlanarField::from_loops(&loops,0.)?,basis.o,basis.u,basis.v,range)

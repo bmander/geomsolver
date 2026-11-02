@@ -37,6 +37,12 @@ pub enum RegionShape {
     /// no foot past them.  The panel is the one a plane touches along each ruling between `rails`
     /// (`developable`), recognised by what its set says.
     Sheet { rails: Box<[super::Rail; 2]>, side: f64 },
+    /// **A drawn face read as a set** (#737 P1): the signed distance in the face's plane from its
+    /// boundary, at the probe's foot on that plane — negative within its loops, positive outside
+    /// them and inside a hole.  `p inside sec` is at most nothing: in the face's plane, the
+    /// region; off it, the points whose foot is in the region (the prism over it, unbounded
+    /// along its normal, which two ordinates bound).
+    Section { face: u32 },
 }
 
 impl RegionShape {
@@ -76,6 +82,7 @@ impl RegionShape {
             RegionShape::Sheet { ref rails, .. } => {
                 rails.iter().flat_map(|r| r.links.iter().copied()).collect()
             }
+            RegionShape::Section { face } => vec![EntRef::face(face as usize)],
         }
     }
 
@@ -109,6 +116,9 @@ impl RegionShape {
                 rails: Box::new([rails[0].remapped(map)?, rails[1].remapped(map)?]),
                 side,
             },
+            RegionShape::Section { face } => {
+                RegionShape::Section { face: i(EntKind::Face, face)? }
+            }
         })
     }
 }

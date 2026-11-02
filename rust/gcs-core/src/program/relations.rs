@@ -770,6 +770,9 @@ fn face_or_ends(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, shape: &Shape) -> bo
             Some(face_term(&cx.sk, &cx.res, w, *point, face, probes))
         }
         (Shape::Ends { point, edge }, Some(w)) => Some(ends_term(w, *point, *edge, probes)),
+        (Shape::Section { point, face }, Some(w)) => {
+            Some(super::regions::section_term(&cx.sk, &cx.res, w, *point, *face, probes))
+        }
         _ => None,
     };
     let Some(made) = term else { return false };
@@ -1356,6 +1359,8 @@ pub(in crate::program) enum Shape {
     Ends { point: EntRef, edge: EntRef },
     /// A point `inside` or `outside` a plane (§9.6): a bound.
     PlaneSide,
+    /// A point against a drawn face (#737 P1): `p inside sec`, `p distance(<= d, along: n) sec`.
+    Section { point: EntRef, face: EntRef },
     Other,
 }
 
@@ -1371,6 +1376,10 @@ pub(in crate::program) fn shape(sk: &Sketch, res: &Resolver, w: &crate::syntax::
     match of {
         Operand::Ends(edge) if side => Shape::Ends { point, edge },
         Operand::Ent(e) if side && e.kind == EntKind::Frame => Shape::PlaneSide,
+        Operand::Ent(e) if e.kind == EntKind::Face
+            && matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident") => {
+            Shape::Section { point, face: e }
+        }
         _ if matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident") => {
             of.faces().map_or(Shape::Other, |face| Shape::Face { point, face })
         }

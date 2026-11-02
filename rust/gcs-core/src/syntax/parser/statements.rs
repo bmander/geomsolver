@@ -898,6 +898,12 @@ impl<'a> P<'a> {
         let word = self.word_at(self.i).map(str::to_string);
         let call = matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')));
         let dotted_call = self.call_at(self.i) == Some(true);
+        // `block := solid(std.solids.Prism(sec, from: -30mm, to: 0mm))` — the set a solid is the
+        // points of, written in place (#737): its own statement under a key the source cannot
+        // write, the solid's operand that key
+        if word.as_deref() == Some("solid") && call && self.solid_set_ahead() {
+            self.solid_set_in_place(next_id, out)?;
+        }
         let kind = match word.as_deref() {
             // `ball := { p | p distance(12mm) c }` — a set, the points its body holds (§6.21)
             None if self.set_ahead() => {
@@ -1967,6 +1973,59 @@ impl<'a> P<'a> {
         let span = Span::new(lo, self.prev_hi());
         let id = self.mint_stmt(next_id, span)?;
         out.push(Stmt { id, kind: StmtKind::Relation(rel), span, chained: Chained::No });
+        Some(())
+    }
+
+    /// Whether `solid(` here is followed by a set written in place (#737): a set literal, or a
+    /// call that is no word of the language's own (`face(…)` is a section, `hint(…)` a seed).
+    fn solid_set_ahead(&self) -> bool {
+        let at = self.i + 2;
+        if self.set_at(at) {
+            return true;
+        }
+        self.call_at(at).is_some_and(|dotted| {
+            dotted || self.word_at(at).is_some_and(|w| w != "face"
+                && !crate::syntax::reserved_word(w) && !crate::constraints::is_operator(w)
+                && crate::model::EntKind::parse(w).is_none())
+        })
+    }
+
+    /// The set `solid(…)` is written over in place (#737), made its own statement — a set or an
+    /// instance under a key the source cannot write, a link of the solid's text as an inline
+    /// set's is of a relation's — and its tokens made the one name of that key, so the solid
+    /// reads it as a set named.
+    fn solid_set_in_place(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        let start = self.i;
+        self.i += 2; // `solid(`
+        let first = self.i;
+        let at = self.here().lo as usize;
+        let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::at(at) };
+        let (name, kind) = if self.set_ahead() {
+            let name = key("s");
+            let lit = self.set_lit(next_id)?;
+            (name.clone(), StmtKind::Set(crate::syntax::SetDecl { name, lit }))
+        } else {
+            let name = key("i");
+            let component = self.component_name()?;
+            let args = self.inst_args()?;
+            let inst = Instance {
+                annotations: Default::default(),
+                name: name.clone(),
+                component,
+                args,
+                span: Span::new(at, self.prev_hi()),
+                membership: Membership::default(),
+                class: Classes::default(),
+                mirror: None,
+            };
+            (name, StmtKind::Instance(inst))
+        };
+        let span = Span::new(at, self.prev_hi());
+        let id = self.mint_stmt(next_id, span)?;
+        out.push(Stmt { id, kind, span, chained: Chained::Link });
+        let past = self.i;
+        self.t.splice(first..past, std::iter::once((Tok::Ident(name.text), span)));
+        self.i = start;
         Some(())
     }
 

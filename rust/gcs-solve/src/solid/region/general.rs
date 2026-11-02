@@ -137,6 +137,24 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                 out.push(signed(std::sync::Arc::new(f)));
                 continue;
             }
+            // a drawn face read as a set (#737 P1): its region's signed distance at the point's
+            // foot on its plane, within the square about the plane's origin its loops are in
+            RegionShape::Section { face } => {
+                let (b, region, reach) =
+                    crate::solid::field::section(sk, face as usize).map_err(named)?;
+                if within {
+                    if let Some(r) = reach {
+                        for e in [b.u, b.v, scale(b.u, -1.0), scale(b.v, -1.0)] {
+                            planes.push((e, dot(e, b.o) + r + lo.max(0.0)));
+                        }
+                    }
+                }
+                let at = move |p: V| {
+                    let d = sub(p, b.o);
+                    region.value([dot(d, b.u), dot(d, b.v)])
+                };
+                Measure::Signed(Signed(std::sync::Arc::new(at)))
+            }
             ref shape => {
                 let m = measure_of(sk, shape)?.ok_or("a region bounds distances, angles and planes")?;
                 match m {

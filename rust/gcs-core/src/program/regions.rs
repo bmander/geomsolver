@@ -440,6 +440,72 @@ pub(super) fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written,
     made.map(|t| (probe, t))
 }
 
+/// **A drawn face read as a set** (#737 P1, `Shape::Section`): `p inside sec`, `p outside sec`,
+/// `p distance(<= d, side: outside) sec` — the region of the face's plane within its loops, read
+/// at the point's foot on that plane — and `p distance(<= d, along: n) sec`, the point's ordinate
+/// along the face's normal from the plane it lies in.  The term of the region solid whose point
+/// `p` is, or why not.  An ordinate's plane is the face's, known once its face is built: it is
+/// written along the face itself (`RegionShape::Plane { along: face, .. }`) and read so by the
+/// solid that takes it (`solids::build`'s `region`).
+pub(super) fn section_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written, point: EntRef,
+             face: EntRef, probes: &Probes)
+    -> Result<(usize, crate::model::RegionTerm), String> {
+    use crate::model::{RegionShape, RegionTerm, TermNumber};
+    use crate::syntax::{Arg as SArg, Cmp, OpArg};
+    if !probes.terms.contains_key(&point.i()) {
+        return Err(format!(
+            "`{}` is a drawn point: a face's region is read where a set is applied to a region \
+             solid's point (`solid(S)`); a drawn point is held in a face by the plane it is drawn \
+             in and its edges",
+            w.ops[0].root.text
+        ));
+    }
+    let probe = point.i();
+    let number = |text: &str, span: Span| -> Result<TermNumber, String> {
+        let arg = Arg::Dim { text: text.to_string(), span };
+        to_arg(sk, res, SpecKind::Length, &arg).ok().as_ref()
+            .and_then(|a| term_number(a, sk, SpecKind::Length))
+            .ok_or_else(|| format!("`{text}` is no length"))
+    };
+    let term = |shape, cmp, lo, hi| RegionTerm { hi, ..RegionTerm::new(shape, cmp, lo) };
+    let section = RegionShape::Section { face: face.i() as u32 };
+    // a side as written or as a set's body carries it (`Written::side`, #192): within the loops,
+    // or grown by a distance across the plane
+    if let Some((cmp, level)) = w.side() {
+        let lo = match level {
+            Some((t, sp)) => number(&t, sp)?,
+            None => TermNumber::stated(0.0),
+        };
+        return Ok((probe, term(section, cmp, lo, None)));
+    }
+    let word = w.word.text.as_str();
+    let along_n = w.args.iter().any(|a| matches!(a,
+        OpArg::Named(n, SArg::Word(d)) if n.text == "along" && d == "n"));
+    match word {
+        "distance" if along_n => {
+            let Some((t, sp)) = w.dim() else { return Err("an ordinate states a number".into()) };
+            let lo = number(t, sp)?;
+            let plane = RegionShape::Plane { along: face, from: u32::MAX, sign: 1.0 };
+            let made = match w.bound() {
+                Some((Cmp::In, Some((hi, sp)))) => {
+                    let hi = number(hi, *sp)?;
+                    term(plane, Cmp::In, lo, Some(hi.c))
+                }
+                Some((cmp, _)) => term(plane, cmp, lo, None),
+                None => {
+                    let at = lo.c;
+                    term(plane, Cmp::In, lo, Some(at))
+                }
+            };
+            Ok((probe, made))
+        }
+        "coincident" => Err("a region's point on a face is in its plane: `p inside sec` with \
+                             `p distance(0mm, along: n) sec`".to_string()),
+        _ => Err(format!("a region's point is `inside` or `outside` a face, or at an ordinate \
+                          from it `along: n`, not `{word}`")),
+    }
+}
+
 /// `p inside S.ends` (#183 F7, `Shape::Ends`), `S` a set measured from at its own point
 /// (`flatten::sets`): `p` on the side the edge `S` is runs on of each face it ends on.
 pub(super) fn ends_term(w: &crate::syntax::Written, point: EntRef, edge: EntRef, probes: &Probes)
