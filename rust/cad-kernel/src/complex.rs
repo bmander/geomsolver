@@ -85,6 +85,10 @@ pub struct Complex {
     pub origins: Vec<Vec<Origin>>,
     /// The tolerance it was built to (a length).
     pub tol: f64,
+    /// Each edge laid by a meeting of the arrangement it was built from, rather than an operand's
+    /// own (none for a complex built otherwise): what a selection's result may take back out where
+    /// it parts nothing (`boolean::selection`).
+    pub met: Vec<bool>,
     /// The cells the shells bound, found the first time they are asked for: a shell's volume and
     /// which shell holds a void are measured, which a Boolean selecting by shells never asks.
     cells: std::sync::OnceLock<Result<Cells,String>>,
@@ -152,7 +156,8 @@ impl Complex {
     pub fn new(b: Brep,origins: Vec<Vec<Origin>>,tol: f64) -> Result<Complex,String> {
         assert_eq!(origins.len(),b.faces.len(),"one list of origins a face");
         let (shell_sides,shells,radial) = Complex::ordered(&b,tol)?;
-        Ok(Complex {b,shell_sides,shells,radial,origins,tol,cells:std::sync::OnceLock::new()})
+        let met = vec![false;b.edges.len()];
+        Ok(Complex {b,shell_sides,shells,radial,origins,tol,met,cells:std::sync::OnceLock::new()})
     }
 
     /// `new`'s work: each face's two shells, the shells, and each edge's uses in order round it.
@@ -470,6 +475,12 @@ impl Complex {
     pub fn select(&self,keep: &dyn Fn(usize) -> bool) -> Result<Selected,String> {
         let found = self.cells_found()?;
         Ok(self.select_shells(&|k| keep(found.of_shell[k])))
+    }
+
+    /// `select`'s faces before they are assembled (`select_parts`), the cells `keep` keeps.
+    pub fn select_cells(&self,keep: &dyn Fn(usize) -> bool) -> Result<Parts,String> {
+        let found = self.cells_found()?;
+        Ok(self.select_parts(&|k| keep(found.of_shell[k])))
     }
 
     /// **The boundary between the shells `keep` keeps and the rest**: each face whose two shells
