@@ -335,6 +335,13 @@ pub enum Chained {
     /// The declaration a link makes — a fragment of a line others share, which is why deleting
     /// a chained entity is refused rather than half-done.
     Link,
+    /// **What another statement writes in place** (#103, #737, #745): a set, a call or a face
+    /// written where a name could stand — `solid(std.solids.Prism(face(a, b, c), …))`, `q inside
+    /// { p | … }` — made a statement of its own under a key the source cannot write, read by its
+    /// host as a name.  The host is the statement whose text holds it: a solid's, a relation's,
+    /// or the call a face is an argument of.  Its text is a fragment of the host's, so deleting
+    /// it alone is refused, as a link's is; a reader asks this, and never the key's spelling.
+    InPlace(StmtId),
     /// A unary word standing before a link: `horizontal line …`.
     Prefix,
     /// A worded joint that also threads: `… -> tangent …`.  Doomed, it steps down to the bare

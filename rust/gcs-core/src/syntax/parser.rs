@@ -15,8 +15,8 @@ use super::lexer::{lex, Tok};
 use super::words::{level_end, Brackets};
 use super::names::write_ref;
 use super::{
-    seed_arg, Component, InBlock, Name, OpArg, OpenJoint, Program, Ref, Seg, Span, Stmt, SynErr,
-    Use, MAX_STMTS, MAX_TEXT,
+    seed_arg, Component, Decl, InBlock, Name, OpArg, OpenJoint, Program, Ref, Seg, Span, Stmt,
+    SynErr, Use, MAX_STMTS, MAX_TEXT,
 };
 
 /// One `name: value` of a `hint(…)` clause, read but not yet resolved: the key, where it was
@@ -90,6 +90,21 @@ struct P<'a> {
     /// How many face families have been read: the next one's instance is keyed by it (`#f0`,
     /// `#f1`), not by where it stands, so an edit that moves it keeps its name.
     families: u32,
+    /// The operand of a `solid(…)` written in place (#737), hoisted before the declaration is
+    /// read (`statements::hoist_in_place`, where `next_id` is in hand) and taken by the
+    /// declaration's child parser when it reaches the token the operand stood at (#745).
+    hoisted: Option<Hoisted>,
+    /// The faces written in place as arguments of a call being hoisted (#737), read but not yet
+    /// minted: `Some` while such a call's arguments are read.
+    faces: Option<Vec<(Decl, Span)>>,
+}
+
+/// An operand written in place, already made its own statement (#745): the token it stood at,
+/// the token past it, and the reference its host reads it by.
+struct Hoisted {
+    at: usize,
+    past: usize,
+    by: Ref,
 }
 
 /// `relative_to:` where a reading is written, retired (#383) for the reading's own observer.
@@ -140,6 +155,8 @@ pub(crate) fn reference_at(text: &str, at: usize) -> Option<Ref> {
         in_in: 0,
         arg_rates: Vec::new(),
         families: 0,
+        hoisted: None,
+        faces: None,
     };
     let mut r = st.refr()?;
     if !st.done() || !st.errs.is_empty() {
@@ -231,6 +248,8 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         in_in: 0,
         arg_rates: Vec::new(),
         families: 0,
+        hoisted: None,
+        faces: None,
     };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();

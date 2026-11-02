@@ -222,7 +222,7 @@ point is what the face occupies under the motion at some roll of the interval:
 by point about a line in the face's plane; any other motion, or a line off the plane, is refused by
 the field with its reason.  Where such a set is written in place in `solid(…)` and its body is one
 statement saying a sweep, the parser reads it as the sweep of the same points
-(`syntax/parser/statements.rs::swept_set`/`swept_tokens`): `solid({ p | p inside(under: m,
+(`syntax/parser/statements.rs::swept_ahead`/`swept_set`): `solid({ p | p inside(under: m,
 seen_from: g, over t in (a, b)) tool })` the motion sweep (`SolidDef::Swept`, a stated roll), `over
 t` a declared parameter's, and no `over` at all the whole roll, `Sweep::Rolled` through
 `syntax::ROLLED` — bounded by the body the solid, or a copy of it placed at a roll (`tool at(under:

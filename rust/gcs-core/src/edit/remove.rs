@@ -506,7 +506,8 @@ fn doom_at(text: &str, at: Span, how: &syntax::Chained) -> Option<Splice> {
     let one_word = |with: &str| Some(Splice { at, with: with.to_string() });
     match how {
         syntax::Chained::No => Some(Splice { at: with_line(text, at), with: String::new() }),
-        syntax::Chained::Link => None,
+        // a fragment of another statement's text: no splice of its own, so the gesture is refused
+        syntax::Chained::Link | syntax::Chained::InPlace(_) => None,
         // a threaded joint steps down to the bare corner: the claim goes, the weld stays
         syntax::Chained::Joint => one_word("->"),
         // an unthreaded joint states only the relation, so its span — grown at desugar time

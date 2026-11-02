@@ -115,7 +115,8 @@ builds a relation with nothing but its form.  Words: `WordDef::body` is `Vec<Stm
 declarations), applied synchronously in the walk's Relation arm (`Walk::apply_word`; numbers
 bound in the closure's `vals`, selector words substituted; `applying_words` for E003); sets:
 `expand_use`.  A set may be written in place on the right of `coincident`/`tangent`
-(`P::inline_set_use`, hoisted as a `Chained::Link` statement keyed `#s…`/`#i…`, described by its
+(`P::inline_set_use`, hoisted by `P::hoist_in_place` as a statement under a key the source
+cannot write, `Chained::InPlace` naming the relation that holds it (#745), described by its
 text).  The lexer reads a brace after `:=` as a group only before `}` or `name:` (`group_ahead`).
 `tests/applied.rs` is the gate.
 

@@ -208,7 +208,13 @@ placement carries inside the blank; CLI test readers zero the offset.
   inside a set, and `solid()` the empty body; the language has no prism, draft or revolution of its
   own.  A set may be written in place in the brackets — a set literal, or a family's call, its
   argument a `face(…)` written in place (`std.solids.Through(face(hole))`) — made its own
-  statement under a key the source cannot write (`parser/statements.rs::solid_set_in_place`).  The
+  statement under a key the source cannot write (`parser/statements.rs::hoist_in_place`, #745),
+  read where it is written: no token is rewritten.  Each such statement names the statement whose
+  text holds it, `Chained::InPlace(host)` — the solid's, or the call a face is given to — and every
+  reader asks that, never the key's spelling: the flat printer writes each where its host reads
+  it (`syntax/print.rs::in_place`, the program's statements kept), the outline puts a face's row
+  under its solid's (`overview/outline.rs::solid_written_in`), the gestures find the call and its
+  face (`edit/solids.rs::reworded`), and W202 tells a bare call from one held in place.  The
   old labels (`depth: from: to: draft: about: sweep: sense: through:`) are E001, the message
   naming the replacement written from the document's own arguments, and `sweep(…)` is retired the
   same way (`syntax::print::solid_word`/`sweep_text` spell them).  **The words are

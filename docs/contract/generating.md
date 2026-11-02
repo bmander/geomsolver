@@ -173,7 +173,8 @@ apart) are the gate. Field-path tests sweep a cylinder along its axis instead
 **A motion's sweep is a set** (#737 P4, [0.199], [sets.md](sets.md)): `solid({ p | p inside(under:
 m, seen_from: g, over t in (a, b)) tool })` — what the solid `tool` occupies under `m` at some roll
 of the interval — is read by the parser as the motion sweep of the same points
-(`syntax/parser/statements.rs::swept_set`/`swept_tokens`, its body one statement saying a sweep)
+(`syntax/parser/statements.rs::swept_ahead`/`swept_set`, its body one statement saying a sweep,
+its parts read where they stand, no token rewritten)
 and built as `SolidDef::Swept` with a stated roll; `over t` reads a declared parameter's interval.
 With no `over` at all, `solid({ p | p inside(under: m) tool })` is what the tool occupies at *any*
 roll, the whole roll (`syntax::ROLLED`): bounded by the body the solid — or a copy of it placed at a

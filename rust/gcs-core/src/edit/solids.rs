@@ -298,7 +298,7 @@ fn resweep(
     let d = decl_of(prog, site).filter(|d| d.kind == EntKind::Solid && d.sweep.is_some())
         .ok_or("that solid is made of others, not swept from a face")?;
     // a word of `std.solids` written in place (#737): its call rewritten
-    if let Some(edit) = reworded(prog, d, &with) {
+    if let Some(edit) = reworded(prog, site.stmt, &with) {
         return edit;
     }
     // a `sweep(…)` is a face family's or a motion's, written as no face's extent (#391 S2)
@@ -322,13 +322,15 @@ fn resweep(
 /// from: a, to: b))`: the sweep the call says, as the gestures read one — the word's labels its
 /// extents — given to `with`, and the call rewritten as the word of what `with` makes; `None`
 /// where the solid is no such call.  A gesture edits the words a person wrote, so it reads them by
-/// name, as the printer writes them.
-fn reworded(prog: &Program, d: &syntax::Decl,
+/// name, as the printer writes them.  The call is the statement written in place in the solid's
+/// (`Chained::InPlace`), and a face written in place in the call is one written in the call's.
+fn reworded(prog: &Program, solid: syntax::StmtId,
             with: &impl Fn(&syntax::Sweep) -> Result<syntax::Sweep, String>)
     -> Option<Result<Edit, String>> {
-    let [syntax::Kid::Ref(key)] = d.children.first()?.as_slice() else { return None };
-    let inst = prog.root().body.iter().find_map(|st| match &st.kind {
-        StmtKind::Instance(i) if i.name.text == key.root.text => Some(i),
+    let in_place = |host: syntax::StmtId| prog.root().body.iter()
+        .filter(move |st| st.chained == syntax::Chained::InPlace(host));
+    let (call, inst) = in_place(solid).find_map(|st| match &st.kind {
+        StmtKind::Instance(i) => Some((st.id, i)),
         _ => None,
     })?;
     let word = inst.component.text.strip_prefix("std.solids.")?;
@@ -342,9 +344,8 @@ fn reworded(prog: &Program, d: &syntax::Decl,
     let face = inst.args.iter().find(|a| a.label.is_none()).map(text)?;
     // a face written in place in the call (`face(ab, bc, cd, da)`) is the parser's anonymous
     // face, named by a key no document can write: the call is rewritten with it as written
-    let face = prog.root().body.iter().find_map(|st| match &st.kind {
-        StmtKind::Decl(f) if f.kind == EntKind::Face && f.name.key().text == face
-            && face.starts_with('#') => {
+    let face = in_place(call).find_map(|st| match &st.kind {
+        StmtKind::Decl(f) if f.kind == EntKind::Face && f.name.key().text == face => {
             prog.text().get(st.span.lo as usize..st.span.hi as usize).map(str::to_string)
         }
         _ => None,

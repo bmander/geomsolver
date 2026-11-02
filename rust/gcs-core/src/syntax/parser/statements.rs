@@ -21,6 +21,29 @@ const PART_RETIRED: &str = "`part` is retired (#562): every definition is held t
 const WHEN: &str = "a `when` is decided by comparing numbers, or names: `when d > 0mm { … }`, \
                     `when b != a { … }`";
 
+/// Where the parts of a set that says a sweep stand (`P::swept_ahead`, #737): its relation's word
+/// (`inside` a body, or `coincident` with a face), its operand's tokens, its `over` item and
+/// its labelled items (`under:`, `seen_from:`), and the `)` closing `solid(`.
+struct SweptAt {
+    inside: bool,
+    operand: (usize, usize),
+    over: Option<(usize, usize)>,
+    labels: Vec<(usize, usize)>,
+    close: usize,
+}
+
+/// The statements a hoist made (`P::hoist_in_place`), held in the text of statement `host` now it
+/// is minted (#745): those it made directly, which wait as `Chained::Link`; a face a call holds
+/// says the call already.
+fn hosted(held: Vec<Stmt>, host: crate::syntax::StmtId) -> Vec<Stmt> {
+    held.into_iter().map(|mut st| {
+        if st.chained == Chained::Link {
+            st.chained = Chained::InPlace(host);
+        }
+        st
+    }).collect()
+}
+
 /// Mark every relation of an `initially` body a row of the home alone (#339 D3), through a
 /// `when` in it; anything else in it is refused, since only a relation can hold at one place.
 fn stamp_initially(stmts: &mut [Stmt], errs: &mut Vec<SynErr>) {
@@ -898,17 +921,28 @@ impl<'a> P<'a> {
         let word = self.word_at(self.i).map(str::to_string);
         let call = matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')));
         let dotted_call = self.call_at(self.i) == Some(true);
+        let solid = word.as_deref() == Some("solid") && call;
+        let mut swept = if solid { self.swept_ahead() } else { None };
         // `block := solid(std.solids.Prism(sec, from: -30mm, to: 0mm))` — the set a solid is the
         // points of, written in place (#737): its own statement under a key the source cannot
-        // write, the solid's operand that key
-        let swept = word.as_deref() == Some("solid") && call && self.swept_set();
-        if word.as_deref() == Some("solid") && call && !swept && self.solid_set_ahead() {
-            self.solid_set_in_place(next_id, out)?;
+        // write, made before the solid is read (`hoist_in_place`) and held in the solid's text,
+        // the solid's operand that key (#745)
+        let mut held = Vec::new();
+        self.hoisted = None;
+        if solid && swept.is_none() && self.solid_set_ahead() {
+            let start = self.i;
+            self.i += 2; // `solid(`
+            let at = self.i;
+            let by = self.hoist_in_place(next_id, &mut held)?;
+            self.hoisted = Some(super::Hoisted { at, past: self.i, by });
+            self.i = start;
         }
         let kind = match word.as_deref() {
             // what a body occupies under a motion, or a face over a running parameter, at some
             // instant (#737): the set read as the sweep it says, `swept_set`'s
-            Some("solid") if swept => StmtKind::Decl(self.sweep_decl(DeclName::Written(name))?),
+            Some("solid") if swept.is_some() => {
+                StmtKind::Decl(self.swept_set(DeclName::Written(name), swept.take()?)?)
+            }
             // `ball := { p | p distance(12mm) c }` — a set, the points its body holds (§6.21)
             None if self.set_ahead() => {
                 let lit = self.set_lit(next_id)?;
@@ -1046,7 +1080,19 @@ impl<'a> P<'a> {
                 StmtKind::Relation(r)
             }
             _ if dotted_call => StmtKind::Instance(self.instance(name, lo)?),
-            _ if self.chain_starts() => return self.chain(next_id, out, Some(name)),
+            _ if self.chain_starts() => {
+                let mark = out.len();
+                let got = self.chain(next_id, out, Some(name));
+                self.hoisted = None;
+                // the declaration the chain made is the solid's, whose text holds its operand
+                let host = out[mark..].iter().find(|st| matches!(st.kind, StmtKind::Decl(_)));
+                if let (Some(host), true) = (host.map(|st| st.id), got.is_some()) {
+                    let tail = out.split_off(mark);
+                    out.extend(hosted(held, host));
+                    out.extend(tail);
+                }
+                return got;
+            }
             Some(w) if call
                 && !crate::constraints::is_operator(w)
                 && crate::expr::builtin(w).is_none()
@@ -1057,8 +1103,10 @@ impl<'a> P<'a> {
             // anything else is a number worked out while elaborating: a param
             _ => self.param(name)?,
         };
+        self.hoisted = None;
         let span = Span::new(lo, self.prev_hi());
         let id = self.mint_stmt(next_id, span)?;
+        out.extend(hosted(held, id));
         out.push(Stmt { id, kind, span, chained: Chained::No });
         Some(())
     }
@@ -1481,11 +1529,20 @@ impl<'a> P<'a> {
                 retired", swept.text));
             return None;
         }
-        let (a, b) = (String::new(), String::new());
         if !self.want_p(')') {
             return None;
         }
         let list_span = Span::new(open, self.prev_hi());
+        self.family_solid(name, component, args, face, swept, list_span, lo)
+    }
+
+    /// A face family's solid (#391 S2, #398 B), its parts read — `sweep(Station(…).f over s)`
+    /// retired, or the set that says it, `solid({ p | p coincident(over s) Station(…).f })` — and
+    /// its trailing clauses read here.
+    #[allow(clippy::too_many_arguments)]
+    fn family_solid(&mut self, name: DeclName, component: Name, args: Vec<InstArg>, face: Ref,
+                    swept: Name, list_span: Span, lo: usize) -> Option<crate::syntax::Decl> {
+        let (a, b) = (String::new(), String::new());
         // keyed by its count and not its offset: what it builds reads its running number's name
         // (`solid::reads`), and a write-back above it moves the offset and not the drawing
         let key = format!("#f{}", self.families);
@@ -1601,6 +1658,14 @@ impl<'a> P<'a> {
                 return None;
             }
         };
+        self.swept_solid(name, tool, sweep, seen_from, list_span)
+    }
+
+    /// A solid a motion sweeps, or a face of the drawing over a running parameter (#391 S2), its
+    /// parts read — `sweep(…)` retired, or the set that says it (`swept_set`) — and its trailing
+    /// clauses read here.
+    fn swept_solid(&mut self, name: DeclName, tool: Ref, sweep: crate::syntax::Sweep,
+                   seen_from: Option<Ref>, list_span: Span) -> Option<crate::syntax::Decl> {
         let at = self.prev_hi();
         let (class, class_span) = self.class_clause(at);
         if self.peek_word("in") || self.peek_word("hint") {
@@ -1949,15 +2014,33 @@ impl<'a> P<'a> {
     }
 
     /// `q coincident { p | … }` or `l tangent std.sets.Cylinder(ax, r: 8mm)`: the set written in
-    /// place is its own statement, a set or an instance under a key the source cannot write, read
-    /// by the relation as a name (#103).  The set is a link of the statement's text: deleting it
-    /// alone is refused, as a chain's link is.
+    /// place is its own statement (`hoist_in_place`), read by the relation as a name (#103).  The
+    /// set is held in the relation's text: deleting it alone is refused, as a chain's link is.
     fn inline_set_use(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
         let lo = self.here().lo as usize;
         let left = self.refr()?;
         let word = self.ident()?;
+        let mut held = Vec::new();
+        let right = self.hoist_in_place(next_id, &mut held)?;
+        let infix = crate::constraints::Fixity::Infix;
+        let rel = self.relation_tail(word, infix, vec![left, right], Vec::new(), lo)?;
+        let span = Span::new(lo, self.prev_hi());
+        let id = self.mint_stmt(next_id, span)?;
+        out.extend(hosted(held, id));
+        out.push(Stmt { id, kind: StmtKind::Relation(rel), span, chained: Chained::No });
+        Some(())
+    }
+
+    /// **A set or a call written in place** where a name could stand (#103, #737), at the token
+    /// here: its own statement under a key the source cannot write — a set, or an instance whose
+    /// `face(…)` arguments are each an anonymous face of their own, held in the call's text —
+    /// pushed to `held` before the statement that holds it is minted (`hosted` says which that
+    /// is, #745).  Returned is the reference that statement reads it by.  The source is read
+    /// where it stands: no token is rewritten.
+    fn hoist_in_place(&mut self, next_id: &mut u32, held: &mut Vec<Stmt>) -> Option<Ref> {
         let at = self.here().lo as usize;
         let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::at(at) };
+        let mut faces = Vec::new();
         let (name, kind) = if self.set_ahead() {
             let name = key("s");
             let lit = self.set_lit(next_id)?;
@@ -1965,7 +2048,15 @@ impl<'a> P<'a> {
         } else {
             let name = key("i");
             let component = self.component_name()?;
-            let args = self.inst_args()?;
+            let outer = self.faces.replace(Vec::new());
+            let args = self.inst_args();
+            let read = std::mem::replace(&mut self.faces, outer).unwrap_or_default();
+            let args = args?;
+            // each face minted before the call that holds it, as it is written first
+            for (decl, span) in read {
+                let id = self.mint_stmt(next_id, span)?;
+                faces.push(Stmt { id, kind: StmtKind::Decl(decl), span, chained: Chained::Link });
+            }
             let inst = Instance {
                 annotations: Default::default(),
                 name: name.clone(),
@@ -1980,18 +2071,14 @@ impl<'a> P<'a> {
         };
         let span = Span::new(at, self.prev_hi());
         let id = self.mint_stmt(next_id, span)?;
-        out.push(Stmt { id, kind, span, chained: Chained::Link });
-        let right = Ref { root: Name { text: name.text, span }, path: Vec::new(), span };
-        let rel = self.relation_tail(word, crate::constraints::Fixity::Infix, vec![left, right], Vec::new(), lo)?;
-        let span = Span::new(lo, self.prev_hi());
-        let id = self.mint_stmt(next_id, span)?;
-        out.push(Stmt { id, kind: StmtKind::Relation(rel), span, chained: Chained::No });
-        Some(())
+        held.extend(hosted(faces, id));
+        held.push(Stmt { id, kind, span, chained: Chained::Link });
+        Some(Ref { root: Name { text: name.text, span }, path: Vec::new(), span })
     }
 
-    /// **A set that says a sweep** (#737), written in place in `solid(…)` here: its tokens made
-    /// the sweep's, so the solid is read as that sweep — whether it was one.  Two bodies of one
-    /// statement say one:
+    /// **A set that says a sweep** (#737), written in place in `solid(…)` here: where its parts
+    /// stand, so `swept_set` reads the solid as that sweep — whether it was one.  Two bodies of
+    /// one statement say one:
     ///
     /// * `{ p | p inside(under: m, seen_from: g, over t in (a, b)) tool }`, what the body `tool`
     ///   occupies under the motion at some roll of the interval (`over t`, a declared parameter's;
@@ -1999,19 +2086,11 @@ impl<'a> P<'a> {
     /// * `{ p | p coincident(over s) Station(…).f }`, what the face `f` of the station occupies at
     ///   some instant of the declared parameter `s` — a face family — or `{ p | p coincident(over
     ///   s) sec }`, a face of the drawing as `s` runs.
-    fn swept_set(&mut self) -> bool {
-        let Some(made) = self.swept_tokens() else { return false };
-        let close = made.1;
-        self.t.splice(self.i..=close, made.0);
-        true
-    }
-
-    /// The tokens of the sweep the set written in place at `solid(` here says, and the index of
-    /// the `)` closing `solid(` — `None` where it says none.
-    fn swept_tokens(&self) -> Option<(Vec<(Tok, Span)>, usize)> {
+    ///
+    /// `None` where it says none.
+    fn swept_ahead(&self) -> Option<SweptAt> {
         let at = |k: usize| self.t.get(k).map(|t| &t.0);
         let word = |k: usize| match at(k) { Some(Tok::Ident(w)) => Some(w.as_str()), _ => None };
-        let span = |k: usize| self.t[k].1;
         let skip = |mut k: usize| { while at(k) == Some(&Tok::Nl) { k += 1; } k };
         let mut k = skip(self.i + 2);
         if at(k) != Some(&Tok::P('{')) { return None; }
@@ -2021,8 +2100,12 @@ impl<'a> P<'a> {
         if at(k) != Some(&Tok::P('|')) { return None; }
         k = skip(k + 1);
         if word(k) != Some(bound) { return None; }
-        let verb = word(k + 1)?;
-        if !matches!(verb, "inside" | "coincident") || at(k + 2) != Some(&Tok::P('(')) { return None; }
+        let inside = match word(k + 1)? {
+            "inside" => true,
+            "coincident" => false,
+            _ => return None,
+        };
+        if at(k + 2) != Some(&Tok::P('(')) { return None; }
         // the parentheses' items, split at their commas
         let mut items: Vec<(usize, usize)> = Vec::new();
         let (mut depth, mut from, mut j) = (0usize, k + 3, k + 2);
@@ -2051,11 +2134,10 @@ impl<'a> P<'a> {
             }
             e += 1;
         }
-        let operand_hi = e;
+        let operand = (operand_lo, e);
         let brace = skip(e);
         if at(brace) != Some(&Tok::P('}')) || at(brace + 1) != Some(&Tok::P(')')) { return None; }
-        if operand_lo == operand_hi { return None; }
-        let close = brace + 1;
+        if operand.0 == operand.1 { return None; }
         let over = items.iter().find(|&&(a, _)| word(a) == Some("over")).copied();
         let labels: Vec<(usize, usize)> = items.iter().filter(|&&(a, _)| word(a) != Some("over"))
             .copied().collect();
@@ -2063,34 +2145,82 @@ impl<'a> P<'a> {
             b > a + 2 && matches!(word(a), Some("under" | "seen_from")) && at(a + 1) == Some(&Tok::P(':'))
         };
         if !labels.iter().all(labelled) { return None; }
-        let toks = |a: usize, b: usize| self.t[a..b].iter().cloned();
-        let mut made: Vec<(Tok, Span)> = vec![(Tok::Ident("sweep".into()), span(self.i)),
-                                              (Tok::P('('), span(self.i + 1))];
-        made.extend(toks(operand_lo, operand_hi));
-        match (verb, over) {
+        match (inside, over) {
             // a face of a station, or of the drawing, at some instant of a declared parameter
-            ("coincident", Some((a, b))) if labels.is_empty() && b == a + 2 => {
-                made.extend(toks(a, b));
-            }
+            (false, Some((a, b))) if labels.is_empty() && b == a + 2 => {}
             // a body under a motion: over an interval, a declared parameter, or the whole roll
-            ("inside", over) => {
-                match over {
-                    Some((a, b)) => made.extend(toks(a, b)),
-                    None => {
-                        let sp = span(k + 1);
-                        made.extend([(Tok::P(','), sp), (Tok::Ident("through".into()), sp),
-                                     (Tok::P(':'), sp), (Tok::Ident(ROLLED.into()), sp)]);
-                    }
-                }
-                for &(a, b) in &labels {
-                    made.push((Tok::P(','), span(a)));
-                    made.extend(toks(a, b));
-                }
-            }
+            (true, _) => {}
             _ => return None,
         }
-        made.push((Tok::P(')'), span(close)));
-        Some((made, close))
+        Some(SweptAt { inside, operand, over, labels, close: brace + 1 })
+    }
+
+    /// The solid a set written in place says is a sweep (`swept_ahead`), read from the set's own
+    /// tokens where they stand (#745): its operand, its `over`, and its frames.
+    fn swept_set(&mut self, name: DeclName, s: SweptAt) -> Option<Decl> {
+        let open = self.t[self.i + 1].1.lo as usize; // `solid(`
+        let list_span = Span::new(open, self.t[s.close].1.hi as usize);
+        // each part read to its end, and no further: what stands past it was not expected
+        let ends = |p: &mut Self, end: usize, next: char| {
+            if p.i != end {
+                p.fail(&format!("expected `{next}`"));
+                return None;
+            }
+            Some(())
+        };
+        self.i = s.operand.0;
+        if !s.inside && self.call_at(self.i).is_some() {
+            // a face family: the station's face, at every instant of the declared parameter
+            let component = self.component_name()?;
+            let lo = component.span.lo as usize;
+            let args = self.inst_args()?;
+            if !self.eat_p('.') {
+                self.fail("the face a family sweeps follows the instance: `Component(…).face`");
+                return None;
+            }
+            let face = self.refr()?;
+            ends(self, s.operand.1, '}')?;
+            let (a, _) = s.over?;
+            let swept = Name { text: self.word_at(a + 1)?.to_string(), span: self.t[a + 1].1 };
+            self.i = s.close + 1;
+            return self.family_solid(name, component, args, face, swept, list_span, lo);
+        }
+        let tool = self.refr()?;
+        ends(self, s.operand.1, '}')?;
+        let over = match s.over {
+            Some((a, b)) => {
+                self.i = a;
+                let over = self.runs_over()?;
+                ends(self, b, ')')?;
+                Some(over)
+            }
+            None => None,
+        };
+        let (mut under, mut seen_from) = (None, None);
+        for &(a, b) in &s.labels {
+            self.i = a;
+            let label = self.slot_label();
+            let slot = if label.as_deref() == Some("under") { &mut under } else { &mut seen_from };
+            if slot.is_some() {
+                self.fail(&format!("`{}` is given twice", label.unwrap_or_default()));
+                return None;
+            }
+            *slot = Some(self.refr()?);
+            ends(self, b, ')')?;
+        }
+        self.i = s.close + 1;
+        use crate::syntax::Sweep;
+        let sweep = match over {
+            Some((over, from, to)) => Sweep::Swept { motion: under, from, to, over },
+            // no interval: the whole roll, bounded by the body the solid is cut from
+            None => {
+                let at = self.t[s.operand.0].1;
+                let body = Ref { root: Name { text: ROLLED.into(), span: at }, path: Vec::new(),
+                                 span: at };
+                Sweep::Rolled { motion: under, body }
+            }
+        };
+        self.swept_solid(name, tool, sweep, seen_from, list_span)
     }
 
     /// Whether `solid(` here is followed by a set written in place (#737): a set literal, or a
@@ -2105,90 +2235,6 @@ impl<'a> P<'a> {
                 && !crate::syntax::reserved_word(w) && !crate::constraints::is_operator(w)
                 && crate::model::EntKind::parse(w).is_none())
         })
-    }
-
-    /// The set `solid(…)` is written over in place (#737), made its own statement — a set or an
-    /// instance under a key the source cannot write, a link of the solid's text as an inline
-    /// set's is of a relation's — and its tokens made the one name of that key, so the solid
-    /// reads it as a set named.
-    fn solid_set_in_place(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
-        let start = self.i;
-        self.i += 2; // `solid(`
-        let first = self.i;
-        let at = self.here().lo as usize;
-        let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::at(at) };
-        let (name, kind) = if self.set_ahead() {
-            let name = key("s");
-            let lit = self.set_lit(next_id)?;
-            (name.clone(), StmtKind::Set(crate::syntax::SetDecl { name, lit }))
-        } else {
-            let name = key("i");
-            self.faces_in_place(next_id, out)?;
-            let component = self.component_name()?;
-            let args = self.inst_args()?;
-            let inst = Instance {
-                annotations: Default::default(),
-                name: name.clone(),
-                component,
-                args,
-                span: Span::new(at, self.prev_hi()),
-                membership: Membership::default(),
-                class: Classes::default(),
-                mirror: None,
-            };
-            (name, StmtKind::Instance(inst))
-        };
-        let span = Span::new(at, self.prev_hi());
-        let id = self.mint_stmt(next_id, span)?;
-        out.push(Stmt { id, kind, span, chained: Chained::Link });
-        let past = self.i;
-        self.t.splice(first..past, std::iter::once((Tok::Ident(name.text), span)));
-        self.i = start;
-        Some(())
-    }
-
-    /// Each `face(…)` written in place as an argument of the call that opens here (#737:
-    /// `std.solids.Prism(face(a, b, c, -> close), from: 0mm, to: 5mm)`), made its own anonymous
-    /// face, a link of the statement, and its tokens made the one name of its key — so the call
-    /// passes a face as it passes one named.
-    fn faces_in_place(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
-        let start = self.i;
-        loop {
-            // the call's own brackets, and an argument `face(` directly within them
-            let open = (start..self.t.len()).find(|&k| self.t[k].0 == Tok::P('('))?;
-            let mut depth = 0usize;
-            let mut found = None;
-            for k in open..self.t.len() {
-                match &self.t[k].0 {
-                    Tok::P('(') => depth += 1,
-                    Tok::P(')') => {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
-                    }
-                    Tok::Ident(w) if depth == 1 && w == "face"
-                        && self.t.get(k + 1).map(|t| &t.0) == Some(&Tok::P('(')) => {
-                        found = Some(k);
-                        break;
-                    }
-                    Tok::Nl if depth == 0 => break,
-                    _ => {}
-                }
-            }
-            let Some(k) = found else { break };
-            self.i = k + 1;
-            let lo = self.t[k].1.lo as usize;
-            let decl = self.decl(EntKind::Face, None)?;
-            let span = Span::new(lo, self.prev_hi());
-            let key = decl.name.key().text.clone();
-            let id = self.mint_stmt(next_id, span)?;
-            out.push(Stmt { id, kind: StmtKind::Decl(decl), span, chained: Chained::Link });
-            let past = self.i;
-            self.t.splice(k..past, std::iter::once((Tok::Ident(key), span)));
-        }
-        self.i = start;
-        Some(())
     }
 
     /// Whether a set literal opens here: `{`, one name, `|` (§6.21), line breaks between them
@@ -2500,6 +2546,22 @@ impl<'a> P<'a> {
         };
         if let Some(fields) = fields {
             return Some(InstArg { label, value: InstVal::Group(fields), span: Span::new(lo, self.prev_hi()) });
+        }
+        // `face(ab, bc, cd, da)` given to a call written in place (#737): its own anonymous face,
+        // minted with the call, and passed as a face named is
+        if self.faces.is_some() && self.peek_word("face")
+            && self.t.get(self.i + 1).map(|t| &t.0) == Some(&Tok::P('(')) {
+            let at = self.here().lo as usize;
+            self.i += 1; // `face`
+            let outer = self.faces.take();
+            let decl = self.decl(EntKind::Face, None);
+            self.faces = outer;
+            let decl = decl?;
+            let span = Span::new(at, self.prev_hi());
+            let key = Name { text: decl.name.key().text.clone(), span };
+            self.faces.get_or_insert_default().push((decl, span));
+            let value = InstVal::Ref(Ref { root: key, path: Vec::new(), span });
+            return Some(InstArg { label, value, span: Span::new(lo, self.prev_hi()) });
         }
         // `beta: hint(15deg)` — an argument that leaves the formal unbound and seeds its unknown
         if let Some((text, at)) = self.hint_value()? {
