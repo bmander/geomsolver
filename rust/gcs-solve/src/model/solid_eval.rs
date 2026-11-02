@@ -602,6 +602,22 @@ pub fn turn_of(degrees: f64) -> Option<(Option<f64>, Sense)> {
     Some(((degrees.abs() < 360.0).then_some(degrees.abs()), sense))
 }
 
+/// **A turn over an interval of its roll, as the evaluator's sweep** (#737, #747): `(from, to)` in
+/// radians, one end of it nothing — turned how far from where the face is drawn, and which way:
+/// the way the interval runs from nothing, `Sense::Cw` for an end below it.  A whole turn is
+/// exactly `TAU`.  `None` where neither end is nothing, or both are.  The one reading, shared by
+/// the elaborator's `std.solids.Revolution` and a set recognised as one (`solid::defined`).
+pub fn turn_between(from: f64, to: f64) -> Option<(f64, Sense)> {
+    use std::f64::consts::TAU;
+    let (lo, hi) = (from.min(to), from.max(to));
+    let (sweep, sense) = match (lo == 0.0, hi == 0.0) {
+        (true, false) => (hi, Sense::Ccw),
+        (false, true) => (-lo, Sense::Cw),
+        _ => return None,
+    };
+    Some((if (sweep - TAU).abs() < 1e-12 { TAU } else { sweep }, sense))
+}
+
 /// How far off its profile's plane a revolution's axis may lie and still be read as in it: a
 /// direction's sine, and a place's distance over the drawing's reach.  Coarser than `views`'
 /// `ON_PLANE`, which judges held datums: this one judges an axis a solve may have placed.

@@ -134,7 +134,10 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   past the start turns it the other way).  Signed degrees end to end, read once by `model::turn_of`
   (sense, and a whole turn as no interval; a partial one `to: θ`, a `cw` one `from: -θ, to: 0deg`):
   previewed by `Sketch::set_turn`, written by `edit::set_turn` (the statement's own `about:` kept;
-  an expression written whole the way it already turns). `tests/revolve.rs` is the gate.
+  an expression written whole the way it already turns — the elaborated solid's sense, what its ends
+  evaluated to, never their text, #747, elaborated again where the ABI has taken the sketch; a turn
+  off its face, built as a region, takes a number but sends an expression to where it is written).
+  `tests/revolve.rs` is the gate.
 - **Union, Cut, Intersect** (#162 F4): Boolean tools (`m`, `z`, `y`; `view.ts::combines`, Intersect
   is `common`) over **the solid selection, in click order**: the first body clicked is the target,
   each after it a tool (clicked again, let go), a click back on the target or Enter

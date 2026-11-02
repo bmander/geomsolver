@@ -54,7 +54,7 @@ pub use solids::{
     MotionDef, MotionE, station_prefix, FamilyLeg, Leg, objects,
 };
 pub use region::{RegionShape, RegionTerm, TermNumber, FaceRef, Target};
-pub use solid_eval::{Way, turn_of};
+pub use solid_eval::{Way, turn_between, turn_of};
 pub use construction::{ThreePointArc, three_point_arc};
 pub use turns::{Turn, Mirror, Images, Derivation};
 pub use bindings::{Binding, Bound};

@@ -84,7 +84,7 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
             }
             Ok(Sweep::Body)
         }
-        (None, None, None, Some(axis)) => Ok(Sweep::Revolve { axis, sweep: p.sweep, sense: turn }),
+        (None, None, None, Some(axis)) => Ok(crate::syntax::turned(axis, p.sweep.as_ref(), turn)),
         (from, to, depth, None) => {
             if p.sweep.is_some() || p.sense.is_some() {
                 return Err("`sweep` and `sense` turn a face about an axis, and this one is \

@@ -1,6 +1,6 @@
 //! Lower a resolved solid declaration into its typed solid definition.
 use super::*;
-use crate::syntax::Sweep;
+use crate::syntax::{Arg, Sweep};
 
 /// **A solid is a face swept, or a term over other solids** (§6.9).
 pub(super) fn build_solid(
@@ -125,9 +125,9 @@ pub(super) fn build_solid(
             }
             SolidDef::Prism { face, from: a, to: b, draft }
         }
-        Sweep::Revolve { axis, sweep, sense } => {
+        Sweep::Revolve { axis, from, to } => {
             let face = one_face(&ops, st, &mut say)?;
-            revolve(sk, res, face, (axis, sweep.as_ref(), *sense), st, &mut say)?
+            revolve(sk, res, face, (axis, from.as_ref(), to.as_ref()), st, &mut say)?
         }
         Sweep::Body => body(&ops, kids, sk.solids.len(), st, &mut say)?,
         Sweep::Family(f) => family(sk, res, f, &ops, st, &mut say)?,
@@ -577,13 +577,13 @@ fn under_motion(
     })
 }
 
-/// A face turned about a line in its own plane or an axis lying there (§6.9), through a sweep
-/// that is a magnitude, which way a word (`sense:`).
+/// A face turned about a line in its own plane or an axis lying there (§6.9), over the interval
+/// `std.solids.Revolution`'s `from:` and `to:` say, one end of it nothing (`model::turn_between`).
 fn revolve(
     sk: &Sketch,
     res: &Resolver,
     face: u32,
-    (axis, sweep, sense): (&crate::syntax::Ref, Option<&crate::syntax::Arg>, crate::syntax::Sense),
+    (axis, from, to): (&crate::syntax::Ref, Option<&Arg>, Option<&Arg>),
     st: &Stmt,
     say: &mut impl FnMut(Code, Span, String),
 ) -> Option<SolidDef> {
@@ -621,30 +621,46 @@ fn revolve(
             return None;
         }
     }
-    let turn = match sweep {
-        None => Extent { text: String::new(), value: std::f64::consts::TAU },
-        Some(a) => match extent(sk.units, a, "sweep", crate::units::Dim::ANGLE) {
-            Ok(e) => Extent { text: e.text, value: e.value.to_radians() },
-            Err(m) => {
-                say(Code::E103, st.span, m);
-                return None;
-            }
-        },
+    // **the interval, read as numbers** (#747): `from:` and `to:` as written, left out `0deg`
+    // and `360deg` — one end nothing, and how far and which way are what the ends evaluate to,
+    // never what their text looks like
+    let end = |a: Option<&crate::syntax::Arg>, what: &str, or: f64| match a {
+        None => Ok(Extent { text: String::new(), value: or }),
+        Some(a) => extent(sk.units, a, what, crate::units::Dim::ANGLE)
+            .map(|e| Extent { text: e.text, value: e.value.to_radians() }),
     };
-    // **a selector is a word, never a sign**: which way it turns is `sense:`
-    if turn.value <= 0.0 {
-        say(
-            Code::E040,
-            st.span,
-            "a sweep is a magnitude: which way it turns is `sense: cw`".into(),
-        );
+    let (a, b) = match (end(from, "from", 0.0), end(to, "to", std::f64::consts::TAU)) {
+        (Ok(a), Ok(b)) => (a, b),
+        (Err(m), _) | (_, Err(m)) => {
+            say(Code::E103, st.span, m);
+            return None;
+        }
+    };
+    let written = |e: &Extent, or: &str| match e.text.is_empty() {
+        true => or.to_string(),
+        false => e.text.clone(),
+    };
+    let (wa, wb) = (written(&a, "0deg"), written(&b, "360deg"));
+    // a turn is an interval of the roll (#737): none runs from the greater to the lesser
+    if a.value > b.value {
+        say(Code::E040, st.span, format!("no roll is at least `{wa}` and at most `{wb}`: a turn \
+            runs `from:` the lesser roll `to:` the greater, so one the other way round from its \
+            face is `from: -90deg, to: 0deg`"));
         return None;
     }
-    let sense = match sense {
-        crate::syntax::Sense::Cw => Sense::Cw,
-        crate::syntax::Sense::Ccw => Sense::Ccw,
+    if a.value == b.value {
+        say(Code::E080, st.span, "a revolution turned nowhere is no solid".into());
+        return None;
+    }
+    let Some((value, sense)) = crate::model::turn_between(a.value, b.value) else {
+        say(Code::E080, st.span, format!("a revolution turns from its face, and neither `{wa}` \
+            nor `{wb}` is nothing: one end of `from:`/`to:` is 0deg"));
+        return None;
     };
-    Some(SolidDef::Revolve { face, axis: ax, sweep: turn, sense })
+    // the end that is not nothing, as written; a whole turn none
+    let far = if sense == Sense::Cw { a } else { b };
+    let text = if value == std::f64::consts::TAU { String::new() } else { far.text };
+    Some(SolidDef::Revolve { face, axis: ax, sweep: Extent { text, value }, sense })
 }
 
 /// A body over other solids: the first its stock, the rest in `union` with it.  **An empty body**,

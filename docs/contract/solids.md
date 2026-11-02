@@ -236,7 +236,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   a family's with its formals bound to the call's arguments as written (`said::binding`) — that is
   a section between two ordinates, the drafted lean, a face's patch turned about a line formal, or a
   section alone (through the body it is cut from, `syntax::ROLLED`) is written out as
-  `syntax::Sweep::Prism`/`Revolve`/`Through`, so every reader of a solid's text before it is built
+  `syntax::Sweep::Prism`/`Revolve`/`Through`.  **A revolution carries its interval as written**
+  (#747), `Sweep::Revolve { axis, from, to }`: which end is nothing, how far and which way are what
+  the ends evaluate to, decided in `program/solids/build.rs`'s `revolve` by `model::turn_between`
+  (the reading `defined.rs` shares), so `to: 2 * pi * 1rad` is `to: 360deg` and `from: 0rad` is no
+  end at all; a turn from the greater roll to the lesser is E040, one of nothing E080.  The
+  flattener decides nothing on text: it keeps the set only where the same number evaluator reads
+  both ends and neither is nothing (`Walk::off_its_face`) — a turn off its face, which no sweep of
+  the evaluator's is, so it stays the region it was.  `tests/revolve.rs`'s
+  `an_interval_is_read_by_its_numbers_not_its_text` is the gate.  So every reader of a solid's text before it is built
   reads it as one: a prism's sides for an envelope (`generated.rs`), a revolution's named side
   (`envelopes.rs`), a sketch's carriers on a face (`flatten/faces.rs`), the gestures' resizing
   (`edit::solids::reworded`); and no probe is made, so the solve is the old spelling's to the bit.

@@ -507,7 +507,8 @@ impl<'a> Walk<'a> {
         if !self.said.is_empty() && d2.kind == crate::model::EntKind::Solid
             && matches!(d2.sweep, Some(crate::syntax::Sweep::Body)) {
             if let Some((_, abs, _)) = self.set_named(&d2, 0, scope) {
-                if let Some((sweep, face)) = self.said.get(&abs).cloned() {
+                if let Some((sweep, face)) = self.said.get(&abs).cloned()
+                    .filter(|(s, _)| !self.off_its_face(s, vals)) {
                     d2.sweep = Some(sweep);
                     d2.children = vec![vec![Kid::Ref(face)]];
                 }
@@ -557,6 +558,21 @@ impl<'a> Walk<'a> {
     /// declaration's — the roll is an angle, so a parameter of another type is refused (a sweep's
     /// by the elaborator, since a face of the drawing swept over one is a face family, #398 B), as
     /// is a name the document declares no parameter by (a component's body sees none).
+    /// **A turn that starts off its face** (#747): a revolution's interval whose ends the number
+    /// evaluator reads, neither of them nothing.  It is no sweep of the evaluator's — whose turns
+    /// start at the face — so it stays the set the region reads point by point.  Any other turn
+    /// is written out with its ends as written, for the elaborator to read how far and which way
+    /// (`program::solids::build`); an end that reads no number here is read there.
+    fn off_its_face(&self, s: &crate::syntax::Sweep, vals: &Vals) -> bool {
+        let crate::syntax::Sweep::Revolve { from, to, .. } = s else { return false };
+        let end = |a: &Option<crate::syntax::Arg>, or: &str| match a {
+            Some(crate::syntax::Arg::Dim { text, .. }) => value_of(text, vals, self.units).ok(),
+            Some(_) => None,
+            None => value_of(or, vals, self.units).ok(),
+        };
+        matches!((end(from, "0deg"), end(to, "360deg")), (Some(a), Some(b)) if a != 0.0 && b != 0.0)
+    }
+
     fn declared_interval(&mut self, d: &mut Decl, scope: &Scope) {
         let (over, from, to, swept) = match (&mut d.sweep, &mut d.angular_span) {
             (Some(crate::syntax::Sweep::Swept { over, from, to, .. }), _) => {

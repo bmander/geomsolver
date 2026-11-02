@@ -219,3 +219,78 @@ fn the_handle_runs_round_the_arc_and_reads_a_drag_back() {
     assert!(turn_handle(&e.sketch, &front, ring).unwrap().tip.is_none());
     assert_eq!(turn_at(&e.sketch, &front, ring, (12.0, 4.0), 90.0), None);
 }
+
+/// **A revolution's interval is read as numbers** (#747): `from:` and `to:` are carried as written
+/// to the elaborator, which reads one end nothing and a whole turn by what they evaluate to — so
+/// an end spelt otherwise builds exactly as the plain one, through the flattener (no probe is
+/// made: it is the same sweep), the build and the resize gesture alike.
+#[test]
+fn an_interval_is_read_by_its_numbers_not_its_text() {
+    let ring_in = |how: &str| build(&format!("{DRAWN}turns := 1
+ring := solid(std.solids.Revolution(\
+        face(ab, bc, cd, da), {how}))\n"));
+    let def = |e: &gcs_core::program::Elaborated| {
+        e.sketch.solids[e.map.ent_named("ring").unwrap().i()].def.clone()
+    };
+    let cases = [
+        ("about: std.z, to: 2 * pi * 1rad", "about: std.z, to: 360deg", 2.0 * PI),
+        ("about: std.z, from: -turns * 360deg, to: 0deg", "about: std.z, from: -360deg, to: 0deg",
+            2.0 * PI),
+        ("about: std.z, from: 0rad, to: 90deg", "about: std.z, to: 90deg", PI / 2.0),
+        ("about: std.z, from: -pi / 2 * 1rad, to: 0 * turns * 1deg",
+            "about: std.z, from: -90deg, to: 0deg", PI / 2.0),
+    ];
+    for (spelt, plain, turn) in cases {
+        let (a, b) = (ring_in(spelt), ring_in(plain));
+        let (gcs_core::model::SolidDef::Revolve { sweep: sa, sense: ea, .. },
+             gcs_core::model::SolidDef::Revolve { sweep: sb, sense: eb, .. }) = (def(&a), def(&b))
+        else { panic!("{spelt}: {:?}", def(&a)) };
+        assert_eq!((sa.value, ea), (sb.value, eb), "{spelt}");
+        assert!(near(sa.value, turn, 1e-12), "{spelt}");
+        // the flattener wrote out the sweep, as for the plain spelling: no probe was made
+        assert_eq!(a.sketch.points.len(), b.sketch.points.len(), "{spelt}");
+        assert_eq!(volume(&a, "ring").to_bits(), volume(&b, "ring").to_bits(), "{spelt}");
+        // and the gesture reads it as the plain one: a number signed, an expression the way it
+        // already turns
+        let ring = a.map.ent_named("ring").unwrap().i();
+        for (angle, got) in [("90", PI / 2.0), ("45deg * 2", PI / 2.0)] {
+            let out = edit::set_turn(&a, &a.program, ring, angle);
+            assert_eq!(out.refused, None, "{spelt}: {angle}");
+            assert!(near(volume(&build(&out.text), "ring"), pappus(12.0, got), 2e-3),
+                "{spelt}: {angle}");
+        }
+        let out = edit::set_turn(&a, &a.program, ring, "45deg * 2");
+        let way = match ea {
+            gcs_core::model::Sense::Cw => "about: std.z, from: -(45deg * 2), to: 0deg",
+            gcs_core::model::Sense::Ccw => "about: std.z, to: 45deg * 2",
+        };
+        assert!(out.text.contains(&format!("{way}))\n")), "{spelt}: {}", out.text);
+    }
+    // a turn off its face is no sweep of the evaluator's: it stays the set, read point by point;
+    // a number turns it from its face anew, and an expression, which says no way, is sent to
+    // where it is written
+    let off = ring_in("about: std.z, from: 30deg, to: 90deg");
+    assert!(matches!(def(&off), gcs_core::model::SolidDef::Region { .. }), "{:?}", def(&off));
+    assert!(near(volume(&off, "ring"), pappus(12.0, PI / 3.0), 2e-3), "{}", volume(&off, "ring"));
+    let ring = off.map.ent_named("ring").unwrap().i();
+    let out = edit::set_turn(&off, &off.program, ring, "-90");
+    assert_eq!(out.refused, None);
+    assert!(out.text.contains("about: std.z, from: -90, to: 0deg))\n"), "{}", out.text);
+    let out = edit::set_turn(&off, &off.program, ring, "45deg * 2");
+    assert!(out.refused.as_deref().is_some_and(|m| m.contains("starts off its face")),
+        "{:?}", out.refused);
+    // the ABI hands the elaborated sketch to a handle of its own: the way it turns is read again
+    let mut taken = ring_in("about: std.z, from: -turns * 360deg, to: 0deg");
+    let ring = taken.map.ent_named("ring").unwrap().i();
+    drop(std::mem::take(&mut taken.sketch));
+    let out = edit::set_turn(&taken, &taken.program, ring, "45deg * 2");
+    assert!(out.text.contains("about: std.z, from: -(45deg * 2), to: 0deg))\n"), "{}", out.text);
+    // an interval runs from the lesser roll, and one of nothing is no solid
+    let got = refusals(&format!("{DRAWN}ring := solid(std.solids.Revolution(face(ab, bc, cd, da), \
+        about: std.z, to: -90deg))\n"));
+    assert!(got.iter().any(|(c, m)| c == "E040" && m.contains("`from:` the lesser roll")),
+        "{got:?}");
+    let got = refusals(&format!("{DRAWN}ring := solid(std.solids.Revolution(face(ab, bc, cd, da), \
+        about: std.z, to: 0rad))\n"));
+    assert!(got.iter().any(|(c, m)| c == "E080" && m.contains("turned nowhere")), "{got:?}");
+}
