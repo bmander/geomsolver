@@ -80,23 +80,47 @@ fn face_plane(sk: &Sketch, face: u32) -> Option<(usize, u32)> {
 }
 
 /// **A prism**: the points whose foot on `sec`'s plane is inside it, between two ordinates along
-/// its normal from that plane.
+/// its normal from that plane — and, drafted, its section at each ordinate its own moved in by the
+/// ordinate's size times the draft's tangent (`draft`).
 fn prism(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
     let mut face = None;
+    let mut inside = false;
+    let mut leaning = None;
     let (mut lo, mut hi) = (None, None);
+    let one = |slot: &mut Option<u32>, f: u32| slot.replace(f).is_none_or(|g| g == f);
     for t in terms {
-        match t.shape {
+        match &t.shape {
             RegionShape::Section { face: f } if t.cmp == Cmp::Le && t.hi.is_none() => {
-                if stated(t)? != 0.0 || face.replace(f).is_some() {
+                if stated(t)? != 0.0 || inside || !one(&mut face, *f) {
                     return None;
                 }
+                inside = true;
             }
             RegionShape::Plane { .. } => {}
+            RegionShape::Measured { of } if leaning.is_none() && t.cmp == Cmp::Ge => {
+                let (f, k) = lean(of)?;
+                if stated(t)? != 0.0 || !one(&mut face, f) {
+                    return None;
+                }
+                leaning = Some(k);
+            }
             _ => return None,
         }
     }
     let face = face?;
     let (frame, origin) = face_plane(sk, face)?;
+    // the drawn plane a lean is measured from is the face's own
+    if let Some((_, plane)) = leaning.zip(terms.iter().find_map(|t| match &t.shape {
+        RegionShape::Measured { of } => of.iter().find_map(|(x, _)| match x {
+            crate::model::Target::Ent(e) => Some(*e),
+            _ => None,
+        }),
+        _ => None,
+    })) {
+        if plane != EntRef::frame(frame) {
+            return None;
+        }
+    }
     for t in terms {
         let RegionShape::Plane { along, from, sign } = t.shape else { continue };
         if along != EntRef::frame(frame) || from != origin || sign != 1.0 {
@@ -117,12 +141,55 @@ fn prism(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
         }
     }
     let (from, to) = (lo?, hi?);
-    (from < to).then(|| SolidDef::Prism {
-        face,
-        from: Extent::at(from),
-        to: Extent::at(to),
-        draft: None,
-    })
+    // undrafted, the section is the set's own; drafted, it is the lean's, and a section kept as
+    // well holds only where the lean takes it in
+    let draft = match leaning {
+        None if inside => None,
+        None => return None,
+        Some(k) if inside && k < 0.0 => return None,
+        Some(k) => {
+            // the angle as a draughtsman states it, to a billionth of a degree
+            let degrees = (k.atan().to_degrees() * 1e9).round() / 1e9;
+            (degrees != 0.0).then(|| Extent {
+                text: format!("{}deg", crate::vocab::num(degrees)),
+                value: degrees.to_radians(),
+            })
+        }
+    };
+    (from < to).then(|| SolidDef::Prism { face, from: Extent::at(from), to: Extent::at(to), draft })
+}
+
+/// **A draft's lean**, `distance(p, beyond) − distance(p, within) ≥ k · distance(p, P)` over
+/// `beyond := { q | q outside sec }`, `within := { q | q inside sec }` and `sec`'s plane `P`: the
+/// face and `k`, the draft's tangent — the signed distance into the section at least `k` times
+/// the ordinate's size.  `None` for any other sum.
+fn lean(of: &[(crate::model::Target, f64)]) -> Option<(u32, f64)> {
+    use crate::model::Target;
+    let mut face = None;
+    let (mut out, mut into, mut plane) = (None, None, None);
+    for (t, c) in of {
+        match t {
+            Target::Set { terms, .. } => {
+                let [s] = terms.as_slice() else { return None };
+                let RegionShape::Section { face: f } = s.shape else { return None };
+                if s.hi.is_some() || stated(s)? != 0.0 || face.replace(f).is_some_and(|g| g != f) {
+                    return None;
+                }
+                let slot = match s.cmp { Cmp::Ge => &mut out, Cmp::Le => &mut into, Cmp::In => return None };
+                if slot.replace(*c).is_some() {
+                    return None;
+                }
+            }
+            Target::Ent(e) if e.kind == EntKind::Frame => {
+                if plane.replace(*c).is_some() {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+    let (a, b, c) = (out?, into?, plane?);
+    (a > 0.0 && b == -a).then(|| (face.expect("a set"), -c / a))
 }
 
 /// Whether `e` is a face's entity (an ordinate written along a face before its plane is known).

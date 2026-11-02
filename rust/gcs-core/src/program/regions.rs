@@ -326,7 +326,9 @@ pub(super) fn measured_term(
             to = Target::Set { probe: q as u32, terms: Vec::new() };
         }
         if let Target::Ent(e) = &to {
-            if !matches!(e.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Frame) {
+            // a drawn face measured from is its plane (#737), read once its face is built
+            if !matches!(e.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Frame
+                | EntKind::Face) {
                 return refuse(format!(
                     "a region's bound measures the distance from a point, a line, an axis, a \
                      plane, a face or a set, not {}",

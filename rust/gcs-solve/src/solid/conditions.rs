@@ -45,6 +45,9 @@ pub enum SetDistance {
     Nearest(Vec<SetDistance>),
     /// The material within every face of a body, or (`beyond`) what is outside it.
     Body { body: Arc<BodyFaces>, beyond: bool },
+    /// A drawn face's region read through its plane (#737), or (`beyond`) what is outside it: the
+    /// distance in the plane from the point's foot to it.
+    Section { at: crate::plane::Basis, region: Arc<crate::solid::field::PlanarField>, beyond: bool },
 }
 
 pub use super::faces::Read;
@@ -105,6 +108,13 @@ impl SetDistance {
                 }
             });
         }
+        // within (or beyond) a drawn face's region, read through its plane (#737)
+        if let [t @ RegionTerm { shape: RegionShape::Section { face }, hi: None, .. }] = terms {
+            if t.cmp != Cmp::In && t.value(sk)? == (0.0, 0.0) {
+                let (at, region, _) = crate::solid::field::section(sk, *face as usize)?;
+                return Ok(SetDistance::Section { at, region: Arc::new(region), beyond: t.cmp == Cmp::Ge });
+            }
+        }
         // within (or beyond) every face of a body, and nothing more: its material, read by its
         // signed distance where that is exact
         if let [t @ RegionTerm { shape: RegionShape::FaceSide { face }, hi: None, .. }] = terms {
@@ -161,6 +171,11 @@ impl SetDistance {
             SetDistance::Nearest(each) => each.iter().map(|s| s.distance(p)).fold(f64::INFINITY, f64::min),
             SetDistance::Body { body, beyond } => {
                 let v = body.signed_distance(p).0;
+                (if *beyond { -v } else { v }).max(0.0)
+            }
+            SetDistance::Section { at, region, beyond } => {
+                let d = sub(p, at.o);
+                let v = region.value([crate::space::dot(d, at.u), crate::space::dot(d, at.v)]);
                 (if *beyond { -v } else { v }).max(0.0)
             }
         }

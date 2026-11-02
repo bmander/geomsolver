@@ -439,8 +439,18 @@ fn face_planes(sk: &Sketch, terms: &mut [crate::model::RegionTerm]) -> Result<()
             }
             RegionShape::Measured { of } => {
                 for (target, _) in of.iter_mut() {
-                    if let Target::Set { terms, .. } = target {
-                        face_planes(sk, terms)?;
+                    match target {
+                        Target::Set { terms, .. } => face_planes(sk, terms)?,
+                        // the distance from a drawn face's plane
+                        Target::Ent(e) if e.kind == EntKind::Face => {
+                            let f = sk.faces.get(e.i()).ok_or("a region's face is not built")?;
+                            let Some(p) = f.plane else {
+                                return Err(format!("`{}` is drawn in no plane, so it has no \
+                                                    plane to measure from", f.name));
+                            };
+                            *e = EntRef::frame(p as usize);
+                        }
+                        _ => {}
                     }
                 }
             }

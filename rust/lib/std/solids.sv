@@ -36,3 +36,18 @@ component Revolution(section: face, about: line, from: Angle = 0deg, to: Angle =
   turn turns(ratio: 1) about
   p coincident(under: turn, t in (from, to)) section
 }
+
+// A drafted prism: `Prism`'s points, its section at each ordinate its own with every edge moved
+// into the material by the ordinate's size times `tan(draft)` — the sides leaning away from the
+// section's plane, the parting plane, on both sides of it, as a forging's come out of its die; a
+// negative draft leans them the other way.  Its faces are named as a prism's, a side crossing the
+// parting plane two pieces of one name.
+//
+//   rod := solid(std.solids.Drafted(sec, from: -4mm, to: 4mm, draft: 3deg))
+component Drafted(section: face, from: Length, to: Length, draft: Angle) := { p |
+  p distance(>= from, along: n) section
+  p distance(<= to, along: n) section
+  beyond := { q | q outside section }
+  within := { q | q inside section }
+  distance(p, beyond) - distance(p, within) >= tan(draft) * distance(p, section)
+}
