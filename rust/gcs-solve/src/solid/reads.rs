@@ -225,6 +225,24 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                         face_reads(sk, face, &mut v, poses);
                         continue;
                     }
+                    // and its patch swept by a motion: the motion's pose wherever it reads
+                    if let crate::model::RegionShape::Swept { motion, roll, face } = t.shape {
+                        v.extend([12.0, motion as f64, roll[0], roll[1]]);
+                        face_reads(sk, face, &mut v, poses);
+                        let poses = crate::motion::Family::read(sk, motion as usize)
+                            .and_then(|f| Ok([f.pose_at(roll[0])?, f.pose_at(roll[1])?]));
+                        match poses {
+                            Ok(ends) => {
+                                for m in ends {
+                                    for q in [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+                                        v.extend(m.point(q));
+                                    }
+                                }
+                            }
+                            Err(_) => v.push(UNREAD),
+                        }
+                        continue;
+                    }
                     for e in t.shape.entities() {
                         match e.kind {
                             crate::model::EntKind::Point => v.extend(sk.world_point(e.i())),

@@ -294,6 +294,10 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// applied as a gauge, taken as a region's term, or refused, and no id. The steps below, in the
 /// order each may end it.
 pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u32> {
+    // a face swept by a motion over an interval of its roll, at a region solid's point (#737)
+    if swept_patch(cx, r, st) {
+        return None;
+    }
     // a point a frame carries (#383): its `under:` and `seen_from:` read as the one motion node
     // the carried point's slot names
     if let Some(carried) = carried_motion(cx, r, st) {
@@ -759,6 +763,69 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &m
         left_out[s] = false;
     }
     Ok(kind)
+}
+
+/// **What a face occupies under a motion over an interval of its roll** (#737), `p
+/// coincident(under: m, t in (a, b)) sec` with `p` a region solid's point: the existential over
+/// the roll, the region's term (`RegionShape::Swept`).  Whether the relation was one, taken or
+/// refused.
+fn swept_patch(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> bool {
+    use crate::syntax::OpArg;
+    let Some(w) = r.form.written() else { return false };
+    let Some((key, lo, hi)) = w.args.iter().find_map(|a| match a {
+        OpArg::Within { key, lo, hi } => Some((key, lo, hi)),
+        _ => None,
+    }) else {
+        return false;
+    };
+    let named = |k: &str| w.args.iter().find_map(|a| match a {
+        OpArg::Named(n, Arg::Ref(r)) if n.text == k => Some(r.clone()),
+        _ => None,
+    });
+    let Some(under) = named("under") else { return false };
+    let seen = named("seen_from");
+    let mut refuse = |m: String| cx.diags.push(Diag::on(Code::E040, st, m));
+    if key.text != "t" {
+        refuse(format!("a motion's interval is of its roll, `t in (a, b)`: `{}` is no roll", key.text));
+        return true;
+    }
+    let [p, x] = w.ops.as_slice() else { return false };
+    let point = cx.res.entity(&cx.sk, p).filter(|e| e.kind == EntKind::Point);
+    let Some(point) = point.filter(|e| cx.probes.terms.contains_key(&e.i())) else {
+        refuse(format!("`{}` is a drawn point: what a face occupies over an interval of a roll is \
+            read where a set is applied to a region solid's point (`solid(S)`); a drawn point is \
+            carried to one roll, `t == τ`", p.root.text));
+        return true;
+    };
+    let Some(face) = cx.res.entity(&cx.sk, x).filter(|e| e.kind == EntKind::Face) else {
+        refuse(format!("`{}` is no face: a set over an interval of a roll is of a face's patch, \
+            `p coincident(under: m, t in (a, b)) sec`", x.root.text));
+        return true;
+    };
+    let roll = |t: &(String, crate::syntax::Span)| -> Option<f64> {
+        let arg = Arg::Dim { text: t.0.clone(), span: t.1 };
+        to_arg(&cx.sk, &cx.res, SpecKind::Angle, &arg).ok().as_ref()
+            .and_then(|a| super::regions::settled_number(a, &cx.sk))
+    };
+    let (Some(a), Some(b)) = (roll(lo), roll(hi)) else {
+        refuse(format!("`({}, {})` is no interval of angles stated: a roll's ends are numbers \
+                        no unknown reads", lo.0, hi.0));
+        return true;
+    };
+    let sole = super::motions::sole(&cx.sk);
+    let m = match super::motions::reading(&mut cx.sk, &cx.res, &under, seen.as_ref(),
+                                          sole.as_deref()) {
+        Ok(m) => m,
+        Err(message) => {
+            cx.diags.push(Diag::within(Code::E040, under.span, st.id, message));
+            return true;
+        }
+    };
+    let shape = crate::model::RegionShape::Swept { motion: m as u32, roll: [a, b], face: face.i() as u32 };
+    let term = crate::model::RegionTerm::new(shape, crate::syntax::Cmp::Le,
+                                             crate::model::TermNumber::stated(0.0));
+    cx.probes.terms.get_mut(&point.i()).expect("a probe's terms").push(term);
+    true
 }
 
 /// **A region's point against a face** (#183 F1), or where an edge ends (F7): a term of the

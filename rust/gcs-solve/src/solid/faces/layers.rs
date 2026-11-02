@@ -64,7 +64,7 @@ fn face_refs<'t>(terms: &'t [RegionTerm], out: &mut Vec<&'t FaceRef>) {
             RegionShape::Ends { edge } => target(edge, out),
             RegionShape::Ball { .. } | RegionShape::Cylinder { .. } | RegionShape::Cone { .. }
             | RegionShape::Plane { .. } | RegionShape::Sheet { .. }
-            | RegionShape::Section { .. } => {}
+            | RegionShape::Section { .. } | RegionShape::Swept { .. } => {}
         }
     }
 }

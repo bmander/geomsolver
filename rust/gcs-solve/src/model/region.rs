@@ -43,6 +43,11 @@ pub enum RegionShape {
     /// region; off it, the points whose foot is in the region (the prism over it, unbounded
     /// along its normal, which two ordinates bound).
     Section { face: u32 },
+    /// **A face's patch swept by a motion over an interval of its roll** (#737 P2, P4): the
+    /// points the face's region occupies at some roll in `roll` (radians, the roll's own) —
+    /// `p coincident(under: m, t in (a, b)) sec`, the existential over the roll.  Held when its
+    /// point is in it, a bound at nothing on its signed distance.
+    Swept { motion: u32, roll: [f64; 2], face: u32 },
 }
 
 impl RegionShape {
@@ -83,6 +88,7 @@ impl RegionShape {
                 rails.iter().flat_map(|r| r.links.iter().copied()).collect()
             }
             RegionShape::Section { face } => vec![EntRef::face(face as usize)],
+            RegionShape::Swept { face, .. } => vec![EntRef::face(face as usize)],
         }
     }
 
@@ -118,6 +124,9 @@ impl RegionShape {
             },
             RegionShape::Section { face } => {
                 RegionShape::Section { face: i(EntKind::Face, face)? }
+            }
+            RegionShape::Swept { motion, roll, face } => {
+                RegionShape::Swept { motion, roll, face: i(EntKind::Face, face)? }
             }
         })
     }

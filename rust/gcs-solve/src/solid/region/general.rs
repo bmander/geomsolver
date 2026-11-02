@@ -155,6 +155,51 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                 };
                 Measure::Signed(Signed(std::sync::Arc::new(at)))
             }
+            // a face's patch swept by a turn about a line in its plane (#737): within its meridian
+            // in the section's half-plane turned through the roll, read on each side of the line
+            RegionShape::Swept { motion, roll, face } => {
+                let (b, region, reach) =
+                    crate::solid::field::section(sk, face as usize).map_err(named)?;
+                let Some((_, a, d, ratio)) = crate::solid::defined::turn_of(sk, motion) else {
+                    return Err(named("a face swept by a motion is read point by point where the \
+                        motion is a turn about a line: a slide, a screw or a motion of several \
+                        steps is not read yet".to_string()));
+                };
+                if !crate::solid::defined::lies_in(&b, a, d) {
+                    return Err(named("a face swept by a turn is read point by point where the \
+                        line it turns about lies in the face's plane".to_string()));
+                }
+                let (t0, t1) = (ratio * roll[0].min(roll[1]), ratio * roll[0].max(roll[1]));
+                let whole = t1 - t0 >= std::f64::consts::TAU - 1e-12;
+                let e0 = crate::space::cross(b.normal(), d);
+                let e1 = crate::space::cross(d, e0);
+                if let Some(r) = reach {
+                    cube(&mut planes, a, crate::space::norm(sub(b.o, a)) + r);
+                }
+                let at = move |p: V| {
+                    let q = sub(p, a);
+                    let z = dot(q, d);
+                    let (x, y) = (dot(q, e0), dot(q, e1));
+                    let rho = x.hypot(y);
+                    let phi = y.atan2(x);
+                    let mut best = f64::INFINITY;
+                    for (side, offset) in [(1.0, 0.0), (-1.0, std::f64::consts::PI)] {
+                        let m = crate::space::add(a, crate::space::add(scale(d, z), scale(e0, side * rho)));
+                        let w = sub(m, b.o);
+                        let inside = region.value([dot(w, b.u), dot(w, b.v)]);
+                        let wedge = if whole { f64::NEG_INFINITY } else {
+                            // the roll this side of the line is turned to, within the interval
+                            let tau = std::f64::consts::TAU;
+                            let th = (phi - offset - t0).rem_euclid(tau) + t0;
+                            if th <= t1 { -rho * (th - t0).min(t1 - th).min(FRAC_PI_2).sin() }
+                            else { rho * (th - t1).min(t0 + tau - th).min(FRAC_PI_2).sin() }
+                        };
+                        best = best.min(inside.max(wedge));
+                    }
+                    best
+                };
+                Measure::Signed(Signed(std::sync::Arc::new(at)))
+            }
             ref shape => {
                 let m = measure_of(sk, shape)?.ok_or("a region bounds distances, angles and planes")?;
                 match m {

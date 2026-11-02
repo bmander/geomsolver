@@ -622,6 +622,6 @@ fn lobe(near: f64, far: f64, k: f64, reach: f64) -> Region {
 /// Whether a term is read only point by point: a sum of measurements, or a face's (#183).
 fn point_by_point(shape: &RegionShape) -> bool {
     matches!(shape, RegionShape::Measured { .. } | RegionShape::Sheet { .. }
-        | RegionShape::Section { .. })
+        | RegionShape::Section { .. } | RegionShape::Swept { .. })
         || crate::solid::faces::reads_faces(shape)
 }

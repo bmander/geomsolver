@@ -23,7 +23,48 @@ use crate::vocab::Cmp;
 /// The sweep a region's terms define, where an entry recognises them; `None` otherwise.  Every
 /// number recognised is stated: a term reading an unknown of the drawing stays the region's.
 pub fn recognised(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
-    prism(sk, terms)
+    prism(sk, terms).or_else(|| revolution(sk, terms))
+}
+
+/// **A revolution**: a face's patch swept by a turn about a line in its plane, over an interval
+/// of the roll one end of which is nothing — turned `sweep` from where it is drawn, the way the
+/// interval runs (`sense: cw` for one below nothing).
+fn revolution(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
+    use crate::model::Sense;
+    use std::f64::consts::TAU;
+    let [t] = terms else { return None };
+    let RegionShape::Swept { motion, roll, face } = t.shape else { return None };
+    if t.cmp != Cmp::Le || t.hi.is_some() || stated(t)? != 0.0 {
+        return None;
+    }
+    let (axis, a, d, ratio) = turn_of(sk, motion)?;
+    let f = sk.faces.get(face as usize)?;
+    let b = match f.plane { Some(p) => sk.basis(p as usize), None => crate::plane::Basis::page() };
+    if !lies_in(&b, a, d) {
+        return None;
+    }
+    // a line turned about lies in the face's own plane as drawn, as `about:` held it
+    if axis.kind == EntKind::Line {
+        let l = sk.lines.get(axis.i())?;
+        if [l.p1, l.p2].iter().any(|&p| sk.plane_of(p as usize).map(|x| x as u32) != f.plane) {
+            return None;
+        }
+    }
+    let (t0, t1) = (ratio * roll[0], ratio * roll[1]);
+    let (lo, hi) = (t0.min(t1), t0.max(t1));
+    let (sweep, sense) = match (lo == 0.0, hi == 0.0) {
+        (true, false) => (hi, Sense::Ccw),
+        (false, true) => (-lo, Sense::Cw),
+        _ => return None,
+    };
+    if sweep > TAU + 1e-12 {
+        return None;
+    }
+    let sweep = match (sweep - TAU).abs() < 1e-12 {
+        true => Extent { text: String::new(), value: TAU },
+        false => Extent::at(sweep),
+    };
+    Some(SolidDef::Revolve { face, axis, sweep, sense })
 }
 
 /// A stated number of a term, its `lo`, where nothing grows it.
@@ -87,4 +128,37 @@ fn prism(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
 /// Whether `e` is a face's entity (an ordinate written along a face before its plane is known).
 pub fn along_face(e: EntRef) -> bool {
     e.kind == EntKind::Face
+}
+
+/// **A turn**: motion `m` as a rotation about a fixed line with no advance — the line it turns
+/// about as an entity (a drawn line, or a frame's axis), a point of it and its unit direction in
+/// space, and its ratio (radians turned a radian of the roll).  `None` for any other motion.
+pub fn turn_of(sk: &Sketch, m: u32) -> Option<(EntRef, [f64; 3], [f64; 3], f64)> {
+    use crate::model::MotionDef;
+    let node = sk.motions.get(m as usize)?;
+    match node.def {
+        MotionDef::Rotation { axis, .. } => {
+            let (ratio, advance) = node.rotation(sk).ok()?;
+            let l = sk.lines.get(axis as usize)?;
+            let (a, b) = (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize));
+            let d = crate::space::normalised(crate::space::sub(b, a))?;
+            (advance == 0.0).then_some((EntRef::line(axis as usize), a, d, ratio))
+        }
+        MotionDef::Joint { axis, ratio, advance } => {
+            let x = sk.axes.get(axis as usize)?;
+            let a = x.a.map(|q| sk.params[q as usize].value);
+            let d = crate::space::normalised(x.d.map(|q| sk.params[q as usize].value))?;
+            (advance == 0.0).then_some((EntRef::new(EntKind::Axis, axis as usize), a, d, ratio))
+        }
+        _ => None,
+    }
+}
+
+/// Whether the line through `a` along the unit `d` lies in the plane of `b`, to the solve's
+/// acceptance at the plane's reach.
+pub fn lies_in(b: &crate::plane::Basis, a: [f64; 3], d: [f64; 3]) -> bool {
+    use crate::space::{dot, norm, sub};
+    let n = b.normal();
+    let reach = 1.0 + norm(sub(a, b.o));
+    dot(n, d).abs() < 1e-9 && dot(n, sub(a, b.o)).abs() < 1e-9 * reach
 }
