@@ -387,13 +387,14 @@ fn explicit_native_stl_never_falls_back_when_occt_is_unavailable() {
     std::fs::write(&model,"\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point
 fix((0, 0)) o
 c := circle(center: o)
 radius(2) c
 }
-body := solid(face(c), depth: 3)
+body := solid(std.solids.Prism(face(c), from: -3, to: 0))
 ").unwrap();
     std::fs::write(&output,"old STL").unwrap();
     let result = run(&[model.to_str().unwrap(),"--stl",output.to_str().unwrap(),
@@ -442,7 +443,6 @@ fn drawings_load_relative_files_select_sheets_and_refuse_broken_references() {
     std::fs::write(dir.join("part.sv"), "\
 unit mm
 use std
-use std.solids
 in std.front {
 a := point
 fix((0, 0)) a
@@ -581,10 +581,12 @@ fn a_solid_at_an_unsolved_pose_does_not_hide_the_diagnosis() {
     let (text, err) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     assert_eq!(out.status.code(), Some(2), "did not solve, whatever the solid does: {text}{err}");
     assert!(text.contains("hidden.sv: did not solve"), "{text}");
-    assert!(text.contains("  conflict: std.origin distance(-6mm, along: u) p1"), "{text}");
+    // either of the two that conflict is said
+    assert!(text.contains("  conflict: std.origin distance(-6mm, along: u) p1")
+            || text.contains("  conflict: p0 distance(10) p1"), "{text}");
     let not_built = text.find(gcs_core::program::NOT_BUILT).expect("the solid said as unbuilt");
     assert!(text.find("conflict:").unwrap() < not_built, "under the diagnosis: {text}");
-    assert!(text.contains("hidden.sv:15:1: note[E080]: `ring`:"), "{text}");
+    assert!(text.contains("hidden.sv:16:1: note[E080]: `ring`:"), "{text}");
     assert_eq!(text.matches("the revolution axis crosses the profile").count(), 1, "once: {text}");
     assert!(!err.contains("error["), "no error of the document: {err}");
     // told an unsolved drawing is no failure, its solids are none either
@@ -615,7 +617,7 @@ fn a_broken_document_says_where() {
     let dir = std::env::temp_dir().join("solventc-test");
     std::fs::create_dir_all(&dir).expect("a place to write");
     let path = dir.join("uni.sv");
-    std::fs::write(&path, "use std\nuse std.solids\nin std.front {\né := point hint((0, 0))   // — an em dash\nl := line(é, zzz)\n}\n")
+    std::fs::write(&path, "use std\nin std.front {\né := point hint((0, 0))   // — an em dash\nl := line(é, zzz)\n}\n")
         .expect("write");
     let out = run(&[&path.to_string_lossy()]);
     let err = String::from_utf8_lossy(&out.stderr);
@@ -1043,7 +1045,6 @@ fn the_drift_lint_is_said_when_asked_and_fails_nothing() {
     let source = dir.join("level.sv");
     std::fs::write(&source,"\
 use std
-use std.solids
 component Level(a: point, b: point, run: Length) {
   a distance(run) b
 }
@@ -1157,7 +1158,6 @@ fn a_frames_answers_are_said() {
     std::fs::write(&source,"\
 unit mm
 use std
-use std.solids
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
 b := 25mm
 h := 50mm
@@ -1211,7 +1211,6 @@ fn a_documents_values_are_read_and_claimed() {
     std::fs::write(&source,"\
 unit mm
 use std
-use std.solids
 teeth := 48
 ratio := teeth / 12 * 4
 torque := 0.006Nm * ratio * 0.9
@@ -1255,7 +1254,6 @@ fn a_value_is_set_for_a_run() {
     let text = "\
 unit mm
 use std
-use std.solids
 checks := 0      // 1: judge every clearance
 travel := 2mm
 claim checks == 0
