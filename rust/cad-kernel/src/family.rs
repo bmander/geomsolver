@@ -189,11 +189,9 @@ pub struct Sheet {
     boxes: Vec<Box3>,
 }
 
-thread_local! {
-    /// The last foot each thread found on each of the last few walls (by their addresses), as a
-    /// B-spline sheet's (`geom::net_inverse`): only ever a start, held to settling near the point.
-    static LAST_FOOT: std::cell::Cell<[(usize,Uv);4]> = const { std::cell::Cell::new([(0,[0.;2]);4]) };
-}
+// The last foot each thread found on each of the last few walls (by their addresses), as a
+// B-spline sheet's (`geom::net_inverse`): only ever a start, held to settling near the point
+// (`util::warm`).
 
 /// Three numbers of `n` from `i`.
 fn v3(n: &[f64],i: usize) -> V { [n[i],n[i+1],n[i+2]] }
@@ -292,8 +290,7 @@ impl Sheet {
     pub fn inverse(&self,p: V) -> Uv {
         let key = self as *const Sheet as usize;
         let near = 1e-3*(1.+dot(p,p).sqrt());
-        let last = LAST_FOOT.with(|c| c.get());
-        let warm = last.iter().find(|f| f.0 == key).map(|f| self.newton(p,f.1))
+        let warm = crate::util::warm::get(crate::util::warm::Kind::Wall,key).map(|f| self.newton(p,f))
             .filter(|&uv| distance(self.d1(uv).0,p) <= near);
         let uv = warm.unwrap_or_else(|| {
             let reach = |b: &Box3| { let gap: V = std::array::from_fn(|i| (b.0[i]-p[i]).max(p[i]-b.1[i]).max(0.)); norm(gap)*(1.-1e-12) };
@@ -315,10 +312,7 @@ impl Sheet {
             }
             self.newton(p,best.1)
         });
-        let mut next = [(key,uv);4];
-        let mut k = 1;
-        for f in last { if f.0 != key && k < 4 { next[k] = f; k += 1; } }
-        LAST_FOOT.with(|c| c.set(next));
+        crate::util::warm::put(crate::util::warm::Kind::Wall,key,uv);
         uv
     }
     /// Gauss–Newton for the parameters of the wall's point nearest `p`, from `uv`.

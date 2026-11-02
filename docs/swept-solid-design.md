@@ -233,6 +233,18 @@ it. It stays as the fast path where #699 D says so.
    the far-reaching tube leave it within a turn, so each plane meets each sheet once; the cut then
    failed where a fitted plane–sheet meeting crosses an edge of a cell on the box's face. What the
    screw waits on is the Booleans meeting a fitted curve at a cell's edge exactly (F4).
+   *The one arrangement (#735)*: `boolean::arrangement_within` splits a box by any number of
+   candidates at once, touches laid as edges, and `Complex::select` takes the members' boundary
+   with no union. On it alone (no separators, no cut order, no per-cell Booleans, no deferred
+   unions) the leaning block's part turn builds, at 1e-6 and at 1e-7, but is not yet right: where
+   two seams, a plane and two surfaces of revolution crossing at a shallow angle meet at one point,
+   a root met at that angle lands `tol / sin θ` from the exact crossing, and the pool, merging
+   within `tol`, keeps the two as two vertices, so two cells are joined (each reads both ways under
+   membership). The fix is A3's: points on one shallow meeting merged within its `on_meeting`
+   reach, or the roots polished well under `tol`. Until it lands `closed` keeps the separators. At a
+   tolerance of 1e-7 the part turn by the separators' road does not yet build either: vertices and
+   edges now carry the tolerance they were merged to through every Boolean of the chain (A3), past
+   which a surface of revolution's pieces in a later cell's split do not close.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
