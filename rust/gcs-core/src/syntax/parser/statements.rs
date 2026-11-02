@@ -2006,6 +2006,7 @@ impl<'a> P<'a> {
             (name.clone(), StmtKind::Set(crate::syntax::SetDecl { name, lit }))
         } else {
             let name = key("i");
+            self.faces_in_place(next_id, out)?;
             let component = self.component_name()?;
             let args = self.inst_args()?;
             let inst = Instance {
@@ -2025,6 +2026,50 @@ impl<'a> P<'a> {
         out.push(Stmt { id, kind, span, chained: Chained::Link });
         let past = self.i;
         self.t.splice(first..past, std::iter::once((Tok::Ident(name.text), span)));
+        self.i = start;
+        Some(())
+    }
+
+    /// Each `face(…)` written in place as an argument of the call that opens here (#737:
+    /// `std.solids.Prism(face(a, b, c, -> close), from: 0mm, to: 5mm)`), made its own anonymous
+    /// face, a link of the statement, and its tokens made the one name of its key — so the call
+    /// passes a face as it passes one named.
+    fn faces_in_place(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        let start = self.i;
+        loop {
+            // the call's own brackets, and an argument `face(` directly within them
+            let open = (start..self.t.len()).find(|&k| self.t[k].0 == Tok::P('('))?;
+            let mut depth = 0usize;
+            let mut found = None;
+            for k in open..self.t.len() {
+                match &self.t[k].0 {
+                    Tok::P('(') => depth += 1,
+                    Tok::P(')') => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    Tok::Ident(w) if depth == 1 && w == "face"
+                        && self.t.get(k + 1).map(|t| &t.0) == Some(&Tok::P('(')) => {
+                        found = Some(k);
+                        break;
+                    }
+                    Tok::Nl if depth == 0 => break,
+                    _ => {}
+                }
+            }
+            let Some(k) = found else { break };
+            self.i = k + 1;
+            let lo = self.t[k].1.lo as usize;
+            let decl = self.decl(EntKind::Face, None)?;
+            let span = Span::new(lo, self.prev_hi());
+            let key = decl.name.key().text.clone();
+            let id = self.mint_stmt(next_id, span)?;
+            out.push(Stmt { id, kind: StmtKind::Decl(decl), span, chained: Chained::Link });
+            let past = self.i;
+            self.t.splice(k..past, std::iter::once((Tok::Ident(key), span)));
+        }
         self.i = start;
         Some(())
     }

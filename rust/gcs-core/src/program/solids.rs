@@ -201,12 +201,36 @@ fn body_rule(
         if let Some(stock) = sk.as_body(b.i()) {
             map.also_made(b, EntRef::solid(stock));
         }
+        // **a section unbounded along its normal** (#737, `std.solids.Through`): the prism over
+        // it through everything, which the evaluator bounds by the material of the body it is
+        // cut from or kept in common with
+        if word != crate::syntax::BodyWord::Union {
+            if let Some(face) = unbounded_section(sk, a.i()) {
+                sk.solids[a.i()].def = SolidDef::Through { face, body: b.idx };
+            }
+        }
         // **the statement that would close a cycle is the one refused**, where it is written —
         // so a gesture writing it is refused at the gesture (#162 F4) — and the body is left as
         // the statements before it made it
         if let Err(why) = sk.join_body(b.i(), word, a.i()) {
             diags.push(Diag::within(Code::E041, at, st.id, why));
         }
+    }
+}
+
+/// The face of a region solid whose one term is a drawn face read through its plane — the points
+/// whose foot is in it, nothing bounding them along its normal (#737) — where it is one.
+fn unbounded_section(sk: &Sketch, i: usize) -> Option<u32> {
+    let SolidDef::Region { terms, .. } = &sk.solids[i].def else { return None };
+    match terms.as_slice() {
+        [t] => match t.shape {
+            crate::model::RegionShape::Section { face } if t.cmp == crate::syntax::Cmp::Le
+                && t.hi.is_none() && t.grow.is_none() && t.lo.free.is_none() && t.lo.c == 0.0 => {
+                Some(face)
+            }
+            _ => None,
+        },
+        _ => None,
     }
 }
 
