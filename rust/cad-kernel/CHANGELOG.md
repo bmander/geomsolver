@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Affine maps of solids** (`Brep::mapped`, `affine::Affine`): any invertible `p ↦ M p + t`
+  carries a solid onto its exact image, its topology and pcurves its own. A kind whose image is
+  its own kind is written so (`Surface::mapped`, `Curve::mapped`: a similarity scales, a plane is
+  a plane, a line a line, a conic an ellipse, a B-spline its poles); anything else is wrapped,
+  `geom::Surface::Affine` and `geom::Curve::Affine` (**new variants**), its foot found in space's
+  metric (exact for a sphere's and a cylinder's image) and its meetings read in the preimage's
+  closed forms and mapped back (`ssi::intersect`, `ssi::same`, `query::curve_surface`). Written to
+  STEP as each face's exact net with its poles mapped (`step::face_net`), pcurves fitted in the
+  net's parameters (`nurbs::arc_parameter`).
+- **The ellipsoid** by its numbers (`build::ellipsoid`): the unit ball stretched along a frame's
+  axes, one face on the sphere's image, its seam a half ellipse.
 - **Faces sewn into a solid** (`sew::sewn`): sheets built apart — a B-spline net with a pole, a
   plane face, any shell's faces — joined where their boundaries are one curve by tolerant topology:
   poles made degenerate edges, vertices merged, an edge cut at another's vertex, edges along one

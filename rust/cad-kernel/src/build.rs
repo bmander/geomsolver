@@ -230,7 +230,8 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                 Curve::Circle(f,r) => (Surface::Cylinder(f,r),!s.forward(),s.t[0],s.t[1]),
                 // C(u) + v n: the step's tangent turned clockwise about n is its normal
                 Curve::BSpline(_) => (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
-                Curve::Ellipse(..) | Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) => unreachable!("a profile has only lines, circles and splines"),
+                Curve::Ellipse(..) | Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) =>
+                    unreachable!("a profile has only lines, circles and splines"),
             };
             // the side's parameters along the walk step, for the step's edge parameter
             let u_at = |t: f64| match s.curve { Curve::Line {..} => (t-s.t[0]).abs(),_ => t };
@@ -629,10 +630,33 @@ const SEAM: f64 = 0.6180339887498949;
 pub fn sphere(c: V,axis: V,r: f64) -> Result<Brep,String> {
     if !(r > 0. && r.is_finite()) { return Err(format!("a sphere's radius must be positive, not {r}")) }
     if !(norm(axis) > 0.) { return Err("a sphere's axis has no direction".into()) }
-    let f = Frame::about(c,axis);
+    ball(&Frame::about(c,axis),r)
+}
+
+/// The ball of radius `r` about `f`'s origin, its poles on `f.z` and its seam on `f.x`'s side.
+fn ball(f: &Frame,r: f64) -> Result<Brep,String> {
+    let c = f.o;
     let arc = ProfileEdge::Arc {frame:Frame::new(c,f.y,f.z),r,span:Some([0.,std::f64::consts::PI])};
     let shut = ProfileEdge::Line {a:f.at([0.,0.,-r]),b:f.at([0.,0.,r])};
     revolve(&Profile {origin:c,normal:f.y,loops:vec![vec![arc,shut]],names:Vec::new()},c,f.z,TAU)
+}
+
+/// **The ellipsoid** about `c` of semi-axes `semi`, along the axes of `Frame::new(c, axis, x)`: the
+/// first along `x` (made square to `axis`), the second along `axis × x`, the third along `axis`.
+/// The unit ball on that frame stretched by the three (`affine::Affine::stretch`, `Brep::mapped`):
+/// one face, the sphere's image, its poles where `axis` meets it, each a degenerate edge, and its
+/// seam the half ellipse through them on the side `x` points to (a sphere where the three are
+/// equal). As there, a plane through a pole is a meeting the Booleans do not split.
+pub fn ellipsoid(c: V,axis: V,x: V,semi: [f64;3]) -> Result<Brep,String> {
+    if !semi.iter().all(|e| *e > 0. && e.is_finite()) {
+        return Err(format!("an ellipsoid's semi-axes must be positive, not {semi:?}"))
+    }
+    if !(norm(axis) > 0.) { return Err("an ellipsoid's axis has no direction".into()) }
+    if !(norm(cross(axis,x)) > 1e-12*norm(axis)*norm(x)) {
+        return Err("an ellipsoid's first axis lies along its third".into())
+    }
+    let f = Frame::new(c,axis,x);
+    Ok(ball(&f,1.)?.mapped(&super::affine::Affine::stretch(&f,semi)?))
 }
 
 /// **The cone** on the line through `o` along `axis`: radius `r0` at `o` and `r1` a height `h` along
@@ -1097,14 +1121,21 @@ pub fn cut_before(piece: &Brep,o: V,keep: V,reach: f64,floor: f64) -> Result<Bre
     Ok(super::boolean::combined(piece,&block,super::boolean::Op::Cut,floor)?)
 }
 
-/// `piece` kept within (`inside`) or outside the solid a cylinder, a cone or a sphere bounds: in
-/// common with it, or less it, the cylinder or the cone long enough to reach past the piece either
-/// way (a cone short of its apex).
+/// `piece` kept within (`inside`) or outside the solid a cylinder, a cone, a sphere or an affine
+/// image of one bounds: in common with it, or less it, the cylinder or the cone long enough to reach
+/// past the piece either way (a cone short of its apex).
 pub fn kept_by_solid(piece: &Brep,surface: &Surface,inside: bool,floor: f64) -> Result<Brep,String> {
-    let (lo,hi) = piece.bounds();
+    let op = if inside { super::boolean::Op::Common } else { super::boolean::Op::Cut };
+    Ok(super::boolean::combined(piece,&bounded_by(piece.bounds(),surface)?,op,floor)?)
+}
+
+/// The solid `surface` bounds, reaching past the box `(lo, hi)` either way where it is unbounded:
+/// an affine image's the image of its preimage's, reaching past the box carried back.
+fn bounded_by((lo,hi): super::geom::Box3,surface: &Surface) -> Result<Brep,String> {
     if !lo[0].is_finite() { return Err("a piece of nothing cut off at a curved face".into()) }
+    if let Surface::Affine(m) = surface { return Ok(bounded_by(super::geom::boxed(&m.back,(lo,hi)),&m.of)?.mapped(&m.map)) }
     let middle = scale(add(lo,hi),0.5);
-    let solid = match *surface {
+    Ok(match *surface {
         Surface::Cylinder(f,radius) => {
             // the circle in the plane square to the axis through the piece's middle's foot
             let foot = add(f.o,scale(f.z,dot(sub(middle,f.o),f.z)));
@@ -1137,7 +1168,5 @@ pub fn kept_by_solid(piece: &Brep,surface: &Surface,inside: bool,floor: f64) -> 
             revolve(&section,f.o,f.z,TAU)?
         }
         _ => return Err(format!("a piece kept within a {}",surface.kind())),
-    };
-    let op = if inside { super::boolean::Op::Common } else { super::boolean::Op::Cut };
-    Ok(super::boolean::combined(piece,&solid,op,floor)?)
+    })
 }
