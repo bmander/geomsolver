@@ -343,8 +343,20 @@ through all but its own width meets itself, its end poses' faces and its edges' 
 one another where they meet (X5, X1; `a_bar_turned_through_all_but_its_width_meets_itself`, its
 slices' arcs carried and united round the circle, to 1e-8), and an L-shaped prism's concave edge's
 sheets cross and are trimmed (X3; `an_l_shaped_prism_turned_is_its_blocks_sweeps_united`, its two
-blocks' arcs united, to 1e-7), each agreeing with membership.  A screw and a curved tool are refused
-by what they are (`Unbuilt`).
+blocks' arcs united, to 1e-7), each agreeing with membership.  **A bar under a screw** builds by the
+same arrangement where its edges run along the axis or square to it: its faces at the end poses,
+its edges along the axis and its side faces' contact lines as coaxial cylinders over the heights the
+roll lifts them through, and its level edges' helicoidal sheets as open faces reaching past a box
+square to the axis and as tall as the sweep (`swept::closed::screwed_sheet`). Its inner face at the
+end pose holds a ruling of its inner level edge's sheet and touches it at the edge's foot, where
+the cylinder of the foot's radius touches both: each pair met in closed form (brep.md's screwed
+meetings), so the touch is one vertex of three exact curves.  Held to its volume in helical
+coordinates `(ρ, ψ, ζ = z − k ψ)`, where the screw is a shift in `ψ`: each helix meets the bar in one
+interval, lengthened by the turn `Θ`, so the sweep is `V + Θ ∫ ρ (h + k Δψ(ρ)) dρ`, for a unit cube
+two out `1 + Θ (3 + k)` — built at 1e-6 and 1e-7, to 1e-9, agreeing with membership
+(`a_bar_under_a_screw_closes_into_its_helical_sweep`, slow tier).  An edge or a face leaning to a
+screw's axis (`Unbuilt::Leaning`) and a curved tool (`Unbuilt::Curved`) are refused by what they
+are.
 
 **K2's chart, contacts read at each instant (#721 K2, `brep::swept::instant`):** under a motion no
 constant twist takes, a face of revolution's contact on each ring is still `A cos θ + B sin θ + C = 0`

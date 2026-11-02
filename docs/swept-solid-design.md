@@ -248,6 +248,23 @@ it. It stays as the fast path where #699 D says so.
    (its square root, some 1e-7) parted it from the lines at any tolerance finer, so the meeting came
    out as branches running along the rulings the other candidates hold, never recognised as them.
    The hyperboloid itself was never off: every edge lies on its own to 1e-15.
+   *Built for the screw* (#735's gate): a bar beside the axis under a screw, on the one arrangement,
+   its volume `1 + Θ (3 + k)` to 1e-9 at 1e-6 and at 1e-7 and agreeing with membership. What it
+   took, against the attempt set aside above. Each level edge's sheet is entered as an **open
+   sheet**, not a tube: a level triangle's face on the line screwed past a box square to the axis
+   and as tall as the sweep, its rims and ends outside it, so no cell reaches round it and no inside
+   is asked of it. Every meeting a sheet has with what the screw keeps is in closed form: a coaxial
+   cylinder in helices (the sheet touching the cylinder of its foot's radius along the foot's
+   helix), another sheet of the screw in a helix, a level plane in a ruling, any other plane in its
+   cut `S(−α/β, v)`, a new curve kind. The configuration that defeated the traced meetings is a
+   triple touch: the bar's inner face at the end pose holds a ruling of its inner level edge's
+   sheet and is tangent to the sheet at the edge's foot, where the cylinder of the foot's radius
+   touches both. Traced, the plane's meeting with the sheet drifted some 8e-4 near the touch and
+   the foot's helix was cut at two vertices; with the cut read about the held ruling by
+   differences, all three curves pass through one vertex exactly. Then speed: crossings of two
+   curves on one sheet are roots of their rules' difference in `v`, the two planes' cuts of two
+   sheets on one plane cross on the sheets' helix, and a sheet's foot starts from the ruling level
+   with the point (no grid search): the build went from minutes to some 20 s a tolerance.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.

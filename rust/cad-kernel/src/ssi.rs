@@ -420,7 +420,134 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         }
         (Surface::Plane(pl),Surface::Revolution(rf,c)) | (Surface::Revolution(rf,c),Surface::Plane(pl)) =>
             match plane_quadric(&pl,&rf,&c,tol) { Some(curves) => Ssi::Curves(curves),None => Ssi::Traced },
+        (Surface::Blend(..),_) | (_,Surface::Blend(..)) => match screwed_meeting(a,b,tol) {
+            Some(curves) => Ssi::Curves(curves),
+            None => Ssi::Traced,
+        },
         _ => Ssi::Traced,
+    }
+}
+
+/// **A sheet a line screws into** (`build::screwed`'s `Blend` of a line and itself, carried by a
+/// screw): the blend, a point of the screw's axis and its unit direction, the screw's step a radian
+/// along that direction, and the line's point at `u = 0` and its run to `u = 1`.
+fn screwed_line(s: &Surface,tol: f64) -> Option<(&std::sync::Arc<super::geom::Blend>,V,V,f64,V,V)> {
+    let Surface::Blend(_,b) = s else { return None };
+    let (o,z,pitch,a0,run) = screw_of(b,tol)?;
+    Some((b,o,z,pitch,a0,run))
+}
+
+/// `screwed_line`'s reading of a blend: a point of the screw's axis, its unit direction, its step a
+/// radian, the line's point at `u = 0` and its run to `u = 1`.
+fn screw_of(b: &super::geom::Blend,tol: f64) -> Option<(V,V,f64,V,V)> {
+    let super::geom::Carry::Screw {center,axis,angle,advance} = b.carry else { return None };
+    let (Curve::Line {..},Curve::Line {..}) = (&b.a,&b.b) else { return None };
+    if angle == 0. { return None }
+    let at = |c: &Curve,t: [f64;2],u: f64| c.point(t[0]+u*(t[1]-t[0]));
+    let (a0,a1) = (at(&b.a,b.ta,0.),at(&b.a,b.ta,1.));
+    if distance(a0,at(&b.b,b.tb,0.)) > tol || distance(a1,at(&b.b,b.tb,1.)) > tol { return None }
+    let z = unit(axis);
+    Some((center,z,advance*dot(axis,z)/angle,a0,sub(a1,a0)))
+}
+
+/// **The helix two sheets of one screw meet in, as `u` on the first** (`on`): its line meets the
+/// second's carried to its height, both square to the axis — `Some(None)` where the two lines run
+/// parallel there and apart, so the sheets meet nowhere. `None` where they are not two such sheets,
+/// or are one.
+pub(crate) fn helix_between(on: &super::geom::Blend,by: &super::geom::Blend,tol: f64) -> Option<Option<f64>> {
+    let (o,z,pitch,a0,run) = screw_of(by,tol)?;
+    let (o2,z2,pitch2,b0,run2) = screw_of(on,tol)?;
+    let level = |d: V| dot(d,z).abs() <= 1e-12*norm(d);
+    let off = sub(o2,o);
+    if norm(cross(z,z2)) > 1e-12 || norm(sub(off,scale(z,dot(off,z)))) > tol
+        || (pitch-pitch2).abs() > 1e-12*pitch.abs().max(pitch2.abs()) || !level(run) || !level(run2) { return None }
+    // `by`'s line screwed to `on`'s height, and where the two meet in that level
+    let turn = dot(sub(b0,a0),z)/pitch;
+    let screwed = super::geom::Carry::Screw {center:o,axis:z,angle:turn,advance:pitch*turn};
+    let (p,d) = (screwed.at(a0,1.),screwed.dir(run,1.));
+    let m = cross(d,run2);
+    if norm(m) <= 1e-12*norm(d)*norm(run2) {
+        // parallel: apart, or one line (one sheet)
+        let gap = sub(b0,p);
+        return (norm(sub(gap,scale(d,dot(gap,d)/dot(d,d)))) > tol).then_some(None)
+    }
+    // b0 + t run2 on the line through p along d: (b0 − p + t run2) × d = 0
+    Some(Some(dot(cross(sub(b0,p),d),m)/dot(m,m)))
+}
+
+/// **Where a sheet a line screws into meets a surface it shares the screw's axis with**, in closed
+/// form: the screw keeps the cylinder about its axis and the other sheet of one screw, so they meet
+/// where the line does, carried — helices, each the sheet's rail at the line's point there
+/// (`Curve::Iso`). A coaxial cylinder of radius `r` meets the line where `|ρ(u)| = r`, two points, or
+/// one where the line passes the axis at `r` within `tol` (the sheet tangent to the cylinder along
+/// that point's helix, judged by the gap); another sheet of the same pitch, at the point where its
+/// level line meets this one's line carried to its height (both square to the axis). A plane square
+/// to the axis meets a level line's sheet in one ruling, the line carried to its height, where that
+/// lies on the sheet. Anything else: `None`, traced.
+fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
+    let (s,other) = if matches!(a,Surface::Blend(..)) { (a,b) } else { (b,a) };
+    let (blend,o,z,_,a0,run) = screwed_line(s,tol)?;
+    let perp = |x: V| sub(x,scale(z,dot(x,z)));
+    let on_axis = |p: V| norm(perp(sub(p,o))) <= tol;
+    let level = |d: V| dot(d,z).abs() <= 1e-12*norm(d);
+    let iso = |u: f64| Curve::Iso(blend.clone(),u);
+    match other {
+        Surface::Cylinder(c,r) if norm(cross(c.z,z)) <= 1e-12 && on_axis(c.o) => {
+            let (w0,w1) = (perp(sub(a0,o)),perp(run));
+            let qa = dot(w1,w1);
+            if qa <= 1e-24*dot(run,run) { return None }
+            // the line's point nearest the axis, and how far it passes it
+            let u = -dot(w0,w1)/qa;
+            let foot = norm(add(w0,scale(w1,u)));
+            if (foot-r).abs() <= tol { return Some(vec![iso(u)]) }
+            if foot > *r { return Some(vec![]) }
+            let h = ((r-foot)*(r+foot)).sqrt()/qa.sqrt();
+            Some(vec![iso(u-h),iso(u+h)])
+        }
+        Surface::Plane(f) if norm(cross(f.z,z)) <= 1e-12 && level(run) => {
+            // the ruling at the plane's height: `v` where the line climbs to it
+            let Surface::Blend(_,_) = s else { return None };
+            let super::geom::Carry::Screw {advance,axis,..} = blend.carry else { return None };
+            let climb = advance*dot(axis,z);
+            if climb == 0. { return None }
+            let v = dot(sub(f.o,a0),z)/climb;
+            let slack = tol/climb.abs();
+            if !(-slack..=1.+slack).contains(&v) { return Some(vec![]) }
+            let p = blend.carry.at(a0,v);
+            Some(vec![Curve::Line {p,d:unit(blend.carry.dir(run,v))}])
+        }
+        Surface::Plane(f) => {
+            // the rulings running parallel to the plane: `β(v) = n·R(θ v) Δ` none, `P cos θ + Q sin θ
+            // + R₀ = 0`; held where the ruling stands within `tol` of the plane
+            let super::geom::Carry::Screw {angle,..} = blend.carry else { return None };
+            let n = f.z;
+            let (p,q,r0) = (dot(n,perp(run)),dot(n,cross(z,run)),dot(n,z)*dot(z,run));
+            let amplitude = p.hypot(q);
+            let cut = |held: Vec<f64>| super::geom::SheetCut {blend:blend.clone(),n,h:dot(n,f.o),held};
+            let probe = cut(Vec::new());
+            let mut held = Vec::new();
+            if amplitude > 1e-12*norm(run) && r0.abs() <= amplitude {
+                let (phi,w) = (q.atan2(p),(-r0/amplitude).clamp(-1.,1.).acos());
+                let reach = |t: f64| t/angle;
+                for base in [phi+w,phi-w] {
+                    // every turn of the root the sheet's stretch holds, a margin past it
+                    let first = ((angle.min(0.)-1e-2*angle.abs()-base)/std::f64::consts::TAU).floor() as i64;
+                    let last = ((angle.max(0.)+1e-2*angle.abs()-base)/std::f64::consts::TAU).ceil() as i64;
+                    for m in first..=last {
+                        let v = reach(base+std::f64::consts::TAU*m as f64);
+                        if !(-1e-2..=1.+1e-2).contains(&v) { continue }
+                        let (a,_,_,_) = probe.coefficients(v);
+                        if a.abs() <= tol && !held.iter().any(|&h: &f64| (h-v).abs() <= 1e-12) { held.push(v) }
+                    }
+                }
+            }
+            held.sort_by(f64::total_cmp);
+            let mut out: Vec<Curve> = held.iter().map(|&v| Curve::Line {p:blend.carry.at(a0,v),d:unit(blend.carry.dir(run,v))}).collect();
+            out.push(Curve::SheetCut(std::sync::Arc::new(cut(held))));
+            Some(out)
+        }
+        Surface::Blend(_,ob) => Some(helix_between(ob,blend,tol)?.map(|u| Curve::Iso(ob.clone(),u)).into_iter().collect()),
+        _ => None,
     }
 }
 

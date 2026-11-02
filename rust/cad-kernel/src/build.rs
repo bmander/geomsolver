@@ -230,7 +230,8 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                 Curve::Circle(f,r) => (Surface::Cylinder(f,r),!s.forward(),s.t[0],s.t[1]),
                 // C(u) + v n: the step's tangent turned clockwise about n is its normal
                 Curve::BSpline(_) => (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
-                Curve::Ellipse(..) | Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) =>
+                Curve::Ellipse(..) | Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..)
+                | Curve::SheetCut(..) =>
                     unreachable!("a profile has only lines, circles and splines"),
             };
             // the side's parameters along the walk step, for the step's edge parameter
@@ -568,6 +569,17 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
         else if angle == 0. { ruled(&disc,&disc.moved(&end),Carry::Line {delta:scale(a,advance)})? }
         else { ruled(&disc,&disc.moved(&end),Carry::Screw {center:origin,axis:a,angle,advance})? };
     ended(tube,half_ball(c,scale(t,-1.),w,r)?,half_ball(c,t,w,r)?.moved(&end),name)
+}
+
+/// **The solid `p` sweeps screwed about the line through `origin` along `axis`**: turned by `angle`
+/// about it and stepped `advance` along it, both together (a screw, neither none). Its faces are the
+/// section where it starts and where it ends and each edge's sheet between them, its rails the
+/// screw's iso-curves (`ruled`'s `Blend`s), exact. The caller's to know it meets itself nowhere: a
+/// section square to the axis never does, a helix crossing each level once.
+pub fn screwed(p: &Profile,origin: V,axis: V,angle: f64,advance: f64) -> Result<Brep,String> {
+    if angle == 0. || advance == 0. { return Err("a screw turns and steps both".into()) }
+    let a = unit(axis);
+    ruled(p,&p.moved(&screw(origin,a,angle,advance)),Carry::Screw {center:origin,axis:a,angle,advance})
 }
 
 /// **The tube a ball sweeps along a path no closed form carries** (#684 D): `tube`, the solid a face

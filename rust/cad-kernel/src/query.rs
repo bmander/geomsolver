@@ -101,6 +101,78 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
     }).collect())
 }
 
+/// **Where two curves on sheets lines screw into cross**, in closed form (`ssi`'s meetings of such
+/// sheets): two curves on one sheet, each a rule `u(v)` over the sheet's `v` — a plane's cut its
+/// `−α/β` (`SheetCut`), a helix (`Iso`) its own `u` — cross where their rules agree; two planes'
+/// cuts of two sheets of one screw, on one plane, where the plane meets the helix the two sheets
+/// share, the first's rule against that helix's `u`. Each a root of the rules' difference over the
+/// stretch both reach (the first's alone for the second), bracketed at samples and settled by
+/// bisection; a sign change across a rule running off to infinity is no root, and is told by the
+/// two curves' points standing apart there. `None` where the two are none of these.
+fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
+    use super::geom::SheetCut;
+    let same = |x: &super::geom::Blend,y: &super::geom::Blend| std::ptr::eq(x,y) || x == y;
+    // the cut whose rule is read, the other curve, and their stretches
+    let (cut,other,cut_is_a) = match (a,b) {
+        (Curve::SheetCut(x),o) => (x,o,true),
+        (o,Curve::SheetCut(x)) => (x,o,false),
+        _ => return None,
+    };
+    let (cut_t,other_t) = if cut_is_a { (ta,tb) } else { (tb,ta) };
+    // the other's rule — a cut's on the same sheet, or a helix's `u` on this one — and whether the
+    // two parameters are one (both the sheet's `v`)
+    let (second,one): (Result<&SheetCut,f64>,bool) = match other {
+        Curve::SheetCut(y) if same(&y.blend,&cut.blend) => (Ok(&**y),true),
+        Curve::Iso(y,u) if same(y,&cut.blend) => (Err(*u),true),
+        Curve::Iso(_,_) => {
+            // a helix of another sheet lying on this one: its `u` here, the same at both its ends
+            let ends = other_t.map(|t| cut.rule_at(other.point(t)));
+            if (ends[0]-ends[1]).abs()*cut.run() > tol { return None }
+            (Err(0.5*(ends[0]+ends[1])),false)
+        }
+        Curve::SheetCut(y) => {
+            // one plane, two sheets of one screw: the helix they share, as `u` on the first
+            if crate::util::space::norm(crate::util::space::cross(cut.n,y.n)) > 1e-12 || (cut.h-dot(cut.n,y.n)*y.h).abs() > tol { return None }
+            match super::ssi::helix_between(&cut.blend,&y.blend,tol)? {
+                Some(u) => (Err(u),false),
+                // the two sheets meet nowhere, so neither do their cuts
+                None => return Some(Vec::new()),
+            }
+        }
+        _ => return None,
+    };
+    let g = |v: f64| cut.u(v).0-match second { Ok(c) => c.u(v).0,Err(u) => u };
+    let [lo,hi] = if one { [cut_t[0].max(other_t[0]),cut_t[1].min(other_t[1])] } else { cut_t };
+    if !(hi > lo) { return Some(Vec::new()) }
+    const N: usize = 64;
+    let vs: Vec<f64> = (0..=N).map(|k| lo+(hi-lo)*k as f64/N as f64).collect();
+    let gs: Vec<f64> = vs.iter().map(|&v| g(v)).collect();
+    let mut roots: Vec<f64> = Vec::new();
+    for k in 0..N {
+        let (mut x,mut y,gx) = (vs[k],vs[k+1],gs[k]);
+        if gx == 0. { roots.push(x); continue }
+        if !(gx*gs[k+1] < 0.) { continue }
+        for _ in 0..100 {
+            let m = 0.5*(x+y);
+            if m <= x || m >= y { break }
+            if (g(m) < 0.) == (gx < 0.) { x = m } else { y = m }
+        }
+        roots.push(0.5*(x+y));
+    }
+    if gs[N] == 0. { roots.push(hi) }
+    let mut out: Vec<(f64,V)> = Vec::new();
+    for v in roots {
+        // on the other within its stretch, and not a rule's pole
+        let p = cut.point(v);
+        let t = if one { v } else { other.inverse(p) };
+        let slack = 1e-12*(1.+t.abs());
+        if t < other_t[0]-slack || t > other_t[1]+slack || distance(other.point(t),p) > 8.*tol { continue }
+        if out.iter().any(|x| distance(x.1,p) <= tol) { continue }
+        out.push((if cut_is_a { v } else { t },p));
+    }
+    Some(out)
+}
+
 /// Where two curves lying in `surface` cross, to `tol`: `curve_curve`'s closed forms where they
 /// have one, else — one of them a line, a circle or an ellipse — the other's roots on a plane
 /// carrying it (a conic's own plane; a line's plane through it square to the surface there), kept
@@ -109,6 +181,7 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
 pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
     use crate::util::space::cross;
     if let Some(found) = curve_curve(a,ta,b,tb,tol) { return Some(found) }
+    if let Some(found) = screwed_crossings(a,ta,b,tb,tol) { return Some(found) }
     // the roots of `other` on the plane carrying `line` (a line or a circle), on it
     let carried = |carrier: &Curve,span: [f64;2],other: &Curve,over: [f64;2]| -> Option<Vec<(f64,V)>> {
         let plane = match *carrier {

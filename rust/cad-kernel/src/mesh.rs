@@ -94,6 +94,10 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
             super::geom::Carry::Screw {angle,..} => ((angle*(z-a)).abs()/std::f64::consts::FRAC_PI_2).ceil().min(1e4).max(1.) as usize,
             super::geom::Carry::Line {..} => 1,
         },
+        super::geom::Curve::SheetCut(s) => match s.blend.carry {
+            super::geom::Carry::Screw {angle,..} => ((angle*(z-a)).abs()/std::f64::consts::FRAC_PI_2).ceil().min(1e4).max(1.) as usize,
+            super::geom::Carry::Line {..} => 1,
+        },
         super::geom::Curve::BSpline(_) => 1,
         _ => if edge.closed() { 3 } else { 1 },
     };
