@@ -34,7 +34,7 @@ fn lift(t: f64) -> f64 {
 /// `R` that centre drawn in the follower, and `cut` the ball swept over `t` as the cam sees it:
 /// what the cam must not hold.  `extra` adds statements.
 fn cam(extra: &str) -> String {
-    format!("unit mm\nuse std\nuse std.motion (slides, spins)\nparam t: Angle over (0deg, 360deg)\n\
+    format!("unit mm\nuse std\nuse std.solids\nuse std.motion (slides, spins)\nparam t: Angle over (0deg, 360deg)\n\
         in std.front {{\n\
         \x20 construction stem := line(std.origin, hint((0, 1)))\n\
         \x20 fix((0, 1)) stem.p2\n\
@@ -48,7 +48,7 @@ fn cam(extra: &str) -> String {
         \x20 meridian := arc(center: r0, start: bottom, end: top)\n\
         \x20 radius(1mm) meridian\n\
         }}\n\
-        ball := solid(face(meridian, diameter), about: diameter)\n\
+        ball := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))\n\
         cam := frame\n\
         cam spins(1) std.origin\n\
         fix(value == t) cam\n\
@@ -56,7 +56,7 @@ fn cam(extra: &str) -> String {
         follower slides(360mm) stem\n\
         fix(value == {RISE}deg * (1 - cos(t))) follower\n\
         R := r0 in follower\n\
-        cut := sweep(ball over t, under: follower, seen_from: cam)\n{extra}",
+        cut := solid({{ p | p inside(under: follower, seen_from: cam, over t) ball }})\n{extra}",
         b = BASE - 1.0, t = BASE + 1.0)
 }
 
@@ -218,8 +218,8 @@ fn a_roll_through_a_body_under_a_drive_is_conservative() {
     let blank = format!("in std.front {{\n  k0 := point\n  fix((0, {BASE})) k0\n  \
         k1 := point\n  k2 := point\n  fix((0, {a})) k1\n  fix((0, {b})) k2\n  \
         kd := line(k1, k2)\n  km := arc(center: k0, start: k1, end: k2)\n  radius(3mm) km\n}}\n\
-        blank := solid(face(km, kd), about: kd)\n\
-        rolled := sweep(ball, through: blank, under: follower, seen_from: cam)\n",
+        blank := solid(std.solids.Revolution(face(km, kd), about: kd))\n\
+        rolled := solid({{ p | p inside(under: follower, seen_from: cam) ball }})\n",
         a = BASE - 3.0, b = BASE + 3.0);
     let e = solved(&cam(&blank));
     let i = e.map.ent_named("rolled").unwrap().i();
@@ -253,7 +253,7 @@ fn a_drive_refuses_what_it_cannot_mean() {
     // the roll is an angle: a drive over a number of another kind is followed, not swept
     let s = said("param s: Scalar over (0, 1)\nlift := frame\n\
         lift slides(360mm) stem\nfix(value == 90deg * s) lift\n\
-        q := sweep(ball over t, under: lift)\n");
+        q := solid({ p | p inside(under: lift, over t) ball })\n");
     assert!(s.len() == 1 && s[0].starts_with("E080") && s[0].contains("a Scalar"), "{s:?}");
     // nor does a relation held to a meshing under the drive, which reads its mesh's turns at a
     // constant ratio (an envelope in space generated under one is held, #398 G)
@@ -269,7 +269,7 @@ fn a_drive_refuses_what_it_cannot_mean() {
 /// function the interval walker carries — and failing closed for one it does not.
 #[test]
 fn a_laws_jet_and_enclosure_agree_with_its_value() {
-    let e = solved("unit mm\nparam t: Angle over (-90deg, 400deg)\nuse std\nuse std.motion (slides, spins)\nin std.front {\n  \
+    let e = solved("unit mm\nparam t: Angle over (-90deg, 400deg)\nuse std\nuse std.solids\nuse std.motion (slides, spins)\nin std.front {\n  \
         o := point\n  fix((0, 0)) o\n}\n");
     let laws = ["5deg * (1 - cos(t))", "t + 20deg * sin(2 * t) - 3deg", "(t / 90deg) ^ 3 * 10deg",
                 "3 * sqrt(t * t + 1deg * 1deg)", "abs(t - 100deg) / 2",
@@ -304,7 +304,7 @@ fn a_laws_jet_and_enclosure_agree_with_its_value() {
     let law = Law::read(&e.sketch, "tan(t / 8)", "t").unwrap();
     assert!(law.enclose(I::new(0.0, 0.1).unwrap()).is_err());
     // a drive over the roll runs over an angle
-    let scalar = solved("unit mm\nparam s: Scalar over (0, 1)\nuse std\nuse std.motion (slides, spins)\nin std.front {\n  \
+    let scalar = solved("unit mm\nparam s: Scalar over (0, 1)\nuse std\nuse std.solids\nuse std.motion (slides, spins)\nin std.front {\n  \
         o := point\n  fix((0, 0)) o\n}\n");
     assert!(Law::read(&scalar.sketch, "90deg * s", "s").unwrap_err().contains("an angle"));
 }
@@ -461,7 +461,7 @@ fn bulb(extra: &str) -> String {
     cam(&format!("in std.front {{\n  lo := point hint((0, 17))\n  hi := point hint((0, 23))\n  \
         lo coincident stem\n  hi coincident stem\n  \
         sleeve := arc(center: r0, start: lo, end: hi)\n  axle := line(lo, hi)\n}}\n\
-        bulb := solid(face(sleeve, axle), about: axle)\n\
+        bulb := solid(std.solids.Revolution(face(sleeve, axle), about: axle))\n\
         skin := surface(bulb, sleeve)\n\
         tube := envelope(skin over t, under: follower, seen_from: cam)\n\
         P := point\nfix(({}, {}, {})) P\nP coincident tube\n{extra}", p[0], p[1], p[2]))

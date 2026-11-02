@@ -6,6 +6,7 @@
 // cubed: `30cm^3` would be the cube of 30 centimetres.
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 
 a := 100mm
@@ -24,6 +25,6 @@ in std.front {
   wall := line(b, o)
   web := face(floor, slope, wall)
 }
-rib := solid(web, from: 0mm, to: t) of steel
+rib := solid(std.solids.Prism(web, from: 0mm, to: t)) of steel
 volume(30 * 1cm^3) rib
 claim mass(<= 250g) rib

@@ -293,8 +293,8 @@ fn a_family_is_written_over_an_instance_in_place() {
     let (_, said) = read(&REDUCER.replace("param s: Scalar over (0, 1)",
                                           "param s: Scalar over (1, 0)"));
     assert!(said.iter().any(|m| m.contains("increasing interval")), "{said:?}");
-    let written = "body := sweep(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
-                   .sec.profile over s)";
+    let written = "body := solid({ p | p coincident(over s) Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
+                   .sec.profile })";
     assert!(REDUCER.contains(written));
     let inside = written.replace("std.z", "up");
     let wrapped = REDUCER.replace(written, "part := Part(guide, std.z)")
@@ -310,10 +310,10 @@ fn a_family_is_written_over_an_instance_in_place() {
 /// station written in place sweeps.
 #[test]
 fn a_station_drawn_in_the_document_sweeps_as_its_parameter_runs() {
-    let written = "body := sweep(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
-                   .sec.profile over s)";
+    let written = "body := solid({ p | p coincident(over s) Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
+                   .sec.profile })";
     let drawn = REDUCER.replace(written, "st := Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, \
-                                          wall: 2mm, s: s)\nbody := sweep(st.sec.profile over s)");
+                                          wall: 2mm, s: s)\nbody := solid({ p | p coincident(over s) st.sec.profile })");
     let e = family(&drawn);
     near(volume(&e, "body").unwrap(), 5120.0, 1e-9, "the reducer drawn in the document");
     // drawn where the parameter stands: its start, the inlet's 24 mm square
@@ -326,6 +326,7 @@ fn a_station_drawn_in_the_document_sweeps_as_its_parameter_runs() {
 const CONE: &str = "\
 unit mm
 use std
+use std.solids
 use std.shapes
 use std.stations
 
@@ -350,7 +351,7 @@ in std.top {
   radius(10mm) ring
 }
 param s: Scalar over (0, 1)
-cone := sweep(Disc(guide, std.z, ring).f over s)
+cone := solid({ p | p coincident(over s) Disc(guide, std.z, ring).f })
 ";
 
 /// **A station reads the geometry it was given** as a traced body does (finding 1): the disc's
@@ -405,9 +406,9 @@ fn walls_lie_on_the_surfaces_their_numbers_say() {
 fn a_family_cuts_like_any_solid() {
     // the duct alone: the auger, written last, left off
     let auger = TWISTED.find("// Three and a half turns").expect("the auger");
-    let src = TWISTED[..auger].replacen("use std\n", "use std\nuse std.shapes\n", 1) + "in std.top {\n  m := point\n  fix((0mm, 20mm)) m\n}\n\
+    let src = TWISTED[..auger].replacen("use std\nuse std.solids\n", "use std\nuse std.solids\nuse std.shapes\n", 1) + "in std.top {\n  m := point\n  fix((0mm, 20mm)) m\n}\n\
         r := std.shapes.CenteredRectangle(m, w: 60mm, h: 20mm) in std.top\nslab := face(r.loop)\n\
-        block := solid(slab, from: -30mm, to: 30mm)\nduct cut block\n";
+        block := solid(std.solids.Prism(slab, from: -30mm, to: 30mm))\nduct cut block\n";
     let e = family(&src);
     near(volume(&e, "block").unwrap(), 64000.0, 1e-9, "the slab less the duct");
     let k = kinds(&e, "block");

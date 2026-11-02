@@ -8,6 +8,7 @@
 // round the boss's top rim too: an edge among the boss's own faces, convex, so cut.
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 3mm   // the fillet's radius
@@ -28,8 +29,8 @@ in std.front {
   rim := circle(center: c) hint(r: 8)
   radius(8mm) rim
 }
-plate := solid(outline, depth: 10mm)
-boss := solid(face(rim), from: 0mm, to: 20mm)
+plate := solid(std.solids.Prism(outline, from: -10mm, to: 0))
+boss := solid(std.solids.Prism(face(rim), from: 0mm, to: 20mm))
 pad := solid(plate)
 boss union pad
 

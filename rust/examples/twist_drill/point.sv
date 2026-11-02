@@ -4,6 +4,7 @@
 // `tilt` from the drill's (towards y, behind the lip as the drill turns), and its half-angle
 // `cone`. It reaches `reach` down the drill's axis from the corner, past everything it keeps.
 use std
+use std.solids
 use std.place (coords, on_u)
 
 component PointCone(side: plane, top: Length, cone: Angle, tilt: Angle, height: Length,
@@ -31,7 +32,7 @@ component PointCone(side: plane, top: Length, cone: Angle, tilt: Angle, height: 
     private base := line(foot, rim)
     flank := line(rim, apex)
   }
-  body := solid(face(ax, base, flank), about: ax)
+  body := solid(std.solids.Revolution(face(ax, base, flank), about: ax))
 }
 
 preview {

@@ -10,6 +10,7 @@
 // the floor.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 2.5mm
@@ -52,9 +53,9 @@ in std.top {
   fix((20, 25)) o
   pin := radius(3mm) circle(center: o)
 }
-enclosure := solid(outline, from: 0mm, to: 30mm)
+enclosure := solid(std.solids.Prism(outline, from: 0mm, to: 30mm))
 enclosure.near shell(t: wall) enclosure
 
 case := solid(enclosure)
-post := solid(face(pin), from: 1mm, to: 20mm)
+post := solid(std.solids.Prism(face(pin), from: 1mm, to: 20mm))
 post union case

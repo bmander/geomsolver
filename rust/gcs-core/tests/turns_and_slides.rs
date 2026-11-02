@@ -86,6 +86,7 @@ fn admitted_as(source: &str) -> gcs_core::motion::Screw {
 const ROD: &str = "\
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (slides)
 in std.front {
@@ -103,7 +104,7 @@ in std.front {
   private rod_end := line(r0, r1)
   private rod_wall := line(r1, r2)
   private rod_top := line(r2, r3)
-  rod := solid(face(rod_axis, rod_end, rod_wall, rod_top), about: rod_axis)
+  rod := solid(std.solids.Revolution(face(rod_axis, rod_end, rod_wall, rod_top), about: rod_axis))
 }
 ";
 
@@ -132,7 +133,7 @@ fn slid(tilt: f64,reach: f64,wheel: Wheel) -> String {
   private tube := circle(center: tc) hint(r: 2)
   radius(2mm) tube
 }}
-construction wheel := solid(face(tube), about: wheel_axis)
+construction wheel := solid(std.solids.Revolution(face(tube), about: wheel_axis))
 ",axis=reach+6.),
         Wheel::Cylinder => format!("\
   private c0 := point
@@ -148,7 +149,7 @@ construction wheel := solid(face(tube), about: wheel_axis)
   private ct := line(c2, c3)
   private ca := line(c3, c0)
 }}
-construction wheel := solid(face(cb, cw, ct, ca), about: ca)
+construction wheel := solid(std.solids.Revolution(face(cb, cw, ct, ca), about: ca))
 ",rim=reach+2.),
         Wheel::Vee => format!("\
   private a0 := point
@@ -166,7 +167,7 @@ construction wheel := solid(face(cb, cw, ct, ca), about: ca)
   private bore := line(v1, v2)
   private upper := line(v2, v0)
 }}
-construction wheel := solid(face(lower, bore, upper), about: wheel_axis)
+construction wheel := solid(std.solids.Revolution(face(lower, bore, upper), about: wheel_axis))
 ",axis=reach+6.,base=reach+2.5,half=2.5*(PI/6.).tan()),
         Wheel::Bit => format!("\
   private v0 := point
@@ -179,7 +180,7 @@ construction wheel := solid(face(lower, bore, upper), about: wheel_axis)
   private back := line(v1, v2)
   private bit_axis := line(v2, v0)
 }}
-construction wheel := solid(face(flank, back, bit_axis), about: bit_axis)
+construction wheel := solid(std.solids.Revolution(face(flank, back, bit_axis), about: bit_axis))
 ",base=reach+2.5,half=2.5*(PI/6.).tan()),
     };
     format!("{ROD}\
@@ -192,7 +193,7 @@ fix(origin == (0, 0, -9)) bench
 in bench {{
 {drawn}feed := frame
 feed slides(40mm) ax
-construction groove := sweep(wheel over t in (0deg, 360deg), under: feed)
+construction groove := solid({{ p | p inside(under: feed, over t in (0deg, 360deg)) wheel }})
 part := solid(rod)
 groove cut part
 ")
@@ -349,12 +350,13 @@ in std.top {{
   private wb := line(w1, w2)
   private wc := line(w2, w0)
 }}
-construction wedge := solid(face(wa, wb, wc), from: -3mm, to: 3mm)
+construction wedge := solid(std.solids.Prism(face(wa, wb, wc), from: -3mm, to: 3mm))
 wedge common ring
 ",wy=20.*60f64.to_radians().sin()) };
     format!("\
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (turns)
 private tx := axis
@@ -390,11 +392,11 @@ in std.front {{
   private outer := line(q1, q2)
   private top := line(q2, q3)
 }}
-ring := solid(face(inner, bottom, outer, top), about: ax)
-{wedge}construction wheel := solid(face(tube), about: taxis)
+ring := solid(std.solids.Revolution(face(inner, bottom, outer, top), about: ax))
+{wedge}construction wheel := solid(std.solids.Revolution(face(tube), about: taxis))
 swing := frame
 swing turns(1) ax
-construction groove := sweep(wheel over t in ({from}deg, {to}deg), under: swing)
+construction groove := solid({{ p | p inside(under: swing, over t in ({from}deg, {to}deg)) wheel }})
 part := solid(ring)
 groove cut part
 ",o0=o[0],o1=o[1],o2=o[2],a0=a[0],a1=a[1],a2=a[2])

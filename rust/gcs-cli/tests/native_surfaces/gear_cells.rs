@@ -140,6 +140,7 @@ fn generic_sheet_reproduces_the_gear_tooth_space() { single_space("gear",117.137
 /// closed-form torus check of the arrangement itself lives in `cells.rs`.
 const BEAD: &str = "\
 use std
+use std.solids
 
 in std.front {
 private bc := point
@@ -154,7 +155,7 @@ length(2mm) bd
 private bm := arc(center: bc, start: bb, end: bt)
 radius(1mm) bm
 }
-construction bead := solid(face(bm, bd), about: bd)
+construction bead := solid(std.solids.Revolution(face(bm, bd), about: bd))
 part := solid(bead)
 removal.body cut part
 ";

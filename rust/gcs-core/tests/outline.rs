@@ -11,7 +11,7 @@ use std::f64::consts::FRAC_PI_2;
 use crate::common::gestures::build;
 
 /// A component instance, a ring, an object made of two features and `use std`.
-const DOC: &str = "unit mm\nuse std\n\
+const DOC: &str = "unit mm\nuse std\nuse std.solids\n\
 component Pin(c: point) {\n  q := point hint((3, 0))\n  c distance(3) q\n  arm := line(c, q)\n  horizontal arm\n}\n\
 in std.front {\n  hub := point\n  fix((0, 0)) hub\n\
   ring 3 about hub {\n    tip := point hint((10, 1))\n    hub distance(10) tip\n\
@@ -19,7 +19,7 @@ in std.front {\n  hub := point\n  fix((0, 0)) hub\n\
   pin := Pin(hub)\n  o := point hint((40, 0))\n  fix((40, 0)) o\n\
   rim := circle(center: o) hint(r: 20)\n  h := circle(center: o) hint(r: 5)\n  line(o, hub)\n\
   seg := line(hint((0, -30)), hint((10, -30)))\n}\n\
-stock := solid(face(rim), depth: 8)\nbore := solid(face(h), depth: 8)\nbore cut stock\n";
+stock := solid(std.solids.Prism(face(rim), from: -8, to: 0))\nbore := solid(std.solids.Prism(face(h), from: -8, to: 0))\nbore cut stock\n";
 
 fn labels(rows: &[Node]) -> Vec<&str> {
     rows.iter().map(|n| n.label.as_str()).collect()
@@ -70,7 +70,7 @@ fn the_outline_is_the_documents_structure() {
     assert_eq!(labels(&stock.children), ["face in stock", "solid in stock", "bore"]);
     assert!(!stock.children[0].operand && stock.children[1].operand && stock.children[2].operand);
     assert_eq!(stock.children[2].solid, e.map.ent_named("bore").map(|r| r.i()));
-    assert_eq!(text(&stock.children[2]), Some("bore := solid(face(h), depth: 8)"));
+    assert_eq!(text(&stock.children[2]), Some("bore := solid(std.solids.Prism(face(h), from: -8, to: 0))"));
     assert!(rows.iter().all(|n| n.path != "bore"), "the cutter is not listed twice");
 
     // std's datums: one group, last, with no span in the document
@@ -206,7 +206,7 @@ fn an_instance_that_makes_an_object_is_a_part() {
         fix((x + 20mm, 10)) c\n  fix((x, 10)) d\n\
         ab := line(a, b)\n  bc := line(b, c)\n  cd := line(c, d)\n  da := line(d, a)\n\
         sec := face(ab, bc, cd, da)\n\
-        body := solid(sec, depth: 5)\n}}\n\
+        body := solid(std.solids.Prism(sec, from: -5, to: 0))\n}}\n\
         in std.top {{\n  left := Block(x: 100mm)\n  right := Block(x: 140mm)\n}}\n");
     let e = build(&src);
     let rows = outline(&e);

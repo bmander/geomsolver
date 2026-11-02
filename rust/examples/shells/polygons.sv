@@ -7,6 +7,7 @@
 // less the scaled triangle over 16.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 use std.shapes
 
@@ -31,8 +32,8 @@ in std.front {
   (ws := line(w0, w1)) -> (wh := line(w1, w2)) -> (wv := line(w2, w0)) -> close
   triangle := face(ws, wh, wv)
 }
-box := solid(hex, from: 0mm, to: 15mm)
-wedge := solid(triangle, depth: 20mm)
+box := solid(std.solids.Prism(hex, from: 0mm, to: 15mm))
+wedge := solid(std.solids.Prism(triangle, from: -20mm, to: 0))
 
 box.near shell(t: wall) box
 shell(t: wall) wedge

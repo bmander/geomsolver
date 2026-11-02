@@ -401,14 +401,14 @@ fn the_end_relief_lowered_is_the_region_read_point_by_point() {
 /// radius either side of an arc is on that side.
 #[test]
 fn the_crown_tip_rounding_is_the_words() {
-    let text = include_str!("fixtures/tip_rounding.sv").replacen("use std\n", "use std\nuse std.rounds (round)\n", 1);
+    let text = include_str!("fixtures/tip_rounding.sv").replacen("use std\nuse std.solids\n", "use std\nuse std.solids\nuse std.rounds (round)\n", 1);
     let close = text.rfind('}').unwrap();
     let more = "  in std.front {\n\
                     c1 := point hint((6.5, 2.5))\n    c2 := point hint((-0.5, 2.5))\n\
                     c1 coincident outer\n    c1 coincident tip\n    c2 coincident tip\n    c2 coincident inner\n\
                     (sb := line(bi, bo)) -> (so := line(bo, c1)) -> (st := line(c1, c2)) -> (si := line(c2, bi)) -> close\n\
                     sharp := face(sb, so, st, si)\n  }\n\
-                  tooth := solid(sharp, from: -1mm, to: 1mm)\n\
+                  tooth := solid(std.solids.Prism(sharp, from: -1mm, to: 1mm))\n\
                   tooth.st round(r: 0.6mm) tooth.so\n\
                   tooth.st round(r: 0.6mm) tooth.si\n";
     let text = format!("{}{more}{}", &text[..close], &text[close..]);

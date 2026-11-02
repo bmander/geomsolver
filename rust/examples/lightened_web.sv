@@ -6,6 +6,7 @@
 // stress under a load at its end, and claims how far the end sinks.
 unit mm
 use std
+use std.solids
 
 L := 160mm
 h := 60mm
@@ -34,7 +35,7 @@ in std.front {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-web := solid(plate, from: -t / 2, to: t / 2) of alloy
+web := solid(std.solids.Prism(plate, from: -t / 2, to: t / 2)) of alloy
 mass(110g) web
 
 scenario hung {

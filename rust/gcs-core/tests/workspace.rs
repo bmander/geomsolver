@@ -367,7 +367,7 @@ flank := envelope(bore over t in (10deg, 170deg), under: counter, seen_from: spi
 
 /// A 20 × 10 block on `std.top`, 5 deep below it, and a second one under it — seen from above,
 /// the upper hides the lower — and a third with a bore cut through it, at x = 40.
-const BLOCKS: &str = "unit mm\nuse std\nuse std.motion (spins)\n\
+const BLOCKS: &str = "unit mm\nuse std\nuse std.solids\nuse std.motion (spins)\n\
     component Slab(x: Length) {\n\
       a := point hint((x, 0))\nb := point hint((x + 20mm, 0))\n\
       c := point hint((x + 20mm, 10))\nd := point hint((x, 10))\n\
@@ -377,10 +377,10 @@ const BLOCKS: &str = "unit mm\nuse std\nuse std.motion (spins)\n\
     }\n\
     in std.top {\nupper := Slab(x: 0mm)\nlower := Slab(x: 0mm)\nholed := Slab(x: 40mm)\n\
     o := point hint((50, 5))\nhole := circle(center: o) hint(r: 3)\n}\n\
-    top := solid(upper.sec, depth: 5)\n\
-    bottom := solid(lower.sec, from: -30, to: -20)\n\
-    stock := solid(holed.sec, depth: 5)\nbody := solid(stock)\n\
-    bore := solid(face(hole), through: body)\nbore cut body\n";
+    top := solid(std.solids.Prism(upper.sec, from: -5, to: 0))\n\
+    bottom := solid(std.solids.Prism(lower.sec, from: -30, to: -20))\n\
+    stock := solid(std.solids.Prism(holed.sec, from: -5, to: 0))\nbody := solid(stock)\n\
+    bore := solid(std.solids.Through(face(hole)))\nbore cut body\n";
 
 /// **A pick passes by what a section took away** (`Sketch::cut`): the top block cut halfway down
 /// its depth, the half above taken away, is met by a ray down onto the cut at the face the cut
@@ -571,12 +571,12 @@ fn a_plane_is_picked_by_its_panes_frame() {
 
 /// A line and a circle on the front, a fixed point and a free one, a dimension, an axis standing
 /// up beside them and a disc made of the circle (#678).
-const KINDS: &str = "unit mm\nuse std\nuse std.motion (spins)\nin std.front {\n\
+const KINDS: &str = "unit mm\nuse std\nuse std.solids\nuse std.motion (spins)\nin std.front {\n\
     a := point hint((0, 0))\nfix((0, 0)) a\nb := point hint((40, 0))\nab := line(a, b)\n\
     horizontal ab\na distance(40) b\n\
     o := point hint((20, 30))\nfix((20, 30)) o\nrim := circle(center: o) hint(r: 10)\n}\n\
     t := axis hint(dir: (0, 0, 1))\nfix(dir == (0, 0, 1), origin == (80, 0, 0)) t\n\
-    disc := solid(face(rim), depth: 5)\n";
+    disc := solid(std.solids.Prism(face(rim), from: -5, to: 0))\n";
 
 /// **A kind turned off is not drawn, not lit and not picked** (#678), as a hidden row is not: each
 /// of objects, planes, axes, sketches and points, off on its own, is passed by every pick,

@@ -7,6 +7,7 @@
 // 4 − π) over its 8 between the caps.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 2mm
@@ -28,6 +29,6 @@ in std.front {
     (ln := line(l4, l5)) -> (lw := line(l5, l0)) -> close
   ell := face(ls, le, lt, lr, ln, lw)
 }
-step := solid(ell, depth: 12mm)
+step := solid(std.solids.Prism(ell, from: -12mm, to: 0))
 
 shell(t: wall) step

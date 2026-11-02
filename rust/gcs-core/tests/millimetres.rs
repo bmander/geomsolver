@@ -9,13 +9,14 @@ use gcs_core::solid::{MaterialField,Millimetres,ProbeState,SpatialField};
 const DISC: &str = "\
 unit cm
 use std
+use std.solids
 in std.front {
 o := point
 fix((0, 0)) o
 c := circle(center: o) hint(r: 2)
 radius(2cm) c
 disc := face(c)
-blank := solid(disc, depth: 6mm)
+blank := solid(std.solids.Prism(disc, from: -6mm, to: 0))
 }
 ";
 

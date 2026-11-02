@@ -713,6 +713,7 @@ st raised(d: -10mm, along: tilt) base
 const DISC: &str = "\
 unit mm
 use std
+use std.solids
 use std.place (seats, raised, coords)
 component Part() {
   in std.top {
@@ -720,7 +721,7 @@ component Part() {
     c coords(du: 3mm, dv: 1mm) std.top
     rim := radius(1mm) circle(center: c)
   }
-  b := solid(face(rim), from: 1mm, to: 2mm)
+  b := solid(std.solids.Prism(face(rim), from: 1mm, to: 2mm))
 }
 in std.top {
   c := point hint((-100, 20))

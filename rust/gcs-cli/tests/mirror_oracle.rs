@@ -19,6 +19,7 @@ extern "C" {
 /// the front, each a closed definition standing in the world.
 const PARTS: &str = "unit mm
 use std
+use std.solids
 use std.place (offset, horizontal)
 component Turned(s0: Length) {
   in std.side {
@@ -42,7 +43,7 @@ component Turned(s0: Length) {
     profile := (l1 := line(p1, p2)) -> (l2 := line(p2, p3)) -> (l3 := line(p3, p4)) ->
                (round := arc(center: k, start: p4, end: p5)) -> (l5 := line(p5, p6)) ->
                (l6 := line(p6, p1)) -> close
-    body := solid(profile, about: ax)
+    body := solid(std.solids.Revolution(profile, about: ax))
   }
 }
 component Plate(w: Length, d: Length, h: Length) {
@@ -59,7 +60,7 @@ component Plate(w: Length, d: Length, h: Length) {
     bc := line(b, c)
     ce := line(c, e)
     ea := line(e, a)
-    body := solid(face(ab, bc, ce, ea), from: 0mm, to: h)
+    body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: h))
   }
 }
 ";

@@ -9,6 +9,7 @@
 // cusps meet the faces. Edit a radius and apply (⌘↵).
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 1mm   // every edge's radius
@@ -27,9 +28,9 @@ in std.front {
   radius(10mm) big
   radius(8mm) small
 }
-disc := solid(face(rim), from: 0mm, to: 10mm)
-left := solid(face(big), from: 0mm, to: 10mm)
-right := solid(face(small), from: 0mm, to: 10mm)
+disc := solid(std.solids.Prism(face(rim), from: 0mm, to: 10mm))
+left := solid(std.solids.Prism(face(big), from: 0mm, to: 10mm))
+right := solid(std.solids.Prism(face(small), from: 0mm, to: 10mm))
 slab := solid(disc)
 left cut slab
 right cut slab

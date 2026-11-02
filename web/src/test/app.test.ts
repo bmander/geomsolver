@@ -620,7 +620,8 @@ function fitThrough(view: SketchView, at: [number, number][]): void {
   view.finishSplineFit();
 }
 
-/** The points a drawing has of its own: not the standard datums' `use std` brings. */
+/** The points a drawing has of its own: not the standard datums' `use std
+use std.solids` brings. */
 function ownPoints(view: SketchView): Point[] {
   return view.sketch.points.filter((p) => !view.doc.nameOf(p)?.startsWith('std.'));
 }
@@ -939,6 +940,7 @@ test('picking measures what is drawn, and does it in the core', () => {
 const ANNOTATED = `\
 // a base, and this comment must survive every gesture
 use std
+use std.solids
 in std.front {
 a := point
 b := point hint((100, 0))
@@ -964,7 +966,8 @@ test('a gesture is a source edit, and leaves everything else written', () => {
   }
   assert.ok(/\nl0 := line\(p0, p1\)/.test(view.source), view.source);
   // and the source is a document: reading it back gives the same drawing — the same points where
-  // they were, drawn where they were (renumbered: what was written comes before what `use std`
+  // they were, drawn where they were (renumbered: what was written comes before what `use std
+use std.solids`
   // brings, where the gesture's points came after it)
   const again = Document.read(view.source);
   assert.ok(again.ok, JSON.stringify(again.diagnostics));
@@ -1168,6 +1171,7 @@ test('a sketch writes the digits its zoom justifies, and no more', () => {
  *  `std.front` away from either plane's origin. */
 const VIEWS = `\
 use std
+use std.solids
 front := plane(u: std.x, v: std.z)
 fix(origin == (0, 0, 0)) front
 top := plane(u: std.x, v: std.y)
@@ -1409,6 +1413,7 @@ test('selecting the picture and selecting geometry are exclusive', () => {
 
 const BLOCK = `unit mm
 use std
+use std.solids
 in std.top {
 a := point hint((0, 0))
 b := point hint((20, 0))
@@ -1419,7 +1424,7 @@ bc := line(b, c)
 cd := line(c, d)
 da := line(d, a)
 }
-block := solid(face(ab, bc, cd, da), depth: 5)
+block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -5, to: 0))
 `;
 
 test('a click on a solid selects it by the face it lands on, apart from the drawing', () => {
@@ -1728,7 +1733,8 @@ test('None in the chooser draws in space: what a tool mints stands in no plane, 
   assert.equal(view.planeName, 'std.front');
 });
 
-test('a standard plane the document does not have comes in with `use std` on the first press', () => {
+test('a standard plane the document does not have comes in with `use std
+use std.solids` on the first press', () => {
   const view = docView('w := 100\n');
   view.choosePlane('std.side');
   assert.equal(view.pendingPlane, 'std.side');
@@ -1971,6 +1977,7 @@ test('a point in space is drawn and picked where it stands, whichever way the ey
 /** On the front: `a` at (10, 0), `c` at (40, 30), `ab` along x to (40, 0) — and far enough out
  *  that the standard axes, drawn across the drawing's reach, reach past where they are clicked. */
 const DATUMS = `use std
+use std.solids
 in std.front {
 a := point hint((10, 0))
 b := point hint((40, 0))
@@ -2063,6 +2070,7 @@ test('the constraint bar relates points, lines, axes and planes by what is selec
 
 test('on a page the bar states the 2D kinds, and a number on two lines is a gap or an angle', () => {
   const view = docView(`use std
+use std.solids
 in std.front {
 a := point hint((0, 0))
 b := point hint((40, 0))
@@ -2196,6 +2204,7 @@ test('a shift-drag on a free plane\'s frame turns it in space about its origin, 
 
 test('a shift-drag on the frame of a plane held at its origin still turns it there', () => {
   const view = docView(`use std
+use std.solids
 v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (0, -10, 0))
 fix(origin == (0, -10, 0)) v0
 `);
@@ -2218,6 +2227,7 @@ fix(origin == (0, -10, 0)) v0
 test('a shift-drag on a figure turns it in its plane about its middle; a shift-click toggles it',
      () => {
   const view = docView(`use std
+use std.solids
 in std.front {
 a := point hint((0, 0))
 b := point hint((20, 0))
@@ -2260,6 +2270,7 @@ c := point hint((0, 30))
 /** On the front: a 60 × 40 rectangle `ab…da` swept 5 behind as `block`, a circle `hole` inside it
  *  and a 10 × 10 square `pq…sp` beside it. */
 const EXTRUDING = `use std
+use std.solids
 in std.front {
 a := point
 b := point
@@ -2382,6 +2393,7 @@ test('with a body selected an extrusion joins it, cuts it with ⌥, and cuts thr
 
 /** On the front: a 4 × 4 square `ab…da` from (10, 2) to (14, 6), and a line `ax` up x = 20. */
 const REVOLVING = `use std
+use std.solids
 in std.front {
 a := point
 b := point
@@ -2507,9 +2519,9 @@ test('with a body selected a revolution joins it, or cuts it with ⌥', () => {
 /** EXTRUDING's rectangle as `block`, 5 behind the front; a peg through it on its circle, standing
  *  10 out either side; and its square, beside it, as `side`.  Seen square on to the front. */
 function combining(more = ''): SketchView {
-  const view = docView(`${EXTRUDING}block := solid(face(ab, bc, cd, da), depth: 5)\n`
+  const view = docView(`${EXTRUDING}block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -5, to: 0))\n`
                        + 'peg := solid(face(hole), from: -10, to: 10)\n'
-                       + `side := solid(face(pq, qr, rs, sp), depth: 5)\n${more}`);
+                       + `side := solid(std.solids.Prism(face(pq, qr, rs, sp), from: -5, to: 0))\n${more}`);
   view.orbit = { az: -Math.PI / 2, el: 0 };
   return view;
 }
@@ -2951,6 +2963,7 @@ test('a plane set off another is sized by its arrow, written once, in the plane\
  *  `end_high` moves the drawing a scenario is read over. */
 const LOADED_WEB = `unit mm
 use std
+use std.solids
 alloy := material(E: 70GPa, nu: 0.33, rho: 2700kg / 1m^3, yield: 240MPa)
 in std.front {
   root_low := point
@@ -2968,7 +2981,7 @@ in std.front {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-web := solid(plate, from: -2.5mm, to: 2.5mm) of alloy
+web := solid(std.solids.Prism(plate, from: -2.5mm, to: 2.5mm)) of alloy
 scenario hung {
   plane stress web
   fixed web.root

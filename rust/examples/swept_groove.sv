@@ -6,6 +6,7 @@
 // block's half width.
 unit mm
 use std
+use std.solids
 use std.place (below, right_of)
 use std.shapes
 use std.motion (turns)
@@ -26,7 +27,7 @@ component Sphere(center: point, r: Length) {
   vertical diameter
   private meridian := arc(center: center, start: bottom, end: top) hint(r: r)
   radius(r) meridian
-  body := solid(face(meridian, diameter), about: diameter)
+  body := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))
 }
 
 // The block: a rectangle below the page's origin, run through the page as deep as it is wide,
@@ -35,7 +36,7 @@ in std.front {
   private mid := point hint((0, -block_h / 2))
   mid below(d: block_h / 2) std.origin
   private outline := std.shapes.CenteredRectangle(mid, w: block_w, h: block_h)
-  construction block := solid(outline.loop, from: -block_w / 2, to: block_w / 2)
+  construction block := solid(std.solids.Prism(outline.loop, from: -block_w / 2, to: block_w / 2))
 
   // The cutter: a ball with its centre on the top face, swung about the upright axis.
   construction centerline spindle := line(std.origin, hint((0, 1)))
@@ -46,7 +47,7 @@ in std.front {
 }
 swing_about := frame
 swing_about turns(1) spindle
-construction groove := sweep(ball.body over t in (-swing / 2, swing / 2), under: swing_about)
+construction groove := solid({ p | p inside(under: swing_about, over t in (-swing / 2, swing / 2)) ball.body })
 
 part := solid(block)
 groove cut part

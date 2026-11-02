@@ -19,6 +19,7 @@ use gcs_core::space::{cross, dot, norm, sub};
 const SIDES: &str = "\
 unit mm
 use std
+use std.solids
 use std.sets
 use std.motion (spins, turns)
 in std.front {
@@ -44,8 +45,8 @@ in std.front {
   rim := circle(center: k) hint(r: 2)
   radius(2mm) rim
 }
-blade := solid(face(l1, l2, l3, l4), about: ax)
-ring := solid(face(rim), about: ax)
+blade := solid(std.solids.Revolution(face(l1, l2, l3, l4), about: ax))
+ring := solid(std.solids.Revolution(face(rim), about: ax))
 side := surface(blade, l1)
 round := surface(ring, rim)
 g1 := point hint((5, 40, 3))

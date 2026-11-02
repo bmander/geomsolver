@@ -23,6 +23,7 @@
 
 unit mm
 use std
+use std.solids
 use std.place (coords, offset, right_of)
 use std.motion (spins, slides)
 
@@ -58,8 +59,8 @@ radius(bore_r) bore_c
 s0 right_of(d: rp) o
 s0 distance(10) s1
 o distance(rp + 3 * m) e
-blank := solid(face(rim), depth: width)
-construction bore := solid(face(bore_c), from: -width - 2mm, to: 2mm)
+blank := solid(std.solids.Prism(face(rim), from: -width, to: 0))
+construction bore := solid(std.solids.Prism(face(bore_c), from: -width - 2mm, to: 2mm))
 
 // the tip held at the working depth, a pressure angle of 20 degrees's thickness; the root corner
 // free along its line, the other flank its mirror
@@ -68,13 +69,13 @@ o distance(rp + 2 * m, along: u) t2
 t1 symmetry(centre_line) t0
 t2 symmetry(centre_line) t3
 tooth := face(t0, t1, rack_flank, t3, -> close)
-construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
+construction rack_tooth := solid(std.solids.Prism(tooth, from: -width - 2mm, to: 2mm))
 
 turn := frame
 turn spins(1) o
 rack := frame
 rack slides(2 * pi * rp) slide
-construction space := sweep(rack_tooth, through: gear, under: rack, seen_from: turn)
+construction space := solid({ p | p inside(under: rack, seen_from: turn) rack_tooth })
 
 // the flank in space: the prism's side, and what it generates
 side := surface(rack_tooth, edge: rack_flank)

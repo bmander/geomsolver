@@ -13,6 +13,7 @@
 // Edit `length`, `r`, `rf`, `thick` or `lean`.
 unit mm
 use std
+use std.solids
 use std.stations
 
 length := 40mm
@@ -40,9 +41,9 @@ component Tube(g: path, up: axis, r: Length, s: Scalar) {
 }
 
 param s: Scalar over (0, 1)
-stub := sweep(Tube(ax, std.y, r: r).f over s)
+stub := solid({ p | p coincident(over s) Tube(ax, std.y, r: r).f })
 
 // the flange: a circle about the stub's top, square to its axis, swept back down it
 rim := circle(center: top, normal: ax)
 radius(rf) rim
-flange := solid(face(rim), depth: thick)
+flange := solid(std.solids.Prism(face(rim), from: -thick, to: 0))

@@ -9,6 +9,7 @@
 // see the corners. Edit `r` or the groove's radius and apply (⌘↵).
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 2mm   // the rims' radius
@@ -28,8 +29,8 @@ in std.front {
   k := circle(center: o) hint(r: 6)
   radius(6mm) k
 }
-plate := solid(face(ab, bc, cd, da), from: 0mm, to: 40mm)
-rod := solid(face(k), from: 0mm, to: 40mm)
+plate := solid(std.solids.Prism(face(ab, bc, cd, da), from: 0mm, to: 40mm))
+rod := solid(std.solids.Prism(face(k), from: 0mm, to: 40mm))
 part := solid(plate)
 rod cut part
 

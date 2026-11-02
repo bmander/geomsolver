@@ -11,7 +11,7 @@ use crate::region_general::field_volume;
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), standing 12 deep along y, and an L of
 /// two such steps whose inner edge is concave.
-const BLOCK: &str = "unit mm\nuse std\nuse std.sets\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.sets\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -23,7 +23,7 @@ const BLOCK: &str = "unit mm\nuse std\nuse std.sets\nin std.front {\n\
     (ls := line(l0, l1)) -> (le := line(l1, l2)) -> (lt := line(l2, l3)) -> (lr := line(l3, l4)) -> \
     (ln := line(l4, l5)) -> (lw := line(l5, l0)) -> close\n\
     ell := face(ls, le, lt, lr, ln, lw)\n}\n\
-    block := solid(outline, depth: 12mm)\nstep := solid(ell, depth: 12mm)\n";
+    block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\nstep := solid(std.solids.Prism(ell, from: -12mm, to: 0))\n";
 
 /// Where the block stands: its corners' box, from its own field's support.
 fn block_box(e: &Elaborated) -> ([f64; 3], [f64; 3]) {

@@ -15,6 +15,7 @@ use std::f64::consts::PI;
 const PARTS: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point hint((0, 0))
 b := point hint((60, 0))
@@ -45,9 +46,9 @@ fix((45, 15)) q
 fix((45, 25)) r
 fix((35, 25)) s
 }
-plate := solid(face(ab, bc, cd, da), depth: 4)
-boss := solid(face(pq, qr, rs, sp), from: -8, to: 4)
-bore := solid(face(hole), from: -8, to: 4)
+plate := solid(std.solids.Prism(face(ab, bc, cd, da), from: -4, to: 0))
+boss := solid(std.solids.Prism(face(pq, qr, rs, sp), from: -8, to: 4))
+bore := solid(std.solids.Prism(face(hole), from: -8, to: 4))
 ";
 
 /// The plate's volume, the boss's share of it, and the bore's.
@@ -121,7 +122,7 @@ fn a_preview_leaves_the_drawing_as_it_was() {
 #[test]
 fn a_body_that_already_cuts_takes_the_tool_into_its_own_sets() {
     // union comes first: a plug joined inside the bore is cut away with it, as the statement says
-    let src = format!("{PARTS}bore cut plate\nplug := solid(face(hole), from: -3, to: -1)\n");
+    let src = format!("{PARTS}bore cut plate\nplug := solid(std.solids.Prism(face(hole), from: -3, to: -1))\n");
     let e = read(&src);
     let want = PLATE - BORE_IN;
     near(previewed(&e, "plate", BodyWord::Union, &["plug"]), want, "previewed");
@@ -133,8 +134,8 @@ fn a_body_that_already_cuts_takes_the_tool_into_its_own_sets() {
 fn a_union_is_drilled_by_the_through_cutter_the_body_already_has() {
     // `drill` runs through the plate's additive material, so a cap joined over the hole is
     // drilled too — the preview reads it as the written statement does, not the plate as it was
-    let src = format!("{PARTS}drill := solid(face(hole), through: plate)\ndrill cut plate\n\
-        cap := solid(face(hole), from: 0, to: 6)\n");
+    let src = format!("{PARTS}drill := solid(std.solids.Through(face(hole)))\ndrill cut plate\n\
+        cap := solid(std.solids.Prism(face(hole), from: 0, to: 6))\n");
     let e = read(&src);
     let want = PLATE - BORE_IN;
     near(previewed(&e, "plate", BodyWord::Union, &["cap"]), want, "previewed");
@@ -145,7 +146,7 @@ fn a_union_is_drilled_by_the_through_cutter_the_body_already_has() {
 #[test]
 fn a_tool_through_the_body_reads_its_material_and_closes_no_cycle() {
     // `through: plate` reads the plate's sweep, which the statement moves to a stock: no cycle
-    let src = format!("{PARTS}drill := solid(face(hole), through: plate)\n");
+    let src = format!("{PARTS}drill := solid(std.solids.Through(face(hole)))\n");
     let e = read(&src);
     let want = PLATE - BORE_IN;
     near(previewed(&e, "plate", BodyWord::Cut, &["drill"]), want, "previewed");

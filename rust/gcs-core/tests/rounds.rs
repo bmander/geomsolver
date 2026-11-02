@@ -11,13 +11,13 @@ use crate::common::rounds::{mitred, root_ring, rounded_box};
 use crate::region_general::field_volume;
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
-const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
     (west := line(b3, b0)) -> close\n\
     outline := face(south, east, north, west)\n}\n\
-    block := solid(outline, depth: 12mm)\n";
+    block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\n";
 
 /// The volume a statement takes from (or gives to) solid `name`, within a box: the field's before
 /// less after.
@@ -52,7 +52,7 @@ fn a_block_rounded_all_over_is_steiners() {
 
 /// A tray 60 × 40 × 10 with a pocket 30 × 20 cut 6 into its near face, and a plate the same with
 /// a boss of radius 8 standing 20 on it — each a body over its operands' faces.
-const PARTS: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {\n\
+const PARTS: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {\n\
     t0 := point\nt1 := point\nt2 := point\nt3 := point\n\
     fix((0, 0)) t0\nfix((60, 0)) t1\nfix((60, 40)) t2\nfix((0, 40)) t3\n\
     (ts := line(t0, t1)) -> (te := line(t1, t2)) -> (tn := line(t2, t3)) -> (tw := line(t3, t0)) -> close\n\
@@ -62,9 +62,9 @@ const PARTS: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.f
     (ks := line(k0, k1)) -> (ke := line(k1, k2)) -> (kn := line(k2, k3)) -> (kw := line(k3, k0)) -> close\n\
     opening := face(ks, ke, kn, kw)\n\
     c := point\nfix((30, 20)) c\nrim := circle(center: c) hint(r: 8)\nradius(8mm) rim\n}\n\
-    tray := solid(outline, depth: 10mm)\npocket := solid(opening, from: -6mm, to: 1mm)\n\
+    tray := solid(std.solids.Prism(outline, from: -10mm, to: 0))\npocket := solid(std.solids.Prism(opening, from: -6mm, to: 1mm))\n\
     dish := solid(tray)\npocket cut dish\n\
-    plate := solid(outline, depth: 10mm)\nboss := solid(face(rim), from: 0mm, to: 20mm)\n\
+    plate := solid(std.solids.Prism(outline, from: -10mm, to: 0))\nboss := solid(std.solids.Prism(face(rim), from: 0mm, to: 20mm))\n\
     pad := solid(plate)\nboss union pad\n";
 
 fn part_change(stmt: &str, name: &str, lo: [f64; 3], hi: [f64; 3], h: f64) -> f64 {

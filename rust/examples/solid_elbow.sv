@@ -36,4 +36,4 @@ in std.top {
   radius(bend_radius) guide
 }
 param s: Scalar over (0, 1)
-body := sweep(Elbow(guide, std.z, size: 2 * half_size, wall: wall).sec.profile over s)
+body := solid({ p | p coincident(over s) Elbow(guide, std.z, size: 2 * half_size, wall: wall).sec.profile })

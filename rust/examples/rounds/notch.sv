@@ -15,6 +15,7 @@
 // far rim. Edit the draft or the round's radius and apply (⌘↵).
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 in std.top {
@@ -67,7 +68,7 @@ in std.top {
   radius(4mm) bot_root
   outline := face(east, top_r, top_root, top_l, west, bot_l, bot_root, bot_r)
 }
-plate := solid(outline, depth: 5mm, draft: 3deg)
+plate := solid(std.solids.Drafted(outline, from: -5mm, to: 0, draft: 3deg))
 body := solid(plate)
 
 // the far rim: eight stretches of rings, one statement

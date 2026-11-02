@@ -517,6 +517,7 @@ fn a_flush_boss_tangent_to_a_blocks_side_builds_as_the_block() {
     let e = crate::common::text::solved("\
 unit mm
 use std
+use std.solids
 use std.shapes
 in std.top {
   c := point hint((0, 0))
@@ -527,8 +528,8 @@ in std.top {
   c level(v) o
   rim := radius(4mm) circle(center: o)
 }
-box := solid(face(sq.loop), from: 0mm, to: 10mm)
-boss := solid(face(rim), from: 0mm, to: 10mm)
+box := solid(std.solids.Prism(face(sq.loop), from: 0mm, to: 10mm))
+boss := solid(std.solids.Prism(face(rim), from: 0mm, to: 10mm))
 part := solid(box)
 boss union part
 ");

@@ -7,6 +7,7 @@
 // the plate's shear and its built-in root, which a beam's line does not have, make it deeper.
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 
 L := 300mm
@@ -32,7 +33,7 @@ in std.front {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-plate := solid(outline, from: -t / 2, to: t / 2) of steel
+plate := solid(std.solids.Prism(outline, from: -t / 2, to: t / 2)) of steel
 
 scenario tip_load {
   plane stress plate

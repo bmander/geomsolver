@@ -4,6 +4,51 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.199] Solids as sets** (#737). A solid is the points of a set and nothing else: `solid(S)` is
+the one constructor (§6.9), `solid()` the empty body. The set is named or written in the brackets —
+a set literal, `solid({ p | … })`, or a family's call, `solid(std.solids.Prism(sec, from: -30mm, to:
+0mm))` — and a `face(…)` may stand in place as such a call's argument
+(`std.solids.Through(face(hole))`). The prism, the drafted prism, the revolution and the prism
+through a body are words of a new module of the standard library, **`std.solids`** (`use
+std.solids`, `rust/lib/std/solids.sv`), written over the language's own words: `Prism(section, from,
+to)`, `Drafted(section, from, to, draft)`, `Revolution(section, about, from = 0deg, to = 360deg)`
+and `Through(section)`. An implementation recognises a set by its terms, never by a word's name, so
+the same set written by hand builds the same solid, exactly — its faces named by one rule (a
+section's sides by the edges they are swept from; of two ordinates the greater bounds `near`, the
+lesser `far`; a turn short of a whole one capped `start` and `end`), its volume and its exported
+bytes alike; a set none of the words is stays a region, read point by point. Two things the language
+did not have make the words: **a drawn face is a set** at a region solid's point (§6.21) — `p inside
+sec` the prism over it, unbounded along its normal, `p distance(<= d, side: outside) sec` grown in
+its plane, `p distance(>= a, along: n) sec` an ordinate along its normal — and **the existential
+over a running parameter** in a relation's parentheses, `over t in (a, b)` or `over s` a declared
+parameter (`coincident` and `inside`, §6.21): `p coincident(under: m, over t in (a, b)) sec` is what
+the face occupies under the motion at some roll, the revolution's body. A set in place in `solid(…)`
+whose body is one such statement is the sweep of the same points, so a motion's sweep and a face
+family are sets too. Retired, each **E001** at the spelling, its message naming the replacement
+written from the document's own arguments (`scripts/solids_as_sets.py` rewrites a document):
+
+| through 0.198 | now |
+|---|---|
+| `solid(F, depth: d)` | `solid(std.solids.Prism(F, from: -d, to: 0))` |
+| `solid(F, from: a, to: b)` | `solid(std.solids.Prism(F, from: a, to: b))` |
+| `solid(F, from: a, to: b, draft: θ)` (or `depth:`) | `solid(std.solids.Drafted(F, from: a, to: b, draft: θ))` |
+| `solid(F, about: l)`, `sweep: S`, `sense: cw` | `std.solids.Revolution(F, about: l)`, `to: S`, `from: -S, to: 0deg` |
+| `solid(F, through: B)` | `solid(std.solids.Through(F))`, cut from `B` |
+| `sweep(tool over t in (a, b), under: m, seen_from: g)` | `solid({ p \| p inside(under: m, seen_from: g, over t in (a, b)) tool })` |
+| `sweep(tool, through: B, under: m)` | `solid({ p \| p inside(under: m) tool })`, cut from `B` |
+| `sweep(I(…).f over s)`, `sweep(sec over s)` | `solid({ p \| p coincident(over s) I(…).f })`, `… sec })` |
+
+A whole-roll sweep cut from nothing is E080 at its declaration. A line named `under:` is the turn
+about it, so a revolution adds no unknown. **Outside a set of several statements** (a conjunction,
+an interval, several numbers) is its complement, where any of them fails — through 0.198 refused as
+a choice of root — so a union is `{ p | p outside { q | q outside a; q outside b } }`; and a set of
+solids named whole (inside one, outside others, or outside what is outside several) is the body
+term over them, `{ p | p inside plate; p outside bore }` the solid `bore cut plate` makes. The body
+words keep their meaning, now said as a set. A body of statements breaks its lines inside
+brackets too (`solid({ p | …` over several lines). The canonical printer writes the new spellings,
+so the workspace's gestures (extrude, revolve, a cut through, a set swept) splice them, adding `use
+std.solids`. The developables' `coincident(t in (0, 1))`, a place on a curve, is unchanged.
+
 **[0.198] A body shelled.** `A shell(t: 2mm) B`, a word of `std.rounds` (§6.9), hollows the
 body `B`'s faces are of to walls `t` thick, open through the faces of `A`: of its material only what
 lies within `t` of one of its faces not among `A`'s is kept, so each wall is its face moved in by

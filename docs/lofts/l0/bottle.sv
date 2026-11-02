@@ -41,4 +41,4 @@ in std.front {
   rail := spline(through: rims, start: axis_line, end: axis_line)
 }
 param s: Scalar over (0, 1)
-bottle := sweep(Body(axis_line, std.y, std.front, rail).f over s)
+bottle := solid({ p | p coincident(over s) Body(axis_line, std.y, std.front, rail).f })

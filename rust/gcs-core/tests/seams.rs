@@ -14,6 +14,7 @@ mod vertices;
 const MODEL: &str = "\
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 use std.motion (turns)
 in std.front {
@@ -42,7 +43,7 @@ top := line(c,d)
 inner := line(d,a)
 }
 profile := face(bottom,low,high,top,inner)
-body := solid(profile,about: ax)
+body := solid(std.solids.Revolution(profile, about: ax))
 first_surface := surface(body,low,from: 0deg,to: 90deg)
 second_surface := surface(body,high,from: 0deg,to: 90deg)
 roll := frame
@@ -147,7 +148,7 @@ component Sphere(o: point,size: Length) {{
   fix(x == 0) top
   private rim := arc(center: o,start: bottom,end: top)
   private diameter := line(top,bottom)
-  ball := solid(face(rim,diameter),about: diameter)
+  ball := solid(std.solids.Revolution(face(rim,diameter), about: diameter))
   wall := surface(ball,rim)
 }}
 large := Sphere(o,size: 4mm) in std.front

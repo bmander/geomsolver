@@ -80,7 +80,21 @@ pub fn add_solid(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str
 fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) -> Result<Edit, String> {
     let sweep = how.sweep()?;
     let name = chosen_name(&mut taken_names(prog), name, EntKind::Solid)?;
-    append_checked(prog, &[solid_stmt(&name, face, sweep)], vec![name])
+    append_solids(prog, &[solid_stmt(&name, face, sweep)], vec![name])
+}
+
+/// `stmts` appended, each a statement the canonical printer writes over the words of `std.solids`
+/// (#737) — and `use std.solids` where the document has none — held to the elaborator.
+fn append_solids(prog: &Program, stmts: &[StmtKind], names: Vec<String>) -> Result<Edit, String> {
+    let mut splices = vec![appending(prog, stmts)?];
+    if !prog.uses.iter().any(|u| u.name == "std.solids") {
+        splices.push(use_line(prog, "use std.solids"));
+    }
+    let (text, landed) = splice_landing(prog.text(), splices);
+    let regions: Vec<Span> = landed.into_iter()
+        .map(|l| l.ok_or("the edit is no place in the source"))
+        .collect::<Result<_, _>>()?;
+    checked_in(prog, text, &regions, names)
 }
 
 /// `name := solid(face, …sweep)`.
@@ -207,7 +221,7 @@ fn region_solid(
     }
     let mut names = vec![solid];
     names.extend(faces);
-    append_checked(prog, &stmts, names)
+    append_solids(prog, &stmts, names)
 }
 
 /// Rewrite how a solid is swept — `depth: 12`, `from: 0, to: 12`, `from: -6, to: 6` — over the
@@ -263,7 +277,7 @@ fn resweep(
     e: &Elaborated,
     prog: &Program,
     solid: usize,
-    with: impl FnOnce(&syntax::Sweep) -> Result<syntax::Sweep, String>,
+    with: impl Fn(&syntax::Sweep) -> Result<syntax::Sweep, String>,
 ) -> Result<Edit, String> {
     let site = e.map.of_entity.get(&EntRef::solid(solid)).ok_or("no statement makes that solid")?;
     if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
@@ -271,6 +285,10 @@ fn resweep(
     }
     let d = decl_of(prog, site).filter(|d| d.kind == EntKind::Solid && d.sweep.is_some())
         .ok_or("that solid is made of others, not swept from a face")?;
+    // a word of `std.solids` written in place (#737): its call rewritten
+    if let Some(edit) = reworded(prog, d, &with) {
+        return edit;
+    }
     // a `sweep(…)` is a face family's or a motion's, written as no face's extent (#391 S2)
     if matches!(d.sweep, Some(syntax::Sweep::Swept { .. } | syntax::Sweep::Rolled { .. }
                               | syntax::Sweep::Family(_))) {
@@ -286,6 +304,65 @@ fn resweep(
     let (text, landed) = splice_landing(prog.text(), vec![edit]);
     checked(prog, text, landed[0].ok_or("that solid's statement is no place in the source")?,
         Vec::new())
+}
+
+/// **A solid of a word of `std.solids` written in place** (#737), `solid(std.solids.Prism(f,
+/// from: a, to: b))`: the sweep the call says, as the gestures read one — the word's labels its
+/// extents — given to `with`, and the call rewritten as the word of what `with` makes; `None`
+/// where the solid is no such call.  A gesture edits the words a person wrote, so it reads them by
+/// name, as the printer writes them.
+fn reworded(prog: &Program, d: &syntax::Decl,
+            with: &impl Fn(&syntax::Sweep) -> Result<syntax::Sweep, String>)
+    -> Option<Result<Edit, String>> {
+    let [syntax::Kid::Ref(key)] = d.children.first()?.as_slice() else { return None };
+    let inst = prog.root().body.iter().find_map(|st| match &st.kind {
+        StmtKind::Instance(i) if i.name.text == key.root.text => Some(i),
+        _ => None,
+    })?;
+    let word = inst.component.text.strip_prefix("std.solids.")?;
+    let label = |l: &str| inst.args.iter().find(|a| a.label.as_ref().is_some_and(|n| n.text == l))
+        .map(|a| match &a.value {
+            syntax::InstVal::Ref(r) => syntax::ref_text(r),
+            syntax::InstVal::Expr(t) | syntax::InstVal::Hint(t, _) => t.clone(),
+            syntax::InstVal::Group(_) => String::new(),
+        });
+    let face = inst.args.iter().find(|a| a.label.is_none()).map(|a| match &a.value {
+        syntax::InstVal::Ref(r) => syntax::ref_text(r),
+        syntax::InstVal::Expr(t) => t.clone(),
+        _ => String::new(),
+    })?;
+    let dim = |t: String| syntax::Arg::Dim { text: t, span: Span::default() };
+    let zero = |t: &Option<String>| t.as_deref().is_none_or(|t| matches!(t.trim(), "0" | "0deg"));
+    let was = match word {
+        "Prism" | "Drafted" => syntax::Sweep::Prism {
+            from: dim(label("from")?), to: dim(label("to")?), draft: label("draft").map(dim),
+        },
+        "Revolution" => {
+            let (from, to) = (label("from"), label("to"));
+            let axis = syntax::Ref::new(label("about")?);
+            match (zero(&from), zero(&to)) {
+                (true, _) => syntax::Sweep::Revolve { axis, sweep: to.filter(|t| t.trim() != "360deg")
+                    .map(dim), sense: syntax::Sense::Ccw },
+                (false, true) => {
+                    let f = from?;
+                    let f = f.trim().strip_prefix('-').map_or(format!("-({f})"), |t| t.to_string());
+                    syntax::Sweep::Revolve { axis, sweep: (f != "360deg").then(|| dim(f)),
+                                             sense: syntax::Sense::Cw }
+                }
+                _ => return Some(Err("that revolution starts off its face: change it where it \
+                                      is written".into())),
+            }
+        }
+        _ => return Some(Err("that solid is a prism through everything, which nothing sizes".into())),
+    };
+    Some((|| {
+        let new = with(&was)?;
+        let text = syntax::solid_word(&new, &face).ok_or("that solid is no sweep of a face")?;
+        let edit = Splice { at: inst.span, with: text };
+        let (text, landed) = splice_landing(prog.text(), vec![edit]);
+        checked(prog, text, landed[0].ok_or("that solid's statement is no place in the source")?,
+                Vec::new())
+    })())
 }
 
 /// `what union body`, `what cut body`, `what common body` — the body rule, a statement for each

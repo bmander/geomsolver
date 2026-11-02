@@ -15,7 +15,8 @@
 //! |---|---|
 //! | `p inside sec` (`Section`), an ordinate along `sec`'s normal at least `a` and one at most `b` | `Prism { face: sec, from: a, to: b }` |
 //! | the same, and `distance(p, beyond) − distance(p, within) ≥ tan θ · distance(p, sec's plane)` over `beyond := { q \| q outside sec }`, `within := { q \| q inside sec }` | `Prism { …, draft: θ }` |
-//! | `p coincident(under: m, t in (a, b)) sec` (`Swept` of a `Section` patch), `m` a turn about a line in `sec`'s plane, one end of the interval nothing | `Revolve { face: sec, axis, sweep: b − a, sense }` |
+//! | `p coincident(under: m, over t in (a, b)) sec` (`Swept`: a face's patch), `m` a turn about a line in `sec`'s plane, one end of the interval nothing | `Revolve { face: sec, axis, sweep: b − a, sense }` |
+//! | `p inside A` and `p inside`/`p outside` other solids, or `p outside { q \| q outside a; q outside b }`, each solid named whole | `Body { stock, on, through, bound }` |
 
 use crate::model::{EntKind, EntRef, Extent, RegionShape, RegionTerm, Sketch, SolidDef};
 use crate::vocab::Cmp;

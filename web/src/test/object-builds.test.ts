@@ -34,10 +34,10 @@ const block = (w = 40, name = 'block'): string => `in std.front {\n  ${name}_a :
   + `  fix((0, 0)) ${name}_a\n  ${name}_ab := line(${name}_a, ${name}_b)\n  ${name}_bc := line(${name}_b, ${name}_c)\n`
   + `  ${name}_cd := line(${name}_c, ${name}_d)\n  ${name}_da := line(${name}_d, ${name}_a)\n  horizontal ${name}_ab\n`
   + `  horizontal ${name}_cd\n  vertical ${name}_bc\n  vertical ${name}_da\n  length(${w}) ${name}_ab\n`
-  + `  length(20) ${name}_bc\n}\n${name} := solid(face(${name}_ab, ${name}_bc, ${name}_cd, ${name}_da), depth: 10)\n`;
+  + `  length(20) ${name}_bc\n}\n${name} := solid(std.solids.Prism(face(${name}_ab, ${name}_bc, ${name}_cd, ${name}_da), from: -10, to: 0))\n`;
 
-const BLOCK = `unit mm\nuse std\n${block()}`;
-const TWO = `unit mm\nuse std\n${block(40, 'one')}${block(30, 'two')}`;
+const BLOCK = `unit mm\nuse std\nuse std.solids\n${block()}`;
+const TWO = `unit mm\nuse std\nuse std.solids\n${block(40, 'one')}${block(30, 'two')}`;
 
 /** Two closed instances of one component, standing apart: one binding, placed twice. */
 const PAIR = 'unit mm\nuse std\nuse std.place (offset)\ncomponent Plate(w: Length) {\n  in std.front {\n'

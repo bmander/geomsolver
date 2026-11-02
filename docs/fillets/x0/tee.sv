@@ -3,6 +3,7 @@
 // nothing in the source says so. Does not parse yet.
 unit mm
 use std
+use std.solids
 in std.side {
   c1 := point
   main_k := circle(center: c1) hint(r: 10)
@@ -15,8 +16,8 @@ in std.top {
 }
 fix((0, 0)) c2
 radius(6) stem_k
-main := solid(face(main_k), from: -30mm, to: 30mm)
-stem := solid(face(stem_k), from: 0mm, to: 25mm)
+main := solid(std.solids.Prism(face(main_k), from: -30mm, to: 30mm))
+stem := solid(std.solids.Prism(face(stem_k), from: 0mm, to: 25mm))
 tee := solid(main)
 stem union tee
 

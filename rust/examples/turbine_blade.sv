@@ -36,6 +36,7 @@
 // or the holes.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.rounds (round)
 use std.stations
@@ -192,7 +193,7 @@ fix((0mm, 0mm, 0mm)) foot0
 fix((0mm, 0mm, span)) tip0
 construction centerline stack := line(foot0, tip0)
 param s: Scalar over (-embed / span, 1)
-airfoil := sweep(Station(stack, std.y, hub, mean, tip).sec.profile over s)
+airfoil := solid({ p | p coincident(over s) Station(stack, std.y, hub, mean, tip).sec.profile })
 
 // ---- the platform and the seal wings: sectors of the annulus about the engine's axis ----
 in std.front {
@@ -220,9 +221,9 @@ in std.front {
 index := frame
 index turns(1) engine
 // each swept one pitch from the front plane, then turned back half a pitch to stand centred
-platform_sector := solid(plat, about: engine, sweep: pitch_angle)
-wing_f_sector := solid(fwd_wing, about: engine, sweep: pitch_angle)
-wing_a_sector := solid(aft_wing, about: engine, sweep: pitch_angle)
+platform_sector := solid(std.solids.Revolution(plat, about: engine, to: pitch_angle))
+wing_f_sector := solid(std.solids.Revolution(fwd_wing, about: engine, to: pitch_angle))
+wing_a_sector := solid(std.solids.Revolution(aft_wing, about: engine, to: pitch_angle))
 platform := platform_sector at(under: index) -pitch_angle / 2
 wing_f := wing_f_sector at(under: index) -pitch_angle / 2
 wing_a := wing_a_sector at(under: index) -pitch_angle / 2
@@ -245,7 +246,7 @@ in std.side {
          step(du: lobe, dv: rise) (bear_l0 := line) ->
          step(v: -platform_t + embed) (shank_l := line) -> close
 }
-root := solid(fir, from: -root_len / 2, to: root_len / 2)
+root := solid(std.solids.Prism(fir, from: -root_len / 2, to: root_len / 2))
 // every corner of the section broken, both sides, top to bottom: each bearing face's edges and
 // each neck
 root.shank_r round(r: edge_r) root.bear_r0
@@ -290,7 +291,7 @@ in std.top {
     c coincident(t == i / (holes - 1)) drill_line
     bore := circle(center: c) hint(r: hole_d / 2)
     radius(hole_d / 2) bore
-    drill := solid(face(bore), from: -root_depth - 1mm, to: span + 1mm)
+    drill := solid(std.solids.Prism(face(bore), from: -root_depth - 1mm, to: span + 1mm))
     drill cut blade
   }
 }

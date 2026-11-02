@@ -28,7 +28,7 @@ component Plate(w: Length, d: Length, h: Length) {
     bc := line(b, c)
     ce := line(c, e)
     ea := line(e, a)
-    body := solid(face(ab, bc, ce, ea), from: 0mm, to: h)
+    body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: h))
   }
 }
 ";
@@ -38,6 +38,7 @@ fn two(first: &str, second: &str) -> String {
     format!("
 unit mm
 use std
+use std.solids
 use std.place (offset)
 {PLATE}
 in (f := frame) {{ one := {first} }}
@@ -167,6 +168,7 @@ fn unequal_arguments_are_two_builds_and_an_open_instance_is_built_as_its_own() {
     let (e, sk) = solved("
 unit mm
 use std
+use std.solids
 use std.place (offset)
 component Lug(o: point, h: Length) {
   in std.front {
@@ -179,7 +181,7 @@ component Lug(o: point, h: Length) {
     ab := line(a, b)
     bc := line(b, c)
     ca := line(c, a)
-    body := solid(face(ab, bc, ca), from: 0mm, to: h)
+    body := solid(std.solids.Prism(face(ab, bc, ca), from: 0mm, to: h))
   }
 }
 in std.front {
@@ -205,6 +207,7 @@ two := Lug(q, h: 2mm)
 const RING: &str = "
 unit mm
 use std
+use std.solids
 use std.place (offset, right_of)
 component Peg(r: Length) {
   in std.front {
@@ -216,11 +219,11 @@ component Peg(r: Length) {
     k offset(dx: 20mm, dy: 3mm) std.origin
     rim := circle(center: c) hint(r: r)
     radius(r) rim
-    body := solid(face(rim), from: 0mm, to: 5mm)
+    body := solid(std.solids.Prism(face(rim), from: 0mm, to: 5mm))
     ct := line(c, t)
     tk := line(t, k)
     kc := line(k, c)
-    tab := solid(face(ct, tk, kc), from: 0mm, to: 1mm)
+    tab := solid(std.solids.Prism(face(ct, tk, kc), from: 0mm, to: 1mm))
   }
 }
 in std.front {
@@ -284,6 +287,7 @@ fn reaching_outside_the_ring_is_still_refused() {
     refused("
 unit mm
 use std
+use std.solids
 use std.place (offset)
 component Lug(o: point) {
   in std.front {
@@ -305,6 +309,7 @@ in std.front {
     refused("
 unit mm
 use std
+use std.solids
 use std.place (right_of)
 in std.front {
   o := point hint((50, 0))

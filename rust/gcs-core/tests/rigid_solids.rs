@@ -228,12 +228,12 @@ fn a_stand_leaves_what_the_crank_does_not_reach_to_the_bit() {
 /// that runs, is the very evaluation it was (#498).
 #[test]
 fn a_solid_whose_dimension_reads_the_parameter_is_built_again_where_stood() {
-    let e = crate::common::read("unit mm\nuse std\nparam r: Length over (10mm, 20mm)\n\
+    let e = crate::common::read("unit mm\nuse std\nuse std.solids\nparam r: Length over (10mm, 20mm)\n\
         in std.front {\n  o := point\n  fix((0, 0)) o\n  \
         rim := circle(center: o) hint(r: 10)\n  radius(r) rim\n  \
         p := point\n  fix((40, 0)) p\n  side := circle(center: p) hint(r: 5)\n  \
-        radius(5mm) side\n}\ndisc := solid(face(rim), depth: 5mm)\n\
-        peg := solid(face(side), depth: 5mm)\n");
+        radius(5mm) side\n}\ndisc := solid(std.solids.Prism(face(rim), from: -5mm, to: 0))\n\
+        peg := solid(std.solids.Prism(face(side), from: -5mm, to: 0))\n");
     let mut sk = e.sketch.clone();
     assert!(solve::solve(&mut sk, Default::default()).success);
     let (disc, peg) = (named(&e, "disc"), named(&e, "peg"));

@@ -34,6 +34,7 @@ fn read(src: &str) -> Elaborated {
 const PART: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 b := point hint((60, 0))
@@ -53,8 +54,8 @@ radius(8) hole
 }
 sec := face(ab, bc, cd, da)
 hole_f := face(hole)
-stock := solid(sec, depth: 30mm)
-bore := solid(hole_f, depth: 30mm)
+stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))
+bore := solid(std.solids.Prism(hole_f, from: -30mm, to: 0))
 body := solid(stock)
 bore cut body
 ";

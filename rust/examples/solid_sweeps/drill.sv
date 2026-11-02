@@ -9,6 +9,7 @@
 // the point: π radius² thick = π × 2² × 4 = 16π ≈ 50.27 mm³ of its 800, leaving 749.73 mm³.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (slides)
 
@@ -33,7 +34,7 @@ in std.top {
   private far_side := line(b2, b3)
   private near_end := line(b3, b0)
 }
-plate := solid(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick)
+plate := solid(std.solids.Prism(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick))
 
 // the drill, drawn in a plane through its axis, which stands upright over the plate's middle,
 // its point 2 above the plate
@@ -57,12 +58,12 @@ in bench {
   private end := line(shank, back)
   private spindle := line(back, tip)
 }
-construction drill := solid(face(cone, side, end, spindle), about: spindle)
+construction drill := solid(std.solids.Revolution(face(cone, side, end, spindle), about: spindle))
 
 // the push down through the plate, 20 mm over the roll, from clear above it to clear below
 private down := axis
 fix(dir == (0, 0, -1)) down
 ram := frame
 ram slides(20mm) down
-construction hole := sweep(drill over t in (0deg, 360deg), under: ram)
+construction hole := solid({ p | p inside(under: ram, over t in (0deg, 360deg)) drill })
 hole cut plate

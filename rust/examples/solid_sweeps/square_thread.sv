@@ -11,6 +11,7 @@
 // point makes to come round to the tip's plane: `lead × acos(tip / r) / π` at radius r.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (screws)
 
@@ -52,8 +53,8 @@ in std.front {
   private upper := line(b2, b3)
   private nose := line(b3, b0)
 }
-rod := solid(face(rod_axis, rod_end, rod_wall, rod_top), about: rod_axis)
-construction bar := solid(face(lower, end, upper, nose), from: -reach, to: reach)
+rod := solid(std.solids.Revolution(face(rod_axis, rod_end, rod_wall, rod_top), about: rod_axis))
+construction bar := solid(std.solids.Prism(face(lower, end, upper, nose), from: -reach, to: reach))
 
 // the screw about the rod's axis, and the roll that carries the bar from a millimetre under the
 // rod to a millimetre over it
@@ -61,5 +62,5 @@ cut := frame
 cut screws(lead) ax
 start := -360deg * (width / 2 + 1mm) / lead
 finish := 360deg * (rod_l + width / 2 + 1mm) / lead
-construction thread := sweep(bar over t in (start, finish), under: cut)
+construction thread := solid({ p | p inside(under: cut, over t in (start, finish)) bar })
 thread cut rod

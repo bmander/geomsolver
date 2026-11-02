@@ -9,6 +9,7 @@
 // convex, so that round cuts.
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 1.5mm   // the pocket's inside radius
@@ -35,8 +36,8 @@ in std.front {
   (ks := line(k0, k1)) -> (ke := line(k1, k2)) -> (kn := line(k2, k3)) -> (kw := line(k3, k0)) -> close
   opening := face(ks, ke, kn, kw)
 }
-tray := solid(outline, depth: 10mm)
-pocket := solid(opening, from: -6mm, to: 1mm)
+tray := solid(std.solids.Prism(outline, from: -10mm, to: 0))
+pocket := solid(std.solids.Prism(opening, from: -6mm, to: 1mm))
 dish := solid(tray)
 pocket cut dish
 

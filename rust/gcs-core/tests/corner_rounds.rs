@@ -14,6 +14,7 @@ use gcs_core::model::Sketch;
 /// A rectangle held at its corners, each corner rounded: the corners are the only numbers.
 const RECT: &str = "\
 use std
+use std.solids
 in std.front {
 a := point
 b := point
@@ -82,7 +83,7 @@ fn a_rounded_rectangle_is_written_as_its_corners() {
     assert!(near(at(&sk, bottom.p1), (10.0, 0.0)) && near(at(&sk, bottom.p2), (90.0, 0.0)));
     // the face walks the rounds: the rectangle less a square's corners, plus the quarter discs
     let area = 100.0 * 60.0 - 4.0 * 100.0 + std::f64::consts::PI * 100.0;
-    let src = format!("{RECT}pad := solid(outline, depth: 5)\n");
+    let src = format!("{RECT}pad := solid(std.solids.Prism(outline, from: -5, to: 0))\n");
     let g = gestures::build(&src);
     let v = gestures::volume(&g, "pad");
     assert!((v - 5.0 * area).abs() <= 1e-6 * v, "{v} against {}", 5.0 * area);
@@ -104,6 +105,7 @@ fn every_round_states_its_arc_its_tangencies_and_its_corner() {
 /// right at, so the arc runs clockwise as walked and its centre is outside the material.
 const BRACKET: &str = "\
 use std
+use std.solids
 in std.front {
 p0 := point
 p1 := point
@@ -152,7 +154,7 @@ fn an_inside_fillet_turns_the_way_its_corner_does() {
     assert!(near((q[0], q[2]), (15.0, 10.0)), "{q:?}");
     // the bracket's area: the L, and the fillet's web between the corner's square and its disc
     let area = 60.0 * 10.0 + 10.0 * 40.0 + 25.0 - std::f64::consts::PI * 25.0 / 4.0;
-    let g = gestures::build(&format!("{BRACKET}pad := solid(outline, depth: 2)\n"));
+    let g = gestures::build(&format!("{BRACKET}pad := solid(std.solids.Prism(outline, from: -2, to: 0))\n"));
     let v = gestures::volume(&g, "pad");
     assert!((v - 2.0 * area).abs() <= 1e-6 * v, "{v} against {}", 2.0 * area);
 }
@@ -196,8 +198,8 @@ fn a_slot_rounded_at_its_joints_is_the_slot_written_longhand() {
 
 #[test]
 fn a_drafted_prism_sweeps_the_rounds_as_cones() {
-    let draft = |src: &str| src.replace("pocket := solid(mouth, from: 1mm, to: -6mm)",
-                                        "pocket := solid(mouth, from: 1mm, to: -6mm, draft: 4deg)");
+    let draft = |src: &str| src.replace("pocket := solid(std.solids.Prism(mouth, from: 1mm, to: -6mm))",
+                                        "pocket := solid(std.solids.Drafted(mouth, from: 1mm, to: -6mm, draft: 4deg))");
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"),
                                               "/../examples/rounds/slot.sv")).unwrap();
     let longhand = gestures::build(&draft(&src));
@@ -213,14 +215,14 @@ fn a_named_chain_walks_its_rounds() {
         .replace("(tr := round(r: 10))", "round(r: 10)")
         .replace("(tl := round(r: 10))", "round(r: 10)")
         .replace("outline := face(bottom, br, right, tr, top, tl, left, bl)\n", "");
-    let g = gestures::build(&format!("{src}pad := solid(outline, depth: 5)\n"));
+    let g = gestures::build(&format!("{src}pad := solid(std.solids.Prism(outline, from: -5, to: 0))\n"));
     let area = 100.0 * 60.0 - 4.0 * 100.0 + std::f64::consts::PI * 100.0;
     let v = gestures::volume(&g, "pad");
     assert!((v - 5.0 * area).abs() <= 1e-6 * v, "{v} against {}", 5.0 * area);
     // and one turning right at a round walks it from the end it is drawn to
     let src = BRACKET.replace("(a := line(p0, p1))", "outline := (a := line(p0, p1))")
         .replace("outline := face(a, b, c, fillet, d, e, f)\n", "");
-    let g = gestures::build(&format!("{src}pad := solid(outline, depth: 2)\n"));
+    let g = gestures::build(&format!("{src}pad := solid(std.solids.Prism(outline, from: -2, to: 0))\n"));
     let area = 60.0 * 10.0 + 10.0 * 40.0 + 25.0 - std::f64::consts::PI * 25.0 / 4.0;
     let v = gestures::volume(&g, "pad");
     assert!((v - 2.0 * area).abs() <= 1e-6 * v, "{v} against {}", 2.0 * area);
@@ -230,6 +232,7 @@ fn a_named_chain_walks_its_rounds() {
 /// filleted, written as its corners — no seed but theirs, no branch chosen by hand.
 const STAR: &str = "\
 use std
+use std.solids
 
 component Star(hub: point, span: Length, waist: Length, tip_r: Length, fillet_r: Length) {
   ring 4 about hub {
@@ -252,7 +255,7 @@ in std.front {
   fix((0, 0)) hub
   s := Star(hub, span: 80, waist: 20, tip_r: 4, fillet_r: 3)
 }
-handle := solid(s.outline, depth: 12, draft: 2deg)
+handle := solid(std.solids.Drafted(s.outline, from: -12, to: 0, draft: 2deg))
 ";
 
 #[test]
@@ -286,6 +289,7 @@ fn a_round_too_large_for_its_line_is_said_by_name() {
     // r 9 at two corners of a 20 × 16 rectangle: the short side between them takes 18 of its 16
     let src = "\
 use std
+use std.solids
 in std.front {
 a := point
 b := point
@@ -305,6 +309,7 @@ fix((0, 16)) d
     // one round alone on a line: the largest radius the line takes
     let src = "\
 use std
+use std.solids
 in std.front {
 a := point
 b := point
@@ -323,7 +328,8 @@ fix((40, 6)) c
 #[test]
 fn what_a_round_cannot_round_is_refused() {
     // a corner its lines run straight through
-    refused("use std\nin std.front {\na := point\nb := point\nc := point\nfix((0, 0)) a\n\
+    refused("use std
+use std.solids\nin std.front {\na := point\nb := point\nc := point\nfix((0, 0)) a\n\
              fix((10, 0)) b\nfix((20, 0)) c\n(l := line(a, b)) -> (k := round(r: 2)) \
              (m := line(b, c))\n}\n", "E040", "`k` rounds no corner", "(k := round(r: 2))");
 }
@@ -344,7 +350,7 @@ fn a_round_is_refused_where_it_is_written() {
 
 #[test]
 fn a_repeat_cannot_round_into_its_next_copy() {
-    let src = "use std\nin std.front {\nrepeat 3 {\n  (s := line) -> round(r: 1)\n}\n}\n";
+    let src = "use std\nuse std.solids\nin std.front {\nrepeat 3 {\n  (s := line) -> round(r: 1)\n}\n}\n";
     let (prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
@@ -358,6 +364,7 @@ fn a_corner_nobody_wrote_still_rounds() {
     // touches each there, at the corner where they would cross, which no point keeps
     let src = "\
 use std
+use std.solids
 in std.front {
 a := point
 b := point hint((20, 0))

@@ -17,6 +17,7 @@
 // hall sensors stand in three slots' mouths.
 
 use std
+use std.solids
 use std.place (horizontal)
 use motor.dims (bo, end_turn_in, hall_l, hall_r0, hall_r1, hall_w, hs, L, overhang, Rb, Rc, Rs, Ry,
                 slot_pitch, slots, wt)
@@ -71,8 +72,7 @@ component Slot() {
     construction lip_l := line(k, g)
     shoe_l := line(g, h)
     wall_l := line(h, a)
-    cutter := solid(face(bottom, wall_r, shoe_r, lip_r, mouth, lip_l, shoe_l, wall_l),
-                    from: -L / 2 - 1mm, to: L / 2 + 1mm)
+    cutter := solid(std.solids.Prism(face(bottom, wall_r, shoe_r, lip_r, mouth, lip_l, shoe_l, wall_l), from: -L / 2 - 1mm, to: L / 2 + 1mm))
   }
 }
 
@@ -86,7 +86,7 @@ component Stator(f: Datums) {
     radius(Rs) tips
     bore := circle(center: f.o) hint(r: Rb)
     radius(Rb) bore
-    stack := solid(face(tips, holes: bore), from: -L / 2, to: L / 2)
+    stack := solid(std.solids.Prism(face(tips, holes: bore), from: -L / 2, to: L / 2))
   }
   lamination := solid(stack)
   repeat slots as i {
@@ -102,7 +102,7 @@ component Stator(f: Datums) {
     radius(Rc) band_o
     band_i := circle(center: f.o) hint(r: end_turn_in)
     radius(end_turn_in) band_i
-    windings := solid(face(band_o, holes: band_i), from: -L / 2 - overhang, to: L / 2 + overhang)
+    windings := solid(std.solids.Prism(face(band_o, holes: band_i), from: -L / 2 - overhang, to: L / 2 + overhang))
   }
   lamination cut windings
 
@@ -135,11 +135,10 @@ component Stator(f: Datums) {
                 (h4 := line(q4, q1)) -> close
     }
     f.datum angle(0deg) hc[0]
-    halls := solid(face(h1[0], h2[0], h3[0], h4[0]), from: L / 2 - hall_l, to: L / 2)
+    halls := solid(std.solids.Prism(face(h1[0], h2[0], h3[0], h4[0]), from: L / 2 - hall_l, to: L / 2))
   }
   repeat 2 as i {
-    private hall := solid(face(h1[i + 1], h2[i + 1], h3[i + 1], h4[i + 1]),
-                          from: L / 2 - hall_l, to: L / 2)
+    private hall := solid(std.solids.Prism(face(h1[i + 1], h2[i + 1], h3[i + 1], h4[i + 1]), from: L / 2 - hall_l, to: L / 2))
     hall union halls
   }
 

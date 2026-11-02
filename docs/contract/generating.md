@@ -170,9 +170,23 @@ capsule, a spline in space, a roll's trochoid, an arc's torus, B1 and B2, each l
 apart) are the gate. Field-path tests sweep a cylinder along its axis instead
 (`solid_sweep.rs::slid`).
 
-**A sweep's roll through what it cuts** (#271, §6.9 [0.88]): `sweep(tool, through: body, under: m)`
-is `SolidDef::Swept { roll: model::Roll::Through { body } }` (`Roll::Stated` is `over t in (a, b)`,
-an interval of the shared roll, `Running::roll`: [parameters.md](parameters.md)), the roll about 0
+**A motion's sweep is a set** (#737 P4, [0.199], [sets.md](sets.md)): `solid({ p | p inside(under:
+m, seen_from: g, over t in (a, b)) tool })` — what the solid `tool` occupies under `m` at some roll
+of the interval — is read by the parser as the motion sweep of the same points
+(`syntax/parser/statements.rs::swept_set`/`swept_tokens`, its body one statement saying a sweep)
+and built as `SolidDef::Swept` with a stated roll; `over t` reads a declared parameter's interval.
+With no `over` at all, `solid({ p | p inside(under: m) tool })` is what the tool occupies at *any*
+roll, the whole roll (`syntax::ROLLED`): bounded by the body the solid — or a copy of it placed at a
+roll, `tool at(under: m) θ` — is cut from, that body joined in `program/solids.rs`'s body rule
+(`program/solids/build.rs` makes `Roll::Through` and the body rule fills it in); never cut, it is
+E080 at its declaration, and a tool always in mesh with the body is E080 asking for a whole period.
+`sweep(…)` is retired (E001), the message naming the set it sweeps; the canonical printer
+(`syntax/print.rs::sweep_text`) writes the set.  `tests/solids_as_sets.rs` is the gate.
+
+**A sweep's roll through what it cuts** (#271, §6.9 [0.88]): the whole roll (through 0.198
+`sweep(tool, through: body, under: m)`) is `SolidDef::Swept { roll: model::Roll::Through { body } }`
+(`Roll::Stated` is `over t in (a, b)`, an interval of the shared roll, `Running::roll`:
+[parameters.md](parameters.md)), the roll about 0
 during which the tool meets the body's material (`document::material_sources`: stock and additions,
 never cuts, so `removal` cutting `body` is no cycle; `evaluation_operands` reads them). **Every
 reader asks `solid::roll::interval`**, never the extents (admission's `SweepContacts`, the field's
@@ -948,14 +962,14 @@ shape only where they cut the region is the box's — the measured handle's hub 
 with the draft, crosses them 48 mm about the wheel's centre. A change in every box is the blank's
 own, refused at Q2 naming the drafted member's depth to step the tool at, found between the two
 stations that differ. `accuracy::Subtracted` meters it, reading each sweep by the class's own
-`planar_subtraction::admit`; a `through:` roll never clear of its body is refused saying the period
+`planar_subtraction::admit`; a whole roll never clear of its body is refused saying the period
 to state. Every period is found by one search (`roll::first_alike`: a degree at a time, none for a
 tool the motion does not move) and said in one form (`roll::advice`). `tests/planar_subtraction.rs` is the gate
 (the #585 wheel against arithmetic made apart, the long form, two bands as one, a stepped tool,
 one arm through, Q3, the drafted wheel at 10 µm, the measured drafted handle above six bands
 stepped down it and the square arms, a drafted disc whose islands change refused at their depth,
 #613's pinion cut at a copy turned 30° and whole, and at module 1.5 over a roll ending as its flank
-grazes the held one or its contact leaves it at its corner just before, stated and `through:`).
+grazes the held one or its contact leaves it at its corner just before, stated and whole).
 
 **Export tolerance ([plan](../native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets

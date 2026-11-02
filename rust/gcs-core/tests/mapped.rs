@@ -13,6 +13,7 @@ use gcs_core::program::Elaborated;
 const TRIANGLES: &str = "\
 unit mm
 use std
+use std.solids
 in std.top {
   s0 := point
   s1 := point
@@ -118,6 +119,7 @@ fn a_map_takes_two_or_three_pairs() {
 const RECT: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
   o := point
   x := point
@@ -169,21 +171,21 @@ round := face(disc)
 fn a_face_is_carried_whole_its_walls_named_as_the_sources() {
     let names = |e: &Elaborated| faces(e, "body");
     let e = determined(&format!("{RECT}sec := rect mapped(o -> a, x -> b) in std.top\n\
-                                 body := solid(sec, depth: 5mm)\n"));
+                                 body := solid(std.solids.Prism(sec, from: -5mm, to: 0))\n"));
     assert!((volume(&e, "body") - 20.0 * 12.0 * 5.0).abs() < 1e-9, "{}", volume(&e, "body"));
     let want = ["near", "far", "close0", "close1", "close2", "close3"];
     assert_eq!(names(&e), want.iter().map(|w| format!("body.{w}")).collect());
     // the corners keep their names, under the image's
     assert!(near(page(&e, "sec.k2"), [100.0 - 12.0, 20.0]), "{:?}", page(&e, "sec.k2"));
     let e = determined(&format!("{RECT}sec := edged mapped(o -> a, x -> b) in std.top\n\
-                                 body := solid(sec, depth: 5mm)\n"));
+                                 body := solid(std.solids.Prism(sec, from: -5mm, to: 0))\n"));
     assert!((volume(&e, "body") - 1200.0).abs() < 1e-9, "{}", volume(&e, "body"));
     let want = ["near", "far", "ab", "bc", "cd", "da"];
     assert_eq!(names(&e), want.iter().map(|w| format!("body.{w}")).collect());
     // a corner named by its path is its image's by the same path
     let e = determined(&format!("{RECT}tri := face(ab.p1, ab.p2, bc.p2, -> close)\n\
                                  sec := tri mapped(o -> a, x -> b) in std.top\n\
-                                 body := solid(sec, depth: 5mm)\n"));
+                                 body := solid(std.solids.Prism(sec, from: -5mm, to: 0))\n"));
     assert!((volume(&e, "body") - 600.0).abs() < 1e-9, "{}", volume(&e, "body"));
     assert!(near(page(&e, "sec.bc.p2"), [88.0, 20.0]), "{:?}", page(&e, "sec.bc.p2"));
 }
@@ -195,7 +197,7 @@ fn a_face_is_carried_whole_its_walls_named_as_the_sources() {
 fn an_arc_under_a_similarity_is_an_arc_its_radius_scaled() {
     let src = format!("{RECT}{DEE}sec := dee mapped(o -> a, x -> b) in std.top\n\
                        disc2 := round mapped(o -> a, x -> b) in std.top\n\
-                       body := solid(sec, depth: 5mm)\nrod := solid(disc2, depth: 5mm)\n");
+                       body := solid(std.solids.Prism(sec, from: -5mm, to: 0))\nrod := solid(std.solids.Prism(disc2, from: -5mm, to: 0))\n");
     let e = determined(&src);
     let radius = |name: &str| {
         let r = e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`"));
@@ -255,7 +257,7 @@ fn turn(c: &[[f64; 2]]) -> f64 {
 fn a_mirrored_face_winds_as_its_source() {
     let e = determined(&format!("{RECT}sec := edged mapped(o -> a, x -> b) in std.top\n\
                                  rev := edged mapped(o -> a, x -> b, mirror: true) in std.top\n\
-                                 body := solid(rev, depth: 5mm)\n"));
+                                 body := solid(std.solids.Prism(rev, from: -5mm, to: 0))\n"));
     assert!(turn(&corners(&e, "edged")) > 0.0);
     assert!(turn(&corners(&e, "sec")) > 0.0);
     assert!(turn(&corners(&e, "rev")) > 0.0, "{:?}", corners(&e, "rev"));

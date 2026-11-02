@@ -9,6 +9,7 @@
 // `r` and apply (⌘↵), or round the flat's top edge alone (`shaft.near round(r: r) shaft.flat`).
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 r := 2mm   // the radius of every edge
@@ -23,6 +24,6 @@ in std.top {
   rim := arc(center: o, start: t, end: s) hint(r: 10)
   flat := line(s, t)
 }
-shaft := solid(face(rim, flat), from: 0mm, to: 20mm)
+shaft := solid(std.solids.Prism(face(rim, flat), from: 0mm, to: 20mm))
 
 round(r: r) shaft

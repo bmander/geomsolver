@@ -221,10 +221,10 @@ fn a_ring_in_contact_all_round_turned_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/spoke.sv".to_string()],true),1);
 }
 
-const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \
-    length(40) l1\n  length(20) l2\n}\nblock := solid(face(l1, l2, l3, l4), depth: 10)\n";
+    length(40) l1\n  length(20) l2\n}\nblock := solid(std.solids.Prism(face(l1, l2, l3, l4), from: -10, to: 0))\n";
 
 /// A static body is a builder of two stages — its recipe built, then meshed — which says what it
 /// is doing as a swept one does, and its display names each face and draws each edge: a block's
@@ -293,11 +293,11 @@ fn a_display_crosses_as_one_buffer_and_a_bad_one_is_refused() {
 }
 
 /// Two closed instances of one component, standing apart: one binding, placed twice.
-const PAIR: &str = "unit mm\nuse std\nuse std.place (offset)\ncomponent Plate(w: Length) {\n  in std.front {\n    \
+const PAIR: &str = "unit mm\nuse std\nuse std.solids\nuse std.place (offset)\ncomponent Plate(w: Length) {\n  in std.front {\n    \
     a := point hint((1, 1))\n    b := point hint((w, 1))\n    c := point hint((w, w))\n    e := point hint((1, w))\n    \
     a offset(dx: 1mm, dy: 1mm) std.origin\n    b offset(dx: w, dy: 1mm) std.origin\n    c offset(dx: w, dy: w) std.origin\n    \
     e offset(dx: 1mm, dy: w) std.origin\n    ab := line(a, b)\n    bc := line(b, c)\n    ce := line(c, e)\n    \
-    ea := line(e, a)\n    body := solid(face(ab, bc, ce, ea), from: 0mm, to: 2mm)\n  }\n}\n\
+    ea := line(e, a)\n    body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: 2mm))\n  }\n}\n\
     in (f := frame) { one := Plate(w: 11mm) }\nfix(dir == (1, 0, 0)) f.u\nfix(dir == (0, 1, 0)) f.v\nfix(origin == (0, 0, 0)) f\n\
     in (g := frame) { two := Plate(w: 11mm) }\nfix(dir == (1, 0, 0)) g.u\nfix(dir == (0, 1, 0)) g.v\nfix(origin == (30, 0, 0)) g\n";
 

@@ -6,6 +6,7 @@
 // 1.8751² / (2π L²) · √(E I / (ρ A)), 1.8751 the least root of 1 + cos x cosh x = 0.
 unit mm
 use std
+use std.solids
 
 L := 1000mm
 h := 50mm
@@ -37,7 +38,7 @@ in std.front {
 }
 down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
-beam := solid(side, from: -b / 2, to: b / 2) of steel
+beam := solid(std.solids.Prism(side, from: -b / 2, to: b / 2)) of steel
 
 // what it is made of answers no load, so it is the drawing's, claimed of it
 claim mass(steel.rho * L * b * h) beam

@@ -10,6 +10,7 @@
 // (Pappus).
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (turns)
 
@@ -38,7 +39,7 @@ in std.front {
   private rod_wall := line(r1, r2)
   private rod_top := line(r2, r3)
 }
-rod := solid(face(rod_axis, rod_end, rod_wall, rod_top), about: rod_axis)
+rod := solid(std.solids.Revolution(face(rod_axis, rod_end, rod_wall, rod_top), about: rod_axis))
 
 // the wheel, drawn in a plane through its axis at the rod's middle height, the axis leaning across
 // the turn: the V's tip toward the rod, its bore a cylinder `depth` behind it
@@ -64,10 +65,10 @@ in bench {
   private bore := line(v1, v2)
   private upper := line(v2, v0)
 }
-construction vwheel := solid(face(lower, bore, upper), about: wheel_axis)
+construction vwheel := solid(std.solids.Revolution(face(lower, bore, upper), about: wheel_axis))
 
 // one whole turn about the rod's axis, from where the wheel is drawn
 lathe := frame
 lathe turns(1) ax
-construction groove := sweep(vwheel over t in (0deg, 360deg), under: lathe)
+construction groove := solid({ p | p inside(under: lathe, over t in (0deg, 360deg)) vwheel })
 groove cut rod

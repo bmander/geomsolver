@@ -24,6 +24,7 @@ use crate::turns_and_slides::{admit,exported,exported_at,near,refused};
 pub(crate) fn slid_mill(r: f64,y: f64,z: f64) -> String {
     format!("unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (slides)
 
@@ -41,7 +42,7 @@ in std.top {{
   private s2 := line(b2, b3)
   private s3 := line(b3, b0)
 }}
-part := solid(face(s0, s1, s2, s3), from: 0mm, to: 10mm)
+part := solid(std.solids.Prism(face(s0, s1, s2, s3), from: 0mm, to: 10mm))
 
 private across := axis
 fix(dir == (1, 0, 0)) across
@@ -63,13 +64,13 @@ in bench {{
   private top := line(e2, e3)
   private spindle := line(e3, e0)
 }}
-construction mill := solid(face(bottom, side, top, spindle), about: spindle)
+construction mill := solid(std.solids.Revolution(face(bottom, side, top, spindle), about: spindle))
 
 private way := axis
 fix(dir == (1, 0, 0)) way
 feed := frame
 feed slides(30mm) way
-construction slot := sweep(mill over t in (0deg, 360deg), under: feed)
+construction slot := solid({{ p | p inside(under: feed, over t in (0deg, 360deg)) mill }})
 slot cut part
 ")
 }
@@ -82,6 +83,7 @@ pub(crate) fn turned_mill(r: f64,top: f64,d: f64,z: f64) -> String {
     let block = crate::prism_twists::BLOCK;
     format!("unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (turns)
 
@@ -107,11 +109,11 @@ in bench {{
   private top := line(e2, e3)
   private spindle := line(e3, e0)
 }}
-construction mill := solid(face(bottom, side, top, spindle), about: spindle)
+construction mill := solid(std.solids.Revolution(face(bottom, side, top, spindle), about: spindle))
 
 swing := frame
 swing turns(1) ax
-construction groove := sweep(mill over t in (-140deg, 140deg), under: swing)
+construction groove := solid({{ p | p inside(under: swing, over t in (-140deg, 140deg)) mill }})
 groove cut part
 ")
 }

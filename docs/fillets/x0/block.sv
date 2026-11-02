@@ -7,6 +7,7 @@
 // `cut` naming one does (§6.9, [0.31]), so the block needs no `pebble := solid(block)`.
 unit mm
 use std
+use std.solids
 in std.front {
   // a block 40 × 24 × 12
   b0 := point
@@ -42,11 +43,11 @@ in std.front {
   (ks := line(k0, k1)) -> (ke := line(k1, k2)) -> (kn := line(k2, k3)) -> (kw := line(k3, k0)) -> close
   mouth := face(ks, ke, kn, kw)
 }
-block := solid(outline, depth: 12mm)
+block := solid(std.solids.Prism(outline, from: -12mm, to: 0))
 round(3mm) block
 
-plate := solid(top, depth: 10mm)
-pocket := solid(mouth, from: 1mm, to: -6mm)
+plate := solid(std.solids.Prism(top, from: -10mm, to: 0))
+pocket := solid(std.solids.Prism(mouth, from: 1mm, to: -6mm))
 tray := solid(plate)
 pocket cut tray
 // Every edge among the pocket's faces: its floor's four and its four upright corners, concave,

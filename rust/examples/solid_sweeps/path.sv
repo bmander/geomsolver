@@ -7,6 +7,7 @@
 // spline's tightest turn, or the tube would fold on itself there.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.stations
 
@@ -36,7 +37,7 @@ in std.front {
   private meridian := arc(center: std.origin, start: bottom, end: top) hint(r: 3)
   radius(ball) meridian
 }
-construction cutter := solid(face(meridian, diameter), about: diameter)
+construction cutter := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))
 
 // the block below the top face, wide enough to hold the whole groove
 in std.top {
@@ -53,8 +54,8 @@ in std.top {
   private s2 := line(b2, b3)
   private s3 := line(b3, b0)
 }
-block := solid(face(s0, s1, s2, s3), from: -8mm, to: 0mm)
+block := solid(std.solids.Prism(face(s0, s1, s2, s3), from: -8mm, to: 0mm))
 
 // the groove the ball sweeps as its frame runs the whole spline
-construction groove := sweep(cutter over t in (0rad, 1rad), under: along.f)
+construction groove := solid({ p | p inside(under: along.f, over t in (0rad, 1rad)) cutter })
 groove cut block

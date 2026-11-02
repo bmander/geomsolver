@@ -8,6 +8,7 @@
 // the groove takes that section's area from every millimetre of the rod.
 unit mm
 use std
+use std.solids
 use std.place (coords)
 use std.motion (screws)
 
@@ -38,7 +39,7 @@ in std.front {
   private rod_wall := line(r1, r2)
   private rod_top := line(r2, r3)
 }
-rod := solid(face(rod_axis, rod_end, rod_wall, rod_top), about: rod_axis)
+rod := solid(std.solids.Revolution(face(rod_axis, rod_end, rod_wall, rod_top), about: rod_axis))
 
 // the wheel, drawn in a plane through its axis, which leans across the rod at its foot: the V's
 // tip toward the rod, its bore a cylinder `depth` behind it
@@ -64,7 +65,7 @@ in bench {
   private bore := line(v1, v2)
   private upper := line(v2, v0)
 }
-construction vwheel := solid(face(lower, bore, upper), about: wheel_axis)
+construction vwheel := solid(std.solids.Revolution(face(lower, bore, upper), about: wheel_axis))
 
 // the screw about the rod's axis, and the roll that carries the wheel from below the rod, its
 // whole size and a millimetre under the foot, to as far above the top
@@ -72,5 +73,5 @@ grind := frame
 grind screws(lead) ax
 start := -360deg * (wheel + 2mm) / lead
 finish := 360deg * (rod_l + wheel + 2mm) / lead
-construction groove := sweep(vwheel over t in (start, finish), under: grind)
+construction groove := solid({ p | p inside(under: grind, over t in (start, finish)) vwheel })
 groove cut rod

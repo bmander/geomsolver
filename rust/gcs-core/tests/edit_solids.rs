@@ -13,6 +13,7 @@ use crate::common::{gestures::{taken, volume}, parsed::{prog_of, read}};
 const PLATE: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point hint((0, 0))
 b := point hint((60, 0))
@@ -55,7 +56,7 @@ fn a_face_and_its_depth_are_two_statements() {
         let out = edit::add_solid(&prog_of(&text), "f0", &depth(written), None);
         assert_eq!(out.names, vec!["b0"]);
         let solid = taken(out);
-        assert!(solid.ends_with(&format!("f0 := face(ab, bc, cd, da)\nb0 := solid(f0, depth: {written})\n")),
+        assert!(solid.ends_with(&format!("f0 := face(ab, bc, cd, da)\nb0 := solid(std.solids.Prism(f0, from: -({written}), to: 0))\n")),
             "{solid}");
         assert!((volume(&read(&solid), "b0") - 2400.0 * d).abs() < 1e-7, "{written}");
     }
@@ -77,15 +78,15 @@ fn a_hole_is_its_circle_or_a_face_written_first() {
 
 #[test]
 fn every_sweep_a_gesture_makes_is_written_as_the_language_spells_it() {
-    let with_face = format!("{PLATE}sec := face(ab, bc, cd, da)\nbody := solid(sec, depth: 4)\n");
+    let with_face = format!("{PLATE}sec := face(ab, bc, cd, da)\nbody := solid(std.solids.Prism(sec, from: -4, to: 0))\n");
     let cases = [
         (SolidSweep { from: Some("-2".into()), to: Some("3".into()), ..Default::default() },
-            "b0 := solid(sec, from: -2, to: 3)"),
+            "b0 := solid(std.solids.Prism(sec, from: -2, to: 3))"),
         (SolidSweep { through: Some("body".into()), ..Default::default() },
-            "b0 := solid(sec, through: body)"),
-        (SolidSweep { about: Some("da".into()), ..Default::default() }, "b0 := solid(sec, about: da)"),
+            "b0 := solid(std.solids.Through(sec))"),
+        (SolidSweep { about: Some("da".into()), ..Default::default() }, "b0 := solid(std.solids.Revolution(sec, about: da))"),
         (SolidSweep { about: Some("da".into()), sweep: Some("90deg".into()), sense: Some(Sense::Cw),
-            ..Default::default() }, "b0 := solid(sec, about: da, sweep: 90deg, sense: cw)"),
+            ..Default::default() }, "b0 := solid(std.solids.Revolution(sec, about: da, from: -90deg, to: 0deg))"),
     ];
     for (how, line) in cases {
         let text = taken(edit::add_solid(&prog_of(&with_face), "sec", &how, None));
@@ -100,7 +101,7 @@ fn a_fresh_name_passes_every_name_the_document_binds() {
     let src = format!("{PLATE}b0 := 5\nsec := face(ab, bc, cd, da)\n");
     let out = edit::add_solid(&prog_of(&src), "sec", &depth("b0"), None);
     assert_eq!(out.names, vec!["b1"]);
-    assert!(taken(out).ends_with("b1 := solid(sec, depth: b0)\n"));
+    assert!(taken(out).ends_with("b1 := solid(std.solids.Prism(sec, from: -b0, to: 0))\n"));
     for (name, why) in [("sec", "already a name"), ("in", "not a name")] {
         let out = edit::add_face(&prog_of(&src), &edges(&OUTER), &[], Some(name));
         assert!(out.refused.as_deref().is_some_and(|m| m.contains(why)), "{name}: {:?}", out.refused);
@@ -129,7 +130,7 @@ fn a_mixture_of_sweeps_is_refused_in_the_parsers_words() {
 
 #[test]
 fn what_the_elaborator_refuses_is_refused_at_the_gesture() {
-    let src = format!("{PLATE}sec := face(ab, bc, cd, da)\nbody := solid(sec, depth: 4)\n");
+    let src = format!("{PLATE}sec := face(ab, bc, cd, da)\nbody := solid(std.solids.Prism(sec, from: -4, to: 0))\n");
     let prog = prog_of(&src);
     let refusals = [
         edit::add_solid(&prog, "nothing", &depth("4"), None),
@@ -152,8 +153,8 @@ fn an_error_already_in_the_document_is_not_the_gestures() {
 
 #[test]
 fn a_body_word_cuts_and_a_removed_solid_takes_its_word_with_it() {
-    let src = format!("{PLATE}sec := face(ab, bc, cd, da)\nstock := solid(sec, depth: 4)\n\
-        body := solid(stock)\nbore := solid(face(hole), through: body)\n");
+    let src = format!("{PLATE}sec := face(ab, bc, cd, da)\nstock := solid(std.solids.Prism(sec, from: -4, to: 0))\n\
+        body := solid(stock)\nbore := solid(std.solids.Through(face(hole)))\n");
     let text = taken(edit::add_body_word(&prog_of(&src), BodyWord::Cut, &["bore"], "body"));
     assert!(text.ends_with("bore cut body\n"), "{text}");
     let e = read(&text);

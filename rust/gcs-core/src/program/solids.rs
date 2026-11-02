@@ -208,6 +208,11 @@ fn body_rule(
             if let Some(face) = unbounded_section(sk, a.i()) {
                 sk.solids[a.i()].def = SolidDef::Through { face, body: b.idx };
             }
+            if let SolidDef::Through { body, .. } = &mut sk.solids[a.i()].def {
+                if *body == u32::MAX {
+                    *body = b.idx;
+                }
+            }
             // and a body under a motion over its whole roll, the roll through that material —
             // where it, or a copy of it placed at a roll, is cut
             let mut tool = a.i();
@@ -231,8 +236,18 @@ fn body_rule(
             diags.push(Diag::within(Code::E041, at, st.id, why));
         }
     }
-    // a body swept over its whole roll that nothing bounds: refused where it is declared
+    // a body swept over its whole roll, or a section through everything, that nothing bounds:
+    // refused where it is declared
     for i in 0..sk.solids.len() {
+        if matches!(sk.solids[i].def, SolidDef::Through { body: u32::MAX, .. }) {
+            let name = sk.solids[i].name.clone();
+            diags.push(Diag::new(Code::E080, declared_at(body, &name), None, format!(
+                "`{name}` is a prism through everything, which only the body it is cut from \
+                 bounds: cut it from one (`{name} cut body`), or bound it by two ordinates")));
+            sk.solids[i].def = SolidDef::Body { stock: i as u32, on: Vec::new(),
+                                                through: Vec::new(), bound: Vec::new() };
+            continue;
+        }
         let SolidDef::Swept { roll: crate::model::Roll::Through { body: through }, .. } =
             sk.solids[i].def else { continue };
         if through != u32::MAX {

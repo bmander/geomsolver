@@ -16,6 +16,7 @@
 // up together; open the glass box (⌘B) to see the sun's ring standing square to the style.
 unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 use std.shapes
 use sun
@@ -74,5 +75,5 @@ repeat 11 as i {
 }
 
 // the plate and the fin on it
-base := solid(plate.loop, depth: 6mm)
-fin := solid(face(noon, north_post, style, south_post), from: -1.5mm, to: 1.5mm)
+base := solid(std.solids.Prism(plate.loop, from: -6mm, to: 0))
+fin := solid(std.solids.Prism(face(noon, north_post, style, south_post), from: -1.5mm, to: 1.5mm))

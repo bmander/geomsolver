@@ -10,6 +10,7 @@
 // sharp outline.
 unit mm
 use std
+use std.solids
 L := 140mm       // centre to centre
 eB := 30mm       // big-end eye, outside
 eS := 16mm       // small-end eye, outside
@@ -56,11 +57,11 @@ in std.front {
   length(2 * hS) head
 }
 
-big_end := solid(face(big), from: -wB / 2, to: wB / 2)
-small_end := solid(face(small), from: -wS / 2, to: wS / 2)
-shank := solid(face(foot, right, head, left), from: -fl / 2, to: fl / 2)
-big_hole := solid(face(big_bore), from: -wB, to: wB)
-small_hole := solid(face(small_bore), from: -wS, to: wS)
+big_end := solid(std.solids.Prism(face(big), from: -wB / 2, to: wB / 2))
+small_end := solid(std.solids.Prism(face(small), from: -wS / 2, to: wS / 2))
+shank := solid(std.solids.Prism(face(foot, right, head, left), from: -fl / 2, to: fl / 2))
+big_hole := solid(std.solids.Prism(face(big_bore), from: -wB, to: wB))
+small_hole := solid(std.solids.Prism(face(small_bore), from: -wS, to: wS))
 
 // A pocket each side of the web: a flange's thickness inside the shank's sides, as far clear of
 // each eye, and beyond half the web from the plane of swing. A region over the operands' own faces

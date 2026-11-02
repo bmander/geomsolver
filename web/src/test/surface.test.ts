@@ -10,6 +10,7 @@ await initCore();
 test('a named analytic surface evaluates the solved model through the ABI', () => {
   const doc = Document.read(`unit mm
 use std
+use std.solids
 in std.front {
 o := point
 q := point
@@ -21,7 +22,7 @@ ax := line(o,q)
 meridian := circle(center: c)
 radius(1mm) meridian
 }
-ring := solid(face(meridian),about: ax)
+ring := solid(std.solids.Revolution(face(meridian), about: ax))
 wall := surface(ring,meridian)
 `);
   try {

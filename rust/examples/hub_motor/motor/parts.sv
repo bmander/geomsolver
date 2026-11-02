@@ -13,6 +13,7 @@
 // either side of the mid-plane say so where they sweep.
 
 use std
+use std.solids
 use std.place (offset, horizontal)
 use motor.dims
 
@@ -61,7 +62,7 @@ component Revolved(s0: Length, s1: Length, r0: Length, r1: Length) {
     length(100mm) ax
     sec := Box(std.side.origin, x0: s0, y0: r0, x1: s1, y1: r1)
   }
-  body := solid(sec.profile, about: ax)
+  body := solid(std.solids.Revolution(sec.profile, about: ax))
 }
 
 // A circle of `n` holes of diameter `d` on radius `r` about the end view's centre, the first at

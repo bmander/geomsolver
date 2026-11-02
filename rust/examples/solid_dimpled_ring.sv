@@ -5,6 +5,7 @@
 // ball only rests on the ring, and that touch is refused, not built.
 unit mm
 use std
+use std.solids
 use std.place (offset, right_of)
 
 ring_r := 30mm     // from the spindle to the middle of the tube
@@ -22,7 +23,7 @@ in std.front {
   section := circle(center: tube) hint(r: tube_r)
   radius(tube_r) section
 }
-ring := solid(face(section), about: spindle)
+ring := solid(std.solids.Revolution(face(section), about: spindle))
 
 // The ball, drawn in a plane standing off the front as far as it stands round the ring. It is half a
 // disc turned about a level diameter: the upper half, so the ball's seam stays above the ring.
@@ -40,7 +41,7 @@ in beside {
   horizontal diameter
   meridian := arc(center: c, start: far, end: near) hint(r: ball_r)
   radius(ball_r) meridian
-  ball := solid(face(meridian, diameter), about: diameter)
+  ball := solid(std.solids.Revolution(face(meridian, diameter), about: diameter))
 }
 
 part := solid(ring)

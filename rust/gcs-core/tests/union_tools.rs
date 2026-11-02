@@ -41,8 +41,8 @@ pub(crate) fn beads_section() -> f64 {
 fn beads_one_after_another() -> String {
     let text = beads();
     let at = text.find("construction groove :=").unwrap();
-    format!("{}construction groove := sweep(bead over t in (0deg, 360deg), under: feed)\n\
-        construction groove2 := sweep(bead2 over t in (0deg, 360deg), under: feed)\ngroove cut rod\ngroove2 cut rod\n",&text[..at])
+    format!("{}construction groove := solid({{ p | p inside(under: feed, over t in (0deg, 360deg)) bead }})\n\
+        construction groove2 := solid({{ p | p inside(under: feed, over t in (0deg, 360deg)) bead2 }})\ngroove cut rod\ngroove2 cut rod\n",&text[..at])
 }
 
 /// The union's groove is its members' grooves cut one after another, to the kernel's rounding: the
@@ -93,7 +93,7 @@ in std.front {
   private meridian2 := arc(center: centre2, start: bottom2, end: top2) hint(r: 2)
   radius(2mm) meridian2
 }
-construction small := solid(face(meridian2, diameter2), about: diameter2)
+construction small := solid(std.solids.Revolution(face(meridian2, diameter2), about: diameter2))
 construction pair := solid(cutter)
 small union pair
 construction groove := sweep(pair ");
@@ -132,7 +132,7 @@ in bench {
   private kt := line(k2, k3)
   private ka := line(k3, k0)
 }
-construction slab := solid(face(kb, kw, kt, ka), from: -20mm, to: 20mm)
+construction slab := solid(std.solids.Prism(face(kb, kw, kt, ka), from: -20mm, to: 20mm))
 construction trimmed := solid(wheel)
 slab common trimmed
 construction groove := sweep(trimmed ");
@@ -153,7 +153,7 @@ fix((4, 2.4)) tc2
 private ring2 := circle(center: tc2) hint(r: 0.4)
 radius(0.4mm) ring2
 }}
-construction bead := solid(face(ring2), about: taxis)
+construction bead := solid(std.solids.Revolution(face(ring2), about: taxis))
 construction lump := solid(tool)
 bead union lump
 ",fixtures::tools::torus(2.));
@@ -217,7 +217,7 @@ in std.front {
   private meridian2 := arc(center: centre2, start: bottom2, end: top2) hint(r: 2)
   radius(2mm) meridian2
 }
-construction small := solid(face(meridian2, diameter2), about: diameter2)
+construction small := solid(std.solids.Revolution(face(meridian2, diameter2), about: diameter2))
 construction pair := solid(cutter)
 small union pair
 construction groove := sweep(pair ");

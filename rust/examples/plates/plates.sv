@@ -9,6 +9,7 @@
 
 unit mm
 use std
+use std.solids
 use std.place (offset)
 
 // a plate drawn about its frame's origin, `w` by `d` and `h` thick
@@ -26,7 +27,7 @@ component Plate(w: Length, d: Length, h: Length) {
     bc := line(b, c)
     ce := line(c, e)
     ea := line(e, a)
-    body := solid(face(ab, bc, ce, ea), from: 0mm, to: h)
+    body := solid(std.solids.Prism(face(ab, bc, ce, ea), from: 0mm, to: h))
   }
 }
 

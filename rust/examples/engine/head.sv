@@ -24,6 +24,7 @@ use engine.dims (D, P, back, camcap, camh, camx, deck, dev, div, dn_e, dn_i, ece
 use engine.parts
 use engine.valvetrain
 use std
+use std.solids
 use std.place (horizontal, offset, right_of)
 
 // the camshafts' own sizes: the shaft between its journals, and each lobe's width along the axis,
@@ -223,8 +224,8 @@ component CylinderHead(cycle: Angle) {
       construction bolt_e := circle(center: bolt_ep) hint(r: rbolt)
       radius(rbolt) bolt_i
       radius(rbolt) bolt_e
-      private bolt_ib := solid(face(bolt_i), from: deck + gasket - 1mm, to: camh + gasket - dpocket)
-      private bolt_eb := solid(face(bolt_e), from: deck + gasket - 1mm, to: camh + gasket - dpocket)
+      private bolt_ib := solid(std.solids.Prism(face(bolt_i), from: deck + gasket - 1mm, to: camh + gasket - dpocket))
+      private bolt_eb := solid(std.solids.Prism(face(bolt_e), from: deck + gasket - 1mm, to: camh + gasket - dpocket))
       bolt_ib cut casting
       bolt_eb cut casting
     }
@@ -238,12 +239,11 @@ component CylinderHead(cycle: Angle) {
       // the combustion chamber over this bore: the roof's section run across the bore, kept
       // within the bore's own outline, so the roof's planes meet the bore's wall; and the plug's
       // well, from inside the chamber up to the cam box
-      private chamber := solid(face(ch_l.p, ridge.p, ch_r.p, -> close),
-                               from: front + 25mm + i * P, to: front + 25mm + P + i * P)
-      private bore_b := solid(face(barrel), from: deck + gasket - 3mm, to: roof + gasket + 1mm)
+      private chamber := solid(std.solids.Prism(face(ch_l.p, ridge.p, ch_r.p, -> close), from: front + 25mm + i * P, to: front + 25mm + P + i * P))
+      private bore_b := solid(std.solids.Prism(face(barrel), from: deck + gasket - 3mm, to: roof + gasket + 1mm))
       bore_b common chamber
       chamber cut casting
-      private well_b := solid(face(plug), from: roof + gasket - 4mm, to: camh + gasket + 1mm)
+      private well_b := solid(std.solids.Prism(face(plug), from: roof + gasket - 4mm, to: camh + gasket + 1mm))
       well_b cut casting
       repeat 2 as k {
         vi := engine.parts.At(pc, dx: (2 * k - 1) * vx, dy: vs)
@@ -273,18 +273,16 @@ component CylinderHead(cycle: Angle) {
   // saddles each shaft's pocket is sunk for its lobes; and under each bore is its chamber, with
   // the plug's well (above, with the plan).  The valves bore their own guides and buckets in it
   // (`Valves`).
-  casting := solid(face(gasket, side_r, topline, side_l), from: front, to: back)
-  tunnel_i := solid(face(j_i), from: front - 1mm, to: back + 1mm)
-  tunnel_e := solid(face(j_e), from: front - 1mm, to: back + 1mm)
+  casting := solid(std.solids.Prism(face(gasket, side_r, topline, side_l), from: front, to: back))
+  tunnel_i := solid(std.solids.Prism(face(j_i), from: front - 1mm, to: back + 1mm))
+  tunnel_e := solid(std.solids.Prism(face(j_e), from: front - 1mm, to: back + 1mm))
   tunnel_i cut casting
   tunnel_e cut casting
-  box := solid(well.profile, from: front + wwall, to: back - wwall)
+  box := solid(std.solids.Prism(well.profile, from: front + wwall, to: back - wwall))
   box cut casting
   repeat 4 as i {
-    private pocket_ib := solid(pocket_i.profile, from: front + 25mm + wcamb / 2 + i * P,
-                               to: front + 25mm + P - wcamb / 2 + i * P)
-    private pocket_eb := solid(pocket_e.profile, from: front + 25mm + wcamb / 2 + i * P,
-                               to: front + 25mm + P - wcamb / 2 + i * P)
+    private pocket_ib := solid(std.solids.Prism(pocket_i.profile, from: front + 25mm + wcamb / 2 + i * P, to: front + 25mm + P - wcamb / 2 + i * P))
+    private pocket_eb := solid(std.solids.Prism(pocket_e.profile, from: front + 25mm + wcamb / 2 + i * P, to: front + 25mm + P - wcamb / 2 + i * P))
     pocket_ib cut casting
     pocket_eb cut casting
   }
@@ -341,34 +339,32 @@ component Camshaft(journal: circle, ref: line, c_s: point, intake: Int, cycle: A
 
   // -- the shaft and its caps as solids ---------------------------------------------------
   shaft := solid()
-  stub := solid(face(journal), from: front - 55mm, to: front + 25mm + wcamb / 2)
-  between := solid(face(core), from: front + 25mm, to: back - 10mm)
+  stub := solid(std.solids.Prism(face(journal), from: front - 55mm, to: front + 25mm + wcamb / 2))
+  between := solid(std.solids.Prism(face(core), from: front + 25mm, to: back - 10mm))
   stub union shaft
   between union shaft
   repeat 4 as j {
-    private journal_b := solid(face(journal), from: front + 25mm + (j + 1) * P - wcamb / 2,
-                               to: front + 25mm + (j + 1) * P + wcamb / 2)
+    private journal_b := solid(std.solids.Prism(face(journal), from: front + 25mm + (j + 1) * P - wcamb / 2, to: front + 25mm + (j + 1) * P + wcamb / 2))
     journal_b union shaft
   }
   repeat 4 as i {
     repeat 2 as k {
       xv := front + 25mm + P / 2 + i * P + (2 * k - 1) * vx
       when i == 0 {
-        private lobe_b := solid(lobe.profile, from: xv - wlobe / 2, to: xv + wlobe / 2)
+        private lobe_b := solid(std.solids.Prism(lobe.profile, from: xv - wlobe / 2, to: xv + wlobe / 2))
       }
       when i > 0 {
-        private lobe_b := solid(ghost[i - 1].profile, from: xv - wlobe / 2, to: xv + wlobe / 2)
+        private lobe_b := solid(std.solids.Prism(ghost[i - 1].profile, from: xv - wlobe / 2, to: xv + wlobe / 2))
       }
       lobe_b union shaft
     }
   }
   caps := solid()
   repeat 5 as j {
-    private cap_b := solid(cap.profile, from: front + 25mm + j * P - wcamb / 2,
-                           to: front + 25mm + j * P + wcamb / 2)
+    private cap_b := solid(std.solids.Prism(cap.profile, from: front + 25mm + j * P - wcamb / 2, to: front + 25mm + j * P + wcamb / 2))
     cap_b union caps
   }
-  bore := solid(face(journal), from: front, to: back)
+  bore := solid(std.solids.Prism(face(journal), from: front, to: back))
   bore cut caps
 }
 

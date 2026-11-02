@@ -1,5 +1,6 @@
 unit mm
 use std
+use std.solids
 in std.front {
   fp0 := point
   fix((1e-05, 0)) fp0
@@ -16,4 +17,4 @@ in std.front {
   fix((0, 1e-05)) b
   ax := line(a,b)
 }
-result := solid(f, about: ax)
+result := solid(std.solids.Revolution(f, about: ax))

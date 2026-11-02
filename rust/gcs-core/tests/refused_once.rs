@@ -11,6 +11,7 @@ fn slot(rounds: usize) -> String {
     let mut src = String::from("\
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 in std.top {
   c0 := point
@@ -27,7 +28,7 @@ in std.top {
   radius(2mm) west
   horizontal lower
 }
-slot := solid(outline, from: -16mm, to: 0mm, draft: 8deg)
+slot := solid(std.solids.Drafted(outline, from: -16mm, to: 0mm, draft: 8deg))
 body := solid(slot)
 ");
     for cap in ["far", "near"].into_iter().take(rounds) {

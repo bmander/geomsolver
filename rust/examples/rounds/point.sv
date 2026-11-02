@@ -10,6 +10,7 @@
 // apex, and over 5 no point of the top stands that far in from the side: refused.
 unit mm
 use std
+use std.solids
 use std.rounds (chamfer)
 
 d := 5mm   // the chamfer's distance on each face
@@ -20,5 +21,5 @@ in std.top {
   rim := circle(center: o) hint(r: 5)
   radius(5mm) rim
 }
-drum := solid(face(rim), from: 0mm, to: 10mm)
+drum := solid(std.solids.Prism(face(rim), from: 0mm, to: 10mm))
 drum.near chamfer(d: d) drum.rim

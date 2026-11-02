@@ -9,6 +9,7 @@
 // face on is `std`'s `Hex`; a washer, a bearing and a pin's head are the circles below.
 
 use std
+use std.solids
 use std.shapes
 
 // -- bolts, nuts and washers, 1/4"-20 ----------------------------------------------------------
@@ -130,7 +131,7 @@ component Groove(body: solid, f: plane,
   g0 distance(z, along: u) f
   claim g0 distance(w) g3
   claim g0 distance(rb) ax
-  groove := solid(gf, about: ax)
+  groove := solid(std.solids.Revolution(gf, about: ax))
   groove cut body
 }
 
@@ -144,7 +145,7 @@ component BoltPattern(body: solid, center: point, ref: line,
   private construction layout := std.shapes.Polygon(center, ref, n: n, r: pitch_r, phase: phase)
   repeat n as i {
     hole := radius(hole_r) circle(center: layout.v[i])
-    private drill := solid(face(hole), through: body)
+    private drill := solid(std.solids.Through(face(hole)))
     drill cut body
   }
 }

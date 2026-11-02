@@ -176,11 +176,12 @@ fn a_view_draws_every_corner_and_only_the_silhouettes_of_a_round_face() {
     let e = crate::common::linked::solved("\
 unit mm
 use std
+use std.solids
 in std.top {
   hub := point
   fix((0mm, 0mm)) hub
   rim := radius(8mm) circle(center: hub)
-  can := solid(face(rim), from: 0mm, to: 20mm)
+  can := solid(std.solids.Prism(face(rim), from: 0mm, to: 20mm))
 }
 ");
     let i = e.map.ent_named("can").unwrap().i();

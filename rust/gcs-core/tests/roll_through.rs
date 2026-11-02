@@ -148,7 +148,7 @@ fn a_roll_through_prints_as_written() {
         .find(|st| src[st.span.lo as usize..st.span.hi as usize].starts_with("construction removal")).unwrap();
     let mut printed = String::new();
     syntax::write_stmt_to(&mut printed, &stmt.kind).unwrap();
-    assert!(printed.contains("sweep(tool, through: part, under: turn)"), "{printed}");
+    assert!(printed.contains("solid({ p | p inside(under: turn) tool })"), "{printed}");
     let e = read(&src.replace(&src[stmt.span.lo as usize..stmt.span.hi as usize], &printed));
     let removal = crate::common::ent(&e, "removal").i();
     assert!(matches!(e.sketch.solids[removal].def, SolidDef::Swept { roll: Roll::Through { .. }, .. }));

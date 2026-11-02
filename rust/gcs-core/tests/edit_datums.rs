@@ -125,11 +125,12 @@ fn a_plane_from_a_plane_is_parallel_and_set_off_by_a_stated_distance() {
 }
 
 /// A 40 × 30 block on the front plane (normal −y), 20 deep behind it.
-const BLOCK: &str = "use std\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n\
+const BLOCK: &str = "use std
+use std.solids\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n\
     c := point hint((40, 30))\n  d := point hint((0, 30))\n  ab := line(a, b)\n\
     bc := line(b, c)\n  cd := line(c, d)\n  da := line(d, a)\n}\n\
     fix((0, 0)) a\nfix((40, 0)) b\nfix((40, 30)) c\nfix((0, 30)) d\n\
-    f0 := face(ab, bc, cd, da)\nb0 := solid(f0, depth: 20)\n";
+    f0 := face(ab, bc, cd, da)\nb0 := solid(std.solids.Prism(f0, from: -20, to: 0))\n";
 
 /// Sketch on `face` of the block where the eye's ray met it, and the document it makes, solved.
 fn on_face(face: &str, at: Option<[f64; 3]>) -> (String, Elaborated) {

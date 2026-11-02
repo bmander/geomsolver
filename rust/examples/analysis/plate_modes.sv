@@ -7,6 +7,7 @@
 // (1, 2) and (2, 1), (2, 2), and the pair (1, 3) and (3, 1); each pair is one frequency twice.
 unit mm
 use std
+use std.solids
 
 a := 1000mm
 h := 50mm
@@ -30,7 +31,7 @@ in std.front {
             (west := line(b3, b0)) -> close
 }
 // drawn in the front, x and z, and its thickness swept across y
-plate := solid(square, from: -h / 2, to: h / 2) of steel
+plate := solid(std.solids.Prism(square, from: -h / 2, to: h / 2)) of steel
 
 scenario ring {
   pinned plate.west along: std.z

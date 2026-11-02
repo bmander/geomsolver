@@ -8,6 +8,7 @@
 // mid-wall circle.
 
 use std
+use std.solids
 use std.place (horizontal)
 use motor.dims (half, L, magnet_arc, poles, Rm, Ro, Rr, screw_r, screws, tap4, tap_depth)
 use motor.parts (Datums)
@@ -44,7 +45,7 @@ component Magnet(theta: Angle) {
     radius(Rr) outer
     side_r := line(p2, p3)
     side_l := line(p4, p1)
-    body := solid(face(inner, side_r, outer, side_l), from: -L / 2, to: L / 2)
+    body := solid(std.solids.Prism(face(inner, side_r, outer, side_l), from: -L / 2, to: L / 2))
   }
 }
 
@@ -59,7 +60,7 @@ component Rotor(f: Datums, theta: Angle) {
     radius(Rr) bore
     shell := circle(center: f.o) hint(r: Ro)
     radius(Ro) shell
-    ring := solid(face(shell, holes: bore), from: -half, to: half)
+    ring := solid(std.solids.Prism(face(shell, holes: bore), from: -half, to: half))
   }
   magnets := solid(m[0].body)
   repeat poles - 1 as i {
@@ -79,8 +80,8 @@ component Rotor(f: Datums, theta: Angle) {
   }
   f.datum angle(180deg / screws) tap_radial[0]
   repeat screws as i {
-    private left := solid(face(screw[i]), from: half - tap_depth, to: half)
-    private right := solid(face(screw[i]), from: -half, to: -half + tap_depth)
+    private left := solid(std.solids.Prism(face(screw[i]), from: half - tap_depth, to: half))
+    private right := solid(std.solids.Prism(face(screw[i]), from: -half, to: -half + tap_depth))
     left cut ring
     right cut ring
   }

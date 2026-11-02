@@ -2,6 +2,7 @@
 // a vase whose wall is a spline turned about its axis.
 unit mm
 use std
+use std.solids
 
 // The cam: a base, a spline from its end round to the back, and the back straight down.
 in std.front {
@@ -18,11 +19,11 @@ in std.front {
   lobe := spline(b, c, d, e)
   base := line(a, b)
   back := line(e, a)
-  plate := solid(face(base, lobe, back), depth: 6mm)
+  plate := solid(std.solids.Prism(face(base, lobe, back), from: -6mm, to: 0))
   axle := point
   fix((12mm, 9mm)) axle
   bore := radius(4mm) circle(center: axle) hint(r: 4mm)
-  drill := solid(face(bore), through: plate)
+  drill := solid(std.solids.Through(face(bore)))
   cam := solid(plate)
   drill cut cam
 
@@ -44,4 +45,4 @@ in std.front {
   rim := line(lip, crown)
   construction centerline spine := line(crown, foot)
 }
-vase := solid(face(sole, wall, rim, spine), about: spine)
+vase := solid(std.solids.Revolution(face(sole, wall, rim, spine), about: spine))

@@ -424,6 +424,7 @@ R coincident(lag == {lag}) contact
 pub(super) const SIDE_MESHING: &str = "\
 unit mm
 use std
+use std.solids
 use std.motion (turns)
 in std.front {
   o := point
@@ -444,7 +445,7 @@ in std.front {
   l3 := line(c, d)
   l4 := line(d, a)
 }
-blade := solid(face(l1, l2, l3, l4), about: ax)
+blade := solid(std.solids.Revolution(face(l1, l2, l3, l4), about: ax))
 side := surface(blade, l1)
 g1 := point hint((5, 40, 3))
 g2 := point hint((9, 41, 13))

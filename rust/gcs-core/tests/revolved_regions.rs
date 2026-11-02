@@ -13,6 +13,7 @@ fn solved(source: &str) -> program::Elaborated {
 const RING: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point
 q := point
@@ -24,12 +25,13 @@ ax := line(o,q)
 rim := circle(center: c)
 radius(1mm) rim
 }
-body := solid(face(rim), about: ax)
+body := solid(std.solids.Revolution(face(rim), about: ax))
 ";
 
 const SPHERE: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point
 a := point
@@ -41,7 +43,7 @@ rim := arc(center: o, start: a, end: b)
 radius(2mm) rim
 ax := line(b,a)
 }
-body := solid(face(rim,ax), about: ax)
+body := solid(std.solids.Revolution(face(rim,ax), about: ax))
 ";
 
 fn check(region: &RevolvedRegion,p: [f64;3],expected: f64) {
@@ -112,6 +114,7 @@ fn finite_conical_material_includes_caps_and_refuses_support_continuations() {
     let e = solved("\
 unit mm
 use std
+use std.solids
 in std.front {
 a := point
 b := point
@@ -124,7 +127,7 @@ fix((0, 3)) d
 ax := line(a,d)
 profile := (ab := line(a,b)) -> (bc := line(b,c)) -> (cd := line(c,d)) -> (da := line(d,a)) -> close
 }
-body := solid(profile,about: ax)
+body := solid(std.solids.Revolution(profile, about: ax))
 ");
     let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
     for (p,d) in [([0.,0.,2.],-1.),([1.,0.,2.],-std::f64::consts::FRAC_1_SQRT_2),

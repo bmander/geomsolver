@@ -4,6 +4,7 @@
 // axis. Every face it grinds with meets the next one tangent, so its characteristic under a
 // screw runs smoothly from face to face (docs/generating-sweeps.md, the constant-twist class).
 use std
+use std.solids
 use std.place (coords)
 
 // `wheel` gives the wheel's radius to its rim (`rim`), how near the drill's axis the rim comes
@@ -58,7 +59,7 @@ component GrindingWheel(side: plane, setting: Angle, wheel: group) {
     left_side := line(hl, fl)
     left_flank := line(fl, tl)
   }
-  body := solid(face(round, right_flank, right_side, hub, left_side, left_flank), about: hub)
+  body := solid(std.solids.Revolution(face(round, right_flank, right_side, hub, left_side, left_flank), about: hub))
 }
 
 preview {

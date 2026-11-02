@@ -14,7 +14,7 @@ use crate::common::gestures::{build, names, near, seen, volume};
 /// On the front: a 60 × 40 rectangle `ab…da` from the origin, swept 5 behind as `block`; a
 /// circle `hole` of radius 5 inside it at (30, 20); and a 10 × 10 square `pq…sp` at (80, 0),
 /// clear of it.
-const DRAWN: &str = "unit mm\nuse std\nin std.front {\n\
+const DRAWN: &str = "unit mm\nuse std\nuse std.solids\nin std.front {\n\
     a := point hint((0, 0))\nb := point hint((60, 0))\nc := point hint((60, 40))\n\
     d := point hint((0, 40))\nab := line(a, b)\nbc := line(b, c)\ncd := line(c, d)\n\
     da := line(d, a)\no := point hint((30, 20))\nhole := circle(center: o) hint(r: 5)\n\
@@ -23,7 +23,7 @@ const DRAWN: &str = "unit mm\nuse std\nin std.front {\n\
     sp := line(s, p)\n\
     fix((0, 0)) a\nfix((60, 0)) b\nfix((60, 40)) c\nfix((0, 40)) d\nfix((30, 20)) o\nfix(r == 5) hole\n\
     fix((80, 0)) p\nfix((90, 0)) q\nfix((90, 10)) r\nfix((80, 10)) s\n}\n\
-    block := solid(face(ab, bc, cd, da), depth: 5)\n";
+    block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -5, to: 0))\n";
 
 /// `edit::extrude` over the document as it stands.
 fn extrude(e: &Elaborated, outer: &[String], holes: &[Vec<String>],
@@ -45,7 +45,7 @@ fn a_click_writes_the_face_and_the_solid_as_one_splice() {
     assert_eq!(out.names, vec!["b0", "f0"]);
     let d = depth_written(&out.text, "b0");
     assert!(d > 0.0, "{}", out.text);
-    assert!(out.text.ends_with(&format!("f0 := face(pq, qr, rs, sp)\nb0 := solid(f0, depth: {})\n",
+    assert!(out.text.ends_with(&format!("f0 := face(pq, qr, rs, sp)\nb0 := solid(std.solids.Prism(f0, from: -({}), to: 0))\n",
         gcs_core::syntax::num(d))), "{}", out.text);
     assert!(near(volume(&build(&out.text), "b0"), 100.0 * d, 1e-9));
 }
@@ -77,7 +77,7 @@ fn with_a_body_selected_it_joins_cuts_or_cuts_through() {
     assert!(near(volume(&build(&out.text), "block"), block - d.min(5.0) * 25.0 * PI, 2e-3));
     // through all: no depth, through the body, and cut
     let out = extrude(&e, &names(&["hole"]), &[], Some((BodyWord::Cut, "block")), true);
-    assert!(out.text.ends_with("b0 := solid(f0, through: block)\nb0 cut block\n"), "{}", out.text);
+    assert!(out.text.ends_with("b0 := solid(std.solids.Through(f0))\nb0 cut block\n"), "{}", out.text);
     assert!(near(volume(&build(&out.text), "block"), 5.0 * (2400.0 - 25.0 * PI), 2e-3));
     // through all with nothing to go through is refused
     let out = extrude(&e, &names(&["hole"]), &[], None, true);
@@ -102,11 +102,11 @@ fn a_solid_is_resized_in_place_and_the_file_is_otherwise_untouched() {
     let rest = |t: &str| t.lines().filter(|l| !l.starts_with("block :=")).collect::<Vec<_>>().join("\n");
     let cases = [
         (SolidSweep { from: Some("0".into()), to: Some("7".into()), ..Default::default() },
-            "block := solid(face(ab, bc, cd, da), from: 0, to: 7)", 7.0),
+            "block := solid(std.solids.Prism(face(ab, bc, cd, da), from: 0, to: 7))", 7.0),
         (SolidSweep { from: Some("-3".into()), to: Some("3".into()), ..Default::default() },
-            "block := solid(face(ab, bc, cd, da), from: -3, to: 3)", 6.0),
+            "block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -3, to: 3))", 6.0),
         (SolidSweep { depth: Some("4".into()), ..Default::default() },
-            "block := solid(face(ab, bc, cd, da), depth: 4)", 4.0),
+            "block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -4, to: 0))", 4.0),
     ];
     for (how, line, thick) in cases {
         let out = edit::set_sweep(&e, &e.program, block, &how);
@@ -129,7 +129,7 @@ fn a_prism_previews_a_new_extent_before_the_source_says_it() {
     assert!(near(volume(&e, "block"), 2400.0 * 9.0, 1e-9));
     assert_ne!(e.sketch.shape_epoch, epoch, "a binding caching a mesh is told");
     // a body is no prism
-    let joined = build(&format!("{DRAWN}stock := solid(face(pq, qr, rs, sp), depth: 2)\nstock union block\n"));
+    let joined = build(&format!("{DRAWN}stock := solid(std.solids.Prism(face(pq, qr, rs, sp), from: -2, to: 0))\nstock union block\n"));
     let body = joined.map.ent_named("block").unwrap().i();
     let mut sk = joined.sketch.clone();
     assert!(matches!(sk.solids[body].def, gcs_core::model::SolidDef::Body { .. }));
@@ -164,7 +164,7 @@ fn the_arrow_runs_from_the_face_to_its_far_end_and_reads_a_drag_back() {
 /// the distance, and a drag on it read back as a distance, either side.
 #[test]
 fn an_offset_planes_arrow_runs_along_the_normal_it_is_set_off_by() {
-    let e = build("unit mm\nuse std\n\
+    let e = build("unit mm\nuse std\nuse std.solids\n\
         v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) hint(origin: (0, 0, 12))\n\
         v0 parallel std.top\nstd.top distance(12) v0\n");
     let sk = &e.sketch;

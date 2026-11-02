@@ -26,10 +26,93 @@ impl std::fmt::Display for PrintError {
 
 impl std::error::Error for PrintError {}
 
+/// **What a solid's brackets hold in place, folded back into them** (#737): a set, a family's call
+/// or a face written in place is a statement of its own under a key the source cannot write, a
+/// link of the statement it stands in (`parser::statements::solid_set_in_place`, `faces_in_place`);
+/// printed, each is its text again where its key is read, and its own statement goes.
+fn fold_in_place(p: &mut Program) {
+    use super::{Chained, InstVal, Kid};
+    for comp in p.components.iter_mut().filter(|c| c.module.is_none()) {
+        let mut texts: std::collections::BTreeMap<String, String> = Default::default();
+        // the faces first: a call reads them
+        for pass in 0..2 {
+            for st in &comp.body {
+                if st.chained != Chained::Link {
+                    continue;
+                }
+                match (&st.kind, pass) {
+                    (StmtKind::Decl(d), 0) if d.kind == crate::model::EntKind::Face
+                        && d.name.key().text.starts_with("#a") => {
+                        let mut s = String::new();
+                        write_decl(&mut s, d);
+                        texts.insert(d.name.key().text.clone(), s);
+                    }
+                    (StmtKind::Instance(i), 1) if i.name.text.starts_with("#i") => {
+                        let mut i = i.clone();
+                        for a in &mut i.args {
+                            if let InstVal::Ref(r) = &mut a.value {
+                                if let Some(t) = texts.get(&r.root.text) {
+                                    r.root.text = t.clone();
+                                }
+                            }
+                        }
+                        let mut s = String::new();
+                        write_instance_call(&mut s, &i);
+                        texts.insert(i.name.text.clone(), s);
+                    }
+                    (StmtKind::Set(set), 1) if set.name.text.starts_with("#s") => {
+                        let mut s = String::new();
+                        if write_stmt_to(&mut s, &st.kind).is_ok() {
+                            if let Some((_, lit)) = s.split_once(":= ") {
+                                texts.insert(set.name.text.clone(), lit.to_string());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if texts.is_empty() {
+            continue;
+        }
+        let folded = |st: &super::Stmt| st.chained == Chained::Link && match &st.kind {
+            StmtKind::Decl(d) => texts.contains_key(&d.name.key().text),
+            StmtKind::Instance(i) => texts.contains_key(&i.name.text),
+            StmtKind::Set(s) => texts.contains_key(&s.name.text),
+            _ => false,
+        };
+        comp.body.retain(|st| !folded(st));
+        for st in &mut comp.body {
+            match &mut st.kind {
+                StmtKind::Decl(d) => {
+                    for k in d.children.iter_mut().flatten() {
+                        if let Kid::Ref(r) = k {
+                            if let Some(t) = texts.get(&r.root.text) {
+                                r.root.text = t.clone();
+                            }
+                        }
+                    }
+                }
+                StmtKind::Relation(r) => {
+                    if let Some(w) = r.form.written_mut() {
+                        for o in &mut w.ops {
+                            if let Some(t) = texts.get(&o.root.text) {
+                                o.root.text = t.clone();
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 /// Export the flat subset and update component and statement spans.
 /// This is canonical export, not source formatting; use `Program::text` to retain source.
 /// Unsupported structure leaves the program unchanged.
 pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
+    fold_in_place(p);
     if p.preview.is_some() {
         return Err(PrintError { construct: "preview blocks" });
     }

@@ -168,6 +168,7 @@ fn a_timeline_is_told_the_march_in_the_cores_words() {
 const SWUNG: &str = "\
 unit mm
 use std
+use std.solids
 use std.place (vertical, coords, on_u)
 use std.motion (turns)
 use std.shapes
@@ -184,8 +185,8 @@ in std.top {
   pc coords(du: 25mm, dv: 25mm) std.top
   post_r := radius(4mm) circle(center: pc)
 }
-arm := solid(face(arm_r.loop), from: 0mm, to: 5mm)
-post := solid(face(post_r), from: 0mm, to: 5mm)
+arm := solid(std.solids.Prism(face(arm_r.loop), from: 0mm, to: 5mm))
+post := solid(std.solids.Prism(face(post_r), from: 0mm, to: 5mm))
 swing := frame
 swing turns(1) pivot
 fix(value == t) swing

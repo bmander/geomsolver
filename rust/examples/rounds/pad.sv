@@ -11,6 +11,7 @@
 // `pad.plate.near round(r: edge_radius) pad.plate.cd`, mitred where it meets the side's.
 unit mm
 use std
+use std.solids
 use std.shapes
 use std.rounds (round)
 
@@ -31,9 +32,9 @@ in std.front {
   radius(bore_radius) hole
 }
 
-plate := solid(outline.loop, depth: thickness)
-boss := solid(face(rim), from: 0mm, to: boss_height)
-bore := solid(face(hole), from: -thickness, to: boss_height)
+plate := solid(std.solids.Prism(outline.loop, from: -thickness, to: 0))
+boss := solid(std.solids.Prism(face(rim), from: 0mm, to: boss_height))
+bore := solid(std.solids.Prism(face(hole), from: -thickness, to: boss_height))
 pad := solid(plate)
 boss union pad
 bore cut pad

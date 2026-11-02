@@ -26,4 +26,4 @@ tip := point
 fix((lean, height, 2mm)) tip
 base := face(a0, a1, a2, a3, -> close)
 param s: Scalar over (0, 1)
-pyramid := sweep(std.stations.Apex(base, tip).f over s)
+pyramid := solid({ p | p coincident(over s) std.stations.Apex(base, tip).f })

@@ -8,6 +8,7 @@
 // shaft's answers: a stress is the least forgiving output, and the round is a few elements across.
 unit mm
 use std
+use std.solids
 
 R := 20mm
 r := 12mm
@@ -44,7 +45,7 @@ in std.front {
   spine := line(k, o)
   section := face(base, barrel, step, round, neck, head, spine)
 }
-shaft := solid(section, about: std.z) of steel
+shaft := solid(std.solids.Revolution(section, about: std.z)) of steel
 
 // what it is made of answers no load, so it is the drawing's, claimed of it
 claim mass(>= steel.rho * pi * (R^2 * shoulder + r^2 * (L - shoulder))) shaft

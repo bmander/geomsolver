@@ -23,6 +23,7 @@ const EXACT: f64 = 1e-10;
 /// the axis.
 const EPIC: &str = "unit mm
 use std
+use std.solids
 use std.place (on_u)
 use std.shapes
 use std.stations
@@ -44,13 +45,14 @@ in screw {
   sq := std.shapes.CenteredRectangle(c, w: size, h: size) in std.front
   sec := face(sq.loop)
 }
-thread := sweep(sec over s)
+thread := solid({ p | p coincident(over s) sec })
 ";
 
 /// The same thread as `lofts/thread.sv` sweeps it: the square drawn in `std.stations.Helix`'s axial
 /// plane, a face family over the instance written in place.
 const STATION: &str = "unit mm
 use std
+use std.solids
 use std.place (on_u)
 use std.shapes
 use std.stations
@@ -66,7 +68,7 @@ component Thread(base: plane, r: Length, size: Length, pitch: Length, turns: Sca
   f := face(sq.loop)
 }
 param s: Scalar over (0, 1)
-thread := sweep(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s)
+thread := solid({ p | p coincident(over s) Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f })
 ";
 
 fn index(e: &Elaborated, name: &str) -> usize {
@@ -178,8 +180,8 @@ fn a_face_family_reads_its_parameter_as_declared() {
     let s = said(&length);
     assert!(s.iter().any(|m| m.starts_with("E103") && m.contains("a parameter of its kind")),
             "{s:?}");
-    let solid = EPIC.replace("thread := sweep(sec over s)",
-                             "bar := solid(sec, from: 0mm, to: 1mm)\nthread := sweep(bar over s)");
+    let solid = EPIC.replace("thread := solid({ p | p coincident(over s) sec })",
+                             "bar := solid(std.solids.Prism(sec, from: 0mm, to: 1mm))\nthread := solid({ p | p coincident(over s) bar })");
     let s = said(&solid);
     assert!(s.iter().any(|m| m.starts_with("E103") && m.contains("is no angle")), "{s:?}");
 }

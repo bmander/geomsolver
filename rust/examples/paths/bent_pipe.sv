@@ -75,5 +75,5 @@ component Bar(g: path, up: axis, lo: Length, hi: Length, s: Scalar) {
 }
 
 param s: Scalar over (0, 5)
-pipe := sweep(Tube(route, std.z, r: r).f over s)
-bar := sweep(Bar(route, std.z, lo: -1mm, hi: 2mm).f over s)
+pipe := solid({ p | p coincident(over s) Tube(route, std.z, r: r).f })
+bar := solid({ p | p coincident(over s) Bar(route, std.z, lo: -1mm, hi: 2mm).f })

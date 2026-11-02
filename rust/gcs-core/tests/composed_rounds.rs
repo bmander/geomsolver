@@ -13,9 +13,9 @@ use crate::common::{ent, parse, text::solved};
 /// A disc of radius `r` drawn about the front plane's origin and swept 20 deep (y from 0 to 20),
 /// `rim` its wall, `near` and `far` its caps; then `rest`.
 fn disc(r: f64, rest: &str) -> String {
-    format!("unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {{\n  o := point\n  fix((0, 0)) o\n  \
+    format!("unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {{\n  o := point\n  fix((0, 0)) o\n  \
              rim := circle(center: o) hint(r: {r})\n  radius({r}mm) rim\n}}\n\
-             plate := solid(face(rim), depth: 20mm)\n{rest}")
+             plate := solid(std.solids.Prism(face(rim), from: -20mm, to: 0))\n{rest}")
 }
 
 /// Solid `name` of `e` built exactly, and its volume.
@@ -147,11 +147,11 @@ fn uses_that_name_each_other_are_refused() {
 /// A plate of 40, its far rim rounded 4 (the far face flat out to 36, then a torus), a boss of 25
 /// about (10, 0) standing on it from y = 20 to 30 — its foot reaching 35, a millimetre short of the
 /// round — and the boss's foot chamfered 2 against the plate's far face.
-const SPILL: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {\n  o := point\n  fix((0, 0)) o\n  \
+const SPILL: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {\n  o := point\n  fix((0, 0)) o\n  \
     rim := circle(center: o) hint(r: 40)\n  radius(40mm) rim\n  q := point\n  fix((10, 0)) q\n  \
     foot := circle(center: q) hint(r: 25)\n  radius(25mm) foot\n}\n\
-    plate := solid(face(rim), depth: 20mm)\nplate.rim round(r: 4mm) plate.far\n\
-    boss := solid(face(foot), from: -30mm, to: -20mm)\npart := solid(plate)\nboss union part\n\
+    plate := solid(std.solids.Prism(face(rim), from: -20mm, to: 0))\nplate.rim round(r: 4mm) plate.far\n\
+    boss := solid(std.solids.Prism(face(foot), from: -30mm, to: -20mm))\npart := solid(plate)\nboss union part\n\
     part.boss.foot chamfer(d: 2mm) part.plate.far\n";
 
 /// **A chamfer's leg runs on across a seam** (`F.smooth`): 2 out from the boss's foot is past
@@ -327,8 +327,8 @@ fn a_round_spilled_onto_a_round_along_a_straight_edge_is_built() {
 /// round's normal at the seam, then `|q − c| = z − 18.5` under the round, up to it at z = 21.5.
 #[test]
 fn a_chamfer_cut_spilled_onto_a_round_along_a_straight_edge_is_built() {
-    let src = ledge("").replace("rib := solid(ribbed, from: -18mm, to: -12mm)\npart := solid(block)\nrib union part\n",
-        "pocket := solid(ribbed, from: -12mm, to: -8mm)\npart := solid(block)\npocket cut part\n")
+    let src = ledge("").replace("rib := solid(std.solids.Prism(ribbed, from: -18mm, to: -12mm))\npart := solid(block)\nrib union part\n",
+        "pocket := solid(std.solids.Prism(ribbed, from: -12mm, to: -8mm))\npart := solid(block)\npocket cut part\n")
         + "part.pocket.rn chamfer(d: 2mm) part.block.far\n";
     let e = solved(&src);
     let got = volume(&e, "part");
@@ -358,10 +358,10 @@ fn a_chamfer_spilled_onto_a_round_is_built_whichever_face_goes_on() {
 /// boss of 26 about the same axis standing on it from y = 20 to 30, and the boss's foot treated by
 /// `how` against the far face — 2 out from the boss, past the seam at 27.
 fn coaxial(how: &str) -> String {
-    format!("unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {{\n  o := point\n  fix((0, 0)) o\n  \
+    format!("unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {{\n  o := point\n  fix((0, 0)) o\n  \
         rim := circle(center: o) hint(r: 30)\n  radius(30mm) rim\n  foot := circle(center: o) hint(r: 26)\n  \
-        radius(26mm) foot\n}}\nplate := solid(face(rim), depth: 20mm)\nplate.rim round(r: 3mm) plate.far\n\
-        boss := solid(face(foot), from: -30mm, to: -20mm)\npart := solid(plate)\nboss union part\n\
+        radius(26mm) foot\n}}\nplate := solid(std.solids.Prism(face(rim), from: -20mm, to: 0))\nplate.rim round(r: 3mm) plate.far\n\
+        boss := solid(std.solids.Prism(face(foot), from: -30mm, to: -20mm))\npart := solid(plate)\nboss union part\n\
         part.boss.foot {how} part.plate.far\n")
 }
 
@@ -644,14 +644,14 @@ fn a_round_spilled_onto_a_rounded_plate_is_built_exactly_at_every_radius() {
 /// the round at y = 20 − 2 tan 22.5°, the round into the slope — and a rib 20 long on the top, its
 /// front wall at y = 17, 6 tall; then `rest`.
 fn sloped(rest: &str) -> String {
-    format!("unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.side {{\n  b0 := point\n  b1 := point\n  b2 := point\n  \
+    format!("unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.side {{\n  b0 := point\n  b1 := point\n  b2 := point\n  \
         b3 := point\n  fix((0, 0)) b0\n  fix((30, 0)) b1\n  fix((20, 10)) b2\n  fix((0, 10)) b3\n  \
         (bottom := line(b0, b1)) -> (slope := line(b1, b2)) -> (top := line(b2, b3)) -> (back := line(b3, b0)) -> close\n  \
         outline := face(bottom, slope, top, back)\n  r0 := point\n  r1 := point\n  r2 := point\n  r3 := point\n  \
         fix((12, 10)) r0\n  fix((17, 10)) r1\n  fix((17, 16)) r2\n  fix((12, 16)) r3\n  \
         (rb := line(r0, r1)) -> (rf := line(r1, r2)) -> (rt := line(r2, r3)) -> (rk := line(r3, r0)) -> close\n  \
-        ribbed := face(rb, rf, rt, rk)\n}}\nblock := solid(outline, from: 0mm, to: 40mm)\nblock.top round(r: 2mm) block.slope\n\
-        rib := solid(ribbed, from: 10mm, to: 30mm)\npart := solid(block)\nrib union part\n{rest}")
+        ribbed := face(rb, rf, rt, rk)\n}}\nblock := solid(std.solids.Prism(outline, from: 0mm, to: 40mm))\nblock.top round(r: 2mm) block.slope\n\
+        rib := solid(std.solids.Prism(ribbed, from: 10mm, to: 30mm))\npart := solid(block)\nrib union part\n{rest}")
 }
 
 /// **A flat across a chain of three faces** (#422's rung 5): the rib's front foot chamfered 4 — its
@@ -701,14 +701,14 @@ fn tilted_with(depth: f64, bosses: &[(f64, f64, f64)], rest: &str) -> String {
     let name = |k: usize| if k == 0 { "boss".to_string() } else { format!("boss{}", k + 1) };
     let drawn: String = bosses.iter().enumerate().map(|(k, (x, y, r))| format!("  bc{k} := point\n  fix(({x}, {y})) bc{k}\n  \
         {n}_k := circle(center: bc{k}) hint(r: {r})\n  radius({r}mm) {n}_k\n", n = name(k))).collect();
-    let solids: String = (0..bosses.len()).map(|k| format!("{n} := solid(face({n}_k), from: 0mm, to: 30mm)\n", n = name(k)))
+    let solids: String = (0..bosses.len()).map(|k| format!("{n} := solid(std.solids.Prism(face({n}_k), from: 0mm, to: 30mm))\n", n = name(k)))
         .collect();
     let unions: String = (0..bosses.len()).map(|k| format!("{} union part\n", name(k))).collect();
-    format!("unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {{\n  w0 := point\n  w1 := point\n  w2 := point\n  \
+    format!("unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {{\n  w0 := point\n  w1 := point\n  w2 := point\n  \
         w3 := point\n  fix((0, 0)) w0\n  fix((40, 0)) w1\n  fix((40, 10)) w2\n  fix((0, 20)) w3\n  \
         (wb := line(w0, w1)) -> (we := line(w1, w2)) -> (wt := line(w2, w3)) -> (ww := line(w3, w0)) -> close\n  \
         side_f := face(wb, we, wt, ww)\n}}\nin std.top {{\n{drawn}}}\n\
-        wedge := solid(side_f, from: 0mm, to: {depth}mm)\nwedge.we round(r: 3mm) wedge.wt\n\
+        wedge := solid(std.solids.Prism(side_f, from: 0mm, to: {depth}mm))\nwedge.we round(r: 3mm) wedge.wt\n\
         {solids}part := solid(wedge)\n{unions}{rest}")
 }
 

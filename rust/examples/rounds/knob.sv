@@ -9,6 +9,7 @@
 // outer rims too, convex, so cut.
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 in std.front {
@@ -52,9 +53,9 @@ in std.front {
   shell := arc(center: c0, start: s0, end: s1) hint(r: 8)
   shut := line(s1, s0)
 }
-disc := solid(face(dbot, dside, dtop, daxis), about: spindle)
-rod := solid(face(rbot, rwall, rtop, raxis), about: spindle)
-ball := solid(face(shell, shut), about: spindle)
+disc := solid(std.solids.Revolution(face(dbot, dside, dtop, daxis), about: spindle))
+rod := solid(std.solids.Revolution(face(rbot, rwall, rtop, raxis), about: spindle))
+ball := solid(std.solids.Revolution(face(shell, shut), about: spindle))
 knob := solid(disc)
 rod union knob
 ball union knob

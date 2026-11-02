@@ -8,6 +8,7 @@
 // the flat. Edit `d` and apply (⌘↵), or round it instead (`use std.rounds (round)`, `round(r: d)`).
 unit mm
 use std
+use std.solids
 use std.rounds (chamfer)
 
 d := 1mm   // the flat's legs
@@ -24,8 +25,8 @@ in std.top {
   stem_k := circle(center: c2) hint(r: 6)
   radius(6mm) stem_k
 }
-main := solid(face(main_k), from: -30mm, to: 30mm)
-stem := solid(face(stem_k), from: 0mm, to: 25mm)
+main := solid(std.solids.Prism(face(main_k), from: -30mm, to: 30mm))
+stem := solid(std.solids.Prism(face(stem_k), from: 0mm, to: 25mm))
 tee := solid(main)
 stem union tee
 

@@ -5,6 +5,7 @@
 // Built exactly: 12000π less the hollow's 18² π × 26, 3576π mm³.
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 2mm
@@ -21,6 +22,6 @@ in std.front {
   (bottom := line(a, b)) -> (side := line(b, c)) -> (top := line(c, d)) -> (axle := line(d, a)) -> close
   half := face(bottom, side, top, axle)
 }
-can := solid(half, about: axle)
+can := solid(std.solids.Revolution(half, about: axle))
 
 shell(t: wall) can

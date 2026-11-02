@@ -80,12 +80,12 @@ rail coincident(sense: same) feed.axis; fix(ratio == 0, advance == {advance_mm}m
 "))
 }
 
-/// The sweep line: `swept := sweep(tool over t in (A, B), under: NAME)`, `motion` the frame's name
-/// or a whole reading (`ROLLED`).
+/// The sweep line: `swept := solid({ p | p inside(under: NAME, over t in (A, B)) tool })`,
+/// `motion` the frame's name or a whole reading (`ROLLED`).
 pub fn swept(motion: &str,from_deg: f64,to_deg: f64) -> String {
     let reading = if motion.contains(':') { motion.to_string() }
         else { format!("under: {motion}") };
-    format!("swept := sweep(tool over t in ({from_deg}deg, {to_deg}deg), {reading})\n")
+    format!("swept := solid({{ p | p inside({reading}, over t in ({from_deg}deg, {to_deg}deg)) tool }})\n")
 }
 
 /// A turn about the line through the page points (u0, v0) and (u1, v1)

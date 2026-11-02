@@ -66,6 +66,10 @@ pub(super) fn build_solid(
         Sweep::Placed { .. } | Sweep::Swept { .. } | Sweep::Rolled { .. } => {
             under_motion(sk, res, sweep, d.seen_from.as_ref(), &ops, st, &mut say)?
         }
+        // through everything (#737): bounded by the body it is cut from, joined there
+        Sweep::Through { body } if body.root.text == crate::syntax::ROLLED => {
+            SolidDef::Through { face: one_face(&ops, st, &mut say)?, body: u32::MAX }
+        }
         Sweep::Through { body } => {
             let face = one_face(&ops, st, &mut say)?;
             let Some(target) = res.lookup(body) else {

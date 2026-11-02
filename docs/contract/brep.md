@@ -114,7 +114,7 @@ spline: a box's top edges chamfered one after another, each cut off by the plane
 is still fitted, as the piece that takes on from its section is. About one axis the flat is turned: between a plane square
 to it, cylinders and cones about it, a closed loop's flat is the section's triangle revolved, a cone
 exact (`fillet::coaxial`; a leg shrunk to a point its apex, [rounds.md](rounds.md)).
-`Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
+`Brep::bounds` encloses (issue #59; through-prism cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
 extreme angle). Never a sample grid: extremes between samples were missed.

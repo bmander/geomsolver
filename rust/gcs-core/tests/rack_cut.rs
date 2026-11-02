@@ -24,13 +24,14 @@ use std::f64::consts::{PI, TAU};
 pub const SPACE: &str = "\
 unit mm
 use std
+use std.solids
 in std.front {
 o := point
 fix((0, 0)) o
 c := circle(center: o) hint(r: 22)
 radius(22mm) c
 disc := face(c)
-blank := solid(disc, depth: 6mm)
+blank := solid(std.solids.Prism(disc, from: -6mm, to: 0))
 
 s0 := point hint((20, 0))
 s1 := point hint((20, 10))
@@ -48,13 +49,13 @@ fix((24, 3.026666)) t2
 fix((24, -3.026666)) t3
 }
 tooth := face(t0, t1, t2, t3, -> close)
-construction rack_tooth := solid(tooth, from: -8mm, to: 2mm)
+construction rack_tooth := solid(std.solids.Prism(tooth, from: -8mm, to: 2mm))
 
 turn := frame
 o coincident turn.axis; turn.axis parallel(sense: same) std.front.normal; fix(ratio == 1, advance == 0mm) turn
 rack := frame
 slide coincident(sense: same) rack.axis; fix(ratio == 0, advance == 2 * pi * 20mm) rack
-construction space := sweep(rack_tooth over t in (-60deg, 60deg), under: rack, seen_from: turn)
+construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) rack_tooth })
 gear := solid(blank)
 space cut gear
 ";
@@ -99,7 +100,7 @@ fn a_racks_sweep_is_admitted() {
 #[test]
 fn a_rack_with_a_cap_in_the_blank_cuts_the_slab_it_spans() {
     use gcs_core::brep::{export, sweep::Say};
-    let src = SPACE.replace("solid(tooth, from: -8mm, to: 2mm)", "solid(tooth, from: -5mm, to: 2mm)");
+    let src = SPACE.replace("solid(std.solids.Prism(tooth, from: -8mm, to: 2mm))", "solid(std.solids.Prism(tooth, from: -5mm, to: 2mm))");
     let admission = admit(&src).unwrap_or_else(|e| panic!("{e}"));
     let [sweep] = admission.sweeps() else { panic!("one sweep") };
     let gcs_core::solid::admission::Class::Subtraction(found) = &sweep.class else { panic!("{:?}", sweep.class) };
@@ -308,10 +309,11 @@ fn the_racks_sheet_is_its_planar_envelope_extruded() {
 pub fn gear(teeth: usize) -> String {
     SPACE.replace("space cut gear\n", &format!("\
 use std
+use std.solids
 in std.front {{
 bore_c := circle(center: o) hint(r: 6)
 radius(6mm) bore_c
-construction bore := solid(face(bore_c), from: -8mm, to: 2mm)
+construction bore := solid(std.solids.Prism(face(bore_c), from: -8mm, to: 2mm))
 bore cut gear
 repeat {teeth} as i {{
   construction indexed := space at(under: turn) i * 360deg / {teeth}

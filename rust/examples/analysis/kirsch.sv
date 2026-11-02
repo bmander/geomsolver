@@ -7,6 +7,7 @@
 // its thickness.  The plate is thin, read in plane stress.
 unit mm
 use std
+use std.solids
 
 r := 10mm
 W := 400mm
@@ -38,7 +39,7 @@ in std.front {
   hole := arc(center: o, start: m, end: s) hint(r: r)
   quarter := face(cut_x, pulled, side, cut_y, hole)
 }
-plate := solid(quarter, from: -t / 2, to: t / 2) of steel
+plate := solid(std.solids.Prism(quarter, from: -t / 2, to: t / 2)) of steel
 
 scenario pull {
   plane stress plate

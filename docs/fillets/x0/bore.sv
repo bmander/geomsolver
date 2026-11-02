@@ -7,6 +7,7 @@
 // the one body that is drilled.
 unit mm
 use std
+use std.solids
 in std.side {
   c1 := point
   main_k := circle(center: c1) hint(r: 10)
@@ -19,8 +20,8 @@ in std.top {
 }
 fix((0, 0)) c2
 radius(6) bore_k
-main := solid(face(main_k), from: -30mm, to: 30mm)
-bore := solid(face(bore_k), from: 0mm, to: 25mm)
+main := solid(std.solids.Prism(face(main_k), from: -30mm, to: 30mm))
+bore := solid(std.solids.Prism(face(bore_k), from: 0mm, to: 25mm))
 pipe := solid(main)
 bore cut pipe
 

@@ -22,6 +22,7 @@
 // it. Open the glass box (⌘B) and orbit to see the sun's ring standing square to the style.
 unit mm
 use std
+use std.solids
 use std.place (horizontal, vertical)
 use sun
 param latitude := 47.6deg
@@ -79,5 +80,5 @@ first_light angle(90deg + tilt) style
 last_light angle(90deg + tilt) style
 
 // the plate and the gnomon on it
-plate := solid(face(rim), depth: 6mm)
-gnomon := solid(face(noon, upright, style), from: -1.5mm, to: 1.5mm)
+plate := solid(std.solids.Prism(face(rim), from: -6mm, to: 0))
+gnomon := solid(std.solids.Prism(face(noon, upright, style), from: -1.5mm, to: 1.5mm))

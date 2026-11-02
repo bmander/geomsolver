@@ -31,4 +31,4 @@ in std.top {
   length(length) guide
 }
 param s: Scalar over (0, 1)
-body := sweep(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm).sec.profile over s)
+body := solid({ p | p coincident(over s) Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm).sec.profile })

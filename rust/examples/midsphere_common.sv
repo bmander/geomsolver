@@ -9,6 +9,7 @@
 // Its volume is the ball less six caps, π(1250 − 2000√2/3) = 965.069.
 unit mm
 use std
+use std.solids
 use std.sets
 
 side := 10mm   // the cube's side
@@ -24,7 +25,7 @@ in std.front {
   length(side) bc
   diagonal := line(a, c)
   std.origin midpoint diagonal
-  cube := solid(section, from: -side / 2, to: side / 2)
+  cube := solid(std.solids.Prism(section, from: -side / 2, to: side / 2))
 }
 
 ball := std.sets.Sphere(std.origin, r: hint(7mm))

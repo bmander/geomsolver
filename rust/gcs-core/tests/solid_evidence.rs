@@ -110,7 +110,7 @@ fn coverage_derives_success_partial_failure_and_counterexamples() {
 }
 
 fn round_claim(form: &str) -> String {
-    format!("unit mm\nuse std\nin std.front {{\na := point\nfix((0, 0)) a\nac := circle(center:a)\nradius(1mm) ac\nb := point\nfix((2, 0)) b\nbc := circle(center:b)\nradius(1mm) bc\n}}\naf := face(ac)\nbf := face(bc)\nresult := solid(af,depth:1mm)\nother := solid(bf,depth:1mm)\nclaim result {form} other\n")
+    format!("unit mm\nuse std\nuse std.solids\nin std.front {{\na := point\nfix((0, 0)) a\nac := circle(center:a)\nradius(1mm) ac\nb := point\nfix((2, 0)) b\nbc := circle(center:b)\nradius(1mm) bc\n}}\naf := face(ac)\nbf := face(bc)\nresult := solid(std.solids.Prism(af, from: -1mm, to: 0))\nother := solid(std.solids.Prism(bf, from: -1mm, to: 0))\nclaim result {form} other\n")
 }
 
 #[test]

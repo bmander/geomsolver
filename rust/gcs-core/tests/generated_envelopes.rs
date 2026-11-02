@@ -5,6 +5,7 @@ use crate::common::parsed::{build, solved};
 const MODEL: &str = "\
 unit mm
 use std
+use std.solids
 use std.motion (turns)
 in std.front {
 o := point
@@ -20,7 +21,7 @@ spin_axis := line(o,x)
 meridian := circle(center: c)
 radius(1mm) meridian
 }
-ring := solid(face(meridian),about: ax)
+ring := solid(std.solids.Revolution(face(meridian), about: ax))
 wall := surface(ring,meridian)
 roll := frame
 roll turns(1) spin_axis

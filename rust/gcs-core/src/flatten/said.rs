@@ -12,15 +12,16 @@
 //! | `p inside F`, `p distance(>= a, along: n) F`, `p distance(<= b, along: n) F` | `Sweep::Prism { from: a, to: b }` |
 //! | the two ordinates, `x := { q \| q outside F }`, `y := { q \| q inside F }`, `distance(p, x) - distance(p, y) >= tan(θ) * distance(p, F)` | `Sweep::Prism { …, draft: θ }` |
 //! | `p coincident(under: l, over t in (a, b)) F`, `l` a line, one end nothing | `Sweep::Revolve { axis: l, … }` |
+//! | `p inside F` alone | `Sweep::Through`, through the body it is cut from |
 use crate::syntax::{Arg, Cmp, Component, InstVal, Instance, OpArg, Ref, SetLit, Sense, Span,
                     StmtKind, Sweep, Written};
 
 /// What a name of the body is bound to: a reference, or a number's text as written.
 #[derive(Clone, Debug)]
 pub(super) enum Bound {
-    /// A reference, and whether the formal it is given for is a line (or an axis): what a
-    /// revolution turns about, which only a formal's type says before the elaborator does.
-    Ref(Ref, bool),
+    /// A reference, and the kind of entity the formal it is given for is — a face, a line —
+    /// which only a formal's type says before the elaborator does.
+    Ref(Ref, Option<crate::model::EntKind>),
     Text(String, Span),
 }
 
@@ -38,9 +39,11 @@ pub(super) fn binding<'a>(comp: &'a Component, inst: &'a Instance)
             });
         match given.map(|a| &a.value) {
             Some(InstVal::Ref(r)) => {
-                let line = matches!(formals[k].ty, crate::syntax::Ty::Ent(
-                    crate::model::EntKind::Line | crate::model::EntKind::Axis));
-                Some(Bound::Ref(r.clone(), line))
+                let kind = match formals[k].ty {
+                    crate::syntax::Ty::Ent(e) => Some(e),
+                    _ => None,
+                };
+                Some(Bound::Ref(r.clone(), kind))
             }
             Some(InstVal::Expr(t)) => Some(Bound::Text(t.clone(), given.map_or(Span::default(), |a| a.span))),
             Some(_) => None,
@@ -53,28 +56,24 @@ pub(super) fn binding<'a>(comp: &'a Component, inst: &'a Instance)
 /// is itself) — `None` where it says none of the table's.
 pub(super) fn said(lit: &SetLit, bind: &dyn Fn(&str) -> Option<Bound>) -> Option<(Sweep, Ref)> {
     let p = lit.bound.text.as_str();
-    let face = |r: &Ref| -> Option<Ref> {
-        if !r.path.is_empty() {
-            return None;
-        }
+    // a face a formal of that type is given: a set written by hand names a face, a plane or a
+    // solid alike, which the elaborator tells apart (`solid::defined` reads those)
+    use crate::model::EntKind;
+    let typed = |r: &Ref, kinds: &[EntKind]| -> Option<Ref> {
         match bind(&r.root.text) {
-            Some(Bound::Ref(a, _)) => Some(a),
-            Some(Bound::Text(..)) => None,
-            None => Some(r.clone()),
-        }
-    };
-    // a line a revolution turns about, as a line formal is given one (a set written by hand
-    // names a line or a frame alike, which the elaborator tells apart)
-    let line = |r: &Ref| -> Option<Ref> {
-        match bind(&r.root.text) {
-            Some(Bound::Ref(a, true)) if r.path.is_empty() => Some(a),
+            Some(Bound::Ref(a, Some(k))) if r.path.is_empty() && kinds.contains(&k) => Some(a),
             _ => None,
         }
     };
+    let face = |r: &Ref| typed(r, &[EntKind::Face]);
+    // and a line a revolution turns about
+    let line = |r: &Ref| typed(r, &[EntKind::Line, EntKind::Axis]);
+    // a number given as a name is that name's text where the call is written
     let number = |text: &str, span: Span| -> Arg {
         match bind(text.trim()) {
             Some(Bound::Text(t, s)) => Arg::Dim { text: t, span: s },
-            _ => Arg::Dim { text: text.trim().to_string(), span },
+            Some(Bound::Ref(r, _)) => Arg::Dim { text: crate::syntax::ref_text(&r), span: r.span },
+            None => Arg::Dim { text: text.trim().to_string(), span },
         }
     };
     let of_p = |w: &Written| w.ops.first().is_some_and(|o| o.root.text == p && o.path.is_empty());
@@ -160,6 +159,11 @@ pub(super) fn said(lit: &SetLit, bind: &dyn Fn(&str) -> Option<Bound>) -> Option
             _ => return None,
         };
         return Some((Sweep::Revolve { axis, sweep, sense }, f));
+    }
+    // a section unbounded along its normal: the prism through the body it is cut from, joined
+    // where the body word joins it (`syntax::ROLLED`)
+    if let (Some(f), None, None, true, None) = (&inside, &lo, &hi, sets.is_empty(), lean) {
+        return Some((Sweep::Through { body: Ref::new(crate::syntax::ROLLED) }, f.clone()));
     }
     let ((fa, from), (fb, to)) = (lo?, hi?);
     if fa.root.text != fb.root.text {

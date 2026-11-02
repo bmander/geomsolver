@@ -10,6 +10,7 @@ use crate::common::lenient::{read, solved};
 
 pub const ROPE: &str = "\
 use std
+use std.solids
 in std.front {
   a := point
   b := point
@@ -210,7 +211,8 @@ fn a_free_length_is_where_the_energy_is_stationary_in_it() {
     let (pa, pb) = ((-2.0f64).atan2(-1.0), (-2.0f64).atan2(-1.0) + 40f64.to_radians());
     let (a, b) = (on(pa), on(pb));
     let src = format!(
-        "use std\nuse std.shapes\nin std.front {{\n  a := point\n  b := point\n  fix(({}, {})) a\n  fix(({}, {})) b\n  k := curve(a, b)\n}}\n\
+        "use std
+use std.solids\nuse std.shapes\nin std.front {{\n  a := point\n  b := point\n  fix(({}, {})) a\n  fix(({}, {})) b\n  k := curve(a, b)\n}}\n\
          k minimizes integral(2 / (1mm^2 + p.x^2 + p.y^2) over p)\n",
         a.0, a.1, b.0, b.1
     );
@@ -246,7 +248,7 @@ fn the_rows_on_a_free_curve_differentiate_exactly() {
 fn the_library_word_hangs_the_same_rope() {
     let longhand = solved(ROPE);
     let src = ROPE
-        .replace("use std\n", "use std\nuse std.shapes (hangs)\n")
+        .replace("use std\nuse std.solids\n", "use std\nuse std.solids\nuse std.shapes (hangs)\n")
         .replace("  length(150) rope\n", "  hangs(L: 150) rope\n")
         .replace("rope minimizes integral(p.y over p)\n", "");
     let mut e = solved(&src);
@@ -372,6 +374,7 @@ fn sagging(sag: f64) -> (impl Fn(f64) -> f64, f64) {
 
 const SAG: &str = "\
 use std
+use std.solids
 in std.front {
   a := point
   b := point
@@ -463,7 +466,8 @@ fn a_free_point_on_a_free_length_curve_leaves_it_stationary() {
     let pa = (-2.0f64).atan2(-1.0);
     let (a, b, q) = (on(pa), on(pa + 40f64.to_radians()), on(pa + 15f64.to_radians()));
     let src = format!(
-        "use std\nin std.front {{\n  a := point\n  b := point\n  q := point hint(({}, {}))\n  fix(({}, {})) a\n  fix(({}, {})) b\n  \
+        "use std
+use std.solids\nin std.front {{\n  a := point\n  b := point\n  q := point hint(({}, {}))\n  fix(({}, {})) a\n  fix(({}, {})) b\n  \
          k := curve(a, b)\n  q coincident k\n}}\nk minimizes integral(2 / (1mm^2 + p.x^2 + p.y^2) over p)\n",
         q.0 + 0.01, q.1, a.0, a.1, b.0, b.1
     );
@@ -584,7 +588,7 @@ fn a_hanging_rope_and_its_chord_are_a_face() {
     let fit = 150.0 * 10.0 * gcs_core::solid::cad::FIT_MM;
     let want = 10.0 * below(0.0, 100.0, 0.0);
     for face in ["face(rope, deck)", "face(deck, rope)", "face(rope, -> close)"] {
-        let e = solved(&format!("{deck}s := solid({face}, depth: 10)\n"));
+        let e = solved(&format!("{deck}s := solid(std.solids.Prism({face}, from: -10, to: 0))\n"));
         let v = volume(&e);
         assert!((v - want).abs() < 1e-5 * want, "{face}: {v} against {want}");
         let x = exact(&e);
@@ -594,14 +598,14 @@ fn a_hanging_rope_and_its_chord_are_a_face() {
     let stretch = ROPE.replace("}\nrope", "  m := point hint((30, -40))\n  \
         n := point hint((70, -40))\n  m coincident rope\n  n coincident rope\n  \
         fix(x == 30) m\n  fix(x == 70) n\n}\nrope");
-    let e = solved(&format!("{stretch}s := solid(face(rope from m to n, -> close), depth: 10)\n"));
+    let e = solved(&format!("{stretch}s := solid(std.solids.Prism(face(rope from m to n, -> close), from: -10, to: 0))\n"));
     let want = 10.0 * below(30.0, 70.0, y(30.0));
     let v = volume(&e);
     assert!((v - want).abs() < 1e-5 * want, "stretch: {v} against {want}");
     let x = exact(&e);
     assert!((x - want).abs() <= fit, "stretch: exact {x} against {want}");
     // and the rope's own end is no point held on it
-    let (_, d) = read(&format!("{deck}s := solid(face(rope from a to b, deck), depth: 10)\n"));
+    let (_, d) = read(&format!("{deck}s := solid(std.solids.Prism(face(rope from a to b, deck), from: -10, to: 0))\n"));
     let named = |m: &String| m.starts_with("E080") && m.contains("`a` is an end of `rope`");
     assert!(d.iter().any(named), "{d:?}");
 }

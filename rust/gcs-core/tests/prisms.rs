@@ -121,6 +121,7 @@ fn sheet(plane: &str, extra: &str) -> String {
     format!("\
 unit mm
 use std
+use std.solids
 w := 80mm
 h := 30mm
 t := 2mm
@@ -140,7 +141,7 @@ in std.front {{
   outline := (low := line(o, b)) -> (right := line(b, k)) -> (top := line(k, d)) ->
              (left := line(d, o)) -> close
 }}
-plate := solid(outline, from: -t / 2, to: t / 2) of steel
+plate := solid(std.solids.Prism(outline, from: -t / 2, to: t / 2)) of steel
 scenario pull {{
   plane {plane} plate
   pinned plate.left along: std.x
@@ -212,6 +213,7 @@ fn what_has_no_answer_in_the_plane_says_why() {
     let l = "\
 unit mm
 use std
+use std.solids
 steel := material(E: 200GPa, nu: 0.3, yield: 250MPa)
 in std.front {
   a := point
@@ -229,7 +231,7 @@ in std.front {
   outline := (foot := line(a, b)) -> (toe := line(b, c)) -> (step := line(c, d)) ->
              (riser := line(d, f)) -> (head := line(f, g)) -> (back := line(g, a)) -> close
 }
-ell := solid(outline, from: -1mm, to: 1mm) of steel
+ell := solid(std.solids.Prism(outline, from: -1mm, to: 1mm)) of steel
 scenario hang {
   plane stress ell
   fixed ell.foot
@@ -290,8 +292,8 @@ fn the_reading_is_a_line_of_the_scenario() {
     has(&with("  plane stress q\n"), "E040", "is no solid");
     has(&with("  plane stress plate\n  plane strain plate\n"), "E001", "read in the plane already");
     has(&with("  plane stretch plate\n"), "syntax", "`plane stress` or `plane strain`");
-    let turned = base.replace("plate := solid(outline, from: -t / 2, to: t / 2) of steel",
-                              "plate := solid(outline, about: low, sweep: 90deg) of steel");
+    let turned = base.replace("plate := solid(std.solids.Prism(outline, from: -t / 2, to: t / 2)) of steel",
+                              "plate := solid(std.solids.Revolution(outline, about: low, to: 90deg)) of steel");
     has(&errors(&turned), "E040", "is a prism");
 }
 

@@ -59,6 +59,7 @@ fn bar(extra: &str) -> String {
     format!("\
 unit mm
 use std
+use std.solids
 w := 80mm
 h := 30mm
 t := 10mm
@@ -80,7 +81,7 @@ in std.front {{
 }}
 tilted := axis
 fix(dir == (1, 0, 1), origin == (0, 0, 0)) tilted
-plate := solid(outline, from: -t / 2, to: t / 2) of steel
+plate := solid(std.solids.Prism(outline, from: -t / 2, to: t / 2)) of steel
 scenario pull {{
   pinned plate.left along: std.x
   pinned o along: std.z
@@ -154,6 +155,7 @@ fn what_has_no_answer_in_three_dimensions_says_why() {
     let l = "\
 unit mm
 use std
+use std.solids
 steel := material(E: 200GPa, nu: 0.3, yield: 250MPa)
 in std.front {
   a := point
@@ -171,7 +173,7 @@ in std.front {
   outline := (foot := line(a, b)) -> (toe := line(b, c)) -> (step := line(c, d)) ->
              (riser := line(d, f)) -> (head := line(f, g)) -> (back := line(g, a)) -> close
 }
-ell := solid(outline, from: -5mm, to: 5mm) of steel
+ell := solid(std.solids.Prism(outline, from: -5mm, to: 5mm)) of steel
 scenario hang {
   fixed ell.foot
   load g 100N along: std.x
@@ -223,6 +225,7 @@ fn a_requirement_sizes_a_plank() {
 /// far block's face named from the body (`bar.tail.right`).
 const UNITED: &str = "unit mm
 use std
+use std.solids
 w := 80mm
 h := 30mm
 t := 10mm
@@ -246,8 +249,8 @@ in std.front {
   far := (low2 := line(m, b)) -> (right := line(b, k)) -> (top2 := line(k, n)) ->
          (seam2 := line(n, m)) -> close
 }
-bar := solid(near, from: 0mm, to: t) of steel
-tail := solid(far, from: 0mm, to: t)
+bar := solid(std.solids.Prism(near, from: 0mm, to: t)) of steel
+tail := solid(std.solids.Prism(far, from: 0mm, to: t))
 tail union bar
 scenario pull {
   pinned bar.left along: std.x
@@ -300,6 +303,7 @@ fn a_body_of_two_blocks_answers_to_rounding() {
 /// base held along z and its centre's nearest node across, pulled by `−σ` on its head.
 const ROD: &str = "unit mm
 use std
+use std.solids
 r := 10mm
 L := 100mm
 sigma := 40MPa
@@ -316,7 +320,7 @@ in std.front {
   profile := (base := line(o, a)) -> (side := line(a, b)) -> (head := line(b, c)) ->
              (spine := line(c, o)) -> close
 }
-rod := solid(profile, about: std.z) of steel
+rod := solid(std.solids.Revolution(profile, about: std.z)) of steel
 scenario pull {
   pinned rod.base along: std.z
   pinned o along: std.x
@@ -436,6 +440,7 @@ fn stress_is_read_where_no_sharp_edge_reaches() {
     let l = "\
 unit mm
 use std
+use std.solids
 steel := material(E: 200GPa, nu: 0.3, yield: 250MPa)
 in std.front {
   a := point
@@ -453,7 +458,7 @@ in std.front {
   outline := (foot := line(a, b)) -> (toe := line(b, c)) -> (step := line(c, d)) ->
              (riser := line(d, f)) -> (head := line(f, g)) -> (back := line(g, a)) -> close
 }
-ell := solid(outline, from: -5mm, to: 5mm) of steel
+ell := solid(std.solids.Prism(outline, from: -5mm, to: 5mm)) of steel
 scenario hang {
   fixed ell.foot
   load ell.head 100N along: std.x

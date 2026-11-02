@@ -1,5 +1,6 @@
 unit mm
 use std
+use std.solids
 in std.front {
   resultfp0 := point
   fix((0, 0)) resultfp0
@@ -11,4 +12,4 @@ in std.front {
   fix((0, 10)) resultfp3
 }
 resultf := face(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
-result := solid(resultf, from: -5mm, to: 0mm)
+result := solid(std.solids.Prism(resultf, from: -5mm, to: 0mm))

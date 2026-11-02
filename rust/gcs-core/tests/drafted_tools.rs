@@ -26,16 +26,16 @@ use std::f64::consts::PI;
 /// front, and run from it to 9 behind; the blank from 1 to 7 behind the front.
 fn drafted_space(draft: &str) -> String {
     crate::rack_cut::SPACE
-        .replace("blank := solid(disc, depth: 6mm)","blank := solid(disc, from: -7mm, to: -1mm)")
-        .replace("solid(tooth, from: -8mm, to: 2mm)",&format!("solid(tooth, from: -9mm, to: 0mm, draft: {draft})"))
+        .replace("blank := solid(std.solids.Prism(disc, from: -6mm, to: 0))","blank := solid(std.solids.Prism(disc, from: -7mm, to: -1mm))")
+        .replace("solid(std.solids.Prism(tooth, from: -8mm, to: 2mm))",&format!("solid(std.solids.Drafted(tooth, from: -9mm, to: 0mm, draft: {draft}))"))
 }
 
 /// The rack-cut tooth space, its tooth drafted `draft` both ways from its own plane, the front, and
 /// run 7 either side of it; the blank 3 either side of the front.
 fn parted_space(draft: &str) -> String {
     crate::rack_cut::SPACE
-        .replace("blank := solid(disc, depth: 6mm)","blank := solid(disc, from: -3mm, to: 3mm)")
-        .replace("solid(tooth, from: -8mm, to: 2mm)",&format!("solid(tooth, from: -7mm, to: 7mm, draft: {draft})"))
+        .replace("blank := solid(std.solids.Prism(disc, from: -6mm, to: 0))","blank := solid(std.solids.Prism(disc, from: -3mm, to: 3mm))")
+        .replace("solid(std.solids.Prism(tooth, from: -8mm, to: 2mm))",&format!("solid(std.solids.Drafted(tooth, from: -7mm, to: 7mm, draft: {draft}))"))
 }
 
 /// `solid_sweeps/helical.sv`: the tooth leaned 15° across the blank and drafted 2°, the blank from
@@ -199,6 +199,7 @@ fn a_drafted_side_is_a_plane_or_a_cone_of_the_tool() {
     let src = "\
 unit mm
 use std
+use std.solids
 use std.motion (spins, slides)
 in std.front {
   o := point
@@ -222,12 +223,12 @@ in std.front {
   fix((20, 10)) p1
   pitch_line := line(p0, p1)
 }
-construction slot := solid(outline, from: -12mm, to: 0mm, draft: 2deg)
+construction slot := solid(std.solids.Drafted(outline, from: -12mm, to: 0mm, draft: 2deg))
 turn := frame
 turn spins(1) o
 rack := frame
 rack slides(2 * pi * 20mm) pitch_line
-construction space := sweep(slot over t in (-60deg, 60deg), under: rack, seen_from: turn)
+construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) slot })
 ";
     let e = fixtures::read(src);
     let sides = ExtrudedSurface::drafted(&e.sketch,fixtures::solid(&e,"slot")).unwrap();
@@ -282,8 +283,8 @@ fn a_drafted_tool_the_class_does_not_read_is_refused_at_t1() {
         .replace("  t1 := point hint((18, 0.84))\n","")
         .replace("  fix((18, -0.842856)) t0\n","")
         .replace("  fix((18, 0.842856)) t1\n","")
-        .replace("solid(face(t0, t1, t2, t3, -> close), from: -12mm, to: 0mm, draft: 2deg)",
-            "solid(face(chord, dome), from: -12mm, to: 0mm, draft: 0.2deg)")
+        .replace("solid(std.solids.Drafted(face(t0, t1, t2, t3, -> close), from: -12mm, to: 0mm, draft: 2deg))",
+            "solid(std.solids.Drafted(face(chord, dome), from: -12mm, to: 0mm, draft: 0.2deg))")
         .replace("// the blank 6 thick","in inclined {\n  hub := point\n  fix((24, 0)) hub\n  dome := arc(center: hub, start: t2, end: t3)\n  \
             chord := line(t3, t2)\n}\n// the blank 6 thick");
     let r = refused({

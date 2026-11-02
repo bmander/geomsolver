@@ -11,6 +11,7 @@
 // as the wheel lifts away, which is no rigid motion.
 unit mm
 use std
+use std.solids
 use std.motion (screws, turns)
 use configuration
 use wheel
@@ -41,7 +42,7 @@ in std.front {
   private stock_end := line(f0, f1)
   private stock_wall := line(f1, f2)
   private stock_top := line(f2, f3)
-  stock := solid(face(stock_axis, stock_end, stock_wall, stock_top), about: stock_axis)
+  stock := solid(std.solids.Revolution(face(stock_axis, stock_end, stock_wall, stock_top), about: stock_axis))
   private s0 := point
   private s1 := point
   fix((0mm, -configuration.shank_length)) s0
@@ -50,7 +51,7 @@ in std.front {
   private shank_end := line(s0, s1)
   private shank_wall := line(s1, f1)
   private shank_top := line(f1, f0)
-  shank := solid(face(shank_axis, shank_end, shank_wall, shank_top), about: shank_axis)
+  shank := solid(std.solids.Revolution(face(shank_axis, shank_end, shank_wall, shank_top), about: shank_axis))
 }
 
 // the screw a wheel rides along, one lead a turn, and the turn from one flute to the next
@@ -66,7 +67,7 @@ param t: Angle over (start, finish)
 fluted := solid(stock)
 
 flute_wheel := wheel.GrindingWheel(side, setting: configuration.helix, wheel: configuration.flute_wheel)
-construction flute := sweep(flute_wheel.body over t, under: grind)
+construction flute := solid({ p | p inside(under: grind, over t) flute_wheel.body })
 
 // the clearance wheel rides the same screw turned `clearance_phase` on about the axis: drawn
 // turned, on the side datum turned so — a screw's roll 0 is as drawn, and a screw turned by a
@@ -77,7 +78,7 @@ clearance_side := plane(u: down, v: clearance_v)
 fix(origin == (0, 0, 0)) clearance_side
 clearance_wheel := wheel.GrindingWheel(clearance_side, setting: configuration.helix,
                                        wheel: configuration.clearance_wheel)
-construction body_clearance := sweep(clearance_wheel.body over t, under: grind)
+construction body_clearance := solid({ p | p inside(under: grind, over t) clearance_wheel.body })
 
 repeat configuration.flutes as i {
   construction flute_at := flute at(under: index) i * 360deg / configuration.flutes

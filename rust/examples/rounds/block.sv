@@ -12,6 +12,7 @@
 // corners where three runs meet spherical, and `chamfer(d: d) block` to cut every edge flat.
 unit mm
 use std
+use std.solids
 use std.rounds (round, chamfer)
 
 r := 2mm   // the near rim's radius
@@ -29,7 +30,7 @@ in std.front {
   (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> (west := line(b3, b0)) -> close
   outline := face(south, east, north, west)
 }
-block := solid(outline, depth: 12mm)
+block := solid(std.solids.Prism(outline, from: -12mm, to: 0))
 
 block.near round(r: r) block
 block.far chamfer(d: d) block

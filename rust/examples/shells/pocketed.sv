@@ -12,6 +12,7 @@
 // 8000 − 180π less 38 × 38 × 3 less 147π (a cylinder of radius 7 through the 3).
 unit mm
 use std
+use std.solids
 use std.rounds (shell)
 
 wall := 1mm
@@ -51,11 +52,11 @@ in std.top {
   fix((100, 0)) bc
   bore := radius(6mm) circle(center: bc)
 }
-tray := solid(slab, from: 0mm, to: 10mm)
-pocket := solid(opening, from: 6mm, to: 11mm)
+tray := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))
+pocket := solid(std.solids.Prism(opening, from: 6mm, to: 11mm))
 pocket cut tray
-plate := solid(square, from: 0mm, to: 5mm)
-drill := solid(face(bore), from: -1mm, to: 6mm)
+plate := solid(std.solids.Prism(square, from: 0mm, to: 5mm))
+drill := solid(std.solids.Prism(face(bore), from: -1mm, to: 6mm))
 drill cut plate
 
 tray.near shell(t: wall) tray

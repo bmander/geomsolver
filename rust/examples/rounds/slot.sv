@@ -11,6 +11,7 @@
 // (⌘↵); the surfaces refine in the background.
 unit mm
 use std
+use std.solids
 use std.rounds (round)
 
 in std.front {
@@ -74,9 +75,9 @@ in std.front {
     (corner0 := arc(center: k0) hint(r: 4)) -> close
   mouth := face(bottom, corner1, right, corner2, upper, corner3, left, corner0)
 }
-plate := solid(top, depth: 10mm)
-boss := solid(outline, from: 0mm, to: 8mm)
-pocket := solid(mouth, from: 1mm, to: -6mm)
+plate := solid(std.solids.Prism(top, from: -10mm, to: 0))
+boss := solid(std.solids.Prism(outline, from: 0mm, to: 8mm))
+pocket := solid(std.solids.Prism(mouth, from: 1mm, to: -6mm))
 part := solid(plate)
 boss union part
 pocket cut part

@@ -9,6 +9,7 @@
 // tooth's is 83.26. Module 2, 20 teeth, 20° pressure angle in the tooth's own plane.
 unit mm
 use std
+use std.solids
 use std.motion (spins, slides)
 
 // the tooth's plane: x across it as the front's, its v leaned 15° from up toward the viewer
@@ -45,14 +46,14 @@ in inclined {
 
 // the blank 6 thick, 2 behind the front; the tooth from its plane to 12 behind it, past the blank
 // either side, its sides drafted inward as it goes
-blank := solid(face(rim), from: -8mm, to: -2mm)
-construction tooth := solid(face(t0, t1, t2, t3, -> close), from: -12mm, to: 0mm, draft: 2deg)
+blank := solid(std.solids.Prism(face(rim), from: -8mm, to: -2mm))
+construction tooth := solid(std.solids.Drafted(face(t0, t1, t2, t3, -> close), from: -12mm, to: 0mm, draft: 2deg))
 
 // the blank turning about its centre, and the rack sliding a pitch circumference a turn
 turn := frame
 turn spins(1) o
 rack := frame
 rack slides(2 * pi * 20mm) pitch_line
-construction space := sweep(tooth over t in (-60deg, 60deg), under: rack, seen_from: turn)
+construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) tooth })
 gear := solid(blank)
 space cut gear

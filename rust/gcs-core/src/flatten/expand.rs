@@ -199,10 +199,6 @@ impl<'a> Walk<'a> {
                 StmtKind::Set(set) => {
                     let abs = format!("{prefix}{}", set.name.text);
                     self.names.insert(abs.clone());
-                    // a set that says a sweep, read as one where a solid is of it (#737)
-                    if let Some(s) = super::said::said(&set.lit, &|_| None) {
-                        self.said.insert(abs.clone(), s);
-                    }
                     self.set_made(abs, &set.lit, scope, depth, Made { st, path, outer: scope });
                 }
                 // an energy: each integrand with the scope's numbers written in (#121)

@@ -54,7 +54,7 @@ fn a_laws_reach_is_the_least_and_greatest_it_takes() {
 }
 
 /// The line of `slide.sv` that sweeps its wheel, which the cases here write under a drive.
-const SLID: &str = "construction groove := sweep(wheel over t in (0deg, 360deg), under: feed)";
+const SLID: &str = "construction groove := solid({ p | p inside(under: feed, over t in (0deg, 360deg)) wheel })";
 
 /// The example `name` with each `(from, to)` written in, every `from` found in it first.
 fn edited(name: &str,edits: &[(&str,&str)]) -> Elaborated {
@@ -74,7 +74,7 @@ fn edited(name: &str,edits: &[(&str,&str)]) -> Elaborated {
 fn a_slide_that_rises_dwells_and_returns_cuts_what_its_rise_does() {
     let e = edited("slide.sv",&[(SLID,"param t: Angle over (0deg, 360deg)\n\
         fix(value == 360deg * min(max(min(t / 90deg, (360deg - t) / 90deg), 0), 1)) feed\n\
-        construction groove := sweep(wheel over t, under: feed)")]);
+        construction groove := solid({ p | p inside(under: feed, over t) wheel })")]);
     let groove = fixtures::solid(&e,"groove");
     let (_,[lo,hi]) = gcs_core::solid::paced::restated(&e.sketch,groove)
         .expect("read as its joint's slide");
@@ -90,10 +90,10 @@ fn a_slide_that_rises_dwells_and_returns_cuts_what_its_rise_does() {
 #[test]
 fn a_ball_rocked_out_and_back_leaves_its_tube_once() {
     let e = edited("ball.sv",&[(
-        "construction groove := sweep(cutter over t in (0deg, swing), under: swinging)",
+        "construction groove := solid({ p | p inside(under: swinging, over t in (0deg, swing)) cutter })",
         "param t: Angle over (0deg, 360deg)\n\
          fix(value == swing * (1 - cos(t)) / 2) swinging\n\
-         construction groove := sweep(cutter over t, under: swinging)")]);
+         construction groove := solid({ p | p inside(under: swinging, over t) cutter })")]);
     let groove = (PI*9.*12.*PI/2.+4./3.*PI*27.)/2.;
     near(exported(&e,"block"),24.*24.*8.-groove,1e-9);
 }
@@ -107,7 +107,7 @@ fn a_drive_seen_from_another_motion_is_still_refused() {
         (SLID,"param t: Angle over (0deg, 360deg)\n\
          fix(value == 180deg * (1 - cos(t))) feed\n\
          spin := frame\nspin turns(1) ax\n\
-         construction groove := sweep(wheel over t, under: feed, seen_from: spin)")]);
+         construction groove := solid({ p | p inside(under: feed, seen_from: spin, over t) wheel })")]);
     assert!(gcs_core::solid::paced::restated(&e.sketch,fixtures::solid(&e,"groove")).is_none());
     let r = refused(admission::admit_body(&e.sketch,fixtures::solid(&e,"rod"),&Options::default()));
     assert!(r.condition == Condition::Motion && r.asked == Asked::Generating,"{r}");

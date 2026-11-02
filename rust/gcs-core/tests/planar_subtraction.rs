@@ -23,6 +23,7 @@ fn wheel(tool: &str, space: &str) -> String {
     format!("\
 unit mm
 use std
+use std.solids
 use std.place (vertical, coords)
 use std.motion (turns)
 
@@ -54,15 +55,15 @@ tool_turn := frame
 tool_turn turns(1) stem
 wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
-blank := solid(face(rim), from: -8mm, to: -2mm)
+blank := solid(std.solids.Prism(face(rim), from: -8mm, to: -2mm))
 wheel := solid(blank)
 {space}
 ")
 }
 
-const STAR: &str = "star := solid(plus, from: -10mm, to: 0mm)";
-const DRAFTED: &str = "star := solid(plus, from: -10mm, to: 0mm, draft: 8deg)";
-const PERIOD: &str = "space := sweep(star over t in (0deg, 540deg), under: tool_turn, seen_from: wheel_turn)\nspace cut wheel";
+const STAR: &str = "star := solid(std.solids.Prism(plus, from: -10mm, to: 0mm))";
+const DRAFTED: &str = "star := solid(std.solids.Drafted(plus, from: -10mm, to: 0mm, draft: 8deg))";
+const PERIOD: &str = "space := solid({ p | p inside(under: tool_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })\nspace cut wheel";
 
 fn solved(src: &str) -> (Elaborated, usize) { solved_body(src, "wheel") }
 
@@ -192,7 +193,7 @@ fn the_long_form_keeps_a_scallop_more() {
 /// as one, and the wheel is the one band's to the last digit.
 #[test]
 fn two_bands_of_the_star_cut_as_the_one() {
-    let bands = "upper := solid(plus, from: -5mm, to: 0mm)\nlower := solid(plus, from: -10mm, to: -5mm)\nstar := solid(upper)\nlower union star";
+    let bands = "upper := solid(std.solids.Prism(plus, from: -5mm, to: 0mm))\nlower := solid(std.solids.Prism(plus, from: -10mm, to: -5mm))\nstar := solid(upper)\nlower union star";
     let (one, two) = (cut(&wheel(STAR, PERIOD), None), cut(&wheel(bands, PERIOD), None));
     assert!((one - two).abs() <= 1e-9 * one, "{one} against {two}");
 }
@@ -202,8 +203,8 @@ fn two_bands_of_the_star_cut_as_the_one() {
 /// the wheel there is a disc of 38; above, half the star's cut.
 #[test]
 fn a_stepped_tool_cuts_each_slab_by_its_own_section() {
-    let stepped = "upper := solid(plus, from: -5mm, to: 0mm)\nin std.top {\n  hub := circle(center: std.top.origin) hint(r: 12)\n  \
-        radius(12mm) hub\n}\nlower := solid(face(hub), from: -10mm, to: -5mm)\nstar := solid(upper)\nlower union star";
+    let stepped = "upper := solid(std.solids.Prism(plus, from: -5mm, to: 0mm))\nin std.top {\n  hub := circle(center: std.top.origin) hint(r: 12)\n  \
+        radius(12mm) hub\n}\nlower := solid(std.solids.Prism(face(hub), from: -10mm, to: -5mm))\nstar := solid(upper)\nlower union star";
     let v = cut(&wheel(stepped, PERIOD), None);
     let want = PI * 38. * 38. * 3. + cut(&wheel(STAR, PERIOD), None) / 2.;
     assert!((v - want).abs() < 1e-4 * want, "{v:.4} mm³ against {want:.4}");
@@ -224,10 +225,10 @@ in std.top {{
   wb coords(du: -60mm, dv: -60mm) std.top
   wedge_f := face(wk, wa, wb, -> close)
 }}
-wedge := solid(wedge_f, from: -20mm, to: 10mm)
+wedge := solid(std.solids.Prism(wedge_f, from: -20mm, to: 10mm))
 arm := solid(star)
 wedge common arm");
-    let src = wheel(&arm, "space := sweep(arm, through: wheel, under: tool_turn, seen_from: wheel_turn)\nspace cut wheel");
+    let src = wheel(&arm, "space := solid({ p | p inside(under: tool_turn, seen_from: wheel_turn) arm })\nspace cut wheel");
     let (e, w) = solved(&src);
     let admitted = admit_body(&e.sketch, w, &Options::default()).unwrap_or_else(|f| panic!("{f}"));
     assert!(matches!(admitted.sweeps()[0].class, Class::Subtraction(_)));
@@ -255,7 +256,7 @@ fn a_roll_short_of_a_period_names_the_period() {
 /// clear of the wheel, so `through:` finds no roll, and says the period.
 #[test]
 fn a_tool_always_in_mesh_names_its_period() {
-    let mut e = crate::common::build(&wheel(STAR, "space := sweep(star, through: wheel, under: tool_turn, seen_from: wheel_turn)\nspace cut wheel"));
+    let mut e = crate::common::build(&wheel(STAR, "space := solid({ p | p inside(under: tool_turn, seen_from: wheel_turn) star })\nspace cut wheel"));
     solve(&mut e.sketch, SolveOpts::default());
     let diags = program::solid_diagnostics(&e.sketch, &e.map, &e.program);
     assert!(diags.iter().any(|d| d.code == Code::E080 && d.message.contains("always in mesh")
@@ -281,6 +282,7 @@ fn handle(tool: &str) -> String {
     format!("\
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 use std.motion (turns)
 
@@ -349,8 +351,8 @@ handle_turn := frame
 handle_turn turns(1) stem
 wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
-space := sweep(star over t in (0deg, 540deg), under: handle_turn, seen_from: wheel_turn)
-wheel := solid(face(rim), from: -15.6mm, to: -0.6mm)
+space := solid({{ p | p inside(under: handle_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star }})
+wheel := solid(std.solids.Prism(face(rim), from: -15.6mm, to: -0.6mm))
 space cut wheel
 ")
 }
@@ -372,7 +374,7 @@ fn outline(name: &str, d: f64) -> String {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 22 s: the handle cut from its wheel")]
 fn the_drafted_handle_cuts_its_wheel() {
-    let drafted = format!("{}\nstar := solid(plan.outline, from: -16mm, to: 0mm, draft: 8deg)", outline("plan", 0.));
+    let drafted = format!("{}\nstar := solid(std.solids.Drafted(plan.outline, from: -16mm, to: 0mm, draft: 8deg))", outline("plan", 0.));
     let src = handle(&drafted);
     let (e, w) = solved(&src);
     let admitted = admit_body(&e.sketch, w, &Options::default()).unwrap_or_else(|f| panic!("{f}"));
@@ -384,13 +386,13 @@ fn the_drafted_handle_cuts_its_wheel() {
         assert!(r.matching(base).is_some() && r.loops.len() == 2, "at {z}: {} loops", r.loops.len());
     }
     let v = cut(&src, Some(Tolerance { millimetres: 0.01 }));
-    let square = cut(&handle(&format!("{}\nstar := solid(plan.outline, from: -16mm, to: 0mm)", outline("plan", 0.))), None);
+    let square = cut(&handle(&format!("{}\nstar := solid(std.solids.Prism(plan.outline, from: -16mm, to: 0mm))", outline("plan", 0.))), None);
     // six bands through the 14.5 mm the star spans in the wheel, the last on to its foot
     let (band, tan) = (14.5 / 6., 8f64.to_radians().tan());
     let mut stepped = String::new();
     for k in 0..6 {
         let from = if k == 5 { -16. } else { -band * (k + 1) as f64 };
-        stepped += &format!("{}\nband{k} := solid(plan{k}.outline, from: {from}mm, to: {}mm)\n", outline(&format!("plan{k}"), band * k as f64 * tan),
+        stepped += &format!("{}\nband{k} := solid(std.solids.Prism(plan{k}.outline, from: {from}mm, to: {}mm))\n", outline(&format!("plan{k}"), band * k as f64 * tan),
             -band * k as f64);
     }
     stepped += "star := solid(band0)\n";
@@ -407,7 +409,7 @@ fn the_drafted_handle_cuts_its_wheel() {
 #[test]
 fn a_drafted_tool_whose_islands_change_is_refused_at_their_depth() {
     let disc = "in std.top {\n  dc := point\n  dc coords(du: 25mm, dv: 1mm) std.top\n  disc := circle(center: dc) hint(r: 3)\n  radius(3mm) disc\n}\n\
-        star := solid(face(disc), from: -10mm, to: 0mm, draft: 12deg)";
+        star := solid(std.solids.Drafted(face(disc), from: -10mm, to: 0mm, draft: 12deg))";
     let (e, w) = solved(&wheel(disc, &PERIOD.replace("540deg", "1080deg")));
     match admit_body(&e.sketch, w, &Options::default()) {
         Err(Error::Refused(r)) => {
@@ -444,6 +446,7 @@ fn a_sweep_the_field_cannot_read_is_said_at_its_statement() {
     let mut e = crate::common::build("\
 unit mm
 use std
+use std.solids
 use std.place (vertical)
 use std.stations
 use std.motion (turns)
@@ -463,10 +466,10 @@ tip := point
 fix((0, 30, 2)) tip
 base := face(a0, a1, a2, a3, -> close)
 param s: Scalar over (0, 1)
-pyramid := sweep(std.stations.Apex(base, tip).f over s)
+pyramid := solid({ p | p coincident(over s) std.stations.Apex(base, tip).f })
 turn := frame
 turn turns(1) stem
-space := sweep(pyramid over t in (0deg, 90deg), under: turn)
+space := solid({ p | p inside(under: turn, over t in (0deg, 90deg)) pyramid })
 ");
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
@@ -489,6 +492,7 @@ fn rolled_pinion(m: &str, tool: &str, cuts: &str) -> String {
     format!("\
 unit mm
 use std
+use std.solids
 use std.place (vertical, coords, on_v)
 use std.motion (turns, slides)
 
@@ -524,7 +528,7 @@ in std.top {{
   hole := circle(center: std.top.origin) hint(r: 1)
   radius(1mm) hole
 }}
-tooth := solid(rack_tooth, from: -1mm, to: 6mm)
+tooth := solid(std.solids.Prism(rack_tooth, from: -1mm, to: 6mm))
 blank_turn := frame
 blank_turn turns(1) spindle
 rack := frame
@@ -532,7 +536,7 @@ rack slides(2 * pi * R) rack_line
 index := frame
 index turns(1) spindle
 space := sweep({tool}, under: rack, seen_from: blank_turn)
-gear := solid(face(tip, holes: hole), from: 0mm, to: 5mm)
+gear := solid(std.solids.Prism(face(tip, holes: hole), from: 0mm, to: 5mm))
 {cuts}
 ")
 }
@@ -710,6 +714,7 @@ fn chamfered() -> String {
     "\
 unit mm
 use std
+use std.solids
 use std.place (vertical, coords, on_v, raised)
 use std.sets
 use std.motion (turns, slides)
@@ -750,12 +755,12 @@ in std.top {
   bottom_at := point hint((0, Rt + 5.35mm))
   bottom_at on_v(d: Rt + 5.35mm) std.top
 }
-tooth := solid(rack_tooth, from: -1mm, to: 6.75mm)
+tooth := solid(std.solids.Prism(rack_tooth, from: -1mm, to: 6.75mm))
 blank_turn := frame
 blank_turn turns(1) spindle
 rack := frame
 rack slides(2 * pi * R) rack_line
-gear := solid(face(tip, holes: hole), from: 0mm, to: 5.75mm)
+gear := solid(std.solids.Prism(face(tip, holes: hole), from: 0mm, to: 5.75mm))
 top_q := point
 top_q raised(d: 5.75mm, along: std.z) top_at
 bottom_q := point
@@ -765,7 +770,7 @@ bottom_cone := std.sets.ConeThrough(spindle, bottom_q, lean: 45deg)
 bicone := { p | p inside top_cone; p inside bottom_cone }
 chamfers := solid(bicone)
 chamfers common gear
-space := sweep(tooth over t in (-window, window), under: rack, seen_from: blank_turn)
+space := solid({ p | p inside(under: rack, seen_from: blank_turn, over t in (-window, window)) tooth })
 space cut gear
 ".into()
 }

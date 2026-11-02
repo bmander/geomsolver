@@ -7,7 +7,8 @@ use std.motion (screws, spins, turns)
 // -- stations of a face family (#243 L3) --------------------------------------------------------
 //
 // A loft or a sweep is a face of a component as one of its numbers runs over a declared parameter
-// (§6.9, #398): `param s: Scalar over (0, 1)` and `sweep(I(…).f over s)`.  These words only say
+// (§6.9, #398): `param s: Scalar over (0, 1)` and `solid({ p | p coincident(over s)
+// I(…).f })`.  These words only say
 // where a station stands on its path: a plane `n` square to the path where its parameter is `s`,
 // its `v` along `up`.  What the section is at that station — its shape, its twist, its scale, the
 // rails it follows — is the writer's component, drawn `in st.n` and reading `s` (the laws below
@@ -18,7 +19,7 @@ use std.motion (screws, spins, turns)
 //     sec := Section(st.n.origin, size: inlet + (outlet - inlet) * s) in st.n
 //   }
 //   param s: Scalar over (0, 1)
-//   body := sweep(Reducer(guide, inlet: 24mm, outlet: 12mm).sec.profile over s)
+//   body := solid({ p | p coincident(over s) Reducer(guide, inlet: 24mm, outlet: 12mm).sec.profile })
 //
 // The edge `ab` at one station is `ab` at every other, so two sections correspond by being one.
 
@@ -184,7 +185,8 @@ component Frenet(g: path, s: Scalar) {
 // turn's is held about a line), so its pose where the path's parameter is `u` is read off the
 // path after the solve — square to the path's tangent there, turned as the path makes it from
 // where the frame is drawn, its home.  What is drawn in it is drawn at the home, and a face drawn
-// there and swept as a declared parameter runs, `sweep(sec over s)`, stands at every station
+// there and swept as a declared parameter runs, `solid({ p | p coincident(over s) sec })`,
+// stands at every station
 // where the frame does, `s` the path's own parameter (a line's and an arc's fraction of its run,
 // a spline's parameter, a traced curve's formal).  Where today's station words solve a plane at
 // every station (`On`, `Minimal` and `Frenet` above), this frame is a motion, read once.
@@ -196,7 +198,7 @@ component Frenet(g: path, s: Scalar) {
 //     radius(2mm) k
 //   }
 //   sec := face(k)
-//   tube := sweep(sec over s)
+//   tube := solid({ p | p coincident(over s) sec })
 
 // `std.stations.Along(g, up: u, home: h)` makes `f`, a frame along `g`, its rotation-minimising
 // frame (`On`'s and `Minimal`'s): drawn square to `g` where its parameter is `h`, `v` leaning
@@ -281,7 +283,7 @@ component Across(a: path, b: path, c: path, s: Scalar) {
 // Nothing is inferred.  The first three corners must not stand in a line.
 //
 //   param s: Scalar over (0, 1)
-//   body := sweep(std.stations.Ruled(inlet, outlet).f over s)
+//   body := solid({ p | p coincident(over s) std.stations.Ruled(inlet, outlet).f })
 component Ruled(a: face, b: face, s: Scalar) {
   cycle (ea, eb) in (a, b) {
     private construction rail := line(ea.p1, eb.p1)

@@ -19,6 +19,7 @@ use crate::common::{ent, text::solved};
 fn block(sweep: &str, more: &str) -> String {
     format!("unit mm
 use std
+use std.solids
 in std.front {{
   a := point
   b := point
@@ -119,6 +120,7 @@ fn a_drafted_disc_is_two_frustums_and_its_bore_widens() {
     let cone = |r0: f64, h: f64, taper: f64| { let r1 = r0 + h * taper; PI * h * (r0 * r0 + r0 * r1 + r1 * r1) / 3.0 };
     let disc = |holes: &str| format!("unit mm
 use std
+use std.solids
 in std.front {{
   o := point
   fix((0, 0)) o
@@ -128,7 +130,7 @@ in std.front {{
   radius(6) bore
   f := face(rim{holes})
 }}
-disc := solid(f, from: -4, to: 3, draft: 5deg)
+disc := solid(std.solids.Drafted(f, from: -4, to: 3, draft: 5deg))
 ");
     let e = solved(&disc(""));
     let want = cone(20.0, 4.0, -t) + cone(20.0, 3.0, -t);
@@ -178,6 +180,7 @@ fn what_a_draft_cannot_say_is_refused() {
     // plane along a line
     let e = solved("unit mm
 use std
+use std.solids
 in std.front {
   a := point
   b := point
@@ -195,7 +198,7 @@ in std.front {
   back := line(d, a)
   f := face(low, end, high, back)
 }
-s := solid(f, from: -2, to: 2, draft: 4deg)
+s := solid(std.solids.Drafted(f, from: -2, to: 2, draft: 4deg))
 ");
     let t = 4f64.to_radians().tan();
     // the section at `h`: the 20 × 10 rectangle less 2|h|t round its three straight sides, and
@@ -207,6 +210,7 @@ s := solid(f, from: -2, to: 2, draft: 4deg)
     // a quarter disc's arc meets its two radii square: refused by name
     let e = solved("unit mm
 use std
+use std.solids
 in std.front {
   o := point
   a := point
@@ -219,7 +223,7 @@ in std.front {
   l2 := line(o, a)
   f := face(q, l1, l2)
 }
-s := solid(f, from: -2, to: 2, draft: 4deg)
+s := solid(std.solids.Drafted(f, from: -2, to: 2, draft: 4deg))
 ");
     let why = exact(&e, "s").unwrap_err();
     assert!(why.contains("at an angle where one is an arc"), "{why}");
@@ -246,7 +250,7 @@ fn resizing_a_drafted_prism_keeps_its_draft() {
     let how = SolidSweep { depth: Some("4".into()), ..Default::default() };
     let out = edit::set_sweep(&e, &e.program, ent(&e, "blk").i(), &how);
     assert_eq!(out.refused, None);
-    assert!(out.text.contains("blk := solid(f, depth: 4, draft: 3deg)"), "{}", out.text);
+    assert!(out.text.contains("blk := solid(std.solids.Drafted(f, from: -4, to: 0, draft: 3deg))"), "{}", out.text);
     let e = solved(&out.text);
     let want = rectangle(20.0, 30.0, 3f64.to_radians().tan(), -4.0, 0.0);
     close("resized", props::volume(&exact(&e, "blk").unwrap()), want, 1e-9);
