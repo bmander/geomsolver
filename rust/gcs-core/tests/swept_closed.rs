@@ -92,14 +92,40 @@ fn a_bar_turned_about_a_line_along_it_closes_into_its_swept_region() {
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
 }
 
-/// What the build refuses it refuses by what the tool and the motion are: a screw, the design's
-/// later step.
+/// **A bar beside the axis under a screw closes into the region it sweeps** (#735's gate): its edges
+/// along the axis and its side faces' contact lines screw into cylinders about the axis, its level
+/// edges into helicoidal sheets, each a level triangle on the line screwed past the box. Apart from
+/// the build: in helical coordinates `(ρ, ψ, ζ = z − k ψ)`, `k` the step a radian, the screw is a
+/// shift in `ψ` and the volume element `ρ dρ dψ dζ`; each helix `(ρ, ζ)` meets the bar in one
+/// interval of `ψ` (it climbs `2πk` a turn, past the bar's height), which the turn `Θ` lengthens by
+/// `Θ`. So the sweep is the bar's volume and `Θ` times the measure `∫ ρ dρ dζ` of the helices that
+/// meet the bar: at each radius the bar's arc `Δψ(ρ)` and its height `h` reach `h + k Δψ(ρ)` of `ζ`,
+/// so `∫ ρ (h + k Δψ) dρ = h (ρ_max² − ρ_min²) / 2 + k A`, the bar's section `A`. For a unit cube
+/// two out, `1 + Θ (3 + k)`. Built at 1e-6 and at 1e-7: its inner face at the end pose holds a
+/// ruling of its inner level edge's sheet and touches it at the edge's foot, where the cylinder of
+/// the foot's radius touches both — three exact curves through one vertex at any tolerance.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 50 s: a bar under a screw, one arrangement at two tolerances")]
+fn a_bar_under_a_screw_closes_into_its_helical_sweep() {
+    let tool = block([2.,0.,0.],[3.,1.,1.]);
+    let (theta,advance) = (1.,2.);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance});
+    let k = advance/std::f64::consts::TAU/theta;
+    let expected = 1.+theta*(3.+k);
+    for tol in [1e-6,1e-7] {
+        let built = closed(&tool,&path,[0.,1.],0.002,tol).unwrap();
+        assert!((volume(&built)-expected).abs() <= 1e-9*expected,"at {tol:e}: {} against {expected}",volume(&built));
+        agrees(&built,&tool,&path);
+    }
+}
+
+/// What the build refuses it refuses by what the tool and the motion are: under a screw, an edge
+/// leaning to the axis, the design's later step.
 #[test]
 fn what_the_closed_build_cannot_yet_build_it_names() {
     use gcs_core::brep::swept::closed::Unbuilt;
-    let tool = block([2.,0.,0.],[3.,1.,1.]);
     let screw = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:2.});
-    assert_eq!(closed(&tool,&screw,[0.,1.],0.01,1e-7).unwrap_err(),Unbuilt::Motion);
+    assert_eq!(closed(&leaning(0.35,3.),&screw,[0.,1.],0.01,1e-7).unwrap_err(),Unbuilt::Leaning);
 }
 
 /// A block leaning to the axis: `block` turned `lean` about the world's `x` and moved out `off`.

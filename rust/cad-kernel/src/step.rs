@@ -671,14 +671,15 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
                 let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
                 spline(o,fit.degree,&ids,&fit.knots,None)
             }
-            // a family's rail or rim likewise, its parameter the rail's or the rim's; and an affine
-            // image of a curve (a rail under a shear)
-            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) => {
+            // a family's rail or rim likewise, its parameter the rail's or the rim's; an affine image
+            // of a curve (a rail under a shear); and a plane's cut of a screwed sheet
+            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) => {
                 let [t0,t1] = e.t;
+                let whose = if matches!(c,Curve::SheetCut(..)) { "a screwed sheet's" } else { "a face family's" };
                 let fit = match super::nurbs::fit_curve(&|f| c.point(t0+(t1-t0)*f),3,8,FIT) {
                     Some((fit,err)) if err <= FIT => fit,
-                    Some((_,err)) => return Err(format!("a face family's {} is fitted no nearer than {err:.3e} mm, past the file's {FIT:e}",c.kind())),
-                    None => return Err(format!("a face family's {} could not be fitted (it is degenerate)",c.kind())),
+                    Some((_,err)) => return Err(format!("{whose} {} is fitted no nearer than {err:.3e} mm, past the file's {FIT:e}",c.kind())),
+                    None => return Err(format!("{whose} {} could not be fitted (it is degenerate)",c.kind())),
                 };
                 // its knots the edge's own parameters
                 let knots: Vec<f64> = fit.knots.iter().map(|k| t0+(t1-t0)*k).collect();

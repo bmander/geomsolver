@@ -256,6 +256,22 @@ cancellation of the terms that constant sums — not its square root, the hyperb
 against the tolerance, which a plane holding a hyperboloid's ruling exactly (some 1e-14 left, a
 semi-axis of some 1e-7) failed at any tolerance finer, its rulings coming out as branches
 (`meeting::a_plane_holding_a_hyperboloids_ruling_meets_it_in_two_lines_at_any_tolerance`).
+**A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
+(`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
+in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it
+(the sheet touching it along the foot's helix, judged by the gap); another such sheet of the same
+pitch in the helix of the point where the two lines meet carried level, none where they run
+parallel there; a level plane in the one ruling at its height; any other plane in its cut
+`S(−α/β, v)` (`Curve::SheetCut`, **a new curve kind**: `α + u β` the ruling's reach to the plane),
+with the rulings it holds as lines, read about the nearest held ruling by differences so the cut
+runs through the point it touches the sheet at as exactly as anywhere. Two curves on one sheet,
+each a rule `u(v)`, cross where the rules agree, and two planes' cuts of two such sheets on one
+plane where the plane meets the sheets' helix (`query::crossings_in`); a point's foot on such a
+sheet starts from the ruling level with it (`Blend::inverse`), with no search
+(`meeting::a_screwed_lines_sheet_meets_what_keeps_the_screw_in_helices`,
+`a_plane_holding_a_screwed_sheets_ruling_meets_it_in_the_ruling_and_a_cut_through_the_touch`, at
+1e-6, 1e-7 and 1e-9). An open sheet reaching past the domain is an operand of `arrangement_within`
+as a solid is, its pieces within the domain parting cells.
 `arrangement::a_plane_crossing_where_two_surfaces_touch_…`, `a_plane_tangent_to_a_hyperboloid_…`
 and `a_plane_crossing_a_shallow_meeting_…` are the gates, at 1e-6 and 1e-7. **The closed swept
 solid is one arrangement and one selection** (`swept::closed`, generating.md);
