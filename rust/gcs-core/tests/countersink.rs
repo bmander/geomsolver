@@ -16,8 +16,8 @@ use std::f64::consts::PI;
 
 use crate::common::{ent, text::solved};
 
-/// A circle `rim` of radius 3 about the origin of the top plane, its solid the set `sink` over
-/// `face(rim)`.
+/// A circle `rim` of radius 3 about the origin of the top plane, its face `f`, and the solid the
+/// set `sink`.
 fn rim(sink: &str) -> String {
     format!("unit mm
 use std
@@ -27,6 +27,7 @@ in std.top {{
   fix((0, 0)) o
   rim := circle(center: o) hint(r: 3)
   radius(3mm) rim
+  f := face(rim)
 }}
 sink := solid({sink})
 ")
@@ -90,14 +91,14 @@ fn a_countersink_is_its_cone_to_its_point() {
 #[test]
 fn a_countersink_written_by_hand_is_built_alike() {
     let e = solved(&rim("{ p |
-  p distance(<= 0mm, along: n) face(rim)
-  beyond := { q | q outside face(rim) }
-  within := { q | q inside face(rim) }
-  distance(p, beyond) - distance(p, within) >= tan(45deg) * distance(p, face(rim))
+  p distance(<= 0mm, along: n) f
+  beyond := { q | q outside f }
+  within := { q | q inside f }
+  distance(p, beyond) - distance(p, within) >= tan(45deg) * distance(p, f)
 }"));
     let b = exact(&e, "sink").unwrap();
     close("by hand, exactly", props::volume(&b), cone(3.0, 90.0), 1e-9);
-    let mut names: Vec<&str> = b.faces.iter().map(|f| f.name.rsplit('.').next().unwrap()).collect();
+    let mut names: Vec<&str> = b.faces.iter().map(|f| f.name.rsplit(['.', '\u{1}']).next().unwrap()).collect();
     names.sort_unstable();
     assert_eq!(names, ["near", "rim"]);
 }
@@ -153,9 +154,9 @@ sink cut strap
     let b = exact(&e, "strap").unwrap();
     close("the countersunk strap, exactly", props::volume(&b), want, 1e-9);
     let read = e.sketch.evaluated_solid(ent(&e, "strap").i(), Report).unwrap();
-    for face in ["near", "far", "hole.bore", "sink.rim"] {
-        assert!(read.surviving_faces().contains(&format!("strap.{face}")), "{face}: {:?}",
-                read.surviving_faces());
+    // an operand's faces by its own path
+    for face in ["strap.near", "strap.far", "hole.bore", "sink.rim"] {
+        assert!(read.surviving_faces().contains(face), "{face}: {:?}", read.surviving_faces());
     }
     // the sink opens on the top: a rim of radius 3 there, the hole's 1.3 at 1.7 below it
     let facets = gcs_core::solid::resolve(&e.sketch, ent(&e, "strap").i(), gcs_core::solid::REPORT_UNIT);
