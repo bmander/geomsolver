@@ -278,12 +278,20 @@ to its patches by route and face, beside the paths in `flatten::Listed` and read
 the paths change. `expand::Asked::meets` answers it; faces of two solids, a face a round made that
 the stratum has not, and a body with a swept cut (no `Meets`) meet. A pair read apart that alone
 left a block out (the condition asked again with every pair meeting) is an `flatten::Apart` at the
-document's statement (`FaceState::at`, carried in `Pending::at`), kept in `SourceMap::apart`, and
+document's statement (`FaceState::at`, carried in `Pending::at`), kept in `SourceMap::apart`.
+**Then it is read where the drawing solves ([0.202], #761):** once a pass elaborates with an
+`Apart`, `program::meets::at_solve` solves a copy of its sketch, and where the solve settles and
+`apart` finds a pair meeting there, it returns each keyed entity's solved numbers (`Stood`, the
+form `crossed` is kept in too), and `elaborate` names every solid's faces again — once (its
+`pose`): `solids_and_surfaces` stands the sketch there by key (`program::stand`, the writer
+`holds` uses for `crossed`) while it reads each `Meets`, and puts the seeds back. A document with
+no `Apart` is solved by its caller alone.
 `program::meets::apart` reads it again in `solid_diagnostics` where the drawing is solved: a pair
 that meets there is E080, once per statement and solid. `std.rounds`' `round` and `chamfer` pair
 only faces that meet and round only threes that meet pairwise; `tests/meets.rs` is the gate (the
-block's 24 pairs and 48 corners, #625's four turned spokes against two crossed bars, the pin
-seeded off its plate).
+block's 24 pairs and 48 corners, #625's four turned spokes against two crossed bars; #761's pin
+seeded off its plate and one left to `radius(3mm)`, and a post placed by `seats`, each the solid of
+the same part seeded where it stands).
 
 **The expansion's limit is said once (#625).** A walk past `MAX_FLAT` statements says one E103
 at the root body's statement it was walking (`FaceState::at`), naming where in a module it had got
