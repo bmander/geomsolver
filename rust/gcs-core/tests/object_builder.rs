@@ -222,12 +222,30 @@ fn a_ring_in_contact_all_round_turned_builds_at_the_displays_samples() {
 }
 
 /// **A sweep of the closed class builds at the display's samples** (`plunge.sv`, `stopped_turn.sv`,
-/// #721): a polyhedral tool's slide and turn, each stopping inside its blank, cut from it on one
-/// arrangement by the page's stepped builder as the export builds it — admitted, its blank built,
-/// and cut in the stage after, with no sheet, plan or sector.
+/// `stopped_punch.sv`, `stopped_drum.sv`, #721): a polyhedral tool's slide and turn and a drum's
+/// slide and turn, each stopping inside its blank, cut from it on one arrangement by the page's
+/// stepped builder as the export builds it — admitted, its blank built, and cut in the stage after,
+/// with no sheet, plan or sector.
 #[test]
 fn a_closed_sweep_builds_at_the_displays_samples() {
-    assert_eq!(corpus(&["solid_sweeps/plunge.sv".to_string(),"solid_sweeps/stopped_turn.sv".to_string()],true),2);
+    assert_eq!(corpus(&["solid_sweeps/plunge.sv".to_string(),"solid_sweeps/stopped_turn.sv".to_string(),
+        "solid_sweeps/stopped_punch.sv".to_string(),"solid_sweeps/stopped_drum.sv".to_string()],true),4);
+}
+
+/// A drum screwed across a ring sector (`helical_groove.sv`, #721 F2c5) builds at the display's
+/// samples as the export builds it, on one arrangement.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 35 s: a drum's screwed rims through a sector")]
+fn a_screwed_drums_groove_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/helical_groove.sv".to_string()],true),1);
+}
+
+/// A bull-nose mill turned partway into a ring sector (`stopped_bullnose.sv`, #721 F2c5) builds at
+/// the display's samples as the export builds it, on one arrangement.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 100 s: a bull-nose's round turned on one arrangement")]
+fn a_turned_bull_noses_notch_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/stopped_bullnose.sv".to_string()],true),1);
 }
 
 const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \

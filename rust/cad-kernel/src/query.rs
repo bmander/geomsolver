@@ -256,6 +256,9 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
     match (curve,surface) {
         (&Curve::Line {p,d},Surface::Cylinder(c,r)) => return line_cylinder(p,d,[t0,t1],c,*r,tol),
         (&Curve::Line {p,d},Surface::Sphere(c,r)) => return line_sphere(p,d,[t0,t1],c.o,*r,tol),
+        (&Curve::Line {p,d},Surface::Blend(_,b)) => if let Some(c) = b.level_circle() { return line_screwed_circle(p,d,[t0,t1],&c,tol) },
+        (Curve::Circle(f,big),Surface::Blend(_,b)) => if let Some(m) = circle_round_screwed(f,big.abs(),b,[t0,t1],tol) { return m },
+        (Curve::Iso(b,u),Surface::Sphere(c,r)) => if let Some(m) = helix_sphere(b,*u,c.o,r.abs(),[t0,t1],tol) { return m },
         _ => {}
     }
     let f = |t: f64| surface.implicit(curve.point(t));
@@ -314,6 +317,184 @@ fn line_chord(w: V,e: V,r: f64,[t0,t1]: [f64;2],tol: f64) -> Meets {
         Chord::Cross(half) => { let half = half/ee.sqrt(); vec![(foot-half,false),(foot+half,false)] }
     };
     Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-tol && t <= t1+tol).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
+}
+
+/// **A line through `p` along the unit `d`, over `[t0, t1]`, against the sheet a level circle screws
+/// into** (`geom::LevelCircle`, a round rim under a screw, #721 F2c5), its roots isolated with a
+/// bound, not sampled. The circle level with the line's point `q(t)` is at the `v` its height gives,
+/// linear in `t`; screwed back from there, `q(t)` lies in the circle's plane, at `A(t)` from its
+/// centre, and the line meets the sheet where `G(t) = |A(t)|² − r² = 0`. Across the axis, `A` is a
+/// line turned at the constant rate `ω` the rise gives, so over a stretch `|A|`, `|A'| ≤ |d⊥| + |ω|
+/// |q⊥|` and `|A''| ≤ 2|ω||d⊥| + ω²|q⊥|` are bounded by its ends, `|G'| ≤ 2|A||A'|` and
+/// `|G''| ≤ 2(|A'|² + |A||A''|)`: a stretch is dropped where `|G|` at its middle outruns what `G'`
+/// can close over its half, read as one root where `G'` at its middle outruns what `G''` can
+/// turn it by (`G` monotone: a root where its ends differ in sign), and halved otherwise. Square to
+/// the axis the line is level and meets the one circle there as a chord. A thin sheet's two
+/// crossings a hair apart are both found: no step need land between them.
+fn line_screwed_circle(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::LevelCircle,tol: f64) -> Meets {
+    use crate::util::space::{cross,sub};
+    let k = c.axis;
+    let perp = |x: V| sub(x,scale(k,dot(x,k)));
+    let (v0,v1) = (c.v_at(p),dot(d,k)/c.rise);
+    // the stretch of the line level with the sheet, `v` in `[0, 1]`
+    if v1.abs()*(t1-t0).abs() <= 1e-15 {
+        if !(0.0..=1.0).contains(&v0) { return Meets::At(Vec::new()) }
+        let o = c.back(c.frame.o,-v0);
+        return line_chord(sub(p,o),perp(d),c.r,[t0,t1],tol)
+    }
+    // (the sheet's ends held a tolerance wide: a line ending on an end circle meets it there)
+    let slack = tol/(c.rise.abs()*v1.abs().max(1e-300)*norm(d).max(1e-300)).max(1e-300)*v1.abs();
+    let (ta,tb) = ((0.-v0-slack)/v1,(1.-v0+slack)/v1);
+    let (lo,hi) = (ta.min(tb).max(t0),ta.max(tb).min(t1));
+    if lo > hi { return Meets::At(Vec::new()) }
+    let omega = c.angle*v1;
+    let (dp,cp) = (perp(d),perp(sub(c.frame.o,c.centre)));
+    let a = |t: f64| -> (V,V) {
+        let q = add(p,scale(d,t));
+        let v = c.v_at(q);
+        let x = sub(perp(sub(c.back(q,v),c.centre)),cp);
+        // `A' = R(−ωt) d⊥ − ω k × R(−ωt) q⊥`: the line's own way turned back, less the turn's sweep
+        let turned = |y: V| c.back(add(c.centre,y),v);
+        let (rd,rq) = (sub(turned(dp),c.centre),sub(turned(perp(sub(q,c.centre))),c.centre));
+        (x,sub(perp(rd),scale(cross(k,perp(rq)),omega)))
+    };
+    let g = |t: f64| { let (x,_) = a(t); dot(x,x)-c.r*c.r };
+    let dg = |t: f64| { let (x,dx) = a(t); 2.*dot(x,dx) };
+    let reach = |t: f64| norm(perp(sub(add(p,scale(d,t)),c.centre)));
+    let (nd,cn) = (norm(dp),norm(cp));
+    let step = tol*1e-3/norm(d).max(1e-300);
+    let mut roots: Vec<(f64,bool)> = Vec::new();
+    let mut stack = vec![(lo,hi,0)];
+    while let Some((x0,x1,depth)) = stack.pop() {
+        let (m,h) = (0.5*(x0+x1),x1-x0);
+        let q = reach(x0).max(reach(x1));
+        let (am,a1,a2) = (q+cn,nd+omega.abs()*q,2.*omega.abs()*nd+omega*omega*q);
+        let (gm,dgm) = (g(m),dg(m));
+        if gm.abs() > 2.*am*a1*h/2. { continue }
+        let m2 = 2.*(a1*a1+am*a2);
+        if dgm.abs() > m2*h/2. {
+            let (g0,g1) = (g(x0),g(x1));
+            if g0 == 0. { roots.push((x0,false)) }
+            if g0*g1 < 0. {
+                let (mut l,mut r,mut gl) = (x0,x1,g0);
+                for _ in 0..200 { if r-l <= step { break } let s = 0.5*(l+r); let gs = g(s); if (gs < 0.) == (gl < 0.) { l = s; gl = gs } else { r = s } }
+                roots.push((0.5*(l+r),false));
+            }
+            continue
+        }
+        // a stretch too short to part: a double root, a touch, where `G` is nought to the line's
+        // tolerance there
+        if h <= step || depth >= 80 {
+            if gm.abs() <= 2.*c.r*tol { roots.push((m,true)) }
+            continue
+        }
+        stack.push((m,x1,depth+1));
+        stack.push((x0,m,depth+1));
+    }
+    // a stretch's end on the sheet (an edge ending on it) is a root there, at the end
+    for end in [lo,hi] {
+        let near = roots.iter().any(|&(t,_)| (t-end).abs()*norm(d) <= tol);
+        if !near && g(end).abs() <= 2.*c.r*tol { roots.push((end,false)) }
+    }
+    for r in roots.iter_mut() { for end in [t0,t1] { if (r.0-end).abs()*norm(d) <= tol { *r = (end,false) } } }
+    roots.sort_by(|x,y| x.0.total_cmp(&y.0));
+    roots.dedup_by(|b,a| (b.0-a.0).abs()*norm(d) <= tol);
+    Meets::At(roots)
+}
+
+/// **A circle about a screw's axis against the sheet a circle screws into**, exactly (#721 F2c5: a
+/// cylinder's rim about the axis against a ball's pipe): the screw keeps each point's distance from
+/// its axis, so the sheet meets the circle's cylinder in the helices of its circle's points at that
+/// radius (`ssi`'s `screwed_circle_round`), and the circle where each helix reaches its height
+/// within the sheet. Where the helix is one the sheet touches the cylinder along, the circle,
+/// lying in the cylinder, touches the sheet there. `None` for a circle not about the screw's axis,
+/// or a sheet no circle screws into.
+fn circle_round_screwed(f: &super::geom::Frame,big: f64,b: &std::sync::Arc<super::geom::Blend>,[t0,t1]: [f64;2],tol: f64) -> Option<Meets> {
+    use crate::util::space::{cross,sub};
+    let super::geom::Carry::Screw {center,axis,angle,advance} = b.carry else { return None };
+    let k = crate::util::space::normalised(axis)?;
+    if norm(cross(f.z,k)) > 1e-12 { return None }
+    let perp = |x: V| sub(x,scale(k,dot(x,k)));
+    if norm(perp(sub(f.o,center))) > tol || angle == 0. { return None }
+    let helices = super::ssi::screwed_circle_round(b,&super::geom::Frame::about(center,k),big,tol)?;
+    let rise = advance*dot(axis,k);
+    if rise == 0. { return None }
+    let h = dot(sub(f.o,center),k);
+    let mut roots = Vec::new();
+    for c in &helices {
+        let Curve::Iso(_,u) = *c else { continue };
+        let start = b.d1([u,0.]).0;
+        let v = (h-dot(sub(start,center),k))/rise;
+        let slack = tol/rise.abs();
+        if !(-slack..=1.+slack).contains(&v) { continue }
+        let (p,su,sv) = b.d1([u,v.clamp(0.,1.)]);
+        // the circle's parameter at the point, within its stretch
+        let q = sub(p,f.o);
+        let mut t = dot(q,f.y).datan2(dot(q,f.x));
+        while t < t0-1e-12 { t += std::f64::consts::TAU }
+        while t > t1+1e-12 { t -= std::f64::consts::TAU }
+        if t < t0-1e-12 || t > t1+1e-12 { continue }
+        // on a helix the sheet touches the cylinder along, its normal is the cylinder's own
+        let n = crate::util::space::normalised(cross(su,sv)).unwrap_or([0.;3]);
+        let radial = crate::util::space::normalised(perp(sub(p,center))).unwrap_or([0.;3]);
+        roots.push((t.clamp(t0,t1),norm(cross(n,radial)) <= 1e-6));
+    }
+    roots.sort_by(|x,y| x.0.total_cmp(&y.0));
+    Some(Meets::At(roots))
+}
+
+/// **A helix against a ball**, its roots isolated with a bound (#721 F2c5: the helix a ball's pipe
+/// touches a cylinder along, which starts on the ball at its start pose, touching it there): the
+/// iso-line of a sheet a curve screws into, where the curve's two ends are one, is its point at `u`
+/// carried by the screw, `p(v)`, and it meets the ball where `G(v) = |p(v) − c|² − r² = 0`. Over a
+/// stretch `|p'| ≤ |a| ρ + |h|` and `|p''| ≤ a² ρ` (`a` the turn, `h` the rise, `ρ` the point's
+/// distance from the axis), so `|G'| ≤ 2|p − c||p'|` and `|G''| ≤ 2(|p'|² + |p − c||p''|)` bound it as
+/// `line_screwed_circle` does: a stretch dropped where `G` cannot reach nought across it, read as one
+/// root where it is monotone, halved otherwise, a touch where it only reaches nought.
+fn helix_sphere(b: &super::geom::Blend,u: f64,c: V,r: f64,[t0,t1]: [f64;2],tol: f64) -> Option<Meets> {
+    use crate::util::space::{cross,sub};
+    let super::geom::Carry::Screw {center,axis,angle,advance} = b.carry else { return None };
+    let p0 = b.d1([u,0.]).0;
+    let same = |q: V,p: V| distance(q,p) <= 1e-9*(1.+norm(p));
+    if !same(b.d1([u,1.]).0,b.carry.at(p0,1.)) || !same(b.d1([u,0.5]).0,b.carry.at(p0,0.5)) { return None }
+    let k = crate::util::space::normalised(axis)?;
+    let rho = norm(sub(sub(p0,center),scale(k,dot(sub(p0,center),k))));
+    let (a,h) = (angle.abs(),(advance*norm(axis)).abs());
+    let p = |v: f64| b.carry.at(p0,v);
+    let g = |v: f64| { let d = sub(p(v),c); dot(d,d)-r*r };
+    let dg = |v: f64| { let e = 1e-7; (g(v+e)-g(v-e))/(2.*e) };
+    let (s1,s2) = (a*rho+h,a*a*rho);
+    let reach = |v: f64| distance(p(v),c);
+    let step = tol*1e-3/s1.max(1e-300);
+    let mut roots: Vec<(f64,bool)> = Vec::new();
+    let mut stack = vec![(t0,t1,0)];
+    while let Some((x0,x1,depth)) = stack.pop() {
+        let (m,w) = (0.5*(x0+x1),x1-x0);
+        let q = reach(x0).max(reach(x1))+s1*w;
+        let (gm,dgm) = (g(m),dg(m));
+        if gm.abs() > 2.*q*s1*w/2. { continue }
+        if dgm.abs() > 2.*(s1*s1+q*s2)*w/2.+1e-9*q*s1 {
+            let (g0,g1) = (g(x0),g(x1));
+            if g0*g1 < 0. {
+                let (mut l,mut rr,mut gl) = (x0,x1,g0);
+                for _ in 0..200 { if rr-l <= step { break } let s = 0.5*(l+rr); let gs = g(s); if (gs < 0.) == (gl < 0.) { l = s; gl = gs } else { rr = s } }
+                roots.push((0.5*(l+rr),false));
+            }
+            continue
+        }
+        if w <= step || depth >= 80 { if gm.abs() <= 2.*r*tol { roots.push((m,true)) } continue }
+        stack.push((m,x1,depth+1));
+        stack.push((x0,m,depth+1));
+    }
+    // an end on the ball is a root there, at the end
+    for end in [t0,t1] {
+        if g(end).abs() <= 2.*r*tol && !roots.iter().any(|&(t,_)| distance(p(t),p(end)) <= tol.sqrt()*r.sqrt()*4.) { roots.push((end,false)) }
+    }
+    for x in roots.iter_mut() { for end in [t0,t1] { if distance(p(x.0),p(end)) <= tol.sqrt()*r.sqrt()*4. && g(end).abs() <= 2.*r*tol { *x = (end,false) } } }
+    roots.sort_by(|x,y| x.0.total_cmp(&y.0));
+    roots.dedup_by(|y,x| distance(p(y.0),p(x.0)) <= tol);
+    let _ = cross;
+    Some(Meets::At(roots))
 }
 
 /// A face's box in space, from its edges and a grid across its parameters, grown by what the

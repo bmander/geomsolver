@@ -24,9 +24,12 @@ fn slide(d: [f64;3]) -> Trajectory {
 
 /// `built`, the closed sweep of `tool` under `path`, read against membership at seeded points of
 /// its box: every settled point inside it a member, every one outside not.
-fn agrees(built: &Brep,tool: &Brep,path: &Trajectory) {
+fn agrees(built: &Brep,tool: &Brep,path: &Trajectory) { agrees_over(built,tool,path,[0.,1.]) }
+
+/// `agrees` over the roll `roll`.
+fn agrees_over(built: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {
     let (solid,body) = (Solid::new(tool,0.002,1.).unwrap(),Solid::new(built,0.002,1.).unwrap());
-    let swept = Swept {tool:&solid,path,roll:[0.,1.]};
+    let swept = Swept {tool:&solid,path,roll};
     let (lo,hi) = built.bounds();
     let mut rng = gcs_core::rng::Rng::new(6);
     let mut held = 0;
@@ -371,9 +374,12 @@ fn an_l_shaped_prism_turned_is_its_blocks_sweeps_united() {
 /// `built`, `tool`'s sweep under `path` cut from `blank`, read against the definition at seeded
 /// points of the blank's box: every settled point inside it in the blank and no member of the
 /// sweep, every one outside either out of the blank or a member.
-fn agrees_cut(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory) {
+fn agrees_cut(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory) { agrees_cut_over(built,blank,tool,path,[0.,1.]) }
+
+/// `agrees_cut` over the roll `roll`.
+fn agrees_cut_over(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {
     let (solid,body,stock) = (Solid::new(tool,0.002,1.).unwrap(),Solid::new(built,0.002,1.).unwrap(),Solid::new(blank,0.002,1.).unwrap());
-    let swept = Swept {tool:&solid,path,roll:[0.,1.]};
+    let swept = Swept {tool:&solid,path,roll};
     let (lo,hi) = blank.bounds();
     let mut rng = gcs_core::rng::Rng::new(9);
     let mut held = 0;
@@ -427,4 +433,439 @@ fn a_bar_turned_through_a_disc_is_cut_from_it_on_one_arrangement() {
     let expected = PI*rdisc*rdisc*h-taken;
     assert!((volume(&cut)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&cut));
     agrees_cut(&cut,&blank,&tool,&path);
+}
+
+/// A drum lying along `x`, radius 2 and 8 long from `x = 6`, its axis at `z = −5`: `punch.sv`'s.
+fn drum() -> Brep {
+    use gcs_core::brep::build::{disc,prism};
+    prism(&disc([6.,0.,-5.],[1.,0.,0.],2.),0.,8.).unwrap()
+}
+
+/// **A drum slid aslant closes into its shadow carried**: a convex tool slid by `D` sweeps its own
+/// volume and its shadow along `D` (on the plane square to it) times `|D|`; a cylinder's shadow at
+/// `θ` from its axis is `π r² |cos θ| + 2 r L sin θ`. Its side's contact rulings sweep their
+/// tangent planes and its rims oblique cylinders (#721 F2c5, a curved tool under a slide).
+#[test]
+fn a_drum_slid_aslant_closes_into_its_shadow_carried() {
+    let d = [4.8,0.,16.*0.9539392014169457];
+    let tool = drum();
+    let path = slide(d);
+    let built = slid(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let (r,l,len) = (2.,8.,norm(d));
+    let cos = d[0]/len;
+    let expected = std::f64::consts::PI*r*r*l+len*(std::f64::consts::PI*r*r*cos+2.*r*l*(1.-cos*cos).sqrt());
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// **A frustum slid aslant closes into its shadow carried**: `build::cone`'s frustum, radii 2 and 1
+/// three apart along z, slid by `D` at `θ` from its axis. Its side's two rulings where its normal
+/// is square to the slide (`A cos u + B sin u = C`) sweep their tangent planes, its rims oblique
+/// cylinders. Apart from the build: its shadow along `D` is the hull of its two rims' ellipses, of
+/// one aspect `cos θ` along the axis's shadow, so stretched by `1/cos θ` that way the hull of two
+/// circles of radii `r₀ ≥ r₁` whose centres stand `L = h tan θ` apart: `r₀² (π + 2β)/2 + r₁² (π −
+/// 2β)/2 + (r₀ + r₁) L cos β`, `sin β = (r₀ − r₁)/L`.
+#[test]
+fn a_frustum_slid_aslant_closes_into_its_shadow_carried() {
+    use std::f64::consts::PI;
+    let (r0,r1,h) = (2.,1.,3.);
+    let tool = gcs_core::brep::build::cone([0.;3],[0.,0.,1.],r0,r1,h).unwrap();
+    let d = [2.,0.5,1.5];
+    let path = slide(d);
+    let built = slid(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let len = norm(d);
+    let cos = d[2]/len;
+    let l = h*(1.-cos*cos).sqrt()/cos;
+    let beta = ((r0-r1)/l).asin();
+    let hull = r0*r0*(PI+2.*beta)/2.+r1*r1*(PI-2.*beta)/2.+(r0+r1)*l*beta.cos();
+    let expected = PI*h*(r0*r0+r0*r1+r1*r1)/3.+len*cos*hull;
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// **A drum slid along its own axis is a longer drum**: its side is in contact all over, swept
+/// along itself into one cylinder; `π r² (L + |D|)`.
+#[test]
+fn a_drum_slid_along_its_axis_is_a_longer_drum() {
+    let tool = drum();
+    let path = slide([3.,0.,0.]);
+    let built = slid(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = std::f64::consts::PI*4.*11.;
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// A capsule along z: a cylinder of radius `r` from 0 to `h`, a half ball on each end.
+fn capsule(r: f64,h: f64) -> Brep {
+    use gcs_core::brep::build::{Profile,ProfileEdge,revolve};
+    use gcs_core::brep::geom::Frame;
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let arc = |z: f64,span: [f64;2]| ProfileEdge::Arc {frame:Frame::new(f.at([0.,0.,z]),f.y,f.z),r,span:Some(span)};
+    let half = std::f64::consts::FRAC_PI_2;
+    let profile = Profile {origin:f.o,normal:f.y,names:Vec::new(),loops:vec![vec![
+        arc(0.,[half,2.*half]),ProfileEdge::Line {a:f.at([r,0.,0.]),b:f.at([r,0.,h])},arc(h,[0.,half]),
+        ProfileEdge::Line {a:f.at([0.,0.,h+r]),b:f.at([0.,0.,-r])}]]};
+    revolve(&profile,f.o,f.z,std::f64::consts::TAU).unwrap()
+}
+
+/// **A capsule slid aslant closes into its shadow carried**: its half balls' contacts are their
+/// great circles square to the slide, each swept into the cylinder of its radius along the
+/// centre's path; its side's two rulings sweep their tangent planes. Its shadow is a disc and the
+/// rectangle between, `π r² + 2 r h sin θ`.
+#[test]
+fn a_capsule_slid_aslant_closes_into_its_shadow_carried() {
+    use std::f64::consts::PI;
+    let (r,h) = (1.,3.);
+    let tool = capsule(r,h);
+    let d = [2.,0.5,1.5];
+    let path = slide(d);
+    let built = slid(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let len = norm(d);
+    let sin = (1.-(d[2]/len).powi(2)).sqrt();
+    let expected = PI*r*r*h+4./3.*PI*r*r*r+len*(PI*r*r+2.*r*h*sin);
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// **Round tools turned part of a turn about an axis along their own** (#721 F2c5, a curved tool
+/// under a turn): a drum, a frustum and a ball beside the axis, each turned 100°. A cylinder's or a
+/// cone's normal passes through the turn's axis along its two generators in the plane through both
+/// axes, which turn into a cylinder or a cone about the turn's; a ball's along its great circle in
+/// the plane through the axis and its centre, which turns into a torus; their rims, square to the
+/// axis, turn within their own planes. Apart from the build, by Pappus: a disc of radius `r` whose
+/// centre stands `D` from the axis, turned by `Θ`, covers itself and the annular sector between
+/// `D ∓ r`, `π r² + 2 Θ D r`, so a drum sweeps `h (π r² + 2 Θ D r)`, a frustum that integrated over
+/// its slices, `π h (r₀² + r₀ r₁ + r₁²)/3 + Θ D h (r₀ + r₁)`, and a ball `4/3 π r³ + Θ D π r²`.
+#[test]
+fn round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus() {
+    use gcs_core::brep::build::{cone,disc,prism,sphere};
+    use std::f64::consts::PI;
+    let theta = 100f64.to_radians();
+    let path = turn([0.;3],[0.,0.,1.],theta);
+    let d = 6.;
+    let cases: Vec<(&str,Brep,f64)> = vec![
+        ("a drum",prism(&disc([d,0.,0.],[0.,0.,1.],1.5),0.,2.).unwrap(),2.*(PI*2.25+2.*theta*d*1.5)),
+        ("a frustum",cone([d,0.,0.],[0.,0.,1.],2.,1.,3.).unwrap(),PI*3.*(4.+2.+1.)/3.+theta*d*3.*3.),
+        ("a ball",sphere([d,0.,0.5],unit([0.2,0.3,1.]),1.5).unwrap(),4./3.*PI*1.5f64.powi(3)+theta*d*PI*2.25),
+    ];
+    for (what,tool,expected) in cases {
+        let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("{what}: {e:?}"));
+        assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{what}: {} against {expected}",volume(&built));
+        agrees(&built,&tool,&path);
+    }
+}
+
+/// **A toolpath of a slide and a turn closes into its pieces' sweeps united** (#721 K1, a path of
+/// pieces): a unit cube slid 4 along x, then turned a quarter turn clockwise about the vertical edge
+/// it stops beside, at x = 5 — the turn a constant twist placed where the slide left the cube
+/// (`Trajectory::Placed`), the two one path (`Trajectory::pieces`). Every piece's candidates split
+/// one box at once, and each cell is read in the sweep of any piece (`member` piece by piece).
+/// Apart from the build: the slide covers `[0, 5] × [0, 1]`, the turn its square turned about the
+/// corner, `1 + π/2` (at each angle about the corner the farthest the square reaches over the turn),
+/// overlapping the slide's in that square alone: `5 + π/2` through its height 1.
+#[test]
+fn a_toolpath_of_a_slide_and_a_turn_is_its_pieces_sweeps_united() {
+    use gcs_core::brep::trajectory::Piece;
+    let tool = block([0.;3],[1.,1.,1.]);
+    let slide = Screw {origin:[0.;3],axis:[1.,0.,0.],ratio:0.,advance:4.*std::f64::consts::TAU};
+    let turn = Screw {origin:[5.,0.,0.],axis:[0.,0.,1.],ratio:-std::f64::consts::FRAC_PI_2,advance:0.};
+    let at = slide.pose(1.).then(turn.pose(1.).inverse());
+    let path = Trajectory::pieces(vec![Piece {over:[0.,1.],path:Trajectory::Twist(slide)},
+        Piece {over:[1.,2.],path:Trajectory::Placed {twist:turn,at}}],1e-12,10.).unwrap();
+    let built = closed(&tool,&path,[0.,2.],0.002,1e-6).unwrap();
+    let expected = 5.+std::f64::consts::FRAC_PI_2;
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    // membership over the whole path, at seeded points of the built solid's box
+    let (solid,body) = (Solid::new(&tool,0.002,1.).unwrap(),Solid::new(&built,0.002,1.).unwrap());
+    let swept = Swept {tool:&solid,path:&path,roll:[0.,2.]};
+    let (lo,hi) = built.bounds();
+    let mut rng = gcs_core::rng::Rng::new(9);
+    let mut held = 0;
+    for _ in 0..300 {
+        let p: [f64;3] = std::array::from_fn(|k| rng.uniform(lo[k]-0.2,hi[k]+0.2));
+        let d = body.signed_distance(p);
+        if d.abs() < 0.01 { continue }
+        let Ok(member) = swept.member(p) else { continue };
+        assert_eq!(member,d < 0.,"at {p:?}");
+        held += 1;
+    }
+    assert!(held > 200,"{held} points held");
+}
+
+/// **A level circle screwed meets what the screw's axis runs along in closed form** (#721 F2c5, a
+/// round tool's rim under a screw; `ssi`'s screwed circle): the sheet a disc's rim screws into (a
+/// drum's top, 3 from the axis, screwed 1.5 rad and a step of 2 a turn) meets a plane square to the
+/// axis in the circle at that height, a cylinder about the axis in the helices of its points at that
+/// radius (touching it along one where the circle reaches no farther), and the drum's own side at
+/// either end pose in the circle there and the curve its two branches `θ±(v)` make leaving it —
+/// every point of each, read along it, on both surfaces to rounding.
+#[test]
+fn a_screwed_circle_meets_planes_and_cylinders_in_closed_form() {
+    use gcs_core::brep::build::{disc,prism,screwed};
+    use gcs_core::brep::geom::{Curve,Frame,Rigid,Surface};
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    let lift = 2./std::f64::consts::TAU;
+    let coin = screwed(&disc([3.,0.,1.],[0.,0.,1.],1.),[0.;3],[0.,0.,1.],1.5,lift).unwrap();
+    let sheet = coin.faces.iter().find(|f| f.surface.kind() == "blend").unwrap().surface.clone();
+    let side = |m: &Rigid| prism(&disc([3.,0.,0.],[0.,0.,1.],1.),0.,1.).unwrap().moved(m).faces.iter()
+        .find(|f| f.surface.kind() == "cylinder").unwrap().surface.clone();
+    let end = Rigid::turn([0.;3],[0.,0.,1.],1.5).then(&Rigid {t:[0.,0.,lift],..Rigid::identity()});
+    let cases: Vec<(&str,Surface,&[&str])> = vec![
+        ("a level plane",Surface::Plane(Frame::about([0.,0.,1.2],[0.,0.,1.])),&["circle"]),
+        ("the cylinder of the rim's farthest radius",Surface::Cylinder(Frame::about([0.;3],[0.,0.,1.]),4.),&["iso"]),
+        ("a cylinder about the axis across the rim",Surface::Cylinder(Frame::about([0.;3],[0.,0.,1.]),3.2),&["iso","iso"]),
+        ("the drum's side where it starts",side(&Rigid::identity()),&["circle","traced"]),
+        ("the drum's side where it ends",side(&end),&["circle","traced"]),
+    ];
+    for (what,other,kinds) in cases {
+        let Ssi::Curves(curves) = intersect(&sheet,&other,1e-6) else { panic!("{what}: curves") };
+        let mut found: Vec<&str> = curves.iter().map(|c| c.kind()).collect();
+        found.sort();
+        assert_eq!(found,kinds,"{what}");
+        for c in &curves {
+            let points: Vec<[f64;3]> = match c {
+                Curve::Traced(t) => t.pts.clone(),
+                Curve::Iso(..) => (0..=32).map(|j| c.point(j as f64/32.)).collect(),
+                _ => (0..64).map(|j| c.point(j as f64*std::f64::consts::TAU/64.)).collect(),
+            };
+            for p in points {
+                let off = sheet.implicit(p).abs().max(other.implicit(p).abs());
+                assert!(off <= 1e-9,"{what}: a point of its {} {off:e} off",c.kind());
+            }
+        }
+    }
+}
+
+/// **A drum screwed beside the axis closes into its helical sweep** (#721 F2c5, a round tool under a
+/// screw: helical milling): a drum of radius 1 and height 1 standing 3 from the screw's axis, along
+/// it, screwed 1.5 rad with a step of 2 a roll. Its side's generators in the plane through both axes
+/// screw into cylinders about the axis, its rims into the solids their discs sweep, each rim's sheet
+/// meeting the drum's side at its end pose in closed form (`ssi`'s screwed circle). Apart from the
+/// build, in helical coordinates `(ρ, ψ, ζ = z − k ψ)`: the drum is less tall than a lead, so each
+/// helix meets it once, over an arc `2α(ρ)` at radius `ρ`, which the turn lengthens by `Θ`; the sweep
+/// is the drum's own volume and `Θ ∫ ρ (h + 2kα) dρ = Θ (h (4² − 2²)/2 + k π)`, `π` the disc's polar
+/// integral: `π + Θ (6 + k π)`.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 2 min: a drum's screwed rims on one arrangement")]
+fn a_drum_screwed_beside_the_axis_closes_into_its_helical_sweep() {
+    use gcs_core::brep::build::{disc,prism};
+    use std::f64::consts::{PI,TAU};
+    let tool = prism(&disc([3.,0.,0.],[0.,0.,1.],1.),0.,1.).unwrap();
+    let (theta,advance) = (1.5,2.);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance});
+    let k = advance/TAU/theta;
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = PI+theta*(6.+k*PI);
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// A drum of radius 1 and height 1 standing 10 from a screw's axis, along it, its disc screwed by
+/// `lead` a turn through `turn` radians: the sheet its rim sweeps bounds a thin helical ramp.
+fn ramp(lead: f64,turn: f64,at: f64) -> Brep {
+    let rise = lead/std::f64::consts::TAU*turn;
+    let (s,c) = at.sin_cos();
+    gcs_core::brep::build::screwed(&gcs_core::brep::build::disc([10.*c,10.*s,-0.5],[0.,0.,1.],1.),[0.;3],[0.,0.,1.],turn,rise).unwrap()
+}
+
+/// **A line meets the sheet a screwed rim sweeps where it does, exactly** (#721 F2c5): the circle level
+/// with a point of the line is at the turn its height gives, and the line's distance from it is
+/// bounded over each stretch, so both crossings of a ramp thinner than any step a sampled search
+/// would take are found. Apart from the kernel: a point is in the ramp exactly where the disc,
+/// screwed back by the turn its height gives, holds it — and the solid's point location (a ray's
+/// crossings) agrees at every point drawn about the ramp, half a millimetre a turn and two.
+#[test]
+fn a_line_meets_a_screwed_rims_sheet_exactly() {
+    use gcs_core::brep::query::{Located,Place};
+    for lead in [0.5,2.] {
+        let theta = 280f64.to_radians();
+        let rise = lead/std::f64::consts::TAU*theta;
+        let ramp = ramp(lead,theta,0.);
+        let at = Located::new(&ramp,1e-6);
+        let mut rng = gcs_core::rng::Rng::new(3);
+        for _ in 0..400 {
+            let (r,a) = (rng.uniform(8.8,11.2),rng.uniform(-0.2,theta+0.2));
+            let z = -0.5+rise*a/theta+rng.uniform(-0.03,0.03);
+            let p = [r*a.cos(),r*a.sin(),z];
+            let turn = (z+0.5)/rise*theta;
+            let (s,c) = (-turn).sin_cos();
+            let q = [c*p[0]-s*p[1],s*p[0]+c*p[1]];
+            let inside = (0.0..=theta).contains(&turn) && (q[0]-10.).hypot(q[1]) < 1.;
+            let place = at.solid_place(p);
+            assert!(place != Place::On && (place == Place::In) == inside,"lead {lead}: at {p:?} {place:?}, the disc screwed back {inside}");
+        }
+    }
+}
+
+/// **Planes through a screw's axis cut a screwed rim's ramp in closed form** (#721 F2c5): each level
+/// circle meets the plane where `A cos θ + B sin θ = C(v)`, the two roots joining where the circle
+/// touches it, handed over as one loop of exact points. Apart from the kernel, in helical
+/// coordinates: the ramp passes wholly across a sixth of a turn, so it holds the disc's area times
+/// the lead's rate over that sixth, `π/3 · k π`.
+#[test]
+fn planes_through_the_axis_cut_a_screwed_rims_ramp_in_closed_form() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::boolean::selected;
+    use gcs_core::brep::geom::Frame;
+    use std::f64::consts::PI;
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let at = |x: f64,z: f64| f.at([x,0.,z]);
+    let rect = [at(8.,-1.),at(12.,-1.),at(12.,1.),at(8.,1.)];
+    let profile = Profile {origin:rect[0],normal:f.y,names:Vec::new(),loops:vec![(0..4).map(|k| ProfileEdge::Line {a:rect[k],b:rect[(k+1)%4]}).collect()]};
+    let sector = revolve(&profile,[0.;3],[0.,0.,1.],PI/3.).unwrap();
+    let theta = 280f64.to_radians();
+    let k = 0.5/std::f64::consts::TAU;
+    let r = selected(&[&ramp(0.5,theta,-theta/2.),&sector],&|m| m[0] && m[1],1e-6).unwrap();
+    let expected = PI/3.*k*PI;
+    assert!((volume(&r.brep)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&r.brep));
+}
+
+/// **A drum screwed a short lead through most of a turn closes into its helical sweep** (#721 F2c5):
+/// the drum of `ramp`, screwed half a millimetre a turn through 280°, its rims' ramps thinner than a
+/// hundredth of a millimetre where they fold against the cylinders its side sweeps. Apart from the
+/// build, as `a_drum_screwed_beside_the_axis_closes_into_its_helical_sweep`'s: `π + Θ (20 + k π)`.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: a drum's screwed rims on one arrangement")]
+fn a_drum_screwed_a_short_lead_through_most_of_a_turn_closes() {
+    use gcs_core::brep::build::{disc,prism};
+    use std::f64::consts::{PI,TAU};
+    let tool = prism(&disc([10.,0.,-0.5],[0.,0.,1.],1.),0.,1.).unwrap();
+    let theta = 280f64.to_radians();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:0.5});
+    let built = closed(&tool,&path,[0.,theta],0.002,1e-6).unwrap();
+    let expected = PI+theta*(20.+0.5/TAU*PI);
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees_over(&built,&tool,&path,[0.,theta]);
+}
+
+/// **A drum screwed across a ring sector bores its helical groove on one arrangement** (#721 F2c5,
+/// #699 C): the drum of `ramp` screwed half a millimetre a turn through 280° about the middle of a
+/// sixth of a ring 8 to 12 across and 2 high, which it passes wholly across, the sector its blank.
+/// The sector's planes through the axis cut the rims' ramps in closed form
+/// (`planes_through_the_axis_cut_a_screwed_rims_ramp_in_closed_form`). Apart from the build: at each
+/// point of the sector the heights the drum covers are its own and twice its half-width in angle
+/// there, `a(ρ)`, times the lead's rate `k`, so it takes `π/3 ∫ ρ (1 + 2 k a(ρ)) dρ = π/3 (20 + k π)`
+/// of the sector's `π/3 · 80`.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: a drum's screwed rims through a sector")]
+fn a_drum_screwed_across_a_ring_sector_bores_its_helical_groove() {
+    use gcs_core::brep::build::{disc,prism,revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::{PI,TAU};
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let at = |x: f64,z: f64| f.at([x,0.,z]);
+    let rect = [at(8.,-1.),at(12.,-1.),at(12.,1.),at(8.,1.)];
+    let profile = Profile {origin:rect[0],normal:f.y,names:Vec::new(),loops:vec![(0..4).map(|k| ProfileEdge::Line {a:rect[k],b:rect[(k+1)%4]}).collect()]};
+    let sector = revolve(&profile,[0.;3],[0.,0.,1.],PI/3.).unwrap();
+    let tool = prism(&disc([10.,0.,-0.5],[0.,0.,1.],1.),0.,1.).unwrap();
+    let theta = 280f64.to_radians();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:0.5});
+    let roll = [-theta/2.,theta/2.];
+    let cut = cut_from(&sector,&tool,&path,roll,0.002,1e-6).unwrap();
+    let expected = PI/3.*80.-PI/3.*(20.+0.5/TAU*PI);
+    assert!((volume(&cut)-expected).abs() <= 1e-8*expected,"{} against {expected}",volume(&cut));
+    agrees_cut_over(&cut,&sector,&tool,&path,roll);
+}
+
+
+/// **Two tori touching round a meridian, and a plane both their tops touch, hold every piece**
+/// (#721 F2c5, `ssi`'s `tori_touching`): a ring of middle radius 1 and tube 0.3 standing 10 from an
+/// axis, the torus of middle radius 11 about that axis its outer meridian turns into, and the plane
+/// on both tubes' tops. The tori touch round the meridian and cross beside it, branches that reach
+/// the meridian's top tangent to the ring's top circle, where the plane touches both: the three meet
+/// pairwise tangent at one point. Read between their exact points on a parabola, not a chord (whose
+/// sag there put the branch on the ring's other side, and its piece of the big torus went missing),
+/// each piece is there: the big torus less the ring is its volume less their common part, with the
+/// plane or without, to 1e-6 (the pieces the branches bound read by their traced points).
+#[test]
+fn two_tori_touching_and_a_plane_on_both_hold_every_piece() {
+    use gcs_core::brep::boolean::selected;
+    let outer = gcs_core::brep::build::torus([0.;3],[0.,0.,1.],11.,0.3).unwrap();
+    let ring = gcs_core::brep::build::torus([10.,0.,0.],[0.,0.,1.],1.,0.3).unwrap();
+    let up = crate::brep::block([-20.,-20.,0.3],[20.,20.,5.]);
+    let part = |ops: &[&Brep],pattern: [bool;2]| selected(ops,&|m| m[..2] == pattern && (m.len() < 3 || !m[2]),1e-6)
+        .map(|s| volume(&s.brep)).unwrap();
+    let common = part(&[&ring,&outer],[true,true]);
+    for ops in [vec![&ring,&outer],vec![&ring,&outer,&up]] {
+        let (only,both) = (part(&ops,[false,true]),part(&ops,[true,true]));
+        assert!((only+both-volume(&outer)).abs() <= 1e-6*volume(&outer),"{only} and {both} against {}",volume(&outer));
+        assert!((both-common).abs() <= 1e-6*common,"{both} against {common}");
+        assert!((part(&ops,[true,false])+both-volume(&ring)).abs() <= 1e-6*volume(&ring));
+    }
+}
+
+/// **A ring turned about an axis along its own closes into its sweep** (#721 F2c5, a torus under a
+/// turn): a torus of middle radius 1 and tube 0.3 standing 10 from the turn's axis, turned 1.5 rad.
+/// It touches round its two meridians in the plane through both axes, turned into tori about the
+/// axis (of middle radii 9 and 11), and round its top and bottom rings, kept in their planes; each
+/// end pose touches each meridian's torus round that meridian (`ssi`'s `tori_touching`). Apart from
+/// the build: the turn is longer than the angle the ring's hole spans at any radius, so each level
+/// `z` of it sweeps its outer disc, radius `R + w` (`w = √(r² − z²)`), and the band that disc's
+/// shadow turns through, `2 d Θ (R + w)`: `π (2 r R² + π R r² + 4 r³/3) + 2 d Θ (2 r R + π r²/2)`.
+#[test]
+fn a_ring_turned_about_an_axis_along_its_own_closes_into_its_sweep() {
+    use std::f64::consts::PI;
+    let (big,r,d,theta) = (1.,0.3,10.,1.5);
+    let tool = gcs_core::brep::build::torus([d,0.,0.],[0.,0.,1.],big,r).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance:0.});
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = PI*(2.*r*big*big+PI*big*r*r+4.*r*r*r/3.)+2.*d*theta*(2.*r*big+PI*r*r/2.);
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// A bull-nose mill of radius `big`, corner `c` and height `h`, standing about an upright axis `d`
+/// out along x, its flat end on `z = 0`.
+fn bull_nose(d: f64,big: f64,c: f64,h: f64) -> Brep {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    let at = |x: f64,z: f64| [d+x,0.,z];
+    let corner = Frame::new(at(big-c,c),[0.,-1.,0.],[1.,0.,0.]);
+    let edges = vec![ProfileEdge::Line {a:at(0.,0.),b:at(big-c,0.)},
+        ProfileEdge::Arc {frame:corner,r:c,span:Some([-std::f64::consts::FRAC_PI_2,0.])},
+        ProfileEdge::Line {a:at(big,c),b:at(big,h)},ProfileEdge::Line {a:at(big,h),b:at(0.,h)},ProfileEdge::Line {a:at(0.,h),b:at(0.,0.)}];
+    let profile = Profile {origin:at(0.,0.),normal:[0.,1.,0.],names:Vec::new(),loops:vec![edges]};
+    revolve(&profile,[d,0.,0.],[0.,0.,1.],std::f64::consts::TAU).unwrap()
+}
+
+/// **A bull-nose mill turned about an axis along its own closes into its sweep** (#721 F2c5): radius
+/// 1, corner 0.3 and 1 tall, 10 from the turn's axis, turned 1.5 rad. Its round, a quarter of a torus,
+/// touches round the quarter of its outer meridian, turned into a torus about the axis, and its flat
+/// end, side and top as a drum's do. Apart from the build: each level is a disc of radius `R(z)`, so
+/// the turn sweeps the mill and the band its shadow turns through, `π ∫R² dz + 2 d Θ ∫R dz`.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: a bull-nose's round turned on one arrangement")]
+fn a_bull_nose_turned_about_an_axis_along_its_own_closes_into_its_sweep() {
+    use std::f64::consts::PI;
+    let (d,big,c,h,theta) = (10.,1.,0.3,1.,1.5);
+    let tool = bull_nose(d,big,c,h);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance:0.});
+    let rz = (big-c)*c+PI*c*c/4.+big*(h-c);
+    let r2z = (big-c)*(big-c)*c+(big-c)*PI*c*c/2.+2.*c*c*c/3.+big*big*(h-c);
+    assert!((volume(&tool)-PI*r2z).abs() <= 1e-12*PI*r2z);
+    let expected = PI*r2z+theta*2.*d*rz;
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+
+/// **A ball screwed closes into the pipe about its centre's helix** (#721 F2c5, a ball under a
+/// screw): a ball of radius 1 standing 10 from a screw's axis, turned 1.5 rad while it climbs half a
+/// unit a radian. It touches round its great circle square to its centre's velocity, which the
+/// screw carries into the pipe about its centre's helix (`Cutter::Pipe`, the disc there screwed),
+/// and at each end pose the ball touches the pipe round that circle (`ssi`'s `pipe_end`). Apart from
+/// the build: a tube about a curve is its section times the curve's length, here the helix's
+/// `Θ √(d² + k²)`, and the two half balls at its ends a ball: `4π/3 + π Θ √(d² + k²)`.
+#[test]
+fn a_ball_screwed_closes_into_the_pipe_about_its_centres_helix() {
+    use std::f64::consts::{PI,TAU};
+    let (r,d,theta,k) = (1.,10.,1.5,0.5);
+    let tool = gcs_core::brep::build::sphere([d,0.,0.],[0.,0.,1.],r).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance:TAU*k*theta});
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = 4./3.*PI*r*r*r+PI*r*r*theta*(d*d+k*k).sqrt();
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
 }

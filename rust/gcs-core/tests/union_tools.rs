@@ -5,11 +5,11 @@
 //! whose STL is held to the field of the union's sweep; and the union cuts what its members cut
 //! written one after another.
 use gcs_core::program::Elaborated;
-use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
+use gcs_core::solid::admission::{self,Class,Error,Options};
 use std::f64::consts::PI;
 
 use crate::solid_sweeps_examples::text;
-use crate::turns_and_slides::{exported,measure,near,refused};
+use crate::turns_and_slides::{exported,measure,near};
 
 fn admit(e: &Elaborated,body: &str) -> Result<admission::Admission,Error> {
     admission::admit_body(&e.sketch,fixtures::solid(e,body),&Options::default())
@@ -115,19 +115,30 @@ small union pair
     near(exported(&e,"block"),24.*24.*8.-half(3.,12.)-half(2.,6.),1e-9);
 }
 
-/// A tool's member is asked its own class's rows, and refused by them naming it: the second bead
-/// grown to reach the rod with the rings where its tube lies flat, in contact all round (S1).
+/// A tool's member is asked its own class's rows, and admitted by the closed class where they
+/// refuse it (#721 F2c5, a torus slid square to its axis): the second bead grown to reach the rod
+/// with the rings where its tube lies flat in contact all round (the constant-twist class's S1). Its
+/// other member stays the constant-twist class's: each member its own sweep, the body is built by
+/// that class's road and the closed member cut from what it leaves on one arrangement. The groove is
+/// what of the rod's disc either bead's shadow covers, the second's ring now 7 from the wheel's
+/// axis, through the rod's 20.
 #[test]
-fn a_member_is_refused_by_its_own_row_naming_it() {
+fn a_member_its_class_refuses_is_the_closed_classs() {
     let text = beads().replace("tc2 coords(du: reach, dv: step) bench","tc2 coords(du: reach - 1mm, dv: step) bench");
-    let r = refused(admit(&fixtures::read(&text),"rod"));
-    assert_eq!((r.condition,r.sweep.as_str()),(Condition::Regular,"groove"));
-    assert!(r.message.starts_with("its tool's member `bead2`: "),"{}",r.message);
+    let e = fixtures::read(&text);
+    let a = admit(&e,"rod").unwrap();
+    assert!(a.sweeps().iter().any(|s| matches!(s.class,Class::Closed(_))),"a member the closed class's");
+    assert!(a.sweeps().iter().any(|s| !matches!(s.class,Class::Closed(_))),"a member another class's");
+    let hit = |x: f64,y: f64| shadowed(x,y,6.,2.,0.) || shadowed(x,y,7.,1.5,1.5);
+    let section = measure([3.,5.],&|x| { let h = (25.-x*x).max(0.).sqrt(); [-h,h] },&hit,&|a,b| b-a);
+    near(exported(&e,"rod"),PI*25.*20.-section*20.,2e-6);
 }
 
-/// A union within an intersection is not distributed: refused at T1, saying so.
+/// A union within an intersection is not distributed — refused at T1, saying so — but the closed
+/// class reads the tool by its B-rep, two tori's faces and the crease where they meet (#721 F2c5),
+/// and builds it.
 #[test]
-fn a_union_within_an_intersection_is_refused() {
+fn a_union_within_an_intersection_is_the_closed_classs() {
     let text = regroove(&beads(),"wheel","\
 in bench {
   private k0 := point
@@ -147,9 +158,11 @@ construction slab := solid(std.solids.Prism(face(kb, kw, kt, ka), from: -20mm, t
 construction trimmed := solid(wheel)
 slab common trimmed
 ","trimmed");
-    let r = refused(admit(&fixtures::read(&text),"rod"));
-    assert_eq!(r.condition,Condition::Tool);
-    assert!(r.message.contains("within an intersection"),"{}",r.message);
+    let e = fixtures::read(&text);
+    let a = admit(&e,"rod").unwrap();
+    assert!(matches!(a.sweeps()[0].class,Class::Closed(_)),"the closed class's");
+    // the slab holds the wheel whole: the groove is the beads'
+    near(exported(&e,"rod"),PI*25.*20.-beads_section()*20.,2e-6);
 }
 
 /// Two tori on one axis, overlapping, rolled about a skew axis through a post (`admission.rs`'s

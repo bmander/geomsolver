@@ -3,8 +3,9 @@
 //! never from how a drawing wrote it. A constant twist is held exactly (`Screw`: a screw, a turn or
 //! a slide), one motion seen from another as the two (`Relative`), a motion taken at a pace as the
 //! path and the pace (`Paced`: a sweep is its path's, not its pace's, #684 L), a path made of
-//! pieces as its pieces (`Pieces`, K1), and any other rigid motion as a pose and its rate at each
-//! time (`General`, K2).
+//! pieces as its pieces (`Pieces`, K1), a constant twist taking up what it carries where a
+//! placement put it (`Placed`, a piece after another: a turn where a slide left the tool), and any
+//! other rigid motion as a pose and its rate at each time (`General`, K2).
 //!
 //! Every reading of a trajectory is a `Motion`, a pose and its derivative by the trajectory's
 //! parameter, and at each time any rigid motion is a screw (Mozzi–Chasles): its **twist**, the
@@ -471,6 +472,10 @@ pub enum Trajectory {
     Paced { path: Box<Trajectory>, pace: Arc<dyn Pace> },
     /// A path made of pieces, each over its stretch of the parameter (`Trajectory::pieces`).
     Pieces(Pieces),
+    /// A constant twist carrying what it carries placed at `at` first: at `t`, `twist(t) · at` — a
+    /// piece of a path that takes up a twist where the piece before it left off (K1: a turn after a
+    /// slide, the tool standing where the slide put it).
+    Placed { twist: Screw, at: Pose },
     /// Any other rigid motion, read by evaluating it.
     General(Arc<dyn Path>),
 }
@@ -507,6 +512,7 @@ impl Trajectory {
                     [{}, {}] has no pose at {t}", all[0].over[0], all[all.len()-1].over[1])))?.path.unchecked(t)?
             }
             Trajectory::General(p) => p.at(t)?,
+            Trajectory::Placed {twist,at} => Motion {r:at.r,dr:[[0.;3];3],p:at.p,dp:[0.;3]}.then(twist.at(t).map_err(|e| read(e, t))?),
         })
     }
 
@@ -530,6 +536,7 @@ impl Trajectory {
                     [{}, {}] has no pose at {t}", all[0].over[0], all[all.len()-1].over[1])))?.path.pose_unchecked(t)?
             }
             Trajectory::General(p) => p.pose(t)?,
+            Trajectory::Placed {twist,at} => at.then(twist.pose(t)),
         })
     }
 
@@ -640,7 +647,7 @@ impl Bound {
         let magnitude = |x: Interval| { let [lo,hi] = x.bounds(); Interval::point(lo.abs().max(hi.abs())) };
         let leaf = match node {
             Trajectory::Relative {source,observer} => { self.read_all(source)?; return self.read_all(observer) }
-            Trajectory::Twist(s) => Leaf::Twist(*s,self.reach,Interval::ONE),
+            Trajectory::Twist(s) | Trajectory::Placed {twist:s,..} => Leaf::Twist(*s,self.reach,Interval::ONE),
             Trajectory::Paced {path,pace} => {
                 let Trajectory::Twist(s) = **path else { return Err(IntervalError::InvalidBounds) };
                 let [v,r] = pace.enclose(self.domain)?;
@@ -716,9 +723,25 @@ impl Bound {
         Ok([around(0)?,around(1)?,around(2)?])
     }
 
+    /// The box holding `b` carried by the rigid `pose`: its corners carried, and their box.
+    fn placed(pose: Pose,b: [Interval;3]) -> Result<[Interval;3],IntervalError> {
+        let (lo,hi): (V3,V3) = (std::array::from_fn(|k| b[k].bounds()[0]),std::array::from_fn(|k| b[k].bounds()[1]));
+        let (mut l,mut h) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+        for c in 0..8 {
+            let x = pose.point(std::array::from_fn(|k| if (c>>k)&1 == 0 { lo[k] } else { hi[k] }));
+            for k in 0..3 { l[k] = l[k].min(x[k]); h[k] = h[k].max(x[k]) }
+        }
+        // a hair past rounding's reach
+        let pad = |k: usize| 1e-12*(1.+l[k].abs().max(h[k].abs()));
+        Ok([Interval::new(l[0]-pad(0),h[0]+pad(0))?,Interval::new(l[1]-pad(1),h[1]+pad(1))?,Interval::new(l[2]-pad(2),h[2]+pad(2))?])
+    }
+
     /// Where `node` carries `b`, forward (`x ↦ O⁻¹(S x)` for a relative) or inverse.
     fn image_of(&self,node: &Trajectory,b: [Interval;3],forward: bool) -> Result<[Interval;3],IntervalError> {
         match node {
+            // placed first, then twisted; inverse, untwisted, then unplaced
+            Trajectory::Placed {at,..} if forward => self.image(node,Self::placed(*at,b)?),
+            Trajectory::Placed {at,..} => Self::placed(at.inverse(),self.image(node,b)?),
             Trajectory::Relative {source,observer} => {
                 let (first,second) = if forward { (source,observer) } else { (observer,source) };
                 let moved = self.image_of(first,b,true)?;
@@ -738,6 +761,8 @@ impl Bound {
                 moved.add(self.speed(second,carried,false)?)
             }
             Trajectory::Pieces(_) => Err(IntervalError::InvalidBounds),
+            // a rigid placement moves nothing: the twist's speed where it carries the box from
+            Trajectory::Placed {at,..} if forward => self.own(node,Self::placed(*at,b)?),
             _ => self.own(node,b),
         }
     }

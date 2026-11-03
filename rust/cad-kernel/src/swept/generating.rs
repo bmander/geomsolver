@@ -78,7 +78,7 @@ impl Form {
             Trajectory::Twist(s) => Ok(*s),
             Trajectory::Paced {..} => Err(Uncharted::Paced),
             Trajectory::General(_) => Err(Uncharted::Evaluated),
-            Trajectory::Relative {..} | Trajectory::Pieces(_) => Err(Uncharted::Motion),
+            Trajectory::Relative {..} | Trajectory::Pieces(_) | Trajectory::Placed {..} => Err(Uncharted::Motion),
         };
         let (source,observer) = (twist(source)?,observer.map(twist).transpose()?);
         match observer {

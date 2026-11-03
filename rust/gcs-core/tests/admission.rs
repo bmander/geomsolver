@@ -5,7 +5,7 @@
 //! class by undercut.
 use fixtures::{tools::{self,centred_post,skew_post,sphere,torus},
     motions::{self,CROSSED_ROLL,Observer,ROLLED,cradle_roll}};
-use gcs_core::solid::admission::{self,Condition,Error,Options};
+use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
 
 /// A tool, a motion named `motion`, the removal over [from, to] and the post it is cut from.
 /// The tool swept by `motion` read as `reading` (`under: turn`, or a roll's `ROLLED`).
@@ -102,12 +102,32 @@ fn a_prism_whose_cap_passes_through_the_blank_is_refused() {
     assert!(r.witness.is_some_and(|p| p[2].abs() < 1e-9),"a point of the top side, at z = 0: {:?}",r.witness);
 }
 
-/// A slide is asked the constant-twist class's rows (#684), as a screw is: this one leaves its
-/// lens in the post at both ends of its roll, refused at E1.
+/// A slide is asked the constant-twist class's rows (#684), as a screw is: this one leaves its lens
+/// in the post at both ends of its roll, refused there at E1 — and built by the closed class (#721
+/// F2c5, a curved tool under a slide): the lens is two balls' common, each ball's face at both end
+/// poses and its great circle across the slide swept into a cylinder, its rim swept within its own
+/// plane. Apart from the build: slid `8/3` along x through the post of radius `a = 0.4` about `x =
+/// 3`, the lens's section at height `z`, a disc of radius `ρ = √(1 − (|z| + 0.2)²)`, sweeps a
+/// stadium whose straight stretch spans the post, so the post loses its disc clipped to `|y| ≤ ρ`:
+/// the whole disc where `ρ ≥ a`, else `2 (ρ √(a² − ρ²) + a² asin(ρ/a))`, integrated over the lens's
+/// heights (from the kink at `ρ = a` to the lens's edge over `z = 0.8 − s²`, its root smooth).
 #[test]
-fn a_slide_that_ends_in_the_blank_is_refused() {
-    let r = refused(admit(&document(&tools::lens(0.,0.2,false),&motions::slide_x(8.),"under: feed",-60.,60.)));
-    assert_eq!((r.condition,r.class()),(Condition::Clearance,"constant-twist class"));
+fn a_slide_that_ends_in_the_blank_is_the_closed_classs() {
+    use std::f64::consts::PI;
+    let source = document(&tools::lens(0.,0.2,false),&motions::slide_x(8.),"under: feed",-60.,60.);
+    let e = fixtures::read(&source);
+    let a = admission::admit_body(&e.sketch,fixtures::solid(&e,"part"),&Options::default()).unwrap();
+    let [s] = a.sweeps() else { panic!("one sweep") };
+    assert!(matches!(s.class,Class::Closed(_)),"the closed class");
+    let r = 0.4_f64;
+    let clipped = |rho: f64| if rho >= r { PI*r*r } else { 2.*(rho*(r*r-rho*rho).sqrt()+r*r*(rho/r).asin()) };
+    let kink = (1.-r*r).sqrt()-0.2;
+    let edge = crate::brep::simpson(0.,(0.8-kink).sqrt(),4000,|s: f64| {
+        let z = 0.8-s*s;
+        clipped((1.-(z+0.2)*(z+0.2)).max(0.).sqrt())*2.*s
+    });
+    let removed = 2.*(PI*r*r*kink+edge);
+    crate::turns_and_slides::near(crate::turns_and_slides::exported(&e,"part"),PI*r*r*4.-removed,1e-9);
 }
 
 #[test]

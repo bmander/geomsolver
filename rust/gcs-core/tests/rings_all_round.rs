@@ -72,14 +72,13 @@ fn a_lemon_slid_along_its_axis_bores_its_greatest_radius() {
     near(exported(&e,"part"),800.-16.*PI,1e-9);
 }
 
-/// What a slide along the tool's own axis still refuses: a torus, its shadow along the slide a
-/// ring from 1.5 to 3.5 about its axis, whose inner ring in contact all round sweeps a second wall,
-/// the plate's core left standing (S2); and the drill pushed through the plate beside a post 30
-/// high, whose heights it does not pass wholly through, though it is clear of the post at both
-/// ends (E1: the class reads the hole only where the tool passes the blank's every height).
+/// **A torus slid along its own axis bores an annulus** (#721 F2c5): its shadow along the slide is
+/// a ring from 1.5 to 3.5 about its axis, whose inner ring in contact all round sweeps a second wall,
+/// the plate's core left standing — the constant-twist class's S2, and the closed class's: its
+/// equators swept into coaxial cylinders. The plate loses that annulus through its 4: `40π`.
 #[test]
-fn what_a_slide_along_the_tools_axis_still_refuses() {
-    let torus = refused(admit(&drawn("  private ta := point
+fn a_torus_slid_along_its_axis_bores_an_annulus() {
+    let e = fixtures::read(&drawn("  private ta := point
   private tb := point
   ta coords(du: 0mm, dv: 0mm) bench
   tb coords(du: 0mm, dv: 1mm) bench
@@ -88,10 +87,20 @@ fn what_a_slide_along_the_tools_axis_still_refuses() {
   tc coords(du: 2.5mm, dv: 2mm) bench
   private tube := circle(center: tc) hint(r: 1)
   radius(1mm) tube
-","tube")));
-    assert_eq!(torus.condition,Condition::Once);
-    assert!(torus.message.contains("the tool's shadow along the slide is no whole disc: none of it stands between 0.0000 and 1.5000"),
-        "{}",torus.message);
+","tube"));
+    let Class::Closed(_) = class(&e,"part") else { panic!("the closed class") };
+    near(exported(&e,"part"),800.-40.*PI,1e-9);
+}
+
+/// **The drill pushed through the plate beside a post** (a negative control until #721 F2c5): the
+/// post 30 high, so the drill does not pass wholly through the blank's heights, though it is clear
+/// of the post at both ends — the constant-twist class reads the hole only where the tool passes
+/// the blank's every height (E1), and the closed class builds it under the slide: the drill's side
+/// along the slide swept along itself, its point's cone at both end poses, its lip's circle along
+/// the slide a cylinder. The body is the plate and the post above it, `800 + 3 × 3 × 26`, less the
+/// hole through the plate, `16π`.
+#[test]
+fn a_drill_beside_a_post_bores_its_hole() {
     let post = drill().replace("part := solid(std.solids.Prism(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick))",
         "part := solid(std.solids.Prism(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick))
 in std.top {
@@ -110,9 +119,10 @@ in std.top {
 }
 post := solid(std.solids.Prism(face(q0, q1, q2, q3), from: 0mm, to: 30mm))
 post union part");
-    let post = refused(admit(&post));
-    assert_eq!(post.condition,Condition::Clearance);
-    assert!(post.message.contains("does not pass wholly through the blank's heights"),"{}",post.message);
+    let e = fixtures::read(&post);
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    near(exported(&e,"part"),800.+3.*3.*26.-16.*PI,1e-9);
 }
 
 // -- a turn about an axis the tool's own meets -------------------------------------------------
@@ -148,14 +158,33 @@ fn a_torus_leaning_toward_the_turns_axis_grooves_its_shadow() {
     near(exported(&e,"part"),2.*PI*80.-6.*away,2e-5);
 }
 
+/// **The upright torus turned across a tall block grooves it by its shadow** (#721 F2c5, the closed
+/// class: a torus about an axis along the turn's): moved out to 7 and turned across a block three
+/// times as tall, its axis along the turn's, the ring at its tube's top, whose normals all lie along
+/// both, is in contact all round in the plane the turn keeps, a strip of it — the constant-twist
+/// class's S1 (D2), and the closed class's top and bottom planes. Its meridians in the plane through
+/// both axes turn into tori about the axis, which its end poses touch round them. The turn passes
+/// wholly across the sector, so every circle about the axis within the tube's reach of its outer
+/// meridian's circle is cut: `π/3 ∫ ((9.5 + √(4 − z²))² − 8²)/2 dz = π/6 (105 + 32/3 + 38π)` of the
+/// sector's `80π`, to 1e-8 (the torus at its end poses crossing the sector's sides in traced curves).
+#[test]
+fn the_upright_torus_turned_across_a_tall_block_grooves_it_by_its_shadow() {
+    use std::f64::consts::PI;
+    let tall = crate::turns_and_slides::turned(crate::turns_and_slides::Lean::Across(0.),-130.,130.)
+        .replace("fix(origin == (5, 0, 0)) lathe","fix(origin == (7, 0, 0)) lathe")
+        .replace("fix((8, -1)) q0\n  fix((12, -1)) q1\n  fix((12, 1)) q2\n  fix((8, 1)) q3","fix((8, -3)) q0\n  fix((12, -3)) q1\n  fix((12, 3)) q2\n  fix((8, 3)) q3")
+        .replace("from: -3mm, to: 3mm","from: -4mm, to: 4mm");
+    let e = fixtures::read(&tall);
+    let gcs_core::solid::admission::Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_turn(),"a turn");
+    crate::turns_and_slides::near(crate::turns_and_slides::exported(&e,"part"),80.*PI-PI/6.*(105.+32./3.+38.*PI),1e-8);
+}
+
 /// What a turn about an axis the tool's own meets still refuses: `spoke.sv`'s pin with its end
 /// domed, a cap of a ball of radius 1.3 about a point of its axis 1.2 short of its end, whose
 /// characteristic in the plane of the two axes runs over the dome's pole on the pin's axis, where
 /// the walk would cross to each ring's other root (S1, a pole); the pin set wholly within the
-/// block, from 9 to 11, its characteristic closing through its base's centre, a pole too (S1); the
-/// upright torus moved out to 7 and turned across a block three times as tall, its axis along the
-/// turn's, the ring at its tube's top, whose normals all lie along both, in contact all round in
-/// the plane the turn keeps, a strip of it (S1, read at the walk's station there); and a torus
+/// block, from 9 to 11, its characteristic closing through its base's centre, a pole too (S1); and a torus
 /// leaning 25° toward the turn's axis small enough to lie wholly within the block, ring 0.8 and tube
 /// 0.3 about (10, 0, 0), whose loop — each tube circle's outer half joined to the far ring and the
 /// near — closes smoothly, with no crease, the first case to reach #684 W's row (S1).
@@ -170,13 +199,6 @@ fn what_a_turn_about_an_axis_the_tools_meets_still_refuses() {
     let within = refused(admit(&spoke(9.,11.)));
     assert_eq!(within.condition,Condition::Regular);
     assert!(within.message.contains("`pin.base` meets the tool's axis at a pole of its profile"),"{}",within.message);
-    let tall = crate::turns_and_slides::turned(crate::turns_and_slides::Lean::Across(0.),-130.,130.)
-        .replace("fix(origin == (5, 0, 0)) lathe","fix(origin == (7, 0, 0)) lathe")
-        .replace("fix((8, -1)) q0\n  fix((12, -1)) q1\n  fix((12, 1)) q2\n  fix((8, 1)) q3","fix((8, -3)) q0\n  fix((12, -3)) q1\n  fix((12, 3)) q2\n  fix((8, 3)) q3")
-        .replace("from: -3mm, to: 3mm","from: -4mm, to: 4mm");
-    let tall = refused(admit(&tall));
-    assert_eq!(tall.condition,Condition::Regular);
-    assert!(tall.message.contains("the characteristic on `wheel.tube` is in contact all round a ring"),"{}",tall.message);
     let small = crate::turns_and_slides::turned(crate::turns_and_slides::Lean::Toward(25.),-140.,140.)
         .replace("fix(origin == (5, 0, 0)) lathe","fix(origin == (10, 0, 0)) lathe")
         .replace("tc coords(du: 2.5mm, dv: 0mm) lathe","tc coords(du: 0.8mm, dv: 0mm) lathe")

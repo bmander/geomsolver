@@ -17,7 +17,7 @@ use gcs_core::program::Elaborated;
 use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
 use gcs_core::solid::export::Tolerance;
 use gcs_core::space::{cross,unit};
-use std::f64::consts::{PI,TAU};
+use std::f64::consts::{FRAC_PI_2,PI,TAU};
 use std::sync::Mutex;
 
 type V = [f64;3];
@@ -473,21 +473,81 @@ fn a_whole_turn_grooves_the_whole_ring() {
 /// `rings_all_round::a_torus_leaning_toward_the_turns_axis_grooves_its_shadow`); and a torus slid through the rod's middle touches it
 /// all round its tube, a characteristic that closes on itself (refused so until #684 W), but at the
 /// tube's top and bottom its rings are in contact all round, square to the slide, where the
-/// characteristic branches into the groove's flat sides (S1). An engraving bit slid square
-/// to its axis touches along the two lines of its cone square to the slide, which meet at its
-/// point, on its axis: every normal of the cone round the point is in contact there, and the
-/// groove's wall has a sharp edge along its path, which the class builds where the corner turns
-/// to a circle (a V wheel's rim, #684 V, above) and not at an apex (S1).
+/// characteristic branches into the groove's flat sides (S1) — which the closed class builds (#721
+/// F2c5, a torus slid square to its axis, below). The torus turned to a stop inside the ring, its
+/// axis along the turn's, the constant-twist class refuses (E1), and the closed class builds
+/// (`a_torus_turned_to_a_stop_inside_the_ring_is_cut_on_one_arrangement`); turned about an axis
+/// leaning to its own it is no tool the closed class takes, so the first refusal stands.
 #[test]
 fn the_turn_and_slide_rows_refuse_by_name() {
-    let short = refused(admit(&turned(Lean::Across(0.),-130.,30.)));
+    let short = refused(admit(&turned(Lean::Toward(25.),-130.,30.)));
     assert_eq!(short.condition,Condition::Clearance);
-    let closed = refused(admit(&slid(0.,0.,Wheel::Torus)));
-    assert_eq!(closed.condition,Condition::Regular,"{closed}");
-    assert!(closed.message.contains("`wheel.tube` is in contact all round a ring"),"{}",closed.message);
-    let pointed = refused(admit(&slid(0.,4.,Wheel::Bit)));
-    assert_eq!(pointed.condition,Condition::Regular,"{pointed}");
-    assert!(pointed.message.contains("`wheel.flank` meets the tool's axis at an apex of its profile"),"{}",pointed.message);
+}
+
+/// **A torus turned to a stop inside the ring is cut on one arrangement** (#721 F2c5, the closed
+/// class: a torus about an axis along the turn's): `turned`'s upright torus, middle radius 2.5 and
+/// tube 2 about an axis 5 out, swung from −130° to 30°, which leaves it in the ring (E1 to the
+/// constant-twist class). Apart from the build: each circle about the axis the torus's level meets
+/// loses the sector's angles from 0 to the turn's end plus the half-angle `β(ρ, z)` its outer disc
+/// spans there, at most the sector's 60°: `∫∫ ρ min(π/3, π/6 + β) dρ dz`, its integral split where
+/// the clip starts and read across the disc's edge by a sine.
+#[test]
+fn a_torus_turned_to_a_stop_inside_the_ring_is_cut_on_one_arrangement() {
+    let e = fixtures::read(&turned(Lean::Across(0.),-130.,30.));
+    let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_turn(),"a turn");
+    let (cos30,beta) = ((PI/6.).cos(),|rho: f64,big: f64| ((rho*rho+25.-big*big)/(10.*rho)).clamp(-1.,1.).acos());
+    let away = crate::brep::simpson(-1.,1.,400,|z: f64| {
+        let big = 2.5+(4.-z*z).sqrt();
+        let hi = 5.+big;
+        // where `β = π/6`, the larger root of `ρ² − 10 cos 30° ρ + 25 − big² = 0`
+        let b = (5.*cos30+(25.*cos30*cos30-25.+big*big).sqrt()).max(8.);
+        let clipped = PI/3.*(b*b-64.)/2.;
+        clipped+crate::brep::simpson(0.,FRAC_PI_2,400,|s: f64| { let rho = b+(hi-b)*s.sin(); rho*(PI/6.+beta(rho,big))*(hi-b)*s.cos() })
+    });
+    near(exported(&e,"part"),PI/3.*80.-away,1e-9);
+}
+
+/// **A torus slid through the rod's middle grooves its shadow** (the constant-twist class's S1, the
+/// closed class's: its top and bottom rings swept within their planes, its meridians square to the
+/// slide into cylinders along it). Its axis along y, 6 from the rod's, its tube 2 about the circle
+/// of radius 6 through the rod's axis: its shadow along the slide within the rod's disc is the strip
+/// `|y| ≤ 2` toward its axis (`0 ≤ x ≤ 5`) and the half disc of radius 2 behind the rod's axis — in
+/// closed form, `2π + 4 √21 + 25 (π/2 − asin(√21/5)) − √21 · 2`, through the rod's 20.
+#[test]
+fn a_torus_slid_through_the_rods_middle_grooves_its_shadow() {
+    let e = fixtures::read(&slid(0.,0.,Wheel::Torus));
+    let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    // the strip: 4 wide to x = √21, then the disc's segment
+    let c = 21f64.sqrt();
+    let segment = |x: f64| x*(25.-x*x).max(0.).sqrt()+25.*(x/5.).asin();
+    let shadow = 2.*PI+4.*c+segment(5.)-segment(c);
+    near(exported(&e,"part"),PI*25.*20.-shadow*20.,1e-9);
+}
+
+/// **An engraving bit slid square to its axis grooves the rod by its shadow** (G5, an apex on the
+/// tool's axis, under a slide; a negative control until #721 F2c5). Its cone touches along the two
+/// lines square to the slide, which meet at its point, on its axis: every normal of the cone round
+/// the point is in contact there, and the groove's wall has a sharp edge along its path, which the
+/// constant-twist class builds where a corner turns to a circle (a V wheel's rim, #684 V) and not
+/// at an apex (S1). The closed class builds it: the cone's two rulings swept into their tangent
+/// planes, its rim an oblique cylinder, the arrangement meeting them where they meet. Apart from
+/// the build: the bit, its point 4 out along x and 60° included, 2.5 long, passes wholly up the
+/// rod, so the rod loses its shadow along the slide — the triangle `|y| ≤ (x − 4) tan 30°` — within
+/// the rod's disc of radius 5, through its 20: `tan 30° (x* − 4)²` and the disc's segment beyond
+/// `x*`, where the triangle's sides leave the disc.
+#[test]
+fn an_engraving_bit_slid_square_to_its_axis_grooves_its_shadow() {
+    let e = fixtures::read(&slid(0.,4.,Wheel::Bit));
+    let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    // `(x − 4)² tan² 30° = 25 − x²`, with `tan² 30° = 1/3`: `4x² − 8x − 59 = 0`
+    let t = (PI/6.).tan();
+    let x = (8.+(64_f64+16.*59.).sqrt())/8.;
+    let segment = |x: f64| x*(25.-x*x).max(0.).sqrt()+25.*(x/5.).asin();
+    let shadow = t*(x-4.)*(x-4.)+segment(5.)-segment(x);
+    near(exported(&e,"part"),PI*25.*20.-shadow*20.,1e-9);
 }
 
 // -- what the shadows are read by ------------------------------------------------------------

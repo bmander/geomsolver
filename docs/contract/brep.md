@@ -289,6 +289,81 @@ cancellation of the terms that constant sums — not its square root, the hyperb
 against the tolerance, which a plane holding a hyperboloid's ruling exactly (some 1e-14 left, a
 semi-axis of some 1e-7) failed at any tolerance finer, its rulings coming out as branches
 (`meeting::a_plane_holding_a_hyperboloids_ruling_meets_it_in_two_lines_at_any_tolerance`).
+**A plane tangent to a cone along a generator meets it in that line** (`ssi`'s plane–cone closed
+form, a plane through the apex leaning to the axis by the half-angle, judged by the gap): a cone
+narrowing along its axis too, its half-angle below nothing (`build::cone`'s frustum from the larger
+radius), whose tangent planes were traced and refused as nearly touching
+(`swept_closed::a_frustum_slid_aslant_closes_into_its_shadow_carried`, a ruling slid into its
+tangent plane against the frustum at its end poses).
+**Parallel cylinders and cones touching along a line, and a ball in a torus's tube, meet in
+closed form** (`ssi::parallel_touch`, `ball_in_tube`): two cylinders or cones whose axes are
+parallel and whose sections' circles touch at two heights (their centres apart by the sum or the
+difference of their radii) touch along the line through those points — a frustum at an end pose
+and the cone its generator turns into about an axis along its own; a ball centred on a torus's
+middle circle with its tube's radius lies in its solid and touches it round the meridian through
+its centre — where they were traced and refused as nearly touching
+(`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`). **A face's
+pieces are ordered by their curvature where they leave a point tangent** (`boolean::pieces_of_face`):
+each half's way out of a node is read a ten-thousandth along its own length, and where two of the
+ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its
+chord) they are read again at one length along each — a ten-thousandth of the shortest of those
+tied, from two readings and the distances they stand at — so two arcs touching there part by their
+curvature, where an arc of five times another's radius and length read alike to rounding (a drum at
+its end pose and the cylinders its generators turn into, in a plane square to the turn); and a
+fitted round's own small lean off tangent, read at the scale the face is drawn at, does not rule
+(`brep::a_face_rounded_from_both_edges_short_of_its_middle_keeps_a_sliver`).
+**A cylinder touching a torus round a meridian meets it there** (`ssi::tube_along_torus`): of the
+tube's radius, its axis through a point of the tube's middle circle along that circle's tangent, it
+is the ball there carried along the tangent and touches the torus round the meridian through that
+point, where it was traced and refused as nearly touching (a bull-nose mill's round at an end pose
+and the cylinder its meridian sweeps under a slide,
+`flat_faces::a_bull_nose_mill_slid_to_a_stop_inside_the_block`).
+**A level circle screwed meets what the screw's axis runs along in closed form**
+(`ssi::screwed_circle_meeting`): at each `v` the circle is level, so a plane square to the axis
+meets the sheet in the circle the screw lifts there; a cylinder about the axis in the helices of
+its points at that radius (`Iso`, one where it touches); a cylinder about another line along the
+axis (a round tool's side at an end pose) where the two circles of that level meet,
+`A(v) cos θ + B(v) sin θ = C(v)`, its two branches joined where they turn and ended at the circle
+where the two coincide — its points written in closed form and handed over as a traced meeting, so
+no near touch is traced (`swept_closed::a_screwed_circle_meets_planes_and_cylinders_in_closed_form`);
+any other plane (a sector's side through the axis) where its line in each level meets the circle,
+the same branches (`branches`). A branch's end at a coincidence is that circle's point square to the
+centre's way there, the way read across it (a one-sided reading leans by the hair and bends the
+first chord, which its projection then slides onto the circle); points are added beside a turn,
+where the roots part as a square root, and wherever either turns by more than `π/1024`, which a
+traced edge's flux reads one stretch at a time. Two sheets of one level circle under one screw are
+one surface only where they share some of its turn (`one_screwed_circle`); apart along it they meet
+nowhere. Where a closed form's traced pieces end on one another (a branch on its coincidence
+circle), each end is laid as a point on both (`boolean`'s `ends_on_one_another`), which no
+crossing of two curves finds. **A line meets the sheet exactly** (`query::line_screwed_circle`): the
+circle level with the line's point is at the `v` its height gives, linear along the line, and
+screwed back the point's distance from the circle's centre is `|A(t)|`; `G = |A|² − r²` has its
+roots isolated by bounds on `G'` and `G''` over each stretch, so a ramp thinner than any sampled
+step has both crossings found — a ray's parity, a solid's point location, by it
+(`swept_closed::a_line_meets_a_screwed_rims_sheet_exactly`: a sampled search was wrong at seven of
+400 points about a ramp half a millimetre a turn). The sheet's inverse starts level with the point
+(`Blend::level_circle`, `LevelCircle`) and not from the last foot found: a ramp thinner than that
+start's reach holds its other side within it.
+**Two tori touching round a meridian meet in closed form** (`ssi`'s `tori_touching`: their axes
+along one another, their middle circles at one height and touching, their tubes of one radius — a
+torus at an end pose of a turn about an axis along its own, and the torus a meridian of it turns
+into): the meridian, and in each level the one pair of the two tori's circles that crosses, as the
+rim's branches are (`branches`), drawn in toward the tube's top and bottom, where they reach the
+meridian tangent to the level circle. **A traced curve is read between its points on a parabola**
+(`Traced::between`: through the two and a neighbour, by their chords' lengths, where the three run
+smoothly — chords within `SMOOTH_RATIO` of each other's length, turning by less than
+`acos(SMOOTH_COS)`), then pulled onto both surfaces: a chord's sag, quadratic in it, stood off the
+curve where two surfaces all but touch by more than the projection could recover, and onto another
+branch of their meeting — a branch leaving a point where three surfaces touch pairwise read on the
+wrong side of the circle it leaves along, and a piece of the arrangement lost
+(`swept_closed::two_tori_touching_and_a_plane_on_both_hold_every_piece`).
+**A ball's pipe under a screw meets in closed form** what touches it: the ball at either end pose
+round the great circle there (`ssi`'s `pipe_end`), and a cylinder about the screw's axis in the
+helices of the circle's points at its radius, the roots of a trigonometric polynomial of degree two
+round the circle, a touch where it only reaches nought (`screwed_circle_round`). **An edge's flux
+settles** (`props`'s `settled`): read over its pieces, then twice as many, until two readings agree
+to rounding, the coarser kept — a ball's great circle passing within a few degrees of a pole sweeps
+half a turn of `u` there, and a sixteenth of a turn a piece left a ball's piece 0.2% off its area.
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it
@@ -374,7 +449,13 @@ outer loop, #597) is one corner of its triangulation. An edge is sampled from fi
 midpoint test can be blind to: a B-spline's knot spans, a family rail's pieces, a screwed rail a
 quarter turn at most (`edge_params`; a coil of four turns has its ends, middle and quarter
 points in one line, and was one chord). `Mesh::turned` counts facets facing against their
-surface (thicker than bar/100); the export refuses any.
+surface (thicker than bar/100); the export refuses any. A face whose facets beside an edge face
+against it — a sheet folding along that edge tighter than the edge's chords sag, which no point
+inside the face can mend (a round rim screwed a short lead, its ramp folding against the wall its
+side sweeps over about a tenth of a micrometre) — asks the chords those facets stand on halved, and
+the faces are meshed again with the edges so sampled, up to `TURNED_ROUNDS` times
+(`closed_characteristics::the_drum_screwed_bores_its_helical_groove`, its STL agreeing with the
+field).
 **Phase 2 (the pattern ours):** `brep::pattern` turns a one-sector body into the whole (the
 kernel's union is never made): sides matched by a pitch's turn, revolution faces keep the sector's
 surface with pcurves shifted along `u`, pieces of one surface across a side become one face, a ring

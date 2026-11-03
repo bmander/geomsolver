@@ -1227,7 +1227,11 @@ impl<'a> Arrangement<'a> {
             let ids = [0,1].map(|k| self.surface_of[&(faces.s[k],faces.f[k])]);
             // two curves of one meeting in closed form may cross one another (`crossings_among`)
             let (curves,crossed) = match self.shared.meeting(ids[0],ids[1],self.tol) {
-                Ssi::Curves(cs) => { let x = crossings_among(surfaces[0],&cs,self.shared(faces),self.pad,self.tol); (cs,x) }
+                Ssi::Curves(cs) => {
+                    let mut x = crossings_among(surfaces[0],&cs,self.shared(faces),self.pad,self.tol);
+                    ends_on_one_another(&cs,&mut x,self.tol);
+                    (cs,x)
+                }
                 Ssi::Same => { found.same_pairs.push(faces); continue }
                 Ssi::Traced => {
                     let (fi,fj) = (filled[&ids[0]],filled[&ids[1]]);
@@ -2149,6 +2153,25 @@ fn stretch_in(c: &Curve,(lo,hi): Box3,pad: f64) -> Option<[f64;2]> {
     }
 }
 
+/// **Where an open curve of a meeting in closed form ends on another of it**: a meeting handed over
+/// in pieces (a screwed circle's branches ending on the circle where it is a round side's section,
+/// `ssi`'s `screwed_circle_meeting`) ends where its pieces meet, which no crossing of two curves
+/// finds; each such end is laid as a point on the curve it ends and on the one it ends on.
+fn ends_on_one_another(curves: &[super::geom::Curve],crossed: &mut [Vec<V>],tol: f64) {
+    use super::geom::Curve;
+    for i in 0..curves.len() {
+        let Curve::Traced(t) = &curves[i] else { continue };
+        if t.closed { continue }
+        for p in [t.pts[0],t.pts[t.pts.len()-1]] {
+            crossed[i].push(p);
+            for (j,c) in curves.iter().enumerate() {
+                if j == i { continue }
+                if distance(c.point(c.inverse(p)),p) <= 8.*tol { crossed[j].push(p) }
+            }
+        }
+    }
+}
+
 /// Where traced curves of one meeting (`curves`) end at one another, each such end listed against
 /// its curve: the branches of a meeting through a point where the two surfaces touch end there
 /// (`ssi::trace_beside`), each at a vertex they share, which no edge crossing need make.
@@ -2244,6 +2267,11 @@ fn fine_area(cycle: &[Half],f: &Face,out: &[WEdge],pool: &Pool) -> f64 {
     last
 }
 
+/// How near two ways at a node may be (radians, each read a ten-thousandth of its own half's length
+/// along it) and be read again at one length by their curvature: two curves tangent there part by
+/// as much as a step along an arc turns its chord, a ten-thousandth of the arc's angle.
+const TANGENT_TIE: f64 = 1e-3;
+
 /// The face split into pieces by its halves: each piece its outer cycle and its holes.
 fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<Vec<Vec<Vec<Half>>>,String> {
     // nodes: a vertex at one place in the parameters (a seam's vertex is at two, a period apart; the
@@ -2264,16 +2292,42 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
         let (v0,v1) = if h.along { (e.v[0],e.v[1]) } else { (e.v[1],e.v[0]) };
         (node_of(v0,h.from),node_of(v1,h.to))
     }).collect();
-    // each half's direction leaving its start and arriving at its end, as lengths, oriented
-    let dir = |h: &Half,at_start: bool| -> f64 {
-        let (p,q) = if at_start { (h.from,at(h,f,out,pool,1e-4)) } else { (h.to,at(h,f,out,pool,1.-1e-4)) };
+    // each half's direction leaving its start and arriving at its end, as lengths, oriented, read a
+    // part `s` of its way along it
+    let dir_at = |h: &Half,at_start: bool,s: f64| -> f64 {
+        let (p,q) = if at_start { (h.from,at(h,f,out,pool,s)) } else { (h.to,at(h,f,out,pool,1.-s)) };
         let (_,su,sv) = f.surface.d1(p);
         let (ku,kv) = (norm(su).max(1e-12),norm(sv).max(1e-12));
         let (p,q) = (oriented(f,p),oriented(f,q));
         ((q[1]-p[1])*kv).datan2((q[0]-p[0])*ku)
     };
-    let leave: Vec<f64> = halves.iter().map(|h| dir(h,true)).collect();
-    let arrive_back: Vec<f64> = halves.iter().map(|h| dir(h,false)).collect();
+    let leave: Vec<f64> = halves.iter().map(|h| dir_at(h,true,1e-4)).collect();
+    let arrive_back: Vec<f64> = halves.iter().map(|h| dir_at(h,false,1e-4)).collect();
+    // where two halves leave a node within rounding of one way (two curves tangent there), read
+    // apart by how they turn: the chord's way at a step `δ` along a half is `θ₀ + κ δ/2`, so read at
+    // `δ` and `2δ` of its own length it gives `κ`, and the two compared at one length (the shorter
+    // step) part by their curvature. Read at a part of each one's own length alone, an arc five times
+    // another's radius and five times its length leaves a point they touch at the same way to
+    // rounding (#721: a drum at its end pose touching the cylinders its generators turn into)
+    let length = |h: &Half| -> f64 {
+        let e = &out[h.edge as usize];
+        let pts: Vec<V> = (0..=8).map(|k| e.point(param(h,out,k as f64/8.),pool)).collect();
+        pts.windows(2).map(|w| distance(w[0],w[1])).sum::<f64>().max(1e-300)
+    };
+    // a half's way leaving its start (or arriving back at its end) read at the length `delta` along
+    // it, from its ways at a ten-thousandth and two of its length
+    let way_at = |g: usize,at_start: bool,delta: f64| -> f64 {
+        // the probes' distances from the node, as they stand (a curve's parameter runs at no one
+        // speed)
+        let h = &halves[g];
+        let reach = |s: f64| { let e = &out[h.edge as usize]; distance(e.point(param(h,out,if at_start { 0. } else { 1. }),pool),
+            e.point(param(h,out,if at_start { s } else { 1.-s }),pool)) };
+        let (d1,d2) = (reach(1e-4),reach(2e-4));
+        let t1 = if at_start { leave[g] } else { arrive_back[g] };
+        let mut t2 = dir_at(&halves[g],at_start,2e-4);
+        while t2-t1 > 0.5*TAU { t2 -= TAU } while t1-t2 > 0.5*TAU { t2 += TAU }
+        t1+(t2-t1)/(d2-d1)*(delta-d1)
+    };
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new();nodes.len()];
     for (i,&(s,_)) in ends.iter().enumerate() { outgoing[s].push(i); }
     let mut seen = vec![false;halves.len()];
@@ -2299,17 +2353,31 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
             cycle.push(h);
             // at the end node, the next half clockwise from the way back along this one
             let node = ends[h].1;
-            let back = arrive_back[h];
             let twin = |g: usize| halves[g].edge == halves[h].edge && halves[g].along != halves[h].along;
-            let mut best: Option<(f64,usize)> = None;
-            for &g in &outgoing[node] {
-                if twin(g) && outgoing[node].len() > 1 { continue }
-                // the clockwise turn from `back` to g's leaving direction, in (0, 2π]
-                let mut turn = back-leave[g];
+            let candidates: Vec<usize> = outgoing[node].iter().copied().filter(|&g| !(twin(g) && outgoing[node].len() > 1)).collect();
+            // where two of the ways here (the way back and those leaving) agree within rounding — two
+            // curves tangent at the node — all are read at one length along each, by their curvature
+            let near = |x: f64,y: f64| { let d = (x-y).rem_euclid(TAU); d <= TANGENT_TIE || TAU-d <= TANGENT_TIE };
+            // (the halves tied, the way back's among them where it is: the length they are read at is a
+            // ten-thousandth of the shortest of them, the scale they are drawn at — not of a short
+            // half beside them, where a fitted curve's own small lean off tangent would rule)
+            let back_tied = candidates.iter().any(|&g| near(leave[g],arrive_back[h]));
+            let tied: Vec<usize> = candidates.iter().copied().filter(|&g| near(leave[g],arrive_back[h])
+                || candidates.iter().any(|&g2| g2 != g && near(leave[g],leave[g2]))).collect();
+            let tangent = !tied.is_empty();
+            let (back,leaving): (f64,Vec<(usize,f64)>) = if tangent {
+                let delta = tied.iter().chain(back_tied.then_some(&h)).map(|&g| 1e-4*length(&halves[g])).fold(f64::INFINITY,f64::min);
+                (way_at(h,false,delta),candidates.iter().map(|&g| (g,way_at(g,true,delta))).collect())
+            } else { (arrive_back[h],candidates.iter().map(|&g| (g,leave[g])).collect()) };
+            if tangent && super::debug() { eprintln!("pieces tie at node {node} from half {h} (back {:.9} read {back:.9}): {:?}",arrive_back[h],
+                leaving.iter().map(|&(g,w)| (g,leave[g],w,length(&halves[g]))).collect::<Vec<_>>()); }
+            // the clockwise turn from `back` to each leaving way, in (0, 2π]: the least
+            let best = leaving.iter().map(|&(g,w)| {
+                let mut turn = back-w;
                 while turn <= 1e-12 { turn += TAU; }
                 while turn > TAU+1e-12 { turn -= TAU; }
-                if best.is_none_or(|(b,_)| turn < b) { best = Some((turn,g)); }
-            }
+                (turn,g)
+            }).fold(None,|b: Option<(f64,usize)>,t| if b.is_none_or(|b| t.0 < b.0) { Some(t) } else { b });
             let Some((_,g)) = best else { return Err(format!("a {}'s pieces end nowhere",f.surface.kind())) };
             h = g;
         }

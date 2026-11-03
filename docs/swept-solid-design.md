@@ -163,7 +163,8 @@ it. It stays as the fast path where #699 D says so.
    face along the axis touches its own contact cylinder at each end pose, so the plane through the
    axis and that line is added as a separator, parting the two sides of the touch into two cells.
    A bar turned a quarter turn beside the axis is its polar integral to 2e-15. Edges leaning to the
-   axis (hyperboloids), screws, curved tools and K2 are the steps after.
+   axis (hyperboloids), screws, curved tools and K2 are the steps after (a curved tool under a
+   slide is built, below).
 
    *Tried and set aside, for the next step:* a block leaning to the axis. Two findings. A face's
    contact line under a turn always meets the axis (it lies in the plane through the axis and the
@@ -282,6 +283,83 @@ it. It stays as the fast path where #699 D says so.
    revolution, a leaning bar's hyperboloids met each other and the walls in traced curves of
    thousands of points, and crossing them took 300 s; two spline meridians about one axis now
    cross in closed form (`ssi::spline_spline`), and the cut takes 12 s.
+   *Built for a curved tool under a slide* (`closed`'s slide, admitted as C1 allows): a tool whose
+   faces are planes, cylinders, cones and balls and whose edges are lines and circles. Under a slide every
+   candidate is a quadric the kernel meets in closed form, so nothing new is traced: a round face at
+   each end pose is its own surface (the tool's cylinder or frustum over the stretch the face spans);
+   its rulings whose normal is square to the slide (two on a cylinder across the slide; on a cone the
+   roots of the ring equation `A cos u + B sin u = C`, the one `contact` writes) sweep the planes
+   tangent along them, and a cylinder along the slide sweeps itself; a ball's great circle square
+   to the slide sweeps the cylinder of its radius along its centre's path; a circle edge's fan
+   (where its faces meet at an angle: a smooth one fans one normal, the faces' own) sweeps an
+   oblique cylinder, entered as its disc's right cylinder sheared along the slide (`Brep::mapped`), so
+   a plane, a coaxial cylinder or another such shear meets it in the preimage's closed forms. A drum
+   slid aslant, a frustum slid aslant, a capsule slid aslant and a drum slid along its axis are each
+   `V + |D| A` to 1e-9,
+   `A` the shadow along the slide in closed form (for the frustum, two ellipses' hull, a stretch of two
+   circles'), and agree with membership; cut from a blank, `punch.sv`'s drum pushed aslant wholly
+   through its plate and partway in (`stopped_punch.sv`) are each their sections' swept hexagons
+   clipped to the plate, to 1e-9. Where the drum stops in the plate, the plate keeps its end pose's
+   cylinder, which its side's tangent planes touch along lines and its rims' oblique cylinders at the
+   rims' silhouette points, the arrangement's touches as the turn's were. A candidate whose solid
+   stands clear of the domain's box is left out of the arrangement: an end pose clear of the blank
+   is never met. A torus slid along its axis or square to it has whole circles of contact (its
+   equators; or its top and bottom rings and its meridians square to the slide), swept into
+   cylinders and level planes, each meridian's cylinder touching the torus round it at the end poses
+   (`ssi`'s `tube_along_torus`): a bull-nose mill slid to a stop inside a block builds to 1e-9. A
+   torus slid at a lean to its axis touches along a curve no plane holds. The constant-twist class's
+   curved refusals under a slide that this covers are its
+   cases now: a hollow mill's ring bottom (G6), an engraving bit's apex (G5) and a drill beside a
+   post. A torus's face (its contact under a slide a curve no plane holds, its sweep no quadric) and
+   any curved face under a turn or a screw are the steps after.
+   *Built for a curved tool under a turn* where its round faces stand about axes along the turn's,
+   or are balls: a cylinder's or a cone's normal passes through the turn's axis along its two
+   generators in the plane through both axes, so they turn into a cylinder or a cone about it; a
+   ball's along its great circle in the plane through the axis and its centre, which turns into a
+   torus; a circle square to the axis turns within its own plane. Each touches the tool at its end
+   poses along a whole line or circle: parallel cylinders and cones whose sections' circles touch
+   at every height meet along that line, and a ball centred on a torus's middle circle with its
+   tube's radius touches it round that meridian (`ssi`, in closed form). Where those touches meet a
+   plane square to the axis, two of its arcs leave one point tangent, and a face's pieces were
+   ordered by their ways a ten-thousandth along each half's own length, where an arc of five times
+   another's radius and length reads alike; ways tied within a thousandth of a radian are now read
+   again at one length along each, by their curvature (`boolean`'s `pieces_of_face`). A drum, a
+   frustum and a ball turned 100° are each their sections' Pappus volume to 1e-9; the drum turned
+   whole bores its annulus, and turned to a stop partway into a ring sector the covered angles of
+   each circle, each to 1e-9. A cylinder or a cone about an axis leaning to the turn's (its contact
+   a curve on it, turned into a surface of revolution with no closed-form meridian) and a ball
+   reaching across the axis (a spindle torus) are the steps after.
+   *Tried and set aside, for a leaning edge under a screw* (#721 F2c5): three ways to enter the
+   ruled helicoid a line leaning to the axis screws into, none of which the arrangement holds yet.
+   (1) **A sheet across the box**, as a level edge's is: a leaning line's two points either side of
+   its foot stand at one radius and climb apart, so one helix holds both wherever their heights
+   differ by the pitch times the angle between them, a whole number of turns over — the whole sheet
+   meets itself, and for a steep edge (0.35 rad off the axis, two a turn) within the box's reach,
+   about a lead out along the line. (2) **A patch** over the line's own stretch and the sweep's
+   roll, a little past each (where no point of it can come round onto another's helix: their
+   heights differ by more than the roll climbs), its rim just past the candidates that seal it:
+   where a rim stands inside another candidate's face, their meeting stops partway across that
+   face, a slit no face's pieces close round (`boolean`'s "pieces do not close"), and the level bar
+   built so failed where its sheets across the box had built. (3) **The triangle on the segment
+   screwed whole**, a closed solid, so every meeting ends on an edge: its sheet's face then holds
+   pairs of helices a few hundredths of its run apart (its own and its neighbours' vertices'), and
+   its pieces would not close either. Met along the way, and set aside with them: two sheets of one
+   screw meet in the helices of the points of the one's line lying on the other's sheet, found as
+   roots of `exp(i Δz/k) e^{−iΔψ} − 1` (the angles' wrap no jump); a leaning face's contact line
+   under a screw is moved off the plane through the axis by `n·v(c)`; and an independent volume for
+   a tool less tall than a lead, its own and `θ ∫ ρ L(ρ) dρ`, `L` the range of `z − k ψ` over its
+   slice by each cylinder (within 2e-5 of the bar's closed form) — a membership Monte Carlo of the
+   leaning block (7.73 ± 0.07) agreed with it to two standard deviations, and the patches' build
+   (6.08) with neither. So the leaning screw waits on the arrangement holding a face with a slit,
+   or a sheet bounded inside the domain (F5's A1, non-manifold topology), and is refused as before
+   (`Unbuilt::Leaning`).
+   *Built for a path of pieces* (K1): a sweep distributes over its path's pieces, so the arrangement
+   takes every piece's candidates at once and membership reads the pieces one by one. A piece after
+   another does not start at the identity: it takes the tool up where the one before left it, a
+   constant twist after a placement, `twist(t) · at` (`Trajectory::Placed`; its speed bound its
+   twist's), read on the tool placed so. A cube slid then turned about the edge it stops beside is
+   its pieces' sweeps united, `5 + π/2`, to 1e-9. Screws among the pieces wait on the screw's box,
+   which is a lone screw's.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
@@ -290,7 +368,83 @@ it. It stays as the fast path where #699 D says so.
    twist, carried by the pose, told apart by the contact's rate round the ring, and the branch
    locus `A² + B² = C²` found in `(t, h)`; a ball's contacts under a tumble bound its sweep by
    membership (`tests/swept_instant.rs`). Its patches in the arrangement follow the patch type.
-8. **The blank-scoped path** as the optimisation of X6 (#699 D).
+8. **The blank-scoped path** as the optimisation of X6 (#699 D). *Decided*: the closed solid cut
+   from a blank is itself blank-scoped — `cut_from` takes the blank as the arrangement's domain and
+   keeps its cells that are no member, no closed solid built and subtracted — so X6 has two roads
+   to a body and one definition. Where a class admits a sweep, its blank-scoped sheet (the walk,
+   the fitted or closed-form sheet, the sector split) stays the road: measured on a sweep both
+   build, `punch.sv`'s drum, it is the faster by about an order (0.09 s against 0.8 s) and the two
+   agree to 1e-9 (`closed_class::the_fast_path_and_the_one_arrangement_agree_where_both_build`, two
+   builds made apart cross-checking each other). Where every class refuses, the one arrangement is
+   the road (`solid::closed_class`, asked after the class the sweep was first asked). `closed`, over
+   a box, is the kernel's `sweep(S, M)` proper, for a sweep with no blank.
+
+**Where it stands (F2c5).** Built on the one arrangement: polyhedral tools under a slide, a turn,
+or a screw with nothing leaning to its axis; under a slide, tools of planes, cylinders, cones, balls
+and tori (a torus's axis along the slide or square to it); under a turn, round faces about axes
+along the turn's (cylinders, cones, tori) and balls clear of its axis; under a screw, cylinders about axes along it and
+level circles (a drum, helical milling); paths of slides and turns (K1); a body mixing the
+closed class with another; the blank-scoped decision. What is left meets one of three gaps, each
+recorded above with what was tried:
+- **a candidate bounded inside the domain** — a leaning edge under a screw (whose whole sheet
+  crosses itself) — waits on the arrangement holding a face with a slit, or a sheet whose rim
+  stands inside a cell (F5's A1);
+- **a meeting with no closed form near a touch** — a cone or a ball screwed, a round face about an
+  axis leaning to a turn's (its contact a curve, its
+  surface of revolution's meridian fitted), a fitted sheet lying in a candidate's plane, and K2's
+  patches (each instant's contact swept, fitted) — is refused as nearly touching: each needs its
+  closed form (as the parallel cones', the ball's in a torus, the meridian's cylinder were), or the
+  tracer holding a near-tangent meeting (F4, #699 E). *A circle screwed is built* (a round tool's
+  rim under a screw: helical milling): its sheet's
+  meetings with a level plane, a cylinder about the axis, a round tool's own side at an end pose and
+  a plane through the axis are closed forms (`ssi::screwed_circle_meeting`), a line meets it exactly
+  (`query::line_screwed_circle`) and its inverse starts level with the point. A drum screwed beside
+  the axis (helical milling: its side's generators screwed into coaxial cylinders, each rim's disc
+  screwed into a solid) is its helical volume `π + Θ (6 + k π)` to 1e-15, a drum screwed half a
+  millimetre a turn through 280° `π + Θ (20 + k π)` to 1e-15, and the same drum through a ring
+  sector the sector less `π/3 (20 + k π)` to 1e-9, each held to membership. What had left a cell
+  holding both sides of the sweep's boundary was not a missing separation but four readings: a
+  branch's end on its coincidence circle laid on neither (`boolean`'s `ends_on_one_another`), that
+  end read one-sidedly so that its first chord bent and was projected onto the circle, two stretches
+  of one circle's sheet two leads apart read as one surface and each other's edges laid on the
+  other, and a sampled search for a ray's crossings missing one of the two a ramp a hundredth of a
+  millimetre thick makes — a solid's point location wrong at seven of 400 points about it, and a
+  cell kept or dropped so. Where the rim's farthest and nearest points run along the screw the ramp
+  folds against the wall its side sweeps over a radius of about a tenth of a micrometre, and a chord
+  of the wall's helix a mesh takes at the bar sags across the fold, so the triangles beside it
+  faced against the sheet: the mesher now halves the chords such triangles stand on and meshes
+  again, and the drawn drum's STL agrees with the field (`solid_sweeps/helical_groove.sv`). A cone
+  about an axis along the screw's touches where `ω cos β (n·(k × d)) = τ sin β` on each ring — the
+  same angle on every ring, so along two of its rulings, turned off the plane through both axes by
+  `asin(τ tan β / (ω |d|))`: lines leaning to the screw's axis, whose sheets are the leaning edge's
+  (the first gap). *A ball screwed is built*: it touches round its great circle square to its
+  centre's velocity, which leans to the axis wherever the screw climbs; that circle screwed is the
+  pipe about its centre's helix (`Cutter::Pipe`), touching the ball at either end pose round that
+  circle (`ssi`'s `pipe_end`), and a ball screwed 1.5 rad is Weyl's tube and a ball to 1e-15 — once
+  an edge's flux settles (`props`'s `settled`: the great circle passing beside the ball's pole had
+  left its piece 0.2% off). A ball-end mill screwed (a ball under a cylinder) is the step after: its
+  pipe touches the cylinders the side's lines screw into along the helices of the ball's equator,
+  in closed form (`screwed_circle_round`), but each such helix starts on the rim of the cylinder's
+  candidate — a crossing at 0.06 rad a sampled edge–sheet search placed 0.01 off — and a candidate
+  run past the rim leaves a cusp-thin cell between pipe and cylinder whose reading went wrong
+  through a ring sector (14.4 removed against 12.0, though a box built it to 1e-14). It waits on
+  an exact meeting of an edge with the pipe, and on cells along a touch read right. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
+  round its two meridians in the plane through both axes, turned into tori about the turn's, and
+  round its top and bottom rings, kept in their planes. The torus at an end pose and a meridian's
+  torus touch round that meridian and cross beside it — in each level both are two circles about
+  their own axes, two pairs touching and one crossing where `A cos θ + B sin θ = C(h)`, a closed
+  form as the rim's branches are. All three meet at one point: the meridian's top is where the
+  ring's top circle touches the plane it turns in and the meridian's torus touches that plane too.
+  The branches reach that point tangent to the ring's top circle, parting from it as the square of
+  the way along, and a chord between their last two points sagged across that circle — read there,
+  the branch left on the wrong side, the walk round the ring's face joined two pieces through a
+  there-and-back along the circle, and the meridian's torus outside the ring came out empty. Read on
+  a parabola through three points (`Traced::between`), the branch leaves on its own side: a ring
+  turned 1.5 rad is its sweep by levels to 1e-11, a bull-nose mill to 1e-15, and the bull-nose turned
+  partway into the ring sector (`solid_sweeps/stopped_bullnose.sv`) to 1e-9 through the drawing, its
+  STL agreeing with the field;
+- **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
+  has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
 
 Every step meets the epic's bar: rows in `docs/contract/generating.md` naming the gate test, field
 agreement and an independent volume at the default tolerance, negative controls kept, an example

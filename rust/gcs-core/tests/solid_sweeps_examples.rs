@@ -430,6 +430,68 @@ fn the_bar_plunged_aslant_stops_inside_the_plate() {
     near(exported(&e,"plate"),800.-crate::closed_class::plunged_away(8.),1e-9);
 }
 
+/// `stopped_punch.sv` (the closed class, X1 with a curved tool): `punch.sv`'s drum pushed aslant 8
+/// into the plate, stopping inside it. The constant-twist class refuses it (as it refuses the drum
+/// pushed aslant wholly through, and it ends in the blank); the closed class reads its cylinder, its
+/// two flat ends and its rims under the slide and cuts it from the plate on one arrangement, the
+/// side's rulings swept into their tangent planes and the rims into oblique cylinders. The plate
+/// loses each `y` section's rectangle swept along the push and clipped to it
+/// (`closed_class::drum_plunged_away`), to 1e-9.
+#[test]
+fn the_drum_plunged_aslant_stops_inside_the_plate() {
+    let e = example("stopped_punch.sv");
+    let Class::Closed(found) = class(&e,"plate") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    near(exported(&e,"plate"),800.-crate::closed_class::drum_plunged_away(8.),1e-9);
+}
+
+/// `stopped_drum.sv` (the closed class, X1 with a curved tool under a turn): a drum about an axis
+/// along the turn's, turned from −140° to 30°, halfway into the sector. The constant-twist class
+/// refuses it (it ends in the blank); the closed class cuts it from the ring on one arrangement, its
+/// side's generators turned into cylinders about the axis. The ring loses each circle's covered
+/// angle within the sector (`closed_class::drum_turned_partway_away`), to 1e-9.
+#[test]
+fn the_drum_turned_partway_stops_inside_the_ring() {
+    let e = example("stopped_drum.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert!(found.screw.is_turn(),"a turn");
+    near(exported(&e,"block"),PI/3.*80.-crate::closed_class::drum_turned_partway_away(),1e-9);
+}
+
+/// `helical_groove.sv` (the closed class, a round tool screwed: helical milling): the drum of
+/// `stopped_drum.sv` screwed half a millimetre a turn from −140° to 140°, wholly across the sector.
+/// The constant-twist class refuses it (its flat ends keep no plane, S2); the closed class cuts it
+/// from the ring on one arrangement, its side's generators screwed into cylinders about the axis and
+/// each rim's disc into the ramp it sweeps. The ring loses `π/3 (20 + k π)`, `k = 0.5/2π`, to 1e-8:
+/// the sector's planes through the axis cut the rims' ramps in traced closed-form points.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: a drum's screwed rims through a sector")]
+fn the_drum_screwed_mills_a_helical_groove() {
+    let e = example("helical_groove.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a screw");
+    let k = 0.5/std::f64::consts::TAU;
+    near(exported(&e,"block"),PI/3.*80.-PI/3.*(20.+k*PI),1e-8);
+}
+
+/// `stopped_bullnose.sv` (the closed class, a torus under a turn): `stopped_drum.sv`'s drum with its
+/// bottom corner rounded to 0.3, turned from −140° to 30°, halfway into the sector. Its round, a
+/// torus about an axis along the turn's, touches round its meridians in the plane through both
+/// axes, turned into tori about the turn's, and round its bottom ring, kept in its plane. Each level
+/// of the mill is a disc of radius `R(z)`, 10 out, so each circle about the axis loses the angle
+/// the disc spans from the sector's edge to 30° past: `π d/3 ∫R dz + π/2 ∫R² dz` of the ring, to 1e-9.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 100 s: a bull-nose's round turned on one arrangement")]
+fn the_bull_nose_turned_partway_stops_inside_the_ring() {
+    let e = example("stopped_bullnose.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert!(found.screw.is_turn(),"a turn");
+    let (d,big,c,h) = (10.,1.,0.3,1.);
+    let rz = (big-c)*c+PI*c*c/4.+big*(h-c);
+    let r2z = (big-c)*(big-c)*c+(big-c)*PI*c*c/2.+2.*c*c*c/3.+big*big*(h-c);
+    near(exported(&e,"block"),PI/3.*80.-(PI*d/3.*rz+PI/2.*r2z),1e-9);
+}
+
 /// `stopped_turn.sv` (the closed class, X1): an upright bar turned from −140° to 30°, halfway into
 /// the sector. The constant-twist class refuses it (it ends in the blank); the closed class cuts it
 /// from the ring on one arrangement, its end pose's faces among the candidates. The ring loses each
@@ -470,4 +532,5 @@ fn every_example_is_held_and_named() {
         assert!(held.contains(&format!("example(\"{name}\")")),"a test reads `{name}`");
     }
 }
+
 

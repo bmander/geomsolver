@@ -12,11 +12,11 @@
 //! (`prism_twists::a_side_square_to_the_turn_cuts_a_floor`). Each volume is a closed form, and each
 //! exact solid's STL agrees with the field. A ring kept in its plane and a disc swept across the
 //! turn's axis are refused by name.
-use gcs_core::solid::admission::{Class,Condition};
+use gcs_core::solid::admission::Class;
 use std::f64::consts::PI;
 
 use crate::solid_sweeps_examples::class;
-use crate::turns_and_slides::{admit,exported,exported_at,near,refused};
+use crate::turns_and_slides::{exported,exported_at,near};
 
 /// A block 20 × 10 × 10 (x 0 to 20, y −5 to 5, z 0 to 10) and an end mill of radius `r`, its axis
 /// upright through (−5, `y`), its flat bottom at `z` and its top 8 above, slid 30 along x over the
@@ -152,6 +152,35 @@ fn a_bull_nose_mill_slid_rounds_the_slots_corners() {
     near(exported_at(&fixtures::read(&text),"part",0.001),2000.-20.*(12.-2.*(1.-PI/4.)*0.25),1e-6);
 }
 
+/// The bull-nose mill of `a_bull_nose_mill_slid_rounds_the_slots_corners`: radius 2, its corner
+/// rounded 0.5, its flat bottom at 7 in the block 10 high.
+fn bull_nose(slide: f64) -> String {
+    slid_mill(2.,0.,7.).replace("  e1 coords(du: 2mm, dv: 0mm) bench","  e1 coords(du: 1.5mm, dv: 0mm) bench\n  \
+        private k := point\n  k coords(du: 1.5mm, dv: 0.5mm) bench\n  private e5 := point\n  e5 coords(du: 2mm, dv: 0.5mm) bench")
+        .replace("  private side := line(e1, e2)","  private nose := arc(center: k, start: e1, end: e5) hint(r: 0.5)\n  radius(0.5mm) nose\n  \
+        private side := line(e5, e2)")
+        .replace("face(bottom, side, top, spindle)","face(bottom, nose, side, top, spindle)")
+        .replace("feed slides(30mm) way",&format!("feed slides({slide}mm) way"))
+}
+
+/// **A bull-nose mill slid to a stop inside the block** (#721 F2c5, a torus under a slide; X1): the
+/// mill slid 15 from x = −5, so it stops with its axis at x = 10, mid-block. The constant-twist
+/// class refuses it (it ends in the blank); the closed class builds it, its round's top and bottom
+/// rings swept within their level planes, its meridians square to the slide swept into cylinders
+/// along it (which touch the round at its end poses round those meridians), its side's rulings into
+/// their tangent planes. Apart from the build: at height `z` the mill's section is a disc of radius
+/// `ρ(z)` — 2 on the side, `1.5 + √(0.25 − (7.5 − z)²)` on the round — swept from before the block to
+/// x = 10, so the block keeps of it the strip `2ρ · 10` and the half disc `π ρ²/2`; over the depth
+/// from 7 to 10, `∫ ρ = 5.75 + π/16` and `∫ ρ² = 11.125 + 1/12 + 3π/16`.
+#[test]
+fn a_bull_nose_mill_slid_to_a_stop_inside_the_block() {
+    let e = fixtures::read(&bull_nose(15.));
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    let (r1,r2) = (5.75+PI/16.,11.125+1./12.+3.*PI/16.);
+    near(exported(&e,"part"),2000.-(20.*r1+PI/2.*r2),1e-9);
+}
+
 /// Turned about z, 10 from it, the mill's flat bottom of radius 1 sweeps the annulus from 9 to 11 in
 /// its own plane, and its side's lines nearest and farthest the axis turn to the groove's walls,
 /// cylinders: within the block's 60°, `π/6 (11² − 9²)` over the block's top millimetre.
@@ -181,22 +210,39 @@ fn a_tapered_mill_turned_cuts_a_groove_between_cones() {
     near(exported(&fixtures::read(&text),"part"),PI/3.*80.-2.*PI/3.*10.*1.125,1e-5);
 }
 
-/// What is still refused (S1): a hollow mill's bottom, a ring the slide keeps in its plane, whose
-/// line across the slide would cross its hole; and a mill turned a whole turn about an axis that
-/// passes through its flat bottom, which sweeps across the axis (the block made a sector of a disc,
-/// its inner radius 0).
+/// **A hollow mill slid across the block cuts a whole slot** (G6, its ring bottom kept in its
+/// plane; once a negative control here): the constant-twist class refuses it (S1: the ring's line
+/// across the slide would cross its hole), and the closed class builds it under the slide (#721
+/// F2c5, a curved tool), its outer and inner cylinders' rulings swept into their tangent planes,
+/// its rims into cylinders along the slide, its ring bottom a plane along it. Passing wholly
+/// through, the ring covers every `y` within its outer radius, the hole too, so the block loses the
+/// slot `20 × 4 × 3`, `1760` of `2000`.
 #[test]
-fn a_ring_or_a_disc_across_the_axis_kept_in_its_plane_is_refused() {
+fn a_hollow_mill_slid_across_the_block_cuts_a_whole_slot() {
     let hollow = slid_mill(2.,0.,7.).replace("  e0 coords(du: 0mm, dv: 0mm) bench","  e0 coords(du: 1mm, dv: 0mm) bench")
         .replace("  e3 coords(du: 0mm, dv: 8mm) bench","  e3 coords(du: 1mm, dv: 8mm) bench")
         .replace("  private spindle := line(e3, e0)\n}","  private inside := line(e3, e0)\n  private a0 := point\n  private a1 := point\n  \
             a0 coords(du: 0mm, dv: 0mm) bench\n  a1 coords(du: 0mm, dv: 1mm) bench\n  private spindle := line(a0, a1)\n}")
         .replace("face(bottom, side, top, spindle)","face(bottom, side, top, inside)");
-    let r = refused(admit(&hollow));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("`mill.bottom` is a ring kept in its own plane"),"{}",r.message);
+    let e = fixtures::read(&hollow);
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    near(exported(&e,"part"),2000.-240.,1e-9);
+}
+
+/// **A mill turned whole about an axis through its flat bottom bores a disc** (G6's `THROUGH`; a
+/// negative control until #721 F2c5): the constant-twist class refuses it (S1: its bottom is kept in
+/// its own plane with the turn's axis through it), and the closed class builds it, its side's
+/// generators in the plane through both axes turned into the cylinders of radii 2.5 and 0.5, its
+/// bottom kept in its plane. The block is a sector of a disc (its inner radius 0); the mill, radius
+/// 1.5 about an axis 1 from the turn's, covers every radius to 2.5 turned whole, so the block loses
+/// `π/6 · 2.5²` through the top millimetre the mill reaches.
+#[test]
+fn a_mill_turned_whole_about_an_axis_through_its_bottom_bores_a_disc() {
     let across = turned_mill(1.5,1.5,1.,0.).replace("(-140deg, 140deg)","(0deg, 360deg)").replace("du: 8mm","du: 0mm");
-    let r = refused(admit(&across));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("`mill.bottom` is kept in its own plane with the turn's axis through it"),"{}",r.message);
+    let r = crate::turns_and_slides::admit(&across);
+    // (the closed class's, after the constant-twist class's refusal)
+    let [s] = r.as_ref().unwrap().sweeps() else { panic!("one sweep") };
+    assert!(matches!(s.class,Class::Closed(_)),"the closed class");
+    near(exported(&fixtures::read(&across),"part"),PI/3.*144.-PI/6.*2.5*2.5,1e-9);
 }
