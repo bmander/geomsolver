@@ -8,6 +8,21 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A Boolean is its complex's selection, with no other road** (#735 A4): a shell kept on one side
+  and dropped on another is refused, where each face was once kept by its own sides; `Complex::try_new`
+  is gone. Ways into faces from an edge within 1e-4 rad are tangent (`complex::TANGENT`), a fitted
+  round being tangent to its faces only as closely as its fit.
+- **Every arrangement lays touches** (`boolean::split` too; `lay_touches` is gone), and every edge a
+  meeting laid is healed out of a Boolean's, a split's or a swept solid's result where one face is
+  kept on both sides of it (`heal`, `boolean::selection`, **new**); `Complex::met` (**new field**)
+  and `Complex::select_cells` (**new**). A split's sheet piece with no inside is merged into its
+  edge, not refused.
+- **A traced meeting is one per pair of surfaces** (`meeting::Shared::traced`, `add_traced`,
+  **new**): traced over the box every face on the two surfaces fills, and handed to every later
+  pair of faces on them.
+- **A sweep cut from a blank on one arrangement** (`swept::closed::cut_from`, **new**): the blank
+  split by the sweep's candidates, its cells kept where they are not swept.
+
 - **The closed swept solid under a screw** (`swept::closed`): a polyhedral tool whose edges run
   along the screw's axis or square to it, on one arrangement — its level edges' helicoidal sheets
   open faces reaching past a box square to the axis (`arrangement_within` takes a sheet as it takes

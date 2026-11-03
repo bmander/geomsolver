@@ -405,6 +405,7 @@ fn region(
         say(Code::E040, st.span, m);
         return None;
     }
+    crate::solid::defined::name_terms(sk, &mut terms);
     for q in sk.own_params(p) {
         sk.params[q as usize].fixed = true;
     }

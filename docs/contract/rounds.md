@@ -21,7 +21,7 @@ origin; cached in `Caches::faces`); one naming nothing holds nowhere, and a regi
 solid lists (`FacePath::matches`, eaten or not) is **W116** at the document's statement it was met
 under (`Pending::at`: the round, not `std.rounds`' block), once per statement (`Walk::once`),
 naming the steps the faces go on by past the longest beginning of it that names any
-(`flatten::resolve::names_no_face`, asked by `Walk::face_links`, [0.201], #760): `part.pad` where
+(`flatten::resolve::names_no_face`, asked by `Walk::face_links`, [0.203], #760): `part.pad` where
 the pads are `part.joint[0].pad`, … says `joint[0]`, `joint[1]`. `std.rounds`: `Run`, `Fill`,
 `Corner`, `CornerFill`,
 `Flat`, `FlatFill` (sets over faces) and the words `A round(r: …) B`, `round(r: …) X`, `A chamfer(d:
@@ -407,7 +407,9 @@ lean term, the angle read to a billionth of a degree (`solid/defined.rs`) — is
 `SolidDef::Prism::draft` (radians; `None` undrafted): the section at ordinate `h` is `f` moved `|h|
 tan θ` into its material from its own plane, the parting plane (an outer loop in, a hole out). Every
 evaluator reads it: the facets (`primitive::prism`'s `taper`, `offset` by mitres, a side breaking at
-the plane; `drafted_away` refuses a side taken to nothing, at validation), the field
+the plane; `drafted_away` refuses a side taken to nothing, at validation, saying the ordinate's
+size at which it comes to nothing from the face's own plane, to three figures, and that the sides
+lean from it, #765), the field
 (`ExtrudedField::drafted`: the side's value plus `|w| tan`, times the cosine — exact only where
 `PlanarField::draftable`: convex loops of lines and whole circles, else refused) and the exact
 kernel (the recipe's prism `"draft"`; `brep::build::drafted`: `offset` the profile — a line moved

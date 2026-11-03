@@ -282,12 +282,16 @@ pub fn meet(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f64) ->
 /// on surfaces the kernel holds the same (`ssi::same`) the same one, and each pair of indices'
 /// closed-form meeting (`ssi::intersect`) found the first time any two faces on them are met and
 /// handed to every other, so the same meeting curve bounds every face that uses it, bit for bit.
+/// A meeting with no closed form is traced, and each curve traced kept for the pair of surfaces
+/// whatever faces it was traced for (`traced`), so the faces met after it are seeded off it and
+/// handed it, not tracing it again.
 #[derive(Clone,Debug,Default)]
 pub struct Shared {
     surfaces: Vec<Surface>,
     /// each kind's surfaces among them, which alone a surface of that kind is compared with
     of_kind: std::collections::BTreeMap<&'static str,Vec<usize>>,
     meetings: std::collections::BTreeMap<(usize,usize),Ssi>,
+    traced: std::collections::BTreeMap<(usize,usize),Vec<Curve>>,
 }
 
 impl Shared {
@@ -308,6 +312,12 @@ impl Shared {
         let m = intersect(&self.surfaces[i],&self.surfaces[j],tol);
         self.meetings.insert((i,j),m.clone());
         m
+    }
+    /// The curves of surfaces `i` and `j`'s traced meeting found so far, in either order.
+    pub fn traced(&self,i: usize,j: usize) -> &[Curve] { self.traced.get(&(i.min(j),i.max(j))).map_or(&[],|v| &v[..]) }
+    /// More curves of `i` and `j`'s traced meeting.
+    pub fn add_traced(&mut self,i: usize,j: usize,curves: impl IntoIterator<Item=Curve>) {
+        self.traced.entry((i.min(j),i.max(j))).or_default().extend(curves)
     }
 }
 

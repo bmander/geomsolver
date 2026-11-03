@@ -213,6 +213,23 @@ section is not a solid's face (`FaceRef`, below): it is the region the face boun
 material.  A drawn point against a face is E040 — a face is read only at a region solid's point.
 `tests/solids_as_sets.rs` (`a_face_is_a_set_where_no_sweep_says_it`) is the gate.
 
+**A draft's lean about a whole circle is two lines of a meridian** (#765, [0.201]): the lean
+`a (distance(p, beyond) − distance(p, within)) + c · distance(p, P)` (`defined::lean`) over a face
+that is one circle of radius `r` about `o` and no hole, its own plane `P`, reads `a (r − ρ) + c |h|`
+— `ρ` off the line through `o` along `P`'s normal, `h` along it — so a region whose terms are such
+a lean and half-spaces square to that line (`std.solids.Countersink`'s set, not a prism for want of
+a second ordinate) is folded by the meridian (`meridian::leaning`, `Fold::lean_within`: all but a
+diamond where it leans in, the outside of two cones where it leans out, each clipped convex,
+`clipped`), its axis the circle's (`axis_of`), and every evaluator reads it as any meridian — the
+recipe a `revolve` of its triangle, the field and the facets its region turned.  Its faces are named
+as a prism's, on the terms themselves before any reader sees them (`defined::name_terms`, called
+by `program/solids/build.rs::region` after `face_planes`, for any region no entry recognises): a
+section's or a lean's term by its face's edge where the face is one edge and no hole, an ordinate
+along that face's plane `near` bounding from above and `far` from below — so its paths
+(`face_paths`, `repeat a in S`), the field and the exact solid agree.  A lean grown, about a circle not square to
+the axis, or about any other face is no meridian's and stays the field's (`Route::Field`, its exact
+export refused).  `tests/countersink.rs` is the gate.
+
 **There is a roll at which** (#737 P4, [0.199]): `over t in (a, b)` (the interval written in
 place) or `over s` (a declared `param`) in a relation's parentheses is `syntax::OpArg::Over`,
 parsed by `parser/relations.rs::op_args` for `coincident` and `inside` and settled by the
@@ -245,7 +262,7 @@ halves — then the face's own name); `FacePath::matches` (segments from the fir
 suffix; [0.157] a step written without an index naming a copy's, `drill` for `drill[1]`,
 `same_step`) is the one rule, read by `BodyFaces::faces` and the flattener's `face_links`, and
 `face_paths` enumerates the same walk with `SolidE::caps`, the one cap table. **An operand's step
-is its path as the body's scope writes it** ([0.201], #760; `document::step_through`, over two
+is its path as the body's scope writes it** ([0.203], #760; `document::step_through`, over two
 written names `step_between`, the one reading — `operand_primitives`, `past_step`, the layers'
 labels, the recipe's per-body `steps` the kernel names faces by (a node has no step of its own),
 and the flattener's carrier of a face set, `flatten::faces`): the operand's `SolidE::written`

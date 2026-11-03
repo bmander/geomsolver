@@ -69,12 +69,14 @@ pub(super) fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         terms.iter().map(|t| meridian_corner(sk, terms, t)).collect();
     // and a sum of distances from points, a conic about the line through them (#238)
     let conics: Vec<Option<Vec<(V, f64)>>> = terms.iter().map(|t| foci(sk, t)).collect();
-    if terms.iter().zip(&corners).zip(&conics)
-        .any(|((t, l), c)| point_by_point(&t.shape) && l.is_none() && c.is_none()) {
+    // and a draft's lean about a whole circle, a double cone about the circle's axis (#765)
+    let leans: Vec<Option<Lean>> = terms.iter().map(|t| leaning(sk, t)).collect();
+    if terms.iter().zip(&corners).zip(&conics).zip(&leans).any(|(((t, l), c), n)|
+        point_by_point(&t.shape) && l.is_none() && c.is_none() && n.is_none()) {
         return Err(format!("`{}` bounds a sum of measurements or reads faces, which no meridian \
                             folds", s.name).into());
     }
-    let (origin, axis) = axis_of(sk, terms, &conics).ok_or("a region with no axis")?;
+    let (origin, axis) = axis_of(sk, terms, &conics, &leans).ok_or("a region with no axis")?;
     // each term's low end as the drawing stands (an unknown's, solved; a cone's half within the
     // half turn its row reads, `expr::sync_free`)
     let lows = terms.iter().map(|t| t.lo.value(sk).map_err(|m| format!("{}: {m}", s.name)))
@@ -84,9 +86,9 @@ pub(super) fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         .collect::<Result<Vec<f64>, String>>()?;
     // how far everything stands from the origin, for the tolerances and the box
     let mut size: f64 = 1.0;
-    for ((t, lo), g) in terms.iter().zip(&lows).zip(&grows) {
+    for (((t, lo), g), n) in terms.iter().zip(&lows).zip(&grows).zip(&leans) {
         size = size.max(lo.abs()).max(t.hi.unwrap_or(0.0).abs()).max(g.abs());
-        size = stands(sk, t).into_iter().fold(size, |s, p| s.max(norm(sub(p, origin))));
+        size = stands(sk, t, n.as_ref()).into_iter().fold(size, |s, p| s.max(norm(sub(p, origin))));
     }
     let tol = 1e-7 * size;
     let f = Fold { sk, origin, axis, tol, reach: 8.0 * size };
@@ -97,8 +99,9 @@ pub(super) fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
             continue;
         }
         let tag = k as u32 + 1;
+        let lean = leans[k].as_ref();
         let fold = |region: &Region, v: f64, op: Op| -> Result<Region, String> {
-            boolean(region, &f.within(t, v, g)?.tagged(&|_, _| tag), op, tol)
+            boolean(region, &f.within(t, lean, v, g)?.tagged(&|_, _| tag), op, tol)
                 .map_err(|e| format!("{}: {e}", what(t)))
         };
         region = match t.cmp {
@@ -140,20 +143,22 @@ pub(super) fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
     Ok(Meridian { origin, axis, seam, region, names })
 }
 
-/// The axis a region's terms turn about: a cone's or a cylinder's line, else a plane's normal
+/// The axis a region's terms turn about: a cone's or a cylinder's line, or a lean's circle's
+/// (`leans`, each term's `leaning`), else a plane's normal
 /// through a ball's centre or the plane's point, else the line through two balls' centres or
 /// measured points (`conics`, each term's `foci`), else the z through one.
-fn axis_of(sk: &Sketch, terms: &[RegionTerm], conics: &[Option<Vec<(V, f64)>>]) -> Option<(V, V)> {
+fn axis_of(sk: &Sketch, terms: &[RegionTerm], conics: &[Option<Vec<(V, f64)>>], leans: &[Option<Lean>])
+    -> Option<(V, V)> {
     let ball = |t: &RegionTerm| match t.shape {
         RegionShape::Ball { center } => Some(point(sk, center)),
         _ => None,
     };
-    let around = terms.iter().find_map(|t| match t.shape {
+    let around = terms.iter().zip(leans).find_map(|(t, n)| match t.shape {
         RegionShape::Cylinder { line: l } | RegionShape::Cone { axis: l } => {
             let (a, b) = line(sk, l);
             normalised(sub(b, a)).map(|d| (a, d))
         }
-        _ => None,
+        _ => n.as_ref().map(|l| (l.o, l.n)),
     });
     let normal = terms.iter().find_map(|t| match t.shape {
         RegionShape::Plane { from, .. } => {
@@ -182,11 +187,17 @@ fn line(sk: &Sketch, l: u32) -> (V, V) {
 }
 
 /// The points a term stands on: a ball's centre, a cylinder's or a cone's line's ends, a plane's
-/// origin, the points a sum of distances measures from.
-fn stands(sk: &Sketch, t: &RegionTerm) -> Vec<V> {
+/// origin, the points a sum of distances measures from, a lean's (`lean`, its `leaning`) circle's
+/// centre and a point along its axis.
+fn stands(sk: &Sketch, t: &RegionTerm, lean: Option<&Lean>) -> Vec<V> {
     match t.shape {
         RegionShape::Ball { center } => vec![point(sk, center)],
-        RegionShape::Measured { .. } => foci(sk, t).into_iter().flatten().map(|(p, _)| p).collect(),
+        RegionShape::Measured { .. } => match lean {
+            // the circle's centre and a point along its axis: a circle tilted off the region's
+            // axis stands off it
+            Some(l) => vec![l.o, crate::space::add(l.o, scale(l.n, l.r))],
+            None => foci(sk, t).into_iter().flatten().map(|(p, _)| p).collect(),
+        },
         RegionShape::Cylinder { line: l } | RegionShape::Cone { axis: l } => {
             let (a, b) = line(sk, l);
             vec![a, b]
@@ -203,12 +214,22 @@ fn what(t: &RegionTerm) -> String {
 
 /// The rectangle `[r0, r1] × [z0, z1]` of the half-plane.
 fn rect(r0: f64, r1: f64, z0: f64, z1: f64) -> Region {
-    Region::plain(vec![vec![
-        Seg::Line { a: [r0, z0], b: [r1, z0] },
-        Seg::Line { a: [r1, z0], b: [r1, z1] },
-        Seg::Line { a: [r1, z1], b: [r0, z1] },
-        Seg::Line { a: [r0, z1], b: [r0, z0] },
-    ]])
+    polygon(&corners(r0, r1, z0, z1))
+}
+
+/// The rectangle's corners, in turn.
+fn corners(r0: f64, r1: f64, z0: f64, z1: f64) -> [[f64; 2]; 4] {
+    [[r0, z0], [r1, z0], [r1, z1], [r0, z1]]
+}
+
+/// The polygon of corners `pts`, either way round (`Region::plain` turns it); nothing where it has
+/// fewer than three.
+fn polygon(pts: &[[f64; 2]]) -> Region {
+    let n = pts.len();
+    if n < 3 {
+        return Region { loops: Vec::new() };
+    }
+    Region::plain(vec![(0..n).map(|k| Seg::Line { a: pts[k], b: pts[(k + 1) % n] }).collect()])
 }
 
 /// What a meridian is folded in: the half-plane through `origin` about the unit `axis`, its box
@@ -241,10 +262,7 @@ impl Fold<'_> {
             if width <= 0.0 {
                 return Region { loops: Vec::new() };
             }
-            // a loop either way round: `Region::plain` turns it
-            let pts = [[0.0, apex], [width, far], [0.0, far]];
-            return Region::plain(vec![(0..3).map(|k| Seg::Line { a: pts[k], b: pts[(k + 1) % 3] })
-                .collect()]);
+            return polygon(&[[0.0, apex], [width, far], [0.0, far]]);
         }
         let (sin, cos) = (half.dsin(), half.dcos());
         // where the grown surface leaves the ball, square to the generator from the apex
@@ -315,18 +333,48 @@ impl Fold<'_> {
         })
     }
 
+    /// A draft's lean about a whole circle (`leaning`): `a (R − ρ) − a k |h| ≤ v` in the
+    /// half-plane, `ρ` along it and `h` along the axis from the circle's centre — `ρ ≥ w − k |h|`
+    /// for `w = R − v / a`.  Drafted in (`k > 0`) all but a diamond, the double cone of apexes
+    /// `w / k` either side of the circle's plane; drafted out, the outside of the cones opening
+    /// away from it: each convex, where two straight lines bound it.
+    fn lean_within(&self, t: &RegionTerm, l: &Lean, v: f64, g: f64) -> Result<Region, String> {
+        if g != 0.0 {
+            return Err(format!("{} is a draft's lean grown, which no meridian folds", what(t)));
+        }
+        let (reach, tol) = (self.reach, self.tol);
+        let (z0, w, k) = (self.z(l.o), l.r - v / l.a, l.k);
+        // `ρ ≥ w − k |h|` is `ρ + k h ≥ w` and `ρ − k h ≥ w` drafted out; drafted in, its other
+        // side is `ρ ≤ w − k h` and `ρ ≤ w + k h`
+        let s = if k <= 0.0 { 1.0 } else { -1.0 };
+        let all = corners(0.0, reach, -reach, reach);
+        let kept = clipped(clipped(all.to_vec(), |q| s * (q[0] + k * (q[1] - z0) - w)),
+                           |q| s * (q[0] - k * (q[1] - z0) - w));
+        let kept = polygon(&kept);
+        if k <= 0.0 {
+            return Ok(kept);
+        }
+        if kept.loops.is_empty() || kept.area().abs() <= tol * tol {
+            return Ok(polygon(&all));
+        }
+        boolean(&polygon(&all), &kept, Op::Cut, tol).map_err(|e| format!("{}: {e}", what(t)))
+    }
+
     /// The points a term reads at most `v` at, or with an offset `g`, no more than `g` outside
-    /// the surface where it reads `v` — in the half-plane.
-    fn within(&self, t: &RegionTerm, v: f64, g: f64) -> Result<Region, String> {
+    /// the surface where it reads `v` — in the half-plane; `lean` its `leaning`.
+    fn within(&self, t: &RegionTerm, lean: Option<&Lean>, v: f64, g: f64) -> Result<Region, String> {
         let (sk, reach, tol) = (self.sk, self.reach, self.tol);
         let plane = matches!(t.shape, RegionShape::Plane { .. });
-        if !plane && stands(sk, t).into_iter().any(|p| self.off(p) > tol) {
+        if !plane && stands(sk, t, lean).into_iter().any(|p| self.off(p) > tol) {
             return Err(match t.shape {
                 RegionShape::Ball { .. } => format!("{}'s centre is off the region's axis", what(t)),
                 RegionShape::Measured { .. } => format!("{} measures from a point off the region's axis",
                     what(t)),
                 _ => format!("{} is about a line other than the region's axis", what(t)),
             });
+        }
+        if let Some(l) = lean {
+            return self.lean_within(t, l, v, g);
         }
         if let RegionShape::Measured { .. } = t.shape {
             return self.measured_within(t, v, g);
@@ -617,6 +665,63 @@ fn lobe(near: f64, far: f64, k: f64, reach: f64) -> Region {
     steps.push(Seg::Line { a: end, b: [0.0, end[1]] });
     steps.push(Seg::Line { a: [0.0, end[1]], b: at(0.0) });
     Region::plain(vec![steps])
+}
+
+/// **A draft's lean about a whole circle** (#765): `a (distance(p, beyond) − distance(p, within))
+/// − a k · distance(p, P)` over `beyond := { q | q outside F }`, `within := { q | q inside F }` and
+/// `F`'s plane `P` (`defined::lean`, `k` the draft's tangent), `F` one circle of radius `r` about
+/// `o` and no hole — what `std.solids.Drafted`'s lean and `std.solids.Countersink` say.  The
+/// distance into `F`'s section less the distance out of it is `r − ρ`, `ρ` how far the point stands
+/// off the line through `o` along `P`'s normal `n`, and the distance from `P` is how far along that
+/// line: two straight lines in a meridian about it, which `Fold::lean_within` folds.
+struct Lean {
+    o: V,
+    n: V,
+    r: f64,
+    a: f64,
+    k: f64,
+}
+
+/// A term's `Lean`, where it is a lean about a whole circle; `None` for any other term.
+fn leaning(sk: &Sketch, t: &RegionTerm) -> Option<Lean> {
+    use crate::model::{EntKind, EntRef, Target};
+    let RegionShape::Measured { of } = &t.shape else { return None };
+    let (face, k, plane) = crate::solid::defined::lean(of)?;
+    let f = sk.faces.get(face as usize)?;
+    let frame = f.plane? as usize;
+    let [e] = f.edges.as_slice() else { return None };
+    if !f.holes.is_empty() || e.kind != EntKind::Circle || plane != EntRef::frame(frame) {
+        return None;
+    }
+    let circle = sk.circles.get(e.i())?;
+    let r = sk.params.get(circle.radius as usize)?.value;
+    let n = normalised(sk.basis(frame).normal())?;
+    // the weight of the distance into the section (`lean` holds the one out of it its negative)
+    let a = of.iter().find_map(|(x, c)| (matches!(x, Target::Set { .. }) && *c > 0.0).then_some(*c))?;
+    (r > 0.0 && r.is_finite()).then(|| Lean { o: sk.world_point(circle.center as usize), n, r, a, k })
+}
+
+/// The convex polygon `pts` (the half-plane's coordinates) where `f` is at least nothing — `f`
+/// affine, so each step crossing it is cut where it crosses.
+fn clipped(pts: Vec<[f64; 2]>, f: impl Fn([f64; 2]) -> f64) -> Vec<[f64; 2]> {
+    let n = pts.len();
+    let mut out: Vec<[f64; 2]> = Vec::new();
+    for k in 0..n {
+        let (p, q) = (pts[k], pts[(k + 1) % n]);
+        let (fp, fq) = (f(p), f(q));
+        if fp >= 0.0 {
+            out.push(p);
+        }
+        if (fp >= 0.0) != (fq >= 0.0) {
+            let s = fp / (fp - fq);
+            out.push([p[0] + s * (q[0] - p[0]), p[1] + s * (q[1] - p[1])]);
+        }
+    }
+    out.dedup();
+    if out.len() > 1 && out.first() == out.last() {
+        out.pop();
+    }
+    out
 }
 
 /// Whether a term is read only point by point: a sum of measurements, or a face's (#183).

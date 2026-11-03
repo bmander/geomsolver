@@ -265,6 +265,11 @@ it. It stays as the fast path where #699 D says so.
    curves on one sheet are roots of their rules' difference in `v`, the two planes' cuts of two
    sheets on one plane cross on the sheets' helix, and a sheet's foot starts from the ruling level
    with the point (no grid search): the build went from minutes to some 20 s a tolerance.
+   *Cut from a blank, the same way* (#699 C on #735's arrangement, `swept::closed::cut_from`): the
+   blank is the domain the candidates split, and its cells are kept where they are no member — the
+   classifier inverted, nothing else changed. The candidates that bound nothing are healed out of
+   the result's faces (`boolean::selection`), so a groove slid into a block leaves the block's faces
+   whole. Whether this or the blank-scoped sheet is the road for a given sweep is #699 D's question.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.

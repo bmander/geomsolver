@@ -355,3 +355,64 @@ fn an_l_shaped_prism_turned_is_its_blocks_sweeps_united() {
     assert!((volume(&built)-expected).abs() <= 1e-7*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
 }
+
+/// `built`, `tool`'s sweep under `path` cut from `blank`, read against the definition at seeded
+/// points of the blank's box: every settled point inside it in the blank and no member of the
+/// sweep, every one outside either out of the blank or a member.
+fn agrees_cut(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory) {
+    let (solid,body,stock) = (Solid::new(tool,0.002,1.).unwrap(),Solid::new(built,0.002,1.).unwrap(),Solid::new(blank,0.002,1.).unwrap());
+    let swept = Swept {tool:&solid,path,roll:[0.,1.]};
+    let (lo,hi) = blank.bounds();
+    let mut rng = gcs_core::rng::Rng::new(9);
+    let mut held = 0;
+    for _ in 0..200 {
+        let p: [f64;3] = std::array::from_fn(|k| rng.uniform(lo[k]-0.2,hi[k]+0.2));
+        let (d,s) = (body.signed_distance(p),stock.signed_distance(p));
+        if d.abs() < 0.01 || s.abs() < 0.01 { continue }
+        let Ok(member) = swept.member(p) else { continue };
+        assert_eq!(s < 0. && !member,d < 0.,"at {p:?}: in the blank {}, swept {member}, the cut's distance {d}",s < 0.);
+        held += 1;
+    }
+    assert!(held > 150,"{held} points held");
+}
+
+/// **A sweep cut from a blank is one arrangement** (#735 A4, #699 C: `swept::closed::cut_from`):
+/// the blank split by the sweep's candidates at once and its cells kept where they are not swept —
+/// no closed solid built and then subtracted. A bar slid along a block, sunk into its top, cuts a
+/// groove: `4 × 1 × 1` of the block's `24`, and the block's faces whole where the groove leaves
+/// them (its ends, its sides, its bottom), the top two strips: ten faces.
+#[test]
+fn a_bar_slid_along_a_block_cuts_a_groove_on_one_arrangement() {
+    use gcs_core::brep::swept::closed::cut_from;
+    let blank = block([0.;3],[4.,3.,2.]);
+    let tool = block([-3.,1.,1.],[-2.,2.,3.]);
+    let path = slide([10.,0.,0.]);
+    let cut = cut_from(&blank,&tool,&path,[0.,1.],0.002,1e-7).unwrap();
+    cut.check(1e-7).unwrap();
+    assert!((volume(&cut)-20.).abs() <= 1e-9*20.,"{}",volume(&cut));
+    assert_eq!(cut.faces.len(),10);
+    agrees_cut(&cut,&blank,&tool,&path);
+}
+
+/// **A bar turned through a disc is cut from it on one arrangement**: a bar standing beside the
+/// axis, taller than the disc, turned a quarter turn through it, takes from it the region its section
+/// sweeps (`a_bar_turned_about_a_line_along_it_closes_into_its_swept_region`'s polar integral) times
+/// the disc's thickness — apart from the build — and agrees with the definition.
+#[test]
+fn a_bar_turned_through_a_disc_is_cut_from_it_on_one_arrangement() {
+    use gcs_core::brep::build::{disc,prism};
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::{FRAC_PI_2,PI};
+    let (x,y,theta,rdisc,h) = ([2.,4.],[-0.25,0.25],FRAC_PI_2,6.,1.);
+    let blank = prism(&disc([0.;3],[0.,0.,1.],rdisc),0.,h).unwrap();
+    let tool = block([x[0],y[0],-1.],[x[1],y[1],h+1.]);
+    let path = turn([0.;3],[0.,0.,1.],theta);
+    let cut = cut_from(&blank,&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    cut.check(1e-6).unwrap();
+    let (rmin,rmax,c) = (x[0],x[1].hypot(y[1]),x[1]);
+    let gap = rmax*rmax*(c/rmax).acos()-c*(rmax*rmax-c*c).sqrt();
+    let taken = h*((x[1]-x[0])*(y[1]-y[0])+theta*(rmax*rmax-rmin*rmin)/2.+gap);
+    let expected = PI*rdisc*rdisc*h-taken;
+    assert!((volume(&cut)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&cut));
+    agrees_cut(&cut,&blank,&tool,&path);
+}

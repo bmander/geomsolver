@@ -211,8 +211,8 @@ fn fill(r: f64, l: f64) -> f64 {
     r * r * (1.0 - PI / 4.0) * l
 }
 
-/// **An operand by its whole path** ([0.201], #760): the `body` of two instances unioned into one
-/// part are two steps, `spine.body` and `hub.body`, so their faces stand apart — through 0.200
+/// **An operand by its whole path** ([0.203], #760): the `body` of two instances unioned into one
+/// part are two steps, `spine.body` and `hub.body`, so their faces stand apart — through 0.202
 /// both were `part.body` — and a round between them is written by the instances' names.
 #[test]
 fn the_bodies_of_two_instances_are_named_apart() {
@@ -260,11 +260,11 @@ fn pads(frame: bool) -> String {
         }}\n")
 }
 
-/// **A copy on the way is an index** ([0.201], #760): the `pad` of an instance a `repeat`'s copy
+/// **A copy on the way is an index** ([0.203], #760): the `pad` of an instance a `repeat`'s copy
 /// holds is `joint[k].pad` through the part, so `part.joint` names every copy's faces and
-/// `part.joint[1]` one's — through 0.200 each was `part.pad`, the copies alike — and a path that
+/// `part.joint[1]` one's — through 0.202 each was `part.pad`, the copies alike — and a path that
 /// names no face says so (W116), with the steps the part's faces are named by.  So in a frame,
-/// where the copies are one binding placed: through 0.200 a round read their faces by their
+/// where the copies are one binding placed: through 0.202 a round read their faces by their
 /// keys (`#41.0.joint.pad.cd`), which no path names, and rounded nothing.
 #[test]
 fn an_instance_a_copy_holds_is_named_by_its_index() {
@@ -287,7 +287,7 @@ fn a_copy_holds(doc: &str) {
         let got = part(&format!("{doc}part.spine round(r: 2mm) {b}\n"))["part.volume"];
         assert!((got - want).abs() < 1e-6 * want, "{b}: {got} against {want}");
     }
-    // the name through 0.200: nothing rounded, and said where the round is
+    // the name through 0.202: nothing rounded, and said where the round is
     let wrong = format!("{doc}part.spine round(r: 2mm) part.pad\n");
     let said = w116(&wrong);
     let [(line, message)] = said.as_slice() else { panic!("{said:?}") };
