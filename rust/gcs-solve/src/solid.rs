@@ -498,12 +498,20 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
 fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bool {
     let field_only = |i: usize| matches!(sk.solids[i].def, SolidDef::Swept { .. }) && !canal::is_canal(sk, i)
         || matches!(sk.solids[i].def, SolidDef::Region { .. }) && region::route(sk, i).is_ok_and(|r| r.field_only());
-    let shells: Vec<(usize, Vec<u32>)> = operands.iter().filter_map(|&i| shelled::stands_for(sk, i).map(|u| (i, u))).collect();
-    let under: std::collections::BTreeSet<usize> = shells.iter()
-        .flat_map(|(i, u)| std::iter::once(*i).chain(u.iter().map(|&x| x as usize))).collect();
+    let (shells, under) = shells_among(sk, operands);
     operands.iter().filter(|i| !under.contains(i)).any(|&i| field_only(i))
         || shells.iter().any(|(i, u)| !matches!(shelled::built(sk, *i), Some(Ok(_)))
             && (field_only(*i) || u.iter().any(|&x| field_only(x as usize))))
+}
+
+/// The shells among `operands`, each with the solids it stands for, and every solid a shell
+/// accounts for (itself and those): what `sweeps_among` and `field_only_reasons` read apart.
+fn shells_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>)
+    -> (Vec<(usize, Vec<u32>)>, std::collections::BTreeSet<usize>) {
+    let shells: Vec<(usize, Vec<u32>)> = operands.iter().filter_map(|&i| shelled::stands_for(sk, i).map(|u| (i, u))).collect();
+    let under = shells.iter()
+        .flat_map(|(i, u)| std::iter::once(*i).chain(u.iter().map(|&x| x as usize))).collect();
+    (shells, under)
 }
 
 /// **Why a solid whose boundary is the field's has no exact construction** (#762): `sweeps_among`'s
@@ -513,17 +521,18 @@ fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bo
 /// that the test did not build.
 pub(crate) fn field_only_reasons(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> Vec<String> {
     let why = |i: usize| -> Option<String> {
-        let name = sk.solid_name(i);
         match &sk.solids[i].def {
+            // read by its field where no exact build of it was made (`--png` makes one where the
+            // kernel builds it, `brep::export::supply_exact_where`)
             SolidDef::Swept { .. } if !canal::is_canal(sk, i) => Some(format!(
-                "`{name}` is a continuous motion sweep, and no exact build of it stands")),
-            SolidDef::Region { .. } => region::route(sk, i).ok()?.refusal().map(|e| format!("`{name}`: {e}")),
+                "`{}` is a continuous motion sweep, read by its field: no exact build of it was made",
+                sk.solid_name(i))),
+            SolidDef::Region { .. } => region::route(sk, i).ok()?.refusal()
+                .map(|e| format!("`{}`: {e}", sk.solid_name(i))),
             _ => None,
         }
     };
-    let shells: Vec<(usize, Vec<u32>)> = operands.iter().filter_map(|&i| shelled::stands_for(sk, i).map(|u| (i, u))).collect();
-    let under: std::collections::BTreeSet<usize> = shells.iter()
-        .flat_map(|(i, u)| std::iter::once(*i).chain(u.iter().map(|&x| x as usize))).collect();
+    let (shells, under) = shells_among(sk, operands);
     let mut out: Vec<String> = operands.iter().filter(|i| !under.contains(i)).filter_map(|&i| why(i)).collect();
     for (i, u) in &shells {
         let built = shelled::built(sk, *i);

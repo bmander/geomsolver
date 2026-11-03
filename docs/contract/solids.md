@@ -511,8 +511,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   built with no material, and a developable panel's band (whose faceting from its rulings is its
   build, #645; a body built on one carries its refusal) carry none, and a placement of a binding's representative carries its
   representative's.  A field the mesher cannot close (`FieldMeshing::Now`) is refused with the
-  build's refusal beside its own ("…; drawn from its material field because it is not built:
-  …"), the cause to fix.  Whatever writes a look at a solid from an evaluation — `solventc --png`,
+  build's refusal beside its own, in `Unbuilt`'s one wording ("…; the field's to mesh, not
+  built: …"), the cause to fix.  Whatever writes a look at a solid from an evaluation — `solventc --png`,
   `--gltf`, the faceted `--stl` — says it against the file it wrote, in `report::unbuilt_text`'s
   words ("`keeper` is drawn from its material field, not built: …"), the file still written and
   the exit unchanged, since what was asked is all there: a quick look is never read as "this

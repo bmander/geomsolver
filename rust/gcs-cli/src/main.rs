@@ -1005,12 +1005,13 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     Ok(drawn) => {
                         // an object that does not evaluate is left out, as the box leaves it, and
                         // said against the picture it is missing from: the picture is written, and
-                        // the run fails, since it is not the whole of what was asked (#614)
-                        for why in &drawn.missing { eprintln!("solventc: {path}: {why}"); }
+                        // the run fails, since it is not the whole of what was asked (#614); one
+                        // drawn from its field or its facets is in the picture, and said against it
+                        // as not built, the run not failed: an export of it is refused (#762)
+                        for why in drawn.missing.iter().chain(&drawn.unbuilt) {
+                            eprintln!("solventc: {path}: {why}");
+                        }
                         if !drawn.missing.is_empty() { code = 1; }
-                        // one drawn from its field or its facets is in the picture, and said
-                        // against it as not built: an export of it is refused (#762)
-                        for why in &drawn.unbuilt { eprintln!("solventc: {path}: {why}"); }
                         if let Err(err) = cad::output::write(path, &drawn.png) {
                             eprintln!("solventc: {err}");
                             code = 1;

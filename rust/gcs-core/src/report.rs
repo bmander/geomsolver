@@ -1815,13 +1815,7 @@ pub fn unbuilt_text(sk: &crate::model::Sketch, i: usize, u: &crate::solid::Unbui
         crate::solid::DrawnFrom::Field => "its material field",
         crate::solid::DrawnFrom::Facets => "its facet term",
     };
-    let name = sk.solids.get(i).map_or("?", |s| s.name.as_str());
-    let more = match u.more {
-        0 => String::new(),
-        1 => " (and 1 more of what it is made of, refused too)".to_string(),
-        n => format!(" (and {n} more of what it is made of, refused too)"),
-    };
-    format!("`{name}` is drawn from {from}, not built: {}{more}", u.why)
+    format!("`{}` is drawn from {from}, {u}", sk.solid_name(i))
 }
 
 /// The same immutable claim result supplies terminal and JSON reports.

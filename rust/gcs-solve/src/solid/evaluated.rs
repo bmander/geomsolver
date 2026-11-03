@@ -113,11 +113,20 @@ pub struct Unbuilt {
 
 impl Unbuilt {
     /// The first of `reasons` and how many follow it; `None` where there is none to give.
-    fn of(from: DrawnFrom, mut reasons: Vec<String>) -> Option<Unbuilt> {
-        let mut seen = BTreeSet::new();
-        reasons.retain(|r| seen.insert(r.clone()));
+    fn of(from: DrawnFrom, reasons: Vec<String>) -> Option<Unbuilt> {
         let more = reasons.len().checked_sub(1)?;
-        Some(Unbuilt { from, why: reasons.swap_remove(0), more })
+        Some(Unbuilt { from, why: reasons.into_iter().next()?, more })
+    }
+}
+
+/// The one wording of it, which every reader says it in: `not built: <why>`, and how many more.
+impl std::fmt::Display for Unbuilt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "not built: {}", self.why)?;
+        if self.more > 0 {
+            write!(f, " (and {} more of what it is made of, refused too)", self.more)?;
+        }
+        Ok(())
     }
 }
 
@@ -305,14 +314,12 @@ impl EvaluatedSolid {
             let why = Unbuilt::of(DrawnFrom::Field, super::field_only_reasons(sk, &operands));
             // a field the mesher cannot close says, beside its refusal, why it was the field's to
             // mesh: where the exact build was refused, that is the cause to fix
-            let now = sk.field_meshing.get() == FieldMeshing::Now;
-            return match Self::of_field(sk, si, policy, unit) {
-                Ok(s) => Ok(s.unbuilt_by(why)),
-                Err(e) => Err(match why.filter(|_| now) {
-                    Some(u) => format!("{e}; drawn from its material field because it is not built: {}", u.why),
+            return Self::of_field(sk, si, policy, unit, why.clone()).map_err(|e| {
+                match why.filter(|_| sk.field_meshing.get() == FieldMeshing::Now) {
+                    Some(u) => format!("{e}; the field's to mesh, {u}"),
                     None => e,
-                }),
-            };
+                }
+            });
         }
         // the exact B-rep where this kernel builds and meshes one, the facet term where it does
         // not, an empty solid among them, whose B-rep has no faces (`SOLVENT_SOLIDS=facets` asks
@@ -330,8 +337,8 @@ impl EvaluatedSolid {
                 Err(e) => Some(e),
             }
         };
-        let why = why.filter(|_| !super::sheet::is_band(sk, si));
-        let why = Unbuilt::of(DrawnFrom::Facets, why.into_iter().collect());
+        let why = why.filter(|_| !super::sheet::is_band(sk, si))
+            .map(|why| Unbuilt { from: DrawnFrom::Facets, why, more: 0 });
         let origin = WorldPoint(frame_origin(sk, si, unit));
         let csg = resolve_at(sk, si, unit, origin.0);
         let mut terms = vec![&csg.term];
@@ -415,9 +422,11 @@ impl EvaluatedSolid {
     /// for: one a host meshed elsewhere and supplied (`Sketch::supply_field`), none while the
     /// sketch leaves meshing to the host (`FieldMeshing::Deferred`), or meshed here and now to the
     /// end (`FieldMeshing::Now`) — seconds of refinement inside the call that asked.
-    fn of_field(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64) -> Result<Self, String> {
+    /// `why` it is the field's, which its surface carries (`EvaluatedSolid::unbuilt`, #762).
+    fn of_field(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64, why: Option<Unbuilt>)
+        -> Result<Self, String> {
         if let Some(surface) = sk.supplied_field(si) {
-            return Self::from_surface(sk, si, policy, unit, &surface);
+            return Self::from_surface(sk, si, policy, unit, &surface, why);
         }
         let name = sk.solid_name(si);
         match sk.field_meshing.get() {
@@ -428,7 +437,7 @@ impl EvaluatedSolid {
             FieldMeshing::Now => {
                 let surface = FieldMesher::new(sk, si)?.finish()
                     .map_err(|e| format!("`{name}`: {e}"))?;
-                Self::from_surface(sk, si, policy, unit, &surface)
+                Self::from_surface(sk, si, policy, unit, &surface, why)
             }
         }
     }
@@ -537,9 +546,10 @@ impl EvaluatedSolid {
     /// A swept solid from its field's surface (`field_mesh.rs`): the mesh stands in as one
     /// polyhedral primitive, so classification, edges and views read it as they read any other.
     /// A provisional surface may be open: what it classifies is a preview's, and it exports
-    /// nothing.
+    /// nothing.  It is not the exact build, for `why`; one a host supplied as an exact build's mesh
+    /// is that build.
     fn from_surface(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64,
-        surface: &FieldSurface) -> Result<Self, String> {
+        surface: &FieldSurface, why: Option<Unbuilt>) -> Result<Self, String> {
         if let Some(exact) = &surface.exact {
             return Self::from_exact_surface(sk, si, policy, unit, surface, exact, BTreeSet::new(), false);
         }
@@ -594,7 +604,7 @@ impl EvaluatedSolid {
             ray_indices: OnceCell::new(),
             face_edges: OnceCell::new(),
             drawn: OnceCell::new(),
-            unbuilt: None,
+            unbuilt: why,
         }))
     }
     /// **A solid from its exact B-rep's mesh, built elsewhere and supplied**
@@ -700,15 +710,6 @@ impl EvaluatedSolid {
     /// host's included, and for a solid built with no material.
     pub fn unbuilt(&self) -> Option<&Unbuilt> {
         self.shape.unbuilt.as_ref()
-    }
-    /// A fresh evaluation with `why` it is not the exact build, where it is a field's surface: one
-    /// a host supplied as an exact build's mesh is that build.
-    fn unbuilt_by(mut self, why: Option<Unbuilt>) -> Self {
-        let field = matches!(self.shape.surface, Surface::Field { .. });
-        if let (true, Some(shape)) = (field, std::rc::Rc::get_mut(&mut self.shape)) {
-            shape.unbuilt = why;
-        }
-        self
     }
     /// Whether this is a host's build of an earlier drawing, drawn until the new one arrives
     /// (#671): an object being built again.
