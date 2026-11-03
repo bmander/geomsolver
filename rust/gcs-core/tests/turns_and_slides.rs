@@ -473,15 +473,31 @@ fn a_whole_turn_grooves_the_whole_ring() {
 /// `rings_all_round::a_torus_leaning_toward_the_turns_axis_grooves_its_shadow`); and a torus slid through the rod's middle touches it
 /// all round its tube, a characteristic that closes on itself (refused so until #684 W), but at the
 /// tube's top and bottom its rings are in contact all round, square to the slide, where the
-/// characteristic branches into the groove's flat sides (S1). (A torus is no tool the closed class
-/// takes, C1, and a curved tool turned none either, so these refusals stand.)
+/// characteristic branches into the groove's flat sides (S1) — which the closed class builds (#721
+/// F2c5, a torus slid square to its axis, below). A torus turned about an axis leaning to its own
+/// is no tool the closed class takes, so the first refusal stands.
 #[test]
 fn the_turn_and_slide_rows_refuse_by_name() {
     let short = refused(admit(&turned(Lean::Across(0.),-130.,30.)));
     assert_eq!(short.condition,Condition::Clearance);
-    let closed = refused(admit(&slid(0.,0.,Wheel::Torus)));
-    assert_eq!(closed.condition,Condition::Regular,"{closed}");
-    assert!(closed.message.contains("`wheel.tube` is in contact all round a ring"),"{}",closed.message);
+}
+
+/// **A torus slid through the rod's middle grooves its shadow** (the constant-twist class's S1, the
+/// closed class's: its top and bottom rings swept within their planes, its meridians square to the
+/// slide into cylinders along it). Its axis along y, 6 from the rod's, its tube 2 about the circle
+/// of radius 6 through the rod's axis: its shadow along the slide within the rod's disc is the strip
+/// `|y| ≤ 2` toward its axis (`0 ≤ x ≤ 5`) and the half disc of radius 2 behind the rod's axis — in
+/// closed form, `2π + 4 √21 + 25 (π/2 − asin(√21/5)) − √21 · 2`, through the rod's 20.
+#[test]
+fn a_torus_slid_through_the_rods_middle_grooves_its_shadow() {
+    let e = fixtures::read(&slid(0.,0.,Wheel::Torus));
+    let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    // the strip: 4 wide to x = √21, then the disc's segment
+    let c = 21f64.sqrt();
+    let segment = |x: f64| x*(25.-x*x).max(0.).sqrt()+25.*(x/5.).asin();
+    let shadow = 2.*PI+4.*c+segment(5.)-segment(c);
+    near(exported(&e,"part"),PI*25.*20.-shadow*20.,1e-9);
 }
 
 /// **An engraving bit slid square to its axis grooves the rod by its shadow** (G5, an apex on the

@@ -72,12 +72,13 @@ fn a_lemon_slid_along_its_axis_bores_its_greatest_radius() {
     near(exported(&e,"part"),800.-16.*PI,1e-9);
 }
 
-/// What a slide along the tool's own axis still refuses: a torus, its shadow along the slide a
-/// ring from 1.5 to 3.5 about its axis, whose inner ring in contact all round sweeps a second wall,
-/// the plate's core left standing (S2; a torus is no tool the closed class takes, C1).
+/// **A torus slid along its own axis bores an annulus** (#721 F2c5): its shadow along the slide is
+/// a ring from 1.5 to 3.5 about its axis, whose inner ring in contact all round sweeps a second wall,
+/// the plate's core left standing — the constant-twist class's S2, and the closed class's: its
+/// equators swept into coaxial cylinders. The plate loses that annulus through its 4: `40π`.
 #[test]
-fn what_a_slide_along_the_tools_axis_still_refuses() {
-    let torus = refused(admit(&drawn("  private ta := point
+fn a_torus_slid_along_its_axis_bores_an_annulus() {
+    let e = fixtures::read(&drawn("  private ta := point
   private tb := point
   ta coords(du: 0mm, dv: 0mm) bench
   tb coords(du: 0mm, dv: 1mm) bench
@@ -86,10 +87,9 @@ fn what_a_slide_along_the_tools_axis_still_refuses() {
   tc coords(du: 2.5mm, dv: 2mm) bench
   private tube := circle(center: tc) hint(r: 1)
   radius(1mm) tube
-","tube")));
-    assert_eq!(torus.condition,Condition::Once);
-    assert!(torus.message.contains("the tool's shadow along the slide is no whole disc: none of it stands between 0.0000 and 1.5000"),
-        "{}",torus.message);
+","tube"));
+    let Class::Closed(_) = class(&e,"part") else { panic!("the closed class") };
+    near(exported(&e,"part"),800.-40.*PI,1e-9);
 }
 
 /// **The drill pushed through the plate beside a post** (a negative control until #721 F2c5): the

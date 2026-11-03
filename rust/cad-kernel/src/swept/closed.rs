@@ -24,6 +24,10 @@
 //!   its radius along the centre's path; each circle edge where its faces meet at an angle swept,
 //!   an oblique cylinder (the circle's disc's cylinder sheared along `D`, an affine image the
 //!   Booleans meet in the preimage's closed forms), or the circle's own plane where `D` lies in it;
+//!   a torus's face (under a slide along its axis or square to it) at both end poses, and its
+//!   contact circles swept: along its axis its equators, into coaxial cylinders; across it its top
+//!   and bottom rings, within their level planes, and its meridians square to `D`, into cylinders
+//!   along `D` (each touching the torus round its meridian, met in closed form, `ssi`);
 //! - under a turn: every face at both end poses; every edge turned; a face square to the axis, its
 //!   own plane (kept in itself, O); every other face's contact line (its points whose normal passes
 //!   through the axis; it meets the axis or runs along it) turned, over the stretch the face spans;
@@ -75,7 +79,8 @@
 //! **A convex polyhedral tool turned whole is built by another road** (`turned_whole`): its solid
 //! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — a curved
 //! face under a screw, a cylinder's or a cone's about an axis leaning to a turn's, a ball reaching
-//! across a turn's axis, a torus's or a free-form face, a curve no line or circle,
+//! across a turn's axis, a torus's under a turn or under a slide leaning to its axis, a free-form
+//! face, a curve no line or circle,
 //! a leaning edge under a screw, another motion — is refused by what it is (`Unbuilt`); those are
 //! the design's later steps.
 use crate::boolean::arrangement_within;
@@ -214,6 +219,13 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
             // turn's; a ball's along its great circle in the plane through the axis and its centre,
             // turned into a torus
             Surface::Cylinder(g,_) | Surface::Cone(g,..) if screw.is_turn() && norm(cross(g.z,screw.axis)) <= 1e-9 => {
+                round.push(k);
+                faces.push((at,[0.;3]));
+            }
+            // under a slide along a torus's axis or square to it, its contacts are whole circles: its
+            // equators along it, swept into cylinders; across it its top and bottom rings, swept
+            // into level planes, and its meridians square to the slide, swept into cylinders
+            Surface::Torus(g,..) if screw.is_slide() && (dot(g.z,screw.axis).abs() <= 1e-9 || norm(cross(g.z,screw.axis)) <= 1e-9) => {
                 round.push(k);
                 faces.push((at,[0.;3]));
             }
@@ -403,9 +415,13 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             // along itself
             for &k in &round {
                 let face = &tool.faces[k];
-                // (a ball's face over every latitude, its own points those in it: its pole on no edge)
-                let (lo,hi) = if let Surface::Sphere(..) = face.surface { (-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2) }
-                    else { rulings_span(tool,k) };
+                // (a ball's face over every latitude, its own points those in it: its pole on no edge; a
+                // torus's over every angle round its tube)
+                let (lo,hi) = match face.surface {
+                    Surface::Sphere(..) => (-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2),
+                    Surface::Torus(..) => (0.,std::f64::consts::TAU),
+                    _ => rulings_span(tool,k),
+                };
                 let points = round_points(&located,tool,k,[lo,hi]);
                 let sites_at = |m: &crate::trajectory::Pose| -> Vec<(V,V)> {
                     points.iter().map(|&x| (m.point(x),m.vector(outward(face,x)))).collect()
@@ -466,7 +482,46 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         }).collect();
                         add_cutter(Cutter::Cylinder {o:start.point(f.o),axis:dd,r,span:[0.,len]},sites);
                     }
-                    _ => unreachable!("`read` takes only cylinders, cones and balls round"),
+                    Surface::Torus(f,big,small) => {
+                        let (big,small,z) = (big.abs(),small.abs(),unit(f.z));
+                        for pose in [&start,&end] {
+                            add_cutter(Cutter::Torus {c:pose.point(f.o),axis:pose.vector(z),major:big,minor:small},sites_at(pose));
+                        }
+                        // the circle about `centre` of radius `r` square to `n`, read where it is on the
+                        // face, each site with its way out from the centre
+                        let circle = |centre: V,n: V,r: f64| -> Vec<(V,V)> {
+                            let g = Frame::about(centre,n);
+                            (0..4*SITES).flat_map(|i| {
+                                let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
+                                let w = add(scale(g.x,cp),scale(g.y,sp));
+                                let x = add(centre,scale(w,r));
+                                let on = located.face_place(k,x) != crate::query::Place::Out;
+                                poses.iter().filter(move |_| on).map(move |m| (m.point(x),w))
+                            }).collect()
+                        };
+                        let (len,dd) = (norm(d),unit(d));
+                        if norm(cross(z,dd)) <= 1e-9 {
+                            // along the axis: its equators, inner and outer, swept into coaxial cylinders
+                            let s = dot(d,z);
+                            for r in [big+small,big-small] {
+                                add_cutter(Cutter::Cylinder {o:start.point(f.o),axis:z,r,span:[s.min(0.),s.max(0.)]},circle(f.o,z,r));
+                            }
+                        } else {
+                            // across the axis: its top and bottom rings swept within their level planes
+                            for side in [1.,-1.] {
+                                let o = add(f.o,scale(z,side*small));
+                                let sites: Vec<(V,V)> = circle(o,z,big).into_iter().map(|(x,_)| (x,scale(z,side))).collect();
+                                add_cutter(Cutter::Plane((start.point(o),z)),sites);
+                            }
+                            // and its meridians square to the slide swept into cylinders along it
+                            let w = unit(cross(z,dd));
+                            for side in [1.,-1.] {
+                                let centre = add(f.o,scale(w,side*big));
+                                add_cutter(Cutter::Cylinder {o:start.point(centre),axis:dd,r:small,span:[0.,len]},circle(centre,dd,small));
+                            }
+                        }
+                    }
+                    _ => unreachable!("`read` takes only cylinders, cones, balls and tori round"),
                 }
             }
             // a circle edge swept: an oblique cylinder (the circle carried along the slide), or within

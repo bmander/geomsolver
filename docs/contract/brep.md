@@ -312,6 +312,12 @@ curvature, where an arc of five times another's radius and length read alike to 
 its end pose and the cylinders its generators turn into, in a plane square to the turn); and a
 fitted round's own small lean off tangent, read at the scale the face is drawn at, does not rule
 (`brep::a_face_rounded_from_both_edges_short_of_its_middle_keeps_a_sliver`).
+**A cylinder touching a torus round a meridian meets it there** (`ssi::tube_along_torus`): of the
+tube's radius, its axis through a point of the tube's middle circle along that circle's tangent, it
+is the ball there carried along the tangent and touches the torus round the meridian through that
+point, where it was traced and refused as nearly touching (a bull-nose mill's round at an end pose
+and the cylinder its meridian sweeps under a slide,
+`flat_faces::a_bull_nose_mill_slid_to_a_stop_inside_the_block`).
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it

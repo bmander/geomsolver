@@ -404,6 +404,14 @@ each to 1e-9; and under a turn a corner holding the axis and a cap of a tool no 
 at C3 until a plane touching a cone narrowing along its axis was met along their generator
 (`prism_twists::a_corner_holding_the_turns_axis_is_the_closed_classs`,
 `a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs`).
+**A torus under a slide** builds where the slide runs along its axis or square to it, its contacts
+whole circles: along the axis its equators, swept into coaxial cylinders; across it its top and
+bottom rings, within their level planes, and its meridians square to the slide, swept into
+cylinders along it, each touching the torus at its end poses round that meridian (`ssi`'s
+`tube_along_torus`, in closed form). A bull-nose mill slid to a stop inside a block keeps of each
+level its strip and its half disc (`flat_faces::a_bull_nose_mill_slid_to_a_stop_inside_the_block`,
+X1, the constant-twist class refusing it, to 1e-9).
+
 **A curved tool under a turn** builds by the same arrangement where its round faces stand about
 axes along the turn's, or are balls: a cylinder's or a cone's two generators in the plane through
 both axes turned (a cylinder or a cone about the turn's axis), a ball's great circle in the plane
@@ -852,8 +860,9 @@ with the field; `brep::a_net_closed_along_its_rows_is_a_tube_of_faces` (a cylind
 its rows cut four round and two along, its core π r² h); the refusals
 `closed_characteristics::what_a_closed_characteristic_still_refuses` (a whole turn, S1; screwed, S2;
 a prism aslant wholly through, S1 over a cap; a prism turned wholly within, S1 a rim's ruling) and
-`turns_and_slides::the_turn_and_slide_rows_refuse_by_name` (a torus slid through the rod's middle,
-its rings at the tube's top and bottom in contact all round, S1); and
+`turns_and_slides::the_turn_and_slide_rows_refuse_by_name`; what it refuses that the closed class
+builds, `turns_and_slides::a_torus_slid_through_the_rods_middle_grooves_its_shadow` (its rings at the
+tube's top and bottom in contact all round, S1); and
 `object_builder::a_closed_characteristic_builds_at_the_displays_samples`.
 
 **A ring in contact all round (#684 X):** under a slide along the tool's own axis, or a screw about
@@ -872,8 +881,9 @@ first column's height to the last), no fit. The native path refuses it as any cl
 characteristic. The gate is `solid_sweeps_examples::the_drill_bores_its_radius_through_a_plate`
 (`solid_sweeps/drill.sv`, `π 2² 4` within 1e-12) and `tests/rings_all_round.rs` (a drill fed as it
 turns, a screw; a lemon whose greatest radius lies within its arc; each within 1e-9), each STL
-agreeing with the field; the refusals `rings_all_round::what_a_slide_along_the_tools_axis_still_refuses`
-(a torus, S2) and `a_drill_beside_a_post_bores_its_hole` (beside a taller post, E1; the closed
+agreeing with the field; what it refuses that the closed class builds,
+`rings_all_round::a_torus_slid_along_its_axis_bores_an_annulus` (a torus, S2) and
+`a_drill_beside_a_post_bores_its_hole` (beside a taller post, E1; the closed
 class builds it); and
 `object_builder::a_ring_in_contact_all_round_builds_at_the_displays_samples`. Under a turn about an
 axis a revolved face's own meets at P, `constant_twist::rounds` reads each face and convex corner
@@ -962,7 +972,9 @@ placements between minted again over each, every minted solid keeping the one it
 (`sheet::SweptCut::read`); a refusal says the member (``its tool's member `bead2`: …``), and a
 union whose every member is a ball's tube admits nothing and builds as static material, held to
 the union's field as a swept body is. Not distributed: a union within an intersection or a cut
-(T1 refuses it, saying so), and a union of prisms under a motion keeping their plane, which
+(T1 refuses it, saying so; the closed class reads such a tool by its B-rep where it takes its faces,
+`union_tools::a_union_within_an_intersection_is_the_closed_classs`; a body whose sweeps fall to the
+closed class and another is refused at the build by name), and a union of prisms under a motion keeping their plane, which
 `planar_subtraction::asks` reads whole. The native path refuses a distributed cut by name.
 `tests/union_tools.rs` and `solid_sweeps_examples.rs` (`union.sv`) are the gate: the beads' groove
 against rows across the rod computed apart, placed and turned, against the long form, two balls'

@@ -152,6 +152,35 @@ fn a_bull_nose_mill_slid_rounds_the_slots_corners() {
     near(exported_at(&fixtures::read(&text),"part",0.001),2000.-20.*(12.-2.*(1.-PI/4.)*0.25),1e-6);
 }
 
+/// The bull-nose mill of `a_bull_nose_mill_slid_rounds_the_slots_corners`: radius 2, its corner
+/// rounded 0.5, its flat bottom at 7 in the block 10 high.
+fn bull_nose(slide: f64) -> String {
+    slid_mill(2.,0.,7.).replace("  e1 coords(du: 2mm, dv: 0mm) bench","  e1 coords(du: 1.5mm, dv: 0mm) bench\n  \
+        private k := point\n  k coords(du: 1.5mm, dv: 0.5mm) bench\n  private e5 := point\n  e5 coords(du: 2mm, dv: 0.5mm) bench")
+        .replace("  private side := line(e1, e2)","  private nose := arc(center: k, start: e1, end: e5) hint(r: 0.5)\n  radius(0.5mm) nose\n  \
+        private side := line(e5, e2)")
+        .replace("face(bottom, side, top, spindle)","face(bottom, nose, side, top, spindle)")
+        .replace("feed slides(30mm) way",&format!("feed slides({slide}mm) way"))
+}
+
+/// **A bull-nose mill slid to a stop inside the block** (#721 F2c5, a torus under a slide; X1): the
+/// mill slid 15 from x = −5, so it stops with its axis at x = 10, mid-block. The constant-twist
+/// class refuses it (it ends in the blank); the closed class builds it, its round's top and bottom
+/// rings swept within their level planes, its meridians square to the slide swept into cylinders
+/// along it (which touch the round at its end poses round those meridians), its side's rulings into
+/// their tangent planes. Apart from the build: at height `z` the mill's section is a disc of radius
+/// `ρ(z)` — 2 on the side, `1.5 + √(0.25 − (7.5 − z)²)` on the round — swept from before the block to
+/// x = 10, so the block keeps of it the strip `2ρ · 10` and the half disc `π ρ²/2`; over the depth
+/// from 7 to 10, `∫ ρ = 5.75 + π/16` and `∫ ρ² = 11.125 + 1/12 + 3π/16`.
+#[test]
+fn a_bull_nose_mill_slid_to_a_stop_inside_the_block() {
+    let e = fixtures::read(&bull_nose(15.));
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    let (r1,r2) = (5.75+PI/16.,11.125+1./12.+3.*PI/16.);
+    near(exported(&e,"part"),2000.-(20.*r1+PI/2.*r2),1e-9);
+}
+
 /// Turned about z, 10 from it, the mill's flat bottom of radius 1 sweeps the annulus from 9 to 11 in
 /// its own plane, and its side's lines nearest and farthest the axis turn to the groove's walls,
 /// cylinders: within the block's 60°, `π/6 (11² − 9²)` over the block's top millimetre.

@@ -303,7 +303,12 @@ it. It stays as the fast path where #699 D says so.
    cylinder, which its side's tangent planes touch along lines and its rims' oblique cylinders at the
    rims' silhouette points, the arrangement's touches as the turn's were. A candidate whose solid
    stands clear of the domain's box is left out of the arrangement: an end pose clear of the blank
-   is never met. The constant-twist class's curved refusals under a slide that this covers are its
+   is never met. A torus slid along its axis or square to it has whole circles of contact (its
+   equators; or its top and bottom rings and its meridians square to the slide), swept into
+   cylinders and level planes, each meridian's cylinder touching the torus round it at the end poses
+   (`ssi`'s `tube_along_torus`): a bull-nose mill slid to a stop inside a block builds to 1e-9. A
+   torus slid at a lean to its axis touches along a curve no plane holds. The constant-twist class's
+   curved refusals under a slide that this covers are its
    cases now: a hollow mill's ring bottom (G6), an engraving bit's apex (G5) and a drill beside a
    post. A torus's face (its contact under a slide a curve no plane holds, its sweep no quadric) and
    any curved face under a turn or a screw are the steps after.

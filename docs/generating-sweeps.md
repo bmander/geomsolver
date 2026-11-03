@@ -583,9 +583,11 @@ through the plate, the slot its shadow with the corners rounded to 0.5, within 2
 (the fit over the four rounds, 1.9e-5 at 0.01 mm as the bull-nose mill's slot reads there); each STL
 agrees with the field. `tests/brep.rs` cuts a cylinder's net closed along its rows into a tube of
 faces that splits a block into its core. `turns_and_slides::the_turn_and_slide_rows_refuse_by_name`'s
-torus slid through the rod's middle, refused before as a closed characteristic, is refused now
-where its rings at the tube's top and bottom are in contact all round, the characteristic
-branching (S1). Refused (`closed_characteristics::what_a_closed_characteristic_still_refuses`): the
+torus slid through the rod's middle, refused before as a closed characteristic, is refused by
+this class where its rings at the tube's top and bottom are in contact all round, the
+characteristic branching (S1) — and built by the closed class
+(`turns_and_slides::a_torus_slid_through_the_rods_middle_grooves_its_shadow`, its shadow in closed
+form, issue #721). Refused (`closed_characteristics::what_a_closed_characteristic_still_refuses`): the
 drum turned a whole turn (S1, above); screwed, its flat ends kept in no plane, so both of each
 ring's points on its side reach the blank with no flat between them (S2); a bar pushed aslant wholly through, its silhouette turning at a vertex of
 the prism to run over a cap (S1, #684 AE's row); and a small bar turned wholly within the sector,
@@ -640,7 +642,8 @@ a 118° point pushed down through a plate 4 thick, which loses `π 2² 4` to the
 (`tests/solid_sweeps_examples.rs`, within 1e-12). `tests/rings_all_round.rs` holds the drill fed
 as it turns about its axis, a screw, to the same hole, and a lemon, whose greatest radius 2 is a
 ring within its one arc, read and refined there, to the same (each within 1e-9); each STL agrees
-with the field. Refused there: a torus slid along its axis, its shadow a ring (S2), and the drill
+with the field. Refused there: a torus slid along its axis, its shadow a ring (S2), which the
+closed class builds (`rings_all_round::a_torus_slid_along_its_axis_bores_an_annulus`), and the drill
 beside a post taller than its travel (E1, a conservative refusal: the hole is the cylinder's
 there too), which the closed class builds (`rings_all_round::a_drill_beside_a_post_bores_its_hole`,
 issue #721). `tests/object_builder.rs` builds `drill.sv` at the page's samples.
@@ -965,8 +968,12 @@ any two placements'. A member refused is refused by its own row, saying so: `` `
 outside the constant-twist class (S1: …): its tool's member `bead2`: … ``.
 
 A union is its members where it is the whole tool, a union within a union, or a placement of
-one, each member placed as it is. Still refused: a union within an intersection or a cut
-(`(A ∪ B) ∩ C`, T1, which is not distributed yet); and a body that cuts a ball's tube beside a
+one, each member placed as it is. Still refused by these classes: a union within an intersection
+or a cut (`(A ∪ B) ∩ C`, T1, which is not distributed yet), which the closed class reads by its
+B-rep where its faces are ones it takes (`union_tools::a_union_within_an_intersection_is_the_closed_classs`);
+a member the closed class takes beside one another class takes, refused at the build by name
+(the two roads are not yet built in one body,
+`union_tools::a_member_its_class_refuses_is_the_closed_classs_and_not_yet_built_beside_another`); and a body that cuts a ball's tube beside a
 sweep of another class, which the static remainder does not read as either form, written as a
 union or as two cuts. A union of prisms under a motion keeping their plane is not distributed:
 the planar subtraction class reads its swept region whole (below). Only the core's kernel builds
@@ -1041,7 +1048,7 @@ asked), and its rows read the tool's B-rep and the motion's structure, not its c
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| C1 | Every face of the tool is a plane and every edge a line; under a slide, every face a plane, a cylinder, a cone or a ball and every edge a line or a circle; under a turn, every round face a cylinder or a cone about an axis along the turn's, or a ball clear of its axis, and every circle square to it. | The candidates are the planes, cylinders, cones and hyperboloids such a tool's faces and edges sweep, the helicoidal sheets of its level edges under a screw, and under a slide a round face's tangent planes along its contact rulings, a ball's cylinder and its circles' oblique cylinders; any other curved face sweeps a curved envelope, the design's later step. | A point of the curved face or edge. |
+| C1 | Every face of the tool is a plane and every edge a line; under a slide, every face a plane, a cylinder, a cone, a ball or a torus (its axis along the slide or square to it) and every edge a line or a circle; under a turn, every round face a cylinder or a cone about an axis along the turn's, or a ball clear of its axis, and every circle square to it. | The candidates are the planes, cylinders, cones and hyperboloids such a tool's faces and edges sweep, the helicoidal sheets of its level edges under a screw, and under a slide a round face's tangent planes along its contact rulings, a ball's cylinder and its circles' oblique cylinders; any other curved face sweeps a curved envelope, the design's later step. | A point of the curved face or edge. |
 | C2 | The motion is one slide, turn or screw, and under a screw every face and edge of the tool runs along its axis or square to it. | A leaning edge or face under a screw sweeps a screw surface no closed solid or sheet holds yet; any other motion is K2's. | A point of the leaning edge or face. |
 | C3 | Every cell the candidates split the blank into is read in or out of the sweep at a point clear of its boundary. | Membership is read on the tool's mesh: a point within its sag of the swept boundary is unsettled, not guessed. | The cell's deepest point. |
 

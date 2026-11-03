@@ -372,6 +372,8 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         }
         (Surface::Sphere(sp,r),Surface::Torus(t,big,small)) | (Surface::Torus(t,big,small),Surface::Sphere(sp,r))
             if let Some(circle) = ball_in_tube(&sp,r,&t,big,small,tol) => Ssi::Curves(vec![circle]),
+        (Surface::Cylinder(cy,r),Surface::Torus(t,big,small)) | (Surface::Torus(t,big,small),Surface::Cylinder(cy,r))
+            if let Some(circle) = tube_along_torus(&cy,r,&t,big,small,tol) => Ssi::Curves(vec![circle]),
         (Surface::Plane(_),Surface::Sphere(..)) | (Surface::Sphere(..),Surface::Plane(_)) => {
             let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Sphere(c,r) = sp else { unreachable!() };
@@ -508,6 +510,21 @@ fn ball_in_tube(sp: &Frame,r: f64,t: &Frame,big: f64,small: f64,tol: f64) -> Opt
     if dot(rel,z).abs() > tol || (rho-big.abs()).abs() > tol || (r.abs()-small.abs()).abs() > tol || rho <= tol { return None }
     let w = scale(w,1./rho);
     Some(Curve::Circle(Frame::new(sp.o,cross(z,w),w),r.abs()))
+}
+
+/// **A cylinder touching a torus round a meridian**: of the tube's radius, its axis through a point
+/// of the tube's middle circle along that circle's tangent there, the cylinder is the ball there
+/// carried along the tangent, and touches the torus round the meridian through that point (a torus
+/// at an end pose of a slide square to its axis, and the cylinder its meridian sweeps, #721 X6). The
+/// meridian, or none for any other cylinder.
+fn tube_along_torus(cy: &Frame,r: f64,t: &Frame,big: f64,small: f64,tol: f64) -> Option<Curve> {
+    let (z,a) = (unit(t.z),unit(cy.z));
+    if (r.abs()-small.abs()).abs() > tol || dot(a,z).abs() > 1e-9 { return None }
+    // where the cylinder's axis passes nearest the torus's centre
+    let foot = add(cy.o,scale(a,dot(sub(t.o,cy.o),a)));
+    let rel = sub(foot,t.o);
+    if dot(rel,z).abs() > tol || (norm(rel)-big.abs()).abs() > tol || dot(unit(rel),a).abs() > 1e-9 { return None }
+    Some(Curve::Circle(Frame::new(foot,a,unit(rel)),r.abs()))
 }
 
 /// The radius of a cylinder or a cone at height `h` along its own axis from its frame's origin.
