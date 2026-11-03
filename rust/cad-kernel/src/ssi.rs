@@ -648,6 +648,9 @@ fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
     let (blend,other) = match (a,b) { (Surface::Blend(_,x),o) | (o,Surface::Blend(_,x)) => (x,o),_ => return None };
     let sheet = if matches!(a,Surface::Blend(..)) { a } else { b };
     if let Some(curves) = screwed_circle_meeting(sheet,blend,other,tol) { return Some(curves) }
+    if let Surface::Sphere(sp,r) = other { if let Some(circle) = pipe_end(blend,sp.o,r.abs(),tol) {
+        return Some(vec![circle]) } }
+    if let Surface::Cylinder(cy,r) = other { if let Some(curves) = screwed_circle_round(blend,cy,r.abs(),tol) { return Some(curves) } }
     let line = blend.screwed_line()?;
     let (o,z,a0,run) = (line.centre,line.axis,line.p0,line.run);
     let perp = |x: V| sub(x,scale(z,dot(x,z)));
@@ -736,6 +739,71 @@ fn screwed_overlap(a: &super::geom::Blend,b: &super::geom::Blend,tol: f64) -> Op
     let (lo1,hi1) = (a1.min(0.),a1.max(0.));
     let (lo2,hi2) = (a2.min(0.)-turn,a2.max(0.)-turn);
     Some(hi1.min(hi2)-lo1.max(lo2))
+}
+
+/// **The sheet any circle screws into meets a cylinder about the screw's axis in helices** (#721
+/// F2c5: a ball's great circle square to its centre's velocity, leaning wherever the screw climbs):
+/// the screw keeps each point's distance from its axis, so the meeting is the helices of the
+/// circle's points at the cylinder's radius, the roots of `|ρ(θ)|² − R²` round the circle — a
+/// trigonometric polynomial of degree two, four roots at most — found where it changes sign and,
+/// where it only touches nought (the circle tangent to the cylinder), at its least. `None` for
+/// any other sheet or cylinder.
+fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy: &Frame,big: f64,tol: f64) -> Option<Vec<Curve>> {
+    let super::geom::Carry::Screw {center,axis,..} = blend.carry else { return None };
+    let k = unit(axis);
+    if norm(cross(unit(cy.z),k)) > 1e-12 { return None }
+    let perp = |x: V| sub(x,scale(k,dot(x,k)));
+    if norm(perp(sub(cy.o,center))) > tol { return None }
+    let (Curve::Circle(f,r),Curve::Circle(..)) = (&blend.a,&blend.b) else { return None };
+    let same = |q: V,p: V| norm(sub(q,p)) <= 1e-9*(1.+norm(p));
+    let span = blend.ta[1]-blend.ta[0];
+    if !(0..3).all(|i| same(blend.b.point(blend.tb[0]+(blend.tb[1]-blend.tb[0])*i as f64/2.),blend.a.point(blend.ta[0]+span*i as f64/2.))) { return None }
+    let r = r.abs();
+    let g = |th: f64| { let (sn,cs) = th.dsin_cos(); let d = perp(sub(add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))),center)); dot(d,d)-big*big };
+    let u_of = |th: f64| { let t = blend.ta[0]+(th-blend.ta[0]).rem_euclid(std::f64::consts::TAU); (t-blend.ta[0])/span };
+    const N: usize = 512;
+    let tau = std::f64::consts::TAU;
+    let ths: Vec<f64> = (0..=N).map(|i| tau*i as f64/N as f64).collect();
+    let gs: Vec<f64> = ths.iter().map(|&t| g(t)).collect();
+    let mut roots: Vec<f64> = Vec::new();
+    for i in 0..N {
+        let (a,b) = (ths[i],ths[i+1]);
+        if gs[i] == 0. { roots.push(a); continue }
+        if gs[i]*gs[i+1] < 0. {
+            let (mut lo,mut hi) = (a,b);
+            for _ in 0..100 { let m = 0.5*(lo+hi); if (g(m) < 0.) == (gs[i] < 0.) { lo = m } else { hi = m } }
+            roots.push(0.5*(lo+hi));
+        }
+    }
+    // where it only touches nought: a least of `|g|` within the tolerance, between two greater
+    for i in 1..N {
+        let (p,q,n) = (gs[i-1].abs(),gs[i].abs(),gs[i+1].abs());
+        if !(q <= p && q <= n) || gs[i-1]*gs[i+1] < 0. || gs[i-1]*gs[i] < 0. || gs[i]*gs[i+1] < 0. { continue }
+        let (mut lo,mut hi) = (ths[i-1],ths[i+1]);
+        for _ in 0..100 {
+            let (m1,m2) = (lo+(hi-lo)/3.,hi-(hi-lo)/3.);
+            if g(m1).abs() < g(m2).abs() { hi = m2 } else { lo = m1 }
+        }
+        let th = 0.5*(lo+hi);
+        if g(th).abs() <= 2.*big*tol && !roots.iter().any(|&x| (x-th).abs()*r <= tol) { roots.push(th) }
+    }
+    Some(roots.into_iter().map(|th| Curve::Iso(blend.clone(),u_of(th))).collect())
+}
+
+/// **A ball touching the pipe its great circle screws into, round that circle** (#721 F2c5: a ball
+/// under a screw touches round its great circle square to its centre's velocity, which the screw
+/// carries into the helical pipe about its centre's path; the ball at either end pose touches the
+/// pipe round the circle there). The blend of a circle and itself carried by a screw, and a ball of
+/// its radius about the circle's centre carried to the blend's start or end: that circle, or none.
+fn pipe_end(blend: &super::geom::Blend,centre: V,r: f64,tol: f64) -> Option<Curve> {
+    let super::geom::Carry::Screw {..} = blend.carry else { return None };
+    let (Curve::Circle(f,rad),Curve::Circle(..)) = (&blend.a,&blend.b) else { return None };
+    if (rad.abs()-r).abs() > tol { return None }
+    let same = |q: V,p: V| norm(sub(q,p)) <= 1e-9*(1.+norm(p));
+    let span = blend.ta[1]-blend.ta[0];
+    if !(0..3).all(|i| same(blend.b.point(blend.tb[0]+(blend.tb[1]-blend.tb[0])*i as f64/2.),blend.a.point(blend.ta[0]+span*i as f64/2.))) { return None }
+    [0.,1.].into_iter().find(|&v| norm(sub(blend.carry.at(f.o,v),centre)) <= tol).map(|v|
+        Curve::Circle(Frame::new(blend.carry.at(f.o,v),blend.carry.dir(f.z,v),blend.carry.dir(f.x,v)),r))
 }
 
 /// **Where the sheet a level circle screws into meets a surface the screw's axis runs along**, in

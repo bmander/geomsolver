@@ -480,7 +480,9 @@ its candidate — a round tool's rim under a screw, helical milling:
 `a_drum_screwed_across_a_ring_sector_bores_its_helical_groove`, each to its helical-coordinate
 volume and the membership test; through the drawing,
 `closed_characteristics::the_drum_screwed_bores_its_helical_groove`, its STL agreeing with the
-field)
+field; or balls alone among its round faces, each touching round its great circle square to its
+centre's velocity, screwed into the pipe about the centre's helix, `Cutter::Pipe`:
+`swept_closed::a_ball_screwed_closes_into_the_pipe_about_its_centres_helix`, Weyl's tube to 1e-9)
 and C2 (one slide, turn or screw; under a screw every face and edge along its
 axis or square to it) read the tool's B-rep and the lowered trajectory in millimetres, before
 anything is built (`brep::swept::closed::reads`, its refusals `Unbuilt::Curved {at}` and

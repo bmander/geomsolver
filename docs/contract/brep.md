@@ -357,6 +357,13 @@ curve where two surfaces all but touch by more than the projection could recover
 branch of their meeting — a branch leaving a point where three surfaces touch pairwise read on the
 wrong side of the circle it leaves along, and a piece of the arrangement lost
 (`swept_closed::two_tori_touching_and_a_plane_on_both_hold_every_piece`).
+**A ball's pipe under a screw meets in closed form** what touches it: the ball at either end pose
+round the great circle there (`ssi`'s `pipe_end`), and a cylinder about the screw's axis in the
+helices of the circle's points at its radius, the roots of a trigonometric polynomial of degree two
+round the circle, a touch where it only reaches nought (`screwed_circle_round`). **An edge's flux
+settles** (`props`'s `settled`): read over its pieces, then twice as many, until two readings agree
+to rounding, the coarser kept — a ball's great circle passing within a few degrees of a pole sweeps
+half a turn of `u` there, and a sixteenth of a turn a piece left a ball's piece 0.2% off its area.
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it

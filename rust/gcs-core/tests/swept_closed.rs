@@ -849,3 +849,23 @@ fn a_bull_nose_turned_about_an_axis_along_its_own_closes_into_its_sweep() {
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
 }
+
+
+/// **A ball screwed closes into the pipe about its centre's helix** (#721 F2c5, a ball under a
+/// screw): a ball of radius 1 standing 10 from a screw's axis, turned 1.5 rad while it climbs half a
+/// unit a radian. It touches round its great circle square to its centre's velocity, which the
+/// screw carries into the pipe about its centre's helix (`Cutter::Pipe`, the disc there screwed),
+/// and at each end pose the ball touches the pipe round that circle (`ssi`'s `pipe_end`). Apart from
+/// the build: a tube about a curve is its section times the curve's length, here the helix's
+/// `Θ √(d² + k²)`, and the two half balls at its ends a ball: `4π/3 + π Θ √(d² + k²)`.
+#[test]
+fn a_ball_screwed_closes_into_the_pipe_about_its_centres_helix() {
+    use std::f64::consts::{PI,TAU};
+    let (r,d,theta,k) = (1.,10.,1.5,0.5);
+    let tool = gcs_core::brep::build::sphere([d,0.,0.],[0.,0.,1.],r).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance:TAU*k*theta});
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = 4./3.*PI*r*r*r+PI*r*r*theta*(d*d+k*k).sqrt();
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}

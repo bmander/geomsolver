@@ -417,11 +417,18 @@ recorded above with what was tried:
   about an axis along the screw's touches where `ω cos β (n·(k × d)) = τ sin β` on each ring — the
   same angle on every ring, so along two of its rulings, turned off the plane through both axes by
   `asin(τ tan β / (ω |d|))`: lines leaning to the screw's axis, whose sheets are the leaning edge's
-  (the first gap). A ball touches round its great circle square to its centre's velocity, which
-  leans to the axis wherever the screw climbs: that circle screwed is the helical pipe its centre's
-  helix carries, touching the ball at either end pose round that circle, and a ball-ended tool's
-  side along the helices of its equator's points — each touch wanting its closed form as the drum's
-  did. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
+  (the first gap). *A ball screwed is built*: it touches round its great circle square to its
+  centre's velocity, which leans to the axis wherever the screw climbs; that circle screwed is the
+  pipe about its centre's helix (`Cutter::Pipe`), touching the ball at either end pose round that
+  circle (`ssi`'s `pipe_end`), and a ball screwed 1.5 rad is Weyl's tube and a ball to 1e-15 — once
+  an edge's flux settles (`props`'s `settled`: the great circle passing beside the ball's pole had
+  left its piece 0.2% off). A ball-end mill screwed (a ball under a cylinder) is the step after: its
+  pipe touches the cylinders the side's lines screw into along the helices of the ball's equator,
+  in closed form (`screwed_circle_round`), but each such helix starts on the rim of the cylinder's
+  candidate — a crossing at 0.06 rad a sampled edge–sheet search placed 0.01 off — and a candidate
+  run past the rim leaves a cusp-thin cell between pipe and cylinder whose reading went wrong
+  through a ring sector (14.4 removed against 12.0, though a box built it to 1e-14). It waits on
+  an exact meeting of an edge with the pipe, and on cells along a touch read right. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
   round its two meridians in the plane through both axes, turned into tori about the turn's, and
   round its top and bottom rings, kept in their planes. The torus at an end pose and a meridian's
   torus touch round that meridian and cross beside it — in each level both are two circles about

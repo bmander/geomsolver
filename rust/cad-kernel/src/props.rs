@@ -37,6 +37,26 @@ fn gauss(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
     sum*h/2.
 }
 
+/// `gauss` over `pieces`, then twice as many, until two readings agree to rounding (or `SETTLE`
+/// doublings): an edge's integrand runs smooth along it only as fast as its curve in the face's
+/// parameters does, and a circle on a ball passing beside a pole sweeps half a turn of `u` within a
+/// few degrees of its own (a ball at an end pose of a screw, its great circle square to the helix).
+fn settled(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
+    let (mut n,mut last) = (pieces,gauss(a,b,pieces,f));
+    for _ in 0..SETTLE {
+        n *= 2;
+        let next = gauss(a,b,n,f);
+        // (the coarser reading kept where the finer agrees with it: a face read well at its first
+        // pieces is read as it always was, to the bit)
+        if (next-last).abs() <= 1e-13*next.abs().max(1e-300) { return last }
+        last = next;
+    }
+    last
+}
+
+/// How many times `settled` doubles an edge's pieces at most.
+const SETTLE: usize = 6;
+
 /// Pieces for an angle-like span, a sixteenth of a turn each.
 fn pieces(span: f64,periodic: bool) -> usize {
     if periodic { ((span.abs()/(std::f64::consts::PI/8.)).ceil() as usize).max(1) } else { 4 }
@@ -210,7 +230,7 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
                     cuts.push(e.t[1]);
                     let each = if let EdgeCurve::Curve(Curve::Traced(_)) = &e.curve { 1 } else { 2 };
                     cuts.windows(2).map(|w| gauss(w[0],w[1],each,&mut integrand)).sum()
-                } else { gauss(e.t[0],e.t[1],pieces(span,periodic),&mut integrand) };
+                } else { settled(e.t[0],e.t[1],pieces(span,periodic),&mut integrand) };
                 row.push((if c.reversed { -line } else { line },0.));
             }
             // the loop closed in the face's parameters, each use's end joined straight to the next's

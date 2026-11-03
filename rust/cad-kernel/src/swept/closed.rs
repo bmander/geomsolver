@@ -142,6 +142,10 @@ enum Cutter { Plane(Plane),
     /// The disc of radius `r` about `c` square to the screw's axis, screwed over the roll: the solid
     /// a round tool's rim sweeps under a screw, its side the sheet the rim screws into.
     ScrewedDisc { c: V,r: f64 },
+    /// The disc of radius `r` about `c` square to the unit `n` screwed over the roll: the solid a
+    /// ball's great circle square to its centre's velocity sweeps under a screw, its side the pipe
+    /// about the centre's helix.
+    Pipe { c: V,n: V,r: f64 },
     /// The ball of radius `r` about `c`, its poles on the unit `axis` (a ball's face at an end
     /// pose, its poles where the tool's are).
     Ball { c: V,axis: V,r: f64 },
@@ -238,7 +242,12 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
                 round.push(k);
                 faces.push((at,[0.;3]));
             }
-            Surface::Sphere(..) if screw.is_turn() => {
+            // a ball's under a turn along its great circle in the plane through the axis and its
+            // centre; under a screw along its great circle square to its centre's velocity, screwed
+            // into the pipe about its centre's helix (a ball alone among round faces: beside a side
+            // the pipe touches along the helices of the ball's equator, not yet held)
+            Surface::Sphere(..) if screw.is_turn() || !screw.is_slide()
+                && tool.faces.iter().all(|g| matches!(g.surface,Surface::Sphere(..) | Surface::Plane(_))) => {
                 round.push(k);
                 faces.push((at,[0.;3]));
             }
@@ -606,7 +615,8 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         // the sheet's normal: square to the line and to the screw's velocity there (which
                         // the screw carries as it carries the normal)
                         Cutter::Screwed {e,..} => unit(cross(e,screw.velocity(x))),
-                        Cutter::Oblique {..} | Cutter::Ball {..} | Cutter::Torus {..} | Cutter::ScrewedDisc {..} => unreachable!("a line turns into none of these"),
+                        Cutter::Oblique {..} | Cutter::Ball {..} | Cutter::Torus {..} | Cutter::ScrewedDisc {..} | Cutter::Pipe {..} =>
+                            unreachable!("a line turns into none of these"),
                     };
                     poses.iter().map(move |m| (m.point(x),m.vector(normal)))
                 }).collect()
@@ -690,6 +700,23 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                             if located.face_place(k,face.surface.point([u,0.5*(lo+hi)])) == crate::query::Place::Out { continue }
                             if let Some(cutter) = turned(p,sub(q,p),q) { add_cutter(cutter,line_sites(p,q,cutter)) }
                         }
+                    }
+                    Surface::Sphere(f,r) if !screw.is_turn() => {
+                        let r = r.abs();
+                        for pose in [&start,&end] {
+                            add_cutter(Cutter::Ball {c:pose.point(f.o),axis:pose.vector(f.z),r},sites_at(pose));
+                        }
+                        // its great circle square to its centre's velocity, screwed: the pipe
+                        let n = unit(screw.velocity(f.o));
+                        let g = Frame::about(f.o,n);
+                        let sites: Vec<(V,V)> = (0..4*SITES).flat_map(|i| {
+                            let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
+                            let w = add(scale(g.x,cp),scale(g.y,sp));
+                            let x = add(f.o,scale(w,r));
+                            let on = located.face_place(k,x) != crate::query::Place::Out;
+                            poses.iter().filter(move |_| on).map(move |m| (m.point(x),m.vector(w)))
+                        }).collect();
+                        add_cutter(Cutter::Pipe {c:f.o,n,r},sites);
                     }
                     Surface::Sphere(f,r) => {
                         let r = r.abs();
@@ -858,6 +885,11 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 let first = pose_at(a)?;
                 let rate = screw.advance/std::f64::consts::TAU;
                 solids.push(crate::build::screwed(&disc(first.point(c),screw.axis,r),screw.origin,screw.axis,screw.ratio*(b-a),rate*(b-a))?)
+            }
+            Cutter::Pipe {c,n,r} => {
+                let first = pose_at(a)?;
+                let rate = screw.advance/std::f64::consts::TAU;
+                solids.push(crate::build::screwed(&disc(first.point(c),first.vector(n),r),screw.origin,screw.axis,screw.ratio*(b-a),rate*(b-a))?)
             }
             Cutter::Torus {c,axis,major,minor} => solids.push(crate::build::torus(c,axis,major,minor)?),
             Cutter::Oblique {c,a,r,d} => {
