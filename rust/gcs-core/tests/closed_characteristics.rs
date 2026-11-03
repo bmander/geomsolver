@@ -93,26 +93,18 @@ fn the_drum_turned_a_whole_turn_bores_the_whole_ring() {
 /// heights it covers are its own height and twice its half-width in angle there, `a(ρ)`, times the
 /// pitch `k = 0.5/2π`: within the sector's heights, `π/3 ∫ ρ (1 + 2k a(ρ)) dρ = π/3 (20 + k π)`.
 /// The kernel's own gate holds the same cut to the membership test
-/// (`swept_closed::a_drum_screwed_across_a_ring_sector_bores_its_helical_groove`). Its STL is still
-/// refused by name: the groove's floor folds against its wall over a ramp thinner than the bar, a
-/// fold no chart of the rim's sheet the mesher reads it by orients its triangles across (F4).
+/// (`swept_closed::a_drum_screwed_across_a_ring_sector_bores_its_helical_groove`); its STL agrees with
+/// the field, the groove's floor folding against its wall over a ramp thinner than the bar meshed by
+/// the wall's chords halved where the triangles beside them turned (`mesh::mesh_with`).
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: a drum's screwed rims through a sector")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: a drum's screwed rims through a sector")]
 fn the_drum_screwed_bores_its_helical_groove() {
-    use gcs_core::brep::{export,props,sweep::Say};
     let screwed = turned_drum().replace("use std.motion (turns)","use std.motion (screws)").replace("swing turns(1) ax","swing screws(0.5mm) ax");
     let e = fixtures::read(&screwed);
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
     assert_eq!(found.kind(),"a screw");
-    let (sk,body) = (&e.sketch,fixtures::solid(&e,"part"));
-    let tolerance = Some(gcs_core::solid::export::Tolerance::new(0.01).unwrap());
-    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
-    let exact = export::exact(sk,body,None,tolerance,&say).unwrap();
-    exact.solid.check(1e-6).unwrap();
     let k = 0.5/std::f64::consts::TAU;
-    near(props::volume(&exact.solid),PI/3.*80.-PI/3.*(20.+k*PI),1e-8);
-    let refused = export::stl(sk,body,&exact,tolerance,&say).unwrap_err();
-    assert!(refused.message.contains("triangles facing against their surfaces"),"{refused}");
+    near(exported(&e,"part"),PI/3.*80.-PI/3.*(20.+k*PI),1e-8);
 }
 
 /// The square bar pushed square to its length keeps its section's plane: planar subtraction's.

@@ -409,10 +409,11 @@ recorded above with what was tried:
   of one circle's sheet two leads apart read as one surface and each other's edges laid on the
   other, and a sampled search for a ray's crossings missing one of the two a ramp a hundredth of a
   millimetre thick makes — a solid's point location wrong at seven of 400 points about it, and a
-  cell kept or dropped so. Its STL is refused by name: where the rim's farthest and nearest points
-  run along the screw the ramp folds against the wall its side sweeps over a radius of about a
-  tenth of a micrometre, and a chord of the wall's helix a mesh takes at the bar sags across the
-  fold, so the triangles beside it face against the sheet (F4). Cones and balls under a screw (their
+  cell kept or dropped so. Where the rim's farthest and nearest points run along the screw the ramp
+  folds against the wall its side sweeps over a radius of about a tenth of a micrometre, and a chord
+  of the wall's helix a mesh takes at the bar sags across the fold, so the triangles beside it
+  faced against the sheet: the mesher now halves the chords such triangles stand on and meshes
+  again, and the drawn drum's STL agrees with the field. Cones and balls under a screw (their
   contacts curves on them, swept into sheets with no closed form) are the step after;- **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
   has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
 

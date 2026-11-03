@@ -458,6 +458,22 @@ fn the_drum_turned_partway_stops_inside_the_ring() {
     near(exported(&e,"block"),PI/3.*80.-crate::closed_class::drum_turned_partway_away(),1e-9);
 }
 
+/// `helical_groove.sv` (the closed class, a round tool screwed: helical milling): the drum of
+/// `stopped_drum.sv` screwed half a millimetre a turn from −140° to 140°, wholly across the sector.
+/// The constant-twist class refuses it (its flat ends keep no plane, S2); the closed class cuts it
+/// from the ring on one arrangement, its side's generators screwed into cylinders about the axis and
+/// each rim's disc into the ramp it sweeps. The ring loses `π/3 (20 + k π)`, `k = 0.5/2π`, to 1e-8:
+/// the sector's planes through the axis cut the rims' ramps in traced closed-form points.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: a drum's screwed rims through a sector")]
+fn the_drum_screwed_mills_a_helical_groove() {
+    let e = example("helical_groove.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a screw");
+    let k = 0.5/std::f64::consts::TAU;
+    near(exported(&e,"block"),PI/3.*80.-PI/3.*(20.+k*PI),1e-8);
+}
+
 /// `stopped_turn.sv` (the closed class, X1): an upright bar turned from −140° to 30°, halfway into
 /// the sector. The constant-twist class refuses it (it ends in the blank); the closed class cuts it
 /// from the ring on one arrangement, its end pose's faces among the candidates. The ring loses each

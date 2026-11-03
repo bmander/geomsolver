@@ -56,7 +56,7 @@ const projects: Example[] = [{
     + 'through a plate, its widest ring touching all round and boring the cylinder of its radius, '
     + 'a pin swung along a radius of the turn, its end\'s rim touching all round on a sphere, '
     + 'a square bar and a drum plunged aslant partway into a plate, a bar and a drum turned partway '
-    + 'into a ring sector and '
+    + 'into a ring sector, a drum screwed across it milling a helical groove and '
     + 'a square thread stopped short, each cut on one arrangement of every face its boundary can lie on, '
     + 'a rack rolling a gear\'s '
     + 'tooth space, a drafted rack '

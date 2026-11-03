@@ -473,8 +473,8 @@ its candidate — a round tool's rim under a screw, helical milling:
 `a_drum_screwed_a_short_lead_through_most_of_a_turn_closes`,
 `a_drum_screwed_across_a_ring_sector_bores_its_helical_groove`, each to its helical-coordinate
 volume and the membership test; through the drawing,
-`closed_characteristics::the_drum_screwed_bores_its_helical_groove`, whose STL is refused by name
-where the groove's floor folds against its wall over a ramp thinner than the bar, F4)
+`closed_characteristics::the_drum_screwed_bores_its_helical_groove`, its STL agreeing with the
+field)
 and C2 (one slide, turn or screw; under a screw every face and edge along its
 axis or square to it) read the tool's B-rep and the lowered trajectory in millimetres, before
 anything is built (`brep::swept::closed::reads`, its refusals `Unbuilt::Curved {at}` and

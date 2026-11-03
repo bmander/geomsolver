@@ -429,7 +429,13 @@ outer loop, #597) is one corner of its triangulation. An edge is sampled from fi
 midpoint test can be blind to: a B-spline's knot spans, a family rail's pieces, a screwed rail a
 quarter turn at most (`edge_params`; a coil of four turns has its ends, middle and quarter
 points in one line, and was one chord). `Mesh::turned` counts facets facing against their
-surface (thicker than bar/100); the export refuses any.
+surface (thicker than bar/100); the export refuses any. A face whose facets beside an edge face
+against it — a sheet folding along that edge tighter than the edge's chords sag, which no point
+inside the face can mend (a round rim screwed a short lead, its ramp folding against the wall its
+side sweeps over about a tenth of a micrometre) — asks the chords those facets stand on halved, and
+the faces are meshed again with the edges so sampled, up to `TURNED_ROUNDS` times
+(`closed_characteristics::the_drum_screwed_bores_its_helical_groove`, its STL agreeing with the
+field).
 **Phase 2 (the pattern ours):** `brep::pattern` turns a one-sector body into the whole (the
 kernel's union is never made): sides matched by a pitch's turn, revolution faces keep the sector's
 surface with pcurves shifted along `u`, pieces of one surface across a side become one face, a ring

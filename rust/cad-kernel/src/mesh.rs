@@ -493,6 +493,10 @@ fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)]) -> Vec<(usize,f
     out
 }
 
+/// How many times a mesh's faces are meshed again with the chords their turned triangles stand on
+/// halved (`mesh_with`).
+const TURNED_ROUNDS: usize = 6;
+
 /// How much a straight parameter's scale is shrunk (`straight`).
 const STRAIGHT: f64 = 1e-3;
 
@@ -586,8 +590,14 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
     // each face side by side: its new points, its triangles (a new point's id marked `NEW`, its
     // place among them), its sag
     const NEW: u32 = 1<<31;
-    let faces = crate::util::par::indices(b.faces.len(),|fi| -> Result<(Vec<V>,Vec<[u32;3]>,f64,usize),String> {
-        if !kept(fi) { return Ok((Vec::new(),Vec::new(),0.,0)) }
+    // a face whose triangles beside an edge come out turned against it (a sheet folding along the
+    // edge tighter than the edge's chord sags: a round rim screwed a short lead, against the wall its
+    // side sweeps) asks that edge's chords there halved, and every face is meshed again, a few times
+    // at most
+    let mut rounds = 0;
+    let faces = loop {
+    let faces = crate::util::par::indices(b.faces.len(),|fi| -> Result<(Vec<V>,Vec<[u32;3]>,f64,usize,Vec<(usize,f64)>),String> {
+        if !kept(fi) { return Ok((Vec::new(),Vec::new(),0.,0,Vec::new())) }
         let f = &b.faces[fi];
         // the loops' corners: their places in the face's scaled, oriented parameters and their ids
         let mut pts: Vec<[f64;2]> = Vec::new();
@@ -595,12 +605,15 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let mut ids: Vec<u32> = Vec::new();
         let mut loops: Vec<Vec<usize>> = Vec::new();
         let mut raw: Vec<Vec<(Uv,u32)>> = Vec::new();
+        // each sample's place on the edges it is on: an edge's and its index along it
+        let mut on_edges: std::collections::BTreeMap<u32,Vec<(usize,usize)>> = std::collections::BTreeMap::new();
         for l in &f.loops {
             let mut run = Vec::new();
             for c in l {
                 let e = &b.edges[c.edge as usize];
                 let (ts,is) = &samples[c.edge as usize];
                 let mut these: Vec<(Uv,u32)> = ts.iter().zip(is).map(|(&t,&i)| (c.pcurve.at(t,e,&f.surface,&b.vertices),i)).collect();
+                for (k,&i) in is.iter().enumerate() { on_edges.entry(i).or_default().push((c.edge as usize,k)); }
                 if c.reversed { these.reverse(); }
                 run.extend_from_slice(&these[..these.len()-1]);
             }
@@ -735,7 +748,7 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         }
         let worst = (0..t2.tris.len()).filter(|&t| inside[t]).map(|t| sag[t]).fold(0.,f64::max);
         let facing = |v: u32| { let v = v as usize; if v < n { uvs[v] } else { unplace(t2.pts[v]) } };
-        let turned = (0..t2.tris.len()).filter(|&ti| inside[ti] && {
+        let turned_tris: Vec<usize> = (0..t2.tris.len()).filter(|&ti| inside[ti] && {
             let [ua,ub,uc] = t2.tris[ti].map(facing);
             let (pa,pb,pc) = (f.surface.point(ua),f.surface.point(ub),f.surface.point(uc));
             let (_,su,sv) = f.surface.d1([(ua[0]+ub[0]+uc[0])/3.,(ua[1]+ub[1]+uc[1])/3.]);
@@ -747,7 +760,24 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
             let longest = distance(pa,pb).max(distance(pb,pc)).max(distance(pc,pa));
             let o = dot(nf,cross(su,sv));
             norm(nf) > 0.1*bar*longest && if f.reversed { o > 0. } else { o < 0. }
-        }).count();
+        }).collect();
+        let turned = turned_tris.len();
+        // the chords of the face's edges those triangles stand on, each to be halved
+        let mut splits: Vec<(usize,f64)> = Vec::new();
+        for &ti in &turned_tris {
+            let t = t2.tris[ti];
+            for k in 0..3 {
+                let (a,z) = (t[k] as usize,t[(k+1)%3] as usize);
+                if a >= n || z >= n { continue }
+                let (Some(ea),Some(ez)) = (on_edges.get(&ids[a]),on_edges.get(&ids[z])) else { continue };
+                for &(e,i) in ea { for &(e2,j) in ez {
+                    if e != e2 || i.abs_diff(j) != 1 { continue }
+                    let ts = &samples[e].0;
+                    let mid = 0.5*(ts[i]+ts[j]);
+                    if !splits.contains(&(e,mid)) { splits.push((e,mid)) }
+                } }
+            }
+        }
         // the new points, and the triangles (the three corners of the triangle about them all come
         // after the face's own, and are never inside)
         let first_new = n+3;
@@ -779,10 +809,22 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         }
         let id = |v: u32| if (v as usize) < n { ids[v as usize] } else { renamed[v as usize-first_new] };
         let tris = t2.tris.iter().zip(&inside).filter(|x| *x.1).map(|(t,_)| t.map(id)).collect();
-        Ok((new_pts,tris,worst,turned))
+        Ok((new_pts,tris,worst,turned,splits))
     });
+    let faces: Vec<(Vec<V>,Vec<[u32;3]>,f64,usize,Vec<(usize,f64)>)> = faces.into_iter().collect::<Result<_,_>>()?;
+    let splits: Vec<(usize,f64)> = faces.iter().flat_map(|f| f.4.iter().copied()).collect();
+    rounds += 1;
+    if splits.is_empty() || rounds >= TURNED_ROUNDS || turned.is_some() { break faces }
+    for (e,t) in splits {
+        let (ts,ids) = &mut samples[e];
+        let k = ts.partition_point(|&x| x < t);
+        if k == 0 || k >= ts.len() || ts[k] == t { continue }
+        m.pts.push(b.edges[e].point(t,&b.vertices)); alias.push(None);
+        ts.insert(k,t); ids.insert(k,(m.pts.len()-1) as u32);
+    }
+    };
     for (fi,face) in faces.into_iter().enumerate() {
-        let (pts,tris,sag,turned) = face?;
+        let (pts,tris,sag,turned,_) = face;
         let base = m.pts.len() as u32;
         alias.extend(pts.iter().map(|_| None));
         m.pts.extend(pts);
