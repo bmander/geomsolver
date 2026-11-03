@@ -1227,7 +1227,11 @@ impl<'a> Arrangement<'a> {
             let ids = [0,1].map(|k| self.surface_of[&(faces.s[k],faces.f[k])]);
             // two curves of one meeting in closed form may cross one another (`crossings_among`)
             let (curves,crossed) = match self.shared.meeting(ids[0],ids[1],self.tol) {
-                Ssi::Curves(cs) => { let x = crossings_among(surfaces[0],&cs,self.shared(faces),self.pad,self.tol); (cs,x) }
+                Ssi::Curves(cs) => {
+                    let mut x = crossings_among(surfaces[0],&cs,self.shared(faces),self.pad,self.tol);
+                    ends_on_one_another(&cs,&mut x,self.tol);
+                    (cs,x)
+                }
                 Ssi::Same => { found.same_pairs.push(faces); continue }
                 Ssi::Traced => {
                     let (fi,fj) = (filled[&ids[0]],filled[&ids[1]]);
@@ -2146,6 +2150,25 @@ fn stretch_in(c: &Curve,(lo,hi): Box3,pad: f64) -> Option<[f64;2]> {
         }
         Curve::BSpline(ref b) => Some(b.domain()),
         _ => None,
+    }
+}
+
+/// **Where an open curve of a meeting in closed form ends on another of it**: a meeting handed over
+/// in pieces (a screwed circle's branches ending on the circle where it is a round side's section,
+/// `ssi`'s `screwed_circle_meeting`) ends where its pieces meet, which no crossing of two curves
+/// finds; each such end is laid as a point on the curve it ends and on the one it ends on.
+fn ends_on_one_another(curves: &[super::geom::Curve],crossed: &mut [Vec<V>],tol: f64) {
+    use super::geom::Curve;
+    for i in 0..curves.len() {
+        let Curve::Traced(t) = &curves[i] else { continue };
+        if t.closed { continue }
+        for p in [t.pts[0],t.pts[t.pts.len()-1]] {
+            crossed[i].push(p);
+            for (j,c) in curves.iter().enumerate() {
+                if j == i { continue }
+                if distance(c.point(c.inverse(p)),p) <= 8.*tol { crossed[j].push(p) }
+            }
+        }
     }
 }
 

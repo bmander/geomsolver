@@ -465,7 +465,16 @@ definition (in the blank and no member).
 `brep::sweep::closed`):** a sweep every class it is asked refuses — the generating, constant-twist
 or planar subtraction class, whichever its motion and tool asked first — is asked the closed
 class's rows, and its refusal stands where they refuse too. C1 (every face of the tool a plane,
-every edge a line; under a slide, a face a cylinder, a cone or a ball too and an edge a circle)
+every edge a line; under a slide, a face a cylinder, a cone, a ball or a torus too and an edge a
+circle; under a turn, a round face about an axis along the turn's or a ball clear of it; under a
+screw, a cylinder about an axis along the screw's and a circle square to it, whose disc screwed is
+its candidate — a round tool's rim under a screw, helical milling:
+`swept_closed::a_drum_screwed_beside_the_axis_closes_into_its_helical_sweep`,
+`a_drum_screwed_a_short_lead_through_most_of_a_turn_closes`,
+`a_drum_screwed_across_a_ring_sector_bores_its_helical_groove`, each to its helical-coordinate
+volume and the membership test; through the drawing,
+`closed_characteristics::the_drum_screwed_bores_its_helical_groove`, whose STL is refused by name
+where the groove's floor folds against its wall over a ramp thinner than the bar, F4)
 and C2 (one slide, turn or screw; under a screw every face and edge along its
 axis or square to it) read the tool's B-rep and the lowered trajectory in millimetres, before
 anything is built (`brep::swept::closed::reads`, its refusals `Unbuilt::Curved {at}` and
@@ -862,8 +871,10 @@ refuses it by name. The gate is `solid_sweeps_examples::the_drum_punches_its_sha
 1e-5; `a_bull_nosed_drum_punches_its_shadow_rounded`, within 2e-6 at 0.001 mm), each STL agreeing
 with the field; `brep::a_net_closed_along_its_rows_is_a_tube_of_faces` (a cylinder's net closed along
 its rows cut four round and two along, its core π r² h); the refusals
-`closed_characteristics::what_a_closed_characteristic_still_refuses` (a whole turn, S1; screwed, S2;
-a prism aslant wholly through, S1 over a cap; a prism turned wholly within, S1 a rim's ruling) and
+`closed_characteristics::a_square_bar_pushed_square_to_its_length_is_planar_subtractions` (the
+drum screwed, S2, is now the closed class's: `the_drum_screwed_bores_its_helical_groove`; a prism
+aslant wholly through, S1 over a cap, and a prism turned wholly within, S1 a rim's ruling, are the
+closed class's too, `closed_class`) and
 `turns_and_slides::the_turn_and_slide_rows_refuse_by_name`; what it refuses that the closed class
 builds, `turns_and_slides::a_torus_slid_through_the_rods_middle_grooves_its_shadow` (its rings at the
 tube's top and bottom in contact all round, S1); and

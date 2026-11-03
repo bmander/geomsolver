@@ -24,9 +24,12 @@ fn slide(d: [f64;3]) -> Trajectory {
 
 /// `built`, the closed sweep of `tool` under `path`, read against membership at seeded points of
 /// its box: every settled point inside it a member, every one outside not.
-fn agrees(built: &Brep,tool: &Brep,path: &Trajectory) {
+fn agrees(built: &Brep,tool: &Brep,path: &Trajectory) { agrees_over(built,tool,path,[0.,1.]) }
+
+/// `agrees` over the roll `roll`.
+fn agrees_over(built: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {
     let (solid,body) = (Solid::new(tool,0.002,1.).unwrap(),Solid::new(built,0.002,1.).unwrap());
-    let swept = Swept {tool:&solid,path,roll:[0.,1.]};
+    let swept = Swept {tool:&solid,path,roll};
     let (lo,hi) = built.bounds();
     let mut rng = gcs_core::rng::Rng::new(6);
     let mut held = 0;
@@ -371,9 +374,12 @@ fn an_l_shaped_prism_turned_is_its_blocks_sweeps_united() {
 /// `built`, `tool`'s sweep under `path` cut from `blank`, read against the definition at seeded
 /// points of the blank's box: every settled point inside it in the blank and no member of the
 /// sweep, every one outside either out of the blank or a member.
-fn agrees_cut(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory) {
+fn agrees_cut(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory) { agrees_cut_over(built,blank,tool,path,[0.,1.]) }
+
+/// `agrees_cut` over the roll `roll`.
+fn agrees_cut_over(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {
     let (solid,body,stock) = (Solid::new(tool,0.002,1.).unwrap(),Solid::new(built,0.002,1.).unwrap(),Solid::new(blank,0.002,1.).unwrap());
-    let swept = Swept {tool:&solid,path,roll:[0.,1.]};
+    let swept = Swept {tool:&solid,path,roll};
     let (lo,hi) = blank.bounds();
     let mut rng = gcs_core::rng::Rng::new(9);
     let mut held = 0;
@@ -628,4 +634,136 @@ fn a_screwed_circle_meets_planes_and_cylinders_in_closed_form() {
             }
         }
     }
+}
+
+/// **A drum screwed beside the axis closes into its helical sweep** (#721 F2c5, a round tool under a
+/// screw: helical milling): a drum of radius 1 and height 1 standing 3 from the screw's axis, along
+/// it, screwed 1.5 rad with a step of 2 a roll. Its side's generators in the plane through both axes
+/// screw into cylinders about the axis, its rims into the solids their discs sweep, each rim's sheet
+/// meeting the drum's side at its end pose in closed form (`ssi`'s screwed circle). Apart from the
+/// build, in helical coordinates `(ρ, ψ, ζ = z − k ψ)`: the drum is less tall than a lead, so each
+/// helix meets it once, over an arc `2α(ρ)` at radius `ρ`, which the turn lengthens by `Θ`; the sweep
+/// is the drum's own volume and `Θ ∫ ρ (h + 2kα) dρ = Θ (h (4² − 2²)/2 + k π)`, `π` the disc's polar
+/// integral: `π + Θ (6 + k π)`.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 2 min: a drum's screwed rims on one arrangement")]
+fn a_drum_screwed_beside_the_axis_closes_into_its_helical_sweep() {
+    use gcs_core::brep::build::{disc,prism};
+    use std::f64::consts::{PI,TAU};
+    let tool = prism(&disc([3.,0.,0.],[0.,0.,1.],1.),0.,1.).unwrap();
+    let (theta,advance) = (1.5,2.);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance});
+    let k = advance/TAU/theta;
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = PI+theta*(6.+k*PI);
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// A drum of radius 1 and height 1 standing 10 from a screw's axis, along it, its disc screwed by
+/// `lead` a turn through `turn` radians: the sheet its rim sweeps bounds a thin helical ramp.
+fn ramp(lead: f64,turn: f64,at: f64) -> Brep {
+    let rise = lead/std::f64::consts::TAU*turn;
+    let (s,c) = at.sin_cos();
+    gcs_core::brep::build::screwed(&gcs_core::brep::build::disc([10.*c,10.*s,-0.5],[0.,0.,1.],1.),[0.;3],[0.,0.,1.],turn,rise).unwrap()
+}
+
+/// **A line meets the sheet a screwed rim sweeps where it does, exactly** (#721 F2c5): the circle level
+/// with a point of the line is at the turn its height gives, and the line's distance from it is
+/// bounded over each stretch, so both crossings of a ramp thinner than any step a sampled search
+/// would take are found. Apart from the kernel: a point is in the ramp exactly where the disc,
+/// screwed back by the turn its height gives, holds it — and the solid's point location (a ray's
+/// crossings) agrees at every point drawn about the ramp, half a millimetre a turn and two.
+#[test]
+fn a_line_meets_a_screwed_rims_sheet_exactly() {
+    use gcs_core::brep::query::{Located,Place};
+    for lead in [0.5,2.] {
+        let theta = 280f64.to_radians();
+        let rise = lead/std::f64::consts::TAU*theta;
+        let ramp = ramp(lead,theta,0.);
+        let at = Located::new(&ramp,1e-6);
+        let mut rng = gcs_core::rng::Rng::new(3);
+        for _ in 0..400 {
+            let (r,a) = (rng.uniform(8.8,11.2),rng.uniform(-0.2,theta+0.2));
+            let z = -0.5+rise*a/theta+rng.uniform(-0.03,0.03);
+            let p = [r*a.cos(),r*a.sin(),z];
+            let turn = (z+0.5)/rise*theta;
+            let (s,c) = (-turn).sin_cos();
+            let q = [c*p[0]-s*p[1],s*p[0]+c*p[1]];
+            let inside = (0.0..=theta).contains(&turn) && (q[0]-10.).hypot(q[1]) < 1.;
+            let place = at.solid_place(p);
+            assert!(place != Place::On && (place == Place::In) == inside,"lead {lead}: at {p:?} {place:?}, the disc screwed back {inside}");
+        }
+    }
+}
+
+/// **Planes through a screw's axis cut a screwed rim's ramp in closed form** (#721 F2c5): each level
+/// circle meets the plane where `A cos θ + B sin θ = C(v)`, the two roots joining where the circle
+/// touches it, handed over as one loop of exact points. Apart from the kernel, in helical
+/// coordinates: the ramp passes wholly across a sixth of a turn, so it holds the disc's area times
+/// the lead's rate over that sixth, `π/3 · k π`.
+#[test]
+fn planes_through_the_axis_cut_a_screwed_rims_ramp_in_closed_form() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::boolean::selected;
+    use gcs_core::brep::geom::Frame;
+    use std::f64::consts::PI;
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let at = |x: f64,z: f64| f.at([x,0.,z]);
+    let rect = [at(8.,-1.),at(12.,-1.),at(12.,1.),at(8.,1.)];
+    let profile = Profile {origin:rect[0],normal:f.y,names:Vec::new(),loops:vec![(0..4).map(|k| ProfileEdge::Line {a:rect[k],b:rect[(k+1)%4]}).collect()]};
+    let sector = revolve(&profile,[0.;3],[0.,0.,1.],PI/3.).unwrap();
+    let theta = 280f64.to_radians();
+    let k = 0.5/std::f64::consts::TAU;
+    let r = selected(&[&ramp(0.5,theta,-theta/2.),&sector],&|m| m[0] && m[1],1e-6).unwrap();
+    let expected = PI/3.*k*PI;
+    assert!((volume(&r.brep)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&r.brep));
+}
+
+/// **A drum screwed a short lead through most of a turn closes into its helical sweep** (#721 F2c5):
+/// the drum of `ramp`, screwed half a millimetre a turn through 280°, its rims' ramps thinner than a
+/// hundredth of a millimetre where they fold against the cylinders its side sweeps. Apart from the
+/// build, as `a_drum_screwed_beside_the_axis_closes_into_its_helical_sweep`'s: `π + Θ (20 + k π)`.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: a drum's screwed rims on one arrangement")]
+fn a_drum_screwed_a_short_lead_through_most_of_a_turn_closes() {
+    use gcs_core::brep::build::{disc,prism};
+    use std::f64::consts::{PI,TAU};
+    let tool = prism(&disc([10.,0.,-0.5],[0.,0.,1.],1.),0.,1.).unwrap();
+    let theta = 280f64.to_radians();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:0.5});
+    let built = closed(&tool,&path,[0.,theta],0.002,1e-6).unwrap();
+    let expected = PI+theta*(20.+0.5/TAU*PI);
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees_over(&built,&tool,&path,[0.,theta]);
+}
+
+/// **A drum screwed across a ring sector bores its helical groove on one arrangement** (#721 F2c5,
+/// #699 C): the drum of `ramp` screwed half a millimetre a turn through 280° about the middle of a
+/// sixth of a ring 8 to 12 across and 2 high, which it passes wholly across, the sector its blank.
+/// The sector's planes through the axis cut the rims' ramps in closed form
+/// (`planes_through_the_axis_cut_a_screwed_rims_ramp_in_closed_form`). Apart from the build: at each
+/// point of the sector the heights the drum covers are its own and twice its half-width in angle
+/// there, `a(ρ)`, times the lead's rate `k`, so it takes `π/3 ∫ ρ (1 + 2 k a(ρ)) dρ = π/3 (20 + k π)`
+/// of the sector's `π/3 · 80`.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: a drum's screwed rims through a sector")]
+fn a_drum_screwed_across_a_ring_sector_bores_its_helical_groove() {
+    use gcs_core::brep::build::{disc,prism,revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::{PI,TAU};
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let at = |x: f64,z: f64| f.at([x,0.,z]);
+    let rect = [at(8.,-1.),at(12.,-1.),at(12.,1.),at(8.,1.)];
+    let profile = Profile {origin:rect[0],normal:f.y,names:Vec::new(),loops:vec![(0..4).map(|k| ProfileEdge::Line {a:rect[k],b:rect[(k+1)%4]}).collect()]};
+    let sector = revolve(&profile,[0.;3],[0.,0.,1.],PI/3.).unwrap();
+    let tool = prism(&disc([10.,0.,-0.5],[0.,0.,1.],1.),0.,1.).unwrap();
+    let theta = 280f64.to_radians();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:0.5});
+    let roll = [-theta/2.,theta/2.];
+    let cut = cut_from(&sector,&tool,&path,roll,0.002,1e-6).unwrap();
+    let expected = PI/3.*80.-PI/3.*(20.+0.5/TAU*PI);
+    assert!((volume(&cut)-expected).abs() <= 1e-8*expected,"{} against {expected}",volume(&cut));
+    agrees_cut_over(&cut,&sector,&tool,&path,roll);
 }

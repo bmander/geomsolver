@@ -295,6 +295,20 @@ fn nearest_held(b: &Arc<BSpline>,p: V) -> f64 {
 #[derive(Clone,Debug,PartialEq)]
 pub struct Blend { pub a: Curve,pub ta: [f64;2],pub b: Curve,pub tb: [f64;2],pub carry: Carry,pub closed: bool }
 
+/// A level circle screwed (`Blend::level_circle`): the screw's centre, unit axis, turn and rise over
+/// the patch's `v`, and the circle — its frame, square to the axis, and its radius.
+#[derive(Clone,Copy,Debug)]
+pub struct LevelCircle { pub centre: V,pub axis: V,pub angle: f64,pub rise: f64,pub frame: Frame,pub r: f64 }
+
+impl LevelCircle {
+    /// The `v` of the circle level with `p`: the circle rises alike all round.
+    pub fn v_at(&self,p: V) -> f64 { dot(sub(p,self.frame.o),self.axis)/self.rise }
+    /// `p` screwed back from `v` to the circle's own level.
+    pub fn back(&self,p: V,v: f64) -> V {
+        Carry::Screw {center:self.centre,axis:self.axis,angle:-self.angle*v,advance:-self.rise*v}.at(p,1.)
+    }
+}
+
 impl Blend {
     fn ends(&self,u: f64) -> ((V,V,V),(V,V,V)) {
         (self.a.d2(self.ta[0]+u*(self.ta[1]-self.ta[0])),self.b.d2(self.tb[0]+u*(self.tb[1]-self.tb[0])))
@@ -315,6 +329,9 @@ impl Blend {
     /// (`turned_to`): a grid spaced along `v` alone would start on the next turn of a coil as
     /// readily as on its own.
     pub fn inverse(&self,p: V) -> Uv {
+        // a level circle's sheet is read level with `p` first: a sheet thinner than the warm start's
+        // reach (a round rim screwed a short lead) has its other side within it
+        if let Some(uv) = self.level_circle_uv(p) { return self.newton(p,uv) }
         let key = self as *const Blend as usize;
         let near = 1e-3*(1.+dot(p,p).sqrt());
         let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
@@ -356,6 +373,35 @@ impl Blend {
         if !(0.0..=1.0).contains(&v) { return None }
         let (s0,su,_) = self.d1([0.,v]);
         Some([dot(sub(p,s0),su)/dot(su,su),v])
+    }
+    /// **The parameters of a level circle's screwed sheet level with `p`** (a round rim under a
+    /// screw, `build::screwed` of a disc, #721 F2c5): the circle square to the screw's axis rises
+    /// alike all round, so the circle level with `p` is at the `v` its height gives, and the screw
+    /// turned back from there brings `p` into the circle's own plane, where its angle is the `u` of
+    /// the circle's point nearest it. `None` for any other patch, or `p` level with none of its
+    /// circles.
+    fn level_circle_uv(&self,p: V) -> Option<Uv> {
+        let c = self.level_circle()?;
+        let v = c.v_at(p);
+        if !(0.0..=1.0).contains(&v) { return None }
+        let d = sub(c.back(p,v),c.frame.o);
+        let th = dot(d,c.frame.y).datan2(dot(d,c.frame.x));
+        let span = self.ta[1]-self.ta[0];
+        Some([((th-self.ta[0]).rem_euclid(std::f64::consts::TAU)/span).rem_euclid(1.),v])
+    }
+    /// **The level circle this patch screws, where it is one** (`build::screwed` of a disc: a
+    /// circle square to the screw's axis and its own image carried, `S(u, v) = carry_v(c + r (cos θ
+    /// x + sin θ y))`), the one reading its closed forms start from: the meeting of its sheet with a
+    /// line (`query`), with planes and cylinders along the axis (`ssi`), its inverse.
+    pub fn level_circle(&self) -> Option<LevelCircle> {
+        let Carry::Screw {center,axis,angle,advance} = self.carry else { return None };
+        let (Curve::Circle(f,r),Curve::Circle(..)) = (&self.a,&self.b) else { return None };
+        let k = unit(axis);
+        if norm(cross(f.z,k)) > 1e-12 || angle == 0. || advance == 0. { return None }
+        let same = |q: V,x: V| crate::util::space::distance(q,x) <= 1e-9*(1.+norm(x));
+        let span = self.ta[1]-self.ta[0];
+        if !(0..3).all(|i| same(self.b.point(self.tb[0]+(self.tb[1]-self.tb[0])*i as f64/2.),self.a.point(self.ta[0]+span*i as f64/2.))) { return None }
+        Some(LevelCircle {centre:center,axis:k,angle,rise:advance*dot(axis,k),frame:*f,r:r.abs()})
     }
     /// `inverse` from the nearest of the grid and the turned points.
     fn searched(&self,p: V) -> Uv {

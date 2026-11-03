@@ -325,7 +325,25 @@ its points at that radius (`Iso`, one where it touches); a cylinder about anothe
 axis (a round tool's side at an end pose) where the two circles of that level meet,
 `A(v) cos θ + B(v) sin θ = C(v)`, its two branches joined where they turn and ended at the circle
 where the two coincide — its points written in closed form and handed over as a traced meeting, so
-no near touch is traced (`swept_closed::a_screwed_circle_meets_planes_and_cylinders_in_closed_form`).
+no near touch is traced (`swept_closed::a_screwed_circle_meets_planes_and_cylinders_in_closed_form`);
+any other plane (a sector's side through the axis) where its line in each level meets the circle,
+the same branches (`branches`). A branch's end at a coincidence is that circle's point square to the
+centre's way there, the way read across it (a one-sided reading leans by the hair and bends the
+first chord, which its projection then slides onto the circle); points are added beside a turn,
+where the roots part as a square root, and wherever either turns by more than `π/1024`, which a
+traced edge's flux reads one stretch at a time. Two sheets of one level circle under one screw are
+one surface only where they share some of its turn (`one_screwed_circle`); apart along it they meet
+nowhere. Where a closed form's traced pieces end on one another (a branch on its coincidence
+circle), each end is laid as a point on both (`boolean`'s `ends_on_one_another`), which no
+crossing of two curves finds. **A line meets the sheet exactly** (`query::line_screwed_circle`): the
+circle level with the line's point is at the `v` its height gives, linear along the line, and
+screwed back the point's distance from the circle's centre is `|A(t)|`; `G = |A|² − r²` has its
+roots isolated by bounds on `G'` and `G''` over each stretch, so a ramp thinner than any sampled
+step has both crossings found — a ray's parity, a solid's point location, by it
+(`swept_closed::a_line_meets_a_screwed_rims_sheet_exactly`: a sampled search was wrong at seven of
+400 points about a ramp half a millimetre a turn). The sheet's inverse starts level with the point
+(`Blend::level_circle`, `LevelCircle`) and not from the last foot found: a ramp thinner than that
+start's reach holds its other side within it.
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it

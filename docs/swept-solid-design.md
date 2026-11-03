@@ -382,28 +382,38 @@ it. It stays as the fast path where #699 D says so.
 **Where it stands (F2c5).** Built on the one arrangement: polyhedral tools under a slide, a turn,
 or a screw with nothing leaning to its axis; under a slide, tools of planes, cylinders, cones, balls
 and tori (a torus's axis along the slide or square to it); under a turn, round faces about axes
-along the turn's and balls clear of its axis; paths of slides and turns (K1); a body mixing the
+along the turn's and balls clear of its axis; under a screw, cylinders about axes along it and
+level circles (a drum, helical milling); paths of slides and turns (K1); a body mixing the
 closed class with another; the blank-scoped decision. What is left meets one of three gaps, each
 recorded above with what was tried:
 - **a candidate bounded inside the domain** — a leaning edge under a screw (whose whole sheet
   crosses itself) — waits on the arrangement holding a face with a slit, or a sheet whose rim
   stands inside a cell (F5's A1);
-- **a meeting with no closed form near a touch** — a circle screwed (a round tool's rim under a
-  screw: helical milling), a round face about an axis leaning to a turn's (its contact a curve, its
+- **a meeting with no closed form near a touch** — a cone or a ball screwed, a round face about an
+  axis leaning to a turn's (its contact a curve, its
   surface of revolution's meridian fitted), a fitted sheet lying in a candidate's plane, and K2's
   patches (each instant's contact swept, fitted) — is refused as nearly touching: each needs its
   closed form (as the parallel cones', the ball's in a torus, the meridian's cylinder were), or the
-  tracer holding a near-tangent meeting (F4, #699 E). *A circle screwed*: its sheet's meetings with
-  a level plane, a cylinder about the axis and a round tool's own side at an end pose are now closed
-  forms (`ssi::screwed_circle_meeting`, every point on both surfaces to rounding). With them a drum
-  screwed beside the axis (helical milling: its side's generators screwed into coaxial cylinders,
-  each rim's disc screwed into a solid) builds, but to 18.9 against its helical volume
-  `π + Θ (6 + k π)`, 13.1: one cell of the arrangement holds points on both sides of the sweep's
-  boundary (from before the start pose to past the end), every candidate the boundary is made of
-  present and every closed-form meeting on both surfaces — a separation the arrangement does not
-  make between the rims' screwed sheets and the faces round them, not yet found. That case stays
-  refused (C1);
-- **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
+  tracer holding a near-tangent meeting (F4, #699 E). *A circle screwed is built* (a round tool's
+  rim under a screw: helical milling): its sheet's
+  meetings with a level plane, a cylinder about the axis, a round tool's own side at an end pose and
+  a plane through the axis are closed forms (`ssi::screwed_circle_meeting`), a line meets it exactly
+  (`query::line_screwed_circle`) and its inverse starts level with the point. A drum screwed beside
+  the axis (helical milling: its side's generators screwed into coaxial cylinders, each rim's disc
+  screwed into a solid) is its helical volume `π + Θ (6 + k π)` to 1e-15, a drum screwed half a
+  millimetre a turn through 280° `π + Θ (20 + k π)` to 1e-15, and the same drum through a ring
+  sector the sector less `π/3 (20 + k π)` to 1e-9, each held to membership. What had left a cell
+  holding both sides of the sweep's boundary was not a missing separation but four readings: a
+  branch's end on its coincidence circle laid on neither (`boolean`'s `ends_on_one_another`), that
+  end read one-sidedly so that its first chord bent and was projected onto the circle, two stretches
+  of one circle's sheet two leads apart read as one surface and each other's edges laid on the
+  other, and a sampled search for a ray's crossings missing one of the two a ramp a hundredth of a
+  millimetre thick makes — a solid's point location wrong at seven of 400 points about it, and a
+  cell kept or dropped so. Its STL is refused by name: where the rim's farthest and nearest points
+  run along the screw the ramp folds against the wall its side sweeps over a radius of about a
+  tenth of a micrometre, and a chord of the wall's helix a mesh takes at the bar sags across the
+  fold, so the triangles beside it face against the sheet (F4). Cones and balls under a screw (their
+  contacts curves on them, swept into sheets with no closed form) are the step after;- **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
   has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
 
 Every step meets the epic's bar: rows in `docs/contract/generating.md` naming the gate test, field

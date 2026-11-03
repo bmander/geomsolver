@@ -139,6 +139,9 @@ enum Cutter { Plane(Plane),
     /// The torus about `c` square to the unit `axis`, its tube's middle circle of radius `major`, its
     /// tube's radius `minor` (a ball's great circle through the turn's axis, turned).
     Torus { c: V,axis: V,major: f64,minor: f64 },
+    /// The disc of radius `r` about `c` square to the screw's axis, screwed over the roll: the solid
+    /// a round tool's rim sweeps under a screw, its side the sheet the rim screws into.
+    ScrewedDisc { c: V,r: f64 },
     /// The ball of radius `r` about `c`, its poles on the unit `axis` (a ball's face at an end
     /// pose, its poles where the tool's are).
     Ball { c: V,axis: V,r: f64 },
@@ -222,6 +225,12 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
                 round.push(k);
                 faces.push((at,[0.;3]));
             }
+            // under a screw a cylinder's about an axis along it touches along its generators in the
+            // plane through both axes, screwed into coaxial cylinders
+            Surface::Cylinder(g,_) if !screw.is_turn() && !screw.is_slide() && norm(cross(g.z,screw.axis)) <= 1e-9 => {
+                round.push(k);
+                faces.push((at,[0.;3]));
+            }
             // under a slide along a torus's axis or square to it, its contacts are whole circles: its
             // equators along it, swept into cylinders; across it its top and bottom rings, swept
             // into level planes, and its meridians square to the slide, swept into cylinders
@@ -256,7 +265,7 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
             // (a circle where two faces meet smoothly, a ball on a cylinder, is no edge of the
             // solid: its fan is one normal, the faces' own contacts')
             // (under a turn, a circle square to the axis only: it turns within its own plane)
-            EdgeCurve::Curve(Curve::Circle(frame,r)) if screw.is_slide() || screw.is_turn() && norm(cross(frame.z,screw.axis)) <= 1e-9 => {
+            EdgeCurve::Curve(Curve::Circle(frame,r)) if screw.is_slide() || norm(cross(frame.z,screw.axis)) <= 1e-9 => {
                 let (n1,n2) = (outward(&tool.faces[f1],mid),outward(&tool.faces[f2],mid));
                 if norm(cross(n1,n2)) > 1e-9 || dot(n1,n2) < 0. { rims.push(Rim {frame:*frame,r:*r,span:edge.t}) }
             }
@@ -590,7 +599,7 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         // the sheet's normal: square to the line and to the screw's velocity there (which
                         // the screw carries as it carries the normal)
                         Cutter::Screwed {e,..} => unit(cross(e,screw.velocity(x))),
-                        Cutter::Oblique {..} | Cutter::Ball {..} | Cutter::Torus {..} => unreachable!("a line turns into none of these"),
+                        Cutter::Oblique {..} | Cutter::Ball {..} | Cutter::Torus {..} | Cutter::ScrewedDisc {..} => unreachable!("a line turns into none of these"),
                     };
                     poses.iter().map(move |m| (m.point(x),m.vector(normal)))
                 }).collect()
@@ -698,15 +707,20 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                     _ => unreachable!("`read` takes only cylinders, cones and balls round"),
                 }
             }
-            // a circle square to the axis turns within its own plane
+            // a circle square to the axis turns within its own plane; under a screw it is screwed, the
+            // solid its disc sweeps (`Cutter::ScrewedDisc`)
             for rim in &rims {
                 let (f,r) = (rim.frame,rim.r);
+                // the screwed sheet's normal: square to the circle and to the screw's velocity
+                let normal_at = |x: V| if screw.is_turn() { axis } else { unit(cross(cross(axis,unit(sub(x,f.o))),screw.velocity(x))) };
                 let sites: Vec<(V,V)> = (0..=SITES).flat_map(|i| {
                     let (sp,cp) = (rim.span[0]+(rim.span[1]-rim.span[0])*within(i)).dsin_cos();
                     let x = f.at([r*cp,r*sp,0.]);
-                    poses.iter().map(move |m| (m.point(x),axis))
+                    let n = normal_at(x);
+                    poses.iter().map(move |m| (m.point(x),m.vector(n)))
                 }).collect();
-                add_cutter(Cutter::Plane((f.o,axis)),sites);
+                if screw.is_turn() { add_cutter(Cutter::Plane((f.o,axis)),sites) }
+                else { add_cutter(Cutter::ScrewedDisc {c:f.o,r:r.abs()},sites) }
             }
             for &(p,q,_) in &edges {
                 let e = unit(sub(q,p));
@@ -793,6 +807,11 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             Cutter::Cylinder {o,axis,r,span} => solids.push(prism(&disc(add(o,scale(axis,span[0])),axis,r),0.,span[1]-span[0])?),
             Cutter::Revolved {o,axis,p,e,span} => solids.extend(revolved(o,axis,p,e,span,eps)?),
             Cutter::Ball {c,axis,r} => solids.push(crate::build::sphere(c,axis,r)?),
+            Cutter::ScrewedDisc {c,r} => {
+                let first = pose_at(a)?;
+                let rate = screw.advance/std::f64::consts::TAU;
+                solids.push(crate::build::screwed(&disc(first.point(c),screw.axis,r),screw.origin,screw.axis,screw.ratio*(b-a),rate*(b-a))?)
+            }
             Cutter::Torus {c,axis,major,minor} => solids.push(crate::build::torus(c,axis,major,minor)?),
             Cutter::Oblique {c,a,r,d} => {
                 // the disc's cylinder along `a` as high as the slide climbs it, sheared

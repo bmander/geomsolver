@@ -256,6 +256,7 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
     match (curve,surface) {
         (&Curve::Line {p,d},Surface::Cylinder(c,r)) => return line_cylinder(p,d,[t0,t1],c,*r,tol),
         (&Curve::Line {p,d},Surface::Sphere(c,r)) => return line_sphere(p,d,[t0,t1],c.o,*r,tol),
+        (&Curve::Line {p,d},Surface::Blend(_,b)) => if let Some(c) = b.level_circle() { return line_screwed_circle(p,d,[t0,t1],&c,tol) },
         _ => {}
     }
     let f = |t: f64| surface.implicit(curve.point(t));
@@ -314,6 +315,89 @@ fn line_chord(w: V,e: V,r: f64,[t0,t1]: [f64;2],tol: f64) -> Meets {
         Chord::Cross(half) => { let half = half/ee.sqrt(); vec![(foot-half,false),(foot+half,false)] }
     };
     Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-tol && t <= t1+tol).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
+}
+
+/// **A line through `p` along the unit `d`, over `[t0, t1]`, against the sheet a level circle screws
+/// into** (`geom::LevelCircle`, a round rim under a screw, #721 F2c5), its roots isolated with a
+/// bound, not sampled. The circle level with the line's point `q(t)` is at the `v` its height gives,
+/// linear in `t`; screwed back from there, `q(t)` lies in the circle's plane, at `A(t)` from its
+/// centre, and the line meets the sheet where `G(t) = |A(t)|² − r² = 0`. Across the axis, `A` is a
+/// line turned at the constant rate `ω` the rise gives, so over a stretch `|A|`, `|A'| ≤ |d⊥| + |ω|
+/// |q⊥|` and `|A''| ≤ 2|ω||d⊥| + ω²|q⊥|` are bounded by its ends, `|G'| ≤ 2|A||A'|` and
+/// `|G''| ≤ 2(|A'|² + |A||A''|)`: a stretch is dropped where `|G|` at its middle outruns what `G'`
+/// can close over its half, read as one root where `G'` at its middle outruns what `G''` can
+/// turn it by (`G` monotone: a root where its ends differ in sign), and halved otherwise. Square to
+/// the axis the line is level and meets the one circle there as a chord. A thin sheet's two
+/// crossings a hair apart are both found: no step need land between them.
+fn line_screwed_circle(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::LevelCircle,tol: f64) -> Meets {
+    use crate::util::space::{cross,sub};
+    let k = c.axis;
+    let perp = |x: V| sub(x,scale(k,dot(x,k)));
+    let (v0,v1) = (c.v_at(p),dot(d,k)/c.rise);
+    // the stretch of the line level with the sheet, `v` in `[0, 1]`
+    if v1.abs()*(t1-t0).abs() <= 1e-15 {
+        if !(0.0..=1.0).contains(&v0) { return Meets::At(Vec::new()) }
+        let o = c.back(c.frame.o,-v0);
+        return line_chord(sub(p,o),perp(d),c.r,[t0,t1],tol)
+    }
+    // (the sheet's ends held a tolerance wide: a line ending on an end circle meets it there)
+    let slack = tol/(c.rise.abs()*v1.abs().max(1e-300)*norm(d).max(1e-300)).max(1e-300)*v1.abs();
+    let (ta,tb) = ((0.-v0-slack)/v1,(1.-v0+slack)/v1);
+    let (lo,hi) = (ta.min(tb).max(t0),ta.max(tb).min(t1));
+    if lo > hi { return Meets::At(Vec::new()) }
+    let omega = c.angle*v1;
+    let (dp,cp) = (perp(d),perp(sub(c.frame.o,c.centre)));
+    let a = |t: f64| -> (V,V) {
+        let q = add(p,scale(d,t));
+        let v = c.v_at(q);
+        let x = sub(perp(sub(c.back(q,v),c.centre)),cp);
+        // `A' = R(−ωt) d⊥ − ω k × R(−ωt) q⊥`: the line's own way turned back, less the turn's sweep
+        let turned = |y: V| c.back(add(c.centre,y),v);
+        let (rd,rq) = (sub(turned(dp),c.centre),sub(turned(perp(sub(q,c.centre))),c.centre));
+        (x,sub(perp(rd),scale(cross(k,perp(rq)),omega)))
+    };
+    let g = |t: f64| { let (x,_) = a(t); dot(x,x)-c.r*c.r };
+    let dg = |t: f64| { let (x,dx) = a(t); 2.*dot(x,dx) };
+    let reach = |t: f64| norm(perp(sub(add(p,scale(d,t)),c.centre)));
+    let (nd,cn) = (norm(dp),norm(cp));
+    let step = tol*1e-3/norm(d).max(1e-300);
+    let mut roots: Vec<(f64,bool)> = Vec::new();
+    let mut stack = vec![(lo,hi,0)];
+    while let Some((x0,x1,depth)) = stack.pop() {
+        let (m,h) = (0.5*(x0+x1),x1-x0);
+        let q = reach(x0).max(reach(x1));
+        let (am,a1,a2) = (q+cn,nd+omega.abs()*q,2.*omega.abs()*nd+omega*omega*q);
+        let (gm,dgm) = (g(m),dg(m));
+        if gm.abs() > 2.*am*a1*h/2. { continue }
+        let m2 = 2.*(a1*a1+am*a2);
+        if dgm.abs() > m2*h/2. {
+            let (g0,g1) = (g(x0),g(x1));
+            if g0 == 0. { roots.push((x0,false)) }
+            if g0*g1 < 0. {
+                let (mut l,mut r,mut gl) = (x0,x1,g0);
+                for _ in 0..200 { if r-l <= step { break } let s = 0.5*(l+r); let gs = g(s); if (gs < 0.) == (gl < 0.) { l = s; gl = gs } else { r = s } }
+                roots.push((0.5*(l+r),false));
+            }
+            continue
+        }
+        // a stretch too short to part: a double root, a touch, where `G` is nought to the line's
+        // tolerance there
+        if h <= step || depth >= 80 {
+            if gm.abs() <= 2.*c.r*tol { roots.push((m,true)) }
+            continue
+        }
+        stack.push((m,x1,depth+1));
+        stack.push((x0,m,depth+1));
+    }
+    // a stretch's end on the sheet (an edge ending on it) is a root there, at the end
+    for end in [lo,hi] {
+        let near = roots.iter().any(|&(t,_)| (t-end).abs()*norm(d) <= tol);
+        if !near && g(end).abs() <= 2.*c.r*tol { roots.push((end,false)) }
+    }
+    for r in roots.iter_mut() { for end in [t0,t1] { if (r.0-end).abs()*norm(d) <= tol { *r = (end,false) } } }
+    roots.sort_by(|x,y| x.0.total_cmp(&y.0));
+    roots.dedup_by(|b,a| (b.0-a.0).abs()*norm(d) <= tol);
+    Meets::At(roots)
 }
 
 /// A face's box in space, from its edges and a grid across its parameters, grown by what the

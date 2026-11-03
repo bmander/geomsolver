@@ -13,12 +13,12 @@
 //! within, a rim's ruling in contact all along it, which this class refuses, are the closed
 //! class's: `closed_class::a_bar_pushed_aslant_through_a_plate_takes_its_shadow`,
 //! `closed_class::a_leaning_bar_turned_wholly_through_a_ring_sector_bores_its_shadow`.)
-use gcs_core::solid::admission::{Class,Condition};
+use gcs_core::solid::admission::Class;
 use std::f64::consts::PI;
 
 use crate::flat_faces::turned_mill;
 use crate::solid_sweeps_examples::{class,text};
-use crate::turns_and_slides::{admit,exported,exported_at,near,refused};
+use crate::turns_and_slides::{exported,exported_at,near};
 
 /// `punch.sv` with its plate named `part`, as `admit` reads it.
 pub(crate) fn punch() -> String { text("punch.sv").replace("plate := solid","part := solid").replace("slot cut plate","slot cut part") }
@@ -85,17 +85,40 @@ fn the_drum_turned_a_whole_turn_bores_the_whole_ring() {
     near(exported(&e,"part"),PI/3.*80.-PI/6.*40.,1e-9);
 }
 
-/// What a closed characteristic is still refused: the drum screwed half a millimetre a turn, which
-/// keeps its flat ends in no plane, so that both of each ring's points on its side reach the blank
-/// with no flat between them (S2), and which the closed class takes no curved tool screwed for (C1).
+/// **The drum screwed half a millimetre a turn bores its helical groove** (#721 F2c5, a round tool
+/// under a screw): its flat ends kept in no plane, both of each ring's points on its side reach the
+/// blank with no flat between them — the constant-twist class's S2 — and the closed class builds it,
+/// its side's generators screwed into cylinders about the axis, its rims into the solids their discs
+/// sweep. Apart from the build: the drum passes wholly across the sector, so at each point of it the
+/// heights it covers are its own height and twice its half-width in angle there, `a(ρ)`, times the
+/// pitch `k = 0.5/2π`: within the sector's heights, `π/3 ∫ ρ (1 + 2k a(ρ)) dρ = π/3 (20 + k π)`.
+/// The kernel's own gate holds the same cut to the membership test
+/// (`swept_closed::a_drum_screwed_across_a_ring_sector_bores_its_helical_groove`). Its STL is still
+/// refused by name: the groove's floor folds against its wall over a ramp thinner than the bar, a
+/// fold no chart of the rim's sheet the mesher reads it by orients its triangles across (F4).
 #[test]
-fn what_a_closed_characteristic_still_refuses() {
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: a drum's screwed rims through a sector")]
+fn the_drum_screwed_bores_its_helical_groove() {
+    use gcs_core::brep::{export,props,sweep::Say};
     let screwed = turned_drum().replace("use std.motion (turns)","use std.motion (screws)").replace("swing turns(1) ax","swing screws(0.5mm) ax");
-    let screwed = refused(admit(&screwed));
-    assert_eq!(screwed.condition,Condition::Once);
-    assert!(screwed.message.contains("both of a ring's characteristic points on `mill.side` reach the blank"),"{}",screwed.message);
+    let e = fixtures::read(&screwed);
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a screw");
+    let (sk,body) = (&e.sketch,fixtures::solid(&e,"part"));
+    let tolerance = Some(gcs_core::solid::export::Tolerance::new(0.01).unwrap());
+    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
+    let exact = export::exact(sk,body,None,tolerance,&say).unwrap();
+    exact.solid.check(1e-6).unwrap();
+    let k = 0.5/std::f64::consts::TAU;
+    near(props::volume(&exact.solid),PI/3.*80.-PI/3.*(20.+k*PI),1e-8);
+    let refused = export::stl(sk,body,&exact,tolerance,&say).unwrap_err();
+    assert!(refused.message.contains("triangles facing against their surfaces"),"{refused}");
+}
+
+/// The square bar pushed square to its length keeps its section's plane: planar subtraction's.
+#[test]
+fn a_square_bar_pushed_square_to_its_length_is_planar_subtractions() {
     let bar = square_bar();
-    // (pushed square to its length, the bar keeps its section's plane: planar subtraction's)
     assert!(matches!(class(&fixtures::read(&bar),"part"),Class::Subtraction(_)),"read by the planar subtraction class");
 }
 
