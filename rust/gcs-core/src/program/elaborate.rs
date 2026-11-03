@@ -15,7 +15,7 @@ use super::{
 };
 use super::{Again, Code, Diag, Elaborated, Made, SourceMap};
 use crate::expr;
-use crate::flatten::{Expansion, Listed};
+use crate::flatten::{Directions, Expansion, Listed};
 use crate::ir::{Operation as StmtKind, Statement};
 use crate::model::{entity_name, EntKind, EntRef, Sketch};
 use crate::style::Presented;
@@ -85,6 +85,7 @@ pub(super) fn elaborate_in(
     refused: &BTreeSet<String>,
     crossed: &BTreeMap<String, Vec<f64>>,
     faces: &BTreeMap<String, Listed>,
+    directions: &Directions,
     faces_settled: bool,
 ) -> Result<Elaborated, Again> {
     let mut cx = Elab {
@@ -100,7 +101,7 @@ pub(super) fn elaborate_in(
     };
     unit(&mut cx);
     check_text(&mut cx);
-    let expansion = expand(&mut cx, refused, faces);
+    let expansion = expand(&mut cx, refused, faces, directions);
     let body: Vec<&Statement> = expansion.flat.iter().collect();
     let stating: Vec<&Statement> = body.iter().copied().filter(|st| !st.turned).collect();
     style_sheet(&mut cx, &body);
@@ -214,8 +215,10 @@ fn expand(
     cx: &mut Elab<'_>,
     refused: &BTreeSet<String>,
     faces: &BTreeMap<String, Listed>,
+    directions: &Directions,
 ) -> Expansion {
-    let mut expansion = crate::flatten::expand_faces(cx.doc, cx.sk.units, refused, faces);
+    let mut expansion =
+        crate::flatten::expand_faces(cx.doc, cx.sk.units, refused, faces, directions);
     // an expansion cut short at its limit is no drawing: what was made of it reads names the
     // rest would have made, so nothing is built, and its one E103 is all that is said (#625)
     if expansion.overflowed {
@@ -223,6 +226,7 @@ fn expand(
     }
     cx.map.private_names = expansion.private_names.clone();
     cx.map.apart = std::mem::take(&mut expansion.apart);
+    cx.map.along = std::mem::take(&mut expansion.along);
     // an instance drawn has its path; one cut short (a recursion refused) has none and is not one
     cx.map.instances = expansion.instances.iter().filter(|i| !i.drawn || !i.path.is_empty())
         .map(|i| super::Instanced { path: super::InstPath(i.path.clone()), prefix: i.prefix.clone(),
@@ -815,15 +819,20 @@ fn solids_and_surfaces(
                 .map(|e| (abs.clone(), e.i(), crate::solid::faces::face_paths(sk, e.i())))
         })
         .filter(|(abs, _, now)| faces.get(abs).map(|l| &l.paths) != Some(now))
-        // which of them meet, read where the drawing is seeded (#625): checked again where it
-        // is solved (`program::meets`)
+        // which of them meet and how each lies, read where the drawing is seeded (#625, #763):
+        // checked again where it is solved (`program::meets`)
         .map(|(abs, i, paths)| {
             let meets = crate::solid::faces::Meets::read(sk, i, &paths);
-            (abs, Listed { paths, meets })
+            let lays = crate::solid::faces::Lays::read(sk, i, &paths);
+            (abs, Listed { paths, meets, lays })
         })
         .collect();
     if !unnamed.is_empty() {
-        return Err(Again::Faces(unnamed));
+        // and every direction drawn, as it stands there, for a `when` to hold a face against
+        let directions = res.of.iter()
+            .flat_map(|(name, &e)| super::meets::directions(sk, name, e))
+            .collect();
+        return Err(Again::Faces(unnamed, directions));
     }
     surfaces::surfaces(sk, res, map, body, skip, diags);
     envelopes::envelopes(sk, res, map, body, generated, held, diags);

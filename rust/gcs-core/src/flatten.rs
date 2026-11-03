@@ -423,6 +423,9 @@ pub struct Expansion {
     /// drawing is seeded, which made the copy nothing — for the elaborator to read again where
     /// it is solved (`program::meets`).
     pub apart: Vec<Apart>,
+    /// Every face a `when` read along a direction or square to it (#763), where the drawing is
+    /// seeded — for the elaborator to read again where it is solved (`program::meets::along`).
+    pub along: Vec<AlongRead>,
     /// Whether the walk stopped at `MAX_FLAT`, its statements cut short: no drawing.
     pub overflowed: bool,
 }
@@ -433,6 +436,20 @@ pub struct Expansion {
 pub struct Apart {
     pub solid: String,
     pub faces: [String; 2],
+    pub at: Span,
+}
+
+/// **A face a `when … parallel …` or `… perpendicular …` read** (#763): the solid by its absolute
+/// name, the face by its name from it, the word, the direction by the absolute name it stands for,
+/// what the face was read as where the drawing is seeded, and the document's statement that made
+/// the block.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AlongRead {
+    pub solid: String,
+    pub face: String,
+    pub along: crate::expr::Along,
+    pub line: String,
+    pub held: bool,
     pub at: Span,
 }
 
@@ -784,12 +801,19 @@ struct SetState<'a> {
 }
 
 /// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
-/// from the solid, and which of them meet (#625, `Meets`), where its boundary says.
+/// from the solid, which of them meet (#625, `Meets`) and how each lies (#763, `Lays`), where its
+/// boundary says.
 #[derive(Clone, Debug)]
 pub struct Listed {
     pub paths: Vec<crate::solid::faces::FacePath>,
     pub meets: Option<crate::solid::faces::Meets>,
+    pub lays: Option<crate::solid::faces::Lays>,
 }
+
+/// **Each direction drawn, where the drawing is seeded** (#763): an axis's, a line's from its
+/// first point to its second, a frame's `u`, `v` and `normal`, by the absolute name a `when`
+/// reads it by — what `a parallel std.z` holds a face against.  Given with the faces.
+pub type Directions = BTreeMap<String, [f64; 3]>;
 
 /// The solids' faces read as sets, and the blocks over them (`Walk::faces`).
 #[derive(Default)]
@@ -800,6 +824,10 @@ struct FaceState {
     repeats: BTreeSet<String>,
     /// See `Expansion::apart`.
     apart: BTreeSet<Apart>,
+    /// See `Expansion::along`.
+    along: BTreeSet<AlongRead>,
+    /// The directions drawn, where the elaborator has said (`Directions`).
+    directions: Directions,
     /// The document's own statement being walked — its root body's — where a block set aside
     /// was met: what a fault deep in what it expands to is said at (#625).
     at: Span,
@@ -817,19 +845,22 @@ pub fn expand(prog: &Program, units: Units) -> Expansion {
 /// `expand`, with the sets named in `unlowered` walked as sets though their bodies are elements'
 /// — those the elaborator refused (`lowering::refused`).
 pub fn expand_with(prog: &Program, units: Units, unlowered: &BTreeSet<String>) -> Expansion {
-    expand_faces(prog, units, unlowered, &BTreeMap::new())
+    expand_faces(prog, units, unlowered, &BTreeMap::new(), &Directions::new())
 }
 
-/// `expand_with`, each solid a block runs over the faces of given its faces (#183 F4).
+/// `expand_with`, each solid a block runs over the faces of given its faces (#183 F4), and the
+/// directions drawn a `when` may hold one against (#763).
 pub fn expand_faces(
     prog: &Program,
     units: Units,
     unlowered: &BTreeSet<String>,
     faces: &BTreeMap<String, Listed>,
+    directions: &Directions,
 ) -> Expansion {
     let mut w = Walk::new(prog, units, None);
     w.sets.unlowered = unlowered;
     w.faces.given = faces.clone();
+    w.faces.directions = directions.clone();
     let root = prog.root();
     // A definitions-only file has nothing to expand. In particular, imported parameters must
     // not be evaluated in a unit system that only an eventual instantiating model will supply.
@@ -1084,6 +1115,7 @@ impl<'a> Walk<'a> {
             held: self.held.names,
             reads: self.held.reads,
             apart: self.faces.apart.into_iter().collect(),
+            along: self.faces.along.into_iter().collect(),
             overflowed: self.overflowed,
         }
     }

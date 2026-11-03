@@ -54,6 +54,9 @@ pub struct SourceMap {
     /// Every pair of faces a `when … meets …` read apart where the drawing is seeded (#625), to
     /// be read again where it is solved (`program::meets`).
     pub(crate) apart: Vec<crate::flatten::Apart>,
+    /// Every face a `when … parallel …` or `… perpendicular …` read where the drawing is seeded
+    /// (#763), to be read again where it is solved (`program::meets::along`).
+    pub(crate) along: Vec<crate::flatten::AlongRead>,
     /// Each number a `fix` held, with the path of the statement holding it: whose `fix` it was.
     /// A gauge makes no constraint, so no `of_constraint` site says so.
     pub holds: Vec<(u32, InstPath)>,

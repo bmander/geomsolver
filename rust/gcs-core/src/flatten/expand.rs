@@ -1113,6 +1113,8 @@ impl<'a> Walk<'a> {
             // faces read apart where the drawing is seeded that alone left the block out, to be
             // read again where it is solved (#625)
             let apart = names.apart.take();
+            // and faces read along a direction, every one, to be read again so too (#763)
+            let along = names.along.take();
             let alone = matches!(decided, Ok(false)) && !apart.is_empty() && {
                 names.every.set(true);
                 matches!(super::values::condition(&b.count, vals, scope, self.units, &names),
@@ -1123,6 +1125,12 @@ impl<'a> Walk<'a> {
                 let at = self.faces.at;
                 self.faces.apart.extend(apart.into_iter()
                     .map(|(solid, faces)| super::Apart { solid, faces, at }));
+            }
+            if decided.is_ok() {
+                let at = self.faces.at;
+                self.faces.along.extend(along.into_iter().map(|(solid, face, along, line, held)| {
+                    super::AlongRead { solid, face, along, line, held, at }
+                }));
             }
             match decided {
                 Ok(true) => {
@@ -2094,6 +2102,9 @@ struct Asked<'w, 'a> {
     /// Whether every two faces are read as meeting: the condition asked again, to tell whether
     /// the pairs read apart are what left the block out.
     every: std::cell::Cell<bool>,
+    /// Every face read along a direction (#763): the solid, the face by its name from it, the
+    /// word, the direction's absolute name, and what it was read as.
+    along: std::cell::RefCell<Vec<(String, String, crate::expr::Along, String, bool)>>,
 }
 
 /// The most aliases a walk may have made for `Asked` to hold each answer to the walk's whole table
@@ -2109,6 +2120,7 @@ impl<'w, 'a> Asked<'w, 'a> {
             alias: super::resolve::Lazy::new(walk),
             apart: Default::default(),
             every: Default::default(),
+            along: Default::default(),
         }
     }
 
@@ -2154,6 +2166,32 @@ impl super::values::Names for Asked<'_, '_> {
             self.apart.borrow_mut().push((solid.to_string(), [ra.to_string(), rb.to_string()]));
         }
         Some(met)
+    }
+
+    /// A face by its solid's `Lays`, read where the drawing is seeded, against a direction drawn
+    /// as it stands there (`Directions`); each answer kept, to be read again where the drawing is
+    /// solved.
+    fn along(&self, along: crate::expr::Along, face: &str, line: &str)
+        -> Option<Result<bool, String>> {
+        let (solid, rest, listed) = self.face(face)?;
+        let Some(&d) = self.walk.faces.directions.get(line) else {
+            return Some(Err(format!(
+                "`{}` is no direction drawn: hold a face against an axis (`std.z`), a line or a \
+                 frame's axis", crate::program::public_path(line)
+            )));
+        };
+        let Some(lays) = &listed.lays else {
+            return Some(Err(format!(
+                "`{}`'s faces are not read where they are named (a body cut by a sweep is its \
+                 field's)", crate::program::public_path(solid)
+            )));
+        };
+        let held = lays.holds(rest, along, d)?;
+        if let Ok(h) = held {
+            self.along.borrow_mut().push((solid.to_string(), rest.to_string(), along,
+                                          line.to_string(), h));
+        }
+        Some(held)
     }
 
     fn running(&self, name: &str) -> bool {

@@ -255,7 +255,8 @@ impl Cmp {
 ///
 /// Two names may also be compared for **identity** (#267): `a == b` and `a != b` where a side
 /// names geometry rather than a number, and `c in B`, a name among the faces another names; and
-/// two faces by whether they **meet** (#625), `a meets b`.  What a name stands for is the
+/// two faces by whether they **meet** (#625), `a meets b`; and a face by how it lies along a
+/// direction (#763), `a parallel l` and `a perpendicular l`.  What a name stands for is the
 /// elaborator's to say, so `decide` refuses those, and `flatten::values::condition` decides them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Cond {
@@ -264,6 +265,9 @@ pub enum Cond {
     In(String, String),
     /// `a meets b`: two faces of a solid sharing a point of its boundary (#625).
     Meets(String, String),
+    /// `a parallel l`, `a perpendicular l`: a face lying along a direction, or square to it, as
+    /// the relation word says of a plane and an axis (#763).
+    Along(Along, String, String),
     And(Box<Cond>, Box<Cond>),
     Or(Box<Cond>, Box<Cond>),
     Not(Box<Cond>),
@@ -288,7 +292,7 @@ impl Cond {
                 b.collect_deps(out);
             }
             Cond::Not(a) => a.collect_deps(out),
-            Cond::In(a, b) | Cond::Meets(a, b) => {
+            Cond::In(a, b) | Cond::Meets(a, b) | Cond::Along(_, a, b) => {
                 out.insert(a.clone());
                 out.insert(b.clone());
             }
@@ -296,14 +300,14 @@ impl Cond {
     }
 
     /// The condition with each name its numbers read written as `f` answers (`Ast::map_vars`);
-    /// a name compared for what it stands for (`in`, `meets`) is left as it is.
+    /// a name compared for what it stands for (`in`, `meets`, `parallel`) is left as it is.
     pub fn map_vars(&self, f: &impl Fn(&str) -> Option<Ast>) -> Cond {
         match self {
             Cond::Cmp(op, a, b) => Cond::Cmp(*op, a.map_vars(f), b.map_vars(f)),
             Cond::And(a, b) => Cond::And(Box::new(a.map_vars(f)), Box::new(b.map_vars(f))),
             Cond::Or(a, b) => Cond::Or(Box::new(a.map_vars(f)), Box::new(b.map_vars(f))),
             Cond::Not(a) => Cond::Not(Box::new(a.map_vars(f))),
-            Cond::In(..) | Cond::Meets(..) => self.clone(),
+            Cond::In(..) | Cond::Meets(..) | Cond::Along(..) => self.clone(),
         }
     }
 
@@ -318,18 +322,48 @@ impl Cond {
                 b.collect_measures(out);
             }
             Cond::Not(a) => a.collect_measures(out),
-            Cond::In(..) | Cond::Meets(..) => {}
+            Cond::In(..) | Cond::Meets(..) | Cond::Along(..) => {}
         }
     }
 
-    /// Whether the condition compares names for what they stand for (`in`, `meets`) anywhere —
+    /// Whether the condition compares names for what they stand for (`in`, `meets`, `parallel`,
+    /// `perpendicular`) anywhere —
     /// which only a `when` decides, the elaborator knowing what a name is.
     pub fn names_geometry(&self) -> bool {
         match self {
             Cond::Cmp(..) => false,
             Cond::And(a, b) | Cond::Or(a, b) => a.names_geometry() || b.names_geometry(),
             Cond::Not(a) => a.names_geometry(),
-            Cond::In(..) | Cond::Meets(..) => true,
+            Cond::In(..) | Cond::Meets(..) | Cond::Along(..) => true,
+        }
+    }
+}
+
+/// **How a face lies against a direction** (#763), as a `when` asks it: `Parallel` where the
+/// direction lies in the face's tangent plane at every point of it (a plane holding it, a
+/// cylinder about it, a side swept along it), `Perpendicular` where the face is a plane square to
+/// it — what the relation words say of a plane and an axis, asked rather than stated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Along {
+    Parallel,
+    Perpendicular,
+}
+
+impl Along {
+    /// The word, as written.
+    pub fn word(self) -> &'static str {
+        match self {
+            Along::Parallel => "parallel",
+            Along::Perpendicular => "perpendicular",
+        }
+    }
+
+    /// The word written `w`, where it is one.
+    pub fn of_word(w: &str) -> Option<Along> {
+        match w {
+            "parallel" => Some(Along::Parallel),
+            "perpendicular" => Some(Along::Perpendicular),
+            _ => None,
         }
     }
 }

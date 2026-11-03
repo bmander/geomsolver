@@ -72,6 +72,9 @@ pub(super) trait Names {
     /// Whether two faces, each by what its name stands for, share a point (#625): `None` where
     /// either is no face a solid lists.
     fn meets(&self, a: &str, b: &str) -> Option<bool>;
+    /// Whether a face, by what its name stands for, lies `along` the direction `line` stands for
+    /// (#763): `None` where it is no face a solid lists, and why not where it cannot be read.
+    fn along(&self, along: expr::Along, face: &str, line: &str) -> Option<Result<bool, String>>;
     /// Whether the unknown `name` is a face family's running number (#243 L5).
     fn running(&self, name: &str) -> bool;
 }
@@ -83,8 +86,9 @@ pub(super) trait Names {
 ///
 /// A name that is no number may still be compared for **identity** (#267): `a != b` holds where
 /// the two stand for different things (`Names::stands`), `c in B` where what `c` stands for is
-/// one of the faces `B` names, `a meets b` where two faces share a point (#625, `Names::meets`).
-/// A number on one side and geometry on the other is E103.
+/// one of the faces `B` names, `a meets b` where two faces share a point (#625, `Names::meets`),
+/// `a parallel l` and `a perpendicular l` where a face lies along a direction or square to it
+/// (#763, `Names::along`).  A number on one side and geometry on the other is E103.
 pub(super) fn condition(
     text: &str,
     env: &Vals,
@@ -142,6 +146,19 @@ fn holds(
                  no face: name a face a `repeat … in` runs over",
                 if names.faces(x).is_none() { x } else { y }
             )))?
+        }
+        Cond::Along(w, x, y) => {
+            let (p, q) = (stands(x)?, stands(y)?);
+            match names.along(*w, &p, &q) {
+                Some(Ok(held)) => held,
+                Some(Err(why)) => return Err((Code::E103, format!(
+                    "`{x} {} {y}` asks how the face `{x}` lies along `{y}`, and {why}", w.word()
+                ))),
+                None => return Err((Code::E103, format!(
+                    "`{x} {} {y}` asks how a face lies along a direction, and `{x}` is no face: \
+                     name a face a `repeat … in` runs over", w.word()
+                ))),
+            }
         }
         Cond::Cmp(op @ (Cmp::Eq | Cmp::Ne), Ast::Var(x), Ast::Var(y))
             if !env.contains_key(x.as_str()) || !env.contains_key(y.as_str()) =>
@@ -210,8 +227,8 @@ fn claimed(
     let said = |code, e: String| (code, format!("`{text}`: {e}"));
     let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
     if c.names_geometry() {
-        return Err(said(Code::E103, "a claim over values compares numbers; `in` and `meets` \
-            ask of faces, and are a `when`'s".into()));
+        return Err(said(Code::E103, "a claim over values compares numbers; `in`, `meets`, \
+            `parallel` and `perpendicular` ask of faces, and are a `when`'s".into()));
     }
     let mut reads = Vec::new();
     for name in c.deps() {

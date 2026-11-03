@@ -587,7 +587,12 @@ at all where it does not, decided over the numbers in scope before the solve: co
 holds where the names stand for different things (a formal is what its call gave), and `c in B`
 where `c` is one of the faces `B` names (1.14); `a meets b` where two faces of a solid share an
 edge or a corner, read where the drawing is seeded (a pair it reads apart that the solve brings
-together is E080). There is no copy: what the body declares keeps
+together is E080); `f parallel l` where face `f` runs along direction `l` at every point (a plane
+holding it, a cylinder about it, a prism's side swept along it) and `f perpendicular l` where it is
+a plane square to it — `l` an axis (`std.z`, a frame's own in a component), a line or a frame's
+axis — read there too (a face read one way there and the other where the drawing solves is E080;
+a fitted face, which its kind does not say of, E103) (0.201). There is no copy: what the body
+declares keeps
 its own name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused:
 an unknown of the drawing in the condition (E040), a number against something drawn (E103), an
 index, a trailing joint. `when` is the one conditional of statements: write a switch as `when
@@ -2243,6 +2248,13 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   its copy's index, as `--where` reports it — the hole the second drill cut is
   `flange.drill[1].hole`. `flange.cd chamfer(d: 1mm) flange.drill[1]` chamfers that one hole
   (`drill[i]` in a `repeat`); `flange.drill` is every copy's.
+- **Pick edges by the faces they lie between** (0.201): a word takes every edge where its faces
+  meet, so a block over the faces chooses. Two faces both along a direction meet in lines along
+  it, so the edges in plan of a part drawn in plan are
+  `repeat f in hub.bar { repeat g in hub.post { when f parallel std.z and g parallel std.z {
+  f round(r: 3mm) g } } }`, and the arc where the post rises from the bar's top is left sharp
+  (`rust/examples/rounds/hub.sv`); `when f perpendicular std.z` keeps the faces square to it, and
+  `when f != hub.bar.near` leaves one out by name. Never split a solid to leave an edge unnamed.
 - Each acts on the body after its other terms: a round reads the faces the cuts and unions left,
   and not another round's — unless it names that round (below).
 - Where two faces meet tangent there is no edge: a chain of tangent edges (an obround's foot, a
@@ -2276,6 +2288,7 @@ They are written in Solvent (`rust/lib/std/rounds.sv`), from region bodies you c
 | `repeat a in A { repeat b in B { when b != a { … } } }` | a copy per pair of faces, each made where the two differ |
 | `when c in B and c != a { … }` | made where `c` is one of `B`'s faces and not `a` |
 | `when b != a and b meets a { … }` | made where the two faces share an edge or a corner |
+| `when a parallel std.z { … }` | made where face `a` runs along `std.z` (`perpendicular`: a plane square to it) |
 | `taken := solid(run)`, `taken cut A.body` | a solid of a set, cut from the body `A`'s faces are of |
 
 `.ends`, `.surface` and `.body` are members only past a set or a solid where nothing declared

@@ -117,8 +117,10 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
             diags.push(refuse(EntRef::new(crate::model::EntKind::Envelope, i), message));
         }
     }
-    // faces read apart where the drawing is seeded that meet where it is solved (#625)
+    // faces read apart where the drawing is seeded that meet where it is solved (#625), and
+    // faces read along a direction there that are not where it is solved, or the other way (#763)
     diags.extend(meets::apart(sk, map));
+    diags.extend(meets::along(sk, map));
     // a module's own place, where no statement of the document made it
     crate::modules::localize(p, &mut diags);
     diags
@@ -236,12 +238,14 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // **a block over a solid's faces** (#183 F4) runs over them once the solid is built: its
     // faces named, and the document elaborated again
     let mut faces = BTreeMap::new();
+    // and the directions drawn where they are named, for a `when` to hold a face against (#763)
+    let mut directions = crate::flatten::Directions::new();
     // named again while a pass's solids give them otherwise — a round over another's faces, once
     // that one is made (#183 F4, [0.149]) — but no more than a few times: rounds that name each
     // other, refused, would give more every pass
     let mut renamed = 0;
     loop {
-        match elaborate_in(p, &refused, &crossed, &faces, renamed >= FACE_PASSES) {
+        match elaborate_in(p, &refused, &crossed, &faces, &directions, renamed >= FACE_PASSES) {
             Ok(mut e) => {
                 if crossed.is_empty() {
                     crossed = crossed_seeds(&e);
@@ -259,9 +263,10 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 return e;
             }
             Err(Again::Refused(more)) => refused.extend(more),
-            Err(Again::Faces(more)) => {
+            Err(Again::Faces(more, drawn)) => {
                 renamed += more.keys().filter(|k| faces.contains_key(*k)).count().min(1);
                 faces.extend(more);
+                directions = drawn;
             }
         }
     }
@@ -272,10 +277,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
 const FACE_PASSES: usize = 8;
 
 /// Why a pass of `elaborate` ends before a drawing is made: sets drawn as elements that are
-/// none, or solids a block runs over the faces of, named.
+/// none, or solids a block runs over the faces of, named — with every direction drawn, as the
+/// pass that named them left it (#763).
 enum Again {
     Refused(BTreeSet<String>),
-    Faces(BTreeMap<String, crate::flatten::Listed>),
+    Faces(BTreeMap<String, crate::flatten::Listed>, crate::flatten::Directions),
 }
 
 /// The points whose seeds break a bound, or an orientation the document states (#157), carried
