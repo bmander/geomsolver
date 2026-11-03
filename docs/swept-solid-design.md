@@ -429,9 +429,17 @@ recorded above with what was tried:
   form as the rim's branches are. But all three meet at one point: the meridian's top is where the
   ring's top circle touches the plane it turns in and the meridian's torus touches that plane too,
   so the plane holds two circles touching there and each torus a node where four ways leave two by
-  two along one line. A ring turned 1.5 rad came out as the ring alone (the meridian's torus's piece
-  outside the ring lost: the tied ways read so its cycle closed on the wrong side). So the turned
-  torus waits on the arrangement holding a point where three surfaces touch pairwise;
+  two along one line. A ring turned 1.5 rad came out as the ring alone. Reduced to the ring, one
+  meridian's torus and the plane (`selected`, each pair alone right), the meridian's torus outside
+  the ring comes out empty: on the ring's face the walk at that node left along the top circle where
+  it should have left along the meridian, so the two pieces between the branches and the meridian
+  either side of it were joined into one through a there-and-back along the top circle, and the
+  piece they border lost that circle. The branches reach the node tangent to the top circle (their
+  angle round the ring goes as the square root of the height below the top), but their last chord,
+  a 2048th of the tube's height long, leaves 0.015 rad below it — outside the tie, so no curvature
+  reading parts them. So the turned torus waits on that node read right (the branches drawn in
+  ever closer to the top as they are to a coincidence, and the four ways there ordered), and on the
+  arrangement holding a point where three surfaces touch pairwise;
 - **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
   has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
 
