@@ -234,7 +234,10 @@ pub fn meet(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f64) ->
             None => {}
         }
     }
-    let (curves,closed_form) = match intersect(a,b,tol) {
+    let start = crate::util::clock::Instant::now();
+    let met = intersect(a,b,tol);
+    crate::util::meter::meeting(a.kind(),b.kind(),!matches!(met,Ssi::Traced),start.elapsed());
+    let (curves,closed_form) = match met {
         Ssi::Same => return Ok(Meeting {same:true,branches:Vec::new(),singular:Vec::new(),closed_form:true}),
         Ssi::Curves(cs) => (cs,true),
         Ssi::Traced => {
@@ -309,7 +312,10 @@ impl Shared {
     /// met with the other's, in the order asked (a closed form's curves run as the order says).
     pub fn meeting(&mut self,i: usize,j: usize,tol: f64) -> Ssi {
         if let Some(m) = self.meetings.get(&(i,j)) { return m.clone() }
+        let start = crate::util::clock::Instant::now();
         let m = intersect(&self.surfaces[i],&self.surfaces[j],tol);
+        // the profile's count of meetings found in closed form and left to a trace (#777 V4)
+        crate::util::meter::meeting(self.surfaces[i].kind(),self.surfaces[j].kind(),!matches!(m,Ssi::Traced),start.elapsed());
         self.meetings.insert((i,j),m.clone());
         m
     }

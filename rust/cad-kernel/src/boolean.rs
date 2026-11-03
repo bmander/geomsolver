@@ -913,8 +913,11 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,tol: f64) -> Res
     // a root met flatly that is a crossing found besides is that crossing (`flat_roots`)
     let gone = arr.flat_roots(&mut crossings);
     arr.say.lap();
+    // (a build past its budget goes no further, #777 V3)
+    if crate::util::meter::stopped() { return Err("the build went past its budget".into()) }
     // 2. every pair of faces: their surfaces' curves, kept where they lie in both faces
     let meetings = arr.meetings(&crossings)?;
+    if crate::util::meter::stopped() { return Err("the build went past its budget".into()) }
     // 2a. where three faces of three operands meet at a point no edge passes: two meetings laid
     // on one face, with faces of two other operands, crossing there (#735 A4)
     if arr.solids.0.len() > 2 { arr.triple_points(&meetings); }
@@ -932,6 +935,7 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,tol: f64) -> Res
     // 4. pieces that are one edge merged: the same ends and the same curve between
     let rep = merged(&out,tol);
     let split = Split {pieces_of,out,rep,gone};
+    if crate::util::meter::stopped() { return Err("the build went past its budget".into()) }
     // 5. each face split by what lies on it, traced in its parameters
     let pieces = arr.faces_split(&meetings,&split)?;
     arr.say.arranged();
@@ -1223,6 +1227,12 @@ impl<'a> Arrangement<'a> {
             let ([sa,sb],[fa,fb]) = (faces.s,faces.f);
             let (a,b) = (self.solids[sa],self.solids[sb]);
             let surfaces = [&a.faces[fa].surface,&b.faces[fb].surface];
+            // each two faces met counted against the build's budget (#777 V3): a stopped build meets
+            // no more
+            if !crate::util::meter::charge(crate::util::meter::Stage::Arrangement,1,|| {
+                let (lo,hi) = self.shared(faces);
+                (std::array::from_fn(|k| 0.5*(lo[k]+hi[k])),format!("{} × {}",surfaces[0].kind(),surfaces[1].kind()))
+            }) { break }
             // the two surfaces' meeting, found once for every two faces on them
             let ids = [0,1].map(|k| self.surface_of[&(faces.s[k],faces.f[k])]);
             // two curves of one meeting in closed form may cross one another (`crossings_among`)

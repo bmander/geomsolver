@@ -113,6 +113,13 @@ pub enum Unbuilt {
     /// A cell's membership could not be settled: its deepest point stands within the mesh's sag
     /// of the swept boundary.
     Unsettled { at: V },
+    /// The build went past its budget (#777 V3, `util::meter`): the stage that ran away, a point
+    /// where it was working, and what it was working on there (the surfaces, by kind). Counted in
+    /// steps, so the same build is refused the same way every time.
+    Budget { stage: crate::util::meter::Stage,at: V,what: String },
+    /// The built solid disagrees with the sweep's definition (#777 V2): at the witness `at`, the
+    /// solid holds it (`held`) where membership says the opposite. Never returned built wrong.
+    Wrong { at: V,held: bool },
     /// The kernel could not do it.
     Failed(String),
 }
@@ -332,8 +339,62 @@ fn legs(tool: &Brep,path: &Trajectory,roll: [f64;2]) -> Result<Vec<(crate::traje
     Ok(legs)
 }
 
-/// `closed` over a box holding the sweep, or `cut_from` over `blank`.
+/// **The work a closed build may do** (#777 V3), by stage (`util::meter::Stage`): far past what
+/// every build the suite holds takes (each measured by its profile, `SOLVENT_SWEEP_PROFILE`), and
+/// short of what one runs to where a generic fallback runs without a bound — refused in seconds,
+/// naming the stage, not hours.
+pub const BUDGET: crate::util::meter::Budget = crate::util::meter::Budget([
+    // arrangement: pairs of faces met
+    400_000,
+    // trace: steps marched along meetings with no closed form
+    4_000_000,
+    // ray: curve–surface searches and the samples sampled ones take
+    40_000_000,
+    // outline: chords faces' loops are cut in
+    20_000_000,
+    // inverse: a swept sheet's inverse map
+    40_000_000,
+    // membership: stretches of the roll read
+    400_000_000,
+    // judge: points judged
+    100_000,
+]);
+
+/// `closed` within `budget` (`BUDGET` is `closed`'s): past it, refused by the stage that ran away
+/// (`Unbuilt::Budget`).
+pub fn closed_within(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,budget: crate::util::meter::Budget) -> Result<Brep,Unbuilt> {
+    metered(tool,path,roll,bar,tol,None,budget)
+}
+
+/// `cut_from` within `budget`.
+pub fn cut_from_within(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,budget: crate::util::meter::Budget)
+    -> Result<Brep,Unbuilt> {
+    metered(tool,path,roll,bar,tol,Some(blank),budget)
+}
+
+/// `closed` over a box holding the sweep, or `cut_from` over `blank`, within `BUDGET`.
 fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    metered(tool,path,roll,bar,tol,blank,BUDGET)
+}
+
+/// `build` with a meter counting its work against `budget` (`util::meter`): a build past it refused
+/// by the stage that ran away, whatever else it ended in, and its profile printed where
+/// `SOLVENT_SWEEP_PROFILE` is set (#777 V4).
+fn metered(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>,budget: crate::util::meter::Budget)
+    -> Result<Brep,Unbuilt> {
+    use crate::util::meter;
+    let m = meter::Meter::new(budget);
+    let clock = crate::util::clock::Instant::now();
+    let out = meter::within(&m,|| build(tool,path,roll,bar,tol,blank));
+    if meter::profiling() {
+        eprintln!("{}  took {:?}: {}",m.report(),clock.elapsed(),match &out { Ok(b) => format!("built, {} faces",b.faces.len()),Err(e) => format!("{e:?}") });
+    }
+    if let Some(o) = m.over() { return Err(Unbuilt::Budget {stage:o.stage,at:o.at,what:o.what}) }
+    out
+}
+
+/// `closed` over a box holding the sweep, or `cut_from` over `blank`: the pipeline itself.
+fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     // the legs the path is taken in: one constant twist over the roll, or each piece of a path of
     // pieces over its stretch of it (K1: a sweep is its pieces' sweeps united), every one read
     let legs = legs(tool,path,roll)?;
@@ -862,6 +923,8 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     let solid = Solid::new(tool,bar,1.)?;
     let swept = Swept {tool:&solid,path,roll:whole_roll};
     let carrying: Vec<Cutter> = cutters.into_iter().filter(|(_,sites)| carries(&swept,sites,half)).map(|(c,_)| c).collect();
+    // a build past its budget goes no further (#777 V3: refused by `metered`, naming the stage)
+    if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
     // **the box split by every candidate at once** (#735 A4, `boolean::arrangement_within`): each
     // candidate a solid one of whose faces lies on it across the box — a plane a block standing on
     // it, far wider than the box; a surface of revolution its solid over the heights its source
@@ -911,25 +974,98 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     let within = blank.unwrap_or(&domain);
     let (dlo,dhi) = within.bounds();
     let refs: Vec<&Brep> = solids.iter().filter(|s| { let (lo,hi) = s.bounds(); (0..3).all(|k| lo[k] <= dhi[k]+tol && hi[k] >= dlo[k]-tol) }).collect();
-    let complex = arrangement_within(within,&refs,tol)?;
+    let out = arranged(within,&refs,&swept,blank,tol);
+    // a failed build's arrangement written where `SOLVENT_SWEEP_DUMP` asks (#777 V5), to be
+    // replayed alone and reduced (`swept::dump`)
+    if let (Err(why),Some(dir)) = (&out,super::dump::dump_dir()) {
+        match super::dump::dump(&dir,within,&refs,tol,&format!("{why:?}")) {
+            Ok(()) => eprintln!("sweep: the failed build's arrangement written to {}",dir.display()),
+            Err(e) => eprintln!("sweep: the failed build's arrangement not written: {e}"),
+        }
+    }
+    out
+}
+
+/// The domain `within` split by the candidates `refs` at once, each cell kept by membership, the
+/// kept cells' boundary selected and judged: `build` from its arrangement on.
+fn arranged(within: &Brep,refs: &[&Brep],swept: &Swept,blank: Option<&Brep>,tol: f64) -> Result<Brep,Unbuilt> {
+    let complex = arrangement_within(within,refs,tol)?;
+    if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
     // each cell classified by membership at the deepest of its points that settles (a cusp-thin
     // cell's stand near the swept boundary, and the first may not), and the boundary between the
     // cells kept — the members, or cut from a blank the rest — and the others the result: one
     // selection, no union, the candidates that bound nothing healed out of its faces
     let cells = complex.cells()?.len();
     let mut keep = vec![false;cells];
+    // each cell's points read past the one that settled it: witnesses the built solid is judged at
+    let mut witnesses: Vec<V> = Vec::new();
     for (c,kept) in keep.iter_mut().enumerate().skip(1) {
+        if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
         let points = complex.inside_points(c,4)?;
         let Some(&first) = points.first() else { continue };
-        match points.iter().find_map(|&x| swept.member(x).ok()) {
-            Some(m) => *kept = m != blank.is_some(),
+        match points.iter().position(|&x| swept.member(x).is_ok()) {
+            Some(k) => {
+                *kept = swept.member(points[k]).ok() != Some(blank.is_some());
+                witnesses.extend(points[k+1..].iter().copied());
+            }
             None => return Err(Unbuilt::Unsettled {at:first}),
         }
     }
     if blank.is_none() && !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
     let out = crate::boolean::selection(&complex,&|c| keep[c])?;
     out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
+    // **judged by its definition before it is returned** (#777 V2): never returned built wrong
+    judge(&out,swept,within,blank,&witnesses,tol)?;
     Ok(out)
+}
+
+/// How many points of the domain each way a built solid is judged at (`judge`).
+const JUDGED: usize = 8;
+
+/// **The built solid judged by the sweep's definition** (#777 V2, the design bible's fourth
+/// principle: built correctly or refused with a witness, never built wrong): at seeded points of
+/// the domain — a jittered grid over its box, and the cells' own points past the one each was
+/// classified by (`witnesses`) — the solid's exact point location (`query::Located`, V1) read
+/// against the swept set's membership (`member::Swept::member`): built alone, inside the solid
+/// exactly where the point is a member; cut from a blank, inside exactly where the blank holds it
+/// and it is no member. A point either reading cannot settle (on the boundary, or within the tool
+/// mesh's sag of it) says nothing. A disagreement is a refusal carrying the point
+/// (`Unbuilt::Wrong`). The solid's sense is judged too: a boundary turned inside out (its volume
+/// below nothing) places points as the right one does, but holds none of them, and is refused at
+/// the first member it so leaves out. Public, so what a build returned can be judged again apart
+/// from it.
+pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witnesses: &[V],tol: f64) -> Result<(),Unbuilt> {
+    use crate::query::{Located,Place};
+    use crate::util::meter::{self,Stage};
+    let (lo,hi) = domain.bounds();
+    let mut rng = crate::util::rng::Rng::new(0x5ee7);
+    let mut points: Vec<V> = Vec::with_capacity(JUDGED*JUDGED*JUDGED+witnesses.len());
+    for k in 0..JUDGED*JUDGED*JUDGED {
+        let ijk = [k%JUDGED,(k/JUDGED)%JUDGED,k/(JUDGED*JUDGED)];
+        points.push(std::array::from_fn(|a| lo[a]+(hi[a]-lo[a])*(ijk[a] as f64+rng.uniform(0.15,0.85))/JUDGED as f64));
+    }
+    points.extend_from_slice(witnesses);
+    // (the grid is within the domain's box; a blank is the domain cut from, read as the blank)
+    let solid = Located::new(built,tol);
+    let blank = blank.map(|b| Located::new(b,tol));
+    let readings = crate::util::par::map(&points,|&p| -> Option<(V,bool)> {
+        if !meter::charge(Stage::Judge,1,|| (p,"the built solid".into())) { return None }
+        let held = match solid.solid_place(p) { Place::In => true,Place::Out => false,Place::On => return None };
+        let member = swept.member(p).ok()?;
+        let should = match &blank {
+            None => member,
+            Some(b) => match b.solid_place(p) { Place::In => !member,Place::Out => false,Place::On => return None },
+        };
+        (held != should).then_some((p,held))
+    });
+    if let Some((at,held)) = readings.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held}) }
+    // turned inside out: every point it seems to hold, it leaves out
+    if crate::props::volume(built) < 0. {
+        let inside = points.iter().copied().find(|&p| solid.solid_place(p) == Place::In)
+            .or_else(|| witnesses.first().copied()).unwrap_or_else(|| built.vertices.first().map_or([0.;3],|v| v.p));
+        return Err(Unbuilt::Wrong {at:inside,held:false})
+    }
+    Ok(())
 }
 
 /// The span of a cylinder's or a cone's face along its rulings (its surface's `v`), read off its

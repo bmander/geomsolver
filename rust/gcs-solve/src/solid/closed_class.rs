@@ -49,6 +49,10 @@ pub fn said(unbuilt: Unbuilt,tool: &str) -> Failure {
             it nor square to it"),Some(at)),
         Unbuilt::Unsettled {at} => (Condition::Settled,"a cell of the arrangement stands within the tool's mesh of the swept \
             boundary at every point it is read at".into(),Some(at)),
+        Unbuilt::Budget {stage,at,what} => (Condition::Settled,format!("the build went past its budget in its {stage} \
+            stage, on a {what}"),Some(at)),
+        Unbuilt::Wrong {at,held} => (Condition::Settled,format!("the built solid {} a point the sweep's definition {}: refused, \
+            not returned wrong",if held { "holds" } else { "leaves out" },if held { "leaves out" } else { "holds" }),Some(at)),
         Unbuilt::Failed(m) => (Condition::Settled,format!("the kernel could not build it: {m}"),None),
     }
 }

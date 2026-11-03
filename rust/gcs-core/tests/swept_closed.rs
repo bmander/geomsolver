@@ -869,3 +869,281 @@ fn a_ball_screwed_closes_into_the_pipe_about_its_centres_helix() {
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
 }
+
+/// The point `x` screwed back by `v` of the screw about the world's `z` axis turning `angle` and
+/// rising `rise` over `v` in `[0, 1]`.
+fn screwed_back(x: [f64;3],angle: f64,rise: f64,v: f64) -> [f64;3] {
+    let (s,c) = (-angle*v).sin_cos();
+    [c*x[0]-s*x[1],s*x[0]+c*x[1],x[2]-rise*v]
+}
+
+/// **Every surface the closed class emits locates a point exactly** (#777 V1's gate): a ray's
+/// crossings with each kind of candidate face are certified, never sampled — planes, a cylinder, a
+/// cone, a ball and a torus, a hyperboloid a leaning edge turns into (a surface of revolution of a
+/// conic, `closed::revolved`), an oblique cylinder (a cylinder's affine image), and the sheets a
+/// screw sweeps: a level line's (a screwed triangle, a thin ramp), a level circle's (a screwed
+/// disc, thinner) and a leaning circle's (a ball's pipe). Each solid's point location
+/// (`Located::solid_place`) is held to its membership computed directly from its definition, apart
+/// from the kernel, at seeded points crowded about its boundary and its thin sheets: no point wrong,
+/// none `On`, and no search sampled (the profile's count, `util::meter`).
+#[test]
+fn every_surface_the_closed_class_emits_locates_points_exactly() {
+    use gcs_core::brep::build::{cone,disc,prism,screwed,sphere,torus,Profile,ProfileEdge};
+    use gcs_core::brep::query::{Located,Place};
+    use gcs_core::meter::{self as meter,Budget,Meter};
+    use std::f64::consts::TAU;
+    let hyperboloid = gcs_core::brep::swept::closed::revolved([0.;3],[0.,0.,1.],[2.,0.,0.],unit([0.,1.,1.]),[-1.,1.5],1e-9).unwrap().remove(0);
+    // the cylinder of radius 1 about the z axis, 2 tall, sheared so its top stands 1.5 along x
+    let shear = gcs_core::brep::affine::Affine::new([[1.,0.,0.75],[0.,1.,0.],[0.,0.,1.]],[0.;3]).unwrap();
+    let oblique = prism(&disc([0.;3],[0.,0.,1.],1.),0.,2.).unwrap().mapped(&shear);
+    // a level triangle 10 out, screwed 280° rising half a unit a turn: a ramp a few hundredths thick
+    let (theta,lead) = (280f64.to_radians(),0.5);
+    let rise = lead/TAU*theta;
+    let tri = [[9.,-0.4,0.],[11.,-0.4,0.],[10.,0.5,0.]];
+    let triangle = Profile {origin:tri[0],normal:[0.,0.,1.],names:Vec::new(),loops:vec![(0..3).map(|k| ProfileEdge::Line {a:tri[k],b:tri[(k+1)%3]}).collect()]};
+    let ramp_line = screwed(&triangle,[0.;3],[0.,0.,1.],theta,rise).unwrap();
+    let ramp_circle = screwed(&disc([10.,0.,0.],[0.,0.,1.],1.),[0.;3],[0.,0.,1.],theta,rise).unwrap();
+    // a ball's great circle square to its centre's velocity, 10 out, screwed 1.5 rad climbing half a
+    // unit a radian: the pipe about the centre's helix
+    let (turn,climb) = (1.5,0.75);
+    let n = unit([0.,10.,0.5]);
+    let pipe = screwed(&disc([10.,0.,0.],n,1.),[0.;3],[0.,0.,1.],turn,climb).unwrap();
+    // membership from each definition: `Some(inside)`, or none within a hair of its boundary
+    let hair = 1e-6;
+    let sure = |margin: f64,inside: bool| (margin.abs() > hair).then_some(inside);
+    let rho = |p: [f64;3]| p[0].hypot(p[1]);
+    let in_triangle = |q: [f64;3]| -> f64 {
+        // the least of the signed distances in from each side
+        (0..3).map(|k| { let (a,b) = (tri[k],tri[(k+1)%3]); let (ex,ey) = (b[0]-a[0],b[1]-a[1]); let l = ex.hypot(ey);
+            (ex*(q[1]-a[1])-ey*(q[0]-a[0]))/l }).fold(f64::INFINITY,f64::min)
+    };
+    // a level section at height 0 screwed: the point screwed back by the turn its height gives,
+    // inside the section; past either end's level, outside
+    let screwed_level = |p: [f64;3],inside: &dyn Fn([f64;3]) -> f64| -> Option<bool> {
+        let v = p[2]/rise;
+        if v < 0. { return sure(p[2],false) }
+        if v > 1. { return sure(p[2]-rise,false) }
+        let m = inside(screwed_back(p,theta,rise,v));
+        if m > 0. { sure(m.min(p[2]).min(rise-p[2]),true) } else { sure(m,false) }
+    };
+    let in_pipe = |p: [f64;3]| -> Option<bool> {
+        // the turns `v` that bring `p` into the disc's plane, sampled finely and each settled
+        let phi = |v: f64| { let q = screwed_back(p,turn,climb,v); n[0]*(q[0]-10.)+n[1]*q[1]+n[2]*q[2] };
+        let mut found: Option<f64> = None;
+        let steps = 4000;
+        for k in 0..steps {
+            let (a,b) = (k as f64/steps as f64,(k+1) as f64/steps as f64);
+            let (fa,fb) = (phi(a),phi(b));
+            if fa*fb > 0. { continue }
+            let (mut l,mut r) = (a,b);
+            for _ in 0..80 { let m = 0.5*(l+r); if (phi(m) < 0.) == (fa < 0.) { l = m } else { r = m } }
+            let q = screwed_back(p,turn,climb,0.5*(l+r));
+            let d = (q[0]-10.).hypot(q[1]).hypot(q[2])-1.;
+            found = Some(found.map_or(d,|f: f64| f.min(d)));
+        }
+        // beyond either end the half-spaces past the end discs hold nothing
+        let ends = phi(0.).abs().min(phi(1.).abs());
+        match found { Some(d) => sure(d.abs().min(if d < 0. { ends } else { f64::INFINITY }),d < 0.),None => sure(ends,false) }
+    };
+    let cases: Vec<(&str,Brep,Box<dyn Fn([f64;3]) -> Option<bool>>)> = vec![
+        ("a block",crate::brep::block([0.;3],[2.,1.,1.5]),Box::new(|p| {
+            let m = (0..3).map(|k| p[k].min([2.,1.,1.5][k]-p[k])).fold(f64::INFINITY,f64::min); sure(m,m > 0.) })),
+        ("a drum",prism(&disc([0.;3],[0.,0.,1.],1.),0.,2.).unwrap(),Box::new(|p| { let m = (1.-rho(p)).min(p[2]).min(2.-p[2]); sure(m,m > 0.) })),
+        ("a frustum",cone([0.;3],[0.,0.,1.],1.,0.4,1.5).unwrap(),Box::new(|p| {
+            let m = (1.-0.4*p[2]-rho(p)).min(p[2]).min(1.5-p[2]); sure(m,m > 0.) })),
+        ("a ball",sphere([0.5,0.,0.],[0.,0.,1.],1.).unwrap(),Box::new(|p| { let m = 1.-(p[0]-0.5).hypot(p[1]).hypot(p[2]); sure(m,m > 0.) })),
+        ("a ring",torus([0.;3],[0.,0.,1.],2.,0.3).unwrap(),Box::new(|p| { let m = 0.3-(rho(p)-2.).hypot(p[2]); sure(m,m > 0.) })),
+        ("a hyperboloid",hyperboloid,Box::new(|p| { let m = (4.+p[2]*p[2]).sqrt()-rho(p); let m = m.min(p[2]+1.).min(1.5-p[2]); sure(m,m > 0.) })),
+        ("an oblique cylinder",oblique,Box::new(|p| { let q = [p[0]-0.75*p[2],p[1],p[2]]; let m = (1.-rho(q)).min(p[2]).min(2.-p[2]); sure(m,m > 0.) })),
+        ("a screwed line's ramp",ramp_line,Box::new(move |p| screwed_level(p,&in_triangle))),
+        ("a screwed rim's ramp",ramp_circle,Box::new(move |p| screwed_level(p,&|q| 1.-(q[0]-10.).hypot(q[1])))),
+        ("a ball's pipe",pipe,Box::new(in_pipe)),
+    ];
+    for (what,solid,member) in cases {
+        let at = Located::new(&solid,1e-6);
+        let (lo,hi) = solid.bounds();
+        let mut rng = gcs_core::rng::Rng::new(11);
+        let m = Meter::new(Budget::UNLIMITED);
+        let (mut held,mut checked) = (0,0);
+        // points over the box, and points crowded within a few hundredths of the boundary: a point of
+        // the box nudged toward a vertex-free spot of a face along its normal
+        let faces: Vec<(usize,[f64;3])> = solid.faces.iter().enumerate().flat_map(|(fi,f)| {
+            let [[u0,u1],[v0,v1]] = gcs_core::brep::boolean::face_parameters(&solid,fi);
+            (1..8).flat_map(move |i| (1..8).map(move |j| (fi,f.surface.point([u0+(u1-u0)*i as f64/8.,v0+(v1-v0)*j as f64/8.]))))
+        }).filter(|&(fi,p)| at.face_place(fi,p) == Place::In).collect();
+        for k in 0..600 {
+            let p: [f64;3] = if k%2 == 0 || faces.is_empty() { std::array::from_fn(|i| rng.uniform(lo[i]-0.1,hi[i]+0.1)) } else {
+                let (fi,q) = faces[(rng.uniform(0.,faces.len() as f64) as usize).min(faces.len()-1)];
+                let nn = solid.faces[fi].outward(q).unwrap();
+                // within a few hundredths of it, or of a thin ramp's few thousandths
+                let s = rng.uniform(-1.,1.)*if k%4 == 1 { 0.03 } else { 0.003 };
+                std::array::from_fn(|i| q[i]+s*nn[i])
+            };
+            let Some(inside) = member(p) else { continue };
+            checked += 1;
+            let place = meter::within(&m,|| at.solid_place(p));
+            assert!(place != Place::On && (place == Place::In) == inside,"{what}: at {p:?} {place:?}, its definition {inside}");
+            if inside { held += 1 }
+        }
+        assert!(checked > 400 && held > 40,"{what}: {checked} points read, {held} inside");
+        assert_eq!(m.sampled(),0,"{what}: a search sampled\n{}",m.report());
+    }
+}
+
+/// **A level rim's sheet in closed form and by the general search agree** (#777 M1, M3: a closed form
+/// kept as a fast path is held to the general method): the lines through a screwed rim's thin ramp
+/// meet its sheet at the same points by `line_screwed_circle`'s bound on one unknown as by the
+/// three-unknown search (`query::curve_surface_searched`), each to the tolerance — and the closed
+/// form is the faster, measured here and said.
+#[test]
+fn a_rims_sheet_in_closed_form_is_held_to_the_general_search() {
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::query::{curve_surface,curve_surface_searched,Meets};
+    let ramp = ramp(0.5,280f64.to_radians(),0.);
+    let sheet = ramp.faces.iter().find(|f| f.surface.kind() == "blend").unwrap().surface.clone();
+    let mut rng = gcs_core::rng::Rng::new(5);
+    let (mut fast,mut general,mut met) = (std::time::Duration::ZERO,std::time::Duration::ZERO,0);
+    for _ in 0..60 {
+        let a = rng.uniform(0.,4.5);
+        let p = [10.*a.cos()+rng.uniform(-1.5,1.5),10.*a.sin()+rng.uniform(-1.5,1.5),rng.uniform(-0.6,0.2)];
+        let d = unit([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-0.2,0.2)]);
+        let line = Curve::Line {p,d};
+        let clock = std::time::Instant::now();
+        let Meets::At(one) = curve_surface(&line,[-3.,3.],&sheet,1e-7) else { panic!("along") };
+        fast += clock.elapsed();
+        let clock = std::time::Instant::now();
+        let Some(Meets::At(two)) = curve_surface_searched(&line,[-3.,3.],&sheet,1e-7) else { panic!("the search gave up") };
+        general += clock.elapsed();
+        assert_eq!(one.len(),two.len(),"from {p:?} along {d:?}: {one:?} against {two:?}");
+        for (x,y) in one.iter().zip(&two) { assert!((x.0-y.0).abs() <= 1e-6,"from {p:?} along {d:?}: {one:?} against {two:?}") }
+        met += one.len();
+    }
+    assert!(met > 20,"{met} crossings");
+    eprintln!("a screwed rim's sheet against 60 lines: in closed form {fast:?}, by the general search {general:?}");
+}
+
+/// **A build past its budget refuses by name, within it** (#777 V3's gate): the ring turned about
+/// an axis along its own, its membership reads held to a fortieth of what it takes, is refused in a
+/// fraction of its time, naming the stage that ran away and a point — the same way at every run,
+/// the budget counted in steps. Within the default budget it builds.
+#[test]
+fn a_build_past_its_budget_refuses_by_name_within_it() {
+    use gcs_core::brep::swept::closed::{closed_within,Unbuilt,BUDGET};
+    use gcs_core::meter::{Budget,Stage};
+    let tool = gcs_core::brep::build::torus([10.,0.,0.],[0.,0.,1.],1.,0.3).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.5,advance:0.});
+    let tight = Budget::UNLIMITED.with(Stage::Membership,20_000);
+    let refused = |_: ()| {
+        let clock = std::time::Instant::now();
+        let r = closed_within(&tool,&path,[0.,1.],0.002,1e-6,tight);
+        (r,clock.elapsed())
+    };
+    let (first,took) = refused(());
+    let Err(Unbuilt::Budget {stage,at,what}) = first else { panic!("{first:?}") };
+    assert_eq!(stage,Stage::Membership);
+    assert!(at.iter().all(|x| x.is_finite()) && !what.is_empty(),"{at:?} {what}");
+    assert!(took.as_secs_f64() < 2.,"refused after {took:?}");
+    let (again,_) = refused(());
+    assert_eq!(again.err(),Some(Unbuilt::Budget {stage,at,what}),"refused the same way again");
+    assert!(BUDGET.0[Stage::Membership as usize] > 20_000);
+}
+
+/// A box about `b`'s, a tenth of its size wider each way: a domain to judge a closed build in.
+fn box_about(b: &Brep) -> Brep {
+    let (lo,hi) = b.bounds();
+    let pad = 0.1*(0..3).map(|k| hi[k]-lo[k]).fold(0.,f64::max);
+    crate::brep::block(lo.map(|x| x-pad),hi.map(|x| x+pad))
+}
+
+/// `b` turned inside out: every face the other side, its loops run the other way.
+fn inside_out(b: &Brep) -> Brep {
+    let mut out = b.clone();
+    for f in &mut out.faces {
+        f.reversed = !f.reversed;
+        f.loops = f.loops.drain(..).map(gcs_core::brep::topo::reverse_loop).collect();
+    }
+    out
+}
+
+/// **A solid built wrong is refused at a witness, never returned** (#777 V2's gate): the three ways
+/// a closed build was returned wrong on #776, recreated on a fast case each and judged by the
+/// sweep's definition (`closed::judge`) — a ball's pipe turned inside out (as a drum screwed half a
+/// millimetre a turn came out at −427), the pipe missing a piece (a drum cut from a ring sector
+/// came out at 54.69 of 62.57), and a groove cut with more taken than the bar sweeps (a ball-end
+/// mill screwed through the sector removed 14.4 of 12.0). Each is refused at a point the solid and
+/// the definition disagree on; what the build itself returned is judged right.
+#[test]
+fn a_solid_built_wrong_is_refused_at_a_witness() {
+    use gcs_core::brep::swept::closed::{cut_from,judge,Unbuilt};
+    use std::f64::consts::TAU;
+    let tool = gcs_core::brep::build::sphere([10.,0.,0.],[0.,0.,1.],1.).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.5,advance:TAU*0.5*1.5});
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let solid = Solid::new(&tool,0.002,1.).unwrap();
+    let swept = Swept {tool:&solid,path:&path,roll:[0.,1.]};
+    let domain = box_about(&built);
+    assert_eq!(judge(&built,&swept,&domain,None,&[],1e-6),Ok(()));
+    let refused = |b: &Brep,blank: Option<&Brep>,swept: &Swept,domain: &Brep,what: &str| match judge(b,swept,domain,blank,&[],1e-6) {
+        Err(Unbuilt::Wrong {at,..}) => assert!(at.iter().all(|x| x.is_finite()),"{what}: at {at:?}"),
+        other => panic!("{what}: {other:?}"),
+    };
+    refused(&inside_out(&built),None,&swept,&domain,"turned inside out");
+    // a piece of the pipe missing: a block taken out across its middle, where its centre's helix
+    // stands at (7.3, 6.8, 0.375)
+    let missing = combined(&built,&block([6.,5.5,-1.],[8.5,8.2,2.]),Op::Cut,1e-6).unwrap();
+    assert!(volume(&missing) < volume(&built)-1.);
+    refused(&missing,None,&swept,&domain,"missing a piece");
+    // a groove cut with more taken than the bar sweeps
+    let blank = block([0.,0.,0.],[6.,2.,2.]);
+    let bar = block([1.,0.5,1.5],[2.,1.5,3.]);
+    let slide = slide([3.,0.,0.]);
+    let cut = cut_from(&blank,&bar,&slide,[0.,1.],0.002,1e-6).unwrap();
+    let bar_solid = Solid::new(&bar,0.002,1.).unwrap();
+    let bar_swept = Swept {tool:&bar_solid,path:&slide,roll:[0.,1.]};
+    assert_eq!(judge(&cut,&bar_swept,&blank,Some(&blank),&[],1e-6),Ok(()));
+    let over = combined(&cut,&block([1.5,0.2,0.8],[4.5,1.8,1.6]),Op::Cut,1e-6).unwrap();
+    assert!(volume(&over) < volume(&cut)-0.5);
+    refused(&over,Some(&blank),&bar_swept,&blank,"cut too deep");
+}
+
+/// **A failed build's arrangement is written, read back whole, replayed alone and reduced** (#777
+/// V5): the candidates a closed build splits its domain by — a screwed rim's ramp, a hyperboloid, a
+/// torus, an oblique cylinder, a block — each written and read back bit for bit (`swept::dump`);
+/// their arrangement replayed from the files has the cells the arrangement built directly has; and
+/// a failure that needs two of them is reduced to those two.
+#[test]
+fn a_failed_builds_arrangement_is_dumped_replayed_and_reduced() {
+    use gcs_core::brep::boolean::arrangement_within;
+    use gcs_core::brep::swept::dump::{dump,load,read,reduce,write};
+    use gcs_core::brep::build::{disc,prism};
+    let shear = gcs_core::brep::affine::Affine::new([[1.,0.,0.5],[0.,1.,0.],[0.,0.,1.]],[0.;3]).unwrap();
+    let candidates: Vec<Brep> = vec![
+        ramp(2.,1.5,0.),
+        gcs_core::brep::swept::closed::revolved([0.;3],[0.,0.,1.],[9.,0.,0.],unit([0.,1.,1.]),[-1.,1.],1e-9).unwrap().remove(0),
+        gcs_core::brep::build::torus([10.,0.,0.],[0.,0.,1.],1.,0.3).unwrap(),
+        prism(&disc([10.,1.,-1.],[0.,0.,1.],0.5),0.,2.).unwrap().mapped(&shear),
+        block([9.,-2.,-0.2],[12.,2.,0.2]),
+    ];
+    for c in &candidates {
+        let text = write(c).unwrap();
+        let back = read(&text).unwrap();
+        assert_eq!(write(&back).unwrap(),text);
+        assert_eq!(volume(&back),volume(c));
+    }
+    let domain = block([7.,-3.,-1.5],[13.,3.,1.5]);
+    let refs: Vec<&Brep> = candidates.iter().collect();
+    let dir = std::env::temp_dir().join(format!("sweep-dump-{}",std::process::id()));
+    dump(&dir,&domain,&refs,1e-6,"a test").unwrap();
+    let loaded = load(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let direct = arrangement_within(&domain,&refs[..3],1e-6).unwrap();
+    let replayed = loaded.replay(&[0,1,2]).unwrap();
+    assert_eq!(replayed.cells().unwrap().len(),direct.cells().unwrap().len());
+    // a failure that needs the ramp and the torus both: reduced to those two
+    let fails = |r: &Result<gcs_core::brep::complex::Complex,String>| r.as_ref().is_ok_and(|c| {
+        let names: std::collections::BTreeSet<usize> = c.origins.iter().flatten().map(|o| o.operand).collect();
+        let kinds: std::collections::BTreeSet<&str> = c.b.faces.iter().map(|f| f.surface.kind()).collect();
+        names.len() > 1 && kinds.contains("blend") && kinds.contains("torus")
+    });
+    assert_eq!(reduce(&loaded,&fails),vec![0,2]);
+}

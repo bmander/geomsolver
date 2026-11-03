@@ -746,9 +746,9 @@ fn screwed_overlap(a: &super::geom::Blend,b: &super::geom::Blend,tol: f64) -> Op
 /// F2c5: a ball's great circle square to its centre's velocity, leaning wherever the screw climbs):
 /// the screw keeps each point's distance from its axis, so the meeting is the helices of the
 /// circle's points at the cylinder's radius, the roots of `|ρ(θ)|² − R²` round the circle — a
-/// trigonometric polynomial of degree two, four roots at most — found where it changes sign and,
-/// where it only touches nought (the circle tangent to the cylinder), at its least. `None` for
-/// any other sheet or cylinder.
+/// trigonometric polynomial of degree two, four roots at most — isolated with a bound on its
+/// derivatives (`util::isolate`), a touch where it only reaches nought (the circle tangent to the
+/// cylinder) placed where its derivative changes sign. `None` for any other sheet or cylinder.
 pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy: &Frame,big: f64,tol: f64) -> Option<Vec<Curve>> {
     let super::geom::Carry::Screw {center,axis,..} = blend.carry else { return None };
     let k = unit(axis);
@@ -762,32 +762,20 @@ pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy
     let r = r.abs();
     let g = |th: f64| { let (sn,cs) = th.dsin_cos(); let d = perp(sub(add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))),center)); dot(d,d)-big*big };
     let u_of = |th: f64| { let t = blend.ta[0]+(th-blend.ta[0]).rem_euclid(std::f64::consts::TAU); (t-blend.ta[0])/span };
-    const N: usize = 512;
+    // `g' = 2 d · P'⊥`, `g'' = 2 (|P'⊥|² + d · P''⊥)`, the circle's point `P` at `r` from its
+    // centre and `d` its offset from the axis, within `D = |(o − c)⊥| + r`
+    let dg = |th: f64| {
+        let (sn,cs) = th.dsin_cos();
+        let d = perp(sub(add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))),center));
+        2.*dot(d,perp(add(scale(f.x,-r*sn),scale(f.y,r*cs))))
+    };
+    let far = norm(perp(sub(f.o,center)))+r;
+    let bound = |_: f64,_: f64| [2.*far*r,2.*(r*r+far*r)];
     let tau = std::f64::consts::TAU;
-    let ths: Vec<f64> = (0..=N).map(|i| tau*i as f64/N as f64).collect();
-    let gs: Vec<f64> = ths.iter().map(|&t| g(t)).collect();
-    let mut roots: Vec<f64> = Vec::new();
-    for i in 0..N {
-        let (a,b) = (ths[i],ths[i+1]);
-        if gs[i] == 0. { roots.push(a); continue }
-        if gs[i]*gs[i+1] < 0. {
-            let (mut lo,mut hi) = (a,b);
-            for _ in 0..100 { let m = 0.5*(lo+hi); if (g(m) < 0.) == (gs[i] < 0.) { lo = m } else { hi = m } }
-            roots.push(0.5*(lo+hi));
-        }
-    }
-    // where it only touches nought: a least of `|g|` within the tolerance, between two greater
-    for i in 1..N {
-        let (p,q,n) = (gs[i-1].abs(),gs[i].abs(),gs[i+1].abs());
-        if !(q <= p && q <= n) || gs[i-1]*gs[i+1] < 0. || gs[i-1]*gs[i] < 0. || gs[i]*gs[i+1] < 0. { continue }
-        let (mut lo,mut hi) = (ths[i-1],ths[i+1]);
-        for _ in 0..100 {
-            let (m1,m2) = (lo+(hi-lo)/3.,hi-(hi-lo)/3.);
-            if g(m1).abs() < g(m2).abs() { hi = m2 } else { lo = m1 }
-        }
-        let th = 0.5*(lo+hi);
-        if g(th).abs() <= 2.*big*tol && !roots.iter().any(|&x| (x-th).abs()*r <= tol) { roots.push(th) }
-    }
+    let mut roots: Vec<f64> = crate::util::isolate::roots(&g,&dg,&bound,[0.,tau],tol*1e-3/r.max(1e-300),&|th| g(th).abs() <= 2.*big*tol)?
+        .into_iter().map(|x| x.at).collect();
+    // the circle closes: a root at its end is the one at its start
+    if roots.len() > 1 && (roots[roots.len()-1]-tau-roots[0]).abs()*r <= tol { roots.pop(); }
     Some(roots.into_iter().map(|th| Curve::Iso(blend.clone(),u_of(th))).collect())
 }
 
@@ -1481,6 +1469,8 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
             // are parallel, a touch a step may cross without landing where they nearly are
             let mut facing = dot(cross(a.gradient(p),b.gradient(p)),t) > 0.;
             for _ in 0..100_000 {
+                // each step counted against the build's budget (#777 V3): a stopped build ends here
+                if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (p,format!("{} × {}",a.kind(),b.kind()))) { break }
                 let q = probe.project(add(p,scale(t,h)));
                 // a projection that does not reach both surfaces: a step too long (shortened), or past a
                 // sheet's domain, where its foot is held at the edge (still so at the least step): the

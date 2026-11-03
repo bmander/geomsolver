@@ -15,8 +15,8 @@
 pub use gcs_solve::{
     amd, beams, bodies, brep, cgraph, cholesky, clear, clock, complex, constraints, contact_rate,
     csg, curve, decompose, deformed, developable, delaunay, diagnose, eigen, envelope, expr, extremal, fmath,
-    follow, generate, graft, graph, homotopy, hulls, integral, interior, interval, json, kernels,
-    linalg, lines, locus, measured, mesh, model, motion, newton, ode, par, path, pcg, plane, prisms,
+    follow, generate, graft, graph, homotopy, hulls, integral, interior, interval, isolate, json, kernels,
+    linalg, lines, locus, measured, mesh, meter, model, motion, newton, ode, par, path, pcg, plane, prisms,
     progress, rates, rng, roots, semantics, solid, solve, space, sparse, system, tape, taylor,
     topology, traced, units, variational, vocab, witness,
 };

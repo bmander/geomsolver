@@ -80,9 +80,11 @@ impl Solid {
 }
 
 /// Why a point's membership is not settled: it stands within the mesh's sag of the swept boundary
-/// at roll `at`, or its trajectory could not be read or bounded.
+/// at roll `at`, or its trajectory could not be read or bounded, or the build asking stopped.
 #[derive(Clone,Debug,PartialEq)]
-pub enum Unsettled { Near { at: f64 },Unbounded,Unread(String) }
+pub enum Unsettled { Near { at: f64 },Unbounded,Unread(String),
+    /// The build reading it went past its budget (`util::meter`): nothing more is read.
+    Stopped }
 
 /// A tool carried along a trajectory over a roll: what membership is read of.
 pub struct Swept<'a> { pub tool: &'a Solid,pub path: &'a Trajectory,pub roll: [f64;2] }
@@ -117,6 +119,8 @@ impl Swept<'_> {
         let mut reads = 0;
         while let Some((lo,hi)) = stack.pop() {
             reads += 1;
+            // each stretch read counted against the build's budget (#777 V3)
+            if !crate::util::meter::charge(crate::util::meter::Stage::Membership,1,|| (x,"membership".into())) { return Err(Unsettled::Stopped) }
             if reads > MOST_READS { return Err(near.map_or(Unsettled::Unbounded,|at| Unsettled::Near {at})) }
             let m = 0.5*(lo+hi);
             let pose = self.path.pose(m).map_err(|e| Unsettled::Unread(e.msg))?;

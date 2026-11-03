@@ -87,6 +87,23 @@ impl BSpline {
         })
     }
     pub fn point(&self,t: f64) -> V { self.ders(t,0)[0] }
+    /// The curve's point at `t` in homogeneous coordinates (clamped): `(Σ N w P, Σ N w)`, every
+    /// weight one for a curve not rational. Polynomial in `t` over each knot span, of the curve's
+    /// degree, where the point itself is a quotient (`query`'s meridians read it so).
+    pub fn homogeneous(&self,t: f64) -> (V,f64) {
+        let p = self.degree;
+        let [a,b] = self.domain();
+        with_basis(p,&self.knots,self.poles.len(),t.clamp(a,b),0,|s,ders| {
+            let (mut out,mut w) = ([0.;3],0.);
+            for (j,&n) in ders[0].iter().enumerate().take(p+1) {
+                let k = s-p+j;
+                let wk = self.weights.as_ref().map_or(1.,|w| w[k]);
+                for c in 0..3 { out[c] += n*wk*self.poles[k][c] }
+                w += n*wk;
+            }
+            (out,w)
+        })
+    }
     /// The length of the control polygon, a bound on the curve's (a rational one's too: its de
     /// Casteljau steps cut corners).
     pub fn hull_length(&self) -> f64 { self.poles.windows(2).map(|w| crate::util::space::distance(w[0],w[1])).sum() }
@@ -672,6 +689,33 @@ impl Net {
         let (i0,i1) = (span(self.du,&self.uknots,nu,u0.min(u1))-self.du,span(self.du,&self.uknots,nu,u0.max(u1)));
         let (j0,j1) = (span(self.dv,&self.vknots,nv,v0.min(v1))-self.dv,span(self.dv,&self.vknots,nv,v0.max(v1)));
         self.poles[i0..=i1].iter().flat_map(move |row| row[j0..=j1].iter().copied())
+    }
+    /// **Bounds on the sheet's second derivatives over `[u0, u1] × [v0, v1]`** — `|S_uu|`, `|S_uv|`,
+    /// `|S_vv|` — from its derivatives' own nets (a B-spline's derivative is a B-spline whose poles
+    /// are its differences, and lies in their hull), read over the poles reaching the box. `None`
+    /// for a rational sheet, whose derivatives are quotients.
+    pub fn second_bounds(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Option<[f64;3]> {
+        if self.weights.is_some() { return None }
+        let (nu,nv) = (self.poles.len(),self.poles[0].len());
+        let (i0,i1) = (span(self.du,&self.uknots,nu,u0.min(u1))-self.du,span(self.du,&self.uknots,nu,u0.max(u1)));
+        let (j0,j1) = (span(self.dv,&self.vknots,nv,v0.min(v1))-self.dv,span(self.dv,&self.vknots,nv,v0.max(v1)));
+        // the first differences' poles along one parameter: `p (P_{i+1} − P_i) / (t_{i+p+1} − t_{i+1})`
+        let diff = |rows: &[Vec<V>],p: usize,t: &[f64],first: usize| -> Vec<Vec<V>> {
+            (0..rows.len().saturating_sub(1)).map(|i| {
+                let k = first+i;
+                let gap = t[k+p+1]-t[k+1];
+                rows[i].iter().zip(&rows[i+1]).map(|(a,b)| if gap > 0. { std::array::from_fn(|c| p as f64*(b[c]-a[c])/gap) } else { [0.;3] }).collect()
+            }).collect()
+        };
+        let transpose = |g: &[Vec<V>]| -> Vec<Vec<V>> { if g.is_empty() { return Vec::new() } (0..g[0].len()).map(|j| g.iter().map(|r| r[j]).collect()).collect() };
+        let sub: Vec<Vec<V>> = self.poles[i0..=i1].iter().map(|r| r[j0..=j1].to_vec()).collect();
+        let most = |g: &[Vec<V>]| g.iter().flatten().map(|v| (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]).sqrt()).fold(0.,f64::max);
+        let du1 = diff(&sub,self.du,&self.uknots,i0);
+        let uu = if self.du < 2 { 0. } else { most(&diff(&du1,self.du-1,&self.uknots[1..],i0)) };
+        let uv = if du1.is_empty() { 0. } else { most(&diff(&transpose(&du1),self.dv,&self.vknots,j0)) };
+        let dv1 = diff(&transpose(&sub),self.dv,&self.vknots,j0);
+        let vv = if self.dv < 2 { 0. } else { most(&diff(&dv1,self.dv-1,&self.vknots[1..],j0)) };
+        Some([uu,uv,vv])
     }
     /// The distinct knots strictly inside `[a, b]` of parameter `k` (0 for u, 1 for v).
     pub fn breaks(&self,k: usize,[a,b]: [f64;2]) -> Vec<f64> {
