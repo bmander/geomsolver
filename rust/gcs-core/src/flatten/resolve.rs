@@ -502,8 +502,8 @@ impl Lookup<'_> {
 
     /// **One copy's faces, past a solid** (`flange.drill[1]`, [0.157]): where an index picks no
     /// copy of a declaration, it is read as part of the segment it stands on, as the faces are
-    /// named (`SolidE::step`, `solid::faces::FacePath`) — a reference that, so read, reaches no
-    /// solid is none.
+    /// named (`solid::step_through`, `solid::faces::FacePath`) — a reference that, so read,
+    /// reaches no solid is none.
     fn face_of_copy(&self, r: &Ref, sc: &Scope) -> Option<(String, Vec<String>)> {
         if self.solids.is_empty() {
             return None;
@@ -1244,23 +1244,26 @@ impl<'a> Walk<'a> {
 
     /// The faces a set-aside block runs over (#183 F4), where it runs over a solid's (`repeat a
     /// in pad.boss`) and the elaborator has named that solid's: each a reference to the face
-    /// (`pad.boss.near`).  Which copies make anything is a `when`'s in the body (#267).
+    /// (`pad.boss.near`), as `faces_named` lists them.  Which copies make anything is a `when`'s
+    /// in the body (#267).  With them the solid, and why there are none where its path names no
+    /// face of it (W116, `names_no_face`).
     fn face_links(
         &self,
         p: &Pending,
         alias: &dyn Aliases,
-    ) -> Option<(Result<Vec<(Vec<Link>, bool)>, (Span, String)>, String)> {
+    ) -> Option<(Result<Vec<(Vec<Link>, bool)>, (Span, String)>, String, Option<String>)> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
         let over = b.over.as_ref().filter(|o| o.zip.is_empty())?;
         let sc = self.pending_scope(p);
-        let all = self.faces_named(&over.chain, &sc, alias)?;
-        let (abs, _) = self.look(alias).find(&over.chain, &sc)?;
-        let links = all.iter().map(|f| {
-            let r = Ref::dotted(f, over.chain.span);
+        let (abs, rest) = self.look(alias).find(&over.chain, &sc)?;
+        let paths = &self.faces.given.get(&abs)?.paths;
+        let links: Vec<Link> = paths.iter().filter(|f| f.listed_by(&rest, sc.prefix())).map(|f| {
+            let r = Ref::dotted(&format!("{abs}.{}", f.text()), over.chain.span);
             // an absolute name, read from the document's root
             Link::Edge(r, Scope::absolute(sc.access.clone()))
         }).collect();
-        Some((Ok(vec![(links, false)]), abs))
+        let nothing = links.is_empty().then(|| names_no_face(&abs, &rest, paths)).flatten();
+        Some((Ok(vec![(links, false)]), abs, nothing))
     }
 
     /// Expand every block over a chain's edges (`repeat e in rack.profile { … }`), each where
@@ -1280,17 +1283,23 @@ impl<'a> Walk<'a> {
                 .iter()
                 .enumerate()
                 .find_map(|(i, p)| {
-                    self.walks_of(p, &alias).map(|c| (c, None))
-                        .or_else(|| self.face_links(p, &alias).map(|(c, abs)| (c, Some(abs))))
+                    self.walks_of(p, &alias).map(|c| (c, None, None))
+                        .or_else(|| self.face_links(p, &alias)
+                            .map(|(c, abs, none)| (c, Some(abs), none)))
                         .map(|c| (i, c))
                 });
-            let Some((i, (walks, over))) = found else { break };
+            let Some((i, (walks, over, nothing))) = found else { break };
             // a block over a solid's faces names it however they were named: the elaborator
             // names them again where its solids now give them otherwise ([0.149])
             if let Some(abs) = over {
                 self.faces.repeats.insert(abs);
             }
             let p = self.aside.blocks.remove(i);
+            // said at the document's statement it was met under (a round's, not the word's
+            // block), however many copies reach it
+            if let Some(m) = nothing {
+                self.once(Code::W116, p.at, m);
+            }
             match walks {
                 Ok(walks) => self.expand_edges(p, walks),
                 Err((span, m)) => {
@@ -1902,4 +1911,24 @@ impl<'a> Walk<'a> {
                 point: abs[i.prefix.len()..].to_string(),
             })
     }
+}
+
+/// Why a block over solid `abs`'s faces (`repeat a in part.pad`) runs over none (W116, #760): its
+/// path past the solid, `rest`, names none of the faces it lists (`paths`), eaten or not — said
+/// with the steps the faces' names go on by past the longest of its beginnings any names, so a
+/// step the document writes otherwise (`joint[0].pad` for `pad`) is shown.  `None` where it names
+/// one: a block that lists none of those (a round over its own faces).
+fn names_no_face(abs: &str, rest: &[String], paths: &[crate::solid::faces::FacePath])
+    -> Option<String> {
+    if paths.is_empty() || paths.iter().any(|f| f.matches(rest)) {
+        return None;
+    }
+    let k = (0..rest.len()).rev().find(|&k| paths.iter().any(|f| f.matches(&rest[..k])))?;
+    let next: BTreeSet<&str> = paths.iter().filter(|f| f.matches(&rest[..k]))
+        .filter_map(|f| f.segments().nth(k)).collect();
+    let shown: Vec<&str> = next.iter().take(8).copied().collect();
+    let more = if next.len() > shown.len() { ", …" } else { "" };
+    let past: String = rest[..k].iter().map(|s| format!(".{s}")).collect();
+    Some(format!("`{abs}.{}` names no face of `{abs}`, so nothing is made over its faces: past \
+        `{abs}{past}` they are named by {}{more}", rest.join("."), crate::syntax::one_of(&shown)))
 }

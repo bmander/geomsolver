@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.202 — November 2026**
+**Specification, Draft 0.203 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -113,7 +113,7 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Solid` | `.start`, `.end` | a partial revolution's two caps **[0.18]** |
 | `Solid` | `.volume`, `.area`, `.bounds.x0`… | what a report measures off it (§16.3) **[0.18]** |
 
-**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and is no operand of a relation over entities — but **[0.66]** a face path names a **set**: **[0.68]** the face as the solid has it, bounded by its edges, and `.surface` the surface it lies on (§6.21). A prism's flat face's surface is one the solve reads — a cap the profile's plane at its extent, a straight side the plane through its edge along the profile's normal — so `p coincident b0.near.surface` and `v1 tangent(at: v1.origin) b0.near.surface` read it as any set; a point or a plane drawn on the bounded face itself, a curved side's surface, a through prism's caps (**[0.199]** `std.solids.Through`) and a revolution's or a loft's faces are not sets the solve reads yet (**E040**). A region's point reads any face, bounded or by its surface, off the solid after the solve. Otherwise the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. **[0.100]** A face family (a loft or a sweep along a path) has `.start` and `.end` caps and walls named by its section's edges under the instance, hole boundaries included (`duct.sec.ab`, `duct.sec.inner.loop.ab`). Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line (or axis), and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
+**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and is no operand of a relation over entities — but **[0.66]** a face path names a **set**: **[0.68]** the face as the solid has it, bounded by its edges, and `.surface` the surface it lies on (§6.21). A prism's flat face's surface is one the solve reads — a cap the profile's plane at its extent, a straight side the plane through its edge along the profile's normal — so `p coincident b0.near.surface` and `v1 tangent(at: v1.origin) b0.near.surface` read it as any set; a point or a plane drawn on the bounded face itself, a curved side's surface, a through prism's caps (**[0.199]** `std.solids.Through`) and a revolution's or a loft's faces are not sets the solve reads yet (**E040**). A region's point reads any face, bounded or by its surface, off the solid after the solve. Otherwise the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. **[0.100]** A face family (a loft or a sweep along a path) has `.start` and `.end` caps and walls named by its section's edges under the instance, hole boundaries included (`duct.sec.ab`, `duct.sec.inner.loop.ab`). Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` (**[0.203]** its whole path as the body's scope writes it: the `body` of an instance `hub` is `part.hub.body.near`, §6.21) — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line (or axis), and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
 
 **[0.42] A plane is two axes and a place.** `P := plane(u: r1, v: r2)` aliases two axes (or
 drawn lines, each read as the axis from its `p1` toward its `p2`) and owns three numbers of its
@@ -2247,7 +2247,16 @@ body (§12.1) is a step with its copy's index, as a reference to the copy is wri
 second drill of `repeat 3 { … drill := solid(std.solids.Through(face(hole))) … }` cuts is
 `plate.drill[1].hole` (an edge drawn in the copy is named as the copy names it, `hole`), so
 `plate.drill[1]` names that drill's faces and `plate.drill` every copy's. A word's solids (a
-round's, §9.9) are no copies a document wrote, and are named as before.
+round's, §9.9) are no copies a document wrote, and are named as before. **[0.203]** An operand's
+step is its path **as the body's scope writes it**, whole: the `body` of an instance `hub` beside
+`part` is the step `hub.body`, so its faces are `part.hub.body.ab`, … and `part.hub` names them
+all, apart from the `body` of an instance `spine` (`part.spine`). A copy on the way carries its
+index on the declaration the copy holds: the `pad` of an instance `joint` a `repeat` makes is
+`joint[1].pad`, so `part.joint` names every copy's faces, `part.joint[1]` one's. An operand from
+outside the body's scope (a solid an instance was given) is a step of its own name's last segment,
+and a word's solids keep theirs (`rim.taken`, §9.9). A face path a block over faces runs over that
+names no face of its solid makes nothing, and is said (**W116**), with the steps the solid's faces
+are named by where the path leaves them.
 
 **Members** **[0.70]**. `S.ends` (where the edge a set is ends, below), `F.surface` (a face's or a
 set's whole surface), **[0.149]** `F.smooth` (a face's surface carried on across every seam where a
@@ -3581,6 +3590,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | W112 | a `param`, formal or block binder declared over a built-in name (§3.3, §5) — the built-in is what an expression reads **[0.17]** |
 | W113 | two planes lying on one another, with a relation reading points drawn in each: one plane in space, read twice (§6.7) **[0.42]** |
 | W114 | a free curve whose length nothing holds and no length makes its energy stationary in (§9.10) **[0.57]** |
+| W116 | a face path a block over a solid's faces runs over (a round's, a chamfer's, §12.8) that names no face of the solid: the block makes nothing **[0.203]** |
 
 ### 16.3 DOF ledger
 

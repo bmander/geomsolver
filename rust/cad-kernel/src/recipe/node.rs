@@ -34,11 +34,10 @@ fn pair(j: &Json) -> [f64;2] { [j.arr()[0].as_f64(),j.arr()[1].as_f64()] }
 #[derive(Clone,Debug)]
 pub struct Recipe { pub root: i64,pub nodes: Vec<Named> }
 
-/// A node of a recipe's list: its id, its name (the solid's, as the document spells it), the
-/// step it adds to a face's route through a body (`SolidE::step`: `step` where the solid is a
-/// copy the document wrote, else its name's) and what it is.
+/// A node of a recipe's list: its id, its name (the solid's, as the document spells it) and what
+/// it is.  The step it adds to a face's route is each body's to say (`Body::steps`).
 #[derive(Clone,Debug)]
-pub struct Named { pub id: i64,pub name: String,pub step: String,pub node: Node }
+pub struct Named { pub id: i64,pub name: String,pub node: Node }
 
 /// A body a `through` prism is applied to: the nodes `sources` its material is made of, and the
 /// row-major 3x4 `matrix` the copy cut from it is placed by (the profile where it is written, none).
@@ -129,7 +128,11 @@ pub struct FamilyWall { pub name: String,pub run: crate::family::Run,pub closed:
 /// reads the faces that makes, fills (`on_late`) then cuts (`cut_late`) — empty where it has none.
 #[derive(Clone,Debug)]
 pub struct Body { pub stock: i64,pub on: Vec<i64>,pub cut: Vec<i64>,pub bound: Vec<i64>,
-    pub on_late: Vec<i64>,pub cut_late: Vec<i64> }
+    pub on_late: Vec<i64>,pub cut_late: Vec<i64>,
+    /// The step each operand adds to its faces' routes through this body, by the operand's id
+    /// (#760: its path as the body's scope writes it, `hub.body`); an operand it does not list
+    /// adds its name whole.
+    pub steps: std::collections::BTreeMap<i64,String> }
 
 /// A piece of a `Region`: a primitive, and whether the region keeps within it (else outside it).
 #[derive(Clone,Debug)]
@@ -185,8 +188,7 @@ impl Recipe {
     pub fn read(j: &Json) -> Read<Recipe> {
         let nodes = each(field(j,"nodes")?.arr(),|n| {
             let name = n.get("name").map_or("",Json::as_str).to_string();
-            let step = n.get("step").map_or_else(|| crate::recipe::route_step(&name),|s| s.as_str().to_string());
-            Ok(Named {id:field(n,"id")?.as_i64(),name,step,node:Node::read(n)?})
+            Ok(Named {id:field(n,"id")?.as_i64(),name,node:Node::read(n)?})
         })?;
         Ok(Recipe {root:field(j,"root")?.as_i64(),nodes})
     }
@@ -242,8 +244,14 @@ impl Body {
     /// ones only where it has them.
     pub fn read(n: &Json) -> Read<Body> {
         let late = |k: &str| listed(n,k).iter().map(Json::as_i64).collect();
+        let steps = match n.get("steps") {
+            Some(Json::Obj(kv)) => kv.iter().map(|(k,v)| Ok((k.parse::<i64>()
+                .map_err(|_| unread(format!("recipe: a body's step for `{k}`, no operand's id")))?,
+                v.as_str().to_string()))).collect::<Read<_>>()?,
+            _ => Default::default(),
+        };
         Ok(Body {stock:field(n,"stock")?.as_i64(),on:ids(n,"on")?,cut:ids(n,"cut")?,bound:ids(n,"bound")?,
-            on_late:late("on_late"),cut_late:late("cut_late")})
+            on_late:late("on_late"),cut_late:late("cut_late"),steps})
     }
     /// Each set after the stock, in the order the body applies them, by its key.
     pub fn sets(&self) -> [(&'static str,&[i64]);5] {

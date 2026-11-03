@@ -406,11 +406,13 @@ pub struct SolidE {
     /// What the document calls it — see `FaceE::name`.
     pub name: String,
     pub class: Classes,
-    /// The copy it is, where the document wrote it in a `repeat`'s or a `ring`'s body itself
-    /// (`drill` of `repeat 6 { … }`, named `#7.1.drill`): the step its faces are named by
-    /// through a body carries the index, `drill[1]` (`step`).  `None` for any other solid, a
-    /// word's (a round's `taken`) among them, whose copies' faces are named as one.
-    pub copy: Option<u32>,
+    /// Its name as the document writes it, where a `repeat` or a `ring` stands on the way
+    /// (#760): each copy an index on the declaration the copy holds — `drill` of `repeat 6 { … }`,
+    /// named `#7.1.drill`, is `drill[1]`, and `pad` of an instance `joint` there,
+    /// `#7.1.joint.pad`, is `joint[1].pad` — so the route a face is named by through a body
+    /// carries the index (`solid::step_through`).  `None` where the name is what the document
+    /// writes, and for a word's solid (a round's `taken`), whose copies' faces are named as one.
+    pub written: Option<String>,
     /// What it is made of, `solid(…) of steel` (#510 P3): a key of `Sketch::materials`.  `None`
     /// for a solid that says nothing of it.
     pub material: Option<String>,
@@ -737,14 +739,9 @@ impl crate::model::Sketch {
 }
 
 impl SolidE {
-    /// The step it adds to the route of a face of a body it is an operand of
-    /// (`solid::route_step`): its name's, with the copy it is (`drill[1]`).
-    pub fn step(&self) -> String {
-        let step = crate::solid::route_step(&self.name);
-        match self.copy {
-            Some(k) => format!("{step}[{k}]"),
-            None => step,
-        }
+    /// Its name as the document writes it (`written`, else `name`).
+    pub fn written_name(&self) -> &str {
+        self.written.as_deref().unwrap_or(&self.name)
     }
 
     /// Boolean operands only; a through-extent target is a separate evaluation dependency.
@@ -942,9 +939,9 @@ impl SolidDef {
 impl SolidE {
     /// Its frames and turns are the source's binding: copied, it is evaluated as its own.
     pub fn remapped(&self, map: &Remap) -> Option<SolidE> {
-        let SolidE { def, name, class, copy, material, binding: _ } = self;
+        let SolidE { def, name, class, written, material, binding: _ } = self;
         Some(SolidE { def: def.remapped(map)?, name: name.clone(), class: class.clone(),
-                      copy: *copy, material: material.clone(), binding: None })
+                      written: written.clone(), material: material.clone(), binding: None })
     }
 }
 

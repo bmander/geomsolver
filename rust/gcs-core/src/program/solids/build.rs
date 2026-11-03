@@ -113,7 +113,7 @@ pub(super) fn build_solid(
     };
     let i = sk.solid(def, &d.name.key().text);
     sk.solids[i].class = d.class.clone();
-    sk.solids[i].copy = copy_written(d, st);
+    sk.solids[i].written = written_name(d);
     // what it is made of (#510 P3), where the flattener found it a material it stated
     sk.solids[i].material = d.material.as_ref().map(crate::syntax::ref_text)
         .filter(|m| sk.materials.contains_key(m));
@@ -707,13 +707,13 @@ fn axis_may_lie_in(sk: &Sketch, plane: Option<u32>, ax: usize) -> bool {
     !still || sk.axis_in(plane, ax).is_some()
 }
 
-/// The copy a solid is, where the document wrote it in a block's body itself (`drill` in `repeat
-/// 6 { … }`): what its faces are named by through a body (`SolidE::copy`).  A word's solid
-/// (`DeclName::Key`) is none, nor one an instance in a copy holds, its last step the instance.
-fn copy_written(d: &Decl, st: &Stmt) -> Option<u32> {
-    use crate::{ir::PathStep, syntax::DeclName};
-    match (&d.name, st.path.last()) {
-        (DeclName::Copy(_), Some(PathStep::Copy { index, .. })) => Some(*index),
-        _ => None,
-    }
+/// A solid's name as the document writes it (`SolidE::written`, #760), where a block's copies
+/// stand on the way: its public path (`public_path`, each copy an index on the declaration it
+/// holds — `drill` in `repeat 6 { … }`, `#7.1.drill`, is `drill[1]`; the `pad` of an instance
+/// `joint` there `joint[1].pad`).  A word's solid (`DeclName::Key`) is none, nor one whose name
+/// holds no copy.
+fn written_name(d: &Decl) -> Option<String> {
+    let crate::syntax::DeclName::Copy(name) = &d.name else { return None };
+    let written = crate::program::public_path(&name.text);
+    (written != name.text).then_some(written)
 }

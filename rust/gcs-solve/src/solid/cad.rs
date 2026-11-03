@@ -168,7 +168,6 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
         let mut node = match &shell { Some(s) => s.node(&w)?,None => walk.node(i,&dependencies,&w)? };
         node.set("id",i.into());
         node.set("name",sk.solids[i].name.clone().into());
-        if sk.solids[i].copy.is_some() { node.set("step",sk.solids[i].step().into()); }
         nodes.push(node);
         seen.insert(i);
     }
@@ -245,7 +244,7 @@ impl<'a> Walk<'a> {
         // **the stratum** (#183 F6): what reads the body's faces acts on the body its other
         // terms make, after them, fills then cuts, as the field applies them
         let [on,cut,on_late,cut_late] = super::faces::stratum(sk,i,on.iter().copied().filter(|o| !self.nowhere(o)),cut);
-        let (on_late,cut_late) = (self.lump(on_late),self.lump(cut_late));
+        let (on_late,cut_late) = (self.lump(i,on_late),self.lump(i,cut_late));
         let dependencies = std::iter::once(*stock).chain(on.iter().copied()).chain(cut.iter().copied())
             .chain(bound.iter().copied()).chain(on_late.iter().copied()).chain(cut_late.iter().copied()).collect();
         self.bodies.insert(i,([on,cut,on_late,cut_late],swept));
@@ -254,14 +253,13 @@ impl<'a> Walk<'a> {
 
     /// A body's late set with its lowered regions built as one (`lowering::assemble`): the first
     /// stands for the rest, which are no operands of their own.  Lumped by the labels their faces
-    /// are named under (`route_step`, [0.149]): a named round's pieces stand apart from another's,
+    /// are named under (`step_labels`, [0.149]): a named round's pieces stand apart from another's,
     /// so each keeps its faces' names, and those of the rounds no name was given stand as one.
-    fn lump(&mut self,v: Vec<u32>) -> Vec<u32> {
+    fn lump(&mut self,body: usize,v: Vec<u32>) -> Vec<u32> {
         let mut by: BTreeMap<String,BTreeSet<u32>> = BTreeMap::new();
         for &o in &v {
             if self.users.get(&o) == Some(&1) && !self.pieces_of(o).is_empty() {
-                let step = super::route_step(&self.sk.solids[o as usize].name);
-                let labels = step.rsplit_once('.').map_or("",|(l,_)| l).to_string();
+                let labels = super::step_labels(&self.sk.solids[body],&self.sk.solids[o as usize]);
                 by.entry(labels).or_default().insert(o);
             }
         }
@@ -299,6 +297,12 @@ impl<'a> Walk<'a> {
                     node.set("on_late",ids(&on_late));
                     node.set("cut_late",ids(&cut_late));
                 }
+                // the step each operand adds to its faces' routes through this body (#760)
+                let all = std::iter::once(stock).chain(&on).chain(&cut).chain(bound)
+                    .chain(&on_late).chain(&cut_late);
+                let steps: BTreeMap<String,Json> = all.map(|&o| (o.to_string(),
+                    super::step_through(solid,&sk.solids[o as usize]).into())).collect();
+                node.set("steps",Json::Obj(steps.into_iter().collect()));
                 node
             }
             // a region: built as its route says (`region::route`)

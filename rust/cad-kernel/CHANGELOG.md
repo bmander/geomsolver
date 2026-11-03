@@ -41,6 +41,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   slit closed): results keep their faces whole where they are manifold. `complex::Parts::twin_of`
   (**new field**): the edge each twin is of.
 
+- **A body names each operand's faces by a step of its own** (#760): a recipe's body node may
+  carry `steps`, the step each operand (by its id) adds to its faces' routes through that body,
+  read into `recipe::Body::steps` (**new field**); an operand it does not list adds its name
+  whole. A node's own `step` is retired (**breaking**: `recipe::Named::step` and
+  `recipe::route_step` are gone, the language's rule for a step its caller's to apply).
+
 ## [0.3.0] - 2026-11-02
 
 - A traced meeting dropped as an edge one face already has (#735 A2) is laid across the other face
