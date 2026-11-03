@@ -435,11 +435,12 @@ recorded above with what was tried:
   it should have left along the meridian, so the two pieces between the branches and the meridian
   either side of it were joined into one through a there-and-back along the top circle, and the
   piece they border lost that circle. The branches reach the node tangent to the top circle (their
-  angle round the ring goes as the square root of the height below the top), but their last chord,
-  a 2048th of the tube's height long, leaves 0.015 rad below it — outside the tie, so no curvature
-  reading parts them. So the turned torus waits on that node read right (the branches drawn in
-  ever closer to the top as they are to a coincidence, and the four ways there ordered), and on the
-  arrangement holding a point where three surfaces touch pairwise;
+  angle round the ring goes as the square root of the height below the top), and their last chord,
+  a 2048th of the tube's height long, left 0.015 rad below it; drawn in ever closer to the top (as
+  they are to a coincidence) they bring the two tori's own pieces to agree with each other to 1e-9,
+  but with the plane the piece is still lost. So the turned torus waits on that node read right —
+  the ways leaving it along the top circle, the meridian and the branches, all but tangent two by
+  two — and on the arrangement holding a point where three surfaces touch pairwise;
 - **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
   has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
 
