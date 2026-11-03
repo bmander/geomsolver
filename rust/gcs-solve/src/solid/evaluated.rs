@@ -318,9 +318,7 @@ impl EvaluatedSolid {
         // not, an empty solid among them, whose B-rep has no faces (`SOLVENT_SOLIDS=facets` asks
         // for it throughout); why it is not, said (#762) — but of a developable panel's band, whose
         // faceting from its rulings is its build, its STL written from it (#645)
-        let why = if super::sheet::is_band(sk, si) {
-            None
-        } else if facets_only() {
+        let why = if facets_only() {
             Some("`SOLVENT_SOLIDS=facets` draws every solid by its facet term".to_string())
         } else {
             match sk.exact_preimage(si) {
@@ -332,6 +330,7 @@ impl EvaluatedSolid {
                 Err(e) => Some(e),
             }
         };
+        let why = why.filter(|_| !super::sheet::is_band(sk, si));
         let why = Unbuilt::of(DrawnFrom::Facets, why.into_iter().collect());
         let origin = WorldPoint(frame_origin(sk, si, unit));
         let csg = resolve_at(sk, si, unit, origin.0);
