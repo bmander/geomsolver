@@ -137,9 +137,17 @@ fn seen(f: &Frame, p: [f64; 3]) -> [f64; 3] {
     f.map(|(row, at)| dot(row, p) + at)
 }
 
-/// The PNG of what `ask` names, seen from `ask.eye`, and each solid that did not evaluate with
-/// the core's reason (left out of the picture, as the box leaves it out).
-pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> {
+/// What a picture is, beside its PNG: each solid that did not evaluate, with the core's reason
+/// (left out of the picture, as the box leaves it out), and each drawn from its field or its
+/// facet term rather than its exact build, in the core's words (`report::unbuilt_text`, #762).
+pub struct Drawn {
+    pub png: Vec<u8>,
+    pub missing: Vec<String>,
+    pub unbuilt: Vec<String>,
+}
+
+/// The picture of what `ask` names, seen from `ask.eye` (`Drawn`).
+pub fn render(sk: &Sketch, ask: &Ask) -> Result<Drawn, String> {
     let axes = eye_frame(ask.eye.az, ask.eye.el);
     let chosen = chosen(sk, ask)?;
     // a swept object drawn from its exact surface where this kernel builds one, as the workspace
@@ -148,14 +156,18 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
     gcs_core::brep::export::supply_exact_where(sk, &|i| chosen.contains(&i));
     // each solid evaluated once, its frame, its colour, its cut and its edges in the eye's
     // coordinates; its triangles are read from its own mesh when they are filled, not copied out
-    let (mut solids, mut unbuilt) = (Vec::new(), Vec::new());
+    let (mut solids, mut missing, mut unbuilt) = (Vec::new(), Vec::new(), Vec::new());
     let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
     let mut any = false;
     for i in chosen {
         let solid = match sk.evaluated_solid(i, ApproximationPolicy::Mesh) {
             Ok(s) => s,
-            Err(why) => { unbuilt.push(why); continue; }
+            Err(why) => { missing.push(why); continue; }
         };
+        // drawn, but not the solid an export builds: said, so a look is not read as a build
+        if let Some(u) = solid.unbuilt() {
+            unbuilt.push(gcs_core::report::unbuilt_text(sk, i, u));
+        }
         any = true;
         let o = solid.origin().0;
         let frame: Frame = axes.map(|e| (solid.vector_to_local(e), dot(e, o)));
@@ -191,7 +203,7 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
         if any {
             return Err("the section takes away everything there is to draw".into());
         }
-        return Err(unbuilt.first().cloned().unwrap_or_else(|| "this document has no solid to draw".into()));
+        return Err(missing.first().cloned().unwrap_or_else(|| "this document has no solid to draw".into()));
     }
     // the picture fitted to what it draws, its longer side `size` and its shorter at least half
     let span = [(hi[0] - lo[0]).max(1e-12), (hi[1] - lo[1]).max(1e-12)];
@@ -244,7 +256,7 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
             canvas.line(place(e[0]), place(e[1]), slack);
         }
     }
-    Ok((crate::png::encode(w, h, &canvas.down()), unbuilt))
+    Ok(Drawn { png: crate::png::encode(w, h, &canvas.down()), missing, unbuilt })
 }
 
 /// How a triangle is filled: shaded, where it is the solid's own surface, or hatched, where it

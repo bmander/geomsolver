@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.201] Faces meet where the drawing solves** (#761). `a meets b` (§12.9) was decided only where
+**[0.202] Faces meet where the drawing solves** (#761). `a meets b` (§12.9) was decided only where
 the drawing is seeded, so a shape whose seed is not its size or its place left a block out: a
 circle whose radius only `radius(r)` says starts at a radius of 1, a part placed by `seats` starts
 at its frame's origin, and a round between a beam and a post that meet in the drawing as solved
@@ -15,6 +15,16 @@ elaborated once more, its solids' faces read at the solved pose — and the bloc
 solve that settles is read so. The seeds, and every solved position, are unchanged; a document
 with no such pair elaborates as before, and one with a pair read apart is solved once more while
 it is elaborated. E080 stays for a pair still read apart that meets once the drawing solves again.
+
+**[0.201] A countersink** (#765). `std.solids.Countersink(rim: face, angle: Angle)` is the cone
+under a circle whose sides meet at the included angle, as a drawing calls one out: `Drafted`'s lean
+at `tan(angle / 2)` with the one ordinate `<= 0mm`, so it runs to its point and states no depth
+(§6.9). A lean about a whole circle is read about the circle's axis, so the cone is built exactly,
+and the same set written by hand alike; its faces are `.near` and the side named by the rim's edge.
+The rim is drawn where the sink opens, on a plane lying on the face it is cut from: a draft's sides
+lean from the plane its face is drawn in, whatever its ordinates. A drafted prism whose side comes
+to nothing within its ordinates is refused as before, now saying how far from that plane it comes
+to nothing. Nothing written before is read differently.
 
 **[0.200] A line is a motion** (#748). Wherever a reading names a frame, `under:` or
 `seen_from:`, it may name a line or an axis instead: the turn about it, a radian a radian of the

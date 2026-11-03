@@ -279,7 +279,7 @@ the paths change. `expand::Asked::meets` answers it; faces of two solids, a face
 the stratum has not, and a body with a swept cut (no `Meets`) meet. A pair read apart that alone
 left a block out (the condition asked again with every pair meeting) is an `flatten::Apart` at the
 document's statement (`FaceState::at`, carried in `Pending::at`), kept in `SourceMap::apart`.
-**Then it is read where the drawing solves ([0.201], #761):** once a pass elaborates with an
+**Then it is read where the drawing solves ([0.202], #761):** once a pass elaborates with an
 `Apart`, `program::meets::at_solve` solves a copy of its sketch, and where the solve settles and
 `apart` finds a pair meeting there, it returns each keyed entity's solved numbers (`Stood`, the
 form `crossed` is kept in too), and `elaborate` names every solid's faces again — once (its

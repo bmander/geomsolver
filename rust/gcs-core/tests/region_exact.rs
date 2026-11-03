@@ -47,6 +47,9 @@ fn an_ellipsoid_by_its_foci_is_an_ellipse_turned() {
         .any(|st| matches!(st.seg, gcs_core::brep::planar::Seg::Conic { .. })));
     let b = exported(&e, "s");
     close(props::volume(&b), 4.0 / 3.0 * PI * 5.0 * 4.0 * 4.0, 1e-9);
+    // built, its evaluation is the build, with nothing to say (#762)
+    let drawn = e.sketch.evaluated_solid(ent(&e, "s").i(), gcs_core::solid::ApproximationPolicy::Mesh).unwrap();
+    assert!(drawn.unbuilt().is_none(), "{:?}", drawn.unbuilt());
     // the bound turned round, the ellipsoid taken out of a ball about it
     let e = solved(&format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
                              f2 := point hint((-3, 0, 0))\nfix((-3, 0, 0)) f2\n\
@@ -117,7 +120,15 @@ fn a_sum_no_conic_folds_stays_the_fields() {
                              oval := {{ p | distance(p, f1) + 2 * distance(p, f2) <= 15mm }}\n\
                              t := solid(oval)\n"));
     for name in ["s", "t"] {
-        assert!(gcs_core::solid::region::in_general(&e.sketch, ent(&e, name).i()), "{name}");
+        let i = ent(&e, name).i();
+        assert!(gcs_core::solid::region::in_general(&e.sketch, i), "{name}");
+        // drawn from its field, and said not built, in the words its export is refused in (#762)
+        let drawn = e.sketch.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh).unwrap();
+        let u = drawn.unbuilt().unwrap_or_else(|| panic!("{name}: said not built"));
+        assert_eq!(u.from, gcs_core::solid::DrawnFrom::Field, "{name}");
+        assert!(u.why.contains("no exact construction is made of it yet"), "{name}: {u:?}");
+        let Err(refused) = e.sketch.exact_solid(i) else { panic!("{name}: built") };
+        assert!(refused.contains(&u.why), "{name}: {refused} / {}", u.why);
     }
 }
 
