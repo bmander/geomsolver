@@ -196,6 +196,16 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     }).ok_or_else(|| format!("the ball between {} rolls nowhere",names()))?;
     // where the ball touches each face, and the direction from its centre to there
     let toward = |k: usize,c: V| scale(unit(surfaces[k].gradient(c)),-sides[k]);
+    // **about one axis the round is turned**: between surfaces turned about one axis with straight
+    // meridians round a loop that closes, the ball's centre runs round a circle about it and the
+    // canal is the section — the corner, its legs to the contacts and the ball's arc between them —
+    // turned once, exact (a torus face), as a flat there is (`flat_along`)
+    if let Some((o,z)) = coaxial(&surfaces,tol).filter(|_| stops.is_empty()) {
+        let at = b.vertices[b.edges[chain[0]].v[0] as usize].p;
+        return Ok(revolved(&chain,&|c| [toward(0,c),toward(1,c)],&|q| onto.project(q),at,o,z,concave,r,tol,
+            &|frame_at| holds_ball(b,&uses,&sides_faces,&chain,&[],frame_at,&surfaces,sides,r,tol,&names(),wedge),
+            &names())?)
+    }
     // **a run that ends**: at each end the faces there besides the two lie in one plane, which cuts
     // the fillet off; the ball rolls on past it and the piece is trimmed there
     let mut ends: Vec<Stop> = Vec::new();
@@ -425,6 +435,54 @@ fn standing(b: &Brep,m: &Meeting,offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V
     let mut contacts = [circle_spline(&ring,r)?,still(touch)?];
     if k == 1 { contacts.swap(0,1); }
     Ok(Rolled {piece:out,chain:chain.to_vec(),spine:still(centre)?,contacts,concave:*concave,r,reach,trims:Vec::new()})
+}
+
+/// `roll`'s round about the axis through `o` along the unit `z` that the faces' surfaces are both
+/// turned about: its section in the meridian through `at` (a vertex of the loop `chain`, so each
+/// circle the turn makes starts where the loop does), the ball's centre the offsets' meeting
+/// (`onto`) there, `toward` the directions from a centre to its contacts; refused where the ball
+/// wedges flat or `held` (its centre and contacts all the way round) refuses it.
+#[allow(clippy::too_many_arguments)]
+fn revolved(chain: &[usize],toward: &dyn Fn(V) -> [V;2],onto: &dyn Fn(V) -> V,at: V,o: V,z: V,concave: bool,
+    r: f64,tol: f64,held: &dyn Fn(&dyn Fn(f64) -> (V,[V;2])) -> Result<(),String>,names: &str) -> Result<Rolled,String> {
+    // the meridian's plane: the axis, and the way out from it to the loop's vertex
+    let w = sub(at,o);
+    let radial = sub(w,scale(z,dot(w,z)));
+    if norm(radial) <= tol { return Err(format!("the loop between {names} stands on their axis")) }
+    let x = unit(radial);
+    let n = cross(z,x);
+    let flat = |p: V| sub(p,scale(n,dot(sub(p,o),n)));
+    let flat_dir = |d: V| unit(sub(d,scale(n,dot(d,n))));
+    // the ball's centre in the corner at `at`, `r` from each face, and its contacts
+    let m = toward(at).map(|d| scale(d,-1.));
+    let c = flat(onto(across(at,m,r)));
+    let e = toward(c).map(flat_dir);
+    let wedge = dot(e[0],e[1]).clamp(-1.,1.).dacos();
+    if !(wedge > MIN_TURN && wedge < std::f64::consts::PI-MIN_TURN) {
+        return Err(format!("the ball between {names} wedges flat somewhere along their meeting"));
+    }
+    let touch = e.map(|d| add(c,scale(d,r)));
+    let frame_at = |u: f64| -> (V,[V;2]) {
+        let turn = super::geom::Rigid::turn(o,z,TAU*u.clamp(0.,1.));
+        (turn.point(c),e.map(|d| turn.vector(d)))
+    };
+    held(&frame_at)?;
+    // the section: the corner to the first contact, the ball's arc, the second contact back
+    let up = if dot(cross(e[0],e[1]),n) > 0. { n } else { scale(n,-1.) };
+    use super::build::{revolve,Profile,ProfileEdge};
+    let section = Profile {origin:at,normal:n,loops:vec![vec![ProfileEdge::Line {a:at,b:touch[0]},
+        ProfileEdge::Arc {frame:Frame::new(c,up,e[0]),r,span:Some([0.,wedge])},ProfileEdge::Line {a:touch[1],b:at}]],
+        names:vec![["a","round","b"].map(String::from).to_vec()]};
+    let piece = revolve(&section,o,z,TAU)?;
+    // the spine and each contact a circle about the axis, from the meridian through `at`
+    let ring = |p: V| -> Result<BSpline,String> {
+        let h = dot(sub(p,o),z);
+        let rho = dot(sub(p,o),x);
+        if rho <= tol { return BSpline::new(1,vec![0.,0.,1.,1.],vec![p,p]) }
+        circle_spline(&Frame::new(add(o,scale(z,h)),z,x),rho)
+    };
+    Ok(Rolled {piece,chain:chain.to_vec(),spine:ring(c)?,contacts:[ring(touch[0])?,ring(touch[1])?],concave,r,
+        reach:distance(c,at),trims:Vec::new()})
 }
 
 /// The circle of radius `r` about `f`'s origin in its `x`–`y` plane, exactly: a rational quadratic

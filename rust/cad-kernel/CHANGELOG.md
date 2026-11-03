@@ -8,6 +8,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A round about one axis is turned, exact** (`fillet::roll`): between a plane square to an axis
+  and cylinders or cones about it, round a closed loop, the piece is the section revolved — a torus
+  face and its strips — where a canal was fitted as a B-spline net of hundreds of poles. A boss's
+  rim and root rounded (brep-bench's fillet/boss-s-curve) is built, measured and meshed in
+  milliseconds rather than 8.7 s, its faces two tori, not two B-splines. `Rolled::spine` and
+  `Rolled::contacts` are then exact circles.
 - **A Boolean is its complex's selection, with no other road** (#735 A4): a shell kept on one side
   and dropped on another is refused, where each face was once kept by its own sides; `Complex::try_new`
   is gone. Ways into faces from an edge within 1e-4 rad are tangent (`complex::TANGENT`), a fitted
