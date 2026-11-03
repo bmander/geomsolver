@@ -324,6 +324,37 @@ it. It stays as the fast path where #699 D says so.
    each circle, each to 1e-9. A cylinder or a cone about an axis leaning to the turn's (its contact
    a curve on it, turned into a surface of revolution with no closed-form meridian) and a ball
    reaching across the axis (a spindle torus) are the steps after.
+   *Tried and set aside, for a leaning edge under a screw* (#721 F2c5): three ways to enter the
+   ruled helicoid a line leaning to the axis screws into, none of which the arrangement holds yet.
+   (1) **A sheet across the box**, as a level edge's is: a leaning line's two points either side of
+   its foot stand at one radius and climb apart, so one helix holds both wherever their heights
+   differ by the pitch times the angle between them, a whole number of turns over — the whole sheet
+   meets itself, and for a steep edge (0.35 rad off the axis, two a turn) within the box's reach,
+   about a lead out along the line. (2) **A patch** over the line's own stretch and the sweep's
+   roll, a little past each (where no point of it can come round onto another's helix: their
+   heights differ by more than the roll climbs), its rim just past the candidates that seal it:
+   where a rim stands inside another candidate's face, their meeting stops partway across that
+   face, a slit no face's pieces close round (`boolean`'s "pieces do not close"), and the level bar
+   built so failed where its sheets across the box had built. (3) **The triangle on the segment
+   screwed whole**, a closed solid, so every meeting ends on an edge: its sheet's face then holds
+   pairs of helices a few hundredths of its run apart (its own and its neighbours' vertices'), and
+   its pieces would not close either. Met along the way, and set aside with them: two sheets of one
+   screw meet in the helices of the points of the one's line lying on the other's sheet, found as
+   roots of `exp(i Δz/k) e^{−iΔψ} − 1` (the angles' wrap no jump); a leaning face's contact line
+   under a screw is moved off the plane through the axis by `n·v(c)`; and an independent volume for
+   a tool less tall than a lead, its own and `θ ∫ ρ L(ρ) dρ`, `L` the range of `z − k ψ` over its
+   slice by each cylinder (within 2e-5 of the bar's closed form) — a membership Monte Carlo of the
+   leaning block (7.73 ± 0.07) agreed with it to two standard deviations, and the patches' build
+   (6.08) with neither. So the leaning screw waits on the arrangement holding a face with a slit,
+   or a sheet bounded inside the domain (F5's A1, non-manifold topology), and is refused as before
+   (`Unbuilt::Leaning`).
+   *Built for a path of pieces* (K1): a sweep distributes over its path's pieces, so the arrangement
+   takes every piece's candidates at once and membership reads the pieces one by one. A piece after
+   another does not start at the identity: it takes the tool up where the one before left it, a
+   constant twist after a placement, `twist(t) · at` (`Trajectory::Placed`; its speed bound its
+   twist's), read on the tool placed so. A cube slid then turned about the edge it stops beside is
+   its pieces' sweeps united, `5 + π/2`, to 1e-9. Screws among the pieces wait on the screw's box,
+   which is a lone screw's.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.

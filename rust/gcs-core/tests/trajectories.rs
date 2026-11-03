@@ -39,6 +39,7 @@ fn kinds(t: &Trajectory,met: &mut std::collections::BTreeMap<&'static str,usize>
         Trajectory::Paced {path,..} => { count("paced"); kinds(path,met) }
         Trajectory::Pieces(p) => { count("pieces"); for p in p.pieces() { kinds(&p.path,met) } }
         Trajectory::General(_) => count("general"),
+        Trajectory::Placed {..} => count("placed"),
     }
 }
 
@@ -166,4 +167,36 @@ fn a_path_of_pieces_meets_or_is_refused() {
     let gap = Trajectory::pieces(vec![piece([-1.,0.],Trajectory::Twist(turn)),piece([0.1,2.],shifted.clone())],1e-9,100.);
     assert!(gap.unwrap_err().msg.contains("followed by"));
     assert!(Trajectory::pieces(vec![piece([1.,1.],shifted)],1e-9,100.).is_err());
+}
+
+/// **A twist after a placement** (`Trajectory::Placed`, #721 K1: a turn taking a tool up where a
+/// slide left it): its pose at `t` is the placement and then the twist's, its rate (of a point of
+/// what it carries) the twist's at where the placement put it, and its speed bound holds every
+/// point it carries back no slower than it moves, each read by differences.
+#[test]
+fn a_twist_after_a_placement_is_the_placement_then_the_twist() {
+    use gcs_core::brep::trajectory::Screw;
+    let twist = Screw {origin:[1.,2.,0.],axis:[0.,0.6,0.8],ratio:0.7,advance:1.3};
+    let at = Screw {origin:[0.;3],axis:[1.,0.,0.],ratio:0.4,advance:2.}.pose(1.);
+    let placed = Trajectory::Placed {twist,at};
+    let domain = gcs_core::brep::util::interval::Interval::new(-1.,2.).unwrap();
+    for &t in &[-0.5,0.,0.3,1.7] {
+        let m = placed.at(t).unwrap();
+        let want = at.then(twist.pose(t));
+        for p in PROBES {
+            agree(m.point(p),want.point(p),"a point");
+            // the rate by differences
+            let h = 1e-6;
+            let (a,b) = (placed.pose(t-h).unwrap().point(p),placed.pose(t+h).unwrap().point(p));
+            let rate: [f64;3] = std::array::from_fn(|k| (b[k]-a[k])/(2.*h));
+            let v = m.velocity(p);
+            assert!((0..3).all(|k| (v[k]-rate[k]).abs() <= 1e-6*(1.+rate[k].abs())),"{v:?} against {rate:?}");
+            // carried back, no faster than the bound
+            let back = |s: f64| placed.pose(s).unwrap().inverse().point(p);
+            let (a,b) = (back(t-h),back(t+h));
+            let speed = ((0..3).map(|k| (b[k]-a[k]).powi(2)).sum::<f64>()).sqrt()/(2.*h);
+            let bound = placed.inverse_point_speed_bound(p,domain).unwrap();
+            assert!(speed <= bound*(1.+1e-6),"{speed} past {bound}");
+        }
+    }
 }

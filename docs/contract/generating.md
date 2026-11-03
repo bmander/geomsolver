@@ -416,6 +416,18 @@ drum, a frustum and a ball turned 100° (`swept_closed::round_tools_turned_part_
 and cut from a ring sector the drum turned whole (`closed_characteristics::the_drum_turned_a_whole_turn_bores_the_whole_ring`,
 the constant-twist class's S1) and turned to a stop partway (`closed_class::a_drum_turned_partway_into_a_ring_sector_stops_there`),
 each to 1e-9.
+**A path of pieces** (#721 K1, `Trajectory::Pieces`) of slides and turns builds on the same one
+arrangement: a sweep is its pieces' sweeps united, so every piece's candidates — read on the tool
+where that piece takes it up (`Trajectory::Placed`, a constant twist after a placement: a turn
+where a slide left the tool, its pose `twist(t) · at`, its speed bound its twist's, a rigid
+placement moving nothing) over its stretch of the roll — split one box at once, and each cell is
+read in the sweep of any piece (`swept::member`, piece by piece). Held to a toolpath: a unit cube
+slid 4 then turned a quarter turn about the edge it stops beside, `5 + π/2` to 1e-9, agreeing with
+membership along the whole path
+(`swept_closed::a_toolpath_of_a_slide_and_a_turn_is_its_pieces_sweeps_united`;
+`trajectories::a_twist_after_a_placement_is_the_placement_then_the_twist` holds `Placed`'s pose,
+rate and speed bound by differences). No drawing lowers to pieces yet (a toolpath written as one
+is the language's `path`), so the closed class's admission reads one constant twist.
 An edge or a face leaning to a screw's axis (`Unbuilt::Leaning`) and a curved tool past these
 (`Unbuilt::Curved`: any face no plane under a screw; under a turn a cylinder or a cone about an
 axis leaning to it, a ball across its axis, a circle leaning to it, a torus or a free-form face;

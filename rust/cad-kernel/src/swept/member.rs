@@ -88,8 +88,25 @@ pub enum Unsettled { Near { at: f64 },Unbounded,Unread(String) }
 pub struct Swept<'a> { pub tool: &'a Solid,pub path: &'a Trajectory,pub roll: [f64;2] }
 
 impl Swept<'_> {
-    /// **Whether `x` is in the swept solid**, or why that is not settled (`Unsettled`).
+    /// **Whether `x` is in the swept solid**, or why that is not settled (`Unsettled`). A path of
+    /// pieces (K1) is read piece by piece over the stretch of the roll each holds, the sweep of a
+    /// path its pieces' sweeps united: a member of any is one, and it is settled out only where every
+    /// piece settles it so.
     pub fn member(&self,x: V) -> Result<bool,Unsettled> {
+        if let Trajectory::Pieces(pieces) = self.path {
+            let [a,b] = [self.roll[0].min(self.roll[1]),self.roll[0].max(self.roll[1])];
+            let mut unsettled = None;
+            for piece in pieces.pieces() {
+                let (lo,hi) = (piece.over[0].max(a),piece.over[1].min(b));
+                if !(hi > lo) { continue }
+                match (Swept {tool:self.tool,path:&piece.path,roll:[lo,hi]}).member(x) {
+                    Ok(true) => return Ok(true),
+                    Ok(false) => {}
+                    Err(e) => { unsettled.get_or_insert(e); }
+                }
+            }
+            return unsettled.map_or(Ok(false),Err)
+        }
         let [a,b] = self.roll;
         let domain = Interval::new(a.min(b),a.max(b)).map_err(|_| Unsettled::Unbounded)?;
         let speed = self.path.inverse_point_speed_bound(x,domain).map_err(|_| Unsettled::Unbounded)?;

@@ -548,3 +548,40 @@ fn round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus() {
         agrees(&built,&tool,&path);
     }
 }
+
+/// **A toolpath of a slide and a turn closes into its pieces' sweeps united** (#721 K1, a path of
+/// pieces): a unit cube slid 4 along x, then turned a quarter turn clockwise about the vertical edge
+/// it stops beside, at x = 5 — the turn a constant twist placed where the slide left the cube
+/// (`Trajectory::Placed`), the two one path (`Trajectory::pieces`). Every piece's candidates split
+/// one box at once, and each cell is read in the sweep of any piece (`member` piece by piece).
+/// Apart from the build: the slide covers `[0, 5] × [0, 1]`, the turn its square turned about the
+/// corner, `1 + π/2` (at each angle about the corner the farthest the square reaches over the turn),
+/// overlapping the slide's in that square alone: `5 + π/2` through its height 1.
+#[test]
+fn a_toolpath_of_a_slide_and_a_turn_is_its_pieces_sweeps_united() {
+    use gcs_core::brep::trajectory::Piece;
+    let tool = block([0.;3],[1.,1.,1.]);
+    let slide = Screw {origin:[0.;3],axis:[1.,0.,0.],ratio:0.,advance:4.*std::f64::consts::TAU};
+    let turn = Screw {origin:[5.,0.,0.],axis:[0.,0.,1.],ratio:-std::f64::consts::FRAC_PI_2,advance:0.};
+    let at = slide.pose(1.).then(turn.pose(1.).inverse());
+    let path = Trajectory::pieces(vec![Piece {over:[0.,1.],path:Trajectory::Twist(slide)},
+        Piece {over:[1.,2.],path:Trajectory::Placed {twist:turn,at}}],1e-12,10.).unwrap();
+    let built = closed(&tool,&path,[0.,2.],0.002,1e-6).unwrap();
+    let expected = 5.+std::f64::consts::FRAC_PI_2;
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    // membership over the whole path, at seeded points of the built solid's box
+    let (solid,body) = (Solid::new(&tool,0.002,1.).unwrap(),Solid::new(&built,0.002,1.).unwrap());
+    let swept = Swept {tool:&solid,path:&path,roll:[0.,2.]};
+    let (lo,hi) = built.bounds();
+    let mut rng = gcs_core::rng::Rng::new(9);
+    let mut held = 0;
+    for _ in 0..300 {
+        let p: [f64;3] = std::array::from_fn(|k| rng.uniform(lo[k]-0.2,hi[k]+0.2));
+        let d = body.signed_distance(p);
+        if d.abs() < 0.01 { continue }
+        let Ok(member) = swept.member(p) else { continue };
+        assert_eq!(member,d < 0.,"at {p:?}");
+        held += 1;
+    }
+    assert!(held > 200,"{held} points held");
+}
