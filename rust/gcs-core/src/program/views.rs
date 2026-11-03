@@ -241,10 +241,14 @@ fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
 /// world origin, say, when it stands on a line a hundred millimetres off.  So the statements
 /// that say where the planes are — about axes and planes themselves, and about points of planes
 /// already placed — are solved first, alone, round by round: a statement is taken once every
-/// point it reads stands in a placed plane (or is held, or is a plane's own origin), and an axis
-/// or a plane is placed once the statements taken determine it.  The drawing in a plane never
-/// places it: its seeds are what is to be read through it.  Nothing else moves; the hidden
-/// points are put back where their points now stand.  What nothing places keeps its seed.
+/// point it reads stands in a placed plane (or is held), and an axis or a plane is placed once
+/// the statements taken determine it.  A point held in a frame — a plane's origin, or the
+/// `std.origin` of the frame an instance stands in, held at its front's `(0, 0)` — is the frame's
+/// own and stands for it, so a mate on an instance's datums (`seats`) places its frame here, its
+/// place as well as its turn, and a part seated in a seated part once that part stands (#764).
+/// The drawing in a plane never places it: its seeds are what is to be read through it.  Nothing
+/// else moves; the hidden points are put back where their points now stand.  What nothing
+/// places keeps its seed.
 ///
 /// Which planes stand turned as the statements say, and not merely as they were seeded: each
 /// plane both of whose axes are held or placed here.
@@ -348,9 +352,10 @@ impl Placed {
     }
 }
 
-/// What a statement `place` may take reads: its axes and planes, a plane's origin standing for
-/// its plane, the planes the other points it reads are drawn in (a held point waits for none),
-/// and every point, whose hidden point follows the planes while it is solved.
+/// What a statement `place` may take reads: its axes and planes, a point of a frame's own
+/// standing for its frame (`own_frame`), the frames the other points it reads are drawn in (a
+/// held point waits for none), and every point, whose hidden point follows the planes while it is
+/// solved.
 struct Reads {
     id: u32,
     axes: Vec<usize>,
@@ -360,8 +365,8 @@ struct Reads {
 }
 
 /// The statements that may place an axis or a plane, with what each reads (`Reads`): none of the
-/// intrinsic rows, a normal's, a point measured from a plane's origin in space, or one reading a
-/// point in space the drawing places.
+/// intrinsic rows, a normal's, a point measured from a frame's own point in space, or one reading
+/// a point in space the drawing places.
 fn statements(sk: &Sketch) -> Vec<Reads> {
     let mut reads: Vec<Reads> = Vec::new();
     let normals: BTreeSet<usize> = sk.frames.iter().filter_map(|f| f.chart.as_ref()?.normal.map(|n| n as usize))
@@ -374,15 +379,13 @@ fn statements(sk: &Sketch) -> Vec<Reads> {
         if c.intrinsic && c.entities().iter().any(|e| e.kind == EntKind::Axis && normals.contains(&e.i())) {
             continue;
         }
-        // a point measured from a plane's origin in space — an ordinate, a height off it — is the
-        // drawing placed by the plane, not the plane by the drawing, unless the point is where a
-        // plane stands
-        let from_origin = || sk.plane_of_origin(c.args[0].ent().i()).is_some();
-        if c.form().is_some_and(|f| f.in_space()) && from_origin() {
-            let p = c.args[1].ent().i();
-            if sk.plane_of_origin(p).is_none() && !sk.point_held(p) {
-                continue;
-            }
+        // a point measured from a frame's own point in space — an ordinate, a height off its
+        // origin — is the drawing placed by the frame, not the frame by the drawing, unless the
+        // point is a frame's own too
+        let from_own = || own_frame(sk, c.args[0].ent().i()).is_some();
+        let measured = || !sk.point_held(c.args[1].ent().i());
+        if c.form().is_some_and(|f| f.in_space()) && from_own() && measured() {
+            continue;
         }
         let (mut axes, mut planes, mut pts) = (Vec::new(), Vec::new(), Vec::new());
         for e in c.entities() {
@@ -395,15 +398,21 @@ fn statements(sk: &Sketch) -> Vec<Reads> {
         let mut through = Vec::new();
         let mut drawing = false;
         for &p in &pts {
-            if let Some(pl) = sk.plane_of_origin(p) {
-                planes.push(pl);
-            } else if sk.point_held(p) {
-                // held: wherever its plane stands, it is where it is said to be
-            } else if let Some(pl) = sk.plane_of(p) {
-                through.push(pl);
-            } else {
-                // a point in space that is not held is the drawing's to place, never a plane's
-                drawing = true;
+            match (frame_of(sk, p), sk.point_held(p)) {
+                // a point of the frame's own, which stands where the frame does and so places it:
+                // a frame an instance stands in by its `std.origin` (#764); one held already
+                // places nothing
+                (Some(f), true) => {
+                    if !sk.plane_fixed(f) && !planes.contains(&f) {
+                        planes.push(f);
+                    }
+                }
+                // drawn in a frame: read through it once the frame stands
+                (Some(f), false) => through.push(f),
+                // held in space: where it is said to be
+                (None, true) => {}
+                // a point in space that is not held is the drawing's to place, never a frame's
+                (None, false) => drawing = true,
             }
         }
         for &pl in &planes {
@@ -415,6 +424,21 @@ fn statements(sk: &Sketch) -> Vec<Reads> {
         reads.push(Reads { id: c.id, axes, planes, through, pts });
     }
     reads
+}
+
+/// The frame point `p` is drawn in, a plane or a spatial chart, read as the frame it stands for:
+/// a frame's standard datum (`Sketch::plane_at`) stands at its frame's own place, over its axes
+/// and normal, and is that frame — the first chart standing there (#764).
+fn frame_of(sk: &Sketch, p: usize) -> Option<usize> {
+    let pt = &sk.points[p];
+    let o = sk.frames[pt.plane.or(pt.chart)? as usize].chart.as_ref()?.o;
+    sk.frames.iter().position(|g| g.chart.as_ref().is_some_and(|c| c.o == o))
+}
+
+/// The frame point `p` is a point of the frame's own of: held where `frame_of` draws it, as its
+/// origin is held at `(0, 0)`, so standing where the frame does.
+fn own_frame(sk: &Sketch, p: usize) -> Option<usize> {
+    frame_of(sk, p).filter(|_| sk.point_held(p))
 }
 
 /// The taken statements solved alone: the unplaced axes and places they read free, everything

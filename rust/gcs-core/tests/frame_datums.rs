@@ -97,6 +97,12 @@ impl Pose {
     /// Turned off every axis and moved.
     const MOVED: Pose = Pose { u: [0.6, 0.8, 0.0], v: [-0.48, 0.36, 0.8], o: [10.0, -20.0, 5.0] };
 
+    /// Turned `deg` about z, standing at `o`.
+    fn turned(deg: f64, o: [f64; 3]) -> Pose {
+        let (c, s) = (deg.to_radians().cos(), deg.to_radians().sin());
+        Pose { u: [c, s, 0.0], v: [-s, c, 0.0], o }
+    }
+
     fn place(&self, f: &str) -> String {
         let t = |x: [f64; 3]| format!("({}, {}, {})", x[0], x[1], x[2]);
         format!("fix(dir == {}) {f}.u\nfix(dir == {}) {f}.v\nfix(origin == {}) {f}\n",
@@ -447,9 +453,12 @@ in std.front {
 // ---- an instance is a frame (#548): its datums read from outside, `b.std.z` ----
 
 /// A seat in space, a bore's axis through it, and a datum across: what `READS`'s post is mated
-/// to, its x along the bore and its y up, by relations on the datums written `x`, `y` and `o`.
+/// to, its x along the bore and its y up, by relations on the datums written `x`, `y` and `o` —
+/// each way said, since the frame starts with its x a right angle from the bore either way round,
+/// and no seed may choose between them (#764: a mate placed before the solve took the other).
 fn mated(x: &str, y: &str, o: &str) -> String {
-    format!("{SEAT}{o} coincident seat\n{x} parallel bore\n{y} parallel std.z\n")
+    format!("{SEAT}{o} coincident seat\n{x} parallel(sense: same) bore\n\
+             {y} parallel(sense: same) std.z\n")
 }
 
 /// The seat and the bore `mated` places the post on.
@@ -629,12 +638,13 @@ g seats_at(up, east) p := {
 }
 ";
 
-/// That `e`'s `p`, a `Post(len: 40mm)`, stands where `pose` takes the root's.
-fn post_at(e: &Elaborated, pose: &Pose) {
+/// That `e`'s `inst`, a `Post(len: 40mm)`, stands where `pose` takes the root's.
+fn post_at(e: &Elaborated, inst: &str, pose: &Pose) {
     let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
-    for name in ["p.a", "p.b"] {
-        let (got, want) = (at(e, name), pose.image(at(&root, name)));
-        assert!(near(got, want), "{name}: {got:?} against {want:?}");
+    for name in ["a", "b"] {
+        let got = at(e, &format!("{inst}.{name}"));
+        let want = pose.image(at(&root, &format!("p.{name}")));
+        assert!(near(got, want), "{inst}.{name}: {got:?} against {want:?}");
     }
 }
 
@@ -646,7 +656,7 @@ fn a_relation_word_over_an_instance_reads_its_frame_and_places_it() {
                        p seats_at(up: std.z, east: bore) seat\n");
     let mut e = solved(&src);
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
-    post_at(&e, &SEATED);
+    post_at(&e, "p", &SEATED);
     // and a word whose body uses that word, its operand passed on, reads the frame through it;
     // the culprit reads as the word written
     let src = format!("{READS}{SEATS}{SEAT}\
@@ -656,7 +666,7 @@ fn a_relation_word_over_an_instance_reads_its_frame_and_places_it() {
                        p upright_twice(up: std.z, east: bore) seat\n");
     let mut e = solved(&src);
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
-    post_at(&e, &SEATED);
+    post_at(&e, "p", &SEATED);
     let said = crate::common::said(&e);
     assert!(said.iter().any(|s| s == "p upright_twice(up: std.z, east: bore) seat"), "{said:?}");
 }
@@ -670,7 +680,7 @@ fn a_relation_word_given_an_instance_as_a_parameter_reads_its_frame() {
                        bore seat_of(part: p, up: std.z) seat\n");
     let mut e = solved(&src);
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
-    post_at(&e, &SEATED);
+    post_at(&e, "p", &SEATED);
 }
 
 #[test]
@@ -690,8 +700,7 @@ p seats(turn: 30deg, up: std.z, east: std.x) st
     let mut e = solved(&src);
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
     assert!(near(at(&e, "st"), [10.0, 20.0, 25.0]), "{:?}", at(&e, "st"));
-    let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
-    post_at(&e, &Pose { u: [c, s, 0.0], v: [-s, c, 0.0], o: [10.0, 20.0, 25.0] });
+    post_at(&e, "p", &Pose::turned(30.0, [10.0, 20.0, 25.0]));
     // a station below, along an axis of the drawing's own: the axis's way, not the seed's
     let src = format!("{READS}\
 in std.top {{
@@ -810,4 +819,90 @@ fn a_seated_parts_cone_reads_a_point_drawn_in_its_front() {
         let carried = e.sketch.carriers(crate::common::ent(&e, name)).unwrap();
         assert_eq!(carried, vec![arm], "{name}");
     }
+}
+
+/// `src` elaborated and solved, every frame with axes having started where the solve leaves it:
+/// its axes and its place.
+fn starts_where_it_solves(src: &str) -> Elaborated {
+    let mut e = build(src);
+    assert!(e.ok(), "{:?}", e.diags);
+    let seeded = e.sketch.clone();
+    let r = gcs_core::solve::solve(&mut e.sketch, Default::default());
+    assert!(r.success, "{}", r.message);
+    for f in seeded.charted() {
+        let (from, to) = (seeded.basis(f), e.sketch.basis(f));
+        assert!(near(from.u, to.u) && near(from.v, to.v) && near(from.o, to.o),
+                "frame {f} is seeded {from:?}, and solves to {to:?}");
+    }
+    e
+}
+
+/// A frame of the drawing's own, `bot`, held a quarter turn about z and 100 along x — the
+/// drawing it stands in turned, as a gearbox's base is (#764).
+const BOT: &str = "\
+bot := frame
+fix(dir == (0, 1, 0)) bot.u
+fix(dir == (-1, 0, 0)) bot.v
+fix(origin == (100, 0, 0)) bot
+in bot {
+  st := point
+  fix((10, 20, 0)) st
+}
+";
+
+#[test]
+fn a_part_seated_in_another_frame_starts_where_its_seat_puts_it() {
+    // a part placed by a point and a heading in another frame (#764): its origin on a point held
+    // in `bot`, its z along `bot`'s and its x 30° on from `bot`'s about it — seeded there, its
+    // place as well as its turn, and not at the world origin for the solve to carry it across
+    let words = |src: String| src.replace("use std\n", "use std\nuse std.place (seats)\n");
+    let pose = Pose::turned(120.0, [80.0, 10.0, 0.0]);
+    for src in [
+        format!("{READS}{BOT}p := Post(len: 40mm)\n\
+                 p seats(turn: 30deg, up: bot.normal, east: bot.u) st\n"),
+        // declared in `bot`, so riding it too
+        format!("{READS}{BOT}in bot {{\n  p := Post(len: 40mm)\n}}\n\
+                 p seats(turn: 30deg, up: bot.normal, east: bot.u) st\n"),
+    ] {
+        let mut e = starts_where_it_solves(&words(src));
+        assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+        let f = e.sketch.basis(crate::common::ent(&e, "p#frame").i());
+        assert!(near(f.u, pose.u) && near(f.v, pose.v) && near(f.o, pose.o), "{f:?}");
+        post_at(&e, "p", &pose);
+    }
+}
+
+#[test]
+fn parts_seated_in_a_seated_part_start_where_they_stand() {
+    // the gearbox's rails (#764): each at a point and a heading a table gives in its base's own
+    // top, the base itself seated a quarter turn round — every frame composed by the mates and
+    // seeded where it stands, round by round, the rails once the base stands
+    let src = format!("{READS}\
+rails := [{{x: 10mm, y: 20mm, a: 30deg}}, {{x: -15mm, y: 5mm, a: 200deg}}]
+component Base() {{
+  repeat r in rails {{
+    in std.top {{
+      st := point
+      fix((r.x, r.y)) st
+    }}
+    rail := Post(len: 40mm)
+    rail seats(turn: r.a, up: std.z, east: std.x) st
+  }}
+}}
+in std.top {{
+  o := point
+  fix((100, 0)) o
+}}
+base := Base()
+base seats(turn: 90deg, up: std.z, east: std.x) o
+").replace("use std\n", "use std\nuse std.place (seats)\n");
+    let mut e = starts_where_it_solves(&src);
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    // the copies' rails, in copy order; the second at (−15, 5) in the base's top and turned 200°
+    // on from its x, the base's x along the world's y — so turned 290°, standing at (95, −15)
+    let mut rails: Vec<&str> = e.map.names.values().flatten()
+        .filter_map(|n| n.strip_suffix(".rail.b").filter(|_| n.starts_with("base.#"))).collect();
+    rails.sort();
+    assert_eq!(rails.len(), 2, "{rails:?}");
+    post_at(&e, &format!("{}.rail", rails[1]), &Pose::turned(290.0, [95.0, -15.0, 0.0]));
 }
