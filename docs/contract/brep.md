@@ -295,6 +295,23 @@ narrowing along its axis too, its half-angle below nothing (`build::cone`'s frus
 radius), whose tangent planes were traced and refused as nearly touching
 (`swept_closed::a_frustum_slid_aslant_closes_into_its_shadow_carried`, a ruling slid into its
 tangent plane against the frustum at its end poses).
+**Parallel cylinders and cones touching along a line, and a ball in a torus's tube, meet in
+closed form** (`ssi::parallel_touch`, `ball_in_tube`): two cylinders or cones whose axes are
+parallel and whose sections' circles touch at two heights (their centres apart by the sum or the
+difference of their radii) touch along the line through those points — a frustum at an end pose
+and the cone its generator turns into about an axis along its own; a ball centred on a torus's
+middle circle with its tube's radius lies in its solid and touches it round the meridian through
+its centre — where they were traced and refused as nearly touching
+(`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`). **A face's
+pieces are ordered by their curvature where they leave a point tangent** (`boolean::pieces_of_face`):
+each half's way out of a node is read a ten-thousandth along its own length, and where two of the
+ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its
+chord) they are read again at one length along each — a ten-thousandth of the shortest of those
+tied, from two readings and the distances they stand at — so two arcs touching there part by their
+curvature, where an arc of five times another's radius and length read alike to rounding (a drum at
+its end pose and the cylinders its generators turn into, in a plane square to the turn); and a
+fitted round's own small lean off tangent, read at the scale the face is drawn at, does not rule
+(`brep::a_face_rounded_from_both_edges_short_of_its_middle_keeps_a_sliver`).
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it

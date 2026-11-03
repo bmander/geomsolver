@@ -481,8 +481,9 @@ turn, its underside square to the axis cutting the floor and its inner side's li
 cylinder of radius 10 (`π/6 (12² − 10²)`, -2.0e-6), refused at S1 before. Each STL agrees with the
 field. Refused by this class: a hollow mill's ring of a bottom slid, which the closed class
 builds (a whole slot, `20 × 4 × 3`, exactly; `flat_faces::a_hollow_mill_slid_across_the_block_cuts_a_whole_slot`),
-and a mill turned a whole turn about an axis through its bottom (S1, `tests/flat_faces.rs`), and
-a bar's side along a slide (S1, `tests/prism_twists.rs`), which the closed class builds too. `tests/object_builder.rs` builds `slot.sv` at the page's samples.
+a mill turned a whole turn about an axis through its bottom (S1), which the closed class builds
+too (`flat_faces::a_mill_turned_whole_about_an_axis_through_its_bottom_bores_a_disc`, the disc it
+covers, exactly), and a bar's side along a slide (S1, `tests/prism_twists.rs`), likewise. `tests/object_builder.rs` builds `slot.sv` at the page's samples.
 
 ### A sharp edge along one point's path (issue #684 V)
 
@@ -1023,7 +1024,8 @@ name with a point of the path.
 
 A sweep every class above refuses, of a tool whose faces are all planes and whose edges are all
 lines, under one slide, turn or screw — or, under a slide, of a tool whose faces are planes,
-cylinders, cones and balls and whose edges are lines and circles — is built by the kernel's one pipeline
+cylinders, cones and balls and whose edges are lines and circles, or under a turn one whose round
+faces stand about axes along the turn's or are balls — is built by the kernel's one pipeline
 (`docs/swept-solid-design.md`; `brep::swept::closed::cut_from`, on #735's arrangement): the blank
 split at once by every face the sweep's boundary can lie on — each face of the tool at the end
 poses, each edge swept, each face's contact line swept (under a slide, a cylinder's or a cone's
@@ -1039,7 +1041,7 @@ asked), and its rows read the tool's B-rep and the motion's structure, not its c
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| C1 | Every face of the tool is a plane and every edge a line; under a slide, every face a plane, a cylinder, a cone or a ball and every edge a line or a circle. | The candidates are the planes, cylinders, cones and hyperboloids such a tool's faces and edges sweep, the helicoidal sheets of its level edges under a screw, and under a slide a round face's tangent planes along its contact rulings, a ball's cylinder and its circles' oblique cylinders; any other curved face sweeps a curved envelope, the design's later step. | A point of the curved face or edge. |
+| C1 | Every face of the tool is a plane and every edge a line; under a slide, every face a plane, a cylinder, a cone or a ball and every edge a line or a circle; under a turn, every round face a cylinder or a cone about an axis along the turn's, or a ball clear of its axis, and every circle square to it. | The candidates are the planes, cylinders, cones and hyperboloids such a tool's faces and edges sweep, the helicoidal sheets of its level edges under a screw, and under a slide a round face's tangent planes along its contact rulings, a ball's cylinder and its circles' oblique cylinders; any other curved face sweeps a curved envelope, the design's later step. | A point of the curved face or edge. |
 | C2 | The motion is one slide, turn or screw, and under a screw every face and edge of the tool runs along its axis or square to it. | A leaning edge or face under a screw sweeps a screw surface no closed solid or sheet holds yet; any other motion is K2's. | A point of the leaning edge or face. |
 | C3 | Every cell the candidates split the blank into is read in or out of the sweep at a point clear of its boundary. | Membership is read on the tool's mesh: a point within its sag of the swept boundary is unsettled, not guessed. | The cell's deepest point. |
 

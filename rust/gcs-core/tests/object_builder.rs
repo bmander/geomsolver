@@ -222,14 +222,14 @@ fn a_ring_in_contact_all_round_turned_builds_at_the_displays_samples() {
 }
 
 /// **A sweep of the closed class builds at the display's samples** (`plunge.sv`, `stopped_turn.sv`,
-/// `stopped_punch.sv`, #721): a polyhedral tool's slide and turn and a drum's slide, each stopping
-/// inside its blank, cut from it on one arrangement by the page's stepped builder as the export
-/// builds it — admitted, its blank built, and cut in the stage after, with no sheet, plan or
-/// sector.
+/// `stopped_punch.sv`, `stopped_drum.sv`, #721): a polyhedral tool's slide and turn and a drum's
+/// slide and turn, each stopping inside its blank, cut from it on one arrangement by the page's
+/// stepped builder as the export builds it — admitted, its blank built, and cut in the stage after,
+/// with no sheet, plan or sector.
 #[test]
 fn a_closed_sweep_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/plunge.sv".to_string(),"solid_sweeps/stopped_turn.sv".to_string(),
-        "solid_sweeps/stopped_punch.sv".to_string()],true),3);
+        "solid_sweeps/stopped_punch.sv".to_string(),"solid_sweeps/stopped_drum.sv".to_string()],true),4);
 }
 
 const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \

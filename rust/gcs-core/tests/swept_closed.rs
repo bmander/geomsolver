@@ -520,3 +520,31 @@ fn a_capsule_slid_aslant_closes_into_its_shadow_carried() {
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
 }
+
+/// **Round tools turned part of a turn about an axis along their own** (#721 F2c5, a curved tool
+/// under a turn): a drum, a frustum and a ball beside the axis, each turned 100°. A cylinder's or a
+/// cone's normal passes through the turn's axis along its two generators in the plane through both
+/// axes, which turn into a cylinder or a cone about the turn's; a ball's along its great circle in
+/// the plane through the axis and its centre, which turns into a torus; their rims, square to the
+/// axis, turn within their own planes. Apart from the build, by Pappus: a disc of radius `r` whose
+/// centre stands `D` from the axis, turned by `Θ`, covers itself and the annular sector between
+/// `D ∓ r`, `π r² + 2 Θ D r`, so a drum sweeps `h (π r² + 2 Θ D r)`, a frustum that integrated over
+/// its slices, `π h (r₀² + r₀ r₁ + r₁²)/3 + Θ D h (r₀ + r₁)`, and a ball `4/3 π r³ + Θ D π r²`.
+#[test]
+fn round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus() {
+    use gcs_core::brep::build::{cone,disc,prism,sphere};
+    use std::f64::consts::PI;
+    let theta = 100f64.to_radians();
+    let path = turn([0.;3],[0.,0.,1.],theta);
+    let d = 6.;
+    let cases: Vec<(&str,Brep,f64)> = vec![
+        ("a drum",prism(&disc([d,0.,0.],[0.,0.,1.],1.5),0.,2.).unwrap(),2.*(PI*2.25+2.*theta*d*1.5)),
+        ("a frustum",cone([d,0.,0.],[0.,0.,1.],2.,1.,3.).unwrap(),PI*3.*(4.+2.+1.)/3.+theta*d*3.*3.),
+        ("a ball",sphere([d,0.,0.5],unit([0.2,0.3,1.]),1.5).unwrap(),4./3.*PI*1.5f64.powi(3)+theta*d*PI*2.25),
+    ];
+    for (what,tool,expected) in cases {
+        let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("{what}: {e:?}"));
+        assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{what}: {} against {expected}",volume(&built));
+        agrees(&built,&tool,&path);
+    }
+}

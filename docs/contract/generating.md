@@ -404,10 +404,23 @@ each to 1e-9; and under a turn a corner holding the axis and a cap of a tool no 
 at C3 until a plane touching a cone narrowing along its axis was met along their generator
 (`prism_twists::a_corner_holding_the_turns_axis_is_the_closed_classs`,
 `a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs`).
+**A curved tool under a turn** builds by the same arrangement where its round faces stand about
+axes along the turn's, or are balls: a cylinder's or a cone's two generators in the plane through
+both axes turned (a cylinder or a cone about the turn's axis), a ball's great circle in the plane
+through the axis and its centre turned (a torus), a circle square to the axis its own plane, and
+each round face at both end poses. The touches they make with the tool's end poses are met in
+closed form (brep.md: parallel cylinders and cones touching along a line, a ball in a torus's
+tube), and a face's pieces leaving one point tangent are ordered by their curvature
+(`boolean::pieces_of_face`, ways within `TANGENT_TIE` read again at one length). Held to Pappus: a
+drum, a frustum and a ball turned 100° (`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`),
+and cut from a ring sector the drum turned whole (`closed_characteristics::the_drum_turned_a_whole_turn_bores_the_whole_ring`,
+the constant-twist class's S1) and turned to a stop partway (`closed_class::a_drum_turned_partway_into_a_ring_sector_stops_there`),
+each to 1e-9.
 An edge or a face leaning to a screw's axis (`Unbuilt::Leaning`) and a curved tool past these
-(`Unbuilt::Curved`: any face no plane under a turn or a screw; under a slide a torus or a
-free-form face, an edge no line or circle) are refused by what they are, read before any build
-(`closed::reads`).  The result is the selection's boundary with the candidates that bound nothing healed out of
+(`Unbuilt::Curved`: any face no plane under a screw; under a turn a cylinder or a cone about an
+axis leaning to it, a ball across its axis, a circle leaning to it, a torus or a free-form face;
+under a slide a torus or a free-form face; an edge no line or circle) are refused by what they
+are, read before any build (`closed::reads`).  The result is the selection's boundary with the candidates that bound nothing healed out of
 its faces (`boolean::selection`): each face as whole as the candidate's it lies on.
 
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
@@ -755,10 +768,11 @@ across a knot standing that often. The gate is `solid_sweeps_examples::the_end_m
 1e-6 at 0.001 mm; the mill turned across `turn.sv`'s block, Pappus over the annulus, and turned a
 whole turn, each within 1e-5; a tapered mill turned, its walls cones, within 1e-5), with
 `prism_twists::a_side_square_to_the_turn_cuts_a_floor` (a bar lying along the turn, its underside
-the floor, within 1e-5, an S1 refusal before), each STL agreeing with the field; the refusal
-`flat_faces::a_disc_across_the_axis_kept_in_its_plane_is_refused` (S1), and what this class refuses
-that the closed class builds, `flat_faces::a_hollow_mill_slid_across_the_block_cuts_a_whole_slot`
-(a ring bottom kept in its plane, G6) and the side along a slide
+the floor, within 1e-5, an S1 refusal before), each STL agreeing with the field; what this class refuses that the closed class builds,
+`flat_faces::a_mill_turned_whole_about_an_axis_through_its_bottom_bores_a_disc` (S1, a flat bottom
+the turn's axis passes through, G6's `THROUGH`),
+`flat_faces::a_hollow_mill_slid_across_the_block_cuts_a_whole_slot` (a ring bottom kept in its
+plane, G6) and the side along a slide
 (`prism_twists::a_side_along_the_slide_is_the_closed_classs`); the creased fit's
 `brep::a_grid_creased_along_a_row_is_its_stretches_fits_joined_there` (through every point, each
 side its plane to 1e-12); and `object_builder::a_flat_face_kept_in_its_plane_builds_at_the_displays_samples`.

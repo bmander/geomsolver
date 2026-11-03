@@ -12,11 +12,11 @@
 //! (`prism_twists::a_side_square_to_the_turn_cuts_a_floor`). Each volume is a closed form, and each
 //! exact solid's STL agrees with the field. A ring kept in its plane and a disc swept across the
 //! turn's axis are refused by name.
-use gcs_core::solid::admission::{Class,Condition};
+use gcs_core::solid::admission::Class;
 use std::f64::consts::PI;
 
 use crate::solid_sweeps_examples::class;
-use crate::turns_and_slides::{admit,exported,exported_at,near,refused};
+use crate::turns_and_slides::{exported,exported_at,near};
 
 /// A block 20 × 10 × 10 (x 0 to 20, y −5 to 5, z 0 to 10) and an end mill of radius `r`, its axis
 /// upright through (−5, `y`), its flat bottom at `z` and its top 8 above, slid 30 along x over the
@@ -201,13 +201,19 @@ fn a_hollow_mill_slid_across_the_block_cuts_a_whole_slot() {
     near(exported(&e,"part"),2000.-240.,1e-9);
 }
 
-/// What is still refused (S1): a mill turned a whole turn about an axis that passes through its
-/// flat bottom, which sweeps across the axis (the block made a sector of a disc, its inner radius
-/// 0); the closed class takes no curved tool turned (C1), so the first class's refusal stands.
+/// **A mill turned whole about an axis through its flat bottom bores a disc** (G6's `THROUGH`; a
+/// negative control until #721 F2c5): the constant-twist class refuses it (S1: its bottom is kept in
+/// its own plane with the turn's axis through it), and the closed class builds it, its side's
+/// generators in the plane through both axes turned into the cylinders of radii 2.5 and 0.5, its
+/// bottom kept in its plane. The block is a sector of a disc (its inner radius 0); the mill, radius
+/// 1.5 about an axis 1 from the turn's, covers every radius to 2.5 turned whole, so the block loses
+/// `π/6 · 2.5²` through the top millimetre the mill reaches.
 #[test]
-fn a_disc_across_the_axis_kept_in_its_plane_is_refused() {
+fn a_mill_turned_whole_about_an_axis_through_its_bottom_bores_a_disc() {
     let across = turned_mill(1.5,1.5,1.,0.).replace("(-140deg, 140deg)","(0deg, 360deg)").replace("du: 8mm","du: 0mm");
-    let r = refused(admit(&across));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("`mill.bottom` is kept in its own plane with the turn's axis through it"),"{}",r.message);
+    let r = crate::turns_and_slides::admit(&across);
+    // (the closed class's, after the constant-twist class's refusal)
+    let [s] = r.as_ref().unwrap().sweeps() else { panic!("one sweep") };
+    assert!(matches!(s.class,Class::Closed(_)),"the closed class");
+    near(exported(&fixtures::read(&across),"part"),PI/3.*144.-PI/6.*2.5*2.5,1e-9);
 }

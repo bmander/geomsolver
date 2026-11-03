@@ -370,6 +370,8 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let Surface::Cylinder(c,r) = cy else { unreachable!() };
             Ssi::Curves(plane_cylinder(pl.z,dot(pl.z,pl.o),&c,r,tol))
         }
+        (Surface::Sphere(sp,r),Surface::Torus(t,big,small)) | (Surface::Torus(t,big,small),Surface::Sphere(sp,r))
+            if let Some(circle) = ball_in_tube(&sp,r,&t,big,small,tol) => Ssi::Curves(vec![circle]),
         (Surface::Plane(_),Surface::Sphere(..)) | (Surface::Sphere(..),Surface::Plane(_)) => {
             let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Sphere(c,r) = sp else { unreachable!() };
@@ -463,6 +465,13 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let Some(h) = h else { return Ssi::Curves(vec![Curve::Line {p:m,d:f.z}]) };
             Ssi::Curves(vec![Curve::Line {p:add(m,scale(v,h)),d:f.z},Curve::Line {p:sub(m,scale(v,h)),d:f.z}])
         }
+        (Surface::Cylinder(..) | Surface::Cone(..),Surface::Cylinder(..) | Surface::Cone(..)) if norm(cross(f.z,g.z)) <= 1e-12 => {
+            // parallel axes, a cone among them: touching along a line where their sections' circles
+            // touch at every height — their radii running at one rate, or opposite rates, beside a
+            // fixed distance between their axes (a frustum at an end pose, and the cone its generator
+            // turns into about an axis along its own, #721 X6); traced otherwise
+            match parallel_touch(a,b,tol) { Some(line) => Ssi::Curves(vec![line]),None => Ssi::Traced }
+        }
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if (r-s).abs() <= tol => {
             // one radius, axes crossing at O: a point as far from both axes has
             // ((p−O)·a₁)² = ((p−O)·a₂)², so the meeting is the first cylinder cut by the two planes
@@ -485,6 +494,59 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         },
         _ => Ssi::Traced,
     }
+}
+
+/// **A ball within a torus's tube touching it round a meridian**: centred on the tube's middle
+/// circle and of the tube's radius, the ball is one of those the torus is the envelope of, within
+/// its solid and touching it only round the tube's circle through its centre (a ball at an end pose
+/// of a turn, and the torus its great circle turns into, #721 X6). None for any other ball.
+fn ball_in_tube(sp: &Frame,r: f64,t: &Frame,big: f64,small: f64,tol: f64) -> Option<Curve> {
+    let z = unit(t.z);
+    let rel = sub(sp.o,t.o);
+    let w = sub(rel,scale(z,dot(rel,z)));
+    let rho = norm(w);
+    if dot(rel,z).abs() > tol || (rho-big.abs()).abs() > tol || (r.abs()-small.abs()).abs() > tol || rho <= tol { return None }
+    let w = scale(w,1./rho);
+    Some(Curve::Circle(Frame::new(sp.o,cross(z,w),w),r.abs()))
+}
+
+/// The radius of a cylinder or a cone at height `h` along its own axis from its frame's origin.
+fn radius_at(s: &Surface,h: f64) -> Option<f64> {
+    match *s {
+        Surface::Cylinder(_,r) => Some(r.abs()),
+        Surface::Cone(_,r,half) => { let (sa,ca) = half.dsin_cos(); (ca > 1e-12).then(|| r+h*sa/ca) }
+        _ => None,
+    }
+}
+
+/// **The line two cylinders or cones with parallel axes touch along**, where they do: at two
+/// heights the circles they cut from a plane square to the axes touch, within `tol` (the distance
+/// between their centres the sum or the difference of their radii), and the line through the two
+/// points they touch at lies on both. None where they do not touch so at both heights, or a radius
+/// there is none (past an apex).
+fn parallel_touch(a: &Surface,b: &Surface,tol: f64) -> Option<Curve> {
+    let (f,g) = (*a.frame(),*b.frame());
+    let z = unit(f.z);
+    let sense = dot(g.z,z).signum();
+    let scale_of = radius_at(a,0.)?.max(radius_at(b,dot(sub(f.o,g.o),z)*sense)?).max(1.);
+    let touch = |h: f64| -> Option<V> {
+        let c1 = add(f.o,scale(z,h));
+        let hg = dot(sub(c1,g.o),z)*sense;
+        let c2 = add(g.o,scale(g.z,hg));
+        let (r1,r2) = (radius_at(a,h)?,radius_at(b,hg)?);
+        if !(r1 > tol && r2 > tol) { return None }
+        let w = sub(sub(c2,c1),scale(z,dot(sub(c2,c1),z)));
+        let d = norm(w);
+        if d <= tol { return None }
+        let w = scale(w,1./d);
+        // externally (the far circle beside it), or the one within the other
+        if (d-(r1+r2)).abs() <= tol { Some(add(c1,scale(w,r1))) }
+        else if (d-(r1-r2).abs()).abs() <= tol { Some(add(c1,scale(w,if r1 >= r2 { r1 } else { -r1 }))) }
+        else { None }
+    };
+    let (h0,h1) = [(0.,scale_of),(0.,-scale_of)].into_iter().find(|&(h0,h1)| touch(h0).is_some() && touch(h1).is_some())?;
+    let (p,q) = (touch(h0)?,touch(h1)?);
+    Some(Curve::Line {p,d:unit(sub(q,p))})
 }
 
 /// **The helix two sheets of one screw meet in, as `u` on the first** (`on`): its line meets the

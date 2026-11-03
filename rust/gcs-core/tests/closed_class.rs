@@ -7,6 +7,7 @@
 //! build (the closed class is asked only where the others refuse, so a sweep read as closed is one
 //! they refuse); and what the class's rows refuse stands as the first class's refusal.
 use gcs_core::solid::admission::{Class,Condition};
+use std::f64::consts::PI;
 
 use crate::closed_characteristics::square_bar;
 use crate::solid_sweeps_examples::class;
@@ -63,12 +64,36 @@ fn a_drum_pushed_aslant_partway_into_a_plate_leaves_its_end_pose() {
     near(exported(&e,"part"),800.-drum_plunged_away(8.),1e-9);
 }
 
-/// What the closed class's rows refuse stands as the class asked first refused it: the punch's
-/// drum, a curved tool (C1 under any motion but a slide), turned partway into the ring sector and
-/// stopped there is the constant-twist class's refusal still.
+/// **A drum turned partway into a ring sector stops there** (X1 with a curved tool under a turn): the
+/// drum, radius 1 and 1 high, its axis along the turn's 10 from it, turned from −140° to 30°,
+/// halfway across the sector's 60°. The constant-twist class refuses it (it ends in the blank); the
+/// closed class builds it, the drum at its end pose touching along a line each cylinder its
+/// generators turn into. Apart from the build: each circle of radius `ρ` meets the drum's section in
+/// the angles `±a(ρ)`, `cos a = (ρ² + 10² − 1)/(20 ρ)`, so the turn covers the sector's angles from
+/// 0 to `30° + a(ρ)`; the ring loses `∫ ρ (π/6 + a(ρ)) dρ` from 9 to 11, over `ρ = 10 + sin s` so
+/// the roots at its ends are smooth.
+#[test]
+fn a_drum_turned_partway_into_a_ring_sector_stops_there() {
+    let e = fixtures::read(&crate::closed_characteristics::turned_drum().replace("(-140deg, 140deg)","(-140deg, 30deg)"));
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_turn(),"a turn");
+    near(exported(&e,"part"),PI/3.*80.-drum_turned_partway_away(),1e-9);
+}
+
+/// What the ring loses to the drum turned to 30° (`a_drum_turned_partway_into_a_ring_sector_stops_there`).
+pub(crate) fn drum_turned_partway_away() -> f64 {
+    use std::f64::consts::FRAC_PI_2;
+    let a = |r: f64| ((r*r+99.)/(20.*r)).min(1.).acos();
+    crate::brep::simpson(-FRAC_PI_2,FRAC_PI_2,4000,|s: f64| { let r = 10.+s.sin(); r*(PI/6.+a(r))*s.cos() })
+}
+
+/// What the closed class's rows refuse stands as the class asked first refused it: the drum, a
+/// curved tool (C1 under a screw), screwed half a millimetre a turn is the constant-twist class's
+/// refusal still.
 #[test]
 fn a_sweep_the_closed_class_refuses_keeps_its_first_refusal() {
-    let r = refused(admit(&crate::closed_characteristics::turned_drum().replace("(-140deg, 140deg)","(-140deg, 30deg)")));
+    let r = refused(admit(&crate::closed_characteristics::turned_drum().replace("use std.motion (turns)","use std.motion (screws)")
+        .replace("swing turns(1) ax","swing screws(0.5mm) ax")));
     assert_eq!(r.class(),"constant-twist class","{r}");
     assert!(!matches!(r.condition,Condition::Faces | Condition::Constant | Condition::Settled),"{r}");
 }
@@ -196,6 +221,12 @@ fn the_partway_figures_reduce_to_the_whole_ones() {
     use std::f64::consts::{PI,TAU};
     let k = 0.3/RISE;
     assert!((plunged_away(16.)-4.*(16.+2.*k)).abs() <= 1e-9,"{}",plunged_away(16.));
+    // the drum's section, the unit disc, by the circles about the axis it meets
+    let disc = 2.*crate::brep::simpson(-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2,4000,|s: f64| {
+        let r = 10.+s.sin();
+        r*((r*r+99.)/(20.*r)).min(1.).acos()*s.cos()
+    });
+    assert!((disc-PI).abs() <= 1e-9*PI,"{disc}");
     let shadow = 4.*(32.+4.*PI*k);
     assert!((drum_plunged_away(16.)-shadow).abs() <= 1e-9*shadow,"{} against {shadow}",drum_plunged_away(16.));
     let (r0,r,w,lead,l) = (4_f64,5_f64,2.,6.,20.);

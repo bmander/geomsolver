@@ -71,15 +71,25 @@ fn a_bull_nosed_drum_punches_its_shadow_rounded() {
     near(exported_at(&e,"part",0.001),800.-4.*(32.-(4.-PI)/4.),2e-6);
 }
 
-/// What a closed characteristic is still refused: the drum turned a whole turn, whose sheet would
-/// close round the turn as well as along the characteristic, a ring with no edge (S1); the drum
-/// screwed half a millimetre a turn, which keeps its flat ends in no plane, so that both of each
-/// ring's points on its side reach the blank with no flat between them (S2).
+/// **The drum turned a whole turn bores the whole ring** (#721 F2c5, a curved tool under a turn): its
+/// sheet would close round the turn as well as along the characteristic, a ring with no edge, which
+/// the constant-twist class refuses (S1); the closed class builds it on one arrangement, the drum's
+/// side's generators in the plane through both axes turned into the cylinders of radii 9 and 11,
+/// its flat ends kept in their planes. The ring loses the annulus between them through the drum's
+/// height within its 60°, `π/6 (11² − 9²)`.
+#[test]
+fn the_drum_turned_a_whole_turn_bores_the_whole_ring() {
+    let e = fixtures::read(&turned_drum().replace("(-140deg, 140deg)","(0deg, 360deg)"));
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_turn(),"a turn");
+    near(exported(&e,"part"),PI/3.*80.-PI/6.*40.,1e-9);
+}
+
+/// What a closed characteristic is still refused: the drum screwed half a millimetre a turn, which
+/// keeps its flat ends in no plane, so that both of each ring's points on its side reach the blank
+/// with no flat between them (S2), and which the closed class takes no curved tool screwed for (C1).
 #[test]
 fn what_a_closed_characteristic_still_refuses() {
-    let whole = refused(admit(&turned_drum().replace("(-140deg, 140deg)","(0deg, 360deg)")));
-    assert_eq!(whole.condition,Condition::Regular);
-    assert!(whole.message.contains("closes on itself through `mill.bottom` under a whole turn"),"{}",whole.message);
     let screwed = turned_drum().replace("use std.motion (turns)","use std.motion (screws)").replace("swing turns(1) ax","swing screws(0.5mm) ax");
     let screwed = refused(admit(&screwed));
     assert_eq!(screwed.condition,Condition::Once);

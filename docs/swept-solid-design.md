@@ -307,6 +307,23 @@ it. It stays as the fast path where #699 D says so.
    cases now: a hollow mill's ring bottom (G6), an engraving bit's apex (G5) and a drill beside a
    post. A torus's face (its contact under a slide a curve no plane holds, its sweep no quadric) and
    any curved face under a turn or a screw are the steps after.
+   *Built for a curved tool under a turn* where its round faces stand about axes along the turn's,
+   or are balls: a cylinder's or a cone's normal passes through the turn's axis along its two
+   generators in the plane through both axes, so they turn into a cylinder or a cone about it; a
+   ball's along its great circle in the plane through the axis and its centre, which turns into a
+   torus; a circle square to the axis turns within its own plane. Each touches the tool at its end
+   poses along a whole line or circle: parallel cylinders and cones whose sections' circles touch
+   at every height meet along that line, and a ball centred on a torus's middle circle with its
+   tube's radius touches it round that meridian (`ssi`, in closed form). Where those touches meet a
+   plane square to the axis, two of its arcs leave one point tangent, and a face's pieces were
+   ordered by their ways a ten-thousandth along each half's own length, where an arc of five times
+   another's radius and length reads alike; ways tied within a thousandth of a radian are now read
+   again at one length along each, by their curvature (`boolean`'s `pieces_of_face`). A drum, a
+   frustum and a ball turned 100° are each their sections' Pappus volume to 1e-9; the drum turned
+   whole bores its annulus, and turned to a stop partway into a ring sector the covered angles of
+   each circle, each to 1e-9. A cylinder or a cone about an axis leaning to the turn's (its contact
+   a curve on it, turned into a surface of revolution with no closed-form meridian) and a ball
+   reaching across the axis (a spindle torus) are the steps after.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.
