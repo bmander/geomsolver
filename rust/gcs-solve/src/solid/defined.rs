@@ -118,6 +118,35 @@ fn revolution(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
     Some(SolidDef::Revolve { face, axis, sweep, sense })
 }
 
+/// **The rule's names written on a region's terms** (#765), for the region no entry here
+/// recognises: a section's term, or a draft's lean's, named by its face's edge where the face is
+/// one edge and no hole (a circle), and an ordinate along that face's plane `near` where it bounds
+/// the points from above and `far` from below — so every reader of the region's faces (its paths,
+/// the field, a meridian, the exact solid) names them as a prism's, as a countersink's cone is.
+/// Called once the ordinates are along the planes (`program::solids::build`'s `face_planes`).
+pub fn name_terms(sk: &Sketch, terms: &mut [RegionTerm]) {
+    let face_of = |t: &RegionTerm| match &t.shape {
+        RegionShape::Section { face } if t.cmp == Cmp::Le => Some(*face),
+        RegionShape::Measured { of } => lean(of).map(|(f, _, _)| f),
+        _ => None,
+    };
+    let planes: Vec<EntRef> = terms.iter().filter_map(face_of)
+        .filter_map(|f| face_plane(sk, f).map(|(p, _)| EntRef::frame(p))).collect();
+    for t in terms.iter_mut() {
+        if let Some(f) = face_of(t).and_then(|f| sk.faces.get(f as usize)) {
+            if let ([edge], true) = (f.edge_names.as_slice(), f.holes.is_empty()) {
+                if !edge.is_empty() {
+                    t.name = edge.clone();
+                }
+            }
+        } else if let RegionShape::Plane { along, sign, .. } = t.shape {
+            if t.cmp != Cmp::In && planes.contains(&along) {
+                t.name = if (t.cmp == Cmp::Le) == (sign > 0.0) { "near" } else { "far" }.into();
+            }
+        }
+    }
+}
+
 /// A stated number of a term, its `lo`, where nothing grows it.
 fn stated(t: &RegionTerm) -> Option<f64> {
     (t.grow.is_none() && t.lo.free.is_none()).then_some(t.lo.c)
@@ -206,7 +235,7 @@ fn prism(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
 /// `beyond := { q | q outside sec }`, `within := { q | q inside sec }` and `sec`'s plane `P`: the
 /// face and `k`, the draft's tangent — the signed distance into the section at least `k` times
 /// the ordinate's size.  `None` for any other sum.
-fn lean(of: &[(crate::model::Target, f64)]) -> Option<(u32, f64, EntRef)> {
+pub(crate) fn lean(of: &[(crate::model::Target, f64)]) -> Option<(u32, f64, EntRef)> {
     use crate::model::Target;
     let mut face = None;
     let (mut out, mut into, mut plane) = (None, None, None);

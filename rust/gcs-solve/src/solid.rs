@@ -567,13 +567,23 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 "edge `{name}` collides with a sweep cap; rename the source edge"
             )));
         }
-        // a draft that takes a side to nothing, or past it, is no solid of those sides
+        // a draft that takes a side to nothing, or past it, is no solid of those sides: said where
+        // it comes to nothing, measured from the plane the face is drawn in, which the sides lean
+        // from whatever the ordinates (#765)
         if let SolidDef::Prism { from, to, draft: Some(d), .. } = &s.def {
             let reach = from.value.abs().max(to.value.abs());
             for (k, p) in polys.iter().enumerate() {
-                if let Some(i) = primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, d.value.dtan())) {
-                    return Err(fail(&format!("a draft of `{}` takes the side `{}` to nothing \
-                        within the prism's ordinates", d.text, p.names[p.of[i].0])));
+                if let Some((i, at)) = primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, d.value.dtan())) {
+                    let length = |x: f64| crate::units::Dim::LENGTH.number_text(x, sk.units);
+                    // to three figures: a tessellated arc's chords come to nothing a little short
+                    // of the arc
+                    let figures = 10f64.powi(2 - at.abs().log10().floor() as i32);
+                    let at = (at * figures).round() / figures;
+                    return Err(fail(&format!("a draft of `{}` takes the side `{}` to nothing {} \
+                        from the face's own plane, within the prism's ordinates ({} to {}): its \
+                        sides lean from the plane the face is drawn in, the parting plane, so draw \
+                        the face where the draft parts", d.text, p.names[p.of[i].0], length(at),
+                        length(from.value), length(to.value))));
                 }
             }
         }

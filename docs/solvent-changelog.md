@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.201] A countersink** (#765). `std.solids.Countersink(rim: face, angle: Angle)` is the cone
+under a circle whose sides meet at the included angle, as a drawing calls one out: `Drafted`'s lean
+at `tan(angle / 2)` with the one ordinate `<= 0mm`, so it runs to its point and states no depth
+(§6.9). A lean about a whole circle is read about the circle's axis, so the cone is built exactly,
+and the same set written by hand alike; its faces are `.near` and the side named by the rim's edge.
+The rim is drawn where the sink opens, on a plane lying on the face it is cut from: a draft's sides
+lean from the plane its face is drawn in, whatever its ordinates. A drafted prism whose side comes
+to nothing within its ordinates is refused as before, now saying how far from that plane it comes
+to nothing. Nothing written before is read differently.
+
 **[0.200] A line is a motion** (#748). Wherever a reading names a frame, `under:` or
 `seen_from:`, it may name a line or an axis instead: the turn about it, a radian a radian of the
 roll (§6.14). Through 0.199 only a face's patch swept into a region solid read a line so (the body
