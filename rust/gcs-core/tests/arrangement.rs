@@ -306,3 +306,23 @@ fn a_hole_whose_caps_touch_the_bore_and_the_rim_is_cut_whole() {
         assert_eq!(out.faces.len(),6,"at {a}: the plate's two, the rim, the bore, the hole and its cap");
     }
 }
+
+/// **A split lays a touch as a Boolean does, and heals it out of each cell** (`boolean::split`): a
+/// block split by a plane across it and by a tube lying on its top, touching it along a line — the
+/// line laid as an edge in the complex, and in each cell the block's top whole again. Two cells of
+/// half the block each, six faces each, valid.
+#[test]
+fn a_split_heals_a_touch_out_of_each_cell() {
+    use gcs_core::brep::build::{face,square,tube};
+    let block = block([-2.,-2.,-1.],[2.,2.,0.]);
+    // the tube along y on the top, touching it along x = 0.5; the plane x = 0 across the block
+    let across = face(&square([0.,0.,-0.5],[1.,0.,0.],5.)).unwrap();
+    let rod = tube([0.5,-3.,1.],[0.,1.,0.],1.,6.,2).unwrap();
+    let cells = gcs_core::brep::boolean::split(&block,&across.joined(&rod),1e-9).unwrap();
+    assert_eq!(cells.len(),2);
+    for c in &cells {
+        c.check(1e-9).unwrap();
+        close(volume(c),8.,1e-9);
+        assert_eq!(c.faces.len(),6,"the block's half, its top whole");
+    }
+}

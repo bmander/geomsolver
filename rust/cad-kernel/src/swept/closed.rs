@@ -104,6 +104,22 @@ enum Cutter { Plane(Plane),
 /// motion and solid in one set of units, built to `tol`; membership read on the tool meshed within
 /// `bar`.
 pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
+    built(tool,path,roll,bar,tol,None)
+}
+
+/// **The solid `tool` sweeps under `path` over `roll` cut from `blank`** (#699 C on #735's one
+/// arrangement): the blank split by the same candidates `closed` splits its box by, all at once
+/// (`boolean::arrangement_within`, the blank the domain), each cell kept where it is no member of
+/// the sweep, and the blank's boundary with the swept cells the result (`boolean::selection`). No
+/// closed solid is built and then subtracted: the blank and the sweep's candidates are one
+/// arrangement, classified once — the closed solid is the same arrangement over a box, its cells
+/// kept where they are members. A sweep missing the blank leaves it whole.
+pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
+    built(tool,path,roll,bar,tol,Some(blank))
+}
+
+/// `closed` over a box holding the sweep, or `cut_from` over `blank`.
+fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let Some(screw) = path.screw().filter(|s| s.ratio != 0. || s.advance != 0.) else { return Err(Unbuilt::Motion) };
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let size = { let (lo,hi) = tool.bounds(); norm(sub(hi,lo)) };
@@ -196,7 +212,7 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
         // closed form with no Boolean
         let whole = (screw.ratio*(b-a)).abs() >= std::f64::consts::TAU*(1.-1e-12);
         let convex = faces.iter().all(|&(o,n)| tool.vertices.iter().all(|v| dot(sub(v.p,o),n) <= eps));
-        if screw.is_turn() && whole && convex { return turned_whole(&faces,&edges,c,axis,eps,tol) }
+        if screw.is_turn() && whole && convex && blank.is_none() { return turned_whole(&faces,&edges,c,axis,eps,tol) }
         // under a screw the heights a source spans run on by the step it takes over the roll, the
         // rest as under a turn (a cylinder about the axis keeps itself under both)
         let lift = { let rate = screw.advance/std::f64::consts::TAU; [(rate*a).min(rate*b),(rate*a).max(rate*b)] };
@@ -279,10 +295,12 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
     // the axis; under a screw, a box square to the axis and as tall along it as the sweep, a little
     // more (`tall`: its heights along the axis and its farthest from it), so a sheet a level edge
     // screws into leaves it within a turn where the sweep climbs less than a turn's step
-    let (lo,hi) = tool.bounds();
-    let corners: Vec<V> = (0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] })).collect();
+    // (cut from a blank, the box holds the blank too: every candidate reaching across it)
+    let box_corners = |(lo,hi): (V,V)| -> Vec<V> { (0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] })).collect() };
+    let corners = box_corners(tool.bounds());
+    let held: Vec<V> = blank.map(|b| box_corners(b.bounds())).unwrap_or_default();
     let (domain,centre,half,tall) = if screw.is_slide() || screw.is_turn() {
-        let mut points: Vec<V> = corners.iter().flat_map(|&p| [start.point(p),end.point(p)]).collect();
+        let mut points: Vec<V> = corners.iter().flat_map(|&p| [start.point(p),end.point(p)]).chain(held.iter().copied()).collect();
         if screw.is_turn() {
             let reach = corners.iter().map(|&p| norm(sub(p,screw.origin))).fold(0.,f64::max);
             points.extend([1.,-1.].iter().flat_map(|&s| (0..3).map(move |k| { let mut v = [0.;3]; v[k] = s*reach; v }))
@@ -309,6 +327,11 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
             }
         }
         let sag = reach*(1.-(0.5*(screw.ratio*(b-a)).abs()/STEPS as f64).cos());
+        for &p in &held {
+            let x = f.local(p);
+            reach = reach.max(x[0].hypot(x[1]));
+            for i in 0..3 { l[i] = l[i].min(x[i]); h[i] = h[i].max(x[i]) }
+        }
         let margin = 0.05*(0..3).map(|i| h[i]-l[i]).fold(0.,f64::max)+tol;
         let pad = [sag+margin,sag+margin,margin];
         for i in 0..3 { l[i] -= pad[i]; h[i] += pad[i] }
@@ -349,22 +372,23 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
         }
     }
     let refs: Vec<&Brep> = solids.iter().collect();
-    let complex = arrangement_within(&domain,&refs,tol)?;
+    let complex = arrangement_within(blank.unwrap_or(&domain),&refs,tol)?;
     // each cell classified by membership at the deepest of its points that settles (a cusp-thin
     // cell's stand near the swept boundary, and the first may not), and the boundary between the
-    // members and the rest the closed solid: one selection, no union
+    // cells kept — the members, or cut from a blank the rest — and the others the result: one
+    // selection, no union, the candidates that bound nothing healed out of its faces
     let cells = complex.cells()?.len();
     let mut keep = vec![false;cells];
     for (c,kept) in keep.iter_mut().enumerate().skip(1) {
         let points = complex.inside_points(c,4)?;
         let Some(&first) = points.first() else { continue };
         match points.iter().find_map(|&x| swept.member(x).ok()) {
-            Some(m) => *kept = m,
+            Some(m) => *kept = m != blank.is_some(),
             None => return Err(Unbuilt::Unsettled {at:first}),
         }
     }
-    if !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
-    let out = complex.select(&|c| keep[c])?.brep;
+    if blank.is_none() && !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
+    let out = crate::boolean::selection(&complex,&|c| keep[c])?;
     out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
     Ok(out)
 }

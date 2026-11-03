@@ -378,7 +378,19 @@ interval, lengthened by the turn `Θ`, so the sweep is `V + Θ ∫ ρ (h + k Δ�
 two out `1 + Θ (3 + k)` — built at 1e-6 and 1e-7, to 1e-9, agreeing with membership
 (`a_bar_under_a_screw_closes_into_its_helical_sweep`, slow tier).  An edge or a face leaning to a
 screw's axis (`Unbuilt::Leaning`) and a curved tool (`Unbuilt::Curved`) are refused by what they
-are.
+are.  The result is the selection's boundary with the candidates that bound nothing healed out of
+its faces (`boolean::selection`): each face as whole as the candidate's it lies on.
+
+**A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
+the blank, not a box, is the domain the candidates split, and its cells are kept where they are no
+member of the sweep — one arrangement and one classification, with no closed solid built and then
+subtracted by a Boolean. The box the candidates are sized by holds the blank as well as the sweep,
+so each reaches across both (a screwed sheet's ends and rims past the blank). A bar slid along a
+block, sunk into its top, cuts a groove of `4 × 1 × 1` from `24`, its result's ten faces whole
+(`a_bar_slid_along_a_block_cuts_a_groove_on_one_arrangement`); a bar beside the axis turned a quarter
+turn through a disc takes its section's polar integral times the disc's thickness
+(`a_bar_turned_through_a_disc_is_cut_from_it_on_one_arrangement`), each to 1e-9 and agreeing with the
+definition (in the blank and no member).
 
 **K2's chart, contacts read at each instant (#721 K2, `brep::swept::instant`):** under a motion no
 constant twist takes, a face of revolution's contact on each ring is still `A cos θ + B sin θ + C = 0`
