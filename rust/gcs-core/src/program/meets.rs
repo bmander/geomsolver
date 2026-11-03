@@ -1,21 +1,43 @@
-//! **Faces read apart where the drawing is seeded, read again where it is solved** (#625).
+//! **Faces read apart where the drawing is seeded, read again where it is solved** (#625, #761).
 //!
 //! `when a meets b` is decided as the block is elaborated, before the solve, so it reads the body
 //! where the drawing is seeded (`flatten::Apart`).  A pair it read apart that meets where the
-//! drawing solves is a copy that should have made something — an edge a round left sharp — and
-//! is said here, at the document's statement that made the block, rather than built wrong.
-//!
-//! So too `when a parallel l` and `when a perpendicular l` (#763): a face whose answer alone
-//! decided the block, read the other way where the drawing solves, made a copy that should not
-//! have been made, or left out one that should — said at the same statement.
-use super::{public_path, Code, Diag, SourceMap};
+//! drawing solves is a copy that should have made something — an edge a round left sharp.  So too
+//! `when a parallel l` and `when a perpendicular l` (#763): a block over faces read along a
+//! direction that, decided again with the faces as the drawing solves, comes out the other way
+//! made a copy that should not have been made, or left out one that should.  Where either does,
+//! the elaboration solves the drawing and decides the conditions again there (`at_solve`), so a
+//! shape whose seed is not its size or its place — a circle's radius left to `radius(r)`, an
+//! instance placed by a mate, a line held along an axis — rounds as it would seeded where it
+//! stands.  What still comes out otherwise where the drawing solves is said here, at the
+//! document's statement that made the block, rather than built wrong.
+use super::{own_values, public_path, Code, Diag, Elaborated, SourceMap, Stood};
 use crate::flatten::{Apart, AlongRead};
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::solid::faces::{face_paths, Lays, ListedFaces, Meets};
 use crate::syntax::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Both checks, each solid they name read once where the drawing stands in `sk`.
+/// Where the drawing of `e` solves, where a pair of faces `meets` read apart where it is seeded
+/// meets there, or a block over faces read along a direction comes out the other way (#761,
+/// #763): every entity's own numbers there by its key, for the faces a block runs over to be named
+/// again at that pose (`elaborate`, `stand`).  Empty where nothing was read so, where the solve
+/// does not settle — a pose it stopped at is no answer to read faces at (#571) — or where every
+/// condition comes out there as it did: the elaboration stands as it is.
+pub(super) fn at_solve(e: &Elaborated) -> Stood {
+    if (e.map.apart.is_empty() && e.map.along.is_empty()) || !e.ok() {
+        return Stood::new();
+    }
+    let mut sk = e.sketch.clone();
+    if !crate::solve::solve(&mut sk, crate::solve::SolveOpts::default()).settled()
+        || read_again(&sk, &e.map).is_empty()
+    {
+        return Stood::new();
+    }
+    e.map.keys().map(|(k, x)| (k.clone(), own_values(&sk, x))).collect()
+}
+
+/// Both checks where the drawing stands in `sk`, each solid they name read once.
 pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     let solids: BTreeSet<&str> = map.apart.iter().map(|a| a.solid.as_str())
         .chain(map.along.iter().flat_map(|w| &w.faces).map(|a| a.solid.as_str())).collect();

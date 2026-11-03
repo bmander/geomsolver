@@ -122,7 +122,16 @@ pub enum Route {
 impl Route {
     /// Whether its boundary is the field's alone: no exact construction builds it.
     pub fn field_only(&self) -> bool {
-        matches!(self, Route::Field(_) | Route::Lowered(Err(_)) | Route::Bounded(Err(_)) | Route::Grown(Err(_)))
+        self.refusal().is_some()
+    }
+
+    /// Why no exact construction builds it, where none does (`field_only`): the refusal of the
+    /// entry that recognised it, or that none recognises it.
+    pub fn refusal(&self) -> Option<&str> {
+        match self {
+            Route::Field(why) | Route::Lowered(Err(why)) | Route::Bounded(Err(why)) | Route::Grown(Err(why)) => Some(why),
+            _ => None,
+        }
     }
 
     /// The solid whose recipe node its own reads, where it reads one: a body grown's body.

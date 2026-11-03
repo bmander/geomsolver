@@ -217,16 +217,22 @@ impl Walk<'_> {
                at: Span)
         -> Result<sets::Site, String> {
         let said = format!("{}.{}", public_path(abs), rest.join("."));
-        // through bodies, operand by operand, by the name each kept (§6.9 [0.18])
+        // through bodies, operand by operand, by the step each is (§6.9 [0.18], #760: its path
+        // as the body's scope writes it, `solid::step_between`, the rule a face is named by)
         let mut solid = abs.to_string();
-        for seg in &rest[..rest.len() - 1] {
-            let leaf = |o: &String| o.rsplit('.').next() == Some(seg.as_str());
-            let Some(next) = t.operands.get(&solid).and_then(|ops| ops.iter().find(|o| leaf(o)))
+        let mut steps = &rest[..rest.len() - 1];
+        while let Some(seg) = steps.first() {
+            let past = |o: &String| {
+                let step = crate::solid::step_between(&public_path(&solid), &public_path(o));
+                crate::solid::route_past(&step, steps).map(|r| (o.clone(), r))
+            };
+            let Some((next, r)) = t.operands.get(&solid).and_then(|ops| ops.iter().find_map(past))
             else {
                 return Err(format!("`{said}` names no face: `{seg}` is not a solid `{}` is made \
                                     of", public_path(&solid)));
             };
-            solid = next.clone();
+            solid = next;
+            steps = r;
         }
         let face = rest.last().unwrap();
         let Some((decl, sc, stmt, span)) = t.solids.get(&solid) else {

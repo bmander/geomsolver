@@ -182,3 +182,130 @@ fn a_member_called_ends_or_surface_is_itself() {
         assert!((got - want).abs() < 2e-3 * want, "{name}: {got} against {want}");
     }
 }
+
+/// A bar `w × 10 × 10` from `x0`, its foot on the front plane's `y0`: one solid, `body`.
+const BARS: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\n\
+    component Bar(x0: Length, w: Length, y0: Length, h: Length) {\n\
+      in std.front {\n\
+        a := point hint((x0, y0))\nb := point hint((x0 + w, y0))\n\
+        c := point hint((x0 + w, y0 + h))\ne := point hint((x0, y0 + h))\n\
+        fix((x0, y0)) a\nfix((x0 + w, y0)) b\nfix((x0 + w, y0 + h)) c\nfix((x0, y0 + h)) e\n\
+        (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, e)) -> \
+        (da := line(e, a)) -> close\n\
+      }\n\
+      body := solid(std.solids.Prism(face(ab, bc, cd, da), from: 0mm, to: 10mm))\n\
+    }\n\
+    spine := Bar(x0: 0mm, w: 60mm, y0: 0mm, h: 10mm)\n\
+    part := solid(spine.body)\n";
+
+/// What a document's `part` came to: its volume and its faces' areas, by name.
+fn part(src: &str) -> Areas {
+    let e = solved(src);
+    gcs_core::report::positions(&e.sketch, &e.map).into_iter()
+        .filter(|(k, _)| k.starts_with("part.") && (k.ends_with(".area") || k == "part.volume"))
+        .collect()
+}
+
+/// The fill a ball of radius `r` leaves in a square concave edge `l` long.
+fn fill(r: f64, l: f64) -> f64 {
+    r * r * (1.0 - PI / 4.0) * l
+}
+
+/// **An operand by its whole path** ([0.203], #760): the `body` of two instances unioned into one
+/// part are two steps, `spine.body` and `hub.body`, so their faces stand apart — through 0.202
+/// both were `part.body` — and a round between them is written by the instances' names.
+#[test]
+fn the_bodies_of_two_instances_are_named_apart() {
+    let doc = format!("{BARS}hub := Bar(x0: 20mm, w: 10mm, y0: 10mm, h: 20mm)\n\
+                       hub.body union part\n");
+    let plain = part(&doc);
+    for k in ["part.spine.body.ab.area", "part.hub.body.cd.area", "part.hub.body.near.area"] {
+        assert!(plain.contains_key(k), "{k}: {plain:?}");
+    }
+    assert!(!plain.keys().any(|k| k.starts_with("part.body.")), "{plain:?}");
+    // the hub's foot is the spine's top: none of it is left
+    assert!(!plain.contains_key("part.hub.body.ab.area"), "{plain:?}");
+    // the hub's two sides meet the spine's top in two concave edges, 10 long
+    let want = plain["part.volume"] + 2.0 * fill(2.0, 10.0);
+    for (a, b) in [("part.spine", "part.hub"), ("part.spine.body", "part.hub.body"),
+                   ("part.spine.body.cd", "part.hub")] {
+        let got = part(&format!("{doc}{a} round(r: 2mm) {b}\n"))["part.volume"];
+        assert!((got - want).abs() < 1e-6 * want, "{a} round {b}: {got} against {want}");
+    }
+}
+
+/// Two pads, each the `pad` of an instance a `repeat` makes, drawn in a plane or a frame of its
+/// copy's own (`frame`): a frame's instance is closed, its two pads one binding built once and
+/// placed (#566), whose faces a round reads by the same names.
+fn pads(frame: bool) -> String {
+    // a frame's front is its own: the pad is drawn in it, its plane's v the world's y
+    let (kind, v) = if frame { ("frame", "(0, 1, 0)") } else { ("plane", "(0, 0, 1)") };
+    let (open, close) = if frame { ("in std.front {\n", "}\n") } else { ("", "") };
+    format!("component Pad() {{\n{open}\
+          a := point hint((0, 0))\nb := point hint((6, 0))\n\
+          c := point hint((6, 8))\ne := point hint((0, 8))\n\
+          fix((0, 0)) a\nfix((6, 0)) b\nfix((6, 8)) c\nfix((0, 8)) e\n\
+          (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, e)) -> \
+          (da := line(e, a)) -> close\n\
+          {close}pad := solid(std.solids.Prism(face(ab, bc, cd, da), from: 0mm, to: 10mm))\n\
+        }}\n\
+        at := [10mm, 40mm]\n\
+        repeat x in at {{\n\
+          rail := {kind}\n\
+          fix(origin == (x, 0mm, 10mm)) rail\n\
+          fix(dir == (1, 0, 0)) rail.u\n\
+          fix(dir == {v}) rail.v\n\
+          joint := Pad() in rail\n\
+          joint.pad union part\n\
+        }}\n")
+}
+
+/// **A copy on the way is an index** ([0.203], #760): the `pad` of an instance a `repeat`'s copy
+/// holds is `joint[k].pad` through the part, so `part.joint` names every copy's faces and
+/// `part.joint[1]` one's — through 0.202 each was `part.pad`, the copies alike — and a path that
+/// names no face says so (W116), with the steps the part's faces are named by.  So in a frame,
+/// where the copies are one binding placed: through 0.202 a round read their faces by their
+/// keys (`#41.0.joint.pad.cd`), which no path names, and rounded nothing.
+#[test]
+fn an_instance_a_copy_holds_is_named_by_its_index() {
+    for frame in [false, true] {
+        a_copy_holds(&format!("{BARS}{}", pads(frame)));
+    }
+}
+
+fn a_copy_holds(doc: &str) {
+    let plain = part(doc);
+    for k in 0..2 {
+        assert!(plain.contains_key(&format!("part.joint[{k}].pad.cd.area")), "{plain:?}");
+    }
+    assert!(!plain.keys().any(|k| k.starts_with("part.pad.")), "{plain:?}");
+    // each pad's two sides meet the spine's top in concave edges 10 long
+    let one = plain["part.volume"] + 2.0 * fill(2.0, 10.0);
+    let both = one + 2.0 * fill(2.0, 10.0);
+    for (b, want) in [("part.joint", both), ("part.joint.pad", both), ("part.joint[1]", one),
+                      ("part.joint[0].pad", one)] {
+        let got = part(&format!("{doc}part.spine round(r: 2mm) {b}\n"))["part.volume"];
+        assert!((got - want).abs() < 1e-6 * want, "{b}: {got} against {want}");
+    }
+    // the name through 0.202: nothing rounded, and said where the round is
+    let wrong = format!("{doc}part.spine round(r: 2mm) part.pad\n");
+    let said = w116(&wrong);
+    let [(line, message)] = said.as_slice() else { panic!("{said:?}") };
+    assert_eq!(*line, wrong.lines().count() as u32, "{message}");
+    for step in ["`part.pad`", "`joint[0]`", "`joint[1]`", "`spine`"] {
+        assert!(message.contains(step), "{step}: {message}");
+    }
+    assert_eq!(part(&wrong)["part.volume"], plain["part.volume"]);
+    // past a beginning that names faces, the steps that go on from it
+    let said = w116(&format!("{doc}part.spine round(r: 2mm) part.joint.pud\n"));
+    let past = "past `part.joint` they are named by `pad`";
+    assert!(said.len() == 1 && said[0].1.contains(past), "{said:?}");
+    // a path that names faces says nothing
+    assert_eq!(w116(&format!("{doc}part.spine round(r: 2mm) part.joint\n")), []);
+}
+
+/// Each W116 `src` says: the line it is said at, and its words.
+fn w116(src: &str) -> Vec<(u32, String)> {
+    solved(src).diags.iter().filter(|d| d.code.as_str() == "W116")
+        .map(|d| (gcs_core::syntax::line_col(src, d.span.lo).0, d.message.clone())).collect()
+}

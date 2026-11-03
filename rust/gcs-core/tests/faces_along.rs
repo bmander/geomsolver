@@ -2,7 +2,7 @@
 //! has `l`'s direction in its tangent plane — a plane holding it, a cylinder about it, a prism's
 //! side swept along it — and `when a perpendicular l` where `a` is a plane square to it, as the
 //! relation words say of a plane and an axis.  Read where the drawing is seeded, as `meets` is,
-//! and again where it is solved.  So the edges a round takes are picked by a block over the faces
+//! and again where it solves where a block comes out the other way there.  So the edges a round takes are picked by a block over the faces
 //! written in Solvent, not by an option of the word: two faces along `std.z` meet in lines along
 //! it, the edges in plan.
 use std::f64::consts::PI;
@@ -134,16 +134,16 @@ fn a_face_along_a_direction_or_e103() {
     assert!(gcs_core::expr::decide(&c, &Default::default()).is_err());
 }
 
-/// **Read where the drawing is seeded, said where it solves** (#763): the faces held against a
-/// line drawn up the front plane, its far end seeded leaning and held along `std.z`.  Where the
-/// drawing is seeded the post's wall does not run along the line, so the `when` leaves the fills
-/// out; where it solves it does — said at the block, rather than built with those edges left
-/// sharp.  Seeded upright, the same document builds its fills and says nothing; and a block whose
-/// condition fails at both however its faces are read says nothing either: the bar's own top,
-/// which runs along nothing, beside a face that turns.  A plane seeded leaning is settled before
-/// the faces are named, so a deck held flat builds them as the top plane does.
+/// **Read where the drawing solves** (#763, as `meets` is, #761): the faces held against a line
+/// drawn up the front plane, its far end seeded leaning and held along `std.z`.  Where the drawing
+/// is seeded the post's wall does not run along the line, so the `when` leaves the fills out; where
+/// it solves the block comes out the other way, so the faces are read again there and the fills
+/// are built, as they are seeded upright, and nothing is said.  A block whose condition fails
+/// however its faces are read — the bar's own top, which runs along nothing, beside a face that
+/// turns — makes nothing either way.  A plane seeded leaning is settled before the faces are named,
+/// so a deck held flat builds them as the top plane does.
 #[test]
-fn a_face_read_off_the_direction_where_it_is_seeded_is_said_where_it_solves() {
+fn a_face_read_off_the_direction_where_it_is_seeded_is_read_where_it_solves() {
     let up = |cond: &str, seed: &str| against_up(cond, &format!(
         "u1 := point hint(({seed}))\n  u0 distance(1mm) u1\n  up parallel std.z"));
     let said = |src: &str| {
@@ -152,16 +152,11 @@ fn a_face_read_off_the_direction_where_it_is_seeded_is_said_where_it_solves() {
         (props::volume(&exported(&e, "hub")), d)
     };
     let both = "f parallel up and g parallel up";
-    let (v, upright) = said(&up(both, "0, 1"));
-    assert!(upright.is_empty(), "{upright:?}");
-    close(v, filled());
-    let (v, leaning) = said(&up(both, "0.3, 1"));
-    close(v, unrounded());
-    assert!(leaning.iter().any(|d| d.code.as_str() == "E080"
-        && d.message.contains("is not `parallel up` where the drawing is seeded, but where it \
-                               solves")
-        && d.message.contains("so what it makes is left out")
-        && d.message.contains("`hub`'s face")), "{leaning:?}");
+    for seed in ["0, 1", "0.3, 1"] {
+        let (v, d) = said(&up(both, seed));
+        assert!(d.is_empty(), "{seed}: {d:?}");
+        close(v, filled());
+    }
     let (v, never) = said(&up("f parallel up and g parallel up and f == hub.bar.near", "0.3, 1"));
     assert!(never.is_empty(), "{never:?}");
     close(v, unrounded());

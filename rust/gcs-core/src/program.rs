@@ -117,8 +117,8 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
             diags.push(refuse(EntRef::new(crate::model::EntKind::Envelope, i), message));
         }
     }
-    // faces read apart where the drawing is seeded that meet where it is solved (#625), and
-    // faces read along a direction there that are not where it is solved, or the other way (#763)
+    // faces read apart where the drawing was decided that meet where it is solved (#625), and a
+    // block over faces read along a direction that comes out the other way there (#763)
     diags.extend(meets::read_again(sk, map));
     // a module's own place, where no statement of the document made it
     crate::modules::localize(p, &mut diags);
@@ -243,12 +243,26 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // that one is made (#183 F4, [0.149]) — but no more than a few times: rounds that name each
     // other, refused, would give more every pass
     let mut renamed = 0;
+    // **faces that meet are read where the drawing solves** (#761): where a pair `meets` read
+    // apart at the seeds meets once the drawing is solved, or a block over faces read along a
+    // direction comes out the other way there (#763), every solid's faces and the directions are
+    // named again, read where that solve put each entity (`meets::at_solve`) — once
+    let mut pose = Stood::new();
     loop {
-        match elaborate_in(p, &refused, &crossed, &faces, &directions, renamed >= FACE_PASSES) {
+        let named = (&faces, &directions);
+        match elaborate_in(p, &refused, &crossed, named, renamed >= FACE_PASSES, &pose) {
             Ok(mut e) => {
                 if crossed.is_empty() {
                     crossed = crossed_seeds(&e);
                     if !crossed.is_empty() {
+                        continue;
+                    }
+                }
+                if pose.is_empty() {
+                    pose = meets::at_solve(&e);
+                    if !pose.is_empty() {
+                        faces.clear();
+                        directions.clear();
                         continue;
                     }
                 }
@@ -299,8 +313,34 @@ fn crossed_seeds(e: &Elaborated) -> BTreeMap<String, Vec<f64>> {
     moved.into_iter().filter_map(|p| {
         let ent = EntRef::point(p);
         let key = e.map.keys().find(|&(_, x)| x == ent).map(|(k, _)| k.clone())?;
-        Some((key, sk.own_params(ent).iter().map(|&i| sk.params[i as usize].value).collect()))
+        Some((key, own_values(&sk, ent)))
     }).collect()
+}
+
+/// Numbers by the key each entity is bound under, in its `own_params` order: where a pass stood
+/// it (`crossed_seeds`, `meets::at_solve`), for a later pass to stand it there again (`stand`).
+type Stood = BTreeMap<String, Vec<f64>>;
+
+/// The numbers `e` has in `sk`, in its `own_params` order.
+fn own_values(sk: &Sketch, e: EntRef) -> Vec<f64> {
+    sk.own_params(e).iter().map(|&q| sk.params[q as usize].value).collect()
+}
+
+/// Each entity `map` names under a key of `stood` given its numbers there, where it has as many:
+/// the parameters written, each with the number it had.  An entity no key names — one only this
+/// pass made — keeps its own.
+fn stand(sk: &mut Sketch, map: &SourceMap, stood: &Stood) -> Vec<(u32, f64)> {
+    let mut was = Vec::new();
+    for (key, values) in stood {
+        let Some(e) = map.ent_named(key) else { continue };
+        let own = sk.own_params(e);
+        if own.len() == values.len() {
+            for (q, &v) in own.into_iter().zip(values) {
+                was.push((q, std::mem::replace(&mut sk.params[q as usize].value, v)));
+            }
+        }
+    }
+    was
 }
 
 /// An angle a declaration is bounded by (`from:`, `to:`), in degrees: written as an angle,

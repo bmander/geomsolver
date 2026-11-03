@@ -1,12 +1,13 @@
 // `std.solids`: the solids a drawing makes from its faces, each a set (#737).  A solid is
-// `solid(S)`, the points inside a set `S`, and nothing else: a prism, a drafted prism and a
-// revolution are words written here over the language's own words, and the evaluator recognises
-// what their sets say — by their statements, never by these names — so the same set written by
-// hand is built the same way, exactly, its faces named alike.
+// `solid(S)`, the points inside a set `S`, and nothing else: a prism, a drafted prism, a
+// countersink and a revolution are words written here over the language's own words, and the
+// evaluator recognises what their sets say — by their statements, never by these names — so the
+// same set written by hand is built the same way, exactly, its faces named alike.
 //
 // The faces of a solid are named by what bounds them: a section's sides by the edges they are
-// swept from; of two ordinates along its normal the greater bounds `near` and the lesser `far`;
-// a turn short of a whole one is capped `start` where it begins and `end` where it ends.
+// swept from; of two ordinates along its normal the greater bounds `near` and the lesser `far`,
+// and one alone (a countersink's) `near` where it bounds from above and `far` from below; a turn
+// short of a whole one is capped `start` where it begins and `end` where it ends.
 
 
 // A prism: the points whose foot on the section's plane lies within it, between the ordinates
@@ -47,6 +48,24 @@ component Drafted(section: face, from: Length, to: Length, draft: Angle) := { p 
   beyond := { q | q outside section }
   within := { q | q inside section }
   distance(p, beyond) - distance(p, within) >= tan(draft) * distance(p, section)
+}
+
+// A countersink: the cone under the circle `rim` whose sides meet at the included angle `angle`,
+// as a drawing calls one out (`⌵ Ø6 × 90°`) — the points behind the face the view shows, each
+// section the rim moved in by its ordinate's size times `tan(angle / 2)`, to the cone's point.  It
+// is `Drafted`'s set with no far ordinate: the lean closes the rim at the apex, so nothing says how
+// deep it reaches, and a hole cut with it is sunk to wherever the cone meets the hole.  The sides
+// lean from the rim's own plane, so draw `rim` where the sink opens: in a plane lying on the face
+// it is cut from (a sketch on a face).  `near` is its cap, the rim's disc, and its side is named
+// by the rim's edge.
+//
+//   sink := solid(std.solids.Countersink(face(rim), angle: 90deg))
+//   sink cut strap
+component Countersink(rim: face, angle: Angle) := { p |
+  p distance(<= 0mm, along: n) rim
+  beyond := { q | q outside rim }
+  within := { q | q inside rim }
+  distance(p, beyond) - distance(p, within) >= tan(angle / 2) * distance(p, rim)
 }
 
 // A prism through everything: the points whose foot on the section's plane lies within it,

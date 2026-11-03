@@ -251,7 +251,7 @@ fn walk(sk: &Sketch, i: usize, route: &[String], placed: bool)
                     if let Ok(found) = walk(sk, o, route, placed) { return Ok(found) }
                     continue;
                 }
-                if let Some(rest) = crate::solid::past_step(operand, route) {
+                if let Some(rest) = crate::solid::past_step(s, operand, route) {
                     return walk(sk, o, rest, placed);
                 }
             }

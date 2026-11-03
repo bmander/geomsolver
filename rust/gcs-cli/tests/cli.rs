@@ -668,7 +668,9 @@ fn no_check_leaves_the_claims_about_solids_unjudged_and_says_so() {
     let out = run(&[path, "--no-check"]);
     assert_eq!(out.status.code(), Some(0));
     let text = String::from_utf8(out.stdout).unwrap();
-    assert!(text.contains("  1 claim about solids not judged\n"), "{text}");
+    // and that nothing was built for it, so a quick look is not read as "this builds" (#762)
+    assert!(text.contains("  1 claim about solids not judged: no solid was built for it, so a \
+                           solid that does not build is not said\n"), "{text}");
     assert!(!text.contains("sampling 37 poses") && !text.contains("claim over"), "{text}");
     let out = run(&[path, "--no-check", "--json"]);
     assert_eq!(out.status.code(), Some(0));
@@ -1834,6 +1836,45 @@ fn a_picture_missing_a_solid_fails_naming_it() {
     assert!(stderr.contains(&format!("solventc: {path}: `space`: ")), "{stderr}");
     let (_, _, rgb) = read_png(&std::fs::read(&png).unwrap());
     assert!(rgb.as_chunks::<3>().0.iter().any(|p| *p != [250, 250, 250]), "the block is drawn");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// **A picture of a solid not built says so** (#762): a block shelled thicker than half of it,
+/// whose cavity no construction builds, is drawn from its field — the picture written, the run
+/// not failed — and said against the picture as not built, in the words an export refuses it
+/// with; so a quick look (`--no-check --png`) is not read as "this builds".  A glTF and a faceted
+/// STL read from the same evaluation say it against their files; a solid the kernel builds is
+/// drawn with nothing said.
+#[test]
+fn a_picture_of_a_solid_not_built_says_so() {
+    let dir = std::env::temp_dir().join(format!("solventc-png-unbuilt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("block.sv");
+    let block = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.front {\n\
+        \x20 b0 := point\n  b1 := point\n  b2 := point\n  b3 := point\n\
+        \x20 fix((0, 0)) b0\n  fix((40, 0)) b1\n  fix((40, 24)) b2\n  fix((0, 24)) b3\n\
+        \x20 (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
+        (west := line(b3, b0)) -> close\n  outline := face(south, east, north, west)\n}\n\
+        block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\n";
+    let [png, glb, stl] = ["p.png", "p.glb", "p.stl"].map(|f| dir.join(f).to_str().unwrap().to_string());
+    std::fs::write(&source, format!("{block}shell(t: 7mm) block\n")).unwrap();
+    let out = run(&[source.to_str().unwrap(), "--no-check", "--no-progress", "--size", "120",
+                    "--png", &png, "--gltf", &glb, "--stl-backend", "mesh", "--stl", &stl]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    for path in [&png, &glb, &stl] {
+        let said = format!("solventc: {path}: `block` is drawn from its material field, not built: ");
+        assert!(stderr.contains(&said), "{path}: {stderr}");
+        assert!(std::fs::metadata(path).is_ok_and(|m| m.len() > 0), "{path} written");
+    }
+    assert!(stderr.contains("no longer than twice the thickness"), "{stderr}");
+    // built, nothing is said
+    std::fs::write(&source, format!("{block}block.north shell(t: 2mm) block\n")).unwrap();
+    let out = run(&[source.to_str().unwrap(), "--no-check", "--no-progress", "--size", "120",
+                    "--png", &png]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("not built"), "{stderr}");
     std::fs::remove_dir_all(dir).unwrap();
 }
 

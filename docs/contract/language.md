@@ -93,8 +93,9 @@ language's own — `is_operator`, `reserved_word` — is no such use, read as th
 would name and refused there; `print::write_relation` writes the name back). Its application's
 prefix is `{scope}{label}#{statement}.{n}.` (`flatten::keys::labelled`, `Walk::begin_nth`): the
 label one segment with the statement, which no source name spells, so the steps a face's route is
-read by — `solid::route_step`, the one reading `operand_primitives`, `brep::recipe`,
-`faces::face_reach` and `carrier` share (`past_step`) — put each named use's label before its
+read by — `solid::step_through` past the body's scope, `route_step` from a use's segment on, the
+one reading `operand_primitives`, `brep::recipe` (a body's `steps`), `faces::face_reach` and
+`carrier` share (`past_step`) — put each named use's label before its
 solid's own leaf (`plate.rim.taken.round`) and two named uses' faces stay apart; the recipe lumps
 lowered regions by their labels (`cad::Walk::lump`), so a named round's pieces keep its names. The
 label is the body's (`Walk::body`: a declaration, a param, a group, an instance, a set or another
@@ -278,14 +279,22 @@ to its patches by route and face, beside the paths in `flatten::Listed` and read
 the paths change. `expand::Asked::meets` answers it; faces of two solids, a face a round made that
 the stratum has not, and a body with a swept cut (no `Meets`) meet. A pair read apart that alone
 left a block out (the condition asked again with every pair meeting) is an `flatten::Apart` at the
-document's statement (`FaceState::at`, carried in `Pending::at`), kept in `SourceMap::apart`, and
+document's statement (`FaceState::at`, carried in `Pending::at`), kept in `SourceMap::apart`.
+**Then it is read where the drawing solves ([0.202], #761):** once a pass elaborates with an
+`Apart`, `program::meets::at_solve` solves a copy of its sketch, and where the solve settles and
+`apart` finds a pair meeting there, it returns each keyed entity's solved numbers (`Stood`, the
+form `crossed` is kept in too), and `elaborate` names every solid's faces again — once (its
+`pose`): `solids_and_surfaces` stands the sketch there by key (`program::stand`, the writer
+`holds` uses for `crossed`) while it reads each `Meets`, and puts the seeds back. A document with
+no `Apart` is solved by its caller alone.
 `program::meets::apart` reads it again in `solid_diagnostics` where the drawing is solved: a pair
 that meets there is E080, once per statement and solid. `std.rounds`' `round` and `chamfer` pair
 only faces that meet and round only threes that meet pairwise; `tests/meets.rs` is the gate (the
-block's 24 pairs and 48 corners, #625's four turned spokes against two crossed bars, the pin
-seeded off its plate).
+block's 24 pairs and 48 corners, #625's four turned spokes against two crossed bars; #761's pin
+seeded off its plate and one left to `radius(3mm)`, and a post placed by `seats`, each the solid of
+the same part seeded where it stands).
 
-**A face along a direction ([0.201], #763).** `f parallel l` and `f perpendicular l`
+**A face along a direction ([0.204], #763).** `f parallel l` and `f perpendicular l`
 (`Cond::Along`, `expr::Along`, made by `parse_condition_in` only, refused by `expr::decide`) hold
 where face `f` runs along direction `l` at every point, or is a plane square to it — the relation
 words' meaning for a plane and an axis, asked. Each patch is read by its surface's kind, exactly
@@ -301,15 +310,17 @@ carried in `Again::Faces` as `flatten::Directions`, a pass more), so `std.z` in 
 a frame is the frame's normal, and a document asking none reads none. A block that read faces so
 is kept with its condition as a truth over them (`flatten::WhenRead`, `Truth`, built by
 `values::truth` with everything else the condition asks decided; `SourceMap::along`), and
-`program::meets` decides it again in `solid_diagnostics` with the faces as the drawing is solved:
-where it comes out the other way, each face read the other way is E080, once per statement and
-solid — a face that turned without changing the block says nothing. A plane is settled before
+`program::meets::read_again` decides it again with the faces and the directions as the drawing
+is solved: where it comes out the other way, `meets::at_solve` gives the pose, and the document is
+elaborated once more there, faces and directions read at it (#761's pose, cleared together);
+where it still does, in `solid_diagnostics`, each face read the other way is E080, once per
+statement and solid — a face that turned without changing the block says nothing. A plane is settled before
 the faces are named, so a deck seeded leaning and held flat reads as flat. It is what picks the
 edges a round takes by their direction, written in Solvent (no option of the word): two faces
 both along `l` meet in lines along it.
 `tests/faces_along.rs` is the gate (`rounds/hub.sv`'s two fills to the closed form, the arc alone
 by `perpendicular`, a component's `std.z` its frame's, a line drawn as the direction, the refusals,
-a line seeded leaning said where it solves, and a turned face that changes no block not).
+a line seeded leaning read where it solves, and a turned face that changes no block said nothing of).
 
 **The expansion's limit is said once (#625).** A walk past `MAX_FLAT` statements says one E103
 at the root body's statement it was walking (`FaceState::at`), naming where in a module it had got
@@ -504,7 +515,14 @@ gives an instance's own frame `Sketch::square_chart`, an intrinsic `Perpendicula
 `v`, so it has six freedoms, and names it after the instance (`Sketch::plane_names`), so
 `diagnose::view_freedoms` says `cyl.attitude` and `cyl.origin`. It **starts where the frame around
 its call stands**: `views::instance_frames`, after the holds, seeds each from the innermost frame
-with axes it rides (`Sketch::seed_at_frame`), a held number left as held. An instance whose `std`
+with axes it rides (`Sketch::seed_at_frame`), a held number left as held; and **a mate on its
+datums seeds it where the mate puts it** (#764): `views::place` reads a point held in a frame — the
+instance's `std.origin`, held at its front's `(0, 0)`, as a plane's origin is — as the frame's own,
+a datum standing at its frame's place read as that frame (`views::frame_of`), so `b.std.origin coincident p`, with `p` held or drawn in a frame already placed, places the frame
+before the drawing is solved, its place as well as its turn, and a part seated in a seated part
+(a gearbox's rails at a table's points and headings in its base) once that part stands
+(`a_part_seated_in_another_frame_starts_where_its_seat_puts_it`,
+`parts_seated_in_a_seated_part_start_where_they_stand`). An instance whose `std`
 nothing outside reads makes no frame and stands as before. One whose body reads no datum, nor any
 body it calls (`Walk::reads_datums`), is kept in `Datums::refused`: its `b.std.D` names nothing and
 `Lookup::missing` says **E111**, since it is placed by its arguments. A path past `std` naming no

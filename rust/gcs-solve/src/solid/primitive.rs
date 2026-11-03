@@ -88,15 +88,18 @@ pub(super) fn offset(pts: &[(f64, f64)], d: f64) -> Vec<(f64, f64)> {
 pub(super) fn loop_taper(k: usize, taper: f64) -> f64 { if k == 0 { taper } else { -taper } }
 
 /// Where a draft of `taper` (its tangent; positive shrinks) as far as ordinate `reach` either way
-/// takes a step of the loop to nothing or turns it round: the step's index, `None` where every one
-/// survives. A step's length is affine in the move, so the farthest section says it.
-pub(super) fn drafted_away(pts: &[(f64, f64)], reach: f64, taper: f64) -> Option<usize> {
+/// takes a step of the loop to nothing or turns it round: the step's index and the ordinate's size
+/// at which it comes to nothing, `None` where every one survives. A step's length is affine in the
+/// move, so the farthest section says it, and where between it comes to nothing.
+pub(super) fn drafted_away(pts: &[(f64, f64)], reach: f64, taper: f64) -> Option<(usize, f64)> {
     let n = pts.len();
     let q = offset(pts, reach * taper);
-    (0..n).find(|&i| {
+    (0..n).find_map(|i| {
         let j = (i + 1) % n;
         let (a, b) = ((pts[j].0 - pts[i].0, pts[j].1 - pts[i].1), (q[j].0 - q[i].0, q[j].1 - q[i].1));
-        a.0 * b.0 + a.1 * b.1 <= 0.0
+        // its length along its own direction, drawn and at the reach, each times the drawn one's
+        let (aa, ab) = (a.0 * a.0 + a.1 * a.1, a.0 * b.0 + a.1 * b.1);
+        (ab <= 0.0).then(|| (i, reach * aa / (aa - ab)))
     })
 }
 

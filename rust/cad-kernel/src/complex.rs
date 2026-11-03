@@ -28,8 +28,17 @@ use std::collections::BTreeMap;
 const TAU: f64 = std::f64::consts::TAU;
 
 /// Two ways into faces from an edge closer than this (radians) are read again a step into each
-/// face, where their surfaces' curvatures part them (faces tangent along the edge).
-const TANGENT: f64 = 1e-6;
+/// face, where their surfaces' curvatures part them (faces tangent along the edge). Not the
+/// rounding of an exact tangency alone: a fitted surface — a round's net, tangent to the faces it
+/// joins as closely as its fit holds — leaves the edge some 1e-5 off the face it is tangent to,
+/// and read to first order that error orders the two (#735: a round cut from a block, its strip
+/// under the round put on the wrong side of it, one shell for every cell). Faces meeting at an
+/// edge at an angle this small part a step in no differently than at the edge.
+const TANGENT: f64 = 1e-4;
+
+/// Ways in closer than this (radians) are read again along the edge where they stand farthest
+/// apart, not beside a point where faces touch.
+const CROWDED: f64 = 1e-3;
 
 /// Where a face of the complex came from: an operand of the arrangement, its face there, and
 /// whether the complex's face faces the way that one did.
@@ -76,6 +85,10 @@ pub struct Complex {
     pub origins: Vec<Vec<Origin>>,
     /// The tolerance it was built to (a length).
     pub tol: f64,
+    /// Each edge laid by a meeting of the arrangement it was built from, rather than an operand's
+    /// own (none for a complex built otherwise): what a selection's result may take back out where
+    /// it parts nothing (`boolean::selection`).
+    pub met: Vec<bool>,
     /// The cells the shells bound, found the first time they are asked for: a shell's volume and
     /// which shell holds a void are measured, which a Boolean selecting by shells never asks.
     cells: std::sync::OnceLock<Result<Cells,String>>,
@@ -141,17 +154,10 @@ impl Complex {
     /// joined into cells, to `tol`. Refused where two faces round an edge cannot be ordered (they
     /// coincide there, which the caller should have merged into one face).
     pub fn new(b: Brep,origins: Vec<Vec<Origin>>,tol: f64) -> Result<Complex,String> {
-        Complex::try_new(b,origins,tol).map_err(|(e,_)| e)
-    }
-
-    /// `new`, handing `b` back where it is refused: a caller with another road for the faces (a
-    /// Boolean keeping each by its own sides) takes them on without a copy.
-    pub(crate) fn try_new(b: Brep,origins: Vec<Vec<Origin>>,tol: f64) -> Result<Complex,(String,Brep)> {
         assert_eq!(origins.len(),b.faces.len(),"one list of origins a face");
-        match Complex::ordered(&b,tol) {
-            Ok((shell_sides,shells,radial)) => Ok(Complex {b,shell_sides,shells,radial,origins,tol,cells:std::sync::OnceLock::new()}),
-            Err(e) => Err((e,b)),
-        }
+        let (shell_sides,shells,radial) = Complex::ordered(&b,tol)?;
+        let met = vec![false;b.edges.len()];
+        Ok(Complex {b,shell_sides,shells,radial,origins,tol,met,cells:std::sync::OnceLock::new()})
     }
 
     /// `new`'s work: each face's two shells, the shells, and each edge's uses in order round it.
@@ -228,7 +234,7 @@ impl Complex {
                 (0..a.len()).map(|i| if i+1 == a.len() { a[0]+TAU-a[i] } else { a[i+1]-a[i] }).fold(f64::INFINITY,f64::min)
             };
             let mut best = read(0.5)?;
-            if least_gap(&best.2) < 1e3*TANGENT {
+            if least_gap(&best.2) < CROWDED {
                 for at in [0.25,0.75] {
                     let other = read(at)?;
                     if least_gap(&other.2) > least_gap(&best.2) { best = other; }
@@ -469,6 +475,12 @@ impl Complex {
     pub fn select(&self,keep: &dyn Fn(usize) -> bool) -> Result<Selected,String> {
         let found = self.cells_found()?;
         Ok(self.select_shells(&|k| keep(found.of_shell[k])))
+    }
+
+    /// `select`'s faces before they are assembled (`select_parts`), the cells `keep` keeps.
+    pub fn select_cells(&self,keep: &dyn Fn(usize) -> bool) -> Result<Parts,String> {
+        let found = self.cells_found()?;
+        Ok(self.select_parts(&|k| keep(found.of_shell[k])))
     }
 
     /// **The boundary between the shells `keep` keeps and the rest**: each face whose two shells

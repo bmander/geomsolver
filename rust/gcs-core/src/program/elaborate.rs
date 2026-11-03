@@ -79,14 +79,15 @@ struct Flat<'a> {
 /// `elaborate`, with the sets in `refused` walked as sets — or `Err` naming the sets drawn as
 /// elements that are none, for another pass.
 /// `crossed`: points a bound carried across in a pass before, by key, and the numbers that pass
-/// gave them, written over their seeds (`elaborate`).
+/// gave them, written over their seeds (`elaborate`).  `pose`: where a pass before solved, by
+/// key, where the faces a block runs over are read (`meets::at_solve`): empty, at the seeds.
 pub(super) fn elaborate_in(
     p: &Program,
     refused: &BTreeSet<String>,
     crossed: &BTreeMap<String, Vec<f64>>,
-    faces: &BTreeMap<String, Listed>,
-    directions: &Directions,
+    (faces, directions): (&BTreeMap<String, Listed>, &Directions),
     faces_settled: bool,
+    pose: &super::Stood,
 ) -> Result<Elaborated, Again> {
     let mut cx = Elab {
         doc: p,
@@ -125,7 +126,7 @@ pub(super) fn elaborate_in(
     super::rounds::rounds(&mut cx, &flat.body, &deferred, &held);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
-    solids_and_surfaces(&mut cx, &flat, (faces, directions), faces_settled, &generated,
+    solids_and_surfaces(&mut cx, &flat, (faces, directions), faces_settled, pose, &generated,
                         &held_in_space)?;
     expressions(&mut cx, &flat, &on_followed);
     regions_read(&mut cx, &flat, &after_solids);
@@ -498,14 +499,8 @@ fn holds(
     entities::places(&mut cx.sk, deferred, &mut cx.diags);
     // a point a bound carried across in a pass before stands where it was carried, whatever its
     // own seed says — before anything is placed through it or seeded from it (§9.6, `elaborate`)
-    let mut held = BTreeSet::new();
-    for (key, values) in crossed {
-        let Some(e) = cx.map.ent_named(key) else { continue };
-        for (q, &v) in cx.sk.own_params(e).into_iter().zip(values) {
-            cx.sk.params[q as usize].value = v;
-            held.insert(q);
-        }
-    }
+    let held: BTreeSet<u32> =
+        super::stand(&mut cx.sk, &cx.map, crossed).into_iter().map(|(q, _)| q).collect();
     // the numbers `fix` holds, once every point has its place and before anything reads one: a
     // held number is its own seed, so nothing that holds one needs a `hint` saying it again — an
     // axis along a line, a motion, a place reading a held point all read where it is held, and
@@ -805,6 +800,7 @@ fn solids_and_surfaces(
     flat: &Flat<'_>,
     (faces, directions): (&BTreeMap<String, Listed>, &Directions),
     settled: bool,
+    pose: &super::Stood,
     generated: &BTreeSet<StmtId>,
     held: &BTreeSet<StmtId>,
 ) -> Result<(), Again> {
@@ -813,15 +809,24 @@ fn solids_and_surfaces(
     solids(sk, res, map, body, skip, probes, diags);
     super::solids::carry_legs(sk);
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
-    let unnamed: BTreeMap<String, Listed> = flat.expansion.face_repeats.iter()
+    let unnamed: Vec<(String, usize, Vec<_>)> = flat.expansion.face_repeats.iter()
         .filter(|abs| !(settled && faces.contains_key(*abs)))
         .filter_map(|abs| {
             res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < sk.solids.len())
                 .map(|e| (abs.clone(), e.i(), crate::solid::faces::face_paths(sk, e.i())))
         })
         .filter(|(abs, _, now)| faces.get(abs).map(|l| &l.paths) != Some(now))
-        // which of them meet and how each lies, read where the drawing is seeded (#625, #763):
-        // checked again where it is solved (`program::meets`)
+        .collect();
+    // and each direction a `when` held a face against and was not given (#763)
+    let wanted: Vec<&String> = flat.expansion.directions_wanted.iter()
+        .filter(|name| !directions.contains_key(*name)).collect();
+    // which of them meet, how each lies and where each direction runs, read where the drawing is
+    // seeded (#625, #763) — or where a pass before solved, once a pair read apart at the seeds met
+    // there or a block over faces read along a direction came out the other way (#761): checked
+    // again where it is solved (`program::meets`)
+    let stood = !unnamed.is_empty() || !wanted.is_empty();
+    let was = if stood { super::stand(sk, map, pose) } else { Vec::new() };
+    let unnamed: BTreeMap<String, Listed> = unnamed.into_iter()
         .map(|(abs, i, paths)| {
             let read = crate::solid::faces::ListedFaces::read(sk, i, &paths);
             let meets = read.as_ref().map(crate::solid::faces::Meets::of);
@@ -829,13 +834,12 @@ fn solids_and_surfaces(
             (abs, Listed { paths, meets, lays })
         })
         .collect();
-    // and each direction a `when` held a face against and was not given, as it stands there
-    let drawn: Directions = flat.expansion.directions_wanted.iter()
-        .filter(|name| !directions.contains_key(*name))
-        .filter_map(|name| {
-            Some((name.clone(), super::meets::direction(sk, |n| res.of.get(n).copied(), name)?))
-        })
-        .collect();
+    let drawn: Directions = wanted.into_iter().filter_map(|name| {
+        Some((name.clone(), super::meets::direction(sk, |n| res.of.get(n).copied(), name)?))
+    }).collect();
+    for (q, v) in was {
+        sk.params[q as usize].value = v;
+    }
     if !unnamed.is_empty() || !drawn.is_empty() {
         return Err(Again::Faces(unnamed, drawn));
     }

@@ -152,7 +152,13 @@ spline: a box's top edges chamfered one after another, each cut off by the plane
 `brep::chamfers_between_planes_are_planes`). A run going on tangent into a curved face at an end
 is still fitted, as the piece that takes on from its section is. About one axis the flat is turned: between a plane square
 to it, cylinders and cones about it, a closed loop's flat is the section's triangle revolved, a cone
-exact (`fillet::coaxial`; a leg shrunk to a point its apex, [rounds.md](rounds.md)).
+exact (`fillet::coaxial`; a leg shrunk to a point its apex, [rounds.md](rounds.md)). So is a
+round there (`fillet::roll`, `fillet::revolved`): the section — the corner, its legs to the
+contacts and the ball's arc — in the meridian through a vertex of the loop, revolved, a torus face
+and its strips exact, no canal fitted. A fitted canal round a circle was a net of hundreds of poles
+that every later Boolean cut and every measure integrated: brep-bench's fillet/boss-s-curve took
+8.7 s, most of it its area, and now takes milliseconds, its volume and area to 1e-15
+(`brep::a_bosss_rim_and_root_rounded_to_meet_are_two_tori`; the hole's waist too).
 `Brep::bounds` encloses (issue #59; through-prism cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
@@ -201,14 +207,20 @@ a point is a state it holds, not a check failure; `select` keeps the faces betwe
 cells, each wedge of a kept cell round an edge where the result touches itself given an edge of its
 own, and says where (`Touch`). `complex::two_blocks_meeting_along_an_edge_…`, `…_at_a_corner_…`,
 `a_void_is_a_shell_…`, `faces_tangent_along_an_edge_…`, `a_ball_in_a_cylinder_of_its_radius_…` and
-`a_block_tangent_to_a_cone_along_a_generator_…` are the gates. **A2, the meeting** (`brep::meeting`):
+`a_block_tangent_to_a_cone_along_a_generator_…` are the gates. Ways into faces from an edge within
+`TANGENT` (1e-4 rad) of one another are ordered a step in: a fitted surface — a round's net — is
+tangent to the faces it joins only as closely as its fit, some 1e-5, and read to first order that
+error put a round's strip on the wrong side of it, every cell one shell (the round-lowering cases,
+each a Boolean's selection with none falling back). **A2, the meeting** (`brep::meeting`):
 two surfaces' meeting over boxes of their parameters as branches (each crossing or touching all
 along), singular points (a touch alone, or branches crossing) and coincidence, complete — boundary
 crossings, every critical point of one's distance across the other's parameters (a closed branch
 encloses one; one at zero is a touch), and between analytic surfaces `ssi::unseen`'s proved search
-for the rest; an arrangement computes each pair of surfaces' closed-form meeting once
-(`meeting::Shared`, surfaces the kernel holds the same one index) and hands it to every two faces on
-them. `meeting::a_*_meeting_with_every_kind_is_complete` (every pair of the kernel's surface kinds,
+for the rest; an arrangement computes each pair of surfaces' meeting once (`meeting::Shared`,
+surfaces the kernel holds the same one index) and hands it to every two faces on them — a closed
+form found the first time, and a traced meeting traced over the box every face on the two surfaces
+fills, kept, and handed to every later pair of faces on them, which are seeded only off it, so one
+meeting curve bounds every face that uses it, traced or not. `meeting::a_*_meeting_with_every_kind_is_complete` (every pair of the kernel's surface kinds,
 seeded placements, against a dense sampling of one across the other) and the singular-point cases
 are the gates. **A3, tolerant topology** (`brep::tolerant`): every rule by which two features are
 the same in one place — a point onto a vertex within `tol` (`Pool`, each vertex keeping how far the
@@ -227,18 +239,26 @@ each operand; a traced meeting along an edge one face already has is that edge, 
 and laid across the other face too wherever it lies inside it (`Meetings::along_edges`: a torus's
 seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_seam_is_half_of_it`); each cell's membership in each operand read off a face of it bounding the cell, else at
 a point deep inside. **A Boolean is a selection over it**: each piece's two sides' membership read
-as before, the complex formed, each shell kept as the operation keeps its sides (which agree round
-it, else each face by its own), and the result touching itself along an edge given an edge for each
-wedge; `split` is the complex's shells inside the solid. **A Boolean lays its touches as edges and
-heals them out of its result** (`heal`): a span two faces only touch along is laid in its complex
-as an arrangement lays it, so the cells either side are classified apart; then, in the result, a
-touch is no edge wherever one face of an operand is kept on both sides of it — that face's pieces
-joined again across it, and a slit left inside it closed — so the result is the manifold B-rep it
-was, its faces whole and touching where they touch, and a touch bounding a face kept on one side
-only stays an edge of it (`arrangement::a_boolean_lays_a_touch_and_heals_it_where_a_face_is_kept_on_both_sides`,
+as before, the complex formed, each shell kept as the operation keeps its sides — which agree round
+it, with no face kept by its own sides instead: a shell kept on one side and dropped on another is
+refused, two cells joined round an edge — and the result touching itself along an edge given an edge for each
+wedge; `split` is the complex's shells inside the solid. **Every arrangement lays its touches as
+edges, and a selection's result heals what parts nothing** (`heal`, `boolean::selection`): a span
+two faces only touch along is laid as an edge (a Boolean's, a split's and an arrangement's alike),
+so the cells either side are classified apart; then, in a Boolean's or a split's result or a swept
+solid's, an edge a meeting laid — a touch, or another operand's surface crossing a face where none
+of that operand is kept — is no edge wherever one face of an operand is kept on both sides of it:
+that face's pieces joined again across it, and a slit left inside it closed, so the result is the
+manifold B-rep it would be had the meeting never been laid, its faces whole and touching where
+they touch. A meeting bounding a face kept on one side only stays an edge, and an operand's own
+edge (a seam) is never taken out (`arrangement::a_boolean_lays_a_touch_and_heals_it_where_a_face_is_kept_on_both_sides`,
 a rod lying on a block united and cut either way; `a_hole_whose_caps_touch_the_bore_and_the_rim_is_cut_whole`,
 the V-twin disc's set-screw hole, its caps tangent to the bore and the rim, at twelve angles, to
-its section's run in closed form). Every Boolean of the suite gives the same
+its section's run in closed form; `a_split_heals_a_touch_out_of_each_cell`). **A Boolean is the
+selection, with no other road**: a shell kept on one side and dropped on another is refused (two
+cells joined round an edge), where each face was once kept by its own sides; the fifteen round
+cases that took that road did so because a fitted round leaves the edge some 1e-5 off the face it is
+tangent to, which `TANGENT` now reads as tangent. Every Boolean of the suite gives the same
 result through it as before (the agreement gate: the whole fast suite). What the arrangement holds
 that the pairwise Boolean never met: a cycle of a face's pieces whose outline is coarser than it is
 wide has its side read along its curves (`fine_area`, a cusp-thin strip between two curves tangent
@@ -283,7 +303,9 @@ sheet starts from the ruling level with it (`Blend::inverse`), with no search
 as a solid is, its pieces within the domain parting cells.
 `arrangement::a_plane_crossing_where_two_surfaces_touch_…`, `a_plane_tangent_to_a_hyperboloid_…`
 and `a_plane_crossing_a_shallow_meeting_…` are the gates, at 1e-6 and 1e-7. **The closed swept
-solid is one arrangement and one selection** (`swept::closed`, generating.md);
+solid is one arrangement and one selection, and so is a sweep cut from a blank** (`swept::closed`,
+`swept::closed::cut_from`: the blank the domain, its cells kept where they are not swept;
+generating.md);
 `arrangement::three_blocks_arranged_at_once_…`, `every_cells_membership_…`,
 `the_arrangement_is_the_same_in_any_order_…` and `coincident_faces_are_one_face_…` are its own.
 **A Boolean's work is where its solids meet** (#589): a face of one whose box misses the box the

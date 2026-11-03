@@ -2,8 +2,8 @@
 //! its boundary, read where the drawing is seeded, so `A round(r) B` pairs and threes only the
 //! faces that meet — not every two and three of the faces a body lists, which for a web opened by
 //! four turned spokes was past the expansion's limit.  A pair read apart that the solve brings
-//! together is said where the drawing is solved; an expansion past its limit is one E103 at the
-//! document's statement, and nothing built.
+//! together is read again where the drawing solves (#761); an expansion past its limit is one
+//! E103 at the document's statement, and nothing built.
 use std::collections::BTreeMap;
 
 use gcs_core::brep::{export, props, sweep::Say};
@@ -126,30 +126,76 @@ fn a_round_over_four_turned_spokes_builds() {
     assert!(a.sketch.solids.len() < 120, "{} solids", a.sketch.solids.len());
 }
 
-/// A pin seeded off the plate it stands on, held onto it by its centre: where the drawing is
-/// seeded no face of the pin meets the plate's, so `meets` reads them apart, and where it solves
-/// they meet — said there, at the round, rather than built with that edge left sharp.  Seeded
-/// where it stands, the same document builds.
-#[test]
-fn faces_read_apart_that_the_solve_brings_together_are_said() {
-    let doc = |at: &str| format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords)\nuse std.rounds (round)\nin std.top {{\n\
+/// A plate 20 × 20 on the top plane, five thick, and `PIN` standing on it, the two one solid
+/// `whole` rounded all over: `PIN` is drawn in `std.top`, its prism called `pin` and joined to
+/// `whole`.
+fn pinned(pin: &str) -> String {
+    format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords, seats)\nuse std.rounds (round)\n\
+        in std.top {{\n\
         a := point hint((0, 0))\nb := point hint((20, 0))\nc := point hint((20, 20))\n\
         d := point hint((0, 20))\n\
-        a coords(du: 0.5mm, dv: 0.5mm) std.top\nb coords(du: 20mm, dv: 0.5mm) std.top\n\
-        c coords(du: 20mm, dv: 20mm) std.top\nd coords(du: 0.5mm, dv: 20mm) std.top\n\
-        o := point hint(({at}))\no coords(du: 10mm, dv: 10mm) std.top\n\
-        boss := circle(center: o) hint(r: 3)\nradius(3mm) boss\n}}\n\
+        a coords(du: 0mm, dv: 0mm) std.top\nb coords(du: 20mm, dv: 0mm) std.top\n\
+        c coords(du: 20mm, dv: 20mm) std.top\nd coords(du: 0mm, dv: 20mm) std.top\n}}\n\
         plate := solid(std.solids.Prism(face(a, b, c, d, -> close), from: 0mm, to: 5mm))\n\
-        pin := solid(std.solids.Prism(face(boss), from: 0mm, to: 10mm))\npin union plate\nround(r: 1mm) plate\n");
-    let said = |at: &str| {
-        let e = solved(&doc(at));
-        program::solid_diagnostics(&e.sketch, &e.map, &e.program)
-    };
-    assert!(said("10, 10").is_empty(), "{:?}", said("10, 10"));
-    let far = said("60, 60");
-    assert!(far.iter().any(|d| d.code.as_str() == "E080"
-        && d.message.contains("meet where the drawing solves, but not where it is seeded")
-        && d.message.contains("pin.boss")), "{far:?}");
+        whole := solid(plate)\n{pin}\nround(r: 1mm) whole\n")
+}
+
+/// `pinned`'s pin of radius 3, its centre held at `(u, v)` and seeded at `at`, its radius
+/// `radius(3mm)` and seeded `seed` (nothing where empty).
+fn pin_at((u, v): (u32, u32), at: &str, seed: &str) -> String {
+    pinned(&format!("in std.top {{\no := point hint(({at}))\no coords(du: {u}mm, dv: {v}mm) std.top\n\
+        boss := circle(center: o){seed}\nradius(3mm) boss\n}}\n\
+        pin := solid(std.solids.Prism(face(boss), from: 0mm, to: 10mm))\npin union whole"))
+}
+
+/// `src` solved, its solids said nothing of.
+fn quiet(src: &str) -> Elaborated {
+    let e = solved(src);
+    let said = program::solid_diagnostics(&e.sketch, &e.map, &e.program);
+    assert!(said.is_empty(), "{said:?}\n{src}");
+    e
+}
+
+/// `src` solved quietly, and `whole`'s volume.
+fn built(src: &str) -> f64 {
+    volume(&quiet(src), "whole")
+}
+
+/// **Faces read apart where the drawing is seeded are read again where it solves** (#625,
+/// #761): a pin seeded off the plate it stands on, held onto it by its centre, meets none of the
+/// plate's faces where it is seeded, so `meets` reads its root apart from the plate's top; where
+/// the drawing solves they meet, and there the faces are read again and the root is rounded — the
+/// same solid as the pin seeded where it stands.  So is a pin whose radius only `radius(3mm)`
+/// says, seeded at none (#761's circle): at the unwritten radius's start it stands clear of the
+/// plate's side it reaches across.
+#[test]
+fn faces_read_apart_that_the_solve_brings_together_are_read_there() {
+    let near = built(&pin_at((10, 10), "10, 10", " hint(r: 3)"));
+    // the root's round fills: the pin and its round add to the plate's rounded volume
+    let plate = built(&pinned(""));
+    assert!(near > plate + std::f64::consts::PI * 9.0 * 5.0, "{near} with the pin, {plate} without");
+    let far = built(&pin_at((10, 10), "60, 60", " hint(r: 3)"));
+    assert!((far - near).abs() <= 1e-9 * near, "{far} seeded far, {near} seeded near");
+    // and one across the plate's side, its radius left to its dimension: the same rounds made
+    // (the solid they make is past the kernel's export, a round's end meeting another's on the
+    // side, seeded or not)
+    let across = |seed| quiet(&pin_at((20, 10), "20, 10", seed)).sketch.solids.len();
+    assert_eq!(across(""), across(" hint(r: 3)"));
+}
+
+/// **A part placed by a mate rounds where it is placed** (#761): a post drawn about its own
+/// origin and seated on the plate by `seats` stands at the world's origin where it is seeded,
+/// over the plate's corner — so the corner's two sides read apart there — and where the drawing
+/// solves it stands at the plate's middle.  The same solid as the post drawn there.
+#[test]
+fn a_part_seated_by_a_mate_rounds_where_it_is_seated() {
+    let seated = built(&pinned("component Post() {\nin std.top {\no := point\nfix((0, 0)) o\n\
+        k := circle(center: o) hint(r: 3)\nradius(3mm) k\n}\n\
+        body := solid(std.solids.Prism(face(k), from: 0mm, to: 10mm))\n}\n\
+        in std.top {\nst := point hint((10, 10))\nst coords(du: 10mm, dv: 10mm) std.top\n}\n\
+        post := Post()\npost seats(turn: 90deg, up: std.z, east: std.x) st\npost.body union whole"));
+    let drawn = built(&pin_at((10, 10), "10, 10", " hint(r: 3)"));
+    assert!((seated - drawn).abs() <= 1e-9 * drawn, "{seated} seated, {drawn} drawn in place");
 }
 
 /// **An expansion past its limit is one E103** (#625), at the document's statement that expands

@@ -27,6 +27,17 @@ pub struct Exact {
 }
 
 impl Exact {
+    /// Its B-rep moved by `by`, each face named in its two halves again (`NAMED`, `named`'s
+    /// inverse): what a build that names faces by their halves takes as an operand built already
+    /// (#760: a shared leaf's joined names read as no primitive's, and a round over them as none).
+    pub(crate) fn halved(&self, by: &geom::Rigid) -> Brep {
+        let mut brep = self.brep.moved(by);
+        for (f, (of, face)) in brep.faces.iter_mut().zip(&self.named) {
+            f.name = name_under(of, face);
+        }
+        brep
+    }
+
     /// The same B-rep under names `re` rewrites (#566): its faces', their halves' and the leading
     /// ones'.
     pub(crate) fn renamed(&self, re: &super::evaluated::Renaming<'_>) -> Exact {
@@ -95,7 +106,7 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
         };
         if let Some(Ok(x)) = leaf {
             let t = std::array::from_fn(|k| (x.origin[k] - origin[k]) * mm);
-            built.insert(id, x.brep.moved(&geom::Rigid { t, ..geom::Rigid::identity() }));
+            built.insert(id, x.halved(&geom::Rigid { t, ..geom::Rigid::identity() }));
             leading.extend(x.leading.iter().cloned());
             continue;
         }

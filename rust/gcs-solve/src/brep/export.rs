@@ -135,7 +135,7 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     let solid = match mirrored {
         true => {
             let x = sk.exact_solid(body).at(Stage::Blank)?;
-            x.brep.moved(&super::geom::Rigid {t:x.origin.map(|k| k*x.mm),..super::geom::Rigid::identity()})
+            x.halved(&super::geom::Rigid {t:x.origin.map(|k| k*x.mm),..super::geom::Rigid::identity()})
         }
         false => super::recipe::build(&recipe.recipe).at(Stage::Blank)?,
     };

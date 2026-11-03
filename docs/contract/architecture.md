@@ -180,7 +180,12 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   does not evaluate is left out, said against the picture with its solid's name (a field
   mesher's refusal names it, `EvaluatedSolid::of_field`), and the run exits 1 with the picture
   written: a picture missing a part is never taken for the whole
-  (`a_picture_missing_a_solid_fails_naming_it`).  The PNG writer is the CLI's (`png.rs`, fixed-code
+  (`a_picture_missing_a_solid_fails_naming_it`).  An object drawn from its field or its facet
+  term, not its exact build — a round its gate refuses, a shell whose cavity no construction
+  builds — is in the picture and said against it as not built, in the core's words
+  (`EvaluatedSolid::unbuilt`, `report::unbuilt_text`, solids.md; #762), the exit unchanged; a
+  `--gltf` and a faceted `--stl` say the same of their files
+  (`a_picture_of_a_solid_not_built_says_so`).  The PNG writer is the CLI's (`png.rs`, fixed-code
   deflate); it computes no geometry, and `tests/cli.rs` reads its pictures back.
   **`--section PLANE` cuts what a picture draws** (`EvaluatedSolid::section`, solids.md): a view's
   word through the world origin, its normal toward that view's eye (`front` takes away what is
@@ -218,8 +223,9 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   page's diagnosis leaves them to its worker): no solid is built for one, and where their
   verdicts would be the report says how many were left, in the core's words
   (`report::solid_claims_unjudged_text`; `solidClaimsUnjudged` in `--json`), so a run that judged
-  none is not read as one where each held.  The claims over values and the geometry's are judged
-  still: they build nothing
+  none is not read as one where each held — and that no solid was built for them, so a solid
+  whose build fails is not said (#762; a `--png` beside it says each it draws unbuilt, below).
+  The claims over values and the geometry's are judged still: they build nothing
   (`no_check_leaves_the_claims_about_solids_unjudged_and_says_so`).
   **`--components` classifies each component against the boundary contract** (#452,
   `boundary::classify`, worded by `boundary::text`/`json`): read through its first instance at the

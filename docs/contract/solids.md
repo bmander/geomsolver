@@ -133,7 +133,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   `exact_solid` places the representative's B-rep likewise (`Exact::placed`, `Caches::placed_exact`),
   and a recipe reaching a solid of a binding several share takes its B-rep from `exact_solid`,
   moved into its place (`exact::build`, `Sketch::shared`), so a union of a ring's instances builds
-  one.  A key holds only while it does (`Sketch::shares`): a solid reaching one its instance did
+  one — its faces named in their two halves again (`Exact::halved`, as the export's mirrored
+  blank takes one too), so the body's
+  faces read by their routes (`joint[1].pad.cd`), and a round over a closed instance's faces in a
+  frame rounds them (#760: through it they read as their keys, `#41.1.joint.pad.cd`, which no path
+  names).  A key holds only while it does (`Sketch::shares`): a solid reaching one its instance did
   not make (a tool joined from outside) or a swept one is its own — but to the exact export, where
   a closed instance's swept body whose motions are the instance's own is its binding's first
   unmirrored solid's build placed, built once a drawing and tolerance (`Sketch::bound_where`,
@@ -221,8 +225,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   `rust/lib/std/solids.sv`** (`use std.solids`): `Prism(section, from, to)`, `Drafted(section,
   from, to, draft)`, `Revolution(section, about, from = 0deg, to = 360deg)` (`p coincident(under: about,
   over t in (from, to)) section`: a line named `under:` is the turn about it,
-  `motions::turn_about`, a motion minted once a line and holding nothing, frames.md) and
-  `Through(section)` (`{ p | p inside section }`).  **They are recognised by their terms, never by
+  `motions::turn_about`, a motion minted once a line and holding nothing, frames.md),
+  `Through(section)` (`{ p | p inside section }`) and `Countersink(rim, angle)` (#765, [0.201]:
+  `Drafted`'s lean at `tan(angle / 2)` and the one ordinate `<= 0mm`, the cone under a rim to its
+  point; no prism for want of a far ordinate, it stays a region the meridian folds about a whole
+  circle, [sets.md](sets.md), its faces `near` and the rim's edge).  **They are recognised by their terms, never by
   a word's name** (`gcs-solve/src/solid/defined.rs`, `recognised`, called from
   `program/solids/build.rs`'s `region`): a section between two stated ordinates along its own
   plane's normal is `SolidDef::Prism`; with the lean term a drafted prism (the angle read to a
@@ -479,7 +486,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   a face and a solid alone, as it does a datum — they bear no points, and refusing them would
   split the design and the solid it is a section of across blocks.
   A boolean **never renames**: `block.near`, `block.far`, `block.side_l` (a prism), `bore.axis`,
-  `bore.start` (a revolution), and through operands — `body.bore.wall`, `part.base.pocket.floor`.
+  `bore.start` (a revolution), and through operands — `body.bore.wall`, `part.base.pocket.floor`,
+  each operand by its whole path from the body's scope (`part.hub.body.ab` for an instance's
+  `hub.body`, `part.joint[1].pad.near` for a copy's, [0.203], #760, [sets.md](sets.md)).
   A name whose face a boolean ate is a *fact the report carries*, never an error.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.
@@ -500,6 +509,25 @@ placement carries inside the blank; CLI test readers zero the offset.
   `pyramid`, whose material the field does not read: …"), and what is built on it follows as
   N080 — never a solved report and a solid that silently names nothing
   (`planar_subtraction::a_sweep_the_field_cannot_read_is_said_at_its_statement`).
+- **A solid drawn and not built says so** (#762, `EvaluatedSolid::unbuilt`).  An evaluation that
+  is not its solid's exact build — its material field's surface, where `sweeps_among` finds an
+  operand no exact construction builds, or the facet term, where `exact_preimage` is refused —
+  carries why (`solid::Unbuilt`: what it is drawn from, the first refusal in the core's words,
+  how many more): a region's refusal by the entry that recognised it (a round's gate: "its exact
+  construction disagrees with the field at …"), or that none builds it; a sweep no ball's tube
+  builds; a shell's cavity refused (`solid::field_only_reasons`, `sweeps_among` read for its
+  reasons, building nothing it did not).  An exact build's mesh, a host's included, a solid
+  built with no material, and a developable panel's band (whose faceting from its rulings is its
+  build, #645; a body built on one carries its refusal) carry none, and a placement of a binding's representative carries its
+  representative's.  A field the mesher cannot close (`FieldMeshing::Now`) is refused with the
+  build's refusal beside its own, in `Unbuilt`'s one wording ("…; the field's to mesh, not
+  built: …"), the cause to fix.  Whatever writes a look at a solid from an evaluation — `solventc --png`,
+  `--gltf`, the faceted `--stl` — says it against the file it wrote, in `report::unbuilt_text`'s
+  words ("`keeper` is drawn from its material field, not built: …"), the file still written and
+  the exit unchanged, since what was asked is all there: a quick look is never read as "this
+  builds" when the export would refuse it
+  (`shell::a_shell_not_built_is_drawn_from_its_field_and_says_why`,
+  `cli::a_picture_of_a_solid_not_built_says_so`).
 
 - **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
   `solid({ p | p coincident(over s) I(…).f })` ([0.199], #737; through 0.198 `sweep(I(…).f over

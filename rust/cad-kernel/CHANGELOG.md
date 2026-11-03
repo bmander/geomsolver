@@ -8,6 +8,27 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A round about one axis is turned, exact** (`fillet::roll`): between a plane square to an axis
+  and cylinders or cones about it, round a closed loop, the piece is the section revolved — a torus
+  face and its strips — where a canal was fitted as a B-spline net of hundreds of poles. A boss's
+  rim and root rounded (brep-bench's fillet/boss-s-curve) is built, measured and meshed in
+  milliseconds rather than 8.7 s, its faces two tori, not two B-splines. `Rolled::spine` and
+  `Rolled::contacts` are then exact circles.
+- **A Boolean is its complex's selection, with no other road** (#735 A4): a shell kept on one side
+  and dropped on another is refused, where each face was once kept by its own sides; `Complex::try_new`
+  is gone. Ways into faces from an edge within 1e-4 rad are tangent (`complex::TANGENT`), a fitted
+  round being tangent to its faces only as closely as its fit.
+- **Every arrangement lays touches** (`boolean::split` too; `lay_touches` is gone), and every edge a
+  meeting laid is healed out of a Boolean's, a split's or a swept solid's result where one face is
+  kept on both sides of it (`heal`, `boolean::selection`, **new**); `Complex::met` (**new field**)
+  and `Complex::select_cells` (**new**). A split's sheet piece with no inside is merged into its
+  edge, not refused.
+- **A traced meeting is one per pair of surfaces** (`meeting::Shared::traced`, `add_traced`,
+  **new**): traced over the box every face on the two surfaces fills, and handed to every later
+  pair of faces on them.
+- **A sweep cut from a blank on one arrangement** (`swept::closed::cut_from`, **new**): the blank
+  split by the sweep's candidates, its cells kept where they are not swept.
+
 - **The closed swept solid under a screw** (`swept::closed`): a polyhedral tool whose edges run
   along the screw's axis or square to it, on one arrangement — its level edges' helicoidal sheets
   open faces reaching past a box square to the axis (`arrangement_within` takes a sheet as it takes
@@ -25,6 +46,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   of the result wherever one face of an operand is kept on both sides of it (its pieces joined, a
   slit closed): results keep their faces whole where they are manifold. `complex::Parts::twin_of`
   (**new field**): the edge each twin is of.
+
+- **A body names each operand's faces by a step of its own** (#760): a recipe's body node may
+  carry `steps`, the step each operand (by its id) adds to its faces' routes through that body,
+  read into `recipe::Body::steps` (**new field**); an operand it does not list adds its name
+  whole. A node's own `step` is retired (**breaking**: `recipe::Named::step` and
+  `recipe::route_step` are gone, the language's rule for a step its caller's to apply).
 
 ## [0.3.0] - 2026-11-02
 

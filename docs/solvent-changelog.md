@@ -4,18 +4,60 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.201] A face along a direction** (#763). A `when` may ask how a face lies against a direction
+**[0.204] A face along a direction** (#763). A `when` may ask how a face lies against a direction
 drawn: `f parallel l`, the face's surface holding `l`'s direction at every point (a plane holding
 it, a cylinder about it, a side swept along it), and `f perpendicular l`, the face a plane square to
 it — what the relation words say of a plane and an axis, asked rather than stated (§12.9). `l` is an
-axis (`std.z`, a frame's own in a body standing in one), a line or a frame's axis. Decided where the
-drawing is seeded, as `meets` is, and said again where it solves (**E080** where it changed). So
+axis (`std.z`, a frame's own in a body standing in one), a line or a frame's axis. Read where the
+drawing solves, as `meets` is (0.202): a block that comes out the other way there is decided again
+at that pose, and **E080** where it still does. So
 which edges a round or a chamfer takes is picked by a block over the faces, written in Solvent, and
 not by an option of the word: `repeat f in A { repeat g in B { when f parallel std.z and g parallel
 std.z { f round(r: 3mm) g } } }` rounds the edges along `std.z` alone (`rounds/hub.sv`, a beam into
-a post whose arc at the beam's top is left sharp). Through 0.200 `parallel` and `perpendicular` in a
+a post whose arc at the beam's top is left sharp). Through 0.203 `parallel` and `perpendicular` in a
 condition were a syntax error, and a part was split in two to leave such an edge unnamed. Nothing
 written before is read differently.
+
+**[0.203] An operand named by its whole path** (#760). Through a body, an operand is a step of
+its faces' names as the body's scope writes it, whole (§6.21): the `body` of an instance `hub`
+unioned into `part` is `hub.body`, its faces `part.hub.body.ab`, … and `part.hub` names every one.
+Through 0.202 a step was the operand's name's last segment, so the `body` of every instance was one
+step and their faces one name: `spine.body` and `hub.body` unioned into `part` were both
+`part.body`, and a round between them could not be written without a wrapper solid for each
+(`k_hub := solid(hub.body)`). A copy on the way is an index on the declaration it holds: the `pad`
+of an instance `joint` a `repeat` makes is `joint[1].pad` (`part.joint` every copy's faces,
+`part.joint[1]` one's), where through 0.202 it was `pad`, every copy's alike. An operand from outside
+the body's scope (a solid an instance was given) keeps its own name's last segment, and a word's
+solids theirs (`plate.rim.taken`). A face path a block over a solid's faces runs over — a round's,
+a chamfer's — that names no face of the solid is said at the statement that wrote it (**W116**), with
+the steps the solid's faces are named by where the path leaves them; through 0.202 it made nothing,
+silently. And the faces of the closed instances of one binding a body is made of (the `pad`s of
+a `repeat`'s copies, each an instance in a frame of its own) are read by a round under these
+names too: through 0.202 the reading named them by keys no path writes, so every round over them
+made nothing, and said nothing. A face path written through an operand with a dotted name (`frame.foot` for
+`blank.foot`) is written whole now (`frame.blank.foot`); reported face names change with it.
+
+**[0.202] Faces meet where the drawing solves** (#761). `a meets b` (§12.9) was decided only where
+the drawing is seeded, so a shape whose seed is not its size or its place left a block out: a
+circle whose radius only `radius(r)` says starts at a radius of 1, a part placed by `seats` starts
+at its frame's origin, and a round between a beam and a post that meet in the drawing as solved
+was **E080** ("meet where the drawing solves, but not where it is seeded"), fixed only by seeds
+written to say again what the dimensions and the mates do. Now, where a pair read apart at the
+seeds meets where the drawing solves, the condition is decided again there — the document
+elaborated once more, its solids' faces read at the solved pose — and the block is made. Only a
+solve that settles is read so. The seeds, and every solved position, are unchanged; a document
+with no such pair elaborates as before, and one with a pair read apart is solved once more while
+it is elaborated. E080 stays for a pair still read apart that meets once the drawing solves again.
+
+**[0.201] A countersink** (#765). `std.solids.Countersink(rim: face, angle: Angle)` is the cone
+under a circle whose sides meet at the included angle, as a drawing calls one out: `Drafted`'s lean
+at `tan(angle / 2)` with the one ordinate `<= 0mm`, so it runs to its point and states no depth
+(§6.9). A lean about a whole circle is read about the circle's axis, so the cone is built exactly,
+and the same set written by hand alike; its faces are `.near` and the side named by the rim's edge.
+The rim is drawn where the sink opens, on a plane lying on the face it is cut from: a draft's sides
+lean from the plane its face is drawn in, whatever its ordinates. A drafted prism whose side comes
+to nothing within its ordinates is refused as before, now saying how far from that plane it comes
+to nothing. Nothing written before is read differently.
 
 **[0.200] A line is a motion** (#748). Wherever a reading names a frame, `under:` or
 `seen_from:`, it may name a line or an axis instead: the turn about it, a radian a radian of the

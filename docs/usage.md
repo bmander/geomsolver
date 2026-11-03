@@ -79,8 +79,13 @@ through one instance into another, an `Int` read only by `when`, and a `group` h
 
 `--no-check` leaves the claims about solids (`clear`, `fits`, `inside`) unjudged, so a run builds
 no solid for one: the quick look at a layout whose full check builds every part. Where their
-verdicts would be, the report says how many it left (`3 claims about solids not judged`;
-`solidClaimsUnjudged` in `--json`). The claims over values and over the geometry build nothing
+verdicts would be, the report says how many it left, and that nothing was built for them, so a
+solid whose build fails is not said (`3 claims about solids not judged: no solid was built for
+them, …`; `solidClaimsUnjudged` in `--json`). A `--png` (or `--gltf`, or a faceted `--stl`) builds
+what it draws, and says against its file each solid drawn from its material field or its facets
+rather than its exact build, with the refusal an export would give (`` `keeper` is drawn from its
+material field, not built: … ``): the file is written and the exit unchanged, but a quick look
+is not a build. The claims over values and over the geometry build nothing
 and are judged still. An export (`--stl`, `--step-assembly`) judges the claims too unless told
 `--no-check`, so a script that only writes files can say it.
 

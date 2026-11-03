@@ -229,16 +229,24 @@ pub fn num(v: f64) -> String {
 }
 
 /// Internal block identity is not part of a drawing reference. `#statement.copy.name`
-/// becomes `name[copy]`, which survives inserting or reordering unrelated statements.
+/// becomes `name[copy]`, which survives inserting or reordering unrelated statements; a copy
+/// holding a copy is named by the inner one (`#3.0.#7.1.drill` is `drill[1]`), as an index is
+/// written once.  The name a solid's faces are routed by too (`SolidE::written`, #760).
 pub fn public_path(name: &str) -> String {
+    let block = |part: &str| part.strip_prefix('#')
+        .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()));
     let mut parts = name.split('.');
     let mut path = Vec::new();
+    let mut index = None;
     while let Some(part) = parts.next() {
-        if part.strip_prefix('#').is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())) {
-            if let (Some(index), Some(name)) = (parts.next(), parts.next()) {
-                path.push(format!("{name}[{index}]"));
-            }
-        } else { path.push(part.to_string()); }
+        if block(part) {
+            index = parts.next();
+            continue;
+        }
+        path.push(match index.take() {
+            Some(k) => format!("{part}[{k}]"),
+            None => part.to_string(),
+        });
     }
     path.join(".")
 }

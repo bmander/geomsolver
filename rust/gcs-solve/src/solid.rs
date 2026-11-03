@@ -73,8 +73,8 @@ pub use document::resolve;
 pub use reads::{reads,same_reads,Memo,MemoKey,ShapeKey};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
-pub use document::{applied_to,built_on,evaluation_operands,operand_paths,past_step,reaches,route_step,
-                   uses,Use};
+pub use document::{applied_to,built_on,evaluation_operands,operand_paths,past_step,reaches,
+                   route_past,step_between,step_labels,step_through,uses,Use};
 use document::{frame_origin,resolve_at};
 mod field;
 pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError,CHORD_SLACK};
@@ -109,6 +109,7 @@ pub use surface::{ReadProjector,ReadRevolved,RegionLocation,RegionSample,Revolve
 pub(crate) use raycast::RayIndex;
 use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
+pub use evaluated::{DrawnFrom, Unbuilt};
 pub use evaluated::{Renamed, Rigid};
 
 use crate::model::{EntKind, EntRef, Roll, Sense, Sketch, SolidDef};
@@ -497,12 +498,56 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
 fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bool {
     let field_only = |i: usize| matches!(sk.solids[i].def, SolidDef::Swept { .. }) && !canal::is_canal(sk, i)
         || matches!(sk.solids[i].def, SolidDef::Region { .. }) && region::route(sk, i).is_ok_and(|r| r.field_only());
-    let shells: Vec<(usize, Vec<u32>)> = operands.iter().filter_map(|&i| shelled::stands_for(sk, i).map(|u| (i, u))).collect();
-    let under: std::collections::BTreeSet<usize> = shells.iter()
-        .flat_map(|(i, u)| std::iter::once(*i).chain(u.iter().map(|&x| x as usize))).collect();
+    let (shells, under) = shells_among(sk, operands);
     operands.iter().filter(|i| !under.contains(i)).any(|&i| field_only(i))
         || shells.iter().any(|(i, u)| !matches!(shelled::built(sk, *i), Some(Ok(_)))
             && (field_only(*i) || u.iter().any(|&x| field_only(x as usize))))
+}
+
+/// The shells among `operands`, each with the solids it stands for, and every solid a shell
+/// accounts for (itself and those): what `sweeps_among` and `field_only_reasons` read apart.
+fn shells_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>)
+    -> (Vec<(usize, Vec<u32>)>, std::collections::BTreeSet<usize>) {
+    let shells: Vec<(usize, Vec<u32>)> = operands.iter().filter_map(|&i| shelled::stands_for(sk, i).map(|u| (i, u))).collect();
+    let under = shells.iter()
+        .flat_map(|(i, u)| std::iter::once(*i).chain(u.iter().map(|&x| x as usize))).collect();
+    (shells, under)
+}
+
+/// **Why a solid whose boundary is the field's has no exact construction** (#762): `sweeps_among`'s
+/// test read for its reasons — each of `operands` it finds the field's, in its own words, in
+/// their order: a region's refusal by the entry that recognised it (a round's gate, #194), or that
+/// none builds it; a sweep no ball's tube builds; a shell's cavity refused.  Nothing is built here
+/// that the test did not build.
+pub(crate) fn field_only_reasons(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> Vec<String> {
+    let why = |i: usize| -> Option<String> {
+        match &sk.solids[i].def {
+            // read by its field where no exact build of it was made (`--png` makes one where the
+            // kernel builds it, `brep::export::supply_exact_where`)
+            SolidDef::Swept { .. } if !canal::is_canal(sk, i) => Some(format!(
+                "`{}` is a continuous motion sweep, read by its field: no exact build of it was made",
+                sk.solid_name(i))),
+            SolidDef::Region { .. } => region::route(sk, i).ok()?.refusal()
+                .map(|e| format!("`{}`: {e}", sk.solid_name(i))),
+            _ => None,
+        }
+    };
+    let (shells, under) = shells_among(sk, operands);
+    let mut out: Vec<String> = operands.iter().filter(|i| !under.contains(i)).filter_map(|&i| why(i)).collect();
+    for (i, u) in &shells {
+        let built = shelled::built(sk, *i);
+        if matches!(built, Some(Ok(_))) { continue }
+        let parts: Vec<String> = u.iter().filter_map(|&x| why(x as usize)).collect();
+        let own = why(*i);
+        if own.is_none() && parts.is_empty() { continue }
+        // the cavity's own refusal, where its construction refused, says more than its route's
+        match built {
+            Some(Err(e)) => out.push(format!("`{}`: {e}", sk.solid_name(*i))),
+            _ => out.extend(own),
+        }
+        out.extend(parts);
+    }
+    out
 }
 
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {
@@ -567,13 +612,23 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 "edge `{name}` collides with a sweep cap; rename the source edge"
             )));
         }
-        // a draft that takes a side to nothing, or past it, is no solid of those sides
+        // a draft that takes a side to nothing, or past it, is no solid of those sides: said where
+        // it comes to nothing, measured from the plane the face is drawn in, which the sides lean
+        // from whatever the ordinates (#765)
         if let SolidDef::Prism { from, to, draft: Some(d), .. } = &s.def {
             let reach = from.value.abs().max(to.value.abs());
             for (k, p) in polys.iter().enumerate() {
-                if let Some(i) = primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, d.value.dtan())) {
-                    return Err(fail(&format!("a draft of `{}` takes the side `{}` to nothing \
-                        within the prism's ordinates", d.text, p.names[p.of[i].0])));
+                if let Some((i, at)) = primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, d.value.dtan())) {
+                    let length = |x: f64| crate::units::Dim::LENGTH.number_text(x, sk.units);
+                    // to three figures: a tessellated arc's chords come to nothing a little short
+                    // of the arc
+                    let figures = 10f64.powi(2 - at.abs().log10().floor() as i32);
+                    let at = (at * figures).round() / figures;
+                    return Err(fail(&format!("a draft of `{}` takes the side `{}` to nothing {} \
+                        from the face's own plane, within the prism's ordinates ({} to {}): its \
+                        sides lean from the plane the face is drawn in, the parting plane, so draw \
+                        the face where the draft parts", d.text, p.names[p.of[i].0], length(at),
+                        length(from.value), length(to.value))));
                 }
             }
         }

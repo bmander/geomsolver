@@ -89,6 +89,47 @@ enum Surface {
     Brep { volume: f64, stale: bool },
 }
 
+/// What an evaluation that is not its solid's exact build is drawn from (`Unbuilt`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DrawnFrom {
+    /// Its material field's surface: a sweep's, or a region's no exact construction builds.
+    Field,
+    /// The facet term, where the exact build is refused.
+    Facets,
+}
+
+/// **Why an evaluation is not its solid's exact build** (#762): what it is drawn from instead,
+/// the first refusal in the core's words, and how many more there are (a body rounded all over
+/// is a region for each edge, each refused alike).  A picture or a mesh read from such an
+/// evaluation is a look at the drawing, not what an export builds — and an export of it is
+/// refused for the same reason — so whatever writes one says so (`report::unbuilt_text`), and a
+/// quick look is not read as "this builds".
+#[derive(Clone, Debug, PartialEq)]
+pub struct Unbuilt {
+    pub from: DrawnFrom,
+    pub why: String,
+    pub more: usize,
+}
+
+impl Unbuilt {
+    /// The first of `reasons` and how many follow it; `None` where there is none to give.
+    fn of(from: DrawnFrom, reasons: Vec<String>) -> Option<Unbuilt> {
+        let more = reasons.len().checked_sub(1)?;
+        Some(Unbuilt { from, why: reasons.into_iter().next()?, more })
+    }
+}
+
+/// The one wording of it, which every reader says it in: `not built: <why>`, and how many more.
+impl std::fmt::Display for Unbuilt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "not built: {}", self.why)?;
+        if self.more > 0 {
+            write!(f, " (and {} more of what it is made of, refused too)", self.more)?;
+        }
+        Ok(())
+    }
+}
+
 /// **An evaluated solid where it stands** (#412): its geometry (`Shape`), shared, and the rigid
 /// placement that stands it in the world — `to_world(p) = R·p + origin`.  A fresh evaluation has
 /// no rotation, its geometry the world's turned nowhere; a solid that has only moved rigidly since
@@ -145,6 +186,8 @@ struct Shape {
     face_edges: OnceCell<Vec<mesh::FaceEdge>>,
     /// Its mesh as a renderer draws it (`mesh::drawn`): names nothing, so shared by a rename.
     drawn: OnceCell<std::rc::Rc<mesh::Drawn>>,
+    /// Why it is not the solid's exact build, where it is not (`EvaluatedSolid::unbuilt`, #762).
+    unbuilt: Option<Unbuilt>,
 }
 
 const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
@@ -209,6 +252,7 @@ impl Shape {
             surface: self.surface,
             corner_normals: self.corner_normals.clone(),
             exact: self.exact.as_ref().map(|(x, of)| (std::rc::Rc::new(x.renamed(re)), of.clone())),
+            unbuilt: self.unbuilt.clone(),
             edges: kept(self.edges.get().map(|e| e.iter()
                 .map(|e| Edge { path: re.name(&e.path), ..e.clone() }).collect())),
             mesh: kept(self.mesh.get().map(|m| mesh::Mesh {
@@ -262,22 +306,39 @@ impl EvaluatedSolid {
             };
         }
         if sweeps_among(sk, &operands) {
-            // a swept solid's exact B-rep where a host supplied one, else its field's surface
+            // a swept solid's exact B-rep where a host supplied one, else its field's surface,
+            // and why no exact construction stands for it (#762)
             if let Some(exact) = sk.supplied_exact_solid(si) {
                 return Self::from_brep(sk, si, policy, unit, operands, &exact);
             }
-            return Self::of_field(sk, si, policy, unit);
+            let why = Unbuilt::of(DrawnFrom::Field, super::field_only_reasons(sk, &operands));
+            // a field the mesher cannot close says, beside its refusal, why it was the field's to
+            // mesh: where the exact build was refused, that is the cause to fix
+            return Self::of_field(sk, si, policy, unit, why.clone()).map_err(|e| {
+                match why.filter(|_| sk.field_meshing.get() == FieldMeshing::Now) {
+                    Some(u) => format!("{e}; the field's to mesh, {u}"),
+                    None => e,
+                }
+            });
         }
         // the exact B-rep where this kernel builds and meshes one, the facet term where it does
         // not, an empty solid among them, whose B-rep has no faces (`SOLVENT_SOLIDS=facets` asks
-        // for it throughout)
-        if !facets_only() {
-            let exact = sk.exact_preimage(si).ok().filter(|x| !x.brep.faces.is_empty())
-                .map(|x| Self::from_brep(sk, si, policy, unit, operands.clone(), &x));
-            if let Some(Ok(solid)) = exact {
-                return Ok(solid);
+        // for it throughout); why it is not, said (#762) — but of a developable panel's band, whose
+        // faceting from its rulings is its build, its STL written from it (#645)
+        let why = if facets_only() {
+            Some("`SOLVENT_SOLIDS=facets` draws every solid by its facet term".to_string())
+        } else {
+            match sk.exact_preimage(si) {
+                Ok(x) if x.brep.faces.is_empty() => None,
+                Ok(x) => match Self::from_brep(sk, si, policy, unit, operands.clone(), &x) {
+                    Ok(solid) => return Ok(solid),
+                    Err(e) => Some(e),
+                },
+                Err(e) => Some(e),
             }
-        }
+        };
+        let why = why.filter(|_| !super::sheet::is_band(sk, si))
+            .map(|why| Unbuilt { from: DrawnFrom::Facets, why, more: 0 });
         let origin = WorldPoint(frame_origin(sk, si, unit));
         let csg = resolve_at(sk, si, unit, origin.0);
         let mut terms = vec![&csg.term];
@@ -354,15 +415,18 @@ impl EvaluatedSolid {
             ray_indices: OnceCell::new(),
             face_edges: OnceCell::new(),
             drawn: OnceCell::new(),
+            unbuilt: why,
         }))
     }
     /// A swept solid's boundary is its material field's surface, whatever approximation is asked
     /// for: one a host meshed elsewhere and supplied (`Sketch::supply_field`), none while the
     /// sketch leaves meshing to the host (`FieldMeshing::Deferred`), or meshed here and now to the
     /// end (`FieldMeshing::Now`) — seconds of refinement inside the call that asked.
-    fn of_field(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64) -> Result<Self, String> {
+    /// `why` it is the field's, which its surface carries (`EvaluatedSolid::unbuilt`, #762).
+    fn of_field(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64, why: Option<Unbuilt>)
+        -> Result<Self, String> {
         if let Some(surface) = sk.supplied_field(si) {
-            return Self::from_surface(sk, si, policy, unit, &surface);
+            return Self::from_surface(sk, si, policy, unit, &surface, why);
         }
         let name = sk.solid_name(si);
         match sk.field_meshing.get() {
@@ -373,7 +437,7 @@ impl EvaluatedSolid {
             FieldMeshing::Now => {
                 let surface = FieldMesher::new(sk, si)?.finish()
                     .map_err(|e| format!("`{name}`: {e}"))?;
-                Self::from_surface(sk, si, policy, unit, &surface)
+                Self::from_surface(sk, si, policy, unit, &surface, why)
             }
         }
     }
@@ -476,14 +540,16 @@ impl EvaluatedSolid {
             ray_indices: OnceCell::new(),
             face_edges: OnceCell::new(),
             drawn: OnceCell::new(),
+            unbuilt: None,
         }))
     }
     /// A swept solid from its field's surface (`field_mesh.rs`): the mesh stands in as one
     /// polyhedral primitive, so classification, edges and views read it as they read any other.
     /// A provisional surface may be open: what it classifies is a preview's, and it exports
-    /// nothing.
+    /// nothing.  It is not the exact build, for `why`; one a host supplied as an exact build's mesh
+    /// is that build.
     fn from_surface(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64,
-        surface: &FieldSurface) -> Result<Self, String> {
+        surface: &FieldSurface, why: Option<Unbuilt>) -> Result<Self, String> {
         if let Some(exact) = &surface.exact {
             return Self::from_exact_surface(sk, si, policy, unit, surface, exact, BTreeSet::new(), false);
         }
@@ -538,6 +604,7 @@ impl EvaluatedSolid {
             ray_indices: OnceCell::new(),
             face_edges: OnceCell::new(),
             drawn: OnceCell::new(),
+            unbuilt: why,
         }))
     }
     /// **A solid from its exact B-rep's mesh, built elsewhere and supplied**
@@ -635,7 +702,14 @@ impl EvaluatedSolid {
             ray_indices: OnceCell::new(),
             face_edges: OnceCell::new(),
             drawn: OnceCell::new(),
+            unbuilt: None,
         }))
+    }
+    /// Why this is not the solid's exact build, where it is not (#762): drawn from its field or
+    /// its facet term, and the refusal that left it so.  `None` for an exact build's mesh, a
+    /// host's included, and for a solid built with no material.
+    pub fn unbuilt(&self) -> Option<&Unbuilt> {
+        self.shape.unbuilt.as_ref()
     }
     /// Whether this is a host's build of an earlier drawing, drawn until the new one arrives
     /// (#671): an object being built again.
