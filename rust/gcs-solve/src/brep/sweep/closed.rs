@@ -24,13 +24,18 @@ pub fn all(prepared: &Prepared) -> bool { prepared.classes.iter().all(|c| matche
 /// The body: its blank less each closed sweep, at each placement, each cut on one arrangement.
 pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,_tolerance: Option<Tolerance>,say: &Say)
     -> Result<Brep,ExportRefusal> {
+    if !all(prepared) { return Err(ExportRefusal::at(Stage::Admission,format!("`{}` cuts a sweep of no closed class",sk.solids[body].name))) }
+    cut_on(sk,body,recipe,prepared,prepared.blank.clone(),say)
+}
+
+/// `solid` — the blank, or the body as the other classes' sweeps left it — less each closed sweep
+/// of the body, at each placement, each cut on one arrangement with what is left so far.
+pub fn cut_on(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,mut solid: Brep,say: &Say)
+    -> Result<Brep,ExportRefusal> {
     let scale = prepared.field.scale();
-    let mut solid = prepared.blank.clone();
     for (k,&swept) in prepared.distinct.iter().enumerate() {
         let name = &sk.solids[swept].name;
-        let Class::Closed(found) = &prepared.classes[k] else {
-            return Err(ExportRefusal::at(Stage::Admission,format!("`{name}` is not a closed sweep")))
-        };
+        let Class::Closed(found) = &prepared.classes[k] else { continue };
         for c in recipe.sweeps.iter().filter(|c| c.swept == swept) {
             let clock = crate::clock::Instant::now();
             // the tool and its screw placed where the body cuts it, the blank left where it stands

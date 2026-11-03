@@ -971,9 +971,8 @@ A union is its members where it is the whole tool, a union within a union, or a 
 one, each member placed as it is. Still refused by these classes: a union within an intersection
 or a cut (`(A ∪ B) ∩ C`, T1, which is not distributed yet), which the closed class reads by its
 B-rep where its faces are ones it takes (`union_tools::a_union_within_an_intersection_is_the_closed_classs`);
-a member the closed class takes beside one another class takes, refused at the build by name
-(the two roads are not yet built in one body,
-`union_tools::a_member_its_class_refuses_is_the_closed_classs_and_not_yet_built_beside_another`); and a body that cuts a ball's tube beside a
+a member the closed class takes beside one another class takes, each member its own sweep, built
+by the other's road and then cut on one arrangement (`union_tools::a_member_its_class_refuses_is_the_closed_classs`); and a body that cuts a ball's tube beside a
 sweep of another class, which the static remainder does not read as either form, written as a
 union or as two cuts. A union of prisms under a motion keeping their plane is not distributed:
 the planar subtraction class reads its swept region whole (below). Only the core's kernel builds
@@ -1054,8 +1053,10 @@ asked), and its rows read the tool's B-rep and the motion's structure, not its c
 
 C1 and C2 are asked at admission; C3 while the body is built (`brep::sweep::closed`), the sweep
 cut at each placement on one arrangement. Where C1 or C2 refuses, the refusal is the first class's,
-unchanged. A body whose sweeps are of the closed class and another together is refused at
-admission's stage by name. The native path refuses the class by name: only the core's kernel
+unchanged. A body whose sweeps fall to the closed class and to another is built by the other's
+road first and each closed sweep then cut from what it leaves on one arrangement
+(`closed_class::a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves`; a union's members
+alike, each its own sweep). The native path refuses the class by name: only the core's kernel
 builds it. `tests/closed_class.rs` and `tests/solid_sweeps_examples.rs` are the gate, each held to
 a volume made apart from the build and its STL to the field: a bar pushed aslant wholly through a
 plate (its shadow along the push) and partway into it (`plunge.sv`, each section's swept hexagon

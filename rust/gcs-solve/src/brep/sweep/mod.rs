@@ -83,12 +83,16 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
     let classes = distinct.iter().map(|&swept| admission.sweeps().iter().find(|e| e.sweep == swept).map(|e| e.class.clone())
         .ok_or_else(|| ExportRefusal::at(Stage::Admission,format!("`{name}`: `{}` was not admitted",sk.solids[swept].name))))
         .collect::<Result<Vec<_>,_>>()?;
-    // a closed sweep is cut from the blank on one arrangement, a sheet's from the blank its sector
-    // or the whole is split by: the two are not yet built in one body
+    // a closed sweep is cut on one arrangement from what the other classes' sweeps leave (`mixed`);
+    // but one sweep read as several (a union's members) whose members fall to the closed class and
+    // another is one cut the two roads would each take part of: not yet built
     let closed = |c: &crate::solid::admission::Class| matches!(c,crate::solid::admission::Class::Closed(_));
-    if classes.iter().any(closed) && !classes.iter().all(closed) {
-        return Err(ExportRefusal::at(Stage::Admission,format!("`{name}` cuts a sweep of the closed class beside sweeps of another, \
-            which are not yet built together")))
+    for &swept in &distinct {
+        let members: Vec<bool> = admission.sweeps().iter().filter(|e| e.sweep == swept).map(|e| closed(&e.class)).collect();
+        if members.iter().any(|&c| c) && !members.iter().all(|&c| c) {
+            return Err(ExportRefusal::at(Stage::Admission,format!("`{name}` cuts a sweep of the closed class beside sweeps of another, \
+                which are not yet built together")))
+        }
     }
     let bounds = field.in_model_units().support_bounds().ok().flatten().map(|b| (b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1])));
     let started = crate::clock::Instant::now();
@@ -112,7 +116,35 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,t
     if planar::all(prepared) { Some(planar::cut(sk,body,recipe,prepared,tolerance,say)) }
     else if subtraction::all(prepared) { Some(subtraction::cut(sk,body,recipe,prepared,tolerance,say)) }
     else if closed::all(prepared) { Some(closed::cut(sk,body,recipe,prepared,tolerance,say)) }
+    else if mixed(prepared) { Some(mixed_cut(sk,body,recipe,prepared,tolerance,say)) }
     else { None }
+}
+
+/// Whether the body cuts sweeps of the closed class beside sweeps of another.
+fn mixed(prepared: &Prepared) -> bool {
+    let closed = |c: &crate::solid::admission::Class| matches!(c,crate::solid::admission::Class::Closed(_));
+    prepared.classes.iter().any(closed) && !prepared.classes.iter().all(closed)
+}
+
+/// **A body whose sweeps fall to the closed class and to others**: built by the others' road first
+/// — the body as `prepared` less its closed sweeps, whole or by sector and pattern — and then each
+/// closed sweep cut from that on one arrangement (`closed::cut_on`), as from a blank: a sweep's
+/// cut is the same set whatever was cut before it.
+fn mixed_cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tolerance: Option<Tolerance>,say: &Say)
+    -> Result<crate::brep::topo::Brep,ExportRefusal> {
+    let keep: Vec<usize> = (0..prepared.distinct.len()).filter(|&k| !matches!(prepared.classes[k],crate::solid::admission::Class::Closed(_))).collect();
+    let rest = Prepared {field:prepared.field.clone(),bounds:prepared.bounds,distinct:keep.iter().map(|&k| prepared.distinct[k]).collect(),
+        cuts:keep.iter().map(|&k| sheet::SweptCut::read(sk,prepared.distinct[k])).collect::<Result<Vec<_>,_>>()?,
+        classes:keep.iter().map(|&k| prepared.classes[k].clone()).collect(),blank:prepared.blank.clone()};
+    let first = match whole(sk,body,recipe,&rest,tolerance,say) {
+        Some(solid) => solid?,
+        None => {
+            let sheets = crate::par::indices(rest.sweeps(),|k| sheet(&rest,k,tolerance,say)).into_iter().collect::<Result<Vec<_>,_>>()?;
+            let plan = plan(sk,body,recipe,&rest,&sheets,say);
+            finish(cut(sk,body,recipe,&rest,&sheets,plan,say)?,say)?.into_solid()
+        }
+    };
+    closed::cut_on(sk,body,recipe,prepared,first,say)
 }
 
 /// Sweep `k`'s sheet fitted against the blank: a prism's under a motion keeping its profile's

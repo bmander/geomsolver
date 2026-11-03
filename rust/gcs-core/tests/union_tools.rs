@@ -118,17 +118,20 @@ small union pair
 /// A tool's member is asked its own class's rows, and admitted by the closed class where they
 /// refuse it (#721 F2c5, a torus slid square to its axis): the second bead grown to reach the rod
 /// with the rings where its tube lies flat in contact all round (the constant-twist class's S1). Its
-/// other member stays the constant-twist class's, and a body cutting a closed sweep beside another
-/// class's is refused at the build, by name: the two roads are not yet built in one body.
+/// other member stays the constant-twist class's: each member its own sweep, the body is built by
+/// that class's road and the closed member cut from what it leaves on one arrangement. The groove is
+/// what of the rod's disc either bead's shadow covers, the second's ring now 7 from the wheel's
+/// axis, through the rod's 20.
 #[test]
-fn a_member_its_class_refuses_is_the_closed_classs_and_not_yet_built_beside_another() {
+fn a_member_its_class_refuses_is_the_closed_classs() {
     let text = beads().replace("tc2 coords(du: reach, dv: step) bench","tc2 coords(du: reach - 1mm, dv: step) bench");
     let e = fixtures::read(&text);
     let a = admit(&e,"rod").unwrap();
     assert!(a.sweeps().iter().any(|s| matches!(s.class,Class::Closed(_))),"a member the closed class's");
-    let say = gcs_core::brep::sweep::Say {stage:&|_: &str| {},mark:&|_| {}};
-    let r = gcs_core::brep::export::exact(&e.sketch,fixtures::solid(&e,"rod"),None,None,&say).unwrap_err();
-    assert!(r.message.contains("beside sweeps of another, which are not yet built together"),"{}",r.message);
+    assert!(a.sweeps().iter().any(|s| !matches!(s.class,Class::Closed(_))),"a member another class's");
+    let hit = |x: f64,y: f64| shadowed(x,y,6.,2.,0.) || shadowed(x,y,7.,1.5,1.5);
+    let section = measure([3.,5.],&|x| { let h = (25.-x*x).max(0.).sqrt(); [-h,h] },&hit,&|a,b| b-a);
+    near(exported(&e,"rod"),PI*25.*20.-section*20.,2e-6);
 }
 
 /// A union within an intersection is not distributed — refused at T1, saying so — but the closed

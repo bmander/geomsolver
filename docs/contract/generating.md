@@ -475,8 +475,12 @@ sweep at each placement from the blank on one arrangement (`cut_from`, the tool 
 where the body cuts it, `Screw::moved`, the blank left where it stands), with no sheet, plan or
 sector: the export's and the page's stepped build alike, through one dispatch (`sweep::whole`;
 `object_builder::a_closed_sweep_builds_at_the_displays_samples`), and the native path refuses it by
-name. A body cutting sweeps of this class beside another's is refused at
-admission's stage, by `sweep::prepare`, on both roads.
+name. A body cutting sweeps of this class beside another's is built by the other's road first —
+the body less its closed sweeps, whole or by sector and pattern — and each closed sweep then cut
+from what that leaves on one arrangement (`sweep::whole`'s `mixed_cut`, `closed::cut_on`), on both
+roads (`closed_class::a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves`, `punch.sv`'s
+drum and `plunge.sv`'s bar in one plate, to 1e-9; a union's members alike, each its own sweep). A fitted sheet's face lying in a plane a
+closed sweep's candidate holds is met as nearly touching and refused (F4, #699 E).
 Each gate is a negative control of another class, held to a volume apart from
 the build and its STL to the field with no disagreement (`tests/closed_class.rs`: a bar pushed
 aslant wholly through a plate, and `punch.sv`'s drum wholly through it and partway into it, its end
@@ -973,8 +977,8 @@ placements between minted again over each, every minted solid keeping the one it
 union whose every member is a ball's tube admits nothing and builds as static material, held to
 the union's field as a swept body is. Not distributed: a union within an intersection or a cut
 (T1 refuses it, saying so; the closed class reads such a tool by its B-rep where it takes its faces,
-`union_tools::a_union_within_an_intersection_is_the_closed_classs`; a body whose sweeps fall to the
-closed class and another is refused at the build by name), and a union of prisms under a motion keeping their plane, which
+`union_tools::a_union_within_an_intersection_is_the_closed_classs`; members falling to the closed
+class and another each built by its road, `union_tools::a_member_its_class_refuses_is_the_closed_classs`), and a union of prisms under a motion keeping their plane, which
 `planar_subtraction::asks` reads whole. The native path refuses a distributed cut by name.
 `tests/union_tools.rs` and `solid_sweeps_examples.rs` (`union.sv`) are the gate: the beads' groove
 against rows across the rod computed apart, placed and turned, against the long form, two balls'

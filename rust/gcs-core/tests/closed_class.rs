@@ -256,3 +256,29 @@ fn the_fast_path_and_the_one_arrangement_agree_where_both_build() {
     near(fast,672.,1e-9);
     near(arranged,fast,1e-9);
 }
+
+/// **A body cut by a sweep of the closed class beside one of another** (#721 F2c5's dispatch):
+/// `punch.sv`'s plate punched by its drum straight up (the constant-twist class's) and plunged by
+/// `plunge.sv`'s bar aslant partway (the closed class's), the bar moved 3.5 across and 3 back so the
+/// two miss each other (and its end face at its start pose stands in no plane the drum's fitted
+/// sheet lies in: a fitted face meeting an exact plane it lies in is F4's, #699 E). The body is built by the other class's road first, then the closed sweep cut from
+/// what it leaves on one arrangement (`brep::sweep`'s `mixed_cut`). Apart from the build, the plate
+/// loses the drum's shadow, 128, and the bar's plunge (`plunged_away(8)`, its hexagons the same
+/// wherever along x the bar starts).
+#[test]
+fn a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves() {
+    let punch = crate::closed_characteristics::punch();
+    let plunge = include_str!("../../examples/solid_sweeps/plunge.sv");
+    let bar = &plunge[plunge.find("// the bar: its section").unwrap()..];
+    let bar = bar.replace("c0 coords(du: 0mm,","c0 coords(du: 3.5mm,").replace("c1 coords(du: 1mm,","c1 coords(du: 4.5mm,")
+        .replace("c2 coords(du: 0mm,","c2 coords(du: 3.5mm,").replace("c3 coords(du: -1mm,","c3 coords(du: 2.5mm,")
+        .replace("private up :=","private up2 :=").replace(") up\n",") up2\n").replace("ram :=","ram2 :=")
+        .replace("ram slides","ram2 slides").replace("under: ram,","under: ram2,").replace("pocket cut plate","pocket cut part")
+        .replace("from: 6mm, to: 14mm","from: 3mm, to: 11mm");
+    let text = format!("{punch}\n{bar}");
+    let e = fixtures::read(&text);
+    let a = crate::turns_and_slides::admit(&text).unwrap();
+    let classes: Vec<bool> = a.sweeps().iter().map(|s| matches!(s.class,Class::Closed(_))).collect();
+    assert!(classes.contains(&true) && classes.contains(&false),"one sweep of each road: {classes:?}");
+    near(exported(&e,"part"),800.-128.-plunged_away(8.),1e-9);
+}
