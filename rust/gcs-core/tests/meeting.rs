@@ -265,3 +265,35 @@ fn a_plane_holding_a_screwed_sheets_ruling_meets_it_in_the_ruling_and_a_cut_thro
         assert!((0..=4).all(|k| { let x = [2.,k as f64-2.,0.]; distance(curves[0].point(curves[0].inverse(x)),x) <= 1e-12 }));
     }
 }
+
+/// **Two coaxial surfaces of revolution with spline meridians meet in circles, in closed form**
+/// (#735 A2, `ssi::spline_spline`): two hyperboloids about z, each a leaning line turned (as
+/// `swept::closed::revolved` builds a swept edge's, its meridian one rational quadratic), meet
+/// where their radii agree, `t₁² + k₁² (z − h₁)² = t₂² + k₂² (z − h₂)²` — a quadratic in `z`, solved
+/// here apart from the kernel — each a circle at that height of that radius, not a curve traced.
+/// (Traced, a leaning bar turned through a ring sector spent 300 s crossing those traces.)
+#[test]
+fn two_coaxial_hyperboloids_meet_in_circles_in_closed_form() {
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    let hyperboloid = |p: V,e: V| {
+        let solids = gcs_core::brep::swept::closed::revolved([0.;3],[0.,0.,1.],p,unit(e),[-2.,2.],1e-9).unwrap();
+        let [solid] = &solids[..] else { panic!("one solid") };
+        solid.faces.iter().find(|f| f.surface.kind() == "revolution").expect("its hyperboloid").surface.clone()
+    };
+    // throat 2 at z = 0, lean 1; throat 1 at z = 0.3, lean 2
+    let (a,b) = (hyperboloid([2.,0.,0.],[0.,1.,1.]),hyperboloid([1.,0.,0.3],[0.,2.,1.]));
+    let Ssi::Curves(curves) = intersect(&a,&b,1e-9) else { panic!("in closed form") };
+    // 4 + z² = 1 + 4 (z − 0.3)²: 3 z² − 2.4 z − 2.64 = 0
+    let d = (2.4f64*2.4+4.*3.*2.64).sqrt();
+    let expected = [(2.4-d)/6.,(2.4+d)/6.];
+    let mut found: Vec<(f64,f64)> = curves.iter().map(|c| match c {
+        Curve::Circle(f,r) => (f.o[2],*r),
+        other => panic!("a circle, not {}",other.kind()),
+    }).collect();
+    found.sort_by(|x,y| x.0.total_cmp(&y.0));
+    assert_eq!(found.len(),2,"{found:?}");
+    for ((z,r),want) in found.into_iter().zip(expected) {
+        assert!((z-want).abs() <= 1e-9,"a circle at {z} against {want}");
+        assert!((r-(4.+want*want).sqrt()).abs() <= 1e-9,"of radius {r}");
+    }
+}

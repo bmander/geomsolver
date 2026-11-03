@@ -96,6 +96,9 @@ fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
                 in {} slabs ({} loops) from {} candidates, {} kept stretches, each a quarter degree of the roll apart{alike}",s.name,
                 found.slabs.len(),found.slabs.iter().flat_map(|x| x.stations.first()).map(|(_,r)| r.loops.len()).sum::<usize>(),
                 s.samples,s.contacts),
+            admission::Class::Closed(found) => eprintln!("solventc: `{}` is in the closed class ({}), its tool's {} faces and {} \
+                edges read as planes and lines, to be cut from the blank on one arrangement{alike}",s.name,found.kind(),
+                found.tool.faces.len(),found.tool.edges.len()),
         }
         if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() {
             eprintln!("admission: `{}`: {} samples, {} contacts, spacing {:e}, least area factor {:e}, {} near double roots, {} near tangent pairs",

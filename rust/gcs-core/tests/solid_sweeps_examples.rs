@@ -1,5 +1,5 @@
-//! **The solid sweeps series** (`rust/examples/solid_sweeps/`, #684): one short document for each
-//! class of continuous sweep this kernel builds exactly. Each is read as the class its README
+//! **The solid sweeps series** (`rust/examples/solid_sweeps/`, #684, #721): one short document for
+//! each class of continuous sweep this kernel builds exactly. Each is read as the class its README
 //! names — admitted to it, or for a ball read as its tube — built within 0.01 mm, its STL held to
 //! the material field with no disagreement, and its volume held to a figure made apart from the
 //! code under test: a closed form, or arithmetic that reads the tool and the motion and nothing
@@ -414,6 +414,45 @@ fn the_spoke_swings_a_slot_ended_by_a_zone_of_a_sphere() {
     assert_eq!(found.rounds(),["a ring of the corner of `pin.side` and `pin.tip` in contact all round"]);
     assert_eq!(found.sharp(),["the corner of `pin.side` and `pin.tip`"]);
     near(exported(&e,"block"),PI/3.*80.-PI/6.*(57.25-1./12.),1e-5);
+}
+
+/// `plunge.sv` (the closed class, #721 X1): a bar of square section pushed aslant 8 into the plate,
+/// stopping inside it. The constant-twist class refuses it (its silhouette turns at a vertex onto a
+/// cap, and it ends in the blank); the closed class reads its six planes and twelve lines and cuts
+/// it from the plate on one arrangement. The plate loses each `y` section's rectangle swept along
+/// the push and clipped to the plate (`closed_class::plunged_away`), to 1e-9.
+#[test]
+fn the_bar_plunged_aslant_stops_inside_the_plate() {
+    let e = example("plunge.sv");
+    let Class::Closed(found) = class(&e,"plate") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    assert_eq!((found.tool.faces.len(),found.tool.edges.len()),(6,12));
+    near(exported(&e,"plate"),800.-crate::closed_class::plunged_away(8.),1e-9);
+}
+
+/// `stopped_turn.sv` (the closed class, X1): an upright bar turned from −140° to 30°, halfway into
+/// the sector. The constant-twist class refuses it (it ends in the blank); the closed class cuts it
+/// from the ring on one arrangement, its end pose's faces among the candidates. The ring loses each
+/// circle's covered angle within the sector (`closed_class::turned_partway_away`), to 1e-9.
+#[test]
+fn the_bar_turned_partway_stops_inside_the_ring() {
+    let e = example("stopped_turn.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert!(found.screw.is_turn(),"a turn");
+    near(exported(&e,"block"),PI/3.*80.-crate::closed_class::turned_partway_away(),1e-9);
+}
+
+/// `stopped_screw.sv` (the closed class, X1 under a screw): `square_thread.sv`'s bar screwed only
+/// halfway up the rod. The constant-twist class refuses it (it ends in the blank); the closed class
+/// cuts it on one arrangement, its level edges' helicoidal sheets met in closed form. The rod loses
+/// each circle's covered angle (`closed_class::screwed_partway_away`), to 1e-9.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: a bar's screwed sheets cut from a rod on one arrangement")]
+fn the_bar_screwed_partway_stops_inside_the_rod() {
+    let e = example("stopped_screw.sv");
+    let Class::Closed(found) = class(&e,"rod") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a screw");
+    near(exported(&e,"rod"),PI*25.*20.-crate::closed_class::screwed_partway_away(10.,8.),1e-9);
 }
 
 /// Every document in the folder is held by a test here, and the README names each.

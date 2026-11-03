@@ -65,14 +65,14 @@ type V = [f64;3];
 /// Why the closed swept solid is not built.
 #[derive(Clone,Debug,PartialEq)]
 pub enum Unbuilt {
-    /// The tool has a face that is no plane, or an edge that is no line: its envelope sheets are
-    /// curved, the design's later steps.
-    Curved,
+    /// The tool has a face that is no plane, or an edge that is no line, at `at`: its envelope
+    /// sheets are curved, the design's later steps.
+    Curved { at: V },
     /// The motion is no slide, turn or screw: the design's later steps.
     Motion,
-    /// Under a screw, an edge or a face leaning to the axis (neither along it nor square to it): its
-    /// sheet a screw surface no closed solid yet holds, the design's later steps.
-    Leaning,
+    /// Under a screw, an edge or a face leaning to the axis (neither along it nor square to it), at
+    /// `at`: its sheet a screw surface no closed solid yet holds, the design's later steps.
+    Leaning { at: V },
     /// A cell's membership could not be settled: its deepest point stands within the mesh's sag
     /// of the swept boundary.
     Unsettled { at: V },
@@ -118,34 +118,52 @@ pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f6
     built(tool,path,roll,bar,tol,Some(blank))
 }
 
+/// **Whether the pipeline takes `tool` under `path`**, read off their structure before anything is
+/// built (what an admission asks, #721's dispatch): the motion a slide, a turn or a screw that
+/// moves something; every face of the tool a plane and every edge a line bounding two of them;
+/// and under a screw every face and edge along the axis or square to it. The constant twist it is,
+/// or the first thing that is not, by what it is and where (a point of the face or the edge).
+pub fn reads(tool: &Brep,path: &Trajectory) -> Result<crate::trajectory::Screw,Unbuilt> { read(tool,path).map(|r| r.screw) }
+
+/// What `reads` reads of a tool it takes: the constant twist, each face's plane (a point of it and
+/// its outward unit normal), and each edge's two ends and two faces.
+struct Read { screw: crate::trajectory::Screw,faces: Vec<(V,V)>,edges: Vec<(V,V,[usize;2])> }
+
+/// `reads`, keeping what it read.
+fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
+    let Some(screw) = path.screw().filter(|s| s.ratio != 0. || s.advance != 0.) else { return Err(Unbuilt::Motion) };
+    // a way leaning to a screw's axis: neither along it nor square to it
+    let leans = |d: V| !screw.is_turn() && !screw.is_slide() && norm(cross(d,screw.axis)) > 1e-9 && dot(d,screw.axis).abs() > 1e-9;
+    let mut faces = Vec::with_capacity(tool.faces.len());
+    for f in &tool.faces {
+        let at = f.loops.iter().flatten().next().map_or([0.;3],|c| tool.vertices[tool.ends(c)[0] as usize].p);
+        let Surface::Plane(frame) = &f.surface else { return Err(Unbuilt::Curved {at}) };
+        let n = unit(if f.reversed { scale(frame.z,-1.) } else { frame.z });
+        if leans(n) { return Err(Unbuilt::Leaning {at}) }
+        faces.push((frame.o,n));
+    }
+    let uses = tool.uses();
+    let mut edges = Vec::with_capacity(tool.edges.len());
+    for (e,edge) in tool.edges.iter().enumerate() {
+        let (p,q) = (edge.point(edge.t[0],&tool.vertices),edge.point(edge.t[1],&tool.vertices));
+        let mid = scale(add(p,q),0.5);
+        if !matches!(edge.curve,EdgeCurve::Curve(Curve::Line {..})) { return Err(Unbuilt::Curved {at:mid}) }
+        let [(f1,..),(f2,..)] = uses[e][..] else { return Err(Unbuilt::Failed(format!("edge {e} bounds {} faces",uses[e].len()))) };
+        if leans(unit(sub(q,p))) { return Err(Unbuilt::Leaning {at:mid}) }
+        edges.push((p,q,[f1,f2]));
+    }
+    Ok(Read {screw,faces,edges})
+}
+
 /// `closed` over a box holding the sweep, or `cut_from` over `blank`.
 fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
-    let Some(screw) = path.screw().filter(|s| s.ratio != 0. || s.advance != 0.) else { return Err(Unbuilt::Motion) };
+    let Read {screw,faces,edges} = read(tool,path)?;
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let size = { let (lo,hi) = tool.bounds(); norm(sub(hi,lo)) };
     let eps = 1e-9*(1.+size);
-    // each face's plane and outward normal, each edge's two ends and two faces
-    let mut faces = Vec::with_capacity(tool.faces.len());
-    for f in &tool.faces {
-        let Surface::Plane(frame) = &f.surface else { return Err(Unbuilt::Curved) };
-        faces.push((frame.o,unit(if f.reversed { scale(frame.z,-1.) } else { frame.z })));
-    }
-    let mut faces_of: Vec<Vec<usize>> = vec![Vec::new();tool.edges.len()];
-    for (k,f) in tool.faces.iter().enumerate() {
-        for c in f.loops.iter().flatten() { faces_of[c.edge as usize].push(k) }
-    }
     // each face's corners in walk order, what its own sites are read over
-    let corners_of: Vec<Vec<V>> = tool.faces.iter().map(|f| f.loops.iter().flatten().map(|c| {
-        let e = &tool.edges[c.edge as usize];
-        let v = if c.reversed { e.v[1] } else { e.v[0] };
-        tool.vertices[v as usize].p
-    }).collect()).collect();
-    let mut edges = Vec::with_capacity(tool.edges.len());
-    for (e,edge) in tool.edges.iter().enumerate() {
-        if !matches!(edge.curve,EdgeCurve::Curve(Curve::Line {..})) { return Err(Unbuilt::Curved) }
-        let [f1,f2] = faces_of[e][..] else { return Err(Unbuilt::Failed(format!("edge {e} bounds {} faces",faces_of[e].len()))) };
-        edges.push((edge.point(edge.t[0],&tool.vertices),edge.point(edge.t[1],&tool.vertices),[f1,f2]));
-    }
+    let corners_of: Vec<Vec<V>> = tool.faces.iter().map(|f| f.loops.iter().flatten()
+        .map(|c| tool.vertices[tool.ends(c)[0] as usize].p).collect()).collect();
     // each candidate with the sites it is read at for whether it carries any of the boundary: the
     // points of its source carried over the roll, each with the candidate's normal there
     let mut cutters: Vec<(Cutter,Vec<(V,V)>)> = Vec::new();
@@ -265,8 +283,8 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 continue
             }
             // under a screw a face along the axis touches along its line nearest the axis, as under a
-            // turn; a face leaning to it, along a line screwing into a sheet not yet held
-            if !screw.is_turn() && dot(n,axis).abs() > 1e-9 { return Err(Unbuilt::Leaning) }
+            // turn (`reads` refuses a face leaning to it, along a line screwing into a sheet not yet
+            // held)
             // the face's contact line: its plane's points whose normal passes through the axis, where
             // its plane meets the plane through the axis along `n × axis`; it meets the axis, or runs
             // along it
@@ -281,9 +299,8 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         for &(p,q,_) in &edges {
             let e = unit(sub(q,p));
             if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 {
-                // under a screw an edge square to the axis sweeps a helicoidal sheet; one leaning to
-                // it, a screw surface not yet held
-                if dot(e,axis).abs() > 1e-9 { return Err(Unbuilt::Leaning) }
+                // under a screw an edge square to the axis sweeps a helicoidal sheet (`reads` refuses
+                // one leaning to it, a screw surface not yet held)
                 let cutter = Cutter::Screwed {p,e};
                 add_cutter(cutter,line_sites(p,q,cutter));
                 continue

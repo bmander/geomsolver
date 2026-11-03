@@ -125,7 +125,12 @@ fn a_bar_under_a_screw_closes_into_its_helical_sweep() {
 fn what_the_closed_build_cannot_yet_build_it_names() {
     use gcs_core::brep::swept::closed::Unbuilt;
     let screw = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:2.});
-    assert_eq!(closed(&leaning(0.35,3.),&screw,[0.,1.],0.01,1e-7).unwrap_err(),Unbuilt::Leaning);
+    let tool = leaning(0.35,3.);
+    let Err(Unbuilt::Leaning {at}) = closed(&tool,&screw,[0.,1.],0.01,1e-7) else { panic!("refused as leaning") };
+    // its witness on the tool
+    let solid = Solid::new(&tool,0.002,1.).unwrap();
+    assert!(solid.signed_distance(at).abs() <= 1e-9,"{at:?} on the tool");
+    assert!(matches!(gcs_core::brep::swept::closed::reads(&tool,&screw),Err(Unbuilt::Leaning {..})),"read so before any build");
 }
 
 /// A block leaning to the axis: `block` turned `lean` about the world's `x` and moved out `off`.
@@ -181,9 +186,16 @@ fn a_block_straddling_the_axis_tipped_two_ways_turned_whole_is_its_solid_of_revo
 fn turned_whole_is_its_solid_of_revolution(tool: &Brep) {
     let path = turn([0.;3],[0.,0.,1.],std::f64::consts::TAU);
     let built = closed(tool,&path,[0.,1.],0.002,1e-6).unwrap();
-    let expected = between_vertices(&[tool],4000,&|z| spans(tool,z).map_or(0.,|(near,far)| std::f64::consts::PI*(far*far-near*near)));
+    let expected = revolved_volume(tool);
     assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
     agrees(&built,tool,&path);
+}
+
+/// The volume of a convex `tool`'s solid of revolution about the world's `z` axis, apart from any
+/// build: `∫ π (ρ_max² − ρ_min²) dz` over its slices' radial spans (`spans`), by Simpson's rule
+/// between the heights its vertices stand at.
+pub(crate) fn revolved_volume(tool: &Brep) -> f64 {
+    between_vertices(&[tool],4000,&|z| spans(tool,z).map_or(0.,|(near,far)| std::f64::consts::PI*(far*far-near*near)))
 }
 
 /// `∫ area(z) dz` over the heights the `parts`' vertices stand at, by Simpson's rule on `n` steps

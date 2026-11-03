@@ -676,12 +676,11 @@ impl Build {
             State::Admit => State::Prepare(admission::admit_body(sk,body,&DISPLAY_ADMISSION)?),
             State::Prepare(admitted) => {
                 let prepared = super::sweep::prepare(sk,body,recipe,&admitted,say)?;
-                // a planar sweep's body is its blank within its envelope: no sheet, no sector
-                if super::sweep::planar::all(&prepared) {
-                    State::Finish(super::sweep::Cut::Whole(super::sweep::planar::cut(sk,body,recipe,&prepared,None,say)?))
-                } else if super::sweep::subtraction::all(&prepared) {
-                    State::Finish(super::sweep::Cut::Whole(super::sweep::subtraction::cut(sk,body,recipe,&prepared,None,say)?))
-                } else { State::Sheets(prepared,Vec::new()) }
+                // a body whose sweeps cut the blank themselves is built whole: no sheet, no sector
+                match super::sweep::whole(sk,body,recipe,&prepared,None,say) {
+                    Some(solid) => State::Finish(super::sweep::Cut::Whole(solid?)),
+                    None => State::Sheets(prepared,Vec::new()),
+                }
             }
             State::Sheets(prepared,mut sheets) => {
                 sheets.push(super::sweep::sheet(&prepared,sheets.len(),None,say)?);

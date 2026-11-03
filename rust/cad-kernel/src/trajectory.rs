@@ -207,6 +207,11 @@ impl Screw {
     /// Whether it advances without turning: a slide, whose path has no period.
     #[inline]
     pub fn is_slide(&self) -> bool { self.ratio == 0. }
+    /// The same screw with its lengths scaled by `k` (a change of units): its origin and advance;
+    /// its axis and ratio are no lengths.
+    pub fn scaled(&self,k: f64) -> Screw { Screw {origin:scale(self.origin,k),advance:self.advance*k,..*self} }
+    /// The same screw carried by the rigid motion `m`: its axis moved, the motion along it as it was.
+    pub fn moved(&self,m: &crate::geom::Rigid) -> Screw { Screw {origin:m.point(self.origin),axis:m.vector(self.axis),..*self} }
     /// Which of the three it is, as a refusal or a report says it.
     pub fn kind(&self) -> &'static str { if self.is_turn() { "a turn" } else if self.is_slide() { "a slide" } else { "a screw" } }
     /// How far round its axis `p` stands, from the axis's own frame's `x` (`Frame::about`): a

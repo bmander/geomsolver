@@ -23,7 +23,7 @@ type V = [f64;3];
 /// The rows of the class, in the order they are asked.
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
 pub enum Condition { Tool, Corner, Motion, Stationary, Reach, Clearance, Single, Fold, Crossing, Sections, Regular, Once, Edgewise, Lead,
-    Plane, Prisms, Period, Envelope, Wall, Members, Slabs, Closes, Kept, Curvature, Return }
+    Plane, Prisms, Period, Envelope, Wall, Members, Slabs, Closes, Kept, Curvature, Return, Faces, Constant, Settled }
 
 impl Condition {
     pub fn code(self) -> &'static str {
@@ -33,7 +33,7 @@ impl Condition {
             Condition::Edgewise => "S3", Condition::Lead => "S4", Condition::Plane => "P1", Condition::Prisms => "P2",
             Condition::Period => "P3", Condition::Envelope => "P4", Condition::Wall => "P5", Condition::Members => "Q1",
             Condition::Slabs => "Q2", Condition::Closes => "Q3", Condition::Kept => "Q4", Condition::Curvature => "B1",
-            Condition::Return => "B2" }
+            Condition::Return => "B2", Condition::Faces => "C1", Condition::Constant => "C2", Condition::Settled => "C3" }
     }
     /// What the row asks, in the words the scope document uses.
     pub fn rule(self) -> &'static str {
@@ -69,6 +69,11 @@ impl Condition {
                 fold and no crossing",
             Condition::Curvature => "the ball's centre's path never stops and turns nowhere tighter than its radius",
             Condition::Return => "the ball's centre's path comes back within its diameter of itself nowhere",
+            Condition::Faces => "every face of the tool is a plane and every edge a line",
+            Condition::Constant => "the motion is one slide, turn or screw, and under a screw every face and edge of the tool runs \
+                along its axis or square to it",
+            Condition::Settled => "every cell the sweep's candidate faces split the blank into is read in or out of the sweep at a \
+                point clear of its boundary",
         }
     }
 }
@@ -207,10 +212,11 @@ pub struct SweepEvidence {
 /// The class a sweep is admitted to: a relative rotation's (the generating class, rows M2–E4), a
 /// screw's (constant twist, rows S1–S4), with the stretch of its characteristic that reaches the
 /// blank at the first placement, or a planar motion's of a pocketed prism (rows P1–P5), with the
-/// pocket's inner envelope.
+/// pocket's inner envelope; or, refused by those, a polyhedral tool's under one constant twist, built
+/// closed by the kernel's one arrangement (rows C1–C3, `closed_class`).
 #[derive(Clone,Debug)]
 pub enum Class { Generating,ConstantTwist(Box<super::constant_twist::Characteristic>),Planar(Box<super::planar_class::Found>),
-    Subtraction(Box<super::planar_subtraction::Found>),Capped(Box<Capped>) }
+    Subtraction(Box<super::planar_subtraction::Found>),Capped(Box<Capped>),Closed(Box<super::closed_class::Closed>) }
 
 /// A generating sweep of a prism whose cap reaches the blank, sectioned across (#684 F, row T3), is
 /// the kernel's finding (`brep::swept::admission::Capped`).
@@ -467,11 +473,20 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     // at once: what those rows guard against — a union within an intersection, a draft running both
     // ways from its plane, a concave corner, a roll never clear, a second contact — its swept region
     // does not need. One under a turn or a slide keeping its plane is asked them outright (#684 M).
+    // a sweep every class it is asked refuses, of a polyhedral tool under one slide, turn or screw,
+    // is built closed by the kernel's one arrangement (#721, rows C1–C3): its refusal stands where
+    // the closed class's rows refuse it too
+    let closed = |swept: usize,refused: Error| -> Result<SweepEvidence,Error> {
+        match refused {
+            Error::Refused(_) => super::closed_class::admit(sk,swept,&by_sweep[&swept]).ok_or(refused),
+            other => Err(other),
+        }
+    };
     let subtract = |swept: usize| -> Result<SweepEvidence,Error> {
         let inside = |p: V| field.value(p) < -options.margin;
         super::planar_subtraction::admit(sk,swept,&by_sweep[&swept],&inside,blank_box()).map_err(|(condition,message,witness)|
             Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message:said(swept,message),witness,
-                asked:Asked::Subtraction}))
+                asked:Asked::Subtraction})).or_else(|e| closed(swept,e))
     };
     for &swept in order.iter().filter(|s| asked[s] == Asked::Subtraction) { planar.push(subtract(swept)?) }
     order.retain(|s| !matches!(asked[s],Asked::Planar | Asked::Subtraction));
@@ -578,7 +593,8 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         })();
         admission.sweeps.push(match generating {
             Err(Error::Refused(_)) if super::planar_subtraction::asks(sk,swept) => subtract(swept)?,
-            other => other?,
+            Err(e) => closed(swept,e)?,
+            Ok(found) => found,
         });
     }
     Ok(admission)

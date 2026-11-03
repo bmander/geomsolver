@@ -1016,6 +1016,49 @@ arc (a torus), and riding a frame along a spline in a block's top face
 the core and held to 1e-9, the body's STL agreeing with the field; and B1 and B2, each refused by
 name with a point of the path.
 
+### A polyhedral tool on one arrangement: the closed class (issue #721)
+
+A sweep every class above refuses, of a tool whose faces are all planes and whose edges are all
+lines, under one slide, turn or screw, is built by the kernel's one pipeline
+(`docs/swept-solid-design.md`; `brep::swept::closed::cut_from`, on #735's arrangement): the blank
+split at once by every face the sweep's boundary can lie on — each face of the tool at the end
+poses, each edge swept, each face's contact line swept — and each cell kept where the kernel's
+membership reads it no member of the sweep. Nothing about the contacts is sampled or walked, so
+the classes' refusals — a tool that stops inside the blank (X1), a silhouette turning at a
+vertex, a ruling in contact all along it, a self-meeting sweep (X5), a concave edge's sheets
+crossing (X3) — are no question here: the arrangement and the classification resolve them. It is
+asked only where the others refuse (`solid::closed_class`, after the class the sweep was first
+asked), and its rows read the tool's B-rep and the motion's structure, not its contacts
+(`brep::swept::closed::reads`):
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| C1 | Every face of the tool is a plane and every edge a line. | The candidates are the planes, cylinders, cones and hyperboloids such a tool's faces and edges sweep, and the helicoidal sheets of its level edges under a screw; a curved face sweeps a curved envelope, the design's later step. | A point of the curved face or edge. |
+| C2 | The motion is one slide, turn or screw, and under a screw every face and edge of the tool runs along its axis or square to it. | A leaning edge or face under a screw sweeps a screw surface no closed solid or sheet holds yet; any other motion is K2's. | A point of the leaning edge or face. |
+| C3 | Every cell the candidates split the blank into is read in or out of the sweep at a point clear of its boundary. | Membership is read on the tool's mesh: a point within its sag of the swept boundary is unsettled, not guessed. | The cell's deepest point. |
+
+C1 and C2 are asked at admission; C3 while the body is built (`brep::sweep::closed`), the sweep
+cut at each placement on one arrangement. Where C1 or C2 refuses, the refusal is the first class's,
+unchanged. A body whose sweeps are of the closed class and another together is refused at
+admission's stage by name. The native path refuses the class by name: only the core's kernel
+builds it. `tests/closed_class.rs` and `tests/solid_sweeps_examples.rs` are the gate, each held to
+a volume made apart from the build and its STL to the field: a bar pushed aslant wholly through a
+plate (its shadow along the push) and partway into it (`plunge.sv`, each section's swept hexagon
+clipped to the plate), a bar turned partway into a ring sector (`stopped_turn.sv`, each circle's
+covered angle) and wholly through it leaning to the axis (its solid of revolution's sixth, slow
+tier), and `square_thread.sv`'s bar screwed only halfway up its rod (`stopped_screw.sv`, each
+circle's angle over the rolls reaching its height, slow tier); each a sweep another class refuses.
+The constant-twist class's prism refusals it covers are its admitted cases now
+(`tests/prism_twists.rs`): a side along a slide (the cube's top 0.2 taken, in closed form), a cap
+in the blank under a slide (each section's reach along the bar, integrated exactly), a corner
+meeting its crease turned (the bar's half-spaces' slices) and a corner reaching a cap under a screw
+(slow tier), each to 1e-9, as the closed characteristics' prism slid aslant wholly through and
+prism turned wholly within are (`tests/closed_class.rs`). Two it admits are refused while built,
+at C3, where a face at an end pose touches its own contact cone at a point the kernel's trace
+cannot start from (F4, #699 E): a corner holding the turn's axis, and a cap of a tool that is no
+lone prism (`prism_twists::a_corner_holding_the_turns_axis_is_refused`,
+`a_cap_of_a_tool_no_lone_prism_turned_is_refused`), kept as negative controls.
+
 ### Undercut is excluded deliberately
 
 A pinion with few teeth often has some undercut. There, the envelope of the blade tip's
@@ -1036,7 +1079,8 @@ best-effort basis. The refusal names the condition row and the witness. The tumb
 cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its caps clear, a
 prism's standing alone or placed whose cap's sections pass T3, a prism's under a screw, a turn or
 a slide with its caps clear (#684 M) or crossed over their rims (AE), walked along a lined side's ruling too (AF) or across a side a turn keeps in its own plane (O), or creased where a corner's or a rim's fan stands at one point (V), a pocketed prism's under a planar motion and a prism tool's
-under a motion that keeps its plane are outside the classes; a slid cylinder is in the constant-twist class, its flat caps, which the
+under a motion that keeps its plane are outside the classes, unless the closed class builds
+them (a polyhedral tool under one slide, turn or screw, issue #721); a slid cylinder is in the constant-twist class, its flat caps, which the
 slide keeps in their own planes, walked across their diameters where they reach the blank (#684 O). Their fixtures stay
 in the tree as **negative controls**: each must
 produce its refusal.

@@ -399,6 +399,10 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     admitted: Admitted,tolerance: Option<Tolerance>,asked: Construction,defer: bool) -> Result<Built,ExportRefusal> {
     let presented = |admission: &Admission| if admission.body() != body {
         Err(ExportRefusal::at(Stage::Admission,format!("`{}`: the admission presented is another body's",sk.solids[body].name)))
+    } else if let Some(s) = admission.sweeps().iter().find(|s| matches!(s.class,gcs_core::solid::admission::Class::Closed(_))) {
+        // a sweep of the closed class is cut from its blank on the core's kernel's one arrangement (#721, #735)
+        Err(ExportRefusal::at(Stage::Admission,format!("`{}`: `{}` is in the closed class, cut from its blank on one arrangement \
+            that only the core's kernel builds: export it with `--kernel rust`",sk.solids[body].name,s.name)))
     } else if let Some(s) = admission.sweeps().iter().find(|s| matches!(s.class,gcs_core::solid::admission::Class::Capped(_))) {
         // a prism's cap in the blank is sectioned across by the core's kernel alone (#684 F)
         Err(ExportRefusal::at(Stage::Admission,format!("`{}`: the cap of `{}`'s prism reaches the blank, which only the core's \

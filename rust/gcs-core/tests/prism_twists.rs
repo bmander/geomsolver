@@ -11,12 +11,16 @@
 //! agrees with the field; the square thread (`rust/examples/solid_sweeps/square_thread.sv`) is
 //! `solid_sweeps_examples::the_square_tool_leaves_a_groove_widening_outward`, and the flat end,
 //! the creased bar and the facing side turned (`flat_end.sv`, `creased.sv`, `facing.sv`) are held
-//! there too.
-use gcs_core::solid::admission::{self,Class,Condition,Options};
+//! there too. What the class refuses of a prism whose faces are planes and edges lines — a side
+//! along a slide, a cap in the blank under a slide, a corner meeting its crease, a corner reaching
+//! a cap under a screw — the closed class builds on one arrangement (#721), each held to its own
+//! figure; and two it admits are still refused while built (C3), a face touching a contact cone at
+//! a point.
+use gcs_core::solid::admission::Class;
 use std::f64::consts::{PI,TAU};
 
 use crate::solid_sweeps_examples::class;
-use crate::turns_and_slides::{admit,exported,exported_at,near,refused};
+use crate::turns_and_slides::{exported,exported_at,near};
 use gcs_core::space::cross;
 
 /// A bar turned about z across `turn.sv`'s block, a ring sector (radii 8 and 12, heights ±1, 60°
@@ -198,52 +202,68 @@ fn a_side_square_to_the_turn_cuts_a_floor() {
 }
 
 /// Flat side down and slid level, the bar's underside runs along the slide: every point of it moves
-/// along it, the face kept in its own plane. Under a slide a prism is read by its silhouette, and
-/// the line across such a side runs between vertices of the prism, where a cap meets it, so the
-/// class reads a prism's flat side only under a turn (S1, #684 O).
+/// along it, the face kept in its own plane. Under a slide the constant-twist class reads a prism by
+/// its silhouette, and the line across such a side runs between vertices of the prism, where a cap
+/// meets it, so it reads a prism's flat side only under a turn (S1, #684 O); the closed class (#721)
+/// cuts it on one arrangement, the underside at both end poses among the candidates. The bar's
+/// underside stands 9.8 high and the slide carries it 18 across the cube, its length past the cube
+/// all the way: the cube loses its top 0.2, `1000 − 20`.
 #[test]
-fn a_side_along_the_slide_is_refused() {
-    let r = refused(admit(&slid_bar(false,0.)));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("`bar.under` moves along itself"),"{}",r.message);
-    assert!(r.message.contains("only under a turn"),"{}",r.message);
+fn a_side_along_the_slide_is_the_closed_classs() {
+    let e = fixtures::read(&slid_bar(false,0.));
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    near(exported(&e,"part"),980.,1e-9);
 }
 
 /// The leaning bar of square section drafted both ways from its parting plane (#684 P, AG): its
 /// characteristic is its inner corner's line, which reaches the plane partway round the corner's
 /// fan, at the vertex where the corner meets the crease. Every normal between the four faces
 /// meeting there is the tool's, and the sweep has a sharp edge along that point's path, which the
-/// class does not build (S1). (Its flat-sided neighbour crosses the crease mid-side, below.)
+/// constant-twist class does not build (S1); the closed class does (#721, G1's vertex read by the
+/// arrangement): its eight drafted sides are planes, its edges' hyperboloids and its sides' contact
+/// cones among the candidates. The block loses what the bar's slices span, read from its
+/// half-spaces (`Bar::removed`). (Its flat-sided neighbour crosses the crease mid-side, below.)
 #[test]
-fn a_corner_meeting_its_crease_turned_is_refused() {
-    let text = turned_bar(20.,diamond(10.),4.,2.).replace("from: 0mm, to: 2 * 4mm","from: -4mm, to: 4mm")
-        .replace("fix(origin == (0, -4 * sin(20deg), -4 * cos(20deg))) holder","fix(origin == (0, 0, 0)) holder");
-    let r = refused(admit(&text));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("the corner of `bar.lower` and `bar.under` runs into a vertex of the prism"),"{}",r.message);
+fn a_corner_meeting_its_crease_turned_is_the_closed_classs() {
+    let (s,c) = 20f64.to_radians().sin_cos();
+    let bar = Bar {origin:[0.;3],across:[1.,0.,0.],along:[0.,c,-s],corners:diamond(10.).to_vec(),names:vec!["lower","upper","outer","under"],
+        from:-4.,to:4.,draft:2.,lead:0.};
+    let e = fixtures::read(&bar.text());
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_turn(),"a turn");
+    near(exported(&e,"part"),PI/3.*80.-bar.removed(),1e-9);
 }
 
 /// The square thread's bar made too short to stand past the rod either side: its caps pass through
 /// the rod, and the corners where its tip meets its flanks, whose roots run out along their rulings
 /// as their fans turn toward the flanks', reach a cap at a vertex of the prism, where the sweep has
-/// a sharp edge along that point's path (S1). A cap is crossed only over a rim, mid-side (#684 AE).
+/// a sharp edge along that point's path, which the constant-twist class refuses (S1: a cap is
+/// crossed only over a rim, mid-side, #684 AE). The closed class cuts it on one arrangement (#721),
+/// every face and edge along the axis or square to it. The rod loses each circle's angle the bar
+/// covers over the rolls reaching its height, the bar's half-angle at radius `ρ` its tip's
+/// `acos(4 / ρ)` or its reach's `asin(2.5 / ρ)`, the less (`closed_class::screwed_partway_away`).
 #[test]
-fn a_corner_reaching_a_cap_under_a_screw_is_refused() {
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 25 s: a short bar's screwed sheets cut from a rod on one arrangement")]
+fn a_corner_reaching_a_cap_under_a_screw_is_the_closed_classs() {
     let text = crate::solid_sweeps_examples::text("square_thread.sv").replace("reach := 8mm","reach := 2.5mm");
     let e = fixtures::read(&text);
-    let r = refused(admission::admit_body(&e.sketch,fixtures::solid(&e,"rod"),&Options::default()));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("the corner of `bar.upper` and `bar.nose` runs into a vertex of the prism"),"{}",r.message);
+    let Class::Closed(found) = class(&e,"rod") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a screw");
+    near(exported(&e,"rod"),PI*25.*20.-crate::closed_class::screwed_partway_away(21.,2.5),1e-9);
 }
 
 /// The bar slid aslant made short enough for its caps to stand in the cube: under a slide a cap is
 /// in contact all over or nowhere, so the silhouette runs over a cap only by turning at a vertex of
-/// the prism, a sharp edge of the sweep (S1).
+/// the prism, a sharp edge of the sweep, which the constant-twist class refuses (S1). The closed
+/// class cuts it on one arrangement (#721), its caps where the slide enters and leaves them among
+/// the candidates, held to `capped_slide_removed`.
 #[test]
-fn a_cap_in_the_blank_under_a_slide_is_refused() {
-    let r = refused(admit(&slid_bar(true,-0.2).replace("from: -8mm, to: 18mm","from: 2mm, to: 8mm")));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("runs over a cap of the prism, which the class does not walk under a slide"),"{}",r.message);
+fn a_cap_in_the_blank_under_a_slide_is_the_closed_classs() {
+    let e = fixtures::read(&slid_bar(true,-0.2).replace("from: -8mm, to: 18mm","from: 2mm, to: 8mm"));
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    near(exported(&e,"part"),1000.-capped_slide_removed(-0.2),1e-9);
 }
 
 // -- caps and creases (#684 AE, AG) -------------------------------------------------------------
@@ -487,7 +507,10 @@ pub(crate) fn parted(lean: f64,draft: f64) -> Bar {
 }
 
 /// The flat end's bar shared with a block (a `common`) is no prism standing alone: its cap in the
-/// block is refused at T1, under a turn as under a relative rotation (#684 F).
+/// block is refused at T1, under a turn as under a relative rotation (#684 F). The closed class
+/// reads it by its B-rep, its faces planes and its edges lines, and admits it (#721); its build
+/// still refuses (C3), where a face at an end pose and its own contact cone touch at a point the
+/// kernel's trace cannot start from (F4, #699 E).
 #[test]
 fn a_cap_of_a_tool_no_lone_prism_turned_is_refused() {
     let text = flat_end(20.,5.).text().replace("construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) bar })","in std.top {\n  private k0 := point\n  \
@@ -496,9 +519,17 @@ fn a_cap_of_a_tool_no_lone_prism_turned_is_refused() {
         construction tool := solid(bar)\nkeep common tool\n\
         construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) tool })");
     assert!(text.contains("keep common tool"));
-    let r = refused(admit(&text));
-    assert_eq!(r.condition,Condition::Tool);
-    assert!(r.message.contains("standing alone"),"{}",r.message);
+    refused_while_built(&text,"part");
+}
+
+/// Sweep of `text`'s body `body` admitted to the closed class and refused while it is built (C3),
+/// where the kernel cannot yet meet a plane touching a cone at a point (F4, #699 E).
+fn refused_while_built(text: &str,body: &str) {
+    let e = fixtures::read(text);
+    assert!(matches!(class(&e,body),Class::Closed(_)),"the closed class");
+    let say = gcs_core::brep::sweep::Say {stage:&|_: &str| {},mark:&|_| {}};
+    let r = gcs_core::brep::export::exact(&e.sketch,fixtures::solid(&e,body),None,None,&say).unwrap_err();
+    assert!(r.message.contains("(C3: ") && r.message.contains("nearly touching"),"{}",r.message);
 }
 
 /// The flat end leaning 45° and screwed 8 mm a turn across the block (#684 AE): the screw's advance
@@ -607,13 +638,51 @@ fn a_bar_lying_across_the_turn_creases_at_its_corner() {
 /// in the block: its fan holds a normal along the turn's axis, so its ruling is in contact all
 /// along it, the top of the cut. But the rulings of its fan either side of that normal have their
 /// roots, and the walk crosses the top ruling where it stands nearest the axis: the characteristic
-/// branches there, the cut's flat top running off the walk, which the class does not sweep (S1).
+/// branches there, the cut's flat top running off the walk, which the constant-twist class does not
+/// sweep (S1). The closed class admits it (#721); its build still refuses (C3), a face at an end
+/// pose touching a contact cone at a point (`refused_while_built`).
 #[test]
 fn a_corner_holding_the_turns_axis_is_refused() {
     let bar = Bar {origin:[0.;3],across:[1.,0.,0.],along:[0.,0.,-1.],corners:vec![[10.,1.],[11.5,-0.5],[13.,1.],[11.5,2.5]],
         names:vec!["inner","outer","under","back"],from:-4.,to:4.,draft:0.,lead:0.};
-    let r = refused(admit(&bar.text()));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("a ruling of the corner of `bar.inner` and `bar.outer` is in contact all along it, where the \
-        characteristic branches"),"{}",r.message);
+    refused_while_built(&bar.text(),"part");
+}
+
+/// What `slid_bar(true, drop)` with its length cut to `x ∈ [2, 8]` takes from the cube, apart from
+/// the build: the slide carries the bar `D = 18 (0.3, 1, drop)`; a cube point at `(y, z)` is the
+/// bar's section's (the square stood on a corner, `|y + 4| + |z − 11.8| ≤ 2`) at the rolls `t` of
+/// `[0, 1]` where `(y, z) − t (D_y, D_z)` lies in it — four linear bounds on `t`, an interval
+/// `[t₀, t₁]` — so the bar covers x from `2 + t₀ D_x` to `8 + t₁ D_x` there, clipped to the cube.
+/// Along z at each y every bound is linear, so the length is linear between the heights where two
+/// of them meet (or one meets 0, 1, or the cube's end): integrated exactly there by two-point Gauss,
+/// and across y by Simpson's rule.
+fn capped_slide_removed(drop: f64) -> f64 {
+    let d = [5.4,18.,18.*drop];
+    // the bounds `a t ≤ p + q z` at `y`: the section's four sides, `sy (y − t dy + 4) + sz (z − t dz
+    // − 11.8) ≤ 2`, carried back along the slide
+    let bounds = |y: f64| [(1.,1.),(1.,-1.),(-1.,1.),(-1.,-1.)]
+        .map(|(sy,sz): (f64,f64)| (-sy*d[1]-sz*d[2],2.-sy*(y+4.)+sz*11.8,-sz));
+    let span = |y: f64,z: f64| -> f64 {
+        let (mut lo,mut hi) = (0f64,1f64);
+        for (a,p,q) in bounds(y) {
+            let b = p+q*z;
+            if a > 0. { hi = hi.min(b/a) } else if a < 0. { lo = lo.max(b/a) } else if b < 0. { return 0. }
+        }
+        if hi < lo { return 0. }
+        ((8.+hi*d[0]).min(10.)-(2.+lo*d[0]).max(0.)).max(0.)
+    };
+    let (z0,z1) = ((9.8+d[2]).max(0.),10.);
+    let across = |y: f64| -> f64 {
+        // each bound on t as a line in z, and the constants it is clipped at
+        let mut lines: Vec<(f64,f64)> = bounds(y).iter().map(|&(a,p,q)| (p/a,q/a)).collect();
+        lines.extend([(0.,0.),(1.,0.),(2./d[0],0.)]);
+        let mut cuts = vec![z0,z1];
+        for (i,&(p,q)) in lines.iter().enumerate() { for &(r,s) in &lines[i+1..] {
+            if (q-s).abs() > 1e-15 { let z = (r-p)/(q-s); if z > z0 && z < z1 { cuts.push(z) } }
+        } }
+        cuts.sort_by(f64::total_cmp);
+        let g = 0.5/3f64.sqrt();
+        cuts.windows(2).map(|w| { let (m,h) = (0.5*(w[0]+w[1]),w[1]-w[0]); 0.5*h*(span(y,m-g*h)+span(y,m+g*h)) }).sum()
+    };
+    crate::brep::simpson(0.,10.,4000,across)
 }
