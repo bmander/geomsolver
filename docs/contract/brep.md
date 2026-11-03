@@ -318,6 +318,14 @@ is the ball there carried along the tangent and touches the torus round the meri
 point, where it was traced and refused as nearly touching (a bull-nose mill's round at an end pose
 and the cylinder its meridian sweeps under a slide,
 `flat_faces::a_bull_nose_mill_slid_to_a_stop_inside_the_block`).
+**A level circle screwed meets what the screw's axis runs along in closed form**
+(`ssi::screwed_circle_meeting`): at each `v` the circle is level, so a plane square to the axis
+meets the sheet in the circle the screw lifts there; a cylinder about the axis in the helices of
+its points at that radius (`Iso`, one where it touches); a cylinder about another line along the
+axis (a round tool's side at an end pose) where the two circles of that level meet,
+`A(v) cos θ + B(v) sin θ = C(v)`, its two branches joined where they turn and ended at the circle
+where the two coincide — its points written in closed form and handed over as a traced meeting, so
+no near touch is traced (`swept_closed::a_screwed_circle_meets_planes_and_cylinders_in_closed_form`).
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it

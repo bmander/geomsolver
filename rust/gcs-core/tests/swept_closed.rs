@@ -585,3 +585,47 @@ fn a_toolpath_of_a_slide_and_a_turn_is_its_pieces_sweeps_united() {
     }
     assert!(held > 200,"{held} points held");
 }
+
+/// **A level circle screwed meets what the screw's axis runs along in closed form** (#721 F2c5, a
+/// round tool's rim under a screw; `ssi`'s screwed circle): the sheet a disc's rim screws into (a
+/// drum's top, 3 from the axis, screwed 1.5 rad and a step of 2 a turn) meets a plane square to the
+/// axis in the circle at that height, a cylinder about the axis in the helices of its points at that
+/// radius (touching it along one where the circle reaches no farther), and the drum's own side at
+/// either end pose in the circle there and the curve its two branches `θ±(v)` make leaving it —
+/// every point of each, read along it, on both surfaces to rounding.
+#[test]
+fn a_screwed_circle_meets_planes_and_cylinders_in_closed_form() {
+    use gcs_core::brep::build::{disc,prism,screwed};
+    use gcs_core::brep::geom::{Curve,Frame,Rigid,Surface};
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    let lift = 2./std::f64::consts::TAU;
+    let coin = screwed(&disc([3.,0.,1.],[0.,0.,1.],1.),[0.;3],[0.,0.,1.],1.5,lift).unwrap();
+    let sheet = coin.faces.iter().find(|f| f.surface.kind() == "blend").unwrap().surface.clone();
+    let side = |m: &Rigid| prism(&disc([3.,0.,0.],[0.,0.,1.],1.),0.,1.).unwrap().moved(m).faces.iter()
+        .find(|f| f.surface.kind() == "cylinder").unwrap().surface.clone();
+    let end = Rigid::turn([0.;3],[0.,0.,1.],1.5).then(&Rigid {t:[0.,0.,lift],..Rigid::identity()});
+    let cases: Vec<(&str,Surface,&[&str])> = vec![
+        ("a level plane",Surface::Plane(Frame::about([0.,0.,1.2],[0.,0.,1.])),&["circle"]),
+        ("the cylinder of the rim's farthest radius",Surface::Cylinder(Frame::about([0.;3],[0.,0.,1.]),4.),&["iso"]),
+        ("a cylinder about the axis across the rim",Surface::Cylinder(Frame::about([0.;3],[0.,0.,1.]),3.2),&["iso","iso"]),
+        ("the drum's side where it starts",side(&Rigid::identity()),&["circle","traced"]),
+        ("the drum's side where it ends",side(&end),&["circle","traced"]),
+    ];
+    for (what,other,kinds) in cases {
+        let Ssi::Curves(curves) = intersect(&sheet,&other,1e-6) else { panic!("{what}: curves") };
+        let mut found: Vec<&str> = curves.iter().map(|c| c.kind()).collect();
+        found.sort();
+        assert_eq!(found,kinds,"{what}");
+        for c in &curves {
+            let points: Vec<[f64;3]> = match c {
+                Curve::Traced(t) => t.pts.clone(),
+                Curve::Iso(..) => (0..=32).map(|j| c.point(j as f64/32.)).collect(),
+                _ => (0..64).map(|j| c.point(j as f64*std::f64::consts::TAU/64.)).collect(),
+            };
+            for p in points {
+                let off = sheet.implicit(p).abs().max(other.implicit(p).abs());
+                assert!(off <= 1e-9,"{what}: a point of its {} {off:e} off",c.kind());
+            }
+        }
+    }
+}

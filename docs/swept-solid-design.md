@@ -393,9 +393,16 @@ recorded above with what was tried:
   surface of revolution's meridian fitted), a fitted sheet lying in a candidate's plane, and K2's
   patches (each instant's contact swept, fitted) — is refused as nearly touching: each needs its
   closed form (as the parallel cones', the ball's in a torus, the meridian's cylinder were), or the
-  tracer holding a near-tangent meeting (F4, #699 E). A circle screwed meets a plane in a curve in
-  closed form, `A cos θ + B sin θ = C(v)` along its rulings, a new curve kind, as `SheetCut` is a
-  line's;
+  tracer holding a near-tangent meeting (F4, #699 E). *A circle screwed*: its sheet's meetings with
+  a level plane, a cylinder about the axis and a round tool's own side at an end pose are now closed
+  forms (`ssi::screwed_circle_meeting`, every point on both surfaces to rounding). With them a drum
+  screwed beside the axis (helical milling: its side's generators screwed into coaxial cylinders,
+  each rim's disc screwed into a solid) builds, but to 18.9 against its helical volume
+  `π + Θ (6 + k π)`, 13.1: one cell of the arrangement holds points on both sides of the sweep's
+  boundary (from before the start pose to past the end), every candidate the boundary is made of
+  present and every closed-form meeting on both surfaces — a separation the arrangement does not
+  make between the rims' screwed sheets and the faces round them, not yet found. That case stays
+  refused (C1);
 - **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
   has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
 

@@ -601,6 +601,8 @@ pub(crate) fn helix_between(on: &super::geom::Blend,by: &super::geom::Blend,tol:
 /// (`Curve::SheetCut`) and the rulings it holds. Anything else: `None`, traced.
 fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
     let (blend,other) = match (a,b) { (Surface::Blend(_,x),o) | (o,Surface::Blend(_,x)) => (x,o),_ => return None };
+    let sheet = if matches!(a,Surface::Blend(..)) { a } else { b };
+    if let Some(curves) = screwed_circle_meeting(sheet,blend,other,tol) { return Some(curves) }
     let line = blend.screwed_line()?;
     let (o,z,a0,run) = (line.centre,line.axis,line.p0,line.run);
     let perp = |x: V| sub(x,scale(z,dot(x,z)));
@@ -653,6 +655,155 @@ fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
             Some(out)
         }
         Surface::Blend(_,ob) => Some(helix_between(ob,blend,tol)?.map(|u| Curve::Iso(ob.clone(),u)).into_iter().collect()),
+        _ => None,
+    }
+}
+
+/// **Where the sheet a level circle screws into meets a surface the screw's axis runs along**, in
+/// closed form (a round tool's rim under a screw, #721 F2c5): the blend of a circle square to the
+/// screw's axis and itself carried by the screw, `S(u, v) = carry_v(c + r (cos θ x + sin θ y))`. At
+/// each `v` the circle is level, so it meets
+/// - a plane square to the axis only at the `v` that lifts it there, whole: that circle;
+/// - a cylinder about the screw's axis where its points stand at the cylinder's radius, the same at
+///   every `v` (the screw keeps the distance): `A cos θ + B sin θ = C`, helices (`Curve::Iso`), one
+///   where the circle touches it;
+/// - a cylinder about another line along the axis (the tool's own side at an end pose) where the two
+///   circles of that level meet, `A(v) cos θ + B(v) sin θ = C(v)`, `A, B = 2 r d·x_v, 2 r d·y_v`,
+///   `C = R² − |d|² − r²`, `d` the offset of their centres: two branches `θ±(v)` over the `v` where
+///   `|C| ≤ √(A² + B²)`, joining where they turn (the circles touching) and ending at the `v` where
+///   the circle is the cylinder's own section (the whole circle on both), at its points along the
+///   centre's way there. Its points are written in closed form and handed over as a traced meeting
+///   (`Traced`, its chords pulled onto both), so no near touch is traced.
+/// `None` for any other blend or surface: traced.
+fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blend>,other: &Surface,tol: f64) -> Option<Vec<Curve>> {
+    use super::geom::{Blend,Carry,Traced};
+    let Carry::Screw {center,axis,angle,advance} = blend.carry else { return None };
+    let k = unit(axis);
+    let Curve::Circle(f,r) = blend.a else { return None };
+    if norm(cross(f.z,k)) > 1e-12 || angle == 0. { return None }
+    let Blend {ta,tb,..} = **blend;
+    // its image read as the circle itself (`Blend::screwed_line`'s reading of a line)
+    let same = |q: V,p: V| norm(sub(q,p)) <= 1e-9*(1.+norm(p));
+    if !(0..3).all(|i| { let t = ta[0]+(ta[1]-ta[0])*i as f64/2.; same(blend.b.point(tb[0]+(tb[1]-tb[0])*i as f64/2.),blend.a.point(t)) }) { return None }
+    let r = r.abs();
+    let rise = advance*dot(axis,k);
+    let perp = |x: V| sub(x,scale(k,dot(x,k)));
+    let circle_at = |v: f64| (blend.carry.at(f.o,v),blend.carry.dir(f.x,v),blend.carry.dir(f.y,v));
+    let point = |th: f64,v: f64| { let (c,x,y) = circle_at(v); let (sn,cs) = th.dsin_cos(); add(c,add(scale(x,r*cs),scale(y,r*sn))) };
+    // the blend's `u` of the circle's angle `θ`
+    let span = ta[1]-ta[0];
+    let u_of = |th: f64| { let t = ta[0]+(th-ta[0]).rem_euclid(std::f64::consts::TAU); (t-ta[0])/span };
+    match *other {
+        Surface::Plane(p) if norm(cross(p.z,k)) <= 1e-12 => {
+            if rise == 0. { return Some(vec![]) }
+            let v = dot(sub(p.o,f.o),k)/rise;
+            let slack = tol/rise.abs();
+            if !(-slack..=1.+slack).contains(&v) { return Some(vec![]) }
+            let (c,x,_) = circle_at(v.clamp(0.,1.));
+            let c = add(c,scale(k,dot(sub(p.o,c),k)));
+            Some(vec![Curve::Circle(Frame::new(c,f.z,x),r)])
+        }
+        Surface::Cylinder(cy,big) if norm(cross(cy.z,k)) <= 1e-12 => {
+            let big = big.abs();
+            // the circle's own frame and its offset from the cylinder's axis at `v`, and the
+            // coefficients there
+            let coefficients = |v: f64| {
+                let (c,x,y) = circle_at(v);
+                let d = perp(sub(c,cy.o));
+                (2.*r*dot(d,x),2.*r*dot(d,y),big*big-dot(d,d)-r*r,d)
+            };
+            if norm(perp(sub(cy.o,center))) <= tol {
+                // coaxial: the same at every `v`, helices
+                let (a,b,c,_) = coefficients(0.);
+                let rho = a.hypot(b);
+                if rho <= 1e-300 { return Some(vec![]) }
+                let ratio = c/rho;
+                let phi = b.datan2(a);
+                if (ratio.abs()-1.).abs()*r <= tol { return Some(vec![Curve::Iso(blend.clone(),u_of(phi+if ratio < 0. { std::f64::consts::PI } else { 0. }))]) }
+                if ratio.abs() > 1. { return Some(vec![]) }
+                let w = ratio.dacos();
+                return Some([phi+w,phi-w].iter().map(|&th| Curve::Iso(blend.clone(),u_of(th))).collect())
+            }
+            // another line along the axis: where the circle is the cylinder's own section, whole
+            let mut out = Vec::new();
+            let (q,p0) = (perp(sub(cy.o,center)),perp(sub(f.o,center)));
+            let mut coincide: Vec<f64> = Vec::new();
+            if (big-r).abs() <= tol && (norm(q)-norm(p0)).abs() <= tol && norm(p0) > tol {
+                let turn = dot(k,cross(p0,q)).datan2(dot(p0,q));
+                for n in -2..=2 {
+                    let v = (turn+std::f64::consts::TAU*n as f64)/angle;
+                    if (-1e-12..=1.+1e-12).contains(&v) {
+                        let v = v.clamp(0.,1.);
+                        coincide.push(v);
+                        let (c,x,_) = circle_at(v);
+                        out.push(Curve::Circle(Frame::new(c,f.z,x),r));
+                    }
+                }
+            }
+            // the two branches over the `v` they stand at, kept clear of a coincidence by a hair
+            // and ended there at its limit
+            const N: usize = 2048;
+            let hair = 1e-6;
+            let defined = |v: f64| { let (a,b,c,_) = coefficients(v); let rho = a.hypot(b); rho > 0. && c.abs() <= rho };
+            let root = |v: f64,branch: f64| -> Option<f64> {
+                let (a,b,c,_) = coefficients(v);
+                let rho = a.hypot(b);
+                if !(rho > 0.) { return None }
+                Some(b.datan2(a)+branch*(c/rho).clamp(-1.,1.).dacos())
+            };
+            // runs of `v` over which the branches stand, each end a turn (refined), a coincidence or
+            // the sheet's edge
+            let near_coincidence = |v: f64| coincide.iter().any(|&w| (w-v).abs() <= hair);
+            let vs: Vec<f64> = (0..=N).map(|i| i as f64/N as f64).collect();
+            let ok: Vec<bool> = vs.iter().map(|&v| !near_coincidence(v) && defined(v)).collect();
+            let mut i = 0;
+            while i <= N {
+                if !ok[i] { i += 1; continue }
+                let start = i;
+                while i < N && ok[i+1] { i += 1 }
+                let end = i;
+                i += 1;
+                // an end of the run: where the branches turn (refined by bisection), or the edge or a
+                // coincidence
+                let refine = |inside: f64,outside: f64| -> f64 {
+                    let (mut a,mut b) = (inside,outside);
+                    for _ in 0..60 { let m = 0.5*(a+b); if defined(m) { a = m } else { b = m } }
+                    a
+                };
+                let lo_v = if start > 0 && !near_coincidence(vs[start-1]) { Some(refine(vs[start],vs[start-1])) } else { None };
+                let hi_v = if end < N && !near_coincidence(vs[end+1]) { Some(refine(vs[end],vs[end+1])) } else { None };
+                let (v0,v1) = (lo_v.unwrap_or(vs[start]),hi_v.unwrap_or(vs[end]));
+                // the stretch's samples, ends included
+                let mut stretch: Vec<f64> = vec![v0];
+                stretch.extend(vs[start..=end].iter().copied().filter(|&v| v > v0 && v < v1));
+                stretch.push(v1);
+                // a coincidence's limit: the circle's points square to the centre's way there
+                let limit = |v: f64,branch: f64| -> Option<V> {
+                    let w = *coincide.iter().find(|&&w| (w-v).abs() <= 2.*hair)?;
+                    let side = if v < w { -1. } else { 1. };
+                    let (a,b,_,_) = coefficients(w+side*hair);
+                    Some(point(b.datan2(a)+branch*std::f64::consts::FRAC_PI_2,w))
+                };
+                let branch_pts = |branch: f64| -> Vec<V> {
+                    let mut pts: Vec<V> = stretch.iter().filter_map(|&v| root(v,branch).map(|th| point(th,v))).collect();
+                    if let Some(p) = limit(v0,branch) { pts.insert(0,p) }
+                    if let Some(p) = limit(v1,branch) { pts.push(p) }
+                    pts
+                };
+                let (plus,minus) = (branch_pts(1.),branch_pts(-1.));
+                let traced = |pts: Vec<V>,closed: bool| Curve::Traced(std::sync::Arc::new(Traced {a:sheet.clone(),
+                    b:other.clone(),pts,closed}));
+                match (lo_v.is_some(),hi_v.is_some()) {
+                    // turning at both ends: one loop
+                    (true,true) => { let mut pts = plus.clone(); pts.extend(minus.iter().rev().skip(1)); out.push(traced(pts,true)) }
+                    // turning at one end: one curve through the turn
+                    (true,false) => { let mut pts: Vec<V> = minus.iter().rev().copied().collect(); pts.extend(plus.iter().skip(1)); out.push(traced(pts,false)) }
+                    (false,true) => { let mut pts = plus.clone(); pts.extend(minus.iter().rev().skip(1)); out.push(traced(pts,false)) }
+                    (false,false) => { out.push(traced(plus,false)); out.push(traced(minus,false)) }
+                }
+            }
+            Some(out)
+        }
         _ => None,
     }
 }
