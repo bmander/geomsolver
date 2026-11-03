@@ -1600,6 +1600,33 @@ parallel(sense: same) up`, `east angle(turn, about: up) g.std.x` — and a word 
 own may say any other mate the same way. A word over an instance whose body reads no datum is
 E111 at the use; a culprit reads as the word (`g seats(turn: 15deg, …) st`).
 
+**A part at a point and a heading in another frame** is `seats` with that frame's datums: its
+origin on a point drawn in the frame, its `up` and `east` the frame's. Within a part, those are the
+body's own `std`, so a part seated in a part composes the two placements, with no `cos`, no `sin`
+and no frame written out. A gearbox's rails, each at a table's point and inward heading in its
+base's own top, the base seated a quarter turn round:
+
+```sv
+rails := [{x: 40mm, y: 0mm, a: 180deg}, {x: 0mm, y: 30mm, a: 270deg}]
+component Base() {
+  repeat r in rails {
+    in std.top {
+      at := point
+      fix((r.x, r.y)) at
+    }
+    rail := Rail()                                   // its dovetail drawn in its own std.side
+    rail seats(turn: r.a, up: std.z, east: std.x) at
+  }
+}
+base := Base()
+base seats(turn: 90deg, up: std.z, east: std.x) o   // `o` the point the base stands on
+```
+
+A seated part starts where its mate puts it, its place as well as its turn, so a round across
+seated parts reads them where they solve. The point it is seated on is read where it starts: where
+it is held, or at its seed in the frame it is drawn in once that frame stands; a point standing
+in space, held by nothing, is the drawing's to place and seats nothing before the solve.
+
 **Model relationships, not coordinate tables**: a rectangle is perpendicular
 sides, a width, a height and a position against a datum, not an ordinate for every corner; the
 library deliberately has no coordinate-placement helper. A stepped outline is a chain of runs

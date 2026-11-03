@@ -248,6 +248,13 @@ impl Sketch {
         (self.frames.get(pl)?.chart.as_ref()?.origin as usize == p).then_some(pl)
     }
 
+    /// The frame point `p` is drawn in, if any (#764): its plane, or its spatial chart — where a
+    /// frame an instance stands in draws its origin.
+    pub fn frame_drawn_in(&self, p: usize) -> Option<usize> {
+        let pt = &self.points[p];
+        pt.plane.or(pt.chart).map(|f| f as usize)
+    }
+
     /// Turn axis `r` to drawn line `l` as it now stands, sense and all: the axis a plane holds
     /// along a line (`program::entities::axes_along`), which takes the line's direction only (its
     /// place is the plane's to give).  False where the line has no length.

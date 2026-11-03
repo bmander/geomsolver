@@ -241,10 +241,14 @@ fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
 /// world origin, say, when it stands on a line a hundred millimetres off.  So the statements
 /// that say where the planes are — about axes and planes themselves, and about points of planes
 /// already placed — are solved first, alone, round by round: a statement is taken once every
-/// point it reads stands in a placed plane (or is held, or is a plane's own origin), and an axis
-/// or a plane is placed once the statements taken determine it.  The drawing in a plane never
-/// places it: its seeds are what is to be read through it.  Nothing else moves; the hidden
-/// points are put back where their points now stand.  What nothing places keeps its seed.
+/// point it reads stands in a placed plane (or is held), and an axis or a plane is placed once
+/// the statements taken determine it.  A point held in a frame — a plane's origin, or the
+/// `std.origin` of the frame an instance stands in, held at its front's `(0, 0)` — is the frame's
+/// own and stands for it, so a mate on an instance's datums (`seats`) places its frame here, its
+/// place as well as its turn, and a part seated in a seated part once that part stands (#764).
+/// The drawing in a plane never places it: its seeds are what is to be read through it.  Nothing
+/// else moves; the hidden points are put back where their points now stand.  What nothing
+/// places keeps its seed.
 ///
 /// Which planes stand turned as the statements say, and not merely as they were seeded: each
 /// plane both of whose axes are held or placed here.
@@ -395,19 +399,24 @@ fn statements(sk: &Sketch) -> Vec<Reads> {
         let mut through = Vec::new();
         let mut drawing = false;
         for &p in &pts {
-            if let Some(pl) = sk.plane_of_origin(p) {
-                planes.push(pl);
-            } else if sk.point_held(p) {
-                // held: wherever its plane stands, it is where it is said to be
-            } else if let Some(pl) = sk.plane_of(p) {
-                through.push(pl);
-            } else {
-                // a point in space that is not held is the drawing's to place, never a plane's
-                drawing = true;
+            match (sk.frame_drawn_in(p), sk.point_held(p)) {
+                // held in a frame, as its origin is: a point of the frame's own, which stands
+                // where the frame does and so places it — a frame an instance stands in, by its
+                // `std.origin` (#764)
+                (Some(f), true) => planes.push(f),
+                // drawn in a frame: read through it once the frame stands
+                (Some(f), false) => through.push(f),
+                // held in space: where it is said to be
+                (None, true) => {}
+                // a point in space that is not held is the drawing's to place, never a frame's
+                (None, false) => drawing = true,
             }
         }
         for &pl in &planes {
-            axes.extend([sk.frames[pl].u as usize, sk.frames[pl].v as usize]);
+            // a normal among them (a frame's front stands on its `u` and its normal) is read off
+            // its frame's axes, never solved for here
+            let own = [sk.frames[pl].u as usize, sk.frames[pl].v as usize];
+            axes.extend(own.into_iter().filter(|r| !normals.contains(r)));
         }
         if drawing || axes.is_empty() && planes.is_empty() {
             continue;

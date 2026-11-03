@@ -43,7 +43,9 @@ An origin already on one axis is placed in fewer rows than three (`P.origin coin
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
 another. `views::place`
 settles axes and plane origins before the solve, round by round with seed settlement; they stay
-unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u` (`CKind::Ordinate`,
+unknowns. A point held in a frame (its origin, an instance's `std.origin`) stands for the frame
+there, a spatial chart's as a plane's, so a statement on it places the frame (#764,
+[language.md](language.md)); one drawn in a frame and not held is read through it once it stands. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u` (`CKind::Ordinate`,
 in space across planes with no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles and
 arcs over a point in space are drawn in a plane they mint (#363 S6, [0.127];
 `entities::arcs_in_space`, `circles_in_space`, in `holds`, before E060 is asked): an arc the plane

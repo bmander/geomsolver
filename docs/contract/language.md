@@ -478,7 +478,14 @@ gives an instance's own frame `Sketch::square_chart`, an intrinsic `Perpendicula
 `v`, so it has six freedoms, and names it after the instance (`Sketch::plane_names`), so
 `diagnose::view_freedoms` says `cyl.attitude` and `cyl.origin`. It **starts where the frame around
 its call stands**: `views::instance_frames`, after the holds, seeds each from the innermost frame
-with axes it rides (`Sketch::seed_at_frame`), a held number left as held. An instance whose `std`
+with axes it rides (`Sketch::seed_at_frame`), a held number left as held; and **a mate on its
+datums seeds it where the mate puts it** (#764): `views::place` reads a point held in a frame — the
+instance's `std.origin`, held at its front's `(0, 0)`, as a plane's origin is — as the frame's own,
+so `b.std.origin coincident p`, with `p` held or drawn in a frame already placed, places the frame
+before the drawing is solved, its place as well as its turn, and a part seated in a seated part
+(a gearbox's rails at a table's points and headings in its base) once that part stands
+(`a_part_seated_in_another_frame_starts_where_its_seat_puts_it`,
+`parts_seated_in_a_seated_part_start_where_they_stand`). An instance whose `std`
 nothing outside reads makes no frame and stands as before. One whose body reads no datum, nor any
 body it calls (`Walk::reads_datums`), is kept in `Datums::refused`: its `b.std.D` names nothing and
 `Lookup::missing` says **E111**, since it is placed by its arguments. A path past `std` naming no
