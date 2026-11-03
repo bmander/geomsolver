@@ -379,6 +379,26 @@ it. It stays as the fast path where #699 D says so.
    the road (`solid::closed_class`, asked after the class the sweep was first asked). `closed`, over
    a box, is the kernel's `sweep(S, M)` proper, for a sweep with no blank.
 
+**Where it stands (F2c5).** Built on the one arrangement: polyhedral tools under a slide, a turn,
+or a screw with nothing leaning to its axis; under a slide, tools of planes, cylinders, cones, balls
+and tori (a torus's axis along the slide or square to it); under a turn, round faces about axes
+along the turn's and balls clear of its axis; paths of slides and turns (K1); a body mixing the
+closed class with another; the blank-scoped decision. What is left meets one of three gaps, each
+recorded above with what was tried:
+- **a candidate bounded inside the domain** — a leaning edge under a screw (whose whole sheet
+  crosses itself) — waits on the arrangement holding a face with a slit, or a sheet whose rim
+  stands inside a cell (F5's A1);
+- **a meeting with no closed form near a touch** — a circle screwed (a round tool's rim under a
+  screw: helical milling), a round face about an axis leaning to a turn's (its contact a curve, its
+  surface of revolution's meridian fitted), a fitted sheet lying in a candidate's plane, and K2's
+  patches (each instant's contact swept, fitted) — is refused as nearly touching: each needs its
+  closed form (as the parallel cones', the ball's in a torus, the meridian's cylinder were), or the
+  tracer holding a near-tangent meeting (F4, #699 E). A circle screwed meets a plane in a curve in
+  closed form, `A cos θ + B sin θ = C(v)` along its rulings, a new curve kind, as `SheetCut` is a
+  line's;
+- **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
+  has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
+
 Every step meets the epic's bar: rows in `docs/contract/generating.md` naming the gate test, field
 agreement and an independent volume at the default tolerance, negative controls kept, an example
 per motion family.
