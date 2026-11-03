@@ -1109,26 +1109,25 @@ impl<'a> Walk<'a> {
         // are its own
         if b.kind == BlockKind::When {
             let names = Asked::new(self, scope);
-            let decided = super::values::condition(&b.count, vals, scope, self.units, &names);
+            let truth = super::values::decided(&b.count, vals, scope, self.units, &names);
+            let decided = truth.as_ref().map(super::Truth::value).map_err(Clone::clone);
             // faces read apart where the drawing is seeded that alone left the block out, to be
             // read again where it is solved (#625)
             let apart = names.apart.take();
-            // the faces read along a direction as first asked (#763), before any asking again
-            let along = names.along.take();
+            // and what it read of faces, as first asked (#763), before any asking again: a block
+            // that read one along a direction kept with its condition as a truth over them all,
+            // to be decided again so too
+            let reads = names.reads.take();
+            let along = match truth {
+                Ok(truth) if reads.iter().any(|r| matches!(r, super::FaceRead::Along(_))) => {
+                    Some(super::WhenRead { at: self.faces.at, truth, reads })
+                }
+                _ => None,
+            };
             let alone = matches!(decided, Ok(false)) && !apart.is_empty() && {
                 names.every.set(true);
                 matches!(super::values::condition(&b.count, vals, scope, self.units, &names),
                     Ok(true))
-            };
-            // and a block that read faces along a direction, its condition as a truth over them,
-            // to be decided again so too
-            let along = match decided {
-                Ok(made) if !along.is_empty() => {
-                    names.every.set(false);
-                    let truth = super::values::truth(&b.count, vals, scope, self.units, &names);
-                    Some(super::WhenRead { at: self.faces.at, made, truth, faces: along })
-                }
-                _ => None,
             };
             let wanted = names.wanted.take();
             drop(names);
@@ -2109,8 +2108,8 @@ struct Asked<'w, 'a> {
     /// Whether every two faces are read as meeting: the condition asked again, to tell whether
     /// the pairs read apart are what left the block out.
     every: std::cell::Cell<bool>,
-    /// Every face read along a direction (#763), in the order asked.
-    along: std::cell::RefCell<Vec<super::AlongRead>>,
+    /// Every read of faces (#763), `meets` and `parallel` alike, in the order asked.
+    reads: std::cell::RefCell<Vec<super::FaceRead>>,
     /// Every direction asked of that the walk was not given.
     wanted: std::cell::RefCell<Vec<String>>,
 }
@@ -2128,7 +2127,7 @@ impl<'w, 'a> Asked<'w, 'a> {
             alias: super::resolve::Lazy::new(walk),
             apart: Default::default(),
             every: Default::default(),
-            along: Default::default(),
+            reads: Default::default(),
             wanted: Default::default(),
         }
     }
@@ -2167,13 +2166,18 @@ impl super::values::Names for Asked<'_, '_> {
     /// one whose boundary does not say, as meeting.
     fn meets(&self, a: &str, b: &str) -> Option<bool> {
         let ((solid, ra, listed), (other, rb, _)) = (self.face(a)?, self.face(b)?);
-        if self.every.get() || solid != other {
+        let read = |r| self.reads.borrow_mut().push(r);
+        let Some((meets, _)) = listed.read.as_ref().filter(|_| !self.every.get() && solid == other)
+        else {
+            read(super::FaceRead::Fixed(true));
             return Some(true);
-        }
-        let met = listed.meets.as_ref().is_none_or(|m| m.meets(ra, rb));
+        };
+        let met = meets.meets(ra, rb);
+        let faces = [ra.to_string(), rb.to_string()];
         if !met {
-            self.apart.borrow_mut().push((solid.to_string(), [ra.to_string(), rb.to_string()]));
+            self.apart.borrow_mut().push((solid.to_string(), faces.clone()));
         }
+        read(super::FaceRead::Meets { solid: solid.to_string(), faces, held: met });
         Some(met)
     }
 
@@ -2189,7 +2193,7 @@ impl super::values::Names for Asked<'_, '_> {
                  frame's axis", crate::program::public_path(line)
             )));
         };
-        let Some(lays) = &listed.lays else {
+        let Some((_, lays)) = &listed.read else {
             return Some(Err(format!(
                 "`{}`'s faces are not read where they are named (a body cut by a sweep is its \
                  field's)", crate::program::public_path(solid)
@@ -2197,10 +2201,10 @@ impl super::values::Names for Asked<'_, '_> {
         };
         let held = lays.holds(rest, along, d)?;
         if let Ok(held) = held {
-            self.along.borrow_mut().push(super::AlongRead {
+            self.reads.borrow_mut().push(super::FaceRead::Along(super::AlongRead {
                 solid: solid.to_string(), face: rest.to_string(), along, line: line.to_string(),
                 held,
-            });
+            }));
         }
         Some(held)
     }

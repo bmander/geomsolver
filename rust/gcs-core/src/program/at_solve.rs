@@ -12,7 +12,7 @@
 //! stands.  What still comes out otherwise where the drawing solves is said here, at the
 //! document's statement that made the block, rather than built wrong.
 use super::{own_values, public_path, Code, Diag, Elaborated, SourceMap, Stood};
-use crate::flatten::{Apart, AlongRead};
+use crate::flatten::{Apart, FaceRead};
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::solid::faces::{face_paths, Lays, ListedFaces, Meets};
 use crate::syntax::Span;
@@ -37,22 +37,33 @@ pub(super) fn at_solve(e: &Elaborated) -> Stood {
     e.map.keys().map(|(k, x)| (k.clone(), own_values(&sk, x))).collect()
 }
 
-/// Both checks where the drawing stands in `sk`, each solid they name read once.
+/// Both checks where the drawing stands in `sk`, each solid they name read once: which of its
+/// faces meet where a pair was read of it, how each lies where a face was read along a direction.
 pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
-    let solids: BTreeSet<&str> = map.apart.iter().map(|a| a.solid.as_str())
-        .chain(map.along.iter().flat_map(|w| &w.faces).map(|a| a.solid.as_str())).collect();
-    let read: Read = solids.into_iter().filter_map(|solid| {
+    let reads = map.along.iter().flat_map(|w| &w.reads);
+    let meets: BTreeSet<&str> = map.apart.iter().map(|a| a.solid.as_str())
+        .chain(reads.clone().filter_map(|r| match r {
+            FaceRead::Meets { solid, .. } => Some(solid.as_str()),
+            _ => None,
+        })).collect();
+    let lays: BTreeSet<&str> = reads.filter_map(|r| match r {
+        FaceRead::Along(a) => Some(a.solid.as_str()),
+        _ => None,
+    }).collect();
+    let read: Read = meets.union(&lays).filter_map(|&solid| {
         let e = map.ent_named(solid).filter(|e| e.kind == EntKind::Solid)?;
         let listed = ListedFaces::read(sk, e.i(), &face_paths(sk, e.i()))?;
-        Some((solid, (Meets::of(&listed), Lays::of(&listed))))
+        let (m, l) = (meets.contains(solid), lays.contains(solid));
+        Some((solid, (m.then(|| Meets::of(&listed)), l.then(|| Lays::of(&listed)))))
     }).collect();
     let mut diags = apart(map, &read);
     diags.extend(along(sk, map, &read));
     diags
 }
 
-/// Each solid's faces where the drawing is solved, by its absolute name: where its boundary says.
-type Read<'m> = BTreeMap<&'m str, (Meets, Lays)>;
+/// Each solid's faces where the drawing is solved, by its absolute name, where its boundary says:
+/// which meet, where a pair was read of it, and how each lies, where a face was read so.
+type Read<'m> = BTreeMap<&'m str, (Option<Meets>, Option<Lays>)>;
 
 /// One E080 for each statement and solid whose faces read apart meet where the drawing is solved:
 /// the first such pair named, and how many more.
@@ -62,7 +73,8 @@ fn apart(map: &SourceMap, read: &Read) -> Vec<Diag> {
     let met = map.apart.iter().filter(|a| {
         let [x, y] = &a.faces;
         said.insert((a.at, a.solid.as_str(), x.min(y), x.max(y)))
-            && read.get(a.solid.as_str()).is_some_and(|(m, _)| m.meets(x, y))
+            && read.get(a.solid.as_str()).and_then(|(m, _)| m.as_ref())
+                .is_some_and(|m| m.meets(x, y))
     });
     grouped(met.map(|a: &Apart| (a.at, a.solid.as_str(), a))).into_iter().map(|(at, a, n)| {
         let [x, y] = &a.faces;
@@ -76,29 +88,56 @@ fn apart(map: &SourceMap, read: &Read) -> Vec<Diag> {
 }
 
 /// One E080 for each statement and solid with a `when` over faces read along a direction that,
-/// decided again with the faces as the drawing is solved, is made where it was not or the other
-/// way round: the first face read the other way named, and how many more.
+/// decided again with what it read of faces as the drawing is solved, is made where it was not or
+/// the other way round: the first read that came out otherwise named, and how many more.
 fn along(sk: &Sketch, map: &SourceMap, read: &Read) -> Vec<Diag> {
-    let solved = |a: &AlongRead| {
-        let d = direction(sk, |n| map.ent_named(n), &a.line)?;
-        read.get(a.solid.as_str())?.1.holds(&a.face, a.along, d)?.ok()
+    let solved = |r: &FaceRead| match r {
+        FaceRead::Meets { solid, faces: [x, y], held } => read.get(solid.as_str())
+            .and_then(|(m, _)| m.as_ref()).map_or(*held, |m| m.meets(x, y)),
+        FaceRead::Along(a) => (|| {
+            let d = direction(sk, |n| map.ent_named(n), &a.line)?;
+            read.get(a.solid.as_str())?.1.as_ref()?.holds(&a.face, a.along, d)?.ok()
+        })().unwrap_or(a.held),
+        FaceRead::Fixed(held) => *held,
     };
     let turned = map.along.iter().flat_map(|w| {
-        let now: Vec<bool> = w.faces.iter().map(|a| solved(a).unwrap_or(a.held)).collect();
-        let decided_again = w.truth.holds(&|k| now[k]) != w.made;
-        w.faces.iter().zip(now).filter(move |(a, now)| decided_again && *now != a.held)
-            .map(move |(a, _)| (w.at, a.solid.as_str(), (a, w.made)))
+        let now: Vec<bool> = w.reads.iter().map(solved).collect();
+        let made = w.truth.value();
+        let again = w.truth.holds(&|k| now[k]) != made;
+        w.reads.iter().zip(now).filter(move |(r, now)| again && *now != r.held())
+            .filter_map(move |(r, _)| Some((w.at, said(r)?, made)))
     });
-    grouped(turned).into_iter().map(|(at, (a, made), n)| {
-        let (seeded, solved) = if a.held { ("", "not ") } else { ("not ", "") };
+    let turned = turned.map(|(at, (solid, what), made)| (at, solid, (solid, what, made)));
+    grouped(turned).into_iter().map(|(at, (solid, what, made), n)| {
         let block = if made { "made" } else { "left out" };
         Diag::new(Code::E080, at, None, format!(
-            "`{}`'s face `{}` is {seeded}`{} {}` where the drawing is seeded, but {solved}where \
-             it solves{}: the `when` over it was decided at the seed, so what it makes is \
+            "`{}`'s {what}{}: the `when` over it was decided at the seed, so what it makes is \
              {block} — seed the drawing nearer where it solves",
-            public_path(&a.solid), a.face, a.along.word(), public_path(&a.line), more(n, "face")
+            public_path(solid), more(n, "face")
         ))
     }).collect()
+}
+
+/// The solid a read is of, and how it came out where the drawing is seeded and where it solves,
+/// it having come out the other way there: nothing for one no pose changes.
+fn said(r: &FaceRead) -> Option<(&str, String)> {
+    Some(match r {
+        FaceRead::Along(a) => {
+            let (seeded, solved) = if a.held { ("", "not ") } else { ("not ", "") };
+            (a.solid.as_str(), format!(
+                "face `{}` is {seeded}`{} {}` where the drawing is seeded, but {solved}where it \
+                 solves", a.face, a.along.word(), public_path(&a.line)
+            ))
+        }
+        FaceRead::Meets { solid, faces: [x, y], held } => {
+            let (seeded, solved) = if *held { ("meet", "not") } else { ("do not meet", "do") };
+            (solid.as_str(), format!(
+                "faces `{x}` and `{y}` {seeded} where the drawing is seeded, but {solved} where it \
+                 solves"
+            ))
+        }
+        FaceRead::Fixed(_) => return None,
+    })
 }
 
 /// Each statement and solid's first item, and how many more it has, in the order they come.
@@ -124,7 +163,7 @@ fn more(n: usize, noun: &str) -> String {
 
 /// **The direction `name` stands for** (#763), where the drawing stands in `sk`, each entity by
 /// `of`: an axis's own, a line's from its first point to its second (`analysis::direction`), or a
-/// frame's `u`, `v` or `normal` under the frame's name.
+/// frame's `u`, `v` or `normal` (`n`) under the frame's name.
 pub(super) fn direction(sk: &Sketch, of: impl Fn(&str) -> Option<EntRef>, name: &str)
     -> Option<[f64; 3]> {
     if let Some(e) = of(name) {
@@ -135,7 +174,7 @@ pub(super) fn direction(sk: &Sketch, of: impl Fn(&str) -> Option<EntRef>, name: 
     match member {
         "u" => Some(b.u),
         "v" => Some(b.v),
-        "normal" => Some(b.normal()),
+        "n" | super::NORMAL => Some(b.normal()),
         _ => None,
     }
 }

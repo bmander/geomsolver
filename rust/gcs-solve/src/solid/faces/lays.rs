@@ -3,10 +3,9 @@
 //! a round takes picked by the faces they lie between, written in Solvent, and not by an option of
 //! the word.  Two faces along one direction meet in lines along it: the edges in plan of a part
 //! drawn in plan.
-use super::{FacePath, ListedFaces};
+use super::ListedFaces;
 use crate::brep::geom::{Curve, Surface, V};
 use crate::expr::Along;
-use crate::model::Sketch;
 use crate::space::{cross, dot, norm, normalised};
 use std::collections::BTreeMap;
 
@@ -74,12 +73,6 @@ pub struct Lays {
 }
 
 impl Lays {
-    /// The faces `listed` of solid `body`, or `None` where its boundary is not read here
-    /// (`ListedFaces::read`).
-    pub fn read(sk: &Sketch, body: usize, listed: &[FacePath]) -> Option<Lays> {
-        ListedFaces::read(sk, body, listed).map(|l| Lays::of(&l))
-    }
-
     /// How each face of `listed` lies.
     pub fn of(listed: &ListedFaces) -> Lays {
         let (brep, _, _) = listed.read.brep();
@@ -100,7 +93,10 @@ impl Lays {
             return Some(Err("it is a face a round of the body made, which is not read where the \
                              body's faces are named".to_string()));
         };
-        let Some(d) = normalised(d).filter(|_| !lays.is_empty()) else { return Some(Ok(false)) };
+        if lays.is_empty() {
+            return Some(Ok(false));
+        }
+        let Some(d) = normalised(d) else { return Some(Ok(false)) };
         Some(lays.iter().try_fold(true, |all, lay| Ok(all & lay.holds(along, d)?)).map_err(
             |kind: &str| format!("it lies on a {kind} surface, whose kind does not say how it lies")
         ))

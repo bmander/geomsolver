@@ -281,13 +281,13 @@ the stratum has not, and a body with a swept cut (no `Meets`) meet. A pair read 
 left a block out (the condition asked again with every pair meeting) is an `flatten::Apart` at the
 document's statement (`FaceState::at`, carried in `Pending::at`), kept in `SourceMap::apart`.
 **Then it is read where the drawing solves ([0.202], #761):** once a pass elaborates with an
-`Apart`, `program::meets::at_solve` solves a copy of its sketch, and where the solve settles and
+`Apart`, `program::at_solve::at_solve` solves a copy of its sketch, and where the solve settles and
 `apart` finds a pair meeting there, it returns each keyed entity's solved numbers (`Stood`, the
 form `crossed` is kept in too), and `elaborate` names every solid's faces again — once (its
 `pose`): `solids_and_surfaces` stands the sketch there by key (`program::stand`, the writer
 `holds` uses for `crossed`) while it reads each `Meets`, and puts the seeds back. A document with
 no `Apart` is solved by its caller alone.
-`program::meets::apart` reads it again in `solid_diagnostics` where the drawing is solved: a pair
+`program::at_solve::read_again` reads it again in `solid_diagnostics` where the drawing is solved: a pair
 that meets there is E080, once per statement and solid. `std.rounds`' `round` and `chamfer` pair
 only faces that meet and round only threes that meet pairwise; `tests/meets.rs` is the gate (the
 block's 24 pairs and 48 corners, #625's four turned spokes against two crossed bars; #761's pin
@@ -304,23 +304,28 @@ revolved line along the axis by that line, a cone, a sphere, a torus and a revol
 nothing, a fitted surface, a blend, a family's wall and an affine image unread (E103, naming the
 kind, as for a round's face the stratum has not, a body cut by a sweep, a name that is no face and
 a direction not drawn). The direction is read off the drawing where the faces are named, only
-once a walk has asked for it (`Expansion::directions_wanted`, read by `program::meets::direction`
-— an axis or a line by `analysis::direction`, a frame's `u`, `v` and `normal` off its basis — and
-carried in `Again::Faces` as `flatten::Directions`, a pass more), so `std.z` in a body standing in
-a frame is the frame's normal, and a document asking none reads none. A block that read faces so
-is kept with its condition as a truth over them (`flatten::WhenRead`, `Truth`, built by
-`values::truth` with everything else the condition asks decided; `SourceMap::along`), and
-`program::meets::read_again` decides it again with the faces and the directions as the drawing
-is solved: where it comes out the other way, `meets::at_solve` gives the pose, and the document is
-elaborated once more there, faces and directions read at it (#761's pose, cleared together);
-where it still does, in `solid_diagnostics`, each face read the other way is E080, once per
-statement and solid — a face that turned without changing the block says nothing. A plane is settled before
-the faces are named, so a deck seeded leaning and held flat reads as flat. It is what picks the
-edges a round takes by their direction, written in Solvent (no option of the word): two faces
-both along `l` meet in lines along it.
+once a walk has asked for it (`Expansion::directions_wanted`, read by `program::at_solve::direction`
+— an axis or a line by `analysis::direction`, a frame's `u`, `v` and `normal` or `n` off its basis
+— and carried in `Again::Faces` with the faces, one `flatten::Named`, a pass more), so `std.z` in a
+body standing in a frame is the frame's normal, and a document asking none reads none. A `when` is
+decided as a truth over what it read of faces (`values::decided`, the one walk of its `and`, `or`
+and `not`; `flatten::Truth`, each `meets` and `parallel` a `Truth::Read` with its answer, every
+other condition decided), and one that read a face along a direction is kept with that truth and
+its reads (`flatten::WhenRead`, `FaceRead`: a pair of faces met or not, a face along a direction,
+or an answer no pose changes; `SourceMap::along`). `program::at_solve::read_again` decides it again
+with every read as the drawing is solved — so `when not (g meets f) and f parallel std.z` turns
+with either — and where it comes out the other way, `at_solve` gives the pose, and the document is
+elaborated once more there, the faces and the directions asked of read at it (`Named::clear`
+keeps the directions' names, so they are read with the faces); where it still does, in
+`solid_diagnostics`, each read that turned is E080, once per statement and solid — a read that
+turned without changing the block says nothing. A plane is settled before the faces are named, so a
+deck seeded leaning and held flat reads as flat. It is what picks the edges a round takes by their
+direction, written in Solvent (no option of the word): two faces both along `l` meet in lines along
+it.
 `tests/faces_along.rs` is the gate (`rounds/hub.sv`'s two fills to the closed form, the arc alone
 by `perpendicular`, a component's `std.z` its frame's, a line drawn as the direction, the refusals,
-a line seeded leaning read where it solves, and a turned face that changes no block said nothing of).
+a line seeded leaning read where it solves, a turned face that changes no block said nothing of,
+and a pin seeded off its plate whose `not (g meets f) and f parallel std.z` turns where it solves).
 
 **The expansion's limit is said once (#625).** A walk past `MAX_FLAT` statements says one E103
 at the root body's statement it was walking (`FaceState::at`), naming where in a module it had got

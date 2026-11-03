@@ -96,41 +96,53 @@ pub(super) fn condition(
     units: Units,
     names: &dyn Names,
 ) -> Result<bool, (Code, String)> {
+    decided(text, env, scope, units, names).map(|t| t.value())
+}
+
+/// `condition`'s condition as it was decided (#763): a truth over what it read of faces, each
+/// `meets` and `parallel` a `Truth::Read` in the order the walk was asked it, to be decided
+/// again where the drawing solves.
+pub(super) fn decided(
+    text: &str,
+    env: &Vals,
+    scope: &Scope,
+    units: Units,
+    names: &dyn Names,
+) -> Result<super::Truth, (Code, String)> {
     let said = |code, e: String| (code, format!("`{text}`: {e}"));
     let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
-    holds(&c, env, scope, names).map_err(|(code, e)| said(code, e))
+    decide(&c, env, scope, names, &mut 0).map_err(|(code, e)| said(code, e))
 }
 
-/// **A `when`'s condition as a truth over the faces it reads along a direction** (#763), each
-/// `Truth::Face` in the order `holds` asks them (an `and`'s and an `or`'s left side first) and
-/// everything else decided as `holds` decides it — for a condition `condition` decided, so that
-/// nothing in it fails.
-pub(super) fn truth(text: &str, env: &Vals, scope: &Scope, units: Units, names: &dyn Names)
-    -> super::Truth {
+/// A condition of a `when`, decided: its `and`, `or` and `not` as they stand, each read of faces
+/// (`meets`, `parallel`, `perpendicular`) numbered from `next`.  Both sides of an `and` or an
+/// `or` are worked out, so a mistake a short circuit would skip is still said.
+fn decide(
+    c: &Cond,
+    env: &Vals,
+    scope: &Scope,
+    names: &dyn Names,
+    next: &mut usize,
+) -> Result<super::Truth, (Code, String)> {
     use super::Truth;
-    fn of(c: &Cond, env: &Vals, scope: &Scope, names: &dyn Names, next: &mut usize) -> Truth {
-        let mut two = |a: &Cond, b: &Cond| {
-            let a = Box::new(of(a, env, scope, names, next));
-            (a, Box::new(of(b, env, scope, names, next)))
-        };
-        match c {
-            Cond::And(a, b) => { let (a, b) = two(a, b); Truth::And(a, b) }
-            Cond::Or(a, b) => { let (a, b) = two(a, b); Truth::Or(a, b) }
-            Cond::Not(a) => Truth::Not(Box::new(of(a, env, scope, names, next))),
-            Cond::Along(..) => {
-                *next += 1;
-                Truth::Face(*next - 1)
-            }
-            _ => Truth::Is(holds(c, env, scope, names).unwrap_or(false)),
+    Ok(match c {
+        Cond::And(a, b) | Cond::Or(a, b) => {
+            let (p, q) = (decide(a, env, scope, names, next), decide(b, env, scope, names, next));
+            let (p, q) = (Box::new(p?), Box::new(q?));
+            if matches!(c, Cond::And(..)) { Truth::And(p, q) } else { Truth::Or(p, q) }
         }
-    }
-    let Ok(c) = expr::parse_condition_in(text, units) else { return Truth::Is(false) };
-    of(&c, env, scope, names, &mut 0)
+        Cond::Not(a) => Truth::Not(Box::new(decide(a, env, scope, names, next)?)),
+        Cond::Meets(..) | Cond::Along(..) => {
+            let held = holds(c, env, scope, names)?;
+            *next += 1;
+            Truth::Read(*next - 1, held)
+        }
+        _ => Truth::Is(holds(c, env, scope, names)?),
+    })
 }
 
-/// One condition of a `when`, decided: identities by what names stand for, comparisons of
-/// numbers by `expr::decide`.  Both sides of an `and` or an `or` are worked out, so a mistake a
-/// short circuit would skip is still said.
+/// One comparison or identity of a `when`, decided (`decide` takes `and`, `or` and `not`):
+/// identities by what names stand for, comparisons of numbers by `expr::decide`.
 fn holds(
     c: &Cond,
     env: &Vals,
@@ -144,15 +156,7 @@ fn holds(
     };
     let stands = |name: &str| names.stands(name).ok_or_else(|| nothing(name));
     Ok(match c {
-        Cond::And(a, b) => {
-            let (p, q) = (holds(a, env, scope, names), holds(b, env, scope, names));
-            p? && q?
-        }
-        Cond::Or(a, b) => {
-            let (p, q) = (holds(a, env, scope, names), holds(b, env, scope, names));
-            p? || q?
-        }
-        Cond::Not(a) => !holds(a, env, scope, names)?,
+        Cond::And(..) | Cond::Or(..) | Cond::Not(..) => unreachable!("`decide` takes a connective"),
         Cond::In(x, y) => {
             let me = stands(x)?;
             let Some(faces) = names.faces(y) else {

@@ -2,9 +2,9 @@
 //! has `l`'s direction in its tangent plane — a plane holding it, a cylinder about it, a prism's
 //! side swept along it — and `when a perpendicular l` where `a` is a plane square to it, as the
 //! relation words say of a plane and an axis.  Read where the drawing is seeded, as `meets` is,
-//! and again where it solves where a block comes out the other way there.  So the edges a round takes are picked by a block over the faces
-//! written in Solvent, not by an option of the word: two faces along `std.z` meet in lines along
-//! it, the edges in plan.
+//! and again where it solves where a block comes out the other way there.  So the edges a round
+//! takes are picked by a block over the faces written in Solvent, not by an option of the word:
+//! two faces along `std.z` meet in lines along it, the edges in plan.
 use std::f64::consts::PI;
 
 use gcs_core::brep::props;
@@ -166,4 +166,38 @@ fn a_face_read_off_the_direction_where_it_is_seeded_is_read_where_it_solves() {
     let (v, flat) = said(&deck);
     assert!(flat.is_empty(), "{flat:?}");
     close(v, filled());
+}
+
+/// **A `when` that reads both** (#763 with #761): a pin of radius 3 standing on a plate 20 × 20,
+/// its centre held at the plate's middle and seeded far off it, a point made for each face of the
+/// plate the pin's wall — along `std.z` — does not meet.  Where the drawing is seeded the wall
+/// meets none of the six, and where it solves it meets the plate's top: decided again there with
+/// both its reads, the block comes out the other way for the top, so the faces are read where the
+/// drawing solves and five points are made, as seeded on the plate.
+#[test]
+fn a_when_over_faces_met_and_faces_along_is_decided_where_the_drawing_solves() {
+    let pin = |at: &str| format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords)\n\
+        in std.top {{\na := point hint((0, 0))\nb := point hint((20, 0))\n\
+        c := point hint((20, 20))\nd := point hint((0, 20))\na coords(du: 0mm, dv: 0mm) std.top\n\
+        b coords(du: 20mm, dv: 0mm) std.top\nc coords(du: 20mm, dv: 20mm) std.top\n\
+        d coords(du: 0mm, dv: 20mm) std.top\no := point hint(({at}))\n\
+        o coords(du: 10mm, dv: 10mm) std.top\nboss := circle(center: o) hint(r: 3)\n\
+        radius(3mm) boss\n}}\n\
+        plate := solid(std.solids.Prism(face(a, b, c, d, -> close), from: 0mm, to: 5mm))\n\
+        pin := solid(std.solids.Prism(face(boss), from: 0mm, to: 10mm))\n\
+        whole := solid(plate)\npin union whole\n\
+        repeat f in whole.pin {{\n  repeat g in whole.plate {{\n    \
+        when not (g meets f) and f parallel std.z {{\n      m := point in std.top\n      \
+        fix((0, 0)) m\n    }}\n  }}\n}}\n");
+    let made = |at: &str| {
+        let e = solved(&pin(at));
+        let d = gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program);
+        assert!(d.is_empty(), "{at}: {d:?}");
+        (0..e.sketch.points.len())
+            .filter_map(|i| e.map.name_of(gcs_core::model::EntRef::point(i)))
+            .filter(|n| n.as_str() == "m" || n.ends_with(".m"))
+            .count()
+    };
+    assert_eq!(made("10, 10"), 5);
+    assert_eq!(made("60, 60"), 5);
 }
