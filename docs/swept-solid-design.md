@@ -421,7 +421,17 @@ recorded above with what was tried:
   leans to the axis wherever the screw climbs: that circle screwed is the helical pipe its centre's
   helix carries, touching the ball at either end pose round that circle, and a ball-ended tool's
   side along the helices of its equator's points — each touch wanting its closed form as the drum's
-  did;
+  did. *Tried, for a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
+  round its two meridians in the plane through both axes, turned into tori about the turn's, and
+  round its top and bottom rings, kept in their planes. The torus at an end pose and a meridian's
+  torus touch round that meridian and cross beside it — in each level both are two circles about
+  their own axes, two pairs touching and one crossing where `A cos θ + B sin θ = C(h)`, a closed
+  form as the rim's branches are. But all three meet at one point: the meridian's top is where the
+  ring's top circle touches the plane it turns in and the meridian's torus touches that plane too,
+  so the plane holds two circles touching there and each torus a node where four ways leave two by
+  two along one line. A ring turned 1.5 rad came out as the ring alone (the meridian's torus's piece
+  outside the ring lost: the tied ways read so its cycle closed on the wrong side). So the turned
+  torus waits on the arrangement holding a point where three surfaces touch pairwise;
 - **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
   has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
 
