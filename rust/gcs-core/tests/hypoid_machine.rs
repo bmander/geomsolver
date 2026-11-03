@@ -88,3 +88,31 @@ fn the_recorded_machine_states_the_mill_the_suites_were_cut_by() {
     }
     assert!(e.map.ent_named("pair.balance.toe").is_none());
 }
+
+/// **At a ten-tooth pinion no face mill balances the undercut** (#283): the balance has no root,
+/// so the pair configured there must state its mill, as the suites cut it (`recorded_machine`).
+/// With the mill stated and the margins read, not held equal, the pinion's margin stays below the
+/// gear's at every pressure shift up to the outer blade's limit — the shift is short of the 20°
+/// pressure angle, where the outer blade, `pressure − shift`, stands upright — at the mean point
+/// and at the toe alike. The pinion's grows with the shift and the gear's, after a least near 15°,
+/// grows faster as its blade stands up: they never meet. (Left to the solve, the balance runs to its
+/// iteration limit there, whatever its seeds.)
+#[test]
+fn at_a_ten_tooth_pinion_no_face_mill_balances_the_undercut() {
+    let ten = fixtures::gear::configure(&fixtures::gear::source(),&[("pinion_teeth",10.)]);
+    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(80mm))";
+    assert!(ten.contains(seeds),"the pair leaves its mill to the balance");
+    // the mean cone distance at 10:48, 2 mm module: the cutter is no smaller
+    let r = 2.*(10f64*10.+48.*48.).sqrt()/2.;
+    for shift in [8.,14.,19.] {
+        let text = ten.replacen(seeds,&format!("pressure_shift: {shift}deg, cutter_radius: {}mm)",1.5*r),1)
+            .replace("  balance.margins.pinion_mean equal balance.margins.gear_mean\n","")
+            .replace("  balance.margins.pinion_toe equal balance.margins.gear_toe\n","");
+        let e = fixtures::gear::read(&text);
+        for station in ["mean","at_toe"] {
+            let (pinion,gear) = (radius(&e,&format!("pair.balance.{station}.pinion_profile")),
+                radius(&e,&format!("pair.balance.{station}.gear_profile")));
+            assert!(pinion < 0.5*gear,"at {shift}°, {station}: the pinion's margin {pinion} mm against the gear's {gear} mm");
+        }
+    }
+}

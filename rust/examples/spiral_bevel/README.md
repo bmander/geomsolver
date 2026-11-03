@@ -226,6 +226,15 @@ seeds. The suites recorded the pair cut by a stated mill, so `fixtures::gear` st
 recorded design (`recorded_machine`: the shift each design names, the cutter 0.8 R) and drops the
 balance; `gcs-core/tests/hypoid_machine.rs` holds the found mill.
 
+**At a ten-tooth pinion the balance has no root.** No face mill with these blades leaves the pinion
+as far from undercut as the gear. With the mill stated and the margins read rather than held equal,
+the pinion's margin stays below half the gear's at every pressure shift up to the outer blade's
+limit: at the mean point and at the toe, at 8°, 14° and 19°, and short of the 20° pressure angle,
+where the outer blade stands upright. The pinion's margin grows with the shift; the gear's, after a
+least near 15°, grows faster as its blade stands up, so they never meet. Left to the solve, the
+balance runs to its iteration limit there, whatever its seeds. The pair configured at 10:48 states
+its mill, as the suites cut it (`hypoid_machine::at_a_ten_tooth_pinion_no_face_mill_balances_the_undercut`).
+
 ## Contact analysis: the meshing of two flanks
 
 Issue #283's step 3 makes the contact of a pair a locus. `meshing(pinion_flank, gear_flank over t in
