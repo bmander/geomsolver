@@ -119,8 +119,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
     }
     // faces read apart where the drawing is seeded that meet where it is solved (#625), and
     // faces read along a direction there that are not where it is solved, or the other way (#763)
-    diags.extend(meets::apart(sk, map));
-    diags.extend(meets::along(sk, map));
+    diags.extend(meets::read_again(sk, map));
     // a module's own place, where no statement of the document made it
     crate::modules::localize(p, &mut diags);
     diags
@@ -266,7 +265,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
             Err(Again::Faces(more, drawn)) => {
                 renamed += more.keys().filter(|k| faces.contains_key(*k)).count().min(1);
                 faces.extend(more);
-                directions = drawn;
+                directions.extend(drawn);
             }
         }
     }
@@ -277,8 +276,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
 const FACE_PASSES: usize = 8;
 
 /// Why a pass of `elaborate` ends before a drawing is made: sets drawn as elements that are
-/// none, or solids a block runs over the faces of, named — with every direction drawn, as the
-/// pass that named them left it (#763).
+/// none, or solids a block runs over the faces of, named — with each direction a `when` held a
+/// face against and was not given, as the pass left it (#763).
 enum Again {
     Refused(BTreeSet<String>),
     Faces(BTreeMap<String, crate::flatten::Listed>, crate::flatten::Directions),

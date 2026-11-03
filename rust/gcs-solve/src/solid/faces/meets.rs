@@ -1,7 +1,7 @@
 //! **Which faces of a body meet** (#625): what `when a meets b` reads, so a block over a body's
 //! faces in pairs and threes (`A round(r) B`'s edges and corners) makes copies only for faces
 //! that share a point, and not for every pair and three of the names a body lists.
-use super::{cached, FacePath};
+use super::{FacePath, ListedFaces};
 use crate::model::Sketch;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -18,34 +18,27 @@ pub struct Meets {
 
 impl Meets {
     /// The faces `listed` of solid `body` (its `face_paths`), or `None` where its boundary is
-    /// not read here: a body with a swept cut, whose boundary is the field's, or one that does
-    /// not build.
+    /// not read here (`ListedFaces::read`).
     pub fn read(sk: &Sketch, body: usize, listed: &[FacePath]) -> Option<Meets> {
-        if body >= sk.solids.len() || crate::solid::cad::contains_sweep(sk, body) {
-            return None;
-        }
-        let read = cached(sk, body).ok()?;
+        ListedFaces::read(sk, body, listed).map(|l| Meets::of(&l))
+    }
+
+    /// The faces of `listed` that meet.
+    pub fn of(listed: &ListedFaces) -> Meets {
+        let read = &listed.read;
         // each patch's corners: two patches sharing an edge share its ends
         let corners: Vec<BTreeSet<u32>> = (0..read.brep().0.faces.len())
             .map(|fi| read.edges_of(fi).iter().flat_map(|&e| read.ends(e)).collect())
             .collect();
-        let patches = |f: &FacePath| -> Vec<usize> {
-            read.paths().iter().enumerate()
-                .filter(|(_, p)| p.route == f.route && p.face == f.face)
-                .map(|(k, _)| k).collect()
-        };
-        let mine: Vec<(String, Vec<usize>)> =
-            listed.iter().map(|f| (f.text(), patches(f))).collect();
         let touch = |a: &[usize], b: &[usize]| a.iter()
             .any(|&i| b.iter().any(|&j| i == j || !corners[i].is_disjoint(&corners[j])));
-        let faces = listed.iter().zip(&mine).map(|(f, (text, own))| {
-            // a round's face the stratum has not: it cannot say what that one meets
-            let unread = f.of.is_some() && own.is_empty();
-            let meets = (!unread).then(|| mine.iter().filter(|(_, other)| touch(own, other))
+        let faces = listed.faces.iter().map(|(text, own)| {
+            let meets = own.as_ref().map(|own| listed.faces.iter()
+                .filter(|(_, other)| other.as_ref().is_some_and(|other| touch(own, other)))
                 .map(|(t, _)| t.clone()).collect());
             (text.clone(), meets)
         }).collect();
-        Some(Meets { faces })
+        Meets { faces }
     }
 
     /// Whether faces `a` and `b` (each by its name from the solid) share a point: where either

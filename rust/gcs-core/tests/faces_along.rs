@@ -7,57 +7,23 @@
 //! it, the edges in plan.
 use std::f64::consts::PI;
 
-use gcs_core::brep::topo::Brep;
-use gcs_core::brep::{export, props, sweep::Say};
-use gcs_core::program::Elaborated;
+use gcs_core::brep::props;
 
 use crate::common::lenient::read;
-use crate::common::{close, ent, text::solved};
+use crate::common::rounds::{exported, kinds, line_beside_circle};
+use crate::common::{close, text::solved};
 
 const HUB: &str = include_str!("../../examples/rounds/hub.sv");
 
 /// The block over the faces in `hub.sv`, as the example writes it.
 const ALONG: &str = "when f parallel std.z and g parallel std.z {";
 
-/// Solid `name` of `e` built and written as STEP and as STL by this kernel (the STL read back as
-/// closed shells), and its B-rep.
-fn exported(e: &Elaborated, name: &str) -> Brep {
-    let body = ent(e, name).i();
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let exact = export::exact(&e.sketch, body, None, None, &say)
-        .unwrap_or_else(|r| panic!("{name}: {r:?}"));
-    export::step(&exact, name, None, &say).unwrap();
-    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
-    gcs_core::mesh::stl_shells(&stl).unwrap();
-    exact.solid
-}
-
-/// How many of a B-rep's faces lie on each kind of surface.
-fn kinds(b: &Brep) -> std::collections::BTreeMap<&'static str, usize> {
-    let mut out = std::collections::BTreeMap::new();
-    for f in &b.faces {
-        *out.entry(f.surface.kind()).or_default() += 1;
-    }
-    out
-}
-
-/// The section of the fill between a line `w` off a circle's centre, the material on the centre's
-/// side, and the circle of radius `big`, filled by a ball of radius `r` outside both: the
-/// quadrilateral of the ball's centre, its touch on the line, the corner and the circle's centre,
-/// less the circle's sector from the corner to the ball's touch and the ball's own sector.
-fn line_beside_circle(w: f64, big: f64, r: f64) -> f64 {
-    let s = ((big + r) * (big + r) - (w + r) * (w + r)).sqrt();
-    let k = (big * big - w * w).sqrt();
-    // about the circle's centre: the ball's centre, its touch on the line, the corner
-    let (c, t, q) = ([-s, w + r], [-s, w], [-k, w]);
-    let quad = 0.5 * ((c[0] * t[1] - t[0] * c[1]) + (t[0] * q[1] - q[0] * t[1])
-        + (q[0] * 0.0 - 0.0 * q[1]) + (0.0 * c[1] - c[0] * 0.0)).abs();
-    let angle = |u: [f64; 2], v: [f64; 2]| {
-        (u[0] * v[1] - u[1] * v[0]).atan2(u[0] * v[0] + u[1] * v[1]).abs()
-    };
-    let at_centre = angle(q, c);
-    let at_ball = angle([0.0, -r], [-c[0], -c[1]]);
-    quad - 0.5 * big * big * at_centre - 0.5 * r * r * at_ball
+/// `hub.sv` with its faces held against a line `up` drawn up the front plane from the origin, its
+/// far end `u1` drawn by `far` — and the block's condition `cond`.
+fn against_up(cond: &str, far: &str) -> String {
+    HUB.replace(ALONG, &format!("when {cond} {{")).replace("in std.top {", &format!(
+        "in std.front {{\n  u0 := point\n  fix((0, 0)) u0\n  {far}\n  up := line(u0, u1)\n}}\n\
+         in std.top {{"))
 }
 
 /// `hub.sv`'s body with nothing rounded: the bar 40 × 8 × 3 and the post of radius 6 and height
@@ -65,6 +31,12 @@ fn line_beside_circle(w: f64, big: f64, r: f64) -> f64 {
 fn unrounded() -> f64 {
     let shared = 4.0 * 20f64.sqrt() + 36.0 * (2.0f64 / 3.0).asin();
     40.0 * 8.0 * 3.0 + PI * 36.0 * 10.0 - 3.0 * shared
+}
+
+/// The same with its sides filled into the post through the bar's depth: two prisms 3 deep of the
+/// section between a line 4 off the post's axis and its wall, a ball of 3.
+fn filled() -> f64 {
+    unrounded() + 2.0 * 3.0 * line_beside_circle(4.0, 6.0, 3.0)
 }
 
 /// **The edges in plan** (#763): the bar's sides filled into the post's wall through the bar's
@@ -75,7 +47,7 @@ fn a_bars_sides_are_filled_into_the_post_and_its_top_left_sharp() {
     assert!(HUB.contains(ALONG));
     let e = solved(HUB);
     let b = exported(&e, "hub");
-    close(props::volume(&b), unrounded() + 2.0 * 3.0 * line_beside_circle(4.0, 6.0, 3.0));
+    close(props::volume(&b), filled());
     let k = kinds(&b);
     assert_eq!(k.get("torus"), None, "{k:?}");
     assert_eq!(k.get("cylinder"), Some(&3), "the post's wall and a fill on each side: {k:?}");
@@ -122,7 +94,7 @@ fn std_z_in_a_component_is_its_frames() {
         "{}component Keeper(r: Length) {{\n{body}}}\nkeeper := Keeper(r: 3mm) in std.front\n",
         &HUB[..open]);
     let b = exported(&solved(&src), "keeper.hub");
-    close(props::volume(&b), unrounded() + 2.0 * 3.0 * line_beside_circle(4.0, 6.0, 3.0));
+    close(props::volume(&b), filled());
 }
 
 /// A line drawn is a direction too: one up the front plane runs along the post as `std.z` does,
@@ -130,14 +102,12 @@ fn std_z_in_a_component_is_its_frames() {
 /// wall, and nothing is.
 #[test]
 fn a_line_drawn_is_a_direction_too() {
-    let src = HUB.replace(ALONG, "when f parallel up and g parallel up {")
-        .replace("in std.top {", "in std.front {\n  u0 := point\n  u1 := point\n  \
-                  fix((0, 0)) u0\n  fix((0, 1)) u1\n  up := line(u0, u1)\n}\nin std.top {");
-    let b = exported(&solved(&src), "hub");
-    close(props::volume(&b), unrounded() + 2.0 * 3.0 * line_beside_circle(4.0, 6.0, 3.0));
-    let across = src.replace("fix((0, 1)) u1", "fix((1, 0)) u1");
-    let b = exported(&solved(&across), "hub");
-    close(props::volume(&b), unrounded());
+    let along = |far: &str| {
+        let src = against_up("f parallel up and g parallel up", far);
+        props::volume(&exported(&solved(&src), "hub"))
+    };
+    close(along("u1 := point\n  fix((0, 1)) u1"), filled());
+    close(along("u1 := point\n  fix((1, 0)) u1"), unrounded());
 }
 
 /// What a `when` holds a face against is a direction drawn, and what it holds is a face: anything
@@ -145,15 +115,11 @@ fn a_line_drawn_is_a_direction_too() {
 #[test]
 fn a_face_along_a_direction_or_e103() {
     let refused = |cond: &str, code: &str, words: &str| {
-        let (e, d) = read(&HUB.replace(ALONG, &format!("when {cond} {{")));
+        let (mut e, d) = read(&HUB.replace(ALONG, &format!("when {cond} {{")));
         assert!(d.iter().any(|m| m.starts_with(code) && m.contains(words)),
                 "{cond}: expected {code} saying {words:?}: {d:?}");
-        let b = exported(&{
-            let mut e = e;
-            assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
-            e
-        }, "hub");
-        close(props::volume(&b), unrounded());
+        assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+        close(props::volume(&exported(&e, "hub")), unrounded());
     };
     refused("f parallel g", "E103", "is no direction drawn");
     refused("o parallel std.z", "E103", "`o` is no face");
@@ -172,34 +138,37 @@ fn a_face_along_a_direction_or_e103() {
 /// line drawn up the front plane, its far end seeded leaning and held along `std.z`.  Where the
 /// drawing is seeded the post's wall does not run along the line, so the `when` leaves the fills
 /// out; where it solves it does — said at the block, rather than built with those edges left
-/// sharp.  Seeded upright, the same document builds its fills and says nothing.  A plane seeded
-/// leaning is settled before the faces are named, so a deck held flat builds them as the top
-/// plane does.
+/// sharp.  Seeded upright, the same document builds its fills and says nothing; and a block whose
+/// condition fails at both however its faces are read says nothing either: the bar's own top,
+/// which runs along nothing, beside a face that turns.  A plane seeded leaning is settled before
+/// the faces are named, so a deck held flat builds them as the top plane does.
 #[test]
 fn a_face_read_off_the_direction_where_it_is_seeded_is_said_where_it_solves() {
-    let filled = unrounded() + 2.0 * 3.0 * line_beside_circle(4.0, 6.0, 3.0);
-    let up = |seed: &str| HUB.replace(ALONG, "when f parallel up and g parallel up {")
-        .replace("in std.top {", &format!("in std.front {{\n  u0 := point\n  \
-                  u1 := point hint(({seed}))\n  fix((0, 0)) u0\n  u0 distance(1mm) u1\n  \
-                  up := line(u0, u1)\n  up parallel std.z\n}}\nin std.top {{"));
+    let up = |cond: &str, seed: &str| against_up(cond, &format!(
+        "u1 := point hint(({seed}))\n  u0 distance(1mm) u1\n  up parallel std.z"));
     let said = |src: &str| {
         let e = solved(src);
         let d = gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program);
         (props::volume(&exported(&e, "hub")), d)
     };
-    let (v, upright) = said(&up("0, 1"));
+    let both = "f parallel up and g parallel up";
+    let (v, upright) = said(&up(both, "0, 1"));
     assert!(upright.is_empty(), "{upright:?}");
-    close(v, filled);
-    let (v, leaning) = said(&up("0.3, 1"));
+    close(v, filled());
+    let (v, leaning) = said(&up(both, "0.3, 1"));
     close(v, unrounded());
     assert!(leaning.iter().any(|d| d.code.as_str() == "E080"
         && d.message.contains("is not `parallel up` where the drawing is seeded, but where it \
                                solves")
+        && d.message.contains("so what it makes is left out")
         && d.message.contains("`hub`'s face")), "{leaning:?}");
+    let (v, never) = said(&up("f parallel up and g parallel up and f == hub.bar.near", "0.3, 1"));
+    assert!(never.is_empty(), "{never:?}");
+    close(v, unrounded());
     let deck = HUB.replace("in std.top {", "du := axis hint(dir: (1, 0, 0))\n\
         dv := axis hint(dir: (0, 1, 0.3))\ndu parallel std.x\ndv parallel std.y\n\
         deck := plane(u: du, v: dv)\nfix(origin == (0mm, 0mm, 0mm)) deck\nin deck {");
     let (v, flat) = said(&deck);
     assert!(flat.is_empty(), "{flat:?}");
-    close(v, filled);
+    close(v, filled());
 }

@@ -139,6 +139,40 @@ pub fn terms_read_faces(terms: &[RegionTerm]) -> bool {
     terms.iter().any(|t| reads_faces(&t.shape))
 }
 
+/// **A solid's listed faces, read off its stratum** (#625, #763): the stratum (`cached`: the body
+/// as made by the terms that do not read its faces) where the drawing stands, and each face the
+/// solid lists (`face_paths`) by its name from the solid (`FacePath::text`) with its patches there
+/// — none for a face a Boolean ate, and `None` for a face a round of the body made, which the
+/// stratum may not have.  What `Meets` and `Lays` are read from, once for both.
+pub struct ListedFaces {
+    read: std::sync::Arc<BodyFaces>,
+    faces: Vec<(String, Option<Vec<usize>>)>,
+}
+
+impl ListedFaces {
+    /// The faces `listed` of solid `body`, or `None` where its boundary is not read here: a body
+    /// with a swept cut, whose boundary is the field's, or one that does not build.
+    pub fn read(sk: &Sketch, body: usize, listed: &[FacePath]) -> Option<ListedFaces> {
+        if body >= sk.solids.len() || super::cad::contains_sweep(sk, body) {
+            return None;
+        }
+        let read = cached(sk, body).ok()?;
+        // each patch under its face's name, in one pass over the stratum
+        let mut by_name: std::collections::BTreeMap<(&[String], &str), Vec<usize>> =
+            Default::default();
+        for (k, p) in read.paths().iter().enumerate() {
+            by_name.entry((&p.route, &p.face)).or_default().push(k);
+        }
+        let faces = listed.iter().map(|f| {
+            let own = by_name.get(&(&f.route[..], &f.face[..])).cloned().unwrap_or_default();
+            // a round's face the stratum has not: it cannot say of that one
+            let unread = f.of.is_some() && own.is_empty();
+            (f.text(), (!unread).then_some(own))
+        }).collect();
+        Some(ListedFaces { read, faces })
+    }
+}
+
 /// `BodyFaces::read`, remembered against what it reads (`Caches::faces`): the stratum, so
 /// a round's own numbers do not build its body again.
 pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, String> {

@@ -590,8 +590,8 @@ edge or a corner, read where the drawing is seeded (a pair it reads apart that t
 together is E080); `f parallel l` where face `f` runs along direction `l` at every point (a plane
 holding it, a cylinder about it, a prism's side swept along it) and `f perpendicular l` where it is
 a plane square to it — `l` an axis (`std.z`, a frame's own in a component), a line or a frame's
-axis — read there too (a face read one way there and the other where the drawing solves is E080;
-a fitted face, which its kind does not say of, E103) (0.201). There is no copy: what the body
+axis — read there too (a block that comes out the other way with its faces read where the
+drawing solves is E080; a fitted face, which its kind does not say of, E103) (0.201). There is no copy: what the body
 declares keeps
 its own name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused:
 an unknown of the drawing in the condition (E040), a number against something drawn (E103), an

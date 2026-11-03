@@ -289,22 +289,27 @@ seeded off its plate).
 (`Cond::Along`, `expr::Along`, made by `parse_condition_in` only, refused by `expr::decide`) hold
 where face `f` runs along direction `l` at every point, or is a plane square to it — the relation
 words' meaning for a plane and an axis, asked. Each patch is read by its surface's kind, exactly
-(`solid::faces::Lays`, off the stratum `Meets` reads, beside it in `flatten::Listed`): a plane by
-its normal, a cylinder, an extrusion and a revolved line along the axis by that line, a cone, a
-sphere, a torus and a revolved circle along nothing, a fitted surface, a blend, a family's wall and
-an affine image unread (E103, naming the kind, as for a round's face the stratum has not, a body
-cut by a sweep, a name that is no face and a direction not drawn). The direction is read off the
-drawing where the faces are named (`flatten::Directions`, every axis, line and frame's `u`, `v` and
-`normal` by absolute name, `program::meets::directions`, carried in `Again::Faces` beside the
-faces), so `std.z` in a body standing in a frame is the frame's normal. Every answer is kept
-(`flatten::AlongRead`, `SourceMap::along`) and `program::meets::along` reads it again in
-`solid_diagnostics` where the drawing is solved: a face read the other way there is E080, once per
-statement and solid. A plane is settled before the faces are named, so a deck seeded leaning and
-held flat reads as flat. It is what picks the edges a round takes by their direction, written in
-Solvent (no option of the word): two faces both along `l` meet in lines along it.
+(`solid::faces::Lays`, beside `Meets` in `flatten::Listed`, both read off one `ListedFaces`, the
+stratum and each listed face's patches): a plane by its normal, a cylinder, an extrusion and a
+revolved line along the axis by that line, a cone, a sphere, a torus and a revolved circle along
+nothing, a fitted surface, a blend, a family's wall and an affine image unread (E103, naming the
+kind, as for a round's face the stratum has not, a body cut by a sweep, a name that is no face and
+a direction not drawn). The direction is read off the drawing where the faces are named, only
+once a walk has asked for it (`Expansion::directions_wanted`, read by `program::meets::direction`
+— an axis or a line by `analysis::direction`, a frame's `u`, `v` and `normal` off its basis — and
+carried in `Again::Faces` as `flatten::Directions`, a pass more), so `std.z` in a body standing in
+a frame is the frame's normal, and a document asking none reads none. A block that read faces so
+is kept with its condition as a truth over them (`flatten::WhenRead`, `Truth`, built by
+`values::truth` with everything else the condition asks decided; `SourceMap::along`), and
+`program::meets` decides it again in `solid_diagnostics` with the faces as the drawing is solved:
+where it comes out the other way, each face read the other way is E080, once per statement and
+solid — a face that turned without changing the block says nothing. A plane is settled before
+the faces are named, so a deck seeded leaning and held flat reads as flat. It is what picks the
+edges a round takes by their direction, written in Solvent (no option of the word): two faces
+both along `l` meet in lines along it.
 `tests/faces_along.rs` is the gate (`rounds/hub.sv`'s two fills to the closed form, the arc alone
 by `perpendicular`, a component's `std.z` its frame's, a line drawn as the direction, the refusals,
-a line seeded leaning said where it solves).
+a line seeded leaning said where it solves, and a turned face that changes no block not).
 
 **The expansion's limit is said once (#625).** A walk past `MAX_FLAT` statements says one E103
 at the root body's statement it was walking (`FaceState::at`), naming where in a module it had got

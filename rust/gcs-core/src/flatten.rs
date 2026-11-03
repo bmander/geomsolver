@@ -423,9 +423,12 @@ pub struct Expansion {
     /// drawing is seeded, which made the copy nothing — for the elaborator to read again where
     /// it is solved (`program::meets`).
     pub apart: Vec<Apart>,
-    /// Every face a `when` read along a direction or square to it (#763), where the drawing is
-    /// seeded — for the elaborator to read again where it is solved (`program::meets::along`).
-    pub along: Vec<AlongRead>,
+    /// Every `when` that read faces along a direction or square to it (#763), where the drawing
+    /// is seeded — for the elaborator to decide again where it is solved (`program::meets`).
+    pub along: Vec<WhenRead>,
+    /// Every direction a `when` held a face against that it was not given (#763): for the
+    /// elaborator to read off the drawing, and walk again (`Directions`).
+    pub directions_wanted: BTreeSet<String>,
     /// Whether the walk stopped at `MAX_FLAT`, its statements cut short: no drawing.
     pub overflowed: bool,
 }
@@ -441,16 +444,50 @@ pub struct Apart {
 
 /// **A face a `when … parallel …` or `… perpendicular …` read** (#763): the solid by its absolute
 /// name, the face by its name from it, the word, the direction by the absolute name it stands for,
-/// what the face was read as where the drawing is seeded, and the document's statement that made
-/// the block.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+/// and what the face was read as where the drawing is seeded.
+#[derive(Clone, Debug, PartialEq)]
 pub struct AlongRead {
     pub solid: String,
     pub face: String,
     pub along: crate::expr::Along,
     pub line: String,
     pub held: bool,
+}
+
+/// **A `when` that read faces along a direction** (#763): the document's statement that made the
+/// block, whether it was made, its condition as a truth over the faces it read (`Truth::Face`
+/// indexing `faces`, in the order they were asked), and those faces.
+#[derive(Clone, Debug)]
+pub struct WhenRead {
     pub at: Span,
+    pub made: bool,
+    pub truth: Truth,
+    pub faces: Vec<AlongRead>,
+}
+
+/// A condition as a truth over the faces it read along a direction, everything else it asks
+/// decided where the drawing is seeded: what its block is made by, decided again with the faces
+/// as the drawing solves.
+#[derive(Clone, Debug)]
+pub enum Truth {
+    Is(bool),
+    Face(usize),
+    And(Box<Truth>, Box<Truth>),
+    Or(Box<Truth>, Box<Truth>),
+    Not(Box<Truth>),
+}
+
+impl Truth {
+    /// Whether it holds with face `k` read as `face(k)`.
+    pub fn holds(&self, face: &dyn Fn(usize) -> bool) -> bool {
+        match self {
+            Truth::Is(b) => *b,
+            Truth::Face(k) => face(*k),
+            Truth::And(a, b) => a.holds(face) && b.holds(face),
+            Truth::Or(a, b) => a.holds(face) || b.holds(face),
+            Truth::Not(a) => !a.holds(face),
+        }
+    }
 }
 
 /// **A number the document names** (#596): `ratio := teeth / 12 * 4`, a `param`, a group's
@@ -810,9 +847,10 @@ pub struct Listed {
     pub lays: Option<crate::solid::faces::Lays>,
 }
 
-/// **Each direction drawn, where the drawing is seeded** (#763): an axis's, a line's from its
-/// first point to its second, a frame's `u`, `v` and `normal`, by the absolute name a `when`
-/// reads it by — what `a parallel std.z` holds a face against.  Given with the faces.
+/// **The directions a `when` holds faces against, where the drawing is seeded** (#763): an
+/// axis's, a line's from its first point to its second, a frame's `u`, `v` and `normal`, by the
+/// absolute name a `when` reads it by — what `a parallel std.z` holds a face against.  Given with
+/// the faces, each once a walk has wanted it (`Expansion::directions_wanted`).
 pub type Directions = BTreeMap<String, [f64; 3]>;
 
 /// The solids' faces read as sets, and the blocks over them (`Walk::faces`).
@@ -825,9 +863,11 @@ struct FaceState {
     /// See `Expansion::apart`.
     apart: BTreeSet<Apart>,
     /// See `Expansion::along`.
-    along: BTreeSet<AlongRead>,
+    along: Vec<WhenRead>,
     /// The directions drawn, where the elaborator has said (`Directions`).
     directions: Directions,
+    /// See `Expansion::directions_wanted`.
+    wanted: BTreeSet<String>,
     /// The document's own statement being walked — its root body's — where a block set aside
     /// was met: what a fault deep in what it expands to is said at (#625).
     at: Span,
@@ -1115,7 +1155,8 @@ impl<'a> Walk<'a> {
             held: self.held.names,
             reads: self.held.reads,
             apart: self.faces.apart.into_iter().collect(),
-            along: self.faces.along.into_iter().collect(),
+            along: self.faces.along,
+            directions_wanted: self.faces.wanted,
             overflowed: self.overflowed,
         }
     }

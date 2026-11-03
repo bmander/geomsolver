@@ -3,11 +3,11 @@
 //! a round takes picked by the faces they lie between, written in Solvent, and not by an option of
 //! the word.  Two faces along one direction meet in lines along it: the edges in plan of a part
 //! drawn in plan.
-use super::{cached, FacePath};
+use super::{FacePath, ListedFaces};
 use crate::brep::geom::{Curve, Surface, V};
 use crate::expr::Along;
 use crate::model::Sketch;
-use crate::space::{cross, dot, norm};
+use crate::space::{cross, dot, norm, normalised};
 use std::collections::BTreeMap;
 
 /// Two unit directions closer than this to square, or to one line, are taken to be: a face is
@@ -33,7 +33,9 @@ impl Lay {
             Surface::Cylinder(f, _) => Lay::Along(f.z),
             // a straight section swept along a line is a plane holding both
             Surface::Extrusion(f, c) => match &**c {
-                Curve::Line { d, .. } => Lay::Plane(unit(cross(f.z, *d))),
+                Curve::Line { d, .. } => {
+                    normalised(cross(f.z, *d)).map_or(Lay::Neither, Lay::Plane)
+                }
                 _ => Lay::Along(f.z),
             },
             // a line turned about an axis it runs along is a cylinder, one square to it a plane
@@ -62,14 +64,9 @@ impl Lay {
     }
 }
 
-fn unit(v: V) -> V {
-    let n = norm(v);
-    if n > 0.0 { v.map(|x| x / n) } else { v }
-}
-
 /// The faces a solid lists (`face_paths`), each by its name as written from the solid
-/// (`FacePath::text`), and how each patch of it lies, read off the stratum (`cached`, as `Meets`
-/// reads it) where the drawing stands.  A face a Boolean ate has no patch; `None` for a face a
+/// (`FacePath::text`), and how each patch of it lies, read off the stratum (`ListedFaces`, as
+/// `Meets` is) where the drawing stands.  A face a Boolean ate has no patch; `None` for a face a
 /// round of the body made, which the stratum may not have.
 #[derive(Clone, Debug)]
 pub struct Lays {
@@ -77,24 +74,21 @@ pub struct Lays {
 }
 
 impl Lays {
-    /// The faces `listed` of solid `body`, or `None` where its boundary is not read here: a body
-    /// with a swept cut, whose boundary is the field's, or one that does not build.
+    /// The faces `listed` of solid `body`, or `None` where its boundary is not read here
+    /// (`ListedFaces::read`).
     pub fn read(sk: &Sketch, body: usize, listed: &[FacePath]) -> Option<Lays> {
-        if body >= sk.solids.len() || crate::solid::cad::contains_sweep(sk, body) {
-            return None;
-        }
-        let read = cached(sk, body).ok()?;
-        let (brep, _, _) = read.brep();
-        let faces = listed.iter().map(|f| {
-            let own: Vec<Lay> = read.paths().iter().enumerate()
-                .filter(|(_, p)| p.route == f.route && p.face == f.face)
-                .map(|(k, _)| Lay::of(&brep.faces[k].surface))
-                .collect();
-            // a round's face the stratum has not: it cannot say how that one lies
-            let unread = f.of.is_some() && own.is_empty();
-            (f.text(), (!unread).then_some(own))
+        ListedFaces::read(sk, body, listed).map(|l| Lays::of(&l))
+    }
+
+    /// How each face of `listed` lies.
+    pub fn of(listed: &ListedFaces) -> Lays {
+        let (brep, _, _) = listed.read.brep();
+        let faces = listed.faces.iter().map(|(text, own)| {
+            let lays = own.as_ref()
+                .map(|own| own.iter().map(|&k| Lay::of(&brep.faces[k].surface)).collect());
+            (text.clone(), lays)
         }).collect();
-        Some(Lays { faces })
+        Lays { faces }
     }
 
     /// Whether face `face` (by its name from the solid) lies `along` the direction `d` at every
@@ -106,19 +100,9 @@ impl Lays {
             return Some(Err("it is a face a round of the body made, which is not read where the \
                              body's faces are named".to_string()));
         };
-        let d = unit(d);
-        if lays.is_empty() || norm(d) == 0.0 {
-            return Some(Ok(false));
-        }
-        let mut all = true;
-        for lay in lays {
-            match lay.holds(along, d) {
-                Ok(h) => all &= h,
-                Err(kind) => return Some(Err(format!(
-                    "it lies on a {kind} surface, whose kind does not say how it lies"
-                ))),
-            }
-        }
-        Some(Ok(all))
+        let Some(d) = normalised(d).filter(|_| !lays.is_empty()) else { return Some(Ok(false)) };
+        Some(lays.iter().try_fold(true, |all, lay| Ok(all & lay.holds(along, d)?)).map_err(
+            |kind: &str| format!("it lies on a {kind} surface, whose kind does not say how it lies")
+        ))
     }
 }

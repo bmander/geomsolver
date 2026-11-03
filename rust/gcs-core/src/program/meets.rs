@@ -5,128 +5,115 @@
 //! drawing solves is a copy that should have made something — an edge a round left sharp — and
 //! is said here, at the document's statement that made the block, rather than built wrong.
 //!
-//! So too `when a parallel l` and `when a perpendicular l` (#763): a face read along a direction
-//! where the drawing is seeded that is not where it solves, or the other way round, made a copy
-//! that should not have been made, or left out one that should — said at the same statement.
+//! So too `when a parallel l` and `when a perpendicular l` (#763): a face whose answer alone
+//! decided the block, read the other way where the drawing solves, made a copy that should not
+//! have been made, or left out one that should — said at the same statement.
 use super::{public_path, Code, Diag, SourceMap};
+use crate::flatten::{Apart, AlongRead};
 use crate::model::{EntKind, EntRef, Sketch};
-use crate::solid::faces::{face_paths, Lays, Meets};
+use crate::solid::faces::{face_paths, Lays, ListedFaces, Meets};
 use crate::syntax::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// One E080 for each statement and solid whose faces read apart meet where the drawing stands
-/// in `sk`: the first such pair named, and how many more.
-pub(super) fn apart(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
-    let mut read: BTreeMap<&str, Option<Meets>> = BTreeMap::new();
-    let mut met: Vec<(Span, &str, &[String; 2], usize)> = Vec::new();
+/// Both checks, each solid they name read once where the drawing stands in `sk`.
+pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
+    let solids: BTreeSet<&str> = map.apart.iter().map(|a| a.solid.as_str())
+        .chain(map.along.iter().flat_map(|w| &w.faces).map(|a| a.solid.as_str())).collect();
+    let read: Read = solids.into_iter().filter_map(|solid| {
+        let e = map.ent_named(solid).filter(|e| e.kind == EntKind::Solid)?;
+        let listed = ListedFaces::read(sk, e.i(), &face_paths(sk, e.i()))?;
+        Some((solid, (Meets::of(&listed), Lays::of(&listed))))
+    }).collect();
+    let mut diags = apart(map, &read);
+    diags.extend(along(sk, map, &read));
+    diags
+}
+
+/// Each solid's faces where the drawing is solved, by its absolute name: where its boundary says.
+type Read<'m> = BTreeMap<&'m str, (Meets, Lays)>;
+
+/// One E080 for each statement and solid whose faces read apart meet where the drawing is solved:
+/// the first such pair named, and how many more.
+fn apart(map: &SourceMap, read: &Read) -> Vec<Diag> {
     // each pair once, whichever way round it was asked
     let mut said = BTreeSet::new();
-    for a in &map.apart {
+    let met = map.apart.iter().filter(|a| {
         let [x, y] = &a.faces;
-        if !said.insert((a.at, a.solid.as_str(), x.min(y), x.max(y))) {
-            continue;
-        }
-        let meets = read.entry(a.solid.as_str()).or_insert_with(|| {
-            let e = map.ent_named(&a.solid).filter(|e| e.kind == EntKind::Solid)?;
-            Meets::read(sk, e.i(), &face_paths(sk, e.i()))
-        });
-        if !meets.as_ref().is_some_and(|m| m.meets(x, y)) {
-            continue;
-        }
-        match met.iter_mut().find(|m| m.0 == a.at && m.1 == a.solid) {
-            Some(m) => m.3 += 1,
-            None => met.push((a.at, &a.solid, &a.faces, 0)),
-        }
-    }
-    met.into_iter().map(|(at, solid, [a, b], more)| {
-        let more = match more {
-            0 => String::new(),
-            1 => " (and one pair more)".to_string(),
-            n => format!(" (and {n} pairs more)"),
-        };
+        said.insert((a.at, a.solid.as_str(), x.min(y), x.max(y)))
+            && read.get(a.solid.as_str()).is_some_and(|(m, _)| m.meets(x, y))
+    });
+    grouped(met.map(|a: &Apart| (a.at, a.solid.as_str(), a))).into_iter().map(|(at, a, n)| {
+        let [x, y] = &a.faces;
         Diag::new(Code::E080, at, None, format!(
-            "`{}`'s faces `{a}` and `{b}` meet where the drawing solves, but not where it is \
-             seeded, where `meets` read them apart{more}: what they would make is not made — seed \
+            "`{}`'s faces `{x}` and `{y}` meet where the drawing solves, but not where it is \
+             seeded, where `meets` read them apart{}: what they would make is not made — seed \
              the drawing nearer where it solves",
-            public_path(solid)
+            public_path(&a.solid), more(n, "pair")
         ))
     }).collect()
 }
 
-/// **The directions entity `e`, named `name`, draws** (#763), as the drawing stands in `sk`, each
-/// by the absolute name a `when` reads it by: an axis's own, a line's from its first point to its
-/// second, and a frame's `u`, `v` and `normal`; nothing for any other kind.
-pub(super) fn directions(sk: &Sketch, name: &str, e: EntRef) -> Vec<(String, [f64; 3])> {
-    let value = |q: u32| sk.params[q as usize].value;
-    match e.kind {
-        EntKind::Axis => vec![(name.to_string(), sk.axes[e.i()].d.map(value))],
-        EntKind::Line => {
-            let l = &sk.lines[e.i()];
-            let (a, b) = (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize));
-            vec![(name.to_string(), crate::space::sub(b, a))]
-        }
-        EntKind::Frame => {
-            let b = sk.basis(e.i());
-            [("u", b.u), ("v", b.v), ("normal", b.normal())].into_iter()
-                .map(|(m, d)| (format!("{name}.{m}"), d)).collect()
-        }
-        _ => Vec::new(),
-    }
-}
-
-/// The direction `name` stands for where the drawing stands in `sk`: drawn under its own name,
-/// or a frame's axis under the frame's.
-fn direction_named(sk: &Sketch, map: &SourceMap, name: &str) -> Option<[f64; 3]> {
-    let own = map.ent_named(name).map(|e| (name, e));
-    let frame = || {
-        let (of, _) = name.rsplit_once('.')?;
-        map.ent_named(of).filter(|e| e.kind == EntKind::Frame).map(|e| (of, e))
+/// One E080 for each statement and solid with a `when` over faces read along a direction that,
+/// decided again with the faces as the drawing is solved, is made where it was not or the other
+/// way round: the first face read the other way named, and how many more.
+fn along(sk: &Sketch, map: &SourceMap, read: &Read) -> Vec<Diag> {
+    let solved = |a: &AlongRead| {
+        let d = direction(sk, |n| map.ent_named(n), &a.line)?;
+        read.get(a.solid.as_str())?.1.holds(&a.face, a.along, d)?.ok()
     };
-    let (at, e) = own.or_else(frame)?;
-    directions(sk, at, e).into_iter().find(|(n, _)| n == name).map(|(_, d)| d)
-}
-
-/// One E080 for each statement and solid with a face read along a direction where the drawing is
-/// seeded that is not where it stands in `sk`, or the other way round: the first such face named,
-/// and how many more.
-pub(super) fn along(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
-    let mut read: BTreeMap<&str, Option<Lays>> = BTreeMap::new();
-    let mut changed: Vec<(Span, &str, &crate::flatten::AlongRead, usize)> = Vec::new();
-    let mut said = BTreeSet::new();
-    for a in &map.along {
-        if !said.insert((a.at, a.solid.as_str(), a.face.as_str(), a.along, a.line.as_str())) {
-            continue;
-        }
-        let lays = read.entry(a.solid.as_str()).or_insert_with(|| {
-            let e = map.ent_named(&a.solid).filter(|e| e.kind == EntKind::Solid)?;
-            Lays::read(sk, e.i(), &face_paths(sk, e.i()))
-        });
-        let Some(d) = direction_named(sk, map, &a.line) else { continue };
-        let now = lays.as_ref().and_then(|l| l.holds(&a.face, a.along, d)).and_then(Result::ok);
-        if now.is_none_or(|h| h == a.held) {
-            continue;
-        }
-        match changed.iter_mut().find(|m| m.0 == a.at && m.1 == a.solid) {
-            Some(m) => m.3 += 1,
-            None => changed.push((a.at, &a.solid, a, 0)),
-        }
-    }
-    changed.into_iter().map(|(at, solid, a, more)| {
-        let more = match more {
-            0 => String::new(),
-            1 => " (and one face more)".to_string(),
-            n => format!(" (and {n} faces more)"),
-        };
-        let (seeded, solved, block) = if a.held {
-            ("", "not ", "made")
-        } else {
-            ("not ", "", "left out")
-        };
+    let turned = map.along.iter().flat_map(|w| {
+        let now: Vec<bool> = w.faces.iter().map(|a| solved(a).unwrap_or(a.held)).collect();
+        let decided_again = w.truth.holds(&|k| now[k]) != w.made;
+        w.faces.iter().zip(now).filter(move |(a, now)| decided_again && *now != a.held)
+            .map(move |(a, _)| (w.at, a.solid.as_str(), (a, w.made)))
+    });
+    grouped(turned).into_iter().map(|(at, (a, made), n)| {
+        let (seeded, solved) = if a.held { ("", "not ") } else { ("not ", "") };
+        let block = if made { "made" } else { "left out" };
         Diag::new(Code::E080, at, None, format!(
             "`{}`'s face `{}` is {seeded}`{} {}` where the drawing is seeded, but {solved}where \
-             it solves{more}: the `when` over it was decided at the seed, so what it makes is \
+             it solves{}: the `when` over it was decided at the seed, so what it makes is \
              {block} — seed the drawing nearer where it solves",
-            public_path(solid), a.face, a.along.word(), public_path(&a.line)
+            public_path(&a.solid), a.face, a.along.word(), public_path(&a.line), more(n, "face")
         ))
     }).collect()
+}
+
+/// Each statement and solid's first item, and how many more it has, in the order they come.
+fn grouped<'a, T>(items: impl Iterator<Item = (Span, &'a str, T)>) -> Vec<(Span, T, usize)> {
+    let mut out: Vec<(Span, &str, T, usize)> = Vec::new();
+    for (at, solid, t) in items {
+        match out.iter_mut().find(|m| m.0 == at && m.1 == solid) {
+            Some(m) => m.3 += 1,
+            None => out.push((at, solid, t, 0)),
+        }
+    }
+    out.into_iter().map(|(at, _, t, n)| (at, t, n)).collect()
+}
+
+/// `(and one {noun} more)`, or how many more, after the first said.
+fn more(n: usize, noun: &str) -> String {
+    match n {
+        0 => String::new(),
+        1 => format!(" (and one {noun} more)"),
+        n => format!(" (and {n} {noun}s more)"),
+    }
+}
+
+/// **The direction `name` stands for** (#763), where the drawing stands in `sk`, each entity by
+/// `of`: an axis's own, a line's from its first point to its second (`analysis::direction`), or a
+/// frame's `u`, `v` or `normal` under the frame's name.
+pub(super) fn direction(sk: &Sketch, of: impl Fn(&str) -> Option<EntRef>, name: &str)
+    -> Option<[f64; 3]> {
+    if let Some(e) = of(name) {
+        return crate::diagnose::analysis::direction(sk, e).ok();
+    }
+    let (frame, member) = name.rsplit_once('.')?;
+    let b = sk.basis(of(frame).filter(|e| e.kind == EntKind::Frame)?.i());
+    match member {
+        "u" => Some(b.u),
+        "v" => Some(b.v),
+        "normal" => Some(b.normal()),
+        _ => None,
+    }
 }

@@ -327,8 +327,8 @@ impl Cond {
     }
 
     /// Whether the condition compares names for what they stand for (`in`, `meets`, `parallel`,
-    /// `perpendicular`) anywhere —
-    /// which only a `when` decides, the elaborator knowing what a name is.
+    /// `perpendicular`) anywhere — which only a `when` decides, the elaborator knowing what a name
+    /// is.
     pub fn names_geometry(&self) -> bool {
         match self {
             Cond::Cmp(..) => false,

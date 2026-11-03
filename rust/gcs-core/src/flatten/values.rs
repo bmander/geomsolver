@@ -101,6 +101,33 @@ pub(super) fn condition(
     holds(&c, env, scope, names).map_err(|(code, e)| said(code, e))
 }
 
+/// **A `when`'s condition as a truth over the faces it reads along a direction** (#763), each
+/// `Truth::Face` in the order `holds` asks them (an `and`'s and an `or`'s left side first) and
+/// everything else decided as `holds` decides it — for a condition `condition` decided, so that
+/// nothing in it fails.
+pub(super) fn truth(text: &str, env: &Vals, scope: &Scope, units: Units, names: &dyn Names)
+    -> super::Truth {
+    use super::Truth;
+    fn of(c: &Cond, env: &Vals, scope: &Scope, names: &dyn Names, next: &mut usize) -> Truth {
+        let mut two = |a: &Cond, b: &Cond| {
+            let a = Box::new(of(a, env, scope, names, next));
+            (a, Box::new(of(b, env, scope, names, next)))
+        };
+        match c {
+            Cond::And(a, b) => { let (a, b) = two(a, b); Truth::And(a, b) }
+            Cond::Or(a, b) => { let (a, b) = two(a, b); Truth::Or(a, b) }
+            Cond::Not(a) => Truth::Not(Box::new(of(a, env, scope, names, next))),
+            Cond::Along(..) => {
+                *next += 1;
+                Truth::Face(*next - 1)
+            }
+            _ => Truth::Is(holds(c, env, scope, names).unwrap_or(false)),
+        }
+    }
+    let Ok(c) = expr::parse_condition_in(text, units) else { return Truth::Is(false) };
+    of(&c, env, scope, names, &mut 0)
+}
+
 /// One condition of a `when`, decided: identities by what names stand for, comparisons of
 /// numbers by `expr::decide`.  Both sides of an `and` or an `or` are worked out, so a mistake a
 /// short circuit would skip is still said.

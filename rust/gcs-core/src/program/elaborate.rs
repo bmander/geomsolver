@@ -125,7 +125,8 @@ pub(super) fn elaborate_in(
     super::rounds::rounds(&mut cx, &flat.body, &deferred, &held);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
-    solids_and_surfaces(&mut cx, &flat, faces, faces_settled, &generated, &held_in_space)?;
+    solids_and_surfaces(&mut cx, &flat, (faces, directions), faces_settled, &generated,
+                        &held_in_space)?;
     expressions(&mut cx, &flat, &on_followed);
     regions_read(&mut cx, &flat, &after_solids);
     Ok(finish(cx, &flat))
@@ -802,7 +803,7 @@ fn place_planes(
 fn solids_and_surfaces(
     cx: &mut Elab<'_>,
     flat: &Flat<'_>,
-    faces: &BTreeMap<String, Listed>,
+    (faces, directions): (&BTreeMap<String, Listed>, &Directions),
     settled: bool,
     generated: &BTreeSet<StmtId>,
     held: &BTreeSet<StmtId>,
@@ -822,17 +823,21 @@ fn solids_and_surfaces(
         // which of them meet and how each lies, read where the drawing is seeded (#625, #763):
         // checked again where it is solved (`program::meets`)
         .map(|(abs, i, paths)| {
-            let meets = crate::solid::faces::Meets::read(sk, i, &paths);
-            let lays = crate::solid::faces::Lays::read(sk, i, &paths);
+            let read = crate::solid::faces::ListedFaces::read(sk, i, &paths);
+            let meets = read.as_ref().map(crate::solid::faces::Meets::of);
+            let lays = read.as_ref().map(crate::solid::faces::Lays::of);
             (abs, Listed { paths, meets, lays })
         })
         .collect();
-    if !unnamed.is_empty() {
-        // and every direction drawn, as it stands there, for a `when` to hold a face against
-        let directions = res.of.iter()
-            .flat_map(|(name, &e)| super::meets::directions(sk, name, e))
-            .collect();
-        return Err(Again::Faces(unnamed, directions));
+    // and each direction a `when` held a face against and was not given, as it stands there
+    let drawn: Directions = flat.expansion.directions_wanted.iter()
+        .filter(|name| !directions.contains_key(*name))
+        .filter_map(|name| {
+            Some((name.clone(), super::meets::direction(sk, |n| res.of.get(n).copied(), name)?))
+        })
+        .collect();
+    if !unnamed.is_empty() || !drawn.is_empty() {
+        return Err(Again::Faces(unnamed, drawn));
     }
     surfaces::surfaces(sk, res, map, body, skip, diags);
     envelopes::envelopes(sk, res, map, body, generated, held, diags);

@@ -1113,25 +1113,32 @@ impl<'a> Walk<'a> {
             // faces read apart where the drawing is seeded that alone left the block out, to be
             // read again where it is solved (#625)
             let apart = names.apart.take();
-            // and faces read along a direction, every one, to be read again so too (#763)
+            // the faces read along a direction as first asked (#763), before any asking again
             let along = names.along.take();
             let alone = matches!(decided, Ok(false)) && !apart.is_empty() && {
                 names.every.set(true);
                 matches!(super::values::condition(&b.count, vals, scope, self.units, &names),
                     Ok(true))
             };
+            // and a block that read faces along a direction, its condition as a truth over them,
+            // to be decided again so too
+            let along = match decided {
+                Ok(made) if !along.is_empty() => {
+                    names.every.set(false);
+                    let truth = super::values::truth(&b.count, vals, scope, self.units, &names);
+                    Some(super::WhenRead { at: self.faces.at, made, truth, faces: along })
+                }
+                _ => None,
+            };
+            let wanted = names.wanted.take();
             drop(names);
             if alone {
                 let at = self.faces.at;
                 self.faces.apart.extend(apart.into_iter()
                     .map(|(solid, faces)| super::Apart { solid, faces, at }));
             }
-            if decided.is_ok() {
-                let at = self.faces.at;
-                self.faces.along.extend(along.into_iter().map(|(solid, face, along, line, held)| {
-                    super::AlongRead { solid, face, along, line, held, at }
-                }));
-            }
+            self.faces.along.extend(along);
+            self.faces.wanted.extend(wanted);
             match decided {
                 Ok(true) => {
                     // a frame of its own over the numbers around it, which it shares (#405)
@@ -2102,9 +2109,10 @@ struct Asked<'w, 'a> {
     /// Whether every two faces are read as meeting: the condition asked again, to tell whether
     /// the pairs read apart are what left the block out.
     every: std::cell::Cell<bool>,
-    /// Every face read along a direction (#763): the solid, the face by its name from it, the
-    /// word, the direction's absolute name, and what it was read as.
-    along: std::cell::RefCell<Vec<(String, String, crate::expr::Along, String, bool)>>,
+    /// Every face read along a direction (#763), in the order asked.
+    along: std::cell::RefCell<Vec<super::AlongRead>>,
+    /// Every direction asked of that the walk was not given.
+    wanted: std::cell::RefCell<Vec<String>>,
 }
 
 /// The most aliases a walk may have made for `Asked` to hold each answer to the walk's whole table
@@ -2121,6 +2129,7 @@ impl<'w, 'a> Asked<'w, 'a> {
             apart: Default::default(),
             every: Default::default(),
             along: Default::default(),
+            wanted: Default::default(),
         }
     }
 
@@ -2169,12 +2178,12 @@ impl super::values::Names for Asked<'_, '_> {
     }
 
     /// A face by its solid's `Lays`, read where the drawing is seeded, against a direction drawn
-    /// as it stands there (`Directions`); each answer kept, to be read again where the drawing is
-    /// solved.
+    /// as it stands there (`Directions`, one not given wanted); each answer kept.
     fn along(&self, along: crate::expr::Along, face: &str, line: &str)
         -> Option<Result<bool, String>> {
         let (solid, rest, listed) = self.face(face)?;
         let Some(&d) = self.walk.faces.directions.get(line) else {
+            self.wanted.borrow_mut().push(line.to_string());
             return Some(Err(format!(
                 "`{}` is no direction drawn: hold a face against an axis (`std.z`), a line or a \
                  frame's axis", crate::program::public_path(line)
@@ -2187,9 +2196,11 @@ impl super::values::Names for Asked<'_, '_> {
             )));
         };
         let held = lays.holds(rest, along, d)?;
-        if let Ok(h) = held {
-            self.along.borrow_mut().push((solid.to_string(), rest.to_string(), along,
-                                          line.to_string(), h));
+        if let Ok(held) = held {
+            self.along.borrow_mut().push(super::AlongRead {
+                solid: solid.to_string(), face: rest.to_string(), along, line: line.to_string(),
+                held,
+            });
         }
         Some(held)
     }

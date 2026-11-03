@@ -71,6 +71,45 @@ pub fn beside_cylinder(big: f64, r: f64) -> f64 {
     a * r / 2.0 - r * r * (r / (big + r)).acos() / 2.0 - big * big * r.atan2(a) / 2.0
 }
 
+/// The section of the fill between a line `w` off a circle's centre, the material on the centre's
+/// side, and the circle of radius `big`, filled by a ball of radius `r` outside both: the
+/// quadrilateral of the ball's centre, its touch on the line, the corner and the circle's centre,
+/// less the circle's sector from the corner to the ball's touch and the ball's own sector.  At
+/// `w = 0` it is `beside_cylinder`'s (#763).
+pub fn line_beside_circle(w: f64, big: f64, r: f64) -> f64 {
+    let s = ((big + r) * (big + r) - (w + r) * (w + r)).sqrt();
+    let k = (big * big - w * w).sqrt();
+    // about the circle's centre: the ball's centre, its touch on the line, the corner
+    let (c, t, q) = ([-s, w + r], [-s, w], [-k, w]);
+    let det = |u: [f64; 2], v: [f64; 2]| u[0] * v[1] - u[1] * v[0];
+    let quad = 0.5 * (det(c, t) + det(t, q)).abs();
+    let angle = |u: [f64; 2], v: [f64; 2]| det(u, v).atan2(u[0] * v[0] + u[1] * v[1]).abs();
+    quad - 0.5 * big * big * angle(q, c) - 0.5 * r * r * angle([0.0, -r], [-c[0], -c[1]])
+}
+
+/// Solid `name` of `e` built, written as STEP and as STL by this kernel (each read back and
+/// checked as `solventc` checks it), and its B-rep.
+pub fn exported(e: &gcs_core::program::Elaborated, name: &str) -> gcs_core::brep::topo::Brep {
+    use gcs_core::brep::{export, sweep::Say};
+    let body = super::ent(e, name).i();
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let exact = export::exact(&e.sketch, body, None, None, &say)
+        .unwrap_or_else(|r| panic!("{name}: {r:?}"));
+    export::step(&exact, name, None, &say).unwrap();
+    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
+    gcs_core::mesh::stl_shells(&stl).unwrap();
+    exact.solid
+}
+
+/// How many of a B-rep's faces lie on each kind of surface.
+pub fn kinds(b: &gcs_core::brep::topo::Brep) -> std::collections::BTreeMap<&'static str, usize> {
+    let mut out = std::collections::BTreeMap::new();
+    for f in &b.faces {
+        *out.entry(f.surface.kind()).or_default() += 1;
+    }
+    out
+}
+
 /// The least positive root of `a t² + b t + c` (infinite where there is none).
 fn first_root(a: f64, b: f64, c: f64) -> f64 {
     let disc = b * b - 4.0 * a * c;
