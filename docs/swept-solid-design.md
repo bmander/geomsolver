@@ -413,8 +413,16 @@ recorded above with what was tried:
   folds against the wall its side sweeps over a radius of about a tenth of a micrometre, and a chord
   of the wall's helix a mesh takes at the bar sags across the fold, so the triangles beside it
   faced against the sheet: the mesher now halves the chords such triangles stand on and meshes
-  again, and the drawn drum's STL agrees with the field. Cones and balls under a screw (their
-  contacts curves on them, swept into sheets with no closed form) are the step after;- **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
+  again, and the drawn drum's STL agrees with the field (`solid_sweeps/helical_groove.sv`). A cone
+  about an axis along the screw's touches where `ω cos β (n·(k × d)) = τ sin β` on each ring — the
+  same angle on every ring, so along two of its rulings, turned off the plane through both axes by
+  `asin(τ tan β / (ω |d|))`: lines leaning to the screw's axis, whose sheets are the leaning edge's
+  (the first gap). A ball touches round its great circle square to its centre's velocity, which
+  leans to the axis wherever the screw climbs: that circle screwed is the helical pipe its centre's
+  helix carries, touching the ball at either end pose round that circle, and a ball-ended tool's
+  side along the helices of its equator's points — each touch wanting its closed form as the drum's
+  did;
+- **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
   has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
 
 Every step meets the epic's bar: rows in `docs/contract/generating.md` naming the gate test, field
