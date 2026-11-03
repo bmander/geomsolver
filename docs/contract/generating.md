@@ -466,7 +466,13 @@ definition (in the blank and no member).
 or planar subtraction class, whichever its motion and tool asked first — is asked the closed
 class's rows, and its refusal stands where they refuse too. C1 (every face of the tool a plane,
 every edge a line; under a slide, a face a cylinder, a cone, a ball or a torus too and an edge a
-circle; under a turn, a round face about an axis along the turn's or a ball clear of it; under a
+circle; under a turn, a round face (a cylinder, a cone, a torus) about an axis along the turn's or
+a ball clear of it — a torus touching round its meridians in the plane through both axes, turned
+into tori about the turn's, and round its top and bottom rings, kept in their planes
+(`swept_closed::a_ring_turned_about_an_axis_along_its_own_closes_into_its_sweep`,
+`a_bull_nose_turned_about_an_axis_along_its_own_closes_into_its_sweep`, each to its sweep's
+volume by levels and the membership test; `solid_sweeps_examples::the_bull_nose_turned_partway_stops_inside_the_ring`,
+`solid_sweeps/stopped_bullnose.sv`); under a
 screw, a cylinder about an axis along the screw's and a circle square to it, whose disc screwed is
 its candidate — a round tool's rim under a screw, helical milling:
 `swept_closed::a_drum_screwed_beside_the_axis_closes_into_its_helical_sweep`,

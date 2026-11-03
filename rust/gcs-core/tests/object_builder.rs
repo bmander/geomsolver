@@ -240,6 +240,14 @@ fn a_screwed_drums_groove_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/helical_groove.sv".to_string()],true),1);
 }
 
+/// A bull-nose mill turned partway into a ring sector (`stopped_bullnose.sv`, #721 F2c5) builds at
+/// the display's samples as the export builds it, on one arrangement.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 100 s: a bull-nose's round turned on one arrangement")]
+fn a_turned_bull_noses_notch_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/stopped_bullnose.sv".to_string()],true),1);
+}
+
 const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \

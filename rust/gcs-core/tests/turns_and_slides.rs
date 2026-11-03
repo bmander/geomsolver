@@ -17,7 +17,7 @@ use gcs_core::program::Elaborated;
 use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
 use gcs_core::solid::export::Tolerance;
 use gcs_core::space::{cross,unit};
-use std::f64::consts::{PI,TAU};
+use std::f64::consts::{FRAC_PI_2,PI,TAU};
 use std::sync::Mutex;
 
 type V = [f64;3];
@@ -474,12 +474,38 @@ fn a_whole_turn_grooves_the_whole_ring() {
 /// all round its tube, a characteristic that closes on itself (refused so until #684 W), but at the
 /// tube's top and bottom its rings are in contact all round, square to the slide, where the
 /// characteristic branches into the groove's flat sides (S1) — which the closed class builds (#721
-/// F2c5, a torus slid square to its axis, below). A torus turned about an axis leaning to its own
-/// is no tool the closed class takes, so the first refusal stands.
+/// F2c5, a torus slid square to its axis, below). The torus turned to a stop inside the ring, its
+/// axis along the turn's, the constant-twist class refuses (E1), and the closed class builds
+/// (`a_torus_turned_to_a_stop_inside_the_ring_is_cut_on_one_arrangement`); turned about an axis
+/// leaning to its own it is no tool the closed class takes, so the first refusal stands.
 #[test]
 fn the_turn_and_slide_rows_refuse_by_name() {
-    let short = refused(admit(&turned(Lean::Across(0.),-130.,30.)));
+    let short = refused(admit(&turned(Lean::Toward(25.),-130.,30.)));
     assert_eq!(short.condition,Condition::Clearance);
+}
+
+/// **A torus turned to a stop inside the ring is cut on one arrangement** (#721 F2c5, the closed
+/// class: a torus about an axis along the turn's): `turned`'s upright torus, middle radius 2.5 and
+/// tube 2 about an axis 5 out, swung from −130° to 30°, which leaves it in the ring (E1 to the
+/// constant-twist class). Apart from the build: each circle about the axis the torus's level meets
+/// loses the sector's angles from 0 to the turn's end plus the half-angle `β(ρ, z)` its outer disc
+/// spans there, at most the sector's 60°: `∫∫ ρ min(π/3, π/6 + β) dρ dz`, its integral split where
+/// the clip starts and read across the disc's edge by a sine.
+#[test]
+fn a_torus_turned_to_a_stop_inside_the_ring_is_cut_on_one_arrangement() {
+    let e = fixtures::read(&turned(Lean::Across(0.),-130.,30.));
+    let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_turn(),"a turn");
+    let (cos30,beta) = ((PI/6.).cos(),|rho: f64,big: f64| ((rho*rho+25.-big*big)/(10.*rho)).clamp(-1.,1.).acos());
+    let away = crate::brep::simpson(-1.,1.,400,|z: f64| {
+        let big = 2.5+(4.-z*z).sqrt();
+        let hi = 5.+big;
+        // where `β = π/6`, the larger root of `ρ² − 10 cos 30° ρ + 25 − big² = 0`
+        let b = (5.*cos30+(25.*cos30*cos30-25.+big*big).sqrt()).max(8.);
+        let clipped = PI/3.*(b*b-64.)/2.;
+        clipped+crate::brep::simpson(0.,FRAC_PI_2,400,|s: f64| { let rho = b+(hi-b)*s.sin(); rho*(PI/6.+beta(rho,big))*(hi-b)*s.cos() })
+    });
+    near(exported(&e,"part"),PI/3.*80.-away,1e-9);
 }
 
 /// **A torus slid through the rod's middle grooves its shadow** (the constant-twist class's S1, the

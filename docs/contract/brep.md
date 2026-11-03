@@ -344,6 +344,19 @@ step has both crossings found — a ray's parity, a solid's point location, by i
 400 points about a ramp half a millimetre a turn). The sheet's inverse starts level with the point
 (`Blend::level_circle`, `LevelCircle`) and not from the last foot found: a ramp thinner than that
 start's reach holds its other side within it.
+**Two tori touching round a meridian meet in closed form** (`ssi`'s `tori_touching`: their axes
+along one another, their middle circles at one height and touching, their tubes of one radius — a
+torus at an end pose of a turn about an axis along its own, and the torus a meridian of it turns
+into): the meridian, and in each level the one pair of the two tori's circles that crosses, as the
+rim's branches are (`branches`), drawn in toward the tube's top and bottom, where they reach the
+meridian tangent to the level circle. **A traced curve is read between its points on a parabola**
+(`Traced::between`: through the two and a neighbour, by their chords' lengths, where the three run
+smoothly — chords within `SMOOTH_RATIO` of each other's length, turning by less than
+`acos(SMOOTH_COS)`), then pulled onto both surfaces: a chord's sag, quadratic in it, stood off the
+curve where two surfaces all but touch by more than the projection could recover, and onto another
+branch of their meeting — a branch leaving a point where three surfaces touch pairwise read on the
+wrong side of the circle it leaves along, and a piece of the arrangement lost
+(`swept_closed::two_tori_touching_and_a_plane_on_both_hold_every_piece`).
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it

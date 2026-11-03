@@ -242,6 +242,13 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
                 round.push(k);
                 faces.push((at,[0.;3]));
             }
+            // under a turn a torus's about an axis along the turn's touches round its two meridians in
+            // the plane through both axes, turned into tori about the turn's, and round its top and
+            // bottom rings, which turn within their own planes
+            Surface::Torus(g,..) if screw.is_turn() && norm(cross(g.z,screw.axis)) <= 1e-9 => {
+                round.push(k);
+                faces.push((at,[0.;3]));
+            }
             _ => return Err(Unbuilt::Curved {at}),
         }
     }
@@ -639,8 +646,11 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             let located = crate::query::Located::new(tool,tol);
             for &k in &round {
                 let face = &tool.faces[k];
-                let ball = matches!(face.surface,Surface::Sphere(..));
-                let (lo,hi) = if ball { (-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2) } else { rulings_span(tool,k) };
+                let (lo,hi) = match face.surface {
+                    Surface::Sphere(..) => (-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2),
+                    Surface::Torus(..) => (0.,std::f64::consts::TAU),
+                    _ => rulings_span(tool,k),
+                };
                 let points = round_points(&located,tool,k,[lo,hi]);
                 let sites_at = |m: &crate::trajectory::Pose| -> Vec<(V,V)> {
                     points.iter().map(|&x| (m.point(x),m.vector(outward(face,x)))).collect()
@@ -704,7 +714,44 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         }).collect();
                         add_cutter(Cutter::Torus {c:add(c,scale(axis,height)),axis,major,minor:r},sites);
                     }
-                    _ => unreachable!("`read` takes only cylinders, cones and balls round"),
+                    Surface::Torus(f,big,small) => {
+                        let (big,r) = (big.abs(),small.abs());
+                        let z = unit(f.z);
+                        for pose in [&start,&end] {
+                            add_cutter(Cutter::Torus {c:pose.point(f.o),axis:pose.vector(z),major:big,minor:r},sites_at(pose));
+                        }
+                        // the face's points of a circle on the torus about `o` in the plane of `p` and
+                        // `q`, each with its normal, carried over the roll
+                        let circle_sites = |o: V,p: V,q: V,rad: f64| -> Vec<(V,V)> {
+                            (0..4*SITES).flat_map(|i| {
+                                let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
+                                let x = add(o,add(scale(p,rad*cp),scale(q,rad*sp)));
+                                let n = outward(face,x);
+                                let on = located.face_place(k,x) != crate::query::Place::Out;
+                                poses.iter().filter(move |_| on).map(move |m| (m.point(x),m.vector(n)))
+                            }).collect()
+                        };
+                        // its top and bottom rings, their normals along the axis: each in its own plane
+                        for side in [1.,-1.] {
+                            let o = add(f.o,scale(z,side*r));
+                            add_cutter(Cutter::Plane((o,scale(z,side))),circle_sites(o,f.x,cross(z,f.x),big));
+                        }
+                        let height = dot(sub(f.o,c),axis);
+                        let Some(w) = away(f.o) else {
+                            // a torus about the axis turns into itself
+                            add_cutter(Cutter::Torus {c:f.o,axis:z,major:big,minor:r},poses.iter().flat_map(|m| sites_at(m)).collect());
+                            continue
+                        };
+                        // its meridians in the plane through both axes, each turned into a torus about the
+                        // axis (one reaching across the axis turns into no ring torus: not held yet)
+                        for side in [1.,-1.] {
+                            let m = add(f.o,scale(w,side*big));
+                            let major = norm(sub(sub(m,c),scale(axis,dot(sub(m,c),axis))));
+                            if !(major > r+eps) { return Err(Unbuilt::Curved {at:m}) }
+                            add_cutter(Cutter::Torus {c:add(c,scale(axis,height)),axis,major,minor:r},circle_sites(m,w,axis,r));
+                        }
+                    }
+                    _ => unreachable!("`read` takes only cylinders, cones, balls and tori round"),
                 }
             }
             // a circle square to the axis turns within its own plane; under a screw it is screwed, the

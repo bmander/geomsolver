@@ -375,6 +375,8 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             if let Some(circle) = ball_in_tube(&sp,r,&t,big,small,tol) => Ssi::Curves(vec![circle]),
         (Surface::Cylinder(cy,r),Surface::Torus(t,big,small)) | (Surface::Torus(t,big,small),Surface::Cylinder(cy,r))
             if let Some(circle) = tube_along_torus(&cy,r,&t,big,small,tol) => Ssi::Curves(vec![circle]),
+        (Surface::Torus(t,big,small),Surface::Torus(u,bog,smell)) if let Some(curves) = tori_touching(a,b,(&t,big,small),(&u,bog,smell),tol) =>
+            Ssi::Curves(curves),
         (Surface::Plane(_),Surface::Sphere(..)) | (Surface::Sphere(..),Surface::Plane(_)) => {
             let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Sphere(c,r) = sp else { unreachable!() };
@@ -526,6 +528,48 @@ fn tube_along_torus(cy: &Frame,r: f64,t: &Frame,big: f64,small: f64,tol: f64) ->
     let rel = sub(foot,t.o);
     if dot(rel,z).abs() > tol || (norm(rel)-big.abs()).abs() > tol || dot(unit(rel),a).abs() > 1e-9 { return None }
     Some(Curve::Circle(Frame::new(foot,a,unit(rel)),r.abs()))
+}
+
+/// **Two tori touching round a meridian** (#721 F2c5: a torus at an end pose of a turn about an axis
+/// along its own, and the torus a meridian of it in the plane through both axes turns into): their
+/// axes along one another, their middle circles at one height and touching, their tubes of one
+/// radius. They touch round the meridian through the point the middle circles touch at, and cross
+/// beside it: in each level `h` across the tube each is two circles about its own axis, of radii
+/// `R ± √(r² − h²)`, and of the four pairs, two touch at that meridian's points and one crosses where
+/// `A cos θ + B sin θ = C(h)` (`branches`, the first's circle's angle `θ`), its two roots joining
+/// where they turn. The meridian and the crossing's branches, or none for any other two tori.
+fn tori_touching(a: &Surface,b: &Surface,(t,big,small): (&Frame,f64,f64),(u,bog,smell): (&Frame,f64,f64),tol: f64) -> Option<Vec<Curve>> {
+    let z = unit(t.z);
+    let (r,big,bog) = (small.abs(),big.abs(),bog.abs());
+    if norm(cross(z,u.z)) > 1e-12 || (r-smell.abs()).abs() > tol || dot(sub(u.o,t.o),z).abs() > tol { return None }
+    let d = sub(u.o,t.o);
+    let d = sub(d,scale(z,dot(d,z)));
+    let gap = norm(d);
+    if gap <= tol || ((gap-(big+bog)).abs() > tol && (gap-(big-bog).abs()).abs() > tol) { return None }
+    // where the middle circles touch, on the line of their centres
+    let w = scale(d,1./gap);
+    let m = [add(t.o,scale(w,big)),sub(t.o,scale(w,big))].into_iter()
+        .find(|&m| (norm(sub(sub(m,u.o),scale(z,dot(sub(m,u.o),z))))-bog).abs() <= 2.*tol)?;
+    let mut out = vec![Curve::Circle(Frame::new(m,cross(z,w),w),r)];
+    let (x,y) = (t.x,cross(z,t.x));
+    let level = |v: f64| { let h = r*(2.*v-1.); (h,(r*r-h*h).max(0.).sqrt()) };
+    for (s1,s2) in [(1.,1.),(1.,-1.),(-1.,1.),(-1.,-1.)] {
+        let (r1,r2) = (big+s1*r,bog+s2*r);
+        if ((r1-r2).abs()-gap).abs() <= tol || (r1+r2-gap).abs() <= tol { continue }
+        let coefficients = |v: f64| {
+            let (_,q) = level(v);
+            let (r1,r2) = (big+s1*q,bog+s2*q);
+            (-2.*r1*dot(d,x),-2.*r1*dot(d,y),r2*r2-gap*gap-r1*r1)
+        };
+        let point = |th: f64,v: f64| {
+            let (h,q) = level(v);
+            let (sn,cs) = th.dsin_cos();
+            add(add(t.o,scale(z,h)),scale(add(scale(x,cs),scale(y,sn)),big+s1*q))
+        };
+        out.extend(branches(&coefficients,&[],&point,&|pts,closed| Curve::Traced(std::sync::Arc::new(
+            super::geom::Traced {a:a.clone(),b:b.clone(),pts,closed}))));
+    }
+    Some(out)
 }
 
 /// The radius of a cylinder or a cone at height `h` along its own axis from its frame's origin.
@@ -821,6 +865,10 @@ fn branches(coefficients: &dyn Fn(f64) -> (f64,f64,f64),coincide: &[f64],point: 
     const N: usize = 2048;
     // the most either root turns between two points of a branch
     const STEP: f64 = std::f64::consts::PI/1024.;
+    // how many halvings deep the points are drawn in toward a turn or an end where the roots meet,
+    // where they part as a square root: a chord there short enough that its sag, quadratic in it,
+    // stands far below the roots' parting, linear in it
+    const DEEP: usize = 32;
     let hair = 1e-6;
     let mut out = Vec::new();
     let defined = |v: f64| { let (a,b,c) = coefficients(v); let rho = a.hypot(b); rho > 0. && c.abs() <= rho };
@@ -867,8 +915,12 @@ fn branches(coefficients: &dyn Fn(f64) -> (f64,f64,f64),coincide: &[f64],point: 
         stretch.extend(vs[start..=end].iter().copied().filter(|&v| v > v0 && v < v1));
         if let Some(w) = hi_w { stretch.extend((1..24).rev().map(|j| w-(w-vs[end])*0.5f64.powi(24-j)).filter(|&v| v > vs[end] && v < v1)) }
         // and beside a turn, where the roots part as the square root of the way from it
-        if let Some(t) = lo_v { stretch.extend((1..24).map(|j| t+(vs[start]-t)*0.5f64.powi(24-j)).filter(|&v| v > v0 && v < vs[start])) }
-        if let Some(t) = hi_v { stretch.extend((1..24).rev().map(|j| t-(t-vs[end])*0.5f64.powi(24-j)).filter(|&v| v > vs[end] && v < v1)) }
+        if let Some(t) = lo_v { stretch.extend((1..DEEP).map(|j| t+(vs[start]-t)*0.5f64.powi((DEEP-j) as i32)).filter(|&v| v > v0 && v < vs[start])) }
+        if let Some(t) = hi_v { stretch.extend((1..DEEP).rev().map(|j| t-(t-vs[end])*0.5f64.powi((DEEP-j) as i32)).filter(|&v| v > vs[end] && v < v1)) }
+        // and toward the sheet's own edge, where the roots may meet as at a turn (two tori's crossing
+        // circles touching at the top of their tubes)
+        if lo_v.is_none() && lo_w.is_none() && start < end { stretch.extend((1..DEEP).map(|j| v0+(vs[start+1]-v0)*0.5f64.powi((DEEP-j) as i32)).filter(|&v| v > v0 && v < vs[start+1])) }
+        if hi_v.is_none() && hi_w.is_none() && start < end { stretch.extend((1..DEEP).rev().map(|j| v1-(v1-vs[end-1])*0.5f64.powi((DEEP-j) as i32)).filter(|&v| v > vs[end-1] && v < v1)) }
         stretch.sort_by(f64::total_cmp);
         stretch.dedup();
         stretch.push(v1);

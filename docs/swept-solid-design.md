@@ -382,7 +382,7 @@ it. It stays as the fast path where #699 D says so.
 **Where it stands (F2c5).** Built on the one arrangement: polyhedral tools under a slide, a turn,
 or a screw with nothing leaning to its axis; under a slide, tools of planes, cylinders, cones, balls
 and tori (a torus's axis along the slide or square to it); under a turn, round faces about axes
-along the turn's and balls clear of its axis; under a screw, cylinders about axes along it and
+along the turn's (cylinders, cones, tori) and balls clear of its axis; under a screw, cylinders about axes along it and
 level circles (a drum, helical milling); paths of slides and turns (K1); a body mixing the
 closed class with another; the blank-scoped decision. What is left meets one of three gaps, each
 recorded above with what was tried:
@@ -421,26 +421,21 @@ recorded above with what was tried:
   leans to the axis wherever the screw climbs: that circle screwed is the helical pipe its centre's
   helix carries, touching the ball at either end pose round that circle, and a ball-ended tool's
   side along the helices of its equator's points — each touch wanting its closed form as the drum's
-  did. *Tried, for a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
+  did. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
   round its two meridians in the plane through both axes, turned into tori about the turn's, and
   round its top and bottom rings, kept in their planes. The torus at an end pose and a meridian's
   torus touch round that meridian and cross beside it — in each level both are two circles about
   their own axes, two pairs touching and one crossing where `A cos θ + B sin θ = C(h)`, a closed
-  form as the rim's branches are. But all three meet at one point: the meridian's top is where the
-  ring's top circle touches the plane it turns in and the meridian's torus touches that plane too,
-  so the plane holds two circles touching there and each torus a node where four ways leave two by
-  two along one line. A ring turned 1.5 rad came out as the ring alone. Reduced to the ring, one
-  meridian's torus and the plane (`selected`, each pair alone right), the meridian's torus outside
-  the ring comes out empty: on the ring's face the walk at that node left along the top circle where
-  it should have left along the meridian, so the two pieces between the branches and the meridian
-  either side of it were joined into one through a there-and-back along the top circle, and the
-  piece they border lost that circle. The branches reach the node tangent to the top circle (their
-  angle round the ring goes as the square root of the height below the top), and their last chord,
-  a 2048th of the tube's height long, left 0.015 rad below it; drawn in ever closer to the top (as
-  they are to a coincidence) they bring the two tori's own pieces to agree with each other to 1e-9,
-  but with the plane the piece is still lost. So the turned torus waits on that node read right —
-  the ways leaving it along the top circle, the meridian and the branches, all but tangent two by
-  two — and on the arrangement holding a point where three surfaces touch pairwise;
+  form as the rim's branches are. All three meet at one point: the meridian's top is where the
+  ring's top circle touches the plane it turns in and the meridian's torus touches that plane too.
+  The branches reach that point tangent to the ring's top circle, parting from it as the square of
+  the way along, and a chord between their last two points sagged across that circle — read there,
+  the branch left on the wrong side, the walk round the ring's face joined two pieces through a
+  there-and-back along the circle, and the meridian's torus outside the ring came out empty. Read on
+  a parabola through three points (`Traced::between`), the branch leaves on its own side: a ring
+  turned 1.5 rad is its sweep by levels to 1e-11, a bull-nose mill to 1e-15, and the bull-nose turned
+  partway into the ring sector (`solid_sweeps/stopped_bullnose.sv`) to 1e-9 through the drawing, its
+  STL agreeing with the field;
 - **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
   has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
 

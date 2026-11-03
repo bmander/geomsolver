@@ -767,3 +767,85 @@ fn a_drum_screwed_across_a_ring_sector_bores_its_helical_groove() {
     assert!((volume(&cut)-expected).abs() <= 1e-8*expected,"{} against {expected}",volume(&cut));
     agrees_cut_over(&cut,&sector,&tool,&path,roll);
 }
+
+
+/// **Two tori touching round a meridian, and a plane both their tops touch, hold every piece**
+/// (#721 F2c5, `ssi`'s `tori_touching`): a ring of middle radius 1 and tube 0.3 standing 10 from an
+/// axis, the torus of middle radius 11 about that axis its outer meridian turns into, and the plane
+/// on both tubes' tops. The tori touch round the meridian and cross beside it, branches that reach
+/// the meridian's top tangent to the ring's top circle, where the plane touches both: the three meet
+/// pairwise tangent at one point. Read between their exact points on a parabola, not a chord (whose
+/// sag there put the branch on the ring's other side, and its piece of the big torus went missing),
+/// each piece is there: the big torus less the ring is its volume less their common part, with the
+/// plane or without, to 1e-6 (the pieces the branches bound read by their traced points).
+#[test]
+fn two_tori_touching_and_a_plane_on_both_hold_every_piece() {
+    use gcs_core::brep::boolean::selected;
+    let outer = gcs_core::brep::build::torus([0.;3],[0.,0.,1.],11.,0.3).unwrap();
+    let ring = gcs_core::brep::build::torus([10.,0.,0.],[0.,0.,1.],1.,0.3).unwrap();
+    let up = crate::brep::block([-20.,-20.,0.3],[20.,20.,5.]);
+    let part = |ops: &[&Brep],pattern: [bool;2]| selected(ops,&|m| m[..2] == pattern && (m.len() < 3 || !m[2]),1e-6)
+        .map(|s| volume(&s.brep)).unwrap();
+    let common = part(&[&ring,&outer],[true,true]);
+    for ops in [vec![&ring,&outer],vec![&ring,&outer,&up]] {
+        let (only,both) = (part(&ops,[false,true]),part(&ops,[true,true]));
+        assert!((only+both-volume(&outer)).abs() <= 1e-6*volume(&outer),"{only} and {both} against {}",volume(&outer));
+        assert!((both-common).abs() <= 1e-6*common,"{both} against {common}");
+        assert!((part(&ops,[true,false])+both-volume(&ring)).abs() <= 1e-6*volume(&ring));
+    }
+}
+
+/// **A ring turned about an axis along its own closes into its sweep** (#721 F2c5, a torus under a
+/// turn): a torus of middle radius 1 and tube 0.3 standing 10 from the turn's axis, turned 1.5 rad.
+/// It touches round its two meridians in the plane through both axes, turned into tori about the
+/// axis (of middle radii 9 and 11), and round its top and bottom rings, kept in their planes; each
+/// end pose touches each meridian's torus round that meridian (`ssi`'s `tori_touching`). Apart from
+/// the build: the turn is longer than the angle the ring's hole spans at any radius, so each level
+/// `z` of it sweeps its outer disc, radius `R + w` (`w = √(r² − z²)`), and the band that disc's
+/// shadow turns through, `2 d Θ (R + w)`: `π (2 r R² + π R r² + 4 r³/3) + 2 d Θ (2 r R + π r²/2)`.
+#[test]
+fn a_ring_turned_about_an_axis_along_its_own_closes_into_its_sweep() {
+    use std::f64::consts::PI;
+    let (big,r,d,theta) = (1.,0.3,10.,1.5);
+    let tool = gcs_core::brep::build::torus([d,0.,0.],[0.,0.,1.],big,r).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance:0.});
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = PI*(2.*r*big*big+PI*big*r*r+4.*r*r*r/3.)+2.*d*theta*(2.*r*big+PI*r*r/2.);
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// A bull-nose mill of radius `big`, corner `c` and height `h`, standing about an upright axis `d`
+/// out along x, its flat end on `z = 0`.
+fn bull_nose(d: f64,big: f64,c: f64,h: f64) -> Brep {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    let at = |x: f64,z: f64| [d+x,0.,z];
+    let corner = Frame::new(at(big-c,c),[0.,-1.,0.],[1.,0.,0.]);
+    let edges = vec![ProfileEdge::Line {a:at(0.,0.),b:at(big-c,0.)},
+        ProfileEdge::Arc {frame:corner,r:c,span:Some([-std::f64::consts::FRAC_PI_2,0.])},
+        ProfileEdge::Line {a:at(big,c),b:at(big,h)},ProfileEdge::Line {a:at(big,h),b:at(0.,h)},ProfileEdge::Line {a:at(0.,h),b:at(0.,0.)}];
+    let profile = Profile {origin:at(0.,0.),normal:[0.,1.,0.],names:Vec::new(),loops:vec![edges]};
+    revolve(&profile,[d,0.,0.],[0.,0.,1.],std::f64::consts::TAU).unwrap()
+}
+
+/// **A bull-nose mill turned about an axis along its own closes into its sweep** (#721 F2c5): radius
+/// 1, corner 0.3 and 1 tall, 10 from the turn's axis, turned 1.5 rad. Its round, a quarter of a torus,
+/// touches round the quarter of its outer meridian, turned into a torus about the axis, and its flat
+/// end, side and top as a drum's do. Apart from the build: each level is a disc of radius `R(z)`, so
+/// the turn sweeps the mill and the band its shadow turns through, `π ∫R² dz + 2 d Θ ∫R dz`.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: a bull-nose's round turned on one arrangement")]
+fn a_bull_nose_turned_about_an_axis_along_its_own_closes_into_its_sweep() {
+    use std::f64::consts::PI;
+    let (d,big,c,h,theta) = (10.,1.,0.3,1.,1.5);
+    let tool = bull_nose(d,big,c,h);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance:0.});
+    let rz = (big-c)*c+PI*c*c/4.+big*(h-c);
+    let r2z = (big-c)*(big-c)*c+(big-c)*PI*c*c/2.+2.*c*c*c/3.+big*big*(h-c);
+    assert!((volume(&tool)-PI*r2z).abs() <= 1e-12*PI*r2z);
+    let expected = PI*r2z+theta*2.*d*rz;
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}

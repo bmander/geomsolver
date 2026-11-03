@@ -1273,10 +1273,16 @@ impl SheetCut {
     }
 }
 
+/// How much longer one of a traced curve's chords may be than its neighbour's, and how far (the
+/// cosine of the angle) the two may turn, for the parabola through their points to be read between
+/// them (`Traced::between`).
+const SMOOTH_RATIO: f64 = 8.;
+const SMOOTH_COS: f64 = 0.95;
+
 /// Two surfaces' intersection with no closed form, traced: points on both, in order, and a
-/// parameter that counts them — `C(t)` is the chord between points `⌊t⌋` and `⌊t⌋ + 1` at `t`'s
-/// fraction, pulled onto both surfaces by Newton, so the curve is on both to rounding wherever it
-/// is read. A closed trace ends where it began (its last point is its first).
+/// parameter that counts them — `C(t)` is the parabola through points `⌊t⌋`, `⌊t⌋ + 1` and a
+/// neighbour at `t`'s fraction between the first two (`between`), pulled onto both surfaces by
+/// Newton, so the curve is on both to rounding wherever it is read. A closed trace ends where it began (its last point is its first).
 #[derive(Clone,Debug,PartialEq)]
 pub struct Traced { pub a: Surface,pub b: Surface,pub pts: Vec<V>,pub closed: bool }
 
@@ -1308,7 +1314,41 @@ impl Traced {
         let m = self.segments();
         let t = if self.closed { t.rem_euclid(m as f64) } else { t };
         let i = (t.floor().max(0.) as usize).min(m-1);
-        self.project(crate::util::space::lerp(self.pts[i],self.pts[i+1],t-i as f64))
+        self.project(self.between(i,t-i as f64))
+    }
+    /// The point a fraction `f` along the stretch from point `i` to the next, on the parabola through
+    /// it, the next and a neighbour, parameterised by their chords' lengths: a chord's sag, quadratic
+    /// in its length, stands off a curve the projection then finds no better than the angle between
+    /// the two surfaces allows (beside a point where they touch, onto another branch of their
+    /// meeting); the parabola's, cubic.
+    fn between(&self,i: usize,f: f64) -> V {
+        use crate::util::space::{distance,lerp};
+        let m = self.segments();
+        let (a,b) = (self.pts[i],self.pts[i+1]);
+        if m < 2 { return lerp(a,b,f) }
+        // the neighbour: the one before, or after where there is none before
+        let (p,q,r,tau) = if i > 0 || self.closed {
+            let p = if i > 0 { self.pts[i-1] } else { self.pts[m-1] };
+            let (d0,d1) = (distance(p,a),distance(a,b));
+            (p,a,b,[-d0,0.,d1])
+        } else {
+            let c = self.pts[i+2];
+            let (d0,d1) = (distance(a,b),distance(b,c));
+            (a,b,c,[0.,d0,d0+d1])
+        };
+        let x = if i > 0 || self.closed { f*tau[2] } else { f*tau[1] };
+        if !(tau[0] < tau[1] && tau[1] < tau[2]) { return lerp(a,b,f) }
+        // (only where the three run smoothly: chords of like lengths, turning a little — not across a
+        // cusp, a seam or a jump in the spacing, where a parabola overshoots)
+        let (u,w) = (sub(q,p),sub(r,q));
+        let (lu,lw) = (tau[1]-tau[0],tau[2]-tau[1]);
+        if lu > SMOOTH_RATIO*lw || lw > SMOOTH_RATIO*lu || dot(u,w) < SMOOTH_COS*lu*lw { return lerp(a,b,f) }
+        let w = |j: usize| {
+            let (k,l) = ((j+1)%3,(j+2)%3);
+            (x-tau[k])*(x-tau[l])/((tau[j]-tau[k])*(tau[j]-tau[l]))
+        };
+        let (wp,wq,wr) = (w(0),w(1),w(2));
+        std::array::from_fn(|k| wp*p[k]+wq*q[k]+wr*r[k])
     }
     /// `C` and `C'`, the derivative the central difference of `C` itself (the projection of a
     /// chord's point is not the curve's tangent times its speed off the curve): consistent with
