@@ -213,6 +213,20 @@ section is not a solid's face (`FaceRef`, below): it is the region the face boun
 material.  A drawn point against a face is E040 — a face is read only at a region solid's point.
 `tests/solids_as_sets.rs` (`a_face_is_a_set_where_no_sweep_says_it`) is the gate.
 
+**A draft's lean about a whole circle is two lines of a meridian** (#765, [0.201]): the lean
+`a (distance(p, beyond) − distance(p, within)) + c · distance(p, P)` (`defined::lean`) over a face
+that is one circle of radius `r` about `o` and no hole, its own plane `P`, reads `a (r − ρ) + c |h|`
+— `ρ` off the line through `o` along `P`'s normal, `h` along it — so a region whose terms are such
+a lean and half-spaces square to that line (`std.solids.Countersink`'s set, not a prism for want of
+a second ordinate) is folded by the meridian (`meridian::leaning`, `Fold::lean_within`: all but a
+diamond where it leans in, the outside of two cones where it leans out, each clipped convex,
+`clipped`), its axis the circle's (`axis_of`), and every evaluator reads it as any meridian — the
+recipe a `revolve` of its triangle, the field and the facets its region turned.  Its faces are named
+as a prism's (`meridian::named`): the lean's by the circle's edge, an ordinate along the plane's
+normal `near` bounding from above and `far` from below.  A lean grown, about a circle not square to
+the axis, or about any other face is no meridian's and stays the field's (`Route::Field`, its exact
+export refused).  `tests/countersink.rs` is the gate.
+
 **There is a roll at which** (#737 P4, [0.199]): `over t in (a, b)` (the interval written in
 place) or `over s` (a declared `param`) in a relation's parentheses is `syntax::OpArg::Over`,
 parsed by `parser/relations.rs::op_args` for `coincident` and `inside` and settled by the

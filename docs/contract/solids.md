@@ -221,8 +221,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   `rust/lib/std/solids.sv`** (`use std.solids`): `Prism(section, from, to)`, `Drafted(section,
   from, to, draft)`, `Revolution(section, about, from = 0deg, to = 360deg)` (`p coincident(under: about,
   over t in (from, to)) section`: a line named `under:` is the turn about it,
-  `motions::turn_about`, a motion minted once a line and holding nothing, frames.md) and
-  `Through(section)` (`{ p | p inside section }`).  **They are recognised by their terms, never by
+  `motions::turn_about`, a motion minted once a line and holding nothing, frames.md),
+  `Through(section)` (`{ p | p inside section }`) and `Countersink(rim, angle)` (#765, [0.201]:
+  `Drafted`'s lean at `tan(angle / 2)` and the one ordinate `<= 0mm`, the cone under a rim to its
+  point; no prism for want of a far ordinate, it stays a region the meridian folds about a whole
+  circle, [sets.md](sets.md), its faces `near` and the rim's edge).  **They are recognised by their terms, never by
   a word's name** (`gcs-solve/src/solid/defined.rs`, `recognised`, called from
   `program/solids/build.rs`'s `region`): a section between two stated ordinates along its own
   plane's normal is `SolidDef::Prism`; with the lean term a drafted prism (the angle read to a

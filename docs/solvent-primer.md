@@ -122,7 +122,7 @@ NAME := CHAIN                           a chain joined by `->`, named as a trave
 NAME := face(EDGE, ..., holes: LOOP)    a planar region                              (1.14)
 NAME := solid(SET)                      the points of a set: `{ p | … }` or a call     (1.14)
 NAME := solid(std.solids.Prism(FACE, from: E, to: E))   a prism; `Drafted`, `Revolution`,
-                                        `Through` likewise, `use std.solids`         (1.14)
+                                        `Through`, `Countersink` likewise, `use std.solids` (1.14)
 NAME := solid({ p | p coincident(over S) Comp(ARGS).FACE })   a face family: S declared
 NAME := solid(SOLID)                    a body over a stock                          (1.14)
 NAME := solid()                         an empty body: what is in `union` with it (1.14)
@@ -1003,7 +1003,7 @@ use std.place (horizontal, vertical)   // and import those two words bare
 | `std.sets` | `Sphere`, `Cylinder`, `Cone`, `ConeThrough`, `HalfSpace`, `Offset` (1.13); the word `on_sphere` |
 | `std.rounds` | the words `round`, `chamfer`, `shell`; `Rounded`, `Chamfered`, `Grown` and the sets the words make (1.14) |
 | `std.panels` | `Developable`, `Development` (1.14) |
-| `std.solids` | `Prism`, `Drafted`, `Revolution`, `Through`: solids as sets (1.14) |
+| `std.solids` | `Prism`, `Drafted`, `Revolution`, `Through`, `Countersink`: solids as sets (1.14) |
 | `std.stations` | `OnLine`, `OnArc`, `OnSpline`, `On`, `Helix`, `OnHelix`, `Minimal`, `Frenet`, `Along`, `AlongFrenet`, `Across`, `Ruled`, `Apex`, `Affine`, `Similar`, `Twisted`; the words `scaled`, `scaled_radius` (1.14) |
 | `std.motion` | the words `turns`, `screws`, `spins`, `slides`, `rolls`, `reciprocal`; `Screw` (1.15) |
 
@@ -1712,7 +1712,7 @@ needs no bound; a round's radius may read an unknown of the drawing (`r: 0.3 * m
 `common` with**. The order lives inside the term, never between statements: `bore cut body` may be
 written fifty lines above `body := solid(…)`. **Nothing about a solid is solved for**: it owns no
 parameters, numeric extents are worked out at elaboration, and the geometry its set reads is the
-drawing, solved as usual. A prism, a draft and a revolution are words of `std.solids` (below),
+drawing, solved as usual. A prism, a draft, a countersink and a revolution are words of `std.solids` (below),
 written over the language's own words: `use std.solids` beside `use std`.
 
 #### Faces
@@ -1810,13 +1810,38 @@ words of `std.solids` (`rust/lib/std/solids.sv`) are sets written in the languag
 | `std.solids.Drafted(sec, from: -4mm, to: 4mm, draft: 3deg)` | the prism's, the section at ordinate `h` the face moved `\|h\| tan 3°` into its material |
 | `std.solids.Revolution(sec, about: ax)` | the face occupies turned about `ax`, a line or axis in its own plane, through some angle from `from:` (default `0deg`) to `to:` (default `360deg`) |
 | `std.solids.Through(sec)` | whose foot lies within `sec`, unbounded along its normal: a cutter |
+| `std.solids.Countersink(face(rim), angle: 90deg)` | behind the face, the section at ordinate `h` the rim moved `\|h\| tan 45°` in, to the cone's point |
 
 - **Prism.** The ordinates are signed and both written; `from: -30mm, to: 0mm` is what was `depth:
   30mm`. Write the face where it is not at an end.
 - **Draft.** The sides lean from the face's own plane (the parting plane, ordinate 0), away from it
   on both sides, a hole widening as the outside narrows; lines' sides stay planes and circles'
   become cones. An arc meeting a side at an angle (not tangent) is refused by the exact kernel.
-  `conrod/rod.sv` drafts its eyes and shank.
+  `conrod/rod.sv` drafts its eyes and shank. **The ordinates do not move the parting plane**: a
+  face drawn in `std.top` and drafted `from: 31mm, to: 33mm` has shrunk `31 tan θ` before it starts,
+  and a side taken to nothing within the ordinates is E080, saying how far from the face's plane
+  it went. To part elsewhere, draw the face there — on a plane lying on the face it opens on
+  (*Sketching on a face*, below).
+- **Countersink.** `Countersink(face(rim), angle: 90deg)` is the cone under `rim` whose sides meet
+  at the included angle, as a drawing calls one out (`⌵ Ø6 × 90°`): `Drafted`'s set at `tan(angle
+  / 2)` with no far ordinate, so it runs to its point and states no depth — cut with the hole, it
+  sinks it to wherever the cone meets the hole. Draw `rim` where the sink opens, on a plane lying
+  on the face it is cut from; its faces are `near` (the rim's disc) and the side, named by the
+  rim's edge. Built exactly about a whole circle; about any other face it is read by the field
+  alone.
+
+  ```sv
+  deck := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) hint(origin: (3, 2, 33))
+  deck.origin coincident strap.near.surface
+  deck tangent(at: deck.origin) strap.near.surface
+  deck.origin coincident up                  // the hole's axis
+  in deck {
+    rim := circle(center: deck.origin) hint(r: 3)
+    radius(3mm) rim
+  }
+  sink := solid(std.solids.Countersink(face(rim), angle: 90deg))
+  sink cut strap
+  ```
 - **Revolution.** Right-handed about the line's own direction; `to: 90deg` a quarter, `from:
   -90deg, to: 0deg` the quarter the other way (what `sense: cw` said). An axis lies in the plane
   when it is one of the plane's own (`about: std.z` on `std.front`) or the solve puts it there.

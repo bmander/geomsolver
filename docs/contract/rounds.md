@@ -401,7 +401,9 @@ lean term, the angle read to a billionth of a degree (`solid/defined.rs`) — is
 `SolidDef::Prism::draft` (radians; `None` undrafted): the section at ordinate `h` is `f` moved `|h|
 tan θ` into its material from its own plane, the parting plane (an outer loop in, a hole out). Every
 evaluator reads it: the facets (`primitive::prism`'s `taper`, `offset` by mitres, a side breaking at
-the plane; `drafted_away` refuses a side taken to nothing, at validation), the field
+the plane; `drafted_away` refuses a side taken to nothing, at validation, saying the ordinate's
+size at which it comes to nothing from the face's own plane, to three figures, and that the sides
+lean from it, #765), the field
 (`ExtrudedField::drafted`: the side's value plus `|w| tan`, times the cosine — exact only where
 `PlanarField::draftable`: convex loops of lines and whole circles, else refused) and the exact
 kernel (the recipe's prism `"draft"`; `brep::build::drafted`: `offset` the profile — a line moved

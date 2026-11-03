@@ -206,7 +206,7 @@ fn prism(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
 /// `beyond := { q | q outside sec }`, `within := { q | q inside sec }` and `sec`'s plane `P`: the
 /// face and `k`, the draft's tangent — the signed distance into the section at least `k` times
 /// the ordinate's size.  `None` for any other sum.
-fn lean(of: &[(crate::model::Target, f64)]) -> Option<(u32, f64, EntRef)> {
+pub(crate) fn lean(of: &[(crate::model::Target, f64)]) -> Option<(u32, f64, EntRef)> {
     use crate::model::Target;
     let mut face = None;
     let (mut out, mut into, mut plane) = (None, None, None);
