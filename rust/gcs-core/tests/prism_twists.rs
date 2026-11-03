@@ -648,7 +648,6 @@ fn a_corner_holding_the_turns_axis_is_refused() {
     refused_while_built(&bar.text(),"part");
 }
 
-
 /// What `slid_bar(true, drop)` with its length cut to `x ∈ [2, 8]` takes from the cube, apart from
 /// the build: the slide carries the bar `D = 18 (0.3, 1, drop)`; a cube point at `(y, z)` is the
 /// bar's section's (the square stood on a corner, `|y + 4| + |z − 11.8| ≤ 2`) at the rolls `t` of
@@ -657,15 +656,16 @@ fn a_corner_holding_the_turns_axis_is_refused() {
 /// Along z at each y every bound is linear, so the length is linear between the heights where two
 /// of them meet (or one meets 0, 1, or the cube's end): integrated exactly there by two-point Gauss,
 /// and across y by Simpson's rule.
-pub(crate) fn capped_slide_removed(drop: f64) -> f64 {
+fn capped_slide_removed(drop: f64) -> f64 {
     let d = [5.4,18.,18.*drop];
-    let signs = [(1.,1.),(1.,-1.),(-1.,1.),(-1.,-1.)];
+    // the bounds `a t ≤ p + q z` at `y`: the section's four sides, `sy (y − t dy + 4) + sz (z − t dz
+    // − 11.8) ≤ 2`, carried back along the slide
+    let bounds = |y: f64| [(1.,1.),(1.,-1.),(-1.,1.),(-1.,-1.)]
+        .map(|(sy,sz): (f64,f64)| (-sy*d[1]-sz*d[2],2.-sy*(y+4.)+sz*11.8,-sz));
     let span = |y: f64,z: f64| -> f64 {
         let (mut lo,mut hi) = (0f64,1f64);
-        for (sy,sz) in signs {
-            // sy (y − t dy + 4) + sz (z − t dz − 11.8) ≤ 2
-            let a = -sy*d[1]-sz*d[2];
-            let b = 2.-sy*(y+4.)-sz*(z-11.8);
+        for (a,p,q) in bounds(y) {
+            let b = p+q*z;
             if a > 0. { hi = hi.min(b/a) } else if a < 0. { lo = lo.max(b/a) } else if b < 0. { return 0. }
         }
         if hi < lo { return 0. }
@@ -673,11 +673,8 @@ pub(crate) fn capped_slide_removed(drop: f64) -> f64 {
     };
     let (z0,z1) = ((9.8+d[2]).max(0.),10.);
     let across = |y: f64| -> f64 {
-        // each bound on t as `p + q z`, and the constants it is clipped at
-        let mut lines: Vec<(f64,f64)> = signs.iter().map(|&(sy,sz)| {
-            let a = -sy*d[1]-sz*d[2];
-            ((2.-sy*(y+4.)+sz*11.8)/a,-sz/a)
-        }).collect();
+        // each bound on t as a line in z, and the constants it is clipped at
+        let mut lines: Vec<(f64,f64)> = bounds(y).iter().map(|&(a,p,q)| (p/a,q/a)).collect();
         lines.extend([(0.,0.),(1.,0.),(2./d[0],0.)]);
         let mut cuts = vec![z0,z1];
         for (i,&(p,q)) in lines.iter().enumerate() { for &(r,s) in &lines[i+1..] {
@@ -689,4 +686,3 @@ pub(crate) fn capped_slide_removed(drop: f64) -> f64 {
     };
     crate::brep::simpson(0.,10.,4000,across)
 }
-

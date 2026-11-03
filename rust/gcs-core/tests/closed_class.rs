@@ -12,8 +12,11 @@ use crate::closed_characteristics::square_bar;
 use crate::solid_sweeps_examples::class;
 use crate::turns_and_slides::{admit,exported,near,refused};
 
-/// The push up the plate leaning toward x, `(0.3, 0, √(1 − 0.3²))`.
-const ASLANT: &str = "fix(dir == (0.3, 0, 0.9539392014169457)) up";
+/// The push up the plate leaning toward x, `(0.3, 0, √(1 − 0.3²))`: its rise.
+const RISE: f64 = 0.9539392014169457;
+
+/// The push up the plate leaning toward x, as `punch.sv`'s ram's axis is fixed.
+fn aslant() -> String { format!("fix(dir == (0.3, 0, {RISE})) up") }
 
 /// **A bar pushed aslant wholly through a plate takes its shadow**: `closed_characteristics`'s bar
 /// of square section, `|y| + |z + 6| ≤ 1` along x from 6 to 14, pushed 16 up through the 20 × 10 × 4
@@ -24,7 +27,7 @@ const ASLANT: &str = "fix(dir == (0.3, 0, 0.9539392014169457)) up";
 /// plate's 4.
 #[test]
 fn a_bar_pushed_aslant_through_a_plate_takes_its_shadow() {
-    let text = square_bar().replace("fix(dir == (0, 0, 1)) up",ASLANT);
+    let text = square_bar().replace("fix(dir == (0, 0, 1)) up",&aslant());
     let e = fixtures::read(&text);
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
     assert!(found.screw.is_slide(),"a slide");
@@ -36,7 +39,7 @@ fn a_bar_pushed_aslant_through_a_plate_takes_its_shadow() {
 /// drum, a curved tool (C1), pushed aslant is the constant-twist class's refusal still.
 #[test]
 fn a_sweep_the_closed_class_refuses_keeps_its_first_refusal() {
-    let drum = crate::closed_characteristics::punch().replace("fix(dir == (0, 0, 1)) up",ASLANT);
+    let drum = crate::closed_characteristics::punch().replace("fix(dir == (0, 0, 1)) up",&aslant());
     let r = refused(admit(&drum));
     assert_eq!(r.class(),"constant-twist class","{r}");
     assert!(!matches!(r.condition,Condition::Faces | Condition::Constant | Condition::Settled),"{r}");
@@ -49,7 +52,7 @@ fn a_sweep_the_closed_class_refuses_keeps_its_first_refusal() {
 /// lean to the axis and turn into hyperboloids, its faces' contact lines into cones. Apart from
 /// the build: the bar stands within the ring's radii and heights and passes wholly through its 60°,
 /// so the ring loses a sixth of the bar's solid of revolution, `∫ π (ρ_max² − ρ_min²) dz` over its
-/// slices' radial spans (`swept_closed::spans`), by Simpson's rule between its vertices' heights.
+/// slices' radial spans (`swept_closed::revolved_volume`).
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 12 s: a leaning bar's hyperboloids cut from a ring sector")]
 fn a_leaning_bar_turned_wholly_through_a_ring_sector_bores_its_shadow() {
@@ -59,8 +62,7 @@ fn a_leaning_bar_turned_wholly_through_a_ring_sector_bores_its_shadow() {
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
     assert!(found.screw.is_turn(),"a turn");
     let bar = crate::brep::block([10.,-0.5,-0.6],[11.,0.5,0.6]).moved(&Rigid::turn([0.;3],[1.,0.,0.],-f64::to_radians(lean)));
-    let whole = crate::swept_closed::between_vertices(&[&bar],4000,&|z| crate::swept_closed::spans(&bar,z)
-        .map_or(0.,|(near,far)| std::f64::consts::PI*(far*far-near*near)));
+    let whole = crate::swept_closed::revolved_volume(&bar);
     let ring = std::f64::consts::PI/3.*(144.-64.);
     near(exported(&e,"part"),ring-whole/6.,1e-9);
 }
@@ -83,7 +85,7 @@ pub(crate) fn turned_partway_away() -> f64 {
 /// (clipped and measured by the shoelace); the plate loses that integrated over `y`. (Pushed 16, the
 /// bar passes wholly through: `4 (16 + 2k)`.)
 pub(crate) fn plunged_away(push: f64) -> f64 {
-    let d = [push*0.3,push*0.9539392014169457];
+    let d = [push*0.3,push*RISE];
     let section = |y: f64| -> f64 {
         let w = 1.-y.abs();
         let (x0,x1,z0,z1) = (6.,14.,-6.-w,-6.+w);
@@ -100,7 +102,7 @@ pub(crate) fn plunged_away(push: f64) -> f64 {
             out
         };
         let kept = clip(clip(pts.to_vec(),&|p| p[1]),&|p| 4.-p[1]);
-        (0..kept.len()).map(|k| { let (p,q) = (kept[k],kept[(k+1)%kept.len()]); p[0]*q[1]-q[0]*p[1] }).sum::<f64>().abs()/2.
+        gcs_core::solid::ring_area(&kept.iter().map(|p| (p[0],p[1])).collect::<Vec<_>>()).abs()
     };
     crate::brep::simpson(-1.,0.,2000,section)+crate::brep::simpson(0.,1.,2000,section)
 }
@@ -141,7 +143,7 @@ pub(crate) fn screwed_partway_away(stop: f64,reach: f64) -> f64 {
 #[test]
 fn the_partway_figures_reduce_to_the_whole_ones() {
     use std::f64::consts::{PI,TAU};
-    let k = 0.3/0.9539392014169457;
+    let k = 0.3/RISE;
     assert!((plunged_away(16.)-4.*(16.+2.*k)).abs() <= 1e-9,"{}",plunged_away(16.));
     let (r0,r,w,lead,l) = (4_f64,5_f64,2.,6.,20.);
     let turned = r*r/2.*(r0/r).acos()-r0/2.*(r*r-r0*r0).sqrt();

@@ -83,6 +83,13 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
     let classes = distinct.iter().map(|&swept| admission.sweeps().iter().find(|e| e.sweep == swept).map(|e| e.class.clone())
         .ok_or_else(|| ExportRefusal::at(Stage::Admission,format!("`{name}`: `{}` was not admitted",sk.solids[swept].name))))
         .collect::<Result<Vec<_>,_>>()?;
+    // a closed sweep is cut from the blank on one arrangement, a sheet's from the blank its sector
+    // or the whole is split by: the two are not yet built in one body
+    let closed = |c: &crate::solid::admission::Class| matches!(c,crate::solid::admission::Class::Closed(_));
+    if classes.iter().any(closed) && !classes.iter().all(closed) {
+        return Err(ExportRefusal::at(Stage::Admission,format!("`{name}` cuts a sweep of the closed class beside sweeps of another, \
+            which are not yet built together")))
+    }
     let bounds = field.in_model_units().support_bounds().ok().flatten().map(|b| (b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1])));
     let started = crate::clock::Instant::now();
     let read = crate::brep::recipe::Recipe::read(&recipe.recipe).at(Stage::Blank)?;
@@ -95,6 +102,17 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
         blank.faces.len(),started.elapsed()));
     (say.mark)(Stage::Blank);
     Ok(Prepared {field,bounds,distinct,cuts,classes,blank})
+}
+
+/// The body built whole with no sheet, where every sweep is of one class that cuts the blank
+/// itself: a planar sweep's envelope (`planar::cut`), a subtraction sweep's swept region
+/// (`subtraction::cut`), or a closed sweep on one arrangement with the blank (`closed::cut`).
+pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tolerance: Option<Tolerance>,say: &Say)
+    -> Option<Result<crate::brep::topo::Brep,ExportRefusal>> {
+    if planar::all(prepared) { Some(planar::cut(sk,body,recipe,prepared,tolerance,say)) }
+    else if subtraction::all(prepared) { Some(subtraction::cut(sk,body,recipe,prepared,tolerance,say)) }
+    else if closed::all(prepared) { Some(closed::cut(sk,body,recipe,prepared,tolerance,say)) }
+    else { None }
 }
 
 /// Sweep `k`'s sheet fitted against the blank: a prism's under a motion keeping its profile's
@@ -176,13 +194,7 @@ pub fn finish(cut: Cut,say: &Say) -> Result<Built,ExportRefusal> {
 pub fn build(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admission,tolerance: Option<Tolerance>,say: &Say)
     -> Result<Built,ExportRefusal> {
     let prepared = prepare(sk,body,recipe,admission,say)?;
-    if planar::all(&prepared) { return Ok(Built::Whole(planar::cut(sk,body,recipe,&prepared,tolerance,say)?)) }
-    if subtraction::all(&prepared) { return Ok(Built::Whole(subtraction::cut(sk,body,recipe,&prepared,tolerance,say)?)) }
-    if closed::all(&prepared) { return Ok(Built::Whole(closed::cut(sk,body,recipe,&prepared,tolerance,say)?)) }
-    if prepared.classes.iter().any(|c| matches!(c,crate::solid::admission::Class::Closed(_))) {
-        return Err(ExportRefusal::at(Stage::Admission,format!("`{}` cuts a sweep of the closed class beside sweeps of another, \
-            which are not yet built together",sk.solids[body].name)))
-    }
+    if let Some(solid) = whole(sk,body,recipe,&prepared,tolerance,say) { return Ok(Built::Whole(solid?)) }
     let sheets = crate::par::indices(prepared.sweeps(),|k| sheet(&prepared,k,tolerance,say)).into_iter().collect::<Result<Vec<_>,_>>()?;
     let plan = plan(sk,body,recipe,&prepared,&sheets,say);
     finish(cut(sk,body,recipe,&prepared,&sheets,plan,say)?,say)

@@ -141,7 +141,7 @@ fn leaning(lean: f64,off: f64) -> Brep {
 
 /// The radii a convex tool's slice at height `z` spans about the world's `z` axis: the nearest of
 /// it and the farthest, its edges cut by the slice.
-pub(crate) fn spans(tool: &Brep,z: f64) -> Option<(f64,f64)> {
+fn spans(tool: &Brep,z: f64) -> Option<(f64,f64)> {
     let ring = slice(tool,z)?;
     let far = ring.iter().map(|p| p[0].hypot(p[1])).fold(0.,f64::max);
     // the slice holds the axis where the origin is left of every side of the ring
@@ -186,14 +186,21 @@ fn a_block_straddling_the_axis_tipped_two_ways_turned_whole_is_its_solid_of_revo
 fn turned_whole_is_its_solid_of_revolution(tool: &Brep) {
     let path = turn([0.;3],[0.,0.,1.],std::f64::consts::TAU);
     let built = closed(tool,&path,[0.,1.],0.002,1e-6).unwrap();
-    let expected = between_vertices(&[tool],4000,&|z| spans(tool,z).map_or(0.,|(near,far)| std::f64::consts::PI*(far*far-near*near)));
+    let expected = revolved_volume(tool);
     assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
     agrees(&built,tool,&path);
 }
 
+/// The volume of a convex `tool`'s solid of revolution about the world's `z` axis, apart from any
+/// build: `∫ π (ρ_max² − ρ_min²) dz` over its slices' radial spans (`spans`), by Simpson's rule
+/// between the heights its vertices stand at.
+pub(crate) fn revolved_volume(tool: &Brep) -> f64 {
+    between_vertices(&[tool],4000,&|z| spans(tool,z).map_or(0.,|(near,far)| std::f64::consts::PI*(far*far-near*near)))
+}
+
 /// `∫ area(z) dz` over the heights the `parts`' vertices stand at, by Simpson's rule on `n` steps
 /// between each two (the slices' combinatorics, so `area`'s kinks, change only there).
-pub(crate) fn between_vertices(parts: &[&Brep],n: usize,area: &dyn Fn(f64) -> f64) -> f64 {
+fn between_vertices(parts: &[&Brep],n: usize,area: &dyn Fn(f64) -> f64) -> f64 {
     let mut heights: Vec<f64> = parts.iter().flat_map(|t| t.vertices.iter().map(|v| v.p[2])).collect();
     heights.sort_by(f64::total_cmp);
     heights.dedup_by(|a,b| (*a-*b).abs() < 1e-12);

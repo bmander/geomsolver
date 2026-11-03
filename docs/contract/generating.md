@@ -401,11 +401,13 @@ axis or square to it) read the tool's B-rep and the lowered trajectory in millim
 anything is built (`brep::swept::closed::reads`, its refusals `Unbuilt::Curved {at}` and
 `Unbuilt::Leaning {at}` with a point of the face or edge); C3 (each cell settled) is the build's.
 Admitted, `Class::Closed` carries the tool and the screw, and the body is built by cutting each
-sweep at each placement from the blank on one arrangement (`cut_from`, the blank carried into the
-sweep's coordinates and back), with no sheet, plan or sector: the export's and the page's stepped
-build alike (`object_builder::a_closed_sweep_builds_at_the_displays_samples`), and the native
-path refuses it by name. A body cutting sweeps of this class beside another's is refused at
-admission's stage. Each gate is a negative control of another class, held to a volume apart from
+sweep at each placement from the blank on one arrangement (`cut_from`, the tool and its screw placed
+where the body cuts it, `Screw::moved`, the blank left where it stands), with no sheet, plan or
+sector: the export's and the page's stepped build alike, through one dispatch (`sweep::whole`;
+`object_builder::a_closed_sweep_builds_at_the_displays_samples`), and the native path refuses it by
+name. A body cutting sweeps of this class beside another's is refused at
+admission's stage, by `sweep::prepare`, on both roads.
+Each gate is a negative control of another class, held to a volume apart from
 the build and its STL to the field with no disagreement (`tests/closed_class.rs`: a bar pushed
 aslant wholly through a plate, to 1e-9; `solid_sweeps_examples::the_bar_plunged_aslant_stops_inside_the_plate`,
 `the_bar_turned_partway_stops_inside_the_ring`, each X1 to 1e-9; slow tier, a leaning bar turned

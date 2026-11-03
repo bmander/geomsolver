@@ -17,11 +17,12 @@ use crate::model::{Sketch,SolidDef};
 
 type V = [f64;3];
 
-/// What the closed class read of a sweep: its tool's B-rep, its motion's constant twist and the
-/// roll it is carried over, in millimetres — what the build hands the kernel.
+/// What the closed class read of a sweep: its tool's B-rep and name, its motion's constant twist
+/// and the roll it is carried over, in millimetres — what the build hands the kernel.
 #[derive(Clone,Debug)]
 pub struct Closed {
     pub tool: Brep,
+    pub tool_name: String,
     pub screw: Screw,
     pub roll: [f64;2],
 }
@@ -29,11 +30,9 @@ pub struct Closed {
 impl Closed {
     /// The motion's kind, in the words a report uses.
     pub fn kind(&self) -> &'static str { self.screw.kind() }
-    /// The path the kernel is handed: the constant twist itself.
-    pub fn path(&self) -> Trajectory { Trajectory::Twist(self.screw) }
 }
 
-/// A sweep outside the closed class: its row, what was seen, and where (in the sweep's own
+/// A closed sweep's build refused: its row, what was seen, and where (in the sweep's own
 /// coordinates, millimetres), where there is a point.
 pub type Failure = (Condition,String,Option<V>);
 
@@ -51,34 +50,22 @@ pub fn said(unbuilt: Unbuilt,tool: &str) -> Failure {
     }
 }
 
-/// The sweep `swept`'s tool, motion and roll read in millimetres, and asked the kernel's
-/// structural rows (C1, C2): the evidence for each of its `placements` (model units), or the row it
-/// fails, its witness in the sweep's coordinates (model units).
-pub fn admit(sk: &Sketch,swept: usize,placements: &[Motion]) -> Result<SweepEvidence,Failure> {
+/// The sweep `swept`'s motion, roll and tool read in millimetres and asked the kernel's structural
+/// rows (C1, C2), the motion first, which needs no tool built: the evidence for each of its
+/// `placements` (model units), or none where they refuse (the first class's refusal then stands).
+pub fn admit(sk: &Sketch,swept: usize,placements: &[Motion]) -> Option<SweepEvidence> {
     let solid = &sk.solids[swept];
-    let SolidDef::Swept {source,motion,..} = &solid.def else {
-        return Err((Condition::Tool,format!("`{}` is not a continuous sweep",solid.name),None))
-    };
-    let tool_name = &sk.solids[*source as usize].name;
-    let mm = cad::millimetres(sk);
-    let unread = |condition,m: String| (condition,m,None);
-    let tool = cad::recipe(sk,*source as usize).and_then(|r| crate::brep::recipe::build(&r))
-        .map_err(|m| unread(Condition::Faces,format!("`{tool_name}` could not be built: {m}")))?;
-    let family = crate::motion::Family::read(sk,*motion as usize).map_err(|m| unread(Condition::Constant,m))?;
-    let path = family.trajectory().map_err(|m| unread(Condition::Constant,m))?;
-    let roll = super::roll::interval(sk,swept).map_err(|m| unread(Condition::Constant,m))?;
+    let SolidDef::Swept {source,motion,..} = &solid.def else { return None };
+    let path = crate::motion::Family::read(sk,*motion as usize).ok()?.trajectory().ok()?;
+    let roll = super::roll::interval(sk,swept).ok()?;
     // a sweep is its path's, not its pace's (#684 L)
-    let (path,roll) = path.unpaced(roll).map_err(|e| unread(Condition::Constant,e.msg))?;
-    let Some(s) = path.screw() else { return Err(said(Unbuilt::Motion,tool_name)) };
-    let screw = Screw {origin:s.origin.map(|x| x*mm),advance:s.advance*mm,..s};
-    closed::reads(&tool,&Trajectory::Twist(screw)).map_err(|u| {
-        let (c,m,w) = said(u,tool_name);
-        (c,m,w.map(|p| p.map(|x| x/mm)))
-    })?;
-    let (faces,edges) = (tool.faces.len(),tool.edges.len());
-    Ok(SweepEvidence {sweep:swept,name:solid.name.clone(),
+    let (path,roll) = path.unpaced(roll).ok()?;
+    let screw = path.screw()?.scaled(cad::millimetres(sk));
+    let tool = crate::brep::recipe::build(&cad::recipe(sk,*source as usize).ok()?).ok()?;
+    closed::reads(&tool,&Trajectory::Twist(screw)).ok()?;
+    Some(SweepEvidence {sweep:swept,name:solid.name.clone(),
         placements:placements.iter().map(|&pose| Placement {pose,equivalent_to:None}).collect(),
-        samples:faces,contacts:edges,spacing:0.,least_area_factor:1.,near_double_roots:0,near_tangent_pairs:0,
+        samples:0,contacts:0,spacing:0.,least_area_factor:1.,near_double_roots:0,near_tangent_pairs:0,
         basis:Basis::Sampled {rows:0,columns:0},equivalence:Equivalence::Sampled,
-        class:Class::Closed(Box::new(Closed {tool,screw,roll}))})
+        class:Class::Closed(Box::new(Closed {tool,tool_name:sk.solids[*source as usize].name.clone(),screw,roll}))})
 }

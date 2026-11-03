@@ -473,22 +473,22 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     // at once: what those rows guard against — a union within an intersection, a draft running both
     // ways from its plane, a concave corner, a roll never clear, a second contact — its swept region
     // does not need. One under a turn or a slide keeping its plane is asked them outright (#684 M).
-    let subtract = |swept: usize| -> Result<SweepEvidence,Error> {
-        let inside = |p: V| field.value(p) < -options.margin;
-        super::planar_subtraction::admit(sk,swept,&by_sweep[&swept],&inside,blank_box()).map_err(|(condition,message,witness)|
-            Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message:said(swept,message),witness,
-                asked:Asked::Subtraction}))
-    };
     // a sweep every class it is asked refuses, of a polyhedral tool under one slide, turn or screw,
     // is built closed by the kernel's one arrangement (#721, rows C1–C3): its refusal stands where
     // the closed class's rows refuse it too
     let closed = |swept: usize,refused: Error| -> Result<SweepEvidence,Error> {
         match refused {
-            Error::Refused(_) => super::closed_class::admit(sk,swept,&by_sweep[&swept]).map_err(|_| refused),
+            Error::Refused(_) => super::closed_class::admit(sk,swept,&by_sweep[&swept]).ok_or(refused),
             other => Err(other),
         }
     };
-    for &swept in order.iter().filter(|s| asked[s] == Asked::Subtraction) { planar.push(subtract(swept).or_else(|e| closed(swept,e))?) }
+    let subtract = |swept: usize| -> Result<SweepEvidence,Error> {
+        let inside = |p: V| field.value(p) < -options.margin;
+        super::planar_subtraction::admit(sk,swept,&by_sweep[&swept],&inside,blank_box()).map_err(|(condition,message,witness)|
+            Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message:said(swept,message),witness,
+                asked:Asked::Subtraction})).or_else(|e| closed(swept,e))
+    };
+    for &swept in order.iter().filter(|s| asked[s] == Asked::Subtraction) { planar.push(subtract(swept)?) }
     order.retain(|s| !matches!(asked[s],Asked::Planar | Asked::Subtraction));
     // a placement's check by the class its motion is in: the kernel's rows (`brep::swept::admission`)
     let check = |contacts: &SweepContacts,lone: Option<&Lone>,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)|
@@ -592,7 +592,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
             Ok(found)
         })();
         admission.sweeps.push(match generating {
-            Err(Error::Refused(_)) if super::planar_subtraction::asks(sk,swept) => subtract(swept).or_else(|e| closed(swept,e))?,
+            Err(Error::Refused(_)) if super::planar_subtraction::asks(sk,swept) => subtract(swept)?,
             Err(e) => closed(swept,e)?,
             Ok(found) => found,
         });

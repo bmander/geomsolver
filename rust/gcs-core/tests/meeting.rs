@@ -285,8 +285,7 @@ fn two_coaxial_hyperboloids_meet_in_circles_in_closed_form() {
     let Ssi::Curves(curves) = intersect(&a,&b,1e-9) else { panic!("in closed form") };
     // 4 + z² = 1 + 4 (z − 0.3)²: 3 z² − 2.4 z − 2.64 = 0
     let d = (2.4f64*2.4+4.*3.*2.64).sqrt();
-    let mut expected: Vec<f64> = vec![(2.4-d)/6.,(2.4+d)/6.];
-    expected.sort_by(f64::total_cmp);
+    let expected = [(2.4-d)/6.,(2.4+d)/6.];
     let mut found: Vec<(f64,f64)> = curves.iter().map(|c| match c {
         Curve::Circle(f,r) => (f.o[2],*r),
         other => panic!("a circle, not {}",other.kind()),

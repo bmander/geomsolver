@@ -62,21 +62,31 @@ impl Meridian {
     }
 }
 
+/// A spline meridian's point at `t` in `(ρ, z)` about the axis through `o` along the unit `z`.
+fn rz_at(s: &super::nurbs::BSpline,o: V,z: V,t: f64) -> [f64;2] {
+    let q = sub(s.point(t),o);
+    let h = dot(q,z);
+    [norm(sub(q,scale(z,h))),h]
+}
+
+/// A spline meridian's point at `t` in `(ρ, z)` (`rz_at`, read off its first derivative's
+/// evaluation) and how fast `ρ` and `z` run there.
+fn rz_jet(s: &super::nurbs::BSpline,o: V,z: V,t: f64) -> ([f64;2],[f64;2]) {
+    let (p,d) = s.d1(t);
+    let q = sub(p,o);
+    let h = dot(q,z);
+    let across = sub(q,scale(z,h));
+    let r = norm(across);
+    ([r,h],[if r > 0. { dot(across,d)/r } else { 0. },dot(d,z)])
+}
+
 /// Where a spline meridian crosses or touches another (not a spline), in `(ρ, z)`: the other's
 /// distance along it, its roots and touches found by `spline_roots`.
 fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
-    // a point's part across the axis, and its height along it
-    let split = |p: V| { let q = sub(p,o); let h = dot(q,z); (sub(q,scale(z,h)),h) };
-    let rz = |t: f64| { let (across,h) = split(s.point(t)); [norm(across),h] };
+    let rz = |t: f64| rz_at(s,o,z,t);
     let at = |t: f64| { let [r,h] = rz(t); [r,h,0.] };
     // the distance's rate along the spline: the gradient in (ρ, z) against how fast ρ and z run
-    let rate = |t: f64| {
-        let (p,d) = s.d1(t);
-        let (across,h) = split(p);
-        let r = norm(across);
-        let g = other.gradient([r,h]);
-        g[0]*(if r > 0. { dot(across,d)/r } else { 0. })+g[1]*dot(d,z)
-    };
+    let rate = |t: f64| { let (q,dq) = rz_jet(s,o,z,t); let g = other.gradient(q); g[0]*dq[0]+g[1]*dq[1] };
     spline_roots(s,&|t| other.implicit(rz(t)),&rate,&at,tol).into_iter().map(rz).collect()
 }
 
@@ -87,42 +97,33 @@ fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -
 /// root held to lie within `tol` of the second. `None` where the two run together over a stretch
 /// (no finite set of circles): left to be traced.
 fn spline_spline(a: &super::nurbs::BSpline,b: &super::nurbs::BSpline,o: V,z: V,tol: f64) -> Option<Vec<[f64;2]>> {
-    let split = |p: V| { let q = sub(p,o); let h = dot(q,z); (sub(q,scale(z,h)),h) };
-    let rz = |s: &super::nurbs::BSpline,t: f64| { let (across,h) = split(s.point(t)); [norm(across),h] };
-    // a spline's (ρ, z) and its rate there
-    let jet = |s: &super::nurbs::BSpline,t: f64| {
-        let (p,d) = s.d1(t);
-        let (across,h) = split(p);
-        let r = norm(across);
-        ([r,h],[if r > 0. { dot(across,d)/r } else { 0. },dot(d,z)])
-    };
     let [b0,b1] = b.domain();
-    let seeds: Vec<(f64,[f64;2])> = spline_samples(b).into_iter().map(|u| (u,rz(b,u))).collect();
+    let seeds: Vec<(f64,[f64;2])> = spline_samples(b).into_iter().map(|u| (u,rz_at(b,o,z,u))).collect();
     // the second's nearest point to `p` (from its nearest sample, by Newton on (B − p)·B', held to
-    // its domain), and its unit normal there
+    // its domain, to a step its rounding allows), and its unit normal there
     let nearest = |p: [f64;2]| -> ([f64;2],[f64;2]) {
         let d2 = |q: [f64;2]| (q[0]-p[0])*(q[0]-p[0])+(q[1]-p[1])*(q[1]-p[1]);
         let mut u = seeds.iter().min_by(|x,y| d2(x.1).total_cmp(&d2(y.1))).map_or(b0,|s| s.0);
         for _ in 0..30 {
-            let (q,dq) = jet(b,u);
+            let (q,dq) = rz_jet(b,o,z,u);
             let h = dq[0]*dq[0]+dq[1]*dq[1];
             if !(h > 0.) { break }
             let next = (u-((q[0]-p[0])*dq[0]+(q[1]-p[1])*dq[1])/h).clamp(b0,b1);
-            if (next-u).abs() <= 1e-15*(b1-b0) { u = next; break }
+            if (next-u).abs() <= 1e-12*(b1-b0) { u = next; break }
             u = next;
         }
-        let (q,dq) = jet(b,u);
+        let (q,dq) = rz_jet(b,o,z,u);
         let l = dq[0].dhypot(dq[1]).max(1e-300);
         (q,[dq[1]/l,-dq[0]/l])
     };
-    let g = |t: f64| { let p = rz(a,t); let (q,n) = nearest(p); (p[0]-q[0])*n[0]+(p[1]-q[1])*n[1] };
-    let dg = |t: f64| { let (p,dp) = jet(a,t); let (_,n) = nearest(p); n[0]*dp[0]+n[1]*dp[1] };
-    // running together over a stretch: three samples in a row on the second
+    let g = |t: f64| { let p = rz_at(a,o,z,t); let (q,n) = nearest(p); (p[0]-q[0])*n[0]+(p[1]-q[1])*n[1] };
+    let dg = |t: f64| { let (p,dp) = rz_jet(a,o,z,t); let (_,n) = nearest(p); n[0]*dp[0]+n[1]*dp[1] };
     let ts = spline_samples(a);
-    let on: Vec<bool> = ts.iter().map(|&t| g(t).abs() <= tol).collect();
-    if on.windows(3).any(|w| w.iter().all(|&x| x)) { return None }
-    let at = |t: f64| { let [r,h] = rz(a,t); [r,h,0.] };
-    Some(spline_roots(a,&g,&dg,&at,tol).into_iter().map(|t| rz(a,t))
+    let gs: Vec<f64> = ts.iter().map(|&t| g(t)).collect();
+    // running together over a stretch: three samples in a row on the second
+    if gs.windows(3).any(|w| w.iter().all(|x| x.abs() <= tol)) { return None }
+    let at = |t: f64| { let [r,h] = rz_at(a,o,z,t); [r,h,0.] };
+    Some(roots_among(a,&ts,&gs,&g,&dg,&at,tol).into_iter().map(|t| rz_at(a,o,z,t))
         .filter(|&p| { let (q,_) = nearest(p); (p[0]-q[0]).dhypot(p[1]-q[1]) <= tol }).collect())
 }
 
@@ -130,11 +131,17 @@ fn spline_spline(a: &super::nurbs::BSpline,b: &super::nurbs::BSpline,o: V,z: V,t
 /// (`util::roots::sampled_roots`: a crossing, or a touch where `dg` turns): one each where `at`
 /// puts them within `tol` of each other.
 fn spline_roots(s: &super::nurbs::BSpline,g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,at: &dyn Fn(f64) -> V,tol: f64) -> Vec<f64> {
-    let [a,b] = s.domain();
     let ts = spline_samples(s);
     let gs: Vec<f64> = ts.iter().map(|&t| g(t)).collect();
+    roots_among(s,&ts,&gs,g,dg,at,tol)
+}
+
+/// `spline_roots` from `g` read already at the spline's samples `ts` (`gs`).
+fn roots_among(s: &super::nurbs::BSpline,ts: &[f64],gs: &[f64],g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,
+    at: &dyn Fn(f64) -> V,tol: f64) -> Vec<f64> {
+    let [a,b] = s.domain();
     let mut out: Vec<f64> = Vec::new();
-    for r in crate::util::roots::sampled_roots(g,dg,&ts,&gs,tol,1e-15*(b-a)) {
+    for r in crate::util::roots::sampled_roots(g,dg,ts,gs,tol,1e-15*(b-a)) {
         if !out.iter().any(|&u| distance(at(u),at(r.at)) <= tol) { out.push(r.at) }
     }
     out
@@ -338,9 +345,10 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         let (Some(ma),Some(mb)) = (meridian(s,o,z,tol),meridian(t,o,z,tol)) else { continue };
         let points = match (&ma,&mb) {
             // two spline meridians: where one crosses the other, unless they run together
+            // (where they run together, read the other way round they would too: traced)
             (Meridian::Spline(sa,o,z),Meridian::Spline(sb,..)) => match spline_spline(sa,sb,*o,*z,tol) {
                 Some(points) => points,
-                None => continue,
+                None => break,
             },
             (Meridian::Spline(sp,o,z),m) | (m,Meridian::Spline(sp,o,z)) => spline_cross(sp,*o,*z,m,tol),
             _ => {
