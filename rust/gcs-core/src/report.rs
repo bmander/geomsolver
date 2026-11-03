@@ -1799,8 +1799,23 @@ pub fn meshings_json(sk: &Sketch) -> Json {
 /// many there are, said where their verdicts would be, so a run that judged none is never read as
 /// one where every one held.
 pub fn solid_claims_unjudged_text(n: usize) -> String {
-    let s = if n == 1 { "" } else { "s" };
-    format!("{n} claim{s} about solids not judged")
+    let (s, them) = if n == 1 { ("", "it") } else { ("s", "them") };
+    // and that no solid was built for them, so a solid whose build fails is not said (#762)
+    format!("{n} claim{s} about solids not judged: no solid was built for {them}, so a solid that \
+             does not build is not said")
+}
+
+/// **A solid drawn, not built** (#762): what an output read from solid `i`'s evaluation (a
+/// picture, a glTF, a faceted STL) says where that evaluation is its field's or its facet term's
+/// rather than its exact build (`EvaluatedSolid::unbuilt`) — what it was drawn from and the
+/// refusal that left it so, as an export of it would refuse.  So a quick look at a solid whose
+/// build fails says that it fails, at the edit that made it so.
+pub fn unbuilt_text(sk: &crate::model::Sketch, i: usize, u: &crate::solid::Unbuilt) -> String {
+    let from = match u.from {
+        crate::solid::DrawnFrom::Field => "its material field",
+        crate::solid::DrawnFrom::Facets => "its facet term",
+    };
+    format!("`{}` is drawn from {from}, {u}", sk.solid_name(i))
 }
 
 /// The same immutable claim result supplies terminal and JSON reports.
