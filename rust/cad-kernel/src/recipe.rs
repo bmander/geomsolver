@@ -355,6 +355,7 @@ impl Recipe {
                 Node::Lowered(_) => {}
                 Node::Body(body) => for id in std::iter::once(&body.stock).chain(body.sets().into_iter().flat_map(|(_,l)| l)) {
                     let Some((operand,short,paths)) = routes.get(id) else { continue };
+                    let short = body.steps.get(id).map_or(*short,String::as_str);
                     for (primitive,path) in paths {
                         // a swept solid's own sweep, split off as its stock, adds no step
                         let route = if operand == name { path.clone() } else { placed_name(short,path) };

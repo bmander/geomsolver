@@ -93,8 +93,9 @@ language's own — `is_operator`, `reserved_word` — is no such use, read as th
 would name and refused there; `print::write_relation` writes the name back). Its application's
 prefix is `{scope}{label}#{statement}.{n}.` (`flatten::keys::labelled`, `Walk::begin_nth`): the
 label one segment with the statement, which no source name spells, so the steps a face's route is
-read by — `solid::route_step`, the one reading `operand_primitives`, `brep::recipe`,
-`faces::face_reach` and `carrier` share (`past_step`) — put each named use's label before its
+read by — `solid::step_through` past the body's scope, `route_step` from a use's segment on, the
+one reading `operand_primitives`, `brep::recipe` (a body's `steps`), `faces::face_reach` and
+`carrier` share (`past_step`) — put each named use's label before its
 solid's own leaf (`plate.rim.taken.round`) and two named uses' faces stay apart; the recipe lumps
 lowered regions by their labels (`cad::Walk::lump`), so a named round's pieces keep its names. The
 label is the body's (`Walk::body`: a declaration, a param, a group, an instance, a set or another

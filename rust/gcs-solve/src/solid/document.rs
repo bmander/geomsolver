@@ -308,7 +308,7 @@ pub(crate) fn operand_primitives(sk: &Sketch, si: usize) -> BTreeMap<String, (St
             SolidDef::Body { .. } => {
                 for o in s.operands().into_iter().rev() {
                     let Some(operand) = sk.solids.get(o as usize) else { continue };
-                    let name = operand.step();
+                    let name = step_through(s, operand);
                     let name = name.as_str();
                     if let Some(source) = done.get(&o) {
                         for (primitive,(path,prim)) in source {
@@ -330,10 +330,34 @@ pub(crate) fn operand_primitives(sk: &Sketch, si: usize) -> BTreeMap<String, (St
 
 pub use cad_kernel::recipe::route_step;
 
-/// Whether `route` begins with `operand`'s step (`SolidE::step`), and the rest of it past: a
-/// step written without the copy's index is any copy's (`faces::same_step`).
-pub fn past_step<'r, S: AsRef<str>>(operand: &SolidE, route: &'r [S]) -> Option<&'r [S]> {
-    let step = operand.step();
+/// **The step operand `operand` adds to the route of a face through body `body`** (#188,
+/// [0.149], #760): the operand's path as the body's scope writes it — `hub.body` for the `body`
+/// of an instance `hub` beside it, `joint[1].pad` for the `pad` of an instance a `repeat`'s copy
+/// holds (`SolidE::written`), `drill[1]` for the copy itself — so no two operands a document
+/// names apart are named alike.  From the first segment a statement's use put there (`#17`, a
+/// named use's `rim#17`) the rest is read by `route_step`, a named round's `rim.taken`; an
+/// operand outside the body's scope (a solid an instance was given) is read by it whole.  The
+/// one reading of a route's steps: the faces are named by it (`operand_primitives`, the recipe's
+/// `steps`) and reached by it (`past_step`).
+pub fn step_through(body: &SolidE, operand: &SolidE) -> String {
+    let written = operand.written_name();
+    let scope = body.written_name().rsplit_once('.').map_or("", |(s, _)| s);
+    let within = if scope.is_empty() { Some(written) }
+        else { written.strip_prefix(scope).and_then(|r| r.strip_prefix('.')) };
+    let Some(within) = within.filter(|w| !w.is_empty()) else { return route_step(written) };
+    let segs: Vec<&str> = within.split('.').collect();
+    match segs.iter().position(|s| s.contains('#')) {
+        None => within.to_string(),
+        Some(0) => route_step(within),
+        Some(k) => format!("{}.{}", segs[..k].join("."), route_step(&segs[k..].join("."))),
+    }
+}
+
+/// Whether `route` begins with `operand`'s step through `body` (`step_through`), and the rest
+/// of it past: a step written without a copy's index is any copy's (`faces::same_step`).
+pub fn past_step<'r, S: AsRef<str>>(body: &SolidE, operand: &SolidE, route: &'r [S])
+    -> Option<&'r [S]> {
+    let step = step_through(body, operand);
     let n = step.split('.').count();
     let same = |(a, b): (&str, &S)| super::faces::same_step(b.as_ref(), a);
     (route.len() >= n && step.split('.').zip(route).all(same)).then(|| &route[n..])

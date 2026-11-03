@@ -1263,6 +1263,38 @@ impl<'a> Walk<'a> {
         Some((Ok(vec![(links, false)]), abs))
     }
 
+    /// Why a block over a solid's faces (`repeat a in part.pad`) runs over none (W116, #760):
+    /// its path names no face the solid lists, eaten or not — said with the steps the faces'
+    /// names go on by past the longest of its beginnings any names, so a step the document writes
+    /// otherwise (`joint[0].pad` for `pad`) is shown.  `None` where it names one, a block that
+    /// lists none of those (a round over its own faces) included.
+    fn names_no_face(&self, p: &Pending, alias: &dyn Aliases) -> Option<String> {
+        let StmtKind::Block(b) = &p.st.kind else { return None };
+        let over = b.over.as_ref()?;
+        let sc = self.pending_scope(p);
+        let (abs, rest) = self.look(alias).find(&over.chain, &sc)?;
+        let all = &self.faces.given.get(&abs)?.paths;
+        if all.is_empty() || all.iter().any(|f| f.matches(&rest)) {
+            return None;
+        }
+        let k = (0..rest.len()).rev().find(|&k| all.iter().any(|f| f.matches(&rest[..k])))?;
+        let next: BTreeSet<&str> = all.iter().filter(|f| f.matches(&rest[..k]))
+            .filter_map(|f| f.segments().nth(k)).collect();
+        let mut steps: Vec<String> = next.iter().take(8).map(|s| format!("`{s}`")).collect();
+        if next.len() > steps.len() {
+            steps.push("…".into());
+        }
+        let steps = match steps.split_last() {
+            Some((last, [])) => last.clone(),
+            Some((last, before)) => format!("{} or {last}", before.join(", ")),
+            None => return None,
+        };
+        let past: Vec<&str> =
+            std::iter::once(abs.as_str()).chain(rest[..k].iter().map(String::as_str)).collect();
+        Some(format!("`{abs}.{}` names no face of `{abs}`, so nothing is made over its faces: past \
+            `{}` they are named by {steps}", rest.join("."), past.join(".")))
+    }
+
     /// Expand every block over a chain's edges (`repeat e in rack.profile { … }`), each where
     /// the walk met it, once its chain can be found.  A copy may itself hold such a block, or
     /// make the instance holding another's chain, so this runs until nothing more resolves; what
@@ -1287,10 +1319,21 @@ impl<'a> Walk<'a> {
             let Some((i, (walks, over))) = found else { break };
             // a block over a solid's faces names it however they were named: the elaborator
             // names them again where its solids now give them otherwise ([0.149])
+            let none = over.is_some()
+                && walks.as_ref().is_ok_and(|w| w.iter().all(|(l, _)| l.is_empty()));
+            let nothing = none.then(|| self.names_no_face(&self.aside.blocks[i], &alias)).flatten();
             if let Some(abs) = over {
                 self.faces.repeats.insert(abs);
             }
             let p = self.aside.blocks.remove(i);
+            // said at the document's statement it was met under (a round's, not the word's
+            // block), once for each path however many copies reach it
+            if let Some(m) = nothing {
+                let said = |d: &Diag| d.code == Code::W116 && d.span == p.at && d.message == m;
+                if !self.diagnostics.iter().any(said) {
+                    self.err(Code::W116, p.at, m);
+                }
+            }
             match walks {
                 Ok(walks) => self.expand_edges(p, walks),
                 Err((span, m)) => {

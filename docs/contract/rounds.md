@@ -17,7 +17,11 @@ body standing on one, [0.198], [sets.md](sets.md)'s shell) are left out of the
 boundary they read and applied last by the field (`document.rs`: fills, then cuts). A face path
 is matched against `solid::exact`'s names (`BodyFaces` is built from `exact::build`, shifted to its
 origin; cached in `Caches::faces`); one naming nothing holds nowhere, and a region over it is
-`RegionField::empty`, no term of a body. `std.rounds`: `Run`, `Fill`, `Corner`, `CornerFill`,
+`RegionField::empty`, no term of a body. A block over a solid's faces whose path names none the
+solid lists (`FacePath::matches`, eaten or not) is **W116** at the document's statement it was met
+under (`Pending::at`: the round, not `std.rounds`' block), once per path, naming the steps the
+faces go on by past the longest beginning of it that names any (`Walk::names_no_face`, [0.201],
+#760): `part.pad` where the pads are `part.joint[0].pad`, … says `joint[0]`, `joint[1]`. `std.rounds`: `Run`, `Fill`, `Corner`, `CornerFill`,
 `Flat`, `FlatFill` (sets over faces) and the words `A round(r: …) B`, `round(r: …) X`, `A chamfer(d:
 …) B`, `chamfer(d: …) X`; in a region's body `std.rounds.Rounded(a, b, r)` and
 `std.rounds.Chamfered(a, b, la, lb)` over two of its own sets (`set` formals, #191; `p inside S(…)`

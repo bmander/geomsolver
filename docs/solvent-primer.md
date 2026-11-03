@@ -2243,6 +2243,12 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   its copy's index, as `--where` reports it — the hole the second drill cut is
   `flange.drill[1].hole`. `flange.cd chamfer(d: 1mm) flange.drill[1]` chamfers that one hole
   (`drill[i]` in a `repeat`); `flange.drill` is every copy's.
+- **An operand is its whole path** (0.201): `hub.body union part` puts the hub's faces under
+  `part.hub.body` (`part.hub.body.ab`, …), apart from `spine.body`'s, so `part.spine round(r: 3mm)
+  part.hub` rounds where the two meet — no wrapper solid each. An instance a `repeat` makes carries
+  its copy's index: `joint.pad union part` in the block's body is `part.joint[0].pad`, …;
+  `part.joint` names every copy's. `--where part` lists the names exactly as a round takes them,
+  and a path naming no face of its solid is **W116**, with the steps its faces are named by.
 - Each acts on the body after its other terms: a round reads the faces the cuts and unions left,
   and not another round's — unless it names that round (below).
 - Where two faces meet tangent there is no edge: a chain of tangent edges (an obround's foot, a

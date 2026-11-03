@@ -38,10 +38,10 @@ pub fn layer(sk: &mut Sketch) -> Vec<(usize, String)> {
     refused
 }
 
-/// The labels a solid's faces are named under (`route_step` without its leaf): none for a solid no
-/// named use made.
-fn labels(name: &str) -> Vec<String> {
-    let step = crate::solid::route_step(name);
+/// The labels a reader's faces are named under through body `b` (its step, `step_through`,
+/// without its leaf): none for a solid no named use made.
+fn labels(sk: &Sketch, b: usize, reader: usize) -> Vec<String> {
+    let step = crate::solid::step_through(&sk.solids[b], &sk.solids[reader]);
     let mut segs: Vec<String> = step.split('.').map(str::to_string).collect();
     segs.pop();
     segs
@@ -77,7 +77,7 @@ fn layers_of(sk: &Sketch, b: usize, readers: &BTreeSet<usize>)
         uses.entry(use_key(&sk.solids[r].name)).or_default().push(r);
     }
     let keys: Vec<&str> = uses.keys().copied().collect();
-    let label: Vec<Vec<String>> = keys.iter().map(|k| labels(&sk.solids[uses[k][0]].name)).collect();
+    let label: Vec<Vec<String>> = keys.iter().map(|k| labels(sk, b, uses[k][0])).collect();
     // what each use names: every use another of its readers' face references reaches by its label
     let names: Vec<BTreeSet<usize>> = keys.iter().enumerate().map(|(u, k)| {
         let mut refs = Vec::new();
@@ -130,7 +130,7 @@ fn stack(sk: &mut Sketch, b: usize, of: &BTreeMap<usize, usize>) {
     let SolidDef::Body { stock, on, through, bound } = sk.solids[b].def.clone() else { return };
     let top = of.values().copied().max().unwrap_or(0);
     let s = &sk.solids[b];
-    let (name, class, copy) = (s.name.clone(), s.class.clone(), s.copy);
+    let (name, class, written) = (s.name.clone(), s.class.clone(), s.written.clone());
     let at = |o: &u32| of.get(&(*o as usize)).copied();
     let mut below: Option<u32> = None;
     for k in 0..top {
@@ -143,8 +143,8 @@ fn stack(sk: &mut Sketch, b: usize, of: &BTreeMap<usize, usize>) {
         };
         let layer = sk.solids.len();
         // what it is made of is the top's, the body the document named (#510)
-        sk.solids.push(SolidE { def, name: name.clone(), class: class.clone(), copy,
-                                material: None, binding: None });
+        sk.solids.push(SolidE { def, name: name.clone(), class: class.clone(),
+                                written: written.clone(), material: None, binding: None });
         // the layer's readers read the body it is
         let to = |e: EntRef| Some(if e.kind == EntKind::Solid && e.i() == b { EntRef::solid(layer) } else { e });
         for (&r, _) in of.iter().filter(|(_, &l)| l == k) {

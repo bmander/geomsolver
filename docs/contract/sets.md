@@ -244,7 +244,15 @@ reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.bos
 halves — then the face's own name); `FacePath::matches` (segments from the first, never a
 suffix; [0.157] a step written without an index naming a copy's, `drill` for `drill[1]`,
 `same_step`) is the one rule, read by `BodyFaces::faces` and the flattener's `face_links`, and
-`face_paths` enumerates the same walk with `SolidE::caps`, the one cap table. The members
+`face_paths` enumerates the same walk with `SolidE::caps`, the one cap table. **An operand's step
+is its path as the body's scope writes it** ([0.201], #760; `document::step_through`, the one
+reading — `operand_primitives`, `past_step`, the layers' labels, the recipe's per-body `steps` the
+kernel names faces by): the operand's `SolidE::written` name (each block copy on the way an index on
+the declaration it holds, `#7.1.joint.pad` → `joint[1].pad`, `program::solids::build::written_name`)
+past the body's scope, whole, so `hub.body` and `spine.body` unioned into `part` are
+`part.hub.body` and `part.spine.body`; from its first hidden segment on (a use's `#17`, `rim#17`)
+it is `route_step`'s, labels and leaf (`rim.taken`), and an operand outside the scope is
+`route_step` of its name. The members
 `ends`, `surface`, `body` are `syntax::Member`, written as `Seg::Member` by the flattener only
 past a set or a solid where no declared name swallows the field (`rewrite`'s `fix` over
 `Known::solids`; `sets::measured_sets` for `S.ends`; in a measurement's text the segment

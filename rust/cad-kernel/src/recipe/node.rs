@@ -129,7 +129,11 @@ pub struct FamilyWall { pub name: String,pub run: crate::family::Run,pub closed:
 /// reads the faces that makes, fills (`on_late`) then cuts (`cut_late`) — empty where it has none.
 #[derive(Clone,Debug)]
 pub struct Body { pub stock: i64,pub on: Vec<i64>,pub cut: Vec<i64>,pub bound: Vec<i64>,
-    pub on_late: Vec<i64>,pub cut_late: Vec<i64> }
+    pub on_late: Vec<i64>,pub cut_late: Vec<i64>,
+    /// The step each operand adds to its faces' routes through this body, by the operand's id
+    /// (#760: its path as the body's scope writes it, `hub.body`); an operand it does not list
+    /// adds its node's own `step`.
+    pub steps: std::collections::BTreeMap<i64,String> }
 
 /// A piece of a `Region`: a primitive, and whether the region keeps within it (else outside it).
 #[derive(Clone,Debug)]
@@ -242,8 +246,14 @@ impl Body {
     /// ones only where it has them.
     pub fn read(n: &Json) -> Read<Body> {
         let late = |k: &str| listed(n,k).iter().map(Json::as_i64).collect();
+        let steps = match n.get("steps") {
+            Some(Json::Obj(kv)) => kv.iter().map(|(k,v)| Ok((k.parse::<i64>()
+                .map_err(|_| unread(format!("recipe: a body's step for `{k}`, no operand's id")))?,
+                v.as_str().to_string()))).collect::<Read<_>>()?,
+            _ => Default::default(),
+        };
         Ok(Body {stock:field(n,"stock")?.as_i64(),on:ids(n,"on")?,cut:ids(n,"cut")?,bound:ids(n,"bound")?,
-            on_late:late("on_late"),cut_late:late("cut_late")})
+            on_late:late("on_late"),cut_late:late("cut_late"),steps})
     }
     /// Each set after the stock, in the order the body applies them, by its key.
     pub fn sets(&self) -> [(&'static str,&[i64]);5] {

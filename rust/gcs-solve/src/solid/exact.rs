@@ -95,7 +95,13 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
         };
         if let Some(Ok(x)) = leaf {
             let t = std::array::from_fn(|k| (x.origin[k] - origin[k]) * mm);
-            built.insert(id, x.brep.moved(&geom::Rigid { t, ..geom::Rigid::identity() }));
+            let mut moved = x.brep.moved(&geom::Rigid { t, ..geom::Rigid::identity() });
+            // its faces named in their two halves again (#760): an `Exact`'s are joined, and
+            // `named` below splits each into the primitive its route is read by and the face
+            for (f, (of, face)) in moved.faces.iter_mut().zip(&x.named) {
+                f.name = name_under(of, face);
+            }
+            built.insert(id, moved);
             leading.extend(x.leading.iter().cloned());
             continue;
         }

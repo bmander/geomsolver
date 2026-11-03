@@ -74,7 +74,7 @@ pub use reads::{reads,same_reads,Memo,MemoKey,ShapeKey};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
 pub use document::{applied_to,built_on,evaluation_operands,operand_paths,past_step,reaches,route_step,
-                   uses,Use};
+                   step_through,uses,Use};
 use document::{frame_origin,resolve_at};
 mod field;
 pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError,CHORD_SLACK};

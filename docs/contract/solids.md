@@ -133,7 +133,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   `exact_solid` places the representative's B-rep likewise (`Exact::placed`, `Caches::placed_exact`),
   and a recipe reaching a solid of a binding several share takes its B-rep from `exact_solid`,
   moved into its place (`exact::build`, `Sketch::shared`), so a union of a ring's instances builds
-  one.  A key holds only while it does (`Sketch::shares`): a solid reaching one its instance did
+  one — its faces named in their two halves again from the leaf's `Exact::named`, so the body's
+  faces read by their routes (`joint[1].pad.cd`), and a round over a closed instance's faces in a
+  frame rounds them (#760: through it they read as their keys, `#41.1.joint.pad.cd`, which no path
+  names).  A key holds only while it does (`Sketch::shares`): a solid reaching one its instance did
   not make (a tool joined from outside) or a swept one is its own — but to the exact export, where
   a closed instance's swept body whose motions are the instance's own is its binding's first
   unmirrored solid's build placed, built once a drawing and tolerance (`Sketch::bound_where`,
@@ -479,7 +482,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   a face and a solid alone, as it does a datum — they bear no points, and refusing them would
   split the design and the solid it is a section of across blocks.
   A boolean **never renames**: `block.near`, `block.far`, `block.side_l` (a prism), `bore.axis`,
-  `bore.start` (a revolution), and through operands — `body.bore.wall`, `part.base.pocket.floor`.
+  `bore.start` (a revolution), and through operands — `body.bore.wall`, `part.base.pocket.floor`,
+  each operand by its whole path from the body's scope (`part.hub.body.ab` for an instance's
+  `hub.body`, `part.joint[1].pad.near` for a copy's, [0.201], #760, [sets.md](sets.md)).
   A name whose face a boolean ate is a *fact the report carries*, never an error.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.

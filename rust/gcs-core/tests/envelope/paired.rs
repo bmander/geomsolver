@@ -843,7 +843,7 @@ fn the_gears_inner_mate_is_its_space_cutters_neighbour_one_tooth_over() {
     let pair = Pair::read([24,48],2.);
     let sk = &pair.model.sketch;
     let body = pair.model.map.ent_named("pair.gear.body").unwrap().i();
-    let FaceSource::Swept {surface,motion,within,..} = face_source(sk,body,&FacePath::new("indexed","neighbor.outer")).unwrap()
+    let FaceSource::Swept {surface,motion,within,..} = face_source(sk,body,&FacePath::new("cut.indexed","neighbor.outer")).unwrap()
         else { panic!("the neighbour's flank is a cut face") };
     assert!(within.point([1.,2.,3.]).iter().zip([1.,2.,3.]).any(|(a,b)| (a-b).abs() > 1e-3),"the neighbour is turned");
     let placed = envelope::GeneratedEnvelope::new("placed".into(),surface,motion,[-PI,PI]).unwrap();

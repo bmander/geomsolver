@@ -4,6 +4,25 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.201] An operand named by its whole path** (#760). Through a body, an operand is a step of
+its faces' names as the body's scope writes it, whole (§6.21): the `body` of an instance `hub`
+unioned into `part` is `hub.body`, its faces `part.hub.body.ab`, … and `part.hub` names every one.
+Through 0.200 a step was the operand's name's last segment, so the `body` of every instance was one
+step and their faces one name: `spine.body` and `hub.body` unioned into `part` were both
+`part.body`, and a round between them could not be written without a wrapper solid for each
+(`k_hub := solid(hub.body)`). A copy on the way is an index on the declaration it holds: the `pad`
+of an instance `joint` a `repeat` makes is `joint[1].pad` (`part.joint` every copy's faces,
+`part.joint[1]` one's), where through 0.200 it was `pad`, every copy's alike. An operand from outside
+the body's scope (a solid an instance was given) keeps its own name's last segment, and a word's
+solids theirs (`plate.rim.taken`). A face path a block over a solid's faces runs over — a round's,
+a chamfer's — that names no face of the solid is said at the statement that wrote it (**W116**), with
+the steps the solid's faces are named by where the path leaves them; through 0.200 it made nothing,
+silently. And the faces of the closed instances of one binding a body is made of (the `pad`s of
+a `repeat`'s copies, each an instance in a frame of its own) are read by a round under these
+names too: through 0.200 the reading named them by keys no path writes, so every round over them
+made nothing, and said nothing. A face path written through an operand with a dotted name (`frame.foot` for
+`blank.foot`) is written whole now (`frame.blank.foot`); reported face names change with it.
+
 **[0.200] A line is a motion** (#748). Wherever a reading names a frame, `under:` or
 `seen_from:`, it may name a line or an axis instead: the turn about it, a radian a radian of the
 roll (§6.14). Through 0.199 only a face's patch swept into a region solid read a line so (the body

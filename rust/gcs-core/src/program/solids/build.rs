@@ -113,7 +113,7 @@ pub(super) fn build_solid(
     };
     let i = sk.solid(def, &d.name.key().text);
     sk.solids[i].class = d.class.clone();
-    sk.solids[i].copy = copy_written(d, st);
+    sk.solids[i].written = written_name(d, st);
     // what it is made of (#510 P3), where the flattener found it a material it stated
     sk.solids[i].material = d.material.as_ref().map(crate::syntax::ref_text)
         .filter(|m| sk.materials.contains_key(m));
@@ -706,13 +706,37 @@ fn axis_may_lie_in(sk: &Sketch, plane: Option<u32>, ax: usize) -> bool {
     !still || sk.axis_in(plane, ax).is_some()
 }
 
-/// The copy a solid is, where the document wrote it in a block's body itself (`drill` in `repeat
-/// 6 { … }`): what its faces are named by through a body (`SolidE::copy`).  A word's solid
-/// (`DeclName::Key`) is none, nor one an instance in a copy holds, its last step the instance.
-fn copy_written(d: &Decl, st: &Stmt) -> Option<u32> {
+/// A solid's name as the document writes it (`SolidE::written`, #760), where a block's copies
+/// stand on the way: each copy's `#{block}.{index}` an index on the declaration it holds — `drill`
+/// in `repeat 6 { … }` (`#7.1.drill`) is `drill[1]`, the `pad` of an instance `joint` there
+/// (`#7.1.joint.pad`) `joint[1].pad` — and a copy holding a copy (`#3.0.#7.1.drill`) left to the
+/// inner, as an index is written once.  A word's solid (`DeclName::Key`) is none, nor one whose
+/// name holds no copy.
+fn written_name(d: &Decl, st: &Stmt) -> Option<String> {
     use crate::{ir::PathStep, syntax::DeclName};
-    match (&d.name, st.path.last()) {
-        (DeclName::Copy(_), Some(PathStep::Copy { index, .. })) => Some(*index),
-        _ => None,
+    let DeclName::Copy(name) = &d.name else { return None };
+    let segs: Vec<&str> = name.text.split('.').collect();
+    let mut out: Vec<String> = Vec::new();
+    let (mut at, mut index) = (0, None);
+    let mut copies = st.path.iter().filter_map(|p| match p {
+        PathStep::Copy { block, index } => Some((format!("#{}", block.0), index.to_string())),
+        PathStep::Instance(_) => None,
+    }).peekable();
+    while at < segs.len() {
+        let here = copies.peek()
+            .is_some_and(|(block, k)| segs[at] == block && segs.get(at + 1) == Some(&k.as_str()));
+        if here {
+            index = copies.next().map(|(_, k)| k);
+            at += 2;
+            continue;
+        }
+        let seg = segs[at];
+        out.push(match index.take() {
+            Some(k) if !seg.contains('#') => format!("{seg}[{k}]"),
+            _ => seg.to_string(),
+        });
+        at += 1;
     }
+    let written = out.join(".");
+    (written != name.text).then_some(written)
 }
