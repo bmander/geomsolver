@@ -651,6 +651,7 @@ fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
     if let Surface::Sphere(sp,r) = other { if let Some(circle) = pipe_end(blend,sp.o,r.abs(),tol) {
         return Some(vec![circle]) } }
     if let Surface::Cylinder(cy,r) = other { if let Some(curves) = screwed_circle_round(blend,cy,r.abs(),tol) { return Some(curves) } }
+    if let Surface::Plane(pl) = other { if let Some(curves) = screwed_circle_level(sheet,blend,pl,tol) { return Some(curves) } }
     let line = blend.screwed_line()?;
     let (o,z,a0,run) = (line.centre,line.axis,line.p0,line.run);
     let perp = |x: V| sub(x,scale(z,dot(x,z)));
@@ -748,7 +749,7 @@ fn screwed_overlap(a: &super::geom::Blend,b: &super::geom::Blend,tol: f64) -> Op
 /// trigonometric polynomial of degree two, four roots at most — found where it changes sign and,
 /// where it only touches nought (the circle tangent to the cylinder), at its least. `None` for
 /// any other sheet or cylinder.
-fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy: &Frame,big: f64,tol: f64) -> Option<Vec<Curve>> {
+pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy: &Frame,big: f64,tol: f64) -> Option<Vec<Curve>> {
     let super::geom::Carry::Screw {center,axis,..} = blend.carry else { return None };
     let k = unit(axis);
     if norm(cross(unit(cy.z),k)) > 1e-12 { return None }
@@ -788,6 +789,62 @@ fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy: &Frame,bi
         if g(th).abs() <= 2.*big*tol && !roots.iter().any(|&x| (x-th).abs()*r <= tol) { roots.push(th) }
     }
     Some(roots.into_iter().map(|th| Curve::Iso(blend.clone(),u_of(th))).collect())
+}
+
+/// **The sheet any circle screws into meets a plane square to the screw's axis**, in closed form
+/// (#721 F2c5: a ball's pipe against a level plane through it): the screw lifts every point alike, so
+/// the circle's point at `u` reaches the plane at the `v` its height gives, `v(u) = (h − z(u))/rise`,
+/// and the meeting is `S(u, v(u))` over the runs of `u` where that `v` is on the sheet — written in
+/// closed form at points dense where the run ends and wherever the point turns, and handed over as a
+/// traced meeting. `None` for any other sheet or plane.
+fn screwed_circle_level(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blend>,pl: &Frame,tol: f64) -> Option<Vec<Curve>> {
+    let super::geom::Carry::Screw {center,axis,advance,..} = blend.carry else { return None };
+    let k = unit(axis);
+    if norm(cross(unit(pl.z),k)) > 1e-12 || blend.level_circle().is_some() { return None }
+    let (Curve::Circle(..),Curve::Circle(..)) = (&blend.a,&blend.b) else { return None };
+    let same = |q: V,p: V| norm(sub(q,p)) <= 1e-9*(1.+norm(p));
+    if !(0..3).all(|i| same(blend.d1([i as f64/2.,1.]).0,blend.carry.at(blend.d1([i as f64/2.,0.]).0,1.))) { return None }
+    let rise = advance*dot(axis,k);
+    if rise == 0. { return None }
+    let h = dot(sub(pl.o,center),k);
+    let v_of = |u: f64| (h-dot(sub(blend.d1([u,0.]).0,center),k))/rise;
+    let slack = tol/rise.abs();
+    let on = |u: f64| (-slack..=1.+slack).contains(&v_of(u));
+    let point = |u: f64| blend.d1([u,v_of(u).clamp(0.,1.)]).0;
+    const N: usize = 2048;
+    let us: Vec<f64> = (0..=N).map(|i| i as f64/N as f64).collect();
+    let ok: Vec<bool> = us.iter().map(|&u| on(u)).collect();
+    // a closed circle whose every point reaches the plane: one loop
+    if ok.iter().all(|&o| o) {
+        let mut pts: Vec<V> = us.iter().map(|&u| point(u)).collect();
+        pts[N] = pts[0];
+        return Some(vec![Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:sheet.clone(),b:Surface::Plane(*pl),pts,closed:true}))])
+    }
+    // runs of `u` (round the circle, from where it leaves the sheet), each end refined
+    let start = (0..N).find(|&i| !ok[i])?;
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < N {
+        let j = (start+i)%N;
+        if !ok[j] { i += 1; continue }
+        let first = i;
+        while i < N && ok[(start+i)%N] { i += 1 }
+        let refine = |inside: f64,outside: f64| { let (mut a,mut b) = (inside,outside); for _ in 0..60 { let m = 0.5*(a+b); if on(m) { a = m } else { b = m } } a };
+        let at = |n: usize| { let x = (start+n) as f64/N as f64; x };
+        let (u0,u1) = (refine(at(first),at(first)-1./N as f64),refine(at(i-1),at(i)));
+        let mut run: Vec<f64> = vec![u0];
+        run.extend((1..24).map(|q| u0+(at(first)-u0)*0.5f64.powi(24-q)).filter(|&u| u > u0 && u < at(first)));
+        run.extend((first..i).map(at).filter(|&u| u > u0 && u < u1));
+        run.extend((1..24).rev().map(|q| u1-(u1-at(i-1))*0.5f64.powi(24-q)).filter(|&u| u > at(i-1) && u < u1));
+        run.push(u1);
+        run.sort_by(f64::total_cmp);
+        run.dedup();
+        let pts: Vec<V> = run.iter().map(|&u| point(u.rem_euclid(1.))).collect();
+        if pts.len() >= 2 && norm(sub(pts[0],pts[pts.len()-1])) > tol || pts.len() > 2 {
+            out.push(Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:sheet.clone(),b:Surface::Plane(*pl),pts,closed:false})));
+        }
+    }
+    Some(out)
 }
 
 /// **A ball touching the pipe its great circle screws into, round that circle** (#721 F2c5: a ball
