@@ -183,14 +183,19 @@ curve carried along the step onto it (`ssi::intersect`), exactly, not traced and
 along it through where the spline crosses or touches that surface, exactly; a cone about such a
 line in the spline carried along it onto the cone, a quintic over the spline's own parameter on
 its knots each twice more (`nurbs::interpolate_on`, so the spline itself is held exactly and only
-the height is fitted), a span halved where it strays past a quarter of the tolerance. Only where
-every meeting is steeper than `ssi::SHALLOW` and no two crossings may hide between the samples
-crossings are read at (the distance turning there within the tolerance of zero or past it): a
-touch or a crossing nearly one (a tool's side in the pocket it cut, along the pocket's wall) is
-traced, where touches are read. Traced, a
+the height is fitted), a span halved where it strays past a quarter of the tolerance. **A touch**
+— the distance along the spline turning within the tolerance of zero (a tool's side in the pocket
+it cut, along the pocket's wall; a vault's crown under the plane along it, brep-bench's
+nurbs/vault-tangent-plane) — is the line along the extrusion through the turn, judged by the gap
+as a plane touching a cylinder is, and placed at the turn, a root of the distance's rate: traced,
+the march refused its seed there as nearly touching. Only where every crossing is steeper than
+`ssi::SHALLOW` and no two crossings may hide between the samples crossings are read at (the
+distance turning past zero between them) is the meeting written so; a crossing nearly a touch is
+traced. Traced, a
 straight meeting took the step the spline's sharpest turn anywhere allows — a tooth space's prism
 met its tip in eight thousand steps fitted through a thousand, and a 16-tooth pinion's STEP grew
-sixfold. `brep::an_extruded_spline_meets_surfaces_along_it_in_closed_form` and
+sixfold. `brep::an_extruded_spline_meets_surfaces_along_it_in_closed_form`,
+`brep::a_plane_touching_a_vault_along_its_crown_keeps_it_whole` and
 `planar_subtraction::a_flanks_prism_meets_the_tip_and_the_chamfers_in_closed_form` are the gates.
 **A B-spline curve's foot** (`BSpline::nearest`) is the nearest of seventeen samples a knot span,
 read off the span's Bézier form, the spans nearest box first and none past the nearest sample

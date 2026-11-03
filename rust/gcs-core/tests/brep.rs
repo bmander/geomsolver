@@ -523,12 +523,21 @@ fn an_extruded_spline_meets_surfaces_along_it_in_closed_form() {
     let tilted = [0.3,-0.2,0.93];
     assert_eq!(intersect(&swept,&Surface::Cylinder(f([0.,0.,0.],tilted,x),2.),1e-9),Ssi::Traced);
     assert_eq!(intersect(&swept,&Surface::Plane(f([0.,0.,0.],[0.,0.6,0.8],x)),1e-9),Ssi::Traced);
-    // along it but touching the bow at its top (a tool's side in the pocket it cut), or crossing it
-    // twice between two of the samples crossings are read at: traced, where a touch is read
-    let top = (0..=100_000).map(|k| spline.point(k as f64/1e5)[1]).fold(f64::MIN,f64::max);
-    for below in [0.,1e-4] {
-        assert_eq!(intersect(&swept,&Surface::Plane(f([0.,top-below,0.],y,x)),1e-9),Ssi::Traced,"{below}");
+    // along it and touching the bow at its top (a tool's side in the pocket it cut, a vault's crown
+    // under the plane along it): the one line through the top, judged by the gap as a plane
+    // touching a cylinder is, either way round
+    let (top,at) = (0..=100_000).map(|k| { let p = spline.point(k as f64/1e5); (p[1],p) })
+        .fold((f64::MIN,[0.;3]),|m,q| if q.0 > m.0 { q } else { m });
+    for touching in [Surface::Plane(f([0.,top,0.],y,x)),Surface::Plane(f([0.,top+1e-10,0.],scale3(y,-1.),x))] {
+        for (a,b) in [(&swept,&touching),(&touching,&swept)] {
+            let Ssi::Curves(cs) = intersect(a,b,1e-9) else { panic!("{touching:?}: traced") };
+            let [Curve::Line {p,d}] = cs[..] else { panic!("{touching:?}: {cs:?}") };
+            assert_eq!(d,z);
+            assert!(swept.implicit(p).abs() < 1e-9 && (p[0]-at[0]).abs() < 1e-4 && (p[1]-top).abs() < 1e-9,"{p:?} by {at:?}");
+        }
     }
+    // crossing it twice between two of the samples crossings are read at: traced
+    assert_eq!(intersect(&swept,&Surface::Plane(f([0.,top-1e-4,0.],y,x)),1e-9),Ssi::Traced);
 }
 
 fn scale3(a: V,s: f64) -> V { [a[0]*s,a[1]*s,a[2]*s] }
@@ -892,6 +901,35 @@ fn a_groin_vault_is_four_vaults_meeting_at_the_crown() {
     // 24²·10 + 8∫₀¹² x(√(225 − x²) − 9) dx, and 24² + 4·24·10 + 8∫₀¹² 15x / √(225 − x²) dx
     let (v,a) = (volume(&r),r.faces.iter().map(|f| gcs_core::brep::props::area(&r,f)).sum::<f64>());
     assert!((v-7632.).abs() <= 1e-9*7632. && (a-2256.).abs() <= 1e-9*2256.,"volume {v}, area {a}");
+}
+
+/// **A plane touching a vault along its crown** (brep-bench's nurbs/vault-tangent-plane): the plane
+/// z = 16 meets the barrel vault's extruded arch in the one line along the sweep where the arch
+/// turns, within `tol` of the plane (`ssi::extruded`, by the gap, as a plane touching a cylinder
+/// is) — traced instead, the march refused its seed there as nearly touching. Kept below it, the
+/// block is whole: its volume 3168 + 5400 asin(4/5) and area 1320 + 1170 asin(4/5), and a plane a
+/// little lower still cuts the vault in its two lines.
+#[test]
+fn a_plane_touching_a_vault_along_its_crown_keeps_it_whole() {
+    use gcs_core::brep::build::kept;
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    let block = barrel_vault(false);
+    let vault = block.faces.iter().find(|f| f.surface.kind() == "extrusion").unwrap().surface.clone();
+    let level = |z: f64| gcs_core::brep::geom::Surface::Plane(Frame::about([0.,0.,z],[0.,0.,1.]));
+    let Ssi::Curves(met) = intersect(&level(16.),&vault,1e-9) else { panic!("the crown traced") };
+    assert_eq!(met.len(),1);
+    let Curve::Line {p,d} = met[0] else { panic!("a {} at the crown",met[0].kind()) };
+    assert!(gcs_core::space::distance(p,[-12.,0.,16.]) <= 1e-9 && d[0].abs() > 1.-1e-12,"{p:?} {d:?}");
+    let Ssi::Curves(cut) = intersect(&level(15.),&vault,1e-9) else { panic!("the cut traced") };
+    assert_eq!(cut.len(),2);
+    let r = kept(&block,[0.,0.,16.],[0.,0.,-1.],0.).unwrap();
+    r.check(1e-8).unwrap();
+    assert_eq!(r.faces.len(),6);
+    let asin = (0.8f64).asin();
+    let (v,a) = (volume(&r),r.faces.iter().map(|f| gcs_core::brep::props::area(&r,f)).sum::<f64>());
+    close(v,3168.+5400.*asin);
+    close(a,1320.+1170.*asin);
 }
 
 /// A traced curve's parameter span: a fit's domain, or a trace's steps.

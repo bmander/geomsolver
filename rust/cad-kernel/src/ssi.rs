@@ -163,12 +163,15 @@ fn spline_samples(s: &super::nurbs::BSpline) -> Vec<f64> {
 /// space's prism cut from a turned blank): a plane along it or a cylinder about a line along it
 /// meets the spline's face in the lines along it through where the spline crosses that surface,
 /// exactly; a cone about a line along it, in the spline carried along it onto the cone (`lifted`).
-/// Traced instead — None — for any other surface, a cone's curve that will not be written so, and
-/// wherever the two may touch, which the trace and the Boolean read (a tool's side in the pocket
-/// it cut, along the pocket's wall): a meeting at under `SHALLOW`, or the distance along the
-/// spline turning between two samples within `tol` of zero or past it (two crossings the samples
-/// alone would read as none). (Traced, a straight meeting took a step as short as the
-/// spline's sharpest turn anywhere allows, thousands of them, and was fitted through a thousand.)
+/// Where the spline touches a plane or a cylinder — the distance along it turning within `tol` of
+/// zero — the meeting is the line along it through the turn, judged by the gap as a plane touching
+/// a cylinder is (a tool's side in the pocket it cut, along the pocket's wall; a vault's crown under
+/// the plane along it, brep-bench's nurbs/vault-tangent-plane): traced, the march refused its seed
+/// there as nearly touching. Traced instead — None — for any other surface, a cone's curve that
+/// will not be written so, a crossing at under `SHALLOW`, or the distance turning past zero between
+/// two samples (two crossings the samples alone would read as none). (Traced, a straight meeting
+/// took a step as short as the spline's sharpest turn anywhere allows, thousands of them, and was
+/// fitted through a thousand.)
 fn extruded(f: &Frame,c: &Curve,s: &Surface,tol: f64) -> Option<Vec<Curve>> {
     let Curve::BSpline(sp) = c else { return None };
     let g = s.frame();
@@ -182,20 +185,27 @@ fn extruded(f: &Frame,c: &Curve,s: &Surface,tol: f64) -> Option<Vec<Curve>> {
         _ => return None,
     }
     // (a plane's and a cylinder's signed distance is the same all along the extrusion), and where
-    // it turns between two samples
+    // it turns between two samples: **within `tol` of zero, a touch**, the line along the sweep
+    // through the turn (`plane_cylinder`'s by the gap), placed at the turn, a root of the rate and
+    // not a least gap; past zero, two crossings the samples alone would read as none: traced
     let gap = |t: f64| s.implicit(sp.point(t));
     let rate = |t: f64| { let (p,d) = sp.d1(t); dot(s.gradient(p),d) };
     let [t0,t1] = sp.domain();
+    let mut touches: Vec<f64> = Vec::new();
     for w in spline_samples(sp).windows(2) {
         let (r0,r1) = (rate(w[0]),rate(w[1]));
         if (r0 < 0.) == (r1 < 0.) { continue }
         let x = crate::util::roots::bracketed_root(|t| Some(rate(t)),w[0],r0,w[1],r1,1e-15*(t1-t0));
         let g = gap(x);
-        if g.abs() <= tol || g*gap(w[0]) <= 0. && g*gap(w[1]) <= 0. { return None }
+        if g.abs() <= tol { touches.push(x); continue }
+        if g*gap(w[0]) <= 0. && g*gap(w[1]) <= 0. { return None }
     }
-    let roots = spline_roots(sp,&gap,&rate,&|t| sp.point(t),tol);
-    roots.iter().all(|&t| steep(t,sp.point(t)))
-        .then(|| roots.into_iter().map(|t| Curve::Line {p:sp.point(t),d:f.z}).collect())
+    let at = |t: f64| sp.point(t);
+    // the crossings, less those at a touch (its double root, found again)
+    let roots: Vec<f64> = spline_roots(sp,&gap,&rate,&at,tol).into_iter()
+        .filter(|&t| !touches.iter().any(|&x| distance(at(x),at(t)) <= tol)).collect();
+    roots.iter().all(|&t| steep(t,at(t)))
+        .then(|| touches.into_iter().chain(roots).map(|t| Curve::Line {p:at(t),d:f.z}).collect())
 }
 
 /// A cubic spline carried along the axis of the cone `g`, `r`, `α` onto it: each of its points to
