@@ -329,7 +329,7 @@ impl Blend {
     /// (`turned_to`): a grid spaced along `v` alone would start on the next turn of a coil as
     /// readily as on its own.
     pub fn inverse(&self,p: V) -> Uv {
-        crate::util::meter::tick(crate::util::meter::Stage::Inverse);
+        crate::util::meter::charge(crate::util::meter::Stage::Inverse,1,|| (p,"a swept sheet's inverse".into()));
         // a level circle's sheet is read level with `p` first: a sheet thinner than the warm start's
         // reach (a round rim screwed a short lead) has its other side within it
         if let Some(uv) = self.level_circle_uv(p) { return self.newton(p,uv) }

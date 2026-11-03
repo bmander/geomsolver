@@ -424,6 +424,28 @@ drum, a frustum and a ball turned 100° (`swept_closed::round_tools_turned_part_
 and cut from a ring sector the drum turned whole (`closed_characteristics::the_drum_turned_a_whole_turn_bores_the_whole_ring`,
 the constant-twist class's S1) and turned to a stop partway (`closed_class::a_drum_turned_partway_into_a_ring_sector_stops_there`),
 each to 1e-9.
+**A closed build is never returned wrong, and fails in seconds (#777 V).** Every closed or cut
+build is judged by its definition before it is returned (`swept::closed::judge`): at a jittered
+grid over its domain and at each cell's own points past the one that classified it, the solid's
+exact point location is read against the sweep's membership (cut from a blank, against "in the
+blank and no member"), and a boundary turned inside out (volume below nothing) is caught too; a
+disagreement is `Unbuilt::Wrong {at, held}`, the witness point, never a solid
+(`swept_closed::a_solid_built_wrong_is_refused_at_a_witness`). Point location is certified for
+every surface the class emits (`query::curve_surface`'s certified readings: a plane, a cone, a
+torus and a conic turned as polynomials along the line, a level rim's sheet on one unknown, any
+other swept or B-spline sheet by the three-unknown search, `util::isolate`;
+`swept_closed::every_surface_the_closed_class_emits_locates_points_exactly`, no point wrong and no
+search sampled). Each build's work is counted in steps per stage (`util::meter`: arrangement,
+trace, ray, outline, inverse, membership, judge) against `closed::BUDGET`; past it every metered
+loop winds down and the build is refused as `Unbuilt::Budget {stage, at, what}`, the same way at
+every run (`swept_closed::a_build_past_its_budget_refuses_by_name_within_it`).
+`SOLVENT_SWEEP_PROFILE` prints a build's counts, its meetings in closed form against traced per
+pair of surface kinds and the slowest, its curve–surface searches certified against sampled, and
+its deepest outline: a performance change cites it before and after. `SOLVENT_SWEEP_DUMP=<dir>`
+writes a failed build's domain and candidates whole (`swept::dump`), replayed alone and reduced
+to the fewest candidates that still fail (`swept_closed::a_failed_builds_arrangement_is_dumped_replayed_and_reduced`;
+the loop is docs/testing.md's).
+
 **Which road a body takes (#699 D, decided):** where a class admits a sweep, its blank-scoped sheet
 builds it (the fast path); where every class refuses, the closed class cuts it from the blank on one
 arrangement (`cut_from`, itself blank-scoped: the blank the arrangement's domain). The two agree

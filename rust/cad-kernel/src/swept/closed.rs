@@ -66,6 +66,14 @@
 //! meet in closed form (`ssi`'s screwed meetings, a plane's `Curve::SheetCut`), so the touch is a
 //! vertex of three exact curves.
 //!
+//! **Never returned wrong, and failing fast** (#777 V): what the selection returns is judged by the
+//! sweep's definition before it is returned (`judge`: the solid's exact point location against
+//! membership at seeded points of the domain and at the cells' own points, and its sense), and a
+//! disagreement is refused with its witness (`Unbuilt::Wrong`). The build's work is counted in
+//! steps per stage against `BUDGET` (`util::meter`), and past it refused by the stage that ran away
+//! (`Unbuilt::Budget`); `SOLVENT_SWEEP_PROFILE` prints the counts, and `SOLVENT_SWEEP_DUMP` writes a
+//! failed build's arrangement to replay alone (`swept::dump`).
+//!
 //! **A path of pieces** (K1, `Trajectory::Pieces`) of slides and turns, each a constant twist or
 //! one taken up where the piece before left the tool (`Trajectory::Placed`), is its pieces' sweeps
 //! united: each piece's candidates, read on the tool where that piece takes it up over its stretch
@@ -353,7 +361,7 @@ pub const BUDGET: crate::util::meter::Budget = crate::util::meter::Budget([
     // outline: chords faces' loops are cut in
     20_000_000,
     // inverse: a swept sheet's inverse map
-    40_000_000,
+    1_000_000_000,
     // membership: stretches of the roll read
     400_000_000,
     // judge: points judged
@@ -1059,6 +1067,23 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
         (held != should).then_some((p,held))
     });
     if let Some((at,held)) = readings.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held}) }
+    // each face turned the way its solid lies: a hair out along its outward normal the solid's own
+    // point location reads out, a hair in reads in (a face turned against its neighbours places
+    // points as the right one does, but its volume is off: the ring's sweep came out at 3.38 of
+    // 25.13 with every point placed right)
+    let size = { let (lo,hi) = built.bounds(); crate::util::space::distance(lo,hi) };
+    let hair = (1e-4*size).max(64.*tol);
+    for (fi,f) in built.faces.iter().enumerate() {
+        let [[u0,u1],[v0,v1]] = crate::boolean::face_parameters(built,fi);
+        let at = (1..4).flat_map(|i| (1..4).map(move |j| [u0+(u1-u0)*i as f64/4.,v0+(v1-v0)*j as f64/4.]))
+            .map(|uv| f.surface.point(uv)).find(|&p| solid.face_place(fi,p) == Place::In);
+        let Some(p) = at else { continue };
+        let Some(n) = f.outward(p) else { continue };
+        let (outside,inside) = (add(p,scale(n,hair)),sub(p,scale(n,hair)));
+        if solid.solid_place(outside) == Place::In && solid.solid_place(inside) == Place::Out {
+            return Err(Unbuilt::Wrong {at:inside,held:false})
+        }
+    }
     // turned inside out: every point it seems to hold, it leaves out
     if crate::props::volume(built) < 0. {
         let inside = points.iter().copied().find(|&p| solid.solid_place(p) == Place::In)

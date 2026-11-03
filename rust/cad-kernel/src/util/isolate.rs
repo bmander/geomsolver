@@ -51,8 +51,18 @@ pub fn roots(g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,bound: &dyn Fn(f64,f
         let (m,h) = (0.5*(a+b),0.5*(b-a));
         let [d1,d2] = bound(a,b);
         let gm = g(m);
-        // nought nowhere across the stretch
-        if gm.abs() > d1*h { continue }
+        // nought nowhere across the stretch: but where it comes within the tolerance of nought and
+        // turns back there (`near` at the turn, `g'` changing sign), a touch to the tolerance — a
+        // line passing a hair from tangent, which the caller reads as touching, as a sampled
+        // search did
+        if gm.abs() > d1*h {
+            let (da,db) = (dg(a),dg(b));
+            if (da < 0.) != (db < 0.) && (gm.abs() <= d1*h*4. || near(m)) {
+                let at = super::roots::bracketed_root(|t| Some(dg(t)),a,da,b,db,width*1e-3);
+                if near(at) { out.push(Root {at,touch:true}) }
+            }
+            continue
+        }
         // monotone across it: one root at most, where its ends differ in sign
         if dg(m).abs() > d2*h {
             let (ga,gb) = (g(a),g(b));

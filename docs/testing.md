@@ -75,6 +75,32 @@ times are taken with the suite's own parallelism, which is how a shard runs them
 when the shards drift apart (each shard's log opens with the time the file predicts for it); a
 stale file costs balance, never coverage.
 
+## Building a sweep: the inner loop (#777)
+
+A failing closed sweep is diagnosed fastest as the smallest Boolean of its candidates, not as the
+sweep: a one-second arrangement finds what minutes a sweep did not
+(`swept_closed::two_tori_touching_and_a_plane_on_both_hold_every_piece`). So **a sweep failure is
+reduced to the smallest Boolean of its candidates and kept as a fast test before it is fixed**:
+
+1. Run the failing build with `SOLVENT_SWEEP_DUMP=<dir>`: its domain, every candidate solid and
+   the tolerance are written whole (`brep::swept::dump`).
+2. `dump::load(dir)` and `Arrangement::reduce` with a predicate that says the failure (an error,
+   a missing piece, a wrong cell count) give the fewest candidates that still fail; write those as
+   a test of `boolean::arrangement_within` or `boolean::selected`, and see it fail.
+3. Fix the kernel against that test; then run the sweep's gate.
+
+`SOLVENT_SWEEP_PROFILE=1` prints what a closed build spent per stage and which pairs of surface
+kinds were traced rather than met in closed form: start a performance change from it, and cite it
+before and after. A build past `closed::BUDGET` is refused by the stage that ran away
+(`Unbuilt::Budget`), in seconds rather than hours.
+
+| tier | tests | typical time | when to run |
+|---|---|---|---|
+| 1 | the reduced Booleans (`swept_closed::two_tori_…`, the arrangements a dump reduced to) | about 1 s | the inner loop |
+| 2 | the kernel's sweep gates (`swept_closed::`, `cargo test swept_closed::`) | seconds to tens of seconds | the inner loop |
+| 3 | drawing, STL and examples (`object_builder::`, `solid_sweeps_examples::`) | minutes | before a commit |
+| 4 | the fast suite (`make test-changed`, then CI) | minutes | before a push |
+
 ## The fast tier's budget
 
 A test of ten seconds or more, timed alone, is in the slow tier

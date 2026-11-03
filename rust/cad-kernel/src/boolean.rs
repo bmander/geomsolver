@@ -1320,6 +1320,11 @@ impl<'a> Arrangement<'a> {
     /// they share.
     fn triple_points(&mut self,meetings: &Meetings) {
         let tol = self.tol;
+        // **each point three surfaces share computed once** (#711, #777 M2): found from each of the
+        // three faces it lies on (each holds two of its three meetings), it is solved the first
+        // time, by the three surfaces' indices among the meetings' (`meeting::Shared`), and every
+        // later finding of it near there takes that vertex — never solved again and snapped
+        let mut shared: BTreeMap<[usize;3],Vec<(V,u32)>> = BTreeMap::new();
         let mut on: BTreeMap<(Side,usize),Vec<(usize,Side,usize)>> = BTreeMap::new();
         for &(we,two) in &meetings.ssi_edges {
             for k in 0..2 { on.entry((two.s[k],two.f[k])).or_default().push((we,two.s[1-k],two.f[1-k])); }
@@ -1350,15 +1355,24 @@ impl<'a> Arrangement<'a> {
                 // each the point the three surfaces share, by Newton on their signed distances: what
                 // each of the three faces' searches finds again, so the pool takes it for one
                 let three = [surface,&self.solids[oi].faces[gi].surface,&self.solids[oj].faces[gj].surface];
+                let key = [(s,fi),(oi,gi),(oj,gj)].map(|k| self.surface_of.get(&k).copied());
+                let key: Option<[usize;3]> = key.iter().all(Option::is_some).then(|| { let mut k = key.map(|x| x.unwrap_or(0)); k.sort(); k });
                 for (t0,q) in found {
                     let q0 = q;
-                    let q = match shared_point(three,q,tol).or_else(|| touch_point(three,q,tol)) {
-                        Some(q) => q,
-                        // two of the three touch there (their gradients parallel), so the two curves
-                        // are tangent and their crossing is known only as the stretch along which
-                        // they stay within reach of one another: a vertex either has in it already
-                        // is that crossing, else their nearest approach is (#735 A3)
-                        None => self.crossing_in_touch([ei,ej],t0,q),
+                    // (within the reach Newton settles it from, `shared_point`'s; a touch's crossing,
+                    // known only along a stretch, is read again)
+                    let known = key.and_then(|k| shared.get(&k)?.iter().find(|(p,_)| distance(*p,q0) <= 16.*ON_CURVE*tol).copied());
+                    let q = match known {
+                        Some((p,_)) => p,
+                        None => match shared_point(three,q,tol).or_else(|| touch_point(three,q,tol)) {
+                            Some(q) => q,
+                            // two of the three touch there (their gradients parallel), so the two
+                            // curves are tangent and their crossing is known only as the stretch
+                            // along which they stay within reach of one another: a vertex either
+                            // has in it already is that crossing, else their nearest approach is
+                            // (#735 A3)
+                            None => self.crossing_in_touch([ei,ej],t0,q),
+                        },
                     };
                     let t = { let mut t = ci.inverse(q); if let Some(period) = ci.period() { t = around(t,ti[0],period); } t };
                     let near = |c: &Curve,x: f64,o: &Surface| distance(c.point(x),q) <= reach_of(o,q).max(distance(q,q0)+ON_CURVE*tol);
@@ -1366,7 +1380,8 @@ impl<'a> Arrangement<'a> {
                     let mut u = cj.inverse(q);
                     if let Some(period) = cj.period() { u = around(u,tj[0],period); }
                     if !(u >= tj[0]-1e-12 && u <= tj[1]+1e-12) || !near(cj,u,sj) { continue }
-                    let v = self.pool.at(q);
+                    let v = match known { Some((_,v)) => v,None => self.pool.at(q) };
+                    if let (Some(k),None) = (key,known) { shared.entry(k).or_default().push((q,v)) }
                     if !self.cuts[ei].iter().any(|&(_,w)| w == v) { self.cuts[ei].push((t,v)); }
                     if !self.cuts[ej].iter().any(|&(_,w)| w == v) { self.cuts[ej].push((u,v)); }
                 }

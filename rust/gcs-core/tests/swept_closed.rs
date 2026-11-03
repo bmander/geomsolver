@@ -1147,3 +1147,130 @@ fn a_failed_builds_arrangement_is_dumped_replayed_and_reduced() {
     });
     assert_eq!(reduce(&loaded,&fails),vec![0,2]);
 }
+
+/// **Every closed form for a touch is held to the general method** (#777 M3): where two surfaces
+/// are tangent along a curve, `ssi::touch_curve` finds it from both surfaces and the condition that
+/// they are tangent alone, with no closed form for the pair. Each closed form the closed class
+/// leans on — two cones on parallel axes touching along a line (`parallel_touch`), a ball in a
+/// torus's tube (`ball_in_tube`), a cylinder round a torus's equator (`tube_along_torus`), two tori
+/// round a meridian (`tori_touching`), a ball at a pipe's end (`pipe_end`), a screwed rim's sheet
+/// and the cylinder of its farthest reach (`screwed_circle_round`) — is a fast path held to it:
+/// the closed form's touch is tangent all along (the normals parallel), and the general method,
+/// seeded a thousandth off it, traces onto it within 1e-5 — a touch is a double root, its general
+/// reading the floor of a valley found by differences, so it is placed only to their rounding (a
+/// ball at a pipe's end, on the sheet's rim, 3e-6 off): which is why the closed forms stay, the
+/// exact and faster road where they hold. Each is measured, and said.
+#[test]
+fn every_closed_form_touch_is_held_to_the_general_method() {
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::ssi::{intersect,touch_curve,Ssi};
+    use gcs_core::space::{cross,distance};
+    use std::f64::consts::TAU;
+    let z = [0.,0.,1.];
+    let about = |o: [f64;3]| Frame::about(o,z);
+    let lean = 0.2f64.atan();
+    let lift = 2./TAU;
+    let rim = gcs_core::brep::build::screwed(&gcs_core::brep::build::disc([3.,0.,1.],z,1.),[0.;3],z,1.5,lift).unwrap();
+    let rim_sheet = rim.faces.iter().find(|f| f.surface.kind() == "blend").unwrap().surface.clone();
+    let pipe = gcs_core::brep::build::screwed(&gcs_core::brep::build::disc([10.,0.,0.],unit([0.,10.,0.5]),1.),[0.;3],z,1.5,0.75).unwrap();
+    let pipe_sheet = pipe.faces.iter().find(|f| f.surface.kind() == "blend").unwrap().surface.clone();
+    let cases: Vec<(&str,Surface,Surface)> = vec![
+        ("two cones on parallel axes",Surface::Cone(about([0.;3]),1.,lean),Surface::Cone(about([3.,0.,0.]),2.,-lean)),
+        ("a ball in a torus's tube",Surface::Sphere(about([2.,0.,0.]),0.3),Surface::Torus(about([0.;3]),2.,0.3)),
+        ("a cylinder round a torus's equator",Surface::Cylinder(about([0.;3]),2.3),Surface::Torus(about([0.;3]),2.,0.3)),
+        ("two tori round a meridian",Surface::Torus(about([10.,0.,0.]),1.,0.3),Surface::Torus(about([0.;3]),11.,0.3)),
+        ("a ball at a pipe's end",Surface::Sphere(about([10.,0.,0.]),1.),pipe_sheet),
+        ("a screwed rim and its farthest cylinder",Surface::Cylinder(about([0.;3]),4.),rim_sheet),
+    ];
+    let tol = 1e-7;
+    for (what,a,b) in cases {
+        let clock = std::time::Instant::now();
+        let Ssi::Curves(curves) = intersect(&a,&b,tol) else { panic!("{what}: no closed form") };
+        let closed_form = clock.elapsed();
+        let samples = |c: &Curve| -> Vec<[f64;3]> { match c {
+            Curve::Line {p,d} => (0..=20).map(|k| { let s = -1.+0.1*k as f64; std::array::from_fn(|i| p[i]+s*d[i]) }).collect(),
+            Curve::Iso(..) => (1..20).map(|k| c.point(k as f64/20.)).collect(),
+            Curve::Traced(t) => t.pts.clone(),
+            _ => (0..32).map(|k| c.point(k as f64*TAU/32.)).collect(),
+        } };
+        let parallel = |p: [f64;3]| norm(cross(unit(a.gradient(p)),unit(b.gradient(p))));
+        let touch = curves.iter().find(|c| samples(c).iter().all(|&p| parallel(p) <= 1e-5))
+            .unwrap_or_else(|| panic!("{what}: no touch among {:?}",curves.iter().map(|c| c.kind()).collect::<Vec<_>>()));
+        let pts = samples(touch);
+        for &p in &pts { assert!(parallel(p) <= 1e-6 && a.implicit(p).abs().max(b.implicit(p).abs()) <= 1e-7,"{what}: {p:?} no touch") }
+        let (lo,hi) = pts.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
+            (std::array::from_fn(|k| l[k].min(p[k]-0.5)),std::array::from_fn(|k| h[k].max(p[k]+0.5))));
+        let q = pts[pts.len()/2];
+        let seed = [q[0]+1e-3,q[1]-1e-3,q[2]+1e-3];
+        let clock = std::time::Instant::now();
+        let general = touch_curve(&a,&b,seed,lo,hi,tol).unwrap_or_else(|| panic!("{what}: the general method found no touch"));
+        let searched = clock.elapsed();
+        let Curve::Traced(traced) = &general else { panic!("{what}: traced") };
+        assert!(traced.pts.len() >= 10,"{what}: {} points",traced.pts.len());
+        for &p in &traced.pts {
+            let off = distance(touch.point(touch.inverse(p)),p);
+            assert!(off <= 1e-5,"{what}: the general touch at {p:?} stands {off:e} off the closed form's");
+        }
+        eprintln!("{what}: in closed form {closed_form:?}, by the general method {searched:?} ({} points)",traced.pts.len());
+    }
+}
+
+/// **The ball-end mill screwed through a ring sector, reduced to its Boolean, holds every cell**
+/// (#777 M4's gate): a ball of radius 1 on a mill's axis 10 from a screw's, screwed 1.5 rad climbing
+/// half a unit a radian, sweeps the pipe about its centre's helix; the mill's side screws into the
+/// cylinder of radius 11 about the axis, which the pipe touches from inside along the helix of the
+/// ball's outer equator, so the cells beside that touch are cusp-thin; and the blank is a sixth of a
+/// ring 8 to 12 across. Their arrangement (`boolean::selected`) is read cell by cell, each by its
+/// own exact point location: the pipe within the sector, the cylinder's part within it the pipe
+/// leaves, and the sector's part neither holds. Apart from the kernel, in helical coordinates
+/// `(ρ, ψ, ζ = z − kψ)` the screw is a shift in `ψ`, so the pipe within the sector (which it passes
+/// wholly across) is the sector's angle times its meridian section's polar integral `∫∫ ρ dρ dz`,
+/// summed here on a fine grid of the section, each point in the pipe where its distance from the
+/// helix is under the radius.
+#[test]
+fn the_ball_end_mill_screwed_through_a_sector_reduced_to_its_boolean_holds_every_cell() {
+    use gcs_core::brep::boolean::selected;
+    use gcs_core::brep::build::{disc,prism,revolve,screwed,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    use std::f64::consts::PI;
+    let (d,r,turn,k) = (10.,1.,1.5,0.5);
+    // the pipe: the ball's great circle square to its centre's velocity, screwed from 0.75 rad
+    // before the sector to 0.75 after, the sector standing from −π/6 to π/6
+    let start: f64 = -0.75;
+    let (s,c) = start.sin_cos();
+    let centre = [d*c,d*s,k*start];
+    let velocity = unit([-d*s,d*c,k]);
+    let pipe = screwed(&disc(centre,velocity,r),[0.;3],[0.,0.,1.],turn,k*turn).unwrap();
+    let side = prism(&disc([0.,0.,-3.],[0.,0.,1.],d+r),0.,6.).unwrap();
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let at = |x: f64,z: f64| f.at([x,0.,z]);
+    let rect = [at(8.,-2.),at(12.,-2.),at(12.,2.),at(8.,2.)];
+    let profile = Profile {origin:rect[0],normal:f.y,names:Vec::new(),loops:vec![(0..4).map(|j| ProfileEdge::Line {a:rect[j],b:rect[(j+1)%4]}).collect()]};
+    let sector = revolve(&profile,[0.;3],[0.,0.,1.],PI/3.).unwrap().moved(&gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],-PI/6.));
+    // the meridian section's polar integral: points (ρ, z) of the half-plane ψ = 0 within `r` of the
+    // helix (ψ, k ψ) at radius d, its nearest point found over ψ near 0
+    let near = |rho: f64,z: f64| -> f64 {
+        let dist = |psi: f64| { let (sn,cs) = psi.sin_cos(); (rho-d*cs).hypot(d*sn).hypot(z-k*psi) };
+        let (mut a,mut b) = (-0.3,0.3);
+        for _ in 0..80 { let (m1,m2) = (a+(b-a)*0.382,a+(b-a)*0.618); if dist(m1) < dist(m2) { b = m2 } else { a = m1 } }
+        dist(0.5*(a+b))
+    };
+    let n = 1200;
+    let mut moment = 0.;
+    for i in 0..n { for j in 0..n {
+        let (rho,z) = (d-1.2+2.4*(i as f64+0.5)/n as f64,-1.2+2.4*(j as f64+0.5)/n as f64);
+        if near(rho,z) < r { moment += rho }
+    } }
+    let moment = moment*(2.4/n as f64)*(2.4/n as f64);
+    let in_sector = PI/3.*moment;
+    let sector_volume = PI/3.*(12.*12.-8.*8.)/2.*4.;
+    let side_in_sector = PI/3.*((d+r)*(d+r)-64.)/2.*4.;
+    let part = |keep: &dyn Fn(&[bool]) -> bool| volume(&selected(&[&pipe,&side,&sector],keep,1e-6).unwrap().brep);
+    let pipe_part = part(&|m| m[0] && m[2]);
+    let side_part = part(&|m| !m[0] && m[1] && m[2]);
+    let rest = part(&|m| !m[0] && !m[1] && m[2]);
+    // the quadrature's own error, a grid of 1200 on the section, about 1e-5 of it
+    assert!((pipe_part-in_sector).abs() <= 1e-4*in_sector,"the pipe within the sector {pipe_part} against {in_sector}");
+    assert!((side_part-(side_in_sector-pipe_part)).abs() <= 1e-6*side_in_sector,"the side's part {side_part} against {}",side_in_sector-pipe_part);
+    assert!((rest-(sector_volume-side_in_sector)).abs() <= 1e-6*sector_volume,"the rest {rest} against {}",sector_volume-side_in_sector);
+}

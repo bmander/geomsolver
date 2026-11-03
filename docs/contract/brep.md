@@ -139,6 +139,32 @@ vertex (a round's contact on the face it rolls on; a cube's edges touching its m
 twelve touches, and the sphere's pieces a hole meeting an outer cycle at no vertex:
 `roots::sampled_roots_place_a_touch_where_the_derivative_turns`,
 `brep::a_cube_trimmed_by_its_midsphere_is_pinched_at_each_edges_middle`, `midsphere_common.sv`).
+**A curve's meeting with a surface is certified wherever a bound is known** (#777 M1, V1):
+`util::isolate` drops a stretch where the function cannot reach nought across it (its first
+derivative's bound), reads one root where it is monotone (its second's), halves it otherwise, and
+calls a touch only a stretch narrower than its width that cannot be parted; over several unknowns
+it isolates each root by Kantorovich's theorem, and reads a stretch it drops where the function
+turns back within the tolerance of nought as a touch, as a sampled search did. A line meets a plane
+and a conic turned (`query::line_revolution`, a quartic in the meridian's own parameter) as
+polynomials along it, wherever it is asked; **a ray a point is located by** (`query::ray_surface`)
+meets a cone and a torus as polynomials too, and a swept sheet or a B-spline net by the
+three-unknown search (`query::curve_sheet`, the sheet's second derivatives bounded by
+`blend_bounds` and `Net::second_bounds`). An edge a Boolean meets with a cone, a torus or a
+general sheet is still sampled: there an edge within the tolerance of tangent, or along a stretch
+of the surface, must read as the sampled search reads it, and taken certified those built wrong
+or were refused (`round_lowering::a_round_across_seams_between_arcs_on_a_drafted_prism_is_glued`,
+`prism_twists::a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs`). A level rim's sheet is
+met by its own bound on one unknown, kept as the faster road and held to the search
+(`swept_closed::a_rims_sheet_in_closed_form_is_held_to_the_general_search`). Only a pair with no
+certified reading samples, and the build's profile counts it (`util::meter`). **A point where three surfaces' meetings meet is solved once** (#711, M2:
+`Arrangement::triple_points`, keyed by the three surfaces' indices among the shared meetings), and
+every later finding of it from another of the three faces takes that vertex. **A touch along a
+curve is found generally** (M3, `ssi::touch_curve`): on one surface the other's distance is nought
+and flat along the touch and a valley across it, so the touch is the valley's floor, found by
+Newton across the null way of its second derivatives and marched along it; a trace whose seed
+stands where the two are tangent along a curve is read so rather than refused. Each closed form
+for a touch is held to it, within 1e-5, since a general touch is a double root placed to its
+differences' rounding (`swept_closed::every_closed_form_touch_is_held_to_the_general_method`).
 A surface offset by a distance is a surface (a cone shrunk past its apex the cone of its own
 apex), or what it closes onto where the distance takes its radius to nothing — a cylinder's axis, a
 sphere's centre, a torus's middle circle — and nothing only past that (`Surface::offset`,
