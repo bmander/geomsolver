@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.201] Faces meet where the drawing solves** (#761). `a meets b` (§12.9) was decided only where
+the drawing is seeded, so a shape whose seed is not its size or its place left a block out: a
+circle whose radius only `radius(r)` says starts at a radius of 1, a part placed by `seats` starts
+at its frame's origin, and a round between a beam and a post that meet in the drawing as solved
+was **E080** ("meet where the drawing solves, but not where it is seeded"), fixed only by seeds
+written to say again what the dimensions and the mates do. Now, where a pair read apart at the
+seeds meets where the drawing solves, the condition is decided again there — the document
+elaborated once more, its solids' faces read at the solved pose — and the block is made. Only a
+solve that settles is read so. The seeds, and every solved position, are unchanged; a document
+with no such pair elaborates as before, and one with a pair read apart is solved once more while
+it is elaborated. E080 stays for a pair still read apart that meets once the drawing solves again.
+
 **[0.200] A line is a motion** (#748). Wherever a reading names a frame, `under:` or
 `seen_from:`, it may name a line or an axis instead: the turn about it, a radian a radian of the
 roll (§6.14). Through 0.199 only a face's patch swept into a region solid read a line so (the body

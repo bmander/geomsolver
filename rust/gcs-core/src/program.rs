@@ -240,12 +240,24 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // that one is made (#183 F4, [0.149]) — but no more than a few times: rounds that name each
     // other, refused, would give more every pass
     let mut renamed = 0;
+    // **faces that meet are read where the drawing solves** (#761): where a pair `meets` read
+    // apart at the seeds meets once the drawing is solved, the faces are read again there, and
+    // the document elaborated again — once, every entity standing where that solve put it while
+    // its faces are read (`meets::at_solve`)
+    let mut pose: Option<BTreeMap<String, Vec<f64>>> = None;
     loop {
-        match elaborate_in(p, &refused, &crossed, &faces, renamed >= FACE_PASSES) {
+        let settled = renamed >= FACE_PASSES;
+        match elaborate_in(p, &refused, &crossed, &faces, settled, pose.as_ref()) {
             Ok(mut e) => {
                 if crossed.is_empty() {
                     crossed = crossed_seeds(&e);
                     if !crossed.is_empty() {
+                        continue;
+                    }
+                }
+                if pose.is_none() {
+                    pose = Some(meets::at_solve(&e, &mut faces).unwrap_or_default());
+                    if pose.as_ref().is_some_and(|p| !p.is_empty()) {
                         continue;
                     }
                 }

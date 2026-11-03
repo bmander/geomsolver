@@ -586,8 +586,9 @@ at all where it does not, decided over the numbers in scope before the solve: co
 (E103) — joined by `and`, `or` and `not`. Two drawn things compare by **identity**: `a != b`
 holds where the names stand for different things (a formal is what its call gave), and `c in B`
 where `c` is one of the faces `B` names (1.14); `a meets b` where two faces of a solid share an
-edge or a corner, read where the drawing is seeded (a pair it reads apart that the solve brings
-together is E080). There is no copy: what the body declares keeps
+edge or a corner, read where the drawing solves: a pair read apart where it is seeded that the
+solve brings together is read again there, so a circle left to `radius(r)` or a part placed by a
+mate rounds as it would seeded where it stands. There is no copy: what the body declares keeps
 its own name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused:
 an unknown of the drawing in the condition (E040), a number against something drawn (E103), an
 index, a trailing joint. `when` is the one conditional of statements: write a switch as `when
