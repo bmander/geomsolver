@@ -222,8 +222,11 @@ a second ordinate) is folded by the meridian (`meridian::leaning`, `Fold::lean_w
 diamond where it leans in, the outside of two cones where it leans out, each clipped convex,
 `clipped`), its axis the circle's (`axis_of`), and every evaluator reads it as any meridian — the
 recipe a `revolve` of its triangle, the field and the facets its region turned.  Its faces are named
-as a prism's (`meridian::named`): the lean's by the circle's edge, an ordinate along the plane's
-normal `near` bounding from above and `far` from below.  A lean grown, about a circle not square to
+as a prism's, on the terms themselves before any reader sees them (`defined::name_terms`, called
+by `program/solids/build.rs::region` after `face_planes`, for any region no entry recognises): a
+section's or a lean's term by its face's edge where the face is one edge and no hole, an ordinate
+along that face's plane `near` bounding from above and `far` from below — so its paths
+(`face_paths`, `repeat a in S`), the field and the exact solid agree.  A lean grown, about a circle not square to
 the axis, or about any other face is no meridian's and stays the field's (`Route::Field`, its exact
 export refused).  `tests/countersink.rs` is the gate.
 

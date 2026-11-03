@@ -97,10 +97,9 @@ pub(super) fn drafted_away(pts: &[(f64, f64)], reach: f64, taper: f64) -> Option
     (0..n).find_map(|i| {
         let j = (i + 1) % n;
         let (a, b) = ((pts[j].0 - pts[i].0, pts[j].1 - pts[i].1), (q[j].0 - q[i].0, q[j].1 - q[i].1));
-        // its length along its own direction, drawn and at the reach
-        let length = a.0.dhypot(a.1);
-        let (l0, l1) = (length, (a.0 * b.0 + a.1 * b.1) / length);
-        (l1 <= 0.0).then(|| (i, reach * l0 / (l0 - l1)))
+        // its length along its own direction, drawn and at the reach, each times the drawn one's
+        let (aa, ab) = (a.0 * a.0 + a.1 * a.1, a.0 * b.0 + a.1 * b.1);
+        (ab <= 0.0).then(|| (i, reach * aa / (aa - ab)))
     })
 }
 

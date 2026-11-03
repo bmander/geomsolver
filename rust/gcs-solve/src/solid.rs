@@ -574,18 +574,16 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
             let reach = from.value.abs().max(to.value.abs());
             for (k, p) in polys.iter().enumerate() {
                 if let Some((i, at)) = primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, d.value.dtan())) {
-                    let mm = |x: f64| format!("{}mm", crate::vocab::num((x * 1e6).round() / 1e6));
+                    let length = |x: f64| crate::units::Dim::LENGTH.number_text(x, sk.units);
                     // to three figures: a tessellated arc's chords come to nothing a little short
                     // of the arc
-                    let figures = |x: f64| {
-                        let k = 10f64.powi(2 - x.abs().log10().floor() as i32);
-                        mm((x * k).round() / k)
-                    };
+                    let figures = 10f64.powi(2 - at.abs().log10().floor() as i32);
+                    let at = (at * figures).round() / figures;
                     return Err(fail(&format!("a draft of `{}` takes the side `{}` to nothing {} \
                         from the face's own plane, within the prism's ordinates ({} to {}): its \
                         sides lean from the plane the face is drawn in, the parting plane, so draw \
-                        the face where the draft parts", d.text, p.names[p.of[i].0], figures(at),
-                        mm(from.value), mm(to.value))));
+                        the face where the draft parts", d.text, p.names[p.of[i].0], length(at),
+                        length(from.value), length(to.value))));
                 }
             }
         }

@@ -11,6 +11,7 @@
 //! to nothing and why.
 use gcs_core::brep::{export, props, sweep::Say};
 use gcs_core::program::Elaborated;
+use gcs_core::solid::faces::{face_paths, FacePath};
 use gcs_core::solid::{ApproximationPolicy::Report, MaterialField};
 use std::f64::consts::PI;
 
@@ -39,6 +40,13 @@ fn exact(e: &Elaborated, name: &str) -> Result<gcs_core::brep::topo::Brep, Strin
     export::exact(&e.sketch, ent(e, name).i(), None, None, &say).map(|x| x.solid).map_err(|r| r.message)
 }
 
+/// The exact solid's faces by their last names, in order.
+fn names(b: &gcs_core::brep::topo::Brep) -> Vec<&str> {
+    let mut names: Vec<&str> = b.faces.iter().map(|f| f.name.rsplit(['.', '\u{1}']).next().unwrap()).collect();
+    names.sort_unstable();
+    names
+}
+
 fn close(what: &str, got: f64, want: f64, rel: f64) {
     eprintln!("{what}: {got:.12} against {want:.12}");
     assert!((got - want).abs() <= rel * want.abs(), "{what}: {got} against {want}");
@@ -61,11 +69,12 @@ fn a_countersink_is_its_cone_to_its_point() {
         let want = cone(3.0, angle);
         let b = exact(&e, "sink").unwrap();
         close(&format!("{angle}°, exactly"), props::volume(&b), want, 1e-9);
-        let names: Vec<&str> = b.faces.iter().map(|f| f.name.as_str()).collect();
-        assert_eq!(names.len(), 2, "{names:?}");
-        for face in ["near", "rim"] {
-            assert_eq!(names.iter().filter(|n| n.ends_with(face)).count(), 1, "{face} in {names:?}");
-        }
+        assert_eq!(names(&b), ["near", "rim"]);
+        // and the paths a drawing reaches them by (`repeat a in sink`, `when a == sink.rim`)
+        let mut paths: Vec<String> = face_paths(&e.sketch, ent(&e, "sink").i()).iter()
+            .map(FacePath::text).collect();
+        paths.sort();
+        assert_eq!(paths, ["near", "rim"]);
         let read = e.sketch.evaluated_solid(ent(&e, "sink").i(), Report).unwrap();
         close(&format!("{angle}°, as the app reads it"), read.volume(), want, 2e-3);
         for face in ["near", "rim"] {
@@ -98,9 +107,7 @@ fn a_countersink_written_by_hand_is_built_alike() {
 }"));
     let b = exact(&e, "sink").unwrap();
     close("by hand, exactly", props::volume(&b), cone(3.0, 90.0), 1e-9);
-    let mut names: Vec<&str> = b.faces.iter().map(|f| f.name.rsplit(['.', '\u{1}']).next().unwrap()).collect();
-    names.sort_unstable();
-    assert_eq!(names, ["near", "rim"]);
+    assert_eq!(names(&b), ["near", "rim"]);
 }
 
 /// The issue's strap (#765): a hole through a strap whose top stands at 33.05, countersunk 90° to
