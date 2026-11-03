@@ -421,8 +421,14 @@ pub struct Expansion {
     pub reads: Vec<(String, String, Vec<String>)>,
     /// Every pair of faces a `when` left apart (#625): faces it read as meeting nowhere where the
     /// drawing is seeded, which made the copy nothing — for the elaborator to read again where
-    /// it is solved (`program::meets`).
+    /// it is solved (`program::at_solve`).
     pub apart: Vec<Apart>,
+    /// Every `when` that read faces along a direction or square to it (#763), where the drawing
+    /// is seeded — for the elaborator to decide again where it is solved (`program::at_solve`).
+    pub along: Vec<WhenRead>,
+    /// Every direction a `when` held a face against that it was not given (#763): for the
+    /// elaborator to read off the drawing, and walk again (`Directions`).
+    pub directions_wanted: BTreeSet<String>,
     /// Whether the walk stopped at `MAX_FLAT`, its statements cut short: no drawing.
     pub overflowed: bool,
 }
@@ -434,6 +440,86 @@ pub struct Apart {
     pub solid: String,
     pub faces: [String; 2],
     pub at: Span,
+}
+
+/// **A face a `when … parallel …` or `… perpendicular …` read** (#763): the solid by its absolute
+/// name, the face by its name from it, the word, the direction by the absolute name it stands for,
+/// and what the face was read as where the drawing is seeded.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AlongRead {
+    pub solid: String,
+    pub face: String,
+    pub along: crate::expr::Along,
+    pub line: String,
+    pub held: bool,
+}
+
+/// **What a `when` read of a solid's faces** (#625, #763), as it read it where the drawing is
+/// seeded: two faces of one solid meeting or not (the solid by its absolute name, the faces by
+/// theirs from it), a face along a direction, or an answer no pose changes — faces of two solids,
+/// or of a body whose boundary does not say, taken to meet.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FaceRead {
+    Meets { solid: String, faces: [String; 2], held: bool },
+    Along(AlongRead),
+    Fixed(bool),
+}
+
+impl FaceRead {
+    /// What it was read as where the drawing is seeded.
+    pub fn held(&self) -> bool {
+        match self {
+            FaceRead::Meets { held, .. } | FaceRead::Along(AlongRead { held, .. }) => *held,
+            FaceRead::Fixed(held) => *held,
+        }
+    }
+}
+
+/// **A `when` that read faces along a direction** (#763): the document's statement that made the
+/// block, its condition as a truth over the faces it read (`Truth::Read` indexing `reads`, in the
+/// order they were asked), and those reads — each pair it asked `meets` of among them, so the
+/// block is decided again with both as the drawing solves.
+#[derive(Clone, Debug)]
+pub struct WhenRead {
+    pub at: Span,
+    pub truth: Truth,
+    pub reads: Vec<FaceRead>,
+}
+
+/// **A `when`'s condition decided** (#763): a truth over what it read of faces (`Read`, each
+/// with its answer where it was decided, numbered in the order asked, an `and`'s and an `or`'s
+/// left side first), everything else it asks decided where it was — what its block is made by,
+/// decided again with the faces as the drawing solves.
+#[derive(Clone, Debug)]
+pub enum Truth {
+    Is(bool),
+    Read(usize, bool),
+    And(Box<Truth>, Box<Truth>),
+    Or(Box<Truth>, Box<Truth>),
+    Not(Box<Truth>),
+}
+
+impl Truth {
+    /// Whether it holds with read `k` answered `read(k)`.
+    pub fn holds(&self, read: &dyn Fn(usize) -> bool) -> bool {
+        match self {
+            Truth::Is(b) => *b,
+            Truth::Read(k, _) => read(*k),
+            Truth::And(a, b) => a.holds(read) && b.holds(read),
+            Truth::Or(a, b) => a.holds(read) || b.holds(read),
+            Truth::Not(a) => !a.holds(read),
+        }
+    }
+
+    /// Whether it holds as it was decided.
+    pub fn value(&self) -> bool {
+        match self {
+            Truth::Is(b) | Truth::Read(_, b) => *b,
+            Truth::And(a, b) => a.value() && b.value(),
+            Truth::Or(a, b) => a.value() || b.value(),
+            Truth::Not(a) => !a.value(),
+        }
+    }
 }
 
 /// **A number the document names** (#596): `ratio := teeth / 12 * 4`, a `param`, a group's
@@ -784,12 +870,45 @@ struct SetState<'a> {
 }
 
 /// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
-/// from the solid, and which of them meet (#625, `Meets`), where its boundary says.
+/// from the solid, and which of them meet (#625, `Meets`) and how each lies (#763, `Lays`), where
+/// its boundary says.
 #[derive(Clone, Debug)]
 pub struct Listed {
     pub paths: Vec<crate::solid::faces::FacePath>,
-    pub meets: Option<crate::solid::faces::Meets>,
+    pub read: Option<(crate::solid::faces::Meets, crate::solid::faces::Lays)>,
 }
+
+/// **What the elaborator names for the walk off the drawing** (#183 F4, #763): each solid a
+/// block runs over the faces of (`Listed`), by its absolute name, and each direction a `when`
+/// holds a face against — read where the drawing is seeded, or where a pass before solved
+/// (#761) — and the names of the directions read so, to read again where they are cleared.
+#[derive(Clone, Debug, Default)]
+pub struct Named {
+    pub faces: BTreeMap<String, Listed>,
+    pub directions: Directions,
+    pub asked: BTreeSet<String>,
+}
+
+impl Named {
+    /// Nothing named, to be named again at another pose: the directions asked of kept by name.
+    pub fn clear(&mut self) {
+        self.faces.clear();
+        self.directions.clear();
+    }
+
+    /// `more` named beside what is.
+    pub fn extend(&mut self, more: Named) {
+        self.faces.extend(more.faces);
+        self.asked.extend(more.directions.keys().cloned());
+        self.directions.extend(more.directions);
+    }
+}
+
+/// **The directions a `when` holds faces against, where the drawing is seeded** (#763): an
+/// axis's, a line's from its first point to its second, a frame's `u`, `v` and `normal`, by the
+/// absolute name a `when` reads it by — what `a parallel std.z` holds a face against.  Given with
+/// the faces, each once a walk has wanted it (`Expansion::directions_wanted`).
+pub type Directions = BTreeMap<String, [f64; 3]>;
 
 /// The solids' faces read as sets, and the blocks over them (`Walk::faces`).
 #[derive(Default)]
@@ -800,6 +919,12 @@ struct FaceState {
     repeats: BTreeSet<String>,
     /// See `Expansion::apart`.
     apart: BTreeSet<Apart>,
+    /// See `Expansion::along`.
+    along: Vec<WhenRead>,
+    /// The directions drawn, where the elaborator has said (`Directions`).
+    directions: Directions,
+    /// See `Expansion::directions_wanted`.
+    wanted: BTreeSet<String>,
     /// The document's own statement being walked — its root body's — where a block set aside
     /// was met: what a fault deep in what it expands to is said at (#625).
     at: Span,
@@ -817,19 +942,21 @@ pub fn expand(prog: &Program, units: Units) -> Expansion {
 /// `expand`, with the sets named in `unlowered` walked as sets though their bodies are elements'
 /// — those the elaborator refused (`lowering::refused`).
 pub fn expand_with(prog: &Program, units: Units, unlowered: &BTreeSet<String>) -> Expansion {
-    expand_faces(prog, units, unlowered, &BTreeMap::new())
+    expand_faces(prog, units, unlowered, &Named::default())
 }
 
-/// `expand_with`, each solid a block runs over the faces of given its faces (#183 F4).
+/// `expand_with`, each solid a block runs over the faces of given its faces (#183 F4), and the
+/// directions drawn a `when` may hold one against (#763).
 pub fn expand_faces(
     prog: &Program,
     units: Units,
     unlowered: &BTreeSet<String>,
-    faces: &BTreeMap<String, Listed>,
+    named: &Named,
 ) -> Expansion {
     let mut w = Walk::new(prog, units, None);
     w.sets.unlowered = unlowered;
-    w.faces.given = faces.clone();
+    w.faces.given = named.faces.clone();
+    w.faces.directions = named.directions.clone();
     let root = prog.root();
     // A definitions-only file has nothing to expand. In particular, imported parameters must
     // not be evaluated in a unit system that only an eventual instantiating model will supply.
@@ -1084,6 +1211,8 @@ impl<'a> Walk<'a> {
             held: self.held.names,
             reads: self.held.reads,
             apart: self.faces.apart.into_iter().collect(),
+            along: self.faces.along,
+            directions_wanted: self.faces.wanted,
             overflowed: self.overflowed,
         }
     }

@@ -26,7 +26,7 @@ mod rings;
 mod rounds;
 mod scenarios;
 mod measures;
-mod meets;
+mod at_solve;
 mod beams;
 mod bound;
 mod mirrors;
@@ -117,8 +117,9 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
             diags.push(refuse(EntRef::new(crate::model::EntKind::Envelope, i), message));
         }
     }
-    // faces read apart where the drawing is seeded that meet where it is solved (#625)
-    diags.extend(meets::apart(sk, map));
+    // faces read apart where the drawing was decided that meet where it is solved (#625), and a
+    // block over faces read along a direction that comes out the other way there (#763)
+    diags.extend(at_solve::read_again(sk, map));
     // a module's own place, where no statement of the document made it
     crate::modules::localize(p, &mut diags);
     diags
@@ -234,18 +235,20 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // and the solve steers what is left (`System::steer`)
     let mut crossed = BTreeMap::new();
     // **a block over a solid's faces** (#183 F4) runs over them once the solid is built: its
-    // faces named, and the document elaborated again
-    let mut faces = BTreeMap::new();
+    // faces named, and the document elaborated again — with the directions a `when` holds a
+    // face against (#763)
+    let mut named = crate::flatten::Named::default();
     // named again while a pass's solids give them otherwise — a round over another's faces, once
     // that one is made (#183 F4, [0.149]) — but no more than a few times: rounds that name each
     // other, refused, would give more every pass
     let mut renamed = 0;
     // **faces that meet are read where the drawing solves** (#761): where a pair `meets` read
-    // apart at the seeds meets once the drawing is solved, every solid's faces are named again,
-    // read where that solve put each entity (`meets::at_solve`) — once
+    // apart at the seeds meets once the drawing is solved, or a block over faces read along a
+    // direction comes out the other way there (#763), every solid's faces and the directions are
+    // named again, read where that solve put each entity (`at_solve::at_solve`) — once
     let mut pose = Stood::new();
     loop {
-        match elaborate_in(p, &refused, &crossed, &faces, renamed >= FACE_PASSES, &pose) {
+        match elaborate_in(p, &refused, &crossed, &named, renamed >= FACE_PASSES, &pose) {
             Ok(mut e) => {
                 if crossed.is_empty() {
                     crossed = crossed_seeds(&e);
@@ -254,9 +257,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
                     }
                 }
                 if pose.is_empty() {
-                    pose = meets::at_solve(&e);
+                    pose = at_solve::at_solve(&e);
                     if !pose.is_empty() {
-                        faces.clear();
+                        named.clear();
                         continue;
                     }
                 }
@@ -271,8 +274,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
             }
             Err(Again::Refused(more)) => refused.extend(more),
             Err(Again::Faces(more)) => {
-                renamed += more.keys().filter(|k| faces.contains_key(*k)).count().min(1);
-                faces.extend(more);
+                let again = more.faces.keys().filter(|k| named.faces.contains_key(*k));
+                renamed += again.count().min(1);
+                named.extend(more);
             }
         }
     }
@@ -283,10 +287,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
 const FACE_PASSES: usize = 8;
 
 /// Why a pass of `elaborate` ends before a drawing is made: sets drawn as elements that are
-/// none, or solids a block runs over the faces of, named.
+/// none, or solids a block runs over the faces of, named — with each direction a `when` held a
+/// face against and was not given, as the pass left it (#763).
 enum Again {
     Refused(BTreeSet<String>),
-    Faces(BTreeMap<String, crate::flatten::Listed>),
+    Faces(crate::flatten::Named),
 }
 
 /// The points whose seeds break a bound, or an orientation the document states (#157), carried
@@ -310,7 +315,7 @@ fn crossed_seeds(e: &Elaborated) -> BTreeMap<String, Vec<f64>> {
 }
 
 /// Numbers by the key each entity is bound under, in its `own_params` order: where a pass stood
-/// it (`crossed_seeds`, `meets::at_solve`), for a later pass to stand it there again (`stand`).
+/// it (`crossed_seeds`, `at_solve::at_solve`), for a later pass to stand it there again (`stand`).
 type Stood = BTreeMap<String, Vec<f64>>;
 
 /// The numbers `e` has in `sk`, in its `own_params` order.

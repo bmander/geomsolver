@@ -323,13 +323,14 @@ impl Parser {
     }
 
     fn compared(&mut self) -> Result<Cond, String> {
-        // `c in B` (#267): a name among the things another names, and `a meets b` (#625): two
-        // faces sharing a point, which only the elaborator can tell — so both sides are names,
-        // and neither is arithmetic
+        // `c in B` (#267): a name among the things another names, `a meets b` (#625): two
+        // faces sharing a point, and `a parallel l` (#763): a face lying along a direction, which
+        // only the elaborator can tell — so both sides are names, and neither is arithmetic
         if let (Tok::Ident(x), Some(Tok::Ident(w))) =
             (self.peek().clone(), self.toks.get(self.pos + 1).map(|t| &t.0))
         {
-            if w == "in" || w == "meets" {
+            let along = super::Along::of_word(w);
+            if w == "in" || w == "meets" || along.is_some() {
                 let w = w.clone();
                 self.next();
                 self.next();
@@ -337,13 +338,18 @@ impl Parser {
                     return Err(format!("expected a name after `{x} {w}` at {}", self.here()));
                 };
                 self.next();
-                return Ok(if w == "in" { Cond::In(x, y) } else { Cond::Meets(x, y) });
+                return Ok(match along {
+                    Some(along) => Cond::Along(along, x, y),
+                    None if w == "in" => Cond::In(x, y),
+                    None => Cond::Meets(x, y),
+                });
             }
         }
         let lhs = self.expr()?;
         let Tok::Cmp(op) = *self.peek() else {
             return Err(format!(
-                "expected a comparison (`<`, `<=`, `>`, `>=`, `==` or `!=`), `in` or `meets` at {}",
+                "expected a comparison (`<`, `<=`, `>`, `>=`, `==` or `!=`), `in`, `meets`, \
+                 `parallel` or `perpendicular` at {}",
                 self.here()
             ));
         };

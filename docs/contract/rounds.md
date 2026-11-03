@@ -39,6 +39,11 @@ round a corner only of three that each meet the other two ([language.md](languag
 whose faces are many — every operand's listed, eaten or not — makes copies for its edges and
 corners, not for the cube of its faces: #625's web cut by four turned spokes lists 28 faces and
 rounds 16 edges and no corner (`tests/meets.rs`).
+**Which edges are the faces'** (#763, [0.204]): a word takes every edge where its faces meet, and
+a block over the faces picks among them — by name, or by how each face lies (`when f parallel l`,
+[language.md](language.md)) — so the words take no option saying which edges: `rounds/hub.sv`
+fills a bar's sides into a post (`f parallel std.z and g parallel std.z`) and leaves the arc where
+the post rises from the bar's top sharp (`tests/faces_along.rs`, the closed form's volume to 1e-9).
 A set's `S.surface` is the set with each bound made an equality (`Written::equality`,
 `sets::surface_of`; a grown side's is the offset surface); a distance from a one-bound region's
 surface reads it (`sets::one_bound`); a set measured from is applied under `PredWalk::held`, so each

@@ -72,6 +72,9 @@ pub(super) trait Names {
     /// Whether two faces, each by what its name stands for, share a point (#625): `None` where
     /// either is no face a solid lists.
     fn meets(&self, a: &str, b: &str) -> Option<bool>;
+    /// Whether a face, by what its name stands for, lies `along` the direction `line` stands for
+    /// (#763): `None` where it is no face a solid lists, and why not where it cannot be read.
+    fn along(&self, along: expr::Along, face: &str, line: &str) -> Option<Result<bool, String>>;
     /// Whether the unknown `name` is a face family's running number (#243 L5).
     fn running(&self, name: &str) -> bool;
 }
@@ -83,8 +86,9 @@ pub(super) trait Names {
 ///
 /// A name that is no number may still be compared for **identity** (#267): `a != b` holds where
 /// the two stand for different things (`Names::stands`), `c in B` where what `c` stands for is
-/// one of the faces `B` names, `a meets b` where two faces share a point (#625, `Names::meets`).
-/// A number on one side and geometry on the other is E103.
+/// one of the faces `B` names, `a meets b` where two faces share a point (#625, `Names::meets`),
+/// `a parallel l` and `a perpendicular l` where a face lies along a direction or square to it
+/// (#763, `Names::along`).  A number on one side and geometry on the other is E103.
 pub(super) fn condition(
     text: &str,
     env: &Vals,
@@ -92,14 +96,53 @@ pub(super) fn condition(
     units: Units,
     names: &dyn Names,
 ) -> Result<bool, (Code, String)> {
-    let said = |code, e: String| (code, format!("`{text}`: {e}"));
-    let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
-    holds(&c, env, scope, names).map_err(|(code, e)| said(code, e))
+    decided(text, env, scope, units, names).map(|t| t.value())
 }
 
-/// One condition of a `when`, decided: identities by what names stand for, comparisons of
-/// numbers by `expr::decide`.  Both sides of an `and` or an `or` are worked out, so a mistake a
-/// short circuit would skip is still said.
+/// `condition`'s condition as it was decided (#763): a truth over what it read of faces, each
+/// `meets` and `parallel` a `Truth::Read` in the order the walk was asked it, to be decided
+/// again where the drawing solves.
+pub(super) fn decided(
+    text: &str,
+    env: &Vals,
+    scope: &Scope,
+    units: Units,
+    names: &dyn Names,
+) -> Result<super::Truth, (Code, String)> {
+    let said = |code, e: String| (code, format!("`{text}`: {e}"));
+    let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
+    decide(&c, env, scope, names, &mut 0).map_err(|(code, e)| said(code, e))
+}
+
+/// A condition of a `when`, decided: its `and`, `or` and `not` as they stand, each read of faces
+/// (`meets`, `parallel`, `perpendicular`) numbered from `next`.  Both sides of an `and` or an
+/// `or` are worked out, so a mistake a short circuit would skip is still said.
+fn decide(
+    c: &Cond,
+    env: &Vals,
+    scope: &Scope,
+    names: &dyn Names,
+    next: &mut usize,
+) -> Result<super::Truth, (Code, String)> {
+    use super::Truth;
+    Ok(match c {
+        Cond::And(a, b) | Cond::Or(a, b) => {
+            let (p, q) = (decide(a, env, scope, names, next), decide(b, env, scope, names, next));
+            let (p, q) = (Box::new(p?), Box::new(q?));
+            if matches!(c, Cond::And(..)) { Truth::And(p, q) } else { Truth::Or(p, q) }
+        }
+        Cond::Not(a) => Truth::Not(Box::new(decide(a, env, scope, names, next)?)),
+        Cond::Meets(..) | Cond::Along(..) => {
+            let held = holds(c, env, scope, names)?;
+            *next += 1;
+            Truth::Read(*next - 1, held)
+        }
+        _ => Truth::Is(holds(c, env, scope, names)?),
+    })
+}
+
+/// One comparison or identity of a `when`, decided (`decide` takes `and`, `or` and `not`):
+/// identities by what names stand for, comparisons of numbers by `expr::decide`.
 fn holds(
     c: &Cond,
     env: &Vals,
@@ -113,15 +156,7 @@ fn holds(
     };
     let stands = |name: &str| names.stands(name).ok_or_else(|| nothing(name));
     Ok(match c {
-        Cond::And(a, b) => {
-            let (p, q) = (holds(a, env, scope, names), holds(b, env, scope, names));
-            p? && q?
-        }
-        Cond::Or(a, b) => {
-            let (p, q) = (holds(a, env, scope, names), holds(b, env, scope, names));
-            p? || q?
-        }
-        Cond::Not(a) => !holds(a, env, scope, names)?,
+        Cond::And(..) | Cond::Or(..) | Cond::Not(..) => unreachable!("`decide` takes a connective"),
         Cond::In(x, y) => {
             let me = stands(x)?;
             let Some(faces) = names.faces(y) else {
@@ -142,6 +177,19 @@ fn holds(
                  no face: name a face a `repeat … in` runs over",
                 if names.faces(x).is_none() { x } else { y }
             )))?
+        }
+        Cond::Along(w, x, y) => {
+            let (p, q) = (stands(x)?, stands(y)?);
+            match names.along(*w, &p, &q) {
+                Some(Ok(held)) => held,
+                Some(Err(why)) => return Err((Code::E103, format!(
+                    "`{x} {} {y}` asks how the face `{x}` lies along `{y}`, and {why}", w.word()
+                ))),
+                None => return Err((Code::E103, format!(
+                    "`{x} {} {y}` asks how a face lies along a direction, and `{x}` is no face: \
+                     name a face a `repeat … in` runs over", w.word()
+                ))),
+            }
         }
         Cond::Cmp(op @ (Cmp::Eq | Cmp::Ne), Ast::Var(x), Ast::Var(y))
             if !env.contains_key(x.as_str()) || !env.contains_key(y.as_str()) =>
@@ -210,8 +258,8 @@ fn claimed(
     let said = |code, e: String| (code, format!("`{text}`: {e}"));
     let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
     if c.names_geometry() {
-        return Err(said(Code::E103, "a claim over values compares numbers; `in` and `meets` \
-            ask of faces, and are a `when`'s".into()));
+        return Err(said(Code::E103, "a claim over values compares numbers; `in`, `meets`, \
+            `parallel` and `perpendicular` ask of faces, and are a `when`'s".into()));
     }
     let mut reads = Vec::new();
     for name in c.deps() {

@@ -115,6 +115,7 @@ mod face_family;
 mod far_seed;
 mod extruded_envelope;
 mod extruded_fields;
+mod faces_along;
 mod face_names;
 mod face_sets;
 mod fillet_definition;

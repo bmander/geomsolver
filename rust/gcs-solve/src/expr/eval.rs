@@ -219,6 +219,12 @@ fn decide_with(
                 "`{a} meets {b}` asks whether two faces share a point, which is no number"
             )))
         }
+        Cond::Along(w, a, b) => {
+            return Err(ExprError::from(format!(
+                "`{a} {} {b}` asks how a face lies along a direction, which is no number",
+                w.word()
+            )))
+        }
     })
 }
 

@@ -5,14 +5,13 @@
 //! stands; a body taking them is built and exported by this kernel, and its volume is the closed
 //! form's to 1e-9. A region no entry builds is refused by name and stays the field's.
 use gcs_core::brep::{export, props, sweep::Say};
-use gcs_core::brep::topo::Brep;
 use gcs_core::program::Elaborated;
 use gcs_core::solid::lowering::{self, Piece};
 use gcs_core::solid::MaterialField;
 use std::f64::consts::PI;
 
 use crate::common::{close, ent, text::solved};
-use crate::common::rounds::{beside_cylinder, root_ring, square_run};
+use crate::common::rounds::{beside_cylinder, exported, kinds, root_ring, square_run};
 use crate::common::rounds::meridian::{knob_neck, knob_rounded};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
@@ -23,27 +22,6 @@ const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, ch
     (west := line(b3, b0)) -> close\n\
     outline := face(south, east, north, west)\n}\n\
     block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\n";
-
-/// Solid `name` of `e` built, written as STEP and as STL by this kernel (each read back and
-/// checked as `solventc` checks it), and its B-rep.
-fn exported(e: &Elaborated, name: &str) -> Brep {
-    let body = ent(e, name).i();
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let exact = export::exact(&e.sketch, body, None, None, &say).unwrap_or_else(|r| panic!("{name}: {r:?}"));
-    export::step(&exact, name, None, &say).unwrap();
-    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
-    gcs_core::mesh::stl_shells(&stl).unwrap();
-    exact.solid
-}
-
-/// How many of a B-rep's faces lie on each kind of surface.
-fn kinds(b: &Brep) -> std::collections::BTreeMap<&'static str, usize> {
-    let mut out = std::collections::BTreeMap::new();
-    for f in &b.faces {
-        *out.entry(f.surface.kind()).or_default() += 1;
-    }
-    out
-}
 
 /// The regions of a drawing an entry lowers, and those it lowers to nothing.
 fn lowered(e: &Elaborated) -> (usize, usize) {

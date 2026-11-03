@@ -15,7 +15,7 @@ use super::{
 };
 use super::{Again, Code, Diag, Elaborated, Made, SourceMap};
 use crate::expr;
-use crate::flatten::{Expansion, Listed};
+use crate::flatten::{Directions, Expansion, Listed, Named};
 use crate::ir::{Operation as StmtKind, Statement};
 use crate::model::{entity_name, EntKind, EntRef, Sketch};
 use crate::style::Presented;
@@ -80,12 +80,12 @@ struct Flat<'a> {
 /// elements that are none, for another pass.
 /// `crossed`: points a bound carried across in a pass before, by key, and the numbers that pass
 /// gave them, written over their seeds (`elaborate`).  `pose`: where a pass before solved, by
-/// key, where the faces a block runs over are read (`meets::at_solve`): empty, at the seeds.
+/// key, where the faces a block runs over are read (`at_solve::at_solve`): empty, at the seeds.
 pub(super) fn elaborate_in(
     p: &Program,
     refused: &BTreeSet<String>,
     crossed: &BTreeMap<String, Vec<f64>>,
-    faces: &BTreeMap<String, Listed>,
+    named: &Named,
     faces_settled: bool,
     pose: &super::Stood,
 ) -> Result<Elaborated, Again> {
@@ -102,7 +102,7 @@ pub(super) fn elaborate_in(
     };
     unit(&mut cx);
     check_text(&mut cx);
-    let expansion = expand(&mut cx, refused, faces);
+    let expansion = expand(&mut cx, refused, named);
     let body: Vec<&Statement> = expansion.flat.iter().collect();
     let stating: Vec<&Statement> = body.iter().copied().filter(|st| !st.turned).collect();
     style_sheet(&mut cx, &body);
@@ -126,7 +126,7 @@ pub(super) fn elaborate_in(
     super::rounds::rounds(&mut cx, &flat.body, &deferred, &held);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
-    solids_and_surfaces(&mut cx, &flat, faces, faces_settled, pose, &generated, &held_in_space)?;
+    solids_and_surfaces(&mut cx, &flat, named, faces_settled, pose, &generated, &held_in_space)?;
     expressions(&mut cx, &flat, &on_followed);
     regions_read(&mut cx, &flat, &after_solids);
     Ok(finish(cx, &flat))
@@ -215,9 +215,9 @@ fn check_text(cx: &mut Elab<'_>) {
 fn expand(
     cx: &mut Elab<'_>,
     refused: &BTreeSet<String>,
-    faces: &BTreeMap<String, Listed>,
+    named: &Named,
 ) -> Expansion {
-    let mut expansion = crate::flatten::expand_faces(cx.doc, cx.sk.units, refused, faces);
+    let mut expansion = crate::flatten::expand_faces(cx.doc, cx.sk.units, refused, named);
     // an expansion cut short at its limit is no drawing: what was made of it reads names the
     // rest would have made, so nothing is built, and its one E103 is all that is said (#625)
     if expansion.overflowed {
@@ -225,6 +225,7 @@ fn expand(
     }
     cx.map.private_names = expansion.private_names.clone();
     cx.map.apart = std::mem::take(&mut expansion.apart);
+    cx.map.along = std::mem::take(&mut expansion.along);
     // an instance drawn has its path; one cut short (a recursion refused) has none and is not one
     cx.map.instances = expansion.instances.iter().filter(|i| !i.drawn || !i.path.is_empty())
         .map(|i| super::Instanced { path: super::InstPath(i.path.clone()), prefix: i.prefix.clone(),
@@ -794,7 +795,7 @@ fn place_planes(
 fn solids_and_surfaces(
     cx: &mut Elab<'_>,
     flat: &Flat<'_>,
-    faces: &BTreeMap<String, Listed>,
+    named: &Named,
     settled: bool,
     pose: &super::Stood,
     generated: &BTreeSet<StmtId>,
@@ -806,28 +807,39 @@ fn solids_and_surfaces(
     super::solids::carry_legs(sk);
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
     let unnamed: Vec<(String, usize, Vec<_>)> = flat.expansion.face_repeats.iter()
-        .filter(|abs| !(settled && faces.contains_key(*abs)))
+        .filter(|abs| !(settled && named.faces.contains_key(*abs)))
         .filter_map(|abs| {
             res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < sk.solids.len())
                 .map(|e| (abs.clone(), e.i(), crate::solid::faces::face_paths(sk, e.i())))
         })
-        .filter(|(abs, _, now)| faces.get(abs).map(|l| &l.paths) != Some(now))
+        .filter(|(abs, _, now)| named.faces.get(abs).map(|l| &l.paths) != Some(now))
         .collect();
-    // which of them meet, read where the drawing is seeded (#625) — or where a pass before
-    // solved, once a pair read apart at the seeds met there (#761): checked again where it is
-    // solved (`program::meets`)
-    let was = if unnamed.is_empty() { Vec::new() } else { super::stand(sk, map, pose) };
+    // and each direction a `when` held a face against and was not given (#763), or was before
+    // the faces were cleared to be named at another pose: read with them
+    let wanted: BTreeSet<&String> = flat.expansion.directions_wanted.iter().chain(&named.asked)
+        .filter(|name| !named.directions.contains_key(*name)).collect();
+    // which of them meet, how each lies and where each direction runs, read where the drawing is
+    // seeded (#625, #763) — or where a pass before solved, once a pair read apart at the seeds met
+    // there or a block over faces read along a direction came out the other way (#761): checked
+    // again where it is solved (`program::at_solve`)
+    let stood = !unnamed.is_empty() || !wanted.is_empty();
+    let was = if stood { super::stand(sk, map, pose) } else { Vec::new() };
     let unnamed: BTreeMap<String, Listed> = unnamed.into_iter()
         .map(|(abs, i, paths)| {
-            let meets = crate::solid::faces::Meets::read(sk, i, &paths);
-            (abs, Listed { paths, meets })
+            let read = crate::solid::faces::ListedFaces::read(sk, i, &paths).map(|l| {
+                (crate::solid::faces::Meets::of(&l), crate::solid::faces::Lays::of(&l))
+            });
+            (abs, Listed { paths, read })
         })
         .collect();
+    let drawn: Directions = wanted.into_iter().filter_map(|name| {
+        Some((name.clone(), super::at_solve::direction(sk, |n| res.of.get(n).copied(), name)?))
+    }).collect();
     for (q, v) in was {
         sk.params[q as usize].value = v;
     }
-    if !unnamed.is_empty() {
-        return Err(Again::Faces(unnamed));
+    if !unnamed.is_empty() || !drawn.is_empty() {
+        return Err(Again::Faces(Named { faces: unnamed, directions: drawn, ..Named::default() }));
     }
     surfaces::surfaces(sk, res, map, body, skip, diags);
     envelopes::envelopes(sk, res, map, body, generated, held, diags);

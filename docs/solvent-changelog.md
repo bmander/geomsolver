@@ -4,6 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.204] A face along a direction** (#763). A `when` may ask how a face lies against a direction
+drawn: `f parallel l`, the face's surface holding `l`'s direction at every point (a plane holding
+it, a cylinder about it, a side swept along it), and `f perpendicular l`, the face a plane square to
+it — what the relation words say of a plane and an axis, asked rather than stated (§12.9). `l` is an
+axis (`std.z`, a frame's own in a body standing in one), a line or a frame's axis. Read where the
+drawing solves, as `meets` is (0.202): a block that comes out the other way there is decided again
+at that pose, and **E080** where it still does. So
+which edges a round or a chamfer takes is picked by a block over the faces, written in Solvent, and
+not by an option of the word: `repeat f in A { repeat g in B { when f parallel std.z and g parallel
+std.z { f round(r: 3mm) g } } }` rounds the edges along `std.z` alone (`rounds/hub.sv`, a beam into
+a post whose arc at the beam's top is left sharp). Through 0.203 `parallel` and `perpendicular` in a
+condition were a syntax error, and a part was split in two to leave such an edge unnamed. Nothing
+written before is read differently.
+
 **[0.203] An operand named by its whole path** (#760). Through a body, an operand is a step of
 its faces' names as the body's scope writes it, whole (§6.21): the `body` of an instance `hub`
 unioned into `part` is `hub.body`, its faces `part.hub.body.ab`, … and `part.hub` names every one.
