@@ -152,7 +152,13 @@ spline: a box's top edges chamfered one after another, each cut off by the plane
 `brep::chamfers_between_planes_are_planes`). A run going on tangent into a curved face at an end
 is still fitted, as the piece that takes on from its section is. About one axis the flat is turned: between a plane square
 to it, cylinders and cones about it, a closed loop's flat is the section's triangle revolved, a cone
-exact (`fillet::coaxial`; a leg shrunk to a point its apex, [rounds.md](rounds.md)).
+exact (`fillet::coaxial`; a leg shrunk to a point its apex, [rounds.md](rounds.md)). So is a
+round there (`fillet::roll`, `fillet::revolved`): the section — the corner, its legs to the
+contacts and the ball's arc — in the meridian through a vertex of the loop, revolved, a torus face
+and its strips exact, no canal fitted. A fitted canal round a circle was a net of hundreds of poles
+that every later Boolean cut and every measure integrated: brep-bench's fillet/boss-s-curve took
+8.7 s, most of it its area, and now takes milliseconds, its volume and area to 1e-15
+(`brep::a_bosss_rim_and_root_rounded_to_meet_are_two_tori`; the hole's waist too).
 `Brep::bounds` encloses (issue #59; through-prism cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's

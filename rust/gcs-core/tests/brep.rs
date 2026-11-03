@@ -2256,6 +2256,31 @@ fn a_holes_rims_rounded_to_half_the_plates_thickness_meet_at_its_waist() {
     close(volume(&waisted),800.-PI*(100./3.-4.*PI));
     close(total_area(&waisted),960.-36.*PI+8.*PI*PI);
     assert!(waisted.faces.iter().all(|f| f.surface.kind() != "cylinder"),"the hole's wall is gone");
+    assert_eq!(face_kinds(&waisted).iter().filter(|&&k| k == "torus").count(),2,"each rim's round turned, exact");
+}
+
+/// **A boss whose root and rim rounds meet** (brep-bench's fillet/boss-s-curve): a boss 5 in radius
+/// and 4 tall on a plate, its rim (convex) and its root (concave) both rounded 2, so its side goes
+/// and its profile is an S. Each round is between a plane and a cylinder about one axis, so its
+/// section is turned about it, a torus face — not a canal fitted round the circle, which left two
+/// nets of hundreds of poles to cut, join and measure — `6400 + 100π + (8π/3)(10 − 3π)` and
+/// `3840 − 40π + 20π²`.
+#[test]
+fn a_bosss_rim_and_root_rounded_to_meet_are_two_tori() {
+    use crate::common::close;
+    use gcs_core::brep::boolean::{combined,Op};
+    let plate = block([-20.,-20.,0.],[20.,20.,4.]);
+    let part = combined(&plate,&rod([0.;3],5.,[4.,8.]),Op::Union,0.).unwrap();
+    let round = gcs_core::brep::fillet::roll(&part,[0.,5.,8.],2.,gcs_core::brep::geom::tolerance(part.size())).unwrap();
+    close(round.reach,2.*2f64.sqrt());
+    let s = round.spine.point(0.3);
+    close(s[0].hypot(s[1]),3.);
+    close(s[2],6.);
+    let boss = rounded(&part,&[[0.,5.,8.],[0.,5.,4.]],2.).unwrap();
+    boss.check(1e-8).unwrap();
+    close(volume(&boss),6400.+100.*PI+8.*PI/3.*(10.-3.*PI));
+    close(total_area(&boss),3840.-40.*PI+20.*PI*PI);
+    assert_eq!(face_kinds(&boss),["plane","plane","plane","plane","plane","plane","plane","torus","torus"]);
 }
 
 /// **A sliver left between two rounds** (brep-bench's fillet/sliver-strip): a plate's face 2 tall
