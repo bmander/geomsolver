@@ -376,9 +376,38 @@ meetings), so the touch is one vertex of three exact curves.  Held to its volume
 coordinates `(ρ, ψ, ζ = z − k ψ)`, where the screw is a shift in `ψ`: each helix meets the bar in one
 interval, lengthened by the turn `Θ`, so the sweep is `V + Θ ∫ ρ (h + k Δψ(ρ)) dρ`, for a unit cube
 two out `1 + Θ (3 + k)` — built at 1e-6 and 1e-7, to 1e-9, agreeing with membership
-(`a_bar_under_a_screw_closes_into_its_helical_sweep`, slow tier).  An edge or a face leaning to a
-screw's axis (`Unbuilt::Leaning`) and a curved tool (`Unbuilt::Curved`) are refused by what they
-are, read before any build (`closed::reads`).  The result is the selection's boundary with the candidates that bound nothing healed out of
+(`a_bar_under_a_screw_closes_into_its_helical_sweep`, slow tier).  **A curved tool under a slide**
+builds by the same arrangement where its faces are planes, cylinders, cones and balls and its edges
+lines and circles: each round face at both end poses (its solid cylinder, frustum or ball over the
+stretch it spans), each of its rulings whose normal is square to the slide (on a cone, the roots of
+`A cos u + B sin u = C`) swept into the plane tangent along it — a cylinder along the slide swept
+along itself, one cylinder — a ball's great circle square to the slide swept into the cylinder of
+its radius along its centre's path, and each circle edge where its faces meet at an angle (a
+smooth one, a ball on a cylinder, fans one normal) swept into an oblique cylinder, its disc's
+cylinder sheared along the slide (`Brep::mapped`), whose meetings are the preimage's closed forms
+(brep.md's affine images). A candidate whose solid stands clear of the domain's box is left out
+of the arrangement. Held to a convex tool's sweep `V + |D| A`, `A` its shadow along the slide: a
+drum slid aslant (`π r² cos θ + 2 r L sin θ`), a frustum slid aslant (two rims' ellipses' hull, one
+stretch from two circles' hull), a capsule slid aslant (`π r² + 2 r h sin θ`) and a drum slid along
+its axis, each to 1e-9 and agreeing with membership
+(`swept_closed::a_drum_slid_aslant_closes_into_its_shadow_carried`,
+`a_frustum_slid_aslant_closes_into_its_shadow_carried`,
+`a_capsule_slid_aslant_closes_into_its_shadow_carried`, `a_drum_slid_along_its_axis_is_a_longer_drum`).
+The constant-twist class's curved refusals it covers under a slide are its admitted cases now: a
+hollow mill's ring bottom (G6, `flat_faces::a_hollow_mill_slid_across_the_block_cuts_a_whole_slot`,
+a whole slot exactly), an engraving bit's apex on its axis (G5,
+`turns_and_slides::an_engraving_bit_slid_square_to_its_axis_grooves_its_shadow`, its shadow's
+triangle within the rod's disc in closed form) and a drill beside a post it does not pass wholly
+through the heights of (`rings_all_round::a_drill_beside_a_post_bores_its_hole`) and a lens
+stopping in a post at both ends (`admission::a_slide_that_ends_in_the_blank_is_the_closed_classs`),
+each to 1e-9; and under a turn a corner holding the axis and a cap of a tool no lone prism, refused
+at C3 until a plane touching a cone narrowing along its axis was met along their generator
+(`prism_twists::a_corner_holding_the_turns_axis_is_the_closed_classs`,
+`a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs`).
+An edge or a face leaning to a screw's axis (`Unbuilt::Leaning`) and a curved tool past these
+(`Unbuilt::Curved`: any face no plane under a turn or a screw; under a slide a torus or a
+free-form face, an edge no line or circle) are refused by what they are, read before any build
+(`closed::reads`).  The result is the selection's boundary with the candidates that bound nothing healed out of
 its faces (`boolean::selection`): each face as whole as the candidate's it lies on.
 
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
@@ -396,7 +425,8 @@ definition (in the blank and no member).
 `brep::sweep::closed`):** a sweep every class it is asked refuses — the generating, constant-twist
 or planar subtraction class, whichever its motion and tool asked first — is asked the closed
 class's rows, and its refusal stands where they refuse too. C1 (every face of the tool a plane,
-every edge a line) and C2 (one slide, turn or screw; under a screw every face and edge along its
+every edge a line; under a slide, a face a cylinder, a cone or a ball too and an edge a circle)
+and C2 (one slide, turn or screw; under a screw every face and edge along its
 axis or square to it) read the tool's B-rep and the lowered trajectory in millimetres, before
 anything is built (`brep::swept::closed::reads`, its refusals `Unbuilt::Curved {at}` and
 `Unbuilt::Leaning {at}` with a point of the face or edge); C3 (each cell settled) is the build's.
@@ -409,7 +439,10 @@ name. A body cutting sweeps of this class beside another's is refused at
 admission's stage, by `sweep::prepare`, on both roads.
 Each gate is a negative control of another class, held to a volume apart from
 the build and its STL to the field with no disagreement (`tests/closed_class.rs`: a bar pushed
-aslant wholly through a plate, to 1e-9; `solid_sweeps_examples::the_bar_plunged_aslant_stops_inside_the_plate`,
+aslant wholly through a plate, and `punch.sv`'s drum wholly through it and partway into it, its end
+pose's cylinder in the plate touching its side's tangent planes along lines and its rims' oblique
+cylinders at points, each to 1e-9; `solid_sweeps_examples::the_bar_plunged_aslant_stops_inside_the_plate`,
+`the_drum_plunged_aslant_stops_inside_the_plate`,
 `the_bar_turned_partway_stops_inside_the_ring`, each X1 to 1e-9; slow tier, a leaning bar turned
 wholly through a ring sector and `the_bar_screwed_partway_stops_inside_the_rod`, each to 1e-9). Two
 coaxial surfaces of revolution with spline meridians — two edges' hyperboloids — meet in circles
@@ -640,7 +673,7 @@ slice of its half-spaces bounding what the turn removes there, within 2e-5 at 0.
 STL agreeing with the field; with the refusals
 `prism_twists::a_corner_reaching_a_cap_under_a_screw_is_refused` (S1, `VERTEX`),
 `a_cap_in_the_blank_under_a_slide_is_refused` (S1) and
-`a_cap_of_a_tool_no_lone_prism_turned_is_refused` (T1), and
+`a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs` (T1 here; the closed class's), and
 `object_builder::a_flat_end_turned_builds_at_the_displays_samples`.
 
 **A drafted prism running both ways under a constant twist (#684 AG):** each plane side's crease
@@ -685,7 +718,8 @@ ruling turned, a cone, in closed form within 1e-5) and
 `prism_twists::a_side_facing_the_axis_screwed_runs_along_its_ruling` (`flat_end.sv`'s bar at 45°
 with its section square, screwed 8 mm a turn, from the end's line round the rim onto the ruling;
 by `z − kθ` within 2e-5 at 0.002 mm), each STL agreeing with the field, both refused at S1 before;
-with the refusal `prism_twists::a_corner_holding_the_turns_axis_is_refused` (S1, a branch), and
+with the refusal of `prism_twists::a_corner_holding_the_turns_axis_is_the_closed_classs` (S1, a
+branch; the closed class builds it), and
 `object_builder::a_ruling_in_contact_all_along_it_turned_builds_at_the_displays_samples`.
 
 **Flat faces a turn or a slide keeps in their own planes (#684 O):** a face whose contact `n·v`
@@ -721,9 +755,11 @@ across a knot standing that often. The gate is `solid_sweeps_examples::the_end_m
 1e-6 at 0.001 mm; the mill turned across `turn.sv`'s block, Pappus over the annulus, and turned a
 whole turn, each within 1e-5; a tapered mill turned, its walls cones, within 1e-5), with
 `prism_twists::a_side_square_to_the_turn_cuts_a_floor` (a bar lying along the turn, its underside
-the floor, within 1e-5, an S1 refusal before), each STL agreeing with the field; the refusals
-`flat_faces::a_ring_or_a_disc_across_the_axis_kept_in_its_plane_is_refused` (S1) and
-`prism_twists::a_side_along_the_slide_is_refused` (S1); the creased fit's
+the floor, within 1e-5, an S1 refusal before), each STL agreeing with the field; the refusal
+`flat_faces::a_disc_across_the_axis_kept_in_its_plane_is_refused` (S1), and what this class refuses
+that the closed class builds, `flat_faces::a_hollow_mill_slid_across_the_block_cuts_a_whole_slot`
+(a ring bottom kept in its plane, G6) and the side along a slide
+(`prism_twists::a_side_along_the_slide_is_the_closed_classs`); the creased fit's
 `brep::a_grid_creased_along_a_row_is_its_stretches_fits_joined_there` (through every point, each
 side its plane to 1e-12); and `object_builder::a_flat_face_kept_in_its_plane_builds_at_the_displays_samples`.
 
@@ -754,8 +790,8 @@ wedge its profile cuts from the rod's circle in closed form, within 1e-6),
 closed form, which `Bar::removed` matches to 1e-9, within 1e-5) and
 `a_side_facing_the_axis_turned_onto_its_rim_creases_there` (`Bar::removed`, within 2e-5 at 0.001
 mm; S1 before, #684 AF), each STL agreeing with the field; the refusal in
-`turns_and_slides::the_turn_and_slide_rows_refuse_by_name` (an engraving bit slid square, S1,
-apex); and `object_builder::a_sharp_edge_along_one_points_path_builds_at_the_displays_samples`.
+`turns_and_slides::an_engraving_bit_slid_square_to_its_axis_grooves_its_shadow` (an engraving bit
+slid square, S1, apex; the closed class builds it); and `object_builder::a_sharp_edge_along_one_points_path_builds_at_the_displays_samples`.
 
 **A characteristic that closes on itself (#684 W):** where the walk comes round to the root it
 began at (`next == seed`, the walk back taken first as before), or the walk ahead comes round onto
@@ -804,7 +840,8 @@ characteristic. The gate is `solid_sweeps_examples::the_drill_bores_its_radius_t
 (`solid_sweeps/drill.sv`, `π 2² 4` within 1e-12) and `tests/rings_all_round.rs` (a drill fed as it
 turns, a screw; a lemon whose greatest radius lies within its arc; each within 1e-9), each STL
 agreeing with the field; the refusals `rings_all_round::what_a_slide_along_the_tools_axis_still_refuses`
-(a torus, S2; beside a taller post, E1); and
+(a torus, S2) and `a_drill_beside_a_post_bores_its_hole` (beside a taller post, E1; the closed
+class builds it); and
 `object_builder::a_ring_in_contact_all_round_builds_at_the_displays_samples`. Under a turn about an
 axis a revolved face's own meets at P, `constant_twist::rounds` reads each face and convex corner
 at `ROUND_READS` stations for a ring with its three coefficients nought (the amplitude turning

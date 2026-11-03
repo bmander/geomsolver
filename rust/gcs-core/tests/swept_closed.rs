@@ -428,3 +428,95 @@ fn a_bar_turned_through_a_disc_is_cut_from_it_on_one_arrangement() {
     assert!((volume(&cut)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&cut));
     agrees_cut(&cut,&blank,&tool,&path);
 }
+
+/// A drum lying along `x`, radius 2 and 8 long from `x = 6`, its axis at `z = −5`: `punch.sv`'s.
+fn drum() -> Brep {
+    use gcs_core::brep::build::{disc,prism};
+    prism(&disc([6.,0.,-5.],[1.,0.,0.],2.),0.,8.).unwrap()
+}
+
+/// **A drum slid aslant closes into its shadow carried**: a convex tool slid by `D` sweeps its own
+/// volume and its shadow along `D` (on the plane square to it) times `|D|`; a cylinder's shadow at
+/// `θ` from its axis is `π r² |cos θ| + 2 r L sin θ`. Its side's contact rulings sweep their
+/// tangent planes and its rims oblique cylinders (#721 F2c5, a curved tool under a slide).
+#[test]
+fn a_drum_slid_aslant_closes_into_its_shadow_carried() {
+    let d = [4.8,0.,16.*0.9539392014169457];
+    let tool = drum();
+    let path = slide(d);
+    let built = slid(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let (r,l,len) = (2.,8.,norm(d));
+    let cos = d[0]/len;
+    let expected = std::f64::consts::PI*r*r*l+len*(std::f64::consts::PI*r*r*cos+2.*r*l*(1.-cos*cos).sqrt());
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// **A frustum slid aslant closes into its shadow carried**: `build::cone`'s frustum, radii 2 and 1
+/// three apart along z, slid by `D` at `θ` from its axis. Its side's two rulings where its normal
+/// is square to the slide (`A cos u + B sin u = C`) sweep their tangent planes, its rims oblique
+/// cylinders. Apart from the build: its shadow along `D` is the hull of its two rims' ellipses, of
+/// one aspect `cos θ` along the axis's shadow, so stretched by `1/cos θ` that way the hull of two
+/// circles of radii `r₀ ≥ r₁` whose centres stand `L = h tan θ` apart: `r₀² (π + 2β)/2 + r₁² (π −
+/// 2β)/2 + (r₀ + r₁) L cos β`, `sin β = (r₀ − r₁)/L`.
+#[test]
+fn a_frustum_slid_aslant_closes_into_its_shadow_carried() {
+    use std::f64::consts::PI;
+    let (r0,r1,h) = (2.,1.,3.);
+    let tool = gcs_core::brep::build::cone([0.;3],[0.,0.,1.],r0,r1,h).unwrap();
+    let d = [2.,0.5,1.5];
+    let path = slide(d);
+    let built = slid(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let len = norm(d);
+    let cos = d[2]/len;
+    let l = h*(1.-cos*cos).sqrt()/cos;
+    let beta = ((r0-r1)/l).asin();
+    let hull = r0*r0*(PI+2.*beta)/2.+r1*r1*(PI-2.*beta)/2.+(r0+r1)*l*beta.cos();
+    let expected = PI*h*(r0*r0+r0*r1+r1*r1)/3.+len*cos*hull;
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// **A drum slid along its own axis is a longer drum**: its side is in contact all over, swept
+/// along itself into one cylinder; `π r² (L + |D|)`.
+#[test]
+fn a_drum_slid_along_its_axis_is_a_longer_drum() {
+    let tool = drum();
+    let path = slide([3.,0.,0.]);
+    let built = slid(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let expected = std::f64::consts::PI*4.*11.;
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// A capsule along z: a cylinder of radius `r` from 0 to `h`, a half ball on each end.
+fn capsule(r: f64,h: f64) -> Brep {
+    use gcs_core::brep::build::{Profile,ProfileEdge,revolve};
+    use gcs_core::brep::geom::Frame;
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let arc = |z: f64,span: [f64;2]| ProfileEdge::Arc {frame:Frame::new(f.at([0.,0.,z]),f.y,f.z),r,span:Some(span)};
+    let half = std::f64::consts::FRAC_PI_2;
+    let profile = Profile {origin:f.o,normal:f.y,names:Vec::new(),loops:vec![vec![
+        arc(0.,[half,2.*half]),ProfileEdge::Line {a:f.at([r,0.,0.]),b:f.at([r,0.,h])},arc(h,[0.,half]),
+        ProfileEdge::Line {a:f.at([0.,0.,h+r]),b:f.at([0.,0.,-r])}]]};
+    revolve(&profile,f.o,f.z,std::f64::consts::TAU).unwrap()
+}
+
+/// **A capsule slid aslant closes into its shadow carried**: its half balls' contacts are their
+/// great circles square to the slide, each swept into the cylinder of its radius along the
+/// centre's path; its side's two rulings sweep their tangent planes. Its shadow is a disc and the
+/// rectangle between, `π r² + 2 r h sin θ`.
+#[test]
+fn a_capsule_slid_aslant_closes_into_its_shadow_carried() {
+    use std::f64::consts::PI;
+    let (r,h) = (1.,3.);
+    let tool = capsule(r,h);
+    let d = [2.,0.5,1.5];
+    let path = slide(d);
+    let built = slid(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let len = norm(d);
+    let sin = (1.-(d[2]/len).powi(2)).sqrt();
+    let expected = PI*r*r*h+4./3.*PI*r*r*r+len*(PI*r*r+2.*r*h*sin);
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}

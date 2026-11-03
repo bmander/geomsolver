@@ -1,5 +1,6 @@
 //! **The closed class** (#721 F2c5's dispatch, docs/swept-solid-design.md): a sweep the other
-//! classes refuse, of a polyhedral tool under one slide, turn or screw, built by the kernel's one
+//! classes refuse, of a polyhedral tool under one slide, turn or screw (or under a slide a tool of
+//! planes, cylinders, cones and balls, its edges lines and circles), built by the kernel's one
 //! pipeline (`brep::swept::closed`) — the blank split by every candidate face of the sweep's
 //! boundary at once, each cell kept where the kernel's membership says it is no member of the
 //! sweep. Nothing about the tool's contacts is sampled at admission: what the pipeline asks is the
@@ -36,11 +37,13 @@ impl Closed {
 /// coordinates, millimetres), where there is a point.
 pub type Failure = (Condition,String,Option<V>);
 
-/// The kernel's refusal said in the class's rows: a curved face or edge is C1's, a motion or a
+/// The kernel's refusal said in the class's rows: a curved face or edge (one the motion's
+/// candidates do not hold) is C1's, a motion or a
 /// leaning edge C2's, a cell left unsettled C3's; what the kernel failed at is said as it is.
 pub fn said(unbuilt: Unbuilt,tool: &str) -> Failure {
     match unbuilt {
-        Unbuilt::Curved {at} => (Condition::Faces,format!("a face or an edge of `{tool}` is curved"),Some(at)),
+        Unbuilt::Curved {at} => (Condition::Faces,format!("a face or an edge of `{tool}` is curved past what the motion's \
+            candidates hold"),Some(at)),
         Unbuilt::Motion => (Condition::Constant,"the motion is no one slide, turn or screw".into(),None),
         Unbuilt::Leaning {at} => (Condition::Constant,format!("an edge or a face of `{tool}` leans to the screw's axis, neither along \
             it nor square to it"),Some(at)),

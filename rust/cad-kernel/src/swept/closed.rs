@@ -6,15 +6,23 @@
 //!
 //! **Built here: a polyhedral tool** (every face a plane, every edge a line) **under a slide or a
 //! turn**, however its edges lean to the axis, **and under a screw where its edges run along the
-//! axis or square to it** (and so its faces). Under a turn, every line turns
-//! into a surface of revolution held exactly over the heights its source spans (heights along the
-//! axis are kept by the turn): a cylinder (a line along the axis), a plane square to the axis (a
-//! line square to it), a hyperboloid (a line passing the axis by, its meridian a rational quadratic)
-//! or a cone (a line meeting it). The candidates:
+//! axis or square to it** (and so its faces); **and under a slide a tool whose faces are planes,
+//! cylinders, cones and balls and whose edges are lines and circles**. Under a turn, every line
+//! turns into a surface of revolution held exactly over the heights its source spans (heights along
+//! the axis are kept by the turn): a cylinder (a line along the axis), a plane square to the axis
+//! (a line square to it), a hyperboloid (a line passing the axis by, its meridian a rational
+//! quadratic) or a cone (a line meeting it). The candidates:
 //! - under a slide `D`: each face at the start pose where it enters the slide (`n·D < 0`), at the
 //!   end pose where it leaves it (`n·D > 0`), a face along the slide (`n·D = 0`) at either (one
 //!   plane); each silhouette edge (its faces' `n·D` of both signs) swept, in the plane through it
-//!   holding `D`;
+//!   holding `D`; a cylinder's or a cone's face at both end poses, its own surface over the stretch
+//!   it spans (the solid cylinder or frustum on it), and each of its rulings whose normal is square
+//!   to `D` (two, one or none: on a cone `A cos u + B sin u = C`) swept into the plane tangent
+//!   along it — or, a cylinder along the slide, the face swept along itself, one cylinder; a ball's
+//!   face at both end poses (its ball) and its great circle square to `D` swept, the cylinder of
+//!   its radius along the centre's path; each circle edge where its faces meet at an angle swept,
+//!   an oblique cylinder (the circle's disc's cylinder sheared along `D`, an affine image the
+//!   Booleans meet in the preimage's closed forms), or the circle's own plane where `D` lies in it;
 //! - under a turn: every face at both end poses; every edge turned; a face square to the axis, its
 //!   own plane (kept in itself, O); every other face's contact line (its points whose normal passes
 //!   through the axis; it meets the axis or runs along it) turned, over the stretch the face spans.
@@ -48,10 +56,15 @@
 //! meet in closed form (`ssi`'s screwed meetings, a plane's `Curve::SheetCut`), so the touch is a
 //! vertex of three exact curves.
 //!
+//! A candidate whose solid stands clear of the domain's box (a curved tool's end pose clear of the
+//! blank it passes wholly through) is left out of the arrangement, so its touches with the others
+//! there are never met.
+//!
 //! **A convex polyhedral tool turned whole is built by another road** (`turned_whole`): its solid
 //! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — a curved
-//! face, a leaning edge under a screw, another motion — is refused by what it is (`Unbuilt`);
-//! those are the design's later steps.
+//! face under a turn or a screw, a torus's or a free-form face, a curve no line or circle,
+//! a leaning edge under a screw, another motion — is refused by what it is (`Unbuilt`); those are
+//! the design's later steps.
 use crate::boolean::arrangement_within;
 use crate::build::{Profile,ProfileEdge,disc,prism,square};
 use crate::geom::{Curve,Frame,Surface};
@@ -59,14 +72,17 @@ use crate::topo::{Brep,EdgeCurve};
 use crate::trajectory::Trajectory;
 use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
 use super::member::{Solid,Swept};
+#[allow(unused_imports)]
+use crate::util::fmath::Det;
 
 type V = [f64;3];
 
 /// Why the closed swept solid is not built.
 #[derive(Clone,Debug,PartialEq)]
 pub enum Unbuilt {
-    /// The tool has a face that is no plane, or an edge that is no line, at `at`: its envelope
-    /// sheets are curved, the design's later steps.
+    /// The tool has a face that is no plane, or an edge that is no line, at `at` — under a slide,
+    /// a face no plane, cylinder, cone or ball, or an edge no line or circle: its envelope sheets
+    /// are curved past what the candidates hold, the design's later steps.
     Curved { at: V },
     /// The motion is no slide, turn or screw: the design's later steps.
     Motion,
@@ -98,7 +114,13 @@ enum Cutter { Plane(Plane),
     Revolved { o: V,axis: V,p: V,e: V,span: [f64;2] },
     /// The line through `p` along unit `e`, square to the screw's axis, screwed whole: a helicoidal
     /// sheet (a right helicoid where the line meets the axis).
-    Screwed { p: V,e: V } }
+    Screwed { p: V,e: V },
+    /// The ball of radius `r` about `c`, its poles on the unit `axis` (a ball's face at an end
+    /// pose, its poles where the tool's are).
+    Ball { c: V,axis: V,r: f64 },
+    /// The circle of radius `r` about `c` square to the unit `a`, carried along `d`: an oblique
+    /// cylinder, the solid the circle's disc sweeps (a cylinder's solid sheared along `d`).
+    Oblique { c: V,a: V,r: f64,d: V } }
 
 /// **The closed solid `tool` sweeps under `path` over `roll`** (the module's cases), its tool,
 /// motion and solid in one set of units, built to `tol`; membership read on the tool meshed within
@@ -120,14 +142,29 @@ pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f6
 
 /// **Whether the pipeline takes `tool` under `path`**, read off their structure before anything is
 /// built (what an admission asks, #721's dispatch): the motion a slide, a turn or a screw that
-/// moves something; every face of the tool a plane and every edge a line bounding two of them;
-/// and under a screw every face and edge along the axis or square to it. The constant twist it is,
-/// or the first thing that is not, by what it is and where (a point of the face or the edge).
+/// moves something; every face of the tool a plane and every edge a line bounding two of them
+/// (under a slide, a face a cylinder, a cone or a ball too, and an edge a circle); and under a
+/// screw every face and edge along the axis or square to it. The constant twist it is, or the first
+/// thing that is not, by what it is and where (a point of the face or the edge).
 pub fn reads(tool: &Brep,path: &Trajectory) -> Result<crate::trajectory::Screw,Unbuilt> { read(tool,path).map(|r| r.screw) }
 
 /// What `reads` reads of a tool it takes: the constant twist, each face's plane (a point of it and
-/// its outward unit normal), and each edge's two ends and two faces.
-struct Read { screw: crate::trajectory::Screw,faces: Vec<(V,V)>,edges: Vec<(V,V,[usize;2])> }
+/// its outward unit normal; for a face no plane, a point of it and no normal), each straight
+/// edge's two ends, two faces and their outward normals along it (the same all along a line on a
+/// plane, a cylinder or a cone), each face no plane (`round`) and each circle edge where its faces
+/// meet at an angle (`rims`): those two only under a slide.
+struct Read { screw: crate::trajectory::Screw,faces: Vec<(V,V)>,edges: Vec<(V,V,[usize;2])>,normals: Vec<[V;2]>,
+    round: Vec<usize>,rims: Vec<Rim> }
+
+/// A circle edge of the tool: its frame (centre and the circle's normal), radius and span of angle.
+#[derive(Clone,Copy,Debug)]
+struct Rim { frame: Frame,r: f64,span: [f64;2] }
+
+/// A face's outward unit normal at its point `p`.
+fn outward(f: &crate::topo::Face,p: V) -> V {
+    let n = unit(f.surface.normal_raw(f.surface.inverse(p)));
+    if f.reversed { scale(n,-1.) } else { n }
+}
 
 /// `reads`, keeping what it read.
 fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
@@ -135,29 +172,58 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
     // a way leaning to a screw's axis: neither along it nor square to it
     let leans = |d: V| !screw.is_turn() && !screw.is_slide() && norm(cross(d,screw.axis)) > 1e-9 && dot(d,screw.axis).abs() > 1e-9;
     let mut faces = Vec::with_capacity(tool.faces.len());
-    for f in &tool.faces {
+    let mut round = Vec::new();
+    for (k,f) in tool.faces.iter().enumerate() {
         let at = f.loops.iter().flatten().next().map_or([0.;3],|c| tool.vertices[tool.ends(c)[0] as usize].p);
-        let Surface::Plane(frame) = &f.surface else { return Err(Unbuilt::Curved {at}) };
-        let n = unit(if f.reversed { scale(frame.z,-1.) } else { frame.z });
-        if leans(n) { return Err(Unbuilt::Leaning {at}) }
-        faces.push((frame.o,n));
+        match &f.surface {
+            Surface::Plane(frame) => {
+                let n = unit(if f.reversed { scale(frame.z,-1.) } else { frame.z });
+                if leans(n) { return Err(Unbuilt::Leaning {at}) }
+                faces.push((frame.o,n));
+            }
+            // under a slide a cylinder's or a cone's contact is along its rulings, each swept into
+            // its tangent plane there, or (a cylinder along the slide) the whole face swept along
+            // itself; a ball's is its great circle square to the slide, swept into a cylinder
+            // (its entry here unread: its candidates are read off its surface)
+            Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) if screw.is_slide() => {
+                round.push(k);
+                faces.push((at,[0.;3]));
+            }
+            _ => return Err(Unbuilt::Curved {at}),
+        }
     }
     let uses = tool.uses();
     let mut edges = Vec::with_capacity(tool.edges.len());
+    let mut normals = Vec::with_capacity(tool.edges.len());
+    let mut rims = Vec::new();
     for (e,edge) in tool.edges.iter().enumerate() {
+        if matches!(edge.curve,EdgeCurve::Degenerate) { continue }
         let (p,q) = (edge.point(edge.t[0],&tool.vertices),edge.point(edge.t[1],&tool.vertices));
-        let mid = scale(add(p,q),0.5);
-        if !matches!(edge.curve,EdgeCurve::Curve(Curve::Line {..})) { return Err(Unbuilt::Curved {at:mid}) }
+        let mid = edge.point(0.5*(edge.t[0]+edge.t[1]),&tool.vertices);
         let [(f1,..),(f2,..)] = uses[e][..] else { return Err(Unbuilt::Failed(format!("edge {e} bounds {} faces",uses[e].len()))) };
-        if leans(unit(sub(q,p))) { return Err(Unbuilt::Leaning {at:mid}) }
-        edges.push((p,q,[f1,f2]));
+        // a seam, one face on both sides of it: no edge of the solid
+        if f1 == f2 { continue }
+        match &edge.curve {
+            EdgeCurve::Curve(Curve::Line {..}) => {
+                if leans(unit(sub(q,p))) { return Err(Unbuilt::Leaning {at:mid}) }
+                edges.push((p,q,[f1,f2]));
+                normals.push([outward(&tool.faces[f1],mid),outward(&tool.faces[f2],mid)]);
+            }
+            // (a circle where two faces meet smoothly, a ball on a cylinder, is no edge of the
+            // solid: its fan is one normal, the faces' own contacts')
+            EdgeCurve::Curve(Curve::Circle(frame,r)) if screw.is_slide() => {
+                let (n1,n2) = (outward(&tool.faces[f1],mid),outward(&tool.faces[f2],mid));
+                if norm(cross(n1,n2)) > 1e-9 || dot(n1,n2) < 0. { rims.push(Rim {frame:*frame,r:*r,span:edge.t}) }
+            }
+            _ => return Err(Unbuilt::Curved {at:mid}),
+        }
     }
-    Ok(Read {screw,faces,edges})
+    Ok(Read {screw,faces,edges,normals,round,rims})
 }
 
 /// `closed` over a box holding the sweep, or `cut_from` over `blank`.
 fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
-    let Read {screw,faces,edges} = read(tool,path)?;
+    let Read {screw,faces,edges,normals,round,rims} = read(tool,path)?;
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let size = { let (lo,hi) = tool.bounds(); norm(sub(hi,lo)) };
     let eps = 1e-9*(1.+size);
@@ -170,7 +236,9 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     let mut add_cutter = |c: Cutter,sites: Vec<(V,V)>| {
         let same = |k: &Cutter| match (*k,c) {
             (Cutter::Plane((p,m)),Cutter::Plane((o,n))) => norm(cross(n,m)) <= 1e-9 && dot(sub(o,p),m).abs() <= eps,
-            (Cutter::Cylinder {r:r1,..},Cutter::Cylinder {r:r2,..}) => (r1-r2).abs() <= eps,
+            (Cutter::Ball {c:c1,r:r1,..},Cutter::Ball {c:c2,r:r2,..}) => norm(sub(c1,c2)) <= eps && (r1-r2).abs() <= eps,
+            (Cutter::Cylinder {o:o1,axis:a1,r:r1,..},Cutter::Cylinder {o:o2,axis:a2,r:r2,..}) => (r1-r2).abs() <= eps
+                && norm(cross(a1,a2)) <= 1e-9 && norm(cross(sub(o2,o1),a1)) <= eps,
             (Cutter::Revolved {o,axis,p:p1,e:e1,..},Cutter::Revolved {p:p2,e:e2,..}) => {
                 // the same surface: the same throat at the same height, and the same lean
                 let (m1,m2) = (meridian(o,axis,p1,e1),meridian(o,axis,p2,e2));
@@ -181,8 +249,12 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         match cutters.iter_mut().find(|(k,_)| same(k)) {
             // one surface from two sources: over both their spans
             Some((k,known)) => {
-                if let (Cutter::Cylinder {span,..} | Cutter::Revolved {span,..},Cutter::Cylinder {span:more,..} | Cutter::Revolved {span:more,..}) = (k,c) {
-                    *span = [span[0].min(more[0]),span[1].max(more[1])];
+                if let (Cutter::Cylinder {o,axis,span,..} | Cutter::Revolved {o,axis,span,..},
+                    Cutter::Cylinder {o:from,axis:way,span:more,..} | Cutter::Revolved {o:from,axis:way,span:more,..}) = (k,c) {
+                    // the other's heights read from this one's origin along this one's axis
+                    let (shift,sense) = (dot(sub(from,*o),*axis),dot(way,*axis).signum());
+                    let more = [shift+sense*more[0],shift+sense*more[1]];
+                    *span = [span[0].min(more[0].min(more[1])),span[1].max(more[0].max(more[1]))];
                 }
                 known.extend(sites)
             }
@@ -210,19 +282,115 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     };
     if screw.is_slide() {
         let d = sub(end.point([0.;3]),start.point([0.;3]));
+        let located = crate::query::Located::new(tool,tol);
         for (k,&(o,n)) in faces.iter().enumerate() {
+            if round.contains(&k) { continue }
             let s = dot(n,d);
             let pose = if s > eps { &end } else { &start };
             add_cutter(Cutter::Plane((pose.point(o),n)),face_sites(k).into_iter().map(|x| (pose.point(x),n)).collect());
         }
-        for &(p,q,[f1,f2]) in &edges {
-            let (s1,s2) = (dot(faces[f1].1,d),dot(faces[f2].1,d));
+        for (&(p,q,_),&[n1,n2]) in edges.iter().zip(&normals) {
+            let (s1,s2) = (dot(n1,d),dot(n2,d));
             if s1*s2 > 0. || (s1.abs() <= eps && s2.abs() <= eps) { continue }
             let n = cross(sub(q,p),d);
             if norm(n) <= eps*norm(d) { continue }
             let n = unit(n);
             let sites = (0..=SITES).flat_map(|i| poses.iter().map(move |m| (m.point(add(p,scale(sub(q,p),within(i)))),n))).collect();
             add_cutter(Cutter::Plane((start.point(p),n)),sites);
+        }
+        // a face no plane: at each end pose its own surface over the stretch it spans (a cylinder's
+        // solid, a cone's frustum), and its contact swept: each ruling where its normal is square
+        // to the slide swept into the plane tangent there, or a cylinder along the slide swept
+        // along itself
+        for &k in &round {
+            let face = &tool.faces[k];
+            // (a ball's face over every latitude, its own points those in it: its pole on no edge)
+            let (lo,hi) = if let Surface::Sphere(..) = face.surface { (-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2) }
+                else { rulings_span(tool,k) };
+            let points = round_points(&located,tool,k,[lo,hi]);
+            let sites_at = |m: &crate::trajectory::Pose| -> Vec<(V,V)> {
+                points.iter().map(|&x| (m.point(x),m.vector(outward(face,x)))).collect()
+            };
+            match face.surface {
+                Surface::Cylinder(f,r) => {
+                    let a = unit(f.z);
+                    let across = sub(d,scale(a,dot(d,a)));
+                    for pose in [&start,&end] {
+                        add_cutter(Cutter::Cylinder {o:pose.point(f.o),axis:a,r:r.abs(),span:[lo,hi]},sites_at(pose));
+                    }
+                    if norm(across) <= 1e-9*norm(d) {
+                        let s = dot(d,a);
+                        add_cutter(Cutter::Cylinder {o:start.point(f.o),axis:a,r:r.abs(),span:[lo+s.min(0.),hi+s.max(0.)]},
+                            poses.iter().flat_map(|m| sites_at(m)).collect());
+                        continue
+                    }
+                    let w = unit(cross(a,across));
+                    for w in [w,scale(w,-1.)] {
+                        let u = dot(w,f.y).datan2(dot(w,f.x));
+                        tangent_plane(&mut add_cutter,&located,tool,k,u,[lo,hi],w,&start,&poses);
+                    }
+                }
+                Surface::Cone(f,_,half) => {
+                    let (sa,ca) = half.dsin_cos();
+                    // the generator through the cone's point at `u = 0`, turned about its axis
+                    let p0 = face.surface.point([0.,0.]);
+                    let e = unit(add(scale(f.x,sa),scale(f.z,ca)));
+                    for pose in [&start,&end] {
+                        add_cutter(Cutter::Revolved {o:pose.point(f.o),axis:f.z,p:pose.point(p0),e,span:[lo*ca,hi*ca]},sites_at(pose));
+                    }
+                    // the normal `cos α ρ̂(u) − sin α z` square to the slide:
+                    // `A cos u + B sin u = C`
+                    let (aa,bb,cc) = (ca*dot(d,f.x),ca*dot(d,f.y),sa*dot(d,f.z));
+                    let rr = aa.hypot(bb);
+                    if !(rr > 1e-12*norm(d)) || cc.abs() > rr { continue }
+                    let (phi,delta) = (bb.datan2(aa),(cc/rr).clamp(-1.,1.).dacos());
+                    for u in [phi+delta,phi-delta] {
+                        let w = unit(face.surface.normal_raw([u,0.5*(lo+hi)]));
+                        tangent_plane(&mut add_cutter,&located,tool,k,u,[lo,hi],w,&start,&poses);
+                    }
+                }
+                Surface::Sphere(f,r) => {
+                    let r = r.abs();
+                    for pose in [&start,&end] {
+                        add_cutter(Cutter::Ball {c:pose.point(f.o),axis:pose.vector(f.z),r},sites_at(pose));
+                    }
+                    // its great circle square to the slide, carried from the start to the end: the
+                    // cylinder of its radius about the centre's path, over that path
+                    let (len,dd) = (norm(d),unit(d));
+                    let g = Frame::about(f.o,dd);
+                    let sites: Vec<(V,V)> = (0..4*SITES).flat_map(|i| {
+                        let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
+                        let w = add(scale(g.x,cp),scale(g.y,sp));
+                        let x = add(f.o,scale(w,r));
+                        let on = located.face_place(k,x) != crate::query::Place::Out;
+                        poses.iter().filter(move |_| on).map(move |m| (m.point(x),w))
+                    }).collect();
+                    add_cutter(Cutter::Cylinder {o:start.point(f.o),axis:dd,r,span:[0.,len]},sites);
+                }
+                _ => unreachable!("`read` takes only cylinders, cones and balls round"),
+            }
+        }
+        // a circle edge swept: an oblique cylinder (the circle carried along the slide), or within
+        // its own plane where the slide lies in it
+        for rim in &rims {
+            let (f,r) = (rim.frame,rim.r);
+            let a = unit(f.z);
+            let n_of = |phi: f64| -> V {
+                let (sp,cp) = phi.dsin_cos();
+                let t = add(scale(f.x,-sp),scale(f.y,cp));
+                let n = cross(t,d);
+                if norm(n) <= 1e-12*norm(d) { a } else { unit(n) }
+            };
+            let sites: Vec<(V,V)> = (0..=SITES).flat_map(|i| {
+                let phi = rim.span[0]+(rim.span[1]-rim.span[0])*within(i);
+                let (sp,cp) = phi.dsin_cos();
+                let x = f.at([r*cp,r*sp,0.]);
+                let n = n_of(phi);
+                poses.iter().map(move |m| (m.point(x),n))
+            }).collect();
+            let c = start.point(f.o);
+            if dot(d,a).abs() <= 1e-9*norm(d) { add_cutter(Cutter::Plane((c,a)),sites) }
+            else { add_cutter(Cutter::Oblique {c,a,r:r.abs(),d},sites) }
         }
     } else {
         let (c,axis) = (screw.origin,screw.axis);
@@ -266,6 +434,7 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                     // the sheet's normal: square to the line and to the screw's velocity there (which
                     // the screw carries as it carries the normal)
                     Cutter::Screwed {e,..} => unit(cross(e,screw.velocity(x))),
+                    Cutter::Oblique {..} | Cutter::Ball {..} => unreachable!("a circle or a ball is swept only under a slide"),
                 };
                 poses.iter().map(move |m| (m.point(x),m.vector(normal)))
             }).collect()
@@ -383,13 +552,27 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             }
             Cutter::Cylinder {o,axis,r,span} => solids.push(prism(&disc(add(o,scale(axis,span[0])),axis,r),0.,span[1]-span[0])?),
             Cutter::Revolved {o,axis,p,e,span} => solids.extend(revolved(o,axis,p,e,span,eps)?),
+            Cutter::Ball {c,axis,r} => solids.push(crate::build::sphere(c,axis,r)?),
+            Cutter::Oblique {c,a,r,d} => {
+                // the disc's cylinder along `a` as high as the slide climbs it, sheared
+                // `x ↦ x + ((x − c)·a) w` so that `a h` goes to `d`
+                let h = dot(d,a);
+                let w = sub(scale(d,1./h),a);
+                let m = std::array::from_fn(|i| std::array::from_fn(|j| if i == j { 1. } else { 0. }+w[i]*a[j]));
+                let shear = crate::affine::Affine::new(m,scale(w,-dot(c,a)))?;
+                solids.push(prism(&disc(c,a,r),0.,h)?.mapped(&shear))
+            }
             Cutter::Screwed {p,e} => {
                 solids.push(screwed_sheet(&screw,&pose_at,p,e,tall.expect("a level edge's sheet is a screw's, its box tall"),size)?)
             }
         }
     }
-    let refs: Vec<&Brep> = solids.iter().collect();
-    let complex = arrangement_within(blank.unwrap_or(&domain),&refs,tol)?;
+    // (a candidate whose solid stands clear of the domain's box parts none of it: left out, so its
+    // meetings with the others there are never sought)
+    let within = blank.unwrap_or(&domain);
+    let (dlo,dhi) = within.bounds();
+    let refs: Vec<&Brep> = solids.iter().filter(|s| { let (lo,hi) = s.bounds(); (0..3).all(|k| lo[k] <= dhi[k]+tol && hi[k] >= dlo[k]-tol) }).collect();
+    let complex = arrangement_within(within,&refs,tol)?;
     // each cell classified by membership at the deepest of its points that settles (a cusp-thin
     // cell's stand near the swept boundary, and the first may not), and the boundary between the
     // cells kept — the members, or cut from a blank the rest — and the others the result: one
@@ -408,6 +591,41 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     let out = crate::boolean::selection(&complex,&|c| keep[c])?;
     out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
     Ok(out)
+}
+
+/// The span of a cylinder's or a cone's face along its rulings (its surface's `v`), read off its
+/// boundary edges.
+fn rulings_span(tool: &Brep,k: usize) -> (f64,f64) {
+    let face = &tool.faces[k];
+    face.loops.iter().flatten().flat_map(|c| {
+        let e = &tool.edges[c.edge as usize];
+        (0..=8).map(move |i| e.point(e.t[0]+(e.t[1]-e.t[0])*i as f64/8.,&tool.vertices))
+    }).fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),p| { let v = face.surface.inverse(p)[1]; (lo.min(v),hi.max(v)) })
+}
+
+/// A round face's own points: its surface over a grid of its parameters round the axis and along
+/// its rulings over `span`, those in the face.
+fn round_points(located: &crate::query::Located,tool: &Brep,k: usize,[lo,hi]: [f64;2]) -> Vec<V> {
+    let surface = &tool.faces[k].surface;
+    let mut out = Vec::new();
+    for i in 0..2*SITES { for j in 0..SITES {
+        let (u,v) = ((i as f64+0.5)*std::f64::consts::TAU/(2*SITES) as f64,lo+(hi-lo)*(j as f64+0.5)/SITES as f64);
+        let p = surface.point([u,v]);
+        if located.face_place(k,p) == crate::query::Place::In { out.push(p) }
+    } }
+    out
+}
+
+/// A round face's ruling at `u` over `span`, where its normal `w` is square to the slide, swept:
+/// the plane tangent to the face there, holding the slide, read at the ruling's points carried over
+/// the roll (none where the ruling is not on the face).
+fn tangent_plane(add_cutter: &mut dyn FnMut(Cutter,Vec<(V,V)>),located: &crate::query::Located,tool: &Brep,k: usize,u: f64,
+    [lo,hi]: [f64;2],w: V,start: &crate::trajectory::Pose,poses: &[crate::trajectory::Pose]) {
+    let surface = &tool.faces[k].surface;
+    let at = |s: f64| surface.point([u,lo+(hi-lo)*s]);
+    if located.face_place(k,at(0.5)) == crate::query::Place::Out { return }
+    let sites = (0..=SITES).flat_map(|i| { let x = at((i as f64+0.5)/(SITES+1) as f64); poses.iter().map(move |m| (m.point(x),w)) }).collect();
+    add_cutter(Cutter::Plane((start.point(at(0.5)),w)),sites);
 }
 
 /// How many steps a candidate's source is read at each way (along it, and across the roll) for

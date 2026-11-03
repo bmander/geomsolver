@@ -1,7 +1,7 @@
 //! **Prisms under a constant twist** (#684 M): a prism tool carried by a turn, a screw or a slide.
-//! Each moves every ruling of the prism — a line along it from one cap to the other — as one
-//! affine field, and a ruling's normal is one, so the contact `n·v` is linear along it: one point
-//! of contact a ruling, fixed on the tool, or under a slide the whole ruling at each of the
+//! Each moves every ruling of the prism — a line along it from one cap to the other — as one affine
+//! field, and a ruling's normal is one, so the contact `n·v` is linear along it: one point of
+//! contact a ruling, fixed on the tool, or under a slide the whole ruling at each of the
 //! silhouette's points. The characteristic is walked over the sides and round the convex corners'
 //! fans where they meet, and carried as a revolution's is (`solid::constant_twist`); across a cap,
 //! where the contact is a line, from a side round the rim's fan (#684 AE), across the crease of a
@@ -9,13 +9,12 @@
 //! it, where the side faces the axis squarely (#684 AF). Each case's volume is computed apart from
 //! the core — in closed form, or from the bar's half-spaces (`Bar`) — and each exact solid's STL
 //! agrees with the field; the square thread (`rust/examples/solid_sweeps/square_thread.sv`) is
-//! `solid_sweeps_examples::the_square_tool_leaves_a_groove_widening_outward`, and the flat end,
-//! the creased bar and the facing side turned (`flat_end.sv`, `creased.sv`, `facing.sv`) are held
-//! there too. What the class refuses of a prism whose faces are planes and edges lines — a side
-//! along a slide, a cap in the blank under a slide, a corner meeting its crease, a corner reaching
-//! a cap under a screw — the closed class builds on one arrangement (#721), each held to its own
-//! figure; and two it admits are still refused while built (C3), a face touching a contact cone at
-//! a point.
+//! `solid_sweeps_examples::the_square_tool_leaves_a_groove_widening_outward`, and the flat end, the
+//! creased bar and the facing side turned (`flat_end.sv`, `creased.sv`, `facing.sv`) are held there
+//! too. What the class refuses of a prism whose faces are planes and edges lines — a side along a
+//! slide, a cap in the blank under a slide, a corner meeting its crease, a corner reaching a cap
+//! under a screw, a corner holding the turn's axis, a cap of a tool no lone prism — the closed
+//! class builds on one arrangement (#721), each held to its own figure.
 use gcs_core::solid::admission::Class;
 use std::f64::consts::{PI,TAU};
 
@@ -508,28 +507,22 @@ pub(crate) fn parted(lean: f64,draft: f64) -> Bar {
 
 /// The flat end's bar shared with a block (a `common`) is no prism standing alone: its cap in the
 /// block is refused at T1, under a turn as under a relative rotation (#684 F). The closed class
-/// reads it by its B-rep, its faces planes and its edges lines, and admits it (#721); its build
-/// still refuses (C3), where a face at an end pose and its own contact cone touch at a point the
-/// kernel's trace cannot start from (F4, #699 E).
+/// reads it by its B-rep, its faces planes and its edges lines, and builds it (#721): where a face
+/// at an end pose touches its own contact cone along a generator, a cone narrowing along its axis,
+/// the two are met in that line (`ssi`; refused at C3 until the closed form took either sense of
+/// cone). The block is far wider than the bar, so the tool is the bar: the block loses what
+/// `Bar::removed` reads off the bar's half-spaces, as `solid_sweeps/flat_end.sv`'s does.
 #[test]
-fn a_cap_of_a_tool_no_lone_prism_turned_is_refused() {
+fn a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs() {
     let text = flat_end(20.,5.).text().replace("construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) bar })","in std.top {\n  private k0 := point\n  \
         private k1 := point\n  private k2 := point\n  private k3 := point\n  fix((0, -20)) k0\n  fix((30, -20)) k1\n  \
         fix((30, 20)) k2\n  fix((0, 20)) k3\n}\nconstruction keep := solid(std.solids.Prism(face(k0, k1, k2, k3, -> close), from: -20mm, to: 20mm))\n\
         construction tool := solid(bar)\nkeep common tool\n\
         construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) tool })");
     assert!(text.contains("keep common tool"));
-    refused_while_built(&text,"part");
-}
-
-/// Sweep of `text`'s body `body` admitted to the closed class and refused while it is built (C3),
-/// where the kernel cannot yet meet a plane touching a cone at a point (F4, #699 E).
-fn refused_while_built(text: &str,body: &str) {
-    let e = fixtures::read(text);
-    assert!(matches!(class(&e,body),Class::Closed(_)),"the closed class");
-    let say = gcs_core::brep::sweep::Say {stage:&|_: &str| {},mark:&|_| {}};
-    let r = gcs_core::brep::export::exact(&e.sketch,fixtures::solid(&e,body),None,None,&say).unwrap_err();
-    assert!(r.message.contains("(C3: ") && r.message.contains("nearly touching"),"{}",r.message);
+    let e = fixtures::read(&text);
+    assert!(matches!(class(&e,"part"),Class::Closed(_)),"the closed class");
+    near(exported(&e,"part"),PI/3.*80.-flat_end(20.,5.).removed(),1e-9);
 }
 
 /// The flat end leaning 45° and screwed 8 mm a turn across the block (#684 AE): the screw's advance
@@ -634,18 +627,25 @@ fn a_bar_lying_across_the_turn_creases_at_its_corner() {
     near(exported(&e,"part"),PI/3.*(144.-64.)-removed,1e-5);
 }
 
-/// A bar of square section stood on a corner, lying along y across the turn with that corner up
-/// in the block: its fan holds a normal along the turn's axis, so its ruling is in contact all
-/// along it, the top of the cut. But the rulings of its fan either side of that normal have their
-/// roots, and the walk crosses the top ruling where it stands nearest the axis: the characteristic
+/// A bar of square section stood on a corner, lying along y across the turn with that corner up in
+/// the block: its fan holds a normal along the turn's axis, so its ruling is in contact all along
+/// it, the top of the cut. But the rulings of its fan either side of that normal have their roots,
+/// and the walk crosses the top ruling where it stands nearest the axis: the characteristic
 /// branches there, the cut's flat top running off the walk, which the constant-twist class does not
-/// sweep (S1). The closed class admits it (#721); its build still refuses (C3), a face at an end
-/// pose touching a contact cone at a point (`refused_while_built`).
+/// sweep (S1). The closed class builds it (#721): a face at an end pose touching its contact cone
+/// along a generator is met in that line. Apart from the build: within the block's heights the bar
+/// stands from `z = −1` to its top corner at `0.5`, its slice there the rectangle `11 + z ≤ x ≤ 12
+/// − z`, `|y| ≤ 4`, whose nearest point to the axis is `11 + z` out and whose farthest past the
+/// ring's 12; turned right across the sector, the block loses `π/3 ∫ (144 − (11 + z)²)/2 dz`, `π/6
+/// · 42.375`.
 #[test]
-fn a_corner_holding_the_turns_axis_is_refused() {
+fn a_corner_holding_the_turns_axis_is_the_closed_classs() {
     let bar = Bar {origin:[0.;3],across:[1.,0.,0.],along:[0.,0.,-1.],corners:vec![[10.,1.],[11.5,-0.5],[13.,1.],[11.5,2.5]],
         names:vec!["inner","outer","under","back"],from:-4.,to:4.,draft:0.,lead:0.};
-    refused_while_built(&bar.text(),"part");
+    let e = fixtures::read(&bar.text());
+    assert!(matches!(class(&e,"part"),Class::Closed(_)),"the closed class");
+    let removed = PI/6.*(144.*1.5-(11.5f64.powi(3)-1000.)/3.);
+    near(exported(&e,"part"),PI/3.*80.-removed,1e-9);
 }
 
 /// What `slid_bar(true, drop)` with its length cut to `x ∈ [2, 8]` takes from the cube, apart from

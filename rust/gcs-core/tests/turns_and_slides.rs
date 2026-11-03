@@ -473,11 +473,8 @@ fn a_whole_turn_grooves_the_whole_ring() {
 /// `rings_all_round::a_torus_leaning_toward_the_turns_axis_grooves_its_shadow`); and a torus slid through the rod's middle touches it
 /// all round its tube, a characteristic that closes on itself (refused so until #684 W), but at the
 /// tube's top and bottom its rings are in contact all round, square to the slide, where the
-/// characteristic branches into the groove's flat sides (S1). An engraving bit slid square
-/// to its axis touches along the two lines of its cone square to the slide, which meet at its
-/// point, on its axis: every normal of the cone round the point is in contact there, and the
-/// groove's wall has a sharp edge along its path, which the class builds where the corner turns
-/// to a circle (a V wheel's rim, #684 V, above) and not at an apex (S1).
+/// characteristic branches into the groove's flat sides (S1). (A torus is no tool the closed class
+/// takes, C1, and a curved tool turned none either, so these refusals stand.)
 #[test]
 fn the_turn_and_slide_rows_refuse_by_name() {
     let short = refused(admit(&turned(Lean::Across(0.),-130.,30.)));
@@ -485,9 +482,30 @@ fn the_turn_and_slide_rows_refuse_by_name() {
     let closed = refused(admit(&slid(0.,0.,Wheel::Torus)));
     assert_eq!(closed.condition,Condition::Regular,"{closed}");
     assert!(closed.message.contains("`wheel.tube` is in contact all round a ring"),"{}",closed.message);
-    let pointed = refused(admit(&slid(0.,4.,Wheel::Bit)));
-    assert_eq!(pointed.condition,Condition::Regular,"{pointed}");
-    assert!(pointed.message.contains("`wheel.flank` meets the tool's axis at an apex of its profile"),"{}",pointed.message);
+}
+
+/// **An engraving bit slid square to its axis grooves the rod by its shadow** (G5, an apex on the
+/// tool's axis, under a slide; a negative control until #721 F2c5). Its cone touches along the two
+/// lines square to the slide, which meet at its point, on its axis: every normal of the cone round
+/// the point is in contact there, and the groove's wall has a sharp edge along its path, which the
+/// constant-twist class builds where a corner turns to a circle (a V wheel's rim, #684 V) and not
+/// at an apex (S1). The closed class builds it: the cone's two rulings swept into their tangent
+/// planes, its rim an oblique cylinder, the arrangement meeting them where they meet. Apart from
+/// the build: the bit, its point 4 out along x and 60° included, 2.5 long, passes wholly up the
+/// rod, so the rod loses its shadow along the slide — the triangle `|y| ≤ (x − 4) tan 30°` — within
+/// the rod's disc of radius 5, through its 20: `tan 30° (x* − 4)²` and the disc's segment beyond
+/// `x*`, where the triangle's sides leave the disc.
+#[test]
+fn an_engraving_bit_slid_square_to_its_axis_grooves_its_shadow() {
+    let e = fixtures::read(&slid(0.,4.,Wheel::Bit));
+    let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    // `(x − 4)² tan² 30° = 25 − x²`, with `tan² 30° = 1/3`: `4x² − 8x − 59 = 0`
+    let t = (PI/6.).tan();
+    let x = (8.+(64_f64+16.*59.).sqrt())/8.;
+    let segment = |x: f64| x*(25.-x*x).max(0.).sqrt()+25.*(x/5.).asin();
+    let shadow = t*(x-4.)*(x-4.)+segment(5.)-segment(x);
+    near(exported(&e,"part"),PI*25.*20.-shadow*20.,1e-9);
 }
 
 // -- what the shadows are read by ------------------------------------------------------------

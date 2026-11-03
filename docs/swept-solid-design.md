@@ -163,7 +163,8 @@ it. It stays as the fast path where #699 D says so.
    face along the axis touches its own contact cylinder at each end pose, so the plane through the
    axis and that line is added as a separator, parting the two sides of the touch into two cells.
    A bar turned a quarter turn beside the axis is its polar integral to 2e-15. Edges leaning to the
-   axis (hyperboloids), screws, curved tools and K2 are the steps after.
+   axis (hyperboloids), screws, curved tools and K2 are the steps after (a curved tool under a
+   slide is built, below).
 
    *Tried and set aside, for the next step:* a block leaning to the axis. Two findings. A face's
    contact line under a turn always meets the axis (it lies in the plane through the axis and the
@@ -282,6 +283,30 @@ it. It stays as the fast path where #699 D says so.
    revolution, a leaning bar's hyperboloids met each other and the walls in traced curves of
    thousands of points, and crossing them took 300 s; two spline meridians about one axis now
    cross in closed form (`ssi::spline_spline`), and the cut takes 12 s.
+   *Built for a curved tool under a slide* (`closed`'s slide, admitted as C1 allows): a tool whose
+   faces are planes, cylinders, cones and balls and whose edges are lines and circles. Under a slide every
+   candidate is a quadric the kernel meets in closed form, so nothing new is traced: a round face at
+   each end pose is its own surface (the tool's cylinder or frustum over the stretch the face spans);
+   its rulings whose normal is square to the slide (two on a cylinder across the slide; on a cone the
+   roots of the ring equation `A cos u + B sin u = C`, the one `contact` writes) sweep the planes
+   tangent along them, and a cylinder along the slide sweeps itself; a ball's great circle square
+   to the slide sweeps the cylinder of its radius along its centre's path; a circle edge's fan
+   (where its faces meet at an angle: a smooth one fans one normal, the faces' own) sweeps an
+   oblique cylinder, entered as its disc's right cylinder sheared along the slide (`Brep::mapped`), so
+   a plane, a coaxial cylinder or another such shear meets it in the preimage's closed forms. A drum
+   slid aslant, a frustum slid aslant, a capsule slid aslant and a drum slid along its axis are each
+   `V + |D| A` to 1e-9,
+   `A` the shadow along the slide in closed form (for the frustum, two ellipses' hull, a stretch of two
+   circles'), and agree with membership; cut from a blank, `punch.sv`'s drum pushed aslant wholly
+   through its plate and partway in (`stopped_punch.sv`) are each their sections' swept hexagons
+   clipped to the plate, to 1e-9. Where the drum stops in the plate, the plate keeps its end pose's
+   cylinder, which its side's tangent planes touch along lines and its rims' oblique cylinders at the
+   rims' silhouette points, the arrangement's touches as the turn's were. A candidate whose solid
+   stands clear of the domain's box is left out of the arrangement: an end pose clear of the blank
+   is never met. The constant-twist class's curved refusals under a slide that this covers are its
+   cases now: a hollow mill's ring bottom (G6), an engraving bit's apex (G5) and a drill beside a
+   post. A torus's face (its contact under a slide a curve no plane holds, its sweep no quadric) and
+   any curved face under a turn or a screw are the steps after.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.

@@ -35,12 +35,40 @@ fn a_bar_pushed_aslant_through_a_plate_takes_its_shadow() {
     near(exported(&e,"part"),800.-plunged_away(16.),1e-9);
 }
 
+/// **A drum pushed aslant wholly through a plate takes its shadow** (#721 F2c5, a curved tool under
+/// a slide): `punch.sv`'s drum, radius 2 and 8 long along x at `z = −5`, pushed 16 up through the
+/// plate leaning toward x, which the constant-twist class refuses (its first refusal, a negative
+/// control here until the closed class took curved tools). Its side's two rulings square to the
+/// push sweep their tangent planes, its rims oblique cylinders. Apart from the build: the drum
+/// passes wholly through, so each slice within the plate is its shadow along the push, across `y`
+/// the drum's length and `2k√(4 − y²)` more, `32 + 4πk` in all, through the plate's 4.
+#[test]
+fn a_drum_pushed_aslant_through_a_plate_takes_its_shadow() {
+    let drum = crate::closed_characteristics::punch().replace("fix(dir == (0, 0, 1)) up",&aslant());
+    let e = fixtures::read(&drum);
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    near(exported(&e,"part"),800.-drum_plunged_away(16.),1e-9);
+}
+
+/// **A drum pushed aslant partway into a plate** (X1 with a curved tool): pushed 8, it stops with
+/// its axis 2.63 up the plate's 4, so the plate keeps the drum's end pose where it stops — a
+/// cylinder its side's tangent planes and its rims' oblique cylinders each touch along a line or at
+/// a point. Apart from the build, `drum_plunged_away`.
+#[test]
+fn a_drum_pushed_aslant_partway_into_a_plate_leaves_its_end_pose() {
+    let drum = crate::closed_characteristics::punch().replace("fix(dir == (0, 0, 1)) up",&aslant()).replace("slides(16mm)","slides(8mm)");
+    let e = fixtures::read(&drum);
+    let Class::Closed(_) = class(&e,"part") else { panic!("the closed class") };
+    near(exported(&e,"part"),800.-drum_plunged_away(8.),1e-9);
+}
+
 /// What the closed class's rows refuse stands as the class asked first refused it: the punch's
-/// drum, a curved tool (C1), pushed aslant is the constant-twist class's refusal still.
+/// drum, a curved tool (C1 under any motion but a slide), turned partway into the ring sector and
+/// stopped there is the constant-twist class's refusal still.
 #[test]
 fn a_sweep_the_closed_class_refuses_keeps_its_first_refusal() {
-    let drum = crate::closed_characteristics::punch().replace("fix(dir == (0, 0, 1)) up",&aslant());
-    let r = refused(admit(&drum));
+    let r = refused(admit(&crate::closed_characteristics::turned_drum().replace("(-140deg, 140deg)","(-140deg, 30deg)")));
     assert_eq!(r.class(),"constant-twist class","{r}");
     assert!(!matches!(r.condition,Condition::Faces | Condition::Constant | Condition::Settled),"{r}");
 }
@@ -85,26 +113,49 @@ pub(crate) fn turned_partway_away() -> f64 {
 /// (clipped and measured by the shoelace); the plate loses that integrated over `y`. (Pushed 16, the
 /// bar passes wholly through: `4 (16 + 2k)`.)
 pub(crate) fn plunged_away(push: f64) -> f64 {
-    let d = [push*0.3,push*RISE];
-    let section = |y: f64| -> f64 {
-        let w = 1.-y.abs();
-        let (x0,x1,z0,z1) = (6.,14.,-6.-w,-6.+w);
-        // the rectangle swept along `d`: its corners and theirs moved, their hull, wound counter-clockwise
-        let pts = [[x0,z0],[x1,z0],[x1+d[0],z0+d[1]],[x1+d[0],z1+d[1]],[x0+d[0],z1+d[1]],[x0,z1]];
-        let clip = |poly: Vec<[f64;2]>,keep: &dyn Fn([f64;2]) -> f64| -> Vec<[f64;2]> {
-            let mut out = Vec::new();
-            for k in 0..poly.len() {
-                let (p,q) = (poly[k],poly[(k+1)%poly.len()]);
-                let (fp,fq) = (keep(p),keep(q));
-                if fp >= 0. { out.push(p) }
-                if (fp >= 0.) != (fq >= 0.) { let t = fp/(fp-fq); out.push([p[0]+t*(q[0]-p[0]),p[1]+t*(q[1]-p[1])]) }
-            }
-            out
-        };
-        let kept = clip(clip(pts.to_vec(),&|p| p[1]),&|p| 4.-p[1]);
-        gcs_core::solid::ring_area(&kept.iter().map(|p| (p[0],p[1])).collect::<Vec<_>>()).abs()
-    };
+    let section = |y: f64| swept_section(push,[6.,14.],-6.,1.-y.abs());
     crate::brep::simpson(-1.,0.,2000,section)+crate::brep::simpson(0.,1.,2000,section)
+}
+
+/// The area of the plate's slice `0 ≤ z ≤ 4` a rectangle `[x0, x1] × [zc − w, zc + w]` in `(x, z)`
+/// sweeps pushed `push` along the slanted line: the hexagon it sweeps, clipped to the plate and
+/// measured by the shoelace.
+fn swept_section(push: f64,[x0,x1]: [f64;2],zc: f64,w: f64) -> f64 {
+    let d = [push*0.3,push*RISE];
+    let (z0,z1) = (zc-w,zc+w);
+    // the rectangle swept along `d`: its corners and theirs moved, their hull, wound
+    // counter-clockwise
+    let pts = [[x0,z0],[x1,z0],[x1+d[0],z0+d[1]],[x1+d[0],z1+d[1]],[x0+d[0],z1+d[1]],[x0,z1]];
+    let clip = |poly: Vec<[f64;2]>,keep: &dyn Fn([f64;2]) -> f64| -> Vec<[f64;2]> {
+        let mut out = Vec::new();
+        for k in 0..poly.len() {
+            let (p,q) = (poly[k],poly[(k+1)%poly.len()]);
+            let (fp,fq) = (keep(p),keep(q));
+            if fp >= 0. { out.push(p) }
+            if (fp >= 0.) != (fq >= 0.) { let t = fp/(fp-fq); out.push([p[0]+t*(q[0]-p[0]),p[1]+t*(q[1]-p[1])]) }
+        }
+        out
+    };
+    let kept = clip(clip(pts.to_vec(),&|p| p[1]),&|p| 4.-p[1]);
+    gcs_core::solid::ring_area(&kept.iter().map(|p| (p[0],p[1])).collect::<Vec<_>>()).abs()
+}
+
+/// What the plate loses to `punch.sv`'s drum pushed `push` up the slanted line: at each `y` the
+/// drum's section is the rectangle `[6, 14] × [−5 − w, −5 + w]`, `w = √(4 − y²)`, swept and clipped
+/// as `plunged_away`'s; integrated over `y = 2 sin s`, so the ends of the root are smooth, by
+/// Simpson's rule between the kinks, where a corner of the hexagon (at `−5 ± w`, carried up the
+/// push or not) crosses the plate's top or bottom. (Pushed 16, it passes wholly through:
+/// `4 (32 + 4πk)`.)
+pub(crate) fn drum_plunged_away(push: f64) -> f64 {
+    use std::f64::consts::FRAC_PI_2;
+    let mut kinks = vec![-FRAC_PI_2,FRAC_PI_2];
+    for target in [0.,4.] { for shift in [0.,push*RISE] {
+        let w = (target-(-5.+shift)).abs();
+        if w < 2. { let s = (w/2.).acos(); kinks.extend([-s,s]) }
+    } }
+    kinks.sort_by(f64::total_cmp);
+    kinks.windows(2).filter(|k| k[1] > k[0])
+        .map(|k| crate::brep::simpson(k[0],k[1],2000,|s: f64| swept_section(push,[6.,14.],-5.,2.*s.cos())*2.*s.cos())).sum()
 }
 
 /// What `stopped_screw.sv`'s rod loses (X1 under a screw): `square_thread.sv`'s bar, its tip 4 from
@@ -145,6 +196,8 @@ fn the_partway_figures_reduce_to_the_whole_ones() {
     use std::f64::consts::{PI,TAU};
     let k = 0.3/RISE;
     assert!((plunged_away(16.)-4.*(16.+2.*k)).abs() <= 1e-9,"{}",plunged_away(16.));
+    let shadow = 4.*(32.+4.*PI*k);
+    assert!((drum_plunged_away(16.)-shadow).abs() <= 1e-9*shadow,"{} against {shadow}",drum_plunged_away(16.));
     let (r0,r,w,lead,l) = (4_f64,5_f64,2.,6.,20.);
     let turned = r*r/2.*(r0/r).acos()-r0/2.*(r*r-r0*r0).sqrt();
     let groove = TAU*l/lead*(w*(r*r-r0*r0)/2.+lead/PI*turned);

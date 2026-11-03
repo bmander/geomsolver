@@ -289,6 +289,12 @@ cancellation of the terms that constant sums — not its square root, the hyperb
 against the tolerance, which a plane holding a hyperboloid's ruling exactly (some 1e-14 left, a
 semi-axis of some 1e-7) failed at any tolerance finer, its rulings coming out as branches
 (`meeting::a_plane_holding_a_hyperboloids_ruling_meets_it_in_two_lines_at_any_tolerance`).
+**A plane tangent to a cone along a generator meets it in that line** (`ssi`'s plane–cone closed
+form, a plane through the apex leaning to the axis by the half-angle, judged by the gap): a cone
+narrowing along its axis too, its half-angle below nothing (`build::cone`'s frustum from the larger
+radius), whose tangent planes were traced and refused as nearly touching
+(`swept_closed::a_frustum_slid_aslant_closes_into_its_shadow_carried`, a ruling slid into its
+tangent plane against the frustum at its end poses).
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it

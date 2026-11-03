@@ -25,7 +25,7 @@ pub(crate) fn punch() -> String { text("punch.sv").replace("plate := solid","par
 
 /// A drum standing upright 10 from z, radius 1 and 1 high about the ring sector's middle height
 /// (`flat_faces::turned_mill`'s mill cut short), turned about z from clear of the sector to clear.
-fn turned_drum() -> String { turned_mill(1.,1.,10.,-0.5).replace("dv: 4mm","dv: 1mm") }
+pub(crate) fn turned_drum() -> String { turned_mill(1.,1.,10.,-0.5).replace("dv: 4mm","dv: 1mm") }
 
 /// Turned about z with its axis along the turn's, the drum's flat ends are kept in their planes and
 /// its side touches along its two lines in the plane through both axes, nearest and farthest the

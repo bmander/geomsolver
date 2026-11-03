@@ -430,6 +430,21 @@ fn the_bar_plunged_aslant_stops_inside_the_plate() {
     near(exported(&e,"plate"),800.-crate::closed_class::plunged_away(8.),1e-9);
 }
 
+/// `stopped_punch.sv` (the closed class, X1 with a curved tool): `punch.sv`'s drum pushed aslant 8
+/// into the plate, stopping inside it. The constant-twist class refuses it (as it refuses the drum
+/// pushed aslant wholly through, and it ends in the blank); the closed class reads its cylinder, its
+/// two flat ends and its rims under the slide and cuts it from the plate on one arrangement, the
+/// side's rulings swept into their tangent planes and the rims into oblique cylinders. The plate
+/// loses each `y` section's rectangle swept along the push and clipped to it
+/// (`closed_class::drum_plunged_away`), to 1e-9.
+#[test]
+fn the_drum_plunged_aslant_stops_inside_the_plate() {
+    let e = example("stopped_punch.sv");
+    let Class::Closed(found) = class(&e,"plate") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    near(exported(&e,"plate"),800.-crate::closed_class::drum_plunged_away(8.),1e-9);
+}
+
 /// `stopped_turn.sv` (the closed class, X1): an upright bar turned from −140° to 30°, halfway into
 /// the sector. The constant-twist class refuses it (it ends in the blank); the closed class cuts it
 /// from the ring on one arrangement, its end pose's faces among the candidates. The ring loses each

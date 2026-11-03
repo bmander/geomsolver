@@ -74,9 +74,7 @@ fn a_lemon_slid_along_its_axis_bores_its_greatest_radius() {
 
 /// What a slide along the tool's own axis still refuses: a torus, its shadow along the slide a
 /// ring from 1.5 to 3.5 about its axis, whose inner ring in contact all round sweeps a second wall,
-/// the plate's core left standing (S2); and the drill pushed through the plate beside a post 30
-/// high, whose heights it does not pass wholly through, though it is clear of the post at both
-/// ends (E1: the class reads the hole only where the tool passes the blank's every height).
+/// the plate's core left standing (S2; a torus is no tool the closed class takes, C1).
 #[test]
 fn what_a_slide_along_the_tools_axis_still_refuses() {
     let torus = refused(admit(&drawn("  private ta := point
@@ -92,6 +90,17 @@ fn what_a_slide_along_the_tools_axis_still_refuses() {
     assert_eq!(torus.condition,Condition::Once);
     assert!(torus.message.contains("the tool's shadow along the slide is no whole disc: none of it stands between 0.0000 and 1.5000"),
         "{}",torus.message);
+}
+
+/// **The drill pushed through the plate beside a post** (a negative control until #721 F2c5): the
+/// post 30 high, so the drill does not pass wholly through the blank's heights, though it is clear
+/// of the post at both ends — the constant-twist class reads the hole only where the tool passes
+/// the blank's every height (E1), and the closed class builds it under the slide: the drill's side
+/// along the slide swept along itself, its point's cone at both end poses, its lip's circle along
+/// the slide a cylinder. The body is the plate and the post above it, `800 + 3 × 3 × 26`, less the
+/// hole through the plate, `16π`.
+#[test]
+fn a_drill_beside_a_post_bores_its_hole() {
     let post = drill().replace("part := solid(std.solids.Prism(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick))",
         "part := solid(std.solids.Prism(face(near_side, far_end, far_side, near_end), from: 0mm, to: thick))
 in std.top {
@@ -110,9 +119,10 @@ in std.top {
 }
 post := solid(std.solids.Prism(face(q0, q1, q2, q3), from: 0mm, to: 30mm))
 post union part");
-    let post = refused(admit(&post));
-    assert_eq!(post.condition,Condition::Clearance);
-    assert!(post.message.contains("does not pass wholly through the blank's heights"),"{}",post.message);
+    let e = fixtures::read(&post);
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    near(exported(&e,"part"),800.+3.*3.*26.-16.*PI,1e-9);
 }
 
 // -- a turn about an axis the tool's own meets -------------------------------------------------

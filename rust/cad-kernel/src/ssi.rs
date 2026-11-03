@@ -389,11 +389,13 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let line = |w: V| unit(add(scale(w,sa),scale(c.z,ca)));
             // a plane through the apex leaning to the axis by the cone's own half-angle touches it
             // along one generator, its meeting that line (twice over): the tangent line, where a
-            // swept face at an end pose meets the cone its contact line turns into (#721 X6). Judged
-            // by the gap, as a plane touching a cylinder is
-            if sa > 1e-12 && ca > 1e-12 {
+            // swept face at an end pose meets the cone its contact line turns into (#721 X6), or
+            // where a cone's ruling slid sweeps its tangent plane. Judged by the gap, as a plane
+            // touching a cylinder is; a cone narrowing along its axis (its half-angle below
+            // nothing) alike
+            if sa.abs() > 1e-12 && ca > 1e-12 {
                 let apex = sub(c.o,scale(c.z,r*ca/sa));
-                let lean = dot(pl.z,c.z).abs()-sa;
+                let lean = dot(pl.z,c.z).abs()-sa.abs();
                 let radial = sub(pl.z,scale(c.z,dot(pl.z,c.z)));
                 if dot(pl.z,sub(apex,pl.o)).abs() <= tol && lean.abs() <= 1e-9 && norm(radial) > 1e-12 {
                     let w = unit(radial);

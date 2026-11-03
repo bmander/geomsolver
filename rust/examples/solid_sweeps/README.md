@@ -31,6 +31,7 @@ Read them in this order:
 | `drill.sv` | constant twist: a ring in contact all round | **A tool slid along its own axis.** A drill with a 118° point pushed down through a plate: each ring of the drill meets the slide at one angle all round, so it touches nowhere or all round, and the ring of its greatest radius sweeps the cylinder of that radius, the hole's wall, written exactly. The drill passes wholly through and its shadow along the slide is its whole disc, so the plate loses that cylinder through its thickness, whatever the point. In closed form. |
 | `spoke.sv` | constant twist: a ring in contact all round, turned | **A tool whose axis meets the turn's.** A pin lying along a radius of the turn swung across a curved block: every ring of it touches at its two points in the plane of the two axes, its side along its top and bottom lines, the slot's roof and floor, and the ring of its end's rim whose normals pass through the centre touches all round, sweeping a zone of the sphere about the centre, the slot's end wall. The branch beyond that ring, across the pin's end, runs within the zone and is trimmed. In closed form. |
 | `plunge.sv` | the closed class: a slide | **A tool plunged partway, aslant.** A bar of square section pushed up a slanted line into a plate, stopping halfway through: no contact walk reads it, its silhouette turning at the bar's vertices and its end in the plate. The kernel splits the plate at once by every face the boundary can lie on — the bar's faces where the push enters and leaves them, its silhouette edges swept — and keeps each cell the bar, carried back, misses (#721). The plate loses each section across the bar swept along the push and clipped to it. |
+| `stopped_punch.sv` | the closed class: a curved tool slid | **A round tool plunged partway, aslant.** `punch.sv`'s drum pushed up a slanted line into the plate, stopping halfway through: no contact walk reads it, its flat ends leaning to the push and its end in the plate. The plate is split at once by the drum where the push enters and leaves it, its side's two lines square to the push swept into the planes tangent along them, and each rim swept into an oblique cylinder, and each cell the drum, carried back, misses is kept (#721). The plate loses each section across the drum swept along the push and clipped to it. |
 | `stopped_turn.sv` | the closed class: a turn | **A tool turned partway, stopping inside.** A small bar swung about the axis from clear of a ring sector to halfway across it: where it stops is its own faces at the end pose, among the candidates the ring is split by at once, with its edges and its sides' contact lines turned. Each circle about the axis loses the angle the bar covers from the sector's edge to where it stops. |
 | `stopped_screw.sv` | the closed class: a screw | **A thread stopped short.** `square_thread.sv`'s bar screwed only halfway up the rod, as a thread stops short of a shoulder: the rod is split at once by the bar's faces at both end poses, its edges and sides' contact lines screwed into cylinders and its level edges into helicoidal sheets, met in closed form. Each circle of the rod loses the angle the bar covers over the rolls that reach its height. |
 | `rack.sv` | generating | **A tool rolled on a turning blank.** A rack tooth slid along the pitch line while the blank turns: one tooth space, its flanks involutes nobody draws. The tool's contact moves over it as it rolls, so each point of the wall is a contact at its own instant. |
@@ -49,11 +50,13 @@ on a screw).
 
 A sweep the other classes refuse, of a tool whose every face is a plane and every edge a line,
 under one slide, turn or screw (under a screw, its faces and edges along the axis or square to it),
-is the closed class's: cut from its blank on one arrangement, whether it stops inside the blank,
-undercuts or meets itself (`plunge.sv`, `stopped_turn.sv`, `stopped_screw.sv`). Outside every class
-— a tumbling tool (`swept_tumble.sv`), a curved tool that stops inside the blank, undercut by a
-curved tool, a flat end whose corners dig past it — the sweep is read by its field and drawn by the
-page, and its export is refused, saying which row it fails.
+or under a slide a tool whose faces are planes, cylinders, cones and balls and whose edges are
+lines and circles, is the closed class's: cut from its blank on one arrangement, whether it stops inside the
+blank, undercuts or meets itself (`plunge.sv`, `stopped_punch.sv`, `stopped_turn.sv`,
+`stopped_screw.sv`). Outside every class — a tumbling tool (`swept_tumble.sv`), a curved tool turned
+or screwed to a stop inside the blank, undercut by a curved tool turned, a flat end whose corners
+dig past it — the sweep is read by its field and drawn by the page, and its export is refused,
+saying which row it fails.
 
 `rust/gcs-core/tests/solid_sweeps_examples.rs` holds each file to its class, to an exact build
 whose STL agrees with the field, and to its volume; a file added here is named in this README and

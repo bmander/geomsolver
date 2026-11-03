@@ -181,20 +181,31 @@ fn a_tapered_mill_turned_cuts_a_groove_between_cones() {
     near(exported(&fixtures::read(&text),"part"),PI/3.*80.-2.*PI/3.*10.*1.125,1e-5);
 }
 
-/// What is still refused (S1): a hollow mill's bottom, a ring the slide keeps in its plane, whose
-/// line across the slide would cross its hole; and a mill turned a whole turn about an axis that
-/// passes through its flat bottom, which sweeps across the axis (the block made a sector of a disc,
-/// its inner radius 0).
+/// **A hollow mill slid across the block cuts a whole slot** (G6, its ring bottom kept in its
+/// plane; once a negative control here): the constant-twist class refuses it (S1: the ring's line
+/// across the slide would cross its hole), and the closed class builds it under the slide (#721
+/// F2c5, a curved tool), its outer and inner cylinders' rulings swept into their tangent planes,
+/// its rims into cylinders along the slide, its ring bottom a plane along it. Passing wholly
+/// through, the ring covers every `y` within its outer radius, the hole too, so the block loses the
+/// slot `20 × 4 × 3`, `1760` of `2000`.
 #[test]
-fn a_ring_or_a_disc_across_the_axis_kept_in_its_plane_is_refused() {
+fn a_hollow_mill_slid_across_the_block_cuts_a_whole_slot() {
     let hollow = slid_mill(2.,0.,7.).replace("  e0 coords(du: 0mm, dv: 0mm) bench","  e0 coords(du: 1mm, dv: 0mm) bench")
         .replace("  e3 coords(du: 0mm, dv: 8mm) bench","  e3 coords(du: 1mm, dv: 8mm) bench")
         .replace("  private spindle := line(e3, e0)\n}","  private inside := line(e3, e0)\n  private a0 := point\n  private a1 := point\n  \
             a0 coords(du: 0mm, dv: 0mm) bench\n  a1 coords(du: 0mm, dv: 1mm) bench\n  private spindle := line(a0, a1)\n}")
         .replace("face(bottom, side, top, spindle)","face(bottom, side, top, inside)");
-    let r = refused(admit(&hollow));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("`mill.bottom` is a ring kept in its own plane"),"{}",r.message);
+    let e = fixtures::read(&hollow);
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    near(exported(&e,"part"),2000.-240.,1e-9);
+}
+
+/// What is still refused (S1): a mill turned a whole turn about an axis that passes through its
+/// flat bottom, which sweeps across the axis (the block made a sector of a disc, its inner radius
+/// 0); the closed class takes no curved tool turned (C1), so the first class's refusal stands.
+#[test]
+fn a_disc_across_the_axis_kept_in_its_plane_is_refused() {
     let across = turned_mill(1.5,1.5,1.,0.).replace("(-140deg, 140deg)","(0deg, 360deg)").replace("du: 8mm","du: 0mm");
     let r = refused(admit(&across));
     assert_eq!(r.condition,Condition::Regular);
