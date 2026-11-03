@@ -681,6 +681,8 @@ impl Build {
                     State::Finish(super::sweep::Cut::Whole(super::sweep::planar::cut(sk,body,recipe,&prepared,None,say)?))
                 } else if super::sweep::subtraction::all(&prepared) {
                     State::Finish(super::sweep::Cut::Whole(super::sweep::subtraction::cut(sk,body,recipe,&prepared,None,say)?))
+                } else if super::sweep::closed::all(&prepared) {
+                    State::Finish(super::sweep::Cut::Whole(super::sweep::closed::cut(sk,body,recipe,&prepared,None,say)?))
                 } else { State::Sheets(prepared,Vec::new()) }
             }
             State::Sheets(prepared,mut sheets) => {

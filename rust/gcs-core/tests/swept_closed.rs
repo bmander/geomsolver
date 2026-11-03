@@ -125,7 +125,12 @@ fn a_bar_under_a_screw_closes_into_its_helical_sweep() {
 fn what_the_closed_build_cannot_yet_build_it_names() {
     use gcs_core::brep::swept::closed::Unbuilt;
     let screw = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:2.});
-    assert_eq!(closed(&leaning(0.35,3.),&screw,[0.,1.],0.01,1e-7).unwrap_err(),Unbuilt::Leaning);
+    let tool = leaning(0.35,3.);
+    let Err(Unbuilt::Leaning {at}) = closed(&tool,&screw,[0.,1.],0.01,1e-7) else { panic!("refused as leaning") };
+    // its witness on the tool
+    let solid = Solid::new(&tool,0.002,1.).unwrap();
+    assert!(solid.signed_distance(at).abs() <= 1e-9,"{at:?} on the tool");
+    assert!(matches!(gcs_core::brep::swept::closed::reads(&tool,&screw),Err(Unbuilt::Leaning {..})),"read so before any build");
 }
 
 /// A block leaning to the axis: `block` turned `lean` about the world's `x` and moved out `off`.
@@ -136,7 +141,7 @@ fn leaning(lean: f64,off: f64) -> Brep {
 
 /// The radii a convex tool's slice at height `z` spans about the world's `z` axis: the nearest of
 /// it and the farthest, its edges cut by the slice.
-fn spans(tool: &Brep,z: f64) -> Option<(f64,f64)> {
+pub(crate) fn spans(tool: &Brep,z: f64) -> Option<(f64,f64)> {
     let ring = slice(tool,z)?;
     let far = ring.iter().map(|p| p[0].hypot(p[1])).fold(0.,f64::max);
     // the slice holds the axis where the origin is left of every side of the ring
@@ -188,7 +193,7 @@ fn turned_whole_is_its_solid_of_revolution(tool: &Brep) {
 
 /// `∫ area(z) dz` over the heights the `parts`' vertices stand at, by Simpson's rule on `n` steps
 /// between each two (the slices' combinatorics, so `area`'s kinks, change only there).
-fn between_vertices(parts: &[&Brep],n: usize,area: &dyn Fn(f64) -> f64) -> f64 {
+pub(crate) fn between_vertices(parts: &[&Brep],n: usize,area: &dyn Fn(f64) -> f64) -> f64 {
     let mut heights: Vec<f64> = parts.iter().flat_map(|t| t.vertices.iter().map(|v| v.p[2])).collect();
     heights.sort_by(f64::total_cmp);
     heights.dedup_by(|a,b| (*a-*b).abs() < 1e-12);

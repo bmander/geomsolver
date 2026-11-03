@@ -764,8 +764,9 @@ surface, and only a loft's blend is fitted.
   the distance to the tangent line at that foot, which runs on past the curve's ends, so
   `query::curve_surface` keeps a root only where the surface itself is. Green's-theorem volumes
   split at knots. A plane square to a revolution's axis, a coaxial cylinder, cone, sphere or torus
-  meets it in circles where the meridians cross (`ssi::spline_cross`); two spline meridians are
-  traced. Two faces on one swept surface (a copied or overlapping prism) are one surface.
+  meets it in circles where the meridians cross (`ssi::spline_cross`), and so does another spline
+  revolution about the same axis (`ssi::spline_spline`), traced only where the two meridians run
+  together. Two faces on one swept surface (a copied or overlapping prism) are one surface.
 - **Traced and formula curves in faces** (`f := face(k from p to q)`, spec 0.28): the stretch of a
   curve between two points held on it by their contacts, minted as a hidden curve whose interval is
   the contacts' parameters (`CurveE::trim`, `Sketch::curve_domain`). The faceted kernel walks it to

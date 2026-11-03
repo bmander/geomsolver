@@ -270,6 +270,18 @@ it. It stays as the fast path where #699 D says so.
    classifier inverted, nothing else changed. The candidates that bound nothing are healed out of
    the result's faces (`boolean::selection`), so a groove slid into a block leaves the block's faces
    whole. Whether this or the blank-scoped sheet is the road for a given sweep is #699 D's question.
+   *Dispatched from `admit_body`* (#721 F2c5, the closed class, rows C1–C3 in
+   docs/generating-sweeps.md): a sweep the other classes refuse whose tool and motion `closed::reads`
+   takes — every face a plane and every edge a line, one slide, turn or screw, under a screw nothing
+   leaning — is admitted by that structure alone and cut from its blank on one arrangement, each
+   placement in the sweep's own coordinates. So the X1 cases (a bar plunged aslant partway into a
+   plate, turned partway into a ring sector, screwed partway up a rod: `solid_sweeps/plunge.sv`,
+   `stopped_turn.sv`, `stopped_screw.sv`) and the vertex and ruling refusals (a bar pushed aslant
+   wholly through, a leaning bar turned wholly within a ring) are built, each to 1e-9 of a volume
+   made apart and its STL agreeing with the field. Cut from a ring whose walls are surfaces of
+   revolution, a leaning bar's hyperboloids met each other and the walls in traced curves of
+   thousands of points, and crossing them took 300 s; two spline meridians about one axis now
+   cross in closed form (`ssi::spline_spline`), and the cut takes 12 s.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
 6. **Fold and branch loci** in the domain, then X2 and X5.

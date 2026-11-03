@@ -378,7 +378,7 @@ interval, lengthened by the turn `Θ`, so the sweep is `V + Θ ∫ ρ (h + k Δ�
 two out `1 + Θ (3 + k)` — built at 1e-6 and 1e-7, to 1e-9, agreeing with membership
 (`a_bar_under_a_screw_closes_into_its_helical_sweep`, slow tier).  An edge or a face leaning to a
 screw's axis (`Unbuilt::Leaning`) and a curved tool (`Unbuilt::Curved`) are refused by what they
-are.  The result is the selection's boundary with the candidates that bound nothing healed out of
+are, read before any build (`closed::reads`).  The result is the selection's boundary with the candidates that bound nothing healed out of
 its faces (`boolean::selection`): each face as whole as the candidate's it lies on.
 
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
@@ -391,6 +391,28 @@ block, sunk into its top, cuts a groove of `4 × 1 × 1` from `24`, its result's
 turn through a disc takes its section's polar integral times the disc's thickness
 (`a_bar_turned_through_a_disc_is_cut_from_it_on_one_arrangement`), each to 1e-9 and agreeing with the
 definition (in the blank and no member).
+
+**The closed class, dispatched from `admit_body` (#721 F2c5; `solid::closed_class`,
+`brep::sweep::closed`):** a sweep every class it is asked refuses — the generating, constant-twist
+or planar subtraction class, whichever its motion and tool asked first — is asked the closed
+class's rows, and its refusal stands where they refuse too. C1 (every face of the tool a plane,
+every edge a line) and C2 (one slide, turn or screw; under a screw every face and edge along its
+axis or square to it) read the tool's B-rep and the lowered trajectory in millimetres, before
+anything is built (`brep::swept::closed::reads`, its refusals `Unbuilt::Curved {at}` and
+`Unbuilt::Leaning {at}` with a point of the face or edge); C3 (each cell settled) is the build's.
+Admitted, `Class::Closed` carries the tool and the screw, and the body is built by cutting each
+sweep at each placement from the blank on one arrangement (`cut_from`, the blank carried into the
+sweep's coordinates and back), with no sheet, plan or sector: the export's and the page's stepped
+build alike (`object_builder::a_closed_sweep_builds_at_the_displays_samples`), and the native
+path refuses it by name. A body cutting sweeps of this class beside another's is refused at
+admission's stage. Each gate is a negative control of another class, held to a volume apart from
+the build and its STL to the field with no disagreement (`tests/closed_class.rs`: a bar pushed
+aslant wholly through a plate, to 1e-9; `solid_sweeps_examples::the_bar_plunged_aslant_stops_inside_the_plate`,
+`the_bar_turned_partway_stops_inside_the_ring`, each X1 to 1e-9; slow tier, a leaning bar turned
+wholly through a ring sector and `the_bar_screwed_partway_stops_inside_the_rod`, each to 1e-9). Two
+coaxial surfaces of revolution with spline meridians — two edges' hyperboloids — meet in circles
+in closed form (`ssi::spline_spline`, brep.md), where tracing them made the leaning bar's cut 300 s
+of crossing searches against 2400-point traces; it is 12 s.
 
 **K2's chart, contacts read at each instant (#721 K2, `brep::swept::instant`):** under a motion no
 constant twist takes, a face of revolution's contact on each ring is still `A cos θ + B sin θ + C = 0`

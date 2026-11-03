@@ -8,9 +8,11 @@
 //! a bull-nosed drum its shadow with the corners rounded, and a drum turned through a ring sector,
 //! its axis along the turn's, bores a tunnel of its section round the axis: each volume a closed
 //! form, each exact solid's STL agreeing with the field. Refused by name: the drum turned a whole
-//! turn, its sheet closed both ways; screwed, its flat ends no longer kept in their planes; a prism
-//! slid aslant wholly through, its silhouette turning at a vertex; and a prism turned wholly
-//! within, a rim's ruling in contact all along it.
+//! turn, its sheet closed both ways; and screwed, its flat ends no longer kept in their planes. (A
+//! prism slid aslant wholly through, its silhouette turning at a vertex, and a prism turned wholly
+//! within, a rim's ruling in contact all along it, which this class refuses, are the closed
+//! class's: `closed_class::a_bar_pushed_aslant_through_a_plate_takes_its_shadow`,
+//! `closed_class::a_leaning_bar_turned_wholly_through_a_ring_sector_bores_its_shadow`.)
 use gcs_core::solid::admission::{Class,Condition};
 use std::f64::consts::PI;
 
@@ -19,7 +21,7 @@ use crate::solid_sweeps_examples::{class,text};
 use crate::turns_and_slides::{admit,exported,exported_at,near,refused};
 
 /// `punch.sv` with its plate named `part`, as `admit` reads it.
-fn punch() -> String { text("punch.sv").replace("plate := solid","part := solid").replace("slot cut plate","slot cut part") }
+pub(crate) fn punch() -> String { text("punch.sv").replace("plate := solid","part := solid").replace("slot cut plate","slot cut part") }
 
 /// A drum standing upright 10 from z, radius 1 and 1 high about the ring sector's middle height
 /// (`flat_faces::turned_mill`'s mill cut short), turned about z from clear of the sector to clear.
@@ -72,10 +74,7 @@ fn a_bull_nosed_drum_punches_its_shadow_rounded() {
 /// What a closed characteristic is still refused: the drum turned a whole turn, whose sheet would
 /// close round the turn as well as along the characteristic, a ring with no edge (S1); the drum
 /// screwed half a millimetre a turn, which keeps its flat ends in no plane, so that both of each
-/// ring's points on its side reach the blank with no flat between them (S2); a bar of square
-/// section pushed aslant wholly through the plate, its silhouette, a corner's ruling, turning at a
-/// vertex of the prism to run over a cap (S1); and a small bar turned wholly within the ring
-/// sector, where the rim at its outer side's cap has a ruling in contact all along it (S1).
+/// ring's points on its side reach the blank with no flat between them (S2).
 #[test]
 fn what_a_closed_characteristic_still_refuses() {
     let whole = refused(admit(&turned_drum().replace("(-140deg, 140deg)","(0deg, 360deg)")));
@@ -85,7 +84,15 @@ fn what_a_closed_characteristic_still_refuses() {
     let screwed = refused(admit(&screwed));
     assert_eq!(screwed.condition,Condition::Once);
     assert!(screwed.message.contains("both of a ring's characteristic points on `mill.side` reach the blank"),"{}",screwed.message);
-    let bar = punch().replace("construction tool := solid(std.solids.Revolution(face(near_face, side, far_face, spindle), about: spindle))","in std.side {
+    let bar = square_bar();
+    // (pushed square to its length, the bar keeps its section's plane: planar subtraction's)
+    assert!(matches!(class(&fixtures::read(&bar),"part"),Class::Subtraction(_)),"read by the planar subtraction class");
+}
+
+/// `punch.sv` with its drum a bar of square section stood on a corner, `|y| + |z + 6| ≤ 1` along x
+/// from 6 to 14, pushed straight up through the plate.
+pub(crate) fn square_bar() -> String {
+    punch().replace("construction tool := solid(std.solids.Revolution(face(near_face, side, far_face, spindle), about: spindle))","in std.side {
   private c0 := point
   private c1 := point
   private c2 := point
@@ -99,14 +106,5 @@ fn what_a_closed_characteristic_still_refuses() {
   private outer := line(c2, c3)
   private under := line(c3, c0)
 }
-construction tool := solid(std.solids.Prism(face(lower, upper, outer, under), from: 6mm, to: 14mm))");
-    // (pushed square to its length, the bar keeps its section's plane: planar subtraction's)
-    assert!(matches!(class(&fixtures::read(&bar),"part"),Class::Subtraction(_)),"read by the planar subtraction class");
-    let aslant = refused(admit(&bar.replace("fix(dir == (0, 0, 1)) up","fix(dir == (0.3, 0, 0.9539392014169457)) up")));
-    assert_eq!(aslant.condition,Condition::Regular);
-    assert!(aslant.message.contains("runs over a cap of the prism, which the class does not walk under a slide"),"{}",aslant.message);
-    let within = refused(admit(&crate::prism_twists::turned_bar(20.,[[10.,-0.5],[11.,-0.5],[11.,0.5],[10.,0.5]],0.6,0.)));
-    assert_eq!(within.condition,Condition::Regular);
-    assert!(within.message.contains("a ruling of the rim where `bar.outer` meets `bar.start` is in contact all along it"),
-        "{}",within.message);
+construction tool := solid(std.solids.Prism(face(lower, upper, outer, under), from: 6mm, to: 14mm))")
 }

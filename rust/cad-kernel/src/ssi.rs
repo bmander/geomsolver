@@ -1,6 +1,6 @@
 //! Where two surfaces meet, in closed form where it has one: two planes in a line; surfaces of
 //! revolution about one axis (a plane square to it, a cylinder, a cone, a sphere centred on it, a
-//! torus) in circles, found where their meridians cross in one half-plane; a plane and a cylinder
+//! torus, a spline turned) in circles, found where their meridians cross in one half-plane; a plane and a cylinder
 //! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines; a
 //! spline extruded and a plane or a cylinder running its way in lines, and a cone about a line its
 //! way in the spline carried onto the cone (`extruded`). The rest is left to be traced
@@ -78,6 +78,52 @@ fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -
         g[0]*(if r > 0. { dot(across,d)/r } else { 0. })+g[1]*dot(d,z)
     };
     spline_roots(s,&|t| other.implicit(rz(t)),&rate,&at,tol).into_iter().map(rz).collect()
+}
+
+/// **Where two spline meridians cross or touch, in `(ρ, z)`** (#735 A2's coaxial surfaces of
+/// revolution, both meridians splines: two hyperboloids a swept tool's edges turn into): the first
+/// read against the second's signed distance, its point's offset from the second's nearest along
+/// the second's normal there (`spline_roots`, as `spline_cross` reads a line or a circle), each
+/// root held to lie within `tol` of the second. `None` where the two run together over a stretch
+/// (no finite set of circles): left to be traced.
+fn spline_spline(a: &super::nurbs::BSpline,b: &super::nurbs::BSpline,o: V,z: V,tol: f64) -> Option<Vec<[f64;2]>> {
+    let split = |p: V| { let q = sub(p,o); let h = dot(q,z); (sub(q,scale(z,h)),h) };
+    let rz = |s: &super::nurbs::BSpline,t: f64| { let (across,h) = split(s.point(t)); [norm(across),h] };
+    // a spline's (ρ, z) and its rate there
+    let jet = |s: &super::nurbs::BSpline,t: f64| {
+        let (p,d) = s.d1(t);
+        let (across,h) = split(p);
+        let r = norm(across);
+        ([r,h],[if r > 0. { dot(across,d)/r } else { 0. },dot(d,z)])
+    };
+    let [b0,b1] = b.domain();
+    let seeds: Vec<(f64,[f64;2])> = spline_samples(b).into_iter().map(|u| (u,rz(b,u))).collect();
+    // the second's nearest point to `p` (from its nearest sample, by Newton on (B − p)·B', held to
+    // its domain), and its unit normal there
+    let nearest = |p: [f64;2]| -> ([f64;2],[f64;2]) {
+        let d2 = |q: [f64;2]| (q[0]-p[0])*(q[0]-p[0])+(q[1]-p[1])*(q[1]-p[1]);
+        let mut u = seeds.iter().min_by(|x,y| d2(x.1).total_cmp(&d2(y.1))).map_or(b0,|s| s.0);
+        for _ in 0..30 {
+            let (q,dq) = jet(b,u);
+            let h = dq[0]*dq[0]+dq[1]*dq[1];
+            if !(h > 0.) { break }
+            let next = (u-((q[0]-p[0])*dq[0]+(q[1]-p[1])*dq[1])/h).clamp(b0,b1);
+            if (next-u).abs() <= 1e-15*(b1-b0) { u = next; break }
+            u = next;
+        }
+        let (q,dq) = jet(b,u);
+        let l = dq[0].dhypot(dq[1]).max(1e-300);
+        (q,[dq[1]/l,-dq[0]/l])
+    };
+    let g = |t: f64| { let p = rz(a,t); let (q,n) = nearest(p); (p[0]-q[0])*n[0]+(p[1]-q[1])*n[1] };
+    let dg = |t: f64| { let (p,dp) = jet(a,t); let (_,n) = nearest(p); n[0]*dp[0]+n[1]*dp[1] };
+    // running together over a stretch: three samples in a row on the second
+    let ts = spline_samples(a);
+    let on: Vec<bool> = ts.iter().map(|&t| g(t).abs() <= tol).collect();
+    if on.windows(3).any(|w| w.iter().all(|&x| x)) { return None }
+    let at = |t: f64| { let [r,h] = rz(a,t); [r,h,0.] };
+    Some(spline_roots(a,&g,&dg,&at,tol).into_iter().map(|t| rz(a,t))
+        .filter(|&p| { let (q,_) = nearest(p); (p[0]-q[0]).dhypot(p[1]-q[1]) <= tol }).collect())
 }
 
 /// The parameters at which `g` along the spline `s`, its rate `dg`, comes to zero within `tol`
@@ -291,8 +337,11 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         let Some((o,z)) = axis_of(s,t) else { continue };
         let (Some(ma),Some(mb)) = (meridian(s,o,z,tol),meridian(t,o,z,tol)) else { continue };
         let points = match (&ma,&mb) {
-            // two spline meridians have no closed-form crossing: traced
-            (Meridian::Spline(..),Meridian::Spline(..)) => continue,
+            // two spline meridians: where one crosses the other, unless they run together
+            (Meridian::Spline(sa,o,z),Meridian::Spline(sb,..)) => match spline_spline(sa,sb,*o,*z,tol) {
+                Some(points) => points,
+                None => continue,
+            },
             (Meridian::Spline(sp,o,z),m) | (m,Meridian::Spline(sp,o,z)) => spline_cross(sp,*o,*z,m,tol),
             _ => {
                 let Some(points) = cross2(ma,mb,tol) else { return Ssi::Same };

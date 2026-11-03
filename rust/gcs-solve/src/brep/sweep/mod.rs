@@ -4,6 +4,7 @@
 //! (`sector`), and that sector patterned round its axis (`brep::pattern`). What a native host did
 //! with its kernel's shapes is done here with this kernel's, so the export needs no native kernel,
 //! and runs where the core does — in the browser's worker too.
+pub mod closed;
 pub mod extruded;
 pub mod helical;
 pub mod planar;
@@ -119,6 +120,9 @@ pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say
         // what a subtraction sweep removes is its swept region's prism (`subtraction::cut`)
         crate::solid::admission::Class::Subtraction(_) => Err(ExportRefusal::at(Stage::Reach,
             format!("`{}`: a planar subtraction sweep is built by its swept region, not a sheet",prepared.cuts[k].name))),
+        // what a closed sweep leaves is the blank's cells no member of it (`closed::cut`)
+        crate::solid::admission::Class::Closed(_) => Err(ExportRefusal::at(Stage::Reach,
+            format!("`{}`: a closed sweep is built on one arrangement with the blank, not a sheet",prepared.cuts[k].name))),
     }
 }
 
@@ -174,6 +178,11 @@ pub fn build(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admission
     let prepared = prepare(sk,body,recipe,admission,say)?;
     if planar::all(&prepared) { return Ok(Built::Whole(planar::cut(sk,body,recipe,&prepared,tolerance,say)?)) }
     if subtraction::all(&prepared) { return Ok(Built::Whole(subtraction::cut(sk,body,recipe,&prepared,tolerance,say)?)) }
+    if closed::all(&prepared) { return Ok(Built::Whole(closed::cut(sk,body,recipe,&prepared,tolerance,say)?)) }
+    if prepared.classes.iter().any(|c| matches!(c,crate::solid::admission::Class::Closed(_))) {
+        return Err(ExportRefusal::at(Stage::Admission,format!("`{}` cuts a sweep of the closed class beside sweeps of another, \
+            which are not yet built together",sk.solids[body].name)))
+    }
     let sheets = crate::par::indices(prepared.sweeps(),|k| sheet(&prepared,k,tolerance,say)).into_iter().collect::<Result<Vec<_>,_>>()?;
     let plan = plan(sk,body,recipe,&prepared,&sheets,say);
     finish(cut(sk,body,recipe,&prepared,&sheets,plan,say)?,say)

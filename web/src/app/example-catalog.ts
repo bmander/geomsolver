@@ -55,6 +55,8 @@ const projects: Example[] = [{
     + 'punch its shadow, its characteristic closed on itself, a drill pushed along its own axis '
     + 'through a plate, its widest ring touching all round and boring the cylinder of its radius, '
     + 'a pin swung along a radius of the turn, its end\'s rim touching all round on a sphere, '
+    + 'a square bar plunged aslant partway into a plate, a bar turned partway into a ring sector and '
+    + 'a square thread stopped short, each cut on one arrangement of every face its boundary can lie on, '
     + 'a rack rolling a gear\'s '
     + 'tooth space, a drafted rack '
     + 'tooth leaned across the blank as a helical rack\'s, the tooth drafted both ways from a parting '
