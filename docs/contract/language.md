@@ -281,10 +281,11 @@ left a block out (the condition asked again with every pair meeting) is an `flat
 document's statement (`FaceState::at`, carried in `Pending::at`), kept in `SourceMap::apart`.
 **Then it is read where the drawing solves ([0.201], #761):** once a pass elaborates with an
 `Apart`, `program::meets::at_solve` solves a copy of its sketch, and where the solve settles and
-`apart` finds a pair meeting there, every `Listed`'s `Meets` is read again on the solved sketch
-and the document elaborated again — once (`elaborate`'s `pose`), each keyed entity's solved
-numbers kept so a solid whose faces a later pass names again is read at that pose too
-(`meets::posed`), the seeds untouched. A document with no `Apart` is solved by its caller alone.
+`apart` finds a pair meeting there, it returns each keyed entity's solved numbers (`Stood`, the
+form `crossed` is kept in too), and `elaborate` names every solid's faces again — once (its
+`pose`): `solids_and_surfaces` stands the sketch there by key (`program::stand`, the writer
+`holds` uses for `crossed`) while it reads each `Meets`, and puts the seeds back. A document with
+no `Apart` is solved by its caller alone.
 `program::meets::apart` reads it again in `solid_diagnostics` where the drawing is solved: a pair
 that meets there is E080, once per statement and solid. `std.rounds`' `round` and `chamfer` pair
 only faces that meet and round only threes that meet pairwise; `tests/meets.rs` is the gate (the

@@ -8,57 +8,28 @@
 //! instance placed by a mate — rounds as it would seeded where it stands.  A pair that still
 //! meets where the drawing solves, read apart where it was decided, is said here, at the
 //! document's statement that made the block, rather than built wrong.
-use super::{public_path, Code, Diag, Elaborated, SourceMap};
-use crate::flatten::Listed;
+use super::{own_values, public_path, Code, Diag, Elaborated, SourceMap, Stood};
 use crate::model::{EntKind, Sketch};
 use crate::solid::faces::{face_paths, Meets};
 use crate::syntax::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Where the drawing of `e` solves, where a pair of faces `meets` read apart where it is seeded
-/// meets there (#761): each solid's faces in `faces` read again at the solved pose, and every
-/// entity's own numbers there by its key, for a solid whose faces are named again in a later pass
-/// to be read at that pose too (`posed`).  `None` where no pair was read apart, where the solve
-/// does not settle — a pose it stopped at is no answer to read faces at (#571) — or where every
-/// pair read apart is apart there too: the elaboration stands as it is.
-pub(super) fn at_solve(e: &Elaborated, faces: &mut BTreeMap<String, Listed>)
-    -> Option<BTreeMap<String, Vec<f64>>>
-{
+/// meets there (#761): every entity's own numbers there by its key, for the faces a block runs
+/// over to be named again at that pose (`elaborate`, `stand`).  Empty where no pair was read
+/// apart, where the solve does not settle — a pose it stopped at is no answer to read faces at
+/// (#571) — or where every pair read apart is apart there too: the elaboration stands as it is.
+pub(super) fn at_solve(e: &Elaborated) -> Stood {
     if e.map.apart.is_empty() || !e.ok() {
-        return None;
+        return Stood::new();
     }
     let mut sk = e.sketch.clone();
-    if !crate::solve::solve(&mut sk, crate::solve::SolveOpts::default()).settled() {
-        return None;
+    if !crate::solve::solve(&mut sk, crate::solve::SolveOpts::default()).settled()
+        || apart(&sk, &e.map).is_empty()
+    {
+        return Stood::new();
     }
-    if apart(&sk, &e.map).is_empty() {
-        return None;
-    }
-    for (abs, listed) in faces.iter_mut() {
-        if let Some(s) = e.map.ent_named(abs).filter(|s| s.kind == EntKind::Solid) {
-            listed.meets = Meets::read(&sk, s.i(), &listed.paths);
-        }
-    }
-    Some(e.map.keys().map(|(k, x)| {
-        (k.clone(), sk.own_params(x).iter().map(|&q| sk.params[q as usize].value).collect())
-    }).collect())
-}
-
-/// `sk` stood at `pose` (`at_solve`): each entity `map` names under a key of it given the numbers
-/// the solve gave it there, where it has as many.  An entity the pose has no key for — one only
-/// this pass made — keeps its seed.
-pub(super) fn posed(sk: &Sketch, map: &SourceMap, pose: &BTreeMap<String, Vec<f64>>) -> Sketch {
-    let mut at = sk.clone();
-    for (key, values) in pose {
-        let Some(e) = map.ent_named(key) else { continue };
-        let own = at.own_params(e);
-        if own.len() == values.len() {
-            for (q, &v) in own.into_iter().zip(values) {
-                at.params[q as usize].value = v;
-            }
-        }
-    }
-    at
+    e.map.keys().map(|(k, x)| (k.clone(), own_values(&sk, x))).collect()
 }
 
 /// One E080 for each statement and solid whose faces read apart meet where the drawing stands

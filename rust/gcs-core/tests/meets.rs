@@ -140,20 +140,25 @@ fn pinned(pin: &str) -> String {
         whole := solid(plate)\n{pin}\nround(r: 1mm) whole\n")
 }
 
-/// `pinned`'s pin of radius 3 about `(10, 10)`, its centre held there and seeded at `at`, its
-/// radius `radius(3mm)` and seeded `seed` (nothing where empty).
-fn pin_at(at: &str, seed: &str) -> String {
-    pinned(&format!("in std.top {{\no := point hint(({at}))\no coords(du: 10mm, dv: 10mm) std.top\n\
+/// `pinned`'s pin of radius 3, its centre held at `(u, v)` and seeded at `at`, its radius
+/// `radius(3mm)` and seeded `seed` (nothing where empty).
+fn pin_at((u, v): (u32, u32), at: &str, seed: &str) -> String {
+    pinned(&format!("in std.top {{\no := point hint(({at}))\no coords(du: {u}mm, dv: {v}mm) std.top\n\
         boss := circle(center: o){seed}\nradius(3mm) boss\n}}\n\
         pin := solid(std.solids.Prism(face(boss), from: 0mm, to: 10mm))\npin union whole"))
 }
 
-/// `src` solved, said nothing of its solids, and `whole`'s volume.
-fn built(src: &str) -> f64 {
+/// `src` solved, its solids said nothing of.
+fn quiet(src: &str) -> Elaborated {
     let e = solved(src);
     let said = program::solid_diagnostics(&e.sketch, &e.map, &e.program);
     assert!(said.is_empty(), "{said:?}\n{src}");
-    volume(&e, "whole")
+    e
+}
+
+/// `src` solved quietly, and `whole`'s volume.
+fn built(src: &str) -> f64 {
+    volume(&quiet(src), "whole")
 }
 
 /// **Faces read apart where the drawing is seeded are read again where it solves** (#625,
@@ -165,24 +170,16 @@ fn built(src: &str) -> f64 {
 /// plate's side it reaches across.
 #[test]
 fn faces_read_apart_that_the_solve_brings_together_are_read_there() {
-    let near = built(&pin_at("10, 10", " hint(r: 3)"));
+    let near = built(&pin_at((10, 10), "10, 10", " hint(r: 3)"));
     // the root's round fills: the pin and its round add to the plate's rounded volume
     let plate = built(&pinned(""));
     assert!(near > plate + std::f64::consts::PI * 9.0 * 5.0, "{near} with the pin, {plate} without");
-    let far = built(&pin_at("60, 60", " hint(r: 3)"));
+    let far = built(&pin_at((10, 10), "60, 60", " hint(r: 3)"));
     assert!((far - near).abs() <= 1e-9 * near, "{far} seeded far, {near} seeded near");
     // and one across the plate's side, its radius left to its dimension: the same rounds made
     // (the solid they make is past the kernel's export, a round's end meeting another's on the
     // side, seeded or not)
-    let across = |seed: &str| {
-        let e = solved(&pinned(&format!("in std.top {{\no := point hint((20, 10))\n\
-            o coords(du: 20mm, dv: 10mm) std.top\nboss := circle(center: o){seed}\n\
-            radius(3mm) boss\n}}\npin := solid(std.solids.Prism(face(boss), from: 0mm, to: 10mm))\n\
-            pin union whole")));
-        let said = program::solid_diagnostics(&e.sketch, &e.map, &e.program);
-        assert!(said.is_empty(), "{seed:?}: {said:?}");
-        e.sketch.solids.len()
-    };
+    let across = |seed| quiet(&pin_at((20, 10), "20, 10", seed)).sketch.solids.len();
     assert_eq!(across(""), across(" hint(r: 3)"));
 }
 
@@ -197,7 +194,7 @@ fn a_part_seated_by_a_mate_rounds_where_it_is_seated() {
         body := solid(std.solids.Prism(face(k), from: 0mm, to: 10mm))\n}\n\
         in std.top {\nst := point hint((10, 10))\nst coords(du: 10mm, dv: 10mm) std.top\n}\n\
         post := Post()\npost seats(turn: 90deg, up: std.z, east: std.x) st\npost.body union whole"));
-    let drawn = built(&pin_at("10, 10", " hint(r: 3)"));
+    let drawn = built(&pin_at((10, 10), "10, 10", " hint(r: 3)"));
     assert!((seated - drawn).abs() <= 1e-9 * drawn, "{seated} seated, {drawn} drawn in place");
 }
 
