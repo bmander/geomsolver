@@ -199,7 +199,8 @@ fn a_roll_through_prints_as_written() {
 /// member's roll ends where the tool's surface, sampled as E1 samples it, is clear of the blank, a
 /// small margin past where it first leaves it, and the gear is admitted.  Cut by the mill the
 /// issue's pair had (`fixtures::gear::recorded_machine`): at a ten-tooth pinion the balance that
-/// finds the mill (#283) does not solve from its seeds.
+/// finds the mill (#283) has no root — no face mill with these blades leaves the pinion as far from
+/// undercut as the gear (`hypoid_machine::at_a_ten_tooth_pinion_no_face_mill_balances_the_undercut`).
 #[test]
 fn the_pair_at_ten_teeth_is_admitted_with_no_roll_stated() {
     let text = fixtures::gear::configure(&fixtures::gear::source(),
@@ -255,7 +256,9 @@ fn the_pair_at_ten_teeth_is_admitted_with_no_roll_stated() {
 
 /// **The gate** (#271): the pair stating no roll builds each member exactly at 24:48 as its stated
 /// rolls built it (±35 degrees for the pinion, ±45 for the gear: `fixtures::gear::roll`), the same
-/// volume and faces, and at 10:48, where the stated gear's was refused, builds both.
+/// volume and faces, and at 10:48, where the stated gear's was refused, builds both — cut there by
+/// the mill the issue's pair had, as `the_pair_at_ten_teeth_is_admitted_with_no_roll_stated` is,
+/// since no mill balances the undercut at a ten-tooth pinion.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: six members built exactly")]
 fn members_rolled_through_their_blanks_build_as_their_stated_rolls_did() {
@@ -275,7 +278,7 @@ fn members_rolled_through_their_blanks_build_as_their_stated_rolls_did() {
         assert!((through - stated).abs() <= 1e-9 * stated, "{member}: {through} against {stated}");
         assert_eq!(faces, stated_faces, "{member}");
     }
-    let ten = fixtures::gear::configure(&text, &[("pinion_teeth", 10.)]);
+    let ten = fixtures::gear::configure(&text, &[("pinion_teeth", 10.), ("pressure_shift", 12.5)]);
     for member in ["pinion", "gear"] {
         let (volume, faces) = built(&ten, member);
         assert!(volume > 0.0 && faces > 0, "{member}: {volume} mm³, {faces} faces");
