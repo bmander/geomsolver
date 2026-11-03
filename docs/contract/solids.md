@@ -133,7 +133,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   `exact_solid` places the representative's B-rep likewise (`Exact::placed`, `Caches::placed_exact`),
   and a recipe reaching a solid of a binding several share takes its B-rep from `exact_solid`,
   moved into its place (`exact::build`, `Sketch::shared`), so a union of a ring's instances builds
-  one — its faces named in their two halves again from the leaf's `Exact::named`, so the body's
+  one — its faces named in their two halves again (`Exact::halved`, as the export's mirrored
+  blank takes one too), so the body's
   faces read by their routes (`joint[1].pad.cd`), and a round over a closed instance's faces in a
   frame rounds them (#760: through it they read as their keys, `#41.1.joint.pad.cd`, which no path
   names).  A key holds only while it does (`Sketch::shares`): a solid reaching one its instance did

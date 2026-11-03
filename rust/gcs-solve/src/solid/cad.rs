@@ -253,14 +253,13 @@ impl<'a> Walk<'a> {
 
     /// A body's late set with its lowered regions built as one (`lowering::assemble`): the first
     /// stands for the rest, which are no operands of their own.  Lumped by the labels their faces
-    /// are named under (`route_step`, [0.149]): a named round's pieces stand apart from another's,
+    /// are named under (`step_labels`, [0.149]): a named round's pieces stand apart from another's,
     /// so each keeps its faces' names, and those of the rounds no name was given stand as one.
     fn lump(&mut self,body: usize,v: Vec<u32>) -> Vec<u32> {
         let mut by: BTreeMap<String,BTreeSet<u32>> = BTreeMap::new();
         for &o in &v {
             if self.users.get(&o) == Some(&1) && !self.pieces_of(o).is_empty() {
-                let step = super::step_through(&self.sk.solids[body],&self.sk.solids[o as usize]);
-                let labels = step.rsplit_once('.').map_or("",|(l,_)| l).to_string();
+                let labels = super::step_labels(&self.sk.solids[body],&self.sk.solids[o as usize]);
                 by.entry(labels).or_default().insert(o);
             }
         }

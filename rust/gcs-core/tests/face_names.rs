@@ -289,21 +289,23 @@ fn a_copy_holds(doc: &str) {
     }
     // the name through 0.200: nothing rounded, and said where the round is
     let wrong = format!("{doc}part.spine round(r: 2mm) part.pad\n");
-    let e = solved(&wrong);
-    let said: Vec<_> = e.diags.iter().filter(|d| d.code.as_str() == "W116").collect();
-    assert_eq!(said.len(), 1, "{:?}", e.diags);
-    let line = wrong.lines().count() as u32;
-    assert_eq!(gcs_core::syntax::line_col(&wrong, said[0].span.lo).0, line, "{}", said[0].message);
+    let said = w116(&wrong);
+    let [(line, message)] = said.as_slice() else { panic!("{said:?}") };
+    assert_eq!(*line, wrong.lines().count() as u32, "{message}");
     for step in ["`part.pad`", "`joint[0]`", "`joint[1]`", "`spine`"] {
-        assert!(said[0].message.contains(step), "{step}: {}", said[0].message);
+        assert!(message.contains(step), "{step}: {message}");
     }
     assert_eq!(part(&wrong)["part.volume"], plain["part.volume"]);
     // past a beginning that names faces, the steps that go on from it
-    let e = solved(&format!("{doc}part.spine round(r: 2mm) part.joint.pud\n"));
-    let said: Vec<_> = e.diags.iter().filter(|d| d.code.as_str() == "W116").collect();
+    let said = w116(&format!("{doc}part.spine round(r: 2mm) part.joint.pud\n"));
     let past = "past `part.joint` they are named by `pad`";
-    assert!(said.len() == 1 && said[0].message.contains(past), "{:?}", e.diags);
+    assert!(said.len() == 1 && said[0].1.contains(past), "{said:?}");
     // a path that names faces says nothing
-    let e = solved(&format!("{doc}part.spine round(r: 2mm) part.joint\n"));
-    assert!(!e.diags.iter().any(|d| d.code.as_str() == "W116"), "{:?}", e.diags);
+    assert_eq!(w116(&format!("{doc}part.spine round(r: 2mm) part.joint\n")), []);
+}
+
+/// Each W116 `src` says: the line it is said at, and its words.
+fn w116(src: &str) -> Vec<(u32, String)> {
+    solved(src).diags.iter().filter(|d| d.code.as_str() == "W116")
+        .map(|d| (gcs_core::syntax::line_col(src, d.span.lo).0, d.message.clone())).collect()
 }

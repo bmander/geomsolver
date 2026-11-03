@@ -2,7 +2,7 @@
 //! that round's statement was given (`rim := plate.c0 round(r: 3mm) plate.far`, then `blend :=
 //! part.boss round(r: 1mm) part.rim`) reads the body as that round leaves it, and acts after it.
 //! A body's readers fall into layers: a word's use stands one layer above the deepest use whose
-//! faces it names by its label (`route_step`), the rest in the first.  Each layer reads the body
+//! faces it names by its label (`step_labels`), the rest in the first.  Each layer reads the body
 //! as its other terms and every layer beneath it make it, and acts on it after them, fills then
 //! cuts — so two rounds of one layer still never see each other, and nothing is ordered by where a
 //! statement is written: only by what it names.
@@ -38,13 +38,11 @@ pub fn layer(sk: &mut Sketch) -> Vec<(usize, String)> {
     refused
 }
 
-/// The labels a reader's faces are named under through body `b` (its step, `step_through`,
-/// without its leaf): none for a solid no named use made.
+/// The labels a reader's faces are named under through body `b` (`step_labels`): none for a
+/// solid no named use made.
 fn labels(sk: &Sketch, b: usize, reader: usize) -> Vec<String> {
-    let step = crate::solid::step_through(&sk.solids[b], &sk.solids[reader]);
-    let mut segs: Vec<String> = step.split('.').map(str::to_string).collect();
-    segs.pop();
-    segs
+    let labels = crate::solid::step_labels(&sk.solids[b], &sk.solids[reader]);
+    labels.split('.').filter(|s| !s.is_empty()).map(str::to_string).collect()
 }
 
 /// Every face reference among `terms`, sets measured from included.

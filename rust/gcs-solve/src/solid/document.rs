@@ -328,7 +328,19 @@ pub(crate) fn operand_primitives(sk: &Sketch, si: usize) -> BTreeMap<String, (St
     done.remove(&(si as u32)).unwrap_or_default()
 }
 
-pub use cad_kernel::recipe::route_step;
+/// **A use's step** (#188, [0.149]): what `step_through` reads from the first segment a
+/// statement's use put in an operand's name: the last segment, under the label of each named use
+/// of a word it was made in (`rim#17`, `flatten::keys::labelled`) — `rim.taken` for the `taken` a
+/// round named `rim` made, so two named rounds' faces stay apart.
+fn route_step(name: &str) -> String {
+    let segs: Vec<&str> = name.split('.').collect();
+    let Some((leaf, before)) = segs.split_last() else { return name.to_string() };
+    fn label<'s>(s: &&'s str) -> Option<&'s str> {
+        let (l, id) = s.split_once('#')?;
+        (!l.is_empty() && !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then_some(l)
+    }
+    before.iter().filter_map(label).chain(std::iter::once(*leaf)).collect::<Vec<_>>().join(".")
+}
 
 /// **The step operand `operand` adds to the route of a face through body `body`** (#188,
 /// [0.149], #760): the operand's path as the body's scope writes it — `hub.body` for the `body`
@@ -340,8 +352,13 @@ pub use cad_kernel::recipe::route_step;
 /// one reading of a route's steps: the faces are named by it (`operand_primitives`, the recipe's
 /// `steps`) and reached by it (`past_step`).
 pub fn step_through(body: &SolidE, operand: &SolidE) -> String {
-    let written = operand.written_name();
-    let scope = body.written_name().rsplit_once('.').map_or("", |(s, _)| s);
+    step_between(body.written_name(), operand.written_name())
+}
+
+/// `step_through` by the two solids' written names (`SolidE::written_name`, `public_path`): what
+/// a reader with no `SolidE` to hand walks a body by (the flattener's carrier of a face).
+pub fn step_between(body: &str, written: &str) -> String {
+    let scope = body.rsplit_once('.').map_or("", |(s, _)| s);
     let within = if scope.is_empty() { Some(written) }
         else { written.strip_prefix(scope).and_then(|r| r.strip_prefix('.')) };
     let Some(within) = within.filter(|w| !w.is_empty()) else { return route_step(written) };
@@ -353,11 +370,24 @@ pub fn step_through(body: &SolidE, operand: &SolidE) -> String {
     }
 }
 
+/// `step_through` without its leaf: the labels of the named uses (and the written steps) an
+/// operand's faces are named under through `body`, empty for an operand of one step — what the
+/// recipe lumps a body's lowered regions by and the stratum's layers read ([0.149]).
+pub fn step_labels(body: &SolidE, operand: &SolidE) -> String {
+    let mut step = step_through(body, operand);
+    step.truncate(step.rfind('.').unwrap_or(0));
+    step
+}
+
 /// Whether `route` begins with `operand`'s step through `body` (`step_through`), and the rest
 /// of it past: a step written without a copy's index is any copy's (`faces::same_step`).
 pub fn past_step<'r, S: AsRef<str>>(body: &SolidE, operand: &SolidE, route: &'r [S])
     -> Option<&'r [S]> {
-    let step = step_through(body, operand);
+    route_past(&step_through(body, operand), route)
+}
+
+/// Whether `route` begins with `step` (`step_through`'s), and the rest of it past.
+pub fn route_past<'r, S: AsRef<str>>(step: &str, route: &'r [S]) -> Option<&'r [S]> {
     let n = step.split('.').count();
     let same = |(a, b): (&str, &S)| super::faces::same_step(b.as_ref(), a);
     (route.len() >= n && step.split('.').zip(route).all(same)).then(|| &route[n..])

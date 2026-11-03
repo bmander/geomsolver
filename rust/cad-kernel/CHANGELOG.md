@@ -28,8 +28,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 - **A body names each operand's faces by a step of its own** (#760): a recipe's body node may
   carry `steps`, the step each operand (by its id) adds to its faces' routes through that body,
-  read into `recipe::Body::steps` (**new field**); an operand it does not list adds its node's own
-  `step`, as before.
+  read into `recipe::Body::steps` (**new field**); an operand it does not list adds its name
+  whole. A node's own `step` is retired (**breaking**: `recipe::Named::step` and
+  `recipe::route_step` are gone, the language's rule for a step its caller's to apply).
 
 ## [0.3.0] - 2026-11-02
 

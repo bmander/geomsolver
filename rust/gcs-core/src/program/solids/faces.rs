@@ -67,7 +67,7 @@ pub(super) fn validate_chain(
 /// copy spelled as the source would reach it, `side[2]` (#243 L8), so the copies of one edge
 /// stay apart — read from `scope`, where the face is declared: an edge of the copy the face is
 /// drawn in is its own name there (`hole`), as a hole's is, its copy being the solid's
-/// (`drill[1].hole`, `SolidE::copy`).
+/// (`drill[1].hole`, `SolidE::written`).
 fn boundary_name(r: &crate::syntax::Ref, scope: Option<&str>) -> String {
     match r.path.last() {
         Some(crate::syntax::Seg::Field(n)) => n.text.clone(),

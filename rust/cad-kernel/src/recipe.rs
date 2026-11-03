@@ -345,17 +345,18 @@ impl Recipe {
     pub fn build(&self) -> Built {
         let mut built = BTreeMap::new();
         // each node's primitives, keyed as its faces are named, and their routes from it
-        let mut routes: BTreeMap<i64,(&str,&str,BTreeMap<String,String>)> = BTreeMap::new();
+        let mut routes: BTreeMap<i64,(&str,BTreeMap<String,String>)> = BTreeMap::new();
         // each node's name, for what a body built of it says
         let names: BTreeMap<i64,String> = self.nodes.iter().map(|n| (n.id,n.name.clone())).collect();
-        for Named {id,name,step,node} in &self.nodes {
+        for Named {id,name,node} in &self.nodes {
             let mut b = node.built(&built,&names,0.).map_err(|e| e.saying(|e| format!("`{name}`: {e}")))?;
             let mut own = BTreeMap::new();
             match node {
                 Node::Lowered(_) => {}
                 Node::Body(body) => for id in std::iter::once(&body.stock).chain(body.sets().into_iter().flat_map(|(_,l)| l)) {
-                    let Some((operand,short,paths)) = routes.get(id) else { continue };
-                    let short = body.steps.get(id).map_or(*short,String::as_str);
+                    let Some((operand,paths)) = routes.get(id) else { continue };
+                    // the step the body names it by, else its name whole
+                    let short = body.steps.get(id).map_or(*operand,String::as_str);
                     for (primitive,path) in paths {
                         // a swept solid's own sweep, split off as its stock, adds no step
                         let route = if operand == name { path.clone() } else { placed_name(short,path) };
@@ -363,7 +364,7 @@ impl Recipe {
                     }
                 },
                 Node::Placed {source,..} => {
-                    let source = routes.get(source).map(|(_,_,p)| p);
+                    let source = routes.get(source).map(|(_,p)| p);
                     for f in &mut b.faces {
                         let (of,face) = named_parts(&f.name);
                         let path = source.and_then(|p| p.get(of)).map_or(of,String::as_str);
@@ -378,7 +379,7 @@ impl Recipe {
                     own.insert(name.to_string(),String::new());
                 }
             }
-            routes.insert(*id,(name,step,own));
+            routes.insert(*id,(name,own));
             built.insert(*id,b);
         }
         built.remove(&self.root).ok_or("recipe: no root".into())
@@ -654,20 +655,4 @@ pub fn region_profile(
             weights:(w != 1.).then(|| vec![1.,w,1.])})),
     }).collect()).collect();
     Profile {origin,normal,loops,names}
-}
-
-/// **The step a body's operand adds to a face's route** (#188, [0.149]): its own name, the last
-/// segment of its absolute name, under the label of each named use of a word it was made in
-/// (`rim#17`, `flatten::keys::labelled`) — `rim.taken` for the `taken` a round named `rim` made,
-/// so two named rounds' faces stay apart.  The one reading of a route's steps: the faces are
-/// named by it (`operand_primitives`, `brep::recipe`) and reached by it (`faces::face_source`,
-/// `carrier`), a copy the document wrote with its index past it (`SolidE::step`, [0.157]).
-pub fn route_step(name: &str) -> String {
-    let segs: Vec<&str> = name.split('.').collect();
-    let Some((leaf, before)) = segs.split_last() else { return name.to_string() };
-    fn label<'s>(s: &&'s str) -> Option<&'s str> {
-        let (l, id) = s.split_once('#')?;
-        (!l.is_empty() && !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then_some(l)
-    }
-    before.iter().filter_map(label).chain(std::iter::once(*leaf)).collect::<Vec<_>>().join(".")
 }
