@@ -500,6 +500,25 @@ placement carries inside the blank; CLI test readers zero the offset.
   `pyramid`, whose material the field does not read: …"), and what is built on it follows as
   N080 — never a solved report and a solid that silently names nothing
   (`planar_subtraction::a_sweep_the_field_cannot_read_is_said_at_its_statement`).
+- **A solid drawn and not built says so** (#762, `EvaluatedSolid::unbuilt`).  An evaluation that
+  is not its solid's exact build — its material field's surface, where `sweeps_among` finds an
+  operand no exact construction builds, or the facet term, where `exact_preimage` is refused —
+  carries why (`solid::Unbuilt`: what it is drawn from, the first refusal in the core's words,
+  how many more): a region's refusal by the entry that recognised it (a round's gate: "its exact
+  construction disagrees with the field at …"), or that none builds it; a sweep no ball's tube
+  builds; a shell's cavity refused (`solid::field_only_reasons`, `sweeps_among` read for its
+  reasons, building nothing it did not).  An exact build's mesh, a host's included, a solid
+  built with no material, and a developable panel's band (whose faceting from its rulings is its
+  build, #645; a body built on one carries its refusal) carry none, and a placement of a binding's representative carries its
+  representative's.  A field the mesher cannot close (`FieldMeshing::Now`) is refused with the
+  build's refusal beside its own ("…; drawn from its material field because it is not built:
+  …"), the cause to fix.  Whatever writes a look at a solid from an evaluation — `solventc --png`,
+  `--gltf`, the faceted `--stl` — says it against the file it wrote, in `report::unbuilt_text`'s
+  words ("`keeper` is drawn from its material field, not built: …"), the file still written and
+  the exit unchanged, since what was asked is all there: a quick look is never read as "this
+  builds" when the export would refuse it
+  (`shell::a_shell_not_built_is_drawn_from_its_field_and_says_why`,
+  `cli::a_picture_of_a_solid_not_built_says_so`).
 
 - **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
   `solid({ p | p coincident(over s) I(…).f })` ([0.199], #737; through 0.198 `sweep(I(…).f over

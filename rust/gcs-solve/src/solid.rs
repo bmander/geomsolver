@@ -109,6 +109,7 @@ pub use surface::{ReadProjector,ReadRevolved,RegionLocation,RegionSample,Revolve
 pub(crate) use raycast::RayIndex;
 use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
+pub use evaluated::{DrawnFrom, Unbuilt};
 pub use evaluated::{Renamed, Rigid};
 
 use crate::model::{EntKind, EntRef, Roll, Sense, Sketch, SolidDef};
@@ -503,6 +504,41 @@ fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bo
     operands.iter().filter(|i| !under.contains(i)).any(|&i| field_only(i))
         || shells.iter().any(|(i, u)| !matches!(shelled::built(sk, *i), Some(Ok(_)))
             && (field_only(*i) || u.iter().any(|&x| field_only(x as usize))))
+}
+
+/// **Why a solid whose boundary is the field's has no exact construction** (#762): `sweeps_among`'s
+/// test read for its reasons — each of `operands` it finds the field's, in its own words, in
+/// their order: a region's refusal by the entry that recognised it (a round's gate, #194), or that
+/// none builds it; a sweep no ball's tube builds; a shell's cavity refused.  Nothing is built here
+/// that the test did not build.
+pub(crate) fn field_only_reasons(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> Vec<String> {
+    let why = |i: usize| -> Option<String> {
+        let name = sk.solid_name(i);
+        match &sk.solids[i].def {
+            SolidDef::Swept { .. } if !canal::is_canal(sk, i) => Some(format!(
+                "`{name}` is a continuous motion sweep, and no exact build of it stands")),
+            SolidDef::Region { .. } => region::route(sk, i).ok()?.refusal().map(|e| format!("`{name}`: {e}")),
+            _ => None,
+        }
+    };
+    let shells: Vec<(usize, Vec<u32>)> = operands.iter().filter_map(|&i| shelled::stands_for(sk, i).map(|u| (i, u))).collect();
+    let under: std::collections::BTreeSet<usize> = shells.iter()
+        .flat_map(|(i, u)| std::iter::once(*i).chain(u.iter().map(|&x| x as usize))).collect();
+    let mut out: Vec<String> = operands.iter().filter(|i| !under.contains(i)).filter_map(|&i| why(i)).collect();
+    for (i, u) in &shells {
+        let built = shelled::built(sk, *i);
+        if matches!(built, Some(Ok(_))) { continue }
+        let parts: Vec<String> = u.iter().filter_map(|&x| why(x as usize)).collect();
+        let own = why(*i);
+        if own.is_none() && parts.is_empty() { continue }
+        // the cavity's own refusal, where its construction refused, says more than its route's
+        match built {
+            Some(Err(e)) => out.push(format!("`{}`: {e}", sk.solid_name(*i))),
+            _ => out.extend(own),
+        }
+        out.extend(parts);
+    }
+    out
 }
 
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {

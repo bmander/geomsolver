@@ -256,6 +256,28 @@ fn what_is_not_built_is_read_by_the_field_and_said() {
     refused(BLOCKS, "shell(t: 7mm) block", "block", "no longer than twice the thickness");
 }
 
+/// **A shell not built is drawn and says so** (#762): what the workspace and `--png` draw of a
+/// block whose cavity no construction builds is its field's surface, and the evaluation says it
+/// is not the exact build and why, in the words the export refuses it with; a shell the kernel
+/// builds is its exact build, with nothing to say.
+#[test]
+fn a_shell_not_built_is_drawn_from_its_field_and_says_why() {
+    use gcs_core::solid::{ApproximationPolicy, DrawnFrom};
+    let e = solved(&format!("{BLOCKS}shell(t: 7mm) block\n"));
+    let i = ent(&e, "block").i();
+    let drawn = e.sketch.evaluated_solid(i, ApproximationPolicy::Mesh).expect("drawn from its field");
+    let u = drawn.unbuilt().expect("said not built");
+    assert_eq!(u.from, DrawnFrom::Field);
+    assert!(u.why.contains("no longer than twice the thickness"), "{u:?}");
+    let Err(refused) = e.sketch.exact_solid(i) else { panic!("built") };
+    assert!(refused.contains(&u.why), "the export's words: {refused} / {}", u.why);
+    let text = gcs_core::report::unbuilt_text(&e.sketch, i, u);
+    assert!(text.starts_with("`block` is drawn from its material field, not built: "), "{text}");
+    let e = solved(&format!("{BLOCKS}block.north shell(t: 2mm) block\n"));
+    let drawn = e.sketch.evaluated_solid(ent(&e, "block").i(), ApproximationPolicy::Mesh).unwrap();
+    assert!(drawn.unbuilt().is_none(), "{:?}", drawn.unbuilt());
+}
+
 /// The cavity's faces are named under it, as a region's are: each wall's inner face for the face
 /// it is moved in from, the arc about a reflex corner `round`.
 #[test]

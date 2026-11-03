@@ -99,8 +99,10 @@ diagnosed, and the report says where it stands.
     --png PATH          draw what the workspace shows as a PNG (a part file: its preview), each
                         object shaded in its instance's colour, depth-buffered, with its creases
                         and silhouettes, a swept one from its exact build where the kernel
-                        builds it; --solid draws one solid or one instance's objects.
-                        Repeatable, each with its own --view, --size and --hide
+                        builds it; one drawn from its field or its facets, not built (a round
+                        or a shell the kernel refuses), is said, with why; --solid draws one
+                        solid or one instance's objects.  Repeatable, each with its own --view,
+                        --size and --hide
     --view VIEW         the eye --png draws from: home (default, as the workspace opens), a view
                         a sheet names (front, back, right, left, top, bottom, isometric), or
                         az,el in degrees
@@ -969,9 +971,12 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     code = 1;
                 } else if !which.is_empty() {
                     match gcs_core::gltf::checked_glb(&sk, &which, gcs_core::solid::ApproximationPolicy::Mesh) {
-                        Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
-                            eprintln!("solventc: {err}"); code = 1;
-                        },
+                        Ok(bytes) => {
+                            for &i in &which { say_unbuilt(&sk, i, path); }
+                            if let Err(err) = cad::output::write(path, &bytes) {
+                                eprintln!("solventc: {err}"); code = 1;
+                            }
+                        }
                         Err(message) => { eprintln!("solventc: {message}"); code = 1; }
                     }
                 }
@@ -997,13 +1002,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     colours: &colours,
                 };
                 match picture::render(seen.as_ref().unwrap_or(&sk), &ask) {
-                    Ok((bytes, unbuilt)) => {
+                    Ok(drawn) => {
                         // an object that does not evaluate is left out, as the box leaves it, and
                         // said against the picture it is missing from: the picture is written, and
                         // the run fails, since it is not the whole of what was asked (#614)
-                        for why in &unbuilt { eprintln!("solventc: {path}: {why}"); }
-                        if !unbuilt.is_empty() { code = 1; }
-                        if let Err(err) = cad::output::write(path, &bytes) {
+                        for why in &drawn.missing { eprintln!("solventc: {path}: {why}"); }
+                        if !drawn.missing.is_empty() { code = 1; }
+                        // one drawn from its field or its facets is in the picture, and said
+                        // against it as not built: an export of it is refused (#762)
+                        for why in &drawn.unbuilt { eprintln!("solventc: {path}: {why}"); }
+                        if let Err(err) = cad::output::write(path, &drawn.png) {
                             eprintln!("solventc: {err}");
                             code = 1;
                         }
@@ -1134,10 +1142,13 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
                 // cut to the *object*, not to the report: a printer resolves a tenth of a
                 // millimetre and a volume is quoted to four digits, and those are not one number
                 match sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh).and_then(|s| s.stl()) {
-                    Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
-                        eprintln!("solventc: {err}");
-                        ok = false;
-                    },
+                    Ok(bytes) => {
+                        say_unbuilt(sk, i, path);
+                        if let Err(err) = cad::output::write(path, &bytes) {
+                            eprintln!("solventc: {err}");
+                            ok = false;
+                        }
+                    }
                     Err(message) => {
                         let site = e.map.site_of(gcs_core::model::EntRef::solid(i));
                         e.diags.push(gcs_core::program::Diag::new(
@@ -1246,6 +1257,16 @@ fn under(name: &str, asked: &str) -> bool {
 fn say(s: &Source, off: u32, sev: &str, code: &str, msg: &str) {
     let (line, col) = line_col(&s.text, off);
     eprintln!("{}:{line}:{col}: {sev}[{code}]: {msg}", s.name);
+}
+
+/// A file written from solid `i`'s evaluation (a glTF, a faceted STL) where that is its field's
+/// or its facet term's, not its exact build: said against the file in the core's words (#762).
+/// The evaluation is the one the file was written from, remembered.
+fn say_unbuilt(sk: &Sketch, i: usize, path: &str) {
+    let Ok(solid) = sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh) else { return };
+    if let Some(u) = solid.unbuilt() {
+        eprintln!("solventc: {path}: {}", gcs_core::report::unbuilt_text(sk, i, u));
+    }
 }
 
 fn severity(s: Severity) -> &'static str {
