@@ -363,7 +363,16 @@ it. It stays as the fast path where #699 D says so.
    twist, carried by the pose, told apart by the contact's rate round the ring, and the branch
    locus `A² + B² = C²` found in `(t, h)`; a ball's contacts under a tumble bound its sweep by
    membership (`tests/swept_instant.rs`). Its patches in the arrangement follow the patch type.
-8. **The blank-scoped path** as the optimisation of X6 (#699 D).
+8. **The blank-scoped path** as the optimisation of X6 (#699 D). *Decided*: the closed solid cut
+   from a blank is itself blank-scoped — `cut_from` takes the blank as the arrangement's domain and
+   keeps its cells that are no member, no closed solid built and subtracted — so X6 has two roads
+   to a body and one definition. Where a class admits a sweep, its blank-scoped sheet (the walk,
+   the fitted or closed-form sheet, the sector split) stays the road: measured on a sweep both
+   build, `punch.sv`'s drum, it is the faster by about an order (0.09 s against 0.8 s) and the two
+   agree to 1e-9 (`closed_class::the_fast_path_and_the_one_arrangement_agree_where_both_build`, two
+   builds made apart cross-checking each other). Where every class refuses, the one arrangement is
+   the road (`solid::closed_class`, asked after the class the sweep was first asked). `closed`, over
+   a box, is the kernel's `sweep(S, M)` proper, for a sweep with no blank.
 
 Every step meets the epic's bar: rows in `docs/contract/generating.md` naming the gate test, field
 agreement and an independent volume at the default tolerance, negative controls kept, an example

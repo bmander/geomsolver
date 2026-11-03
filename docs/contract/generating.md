@@ -416,6 +416,13 @@ drum, a frustum and a ball turned 100° (`swept_closed::round_tools_turned_part_
 and cut from a ring sector the drum turned whole (`closed_characteristics::the_drum_turned_a_whole_turn_bores_the_whole_ring`,
 the constant-twist class's S1) and turned to a stop partway (`closed_class::a_drum_turned_partway_into_a_ring_sector_stops_there`),
 each to 1e-9.
+**Which road a body takes (#699 D, decided):** where a class admits a sweep, its blank-scoped sheet
+builds it (the fast path); where every class refuses, the closed class cuts it from the blank on one
+arrangement (`cut_from`, itself blank-scoped: the blank the arrangement's domain). The two agree
+where both build — `punch.sv`'s drum, its class's sheet and the one arrangement, each 672 and the
+same to 1e-9, the sheet the faster by about an order
+(`closed_class::the_fast_path_and_the_one_arrangement_agree_where_both_build`).
+
 **A path of pieces** (#721 K1, `Trajectory::Pieces`) of slides and turns builds on the same one
 arrangement: a sweep is its pieces' sweeps united, so every piece's candidates — read on the tool
 where that piece takes it up (`Trajectory::Placed`, a constant twist after a placement: a turn

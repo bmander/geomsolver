@@ -234,3 +234,25 @@ fn the_partway_figures_reduce_to_the_whole_ones() {
     let groove = TAU*l/lead*(w*(r*r-r0*r0)/2.+lead/PI*turned);
     assert!((screwed_partway_away(21.,8.)-groove).abs() <= 1e-8*groove,"{} against {groove}",screwed_partway_away(21.,8.));
 }
+
+/// **The fast path and the one arrangement agree where both build** (#699 D, docs/swept-solid-design.md
+/// §8, step 8): `punch.sv`'s drum pushed through its plate is the constant-twist class's — its
+/// blank-scoped sheet, the fast path — and, read in the kernel alone, the closed class's too
+/// (`swept::closed::cut_from`, the plate the arrangement's domain). Two builds made apart, one by a
+/// walk and a fitted sheet, the other by an arrangement and membership: each the plate less the
+/// drum's shadow, 672, and the same to 1e-9. (The fast path is the faster by about an order: 0.09 s
+/// against 0.8 s when written.)
+#[test]
+fn the_fast_path_and_the_one_arrangement_agree_where_both_build() {
+    use gcs_core::brep::trajectory::{Screw,Trajectory};
+    let e = fixtures::read(&crate::closed_characteristics::punch());
+    assert!(matches!(class(&e,"part"),Class::ConstantTwist(_)),"the constant-twist class's");
+    let fast = exported(&e,"part");
+    let drum = gcs_core::brep::build::prism(&gcs_core::brep::build::disc([6.,0.,-5.],[1.,0.,0.],2.),0.,8.).unwrap();
+    let plate = crate::brep::block([0.,-5.,0.],[20.,5.,4.]);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:16.*std::f64::consts::TAU});
+    let cut = gcs_core::brep::swept::closed::cut_from(&plate,&drum,&path,[0.,1.],0.002,1e-6).unwrap();
+    let arranged = gcs_core::brep::props::volume(&cut);
+    near(fast,672.,1e-9);
+    near(arranged,fast,1e-9);
+}
