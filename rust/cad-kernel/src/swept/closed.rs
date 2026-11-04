@@ -41,8 +41,10 @@
 //!   under a turn), a cylinder about the axis over the heights the source spans, run on by the
 //!   step the roll takes; an edge square to the axis, the helicoidal sheet it screws into
 //!   (`screwed_sheet`). A face square to the axis has no contact (its normal meets the velocity by
-//!   the step everywhere); an edge or a face leaning to the axis screws into a surface no closed
-//!   solid or sheet holds yet, and is refused (`Unbuilt::Leaning`).
+//!   the step everywhere); an edge leaning to the axis, and a leaning face's contact line (its
+//!   points where `n · v = 0`, a line of its plane), each screw into a patch of the ruled helicoid
+//!   over the segment and the roll a twentieth past each, its rim inside the domain
+//!   (`Cutter::Patch`, #777 M5).
 //!
 //! Only the candidates that carry some of the boundary are kept (`carries`): read at their source's
 //! points carried over the roll, inside the source and the roll, where membership a hair to each
@@ -65,6 +67,14 @@
 //! pose holds a ruling of the sheet of its own level edge, touching it at that foot: all three
 //! meet in closed form (`ssi`'s screwed meetings, a plane's `Curve::SheetCut`), so the touch is a
 //! vertex of three exact curves.
+//!
+//! **Never returned wrong, and failing fast** (#777 V): what the selection returns is judged by the
+//! sweep's definition before it is returned (`judge`: the solid's exact point location against
+//! membership at seeded points of the domain and at the cells' own points, and its sense), and a
+//! disagreement is refused with its witness (`Unbuilt::Wrong`). The build's work is counted in
+//! steps per stage against `BUDGET` (`util::meter`), and past it refused by the stage that ran away
+//! (`Unbuilt::Budget`); `SOLVENT_SWEEP_PROFILE` prints the counts, and `SOLVENT_SWEEP_DUMP` writes a
+//! failed build's arrangement to replay alone (`swept::dump`).
 //!
 //! **A path of pieces** (K1, `Trajectory::Pieces`) of slides and turns, each a constant twist or
 //! one taken up where the piece before left the tool (`Trajectory::Placed`), is its pieces' sweeps
@@ -107,12 +117,16 @@ pub enum Unbuilt {
     /// The motion is no slide, turn or screw, nor a path of slides and turns (each taken up where
     /// the one before left the tool, `Trajectory::Placed`): the design's later steps.
     Motion,
-    /// Under a screw, an edge or a face leaning to the axis (neither along it nor square to it), at
-    /// `at`: its sheet a screw surface no closed solid yet holds, the design's later steps.
-    Leaning { at: V },
     /// A cell's membership could not be settled: its deepest point stands within the mesh's sag
     /// of the swept boundary.
     Unsettled { at: V },
+    /// The build went past its budget (#777 V3, `util::meter`): the stage that ran away, a point
+    /// where it was working, and what it was working on there (the surfaces, by kind). Counted in
+    /// steps, so the same build is refused the same way every time.
+    Budget { stage: crate::util::meter::Stage,at: V,what: String },
+    /// The built solid disagrees with the sweep's definition (#777 V2): at the witness `at`, the
+    /// solid holds it (`held`) where membership says the opposite. Never returned built wrong.
+    Wrong { at: V,held: bool },
     /// The kernel could not do it.
     Failed(String),
 }
@@ -136,6 +150,10 @@ enum Cutter { Plane(Plane),
     /// The line through `p` along unit `e`, square to the screw's axis, screwed whole: a helicoidal
     /// sheet (a right helicoid where the line meets the axis).
     Screwed { p: V,e: V },
+    /// The segment from `p` to `q`, leaning to the screw's axis, screwed over the roll (#777 M5): a
+    /// patch of the ruled helicoid it sweeps, a little past the segment's ends and the roll's, its
+    /// rim standing inside the domain (`patch`).
+    Patch { p: V,q: V },
     /// The torus about `c` square to the unit `axis`, its tube's middle circle of radius `major`, its
     /// tube's radius `minor` (a ball's great circle through the turn's axis, turned).
     Torus { c: V,axis: V,major: f64,minor: f64 },
@@ -175,9 +193,9 @@ pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f6
 /// built (what an admission asks, #721's dispatch): the motion a slide, a turn or a screw that
 /// moves something; every face of the tool a plane and every edge a line bounding two of them
 /// (under a slide, a face a cylinder, a cone or a ball too, and an edge a circle; under a turn, a
-/// cylinder or a cone about an axis along it, a ball, and a circle square to it); and under a
-/// screw every face and edge along the axis or square to it. The constant twist it is, or the first
-/// thing that is not, by what it is and where (a point of the face or the edge).
+/// cylinder or a cone about an axis along it, a ball, and a circle square to it; under a screw, a
+/// cylinder about an axis along it, and a ball beside planes and such a side). The constant twist
+/// it is, or the first thing that is not, by what it is and where (a point of the face or the edge).
 pub fn reads(tool: &Brep,path: &Trajectory) -> Result<crate::trajectory::Screw,Unbuilt> { read(tool,path).map(|r| r.screw) }
 
 /// What `reads` reads of a tool it takes: the constant twist, each face's plane (a point of it and
@@ -201,17 +219,15 @@ fn outward(f: &crate::topo::Face,p: V) -> V {
 /// `reads`, keeping what it read.
 fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
     let Some(screw) = path.screw().filter(|s| s.ratio != 0. || s.advance != 0.) else { return Err(Unbuilt::Motion) };
-    // a way leaning to a screw's axis: neither along it nor square to it
-    let leans = |d: V| !screw.is_turn() && !screw.is_slide() && norm(cross(d,screw.axis)) > 1e-9 && dot(d,screw.axis).abs() > 1e-9;
     let mut faces = Vec::with_capacity(tool.faces.len());
     let mut round = Vec::new();
     for (k,f) in tool.faces.iter().enumerate() {
         let at = f.loops.iter().flatten().next().map_or([0.;3],|c| tool.vertices[tool.ends(c)[0] as usize].p);
         match &f.surface {
             Surface::Plane(frame) => {
-                let n = unit(if f.reversed { scale(frame.z,-1.) } else { frame.z });
-                if leans(n) { return Err(Unbuilt::Leaning {at}) }
-                faces.push((frame.o,n));
+                // (a face leaning to a screw's axis touches along a leaning line, screwed into a patch
+                // of a ruled helicoid bounded inside the domain, #777 M5)
+                faces.push((frame.o,unit(if f.reversed { scale(frame.z,-1.) } else { frame.z })));
             }
             // under a slide a cylinder's or a cone's contact is along its rulings, each swept into
             // its tangent plane there, or (a cylinder along the slide) the whole face swept along
@@ -244,10 +260,15 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
             }
             // a ball's under a turn along its great circle in the plane through the axis and its
             // centre; under a screw along its great circle square to its centre's velocity, screwed
-            // into the pipe about its centre's helix (a ball alone among round faces: beside a side
-            // the pipe touches along the helices of the ball's equator, not yet held)
+            // into the pipe about its centre's helix, beside planes and a side about an axis along
+            // the screw's (a ball-end mill, whose pipe touches the side's cylinders along the
+            // helices of the ball's equator, #777 M3 and M4)
             Surface::Sphere(..) if screw.is_turn() || !screw.is_slide()
-                && tool.faces.iter().all(|g| matches!(g.surface,Surface::Sphere(..) | Surface::Plane(_))) => {
+                && tool.faces.iter().all(|g| match &g.surface {
+                    Surface::Sphere(..) | Surface::Plane(_) => true,
+                    Surface::Cylinder(c,_) => norm(cross(c.z,screw.axis)) <= 1e-9,
+                    _ => false,
+                }) => {
                 round.push(k);
                 faces.push((at,[0.;3]));
             }
@@ -274,7 +295,6 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
         if f1 == f2 { continue }
         match &edge.curve {
             EdgeCurve::Curve(Curve::Line {..}) => {
-                if leans(unit(sub(q,p))) { return Err(Unbuilt::Leaning {at:mid}) }
                 edges.push((p,q,[f1,f2]));
                 normals.push([outward(&tool.faces[f1],mid),outward(&tool.faces[f2],mid)]);
             }
@@ -332,8 +352,64 @@ fn legs(tool: &Brep,path: &Trajectory,roll: [f64;2]) -> Result<Vec<(crate::traje
     Ok(legs)
 }
 
-/// `closed` over a box holding the sweep, or `cut_from` over `blank`.
+/// **The work a closed build may do** (#777 V3), by stage (`util::meter::Stage`): past what every
+/// build the suite holds takes (each measured by its profile, `SOLVENT_SWEEP_PROFILE`), and short
+/// of what one runs to where a generic fallback runs without a bound — refused naming the stage,
+/// not after hours. The inverse map's is about four times the most a build takes (the drum
+/// screwed beside the axis, 51 million; the leaning block 8.5 million), so the ball-end mill
+/// screwed through a sector, whose sheet's inverse ran for hours, is refused in about two minutes.
+pub const BUDGET: crate::util::meter::Budget = crate::util::meter::Budget([
+    // arrangement: pairs of faces met
+    400_000,
+    // trace: steps marched along meetings with no closed form
+    4_000_000,
+    // ray: curve–surface searches and the samples sampled ones take
+    2_000_000_000,
+    // outline: chords faces' loops are cut in
+    20_000_000,
+    // inverse: a swept sheet's inverse map
+    200_000_000,
+    // membership: stretches of the roll read
+    400_000_000,
+    // judge: points judged
+    100_000,
+]);
+
+/// `closed` within `budget` (`BUDGET` is `closed`'s): past it, refused by the stage that ran away
+/// (`Unbuilt::Budget`).
+pub fn closed_within(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,budget: crate::util::meter::Budget) -> Result<Brep,Unbuilt> {
+    metered(tool,path,roll,bar,tol,None,budget)
+}
+
+/// `cut_from` within `budget`.
+pub fn cut_from_within(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,budget: crate::util::meter::Budget)
+    -> Result<Brep,Unbuilt> {
+    metered(tool,path,roll,bar,tol,Some(blank),budget)
+}
+
+/// `closed` over a box holding the sweep, or `cut_from` over `blank`, within `BUDGET`.
 fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    metered(tool,path,roll,bar,tol,blank,BUDGET)
+}
+
+/// `build` with a meter counting its work against `budget` (`util::meter`): a build past it refused
+/// by the stage that ran away, whatever else it ended in, and its profile printed where
+/// `SOLVENT_SWEEP_PROFILE` is set (#777 V4).
+fn metered(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>,budget: crate::util::meter::Budget)
+    -> Result<Brep,Unbuilt> {
+    use crate::util::meter;
+    let m = meter::Meter::new(budget);
+    let clock = crate::util::clock::Instant::now();
+    let out = meter::within(&m,|| build(tool,path,roll,bar,tol,blank));
+    if meter::profiling() {
+        eprintln!("{}  took {:?}: {}",m.report(),clock.elapsed(),match &out { Ok(b) => format!("built, {} faces",b.faces.len()),Err(e) => format!("{e:?}") });
+    }
+    if let Some(o) = m.over() { return Err(Unbuilt::Budget {stage:o.stage,at:o.at,what:o.what}) }
+    out
+}
+
+/// `closed` over a box holding the sweep, or `cut_from` over `blank`: the pipeline itself.
+fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     // the legs the path is taken in: one constant twist over the roll, or each piece of a path of
     // pieces over its stretch of it (K1: a sweep is its pieces' sweeps united), every one read
     let legs = legs(tool,path,roll)?;
@@ -615,6 +691,7 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         // the sheet's normal: square to the line and to the screw's velocity there (which
                         // the screw carries as it carries the normal)
                         Cutter::Screwed {e,..} => unit(cross(e,screw.velocity(x))),
+                        Cutter::Patch {p,q} => unit(cross(unit(sub(q,p)),screw.velocity(x))),
                         Cutter::Oblique {..} | Cutter::Ball {..} | Cutter::Torus {..} | Cutter::ScrewedDisc {..} | Cutter::Pipe {..} =>
                             unreachable!("a line turns into none of these"),
                     };
@@ -634,9 +711,18 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                     if screw.is_turn() { add_cutter(Cutter::Plane((o,n)),poses.iter().flat_map(|pose| own.iter().map(|&x| (pose.point(x),n))).collect()) }
                     continue
                 }
+                // under a screw a face leaning to the axis touches where its normal is square to the
+                // screw's velocity, `n · v(x) = 0`, affine in `x`: a line of its plane, leaning, screwed
+                // into a patch of a ruled helicoid (#777 M5)
+                if !screw.is_turn() && dot(n,axis).abs() > 1e-9 {
+                    if let Some((from,to)) = leaning_contact(&screw,o,n,&corners_of[k],eps) {
+                        let cutter = Cutter::Patch {p:from,q:to};
+                        add_cutter(cutter,line_sites(from,to,cutter));
+                    }
+                    continue
+                }
                 // under a screw a face along the axis touches along its line nearest the axis, as under a
-                // turn (`reads` refuses a face leaning to it, along a line screwing into a sheet not yet
-                // held)
+                // turn
                 // the face's contact line: its plane's points whose normal passes through the axis, where
                 // its plane meets the plane through the axis along `n × axis`; it meets the axis, or runs
                 // along it
@@ -799,9 +885,10 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             for &(p,q,_) in &edges {
                 let e = unit(sub(q,p));
                 if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 {
-                    // under a screw an edge square to the axis sweeps a helicoidal sheet (`reads` refuses
-                    // one leaning to it, a screw surface not yet held)
-                    let cutter = Cutter::Screwed {p,e};
+                    // under a screw an edge square to the axis sweeps a helicoidal sheet across the
+                    // box; one leaning to it, a patch of a ruled helicoid bounded inside the domain
+                    // (#777 M5)
+                    let cutter = if dot(e,axis).abs() > 1e-9 { Cutter::Patch {p,q} } else { Cutter::Screwed {p,e} };
                     add_cutter(cutter,line_sites(p,q,cutter));
                     continue
                 }
@@ -862,6 +949,8 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     let solid = Solid::new(tool,bar,1.)?;
     let swept = Swept {tool:&solid,path,roll:whole_roll};
     let carrying: Vec<Cutter> = cutters.into_iter().filter(|(_,sites)| carries(&swept,sites,half)).map(|(c,_)| c).collect();
+    // a build past its budget goes no further (#777 V3: refused by `metered`, naming the stage)
+    if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
     // **the box split by every candidate at once** (#735 A4, `boolean::arrangement_within`): each
     // candidate a solid one of whose faces lies on it across the box — a plane a block standing on
     // it, far wider than the box; a surface of revolution its solid over the heights its source
@@ -901,6 +990,7 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 let shear = crate::affine::Affine::new(m,scale(w,-dot(c,a)))?;
                 solids.push(prism(&disc(c,a,r),0.,h)?.mapped(&shear))
             }
+            Cutter::Patch {p,q} => solids.push(patch(&screw,&pose_at,p,q,[a,b])?),
             Cutter::Screwed {p,e} => {
                 solids.push(screwed_sheet(&screw,&pose_at,p,e,tall.expect("a level edge's sheet is a screw's, its box tall"),size)?)
             }
@@ -911,25 +1001,118 @@ fn built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     let within = blank.unwrap_or(&domain);
     let (dlo,dhi) = within.bounds();
     let refs: Vec<&Brep> = solids.iter().filter(|s| { let (lo,hi) = s.bounds(); (0..3).all(|k| lo[k] <= dhi[k]+tol && hi[k] >= dlo[k]-tol) }).collect();
-    let complex = arrangement_within(within,&refs,tol)?;
+    let out = arranged(within,&refs,&swept,blank,tol);
+    // a failed build's arrangement written where `SOLVENT_SWEEP_DUMP` asks (#777 V5), to be
+    // replayed alone and reduced (`swept::dump`)
+    if let (Err(why),Some(dir)) = (&out,super::dump::dump_dir()) {
+        match super::dump::dump(&dir,within,&refs,tol,&format!("{why:?}")) {
+            Ok(()) => eprintln!("sweep: the failed build's arrangement written to {}",dir.display()),
+            Err(e) => eprintln!("sweep: the failed build's arrangement not written: {e}"),
+        }
+    }
+    out
+}
+
+/// The domain `within` split by the candidates `refs` at once, each cell kept by membership, the
+/// kept cells' boundary selected and judged: `build` from its arrangement on.
+fn arranged(within: &Brep,refs: &[&Brep],swept: &Swept,blank: Option<&Brep>,tol: f64) -> Result<Brep,Unbuilt> {
+    let complex = arrangement_within(within,refs,tol)?;
+    if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
     // each cell classified by membership at the deepest of its points that settles (a cusp-thin
     // cell's stand near the swept boundary, and the first may not), and the boundary between the
     // cells kept — the members, or cut from a blank the rest — and the others the result: one
     // selection, no union, the candidates that bound nothing healed out of its faces
     let cells = complex.cells()?.len();
-    let mut keep = vec![false;cells];
-    for (c,kept) in keep.iter_mut().enumerate().skip(1) {
+    // each cell read on its own, across the cores (`util::par`, in the cells' order): its points
+    // certified by its own exact point location, the first whose membership settles classifying it,
+    // and those past it kept as witnesses the built solid is judged at
+    let read = crate::util::par::indices(cells.saturating_sub(1),|i| -> Result<Option<(bool,Vec<V>)>,Unbuilt> {
+        let c = i+1;
+        if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
         let points = complex.inside_points(c,4)?;
-        let Some(&first) = points.first() else { continue };
-        match points.iter().find_map(|&x| swept.member(x).ok()) {
-            Some(m) => *kept = m != blank.is_some(),
-            None => return Err(Unbuilt::Unsettled {at:first}),
+        let Some(&first) = points.first() else { return Ok(None) };
+        match points.iter().enumerate().find_map(|(k,&x)| swept.member(x).ok().map(|m| (k,m))) {
+            Some((k,member)) => Ok(Some((member != blank.is_some(),points[k+1..].to_vec()))),
+            None => Err(Unbuilt::Unsettled {at:first}),
         }
+    });
+    let mut keep = vec![false;cells];
+    let mut witnesses: Vec<V> = Vec::new();
+    for (i,r) in read.into_iter().enumerate() {
+        if let Some((kept,more)) = r? { keep[i+1] = kept; witnesses.extend(more) }
     }
     if blank.is_none() && !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
     let out = crate::boolean::selection(&complex,&|c| keep[c])?;
     out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
+    // **judged by its definition before it is returned** (#777 V2): never returned built wrong
+    judge(&out,swept,within,blank,&witnesses,tol)?;
     Ok(out)
+}
+
+/// How many points of the domain each way a built solid is judged at (`judge`).
+const JUDGED: usize = 8;
+
+/// **The built solid judged by the sweep's definition** (#777 V2, the design bible's fourth
+/// principle: built correctly or refused with a witness, never built wrong): at seeded points of
+/// the domain — a jittered grid over its box, and the cells' own points past the one each was
+/// classified by (`witnesses`) — the solid's exact point location (`query::Located`, V1) read
+/// against the swept set's membership (`member::Swept::member`): built alone, inside the solid
+/// exactly where the point is a member; cut from a blank, inside exactly where the blank holds it
+/// and it is no member. A point either reading cannot settle (on the boundary, or within the tool
+/// mesh's sag of it) says nothing. A disagreement is a refusal carrying the point
+/// (`Unbuilt::Wrong`). The solid's sense is judged too: a boundary turned inside out (its volume
+/// below nothing) places points as the right one does, but holds none of them, and is refused at
+/// the first member it so leaves out. Public, so what a build returned can be judged again apart
+/// from it.
+pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witnesses: &[V],tol: f64) -> Result<(),Unbuilt> {
+    use crate::query::{Located,Place};
+    use crate::util::meter::{self,Stage};
+    let (lo,hi) = domain.bounds();
+    let mut rng = crate::util::rng::Rng::new(0x5ee7);
+    let mut points: Vec<V> = Vec::with_capacity(JUDGED*JUDGED*JUDGED+witnesses.len());
+    for k in 0..JUDGED*JUDGED*JUDGED {
+        let ijk = [k%JUDGED,(k/JUDGED)%JUDGED,k/(JUDGED*JUDGED)];
+        points.push(std::array::from_fn(|a| lo[a]+(hi[a]-lo[a])*(ijk[a] as f64+rng.uniform(0.15,0.85))/JUDGED as f64));
+    }
+    points.extend_from_slice(witnesses);
+    // (the grid is within the domain's box; a blank is the domain cut from, read as the blank)
+    let solid = Located::new(built,tol);
+    let blank = blank.map(|b| Located::new(b,tol));
+    let readings = crate::util::par::map(&points,|&p| -> Option<(V,bool)> {
+        if !meter::charge(Stage::Judge,1,|| (p,"the built solid".into())) { return None }
+        let held = match solid.solid_place(p) { Place::In => true,Place::Out => false,Place::On => return None };
+        let member = swept.member(p).ok()?;
+        let should = match &blank {
+            None => member,
+            Some(b) => match b.solid_place(p) { Place::In => !member,Place::Out => false,Place::On => return None },
+        };
+        (held != should).then_some((p,held))
+    });
+    if let Some((at,held)) = readings.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held}) }
+    // each face turned the way its solid lies: a hair out along its outward normal the solid's own
+    // point location reads out, a hair in reads in (a face turned against its neighbours places
+    // points as the right one does, but its volume is off: the ring's sweep came out at 3.38 of
+    // 25.13 with every point placed right)
+    let size = { let (lo,hi) = built.bounds(); crate::util::space::distance(lo,hi) };
+    let hair = (1e-4*size).max(64.*tol);
+    for (fi,f) in built.faces.iter().enumerate() {
+        let [[u0,u1],[v0,v1]] = crate::boolean::face_parameters(built,fi);
+        let at = (1..4).flat_map(|i| (1..4).map(move |j| [u0+(u1-u0)*i as f64/4.,v0+(v1-v0)*j as f64/4.]))
+            .map(|uv| f.surface.point(uv)).find(|&p| solid.face_place(fi,p) == Place::In);
+        let Some(p) = at else { continue };
+        let Some(n) = f.outward(p) else { continue };
+        let (outside,inside) = (add(p,scale(n,hair)),sub(p,scale(n,hair)));
+        if solid.solid_place(outside) == Place::In && solid.solid_place(inside) == Place::Out {
+            return Err(Unbuilt::Wrong {at:inside,held:false})
+        }
+    }
+    // turned inside out: every point it seems to hold, it leaves out
+    if crate::props::volume(built) < 0. {
+        let inside = points.iter().copied().find(|&p| solid.solid_place(p) == Place::In)
+            .or_else(|| witnesses.first().copied()).unwrap_or_else(|| built.vertices.first().map_or([0.;3],|v| v.p));
+        return Err(Unbuilt::Wrong {at:inside,held:false})
+    }
+    Ok(())
 }
 
 /// The span of a cylinder's or a cone's face along its rulings (its surface's `v`), read off its
@@ -1017,6 +1200,57 @@ fn screwed_sheet(screw: &crate::trajectory::Screw,pose_at: &dyn Fn(f64) -> Resul
     let triangle = Profile {origin:corners[0],normal:axis,names:vec![vec!["sheet".into(),String::new(),String::new()]],
         loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
     let mut sheet = crate::build::screwed(&triangle,c,axis,screw.ratio*(s1-s0),rate*(s1-s0))?;
+    sheet.faces.retain(|f| f.name == "sheet");
+    Ok(sheet.compacted())
+}
+
+/// **A plane face's contact under a screw, leaning to its axis** (#777 M5): its points where the
+/// screw's velocity lies in the plane, `n · v(x) = 0` (affine in `x`, so a plane), met with the
+/// face's own plane in a line, clipped to the face's polygon `corners` (convex): the chord's ends,
+/// or `None` where the line misses the face.
+fn leaning_contact(screw: &crate::trajectory::Screw,o: V,n: V,corners: &[V],eps: f64) -> Option<(V,V)> {
+    let a = |x: V| dot(n,screw.velocity(x));
+    let a0 = a(o);
+    let g: V = std::array::from_fn(|i| { let mut e = [0.;3]; e[i] = 1.; a(add(o,e))-a0 });
+    let e = cross(n,g);
+    if norm(e) <= 1e-12*norm(g).max(1e-300) { return None }
+    let e = unit(e);
+    // the line's point: on the plane, on `a = 0`, and level with `o` along it
+    let x0 = crate::ssi::solve3([n,g,e],[dot(n,o),dot(g,o)-a0,dot(e,o)]);
+    // where it crosses each side of the polygon, its parameter along `e`
+    let side = unit(cross(n,e));
+    let mut ts: Vec<f64> = Vec::new();
+    for k in 0..corners.len() {
+        let (u,v) = (corners[k],corners[(k+1)%corners.len()]);
+        let (du,dv) = (dot(sub(u,x0),side),dot(sub(v,x0),side));
+        if (du > eps && dv > eps) || (du < -eps && dv < -eps) || (du-dv).abs() <= 1e-300 { continue }
+        let s = (du/(du-dv)).clamp(0.,1.);
+        ts.push(dot(sub(add(u,scale(sub(v,u),s)),x0),e));
+    }
+    let (t0,t1) = ts.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),&t| (l.min(t),h.max(t)));
+    (t1-t0 > eps).then(|| (add(x0,scale(e,t0)),add(x0,scale(e,t1))))
+}
+
+/// **The patch a segment leaning to a screw's axis sweeps over the roll `[a, b]`** (#777 M5): one
+/// open face of the ruled helicoid, the segment lengthened a twentieth past each end and the roll
+/// a twentieth past each of its, so its rim stands just past the candidates that seal it, inside
+/// the domain — a sheet bounded inside a cell, whose meetings stop partway across the faces it
+/// meets. It is the face of a triangle on the segment screwed (`build::screwed`), the triangle's
+/// other faces left off.
+fn patch(screw: &crate::trajectory::Screw,pose_at: &dyn Fn(f64) -> Result<crate::trajectory::Pose,Unbuilt>,p: V,q: V,[a,b]: [f64;2])
+    -> Result<Brep,Unbuilt> {
+    let d = sub(q,p);
+    let (p,q) = (sub(p,scale(d,0.05)),add(q,scale(d,0.05)));
+    let delta = 0.05*(b-a);
+    let (s0,s1) = (a-delta,b+delta);
+    let first = pose_at(s0)?;
+    let across = { let w = cross(d,screw.axis); if norm(w) > 1e-12*norm(d) { unit(w) } else { unit(cross(d,[1.,0.,0.])) } };
+    let corners = [p,q,add(p,scale(across,0.5*norm(d)))].map(|x| first.point(x));
+    let normal = unit(cross(sub(corners[1],corners[0]),sub(corners[2],corners[0])));
+    let triangle = Profile {origin:corners[0],normal,names:vec![vec!["sheet".into(),String::new(),String::new()]],
+        loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
+    let rate = screw.advance/std::f64::consts::TAU;
+    let mut sheet = crate::build::screwed(&triangle,screw.origin,screw.axis,screw.ratio*(s1-s0),rate*(s1-s0))?;
     sheet.faces.retain(|f| f.name == "sheet");
     Ok(sheet.compacted())
 }

@@ -37,9 +37,11 @@ pub fn indices_with<S,R: Send>(n: usize,init: impl Fn() -> S + Sync,f: impl Fn(&
         use std::sync::{Mutex,atomic::{AtomicUsize,Ordering}};
         let next = AtomicUsize::new(0);
         let done: Mutex<Vec<(usize,R)>> = Mutex::new(Vec::with_capacity(n));
+        // the caller's meter counts its workers' work too (`util::meter`)
+        let meter = super::meter::current();
         std::thread::scope(|scope| {
             for _ in 0..threads {
-                scope.spawn(|| {
+                scope.spawn(|| super::meter::under(meter.as_ref(),|| {
                     let mut mine = Vec::new();
                     let mut state = init();
                     loop {
@@ -49,7 +51,7 @@ pub fn indices_with<S,R: Send>(n: usize,init: impl Fn() -> S + Sync,f: impl Fn(&
                         mine.push((i,super::warm::fresh(|| f(&mut state,i))));
                     }
                     done.lock().unwrap_or_else(|e| e.into_inner()).extend(mine);
-                });
+                }));
             }
         });
         let mut done = done.into_inner().unwrap_or_else(|e| e.into_inner());

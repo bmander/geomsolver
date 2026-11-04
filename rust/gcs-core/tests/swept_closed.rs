@@ -122,18 +122,154 @@ fn a_bar_under_a_screw_closes_into_its_helical_sweep() {
     }
 }
 
-/// What the build refuses it refuses by what the tool and the motion are: under a screw, an edge
-/// leaning to the axis, the design's later step.
+/// **A block leaning to a screw's axis closes into its helical sweep** (#777 M5's gate: the leaning
+/// block under a screw, docs/swept-solid-design.md's "tried and set aside, for a leaning edge under
+/// a screw"): its leaning edges, and its leaning faces' contact lines (where a face's normal is
+/// square to the screw's velocity), each screw into a patch of a ruled helicoid bounded inside the
+/// domain, its rim standing in a cell just past the candidates that seal it, its meetings stopping
+/// partway across the faces it meets. Held to its volume apart from the build
+/// (`leaning_sweep_volume`) to 1e-6, and to membership at seeded points.
 #[test]
-fn what_the_closed_build_cannot_yet_build_it_names() {
-    use gcs_core::brep::swept::closed::Unbuilt;
-    let screw = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:2.});
-    let tool = leaning(0.35,3.);
-    let Err(Unbuilt::Leaning {at}) = closed(&tool,&screw,[0.,1.],0.01,1e-7) else { panic!("refused as leaning") };
-    // its witness on the tool
-    let solid = Solid::new(&tool,0.002,1.).unwrap();
-    assert!(solid.signed_distance(at).abs() <= 1e-9,"{at:?} on the tool");
-    assert!(matches!(gcs_core::brep::swept::closed::reads(&tool,&screw),Err(Unbuilt::Leaning {..})),"read so before any build");
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, #777 M5: the leaning block's build takes minutes")]
+fn a_block_leaning_to_a_screws_axis_closes_into_its_helical_sweep() {
+    let (lean,off) = (0.35,3.);
+    let tool = leaning(lean,off);
+    let (theta,advance) = (1.,2.);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance});
+    let expected = leaning_sweep_volume(lean,off,theta,advance/std::f64::consts::TAU/theta);
+    eprintln!("a block leaning to a screw's axis: its sweep {expected} apart from the build");
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// **The volume a block leaning to a screw's axis sweeps** (`leaning(lean, off)`, turned `Θ` about
+/// the world's `z` and climbing `k` a radian), apart from the kernel. In helical coordinates
+/// `(ρ, ψ, ζ = z − kψ)`, volume `ρ dρ dψ dζ`, the screw is a shift of `ψ` by `[0, Θ]`, so the sweep's
+/// slice by the cylinder of radius `ρ` is the block's slice `S_ρ` stretched along `ψ` — its area
+/// read line by line of constant `ψ'`: there the sweep holds `ζ` where some `ψ ∈ [ψ' − Θ, ψ']` does,
+/// and on each run of `ψ` where the vertical line meets the block (between `z_lo(ψ)` and
+/// `z_hi(ψ)`, clipped exactly) that is the interval from the least `z_lo − kψ` to the greatest
+/// `z_hi − kψ`, read at the window's ends and at the run's interior extremes. The runs are where a
+/// line meets the block at all — two of them at some radii, which is why a helix can meet the block
+/// twice and the sweep is less than its own volume and `Θ ∫ ρ L(ρ) dρ`. The section is smooth
+/// between the run ends and extremes and those shifted by `Θ`, integrated by Gauss–Legendre on
+/// those pieces, and `ρ` likewise between the radii of the block's corners and of its edges'
+/// points nearest the axis.
+fn leaning_sweep_volume(lean: f64,off: f64,theta: f64,k: f64) -> f64 {
+    let (sn,cs) = lean.sin_cos();
+    // the vertical line at (x, y): the block's bottom and top along it, and how far it is from
+    // missing the block (positive where it meets it); local (x − off, c y + s z, −s y + c z)
+    let line = |x: f64,y: f64| -> (f64,f64,f64) {
+        let (mut lo,mut hi) = (f64::NEG_INFINITY,f64::INFINITY);
+        for (a,b,h) in [(cs*y,sn,0.5),(-sn*y,cs,0.75)] {
+            let (z0,z1) = ((-h-a)/b,(h-a)/b);
+            lo = lo.max(z0.min(z1));
+            hi = hi.min(z0.max(z1));
+        }
+        (lo,hi,(x-off).min(1.-(x-off)).min(hi-lo))
+    };
+    // a sign change of `f` on [a, b] settled, and a least of `f` on [a, b]
+    let root = |f: &dyn Fn(f64) -> f64,mut a: f64,mut b: f64| {
+        let fa = f(a) > 0.;
+        for _ in 0..100 { let m = 0.5*(a+b); if (f(m) > 0.) == fa { a = m } else { b = m } }
+        0.5*(a+b)
+    };
+    let least = |f: &dyn Fn(f64) -> f64,mut a: f64,mut b: f64| {
+        for _ in 0..100 { let (m1,m2) = (a+(b-a)*0.381966,a+(b-a)*0.618034); if f(m1) < f(m2) { b = m2 } else { a = m1 } }
+        0.5*(a+b)
+    };
+    let corners: Vec<[f64;3]> = (0..8).map(|i| {
+        let (x,y,z) = (off+(i&1) as f64,if i&2 == 0 { -0.5 } else { 0.5 },if i&4 == 0 { -0.75 } else { 0.75 });
+        [x,cs*y-sn*z,sn*y+cs*z]
+    }).collect();
+    let pieces = |breaks: &[f64],n: usize,f: &dyn Fn(f64) -> f64| -> f64 {
+        let mut sum = 0.;
+        for w in breaks.windows(2) { for j in 0..n {
+            let (a,b) = (w[0]+(w[1]-w[0])*j as f64/n as f64,w[0]+(w[1]-w[0])*(j+1) as f64/n as f64);
+            for (x,g) in gcs_core::integral::GAUSS8 { sum += 0.5*(b-a)*g*f(0.5*(a+b)+0.5*(b-a)*x) }
+        } }
+        sum
+    };
+    let area = |rho: f64| -> f64 {
+        let at = |p: f64| line(rho*p.cos(),rho*p.sin());
+        let gap = |p: f64| at(p).2;
+        // the runs of ψ where the line meets the block, a run between samples found at its gap's
+        // greatest
+        let n = 1000;
+        let ps: Vec<f64> = (0..=n).map(|i| -0.7+1.4*i as f64/n as f64).collect();
+        let g: Vec<f64> = ps.iter().map(|&p| gap(p)).collect();
+        let mut runs = vec![];
+        let mut start = None;
+        for i in 0..=n {
+            if g[i] > 0. && start.is_none() { start = Some(if i > 0 { root(&gap,ps[i-1],ps[i]) } else { ps[0] }) }
+            if g[i] > 0. && (i == n || g[i+1] <= 0.) {
+                runs.push((start.take().unwrap(),if i < n { root(&gap,ps[i],ps[i+1]) } else { ps[n] }));
+            }
+            if i > 0 && i < n && g[i] <= 0. && g[i] >= g[i-1] && g[i] >= g[i+1] {
+                let p = least(&|q| -gap(q),ps[i-1],ps[i+1]);
+                if gap(p) > 0. { runs.push((root(&gap,ps[i-1],p),root(&gap,ps[i+1],p))) }
+            }
+        }
+        if runs.is_empty() { return 0. }
+        // `z_lo − kψ` and `−(z_hi − kψ)`, each least at a run's ends and its interior minima
+        let bottom = |p: f64| at(p).0-k*p;
+        let top = |p: f64| -(at(p).1-k*p);
+        let ends: [&dyn Fn(f64) -> f64;2] = [&bottom,&top];
+        let minima: Vec<[Vec<(f64,f64)>;2]> = runs.iter().map(|&(a,b)| ends.map(|f| {
+            let m = 200;
+            let qs: Vec<f64> = (0..=m).map(|t| a+(b-a)*t as f64/m as f64).collect();
+            let v: Vec<f64> = qs.iter().map(|&q| f(q)).collect();
+            (1..m).filter(|&t| v[t] <= v[t-1] && v[t] <= v[t+1])
+                .map(|t| { let q = least(f,qs[t-1],qs[t+1]); (q,f(q)) }).collect()
+        })).collect();
+        // the sweep's section at ψ': the union of each run's interval over the window
+        let section = |pp: f64| -> f64 {
+            let mut spans: Vec<(f64,f64)> = vec![];
+            for (&(a,b),mins) in runs.iter().zip(&minima) {
+                let (u,v) = (a.max(pp-theta),b.min(pp));
+                if u > v { continue }
+                let low = |j: usize| mins[j].iter().filter(|&&(q,_)| u < q && q < v).map(|&(_,f)| f)
+                    .fold(ends[j](u).min(ends[j](v)),f64::min);
+                spans.push((low(0),-low(1)));
+            }
+            spans.sort_by(|x,y| x.0.total_cmp(&y.0));
+            let (mut length,mut current) = (0.,None::<(f64,f64)>);
+            for (x,y) in spans {
+                current = match current {
+                    Some((c0,c1)) if x <= c1 => Some((c0,c1.max(y))),
+                    Some((c0,c1)) => { length += c1-c0; Some((x,y)) }
+                    None => Some((x,y)),
+                };
+            }
+            length+current.map_or(0.,|(c0,c1)| c1-c0)
+        };
+        let mut breaks: Vec<f64> = runs.iter().zip(&minima).flat_map(|(&(a,b),mins)|
+            [a,b].into_iter().chain(mins.iter().flatten().map(|&(q,_)| q)).collect::<Vec<_>>())
+            .flat_map(|q| [q,q+theta]).collect();
+        breaks.sort_by(f64::total_cmp);
+        breaks.dedup();
+        pieces(&breaks,4,&section)
+    };
+    // ρ from the block's face nearest the axis to its farthest corner, broken at the corners' radii
+    // and at each edge's point nearest the axis
+    let radius = |p: [f64;3]| p[0].hypot(p[1]);
+    let mut radii: Vec<f64> = corners.iter().map(|&p| radius(p)).collect();
+    radii.push(off);
+    for i in 0..8usize { for j in 0..8usize { if (i^j).count_ones() == 1 && i < j {
+        let (a,b) = (corners[i],corners[j]);
+        let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
+        let q = dx*dx+dy*dy;
+        if q <= 1e-24 { continue }
+        let t = -(a[0]*dx+a[1]*dy)/q;
+        if 0. < t && t < 1. { radii.push((a[0]+t*dx).hypot(a[1]+t*dy)) }
+    } } }
+    let far = radii.iter().copied().fold(0.,f64::max);
+    radii.retain(|&r| r >= off);
+    radii.sort_by(f64::total_cmp);
+    radii.dedup_by(|a,b| (*a-*b).abs() <= 1e-12);
+    debug_assert!(radii.last() == Some(&far));
+    pieces(&radii,64,&|rho| rho*area(rho))
 }
 
 /// A block leaning to the axis: `block` turned `lean` about the world's `x` and moved out `off`.
@@ -868,4 +1004,474 @@ fn a_ball_screwed_closes_into_the_pipe_about_its_centres_helix() {
     let expected = 4./3.*PI*r*r*r+PI*r*r*theta*(d*d+k*k).sqrt();
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
+}
+
+/// The point `x` screwed back by `v` of the screw about the world's `z` axis turning `angle` and
+/// rising `rise` over `v` in `[0, 1]`.
+fn screwed_back(x: [f64;3],angle: f64,rise: f64,v: f64) -> [f64;3] {
+    let (s,c) = (-angle*v).sin_cos();
+    [c*x[0]-s*x[1],s*x[0]+c*x[1],x[2]-rise*v]
+}
+
+/// **A line grazing a hyperboloid touches it, read once** (`query::curve_surface`'s certified
+/// reading of a line against a surface of revolution, `line_revolution`): the hyperboloid a leaning
+/// edge turns into, `ρ = √(10² + k² z²)`, its meridian the rational conic the closed class lays
+/// (`closed::meridian_arc`'s), and lines tangent to it at points of several heights, leaning in
+/// its tangent plane off the horizontal by several angles (none a ruling). Each is one touch at
+/// its point: a double root, which rounding can part into two simple ones a hair apart, read as a
+/// crossing once cut the plane face of a leaning bar turned through a ring sector where its edge
+/// only grazed the hyperboloid, and left a vertex on another edge's chord its mesh refused.
+#[test]
+fn a_line_grazing_a_hyperboloid_touches_it_once() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::nurbs::BSpline;
+    use gcs_core::brep::query::{curve_surface,Meets};
+    let (throat,k) = (10.,20f64.to_radians().tan());
+    let rho = |z: f64| (throat*throat+k*k*z*z).sqrt();
+    let (za,zb) = (-1.,1.);
+    let (a,b) = ([rho(za),za],[rho(zb),zb]);
+    // the conic through the meridian's ends, its end tangents' meeting and its shoulder
+    let slope = |z: f64| k*k*z/rho(z);
+    let (ta,tb) = ([slope(za),1.],[slope(zb),1.]);
+    let det = -ta[0]*tb[1]+ta[1]*tb[0];
+    let t = (-(b[0]-a[0])*tb[1]+(b[1]-a[1])*tb[0])/det;
+    let m = [a[0]+t*ta[0],a[1]+t*ta[1]];
+    let mid = [0.5*(a[0]+b[0]),0.5*(a[1]+b[1])];
+    let (dr,dz) = (m[0]-mid[0],m[1]-mid[1]);
+    let (qa,qb,qc) = (dr*dr-k*k*dz*dz,2.*(mid[0]*dr-k*k*mid[1]*dz),mid[0]*mid[0]-throat*throat-k*k*mid[1]*mid[1]);
+    let u = gcs_core::roots::quadratic(qa,qb,qc).into_iter().find(|u| *u > 0. && *u < 1.).unwrap();
+    let at = |r: f64,z: f64| [r,0.,z];
+    let conic = BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],vec![at(a[0],a[1]),at(m[0],m[1]),at(b[0],b[1])],vec![1.,u/(1.-u),1.]).unwrap();
+    let edges = vec![ProfileEdge::Spline(std::sync::Arc::new(conic)),ProfileEdge::Line {a:at(b[0],zb),b:at(0.,zb)},
+        ProfileEdge::Line {a:at(0.,zb),b:at(0.,za)},ProfileEdge::Line {a:at(0.,za),b:at(a[0],za)}];
+    let solid = revolve(&Profile {origin:[0.;3],normal:[0.,1.,0.],names:Vec::new(),loops:vec![edges]},[0.;3],[0.,0.,1.],
+        std::f64::consts::TAU).unwrap();
+    let sheet = &solid.faces.iter().find(|f| f.surface.kind() == "revolution").expect("a hyperboloid").surface;
+    let tol = 1e-6;
+    let mut read = 0;
+    for z in [-0.6385066634855452,-0.3,0.,0.25,0.6385066634855529] {
+        for angle in [15f64,40.,65.,80.] {
+            // at (ρ(z), 0, z): the tangent plane holds y and the meridian's tangent (ρ'(z), 0, 1)
+            let p = [rho(z),0.,z];
+            let along = unit([slope(z),0.,1.]);
+            let (s,c) = angle.to_radians().sin_cos();
+            let d = [c*0.+s*along[0],c*1.+s*along[1],s*along[2]];
+            let line = Curve::Line {p:[p[0]-0.7*d[0],p[1]-0.7*d[1],p[2]-0.7*d[2]],d};
+            match curve_surface(&line,[0.,1.4],sheet,tol) {
+                Meets::At(found) => {
+                    assert_eq!(found.len(),1,"z {z}, {angle}°: {found:?}");
+                    let (t,touch) = found[0];
+                    assert!(touch,"z {z}, {angle}°: read as a crossing at {t}");
+                    assert!((t-0.7).abs() <= 1e-3,"z {z}, {angle}°: at {t}");
+                }
+                Meets::Along => panic!("z {z}, {angle}°: along"),
+            }
+            read += 1;
+        }
+    }
+    assert_eq!(read,20);
+}
+
+/// **Every surface the closed class emits locates a point exactly** (#777 V1's gate): a ray's
+/// crossings with each kind of candidate face are certified, never sampled — planes, a cylinder, a
+/// cone, a ball and a torus, a hyperboloid a leaning edge turns into (a surface of revolution of a
+/// conic, `closed::revolved`), an oblique cylinder (a cylinder's affine image), and the sheets a
+/// screw sweeps: a level line's (a screwed triangle, a thin ramp), a level circle's (a screwed
+/// disc, thinner) and a leaning circle's (a ball's pipe). Each solid's point location
+/// (`Located::solid_place`) is held to its membership computed directly from its definition, apart
+/// from the kernel, at seeded points crowded about its boundary and its thin sheets: no point wrong,
+/// none `On`, and no search sampled (the profile's count, `util::meter`).
+#[test]
+fn every_surface_the_closed_class_emits_locates_points_exactly() {
+    use gcs_core::brep::build::{cone,disc,prism,screwed,sphere,torus,Profile,ProfileEdge};
+    use gcs_core::brep::query::{Located,Place};
+    use gcs_core::meter::{self as meter,Budget,Meter};
+    use std::f64::consts::TAU;
+    let hyperboloid = gcs_core::brep::swept::closed::revolved([0.;3],[0.,0.,1.],[2.,0.,0.],unit([0.,1.,1.]),[-1.,1.5],1e-9).unwrap().remove(0);
+    // the cylinder of radius 1 about the z axis, 2 tall, sheared so its top stands 1.5 along x
+    let shear = gcs_core::brep::affine::Affine::new([[1.,0.,0.75],[0.,1.,0.],[0.,0.,1.]],[0.;3]).unwrap();
+    let oblique = prism(&disc([0.;3],[0.,0.,1.],1.),0.,2.).unwrap().mapped(&shear);
+    // a level triangle 10 out, screwed 280° rising half a unit a turn: a ramp a few hundredths thick
+    let (theta,lead) = (280f64.to_radians(),0.5);
+    let rise = lead/TAU*theta;
+    let tri = [[9.,-0.4,0.],[11.,-0.4,0.],[10.,0.5,0.]];
+    let triangle = Profile {origin:tri[0],normal:[0.,0.,1.],names:Vec::new(),loops:vec![(0..3).map(|k| ProfileEdge::Line {a:tri[k],b:tri[(k+1)%3]}).collect()]};
+    let ramp_line = screwed(&triangle,[0.;3],[0.,0.,1.],theta,rise).unwrap();
+    let ramp_circle = screwed(&disc([10.,0.,0.],[0.,0.,1.],1.),[0.;3],[0.,0.,1.],theta,rise).unwrap();
+    // a ball's great circle square to its centre's velocity, 10 out, screwed 1.5 rad climbing half a
+    // unit a radian: the pipe about the centre's helix
+    let (turn,climb) = (1.5,0.75);
+    let n = unit([0.,10.,0.5]);
+    let pipe = screwed(&disc([10.,0.,0.],n,1.),[0.;3],[0.,0.,1.],turn,climb).unwrap();
+    // membership from each definition: `Some(inside)`, or none within a hair of its boundary
+    let hair = 1e-6;
+    let sure = |margin: f64,inside: bool| (margin.abs() > hair).then_some(inside);
+    let rho = |p: [f64;3]| p[0].hypot(p[1]);
+    let in_triangle = |q: [f64;3]| -> f64 {
+        // the least of the signed distances in from each side
+        (0..3).map(|k| { let (a,b) = (tri[k],tri[(k+1)%3]); let (ex,ey) = (b[0]-a[0],b[1]-a[1]); let l = ex.hypot(ey);
+            (ex*(q[1]-a[1])-ey*(q[0]-a[0]))/l }).fold(f64::INFINITY,f64::min)
+    };
+    // a level section at height 0 screwed: the point screwed back by the turn its height gives,
+    // inside the section; past either end's level, outside
+    let screwed_level = |p: [f64;3],inside: &dyn Fn([f64;3]) -> f64| -> Option<bool> {
+        let v = p[2]/rise;
+        if v < 0. { return sure(p[2],false) }
+        if v > 1. { return sure(p[2]-rise,false) }
+        let m = inside(screwed_back(p,theta,rise,v));
+        if m > 0. { sure(m.min(p[2]).min(rise-p[2]),true) } else { sure(m,false) }
+    };
+    let in_pipe = |p: [f64;3]| -> Option<bool> {
+        // the turns `v` that bring `p` into the disc's plane, sampled finely and each settled
+        let phi = |v: f64| { let q = screwed_back(p,turn,climb,v); n[0]*(q[0]-10.)+n[1]*q[1]+n[2]*q[2] };
+        let mut found: Option<f64> = None;
+        let steps = 4000;
+        for k in 0..steps {
+            let (a,b) = (k as f64/steps as f64,(k+1) as f64/steps as f64);
+            let (fa,fb) = (phi(a),phi(b));
+            if fa*fb > 0. { continue }
+            let (mut l,mut r) = (a,b);
+            for _ in 0..80 { let m = 0.5*(l+r); if (phi(m) < 0.) == (fa < 0.) { l = m } else { r = m } }
+            let q = screwed_back(p,turn,climb,0.5*(l+r));
+            let d = (q[0]-10.).hypot(q[1]).hypot(q[2])-1.;
+            found = Some(found.map_or(d,|f: f64| f.min(d)));
+        }
+        // beyond either end the half-spaces past the end discs hold nothing
+        let ends = phi(0.).abs().min(phi(1.).abs());
+        match found { Some(d) => sure(d.abs().min(if d < 0. { ends } else { f64::INFINITY }),d < 0.),None => sure(ends,false) }
+    };
+    let cases: Vec<(&str,Brep,Box<dyn Fn([f64;3]) -> Option<bool>>)> = vec![
+        ("a block",crate::brep::block([0.;3],[2.,1.,1.5]),Box::new(|p| {
+            let m = (0..3).map(|k| p[k].min([2.,1.,1.5][k]-p[k])).fold(f64::INFINITY,f64::min); sure(m,m > 0.) })),
+        ("a drum",prism(&disc([0.;3],[0.,0.,1.],1.),0.,2.).unwrap(),Box::new(|p| { let m = (1.-rho(p)).min(p[2]).min(2.-p[2]); sure(m,m > 0.) })),
+        ("a frustum",cone([0.;3],[0.,0.,1.],1.,0.4,1.5).unwrap(),Box::new(|p| {
+            let m = (1.-0.4*p[2]-rho(p)).min(p[2]).min(1.5-p[2]); sure(m,m > 0.) })),
+        ("a ball",sphere([0.5,0.,0.],[0.,0.,1.],1.).unwrap(),Box::new(|p| { let m = 1.-(p[0]-0.5).hypot(p[1]).hypot(p[2]); sure(m,m > 0.) })),
+        ("a ring",torus([0.;3],[0.,0.,1.],2.,0.3).unwrap(),Box::new(|p| { let m = 0.3-(rho(p)-2.).hypot(p[2]); sure(m,m > 0.) })),
+        ("a hyperboloid",hyperboloid,Box::new(|p| { let m = (4.+p[2]*p[2]).sqrt()-rho(p); let m = m.min(p[2]+1.).min(1.5-p[2]); sure(m,m > 0.) })),
+        ("an oblique cylinder",oblique,Box::new(|p| { let q = [p[0]-0.75*p[2],p[1],p[2]]; let m = (1.-rho(q)).min(p[2]).min(2.-p[2]); sure(m,m > 0.) })),
+        ("a screwed line's ramp",ramp_line,Box::new(move |p| screwed_level(p,&in_triangle))),
+        ("a screwed rim's ramp",ramp_circle,Box::new(move |p| screwed_level(p,&|q| 1.-(q[0]-10.).hypot(q[1])))),
+        ("a ball's pipe",pipe,Box::new(in_pipe)),
+    ];
+    for (what,solid,member) in cases {
+        let at = Located::new(&solid,1e-6);
+        let (lo,hi) = solid.bounds();
+        let mut rng = gcs_core::rng::Rng::new(11);
+        let m = Meter::new(Budget::UNLIMITED);
+        let (mut held,mut checked) = (0,0);
+        // points over the box, and points crowded within a few hundredths of the boundary: a point of
+        // the box nudged toward a vertex-free spot of a face along its normal
+        let faces: Vec<(usize,[f64;3])> = solid.faces.iter().enumerate().flat_map(|(fi,f)| {
+            let [[u0,u1],[v0,v1]] = gcs_core::brep::boolean::face_parameters(&solid,fi);
+            (1..8).flat_map(move |i| (1..8).map(move |j| (fi,f.surface.point([u0+(u1-u0)*i as f64/8.,v0+(v1-v0)*j as f64/8.]))))
+        }).filter(|&(fi,p)| at.face_place(fi,p) == Place::In).collect();
+        for k in 0..600 {
+            let p: [f64;3] = if k%2 == 0 || faces.is_empty() { std::array::from_fn(|i| rng.uniform(lo[i]-0.1,hi[i]+0.1)) } else {
+                let (fi,q) = faces[(rng.uniform(0.,faces.len() as f64) as usize).min(faces.len()-1)];
+                let nn = solid.faces[fi].outward(q).unwrap();
+                // within a few hundredths of it, or of a thin ramp's few thousandths
+                let s = rng.uniform(-1.,1.)*if k%4 == 1 { 0.03 } else { 0.003 };
+                std::array::from_fn(|i| q[i]+s*nn[i])
+            };
+            let Some(inside) = member(p) else { continue };
+            checked += 1;
+            let place = meter::within(&m,|| at.solid_place(p));
+            assert!(place != Place::On && (place == Place::In) == inside,"{what}: at {p:?} {place:?}, its definition {inside}");
+            if inside { held += 1 }
+        }
+        assert!(checked > 400 && held > 40,"{what}: {checked} points read, {held} inside");
+        assert_eq!(m.sampled(),0,"{what}: a search sampled\n{}",m.report());
+    }
+}
+
+/// **A level rim's sheet in closed form and by the general search agree** (#777 M1, M3: a closed form
+/// kept as a fast path is held to the general method): the lines through a screwed rim's thin ramp
+/// meet its sheet at the same points by `line_screwed_circle`'s bound on one unknown as by the
+/// three-unknown search (`query::curve_surface_searched`), each to the tolerance — and the closed
+/// form is the faster, measured here and said.
+#[test]
+fn a_rims_sheet_in_closed_form_is_held_to_the_general_search() {
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::query::{curve_surface,curve_surface_searched,Meets};
+    let ramp = ramp(0.5,280f64.to_radians(),0.);
+    let sheet = ramp.faces.iter().find(|f| f.surface.kind() == "blend").unwrap().surface.clone();
+    let mut rng = gcs_core::rng::Rng::new(5);
+    let (mut fast,mut general,mut met) = (std::time::Duration::ZERO,std::time::Duration::ZERO,0);
+    for _ in 0..60 {
+        let a = rng.uniform(0.,4.5);
+        let p = [10.*a.cos()+rng.uniform(-1.5,1.5),10.*a.sin()+rng.uniform(-1.5,1.5),rng.uniform(-0.6,0.2)];
+        let d = unit([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-0.2,0.2)]);
+        let line = Curve::Line {p,d};
+        let clock = std::time::Instant::now();
+        let Meets::At(one) = curve_surface(&line,[-3.,3.],&sheet,1e-7) else { panic!("along") };
+        fast += clock.elapsed();
+        let clock = std::time::Instant::now();
+        let Some(Meets::At(two)) = curve_surface_searched(&line,[-3.,3.],&sheet,1e-7) else { panic!("the search gave up") };
+        general += clock.elapsed();
+        assert_eq!(one.len(),two.len(),"from {p:?} along {d:?}: {one:?} against {two:?}");
+        for (x,y) in one.iter().zip(&two) { assert!((x.0-y.0).abs() <= 1e-6,"from {p:?} along {d:?}: {one:?} against {two:?}") }
+        met += one.len();
+    }
+    assert!(met > 20,"{met} crossings");
+    eprintln!("a screwed rim's sheet against 60 lines: in closed form {fast:?}, by the general search {general:?}");
+}
+
+/// **A build past its budget refuses by name, within it** (#777 V3's gate): the ring turned about
+/// an axis along its own, its membership reads held to a fortieth of what it takes, is refused in a
+/// fraction of its time, naming the stage that ran away and a point — the same way at every run,
+/// the budget counted in steps. Within the default budget it builds.
+#[test]
+fn a_build_past_its_budget_refuses_by_name_within_it() {
+    use gcs_core::brep::swept::closed::{closed_within,Unbuilt,BUDGET};
+    use gcs_core::meter::{Budget,Stage};
+    let tool = gcs_core::brep::build::torus([10.,0.,0.],[0.,0.,1.],1.,0.3).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.5,advance:0.});
+    let tight = Budget::UNLIMITED.with(Stage::Membership,20_000);
+    let refused = |_: ()| {
+        let clock = std::time::Instant::now();
+        let r = closed_within(&tool,&path,[0.,1.],0.002,1e-6,tight);
+        (r,clock.elapsed())
+    };
+    let (first,took) = refused(());
+    let Err(Unbuilt::Budget {stage,at,what}) = first else { panic!("{first:?}") };
+    assert_eq!(stage,Stage::Membership);
+    assert!(at.iter().all(|x| x.is_finite()) && !what.is_empty(),"{at:?} {what}");
+    assert!(took.as_secs_f64() < 2.,"refused after {took:?}");
+    let (again,_) = refused(());
+    assert_eq!(again.err(),Some(Unbuilt::Budget {stage,at,what}),"refused the same way again");
+    assert!(BUDGET.0[Stage::Membership as usize] > 20_000);
+}
+
+/// A box about `b`'s, a tenth of its size wider each way: a domain to judge a closed build in.
+fn box_about(b: &Brep) -> Brep {
+    let (lo,hi) = b.bounds();
+    let pad = 0.1*(0..3).map(|k| hi[k]-lo[k]).fold(0.,f64::max);
+    crate::brep::block(lo.map(|x| x-pad),hi.map(|x| x+pad))
+}
+
+/// `b` turned inside out: every face the other side, its loops run the other way.
+fn inside_out(b: &Brep) -> Brep {
+    let mut out = b.clone();
+    for f in &mut out.faces {
+        f.reversed = !f.reversed;
+        f.loops = f.loops.drain(..).map(gcs_core::brep::topo::reverse_loop).collect();
+    }
+    out
+}
+
+/// **A solid built wrong is refused at a witness, never returned** (#777 V2's gate): the three ways
+/// a closed build was returned wrong on #776, recreated on a fast case each and judged by the
+/// sweep's definition (`closed::judge`) — a ball's pipe turned inside out (as a drum screwed half a
+/// millimetre a turn came out at −427), the pipe missing a piece (a drum cut from a ring sector
+/// came out at 54.69 of 62.57), and a groove cut with more taken than the bar sweeps (a ball-end
+/// mill screwed through the sector removed 14.4 of 12.0). Each is refused at a point the solid and
+/// the definition disagree on; what the build itself returned is judged right.
+#[test]
+fn a_solid_built_wrong_is_refused_at_a_witness() {
+    use gcs_core::brep::swept::closed::{cut_from,judge,Unbuilt};
+    use std::f64::consts::TAU;
+    let tool = gcs_core::brep::build::sphere([10.,0.,0.],[0.,0.,1.],1.).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.5,advance:TAU*0.5*1.5});
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    let solid = Solid::new(&tool,0.002,1.).unwrap();
+    let swept = Swept {tool:&solid,path:&path,roll:[0.,1.]};
+    let domain = box_about(&built);
+    assert_eq!(judge(&built,&swept,&domain,None,&[],1e-6),Ok(()));
+    let refused = |b: &Brep,blank: Option<&Brep>,swept: &Swept,domain: &Brep,what: &str| match judge(b,swept,domain,blank,&[],1e-6) {
+        Err(Unbuilt::Wrong {at,..}) => assert!(at.iter().all(|x| x.is_finite()),"{what}: at {at:?}"),
+        other => panic!("{what}: {other:?}"),
+    };
+    refused(&inside_out(&built),None,&swept,&domain,"turned inside out");
+    // a piece of the pipe missing: a block taken out across its middle, where its centre's helix
+    // stands at (7.3, 6.8, 0.375)
+    let missing = combined(&built,&block([6.,5.5,-1.],[8.5,8.2,2.]),Op::Cut,1e-6).unwrap();
+    assert!(volume(&missing) < volume(&built)-1.);
+    refused(&missing,None,&swept,&domain,"missing a piece");
+    // a groove cut with more taken than the bar sweeps
+    let blank = block([0.,0.,0.],[6.,2.,2.]);
+    let bar = block([1.,0.5,1.5],[2.,1.5,3.]);
+    let slide = slide([3.,0.,0.]);
+    let cut = cut_from(&blank,&bar,&slide,[0.,1.],0.002,1e-6).unwrap();
+    let bar_solid = Solid::new(&bar,0.002,1.).unwrap();
+    let bar_swept = Swept {tool:&bar_solid,path:&slide,roll:[0.,1.]};
+    assert_eq!(judge(&cut,&bar_swept,&blank,Some(&blank),&[],1e-6),Ok(()));
+    let over = combined(&cut,&block([1.5,0.2,0.8],[4.5,1.8,1.6]),Op::Cut,1e-6).unwrap();
+    assert!(volume(&over) < volume(&cut)-0.5);
+    refused(&over,Some(&blank),&bar_swept,&blank,"cut too deep");
+}
+
+/// **A failed build's arrangement is written, read back whole, replayed alone and reduced** (#777
+/// V5): the candidates a closed build splits its domain by — a screwed rim's ramp, a hyperboloid, a
+/// torus, an oblique cylinder, a block — each written and read back bit for bit (`swept::dump`);
+/// their arrangement replayed from the files has the cells the arrangement built directly has; and
+/// a failure that needs two of them is reduced to those two.
+#[test]
+fn a_failed_builds_arrangement_is_dumped_replayed_and_reduced() {
+    use gcs_core::brep::boolean::arrangement_within;
+    use gcs_core::brep::swept::dump::{dump,load,read,reduce,write};
+    use gcs_core::brep::build::{disc,prism};
+    let shear = gcs_core::brep::affine::Affine::new([[1.,0.,0.5],[0.,1.,0.],[0.,0.,1.]],[0.;3]).unwrap();
+    let candidates: Vec<Brep> = vec![
+        ramp(2.,1.5,0.),
+        gcs_core::brep::swept::closed::revolved([0.;3],[0.,0.,1.],[9.,0.,0.],unit([0.,1.,1.]),[-1.,1.],1e-9).unwrap().remove(0),
+        gcs_core::brep::build::torus([10.,0.,0.],[0.,0.,1.],1.,0.3).unwrap(),
+        prism(&disc([10.,1.,-1.],[0.,0.,1.],0.5),0.,2.).unwrap().mapped(&shear),
+        block([9.,-2.,-0.2],[12.,2.,0.2]),
+    ];
+    for c in &candidates {
+        let text = write(c).unwrap();
+        let back = read(&text).unwrap();
+        assert_eq!(write(&back).unwrap(),text);
+        assert_eq!(volume(&back),volume(c));
+    }
+    let domain = block([7.,-3.,-1.5],[13.,3.,1.5]);
+    let refs: Vec<&Brep> = candidates.iter().collect();
+    let dir = std::env::temp_dir().join(format!("sweep-dump-{}",std::process::id()));
+    dump(&dir,&domain,&refs,1e-6,"a test").unwrap();
+    let loaded = load(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let direct = arrangement_within(&domain,&refs[..3],1e-6).unwrap();
+    let replayed = loaded.replay(&[0,1,2]).unwrap();
+    assert_eq!(replayed.cells().unwrap().len(),direct.cells().unwrap().len());
+    // a failure that needs the ramp and the torus both: reduced to those two
+    let fails = |r: &Result<gcs_core::brep::complex::Complex,String>| r.as_ref().is_ok_and(|c| {
+        let names: std::collections::BTreeSet<usize> = c.origins.iter().flatten().map(|o| o.operand).collect();
+        let kinds: std::collections::BTreeSet<&str> = c.b.faces.iter().map(|f| f.surface.kind()).collect();
+        names.len() > 1 && kinds.contains("blend") && kinds.contains("torus")
+    });
+    assert_eq!(reduce(&loaded,&fails),vec![0,2]);
+}
+
+/// **The ball-end mill screwed through a ring sector is cut right, or refused by name within its
+/// budget** (#777 V3's gate, and the case M3 and M4 were for): a mill of radius 1, its ball's centre
+/// 10 from a screw's axis and its side 3 tall above it, screwed 1.5 rad climbing half a unit a
+/// radian through a sixth of a ring 8 to 12 across and 4 high, which it passes wholly across. On
+/// #776 this run stalled for hours, and a build of it removed 14.4 against 12.0; now it is held to
+/// the volume it removes apart from the kernel, or refused naming the stage that ran away — never
+/// hung, never wrong. In helical coordinates `(ρ, ψ, ζ = z − kψ)` the screw is a shift in `ψ`, so
+/// a point of the sector is removed where the helix through it meets the mill: the section of such
+/// helices, `(ρ, ζ)` on a fine grid (the side's where `|ρ e^{iψ} − d| ≤ 1` for some `ψ` whose height
+/// is on it, the ball's within 1 of the centre's helix), each weighed by `ρ` and by the angle of the
+/// sector over which its helix stays within the sector's heights.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier: the ball-end mill screwed through a sector")]
+fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    use gcs_core::brep::swept::closed::{cut_from,Unbuilt};
+    use std::f64::consts::{FRAC_PI_2,PI};
+    let (d,r,h,turn,k) = (10.,1.,3.,1.5,0.5);
+    let at = |x: f64,z: f64| [d+x,0.,z];
+    let edges = vec![ProfileEdge::Arc {frame:Frame::new(at(0.,0.),[0.,-1.,0.],[1.,0.,0.]),r,span:Some([-FRAC_PI_2,0.])},
+        ProfileEdge::Line {a:at(r,0.),b:at(r,h)},ProfileEdge::Line {a:at(r,h),b:at(0.,h)},ProfileEdge::Line {a:at(0.,h),b:at(0.,-r)}];
+    let mill = revolve(&Profile {origin:at(0.,0.),normal:[0.,1.,0.],names:Vec::new(),loops:vec![edges]},[d,0.,0.],[0.,0.,1.],
+        2.*PI).unwrap();
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let rect = [f.at([8.,0.,-2.]),f.at([12.,0.,-2.]),f.at([12.,0.,2.]),f.at([8.,0.,2.])];
+    let profile = Profile {origin:rect[0],normal:f.y,names:Vec::new(),loops:vec![(0..4).map(|j| ProfileEdge::Line {a:rect[j],b:rect[(j+1)%4]}).collect()]};
+    let sector = revolve(&profile,[0.;3],[0.,0.,1.],PI/3.).unwrap().moved(&gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],-PI/6.));
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:k*std::f64::consts::TAU});
+    let roll = [-turn/2.,turn/2.];
+    // apart from the kernel: whether the helix (ρ, ζ) meets the mill, and over what angle of the
+    // sector it stays within the sector's heights
+    let meets = |rho: f64,zeta: f64| -> bool {
+        let c = (rho*rho+d*d-r*r)/(2.*rho*d);
+        if c <= 1. {
+            let a = c.max(-1.).acos();
+            if zeta+k*a >= 0. && zeta-k*a <= h { return true }
+        }
+        let dist = |psi: f64| { let (sn,cs) = psi.sin_cos(); (rho*cs-d).hypot(rho*sn).hypot(zeta+k*psi) };
+        let (mut lo,mut hi) = (-0.3,0.3);
+        for _ in 0..80 { let (m1,m2) = (lo+(hi-lo)*0.382,lo+(hi-lo)*0.618); if dist(m1) < dist(m2) { hi = m2 } else { lo = m1 } }
+        dist(0.5*(lo+hi)) <= r
+    };
+    let within = |zeta: f64| -> f64 {
+        // ψ in [−π/6, π/6] with −2 ≤ ζ + kψ ≤ 2
+        let (lo,hi) = ((-2.-zeta)/k,(2.-zeta)/k);
+        (hi.min(PI/6.)-lo.max(-PI/6.)).max(0.)
+    };
+    let (n,m) = (1000,2400);
+    let (z0,z1) = (-2.-k*PI/6.,2.+k*PI/6.);
+    let mut removed = 0.;
+    for i in 0..n { for j in 0..m {
+        let (rho,zeta) = (d-1.1+2.2*(i as f64+0.5)/n as f64,z0+(z1-z0)*(j as f64+0.5)/m as f64);
+        if meets(rho,zeta) { removed += rho*within(zeta) }
+    } }
+    let removed = removed*(2.2/n as f64)*((z1-z0)/m as f64);
+    let blank = volume(&sector);
+    eprintln!("the ball-end mill through a sector: removes {removed} apart from the build");
+    let clock = std::time::Instant::now();
+    match cut_from(&sector,&mill,&path,roll,0.002,1e-6) {
+        Ok(cut) => {
+            eprintln!("cut in {:?}: removes {}",clock.elapsed(),blank-volume(&cut));
+            assert!((blank-volume(&cut)-removed).abs() <= 1e-3*removed,"removes {} against {removed}",blank-volume(&cut));
+            agrees_cut_over(&cut,&sector,&mill,&path,roll);
+        }
+        Err(e) => {
+            eprintln!("refused in {:?}: {e:?}",clock.elapsed());
+            assert!(matches!(e,Unbuilt::Budget {..}),"refused other than by its budget: {e:?}");
+        }
+    }
+}
+
+/// **The ball-end mill screwed through a ring sector, reduced to its Boolean, holds every cell**
+/// (#777 M4's gate): a ball of radius 1 on a mill's axis 10 from a screw's, screwed 1.5 rad climbing
+/// half a unit a radian, sweeps the pipe about its centre's helix; the mill's side screws into the
+/// cylinder of radius 11 about the axis, which the pipe touches from inside along the helix of the
+/// ball's outer equator, so the cells beside that touch are cusp-thin; and the blank is a sixth of a
+/// ring 8 to 12 across. Their arrangement (`boolean::selected`) is read cell by cell, each by its
+/// own exact point location: the pipe within the sector, the cylinder's part within it the pipe
+/// leaves, and the sector's part neither holds. Apart from the kernel, in helical coordinates
+/// `(ρ, ψ, ζ = z − kψ)` the screw is a shift in `ψ`, so the pipe within the sector (which it passes
+/// wholly across) is the sector's angle times its meridian section's polar integral `∫∫ ρ dρ dz`,
+/// summed here on a fine grid of the section, each point in the pipe where its distance from the
+/// helix is under the radius.
+#[test]
+fn the_ball_end_mill_screwed_through_a_sector_reduced_to_its_boolean_holds_every_cell() {
+    use gcs_core::brep::boolean::selected;
+    use gcs_core::brep::build::{disc,prism,revolve,screwed,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    use std::f64::consts::PI;
+    let (d,r,turn,k) = (10.,1.,1.5,0.5);
+    // the pipe: the ball's great circle square to its centre's velocity, screwed from 0.75 rad
+    // before the sector to 0.75 after, the sector standing from −π/6 to π/6
+    let start: f64 = -0.75;
+    let (s,c) = start.sin_cos();
+    let centre = [d*c,d*s,k*start];
+    let velocity = unit([-d*s,d*c,k]);
+    let pipe = screwed(&disc(centre,velocity,r),[0.;3],[0.,0.,1.],turn,k*turn).unwrap();
+    let side = prism(&disc([0.,0.,-3.],[0.,0.,1.],d+r),0.,6.).unwrap();
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let at = |x: f64,z: f64| f.at([x,0.,z]);
+    let rect = [at(8.,-2.),at(12.,-2.),at(12.,2.),at(8.,2.)];
+    let profile = Profile {origin:rect[0],normal:f.y,names:Vec::new(),loops:vec![(0..4).map(|j| ProfileEdge::Line {a:rect[j],b:rect[(j+1)%4]}).collect()]};
+    let sector = revolve(&profile,[0.;3],[0.,0.,1.],PI/3.).unwrap().moved(&gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],-PI/6.));
+    // the meridian section's polar integral: points (ρ, z) of the half-plane ψ = 0 within `r` of the
+    // helix (ψ, k ψ) at radius d, its nearest point found over ψ near 0
+    let near = |rho: f64,z: f64| -> f64 {
+        let dist = |psi: f64| { let (sn,cs) = psi.sin_cos(); (rho-d*cs).hypot(d*sn).hypot(z-k*psi) };
+        let (mut a,mut b) = (-0.3,0.3);
+        for _ in 0..80 { let (m1,m2) = (a+(b-a)*0.382,a+(b-a)*0.618); if dist(m1) < dist(m2) { b = m2 } else { a = m1 } }
+        dist(0.5*(a+b))
+    };
+    let n = 1200;
+    let mut moment = 0.;
+    for i in 0..n { for j in 0..n {
+        let (rho,z) = (d-1.2+2.4*(i as f64+0.5)/n as f64,-1.2+2.4*(j as f64+0.5)/n as f64);
+        if near(rho,z) < r { moment += rho }
+    } }
+    let moment = moment*(2.4/n as f64)*(2.4/n as f64);
+    let in_sector = PI/3.*moment;
+    let sector_volume = PI/3.*(12.*12.-8.*8.)/2.*4.;
+    let side_in_sector = PI/3.*((d+r)*(d+r)-64.)/2.*4.;
+    let part = |keep: &dyn Fn(&[bool]) -> bool| volume(&selected(&[&pipe,&side,&sector],keep,1e-6).unwrap().brep);
+    let pipe_part = part(&|m| m[0] && m[2]);
+    let side_part = part(&|m| !m[0] && m[1] && m[2]);
+    let rest = part(&|m| !m[0] && !m[1] && m[2]);
+    // the quadrature's own error, a grid of 1200 on the section, about 1e-5 of it
+    assert!((pipe_part-in_sector).abs() <= 1e-4*in_sector,"the pipe within the sector {pipe_part} against {in_sector}");
+    assert!((side_part-(side_in_sector-pipe_part)).abs() <= 1e-6*side_in_sector,"the side's part {side_part} against {}",side_in_sector-pipe_part);
+    assert!((rest-(sector_volume-side_in_sector)).abs() <= 1e-6*sector_volume,"the rest {rest} against {}",sector_volume-side_in_sector);
 }

@@ -995,8 +995,9 @@ pub fn lofted(origin: V,n: V,h: [f64;2],loops: Vec<Vec<crate::nurbs::Net>>) -> R
     let mut b = Brep::default();
     let row = |net: &crate::nurbs::Net,i: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),
         poles:net.poles[i].clone(),weights:None})) };
+    // (a rational net's column carries its weights: a vault's arc stays the arc its face is)
     let column = |net: &crate::nurbs::Net,j: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.du,knots:net.uknots.clone(),
-        poles:net.poles.iter().map(|r| r[j]).collect(),weights:None})) };
+        poles:net.poles.iter().map(|r| r[j]).collect(),weights:net.weights.as_ref().map(|w| w.iter().map(|r| r[j]).collect())})) };
     let line = |a: [f64;2],z: [f64;2]| Pcurve::Line {a,b:z};
     let (mut bottom_loops,mut top_loops) = (Vec::new(),Vec::new());
     for nets in &loops {

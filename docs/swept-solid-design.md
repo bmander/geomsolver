@@ -351,8 +351,29 @@ it. It stays as the fast path where #699 D says so.
    slice by each cylinder (within 2e-5 of the bar's closed form) — a membership Monte Carlo of the
    leaning block (7.73 ± 0.07) agreed with it to two standard deviations, and the patches' build
    (6.08) with neither. So the leaning screw waits on the arrangement holding a face with a slit,
-   or a sheet bounded inside the domain (F5's A1, non-manifold topology), and is refused as before
-   (`Unbuilt::Leaning`).
+   or a sheet bounded inside the domain (F5's A1, non-manifold topology), and was refused
+   (`Unbuilt::Leaning`, since removed).
+   *Built (#777 M5)*: way (2) is the road. Under a screw a leaning edge, and a leaning face's
+   contact line (its points where `n · v(x) = 0`, a line of its plane), each screw into a patch of
+   the ruled helicoid over the segment and the roll a twentieth past each (`closed::Cutter::Patch`,
+   `closed::patch`), its rim inside the domain; `reads` no longer refuses them. The arrangement
+   holds the patches — no piece fails to close — its cells classified across the cores and the
+   sheet search pruned by Krawczyk's preconditioned exclusion. Two sheets of one screw (a patch and
+   its neighbour's sheet, two patches) meet in helices, the rails of the points of the one's line
+   the screw carries onto the other's sheet: three equations in the line's parameter, the other
+   line's and the turn, isolated with a bound (`ssi::screwed_lines_meeting`, M1's `isolate::solve`),
+   each meeting exact (`Curve::Iso`). Traced and fitted instead, the corner's helix left the start
+   pose's corner a few degrees off, among curves leaving it nearly tangent (the start plane's cut,
+   the level edge's ruling, the cylinder of radius 3's helix 0.0075 away); the face walk ordered
+   them wrongly, a sheet's piece walked the helix both ways, and the judge refused the build at a
+   point it held outside the sweep. The gate,
+   `swept_closed::a_block_leaning_to_a_screws_axis_closes_into_its_helical_sweep` (slow tier, about
+   two minutes), holds the build to 1e-6 of a volume found apart from it: in helical coordinates
+   the sweep's slice by each cylinder is the block's stretched along `ψ`, its area read along lines
+   of constant `ψ` — the union, over the window `[ψ − Θ, ψ]`, of where each vertical line meets the
+   block, clipped exactly. The earlier `Θ ∫ ρ L(ρ) dρ` held only where every helix meets the tool
+   once; this block's slice by a cylinder near its far face falls in two runs (a circle crossing a
+   rectangle's corners), so a helix meets it twice and that form overstates the sweep by 0.8%.
    *Built for a path of pieces* (K1): a sweep distributes over its path's pieces, so the arrangement
    takes every piece's candidates at once and membership reads the pieces one by one. A piece after
    another does not start at the identity: it takes the tool up where the one before left it, a
@@ -428,7 +449,11 @@ recorded above with what was tried:
   candidate — a crossing at 0.06 rad a sampled edge–sheet search placed 0.01 off — and a candidate
   run past the rim leaves a cusp-thin cell between pipe and cylinder whose reading went wrong
   through a ring sector (14.4 removed against 12.0, though a box built it to 1e-14). It waits on
-  an exact meeting of an edge with the pipe, and on cells along a touch read right. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
+  an exact meeting of an edge with the pipe, and on cells along a touch read right. *Since #777*
+  cells along a touch are read right (M4) and touches found generally (M3), and the mill is
+  admitted; screwed through the sector it is refused by its budget, naming the inverse stage at
+  the pipe's sheet (whose inverse map is a general search on every ray and outline), in about two
+  minutes where it had stalled for hours — the case #721 resumes with. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
   round its two meridians in the plane through both axes, turned into tori about the turn's, and
   round its top and bottom rings, kept in their planes. The torus at an end pose and a meridian's
   torus touch round that meridian and cross beside it — in each level both are two circles about

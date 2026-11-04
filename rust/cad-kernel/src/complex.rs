@@ -559,8 +559,13 @@ impl Complex {
     pub fn inside_points(&self,c: usize,capacity: usize) -> Result<Vec<V>,String> {
         let cells = self.cells()?;
         let solid = self.boundary_of(&self.cell_sides(cells,c));
-        if let Ok(found) = super::query::interior(&solid,capacity) { if !found.is_empty() { return Ok(found.into_iter().map(|(p,_)| p).collect()) } }
         let located = Located::new(&solid,self.tol);
+        // the mesh's points, each certified by the cell's own exact point location (#777 M4): a
+        // cusp-thin cell along a touch, whose mesh may fold across it, is read by its definition
+        if let Ok(found) = super::query::interior(&solid,capacity) {
+            let found: Vec<V> = found.into_iter().map(|(p,_)| p).filter(|&p| located.solid_place(p) == Place::In).collect();
+            if !found.is_empty() { return Ok(found) }
+        }
         let size = solid.size();
         let mut out = Vec::new();
         for (fi,f) in solid.faces.iter().enumerate() {

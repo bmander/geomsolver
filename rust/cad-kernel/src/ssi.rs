@@ -8,7 +8,7 @@
 //! for (`unseen`).
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use super::geom::{Curve,Frame,Surface,V};
+use super::geom::{Carry,Curve,Frame,Surface,V};
 use super::plane2;
 use crate::util::space::{add,cross,distance,dot,norm,scale,segment_distance,sub,unit};
 
@@ -611,15 +611,21 @@ fn parallel_touch(a: &Surface,b: &Surface,tol: f64) -> Option<Curve> {
     Some(Curve::Line {p,d:unit(sub(q,p))})
 }
 
+/// Whether two lines' sheets are screwed by one screw: their axes along one another and through
+/// one another within `tol`, and the same pitch.
+fn one_screw(l: &super::geom::ScrewedLine,m: &super::geom::ScrewedLine,tol: f64) -> bool {
+    let off = sub(m.centre,l.centre);
+    norm(cross(l.axis,m.axis)) <= 1e-12 && norm(sub(off,scale(l.axis,dot(off,l.axis)))) <= tol
+        && (l.pitch()-m.pitch()).abs() <= 1e-12*l.pitch().abs().max(m.pitch().abs())
+}
+
 /// **The helix two sheets of one screw meet in, as `u` on the first** (`on`): its line meets the
 /// second's carried to its height, both square to the axis — `Some(None)` where the two lines run
 /// parallel there and apart, so the sheets meet nowhere. `None` where they are not two such sheets,
 /// or are one.
 pub(crate) fn helix_between(on: &super::geom::Blend,by: &super::geom::Blend,tol: f64) -> Option<Option<f64>> {
     let (l,m) = (by.screwed_line()?,on.screwed_line()?);
-    let off = sub(m.centre,l.centre);
-    if norm(cross(l.axis,m.axis)) > 1e-12 || norm(sub(off,scale(l.axis,dot(off,l.axis)))) > tol
-        || (l.pitch()-m.pitch()).abs() > 1e-12*l.pitch().abs().max(m.pitch().abs()) || !l.level() || !m.level() { return None }
+    if !one_screw(&l,&m,tol) || !l.level() || !m.level() { return None }
     // `by`'s line screwed to `on`'s height, and where the two meet in that level
     let turn = dot(sub(m.p0,l.p0),l.axis)/l.pitch();
     let screwed = super::geom::Carry::Screw {center:l.centre,axis:l.axis,angle:turn,advance:l.pitch()*turn};
@@ -632,6 +638,45 @@ pub(crate) fn helix_between(on: &super::geom::Blend,by: &super::geom::Blend,tol:
     }
     // p0 + t run on the line through p along d: (p0 − p + t run) × d = 0
     Some(Some(dot(cross(sub(m.p0,p),d),cr)/dot(cr,cr)))
+}
+
+/// **Two sheets lines screw into by one screw meet in helices** (#777 M5: a leaning edge's patch and
+/// its neighbour's sheet, which share the helix of their common corner): a point of `on`'s line,
+/// `p(u) = p₀ + u Δ`, lies on `by`'s sheet where the screw carries some point of `by`'s line onto it,
+/// `p(u) = screw_θ(q(w))` — three equations in `(u, w, θ)`, `θ` over the turns the two sheets' spans
+/// differ by, isolated with a bound (`util::isolate::solve`, #777 M1): `q` is a line, so the second
+/// derivatives are `|∂²/∂w∂θ| ≤ |Δ_by|` and `|∂²/∂θ²| ≤` its reach from the axis. Each root's
+/// meeting is the helix of `p(u)`, `on`'s rail there (`Curve::Iso`), exact where a trace would fit it
+/// — and a fit's end, leaning a few degrees off, once ordered the curves leaving a corner wrongly.
+/// `None` for sheets of different screws, or where the search gives up.
+fn screwed_lines_meeting(on: &std::sync::Arc<super::geom::Blend>,by: &super::geom::Blend,tol: f64) -> Option<Vec<Curve>> {
+    let (m,l) = (on.screwed_line()?,by.screwed_line()?);
+    if !one_screw(&l,&m,tol) { return None }
+    let (c,k) = (l.centre,l.axis);
+    // the turn `θ` that carries `by`'s line onto a point of `on`'s: `by`'s span less `on`'s
+    let (a0,a1) = (m.angle.min(0.),m.angle.max(0.));
+    let (b0,b1) = (l.angle.min(0.),l.angle.max(0.));
+    let span = [b0-a1,b1-a0];
+    // the screw a radian of turn at a time, `θ` its parameter
+    let screw = Carry::Screw {center:c,axis:k,angle:1.,advance:l.pitch()};
+    let f = |x: [f64;3]| -> ([f64;3],[[f64;3];3]) {
+        let (u,w,t) = (x[0],x[1],x[2]);
+        let p = add(m.p0,scale(m.run,u));
+        let sq = screw.at(add(l.p0,scale(l.run,w)),t);
+        let (rq,dt) = (screw.dir(l.run,t),screw.rate(sq));
+        (std::array::from_fn(|i| p[i]-sq[i]),std::array::from_fn(|i| [m.run[i],-rq[i],-dt[i]]))
+    };
+    let reach = norm(sub(l.p0,c))+norm(l.run);
+    let h = 2.*norm(l.run)+reach;
+    let second = |_: &[[f64;2];3]| [h;3];
+    let size = norm(m.run).max(norm(l.run)).max(reach);
+    let width = tol*1e-2/size.max(1e-300);
+    let near = |x: [f64;3]| { let (v,_) = f(x); norm(v) <= tol };
+    let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,1.],[0.,1.],span],width,&near)?;
+    let mut us: Vec<f64> = found.into_iter().map(|r| r.at[0].clamp(0.,1.)).collect();
+    us.sort_by(f64::total_cmp);
+    us.dedup_by(|y,x| (*y-*x).abs()*norm(m.run) <= tol);
+    Some(us.into_iter().map(|u| Curve::Iso(on.clone(),u)).collect())
 }
 
 /// **Where a sheet a line screws into meets a surface it shares the screw's axis with**, in closed
@@ -703,7 +748,10 @@ fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
             out.push(Curve::SheetCut(std::sync::Arc::new(super::geom::SheetCut::new(blend.clone(),n,h,held)?)));
             Some(out)
         }
-        Surface::Blend(_,ob) => Some(helix_between(ob,blend,tol)?.map(|u| Curve::Iso(ob.clone(),u)).into_iter().collect()),
+        Surface::Blend(_,ob) => match helix_between(ob,blend,tol) {
+            Some(h) => Some(h.map(|u| Curve::Iso(ob.clone(),u)).into_iter().collect()),
+            None => screwed_lines_meeting(ob,blend,tol),
+        },
         _ => None,
     }
 }
@@ -746,9 +794,9 @@ fn screwed_overlap(a: &super::geom::Blend,b: &super::geom::Blend,tol: f64) -> Op
 /// F2c5: a ball's great circle square to its centre's velocity, leaning wherever the screw climbs):
 /// the screw keeps each point's distance from its axis, so the meeting is the helices of the
 /// circle's points at the cylinder's radius, the roots of `|ρ(θ)|² − R²` round the circle — a
-/// trigonometric polynomial of degree two, four roots at most — found where it changes sign and,
-/// where it only touches nought (the circle tangent to the cylinder), at its least. `None` for
-/// any other sheet or cylinder.
+/// trigonometric polynomial of degree two, four roots at most — isolated with a bound on its
+/// derivatives (`util::isolate`), a touch where it only reaches nought (the circle tangent to the
+/// cylinder) placed where its derivative changes sign. `None` for any other sheet or cylinder.
 pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy: &Frame,big: f64,tol: f64) -> Option<Vec<Curve>> {
     let super::geom::Carry::Screw {center,axis,..} = blend.carry else { return None };
     let k = unit(axis);
@@ -762,32 +810,20 @@ pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy
     let r = r.abs();
     let g = |th: f64| { let (sn,cs) = th.dsin_cos(); let d = perp(sub(add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))),center)); dot(d,d)-big*big };
     let u_of = |th: f64| { let t = blend.ta[0]+(th-blend.ta[0]).rem_euclid(std::f64::consts::TAU); (t-blend.ta[0])/span };
-    const N: usize = 512;
+    // `g' = 2 d · P'⊥`, `g'' = 2 (|P'⊥|² + d · P''⊥)`, the circle's point `P` at `r` from its
+    // centre and `d` its offset from the axis, within `D = |(o − c)⊥| + r`
+    let dg = |th: f64| {
+        let (sn,cs) = th.dsin_cos();
+        let d = perp(sub(add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))),center));
+        2.*dot(d,perp(add(scale(f.x,-r*sn),scale(f.y,r*cs))))
+    };
+    let far = norm(perp(sub(f.o,center)))+r;
+    let bound = |_: f64,_: f64| [2.*far*r,2.*(r*r+far*r)];
     let tau = std::f64::consts::TAU;
-    let ths: Vec<f64> = (0..=N).map(|i| tau*i as f64/N as f64).collect();
-    let gs: Vec<f64> = ths.iter().map(|&t| g(t)).collect();
-    let mut roots: Vec<f64> = Vec::new();
-    for i in 0..N {
-        let (a,b) = (ths[i],ths[i+1]);
-        if gs[i] == 0. { roots.push(a); continue }
-        if gs[i]*gs[i+1] < 0. {
-            let (mut lo,mut hi) = (a,b);
-            for _ in 0..100 { let m = 0.5*(lo+hi); if (g(m) < 0.) == (gs[i] < 0.) { lo = m } else { hi = m } }
-            roots.push(0.5*(lo+hi));
-        }
-    }
-    // where it only touches nought: a least of `|g|` within the tolerance, between two greater
-    for i in 1..N {
-        let (p,q,n) = (gs[i-1].abs(),gs[i].abs(),gs[i+1].abs());
-        if !(q <= p && q <= n) || gs[i-1]*gs[i+1] < 0. || gs[i-1]*gs[i] < 0. || gs[i]*gs[i+1] < 0. { continue }
-        let (mut lo,mut hi) = (ths[i-1],ths[i+1]);
-        for _ in 0..100 {
-            let (m1,m2) = (lo+(hi-lo)/3.,hi-(hi-lo)/3.);
-            if g(m1).abs() < g(m2).abs() { hi = m2 } else { lo = m1 }
-        }
-        let th = 0.5*(lo+hi);
-        if g(th).abs() <= 2.*big*tol && !roots.iter().any(|&x| (x-th).abs()*r <= tol) { roots.push(th) }
-    }
+    let mut roots: Vec<f64> = crate::util::isolate::roots(&g,&dg,&bound,[0.,tau],tol*1e-3/r.max(1e-300),&|th| g(th).abs() <= 2.*big*tol)?
+        .into_iter().map(|x| x.at).collect();
+    // the circle closes: a root at its end is the one at its start
+    if roots.len() > 1 && (roots[roots.len()-1]-tau-roots[0]).abs()*r <= tol { roots.pop(); }
     Some(roots.into_iter().map(|th| Curve::Iso(blend.clone(),u_of(th))).collect())
 }
 
@@ -1383,6 +1419,10 @@ pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
     None
 }
 
+/// Whether a trace was refused for two surfaces nearly touching where it marched (`trace_beside`'s
+/// refusal below `SHALLOW`): what a caller reads the meeting's ridges for (#778 T4).
+pub fn refused_as_shallow(e: &str) -> bool { e.contains("nearly touching: their meeting is ill-conditioned") }
+
 /// The curves two surfaces meet in, traced through `seeds` (points on both) within the box
 /// `[lo, hi]`: from each seed not already on a traced curve, a march along `∇a × ∇b` both ways
 /// — each step predicted along the tangent and pulled onto both surfaces, shortened while the
@@ -1451,6 +1491,8 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                     if !touches.iter().any(|u| distance(u.at,t.at) <= 8.*tol) { touches.push(t); }
                     continue
                 }
+                // no touch at a point: the two touch along a curve through it, read from the
+                // meeting's critical set by whoever asked (`meeting::ridges`, #778)
                 None => return Err(shallow(p0)),
             }
         }
@@ -1481,6 +1523,8 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
             // are parallel, a touch a step may cross without landing where they nearly are
             let mut facing = dot(cross(a.gradient(p),b.gradient(p)),t) > 0.;
             for _ in 0..100_000 {
+                // each step counted against the build's budget (#777 V3): a stopped build ends here
+                if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (p,format!("{} × {}",a.kind(),b.kind()))) { break }
                 let q = probe.project(add(p,scale(t,h)));
                 // a projection that does not reach both surfaces: a step too long (shortened), or past a
                 // sheet's domain, where its foot is held at the edge (still so at the least step): the
