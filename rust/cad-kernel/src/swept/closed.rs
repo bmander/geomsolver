@@ -356,10 +356,12 @@ fn legs(tool: &Brep,path: &Trajectory,roll: [f64;2]) -> Result<Vec<(crate::traje
     Ok(legs)
 }
 
-/// **The work a closed build may do** (#777 V3), by stage (`util::meter::Stage`): far past what
-/// every build the suite holds takes (each measured by its profile, `SOLVENT_SWEEP_PROFILE`), and
-/// short of what one runs to where a generic fallback runs without a bound — refused in seconds,
-/// naming the stage, not hours.
+/// **The work a closed build may do** (#777 V3), by stage (`util::meter::Stage`): past what every
+/// build the suite holds takes (each measured by its profile, `SOLVENT_SWEEP_PROFILE`), and short
+/// of what one runs to where a generic fallback runs without a bound — refused naming the stage,
+/// not after hours. The inverse map's is about four times the most a build takes (the drum
+/// screwed beside the axis, 51 million; the leaning block 8.5 million), so the ball-end mill
+/// screwed through a sector, whose sheet's inverse ran for hours, is refused in about two minutes.
 pub const BUDGET: crate::util::meter::Budget = crate::util::meter::Budget([
     // arrangement: pairs of faces met
     400_000,
@@ -370,7 +372,7 @@ pub const BUDGET: crate::util::meter::Budget = crate::util::meter::Budget([
     // outline: chords faces' loops are cut in
     20_000_000,
     // inverse: a swept sheet's inverse map
-    1_000_000_000,
+    200_000_000,
     // membership: stretches of the roll read
     400_000_000,
     // judge: points judged

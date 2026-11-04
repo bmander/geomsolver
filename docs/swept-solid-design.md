@@ -449,7 +449,11 @@ recorded above with what was tried:
   candidate — a crossing at 0.06 rad a sampled edge–sheet search placed 0.01 off — and a candidate
   run past the rim leaves a cusp-thin cell between pipe and cylinder whose reading went wrong
   through a ring sector (14.4 removed against 12.0, though a box built it to 1e-14). It waits on
-  an exact meeting of an edge with the pipe, and on cells along a touch read right. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
+  an exact meeting of an edge with the pipe, and on cells along a touch read right. *Since #777*
+  cells along a touch are read right (M4) and touches found generally (M3), and the mill is
+  admitted; screwed through the sector it is refused by its budget, naming the inverse stage at
+  the pipe's sheet (whose inverse map is a general search on every ray and outline), in about two
+  minutes where it had stalled for hours — the case #721 resumes with. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
   round its two meridians in the plane through both axes, turned into tori about the turn's, and
   round its top and bottom rings, kept in their planes. The torus at an end pose and a meridian's
   torus touch round that meridian and cross beside it — in each level both are two circles about

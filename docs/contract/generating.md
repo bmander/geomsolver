@@ -438,7 +438,13 @@ other swept or B-spline sheet by the three-unknown search, `util::isolate`;
 search sampled). Each build's work is counted in steps per stage (`util::meter`: arrangement,
 trace, ray, outline, inverse, membership, judge) against `closed::BUDGET`; past it every metered
 loop winds down and the build is refused as `Unbuilt::Budget {stage, at, what}`, the same way at
-every run (`swept_closed::a_build_past_its_budget_refuses_by_name_within_it`).
+every run (`swept_closed::a_build_past_its_budget_refuses_by_name_within_it`). The run #776 saw
+stall for hours, a ball-end mill screwed through a ring sector (a ball beside a side about an axis
+along the screw's, admitted), is cut to the volume it removes apart from the kernel or refused by
+its budget naming the stage, a point and the surface — today the inverse stage, at its sheet's
+inverse map, in about two minutes, that stage's limit about four times the most any build takes
+(`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name`,
+slow tier).
 `SOLVENT_SWEEP_PROFILE` prints a build's counts, its meetings in closed form against traced per
 pair of surface kinds and the slowest, its curve–surface searches certified against sampled, and
 its deepest outline: a performance change cites it before and after. `SOLVENT_SWEEP_DUMP=<dir>`
