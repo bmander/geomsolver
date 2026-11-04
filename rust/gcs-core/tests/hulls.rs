@@ -163,10 +163,18 @@ scenario pull {
 /// driven to move `δ` under a pull `P`, the solve finds `r = √(P L / (π E δ))` within 5e-4 — a
 /// uniform bar pulled is read exactly by quadratic elements, so to the mesh's approximation of its
 /// section's circle, the bar meshed at 10mm and moved to the 7.98mm found — leaving no freedom.
+/// Its work is pinned by counts and its row held at a reading's own size, as the library's rod's
+/// is: the rod's properties on every push, the rod itself the slow tier's.
 #[test]
 fn a_turned_bars_radius_is_sized_by_its_stretch() {
     let sag = 0.025;
-    let mut e = crate::common::text::solved(&BAR.replace("SAG", &format!("{sag}mm")));
+    let mut e = crate::common::read(&BAR.replace("SAG", &format!("{sag}mm")));
+    let res = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    assert!(res.success, "{}", res.message);
+    // its work pinned by counts and held at a reading's own size, as the library's rod's is in
+    // the slow tier (`the_librarys_rod_is_sized_by_its_sag`): 3 and 3 today
+    assert!(res.nfev <= 4 && res.njev <= 4, "{} evaluations, {} rates", res.nfev, res.njev);
+    assert!(e.sketch.meshed.values().all(|r| r.coarser == 1.0), "held at a reading's own size");
     let r = e.sketch.params[*e.sketch.free_vars.get("r").expect("r") as usize].value;
     let want = (10e3 * 100.0 / (std::f64::consts::PI * 200e3 * sag)).sqrt();
     assert!((r - want).abs() <= 5e-4 * want, "{r} against {want}");
