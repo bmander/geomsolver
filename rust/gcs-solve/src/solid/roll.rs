@@ -23,9 +23,8 @@ use crate::model::{Roll, Sketch, SolidDef};
 
 /// The march's step, in the motion's own parameter (radians of its roll).
 pub const STEP: f64 = std::f64::consts::PI / 180.0;
-/// How far the march goes each way before refusing, where the motion bounds it no nearer: two
-/// turns.  A motion that advances along its axis goes as far as it takes to carry the tool past the
-/// blank along it (`reach`).
+/// How far the march goes each way before refusing: two turns.  A motion that advances along its
+/// axis goes instead as far as it carries the tool past the blank, and ends there (`escape`).
 pub const REACH: f64 = 2.0 * std::f64::consts::TAU;
 /// How many times a step may halve a box of the tool's support, and how many boxes it may ask,
 /// before it stands unproved.
@@ -86,38 +85,48 @@ fn through(sk: &Sketch, source: usize, motion: usize, bodies: &[u32]) -> Result<
     }
     let blank = blank.ok_or("it has no material")?;
     let family = crate::motion::Family::read(sk, motion)?;
-    let reach = reach(&family, support, blank.support_bounds().map_err(fault)?);
+    let far = escape(&family, support, &blank);
     // both ways at once, a few steps of each ahead on every core: the first clear step of each
     // way is its end, and a step past it asked meanwhile is only wasted
-    let ahead = crate::par::threads().clamp(1, 4) as u32;
+    let ahead = crate::par::threads().clamp(1, 4) as u64;
     let mut ends: [Option<f64>; 2] = [None, None];
     // where each way's last step not clear ended, which its next steps are walked toward first
     let mut toward: [Option<Hint>; 2] = [None, None];
-    let mut k = 0_u32;
+    let mut k = 0_u64;
     while ends.iter().any(Option::is_none) {
-        let asks: Vec<(usize, u32)> = (0..2).filter(|&w| ends[w].is_none())
+        let asks: Vec<(usize, u64)> = (0..2).filter(|&w| ends[w].is_none())
             .flat_map(|w| (k..k + ahead).map(move |j| (w, j))).collect();
         let answers = crate::par::map(&asks, |&(w, j)| {
-            let [a, b] = [j, j + 1].map(|n| WAYS[w] * f64::from(n) * STEP);
+            let [a, b] = [j, j + 1].map(|n| WAYS[w] * n as f64 * STEP);
             march(&tool, support, &blank, &family, [a.min(b), a.max(b)], toward[w])
         });
         for (&(w, j), answer) in asks.iter().zip(answers) {
             let (clear, ended) = answer?;
             toward[w] = ended.or(toward[w]);
             if ends[w].is_none() && clear {
-                ends[w] = Some(WAYS[w] * f64::from(j) * STEP);
+                ends[w] = Some(WAYS[w] * j as f64 * STEP);
             }
         }
         k += ahead;
-        if let Some(w) = (0..2).find(|&w| ends[w].is_none() && f64::from(k) * STEP >= reach[w]) {
+        let gone = k as f64 * STEP;
+        if let Some(far) = far {
+            // a screw or a slide not proved clear sooner is clear where it carries the tool past
+            for w in 0..2 {
+                if ends[w].is_none() && gone >= far[w] {
+                    ends[w] = Some(WAYS[w] * far[w]);
+                }
+            }
+        }
+        // anything else not clear within two turns is refused
+        if let Some(w) = (0..2).find(|&w| ends[w].is_none() && far.is_none() && gone >= REACH) {
             // a tool never clear either way is always in mesh: the roll to state is a period
             if ends.iter().all(Option::is_none) {
                 if let Some(p) = period(&tool, support, &family) {
                     return Err(format!("its tool is always in mesh with it: {}", advice(0.0, p)));
                 }
             }
-            return Err(format!("its tool is not clear of it within {} {} of 0",
-                               turns(reach[w]), ["below", "above"][w]));
+            return Err(format!("its tool is not clear of it within two turns {} of 0",
+                               ["below", "above"][w]));
         }
     }
     let [Some(lo), Some(hi)] = ends else { unreachable!("each way has its end") };
@@ -127,39 +136,26 @@ fn through(sk: &Sketch, source: usize, motion: usize, bodies: &[u32]) -> Result<
     Ok([lo, hi])
 }
 
-/// **How far each way the march goes** (down, then up), radians: `REACH`, or, where the motion is
-/// a constant twist that advances along its axis (a screw or a slide), as far as it takes to carry
-/// the tool's support wholly past the blank's along that axis, and a few steps more — past that the
-/// tool is clear by its bounds alone, so a blank however long along a screw needs no roll stated
-/// (#271).  A turn, a relative or a driven motion, and a blank with no bounded support, march
-/// `REACH`.
-fn reach(family: &crate::motion::Family, tool: [I; 3], blank: Option<[I; 3]>) -> [f64; 2] {
-    let along = |b: [I; 3], axis: [f64; 3]| -> [f64; 2] {
-        // the box's extent along the unit axis, its corners' least and greatest
-        (0..3).fold([0.0, 0.0], |[lo, hi], k| {
-            let [a, b] = b[k].bounds().map(|x| x * axis[k]);
-            [lo + a.min(b), hi + a.max(b)]
-        })
-    };
-    let (Some(s), Some(blank)) = (family.twist(), blank) else { return [REACH; 2] };
-    if s.advance == 0.0 || !s.advance.is_finite() {
-        return [REACH; 2];
-    }
-    let [t, b] = [along(tool, s.axis), along(blank, s.axis)];
-    // a roll of `x` carries the tool `advance · x / τ` along the axis: clear above the blank once
-    // its least is past the blank's greatest, below once its greatest is short of the blank's least
+/// **Where a screw or a slide carries the tool past the blank** (#271), radians each way from 0
+/// (down, then up), each a whole step: the least roll past which the tool's support stands wholly
+/// beyond the blank's along the axis, which the turn about it never changes, so the tool is clear
+/// there and at every roll on.  The march goes no further, and ends a way there that it has not
+/// proved clear sooner: never short, as the march's own end is, only looser by as much as the
+/// supports are, so the march's nearer end is kept where it finds one.  None for a motion that does
+/// not advance (a turn, a relative or a driven motion) and for a blank with no bounded support.
+fn escape(family: &crate::motion::Family, tool: [I; 3], blank: &SpatialField) -> Option<[f64; 2]> {
+    let s = family.twist().filter(|s| !s.is_turn())?;
+    let blank = blank.support_bounds().ok().flatten()?;
+    let height = |bx: [I; 3]| s.extent(bx.map(|x| x.bounds()[0]), bx.map(|x| x.bounds()[1]),
+                                       crate::envelope::Motion::identity()).0;
+    let [t, b] = [height(tool), height(blank)];
+    // a roll of `x` carries the tool `advance · x / τ` along the axis: past the blank's greatest
+    // when its least is, short of the blank's least when its greatest is
     let rise = s.advance / std::f64::consts::TAU;
-    WAYS.map(|w| {
+    Some(WAYS.map(|w| {
         let gap = if w * rise > 0.0 { b[1] - t[0] } else { t[1] - b[0] };
-        let need = gap.max(0.0) / rise.abs() + 4.0 * STEP;
-        if need.is_finite() { need.max(REACH) } else { REACH }
-    })
-}
-
-/// A roll said in turns, as a refusal says how far the march went.
-fn turns(x: f64) -> String {
-    let n = x / std::f64::consts::TAU;
-    if (n - 2.0).abs() < 1e-9 { "two turns".into() } else { format!("{:.1} turns", n) }
+        (gap / rise.abs() / STEP).ceil().max(0.0) * STEP
+    }))
 }
 
 /// The least roll, a degree at a time within `PERIOD_TURNS` turns, after which `family` stands

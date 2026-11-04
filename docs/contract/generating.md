@@ -209,10 +209,11 @@ holds by construction. The boxes are one tree whatever order they are walked in,
 the order's to choose freely: each step walks first the halves toward where the way's step before
 ended (`roll::march`), and a step the tool has not cleared ends in a few dozen boxes, not hundreds
 (the same rolls, a fraction of the time; a document's workers each find them before their first
-surface). The march goes two turns each way (`roll::REACH`), or, under a screw or a slide, as far
-as it takes to carry the tool's support wholly past the blank's along the axis (`roll::reach`), so
-a blank however long along a screw needs no roll stated (`square_thread.sv`). Refused naming why
-(no meeting at 0, not clear within the march, a tool with no bounded support). The spiral bevel,
+surface). The march goes two turns each way (`roll::REACH`); under a screw or a slide it goes
+instead as far as carries the tool's support wholly past the blank's along the axis, and a way it
+has not proved clear sooner ends there (`roll::escape`: clear by the supports alone, so never
+short), so a blank however long along a screw needs no roll stated (`square_thread.sv`). Refused naming why
+(no meeting at 0, not clear within two turns, a tool with no bounded support). The spiral bevel,
 the rack cuts and the lantern state no roll; the drill's flute and the Wankel's period are design.
 `fixtures::gear::roll` restates one member's roll (negative controls).
 `tests/roll_through.rs` is the gate (two balls parting at `2 asin(1/3)`; the square thread's bar

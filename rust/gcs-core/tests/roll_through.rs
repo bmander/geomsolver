@@ -152,13 +152,12 @@ fn a_screw_rolls_through_a_blank_longer_than_two_turns() {
     let thread = crate::common::ent(&e, "thread").i();
     let [from, to] = solid::roll::interval(&e.sketch, thread).unwrap();
     let tau = std::f64::consts::TAU;
-    let [below, above] = [1.0 / 6.0 * tau, 21.0 / 6.0 * tau];
+    let [below, above] = [tau / 6.0, 3.5 * tau];
     assert!(above > solid::roll::REACH, "the rod is longer than the turn's march");
-    let margin = 4.0 * solid::roll::STEP;
-    assert!(-from >= below && -from <= below + margin, "{} against {}", from.to_degrees(),
-            below.to_degrees());
-    assert!(to >= above && to <= above + margin, "{} against {}", to.to_degrees(),
-            above.to_degrees());
+    for (end, at) in [(-from, below), (to, above)] {
+        assert!(end >= at && end <= at + 4.0 * solid::roll::STEP, "{} against {}",
+                end.to_degrees(), at.to_degrees());
+    }
 }
 
 /// A tool that does not meet the body at 0, or one never clear of it, is refused naming why.
