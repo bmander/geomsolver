@@ -18,7 +18,7 @@ use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
 use crate::common::{ent, read, text::solved};
-use crate::region_general::field_volume;
+use crate::common::rounds::field_is_the_kernels;
 
 const ROD: &str = include_str!("../../examples/conrod/rod.sv");
 
@@ -204,7 +204,6 @@ fn a_fill_across_the_parting_plane_is_refused_by_name() {
 /// The rod as shipped, built and written as STEP and STL by this kernel (each read back and
 /// checked as `solventc` checks it).
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: the rod built, written and checked")]
 fn the_rod_is_built_exactly() {
     let e = solved(ROD);
     let body = ent(&e, "rod").i();
@@ -232,25 +231,14 @@ fn the_rod_is_built_exactly() {
     close("the rod, against each kind apart", v, sharp - apart);
 }
 
-/// The field's bar: a round's volume read off the field within this of the kernel's.
-const BAR: f64 = 2e-3;
-
-/// What `more` takes from the sharp rod read off the field within the box `lo`–`hi`, by cells of
-/// `h`.
-fn read_taken(more: &[&str], lo: [f64; 3], hi: [f64; 3], h: f64) -> f64 {
-    let v = |src: &str| {
-        let e = solved(src);
-        field_volume(&MaterialField::read(&e.sketch, ent(&e, "rod").i(), 1e-10).unwrap(), lo, hi, h)
-    };
-    v(&sharp(&[])) - v(&sharp(more))
-}
-
 /// The field's reading of the rod's rounds is the kernel's construction: the shank's near face
 /// filled into the big eye (a plane against the drafted eye's cone), a pocket rounded inside (its
 /// floor's edges, its upright corners and the balls where three meet) and a flange's edge run
-/// between the eyes and cut off by their cones.
+/// between the eyes and cut off by their cones — the field's boundary the kernel's build's, point
+/// by point a step either side of it (`field_is_the_kernels`).  The kernel's build is the closed
+/// form's (`the_rod_is_built_exactly`).  Until #780 R1 the field's volume of each was read
+/// against the kernel's, five minutes to a part in five hundred.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, two minutes: three rounds, by the field")]
 fn the_fields_rounds_are_the_kernels() {
     for (what, statement, lo, hi, h) in [
         ("the near face into the big eye", "rod.shank.near round(r: re) rod.big_end",
@@ -260,8 +248,7 @@ fn the_fields_rounds_are_the_kernels() {
         ("the flange's near right edge", "rod.shank.near round(r: re) rod.shank.right",
          [8.0, -9.5, 26.5], [12.5, -7.5, 128.0], 1.0 / 16.0),
     ] {
-        let (field, exact) = (read_taken(&[statement], lo, hi, h), taken(&[statement]));
-        eprintln!("{what}: {field:.6} against {exact:.6}, {:+.2e}", (field - exact) / exact);
-        assert!((field - exact).abs() <= BAR * exact.abs(), "{what}: {field} against {exact}");
+        let read = field_is_the_kernels(&solved(&sharp(&[statement])), "rod", lo, hi, 2.0 * h, 800);
+        eprintln!("{what}: the field's side is the kernel's at {read} points");
     }
 }

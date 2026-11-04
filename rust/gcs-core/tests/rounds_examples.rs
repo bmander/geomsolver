@@ -9,10 +9,10 @@ use gcs_core::solid::MaterialField;
 
 use crate::common::{ent, text::solved};
 use crate::common::rounds::{
-    beside_cylinder, bore_rim, root_ring, sloped, sloped_root, square_run, tee_crotch, RIM, ROOT,
+    beside_cylinder, bore_rim, field_is_the_kernels, root_ring, sloped, sloped_root, square_run,
+    taken_exactly, tee_crotch, RIM, ROOT,
 };
 use crate::common::rounds::meridian::knob_neck;
-use crate::region_general::field_volume;
 
 /// Where solid `name` of `src` has material and where it has none.
 fn holds(src: &str, name: &str, inside: &[[f64; 3]], outside: &[[f64; 3]]) -> Elaborated {
@@ -139,12 +139,13 @@ fn rounding(src: &str) -> [Elaborated; 2] {
 }
 
 /// The volume solid `name` loses to its rounds within the box `lo`–`hi` (negative where they
-/// add), each reading by the field down to cells of `h`.
+/// add), the kernel's build of each kept in the box (`taken_exactly`) — and the field's boundary
+/// there held to the kernel's point by point, a step `h` either side of it
+/// (`field_is_the_kernels`).  Until #780 R1 the field's volume was read instead, down to cells of
+/// `h`: minutes a round, to a part in five hundred.
 fn taken(both: &[Elaborated; 2], name: &str, lo: [f64; 3], hi: [f64; 3], h: f64) -> f64 {
-    let [before, after] = both.each_ref().map(|e| {
-        field_volume(&MaterialField::read(&e.sketch, ent(e, name).i(), 1e-10).unwrap(), lo, hi, h)
-    });
-    before - after
+    field_is_the_kernels(&both[1], name, lo, hi, h, 600);
+    taken_exactly(both, name, lo, hi)
 }
 
 fn agrees(what: &str, got: f64, want: f64) {
@@ -168,7 +169,6 @@ fn the_pad_is_filled_at_its_root_and_rounded_at_its_sides() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: the pad's three rounds, by the field")]
 fn the_pads_rounds_are_the_stacks() {
     let pad = rounding(PAD);
     let root = -taken(&pad, "pad", [-12.0, -4.0, -12.0], [12.0, 1.0, 12.0], 3.0 / 32.0);
@@ -196,7 +196,6 @@ fn the_knobs_root_and_neck_are_filled() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: the knob's two rounds, by the field")]
 fn the_knobs_rounds_are_the_stacks() {
     let knob = rounding(KNOB);
     let root = -taken(&knob, "knob", [-9.0, -9.0, 7.0], [9.0, 9.0, 15.0], 2.0 / 32.0);
@@ -217,7 +216,6 @@ fn the_rails_sides_are_filled() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: the rail's two runs, by the field")]
 fn the_rails_runs_are_the_stacks() {
     let (big, r): (f64, f64) = (6.0, 2.0);
     let got = -taken(&rounding(RAIL), "rail", [20.0, -41.0, 9.0], [40.0, 1.0, 15.0], r / 32.0);
@@ -234,7 +232,6 @@ fn the_tees_crotch_is_filled() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: the tee's crotch, by the field")]
 fn the_tees_crotch_is_the_stacks() {
     let got = -taken(&rounding(TEE), "tee", [-10.0, -10.0, 4.0], [10.0, 10.0, 14.0], 2.0 / 64.0);
     agrees("the tee's crotch", got, tee_crotch(10.0, 6.0, 2.0));
@@ -251,7 +248,6 @@ fn the_bores_rim_is_rounded() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: the bore's rim, by the field")]
 fn the_bores_rim_is_the_stacks() {
     let got = taken(&rounding(BORE), "pipe", [-10.0, -10.0, 4.0], [10.0, 10.0, 14.0], 1.0 / 32.0);
     agrees("the bore's rim", got, bore_rim(10.0, 6.0, 1.0));
@@ -274,7 +270,6 @@ fn the_slots_chains_run_through_their_seams() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: the slot's two chains, by the field")]
 fn the_slots_chains_are_the_stacks() {
     let slot = rounding(SLOT);
     // the foot: two straight sides 18 long and the two half rings, one ring in all
@@ -298,7 +293,6 @@ fn the_runouts_end_on_the_faces_they_run_onto() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: four run-outs, by the field")]
 fn the_runouts_are_the_stacks() {
     let lug = ([10.0, -14.0, 8.0], [30.0, 3.0, 22.0]);
     let vent = ([84.0, -18.0, 7.0], [102.0, -6.0, 15.0]);
