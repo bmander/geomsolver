@@ -6,10 +6,11 @@
 //! the construction does.
 use gcs_core::program::Elaborated;
 use gcs_core::solid::admission::{self,Class,Options};
+use gcs_core::solid::export::Tolerance;
 use std::f64::consts::{PI,TAU};
 
 use crate::round_lowering::lens;
-use crate::turns_and_slides::{exported,exported_at,measure,near,reaches,turned_away,turned_torus,Lean};
+use crate::turns_and_slides::{exported,exported_at,exported_within,measure,near,reaches,turned_away,turned_torus,Lean};
 
 /// The text of the example `name` of the series.
 pub(crate) fn text(name: &str) -> String {
@@ -464,6 +465,9 @@ fn the_drum_turned_partway_stops_inside_the_ring() {
 /// from the ring on one arrangement, its side's generators screwed into cylinders about the axis and
 /// each rim's disc into the ramp it sweeps. The ring loses `π/3 (20 + k π)`, `k = 0.5/2π`, to 1e-8:
 /// the sector's planes through the axis cut the rims' ramps in traced closed-form points.
+/// Built once, within 0.01 mm: the page's stepped builder is held to the same build
+/// (`object_builder::builds_as_exported`, within the export's gross bar), which a test of its own
+/// once built again.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: a drum's screwed rims through a sector")]
 fn the_drum_screwed_mills_a_helical_groove() {
@@ -471,7 +475,9 @@ fn the_drum_screwed_mills_a_helical_groove() {
     let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
     assert_eq!(found.kind(),"a screw");
     let k = 0.5/std::f64::consts::TAU;
-    near(exported(&e,"block"),PI/3.*80.-PI/3.*(20.+k*PI),1e-8);
+    let exact = exported_within(&e,"block",Some(Tolerance::new(0.01).unwrap()));
+    near(gcs_core::brep::props::volume(&exact.solid),PI/3.*80.-PI/3.*(20.+k*PI),1e-8);
+    crate::object_builder::builds_as_exported("helical_groove.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
 }
 
 /// `stopped_bullnose.sv` (the closed class, a torus under a turn): `stopped_drum.sv`'s drum with its
@@ -480,6 +486,9 @@ fn the_drum_screwed_mills_a_helical_groove() {
 /// axes, turned into tori about the turn's, and round its bottom ring, kept in its plane. Each level
 /// of the mill is a disc of radius `R(z)`, 10 out, so each circle about the axis loses the angle
 /// the disc spans from the sector's edge to 30° past: `π d/3 ∫R dz + π/2 ∫R² dz` of the ring, to 1e-9.
+/// Built once, within 0.01 mm: the page's stepped builder is held to the same build
+/// (`object_builder::builds_as_exported`, within the export's gross bar), which a test of its own
+/// once built again.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 100 s: a bull-nose's round turned on one arrangement")]
 fn the_bull_nose_turned_partway_stops_inside_the_ring() {
@@ -489,7 +498,9 @@ fn the_bull_nose_turned_partway_stops_inside_the_ring() {
     let (d,big,c,h) = (10.,1.,0.3,1.);
     let rz = (big-c)*c+PI*c*c/4.+big*(h-c);
     let r2z = (big-c)*(big-c)*c+(big-c)*PI*c*c/2.+2.*c*c*c/3.+big*big*(h-c);
-    near(exported(&e,"block"),PI/3.*80.-(PI*d/3.*rz+PI/2.*r2z),1e-9);
+    let exact = exported_within(&e,"block",Some(Tolerance::new(0.01).unwrap()));
+    near(gcs_core::brep::props::volume(&exact.solid),PI/3.*80.-(PI*d/3.*rz+PI/2.*r2z),1e-9);
+    crate::object_builder::builds_as_exported("stopped_bullnose.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
 }
 
 /// `stopped_turn.sv` (the closed class, X1): an upright bar turned from −140° to 30°, halfway into

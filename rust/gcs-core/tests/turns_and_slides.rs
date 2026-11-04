@@ -37,8 +37,12 @@ pub(crate) fn exported(e: &Elaborated,name: &str) -> f64 { exported_at(e,name,0.
 
 /// The same, built within `tolerance` millimetres.
 pub(crate) fn exported_at(e: &Elaborated,name: &str,tolerance: f64) -> f64 {
+    props::volume(&exported_within(e,name,Some(Tolerance::new(tolerance).unwrap())).solid)
+}
+
+/// The same, built within `tolerance` (the export's own where none is given): the build.
+pub(crate) fn exported_within(e: &Elaborated,name: &str,tolerance: Option<Tolerance>) -> export::Exact {
     let (sk,body) = (&e.sketch,fixtures::solid(e,name));
-    let tolerance = Some(Tolerance::new(tolerance).unwrap());
     let (exact,said) = saying(|say| export::exact(sk,body,None,tolerance,say));
     let exact = exact.unwrap_or_else(|r| panic!("{r}\n{said}"));
     eprintln!("{said}");
@@ -48,7 +52,7 @@ pub(crate) fn exported_at(e: &Elaborated,name: &str,tolerance: f64) -> f64 {
     assert!(step.starts_with("ISO-10303-21;"));
     gcs_core::mesh::stl_shells(&stl).unwrap();
     assert!(!exact.swept || said.contains(", 0 disagree"),"{said}");
-    props::volume(&exact.solid)
+    exact
 }
 
 /// `volume` against `expected`, within `bar` of it.

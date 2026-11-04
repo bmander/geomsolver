@@ -53,6 +53,79 @@ fn corpus(names: &[String],swept: bool) -> usize {
         .sum()
 }
 
+/// **Solid `i` of document `name` (drawn as `sk`) built by the stepped builder as the export built
+/// it** (`exact`): as `corpus` holds it, for a test that has the export's build in hand already and
+/// would not build it twice
+/// (`solid_sweeps_examples::the_bull_nose_turned_partway_stops_inside_the_ring`).
+pub(crate) fn builds_as_exported(name: &str,sk: &Sketch,i: usize,exact: &export::Exact) {
+    let mm = sk.units.mm_per();
+    let volume = gcs_core::brep::props::volume(&exact.solid)/(mm*mm*mm);
+    let (d,_) = stepped(sk,i).unwrap_or_else(|why| panic!("{name}: the export built it, the builder: {why}"));
+    assert_eq!(d.faces.names.len(),d.faces.smooth.len(),"{name}: the faces named");
+    let within = if sk.is_swept(i) { export::GROSS/mm*area(&d) } else { 1e-9*volume.abs().max(1.) };
+    assert!((d.faces.volume-volume).abs() <= within,"{name}: {} against {volume}, within {within}",d.faces.volume);
+}
+
+/// **The kinds of construction object `i` is built of**: every solid under it by its form — a
+/// prism (drafted or not), a prism through, a revolution (whole or part of a turn), a body (with
+/// what it unites, cuts and keeps in common), a region (by its terms' shapes), a face family, a
+/// placed solid — and each sweep it cuts by the class admission reads it in and its motion (or
+/// its refusal).  What decides which way the export and the stepped builder go, so a document
+/// holding a kind holds every document's object of that kind to the comparison.
+fn kinds(sk: &Sketch,i: usize) -> std::collections::BTreeSet<String> {
+    use gcs_core::model::SolidDef;
+    use gcs_core::solid::admission::{admit_body,Class,Options};
+    let variant = |d: &dyn std::fmt::Debug| {
+        let t = format!("{d:?}");
+        t.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("").to_string()
+    };
+    let mut out = std::collections::BTreeSet::new();
+    let mut todo = vec![i];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(k) = todo.pop() {
+        if !seen.insert(k) { continue }
+        let Some(solid) = sk.solids.get(k) else { continue };
+        match &solid.def {
+            SolidDef::Placed {source,..} => { out.insert("placed".into()); todo.push(*source as usize) }
+            SolidDef::Swept {source,..} => { out.insert("swept material".into()); todo.push(*source as usize) }
+            SolidDef::Prism {draft,..} => { out.insert(if draft.is_some() { "prism, drafted" } else { "prism" }.into()); }
+            SolidDef::Through {..} => { out.insert("prism through".into()); }
+            SolidDef::Revolve {sweep,..} => {
+                let whole = (sweep.value.abs()-std::f64::consts::TAU).abs() < 1e-9;
+                out.insert(if whole { "revolution" } else { "revolution, part of a turn" }.into());
+            }
+            SolidDef::Body {stock,on,through,bound} => {
+                for (what,set) in [("unites",on),("cuts",through),("keeps in common",bound)] {
+                    if !set.is_empty() { out.insert(format!("body {what}")); }
+                }
+                todo.push(*stock as usize);
+                todo.extend(on.iter().chain(through).chain(bound).map(|&o| o as usize));
+            }
+            SolidDef::Region {terms,..} => {
+                out.insert("region".into());
+                out.extend(terms.iter().map(|t| format!("region term {}",variant(&t.shape))));
+            }
+            SolidDef::Family {legs,..} => { out.insert(if legs.is_empty() { "face family" } else { "face family, chained" }.into()); }
+        }
+    }
+    if sk.is_swept(i) {
+        match admit_body(sk,i,&Options::default()) {
+            Ok(a) => for e in a.sweeps() {
+                out.insert(match &e.class {
+                    Class::Generating => "sweep generating".to_string(),
+                    Class::ConstantTwist(c) => format!("sweep constant twist, {}",c.kind()),
+                    Class::Planar(_) => "sweep planar".into(),
+                    Class::Subtraction(_) => "sweep planar subtraction".into(),
+                    Class::Capped(_) => "sweep capped".into(),
+                    Class::Closed(c) => format!("sweep closed, {}",c.kind()),
+                });
+            },
+            Err(_) => { out.insert("sweep refused".into()); }
+        }
+    }
+    out
+}
+
 /// The objects of document `name` (drawn as `sk`) whose sweeping `keep` admits, each held as
 /// `corpus` holds it.  How many were built: the static ones, and the swept.
 fn objects_of(name: &str,sk: &Sketch,keep: impl Fn(bool) -> bool) -> [usize; 2] {
@@ -82,8 +155,8 @@ fn objects_of(name: &str,sk: &Sketch,keep: impl Fn(bool) -> bool) -> [usize; 2] 
 }
 
 /// **Every object the export builds, the builder builds the same; one it refuses, it refuses in
-/// the same words** — here over documents of every kind of static body, and over the whole case
-/// library in the slow tier (`every_object_of_the_library_builds_as_the_export_builds_it`).
+/// the same words** — here over documents of every kind of static body, and over a document of
+/// every kind of object the library builds (`every_kind_of_object_builds_as_the_export_builds_it`).
 #[test]
 fn every_static_object_builds_as_the_export_builds_it() {
     let names: Vec<String> = ["solid_flange.sv","turned_shaft.sv","star_handle.sv","rounded_bracket.sv","solid_tray.sv",
@@ -92,9 +165,9 @@ fn every_static_object_builds_as_the_export_builds_it() {
     assert!(built >= names.len(),"{built} built");
 }
 
-/// The documents whose swept objects a test of their own below holds as the library test would
-/// (`corpus(&[…], true)`): the library test holds their static objects alone, and does not build
-/// the same sweep twice — the bull-nose's notch alone is minutes.
+/// The documents whose swept objects a test of their own holds — below (`corpus(&[…], true)`), or
+/// an example's that builds it once for its volume and this (`builds_as_exported`): they hold the
+/// kinds of those objects for `the_corpus_holds_every_kind_the_library_builds`.
 const NAMED: [&str; 21] = ["solid_sweeps/vthread.sv","solid_sweeps/bar_end.sv",
     "solid_sweeps/next_tooth.sv","solid_sweeps/parted.sv","solid_sweeps/whole_turn.sv",
     "solid_sweeps/square_thread.sv","solid_sweeps/rocked.sv","solid_sweeps/flat_end.sv",
@@ -103,33 +176,72 @@ const NAMED: [&str; 21] = ["solid_sweeps/vthread.sv","solid_sweeps/bar_end.sv",
     "solid_sweeps/stopped_turn.sv","solid_sweeps/stopped_punch.sv","solid_sweeps/stopped_drum.sv",
     "solid_sweeps/helical_groove.sv","solid_sweeps/stopped_bullnose.sv"];
 
-/// The whole case library, static objects and swept ones
-/// (`every_static_object_builds_as_the_export_builds_it`): each document solved once and its
-/// objects of both kinds held, the documents side by side, and a sweep a test below holds by name
-/// left to it (`NAMED`).  A case whose solve takes minutes (`examples::SLOW`, a filled body driven
-/// at three sizes) is held as it is drawn, unsolved: the builder and the export are held to one
-/// another on whatever drawing they are given, and its solve is
-/// `hulls::the_librarys_rod_is_sized_by_its_sag`'s.
+/// Where each of `NAMED` is held, its sweep built by the stepped builder as the export builds it:
+/// this file, or an example's own test that builds it once for both (`builds_as_exported`).
+const HELD_IN: [&str; 2] = [include_str!("object_builder.rs"),include_str!("solid_sweeps_examples.rs")];
+
+/// **A document of every kind of object the library builds** (`kinds`), besides those `NAMED`'s
+/// tests hold: chosen from the library as the fewest and quickest documents that, with the swept
+/// objects of `NAMED`, hold every kind it has (11 documents, about five seconds of building where
+/// the library's 282 took minutes).  `the_corpus_holds_every_kind_the_library_builds` says when
+/// one is missing.
+const CORPUS: [&str; 11] = ["rounds/by_hand.sv","rounds/disc.sv","rounds/blank.sv",
+    "vtwin/components/piston.sv","developable/frustum.sv","solid_twist.sv","swept_tumble.sv",
+    "lofts/squares.sv","generation/cam_plate.sv","turbine_blade.sv","wankel/wankel.sv"];
+
+/// **Every kind of object the library builds, the builder builds as the export does**
+/// (`every_static_object_builds_as_the_export_builds_it` over the `CORPUS`): each document solved
+/// once and its objects of both kinds held, the documents side by side.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, minutes: the library's objects built twice")]
-fn every_object_of_the_library_builds_as_the_export_builds_it() {
-    // each of `NAMED` held by a test of this file, or its sweep would be held nowhere
-    let this = include_str!("object_builder.rs");
+fn every_kind_of_object_builds_as_the_export_builds_it() {
+    let built = gcs_core::par::map(&CORPUS,|name| solved(name).map_or([0,0],|sk| objects_of(name,&sk,|_| true)));
+    let [statics,swept] = built.iter().fold([0,0],|t,b| [t[0]+b[0],t[1]+b[1]]);
+    assert!(statics >= 8 && swept >= 2,"{statics} static objects built, {swept} swept");
+}
+
+/// **The corpus holds every kind of object in the library** (`kinds`): every document solved
+/// (one whose solve takes minutes, `examples::SLOW`, read as it is drawn), each object's kinds
+/// read — no object built — and each kind found in an object of `CORPUS`, or in a swept object of
+/// one of `NAMED` (whose tests hold its sweeps).  A document with a kind none of them has is said,
+/// to be added to the corpus.  It stands for the whole library built twice, which this test did
+/// until #780 R1 (23 minutes; see `docs/testing.md`).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, half a minute: every document solved and its objects' kinds read")]
+fn the_corpus_holds_every_kind_the_library_builds() {
+    use std::collections::{BTreeMap,BTreeSet};
+    // each of `NAMED` held by a test of this file or an example's, or its sweep would be held
+    // nowhere
     for name in NAMED {
-        assert!(this.contains(&format!("\"{name}\".to_string()")),"`{name}` is held by no test");
+        let file = name.rsplit('/').next().unwrap();
+        assert!(HELD_IN[0].contains(&format!("\"{name}\".to_string()"))
+            || HELD_IN[1].contains(&format!("builds_as_exported(\"{file}\"")),"`{name}` is held by no test");
     }
     let names = fixtures::example_names();
-    let built = gcs_core::par::map(&names,|name| {
+    // each document's objects' kinds, each with whether its object is swept
+    let read = gcs_core::par::map(&names,|name| {
         let stem = name.rsplit('/').next().unwrap().trim_end_matches(".sv");
         let sk = match gcs_core::examples::SLOW.contains(&stem) {
             true => document_unsolved(name),
             false => solved(name),
         };
-        let named = NAMED.contains(&name.as_str());
-        sk.map_or(0,|sk| objects_of(name,&sk,|swept| !(named && swept))[0])
+        sk.map_or(Vec::new(),|sk| objects(&sk).into_iter().flat_map(|i| {
+            let swept = sk.is_swept(i);
+            kinds(&sk,i).into_iter().map(move |k| (k,swept))
+        }).collect::<Vec<_>>())
     });
-    let built: usize = built.into_iter().sum();
-    assert!(built > 50,"{built} static objects built");
+    let mut held = BTreeSet::new();
+    let mut found: BTreeMap<String,BTreeSet<&str>> = BTreeMap::new();
+    for (name,ks) in names.iter().zip(&read) {
+        let (corpus,named) = (CORPUS.contains(&name.as_str()),NAMED.contains(&name.as_str()));
+        for (k,swept) in ks {
+            found.entry(k.clone()).or_default().insert(name);
+            if corpus || (named && *swept) { held.insert(k.clone()); }
+        }
+    }
+    assert!(found.len() >= 30,"{} kinds in the library",found.len());
+    let missing: Vec<String> = found.iter().filter(|(k,_)| !held.contains(*k))
+        .map(|(k,docs)| format!("{k}: {docs:?}")).collect();
+    assert!(missing.is_empty(),"kinds no document of the corpus holds:\n{}",missing.join("\n"));
 }
 
 /// Document `name` as it is drawn, not solved.
@@ -270,22 +382,6 @@ fn a_ring_in_contact_all_round_turned_builds_at_the_displays_samples() {
 fn a_closed_sweep_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/plunge.sv".to_string(),"solid_sweeps/stopped_turn.sv".to_string(),
         "solid_sweeps/stopped_punch.sv".to_string(),"solid_sweeps/stopped_drum.sv".to_string()],true),4);
-}
-
-/// A drum screwed across a ring sector (`helical_groove.sv`, #721 F2c5) builds at the display's
-/// samples as the export builds it, on one arrangement.
-#[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 35 s: a drum's screwed rims through a sector")]
-fn a_screwed_drums_groove_builds_at_the_displays_samples() {
-    assert_eq!(corpus(&["solid_sweeps/helical_groove.sv".to_string()],true),1);
-}
-
-/// A bull-nose mill turned partway into a ring sector (`stopped_bullnose.sv`, #721 F2c5) builds at
-/// the display's samples as the export builds it, on one arrangement.
-#[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 100 s: a bull-nose's round turned on one arrangement")]
-fn a_turned_bull_noses_notch_builds_at_the_displays_samples() {
-    assert_eq!(corpus(&["solid_sweeps/stopped_bullnose.sv".to_string()],true),1);
 }
 
 const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
