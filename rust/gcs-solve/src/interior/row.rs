@@ -191,9 +191,11 @@ thread_local! {
 }
 
 /// **The last row solved on this thread let go** (`LAST`): a filled body's holds its mesh, its
-/// placement's factors and its stiffness, so a document solve lets it go when it ends.
+/// placement's factors and its stiffness, so a document solve lets it go when it ends — and with
+/// it the harmonic maps its meshes were placed by (`hull::forget`).
 pub fn forget() {
     LAST.with(|last| *last.borrow_mut() = None);
+    hull::forget();
 }
 
 /// One row read off its columns `v` and constants `k`, and its structure solved there — a

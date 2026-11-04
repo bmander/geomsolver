@@ -931,6 +931,15 @@ names another.
   (`interior::forget`): a filled body's holds its mesh, its factors and its stiffness. A harmonic
   stage keeps each pair of a free node and a held one with its weight (`Harmonic::held`), so its
   rate is taken back without the Laplacian's weights read again.
+- **A filled body's harmonic maps are made once a mesh** (#780; `hull::Made`, `MADE`): its
+  facets, each node's stage and each stage's Laplacian factored read the mesh as it was meshed —
+  the nodes' tags, their places at the compile and the elements — and none of the drawing's
+  columns, so they are kept for the last few meshes placed on a thread, found again where those
+  three are the same to the bit, and a placing at new columns only sums its right-hand sides (in
+  the order the weights were always handed on) and solves on the kept factor. The answer is the
+  same to the bit; the library's rod, driven, solved in half the time it took to factor them
+  again at every step (287 s to 141 s), 70% of which was spent so. `interior::forget` lets them go
+  with the last row.
 - **A drawing whose seeds leave its solid unbuilt stands where it solves before its rows are
   made** (#567; `program::scenarios::stand`): the engine's rod, seeded view by view, has no B-rep
   until its views are solved together, so no point of it falls in it and no row could be meshed.

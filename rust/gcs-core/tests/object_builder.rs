@@ -48,28 +48,34 @@ fn area(d: &Display) -> f64 {
 /// same volume — a swept one's within the export's gross bar, since the display admits it at fewer
 /// samples; or refused in the same words.  How many were built.
 fn corpus(names: &[String],swept: bool) -> usize {
-    let mut built = 0;
-    for name in names {
-        let Some(sk) = solved(name) else { continue };
-        for i in objects(&sk).into_iter().filter(|&i| sk.is_swept(i) == swept) {
-            let solid = &sk.solids[i].name;
-            match (exported(&sk,i),stepped(&sk,i)) {
-                (Ok((faces,volume)),Ok((d,doing))) => {
-                    assert_eq!(d.faces.names.len(),d.faces.smooth.len(),"{name}: `{solid}`'s faces named");
-                    if !swept {
-                        assert_eq!(doing[0],"building the solid from its recipe","{name}: `{solid}`");
-                        assert_eq!(d.faces.smooth.len(),faces,"{name}: `{solid}`'s faces");
-                    }
-                    // a static body is the export's own build; a swept one is admitted at the
-                    // display's samples, and comes out within the export's gross bar of it: no
-                    // more volume than its surface swept that far
-                    let within = if swept { export::GROSS/sk.units.mm_per()*area(&d) } else { 1e-9*volume.abs().max(1.) };
-                    assert!((d.faces.volume-volume).abs() <= within,"{name}: `{solid}`: {} against {volume}, within {within}",d.faces.volume);
-                    built += 1;
+    names.iter()
+        .map(|name| solved(name).map_or(0,|sk| objects_of(name,&sk,|s| s == swept)[swept as usize]))
+        .sum()
+}
+
+/// The objects of document `name` (drawn as `sk`) whose sweeping `keep` admits, each held as
+/// `corpus` holds it.  How many were built: the static ones, and the swept.
+fn objects_of(name: &str,sk: &Sketch,keep: impl Fn(bool) -> bool) -> [usize; 2] {
+    let mut built = [0,0];
+    for i in objects(sk).into_iter().filter(|&i| keep(sk.is_swept(i))) {
+        let swept = sk.is_swept(i);
+        let solid = &sk.solids[i].name;
+        match (exported(sk,i),stepped(sk,i)) {
+            (Ok((faces,volume)),Ok((d,doing))) => {
+                assert_eq!(d.faces.names.len(),d.faces.smooth.len(),"{name}: `{solid}`'s faces named");
+                if !swept {
+                    assert_eq!(doing[0],"building the solid from its recipe","{name}: `{solid}`");
+                    assert_eq!(d.faces.smooth.len(),faces,"{name}: `{solid}`'s faces");
                 }
-                (Err(a),Err(b)) => assert_eq!(a,b,"{name}: `{solid}`"),
-                (a,b) => panic!("{name}: `{solid}`: the export {:?}, the builder {:?}",a.map(|_| ()),b.map(|_| ())),
+                // a static body is the export's own build; a swept one is admitted at the
+                // display's samples, and comes out within the export's gross bar of it: no
+                // more volume than its surface swept that far
+                let within = if swept { export::GROSS/sk.units.mm_per()*area(&d) } else { 1e-9*volume.abs().max(1.) };
+                assert!((d.faces.volume-volume).abs() <= within,"{name}: `{solid}`: {} against {volume}, within {within}",d.faces.volume);
+                built[swept as usize] += 1;
             }
+            (Err(a),Err(b)) => assert_eq!(a,b,"{name}: `{solid}`"),
+            (a,b) => panic!("{name}: `{solid}`: the export {:?}, the builder {:?}",a.map(|_| ()),b.map(|_| ())),
         }
     }
     built
@@ -86,14 +92,48 @@ fn every_static_object_builds_as_the_export_builds_it() {
     assert!(built >= names.len(),"{built} built");
 }
 
-/// The whole case library, static objects and swept ones (`every_static_object_builds_as_the_export_builds_it`).
+/// The documents whose swept objects a test of their own below holds as the library test would
+/// (`corpus(&[…], true)`): the library test holds their static objects alone, and does not build
+/// the same sweep twice — the bull-nose's notch alone is minutes.
+const NAMED: [&str; 21] = ["solid_sweeps/vthread.sv","solid_sweeps/bar_end.sv",
+    "solid_sweeps/next_tooth.sv","solid_sweeps/parted.sv","solid_sweeps/whole_turn.sv",
+    "solid_sweeps/square_thread.sv","solid_sweeps/rocked.sv","solid_sweeps/flat_end.sv",
+    "solid_sweeps/creased.sv","solid_sweeps/facing.sv","solid_sweeps/slot.sv","solid_sweeps/vgroove.sv",
+    "solid_sweeps/punch.sv","solid_sweeps/drill.sv","solid_sweeps/spoke.sv","solid_sweeps/plunge.sv",
+    "solid_sweeps/stopped_turn.sv","solid_sweeps/stopped_punch.sv","solid_sweeps/stopped_drum.sv",
+    "solid_sweeps/helical_groove.sv","solid_sweeps/stopped_bullnose.sv"];
+
+/// The whole case library, static objects and swept ones
+/// (`every_static_object_builds_as_the_export_builds_it`): each document solved once and its
+/// objects of both kinds held, the documents side by side, and a sweep a test below holds by name
+/// left to it (`NAMED`).  A case whose solve takes minutes (`examples::SLOW`, a filled body driven
+/// at three sizes) is held as it is drawn, unsolved: the builder and the export are held to one
+/// another on whatever drawing they are given, and its solve is
+/// `hulls::the_librarys_rod_is_sized_by_its_sag`'s.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, many minutes: every object of the library built twice")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, minutes: the library's objects built twice")]
 fn every_object_of_the_library_builds_as_the_export_builds_it() {
+    // each of `NAMED` held by a test of this file, or its sweep would be held nowhere
+    let this = include_str!("object_builder.rs");
+    for name in NAMED {
+        assert!(this.contains(&format!("\"{name}\".to_string()")),"`{name}` is held by no test");
+    }
     let names = fixtures::example_names();
-    assert!(corpus(&names,false) > 50);
-    corpus(&names,true);
+    let built = gcs_core::par::map(&names,|name| {
+        let stem = name.rsplit('/').next().unwrap().trim_end_matches(".sv");
+        let sk = match gcs_core::examples::SLOW.contains(&stem) {
+            true => document_unsolved(name),
+            false => solved(name),
+        };
+        let named = NAMED.contains(&name.as_str());
+        sk.map_or(0,|sk| objects_of(name,&sk,|swept| !(named && swept))[0])
+    });
+    let built: usize = built.into_iter().sum();
+    assert!(built > 50,"{built} static objects built");
 }
+
+/// Document `name` as it is drawn, not solved.
+fn document_unsolved(name: &str) -> Option<Sketch> { fixtures::example(name).map(|e| e.sketch) }
 
 /// **A sharp rim's fan builds at the display's samples** (`?example=solid_sweeps`, `vthread.sv`):
 /// the rod's end planes meet the fan the V wheel's rim sweeps in a curve 0.09 mm long, shorter than
@@ -417,7 +457,6 @@ fn a_face_familys_job_keeps_its_key_through_the_write_back() {
 /// `exact_solid` as the export builds it, where the sketch builds its own solids; where a host
 /// builds them, the refusal names the builder that does.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: a generated body built twice")]
 fn exact_solid_builds_a_generated_body_as_the_export_does() {
     let sk = solved("swept_torus.sv").unwrap();
     let part = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "part").unwrap();

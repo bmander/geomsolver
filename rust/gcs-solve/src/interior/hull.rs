@@ -35,6 +35,8 @@ use crate::cholesky::{assembled, Cholesky, Ordering};
 use crate::envelope::held::{cross as vcross, dot as vdot, vadd, vscale, vsub};
 use crate::kernels::{Dual, Num};
 use crate::space::{cross, dot, norm, sub};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// The most Gauss–Newton steps a foot takes.
 const STEPS: usize = 40;
@@ -128,18 +130,19 @@ struct Harmonic {
 pub struct Placed {
     pub x: Vec<f64>,
     start: Vec<f64>,
-    stage: Vec<Stage>,
-    maps: [Option<Harmonic>; 3],
+    stage: Rc<Vec<Stage>>,
+    maps: [Option<Rc<Harmonic>>; 3],
 }
 
-/// **The nodes `free` moved harmonically from the rest** over the Laplacian `weights` hands on —
-/// `L_FF δ_F = −L_FH δ_H`, each axis its solve on one factor — their places in `x` (three a
-/// node), every other node's move read off `x` against `x0`.  A Laplacian of a curve or a surface
-/// (`regular`) may hold a piece no held node reaches (a closed circle's edge, a face of none): its
-/// diagonal is taken a part in a billion heavier, so that piece stays where it was meshed.  The
-/// map, none where nothing is free; `None` where the Laplacian does not factor.
-fn harmonic(free: &[bool], weights: &dyn Fn(&mut dyn FnMut(usize, usize, f64)), x0: &[f64],
-            x: &mut [f64], regular: bool) -> Option<Option<Harmonic>>
+/// **The map that moves the nodes `free` harmonically from the rest** over the Laplacian `weights`
+/// hands on — `L_FF δ_F = −L_FH δ_H`, each axis its solve on one factor (`Harmonic::moves`).  A
+/// Laplacian of a curve or a surface (`regular`) may hold a piece no held node reaches (a closed
+/// circle's edge, a face of none): its diagonal is taken a part in a billion heavier, so that piece
+/// stays where it was meshed.  The map, none where nothing is free; `None` where the Laplacian does
+/// not factor.  It reads the mesh as it was meshed and nothing the drawing moves, so it is made
+/// once a mesh (`Made`).
+fn harmonic(free: &[bool], weights: &dyn Fn(&mut dyn FnMut(usize, usize, f64)), regular: bool)
+    -> Option<Option<Harmonic>>
 {
     let mut m = 0;
     let at: Vec<Option<usize>> =
@@ -149,7 +152,6 @@ fn harmonic(free: &[bool], weights: &dyn Fn(&mut dyn FnMut(usize, usize, f64)), 
     }
     let mut t: Vec<(usize, usize, f64)> = Vec::new();
     let mut held: Vec<(usize, usize, f64)> = Vec::new();
-    let mut rhs = [vec![0.0; m], vec![0.0; m], vec![0.0; m]];
     let mut diagonal = vec![0.0; m];
     weights(&mut |a, b, w| {
         for (p, q) in [(a, b), (b, a)] {
@@ -158,12 +160,7 @@ fn harmonic(free: &[bool], weights: &dyn Fn(&mut dyn FnMut(usize, usize, f64)), 
             diagonal[ip] += w;
             match at[q] {
                 Some(iq) => t.push((ip, iq, -w)),
-                None => {
-                    held.push((ip, q, w));
-                    for c in 0..3 {
-                        rhs[c][ip] += w * (x[3 * q + c] - x0[3 * q + c]);
-                    }
-                }
+                None => held.push((ip, q, w)),
             }
         }
     });
@@ -175,15 +172,66 @@ fn harmonic(free: &[bool], weights: &dyn Fn(&mut dyn FnMut(usize, usize, f64)), 
     }
     let (l, mut factor) = assembled(m, &t, Ordering::Amd);
     factor.factor(&l).ok()?;
-    for (c, r) in rhs.iter_mut().enumerate() {
-        factor.solve(r);
-        for (i, k) in at.iter().enumerate() {
-            if let Some(k) = *k {
-                x[3 * i + c] = moved(x0[3 * i + c], r[k]);
+    Some(Some(Harmonic { at, factor, held }))
+}
+
+impl Harmonic {
+    /// Its free nodes' places in `x` (three a node), moved from where they were meshed (`x0`) by
+    /// the held nodes' moves read off `x` against `x0`.
+    fn moves(&self, x0: &[f64], x: &mut [f64]) {
+        let m = self.free_len();
+        let mut rhs = [vec![0.0; m], vec![0.0; m], vec![0.0; m]];
+        // in the order the weights were handed on, as the sums were always taken
+        for &(ip, q, w) in &self.held {
+            for c in 0..3 {
+                rhs[c][ip] += w * (x[3 * q + c] - x0[3 * q + c]);
+            }
+        }
+        for (c, r) in rhs.iter_mut().enumerate() {
+            self.factor.solve(r);
+            for (i, k) in self.at.iter().enumerate() {
+                if let Some(k) = *k {
+                    x[3 * i + c] = moved(x0[3 * i + c], r[k]);
+                }
             }
         }
     }
-    Some(Some(Harmonic { at, factor, held }))
+
+    /// How many nodes it moves.
+    fn free_len(&self) -> usize {
+        self.at.iter().flatten().count()
+    }
+}
+
+/// **What placing a filled body's nodes reads of its mesh alone**: the mesh's facets, each node's
+/// stage and each harmonic stage's map — every one a function of the nodes' tags, their places as
+/// meshed and the elements, and none of the drawing's columns.  A solve places the same mesh at
+/// every step, its rate at every step again, so they are made once a mesh and kept (`MADE`): the
+/// same factors, and the same sums taken on them, as made afresh every time.
+struct Made {
+    x0: Vec<f64>,
+    nodes: Vec<Vec<usize>>,
+    tets: Vec<[usize; 10]>,
+    facets: Vec<[usize; 6]>,
+    stage: Rc<Vec<Stage>>,
+    /// Each harmonic stage's map once asked for (`HARMONIC`'s order): none where nothing is free,
+    /// `Err` where its Laplacian does not factor.
+    maps: [Option<Result<Option<Rc<Harmonic>>, ()>>; 3],
+}
+
+/// How many meshes' `Made` a thread keeps: the drawings a test or a page solves at once have a few
+/// filled bodies at most.
+const KEPT: usize = 4;
+
+thread_local! {
+    /// The meshes placed last on this thread, the latest first.
+    static MADE: RefCell<Vec<Rc<RefCell<Made>>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The meshes kept on this thread let go (`MADE`): each holds its Laplacians' factors, so a
+/// document solve lets them go when it ends, as it does its last row (`row::forget`).
+pub fn forget() {
+    MADE.with(|kept| kept.borrow_mut().clear());
 }
 
 /// `x` moved by `d`: itself, to the bit, where `d` is nothing.
@@ -494,8 +542,9 @@ impl Hull {
     /// (`inside` false), its inner nodes left where they were meshed.
     pub fn places(&self, v: &[f64], tets: &[[usize; 10]], inside: bool) -> Option<Placed> {
         let n = self.nodes.len();
-        let facets = surface(tets);
-        let stage = self.stages(&facets);
+        let made = self.made(tets);
+        let mut made = made.borrow_mut();
+        let stage = made.stage.clone();
         let mut x = self.x0.clone();
         let mut start = self.x0.clone();
         let feet = |s: Stage, start: &[f64], x: &mut [f64]| -> Option<()> {
@@ -508,17 +557,27 @@ impl Hull {
             Some(())
         };
         feet(Stage::Vertex, &start, &mut x)?;
-        let mut maps: [Option<Harmonic>; 3] = [None, None, None];
+        let mut maps: [Option<Rc<Harmonic>>; 3] = [None, None, None];
         for (k, s) in HARMONIC.into_iter().enumerate() {
             if s == Stage::Inner && !inside {
                 break;
             }
             // moved harmonically from the stages before
             let free: Vec<bool> = stage.iter().map(|&t| t == s).collect();
-            let weights = |put: &mut dyn FnMut(usize, usize, f64)| {
-                self.weights(s, &facets, &stage, tets, put)
-            };
-            maps[k] = harmonic(&free, &weights, &self.x0, &mut x, s != Stage::Inner)?;
+            if made.maps[k].is_none() {
+                let map = {
+                    let facets = &made.facets;
+                    let weights = |put: &mut dyn FnMut(usize, usize, f64)| {
+                        self.weights(s, facets, &stage, tets, put)
+                    };
+                    harmonic(&free, &weights, s != Stage::Inner).ok_or(())
+                };
+                made.maps[k] = Some(map.map(|m| m.map(Rc::new)));
+            }
+            maps[k] = made.maps[k].clone().unwrap().ok()?;
+            if let Some(map) = &maps[k] {
+                map.moves(&self.x0, &mut x);
+            }
             for i in (0..n).filter(|&i| free[i]) {
                 start[3 * i..3 * i + 3].copy_from_slice(&x[3 * i..3 * i + 3]);
             }
@@ -527,6 +586,33 @@ impl Hull {
             }
         }
         Some(Placed { x, start, stage, maps })
+    }
+
+    /// What placing this hull's nodes over the elements `tets` reads of the mesh alone (`Made`):
+    /// kept from an earlier placing of the same mesh on this thread, or made now and kept.
+    fn made(&self, tets: &[[usize; 10]]) -> Rc<RefCell<Made>> {
+        let same = |m: &Made| {
+            m.x0.len() == self.x0.len()
+                && m.x0.iter().zip(&self.x0).all(|(a, b)| a.to_bits() == b.to_bits())
+                && m.nodes == self.nodes && m.tets == tets
+        };
+        MADE.with(|kept| {
+            let mut kept = kept.borrow_mut();
+            if let Some(k) = kept.iter().position(|m| same(&m.borrow())) {
+                let m = kept.remove(k);
+                kept.insert(0, m.clone());
+                return m;
+            }
+            let facets = surface(tets);
+            let stage = Rc::new(self.stages(&facets));
+            let m = Rc::new(RefCell::new(Made {
+                x0: self.x0.clone(), nodes: self.nodes.clone(), tets: tets.to_vec(), facets, stage,
+                maps: [None, None, None],
+            }));
+            kept.insert(0, m.clone());
+            kept.truncate(KEPT);
+            m
+        })
     }
 
     /// The Laplacian stage `s` is moved by: a curve's for an edge's nodes, the surface's for a
