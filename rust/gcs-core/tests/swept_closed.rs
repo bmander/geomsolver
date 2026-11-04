@@ -1017,6 +1017,67 @@ fn screwed_back(x: [f64;3],angle: f64,rise: f64,v: f64) -> [f64;3] {
     [c*x[0]-s*x[1],s*x[0]+c*x[1],x[2]-rise*v]
 }
 
+/// **A line grazing a hyperboloid touches it, read once** (`query::curve_surface`'s certified
+/// reading of a line against a surface of revolution, `line_revolution`): the hyperboloid a leaning
+/// edge turns into, `ρ = √(10² + k² z²)`, its meridian the rational conic the closed class lays
+/// (`closed::meridian_arc`'s), and lines tangent to it at points of several heights, leaning in
+/// its tangent plane off the horizontal by several angles (none a ruling). Each is one touch at
+/// its point: a double root, which rounding can part into two simple ones a hair apart, read as a
+/// crossing once cut the plane face of a leaning bar turned through a ring sector where its edge
+/// only grazed the hyperboloid, and left a vertex on another edge's chord its mesh refused.
+#[test]
+fn a_line_grazing_a_hyperboloid_touches_it_once() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::nurbs::BSpline;
+    use gcs_core::brep::query::{curve_surface,Meets};
+    let (throat,k) = (10.,20f64.to_radians().tan());
+    let rho = |z: f64| (throat*throat+k*k*z*z).sqrt();
+    let (za,zb) = (-1.,1.);
+    let (a,b) = ([rho(za),za],[rho(zb),zb]);
+    // the conic through the meridian's ends, its end tangents' meeting and its shoulder
+    let slope = |z: f64| k*k*z/rho(z);
+    let (ta,tb) = ([slope(za),1.],[slope(zb),1.]);
+    let det = -ta[0]*tb[1]+ta[1]*tb[0];
+    let t = (-(b[0]-a[0])*tb[1]+(b[1]-a[1])*tb[0])/det;
+    let m = [a[0]+t*ta[0],a[1]+t*ta[1]];
+    let mid = [0.5*(a[0]+b[0]),0.5*(a[1]+b[1])];
+    let (dr,dz) = (m[0]-mid[0],m[1]-mid[1]);
+    let (qa,qb,qc) = (dr*dr-k*k*dz*dz,2.*(mid[0]*dr-k*k*mid[1]*dz),mid[0]*mid[0]-throat*throat-k*k*mid[1]*mid[1]);
+    let disc = (qb*qb-4.*qa*qc).sqrt();
+    let u = [(-qb+disc)/(2.*qa),(-qb-disc)/(2.*qa)].into_iter().find(|u| *u > 0. && *u < 1.).unwrap();
+    let at = |r: f64,z: f64| [r,0.,z];
+    let conic = BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],vec![at(a[0],a[1]),at(m[0],m[1]),at(b[0],b[1])],vec![1.,u/(1.-u),1.]).unwrap();
+    let edges = vec![ProfileEdge::Spline(std::sync::Arc::new(conic)),ProfileEdge::Line {a:at(b[0],zb),b:at(0.,zb)},
+        ProfileEdge::Line {a:at(0.,zb),b:at(0.,za)},ProfileEdge::Line {a:at(0.,za),b:at(a[0],za)}];
+    let solid = revolve(&Profile {origin:[0.;3],normal:[0.,1.,0.],names:Vec::new(),loops:vec![edges]},[0.;3],[0.,0.,1.],
+        std::f64::consts::TAU).unwrap();
+    let sheet = &solid.faces.iter().find(|f| f.surface.kind() == "revolution").expect("a hyperboloid").surface;
+    let tol = 1e-6;
+    let mut read = 0;
+    for z in [-0.6385066634855452,-0.3,0.,0.25,0.6385066634855529] {
+        for angle in [15f64,40.,65.,80.] {
+            // at (ρ(z), 0, z): the tangent plane holds y and the meridian's tangent (ρ'(z), 0, 1)
+            let p = [rho(z),0.,z];
+            let along = unit([slope(z),0.,1.]);
+            let (s,c) = angle.to_radians().sin_cos();
+            let d = [c*0.+s*along[0],c*1.+s*along[1],s*along[2]];
+            let line = Curve::Line {p:[p[0]-0.7*d[0],p[1]-0.7*d[1],p[2]-0.7*d[2]],d};
+            match curve_surface(&line,[0.,1.4],sheet,tol) {
+                Meets::At(found) => {
+                    assert_eq!(found.len(),1,"z {z}, {angle}°: {found:?}");
+                    let (t,touch) = found[0];
+                    assert!(touch,"z {z}, {angle}°: read as a crossing at {t}");
+                    assert!((t-0.7).abs() <= 1e-3,"z {z}, {angle}°: at {t}");
+                }
+                Meets::Along => panic!("z {z}, {angle}°: along"),
+            }
+            read += 1;
+        }
+    }
+    assert_eq!(read,20);
+}
+
 /// **Every surface the closed class emits locates a point exactly** (#777 V1's gate): a ray's
 /// crossings with each kind of candidate face are certified, never sampled — planes, a cylinder, a
 /// cone, a ball and a torus, a hyperboloid a leaning edge turns into (a surface of revolution of a

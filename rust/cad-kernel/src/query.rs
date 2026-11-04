@@ -317,9 +317,8 @@ fn line_poly(c: &[f64],p: V,d: V,[t0,t1]: [f64;2],surface: &Surface,tol: f64,kee
     let dg = |t: f64| crate::util::isolate::poly_d(c,t);
     let bound = |a: f64,b: f64| crate::util::isolate::poly_bounds(c,a,b);
     let found = crate::util::isolate::roots(&g,&dg,&bound,[lo,hi],tol*1e-3/speed,&|t| surface.implicit(at(t)).abs() <= tol)?;
-    let mut out: Vec<(f64,bool)> = found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at.clamp(t0,t1),r.touch)).collect();
-    out.dedup_by(|b,a| (b.0-a.0).abs()*speed <= tol);
-    Some(Meets::At(out))
+    let out: Vec<(f64,bool)> = found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at.clamp(t0,t1),r.touch)).collect();
+    Some(Meets::At(merged(out,speed,tol,&|t| surface.implicit(at(t)))))
 }
 
 /// A line against a cone (`Surface::Cone`, its frame `f`, radius `r` at the origin, half-angle
@@ -408,9 +407,31 @@ fn line_revolution(p: V,d: V,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Curve,s
             }
         }
     }
+    Some(Meets::At(merged(out,speed,tol,&|t| surface.implicit(add(p,scale(d,t))))))
+}
+
+/// **Roots along a line within `tol` of one another read as one** (`line_poly`,
+/// `line_revolution`): sorted, and each run of them closer than `tol` apart along the line taken
+/// for one meeting — a crossing where the surface's sign `side` changes across the run (a root
+/// found twice, at a knot both spans share), a touch where it does not (a double root, which
+/// rounding parts into two simple ones a hair apart: read as a crossing it cut a face where an
+/// edge only grazes the surface, and left a vertex on another face's boundary).
+fn merged(mut out: Vec<(f64,bool)>,speed: f64,tol: f64,side: &dyn Fn(f64) -> f64) -> Vec<(f64,bool)> {
     out.sort_by(|x,y| x.0.total_cmp(&y.0));
-    out.dedup_by(|y,x| (y.0-x.0).abs()*speed <= tol);
-    Some(Meets::At(out))
+    let mut runs: Vec<(f64,bool)> = Vec::with_capacity(out.len());
+    let mut i = 0;
+    while i < out.len() {
+        let mut j = i;
+        while j+1 < out.len() && (out[j+1].0-out[j].0).abs()*speed <= tol { j += 1 }
+        if j == i { runs.push(out[i]) } else {
+            let (a,b) = (out[i].0,out[j].0);
+            let step = 2.*tol/speed;
+            let touch = out[i..=j].iter().all(|r| r.1) || side(a-step)*side(b+step) > 0.;
+            runs.push((if touch { 0.5*(a+b) } else { a },touch));
+        }
+        i = j+1;
+    }
+    runs
 }
 
 /// **`curve_surface` by the general search alone** (`curve_sheet`), whatever closed form the pair
