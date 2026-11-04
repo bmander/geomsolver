@@ -4,6 +4,7 @@
 //! constraints implied, over and expected, the same parameters free.
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, Diagnosis, NUMERIC_MAX};
 use gcs_core::examples;
+use gcs_core::linalg::Mat;
 use gcs_core::model::Sketch;
 use gcs_core::solve::{solve, SolveOpts};
 use std::collections::BTreeSet;
@@ -54,13 +55,139 @@ fn the_parts_read_the_library_as_the_whole_does() {
     assert!(differ.is_empty(), "{}", differ.join("\n"));
 }
 
-/// Past it — the V-twin, the engine, the long truss — forcing the whole SVD to compare against
-/// takes minutes, which the slow tier affords (the cases below it are the test above's).
+/// The most free parameters a case is held to the whole SVD at: the V-twin's 993 take seconds,
+/// the engine's 4,859 two SVDs of minutes each.  Past it a case's parts are held to the Jacobian
+/// itself (`the_parts_reading_of_every_large_case_holds_on_its_jacobian`).
+const WHOLE_MAX: usize = 1000;
+
+/// Past it — the V-twin, the long truss, the plate — the parts read each large case as the whole
+/// SVD does, up to `WHOLE_MAX`.  The library's rod (`examples::SLOW`, its solve minutes) joins
+/// them in the slow tier.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, minutes: the whole SVD of every large case")]
 fn the_parts_read_the_large_cases_as_the_whole_does() {
-    let differ = disagreements(NUMERIC_MAX + 1..=usize::MAX);
+    let differ = disagreements(NUMERIC_MAX + 1..=WHOLE_MAX);
     assert!(differ.is_empty(), "{}", differ.join("\n"));
+}
+
+/// The parts' motions and dependencies of `sk` held to its Jacobian: each sent to zero by it
+/// (`J n`, `Jᵀ w`, to 1e-8 of its largest entry), each set independent, and the rank they leave
+/// read forward over the columns, `n − motions`, the same as read backward over the rows,
+/// `m − dependencies` — two readings by different parts in different orders — and as its
+/// diagnosis `d` says it.  What is wrong, said; nothing where it holds.
+fn held_on_its_jacobian(key: &str, sk: &Sketch, d: &Diagnosis) -> Vec<String> {
+    let (j, rows, null, left) = gcs_core::diagnose::parts_null_spaces(sk);
+    let n = j.n_cols;
+    let big = (0..j.n_rows()).flat_map(|r| j.row(r).map(|(_, v)| v.abs())).fold(0.0, f64::max);
+    let mut wrong = Vec::new();
+    for (k, v) in null.iter().enumerate() {
+        let off = (0..j.n_rows()).map(|r| j.row_dot(r, v).abs()).fold(0.0, f64::max);
+        if !(off <= 1e-8 * big) {
+            wrong.push(format!("{key}: motion {k} moves a row by {off:e}"));
+        }
+    }
+    for (k, w) in left.iter().enumerate() {
+        let mut jt = vec![0.0; n];
+        for (r, &wr) in w.iter().enumerate().filter(|(_, wr)| **wr != 0.0) {
+            for (c, a) in j.row(r) {
+                jt[c] += wr * a;
+            }
+        }
+        let off = jt.iter().fold(0.0f64, |m, x| m.max(x.abs()));
+        if !(off <= 1e-8 * big) {
+            wrong.push(format!("{key}: dependency {k} leaves {off:e} of the rows"));
+        }
+    }
+    let independent = |vs: &[Vec<f64>]| {
+        vs.is_empty() || gcs_core::linalg::rank_rrqr(&Mat::from_vec(vs.len(), vs[0].len(), vs.concat()), 1e-9)
+            == vs.len()
+    };
+    if !independent(&null) || !independent(&left) {
+        wrong.push(format!("{key}: {} motions or {} dependencies not independent", null.len(), left.len()));
+    }
+    let (forward, backward) = (n - null.len(), rows - left.len());
+    if forward != backward || d.numeric_rank != Some(forward) {
+        wrong.push(format!("{key}: rank {forward} over the columns, {backward} over the rows, {:?} \
+                            said", d.numeric_rank));
+    }
+    wrong
+}
+
+/// **Every large case's parts hold on its Jacobian** (#88, #780), the engine's 4,859 columns among
+/// them: what the whole SVD would be asked, certified by the Jacobian itself in milliseconds a
+/// case — every motion and dependency the parts read is one, and there are as many as the rank
+/// read both ways leaves.
+#[test]
+fn the_parts_reading_of_every_large_case_holds_on_its_jacobian() {
+    let wrong: Vec<String> = gcs_core::par::map(&examples::CASES, |(_, key, _)| {
+        if examples::left_to_slow_tier(key) {
+            return Vec::new();
+        }
+        let Some(mut sk) = examples::case(key) else { return Vec::new() };
+        solve(&mut sk, SolveOpts::default());
+        if gcs_core::system::System::new(&sk).n_free <= NUMERIC_MAX {
+            return Vec::new();
+        }
+        let d = diagnose(&mut sk, DiagnoseOptions::default());
+        held_on_its_jacobian(key, &sk, &d)
+    }).into_iter().flatten().collect();
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// A rigid framework of `n` points past the dense limit (`fixtures::laman`, Henneberg's moves:
+/// minimally rigid by construction, grounded), with `more` bars added between points it already
+/// holds and the first `fewer` of its bars taken away.  Its numbers are measured off its points,
+/// so it stands solved.
+fn framework(n: usize, seed: u32, more: usize, fewer: usize) -> Sketch {
+    use gcs_core::constraints::{CKind, Constraint};
+    use gcs_core::model::EntRef;
+    let mut sk = gcs_core::fixtures::laman(n, seed, true);
+    let bars: Vec<u32> = sk.constraints.iter().filter(|c| c.kind == CKind::Distance).map(|c| c.id)
+        .take(fewer).collect();
+    for id in bars {
+        sk.remove(id);
+    }
+    let mut rng = gcs_core::rng::Rng::new(seed + 1);
+    for _ in 0..more {
+        let s = rng.sample(n, 2);
+        let ((ax, ay), (bx, by)) = (sk.point_xy(s[0]), sk.point_xy(s[1]));
+        let d = (ax - bx).hypot(ay - by);
+        sk.add(Constraint::distance(EntRef::point(s[0]), EntRef::point(s[1]), d));
+    }
+    sk
+}
+
+/// **A framework past the dense limit whose answer is known reads as it must, by parts and by the
+/// whole alike** (#88, #780): Henneberg's frameworks of 152 points (302 free numbers, just past
+/// the limit) are rigid by construction, so held as made they are determined, and with `k` bars
+/// fewer `k` freedoms open.  At 302 columns the whole SVD takes a fraction of a second, so each
+/// seed is read both ways, and the parts held to the Jacobian.  With a bar more the rank is the
+/// same and its dependency is over, read by parts alone: naming what is over is the cost (three
+/// bars more took ten seconds a reading at 358 columns), and the library's small cases hold the
+/// two readings' `over` to one another (`the_parts_read_the_library_as_the_whole_does`).
+#[test]
+fn a_framework_past_the_dense_limit_reads_as_it_was_built() {
+    let held = |sk: &Sketch, d: &Diagnosis, what: &str| {
+        let wrong = held_on_its_jacobian(what, sk, d);
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    };
+    for seed in 0..2 {
+        for fewer in [0, 2] {
+            let mut sk = framework(152, 780 + seed, 0, fewer);
+            let what = format!("seed {seed}, {fewer} fewer");
+            let (whole, parts) = both(&mut sk);
+            assert!(whole.n_params > NUMERIC_MAX, "{what}: {} free", whole.n_params);
+            assert_eq!(said(&whole), said(&parts), "{what}");
+            assert_eq!((parts.dof, parts.numeric_rank), (fewer as i64, Some(302 - fewer)), "{what}");
+            assert!(parts.over.is_empty() && parts.implied.is_empty(), "{what}: {:?}", parts.over);
+            held(&sk, &parts, &what);
+        }
+    }
+    let mut sk = framework(152, 780, 1, 0);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert!(d.by_parts && d.n_params > NUMERIC_MAX);
+    assert_eq!((d.dof, d.numeric_rank), (0, Some(302)));
+    assert!(!d.over.is_empty(), "a bar more is over: {:?}", d.implied);
+    held(&sk, &d, "a bar more");
 }
 
 /// **Past the dense limit the rank is read, not skipped** (#88): the V-twin's free parameters are

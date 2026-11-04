@@ -327,7 +327,10 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   only asked for a null space, `linalg::null_full_row_rank` for the under part, SVD otherwise),
   every part's null vectors carried into later parts by minimum-norm solves and checked against
   the rows a part could not make up: exact, not a bound (`tests/numeric_parts.rs` holds it to the
-  whole SVD over the library; the large cases in the slow tier).  The second-order screen runs
+  whole SVD over the library, forced by parts, and over the large cases up to a thousand columns;
+  past that, the engine's 4,859, to the Jacobian itself — every motion and dependency the parts
+  read sent to zero by it, independent, and the rank read forward over the columns the same as
+  backward over the rows; and Henneberg's frameworks past the limit read as they were built).  The second-order screen runs
   on its null space as on the whole's.  The V-twin (925) reads in ~0.2 s.  A consistent dependency is `over` ("remove one") only when a
   dimension takes part in it — editing that dimension is the next conflict; one among pure
   relations is a theorem that nothing can break, so its wholly-implied constraints are

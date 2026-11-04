@@ -1344,23 +1344,13 @@ fn a_failed_builds_arrangement_is_dumped_replayed_and_reduced() {
     assert_eq!(reduce(&loaded,&fails),vec![0,2]);
 }
 
-/// **The ball-end mill screwed through a ring sector is cut right, or refused by name within its
-/// budget** (#777 V3's gate, and the case M3 and M4 were for): a mill of radius 1, its ball's centre
-/// 10 from a screw's axis and its side 3 tall above it, screwed 1.5 rad climbing half a unit a
-/// radian through a sixth of a ring 8 to 12 across and 4 high, which it passes wholly across. On
-/// #776 this run stalled for hours, and a build of it removed 14.4 against 12.0; now it is held to
-/// the volume it removes apart from the kernel, or refused naming the stage that ran away — never
-/// hung, never wrong. In helical coordinates `(ρ, ψ, ζ = z − kψ)` the screw is a shift in `ψ`, so
-/// a point of the sector is removed where the helix through it meets the mill: the section of such
-/// helices, `(ρ, ζ)` on a fine grid (the side's where `|ρ e^{iψ} − d| ≤ 1` for some `ψ` whose height
-/// is on it, the ball's within 1 of the centre's helix), each weighed by `ρ` and by the angle of the
-/// sector over which its helix stays within the sector's heights.
-#[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: the ball-end mill screwed through a sector")]
-fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name() {
+/// The ball-end mill of #777 V3's gate: a mill of radius 1, its ball's centre 10 from a screw's
+/// axis and its side 3 tall above it, screwed 1.5 rad climbing half a unit a radian through a
+/// sixth of a ring 8 to 12 across and 4 high, which it passes wholly across. The sector, the mill,
+/// the screw and the roll.
+fn ball_end_mill_through_a_sector() -> (Brep,Brep,Trajectory,[f64;2]) {
     use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
     use gcs_core::brep::geom::Frame;
-    use gcs_core::brep::swept::closed::{cut_from,Unbuilt};
     use std::f64::consts::{FRAC_PI_2,PI};
     let (d,r,h,turn,k) = (10.,1.,3.,1.5,0.5);
     let at = |x: f64,z: f64| [d+x,0.,z];
@@ -1373,7 +1363,55 @@ fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_na
     let profile = Profile {origin:rect[0],normal:f.y,names:Vec::new(),loops:vec![(0..4).map(|j| ProfileEdge::Line {a:rect[j],b:rect[(j+1)%4]}).collect()]};
     let sector = revolve(&profile,[0.;3],[0.,0.,1.],PI/3.).unwrap().moved(&gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],-PI/6.));
     let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:k*std::f64::consts::TAU});
-    let roll = [-turn/2.,turn/2.];
+    (sector,mill,path,[-turn/2.,turn/2.])
+}
+
+/// **The ball-end mill screwed through a ring sector is refused by name when its sheet's inverse
+/// map runs past its budget** (#777 V3's gate, the case M3 and M4 were for; #780 R1): on #776 this
+/// run stalled for hours, and a build of it removed 14.4 against 12.0. Its inverse stage given a
+/// thousandth of `closed::BUDGET`'s and every other stage its whole, the build runs its
+/// arrangement, traces, rays and outlines as under the default budget and is refused in the stage
+/// that ran away there — the inverse map, at a point, naming the surface — the same way again, in
+/// seconds, where the default budget's refusal takes minutes
+/// (`the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name`, slow tier).
+/// A stopped build stops its crossings' search too (`meeting::crossings`): before, refused at a
+/// hundredth of the budget, the build still walked every pair of near chords to its crossing, 23
+/// minutes.
+#[test]
+fn the_ball_end_mill_screwed_through_a_ring_sector_is_refused_by_its_inverse_maps_budget() {
+    use gcs_core::brep::swept::closed::{cut_from_within,Unbuilt,BUDGET};
+    use gcs_core::meter::Stage;
+    let (sector,mill,path,roll) = ball_end_mill_through_a_sector();
+    let tight = BUDGET.with(Stage::Inverse,BUDGET.0[Stage::Inverse as usize]/1000);
+    let refused = || {
+        let clock = std::time::Instant::now();
+        (cut_from_within(&sector,&mill,&path,roll,0.002,1e-6,tight),clock.elapsed())
+    };
+    let (first,took) = refused();
+    eprintln!("refused in {took:?}: {first:?}");
+    let Err(Unbuilt::Budget {stage,at,what}) = first else { panic!("{first:?}") };
+    assert_eq!(stage,Stage::Inverse);
+    assert!(at.iter().all(|x| x.is_finite()) && !what.is_empty(),"{at:?} {what}");
+    let (again,_) = refused();
+    assert_eq!(again.err(),Some(Unbuilt::Budget {stage,at,what}),"refused the same way again");
+}
+
+/// **The ball-end mill screwed through a ring sector is cut right, or refused by name within its
+/// budget** (#777 V3's gate, under the default budget): held to the volume it removes apart from
+/// the kernel, or refused naming the stage that ran away — never hung, never wrong. In helical
+/// coordinates `(ρ, ψ, ζ = z − kψ)` the screw is a shift in `ψ`, so a point of the sector is
+/// removed where the helix through it meets the mill: the section of such helices, `(ρ, ζ)` on a
+/// fine grid (the side's where `|ρ e^{iψ} − d| ≤ 1` for some `ψ` whose height is on it, the ball's
+/// within 1 of the centre's helix), each weighed by `ρ` and by the angle of the sector over which
+/// its helix stays within the sector's heights. Refused, it runs the inverse stage's whole budget
+/// first: about three minutes.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about three minutes: the ball-end mill's budget run down")]
+fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name() {
+    use gcs_core::brep::swept::closed::{cut_from,Unbuilt};
+    use std::f64::consts::PI;
+    let (d,r,h,k) = (10.,1.,3.,0.5);
+    let (sector,mill,path,roll) = ball_end_mill_through_a_sector();
     // apart from the kernel: whether the helix (ρ, ζ) meets the mill, and over what angle of the
     // sector it stays within the sector's heights
     let meets = |rho: f64,zeta: f64| -> bool {
