@@ -8,7 +8,7 @@
 //! for (`unseen`).
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use super::geom::{Curve,Frame,Surface,V};
+use super::geom::{Carry,Curve,Frame,Surface,V};
 use super::plane2;
 use crate::util::space::{add,cross,distance,dot,norm,scale,segment_distance,sub,unit};
 
@@ -634,6 +634,49 @@ pub(crate) fn helix_between(on: &super::geom::Blend,by: &super::geom::Blend,tol:
     Some(Some(dot(cross(sub(m.p0,p),d),cr)/dot(cr,cr)))
 }
 
+/// **Two sheets lines screw into by one screw meet in helices** (#777 M5: a leaning edge's patch and
+/// its neighbour's sheet, which share the helix of their common corner): a point of `on`'s line,
+/// `p(u) = p₀ + u Δ`, lies on `by`'s sheet where the screw carries some point of `by`'s line onto it,
+/// `p(u) = screw_θ(q(w))` — three equations in `(u, w, θ)`, `θ` over the turns the two sheets' spans
+/// differ by, isolated with a bound (`util::isolate::solve`, #777 M1): `q` is a line, so the second
+/// derivatives are `|∂²/∂w∂θ| ≤ |Δ_by|` and `|∂²/∂θ²| ≤` its reach from the axis. Each root's
+/// meeting is the helix of `p(u)`, `on`'s rail there (`Curve::Iso`), exact where a trace would fit it
+/// — and a fit's end, leaning a few degrees off, once ordered the curves leaving a corner wrongly.
+/// `None` for sheets of different screws, or where the search gives up.
+fn screwed_lines_meeting(on: &std::sync::Arc<super::geom::Blend>,by: &super::geom::Blend,tol: f64) -> Option<Vec<Curve>> {
+    let (m,l) = (on.screwed_line()?,by.screwed_line()?);
+    let off = sub(m.centre,l.centre);
+    if norm(cross(l.axis,m.axis)) > 1e-12 || norm(sub(off,scale(l.axis,dot(off,l.axis)))) > tol
+        || (l.pitch()-m.pitch()).abs() > 1e-12*l.pitch().abs().max(m.pitch().abs()) { return None }
+    let (c,k,pitch) = (l.centre,l.axis,l.pitch());
+    // the turn `θ` that carries `by`'s line onto a point of `on`'s: `by`'s span less `on`'s
+    let (a0,a1) = (m.angle.min(0.),m.angle.max(0.));
+    let (b0,b1) = (l.angle.min(0.),l.angle.max(0.));
+    let span = [b0-a1,b1-a0];
+    let screw = |t: f64,x: V| -> V { add(add(c,Carry::turn(k,t,sub(x,c))),scale(k,pitch*t)) };
+    let f = |x: [f64;3]| -> ([f64;3],[[f64;3];3]) {
+        let (u,w,t) = (x[0],x[1],x[2]);
+        let p = add(m.p0,scale(m.run,u));
+        let q = add(l.p0,scale(l.run,w));
+        let sq = screw(t,q);
+        let rq = Carry::turn(k,t,l.run);
+        // d/dθ of screw_θ(q): k × (screw_θ(q) − c) turned, and the rise
+        let dt = add(cross(k,sub(sub(sq,c),scale(k,pitch*t))),scale(k,pitch));
+        (std::array::from_fn(|i| p[i]-sq[i]),std::array::from_fn(|i| [m.run[i],-rq[i],-dt[i]]))
+    };
+    let reach = norm(sub(l.p0,c))+norm(l.run);
+    let h = 2.*norm(l.run)+reach;
+    let second = |_: &[[f64;2];3]| [h;3];
+    let size = norm(m.run).max(norm(l.run)).max(reach);
+    let width = tol*1e-2/size.max(1e-300);
+    let near = |x: [f64;3]| { let (v,_) = f(x); norm(v) <= tol };
+    let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,1.],[0.,1.],span],width,&near)?;
+    let mut us: Vec<f64> = found.into_iter().map(|r| r.at[0].clamp(0.,1.)).collect();
+    us.sort_by(f64::total_cmp);
+    us.dedup_by(|y,x| (*y-*x).abs()*norm(m.run) <= tol);
+    Some(us.into_iter().map(|u| Curve::Iso(on.clone(),u)).collect())
+}
+
 /// **Where a sheet a line screws into meets a surface it shares the screw's axis with**, in closed
 /// form (`Blend::screwed_line`): the screw keeps the cylinder about its axis and the other sheet of
 /// one screw, so they meet where the line does, carried — helices, each the sheet's rail at the
@@ -703,7 +746,10 @@ fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
             out.push(Curve::SheetCut(std::sync::Arc::new(super::geom::SheetCut::new(blend.clone(),n,h,held)?)));
             Some(out)
         }
-        Surface::Blend(_,ob) => Some(helix_between(ob,blend,tol)?.map(|u| Curve::Iso(ob.clone(),u)).into_iter().collect()),
+        Surface::Blend(_,ob) => match helix_between(ob,blend,tol) {
+            Some(h) => Some(h.map(|u| Curve::Iso(ob.clone(),u)).into_iter().collect()),
+            None => screwed_lines_meeting(ob,blend,tol),
+        },
         _ => None,
     }
 }

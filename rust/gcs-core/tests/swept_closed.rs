@@ -127,71 +127,153 @@ fn a_bar_under_a_screw_closes_into_its_helical_sweep() {
 /// a screw"): its leaning edges, and its leaning faces' contact lines (where a face's normal is
 /// square to the screw's velocity), each screw into a patch of a ruled helicoid bounded inside the
 /// domain, its rim standing in a cell just past the candidates that seal it, its meetings stopping
-/// partway across the faces it meets. Apart from the build, in helical coordinates `(ρ, ψ, ζ = z −
-/// kψ)` the screw is a shift in `ψ`: the block is less tall than a lead, so each helix meets it once,
-/// and the sweep is its own volume and `Θ ∫ ρ L(ρ) dρ`, `L(ρ)` the range of `z − kψ` over its slice
-/// by the cylinder of radius `ρ` — each vertical line of that cylinder clipped to the block exactly,
-/// the extremes read over a fine grid of `ψ` and settled, and `ρ` integrated by Gauss–Legendre.
+/// partway across the faces it meets. Held to its volume apart from the build
+/// (`leaning_sweep_volume`) to 1e-6, and to membership at seeded points.
 #[test]
-#[ignore = "#777 M5, not built yet: refused by the judge — a sheet's piece walks the bottom corner's helix both ways, where curves leave the corner nearly tangent (docs/swept-solid-design.md)"]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, #777 M5: the leaning block's build takes minutes")]
 fn a_block_leaning_to_a_screws_axis_closes_into_its_helical_sweep() {
-    use std::f64::consts::TAU;
     let (lean,off) = (0.35,3.);
     let tool = leaning(lean,off);
     let (theta,advance) = (1.,2.);
     let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance});
-    let k = advance/TAU/theta;
-    // the vertical line at (x, y) within the block, in its own frame [0, 1] × [−½, ½] × [−¾, ¾] turned
-    // `lean` about x and moved out `off`: local (x − off, c y + s z, −s y + c z)
+    let expected = leaning_sweep_volume(lean,off,theta,advance/std::f64::consts::TAU/theta);
+    eprintln!("a block leaning to a screw's axis: its sweep {expected} apart from the build");
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// **The volume a block leaning to a screw's axis sweeps** (`leaning(lean, off)`, turned `Θ` about
+/// the world's `z` and climbing `k` a radian), apart from the kernel. In helical coordinates
+/// `(ρ, ψ, ζ = z − kψ)`, volume `ρ dρ dψ dζ`, the screw is a shift of `ψ` by `[0, Θ]`, so the sweep's
+/// slice by the cylinder of radius `ρ` is the block's slice `S_ρ` stretched along `ψ` — its area
+/// read line by line of constant `ψ'`: there the sweep holds `ζ` where some `ψ ∈ [ψ' − Θ, ψ']` does,
+/// and on each run of `ψ` where the vertical line meets the block (between `z_lo(ψ)` and
+/// `z_hi(ψ)`, clipped exactly) that is the interval from the least `z_lo − kψ` to the greatest
+/// `z_hi − kψ`, read at the window's ends and at the run's interior extremes. The runs are where a
+/// line meets the block at all — two of them at some radii, which is why a helix can meet the block
+/// twice and the sweep is less than its own volume and `Θ ∫ ρ L(ρ) dρ`. The section is smooth
+/// between the run ends and extremes and those shifted by `Θ`, integrated by Gauss–Legendre on
+/// those pieces, and `ρ` likewise between the radii of the block's corners and of its edges'
+/// points nearest the axis.
+fn leaning_sweep_volume(lean: f64,off: f64,theta: f64,k: f64) -> f64 {
     let (sn,cs) = lean.sin_cos();
-    let clip = |x: f64,y: f64| -> Option<(f64,f64)> {
-        if !(0.0..=1.).contains(&(x-off)) { return None }
-        // c y + s z in [−½, ½] and −s y + c z in [−¾, ¾], each linear in z
+    // the vertical line at (x, y): the block's bottom and top along it, and how far it is from
+    // missing the block (positive where it meets it); local (x − off, c y + s z, −s y + c z)
+    let line = |x: f64,y: f64| -> (f64,f64,f64) {
         let (mut lo,mut hi) = (f64::NEG_INFINITY,f64::INFINITY);
         for (a,b,h) in [(cs*y,sn,0.5),(-sn*y,cs,0.75)] {
             let (z0,z1) = ((-h-a)/b,(h-a)/b);
             lo = lo.max(z0.min(z1));
             hi = hi.min(z0.max(z1));
         }
-        (hi > lo).then_some((lo,hi))
+        (lo,hi,(x-off).min(1.-(x-off)).min(hi-lo))
     };
-    let range = |rho: f64| -> f64 {
-        let reach = |psi: f64| clip(rho*psi.cos(),rho*psi.sin()).map(|(lo,hi)| (hi-k*psi,lo-k*psi));
-        let n = 4000;
-        let psis: Vec<f64> = (0..=n).map(|i| -0.6+1.2*i as f64/n as f64).collect();
-        let (mut top,mut bottom) = (f64::NEG_INFINITY,f64::INFINITY);
-        let (mut at_top,mut at_bottom) = (0.,0.);
-        for &psi in &psis { if let Some((t,b)) = reach(psi) {
-            if t > top { top = t; at_top = psi }
-            if b < bottom { bottom = b; at_bottom = psi }
+    // a sign change of `f` on [a, b] settled, and a least of `f` on [a, b]
+    let root = |f: &dyn Fn(f64) -> f64,mut a: f64,mut b: f64| {
+        let fa = f(a) > 0.;
+        for _ in 0..100 { let m = 0.5*(a+b); if (f(m) > 0.) == fa { a = m } else { b = m } }
+        0.5*(a+b)
+    };
+    let least = |f: &dyn Fn(f64) -> f64,mut a: f64,mut b: f64| {
+        for _ in 0..100 { let (m1,m2) = (a+(b-a)*0.381966,a+(b-a)*0.618034); if f(m1) < f(m2) { b = m2 } else { a = m1 } }
+        0.5*(a+b)
+    };
+    let corners: Vec<[f64;3]> = (0..8).map(|i| {
+        let (x,y,z) = (off+(i&1) as f64,if i&2 == 0 { -0.5 } else { 0.5 },if i&4 == 0 { -0.75 } else { 0.75 });
+        [x,cs*y-sn*z,sn*y+cs*z]
+    }).collect();
+    let gauss8 = [(-0.960289856497536,0.101228536290376),(-0.796666477413627,0.222381034453374),
+        (-0.525532409916329,0.313706645877887),(-0.183434642495650,0.362683783378362),
+        (0.183434642495650,0.362683783378362),(0.525532409916329,0.313706645877887),
+        (0.796666477413627,0.222381034453374),(0.960289856497536,0.101228536290376)];
+    let pieces = |breaks: &[f64],n: usize,f: &dyn Fn(f64) -> f64| -> f64 {
+        let mut sum = 0.;
+        for w in breaks.windows(2) { for j in 0..n {
+            let (a,b) = (w[0]+(w[1]-w[0])*j as f64/n as f64,w[0]+(w[1]-w[0])*(j+1) as f64/n as f64);
+            for (x,g) in gauss8 { sum += 0.5*(b-a)*g*f(0.5*(a+b)+0.5*(b-a)*x) }
         } }
-        if !top.is_finite() { return 0. }
-        // each extreme settled over the steps beside it (golden section)
-        let settle = |at: f64,pick: &dyn Fn(f64) -> f64| {
-            let (mut a,mut b) = (at-1.2/n as f64,at+1.2/n as f64);
-            for _ in 0..60 { let (m1,m2) = (a+(b-a)*0.382,a+(b-a)*0.618); if pick(m1) > pick(m2) { b = m2 } else { a = m1 } }
-            pick(0.5*(a+b))
-        };
-        let top = settle(at_top,&|p| reach(p).map_or(f64::NEG_INFINITY,|r| r.0)).max(top);
-        let bottom = -settle(at_bottom,&|p| reach(p).map_or(f64::NEG_INFINITY,|r| -r.1)).max(-bottom);
-        top-bottom
+        sum
     };
-    // ρ over the block's reach from the axis, Gauss–Legendre on panels
-    // (its nearest the axis on its face at `x = off`, its farthest at a corner)
-    let (r0,r1) = (off,tool.vertices.iter().map(|v| v.p[0].hypot(v.p[1])).fold(0.,f64::max));
-    let gauss = [(-0.861136311594053,0.347854845137454),(-0.339981043584856,0.652145154862546),
-        (0.339981043584856,0.652145154862546),(0.861136311594053,0.347854845137454)];
-    let panels = 600;
-    let mut integral = 0.;
-    for j in 0..panels {
-        let (a,b) = (r0+(r1-r0)*j as f64/panels as f64,r0+(r1-r0)*(j+1) as f64/panels as f64);
-        for (x,w) in gauss { let rho = 0.5*(a+b)+0.5*(b-a)*x; integral += 0.5*(b-a)*w*rho*range(rho) }
-    }
-    let expected = 1.5+theta*integral;
-    eprintln!("a block leaning to a screw's axis: its sweep {expected} apart from the build");
-    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
-    assert!((volume(&built)-expected).abs() <= 1e-5*expected,"{} against {expected}",volume(&built));
-    agrees(&built,&tool,&path);
+    let area = |rho: f64| -> f64 {
+        let at = |p: f64| line(rho*p.cos(),rho*p.sin());
+        let gap = |p: f64| at(p).2;
+        // the runs of ψ where the line meets the block, a run between samples found at its gap's
+        // greatest
+        let n = 1000;
+        let ps: Vec<f64> = (0..=n).map(|i| -0.7+1.4*i as f64/n as f64).collect();
+        let g: Vec<f64> = ps.iter().map(|&p| gap(p)).collect();
+        let mut runs = vec![];
+        let mut start = None;
+        for i in 0..=n {
+            if g[i] > 0. && start.is_none() { start = Some(if i > 0 { root(&gap,ps[i-1],ps[i]) } else { ps[0] }) }
+            if g[i] > 0. && (i == n || g[i+1] <= 0.) {
+                runs.push((start.take().unwrap(),if i < n { root(&gap,ps[i],ps[i+1]) } else { ps[n] }));
+            }
+            if i > 0 && i < n && g[i] <= 0. && g[i] >= g[i-1] && g[i] >= g[i+1] {
+                let p = least(&|q| -gap(q),ps[i-1],ps[i+1]);
+                if gap(p) > 0. { runs.push((root(&gap,ps[i-1],p),root(&gap,ps[i+1],p))) }
+            }
+        }
+        if runs.is_empty() { return 0. }
+        // `z_lo − kψ` and `−(z_hi − kψ)`, each least at a run's ends and its interior minima
+        let bottom = |p: f64| at(p).0-k*p;
+        let top = |p: f64| -(at(p).1-k*p);
+        let ends: [&dyn Fn(f64) -> f64;2] = [&bottom,&top];
+        let minima: Vec<[Vec<(f64,f64)>;2]> = runs.iter().map(|&(a,b)| ends.map(|f| {
+            let m = 200;
+            let qs: Vec<f64> = (0..=m).map(|t| a+(b-a)*t as f64/m as f64).collect();
+            let v: Vec<f64> = qs.iter().map(|&q| f(q)).collect();
+            (1..m).filter(|&t| v[t] <= v[t-1] && v[t] <= v[t+1])
+                .map(|t| { let q = least(f,qs[t-1],qs[t+1]); (q,f(q)) }).collect()
+        })).collect();
+        // the sweep's section at ψ': the union of each run's interval over the window
+        let section = |pp: f64| -> f64 {
+            let mut spans: Vec<(f64,f64)> = vec![];
+            for (&(a,b),mins) in runs.iter().zip(&minima) {
+                let (u,v) = (a.max(pp-theta),b.min(pp));
+                if u > v { continue }
+                let low = |j: usize| mins[j].iter().filter(|&&(q,_)| u < q && q < v).map(|&(_,f)| f)
+                    .fold(ends[j](u).min(ends[j](v)),f64::min);
+                spans.push((low(0),-low(1)));
+            }
+            spans.sort_by(|x,y| x.0.total_cmp(&y.0));
+            let (mut length,mut current) = (0.,None::<(f64,f64)>);
+            for (x,y) in spans {
+                current = match current {
+                    Some((c0,c1)) if x <= c1 => Some((c0,c1.max(y))),
+                    Some((c0,c1)) => { length += c1-c0; Some((x,y)) }
+                    None => Some((x,y)),
+                };
+            }
+            length+current.map_or(0.,|(c0,c1)| c1-c0)
+        };
+        let mut breaks: Vec<f64> = runs.iter().zip(&minima).flat_map(|(&(a,b),mins)|
+            [a,b].into_iter().chain(mins.iter().flatten().map(|&(q,_)| q)).collect::<Vec<_>>())
+            .flat_map(|q| [q,q+theta]).collect();
+        breaks.sort_by(f64::total_cmp);
+        breaks.dedup();
+        pieces(&breaks,4,&section)
+    };
+    // ρ from the block's face nearest the axis to its farthest corner, broken at the corners' radii
+    // and at each edge's point nearest the axis
+    let radius = |p: [f64;3]| p[0].hypot(p[1]);
+    let mut radii: Vec<f64> = corners.iter().map(|&p| radius(p)).collect();
+    radii.push(off);
+    for i in 0..8usize { for j in 0..8usize { if (i^j).count_ones() == 1 && i < j {
+        let (a,b) = (corners[i],corners[j]);
+        let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
+        let q = dx*dx+dy*dy;
+        if q <= 1e-24 { continue }
+        let t = -(a[0]*dx+a[1]*dy)/q;
+        if 0. < t && t < 1. { radii.push((a[0]+t*dx).hypot(a[1]+t*dy)) }
+    } } }
+    let far = radii.iter().copied().fold(0.,f64::max);
+    radii.retain(|&r| r >= off);
+    radii.sort_by(f64::total_cmp);
+    radii.dedup_by(|a,b| (*a-*b).abs() <= 1e-12);
+    debug_assert!(radii.last() == Some(&far));
+    pieces(&radii,64,&|rho| rho*area(rho))
 }
 
 /// A block leaning to the axis: `block` turned `lean` about the world's `x` and moved out `off`.

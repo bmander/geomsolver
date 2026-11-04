@@ -38,15 +38,12 @@ impl Closed {
 pub type Failure = (Condition,String,Option<V>);
 
 /// The kernel's refusal said in the class's rows: a curved face or edge (one the motion's
-/// candidates do not hold) is C1's, a motion or a
-/// leaning edge C2's, a cell left unsettled C3's; what the kernel failed at is said as it is.
+/// candidates do not hold) is C1's, a motion C2's, a cell left unsettled C3's; what the kernel failed at is said as it is.
 pub fn said(unbuilt: Unbuilt,tool: &str) -> Failure {
     match unbuilt {
         Unbuilt::Curved {at} => (Condition::Faces,format!("a face or an edge of `{tool}` is curved past what the motion's \
             candidates hold"),Some(at)),
         Unbuilt::Motion => (Condition::Constant,"the motion is no one slide, turn or screw".into(),None),
-        Unbuilt::Leaning {at} => (Condition::Constant,format!("an edge or a face of `{tool}` leans to the screw's axis, neither along \
-            it nor square to it"),Some(at)),
         Unbuilt::Unsettled {at} => (Condition::Settled,"a cell of the arrangement stands within the tool's mesh of the swept \
             boundary at every point it is read at".into(),Some(at)),
         Unbuilt::Budget {stage,at,what} => (Condition::Settled,format!("the build went past its budget in its {stage} \

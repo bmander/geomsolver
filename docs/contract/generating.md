@@ -446,6 +446,16 @@ writes a failed build's domain and candidates whole (`swept::dump`), replayed al
 to the fewest candidates that still fail (`swept_closed::a_failed_builds_arrangement_is_dumped_replayed_and_reduced`;
 the loop is docs/testing.md's).
 
+**A tool leaning to a screw's axis is built (#777 M5).** Each leaning edge, and each leaning
+face's contact line, screws into a patch of a ruled helicoid over the segment and the roll a
+twentieth past each (`closed::Cutter::Patch`), its rim standing inside a cell; two sheets of one
+screw meet in exact helices (`ssi::screwed_lines_meeting`: the line's points the screw carries onto
+the other sheet, isolated with a bound), never traced ones, whose ends leaning a few degrees off
+once ordered the curves leaving a corner wrongly. The gate is a block leaning 0.35 rad, 3 out from
+the axis, screwed a radian at 2 a turn, held to 1e-6 of its volume read in helical coordinates
+apart from the kernel and to membership
+(`swept_closed::a_block_leaning_to_a_screws_axis_closes_into_its_helical_sweep`, slow tier).
+
 **Which road a body takes (#699 D, decided):** where a class admits a sweep, its blank-scoped sheet
 builds it (the fast path); where every class refuses, the closed class cuts it from the blank on one
 arrangement (`cut_from`, itself blank-scoped: the blank the arrangement's domain). The two agree
@@ -465,8 +475,7 @@ membership along the whole path
 `trajectories::a_twist_after_a_placement_is_the_placement_then_the_twist` holds `Placed`'s pose,
 rate and speed bound by differences). No drawing lowers to pieces yet (a toolpath written as one
 is the language's `path`), so the closed class's admission reads one constant twist.
-An edge or a face leaning to a screw's axis (`Unbuilt::Leaning`) and a curved tool past these
-(`Unbuilt::Curved`: any face no plane under a screw; under a turn a cylinder or a cone about an
+A curved tool past these (`Unbuilt::Curved`: any face no plane under a screw; under a turn a cylinder or a cone about an
 axis leaning to it, a ball across its axis, a circle leaning to it, a torus or a free-form face;
 under a slide a torus or a free-form face; an edge no line or circle) are refused by what they
 are, read before any build (`closed::reads`).  The result is the selection's boundary with the candidates that bound nothing healed out of
@@ -505,10 +514,10 @@ volume and the membership test; through the drawing,
 field; or balls alone among its round faces, each touching round its great circle square to its
 centre's velocity, screwed into the pipe about the centre's helix, `Cutter::Pipe`:
 `swept_closed::a_ball_screwed_closes_into_the_pipe_about_its_centres_helix`, Weyl's tube to 1e-9)
-and C2 (one slide, turn or screw; under a screw every face and edge along its
-axis or square to it) read the tool's B-rep and the lowered trajectory in millimetres, before
-anything is built (`brep::swept::closed::reads`, its refusals `Unbuilt::Curved {at}` and
-`Unbuilt::Leaning {at}` with a point of the face or edge); C3 (each cell settled) is the build's.
+and C2 (one slide, turn or screw; under a screw a face or an edge leaning to its axis screws
+into a patch of a ruled helicoid, `Cutter::Patch`, #777 M5) read the tool's B-rep and the lowered
+trajectory in millimetres, before anything is built (`brep::swept::closed::reads`, its refusal
+`Unbuilt::Curved {at}` with a point of the face or edge); C3 (each cell settled) is the build's.
 Admitted, `Class::Closed` carries the tool and the screw, and the body is built by cutting each
 sweep at each placement from the blank on one arrangement (`cut_from`, the tool and its screw placed
 where the body cuts it, `Screw::moved`, the blank left where it stands), with no sheet, plan or

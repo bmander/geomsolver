@@ -41,8 +41,10 @@
 //!   under a turn), a cylinder about the axis over the heights the source spans, run on by the
 //!   step the roll takes; an edge square to the axis, the helicoidal sheet it screws into
 //!   (`screwed_sheet`). A face square to the axis has no contact (its normal meets the velocity by
-//!   the step everywhere); an edge or a face leaning to the axis screws into a surface no closed
-//!   solid or sheet holds yet, and is refused (`Unbuilt::Leaning`).
+//!   the step everywhere); an edge leaning to the axis, and a leaning face's contact line (its
+//!   points where `n · v = 0`, a line of its plane), each screw into a patch of the ruled helicoid
+//!   over the segment and the roll a twentieth past each, its rim inside the domain
+//!   (`Cutter::Patch`, #777 M5).
 //!
 //! Only the candidates that carry some of the boundary are kept (`carries`): read at their source's
 //! points carried over the roll, inside the source and the roll, where membership a hair to each
@@ -115,9 +117,6 @@ pub enum Unbuilt {
     /// The motion is no slide, turn or screw, nor a path of slides and turns (each taken up where
     /// the one before left the tool, `Trajectory::Placed`): the design's later steps.
     Motion,
-    /// Under a screw, an edge or a face leaning to the axis (neither along it nor square to it), at
-    /// `at`: its sheet a screw surface no closed solid yet holds, the design's later steps.
-    Leaning { at: V },
     /// A cell's membership could not be settled: its deepest point stands within the mesh's sag
     /// of the swept boundary.
     Unsettled { at: V },
