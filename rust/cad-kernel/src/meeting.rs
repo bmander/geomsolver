@@ -142,9 +142,23 @@ const STEP_RANK: f64 = 1e-2;
 /// its gradient `D⁻¹ g`, its Hessian `D⁻¹ H D⁻¹`, and the speeds.
 fn metric_jet(a: &Surface,b: &Surface,uv: Uv,h: [f64;2]) -> (f64,[f64;2],[[f64;2];2],[f64;2]) {
     let (v,g,m) = jet(a,b,uv,h);
-    let (_,su,sv) = a.d1(uv);
-    let k = [norm(su).max(1e-300),norm(sv).max(1e-300)];
+    let k = speeds(a,uv);
     (v,[g[0]/k[0],g[1]/k[1]],[[m[0][0]/(k[0]*k[0]),m[0][1]/(k[0]*k[1])],[m[1][0]/(k[1]*k[0]),m[1][1]/(k[1]*k[1])]],k)
+}
+
+/// `metric_jet` without the Hessian (five readings of `f`, not nine): its value, gradient and the
+/// speeds, what a march along `f = 0` or onto it takes.
+fn metric_grad(a: &Surface,b: &Surface,uv: Uv,h: [f64;2]) -> (f64,[f64;2],[f64;2]) {
+    let g = |du: f64,dv: f64| f(a,b,[uv[0]+du,uv[1]+dv]);
+    let grad = [(g(h[0],0.)-g(-h[0],0.))/(2.*h[0]),(g(0.,h[1])-g(0.,-h[1]))/(2.*h[1])];
+    let k = speeds(a,uv);
+    (g(0.,0.),[grad[0]/k[0],grad[1]/k[1]],k)
+}
+
+/// `a`'s speeds along its two parameters at `uv`: the metric `D` the jets are read in.
+fn speeds(a: &Surface,uv: Uv) -> [f64;2] {
+    let (_,su,sv) = a.d1(uv);
+    [norm(su).max(1e-300),norm(sv).max(1e-300)]
 }
 
 /// A symmetric 2 × 2 matrix's eigenvalues, the larger in size first, with their unit eigenvectors.
@@ -169,7 +183,7 @@ fn rank_of(l: [f64;2],floor: f64) -> usize {
 fn wrapped(a: &Surface,d: [[f64;2];2],uv: Uv) -> Uv {
     let p = a.periods();
     std::array::from_fn(|k| match p[k] {
-        Some(per) if d[k][1]-d[k][0] >= per*(1.-1e-12) => d[k][0]+(uv[k]-d[k][0]).rem_euclid(per),
+        Some(per) if d[k][1]-d[k][0] >= per*(1.-1e-12) => super::geom::around(uv[k],d[k][0],per),
         _ => uv[k],
     })
 }
@@ -239,7 +253,7 @@ pub fn critical_points(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Vec<(
 /// start. At each point, its parameters on `a`, `f`'s value there (the fold's), its way across `n`
 /// (in the parameters, unit in the metric) and `f`'s curvature across, `∂²f/∂n²`.
 #[derive(Clone,Debug)]
-pub struct Ridge { pub uv: Vec<Uv>,pub value: Vec<f64>,pub across: Vec<[f64;2]>,pub curvature: Vec<f64>,pub closed: bool }
+pub struct Ridge { pub uv: Vec<Uv>,pub value: Vec<f64>,pub across: Vec<[f64;2]>,pub curvature: Vec<f64> }
 
 /// How far from nought a ridge's fold may stand and still be traced: where the crossings beside it
 /// meet steeper than this the ordinary trace follows them (`ssi::SHALLOW`, a tenfold margin).
@@ -297,7 +311,7 @@ pub fn ridges(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Result<Vec<Rid
             let (mut uv,mut n,mut e) = (uv0,n0,[e0[0]*sense,e0[1]*sense]);
             for _ in 0..20_000 {
                 if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (a.point(uv),format!("{} × {} (a ridge)",a.kind(),b.kind()))) { break }
-                let (_,_,_,k) = metric_jet(a,b,uv,h);
+                let k = speeds(a,uv);
                 let delta = [step*e[0]/k[0],step*e[1]/k[1]];
                 let guess = wrapped(a,d,[uv[0]+delta[0],uv[1]+delta[1]]);
                 if !inside(guess) {
@@ -342,7 +356,7 @@ pub fn ridges(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Result<Vec<Rid
         pts.extend(halves[0].iter().copied());
         if pts.len() < 2 { continue }
         out.push(Ridge {uv:pts.iter().map(|x| x.0).collect(),value:pts.iter().map(|x| x.1).collect(),
-            across:pts.iter().map(|x| x.2).collect(),curvature:pts.iter().map(|x| x.3).collect(),closed});
+            across:pts.iter().map(|x| x.2).collect(),curvature:pts.iter().map(|x| x.3).collect()});
     }
     Ok(out)
 }
@@ -365,7 +379,7 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
     let onto = |uv: Uv| -> Option<Uv> {
         let mut uv = uv;
         for _ in 0..40 {
-            let (v,g,_,k) = metric_jet(a,b,uv,h);
+            let (v,g,k) = metric_grad(a,b,uv,h);
             let gg = g[0]*g[0]+g[1]*g[1];
             if !(gg > 0.) { return None }
             let t = v/gg;
@@ -390,7 +404,7 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
             let mut hstep = step;
             for _ in 0..100_000 {
                 if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (a.point(uv),format!("{} × {} (a level curve)",a.kind(),b.kind()))) { break }
-                let (_,g,_,k) = metric_jet(a,b,uv,h);
+                let (_,g,k) = metric_grad(a,b,uv,h);
                 let gn = g[0].hypot(g[1]);
                 if !(gn > 0.) { break }
                 let t = [-g[1]*sense/gn,g[0]*sense/gn];
@@ -399,7 +413,7 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
                 let turned = |hs: f64| -> bool {
                     let ahead = [uv[0]+hs*t[0]/k[0],uv[1]+hs*t[1]/k[1]];
                     let Some(q) = onto(ahead) else { return true };
-                    let (_,g2,_,_) = metric_jet(a,b,q,h);
+                    let (_,g2,_) = metric_grad(a,b,q,h);
                     let n2 = g2[0].hypot(g2[1]);
                     !(n2 > 0.) || (g[0]*g2[0]+g[1]*g2[1])/(gn*n2) < 0.995
                 };
@@ -435,15 +449,20 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
         if closed { pts.push(pts[0]) }
         if pts.len() >= 2 { found.push(pts) }
     }
-    found.into_iter().filter_map(|pts| {
-        let mut t = vec![0.];
-        for k in 1..pts.len() { t.push(t[k-1]+distance(pts[k-1],pts[k])) }
-        let total = t[t.len()-1];
-        if !(total > 0.) { return None }
-        let t: Vec<f64> = t.iter().map(|x| x/total).collect();
-        let degree = if pts.len() >= 4 { 3 } else { pts.len()-1 };
-        super::nurbs::interpolate(&pts,&t,degree).map(|c| Branch {curve:Curve::BSpline(std::sync::Arc::new(c)),contact:Contact::Crossing})
-    }).collect()
+    found.into_iter().filter_map(|pts| fitted(&pts).map(|curve| Branch {curve,contact:Contact::Crossing})).collect()
+}
+
+/// The cubic (or lower, for fewer points) through `pts` at their chord lengths: a traced branch's
+/// curve. None for fewer than two points, or none apart.
+fn fitted(pts: &[V]) -> Option<Curve> {
+    if pts.len() < 2 { return None }
+    let mut t = vec![0.];
+    for k in 1..pts.len() { t.push(t[k-1]+distance(pts[k-1],pts[k])) }
+    let total = t[t.len()-1];
+    if !(total > 0.) { return None }
+    let t: Vec<f64> = t.iter().map(|x| x/total).collect();
+    let degree = if pts.len() >= 4 { 3 } else { pts.len()-1 };
+    super::nurbs::interpolate(pts,&t,degree).map(|c| Curve::BSpline(std::sync::Arc::new(c)))
 }
 
 /// Whether `p` (on `s`) lies in the box `d` of its parameters, a periodic one read round its
@@ -455,7 +474,7 @@ fn in_box(s: &Surface,d: [[f64;2];2],p: V,tol: f64) -> bool {
     let slack = [tol/norm(su).max(1e-300),tol/norm(sv).max(1e-300)];
     (0..2).all(|k| {
         let mut x = uv[k];
-        if let Some(per) = periods[k] { x = d[k][0]+(x-d[k][0]).rem_euclid(per) }
+        if let Some(per) = periods[k] { x = super::geom::around(x,d[k][0],per) }
         x >= d[k][0]-slack[k] && x <= d[k][1]+slack[k]
     })
 }
@@ -511,20 +530,9 @@ fn branch_distance(c: &Curve,p: V) -> f64 {
 /// by chord length).
 pub fn ridge_branches(a: &Surface,d: [[f64;2];2],b: &Surface,r: &Ridge,tol: f64) -> Vec<Branch> {
     let w = [d[0][1]-d[0][0],d[1][1]-d[1][0]];
-    let h = [w[0]*1e-5,w[1]*1e-5];
     // (the box's edges a rounding's width wide: a station on one stays on it)
     let inside = |uv: Uv| (0..2).all(|k| uv[k] >= d[k][0]-1e-9*w[k] && uv[k] <= d[k][1]+1e-9*w[k]);
     let mut out: Vec<Branch> = Vec::new();
-    let curve_of = |pts: &[V]| -> Option<Curve> {
-        if pts.len() < 2 { return None }
-        let mut t = vec![0.];
-        for k in 1..pts.len() { t.push(t[k-1]+distance(pts[k-1],pts[k])) }
-        let total = t[t.len()-1];
-        if !(total > 0.) { return None }
-        let t: Vec<f64> = t.iter().map(|x| x/total).collect();
-        let degree = if pts.len() >= 4 { 3 } else { pts.len()-1 };
-        super::nurbs::interpolate(pts,&t,degree).map(|c| Curve::BSpline(std::sync::Arc::new(c)))
-    };
     // the touch: runs of the ridge where the fold is within `tol` of nought
     let mut run: Vec<V> = Vec::new();
     let mut runs: Vec<Vec<V>> = Vec::new();
@@ -532,18 +540,18 @@ pub fn ridge_branches(a: &Surface,d: [[f64;2];2],b: &Surface,r: &Ridge,tol: f64)
         if r.value[k].abs() <= tol { run.push(a.point(uv)) } else if !run.is_empty() { runs.push(std::mem::take(&mut run)) }
     }
     if !run.is_empty() { runs.push(run) }
-    for pts in runs { if let Some(c) = curve_of(&pts) { out.push(Branch {curve:c,contact:Contact::Touching}) } }
+    for pts in runs { if let Some(c) = fitted(&pts) { out.push(Branch {curve:c,contact:Contact::Touching}) } }
     // the crossings beside it: each side's root along n nearest the ridge
     let mut sides: [Vec<V>;2] = [Vec::new(),Vec::new()];
     let flush = |sides: &mut [Vec<V>;2],out: &mut Vec<Branch>| for s in sides.iter_mut() {
-        if let Some(c) = curve_of(s) { out.push(Branch {curve:c,contact:Contact::Crossing}) }
+        if let Some(c) = fitted(s) { out.push(Branch {curve:c,contact:Contact::Crossing}) }
         s.clear();
     };
     for (k,&uv) in r.uv.iter().enumerate() {
         let (v,kappa,n) = (r.value[k],r.curvature[k],r.across[k]);
         if !(v*kappa < 0.) || v.abs() <= tol { flush(&mut sides,&mut out); continue }
         let reach = 3.*(2.*v.abs()/kappa.abs()).sqrt();
-        let (_,_,_,sp) = metric_jet(a,b,uv,h);
+        let sp = speeds(a,uv);
         // (round a period the box spans whole: a crossing beside a ridge on its seam is inside)
         let at = |t: f64| wrapped(a,d,[uv[0]+t*n[0]/sp[0],uv[1]+t*n[1]/sp[1]]);
         let g = |t: f64| f(a,b,at(t));
@@ -553,7 +561,8 @@ pub fn ridge_branches(a: &Surface,d: [[f64;2];2],b: &Surface,r: &Ridge,tol: f64)
         // over the reach by its own, doubled, and the variation read across it
         let samples: Vec<f64> = (0..=16).map(|i| { let t = -reach+2.*reach*i as f64/16.; (g(t+dt)-2.*g(t)+g(t-dt))/(dt*dt) }).collect();
         let bend = samples.iter().fold(kappa.abs(),|m,&x| m.max(x.abs()))*2.;
-        let bound = |x0: f64,x1: f64| [bend*x0.abs().max(x1.abs())+dg(0.).abs(),bend];
+        let d0 = dg(0.).abs();
+        let bound = |x0: f64,x1: f64| [bend*x0.abs().max(x1.abs())+d0,bend];
         let roots = crate::util::isolate::roots(&g,&dg,&bound,[-reach,reach],tol*1e-3,&|t| g(t).abs() <= tol).unwrap_or_default();
         let plus = roots.iter().filter(|x| x.at > 0. && !x.touch).map(|x| x.at).fold(f64::INFINITY,f64::min);
         let minus = roots.iter().filter(|x| x.at < 0. && !x.touch).map(|x| x.at).fold(f64::NEG_INFINITY,f64::max);

@@ -71,8 +71,6 @@ impl Budget {
     pub const UNLIMITED: Budget = Budget([u64::MAX;STAGES]);
     /// `self` with `stage` limited to `steps`.
     pub fn with(mut self,stage: Stage,steps: u64) -> Budget { self.0[stage as usize] = steps; self }
-    /// Every limit times `k`.
-    pub fn times(self,k: u64) -> Budget { Budget(self.0.map(|s| s.saturating_mul(k))) }
 }
 
 /// What ran away: the stage, a point where it was working when it went past its limit, and what it

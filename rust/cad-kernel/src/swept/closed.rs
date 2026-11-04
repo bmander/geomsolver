@@ -193,9 +193,9 @@ pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f6
 /// built (what an admission asks, #721's dispatch): the motion a slide, a turn or a screw that
 /// moves something; every face of the tool a plane and every edge a line bounding two of them
 /// (under a slide, a face a cylinder, a cone or a ball too, and an edge a circle; under a turn, a
-/// cylinder or a cone about an axis along it, a ball, and a circle square to it); and under a
-/// screw every face and edge along the axis or square to it. The constant twist it is, or the first
-/// thing that is not, by what it is and where (a point of the face or the edge).
+/// cylinder or a cone about an axis along it, a ball, and a circle square to it; under a screw, a
+/// cylinder about an axis along it, and a ball beside planes and such a side). The constant twist
+/// it is, or the first thing that is not, by what it is and where (a point of the face or the edge).
 pub fn reads(tool: &Brep,path: &Trajectory) -> Result<crate::trajectory::Screw,Unbuilt> { read(tool,path).map(|r| r.screw) }
 
 /// What `reads` reads of a tool it takes: the constant twist, each face's plane (a point of it and
@@ -219,19 +219,15 @@ fn outward(f: &crate::topo::Face,p: V) -> V {
 /// `reads`, keeping what it read.
 fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
     let Some(screw) = path.screw().filter(|s| s.ratio != 0. || s.advance != 0.) else { return Err(Unbuilt::Motion) };
-    // a way leaning to a screw's axis: neither along it nor square to it
-    let leans = |d: V| !screw.is_turn() && !screw.is_slide() && norm(cross(d,screw.axis)) > 1e-9 && dot(d,screw.axis).abs() > 1e-9;
     let mut faces = Vec::with_capacity(tool.faces.len());
     let mut round = Vec::new();
     for (k,f) in tool.faces.iter().enumerate() {
         let at = f.loops.iter().flatten().next().map_or([0.;3],|c| tool.vertices[tool.ends(c)[0] as usize].p);
         match &f.surface {
             Surface::Plane(frame) => {
-                let n = unit(if f.reversed { scale(frame.z,-1.) } else { frame.z });
                 // (a face leaning to a screw's axis touches along a leaning line, screwed into a patch
                 // of a ruled helicoid bounded inside the domain, #777 M5)
-                let _ = (leans(n),at);
-                faces.push((frame.o,n));
+                faces.push((frame.o,unit(if f.reversed { scale(frame.z,-1.) } else { frame.z })));
             }
             // under a slide a cylinder's or a cone's contact is along its rulings, each swept into
             // its tangent plane there, or (a cylinder along the slide) the whole face swept along
@@ -888,16 +884,11 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             }
             for &(p,q,_) in &edges {
                 let e = unit(sub(q,p));
-                if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 && dot(e,axis).abs() > 1e-9 {
-                    // under a screw an edge leaning to the axis sweeps a patch of a ruled helicoid,
-                    // bounded inside the domain (#777 M5)
-                    let cutter = Cutter::Patch {p,q};
-                    add_cutter(cutter,line_sites(p,q,cutter));
-                    continue
-                }
                 if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 {
-                    // under a screw an edge square to the axis sweeps a helicoidal sheet across the box
-                    let cutter = Cutter::Screwed {p,e};
+                    // under a screw an edge square to the axis sweeps a helicoidal sheet across the
+                    // box; one leaning to it, a patch of a ruled helicoid bounded inside the domain
+                    // (#777 M5)
+                    let cutter = if dot(e,axis).abs() > 1e-9 { Cutter::Patch {p,q} } else { Cutter::Screwed {p,e} };
                     add_cutter(cutter,line_sites(p,q,cutter));
                     continue
                 }
@@ -1040,8 +1031,8 @@ fn arranged(within: &Brep,refs: &[&Brep],swept: &Swept,blank: Option<&Brep>,tol:
         if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
         let points = complex.inside_points(c,4)?;
         let Some(&first) = points.first() else { return Ok(None) };
-        match points.iter().position(|&x| swept.member(x).is_ok()) {
-            Some(k) => Ok(Some((swept.member(points[k]).ok() != Some(blank.is_some()),points[k+1..].to_vec()))),
+        match points.iter().enumerate().find_map(|(k,&x)| swept.member(x).ok().map(|m| (k,m))) {
+            Some((k,member)) => Ok(Some((member != blank.is_some(),points[k+1..].to_vec()))),
             None => Err(Unbuilt::Unsettled {at:first}),
         }
     });

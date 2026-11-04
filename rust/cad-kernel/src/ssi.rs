@@ -611,15 +611,21 @@ fn parallel_touch(a: &Surface,b: &Surface,tol: f64) -> Option<Curve> {
     Some(Curve::Line {p,d:unit(sub(q,p))})
 }
 
+/// Whether two lines' sheets are screwed by one screw: their axes along one another and through
+/// one another within `tol`, and the same pitch.
+fn one_screw(l: &super::geom::ScrewedLine,m: &super::geom::ScrewedLine,tol: f64) -> bool {
+    let off = sub(m.centre,l.centre);
+    norm(cross(l.axis,m.axis)) <= 1e-12 && norm(sub(off,scale(l.axis,dot(off,l.axis)))) <= tol
+        && (l.pitch()-m.pitch()).abs() <= 1e-12*l.pitch().abs().max(m.pitch().abs())
+}
+
 /// **The helix two sheets of one screw meet in, as `u` on the first** (`on`): its line meets the
 /// second's carried to its height, both square to the axis — `Some(None)` where the two lines run
 /// parallel there and apart, so the sheets meet nowhere. `None` where they are not two such sheets,
 /// or are one.
 pub(crate) fn helix_between(on: &super::geom::Blend,by: &super::geom::Blend,tol: f64) -> Option<Option<f64>> {
     let (l,m) = (by.screwed_line()?,on.screwed_line()?);
-    let off = sub(m.centre,l.centre);
-    if norm(cross(l.axis,m.axis)) > 1e-12 || norm(sub(off,scale(l.axis,dot(off,l.axis)))) > tol
-        || (l.pitch()-m.pitch()).abs() > 1e-12*l.pitch().abs().max(m.pitch().abs()) || !l.level() || !m.level() { return None }
+    if !one_screw(&l,&m,tol) || !l.level() || !m.level() { return None }
     // `by`'s line screwed to `on`'s height, and where the two meet in that level
     let turn = dot(sub(m.p0,l.p0),l.axis)/l.pitch();
     let screwed = super::geom::Carry::Screw {center:l.centre,axis:l.axis,angle:turn,advance:l.pitch()*turn};
@@ -645,23 +651,19 @@ pub(crate) fn helix_between(on: &super::geom::Blend,by: &super::geom::Blend,tol:
 /// `None` for sheets of different screws, or where the search gives up.
 fn screwed_lines_meeting(on: &std::sync::Arc<super::geom::Blend>,by: &super::geom::Blend,tol: f64) -> Option<Vec<Curve>> {
     let (m,l) = (on.screwed_line()?,by.screwed_line()?);
-    let off = sub(m.centre,l.centre);
-    if norm(cross(l.axis,m.axis)) > 1e-12 || norm(sub(off,scale(l.axis,dot(off,l.axis)))) > tol
-        || (l.pitch()-m.pitch()).abs() > 1e-12*l.pitch().abs().max(m.pitch().abs()) { return None }
-    let (c,k,pitch) = (l.centre,l.axis,l.pitch());
+    if !one_screw(&l,&m,tol) { return None }
+    let (c,k) = (l.centre,l.axis);
     // the turn `θ` that carries `by`'s line onto a point of `on`'s: `by`'s span less `on`'s
     let (a0,a1) = (m.angle.min(0.),m.angle.max(0.));
     let (b0,b1) = (l.angle.min(0.),l.angle.max(0.));
     let span = [b0-a1,b1-a0];
-    let screw = |t: f64,x: V| -> V { add(add(c,Carry::turn(k,t,sub(x,c))),scale(k,pitch*t)) };
+    // the screw a radian of turn at a time, `θ` its parameter
+    let screw = Carry::Screw {center:c,axis:k,angle:1.,advance:l.pitch()};
     let f = |x: [f64;3]| -> ([f64;3],[[f64;3];3]) {
         let (u,w,t) = (x[0],x[1],x[2]);
         let p = add(m.p0,scale(m.run,u));
-        let q = add(l.p0,scale(l.run,w));
-        let sq = screw(t,q);
-        let rq = Carry::turn(k,t,l.run);
-        // d/dθ of screw_θ(q): k × (screw_θ(q) − c) turned, and the rise
-        let dt = add(cross(k,sub(sub(sq,c),scale(k,pitch*t))),scale(k,pitch));
+        let sq = screw.at(add(l.p0,scale(l.run,w)),t);
+        let (rq,dt) = (screw.dir(l.run,t),screw.rate(sq));
         (std::array::from_fn(|i| p[i]-sq[i]),std::array::from_fn(|i| [m.run[i],-rq[i],-dt[i]]))
     };
     let reach = norm(sub(l.p0,c))+norm(l.run);

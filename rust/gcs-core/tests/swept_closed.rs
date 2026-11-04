@@ -183,15 +183,11 @@ fn leaning_sweep_volume(lean: f64,off: f64,theta: f64,k: f64) -> f64 {
         let (x,y,z) = (off+(i&1) as f64,if i&2 == 0 { -0.5 } else { 0.5 },if i&4 == 0 { -0.75 } else { 0.75 });
         [x,cs*y-sn*z,sn*y+cs*z]
     }).collect();
-    let gauss8 = [(-0.960289856497536,0.101228536290376),(-0.796666477413627,0.222381034453374),
-        (-0.525532409916329,0.313706645877887),(-0.183434642495650,0.362683783378362),
-        (0.183434642495650,0.362683783378362),(0.525532409916329,0.313706645877887),
-        (0.796666477413627,0.222381034453374),(0.960289856497536,0.101228536290376)];
     let pieces = |breaks: &[f64],n: usize,f: &dyn Fn(f64) -> f64| -> f64 {
         let mut sum = 0.;
         for w in breaks.windows(2) { for j in 0..n {
             let (a,b) = (w[0]+(w[1]-w[0])*j as f64/n as f64,w[0]+(w[1]-w[0])*(j+1) as f64/n as f64);
-            for (x,g) in gauss8 { sum += 0.5*(b-a)*g*f(0.5*(a+b)+0.5*(b-a)*x) }
+            for (x,g) in gcs_core::integral::GAUSS8 { sum += 0.5*(b-a)*g*f(0.5*(a+b)+0.5*(b-a)*x) }
         } }
         sum
     };
@@ -1044,8 +1040,7 @@ fn a_line_grazing_a_hyperboloid_touches_it_once() {
     let mid = [0.5*(a[0]+b[0]),0.5*(a[1]+b[1])];
     let (dr,dz) = (m[0]-mid[0],m[1]-mid[1]);
     let (qa,qb,qc) = (dr*dr-k*k*dz*dz,2.*(mid[0]*dr-k*k*mid[1]*dz),mid[0]*mid[0]-throat*throat-k*k*mid[1]*mid[1]);
-    let disc = (qb*qb-4.*qa*qc).sqrt();
-    let u = [(-qb+disc)/(2.*qa),(-qb-disc)/(2.*qa)].into_iter().find(|u| *u > 0. && *u < 1.).unwrap();
+    let u = gcs_core::roots::quadratic(qa,qb,qc).into_iter().find(|u| *u > 0. && *u < 1.).unwrap();
     let at = |r: f64,z: f64| [r,0.,z];
     let conic = BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],vec![at(a[0],a[1]),at(m[0],m[1]),at(b[0],b[1])],vec![1.,u/(1.-u),1.]).unwrap();
     let edges = vec![ProfileEdge::Spline(std::sync::Arc::new(conic)),ProfileEdge::Line {a:at(b[0],zb),b:at(0.,zb)},

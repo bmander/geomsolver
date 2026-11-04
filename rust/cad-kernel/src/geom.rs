@@ -229,7 +229,7 @@ pub enum Carry { Line { delta: V },Screw { center: V,axis: V,angle: f64,advance:
 impl Carry {
     /// `p` turned by `angle` about the unit `axis` through the origin, by Rodrigues' formula: the
     /// same turn as `Rigid::turn`'s matrix, but not its bits, so the two stay apart.
-    pub(crate) fn turn(axis: V,angle: f64,p: V) -> V {
+    fn turn(axis: V,angle: f64,p: V) -> V {
         let (s,c) = angle.dsin_cos();
         add(add(scale(p,c),scale(cross(axis,p),s)),scale(axis,dot(axis,p)*(1.-c)))
     }

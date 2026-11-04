@@ -300,6 +300,12 @@ fn certified(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,ray: bool
     }
 }
 
+/// Whether the curve `at` over `[t0, t1]` lies in `surface` to `tol`, read at its ends, middle
+/// and quarters: a ruling of a hyperboloid, a helix a sheet carries.
+fn lies_along(at: &dyn Fn(f64) -> V,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> bool {
+    (0..=4).all(|k| surface.implicit(at(t0+(t1-t0)*k as f64/4.)).abs() <= tol)
+}
+
 /// **A line against a surface whose distance along it is a polynomial**, `c` its coefficients in
 /// the line's parameter (lowest first) — a plane's linear, a cone's quadratic, a torus's quartic —
 /// its roots isolated with the polynomial's own derivative bounds (`util::isolate`), a touch
@@ -310,7 +316,7 @@ fn certified(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,ray: bool
 fn line_poly(c: &[f64],p: V,d: V,[t0,t1]: [f64;2],surface: &Surface,tol: f64,keep: &dyn Fn(V) -> bool) -> Option<Meets> {
     let at = |t: f64| add(p,scale(d,t));
     let speed = norm(d).max(1e-300);
-    if (0..=4).all(|k| surface.implicit(at(t0+(t1-t0)*k as f64/4.)).abs() <= tol) { return Some(Meets::Along) }
+    if lies_along(&at,[t0,t1],surface,tol) { return Some(Meets::Along) }
     let slack = tol/speed;
     let (lo,hi) = (t0-slack,t1+slack);
     let g = |t: f64| crate::util::isolate::poly(c,t);
@@ -362,7 +368,7 @@ fn line_revolution(p: V,d: V,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Curve,s
     let Curve::BSpline(sp) = c else { return None };
     if sp.degree > 2 { return None }
     // a line lying in it (a hyperboloid's ruling) is along it
-    if (0..=4).all(|k| surface.implicit(add(p,scale(d,t0+(t1-t0)*k as f64/4.))).abs() <= tol) { return Some(Meets::Along) }
+    if lies_along(&|t| add(p,scale(d,t)),[t0,t1],surface,tol) { return Some(Meets::Along) }
     let (q,e) = (f.local(p),f.dir_local(d));
     let speed = norm(d).max(1e-300);
     let (a,b,cc) = (e[0]*e[0]+e[1]*e[1],2.*(q[0]*e[0]+q[1]*e[1]),q[0]*q[0]+q[1]*q[1]);
@@ -372,6 +378,11 @@ fn line_revolution(p: V,d: V,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Curve,s
     knots.extend(sp.breaks([k0,k1]));
     knots.push(k1);
     let slack = tol/speed;
+    // a line all but level is read neither way well: sampled
+    if dz.abs() > 1e-12*speed && dz.abs() < 1e-7*speed { return None }
+    let width = 1e-12;
+    // a level line's direction and foot, square to the axis
+    let (flat,from) = (f.dir([e[0],e[1],0.]),f.dir([q[0],q[1],0.]));
     let mut out: Vec<(f64,bool)> = Vec::new();
     for w in knots.windows(2) {
         // the span's homogeneous local radius, height and weight, each a quadratic in σ
@@ -380,9 +391,6 @@ fn line_revolution(p: V,d: V,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Curve,s
         let quad = |i: usize| [h0[i],-3.*h0[i]+4.*hm[i]-h1[i],2.*h0[i]-4.*hm[i]+2.*h1[i]];
         let (xx,zz,ww) = (quad(0),quad(1),quad(2));
         let n = poly_sum(&[(1.,&zz),(-q[2],&ww)]);
-        let width = 1e-12;
-        // a line all but level is read neither way well: sampled
-        if dz.abs() > 1e-12*speed && dz.abs() < 1e-7*speed { return None }
         if dz.abs() > 1e-12*speed {
             let pp = poly_sum(&[(a,&poly_mul(&n,&n)),(b*dz,&poly_mul(&n,&ww)),(cc*dz*dz,&poly_mul(&ww,&ww)),(-dz*dz,&poly_mul(&xx,&xx))]);
             let t_of = |s: f64| poly(&n,s)/(poly(&ww,s)*dz);
@@ -401,8 +409,6 @@ fn line_revolution(p: V,d: V,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Curve,s
             let bound = |x: f64,y: f64| crate::util::isolate::poly_bounds(&n,x,y);
             for r in crate::util::isolate::roots(&g,&dg,&bound,[0.,1.],width,&|_| false)? {
                 let rho = poly(&xx,r.at)/poly(&ww,r.at);
-                let flat = f.dir([e[0],e[1],0.]);
-                let from = f.dir([q[0],q[1],0.]);
                 if let Meets::At(found) = line_chord(from,flat,rho.abs(),[t0,t1],tol) { out.extend(found) }
             }
         }
@@ -461,7 +467,7 @@ fn curve_sheet(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Opt
     if !(span > 0.) { return None }
     // a curve lying in the sheet (a ruling, a helix it carries) is along it: the sampled reading
     // says so
-    if (0..=4).all(|k| surface.implicit(curve.point(t0+span*k as f64/4.)).abs() <= tol) { return None }
+    if lies_along(&|t| curve.point(t),[t0,t1],surface,tol) { return None }
     let speed = curve.d1(0.5*(t0+t1)).1;
     let reach = norm(speed)*span+{ let (s0,_,_) = d1([domain[0][0],domain[1][0]]); let (s1,_,_) = d1([domain[0][1],domain[1][1]]); distance(s0,s1) };
     let f = |x: [f64;3]| -> ([f64;3],[[f64;3];3]) {

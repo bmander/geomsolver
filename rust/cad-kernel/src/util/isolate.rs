@@ -67,17 +67,7 @@ pub fn roots(g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,bound: &dyn Fn(f64,f
         if dg(m).abs() > d2*h {
             let (ga,gb) = (g(a),g(b));
             if ga == 0. { out.push(Root {at:a,touch:false}) }
-            if ga*gb < 0. {
-                let (mut l,mut r,mut gl) = (a,b,ga);
-                for _ in 0..200 {
-                    if r-l <= width*1e-3 { break }
-                    let s = 0.5*(l+r);
-                    let gs = g(s);
-                    if gs == 0. { l = s; r = s; break }
-                    if (gs < 0.) == (gl < 0.) { l = s; gl = gs } else { r = s }
-                }
-                out.push(Root {at:0.5*(l+r),touch:false});
-            }
+            if ga*gb < 0. { out.push(Root {at:super::roots::bracketed_root(|t| Some(g(t)),a,ga,b,gb,width*1e-3),touch:false}) }
             continue
         }
         // too narrow to part: a double root where the function is nought there
@@ -152,18 +142,15 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
         // derivatives' bound carried through `J(m)⁻¹` beyond — a box whose Newton step reaches past
         // that on any unknown holds no root. Far stronger than `F`'s own components where they
         // couple (a ray against a long sheet), it drops what they leave standing
-        if let Some(c) = &inv {
-            let g: [f64;N] = std::array::from_fn(|i| (0..N).map(|k| c[i][k]*fm[k]).sum());
+        if let Some(inv) = inv {
+            let step: [f64;N] = std::array::from_fn(|i| (0..N).map(|k| inv[i][k]*fm[k]).sum());
             let far = (0..N).any(|i| {
-                let bend: f64 = (0..N).map(|k| c[i][k].abs()*hs[k]).sum();
-                g[i].abs() > 0.5*(bx[i][1]-bx[i][0])+0.5*bend*r*r
+                let bend: f64 = (0..N).map(|k| inv[i][k].abs()*hs[k]).sum();
+                step[i].abs() > 0.5*(bx[i][1]-bx[i][0])+0.5*bend*r*r
             });
             if far { continue }
-        }
-        // one root, and no other, in the box: Kantorovich at its middle
-        if let Some(inv) = inv {
+            // one root, and no other, in the box: Kantorovich at its middle, from the same step
             let beta = norm_inf(&inv);
-            let step: [f64;N] = std::array::from_fn(|i| (0..N).map(|k| inv[i][k]*fm[k]).sum());
             let eta = step.iter().fold(0f64,|a,&s| a.max(s.abs()));
             let big = hs.iter().fold(0f64,|a,&h| a.max(h));
             let bk = beta*big;
