@@ -648,10 +648,10 @@ pub fn volume_within(b: &gcs_core::brep::topo::Brep, lo: V, hi: V) -> f64 {
     gcs_core::brep::props::volume(&boxed)
 }
 
-/// **The volume a round takes, exactly**: solid `name` built by the kernel before (`both[0]`) and
-/// after (`both[1]`), each kept in the box `lo`–`hi`, before less after (negative where it adds) —
-/// what `field_volume` read off the field to a part in five hundred, here to the kernel's own
-/// precision.
+/// **The volume a round takes, exactly**: solid `name` built by the kernel before (`both[0]`)
+/// and after (`both[1]`), each kept in the box `lo`–`hi`, before less after (negative where it
+/// adds) — what `field_volume` read off the field to a part in five hundred, here to the kernel's
+/// own precision.
 pub fn taken_exactly(both: &[gcs_core::program::Elaborated; 2], name: &str, lo: V, hi: V) -> f64 {
     let [before, after] = both.each_ref().map(|e| volume_within(&exact(e, name), lo, hi));
     before - after
@@ -672,7 +672,8 @@ pub fn field_is_the_kernels(e: &gcs_core::program::Elaborated, name: &str, lo: V
     use gcs_core::solid::MaterialField;
     assert_eq!(e.sketch.units.mm_per(), 1.0, "{name}: read in millimetres");
     let b = exact(e, name);
-    let m = gcs_core::brep::mesh::mesh(&b, step / 10.0, 0.1).unwrap_or_else(|why| panic!("{name}: {why}"));
+    let m = gcs_core::brep::mesh::mesh(&b, step / 10.0, 0.1)
+        .unwrap_or_else(|why| panic!("{name}: {why}"));
     let kernel = Solid::new(&b, step / 10.0, 1.0).unwrap_or_else(|why| panic!("{name}: {why}"));
     assert!(kernel.sag <= step / 4.0, "{name}: meshed within {} of a step {step}", kernel.sag);
     let field = MaterialField::read(&e.sketch, super::ent(e, name).i(), 1e-10).unwrap();
@@ -695,16 +696,19 @@ pub fn field_is_the_kernels(e: &gcs_core::program::Elaborated, name: &str, lo: V
         let d = kernel.signed_distance(p);
         (d.abs() >= step / 2.0).then(|| (p, d < 0.0, field.side(p)))
     }).into_iter().flatten().collect();
-    assert!(read.len() * 2 >= chosen.len(), "{name}: {} of {} points read", read.len(), chosen.len());
-    let wrong: Vec<String> = read.iter().filter(|(_, ins, f)| f.is_nan() || if *ins { *f > 0.0 } else { *f < 0.0 })
+    assert!(read.len() * 2 >= chosen.len(), "{name}: {} of {} points read", read.len(),
+            chosen.len());
+    let wrong: Vec<String> = read.iter()
+        .filter(|(_, ins, f)| f.is_nan() || if *ins { *f > 0.0 } else { *f < 0.0 })
         .map(|(p, ins, f)| format!("at {p:?}: the kernel's {}, the field reads {f:e}",
                                    if *ins { "inside" } else { "outside" })).collect();
-    assert!(wrong.is_empty(), "{name}: the field is not the kernel's {} times of {}:\n{}", wrong.len(),
-            read.len(), wrong.iter().take(8).cloned().collect::<Vec<_>>().join("\n"));
+    assert!(wrong.is_empty(), "{name}: the field is not the kernel's {} times of {}:\n{}",
+            wrong.len(), read.len(), wrong.iter().take(8).cloned().collect::<Vec<_>>().join("\n"));
     // a reading of exactly nothing is on the field's boundary, not across it: where two operands'
     // faces meet in one plane inside the material (the pad's plate and its boss's cap) the field
     // reads zero over a set of no volume.  A few are let be; a wrong side never is.
     let on = read.iter().filter(|(_, _, f)| *f == 0.0).count();
-    assert!(on * 20 <= read.len(), "{name}: the field reads its boundary {on} times of {}", read.len());
+    assert!(on * 20 <= read.len(), "{name}: the field reads its boundary {on} times of {}",
+            read.len());
     read.len()
 }

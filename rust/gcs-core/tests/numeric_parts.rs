@@ -98,11 +98,13 @@ fn held_on_its_jacobian(key: &str, sk: &Sketch, d: &Diagnosis) -> Vec<String> {
         }
     }
     let independent = |vs: &[Vec<f64>]| {
-        vs.is_empty() || gcs_core::linalg::rank_rrqr(&Mat::from_vec(vs.len(), vs[0].len(), vs.concat()), 1e-9)
-            == vs.len()
+        vs.is_empty()
+            || gcs_core::linalg::rank_rrqr(&Mat::from_vec(vs.len(), vs[0].len(), vs.concat()), 1e-9)
+                == vs.len()
     };
     if !independent(&null) || !independent(&left) {
-        wrong.push(format!("{key}: {} motions or {} dependencies not independent", null.len(), left.len()));
+        wrong.push(format!("{key}: {} motions or {} dependencies not independent", null.len(),
+                           left.len()));
     }
     let (forward, backward) = (n - null.len(), rows - left.len());
     if forward != backward || d.numeric_rank != Some(forward) {
@@ -177,7 +179,8 @@ fn a_framework_past_the_dense_limit_reads_as_it_was_built() {
             let (whole, parts) = both(&mut sk);
             assert!(whole.n_params > NUMERIC_MAX, "{what}: {} free", whole.n_params);
             assert_eq!(said(&whole), said(&parts), "{what}");
-            assert_eq!((parts.dof, parts.numeric_rank), (fewer as i64, Some(302 - fewer)), "{what}");
+            assert_eq!((parts.dof, parts.numeric_rank), (fewer as i64, Some(302 - fewer)),
+                       "{what}");
             assert!(parts.over.is_empty() && parts.implied.is_empty(), "{what}: {:?}", parts.over);
             held(&sk, &parts, &what);
         }
