@@ -156,3 +156,54 @@ Measured on a four-core Linux container, warm build, `cargo test -p gcs-core --t
   `rates::a_tube_on_a_helix_is_its_section_along_its_length` and
   `helix::a_screwed_wall_is_written_and_meshed`.  Each is a candidate for a smaller instance
   that would bring it back.
+
+## The slow tier's first pass (November 4, 2026, #780 R1)
+
+Each slow test was timed alone on the four-core Linux container, warm build: 79 tests, about
+2.5 hours of test time end to end, the nightly's slowest shard 47 minutes for one test.  What
+it spent, and what changed:
+
+| test | before | after | what changed |
+|---|---:|---:|---|
+| `numeric_parts::the_parts_read_the_large_cases_as_the_whole_does` | 47 min on CI | 12.3 min | the dense SVD and pivoted QR walk memory by rows |
+| `object_builder::every_object_of_the_library_builds_as_the_export_builds_it` | 23.5 min | 4.9 min | one solve a document, documents side by side, named sweeps left to their tests |
+| `hulls::the_librarys_rod_is_sized_by_its_sag` | 4.8 min | 2.4 min | a filled body's harmonic maps made once a mesh |
+
+- **The engine's whole SVD** (4,859 columns) is what the large cases' test waits on.
+  `linalg::gr_svd` and `qrp` walked the row-major matrix down its columns, a cache line an
+  element; they now keep V transposed (a rotation of two of V's columns runs along two rows)
+  and turn the column-by-column loops round so each sum is taken a row at a time, its terms in the
+  order they always were.  The factors are the old ones to the bit (checked on 64 matrices,
+  rank-deficient, wide and tall, against the old code); at n = 1000 the SVD takes 1.5 s where it
+  took 3.9, the pivoted QR 0.36 where it took 1.0, the V-twin's whole diagnosis 2.7 s where it
+  took 14.8.  Dealing the same loops across cores gained nothing on this machine (they are bound
+  by memory, not arithmetic), so they are not dealt.  The engine still takes two SVDs of about
+  four minutes each.
+- **The library's rod** (`sized_conrod.sv`, solved by four slow tests and the CLI's) spent 70% of
+  its solve factoring its mesh's three Laplacians again at every evaluation, though they read the
+  mesh as it was meshed and none of the drawing (`docs/contract/analysis.md`, `hull::Made`).
+- **`object_builder`'s library test** solved every document twice (once for its static objects,
+  once for its swept), the rod's 276 s solve among them, and built `stopped_bullnose.sv`'s sweep
+  that `a_turned_bull_noses_notch_builds_at_the_displays_samples` builds already (287 s).
+- Six tests of three seconds or less alone came back to the fast tier: `admission::`'s three,
+  `homotopy::the_k33_core_has_several_real_realizations`, `rounds::a_bosss_root_is_a_ring` and
+  `object_builder::exact_solid_builds_a_generated_body_as_the_export_does`.
+- `rust/test-times.tsv` now holds the slow tier's times, which it lacked: every slow test weighed
+  the 60 s `slow.yml` gives a missing one, so the large cases and the library's objects fell on
+  one machine.
+
+What is left, the longest first, and where its time goes:
+
+- `swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name`,
+  15 min: its build runs to `closed::BUDGET` before it is refused (#780 C1 builds it).
+- The engine's two SVDs (12 min above).  A faster one would block its Householder steps, which
+  changes the factors' last bits; that is a change to the diagnosis, not to a test.
+- The field's volume of a round (`rounds_examples::`, `conrod::the_fields_rounds_are_the_kernels`,
+  `rounds::`, `composed_rounds::`, `fillet_definition::`), about 20 minutes together, the slot's
+  8: nearly all of it `MaterialField::side`, a region's point projected onto its conditions
+  (`conditions::nearest`, a face's nearest point each step) at every sample of the octree.
+- The closed sweeps (`swept_closed::`, `solid_sweeps_examples::`, `object_builder::`'s bull-nose
+  notch), 2 to 5 minutes each: sampled, the bull-nose's spends two thirds of its build in
+  `meeting::crossings`' polish, every pair of near chords walked to its crossing by up to sixty
+  global `Curve::inverse`s, most of them to a crossing already found (#780 R4).
+- `hypoid_drive::every_claim_the_drive_makes_holds`, 8 min: the drive's seventeen solid claims.

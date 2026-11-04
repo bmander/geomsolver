@@ -270,7 +270,6 @@ holder common part
 /// The configured hypoid pinion, its backlash, tip relief and end relief in: the crown's sweep and
 /// the relief's are both in the class, each with margin.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 14 s: the configured pinion's two sweeps admitted")]
 fn the_configured_hypoid_pinion_is_admitted() {
     let a = fabricated("pinion",[25.,12.5,25.],0.05,0.2,0.2).unwrap();
     assert_eq!(a.sweeps().len(),2);
@@ -280,7 +279,6 @@ fn the_configured_hypoid_pinion_is_admitted() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 14 s: the configured gear's two sweeps admitted")]
 fn the_configured_hypoid_gear_is_admitted() {
     let a = fabricated("gear",[25.,12.5,25.],0.05,0.2,0.2).unwrap();
     assert_eq!(a.sweeps().len(),2);
@@ -299,7 +297,6 @@ fn a_hypoid_pinion_with_undercut_is_refused() {
 /// At 20 mm of offset with a symmetric rack no tool point touches the blank twice; the flank's
 /// generated surface folds, and the fold is what refuses it. Split 7.5 degrees, it does not.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 22 s: admission of two gear designs")]
 fn a_folding_flank_is_refused_and_balanced_pressure_angles_admit_it() {
     let r = refused(pinion(20.,0.,35.));
     assert!(matches!(r.condition,Condition::Fold | Condition::Crossing),"{r}");

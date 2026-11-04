@@ -91,7 +91,6 @@ fn a_pocket_rounded_inside_is_filled() {
 
 /// A boss's root, where its wall meets the plate: a concave circle, filled by a torus's ring.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: a boss's root, by the field")]
 fn a_bosss_root_is_a_ring() {
     let r = 3.0;
     let got = -part_change("pad.boss round(r: 3mm) pad.plate", "pad", [17.0, -5.0, 7.0], [43.0, 1.0, 33.0], r / 32.0);

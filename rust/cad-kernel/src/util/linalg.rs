@@ -207,17 +207,19 @@ fn qrp(m: usize, n: usize, a: &mut [f64], tol: Tol) -> (Vec<f64>, Vec<i32>, usiz
     let k = m.min(n);
     let mut tau = vec![0.0; k];
     let mut piv: Vec<i32> = (0..n as i32).collect();
+    // the column norms' squares summed down the rows, each column's in the order a walk down it
+    // would take: the matrix is row-major, and a walk down a column touches a line per element
     let mut cn = vec![0.0; n];
-    let mut cn0 = vec![0.0; n];
-    for j in 0..n {
-        let mut s = 0.0;
-        for i in 0..m {
-            let v = a[i * n + j];
-            s += v * v;
+    for i in 0..m {
+        for (c, &v) in cn.iter_mut().zip(&a[i * n..(i + 1) * n]) {
+            *c += v * v;
         }
-        cn[j] = s.sqrt();
-        cn0[j] = cn[j];
     }
+    for c in cn.iter_mut() {
+        *c = c.sqrt();
+    }
+    let mut cn0 = cn.clone();
+    let mut w = vec![0.0; n];
     for p in 0..k {
         let mut best = p;
         for j in p + 1..n {
@@ -236,15 +238,24 @@ fn qrp(m: usize, n: usize, a: &mut [f64], tol: Tol) -> (Vec<f64>, Vec<i32>, usiz
         let (beta, t) = house_gen(a, p * n + p, m - p, n);
         tau[p] = t;
         if t != 0.0 {
-            for j in p + 1..n {
-                let mut w = a[p * n + j];
-                for i in p + 1..m {
-                    w += a[i * n + p] * a[i * n + j];
+            // `w = t·vᵀA` over the trailing columns, then `A -= v·w`: row by row, every sum and
+            // every update in the order the column-by-column loops took, so the same numbers
+            let w = &mut w[p + 1..n];
+            w.copy_from_slice(&a[p * n + p + 1..(p + 1) * n]);
+            for i in p + 1..m {
+                let vi = a[i * n + p];
+                for (wj, &x) in w.iter_mut().zip(&a[i * n + p + 1..(i + 1) * n]) {
+                    *wj += vi * x;
                 }
-                w *= t;
-                a[p * n + j] -= w;
-                for i in p + 1..m {
-                    a[i * n + j] -= w * a[i * n + p];
+            }
+            for (wj, x) in w.iter_mut().zip(&mut a[p * n + p + 1..(p + 1) * n]) {
+                *wj *= t;
+                *x -= *wj;
+            }
+            for i in p + 1..m {
+                let vi = a[i * n + p];
+                for (&wj, x) in w.iter().zip(&mut a[i * n + p + 1..(i + 1) * n]) {
+                    *x -= wj * vi;
                 }
             }
         }
@@ -568,9 +579,14 @@ fn pythag(a: f64, b: f64) -> f64 {
 /// edit and Jacobi's sweep count makes that quadratically too slow at sketch sizes.
 ///
 /// `a` (m*n, m >= n) is overwritten with U when `want_u`; `w` receives the singular values in
-/// bidiagonalization order and `v` (n*n) the right factor.
-fn gr_svd(m: usize, n: usize, a: &mut [f64], w: &mut [f64], v: &mut [f64], want_u: bool) -> bool {
+/// bidiagonalization order and `vt` (n*n) the right factor transposed: row `j` of `vt` is column
+/// `j` of V, so a rotation of two of V's columns runs along two rows of memory.  The arithmetic
+/// is the classic algorithm's, step for step; only the order the loops walk memory in differs, and
+/// where a loop was turned round every sum still takes its terms in the order it did (#780).
+fn gr_svd(m: usize, n: usize, a: &mut [f64], w: &mut [f64], vt: &mut [f64], want_u: bool) -> bool {
     let mut rv1 = vec![0.0; n];
+    // the column sums of a reflector's application, accumulated a row at a time
+    let mut col = vec![0.0; n];
     let (mut g, mut scale, mut anorm) = (0.0f64, 0.0f64, 0.0f64);
     let mut l = 0usize;
 
@@ -593,14 +609,24 @@ fn gr_svd(m: usize, n: usize, a: &mut [f64], w: &mut [f64], v: &mut [f64], want_
                 g = -dsign(s.sqrt(), f);
                 let h = f * g - s;
                 a[i * n + i] = f - g;
-                for j in l..n {
-                    let mut ss = 0.0;
-                    for k in i..m {
-                        ss += a[k * n + i] * a[k * n + j];
+                // `ss_j = Σ_k a[k][i]·a[k][j]` for every trailing column, then `a[k][j] +=
+                // (ss_j / h)·a[k][i]`: column i is left alone by both, so the sums can all be
+                // taken before any update, and each is summed over k in the same order
+                let col = &mut col[l..n];
+                col.fill(0.0);
+                for k in i..m {
+                    let aki = a[k * n + i];
+                    for (c, &x) in col.iter_mut().zip(&a[k * n + l..(k + 1) * n]) {
+                        *c += aki * x;
                     }
-                    let ff = ss / h;
-                    for k in i..m {
-                        a[k * n + j] += ff * a[k * n + i];
+                }
+                for c in col.iter_mut() {
+                    *c /= h;
+                }
+                for k in i..m {
+                    let aki = a[k * n + i];
+                    for (&ff, x) in col.iter().zip(&mut a[k * n + l..(k + 1) * n]) {
+                        *x += ff * aki;
                     }
                 }
                 for k in i..m {
@@ -652,24 +678,24 @@ fn gr_svd(m: usize, n: usize, a: &mut [f64], w: &mut [f64], v: &mut [f64], want_
         if i + 1 < n {
             if g != 0.0 {
                 for j in l..n {
-                    v[j * n + i] = (a[i * n + j] / a[i * n + l]) / g;
+                    vt[i * n + j] = (a[i * n + j] / a[i * n + l]) / g;
                 }
                 for j in l..n {
                     let mut s = 0.0;
                     for k in l..n {
-                        s += a[i * n + k] * v[k * n + j];
+                        s += a[i * n + k] * vt[j * n + k];
                     }
                     for k in l..n {
-                        v[k * n + j] += s * v[k * n + i];
+                        vt[j * n + k] += s * vt[i * n + k];
                     }
                 }
             }
             for j in l..n {
-                v[i * n + j] = 0.0;
-                v[j * n + i] = 0.0;
+                vt[j * n + i] = 0.0;
+                vt[i * n + j] = 0.0;
             }
         }
-        v[i * n + i] = 1.0;
+        vt[i * n + i] = 1.0;
         g = rv1[i];
         l = i;
     }
@@ -683,14 +709,22 @@ fn gr_svd(m: usize, n: usize, a: &mut [f64], w: &mut [f64], v: &mut [f64], want_
             }
             if g != 0.0 {
                 g = 1.0 / g;
-                for j in l..n {
-                    let mut s = 0.0;
-                    for k in l..m {
-                        s += a[k * n + i] * a[k * n + j];
+                // as above: the sums over k > i first, row by row, then the updates
+                let col = &mut col[l..n];
+                col.fill(0.0);
+                for k in l..m {
+                    let aki = a[k * n + i];
+                    for (c, &x) in col.iter_mut().zip(&a[k * n + l..(k + 1) * n]) {
+                        *c += aki * x;
                     }
-                    let f = (s / a[i * n + i]) * g;
-                    for k in i..m {
-                        a[k * n + j] += f * a[k * n + i];
+                }
+                for c in col.iter_mut() {
+                    *c = (*c / a[i * n + i]) * g;
+                }
+                for k in i..m {
+                    let aki = a[k * n + i];
+                    for (&f, x) in col.iter().zip(&mut a[k * n + l..(k + 1) * n]) {
+                        *x += f * aki;
                     }
                 }
                 for j in i..m {
@@ -752,8 +786,8 @@ fn gr_svd(m: usize, n: usize, a: &mut [f64], w: &mut [f64], v: &mut [f64], want_
             if ll == k {
                 if z < 0.0 {
                     w[k] = -z;
-                    for j in 0..n {
-                        v[j * n + k] = -v[j * n + k];
+                    for x in &mut vt[k * n..(k + 1) * n] {
+                        *x = -*x;
                     }
                 }
                 break;
@@ -784,11 +818,12 @@ fn gr_svd(m: usize, n: usize, a: &mut [f64], w: &mut [f64], v: &mut [f64], want_
                 g = g * c - x * s;
                 h = y * s;
                 y *= c;
-                for jj in 0..n {
-                    let xx = v[jj * n + j];
-                    let zz = v[jj * n + i];
-                    v[jj * n + j] = xx * c + zz * s;
-                    v[jj * n + i] = zz * c - xx * s;
+                // columns j and i of V: rows j < i of `vt`
+                let (vj, vi) = vt.split_at_mut(i * n);
+                for (xx, zz) in vj[j * n..(j + 1) * n].iter_mut().zip(&mut vi[..n]) {
+                    let (x0, z0) = (*xx, *zz);
+                    *xx = x0 * c + z0 * s;
+                    *zz = z0 * c - x0 * s;
                 }
                 z = pythag(f, h);
                 w[j] = z;
@@ -862,9 +897,7 @@ pub fn svd(a: &Mat, want_u: bool) -> Svd {
     }
     let mut vt = Mat::zeros(n, n);
     for i in 0..n {
-        for j in 0..n {
-            vt.data[i * n + j] = v[j * n + ord[i]];
-        }
+        vt.data[i * n..(i + 1) * n].copy_from_slice(&v[ord[i] * n..(ord[i] + 1) * n]);
     }
     let u = if want_u {
         let mut u = Mat::zeros(m, mn);
