@@ -832,6 +832,9 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
     let wrap = |c: &Curve,t: f64,span: [f64;2]| match c.period() { Some(p) => around(t,span[0],p),None => t };
     let mut out: Vec<(f64,f64,V)> = Vec::new();
     for wa in sa.windows(2) {
+        // a build past its budget goes no further (#777 V3): the inverses below charge it, and
+        // walked on, every pair of near chords would still be polished at full cost (#780)
+        if crate::util::meter::stopped() { break }
         let mut near = Vec::new();
         boxes.query_box(chord(wa,0.),|j| near.push(j));
         near.sort_unstable();

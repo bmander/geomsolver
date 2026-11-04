@@ -2,12 +2,11 @@
 //! `rust/lib/std/rounds.sv` over the language's own features — faces as sets, the distance from a
 //! set, a bound on measurements, where an edge ends, the material's angle, repetition over faces
 //! and words that make solids — evaluated by the field, and held to X2's closed forms.
-use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
 use std::f64::consts::PI;
 
 use crate::common::{ent, text::solved};
-use crate::common::rounds::{mitred, root_ring, rounded_box};
+use crate::common::rounds::{field_is_the_kernels, mitred, root_ring, rounded_box, taken_exactly};
 use crate::region_general::field_volume;
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
@@ -19,15 +18,14 @@ const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, ch
     outline := face(south, east, north, west)\n}\n\
     block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\n";
 
-/// The volume a statement takes from (or gives to) solid `name`, within a box: the field's before
-/// less after.
+/// The volume a statement takes from (or gives to) solid `name`, within a box: the kernel's build
+/// before less after (`taken_exactly`), and the field's boundary held to the kernel's there point
+/// by point, a step `h` either side of it (`field_is_the_kernels`).  Until #780 R1 the field's
+/// volume was read instead, down to cells of `h`.
 fn change(stmt: &str, name: &str, lo: [f64; 3], hi: [f64; 3], h: f64) -> f64 {
-    let before = solved(BLOCK);
-    let after = solved(&format!("{BLOCK}{stmt}\n"));
-    let volume = |e: &Elaborated| {
-        field_volume(&MaterialField::read(&e.sketch, ent(e, name).i(), 1e-10).unwrap(), lo, hi, h)
-    };
-    volume(&before) - volume(&after)
+    let both = [solved(BLOCK), solved(&format!("{BLOCK}{stmt}\n"))];
+    field_is_the_kernels(&both[1], name, lo, hi, h, 600);
+    taken_exactly(&both, name, lo, hi)
 }
 
 /// X2's lid: the near face's rim rounded alone, the other edges sharp — runs crossing at each
@@ -42,7 +40,6 @@ fn a_rim_rounded_alone_is_mitred() {
 
 /// X2's block rounded all over: twelve runs, and a corner term where three meet.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: every edge of a block, by the field")]
 fn a_block_rounded_all_over_is_steiners() {
     let r = 2.0;
     let got = change("round(r: 2mm) block", "block", [-1.0, -13.0, -1.0], [41.0, 13.0, 25.0], r / 16.0);
@@ -67,19 +64,16 @@ const PARTS: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, ch
     plate := solid(std.solids.Prism(outline, from: -10mm, to: 0))\nboss := solid(std.solids.Prism(face(rim), from: 0mm, to: 20mm))\n\
     pad := solid(plate)\nboss union pad\n";
 
+/// As `change`, over the tray and the plate.
 fn part_change(stmt: &str, name: &str, lo: [f64; 3], hi: [f64; 3], h: f64) -> f64 {
-    let before = solved(PARTS);
-    let after = solved(&format!("{PARTS}{stmt}\n"));
-    let volume = |e: &Elaborated| {
-        field_volume(&MaterialField::read(&e.sketch, ent(e, name).i(), 1e-10).unwrap(), lo, hi, h)
-    };
-    volume(&before) - volume(&after)
+    let both = [solved(PARTS), solved(&format!("{PARTS}{stmt}\n"))];
+    field_is_the_kernels(&both[1], name, lo, hi, h, 600);
+    taken_exactly(&both, name, lo, hi)
 }
 
 /// X2's pocket rounded inside: every edge among the pocket's faces is concave, filled, and its
 /// corners are each a ball's patch filled too.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: a pocket rounded inside, by the field")]
 fn a_pocket_rounded_inside_is_filled() {
     let pr = 1.5;
     let run = (1.0 - PI / 4.0) * pr * pr;
@@ -100,7 +94,6 @@ fn a_bosss_root_is_a_ring() {
 
 /// X3's block chamfered all over: three flats meet at each corner, `2d²(l + w + h) − 6d³`.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier: every edge of a block chamfered, by the field")]
 fn a_block_chamfered_all_over() {
     let d = 1.0;
     let got = change("chamfer(d: 1mm) block", "block", [-1.0, -13.0, -1.0], [41.0, 13.0, 25.0], d / 16.0);

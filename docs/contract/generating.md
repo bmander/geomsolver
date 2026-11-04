@@ -443,13 +443,17 @@ other swept or B-spline sheet by the three-unknown search, `util::isolate`;
 search sampled). Each build's work is counted in steps per stage (`util::meter`: arrangement,
 trace, ray, outline, inverse, membership, judge) against `closed::BUDGET`; past it every metered
 loop winds down and the build is refused as `Unbuilt::Budget {stage, at, what}`, the same way at
-every run (`swept_closed::a_build_past_its_budget_refuses_by_name_within_it`). The run #776 saw
-stall for hours, a ball-end mill screwed through a ring sector (a ball beside a side about an axis
-along the screw's, admitted), is cut to the volume it removes apart from the kernel or refused by
-its budget naming the stage, a point and the surface — today the inverse stage, at its sheet's
-inverse map, in about two minutes, that stage's limit about four times the most any build takes
-(`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name`,
-slow tier).
+every run (`swept_closed::a_build_past_its_budget_refuses_by_name_within_it`) — a curve's
+crossings' search among them (`meeting::crossings`, #780), whose polish charges the inverse map
+and once walked every pair of near chords on, 23 minutes, after the build was stopped. The run
+#776 saw stall for hours, a ball-end mill screwed through a ring sector (a ball beside a side about
+an axis along the screw's, admitted), is cut to the volume it removes apart from the kernel or
+refused by its budget naming the stage, a point and the surface — today the inverse stage, at its
+sheet's inverse map, in about three minutes, that stage's limit about four times the most any
+build takes (`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name`,
+slow tier); its inverse stage given a thousandth of that, every other stage its whole, it is
+refused there by name in seconds, the same way twice
+(`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_refused_by_its_inverse_maps_budget`).
 `SOLVENT_SWEEP_PROFILE` prints a build's counts, its meetings in closed form against traced per
 pair of surface kinds and the slowest, its curve–surface searches certified against sampled, and
 its deepest outline: a performance change cites it before and after. `SOLVENT_SWEEP_DUMP=<dir>`

@@ -623,9 +623,13 @@ are listed below.
 Seven of the stack's examples, from X0's paper programs, are now Solvent in
 [`rust/examples/rounds/`](../../rust/examples/rounds/): `pad.sv`, `knob.sv`, `rail.sv`, `tee.sv`,
 `bore.sv`, `slot.sv` and `runout.sv`. Each elaborates, solves and is read by the field. The gates
-are in `rust/gcs-core/tests/rounds_examples.rs`: points where the comments say, by default, and
-each round's volume in the slow tier. A volume is the field's reading of the example less its
-reading with the rounds left out, within a box about the round.
+are in `rust/gcs-core/tests/rounds_examples.rs`: points where the comments say, and each round's
+volume. A volume was the field's reading of the example less its reading with the rounds left out,
+within a box about the round, to 2e-3 and minutes a round in the slow tier. Since #780 R1 it is the
+kernel's: the example built exactly with and without its rounds, each kept in the box, and the
+difference held to the closed form (to 1e-8 or better, every one); and the field's boundary is held
+to the kernel's there point by point — the field's side a step either side of the exact build's
+triangles is the kernel's own (`common::rounds::field_is_the_kernels`) — in seconds, every push.
 
 ### Held to
 
@@ -654,7 +658,9 @@ six are refused by name, each with the table's reason: a circle between faces no
 axis (the knob), a round over several faces at once (the rail), an edge beside a curved face (the
 tee, the bore, the vent), an edge cut off at a slant or by a curved face (the slot) and faces
 meeting in several edges (the lug). They stay the field's, as `the_rest_are_refused_exactly_by_name`
-holds.
+held. (Since then the lowering table has grown to every one of them: all seven build exactly, and
+since #780 R1 each round's volume is the kernel's against its closed form and the field is held to
+the kernel point by point; the table above is the field's volumes as they were read on 2026-10-12.)
 
 ### Findings
 

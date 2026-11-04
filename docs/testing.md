@@ -192,18 +192,67 @@ it spent, and what changed:
   the 60 s `slow.yml` gives a missing one, so the large cases and the library's objects fell on
   one machine.
 
+## The second pass: cheaper oracles (November 4, 2026, #780 R1)
+
+Most of what the slow tier spent bought no coverage: a test waited on a slow *reference* (the
+whole SVD the parts were compared with, the field's volume a round was compared with) or built a
+large instance that walks the paths a small one does.  So before a slow test is made smaller, it is
+asked what it buys, and the answer held more cheaply:
+
+- **Check the answer instead of computing it again.**  `numeric_parts::` holds the parts' reading
+  of the engine (4,859 columns) to the Jacobian itself — every motion and dependency the parts
+  read sent to zero by it, independent, the rank read forward over the columns the same as
+  backward over the rows — where the whole SVD took minutes
+  (`the_parts_reading_of_every_large_case_holds_on_its_jacobian`); the whole SVD is the oracle
+  up to a thousand columns, every push.
+- **Instances whose answer is known by construction.**  Henneberg's frameworks past the dense
+  limit are rigid as built, so their rank, freedoms and dependencies are known
+  (`numeric_parts::a_framework_past_the_dense_limit_reads_as_it_was_built`).
+- **An exact oracle and a pointwise one, for a sampled one.**  A round's volume was the field's,
+  integrated by an octree to 2e-3 (minutes a round, the slot's eight).  It is now the kernel's
+  exact build with and without the round, kept in the test's box, against the closed form (1e-8
+  or better on every example), and the field's boundary is held to the kernel's point by point, a
+  step either side of its triangles, by the kernel's own winding number
+  (`common::rounds::field_is_the_kernels`).  Stronger, since a volume can be right with two
+  errors cancelling and a point cannot; and it found a set of no volume where the field reads
+  exactly nothing inside the material, where two operands' faces meet in a plane.
+- **A refusal is tested with a small budget.**  The ball-end mill's gate ran `closed::BUDGET`
+  down; given a thousandth of the inverse stage's, every other stage its whole, it is refused in
+  the same stage by name in seconds.  This found that a stopped build still polished every
+  crossing (`meeting::crossings` now stops): the default budget's refusal came down from 15–23
+  minutes to three.
+- **A corpus chosen by what decides the paths.**  `object_builder` holds the builder to the
+  export on 11 documents holding every kind of object the library builds (recipe forms, region
+  terms, sweep classes and motions: `kinds`), and the slow tier reads every document's kinds,
+  building nothing, to say when a new kind is held by none of them.
+- **One build for every property of it.**  The helical groove's and the bull-nose's stepped
+  builds are held to the build their examples already make.
+- **A property held on a small body as on the large one.**  The rod's work counts and its row held
+  at a reading's own size are held on the turned bar every push.
+
+| tests | before | after |
+|---|---:|---:|
+| `numeric_parts::` (large cases, frameworks, certificate) | 12.3 min, slow | 12 s, fast |
+| `rounds_examples::`'s seven `_are_the_stacks` | 15 min, slow | 20 s, fast |
+| `rounds::`'s three, `conrod::the_fields_rounds_are_the_kernels`, `conrod::the_rod_is_built_exactly` | 7 min, slow | 13 s, fast |
+| `object_builder::` the library | 3–5 min, slow | 3 s fast, 30 s slow |
+| `swept_closed::` the ball-end mill | 15–23 min, slow | 8 s fast, 3 min slow |
+
+What was not taken: the leaning block's part turn at a tenth of the tolerance is #735's
+regression gate and reaches its own paths (the rounding constant at a ring's centre, collapsed
+pieces), so it stays.  `hypoid_drive`'s claims share their cost — nearly all of it
+`clear::measure_pair`'s nearest-pair search between two meshes, one thread, which judging fewer
+claims barely shortens — so they all stay; that search is where to look.  `composed_rounds`'s
+boss radii from 21 to 21.7 are the contract's gate (`rounds.md`).
+
 What is left, the longest first, and where its time goes:
 
+- `hypoid_drive::every_claim_the_drive_makes_holds`, 8 min: `clear::measure_pair`, above.
+- The closed sweeps (`swept_closed::`, `solid_sweeps_examples::`), 2 to 7 minutes each: sampled,
+  the bull-nose's spends two thirds of its build in `meeting::crossings`' polish, every pair of
+  near chords walked to its crossing by up to sixty global `Curve::inverse`s, most of them to a
+  crossing already found (#780 R4), and the page's stepped builder of it as long again.
 - `swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name`,
-  15 min: its build runs to `closed::BUDGET` before it is refused (#780 C1 builds it).
-- The engine's two SVDs (12 min above).  A faster one would block its Householder steps, which
-  changes the factors' last bits; that is a change to the diagnosis, not to a test.
-- The field's volume of a round (`rounds_examples::`, `conrod::the_fields_rounds_are_the_kernels`,
-  `rounds::`, `composed_rounds::`, `fillet_definition::`), about 20 minutes together, the slot's
-  8: nearly all of it `MaterialField::side`, a region's point projected onto its conditions
-  (`conditions::nearest`, a face's nearest point each step) at every sample of the octree.
-- The closed sweeps (`swept_closed::`, `solid_sweeps_examples::`, `object_builder::`'s bull-nose
-  notch), 2 to 5 minutes each: sampled, the bull-nose's spends two thirds of its build in
-  `meeting::crossings`' polish, every pair of near chords walked to its crossing by up to sixty
-  global `Curve::inverse`s, most of them to a crossing already found (#780 R4).
-- `hypoid_drive::every_claim_the_drive_makes_holds`, 8 min: the drive's seventeen solid claims.
+  3 min: its default budget run down (#780 C1 builds it).
+- `hulls::the_librarys_rod_is_sized_by_its_sag`, 2.4 min: the rod's finite elements.
+- `fillet_definition::`, about two minutes together: the three candidate definitions' volumes.
