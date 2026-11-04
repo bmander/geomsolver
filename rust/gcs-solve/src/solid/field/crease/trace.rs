@@ -147,26 +147,42 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
             };
             if !on_crease(field,q,&trial,options.tolerance) {
                 // A third operand has taken the boundary over, at `at`.
-                let (at,at_ops,_,reading) = takeover(field,p,ops,q,options);
+                let (at,at_ops,off,reading) = takeover(field,p,ops,q,options);
                 // a reading naming no operand (its sweep's pose could not be read) says nothing
                 // of what took over
                 let Some(third) = reading.operand else { break End::Lost };
                 let o = super::accuracy(options.tolerance);
-                let here = field.read_operand(at,third,o);
                 // It continues one being followed without a corner — the next piece of a tool's
                 // profile, tangent to the last, or another contact time on one smooth sheet — so
-                // the crease goes on along it from there.
-                let tangent_to = |k: usize| match (&here,field.read_operand(at,at_ops[k],o)) {
-                    (Some(h),Some(r)) => third.differs(at_ops[k],0.) && dot(r.gradient,h.gradient) > 0.
-                        && norm(cross(r.gradient,h.gradient)) <= LEAST_DIHEDRAL.dsin()*norm(r.gradient)*norm(h.gradient),
-                    _ => false,
+                // the crease goes on along it from there: `next`, read at `at` as `here`.
+                let tangent_to = |next: OperandId,here: &Option<Reading>,k: usize| {
+                    match (here,field.read_operand(at,at_ops[k],o)) {
+                        (Some(h),Some(r)) => next.differs(at_ops[k],0.)
+                            && dot(r.gradient,h.gradient) > 0. && norm(cross(r.gradient,h.gradient))
+                                <= LEAST_DIHEDRAL.dsin()*norm(r.gradient)*norm(h.gradient),
+                        _ => false,
+                    }
                 };
-                if let Some(k) = (0..2).find(|&k| tangent_to(k)) {
+                // Where two leaves' faces lie on one another (a boss drawn on its plate's plane,
+                // its base on the plate's face) the whole field may name either past `at`, and
+                // the one it names may face the other way: so a followed leaf's own piece past
+                // `at` continues it as well, or the crease would stop there coming one way and
+                // run on going the other (#780 R1).
+                let own = |k: usize| field.read_operand(off,at_ops[k].whole(),o)
+                    .and_then(|r| r.operand).filter(|n| n.same_leaf(&at_ops[k]));
+                let here = field.read_operand(at,third,o);
+                let next = (0..2).find(|&k| tangent_to(third,&here,k)).map(|k| (k,third,here))
+                    .or_else(|| (0..2).find_map(|k| {
+                        let n = own(k)?;
+                        let h = field.read_operand(at,n,o);
+                        tangent_to(n,&h,k).then_some((k,n,h))
+                    }));
+                if let Some((k,next,here)) = next {
                     if handed >= 2 { break End::Handoffs; }
                     handed += 1;
                     if distance(at,p) > options.tolerance { halves[side].push(at); walked += distance(at,p); p = at; }
                     ops = at_ops;
-                    ops[k] = third;
+                    ops[k] = next;
                     if let Some(h) = here { ops[k] = ops[k].at_time(h.time()); }
                     continue;
                 }

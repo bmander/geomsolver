@@ -239,6 +239,24 @@ impl Refiner<'_> {
     /// such facets), and refining it inserts that vertex again, forever.
     fn margin(&self) -> f64 { 0.05*self.criteria.edge_size }
 
+    /// Whether `p` stands within `margin` of a vertex of `region` — the tetrahedra it would take,
+    /// whose corners its nearest vertex is among — that is no protecting ball (those are
+    /// `ball_at`'s).  A restricted facet's surface ball is empty, so its centre is no nearer any
+    /// vertex than its own corners, which `refine_some` holds `margin` off already: what this
+    /// refuses is a centre off its facet's dual edge.  Four corners nearly on one circle and in its
+    /// plane (two pairs of a symmetric part's protecting balls) have an orthocentre rounding puts
+    /// anywhere along that circle's axis, its side with it: a facet of such a tetrahedron reads
+    /// as crossing the boundary where its dual edge does not reach it, and the crossing found
+    /// along the axis was a vertex already there (#780 R1: the library rod at a reading's own
+    /// size, three corners of an element 10⁻¹⁵ apart).
+    fn crowded(&self,p: P,region: &[u32]) -> bool {
+        let m2 = self.margin()*self.margin();
+        region.iter().flat_map(|&t| self.tri.tet(t).v).any(|v| v >= ENCLOSING && {
+            let q = self.tri.points()[v as usize];
+            q.w == 0. && dist2(q.p,p) < m2
+        })
+    }
+
     /// The facet `(t, i)` if restricted: its sorted vertices and its surface centre.
     fn restricted(&mut self,t: u32,i: usize) -> Option<([u32;3],P)> {
         if !self.tri.alive(t) { return None; }
@@ -373,7 +391,10 @@ impl Refiner<'_> {
             // (and the facet, judged from both sides, would ask for the same point again).
             let n = self.tri.tet(bad.t).n[bad.i];
             let region = self.tri.conflicts(centre,0.,Some(bad.t))?;
-            if !region.iter().any(|&t| t == bad.t || t == n) { self.report.off_dual += 1; continue; }
+            if !region.iter().any(|&t| t == bad.t || t == n) || self.crowded(centre,&region) {
+                self.report.off_dual += 1;
+                continue;
+            }
             self.insert(centre)?;
         }
         Ok(self.queue.is_empty())
