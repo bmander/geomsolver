@@ -146,8 +146,22 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
             fm[i].abs() > reach+0.5*hs[i]*r*r
         });
         if off { continue }
+        let inv = inverse(jm);
+        // and preconditioned (Krawczyk's): `G = J(m)⁻¹ F` has `∇G = I` at the middle, so each of its
+        // components moves across the box by its own half-width at first order, and by the second
+        // derivatives' bound carried through `J(m)⁻¹` beyond — a box whose Newton step reaches past
+        // that on any unknown holds no root. Far stronger than `F`'s own components where they
+        // couple (a ray against a long sheet), it drops what they leave standing
+        if let Some(c) = &inv {
+            let g: [f64;N] = std::array::from_fn(|i| (0..N).map(|k| c[i][k]*fm[k]).sum());
+            let far = (0..N).any(|i| {
+                let bend: f64 = (0..N).map(|k| c[i][k].abs()*hs[k]).sum();
+                g[i].abs() > 0.5*(bx[i][1]-bx[i][0])+0.5*bend*r*r
+            });
+            if far { continue }
+        }
         // one root, and no other, in the box: Kantorovich at its middle
-        if let Some(inv) = inverse(jm) {
+        if let Some(inv) = inv {
             let beta = norm_inf(&inv);
             let step: [f64;N] = std::array::from_fn(|i| (0..N).map(|k| inv[i][k]*fm[k]).sum());
             let eta = step.iter().fold(0f64,|a,&s| a.max(s.abs()));

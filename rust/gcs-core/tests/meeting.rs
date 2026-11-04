@@ -297,3 +297,63 @@ fn two_coaxial_hyperboloids_meet_in_circles_in_closed_form() {
         assert!((r-(4.+want*want).sqrt()).abs() <= 1e-9,"of radius {r}");
     }
 }
+
+/// **Every kind touching along a curve, and crossing at under a degree, is met completely, with
+/// and without the closed forms** (#778 T5's gate on the completeness gate): for each kind of
+/// surface, a partner tangent to it along a curve — a plane on a cylinder's side and on a cone's
+/// generator, a cylinder round a ball's equator and round a torus's, a plane on a vault's crown
+/// (an extrusion) and on a fitted sheet's crest — and that partner moved to cross it at under a
+/// degree. Touching, a branch of the meeting touches all along it (`Contact::Touching`), within a
+/// ten-thousandth of the curve's points; crossing shallowly, every point a dense sampling finds
+/// where they cross (at any angle) lies on a branch within a ten-thousandth. Each met by
+/// `meeting::meet_with` with the closed forms taken and bypassed.
+#[test]
+fn every_kind_touching_along_a_curve_and_crossing_shallowly_is_met_completely() {
+    use gcs_core::brep::meeting::meet_with;
+    let z = [0.,0.,1.];
+    let at = |o: V,n: V| Frame::about(o,n);
+    let lean = 0.3f64;
+    let (sl,cl) = lean.sin_cos();
+    let arc = Surface::Extrusion(Frame::new([-12.,0.,0.],[1.,0.,0.],[0.,1.,0.]),Arc::new(Curve::BSpline(Arc::new(
+        BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],vec![[-12.,-12.,10.],[-12.,0.,26.],[-12.,12.,10.]],vec![1.,0.6,1.]).unwrap()))));
+    let crest = Surface::BSpline(Frame::WORLD,Arc::new(fit_net(&|u,v| { let (x,y) = (4.*u-2.,4.*v-2.); [x,y,1.-y*y/4.] },3,3,8,8,1e-10).unwrap().0));
+    // (each: what, the surface, its box, the partner touching it, its box, the touch's points, and
+    // the partner moved off to cross at under a degree)
+    let line = |p: V,d: V| (0..=8).map(|k| { let s = -1.+0.25*k as f64; [p[0]+s*d[0],p[1]+s*d[1],p[2]+s*d[2]] }).collect::<Vec<V>>();
+    let circle = |c: V,r: f64| (0..16).map(|k| { let a = k as f64*TAU/16.; [c[0]+r*a.cos(),c[1]+r*a.sin(),c[2]] }).collect::<Vec<V>>();
+    let full = [0.,TAU];
+    let cases: Vec<(&str,Surface,[[f64;2];2],Surface,[[f64;2];2],Vec<V>,Surface)> = vec![
+        ("a plane on a cylinder's side",Surface::Cylinder(at([0.;3],z),1.),[full,[-2.,2.]],Surface::Plane(at([1.,0.,0.],[1.,0.,0.])),[[-3.,3.],[-3.,3.]],
+            line([1.,0.,0.],z),Surface::Plane(at([1.-1e-4,0.,0.],[1.,0.,0.]))),
+        ("a plane on a cone's generator",Surface::Cone(at([0.;3],z),1.,lean),[full,[-1.5,1.5]],Surface::Plane(at([1.,0.,0.],[cl,0.,-sl])),[[-3.,3.],[-3.,3.]],
+            line([1.,0.,0.],[sl,0.,cl]),Surface::Plane(at([1.-1e-4,0.,0.],[cl,0.,-sl]))),
+        ("a cylinder round a ball's equator",Surface::Sphere(at([0.;3],z),1.),[full,[-1.4,1.4]],Surface::Cylinder(at([0.;3],z),1.),[full,[-2.,2.]],
+            circle([0.;3],1.),Surface::Cylinder(at([0.;3],z),1.-1e-4)),
+        ("a cylinder round a torus's equator",Surface::Torus(at([0.;3],z),1.4,0.5),[full,full],Surface::Cylinder(at([0.;3],z),1.9),[full,[-2.,2.]],
+            circle([0.;3],1.9),Surface::Cylinder(at([0.;3],z),1.9-1e-4)),
+        ("a plane on a vault's crown",arc,[[0.,1.],[0.,24.]],Surface::Plane(at([0.,0.,16.],z)),[[-13.,13.],[-13.,13.]],
+            line([0.,0.,16.],[11.,0.,0.]),Surface::Plane(at([0.,0.,16.-1e-4],z))),
+        ("a plane on a sheet's crest",crest,[[0.,1.],[0.,1.]],Surface::Plane(at([0.,0.,1.],z)),[[-3.,3.],[-3.,3.]],
+            line([0.,0.,1.],[1.9,0.,0.]),Surface::Plane(at([0.,0.,1.-1e-4],z))),
+    ];
+    for (what,a,da,b,db,touch,shallow) in cases {
+        for closed in [true,false] {
+            let m = meet_with(&a,da,&b,db,1e-7,closed).unwrap_or_else(|e| panic!("{what}, closed forms {closed}: {e}"));
+            let touching: Vec<_> = m.branches.iter().filter(|br| br.contact == Contact::Touching).collect();
+            assert!(!touching.is_empty(),"{what}, closed forms {closed}: no touch among {} branches",m.branches.len());
+            for &p in &touch {
+                let off = touching.iter().map(|br| distance(br.curve.point(br.curve.inverse(p)),p)).fold(f64::INFINITY,f64::min);
+                assert!(off <= 1e-4,"{what}, closed forms {closed}: the touch's point {p:?} is {off:e} from every touching branch");
+            }
+            // moved off a ten-thousandth, crossing at under a degree: every crossing sampled on a branch
+            let m = meet_with(&a,da,&shallow,db,1e-7,closed).unwrap_or_else(|e| panic!("{what} moved off, closed forms {closed}: {e}"));
+            let points = sampled(&a,da,&shallow,db,240,0.);
+            assert!(!points.is_empty(),"{what} moved off: no crossing sampled");
+            for p in points {
+                let off = m.branches.iter().map(|br| distance(br.curve.point(br.curve.inverse(p)),p)).fold(f64::INFINITY,f64::min);
+                assert!(off <= 1e-4,"{what} moved off, closed forms {closed}: the sampled crossing {p:?} is {off:e} from every one of {} branches: {:?}",
+                    m.branches.len(),m.branches.iter().map(|br| (br.curve.kind(),br.curve.point(br.curve.inverse(p)))).collect::<Vec<_>>());
+            }
+        }
+    }
+}

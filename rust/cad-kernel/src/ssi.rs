@@ -1371,95 +1371,9 @@ pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
     None
 }
 
-/// **Where two surfaces touch along a curve, found generally** (#777 M3, #735's A2): from both
-/// surfaces and the condition that they are tangent, with no closed form for the pair. On `a`,
-/// `b`'s signed distance `g` over `a`'s tangent plane is nought and stationary along a touch;
-/// across the touch it is a valley (or a ridge) and along it flat, so its second derivatives `Q`
-/// (by differences) have one null direction, the touch's tangent `t`, and one other, `w`. From
-/// `p` the valley's floor is found by Newton on `∂g/∂w` alone; then the touch is marched along `t`
-/// both ways, each step predicted along it and pulled back onto the floor across it, until it
-/// leaves the box `[lo, hi]`, closes on itself, or the two stop touching (`g` off nought past `8
-/// tol`, where they part or cross). The touch traced (`Curve::Traced`), or `None` where `p` is
-/// near no touch along a curve (a definite `Q`: a touch at a point, or none). Each step counted
-/// against the build's budget (the trace stage). What every closed form for a touch is held to
-/// (`parallel_touch`, `ball_in_tube`, `tube_along_torus`, `tori_touching`, `pipe_end`, a screwed
-/// rim against the cylinder of its farthest reach), and what a meeting with none is read by where
-/// a trace finds its two surfaces tangent (`trace_beside`).
-pub fn touch_curve(a: &Surface,b: &Surface,p: V,lo: V,hi: V,tol: f64) -> Option<Curve> {
-    let on_a = |q: V| a.point(a.inverse(q));
-    let h = difference_step(a,b);
-    // `g` over `a`'s tangent plane at `x`: its value, slopes and second derivatives there
-    let jet = |x: V| {
-        let f = Frame::about(x,a.gradient(x));
-        let g = |s: f64,t: f64| b.implicit(on_a(add(x,add(scale(f.x,s),scale(f.y,t)))));
-        let (g0,[sp,sm,tp,tm]) = (g(0.,0.),[g(h,0.),g(-h,0.),g(0.,h),g(0.,-h)]);
-        let (gs,gt) = ((sp-sm)/(2.*h),(tp-tm)/(2.*h));
-        let (gss,gtt) = ((sp-2.*g0+sm)/(h*h),(tp-2.*g0+tm)/(h*h));
-        let gst = (g(h,h)-g(h,-h)-g(-h,h)+g(-h,-h))/(4.*h*h);
-        (f,g0,[gs,gt],[gss,gst,gtt])
-    };
-    // the null way of `Q` (the touch's tangent) and the other, in space
-    let ways = |f: &Frame,[qss,qst,qtt]: [f64;3]| -> (V,V,f64,f64) {
-        let (mean,dev) = (0.5*(qss+qtt),(0.25*(qss-qtt)*(qss-qtt)+qst*qst).sqrt());
-        let (l1,l2) = (mean+dev,mean-dev);
-        // the eigenvector of the eigenvalue farther from nought is `w`, the other `t`
-        let big = if l1.abs() >= l2.abs() { l1 } else { l2 };
-        let small = if l1.abs() >= l2.abs() { l2 } else { l1 };
-        let phase = 0.5*(2.*qst).datan2(qss-qtt);
-        let (sn,cs) = phase.dsin_cos();
-        let e1 = add(scale(f.x,cs),scale(f.y,sn));
-        let e2 = add(scale(f.x,-sn),scale(f.y,cs));
-        // `e1` belongs to `mean + dev`
-        let (w,t) = if big == l1 { (e1,e2) } else { (e2,e1) };
-        (t,w,big,small)
-    };
-    // the valley's floor across it from `x`: Newton on `∂g/∂w`, `w` held from the start
-    let floor = |x: V| -> Option<V> {
-        let mut x = on_a(x);
-        for _ in 0..24 {
-            let (f,_,[gs,gt],q) = jet(x);
-            let (_,w,big,small) = ways(&f,q);
-            if !(big.abs() > 0.) || small.abs() > 0.25*big.abs() { return None }
-            let ws = [crate::util::space::dot(w,f.x),crate::util::space::dot(w,f.y)];
-            let slope = gs*ws[0]+gt*ws[1];
-            let step = -slope/big;
-            x = on_a(add(x,scale(w,step)));
-            if step.abs() <= 1e-3*tol { break }
-        }
-        (b.implicit(x).abs() <= 8.*tol).then_some(x)
-    };
-    let x0 = floor(p)?;
-    let diag = norm(sub(hi,lo)).max(tol);
-    let step = (a.feature_within(lo,hi).min(b.feature_within(lo,hi))/24.).min(diag/48.).max(diag*1e-4);
-    let inside = |q: V| (0..3).all(|k| q[k] >= lo[k]-step && q[k] <= hi[k]+step);
-    let mut halves: Vec<Vec<V>> = Vec::new();
-    let mut closed = false;
-    for sense in [1.,-1.] {
-        let mut pts = vec![x0];
-        let (f,_,_,q) = jet(x0);
-        let mut t = scale(ways(&f,q).0,sense);
-        for _ in 0..20_000 {
-            let x = *pts.last().unwrap_or(&x0);
-            if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (x,format!("{} × {} (a touch)",a.kind(),b.kind()))) { break }
-            let Some(y) = floor(add(x,scale(t,step))) else { break };
-            if !inside(y) { pts.push(y); break }
-            // back where it began: the touch closes
-            if pts.len() > 3 && distance(y,x0) <= 0.75*step { closed = true; break }
-            let (f,_,_,q) = jet(y);
-            let tn = ways(&f,q).0;
-            t = if crate::util::space::dot(tn,t) < 0. { scale(tn,-1.) } else { tn };
-            pts.push(y);
-        }
-        halves.push(pts);
-        if closed { break }
-    }
-    let mut pts: Vec<V> = halves.get(1).map_or(Vec::new(),|back| back.iter().rev().copied().collect());
-    if !pts.is_empty() { pts.pop(); }
-    pts.extend(halves[0].iter().copied());
-    if pts.len() < 3 { return None }
-    if closed { pts.push(pts[0]) }
-    Some(Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:a.clone(),b:b.clone(),pts,closed})))
-}
+/// Whether a trace was refused for two surfaces nearly touching where it marched (`trace_beside`'s
+/// refusal below `SHALLOW`): what a caller reads the meeting's ridges for (#778 T4).
+pub fn refused_as_shallow(e: &str) -> bool { e.contains("nearly touching: their meeting is ill-conditioned") }
 
 /// The curves two surfaces meet in, traced through `seeds` (points on both) within the box
 /// `[lo, hi]`: from each seed not already on a traced curve, a march along `∇a × ∇b` both ways
@@ -1529,12 +1443,9 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                     if !touches.iter().any(|u| distance(u.at,t.at) <= 8.*tol) { touches.push(t); }
                     continue
                 }
-                // no touch at a point: the two touch along a curve through it, found generally
-                // from both and the condition that they are tangent (#777 M3), else refused
-                None => match touch_curve(a,b,p0,lo,hi,tol) {
-                    Some(c) => { traced_so_far.push(c); continue }
-                    None => return Err(shallow(p0)),
-                },
+                // no touch at a point: the two touch along a curve through it, read from the
+                // meeting's critical set by whoever asked (`meeting::ridges`, #778)
+                None => return Err(shallow(p0)),
             }
         }
         let mut halves: Vec<Vec<V>> = Vec::new();

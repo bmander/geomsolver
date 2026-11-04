@@ -1472,7 +1472,50 @@ impl<'a> Arrangement<'a> {
     /// for what no curve yet passes, each found traced in turn, until the search shows nothing
     /// else is there. Where the two only touch is a meeting already known (`Touches`): no trace
     /// starts or passes there.
-    fn traced_meeting(&self,faces: Two,crossings: &Crossings,known: &[Curve],(lo,hi): Box3) -> Result<Vec<Curve>,String> {
+    fn traced_meeting(&self,faces: Two,crossings: &Crossings,known: &[Curve],bx: Box3) -> Result<Vec<Curve>,String> {
+        match self.traced_meeting_with(faces,crossings,known,&[],bx) {
+            // **a meeting the march finds nearly touching is read from its critical set** (#778 T4):
+            // the ridges of one face's distance from the other over its parameters — the touches
+            // along curves through the inside of both faces, and the crossings beside them however
+            // shallow — known before the march, which ends where it comes to one
+            Err(e) if super::ssi::refused_as_shallow(&e) => {
+                let ([oa,ob],[fa,fb]) = (faces.s,faces.f);
+                let (a,b) = (self.solids[oa],self.solids[ob]);
+                let mut branches: Vec<super::meeting::Branch> = Vec::new();
+                // over the parameters of the face whose partner's distance is exact first
+                let mut order = [(a,fa,&a.faces[fa].surface,&b.faces[fb].surface),(b,fb,&b.faces[fb].surface,&a.faces[fa].surface)];
+                if super::meeting::exact_distance(order[0].2) && !super::meeting::exact_distance(order[0].3) { order.swap(0,1) }
+                for (sol,fi,mine,theirs) in order {
+                    let domain = super::meeting::within_domain(mine,parameters(sol,fi,true));
+                    for r in super::meeting::ridges(mine,domain,theirs,self.tol)? { branches.extend(super::meeting::ridge_branches(mine,domain,theirs,&r,self.tol)) }
+                    if !branches.is_empty() { break }
+                }
+                // the crossings no ridge holds, traced as `f = 0` in either face's parameters through
+                // the points where the faces' edges cross the other (#778 T3)
+                let on = &crossings.on_face;
+                let seeds: Vec<V> = on[ob][fb].iter().chain(&on[oa][fa]).map(|&v| self.pool.pts[v as usize])
+                    .filter(|&p| !super::meeting::on_a_branch(&a.faces[fa].surface,&b.faces[fb].surface,&branches,p,self.tol)).collect();
+                for (sol,fi,mine,theirs) in [(a,fa,&a.faces[fa].surface,&b.faces[fb].surface),(b,fb,&b.faces[fb].surface,&a.faces[fa].surface)] {
+                    let level = super::meeting::level_curves(mine,super::meeting::within_domain(mine,parameters(sol,fi,true)),theirs,&seeds,self.tol);
+                    if !level.is_empty() { branches.extend(level); break }
+                }
+                if branches.is_empty() { return Err(e) }
+                if super::debug() {
+                    eprintln!("brep: a meeting read from its ridges and level curves: {} branches",branches.len());
+                    for br in &branches { if let Curve::BSpline(s) = &br.curve { let [t0,t1] = s.domain();
+                        eprintln!("brep:   {:?} from {:?} to {:?}",br.contact,br.curve.point(t0),br.curve.point(t1)) } }
+                    for s in &seeds { eprintln!("brep:   seed {s:?}") }
+                }
+                self.traced_meeting_with(faces,crossings,known,&branches,bx)
+            }
+            other => other,
+        }
+    }
+
+    /// `traced_meeting`, the branches a ridge holds (`ridged`) known before the march: each a curve
+    /// of the meeting, a touch among them a stretch a march ends at.
+    fn traced_meeting_with(&self,faces: Two,crossings: &Crossings,known: &[Curve],ridged: &[super::meeting::Branch],(lo,hi): Box3)
+        -> Result<Vec<Curve>,String> {
         let (tol,pad) = (self.tol,self.pad);
         let ([oa,ob],[fa,fb]) = (faces.s,faces.f);
         let (a,b) = (self.solids[oa],self.solids[ob]);
@@ -1483,14 +1526,20 @@ impl<'a> Arrangement<'a> {
             .filter(|&p| sa.implicit(p).abs() <= 8.*tol && sb.implicit(p).abs() <= 8.*tol).collect();
         // the edges either lies in that the other's face holds (`Meets::Along`), over their stretches
         let along = &crossings.along_face;
-        let stretches: Vec<(&Curve,[f64;2])> = along[ob][fb].iter().chain(&along[oa][fa])
+        let mut stretches: Vec<(&Curve,[f64;2])> = along[ob][fb].iter().chain(&along[oa][fa])
             .filter_map(|&we| match &self.edges[we].curve {
                 EdgeCurve::Curve(c) => Some((c,self.edges[we].t)),
                 EdgeCurve::Degenerate => None,
             }).collect();
+        // a ridge's touches are stretches the two touch along, as an edge they lie along is
+        for br in ridged.iter().filter(|br| br.contact == super::meeting::Contact::Touching) {
+            if let Curve::BSpline(s) = &br.curve { stretches.push((&br.curve,s.domain())) }
+        }
         let mut touches = Touches::new(self,faces,&stretches);
-        // a seed on a curve of the meeting traced for two other faces on these surfaces is on it
-        let on_known = |p: V| known.iter().any(|c| distance(c.point(c.inverse(p)),p) <= 8.*tol);
+        // a seed on a curve of the meeting traced for two other faces on these surfaces is on it, or
+        // on a ridge's branch
+        let on_known = |p: V| known.iter().any(|c| distance(c.point(c.inverse(p)),p) <= 8.*tol)
+            || super::meeting::on_a_branch(&self.solids[faces.s[0]].faces[faces.f[0]].surface,&self.solids[faces.s[1]].faces[faces.f[1]].surface,ridged,p,tol);
         seeds.retain(|&p| !touches.touching(p) && !on_known(p));
         let started = crate::util::clock::Instant::now();
         // a sheet's or a face family's wall: no closed form says where a meeting may lie
@@ -1502,9 +1551,24 @@ impl<'a> Arrangement<'a> {
             .filter(|&p| !touches.touching(p) && !on_known(p)));
         self.say.tracing(faces,surfaces,&seeds);
         let started = crate::util::clock::Instant::now();
-        let beside = &mut |p: V| touches.beside(p);
+        // beside a ridge's or a level curve's branch is beside a known meeting
+        let beside = &mut |p: V| touches.beside(p) || super::meeting::on_a_branch(sa,sb,ridged,p,tol);
         let mut traced = known.to_vec();
-        traced.extend(super::ssi::trace_beside(sa,sb,&seeds,beside,lo,hi,tol)?);
+        traced.extend(ridged.iter().map(|br| br.curve.clone()));
+        if ridged.is_empty() {
+            traced.extend(super::ssi::trace_beside(sa,sb,&seeds,beside,lo,hi,tol)?);
+        } else {
+            // read from its ridges and level curves (#778): each seed left traced alone, one refused
+            // as shallow again standing where they read the meeting, passed by
+            for &p in &seeds {
+                if traced.iter().any(|c| distance(c.point(c.inverse(p)),p) <= 8.*tol) { continue }
+                match super::ssi::trace_beside(sa,sb,&[p],beside,lo,hi,tol) {
+                    Ok(found) => traced.extend(found),
+                    Err(e) if super::ssi::refused_as_shallow(&e) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+        }
         // a closed curve inside both faces crosses no edge and has no seed
         if super::ssi::searchable(sa) && super::ssi::searchable(sb) {
             let size = |bx: &Box3| distance(bx.0,bx.1);
@@ -1521,7 +1585,10 @@ impl<'a> Arrangement<'a> {
                     return Err(format!("a {} and a {} meet in more than {LOOPS} curves no edge crosses, not built yet",
                         sa.kind(),sb.kind()))
                 }
-                let more = super::ssi::trace_beside(sa,sb,&[p],beside,lo,hi,tol)?;
+                let more = match super::ssi::trace_beside(sa,sb,&[p],beside,lo,hi,tol) {
+                    Err(e) if !ridged.is_empty() && super::ssi::refused_as_shallow(&e) => break,
+                    other => other?,
+                };
                 if more.is_empty() {
                     return Err(format!("a {} and a {} meet at {p:?}, where no edge crosses, in a curve that could not be \
                         traced, not built yet",sa.kind(),sb.kind()))

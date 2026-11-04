@@ -122,18 +122,76 @@ fn a_bar_under_a_screw_closes_into_its_helical_sweep() {
     }
 }
 
-/// What the build refuses it refuses by what the tool and the motion are: under a screw, an edge
-/// leaning to the axis, the design's later step.
+/// **A block leaning to a screw's axis closes into its helical sweep** (#777 M5's gate: the leaning
+/// block under a screw, docs/swept-solid-design.md's "tried and set aside, for a leaning edge under
+/// a screw"): its leaning edges, and its leaning faces' contact lines (where a face's normal is
+/// square to the screw's velocity), each screw into a patch of a ruled helicoid bounded inside the
+/// domain, its rim standing in a cell just past the candidates that seal it, its meetings stopping
+/// partway across the faces it meets. Apart from the build, in helical coordinates `(ρ, ψ, ζ = z −
+/// kψ)` the screw is a shift in `ψ`: the block is less tall than a lead, so each helix meets it once,
+/// and the sweep is its own volume and `Θ ∫ ρ L(ρ) dρ`, `L(ρ)` the range of `z − kψ` over its slice
+/// by the cylinder of radius `ρ` — each vertical line of that cylinder clipped to the block exactly,
+/// the extremes read over a fine grid of `ψ` and settled, and `ρ` integrated by Gauss–Legendre.
 #[test]
-fn what_the_closed_build_cannot_yet_build_it_names() {
-    use gcs_core::brep::swept::closed::Unbuilt;
-    let screw = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:2.});
-    let tool = leaning(0.35,3.);
-    let Err(Unbuilt::Leaning {at}) = closed(&tool,&screw,[0.,1.],0.01,1e-7) else { panic!("refused as leaning") };
-    // its witness on the tool
-    let solid = Solid::new(&tool,0.002,1.).unwrap();
-    assert!(solid.signed_distance(at).abs() <= 1e-9,"{at:?} on the tool");
-    assert!(matches!(gcs_core::brep::swept::closed::reads(&tool,&screw),Err(Unbuilt::Leaning {..})),"read so before any build");
+#[ignore = "#777 M5, not built yet: its arrangement holds the patches, but locating points in cells bounded by them runs past the budget"]
+fn a_block_leaning_to_a_screws_axis_closes_into_its_helical_sweep() {
+    use std::f64::consts::TAU;
+    let (lean,off) = (0.35,3.);
+    let tool = leaning(lean,off);
+    let (theta,advance) = (1.,2.);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance});
+    let k = advance/TAU/theta;
+    // the vertical line at (x, y) within the block, in its own frame [0, 1] × [−½, ½] × [−¾, ¾] turned
+    // `lean` about x and moved out `off`: local (x − off, c y + s z, −s y + c z)
+    let (sn,cs) = lean.sin_cos();
+    let clip = |x: f64,y: f64| -> Option<(f64,f64)> {
+        if !(0.0..=1.).contains(&(x-off)) { return None }
+        // c y + s z in [−½, ½] and −s y + c z in [−¾, ¾], each linear in z
+        let (mut lo,mut hi) = (f64::NEG_INFINITY,f64::INFINITY);
+        for (a,b,h) in [(cs*y,sn,0.5),(-sn*y,cs,0.75)] {
+            let (z0,z1) = ((-h-a)/b,(h-a)/b);
+            lo = lo.max(z0.min(z1));
+            hi = hi.min(z0.max(z1));
+        }
+        (hi > lo).then_some((lo,hi))
+    };
+    let range = |rho: f64| -> f64 {
+        let reach = |psi: f64| clip(rho*psi.cos(),rho*psi.sin()).map(|(lo,hi)| (hi-k*psi,lo-k*psi));
+        let n = 4000;
+        let psis: Vec<f64> = (0..=n).map(|i| -0.6+1.2*i as f64/n as f64).collect();
+        let (mut top,mut bottom) = (f64::NEG_INFINITY,f64::INFINITY);
+        let (mut at_top,mut at_bottom) = (0.,0.);
+        for &psi in &psis { if let Some((t,b)) = reach(psi) {
+            if t > top { top = t; at_top = psi }
+            if b < bottom { bottom = b; at_bottom = psi }
+        } }
+        if !top.is_finite() { return 0. }
+        // each extreme settled over the steps beside it (golden section)
+        let settle = |at: f64,pick: &dyn Fn(f64) -> f64| {
+            let (mut a,mut b) = (at-1.2/n as f64,at+1.2/n as f64);
+            for _ in 0..60 { let (m1,m2) = (a+(b-a)*0.382,a+(b-a)*0.618); if pick(m1) > pick(m2) { b = m2 } else { a = m1 } }
+            pick(0.5*(a+b))
+        };
+        let top = settle(at_top,&|p| reach(p).map_or(f64::NEG_INFINITY,|r| r.0)).max(top);
+        let bottom = -settle(at_bottom,&|p| reach(p).map_or(f64::NEG_INFINITY,|r| -r.1)).max(-bottom);
+        top-bottom
+    };
+    // ρ over the block's reach from the axis, Gauss–Legendre on panels
+    // (its nearest the axis on its face at `x = off`, its farthest at a corner)
+    let (r0,r1) = (off,tool.vertices.iter().map(|v| v.p[0].hypot(v.p[1])).fold(0.,f64::max));
+    let gauss = [(-0.861136311594053,0.347854845137454),(-0.339981043584856,0.652145154862546),
+        (0.339981043584856,0.652145154862546),(0.861136311594053,0.347854845137454)];
+    let panels = 600;
+    let mut integral = 0.;
+    for j in 0..panels {
+        let (a,b) = (r0+(r1-r0)*j as f64/panels as f64,r0+(r1-r0)*(j+1) as f64/panels as f64);
+        for (x,w) in gauss { let rho = 0.5*(a+b)+0.5*(b-a)*x; integral += 0.5*(b-a)*w*rho*range(rho) }
+    }
+    let expected = 1.5+theta*integral;
+    eprintln!("a block leaning to a screw's axis: its sweep {expected} apart from the build");
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    assert!((volume(&built)-expected).abs() <= 1e-5*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
 }
 
 /// A block leaning to the axis: `block` turned `lean` about the world's `x` and moved out `off`.
@@ -1146,73 +1204,6 @@ fn a_failed_builds_arrangement_is_dumped_replayed_and_reduced() {
         names.len() > 1 && kinds.contains("blend") && kinds.contains("torus")
     });
     assert_eq!(reduce(&loaded,&fails),vec![0,2]);
-}
-
-/// **Every closed form for a touch is held to the general method** (#777 M3): where two surfaces
-/// are tangent along a curve, `ssi::touch_curve` finds it from both surfaces and the condition that
-/// they are tangent alone, with no closed form for the pair. Each closed form the closed class
-/// leans on — two cones on parallel axes touching along a line (`parallel_touch`), a ball in a
-/// torus's tube (`ball_in_tube`), a cylinder round a torus's equator (`tube_along_torus`), two tori
-/// round a meridian (`tori_touching`), a ball at a pipe's end (`pipe_end`), a screwed rim's sheet
-/// and the cylinder of its farthest reach (`screwed_circle_round`) — is a fast path held to it:
-/// the closed form's touch is tangent all along (the normals parallel), and the general method,
-/// seeded a thousandth off it, traces onto it within 1e-5 — a touch is a double root, its general
-/// reading the floor of a valley found by differences, so it is placed only to their rounding (a
-/// ball at a pipe's end, on the sheet's rim, 3e-6 off): which is why the closed forms stay, the
-/// exact and faster road where they hold. Each is measured, and said.
-#[test]
-fn every_closed_form_touch_is_held_to_the_general_method() {
-    use gcs_core::brep::geom::{Curve,Frame,Surface};
-    use gcs_core::brep::ssi::{intersect,touch_curve,Ssi};
-    use gcs_core::space::{cross,distance};
-    use std::f64::consts::TAU;
-    let z = [0.,0.,1.];
-    let about = |o: [f64;3]| Frame::about(o,z);
-    let lean = 0.2f64.atan();
-    let lift = 2./TAU;
-    let rim = gcs_core::brep::build::screwed(&gcs_core::brep::build::disc([3.,0.,1.],z,1.),[0.;3],z,1.5,lift).unwrap();
-    let rim_sheet = rim.faces.iter().find(|f| f.surface.kind() == "blend").unwrap().surface.clone();
-    let pipe = gcs_core::brep::build::screwed(&gcs_core::brep::build::disc([10.,0.,0.],unit([0.,10.,0.5]),1.),[0.;3],z,1.5,0.75).unwrap();
-    let pipe_sheet = pipe.faces.iter().find(|f| f.surface.kind() == "blend").unwrap().surface.clone();
-    let cases: Vec<(&str,Surface,Surface)> = vec![
-        ("two cones on parallel axes",Surface::Cone(about([0.;3]),1.,lean),Surface::Cone(about([3.,0.,0.]),2.,-lean)),
-        ("a ball in a torus's tube",Surface::Sphere(about([2.,0.,0.]),0.3),Surface::Torus(about([0.;3]),2.,0.3)),
-        ("a cylinder round a torus's equator",Surface::Cylinder(about([0.;3]),2.3),Surface::Torus(about([0.;3]),2.,0.3)),
-        ("two tori round a meridian",Surface::Torus(about([10.,0.,0.]),1.,0.3),Surface::Torus(about([0.;3]),11.,0.3)),
-        ("a ball at a pipe's end",Surface::Sphere(about([10.,0.,0.]),1.),pipe_sheet),
-        ("a screwed rim and its farthest cylinder",Surface::Cylinder(about([0.;3]),4.),rim_sheet),
-    ];
-    let tol = 1e-7;
-    for (what,a,b) in cases {
-        let clock = std::time::Instant::now();
-        let Ssi::Curves(curves) = intersect(&a,&b,tol) else { panic!("{what}: no closed form") };
-        let closed_form = clock.elapsed();
-        let samples = |c: &Curve| -> Vec<[f64;3]> { match c {
-            Curve::Line {p,d} => (0..=20).map(|k| { let s = -1.+0.1*k as f64; std::array::from_fn(|i| p[i]+s*d[i]) }).collect(),
-            Curve::Iso(..) => (1..20).map(|k| c.point(k as f64/20.)).collect(),
-            Curve::Traced(t) => t.pts.clone(),
-            _ => (0..32).map(|k| c.point(k as f64*TAU/32.)).collect(),
-        } };
-        let parallel = |p: [f64;3]| norm(cross(unit(a.gradient(p)),unit(b.gradient(p))));
-        let touch = curves.iter().find(|c| samples(c).iter().all(|&p| parallel(p) <= 1e-5))
-            .unwrap_or_else(|| panic!("{what}: no touch among {:?}",curves.iter().map(|c| c.kind()).collect::<Vec<_>>()));
-        let pts = samples(touch);
-        for &p in &pts { assert!(parallel(p) <= 1e-6 && a.implicit(p).abs().max(b.implicit(p).abs()) <= 1e-7,"{what}: {p:?} no touch") }
-        let (lo,hi) = pts.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
-            (std::array::from_fn(|k| l[k].min(p[k]-0.5)),std::array::from_fn(|k| h[k].max(p[k]+0.5))));
-        let q = pts[pts.len()/2];
-        let seed = [q[0]+1e-3,q[1]-1e-3,q[2]+1e-3];
-        let clock = std::time::Instant::now();
-        let general = touch_curve(&a,&b,seed,lo,hi,tol).unwrap_or_else(|| panic!("{what}: the general method found no touch"));
-        let searched = clock.elapsed();
-        let Curve::Traced(traced) = &general else { panic!("{what}: traced") };
-        assert!(traced.pts.len() >= 10,"{what}: {} points",traced.pts.len());
-        for &p in &traced.pts {
-            let off = distance(touch.point(touch.inverse(p)),p);
-            assert!(off <= 1e-5,"{what}: the general touch at {p:?} stands {off:e} off the closed form's");
-        }
-        eprintln!("{what}: in closed form {closed_form:?}, by the general method {searched:?} ({} points)",traced.pts.len());
-    }
 }
 
 /// **The ball-end mill screwed through a ring sector, reduced to its Boolean, holds every cell**

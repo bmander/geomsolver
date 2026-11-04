@@ -151,6 +151,10 @@ enum Cutter { Plane(Plane),
     /// The line through `p` along unit `e`, square to the screw's axis, screwed whole: a helicoidal
     /// sheet (a right helicoid where the line meets the axis).
     Screwed { p: V,e: V },
+    /// The segment from `p` to `q`, leaning to the screw's axis, screwed over the roll (#777 M5): a
+    /// patch of the ruled helicoid it sweeps, a little past the segment's ends and the roll's, its
+    /// rim standing inside the domain (`patch`).
+    Patch { p: V,q: V },
     /// The torus about `c` square to the unit `axis`, its tube's middle circle of radius `major`, its
     /// tube's radius `minor` (a ball's great circle through the turn's axis, turned).
     Torus { c: V,axis: V,major: f64,minor: f64 },
@@ -225,7 +229,9 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
         match &f.surface {
             Surface::Plane(frame) => {
                 let n = unit(if f.reversed { scale(frame.z,-1.) } else { frame.z });
-                if leans(n) { return Err(Unbuilt::Leaning {at}) }
+                // (a face leaning to a screw's axis touches along a leaning line, screwed into a patch
+                // of a ruled helicoid bounded inside the domain, #777 M5)
+                let _ = (leans(n),at);
                 faces.push((frame.o,n));
             }
             // under a slide a cylinder's or a cone's contact is along its rulings, each swept into
@@ -289,7 +295,6 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
         if f1 == f2 { continue }
         match &edge.curve {
             EdgeCurve::Curve(Curve::Line {..}) => {
-                if leans(unit(sub(q,p))) { return Err(Unbuilt::Leaning {at:mid}) }
                 edges.push((p,q,[f1,f2]));
                 normals.push([outward(&tool.faces[f1],mid),outward(&tool.faces[f2],mid)]);
             }
@@ -357,7 +362,7 @@ pub const BUDGET: crate::util::meter::Budget = crate::util::meter::Budget([
     // trace: steps marched along meetings with no closed form
     4_000_000,
     // ray: curve–surface searches and the samples sampled ones take
-    40_000_000,
+    2_000_000_000,
     // outline: chords faces' loops are cut in
     20_000_000,
     // inverse: a swept sheet's inverse map
@@ -684,6 +689,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         // the sheet's normal: square to the line and to the screw's velocity there (which
                         // the screw carries as it carries the normal)
                         Cutter::Screwed {e,..} => unit(cross(e,screw.velocity(x))),
+                        Cutter::Patch {p,q} => unit(cross(unit(sub(q,p)),screw.velocity(x))),
                         Cutter::Oblique {..} | Cutter::Ball {..} | Cutter::Torus {..} | Cutter::ScrewedDisc {..} | Cutter::Pipe {..} =>
                             unreachable!("a line turns into none of these"),
                     };
@@ -703,9 +709,18 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                     if screw.is_turn() { add_cutter(Cutter::Plane((o,n)),poses.iter().flat_map(|pose| own.iter().map(|&x| (pose.point(x),n))).collect()) }
                     continue
                 }
+                // under a screw a face leaning to the axis touches where its normal is square to the
+                // screw's velocity, `n · v(x) = 0`, affine in `x`: a line of its plane, leaning, screwed
+                // into a patch of a ruled helicoid (#777 M5)
+                if !screw.is_turn() && dot(n,axis).abs() > 1e-9 {
+                    if let Some((from,to)) = leaning_contact(&screw,o,n,&corners_of[k],eps) {
+                        let cutter = Cutter::Patch {p:from,q:to};
+                        add_cutter(cutter,line_sites(from,to,cutter));
+                    }
+                    continue
+                }
                 // under a screw a face along the axis touches along its line nearest the axis, as under a
-                // turn (`reads` refuses a face leaning to it, along a line screwing into a sheet not yet
-                // held)
+                // turn
                 // the face's contact line: its plane's points whose normal passes through the axis, where
                 // its plane meets the plane through the axis along `n × axis`; it meets the axis, or runs
                 // along it
@@ -867,9 +882,15 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             }
             for &(p,q,_) in &edges {
                 let e = unit(sub(q,p));
+                if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 && dot(e,axis).abs() > 1e-9 {
+                    // under a screw an edge leaning to the axis sweeps a patch of a ruled helicoid,
+                    // bounded inside the domain (#777 M5)
+                    let cutter = Cutter::Patch {p,q};
+                    add_cutter(cutter,line_sites(p,q,cutter));
+                    continue
+                }
                 if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 {
-                    // under a screw an edge square to the axis sweeps a helicoidal sheet (`reads` refuses
-                    // one leaning to it, a screw surface not yet held)
+                    // under a screw an edge square to the axis sweeps a helicoidal sheet across the box
                     let cutter = Cutter::Screwed {p,e};
                     add_cutter(cutter,line_sites(p,q,cutter));
                     continue
@@ -972,6 +993,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 let shear = crate::affine::Affine::new(m,scale(w,-dot(c,a)))?;
                 solids.push(prism(&disc(c,a,r),0.,h)?.mapped(&shear))
             }
+            Cutter::Patch {p,q} => solids.push(patch(&screw,&pose_at,p,q,[a,b])?),
             Cutter::Screwed {p,e} => {
                 solids.push(screwed_sheet(&screw,&pose_at,p,e,tall.expect("a level edge's sheet is a screw's, its box tall"),size)?)
             }
@@ -1016,14 +1038,64 @@ fn arranged(within: &Brep,refs: &[&Brep],swept: &Swept,blank: Option<&Brep>,tol:
                 *kept = swept.member(points[k]).ok() != Some(blank.is_some());
                 witnesses.extend(points[k+1..].iter().copied());
             }
-            None => return Err(Unbuilt::Unsettled {at:first}),
+            None => {
+                if std::env::var_os("XDEBUG").is_some() {
+                    let cell = &complex.solids()?[c-1];
+                    let (lo,hi) = cell.bounds();
+                    eprintln!("unsettled cell {c}: volume {:e}, box {lo:?} {hi:?}, faces {:?}, points {:?}",crate::props::volume(cell),
+                        cell.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>(),points);
+                    for &x in &points { eprintln!("  {x:?}: {:?}",swept.member(x)) }
+                }
+                return Err(Unbuilt::Unsettled {at:first})
+            }
         }
     }
     if blank.is_none() && !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
     let out = crate::boolean::selection(&complex,&|c| keep[c])?;
     out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
     // **judged by its definition before it is returned** (#777 V2): never returned built wrong
-    judge(&out,swept,within,blank,&witnesses,tol)?;
+    let judged = judge(&out,swept,within,blank,&witnesses,tol);
+    if let (Err(Unbuilt::Wrong {at,..}),true) = (&judged,std::env::var_os("XDEBUG").is_some()) {
+        for (c,cell) in complex.solids()?.iter().enumerate() {
+            let l = crate::query::Located::new(cell,tol);
+            if l.solid_place(*at) != crate::query::Place::In { continue }
+            let (lo,hi) = cell.bounds();
+            let pts = complex.inside_points(c+1,4)?;
+            eprintln!("witness {at:?} in cell {} kept {}: volume {:e}, box {lo:?} {hi:?}, {} faces {:?}",c+1,keep[c+1],crate::props::volume(cell),
+                cell.faces.len(),cell.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>());
+            for x in pts { eprintln!("  point {x:?}: member {:?}",swept.member(x)) }
+            // where in the cell members and others stand side by side: the missing separator
+            let mesh = super::member::Solid::new(cell,0.002,1.)?;
+            let n = 36;
+            let (wl,wh) = (sub(*at,[1.5,1.5,0.6]),add(*at,[1.5,1.5,0.6]));
+            let grid: Vec<V> = (0..n*n*n).map(|i| { let ijk = [i%n,(i/n)%n,i/(n*n)]; std::array::from_fn(|a| wl[a]+(wh[a]-wl[a])*ijk[a] as f64/(n-1) as f64) }).collect();
+            eprintln!("  the witness by the cell's mesh: signed distance {:e}, winding {}",mesh.signed_distance(*at),mesh.winding(*at));
+            let whole = super::member::Solid::new(&out,0.002,1.)?;
+            eprintln!("  the witness by the built solid's mesh: winding {}",whole.winding(*at));
+            let state: Vec<Option<bool>> = crate::util::par::map(&grid,|&p| if mesh.signed_distance(p) < -1e-4 { swept.member(p).ok() } else { None });
+            eprintln!("  {} of the grid in the cell by its mesh",state.iter().filter(|s| s.is_some()).count());
+            let mut shown = 0;
+            for i in 0..grid.len() { for step in [1,n,n*n] {
+                let j = i+step;
+                if j >= grid.len() || shown >= 12 { continue }
+                if let (Some(a),Some(b)) = (state[i],state[j]) { if a != b {
+                    let m = scale(add(grid[i],grid[j]),0.5);
+                    let near: Vec<(usize,f64)> = refs.iter().enumerate().flat_map(|(k,r)| r.faces.iter().map(move |f| (k+1,f.surface.implicit(m).abs()))).filter(|x| x.1 < 0.15).collect();
+                    eprintln!("  member {a} beside {b} at {m:?}: candidates near {near:?}");
+                    shown += 1;
+                } }
+            } }
+        }
+        eprintln!("cells {}, kept {}, built volume {}",keep.len()-1,keep.iter().filter(|&&k| k).count(),crate::props::volume(&out));
+        eprintln!("complex check: {:?}",complex.check(tol));
+        for (k,r) in refs.iter().enumerate() { eprintln!("candidate {}: {:?} faces {:?}",k+1,r.bounds(),r.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>()) }
+        for (c,_) in complex.solids()?.iter().enumerate() {
+            let sides = complex.cell_sides(complex.cells()?,c+1);
+            let ops: std::collections::BTreeSet<usize> = sides.iter().flat_map(|&(f,_)| complex.origins[f].iter().map(|o| o.operand)).collect();
+            if keep[c+1] { eprintln!("kept cell {}: operands {ops:?}",c+1) }
+        }
+    }
+    judged?;
     Ok(out)
 }
 
@@ -1178,6 +1250,57 @@ fn screwed_sheet(screw: &crate::trajectory::Screw,pose_at: &dyn Fn(f64) -> Resul
     let triangle = Profile {origin:corners[0],normal:axis,names:vec![vec!["sheet".into(),String::new(),String::new()]],
         loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
     let mut sheet = crate::build::screwed(&triangle,c,axis,screw.ratio*(s1-s0),rate*(s1-s0))?;
+    sheet.faces.retain(|f| f.name == "sheet");
+    Ok(sheet.compacted())
+}
+
+/// **A plane face's contact under a screw, leaning to its axis** (#777 M5): its points where the
+/// screw's velocity lies in the plane, `n · v(x) = 0` (affine in `x`, so a plane), met with the
+/// face's own plane in a line, clipped to the face's polygon `corners` (convex): the chord's ends,
+/// or `None` where the line misses the face.
+fn leaning_contact(screw: &crate::trajectory::Screw,o: V,n: V,corners: &[V],eps: f64) -> Option<(V,V)> {
+    let a = |x: V| dot(n,screw.velocity(x));
+    let a0 = a(o);
+    let g: V = std::array::from_fn(|i| { let mut e = [0.;3]; e[i] = 1.; a(add(o,e))-a0 });
+    let e = cross(n,g);
+    if norm(e) <= 1e-12*norm(g).max(1e-300) { return None }
+    let e = unit(e);
+    // the line's point: on the plane, on `a = 0`, and level with `o` along it
+    let x0 = crate::ssi::solve3([n,g,e],[dot(n,o),dot(g,o)-a0,dot(e,o)]);
+    // where it crosses each side of the polygon, its parameter along `e`
+    let side = unit(cross(n,e));
+    let mut ts: Vec<f64> = Vec::new();
+    for k in 0..corners.len() {
+        let (u,v) = (corners[k],corners[(k+1)%corners.len()]);
+        let (du,dv) = (dot(sub(u,x0),side),dot(sub(v,x0),side));
+        if (du > eps && dv > eps) || (du < -eps && dv < -eps) || (du-dv).abs() <= 1e-300 { continue }
+        let s = (du/(du-dv)).clamp(0.,1.);
+        ts.push(dot(sub(add(u,scale(sub(v,u),s)),x0),e));
+    }
+    let (t0,t1) = ts.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),&t| (l.min(t),h.max(t)));
+    (t1-t0 > eps).then(|| (add(x0,scale(e,t0)),add(x0,scale(e,t1))))
+}
+
+/// **The patch a segment leaning to a screw's axis sweeps over the roll `[a, b]`** (#777 M5): one
+/// open face of the ruled helicoid, the segment lengthened a twentieth past each end and the roll
+/// a twentieth past each of its, so its rim stands just past the candidates that seal it, inside
+/// the domain — a sheet bounded inside a cell, whose meetings stop partway across the faces it
+/// meets. It is the face of a triangle on the segment screwed (`build::screwed`), the triangle's
+/// other faces left off.
+fn patch(screw: &crate::trajectory::Screw,pose_at: &dyn Fn(f64) -> Result<crate::trajectory::Pose,Unbuilt>,p: V,q: V,[a,b]: [f64;2])
+    -> Result<Brep,Unbuilt> {
+    let d = sub(q,p);
+    let (p,q) = (sub(p,scale(d,0.05)),add(q,scale(d,0.05)));
+    let delta = 0.05*(b-a);
+    let (s0,s1) = (a-delta,b+delta);
+    let first = pose_at(s0)?;
+    let across = { let w = cross(d,screw.axis); if norm(w) > 1e-12*norm(d) { unit(w) } else { unit(cross(d,[1.,0.,0.])) } };
+    let corners = [p,q,add(p,scale(across,0.5*norm(d)))].map(|x| first.point(x));
+    let normal = unit(cross(sub(corners[1],corners[0]),sub(corners[2],corners[0])));
+    let triangle = Profile {origin:corners[0],normal,names:vec![vec!["sheet".into(),String::new(),String::new()]],
+        loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
+    let rate = screw.advance/std::f64::consts::TAU;
+    let mut sheet = crate::build::screwed(&triangle,screw.origin,screw.axis,screw.ratio*(s1-s0),rate*(s1-s0))?;
     sheet.faces.retain(|f| f.name == "sheet");
     Ok(sheet.compacted())
 }

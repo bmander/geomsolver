@@ -156,15 +156,46 @@ or were refused (`round_lowering::a_round_across_seams_between_arcs_on_a_drafted
 `prism_twists::a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs`). A level rim's sheet is
 met by its own bound on one unknown, kept as the faster road and held to the search
 (`swept_closed::a_rims_sheet_in_closed_form_is_held_to_the_general_search`). Only a pair with no
-certified reading samples, and the build's profile counts it (`util::meter`). **A point where three surfaces' meetings meet is solved once** (#711, M2:
+certified reading samples, and the build's profile counts it (`util::meter`). **A point where three surfaces' meetings meet is solved once** (#711, #777 M2:
 `Arrangement::triple_points`, keyed by the three surfaces' indices among the shared meetings), and
-every later finding of it from another of the three faces takes that vertex. **A touch along a
-curve is found generally** (M3, `ssi::touch_curve`): on one surface the other's distance is nought
-and flat along the touch and a valley across it, so the touch is the valley's floor, found by
-Newton across the null way of its second derivatives and marched along it; a trace whose seed
-stands where the two are tangent along a curve is read so rather than refused. Each closed form
-for a touch is held to it, within 1e-5, since a general touch is a double root placed to its
-differences' rounding (`swept_closed::every_closed_form_touch_is_held_to_the_general_method`).
+every later finding of it from another of the three faces takes that vertex.
+
+**Touch curves are found generally, and shallow crossings built, not refused** (#778, #777 M3).
+A meeting's critical set is read in one surface's parameters, over the one whose partner's
+distance is exact (`meeting::exact_distance`; a sheet's is a numerical foot, too rough to
+difference twice): `f = b ∘ a`'s critical points by minimum-norm Newton steps — the Hessian
+inverted on its well-bent ways alone — each classified by the Hessian's rank (`critical_set`):
+rank 2 an isolated point (`ssi::touch`'s), rank 1 a point of a critical curve, rank 0 refused,
+typed, naming the surfaces and the point (#717). A point where `f` still slopes along the null way
+is a fold, no critical point. From each rank-1 point whose fold stands within reach of nought the
+**ridge** `∂f/∂n = 0` is traced along the null way to the box's edge or round to its start
+(`ridges`); where its fold is within `tol` of nought it is a touch (`Contact::Touching`), and
+where the fold has the sign opposite `f`'s curvature across it the two crossings beside it are the
+roots of `f` along `n` at each of its points, isolated with a bound (`ridge_branches`, #777 M1) —
+however shallow, the fold solved in its two-root form. A crossing with no ridge, too shallow for
+the march along `∇a × ∇b`, is traced as `f = 0` in either surface's own parameters
+(`level_curves`: one scalar equation, its tangent square to `∇f`, its step halved where it turns
+sharply, as at a parabola's vertex where a plane leans a hair to a vault's crown). A point is on
+such a branch within `8 tol / sin θ` (`on_a_branch`, A3's reach). `meeting::meet` reads them on its
+traced road; an arrangement reads them where its march is refused as nearly touching
+(`Arrangement::traced_meeting`), each touch a stretch its march ends at, each seed then traced
+alone. **The trace's refusal below `SHALLOW` is no longer the kernel's answer**: it is where the
+meeting is read another way. The closed forms that know a touch — `plane_cylinder`'s, a cone's
+generator, `parallel_touch`, `ball_in_tube`, `tube_along_torus`, `tori_touching`, `pipe_end`,
+`screwed_circle_round`, and `extruded`'s plane through a spline extrusion — are fast paths, each
+held to the general method with them bypassed (`meeting::meet_with`, an argument, not a switch):
+within 1e-5 (2e-5 on a sheet's rim), a touch being a double root placed to its differences'
+rounding, and each three to five orders faster
+(`touch_curves::each_closed_form_for_a_touch_is_held_to_the_general_method`; every kind touching
+along a curve and crossing at under a degree met completely with and without them,
+`meeting::every_kind_touching_along_a_curve_and_crossing_shallowly_is_met_completely`). Held on
+brep-bench's vault, as a prism of its arc and as its rational sheet, to 1e-9 of the closed forms:
+cut at its crown and from a billionth to a tenth below it, and by a plane through the crown leaning
+0.001°, 0.1° and 1° (`touch_curves::a_vault_cut_*`), through `combined`, `kept` and `split` alike,
+six faces at the crown, eight below, seven leaning
+(`touch_curves::the_boolean_reads_touches_and_shallow_crossings_through_each_road`); and a fitted
+sheet touching a plane along `y = 0.2 sin x`, no closed form's, kept whole below it
+(`touch_curves::a_fitted_sheet_touching_a_plane_along_a_wavy_curve_keeps_whole_below_it`).
 A surface offset by a distance is a surface (a cone shrunk past its apex the cone of its own
 apex), or what it closes onto where the distance takes its radius to nothing — a cylinder's axis, a
 sphere's centre, a torus's middle circle — and nothing only past that (`Surface::offset`,
