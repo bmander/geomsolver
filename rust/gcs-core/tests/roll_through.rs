@@ -141,6 +141,26 @@ removal cut other
     assert!(material([c, s, 0.9])[0] > 0.0, "{:?}", material([c, s, 0.9]));
 }
 
+/// **A screw goes as far as its blank is long** (#271): `square_thread.sv`'s bar, 2 wide and
+/// centred on the rod's foot, screwed 6 a turn up a rod 20 long, states no roll. It clears the foot
+/// a sixth of a turn down and the top three and a half turns up — past the two turns a turn
+/// marches — and the march finds each, never short and within a few steps past, from how far the
+/// screw must carry the bar along its axis to pass the rod.
+#[test]
+fn a_screw_rolls_through_a_blank_longer_than_two_turns() {
+    let e = read(&crate::solid_sweeps_examples::text("square_thread.sv"));
+    let thread = crate::common::ent(&e, "thread").i();
+    let [from, to] = solid::roll::interval(&e.sketch, thread).unwrap();
+    let tau = std::f64::consts::TAU;
+    let [below, above] = [1.0 / 6.0 * tau, 21.0 / 6.0 * tau];
+    assert!(above > solid::roll::REACH, "the rod is longer than the turn's march");
+    let margin = 4.0 * solid::roll::STEP;
+    assert!(-from >= below && -from <= below + margin, "{} against {}", from.to_degrees(),
+            below.to_degrees());
+    assert!(to >= above && to <= above + margin, "{} against {}", to.to_degrees(),
+            above.to_degrees());
+}
+
 /// A tool that does not meet the body at 0, or one never clear of it, is refused naming why.
 #[test]
 fn a_roll_with_no_engagement_about_0_is_refused() {
