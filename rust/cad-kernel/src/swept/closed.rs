@@ -1026,76 +1026,29 @@ fn arranged(within: &Brep,refs: &[&Brep],swept: &Swept,blank: Option<&Brep>,tol:
     // cells kept — the members, or cut from a blank the rest — and the others the result: one
     // selection, no union, the candidates that bound nothing healed out of its faces
     let cells = complex.cells()?.len();
-    let mut keep = vec![false;cells];
-    // each cell's points read past the one that settled it: witnesses the built solid is judged at
-    let mut witnesses: Vec<V> = Vec::new();
-    for (c,kept) in keep.iter_mut().enumerate().skip(1) {
+    // each cell read on its own, across the cores (`util::par`, in the cells' order): its points
+    // certified by its own exact point location, the first whose membership settles classifying it,
+    // and those past it kept as witnesses the built solid is judged at
+    let read = crate::util::par::indices(cells.saturating_sub(1),|i| -> Result<Option<(bool,Vec<V>)>,Unbuilt> {
+        let c = i+1;
         if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
         let points = complex.inside_points(c,4)?;
-        let Some(&first) = points.first() else { continue };
+        let Some(&first) = points.first() else { return Ok(None) };
         match points.iter().position(|&x| swept.member(x).is_ok()) {
-            Some(k) => {
-                *kept = swept.member(points[k]).ok() != Some(blank.is_some());
-                witnesses.extend(points[k+1..].iter().copied());
-            }
-            None => {
-                if std::env::var_os("XDEBUG").is_some() {
-                    let cell = &complex.solids()?[c-1];
-                    let (lo,hi) = cell.bounds();
-                    eprintln!("unsettled cell {c}: volume {:e}, box {lo:?} {hi:?}, faces {:?}, points {:?}",crate::props::volume(cell),
-                        cell.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>(),points);
-                    for &x in &points { eprintln!("  {x:?}: {:?}",swept.member(x)) }
-                }
-                return Err(Unbuilt::Unsettled {at:first})
-            }
+            Some(k) => Ok(Some((swept.member(points[k]).ok() != Some(blank.is_some()),points[k+1..].to_vec()))),
+            None => Err(Unbuilt::Unsettled {at:first}),
         }
+    });
+    let mut keep = vec![false;cells];
+    let mut witnesses: Vec<V> = Vec::new();
+    for (i,r) in read.into_iter().enumerate() {
+        if let Some((kept,more)) = r? { keep[i+1] = kept; witnesses.extend(more) }
     }
     if blank.is_none() && !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
     let out = crate::boolean::selection(&complex,&|c| keep[c])?;
     out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
     // **judged by its definition before it is returned** (#777 V2): never returned built wrong
-    let judged = judge(&out,swept,within,blank,&witnesses,tol);
-    if let (Err(Unbuilt::Wrong {at,..}),true) = (&judged,std::env::var_os("XDEBUG").is_some()) {
-        for (c,cell) in complex.solids()?.iter().enumerate() {
-            let l = crate::query::Located::new(cell,tol);
-            if l.solid_place(*at) != crate::query::Place::In { continue }
-            let (lo,hi) = cell.bounds();
-            let pts = complex.inside_points(c+1,4)?;
-            eprintln!("witness {at:?} in cell {} kept {}: volume {:e}, box {lo:?} {hi:?}, {} faces {:?}",c+1,keep[c+1],crate::props::volume(cell),
-                cell.faces.len(),cell.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>());
-            for x in pts { eprintln!("  point {x:?}: member {:?}",swept.member(x)) }
-            // where in the cell members and others stand side by side: the missing separator
-            let mesh = super::member::Solid::new(cell,0.002,1.)?;
-            let n = 36;
-            let (wl,wh) = (sub(*at,[1.5,1.5,0.6]),add(*at,[1.5,1.5,0.6]));
-            let grid: Vec<V> = (0..n*n*n).map(|i| { let ijk = [i%n,(i/n)%n,i/(n*n)]; std::array::from_fn(|a| wl[a]+(wh[a]-wl[a])*ijk[a] as f64/(n-1) as f64) }).collect();
-            eprintln!("  the witness by the cell's mesh: signed distance {:e}, winding {}",mesh.signed_distance(*at),mesh.winding(*at));
-            let whole = super::member::Solid::new(&out,0.002,1.)?;
-            eprintln!("  the witness by the built solid's mesh: winding {}",whole.winding(*at));
-            let state: Vec<Option<bool>> = crate::util::par::map(&grid,|&p| if mesh.signed_distance(p) < -1e-4 { swept.member(p).ok() } else { None });
-            eprintln!("  {} of the grid in the cell by its mesh",state.iter().filter(|s| s.is_some()).count());
-            let mut shown = 0;
-            for i in 0..grid.len() { for step in [1,n,n*n] {
-                let j = i+step;
-                if j >= grid.len() || shown >= 12 { continue }
-                if let (Some(a),Some(b)) = (state[i],state[j]) { if a != b {
-                    let m = scale(add(grid[i],grid[j]),0.5);
-                    let near: Vec<(usize,f64)> = refs.iter().enumerate().flat_map(|(k,r)| r.faces.iter().map(move |f| (k+1,f.surface.implicit(m).abs()))).filter(|x| x.1 < 0.15).collect();
-                    eprintln!("  member {a} beside {b} at {m:?}: candidates near {near:?}");
-                    shown += 1;
-                } }
-            } }
-        }
-        eprintln!("cells {}, kept {}, built volume {}",keep.len()-1,keep.iter().filter(|&&k| k).count(),crate::props::volume(&out));
-        eprintln!("complex check: {:?}",complex.check(tol));
-        for (k,r) in refs.iter().enumerate() { eprintln!("candidate {}: {:?} faces {:?}",k+1,r.bounds(),r.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>()) }
-        for (c,_) in complex.solids()?.iter().enumerate() {
-            let sides = complex.cell_sides(complex.cells()?,c+1);
-            let ops: std::collections::BTreeSet<usize> = sides.iter().flat_map(|&(f,_)| complex.origins[f].iter().map(|o| o.operand)).collect();
-            if keep[c+1] { eprintln!("kept cell {}: operands {ops:?}",c+1) }
-        }
-    }
-    judged?;
+    judge(&out,swept,within,blank,&witnesses,tol)?;
     Ok(out)
 }
 

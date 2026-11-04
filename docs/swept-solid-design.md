@@ -353,6 +353,22 @@ it. It stays as the fast path where #699 D says so.
    (6.08) with neither. So the leaning screw waits on the arrangement holding a face with a slit,
    or a sheet bounded inside the domain (F5's A1, non-manifold topology), and is refused as before
    (`Unbuilt::Leaning`).
+   *Taken further (#777 M5), not yet built*: way (2) is now the road. Under a screw a leaning
+   edge, and a leaning face's contact line (its points where `n · v(x) = 0`, a line of its plane),
+   each screw into a patch of the ruled helicoid over the segment and the roll a twentieth past each
+   (`closed::Cutter::Patch`, `closed::patch`), its rim inside the domain; `reads` no longer refuses
+   them. The arrangement holds the patches — no piece fails to close — and the build reaches the
+   judge in about three minutes (its cells classified across the cores, the sheet search pruned by
+   Krawczyk's preconditioned exclusion). The judge refuses it (`Unbuilt::Wrong`, a point at radius
+   2.3 held though no member): the piece of the bottom level edge's sheet beside the block's bottom
+   corner walks two of its edges both ways — the corner's helix, where that sheet and the corner's
+   leaning edge's patch cross, and the sheet's cut by the start pose's inner face — so it parts
+   nothing and its cell leaks round it. Several curves leave that corner nearly tangent (the helix,
+   the start plane's cut, the level edge's ruling, the cylinder of radius 3's helix 0.0075 away), and
+   the face's walk (`boolean::pieces_of_face`) orders them wrongly. The gate,
+   `swept_closed::a_block_leaning_to_a_screws_axis_closes_into_its_helical_sweep` (its volume in
+   helical coordinates apart from the build), is ignored until the walk orders curves leaving a
+   vertex nearly tangent — the Booleans' robustness at a cluster of tangent meetings.
    *Built for a path of pieces* (K1): a sweep distributes over its path's pieces, so the arrangement
    takes every piece's candidates at once and membership reads the pieces one by one. A piece after
    another does not start at the identity: it takes the tool up where the one before left it, a

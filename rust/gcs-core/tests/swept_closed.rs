@@ -133,7 +133,7 @@ fn a_bar_under_a_screw_closes_into_its_helical_sweep() {
 /// by the cylinder of radius `ρ` — each vertical line of that cylinder clipped to the block exactly,
 /// the extremes read over a fine grid of `ψ` and settled, and `ρ` integrated by Gauss–Legendre.
 #[test]
-#[ignore = "#777 M5, not built yet: its arrangement holds the patches, but locating points in cells bounded by them runs past the budget"]
+#[ignore = "#777 M5, not built yet: refused by the judge — a sheet's piece walks the bottom corner's helix both ways, where curves leave the corner nearly tangent (docs/swept-solid-design.md)"]
 fn a_block_leaning_to_a_screws_axis_closes_into_its_helical_sweep() {
     use std::f64::consts::TAU;
     let (lean,off) = (0.35,3.);
