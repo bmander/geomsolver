@@ -1288,6 +1288,78 @@ fn a_failed_builds_arrangement_is_dumped_replayed_and_reduced() {
     assert_eq!(reduce(&loaded,&fails),vec![0,2]);
 }
 
+/// **The ball-end mill screwed through a ring sector is cut right, or refused by name within its
+/// budget** (#777 V3's gate, and the case M3 and M4 were for): a mill of radius 1, its ball's centre
+/// 10 from a screw's axis and its side 3 tall above it, screwed 1.5 rad climbing half a unit a
+/// radian through a sixth of a ring 8 to 12 across and 4 high, which it passes wholly across. On
+/// #776 this run stalled for hours, and a build of it removed 14.4 against 12.0; now it is held to
+/// the volume it removes apart from the kernel, or refused naming the stage that ran away — never
+/// hung, never wrong. In helical coordinates `(ρ, ψ, ζ = z − kψ)` the screw is a shift in `ψ`, so
+/// a point of the sector is removed where the helix through it meets the mill: the section of such
+/// helices, `(ρ, ζ)` on a fine grid (the side's where `|ρ e^{iψ} − d| ≤ 1` for some `ψ` whose height
+/// is on it, the ball's within 1 of the centre's helix), each weighed by `ρ` and by the angle of the
+/// sector over which its helix stays within the sector's heights.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier: the ball-end mill screwed through a sector")]
+fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    use gcs_core::brep::swept::closed::{cut_from,Unbuilt};
+    use std::f64::consts::{FRAC_PI_2,PI};
+    let (d,r,h,turn,k) = (10.,1.,3.,1.5,0.5);
+    let at = |x: f64,z: f64| [d+x,0.,z];
+    let edges = vec![ProfileEdge::Arc {frame:Frame::new(at(0.,0.),[0.,-1.,0.],[1.,0.,0.]),r,span:Some([-FRAC_PI_2,0.])},
+        ProfileEdge::Line {a:at(r,0.),b:at(r,h)},ProfileEdge::Line {a:at(r,h),b:at(0.,h)},ProfileEdge::Line {a:at(0.,h),b:at(0.,-r)}];
+    let mill = revolve(&Profile {origin:at(0.,0.),normal:[0.,1.,0.],names:Vec::new(),loops:vec![edges]},[d,0.,0.],[0.,0.,1.],
+        2.*PI).unwrap();
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let rect = [f.at([8.,0.,-2.]),f.at([12.,0.,-2.]),f.at([12.,0.,2.]),f.at([8.,0.,2.])];
+    let profile = Profile {origin:rect[0],normal:f.y,names:Vec::new(),loops:vec![(0..4).map(|j| ProfileEdge::Line {a:rect[j],b:rect[(j+1)%4]}).collect()]};
+    let sector = revolve(&profile,[0.;3],[0.,0.,1.],PI/3.).unwrap().moved(&gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],-PI/6.));
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:k*std::f64::consts::TAU});
+    let roll = [-turn/2.,turn/2.];
+    // apart from the kernel: whether the helix (ρ, ζ) meets the mill, and over what angle of the
+    // sector it stays within the sector's heights
+    let meets = |rho: f64,zeta: f64| -> bool {
+        let c = (rho*rho+d*d-r*r)/(2.*rho*d);
+        if c <= 1. {
+            let a = c.max(-1.).acos();
+            if zeta+k*a >= 0. && zeta-k*a <= h { return true }
+        }
+        let dist = |psi: f64| { let (sn,cs) = psi.sin_cos(); (rho*cs-d).hypot(rho*sn).hypot(zeta+k*psi) };
+        let (mut lo,mut hi) = (-0.3,0.3);
+        for _ in 0..80 { let (m1,m2) = (lo+(hi-lo)*0.382,lo+(hi-lo)*0.618); if dist(m1) < dist(m2) { hi = m2 } else { lo = m1 } }
+        dist(0.5*(lo+hi)) <= r
+    };
+    let within = |zeta: f64| -> f64 {
+        // ψ in [−π/6, π/6] with −2 ≤ ζ + kψ ≤ 2
+        let (lo,hi) = ((-2.-zeta)/k,(2.-zeta)/k);
+        (hi.min(PI/6.)-lo.max(-PI/6.)).max(0.)
+    };
+    let (n,m) = (1000,2400);
+    let (z0,z1) = (-2.-k*PI/6.,2.+k*PI/6.);
+    let mut removed = 0.;
+    for i in 0..n { for j in 0..m {
+        let (rho,zeta) = (d-1.1+2.2*(i as f64+0.5)/n as f64,z0+(z1-z0)*(j as f64+0.5)/m as f64);
+        if meets(rho,zeta) { removed += rho*within(zeta) }
+    } }
+    let removed = removed*(2.2/n as f64)*((z1-z0)/m as f64);
+    let blank = volume(&sector);
+    eprintln!("the ball-end mill through a sector: removes {removed} apart from the build");
+    let clock = std::time::Instant::now();
+    match cut_from(&sector,&mill,&path,roll,0.002,1e-6) {
+        Ok(cut) => {
+            eprintln!("cut in {:?}: removes {}",clock.elapsed(),blank-volume(&cut));
+            assert!((blank-volume(&cut)-removed).abs() <= 1e-3*removed,"removes {} against {removed}",blank-volume(&cut));
+            agrees_cut_over(&cut,&sector,&mill,&path,roll);
+        }
+        Err(e) => {
+            eprintln!("refused in {:?}: {e:?}",clock.elapsed());
+            assert!(matches!(e,Unbuilt::Budget {..}),"refused other than by its budget: {e:?}");
+        }
+    }
+}
+
 /// **The ball-end mill screwed through a ring sector, reduced to its Boolean, holds every cell**
 /// (#777 M4's gate): a ball of radius 1 on a mill's axis 10 from a screw's, screwed 1.5 rad climbing
 /// half a unit a radian, sweeps the pipe about its centre's helix; the mill's side screws into the

@@ -264,10 +264,15 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
             }
             // a ball's under a turn along its great circle in the plane through the axis and its
             // centre; under a screw along its great circle square to its centre's velocity, screwed
-            // into the pipe about its centre's helix (a ball alone among round faces: beside a side
-            // the pipe touches along the helices of the ball's equator, not yet held)
+            // into the pipe about its centre's helix, beside planes and a side about an axis along
+            // the screw's (a ball-end mill, whose pipe touches the side's cylinders along the
+            // helices of the ball's equator, #777 M3 and M4)
             Surface::Sphere(..) if screw.is_turn() || !screw.is_slide()
-                && tool.faces.iter().all(|g| matches!(g.surface,Surface::Sphere(..) | Surface::Plane(_))) => {
+                && tool.faces.iter().all(|g| match &g.surface {
+                    Surface::Sphere(..) | Surface::Plane(_) => true,
+                    Surface::Cylinder(c,_) => norm(cross(c.z,screw.axis)) <= 1e-9,
+                    _ => false,
+                }) => {
                 round.push(k);
                 faces.push((at,[0.;3]));
             }
