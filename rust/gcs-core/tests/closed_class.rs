@@ -262,12 +262,13 @@ fn the_fast_path_and_the_one_arrangement_agree_where_both_build() {
 
 /// **A body cut by a sweep of the closed class beside one of another** (#721 F2c5's dispatch):
 /// `punch.sv`'s plate punched by its drum straight up (the constant-twist class's) and plunged by
-/// `plunge.sv`'s bar aslant partway (the closed class's), the bar moved 3.5 across and 3 back so the
-/// two miss each other (and its end face at its start pose stands in no plane the drum's fitted
-/// sheet lies in: a fitted face meeting an exact plane it lies in is F4's, #699 E). The body is built by the other class's road first, then the closed sweep cut from
-/// what it leaves on one arrangement (`brep::sweep`'s `mixed_cut`). Apart from the build, the plate
-/// loses the drum's shadow, 128, and the bar's plunge (`plunged_away(8)`, its hexagons the same
-/// wherever along x the bar starts).
+/// `plunge.sv`'s bar aslant partway (the closed class's), the bar moved 3.5 across so the two miss
+/// each other. The bar's end face at its start pose stands in the plane x = 6 the slot's end wall
+/// lies in, a fitted sheet, met there as one surface with it (#780 C4,
+/// `a_fitted_sheet_lying_in_a_candidates_plane_is_one_surface_with_it`). The body is built by the
+/// other class's road first, then the closed sweep cut from what it leaves on one arrangement
+/// (`brep::sweep`'s `mixed_cut`). Apart from the build, the plate loses the drum's shadow, 128, and
+/// the bar's plunge (`plunged_away(8)`).
 #[test]
 fn a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves() {
     let punch = crate::closed_characteristics::punch();
@@ -276,12 +277,50 @@ fn a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves() {
     let bar = bar.replace("c0 coords(du: 0mm,","c0 coords(du: 3.5mm,").replace("c1 coords(du: 1mm,","c1 coords(du: 4.5mm,")
         .replace("c2 coords(du: 0mm,","c2 coords(du: 3.5mm,").replace("c3 coords(du: -1mm,","c3 coords(du: 2.5mm,")
         .replace("private up :=","private up2 :=").replace(") up\n",") up2\n").replace("ram :=","ram2 :=")
-        .replace("ram slides","ram2 slides").replace("under: ram)","under: ram2)").replace("pocket cut plate","pocket cut part")
-        .replace("from: 6mm, to: 14mm","from: 3mm, to: 11mm");
+        .replace("ram slides","ram2 slides").replace("under: ram)","under: ram2)").replace("pocket cut plate","pocket cut part");
     let text = format!("{punch}\n{bar}");
     let e = fixtures::read(&text);
     let a = crate::turns_and_slides::admit(&text).unwrap();
     let classes: Vec<bool> = a.sweeps().iter().map(|s| matches!(s.class,Class::Closed(_))).collect();
     assert!(classes.contains(&true) && classes.contains(&false),"one sweep of each road: {classes:?}");
     near(exported(&e,"part"),800.-128.-plunged_away(8.),1e-9);
+}
+
+/// **A fitted sheet lying in a candidate's plane is one surface with it** (#780 C4, A2's
+/// coincidence): `punch.sv`'s drum pushed up through its plate leaves a slot whose walls are one
+/// fitted sheet cut into four faces, each end wall a strip of the plane x = 6 or x = 14 its flat end
+/// sweeps. A closed sweep cut beside it — `plunge.sv`'s bar, its end face at its start pose in the
+/// plane x = 6 (`a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves`) — splits the plate
+/// by that plane, and its arrangement reduced (`swept::dump`) is the plate and one block whose face
+/// holds it. Read as a near touch, the sheet and the plane were two faces coinciding round the
+/// slot's corner edges (`complex`'s "coincide along it"); read as one surface (`ssi::same`: every
+/// pole of the sheet within the tolerance of the plane, the sheet within its poles' hull), the
+/// end wall is a face of the complex naming both. The plane is the sheet over the sheet's patch
+/// alone (`Located::face_holds`): the block's face beside the slot, past the patch, was read on
+/// the end wall where the sheet's foot clamps to its edge, and dropped as one with it. The plate
+/// splits into the part short of x = 6, 6 × 10 × 4, and the rest less the slot, 14 × 10 × 4 − 128.
+#[test]
+fn a_fitted_sheet_lying_in_a_candidates_plane_is_one_surface_with_it() {
+    use gcs_core::brep::geom::{Frame,Surface};
+    let e = fixtures::read(&crate::closed_characteristics::punch());
+    let plate = crate::turns_and_slides::exported_within(&e,"part",None).solid;
+    let wall = Surface::Plane(Frame::new([6.,0.,0.],[1.,0.,0.],[0.,1.,0.]));
+    let sheets: Vec<usize> = (0..plate.faces.len()).filter(|&f| plate.faces[f].surface.kind() == "bspline").collect();
+    assert_eq!(sheets.len(),4,"the slot's walls, one fitted sheet cut into four faces");
+    let lying: Vec<usize> = sheets.iter().copied().filter(|&f| gcs_core::brep::ssi::same(&plate.faces[f].surface,&wall,1e-6)).collect();
+    assert_eq!(lying.len(),1,"one end wall lies in x = 6");
+    // a plane beside it, past the tolerance, is not the sheet's
+    let aside = Surface::Plane(Frame::new([6.+1e-5,0.,0.],[1.,0.,0.],[0.,1.,0.]));
+    assert!(!gcs_core::brep::ssi::same(&plate.faces[lying[0]].surface,&aside,1e-6));
+    // the reduced Boolean: the plate and the block whose face holds the bar's end face's plane
+    let block = crate::brep::block([-42.,-48.,-49.],[6.,48.,47.]);
+    let complex = gcs_core::brep::boolean::arrangement_within(&plate,&[&block],1e-6).unwrap();
+    let volumes = crate::complex::volumes(&complex);
+    assert_eq!(volumes.len(),2,"{volumes:?}");
+    near(volumes[0],240.,1e-9);
+    near(volumes[1],560.-128.,1e-9);
+    // the end wall one face of the complex naming the plate's sheet and the block's face both
+    let named = complex.origins.iter().filter(|o| o.len() == 2 && o.iter().any(|x| x.operand == 0 && x.face == lying[0])
+        && o.iter().any(|x| x.operand == 1)).count();
+    assert_eq!(named,1,"one face of the complex is the end wall and the block's face");
 }

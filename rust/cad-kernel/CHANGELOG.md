@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A B-spline sheet lying in a plane is that plane** (`ssi::same`, so `ssi::intersect` answers
+  `Same`): every pole within the tolerance of the plane, the sheet within its poles' hull. Two
+  faces on them coincide in an arrangement as two planes' do, where they had been two faces
+  coinciding along their shared edges. `query::Located::face_holds` (**new**): whether a face
+  holds a point of a surface the same as its own, on its patch too where its surface has a rim,
+  which the arrangement's coincidences now ask in place of `face_place`.
+
 ## [0.4.0] - 2026-11-05
 
 - **A round about one axis is turned, exact** (`fillet::roll`): between a plane square to an axis

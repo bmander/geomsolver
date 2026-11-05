@@ -411,10 +411,16 @@ recorded above with what was tried:
 - **a candidate bounded inside the domain** — a leaning edge under a screw (whose whole sheet
   crosses itself) — waits on the arrangement holding a face with a slit, or a sheet whose rim
   stands inside a cell (F5's A1);
-- **a meeting with no closed form near a touch** — a fitted sheet lying in a candidate's plane, and
-  K2's patches (each instant's contact swept, fitted) — is refused as nearly touching: each needs its
-  closed form (as the parallel cones', the ball's in a torus, the meridian's cylinder were), or the
-  tracer holding a near-tangent meeting (F4, #699 E). *A round face about an axis leaning to a
+- **a meeting with no closed form near a touch** — K2's patches (each instant's contact swept,
+  fitted) — is refused as nearly touching: each needs its closed form (as the parallel cones', the
+  ball's in a torus, the meridian's cylinder were), or the tracer holding a near-tangent meeting
+  (F4, #699 E). *A fitted sheet lying in a candidate's plane is built* (#780 C4): it is the plane
+  (`ssi::same`, every pole within the tolerance of it, the sheet in its poles' hull), a coincidence
+  in A2's classification and not a touch to trace, and the plane is the sheet over its patch alone
+  (`query::Located::face_holds`) — met where `plunge.sv`'s bar, cut beside `punch.sv`'s drum,
+  stands its end face at its start pose in the plane of the slot's end wall, which had been two
+  faces coinciding round the slot's corners, and then, the plane's piece beside the slot read on
+  the wall where the sheet's foot clamps to its edge, one cell where the plane splits two. *A round face about an axis leaning to a
   turn's is built* (#780 C3): its contact, on each ring `A cos u + B sin u = C`, is two curves along
   the face, each turned into the surface of revolution of its meridian read exactly — a closed form
   in the face's slant with its derivatives, read in floats and in outward-rounded intervals

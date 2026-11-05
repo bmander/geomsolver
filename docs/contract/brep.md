@@ -336,7 +336,14 @@ form found the first time, and a traced meeting traced over the box every face o
 fills, kept, and handed to every later pair of faces on them, which are seeded only off it, so one
 meeting curve bounds every face that uses it, traced or not. `meeting::a_*_meeting_with_every_kind_is_complete` (every pair of the kernel's surface kinds,
 seeded placements, against a dense sampling of one across the other) and the singular-point cases
-are the gates. **A3, tolerant topology** (`brep::tolerant`): every rule by which two features are
+are the gates. **A sheet lying in a plane is that plane over its patch** (#780 C4): a B-spline
+surface every pole of which stands within the tolerance of a plane lies within it everywhere (its
+poles' hull), and `ssi::same` reads the two as one — a coincidence, not a touch to trace — so a
+piece of either on a face of the other is one face of the complex naming both; a point is on a
+face whose surface is the same as its own only where it is on that face's patch too, where the
+surface has a rim (`query::Located::face_holds`), not where the sheet's foot is clamped to the
+patch's edge (`closed_class::a_fitted_sheet_lying_in_a_candidates_plane_is_one_surface_with_it`).
+**A3, tolerant topology** (`brep::tolerant`): every rule by which two features are
 the same in one place — a point onto a vertex within `tol` (`Pool`, each vertex keeping how far the
 farthest point merged into it stood: `topo::Vertex::tol`, which `check` reads an edge's end
 against), a vertex onto an edge and an edge onto an edge within `ON_CURVE` tolerances, a point onto
