@@ -32,5 +32,5 @@ component Thread(base: plane, r: Length, size: Length, pitch: Length, turns: Sca
 }
 
 param s: Scalar over (0, 1)
-spring := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f })
-thread := solid({ p | p coincident(over s) Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f })
+spring := solid({ p | some s: p in Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f at s })
+thread := solid({ p | some s: p in Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f at s })

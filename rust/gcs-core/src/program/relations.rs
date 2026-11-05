@@ -311,6 +311,35 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     let witness = r.witness.map(|k| cx.witness_block(k, &st.path));
     // what the relation is, by what its operands resolve to (`shape`)
     let shape = r.form.written().map_or(Shape::Other, |w| shape(&cx.sk, &cx.res, w));
+    // **the notation of sets against a face or a plane** (#783): `p in a`, `a` one face of a
+    // solid, is on the face (`p in a.side` its material's side); `p in P`, `P` a plane, is no
+    // side of it
+    if let Some(w) = r.form.written().filter(|w| w.lowered == crate::syntax::Lowered::Set) {
+        let word = w.word.text.as_str();
+        match &shape {
+            Shape::Face { face, .. } if !face.path.is_empty() && !face.surface && !face.smooth
+                && w.args.is_empty() && matches!(word, "inside" | "outside") =>
+            {
+                if word == "outside" {
+                    let m = "a face has no inside, so nothing is outside it: off the side its \
+                             material is on is `p not in a.side`";
+                    cx.diags.push(Diag::on(Code::E040, st, m.to_string()));
+                    return None;
+                }
+                let mut on = w.clone();
+                on.word.text = "coincident".to_string();
+                let r = Relation { form: crate::syntax::RelationForm::Written(on), ..r.clone() };
+                return constrain(cx, &r, st);
+            }
+            Shape::PlaneSide => {
+                let m = "a point in a plane is `p coincident P`; behind its normal, `p \
+                         distance(<= 0mm, along: n) P`, and before it `(>= 0mm, …)`";
+                cx.diags.push(Diag::on(Code::E040, st, m.to_string()));
+                return None;
+            }
+            _ => {}
+        }
+    }
     if face_or_ends(cx, r, st, &shape) {
         return None;
     }
@@ -859,7 +888,8 @@ fn face_or_ends(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, shape: &Shape) -> bo
 fn solid_word(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> bool {
     let Some(w) = r.form.written() else { return false };
     if w.word.text == "outside" {
-        let m = "`outside` says which side of a plane a point is on: `p outside P`";
+        let m = "a point not in a set is `p not in S`; before a plane's normal, `p distance(>= \
+                 0mm, along: n) P`";
         let message = m.to_string();
         cx.diags.push(Diag::on(Code::E040, st, message));
         return true;
@@ -877,7 +907,7 @@ fn set_words(
     cx: &mut Elab<'_>, r: &Relation, st: &Stmt, word: &Option<crate::constraints::WordUse>,
 ) -> Option<bool> {
     let point_word = |w: &&crate::syntax::Worded| {
-        matches!(w.word.as_str(), "coincident" | "inside" | "outside")
+        matches!(w.word.as_str(), "coincident" | "inside" | "outside" | "in" | "not in")
     };
     if let (Some(w), Some(found)) = (r.word.as_ref().filter(point_word), word) {
         if let (Some(&op), Some((_, set))) = (found.ops.first(), w.sets.first()) {

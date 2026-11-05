@@ -79,7 +79,7 @@ fn a_flat_end_its_corners_dig_past_is_refused() {
     let source = bar_end().replace("  s0 := point hint((16, 0))\n  s1 := point hint((16, 10))\n  fix((16, 0)) s0\n  fix((16, 10)) s1\n  pitch_line := line(s0, s1)\n",
         "  c := point hint((40, 0))\n  fix((40, 0)) c\n")
         .replace("rack := frame\nrack slides(2 * pi * 16mm) pitch_line\n","arm := frame\narm spins(2) c\n")
-        .replace("solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) bar })","solid({ p | p inside(under: arm, seen_from: turn, over t in (-25deg, 25deg)) bar })");
+        .replace("solid({ p | some t in (-60deg, 60deg): p in bar at(under: rack, seen_from: turn) t })","solid({ p | some t in (-25deg, 25deg): p in bar at(under: arm, seen_from: turn) t })");
     assert!(source.contains("under: arm") && source.contains("arm spins"),"the arm is written in");
     let r = refused(&source,"part");
     assert_eq!((r.condition,r.class()),(Condition::Fold,"generating-sweep class"));
@@ -103,10 +103,10 @@ fn a_band_of_sections_meeting_a_corner_is_refused() {
 /// the disc is refused at T1, as every cap was before (#684 F).
 #[test]
 fn a_cap_of_a_tool_no_lone_prism_is_refused() {
-    let source = bar_end().replace("construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) bar })","in std.top {\n  k0 := point hint((10, -10))\n  k1 := point hint((40, -10))\n  \
+    let source = bar_end().replace("construction space := solid({ p | some t in (-60deg, 60deg): p in bar at(under: rack, seen_from: turn) t })","in std.top {\n  k0 := point hint((10, -10))\n  k1 := point hint((40, -10))\n  \
         k2 := point hint((40, 10))\n  k3 := point hint((10, 10))\n  fix((10, -10)) k0\n  fix((40, -10)) k1\n  fix((40, 10)) k2\n  fix((10, 10)) k3\n}\n\
         construction keep := solid(std.solids.Prism(face(k0, k1, k2, k3, -> close), from: -20mm, to: 20mm))\nconstruction tool := solid(bar)\nkeep common tool\n\
-        construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) tool })");
+        construction space := solid({ p | some t in (-60deg, 60deg): p in tool at(under: rack, seen_from: turn) t })");
     assert!(source.contains("keep common tool"));
     let r = refused(&source,"part");
     assert_eq!(r.condition,Condition::Tool);

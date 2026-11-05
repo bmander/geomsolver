@@ -53,4 +53,4 @@ component Tube(a: Length, b: Length, r: Length, up: axis, phi: Angle) {
 }
 
 param phi: Angle over (0deg, 720deg)
-tube := solid({ p | p coincident(over phi) Tube(a: 10mm, b: 5mm / (2 * pi), r: 1.5mm, up: std.z).sec })
+tube := solid({ p | some phi: p in Tube(a: 10mm, b: 5mm / (2 * pi), r: 1.5mm, up: std.z).sec at phi })

@@ -42,6 +42,6 @@ turn := frame
 turn spins(1) o
 rack := frame
 rack slides(2 * pi * 20mm) pitch_line
-construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) tooth })
+construction space := solid({ p | some t in (-60deg, 60deg): p in tooth at(under: rack, seen_from: turn) t })
 gear := solid(blank)
 space cut gear

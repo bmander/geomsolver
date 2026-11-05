@@ -436,8 +436,8 @@ fn a_chamfer_between_two_rods_is_an_ellipse() {
 fn a_lenss_rim_chamfered_is_a_spheroid() {
     let e = solved("unit mm\nuse std\nuse std.solids\nuse std.sets\nuse std.rounds\nc1 := point hint((0, 0, -6))\nfix((0, 0, -6)) c1\n\
         c2 := point hint((0, 0, 6))\nfix((0, 0, 6)) c2\n\
-        a := std.sets.Sphere(c1, r: 10mm)\nb := std.sets.Sphere(c2, r: 10mm)\n\
-        both := { p |\n  p inside a\n  p inside b\n  p inside std.rounds.Chamfered(a, b, la: 1mm, lb: 1mm)\n}\n\
+        a := std.sets.Ball(c1, r: 10mm)\nb := std.sets.Ball(c2, r: 10mm)\n\
+        both := { p |\n  p in a\n  p in b\n  p in std.rounds.Chamfered(a, b, la: 1mm, lb: 1mm)\n}\n\
         lens := solid(both)\n");
     let b = exported(&e, "lens");
     let z0: f64 = 19.0 / 24.0;
@@ -1024,7 +1024,7 @@ fn rounds_that_run_out_onto_a_face_are_rolled_and_cut_off() {
 #[test]
 fn a_set_with_a_term_no_entry_reads_is_not_lowered() {
     let src = include_str!("../../examples/rounds/by_hand.sv")
-        .replacen("  p inside a\n", "  p distance(<= 1mm, side: outside) a\n", 1);
+        .replacen("  p in a.side\n", "  p distance(<= 1mm) a\n", 1);
     assert_ne!(src, include_str!("../../examples/rounds/by_hand.sv"));
     let e = solved(&src);
     assert_eq!(lowered(&e), (0, 0));

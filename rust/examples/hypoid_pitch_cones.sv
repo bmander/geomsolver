@@ -57,9 +57,9 @@ horizontal pax
 // the pitch cones: the gear's pitch angle, M on both, and the two touching there
 gc := std.sets.Cone(gax, half: 60deg)
 pc := std.sets.Cone(pax, half: hint(30deg))
-M coincident gc
-M coincident pc
-gc tangent(at: M) pc
+M in boundary(gc)
+M in boundary(pc)
+boundary(gc) tangent(at: M) boundary(pc)
 
 // the two pitch radii at M, and the shafts: square, and E apart
 M distance(Rg) gax

@@ -120,10 +120,10 @@ impl Walk<'_> {
                 let m = if rest.len() == 1 && surface(&rest[0]) {
                     let s = public_path(&abs);
                     format!("`{said}` is every face of `{s}`: a point or a plane is drawn on one \
-                             face's surface, `{s}.near.surface`")
+                             face's surface, `boundary({s}.near.side)`")
                 } else {
                     format!("`{said}` is the face, bounded by its edges; a point or a plane is \
-                             drawn on the surface it lies on, `{said}.surface`")
+                             drawn on the surface it lies on, `boundary({said}.side)`")
                 };
                 self.once(Code::E040, span, m);
                 self.checks.refused.push(span);

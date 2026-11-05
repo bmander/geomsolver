@@ -18,12 +18,12 @@
 // A face is its patch (`q coincident a`: on the face itself) and has a surface (`a.surface`: the
 // whole plane, cylinder or cone it lies on); `p inside a` is the surface's material side.
 component Meeting(a: face, b: face) := { q |                                       // [F1]
-  q coincident a.surface
-  q coincident b.surface
+  q in boundary(a.side)
+  q in boundary(b.side)
 }
 component Edge(a: face, b: face) := { q |                                          // [F1]
-  q coincident a
-  q coincident b
+  q in a
+  q in b
 }
 
 // What a ball of radius `r` rolled along the convex edge of `a` and `b` cannot reach: the points
@@ -32,40 +32,40 @@ component Edge(a: face, b: face) := { q |                                       
 // the body has no edge (two cylinders' far crossing, a cap a cut ate, a wall's plane past its
 // tangent seam) make nothing.
 component Run(a: face, b: face, r: Length) := { p |
-  p inside a                                                                       // [F1]
-  p inside b
+  p in a.side                                                                       // [F1]
+  p in b.side
   // a convex edge: the material's angle at `p`'s nearest point of the edge
   angle(a, b, at: p) < 180deg                                                      // [F9]
   // the balls' centres, r or more within both faces
   private centres := { c |
-    c inside a
-    c distance(>= r) a.surface                                                     // [F1]
-    c inside b
-    c distance(>= r) b.surface
+    c in a.side
+    c distance(>= r) boundary(a.side)                                                     // [F1]
+    c in b.side
+    c distance(>= r) boundary(b.side)
   }
   // no ball covers `p`: it is farther than `r` from every centre
-  p outside std.Offset(centres, d: r)                                              // [F2]
+  p not in std.Offset(centres, d: r)                                              // [F2]
   // the ball is the ball of a point of the edge
   distance(p, Edge(a, b)) <= distance(p, Meeting(a, b))                            // [F2, F3]
   // a run that ends on a face that is not rounded is cut off by it
-  p inside Edge(a, b).ends                                                         // [F7]
+  p in Edge(a, b).ends                                                         // [F7]
 }
 
 // The same at a concave edge, every side turned round: what the ball rolled outside both cannot
 // reach is added.
 component Fill(a: face, b: face, r: Length) := { p |
-  p outside a
-  p outside b
+  p not in a.side
+  p not in b.side
   angle(a, b, at: p) > 180deg                                                      // [F9]
   private centres := { c |
-    c outside a
-    c distance(>= r) a.surface
-    c outside b
-    c distance(>= r) b.surface
+    c not in a.side
+    c distance(>= r) boundary(a.side)
+    c not in b.side
+    c distance(>= r) boundary(b.side)
   }
-  p outside std.Offset(centres, d: r)                                              // [F2]
+  p not in std.Offset(centres, d: r)                                              // [F2]
   distance(p, Edge(a, b)) <= distance(p, Meeting(a, b))                            // [F2, F3]
-  p inside Edge(a, b).ends                                                         // [F7]
+  p in Edge(a, b).ends                                                         // [F7]
 }
 
 // -- a corner ----------------------------------------------------------------------------------
@@ -74,22 +74,22 @@ component Fill(a: face, b: face, r: Length) := { p |
 // finding 3, a term of its own). Only at a corner of the body: the point of the three faces is
 // one of its points.
 component Corner(a: face, b: face, c: face, r: Length) := { p |
-  p inside a
-  p inside b
-  p inside c
+  p in a.side
+  p in b.side
+  p in c.side
   angle(a, b, at: p) < 180deg                                                      // [F9]
   private centres := { o |
-    o inside a
-    o distance(>= r) a.surface
-    o inside b
-    o distance(>= r) b.surface
-    o inside c
-    o distance(>= r) c.surface
+    o in a.side
+    o distance(>= r) boundary(a.side)
+    o in b.side
+    o distance(>= r) boundary(b.side)
+    o in c.side
+    o distance(>= r) boundary(c.side)
   }
-  p outside std.Offset(centres, d: r)                                              // [F2]
-  private vertex := { q | q coincident a; q coincident b; q coincident c }
-  distance(p, vertex) <= distance(p, { q | q coincident a.surface; q coincident b.surface;
-                                           q coincident c.surface })               // [F2, F3]
+  p not in std.Offset(centres, d: r)                                              // [F2]
+  private vertex := { q | q in a; q in b; q in c }
+  distance(p, vertex) <= distance(p, { q | q in boundary(a.side); q in boundary(b.side);
+                                           q in boundary(c.side) })               // [F2, F3]
 }
 // `CornerFill` is `Corner` with every side turned round, as `Fill` is `Run`'s.
 
@@ -131,12 +131,12 @@ round(r) X := X round(r) X
 // bows by the sphere's curvature (7e-5 mm on the hypoid's 0.2 mm end relief). Three chamfered
 // edges at a corner meet in a point: no corner term.
 component Flat(a: face, b: face, la: Length, lb: Length) := { p |
-  p inside a
-  p inside b
+  p in a.side
+  p in b.side
   angle(a, b, at: p) < 180deg                                                      // [F9]
-  distance(p, a.surface) / lb + distance(p, b.surface) / la < 1                    // [F3]
+  distance(p, boundary(a.side)) / lb + distance(p, boundary(b.side)) / la < 1                    // [F3]
   distance(p, Edge(a, b)) <= distance(p, Meeting(a, b))                            // [F2, F3]
-  p inside Edge(a, b).ends                                                         // [F7]
+  p in Edge(a, b).ends                                                         // [F7]
 }
 // `FlatFill` is `Flat` with every side turned round.
 

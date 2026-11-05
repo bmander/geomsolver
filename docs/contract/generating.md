@@ -170,13 +170,15 @@ capsule, a spline in space, a roll's trochoid, an arc's torus, B1 and B2, each l
 apart) are the gate. Field-path tests sweep a cylinder along its axis instead
 (`solid_sweep.rs::slid`).
 
-**A motion's sweep is a set** (#737 P4, [0.199], [sets.md](sets.md)): `solid({ p | p inside(under:
-m, seen_from: g, over t in (a, b)) tool })` — what the solid `tool` occupies under `m` at some roll
+**A motion's sweep is a set** (#737 P4, [0.199], [sets.md](sets.md)): `solid({ p | some t in (a,
+b): p in tool at(under: m, seen_from: g) t })` ([0.205], lowered to `p inside(under: m,
+seen_from: g, over t in (a, b)) tool`) — what the solid `tool` occupies under `m` at some roll
 of the interval — is read by the parser as the motion sweep of the same points
 (`syntax/parser/statements.rs::swept_ahead`/`swept_set`, its body one statement saying a sweep,
 its parts read where they stand, no token rewritten)
 and built as `SolidDef::Swept` with a stated roll; `over t` reads a declared parameter's interval.
-With no `over` at all, `solid({ p | p inside(under: m) tool })` is what the tool occupies at *any*
+With no `over` at all, `solid({ p | some t: p in tool at(under: m) t })` is what the tool occupies
+at *any*
 roll, the whole roll (`Sweep::Rolled`, `Roll::Through`), which **names no body** (#746): the
 evaluator bounds it by its context, the material of every body it — or a copy of it placed at a
 roll, `tool at(under: m) θ` — is cut from or kept in common with (`solid::applied_to`, the walk

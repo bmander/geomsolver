@@ -43,6 +43,6 @@ rack := frame
 rack slides(2 * pi * 16mm) pitch_line
 // the next tooth, a quarter turn of the rack's roll along it
 construction tooth := bar at(under: rack) 90deg
-construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-150deg, -30deg)) tooth })
+construction space := solid({ p | some t in (-150deg, -30deg): p in tooth at(under: rack, seen_from: turn) t })
 part := solid(disc)
 space cut part

@@ -144,7 +144,7 @@ fn the_rim_is_picked_and_bounded() {
     assert_eq!(cv.kind, EntKind::Curve);
     // the top of the rim is a minor radius above the centre
     assert_eq!(pick(&e.sketch, 10.0, 8.02, 0.2), Some(cv));
-    assert!(pick(&e.sketch, 12.0, 5.8, 0.2).is_none(), "the inside of an ellipse is empty space");
+    assert!(pick(&e.sketch, 12.0, 5.8, 0.2).is_none(), "the in of an ellipse is empty space");
     let (x0, y0, x1, y1) = e.sketch.bounds(EntRef::new(EntKind::Curve, cv.i()));
     assert!((x0 - 2.0).abs() < 1e-3 && (x1 - 18.0).abs() < 1e-3, "{x0} .. {x1}");
     assert!((y0 - 2.0).abs() < 1e-3 && (y1 - 8.0).abs() < 1e-3, "{y0} .. {y1}");

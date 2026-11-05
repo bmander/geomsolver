@@ -186,6 +186,7 @@ mod minimize;
 mod modules;
 mod motions;
 mod names;
+mod notation;
 mod numeric_parts;
 mod object_builder;
 mod ode;

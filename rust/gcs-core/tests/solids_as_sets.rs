@@ -89,7 +89,7 @@ fn alike(e: &Elaborated, a: &str, b: &str) {
 #[test]
 fn a_prism_by_hand_is_the_words() {
     let e = solved(&format!("{RECT}word := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n\
-        hand := solid({{ p | p distance(<= 0mm, along: n) sec; p inside sec\n\
+        hand := solid({{ p | p distance(<= 0mm, along: n) sec; some h: p in sec at(along: n) h\n\
                           p distance(>= -30mm, along: n) sec }})\n"));
     let SolidDef::Prism { from, to, draft: None, .. } = def(&e, "word") else {
         panic!("a prism: {:?}", def(&e, "word"))
@@ -108,7 +108,7 @@ fn a_drafted_prism_by_hand_is_the_words() {
     let e = solved(&format!("{RECT}word := solid(std.solids.Drafted(sec, from: -5mm, to: 5mm, \
         draft: 3deg))\n\
         hand := solid({{ p | p distance(>= -5mm, along: n) sec; p distance(<= 5mm, along: n) sec\n\
-            out := {{ q | q outside sec }}\n  into := {{ q | q inside sec }}\n\
+            out := {{ q | not some h: q in sec at(along: n) h }}\n  into := {{ q | some h: q in sec at(along: n) h }}\n\
             distance(p, out) - distance(p, into) >= tan(3deg) * distance(p, sec) }})\n"));
     let SolidDef::Prism { draft: Some(d), .. } = def(&e, "word") else {
         panic!("a drafted prism: {:?}", def(&e, "word"))
@@ -126,9 +126,9 @@ fn a_revolution_by_hand_is_the_words() {
     let e = solved(&format!("{RING}whole := solid(std.solids.Revolution(sec, about: ax))\n\
         quarter := solid(std.solids.Revolution(sec, about: ax, to: 90deg))\n\
         back := solid(std.solids.Revolution(sec, about: ax, from: -90deg, to: 0deg))\n\
-        whole_hand := solid({{ p | p coincident(under: turn, over t in (0deg, 360deg)) sec }})\n\
-        quarter_hand := solid({{ p | p coincident(under: turn, over t in (0deg, 90deg)) sec }})\n\
-        back_hand := solid({{ p | p coincident(under: turn, over t in (-90deg, 0deg)) sec }})\n"));
+        whole_hand := solid({{ p | some t in (0deg, 360deg): p in sec at(under: turn) t }})\n\
+        quarter_hand := solid({{ p | some t in (0deg, 90deg): p in sec at(under: turn) t }})\n\
+        back_hand := solid({{ p | some t in (-90deg, 0deg): p in sec at(under: turn) t }})\n"));
     for (name, sweep, sense) in [("whole", TAU, Sense::Ccw), ("quarter", TAU / 4.0, Sense::Ccw),
                                  ("back", TAU / 4.0, Sense::Cw)] {
         let SolidDef::Revolve { sweep: s, sense: k, .. } = def(&e, name) else {
@@ -150,7 +150,7 @@ fn a_revolution_by_hand_is_the_words() {
 fn a_prism_through_everything_is_bounded_by_what_it_cuts() {
     let e = solved(&format!("{RECT}plate := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n\
         drill := solid(std.solids.Through(face(hole)))\n\
-        bore := solid({{ p | p inside hole_f }})\n\
+        bore := solid({{ p | some h: p in hole_f at(along: n) h }})\n\
         body := solid(plate)\ndrill cut body\nother := solid(plate)\nbore cut other\n"));
     for (tool, body) in [("drill", "body"), ("bore", "other")] {
         assert!(matches!(def(&e, tool), SolidDef::Through { .. }), "{tool}: {:?}", def(&e, tool));
@@ -233,16 +233,16 @@ fn a_placed_copy_of_a_prism_through_everything_goes_through_its_own_body() {
     assert!((b.lo[2] + 5.0).abs() < 1e-2 && (b.hi[2] - 10.0).abs() < 1e-2, "{b:?}");
 }
 
-/// **Booleans as sets**: the points inside a solid and outside another are the body term over
-/// them — the same solid `bore cut body` makes — and the outside of what is outside two solids is
-/// their union, exactly.
+/// **Booleans as sets**: the points in a solid and not in another are the body term over
+/// them — the same solid `bore cut body` makes — and what is in one solid or the other (`or`, the
+/// outside of what is in neither) is their union, exactly.
 #[test]
 fn a_boolean_of_solids_is_the_body_term() {
     let e = solved(&format!("{RECT}stock := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n\
         bore := solid(std.solids.Prism(face(hole), from: -40mm, to: 10mm))\n\
         cut_by_word := solid(stock)\nbore cut cut_by_word\n\
-        cut_as_set := solid({{ p | p inside stock; p outside bore }})\n\
-        joined := solid({{ p | p outside {{ q | q outside stock; q outside bore }} }})\n"));
+        cut_as_set := solid({{ p | p in stock; p not in bore }})\n\
+        joined := solid({{ p | p in stock or p in bore }})\n"));
     let SolidDef::Body { stock, through, .. } = def(&e, "cut_as_set") else {
         panic!("a body: {:?}", def(&e, "cut_as_set"))
     };
@@ -255,13 +255,13 @@ fn a_boolean_of_solids_is_the_body_term() {
 }
 
 /// **The outside of a set of several statements** is where any of them fails: the union of two
-/// balls as the outside of what is outside both, read point by point — in either ball and in
-/// neither.
+/// balls as what is in one or the other (`or`, the outside of what is in neither), read point by
+/// point — in either ball and in neither.
 #[test]
 fn outside_a_conjunction_is_a_union() {
     let e = solved("unit mm\nuse std\nuse std.sets\nc2 := point\nfix((4, 0, 0)) c2\n\
-        one := std.sets.Sphere(std.origin, r: 5)\nother := std.sets.Sphere(c2, r: 5)\n\
-        both := solid({ p | p outside { q | q outside one; q outside other } })\n");
+        one := std.sets.Ball(std.origin, r: 5)\nother := std.sets.Ball(c2, r: 5)\n\
+        both := solid({ p | p in one or p in other })\n");
     let s = ent(&e, "both").i();
     let SolidDef::Region { terms, .. } = &e.sketch.solids[s].def else { panic!("a region") };
     assert!(matches!(terms[0].shape, RegionShape::Outside { .. }), "{terms:?}");
@@ -276,7 +276,7 @@ fn outside_a_conjunction_is_a_union() {
 /// point's foot and within a ball — a quarter ball, read point by point.
 #[test]
 fn a_face_is_a_set_where_no_sweep_says_it() {
-    let e = solved(&format!("{RECT}r := solid({{ p | p inside sec; p inside std.sets.Sphere(a, \
+    let e = solved(&format!("{RECT}r := solid({{ p | some h: p in sec at(along: n) h; p in std.sets.Ball(a, \
         r: 20mm) }})\n"));
     let s = ent(&e, "r").i();
     assert!(matches!(def(&e, "r"), SolidDef::Region { .. }));
@@ -303,7 +303,7 @@ fn the_sweep_labels_are_retired_naming_the_set() {
     says(format!("{RECT}d := solid(hole_f, through: sec)\n"),
          "`solid(std.solids.Through(hole_f))`, cut from the body it goes through");
     says(format!("{RING}s := sweep(sec over t in (0deg, 90deg), under: turn)\n"),
-         "`solid({ p | p inside(under: turn, over t in (0deg, 90deg)) sec })`");
+         "`solid({ p | some t in (0deg, 90deg): p in sec at(under: turn) t })`");
 }
 
 /// **What a statement holds in place is read where it is written** (#745): the family's call in
@@ -356,13 +356,13 @@ fn what_is_written_in_place_names_its_host() {
     assert!(faces.iter().all(|f| f.slice(p.text()) == "face(ab, bc)"));
 
     // a set on a relation's right is held by the relation
-    let (p, errs) = parse("a := point\nq := point\nq inside { p | p distance(3mm) a }\n");
+    let (p, errs) = parse("a := point\nq := point\nq in { p | p distance(<= 3mm) a }\n");
     assert!(errs.is_empty(), "{errs:?}");
     let body = &p.root().body;
     let rel = body.iter().find(|st| matches!(st.kind, StmtKind::Relation(_))).unwrap();
     let set = body.iter().find(|st| matches!(st.kind, StmtKind::Set(_))).unwrap();
     assert_eq!(set.chained, Chained::InPlace(rel.id));
-    assert_eq!(set.span.slice(p.text()), "{ p | p distance(3mm) a }");
+    assert_eq!(set.span.slice(p.text()), "{ p | p distance(<= 3mm) a }");
 
     // a face sealed by `-> close` in the call is the face's, not a chain of the statement's
     let (_, errs) = parse(&format!("{RECT}block := solid(std.solids.Prism(face(a, b, c, d, -> \
@@ -375,8 +375,8 @@ fn what_is_written_in_place_names_its_host() {
 #[test]
 fn a_swept_set_is_read_where_it_is_written() {
     use gcs_core::syntax::{parse, Sweep};
-    let (p, errs) = parse(&format!("{RING}s := solid({{ p | p inside(under: turn, over t in \
-        (0deg, 90deg)) sec }})\n"));
+    let (p, errs) = parse(&format!("{RING}s := solid({{ p | some t in (0deg, 90deg): p in tool \
+        at(under: turn) t }})\n"));
     assert!(errs.is_empty(), "{errs:?}");
     let swept = p.root().body.iter().find_map(|st| match &st.kind {
         gcs_core::syntax::StmtKind::Decl(d) if d.name.shown().is_some_and(|n| n.text == "s") => {
@@ -385,8 +385,8 @@ fn a_swept_set_is_read_where_it_is_written() {
         _ => None,
     });
     assert!(matches!(swept, Some(Sweep::Swept { motion: Some(_), .. })), "{swept:?}");
-    let (_, errs) = parse(&format!("{RING}s := solid({{ p | p inside(under: turn, under: turn) \
-        sec }})\n"));
+    let (_, errs) = parse(&format!("{RING}s := solid({{ p | some t: p in tool at(under: turn, \
+        under: turn) t }})\n"));
     assert!(errs.iter().any(|e| e.message.contains("`under` is given twice")), "{errs:?}");
     assert!(errs.iter().all(|e| !e.message.contains("sweep(")), "{errs:?}");
 }
@@ -397,7 +397,7 @@ fn a_swept_set_is_read_where_it_is_written() {
 #[test]
 fn a_set_by_hand_adds_nothing_to_the_solve() {
     let word = solved(&format!("{RECT}s := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n"));
-    let hand = solved(&format!("{RECT}s := solid({{ p | p inside sec\n\
+    let hand = solved(&format!("{RECT}s := solid({{ p | some h: p in sec at(along: n) h\n\
         p distance(>= -30mm, along: n) sec; p distance(<= 0mm, along: n) sec }})\n"));
     assert_eq!(word.sketch.points.len(), hand.sketch.points.len());
     assert_eq!(word.sketch.params.len(), hand.sketch.params.len());
@@ -409,11 +409,11 @@ fn a_set_by_hand_adds_nothing_to_the_solve() {
 /// its ordinate, and a plane touching a straight side at its origin lies on it.
 #[test]
 fn a_prism_by_hand_is_sketched_on() {
-    let e = solved(&format!("{RECT}hand := solid({{ p | p inside sec\n\
+    let e = solved(&format!("{RECT}hand := solid({{ p | some h: p in sec at(along: n) h\n\
         p distance(>= -30mm, along: n) sec; p distance(<= 0mm, along: n) sec }})\n\
-        m := point hint((5, 10, 5))\nm coincident hand.far.surface\n\
+        m := point hint((5, 10, 5))\nm in boundary(hand.far.side)\n\
         v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) hint(origin: (10, 8, 1))\n\
-        v1.origin coincident hand.ab.surface\nv1 tangent(at: v1.origin) hand.ab.surface\n"));
+        v1.origin in boundary(hand.ab.side)\nv1 tangent(at: v1.origin) boundary(hand.ab.side)\n"));
     // the front plane's normal is the world's −y: the far cap 30 behind it
     let m = e.sketch.world_point(ent(&e, "m").i());
     assert!((m[1] - 30.0).abs() < 1e-9, "{m:?}");
@@ -437,7 +437,7 @@ fn a_revolution_by_hand_has_named_sides() {
         assert_eq!((axis, edge), (ent(&e, "ax"), ent(&e, "e1")));
     };
     held("std.solids.Revolution(sec, about: ax, to: 90deg)");
-    held("{ p | p coincident(under: ax, over t in (0deg, 90deg)) sec }");
+    held("{ p | some t in (0deg, 90deg): p in sec at(under: ax) t }");
 }
 
 /// **A draft is read off the bound's tree**, not its printed text: the lean written with its
@@ -447,8 +447,8 @@ fn a_revolution_by_hand_has_named_sides() {
 fn a_draft_is_read_off_its_tree() {
     let word = "word := solid(std.solids.Drafted(sec, from: -5mm, to: 5mm, draft: 3deg))\n";
     let hand = "hand := solid({ p | p distance(<= 5mm, along: n) sec\n\
-        p distance(>= -5mm, along: n) sec\n  into := { q | q inside sec }\n\
-        out := { q | q outside sec }\n\
+        p distance(>= -5mm, along: n) sec\n  into := { q | some h: q in sec at(along: n) h }\n\
+        out := { q | not some h: q in sec at(along: n) h }\n\
         distance(p,out)-distance( p, into ) >= distance(p, sec) * tan( 3deg ) })\n";
     // read before it is built, as the word is: nothing added to the solve
     let points = |s: &str| solved(&format!("{RECT}{s}")).sketch.points.len();

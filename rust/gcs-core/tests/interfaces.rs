@@ -198,7 +198,7 @@ use std.sets
 interface Ball {{ about: point, bulk: set }}
 component Touch(b: Ball) {{
   q := point hint((3, 4))
-  q coincident b.bulk
+  q in b.bulk
   b.about level(v) q
 }}
 in std.front {{
@@ -212,7 +212,10 @@ s := std.sets.Sphere(o, r: 5mm)
     let e = solved(&doc("s"));
     let q = e.sketch.point_xy(e.map.ent_named("t.q").unwrap().i());
     assert!((q.0.hypot(q.1) - 5.0).abs() < 1e-8, "{q:?}");
-    said(&doc("o"), Code::E103, &["`ball.bulk` is not a set"]);
+    // a point given for the set: refused as no set, and `q in` it as a point's place (#783)
+    let errs = errors(&doc("o"));
+    assert!(errs.iter().any(|(c, m)| *c == Code::E103 && m.contains("`ball.bulk` is not a set")),
+            "{errs:?}");
 }
 
 #[test]

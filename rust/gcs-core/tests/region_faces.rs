@@ -54,9 +54,9 @@ fn the_points_near_a_face_are_its_patch_grown() {
 /// plane, though the ball reaches past the patch.
 #[test]
 fn a_face_has_a_side_and_a_surface() {
-    let e = solved(&format!("{BLOCK}c := point hint((20, 0, 12))\nball := std.sets.Sphere(c, r: 5)\n\
-                             half := {{ p | p inside ball; p inside block.near }}\n\
-                             slice := {{ p | p inside ball; p distance(<= 2mm) block.near.surface }}\n\
+    let e = solved(&format!("{BLOCK}c := point hint((20, 0, 12))\nball := std.sets.Ball(c, r: 5)\n\
+                             half := {{ p | p in ball; p in block.near }}\n\
+                             slice := {{ p | p in ball; p distance(<= 2mm) boundary(block.near.side) }}\n\
                              sh := solid(half)\nss := solid(slice)\n"));
     let (lo, hi) = block_box(&e);
     // the ball's centre on the near face, wherever the block stands
@@ -74,13 +74,13 @@ fn a_face_has_a_side_and_a_surface() {
 /// L's inner edge concave (three quarters), read at the point of the edge nearest.
 #[test]
 fn the_material_angle_at_an_edge_says_which_way_it_turns() {
-    let e = solved(&format!("{BLOCK}c := point hint((0, 0, 0))\nball := std.sets.Sphere(c, r: 300)\n\
-        convex := {{ p | p inside ball; angle(block.near, block.south, at: p) <= 180deg }}\n\
-        concave := {{ p | p inside ball; angle(block.near, block.south, at: p) >= 180deg }}\n\
-        square := {{ p | p inside ball; angle(block.east, block.south, at: p) <= 91deg; \
+    let e = solved(&format!("{BLOCK}c := point hint((0, 0, 0))\nball := std.sets.Ball(c, r: 300)\n\
+        convex := {{ p | p in ball; angle(block.near, block.south, at: p) <= 180deg }}\n\
+        concave := {{ p | p in ball; angle(block.near, block.south, at: p) >= 180deg }}\n\
+        square := {{ p | p in ball; angle(block.east, block.south, at: p) <= 91deg; \
                          angle(block.east, block.south, at: p) >= 89deg }}\n\
-        inner := {{ p | p inside ball; angle(step.lt, step.lr, at: p) >= 269deg }}\n\
-        outer := {{ p | p inside ball; angle(step.le, step.lt, at: p) >= 180deg }}\n\
+        inner := {{ p | p in ball; angle(step.lt, step.lr, at: p) >= 269deg }}\n\
+        outer := {{ p | p in ball; angle(step.le, step.lt, at: p) >= 180deg }}\n\
         s1 := solid(convex)\ns2 := solid(concave)\ns3 := solid(square)\ns4 := solid(inner)\n\
         s5 := solid(outer)\n"));
     let filled = |name: &str| {
@@ -98,14 +98,14 @@ fn the_material_angle_at_an_edge_says_which_way_it_turns() {
 /// side holds nowhere.
 #[test]
 fn a_face_path_naming_no_face_holds_nowhere() {
-    let e = read(&format!("{BLOCK}nowhere := {{ p | p inside block.top }}\nsn := solid(nowhere)\n"));
+    let e = read(&format!("{BLOCK}nowhere := {{ p | p in block.top }}\nsn := solid(nowhere)\n"));
     let field = MaterialField::read(&e.sketch, ent(&e, "sn").i(), 1e-10).unwrap();
     assert!(field.side([20.0, 6.0, 12.0]) > 0.0 && field.side([0.0; 3]) > 0.0);
 }
 
 /// The edge where the near face meets the south face, and the faces' surfaces' meeting.
 const EDGE: &str = "crease := { q | q coincident block.near; q coincident block.south }\n\
-                    meeting := { q | q coincident block.near.surface; q coincident block.south.surface }\n";
+                    meeting := { q | q in boundary(block.near.side); q in boundary(block.south.side) }\n";
 
 /// **The distance from a set** (#183 F2): a weld's reach, the points within 1 of the block's edge
 /// 40 long, a capsule `πr²L + 4πr³/3`.
@@ -124,9 +124,9 @@ fn a_reach_from_an_edge_is_a_capsule() {
 /// grown (Steiner): `abc + 2(ab + bc + ca)r + πr²(a + b + c) + 4πr³/3`.
 #[test]
 fn a_clearance_is_a_set_grown() {
-    let e = solved(&format!("{BLOCK}held := {{ c | c inside block.near; c inside block.far; \
-                             c inside block.south; c inside block.north; c inside block.east; \
-                             c inside block.west }}\n\
+    let e = solved(&format!("{BLOCK}held := {{ c | c in block.near; c in block.far; \
+                             c in block.south; c in block.north; c in block.east; \
+                             c in block.west }}\n\
                              clear := {{ p | distance(p, held) <= 1mm }}\ns := solid(clear)\n"));
     let (lo, hi) = block_box(&e);
     let field = MaterialField::read(&e.sketch, ent(&e, "s").i(), 1e-10).unwrap();
@@ -142,9 +142,9 @@ fn a_clearance_is_a_set_grown() {
 /// the side of each face the edge ends on it runs on (#183 F7).
 #[test]
 fn the_reach_of_an_edge_and_where_it_ends_are_one_slab() {
-    let e = solved(&format!("{BLOCK}{EDGE}c := point hint((20, 6, 0))\nball := std.sets.Sphere(c, r: 30)\n\
-                             reach := {{ p | p inside ball; distance(p, crease) <= distance(p, meeting) }}\n\
-                             ended := {{ p | p inside ball; p inside crease.ends }}\n\
+    let e = solved(&format!("{BLOCK}{EDGE}c := point hint((20, 6, 0))\nball := std.sets.Ball(c, r: 30)\n\
+                             reach := {{ p | p in ball; distance(p, crease) <= distance(p, meeting) }}\n\
+                             ended := {{ p | p in ball; p in crease.ends }}\n\
                              sr := solid(reach)\nse := solid(ended)\n"));
     let (r, h): (f64, f64) = (30.0, 20.0);
     let want = PI * (2.0 * h * r * r - 2.0 * h.powi(3) / 3.0);
@@ -163,10 +163,10 @@ fn the_reach_of_an_edge_and_where_it_ends_are_one_slab() {
 /// ends on to cut off.
 #[test]
 fn a_meeting_cut_where_its_edge_ends_is_the_edge() {
-    let e = solved(&format!("{BLOCK}{EDGE}short := {{ q | q coincident block.near.surface; \
-                             q coincident block.south.surface; q inside crease.ends }}\n\
-                             c := point hint((20, 6, 0))\nball := std.sets.Sphere(c, r: 30)\n\
-                             reach := {{ p | p inside ball; \
+    let e = solved(&format!("{BLOCK}{EDGE}short := {{ q | q in boundary(block.near.side); \
+                             q in boundary(block.south.side); q in crease.ends }}\n\
+                             c := point hint((20, 6, 0))\nball := std.sets.Ball(c, r: 30)\n\
+                             reach := {{ p | p in ball; \
                              distance(p, crease) <= distance(p, short) }}\n\
                              sr := solid(reach)\n"));
     let field = MaterialField::read(&e.sketch, ent(&e, "sr").i(), 1e-10).unwrap();
@@ -179,13 +179,13 @@ fn a_meeting_cut_where_its_edge_ends_is_the_edge() {
 /// What a ball rolled along a convex edge cannot reach, written over F1–F3, F7 and F9 (#183 X3's
 /// `Run`), on one edge of the block: `r²(1 − π/4)` along its 40.
 const RUN: &str = "component Run(a: face, b: face, r: Length) := { p |\n\
-    p inside a\n    p inside b\n    angle(a, b, at: p) <= 180deg\n\
-    centres := { c | c inside a; c distance(>= r) a.surface; c inside b; c distance(>= r) b.surface }\n\
-    crease := { q | q coincident a; q coincident b }\n\
-    meeting := { q | q coincident a.surface; q coincident b.surface }\n\
+    p in a.side\n    p in b.side\n    angle(a, b, at: p) <= 180deg\n\
+    centres := { c | c in a.side; c distance(>= r) boundary(a.side); c in b.side; c distance(>= r) boundary(b.side) }\n\
+    crease := { q | q in a; q in b }\n\
+    meeting := { q | q in boundary(a.side); q in boundary(b.side) }\n\
     distance(p, centres) >= r\n\
     distance(p, crease) <= distance(p, meeting)\n\
-    p inside crease.ends\n}\n";
+    p in crease.ends\n}\n";
 
 #[test]
 fn a_run_along_one_edge() {
@@ -235,7 +235,7 @@ fn a_word_makes_a_relief() {
                   repeat a in A {\n\
                     repeat b in B {\n\
                       when b != a {\n\
-                        groove := { p | p distance(<= d) a; p distance(<= d) b; p inside a; p inside b }\n\
+                        groove := { p | p distance(<= d) a; p distance(<= d) b; p in a.side; p in b.side }\n\
                         relief := solid(groove)\n\
                         relief cut A.body\n\
                       }\n\
@@ -259,11 +259,11 @@ fn a_word_makes_a_relief() {
 /// as it was: the pillow round the near face is no thicker past the face's edge for it.
 #[test]
 fn a_sketch_on_a_face_leaves_a_regions_reading_of_it() {
-    let region = "c := point hint((20, 0, 12))\nfix((20, 0, 12)) c\nball := std.sets.Sphere(c, r: 30)\n\
-                  pillow := { p | p inside ball; p distance(<= 1mm) block.near }\n\
+    let region = "c := point hint((20, 0, 12))\nfix((20, 0, 12)) c\nball := std.sets.Ball(c, r: 30)\n\
+                  pillow := { p | p in ball; p distance(<= 1mm) block.near }\n\
                   s := solid(pillow)\n";
-    let sketch = "v1 := plane\nv1.origin coincident block.near.surface\n\
-                  v1 tangent(at: v1.origin) block.near.surface\n";
+    let sketch = "v1 := plane\nv1.origin in boundary(block.near.side)\n\
+                  v1 tangent(at: v1.origin) boundary(block.near.side)\n";
     // past the near face's edge (x = 40) and in front of its plane (y = 0): within 1 of the
     // plane, but more than 1 from the face
     let (past, over) = ([45.0, -0.5, 12.0], [20.0, -0.5, 12.0]);

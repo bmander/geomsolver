@@ -45,5 +45,5 @@ wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
 blank := solid(std.solids.Prism(face(rim), from: -8mm, to: -2mm))
 wheel := solid(blank)
-construction space := solid({ p | p inside(under: tool_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })
+construction space := solid({ p | some t in (0deg, 540deg): p in star at(under: tool_turn, seen_from: wheel_turn) t })
 space cut wheel

@@ -67,7 +67,7 @@ param t: Angle over (start, finish)
 fluted := solid(stock)
 
 flute_wheel := wheel.GrindingWheel(side, setting: configuration.helix, wheel: configuration.flute_wheel)
-construction flute := solid({ p | p inside(under: grind, over t) flute_wheel.body })
+construction flute := solid({ p | some t: p in flute_wheel.body at(under: grind) t })
 
 // the clearance wheel rides the same screw turned `clearance_phase` on about the axis: drawn
 // turned, on the side datum turned so — a screw's roll 0 is as drawn, and a screw turned by a
@@ -78,7 +78,7 @@ clearance_side := plane(u: down, v: clearance_v)
 fix(origin == (0, 0, 0)) clearance_side
 clearance_wheel := wheel.GrindingWheel(clearance_side, setting: configuration.helix,
                                        wheel: configuration.clearance_wheel)
-construction body_clearance := solid({ p | p inside(under: grind, over t) clearance_wheel.body })
+construction body_clearance := solid({ p | some t: p in clearance_wheel.body at(under: grind) t })
 
 repeat configuration.flutes as i {
   construction flute_at := flute at(under: index) i * 360deg / configuration.flutes

@@ -190,7 +190,7 @@ post := solid(std.solids.Prism(face(post_r), from: 0mm, to: 5mm))
 swing := frame
 swing turns(1) pivot
 fix(value == t) swing
-shown := arm in swing
+shown := arm at swing
 claim shown clear(0.5mm) post
 ";
 

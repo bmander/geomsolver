@@ -63,7 +63,7 @@ wheel := solid(blank)
 
 const STAR: &str = "star := solid(std.solids.Prism(plus, from: -10mm, to: 0mm))";
 const DRAFTED: &str = "star := solid(std.solids.Drafted(plus, from: -10mm, to: 0mm, draft: 8deg))";
-const PERIOD: &str = "space := solid({ p | p inside(under: tool_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })\nspace cut wheel";
+const PERIOD: &str = "space := solid({ p | some t in (0deg, 540deg): p in star at(under: tool_turn, seen_from: wheel_turn) t })\nspace cut wheel";
 
 fn solved(src: &str) -> (Elaborated, usize) { solved_body(src, "wheel") }
 
@@ -228,7 +228,7 @@ in std.top {{
 wedge := solid(std.solids.Prism(wedge_f, from: -20mm, to: 10mm))
 arm := solid(star)
 wedge common arm");
-    let src = wheel(&arm, "space := solid({ p | p inside(under: tool_turn, seen_from: wheel_turn) arm })\nspace cut wheel");
+    let src = wheel(&arm, "space := solid({ p | some t: p in arm at(under: tool_turn, seen_from: wheel_turn) t })\nspace cut wheel");
     let (e, w) = solved(&src);
     let admitted = admit_body(&e.sketch, w, &Options::default()).unwrap_or_else(|f| panic!("{f}"));
     assert!(matches!(admitted.sweeps()[0].class, Class::Subtraction(_)));
@@ -246,7 +246,7 @@ fn a_roll_short_of_a_period_names_the_period() {
     match admit_body(&e.sketch, w, &Options::default()) {
         Err(Error::Refused(r)) => {
             assert_eq!(r.condition, Condition::Closes, "{r}");
-            assert!(r.to_string().contains("roll it a whole period, `over t in (0deg, 540deg)`"), "{r}");
+            assert!(r.to_string().contains("roll it a whole period, `some t in (0deg, 540deg)`"), "{r}");
         }
         other => panic!("{other:?}"),
     }
@@ -256,11 +256,11 @@ fn a_roll_short_of_a_period_names_the_period() {
 /// clear of the wheel, so `through:` finds no roll, and says the period.
 #[test]
 fn a_tool_always_in_mesh_names_its_period() {
-    let mut e = crate::common::build(&wheel(STAR, "space := solid({ p | p inside(under: tool_turn, seen_from: wheel_turn) star })\nspace cut wheel"));
+    let mut e = crate::common::build(&wheel(STAR, "space := solid({ p | some t: p in star at(under: tool_turn, seen_from: wheel_turn) t })\nspace cut wheel"));
     solve(&mut e.sketch, SolveOpts::default());
     let diags = program::solid_diagnostics(&e.sketch, &e.map, &e.program);
     assert!(diags.iter().any(|d| d.code == Code::E080 && d.message.contains("always in mesh")
-        && d.message.contains("`over t in (0deg, 540deg)`")), "{diags:#?}");
+        && d.message.contains("`some t in (0deg, 540deg)`")), "{diags:#?}");
 }
 
 /// **The drafted star cuts its wheel** (#607, #590): the handle's arms lean 8°, so each height of
@@ -351,7 +351,7 @@ handle_turn := frame
 handle_turn turns(1) stem
 wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
-space := solid({{ p | p inside(under: handle_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star }})
+space := solid({{ p | some t in (0deg, 540deg): p in star at(under: handle_turn, seen_from: wheel_turn) t }})
 wheel := solid(std.solids.Prism(face(rim), from: -15.6mm, to: -0.6mm))
 space cut wheel
 ")
@@ -465,10 +465,10 @@ tip := point
 fix((0, 30, 2)) tip
 base := face(a0, a1, a2, a3, -> close)
 param s: Scalar over (0, 1)
-pyramid := solid({ p | p coincident(over s) std.stations.Apex(base, tip).f })
+pyramid := solid({ p | some s: p in std.stations.Apex(base, tip).f at s })
 turn := frame
 turn turns(1) stem
-space := solid({ p | p inside(under: turn, over t in (0deg, 90deg)) pyramid })
+space := solid({ p | some t in (0deg, 90deg): p in pyramid at(under: turn) t })
 ");
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
@@ -482,12 +482,12 @@ space := solid({ p | p inside(under: turn, over t in (0deg, 90deg)) pyramid })
 /// pitch line shifted +0.3 m) rolled across the blank on the pitch circle, from clear of the tip to
 /// clear of it; `cuts` cuts `space` (or its copies about the spindle) from `gear`.
 fn pinion(cuts: &str) -> String {
-    rolled_pinion("0.8mm", ", over t in (-window, window)", cuts)
+    rolled_pinion("0.8mm", " in (-window, window)", cuts)
 }
 
 /// `pinion`, of module `m`, its `space` the tooth swept as
-/// `solid({ p | p inside(under: rack, seen_from: blank_turn{over}) tooth })` — `over` the roll's
-/// interval, `, over t in (a, b)`, or nothing for the roll through the body it is cut from.
+/// `solid({ p | some t{over}: p in tooth at(under: rack, seen_from: blank_turn) t })` — `over` the roll's
+/// interval, ` in (a, b)`, or nothing for the roll through the body it is cut from.
 fn rolled_pinion(m: &str, over: &str, cuts: &str) -> String {
     format!("\
 unit mm
@@ -535,7 +535,7 @@ rack := frame
 rack slides(2 * pi * R) rack_line
 index := frame
 index turns(1) spindle
-space := solid({{ p | p inside(under: rack, seen_from: blank_turn{over}) tooth }})
+space := solid({{ p | some t{over}: p in tooth at(under: rack, seen_from: blank_turn) t }})
 gear := solid(std.solids.Prism(face(tip, holes: hole), from: 0mm, to: 5mm))
 {cuts}
 ")
@@ -577,9 +577,9 @@ fn a_roll_ending_where_the_flank_grazes_its_held_edge_closes() {
     let blank = PI * (10.95 * 10.95 - 1.) * 5.;
     let removed =
         |over: &str| blank - cut_body(&rolled_pinion("1.5mm", over, turned), "gear", None);
-    let generous = removed(", over t in (-window, window)");
+    let generous = removed(" in (-window, window)");
     assert!(generous > 10., "the space removes {generous:.5} mm³");
-    for over in [", over t in (-56deg, 56deg)", ", over t in (-60deg, 60deg)", ""] {
+    for over in [" in (-56deg, 56deg)", " in (-60deg, 60deg)", ""] {
         let r = removed(over);
         assert!((r - generous).abs() < 1e-4 * generous,
                 "`{over}` removes {r:.6} mm³, the stated window {generous:.6}");
@@ -589,7 +589,7 @@ fn a_roll_ending_where_the_flank_grazes_its_held_edge_closes() {
 /// The wheel stood by a frame turning with it at `degrees` of its value (`x in f`), and a body made
 /// from that copy (#619).
 fn stood(degrees: f64) -> String {
-    format!("{}held := frame\nheld turns(-4 / 6) spindle\nfix(value == {degrees}deg) held\nshown := wheel in held\ncopy := solid(shown)\n",
+    format!("{}held := frame\nheld turns(-4 / 6) spindle\nfix(value == {degrees}deg) held\nshown := wheel at held\ncopy := solid(shown)\n",
         wheel(STAR, PERIOD))
 }
 
@@ -766,10 +766,10 @@ bottom_q := point
 bottom_q raised(d: 5.75mm, along: std.z) bottom_at
 top_cone := std.sets.ConeThrough(spindle, top_q, lean: -45deg)
 bottom_cone := std.sets.ConeThrough(spindle, bottom_q, lean: 45deg)
-bicone := { p | p inside top_cone; p inside bottom_cone }
+bicone := { p | p in top_cone; p in bottom_cone }
 chamfers := solid(bicone)
 chamfers common gear
-space := solid({ p | p inside(under: rack, seen_from: blank_turn, over t in (-window, window)) tooth })
+space := solid({ p | some t in (-window, window): p in tooth at(under: rack, seen_from: blank_turn) t })
 space cut gear
 ".into()
 }

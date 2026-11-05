@@ -10,8 +10,8 @@ use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
 /// A tool, a motion named `motion`, the removal over [from, to] and the post it is cut from.
 /// The tool swept by `motion` read as `reading` (`under: turn`, or a roll's `ROLLED`).
 fn document(tool: &str,motion: &str,reading: &str,from: f64,to: f64) -> String {
-    format!("{tool}{motion}construction removal := solid({{ p | p inside({reading}, \
-        over t in ({from}deg, {to}deg)) tool }})\n{}",centred_post())
+    format!("{tool}{motion}construction removal := solid({{ p | some t in ({from}deg, \
+        {to}deg): p in tool at({reading}) t }})\n{}",centred_post())
 }
 
 fn admit(source: &str) -> Result<admission::Admission,Error> {
@@ -35,7 +35,7 @@ fn refused(result: Result<admission::Admission,Error>) -> admission::Refusal {
 /// contact at every time: refused, found between samples (or inside a sample cell).
 #[test]
 fn a_ring_in_contact_at_every_time_is_refused() {
-    let source = format!("{}{CROSSED_ROLL}construction removal := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-60deg, 60deg)) tool }})\n{}",
+    let source = format!("{}{CROSSED_ROLL}construction removal := solid({{ p | some t in (-60deg, 60deg): p in tool at(under: spin, seen_from: observer) t }})\n{}",
         torus(2.),tools::post(4.,0.4,-2.,2.));
     let r = refused(admit(&source));
     assert_eq!(r.condition,Condition::Stationary);
@@ -45,7 +45,7 @@ fn a_ring_in_contact_at_every_time_is_refused() {
 
 #[test]
 fn a_torus_rolled_about_a_skew_axis_through_a_post_is_admitted() {
-    let source = format!("{}{}construction removal := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-75deg, 75deg)) tool }})\n{}",
+    let source = format!("{}{}construction removal := solid({{ p | some t in (-75deg, 75deg): p in tool at(under: spin, seen_from: observer) t }})\n{}",
         torus(2.),cradle_roll(0.25,Observer::Skew),skew_post(4.));
     let a = admit(&source).unwrap();
     let s = &a.sweeps()[0];
@@ -69,7 +69,7 @@ fn a_pole_in_contact_at_every_time_is_refused() {
 /// A tool that never meets the blank is no cut: refused, not admitted vacuously.
 #[test]
 fn a_sweep_that_reaches_nothing_is_refused() {
-    let source = format!("{}{}construction removal := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-75deg, 75deg)) tool }})\n{}",
+    let source = format!("{}{}construction removal := solid({{ p | some t in (-75deg, 75deg): p in tool at(under: spin, seen_from: observer) t }})\n{}",
         torus(2.),cradle_roll(0.25,Observer::Skew),skew_post(13.));
     let r = refused(admit(&source));
     assert_eq!(r.condition,Condition::Reach);
@@ -145,7 +145,7 @@ fn a_roll_that_starts_in_the_blank_is_refused() {
 fn a_union_tools_members_are_asked_their_own_rows() {
     let tool = format!("{}construction twin := tool at(under: observer) 20deg\nconstruction lump := solid(tool)\ntwin union lump\n",
         tools::lens(0.,0.2,false));
-    let source = format!("{tool}{}construction removal := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-60deg, 60deg)) lump }})\n{}",motions::roll(0.25),centred_post());
+    let source = format!("{tool}{}construction removal := solid({{ p | some t in (-60deg, 60deg): p in lump at(under: spin, seen_from: observer) t }})\n{}",motions::roll(0.25),centred_post());
     let r = refused(admit(&source));
     assert_eq!((r.condition,r.sweep.as_str()),(Condition::Stationary,"removal"));
     assert!(r.message.starts_with("its tool's member `tool`: the pole"),"{}",r.message);
@@ -229,7 +229,7 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
 /// placements are compared by sampling — and found alike. The verdicts are the same.
 #[test]
 fn an_indexed_ring_is_alike_by_its_revolution_and_a_boxed_ring_by_sampling() {
-    let ring = |extra: &str| format!("{}{}construction removal := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-35deg, 35deg)) tool }})\n{}{extra}",
+    let ring = |extra: &str| format!("{}{}construction removal := solid({{ p | some t in (-35deg, 35deg): p in tool at(under: spin, seen_from: observer) t }})\n{}{extra}",
         tools::lens(2.,0.2,false),cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
     let boxed = "\
 use std
@@ -425,7 +425,7 @@ fn a_probe_through_another_face_is_withdrawn_nearer_the_mesh() {
 #[test]
 fn a_material_side_agrees_with_its_enclosure() {
     use gcs_core::interval::{Interval,minimum::{self,Stop}};
-    let source = format!("{}{}construction removal := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-75deg, 75deg)) tool }})\n{}",
+    let source = format!("{}{}construction removal := solid({{ p | some t in (-75deg, 75deg): p in tool at(under: spin, seen_from: observer) t }})\n{}",
         torus(2.),cradle_roll(0.25,Observer::Skew),skew_post(4.));
     let e = fixtures::read(&source);
     let field = gcs_core::solid::MaterialField::read(&e.sketch,fixtures::solid(&e,"part"),1e-10).unwrap();
@@ -454,7 +454,7 @@ fn a_material_side_agrees_with_its_enclosure() {
 fn an_indexed_field_read_a_sector_at_a_time_decides_as_the_whole_field() {
     use gcs_core::interval::{Interval,minimum::{self,Stop}};
     use gcs_core::solid::{agreement,MaterialField};
-    let source = format!("{}{}construction removal := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-35deg, 35deg)) tool }})\n{}",tools::lens(2.,0.2,false),
+    let source = format!("{}{}construction removal := solid({{ p | some t in (-35deg, 35deg): p in tool at(under: spin, seen_from: observer) t }})\n{}",tools::lens(2.,0.2,false),
         cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
     let e = fixtures::read(&source);
     let body = fixtures::solid(&e,"part");

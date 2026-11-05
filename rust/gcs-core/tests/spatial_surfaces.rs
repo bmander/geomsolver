@@ -81,13 +81,13 @@ fn a_cone_and_a_cylinder_are_a_line_and_a_number() {
 #[test]
 fn the_words_on_a_cone_and_a_cylinder() {
     // a distance from the axis, in space across views and on the page within one
-    assert_eq!(settles("a coincident c"), CKind::PointLine3);
-    assert_eq!(settles("b := point hint((4, 4)) in std.front\nb coincident c"),
+    assert_eq!(settles("a in boundary(c)"), CKind::PointLine3);
+    assert_eq!(settles("b := point hint((4, 4)) in std.front\nb in boundary(c)"),
                CKind::PointLineDistance);
     assert_eq!(settles("c.about distance(c.r) l"), CKind::LineLine3);
     // an angle at the apex, in space within one view too: the page's turns one way (§6.21)
-    assert_eq!(settles("a coincident k"), CKind::Angle3);
-    assert_eq!(settles("b := point hint((4, 4)) in std.front\nb coincident k"), CKind::Angle3);
+    assert_eq!(settles("a in boundary(k)"), CKind::Angle3);
+    assert_eq!(settles("b := point hint((4, 4)) in std.front\nb in boundary(k)"), CKind::Angle3);
     // and the words are gone: `cone` and `cylinder` are names like any other
     refused(&format!("{VIEWS}k := cone(axis: ax)\n"), "E103", "no component named `cone`", "cone");
 }
@@ -95,7 +95,7 @@ fn the_words_on_a_cone_and_a_cylinder() {
 /// A point on a cylinder stands its radius off the axis.
 #[test]
 fn a_point_on_a_cylinder_is_its_radius_off_the_axis() {
-    let src = with("15", "30deg", "a coincident c");
+    let src = with("15", "30deg", "a in boundary(c)");
     let e = read(&src);
     let sk = solved(&e);
     let (p, d) = axis(&sk, &e, "ax");
@@ -109,7 +109,7 @@ fn a_point_on_a_cylinder_is_its_radius_off_the_axis() {
 /// points into.
 #[test]
 fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
-    let src = with("10", "25deg", "a coincident k");
+    let src = with("10", "25deg", "a in boundary(k)");
     let e = read(&src);
     let sk = solved(&e);
     let (apex, d) = axis(&sk, &e, "ax");
@@ -118,7 +118,7 @@ fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
     assert!(dot(w, d) > 0.0, "on the nappe the axis points into");
     assert_eq!(dof(&with("10", "25deg", "")) - dof(&src), 1);
     // and a half-angle left unbound is found by the point
-    let e = read(&with("10", "hint(30deg)", "fix((130, 20)) a\na coincident k"));
+    let e = read(&with("10", "hint(30deg)", "fix((130, 20)) a\na in boundary(k)"));
     let sk = solved(&e);
     let (apex, d) = axis(&sk, &e, "ax");
     let half = unknown(&sk, "k.half");
@@ -217,7 +217,7 @@ fn the_named_hypoid_round_trips() {
     for i in 0..sk.points.len() {
         assert!(norm(sub(sk.world_point(i), again.world_point(i))) < 1e-7, "p{i}");
     }
-    let src = with("10", "hint(30deg)", "fix((130, 20)) a\na coincident k");
+    let src = with("10", "hint(30deg)", "fix((130, 20)) a\na in boundary(k)");
     let e = read(&src);
     let sk = solved(&e);
     let out = gcs_core::edit::commit_seeds(&e, &sk, &e.program).text;

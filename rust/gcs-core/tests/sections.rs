@@ -346,10 +346,10 @@ in std.front {
 fn a_ruled_loft_through_three_sections_is_its_frusta() {
     let e = with(BOTTLE, "
 param s: Scalar over (0, 2)
-ruled := solid({ p | p coincident(over s) Ring(axis, std.y, std.front, rims).f })
-smooth := solid({ p | p coincident(over s) Ring(axis, std.y, std.front, rail).f })
+ruled := solid({ p | some s: p in Ring(axis, std.y, std.front, rims).f at s })
+smooth := solid({ p | some s: p in Ring(axis, std.y, std.front, rail).f at s })
 param s2: Scalar over (0, 1)
-single := solid({ p | p coincident(over s2) Ring(whole, std.y, std.front, rail, s: s2).f })");
+single := solid({ p | some s2: p in Ring(whole, std.y, std.front, rail, s: s2).f at s2 })");
     near(volume(&e, "ruled"), frustum(60.0, 30.0, 28.0) + frustum(30.0, 28.0, 12.0), 1e-9,
          "the ruled bottle");
     near(volume(&e, "smooth"), volume(&e, "single"), 1e-9, "the smooth bottle, cut or whole");
@@ -371,7 +371,7 @@ single := solid({ p | p coincident(over s2) Ring(whole, std.y, std.front, rail, 
 /// of them, level wherever the rails are, so each piece is the prismatoid of its two squares.
 #[test]
 fn a_loft_with_no_guide_is_its_prismatoids() {
-    let e = with(SQUARES, "param s: Scalar over (0, 2)\nbody := solid({ p | p coincident(over s) Quad(ra, rb, rc, rd).f })");
+    let e = with(SQUARES, "param s: Scalar over (0, 2)\nbody := solid({ p | some s: p in Quad(ra, rb, rc, rd).f at s })");
     near(volume(&e, "body"), prismatoid(40.0, 20.0, 12.0) + prismatoid(20.0, 12.0, 16.0), 1e-9,
          "the squares");
     let x = exact(&e, "body");
@@ -397,7 +397,7 @@ fn a_smooth_loft_meets_the_faces_at_its_ends() {
   shaft := line(t3, top)
   seat := line(top, r2)
   neck := solid(std.solids.Revolution(face(slope, lid, shaft, seat), about: whole))");
-    let e = with(&neck, "param s: Scalar over (0, 1)\nbottle := solid({ p | p coincident(over s) Ring(whole, std.y, std.front, rail).f })");
+    let e = with(&neck, "param s: Scalar over (0, 1)\nbottle := solid({ p | some s: p in Ring(whole, std.y, std.front, rail).f at s })");
     // π∫ x² dy over each span of the rail, five Gauss–Legendre points exact for degree 8
     let (sk, i) = (&e.sketch, index(&e, "rail"));
     let want: f64 = (0..2).map(|span| gauss5(|t| {
@@ -463,7 +463,7 @@ component Tri(ra: path, rb: path, rc: path, side: plane, front: plane, s: Scalar
 }}
 {}{}{}
 param s: Scalar over (0, 2)
-body := solid({{ p | p coincident(over s) Tri(ra, rb, rc, std.side, std.front).f }})
+body := solid({{ p | some s: p in Tri(ra, rb, rc, std.side, std.front).f at s }})
 ", rail("a", "side", 1.0), rail("b", "front", -1.0), rail("c", "front", 1.0));
     let e = determined(&src);
     let (sk, i) = (&e.sketch, index(&e, "ra"));
@@ -497,7 +497,7 @@ in std.front {{
   ring := line(r1, r2) -> line(r2, r4) -> line(r4, r1) -> close
 }}
 ");
-    let bad = "param s: Scalar over (0, 2)\nbad := solid({ p | p coincident(over s) Ring(axis, std.y, std.front, long).f })";
+    let bad = "param s: Scalar over (0, 2)\nbad := solid({ p | some s: p in Ring(axis, std.y, std.front, long).f at s })";
     let said = refused(&format!("{src}{bad}"));
     assert!(said.iter().any(|m| m.contains("runs the chains it is given in step")
         && m.contains("`long` has 3 links")), "{said:?}");

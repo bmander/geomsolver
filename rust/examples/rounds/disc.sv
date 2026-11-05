@@ -33,10 +33,10 @@ top := { q | q distance(<= 2mm, along: n) mid }
 bottom := { q | q distance(>= -2mm, along: n) mid }
 
 finished := { p |
-  p inside wall
-  p inside top
-  p inside bottom
-  p inside std.rounds.Rounded(wall, top, r: 1.5mm)
-  p inside std.rounds.Chamfered(wall, bottom, la: 1mm, lb: 1mm)
+  p in wall
+  p in top
+  p in bottom
+  p in std.rounds.Rounded(wall, top, r: 1.5mm)
+  p in std.rounds.Chamfered(wall, bottom, la: 1mm, lb: 1mm)
 }
 disc := solid(finished)

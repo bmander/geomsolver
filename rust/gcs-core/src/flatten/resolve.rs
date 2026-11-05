@@ -679,9 +679,9 @@ fn rewrite(
             Code::E040,
             r.span,
             format!(
-                "`{}` is a set, the points its body holds: a point is put on it by `coincident` \
-                 or `inside` and `outside` it, at a distance from its surface by `distance(d, \
-                 side: outside)` or `side: inside`, and a line touches it by `tangent`",
+                "`{}` is a set, the points its body holds: a point is put in it by `in` and out of \
+                 it by `not in`, at a distance from it by `distance(d)`, on its boundary by `in \
+                 boundary(S)`, and a line touches its boundary by `tangent`",
                 ref_text(r)
             ),
         )),

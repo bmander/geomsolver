@@ -70,5 +70,5 @@ construction vwheel := solid(std.solids.Revolution(face(lower, bore, upper), abo
 // one whole turn about the rod's axis, from where the wheel is drawn
 lathe := frame
 lathe turns(1) ax
-construction groove := solid({ p | p inside(under: lathe, over t in (0deg, 360deg)) vwheel })
+construction groove := solid({ p | some t in (0deg, 360deg): p in vwheel at(under: lathe) t })
 groove cut rod

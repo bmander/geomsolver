@@ -92,7 +92,7 @@ in std.top {{
   curvy := spline(k0, k1, k2, k3)
 }}
 param s: Scalar over (0, 1)
-tube := solid({{ p | p coincident(over s) Tube({guide}, std.z).f }})
+tube := solid({{ p | some s: p in Tube({guide}, std.z).f at s }})
 ")
 }
 
@@ -219,7 +219,7 @@ in std.top {
     horizontal (cd := line(c, d)) -> length(20mm) vertical (da := line(d, a)) -> close
 }
 param s: Scalar over (0, 4)
-body := solid({ p | p coincident(over s) Tube(ring, std.z).f })
+body := solid({ p | some s: p in Tube(ring, std.z).f at s })
 ";
     let said = refused(closed);
     assert!(said.iter().any(|m| m.contains("closed chain")), "{said:?}");

@@ -73,8 +73,8 @@ component Minimal(g: path, up: axis, w: Length, h: Length, s: Scalar) {
 
 helix := trace(Helix(o, xl, yl, zl, r: r, pitch: pitch, turns: turns).p over u in (0, 1))
 param s: Scalar over (0, 1)
-facing := solid({ p | p coincident(over s) Facing(helix, w: w, h: h).f })
-minimal := solid({ p | p coincident(over s) Minimal(helix, std.z, w: w, h: h).f })
+facing := solid({ p | some s: p in Facing(helix, w: w, h: h).f at s })
+minimal := solid({ p | some s: p in Minimal(helix, std.z, w: w, h: h).f at s })
 
 // Frenet's frame where the helix is a third of the way up: its centre of curvature stands
 // (r² + (pitch/2π)²)/r in from the curve, toward the axis

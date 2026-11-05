@@ -9,7 +9,7 @@ fn at(sweep: &SweepContacts,patch: usize,u: f64,roll: f64,tolerance: f64) -> Res
 }
 
 fn swept(extra: &str) -> program::Elaborated {
-    read(&format!("{SOURCE}\n{extra}\nswept := solid({{ p | p inside(under: generating, over t in (-60deg, 60deg)) tool }})\n"))
+    read(&format!("{SOURCE}\n{extra}\nswept := solid({{ p | some t in (-60deg, 60deg): p in tool at(under: generating) t }})\n"))
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn source_placements_and_boolean_sharing_preserve_contact_geometry() {
         placed := tool at(under: index) 90deg\n\
         outside := solid(tool)\nplaced cut outside\n\
         lens := solid(tool)\noutside cut lens\n\
-        swept := solid({{ p | p inside(under: generating, over t in (-60deg, 60deg)) lens }})\n");
+        swept := solid({{ p | some t in (-60deg, 60deg): p in lens at(under: generating) t }})\n");
     let e = read(&src);
     let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
     assert_eq!(sweep.patches().len(),2,"shared Boolean operands contribute their faces once");
@@ -131,7 +131,7 @@ fn analytic_branch_labels_do_not_swap_at_the_periodic_seam() {
 #[test]
 fn clockwise_source_revolution_keeps_the_same_contact_set() {
     let a = swept("");
-    let b = read(&format!("{}\nswept := solid({{ p | p inside(under: generating, over t in (-60deg, 60deg)) tool }})\n",
+    let b = read(&format!("{}\nswept := solid({{ p | some t in (-60deg, 60deg): p in tool at(under: generating) t }})\n",
         SOURCE.replace("about: diameter)","about: diameter, from: -360deg, to: 0deg)")));
     let read = |e: &program::Elaborated| SweepContacts::read(&e.sketch,
         e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();

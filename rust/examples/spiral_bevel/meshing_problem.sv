@@ -105,9 +105,9 @@ component MeshingPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, s
   // meshing with the gear's concave flank: the cone eased about T, along the tooth trace and
   // across it, by the two curvatures. Conjugate, the flanks would touch along a line; eased, at a
   // point, T where the pair is drawn, the phase 0, and the pinion lags the relief elsewhere.
-  pinion_flank := envelope(mill.inner_flank over t in (-60deg, 60deg), under: gear_turn,
+  pinion_flank := envelope(boundary(mill.inner_flank) over t in (-60deg, 60deg), under: gear_turn,
                            seen_from: pinion_turn)
-  contact := meshing(mill.inner_flank, pinion_flank over t in (-7.5deg, 7.5deg),
+  contact := meshing(boundary(mill.inner_flank), pinion_flank over t in (-7.5deg, 7.5deg),
     under: pinion_turn, seen_from: gear_turn, ease: mean.T, along: trace.heading,
     profile: profile_ease / 1mm, lengthwise: lengthwise_ease / 1mm)
   Q := point hint(at: mean.T)
@@ -152,7 +152,7 @@ component MeanContact(gear: Gear, heading: line, ax: line, flank: set, mesh: fra
     seen_from: frame) {
   T := point hint((53.2, 1, 0.6))
   gear.M level(heading) T
-  T coincident flank
+  T in boundary(flank)
   to_axis := point hint((35.5, 38.9, 24.8))
   to_axis coincident ax
   normal := line(T, to_axis)
@@ -197,7 +197,7 @@ component EasedBlade(mean: Contact, ax: line, flank: set, heading: line, profile
   line(centre, mean.T) equal line(centre, bent)
   // along the trace: the axis through `turn_centre`, level with T and as far from `eased`
   on_cone := point hint(at: mean.T)
-  on_cone coincident flank
+  on_cone in boundary(flank)
   on_cone level(ax) mean.T
   mean.T distance(2mm, along: heading) on_cone
   eased := point hint(at: mean.T)
@@ -243,11 +243,11 @@ component EasedBlade(mean: Contact, ax: line, flank: set, heading: line, profile
 // that tooth `step` read at `pitch`.
 component Space(a: set, flank: solid, lo: set, hi: set, cap: set, step: frame, pitch: Angle,
     grow: Length, r: Length) {
-  convex := { q | q distance(<= grow, side: inside) a }
-  tip := { q | q outside lo }
-  base := { q | q inside hi }
+  convex := { q | q distance(<= grow) { r | r not in a } }
+  tip := { q | q not in lo }
+  base := { q | q in hi }
   convex_round := std.rounds.Rounded(convex, tip, r: r)
-  near := { p | p inside convex; p inside cap; p inside tip; p inside base; p inside convex_round }
+  near := { p | p in convex; p in cap; p in tip; p in base; p in convex_round }
   private construction behind := solid(near)
   private construction ahead := flank at(under: step) pitch
   body := solid(behind)

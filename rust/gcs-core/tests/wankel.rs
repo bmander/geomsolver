@@ -82,8 +82,8 @@ fn each_planar_row_names_what_it_refuses() {
     let r = refused(&edit("Prism(face(rim), from: -1mm,","Prism(face(rim), from: 10mm,"),&[]);
     assert_eq!(r.condition,admission::Condition::Prisms,"{r}");
     // P3: two turns of the shaft are no period
-    let r = refused(&edit("over t in (0deg, 1080deg)) housing",
-                          "over t in (0deg, 720deg)) housing"),&[]);
+    let r = refused(&edit("some t in (0deg, 1080deg): p in housing",
+                          "some t in (0deg, 720deg): p in housing"),&[]);
     assert_eq!(r.condition,admission::Condition::Period,"{r}");
     // P5: a case too small, its wall reaching the blank as it turns
     let r = refused(&edit("radius(R + 4 * e) rim","radius(R + e) rim"),&[]);

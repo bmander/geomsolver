@@ -41,13 +41,14 @@ const AT_RETIRED: &str = "`solid(tool, at: θ)` is retired (#391): a solid is re
 
 /// `solid(tool, under: m, from: a, to: b)`, retired (#391 S2) for the sweep over an interval.
 pub(crate) const SWEPT_RETIRED: &str = "a solid a motion sweeps is the set of what the tool \
-    occupies under it, `solid({ p | p inside(under: m, seen_from: g, over t in (a, b)) tool })` \
-    (#391, #737): `solid(tool, under: m, from: a, to: b)` is retired";
+    occupies under it, `solid({ p | some t in (a, b): p in tool at(under: m, seen_from: g) t })` \
+    (#391, #737, #783): `solid(tool, under: m, from: a, to: b)` is retired";
 
 /// `solid(tool, under: m, through: body)`, retired (#391 S2) for the sweep through a body.
 pub(crate) const ROLLED_RETIRED: &str = "a solid a motion rolls through a body is the set of \
-    what the tool occupies under it at any roll, `solid({ p | p inside(under: m, seen_from: g) \
-    tool })`, cut from the body (#391, #737): `solid(tool, under: m, through: body)` is retired";
+    what the tool occupies under it at any roll, `solid({ p | some t: p in tool at(under: m, \
+    seen_from: g) t })`, cut from the body (#391, #737, #783): `solid(tool, under: m, through: \
+    body)` is retired";
 
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.

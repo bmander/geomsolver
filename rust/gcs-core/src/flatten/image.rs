@@ -149,6 +149,7 @@ impl Walk<'_> {
                 args: img.args.clone(),
                 span: at,
                 rates: Vec::new(),
+                lowered: crate::syntax::Lowered::No,
             }),
             place: None,
             place_span: Span::default(),

@@ -54,6 +54,7 @@ fn infix(word: &str, ops: [Ref; 2], args: Vec<OpArg>, at: Span) -> Relation {
         args,
         span: at,
         rates: Vec::new(),
+        lowered: crate::syntax::Lowered::No,
     }))
 }
 

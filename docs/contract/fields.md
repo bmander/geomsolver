@@ -4,8 +4,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
 `delaunay/`, `crease.rs`, or the mesh worker. An issue number (#n) or a spec version ([0.n], see the
 [language changelog](../solvent-changelog.md)) says where a rule came from.
 
-**Continuous motion solids:** `removal := solid({ p | p inside(under: generating, over t in
-(-30deg, 30deg)) tool })` ([0.199]; through 0.198 `sweep(tool over t in (…), under: generating)`)
+**Continuous motion solids:** `removal := solid({ p | some t in (-30deg, 30deg): p in tool
+at(under: generating) t })` ([0.199], [0.205]; through 0.198 `sweep(tool over t in (…), under:
+generating)`)
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches
 read the whole motion graph. The native recipe rejects sweeps; `EvaluatedSolid` meshes the field

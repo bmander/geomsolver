@@ -167,9 +167,9 @@ fn wrapped(a: f64) -> f64 {
 fn a_minimal_frame_turns_against_frenet_at_the_torsion() {
     let e = with("
 param s: Scalar over (0, 1)
-minimal := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, pitch: 5mm, turns: 1).f })
-frenet := solid({ p | p coincident(over s) Frenet(std.top, r: 10mm, pitch: 5mm, turns: 1).f })
-three_quarters := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, pitch: 5mm, turns: 0.75).f })");
+minimal := solid({ p | some s: p in Coil(std.top, r: 10mm, pitch: 5mm, turns: 1).f at s })
+frenet := solid({ p | some s: p in Frenet(std.top, r: 10mm, pitch: 5mm, turns: 1).f at s })
+three_quarters := solid({ p | some s: p in Coil(std.top, r: 10mm, pitch: 5mm, turns: 0.75).f at s })");
     let b = 5.0 / (2.0 * PI);
     let per_turn = -2.0 * PI * b / (100.0 + b * b).sqrt();
     assert!((per_turn.to_degrees() + 28.558).abs() < 1e-3, "{}", per_turn.to_degrees());
@@ -200,8 +200,8 @@ three_quarters := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, pitch:
 fn a_tube_on_a_helix_is_its_section_along_its_length() {
     let e = with("
 param s: Scalar over (0, 1)
-minimal := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, pitch: 5mm, turns: 4).f })
-frenet := solid({ p | p coincident(over s) Frenet(std.top, r: 10mm, pitch: 5mm, turns: 4).f })");
+minimal := solid({ p | some s: p in Coil(std.top, r: 10mm, pitch: 5mm, turns: 4).f at s })
+frenet := solid({ p | some s: p in Frenet(std.top, r: 10mm, pitch: 5mm, turns: 4).f at s })");
     let helix = 4.0 * (20.0 * PI).hypot(5.0);
     near(exact(&e, "minimal"), 2.0 * helix, 1e-9, "the minimal coil");
     near(exact(&e, "frenet"), 2.0 * helix, 1e-9, "the Frenet coil");
@@ -214,9 +214,9 @@ frenet := solid({ p | p coincident(over s) Frenet(std.top, r: 10mm, pitch: 5mm, 
 fn on_a_planar_guide_the_word_is_ons_frame() {
     let e = with("
 param s: Scalar over (0, 1)
-minimal := solid({ p | p coincident(over s) Tube(curvy, std.z).f })
-held := solid({ p | p coincident(over s) Held(curvy, std.z).f })
-algebraic := solid({ p | p coincident(over s) Algebraic(curvy, std.z).f })");
+minimal := solid({ p | some s: p in Tube(curvy, std.z).f at s })
+held := solid({ p | some s: p in Held(curvy, std.z).f at s })
+algebraic := solid({ p | some s: p in Algebraic(curvy, std.z).f at s })");
     let corners = |name: &str| -> Vec<V> { brep(&e, name).vertices.iter().map(|v| v.p).collect() };
     // `std.stations.On`'s frame is integrated too (#363 S2): over a planar guide it is the frame
     // that holds `v` along `up` at every station, `OnSpline`'s.  Corners paired by nearness: two
@@ -269,7 +269,7 @@ component Loose(g: path, up: axis, s: Scalar) {{
   k := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }}
 param s: Scalar over (0, 1)
-loose := solid({{ p | p coincident(over s) Loose(curvy, std.z).k }})
+loose := solid({{ p | some s: p in Loose(curvy, std.z).k at s }})
 ");
     let said = refused(&short, "loose");
     assert!(said.contains("is short of rates: 2 degrees of freedom along its running number"),
@@ -293,7 +293,7 @@ component Homely(g: spline, up: axis, s: Scalar) {{
   k := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }}
 param s: Scalar over (0, 1)
-homely := solid({{ p | p coincident(over s) Homely(curvy, std.z).k }})
+homely := solid({{ p | some s: p in Homely(curvy, std.z).k at s }})
 ");
     // away from its home the `initially` row is not stated and nothing turns the plane: the
     // definition leaves it free there (E108, #562)
@@ -310,7 +310,7 @@ component Round(g: path, up: axis, s: Scalar) {{
   k := face(c)
 }}
 param s: Scalar over (0, 1)
-round := solid({{ p | p coincident(over s) Round(curvy, std.z).k }})
+round := solid({{ p | some s: p in Round(curvy, std.z).k at s }})
 ");
     let said = refused(&circle, "round");
     assert!(said.contains("a rate is of an axis's direction or of a point"), "{said}");

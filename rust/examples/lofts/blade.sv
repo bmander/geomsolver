@@ -65,4 +65,4 @@ in std.front {
 }
 profile := face(k0, k1, k2, k3, -> close)
 param s: Scalar over (0, 1)
-blade := solid({ p | p coincident(over s) Blade(spine, std.z, port, starboard, profile, p0, p1).sec })
+blade := solid({ p | some s: p in Blade(spine, std.z, port, starboard, profile, p0, p1).sec at s })

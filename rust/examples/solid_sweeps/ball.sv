@@ -49,5 +49,5 @@ block := solid(std.solids.Prism(face(s0, s1, s2, s3), from: -8mm, to: 0mm))
 // the turn about the upright axis, and the groove the ball sweeps over `swing` of it
 swinging := frame
 swinging turns(1) ax
-construction groove := solid({ p | p inside(under: swinging, over t in (0deg, swing)) cutter })
+construction groove := solid({ p | some t in (0deg, swing): p in cutter at(under: swinging) t })
 groove cut block

@@ -108,10 +108,10 @@ fn a_continuous_sweep_is_meshed_from_its_field() {
 
 #[test]
 fn sweep_print_copy_paste_and_delete_preserve_transitive_dependencies() {
-    let e = read(&format!("swept := solid({{ p | p inside(under: generating, over t in (-60deg, 60deg)) tool }})\n{SOURCE}"));
+    let e = read(&format!("swept := solid({{ p | some t in (-60deg, 60deg): p in tool at(under: generating) t }})\n{SOURCE}"));
     let mut p = e.program.clone();
     let printed = syntax::render_flat(&mut p).unwrap();
-    assert!(printed.contains("swept := solid({ p | p inside(under: generating, over t in (-60deg, 60deg)) tool })"),
+    assert!(printed.contains("swept := solid({ p | some t in (-60deg, 60deg): p in tool at(under: generating) t })"),
         "{printed}");
     let restored = read(printed);
     let i = restored.map.ent_named("swept").unwrap().i();
@@ -143,7 +143,7 @@ band := circle(center: center)
 radius(2) band
 stock := solid(std.solids.Revolution(face(band), about: ax))
 body := solid(stock)
-swept := solid({{ p | p inside(under: generating, over t in (-10deg, 10deg)) tool }})
+swept := solid({{ p | some t in (-10deg, 10deg): p in tool at(under: generating) t }})
 cuts := IndexedCuts(swept,body,generating,count: 3)
 "));
     let i = e.map.ent_named("body").unwrap().i();
@@ -164,7 +164,7 @@ cuts := IndexedCuts(swept,body,generating,count: 3)
 
 #[test]
 fn sweep_fingerprints_read_the_motion_family_and_source_geometry() {
-    let mut e = read(&format!("{SOURCE}swept := solid({{ p | p inside(under: generating, over t in (0deg, 360deg)) tool }})\n"));
+    let mut e = read(&format!("{SOURCE}swept := solid({{ p | some t in (0deg, 360deg): p in tool at(under: generating) t }})\n"));
     let i = e.map.ent_named("swept").unwrap().i();
     let before = solid::reads(&e.sketch,i,solid::REPORT_UNIT);
     let m = joint(&e,"generating");
@@ -179,22 +179,22 @@ fn sweep_fingerprints_read_the_motion_family_and_source_geometry() {
 
 #[test]
 fn invalid_intervals_cycles_and_nested_sweeps_are_explicit() {
-    for bad in ["bad := solid({ p | p inside(under: generating, over t in (1deg)) tool })",
-        "bad := solid({ p | p inside(under: generating, over t) tool })",
-        "bad := solid({ p | p inside(under: generating, over t in (0deg, 0deg)) tool })",
-        "bad := solid({ p | p inside(under: generating, over t in (1deg, -1deg)) tool })",
-        "bad := solid({ p | p inside(under: generating, over t in (1mm, 2mm)) tool })",
+    for bad in ["bad := solid({ p | some t in (1deg): p in tool at(under: generating) t })",
+        "bad := solid({ p | some t: p in tool at(under: generating) t })",
+        "bad := solid({ p | some t in (0deg, 0deg): p in tool at(under: generating) t })",
+        "bad := solid({ p | some t in (1deg, -1deg): p in tool at(under: generating) t })",
+        "bad := solid({ p | some t in (1mm, 2mm): p in tool at(under: generating) t })",
         "bad := solid(tool,under: generating,from: 0deg,to: 1deg,at: 0deg)",
         "bad := solid(tool,under: generating,from: 0deg,to: 1deg,depth: 1mm)",
-        "bad := solid({ p | p inside(under: o, over t in (0deg, 1deg)) tool })",
-        "bad := solid({ p | p inside(under: generating, over t in (0deg, 1deg)) bad })"] {
+        "bad := solid({ p | some t in (0deg, 1deg): p in tool at(under: o) t })",
+        "bad := solid({ p | some t in (0deg, 1deg): p in bad at(under: generating) t })"] {
         let (p,errors) = crate::common::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);
         assert!(!errors.is_empty() || !e.ok() ||
             e.sketch.solids.iter().enumerate().any(|(i,_)| solid::validate(&e.sketch,i).is_err()),"{bad}");
     }
-    let e = read(&format!("{SOURCE}inner_sweep := solid({{ p | p inside(under: generating, over t in (-10deg, 10deg)) tool }})\n\
-        outer_sweep := solid({{ p | p inside(under: generating, over t in (-10deg, 10deg)) inner_sweep }})\n"));
+    let e = read(&format!("{SOURCE}inner_sweep := solid({{ p | some t in (-10deg, 10deg): p in tool at(under: generating) t }})\n\
+        outer_sweep := solid({{ p | some t in (-10deg, 10deg): p in inner_sweep at(under: generating) t }})\n"));
     let i = e.map.ent_named("outer_sweep").unwrap().i();
     assert!(MaterialField::read(&e.sketch,i,1e-10).unwrap_err().contains("nested continuous sweeps"));
 }

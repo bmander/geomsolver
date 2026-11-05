@@ -497,7 +497,7 @@ fn write_decl(out: &mut String, d: &Decl) {
         write_ref(out, &c.source);
         out.push_str(&match frame_drawn_in(&c.args) {
             // and one drawn in a jointed frame, at the frame's value (#391 S3)
-            Some(f) => format!(" in {}", super::ref_text(f)),
+            Some(f) => format!(" at {}", super::ref_text(f)),
             None => instant_text(&c.args),
         });
         write_class(out, d);
@@ -619,6 +619,15 @@ fn over_text(over: &super::RunsOver, from: &Arg, to: &Arg) -> String {
     }
 }
 
+/// `some t`, or `some t in (a, b)` over an interval written in place (#783): the quantifier a
+/// set's point is read under, at some instant of a running number.
+fn quantifier(var: &str, ends: Option<(&str, &str)>) -> String {
+    match ends {
+        Some((a, b)) => format!("some {var} in ({a}, {b})"),
+        None => format!("some {var}"),
+    }
+}
+
 /// `sweep(…)` (#391 S2): a face family's instance written in place and its formal's interval,
 /// or the tool a motion sweeps over an interval of the roll or the whole of it, and the frames.
 pub(crate) fn sweep_text(d: &Decl, sweep: &Sweep) -> String {
@@ -633,22 +642,28 @@ pub(crate) fn sweep_text(d: &Decl, sweep: &Sweep) -> String {
         write_instance_call(&mut text, &f.instance);
         text.push('.');
         write_ref(&mut text, &f.face);
-        return format!("solid({{ p | p coincident(over {}) {text} }})", f.swept.text);
+        return format!("solid({{ p | some {0}: p in {text} at {0} }})", f.swept.text);
     }
     let mut parts: Vec<String> = Vec::new();
     if let Sweep::Swept { motion, .. } | Sweep::Rolled { motion, .. } = sweep {
         parts.extend(motion.iter().map(under));
         parts.extend(d.seen_from.iter().map(|g| format!("seen_from: {}", super::ref_text(g))));
     }
-    match sweep {
-        // a face of the drawing over a declared parameter
-        Sweep::Swept { motion: None, over, .. } if over.declared && d.seen_from.is_none() => {
-            return format!("solid({{ p | p coincident(over {}) {} }})", over.name.text, tool());
+    // a face of the drawing over a declared parameter
+    if let Sweep::Swept { motion: None, over, .. } = sweep {
+        if over.declared && d.seen_from.is_none() {
+            return format!("solid({{ p | some {0}: p in {1} at {0} }})", over.name.text, tool());
         }
-        Sweep::Swept { from, to, over, .. } => parts.push(over_text(over, from, to).trim().to_string()),
-        _ => {}
     }
-    format!("solid({{ p | p inside({}) {} }})", parts.join(", "), tool())
+    let (var, quantified) = match sweep {
+        Sweep::Swept { from, to, over, .. } => {
+            let ends = (!over.declared).then(|| (dim(from), dim(to)));
+            let ends = ends.as_ref().map(|(a, b)| (a.as_str(), b.as_str()));
+            (over.name.text.as_str(), quantifier(&over.name.text, ends))
+        }
+        _ => ("t", quantifier("t", None)),
+    };
+    format!("solid({{ p | {quantified}: p in {} at({}) {var} }})", tool(), parts.join(", "))
 }
 
 /// A number's text negated as a person writes it (#737): `-30mm` for `30mm`, `30mm` for `-30mm`,
@@ -1149,6 +1164,11 @@ pub fn bounded(
 }
 
 fn write_written(out: &mut String, w: &Written) {
+    // the notation of sets (#783), as the parser lowered it (`syntax::notation`)
+    if let Some(text) = notation_text(w) {
+        out.push_str(&text);
+        return;
+    }
     // a point read at an instant (#391 S2): its roll and frames are the instant's, after the
     // operand it reads
     let instant = w.word.text == "coincident" && w.args.iter().any(|a| matches!(a, OpArg::Dim(..)));
@@ -1194,6 +1214,57 @@ fn write_written(out: &mut String, w: &Written) {
         out.push(' ');
         out.push_str(&hint);
     }
+}
+
+/// **A relation in the notation of sets** (#783), as `syntax::notation` lowered it, printed in the
+/// notation: `p in S`, `p not in S` (`.side` where the face's side was meant), `p in boundary(S)`,
+/// a distance from what is not in a set, and the quantifier a sweep or a face family is — so what
+/// is printed parses back to what was read.  `None` for any other relation.
+fn notation_text(w: &Written) -> Option<String> {
+    use super::Lowered;
+    if !w.lowered.any() || w.fixity != Fixity::Infix {
+        return None;
+    }
+    let [p, x] = w.ops.as_slice() else { return None };
+    let mut point = String::new();
+    write_ref(&mut point, p);
+    let mut set = String::new();
+    write_ref(&mut set, x);
+    if w.lowered == Lowered::Side {
+        set.push_str(".side");
+    }
+    let word = w.word.text.as_str();
+    if w.args.is_empty() {
+        return matches!(word, "inside" | "outside" | "coincident")
+            .then(|| format!("{point} {} {set}", w.spelled()));
+    }
+    if word == "distance" && w.sel("side").as_deref() == Some("inside") {
+        let args: Vec<OpArg> = w.args.iter()
+            .filter(|a| !matches!(a, OpArg::Named(n, _) if n.text == "side"))
+            .cloned().collect();
+        let (parts, _) = written_parts(&args, false);
+        let q = if point == "q" { "r" } else { "q" };
+        return Some(format!("{point} distance({}) {{ {q} | {q} not in {set} }}", parts.join(", ")));
+    }
+    let over = w.args.iter().find_map(|a| match a {
+        OpArg::Over { key, ends } => Some((key, ends)),
+        _ => None,
+    });
+    let frame = |label: &str| w.args.iter().find_map(|a| match a {
+        OpArg::Named(n, Arg::Ref(r)) if n.text == label => Some(r),
+        _ => None,
+    });
+    let frames = frames_text(frame("under"), frame("seen_from"));
+    if over.is_none() && frames.is_empty() {
+        return None;
+    }
+    let (var, ends) = match over {
+        Some((key, ends)) => {
+            (key.text.as_str(), ends.as_ref().map(|[lo, hi]| (lo.0.as_str(), hi.0.as_str())))
+        }
+        None => ("t", None),
+    };
+    Some(format!("{}: {point} in {set} at{frames} {var}", quantifier(var, ends)))
 }
 
 /// A constraint the *library* holds, written as the operator it is spelled with (spec §9.1).

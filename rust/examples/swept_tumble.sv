@@ -48,4 +48,4 @@ in tilted {
 }
 private observer := frame
 observer turns(1) kaxis
-tumbled := solid({ p | p inside(under: spin, seen_from: observer, over t in (-roll, roll)) torus })
+tumbled := solid({ p | some t in (-roll, roll): p in torus at(under: spin, seen_from: observer) t })

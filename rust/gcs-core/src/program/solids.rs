@@ -221,7 +221,7 @@ fn body_rule(
             SolidDef::Swept { roll: crate::model::Roll::Through, .. } if unbounded() => format!(
                 "`{name}` is what a body occupies under a motion at any roll, which only the \
                  bodies it is cut from bound: cut it from one (`{name} cut body`), or bound the \
-                 roll, `over t in (a, b)`"),
+                 roll, `some t in (a, b)`"),
             _ => continue,
         };
         diags.push(Diag::new(Code::E080, declared_at(body, &name), None, why));

@@ -684,7 +684,7 @@ fn the_planar_envelope_is_the_swept_solids_boundary() {
          fix((36, 7.1838203)) t2\nfix((36, -1.8962057)) t3\n}}\n\
          tooth := face(t0, t1, t2, t3, -> close)\n\
          construction rack_tooth := solid(std.solids.Prism(tooth, from: -4, to: 0))\n\
-         construction removal := solid({{ p | p inside(under: rack, seen_from: blank, over t in (-60deg, 60deg)) rack_tooth }})\n"
+         construction removal := solid({{ p | some t in (-60deg, 60deg): p in rack_tooth at(under: rack, seen_from: blank) t }})\n"
     );
     let mut e = build(&src);
     let r = solve(&mut e.sketch, SolveOpts::default());

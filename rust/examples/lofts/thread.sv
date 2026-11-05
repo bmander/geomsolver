@@ -54,5 +54,5 @@ in screw {
   sq := std.shapes.CenteredRectangle(c, w: size, h: size) in std.front
   sec := face(sq.loop)
 }
-thread := solid({ p | p coincident(over s) sec })
-flight := solid({ p | p coincident(over s) Flight(off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f })
+thread := solid({ p | some s: p in sec at s })
+flight := solid({ p | some s: p in Flight(off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f at s })

@@ -234,7 +234,7 @@ spin := frame
 spin turns(1) ax
 gear_turn := frame
 gear_turn turns(-0.5) gear_ax
-flank := envelope(cone over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
+flank := envelope(boundary(cone) over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
 p := point hint((9, 3, 1))
 fix(x == 9, z == 1) p
 p coincident flank
@@ -263,7 +263,7 @@ cax := line(c1, c2)
 cyl := std.sets.Cylinder(cax, r: 5mm)
 turn := frame
 turn turns(1) ax
-flank := envelope(cyl over t in (-30deg, 30deg), under: turn)
+flank := envelope(boundary(cyl) over t in (-30deg, 30deg), under: turn)
 in std.top {
   p := point hint((34, 9))
   kc := point hint((4, -3))
@@ -570,7 +570,7 @@ cax := line(c1, c2)
 cyl := std.sets.Cylinder(cax, r: 5mm)
 turn := frame
 turn turns(1) ax
-flank := envelope(cyl over t in (-30deg, 30deg), under: turn)
+flank := envelope(boundary(cyl) over t in (-30deg, 30deg), under: turn)
 in std.top {
   p := point hint((34, 9))
 }

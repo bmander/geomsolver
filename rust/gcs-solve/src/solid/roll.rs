@@ -194,7 +194,7 @@ pub use crate::brep::swept::region::{first_alike, PERIOD_TURNS};
 /// the words every such refusal uses.
 pub fn advice(from: f64, to: f64) -> String {
     let degrees = |x: f64| (x.to_degrees() * 1e6).round() / 1e6;
-    format!("roll it a whole period, `over t in ({}deg, {}deg)`", degrees(from), degrees(to))
+    format!("roll it a whole period, `some t in ({}deg, {}deg)`", degrees(from), degrees(to))
 }
 
 /// Whether `tool` under every pose of `family` over `span` is proved clear of `blank`: the

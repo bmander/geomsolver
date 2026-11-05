@@ -101,7 +101,7 @@ component Pulley(o: point, n: Int, bore: Length, up: Scalar, flanged: Int) {
   turn := frame
   turn turns(1) spindle
   belt slides(2 * pi * rp) line_of_pitch
-  construction space := solid({ p | p inside(seen_from: turn) belt_tooth })
+  construction space := solid({ p | some t: p in belt_tooth at(seen_from: turn) t })
 
   construction blank := solid(std.solids.Prism(face(tip), from: xp0 + flanged * wf, to: xp1 - flanged * wf))
   construction bored := solid(std.solids.Prism(face(hole), from: xp0 - 2mm, to: xp1 + 2mm))

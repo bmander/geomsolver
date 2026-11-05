@@ -67,7 +67,7 @@ in std.top {
   radius(R + e) blank_rim
 }
 private blank := solid(std.solids.Prism(face(blank_rim), from: 0mm, to: W))
-construction swept := solid({ p | p inside(under: counter, seen_from: spin, over t in (0deg, 1080deg)) housing })
+construction swept := solid({ p | some t in (0deg, 1080deg): p in housing at(under: counter, seen_from: spin) t })
 rotor := solid(blank)
 swept cut rotor
 

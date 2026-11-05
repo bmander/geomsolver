@@ -32,4 +32,4 @@ in std.top {
   length(length) guide
 }
 param s: Scalar over (0, 1)
-body := solid({ p | p coincident(over s) Reducer(guide, std.z, inlet: inlet_size, outlet: outlet_size, wall: wall).sec.profile })
+body := solid({ p | some s: p in Reducer(guide, std.z, inlet: inlet_size, outlet: outlet_size, wall: wall).sec.profile at s })

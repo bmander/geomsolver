@@ -75,10 +75,10 @@ fn the_configured_pinion_is_admitted() {
 #[ignore = "a kernel reproduction, about two minutes: fails today (brep::boolean), see formate.sv's Space"]
 fn a_formed_gear_with_two_floors_a_space_builds() {
     let text = fixtures::gear::formate_source();
-    let far = "far := { p | p inside concave; p inside cap; p outside below; p inside above }";
+    let far = "far := { p | p in concave; p in cap; p not in below; p in above }";
     assert!(text.contains(far),"the space bounds the tooth ahead by its flank alone");
     let e = fixtures::gear::read(&text.replace(far,"concave_round := std.rounds.Rounded(concave, tip, r: r)\n  \
-        far := { p | p inside concave; p inside tip; p inside base; p inside concave_round }"));
+        far := { p | p in concave; p in tip; p in base; p in concave_round }"));
     let say = Say {stage:&|l: &str| eprintln!("{l}"),mark:&|_| {}};
     let exact = export::exact(&e.sketch,fixtures::solid(&e,"pair.gear.body"),None,None,&say);
     assert!(exact.is_ok(),"{}",exact.err().unwrap());

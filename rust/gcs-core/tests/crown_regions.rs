@@ -38,7 +38,7 @@ in std.front {
 /// A cone through `q` leaning `lean`, and a point on it held at `x = 30`, `y = 5`.
 fn cone_through(lean: &str, more: &str) -> String {
     format!("{AXIS}k := std.sets.ConeThrough(ax, q, lean: {lean})\n\
-             a := point hint((30, 5, 10))\nfix(x == 30) a\nfix(y == 5) a\na coincident k\n{more}")
+             a := point hint((30, 5, 10))\nfix(x == 30) a\nfix(y == 5) a\na in boundary(k)\n{more}")
 }
 
 /// **The cone about a line through a point** (#145's library): its apex on the line where the
@@ -70,7 +70,7 @@ fn a_cone_through_a_point_is_its_closed_form() {
 /// point put on the cone adds that point and its one row, and no second apex.
 #[test]
 fn a_cone_throughs_apex_is_made_once() {
-    let b = "b := point hint((5, 30, 10))\nfix(x == 5) b\nfix(y == 30) b\nb coincident k\n";
+    let b = "b := point hint((5, 30, 10))\nfix(x == 5) b\nfix(y == 30) b\nb in boundary(k)\n";
     let one = read(&cone_through("20deg", ""));
     let e = solved(&cone_through("20deg", b));
     assert_eq!(e.sketch.params.len() - one.sketch.params.len(), 3);
@@ -97,19 +97,19 @@ inner := std.sets.ConeThrough(cut_ax, qi, lean: -20deg)
 outer := std.sets.ConeThrough(cut_ax, qo, lean: 20deg)
 back := std.sets.HalfSpace(c, cut_ax, d: 1.5mm)
 point_ := std.sets.HalfSpace(c, cut_ax, d: -1.25mm)
-beyond := { x | x outside inner }
-above := { x | x outside point_ }
+beyond := { x | x not in inner }
+above := { x | x not in point_ }
 ";
 
 const SHARP: &str = "\
-sharp := { p | p outside inner; p inside outer; p inside back; p outside point_ }
+sharp := { p | p not in inner; p in outer; p in back; p not in point_ }
 sharp_tool := solid(sharp)
 ";
 
 const ROUNDED: &str = "\
-tooth := { p | p outside inner; p inside outer; p inside back; p outside point_
-               p inside std.rounds.Rounded(beyond, above, r: 0.3mm)
-               p inside std.rounds.Rounded(outer, above, r: 0.3mm) }
+tooth := { p | p not in inner; p in outer; p in back; p not in point_
+               p in std.rounds.Rounded(beyond, above, r: 0.3mm)
+               p in std.rounds.Rounded(outer, above, r: 0.3mm) }
 construction tool := solid(tooth)
 ";
 
@@ -195,11 +195,11 @@ in std.front {
 }
 tip := std.sets.HalfSpace(ax.p1, ax, d: -1.25mm)
 back := std.sets.HalfSpace(ax.p1, ax, d: 1.5mm)
-ea coincident tip
+ea in boundary(tip)
 ea distance(0.6mm) eb
 inner := std.sets.ConeThrough(ax, ea, lean: -20deg)
 outer := std.sets.ConeThrough(ax, eb, lean: 20deg)
-tooth := { p | p outside inner; p inside outer; p inside back; p outside tip }
+tooth := { p | p not in inner; p in outer; p in back; p not in tip }
 blade := solid(tooth)
 ";
 
@@ -251,11 +251,11 @@ in std.front {
   construction crown_ax := line(o, ze)
 }
 pitch := std.sets.Cone(gear_ax, half: 45deg)
-tip := std.sets.Offset(pitch, d: 1mm)
-toe := std.sets.Sphere(o, r: 17mm)
-heel := std.sets.Sphere(o, r: 23mm)
-blank_region := { p | p inside tip; p inside heel; p outside toe
-  p distance(<= 3mm, side: inside) pitch }
+tip := { q | q distance(<= 1mm) pitch }
+toe := std.sets.Ball(o, r: 17mm)
+heel := std.sets.Ball(o, r: 23mm)
+blank_region := { p | p in tip; p in heel; p not in toe
+  p distance(<= 3mm) { q | q not in pitch } }
 blank := solid(blank_region)
 ";
 
@@ -264,7 +264,7 @@ crown_roll := frame
 crown_roll turns(1) crown_ax
 gear_roll := frame
 gear_roll turns(-1.4142135623730951) gear_ax
-construction removal := solid({ p | p inside(under: crown_roll, seen_from: gear_roll, over t in (-40deg, 40deg)) tool })
+construction removal := solid({ p | some t in (-40deg, 40deg): p in tool at(under: crown_roll, seen_from: gear_roll) t })
 part := solid(blank)
 removal cut part
 ";
@@ -323,10 +323,10 @@ fn radius_at(z: f64) -> f64 { 20.0 + 20f64.to_radians().tan() * (z - 10.0) }
 #[test]
 fn a_point_is_put_on_a_sides_surface() {
     let e = solved(&format!("{AXIS}k := std.sets.ConeThrough(ax, q, lean: 20deg)\n\
-        side := {{ x | x distance(<= 0.5mm, side: inside) k }}\n\
-        in std.front {{\n  m := point hint((15, -2))\n}}\nm coincident side.surface\n\
+        side := {{ x | x distance(<= 0.5mm) {{ q | q not in k }} }}\n\
+        in std.front {{\n  m := point hint((15, -2))\n}}\nm in boundary(side)\n\
         ax.p1 distance(-2mm, along: ax) m\n\
-        component On(f: set, at: point) {{\n  n := point hint((15, 0, -4))\n  n coincident f.surface\n  \
+        component On(f: set, at: point) {{\n  n := point hint((15, 0, -4))\n  n in boundary(f)\n  \
         fix(y == 0) n\n  at distance(-4mm, along: ax) n\n}}\non := On(side, ax.p1)\n"));
     let want = |z: f64| radius_at(z) - 0.5 / 20f64.to_radians().cos();
     let m = at(&e, "m");
@@ -341,11 +341,12 @@ fn a_point_is_put_on_a_sides_surface() {
 /// written as the distance is still refused, naming `coincident`.
 #[test]
 fn an_offset_of_nothing_is_the_set() {
-    let src = format!("{AXIS}k := std.sets.ConeThrough(ax, q, lean: 20deg)\nnone := std.sets.Offset(k, d: 0mm)\n\
-        in std.front {{\n  m := point hint((18, 4))\n}}\nm coincident none\nax.p1 distance(4mm, along: ax) m\n\
-        lid := std.sets.HalfSpace(ax.p1, ax, d: 6mm)\nfloor := {{ x | x outside std.sets.HalfSpace(ax.p1, ax, d: -6mm) }}\n\
-        grown := {{ p | p inside none; p inside lid; p inside floor }}\n\
-        plain := {{ p | p inside k; p inside lid; p inside floor }}\n\
+    let src = format!("{AXIS}k := std.sets.ConeThrough(ax, q, lean: 20deg)\nnothing := 0mm\n\
+        none := {{ q | q distance(<= nothing) k }}\n\
+        in std.front {{\n  m := point hint((18, 4))\n}}\nm in boundary(none)\nax.p1 distance(4mm, along: ax) m\n\
+        lid := std.sets.HalfSpace(ax.p1, ax, d: 6mm)\nfloor := {{ x | x not in std.sets.HalfSpace(ax.p1, ax, d: -6mm) }}\n\
+        grown := {{ p | p in none; p in lid; p in floor }}\n\
+        plain := {{ p | p in k; p in lid; p in floor }}\n\
         a := solid(grown)\nb := solid(plain)\n");
     let e = solved(&src);
     let m = at(&e, "m");
@@ -356,10 +357,10 @@ fn an_offset_of_nothing_is_the_set() {
     };
     assert!((volume("a") - volume("b")).abs() <= 1e-12 * volume("b"), "{} against {}", volume("a"), volume("b"));
     let written = format!("{AXIS}k := std.sets.ConeThrough(ax, q, lean: 20deg)\n\
-        in std.front {{\n  m := point hint((18, 4))\n}}\nm distance(0mm, side: outside) k\n");
+        in std.front {{\n  m := point hint((18, 4))\n}}\nm distance(0mm) k\n");
     let (p, _, _) = gcs_core::library::parse_linked(&written);
     let refused = gcs_core::program::elaborate(&p);
-    assert!(refused.diags.iter().any(|d| d.message.contains("coincident")), "{:?}", refused.diags);
+    assert!(refused.diags.iter().any(|d| d.message.contains("in boundary(k)")), "{:?}", refused.diags);
 }
 
 /// **A round's radius may read an unknown of the drawing** (#214), as the hypoid's reads the normal
@@ -385,11 +386,11 @@ fn a_rounds_radius_reads_an_unknown() {
         assert!((volume - want).abs() <= 1e-9 * want, "{r}: {volume} against {want}");
     }
     let grown = |g: &str| {
-        let tooth = format!("beyond_g := {{ x | x distance(<= {g}, side: inside) inner }}\n\
-            outer_g := std.sets.Offset(outer, d: {g})\n\
-            tooth := {{ p | p inside beyond_g; p inside outer_g; p inside back; p outside point_\n\
-            p inside std.rounds.Rounded(beyond_g, above, r: 0.3 * m)\n\
-            p inside std.rounds.Rounded(outer_g, above, r: 0.3 * m) }}\nconstruction tool := solid(tooth)\n");
+        let tooth = format!("beyond_g := {{ x | x distance(<= {g}) {{ q | q not in inner }} }}\n\
+            outer_g := {{ q | q distance(<= {g}) outer }}\n\
+            tooth := {{ p | p in beyond_g; p in outer_g; p in back; p not in point_\n\
+            p in std.rounds.Rounded(beyond_g, above, r: 0.3 * m)\n\
+            p in std.rounds.Rounded(outer_g, above, r: 0.3 * m) }}\nconstruction tool := solid(tooth)\n");
         let e = solved(&format!("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{unknown}{TOOTH}{tooth}"));
         let ex = e.sketch.exact_solid(ent(&e, "tool").i()).unwrap();
         props::volume(&ex.brep) / ex.mm.powi(3)

@@ -12,6 +12,7 @@ fn written(s: Said) -> StmtKind {
         args: s.args,
         span: Span::default(),
         rates: Vec::new(),
+        lowered: crate::syntax::Lowered::No,
     };
     StmtKind::Relation(syntax::Relation::of(syntax::RelationForm::Written(form)))
 }
@@ -303,12 +304,22 @@ fn on_face_edit(
     let point = format!("{name}.origin");
     let touch = syntax::OpArg::Named(syntax::Name::new("at"),
                                      syntax::Arg::Ref(syntax::Ref::new(point.clone())));
-    // what is drawn on a face is drawn on the surface it lies on (§6.9 [0.68])
-    let surface = format!("{face}.surface");
+    // what is drawn on a face is drawn on the surface it lies on (§6.9 [0.68]): the boundary of
+    // the side its material is on, `boundary(b0.far.side)` (#783)
+    let surface = syntax::reference_at(&format!("{face}.side.surface"), 0)
+        .ok_or_else(|| format!("`{face}` is no face's name"))?;
+    let on = |s: Said, lowered: syntax::Lowered| {
+        let StmtKind::Relation(mut r) = written(s) else { unreachable!("a relation") };
+        if let Some(w) = r.form.written_mut() {
+            w.ops[1] = surface.clone();
+            w.lowered = lowered;
+        }
+        StmtKind::Relation(r)
+    };
     let stmts = [
         StmtKind::Decl(decl),
-        written(said(point, "coincident", &surface)),
-        written(Said { args: vec![touch], ..said(name.clone(), "tangent", &surface) }),
+        on(said(point, "coincident", ""), syntax::Lowered::Set),
+        on(Said { args: vec![touch], ..said(name.clone(), "tangent", "") }, syntax::Lowered::No),
     ];
     append_checked(&e.program, &stmts, vec![name])
 }

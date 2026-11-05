@@ -52,7 +52,7 @@ apex := point hint((35, -60, -35))
 apex coincident mill_ax
 spine := line(apex, C)
 flank := std.sets.Cone(spine, half: 15deg)
-M coincident flank
+M in boundary(flank)
 ";
 
 pub(super) const HALF: f64 = 15.0;
@@ -111,8 +111,8 @@ pub(super) fn holds_together(s: &Sample, apex: [f64; 3], axis: [f64; 3]) {
 #[test]
 fn a_conjugate_pair_transmits_without_error_and_one_cut_at_another_ratio_at_that_ratio() {
     let src = format!("{MESH}\
-pinion_flank := envelope(flank over t in (-40deg, 40deg), under: gear_turn, seen_from: pinion_turn)
-contact := meshing(pinion_flank, flank over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
+pinion_flank := envelope(boundary(flank) over t in (-40deg, 40deg), under: gear_turn, seen_from: pinion_turn)
+contact := meshing(pinion_flank, boundary(flank) over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) contact
 ");
@@ -129,10 +129,10 @@ Q coincident(t == 0deg) contact
     assert!(text.starts_with("contact: line contact; transmission error"), "{text}");
 
     let q = 1.01;
-    let cut = src.replace("pinion_flank := envelope(flank over t in (-40deg, 40deg), under: gear_turn,",
+    let cut = src.replace("pinion_flank := envelope(boundary(flank) over t in (-40deg, 40deg), under: gear_turn,",
         &format!("cutting_turn := frame\n\
                   cutting_turn turns(-0.5 * {q}) gear_ax\n\
-                  pinion_flank := envelope(flank over t in (-40deg, 40deg), under: cutting_turn,"));
+                  pinion_flank := envelope(boundary(flank) over t in (-40deg, 40deg), under: cutting_turn,"));
     let e = solved(&cut);
     let t = traced(&e.sketch, "contact", 24);
     assert_eq!(t.found().count(), 25);
@@ -164,8 +164,8 @@ apex2 distance(10mm) top2
 cutter := std.sets.Cone(spine2, half: 15deg)
 cutting_turn := frame
 cutting_turn turns(-0.5 * {q}) gear_ax
-pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn, seen_from: pinion_turn)
-contact := meshing(pinion_flank, flank over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
+pinion_flank := envelope(boundary(cutter) over t in (-40deg, 40deg), under: cutting_turn, seen_from: pinion_turn)
+contact := meshing(pinion_flank, boundary(flank) over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((1, 47, 1))
 Q coincident(t == 0deg) contact
 ");
@@ -324,7 +324,7 @@ pub(super) fn closing(point: &impl Fn(f64, f64, f64) -> ([f64; 3], f64),
 /// generating under the mesh, and Q held to the meshing where the pair is drawn.  The document, M,
 /// the gear's cone's apex and axis, and the cutter's apex and axis point.
 fn turned_cutter() -> (String, [[f64; 3]; 3], [[f64; 3]; 2]) {
-    let base = solved(&format!("{MESH}gear_flank := envelope(flank over t in (-40deg, 40deg), under: gear_turn, \
+    let base = solved(&format!("{MESH}gear_flank := envelope(boundary(flank) over t in (-40deg, 40deg), under: gear_turn, \
                                 seen_from: pinion_turn)\n"));
     let (m, apex, c) = (at(&base, "M"), at(&base, "apex"), at(&base, "C"));
     let axis = unit(sub(c, apex));
@@ -340,8 +340,8 @@ cut_c := point hint(({}, {}, {}))
 fix({}) cut_c
 cut_spine := line(cut_apex, cut_c)
 cutter := std.sets.Cone(cut_spine, half: 15deg)
-pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: gear_turn, seen_from: pinion_turn)
-contact := meshing(pinion_flank, flank over t in (-15deg, 15deg), under: gear_turn, seen_from: pinion_turn)
+pinion_flank := envelope(boundary(cutter) over t in (-40deg, 40deg), under: gear_turn, seen_from: pinion_turn)
+contact := meshing(pinion_flank, boundary(flank) over t in (-15deg, 15deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) contact
 ", a2[0], a2[1], a2[2], pt(a2), c2[0], c2[1], c2[2], pt(c2));
@@ -398,8 +398,8 @@ apex2 distance(10mm) top2
 cutter := std.sets.Cone(spine2, half: 15deg)
 cutting_turn := frame
 cutting_turn turns(-0.5 * {q}) gear_ax
-pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn, seen_from: pinion_turn)
-contact := meshing(pinion_flank, flank over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
+pinion_flank := envelope(boundary(cutter) over t in (-40deg, 40deg), under: cutting_turn, seen_from: pinion_turn)
+contact := meshing(pinion_flank, boundary(flank) over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) contact
 R := point hint((1, 48, 1))

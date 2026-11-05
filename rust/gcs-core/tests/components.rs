@@ -265,7 +265,7 @@ cycle 4 as i { s := Spoke(o, i * 90deg) }
 fn a_set_and_a_group_fill_only_their_own_formals() {
     let base = "unit mm\nuse std\nuse std.sets\n\
         component Reads(p: point, dims: group) {\n  p distance(dims.r) dims.at\n}\n\
-        component On(p: point, s: set) {\n  p coincident s\n}\n\
+        component On(p: point, s: set) {\n  p in boundary(s)\n}\n\
         c := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
         p := point hint((3, 4, 1))\n\
         ball := { q | q distance(5) c }\n\
@@ -275,8 +275,8 @@ fn a_set_and_a_group_fill_only_their_own_formals() {
     crate::common::refused(&format!("{base}On(p, dims)\n"), "E103", "wants a set", "dims");
     crate::common::refused(&format!("{base}On(p, 5mm)\n"), "E103", "wants a set", "5mm");
     // a set's surface is no set a formal takes yet (§4.1)
-    crate::common::refused(&format!("{base}On(p, ball.surface)\n"), "E103", "wants a set",
-                           "ball.surface");
+    crate::common::refused(&format!("{base}On(p, boundary(ball))\n"), "E103", "wants a set",
+                           "boundary(ball)");
     crate::common::refused(&format!("{base}On(p)\n"), "E103", "missing set argument `s`", "On(p)");
     // and an entity left out is said at the call too, not where the body reads it — nor nowhere,
     // as it was for a set family's instance nothing uses: only a number is left an unknown

@@ -79,16 +79,16 @@ fn solid_claim(
         match res.lookup(o) {
             Some(e) if e.kind == EntKind::Solid => ends.push(e.idx),
             Some(e) => {
-                say(
-                    Code::E040,
-                    o.span,
-                    format!(
-                        "`{}` relates solids, and `{}` is {}",
-                        word.as_str(),
-                        o.root.text,
-                        e.kind.a()
-                    ),
-                );
+                // `p in x`, `x` no set, written in the notation of sets (#783): a point on an
+                // entity is `coincident` with it
+                let m = if w.lowered.any() {
+                    format!("`{}` relates a point to a set, a face or a solid, and `{}` is {}: a \
+                             point on it is `coincident`", w.spelled(), o.root.text, e.kind.a())
+                } else {
+                    format!("`{}` relates solids, and `{}` is {}", word.as_str(), o.root.text,
+                            e.kind.a())
+                };
+                say(Code::E040, o.span, m);
                 return;
             }
             None => {

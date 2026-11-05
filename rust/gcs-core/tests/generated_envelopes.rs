@@ -130,12 +130,12 @@ fn envelope_declarations_round_trip_and_follow_dependency_copy_delete() {
 #[test]
 fn envelope_formals_alias_forward_source_dependencies_and_private_members() {
     let src = format!("component Copy(e: envelope,limit: Angle) {{\n\
-        private out := envelope(e.surface over t in (-limit, limit), under: e.motion)\n}}\n\
+        private out := envelope(boundary(e.side) over t in (-limit, limit), under: e.motion)\n}}\n\
         copy := Copy(generated,limit: 10deg)\n{MODEL}");
     let e = solved(&src);
     assert_eq!(e.sketch.envelopes.len(),2);
     assert!(e.map.entity_path(&e.sketch,"copy.out").is_none());
-    let bad = build(&format!("{src}bad := envelope(copy.out.surface over t in (-10deg, 10deg), under: roll)\n"));
+    let bad = build(&format!("{src}bad := envelope(boundary(copy.out.side) over t in (-10deg, 10deg), under: roll)\n"));
     assert!(bad.errors().any(|d| d.message.contains("private member")),"{:?}",bad.diags);
 }
 

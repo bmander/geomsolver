@@ -81,5 +81,5 @@ wedge common block
 swing := frame
 swing turns(1) ax
 fix(value == from + (to - from) * (1 - cos(t)) / 2) swing
-construction groove := solid({ p | p inside(under: swing, over t) cutter })
+construction groove := solid({ p | some t: p in cutter at(under: swing) t })
 groove cut block

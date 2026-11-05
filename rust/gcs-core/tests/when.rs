@@ -269,7 +269,7 @@ fn a_when_over_faces_keeps_copies_by_what_they_stand_for() {
     assert_eq!(count(same, "m"), 6);
     let among = "repeat c in block {\nwhen c in block.near or c in block.far {\nn := point\n}\n}\n";
     assert_eq!(count(among, "n"), 2);
-    let mixed = "repeat c in block {\nwhen not c in block.near and k > 1 {\nn := point\n}\n}\n";
+    let mixed = "repeat c in block {\nwhen c not in block.near and k > 1 {\nn := point\n}\n}\n";
     assert_eq!(count(mixed, "n"), 5);
     let off = "repeat c in block {\nwhen c != block.near and k > 2 {\nn := point\n}\n}\n";
     assert_eq!(count(off, "n"), 0);

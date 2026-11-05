@@ -47,7 +47,7 @@ fn an_unseeded_triangle_stands_where_its_words_say_at_its_own_size() {
                O := point in std.top\nM := point in std.top\nO coincident std.top.origin\n\
                M level(v) std.top\nM distance(>= 0, along: u) std.top\n\
                foot := point\nto_foot := line(M, foot)\nax := line(O, foot)\n\
-               O level(std.y) foot\nfoot inside std.top\nto_foot perpendicular ax\n\
+               O level(std.y) foot\nfoot distance(<= 0mm, along: n) std.top\nto_foot perpendicular ax\n\
                M distance(400mm) foot\nO distance(300mm) foot\n";
     let e = solved(src);
     let (m, f) = (at(&e, "M"), at(&e, "foot"));
@@ -87,8 +87,8 @@ fn an_angles_bound_is_held_to_the_solves_tolerance() {
                C := point in std.top\nq := point in std.top\nfix((0, 0)) C\nfix((300, 0)) q\n\
                ax := line(C)\nax parallel std.z\nC distance(100, along: std.z) ax.p2\n\
                k := std.sets.ConeThrough(ax, q, lean: -10deg)\n\
-               grown := { p | p distance(<= 0.5mm, side: inside) k }\n\
-               kink := point in std.front\nkink coincident grown.surface\n\
+               grown := { p | p distance(<= 0.5mm) { q | q not in k } }\n\
+               kink := point in std.front\nkink in boundary(grown)\n\
                C distance(5mm, along: ax) kink\nC distance(>= 0mm, along: std.x) kink\n";
     let e = solved(src);
     let p = at(&e, "kink");
@@ -109,8 +109,8 @@ fn a_chart_is_gauged_where_the_solve_ends() {
                C := point in std.top\nq := point in std.top\nfix((0, 0)) C\nfix((50, 0)) q\n\
                ax := line(C)\nax parallel std.z\nC distance(100, along: std.z) ax.p2\n\
                k := std.sets.ConeThrough(ax, q, lean: 20deg)\n\
-               grown := { p | p distance(<= 0.5mm, side: inside) k }\n\
-               kink := point in std.front\nkink coincident grown.surface\n\
+               grown := { p | p distance(<= 0.5mm) { q | q not in k } }\n\
+               kink := point in std.front\nkink in boundary(grown)\n\
                C distance(-2mm, along: ax) kink\nC distance(>= 0mm, along: std.x) kink\n";
     let e = solved(src);
     let p = at(&e, "kink");

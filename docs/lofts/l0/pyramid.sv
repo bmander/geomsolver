@@ -20,4 +20,4 @@ in std.top {
   guide := line(o, e)
 }
 param s: Scalar over (0, 1)
-pyramid := solid({ p | p coincident(over s) Shrinking(guide, std.z, size: 20mm).f })
+pyramid := solid({ p | some s: p in Shrinking(guide, std.z, size: 20mm).f at s })

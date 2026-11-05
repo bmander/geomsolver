@@ -197,7 +197,7 @@ fix(origin == (0, 0, -9)) bench
 in bench {{
 {drawn}feed := frame
 feed slides(40mm) ax
-construction groove := solid({{ p | p inside(under: feed, over t in (0deg, 360deg)) wheel }})
+construction groove := solid({{ p | some t in (0deg, 360deg): p in wheel at(under: feed) t }})
 part := solid(rod)
 groove cut part
 ")
@@ -400,7 +400,7 @@ ring := solid(std.solids.Revolution(face(inner, bottom, outer, top), about: ax))
 {wedge}construction wheel := solid(std.solids.Revolution(face(tube), about: taxis))
 swing := frame
 swing turns(1) ax
-construction groove := solid({{ p | p inside(under: swing, over t in ({from}deg, {to}deg)) wheel }})
+construction groove := solid({{ p | some t in ({from}deg, {to}deg): p in wheel at(under: swing) t }})
 part := solid(ring)
 groove cut part
 ",o0=o[0],o1=o[1],o2=o[2],a0=a[0],a1=a[1],a2=a[2])

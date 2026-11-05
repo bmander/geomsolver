@@ -188,7 +188,7 @@ bottom_q := point
 bottom_q raised(d: 6mm, along: std.z) bottom_at
 top_cone := std.sets.ConeThrough(spindle, top_q, lean: -45deg)
 bottom_cone := std.sets.ConeThrough(spindle, bottom_q, lean: 45deg)
-bicone := { p | p inside top_cone; p inside bottom_cone }
+bicone := { p | p in top_cone; p in bottom_cone }
 construction chamfers := solid(bicone)
 chamfers common disc
 ";
@@ -248,7 +248,7 @@ component Spur(N: Int, m: Length, z1: Length) {
   index := frame
   index turns(1) spindle
   construction gear := solid(std.solids.Prism(face(tip, holes: hole), from: 0mm, to: z1))
-  private construction space := solid({ p | p inside(under: rack, seen_from: blank_turn, over t in (-window, window)) tooth })
+  private construction space := solid({ p | some t in (-window, window): p in tooth at(under: rack, seen_from: blank_turn) t })
   space cut gear
   repeat N - 1 as j {
     turned := space at(under: index) ((j + 1) * 360deg / N)

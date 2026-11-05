@@ -66,7 +66,7 @@ apex := point hint((35, -96, -35))
 apex coincident mill_ax
 spine := line(apex, C)
 flank := std.sets.Cone(spine, half: pressure - tilt)
-M coincident flank
+M in boundary(flank)
 
 // -- the pinion: cut by a larger cutter at a modified roll ---------------------------------------
 generator := line(M, apex)
@@ -79,13 +79,13 @@ cut_apex distance(10mm) cut_top
 cutter := std.sets.Cone(cut_spine, half: pressure - tilt)
 cutting_turn := frame
 cutting_turn turns(-roll * pinion_teeth / gear_teeth) gear_ax
-pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn,
+pinion_flank := envelope(boundary(cutter) over t in (-40deg, 40deg), under: cutting_turn,
                          seen_from: pinion_turn)
 
 // -- the contact ---------------------------------------------------------------------------------
 // The two flanks turning with their members; Q, where they touch at the phase the pair is drawn
 // at. The trace over the phase is the bearing and the transmission error.
-bearing := meshing(pinion_flank, flank over t in (-15deg, 15deg), under: gear_turn,
+bearing := meshing(pinion_flank, boundary(flank) over t in (-15deg, 15deg), under: gear_turn,
                    seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) bearing
