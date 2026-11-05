@@ -1479,15 +1479,16 @@ impl<'a> Arrangement<'a> {
         // crossings beside them however shallow — and the crossings no ridge holds traced as
         // `f = 0` in either face's parameters through the points where the faces' edges cross the
         // other, known before the march, which ends where it comes to one
-        let ([oa,ob],[fa,fb]) = (faces.s,faces.f);
-        let (a,b) = (self.solids[oa],self.solids[ob]);
-        let (sa,sb) = (&a.faces[fa].surface,&b.faces[fb].surface);
-        let sides = [(sa,super::meeting::within_domain(sa,parameters(a,fa,true))),(sb,super::meeting::within_domain(sb,parameters(b,fb,true)))];
-        let on = &crossings.on_face;
-        let seeds: Vec<V> = on[ob][fb].iter().chain(&on[oa][fa]).map(|&v| self.pool.pts[v as usize]).collect();
-        let (traced,_) = super::meeting::marched(sides,None,&seeds,self.tol,
-            &mut |ridged,past| self.traced_meeting_with(faces,crossings,known,ridged,past,bx))?;
-        Ok(traced)
+        // (each face's parameters and the seeds read only where the march is refused)
+        let past_inputs = || {
+            let ([oa,ob],[fa,fb]) = (faces.s,faces.f);
+            let (a,b) = (self.solids[oa],self.solids[ob]);
+            let side = |s: &'a Brep,f: usize| (&s.faces[f].surface,super::meeting::within_domain(&s.faces[f].surface,parameters(s,f,true)));
+            let on = &crossings.on_face;
+            ([side(a,fa),side(b,fb)],on[ob][fb].iter().chain(&on[oa][fa]).map(|&v| self.pool.pts[v as usize]).collect())
+        };
+        super::meeting::marched(None,self.tol,past_inputs,&mut |ridged,past| self.traced_meeting_with(faces,crossings,known,ridged,past,bx))
+            .map(|(traced,_)| traced)
     }
 
     /// `traced_meeting`'s march, the branches a ridge holds (`ridged`) known before it: each a curve

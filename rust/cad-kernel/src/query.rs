@@ -274,9 +274,9 @@ fn read(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Option<Vec
     let found = match certified(curve,[t0,t1],surface,tol) {
         Ok(m) => { crate::util::meter::crossing(curve.kind(),surface.kind(),true); m }
         // a build past its budget reads nothing more (#780 R3): no sampled search in its place
-        Err(Uncertified::GaveUp(GaveUp::Stopped)) => return Some(Vec::new()),
+        Err(Uncertified::Stopped) => return Some(Vec::new()),
         // no form for the pair, or a bounded search past its most boxes: the sampled search
-        Err(Uncertified::NoForm | Uncertified::GaveUp(GaveUp::Most)) => {
+        Err(Uncertified::NoForm) => {
             crate::util::meter::crossing(curve.kind(),surface.kind(),false);
             sampled(curve,[t0,t1],surface,tol)
         }
@@ -362,12 +362,14 @@ fn settled(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,roots: Vec<
 
 /// **Why a curve and a surface have no certified reading** (#780 R3), told apart so each is
 /// answered its own way: no form for the pair (`NoForm`), which the sampled search reads, or a
-/// bounded search that gave up (`util::isolate::GaveUp`) — under a stopped build, which then reads
-/// nothing more, or past its most boxes, read as a pair with no form is.
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-enum Uncertified { NoForm,GaveUp(GaveUp) }
+/// build stopped past its budget (`Stopped`), which reads nothing more. A bounded search past its
+/// most boxes (`util::isolate::GaveUp::Most`) is read as a pair with no form is.
+#[derive(Clone,Copy,Debug)]
+enum Uncertified { NoForm,Stopped }
 
-impl From<GaveUp> for Uncertified { fn from(g: GaveUp) -> Uncertified { Uncertified::GaveUp(g) } }
+impl From<GaveUp> for Uncertified {
+    fn from(g: GaveUp) -> Uncertified { match g { GaveUp::Most => Uncertified::NoForm,GaveUp::Stopped => Uncertified::Stopped } }
+}
 
 /// A certified reading of a curve against a surface, or why there is none.
 type Certified = Result<Meets,Uncertified>;
@@ -390,7 +392,7 @@ fn certified(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certi
         // other sheet by the search
         // (a level circle's search past its most boxes is read by the general one)
         (&Curve::Line {p,d},Surface::Blend(_,b)) => match b.level_circle().map(|c| line_screwed_circle(p,d,[t0,t1],&c,tol)) {
-            None | Some(Err(Uncertified::GaveUp(GaveUp::Most))) => curve_sheet(curve,[t0,t1],surface,tol),
+            None | Some(Err(Uncertified::NoForm)) => curve_sheet(curve,[t0,t1],surface,tol),
             Some(read) => read,
         },
         (Curve::Circle(f,big),Surface::Blend(_,b)) => circle_round_screwed(f,big.abs(),b,[t0,t1],tol),
@@ -610,7 +612,7 @@ pub fn curve_surface_searched(curve: &Curve,t: [f64;2],surface: &Surface,tol: f6
 /// certifies; a touch a root no box can part from its neighbours, its point on both to `tol`.
 /// The sheets: a section's edge and its image carried along a line or by a screw (`Blend`, its
 /// edges lines or circles — a screwed line's sheet, a ball's pipe, a leaning rim's), and a
-/// B-spline net not rational. `NoForm` for any other, `GaveUp` where the search gives up.
+/// B-spline net not rational. `NoForm` for any other, `Stopped` where the build has stopped.
 fn curve_sheet(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certified {
     let bend = match curve { Curve::Line {..} => 0.,Curve::Circle(_,r) => r.abs(),_ => return Err(Uncertified::NoForm) };
     let (domain,d1,second): ([[f64;2];2],Box<dyn Fn([f64;2]) -> (V,V,V) + '_>,Box<dyn Fn([f64;2],[f64;2]) -> Option<[f64;3]> + '_>) = match surface {

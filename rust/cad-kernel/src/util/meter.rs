@@ -219,9 +219,9 @@ impl From<Stopped> for String { fn from(s: Stopped) -> String { s.to_string() } 
 /// check a metered pipeline makes between its phases (`go_on()?`). With no meter, always on.
 #[inline]
 pub fn go_on() -> Result<(),Stopped> {
+    // (the first stage over names itself before the meter stops: a stopped meter has its `over`)
     CURRENT.with(|c| match &*c.borrow() {
-        // (the first stage over names itself before the meter is stopped, so it is there to read)
-        Some(m) if m.stopped() => Err(Stopped(m.over().unwrap_or(Over {stage:Stage::Arrangement,at:[f64::NAN;3],what:String::new()}))),
+        Some(m) if m.stopped() => m.over().map_or(Ok(()),|o| Err(Stopped(o))),
         _ => Ok(()),
     })
 }

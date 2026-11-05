@@ -636,7 +636,7 @@ fn contact(a: &Surface,b: &Surface,c: &Curve,(lo,hi): (V,V)) -> Contact {
 
 /// **Why a meeting's march answered nothing** (#780 R3): refused as shallow (`ssi::Shallow`), which
 /// the meeting is read past (`marched`), or for any other reason, which stands.
-#[derive(Clone,Debug)]
+#[derive(Debug)]
 pub(crate) enum Unmarched { Shallow(super::ssi::Shallow),Failed(String) }
 
 impl From<super::ssi::Shallow> for Unmarched { fn from(e: super::ssi::Shallow) -> Unmarched { Unmarched::Shallow(e) } }
@@ -653,15 +653,15 @@ impl From<Unmarched> for String {
 /// where the branches read the meeting and is passed by (`traced_alone`).
 ///
 /// It is marched first with the meeting's ridges where the caller read them before (`ridged`),
-/// else with none. Refused as shallow, the meeting is read from its critical set: its ridges, where
-/// the caller had not read them — over the parameters of the side whose partner's distance is exact
-/// (a plane's, a quadric's, a torus's: a sheet's is a numerical foot, too rough to difference
-/// twice), the other's where those hold none — and the level curves `f = 0` through the `seeds`
-/// no branch holds, in either's parameters; then it is marched again with them known. Refused as
-/// before where that reads no branch the march did not know. The march's answer, and every branch
-/// known.
-pub(crate) fn marched<T>(sides: [(&Surface,[[f64;2];2]);2],ridged: Option<Vec<Branch>>,seeds: &[V],tol: f64,
-    march: &mut dyn FnMut(&[Branch],bool) -> Result<T,Unmarched>) -> Result<(T,Vec<Branch>),String> {
+/// else with none. Refused as shallow, the meeting is read from its critical set over the `sides`
+/// and `seeds` the caller then gives (`past_inputs`, asked only here: the seeds clear of `ridged`
+/// already): its ridges, where the caller had not read them — over the parameters of the side
+/// `ridge_order` puts first, the other's where those hold none — and the level curves `f = 0`
+/// through the seeds no new branch holds, in either's parameters; then it is marched again with
+/// them known. Refused as before where that reads no branch the march did not know. The march's
+/// curves, and every branch known.
+pub(crate) fn marched<'s>(ridged: Option<Vec<Branch>>,tol: f64,past_inputs: impl FnOnce() -> ([(&'s Surface,[[f64;2];2]);2],Vec<V>),
+    march: &mut dyn FnMut(&[Branch],bool) -> Result<Vec<Curve>,Unmarched>) -> Result<(Vec<Curve>,Vec<Branch>),String> {
     let read = ridged.is_some();
     let mut branches = ridged.unwrap_or_default();
     let refused = match march(&branches,false) {
@@ -670,16 +670,14 @@ pub(crate) fn marched<T>(sides: [(&Surface,[[f64;2];2]);2],ridged: Option<Vec<Br
         Err(Unmarched::Failed(e)) => return Err(e),
     };
     let known = branches.len();
-    let [(a,da),(b,db)] = sides;
+    let ([(a,da),(b,db)],seeds) = past_inputs();
     if !read {
-        let mut order = [(a,da,b),(b,db,a)];
-        if exact_distance(a) && !exact_distance(b) { order.swap(0,1) }
-        for (s,d,o) in order {
+        for (s,d,o) in ridge_order(a,da,b,db) {
             for r in ridges(s,d,o,tol)? { branches.extend(ridge_branches(s,d,o,&r,tol)) }
             if !branches.is_empty() { break }
         }
     }
-    let free: Vec<V> = seeds.iter().copied().filter(|&p| !on_a_branch(a,b,&branches,p,tol)).collect();
+    let free: Vec<V> = seeds.into_iter().filter(|&p| !on_a_branch(a,b,&branches[known..],p,tol)).collect();
     for (s,d,o) in [(a,da,b),(b,db,a)] {
         let level = level_curves(s,d,o,&free,tol);
         if !level.is_empty() { branches.extend(level); break }
@@ -693,6 +691,13 @@ pub(crate) fn marched<T>(sides: [(&Surface,[[f64;2];2]);2],ridged: Option<Vec<Br
     }
     let t = march(&branches,true)?;
     Ok((t,branches))
+}
+
+/// The sides a meeting's ridges are read over, in the order they are tried: first the one whose
+/// partner's distance is exact (a plane's, a quadric's, a torus's) where only one's is — a sheet's
+/// is a numerical foot, too rough to difference twice — each with its box and its partner.
+pub(crate) fn ridge_order<'s>(a: &'s Surface,da: [[f64;2];2],b: &'s Surface,db: [[f64;2];2]) -> [(&'s Surface,[[f64;2];2],&'s Surface);2] {
+    if exact_distance(a) && !exact_distance(b) { [(b,db,a),(a,da,b)] } else { [(a,da,b),(b,db,a)] }
 }
 
 /// **Each seed traced alone, past a refusal** (`marched`): one on a curve `found` already holds
@@ -742,9 +747,8 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
     // the crossings beside them however shallow, read from the critical set — the general road
     let mut from_ridges: Vec<Branch> = Vec::new();
     if matches!(met,Ssi::Traced) {
-        // over the parameters of the one whose partner's distance is exact (a plane's, a quadric's, a
-        // torus's): a sheet's is a numerical foot, too rough to difference twice
-        let (s,d,o) = if exact_distance(a) && !exact_distance(b) { (b,db,a) } else { (a,da,b) };
+        // over the parameters of the side read first (`ridge_order`)
+        let [(s,d,o),_] = ridge_order(a,da,b,db);
         for r in ridges(s,d,o,tol)? { from_ridges.extend(ridge_branches(s,d,o,&r,tol)) }
     }
     let (curves,closed_form) = match met {
@@ -771,9 +775,11 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
             // the meeting over both boxes: a seed on one's edge outside the other's box is none of it
             seeds.retain(|&p| in_box(a,da,p,tol) && in_box(b,db,p,tol));
             // marched through the seeds, and read past a march refused as shallow (`marched`)
-            let (traced,branches) = marched([(a,da),(b,db)],Some(from_ridges),&seeds,tol,&mut |known,past| {
-                let seeds: Vec<V> = seeds.iter().copied().filter(|&p| !on_a_branch(a,b,known,p,tol)).collect();
+            let ridged = from_ridges.len();
+            let (traced,branches) = marched(Some(from_ridges),tol,|| ([(a,da),(b,db)],seeds.clone()),&mut |known,past| {
                 let mut traced = if past {
+                    // (the seeds are clear of the ridges' branches: of the level curves' too)
+                    let seeds: Vec<V> = seeds.iter().copied().filter(|&p| !on_a_branch(a,b,&known[ridged..],p,tol)).collect();
                     let mut found = Vec::new();
                     traced_alone(&seeds,&mut found,&mut |p| super::ssi::trace(a,b,&[p],lo,hi,tol),tol);
                     found

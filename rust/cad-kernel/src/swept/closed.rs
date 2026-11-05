@@ -409,7 +409,7 @@ fn metered(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: 
     if meter::profiling() {
         eprintln!("{}  took {:?}: {}",m.report(),clock.elapsed(),match &out { Ok(b) => format!("built, {} faces",b.faces.len()),Err(e) => format!("{e:?}") });
     }
-    if let Some(o) = m.over() { return Err(Unbuilt::Budget {stage:o.stage,at:o.at,what:o.what}) }
+    if let Some(o) = m.over() { return Err(meter::Stopped(o).into()) }
     out
 }
 
