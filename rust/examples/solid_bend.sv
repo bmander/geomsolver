@@ -38,4 +38,4 @@ in std.top {
   radius(bend_radius) guide
 }
 param s: Scalar over (0, 1)
-body := solid({ p | p coincident(over s) Bend(guide, std.z, inlet: inlet_half, outlet: outlet_half, wall: wall).sec.profile })
+body := solid({ p | some s: p in Bend(guide, std.z, inlet: inlet_half, outlet: outlet_half, wall: wall).sec.profile at s })

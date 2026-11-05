@@ -51,9 +51,9 @@ pub(super) fn build_solid(
         // the roll is an angle: a solid swept over a parameter of another kind is refused
         Sweep::Swept { over, .. } if over.declared && sk.parameters.get(&over.name.text)
             .is_some_and(|p| p.dim != crate::units::Dim::ANGLE) => {
-            say(Code::E103, over.name.span, format!("`{}` is no angle: a reading over the roll \
+            say(Code::E103, over.name.span, format!("`{0}` is no angle: a reading over the roll \
                 runs over an angle, and a face of the drawing swept over it is a face family, \
-                `solid({{ p | p coincident(over {}) face }})`", over.name.text, over.name.text));
+                `solid({{ p | some {0}: p in face at {0} }})`", over.name.text));
             return None;
         }
         Sweep::Placed { .. } | Sweep::Swept { .. } | Sweep::Rolled { .. } => {
@@ -396,8 +396,8 @@ fn region(
         return None;
     }
     if terms.is_empty() {
-        let m = "a solid is a region: a set whose body bounds a number, or a set its \
-                 `inside` reads one of";
+        let m = "a solid is a region: a set whose body bounds a number (`std.sets.Ball`, not \
+                 the sphere it bounds)";
         say(Code::E080, st.span, m.into());
         return None;
     }
@@ -476,7 +476,7 @@ fn under_motion(
         sweep else { unreachable!() };
     if ops.len() != 1 || ops[0].kind != EntKind::Solid {
         say(Code::E080,st.span,"a frame's motion moves one solid; a face swept as a parameter runs \
-            is a face family, `solid({ p | p coincident(over s) face })` over a declared `param s` \
+            is a face family, `solid({ p | some s: p in face at s })` over a declared `param s` \
             (#398, #737)".into());
         return None;
     }

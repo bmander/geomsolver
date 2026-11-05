@@ -61,5 +61,5 @@ cut := frame
 cut screws(lead) ax
 start := -360deg * (width / 2 + 1mm) / lead
 finish := 360deg * stop / lead
-construction thread := solid({ p | p inside(under: cut, over t in (start, finish)) bar })
+construction thread := solid({ p | some t in (start, finish): p in bar at(under: cut) t })
 thread cut rod

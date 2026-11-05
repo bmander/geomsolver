@@ -36,4 +36,4 @@ in std.top {
   radius(bend_radius) guide
 }
 param s: Scalar over (0, 1)
-body := solid({ p | p coincident(over s) Elbow(guide, std.z, size: 2 * half_size, wall: wall).sec.profile })
+body := solid({ p | some s: p in Elbow(guide, std.z, size: 2 * half_size, wall: wall).sec.profile at s })

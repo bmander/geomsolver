@@ -41,4 +41,4 @@ in end_plane {
 square := face(a0, a1, a2, a3, -> close)
 triangle := face(t0, t1, t2, m, -> close)
 param s: Scalar over (0, 1)
-body := solid({ p | p coincident(over s) std.stations.Ruled(square, triangle).f })
+body := solid({ p | some s: p in std.stations.Ruled(square, triangle).f at s })

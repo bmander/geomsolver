@@ -41,7 +41,7 @@ in flat {
 }
 private observer := frame
 observer turns(1) kaxis
-construction removal := solid({ p | p inside(under: spin, seen_from: observer, over t in (-75deg, 75deg)) tool })
+construction removal := solid({ p | some t in (-75deg, 75deg): p in tool at(under: spin, seen_from: observer) t })
 in std.front {
   private q0 := point
   private q1 := point

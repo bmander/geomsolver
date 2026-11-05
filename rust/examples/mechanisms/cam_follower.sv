@@ -58,5 +58,5 @@ pitch := envelope(c over t, under: follower, seen_from: cam)
 profile := envelope(roller over t, under: follower, seen_from: cam, side: near)
 
 // drawn where the instant puts them
-riding := c in follower
-pin := p in cam
+riding := c at follower
+pin := p at cam

@@ -86,5 +86,5 @@ wedge common block
 // the turn about the block's axis, and the slot it sweeps
 swing := frame
 swing turns(1) ax
-construction slot := solid({ p | p inside(under: swing, over t in (from, to)) pin })
+construction slot := solid({ p | some t in (from, to): p in pin at(under: swing) t })
 slot cut block

@@ -56,6 +56,32 @@ pub struct Written {
     /// The operands written as a **rate** (#339 D2): `rate(p over s)` is operand `op` read as
     /// its rate along the formal `over`, never as itself.  Empty for every other relation.
     pub rates: Vec<RateOf>,
+    /// Written in the notation of sets (#783), and lowered to this form by the parser
+    /// (`syntax::notation`): `p in S` read as `p inside S`, `p in boundary(S)` as `p coincident
+    /// S.surface`, a distance from what is not in a set as one with `side: inside`.  What the
+    /// flattener refuses of `coincident` against a set and of `side:` on one, the retired
+    /// spellings, it never refuses of the notation's own lowering.
+    pub lowered: Lowered,
+}
+
+/// Whether a relation was written in the notation of sets (#783), and how (`Written::lowered`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Lowered {
+    /// written as it reads: a word between entities, or one the flattener made
+    #[default]
+    No,
+    /// `p in S`, `p not in S` and the rest of the notation, lowered
+    Set,
+    /// `p in a.side`, `p not in a.side`: the side of a face its material is on, the `.side` taken
+    /// off — where `p in a` is the face itself
+    Side,
+}
+
+impl Lowered {
+    /// Whether the relation was written in the notation of sets.
+    pub fn any(self) -> bool {
+        self != Lowered::No
+    }
 }
 
 /// Where a rate in a relation's parentheses (`angle(rate(m over u), l)`, #645) is numbered from:

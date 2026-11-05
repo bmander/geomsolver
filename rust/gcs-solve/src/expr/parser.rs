@@ -286,6 +286,14 @@ impl Parser {
 
     fn negation(&mut self) -> Result<Cond, String> {
         self.enter()?;
+        // `not w in A` is retired (#783) for `w not in A`, membership's own negation
+        let retired = matches!(self.peek(), Tok::Ident(s) if s == "not")
+            && matches!(self.toks.get(self.pos + 1).map(|t| &t.0), Some(Tok::Ident(_)))
+            && matches!(self.toks.get(self.pos + 2).map(|t| &t.0), Some(Tok::Ident(w)) if w == "in");
+        if retired {
+            return Err(format!("`not w in A` is retired (#783): a name not among another's is \
+                `w not in A`, at {}", self.here()));
+        }
         let r = if self.word("not") {
             Cond::Not(Box::new(self.negation()?))
         } else {
@@ -326,6 +334,21 @@ impl Parser {
         // `c in B` (#267): a name among the things another names, `a meets b` (#625): two
         // faces sharing a point, and `a parallel l` (#763): a face lying along a direction, which
         // only the elaborator can tell — so both sides are names, and neither is arithmetic
+        // `w not in A` (#783): a name not among the things another names
+        if let (Tok::Ident(x), Some(Tok::Ident(n)), Some(Tok::Ident(w))) = (self.peek().clone(),
+            self.toks.get(self.pos + 1).map(|t| &t.0), self.toks.get(self.pos + 2).map(|t| &t.0))
+        {
+            if n == "not" && w == "in" {
+                self.next();
+                self.next();
+                self.next();
+                let Tok::Ident(y) = self.peek().clone() else {
+                    return Err(format!("expected a name after `{x} not in` at {}", self.here()));
+                };
+                self.next();
+                return Ok(Cond::Not(Box::new(Cond::In(x, y))));
+            }
+        }
         if let (Tok::Ident(x), Some(Tok::Ident(w))) =
             (self.peek().clone(), self.toks.get(self.pos + 1).map(|t| &t.0))
         {

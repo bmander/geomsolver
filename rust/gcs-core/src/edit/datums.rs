@@ -12,6 +12,7 @@ fn written(s: Said) -> StmtKind {
         args: s.args,
         span: Span::default(),
         rates: Vec::new(),
+        lowered: crate::syntax::Lowered::No,
     };
     StmtKind::Relation(syntax::Relation::of(syntax::RelationForm::Written(form)))
 }

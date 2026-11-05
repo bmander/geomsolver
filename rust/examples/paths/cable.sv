@@ -52,6 +52,6 @@ component Tube(g: path, up: axis, r: Length, s: Scalar) {
 
 // the through-spline's parameter runs one a corner, the Bézier's from 0 to 1
 param s: Scalar over (0, 3)
-cable_tube := solid({ p | p coincident(over s) Tube(cable, std.x, r: r).f })
+cable_tube := solid({ p | some s: p in Tube(cable, std.x, r: r).f at s })
 param s2: Scalar over (0, 1)
-hose_tube := solid({ p | p coincident(over s2) Tube(hose, std.x, r: r, s: s2).f })
+hose_tube := solid({ p | some s2: p in Tube(hose, std.x, r: r, s: s2).f at s2 })

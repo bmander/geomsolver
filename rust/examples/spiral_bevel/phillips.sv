@@ -68,8 +68,8 @@ screw := std.motion.Screw(toward, gear_turn, seen_from: pinion_turn)
 rack := std.sets.HalfSpace(P, L, d: 0mm)
 slide := frame
 slide slides(2 * pi * sigma) L
-pinion_flank := envelope(rack over t in (-40deg, 40deg), under: slide, seen_from: pinion_turn)
-gear_flank := envelope(rack over t in (-40deg, 40deg), under: slide, seen_from: gear_turn)
+pinion_flank := envelope(boundary(rack) over t in (-40deg, 40deg), under: slide, seen_from: pinion_turn)
+gear_flank := envelope(boundary(rack) over t in (-40deg, 40deg), under: slide, seen_from: gear_turn)
 claim L reciprocal(seen_from: pinion_turn) slide
 claim L reciprocal(seen_from: gear_turn) slide
 

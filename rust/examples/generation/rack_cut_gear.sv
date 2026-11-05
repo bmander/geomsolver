@@ -75,7 +75,7 @@ construction rack_tooth := solid(std.solids.Prism(tooth, from: -width - 2mm, to:
 turn := frame
 turn spins(1) o
 rack slides(2 * pi * rp) slide
-construction space := solid({ p | p inside(seen_from: turn) rack_tooth })
+construction space := solid({ p | some t: p in rack_tooth at(seen_from: turn) t })
 
 // The same motion draws on the sketch what it cuts in the solid: the envelope of the rack's flank
 // is the tooth's involute, and the envelope of its tip corner the root fillet, curves of the

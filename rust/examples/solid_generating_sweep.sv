@@ -7,7 +7,7 @@ use std.place (on_u)
 use std.motion (turns)
 
 component GeneratingCut(tool: solid, generating: frame, start: Angle, finish: Angle) {
-  body := solid({ p | p inside(under: generating, over t in (start, finish)) tool })
+  body := solid({ p | some t in (start, finish): p in tool at(under: generating) t })
 }
 
 in std.front {

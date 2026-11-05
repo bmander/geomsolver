@@ -59,5 +59,5 @@ construction wheel := solid(std.solids.Revolution(face(rim), about: wheel_axis))
 // the slide up the rod's axis, 40 mm a turn of the roll, and the groove it leaves
 feed := frame
 feed slides(40mm) ax
-construction groove := solid({ p | p inside(under: feed, over t in (0deg, 360deg)) wheel })
+construction groove := solid({ p | some t in (0deg, 360deg): p in wheel at(under: feed) t })
 groove cut rod

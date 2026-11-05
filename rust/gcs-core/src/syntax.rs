@@ -7,6 +7,7 @@ mod highlight;
 mod lexer;
 mod measured;
 mod names;
+mod notation;
 mod parser;
 mod print;
 mod scenario;
@@ -29,7 +30,7 @@ pub use scenario::{Item, ItemKind, LoadText, RequirementText, Scenario};
 pub use symbols::{symbols, Occurrence, Symbol, SymbolKind, Symbols};
 pub use source::{line_col, Module, Name, Program, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name, reserved_word};
-pub use written::{OpArg, RateOf, Written, ARG_RATES, WITHIN};
+pub use written::{Lowered, OpArg, RateOf, Written, ARG_RATES, WITHIN};
 pub use crate::vocab::{camel, num, one_of, snake, BodyWord, Cmp, Span};
 
 use crate::constraints::{CKind, Fixity};

@@ -65,5 +65,5 @@ private down := axis
 fix(dir == (0, 0, -1)) down
 ram := frame
 ram slides(20mm) down
-construction hole := solid({ p | p inside(under: ram, over t in (0deg, 360deg)) drill })
+construction hole := solid({ p | some t in (0deg, 360deg): p in drill at(under: ram) t })
 hole cut plate

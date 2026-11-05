@@ -41,7 +41,7 @@ component Tube(g: path, up: axis, r: Length, s: Scalar) {
 }
 
 param s: Scalar over (0, 1)
-stub := solid({ p | p coincident(over s) Tube(ax, std.y, r: r).f })
+stub := solid({ p | some s: p in Tube(ax, std.y, r: r).f at s })
 
 // the flange: a circle about the stub's top, square to its axis, swept back down it
 rim := circle(center: top, normal: ax)

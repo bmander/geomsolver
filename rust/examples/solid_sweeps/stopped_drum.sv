@@ -74,5 +74,5 @@ construction drum := solid(std.solids.Revolution(face(bottom, side, top, spindle
 // the swing: from 140° short of the sector to 30° into it
 swing := frame
 swing turns(1) ax
-construction notch := solid({ p | p inside(under: swing, over t in (-140deg, 30deg)) drum })
+construction notch := solid({ p | some t in (-140deg, 30deg): p in drum at(under: swing) t })
 notch cut block

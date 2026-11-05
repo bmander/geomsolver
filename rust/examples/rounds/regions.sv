@@ -34,7 +34,7 @@ along_x := line(o, ox)
 along_z := line(o, oz)
 a := std.sets.Cylinder(along_x, r: 3)
 b := std.sets.Cylinder(along_z, r: 3)
-crossing := { p | p inside a; p inside b }
+crossing := { p | p in a; p in b }
 bicylinder := solid(crossing)
 
 // a ball about (40, 0, 0), and two centres either side of it
@@ -44,6 +44,6 @@ near := point hint((38, 0, 0))
 fix((38, 0, 0)) near
 far := point hint((42, 0, 0))
 fix((42, 0, 0)) far
-ball := std.sets.Sphere(m, r: 5)
-nearer := { p | p inside ball; distance(p, near) <= distance(p, far) }
+ball := std.sets.Ball(m, r: 5)
+nearer := { p | p in ball; distance(p, near) <= distance(p, far) }
 cell := solid(nearer)

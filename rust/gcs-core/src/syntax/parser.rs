@@ -97,6 +97,11 @@ struct P<'a> {
     /// The faces written in place as arguments of a call being hoisted (#737), read but not yet
     /// minted: `Some` while such a call's arguments are read.
     faces: Option<Vec<(Decl, Span)>>,
+    /// The spans of the relation words the notation of sets was lowered to (#783,
+    /// `syntax::notation`): a relation read from one is `Written::lowered`.
+    lowered: Vec<Span>,
+    /// Those of them lowered from a face's `.side` (`Lowered::Side`).
+    sided: Vec<Span>,
 }
 
 /// An operand written in place, already made its own statement (#745): the token it stood at,
@@ -157,6 +162,8 @@ pub(crate) fn reference_at(text: &str, at: usize) -> Option<Ref> {
         families: 0,
         hoisted: None,
         faces: None,
+        lowered: Vec::new(),
+        sided: Vec::new(),
     };
     let mut r = st.refr()?;
     if !st.done() || !st.errs.is_empty() {
@@ -227,7 +234,10 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
     } else {
         src
     };
-    let (lexed, errs) = lex(src);
+    let (lexed, mut errs) = lex(src);
+    // the notation of sets lowered to the forms read below, its retired spellings refused (#783)
+    let low = super::notation::lower(lexed.toks);
+    errs.extend(low.errs);
     let defaults = ParseLimits::default();
     let mut st = P {
         src,
@@ -237,7 +247,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         },
         statements: 0,
         exhausted: false,
-        t: lexed.toks,
+        t: low.toks,
         i: 0,
         errs,
         in_body: 0,
@@ -250,6 +260,8 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         families: 0,
         hoisted: None,
         faces: None,
+        lowered: low.words,
+        sided: low.sided,
     };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();

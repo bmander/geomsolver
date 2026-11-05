@@ -399,7 +399,8 @@ impl<'a> Walk<'a> {
         for round in 0..=MAX_DEPTH {
             // no word a set is used by, no table to build: the last round is usually this
             let words = |st: &Stmt| match &st.kind {
-                StmtKind::Relation(r) => r.form.written().is_some_and(may_use),
+                StmtKind::Relation(r) => r.form.written()
+                    .is_some_and(|w| may_use(w) || w.word.text == "distance"),
                 StmtKind::Measured(_) => true,
                 _ => false,
             };
@@ -412,6 +413,11 @@ impl<'a> Walk<'a> {
             let mut any = false;
             let mut rest = out.into_iter();
             while let Some((st, path, sc)) = rest.next() {
+                // the notation of sets, read against what its operand is (#783)
+                let Some(st) = self.notation(st, &sc, &alias) else {
+                    any = true;
+                    continue;
+                };
                 // a set measured from, or where one ends (#183 F2, F7): a point of its own
                 if let Some(made) = self.measured_sets(&st, &path, &sc, &alias) {
                     any = true;
@@ -438,8 +444,8 @@ impl<'a> Walk<'a> {
                 let pair = found.len() == 2
                     && rel.form.written().is_some_and(|w| w.word.text == "tangent");
                 if found.len() > 1 && !pair {
-                    let m = "`coincident`, `inside`, `outside` and `distance` relate a set to a \
-                             point, and `tangent` a set to a line or to another set at a point";
+                    let m = "`in`, `not in` and `distance` relate a set to a point, and \
+                             `tangent` a set's boundary to a line or to another at a point";
                     self.once(Code::E040, st.span, m);
                     continue;
                 }
@@ -474,6 +480,73 @@ impl<'a> Walk<'a> {
                 return;
             }
         }
+    }
+
+    /// **The notation of sets, against a set** (#783): what a statement written in it says once its
+    /// operand is known to be a set (`syntax::notation` lowered it knowing only its spelling).
+    ///
+    /// * `p in S`, `S` no region (a sphere, a circle, any set whose body bounds no number): the
+    ///   set's statements at `p` as written — `coincident`, a point on it.  No number of it is read
+    ///   as a bound unasked (the retired one-number rule), and `p not in S` is refused: a set with
+    ///   no inside has no outside to be in.
+    /// * `p distance(d) S`, no side said: the ordinary distance from the set, nothing inside it —
+    ///   from a region's surface on its outside (`side: outside`).  From a set with no inside it
+    ///   has a root either side, and is refused.
+    /// * `p coincident S` written so, the retired spelling of `p in S`, is refused naming it; so is
+    ///   `side:` on a distance from a set with an inside, but for a sheet's (#645), which has two
+    ///   sides and no inside (`expand_reach`).
+    ///
+    /// `None` where the statement is refused.
+    fn notation(&mut self, mut st: Stmt, sc: &Scope, alias: &BTreeMap<String, String>) -> Option<Stmt> {
+        use crate::syntax::{Arg, Lowered, OpArg};
+        let StmtKind::Relation(r) = &mut st.kind else { return Some(st) };
+        let Some(w) = r.form.written_mut() else { return Some(st) };
+        let word = w.word.text.clone();
+        if !matches!(word.as_str(), "inside" | "outside" | "coincident" | "distance")
+            || w.ops.len() != 2
+        {
+            return Some(st);
+        }
+        let set = w.ops.iter().enumerate().find_map(|(k, o)| {
+            let (abs, rest) = self.look(alias).raw(o, sc)?;
+            (rest.is_empty() && self.sets.made.contains_key(&abs)).then_some((k, abs))
+        });
+        let Some((k, abs)) = set else { return Some(st) };
+        let region = self.sets.made[&abs].shape.region;
+        let name = public_path(&abs);
+        let at = w.word.span;
+        match word.as_str() {
+            "inside" | "outside" if w.lowered.any() && k == 1 && !region && w.args.is_empty() => {
+                if word == "outside" {
+                    let m = format!("`{name}` has no inside, so nothing is outside it: a point not \
+                        in a region is `p not in R` — the ball `std.sets.Ball(c, r)`, not the \
+                        sphere");
+                    self.once(Code::E040, at, m);
+                    return None;
+                }
+                w.word.text = "coincident".to_string();
+            }
+            "coincident" if !w.lowered.any() && k == 1 && !w.ops[0].root.text.contains('#') => {
+                let m = format!("`coincident` against a set is retired (#783): a point in `{name}` \
+                    is `p in {name}`, and on a region's surface `p in boundary({name})`");
+                self.once(Code::E040, at, m);
+                return None;
+            }
+            "distance" if w.sel("side").is_none() && w.sel("along").is_none() => {
+                if !region {
+                    let m = format!("`{name}` has no inside, so a distance from it has a root \
+                        either side: measure from the region it bounds (`p distance(d) R`) or \
+                        from what is not in that (`p distance(d) {{ q | q not in R }}`)");
+                    self.once(Code::E040, at, m);
+                    return None;
+                }
+                w.args.push(OpArg::Named(Name { text: "side".to_string(), span: Span::at(at.hi as usize) },
+                                         Arg::Word("outside".to_string())));
+                w.lowered = Lowered::Set;
+            }
+            _ => {}
+        }
+        Some(st)
     }
 
     /// **Outside a set** (#737 P3): `p outside S` where `S`'s body is several statements, an
@@ -533,6 +606,7 @@ impl<'a> Walk<'a> {
             args: Vec::new(),
             span: at,
             rates: Vec::new(),
+            lowered: crate::syntax::Lowered::No,
         };
         let mut usc = sc.clone();
         usc.pred.held = true;
@@ -641,6 +715,7 @@ impl<'a> Walk<'a> {
                 args: Vec::new(),
                 span: at,
                 rates: Vec::new(),
+                lowered: crate::syntax::Lowered::No,
             };
             let rel = Relation::of(RelationForm::Written(on));
             // applied under a prefix of its own, so two sets one statement measures from bind
@@ -919,6 +994,21 @@ impl<'a> Walk<'a> {
         let (w, rel, at) = (su.w, su.u.rel, su.u.at);
         let word = w.word.text.as_str();
         let set = self.set_written(&w.ops[k]);
+        // `side:` on a set with an inside, written so, is the retired spelling (#783): the
+        // ordinary distance needs none; a sheet's two sides are another meaning, and stay
+        if word == "distance" && !w.lowered.any() && w.sel("side").is_some()
+            && self.sheet_rails(&self.sets.made[abs], alias).is_none()
+        {
+            let side = w.sel("side").unwrap_or_default();
+            let m = if side == "inside" {
+                format!("`side: inside` is retired (#783): the distance from what is not in \
+                    `{set}` is `p distance(d) {{ q | q not in {set} }}`")
+            } else {
+                format!("`side: outside` is retired (#783): the distance from a set is nothing \
+                    inside it, so `p distance(d) {set}` is already outside it")
+            };
+            return self.once(Code::E040, w.key_span("side").unwrap_or(at), m);
+        }
         // a side grown, as a set's body carries it (`Written::lower_side`): a bounded distance
         let mut lowered = w.clone();
         lowered.lower_side();
@@ -1050,7 +1140,7 @@ impl<'a> Walk<'a> {
         let at = su.u.at;
         // the number moved, or the bound on the number offset
         if !distance && cmp.is_none() {
-            let m = format!("a region solid's point is bounded: `inside({text}) {set}`");
+            let m = format!("a region solid's point is bounded: `p distance(<= {text}) {set}`");
             return self.once(Code::E040, at, m);
         }
         let StmtKind::Relation(r) = &mut lit.body[i].kind else { unreachable!("a relation") };
@@ -1218,8 +1308,7 @@ pub(super) fn relation(
 ) -> Relation {
     let word = Name { text: word.to_string(), span: at };
     Relation::of(RelationForm::Written(crate::syntax::Written {
-        word, fixity, ops, args, span, rates: Vec::new(),
-    }))
+        word, fixity, ops, args, span, rates: Vec::new(), lowered: crate::syntax::Lowered::No }))
 }
 
 /// The point a tangency names, `tangent(at: m)` — `None` where its parentheses hold anything else.
@@ -1479,8 +1568,9 @@ fn reach_of(w: &crate::syntax::Written, set: &str) -> Result<Reach, String> {
             OpArg::Dim(t, _) => text = Some(t.clone()),
             OpArg::Named(n, Arg::Word(_)) if n.text == "side" => {}
             _ => {
-                return Err(format!("a distance from `{set}` takes its number and `side: \
-                                    outside` or `side: inside`"))
+                return Err(format!("a distance from `{set}` takes its number: `p distance(<= d) \
+                                    {set}`, or from what is not in it `p distance(<= d) {{ q | q \
+                                    not in {set} }}`"))
             }
         }
     }

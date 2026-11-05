@@ -7,8 +7,8 @@ use std.motion (screws, spins, turns)
 // -- stations of a face family (#243 L3) --------------------------------------------------------
 //
 // A loft or a sweep is a face of a component as one of its numbers runs over a declared parameter
-// (§6.9, #398): `param s: Scalar over (0, 1)` and `solid({ p | p coincident(over s)
-// I(…).f })`.  These words only say
+// (§6.9, #398): `param s: Scalar over (0, 1)` and `solid({ p | some s: p in
+// I(…).f at s })`.  These words only say
 // where a station stands on its path: a plane `n` square to the path where its parameter is `s`,
 // its `v` along `up`.  What the section is at that station — its shape, its twist, its scale, the
 // rails it follows — is the writer's component, drawn `in st.n` and reading `s` (the laws below
@@ -19,7 +19,7 @@ use std.motion (screws, spins, turns)
 //     sec := Section(st.n.origin, size: inlet + (outlet - inlet) * s) in st.n
 //   }
 //   param s: Scalar over (0, 1)
-//   body := solid({ p | p coincident(over s) Reducer(guide, inlet: 24mm, outlet: 12mm).sec.profile })
+//   body := solid({ p | some s: p in Reducer(guide, inlet: 24mm, outlet: 12mm).sec.profile at s })
 //
 // The edge `ab` at one station is `ab` at every other, so two sections correspond by being one.
 
@@ -108,12 +108,12 @@ component Helix(base: plane, pitch: Length, turns: Scalar, s: Scalar) {
   private screw := frame
   screw screws(pitch) base.normal
   fix(value == 360deg * turns * s) screw
-  n := base in screw
+  n := base at screw
   // and `n` turned a quarter about its `u`
   private stand := frame
   stand turns(1) n.u
   fix(value == 90deg) stand
-  axial := n in stand
+  axial := n at stand
 }
 
 // A helix's normal station: the plane square to the helix of radius `r` about `base`'s normal
@@ -133,8 +133,8 @@ component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scala
   private tilt := frame
   tilt screws(r * 360deg / (90deg + atan2(pitch, 2 * pi * r))) base.u
   fix(value == 90deg + atan2(pitch, 2 * pi * r)) tilt
-  private start := base in tilt
-  n := start in screw
+  private start := base at tilt
+  n := start at screw
 }
 
 // The rotation-minimising frame of a station (#339 D3, #243 L9): the plane `f` through `n`'s
@@ -185,7 +185,7 @@ component Frenet(g: path, s: Scalar) {
 // turn's is held about a line), so its pose where the path's parameter is `u` is read off the
 // path after the solve — square to the path's tangent there, turned as the path makes it from
 // where the frame is drawn, its home.  What is drawn in it is drawn at the home, and a face drawn
-// there and swept as a declared parameter runs, `solid({ p | p coincident(over s) sec })`,
+// there and swept as a declared parameter runs, `solid({ p | some s: p in sec at s })`,
 // stands at every station
 // where the frame does, `s` the path's own parameter (a line's and an arc's fraction of its run,
 // a spline's parameter, a traced curve's formal).  Where today's station words solve a plane at
@@ -198,7 +198,7 @@ component Frenet(g: path, s: Scalar) {
 //     radius(2mm) k
 //   }
 //   sec := face(k)
-//   tube := solid({ p | p coincident(over s) sec })
+//   tube := solid({ p | some s: p in sec at s })
 
 // `std.stations.Along(g, up: u, home: h)` makes `f`, a frame along `g`, its rotation-minimising
 // frame (`On`'s and `Minimal`'s): drawn square to `g` where its parameter is `h`, `v` leaning
@@ -283,7 +283,7 @@ component Across(a: path, b: path, c: path, s: Scalar) {
 // Nothing is inferred.  The first three corners must not stand in a line.
 //
 //   param s: Scalar over (0, 1)
-//   body := solid({ p | p coincident(over s) std.stations.Ruled(inlet, outlet).f })
+//   body := solid({ p | some s: p in std.stations.Ruled(inlet, outlet).f at s })
 component Ruled(a: face, b: face, s: Scalar) {
   cycle (ea, eb) in (a, b) {
     private construction rail := line(ea.p1, eb.p1)
@@ -364,7 +364,7 @@ component Twisted(n: plane, twist: Angle, reach: Length, s: Scalar) {
   in n {
     private x := point
     x on_u(d: reach) n
-    t := x in turn
+    t := x at turn
   }
 }
 

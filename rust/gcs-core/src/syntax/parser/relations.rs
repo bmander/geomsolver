@@ -81,6 +81,19 @@ impl<'a> P<'a> {
         Some(r)
     }
 
+    /// How a relation word at `span` was written (#783): lowered from the notation of sets, and
+    /// from a face's `.side` or not (`syntax::notation`).
+    pub(super) fn lowered_word(&self, span: Span) -> crate::syntax::Lowered {
+        use crate::syntax::Lowered;
+        // where the word starts: its span may be widened over its parentheses
+        let at = |spans: &[Span]| spans.iter().any(|s| s.lo == span.lo);
+        match (at(&self.lowered), at(&self.sided)) {
+            (_, true) => Lowered::Side,
+            (true, false) => Lowered::Set,
+            _ => Lowered::No,
+        }
+    }
+
     /// Whether the tokens ahead are `rate(`, an operand read as its rate (#339 D2).
     pub(super) fn rate_ahead(&self) -> bool {
         matches!(self.peek(), Some(Tok::Ident(w)) if w == "rate")
@@ -125,6 +138,7 @@ impl<'a> P<'a> {
         args: Vec<OpArg>,
         lo: usize,
     ) -> Option<Relation> {
+        let word_span = word.span;
         let mut args = args;
         let mut place = None;
         let mut place_span = Span::default();
@@ -182,6 +196,7 @@ impl<'a> P<'a> {
                 args,
                 span: Span::new(lo, self.prev_hi()),
                 rates: Vec::new(),
+                lowered: self.lowered_word(word_span),
             }),
             claim: false,
             witness: None,
@@ -228,9 +243,10 @@ impl<'a> P<'a> {
         if fixity == Fixity::Infix && !self.over_ahead() {
             if let Some(cmp) = crate::constraints::plane_side_word(word) {
                 let side = if cmp == Cmp::Le { "outside" } else { "inside" };
-                self.fail(&format!("`{word}` takes nothing in its parentheses: a point at most \
-                    `d` on `S`'s {side} is `p distance(<= d, side: {side}) S`, and `S` grown by \
-                    `d` is the set `std.sets.Offset(S, d: d)`"));
+                let _ = side;
+                self.fail(&format!("`{word}` takes nothing in its parentheses: a point within \
+                    `d` of `S` is `p distance(<= d) S`, and `S` grown by `d` is the set \
+                    `std.sets.Grown(S, d: d)`"));
                 return None;
             }
         }

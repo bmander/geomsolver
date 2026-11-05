@@ -23,15 +23,15 @@ use std.solids
 r := 3mm
 
 component Rolled(a: face, b: face, r: Length) := { p |
-  p inside a
-  p inside b
+  p in a.side
+  p in b.side
   angle(a, b, at: p) <= 180deg
-  centres := { c | c inside a; c distance(>= r) a.surface; c inside b; c distance(>= r) b.surface }
-  crease := { q | q coincident a; q coincident b }
-  meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
+  centres := { c | c in a.side; c distance(>= r) boundary(a.side); c in b.side; c distance(>= r) boundary(b.side) }
+  crease := { q | q in a; q in b }
+  meeting := { q | q in boundary(a.side); q in boundary(b.side); q in crease.ends }
   distance(p, centres) >= r
   distance(p, crease) <= distance(p, meeting)
-  p inside crease.ends
+  p in crease.ends
 }
 
 A rolled(r) B := {

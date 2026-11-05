@@ -75,5 +75,5 @@ construction drum := solid(std.solids.Revolution(face(bottom, side, top, spindle
 // the swing: from 140° short of the sector to 140° past its start, half a millimetre a turn
 swing := frame
 swing screws(0.5mm) ax
-construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) drum })
+construction groove := solid({ p | some t in (-140deg, 140deg): p in drum at(under: swing) t })
 groove cut block

@@ -1048,8 +1048,8 @@ impl<'a> P<'a> {
             }
             // `solid(… over s in (a, b))` is retired (#391 S2) for the sweep
             Some("solid") if call && self.family_ahead() => {
-                self.fail("a face family is `solid({ p | p coincident(over s) \
-                           Component(…).face })` (#391, #398, #737): `solid(… over …)` is retired");
+                self.fail("a face family is `solid({ p | some s: p in Component(…).face at s })` \
+                           (#391, #398, #737, #783): `solid(… over …)` is retired");
                 return None;
             }
             // `k := trace(leg.toe over theta in (0, 360))` — a point of a component as one of

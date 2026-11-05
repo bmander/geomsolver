@@ -23,16 +23,16 @@ fix((0, 0, 1)) ze
 axis_line := line(apex, ze)
 
 pitch := std.sets.Cone(axis_line, half: 30deg)
-tip := std.sets.Offset(pitch, d: 1.5mm)
-heel := std.sets.Sphere(apex, r: 20)
+tip := std.sets.Grown(pitch, d: 1.5mm)
+heel := std.sets.Ball(apex, r: 20)
 toe_side := { q | q distance(>= 12mm) apex }
 
 face := { p |
-  p inside tip
-  p distance(<= 2mm, side: inside) pitch
-  p inside heel
-  p inside toe_side
-  p inside std.rounds.Rounded(tip, heel, r: 0.8mm)
-  p inside std.rounds.Rounded(tip, toe_side, r: 0.8mm)
+  p in tip
+  p distance(<= 2mm) { q | q not in pitch }
+  p in heel
+  p in toe_side
+  p in std.rounds.Rounded(tip, heel, r: 0.8mm)
+  p in std.rounds.Rounded(tip, toe_side, r: 0.8mm)
 }
 blank := solid(face)

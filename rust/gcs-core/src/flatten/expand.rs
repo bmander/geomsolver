@@ -2057,6 +2057,20 @@ impl Walk<'_> {
 
     /// The set a declaration's `i`th operand names, where it names one.
     fn set_operand(&mut self, d: &Decl, i: usize, sc: &Scope) -> Option<Ref> {
+        // a region's boundary, `boundary(S)` (#783): its surface, which the probe is put on
+        if let [Kid::Ref(set)] = d.children.get(i).map(Vec::as_slice).unwrap_or(&[]) {
+            if let Some((last, rest)) = set.path.split_last() {
+                let surface = matches!(last, crate::syntax::Seg::Field(f) if f.text == "surface")
+                    || matches!(last, crate::syntax::Seg::Member(m) if m.word() == "surface");
+                if surface {
+                    let mut bare = d.clone();
+                    let mut of = set.clone();
+                    of.path = rest.to_vec();
+                    bare.children[i] = vec![Kid::Ref(of)];
+                    return self.set_named(&bare, i, sc).map(|_| set.clone());
+                }
+            }
+        }
         self.set_named(d, i, sc).map(|(set, _, _)| set)
     }
 
@@ -2223,6 +2237,7 @@ fn applied(probe: &str, set: Ref, word: &str, at: Span) -> crate::syntax::Relati
         args: Vec::new(),
         span: at,
         rates: Vec::new(),
+        lowered: crate::syntax::Lowered::No,
     };
     crate::syntax::Relation::of(crate::syntax::RelationForm::Written(written))
 }

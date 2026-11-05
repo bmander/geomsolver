@@ -75,5 +75,5 @@ inlet2 := face(c0, c1, c2, c3, -> close)
 // the same diamond walked from its second corner: a connector
 outlet_turned := face(d1, d2, d3, d0, -> close)
 param s: Scalar over (0, 1)
-body := solid({ p | p coincident(over s) std.stations.Ruled(inlet, outlet).f })
-turned := solid({ p | p coincident(over s) std.stations.Ruled(inlet2, outlet_turned).f })
+body := solid({ p | some s: p in std.stations.Ruled(inlet, outlet).f at s })
+turned := solid({ p | some s: p in std.stations.Ruled(inlet2, outlet_turned).f at s })

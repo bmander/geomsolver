@@ -47,7 +47,7 @@ in std.front {
 }
 swing_about := frame
 swing_about turns(1) spindle
-construction groove := solid({ p | p inside(under: swing_about, over t in (-swing / 2, swing / 2)) ball.body })
+construction groove := solid({ p | some t in (-swing / 2, swing / 2): p in ball.body at(under: swing_about) t })
 
 part := solid(block)
 groove cut part

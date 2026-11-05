@@ -60,6 +60,19 @@ pub(super) fn refs_eq(a: &Ref, b: &Ref) -> bool {
 }
 
 pub(super) fn write_ref(out: &mut String, r: &Ref) {
+    // a set's or a face's surface is its boundary (#783): `S.surface` as `boundary(S)`
+    let surface = |seg: &Seg| match seg {
+        Seg::Field(f) => f.text == "surface",
+        Seg::Member(m) => m.word() == "surface",
+        _ => false,
+    };
+    if let Some((last, rest)) = r.path.split_last().filter(|(last, _)| surface(last)) {
+        let _ = last;
+        out.push_str("boundary(");
+        write_ref(out, &Ref { path: rest.to_vec(), ..r.clone() });
+        out.push(')');
+        return;
+    }
     out.push_str(&r.root.text);
     for seg in &r.path {
         match seg {

@@ -1,5 +1,5 @@
 // `std.solids`: the solids a drawing makes from its faces, each a set (#737).  A solid is
-// `solid(S)`, the points inside a set `S`, and nothing else: a prism, a drafted prism, a
+// `solid(S)`, the points in a set `S`, and nothing else: a prism, a drafted prism, a
 // countersink and a revolution are words written here over the language's own words, and the
 // evaluator recognises what their sets say — by their statements, never by these names — so the
 // same set written by hand is built the same way, exactly, its faces named alike.
@@ -10,7 +10,7 @@
 // short of a whole one is capped `start` where it begins and `end` where it ends.
 
 
-// A prism: the points whose foot on the section's plane lies within it, between the ordinates
+// A prism: the points the section occupies slid some way along its normal, between the ordinates
 // `from` and `to` along its normal from that plane — `from: -30mm, to: 0mm` the material behind
 // the face the view shows.  `near` is its cap at `to`, `far` at `from`, and each side is named by
 // the edge it is swept from (`block.ab`).
@@ -18,7 +18,7 @@
 //   use std.solids
 //   block := solid(std.solids.Prism(sec, from: -30mm, to: 0mm))
 component Prism(section: face, from: Length, to: Length) := { p |
-  p inside section
+  some h: p in section at(along: n) h
   p distance(>= from, along: n) section
   p distance(<= to, along: n) section
 }
@@ -32,7 +32,7 @@ component Prism(section: face, from: Length, to: Length) := { p |
 //   use std.solids
 //   ring := solid(std.solids.Revolution(sec, about: ax))
 component Revolution(section: face, about: line, from: Angle = 0deg, to: Angle = 360deg) := { p |
-  p coincident(under: about, over t in (from, to)) section
+  some t in (from, to): p in section at(under: about) t
 }
 
 // A drafted prism: `Prism`'s points, its section at each ordinate its own with every edge moved
@@ -45,8 +45,8 @@ component Revolution(section: face, about: line, from: Angle = 0deg, to: Angle =
 component Drafted(section: face, from: Length, to: Length, draft: Angle) := { p |
   p distance(>= from, along: n) section
   p distance(<= to, along: n) section
-  beyond := { q | q outside section }
-  within := { q | q inside section }
+  beyond := { q | not some h: q in section at(along: n) h }
+  within := { q | some h: q in section at(along: n) h }
   distance(p, beyond) - distance(p, within) >= tan(draft) * distance(p, section)
 }
 
@@ -63,16 +63,16 @@ component Drafted(section: face, from: Length, to: Length, draft: Angle) := { p 
 //   sink cut strap
 component Countersink(rim: face, angle: Angle) := { p |
   p distance(<= 0mm, along: n) rim
-  beyond := { q | q outside rim }
-  within := { q | q inside rim }
+  beyond := { q | not some h: q in rim at(along: n) h }
+  within := { q | some h: q in rim at(along: n) h }
   distance(p, beyond) - distance(p, within) >= tan(angle / 2) * distance(p, rim)
 }
 
-// A prism through everything: the points whose foot on the section's plane lies within it,
-// unbounded along its normal.  It is a cutter, naming no body: cut from bodies (`pin cut body`) or
+// A prism through everything: the points the section occupies slid any way along its normal,
+// unbounded along it.  It is a cutter, naming no body: cut from bodies (`pin cut body`) or
 // kept in common with them, it reaches through each one's material both ways, however the drawing
 // moves it; its sides are named by the section's edges.
 //
 //   pin := solid(std.solids.Through(hole))
 //   pin cut body
-component Through(section: face) := { p | p inside section }
+component Through(section: face) := { p | some h: p in section at(along: n) h }
