@@ -161,10 +161,10 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
             let big = hs.iter().fold(0f64,|a,&h| a.max(h));
             let bk = beta*big;
             let h = bk*eta;
-            // (the nearer radius `(1 − s)/βK` read as `2η/(1 + s)`, which is it exactly: over a
-            // sheet all but flat `βK` is rounding's and `1 − s` cancels to nothing, the ball held
-            // empty and Newton's first step out of it — the box's middle then returned as a root, a
-            // long way off)
+            // (the nearer radius `(1 − s)/βK` read as `2η/(1 + s)`, which is it exactly and never
+            // short of the first step `η`: over a sheet all but flat `βK` is rounding's and `1 − s`
+            // cancelled to nothing, the ball held empty and Newton's first step out of it — the
+            // box's middle then returned as a root, a long way off)
             let (lo,hi) = if bk > 0. {
                 let s = (1.-2.*h).max(0.).sqrt();
                 (2.*eta/(1.+s),(1.+s)/bk)
@@ -172,7 +172,6 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
             if h <= 0.5 && lo <= r && r <= hi {
                 // Newton's method from the middle converges to it, within `lo` of the middle
                 let mut x = m;
-                let mut stepped = eta == 0.;
                 for _ in 0..60 {
                     let (fx,jx) = f(x);
                     let Some(ix) = inverse(jx) else { break };
@@ -182,15 +181,10 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
                     // held within the root's ball, where it is
                     if (0..N).any(|i| (next[i]-m[i]).abs() > lo*(1.+1e-9)+1e-300) { break }
                     x = next;
-                    stepped = true;
                     if moved <= 1e-15*(1.+x.iter().fold(0f64,|a,&v| a.max(v.abs()))) { break }
                 }
-                // a first step out of the ball is the theorem's bounds read past rounding: the box
-                // is halved, not its middle taken for the root
-                if stepped {
-                    out.push(Point {at:x,touch:false});
-                    continue
-                }
+                out.push(Point {at:x,touch:false});
+                continue
             }
         }
         if (0..N).all(|k| bx[k][1]-bx[k][0] <= width) || depth >= 200 {

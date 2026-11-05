@@ -21,34 +21,27 @@ pub struct BSpline { pub degree: usize,pub knots: Vec<f64>,pub poles: Vec<V>,pub
 /// derivatives' `d` and `e`. Over a stretch inside one knot span it is a polynomial, and its
 /// derivatives lie in the hull of the coefficients reaching the span (`bounds`).
 #[derive(Clone,Debug)]
-pub struct Heights { degree: usize,knots: Vec<f64>,c: Vec<f64>,d: Vec<f64>,e: Vec<f64> }
+pub struct Heights<'a> { degree: usize,knots: &'a [f64],c: Vec<f64>,d: Vec<f64>,e: Vec<f64> }
 
-impl Heights {
+impl Heights<'_> {
     /// The height and its rate at `t`, clamped into the domain.
     pub fn at(&self,t: f64) -> (f64,f64) {
         let (p,n) = (self.degree,self.c.len());
         let t = t.clamp(self.knots[p],self.knots[n]);
-        with_basis(p,&self.knots,n,t,1,|s,ders| {
+        with_basis(p,self.knots,n,t,1,|s,ders| {
             let (mut v,mut r) = (0.,0.);
             for j in 0..=p { v += ders[0][j]*self.c[s-p+j]; r += ders[1][j]*self.c[s-p+j] }
             (v,r)
         })
     }
-    /// The distinct knots, the curve's domain's ends among them: the spans' bounds.
-    pub fn spans(&self) -> Vec<f64> {
-        let (p,n) = (self.degree,self.c.len());
-        let mut k: Vec<f64> = self.knots[p..=n].to_vec();
-        k.dedup();
-        k
-    }
     /// Bounds on `|h'|` and `|h''|` over `[a, b]`, a stretch within one knot span: the largest of
     /// the derivatives' coefficients reaching it.
     pub fn bounds(&self,[a,b]: [f64;2]) -> [f64;2] {
         let (p,n) = (self.degree,self.c.len());
-        let s = span(p,&self.knots,n,0.5*(a+b));
+        let s = span(p,self.knots,n,0.5*(a+b));
         let most = |x: &[f64],hi: usize| -> f64 {
             let lo = s-p;
-            if x.is_empty() || lo >= x.len() { return 0. }
+            if lo >= x.len() { return 0. }
             x[lo..=hi.min(x.len()-1)].iter().fold(0.,|m: f64,v| m.max(v.abs()))
         };
         [most(&self.d,s.saturating_sub(1)),if s >= 2 { most(&self.e,s-2) } else { 0. }]
@@ -146,7 +139,7 @@ impl BSpline {
     /// **The heights of the curve's points over the plane through `o` square to `n`**, weighed
     /// (`Heights`): `Σ N_i w_i n · (P_i − o)`, a scalar B-spline nought exactly where the curve's
     /// point is on the plane (its weight is positive), read with bounds on its derivatives.
-    pub fn heights(&self,n: V,o: V) -> Heights {
+    pub fn heights(&self,n: V,o: V) -> Heights<'_> {
         let h = crate::util::space::dot(n,o);
         let c: Vec<f64> = self.poles.iter().enumerate()
             .map(|(i,q)| self.weights.as_ref().map_or(1.,|w| w[i])*(crate::util::space::dot(n,*q)-h)).collect();
@@ -162,7 +155,7 @@ impl BSpline {
         };
         let d = diff(&c,p,0);
         let e = if p >= 2 { diff(&d,p-1,1) } else { Vec::new() };
-        Heights {degree:p,knots:self.knots.clone(),c,d,e}
+        Heights {degree:p,knots:&self.knots,c,d,e}
     }
     /// The length of the control polygon, a bound on the curve's (a rational one's too: its de
     /// Casteljau steps cut corners).

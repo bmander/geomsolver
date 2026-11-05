@@ -174,7 +174,13 @@ changes across it, read where the curve has left the tolerance, a touch at its m
 does not (a double root rounding parts, a root two spans or stretches both find, and the noise a
 polynomial's rounding makes where a line runs along a torus's tube top, its distance the fourth
 power of the way: hundreds of crossings a micrometre apart before); and an end on the surface is
-a crossing there, taking the run beside it, as the sampled search reads it. That edges within
+a crossing there, taking the run the curve keeps within the tolerance beside it, as the sampled
+search reads it — not only the roots within the tolerance of it along the curve: a touch rounding
+places a little way in from an end on the surface, kept beside the end's crossing, left a
+plane's pieces open (`round_lowering::rounds_that_run_out_onto_a_face_are_rolled_and_cut_off`,
+`rounds_examples::the_runouts_are_the_stacks`). An edge clipped to a face's box
+(`query::curve_surface_within`) is read stretch by stretch and settled once over the whole, a
+stretch's end cut at the box no end of the edge. That edges within
 the tolerance of tangent were read one way by the polynomials and another by the samples is why
 a Boolean's edges once sampled the cone, the torus and the sheets
 (`round_lowering::a_round_across_seams_between_arcs_on_a_drafted_prism_is_glued`,
