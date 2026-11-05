@@ -208,7 +208,14 @@ however shallow, the fold solved in its two-root form. A crossing with no ridge,
 the march along `∇a × ∇b`, is traced as `f = 0` in either surface's own parameters
 (`level_curves`: one scalar equation, its tangent square to `∇f`, its step halved where it turns
 sharply, as at a parabola's vertex where a plane leans a hair to a vault's crown). A point is on
-such a branch within `8 tol / sin θ` (`on_a_branch`, A3's reach). `meeting::meet` reads them on its
+such a branch within `8 tol / sin θ` (`on_a_branch`, A3's reach). **A meeting's analysis is done
+once** (#780 R4): `meet_with` finds each side's critical set once and reads it for the singular
+points, the ridges (`ridges_from`) and the seeds alike; the branches a point is asked about are
+sampled once into chords filed by their boxes (`meeting::Sampled`), a point held only to the
+chords within reach of it and no foot sought beyond reach of a branch's poles; and a level curve's
+step goes to the point its look-ahead projected, the next station's gradient the one read there.
+The profile counts each (`util::meter::analysis`: critical sets and their jets, branch tests,
+samples and feet, a level curve's readings of `f`). `meeting::meet` reads them on its
 traced road; an arrangement reads them where its march is refused as nearly touching
 (`Arrangement::traced_meeting`), each touch a stretch its march ends at, each seed then traced
 alone. **The trace's refusal below `SHALLOW` is no longer the kernel's answer**: it is where the

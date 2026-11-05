@@ -1093,19 +1093,20 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
     // point location reads out, a hair in reads in (a face turned against its neighbours places
     // points as the right one does, but its volume is off: the ring's sweep came out at 3.38 of
     // 25.13 with every point placed right)
+    // (each face read on its own, across the cores, the first turned in the faces' order refused:
+    // #780 R4)
     let size = { let (lo,hi) = built.bounds(); crate::util::space::distance(lo,hi) };
     let hair = (1e-4*size).max(64.*tol);
-    for (fi,f) in built.faces.iter().enumerate() {
+    let turned = crate::util::par::indices(built.faces.len(),|fi| -> Option<V> {
+        let f = &built.faces[fi];
         let [[u0,u1],[v0,v1]] = crate::boolean::face_parameters(built,fi);
-        let at = (1..4).flat_map(|i| (1..4).map(move |j| [u0+(u1-u0)*i as f64/4.,v0+(v1-v0)*j as f64/4.]))
-            .map(|uv| f.surface.point(uv)).find(|&p| solid.face_place(fi,p) == Place::In);
-        let Some(p) = at else { continue };
-        let Some(n) = f.outward(p) else { continue };
+        let p = (1..4).flat_map(|i| (1..4).map(move |j| [u0+(u1-u0)*i as f64/4.,v0+(v1-v0)*j as f64/4.]))
+            .map(|uv| f.surface.point(uv)).find(|&p| solid.face_place(fi,p) == Place::In)?;
+        let n = f.outward(p)?;
         let (outside,inside) = (add(p,scale(n,hair)),sub(p,scale(n,hair)));
-        if solid.solid_place(outside) == Place::In && solid.solid_place(inside) == Place::Out {
-            return Err(Unbuilt::Wrong {at:inside,held:false})
-        }
-    }
+        (solid.solid_place(outside) == Place::In && solid.solid_place(inside) == Place::Out).then_some(inside)
+    });
+    if let Some(at) = turned.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held:false}) }
     // turned inside out: every point it seems to hold, it leaves out
     if crate::props::volume(built) < 0. {
         let inside = points.iter().copied().find(|&p| solid.solid_place(p) == Place::In)

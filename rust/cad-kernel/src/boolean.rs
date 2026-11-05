@@ -1473,7 +1473,7 @@ impl<'a> Arrangement<'a> {
     /// else is there. Where the two only touch is a meeting already known (`Touches`): no trace
     /// starts or passes there.
     fn traced_meeting(&self,faces: Two,crossings: &Crossings,known: &[Curve],bx: Box3) -> Result<Vec<Curve>,String> {
-        match self.traced_meeting_with(faces,crossings,known,&[],bx) {
+        match self.traced_meeting_with(faces,crossings,known,&super::meeting::Sampled::default(),bx) {
             // **a meeting the march finds nearly touching is read from its critical set** (#778 T4):
             // the ridges of one face's distance from the other over its parameters — the touches
             // along curves through the inside of both faces, and the crossings beside them however
@@ -1490,6 +1490,8 @@ impl<'a> Arrangement<'a> {
                     for r in super::meeting::ridges(mine,domain,theirs,self.tol)? { branches.extend(super::meeting::ridge_branches(mine,domain,theirs,&r,self.tol)) }
                     if !branches.is_empty() { break }
                 }
+                // (sampled once, for every seed and cell asked whether it lies on one, #780 R4)
+                let mut branches = super::meeting::Sampled::new(branches);
                 // the crossings no ridge holds, traced as `f = 0` in either face's parameters through
                 // the points where the faces' edges cross the other (#778 T3)
                 let on = &crossings.on_face;
@@ -1501,8 +1503,8 @@ impl<'a> Arrangement<'a> {
                 }
                 if branches.is_empty() { return Err(e) }
                 if super::debug() {
-                    eprintln!("brep: a meeting read from its ridges and level curves: {} branches",branches.len());
-                    for br in &branches { if let Curve::BSpline(s) = &br.curve { let [t0,t1] = s.domain();
+                    eprintln!("brep: a meeting read from its ridges and level curves: {} branches",branches.branches().len());
+                    for br in branches.branches() { if let Curve::BSpline(s) = &br.curve { let [t0,t1] = s.domain();
                         eprintln!("brep:   {:?} from {:?} to {:?}",br.contact,br.curve.point(t0),br.curve.point(t1)) } }
                     for s in &seeds { eprintln!("brep:   seed {s:?}") }
                 }
@@ -1514,7 +1516,7 @@ impl<'a> Arrangement<'a> {
 
     /// `traced_meeting`, the branches a ridge holds (`ridged`) known before the march: each a curve
     /// of the meeting, a touch among them a stretch a march ends at.
-    fn traced_meeting_with(&self,faces: Two,crossings: &Crossings,known: &[Curve],ridged: &[super::meeting::Branch],(lo,hi): Box3)
+    fn traced_meeting_with(&self,faces: Two,crossings: &Crossings,known: &[Curve],ridged: &super::meeting::Sampled,(lo,hi): Box3)
         -> Result<Vec<Curve>,String> {
         let (tol,pad) = (self.tol,self.pad);
         let ([oa,ob],[fa,fb]) = (faces.s,faces.f);
@@ -1532,7 +1534,7 @@ impl<'a> Arrangement<'a> {
                 EdgeCurve::Degenerate => None,
             }).collect();
         // a ridge's touches are stretches the two touch along, as an edge they lie along is
-        for br in ridged.iter().filter(|br| br.contact == super::meeting::Contact::Touching) {
+        for br in ridged.branches().iter().filter(|br| br.contact == super::meeting::Contact::Touching) {
             if let Curve::BSpline(s) = &br.curve { stretches.push((&br.curve,s.domain())) }
         }
         let mut touches = Touches::new(self,faces,&stretches);
@@ -1554,7 +1556,7 @@ impl<'a> Arrangement<'a> {
         // beside a ridge's or a level curve's branch is beside a known meeting
         let beside = &mut |p: V| touches.beside(p) || super::meeting::on_a_branch(sa,sb,ridged,p,tol);
         let mut traced = known.to_vec();
-        traced.extend(ridged.iter().map(|br| br.curve.clone()));
+        traced.extend(ridged.branches().iter().map(|br| br.curve.clone()));
         if ridged.is_empty() {
             traced.extend(super::ssi::trace_beside(sa,sb,&seeds,beside,lo,hi,tol)?);
         } else {

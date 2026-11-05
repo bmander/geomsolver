@@ -271,15 +271,21 @@ const STEEP: f64 = 10.*super::ssi::SHALLOW;
 /// `∂f/∂n`, each ridge once. A rank-0 zero is refused, typed, naming the surfaces and the point: the
 /// two coincide there, or touch to higher order (#717).
 pub fn ridges(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Result<Vec<Ridge>,String> {
+    ridges_from(a,d,b,&critical_set(a,d,b,tol),tol)
+}
+
+/// `ridges`, from the critical set `set` of `f` over the box already found (`critical_set(a, d, b,
+/// tol)`): a meeting reads its critical set once a side, for its singular points, its ridges and
+/// its seeds alike (#780 R4).
+pub fn ridges_from(a: &Surface,d: [[f64;2];2],b: &Surface,set: &[Critical],tol: f64) -> Result<Vec<Ridge>,String> {
     let w = [d[0][1]-d[0][0],d[1][1]-d[1][0]];
     let h = [w[0]*1e-5,w[1]*1e-5];
     let size = { let (lo,hi) = reach(a,d); norm(sub(hi,lo)).max(1e-300) };
     let inside = |uv: Uv| uv[0] >= d[0][0] && uv[0] <= d[0][1] && uv[1] >= d[1][0] && uv[1] <= d[1][1];
     let step = (a.feature().min(b.feature()).min(size)/96.).max(size*1e-4);
     let mut out: Vec<Ridge> = Vec::new();
-    let set = critical_set(a,d,b,tol);
-    if super::debug() { for c in &set { eprintln!("brep: critical {:?} on a {} against a {}",c,a.kind(),b.kind()) } }
-    for c in set {
+    if super::debug() { for c in set { eprintln!("brep: critical {:?} on a {} against a {}",c,a.kind(),b.kind()) } }
+    for &c in set {
         if c.rank == 0 && c.value.abs() <= 8.*tol {
             let p = a.point(c.uv);
             return Err(format!("a {} and a {} coincide or touch to higher order at [{:.4}, {:.4}, {:.4}]: refused (#717)",a.kind(),b.kind(),p[0],p[1],p[2]))
@@ -412,20 +418,27 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
             // the step shortened where the level curve turns sharply in the parameters (a parabola's
             // vertex where a plane leans a hair to a vault's crown) and let out again after
             let mut hstep = step;
+            // the look-ahead that let the step be taken, kept (#780 R4): the step is taken to the
+            // point it projected, and the next station's gradient is the one it read there
+            let mut held: Option<(Uv,(f64,[f64;2],[f64;2]))> = None;
             for _ in 0..100_000 {
                 if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (a.point(uv),format!("{} × {} (a level curve)",a.kind(),b.kind()))) { break }
-                let (_,g,k) = metric_grad(a,b,uv,h);
+                let (_,g,k) = match held.take() { Some((at,jet)) if at == uv => jet,_ => metric_grad(a,b,uv,h) };
                 let gn = g[0].hypot(g[1]);
                 if !(gn > 0.) { break }
                 let t = [-g[1]*sense/gn,g[0]*sense/gn];
                 // the tangent a step on, read before the step is taken: more than a tenth of a radian
-                // off this one, the step halved
-                let turned = |hs: f64| -> bool {
+                // off this one, the step halved; one not turned kept with its step, point and jet
+                let mut seen: Option<(f64,Uv,(f64,[f64;2],[f64;2]))> = None;
+                let mut turned = |hs: f64| -> bool {
                     let ahead = [uv[0]+hs*t[0]/k[0],uv[1]+hs*t[1]/k[1]];
                     let Some(q) = onto(ahead) else { return true };
-                    let (_,g2,_) = metric_grad(a,b,q,h);
+                    let jet = metric_grad(a,b,q,h);
+                    let g2 = jet.1;
                     let n2 = g2[0].hypot(g2[1]);
-                    !(n2 > 0.) || (g[0]*g2[0]+g[1]*g2[1])/(gn*n2) < 0.995
+                    let bent = !(n2 > 0.) || (g[0]*g2[0]+g[1]*g2[1])/(gn*n2) < 0.995;
+                    if !bent { seen = Some((hs,q,jet)) }
+                    bent
                 };
                 while hstep > 1e-7*size && turned(hstep) { hstep *= 0.5 }
                 let here = hstep;
@@ -442,7 +455,10 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
                     guess = [uv[0]+s*delta[0],uv[1]+s*delta[1]];
                     last = true;
                 }
-                let Some(next) = onto(guess) else { break };
+                // (the guess is the look-ahead's own point where its step is the one taken whole)
+                let projected = match seen { Some((hs,q,jet)) if hs == here && !last => { held = Some((q,jet)); Some(q) }
+                    _ => onto(guess) };
+                let Some(next) = projected else { break };
                 let next = [next[0].clamp(d[0][0],d[0][1]),next[1].clamp(d[1][0],d[1][1])];
                 let p = a.point(next);
                 if pts.len() > 3 && distance(p,a.point(uv0)) <= 0.75*step { closed = true; break }
@@ -504,35 +520,94 @@ pub fn within_domain(s: &Surface,d: [[f64;2];2]) -> [[f64;2];2] {
 /// enough to difference twice: what a meeting's ridges are read through (#778 T1).
 pub fn exact_distance(s: &Surface) -> bool { matches!(s,Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..)) }
 
-/// Whether `p` lies on one of `branches`: within `8 tol / sin θ` of it, `θ` the two surfaces'
-/// angle there — a point of a crossing at that angle is placed only so well (#735 A3's
-/// `on_meeting`), and a touch's to the square root of the tolerance, beside its own radius.
-pub fn on_a_branch(a: &Surface,b: &Surface,branches: &[Branch],p: V,tol: f64) -> bool {
-    crate::util::meter::analysis("branch tests",1);
-    let sine = norm(cross(unit_or(a.gradient(p)),unit_or(b.gradient(p)))).max(1e-6);
-    branches.iter().any(|br| {
-        // (a point where the two stand tangent within a few of a ridge's steps of a touch is that
-        // touch: a ridge's step is a forty-eighth of their finer feature)
-        let feature = a.feature().min(b.feature()).min(1e6);
-        let reach = match br.contact {
-            Contact::Crossing => 8.*tol/sine,
-            Contact::Touching if sine < super::ssi::SHALLOW => (8.*tol*feature).sqrt().max(feature/12.),
-            Contact::Touching => (8.*tol*feature).sqrt().max(8.*tol),
-        };
-        branch_distance(&br.curve,p) <= reach
-    })
+/// **A meeting's branches sampled once, to be asked whether points lie on them** (#780 R4): each
+/// B-spline branch's polyline of 512 chords (a closed one's too, whose foot a Newton search can
+/// settle on the wrong side of its seam) read when the branches are gathered, not again at every
+/// point asked; the chords filed by their boxes (`util::bvh`), so a point is held only to those
+/// within reach of it; and each such branch's poles' box, which its curve lies in, so a point
+/// beyond its reach of the box is off the branch with no foot sought.
+#[derive(Clone,Debug,Default)]
+pub struct Sampled {
+    branches: Vec<Branch>,
+    /// each chord: its branch, and its ends
+    chords: Vec<(usize,V,V)>,
+    boxes: Option<crate::util::bvh::Bvh<3>>,
+    /// each branch's poles' box, where its curve lies within its poles' hull (a B-spline's, its
+    /// weights positive)
+    hulls: Vec<Option<(V,V)>>,
 }
 
-/// How far `p` stands from a branch's curve: from a polyline of 512 chords along it, a closed
-/// one's too (whose foot a Newton search can settle on the wrong side of its seam), the nearer of
-/// that and the curve's own foot.
-fn branch_distance(c: &Curve,p: V) -> f64 {
-    crate::util::meter::analysis("branch feet",1);
-    let [t0,t1] = match c { Curve::BSpline(s) => s.domain(),_ => return distance(c.point(c.inverse(p)),p) };
-    crate::util::meter::analysis("branch samples",513);
-    let pts: Vec<V> = (0..=512).map(|k| c.point(t0+(t1-t0)*k as f64/512.)).collect();
-    let chords = pts.windows(2).map(|w| crate::util::space::segment_distance(p,w[0],w[1])).fold(f64::INFINITY,f64::min);
-    chords.min(distance(c.point(c.inverse(p)),p))
+impl Sampled {
+    /// `branches` sampled.
+    pub fn new(branches: Vec<Branch>) -> Sampled {
+        let mut s = Sampled::default();
+        s.extend(branches);
+        s
+    }
+    /// More branches, sampled, and the chords filed again.
+    pub fn extend(&mut self,more: impl IntoIterator<Item=Branch>) {
+        use crate::util::bvh::{Bounds,Bvh};
+        let mut sampled = 0;
+        for br in more {
+            let i = self.branches.len();
+            if let Curve::BSpline(s) = &br.curve {
+                let [t0,t1] = s.domain();
+                let pts: Vec<V> = (0..=512).map(|k| br.curve.point(t0+(t1-t0)*k as f64/512.)).collect();
+                sampled += pts.len() as u64;
+                self.chords.extend(pts.windows(2).map(|w| (i,w[0],w[1])));
+                let hull = s.weights.as_ref().is_none_or(|w| w.iter().all(|&x| x > 0.)).then(|| super::geom::hull(s.poles.iter().copied()));
+                self.hulls.push(hull);
+            } else { self.hulls.push(None) }
+            self.branches.push(br);
+        }
+        crate::util::meter::analysis("branch samples",sampled);
+        self.boxes = Some(Bvh::new(self.chords.iter().map(|&(_,p,q)| { let (lo,hi) = super::geom::hull([p,q]); Bounds {lo,hi} })));
+    }
+    /// The branches.
+    pub fn branches(&self) -> &[Branch] { &self.branches }
+    /// The branches, given back.
+    pub fn into_branches(self) -> Vec<Branch> { self.branches }
+    /// Whether there are none.
+    pub fn is_empty(&self) -> bool { self.branches.is_empty() }
+}
+
+/// Whether `p` lies on one of `branches`: within `8 tol / sin θ` of it, `θ` the two surfaces'
+/// angle there — a point of a crossing at that angle is placed only so well (#735 A3's
+/// `on_meeting`), and a touch's to the square root of the tolerance, beside its own radius. How far
+/// `p` stands from a B-spline branch is the nearer of its sampled chords and the curve's own foot,
+/// from another branch its foot alone.
+pub fn on_a_branch(a: &Surface,b: &Surface,branches: &Sampled,p: V,tol: f64) -> bool {
+    crate::util::meter::analysis("branch tests",1);
+    if branches.is_empty() { return false }
+    let sine = norm(cross(unit_or(a.gradient(p)),unit_or(b.gradient(p)))).max(1e-6);
+    // (a point where the two stand tangent within a few of a ridge's steps of a touch is that
+    // touch: a ridge's step is a forty-eighth of their finer feature)
+    let feature = a.feature().min(b.feature()).min(1e6);
+    let reach: Vec<f64> = branches.branches.iter().map(|br| match br.contact {
+        Contact::Crossing => 8.*tol/sine,
+        Contact::Touching if sine < super::ssi::SHALLOW => (8.*tol*feature).sqrt().max(feature/12.),
+        Contact::Touching => (8.*tol*feature).sqrt().max(8.*tol),
+    }).collect();
+    // a chord within its branch's reach (those whose boxes come within the farthest reach asked,
+    // a hair past it for rounding)
+    let far = reach.iter().fold(0f64,|m,&r| m.max(r))*(1.+1e-9);
+    let mut on = false;
+    if let Some(boxes) = &branches.boxes {
+        boxes.query_box(crate::util::bvh::Bounds {lo:p.map(|x| x-far),hi:p.map(|x| x+far)},|j| if !on {
+            let (i,u,v) = branches.chords[j];
+            on = crate::util::space::segment_distance(p,u,v) <= reach[i];
+        });
+    }
+    if on { return true }
+    // else a branch's own foot, none sought beyond its reach of the box its curve lies in
+    branches.branches.iter().enumerate().any(|(i,br)| {
+        if let Some((lo,hi)) = branches.hulls[i] {
+            let gap: [f64;3] = std::array::from_fn(|k| (lo[k]-p[k]).max(p[k]-hi[k]).max(0.));
+            if norm(gap)*(1.-1e-12) > reach[i] { return false }
+        }
+        crate::util::meter::analysis("branch feet",1);
+        distance(br.curve.point(br.curve.inverse(p)),p) <= reach[i]
+    })
 }
 
 /// **The branches a ridge holds** (#778 T2, T3): the stretches where its fold is within `tol` of
@@ -659,13 +734,15 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
     let (ra,rb) = (reach(a,da),reach(b,db));
     let (lo,hi) = shared(ra,rb);
     let mut singular: Vec<Point> = Vec::new();
-    // the Morse analysis in each surface's parameters: the critical points of the other's distance
+    // the Morse analysis in each surface's parameters: the critical set of the other's distance,
+    // found once a side and read for the singular points, the ridges and the seeds (#780 R4)
+    let sets = [critical_set(a,da,b,tol),critical_set(b,db,a,tol)];
     let mut critical: Vec<(V,bool)> = Vec::new();
-    for (s,d,o) in [(a,da,b),(b,db,a)] {
-        for (uv,value) in critical_points(s,d,o,tol) {
-            let p = s.point(uv);
+    for (s,set) in [a,b].into_iter().zip(&sets) {
+        for c in set {
+            let p = s.point(c.uv);
             if (0..3).any(|k| p[k] < lo[k] || p[k] > hi[k]) { continue }
-            critical.push((p,value.abs() <= 8.*tol));
+            critical.push((p,c.value.abs() <= 8.*tol));
         }
     }
     for &(p,zero) in &critical {
@@ -682,22 +759,24 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
     crate::util::meter::meeting(a.kind(),b.kind(),!matches!(met,Ssi::Traced),start.elapsed());
     // the ridges of the meeting, in `a`'s parameters (#778 T2, T3): its touches along curves, and
     // the crossings beside them however shallow, read from the critical set — the general road
-    let mut from_ridges: Vec<Branch> = Vec::new();
+    let mut ridged: Vec<Branch> = Vec::new();
     if matches!(met,Ssi::Traced) {
         // over the parameters of the one whose partner's distance is exact (a plane's, a quadric's, a
         // torus's): a sheet's is a numerical foot, too rough to difference twice
-        let (s,d,o) = if exact_distance(a) && !exact_distance(b) { (b,db,a) } else { (a,da,b) };
-        for r in ridges(s,d,o,tol)? { from_ridges.extend(ridge_branches(s,d,o,&r,tol)) }
+        let (s,d,o,set) = if exact_distance(a) && !exact_distance(b) { (b,db,a,&sets[1]) } else { (a,da,b,&sets[0]) };
+        for r in ridges_from(s,d,o,set,tol)? { ridged.extend(ridge_branches(s,d,o,&r,tol)) }
     }
+    // (sampled once, for every seed and cell asked whether it lies on one, #780 R4)
+    let mut from_ridges = Sampled::new(ridged);
     let (curves,closed_form) = match met {
         Ssi::Same => return Ok(Meeting {same:true,branches:Vec::new(),singular:Vec::new(),closed_form:true}),
         Ssi::Curves(cs) => (cs,true),
         Ssi::Traced => {
             let mut seeds = boundary_seeds(a,da,b);
             seeds.extend(boundary_seeds(b,db,a));
-            for (s,d,o) in [(a,da,b),(b,db,a)] {
-                for (uv,value) in critical_points(s,d,o,tol) {
-                    if value.abs() > 8.*tol { seeds.extend(descents(s,d,o,uv,tol)); }
+            for ((s,d,o),set) in [(a,da,b),(b,db,a)].into_iter().zip(&sets) {
+                for c in set {
+                    if c.value.abs() > 8.*tol { seeds.extend(descents(s,d,o,c.uv,tol)); }
                 }
             }
             // a seed where they touch traces nothing; the touch is a singular point; and a seed on a
@@ -705,8 +784,8 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
             let touch_points: Vec<V> = singular.iter().map(|q| q.at).collect();
             seeds.retain(|&p| !touch_points.iter().any(|&q| distance(p,q) <= 1e3*tol));
             if super::debug() { for &p in &seeds {
-                let off = from_ridges.iter().map(|br| distance(br.curve.point(br.curve.inverse(p)),p)).fold(f64::INFINITY,f64::min);
-                eprintln!("brep: seed {p:?}: {off:e} from the ridges' {} branches, sine {:e}, on {}",from_ridges.len(),
+                let off = from_ridges.branches().iter().map(|br| distance(br.curve.point(br.curve.inverse(p)),p)).fold(f64::INFINITY,f64::min);
+                eprintln!("brep: seed {p:?}: {off:e} from the ridges' {} branches, sine {:e}, on {}",from_ridges.branches().len(),
                     norm(cross(unit_or(a.gradient(p)),unit_or(b.gradient(p)))),on_a_branch(a,b,&from_ridges,p,tol));
             } }
             seeds.retain(|&p| !on_a_branch(a,b,&from_ridges,p,tol));
@@ -737,13 +816,13 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
                 }
                 other => other?,
             };
-            let known: Vec<Curve> = from_ridges.iter().map(|br| br.curve.clone()).collect();
+            let known: Vec<Curve> = from_ridges.branches().iter().map(|br| br.curve.clone()).collect();
             // what no seed reached, proved absent cell by cell between analytic surfaces
             if super::ssi::searchable(a) && super::ssi::searchable(b) {
                 let mut more = 0;
                 // a ridge's touches are stretches the two touch along, and a cell beside a branch a
                 // ridge holds is beside a known meeting
-                let stretches: Vec<(&Curve,[f64;2])> = from_ridges.iter().filter(|br| br.contact == Contact::Touching)
+                let stretches: Vec<(&Curve,[f64;2])> = from_ridges.branches().iter().filter(|br| br.contact == Contact::Touching)
                     .filter_map(|br| if let Curve::BSpline(s) = &br.curve { Some((&br.curve,s.domain())) } else { None }).collect();
                 let mut beside = |p: V| on_a_branch(a,b,&from_ridges,p,tol);
                 while let Some(p) = super::ssi::unseen_beside(a,da,b,&[traced.clone(),known.clone()].concat(),&stretches,&mut beside,lo,hi,tol)? {
@@ -769,7 +848,7 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
         }
     } }
     let mut branches: Vec<Branch> = curves.into_iter().map(|c| { let contact = contact(a,b,&c,(lo,hi)); Branch {curve:c,contact} }).collect();
-    branches.extend(from_ridges);
+    branches.extend(from_ridges.into_branches());
     Ok(Meeting {same:false,branches,singular,closed_form})
 }
 
