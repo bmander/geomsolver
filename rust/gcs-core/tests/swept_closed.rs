@@ -2135,7 +2135,18 @@ fn a_balls_pipe_is_inverted_off_its_spine() {
     // on the screw's axis, and on the spine itself
     points.push([0.,0.,0.3]);
     points.push([d,0.,0.]);
+    // how far `p` stands from the circle about the spine at `v`
+    let pipe = b.pipe().unwrap();
+    let off = |p: [f64;3],v: f64| {
+        let d = sub(pipe.back(p,v),pipe.frame.o);
+        let h = dot(d,pipe.frame.z);
+        ((dot(d,d)-h*h).max(0.).sqrt()-pipe.r).hypot(h)
+    };
     for p in points {
+        // the feet searched where the nearest can stand (#798) hold the nearest of every foot
+        let least = |feet: Vec<f64>| feet.into_iter().map(|v| off(p,v)).fold(f64::INFINITY,f64::min);
+        let (near,all) = (least(pipe.nearest_feet(p).unwrap()),least(pipe.feet(p).unwrap()));
+        assert!((near-all).abs() <= 1e-12*(1.+all),"{p:?}: the nearest feet's {near} against every foot's {all}");
         let uv = s.inverse(p);
         let (x,su,sv) = (s.point(uv),s.point([uv[0]+1e-7,uv[1]]),s.point([uv[0],(uv[1]+1e-7).min(1.)]));
         let gap = distance(x,p);

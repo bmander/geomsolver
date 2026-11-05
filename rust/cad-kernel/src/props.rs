@@ -142,6 +142,98 @@ impl<'a> Prefix<'a> {
     }
 }
 
+/// How far a span of a traced curve's points may turn, chord against chord: each of its chords within
+/// this angle (its cosine) of its first, so within twice it of the span's own chord.
+const SPAN_COS: f64 = 0.9659258262890683;
+
+/// **`∫ f(uv, uv') dt` along a traced edge inverted onto `surface`** (#798), `f` given the edge's
+/// parameters on the face and their rate. Green's integral does not depend on how its curve is
+/// parameterised, only on the curve, so it is read not by the edge's own parameter — which counts
+/// the trace's points, its rate stepping at every one, so that each stretch between two was a rule
+/// of its own, each node of it three projections onto both surfaces (a canal's meeting with an end
+/// disc, a thousand stretches, measured in seconds) — but over spans of the points turning a little
+/// (`SPAN_COS`), each by its distance `σ` along its chord `n`: the curve's point at each node is
+/// where it crosses the plane `n·x = σ` (`Traced::across`), and its rate `T / (T·n)` read there,
+/// both as exact as the trace, so each span is one smooth integrand, read by Gauss–Legendre until
+/// two readings agree to rounding. A span the curve does not cross as a graph over its chord (its
+/// rate turned past 60° from it, or a crossing found off the stretch it was sought in) is read by
+/// the edge's parameter, stretch by stretch, as before.
+fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,pc: &Pcurve,s: &Surface,vertices: &[super::topo::Vertex],
+    f: &mut dyn FnMut(Uv,Uv) -> f64) -> f64 {
+    use crate::util::space::{distance,norm,scale,sub};
+    let [t0,t1] = e.t;
+    // the edge's ends and the trace's points between, each with its parameter
+    let m = tr.pts.len()-1;
+    let point = |k: i64| tr.pts[if tr.closed { k.rem_euclid(m as i64) as usize } else { (k.max(0) as usize).min(m) }];
+    let mut at: Vec<(f64,[f64;3])> = vec![(t0,tr.at(t0))];
+    let mut k = t0.floor() as i64+1;
+    while (k as f64) < t1 { at.push((k as f64,point(k))); k += 1 }
+    at.push((t1,tr.at(t1)));
+    // by the edge's parameter, stretch by stretch: `at[i..=j]`
+    let by_parameter = |i: usize,j: usize,f: &mut dyn FnMut(Uv,Uv) -> f64| -> f64 {
+        let mut integrand = |t: f64| { let (uv,d) = pc.at_and_derivative(t,e,s,vertices); f(uv,d) };
+        at[i..=j].windows(2).map(|w| gauss(w[0].0,w[1].0,1,&mut integrand)).sum::<f64>()
+    };
+    let chord = |i: usize| sub(at[i+1].1,at[i].1);
+    let mut total = 0.;
+    let mut i = 0;
+    while i+1 < at.len() {
+        // the span: chords within `SPAN_COS` of its first that has a length
+        let first = (i..at.len()-1).map(chord).find(|&c| norm(c) > 0.);
+        let mut j = i+1;
+        if let Some(d) = first {
+            let d = scale(d,1./norm(d));
+            while j+1 < at.len() && { let c = chord(j); dot(c,d) >= SPAN_COS*norm(c) } { j += 1 }
+        }
+        let n = sub(at[j].1,at[i].1);
+        let len = norm(n);
+        if !(len > 0.) { i = j; continue }
+        let n = scale(n,1./len);
+        // each point's distance along the chord, rising from 0 to `len`
+        let sig: Vec<f64> = at[i..=j].iter().map(|&(_,x)| dot(n,sub(x,at[i].1))).collect();
+        let h0 = dot(n,at[i].1);
+        // `∫ f` over the span on `pieces` pieces, and the mean size of `f` at its nodes; `None` where
+        // a node is not crossed as a graph over the chord
+        let read = |pieces: usize,f: &mut dyn FnMut(Uv,Uv) -> f64| -> Option<(f64,f64)> {
+            let (mut size,mut failed) = (0.,false);
+            let mut integrand = |x: f64| {
+                if failed { return 0. }
+                // the stretch holding `x`, and the parabola's point there to start from
+                let a = (sig.partition_point(|&y| y <= x).max(1)-1).min(sig.len()-2);
+                let w = sig[a+1]-sig[a];
+                let fr = if w > 0. { ((x-sig[a])/w).clamp(0.,1.) } else { 0. };
+                let t = at[i+a].0+fr*(at[i+a+1].0-at[i+a].0);
+                let q = tr.guess(t);
+                let stretch = distance(at[i+a].1,at[i+a+1].1);
+                let Some((p,rate)) = tr.across(q,n,h0+x).filter(|&(p,rate)| norm(rate) <= 2. && distance(p,q) <= stretch)
+                    else { failed = true; return 0. };
+                let uv = pc.inverse_of(t,p,e,s).expect("an inverse curve");
+                let y = f(uv,super::topo::in_parameters(s,uv,rate));
+                size += y.abs();
+                y
+            };
+            let v = gauss(0.,len,pieces,&mut integrand);
+            (!failed).then_some((v,size/(10*pieces) as f64))
+        };
+        // doubled until two readings agree to the rounding of the integrand's size over the span,
+        // `SETTLE` times at most
+        let mut pieces = 1;
+        let mut value = read(pieces,f).map(|r| r.0);
+        if let Some(mut last) = value {
+            for _ in 0..SETTLE {
+                pieces *= 2;
+                let Some((next,size)) = read(pieces,f) else { value = None; break };
+                if (next-last).abs() <= 1e-13*(size*len).max(1e-300) { break }
+                last = next;
+                value = Some(last);
+            }
+        }
+        total += match value { Some(v) => v,None => by_parameter(i,j,f) };
+        i = j;
+    }
+    total
+}
+
 /// The volume the boundary encloses (negative if it is turned inside out).
 pub fn volume(b: &Brep) -> f64 { fluxes(b).iter().sum::<f64>()/3. }
 
@@ -209,6 +301,16 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
                 // a pole's degenerate edge runs along u alone: nothing in dv, but its du counts
                 if matches!(e.curve,EdgeCurve::Degenerate) && (other == 1 || !matches!(c.pcurve,Pcurve::Line {..})) {
                     row.push((0.,0.)); continue
+                }
+                // a traced curve inverted onto the face: read across planes, a span of its points
+                // at a time (#798)
+                if let (EdgeCurve::Curve(Curve::Traced(tr)),Pcurve::Inverse {..}) = (&e.curve,&c.pcurve) {
+                    let line = along_trace(tr,e,&c.pcurve,s,&b.vertices,&mut |[u,v]: Uv,d: Uv| {
+                        let dv = d[other];
+                        if dv == 0. { 0. } else { sign*big_g(u,v)*dv }
+                    });
+                    row.push((if c.reversed { -line } else { line },0.));
+                    continue
                 }
                 let span = e.t[1]-e.t[0];
                 let periodic = pu.is_some() || pv.is_some() || matches!(&e.curve,EdgeCurve::Curve(c) if c.period().is_some());

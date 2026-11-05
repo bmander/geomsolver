@@ -72,11 +72,17 @@ impl Pcurve {
         match *self {
             Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
             Pcurve::Line {a,b} => [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])],
-            Pcurve::Inverse {a,b} => {
-                let near = [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])];
-                unwrap(surface.inverse_near(edge.point(t,vertices),near),near,surface.periods())
-            }
+            Pcurve::Inverse {..} => self.inverse_of(t,edge.point(t,vertices),edge,surface).expect("an inverse curve"),
         }
+    }
+    /// An inverse curve's parameters at `t`, the edge's point there given as `x`: `at`, for what
+    /// reads the edge's curve some other way (`props`, a traced edge read across planes). `None`
+    /// for any other curve.
+    pub(crate) fn inverse_of(&self,t: f64,x: V,edge: &Edge,surface: &Surface) -> Option<Uv> {
+        let Pcurve::Inverse {a,b} = *self else { return None };
+        let s = if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. };
+        let near = [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])];
+        Some(unwrap(surface.inverse_near(x,near),near,surface.periods()))
     }
     /// `d(u, v)/dt` at `t`.
     pub fn derivative(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex]) -> Uv {
