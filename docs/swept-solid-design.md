@@ -453,7 +453,20 @@ recorded above with what was tried:
   cells along a touch are read right (M4) and touches found generally (M3), and the mill is
   admitted; screwed through the sector it is refused by its budget, naming the inverse stage at
   the pipe's sheet (whose inverse map is a general search on every ray and outline), in about two
-  minutes where it had stalled for hours — the case #721 resumes with. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
+  minutes where it had stalled for hours — the case #721 resumes with. *Built since #780 C1*: the
+  pipe is inverted off its spine (each foot of a point on it the circle about a foot on the centre's
+  helix, isolated with a bound, or an end circle), but the profile showed the inverse map's calls,
+  not their cost, running away — a short arc beside a traced meeting polished from each of 26,000
+  pairs of near chords to the same place, by global inverses through the pipe (`meeting::crossings`
+  now polishes from the pairs no neighbour stands closer than). Two failures met on the way were
+  reduced (`swept::dump`) and fixed where they lay: a traced curve's inverse stepping off along the
+  whole curve from points crowded where its trace set out, and the circle's tangency to the side's
+  cylinder read as four helices. Through the sector it removes its helical-coordinate volume to
+  1e-11, in ten seconds; the mill screwed alone, its own to rounding
+  (`swept_closed::the_ball_end_mill_screwed_closes_into_its_helical_sweep`). Drawn at 3 mm a turn
+  it is not yet built: the pipe's meeting with the plane of the side's screwed foot sets out a
+  millionth past the pipe's start, where it, the foot's rim and the touch helix all touch, and the
+  foot's pieces do not close. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
   round its two meridians in the plane through both axes, turned into tori about the turn's, and
   round its top and bottom rings, kept in their planes. The torus at an end pose and a meridian's
   torus touch round that meridian and cross beside it — in each level both are two circles about

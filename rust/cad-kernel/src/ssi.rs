@@ -825,15 +825,24 @@ pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy
     // a run of roots the circle keeps within the tolerance of the cylinder between is one helix
     // (#780 R2's rule, `query::settled`): a double root rounding parts into several a hair apart —
     // a ball's great circle tangent to the cylinder its outer equator screws round, four roots
-    // within 5e-8 rad (#780 C1) — is the one helix the sheet touches the cylinder along, placed at
-    // the run's middle, and read four times it left the faces it bounds unclosed
+    // within 5e-8 rad (#780 C1) — is the one helix the sheet touches the cylinder along, and read
+    // four times it left the faces it bounds unclosed. A touch is placed where `g'` changes sign
+    // across the run, a simple root of it settled to rounding (the run's middle only stands within
+    // the square root of rounding of a double root: 2.6e-7 off, where the helix, the cylinder's rim
+    // and the pipe's meeting with the rim's plane all touch at its start); a crossing where it is
     let within = |a: f64,b: f64| (b-a)*r <= tol || (1..4).all(|j| g(a+(b-a)*j as f64/4.).abs() <= 2.*big*tol);
     let mut roots: Vec<f64> = Vec::with_capacity(found.len());
     let mut i = 0;
     while i < found.len() {
         let mut j = i;
         while j+1 < found.len() && within(found[j],found[j+1]) { j += 1 }
-        roots.push(0.5*(found[i]+found[j]));
+        let pad = (tol/r.max(1e-300)).min(1e-3);
+        let (a,b) = (found[i]-pad,found[j]+pad);
+        let (da,db) = (dg(a),dg(b));
+        let crossing = g(a)*g(b) < 0. && found[i..=j].len() == 1;
+        roots.push(if !crossing && da*db < 0. {
+            crate::util::roots::bracketed_root(|t| Some(dg(t)),a,da,b,db,4e-16*b.abs().max(1.))
+        } else if j == i { found[i] } else { 0.5*(found[i]+found[j]) });
         i = j+1;
     }
     // the circle closes: a root at its end is the one at its start
