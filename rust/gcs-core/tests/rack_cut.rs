@@ -55,7 +55,7 @@ turn := frame
 o coincident turn.axis; turn.axis parallel(sense: same) std.front.normal; fix(ratio == 1, advance == 0mm) turn
 rack := frame
 slide coincident(sense: same) rack.axis; fix(ratio == 0, advance == 2 * pi * 20mm) rack
-construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) rack_tooth })
+construction space := solid({ p | some t in (-60deg, 60deg): p in rack_tooth at(under: rack, seen_from: turn) t })
 gear := solid(blank)
 space cut gear
 ";
@@ -415,13 +415,13 @@ fn the_rack_cut_gear_example_is_admitted() {
 /// alone the generating class cuts, by its sheet.  What the two remove agrees to the fits'.
 #[test]
 fn the_tooth_united_with_itself_cuts_as_the_tooth_does() {
-    let space = "construction space := solid({ p | p inside(under: rack, seen_from: turn, \
-                 over t in (-60deg, 60deg)) rack_tooth })";
+    let space = "construction space := solid({ p | some t in (-60deg, 60deg): p in rack_tooth \
+                 at(under: rack, seen_from: turn) t })";
     assert!(SPACE.contains(space));
     let twin = SPACE.replace(space, "construction twin := solid(rack_tooth)\n\
         construction both := solid(rack_tooth)\ntwin union both\n\
-        construction space := solid({ p | p inside(under: rack, seen_from: turn, \
-        over t in (-60deg, 60deg)) both })");
+        construction space := solid({ p | some t in (-60deg, 60deg): p in both \
+        at(under: rack, seen_from: turn) t })");
     let (sheet, region) = (removed(SPACE), removed(&twin));
     assert!((sheet - region).abs() < 1e-5 * sheet, "the sheet removes {sheet:.6} mm³, the region {region:.6}");
 }
@@ -433,12 +433,12 @@ fn the_tooth_united_with_itself_cuts_as_the_tooth_does() {
 /// extruded as the tooth's is, and what the two remove agrees to the fits'.
 #[test]
 fn a_placed_tooth_cuts_as_the_tooth_does() {
-    let placed = SPACE.replace("construction space := solid({ p | p inside(under: rack, seen_from: turn, \
-                                over t in (-60deg, 60deg)) rack_tooth })",
+    let placed = SPACE.replace("construction space := solid({ p | some t in (-60deg, 60deg): p in \
+                                rack_tooth at(under: rack, seen_from: turn) t })",
         "construction next := rack_tooth at(under: rack) 90deg\n\
-         construction space := solid({ p | p inside(under: rack, seen_from: turn, \
-         over t in (-150deg, -30deg)) next })");
-    assert!(placed.contains(") next })"), "the placed tooth is swept");
+         construction space := solid({ p | some t in (-150deg, -30deg): p in next \
+         at(under: rack, seen_from: turn) t })");
+    assert!(placed.contains("p in next at("), "the placed tooth is swept");
     let a = admit(&placed).unwrap_or_else(|r| panic!("{r}"));
     assert!(matches!(a.sweeps()[0].class, gcs_core::solid::admission::Class::Generating), "the generating class");
     let (tooth, next) = (removed(SPACE), removed(&placed));

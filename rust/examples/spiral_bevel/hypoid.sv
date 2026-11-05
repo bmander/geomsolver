@@ -246,7 +246,7 @@ component Blank(rim: line, ax: line, design: BlankDesign) {
   rim.p2 distance(design.width / 2) { q | q not in heel }
   pitch := std.sets.Cone(ax)
   rim.p2 in boundary(pitch)
-  tip := std.sets.Grown(pitch, d: design.addendum)
+  tip := { q | q distance(<= design.addendum) pitch }
   back := { q | q distance(<= design.back) { r | r not in pitch } }
   beyond_toe := { q | q not in toe }
   region := { p | p in tip; p in heel; p not in toe; p in back
@@ -301,7 +301,7 @@ component FaceMill(P: plane, gear: Gear, trace: Trace, R: Length, mean_module: L
 // above `lo` and below `hi`, its tip's edges rounded by `r`. Each set names the face it bounds.
 component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
   inner := { q | q distance(<= grow) { r | r not in a } }
-  outer := std.sets.Grown(b, d: grow)
+  outer := { q | q distance(<= grow) b }
   base := { q | q not in lo }
   tip := { q | q in hi }
   inner_round := std.rounds.Rounded(inner, tip, r: r)
@@ -317,7 +317,7 @@ component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
 component Space(a: set, b: set, lo: set, hi: set, cap: set, step: frame, pitch: Angle,
     grow: Length, r: Length) {
   inner := { q | q distance(<= grow) { r | r not in a } }
-  outer := std.sets.Grown(b, d: grow)
+  outer := { q | q distance(<= grow) b }
   tip := { q | q not in lo }
   base := { q | q in hi }
   inner_round := std.rounds.Rounded(inner, tip, r: r)

@@ -41,8 +41,8 @@ const FRAME: &str = "unit mm\nuse std\nuse std.sets\nc := point hint((0, 0, 0))\
 
 #[test]
 fn a_ball_and_a_shell() {
-    let e = solved(&format!("{FRAME}big := std.sets.Sphere(c, r: 5)\nsmall := std.sets.Sphere(c, r: 3)\n\
-                             ball := solid(big)\nskin := {{ p | p inside big; p outside small }}\n\
+    let e = solved(&format!("{FRAME}big := std.sets.Ball(c, r: 5)\nsmall := std.sets.Ball(c, r: 3)\n\
+                             ball := solid(big)\nskin := {{ p | p in big; p not in small }}\n\
                              shell := solid(skin)\n"));
     let ball = 4.0 / 3.0 * PI * 125.0;
     holds(&e, "ball", ball, &[[0.0, 0.0, 0.0], [4.0, 0.0, 0.0]], &[[6.0, 0.0, 0.0]]);
@@ -55,8 +55,8 @@ fn a_ball_and_a_shell() {
 fn a_capped_cylinder_and_a_cone() {
     let e = solved(&format!("{FRAME}tube := std.sets.Cylinder(up, r: 2)\n\
                              funnel := std.sets.Cone(up, half: 30deg)\n\
-                             can := {{ p | p inside tube; p outside std.top; p inside lid }}\n\
-                             cup := {{ p | p inside funnel; p inside lid }}\n\
+                             can := {{ p | p in tube; p distance(>= 0mm, along: n) std.top; p distance(<= 0mm, along: n) lid }}\n\
+                             cup := {{ p | p in funnel; p distance(<= 0mm, along: n) lid }}\n\
                              tin := solid(can)\ncone := solid(cup)\n"));
     let outside = [[3.0, 0.0, 5.0], [0.0, 0.0, 11.0], [0.0, 0.0, -1.0]];
     holds(&e, "tin", PI * 4.0 * 10.0, &[[1.0, 0.0, 5.0]], &outside);
@@ -69,8 +69,8 @@ fn a_capped_cylinder_and_a_cone() {
 #[test]
 fn a_spherical_sector() {
     let e = solved(&format!("{FRAME}funnel := std.sets.Cone(up, half: 30deg)\n\
-                             big := std.sets.Sphere(c, r: 5)\n\
-                             sector := {{ p | p inside funnel; p inside big }}\n\
+                             big := std.sets.Ball(c, r: 5)\n\
+                             sector := {{ p | p in funnel; p in big }}\n\
                              piece := solid(sector)\n"));
     let want = 2.0 / 3.0 * PI * 125.0 * (1.0 - (30f64).to_radians().cos());
     holds(&e, "piece", want, &[[0.0, 0.0, 3.0]], &[[0.5, 0.0, 6.0], [3.0, 0.0, 1.0]]);
@@ -98,8 +98,8 @@ fn a_region_solid_is_bounded_on_one_axis() {
     let rod = format!("{FRAME}tube := std.sets.Cylinder(up, r: 2)\nrod := solid(tube)\n");
     refused_as(rod, "rod", "no end");
     let e = solved(&format!("{FRAME}d := point hint((1, 0, 0))\nfix((1, 0, 0)) d\n\
-                             tube := std.sets.Cylinder(up, r: 2)\naway := std.sets.Sphere(d, r: 1)\n\
-                             odd := {{ p | p inside tube; p inside away }}\nbad := solid(odd)\n"));
+                             tube := std.sets.Cylinder(up, r: 2)\naway := std.sets.Ball(d, r: 1)\n\
+                             odd := {{ p | p in tube; p in away }}\nbad := solid(odd)\n"));
     let bad = ent(&e, "bad").i();
     assert!(gcs_core::solid::region::meridian(&e.sketch, bad).is_err_and(|m| m.contains("off the region's axis")));
     assert!(gcs_core::solid::region::in_general(&e.sketch, bad));
@@ -116,7 +116,7 @@ fn a_region_solid_is_bounded_on_one_axis() {
 fn two_cones_in_one_region() {
     let e = solved(&format!("{FRAME}wide := std.sets.Cone(up, half: 30deg)\n\
                              narrow := std.sets.Cone(up, half: 15deg)\n\
-                             shade := {{ p | p inside wide; p outside narrow; p inside lid }}\n\
+                             shade := {{ p | p in wide; p not in narrow; p distance(<= 0mm, along: n) lid }}\n\
                              lamp := solid(shade)\n"));
     let (t30, t15) = ((30f64).to_radians().tan(), (15f64).to_radians().tan());
     let want = PI * 1000.0 * (t30 * t30 - t15 * t15) / 3.0;
@@ -128,7 +128,7 @@ fn two_cones_in_one_region() {
 #[test]
 fn a_region_reads_an_unknown_the_drawing_solves() {
     let e = solved(&format!("{FRAME}q := point hint((4, 0, 3))\nfix((4, 0, 3)) q\n\
-                             big := std.sets.Sphere(c, r: hint(2mm))\nq coincident big\n\
+                             big := std.sets.Ball(c, r: hint(2mm))\nq in boundary(big)\n\
                              ball := solid(big)\n"));
     holds(&e, "ball", 4.0 / 3.0 * PI * 125.0, &[[4.5, 0.0, 0.0]], &[[5.5, 0.0, 0.0]]);
     let e = solved(&format!("{FRAME}big := std.sets.Sphere(c, r: hint(2mm))\nball := solid(big)\n"));
@@ -143,8 +143,8 @@ fn a_region_reads_an_unknown_the_drawing_solves() {
 fn a_cones_unknown_half_reads_within_a_half_turn() {
     let x = 10.0 * (30f64).to_radians().tan();
     let e = solved(&format!("{FRAME}q := point hint(({x:.17}, 0, 10))\nfix(({x:.17}, 0, 10)) q\n\
-                             funnel := std.sets.Cone(up, half: hint(400deg))\nq coincident funnel\n\
-                             cup := {{ p | p inside funnel; p inside lid }}\ncone := solid(cup)\n"));
+                             funnel := std.sets.Cone(up, half: hint(400deg))\nq in boundary(funnel)\n\
+                             cup := {{ p | p in funnel; p distance(<= 0mm, along: n) lid }}\ncone := solid(cup)\n"));
     let half = e.sketch.params[e.sketch.free_vars["funnel.half"] as usize].value;
     assert!((half - 30.0).abs() < 1e-9, "{half}");
     holds(&e, "cone", PI * x * x * 10.0 / 3.0, &[[0.0, 0.0, 5.0]], &[[4.0, 0.0, 5.0]]);

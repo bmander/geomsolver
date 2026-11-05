@@ -63,7 +63,7 @@ construction bar := solid(std.solids.{word}(face(lower, upper, outer, under), fr
 
 swing := frame
 swing turns(1) ax
-construction groove := solid({{ p | p inside(under: swing, over t in (-140deg, 140deg)) bar }})
+construction groove := solid({{ p | some t in (-140deg, 140deg): p in bar at(under: swing) t }})
 groove cut part
 ")
 }
@@ -165,7 +165,7 @@ private way := axis
 fix(dir == ({}, {}, {})) way
 feed := frame
 feed slides({}mm) way
-construction groove := solid({{ p | p inside(under: feed, over t in (0deg, 360deg)) bar }})
+construction groove := solid({{ p | some t in (0deg, 360deg): p in bar at(under: feed) t }})
 groove cut part
 ",0.3/length,1./length,drop/length,18.*length)
 }
@@ -309,7 +309,7 @@ construction bar := solid(std.solids.{word}(face({}), from: {}mm, to: {}mm{draft
 {BLOCK}
 swing := frame
 swing {motion} ax
-construction groove := solid({{ p | p inside(under: swing, over t in (-{roll}deg, {roll}deg)) bar }})
+construction groove := solid({{ p | some t in (-{roll}deg, {roll}deg): p in bar at(under: swing) t }})
 groove cut part
 ",a[0],a[1],a[2],b[0],b[1],b[2],o[0],o[1],o[2],self.names.join(", "),self.from,self.to)
     }
@@ -514,11 +514,11 @@ pub(crate) fn parted(lean: f64,draft: f64) -> Bar {
 /// `Bar::removed` reads off the bar's half-spaces, as `solid_sweeps/flat_end.sv`'s does.
 #[test]
 fn a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs() {
-    let text = flat_end(20.,5.).text().replace("construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) bar })","in std.top {\n  private k0 := point\n  \
+    let text = flat_end(20.,5.).text().replace("construction groove := solid({ p | some t in (-140deg, 140deg): p in bar at(under: swing) t })","in std.top {\n  private k0 := point\n  \
         private k1 := point\n  private k2 := point\n  private k3 := point\n  fix((0, -20)) k0\n  fix((30, -20)) k1\n  \
         fix((30, 20)) k2\n  fix((0, 20)) k3\n}\nconstruction keep := solid(std.solids.Prism(face(k0, k1, k2, k3, -> close), from: -20mm, to: 20mm))\n\
         construction tool := solid(bar)\nkeep common tool\n\
-        construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) tool })");
+        construction groove := solid({ p | some t in (-140deg, 140deg): p in tool at(under: swing) t })");
     assert!(text.contains("keep common tool"));
     let e = fixtures::read(&text);
     assert!(matches!(class(&e,"part"),Class::Closed(_)),"the closed class");

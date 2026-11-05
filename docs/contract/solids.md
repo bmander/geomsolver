@@ -22,7 +22,8 @@ it — `GearCone`, `ToothTrace`, `PinionCone` (each cone's axis `.ax`; `fixtures
 `Topping` — so every name is under `pair.` (`pair.pinion.body`, `pair.gear_cone.M`); a test reads
 the recorded rows under their old labels. Each
 member's blank is a region (`Blank`: the pitch cone, a `std.sets.Cone` about the member's axis, its
-half left unknown so it settles from the pose, grown by the addendum (`std.sets.Offset`) and its
+half left unknown so it settles from the pose, grown by the addendum
+(`{ q | q distance(<= addendum) pitch }`) and its
 outside by the back depth (`distance(<= d, side: inside)`), `std.sets.Sphere`s about the apex the half face width either
 side of M (`rim.p2 distance(w / 2, side: outside) toe`), sized by the solved layout — a region term
 reads an unknown, `model::TermNumber`; the end relief two `std.rounds.Chamfered` bounds in the same
@@ -530,8 +531,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   `cli::a_picture_of_a_solid_not_built_says_so`).
 
 - **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
-  `solid({ p | p coincident(over s) I(…).f })` ([0.199], #737; through 0.198 `sweep(I(…).f over
-  s)`) is read by the parser as the family's tokens (`parser/statements.rs::swept_set`) and parses
+  `solid({ p | some s: p in I(…).f at s })` ([0.199], #737, [0.205]; through 0.198 `sweep(I(…).f
+  over s)`) is read by the parser as the family's tokens (`parser/statements.rs::swept_set`) and
+  parses
   to `Sweep::Family(FamilySpec)` (`parser::family`, by an `over` inside the brackets,
   `family_ahead`), `s` a declared parameter whose interval it
   runs over (#398 B, [0.145]: `Walk::family_parameter`, the formal the call gives it or the one

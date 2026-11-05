@@ -234,19 +234,21 @@ impl<'a> P<'a> {
     /// Read optional operator arguments. Slot pins stay in parentheses; seeds come
     /// from the separate hint clause.
     pub(super) fn op_args(&mut self, word: &str, fixity: Fixity) -> Option<Vec<OpArg>> {
+        // whether the parentheses read a motion or a running number, asked before they open
+        let over = self.over_ahead();
         // `horizontal (l := line)` — a named link after the word, not the word's own arguments
         if crate::syntax::words::named_link_at(&self.t, self.i) || !self.eat_p('(') {
             return Some(Vec::new());
         }
         // a side takes nothing in its parentheses: one grown by a distance is that distance from
-        // the surface (§6.21, #266), and the set grown is `std.sets.Offset`
-        if fixity == Fixity::Infix && !self.over_ahead() {
+        // the set (§6.21, #266, #783), and the set grown is the points within `d` of it
+        if fixity == Fixity::Infix && !over {
             if let Some(cmp) = crate::constraints::plane_side_word(word) {
                 let side = if cmp == Cmp::Le { "outside" } else { "inside" };
                 let _ = side;
                 self.fail(&format!("`{word}` takes nothing in its parentheses: a point within \
-                    `d` of `S` is `p distance(<= d) S`, and `S` grown by `d` is the set \
-                    `std.sets.Grown(S, d: d)`"));
+                    `d` of `S` is `p distance(<= d) S`, and `S` grown by `d` is the set `{{ p | \
+                    p distance(<= d) S }}`"));
                 return None;
             }
         }

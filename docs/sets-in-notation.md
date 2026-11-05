@@ -1,4 +1,4 @@
-# Sets in the notation of sets (#783): the P0 experiment
+# Sets in the notation of sets (#783): P0 and P1
 
 This is the record #783's P0 asks for. The corpus's hardest set documents were written by hand in
 the proposed spelling (`in`, `not in`, `or` in a set body, `some`, `boundary`, the library's
@@ -412,3 +412,41 @@ The words the issue lists, with these settled or added:
 - **`every`**: reserved, not written; no document needs it yet.
 - **A full corpus run.** The comparisons above are the documents the issue names, and the probe
   sets; the corpus-wide byte gate is P1's, once the spellings parse.
+
+## P1 — the words, as built ([0.205])
+
+**How it is read.** The parser lowers the notation to the forms the evaluator has always read
+(`syntax/notation.rs`, the contract in [sets.md](contract/sets.md)): `p in S` to `p inside S`,
+`some t in (a, b): p in X at(under: m) t` to the sweep, `boundary(S)` to `S.surface`, and so on,
+each lowered relation marked (`Written::lowered`). What needs the operand's kind is read once it is
+known: in the flattener a membership of a set with no inside is `coincident` (the one-number rule
+gone), a plain distance from a region is the ordinary one, and `coincident` written against a set
+and `side:` on one are refused; in the elaborator `p in a`, `a` one face of a solid, is the face,
+and `p in P`, `P` a plane, is refused. Because the evaluator meets the same internal forms, the
+corpus's outputs did not move: each of the 282 documents of `rust/examples/` gives the
+same report, STEP assembly and STL, byte for byte, before the rewrite and after.
+
+**What was decided as it was built**, beyond the P0 record's list:
+
+- **`std.sets.Grown` and `Shrunk` are not words.** A set grown is one statement, `{ q | q
+  distance(<= d) S }`, as a slab is (`Slab` was dropped for the same reason), and
+  `std.rounds.Grown`, the solid grown and built exactly, keeps its name: every word of `std` has
+  one home, and the solid's exact route reads the distance from a solid's set (`{ c | c in B }`), which `distance(<=
+  d) B` written against the solid itself does not say yet. Retiring `std.rounds.Grown` for one word
+  over sets and solids needs the distance from a solid to be the ordinary one in the elaborator;
+  that is left open.
+- **`claim a inside b` stays.** Between two solids it says one lies within the other — ⊆, not ∈ —
+  so it is no membership; the notation leaves it, and a spelling for it waits on the body words
+  (P3).
+- **`side:` stays where there is no inside**: a developable sheet's band says which side of the
+  sheet it lies on, and a plane's side grown is still read so (an ordinate along its normal, `p
+  distance(<= d, along: n) P`, is the spelling the documents use).
+- **A family's body stays a set written out.** `std.sets.Sphere` is `{ p | p distance(r) center }`,
+  the sphere, so no family needs a set term for its body.
+- **`boundary(…)` takes a call** written in place (`boundary(std.sets.Cone(l, half: h))`), hoisted
+  with its member; a set literal inside it is not read yet.
+- **A quantifier over a declared parameter** ranges its interval (`some t:`, `t` a `param` of the
+  file); a fresh name ranges the whole roll. The rule that a bound name never shadows another
+  declaration is not enforced yet: the lowering reads the file's `param`s, not its scopes.
+- **`some … at t` with no motion** is a face family where its operand is a face (drawn, a formal
+  `face`, or a family's member) and a ridden body's sweep otherwise.

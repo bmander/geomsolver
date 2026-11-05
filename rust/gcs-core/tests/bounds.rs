@@ -25,7 +25,7 @@ fn p_at(e: &Elaborated) -> [f64; 3] {
 fn a_bound_chooses_the_root_the_seed_did_not() {
     let below = solved(CROSSING);
     assert!((p_at(&below)[2] + 4.0).abs() < 1e-9, "{:?}", p_at(&below));
-    let upward = ["a distance(>= 0, along: up) p", "p outside std.top",
+    let upward = ["a distance(>= 0, along: up) p", "p distance(>= 0mm, along: n) std.top",
                   "a distance(in: (1, 9), along: up) p"];
     for bound in upward {
         let e = solved(&format!("{CROSSING}{bound}\n"));
@@ -34,7 +34,7 @@ fn a_bound_chooses_the_root_the_seed_did_not() {
     }
     // and the other way, from a seed above
     let above = CROSSING.replace("hint((3, -2))", "hint((3, 2))");
-    for bound in ["a distance(<= 0, along: up) p", "p inside std.top"] {
+    for bound in ["a distance(<= 0, along: up) p", "p distance(<= 0mm, along: n) std.top"] {
         let e = solved(&format!("{above}{bound}\n"));
         assert!((p_at(&e)[2] + 4.0).abs() < 1e-9, "{bound}: {:?}", p_at(&e));
     }
@@ -122,7 +122,7 @@ fn a_bound_is_said_of_a_measure() {
             "E040", "low end", "in:");
     refused(&format!("{CROSSING}param w: Length hint(1)\na distance(>= w, along: up) p\n"),
             "E040", "a bound may not bind", "a distance(>= w, along: up) p");
-    refused(&format!("{CROSSING}a outside b\n"), "E040", "`outside` says", "a outside b");
+    refused(&format!("{CROSSING}a not in b\n"), "E040", "a point not in a set", "a not in b");
 }
 
 /// The source, the program and the document all keep a bound as the bound it is.

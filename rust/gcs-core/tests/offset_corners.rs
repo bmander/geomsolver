@@ -17,8 +17,8 @@ use crate::common::{ent, text::solved};
 /// radius 3 about the axis and the half-spaces below 10 (`lid`) and above -0.8 (`floor`).
 const FRAME: &str = "unit mm\nuse std\nuse std.sets\nuse std.rounds\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
                      t := point hint((0, 0, 1))\nfix((0, 0, 1)) t\nup := line(c, t)\n\
-                     funnel := std.sets.Cone(up, half: 30deg)\ntip := std.sets.Offset(funnel, d: 1mm)\n\
-                     big := std.sets.Sphere(c, r: 9)\ntube := std.sets.Cylinder(up, r: 3)\n\
+                     funnel := std.sets.Cone(up, half: 30deg)\ntip := { q | q distance(<= 1mm) funnel }\n\
+                     big := std.sets.Ball(c, r: 9)\ntube := std.sets.Cylinder(up, r: 3)\n\
                      lid := { q | q distance(<= 10mm, along: n) std.top }\n\
                      floor := { q | q distance(>= -0.8mm, along: n) std.top }\n";
 
@@ -108,8 +108,8 @@ fn sc() -> (f64, f64, f64) {
 /// ball's centre 0.5 below the lid and 0.5 within the generator, which the cone grown by 0.5 holds.
 #[test]
 fn a_round_where_a_grown_cone_meets_a_plane() {
-    let e = solved(&format!("{FRAME}cup := {{ p | p inside tip; p outside std.top; p inside lid; \
-                             p inside std.rounds.Rounded(tip, lid, r: 0.5mm) }}\nglass := solid(cup)\n"));
+    let e = solved(&format!("{FRAME}cup := {{ p | p in tip; p distance(>= 0mm, along: n) std.top; p in lid; \
+                             p in std.rounds.Rounded(tip, lid, r: 0.5mm) }}\nglass := solid(cup)\n"));
     let ((s, co, ta), g, rho) = (sc(), 1.0, 0.5);
     // the generator grown by g: r = z tan + g / cos; its outward normal (cos, -sin)
     let centre = [(10.0 - rho) * ta + (g - rho) / co, 10.0 - rho];
@@ -129,8 +129,8 @@ fn a_round_where_a_grown_cone_meets_a_plane() {
 /// centre is on the sphere shrunk by 0.5 and the cone grown by 0.5.
 #[test]
 fn a_round_where_a_grown_cone_meets_a_sphere() {
-    let e = solved(&format!("{FRAME}bead := {{ p | p inside tip; p outside std.top; p inside big; \
-                             p inside std.rounds.Rounded(tip, big, r: 0.5mm) }}\nb := solid(bead)\n"));
+    let e = solved(&format!("{FRAME}bead := {{ p | p in tip; p distance(>= 0mm, along: n) std.top; p in big; \
+                             p in std.rounds.Rounded(tip, big, r: 0.5mm) }}\nb := solid(bead)\n"));
     let ((s, co, ta), g, rho, big) = (sc(), 1.0, 0.5, 9.0);
     // the line r = z tan + k against the circle r² + z² = R²
     let (k, rr) = ((g - rho) / co, big - rho);
@@ -153,9 +153,9 @@ fn a_round_where_a_grown_cone_meets_a_sphere() {
 /// below it: where it meets the cylinder's wall, a convex corner, rounded by a ball of 0.5.
 #[test]
 fn a_round_where_a_shrunk_cone_meets_a_cylinder() {
-    let e = solved(&format!("{FRAME}cleared := {{ q | q distance(<= 1mm, side: inside) funnel }}\n\
-                             plug := {{ p | p inside tube; p outside std.top; p inside lid; \
-                             p inside cleared; p inside std.rounds.Rounded(cleared, tube, r: 0.5mm) }}\n\
+    let e = solved(&format!("{FRAME}cleared := {{ q | q distance(<= 1mm) {{ r | r not in funnel }} }}\n\
+                             plug := {{ p | p in tube; p distance(>= 0mm, along: n) std.top; p in lid; \
+                             p in cleared; p in std.rounds.Rounded(cleared, tube, r: 0.5mm) }}\n\
                              s := solid(plug)\n"));
     let ((s, co, _), rho, wall) = (sc(), 0.5, 3.0);
     // the generator from (0, 2), material to its right: the signed distance r cos - (z - 2) sin
@@ -177,8 +177,8 @@ fn a_round_where_a_shrunk_cone_meets_a_cylinder() {
 /// ball of 0.2 whose centre is 0.2 above the floor on the apex's ball shrunk by 0.2.
 #[test]
 fn a_round_where_a_grown_cones_apex_meets_a_plane() {
-    let e = solved(&format!("{FRAME}nib := {{ p | p inside tip; p inside floor; p inside lid; \
-                             p inside std.rounds.Rounded(tip, floor, r: 0.2mm) }}\nn := solid(nib)\n"));
+    let e = solved(&format!("{FRAME}nib := {{ p | p in tip; p in floor; p in lid; \
+                             p in std.rounds.Rounded(tip, floor, r: 0.2mm) }}\nn := solid(nib)\n"));
     let ((s, co, ta), g, rho, low) = (sc(), 1.0f64, 0.2, -0.8);
     let zc = low + rho;
     let centre = [((g - rho).powi(2) - zc * zc).sqrt(), zc];
@@ -201,8 +201,8 @@ fn a_round_where_a_grown_cones_apex_meets_a_plane() {
 /// below the lid and the lid's point 0.5 within the generator.
 #[test]
 fn a_flat_where_a_grown_cone_meets_a_plane() {
-    let e = solved(&format!("{FRAME}cup := {{ p | p inside tip; p outside std.top; p inside lid; \
-                             p inside std.rounds.Chamfered(tip, lid, la: 0.5mm, lb: 0.5mm) }}\n\
+    let e = solved(&format!("{FRAME}cup := {{ p | p in tip; p distance(>= 0mm, along: n) std.top; p in lid; \
+                             p in std.rounds.Chamfered(tip, lid, la: 0.5mm, lb: 0.5mm) }}\n\
                              glass := solid(cup)\n"));
     let ((_, co, ta), g, d) = (sc(), 1.0, 0.5);
     let on_cone = [(10.0 - d) * ta + g / co, 10.0 - d];
@@ -224,8 +224,8 @@ fn a_flat_where_a_grown_cone_meets_a_plane() {
 /// the walk with the chord in its place (Pappus), less the chord's flux, plus the parabola's.
 #[test]
 fn a_flat_beside_a_sphere_is_a_parabola_turned() {
-    let e = solved(&format!("{FRAME}bead := {{ p | p inside tip; p outside std.top; p inside big; \
-                             p inside std.rounds.Chamfered(tip, big, la: 0.5mm, lb: 0.5mm) }}\n\
+    let e = solved(&format!("{FRAME}bead := {{ p | p in tip; p distance(>= 0mm, along: n) std.top; p in big; \
+                             p in std.rounds.Chamfered(tip, big, la: 0.5mm, lb: 0.5mm) }}\n\
                              b := solid(bead)\n"));
     let (_, co, _) = sc();
     let k = 1.0 / co;

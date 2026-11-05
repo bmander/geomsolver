@@ -284,17 +284,18 @@ fn a_family_is_written_over_an_instance_in_place() {
     let bound = REDUCER.replace("wall: 2mm).sec", "wall: 2mm, s: 0.5).sec");
     let (_, said) = read(&bound);
     assert!(said.iter().any(|m| m.contains("so the call gives it nothing else")), "{said:?}");
-    let other = REDUCER.replace("param s: Scalar", "param t: Scalar").replace("over s)", "over t)");
+    let other = REDUCER.replace("param s: Scalar", "param t: Scalar").replace("some s:", "some t:")
+        .replace(".profile at s })", ".profile at t })");
     let (_, said) = read(&other);
     assert!(said.iter().any(|m| m.contains("has no formal `t`")), "{said:?}");
-    let (_, said) = read(&REDUCER.replace("over s)", "over u)"));
+    let (_, said) = read(&REDUCER.replace("some s:", "some u:").replace(".profile at s })", ".profile at u })"));
     assert!(said.iter().any(|m| m.contains("`u` names no parameter the document declares")),
             "{said:?}");
     let (_, said) = read(&REDUCER.replace("param s: Scalar over (0, 1)",
                                           "param s: Scalar over (1, 0)"));
     assert!(said.iter().any(|m| m.contains("increasing interval")), "{said:?}");
-    let written = "body := solid({ p | p coincident(over s) Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
-                   .sec.profile })";
+    let written = "body := solid({ p | some s: p in Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
+                   .sec.profile at s })";
     assert!(REDUCER.contains(written));
     let inside = written.replace("std.z", "up");
     let wrapped = REDUCER.replace(written, "part := Part(guide, std.z)")
@@ -310,10 +311,10 @@ fn a_family_is_written_over_an_instance_in_place() {
 /// station written in place sweeps.
 #[test]
 fn a_station_drawn_in_the_document_sweeps_as_its_parameter_runs() {
-    let written = "body := solid({ p | p coincident(over s) Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
-                   .sec.profile })";
+    let written = "body := solid({ p | some s: p in Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
+                   .sec.profile at s })";
     let drawn = REDUCER.replace(written, "st := Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, \
-                                          wall: 2mm, s: s)\nbody := solid({ p | p coincident(over s) st.sec.profile })");
+                                          wall: 2mm, s: s)\nbody := solid({ p | some s: p in st.sec.profile at s })");
     let e = family(&drawn);
     near(volume(&e, "body").unwrap(), 5120.0, 1e-9, "the reducer drawn in the document");
     // drawn where the parameter stands: its start, the inlet's 24 mm square
@@ -351,7 +352,7 @@ in std.top {
   radius(10mm) ring
 }
 param s: Scalar over (0, 1)
-cone := solid({ p | p coincident(over s) Disc(guide, std.z, ring).f })
+cone := solid({ p | some s: p in Disc(guide, std.z, ring).f at s })
 ";
 
 /// **A station reads the geometry it was given** as a traced body does (finding 1): the disc's

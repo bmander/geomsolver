@@ -12,13 +12,50 @@ centre or a line and one number (`std.sets.Sphere(c, r)`, `std.sets.Cylinder(abo
 element's word a body cannot name bare), nothing drawn, no entity kind, kernel or `CKind` of their
 own.  A point on one is `p coincident S`, a line touching one `l tangent S` (below); two touching at
 a point with one tangent plane is `k1 tangent(at: m) k2` (below, #104; `std.TangentCones` is
-retired, #265), `std.sets.Offset(S, d)` is the set `d` outside one (F4, below) and `k
+retired, #265), a set grown by `d` is `{ q | q distance(<= d) S }` (F4, below; `std.sets.Offset`
+retired, [0.205]) and `k
 on_sphere(view: v) s` is a relation word (a component until #562, which held a circle it was given).
 An unbound number is the instance's unknown (`pc.half`, an angle in degrees); `edit::unknown_seeds`
 writes it back into the call's `hint(…)` (`InstVal::Hint` carries the span).  A lifted program
 declares it under a name it can write (`lift::declarable`: `pc_half`, apart from every other
 unknown's) and every dimension reading it says so (`flatten::substitute_with`).
 `tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the gates.
+
+**The notation of sets** (#783, [0.205]): the parser lowers it, token by token, to the forms the
+rest of this file reads (`syntax/notation.rs`, run on every text `parse_at` reads, a module's
+included): `p in S` as `p inside S`, `p not in S` as `p outside S`, `p in a.side` as `p inside a`
+(a face's material side), `p in a` with `a` a face — a formal `a: face` of the definition the
+statement stands in, or one drawn `a := face(…)` — as `p coincident a`, `boundary(S)` anywhere as
+`S.surface` (`a.side`'s `a.surface`, `a.smooth`'s itself), `p in boundary(S)` as `p coincident
+S.surface`, `p in A or p not in B` in a set's body as `p outside { p | p outside A; p inside B }`,
+`some t [in (a, b)]: p in X at(under: m, seen_from: g) t` as `p inside(under: m, seen_from: g[,
+over t in (a, b)]) X` (`over t` where `t` names a declared `param`, none for the whole roll;
+`coincident` where `X` is a face, or a family's member read at a declared parameter, `some s: p in
+F(…).f at s`), `some h: p in F at(along: n) h` as `p inside F` and `not some …` as `p outside F`,
+a distance from `{ q | q not in S }` as one with `side: inside` from `S`, and `n := x at f`, `f`
+declared `:= frame` or a `frame` formal, as `n := x in f`; `when w not in A` is the condition
+reader's own (`expr::parser`). A lowered token carries the span of the word it stands for, so
+every diagnosis lands on the source, and the relation read from a lowered word is marked
+(`Written::lowered`, `Lowered::Set` or, from `.side`, `Lowered::Side`; the parser's `lowered_word`
+matches the word's start, its span widened over its parentheses). The retired spellings are
+refused there, naming their replacements: `inside` and `outside` as a relation's word (but `claim
+a inside b` between solids), `.surface`, `over` in `coincident`'s parentheses, `n := x in f`, and
+in the condition reader `not w in A`. **What needs the operand's kind** is read once it is known.
+In the flattener, before a round of set uses (`sets::notation`): a lowered `in` against a set whose
+body bounds no number is `coincident` (no number is read as a bound unasked — the one-number rule
+of **Regions** below stays for the internal `inside` a probe or a foot is applied with), a lowered
+`not in` against one is **E040**, a `distance` with no `side:` against a region is the ordinary
+distance (`side: outside`, marked lowered) and against a set with no inside **E040**, and a
+`coincident` written against a set, its first operand no hidden key, is **E040** naming `in`;
+`expand_reach` refuses `side:` written on a distance from a set that is no recognised sheet. In
+the elaborator (`program/relations.rs::constrain`): a lowered `in` against one face of a solid (a
+`Shape::Face` with a path, no `.surface`, no `.smooth`) is `coincident`, on the face, and `not in`
+it **E040**; a lowered `in` against a plane is **E040** naming `coincident` and the plane's side as
+an ordinate. An envelope's or a meshing's operand may be `boundary(S)` (`flatten::expand`'s
+`set_operand`, the probe applied to `S.surface`). The printer prints the notation back
+(`syntax::print::notation_text`, and `write_ref` a surface as `boundary(…)`), so a statement the
+app writes parses to what it read; a sketch on a face writes `in boundary(F.side)`.
+`tests/notation.rs` is the gate.
 
 **A set is an envelope's operand** (#283, [0.90]): `flank := envelope(S, under: m, …)` over a set
 is applied to a hidden point keyed `{flank}#probe` (`Walk::envelope_of`, beside `region_of`, both
@@ -117,7 +154,7 @@ written by `inside` and refused by `outside` (a union) but for one side of anoth
 round, as are an interval `outside`, several numbers and none (E040). **A side is a bound**
 (#192): `Written::lower_side` says `p inside X` as `p coincident(<=) X`, `p outside X` as `(>=)`,
 beside a side grown, `p distance(<= d, side: outside|inside) X` (`inside(d)`/`outside(d)` are
-refused by the parser naming it and `std.sets.Offset`, #266: one spelling, `op_args`); every
+refused by the parser naming the distance and the set grown, #266: one spelling, `op_args`); every
 set's body is held so (`sets::lowered`, at `Site::new`) and each use read so, and the
 elaborator's readers (`relations::shape`, `side_of_plane`, `face_term`, `ends_term`) take either spelling
 through `Written::side` (the bound on the signed distance from the surface, and its level). A tangency to a region is E040, once, in
@@ -230,8 +267,10 @@ along that face's plane `near` bounding from above and `far` from below — so i
 the axis, or about any other face is no meridian's and stays the field's (`Route::Field`, its exact
 export refused).  `tests/countersink.rs` is the gate.
 
-**There is a roll at which** (#737 P4, [0.199]): `over t in (a, b)` (the interval written in
-place) or `over s` (a declared `param`) in a relation's parentheses is `syntax::OpArg::Over`,
+**There is a roll at which** (#737 P4, [0.199]; written `some t in (a, b): p in X at(under: m) t`
+since [0.205], and lowered to the forms below — `syntax/notation.rs`): `over t in (a, b)` (the
+interval written in place) or `over s` (a declared `param`) in a relation's parentheses is
+`syntax::OpArg::Over`,
 parsed by `parser/relations.rs::op_args` for `coincident` and `inside` and settled by the
 flattener like any dimension.  `p coincident(under: m, over t in (a, b)) sec` at a region solid's
 point is what the face occupies under the motion at some roll of the interval:
@@ -334,7 +373,8 @@ a run is carried past its edge's end and cut off by the face it ends on (#195). 
 
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), its bound `p distance(<= d, side: outside) S` and
-`std.sets.Offset(S, d)` (the set, where one is passed or used) are one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
+the set grown, `{ q | q distance(<= d) S }` (where one is passed or used), are one bound on the
+signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
 the offset grows it, `reach_of` over `Written::lower_side`'s form; only a `distance` with `side:
 outside|inside` is a set use, `sets::reaches`), applied by `sets::expand_reach` in three representations: a body whose
 one relation is a `distance` gets its number moved (`(r) + #grow`, the grow settled in the use's
@@ -350,7 +390,8 @@ the body walked `Itself` then along
 sphere about `p`'s), `p outside S` (the side) and `foot inside S` (so the seed crossing puts the
 foot across the surface from `p`) appended to the body under synthetic ids (`FOOT_STATEMENTS`
 down, so `PredWalk::written` keeps their uses apart). `region_body` counts no bounded side of
-another set among a body's numbers (a distance from one is `std.sets.Offset`'s). `tests/offsets.rs` is the gate.
+another set among a body's numbers (a distance from one is the set grown's). `tests/offsets.rs` is
+the gate.
 
 **A body grown, built exactly** (`std.rounds.Grown`, [0.194]): `B` grown by `d` is a set of the
 language's own words, `near := { p | distance(p, within) <= d }` over `within := { c | c inside B }`

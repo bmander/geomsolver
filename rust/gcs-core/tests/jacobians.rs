@@ -966,12 +966,12 @@ spin := frame
 spin turns(1) ax
 gear_turn := frame
 gear_ax coincident(sense: same) gear_turn.axis; fix(ratio == -0.5, advance == 2mm) gear_turn
-flank := envelope(cone over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
+flank := envelope(boundary(cone) over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
 c1 := point hint((30, 0, -5))
 c2 := point hint((31, 1, 5))
 cax := line(c1, c2)
 cyl := std.sets.Cylinder(cax, r: hint(5mm))
-f2 := envelope(cyl over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
+f2 := envelope(boundary(cyl) over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
 in std.front {
   e1 := point hint((6, 2))
   e2 := point hint((9, 7))
@@ -1080,8 +1080,8 @@ c1 := point hint((30, 0, -5))
 c2 := point hint((31, 1, 5))
 cax := line(c1, c2)
 cyl := std.sets.Cylinder(cax, r: hint(5mm))
-pinion_flank := envelope(cyl over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
-gear_flank := envelope(cone over t in (-30deg, 30deg), under: gear_turn, seen_from: spin)
+pinion_flank := envelope(boundary(cyl) over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
+gear_flank := envelope(boundary(cone) over t in (-30deg, 30deg), under: gear_turn, seen_from: spin)
 in std.front {
   rc := point hint((20, 4))
   rim := circle(center: rc) hint(r: 2)
@@ -1091,7 +1091,7 @@ in std.front {
 }
 ring := solid(std.solids.Revolution(face(rim), about: rax))
 round := surface(ring, rim)
-formed := meshing(pinion_flank, cone over t in (-20deg, 20deg), under: gear_turn, seen_from: spin)
+formed := meshing(pinion_flank, boundary(cone) over t in (-20deg, 20deg), under: gear_turn, seen_from: spin)
 rounded := meshing(pinion_flank, round over t in (-20deg, 20deg), under: gear_turn, seen_from: spin)
 both := meshing(pinion_flank, gear_flank over t in (-20deg, 20deg), under: gear_turn, seen_from: spin)
 p := point hint((9, 3, 1))
@@ -1113,9 +1113,9 @@ param kp: Scalar hint(0.02)
 e0 := point hint((8, 2, 2))
 e1 := point hint((9, 3, 5))
 el := line(e0, e1)
-eased := meshing(pinion_flank, cone over t in (-20deg, 20deg), under: gear_turn, seen_from: spin,
+eased := meshing(pinion_flank, boundary(cone) over t in (-20deg, 20deg), under: gear_turn, seen_from: spin,
                  ease: e0, along: el, profile: kp / 1mm, lengthwise: -0.01 / 1mm)
-standing := meshing(round, cone over t in (-20deg, 20deg), under: gear_turn, seen_from: spin,
+standing := meshing(round, boundary(cone) over t in (-20deg, 20deg), under: gear_turn, seen_from: spin,
                     ease: e1, along: el, profile: 0.03 / 1mm, lengthwise: kp / 1mm)
 u := point hint((9, 3, 2))
 u coincident(t == 3deg) eased
@@ -1415,14 +1415,14 @@ fix(advance == 0mm) spin
 gear_turn := frame
 gear_ax coincident gear_turn.axis
 fix(ratio == -0.5) gear_turn
-flank := envelope(cone over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
+flank := envelope(boundary(cone) over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
 p := point hint((9, 3, 1))
 p coincident flank
 c1 := point hint((30, 0, -5))
 c2 := point hint((31, 1, 5))
 cax := line(c1, c2)
 mated := std.sets.Cone(cax, half: 15deg)
-both := meshing(flank, mated over t in (-20deg, 20deg), under: gear_turn, seen_from: spin)
+both := meshing(flank, boundary(mated) over t in (-20deg, 20deg), under: gear_turn, seen_from: spin)
 q := point hint((20, 3, 4))
 q coincident both
 x := point hint((3, -2, 5))

@@ -146,7 +146,7 @@ component FormatePair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, s
 component Space(a: set, b: set, lo: set, hi: set, below: set, above: set, cap: set, step: frame,
     pitch: Angle, grow: Length, r: Length) {
   convex := { q | q distance(<= grow) { r | r not in a } }
-  concave := std.sets.Grown(b, d: grow)
+  concave := { q | q distance(<= grow) b }
   tip := { q | q not in lo }
   base := { q | q in hi }
   convex_round := std.rounds.Rounded(convex, tip, r: r)

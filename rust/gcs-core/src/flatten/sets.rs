@@ -497,7 +497,8 @@ impl<'a> Walk<'a> {
     ///   sides and no inside (`expand_reach`).
     ///
     /// `None` where the statement is refused.
-    fn notation(&mut self, mut st: Stmt, sc: &Scope, alias: &BTreeMap<String, String>) -> Option<Stmt> {
+    fn notation(&mut self, mut st: Stmt, sc: &Scope, alias: &BTreeMap<String, String>)
+        -> Option<Stmt> {
         use crate::syntax::{Arg, Lowered, OpArg};
         let StmtKind::Relation(r) = &mut st.kind else { return Some(st) };
         let Some(w) = r.form.written_mut() else { return Some(st) };
@@ -526,6 +527,21 @@ impl<'a> Walk<'a> {
                 }
                 w.word.text = "coincident".to_string();
             }
+            // a membership a set's body holds is lowered once more as the set is made
+            // (`Written::lower_side`): `p in S` there is `p coincident(<=) S`
+            "coincident" if w.lowered.any() && k == 1 && !region
+                && matches!(w.args.as_slice(), [OpArg::Bound { hi: None, grow: None, .. }]) =>
+            {
+                let OpArg::Bound { cmp, .. } = &w.args[0] else { unreachable!("a bound") };
+                if *cmp != crate::syntax::Cmp::Le {
+                    let m = format!("`{name}` has no inside, so nothing is outside it: a point not \
+                        in a region is `p not in R` — the ball `std.sets.Ball(c, r)`, not the \
+                        sphere");
+                    self.once(Code::E040, at, m);
+                    return None;
+                }
+                w.args.clear();
+            }
             "coincident" if !w.lowered.any() && k == 1 && !w.ops[0].root.text.contains('#') => {
                 let m = format!("`coincident` against a set is retired (#783): a point in `{name}` \
                     is `p in {name}`, and on a region's surface `p in boundary({name})`");
@@ -540,13 +556,36 @@ impl<'a> Walk<'a> {
                     self.once(Code::E040, at, m);
                     return None;
                 }
-                w.args.push(OpArg::Named(Name { text: "side".to_string(), span: Span::at(at.hi as usize) },
-                                         Arg::Word("outside".to_string())));
+                let key = Name { text: "side".to_string(), span: Span::at(at.hi as usize) };
+                w.args.push(OpArg::Named(key, Arg::Word("outside".to_string())));
                 w.lowered = Lowered::Set;
             }
             _ => {}
         }
         Some(st)
+    }
+
+    /// A `distance` from a region with no `side:` said, written in the notation of sets (#783):
+    /// the ordinary distance, nothing inside it — from its surface on its outside (`side:
+    /// outside`), marked lowered.  Whether it was one.
+    fn ordinary_distance(&self, w: &mut crate::syntax::Written, sc: &Scope,
+                         alias: &BTreeMap<String, String>) -> bool {
+        use crate::syntax::{Arg, Lowered, OpArg};
+        if w.word.text != "distance" || w.ops.len() != 2 || w.sel("side").is_some()
+            || w.sel("along").is_some()
+        {
+            return false;
+        }
+        let region = w.ops.iter().any(|o| self.look(alias).raw(o, sc).is_some_and(|(abs, rest)|
+            rest.is_empty() && self.sets.made.get(&abs).is_some_and(|site| site.shape.region)));
+        if !region {
+            return false;
+        }
+        let at = w.word.span;
+        w.args.push(OpArg::Named(Name { text: "side".to_string(), span: Span::at(at.hi as usize) },
+                                 Arg::Word("outside".to_string())));
+        w.lowered = Lowered::Set;
+        true
     }
 
     /// **Outside a set** (#737 P3): `p outside S` where `S`'s body is several statements, an
@@ -765,6 +804,16 @@ impl<'a> Walk<'a> {
         if !self.sets.made.contains_key(&key) {
             let site = &self.sets.made[abs];
             let mut lit = site.lit.clone();
+            // a plain distance from a region in it is the ordinary one (#783), said before its
+            // bound is made the equality the surface is at
+            let alias = self.alias_table();
+            let scope = site.scope.clone();
+            for st in lit.body.iter_mut() {
+                let StmtKind::Relation(r) = &mut st.kind else { continue };
+                if let Some(w) = r.form.written_mut() {
+                    self.ordinary_distance(w, &scope, &alias);
+                }
+            }
             for st in lit.body.iter_mut() {
                 let StmtKind::Relation(r) = &mut st.kind else { continue };
                 if let Some(w) = r.form.written_mut() {
@@ -790,7 +839,7 @@ impl<'a> Walk<'a> {
     ) -> SetUse<'u> {
         let w = rel.form.written().expect("a set's use is written");
         let worded = Worded {
-            word: w.word.text.clone(),
+            word: w.spelled(),
             ops: (0..w.ops.len())
                 .filter(|i| found.iter().all(|(k, _)| k != i))
                 .map(|i| w.ops[i].clone())
@@ -1079,15 +1128,23 @@ impl<'a> Walk<'a> {
         // `coincident` says; a zero written so, not by a set's application, is said so
         let written = !rel.space && w.args.iter().any(|a| matches!(a, OpArg::Dim(t, _) if expr::is_literal(t)));
         if d.number() == Some(0.0) && word == "distance" && cmp.is_none() {
-            if surface.is_none() && !written {
+            if !written {
                 let mut on = w.clone();
                 on.word.text = "coincident".to_string();
                 on.args.clear();
+                // on a region's boundary, its bound made the equality (#783)
+                let mut found = su.found.clone();
+                if surface.is_some() {
+                    let owned = abs.to_string();
+                    let key = self.surface_of(&owned);
+                    found = vec![(k, key)];
+                }
                 let rel = Relation { form: RelationForm::Written(on), ..rel.clone() };
-                let on = self.set_use_of(su.u.st, &rel, su.u.path, su.u.scope, su.found.clone());
+                let on = self.set_use_of(su.u.st, &rel, su.u.path, su.u.scope, found);
                 return self.expand_use(&on);
             }
-            let m = format!("a point at no distance from `{set}` is on it: `coincident`");
+            let m = format!("a point at no distance from `{set}` is on its boundary: `p in \
+                boundary({set})`");
             return self.once(Code::E040, at, m);
         }
         let distance = written_of(&lit.body[i]).is_some_and(|m| m.word.text == "distance");

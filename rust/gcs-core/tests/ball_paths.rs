@@ -104,7 +104,7 @@ block := solid(std.solids.Prism(face(s0, s1, s2, s3), from: -8mm, to: 0mm))
 fn a_ball_slid_is_a_capsule_its_ends_in_the_blank() {
     let e = fixtures::read(&format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords)\nuse std.motion (slides)\nball := 3mm\n{}\
         in std.front {{\n  construction centerline rail := line(std.origin, hint((1, 0)))\n  fix((1, 0)) rail.p2\n}}\n{BLOCK}\
-        feed := frame\nfeed slides(40mm) rail\nconstruction groove := solid({{ p | p inside(under: feed, over t in (0deg, 180deg)) cutter }})\n\
+        feed := frame\nfeed slides(40mm) rail\nconstruction groove := solid({{ p | some t in (0deg, 180deg): p in cutter at(under: feed) t }})\n\
         groove cut block\n", ball("0mm")));
     let c = canal::built(&e.sketch, fixtures::solid(&e, "groove")).unwrap().unwrap();
     assert!(!c.fitted(), "a line is a closed form");
@@ -122,7 +122,7 @@ fn a_ball_along_a_spline_in_space_is_its_tube() {
         ka := point hint((0, 0, 0))\nkb := point hint((10, 20, 5))\nkc := point hint((30, 20, 15))\nkd := point hint((40, 0, 30))\n\
         fix((0mm, 0mm, 0mm)) ka\nfix((10mm, 20mm, 5mm)) kb\nfix((30mm, 20mm, 15mm)) kc\nfix((40mm, 0mm, 30mm)) kd\n\
         cubic := spline(ka, kb, kc, kd)\nalong := std.stations.Along(cubic, up: std.z)\n\
-        wire := solid({{ p | p inside(under: along.f, over t in (0rad, 1rad)) cutter }})\n", ball("0mm")));
+        wire := solid({{ p | some t in (0rad, 1rad): p in cutter at(under: along.f) t }})\n", ball("0mm")));
     assert!(canal::built(&e.sketch, fixtures::solid(&e, "wire")).unwrap().unwrap().fitted());
     let length = bezier_length([[0.0, 0.0, 0.0], [10.0, 20.0, 5.0], [30.0, 20.0, 15.0], [40.0, 0.0, 30.0]]);
     near(held(&e, "wire").0, tube(2.0, length), 1e-9);
@@ -139,7 +139,7 @@ fn a_ball_rolled_is_its_tube_along_the_trochoid() {
           private h0 := point\n  private h1 := point\n  h0 coords(du: 3mm, dv: 0mm) std.front\n\
           h1 coords(du: 3mm, dv: 5mm) std.front\n  construction centerline own := line(h0, h1)\n}}\n\
         spin := frame\nspin turns(0.25) own\nobserver := frame\nobserver turns(1) spindle\n\
-        rolled := solid({{ p | p inside(under: spin, seen_from: observer, over t in (-60deg, 60deg)) cutter }})\n", ball("5mm")));
+        rolled := solid({{ p | some t in (-60deg, 60deg): p in cutter at(under: spin, seen_from: observer) t }})\n", ball("5mm")));
     assert!(canal::built(&e.sketch, fixtures::solid(&e, "rolled")).unwrap().unwrap().fitted());
     // |q'(t)| = |3 e^{-it} + 3/2 e^{-3it/4}|, for q(t) = 3 e^{-it} + 2 e^{-3it/4}
     let speed = |t: f64| (9.0 + 2.25 + 9.0 * (t / 4.0).cos()).sqrt();
@@ -155,7 +155,7 @@ fn a_ball_along_an_arc_lies_on_its_torus() {
     let e = fixtures::read(&format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords)\nuse std.stations\nball := 2mm\n{}\
         in std.top {{\n  private a := point\n  private o := point\n  private e := point\n  fix((0mm, 0mm)) a\n\
           fix((0mm, 15mm)) o\n  fix((15mm, 15mm)) e\n  bend := arc(center: o, start: a, end: e)\n}}\nalong := std.stations.Along(bend, up: std.z)\n\
-        bent := solid({{ p | p inside(under: along.f, over t in (0rad, 1rad)) cutter }})\n", ball("0mm")));
+        bent := solid({{ p | some t in (0rad, 1rad): p in cutter at(under: along.f) t }})\n", ball("0mm")));
     let (volume, kinds) = held(&e, "bent");
     assert!(kinds.contains(&"torus"), "{kinds:?}");
     near(volume, tube(2.0, 15.0 * PI / 2.0), 1e-9);

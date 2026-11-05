@@ -1283,7 +1283,7 @@ fn a_solid_built_wrong_is_refused_at_a_witness() {
         Err(Unbuilt::Wrong {at,..}) => assert!(at.iter().all(|x| x.is_finite()),"{what}: at {at:?}"),
         other => panic!("{what}: {other:?}"),
     };
-    refused(&inside_out(&built),None,&swept,&domain,"turned inside out");
+    refused(&inside_out(&built),None,&swept,&domain,"turned in out");
     // a piece of the pipe missing: a block taken out across its middle, where its centre's helix
     // stands at (7.3, 6.8, 0.375)
     let missing = combined(&built,&block([6.,5.5,-1.],[8.5,8.2,2.]),Op::Cut,1e-6).unwrap();

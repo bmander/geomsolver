@@ -1,7 +1,7 @@
-//! **Regions** (§6.21, §9.6; #145 F1, #109): a set whose body bounds a number is a region, and
-//! `p inside S` / `p outside S` put a point in or out of one — the set's body applied to the
-//! point with its one number read as at most (`inside`) or at least (`outside`) what it says.
-//! A bound on the point, so a choice of root: no row.
+//! **Regions** (§6.21, §9.6; #145 F1, #109, #783): a set whose body bounds a number is a region,
+//! and `p in S` / `p not in S` put a point in or out of one — the set's body applied to the point
+//! as written, its bound kept or turned round.  A bound on the point, so a choice of root: no row.
+//! No number is read as a bound unasked: `p in std.sets.Sphere(c, r)` is on the sphere.
 use gcs_core::program::Elaborated;
 use gcs_core::system::System;
 
@@ -25,14 +25,14 @@ fn p_at(e: &Elaborated) -> [f64; 3] {
     e.sketch.world_point(ent(e, "p").i())
 }
 
-/// Inside a sphere about `c` is the root near it; outside, the other.
+/// In a ball about `c` is the root near it; not in it, the other.
 #[test]
-fn inside_a_sphere_is_within_its_radius() {
-    let near = format!("{CROSSING}near := std.sets.Sphere(c, r: 2)\n");
-    let e = solved(&format!("{near}p inside near\n"));
+fn in_a_ball_is_within_its_radius() {
+    let near = format!("{CROSSING}near := std.sets.Ball(c, r: 2)\n");
+    let e = solved(&format!("{near}p in near\n"));
     assert!((p_at(&e)[2] - 4.0).abs() < 1e-9, "{:?}", p_at(&e));
     let above = near.replace("hint((3, -2))", "hint((3, 2))");
-    let e = solved(&format!("{above}p outside near\n"));
+    let e = solved(&format!("{above}p not in near\n"));
     assert!((p_at(&e)[2] + 4.0).abs() < 1e-9, "{:?}", p_at(&e));
 }
 
@@ -50,6 +50,7 @@ fn inside_a_cylinder_and_a_cone_in_space() {
                               ("outside", "funnel", -1.0)] {
         let src = if sign < 0.0 { solids.replace("hint((3, 3, -2))", "hint((3, 3, 2))") }
                   else { solids.clone() };
+        let word = if word == "inside" { "in" } else { "not in" };
         let e = solved(&format!("{src}p {word} {set}\n"));
         assert!((p_at(&e)[2] - sign * z).abs() < 1e-9, "{word} {set}: {:?}", p_at(&e));
     }
@@ -63,7 +64,7 @@ fn a_cones_angle_reads_unsigned() {
                fix((0, 0, 0)) o\nfix((0, 0, 1)) t\nup := line(o, t)\n\
                q := point hint((0, 0, 3))\nfix((0, 0, 3)) q\ns := point hint((0, 0, -3))\n\
                fix((0, 0, -3)) s\nw := point hint((3, 0, 3))\nfix((3, 0, 3)) w\n\
-               funnel := std.sets.Cone(up, half: 30deg)\nq inside funnel\ns outside funnel\nw inside funnel\n";
+               funnel := std.sets.Cone(up, half: 30deg)\nq in funnel\ns not in funnel\nw in funnel\n";
     let e = read(src);
     let deg: Vec<f64> = e.sketch.constraints.iter().filter(|c| c.bound.is_some())
         .map(|c| c.reading(&e.sketch).unwrap().to_degrees())
@@ -74,17 +75,16 @@ fn a_cones_angle_reads_unsigned() {
     }
 }
 
-/// A region written out: `inside` and `coincident` alike put the point in it, and `outside`
-/// turns its bound round.
+/// A region written out: `in` puts the point in it, and `not in` turns its bound round.
 #[test]
 fn a_written_region() {
     let region = format!("{CROSSING}ball := {{ q | q distance(<= 2) c }}\n");
-    for word in ["inside", "coincident"] {
+    for word in ["in"] {
         let e = solved(&format!("{region}p {word} ball\n"));
         assert!((p_at(&e)[2] - 4.0).abs() < 1e-9, "{word}: {:?}", p_at(&e));
     }
     let above = region.replace("hint((3, -2))", "hint((3, 2))");
-    let e = solved(&format!("{above}p outside ball\n"));
+    let e = solved(&format!("{above}p not in ball\n"));
     assert!((p_at(&e)[2] + 4.0).abs() < 1e-9, "{:?}", p_at(&e));
 }
 
@@ -98,15 +98,15 @@ fn inside_adds_only_what_the_body_states_besides_its_number() {
         (sys.hard_rows().len(), sys.n_free)
     };
     let plain = count(CROSSING);
-    assert_eq!(count(&format!("{CROSSING}near := std.sets.Sphere(c, r: 2)\np inside near\n")), plain);
+    assert_eq!(count(&format!("{CROSSING}near := std.sets.Ball(c, r: 2)\np in near\n")), plain);
     // a free point inside a disc on a line: the line's row and a bound
     let disc = "unit mm\nuse std\nuse std.sets\nin std.front {\n  o := point hint((0, 0))\n  \
                 e := point hint((10, 0))\n  q := point hint((20, 1))\n}\nfix((0, 0)) o\n\
                 fix((10, 0)) e\nrail := line(o, e)\nslot := { s | s coincident rail; \
-                s distance(5) o }\n";
+                s distance(<= 5) o }\n";
     let (rows, free) = count(disc);
-    assert_eq!(count(&format!("{disc}q inside slot\n")), (rows + 1, free));
-    let e = solved(&format!("{disc}q inside slot\n"));
+    assert_eq!(count(&format!("{disc}q in slot\n")), (rows + 1, free));
+    let e = solved(&format!("{disc}q in slot\n"));
     let at = e.sketch.world_point(ent(&e, "q").i());
     assert!(at[2].abs() < 1e-9 && at[0].abs() <= 5.0 + 1e-6, "on the rail, within 5: {at:?}");
 }
@@ -115,23 +115,27 @@ fn inside_adds_only_what_the_body_states_besides_its_number() {
 /// where any one fails — a choice of root, which `outside` cannot say.
 #[test]
 fn a_region_of_regions() {
-    let both = format!("{CROSSING}near := std.sets.Sphere(c, r: 2)\nfar := std.sets.Sphere(a, r: 1)\n\
-                        between := {{ q | q inside near; q outside far }}\n");
-    let e = solved(&format!("{both}p inside between\n"));
+    let both = format!("{CROSSING}near := std.sets.Ball(c, r: 2)\nfar := std.sets.Ball(a, r: 1)\n\
+                        between := {{ q | q in near; q not in far }}\n");
+    let e = solved(&format!("{both}p in between\n"));
     assert!((p_at(&e)[2] - 4.0).abs() < 1e-9, "{:?}", p_at(&e));
     assert_eq!(e.sketch.constraints.iter().filter(|c| c.bound.is_some()).count(), 2);
-    refused(&format!("{both}p outside between\n"), "E040", "choice of root", "outside");
+    refused(&format!("{both}p not in between\n"), "E040", "choice of root", "not in");
 }
 
-/// What `inside` and `outside` may be said of.
+/// What `in` and `not in` may be said of.  A set with no inside — two circles' crossing — is a
+/// set a point is put on, its statements as written.
 #[test]
 fn a_region_is_said_of_one_number() {
-    refused(&format!("{CROSSING}band := {{ q | q distance(in: (1, 3)) c }}\np outside band\n"),
-            "E040", "either side", "outside");
+    refused(&format!("{CROSSING}band := {{ q | q distance(in: (1, 3)) c }}\np not in band\n"),
+            "E040", "either side", "not in");
+    let e = solved(&format!("{CROSSING}lens := {{ q | q distance(5) a; q distance(5) b }}\n\
+                             p in lens\n"));
+    assert!((p_at(&e)[0] - 3.0).abs() < 1e-9, "{:?}", p_at(&e));
     refused(&format!("{CROSSING}lens := {{ q | q distance(5) a; q distance(5) b }}\n\
-                      p inside lens\n"), "E040", "states 2 numbers", "inside");
-    refused(&format!("{CROSSING}near := std.sets.Sphere(c, r: 2)\nl := line(a, b)\nl inside near\n"),
-            "E040", "puts a point on it", "inside");
+                      p not in lens\n"), "E040", "no inside", "not in");
+    refused(&format!("{CROSSING}near := std.sets.Ball(c, r: 2)\nl := line(a, b)\nl in near\n"),
+            "E040", "puts a point on it", "in");
     refused(&format!("{CROSSING}ball := {{ q | q distance(<= 2) c }}\nl := line(a, b)\n\
                       l tangent ball\n"), "E040", "is a region", "tangent");
 }
@@ -150,13 +154,13 @@ fn an_angle_bound_in_a_view_is_refused() {
 #[test]
 fn a_cone_drawn_in_the_points_view_is_a_region() {
     let funnel = format!("{CROSSING}up := line(a, c)\nfunnel := std.sets.Cone(up, half: 30deg)\n");
-    let e = solved(&format!("{funnel}p inside funnel\n"));
+    let e = solved(&format!("{funnel}p in funnel\n"));
     assert!((p_at(&e)[2] - 4.0).abs() < 1e-9, "{:?}", p_at(&e));
     let bounds: Vec<_> = e.sketch.constraints.iter().filter(|c| c.bound.is_some())
         .map(|c| c.kind).collect();
     assert_eq!(bounds, [gcs_core::constraints::CKind::Angle3]);
     let above = funnel.replace("hint((3, -2))", "hint((3, 2))");
-    let e = solved(&format!("{above}p outside funnel\n"));
+    let e = solved(&format!("{above}p not in funnel\n"));
     assert!((p_at(&e)[2] + 4.0).abs() < 1e-9, "{:?}", p_at(&e));
 }
 
@@ -165,7 +169,7 @@ fn a_cone_drawn_in_the_points_view_is_a_region() {
 /// region put there, and the document keeps it.
 #[test]
 fn a_region_use_is_kept_as_its_bound() {
-    let e = solved(&format!("{CROSSING}near := std.sets.Sphere(c, r: 2)\np inside near\n"));
+    let e = solved(&format!("{CROSSING}near := std.sets.Ball(c, r: 2)\np in near\n"));
     let lifted = gcs_core::program::to_program(&e.sketch).text().to_string();
     assert!(lifted.contains("distance(<= 2mm)"), "{lifted}");
     let doc = gcs_core::io::from_json(&gcs_core::io::to_json(&e.sketch)).unwrap();

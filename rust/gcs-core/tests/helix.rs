@@ -123,8 +123,8 @@ fn near(got: f64, want: f64, rel: f64, what: &str) {
 fn a_thread_is_pappus() {
     let e = with("
 param s: Scalar over (0, 1)
-thread := solid({ p | p coincident(over s) Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f })
-vee := solid({ p | p coincident(over s) VThread(std.top, root: 8mm, crest: 10.5mm, half: 1mm, pitch: 3mm, turns: 2).f })");
+thread := solid({ p | some s: p in Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f at s })
+vee := solid({ p | some s: p in VThread(std.top, root: 8mm, crest: 10.5mm, half: 1mm, pitch: 3mm, turns: 2).f at s })");
     near(exact(&e, "thread"), 240.0 * PI, 1e-9, "a square thread");
     near(exact(&e, "vee"), 2.5 * 2.0 * PI * 26.5 / 3.0 * 2.0, 1e-9, "a V thread");
 }
@@ -136,8 +136,8 @@ vee := solid({ p | p coincident(over s) VThread(std.top, root: 8mm, crest: 10.5m
 fn a_flight_is_cavalieri() {
     let e = with("
 param s: Scalar over (0, 1)
-half := solid({ p | p coincident(over s) Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 30mm, turns: 0.5).f })
-auger := solid({ p | p coincident(over s) Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f })");
+half := solid({ p | some s: p in Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 30mm, turns: 0.5).f at s })
+auger := solid({ p | some s: p in Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f at s })");
     near(exact(&e, "half"), 8.0 * 15.0, 1e-9, "half a turn");
     near(exact(&e, "auger"), 8.0 * 30.0, 1e-9, "two and a half turns");
 }
@@ -149,7 +149,7 @@ auger := solid({ p | p coincident(over s) Flight(std.top, off: 6mm, w: 4mm, h: 2
 fn a_spring_is_its_wire_along_the_helix() {
     let e = with("
 param s: Scalar over (0, 1)
-spring := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f })");
+spring := solid({ p | some s: p in Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f at s })");
     let helix = 4.0 * (20.0 * PI).hypot(5.0);
     near(exact(&e, "spring"), PI * 1.5 * 1.5 * helix, 1e-9, "the spring");
 }
@@ -162,9 +162,9 @@ spring := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, wire: 1.5mm, p
 fn a_negative_pitch_is_the_mirror_image() {
     let e = with("
 param s: Scalar over (0, 1)
-right := solid({ p | p coincident(over s) Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3.25).f })
-left := solid({ p | p coincident(over s) Thread(std.top, r: 10mm, size: 2mm, pitch: -4mm, turns: 3.25).f })
-coil := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, wire: 1.5mm, pitch: -5mm, turns: 4).f })");
+right := solid({ p | some s: p in Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3.25).f at s })
+left := solid({ p | some s: p in Thread(std.top, r: 10mm, size: 2mm, pitch: -4mm, turns: 3.25).f at s })
+coil := solid({ p | some s: p in Coil(std.top, r: 10mm, wire: 1.5mm, pitch: -5mm, turns: 4).f at s })");
     near(exact(&e, "left"), exact(&e, "right"), 1e-9, "the mirror thread");
     near(exact(&e, "left"), 4.0 * 20.0 * PI * 3.25, 1e-9, "a left-handed thread");
     let helix = 4.0 * (20.0 * PI).hypot(5.0);
@@ -197,9 +197,9 @@ coil := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, wire: 1.5mm, pit
 fn a_rigid_screw_lies_on_its_swept_rim() {
     let e = with("
 param s: Scalar over (0, 1)
-thread := solid({ p | p coincident(over s) Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f })
-auger := solid({ p | p coincident(over s) Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f })
-spring := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f })
+thread := solid({ p | some s: p in Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f at s })
+auger := solid({ p | some s: p in Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f at s })
+spring := solid({ p | some s: p in Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f at s })
 component Swelling(base: plane, r: Length, size: Length, pitch: Length, turns: Scalar, s: Scalar) {
   st := std.stations.Helix(base, pitch: pitch, turns: turns, s: s)
   in st.axial {
@@ -209,7 +209,7 @@ component Swelling(base: plane, r: Length, size: Length, pitch: Length, turns: S
   sq := std.shapes.CenteredRectangle(c, w: size * (1 + 0.5 * s), h: size * (1 + 0.5 * s)) in st.axial
   f := face(sq.loop)
 }
-swelling := solid({ p | p coincident(over s) Swelling(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f })");
+swelling := solid({ p | some s: p in Swelling(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f at s })");
     for name in ["thread", "auger", "spring"] {
         let k = walls(&e, name);
         assert!(!k.is_empty() && k.values().all(|&v| v == "blend"), "{name}: {k:?}");
@@ -232,8 +232,8 @@ swelling := solid({ p | p coincident(over s) Swelling(std.top, r: 10mm, size: 2m
 fn a_screwed_wall_is_written_and_meshed() {
     let e = with("
 param s: Scalar over (0, 1)
-thread := solid({ p | p coincident(over s) Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f })
-spring := solid({ p | p coincident(over s) Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f })
+thread := solid({ p | some s: p in Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f at s })
+spring := solid({ p | some s: p in Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f at s })
 component Swelling(base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar, s: Scalar) {
   st := std.stations.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
   in st.n {
@@ -242,7 +242,7 @@ component Swelling(base: plane, r: Length, wire: Length, pitch: Length, turns: S
   }
   f := face(w)
 }
-swelling := solid({ p | p coincident(over s) Swelling(std.top, r: 10mm, wire: 1mm, pitch: 5mm, turns: 4).f })");
+swelling := solid({ p | some s: p in Swelling(std.top, r: 10mm, wire: 1mm, pitch: 5mm, turns: 4).f at s })");
     for name in ["thread", "spring"] {
         let b = brep(&e, name);
         let text = gcs_core::brep::step::write(&b, name, 1e-3).unwrap();

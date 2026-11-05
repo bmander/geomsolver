@@ -2086,7 +2086,18 @@ impl<'a> P<'a> {
         let faces = faces.into_iter()
             .map(|(f, kind, span)| Stmt { id: f, kind, span, chained: Chained::InPlace(id) })
             .collect();
-        let by = Ref { root: Name { text: name.text, span }, path: Vec::new(), span };
+        // a member of what was written in place, `std.sets.Cone(l, half: h).surface` — the
+        // boundary of a set written in place (#783), lowered so — read off the hoisted name
+        let mut path = Vec::new();
+        while self.peek() == Some(&Tok::P('.'))
+            && matches!(self.t.get(self.i + 1), Some((Tok::Ident(_), _)))
+        {
+            self.i += 1;
+            let field = self.ident()?;
+            path.push(crate::syntax::Seg::Field(field));
+        }
+        let whole = Span::new(span.lo as usize, self.prev_hi());
+        let by = Ref { root: Name { text: name.text, span }, path, span: whole };
         Some(InPlace { by, faces, id, kind, span })
     }
 

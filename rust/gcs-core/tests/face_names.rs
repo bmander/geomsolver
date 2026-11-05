@@ -172,8 +172,8 @@ const MEMBERS: &str = "unit mm\n\
 
 #[test]
 fn a_member_called_ends_or_surface_is_itself() {
-    let e = solved(&format!("{MEMBERS}within := {{ p | p inside h.ends }}\n\
-                             near := {{ p | distance(p, h.surface) <= 1mm }}\n\
+    let e = solved(&format!("{MEMBERS}within := {{ p | p in h.ends }}\n\
+                             near := {{ p | distance(p, boundary(h.side)) <= 1mm }}\n\
                              a := solid(within)\nb := solid(near)\n"));
     let ball = |r: f64| 4.0 / 3.0 * PI * r.powi(3);
     for (name, want) in [("a", ball(2.0)), ("b", ball(4.0))] {

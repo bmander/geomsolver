@@ -137,7 +137,7 @@ fn a_round_naming_nothing_reads_the_body_before_the_others() {
 /// operand does.)
 #[test]
 fn uses_that_name_each_other_are_refused() {
-    let shave = "A shave(d) B := {\n  near := { p | p inside A; p distance(<= d) B }\n  \
+    let shave = "A shave(d) B := {\n  near := { p | p in A; p distance(<= d) B }\n  \
                  shaved := solid(near)\n  shaved cut A.body\n}\n";
     let src = disc(30.0, "x := plate.y shave(d: 1mm) plate.far\ny := plate.x shave(d: 1mm) plate.far\n");
     refused(&src.replacen("in std.front", &format!("{shave}in std.front"), 1), Code::E041,

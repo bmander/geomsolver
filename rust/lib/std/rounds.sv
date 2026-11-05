@@ -7,8 +7,9 @@
 // What a round or a chamfer means is said here, over the language's own words: faces as sets (a
 // face is its patch, `q in a`; `a.side` the side of the surface it lies on that its material is
 // on, and `boundary(a.side)` that whole surface; `a.smooth` that side carried on across every seam
-// where a face of the body goes on from it tangent, `boundary(a.smooth)` its surface), the distance from a set, a bound on measurements, where an
-// edge ends, the material's angle at an edge, words that repeat over faces and make solids.  An
+// where a face of the body goes on from it tangent, `boundary(a.smooth)` its surface), the
+// distance from a set, a bound on measurements, where an edge ends, the material's angle at an
+// edge, words that repeat over faces and make solids.  An
 // evaluator reads the sets (the field); a lowering may build an exact surface for a shape it
 // recognises, and says nothing these do not.  Each is `symmetric` in its faces (#415): the edge of
 // `a` and `b` is the edge of `b` and `a`, so a word that reaches it both ways states it once.

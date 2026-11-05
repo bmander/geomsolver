@@ -31,21 +31,21 @@ component FaceSpan(generator: line, width: Length) {
 // axis from its apex.
 component MemberBlank(generator: line, ax: line, design: group, normal_module: Length) {
   span := FaceSpan(generator, width: design.face_width)
-  toe := std.sets.Sphere(generator.p1, r: hint(design.cone_distance))
-  heel := std.sets.Sphere(generator.p1, r: hint(design.cone_distance))
-  span.toe coincident toe
-  span.heel coincident heel
+  toe := std.sets.Ball(generator.p1, r: hint(design.cone_distance))
+  heel := std.sets.Ball(generator.p1, r: hint(design.cone_distance))
+  span.toe in boundary(toe)
+  span.heel in boundary(heel)
   // The pitch cone, about the member's axis; its half is the drawing's to solve.
   pitch := std.sets.Cone(ax)
-  generator.p2 coincident pitch
-  tip := std.sets.Offset(pitch, d: design.addendum * normal_module)
-  back := { q | q distance(<= design.back * normal_module, side: inside) pitch }
+  generator.p2 in boundary(pitch)
+  tip := { q | q distance(<= design.addendum * normal_module) pitch }
+  back := { q | q distance(<= design.back * normal_module) { r | r not in pitch } }
   // the toe's side of the blank, a bound of its own for the toe's chamfer
-  beyond_toe := { q | q outside toe }
+  beyond_toe := { q | q not in toe }
   relief := design.end_relief
-  region := { p | p inside tip; p inside heel; p outside toe; p inside back
-                  p inside std.rounds.Chamfered(tip, beyond_toe, la: relief, lb: relief)
-                  p inside std.rounds.Chamfered(tip, heel, la: relief, lb: relief) }
+  region := { p | p in tip; p in heel; p not in toe; p in back
+                  p in std.rounds.Chamfered(tip, beyond_toe, la: relief, lb: relief)
+                  p in std.rounds.Chamfered(tip, heel, la: relief, lb: relief) }
   material := solid(region)
 }
 

@@ -907,7 +907,7 @@ fn set_words(
     cx: &mut Elab<'_>, r: &Relation, st: &Stmt, word: &Option<crate::constraints::WordUse>,
 ) -> Option<bool> {
     let point_word = |w: &&crate::syntax::Worded| {
-        matches!(w.word.as_str(), "coincident" | "inside" | "outside")
+        matches!(w.word.as_str(), "coincident" | "inside" | "outside" | "in" | "not in")
     };
     if let (Some(w), Some(found)) = (r.word.as_ref().filter(point_word), word) {
         if let (Some(&op), Some((_, set))) = (found.ops.first(), w.sets.first()) {

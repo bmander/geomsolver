@@ -1050,7 +1050,8 @@ impl<'a> P<'a> {
         for (word, args) in &link.prefixes {
             let sp = word.span;
             let ops = vec![ent.clone()];
-            let rel = word_relation(word.clone(), Fixity::Prefix, ops, args.clone(), sp, self.lowered_word(word.span));
+            let lowered = self.lowered_word(word.span);
+            let rel = word_relation(word.clone(), Fixity::Prefix, ops, args.clone(), sp, lowered);
             let id = self.mint_stmt(next_id, sp)?;
             out.push(Stmt {
                 id,
@@ -1325,7 +1326,8 @@ impl<'a> P<'a> {
         }));
         let relation = |word: &str, fixity: Fixity, ops: Vec<Ref>, args: Vec<OpArg>| {
             let word = Name { text: word.to_string(), span: at };
-            StmtKind::Relation(word_relation(word.clone(), fixity, ops, args, at, self.lowered_word(word.span)))
+            let lowered = self.lowered_word(word.span);
+            StmtKind::Relation(word_relation(word.clone(), fixity, ops, args, at, lowered))
         };
         let touch = |p: &Ref| {
             vec![OpArg::Named(Name { text: "at".into(), span: at }, Arg::Ref(p.clone()))]
@@ -1494,7 +1496,8 @@ impl<'a> P<'a> {
         // the operator cannot: *which end* two links meet at.
         let written = |w: &str, ops: Vec<Ref>, args: Vec<OpArg>| {
             let word = Name { text: w.to_string(), span: at };
-            Some(word_relation(word.clone(), Fixity::Infix, ops, args, at, self.lowered_word(word.span)))
+            let lowered = self.lowered_word(word.span);
+            Some(word_relation(word.clone(), Fixity::Infix, ops, args, at, lowered))
         };
         let end = |w: &str| {
             vec![OpArg::Named(Name { text: "at".into(), span: at }, Arg::Word(w.to_string()))]

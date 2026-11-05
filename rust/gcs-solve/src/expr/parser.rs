@@ -289,7 +289,8 @@ impl Parser {
         // `not w in A` is retired (#783) for `w not in A`, membership's own negation
         let retired = matches!(self.peek(), Tok::Ident(s) if s == "not")
             && matches!(self.toks.get(self.pos + 1).map(|t| &t.0), Some(Tok::Ident(_)))
-            && matches!(self.toks.get(self.pos + 2).map(|t| &t.0), Some(Tok::Ident(w)) if w == "in");
+            && matches!(self.toks.get(self.pos + 2).map(|t| &t.0),
+                        Some(Tok::Ident(w)) if w == "in");
         if retired {
             return Err(format!("`not w in A` is retired (#783): a name not among another's is \
                 `w not in A`, at {}", self.here()));

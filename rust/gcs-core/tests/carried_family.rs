@@ -132,7 +132,7 @@ fn a_law_reparametrises_its_screws_sweep() {
         "  private screw := frame\n  \
          screw screws(pitch) std.top.normal\n  \
          fix(value == 360deg * turns * s + 30deg * sin(360deg * s)) screw\n  \
-         st_n := std.top in screw\n  in st_n {").replace(") st.n\n", ") st_n\n");
+         st_n := std.top at screw\n  in st_n {").replace(") st.n\n", ") st_n\n");
     assert!(src.contains("sin(360deg * s)") && !src.contains(") st.n\n"), "the flight moved");
     let e = determined(&src);
     let flight = e.sketch.exact_solid(ent(&e, "flight").i()).unwrap();

@@ -67,18 +67,18 @@ small_hole := solid(std.solids.Prism(face(small_bore), from: -wS, to: wS))
 // each eye, and beyond half the web from the plane of swing. A region over the operands' own faces
 // and solids, not the rod's, so it reads nothing the rod's body makes (X4).
 front_pocket := solid({ p |
-  p distance(>= ft, side: inside) shank.left
-  p distance(>= ft, side: inside) shank.right
-  p distance(>= ft, side: outside) big_end
-  p distance(>= ft, side: outside) small_end
-  p distance(>= wt / 2, side: outside) std.front
+  p distance(>= ft) { q | q not in shank.left }
+  p distance(>= ft) { q | q not in shank.right }
+  p distance(>= ft) big_end
+  p distance(>= ft) small_end
+  p distance(>= wt / 2) std.front
 })
 back_pocket := solid({ p |
-  p distance(>= ft, side: inside) shank.left
-  p distance(>= ft, side: inside) shank.right
-  p distance(>= ft, side: outside) big_end
-  p distance(>= ft, side: outside) small_end
-  p distance(>= wt / 2, side: inside) std.front
+  p distance(>= ft) { q | q not in shank.left }
+  p distance(>= ft) { q | q not in shank.right }
+  p distance(>= ft) big_end
+  p distance(>= ft) small_end
+  p distance(>= wt / 2) { q | q not in std.front }
 })
 
 rod := solid(shank)

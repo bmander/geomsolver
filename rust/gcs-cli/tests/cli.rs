@@ -1346,7 +1346,7 @@ tool_turn turns(1) stem
 wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
 blank := solid(std.solids.Prism(face(rim), from: -8mm, to: -2mm))
-space := solid({ p | p inside(under: tool_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })
+space := solid({ p | some t in (0deg, 540deg): p in star at(under: tool_turn, seen_from: wheel_turn) t })
 wheel := solid(blank)
 space cut wheel
 overlap := solid(wheel)
@@ -1764,7 +1764,7 @@ handle_turn := frame
 handle_turn turns(1) stem
 wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
-space := solid({ p | p inside(under: handle_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })
+space := solid({ p | some t in (0deg, 540deg): p in star at(under: handle_turn, seen_from: wheel_turn) t })
 in std.top {
   bc := point hint((-60, 70))
   fix((-60mm, 70mm)) bc

@@ -240,10 +240,10 @@ s := solid(std.solids.Drafted(f, from: -2, to: 2, draft: 4deg))
 #[test]
 fn a_drafted_side_is_no_set_to_sketch_on() {
     let src = block("std.solids.Drafted(f, from: -5, to: 5, draft: 3deg)", "")
-        + "p := point\np coincident blk.near.surface\n";
+        + "p := point\np in boundary(blk.near.side)\n";
     solved(&src);
     let (p, _) = crate::common::parse(&(block("std.solids.Drafted(f, from: -5, to: 5, draft: 3deg)", "")
-        + "p := point\np coincident blk.ab.surface\n"));
+        + "p := point\np in boundary(blk.ab.side)\n"));
     let e = gcs_core::program::elaborate(&p);
     assert!(e.diags.iter().any(|d| d.message.contains("drafted side")), "{:?}", e.diags);
 }

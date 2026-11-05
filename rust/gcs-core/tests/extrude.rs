@@ -102,7 +102,7 @@ fn a_region_the_source_cannot_name_or_a_missing_body_is_refused() {
 /// the new prism; one whose set reads its formal under arithmetic, or says no sweep, is refused.
 #[test]
 fn a_family_saying_a_prism_is_resized_by_its_set() {
-    let own = "component Slab(section: face, t: Length) := { p |\n  p inside section\n\
+    let own = "component Slab(section: face, t: Length) := { p |\n  p in section.side\n\
         p distance(<= t, along: n) section\n  p distance(>= 0mm, along: n) section\n}\n";
     let src = DRAWN.replace("block := solid(std.solids.Prism(face(ab, bc, cd, da), from: -5, to: 0))",
                             &format!("{own}block := solid(Slab(face(ab, bc, cd, da), t: 5))"));

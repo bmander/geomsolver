@@ -73,7 +73,7 @@ in std.front {
 }
 ax := axis
 q := point
-q inside std.sets.Cylinder(ax, r: 8mm)
+q in std.sets.Cylinder(ax, r: 8mm)
 ";
     assert_eq!(of("W202", src), ["W202: Level"], "{:?}", lint(src));
 }

@@ -8,11 +8,15 @@
 //! | `p not in S` | `p outside S`: its complement |
 //! | `p in a.side`, `p not in a.side` | `p inside a`, `p outside a`: the material side of a face |
 //! | `p in a`, `a` a face | `p coincident a`: the face itself |
-//! | `p in boundary(S)` | `p coincident S.surface` (`a.side`'s the face's surface, `a.smooth`'s itself) |
-//! | `boundary(S)` elsewhere | `S.surface`, as above |
-//! | `p in A or p not in B` | `p outside { p \| p outside A; p inside B }`: De Morgan, in a set's body |
-//! | `some t in (a, b): p in X at(under: m) t` | `p inside(under: m, over t in (a, b)) X` (a face's: `coincident`) |
-//! | `some t: p in X at(under: m) t` | `p inside(under: m) X`, the whole roll; `over t` where `t` is a declared `param` |
+//! | `p in boundary(S)` | `p coincident S.surface` (of `a.side`, `a.surface`) |
+//! | `boundary(S)` elsewhere | `S.surface`, as above (`a.smooth`'s itself) |
+//! | `p in A or p not in B` | `p outside { p \| p outside A; p inside B }`, in a body |
+//!
+//! A sweep's operand that is a face (drawn, a `face` formal, a family's member read at a declared
+//! parameter) is lowered with `coincident` where a body's is with `inside`, and `over t` stands in
+//! its parentheses where `t` is a declared `param` (none for the whole roll).
+//! | `some t in (a, b): p in X at(under: m) t` | `p inside(under: m, over t in (a, b)) X` |
+//! | `some t: p in X at(under: m) t` | `p inside(under: m) X`, the whole roll |
 //! | `some s: p in F at s` | `p coincident(over s) F`: a face family over a declared parameter |
 //! | `some h: p in F at(along: n) h` | `p inside F`: the prism through a face |
 //! | `not some h: p in F at(along: n) h` | `p outside F`: what is not in it |
@@ -140,7 +144,13 @@ fn operand_end(t: &[T], j: usize) -> Option<usize> {
 /// Whether a statement may start at `i`: the first token, or one after a statement's end, a
 /// body's opening brace or a set's bar.
 fn starts(t: &[T], i: usize) -> bool {
-    i == 0 || matches!(t[i - 1].0, Tok::Nl | Tok::P('{') | Tok::P('|'))
+    // a set's bound name after its `{` is no statement: its first stands after the `|`
+    i == 0 || matches!(t[i - 1].0, Tok::Nl | Tok::P('|'))
+        || (t[i - 1].0 == Tok::P('{') && super::words::set_at(t, i - 1).is_none())
+        // a word's body written on its head's line, `a opens(h) l := a in boundary(…)`: its
+        // statement after the `:=`, where more than a name stands before it
+        || (t[i - 1].0 == Tok::Define && i >= 3 && !matches!(t[i - 3].0, Tok::Nl)
+            && word(t, i - 3) != Some("private") && word(t, i - 3) != Some("construction"))
 }
 
 /// The statement's end from `i`: the line break or `;` that ends it, or the brace closing the body
@@ -273,9 +283,13 @@ impl Lowering<'_> {
             let span = t[i].1;
             match word(t, i) {
                 // `inside` and `outside` as a relation's word: after an operand, before one
+                // the claim word `inside` between two solids (§9.8), one within another, is not
+                // membership, and stays
+                Some("inside") if self.claimed(i) => {}
                 Some(w @ ("inside" | "outside")) if i > 0
                     && matches!(t[i - 1].0, Tok::Ident(_) | Tok::P(')' | ']'))
-                    && matches!(t.get(i + 1).map(|x| &x.0), Some(Tok::Ident(_) | Tok::P('(' | '{'))) =>
+                    && matches!(t.get(i + 1).map(|x| &x.0),
+                                Some(Tok::Ident(_) | Tok::P('(' | '{'))) =>
                 {
                     let m = if w == "inside" {
                         "`inside` is retired (#783): a point in a set is `p in S` — the set's own \
@@ -293,7 +307,9 @@ impl Lowering<'_> {
                         `boundary(S)` — of a face's material side, `boundary(a.side)`, the \
                         surface the face lies on");
                 }
-                Some("over") if self.encl[i].is_some_and(|o| o > 0 && word(t, o - 1) == Some("coincident")) => {
+                Some("over") if self.encl[i]
+                    .is_some_and(|o| o > 0 && word(t, o - 1) == Some("coincident")) =>
+                {
                     self.fail(span, "`over` in a relation's parentheses is retired (#783): the \
                         points a face occupies at some value are `some s: p in F at s`, and \
                         under a motion `some t in (a, b): p in F at(under: m) t`");
@@ -301,6 +317,15 @@ impl Lowering<'_> {
                 _ => {}
             }
         }
+    }
+
+    /// Whether the token at `i` stands in a claim: its statement opens with `claim`.
+    fn claimed(&self, i: usize) -> bool {
+        let t = self.t;
+        let start = (0..i).rev().find(|&k| starts(t, k)).unwrap_or(0);
+        // or in a claim's block, `claim over r in (a, b) { a inside b }`
+        word(t, start) == Some("claim")
+            || self.encl[start].is_some_and(|o| punct(t, o, '{') && self.claimed(o))
     }
 
     /// Lower the tokens `[lo, hi)` into `out`.
@@ -332,6 +357,7 @@ impl Lowering<'_> {
     fn statement(&mut self, i: usize, hi: usize, out: &mut Vec<T>) -> Option<usize> {
         let t = self.t;
         match word(t, i)? {
+            "claim" if word(t, past_ref(t, i + 1).unwrap_or(i + 1)) == Some("inside") => None,
             "claim" | "private" | "construction" | "centerline" if i + 1 < hi => {
                 let mut held = Vec::new();
                 let next = self.statement(i + 1, hi, &mut held)?;
@@ -386,9 +412,25 @@ impl Lowering<'_> {
     /// side's `a.surface`, and `a.smooth` as itself (the face's surface carried over its seams).
     fn surface_of(&mut self, a: usize, b: usize, at: Span, out: &mut Vec<T>) {
         let t = self.t;
-        if past_ref(t, a) != Some(b) {
-            self.fail(at, "`boundary(…)` takes a set, a solid or a face's side by name: \
-                `boundary(S)`, `boundary(a.side)`");
+        let first = out.len();
+        self.surface_tokens(a, b, at, out);
+        // the reference spans the whole of `boundary(…)`, where it was written
+        if let Some(close) = t.get(b).filter(|x| x.0 == Tok::P(')')) {
+            if let Some(x) = out.get_mut(first) {
+                x.1 = Span::new(at.lo as usize, x.1.hi as usize);
+            }
+            if let Some(x) = out.last_mut() {
+                x.1 = Span::new(x.1.lo as usize, close.1.hi as usize);
+            }
+        }
+    }
+
+    fn surface_tokens(&mut self, a: usize, b: usize, at: Span, out: &mut Vec<T>) {
+        let t = self.t;
+        // a set named, or one written in place by a call (`boundary(std.sets.Cone(l, half: h))`)
+        if past_ref(t, a) != Some(b) && operand_end(t, a) != Some(b) {
+            self.fail(at, "`boundary(…)` takes a set, a solid or a face's side, by name or by a \
+                call: `boundary(S)`, `boundary(a.side)`, `boundary(std.sets.Ball(c, r: 5mm))`");
         }
         let end = t[b.saturating_sub(1).max(a)].1;
         if b >= a + 3 && punct(t, b - 2, '.') && word(t, b - 1) == Some("side") {
@@ -406,7 +448,9 @@ impl Lowering<'_> {
     /// `boundary(S)` standing as any relation's operand.
     fn boundary(&mut self, i: usize, out: &mut Vec<T>) -> Option<usize> {
         let t = self.t;
-        if word(t, i) != Some("boundary") || !punct(t, i + 1, '(') || (i > 0 && punct(t, i - 1, '.')) {
+        if word(t, i) != Some("boundary") || !punct(t, i + 1, '(')
+            || (i > 0 && punct(t, i - 1, '.'))
+        {
             return None;
         }
         let c = close(t, i + 1)?;
@@ -497,6 +541,10 @@ impl Lowering<'_> {
     /// `p in X`, `p not in X`, and memberships joined by `or` in a set's body.
     fn membership(&mut self, i: usize, hi: usize, out: &mut Vec<T>) -> Option<usize> {
         let t = self.t;
+        // a declaration's element word is no point: `p := point in P` draws one in a plane
+        if word(t, i).is_some_and(|w| crate::model::EntKind::parse(w).is_some()) {
+            return None;
+        }
         let (point, x0, not, at) = self.member_word(i)?;
         let x1 = operand_end(t, x0)?;
         if word(t, x1) == Some("or") {
@@ -537,7 +585,8 @@ impl Lowering<'_> {
         match (word(t, point), word(t, point + 1)) {
             (Some("in"), _) => Some((point, point + 1, false, t[point].1)),
             (Some("not"), Some("in")) => {
-                Some((point, point + 2, true, Span::new(t[point].1.lo as usize, t[point + 1].1.hi as usize)))
+                let at = Span::new(t[point].1.lo as usize, t[point + 1].1.hi as usize);
+                Some((point, point + 2, true, at))
             }
             _ => None,
         }
@@ -545,7 +594,8 @@ impl Lowering<'_> {
 
     /// `p in A or p not in B …` in a set's body: the outside of where each fails (De Morgan),
     /// `p outside { p | p outside A; p inside B }`, which the evaluator reads as the union.
-    fn disjunction(&mut self, i: usize, point: usize, hi: usize, out: &mut Vec<T>) -> Option<usize> {
+    fn disjunction(&mut self, i: usize, point: usize, hi: usize, out: &mut Vec<T>)
+        -> Option<usize> {
         let t = self.t;
         let in_set = self.encl[i].is_some_and(|o| super::words::set_at(t, o).is_some());
         let mut parts: Vec<(usize, usize, bool, Span)> = Vec::new();
@@ -614,9 +664,9 @@ impl Lowering<'_> {
         let mut k = i + 2;
         let mut interval = None;
         if word(t, k) == Some("in") && punct(t, k + 1, '[') {
-            self.fail(t[k + 1].1, "an interval is `(a, b)`, closed at both ends, as `over t in (a, \
-                b)` and `distance(in: (a, b))` write it: `[a, b]` is a list, and `t in [a, b]` its two \
-                members");
+            self.fail(t[k + 1].1, "an interval is `(a, b)`, closed at both ends, as `over t in \
+                (a, b)` and `distance(in: (a, b))` write it: `[a, b]` is a list, and `t in [a, b]` \
+                its two members");
             return Some(statement_end(t, i));
         }
         if word(t, k) == Some("in") && punct(t, k + 1, '(') {
@@ -684,8 +734,10 @@ impl Lowering<'_> {
                     `not some h: p in F at(along: n) h`: what a sweep leaves is the body it is \
                     cut from, `swept cut body`");
             }
-            let face = reads == Reads::Face;
-            let lowered = if face || labels.is_none() { "coincident" } else { "inside" };
+            // a face (drawn, a formal, a family's member) is swept as a face is; a body as a body
+            let member = (x0..x1).any(|k| punct(t, k, '(')) && punct(t, x1.saturating_sub(2), '.');
+            let face = reads == Reads::Face || (labels.is_none() && member);
+            let lowered = if face { "coincident" } else { "inside" };
             self.words.push(in_at);
             emitted.push(ident(lowered, in_at));
             let at = t[x1].1;

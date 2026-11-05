@@ -228,7 +228,7 @@ turn := frame
 turn spins(1) o
 rack := frame
 rack slides(2 * pi * 20mm) pitch_line
-construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) slot })
+construction space := solid({ p | some t in (-60deg, 60deg): p in slot at(under: rack, seen_from: turn) t })
 ";
     let e = fixtures::read(src);
     let sides = ExtrudedSurface::drafted(&e.sketch,fixtures::solid(&e,"slot")).unwrap();

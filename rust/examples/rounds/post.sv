@@ -2,7 +2,7 @@
 // past its top. The plate's top edge along that side is rounded up to the post on either side of
 // it. Each run ends on the plate's square side at one end and on the post's curved wall at the
 // other: carried on into the post and cut off by its wall, so the round stops flush where the
-// post rises, as the set says (`p inside crease.ends`: on the side of the wall the edge runs on).
+// post rises, as the set says (`p in crease.ends`: on the side of the wall the edge runs on).
 //
 // Drawn on the top plane, standing 10 (the plate) and 30 (the post) up from it. Orbit
 // (right-drag) to see the rounds meet the post. Edit `r` and apply (⌘↵).

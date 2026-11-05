@@ -1,6 +1,6 @@
-// `std.sets`: regions as sets of points (§6.21, #783) — a ball, a cylinder, a cone, a half-space,
-// a rod, a set grown and a set shrunk — each a set and nothing drawn; the sphere, the one surface
-// mathematics names apart from the region it bounds; a segment; and a circle lying on a sphere.
+// `std.sets`: regions as sets of points (§6.21, #783) — a ball, a cylinder, a cone, a half-space
+// and a rod — each a set and nothing drawn; the sphere, the one surface mathematics names apart
+// from the region it bounds; a segment; and a circle lying on a sphere.
 // A region's surface is its boundary, `boundary(S)`: a point on a cylinder is `p in
 // boundary(shaft)`, and a line touching it `l tangent boundary(shaft)`.
 
@@ -126,19 +126,11 @@ component Rod(about: line, r: Length) := { p |
   about.p2 distance(<= 0mm, along: about) p
 }
 
-// The set `S` grown by `d`: the points within `d` of it (§6.21) — a ball's, a cylinder's or a
-// cone's, `S ⊕ B_d`, the distance from a set being nothing inside it.  A cone's grown is a cone,
-// its apex rounded by a ball.
-//
-//   tip := std.sets.Grown(pitch, d: 2mm)
-//   region := { p | p in tip; p distance(<= 4mm) { q | q not in pitch } }
-component Grown(S: set, d: Length) := { p | p distance(<= d) S }
-
-// The set `S` shrunk by `d`: the points at least `d` from everything not in it — what is left of
-// `S` once `d` is taken off every side.
-//
-//   back := { q | q not in std.sets.Shrunk(pitch, d: 4mm) }
-component Shrunk(S: set, d: Length) := { p | p distance(>= d) { q | q not in S } }
+// The set `S` grown by `d` is the points within `d` of it, one statement — `{ p | p distance(<= d)
+// S }`, the distance from a set being nothing inside it (a cone's grown is a cone, its apex rounded
+// by a ball) — and shrunk by `d` the points at least `d` from everything not in it, `{ p | p
+// distance(>= d) { q | q not in S } }`: the language's own words, so no word here says them
+// again.  A solid grown, built exactly, is `std.rounds.Grown`.
 
 // The segment from `a` to `b`: the points on the line through them, from one to the other — where
 // `line(a, b)` as a set, `p coincident l`, is the whole line.

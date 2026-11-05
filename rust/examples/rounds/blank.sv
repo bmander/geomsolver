@@ -2,7 +2,7 @@
 // (`tip`) and shrunk by the dedendum, and between two spheres about the cone's apex — outside the
 // toe's (`toe_side`), inside the heel's — with the tip's rims rounded where it meets each sphere.
 //
-// `tip` is `std.sets.Offset(pitch, d: …)`, the cone grown by the addendum: an offset cone. Rounding
+// `tip` is `{ q | q distance(<= …) pitch }`, the cone grown by the addendum: an offset cone. Rounding
 // its corners with `std.rounds.Rounded(tip, heel, r: …)` is a ball rolled inside both, whose centre
 // stands on the cone grown by the addendum less the radius and on the sphere shrunk by it. Every
 // term is about the cone's axis, so the region is a meridian turned once, its rounds built exactly
@@ -23,7 +23,7 @@ fix((0, 0, 1)) ze
 axis_line := line(apex, ze)
 
 pitch := std.sets.Cone(axis_line, half: 30deg)
-tip := std.sets.Grown(pitch, d: 1.5mm)
+tip := { q | q distance(<= 1.5mm) pitch }
 heel := std.sets.Ball(apex, r: 20)
 toe_side := { q | q distance(>= 12mm) apex }
 

@@ -263,8 +263,8 @@ slide := frame
 slide slides({s1}mm) L
 gear_slide := frame
 gear_slide slides({s2}mm) GL
-pinion_flank := envelope(rack over t in (-40deg, 40deg), under: slide, seen_from: pinion_turn)
-gear_flank := envelope(gear_rack over t in (-40deg, 40deg), under: gear_slide, seen_from: gear_turn)
+pinion_flank := envelope(boundary(rack) over t in (-40deg, 40deg), under: slide, seen_from: pinion_turn)
+gear_flank := envelope(boundary(gear_rack) over t in (-40deg, 40deg), under: gear_slide, seen_from: gear_turn)
 bearing := meshing(pinion_flank, gear_flank over t in (-15deg, 15deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint({hp})
 Q coincident(t == 0deg) bearing

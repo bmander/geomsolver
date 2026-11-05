@@ -53,4 +53,4 @@ in std.top {
   guide := line(o, e)
 }
 param s: Scalar over (0, 1)
-transition := solid({ p | p coincident(over s) Transition(guide, std.z, half: 10mm).f })
+transition := solid({ p | some s: p in Transition(guide, std.z, half: 10mm).f at s })

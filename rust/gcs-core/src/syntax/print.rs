@@ -1259,7 +1259,9 @@ fn notation_text(w: &Written) -> Option<String> {
         return None;
     }
     let (var, quantifier) = match over {
-        Some((key, Some([lo, hi]))) => (key.text.clone(), format!("some {} in ({}, {})", key.text, lo.0, hi.0)),
+        Some((key, Some([lo, hi]))) => {
+            (key.text.clone(), format!("some {} in ({}, {})", key.text, lo.0, hi.0))
+        }
         Some((key, None)) => (key.text.clone(), format!("some {}", key.text)),
         None => ("t".to_string(), "some t".to_string()),
     };

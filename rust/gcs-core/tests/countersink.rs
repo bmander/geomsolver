@@ -101,8 +101,8 @@ fn a_countersink_is_its_cone_to_its_point() {
 fn a_countersink_written_by_hand_is_built_alike() {
     let e = solved(&rim("{ p |
   p distance(<= 0mm, along: n) f
-  beyond := { q | q outside f }
-  within := { q | q inside f }
+  beyond := { q | not some h: q in f at(along: n) h }
+  within := { q | some h: q in f at(along: n) h }
   distance(p, beyond) - distance(p, within) >= tan(45deg) * distance(p, f)
 }"));
     let b = exact(&e, "sink").unwrap();
@@ -145,8 +145,8 @@ up := axis
 up coincident o
 up perpendicular std.top
 deck := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) hint(origin: (3, 2, 33))
-deck.origin coincident strap.near.surface
-deck tangent(at: deck.origin) strap.near.surface
+deck.origin in boundary(strap.near.side)
+deck tangent(at: deck.origin) boundary(strap.near.side)
 deck.origin coincident up
 in deck {
   rim := circle(center: deck.origin) hint(r: 3)

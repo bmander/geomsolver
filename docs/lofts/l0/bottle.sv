@@ -41,4 +41,4 @@ in std.front {
   rail := spline(through: rims, start: axis_line, end: axis_line)
 }
 param s: Scalar over (0, 1)
-bottle := solid({ p | p coincident(over s) Body(axis_line, std.y, std.front, rail).f })
+bottle := solid({ p | some s: p in Body(axis_line, std.y, std.front, rail).f at s })

@@ -25,6 +25,8 @@ A Rust file's string literals are rewritten in place; a document (.sv) whole.  W
 cannot read is printed for a hand to settle:
 
     scripts/sets_in_notation.py FILE...      rewrite in place, saying each file changed
+    scripts/sets_in_notation.py --comments FILE.sv...   the code in a document's comments
+    scripts/sets_in_notation.py FILE.md...   the code in a page's backticks
 """
 import os
 import re
@@ -174,7 +176,11 @@ def sweeps(code, doc):
             continue
         point, x = m.group(1), om.group(1)
         if over:
-            ov = re.match(r"over (" + NAME + r")(?: in (\(.*\)))?$", over[0])
+            ov = re.match(r"over\s+(" + NAME + r")(?:\s+in\s+(\(.*\)))?$", over[0], re.S)
+            if not ov:
+                out.append(code[i:m.end()])
+                i = m.end()
+                continue
             var, interval = ov.group(1), ov.group(2)
         else:
             var, interval = ("u" if "t" in doc.params else "t"), None
@@ -226,7 +232,10 @@ def rewrite_code(code, doc):
             WARN.append("`%s %s %s` read a surface's one number as a bound: `%s` must become a "
                         "region" % (p_, w, y, y))
         return p_ + (" not in " if neg else " in ") + y
+    # the claim word `inside` between two solids, one within another, stays
+    code = re.sub(r"(claim " + REF + r") inside ", lambda m: m.group(1) + " \x06 ", code)
     code = re.sub(r"(" + REF + r") (inside|outside) (" + OPERAND + ")", side_word, code)
+    code = code.replace(" \x06 ", " inside ")
     # drawn faces: the prism through one, and what is not in it
     def face_prism(m):
         p_, neg, y = m.group(1), m.group(2), m.group(3)
@@ -273,9 +282,10 @@ def rewrite_code(code, doc):
     return code
 
 
-def rewrite_text(text, fam):
-    """A document's text: its code rewritten, its comments as they were."""
-    doc = Doc(text, fam)
+def rewrite_text(text, fam, doc=None):
+    """A document's text: its code rewritten, its comments as they were — read by the kinds `doc`
+    knows (a Rust file's, across its strings), else its own."""
+    doc = doc or Doc(text, fam)
     # rewrite line by line, keeping each line's comment apart; a statement spanning lines is
     # rewritten as one, its comments put back where they stood
     lines = text.split("\n")
@@ -298,31 +308,99 @@ def rewrite_text(text, fam):
 
 def rust_strings(text, fam):
     """A Rust file: each string literal holding Solvent rewritten, its escapes and its line
-    breaks kept as they were."""
+    breaks kept as they were, read by what every string of the file declares."""
+    every = "\n".join(m.group(0)[1:-1].replace("\\n", "\n").replace("{{", "{").replace("}}", "}")
+                      for m in re.finditer(r'"(?:[^"\\]|\\.)*"', text, flags=re.S))
+    doc = Doc(every, fam)
     def one(m):
         s = m.group(0)
-        if not re.search(r"\b(inside|outside|coincident|side:|Offset|surface|tangent|envelope)\b"
+        if not re.search(r"\b(inside|outside|coincident|side:|Offset|surface|tangent|envelope|Sphere|meshing)\b"
                          r"|:= \w+ in \w+|when not", s):
             return s
         body = s[1:-1]
+        if '\\"' in body:
+            return s
+        # Solvent, not prose: a definition, a set written out, or a document's head
+        if not re.search(r":=|\{\{? ?[a-z] \||(^|\\n)\s*(unit|use|in) ", body):
+            return s
         # `\n` escapes read as the line breaks they are, and put back after
-        body = body.replace("\\n", "\x03\n")
+        # every line break, escaped or real, read as one, and each put back as it was written
+        pieces = re.split(r"(\\n|\n)", body)
+        seps = pieces[1::2]
+        body = "\n".join(pieces[0::2])
         fmt = "{{" in body or "}}" in body
         holes = []
         if fmt:
-            # a format string's own holes kept apart, its doubled braces read as the braces
-            def hole(h):
-                holes.append(h.group(0))
-                return "\x04%d\x05" % (len(holes) - 1)
-            body = re.sub(r"(?<!\{)\{[A-Za-z0-9_:.?#]*\}(?!\})", hole, body)
-            body = body.replace("{{", "{").replace("}}", "}")
-        new = rewrite_text(body, fam)
+            # a format string read as its text: `{{` and `}}` the braces, `{…}` its holes kept apart
+            text, k = "", 0
+            while k < len(body):
+                if body.startswith("{{", k) or body.startswith("}}", k):
+                    text += body[k]
+                    k += 2
+                elif body[k] == "{":
+                    e = body.index("}", k)
+                    holes.append(body[k:e + 1])
+                    text += "\x04%d\x05" % (len(holes) - 1)
+                    k = e + 1
+                else:
+                    text += body[k]
+                    k += 1
+            body = text
+        new = rewrite_text(body, fam, doc)
+        new = loose(new)
         if fmt:
             new = new.replace("{", "{{").replace("}", "}}")
             new = re.sub(r"\x04(\d+)\x05", lambda h: holes[int(h.group(1))], new)
-        new = new.replace("\x03\n", "\\n")
+        lines = new.split("\n")
+        if len(lines) == len(seps) + 1:
+            new = lines[0] + "".join(sep + ln for sep, ln in zip(seps, lines[1:]))
+        else:
+            return s
         return '"' + new + '"'
     return re.sub(r'"(?:[^"\\]|\\.)*"', one, text, flags=re.S)
+
+
+def loose(code):
+    """What a test's text says in the retired spellings that its kinds did not reach: the side
+    words between operands, `coincident(over s)` before a hole, a whole-roll sweep of a hole."""
+    code = re.sub(r"(claim " + REF + r") inside ", lambda m: m.group(1) + " \x06 ", code)
+    # only where a statement stands: a line's start, after a body's `|` or a `;`
+    at = r"((?:^|[|;])[ \t]*)"
+    code = re.sub(at + r"(" + REF + r") inside (?=[A-Za-z_{\x04])", r"\1\2 in ", code, flags=re.M)
+    code = re.sub(at + r"(" + REF + r") outside (?=[A-Za-z_{\x04])", r"\1\2 not in ", code, flags=re.M)
+    code = code.replace(" \x06 ", " inside ")
+    # a set written in place is a set
+    code = re.sub(r"\b(" + REF + r") coincident (?=\{)", r"\1 in ", code)
+    code = re.sub(r"\b(" + REF + r") coincident\(over (" + NAME + r")\) (\x04\d+\x05(?:\.\w+)*)",
+                  lambda m: "some %s: %s in %s at %s" % (m.group(2), m.group(1), m.group(3), m.group(2)), code)
+    return code
+
+
+def prose(text, fam):
+    """Prose: each piece of code in backticks rewritten as a statement is (an `.md` file's, and a
+    document's comments with `--comments`)."""
+    def span(m):
+        code = m.group(1)
+        if not re.search(r"\b(inside|outside|coincident|surface|Offset|side:)\b|:= \w+ in \w+", code):
+            return m.group(0)
+        return "`" + rewrite_code(code, Doc(code, fam)) + "`"
+    # a fenced block is a document's text; a span may break across one line
+    def fenced(m):
+        return m.group(1) + rewrite_text(m.group(2), fam) + m.group(3)
+    text = re.sub(r"(```[a-z]*\n)(.*?)(```)", fenced, text, flags=re.S)
+    parts = re.split(r"(```.*?```)", text, flags=re.S)
+    return "".join(p if p.startswith("```") else
+                   re.sub(r"`([^`]+?)`", lambda m: span(m) if m.group(1).count("\n") <= 1 else m.group(0), p)
+                   for p in parts)
+
+
+def comments(text, fam):
+    """A document's comments: the code in their backticks rewritten."""
+    out = []
+    for ln in text.split("\n"):
+        k = ln.find("//")
+        out.append(ln if k < 0 else ln[:k] + prose(ln[k:], fam))
+    return "\n".join(out)
 
 
 def main():
@@ -334,10 +412,17 @@ def main():
                     texts.append(open(os.path.join(root, f)).read())
     fam = families(texts)
     fam["Blade"] = True
-    for path in sys.argv[1:]:
+    args = sys.argv[1:]
+    in_comments = "--comments" in args
+    for path in [a for a in args if a != "--comments"]:
         text = open(path).read()
         WARN.clear()
-        new = rust_strings(text, fam) if path.endswith(".rs") else rewrite_text(text, fam)
+        if path.endswith(".md"):
+            new = prose(text, fam)
+        elif in_comments:
+            new = comments(text, fam)
+        else:
+            new = rust_strings(text, fam) if path.endswith(".rs") else rewrite_text(text, fam)
         if new != text:
             open(path, "w").write(new)
             print(path)

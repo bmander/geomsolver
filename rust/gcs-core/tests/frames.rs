@@ -736,11 +736,11 @@ turn turns(1) ax
     let riding = format!("{head}in turn {{\n  in std.front {{\n{tool}  }}\n}}\n\
         stock := solid(std.solids.Prism(profile, from: 0mm, to: 2mm))\n\
         placed := stock at 30deg\n\
-        swept := solid({{ p | p inside(over t in (-20deg, 20deg)) stock }})\n");
+        swept := solid({{ p | some t in (-20deg, 20deg): p in stock at t }})\n");
     let under = format!("{head}in std.front {{\n{tool}}}\n\
         stock := solid(std.solids.Prism(profile, from: 0mm, to: 2mm))\n\
         placed := stock at(under: turn) 30deg\n\
-        swept := solid({{ p | p inside(under: turn, over t in (-20deg, 20deg)) stock }})\n");
+        swept := solid({{ p | some t in (-20deg, 20deg): p in stock at(under: turn) t }})\n");
     let (mut a, mut b) = (build(&riding), build(&under));
     assert!(solve::solve(&mut a.sketch, Default::default()).success);
     assert!(solve::solve(&mut b.sketch, Default::default()).success);

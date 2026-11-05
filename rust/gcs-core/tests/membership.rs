@@ -102,14 +102,14 @@ fn a_point_said_to_stand_in_space_keeps_the_row() {
 #[test]
 fn a_sets_plane_draws_the_point_it_is_used_on() {
     let e = read(&format!(
-        "{SIDE}q := point\nq coincident {{ p | p coincident side; p distance(12) std.origin }}\n"
+        "{SIDE}q := point\nq in {{ p | p coincident side; p distance(12) std.origin }}\n"
     ));
     assert_eq!(plane_of(&e, "q"), Some(ent(&e, "side").i()));
     assert_eq!(kinds(&e), vec![CKind::Distance3]);
     let sk = solved(&e);
     assert!(off_side(&sk, &e, "q") < 1e-9);
     let e = read(&format!("{SIDE}q := point hint((0, 30)) in side\n\
-                           q coincident {{ p | p coincident side; p distance(12) a }}\n"));
+                           q in {{ p | p coincident side; p distance(12) a }}\n"));
     assert_eq!(e.sketch.circles.len(), 1);
     assert_eq!(kinds(&e), vec![CKind::Radius, CKind::PointOnCircle]);
 }
@@ -137,9 +137,11 @@ fn a_written_pose_keeps_the_point_in_its_plane() {
 /// A circle centred on the front plane's origin, written as `circle` or as a set, with a point
 /// on it and a disc swept from it.
 fn disc(circle: &str) -> String {
+    // a point on a circle drawn is `coincident` with it, on a set `in` it (#783)
+    let on = if circle.starts_with("k := circle") { "coincident" } else { "in" };
     format!(
         "unit mm\nuse std\nuse std.solids\nuse std.sets\no := point in std.front\nfix((0, 0)) o\n{circle}\n\
-         q := point hint((20, 10)) in std.front\nq coincident k\n\
+         q := point hint((20, 10)) in std.front\nq {on} k\n\
          f := face(k)\ndisc := solid(std.solids.Prism(f, from: -4mm, to: 0))\n"
     )
 }
@@ -228,12 +230,12 @@ fn a_set_that_is_no_circle_here_stays_a_set() {
     let on_line = read(&format!(
         "{SIDE}l := line(hint((0, 0)), hint((40, 0))) in side\nfix((0, 0)) l.p1\nfix((40, 0)) l.p2\n\
          k := {{ p | p coincident l; p distance(25) a }}\nq := point hint((30, 0)) in side\n\
-         q coincident k\n"));
+         q in k\n"));
     assert!(on_line.sketch.circles.is_empty());
     assert_eq!(kinds(&on_line), vec![CKind::PointOnLine, CKind::Distance]);
     let off = read(&format!(
         "{SIDE}c := point hint((5, 0)) in std.front\nfix((5, 0)) c\n\
-         k := {{ p | p coincident side; p distance(13) c }}\nq := point\nq coincident k\n"));
+         k := {{ p | p coincident side; p distance(13) c }}\nq := point\nq in k\n"));
     assert!(off.sketch.circles.is_empty());
     assert_eq!(plane_of(&off, "q"), Some(ent(&off, "side").i()));
     assert_eq!(kinds(&off), vec![CKind::Distance3]);
@@ -324,7 +326,7 @@ fn a_set_circles_text_stands_through_a_solve_and_a_gesture() {
 fn a_gesture_naming_an_in_place_set_circle_is_refused() {
     let mut e = read("unit mm\nuse std\nuse std.sets\no := point in std.front\nfix((0, 0)) o\n\
         q := point hint((20, 10)) in std.front\n\
-        q coincident { p | p coincident std.front; p distance(25) o }\n");
+        q in { p | p coincident std.front; p distance(25) o }\n");
     let mut sk = solved(&e);
     assert_eq!(sk.circles.len(), 1, "the in-place set is drawn as a circle");
     let r = sk.circles[0].radius as usize;
@@ -357,8 +359,8 @@ fn a_set_circle_is_made_per_instance_and_per_copy() {
 #[test]
 fn a_set_on_a_set_is_no_circle() {
     let e = read(&format!(
-        "{SIDE}ball := std.sets.Sphere(a, r: 20)\nk := {{ p | p coincident ball; p distance(5) a }}\n\
-         q := point\nq coincident k\n"));
+        "{SIDE}ball := std.sets.Sphere(a, r: 20)\nk := {{ p | p in ball; p distance(5) a }}\n\
+         q := point\nq in k\n"));
     assert!(e.sketch.circles.is_empty());
     assert_eq!(kinds(&e).len(), 2);
 }
@@ -371,8 +373,8 @@ fn a_centre_another_sets_use_draws_is_a_circle() {
     let doc = |o: &str| format!(
         "unit mm\nuse std\nuse std.sets\non := {{ p | p coincident std.front }}\no := point\n{o}\n\
          k := {{ p | p coincident std.front; p distance(25) o }}\n\
-         q := point hint((20, 10)) in std.front\nq coincident k\n");
-    let by_set = read(&doc("o coincident on"));
+         q := point hint((20, 10)) in std.front\nq in k\n");
+    let by_set = read(&doc("o in on"));
     let said = read(&doc("o coincident std.front"));
     let front = Some(ent(&by_set, "std.front").i());
     assert_eq!(plane_of(&by_set, "o"), front);
@@ -392,9 +394,9 @@ fn a_centre_another_sets_use_draws_is_a_circle() {
 fn a_refusal_is_final() {
     let e = read("unit mm\nuse std\nuse std.sets\na := point\nfix((0, 3, 0)) a\n\
         k1 := { p | p coincident std.front; p distance(5) a }\n\
-        q := point\nq coincident k1\n\
+        q := point\nq in k1\n\
         k2 := { p | p coincident std.front; p distance(3) q }\n\
-        s := point\ns coincident k2\n");
+        s := point\ns in k2\n");
     assert!(e.sketch.circles.is_empty());
     let front = Some(ent(&e, "std.front").i());
     assert_eq!(plane_of(&e, "q"), front);

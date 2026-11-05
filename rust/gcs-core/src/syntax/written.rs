@@ -253,6 +253,18 @@ impl Written {
         self.bound().is_some() || crate::constraints::plane_side_word(&self.word.text).is_some()
     }
 
+    /// The word as the statement spells it (#783): a relation lowered from the notation of sets
+    /// is `in` or `not in` (`p in S`, `p in boundary(S)`, `p not in a.side`), whatever word it was
+    /// lowered to; any other its own word.  What a statement is described by.
+    pub fn spelled(&self) -> String {
+        let sweep = self.args.iter().any(|a| matches!(a, OpArg::Over { .. }));
+        match (self.lowered.any() && !sweep, self.word.text.as_str()) {
+            (true, "inside" | "coincident") => "in".to_string(),
+            (true, "outside") => "not in".to_string(),
+            (_, w) => w.to_string(),
+        }
+    }
+
     /// One selector by name — what `constraints::infix_op` reads to tell `distance … along: u`
     /// from a plain one, and a tangency at a named end from the bare pair.
     pub fn sel(&self, name: &str) -> Option<String> {

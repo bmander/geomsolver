@@ -9,14 +9,14 @@ use std.solids
 // a bracket standing on it, a dimension to it.
 hole.center coincident plate.top
 bracket.base.p1 coincident plate.top
-p distance(12mm) plate.top.surface
+p distance(12mm) boundary(plate.top.side)
 
 // [F2] Distance from a set bounded by several conditions: a curve (two surfaces met) or a region.
 // A weld's reach from the edge it runs along; a part's clearance envelope (a body grown by a gap,
 // the Minkowski sum); a pocket's tool path, the pocket shrunk by the cutter's radius.
 bead := { p | p distance(<= 6mm) { q | q coincident frame.web; q coincident frame.flange } }
-keep_out := std.Offset({ p | p inside engine.block; p inside engine.head }, d: 5mm)
-path := { c | c inside pocket; c distance(>= 3mm) pocket.walls.surface }
+keep_out := std.Offset({ p | p in engine.block; p in engine.head }, d: 5mm)
+path := { c | c in pocket; c distance(>= 3mm) boundary(pocket.walls.side) }
 
 // [F3] A bound on an expression of measurements in a set's body. An ellipse by its foci; the
 // points nearer one bore than another (a Voronoi cell: where a split line between two bosses
@@ -46,11 +46,11 @@ bore(d, depth) f at(p) := {
 // [F7] The faces an edge ends on. A weld bead along an edge, stopped where the edge stops; a
 // sheet's callout of an edge's length between the faces it runs from and to.
 web_edge := { q | q coincident frame.web; q coincident frame.flange }
-bead := { p | p distance(<= 6mm) web_edge; p inside web_edge.ends }
+bead := { p | p distance(<= 6mm) web_edge; p in web_edge.ends }
 
 // [F8] Repetition with a condition. Every face that faces up; every edge between two named
 // groups that also meets a third.
-repeat f in box if angle(f.surface, std.z) < 1deg {
+repeat f in box if angle(boundary(f.side), std.z) < 1deg {
   f class top_face
 }
 
