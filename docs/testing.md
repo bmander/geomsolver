@@ -344,3 +344,7 @@ touch helix touch at one point, and the foot's pieces do not close.  The touch h
 placed where `g'` changes sign (it stood 2.6e-7 off at the run's middle); the trace's start is what
 is left.
 
+The slow tier of `swept_closed::` after: 42 of 43 in 291 s (939 s before).  The one failure,
+`a_bull_nose_turned_about_an_axis_along_its_own_closes_into_its_sweep`, fails on `main` before
+#780 C1 too, the same way (`Unbuilt::Wrong` at the same witness, 1,072 s there); now in 14 s, the
+crossings' polish no longer walking every near pair.

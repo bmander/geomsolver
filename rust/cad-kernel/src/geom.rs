@@ -457,13 +457,14 @@ impl Blend {
     /// **The pipe this patch is, where it is one** (`build::screwed` of a ball's great circle
     /// square to its centre's velocity: the side of the solid a ball sweeps under a screw, #721
     /// F2c5, #780 C1): a whole circle and its own image carried by a screw, square to its centre's
-    /// velocity there. The screw carries the circle's plane with the helix its centre runs along,
+    /// velocity there, under a screw that climbs (a turn's is a torus's patch). The screw carries the
+    /// circle's plane with the helix its centre runs along,
     /// so every carried circle stands square to that helix where it is, and the patch is the tube
     /// of the circle's radius about it. `None` for any other patch.
     pub fn pipe(&self) -> Option<Pipe> {
-        let Carry::Screw {angle,..} = self.carry else { return None };
+        let Carry::Screw {angle,advance,..} = self.carry else { return None };
         let (Curve::Circle(f,r),Curve::Circle(g,s)) = (&self.a,&self.b) else { return None };
-        if !self.closed || angle == 0. { return None }
+        if !self.closed || angle == 0. || advance == 0. { return None }
         // the image carried back the circle itself, read off the two frames (asked at every inverse,
         // so no point of either circle is evaluated)
         let same = |q: V,x: V,scale: f64| crate::util::space::distance(q,x) <= 1e-9*scale;
