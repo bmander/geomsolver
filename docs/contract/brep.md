@@ -161,7 +161,18 @@ is the root: Kantorovich's nearer radius is read as `2η/(1 + √(1 − 2h))`, w
 all but flat (a line against a sheet fitted flat) does not cancel to nothing, and a first Newton
 step out of the ball halves the box rather than returning its middle
 (`roots::a_root_certified_over_a_flat_system_is_where_it_is`; once it put a slid bar's corner
-edge on its plane at 7.86 rather than 9). **An edge a Boolean meets with a surface and a ray a
+edge on its plane at 7.86 rather than 9). **A box is read grown past its sides** (#796,
+`isolate::GROW`), the theorem in the norm that box is the unit ball of, so the halves of a box
+overlap and a root on the face they share is inside both, the two that find it one root (each
+certified the only root of its box): read as halves meeting at a face, a crossing there was never
+certified (the ball about the middle reaches a hair past the face its step ends on) and was
+dropped by both once rounding put it a hair outside — a ray from inside a saddle block met the
+block's side at its stretch's middle, the block's inside read as out, and the drum it was cut by
+refused (`roots::a_crossing_on_the_face_two_halves_share_is_found_once`,
+`arrangement::a_bilinear_sheets_block_in_common_with_a_drum_is_the_drum_under_the_sheet`). **A
+B-spline sheet's foot held at its patch's rim is let go once the descent pulls it back in**
+(`geom::net_newton`): its other parameter settled alone, the foot was returned on the rim a long
+way from a point of the patch, and the point read outside its face. **An edge a Boolean meets with a surface and a ray a
 point is located by are read alike** (#780 R2, `query::curve_surface`; there is no `ray`
 switch): a line meets a plane, a cone, a torus and a conic turned (`query::line_revolution`, a
 quartic in the meridian's own parameter) as polynomials along it, and a turned contact's meridian
