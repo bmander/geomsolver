@@ -35,6 +35,14 @@
  * function that says which runs of it are what.  That is what lets the harness build the very same
  * control the app builds, rather than a second one that might not have the bug.
  *
+ * **Signs drawn over the text** (#783 P2): a run the caller names (`ligating`) may be drawn as one
+ * sign — `in` as ∈ — over exactly its own characters.  Not a font's ligature, which the second rule
+ * forbids: the copy keeps the ASCII, made invisible, and the sign is a box laid over it out of the
+ * flow, so no character moves and the caret, the selection and a click still land on the ASCII.
+ * Where the caret touches a sign the ASCII is shown instead, so a key never acts on a character
+ * the eye cannot see: backspacing at ` in ` shows the word and takes its last letter, as plain text
+ * does.  `tools/overlay.mjs` checks that drawing them moves no glyph.
+ *
  * What an editor's features need of it is two things, and both are said here without saying what
  * any feature is: **marks in layers** (`setMarks(marks, layer)`), so the statement picked on the
  * drawing, the names under the caret and whatever comes next each keep their own and none has to
@@ -54,6 +62,10 @@ export interface Run extends Extent { cls: string }
  *  Marks may overlap — a statement can be both picked and judged — and a character under two of
  *  them carries both classes, so the stylesheet composes them rather than either one winning. */
 export interface Mark extends Extent { cls: string }
+
+/** A run drawn as one sign over its own characters (`ligating`): what the sign is, and nothing
+ *  of why — that is the caller's. */
+export interface Ligature extends Extent { glyph: string }
 
 /** Past this the colouring is dropped and the text is shown plain: one span per run stops being
  *  free long before a textarea's own limit, and a file this long is not one anybody is reading a
@@ -88,9 +100,25 @@ export class CodeEditor {
    *  re-lexes the document, and a repaint that only moved the *mark* has the same text and so
    *  the same runs — which used to be paid for again anyway. */
   private lastRuns: { text: string; runs: Run[] } | null = null;
+  /** Which runs are drawn as signs (`Ligature`), and the last answer against its text, as the
+   *  colouring's is kept.  None by default: a drawing's language has none. */
+  private ligate: (text: string) => Ligature[] = () => [];
+  private lastLigatures: { text: string; ligatures: Ligature[] } | null = null;
+  /** The signs the caret shows as their ASCII at the last paint, and the text painted: a caret
+   *  that moves without changing which sign it touches repaints nothing. */
+  private revealed = '';
+  private painted: string | null = null;
   /** Show the text uncoloured.  The colouring is the core's reading of Solvent, and prose read
    *  as statements — a README beside the sources — would be tinted at random. */
   plain = false;
+
+  /** What draws runs as signs — a program's, or none for a drawing.  Changing it drops the last
+   *  answer, which was the other language's. */
+  set ligating(ligate: (text: string) => Ligature[]) {
+    if (ligate === this.ligate) return;
+    this.ligate = ligate;
+    this.lastLigatures = null;
+  }
 
   /** What colours the text — a program's scan or a drawing's, as the file shown is one or the
    *  other.  Changing it drops the last runs, which were the other language's reading. */
@@ -127,6 +155,9 @@ export class CodeEditor {
     for (const e of ['keyup', 'pointerup', 'select', 'focus']) {
       this.box.addEventListener(e, () => this.caretMoved());
     }
+    // a sign is shown as its ASCII only where the caret is, and the caret is only where the box
+    // has the focus: leaving it draws every sign again
+    this.box.addEventListener('blur', () => this.reveal());
     document.addEventListener('selectionchange', () => {
       if (document.activeElement === this.box) this.caretMoved();
     });
@@ -230,6 +261,7 @@ export class CodeEditor {
   }
 
   private caretMoved(): void {
+    this.reveal();
     const { selectionStart: lo, selectionEnd: hi } = this.box;
     const edited = this.dirty;
     if (!edited && this.lastCaret.lo === lo && this.lastCaret.hi === hi) return;
@@ -282,10 +314,43 @@ export class CodeEditor {
     this.repaint();
   }
 
+  /** The signs drawn over this text, less those the caret touches (shown as their ASCII), and
+   *  the key that says which those are. */
+  private signs(text: string): { shown: Ligature[]; key: string } {
+    if (this.plain || text.length > MAX_COLOUR) return { shown: [], key: '' };
+    if (this.lastLigatures?.text !== text) {
+      this.lastLigatures = { text, ligatures: this.ligate(text) };
+    }
+    const all = this.lastLigatures.ligatures;
+    if (document.activeElement !== this.box) return { shown: all, key: '' };
+    const { selectionStart: lo, selectionEnd: hi } = this.box;
+    const touched = (l: Ligature): boolean =>
+      (l.lo <= lo && lo <= l.hi) || (l.lo <= hi && hi <= l.hi);
+    const shown = all.filter((l) => !touched(l));
+    const key = shown.length === all.length ? ''
+      : all.filter(touched).map((l) => l.lo).join(',');
+    return { shown, key };
+  }
+
+  /** Repaint where the caret has come to or left a sign — and only then, so moving it through
+   *  ordinary text paints nothing.  A text not yet painted is the pending repaint's. */
+  private reveal(): void {
+    const text = this.text;
+    if (this.painted !== text || !this.lastLigatures?.ligatures.length) return;
+    if (this.signs(text).key !== this.revealed) this.repaint();
+  }
+
   /** Colour what is in the box now — after typing, or after the rules changed. */
   repaint(): void {
     const text = this.text;
     const out = document.createDocumentFragment();
+    // the signs, in order, and the one whose characters are being written: its pieces go into
+    // the box the sign is drawn on, not the copy itself (`sink`)
+    const { shown: signs, key } = this.signs(text);
+    this.revealed = key;
+    this.painted = text;
+    let sign = 0;
+    let sink: Node = out;
     // every layer's marks at once, by where they start: the stretches below are written in order,
     // so a mark is taken up when the text reaches it and let go once it is past — a repaint walks
     // the marks once, not once per coloured run
@@ -293,16 +358,28 @@ export class CodeEditor {
     let taken = 0;
     let open: Mark[] = [];
     /** One piece of one colour: a bare string where it has nothing to say, a span where it has. */
-    const piece = (a: number, b: number, cls: string): void => {
+    const piece = (a: number, b: number, cls: string, tint: string): void => {
       if (b <= a) return;
-      if (!cls) {
-        out.append(text.slice(a, b));
-        return;
+      // a sign opening here: one box over all of its characters, coloured as its first run is
+      // and carrying the sign, which the stylesheet draws over the ASCII it makes invisible
+      while (sign < signs.length && signs[sign].hi <= a) sign += 1;
+      const s = signs[sign];
+      if (s && s.lo === a) {
+        const over = document.createElement('span');
+        over.className = ['ligature', tint].filter(Boolean).join(' ');
+        over.dataset.glyph = s.glyph;
+        out.append(over);
+        sink = over;
       }
-      const span = document.createElement('span');
-      span.className = cls;
-      span.textContent = text.slice(a, b);
-      out.append(span);
+      if (!cls) {
+        sink.appendChild(document.createTextNode(text.slice(a, b)));
+      } else {
+        const span = document.createElement('span');
+        span.className = cls;
+        span.textContent = text.slice(a, b);
+        sink.appendChild(span);
+      }
+      if (s && s.lo <= a && b >= s.hi) sink = out;
     };
     /* One stretch of text, cut wherever a mark starts or ends inside it, so a mark covers the
      * punctuation *between* coloured runs too — a statement is spans and gaps, and half a marked
@@ -320,12 +397,16 @@ export class CodeEditor {
       const cut = (i: number): number => Math.min(Math.max(i, from), to);
       const edges = [from, to];
       for (const m of open) edges.push(cut(m.lo), cut(m.hi));
+      // and wherever a sign starts or ends, so its box holds its characters and no others
+      for (let k = sign; k < signs.length && signs[k].lo < to; k += 1) {
+        if (signs[k].hi > from) edges.push(cut(signs[k].lo), cut(signs[k].hi));
+      }
       edges.sort((a, b) => a - b);
       for (let i = 0; i + 1 < edges.length; i += 1) {
         const [a, b] = [edges[i], edges[i + 1]];
         if (b <= a) continue;
         const over = open.filter((m) => m.lo <= a && m.hi >= b).map((m) => m.cls);
-        piece(a, b, [cls, ...over].filter(Boolean).join(' '));
+        piece(a, b, [cls, ...over].filter(Boolean).join(' '), cls);
       }
     };
     let at = 0;
