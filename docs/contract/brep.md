@@ -144,19 +144,51 @@ twelve touches, and the sphere's pieces a hole meeting an outer cycle at no vert
 derivative's bound), reads one root where it is monotone (its second's), halves it otherwise, and
 calls a touch only a stretch narrower than its width that cannot be parted; over several unknowns
 it isolates each root by Kantorovich's theorem, and reads a stretch it drops where the function
-turns back within the tolerance of nought as a touch, as a sampled search did. A line meets a plane
-and a conic turned (`query::line_revolution`, a quartic in the meridian's own parameter) as
-polynomials along it, wherever it is asked; **a ray a point is located by** (`query::ray_surface`)
-meets a cone and a torus as polynomials too, and a swept sheet or a B-spline net by the
-three-unknown search (`query::curve_sheet`, the sheet's second derivatives bounded by
-`blend_bounds` and `Net::second_bounds`). An edge a Boolean meets with a cone, a torus or a
-general sheet is still sampled: there an edge within the tolerance of tangent, or along a stretch
-of the surface, must read as the sampled search reads it, and taken certified those built wrong
-or were refused (`round_lowering::a_round_across_seams_between_arcs_on_a_drafted_prism_is_glued`,
-`prism_twists::a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs`). A level rim's sheet is
-met by its own bound on one unknown, kept as the faster road and held to the search
-(`swept_closed::a_rims_sheet_in_closed_form_is_held_to_the_general_search`). Only a pair with no
-certified reading samples, and the build's profile counts it (`util::meter`). **A point where three surfaces' meetings meet is solved once** (#711, #777 M2:
+turns back within the tolerance of nought as a touch, as a sampled search did. A stretch is read
+monotone only by a margin past rounding — one ending on a double root has `|g'|` at its middle all
+but its bound, and claimed monotone there, its ends a hair below nought, lost the touch to both
+sides (`roots::a_double_root_a_stretch_ends_on_is_found`; a cone's rim circle tangent to a slid
+frustum's side) — and a crossing is polished to rounding, as the sampled search's was (a seam's
+crossing a hair off left a chamfered hemisphere's edge out of order). Its certificate
+is the root: Kantorovich's nearer radius is read as `2η/(1 + √(1 − 2h))`, which over a system
+all but flat (a line against a sheet fitted flat) does not cancel to nothing, and a first Newton
+step out of the ball halves the box rather than returning its middle
+(`roots::a_root_certified_over_a_flat_system_is_where_it_is`; once it put a slid bar's corner
+edge on its plane at 7.86 rather than 9). **An edge a Boolean meets with a surface and a ray a
+point is located by are read alike** (#780 R2, `query::curve_surface`; there is no `ray`
+switch): a line meets a plane, a cone, a torus and a conic turned (`query::line_revolution`, a
+quartic in the meridian's own parameter) as polynomials along it, a cylinder and a ball as a
+chord, a swept sheet or a B-spline net by the three-unknown search (`query::curve_sheet`, the
+sheet's second derivatives bounded by `blend_bounds` and `Net::second_bounds`); a circle or an
+ellipse meets a plane, a cylinder, a ball, a cone and a torus as the surface's algebraic form
+along it, a trigonometric polynomial bounded by its amplitudes (`query::conic_algebraic`); and a
+B-spline curve meets a plane as its poles' heights, a scalar B-spline bounded by its
+differences span by span (`nurbs::Heights`, `query::spline_plane`)
+(`swept_closed::an_edge_is_read_certified_and_settled_as_a_ray_is`,
+`…::a_conic_and_a_spline_edge_are_read_certified`). **Whatever any reader returns is settled by
+one rule** (`query::settled`): a curve lying in the surface (read at its quarters, then at the
+sampled search's steps) is `Along` before any reader is asked; a root past either end by more
+than the tolerance is no meeting, one within it is at the end; a run of roots the curve stays
+within the tolerance of the surface between is one meeting — a crossing where the surface's side
+changes across it, read where the curve has left the tolerance, a touch at its middle where it
+does not (a double root rounding parts, a root two spans or stretches both find, and the noise a
+polynomial's rounding makes where a line runs along a torus's tube top, its distance the fourth
+power of the way: hundreds of crossings a micrometre apart before); and an end on the surface is
+a crossing there, taking the run the curve keeps within the tolerance beside it, as the sampled
+search reads it — not only the roots within the tolerance of it along the curve: a touch rounding
+places a little way in from an end on the surface, kept beside the end's crossing, left a
+plane's pieces open (`round_lowering::rounds_that_run_out_onto_a_face_are_rolled_and_cut_off`,
+`rounds_examples::the_runouts_are_the_stacks`). An edge clipped to a face's box
+(`query::curve_surface_within`) is read stretch by stretch and settled once over the whole, a
+stretch's end cut at the box no end of the edge. That edges within
+the tolerance of tangent were read one way by the polynomials and another by the samples is why
+a Boolean's edges once sampled the cone, the torus and the sheets
+(`round_lowering::a_round_across_seams_between_arcs_on_a_drafted_prism_is_glued`,
+`prism_twists::a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs`, both building now). A
+level rim's sheet is met by its own bound on one unknown, kept as the faster road and held to the
+search (`swept_closed::a_rims_sheet_in_closed_form_is_held_to_the_general_search`). Only a pair
+with no certified reading samples, and the build's profile counts it (`util::meter`). **A point
+where three surfaces' meetings meet is solved once** (#711, #777 M2:
 `Arrangement::triple_points`, keyed by the three surfaces' indices among the shared meetings), and
 every later finding of it from another of the three faces takes that vertex.
 

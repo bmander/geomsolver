@@ -1073,6 +1073,151 @@ fn a_line_grazing_a_hyperboloid_touches_it_once() {
     assert_eq!(read,20);
 }
 
+/// **An edge is read by the readings a ray is, settled by one rule** (#780 R2): a line against a
+/// cone and a torus — an edge a Boolean meets with them (`query::curve_surface`), not a ray — is
+/// certified, never sampled (the profile's count, `util::meter`), and what it returns is settled
+/// as every reader's is: a line tangent to the surface off its rulings one touch at its point, a
+/// line through it its crossings, a ruling `Along`, and a line ending on the surface one crossing
+/// exactly at its end. The cone's and the torus's polynomials once served rays alone, an edge
+/// within the tolerance of tangent left to the samples because the two read it differently.
+#[test]
+fn an_edge_is_read_certified_and_settled_as_a_ray_is() {
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::query::{curve_surface,Meets};
+    use gcs_core::meter::{self as meter,Budget,Meter};
+    let tol = 1e-7;
+    let f = Frame::about([0.;3],[0.,0.,1.]);
+    let at = |x: f64,y: f64,z: f64| -> [f64;3] { std::array::from_fn(|k| f.o[k]+x*f.x[k]+y*f.y[k]+z*f.z[k]) };
+    let (r,a) = (1.,20f64.to_radians());
+    let cone = Surface::Cone(f,r,a);
+    let (big,small) = (2.,0.5);
+    let ring = Surface::Torus(f,big,small);
+    let m = Meter::new(Budget::UNLIMITED);
+    let line = |p: [f64;3],d: [f64;3]| Curve::Line {p,d:unit(d)};
+    // a line from `p` through `q`, ending there
+    let ending = |p: [f64;3],q: [f64;3]| -> (Curve,f64) {
+        let d: [f64;3] = std::array::from_fn(|k| q[k]-p[k]);
+        (line(p,d),norm(d))
+    };
+    let read = |c: &Curve,t: [f64;2],s: &Surface| meter::within(&m,|| curve_surface(c,t,s,tol));
+    let one_touch = |what: &str,found: Meets,at: f64| {
+        let Meets::At(found) = found else { panic!("{what}: along") };
+        assert_eq!(found.len(),1,"{what}: {found:?}");
+        assert!(found[0].1 && (found[0].0-at).abs() <= 1e-3,"{what}: {found:?}, a touch at {at}");
+    };
+    let one_end = |what: &str,found: Meets,end: f64| {
+        assert_eq!(found,Meets::At(vec![(end,false)]),"{what}: a crossing exactly at its end {end}");
+    };
+    // the cone: tangent at its point over the x axis, leaning in its tangent plane off the ruling
+    let k = a.tan();
+    let ruling = unit([k,0.,1.]);
+    for (z,turn) in [(0.,30f64),(0.4,55.),(-0.3,80.)] {
+        let q = at(r+k*z,0.,z);
+        let (s,c) = turn.to_radians().sin_cos();
+        let d: [f64;3] = std::array::from_fn(|i| c*f.y[i]+s*ruling[i]);
+        let p: [f64;3] = std::array::from_fn(|i| q[i]-0.7*d[i]);
+        one_touch(&format!("the cone touched at height {z}, {turn}°"),read(&line(p,d),[0.,1.4],&cone),0.7);
+    }
+    assert_eq!(read(&line(at(r-k*0.5,0.,-0.5),ruling),[0.,1.],&cone),Meets::Along,"a ruling of the cone");
+    let Meets::At(through) = read(&line(at(-3.,0.2,0.3),[1.,0.,0.]),[0.,6.],&cone) else { panic!("a chord: along") };
+    assert!(through.len() == 2 && through.iter().all(|x| !x.1),"a chord of the cone: {through:?}");
+    let (edge,end) = ending(at(2.4,1.1,0.9),at((r+k*0.4)*0.7f64.cos(),(r+k*0.4)*0.7f64.sin(),0.4));
+    one_end("an edge ending on the cone",read(&edge,[0.,end],&cone),end);
+    // the torus: tangent at its outer equator along the ring, and over the tube's top both ways
+    one_touch("the torus's outer equator",read(&line(at(big+small,-1.,0.),[0.,1.,0.]),[0.,2.],&ring),1.);
+    one_touch("the tube's top along the ring",read(&line(at(big,-1.,small),[0.,1.,0.]),[0.,2.],&ring),1.);
+    one_touch("the tube's top across it",read(&line(at(big-1.,0.,small),[1.,0.,0.]),[0.,2.],&ring),1.);
+    let Meets::At(through) = read(&line(at(-4.,0.1,0.2),[1.,0.,0.]),[0.,8.],&ring) else { panic!("through: along") };
+    assert!(through.len() == 4 && through.iter().all(|x| !x.1),"a line through the ring: {through:?}");
+    let (edge,end) = ending(at(3.5,0.4,1.2),at((big+small*0.6f64.cos())*0.3f64.cos(),(big+small*0.6f64.cos())*0.3f64.sin(),small*0.6f64.sin()));
+    one_end("an edge ending on the torus",read(&edge,[0.,end],&ring),end);
+    assert_eq!(m.sampled(),0,"a search sampled\n{}",m.report());
+}
+
+/// **A conic edge and a spline edge are read certified too** (#780 R2: the closed class's edges
+/// sampled none): a circle or an ellipse against a plane, a cylinder, a ball, a cone and a torus is
+/// its surface's algebraic form along it, a trigonometric polynomial bounded by its amplitudes; a
+/// B-spline curve against a plane its poles' heights, a scalar B-spline bounded by its differences
+/// span by span. Each against what is known apart from the kernel: the circle of radius 2 meets the
+/// plane `x = 1` at `±60°` and touches `x = 2`; the cylinder of radius 1 about the x axis at the
+/// four `sin t = ±½`; the ball of radius 3 about `(3, 0, 1)` where `cos t = ⅓`; a circle on a cone,
+/// on a torus's equator and on its tube's top lies along them; a meridian circle crosses the tube
+/// twice; a spline's crossings where bisection of its own heights finds them, none where its
+/// weights lift it clear, and an end on the plane its end.
+#[test]
+fn a_conic_and_a_spline_edge_are_read_certified() {
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::nurbs::BSpline;
+    use gcs_core::brep::query::{curve_surface,Meets};
+    use gcs_core::meter::{self as meter,Budget,Meter};
+    use std::f64::consts::{PI,TAU};
+    let tol = 1e-7;
+    let m = Meter::new(Budget::UNLIMITED);
+    let read = |c: &Curve,t: [f64;2],s: &Surface| meter::within(&m,|| curve_surface(c,t,s,tol));
+    let about = |o: [f64;3],z: [f64;3]| Frame::about(o,z);
+    let flat = Curve::Circle(about([0.;3],[0.,0.,1.]),2.);
+    // its roots: as many as `want`, crossings or touches as `touch`, and each point where `on` is
+    // nought
+    let check = |what: &str,found: Meets,c: &Curve,want: usize,touch: bool,on: &dyn Fn([f64;3]) -> f64| {
+        let Meets::At(found) = found else { panic!("{what}: along") };
+        assert_eq!(found.len(),want,"{what}: {found:?}");
+        for &(t,k) in &found {
+            assert_eq!(k,touch,"{what}: {found:?}");
+            let q = c.point(t);
+            assert!(on(q).abs() <= if touch { 1e-3 } else { 1e-9 },"{what}: at {t}, {q:?} off by {}",on(q));
+        }
+    };
+    check("a circle across a plane",read(&flat,[0.,TAU],&Surface::Plane(about([1.,0.,0.],[1.,0.,0.]))),&flat,2,false,&|q| q[0]-1.);
+    check("a circle touching a plane",read(&flat,[-PI,PI],&Surface::Plane(about([2.,0.,0.],[1.,0.,0.]))),&flat,1,true,&|q| q[0]-2.);
+    check("a circle across a cylinder",read(&flat,[0.,TAU],&Surface::Cylinder(about([0.;3],[1.,0.,0.]),1.)),&flat,4,false,
+        &|q| q[1].hypot(q[2])-1.);
+    let high = Curve::Circle(about([0.,0.,1.],[0.,0.,1.]),2.);
+    check("a circle across a ball",read(&high,[-PI,PI],&Surface::Sphere(about([3.,0.,1.],[0.,0.,1.]),3.)),&high,2,false,
+        &|q| (q[0]-3.).hypot(q[1]).hypot(q[2]-1.)-3.);
+    assert_eq!(read(&high,[0.,TAU],&Surface::Sphere(about([0.;3],[0.,0.,1.]),5f64.sqrt())),Meets::Along,"a circle on a ball");
+    let cone = Surface::Cone(about([0.;3],[0.,0.,1.]),1.,PI/4.);
+    assert_eq!(read(&high,[0.,TAU],&cone),Meets::Along,"a circle on a cone");
+    let upright = Curve::Circle(about([1.5,0.,0.5],[0.,1.,0.]),0.5);
+    check("an upright circle across a cone",read(&upright,[0.,TAU],&cone),&upright,2,false,&|q| q[0].hypot(q[1])-(1.+q[2]));
+    let ring = Surface::Torus(about([0.;3],[0.,0.,1.]),2.,0.5);
+    assert_eq!(read(&Curve::Circle(about([0.;3],[0.,0.,1.]),2.5),[0.,TAU],&ring),Meets::Along,"the torus's equator");
+    assert_eq!(read(&Curve::Circle(about([0.,0.,0.5],[0.,0.,1.]),2.),[0.,TAU],&ring),Meets::Along,"the tube's top");
+    let meridian = Curve::Circle(about([2.5,0.,0.],[0.,1.,0.]),0.5);
+    check("a meridian circle across the tube",read(&meridian,[0.,TAU],&ring),&meridian,2,false,
+        &|q| (q[0].hypot(q[1])-2.).hypot(q[2])-0.5);
+    let oval = Curve::Ellipse(about([0.;3],[0.,0.,1.]),3.,1.);
+    check("an ellipse across a plane",read(&oval,[-PI,PI],&Surface::Plane(about([1.5,0.,0.],[1.,0.,0.]))),&oval,2,false,&|q| q[0]-1.5);
+    // a cubic over two spans, and its heights over `y = 0` bisected apart from the kernel's search
+    let ground = Surface::Plane(about([0.;3],[0.,1.,0.]));
+    let poles = vec![[0.,0.,0.],[1.,2.,0.],[2.,-3.,0.],[3.,3.,0.],[4.,-1.,0.]];
+    let two = BSpline::new(3,vec![0.,0.,0.,0.,1.,2.,2.,2.,2.],poles).unwrap();
+    let bisected: Vec<f64> = {
+        let y = |t: f64| two.point(t)[1];
+        let n = 4000;
+        (1..n).filter_map(|i| {
+            let (mut a,mut b) = (2.*i as f64/n as f64,2.*(i+1) as f64/n as f64);
+            if y(a)*y(b) > 0. { return None }
+            for _ in 0..80 { let c = 0.5*(a+b); if (y(c) < 0.) == (y(a) < 0.) { a = c } else { b = c } }
+            Some(0.5*(a+b))
+        }).collect()
+    };
+    let spline = Curve::BSpline(std::sync::Arc::new(two));
+    let Meets::At(found) = read(&spline,[0.,2.],&ground) else { panic!("a spline along a plane") };
+    assert!(bisected.len() >= 3,"{bisected:?}");
+    assert_eq!(found.len(),bisected.len()+1,"{found:?} against its start and {bisected:?}");
+    assert_eq!(found[0],(0.,false),"its start on the plane");
+    for (x,y) in found[1..].iter().zip(&bisected) { assert!(!x.1 && (x.0-y).abs() <= 1e-9,"{found:?} against {bisected:?}") }
+    // weighed, `19t² − 30t + 12` over the one span has no root: only the start meets it
+    let lifted = BSpline::rational(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[1.,2.,0.],[2.,-2.,0.],[3.,1.,0.]],vec![1.,2.,1.,1.]).unwrap();
+    assert_eq!(read(&Curve::BSpline(std::sync::Arc::new(lifted)),[0.,1.],&ground),Meets::At(vec![(0.,false)]),"a rational spline lifted clear");
+    // unweighed, `13t² − 18t + 6`: its start and two crossings
+    let plain = BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[1.,2.,0.],[2.,-2.,0.],[3.,1.,0.]]).unwrap();
+    let Meets::At(found) = read(&Curve::BSpline(std::sync::Arc::new(plain)),[0.,1.],&ground) else { panic!("along") };
+    let roots = [0.,(18.-12f64.sqrt())/26.,(18.+12f64.sqrt())/26.];
+    assert!(found.len() == 3 && found.iter().zip(roots).all(|(x,y)| !x.1 && (x.0-y).abs() <= 1e-9),"{found:?} against {roots:?}");
+    assert_eq!(m.sampled(),0,"a search sampled\n{}",m.report());
+}
+
 /// **Every surface the closed class emits locates a point exactly** (#777 V1's gate): a ray's
 /// crossings with each kind of candidate face are certified, never sampled — planes, a cylinder, a
 /// cone, a ball and a torus, a hyperboloid a leaning edge turns into (a surface of revolution of a

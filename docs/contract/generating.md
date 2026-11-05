@@ -440,8 +440,10 @@ every surface the class emits (`query::curve_surface`'s certified readings: a pl
 torus and a conic turned as polynomials along the line, a level rim's sheet on one unknown, any
 other swept or B-spline sheet by the three-unknown search, `util::isolate`;
 `swept_closed::every_surface_the_closed_class_emits_locates_points_exactly`, no point wrong and no
-search sampled). Each build's work is counted in steps per stage (`util::meter`: arrangement,
-trace, ray, outline, inverse, membership, judge) against `closed::BUDGET`; past it every metered
+search sampled), and a Boolean's edges by the same readings, settled by one rule (#780 R2,
+brep.md's `query::settled`; a conic edge and a spline edge against a plane certified too). Each
+build's work is counted in steps per stage (`util::meter`: arrangement, trace, ray, outline,
+inverse, membership, judge) against `closed::BUDGET`; past it every metered
 loop winds down and the build is refused as `Unbuilt::Budget {stage, at, what}`, the same way at
 every run (`swept_closed::a_build_past_its_budget_refuses_by_name_within_it`) — a curve's
 crossings' search among them (`meeting::crossings`, #780), whose polish charges the inverse map
