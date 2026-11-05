@@ -24,7 +24,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { initCore } from '../dist/core/wasm.js';
-import { highlight } from '../dist/core/program.js';
+import { highlight, ligatures } from '../dist/core/program.js';
 import * as examples from '../dist/core/examples.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -51,6 +51,16 @@ function cases() {
       'point p at (0, 0)   // — — — — — — — — — —',
       'radius(c) == 3      // π² ×',
       'l := line(p, q)        // the last line, after everything above it',
+      '',
+    ].join('\n')],
+    // signs drawn over their words (#783 P2): ∈, ∉ and ∃ laid over ASCII made invisible, next to
+    // ordinary runs, a mark across one, and a non-ASCII character before them on the line
+    ['signs', [
+      'S := { q | q in A or q not in B }   // — a set',
+      'n := { q | some t in (0deg, 90deg): q in tool at(under: m) t }',
+      'k := { q | q in std.sets.Ball(c, r: 5mm); q not in std.sets.Ball(c, r: 2mm) }',
+      'repeat e in S.ends {',
+      '}',
       '',
     ].join('\n')],
     // long lines, so the box carries a horizontal scrollbar and the copy does not
@@ -89,7 +99,7 @@ try {
     // a lit range over the middle of the document, so the mark the panel puts on a picked
     // statement is under the same test as the colouring is
     const lit = { lo: Math.floor(text.length / 3), hi: Math.floor((text.length * 2) / 3) };
-    const CASE = { text, runs: highlight(text), lit };
+    const CASE = { text, runs: highlight(text), signs: ligatures(text), lit };
     writeFileSync(here_case, `window.CASE = ${JSON.stringify(CASE)};\n`);
     // Chrome prints the DOM and then does not always exit, so the timeout is the normal path
     // and what it collected on the way is the answer.

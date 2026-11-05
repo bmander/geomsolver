@@ -461,6 +461,23 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `core/drawing.ts`); the panel picks one by the file shown (`CodeEditor.colouring`).  Relation
   words are known by the text: those it defines or names in a `use (…)` (`relation_words`); units
   join their number's run; `expr`'s functions, constants and measures are `builtin`.
+- **The notation of sets is drawn as its signs, and written as its words** (#783 P2): `in` as ∈,
+  `not in` as ∉, `some` as ∃.  Which runs are signs is the core's (`syntax::ligatures`, FFI
+  `gcs_program_ligatures`, `core/program.ts::ligatures`), **standing on the colouring's scan**: `in`
+  is one where it stands between two operands and is tinted a word (`p in S`, `t in (a, b)`,
+  `repeat e in S`, `p := point in P`), so the block `in P { … }`, a label `in:`, a name and a word
+  in a comment are none; `not in` is one sign over both words; `some` one before the name it binds
+  and its `:` or `in`; `or` stays a word.  The document, the clipboard, undo and every message keep
+  the ASCII — there is no second spelling to parse.  The editor draws a sign over exactly its
+  words' characters (`CodeEditor.ligating`): the words stay in the copy with their ink made
+  invisible (`-webkit-text-fill-color`) inside a `.ligature` box whose `::after` is the sign,
+  absolutely placed and centred on them, so nothing moves and the caret, a selection and a click
+  land on the ASCII.  Not a font ligature, which the editor's second rule forbids.  **Where the
+  caret touches a sign, while the box has the focus, the words are shown** — so a key never acts
+  on a character not drawn: at ` in ` a backspace shows `in` and takes its `n`, as plain text does,
+  with no key handler.  A drawing (`.svd`) has none.  `tests/highlight.rs`
+  (`membership_and_the_quantifier_are_signs`, `a_sign_needs_its_operands`) is the gate of which;
+  `npm run overlay`'s `signs` case, that drawing them moves no glyph and the caret shows one.
 - **The names a text gives and reads are the core's** (`syntax::symbols`, FFI
   `gcs_program_symbols`, `core/program.ts::symbols` → `Symbols`): every name, the declaration it
   names, and each place it is named, given (`def`) or read — the index an editor feature stands
@@ -527,7 +544,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   off; a run may change the colour and **never the face**; and the copy is **translated** to
   follow the box, never scrolled (the box's scrollbars shorten its range).  `npm run overlay`
   (`web/tools/overlay.mjs`) drives headless Chrome against the *real* `CodeEditor`: metrics agree,
-  colouring moves no glyph, the copy follows to both ends.  Not in `npm test`: it needs Chrome,
+  colouring and the signs drawn over the text move no glyph, the copy follows to both ends.  Not in `npm test`: it needs Chrome,
   and `make test` must not.
 - **The page says it is arriving, and asks for the core first** (`index.html`, `core/wasm.ts`,
   `app/shell.ts`).  The core is most of what a visit waits for (megabytes, against the bundle's

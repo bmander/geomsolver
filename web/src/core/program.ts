@@ -617,6 +617,18 @@ export function highlight(text: string): Run[] {
   return coloured(text, (p, n) => core().gcs_program_highlight(p, n));
 }
 
+/** A run of the source an editor may draw as one sign (#783 P2): `in` as ∈, `not in` as ∉, `some`
+ *  as ∃.  `lo`/`hi` index the string, as a `Run`'s do; the text beneath stays the ASCII. */
+export interface Ligature { glyph: string; lo: number; hi: number }
+
+/** The runs of a program drawn as signs, in order and disjoint (`syntax::ligatures`).  Which they
+ *  are is the core's answer from its own scan, so a word in a comment or a name is never one. */
+export function ligatures(text: string): Ligature[] {
+  return crossed<[string, number, number][], Ligature[]>(text,
+    (p, n) => core().gcs_program_ligatures(p, n), (runs, at) =>
+      runs.map(([glyph, lo, hi]) => ({ glyph, lo: at.at(lo), hi: at.at(hi) })));
+}
+
 /** What gave a symbol its name — the core's `syntax::SymbolKind`, by its word. */
 export type SymbolKind = 'name' | 'param' | 'formal' | 'binder' | 'component' | 'word' | 'module'
   | 'import' | 'member' | 'unknown';

@@ -4,7 +4,7 @@
 import { Constraint } from '../core/constraints.js';
 import { expand, type Primitive } from '../core/model.js';
 import { initCore } from '../core/wasm.js';
-import { Document, highlight } from '../core/program.js';
+import { Document, highlight, ligatures } from '../core/program.js';
 import { CodeEditor } from './editor.js';
 import { loading, painted } from './loading.js';
 import { prefetch } from './remote.js';
@@ -32,8 +32,9 @@ export const ppanel = document.getElementById('ppanel') as HTMLElement;
 export const psplit = document.getElementById('psplit') as HTMLElement;
 export const ppanelState = document.getElementById('ppanel-state') as HTMLElement;
 /** The program panel's code box — the two layers, built into `#pcode` by `app/editor.ts`.  It is
- *  handed the core's colouring and knows nothing else about Solvent. */
+ *  handed the core's colouring and its signs (#783 P2), and knows nothing else about Solvent. */
 export const ped = new CodeEditor(document.getElementById('pcode') as HTMLElement, highlight);
+ped.ligating = ligatures;
 export const pdiags = document.getElementById('pdiags') as HTMLElement;
 export const componentEl = document.getElementById('component') as HTMLElement;
 export const footerEl = document.querySelector('footer') as HTMLElement;

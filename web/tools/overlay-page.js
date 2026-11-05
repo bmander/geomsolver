@@ -13,15 +13,19 @@
  *      character exactly where an unspanned mirror of it does (this is what an italic, a bold, a
  *      ligature or a kern across a run boundary breaks);
  *   3. the copy follows the box's scrolling exactly, at the extremes as well as the middle (this
- *      is what a scrollbar's width breaks, by shortening one layer's scroll range).
+ *      is what a scrollbar's width breaks, by shortening one layer's scroll range);
+ *   4. a sign drawn over its words (#783 P2) is drawn — one box over exactly its characters, which
+ *      piece 2 has already found unmoved — and the caret shows the words where it touches one.
+ *      What the sign itself looks like is a stylesheet's; that it moves nothing is this.
  *
  * The harness bundles this and hands the case in `window.CASE`, so the page never guesses at the
  * language: the runs come from the core, the same as in the app. */
 import { CodeEditor } from '../src/app/editor.js';
 
-const { text, runs, lit } = window.CASE;
+const { text, runs, signs = [], lit } = window.CASE;
 
 const ed = new CodeEditor(document.getElementById('pcode'), () => runs);
+ed.ligating = () => signs;
 ed.setText(text);
 // and mark some ranges, because a mark is the other thing that can move a glyph: a mark's class
 // may tint, never change the face.  The check below is exactly the one that catches it if it
@@ -161,6 +165,40 @@ for (const want of [0, 13, box.scrollWidth]) {
   }
 }
 say(`scrolling   followed to the top, the bottom and the far right`);
+
+/* -- 4. are the signs drawn over their words, and shown as the words at the caret? --- */
+
+if (signs.length) {
+  const drawn = () => [...copy.querySelectorAll('.ligature')];
+  box.blur();
+  if (drawn().length !== signs.length) {
+    fail(`${signs.length} signs, ${drawn().length} drawn`);
+  } else {
+    drawn().forEach((el, k) => {
+      const s = signs[k];
+      if (el.textContent !== text.slice(s.lo, s.hi) || el.dataset.glyph !== s.glyph) {
+        fail(`sign ${k} holds ${JSON.stringify(el.textContent)} as ${el.dataset.glyph}, not ` +
+             `${JSON.stringify(text.slice(s.lo, s.hi))} as ${s.glyph}`);
+      }
+    });
+  }
+  // the caret in one: that one is its words, every other still a sign, and leaving shows it again
+  const s = signs[0];
+  box.focus();
+  box.setSelectionRange(s.lo + 1, s.lo + 1);
+  box.dispatchEvent(new Event('keyup'));
+  const open = drawn();
+  const next = signs[1];
+  if (open.length !== signs.length - 1) {
+    fail(`the caret in the first sign leaves ${open.length} of ${signs.length} drawn`);
+  } else if (next && (open[0].dataset.glyph !== next.glyph
+                      || open[0].textContent !== text.slice(next.lo, next.hi))) {
+    fail('the caret in the first sign hid another one');
+  }
+  box.blur();
+  if (drawn().length !== signs.length) fail(`leaving the box draws ${drawn().length} signs again`);
+  say(`signs       ${signs.length} drawn over their words, the caret's shown as its words`);
+}
 
 mirror.remove();
 say('');

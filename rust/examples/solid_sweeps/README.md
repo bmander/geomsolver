@@ -55,11 +55,10 @@ on a screw).
 A sweep the other classes refuse, of a tool whose every face is a plane and every edge a line,
 under one slide, turn or screw (under a screw, its faces and edges along the axis or square to it),
 or under a slide a tool whose faces are planes, cylinders, cones and balls and whose edges are
-lines and circles, under a turn one whose round faces (cylinders, cones, tori) stand about axes along the turn's, or under a screw a drum about an axis along the screw's, or a ball, alone or under such a side (a ball-end mill), is the closed class's: cut from its blank on one arrangement, whether it stops inside the
+lines and circles, under a turn one whose round faces (cylinders, cones, tori) stand about axes along the turn's, or under a screw a drum or a frustum about an axis along the screw's, or a ball, alone or under such a side (a ball-end mill), is the closed class's: cut from its blank on one arrangement, whether it stops inside the
 blank, undercuts or meets itself (`plunge.sv`, `stopped_punch.sv`, `stopped_drum.sv`, `stopped_bullnose.sv`, `helical_groove.sv`, `ball_end_mill.sv`, `stopped_turn.sv`,
-`stopped_screw.sv`). Outside every class — a tumbling tool (`swept_tumble.sv`), a cone
-screwed, a curved tool turned about an axis leaning to its own, a flat end whose corners
-dig past it — the sweep is read by its field and drawn by the page, and its export is refused,
+`stopped_screw.sv`). Outside every class — a tumbling tool (`swept_tumble.sv`), a
+curved tool turned about an axis leaning to its own, a flat end whose corners dig past it — the sweep is read by its field and drawn by the page, and its export is refused,
 saying which row it fails.
 
 `rust/gcs-core/tests/solid_sweeps_examples.rs` holds each file to its class, to an exact build

@@ -450,3 +450,24 @@ same report, STEP assembly and STL, byte for byte, before the rewrite and after.
   declaration is not enforced yet: the lowering reads the file's `param`s, not its scopes.
 - **`some … at t` with no motion** is a face family where its operand is a face (drawn, a formal
   `face`, or a family's member) and a ridden body's sweep otherwise.
+
+## P2 — the signs, as built
+
+The editor draws `in` as ∈, `not in` as ∉ and `some` as ∃; the document stays ASCII
+([app.md](contract/app.md)).
+What was decided as it was built:
+
+- **Reach: the three words that exist.** `every` is reserved and refused, so it has no sign until
+  it is read. `or` stays a word.
+- **Which `in`:** wherever it stands between two operands, which in the corpus is always
+  membership — of a set, of an interval (`t in (a, b)`, `over t in`), of a list (`repeat e in S`)
+  or of a plane (`p := point in P`, a component drawn `in std.front`). The block `in P { … }`
+  opens a line with nothing before it, and keeps its word. Across `rust/examples` and `std`: 272
+  ∈, 21 ∉, 45 ∃.
+- **The caret shows the words; no key handler.** The issue asked for a handler so that a backspace
+  at a sign reverts it. Showing the ASCII wherever the caret touches a sign does that with the
+  textarea's own keys: at `p in |` a backspace takes the space, the caret touches `in`, and the
+  next takes its `n`. While the box does not have the focus every sign is drawn. A sign needs an
+  operand after it, so `p in` being typed at a line's end is the word until something follows.
+- **Not a font feature.** The words stay in the copy, ink invisible, and the sign is an absolutely
+  placed box over their cells; `npm run overlay` holds that no glyph moves.

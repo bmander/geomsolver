@@ -17,7 +17,7 @@ import type { Mark } from './editor.js';
 import { Occurrences } from './occurrences.js';
 import { CodeMenu, clipboardItems } from './code-menu.js';
 import { Names, selectRows, selectionMarks } from './names.js';
-import { highlight, symbols, type Diagnostic, type SourceMap, type SourceSpan }
+import { highlight, ligatures, symbols, type Diagnostic, type SourceMap, type SourceSpan }
   from '../core/program.js';
 import type { ClaimVerdict } from '../core/claims.js';
 import * as modules from '../core/modules.js';
@@ -44,6 +44,9 @@ new CodeMenu(ped, () => {
   ];
 });
 /** The editor's layer what is selected in the workspace is named in. */
+/** A drawing's language draws no signs (`CodeEditor.ligating`): one function, so switching to
+ *  a drawing and back keeps the answers the editor holds. */
+const NO_SIGNS = (): [] => [];
 const SELECTED = 'selected';
 /** The text the drawing came from, joined to the outline of what it made (`names.ts`) — the
  *  names the caret's lighting already read, once per text and outline, and only while the box
@@ -384,6 +387,7 @@ export function refreshProgram(): void {
   const quiet = imported || drawingActive() || showingText();
   ped.plain = showingText();
   ped.colouring = activeFile.endsWith('.svd') ? drawingHighlight : highlight;
+  ped.ligating = activeFile.endsWith('.svd') ? NO_SIGNS : ligatures;
   occurrences.names = activeFile.endsWith('.svd') || showingText() ? null : symbols;
   ped.setText(text, quiet ? [] : marks());
   markSelected();               // the new text let go of the names the old one lit

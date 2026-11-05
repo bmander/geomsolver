@@ -104,6 +104,19 @@ pub unsafe extern "C" fn gcs_program_highlight(ptr: *const u8, len: usize) -> *m
     json_out(move || runs_json(syntax::highlight(as_str(ptr, len))))
 }
 
+/// The runs of a program an editor may draw as signs (`syntax::ligatures`, #783 P2): `[[glyph,
+/// lo, hi], …]`, in order and disjoint — `in` as ∈, `not in` as ∉, `some` as ∃.  A function of the
+/// text, as the colouring is; the document stays ASCII, and the sign is drawn over it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_program_ligatures(ptr: *const u8, len: usize) -> *mut u8 {
+    json_out(move || {
+        let runs = syntax::ligatures(as_str(ptr, len)).into_iter().map(|(l, s)| {
+            Json::Arr(vec![l.glyph().into(), s.lo.into(), s.hi.into()])
+        });
+        Json::Arr(runs.collect())
+    })
+}
+
 /// The names a program gives and reads (`syntax::symbols`): `{"symbols": [[name, kind,
 /// parent], …], "occurrences": [[lo, hi, symbol, def], …]}`, the occurrences in order, `parent`
 /// the symbol a member is read of or -1, `def` 1 where the name is given.  A function of the text,
