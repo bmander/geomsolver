@@ -280,7 +280,8 @@ Measured on the four-core container, warm build, after the fixes:
   before #777.  The bull-nose turned about an axis along its own is 595 s of it (its row in
   `rust/test-times.tsv` said 208 s); the ball-end mill's refusal at the default budget 104 s.
 - **The one failure is new**:
-  `prism_twists::a_corner_reaching_a_cap_under_a_screw_is_the_closed_classs` passed the night of #779 and fails on `main` since #782, whose `square_thread.sv` states no roll.
+  `prism_twists::a_corner_reaching_a_cap_under_a_screw_is_the_closed_classs` passed the night of
+  #779 and fails on `main` since #782, whose `square_thread.sv` states no roll.
   The march now ends at the first whole degree that is clear of the rod, the bar's flank 1/60 mm
   past the rod's end plane, where the stated roll ended 1 mm past it, and the closed arrangement
   refuses it ("a plane's pieces do not close").  With the end 30 steps further out it builds; 1
