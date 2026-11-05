@@ -25,8 +25,9 @@
 //! be parted before it is `width` wide holds a singular root — two surfaces touching — where `near`
 //! accepts its middle.
 //!
-//! Each stretch or box read is counted against the build's budget (`util::meter`, the ray stage):
-//! past it, or past `MOST` boxes, the search gives up and says which (`GaveUp`), never a guess.
+//! Each stretch or box read is counted against the build's budget (`util::meter`, the ray stage, or
+//! the stage the caller names): past it, or past `MOST` boxes, the search gives up and says which
+//! (`GaveUp`), never a guess.
 
 type Root = super::roots::Root;
 
@@ -45,10 +46,10 @@ pub enum GaveUp {
 
 /// One more stretch or box read: `read` of them so far, the search giving up past `MOST` or under
 /// a stopped build.
-fn read_one(read: &mut usize) -> Result<(),GaveUp> {
+fn read_one(read: &mut usize,stage: super::meter::Stage) -> Result<(),GaveUp> {
     *read += 1;
     if *read > MOST { return Err(GaveUp::Most) }
-    if !super::meter::tick(super::meter::Stage::Ray) { return Err(GaveUp::Stopped) }
+    if !super::meter::tick(stage) { return Err(GaveUp::Stopped) }
     Ok(())
 }
 
@@ -59,13 +60,20 @@ fn read_one(read: &mut usize) -> Result<(),GaveUp> {
 /// stretches or the build stopped.
 pub fn roots(g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,bound: &dyn Fn(f64,f64) -> [f64;2],[t0,t1]: [f64;2],width: f64,
     near: &dyn Fn(f64) -> bool) -> Result<Vec<Root>,GaveUp> {
+    roots_charged(super::meter::Stage::Ray,g,dg,bound,[t0,t1],width,near)
+}
+
+/// `roots`, each stretch read charged to `stage` (a swept sheet's inverse map isolates its foot on
+/// its spine this way, and its work is the inverse stage's, #780 C1).
+pub fn roots_charged(stage: super::meter::Stage,g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,bound: &dyn Fn(f64,f64) -> [f64;2],
+    [t0,t1]: [f64;2],width: f64,near: &dyn Fn(f64) -> bool) -> Result<Vec<Root>,GaveUp> {
     let mut out: Vec<Root> = Vec::new();
     if !(t1 >= t0) { return Ok(out) }
     let width = width.max(1e-15*(t0.abs()+t1.abs()).max(1e-300));
     let mut stack = vec![(t0,t1,0usize)];
     let mut read = 0;
     while let Some((a,b,depth)) = stack.pop() {
-        read_one(&mut read)?;
+        read_one(&mut read,stage)?;
         let (m,h) = (0.5*(a+b),0.5*(b-a));
         let [d1,d2] = bound(a,b);
         let gm = g(m);
@@ -148,7 +156,7 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
     let mut stack = vec![(domain,0usize)];
     let mut read = 0;
     while let Some((bx,depth)) = stack.pop() {
-        read_one(&mut read)?;
+        read_one(&mut read,super::meter::Stage::Ray)?;
         let m: [f64;N] = std::array::from_fn(|k| 0.5*(bx[k][0]+bx[k][1]));
         let r = (0..N).map(|k| 0.5*(bx[k][1]-bx[k][0])).fold(0.,f64::max);
         let (fm,jm) = f(m);

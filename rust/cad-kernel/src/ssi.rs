@@ -820,8 +820,29 @@ pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy
     let far = norm(perp(sub(f.o,center)))+r;
     let bound = |_: f64,_: f64| [2.*far*r,2.*(r*r+far*r)];
     let tau = std::f64::consts::TAU;
-    let mut roots: Vec<f64> = crate::util::isolate::roots(&g,&dg,&bound,[0.,tau],tol*1e-3/r.max(1e-300),&|th| g(th).abs() <= 2.*big*tol).ok()?
+    // the circle within the tolerance of the cylinder at `th`, and the angle the tolerance spans
+    let on = |th: f64| g(th).abs() <= 2.*big*tol;
+    let step = tol/r.max(1e-300);
+    let found: Vec<f64> = crate::util::isolate::roots(&g,&dg,&bound,[0.,tau],tol*1e-3/r.max(1e-300),&on).ok()?
         .into_iter().map(|x| x.at).collect();
+    // a run of roots the circle keeps within the tolerance of the cylinder between is one helix
+    // (#780 R2's rule, `query::settled`): a double root rounding parts into several a hair apart —
+    // a ball's great circle tangent to the cylinder its outer equator screws round, four roots
+    // within 5e-8 rad (#780 C1) — is the one helix the sheet touches the cylinder along, and read
+    // four times it left the faces it bounds unclosed. A touch is placed where `g'` changes sign
+    // across the run, a simple root of it settled to rounding (the run's middle only stands within
+    // the square root of rounding of a double root: 2.6e-7 off, where the helix, the cylinder's rim
+    // and the pipe's meeting with the rim's plane all touch at its start); a lone crossing where it
+    // was found
+    let pad = step.min(1e-3);
+    let mut roots: Vec<f64> = found.chunk_by(|&x,&y| (y-x)*r <= tol || (1..4).all(|j| on(x+(y-x)*j as f64/4.))).map(|run| {
+        let (first,last) = (run[0],run[run.len()-1]);
+        let (a,b) = (first-pad,last+pad);
+        let (da,db) = (dg(a),dg(b));
+        let crossing = run.len() == 1 && g(a)*g(b) < 0.;
+        if !crossing && da*db < 0. { crate::util::roots::bracketed_root(|t| Some(dg(t)),a,da,b,db,4e-16*b.abs().max(1.)) }
+        else { 0.5*(first+last) }
+    }).collect();
     // the circle closes: a root at its end is the one at its start
     if roots.len() > 1 && (roots[roots.len()-1]-tau-roots[0]).abs()*r <= tol { roots.pop(); }
     Some(roots.into_iter().map(|th| Curve::Iso(blend.clone(),u_of(th))).collect())
