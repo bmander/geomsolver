@@ -291,3 +291,25 @@ fn the_boolean_reads_touches_and_shallow_crossings_through_each_road() {
     }
     assert!(counts.is_empty(),"{}",counts.join("\n"));
 }
+
+/// **A march refused as shallow says so by its type** (#780 R3, `ssi::Shallow`): a plane on a
+/// cylinder's side touches it along a ruling, and a trace seeded there has no tangent to march along
+/// and no touch at a point to end at (`ssi::touch`'s `Q` is singular along a ruling): refused, by
+/// the surfaces' kinds, the angle they meet at and the point — what `meeting::marched` reads the
+/// meeting's ridges and level curves for, by its type and never by its words — and said, where it
+/// stands, as before.
+#[test]
+fn a_march_refused_as_shallow_says_so_by_its_type() {
+    let _profile = profiled("the shallow refusal's type");
+    use gcs_core::brep::ssi::{trace,Shallow};
+    let plane = Surface::Plane(Frame::about([0.,0.,1.],[0.,0.,1.]));
+    let cylinder = Surface::Cylinder(Frame::new([0.;3],[1.,0.,0.],[0.,1.,0.]),1.);
+    let seed = [0.3,0.,1.];
+    let refused = trace(&plane,&cylinder,&[seed],[-2.;3],[2.;3],1e-9).unwrap_err();
+    let Shallow {a,b,degrees,at} = refused.clone();
+    assert_eq!((a,b),("plane","cylinder"));
+    assert!(degrees.abs() < 1e-6 && distance(at,seed) <= 1e-9,"{refused:?}");
+    let said = String::from(refused);
+    assert!(said.starts_with("a plane and a cylinder meet at 0.00°") && said.contains("nearly touching: their meeting is ill-conditioned"),
+        "{said}");
+}

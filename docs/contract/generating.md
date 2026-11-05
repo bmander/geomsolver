@@ -447,7 +447,14 @@ inverse, membership, judge) against `closed::BUDGET`; past it every metered
 loop winds down and the build is refused as `Unbuilt::Budget {stage, at, what}`, the same way at
 every run (`swept_closed::a_build_past_its_budget_refuses_by_name_within_it`) — a curve's
 crossings' search among them (`meeting::crossings`, #780), whose polish charges the inverse map
-and once walked every pair of near chords on, 23 minutes, after the build was stopped. The run
+and once walked every pair of near chords on, 23 minutes, after the build was stopped. A stopped
+build is told by its type, never its words (#780 R3): every phase between its stages asks the one
+check `util::meter::go_on`, whose `Stopped` names the stage and becomes `Unbuilt::Budget`; a
+bounded search says why it gave up (`util::isolate::GaveUp`), so a certified reading stopped by
+the build reads nothing more where one past its most boxes, or a pair with no form, is sampled;
+and a sheet's inverse map searches no further
+(`swept_closed::a_build_past_its_budget_stops_by_one_typed_check`,
+`roots::a_search_says_why_it_gave_up`). The run
 #776 saw stall for hours, a ball-end mill screwed through a ring sector (a ball beside a side about
 an axis along the screw's, admitted), is cut to the volume it removes apart from the kernel or
 refused by its budget naming the stage, a point and the surface — today the inverse stage, at its
