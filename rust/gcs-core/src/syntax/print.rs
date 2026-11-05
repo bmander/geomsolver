@@ -619,6 +619,15 @@ fn over_text(over: &super::RunsOver, from: &Arg, to: &Arg) -> String {
     }
 }
 
+/// `some t`, or `some t in (a, b)` over an interval written in place (#783): the quantifier a
+/// set's point is read under, at some instant of a running number.
+fn quantifier(var: &str, ends: Option<(&str, &str)>) -> String {
+    match ends {
+        Some((a, b)) => format!("some {var} in ({a}, {b})"),
+        None => format!("some {var}"),
+    }
+}
+
 /// `sweep(…)` (#391 S2): a face family's instance written in place and its formal's interval,
 /// or the tool a motion sweeps over an interval of the roll or the whole of it, and the frames.
 pub(crate) fn sweep_text(d: &Decl, sweep: &Sweep) -> String {
@@ -640,25 +649,21 @@ pub(crate) fn sweep_text(d: &Decl, sweep: &Sweep) -> String {
         parts.extend(motion.iter().map(under));
         parts.extend(d.seen_from.iter().map(|g| format!("seen_from: {}", super::ref_text(g))));
     }
-    match sweep {
-        // a face of the drawing over a declared parameter
-        Sweep::Swept { motion: None, over, .. } if over.declared && d.seen_from.is_none() => {
+    // a face of the drawing over a declared parameter
+    if let Sweep::Swept { motion: None, over, .. } = sweep {
+        if over.declared && d.seen_from.is_none() {
             return format!("solid({{ p | some {0}: p in {1} at {0} }})", over.name.text, tool());
         }
-        _ => {}
     }
-    let quantifier = match sweep {
-        Sweep::Swept { from, to, over, .. } if !over.declared => {
-            format!("some {} in ({}, {})", over.name.text, dim(from), dim(to))
+    let (var, quantified) = match sweep {
+        Sweep::Swept { from, to, over, .. } => {
+            let ends = (!over.declared).then(|| (dim(from), dim(to)));
+            let ends = ends.as_ref().map(|(a, b)| (a.as_str(), b.as_str()));
+            (over.name.text.as_str(), quantifier(&over.name.text, ends))
         }
-        Sweep::Swept { over, .. } => format!("some {}", over.name.text),
-        _ => "some t".to_string(),
+        _ => ("t", quantifier("t", None)),
     };
-    let var = match sweep {
-        Sweep::Swept { over, .. } => over.name.text.clone(),
-        _ => "t".to_string(),
-    };
-    format!("solid({{ p | {quantifier}: p in {} at({}) {var} }})", tool(), parts.join(", "))
+    format!("solid({{ p | {quantified}: p in {} at({}) {var} }})", tool(), parts.join(", "))
 }
 
 /// A number's text negated as a person writes it (#737): `-30mm` for `30mm`, `30mm` for `-30mm`,
@@ -1230,12 +1235,8 @@ fn notation_text(w: &Written) -> Option<String> {
     }
     let word = w.word.text.as_str();
     if w.args.is_empty() {
-        return match word {
-            "inside" => Some(format!("{point} in {set}")),
-            "outside" => Some(format!("{point} not in {set}")),
-            "coincident" => Some(format!("{point} in {set}")),
-            _ => None,
-        };
+        return matches!(word, "inside" | "outside" | "coincident")
+            .then(|| format!("{point} {} {set}", w.spelled()));
     }
     if word == "distance" && w.sel("side").as_deref() == Some("inside") {
         let args: Vec<OpArg> = w.args.iter()
@@ -1249,28 +1250,21 @@ fn notation_text(w: &Written) -> Option<String> {
         OpArg::Over { key, ends } => Some((key, ends)),
         _ => None,
     });
-    let labels: Vec<String> = w.args.iter().filter_map(|a| match a {
-        OpArg::Named(n, Arg::Ref(r)) if n.text == "under" || n.text == "seen_from" => {
-            Some(format!("{}: {}", n.text, super::ref_text(r)))
-        }
+    let frame = |label: &str| w.args.iter().find_map(|a| match a {
+        OpArg::Named(n, Arg::Ref(r)) if n.text == label => Some(r),
         _ => None,
-    }).collect();
-    if over.is_none() && labels.is_empty() {
+    });
+    let frames = frames_text(frame("under"), frame("seen_from"));
+    if over.is_none() && frames.is_empty() {
         return None;
     }
-    let (var, quantifier) = match over {
-        Some((key, Some([lo, hi]))) => {
-            (key.text.clone(), format!("some {} in ({}, {})", key.text, lo.0, hi.0))
+    let (var, ends) = match over {
+        Some((key, ends)) => {
+            (key.text.as_str(), ends.as_ref().map(|[lo, hi]| (lo.0.as_str(), hi.0.as_str())))
         }
-        Some((key, None)) => (key.text.clone(), format!("some {}", key.text)),
-        None => ("t".to_string(), "some t".to_string()),
+        None => ("t", None),
     };
-    let at = if labels.is_empty() {
-        format!("at {var}")
-    } else {
-        format!("at({}) {var}", labels.join(", "))
-    };
-    Some(format!("{quantifier}: {point} in {set} {at}"))
+    Some(format!("{}: {point} in {set} at{frames} {var}", quantifier(var, ends)))
 }
 
 /// A constraint the *library* holds, written as the operator it is spelled with (spec §9.1).

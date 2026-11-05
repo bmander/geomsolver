@@ -1918,6 +1918,18 @@ impl Ref {
             _ => None,
         }
     }
+
+    /// What the reference is the surface of, where it ends in `.surface` — read or as written
+    /// (#783: `S.surface` is `boundary(S)`).
+    pub fn surface_of(&self) -> Option<Ref> {
+        let (last, rest) = self.path.split_last()?;
+        let member = match last {
+            Seg::Field(f) => Member::of(&f.text),
+            Seg::Member(m) => Some(*m),
+            _ => None,
+        };
+        (member == Some(Member::Surface)).then(|| Ref { path: rest.to_vec(), ..self.clone() })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

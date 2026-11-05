@@ -369,7 +369,7 @@ impl<'a> Walk<'a> {
             } else if names_surface(&rest) {
                 // a set's surface (`S.surface`): the set with each bound an equality, a set of its
                 // own (#214: a point on a side grown, where a topping leaves a crown's flank)
-                let surface = self.surface_of(&abs);
+                let surface = self.surface_of(&abs, alias);
                 found.push((i, surface));
             }
         }
@@ -499,15 +499,15 @@ impl<'a> Walk<'a> {
     /// `None` where the statement is refused.
     fn notation(&mut self, mut st: Stmt, sc: &Scope, alias: &BTreeMap<String, String>)
         -> Option<Stmt> {
-        use crate::syntax::{Arg, Lowered, OpArg};
+        use crate::syntax::OpArg;
         let StmtKind::Relation(r) = &mut st.kind else { return Some(st) };
         let Some(w) = r.form.written_mut() else { return Some(st) };
-        let word = w.word.text.clone();
-        if !matches!(word.as_str(), "inside" | "outside" | "coincident" | "distance")
+        if !matches!(w.word.text.as_str(), "inside" | "outside" | "coincident" | "distance")
             || w.ops.len() != 2
         {
             return Some(st);
         }
+        let word = w.word.text.clone();
         let set = w.ops.iter().enumerate().find_map(|(k, o)| {
             let (abs, rest) = self.look(alias).raw(o, sc)?;
             (rest.is_empty() && self.sets.made.contains_key(&abs)).then_some((k, abs))
@@ -516,13 +516,12 @@ impl<'a> Walk<'a> {
         let region = self.sets.made[&abs].shape.region;
         let name = public_path(&abs);
         let at = w.word.span;
+        let no_inside = format!("`{name}` has no inside, so nothing is outside it: a point not in \
+            a region is `p not in R` — the ball `std.sets.Ball(c, r)`, not the sphere");
         match word.as_str() {
             "inside" | "outside" if w.lowered.any() && k == 1 && !region && w.args.is_empty() => {
                 if word == "outside" {
-                    let m = format!("`{name}` has no inside, so nothing is outside it: a point not \
-                        in a region is `p not in R` — the ball `std.sets.Ball(c, r)`, not the \
-                        sphere");
-                    self.once(Code::E040, at, m);
+                    self.once(Code::E040, at, no_inside);
                     return None;
                 }
                 w.word.text = "coincident".to_string();
@@ -534,10 +533,7 @@ impl<'a> Walk<'a> {
             {
                 let OpArg::Bound { cmp, .. } = &w.args[0] else { unreachable!("a bound") };
                 if *cmp != crate::syntax::Cmp::Le {
-                    let m = format!("`{name}` has no inside, so nothing is outside it: a point not \
-                        in a region is `p not in R` — the ball `std.sets.Ball(c, r)`, not the \
-                        sphere");
-                    self.once(Code::E040, at, m);
+                    self.once(Code::E040, at, no_inside);
                     return None;
                 }
                 w.args.clear();
@@ -556,9 +552,7 @@ impl<'a> Walk<'a> {
                     self.once(Code::E040, at, m);
                     return None;
                 }
-                let key = Name { text: "side".to_string(), span: Span::at(at.hi as usize) };
-                w.args.push(OpArg::Named(key, Arg::Word("outside".to_string())));
-                w.lowered = Lowered::Set;
+                outside_side(w);
             }
             _ => {}
         }
@@ -566,26 +560,19 @@ impl<'a> Walk<'a> {
     }
 
     /// A `distance` from a region with no `side:` said, written in the notation of sets (#783):
-    /// the ordinary distance, nothing inside it — from its surface on its outside (`side:
-    /// outside`), marked lowered.  Whether it was one.
+    /// the ordinary distance, nothing inside it (`outside_side`).
     fn ordinary_distance(&self, w: &mut crate::syntax::Written, sc: &Scope,
-                         alias: &BTreeMap<String, String>) -> bool {
-        use crate::syntax::{Arg, Lowered, OpArg};
+                         alias: &BTreeMap<String, String>) {
         if w.word.text != "distance" || w.ops.len() != 2 || w.sel("side").is_some()
             || w.sel("along").is_some()
         {
-            return false;
+            return;
         }
         let region = w.ops.iter().any(|o| self.look(alias).raw(o, sc).is_some_and(|(abs, rest)|
             rest.is_empty() && self.sets.made.get(&abs).is_some_and(|site| site.shape.region)));
-        if !region {
-            return false;
+        if region {
+            outside_side(w);
         }
-        let at = w.word.span;
-        w.args.push(OpArg::Named(Name { text: "side".to_string(), span: Span::at(at.hi as usize) },
-                                 Arg::Word("outside".to_string())));
-        w.lowered = Lowered::Set;
-        true
     }
 
     /// **Outside a set** (#737 P3): `p outside S` where `S`'s body is several statements, an
@@ -697,7 +684,7 @@ impl<'a> Walk<'a> {
                     let surface = names_surface(&rest);
                     if (rest.is_empty() || surface) && !sets.iter().any(|(t, _)| *t == text) {
                         if surface {
-                            surfaces.insert(text.clone(), self.surface_of(&abs));
+                            surfaces.insert(text.clone(), self.surface_of(&abs, alias));
                         }
                         sets.push((text, r.clone()));
                     }
@@ -799,24 +786,17 @@ impl<'a> Walk<'a> {
     /// made the equality at its number (`Written::equality`) — a ball's sphere, a half-space's
     /// plane, a side's surface, a grown side's the offset one — by its absolute name
     /// (`{abs}#surface`), made once.  An interval's two surfaces are no one surface: kept.
-    fn surface_of(&mut self, abs: &str) -> String {
+    fn surface_of(&mut self, abs: &str, alias: &BTreeMap<String, String>) -> String {
         let key = keys::surface(abs);
         if !self.sets.made.contains_key(&key) {
             let site = &self.sets.made[abs];
             let mut lit = site.lit.clone();
             // a plain distance from a region in it is the ordinary one (#783), said before its
             // bound is made the equality the surface is at
-            let alias = self.alias_table();
-            let scope = site.scope.clone();
             for st in lit.body.iter_mut() {
                 let StmtKind::Relation(r) = &mut st.kind else { continue };
                 if let Some(w) = r.form.written_mut() {
-                    self.ordinary_distance(w, &scope, &alias);
-                }
-            }
-            for st in lit.body.iter_mut() {
-                let StmtKind::Relation(r) = &mut st.kind else { continue };
-                if let Some(w) = r.form.written_mut() {
+                    self.ordinary_distance(w, &site.scope, alias);
                     w.equality();
                 }
             }
@@ -1045,10 +1025,9 @@ impl<'a> Walk<'a> {
         let set = self.set_written(&w.ops[k]);
         // `side:` on a set with an inside, written so, is the retired spelling (#783): the
         // ordinary distance needs none; a sheet's two sides are another meaning, and stay
-        if word == "distance" && !w.lowered.any() && w.sel("side").is_some()
-            && self.sheet_rails(&self.sets.made[abs], alias).is_none()
+        let side = w.sel("side").filter(|_| word == "distance" && !w.lowered.any());
+        if let Some(side) = side.filter(|_| self.sheet_rails(&self.sets.made[abs], alias).is_none())
         {
-            let side = w.sel("side").unwrap_or_default();
             let m = if side == "inside" {
                 format!("`side: inside` is retired (#783): the distance from what is not in \
                     `{set}` is `p distance(d) {{ q | q not in {set} }}`")
@@ -1136,7 +1115,7 @@ impl<'a> Walk<'a> {
                 let mut found = su.found.clone();
                 if surface.is_some() {
                     let owned = abs.to_string();
-                    let key = self.surface_of(&owned);
+                    let key = self.surface_of(&owned, alias);
                     found = vec![(k, key)];
                 }
                 let rel = Relation { form: RelationForm::Written(on), ..rel.clone() };
@@ -1609,6 +1588,15 @@ struct Reach {
     text: String,
     grows: bool,
     args: String,
+}
+
+/// A plain distance from a region read as the ordinary one (#783): from its surface on its
+/// outside (`side: outside`), marked lowered so the retired `side:` is not refused in it.
+fn outside_side(w: &mut crate::syntax::Written) {
+    use crate::syntax::{Arg, Lowered, OpArg};
+    let key = Name { text: "side".to_string(), span: Span::at(w.word.span.hi as usize) };
+    w.args.push(OpArg::Named(key, Arg::Word("outside".to_string())));
+    w.lowered = Lowered::Set;
 }
 
 /// `p distance(d, side: outside) S`, `p distance(<= d, side: inside) S`, … — `side:` said,

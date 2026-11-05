@@ -84,14 +84,8 @@ impl<'a> P<'a> {
     /// How a relation word at `span` was written (#783): lowered from the notation of sets, and
     /// from a face's `.side` or not (`syntax::notation`).
     pub(super) fn lowered_word(&self, span: Span) -> crate::syntax::Lowered {
-        use crate::syntax::Lowered;
         // where the word starts: its span may be widened over its parentheses
-        let at = |spans: &[Span]| spans.iter().any(|s| s.lo == span.lo);
-        match (at(&self.lowered), at(&self.sided)) {
-            (_, true) => Lowered::Side,
-            (true, false) => Lowered::Set,
-            _ => Lowered::No,
-        }
+        self.lowered.get(&span.lo).copied().unwrap_or_default()
     }
 
     /// Whether the tokens ahead are `rate(`, an operand read as its rate (#339 D2).
@@ -243,9 +237,7 @@ impl<'a> P<'a> {
         // a side takes nothing in its parentheses: one grown by a distance is that distance from
         // the set (§6.21, #266, #783), and the set grown is the points within `d` of it
         if fixity == Fixity::Infix && !over {
-            if let Some(cmp) = crate::constraints::plane_side_word(word) {
-                let side = if cmp == Cmp::Le { "outside" } else { "inside" };
-                let _ = side;
+            if crate::constraints::plane_side_word(word).is_some() {
                 self.fail(&format!("`{word}` takes nothing in its parentheses: a point within \
                     `d` of `S` is `p distance(<= d) S`, and `S` grown by `d` is the set `{{ p | \
                     p distance(<= d) S }}`"));

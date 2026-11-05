@@ -23,25 +23,25 @@
 //! | `p distance(…) { q \| q not in S }` | `p distance(…, side: inside) S` |
 //! | `n := x at f`, `f` a frame | `n := x in f`: drawn in the jointed frame at its value |
 //!
-//! The relation words a lowering makes are recorded by span (`Lowered::words`), so the relation
+//! The relation words a lowering makes are recorded by span (`Text::words`), so the relation
 //! the parser reads from them knows it was written in the set notation (`Written::lowered`): what
 //! the flattener refuses of `coincident` against a set or of `side:` on one, it never refuses of
 //! its own lowering.  The source is read where it stands: no span moves, and a lowered token
 //! carries the span of the word it stands for.
 
 use super::lexer::Tok;
-use super::{Span, SynErr};
-use std::collections::BTreeSet;
+use super::words::{word_at as word, QUALIFIERS};
+use super::{Lowered, Member, Span, SynErr};
+use std::collections::{BTreeMap, BTreeSet};
 
 type T = (Tok, Span);
 
-/// What the lowering gives back: the tokens the parser reads, the spans of the relation words it
-/// lowered, and the retired spellings it met.
-pub(super) struct Lowered {
+/// What the lowering gives back: the tokens the parser reads, how each relation word it lowered
+/// was written (by where the word starts, its span widened over its parentheses as it may be),
+/// and the retired spellings it met.
+pub(super) struct Text {
     pub toks: Vec<T>,
-    pub words: Vec<Span>,
-    /// those of them lowered from a face's `.side`
-    pub sided: Vec<Span>,
+    pub words: BTreeMap<u32, Lowered>,
     pub errs: Vec<SynErr>,
 }
 
@@ -58,13 +58,6 @@ struct Kinds {
     formals: Vec<(usize, usize, String)>,
 }
 
-fn word(t: &[T], i: usize) -> Option<&str> {
-    match t.get(i).map(|x| &x.0) {
-        Some(Tok::Ident(w)) => Some(w.as_str()),
-        _ => None,
-    }
-}
-
 fn punct(t: &[T], i: usize, c: char) -> bool {
     t.get(i).map(|x| &x.0) == Some(&Tok::P(c))
 }
@@ -75,6 +68,11 @@ fn ident(text: &str, span: Span) -> T {
 
 fn p(c: char, span: Span) -> T {
     (Tok::P(c), span)
+}
+
+/// Whether `[a, b)` ends in `.w` with something before it: `a.side`, `a.smooth`.
+fn suffix(t: &[T], a: usize, b: usize, w: &str) -> bool {
+    b >= a + 3 && punct(t, b - 2, '.') && word(t, b - 1) == Some(w)
 }
 
 fn at_end(span: Span) -> Span {
@@ -100,9 +98,13 @@ fn close(t: &[T], i: usize) -> Option<usize> {
 }
 
 /// Past a reference at `j`: a name, then `.name` and `[…]` steps.
-fn past_ref(t: &[T], mut j: usize) -> Option<usize> {
+fn past_ref(t: &[T], j: usize) -> Option<usize> {
     word(t, j)?;
-    j += 1;
+    steps(t, j + 1)
+}
+
+/// Past the `.name` and `[…]` steps from `j`.
+fn steps(t: &[T], mut j: usize) -> Option<usize> {
     loop {
         if punct(t, j, '.') && word(t, j + 1).is_some() {
             j += 2;
@@ -129,16 +131,7 @@ fn operand_end(t: &[T], j: usize) -> Option<usize> {
     if !punct(t, k, '(') {
         return past_ref(t, j);
     }
-    let mut k = close(t, k)? + 1;
-    loop {
-        if punct(t, k, '.') && word(t, k + 1).is_some() {
-            k += 2;
-        } else if punct(t, k, '[') {
-            k = close(t, k)? + 1;
-        } else {
-            return Some(k);
-        }
-    }
+    steps(t, close(t, k)? + 1)
 }
 
 /// Whether a statement may start at `i`: the first token, or one after a statement's end, a
@@ -150,7 +143,7 @@ fn starts(t: &[T], i: usize) -> bool {
         // a word's body written on its head's line, `a opens(h) l := a in boundary(…)`: its
         // statement after the `:=`, where more than a name stands before it
         || (t[i - 1].0 == Tok::Define && i >= 3 && !matches!(t[i - 3].0, Tok::Nl)
-            && word(t, i - 3) != Some("private") && word(t, i - 3) != Some("construction"))
+            && !word(t, i - 3).is_some_and(|w| QUALIFIERS.contains(&w)))
 }
 
 /// The statement's end from `i`: the line break or `;` that ends it, or the brace closing the body
@@ -249,31 +242,38 @@ struct Lowering<'a> {
     t: &'a [T],
     kinds: Kinds,
     encl: Vec<Option<usize>>,
-    words: Vec<Span>,
-    sided: Vec<Span>,
+    words: BTreeMap<u32, Lowered>,
     errs: Vec<SynErr>,
 }
 
 /// Lower the set notation in `toks` and refuse the spellings it retires (#783).
-pub(super) fn lower(toks: Vec<T>) -> Lowered {
+pub(super) fn lower(toks: Vec<T>) -> Text {
     let mut l = Lowering {
         t: &toks,
         kinds: Kinds::of(&toks),
         encl: enclosing(&toks),
-        words: Vec::new(),
-        sided: Vec::new(),
+        words: BTreeMap::new(),
         errs: Vec::new(),
     };
     l.retired();
     let mut out = Vec::with_capacity(toks.len());
     l.range(0, toks.len(), &mut out);
-    let Lowering { words, sided, errs, .. } = l;
-    Lowered { toks: out, words, sided, errs }
+    let Lowering { words, errs, .. } = l;
+    Text { toks: out, words, errs }
 }
 
 impl Lowering<'_> {
     fn fail(&mut self, span: Span, message: impl Into<String>) {
         self.errs.push(SynErr { span, message: message.into() });
+    }
+
+    /// The relation word lowered at `at`, its operand read as `reads`: a face's side marks it
+    /// so, whatever else is marked at the same place.
+    fn mark(&mut self, at: Span, reads: Reads) {
+        let w = self.words.entry(at.lo).or_insert(Lowered::Set);
+        if reads == Reads::Side {
+            *w = Lowered::Side;
+        }
     }
 
     /// The spellings #783 retires, refused where they are written.
@@ -358,7 +358,7 @@ impl Lowering<'_> {
         let t = self.t;
         match word(t, i)? {
             "claim" if word(t, past_ref(t, i + 1).unwrap_or(i + 1)) == Some("inside") => None,
-            "claim" | "private" | "construction" | "centerline" if i + 1 < hi => {
+            w if (w == "claim" || QUALIFIERS.contains(&w)) && i + 1 < hi => {
                 let mut held = Vec::new();
                 let next = self.statement(i + 1, hi, &mut held)?;
                 out.push(t[i].clone());
@@ -399,7 +399,7 @@ impl Lowering<'_> {
                 return Reads::Boundary;
             }
         }
-        if b >= a + 3 && punct(t, b - 2, '.') && word(t, b - 1) == Some("side") {
+        if suffix(t, a, b, "side") {
             self.range(a, b - 2, out);
             return Reads::Side;
         }
@@ -413,7 +413,22 @@ impl Lowering<'_> {
     fn surface_of(&mut self, a: usize, b: usize, at: Span, out: &mut Vec<T>) {
         let t = self.t;
         let first = out.len();
-        self.surface_tokens(a, b, at, out);
+        // a set named, or one written in place by a call (`boundary(std.sets.Cone(l, half: h))`)
+        if operand_end(t, a) != Some(b) {
+            self.fail(at, "`boundary(…)` takes a set, a solid or a face's side, by name or by a \
+                call: `boundary(S)`, `boundary(a.side)`, `boundary(std.sets.Ball(c, r: 5mm))`");
+        }
+        let end = t[b.saturating_sub(1).max(a)].1;
+        if suffix(t, a, b, "side") {
+            out.extend(t[a..b - 1].iter().cloned());
+            out.push(ident(Member::Surface.word(), t[b - 1].1));
+        } else if suffix(t, a, b, Member::Smooth.word()) {
+            out.extend(t[a..b].iter().cloned());
+        } else {
+            out.extend(t[a..b].iter().cloned());
+            out.push(p('.', at_end(end)));
+            out.push(ident(Member::Surface.word(), at_end(end)));
+        }
         // the reference spans the whole of `boundary(…)`, where it was written
         if let Some(close) = t.get(b).filter(|x| x.0 == Tok::P(')')) {
             if let Some(x) = out.get_mut(first) {
@@ -422,26 +437,6 @@ impl Lowering<'_> {
             if let Some(x) = out.last_mut() {
                 x.1 = Span::new(x.1.lo as usize, close.1.hi as usize);
             }
-        }
-    }
-
-    fn surface_tokens(&mut self, a: usize, b: usize, at: Span, out: &mut Vec<T>) {
-        let t = self.t;
-        // a set named, or one written in place by a call (`boundary(std.sets.Cone(l, half: h))`)
-        if past_ref(t, a) != Some(b) && operand_end(t, a) != Some(b) {
-            self.fail(at, "`boundary(…)` takes a set, a solid or a face's side, by name or by a \
-                call: `boundary(S)`, `boundary(a.side)`, `boundary(std.sets.Ball(c, r: 5mm))`");
-        }
-        let end = t[b.saturating_sub(1).max(a)].1;
-        if b >= a + 3 && punct(t, b - 2, '.') && word(t, b - 1) == Some("side") {
-            out.extend(t[a..b - 1].iter().cloned());
-            out.push(ident("surface", t[b - 1].1));
-        } else if b >= a + 3 && punct(t, b - 2, '.') && word(t, b - 1) == Some("smooth") {
-            out.extend(t[a..b].iter().cloned());
-        } else {
-            out.extend(t[a..b].iter().cloned());
-            out.push(p('.', at_end(end)));
-            out.push(ident("surface", at_end(end)));
         }
     }
 
@@ -481,7 +476,7 @@ impl Lowering<'_> {
         if (s_end..end).any(|j| t[j].0 != Tok::Nl) {
             return None;
         }
-        self.words.push(t[i].1);
+        self.mark(t[i].1, Reads::Set);
         out.push(t[i].clone());
         out.extend(t[i + 1..c].iter().cloned());
         let at = Span::at(t[c].1.lo as usize);
@@ -552,9 +547,6 @@ impl Lowering<'_> {
         }
         let mut x = Vec::new();
         let reads = self.operand(x0, x1, &mut x);
-        if reads == Reads::Side {
-            self.sided.push(at);
-        }
         let lowered = match (reads, not) {
             (Reads::Set | Reads::Side, false) => "inside",
             (Reads::Set | Reads::Side, true) => "outside",
@@ -571,7 +563,7 @@ impl Lowering<'_> {
             }
         };
         out.extend(t[i..point].iter().cloned());
-        self.words.push(at);
+        self.mark(at, reads);
         out.push(ident(lowered, at));
         out.extend(x);
         Some(x1)
@@ -624,7 +616,7 @@ impl Lowering<'_> {
         }
         // the outer relation: outside the set of where every membership fails
         out.extend(t[i..point].iter().cloned());
-        self.words.push(first);
+        self.mark(first, Reads::Set);
         out.push(ident("outside", first));
         out.push(p('{', Span::at(first.hi as usize)));
         out.extend(t[i..point].iter().cloned());
@@ -636,14 +628,11 @@ impl Lowering<'_> {
             out.extend(t[i..point].iter().cloned());
             let mut x = Vec::new();
             let reads = self.operand(x0, x1, &mut x);
-            if reads == Reads::Side {
-                self.sided.push(at);
-            }
             if !matches!(reads, Reads::Set | Reads::Side) {
                 self.fail(at, "`or` joins memberships of sets with an inside: a region, a \
                     solid or a face's side");
             }
-            self.words.push(at);
+            self.mark(at, reads);
             out.push(ident(if not { "inside" } else { "outside" }, at));
             out.extend(x);
         }
@@ -726,7 +715,7 @@ impl Lowering<'_> {
                 self.fail(t[ia].1, "a face slid over an interval is a prism: \
                     `std.solids.Prism(F, from: a, to: b)`, its caps `near` and `far`");
             }
-            self.words.push(in_at);
+            self.mark(in_at, Reads::Set);
             emitted.push(ident(if not { "outside" } else { "inside" }, in_at));
         } else {
             if not {
@@ -738,7 +727,7 @@ impl Lowering<'_> {
             let member = (x0..x1).any(|k| punct(t, k, '(')) && punct(t, x1.saturating_sub(2), '.');
             let face = reads == Reads::Face || (labels.is_none() && member);
             let lowered = if face { "coincident" } else { "inside" };
-            self.words.push(in_at);
+            self.mark(in_at, Reads::Set);
             emitted.push(ident(lowered, in_at));
             let at = t[x1].1;
             emitted.push(p('(', at));

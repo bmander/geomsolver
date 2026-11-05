@@ -335,35 +335,28 @@ impl Parser {
         // `c in B` (#267): a name among the things another names, `a meets b` (#625): two
         // faces sharing a point, and `a parallel l` (#763): a face lying along a direction, which
         // only the elaborator can tell — so both sides are names, and neither is arithmetic
-        // `w not in A` (#783): a name not among the things another names
-        if let (Tok::Ident(x), Some(Tok::Ident(n)), Some(Tok::Ident(w))) = (self.peek().clone(),
-            self.toks.get(self.pos + 1).map(|t| &t.0), self.toks.get(self.pos + 2).map(|t| &t.0))
-        {
-            if n == "not" && w == "in" {
-                self.next();
-                self.next();
-                self.next();
-                let Tok::Ident(y) = self.peek().clone() else {
-                    return Err(format!("expected a name after `{x} not in` at {}", self.here()));
-                };
-                self.next();
-                return Ok(Cond::Not(Box::new(Cond::In(x, y))));
-            }
-        }
         if let (Tok::Ident(x), Some(Tok::Ident(w))) =
             (self.peek().clone(), self.toks.get(self.pos + 1).map(|t| &t.0))
         {
+            // `w not in A` (#783): a name not among the things another names
+            let not = w == "not"
+                && matches!(self.toks.get(self.pos + 2).map(|t| &t.0),
+                            Some(Tok::Ident(i)) if i == "in");
             let along = super::Along::of_word(w);
-            if w == "in" || w == "meets" || along.is_some() {
-                let w = w.clone();
+            if not || w == "in" || w == "meets" || along.is_some() {
+                let w = if not { "not in".to_string() } else { w.clone() };
                 self.next();
                 self.next();
+                if not {
+                    self.next();
+                }
                 let Tok::Ident(y) = self.peek().clone() else {
                     return Err(format!("expected a name after `{x} {w}` at {}", self.here()));
                 };
                 self.next();
                 return Ok(match along {
                     Some(along) => Cond::Along(along, x, y),
+                    None if not => Cond::Not(Box::new(Cond::In(x, y))),
                     None if w == "in" => Cond::In(x, y),
                     None => Cond::Meets(x, y),
                 });

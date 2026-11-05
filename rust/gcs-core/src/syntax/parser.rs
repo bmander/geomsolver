@@ -97,11 +97,9 @@ struct P<'a> {
     /// The faces written in place as arguments of a call being hoisted (#737), read but not yet
     /// minted: `Some` while such a call's arguments are read.
     faces: Option<Vec<(Decl, Span)>>,
-    /// The spans of the relation words the notation of sets was lowered to (#783,
-    /// `syntax::notation`): a relation read from one is `Written::lowered`.
-    lowered: Vec<Span>,
-    /// Those of them lowered from a face's `.side` (`Lowered::Side`).
-    sided: Vec<Span>,
+    /// How each relation word the notation of sets was lowered to was written, by where the word
+    /// starts (#783, `syntax::notation`): a relation read from one is `Written::lowered`.
+    lowered: std::collections::BTreeMap<u32, crate::syntax::Lowered>,
 }
 
 /// An operand written in place, already made its own statement (#745): the token it stood at,
@@ -162,8 +160,7 @@ pub(crate) fn reference_at(text: &str, at: usize) -> Option<Ref> {
         families: 0,
         hoisted: None,
         faces: None,
-        lowered: Vec::new(),
-        sided: Vec::new(),
+        lowered: Default::default(),
     };
     let mut r = st.refr()?;
     if !st.done() || !st.errs.is_empty() {
@@ -261,7 +258,6 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         hoisted: None,
         faces: None,
         lowered: low.words,
-        sided: low.sided,
     };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();
