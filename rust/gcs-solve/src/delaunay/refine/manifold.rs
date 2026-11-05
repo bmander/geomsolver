@@ -49,6 +49,12 @@ pub(super) fn repair(r: &mut Refiner) -> Result<bool,String> {
                 // it duplicates a vertex.
                 let near = key.iter().map(|&v| dist2(centre,r.tri.points()[v as usize].p)).fold(f64::INFINITY,f64::min).sqrt();
                 if near <= 2.*r.criteria.bisection { r.report.too_small += 1; continue; }
+                // nor one off its dual edge, on another vertex (`Refiner::crowded`); one in a
+                // ball is the insertion's to refuse, which says which ball blocks
+                if r.ball_at(centre).is_none() {
+                    let region = r.tri.conflicts(centre,0.,Some(t))?;
+                    if r.crowded(centre,&region,key) { r.report.off_dual += 1; continue; }
+                }
                 any |= r.insert(centre)?;
                 r.refine()?;
             }

@@ -296,11 +296,13 @@ fn the_regions_cut_the_recorded_tooth_spaces() {
 /// configured hypoid with its backlash, tip relief and end relief, each member built whole by this
 /// kernel at the export tolerance (10 µm), has the faces the drawn sections' export had and their
 /// volume to 1e-6 — a ten-micron band over either member is a thousand times that.  Recorded
-/// from the drawn sections before they were retired.
+/// from the drawn sections before they were retired, so cut by the mill they were cut by
+/// (`fixtures::gear::recorded_machine`, a pressure shift of 12.5 degrees): the mill the pair finds
+/// (#283) is another, whose pair is another pair (its pinion 147 faces and 14679.456 mm³).
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: both members built whole as fabricated")]
 fn the_fabricated_pair_is_the_drawn_sections_export() {
-    let members = built(&|text| text,Some(0.01));
+    let members = built(&|text| fixtures::gear::recorded_machine(&text,12.5),Some(0.01));
     for ((member,(volume,_,faces)),(recorded,recorded_faces)) in ["pinion","gear"].iter().zip(members)
         .zip([(14643.571918,243),(22261.893669,291)]) {
         eprintln!("{member}: {volume:.6} mm³ in {faces} faces, the drawn sections' {recorded} in {recorded_faces}");

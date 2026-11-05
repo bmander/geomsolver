@@ -263,6 +263,41 @@ fn a_chamfer_spilled_onto_a_rounded_plate_meshes() {
     spilled_meshes(21.7);
 }
 
+/// **The chamfer's foot is one crease over the plate's tangent seam, either way** (#780 R1): at a
+/// boss of 21 the crease between the chamfer and the plate runs round the plate's top, out over
+/// its rim's round and back, the boss's base lying on the plate's top.  Coming off the round, the
+/// whole field may name that base past the seam, facing down, and not the plate's top: read so,
+/// the seam was a corner one way and a hand-off the other, the crease ran twice over the round and
+/// ended three microns from its own start, and the part could not be meshed at that radius (no
+/// protection keeps two ends three microns apart).  A followed leaf's own next piece continues it
+/// (`crease::trace`), so traced from the plate's side it closes on itself.  The mesh it lets be
+/// made is the slow tier's (`…_meshes_at_every_radius`).
+#[test]
+fn a_chamfer_spilled_onto_a_rounded_plate_has_one_closed_crease_over_the_seam() {
+    use gcs_core::solid::crease::{self, CreaseOptions, CreaseSource};
+    let r = 21.0;
+    let e = solved(&spilled(r));
+    let field = MaterialField::read(&e.sketch, ent(&e, "boss").i(), 1e-10).unwrap();
+    let c = e.sketch.world_point(ent(&e, "centre").i());
+    // out from the plate's axis
+    let rho = |p: &[f64; 3]| p[0].hypot(p[2]);
+    let out = rho(&c);
+    // on the boss's side away from the rim: just in on the chamfer's flat, just out on the plate
+    let at = |d: f64, y: f64| [c[0] - c[0] / out * (r + d), y, c[2] - c[2] / out * (r + d)];
+    let vertices = [at(1.9, 20.1), at(2.1, 20.0)];
+    let options = CreaseOptions { step: 1.1, tolerance: 1e-7, time_gap: 0.1, centre: c,
+        radius: 100.0, max_points: 200_000 };
+    let seeds = crease::seeds(&field, &vertices, &[[0, 1, 1]], &options);
+    assert_eq!(seeds.len(), 1, "the two sides read alike: {:?}",
+        vertices.map(|v| field.read(v, 1e-9).operand));
+    let found = crease::creases(&field, &seeds, &options);
+    assert_eq!(found.len(), 1);
+    let foot = &found[0];
+    // round the plate's top and out over the round: its points either side of the seam
+    assert!(foot.points.iter().any(|p| rho(p) > 31.0) && foot.points.iter().any(|p| rho(p) < 20.0));
+    assert!(foot.closed, "ends {:?}: {:?} and {:?}", foot.ends, foot.points[0], foot.points.last());
+}
+
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, a mesh for each boss")]
 fn a_chamfer_spilled_onto_a_rounded_plate_meshes_at_every_radius() {

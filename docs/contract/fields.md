@@ -51,13 +51,26 @@ in the slow tier.
 weighted points. A first pass on `MaterialField::tight_support`, `solid::crease` traces creases,
 the final pass protects them. A crease is where the deciding operand changes (leaf,
 `PlanarField::carrier` piece, sweep contact time; `OperandId::whole`); a point needs the field at
-zero and both leaves active; `End` says why one ends. Crease reads only `crease::CreaseSource`.
+zero and both leaves active; `End` says why one ends. A crease runs on across a seam where a
+followed leaf's next piece is tangent to the last: the piece the field names past it, or, where
+two leaves' faces lie on one another and the field names the other's (a boss's base on its
+plate's face, facing down), the followed leaf's own — else the seam is a corner coming one way and
+a hand-off going the other, and the crease ran twice over the round and ended microns from its
+start (`crease::trace`, #780 R1;
+`composed_rounds::a_chamfer_spilled_onto_a_rounded_plate_has_one_closed_crease_over_the_seam`).
+Crease reads only `crease::CreaseSource`.
 Rays seed beside the centre, never on it. `MaterialField::reading`: value, gradient, `OperandId`,
 crease flag. Terms compile once (`material/plan.rs`); support, bounds, enclosure are `Fold`s. Every
 point query is `MaterialField::query(p, &mut Query)` (`Want::Sign | Reading`, `Source::Exact |
 Cached(Resolution) | Warm {hints,local}`; shorthands `side`, `reading`); `SweptField::query` takes
 box, floor table, cache, search, in order. Readings are branch and bound; crossings by safeguarded
-Newton, memoised. A `construction` solid is never an object. `spiral_bevel` (`hypoid.sv`) is built
+Newton, memoised. A surface centre within the refinement's margin of a vertex is not inserted
+(`Refiner::crowded`, #780 R1): a restricted facet's surface ball is empty, so such a centre is
+off its facet's dual edge — four corners nearly on one circle and in its plane, two pairs of a
+symmetric part's protecting balls, have an orthocentre rounding puts anywhere on the circle's
+axis, its side with it — and inserted it was a vertex again, 10⁻¹⁵ off: the library rod at its
+reading's size held three corners of an element there, and its drive could not be refined
+(`hulls::the_librarys_rod_is_sized_by_its_sag`, the slow tier). A `construction` solid is never an object. `spiral_bevel` (`hypoid.sv`) is built
 exactly, both members, as every object the page draws is. `solventc --stl-backend refine` skips admission, gated by field agreement
 (`SOLVENT_FEATURES=field`).
 
