@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.4.0] - 2026-11-05
+
 - **A round about one axis is turned, exact** (`fillet::roll`): between a plane square to an axis
   and cylinders or cones about it, round a closed loop, the piece is the section revolved — a torus
   face and its strips — where a canal was fitted as a B-spline net of hundreds of poles. A boss's
