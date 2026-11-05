@@ -122,7 +122,6 @@ impl<'a> Prefix<'a> {
         let (mid,h) = ((a+b)/2.,(b-a)/2.);
         h*self.ru.iter().map(|&(x,w)| w*self.g(mid+x*h,v)).sum::<f64>()
     }
-    /// The span of `knots` holding `t`, the end ones taking what lies past them.
     fn big_g(&mut self,u: f64,v: f64) -> f64 {
         let (i,j) = (span(&self.us,u),span(&self.vs,v));
         let (v0,v1) = (self.vs[j],self.vs[j+1]);
@@ -171,18 +170,16 @@ const SPAN_COS: f64 = 0.9659258262890683;
 /// a graph over its chord (its
 /// rate turned past 60° from it, or a crossing found off the stretch it was sought in) is read by
 /// the edge's parameter, stretch by stretch, as before.
-fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,pc: &Pcurve,s: &Surface,vertices: &[super::topo::Vertex],
+fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,[ua,ub]: [Uv;2],s: &Surface,vertices: &[super::topo::Vertex],
     f: &mut dyn FnMut(Uv,Uv) -> f64) -> f64 {
-    use crate::util::space::{distance,norm,scale,sub};
+    use crate::util::space::{norm,normalised,scale,sub};
     let [t0,t1] = e.t;
-    // the edge's ends and the trace's points between, each with its parameter
-    let m = tr.pts.len()-1;
-    let point = |k: i64| tr.pts[if tr.closed { k.rem_euclid(m as i64) as usize } else { (k.max(0) as usize).min(m) }];
-    let mut at: Vec<(f64,[f64;3])> = vec![(t0,tr.at(t0))];
-    let mut k = t0.floor() as i64+1;
-    while (k as f64) < t1 { at.push((k as f64,point(k))); k += 1 }
-    at.push((t1,tr.at(t1)));
+    // the edge's ends and the trace's points between (its breaks), each with its parameter
+    let breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
+    let at: Vec<(f64,[f64;3])> = std::iter::once((t0,tr.at(t0))).chain(breaks.into_iter().map(|k| (k,tr.guess(k))))
+        .chain(std::iter::once((t1,tr.at(t1)))).collect();
     // by the edge's parameter, stretch by stretch: `at[i..=j]`
+    let pc = Pcurve::Inverse {a:ua,b:ub};
     let by_parameter = |i: usize,j: usize,f: &mut dyn FnMut(Uv,Uv) -> f64| -> f64 {
         let mut integrand = |t: f64| { let (uv,d) = pc.at_and_derivative(t,e,s,vertices); f(uv,d) };
         at[i..=j].windows(2).map(|w| gauss(w[0].0,w[1].0,1,&mut integrand)).sum::<f64>()
@@ -191,53 +188,56 @@ fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,pc: &Pcurve,s: &Su
     let mut total = 0.;
     let mut i = 0;
     while i+1 < at.len() {
-        // the span: chords within `SPAN_COS` of its first that has a length
-        let first = (i..at.len()-1).map(chord).find(|&c| norm(c) > 0.);
+        // the span: chords within `SPAN_COS` of its first (one chord where that has no length, and
+        // nothing to read)
         let mut j = i+1;
-        if let Some(d) = first {
-            let d = scale(d,1./norm(d));
+        if let Some(d) = normalised(chord(i)) {
             while j+1 < at.len() && { let c = chord(j); dot(c,d) >= SPAN_COS*norm(c) } { j += 1 }
         }
         let n = sub(at[j].1,at[i].1);
         let len = norm(n);
-        if !(len > 0.) { i = j; continue }
-        let n = scale(n,1./len);
-        // each point's distance along the chord, rising from 0 to `len`
-        let sig: Vec<f64> = at[i..=j].iter().map(|&(_,x)| dot(n,sub(x,at[i].1))).collect();
-        let h0 = dot(n,at[i].1);
-        // `∫ f` over the span on `cells` cells, each a run of its stretches as near alike in number as
-        // they go, and the size of its rounding: the mean size of `f` at its nodes over the span's
-        // length; `None` where a node is not crossed as a graph over the chord
-        let stretches = j-i;
-        let mut read = |cells: usize| -> Option<(f64,f64)> {
-            let (mut size,mut failed) = (0.,false);
-            let mut integrand = |x: f64| {
-                if failed { return 0. }
-                // the stretch holding `x`, and the parabola's point there to start from
-                let a = span(&sig,x);
-                let w = sig[a+1]-sig[a];
-                let fr = if w > 0. { ((x-sig[a])/w).clamp(0.,1.) } else { 0. };
-                let t = at[i+a].0+fr*(at[i+a+1].0-at[i+a].0);
-                let q = tr.guess(t);
-                let stretch = distance(at[i+a].1,at[i+a+1].1);
-                let Some((p,rate)) = tr.across(q,n,h0+x).filter(|&(p,rate)| norm(rate) <= 2. && distance(p,q) <= stretch)
-                    else { failed = true; return 0. };
-                let uv = pc.inverse_of(t,p,e,s).expect("an inverse curve");
-                let y = f(uv,super::topo::in_parameters(s,uv,rate));
-                size += y.abs();
-                y
-            };
-            let cells = cells.min(stretches);
-            let ends: Vec<usize> = (0..=cells).map(|k| k*stretches/cells).collect();
-            let v = ends.windows(2).map(|w| gauss(sig[w[0]],sig[w[1]],1,&mut integrand)).sum::<f64>();
-            (!failed).then_some((v,size*len/(GAUSS.len()*cells) as f64))
-        };
-        // the cells doubled until two readings agree, or each is one stretch
-        let value = settled_by(1,stretches.next_power_of_two().trailing_zeros() as usize,&mut read);
-        total += match value { Some(v) => v,None => by_parameter(i,j,f) };
+        if len > 0. { total += across_span(tr,&at[i..=j],scale(n,1./len),len,e,(ua,ub),s,f).unwrap_or_else(|| by_parameter(i,j,f)) }
         i = j;
     }
     total
+}
+
+/// `∫ f` over one span of a traced edge's points, `at` (each with its parameter), by its distance
+/// along its chord `n` of length `len`; `None` where a node is not crossed as a graph over the chord.
+#[allow(clippy::too_many_arguments)]
+fn across_span(tr: &super::geom::Traced,at: &[(f64,[f64;3])],n: [f64;3],len: f64,e: &super::topo::Edge,(ua,ub): (Uv,Uv),
+    s: &Surface,f: &mut dyn FnMut(Uv,Uv) -> f64) -> Option<f64> {
+    use crate::util::space::{distance,norm,sub};
+    // each point's distance along the chord, rising from 0 to `len`
+    let sig: Vec<f64> = at.iter().map(|&(_,x)| dot(n,sub(x,at[0].1))).collect();
+    let h0 = dot(n,at[0].1);
+    // `∫ f` over the span on `cells` cells, each a run of its stretches as near alike in number as
+    // they go, and the size of its rounding: the mean size of `f` at its nodes over the span's length
+    let stretches = at.len()-1;
+    let mut read = |cells: usize| -> Option<(f64,f64)> {
+        let (mut size,mut failed) = (0.,false);
+        let mut integrand = |x: f64| {
+            if failed { return 0. }
+            // the stretch holding `x`, and the parabola's point there to start from
+            let a = span(&sig,x);
+            let w = sig[a+1]-sig[a];
+            let fr = if w > 0. { ((x-sig[a])/w).clamp(0.,1.) } else { 0. };
+            let t = at[a].0+fr*(at[a+1].0-at[a].0);
+            let q = tr.guess(t);
+            let Some((p,rate)) = tr.across(q,n,h0+x).filter(|&(p,rate)| norm(rate) <= 2. && distance(p,q) <= distance(at[a].1,at[a+1].1))
+                else { failed = true; return 0. };
+            let uv = super::topo::inverse_at(ua,ub,t,p,e,s);
+            let y = f(uv,super::topo::in_parameters(s,uv,rate));
+            size += y.abs();
+            y
+        };
+        let cells = cells.min(stretches);
+        let ends: Vec<usize> = (0..=cells).map(|k| k*stretches/cells).collect();
+        let v = ends.windows(2).map(|w| gauss(sig[w[0]],sig[w[1]],1,&mut integrand)).sum::<f64>();
+        (!failed).then_some((v,size*len/(GAUSS.len()*cells) as f64))
+    };
+    // the cells doubled until two readings agree, or each is one stretch
+    settled_by(1,stretches.next_power_of_two().trailing_zeros() as usize,&mut read)
 }
 
 /// The volume the boundary encloses (negative if it is turned inside out).
@@ -312,8 +312,8 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
                 let mut value = |[u,v]: Uv,d: Uv| { let dv = d[other]; if dv == 0. { 0. } else { sign*big_g(u,v)*dv } };
                 // a traced curve inverted onto the face: read across planes, a span of its points
                 // at a time (#798)
-                if let (EdgeCurve::Curve(Curve::Traced(tr)),Pcurve::Inverse {..}) = (&e.curve,&c.pcurve) {
-                    let line = along_trace(tr,e,&c.pcurve,s,&b.vertices,&mut value);
+                if let (EdgeCurve::Curve(Curve::Traced(tr)),&Pcurve::Inverse {a,b:z}) = (&e.curve,&c.pcurve) {
+                    let line = along_trace(tr,e,[a,z],s,&b.vertices,&mut value);
                     row.push((if c.reversed { -line } else { line },0.));
                     continue
                 }

@@ -71,16 +71,8 @@ impl Pcurve {
         match *self {
             Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
             Pcurve::Line {a,b} => along(a,b,t,edge),
-            Pcurve::Inverse {..} => self.inverse_of(t,edge.point(t,vertices),edge,surface).expect("an inverse curve"),
+            Pcurve::Inverse {a,b} => inverse_at(a,b,t,edge.point(t,vertices),edge,surface),
         }
-    }
-    /// An inverse curve's parameters at `t`, the edge's point there given as `x`: `at`, for what
-    /// reads the edge's curve some other way (`props`, a traced edge read across planes). `None`
-    /// for any other curve.
-    pub(crate) fn inverse_of(&self,t: f64,x: V,edge: &Edge,surface: &Surface) -> Option<Uv> {
-        let Pcurve::Inverse {a,b} = *self else { return None };
-        let near = along(a,b,t,edge);
-        Some(unwrap(surface.inverse_near(x,near),near,surface.periods()))
     }
     /// `d(u, v)/dt` at `t`.
     pub fn derivative(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex]) -> Uv {
@@ -127,6 +119,14 @@ impl Pcurve {
 fn along(a: Uv,b: Uv,t: f64,edge: &Edge) -> Uv {
     let s = if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. };
     [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])]
+}
+
+/// An inverse curve's parameters at `t` (`Pcurve::Inverse {a, b}`), the edge's point there given as
+/// `x`: `Pcurve::at`, for what reads the edge's curve some other way (`props`, a traced edge read
+/// across planes).
+pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv {
+    let near = along(a,b,t,edge);
+    unwrap(surface.inverse_near(x,near),near,surface.periods())
 }
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters

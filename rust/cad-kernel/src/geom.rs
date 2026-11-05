@@ -345,24 +345,32 @@ impl Pipe {
     /// stands beside, not all of them (a coil of six turns was searched whole at every point of its
     /// meetings traced, and a traced meeting with an end disc measured 50 times slower for it).
     pub fn nearest_feet(&self,p: V) -> Option<Vec<f64>> {
-        let Carry::Screw {angle,..} = self.carry else { return None };
+        let Carry::Screw {center,axis,angle,advance} = self.carry else { return None };
         let s1 = norm(self.carry.rate(self.frame.o));
         let n = ((16.*angle.abs()/std::f64::consts::TAU).ceil() as usize).max(1);
-        let vs: Vec<f64> = (0..=n).map(|i| i as f64/n as f64).collect();
-        // each end's reach to `p`, and how far `p` stands from the circle about it: its height off
-        // the circle's plane, square to the spine there, and its reach in it against the radius
-        let (reach,off): (Vec<f64>,Vec<f64>) = vs.iter().map(|&v| {
-            let x = self.spine(v);
+        // the spine's points a stretch apart, each the last screwed on by one stretch's turn (its
+        // sine and cosine found once): each one's reach to `p`, and the nearest point of the pipe in
+        // hand, the circles about them — how far `p` stands from one is its height off the circle's
+        // plane, square to the spine there, and its reach in it against the radius
+        let (sn,cs) = (angle/n as f64).dsin_cos();
+        let rise = scale(axis,advance/n as f64);
+        let (mut x,mut reach,mut best) = (self.frame.o,Vec::with_capacity(n+1),f64::INFINITY);
+        for i in 0..=n {
+            if i > 0 {
+                let d = sub(x,center);
+                x = add(add(center,add(add(scale(d,cs),scale(cross(axis,d),sn)),scale(axis,dot(axis,d)*(1.-cs)))),rise);
+            }
             let d = sub(p,x);
             let (q,h) = (norm(d),dot(d,self.carry.rate(x))/s1);
-            (q,((q*q-h*h).max(0.).sqrt()-self.r).dhypot(h))
-        }).unzip();
-        // a point of the pipe in hand, the nearest of those circles (a hair of slack: a foot at a
-        // stretch's end is read there again by the search)
-        let best = off.iter().fold(f64::INFINITY,|m,&x| m.min(x));
+            let rho = (q*q-h*h).max(0.).sqrt()-self.r;
+            reach.push(q);
+            best = best.min((rho*rho+h*h).sqrt());
+        }
+        // (a hair of slack: a foot at a stretch's end is read there again by the search)
         let slack = best+1e-9*(1.+best+self.r);
+        let w = s1/n as f64;
         let can = |i: usize| {
-            let (sum,w) = (reach[i]+reach[i+1],s1*(vs[i+1]-vs[i]));
+            let sum = reach[i]+reach[i+1];
             let (lo,hi) = (0.5*(sum-w),0.5*(sum+w));
             (lo-self.r).max(self.r-hi).max(0.) <= slack
         };
@@ -373,7 +381,7 @@ impl Pipe {
             if !can(i) { i += 1; continue }
             let mut j = i+1;
             while j < n && can(j) { j += 1 }
-            runs.push([vs[i],vs[j]]);
+            runs.push([i as f64/n as f64,j as f64/n as f64]);
             i = j;
         }
         self.feet_over(p,&runs)
@@ -1478,19 +1486,20 @@ impl Traced {
     pub(crate) fn across(&self,q: V,n: V,h: f64) -> Option<(V,V)> {
         let settled = 4.*f64::EPSILON*(1.+crate::util::space::norm(q));
         let mut p = q;
-        let mut best: (f64,V,Option<V>) = (f64::INFINITY,q,None);
+        let mut best: (f64,Option<(V,V)>) = (f64::INFINITY,None);
         for _ in 0..50 {
             let ((fa,ga),(fb,gb)) = (self.a.side(p),self.b.side(p));
             let fc = dot(n,p)-h;
             let off = fa.abs().max(fb.abs()).max(fc.abs());
             if off >= best.0 { break }
             let t = cross(ga,gb);
-            best = (off,p,Some(scale(t,1./dot(t,n))).filter(|r| r.iter().all(|x| x.is_finite())));
+            let rate = scale(t,1./dot(t,n));
+            best = (off,rate.iter().all(|x| x.is_finite()).then_some((p,rate)));
             if off <= settled { break }
             let Some(step) = crate::util::roots::least_norm_step(&[ga,gb,n],&[fa,fb,fc]) else { break };
             p = sub(p,step);
         }
-        best.2.map(|rate| (best.1,rate))
+        best.1
     }
     /// The point a fraction `f` along the stretch from point `i` to the next, on the parabola through
     /// it, the next and a neighbour, parameterised by their chords' lengths: a chord's sag, quadratic
