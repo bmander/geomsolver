@@ -154,6 +154,44 @@ fn a_root_certified_over_a_flat_system_is_where_it_is() {
     }
 }
 
+/// **A crossing on the face two halves of a box share is found, once** (#796, `isolate::solve`):
+/// a line against a bilinear sheet (the wall of brep-bench's saddle drum, `y = 10` between the
+/// floor `z = −5` and the saddle `z = 10 + xy/8`), read over stretches centred on where it crosses,
+/// so the crossing stands on the face the search halves its first box along. Read as halves
+/// meeting at that face, it stood on the edge of each: Kantorovich's ball about the middle reached
+/// a hair past the face, so neither half certified it, and each was halved again with the crossing
+/// still on its face until rounding put it a hair outside both and both were dropped — a ray from
+/// inside the saddle block missed the wall, and the block's inside read as out. Each box is read
+/// grown past its sides, so the crossing is inside both halves, and the two finding it are one.
+#[test]
+fn a_crossing_on_the_face_two_halves_share_is_found_once() {
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::nurbs::Net;
+    use gcs_core::brep::query::{curve_surface,Meets};
+    let saddle = |x: f64,y: f64| 10.+x*y/8.;
+    let l = vec![0.,0.,1.,1.];
+    let wall = Net {du:1,dv:1,uknots:l.clone(),vknots:l,
+        poles:vec![vec![[-10.,10.,-5.],[10.,10.,-5.]],vec![[-10.,10.,saddle(-10.,10.)],[10.,10.,saddle(10.,10.)]]],weights:None};
+    let wall = Surface::BSpline(Frame::WORLD,std::sync::Arc::new(wall));
+    let (mut failed,mut read) = (Vec::new(),0);
+    for p in [[3.,3.,0.],[-9.,-9.,-1.],[0.,0.,5.],[-4.,2.,8.],[6.,-7.,-3.]] {
+        for d in [[0.5773,0.6124,0.5402],[-0.3172,0.8123,-0.4893],[0.2,0.9,0.1],[0.05,1.,-0.3]] {
+            let d = gcs_core::space::normalised(d).unwrap();
+            let t = (10.-p[1])/d[1];
+            let q = [p[0]+d[0]*t,10.,p[2]+d[2]*t];
+            if q[0].abs() >= 10. || q[2] <= -5. || q[2] >= saddle(q[0],10.) { continue }
+            for h in [3.26763806389766,1.,0.1,7.3] {
+                read += 1;
+                match curve_surface(&Curve::Line {p,d},[t-h,t+h],&wall,4e-11) {
+                    Meets::At(r) if r.len() == 1 && !r[0].1 && (r[0].0-t).abs() <= 1e-9 => {}
+                    m => failed.push(format!("from {p:?} along {d:?}, {h} either side of {t}: {m:?}")),
+                }
+            }
+        }
+    }
+    assert!(read > 20 && failed.is_empty(),"{} of {read}:\n{}",failed.len(),failed.join("\n"));
+}
+
 /// **A double root a stretch ends on is found** (#780 R2, `isolate::roots`): `g = −A(1 + ε) − A
 /// sin t` over `[0, 2π]`, its turn at `3π/2` a hair below nought — the middle of the stretch's
 /// second half, so halving leaves it at the end of the stretches either side. There `|g'(m)|` is

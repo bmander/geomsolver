@@ -14,6 +14,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   coinciding along their shared edges. `query::Located::face_holds` (**new**): whether a face
   holds a point of a surface the same as its own, on its patch too where its surface has a rim,
   which the arrangement's coincidences now ask in place of `face_place`.
+- **A root on the face two halves of a box share is found** (#796, `util::isolate::solve`): each
+  box is read grown past its sides by `isolate::GROW` (**new**), and Kantorovich's theorem read in
+  the norm that box is the unit ball of, so a crossing at the middle of a stretch is certified
+  rather than dropped by both halves. A ray from inside a bilinear B-spline block met its side
+  there and missed it, so points inside the block read as outside, and the block in common with a
+  cylinder (brep-bench's `geometry/saddle-drum`) was refused: built again, as 0.3.0 built it.
+- **A B-spline sheet's foot is not left on its rim** (`Surface::inverse_near`, `inverse`): a
+  parameter held at the patch's edge is let go where the descent pulls it back in, where the foot
+  was returned on the edge a long way from a point of the patch.
 
 ## [0.4.0] - 2026-11-05
 

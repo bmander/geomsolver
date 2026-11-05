@@ -626,13 +626,18 @@ fn net_newton(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
         uv = next;
         // still: at a foot, or at the domain's edge with the point beyond it (the nearest the domain has)
         if moved <= 1e-14*size { return Some(uv) }
-        // settled along the edge: the free parameter's gap square to the surface
+        // settled along the edge: the free parameter's gap square to the surface, and the descent
+        // still pushing the held one out. Where it no longer does, the edge is let go and the next
+        // step is a joint one: the free parameter settled first can leave the held one pulled
+        // back in (a point inside a bilinear wall, held at its rim while its height was wrong,
+        // returned on the rim a long way off, and the point read outside the face, #796)
         if held_u || held_v {
             let (x,xu,xv) = n.d1(uv[0],uv[1]);
             let e = sub(x,p);
             let gap = dot(e,e).sqrt();
-            let d = if held_u { xv } else { xu };
-            if dot(e,d).abs() <= 1e-9*gap*dot(d,d).sqrt() { return Some(uv) }
+            let (d,out) = if held_u { (xv,(uv[0] <= u0 && dot(xu,e) > 0.) || (uv[0] >= u1 && dot(xu,e) < 0.)) }
+                else { (xu,(uv[1] <= v0 && dot(xv,e) > 0.) || (uv[1] >= v1 && dot(xv,e) < 0.)) };
+            if out && dot(e,d).abs() <= 1e-9*gap*dot(d,d).sqrt() { return Some(uv) }
         }
     }
     None
