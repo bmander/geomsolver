@@ -99,9 +99,8 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
         // turns into): the ellipse's roots on the circle's cylinder, certified — its trigonometric
         // quartic bounded by its amplitudes (`conic_algebraic`) — so a touch is one root, the vertex
         // where the two are tangent, whatever the rounding
-        (&Curve::Circle(f,r),Curve::Ellipse(g,..)) | (Curve::Ellipse(g,..),&Curve::Circle(f,r))
+        (&Curve::Circle(f,r),ellipse @ Curve::Ellipse(g,..)) | (ellipse @ Curve::Ellipse(g,..),&Curve::Circle(f,r))
             if norm(cross(f.z,g.z)) <= 1e-12 && dot(sub(g.o,f.o),f.z).abs() <= tol => {
-            let ellipse = if matches!(a,Curve::Ellipse(..)) { a } else { b };
             match curve_surface(ellipse,[0.,std::f64::consts::TAU],&Surface::Cylinder(f,r.abs()),tol) {
                 Meets::At(roots) => roots.into_iter().map(|(t,_)| ellipse.point(t)).collect(),
                 // the ellipse a circle of the same radius about the same centre: running along one
@@ -625,7 +624,7 @@ fn line_revolution(p: V,d: V,f: &super::geom::Frame,c: &Curve,surface: &Surface,
 fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surface: &Surface,tol: f64) -> Certified {
     use crate::turned::{Iv,Jet};
     let g = &m.frame;
-    if m.posed.is_some() { return Err(Uncertified::NoForm) }
+    if m.posed { return Err(Uncertified::NoForm) }
     if norm(crate::util::space::cross(g.z,f.z)) > 1e-12 || norm(crate::util::space::cross(crate::util::space::sub(f.o,g.o),g.z)) > tol {
         return Err(Uncertified::NoForm)
     }
@@ -641,24 +640,24 @@ fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surfac
     let most = |j: Jet<Iv>| match (j.d.most(),j.dd.most()) { (Some(x),Some(y)) => [x,y],_ => [f64::INFINITY;2] };
     let mut out: Vec<(f64,bool)> = Vec::new();
     if dz.abs() > 1e-12*speed {
-        // G of the meridian's jet, in floats or in intervals
-        fn big<T: crate::turned::Num>([r,z]: [Jet<T>;2],(a,b,cc,dz,z0): (f64,f64,f64,f64,f64)) -> Jet<T> {
+        // G of the meridian's jet, its radius read squared, in floats or in intervals
+        fn big<T: crate::turned::Num>([r2,z]: [Jet<T>;2],(a,b,cc,dz,z0): (f64,f64,f64,f64,f64)) -> Jet<T> {
             let n = z-Jet::of(z0);
-            (n*n).times(a)+n.times(b*dz)+Jet::of(cc*dz*dz)-(r*r).times(dz*dz)
+            (n*n).times(a)+n.times(b*dz)+Jet::of(cc*dz*dz)-r2.times(dz*dz)
         }
         let k = (a,b,cc,dz,q[2]);
-        let jet = |s: f64| big(m.contact.meridian(Jet::at(s)),k);
-        let t_of = |s: f64| (m.contact.meridian(Jet::at(s))[1].v-q[2])/dz;
+        let jet = |s: f64| big(m.contact.meridian2(Jet::at(s)),k);
+        let t_of = |s: f64| (m.contact.meridian2(Jet::at(s))[1].v-q[2])/dz;
         let at = |s: f64| add(p,scale(d,t_of(s)));
-        let bound = |x: f64,y: f64| most(big(m.contact.meridian(Jet::at(Iv::new(x,y))),k));
+        let bound = |x: f64,y: f64| most(big(m.contact.meridian2(Jet::at(Iv::new(x,y))),k));
         for r in crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|s| surface.implicit(at(s)).abs() <= tol)? {
             out.push((t_of(r.at),r.touch));
         }
     } else {
         // a level line: the circles at its height, each met as a chord
         let (flat,from) = (g.dir([e[0],e[1],0.]),g.dir([q[0],q[1],0.]));
-        let jet = |s: f64| m.contact.meridian(Jet::at(s))[1]-Jet::of(q[2]);
-        let bound = |x: f64,y: f64| most(m.contact.meridian(Jet::at(Iv::new(x,y)))[1]);
+        let jet = |s: f64| m.contact.meridian2(Jet::at(s))[1]-Jet::of(q[2]);
+        let bound = |x: f64,y: f64| most(m.contact.meridian2(Jet::at(Iv::new(x,y)))[1]);
         for r in crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|_| false)? {
             let rho = m.contact.meridian(Jet::at(r.at))[0].v;
             if let Meets::At(found) = line_chord(from,flat,rho.abs(),tol) { out.extend(found) }

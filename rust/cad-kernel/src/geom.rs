@@ -933,6 +933,13 @@ impl Surface {
                 let uv = self.swept_inverse(p,&|q,k| b.refined(q,hint[k])).expect("a swept curve");
                 if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
             }
+            // a turned contact's meridian likewise, by Newton from the hint's slant (#780 C3: read
+            // afresh, its samples were most of a turned build's time)
+            Surface::Revolution(_,c) if matches!(**c,Curve::Turned(_)) => {
+                let Curve::Turned(t) = &**c else { unreachable!() };
+                let uv = self.swept_inverse(p,&|q,k| t.newton(q,hint[k])).expect("a swept curve");
+                if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
+            }
             _ => self.inverse(p),
         }
     }

@@ -556,12 +556,12 @@ turned once (`ProfileEdge::Turned`, `build::revolve`); refused (`Curved`) unless
 curve all along — its discriminant held above nought and it off the axis, proved over the span by the
 intervals (`Turned::defined`) — and its height climbs one way (`Turned::climbs`). The face at each end
 pose (its own surface a fortieth past its span) touches that surface along its contact turned there,
-`Turned::posed`, in closed form (`ssi`'s `own_contact`, held only where the face stands on one side of
+`Turned::posed` (the contact itself, in the turn's frame turned by the pose), in closed form (`ssi`'s `own_contact`, held only where the face stands on one side of
 the surface over its heights; traced, the touch came apart in two). A line meets the surface
 certified (`query::line_turned`: `G = a N² + b D N + c D² − D² ρ(v)²` isolated with `G'` and `G''`
 bounded by the interval jets — any meridian with bounded derivatives, not only a conic); two coaxial
 such surfaces, or one and a plane, a cylinder, a cone or a torus about the axis, meet in circles where
-their meridians cross (`ssi`'s `Meridian::Spline` reads a turned contact's meridian as a spline's). An
+their meridians cross (`ssi`'s `Meridian::Curve` reads a turned contact's meridian as a spline's). An
 axis in one plane with the turn's touches along its two generators there, turned into hyperboloids,
 and one crossing the turn's axis within the face is refused. A rim lying in a plane square to the
 axis — an ellipse a level plane cuts from a leaning drum, or from a cone (a plane cutting every

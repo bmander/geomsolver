@@ -12,9 +12,8 @@ use gcs_core::brep::build::{disc,prism};
 use gcs_core::brep::geom::{Curve,Frame,Surface};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::closed::closed;
-use gcs_core::brep::swept::member::{Solid,Swept};
 use gcs_core::brep::topo::Brep;
-use gcs_core::brep::trajectory::{Screw,Trajectory};
+use gcs_core::brep::trajectory::Trajectory;
 use gcs_core::brep::turned::{Contact,Jet,Turned};
 use gcs_core::space::{add,cross,dot,norm,scale,sub,unit};
 use std::f64::consts::{PI,TAU};
@@ -22,7 +21,15 @@ use std::f64::consts::{PI,TAU};
 type V = [f64;3];
 
 /// The turn by `angle` about the world's `z` axis over the roll `[0, 1]`.
-fn turn(angle: f64) -> Trajectory { Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:angle,advance:0.}) }
+fn turn(angle: f64) -> Trajectory { crate::swept_closed::turn([0.;3],[0.,0.,1.],angle) }
+
+/// The way the gates' tools lean: 25° from the turn's axis, in the plane `y = 0`.
+fn leaning() -> V { let beta = 25f64.to_radians(); [beta.sin(),0.,beta.cos()] }
+
+/// `long` cut between the level planes `z = bottom` and `z = 1.5`.
+fn level_cut(long: &Brep,bottom: f64) -> Brep {
+    gcs_core::brep::boolean::combined(long,&block([-10.,-10.,bottom],[10.,10.,1.5]),gcs_core::brep::boolean::Op::Common,1e-9).unwrap()
+}
 
 /// The contacts of a drum and a frustum leaning to the world's `z`, each side's (their faces'
 /// axes through `o` along `a`, ring frames `Frame::new(o, a, ring(a))`).
@@ -159,9 +166,8 @@ fn a_line_meets_a_turned_contacts_surface_where_sampling_finds_it() {
             let z = |v: f64| t.d2(v).0[2];
             let (za,zb) = (z(a),z(b));
             if (x[2]-za)*(x[2]-zb) > 0. { return None }
-            let (mut lo,mut hi) = (a,b);
-            for _ in 0..80 { let m = 0.5*(lo+hi); if (z(m)-x[2])*(za-x[2]) > 0. { lo = m } else { hi = m } }
-            Some(x[0].hypot(x[1])-t.d2(0.5*(lo+hi)).0[0])
+            let v = gcs_core::roots::bracketed_root(|v| Some(z(v)-x[2]),a,za-x[2],b,zb-x[2],1e-15);
+            Some(x[0].hypot(x[1])-t.d2(v).0[0])
         };
         let mut sampled = 0;
         let mut last: Option<f64> = None;
@@ -195,7 +201,8 @@ fn a_leaning_face_at_a_pose_meets_its_contacts_surface_along_its_contact_turned(
         let Ssi::Curves(curves) = intersect(&face,&revolution,1e-9) else { panic!("{what}: traced") };
         assert_eq!(curves.len(),1,"{what}");
         let Curve::Turned(ref posed) = curves[0] else { panic!("{what}: {:?}",curves[0]) };
-        let turned = posed.posed.expect("posed");
+        assert!(posed.posed,"{what}: posed");
+        let turned = posed.frame.x[1].atan2(posed.frame.x[0]);
         assert!(((turned-theta).rem_euclid(TAU)).min(TAU-(turned-theta).rem_euclid(TAU)) <= 1e-12,"{what}: posed at {turned}");
         for k in 0..=16 {
             let v = t.span[0]+(t.span[1]-t.span[0])*k as f64/16.;
@@ -232,10 +239,7 @@ fn a_circle_and_an_ellipse_in_one_plane_cross_where_certified() {
 
 /// A leaning drum: radius 1 about the axis through `(5, 1.2, 0)` along `a`, cut by the level planes
 /// `z = ±1.5` — its rims there ellipses in level planes.
-fn leaning_drum(a: V) -> Brep {
-    let long = prism(&disc(sub([5.,1.2,0.],scale(a,3.)),a,1.),0.,6.).unwrap();
-    gcs_core::brep::boolean::combined(&long,&block([-10.,-10.,-1.5],[10.,10.,1.5]),gcs_core::brep::boolean::Op::Common,1e-9).unwrap()
-}
+fn leaning_drum(a: V) -> Brep { level_cut(&prism(&disc(sub([5.,1.2,0.],scale(a,3.)),a,1.),0.,6.).unwrap(),-1.5) }
 
 /// The radii the level slice at height `z` of the leaning drum spans about the world's `z` axis:
 /// its ellipse, centre on the drum's axis at that height, its radii `1 / cos β` along the axis's
@@ -263,24 +267,6 @@ fn drum_spans(a: V,z: f64) -> (f64,f64) {
     (polish(near),polish(far))
 }
 
-/// `built` read against membership at seeded points of its box.
-fn agrees(built: &Brep,tool: &Brep,path: &Trajectory) {
-    let (solid,body) = (Solid::new(tool,0.002,1.).unwrap(),Solid::new(built,0.002,1.).unwrap());
-    let swept = Swept {tool:&solid,path,roll:[0.,1.]};
-    let (lo,hi) = built.bounds();
-    let mut rng = gcs_core::rng::Rng::new(6);
-    let mut held = 0;
-    for _ in 0..200 {
-        let p: V = std::array::from_fn(|k| rng.uniform(lo[k]-0.2,hi[k]+0.2));
-        let d = body.signed_distance(p);
-        if d.abs() < 0.01 { continue }
-        let Ok(member) = swept.member(p) else { continue };
-        assert_eq!(member,d < 0.,"at {p:?}: membership {member}, the built solid's distance {d}");
-        held += 1;
-    }
-    assert!(held > 150,"{held} points held");
-}
-
 /// **A Monte Carlo of the sweep's definition**, apart from the kernel's membership: the swept set
 /// is the tool's points turned by every angle of the roll, so a point is in it where turned back by
 /// some angle in `[0, angle]` it is in the tool — read off `inside` (the tool's own analytic test,
@@ -288,21 +274,9 @@ fn agrees(built: &Brep,tool: &Brep,path: &Trajectory) {
 /// box: the volume they say and its standard error.
 fn monte_carlo(built: &Brep,inside: &dyn Fn(V) -> f64,angle: f64,n: usize) -> (f64,f64) {
     let (lo,hi) = built.bounds();
-    let (lo,hi): (V,V) = (lo.map(|x| x-0.1),hi.map(|x| x+0.1));
     let steps = (angle.to_degrees()*4.).ceil() as usize;
-    let mut rng = gcs_core::rng::Rng::new(29);
-    let mut hits = 0;
-    for _ in 0..n {
-        let p: V = std::array::from_fn(|k| rng.uniform(lo[k],hi[k]));
-        let held = (0..=steps).any(|k| {
-            let (s,c) = (-angle*k as f64/steps as f64).sin_cos();
-            inside([c*p[0]-s*p[1],s*p[0]+c*p[1],p[2]]) <= 0.
-        });
-        if held { hits += 1 }
-    }
-    let boxed = (0..3).map(|k| hi[k]-lo[k]).product::<f64>();
-    let f = hits as f64/n as f64;
-    (boxed*f,boxed*(f*(1.-f)/n as f64).sqrt())
+    let back: Vec<gcs_core::brep::geom::Rigid> = (0..=steps).map(|k| gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],-angle*k as f64/steps as f64)).collect();
+    crate::swept_closed::monte_carlo(lo.map(|x| x-0.1),hi.map(|x| x+0.1),n,29,&|p| back.iter().any(|m| inside(m.point(p)) <= 0.))
 }
 
 /// The part of a turn the gates turn their tools through besides the whole, 100°.
@@ -325,7 +299,7 @@ fn turned_whole(what: &str,tool: &Brep,inside: &dyn Fn(V) -> f64,whole: f64) {
     let path = turn(TAU);
     let built = closed(tool,&path,[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("{what} turned whole: {e:?}"));
     assert!((volume(&built)-whole).abs() <= 1e-9*whole,"{what} turned whole: {} against {whole}",volume(&built));
-    agrees(&built,tool,&path);
+    crate::swept_closed::agrees(&built,tool,&path);
     let (sampled,error) = monte_carlo(&built,inside,TAU,20000);
     assert!((sampled-whole).abs() <= 4.*error,"{what} turned whole: sampled {sampled} ± {error} against {whole}");
 }
@@ -336,7 +310,7 @@ fn turned_part(what: &str,tool: &Brep,inside: &dyn Fn(V) -> f64,whole: f64,conve
     let path = turn(PART);
     match closed(tool,&path,[0.,1.],0.002,1e-6) {
         Ok(built) => {
-            agrees(&built,tool,&path);
+            crate::swept_closed::agrees(&built,tool,&path);
             let (sampled,error) = monte_carlo(&built,inside,PART,20000);
             assert!((sampled-volume(&built)).abs() <= 4.*error,"{what} turned {PART}: sampled {sampled} ± {error} against {}",volume(&built));
             if convex {
@@ -360,8 +334,7 @@ fn turned_part(what: &str,tool: &Brep,inside: &dyn Fn(V) -> f64,whole: f64,conve
 /// (`turned_both_ways`).
 #[test]
 fn a_leaning_drum_turned_closes_into_its_sweep() {
-    let beta = 25f64.to_radians();
-    let a = [beta.sin(),0.,beta.cos()];
+    let a = leaning();
     let tool = leaning_drum(a);
     let whole = simpson(-1.5,1.5,400,|z| { let (n,f) = drum_spans(a,z); PI*(f*f-n*n) });
     let o = [5.,1.2,0.];
@@ -376,9 +349,11 @@ fn a_leaning_drum_turned_closes_into_its_sweep() {
 fn convex_spans(inside: &dyn Fn(V) -> f64,centre: [f64;2],z: f64) -> (f64,f64) {
     let edge = |phi: f64| -> [f64;2] {
         let u = [phi.cos(),phi.sin()];
+        // (by bisection: `inside` is a most of several, kinked where they change hands)
+        let along = |m: f64| inside([centre[0]+m*u[0],centre[1]+m*u[1],z]);
         let (mut lo,mut hi) = (0.,1.);
-        while inside([centre[0]+hi*u[0],centre[1]+hi*u[1],z]) <= 0. { hi *= 2. }
-        for _ in 0..56 { let m = 0.5*(lo+hi); if inside([centre[0]+m*u[0],centre[1]+m*u[1],z]) <= 0. { lo = m } else { hi = m } }
+        while along(hi) <= 0. { hi *= 2. }
+        for _ in 0..56 { let m = 0.5*(lo+hi); if along(m) <= 0. { lo = m } else { hi = m } }
         [centre[0]+lo*u[0],centre[1]+lo*u[1]]
     };
     let rho = |phi: f64| { let p = edge(phi); p[0].hypot(p[1]) };
@@ -418,7 +393,7 @@ fn ball_on_a_stem(beta: f64) -> (Brep,V,V) {
         ProfileEdge::Line {a:f.at([STEM,0.,5.]),b:f.at([0.,0.,5.])},ProfileEdge::Line {a:f.at([0.,0.,5.]),b:f.at([0.,0.,-1.])}]]};
     let m = Rigid::turn([0.;3],[0.,1.,0.],beta).then(&Rigid {t:[5.,1.2,-1.],..Rigid::identity()});
     let stem = revolve(&profile,f.o,f.z,TAU).unwrap().moved(&m);
-    let tool = gcs_core::brep::boolean::combined(&stem,&block([-10.,-10.,-10.],[10.,10.,1.5]),gcs_core::brep::boolean::Op::Common,1e-9).unwrap();
+    let tool = level_cut(&stem,-10.);
     (tool,m.point([0.;3]),m.vector([0.,0.,1.]))
 }
 
@@ -523,12 +498,11 @@ fn a_ball_tilted_on_a_stem_turned_part_of_a_turn_is_cut_right_or_refused_by_name
 /// (`turned_both_ways`).
 #[test]
 fn a_leaning_frustum_turned_closes_into_its_sweep() {
-    let beta = 25f64.to_radians();
-    let a = [beta.sin(),0.,beta.cos()];
+    let a = leaning();
     let base = sub([5.,1.2,0.],scale(a,3.));
     let (r0,r1,h) = (1.2,0.7,6.);
     let long = gcs_core::brep::build::cone(base,a,r0,r1,h).unwrap();
-    let tool = gcs_core::brep::boolean::combined(&long,&block([-10.,-10.,-1.5],[10.,10.,1.5]),gcs_core::brep::boolean::Op::Common,1e-9).unwrap();
+    let tool = level_cut(&long,-1.5);
     let inside = |p: V| {
         let w = sub(p,base);
         let t = dot(w,a);
@@ -559,7 +533,7 @@ fn rounded_key(a: V) -> (Brep,V) {
         ProfileEdge::Arc {frame:Frame::new(c2,a,w),r,span:Some([half,3.*half])},
         ProfileEdge::Line {a:sub(c2,scale(v,r)),b:sub(c1,scale(v,r))}]]};
     let long = prism(&profile,0.,6.).unwrap();
-    (gcs_core::brep::boolean::combined(&long,&block([-10.,-10.,-1.5],[10.,10.,1.5]),gcs_core::brep::boolean::Op::Common,1e-9).unwrap(),w)
+    (level_cut(&long,-1.5),w)
 }
 
 /// `rounded_key`'s radius and its segment's half-length.
@@ -591,8 +565,7 @@ fn a_rounded_key_leaning_to_the_axis_turned_part_of_a_turn_closes_into_its_sweep
 /// `rounded_key` leaning 25°, its own test (below nought within it), and the volume it sweeps
 /// turned whole, worked apart from any build.
 fn keyed() -> (Brep,impl Fn(V) -> f64,f64) {
-    let beta = 25f64.to_radians();
-    let a = [beta.sin(),0.,beta.cos()];
+    let a = leaning();
     let (tool,w) = rounded_key(a);
     let o = [5.,1.2,0.];
     let inside = move |p: V| {

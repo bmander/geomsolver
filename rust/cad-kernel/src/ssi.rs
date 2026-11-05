@@ -8,7 +8,7 @@
 //! for (`unseen`).
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use super::geom::{Carry,Curve,Frame,Surface,V};
+use super::geom::{Carry,Curve,Frame,Rigid,Surface,V};
 use super::plane2;
 use crate::util::space::{add,cross,distance,dot,norm,scale,segment_distance,sub,unit};
 
@@ -33,9 +33,9 @@ pub(super) enum Meridian {
     Line { p: [f64;2],d: [f64;2] },
     /// A circle about `c` of radius `r`.
     Circle { c: [f64;2],r: f64 },
-    /// A curve turned about the axis — a B-spline, or a turned contact's meridian (#780 C3) — and
-    /// the point and direction that axis runs through.
-    Spline(Curve,V,V),
+    /// A curve turned about the axis — a B-spline, or a turned contact's meridian (#780 C3) — over
+    /// its domain, and the point and direction that axis runs through.
+    Curve(Curve,[f64;2],V,V),
 }
 
 impl Meridian {
@@ -45,7 +45,7 @@ impl Meridian {
             Meridian::Level(h) => z-h,
             Meridian::Line {p,d} => (r-p[0])*d[1]-(z-p[1])*d[0],
             Meridian::Circle {c,r: rad} => (r-c[0]).dhypot(z-c[1])-rad,
-            Meridian::Spline(..) => unreachable!("a spline meridian has no closed-form distance"),
+            Meridian::Curve(..) => unreachable!("a curve meridian has no closed-form distance"),
         }
     }
     /// The gradient of `implicit` in `(ρ, z)`.
@@ -58,15 +58,9 @@ impl Meridian {
                 let l = x.dhypot(y);
                 if l > 0. { [x/l,y/l] } else { [1.,0.] }
             }
-            Meridian::Spline(..) => unreachable!("a spline meridian has no closed-form distance"),
+            Meridian::Curve(..) => unreachable!("a curve meridian has no closed-form distance"),
         }
     }
-}
-
-/// The stretch of parameter a curve meridian is read over: a B-spline's knots' domain, a turned
-/// contact's span.
-fn domain(s: &Curve) -> [f64;2] {
-    match s { Curve::BSpline(b) => b.domain(),Curve::Turned(t) => t.span,_ => unreachable!("a meridian curve is a spline or a turned contact") }
 }
 
 /// A spline meridian's point at `t` in `(ρ, z)` about the axis through `o` along the unit `z`.
@@ -89,12 +83,12 @@ fn rz_jet(s: &Curve,o: V,z: V,t: f64) -> ([f64;2],[f64;2]) {
 
 /// Where a spline meridian crosses or touches another (not a spline), in `(ρ, z)`: the other's
 /// distance along it, its roots and touches found by `spline_roots`.
-fn spline_cross(s: &Curve,o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
+fn spline_cross(s: &Curve,dom: [f64;2],o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
     let rz = |t: f64| rz_at(s,o,z,t);
     let at = |t: f64| { let [r,h] = rz(t); [r,h,0.] };
     // the distance's rate along the spline: the gradient in (ρ, z) against how fast ρ and z run
     let rate = |t: f64| { let (q,dq) = rz_jet(s,o,z,t); let g = other.gradient(q); g[0]*dq[0]+g[1]*dq[1] };
-    spline_roots(s,&|t| other.implicit(rz(t)),&rate,&at,tol).into_iter().map(rz).collect()
+    spline_roots(s,dom,&|t| other.implicit(rz(t)),&rate,&at,tol).into_iter().map(rz).collect()
 }
 
 /// **Where two spline meridians cross or touch, in `(ρ, z)`** (#735 A2's coaxial surfaces of
@@ -103,9 +97,9 @@ fn spline_cross(s: &Curve,o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
 /// the second's normal there (`spline_roots`, as `spline_cross` reads a line or a circle), each
 /// root held to lie within `tol` of the second. `None` where the two run together over a stretch
 /// (no finite set of circles): left to be traced.
-fn spline_spline(a: &Curve,b: &Curve,o: V,z: V,tol: f64) -> Option<Vec<[f64;2]>> {
-    let [b0,b1] = domain(b);
-    let seeds: Vec<(f64,[f64;2])> = spline_samples(b).into_iter().map(|u| (u,rz_at(b,o,z,u))).collect();
+fn spline_spline((a,da): (&Curve,[f64;2]),(b,db): (&Curve,[f64;2]),o: V,z: V,tol: f64) -> Option<Vec<[f64;2]>> {
+    let [b0,b1] = db;
+    let seeds: Vec<(f64,[f64;2])> = spline_samples(b,db).into_iter().map(|u| (u,rz_at(b,o,z,u))).collect();
     // the second's nearest point to `p` (from its nearest sample, by Newton on (B − p)·B', held to
     // its domain, to a step its rounding allows), and its unit normal there
     let nearest = |p: [f64;2]| -> ([f64;2],[f64;2]) {
@@ -125,28 +119,27 @@ fn spline_spline(a: &Curve,b: &Curve,o: V,z: V,tol: f64) -> Option<Vec<[f64;2]>>
     };
     let g = |t: f64| { let p = rz_at(a,o,z,t); let (q,n) = nearest(p); (p[0]-q[0])*n[0]+(p[1]-q[1])*n[1] };
     let dg = |t: f64| { let (p,dp) = rz_jet(a,o,z,t); let (_,n) = nearest(p); n[0]*dp[0]+n[1]*dp[1] };
-    let ts = spline_samples(a);
+    let ts = spline_samples(a,da);
     let gs: Vec<f64> = ts.iter().map(|&t| g(t)).collect();
     // running together over a stretch: three samples in a row on the second
     if gs.windows(3).any(|w| w.iter().all(|x| x.abs() <= tol)) { return None }
     let at = |t: f64| { let [r,h] = rz_at(a,o,z,t); [r,h,0.] };
-    Some(roots_among(a,&ts,&gs,&g,&dg,&at,tol).into_iter().map(|t| rz_at(a,o,z,t))
+    Some(roots_among(da,&ts,&gs,&g,&dg,&at,tol).into_iter().map(|t| rz_at(a,o,z,t))
         .filter(|&p| { let (q,_) = nearest(p); (p[0]-q[0]).dhypot(p[1]-q[1]) <= tol }).collect())
 }
 
 /// The parameters at which `g` along the spline `s`, its rate `dg`, comes to zero within `tol`
 /// (`util::roots::sampled_roots`: a crossing, or a touch where `dg` turns): one each where `at`
 /// puts them within `tol` of each other.
-fn spline_roots(s: &Curve,g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,at: &dyn Fn(f64) -> V,tol: f64) -> Vec<f64> {
-    let ts = spline_samples(s);
+fn spline_roots(s: &Curve,dom: [f64;2],g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,at: &dyn Fn(f64) -> V,tol: f64) -> Vec<f64> {
+    let ts = spline_samples(s,dom);
     let gs: Vec<f64> = ts.iter().map(|&t| g(t)).collect();
-    roots_among(s,&ts,&gs,g,dg,at,tol)
+    roots_among(dom,&ts,&gs,g,dg,at,tol)
 }
 
 /// `spline_roots` from `g` read already at the spline's samples `ts` (`gs`).
-fn roots_among(s: &Curve,ts: &[f64],gs: &[f64],g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,
+fn roots_among([a,b]: [f64;2],ts: &[f64],gs: &[f64],g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,
     at: &dyn Fn(f64) -> V,tol: f64) -> Vec<f64> {
-    let [a,b] = domain(s);
     let mut out: Vec<f64> = Vec::new();
     for r in crate::util::roots::sampled_roots(g,dg,ts,gs,tol,1e-15*(b-a)) {
         if !out.iter().any(|&u| distance(at(u),at(r.at)) <= tol) { out.push(r.at) }
@@ -155,8 +148,7 @@ fn roots_among(s: &Curve,ts: &[f64],gs: &[f64],g: &dyn Fn(f64) -> f64,dg: &dyn F
 }
 
 /// Where a spline's crossings are looked for: 32 steps a knot span, both ends included.
-fn spline_samples(s: &Curve) -> Vec<f64> {
-    let [a,b] = domain(s);
+fn spline_samples(s: &Curve,[a,b]: [f64;2]) -> Vec<f64> {
     let mut cuts = vec![a];
     cuts.extend(s.breaks([a,b]));
     cuts.push(b);
@@ -193,14 +185,14 @@ fn extruded(f: &Frame,c: &Curve,s: &Surface,tol: f64) -> Option<Vec<Curve>> {
     let gap = |t: f64| s.implicit(sp.point(t));
     let rate = |t: f64| { let (p,d) = sp.d1(t); dot(s.gradient(p),d) };
     let [t0,t1] = sp.domain();
-    for w in spline_samples(c).windows(2) {
+    for w in spline_samples(c,sp.domain()).windows(2) {
         let (r0,r1) = (rate(w[0]),rate(w[1]));
         if (r0 < 0.) == (r1 < 0.) { continue }
         let x = crate::util::roots::bracketed_root(|t| Some(rate(t)),w[0],r0,w[1],r1,1e-15*(t1-t0));
         let g = gap(x);
         if g.abs() <= tol || g*gap(w[0]) <= 0. && g*gap(w[1]) <= 0. { return None }
     }
-    let roots = spline_roots(c,&gap,&rate,&|t| sp.point(t),tol);
+    let roots = spline_roots(c,sp.domain(),&gap,&rate,&|t| sp.point(t),tol);
     roots.iter().all(|&t| steep(t,sp.point(t)))
         .then(|| roots.into_iter().map(|t| Curve::Line {p:sp.point(t),d:f.z}).collect())
 }
@@ -265,8 +257,8 @@ pub(super) fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
         }
         Surface::Torus(_,big,r) => Some(Meridian::Circle {c:[big,height(f.o)],r}),
         Surface::Revolution(_,ref c) => match &**c {
-            Curve::BSpline(_) => Some(Meridian::Spline((**c).clone(),o,z)),
-            Curve::Turned(t) if t.posed.is_none() => Some(Meridian::Spline((**c).clone(),o,z)),
+            Curve::BSpline(b) => Some(Meridian::Curve((**c).clone(),b.domain(),o,z)),
+            Curve::Turned(t) if !t.posed => Some(Meridian::Curve((**c).clone(),t.span,o,z)),
             _ => None,
         },
         Surface::Affine(..) | Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
@@ -280,7 +272,7 @@ fn cross2(a: Meridian,b: Meridian,tol: f64) -> Option<Vec<[f64;2]>> {
         Level(h) => plane2::Carrier::Line {p:[0.,h],d:[1.,0.]},
         Line {p,d} => plane2::Carrier::Line {p,d},
         Circle {c,r} => plane2::Carrier::Circle {c,r},
-        Spline(..) => unreachable!("a spline meridian is crossed by `spline_cross`"),
+        Curve(..) => unreachable!("a curve meridian is crossed by `spline_cross`"),
     };
     // a level is the line the crossing is read along
     let (a,b) = if matches!(b,Level(_)) && !matches!(a,Level(_)) { (b,a) } else { (a,b) };
@@ -358,11 +350,11 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         let points = match (&ma,&mb) {
             // two spline meridians: where one crosses the other, unless they run together
             // (where they run together, read the other way round they would too: traced)
-            (Meridian::Spline(sa,o,z),Meridian::Spline(sb,..)) => match spline_spline(sa,sb,*o,*z,tol) {
+            (Meridian::Curve(sa,da,o,z),Meridian::Curve(sb,db,..)) => match spline_spline((sa,*da),(sb,*db),*o,*z,tol) {
                 Some(points) => points,
                 None => break,
             },
-            (Meridian::Spline(sp,o,z),m) | (m,Meridian::Spline(sp,o,z)) => spline_cross(sp,*o,*z,m,tol),
+            (Meridian::Curve(sp,d,o,z),m) | (m,Meridian::Curve(sp,d,o,z)) => spline_cross(sp,*d,*o,*z,m,tol),
             _ => {
                 let Some(points) = cross2(ma,mb,tol) else { return Ssi::Same };
                 points
@@ -529,7 +521,7 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
 fn own_contact(s: &Surface,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
     use crate::turned::{Jet,Turned};
     let Curve::Turned(t) = c else { return None };
-    if t.posed.is_some() { return None }
+    if t.posed { return None }
     let (g,k) = (t.frame,t.contact);
     let (f,r,tan) = match *s {
         Surface::Cylinder(f,r) => (f,r.abs(),0.),
@@ -541,31 +533,28 @@ fn own_contact(s: &Surface,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
     if (a[2] < 0.) != (k.a[2] < 0.) { a = a.map(|x| -x); tan = -tan; }
     let tan_k = k.sa/k.ca;
     if (a[2]-k.a[2]).abs() > 1e-9 || (tan-tan_k).abs() > 1e-9 { return None }
-    let theta = a[1].datan2(a[0])-k.a[1].datan2(k.a[0]);
-    let (sn,cs) = theta.dsin_cos();
-    let turn = |p: V| [cs*p[0]-sn*p[1],sn*p[0]+cs*p[1],p[2]];
-    let (o_k,a_k) = (turn(k.o),turn(k.a));
+    // the pose: the turn about the axis carrying the contact's axis onto the face's
+    let pose = Rigid::turn([0.;3],[0.,0.,1.],a[1].datan2(a[0])-k.a[1].datan2(k.a[0]));
+    let (o_k,a_k) = (pose.point(k.o),pose.vector(k.a));
     if norm(sub(a,a_k)) > 1e-9 || norm(cross(sub(o,o_k),a)) > tol { return None }
     // the radius at the contact's origin, read along the face
     let along = dot(sub(o_k,o),a);
     if (r+along*tan-k.r).abs() > tol { return None }
-    // the meridian's heights, and its radius at a height (it climbs: by bisection along it)
+    // the meridian's heights, and its radius at a height (it climbs: its root along it)
     let [v0,v1] = t.span;
     let z_of = |v: f64| k.meridian(Jet::at(v))[1].v;
     let (za,zb) = (z_of(v0),z_of(v1));
     let (zlo,zhi) = (za.min(zb),za.max(zb));
     let rho_at = |z: f64| -> f64 {
-        let (mut lo,mut hi) = (v0,v1);
-        for _ in 0..60 { let m = 0.5*(lo+hi); if (z_of(m)-z)*(za-z) > 0. { lo = m } else { hi = m } }
-        k.meridian(Jet::at(0.5*(lo+hi)))[0].v
+        let v = crate::util::roots::bracketed_root(|v| Some(z_of(v)-z),v0,za-z,v1,zb-z,1e-13*(v1-v0).abs());
+        k.meridian(Jet::at(v))[0].v
     };
     // the face's surface over the heights the meridian spans: its rings along the axis by their
     // centres' heights, a radius further each way
     let reach = k.r.abs()+(v1-v0).abs()*k.sa.abs()+1.;
     let (h0,h1) = ((zlo-reach-o[2])/a[2],(zhi+reach-o[2])/a[2]);
     let (h0,h1) = (h0.min(h1),h0.max(h1));
-    let x = unit(cross(a,if a[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] }));
-    let y = cross(a,x);
+    let (x,y) = crate::util::space::across(a);
     let size = norm(o)+reach;
     let mut sides = (false,false);
     for i in 0..=48 {
@@ -581,7 +570,9 @@ fn own_contact(s: &Surface,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
         }
     }
     if sides.0 && sides.1 { return None }
-    Some(vec![Curve::Turned(std::sync::Arc::new(Turned {posed:Some(theta),..**t}))])
+    // posed: the contact itself, read in the turn's frame turned by the pose
+    let frame = Frame {o:g.o,x:g.dir(pose.vector([1.,0.,0.])),y:g.dir(pose.vector([0.,1.,0.])),z:g.z};
+    Some(vec![Curve::Turned(std::sync::Arc::new(Turned {frame,posed:true,..**t}))])
 }
 
 /// **A plane cutting every generator of a cone, in an ellipse** (#780 C3: a leaning frustum cut by
@@ -604,7 +595,7 @@ fn plane_cone_ellipse(pl: &Frame,c: &Frame,r: f64,half: f64,tol: f64) -> Option<
     let nk = dot(n,k);
     let shadow = sub(k,scale(n,nk));
     let kappa = norm(shadow);
-    let (cc,ss) = (ca*ca,sa*sa);
+    let cc = ca*ca;
     let a2 = cc-kappa*kappa;
     // (square to the axis: a circle, read elsewhere; leaning as far as a generator or past it: an
     // open conic)
@@ -615,7 +606,7 @@ fn plane_cone_ellipse(pl: &Frame,c: &Frame,r: f64,half: f64,tol: f64) -> Option<
     let u0 = d*nk*kappa/a2;
     let centre = add(apex,add(scale(n,d),scale(e,u0)));
     if dot(sub(centre,apex),k)*sa*ca < 0. { return Some(vec![]) }
-    let (big,small) = (d.abs()*ca.abs()*ss.sqrt()/a2,d.abs()*ss.sqrt()/a2.sqrt());
+    let (big,small) = (d.abs()*ca.abs()*sa.abs()/a2,d.abs()*sa.abs()/a2.sqrt());
     Some(vec![Curve::Ellipse(Frame::new(centre,n,e),big,small)])
 }
 

@@ -47,8 +47,8 @@ impl Num for f64 {
 pub struct Iv(pub Option<Interval>);
 
 impl Iv {
-    /// The interval `[lo, hi]`.
-    pub fn new(lo: f64,hi: f64) -> Iv { Iv(Interval::new(lo,hi).ok()) }
+    /// The interval between `lo` and `hi`, either way round.
+    pub fn new(lo: f64,hi: f64) -> Iv { Iv(Interval::new(lo.min(hi),lo.max(hi)).ok()) }
     /// Its ends, where it is one.
     pub fn bounds(self) -> Option<[f64;2]> { self.0.map(|i| i.bounds()) }
     /// The most magnitude it holds, where it is one.
@@ -142,69 +142,70 @@ impl Contact {
     }
     /// Where the contact at `v` goes in `(ρ, z)` about the turn's axis, each with its jet.
     pub fn meridian<T: Num>(&self,v: Jet<T>) -> [Jet<T>;2] {
+        let [r2,z] = self.meridian2(v);
+        [r2.sqrt(),z]
+    }
+    /// `meridian` with its radius squared, `ρ² = x² + y²`, read with no root (an interval's root
+    /// and square again only widen it).
+    pub fn meridian2<T: Num>(&self,v: Jet<T>) -> [Jet<T>;2] {
         let (x,_) = self.point(v);
-        [(x[0]*x[0]+x[1]*x[1]).sqrt(),x[2]]
+        [x[0]*x[0]+x[1]*x[1],x[2]]
     }
 }
 
 /// **The meridian of a contact turned** (`geom::Curve::Turned`): the curve `frame.at([ρ(v), 0,
 /// z(v)])`, `v` the face's slant over `span`, in the half-plane of `frame`'s `x` and `z` — `frame`
 /// the turn's axis (its origin on it, its `z` along it), the contact read in its coordinates. Or,
-/// `posed` by an angle `θ`, the contact itself turned by `θ` about that axis: where the face at that
-/// pose of the turn touches the meridian's surface of revolution (`ssi`'s `own_contact`).
+/// `posed`, the contact itself, `frame.at(x(v))`: `frame` then the turn's turned by the pose's angle,
+/// where the face at that pose of the turn touches the meridian's surface of revolution (`ssi`'s
+/// `own_contact`).
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub struct Turned { pub frame: Frame,pub contact: Contact,pub span: [f64;2],pub posed: Option<f64> }
+pub struct Turned { pub frame: Frame,pub contact: Contact,pub span: [f64;2],pub posed: bool }
+
+/// `[a, b]` in `n` pieces, each an interval.
+fn pieces([a,b]: [f64;2],n: usize) -> impl Iterator<Item=Iv> {
+    (0..n).map(move |k| Iv::new(a+(b-a)*k as f64/n as f64,a+(b-a)*(k+1) as f64/n as f64))
+}
 
 impl Turned {
     /// The meridian of `contact` turned about `frame`'s axis, over `span`.
-    pub fn meridian(frame: Frame,contact: Contact,span: [f64;2]) -> Turned { Turned {frame,contact,span,posed:None} }
+    pub fn meridian(frame: Frame,contact: Contact,span: [f64;2]) -> Turned { Turned {frame,contact,span,posed:false} }
+    /// Its point at the jet `v`, in its frame's coordinates: the contact's own, posed, else
+    /// `(ρ, 0, z)`.
+    fn local<T: Num>(&self,v: Jet<T>) -> J3<T> {
+        if self.posed { return self.contact.point(v).0 }
+        let [r,z] = self.contact.meridian(v);
+        [r,Jet::of(0.),z]
+    }
     /// `M`, `M'`, `M''` at `v`.
     pub fn d2(&self,v: f64) -> (V,V,V) {
-        let f = &self.frame;
-        if let Some(theta) = self.posed {
-            let (x,_) = self.contact.point(Jet::at(v));
-            let (s,c) = (theta.sin(),theta.cos());
-            let turn = |p: [f64;3]| [c*p[0]-s*p[1],s*p[0]+c*p[1],p[2]];
-            return (f.at(turn(x.map(|j| j.v))),f.dir(turn(x.map(|j| j.d))),f.dir(turn(x.map(|j| j.dd))))
-        }
-        let [r,z] = self.contact.meridian(Jet::at(v));
-        (f.at([r.v,0.,z.v]),f.dir([r.d,0.,z.d]),f.dir([r.dd,0.,z.dd]))
+        let (f,l) = (&self.frame,self.local(Jet::at(v)));
+        (f.at(l.map(|j| j.v)),f.dir(l.map(|j| j.d)),f.dir(l.map(|j| j.dd)))
     }
     /// `ρ` and `z` with their first two derivatives over the stretch `[a, b]` of `v`, each held in
     /// an interval (none where a reading left its domain over it).
     pub fn bounded(&self,[a,b]: [f64;2]) -> Option<[[[f64;2];3];2]> {
-        let [r,z] = self.contact.meridian(Jet::at(Iv::new(a.min(b),a.max(b))));
+        let [r,z] = self.contact.meridian(Jet::at(Iv::new(a,b)));
         let three = |j: Jet<Iv>| Some([j.v.bounds()?,j.d.bounds()?,j.dd.bounds()?]);
         Some([three(r)?,three(z)?])
     }
-    /// Whether the contact is a curve over the stretch `[a, b]`, proved: its discriminant above
-    /// nought (two contacts on every ring, apart), and it off the turn's axis, all along.
-    pub fn defined(&self,[a,b]: [f64;2]) -> bool {
-        const PIECES: usize = 64;
-        (0..PIECES).all(|k| {
-            let (s,t) = (a+(b-a)*k as f64/PIECES as f64,a+(b-a)*(k+1) as f64/PIECES as f64);
-            let v = Jet::at(Iv::new(s.min(t),s.max(t)));
-            let (x,disc) = self.contact.point(v);
+    /// Whether the contact is a curve over `span`, proved, and its height runs one way: over each of
+    /// 64 pieces its discriminant above nought (two contacts on every ring, apart), it off the
+    /// turn's axis, and `z'` held off nought, one sign all along.
+    pub fn defined(&self,span: [f64;2]) -> bool {
+        let mut sign = 0.;
+        pieces(span,64).all(|v| {
+            let (x,disc) = self.contact.point(Jet::at(v));
             let rho2 = x[0].v*x[0].v+x[1].v*x[1].v;
-            disc.v.bounds().is_some_and(|[lo,_]| lo > 0.) && rho2.bounds().is_some_and(|[lo,_]| lo > 0.)
+            let climb = match x[2].d.bounds() { Some([lo,_]) if lo > 0. => 1.,Some([_,hi]) if hi < 0. => -1.,_ => 0. };
+            let held = climb != 0. && (sign == 0. || sign == climb);
+            sign = climb;
+            held && disc.v.bounds().is_some_and(|[lo,_]| lo > 0.) && rho2.bounds().is_some_and(|[lo,_]| lo > 0.)
         })
     }
-    /// Whether its height runs one way over the stretch `[a, b]`, proved: `z'` held off nought.
-    pub fn climbs(&self,[a,b]: [f64;2]) -> bool {
-        const PIECES: usize = 64;
-        let signs: Vec<Option<f64>> = (0..PIECES).map(|k| {
-            let (s,t) = (a+(b-a)*k as f64/PIECES as f64,a+(b-a)*(k+1) as f64/PIECES as f64);
-            let [lo,hi] = self.bounded([s,t])?[1][1];
-            if lo > 0. { Some(1.) } else if hi < 0. { Some(-1.) } else { None }
-        }).collect();
-        signs.iter().all(|s| s.is_some()) && signs.windows(2).all(|w| w[0] == w[1])
-    }
-    /// The parameter of its point nearest `p`: the nearest of samples across the span, then
-    /// Newton on `(M − p) · M'` held to the span.
-    pub fn inverse(&self,p: V) -> f64 {
+    /// Newton on `(M − p) · M'` from `v`, held to the span.
+    pub fn newton(&self,p: V,mut v: f64) -> f64 {
         let [a,b] = self.span;
-        let d2 = |v: f64| { let q = sub(self.d2(v).0,p); dot(q,q) };
-        let mut v = (0..=64).map(|k| a+(b-a)*k as f64/64.).min_by(|x,y| d2(*x).total_cmp(&d2(*y))).unwrap_or(a);
         for _ in 0..30 {
             let (x,d,dd) = self.d2(v);
             let e = sub(x,p);
@@ -217,43 +218,31 @@ impl Turned {
         }
         v
     }
-    /// A box about it over `[t0, t1]`, never smaller than it: `ρ` and `z` held in intervals over
-    /// each of sixteen pieces, their rectangles in the half-plane placed; where a reading leaves
-    /// its domain, its samples grown by its speed across a piece.
+    /// The parameter of its point nearest `p`: the nearest of samples across the span (each read
+    /// once, its point alone), then `newton`.
+    pub fn inverse(&self,p: V) -> f64 {
+        let [a,b] = self.span;
+        let off = |v: f64| { let l = self.local(Jet::<f64>::of(v)).map(|j| j.v); let q = sub(self.frame.at(l),p); dot(q,q) };
+        let v = (0..=64).map(|k| a+(b-a)*k as f64/64.).map(|v| (off(v),v)).min_by(|x,y| x.0.total_cmp(&y.0)).map_or(a,|x| x.1);
+        self.newton(p,v)
+    }
+    /// A box about it over `[t0, t1]`, never smaller than it: its point held in intervals over each
+    /// of sixteen pieces, each box's corners placed; where a reading leaves its domain, its samples
+    /// grown by its speed across a piece.
     pub fn bounds(&self,[t0,t1]: [f64;2]) -> Box3 {
         const PIECES: usize = 16;
-        let f = &self.frame;
-        let mut out = (([f64::INFINITY;3]),[f64::NEG_INFINITY;3]);
-        let mut take = |p: V| for k in 0..3 { out.0[k] = out.0[k].min(p[k]); out.1[k] = out.1[k].max(p[k]) };
-        for k in 0..PIECES {
-            let (s,t) = (t0+(t1-t0)*k as f64/PIECES as f64,t0+(t1-t0)*(k+1) as f64/PIECES as f64);
-            // posed, the contact's own box turned: its corners', each turned (a turn of a box
-            // about its axis is held by the box of its corners turned and its ring's reach)
-            let held = match self.posed {
-                None => self.bounded([s,t]).map(|[[r,..],[z,..]]| vec![[r[0],0.,z[0]],[r[1],0.,z[1]],[r[0],0.,z[1]],[r[1],0.,z[0]]]),
-                Some(theta) => {
-                    let (x,_) = self.contact.point(Jet::at(Iv::new(s.min(t),s.max(t))));
-                    match (x[0].v.bounds(),x[1].v.bounds(),x[2].v.bounds()) {
-                        (Some(a),Some(b),Some(z)) => {
-                            let (sn,cs) = (theta.sin(),theta.cos());
-                            // the turned box's corners, the box of them a little grown for rounding,
-                            // and that box's corners
-                            let mut pts: Vec<[f64;3]> = Vec::new();
-                            for &x in &a { for &y in &b { for &zz in &z { pts.push([cs*x-sn*y,sn*x+cs*y,zz]) } } }
-                            let (lo,hi) = pts.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
-                                (std::array::from_fn(|i| l[i].min(p[i])),std::array::from_fn(|i| h[i].max(p[i]))));
-                            let pad = 1e-12*(1.+hi.iter().chain(lo.iter()).fold(0f64,|m,x| m.max(x.abs())));
-                            Some((0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i]-pad } else { hi[i]+pad })).collect())
-                        }
-                        _ => None,
-                    }
-                }
-            };
-            match held {
-                Some(corners) => for l in corners { take(f.at(l)) },
-                None => {
-                    let reach = (t-s).abs()*self.speed();
-                    for v in [s,t] { let p = self.d2(v).0; for k in 0..3 { let mut q = p; q[k] -= reach; take(q); q[k] += 2.*reach; take(q) } }
+        let mut out = crate::geom::EMPTY;
+        let mut speed = None;
+        for (k,v) in pieces([t0,t1],PIECES).enumerate() {
+            let l = self.local(Jet::at(v));
+            match (l[0].v.bounds(),l[1].v.bounds(),l[2].v.bounds()) {
+                (Some(x),Some(y),Some(z)) => for c in 0..8 {
+                    crate::geom::include(&mut out,self.frame.at([x[c&1],y[(c>>1)&1],z[c>>2]]))
+                },
+                _ => {
+                    let (s,t) = (t0+(t1-t0)*k as f64/PIECES as f64,t0+(t1-t0)*(k+1) as f64/PIECES as f64);
+                    let reach = (t-s).abs()**speed.get_or_insert_with(|| self.speed());
+                    for v in [s,t] { let p = self.d2(v).0; for k in 0..3 { let mut q = p; q[k] -= reach; crate::geom::include(&mut out,q); q[k] += 2.*reach; crate::geom::include(&mut out,q) } }
                 }
             }
         }
@@ -270,6 +259,6 @@ impl Turned {
     pub fn moved(&self,m: &Rigid) -> Option<Turned> {
         let f = self.frame.moved(m);
         if f.right() { return Some(Turned {frame:f,..*self}) }
-        self.posed.is_none().then(|| Turned {frame:f.rehanded(true).0,..*self})
+        (!self.posed).then(|| Turned {frame:f.rehanded(true).0,..*self})
     }
 }

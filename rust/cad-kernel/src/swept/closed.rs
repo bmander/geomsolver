@@ -240,15 +240,14 @@ pub fn reads(tool: &Brep,path: &Trajectory) -> Result<crate::trajectory::Screw,U
 /// meet at an angle (`rims`): those two only under a slide.
 struct Read { screw: crate::trajectory::Screw,faces: Vec<(V,V)>,edges: Vec<(V,V,[usize;2])>,normals: Vec<[V;2]>,
     round: Vec<usize>,rims: Vec<Rim>,
-    /// Under a turn, each sharp edge no line lying in a plane square to the axis — a leaning round
-    /// face's rim cut by a level plane, an ellipse or a conic's spline (#780 C3) — read at its
-    /// points: it turns within its own plane.
+    /// Under a turn, each sharp edge no line lying in a plane square to the axis — a circle about a
+    /// line along it, or a leaning round face's rim cut level, an ellipse or a conic's spline (#780
+    /// C3) — read at its points: it turns within its own plane.
     levels: Vec<Vec<V>> }
 
-/// A circle or an ellipse edge of the tool: its frame (centre and the curve's normal), its radius
-/// along the frame's `x` and along its `y` (one radius, a circle's), and its span of angle.
+/// A circle edge of the tool: its frame (centre and the circle's normal), radius and span of angle.
 #[derive(Clone,Copy,Debug)]
-struct Rim { frame: Frame,r: f64,b: f64,span: [f64;2] }
+struct Rim { frame: Frame,r: f64,span: [f64;2] }
 
 /// A face's outward unit normal at its point `p`.
 fn outward(f: &crate::topo::Face,p: V) -> V {
@@ -279,13 +278,7 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
             }
             // under a turn a cylinder's or a cone's about an axis along the turn's touches along its
             // generators in the plane through both axes, turned into a cylinder or a cone about the
-            // turn's; a ball's along its great circle in the plane through the axis and its centre,
-            // turned into a torus
-            Surface::Cylinder(g,_) | Surface::Cone(g,..) if screw.is_turn() && norm(cross(g.z,screw.axis)) <= 1e-9 => {
-                round.push(k);
-                faces.push((at,[0.;3]));
-            }
-            // and about an axis leaning to the turn's, along a curve on each ring where
+            // turn's; about an axis leaning to it, along a curve on each ring where
             // `A cos u + B sin u = C`, turned into a surface of revolution whose meridian is read
             // exactly (#780 C3, `turned::Turned`)
             Surface::Cylinder(..) | Surface::Cone(..) if screw.is_turn() => {
@@ -343,33 +336,36 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
         let [(f1,..),(f2,..)] = uses[e][..] else { return Err(Unbuilt::Failed(format!("edge {e} bounds {} faces",uses[e].len()))) };
         // a seam, one face on both sides of it: no edge of the solid
         if f1 == f2 { continue }
+        // where its two faces meet smoothly, its fan one normal, the faces' own contacts'
+        let (n1,n2) = (outward(&tool.faces[f1],mid),outward(&tool.faces[f2],mid));
+        let smooth = norm(cross(n1,n2)) <= 1e-9 && dot(n1,n2) > 0.;
         match &edge.curve {
             EdgeCurve::Curve(Curve::Line {..}) => {
-                let (n1,n2) = (outward(&tool.faces[f1],mid),outward(&tool.faces[f2],mid));
                 // (a line where a round face runs on smoothly into a plane — a rounded key's flat
-                // into its end — is no edge of the solid: its fan is one normal, the faces' own
-                // contacts', #780 C3)
-                let round_side = [f1,f2].iter().any(|&f| !matches!(tool.faces[f].surface,Surface::Plane(_)));
-                if round_side && norm(cross(n1,n2)) <= 1e-9 && dot(n1,n2) > 0. { continue }
+                // into its end — is no edge of the solid, #780 C3)
+                if smooth && [f1,f2].iter().any(|&f| !matches!(tool.faces[f].surface,Surface::Plane(_))) { continue }
                 edges.push((p,q,[f1,f2]));
                 normals.push([n1,n2]);
             }
             // (a circle where two faces meet smoothly, a ball on a cylinder, is no edge of the
-            // solid, however it leans: its fan is one normal, the faces' own contacts')
-            // (under a turn, a circle square to the axis only: it turns within its own plane — and
-            // an ellipse so, a leaning round face's cut by a level plane, #780 C3)
+            // solid, however it leans)
+            EdgeCurve::Curve(_) if smooth => continue,
             EdgeCurve::Curve(c) => {
-                let (n1,n2) = (outward(&tool.faces[f1],mid),outward(&tool.faces[f2],mid));
-                if !(norm(cross(n1,n2)) > 1e-9 || dot(n1,n2) < 0.) { continue }
-                let samples: Vec<V> = (0..=SITES).map(|i| edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*(i as f64+0.5)/(SITES+1) as f64,&tool.vertices)).collect();
-                let level = { let h = |p: V| dot(sub(p,screw.origin),screw.axis); samples.iter().all(|&p| (h(p)-h(mid)).abs() <= 1e-9*(1.+norm(sub(p,screw.origin)))) };
+                // its points, where they lie in one plane square to the axis
+                let level = || -> Option<Vec<V>> {
+                    let h = |p: V| dot(sub(p,screw.origin),screw.axis);
+                    let points: Vec<V> = (0..=SITES).map(|i| edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*within(i),&tool.vertices)).collect();
+                    points.iter().all(|&p| (h(p)-h(mid)).abs() <= 1e-9*(1.+norm(sub(p,screw.origin)))).then_some(points)
+                };
                 match c {
-                    // a circle: under a slide or square to the axis, swept or turned within its plane
-                    Curve::Circle(frame,r) if screw.is_slide() || norm(cross(frame.z,screw.axis)) <= 1e-9 => {
-                        rims.push(Rim {frame:*frame,r:*r,b:*r,span:edge.t})
+                    // a circle under a slide, or under a screw square to its axis: swept, or screwed
+                    // into the solid its disc sweeps
+                    Curve::Circle(frame,r) if !screw.is_turn() && (screw.is_slide() || norm(cross(frame.z,screw.axis)) <= 1e-9) => {
+                        rims.push(Rim {frame:*frame,r:*r,span:edge.t})
                     }
-                    // any other curve in a level plane, under a turn: within its plane
-                    _ if screw.is_turn() && level => levels.push(samples),
+                    // any curve in a level plane, under a turn (a circle about a line along the axis,
+                    // a leaning round face's rim cut level, #780 C3): within its plane
+                    _ if screw.is_turn() && let Some(points) = level() => levels.push(points),
                     // a concave edge, the two faces' material wrapping round it more than half a
                     // turn (a stem entering a ball), carries none of the swept boundary: what
                     // bounds a sweep near it is its faces' contacts. Its first face's way in from
@@ -557,7 +553,6 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         // the poses the sites are carried by, across the roll
         // (inside the roll and inside each source, a site at a source's own edge reading its neighbours'
         // boundary, not its own)
-        let within = |i: usize| (i as f64+0.5)/(SITES+1) as f64;
         let poses: Vec<crate::trajectory::Pose> = (0..=SITES).map(|k| pose_at(a+(b-a)*within(k))).collect::<Result<_,_>>()?;
         // a face's own points, a grid over each triangle of a fan of its corners
         let face_sites = |k: usize| -> Vec<V> {
@@ -718,7 +713,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 let sites: Vec<(V,V)> = (0..=SITES).flat_map(|i| {
                     let phi = rim.span[0]+(rim.span[1]-rim.span[0])*within(i);
                     let (sp,cp) = phi.dsin_cos();
-                    let x = f.at([r*cp,rim.b*sp,0.]);
+                    let x = f.at([r*cp,r*sp,0.]);
                     let n = n_of(phi);
                     poses.iter().map(move |m| (m.point(x),n))
                 }).collect();
@@ -738,7 +733,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             // ball's torus, was a triple touch no arrangement holds by rounding), so none
             let ends: Vec<&crate::trajectory::Pose> = if screw.is_turn() && whole { vec![] } else { vec![&start,&end] };
             let convex = faces.iter().all(|&(o,n)| tool.vertices.iter().all(|v| dot(sub(v.p,o),n) <= eps));
-            if one && screw.is_turn() && whole && convex && round.is_empty() && rims.is_empty() && blank.is_none() {
+            if one && screw.is_turn() && whole && convex && round.is_empty() && rims.is_empty() && levels.is_empty() && blank.is_none() {
                 return turned_whole(&faces,&edges,c,axis,eps,tol)
             }
             // under a screw the heights a source spans run on by the step it takes over the roll, the
@@ -796,7 +791,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             for (k,&(o,n)) in faces.iter().enumerate() {
                 if round.contains(&k) { continue }
                 let own = face_sites(k);
-                for pose in ends.iter().copied() {
+                for pose in &ends {
                     add_cutter(Cutter::Plane((pose.point(o),pose.vector(n))),own.iter().map(|&x| (pose.point(x),pose.vector(n))).collect());
                 }
                 let m = cross(n,axis);
@@ -855,38 +850,18 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 };
                 // the way from the axis to the face's own axis or centre, square to the axis
                 let away = |o: V| -> Option<V> { let r = sub(o,c); let w = sub(r,scale(axis,dot(r,axis))); (norm(w) > eps).then(|| unit(w)) };
-                // a cylinder's or a cone's about an axis leaning to the turn's (#780 C3): at both end
-                // poses its own surface, and its contact on each ring turned
-                let leaning = match face.surface {
-                    Surface::Cylinder(f,_) | Surface::Cone(f,..) if screw.is_turn() && norm(cross(f.z,axis)) > 1e-9 => Some(f),
-                    _ => None,
-                };
-                if let Some(f) = leaning {
-                    let (r,sa,ca) = match face.surface {
-                        Surface::Cylinder(_,r) => (r.abs(),0.,1.),
-                        Surface::Cone(_,r,half) => { let (sa,ca) = half.dsin_cos(); (r,sa,ca) }
-                        _ => unreachable!(),
-                    };
-                    // (its own surface a fortieth past its span each way, its contact's meridian a
-                    // twentieth: no end of either on the other's, nor on a face the round one meets
-                    // at a concave edge — a stem's rim on the ball it enters)
-                    let past = 0.025*(hi-lo);
-                    let (lo,hi) = (lo-past,hi+past);
-                    for pose in ends.iter().copied() {
-                        let cutter = if sa == 0. { Cutter::Cylinder {o:pose.point(f.o),axis:pose.vector(unit(f.z)),r,span:[lo,hi]} } else {
-                            let e = unit(add(scale(f.x,sa),scale(f.z,ca)));
-                            Cutter::Revolved {o:pose.point(f.o),axis:pose.vector(f.z),p:pose.point(face.surface.point([0.,0.])),e:pose.vector(e),span:[lo*ca,hi*ca]}
-                        };
-                        add_cutter(cutter,sites_at(pose));
-                    }
-                    turned_contacts(&mut add_cutter,&located,tool,k,&screw,[lo+past,hi-past],&poses,eps)?;
-                    continue
-                }
+                // a cylinder's or a cone's about an axis leaning to the turn's (#780 C3): its own
+                // surface at both end poses half `PAST` past its span each way (no end of it on its
+                // contact's meridian's, `PAST` past, nor on a face it meets at a concave edge — a
+                // stem's rim on the ball it enters), and its contact on each ring turned
+                let leaning = |f: &Frame| screw.is_turn() && norm(cross(f.z,axis)) > 1e-9;
+                let own = |f: &Frame| if leaning(f) { let past = 0.5*PAST*(hi-lo); [lo-past,hi+past] } else { [lo,hi] };
                 match face.surface {
                     Surface::Cylinder(f,r) => {
-                        for pose in ends.iter().copied() {
-                            add_cutter(Cutter::Cylinder {o:pose.point(f.o),axis:pose.vector(unit(f.z)),r:r.abs(),span:[lo,hi]},sites_at(pose));
+                        for pose in &ends {
+                            add_cutter(Cutter::Cylinder {o:pose.point(f.o),axis:pose.vector(unit(f.z)),r:r.abs(),span:own(&f)},sites_at(pose));
                         }
+                        if leaning(&f) { turned_contacts(&mut add_cutter,&located,face,k,&screw,(f,r.abs(),0.,1.),[lo,hi],&poses,&ruling,eps)?; continue }
                         let ways = match away(f.o) { Some(w) => vec![w,scale(w,-1.)],None => vec![] };
                         // coaxial, the face turns into itself
                         if ways.is_empty() { add_cutter(Cutter::Cylinder {o:f.o,axis:unit(f.z),r:r.abs(),span:[lo,hi]},poses.iter().flat_map(|m| sites_at(m)).collect()) }
@@ -894,14 +869,16 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                             if let Some((cutter,sites)) = ruling(dot(w,f.y).datan2(dot(w,f.x))) { add_cutter(cutter,sites) }
                         }
                     }
-                    Surface::Cone(f,_,half) => {
+                    Surface::Cone(f,r,half) => {
                         let (sa,ca) = half.dsin_cos();
                         let p0 = face.surface.point([0.,0.]);
                         let e = unit(add(scale(f.x,sa),scale(f.z,ca)));
-                        for pose in ends.iter().copied() {
-                            add_cutter(Cutter::Revolved {o:pose.point(f.o),axis:pose.vector(f.z),p:pose.point(p0),e:pose.vector(e),span:[lo*ca,hi*ca]},
+                        let [l0,h0] = own(&f);
+                        for pose in &ends {
+                            add_cutter(Cutter::Revolved {o:pose.point(f.o),axis:pose.vector(f.z),p:pose.point(p0),e:pose.vector(e),span:[l0*ca,h0*ca]},
                                 sites_at(pose));
                         }
+                        if leaning(&f) { turned_contacts(&mut add_cutter,&located,face,k,&screw,(f,r,sa,ca),[lo,hi],&poses,&ruling,eps)?; continue }
                         if !screw.is_turn() {
                             // under a screw its normal `cos α ρ̂(u) − sin α z` is square to the
                             // velocity `ω axis × (x − c) + κ axis` where `A cos u + B sin u = C`,
@@ -933,7 +910,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                     }
                     Surface::Sphere(f,r) if !screw.is_turn() => {
                         let r = r.abs();
-                        for pose in ends.iter().copied() {
+                        for pose in &ends {
                             add_cutter(Cutter::Ball {c:pose.point(f.o),axis:pose.vector(f.z),r},sites_at(pose));
                         }
                         // its great circle square to its centre's velocity, screwed: the pipe
@@ -950,7 +927,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                     }
                     Surface::Sphere(f,r) => {
                         let r = r.abs();
-                        for pose in ends.iter().copied() {
+                        for pose in &ends {
                             add_cutter(Cutter::Ball {c:pose.point(f.o),axis:pose.vector(f.z),r},sites_at(pose));
                         }
                         let height = dot(sub(f.o,c),axis);
@@ -974,7 +951,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                     Surface::Torus(f,big,small) => {
                         let (big,r) = (big.abs(),small.abs());
                         let z = unit(f.z);
-                        for pose in ends.iter().copied() {
+                        for pose in &ends {
                             add_cutter(Cutter::Torus {c:pose.point(f.o),axis:pose.vector(z),major:big,minor:r},sites_at(pose));
                         }
                         // the face's points of a circle on the torus about `o` in the plane of `p` and
@@ -1011,23 +988,22 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                     _ => unreachable!("`read` takes only cylinders, cones, balls and tori round"),
                 }
             }
-            // a circle square to the axis turns within its own plane; under a screw it is screwed, the
-            // solid its disc sweeps (`Cutter::ScrewedDisc`)
+            // under a screw a circle square to the axis is screwed, the solid its disc sweeps
+            // (`Cutter::ScrewedDisc`; under a turn it is a level curve, below)
             for rim in &rims {
                 let (f,r) = (rim.frame,rim.r);
                 // the screwed sheet's normal: square to the circle and to the screw's velocity
-                let normal_at = |x: V| if screw.is_turn() { axis } else { unit(cross(cross(axis,unit(sub(x,f.o))),screw.velocity(x))) };
+                let normal_at = |x: V| unit(cross(cross(axis,unit(sub(x,f.o))),screw.velocity(x)));
                 let sites: Vec<(V,V)> = (0..=SITES).flat_map(|i| {
                     let (sp,cp) = (rim.span[0]+(rim.span[1]-rim.span[0])*within(i)).dsin_cos();
-                    let x = f.at([r*cp,rim.b*sp,0.]);
+                    let x = f.at([r*cp,r*sp,0.]);
                     let n = normal_at(x);
                     poses.iter().map(move |m| (m.point(x),m.vector(n)))
                 }).collect();
-                if screw.is_turn() { add_cutter(Cutter::Plane((f.o,axis)),sites) }
-                else { add_cutter(Cutter::ScrewedDisc {c:f.o,r:r.abs()},sites) }
+                add_cutter(Cutter::ScrewedDisc {c:f.o,r:r.abs()},sites)
             }
-            // a level curve no circle (an ellipse or a conic a level plane cuts from a leaning round
-            // face, #780 C3) turns within its own plane
+            // under a turn a curve in a level plane (a circle about a line along the axis, an ellipse
+            // or a conic a level plane cuts from a leaning round face, #780 C3) turns within it
             for points in &levels {
                 let sites: Vec<(V,V)> = points.iter().flat_map(|&x| poses.iter().map(move |m| (m.point(x),axis))).collect();
                 add_cutter(Cutter::Plane((points[0],axis)),sites);
@@ -1296,6 +1272,10 @@ fn tangent_plane(add_cutter: &mut dyn FnMut(Cutter,Vec<(V,V)>),located: &crate::
 /// whether it carries any of the boundary.
 const SITES: usize = 24;
 
+/// The `i`th of `SITES + 1` fractions a source is read at, inside it and the roll (a site at a
+/// source's own edge reading its neighbours' boundary, not its own).
+fn within(i: usize) -> f64 { (i as f64+0.5)/(SITES+1) as f64 }
+
 /// Whether a candidate carries some of the swept boundary: at one of its `sites` (its source's
 /// points carried over the roll, each with the candidate's normal there), membership a hair to one
 /// side differs from a hair to the other, or cannot be settled. A candidate carries boundary only
@@ -1382,8 +1362,8 @@ fn leaning_contact(screw: &crate::trajectory::Screw,o: V,n: V,corners: &[V],eps:
 fn patch(screw: &crate::trajectory::Screw,pose_at: &dyn Fn(f64) -> Result<crate::trajectory::Pose,Unbuilt>,p: V,q: V,[a,b]: [f64;2])
     -> Result<Brep,Unbuilt> {
     let d = sub(q,p);
-    let (p,q) = (sub(p,scale(d,0.05)),add(q,scale(d,0.05)));
-    let delta = 0.05*(b-a);
+    let (p,q) = (sub(p,scale(d,PAST)),add(q,scale(d,PAST)));
+    let delta = PAST*(b-a);
     let (s0,s1) = (a-delta,b+delta);
     let first = pose_at(s0)?;
     let across = { let w = cross(d,screw.axis); if norm(w) > 1e-12*norm(d) { unit(w) } else { unit(cross(d,[1.,0.,0.])) } };
@@ -1445,29 +1425,23 @@ pub fn revolved(o: V,axis: V,p: V,e: V,[z0,z1]: [f64;2],eps: f64) -> Result<Vec<
 /// the turn's axis whose meridian is read exactly (`Cutter::Turned`), its sites the curve's points
 /// on the face carried over the roll with the face's normal there (the turned surface's: it touches
 /// the face there). An axis in one plane with the turn's touches along its two generators in that
-/// plane, lines, each turned into a hyperboloid (`Cutter::Revolved`) — refused where it crosses the
+/// plane, lines, each turned as any ruling is (`ruling`, a hyperboloid) — refused where it crosses the
 /// turn's axis within the face, whose ring there touches all round. Refused by what it is
 /// (`Unbuilt::Curved`) where a contact is no curve over the span (the two roots on a ring meeting,
 /// or the curve reaching the axis) or its meridian folds back along the axis, which its solid,
 /// closed down to the axis at both ends, cannot hold.
-fn turned_contacts(add_cutter: &mut dyn FnMut(Cutter,Vec<(V,V)>),located: &crate::query::Located,tool: &Brep,k: usize,
-    screw: &crate::trajectory::Screw,[lo,hi]: [f64;2],poses: &[crate::trajectory::Pose],eps: f64) -> Result<(),Unbuilt> {
+fn turned_contacts(add_cutter: &mut dyn FnMut(Cutter,Vec<(V,V)>),located: &crate::query::Located,face: &crate::topo::Face,k: usize,
+    screw: &crate::trajectory::Screw,(f,r,sa,ca): (Frame,f64,f64,f64),[lo,hi]: [f64;2],poses: &[crate::trajectory::Pose],
+    ruling: &dyn Fn(f64) -> Option<(Cutter,Vec<(V,V)>)>,eps: f64) -> Result<(),Unbuilt> {
     use crate::turned::{Contact,Jet,Turned};
-    let face = &tool.faces[k];
-    let (f,r,sa,ca) = match face.surface {
-        Surface::Cylinder(f,r) => (f,r.abs(),0.,1.),
-        Surface::Cone(f,r,half) => { let (sa,ca) = half.dsin_cos(); (f,r,sa,ca) }
-        _ => unreachable!("a leaning round face is a cylinder's or a cone's"),
-    };
     let (c,axis) = (screw.origin,screw.axis);
     let a = unit(f.z);
-    let within = |i: usize| (i as f64+0.5)/(SITES+1) as f64;
     let carried = |x: V| -> Vec<(V,V)> {
         if located.face_place(k,x) == crate::query::Place::Out { return vec![] }
         let n = outward(face,x);
         poses.iter().map(|m| (m.point(x),m.vector(n))).collect()
     };
-    // an axis in one plane with the turn's: its generators in that plane, turned
+    // an axis in one plane with the turn's: its generators in that plane, turned (`ruling`)
     let np = cross(a,axis);
     if dot(unit(np),sub(f.o,c)).abs() <= eps {
         // where it crosses the turn's axis, along its own, within the face: a ring there touches
@@ -1477,30 +1451,21 @@ fn turned_contacts(add_cutter: &mut dyn FnMut(Cutter,Vec<(V,V)>),located: &crate
         }
         let w = unit(cross(np,a));
         for w in [w,scale(w,-1.)] {
-            let u = dot(w,f.y).datan2(dot(w,f.x));
-            let (p,q) = (face.surface.point([u,lo]),face.surface.point([u,hi]));
-            let sites: Vec<(V,V)> = (0..=SITES).flat_map(|i| carried(add(p,scale(sub(q,p),within(i))))).collect();
-            if sites.is_empty() { continue }
-            let e = unit(sub(q,p));
-            let cutter = if dot(e,axis).abs() <= 1e-9 { Cutter::Plane((p,axis)) } else {
-                let (h0,h1) = (dot(sub(p,c),axis),dot(sub(q,c),axis));
-                Cutter::Revolved {o:c,axis,p,e,span:[h0.min(h1),h0.max(h1)]}
-            };
-            add_cutter(cutter,sites);
+            if let Some((cutter,sites)) = ruling(dot(w,f.y).datan2(dot(w,f.x))) { add_cutter(cutter,sites) }
         }
         return Ok(())
     }
     let g = Frame::about(c,axis);
-    // the meridian a twentieth past the face's span each way, so its ends stand clear of the face's
-    // own at the end poses (where the face's rim, the meridian's end and the touch along the contact
+    // the meridian `PAST` past the face's span each way, so its ends stand clear of the face's own
+    // at the end poses (where the face's rim, the meridian's end and the touch along the contact
     // would meet at one point), as a patch's under a screw do (#777 M5)
-    let past = 0.05*(hi-lo);
+    let past = PAST*(hi-lo);
     let span = [lo-past,hi+past];
     for side in [1.,-1.] {
         let contact = Contact {o:g.local(f.o),a:g.dir_local(a),r,sa,ca,side};
         let turned = Turned::meridian(g,contact,span);
         let at = g.at(contact.point(Jet::at(0.5*(lo+hi))).0.map(|j| j.v));
-        if !turned.defined(span) || !turned.climbs(span) { return Err(Unbuilt::Curved {at}) }
+        if !turned.defined(span) { return Err(Unbuilt::Curved {at}) }
         let sites: Vec<(V,V)> = (0..=SITES).flat_map(|i| {
             let x = g.at(contact.point(Jet::at(lo+(hi-lo)*within(i))).0.map(|j| j.v));
             carried(x)
@@ -1509,6 +1474,12 @@ fn turned_contacts(add_cutter: &mut dyn FnMut(Cutter,Vec<(V,V)>),located: &crate
     }
     Ok(())
 }
+
+/// **How far past its source's ends a candidate bounded inside the domain reaches**, as a fraction
+/// of the source's stretch: a patch past its segment and its roll (#777 M5), a turned contact's
+/// meridian past its face's span (#780 C3, the face's own surface at the end poses half as far), so
+/// no end of one stands on another's.
+const PAST: f64 = 0.05;
 
 /// Where the line through `o` along the unit `a` passes nearest the line through `c` along the
 /// unit `z`, as its distance along `a` from `o`; none where the two run parallel.
