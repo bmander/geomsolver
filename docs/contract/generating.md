@@ -655,7 +655,14 @@ the body less its closed sweeps, whole or by sector and pattern — and each clo
 from what that leaves on one arrangement (`sweep::whole`'s `mixed_cut`, `closed::cut_on`), on both
 roads (`closed_class::a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves`, `punch.sv`'s
 drum and `plunge.sv`'s bar in one plate, to 1e-9; a union's members alike, each its own sweep). A fitted sheet's face lying in a plane a
-closed sweep's candidate holds is met as nearly touching and refused (F4, #699 E).
+closed sweep's candidate holds is one surface with it (#780 C4, A2's coincidence): `punch.sv`'s
+slot's end wall, a strip of the plane x = 6 its drum's flat end sweeps, fitted, and `plunge.sv`'s
+bar's end face at its start pose in that plane, which had been two faces coinciding round the
+slot's corner edges (`complex`'s "coincide along it"), are one face naming both, and the plate
+beside it is split by that plane over the sheet's patch alone (brep.md's A2; the reduced
+Boolean, `closed_class::a_fitted_sheet_lying_in_a_candidates_plane_is_one_surface_with_it`, the
+plate and one block, 240 and 432 to 1e-9; the case,
+`a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves`, its bar's end at x = 6).
 Each gate is a negative control of another class, held to a volume apart from
 the build and its STL to the field with no disagreement (`tests/closed_class.rs`: a bar pushed
 aslant wholly through a plate, and `punch.sv`'s drum wholly through it and partway into it, its end

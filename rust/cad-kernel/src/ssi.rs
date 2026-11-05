@@ -322,8 +322,20 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
         (Surface::Revolution(_,c),Surface::Revolution(_,d)) => parallel && on_axis
             && same_curve(&c,&d,tol,&|p| { let q = sub(p,f.o); let h = dot(q,f.z); [norm(sub(q,scale(f.z,h))),h,0.] }),
         (Surface::Blend(_,x),Surface::Blend(_,y)) => one_screwed_circle(&x,&y,tol),
+        (Surface::Plane(p),Surface::BSpline(_,n)) | (Surface::BSpline(_,n),Surface::Plane(p)) => net_in_plane(&n,&p,tol),
         _ => false,
     }
+}
+
+/// **A sheet lying in a plane is that plane** (#780 C4): a B-spline surface, rational or not, lies
+/// in the hull of its poles (its weights positive), so where every pole stands within `tol` of the
+/// plane every point of it does — a fitted sheet a slide sweeps a flat face's strip into, which a
+/// closed sweep's candidate holding that face's plane meets as a coincidence (A2), not as a touch
+/// to trace. A sheet lying in the plane has its poles in it too (the distance from the plane is a
+/// spline whose coefficients are the poles' distances), so nothing that lies in it is missed but
+/// by its fit's rounding.
+fn net_in_plane(n: &super::nurbs::Net,p: &Frame,tol: f64) -> bool {
+    n.poles.iter().flatten().all(|&q| dot(sub(q,p.o),p.z).abs() <= tol)
 }
 
 /// Where two surfaces meet (`tol` a length).

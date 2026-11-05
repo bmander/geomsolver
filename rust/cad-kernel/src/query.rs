@@ -1350,6 +1350,17 @@ impl<'a> Located<'a> {
         nearest_on(&e.curve,e.t,self.b.vertices[e.v[0] as usize].p,p)
     }
 
+    /// **Whether face `fi` holds `p`, a point of `of`, a surface the same as the face's**
+    /// (`ssi::same`): in the face (`face_place`), and, where the two are of different kinds, on
+    /// the face's own patch. A sheet lying in a plane is that plane over its patch alone (#780
+    /// C4): past the patch a point's foot is clamped to its edge, which the face's loop may run
+    /// along, and read there the point would be in the face. Two surfaces of one kind the same are
+    /// one patch, or unbounded both.
+    pub fn face_holds(&self,fi: usize,of: &Surface,p: V) -> bool {
+        let s = &self.b.faces[fi].surface;
+        (s.kind() == of.kind() || s.off_patch(p).is_none_or(|d| d <= self.tol)) && self.face_place(fi,p) == Place::In
+    }
+
     /// Where a point of face `fi`'s surface stands against the face: `On` within `tol` of its
     /// boundary. A seam (an edge the face uses twice, once each side) is no boundary: a point on
     /// one, away from every other edge, is in the face.
