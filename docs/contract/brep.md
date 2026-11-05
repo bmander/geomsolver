@@ -125,8 +125,15 @@ at the hole next to it (a turned rim's chamfer
 from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly`).
 A line meets a cylinder or a sphere in closed form (`query::line_cylinder`, `line_sphere`, one
 chord, `line_chord`): one touch exactly at the foot where it is tangent, in one evaluation where a
-sampled search takes thousands. Two coaxial surfaces of revolution meet in circles where their meridians cross in one half-plane,
-two spline meridians too (`ssi::spline_spline`: the first read against the second's signed distance,
+sampled search takes thousands. A plane cutting every generator of a cone meets it in an
+ellipse, exactly (`ssi`'s `plane_cone_ellipse`: about `A + d n + u₀ e` of radii `|d| c s / (c² −
+κ²)` and `|d| s / √(c² − κ²)`, nothing where it is the nappe the surface is not; traced before, a
+level plane's cut of a leaning frustum and the circle it cuts from a surface of revolution tangent
+to it were sampled apart; `swept_turned::a_plane_cutting_every_generator_of_a_cone_meets_it_in_an_ellipse`),
+and a circle and an ellipse in one plane cross where the ellipse meets the circle's cylinder,
+certified, a touch one root (`query::curve_curve`;
+`swept_turned::a_circle_and_an_ellipse_in_one_plane_cross_where_certified`). Two coaxial surfaces of revolution meet in circles where their meridians cross in one half-plane,
+two spline meridians too (a turned contact's meridian read as a spline's, #780 C3) (`ssi::spline_spline`: the first read against the second's signed distance,
 its nearest point's normal; left traced where the two run together over a stretch), so two swept
 edges' hyperboloids meet in exact circles
 (`meeting::two_coaxial_hyperboloids_meet_in_circles_in_closed_form`). Any other curve's meeting
@@ -157,7 +164,10 @@ step out of the ball halves the box rather than returning its middle
 edge on its plane at 7.86 rather than 9). **An edge a Boolean meets with a surface and a ray a
 point is located by are read alike** (#780 R2, `query::curve_surface`; there is no `ray`
 switch): a line meets a plane, a cone, a torus and a conic turned (`query::line_revolution`, a
-quartic in the meridian's own parameter) as polynomials along it, a cylinder and a ball as a
+quartic in the meridian's own parameter) as polynomials along it, and a turned contact's meridian
+(#780 C3, `query::line_turned`) by the same function of the meridian's parameter isolated with its
+first two derivatives bounded by the meridian's jets read in outward-rounded intervals
+(`swept_turned::a_line_meets_a_turned_contacts_surface_where_sampling_finds_it`), a cylinder and a ball as a
 chord, a swept sheet or a B-spline net by the three-unknown search (`query::curve_sheet`, the
 sheet's second derivatives bounded by `blend_bounds` and `Net::second_bounds`); a circle or an
 ellipse meets a plane, a cylinder, a ball, a cone and a torus as the surface's algebraic form

@@ -56,6 +56,7 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
     let on = |c: &Curve,q: V| match *c {
         Curve::Line {p,d} => norm(cross(sub(q,p),d)) <= tol,
         Curve::Circle(f,r) => dot(sub(q,f.o),f.z).abs() <= tol && (distance(q,f.o)-r).abs() <= tol,
+        Curve::Ellipse(..) => distance(c.point(c.inverse(q)),q) <= tol,
         _ => false,
     };
     let points: Vec<V> = match (a,b) {
@@ -91,6 +92,21 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
                 let den = 1.-c*c;
                 let p = add(scale(f1.z,(h1-h2*c)/den),scale(f2.z,(h2-h1*c)/den));
                 line_circle(p,d,f1.o,f1.z,r1)
+            }
+        }
+        // a circle and an ellipse in one plane (#780 C3: a leaning drum at an end pose cut by a
+        // level plane, its ellipse touching the circle the plane cuts from the surface its contact
+        // turns into): the ellipse's roots on the circle's cylinder, certified — its trigonometric
+        // quartic bounded by its amplitudes (`conic_algebraic`) — so a touch is one root, the vertex
+        // where the two are tangent, whatever the rounding
+        (&Curve::Circle(f,r),Curve::Ellipse(g,..)) | (Curve::Ellipse(g,..),&Curve::Circle(f,r))
+            if norm(cross(f.z,g.z)) <= 1e-12 && dot(sub(g.o,f.o),f.z).abs() <= tol => {
+            let ellipse = if matches!(a,Curve::Ellipse(..)) { a } else { b };
+            match curve_surface(ellipse,[0.,std::f64::consts::TAU],&Surface::Cylinder(f,r.abs()),tol) {
+                Meets::At(roots) => roots.into_iter().map(|(t,_)| ellipse.point(t)).collect(),
+                // the ellipse a circle of the same radius about the same centre: running along one
+                // another, they cross nowhere
+                Meets::Along => return Some(Vec::new()),
             }
         }
         _ => return None,
@@ -549,6 +565,7 @@ fn line_torus(p: V,d: V,t: [f64;2],f: &super::geom::Frame,big: f64,r: f64,surfac
 /// `meets` has read as along it already.)
 fn line_revolution(p: V,d: V,f: &super::geom::Frame,c: &Curve,surface: &Surface,tol: f64) -> Certified {
     use crate::util::isolate::{poly_mul,poly_sum,poly};
+    if let Curve::Turned(m) = c { return line_turned(p,d,f,m,surface,tol) }
     let Curve::BSpline(sp) = c else { return Err(Uncertified::NoForm) };
     if sp.degree > 2 { return Err(Uncertified::NoForm) }
     let (q,e) = (f.local(p),f.dir_local(d));
@@ -591,6 +608,60 @@ fn line_revolution(p: V,d: V,f: &super::geom::Frame,c: &Curve,surface: &Surface,
                 let rho = poly(&xx,r.at)/poly(&ww,r.at);
                 if let Meets::At(found) = line_chord(from,flat,rho.abs(),tol) { out.extend(found) }
             }
+        }
+    }
+    Ok(Meets::At(out))
+}
+
+/// **A line against a surface of revolution whose meridian is a turned contact** (#780 C3,
+/// `turned::Turned`: no conic, but a closed form in the face's slant `v` with its derivatives),
+/// as `line_revolution` reads a conic's: the line's radius squared is `a t² + b t + c` at the
+/// height `z(t) = z₀ + D t`, so where it climbs it meets the surface where
+/// `G(v) = a N² + b D N + c D² − D² ρ(v)²`, `N = z(v) − z₀`, is nought, its parameter `N / D`
+/// there; a level line meets the circles at the roots of `N`, each a chord. The roots are isolated
+/// (`util::isolate::roots`) from `G'` and `G''` bounded over each stretch by the meridian's jets
+/// read in outward-rounded intervals (`turned::Iv`): any meridian with bounded derivatives, not
+/// only a polynomial one. `NoForm` where the surface's axis is not the meridian's.
+fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surface: &Surface,tol: f64) -> Certified {
+    use crate::turned::{Iv,Jet};
+    let g = &m.frame;
+    if m.posed.is_some() { return Err(Uncertified::NoForm) }
+    if norm(crate::util::space::cross(g.z,f.z)) > 1e-12 || norm(crate::util::space::cross(crate::util::space::sub(f.o,g.o),g.z)) > tol {
+        return Err(Uncertified::NoForm)
+    }
+    let (q,e) = (g.local(p),g.dir_local(d));
+    let speed = norm(d).max(1e-300);
+    let (a,b,cc) = (e[0]*e[0]+e[1]*e[1],2.*(q[0]*e[0]+q[1]*e[1]),q[0]*q[0]+q[1]*q[1]);
+    let dz = e[2];
+    // a line all but level is read neither way well: sampled
+    if dz.abs() > 1e-12*speed && dz.abs() < 1e-7*speed { return Err(Uncertified::NoForm) }
+    let [s0,s1] = m.span;
+    let (s0,s1) = (s0.min(s1),s0.max(s1));
+    let width = 1e-12*(s1-s0).max(1e-300);
+    let most = |j: Jet<Iv>| match (j.d.most(),j.dd.most()) { (Some(x),Some(y)) => [x,y],_ => [f64::INFINITY;2] };
+    let mut out: Vec<(f64,bool)> = Vec::new();
+    if dz.abs() > 1e-12*speed {
+        // G of the meridian's jet, in floats or in intervals
+        fn big<T: crate::turned::Num>([r,z]: [Jet<T>;2],(a,b,cc,dz,z0): (f64,f64,f64,f64,f64)) -> Jet<T> {
+            let n = z-Jet::of(z0);
+            (n*n).times(a)+n.times(b*dz)+Jet::of(cc*dz*dz)-(r*r).times(dz*dz)
+        }
+        let k = (a,b,cc,dz,q[2]);
+        let jet = |s: f64| big(m.contact.meridian(Jet::at(s)),k);
+        let t_of = |s: f64| (m.contact.meridian(Jet::at(s))[1].v-q[2])/dz;
+        let at = |s: f64| add(p,scale(d,t_of(s)));
+        let bound = |x: f64,y: f64| most(big(m.contact.meridian(Jet::at(Iv::new(x,y))),k));
+        for r in crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|s| surface.implicit(at(s)).abs() <= tol)? {
+            out.push((t_of(r.at),r.touch));
+        }
+    } else {
+        // a level line: the circles at its height, each met as a chord
+        let (flat,from) = (g.dir([e[0],e[1],0.]),g.dir([q[0],q[1],0.]));
+        let jet = |s: f64| m.contact.meridian(Jet::at(s))[1]-Jet::of(q[2]);
+        let bound = |x: f64,y: f64| most(m.contact.meridian(Jet::at(Iv::new(x,y)))[1]);
+        for r in crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|_| false)? {
+            let rho = m.contact.meridian(Jet::at(r.at))[0].v;
+            if let Meets::At(found) = line_chord(from,flat,rho.abs(),tol) { out.extend(found) }
         }
     }
     Ok(Meets::At(out))

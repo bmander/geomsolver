@@ -537,10 +537,56 @@ membership along the whole path
 `trajectories::a_twist_after_a_placement_is_the_placement_then_the_twist` holds `Placed`'s pose,
 rate and speed bound by differences). No drawing lowers to pieces yet (a toolpath written as one
 is the language's `path`), so the closed class's admission reads one constant twist.
-A curved tool past these (`Unbuilt::Curved`: under a screw a round face about an axis leaning to it, or a torus; under a turn a cylinder or a cone about an
-axis leaning to it, a ball across its axis, a circle leaning to it, a torus or a free-form face;
-under a slide a torus or a free-form face; an edge no line or circle) are refused by what they
-are, read before any build (`closed::reads`).  The result is the selection's boundary with the candidates that bound nothing healed out of
+A curved tool past these (`Unbuilt::Curved`: under a screw a round face about an axis leaning to it, or a torus; under a turn a ball across its axis, a sharp
+circle leaning to it, a torus leaning to it or a free-form face; under a slide a torus or a
+free-form face; an edge no line or circle) are refused by what they are, read before any build
+(`closed::reads`); under a turn a cylinder or a cone about a leaning axis whose contact is no curve
+over the face, or whose meridian folds back along the axis, at the build's first step.
+
+**A round face about an axis leaning to a turn's (#780 C3, `brep::turned`).** On the ring at slant
+`v` of a cylinder or a cone about the axis `a` through `o`, its normal `cos α ρ̂ − sin α a` is
+square to the turn's velocity where `ρ̂ · W = C`, `W = cos α (Z × q) − R sin α (a × Z)` in the ring's
+plane and `C = sin α a · (Z × q)`, `q = m(v) − c`: `A cos u + B sin u = C`, two roots, written without
+an angle as `ρ̂ = (C W ± √(|W|² − C²) a × W)/|W|²`. Each sign is a curve along the face, and turned it
+sweeps the surface of revolution of its meridian — where its points go in `(ρ, z)` — held as that
+closed form in `v` with its derivatives, not fitted (`turned::Turned`, `Curve::Turned`; its jets one
+formula read in floats and in outward-rounded intervals, `turned::Num`). Its candidate (`Cutter::Turned`)
+is that meridian a twentieth past the face's span each way, closed down the axis at both ends and
+turned once (`ProfileEdge::Turned`, `build::revolve`); refused (`Curved`) unless the contact is a
+curve all along — its discriminant held above nought and it off the axis, proved over the span by the
+intervals (`Turned::defined`) — and its height climbs one way (`Turned::climbs`). The face at each end
+pose (its own surface a fortieth past its span) touches that surface along its contact turned there,
+`Turned::posed`, in closed form (`ssi`'s `own_contact`, held only where the face stands on one side of
+the surface over its heights; traced, the touch came apart in two). A line meets the surface
+certified (`query::line_turned`: `G = a N² + b D N + c D² − D² ρ(v)²` isolated with `G'` and `G''`
+bounded by the interval jets — any meridian with bounded derivatives, not only a conic); two coaxial
+such surfaces, or one and a plane, a cylinder, a cone or a torus about the axis, meet in circles where
+their meridians cross (`ssi`'s `Meridian::Spline` reads a turned contact's meridian as a spline's). An
+axis in one plane with the turn's touches along its two generators there, turned into hyperboloids,
+and one crossing the turn's axis within the face is refused. A rim lying in a plane square to the
+axis — an ellipse a level plane cuts from a leaning drum, or from a cone (a plane cutting every
+generator of a cone meets it in an exact ellipse, `ssi`'s `plane_cone_ellipse`, nothing where that
+is the other nappe) — turns within its plane; a coplanar circle and ellipse cross where the ellipse
+meets the circle's cylinder, certified, so a touch on that plane is one vertex
+(`query::curve_curve`). An edge where a round face runs on smoothly — a line into a plane (a rounded
+key's flat into its end), a circle into a ball, however it leans — bounds nothing, and nor does a
+concave edge (a stem entering a ball): neither is a candidate. **A whole turn takes no face at its end
+poses**: its sweep is the tool's solid of revolution, bounded by its contacts, edges and rims turned
+alone, which those faces only touch (a leaning stem at an end pose, touching its contact's surface,
+crossed there by its ball's torus, was a triple touch). Gates (`tests/swept_turned.rs`), each against
+a volume worked apart from the build and against membership and a Monte Carlo of the definition read
+by turning points back over the roll: a drum and a frustum leaning 25° from the turn's axis and 1.2
+beside the plane through it, cut by level planes, turned whole — `∫ π (ρ_max² − ρ_min²) dz` over
+their slices' radial spans — and 100°, their own volume and `Θ/2π` of that (each slice is convex and
+clear of the axis, so every circle about the axis meets it in one arc and the slice sweeps `∫ ρ (w + Θ)
+dρ`), each to 1e-9
+(`swept_turned::a_leaning_drum_turned_closes_into_its_sweep`, `…::a_leaning_frustum_turned_closes_into_its_sweep`);
+a rounded key so (`…::a_rounded_key_leaning_to_the_axis_turned_whole_closes_into_its_solid_of_revolution`,
+its part turn slow tier); a ball off the axis tilted on a thinner stem, turned whole, its slices'
+spans two apart near the ball's top (`…::a_ball_tilted_on_a_stem_turned_whole_closes_into_its_solid_of_revolution`, to
+1e-11) — turned 100° it is refused by name (`Unsettled`: a cell at its concave seam the mesh's sag
+cannot settle), never built wrong. Not yet: a drawn example agreeing with the field, a torus about a
+leaning axis under a turn, a sharp circle leaning to it.  The result is the selection's boundary with the candidates that bound nothing healed out of
 its faces (`boolean::selection`): each face as whole as the candidate's it lies on.
 
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
