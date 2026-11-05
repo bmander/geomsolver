@@ -240,27 +240,24 @@ fn tangential(carrier: &Curve,other: &Curve,over: [f64;2],mut found: Vec<(f64,V)
     out
 }
 
-/// Where `curve` over `[t0, t1]` meets `surface`, to `tol`: the surface's signed distance along it
-/// sampled, its roots and touches found by `util::roots::sampled_roots` (a touch where its rate
-/// along the curve turns), an end on the surface a root there.
-pub fn curve_surface(curve: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> Meets { meets(curve,t,surface,tol,false) }
+/// **Where `curve` over `[t0, t1]` meets `surface`, to `tol`**: certified wherever a reading of the
+/// pair is known (`certified`), sampled where none is (`sampled`), and whatever either returns
+/// settled by one rule (#780 R2, `settled`) — a curve lying in the surface is `Along`, a root past
+/// either end by more than the tolerance is no meeting and one within it is at the end, an end on
+/// the surface is a crossing there, and a run of roots the curve keeps within the tolerance of the
+/// surface between is one meeting, a crossing where the surface's side changes across it and a
+/// touch where it does not.
+/// So an edge a Boolean meets with a surface and a ray a point is located by
+/// (`Located::solid_place`) are read alike, by the same readings.
+pub fn curve_surface(curve: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> Meets { meets(curve,t,surface,tol) }
 
-/// `curve_surface` for a ray a point is located by (`Located::solid_place`): every certified
-/// reading taken. An edge's (`curve_surface`) leaves the cone's and the torus's polynomials and the
-/// general sheet search to the samples yet: a Boolean reads an edge within the tolerance of
-/// tangent, or lying along a stretch of the surface, as its sampled search does, which those do not
-/// yet say alike (a round's edges beside its torus, a drafted prism's rulings, a tool's face at an
-/// end pose along its contact cone: each built wrong or refused when they were taken), while a
-/// ray's crossings are its parity alone.
-pub fn ray_surface(curve: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> Meets { meets(curve,t,surface,tol,true) }
-
-/// `curve_surface`, or `ray_surface` where `ray`.
-fn meets(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,ray: bool) -> Meets {
+/// `curve_surface`.
+fn meets(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Meets {
     // an affine image's by its preimage's, the curve carried back (`Curve::mapped`) over the
     // parameters its image runs, the tolerance shrunk by the map's greatest stretch
     if let Surface::Affine(m) = surface {
         let (back,[al,be]) = curve.mapped(&m.back);
-        return match meets(&back,[al*t0+be,al*t1+be],&m.of,tol/m.stretch[1],ray) {
+        return match meets(&back,[al*t0+be,al*t1+be],&m.of,tol/m.stretch[1]) {
             Meets::At(at) => Meets::At(at.into_iter().map(|(t,k)| (((t-be)/al).clamp(t0,t1),k)).collect()),
             Meets::Along => Meets::Along,
         }
@@ -268,36 +265,201 @@ fn meets(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,ray: bool) ->
     // each search counted against the build's budget (#777 V3), and in its profile as certified
     // or sampled (V4)
     crate::util::meter::tick(crate::util::meter::Stage::Ray);
-    if let Some(m) = certified(curve,[t0,t1],surface,tol,ray) {
-        crate::util::meter::crossing(curve.kind(),surface.kind(),true);
-        return m
+    // a curve lying in the surface is along it, whoever reads it
+    if along(curve,[t0,t1],surface,tol) { return Meets::Along }
+    let found = match certified(curve,[t0,t1],surface,tol) {
+        Some(m) => { crate::util::meter::crossing(curve.kind(),surface.kind(),true); m }
+        None => { crate::util::meter::crossing(curve.kind(),surface.kind(),false); sampled(curve,[t0,t1],surface,tol) }
+    };
+    match found {
+        Meets::At(roots) => Meets::At(settled(curve,[t0,t1],surface,tol,roots)),
+        Meets::Along => Meets::Along,
     }
-    crate::util::meter::crossing(curve.kind(),surface.kind(),false);
-    sampled(curve,[t0,t1],surface,tol)
+}
+
+/// **Whether `curve` over `[t0, t1]` lies in `surface` to `tol`** (#780 R2: asked once, of every
+/// pair, before any reader): read at its ends, middle and quarters (`lies_along`, which a curve
+/// clear of the surface leaves at its first point), and where those all lie in it, at the steps
+/// the sampled search takes (`samples`) — a ruling of a hyperboloid, a helix a sheet carries, an
+/// edge along a stretch of a face's surface. An unbounded stretch lies along nothing: a reader
+/// says so where it can (a line along a cylinder).
+fn along(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> bool {
+    if !(t0.is_finite() && t1.is_finite()) { return false }
+    if !lies_along(&|t| curve.point(t),[t0,t1],surface,tol) { return false }
+    let n = samples(curve,[t0,t1],surface);
+    (0..=n).all(|i| surface.implicit(curve.point(t0+(t1-t0)*i as f64/n as f64)).abs() <= tol)
+}
+
+/// **What any reader returns, settled by one rule** (#780 R2), so a closed form, a bounded
+/// isolation and the sampled search read an edge at the tolerance of tangent, or ending on the
+/// surface, alike:
+/// - a root past either end of `[t0, t1]` by more than `tol` along the curve is no meeting of the
+///   stretch, and one within it is at that end;
+/// - a run of roots the curve stays within `tol` of the surface between — each next within `tol`
+///   of the last along the curve, or the curve within `tol` of the surface at the quarters
+///   between them — is one meeting: a crossing where the surface's sign changes across the run,
+///   read where the curve has left the tolerance on either side, and a touch, at its middle, where
+///   it does not. So a root found twice (at a knot two spans share, from two stretches) is one
+///   crossing; a double root rounding parts into two simple ones a hair apart, a shallow pair the
+///   samples bracket, and the noise of a polynomial's rounding where the curve runs within the
+///   tolerance of the surface for a while (a line along the top of a torus's tube, its distance
+///   the fourth power of the way from its point) are one touch. Read as crossings they cut a face
+///   where an edge only grazes the surface, and left a vertex on another face's boundary.
+/// - an end on the surface (within `tol`, and on a bounded surface on the surface itself, not its
+///   extension) is a meeting there, a crossing — the end's vertex, as the sampled search reads it —
+///   and takes the run within `tol` of it.
+fn settled(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,roots: Vec<(f64,bool)>) -> Vec<(f64,bool)> {
+    let gap = |a: f64,b: f64| distance(curve.point(a),curve.point(b));
+    let side = |t: f64| surface.implicit(curve.point(t));
+    let mut out: Vec<(f64,bool)> = roots.into_iter().filter(|r| r.0.is_finite()).filter_map(|(t,k)| {
+        if t >= t0 && t <= t1 { return Some((t,k)) }
+        let end = if t < t0 { t0 } else { t1 };
+        (gap(t,end) <= tol).then_some((end,k))
+    }).collect();
+    out.sort_by(|x,y| x.0.total_cmp(&y.0));
+    // whether the curve keeps within the tolerance of the surface from root `a` to root `b`
+    let joined = |a: f64,b: f64| gap(a,b) <= tol || (1..4).all(|k| side(a+(b-a)*k as f64/4.).abs() <= tol);
+    // the surface's side where the curve has left the tolerance, from `t` the way `way` goes:
+    // stepped twice the tolerance off and doubled, no farther than the stretch's end
+    let clear = |t: f64,way: f64| -> f64 {
+        let end = if way < 0. { t0 } else { t1 };
+        let mut step = 2.*tol/norm(curve.d1(t).1).max(1e-300);
+        loop {
+            let x = if end.is_finite() { (t+way*step).clamp(t0.min(t1),t0.max(t1)) } else { t+way*step };
+            let v = side(x);
+            if v.abs() > tol || x == end || !(step < 1e300) { return v }
+            step *= 2.;
+        }
+    };
+    let mut runs: Vec<(f64,bool)> = Vec::with_capacity(out.len());
+    let mut i = 0;
+    while i < out.len() {
+        let mut j = i;
+        while j+1 < out.len() && joined(out[j].0,out[j+1].0) { j += 1 }
+        if j == i { runs.push(out[i]) } else {
+            let (a,b) = (out[i].0,out[j].0);
+            let touch = out[i..=j].iter().all(|r| r.1) || clear(a,-1.)*clear(b,1.) > 0.;
+            runs.push((if touch { 0.5*(a+b) } else { a },touch));
+        }
+        i = j+1;
+    }
+    for end in [t0,t1] {
+        if !end.is_finite() { continue }
+        let p = curve.point(end);
+        if !(side(end).abs() <= tol) { continue }
+        if surface.bounded() && !(distance(p,surface.point(surface.inverse(p))) <= tol.max(1e-9*(1.+norm(p)))) { continue }
+        runs.retain(|r| !(gap(r.0,end) <= tol));
+        runs.push((end,false));
+    }
+    runs.sort_by(|x,y| x.0.total_cmp(&y.0));
+    runs
 }
 
 /// **Where `curve` meets `surface`, certified** (#777 V1, M1): in closed form, or its roots isolated
 /// with a bound on the derivatives of a function whose zeros they are (`util::isolate`), so no root
 /// is missed between samples however thin the sheet. `None` where no certified reading of the pair
-/// is known: the caller samples (`sampled`), and the profile says so.
-fn certified(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,ray: bool) -> Option<Meets> {
+/// is known: the caller samples (`sampled`), and the profile says so. What it returns `meets`
+/// settles (`settled`).
+fn certified(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Option<Meets> {
     match (curve,surface) {
         (&Curve::Line {p,d},Surface::Plane(f)) => line_poly(&[dot(f.z,crate::util::space::sub(p,f.o)),dot(f.z,d)],p,d,[t0,t1],surface,tol,&|_| true),
-        (&Curve::Line {p,d},Surface::Cylinder(c,r)) => Some(line_cylinder(p,d,[t0,t1],c,*r,tol)),
-        (&Curve::Line {p,d},Surface::Cone(f,r,a)) if ray => line_cone(p,d,[t0,t1],f,*r,*a,surface,tol),
-        (&Curve::Line {p,d},Surface::Sphere(c,r)) => Some(line_sphere(p,d,[t0,t1],c.o,*r,tol)),
-        (&Curve::Line {p,d},Surface::Torus(f,big,r)) if ray => line_torus(p,d,[t0,t1],f,big.abs(),r.abs(),surface,tol),
+        (&Curve::Line {p,d},Surface::Cylinder(c,r)) => Some(line_cylinder(p,d,c,*r,tol)),
+        (&Curve::Line {p,d},Surface::Cone(f,r,a)) => line_cone(p,d,[t0,t1],f,*r,*a,surface,tol),
+        (&Curve::Line {p,d},Surface::Sphere(c,r)) => Some(line_sphere(p,d,c.o,*r,tol)),
+        (&Curve::Line {p,d},Surface::Torus(f,big,r)) => line_torus(p,d,[t0,t1],f,big.abs(),r.abs(),surface,tol),
         (&Curve::Line {p,d},Surface::Revolution(f,c)) => line_revolution(p,d,[t0,t1],f,c,surface,tol),
         // a level circle's sheet in closed form, measured faster than the general search and held
         // to it (`swept_closed::every_surface_the_closed_class_emits_locates_points_exactly`); any
         // other sheet by the search
         (&Curve::Line {p,d},Surface::Blend(_,b)) => b.level_circle().and_then(|c| line_screwed_circle(p,d,[t0,t1],&c,tol))
-            .or_else(|| if ray { curve_sheet(curve,[t0,t1],surface,tol) } else { None }),
+            .or_else(|| curve_sheet(curve,[t0,t1],surface,tol)),
         (Curve::Circle(f,big),Surface::Blend(_,b)) => circle_round_screwed(f,big.abs(),b,[t0,t1],tol),
-        (Curve::Line {..},Surface::BSpline(..)) if ray => curve_sheet(curve,[t0,t1],surface,tol),
+        (Curve::Line {..},Surface::BSpline(..)) => curve_sheet(curve,[t0,t1],surface,tol),
         (Curve::Iso(b,u),Surface::Sphere(c,r)) => helix_sphere(b,*u,c.o,r.abs(),[t0,t1],tol),
+        // a circle's or an ellipse's on any surface with an algebraic form here, an edge of a
+        // drum, a fillet's rim or a section's arc (#780 R2)
+        (&Curve::Circle(f,r),_) => conic_algebraic(f.o,scale(f.x,r),scale(f.y,r),[t0,t1],surface,tol),
+        (&Curve::Ellipse(f,a,b),_) => conic_algebraic(f.o,scale(f.x,a),scale(f.y,b),[t0,t1],surface,tol),
+        (Curve::BSpline(sp),Surface::Plane(f)) => spline_plane(sp,[t0,t1],f,surface,tol),
         _ => None,
     }
+}
+
+/// **A surface's algebraic form**, where it has one here: its degree, the polynomial whose zero set
+/// it is (in its frame's coordinates — a plane's height, `ρ² − r²` a cylinder's, `|q|² − r²` a
+/// ball's, `ρ² − (r + z tan a)²` a cone's, `(|q|² + R² − r²)² − 4R²ρ²` a torus's), and which of its
+/// points are the surface's (a cone's one sheet). `None` for a surface with none.
+fn algebraic(surface: &Surface,tol: f64) -> Option<(usize,Box<dyn Fn(V) -> f64 + '_>,Box<dyn Fn(V) -> bool + '_>)> {
+    let all: Box<dyn Fn(V) -> bool> = Box::new(|_| true);
+    Some(match *surface {
+        Surface::Plane(ref f) => (1,Box::new(move |p| f.local(p)[2]),all),
+        Surface::Cylinder(ref f,r) => (2,Box::new(move |p| { let q = f.local(p); q[0]*q[0]+q[1]*q[1]-r*r }),all),
+        Surface::Sphere(ref f,r) => (2,Box::new(move |p| { let q = f.local(p); q[0]*q[0]+q[1]*q[1]+q[2]*q[2]-r*r }),all),
+        Surface::Cone(ref f,r,a) => {
+            let (sa,ca) = a.dsin_cos();
+            if !(ca.abs() > 1e-9) { return None }
+            let k = sa/ca;
+            (2,Box::new(move |p| { let q = f.local(p); let w = r+k*q[2]; q[0]*q[0]+q[1]*q[1]-w*w }),
+                Box::new(move |p| r+k*f.local(p)[2] >= -tol))
+        }
+        Surface::Torus(ref f,big,r) => {
+            let (big,r) = (big.abs(),r.abs());
+            (4,Box::new(move |p| { let q = f.local(p); let (flat,s) = (q[0]*q[0]+q[1]*q[1],q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+big*big-r*r);
+                s*s-4.*big*big*flat }),all)
+        }
+        _ => return None,
+    })
+}
+
+/// **A circle or an ellipse, `o + a cos t + b sin t`, against a surface with an algebraic form of
+/// degree `n`** (`algebraic`; #780 R2): the form along it is a trigonometric polynomial of degree
+/// `n`, `c₀ + Σ (a_k cos kt + b_k sin kt)`, its coefficients read exactly from `2n + 1` points
+/// evenly round it; its derivatives are bounded by its amplitudes, `|g'| ≤ Σ k √(a_k² + b_k²)` and
+/// `|g''| ≤ Σ k² √(a_k² + b_k²)`, and its roots isolated with them (`util::isolate`), a touch
+/// accepted where the surface's distance is within `tol`. Each kept where the surface's points are.
+fn conic_algebraic(o: V,a: V,b: V,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Option<Meets> {
+    use std::f64::consts::TAU;
+    let (n,form,keep) = algebraic(surface,tol)?;
+    let at = |t: f64| { let (s,c) = t.dsin_cos(); add(o,add(scale(a,c),scale(b,s))) };
+    let m = 2*n+1;
+    let ys: Vec<f64> = (0..m).map(|j| form(at(TAU*j as f64/m as f64))).collect();
+    let c0 = ys.iter().sum::<f64>()/m as f64;
+    let terms: Vec<(f64,f64)> = (1..=n).map(|k| {
+        let (mut x,mut y) = (0.,0.);
+        for (j,v) in ys.iter().enumerate() { let (s,c) = (TAU*(k*j) as f64/m as f64).dsin_cos(); x += v*c; y += v*s; }
+        (2.*x/m as f64,2.*y/m as f64)
+    }).collect();
+    let g = |t: f64| c0+terms.iter().enumerate().map(|(i,&(x,y))| { let (s,c) = ((i+1) as f64*t).dsin_cos(); x*c+y*s }).sum::<f64>();
+    let dg = |t: f64| terms.iter().enumerate().map(|(i,&(x,y))| { let k = (i+1) as f64; let (s,c) = (k*t).dsin_cos(); k*(y*c-x*s) }).sum::<f64>();
+    let (d1,d2) = terms.iter().enumerate().fold((0.,0.),|(p,q),(i,&(x,y))| { let (k,amp) = ((i+1) as f64,x.dhypot(y)); (p+k*amp,q+k*k*amp) });
+    let speed = norm(a).max(norm(b)).max(1e-300);
+    let found = crate::util::isolate::roots(&g,&dg,&|_,_| [d1,d2],[t0,t1],tol*1e-3/speed,&|t| surface.implicit(at(t)).abs() <= tol)?;
+    Some(Meets::At(found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at,r.touch)).collect()))
+}
+
+/// **A B-spline curve against a plane** (#780 R2): its points' heights over the plane, weighed, are
+/// a scalar B-spline (`BSpline::heights`), a polynomial over each knot span whose derivatives lie
+/// in the hull of its derivatives' coefficients there, so its roots are isolated span by span
+/// (`util::isolate`; a root at a knot both spans share `settled` reads once), a touch accepted
+/// where the plane's distance is within `tol`.
+fn spline_plane(sp: &super::nurbs::BSpline,[t0,t1]: [f64;2],f: &super::geom::Frame,surface: &Surface,tol: f64) -> Option<Meets> {
+    let h = sp.heights(f.z,f.o);
+    let [lo,hi] = sp.domain();
+    let (a,b) = (t0.max(lo),t1.min(hi));
+    if !(a <= b) { return Some(Meets::At(Vec::new())) }
+    let mut cuts = vec![a];
+    cuts.extend(h.spans().into_iter().filter(|&k| k > a && k < b));
+    cuts.push(b);
+    let g = |t: f64| h.at(t).0;
+    let dg = |t: f64| h.at(t).1;
+    let reach = sp.hull_length().max(1e-300)/(hi-lo).max(1e-300);
+    let mut out = Vec::new();
+    for w in cuts.windows(2) {
+        let bound = |x: f64,y: f64| h.bounds([x.max(w[0]),y.min(w[1])]);
+        let found = crate::util::isolate::roots(&g,&dg,&bound,[w[0],w[1]],tol*1e-3/reach,&|t| surface.implicit(sp.point(t)).abs() <= tol)?;
+        out.extend(found.into_iter().map(|r| (r.at,r.touch)));
+    }
+    Some(Meets::At(out))
 }
 
 /// Whether the curve `at` over `[t0, t1]` lies in `surface` to `tol`, read at its ends, middle
@@ -310,21 +472,18 @@ fn lies_along(at: &dyn Fn(f64) -> V,[t0,t1]: [f64;2],surface: &Surface,tol: f64)
 /// the line's parameter (lowest first) — a plane's linear, a cone's quadratic, a torus's quartic —
 /// its roots isolated with the polynomial's own derivative bounds (`util::isolate`), a touch
 /// accepted where the surface's distance there is within `tol`, and each kept where `keep` takes
-/// its point (a cone's one sheet). Over the stretch reached a tolerance past either end, each root
-/// clamped into it: an edge ending on the surface meets it at its end. A line lying in the
-/// surface is `Along`.
+/// its point (a cone's one sheet), over the stretch reached a tolerance past either end (what is
+/// past an end, and roots a hair apart, `settled` reads).
 fn line_poly(c: &[f64],p: V,d: V,[t0,t1]: [f64;2],surface: &Surface,tol: f64,keep: &dyn Fn(V) -> bool) -> Option<Meets> {
     let at = |t: f64| add(p,scale(d,t));
     let speed = norm(d).max(1e-300);
-    if lies_along(&at,[t0,t1],surface,tol) { return Some(Meets::Along) }
     let slack = tol/speed;
     let (lo,hi) = (t0-slack,t1+slack);
     let g = |t: f64| crate::util::isolate::poly(c,t);
     let dg = |t: f64| crate::util::isolate::poly_d(c,t);
     let bound = |a: f64,b: f64| crate::util::isolate::poly_bounds(c,a,b);
     let found = crate::util::isolate::roots(&g,&dg,&bound,[lo,hi],tol*1e-3/speed,&|t| surface.implicit(at(t)).abs() <= tol)?;
-    let out: Vec<(f64,bool)> = found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at.clamp(t0,t1),r.touch)).collect();
-    Some(Meets::At(merged(out,speed,tol,&|t| surface.implicit(at(t)))))
+    Some(Meets::At(found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at,r.touch)).collect()))
 }
 
 /// A line against a cone (`Surface::Cone`, its frame `f`, radius `r` at the origin, half-angle
@@ -362,13 +521,12 @@ fn line_torus(p: V,d: V,t: [f64;2],f: &super::geom::Frame,big: f64,r: f64,surfac
 /// line climbs (`z' = D ≠ 0`) its parameter at the meridian's height is `t = N / (W D)`, `N = Z −
 /// z₀ W`, and it meets the surface where the quartic `a N² + b D N W + c D² W² − D² X²` is nought,
 /// its roots isolated (`util::isolate`); a level line meets the circles at the roots of `N`, each
-/// a chord. `None` for a meridian of higher degree.
+/// a chord. `None` for a meridian of higher degree. (A line lying in it, a hyperboloid's ruling,
+/// `meets` has read as along it already.)
 fn line_revolution(p: V,d: V,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Curve,surface: &Surface,tol: f64) -> Option<Meets> {
     use crate::util::isolate::{poly_mul,poly_sum,poly};
     let Curve::BSpline(sp) = c else { return None };
     if sp.degree > 2 { return None }
-    // a line lying in it (a hyperboloid's ruling) is along it
-    if lies_along(&|t| add(p,scale(d,t)),[t0,t1],surface,tol) { return Some(Meets::Along) }
     let (q,e) = (f.local(p),f.dir_local(d));
     let speed = norm(d).max(1e-300);
     let (a,b,cc) = (e[0]*e[0]+e[1]*e[1],2.*(q[0]*e[0]+q[1]*e[1]),q[0]*q[0]+q[1]*q[1]);
@@ -400,7 +558,7 @@ fn line_revolution(p: V,d: V,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Curve,s
             let bound = |x: f64,y: f64| crate::util::isolate::poly_bounds(&pp,x,y);
             for r in crate::util::isolate::roots(&g,&dg,&bound,[0.,1.],width,&|s| surface.implicit(at(s)).abs() <= tol)? {
                 let t = t_of(r.at);
-                if t >= t0-slack && t <= t1+slack { out.push((t.clamp(t0,t1),r.touch)) }
+                if t >= t0-slack && t <= t1+slack { out.push((t,r.touch)) }
             }
         } else {
             // a level line: the circles at its height, each met as a chord
@@ -409,41 +567,19 @@ fn line_revolution(p: V,d: V,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Curve,s
             let bound = |x: f64,y: f64| crate::util::isolate::poly_bounds(&n,x,y);
             for r in crate::util::isolate::roots(&g,&dg,&bound,[0.,1.],width,&|_| false)? {
                 let rho = poly(&xx,r.at)/poly(&ww,r.at);
-                if let Meets::At(found) = line_chord(from,flat,rho.abs(),[t0,t1],tol) { out.extend(found) }
+                if let Meets::At(found) = line_chord(from,flat,rho.abs(),tol) { out.extend(found) }
             }
         }
     }
-    Some(Meets::At(merged(out,speed,tol,&|t| surface.implicit(add(p,scale(d,t))))))
-}
-
-/// **Roots along a line within `tol` of one another read as one** (`line_poly`,
-/// `line_revolution`): sorted, and each run of them closer than `tol` apart along the line taken
-/// for one meeting — a crossing where the surface's sign `side` changes across the run (a root
-/// found twice, at a knot both spans share), a touch where it does not (a double root, which
-/// rounding parts into two simple ones a hair apart: read as a crossing it cut a face where an
-/// edge only grazes the surface, and left a vertex on another face's boundary).
-fn merged(mut out: Vec<(f64,bool)>,speed: f64,tol: f64,side: &dyn Fn(f64) -> f64) -> Vec<(f64,bool)> {
-    out.sort_by(|x,y| x.0.total_cmp(&y.0));
-    let mut runs: Vec<(f64,bool)> = Vec::with_capacity(out.len());
-    let mut i = 0;
-    while i < out.len() {
-        let mut j = i;
-        while j+1 < out.len() && (out[j+1].0-out[j].0).abs()*speed <= tol { j += 1 }
-        if j == i { runs.push(out[i]) } else {
-            let (a,b) = (out[i].0,out[j].0);
-            let step = 2.*tol/speed;
-            let touch = out[i..=j].iter().all(|r| r.1) || side(a-step)*side(b+step) > 0.;
-            runs.push((if touch { 0.5*(a+b) } else { a },touch));
-        }
-        i = j+1;
-    }
-    runs
+    Some(Meets::At(out))
 }
 
 /// **`curve_surface` by the general search alone** (`curve_sheet`), whatever closed form the pair
-/// has: what each closed form for a sheet is held to and measured against (#777 M3's fast paths).
-/// `None` where the search does not take the pair.
-pub fn curve_surface_searched(curve: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> Option<Meets> { curve_sheet(curve,t,surface,tol) }
+/// has, settled as every reading is: what each closed form for a sheet is held to and measured
+/// against (#777 M3's fast paths). `None` where the search does not take the pair.
+pub fn curve_surface_searched(curve: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> Option<Meets> {
+    curve_sheet(curve,t,surface,tol).map(|m| match m { Meets::At(r) => Meets::At(settled(curve,t,surface,tol,r)),m => m })
+}
 
 /// **A line or a circle against a swept sheet or a B-spline sheet**, by the general search
 /// (#777 M1, `util::isolate::solve`): the curve's point `q(t)` and the sheet's `S(u, v)` equal,
@@ -465,8 +601,8 @@ fn curve_sheet(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Opt
     };
     let span = t1-t0;
     if !(span > 0.) { return None }
-    // a curve lying in the sheet (a ruling, a helix it carries) is along it: the sampled reading
-    // says so
+    // a curve lying in the sheet (a ruling, a helix it carries) `meets` has read as along it; one
+    // within the tolerance of it at its quarters but not between is the sampled reading's
     if lies_along(&|t| curve.point(t),[t0,t1],surface,tol) { return None }
     let speed = curve.d1(0.5*(t0+t1)).1;
     let reach = norm(speed)*span+{ let (s0,_,_) = d1([domain[0][0],domain[1][0]]); let (s1,_,_) = d1([domain[0][1],domain[1][1]]); distance(s0,s1) };
@@ -485,11 +621,7 @@ fn curve_sheet(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Opt
     let width = tol*1e-2/reach.max(1e-300);
     let near = |x: [f64;3]| { let (fx,_) = f(x); norm(fx) <= tol };
     let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,1.],domain[0],domain[1]],width,&near)?;
-    let mut out: Vec<(f64,bool)> = found.into_iter().map(|r| (t0+r.at[0].clamp(0.,1.)*span,r.touch)).collect();
-    out.sort_by(|x,y| x.0.total_cmp(&y.0));
-    let speed = norm(speed).max(1e-300);
-    out.dedup_by(|y,x| (y.0-x.0).abs()*speed <= tol);
-    Some(Meets::At(out))
+    Some(Meets::At(found.into_iter().map(|r| (t0+r.at[0].clamp(0.,1.)*span,r.touch)).collect()))
 }
 
 /// **Bounds on a blend's second derivatives over `u × v`** — `|S_uu|`, `|S_uv|`, `|S_vv|` — for
@@ -526,25 +658,29 @@ fn blend_bounds(b: &super::geom::Blend,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Opt
     }
 }
 
+/// How many steps the sampled search takes along `curve` over `[t0, t1]` against `surface`: a
+/// fraction of the surface's feature apart, and a closed curve's at least 64 a turn.
+fn samples(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface) -> usize {
+    let length = (t1-t0)*curve.speed();
+    let (lo,hi) = curve.bounds([t0,t1]);
+    ((length/surface.feature_within(lo,hi)*16.).ceil() as usize)
+        .max(if curve.period().is_some() { ((t1-t0)/(std::f64::consts::PI/32.)).ceil() as usize } else { 1 })
+        .clamp(16,1<<14)
+}
+
 /// `curve_surface` by samples: the surface's signed distance along the curve read at steps a
 /// fraction of the surface's feature apart, its roots and touches found between them
 /// (`util::roots::sampled_roots`). What a pair with no certified reading is left to.
 fn sampled(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Meets {
     let f = |t: f64| surface.implicit(curve.point(t));
-    let length = (t1-t0)*curve.speed();
-    let (lo,hi) = curve.bounds([t0,t1]);
-    let n = ((length/surface.feature_within(lo,hi)*16.).ceil() as usize)
-        .max(if curve.period().is_some() { ((t1-t0)/(std::f64::consts::PI/32.)).ceil() as usize } else { 1 })
-        .clamp(16,1<<14);
+    let n = samples(curve,[t0,t1],surface);
     crate::util::meter::charge(crate::util::meter::Stage::Ray,n as u64,|| (curve.point(t0),format!("{} × {}",curve.kind(),surface.kind())));
     let ts: Vec<f64> = (0..=n).map(|i| t0+(t1-t0)*i as f64/n as f64).collect();
     let fs: Vec<f64> = ts.iter().map(|&t| f(t)).collect();
-    if fs.iter().all(|v| v.abs() <= tol) { return Meets::Along }
     // the distance's rate along the curve, whose roots place a touch (`sampled_roots`)
     let df = |t: f64| { let (p,d) = curve.d1(t); dot(surface.gradient(p),d) };
     let mut roots: Vec<(f64,bool)> = sampled_roots(f,df,&ts,&fs,tol,1e-15*(t1-t0).abs().max(1.))
         .into_iter().map(|r| (r.at,r.touch)).collect();
-    roots.dedup_by(|b,a| (b.0-a.0).abs()*curve.speed() <= tol);
     // a swept curve's implicit runs on past its ends along their tangents (and steps across the
     // normal there): a root off the surface itself is that extension's, not the surface's
     if surface.bounded() {
@@ -556,28 +692,29 @@ fn sampled(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Meets {
     Meets::At(roots)
 }
 
-/// A line through `p` along the unit `d`, over `[t0, t1]`, against the cylinder of radius `r` about
+/// A line through `p` along the unit `d` against the cylinder of radius `r` about
 /// `c`'s axis, in closed form: across the axis it is a chord of the circle (`line_chord`). A line
 /// along the axis lies in the surface or misses it.
-fn line_cylinder(p: V,d: V,t: [f64;2],c: &super::geom::Frame,r: f64,tol: f64) -> Meets {
+fn line_cylinder(p: V,d: V,c: &super::geom::Frame,r: f64,tol: f64) -> Meets {
     use crate::util::space::sub;
     let across = |v: V| sub(v,scale(c.z,dot(v,c.z)));
     let (w,e) = (across(sub(p,c.o)),across(d));
     if dot(e,e) <= 1e-24 {
         return if (norm(w)-r).abs() <= tol { Meets::Along } else { Meets::At(Vec::new()) }
     }
-    line_chord(w,e,r,t,tol)
+    line_chord(w,e,r,tol)
 }
 
-/// A line through `p` along `d`, over `[t0, t1]`, against the sphere of radius `r` about `o`, in
+/// A line through `p` along `d` against the sphere of radius `r` about `o`, in
 /// closed form: a chord of the great circle in the plane through it and the centre (`line_chord`).
-fn line_sphere(p: V,d: V,t: [f64;2],o: V,r: f64,tol: f64) -> Meets { line_chord(crate::util::space::sub(p,o),d,r,t,tol) }
+fn line_sphere(p: V,d: V,o: V,r: f64,tol: f64) -> Meets { line_chord(crate::util::space::sub(p,o),d,r,tol) }
 
 /// The line `w + t e` (`w` from a centre) against the circle of radius `r` about that centre in the
-/// plane through them, over `[t0, t1]`: a chord's two roots, or one touch exactly at the foot where
-/// it is tangent (`plane2::chord`), each clamped to the stretch. Exact, where a sampled search
-/// places a touch only to its distance's rate's rounding, and over one evaluation, not thousands.
-fn line_chord(w: V,e: V,r: f64,[t0,t1]: [f64;2],tol: f64) -> Meets {
+/// plane through them: a chord's two roots, or one touch exactly at the foot where it is tangent
+/// (`plane2::chord`), whatever stretch is asked (what lies past it `settled` reads). Exact, where a
+/// sampled search places a touch only to its distance's rate's rounding, and over one evaluation,
+/// not thousands.
+fn line_chord(w: V,e: V,r: f64,tol: f64) -> Meets {
     let ee = dot(e,e);
     if ee <= 1e-24 { return Meets::At(Vec::new()) }
     let foot = -dot(w,e)/ee;
@@ -586,7 +723,7 @@ fn line_chord(w: V,e: V,r: f64,[t0,t1]: [f64;2],tol: f64) -> Meets {
         Chord::Touch => vec![(foot,true)],
         Chord::Cross(half) => { let half = half/ee.sqrt(); vec![(foot-half,false),(foot+half,false)] }
     };
-    Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-tol && t <= t1+tol).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
+    Meets::At(roots)
 }
 
 /// **A line through `p` along the unit `d`, over `[t0, t1]`, against the sheet a level circle screws
@@ -610,7 +747,7 @@ fn line_screwed_circle(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::LevelCircle,t
     if v1.abs()*(t1-t0).abs() <= 1e-15 {
         if !(0.0..=1.0).contains(&v0) { return Some(Meets::At(Vec::new())) }
         let o = c.back(c.frame.o,-v0);
-        return Some(line_chord(sub(p,o),perp(d),c.r,[t0,t1],tol))
+        return Some(line_chord(sub(p,o),perp(d),c.r,tol))
     }
     // (the sheet's ends held a tolerance wide: a line ending on an end circle meets it there)
     let slack = tol/(c.rise.abs()*v1.abs().max(1e-300)*norm(d).max(1e-300)).max(1e-300)*v1.abs();
@@ -647,9 +784,6 @@ fn line_screwed_circle(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::LevelCircle,t
         let near = roots.iter().any(|&(t,_)| (t-end).abs()*norm(d) <= tol);
         if !near && g(end).abs() <= 2.*c.r*tol { roots.push((end,false)) }
     }
-    for r in roots.iter_mut() { for end in [t0,t1] { if (r.0-end).abs()*norm(d) <= tol { *r = (end,false) } } }
-    roots.sort_by(|x,y| x.0.total_cmp(&y.0));
-    roots.dedup_by(|b,a| (b.0-a.0).abs()*norm(d) <= tol);
     Some(Meets::At(roots))
 }
 
@@ -788,11 +922,11 @@ pub(crate) fn edge_box(b: &Brep,e: usize,size: f64) -> ([f64;3],[f64;3]) {
 /// sample.  A line is clipped to the box exactly; any other curve by samples, each stretch grown
 /// by a sample to either side.  A stretch lying along the surface is asked of the whole again.
 pub fn curve_surface_within(curve: &Curve,t: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3],[f64;3]),grow: f64) -> Meets {
-    within(curve,t,surface,tol,bx,grow,false)
+    within(curve,t,surface,tol,bx,grow)
 }
 
-/// `curve_surface_within`, or for a ray (`ray_surface`) where `ray`.
-fn within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3],[f64;3]),grow: f64,ray: bool) -> Meets {
+/// `curve_surface_within`.
+fn within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3],[f64;3]),grow: f64) -> Meets {
     let (lo,hi) = (bx.0.map(|x| x-grow-tol),bx.1.map(|x| x+grow+tol));
     let mut stretches: Vec<[f64;2]> = Vec::new();
     match curve {
@@ -824,15 +958,16 @@ fn within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3]
             }
         }
     }
-    if stretches.len() == 1 && stretches[0] == [t0,t1] { return meets(curve,[t0,t1],surface,tol,ray) }
+    if stretches.len() == 1 && stretches[0] == [t0,t1] { return meets(curve,[t0,t1],surface,tol) }
     let mut roots = Vec::new();
     for s in stretches {
-        match meets(curve,s,surface,tol,ray) {
-            Meets::Along => return meets(curve,[t0,t1],surface,tol,ray),
+        match meets(curve,s,surface,tol) {
+            Meets::Along => return meets(curve,[t0,t1],surface,tol),
             Meets::At(r) => roots.extend(r),
         }
     }
-    Meets::At(roots)
+    // the stretches' roots settled together (a root two overlapping stretches both found is one)
+    Meets::At(settled(curve,[t0,t1],surface,tol,roots))
 }
 
 /// A face's loops drawn in its parameters as closed polygons: each edge's run along a loop cut in
@@ -1129,7 +1264,7 @@ impl<'a> Located<'a> {
             let ray = Curve::Line {p,d};
             let mut crossings = 0;
             for (fi,f) in self.b.faces.iter().enumerate() {
-                match within(&ray,[0.,reach],&f.surface,self.tol*1e-3,self.space[fi],self.tol,true) {
+                match within(&ray,[0.,reach],&f.surface,self.tol*1e-3,self.space[fi],self.tol) {
                     Meets::Along => continue 'dirs,
                     Meets::At(roots) => for (t,touch) in roots {
                         if t <= self.tol { continue }

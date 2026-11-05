@@ -132,3 +132,46 @@ fn newton_onto_two_spheres_lands_on_their_circle_and_three_on_their_point() {
     assert!(newton_onto([1.,0.1,0.],0.5,|p| Some([a(p),far(p)]),|at| at.iter().all(|r| r.1.abs() < 1e-13)).is_none());
     assert!(newton_onto([0.;3],0.5,|_| None::<[([f64;3],f64);2]>,|_| true).is_none());
 }
+
+/// **A root certified by Kantorovich's theorem is the root, however flat the system** (#780 R2,
+/// `isolate::solve`): a system all but linear — its second derivatives' bound a rounding's, as a
+/// line's against a B-spline sheet fitted flat is — has its one root found where it is. The ball
+/// the theorem holds it in was once read as `(1 − √(1 − 2h))/βK`, which cancels to nothing when
+/// `βK` is rounding's: Newton's first step left the empty ball, and the box's middle came back as
+/// a crossing a long way off (a slid bar's edge met its plane at 7.86 rather than 9).
+#[test]
+fn a_root_certified_over_a_flat_system_is_where_it_is() {
+    use gcs_core::isolate::solve;
+    let root = [0.27,0.81,0.64];
+    let a = [[2.,-0.3,0.1],[0.4,-1.,0.2],[0.,0.5,-3.]];
+    let f = |x: [f64;3]| -> ([f64;3],[[f64;3];3]) {
+        (std::array::from_fn(|i| (0..3).map(|k| a[i][k]*(x[k]-root[k])).sum()),a)
+    };
+    for bend in [0.,1e-30,1e-17,1e-9] {
+        let found = solve::<3>(&f,&|_| [bend;3],[[0.,1.];3],1e-12,&|_| false).expect("a search that stops");
+        assert_eq!(found.len(),1,"bent by {bend}: {found:?}");
+        assert!(!found[0].touch && (0..3).all(|k| (found[0].at[k]-root[k]).abs() <= 1e-12),"bent by {bend}: {found:?}");
+    }
+}
+
+/// **A double root a stretch ends on is found** (#780 R2, `isolate::roots`): `g = −A(1 + ε) − A
+/// sin t` over `[0, 2π]`, its turn at `3π/2` a hair below nought — the middle of the stretch's
+/// second half, so halving leaves it at the end of the stretches either side. There `|g'(m)|` is
+/// its bound `A h` to rounding (`sin h` against `h`), and claimed monotone by rounding, both ends
+/// below nought, each side dropped it: a cone's rim circle tangent to a slid frustum's side, met
+/// nowhere, built the frustum's sweep wrong. A touch, once, at the turn.
+#[test]
+fn a_double_root_a_stretch_ends_on_is_found() {
+    use gcs_core::isolate::roots;
+    use std::f64::consts::{PI,TAU};
+    for amp in [1.8973665961010275,1.,3.7,0.25] {
+        for eps in [4e-16,1e-15,1e-13,1e-10] {
+            let c = -amp*(1.+eps);
+            let g = |t: f64| c-amp*t.sin();
+            let dg = |t: f64| -amp*t.cos();
+            let found = roots(&g,&dg,&|_,_| [amp,amp],[0.,TAU],1e-12,&|t| g(t).abs() <= 1e-9).expect("a search that stops");
+            assert_eq!(found.len(),1,"{amp}, {eps}: {found:?}");
+            assert!(found[0].touch && (found[0].at-1.5*PI).abs() <= 1e-4,"{amp}, {eps}: {found:?}");
+        }
+    }
+}
