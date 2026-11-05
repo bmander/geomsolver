@@ -451,10 +451,16 @@ and once walked every pair of near chords on, 23 minutes, after the build was st
 polishes only from a pair of chords no neighbouring pair stands closer than, since every pair of
 two curves running within reach of one another walks to the same place (#780 C1: a short arc
 beside a traced meeting, 26,000 pairs and no crossing among them, ran the build's inverse budget
-down). The run #776 saw stall for hours, a ball-end mill screwed through a ring sector (a ball
-beside a side about an axis along the screw's, admitted), is cut to the volume it removes apart
-from the kernel, in helical coordinates to rounding, within a millionth, and to a Monte Carlo of
-the sweep's definition within four of its standard errors
+down). A stopped build is told by its type, never its words (#780 R3): every phase between its
+stages asks the one check `util::meter::go_on`, whose `Stopped` names the stage and becomes
+`Unbuilt::Budget`; a bounded search says why it gave up (`util::isolate::GaveUp`), so a certified
+reading stopped by the build reads nothing more where one past its most boxes, or a pair with no
+form, is sampled; and a sheet's inverse map searches no further
+(`swept_closed::a_build_past_its_budget_stops_by_one_typed_check`,
+`roots::a_search_says_why_it_gave_up`). The run #776 saw stall for hours, a ball-end mill screwed
+through a ring sector (a ball beside a side about an axis along the screw's, admitted), is cut to
+the volume it removes apart from the kernel, in helical coordinates to rounding, within a
+millionth, and to a Monte Carlo of the sweep's definition within four of its standard errors
 (`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right`, slow tier, about
 ten seconds of build; until #780 C1 refused by its inverse stage after three minutes); its inverse
 stage given a thousandth of `BUDGET`'s, every other stage its whole, it is refused there by name in

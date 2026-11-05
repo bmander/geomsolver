@@ -200,6 +200,32 @@ pub fn tick(stage: Stage) -> bool { charge(stage,1,|| ([f64::NAN;3],String::new(
 #[inline]
 pub fn stopped() -> bool { CURRENT.with(|c| c.borrow().as_ref().is_some_and(|m| m.stopped())) }
 
+/// **A build stopped past its budget** (#780 R3), as a typed answer: the stage that ran away, and
+/// where (`Over`). What `go_on` returns once the build is to stop, carried out by `?` — as a
+/// refusal by budget where a build answers in `swept::closed::Unbuilt`, and as its message where it
+/// answers in text (a Boolean's phases) — never matched by its words.
+#[derive(Clone,Debug,PartialEq)]
+pub struct Stopped(pub Over);
+
+impl std::fmt::Display for Stopped {
+    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f,"the build went past its budget in its {} stage at {:?} ({})",self.0.stage,self.0.at,self.0.what)
+    }
+}
+
+impl From<Stopped> for String { fn from(s: Stopped) -> String { s.to_string() } }
+
+/// **Whether the thread's build goes on** (#780 R3): `Err` once a stage went past its limit, the one
+/// check a metered pipeline makes between its phases (`go_on()?`). With no meter, always on.
+#[inline]
+pub fn go_on() -> Result<(),Stopped> {
+    // (the first stage over names itself before the meter stops: a stopped meter has its `over`)
+    CURRENT.with(|c| match &*c.borrow() {
+        Some(m) if m.stopped() => m.over().map_or(Ok(()),|o| Err(Stopped(o))),
+        _ => Ok(()),
+    })
+}
+
 /// A meeting of surfaces of kinds `a` and `b` found, in closed form or traced, in `took`.
 pub fn meeting(a: &'static str,b: &'static str,exact: bool,took: std::time::Duration) {
     CURRENT.with(|c| if let Some(m) = &*c.borrow() {

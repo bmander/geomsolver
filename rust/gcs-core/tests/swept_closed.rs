@@ -1389,6 +1389,36 @@ fn a_build_past_its_budget_refuses_by_name_within_it() {
     assert!(BUDGET.0[Stage::Membership as usize] > 20_000);
 }
 
+/// **A build past its budget stops by one typed check** (#780 R3, `util::meter::go_on`): with no
+/// meter a build always goes on; past its budget `go_on` answers `Stopped`, naming the stage that
+/// ran away, which a closed build turns into its refusal by budget (`Unbuilt::Budget`) and a
+/// Boolean's phases into their message. And a certified reading stopped there reads nothing more: a
+/// line through a torus (a quartic, its roots isolated) within a budget of one step of the ray stage
+/// is read once, its isolation stopped at its first stretch, and nothing sampled in its place.
+#[test]
+fn a_build_past_its_budget_stops_by_one_typed_check() {
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::query::{curve_surface,Meets};
+    use gcs_core::brep::swept::closed::Unbuilt;
+    use gcs_core::meter::{self as meter,Budget,Meter,Stage,Stopped};
+    assert_eq!(meter::go_on(),Ok(()));
+    let ring = Surface::Torus(Frame::about([0.;3],[0.,0.,1.]),2.,0.5);
+    let line = Curve::Line {p:[-4.,0.,0.1],d:[1.,0.,0.]};
+    let m = Meter::new(Budget::UNLIMITED);
+    let (found,on) = meter::within(&m,|| (curve_surface(&line,[0.,8.],&ring,1e-7),meter::go_on()));
+    let Meets::At(found) = found else { panic!("along") };
+    assert_eq!((found.len(),on,m.sampled()),(4,Ok(()),0),"{found:?}");
+    let m = Meter::new(Budget::UNLIMITED.with(Stage::Ray,1));
+    let (found,on) = meter::within(&m,|| (curve_surface(&line,[0.,8.],&ring,1e-7),meter::go_on()));
+    assert_eq!(found,Meets::At(Vec::new()));
+    assert_eq!((m.count(Stage::Ray),m.sampled()),(2,0),"read once, one stretch isolated, nothing sampled:\n{}",m.report());
+    let Err(Stopped(over)) = on else { panic!("{on:?}") };
+    assert_eq!(over.stage,Stage::Ray);
+    let said = String::from(Stopped(over.clone()));
+    assert!(said.starts_with("the build went past its budget in its ray stage"),"{said}");
+    assert!(matches!(Unbuilt::from(Stopped(over)),Unbuilt::Budget {stage:Stage::Ray,..}));
+}
+
 /// A box about `b`'s, a tenth of its size wider each way: a domain to judge a closed build in.
 fn box_about(b: &Brep) -> Brep {
     let (lo,hi) = b.bounds();

@@ -350,7 +350,7 @@ impl Pipe {
         let reach = |v: f64| crate::util::space::distance(self.spine(v),p);
         let bound = |x0: f64,x1: f64| { let q = reach(x0).max(reach(x1))+s1*(x1-x0); [s1*s1+q*s2,q*s3] };
         let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&|v| self.g(p,v),&|v| self.dg(p,v),
-            &bound,[0.,1.],1e-12,&|_| true)?;
+            &bound,[0.,1.],1e-12,&|_| true).ok()?;
         Some([0.,1.].into_iter().chain(roots.into_iter().map(|x| x.at)).collect())
     }
 }
@@ -375,7 +375,12 @@ impl Blend {
     /// (`turned_to`): a grid spaced along `v` alone would start on the next turn of a coil as
     /// readily as on its own.
     pub fn inverse(&self,p: V) -> Uv {
-        crate::util::meter::charge(crate::util::meter::Stage::Inverse,1,|| (p,"a swept sheet's inverse".into()));
+        let key = self as *const Blend as usize;
+        // a build past its budget searches no further (#780 R3): the last foot found, or the patch's
+        // middle, stands for it, and the build is refused by its budget whatever it makes of it
+        if !crate::util::meter::charge(crate::util::meter::Stage::Inverse,1,|| (p,"a swept sheet's inverse".into())) {
+            return crate::util::warm::get(crate::util::warm::Kind::Blend,key).unwrap_or([0.5,0.5])
+        }
         // a level circle's sheet is read level with `p` first: a sheet thinner than the warm start's
         // reach (a round rim screwed a short lead) has its other side within it
         if let Some(uv) = self.level_circle_uv(p) { return self.newton(p,uv) }
@@ -383,7 +388,6 @@ impl Blend {
         // on the far side of the tube or on the next turn of the coil, no search, and no polish
         // (Gauss–Newton from a far point's foot on an end circle, `v` held, swings `u` round it)
         if let Some(uv) = self.pipe().and_then(|c| self.pipe_uv(&c,p)) { return uv }
-        let key = self as *const Blend as usize;
         let near = 1e-3*(1.+dot(p,p).sqrt());
         let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
             .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= near);
