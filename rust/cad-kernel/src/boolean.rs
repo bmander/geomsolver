@@ -1494,7 +1494,7 @@ impl<'a> Arrangement<'a> {
     /// `traced_meeting`'s march, the branches a ridge holds (`ridged`) known before it: each a curve
     /// of the meeting, a touch among them a stretch a march ends at; `past` a refusal read past
     /// (`meeting::marched`).
-    fn traced_meeting_with(&self,faces: Two,crossings: &Crossings,known: &[Curve],ridged: &[super::meeting::Branch],past: bool,
+    fn traced_meeting_with(&self,faces: Two,crossings: &Crossings,known: &[Curve],ridged: &super::meeting::Sampled,past: bool,
         (lo,hi): Box3) -> Result<Vec<Curve>,super::meeting::Unmarched> {
         let (tol,pad) = (self.tol,self.pad);
         let ([oa,ob],[fa,fb]) = (faces.s,faces.f);
@@ -1512,7 +1512,7 @@ impl<'a> Arrangement<'a> {
                 EdgeCurve::Degenerate => None,
             }).collect();
         // a ridge's touches are stretches the two touch along, as an edge they lie along is
-        for br in ridged.iter().filter(|br| br.contact == super::meeting::Contact::Touching) {
+        for br in ridged.branches().iter().filter(|br| br.contact == super::meeting::Contact::Touching) {
             if let Curve::BSpline(s) = &br.curve { stretches.push((&br.curve,s.domain())) }
         }
         let mut touches = Touches::new(self,faces,&stretches);
@@ -1534,7 +1534,7 @@ impl<'a> Arrangement<'a> {
         // beside a ridge's or a level curve's branch is beside a known meeting
         let beside = &mut |p: V| touches.beside(p) || super::meeting::on_a_branch(sa,sb,ridged,p,tol);
         let mut traced = known.to_vec();
-        traced.extend(ridged.iter().map(|br| br.curve.clone()));
+        traced.extend(ridged.branches().iter().map(|br| br.curve.clone()));
         if past {
             // read from its ridges and level curves (#778): each seed left traced alone
             super::meeting::traced_alone(&seeds,&mut traced,&mut |p| super::ssi::trace_beside(sa,sb,&[p],beside,lo,hi,tol),tol);
