@@ -522,3 +522,66 @@ sheet nurbs {
     let runs = gcs_core::drawing::highlight(half);
     assert_eq!(runs.last().map(|r| r.0), Some(Tint::Str));
 }
+
+/// The words drawn as signs (#783 P2), as the text they stand over: `syntax::ligatures`.
+fn signs(src: &str) -> Vec<(&'static str, &str)> {
+    gcs_core::syntax::ligatures(src).into_iter()
+        .map(|(l, s)| (l.glyph(), &src[s.lo as usize..s.hi as usize]))
+        .collect()
+}
+
+/// `in` is ∈ where it stands between two operands, as membership does, `not in` is ∉ over both
+/// words, and `some` is ∃ before the name it binds — and nothing else is a sign: the block `in P {
+/// … }` with nothing before it, a label `in:`, a name, a word in a comment.
+#[test]
+fn membership_and_the_quantifier_are_signs() {
+    let src = "\
+use std
+use std.sets
+in std.front {
+  p := point
+}
+S := { q | q in std.sets.Ball(p, r: 5mm) or q not in T }
+n := { q | some t in (0deg, 90deg): q in tool at(under: m) t }
+k := { q | some s: q in F(s).f at s }
+repeat e in S.ends {
+}
+p distance(in: (1mm, 2mm)) a
+when w not in A {
+}
+// p in S, in a comment
+";
+    assert_eq!(signs(src), vec![
+        ("∈", "in"),
+        ("∉", "not in"),
+        ("∃", "some"),
+        ("∈", "in"),
+        ("∈", "in"),
+        ("∃", "some"),
+        ("∈", "in"),
+        ("∈", "in"),
+        ("∉", "not in"),
+    ]);
+    // the first `in`, the block's, has no operand before it, and `in:` is a label
+    let first = gcs_core::syntax::ligatures(src)[0].1;
+    assert_eq!(src[..first.lo as usize].lines().count(), 6);
+}
+
+/// A word typed so far is not a sign until what follows it is an operand: `p in` at a line's end,
+/// `p in|` half-typed, is the word, and the caret's own rule (the editor's) does the rest.
+#[test]
+fn a_sign_needs_its_operands() {
+    assert!(signs("p in\n").is_empty());
+    assert!(signs("p not in\n").is_empty());
+    assert!(signs("some\n").is_empty());
+    assert!(signs("in := 3\n").is_empty());
+    assert_eq!(signs("x := p.in\n"), vec![]);
+    // the runs are in order and disjoint, each over its own characters
+    let src = "a in b; c not in d; e in f\n";
+    let mut end = 0;
+    for (_, s) in gcs_core::syntax::ligatures(src) {
+        assert!(s.lo as usize >= end && s.lo < s.hi);
+        end = s.hi as usize;
+    }
+}
+

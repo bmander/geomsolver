@@ -25,7 +25,7 @@ import { Axis, Plane, Point, Sketch, Spline } from '../core/model.js';
 import { materials, mesh, objects, preview, stl, glb, unbuilt } from '../core/mesh.js';
 import { FieldMesher, deferFields, fieldJobs, supplyField, unpaired } from '../core/field.js';
 import { overview } from '../core/overview.js';
-import { Document, fromSketch, highlight } from '../core/program.js';
+import { Document, fromSketch, highlight, ligatures } from '../core/program.js';
 import { highlight as drawingHighlight } from '../core/drawing.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
@@ -2641,6 +2641,17 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
   // the line the core counted and the line the string has agree
   assert.equal(broken.slice(0, err.lo).split('\n').length, err.line);
   b.dispose();
+});
+
+/* Which words are drawn as signs is tested in Rust (`syntax::ligatures`, #783 P2); here, the seam:
+ * a sign past a non-ASCII character still lies over the words it stands for. */
+test('a sign lies over its own words, indexing the string', () => {
+  const text = '// a set — its points\nS := { q | q in A or q not in B }\n'
+    + 'n := { q | some t in (0deg, 90deg): q in tool at(under: m) t }\n';
+  const signs = ligatures(text).map((l) => [l.glyph, text.slice(l.lo, l.hi)]);
+  assert.deepEqual(signs, [['∈', 'in'], ['∉', 'not in'], ['∃', 'some'], ['∈', 'in'], ['∈', 'in']]);
+  // the block word, with nothing before it, is no sign, nor is a word in a comment
+  assert.deepEqual(ligatures('in std.front {\n  p := point // p in S\n}\n'), []);
 });
 
 test('a program half-typed is still coloured', () => {

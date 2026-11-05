@@ -685,6 +685,18 @@ dialog input[type=search] {
    inside the picked statement still reads as one. */
 .code-copy .occurrence { background: rgba(87, 87, 87, 0.16); }
 .code-copy .occurrence-def { background: rgba(14, 99, 156, 0.22); }
+/* A sign drawn over its words (#783 P2, `app/editor.ts`): `in` as ∈.  The words stay in the copy,
+   their ink made invisible, so every character keeps its place; the sign is a box laid over them
+   out of the flow, centred on their cells.  Its ink is its words', a shaping word's where they have
+   no tint of their own (the rules below come after this one and win). */
+.code-copy .ligature {
+  position: relative; color: var(--syn-word); -webkit-text-fill-color: transparent;
+}
+.code-copy .ligature * { -webkit-text-stroke-width: 0; }
+.code-copy .ligature::after {
+  content: attr(data-glyph); position: absolute; top: 0; left: 0; right: 0;
+  text-align: center; -webkit-text-fill-color: currentColor; pointer-events: none;
+}
 .code-copy .word { color: var(--syn-word); }
 .code-copy .type { color: var(--syn-type); }
 .code-copy .relation { color: var(--syn-relation); }
