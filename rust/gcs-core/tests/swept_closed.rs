@@ -1523,13 +1523,29 @@ fn a_failed_builds_arrangement_is_dumped_replayed_and_reduced() {
 /// side `h` tall above the centre, the screw's climb `k` a radian, and the turn of its roll.
 const MILL: [f64;5] = [10.,1.,3.,0.5,1.5];
 
-/// The ball's pipe of `ball_end_mill_through_a_sector`'s mill: its great circle square to its
-/// centre's velocity at the turn `start`, screwed the roll's turn from there.
-fn ball_pipe(start: f64) -> Brep {
+/// The ball's pipe of `ball_end_mill_through_a_sector`'s mill climbing `k` a radian: its great
+/// circle square to its centre's velocity at the turn `start`, screwed `turn` from there.
+fn ball_pipe(start: f64,k: f64,turn: f64) -> Brep {
     use gcs_core::brep::build::{disc,screwed};
-    let [d,r,_,k,turn] = MILL;
+    let [d,r,..] = MILL;
     let (s,c) = start.sin_cos();
     screwed(&disc([d*c,d*s,k*start],unit([-d*s,d*c,k]),r),[0.;3],[0.,0.,1.],turn,k*turn).unwrap()
+}
+
+/// The cylinder of radius 11 the mill's side screws into climbing `k` a radian over `turn` about
+/// the sector's middle: from the side's foot at the roll's start to its top at the roll's end.
+fn screwed_side(k: f64,turn: f64) -> Brep {
+    use gcs_core::brep::build::{disc,prism};
+    let [d,r,h,..] = MILL;
+    prism(&disc([0.,0.,-k*turn/2.],[0.,0.,1.],d+r),0.,h+k*turn).unwrap()
+}
+
+/// `∫ w` over `[a, b]`, `w` linear between its `corners`: the trapezoid rule, exact on each piece.
+fn piecewise(w: &dyn Fn(f64) -> f64,[a,b]: [f64;2],corners: &[f64]) -> f64 {
+    let mut cuts = vec![a,b];
+    cuts.extend(corners.iter().copied().filter(|&c| c > a && c < b));
+    cuts.sort_by(f64::total_cmp);
+    cuts.windows(2).map(|x| (x[1]-x[0])/2.*(w(x[0])+w(x[1]))).sum()
 }
 
 /// The ball-end mill of #777 V3's gate: a mill of radius 1, its ball's centre 10 from a screw's
@@ -1601,9 +1617,12 @@ pub(crate) fn helix_reach(rho: f64,d: f64,r: f64,k: f64) -> (f64,f64) {
 /// `∫ ρ f(ρ) dρ` across the ring `d − r ≤ ρ ≤ d + r`, read at `ρ = d + r sin θ`: the square-root
 /// ends of a ball's reach (`helix_reach`) made smooth, so Simpson's rule on 4000 steps holds it to
 /// rounding.
-pub(crate) fn across_the_ring(d: f64,r: f64,f: &dyn Fn(f64) -> f64) -> f64 {
-    use std::f64::consts::FRAC_PI_2;
-    crate::brep::simpson(-FRAC_PI_2,FRAC_PI_2,4000,|th| { let rho = d+r*th.sin(); rho*f(rho)*r*th.cos() })
+pub(crate) fn across_the_ring(d: f64,r: f64,f: &dyn Fn(f64) -> f64) -> f64 { across_the_ring_from(d-r,d,r,f) }
+
+/// `across_the_ring` from `ρ₀` out.
+fn across_the_ring_from(rho0: f64,d: f64,r: f64,f: &dyn Fn(f64) -> f64) -> f64 {
+    let from = ((rho0-d)/r).clamp(-1.,1.).asin();
+    crate::brep::simpson(from,std::f64::consts::FRAC_PI_2,4000,|th| { let rho = d+r*th.sin(); rho*f(rho)*r*th.cos() })
 }
 
 /// Membership in the ball-end mill of `ball_end_mill_through_a_sector`, read directly: within its
@@ -1661,11 +1680,7 @@ fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right() {
     // W's antiderivative's increments, the trapezoid rule exact on each linear piece between its corners
     let corners = [-2.-k*PI/6.,-2.+k*PI/6.,2.-k*PI/6.,2.+k*PI/6.];
     let w = |zeta: f64| ((PI/6.).min((2.-zeta)/k)-(-PI/6.).max((-2.-zeta)/k)).max(0.);
-    let over = |a: f64,b: f64| -> f64 {
-        let cuts: Vec<f64> = std::iter::once(a).chain(corners.iter().copied().filter(|&c| c > a && c < b)).chain(std::iter::once(b)).collect();
-        cuts.windows(2).map(|x| (x[1]-x[0])/2.*(w(x[0])+w(x[1]))).sum()
-    };
-    let removed = across_the_ring(d,r,&|rho| { let (m,a) = helix_reach(rho,d,r,k); over(-m,h+k*a) });
+    let removed = across_the_ring(d,r,&|rho| { let (m,a) = helix_reach(rho,d,r,k); piecewise(&w,[-m,h+k*a],&corners) });
     let blank = volume(&sector);
     eprintln!("the ball-end mill through a sector: removes {removed} apart from the build");
     let clock = std::time::Instant::now();
@@ -1728,25 +1743,11 @@ fn the_ball_end_mills_pipe_beside_its_side_is_arranged() {
     use gcs_core::brep::build::{disc,prism};
     let [d,r,h,k,turn] = MILL;
     let (sector,..) = ball_end_mill_through_a_sector();
-    let pipe = ball_pipe(-turn/2.);
+    let pipe = ball_pipe(-turn/2.,k,turn);
     let (s,c) = (turn/2f64).sin_cos();
     let side_at_end = prism(&disc([d*c,d*s,k*turn/2.],[0.,0.,1.],r),0.,h).unwrap();
     assert_eq!(arrangement_within(&sector,&[&pipe,&side_at_end],1e-6).unwrap().cells().unwrap().len(),3);
-    let side_screwed = prism(&disc([0.,0.,-k*turn/2.],[0.,0.,1.],d+r),0.,h+k*turn).unwrap();
-    assert_eq!(arrangement_within(&sector,&[&pipe,&side_screwed],1e-6).unwrap().cells().unwrap().len(),6);
-}
-
-/// The pipe of `ball_end_mill_through_a_sector`'s ball screwed `lead` a turn over the roll of the
-/// drawn mill (`solid_sweeps/ball_end_mill.sv`), 2π/3 about the sector's middle, and the cylinder of
-/// radius 11 its side screws into over that roll: from the side's foot at the roll's start, `−kπ/3`,
-/// to its top at the roll's end.
-fn pipe_and_screwed_side(lead: f64) -> (Brep,Brep) {
-    use gcs_core::brep::build::{disc,prism,screwed};
-    let [d,r,h,..] = MILL;
-    let (k,turn) = (lead/std::f64::consts::TAU,std::f64::consts::TAU/3.);
-    let (s,c) = (-turn/2.).sin_cos();
-    let pipe = screwed(&disc([d*c,d*s,-k*turn/2.],unit([-d*s,d*c,k]),r),[0.;3],[0.,0.,1.],turn,k*turn).unwrap();
-    (pipe,prism(&disc([0.,0.,-k*turn/2.],[0.,0.,1.],d+r),0.,h+k*turn).unwrap())
+    assert_eq!(arrangement_within(&sector,&[&pipe,&screwed_side(k,turn)],1e-6).unwrap().cells().unwrap().len(),6);
 }
 
 /// **The drawn ball-end mill's pipe beside the cylinder its side screws into is arranged, whatever
@@ -1774,33 +1775,24 @@ fn pipe_and_screwed_side(lead: f64) -> (Brep,Brep) {
 #[test]
 fn the_drawn_ball_end_mills_pipe_beside_its_screwed_side_is_arranged_at_every_lead() {
     use gcs_core::brep::boolean::arrangement_within;
-    use std::f64::consts::{FRAC_PI_2,PI,TAU};
+    use std::f64::consts::{PI,TAU};
     let [d,r,..] = MILL;
     let (sector,..) = ball_end_mill_through_a_sector();
-    let (edge,blank) = (PI/6.,volume(&sector));
+    let (edge,blank,turn) = (PI/6.,volume(&sector),TAU/3.);
     for lead in [3.,4.,5.] {
         let k = lead/TAU;
-        let foot = -k*PI/3.;
+        let foot = -k*turn/2.;
         let reach = |rho: f64| helix_reach(rho,d,r,k).0;
-        // `∫ w(ψ) dψ` across the sector, `w` piecewise linear between `corners`, by the trapezoid rule
-        let across = |w: &dyn Fn(f64) -> f64,corners: [f64;2]| -> f64 {
-            let mut cuts = vec![-edge,edge];
-            cuts.extend(corners.into_iter().filter(|c| c.abs() < edge));
-            cuts.sort_by(f64::total_cmp);
-            cuts.windows(2).map(|x| (x[1]-x[0])/2.*(w(x[0])+w(x[1]))).sum()
-        };
         let pipe = PI/3.*across_the_ring(d,r,&|rho| 2.*reach(rho));
-        let below = across_the_ring(d,r,&|rho| { let m = reach(rho); across(&|psi| (foot-k*psi+m).clamp(0.,2.*m),[(foot+m)/k,(foot-m)/k]) });
+        let below = across_the_ring(d,r,&|rho| { let m = reach(rho);
+            piecewise(&|psi| (foot-k*psi+m).clamp(0.,2.*m),[-edge,edge],&[(foot+m)/k,(foot-m)/k]) });
         let side = PI/3.*((d+r)*(d+r)-64.)/2.*(2.-foot);
         let top = gcs_core::roots::brent(&|rho| -reach(rho),d-r,d+r,1e-13,200,|_,_| false);
         let cornered = (foot-top.value)/k > edge;
-        let from = ((top.at-d)/r).asin();
-        let corner = crate::brep::simpson(from,FRAC_PI_2,4000,|th| { let rho = d+r*th.sin();
-            let from = (foot+reach(rho))/k;
-            rho*k/2.*((edge-from).max(0.).powi(2)-(-edge-from).max(0.).powi(2))*r*th.cos() });
+        let corner = across_the_ring_from(top.at,d,r,&|rho| { let psi_c = (foot+reach(rho))/k;
+            k/2.*((edge-psi_c).max(0.).powi(2)-(-edge-psi_c).max(0.).powi(2)) });
         let expected = [(true,false,below),(true,true,pipe-below),(false,true,side-pipe+below),(false,false,blank-side-below)];
-        let (screwed_pipe,screwed_side) = pipe_and_screwed_side(lead);
-        let complex = arrangement_within(&sector,&[&screwed_pipe,&screwed_side],1e-6).unwrap();
+        let complex = arrangement_within(&sector,&[&ball_pipe(-turn/2.,k,turn),&screwed_side(k,turn)],1e-6).unwrap();
         let cells = complex.cells().unwrap();
         let held = |c: usize| {
             let p = complex.inside(c).unwrap().unwrap();
@@ -1808,15 +1800,13 @@ fn the_drawn_ball_end_mills_pipe_beside_its_screwed_side_is_arranged_at_every_le
             ((p[2]-k*psi).abs() <= reach(rho),rho <= d+r && p[2] >= foot)
         };
         let read: Vec<((bool,bool),f64)> = (1..cells.len()).map(|c| (held(c),cells[c].volume)).collect();
-        eprintln!("{lead} mm a turn: {read:?}; the corner {corner} ({cornered})");
-        assert_eq!(read.len(),if cornered { 5 } else { 4 },"{lead} mm a turn: {read:?}");
         for (in_pipe,in_side,volume) in expected {
             let of: Vec<f64> = read.iter().filter(|x| x.0 == (in_pipe,in_side)).map(|x| x.1).collect();
             assert_eq!(of.len(),if cornered && !in_pipe && in_side { 2 } else { 1 },"{lead} mm a turn: {read:?}");
             let sum: f64 = of.iter().sum();
             assert!((sum-volume).abs() <= 1e-6*blank,"{lead} mm a turn, {in_pipe} {in_side}: {sum} against {volume}");
             if of.len() == 2 {
-                let least = of.iter().copied().fold(f64::INFINITY,f64::min);
+                let least = of[0].min(of[1]);
                 assert!((least-corner).abs() <= 1e-6*blank,"{lead} mm a turn: the corner {least} against {corner}");
             }
         }
@@ -1842,7 +1832,7 @@ fn the_ball_end_mill_screwed_through_a_sector_reduced_to_its_boolean_holds_every
     let [d,r,_,k,turn] = MILL;
     // the pipe, screwed from 0.75 rad before the sector to 0.75 after, the sector standing from −π/6
     // to π/6
-    let pipe = ball_pipe(-turn/2.);
+    let pipe = ball_pipe(-turn/2.,k,turn);
     let side = prism(&disc([0.,0.,-3.],[0.,0.,1.],d+r),0.,6.).unwrap();
     let (sector,..) = ball_end_mill_through_a_sector();
     // the meridian section's polar integral: across the ring, the heights within `M(ρ)` of the
@@ -1872,7 +1862,7 @@ fn a_balls_pipe_is_inverted_off_its_spine() {
     use gcs_core::brep::geom::Surface;
     use gcs_core::space::{distance,dot,sub};
     let [d,_,_,k,turn] = MILL;
-    let pipe = ball_pipe(0.);
+    let pipe = ball_pipe(0.,k,turn);
     let face = pipe.faces.iter().find(|f| f.surface.kind() == "blend").expect("the pipe's side");
     let Surface::Blend(_,b) = &face.surface else { unreachable!() };
     assert!(b.pipe().is_some(),"read as a pipe");
@@ -1908,4 +1898,3 @@ fn a_balls_pipe_is_inverted_off_its_spine() {
         if uv[1] > 1e-9 && uv[1] < 1.-1e-9 { assert!(gap < 1e-9 || off(dv) <= 1e-5,"{p:?}: square along v {}",off(dv)) }
     }
 }
-

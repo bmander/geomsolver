@@ -503,14 +503,6 @@ fn the_bull_nose_turned_partway_stops_inside_the_ring() {
     crate::object_builder::builds_as_exported("stopped_bullnose.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
 }
 
-/// `ball_end_mill.sv` stated `lead` a turn: its document with the named number replaced, as
-/// `examples::document`'s `with_params` gives a named number the caller's value.
-fn ball_end_mill(lead: f64) -> Elaborated {
-    let text = text("ball_end_mill.sv");
-    assert!(text.contains("lead := 3mm "));
-    fixtures::read(&text.replace("lead := 3mm ",&format!("lead := {lead}mm ")))
-}
-
 /// What `ball_end_mill.sv` stated `lead` a turn leaves of its ring sector (`π/3 · 160`): in helical
 /// coordinates `(ρ, ψ, ζ = z − kψ)`, `k` the lead over `2π`, a point of the sector is removed where
 /// the helix through it meets the mill, which the swing carries wholly across the sector: `ζ`
@@ -550,9 +542,11 @@ fn the_ball_end_mill_screwed_mills_its_helical_groove() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: the ball-end mill at two more leads")]
 fn the_ball_end_mill_screwed_at_other_leads_mills_its_groove() {
+    let text = text("ball_end_mill.sv");
     for lead in [2.,4.] {
-        let e = ball_end_mill(lead);
-        near(exported(&e,"block"),ball_end_mill_leaves(lead),1e-8);
+        // its `lead` stated over the document's, as `examples::document`'s `with_params` does
+        let (stated,_) = gcs_core::edit::rebind(&text,&[("lead".into(),format!("{lead}mm"))]).unwrap();
+        near(exported(&fixtures::read(&stated),"block"),ball_end_mill_leaves(lead),1e-8);
     }
 }
 

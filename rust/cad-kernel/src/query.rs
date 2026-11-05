@@ -823,32 +823,49 @@ fn circle_round_screwed(f: &super::geom::Frame,big: f64,b: &std::sync::Arc<super
     let super::geom::Carry::Screw {center,axis,angle,advance} = b.carry else { return Err(Uncertified::NoForm) };
     let k = crate::util::space::normalised(axis).ok_or(Uncertified::NoForm)?;
     if norm(cross(f.z,k)) > 1e-12 { return Err(Uncertified::NoForm) }
-    let perp = |x: V| sub(x,scale(k,dot(x,k)));
-    if norm(perp(sub(f.o,center))) > tol || angle == 0. { return Err(Uncertified::NoForm) }
-    let helices = super::ssi::screwed_circle_round(b,&super::geom::Frame::about(center,k),big,tol).ok_or(Uncertified::NoForm)?;
+    if norm(sub(sub(f.o,center),scale(k,dot(sub(f.o,center),k)))) > tol || angle == 0. { return Err(Uncertified::NoForm) }
     let rise = advance*dot(axis,k);
     if rise == 0. { return Err(Uncertified::NoForm) }
     let h = dot(sub(f.o,center),k);
     let mut roots = Vec::new();
-    for c in &helices {
-        let Curve::Iso(_,u) = *c else { continue };
-        let start = b.d1([u,0.]).0;
-        let v = (h-dot(sub(start,center),k))/rise;
+    for u in screw_helices(b,big,tol)? {
+        let v = (h-dot(sub(b.d1([u,0.]).0,center),k))/rise;
         let slack = tol/rise.abs();
         if !(-slack..=1.+slack).contains(&v) { continue }
-        let (p,su,sv) = b.d1([u,v.clamp(0.,1.)]);
+        let (p,touch) = on_screw_helix(b,u,v);
         // the circle's parameter at the point, within its stretch
         let q = sub(p,f.o);
         let mut t = dot(q,f.y).datan2(dot(q,f.x));
         while t < t0-1e-12 { t += std::f64::consts::TAU }
         while t > t1+1e-12 { t -= std::f64::consts::TAU }
         if t < t0-1e-12 || t > t1+1e-12 { continue }
-        // on a helix the sheet touches the cylinder along, its normal is the cylinder's own
-        let n = crate::util::space::normalised(cross(su,sv)).unwrap_or([0.;3]);
-        let radial = crate::util::space::normalised(perp(sub(p,center))).unwrap_or([0.;3]);
-        roots.push((t.clamp(t0,t1),norm(cross(n,radial)) <= 1e-6));
+        roots.push((t.clamp(t0,t1),touch));
     }
     Ok(Meets::At(roots))
+}
+
+/// **Where the sheet a circle screws into meets the cylinder of radius `big` about the screw's
+/// axis**: the `u` of each helix `ssi::screwed_circle_round` reads there (a touch read once, placed
+/// where the circle's distance from the axis turns), what a circle about the axis
+/// (`circle_round_screwed`) and a line along it (`line_along_screw`) are crossed by. `NoForm` for a
+/// sheet no circle screws into.
+fn screw_helices(b: &std::sync::Arc<super::geom::Blend>,big: f64,tol: f64) -> Result<Vec<f64>,Uncertified> {
+    let super::geom::Carry::Screw {center,axis,..} = b.carry else { return Err(Uncertified::NoForm) };
+    let k = crate::util::space::normalised(axis).ok_or(Uncertified::NoForm)?;
+    let helices = super::ssi::screwed_circle_round(b,&super::geom::Frame::about(center,k),big,tol).ok_or(Uncertified::NoForm)?;
+    Ok(helices.into_iter().filter_map(|c| if let Curve::Iso(_,u) = c { Some(u) } else { None }).collect())
+}
+
+/// A screwed sheet's point on the helix `u` at `v` (clamped to the sheet), and whether the sheet
+/// touches the cylinder about the axis there: on a helix it touches that cylinder along, its normal
+/// is the cylinder's own.
+fn on_screw_helix(b: &super::geom::Blend,u: f64,v: f64) -> (V,bool) {
+    use crate::util::space::{cross,normalised,sub};
+    let super::geom::Carry::Screw {center,axis,..} = b.carry else { unreachable!("a screwed sheet") };
+    let (p,su,sv) = b.d1([u,v.clamp(0.,1.)]);
+    let off = sub(p,center);
+    let radial = normalised(sub(off,scale(axis,dot(off,axis)/dot(axis,axis)))).unwrap_or([0.;3]);
+    (p,norm(cross(normalised(cross(su,sv)).unwrap_or([0.;3]),radial)) <= 1e-6)
 }
 
 /// **A line along a screw's axis against the sheet a circle screws into** (#791), in closed form:
@@ -870,30 +887,23 @@ fn line_along_screw(p: V,d: V,[t0,t1]: [f64;2],b: &std::sync::Arc<super::geom::B
     let k = normalised(axis).ok_or(Uncertified::NoForm)?;
     let dd = norm(d);
     if !(dd > 0.) || norm(cross(d,k)) > 1e-12*dd || angle == 0. { return Err(Uncertified::NoForm) }
-    let perp = |x: V| sub(x,scale(k,dot(x,k)));
-    let off = perp(sub(p,center));
+    let off = sub(sub(p,center),scale(k,dot(sub(p,center),k)));
     let big = norm(off);
     if big <= tol { return Err(Uncertified::NoForm) }
-    let helices = super::ssi::screwed_circle_round(b,&super::geom::Frame::about(center,k),big,tol).ok_or(Uncertified::NoForm)?;
-    let (e1,e2) = (scale(off,1./big),cross(k,scale(off,1./big)));
+    // each helix's start's angle about the axis, from the line's
+    let around = super::geom::Frame::new(center,k,off);
     // the turns `θ v` over the sheet, the tolerance's worth past each end
     let slack = tol/(angle.abs()*big);
     let (lo,hi) = { let (a,z) = (angle*-slack,angle*(1.+slack)); (a.min(z),a.max(z)) };
     let tau = std::f64::consts::TAU;
     let mut roots = Vec::new();
-    for c in &helices {
-        let Curve::Iso(_,u) = *c else { continue };
-        let s = perp(sub(b.d1([u,0.]).0,center));
-        let phi = dot(s,e2).datan2(dot(s,e1));
+    for u in screw_helices(b,big,tol)? {
+        let at = around.local(b.d1([u,0.]).0);
+        let phi = at[1].datan2(at[0]);
         for n in ((lo+phi)/tau).ceil() as i64..=((hi+phi)/tau).floor() as i64 {
-            let v = (tau*n as f64-phi)/angle;
-            let (q,su,sv) = b.d1([u,v.clamp(0.,1.)]);
+            let (q,touch) = on_screw_helix(b,u,(tau*n as f64-phi)/angle);
             let t = dot(sub(q,p),d)/(dd*dd);
-            if t < t0-tol/dd || t > t1+tol/dd { continue }
-            // on a helix the sheet touches the cylinder along, its normal is the cylinder's own
-            let normal = normalised(cross(su,sv)).unwrap_or([0.;3]);
-            let radial = normalised(perp(sub(q,center))).unwrap_or([0.;3]);
-            roots.push((t,norm(cross(normal,radial)) <= 1e-6));
+            if t >= t0-tol/dd && t <= t1+tol/dd { roots.push((t,touch)) }
         }
     }
     Ok(Meets::At(roots))

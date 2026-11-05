@@ -892,11 +892,9 @@ fn screwed_circle_level(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blen
         // cylinder's rim and the helix the sheet touches that cylinder along all touch); a run
         // wholly within the tolerance past the edge (a graze) is read to the tolerance
         let refine = |inside: f64,outside: f64| {
-            let within = |u: f64| (0.0..=1.).contains(&v_of(u));
-            let keep: &dyn Fn(f64) -> bool = if within(inside) { &within } else { &on };
-            let (mut a,mut b) = (inside,outside);
-            for _ in 0..60 { let m = 0.5*(a+b); if keep(m) { a = m } else { b = m } }
-            a
+            let (lo,hi) = if (0.0..=1.).contains(&v_of(inside)) { (0.,1.) } else { (-slack,1.+slack) };
+            crate::util::roots::bisect(inside,outside,|a,b| 0.5*(a+b),|a,b| { let m = 0.5*(a+b); m != a && m != b },
+                |m| (lo..=hi).contains(&v_of(m))).0
         };
         let at = |n: usize| { let x = (start+n) as f64/N as f64; x };
         let (u0,u1) = (refine(at(first),at(first)-1./N as f64),refine(at(i-1),at(i)));

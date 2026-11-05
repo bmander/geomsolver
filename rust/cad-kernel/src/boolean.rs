@@ -2391,11 +2391,17 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
         let e = &out[h.edge as usize];
         let node = e.point(param(h,out,if at_start { 0. } else { 1. }),pool);
         let reach = |s: f64| distance(node,e.point(param(h,out,if at_start { s } else { 1.-s }),pool));
-        // bracket the part: halved until short of `delta`, doubled until past it
+        // bracket the part, halved until short of `delta` or doubled until past it, and halved to
+        // a millionth of it: a way read that far off its length turns by a millionth of what two
+        // tied curves part by there
         let (mut lo,mut hi) = (0.,1e-4);
-        while hi > 1e-300 && reach(hi) > delta { hi *= 0.5 }
-        while hi < 1. && reach(hi) < delta { lo = hi; hi = (2.*hi).min(1.) }
-        for _ in 0..60 { let m = 0.5*(lo+hi); if reach(m) < delta { lo = m } else { hi = m } }
+        if reach(hi) > delta {
+            while hi > 1e-300 && reach(0.5*hi) > delta { hi *= 0.5 }
+            lo = 0.5*hi;
+        } else {
+            while hi < 1. && reach(hi) < delta { lo = hi; hi = (2.*hi).min(1.) }
+        }
+        let (_,hi) = crate::util::roots::bisect(lo,hi,|a,b| 0.5*(a+b),|a,b| b-a > 1e-6*b,|m| reach(m) < delta);
         dir_at(h,at_start,hi)
     };
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new();nodes.len()];
