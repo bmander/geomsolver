@@ -1104,7 +1104,8 @@ fn planes_through_the_axis_cut_a_screwed_rims_ramp_in_closed_form() {
     let k = 0.5/std::f64::consts::TAU;
     let r = selected(&[&ramp(0.5,theta,-theta/2.),&sector],&|m| m[0] && m[1],1e-6).unwrap();
     let expected = PI/3.*k*PI;
-    assert!((volume(&r.brep)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&r.brep));
+    // (to 1e-12 since its traced cuts are read across planes, #798: by their stretches, 3e-7)
+    assert!((volume(&r.brep)-expected).abs() <= 1e-12*expected,"{} against {expected}",volume(&r.brep));
 }
 
 /// **A drum screwed a short lead through most of a turn closes into its helical sweep** (#721 F2c5):

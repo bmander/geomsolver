@@ -68,10 +68,9 @@ impl Pcurve {
     }
     /// The parameters at the edge's parameter `t` of `edge`, on `surface`.
     pub fn at(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex]) -> Uv {
-        let s = if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. };
         match *self {
             Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
-            Pcurve::Line {a,b} => [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])],
+            Pcurve::Line {a,b} => along(a,b,t,edge),
             Pcurve::Inverse {..} => self.inverse_of(t,edge.point(t,vertices),edge,surface).expect("an inverse curve"),
         }
     }
@@ -80,8 +79,7 @@ impl Pcurve {
     /// for any other curve.
     pub(crate) fn inverse_of(&self,t: f64,x: V,edge: &Edge,surface: &Surface) -> Option<Uv> {
         let Pcurve::Inverse {a,b} = *self else { return None };
-        let s = if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. };
-        let near = [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])];
+        let near = along(a,b,t,edge);
         Some(unwrap(surface.inverse_near(x,near),near,surface.periods()))
     }
     /// `d(u, v)/dt` at `t`.
@@ -123,6 +121,12 @@ impl Pcurve {
             })),
         }
     }
+}
+
+/// The point the edge's parameter `t` reaches on the line from `a` (at its first) to `b` (its last).
+fn along(a: Uv,b: Uv,t: f64,edge: &Edge) -> Uv {
+    let s = if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. };
+    [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])]
 }
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters

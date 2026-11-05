@@ -333,7 +333,53 @@ impl Pipe {
     /// screw's turn over the patch, `ρ` the helix's distance from the axis), each bounded over a
     /// stretch where `|H − p|` reaches `q` at most. Each stretch read is the inverse stage's work
     /// (`util::meter`). `None` where the search gave up or the build stopped.
-    pub fn feet(&self,p: V) -> Option<Vec<f64>> {
+    pub fn feet(&self,p: V) -> Option<Vec<f64>> { self.feet_over(p,&[[0.,1.]]) }
+    /// **The feet of `p` on the spine its nearest point of the pipe may stand about** (#798), and
+    /// the two ends: `feet` over the stretches of the spine that can hold one, each a sixteenth of
+    /// a turn at most. On a stretch of width `w` whose ends stand `d₀` and `d₁` from `p`, the spine
+    /// keeps within `L = (d₀ + d₁ − s₁ w) / 2` and `U = (d₀ + d₁ + s₁ w) / 2` of it (its speed `s₁`),
+    /// so every circle about it stands at least `max(L − r, r − U, 0)` from `p`; a stretch where
+    /// that is farther than `p` stands from the circle at an end of some stretch is passed by, its
+    /// feet no nearer than a point of the pipe already in hand. The pipe's nearest point is about
+    /// one of these, as it is about one of `feet` — searched over the turn or so of the coil `p`
+    /// stands beside, not all of them (a coil of six turns was searched whole at every point of its
+    /// meetings traced, and a traced meeting with an end disc measured 50 times slower for it).
+    pub fn nearest_feet(&self,p: V) -> Option<Vec<f64>> {
+        let Carry::Screw {angle,..} = self.carry else { return None };
+        let s1 = norm(self.carry.rate(self.frame.o));
+        let n = ((16.*angle.abs()/std::f64::consts::TAU).ceil() as usize).max(1);
+        let vs: Vec<f64> = (0..=n).map(|i| i as f64/n as f64).collect();
+        // each end's reach to `p`, and how far `p` stands from the circle about it: its height off
+        // the circle's plane, square to the spine there, and its reach in it against the radius
+        let (reach,off): (Vec<f64>,Vec<f64>) = vs.iter().map(|&v| {
+            let x = self.spine(v);
+            let d = sub(p,x);
+            let (q,h) = (norm(d),dot(d,self.carry.rate(x))/s1);
+            (q,((q*q-h*h).max(0.).sqrt()-self.r).dhypot(h))
+        }).unzip();
+        // a point of the pipe in hand, the nearest of those circles (a hair of slack: a foot at a
+        // stretch's end is read there again by the search)
+        let best = off.iter().fold(f64::INFINITY,|m,&x| m.min(x));
+        let slack = best+1e-9*(1.+best+self.r);
+        let can = |i: usize| {
+            let (sum,w) = (reach[i]+reach[i+1],s1*(vs[i+1]-vs[i]));
+            let (lo,hi) = (0.5*(sum-w),0.5*(sum+w));
+            (lo-self.r).max(self.r-hi).max(0.) <= slack
+        };
+        // each run of neighbouring stretches that can hold one, searched as one
+        let mut runs = Vec::new();
+        let mut i = 0;
+        while i < n {
+            if !can(i) { i += 1; continue }
+            let mut j = i+1;
+            while j < n && can(j) { j += 1 }
+            runs.push([vs[i],vs[j]]);
+            i = j;
+        }
+        self.feet_over(p,&runs)
+    }
+    /// `feet` over each of `spans`, and the spine's two ends.
+    fn feet_over(&self,p: V,spans: &[[f64;2]]) -> Option<Vec<f64>> {
         let Carry::Screw {center,axis,angle,..} = self.carry else { return None };
         let k = crate::util::space::normalised(axis)?;
         let o = sub(self.frame.o,center);
@@ -357,53 +403,10 @@ impl Pipe {
         let dg = |v: f64| { let (x,dx) = jet(v); s1*s1+dot(sub(x,p),scale(cross(axis,dx),angle)) };
         let reach = |v: f64| crate::util::space::distance(jet(v).0,p);
         let bound = |x0: f64,x1: f64| { let q = reach(x0).max(reach(x1))+s1*(x1-x0); [s1*s1+q*s2,q*s3] };
-        let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&g,&dg,&bound,[0.,1.],1e-12,&|_| true).ok()?;
-        Some([0.,1.].into_iter().chain(roots.into_iter().map(|x| x.at)).collect())
-    }
-    /// **The feet of `p` on the spine its nearest point of the pipe may stand about** (#798), and
-    /// the two ends: `feet` over the stretches of the spine that can hold one, each a sixteenth of
-    /// a turn at most. On a stretch of width `w` whose ends stand `d₀` and `d₁` from `p`, the spine
-    /// keeps within `L = (d₀ + d₁ − s₁ w) / 2` and `U = (d₀ + d₁ + s₁ w) / 2` of it (its speed `s₁`),
-    /// so every circle about it stands at least `max(L − r, r − U, 0)` from `p`; a stretch where
-    /// that is farther than `p` stands from the circle at an end of some stretch is passed by, its
-    /// feet no nearer than a point of the pipe already in hand. The pipe's nearest point is about
-    /// one of these, as it is about one of `feet` — searched over the turn or so of the coil `p`
-    /// stands beside, not all of them (a coil of six turns was searched whole at every point of its
-    /// meetings traced, and a traced meeting with an end disc measured 50 times slower for it).
-    pub fn nearest_feet(&self,p: V) -> Option<Vec<f64>> {
-        let Carry::Screw {center,axis,angle,..} = self.carry else { return None };
-        let k = crate::util::space::normalised(axis)?;
-        let o = sub(self.frame.o,center);
-        let rho = norm(sub(o,scale(k,dot(o,k))));
-        let a = angle.abs();
-        let (s1,s2,s3) = (norm(self.carry.rate(self.frame.o)),a*a*rho,a*a*a*rho);
-        let n = ((16.*a/std::f64::consts::TAU).ceil() as usize).max(1);
-        let vs: Vec<f64> = (0..=n).map(|i| i as f64/n as f64).collect();
-        let at: Vec<V> = vs.iter().map(|&v| self.spine(v)).collect();
-        let reach: Vec<f64> = at.iter().map(|&x| crate::util::space::distance(x,p)).collect();
-        // a point of the pipe in hand: the nearest of the circles about the stretches' ends
-        let best = vs.iter().map(|&v| self.off_back(sub(self.back(p,v),self.frame.o))).fold(f64::INFINITY,f64::min);
-        // (a hair of slack: a foot at a stretch's end is read there again by the search)
-        let slack = best+1e-9*(1.+best+self.r);
-        let can = |i: usize| {
-            let (sum,w) = (reach[i]+reach[i+1],s1*(vs[i+1]-vs[i]));
-            let (lo,hi) = (0.5*(sum-w),0.5*(sum+w));
-            (lo-self.r).max(self.r-hi).max(0.) <= slack
-        };
-        let g = |v: f64| { let x = self.spine(v); dot(sub(x,p),self.carry.rate(x)) };
-        let dg = |v: f64| { let x = self.spine(v); let dx = self.carry.rate(x); s1*s1+dot(sub(x,p),scale(cross(axis,dx),angle)) };
-        let far = |v: f64| crate::util::space::distance(self.spine(v),p);
-        let bound = |x0: f64,x1: f64| { let q = far(x0).max(far(x1))+s1*(x1-x0); [s1*s1+q*s2,q*s3] };
         let mut out = vec![0.,1.];
-        let mut i = 0;
-        while i < n {
-            if !can(i) { i += 1; continue }
-            // the run of neighbouring stretches that can hold one, searched as one
-            let mut j = i+1;
-            while j < n && can(j) { j += 1 }
-            let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&g,&dg,&bound,[vs[i],vs[j]],1e-12,&|_| true).ok()?;
+        for &span in spans {
+            let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&g,&dg,&bound,span,1e-12,&|_| true).ok()?;
             out.extend(roots.into_iter().map(|x| x.at));
-            i = j;
         }
         Some(out)
     }
@@ -1475,22 +1478,19 @@ impl Traced {
     pub(crate) fn across(&self,q: V,n: V,h: f64) -> Option<(V,V)> {
         let settled = 4.*f64::EPSILON*(1.+crate::util::space::norm(q));
         let mut p = q;
-        let mut best: Option<(f64,V,V)> = None;
+        let mut best: (f64,V,Option<V>) = (f64::INFINITY,q,None);
         for _ in 0..50 {
             let ((fa,ga),(fb,gb)) = (self.a.side(p),self.b.side(p));
             let fc = dot(n,p)-h;
-            let t = cross(ga,gb);
-            let det = dot(t,n);
-            if !(det.abs() > 0.) { break }
             let off = fa.abs().max(fb.abs()).max(fc.abs());
-            if best.is_some_and(|b| off >= b.0) { break }
-            best = Some((off,p,scale(t,1./det)));
+            if off >= best.0 { break }
+            let t = cross(ga,gb);
+            best = (off,p,Some(scale(t,1./dot(t,n))).filter(|r| r.iter().all(|x| x.is_finite())));
             if off <= settled { break }
-            // the rows ∇a, ∇b, n against the residuals, by Cramer's rule
-            let step = scale(add(add(scale(cross(gb,n),fa),scale(cross(n,ga),fb)),scale(t,fc)),1./det);
+            let Some(step) = crate::util::roots::least_norm_step(&[ga,gb,n],&[fa,fb,fc]) else { break };
             p = sub(p,step);
         }
-        best.map(|(_,p,rate)| (p,rate))
+        best.2.map(|rate| (best.1,rate))
     }
     /// The point a fraction `f` along the stretch from point `i` to the next, on the parabola through
     /// it, the next and a neighbour, parameterised by their chords' lengths: a chord's sag, quadratic

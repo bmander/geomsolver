@@ -518,9 +518,15 @@ own parameter — which counts its points, its rate stepping at each, every stre
 and each node three projections onto both surfaces — but over spans of its points whose chords
 turn within 15° of the first, each by its distance `σ` along its chord `n`: a node is where the
 curve crosses the plane `n·x = σ` (`Traced::across`, Newton on both surfaces and the plane), its
-rate `T / (T·n)` read at that point, as exact as the trace, so each span is one smooth integrand
-settled as an edge's is. A span not crossed as a graph over its chord (its rate past 60° from it,
-or a crossing off the stretch it was sought in) is read stretch by stretch as before. A canal's
+rate `T / (T·n)` read at that point, as exact as the trace, so each span is one smooth integrand.
+It is read on cells of its stretches, doubled until two readings agree to rounding or each cell is
+one stretch, so its nodes crowd where the march crowded its points: spread evenly along the chord,
+they missed the turn at a span's end, the tip of the sliver a plane through a screwed rim's ramp's
+axis cuts from it, by 2e-5 of the span, and that ramp's volume, held to its closed form within 1e-6
+(`swept_closed::planes_through_the_axis_cut_a_screwed_rims_ramp_in_closed_form`), now holds it to
+3e-14 where the stretches' central differences held it to 3e-7. A span not crossed as a graph over
+its chord (its rate past 60° from it, or a crossing off the stretch it was sought in) is read
+stretch by stretch as before. A canal's
 meeting with an end disc, a thousand stretches, measured in 9 s and does in 30 ms, and the same
 whichever way the solid is moved, where the stretches' central differences moved it by 2e-10
 (`brep::a_rod_grooved_by_a_balls_helix_is_measured_along_its_traced_meetings`, brep-bench's

@@ -42,16 +42,23 @@ fn gauss(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
 /// parameters does, and a circle on a ball passing beside a pole sweeps half a turn of `u` within a
 /// few degrees of its own (a ball at an end pose of a screw, its great circle square to the helix).
 fn settled(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
-    let (mut n,mut last) = (pieces,gauss(a,b,pieces,f));
-    for _ in 0..SETTLE {
+    settled_by(pieces,SETTLE,&mut |n| { let v = gauss(a,b,n,f); Some((v,v.abs())) }).expect("a reading")
+}
+
+/// `settled` of a reading that may fail, doubled `most` times at most: `read(n)` the integral on `n`
+/// pieces and the size its rounding is measured against, two readings agreeing to 1e-13 of it;
+/// `None` where a reading is.
+fn settled_by(pieces: usize,most: usize,read: &mut dyn FnMut(usize) -> Option<(f64,f64)>) -> Option<f64> {
+    let (mut n,mut last) = (pieces,read(pieces)?.0);
+    for _ in 0..most {
         n *= 2;
-        let next = gauss(a,b,n,f);
+        let (next,size) = read(n)?;
         // (the coarser reading kept where the finer agrees with it: a face read well at its first
         // pieces is read as it always was, to the bit)
-        if (next-last).abs() <= 1e-13*next.abs().max(1e-300) { return last }
+        if (next-last).abs() <= 1e-13*size.max(1e-300) { return Some(last) }
         last = next;
     }
-    last
+    Some(last)
 }
 
 /// How many times `settled` doubles an edge's pieces at most.
@@ -78,6 +85,9 @@ fn rule(n: usize) -> Vec<(f64,f64)> {
         (x,2./((1.-x*x)*dp*dp))
     }).collect()
 }
+
+/// The stretch of `knots` (rising) holding `t`, the end ones taking what lies past them.
+fn span(knots: &[f64],t: f64) -> usize { knots.partition_point(|&k| k <= t).clamp(1,knots.len()-1)-1 }
 
 /// `G(u, v) = ∫_{u₀}^u g(σ, v) dσ` on a polynomial B-spline face, from the domain's start rather
 /// than 0 (which changes `G` by a function of `v` alone, and `∮ F(v) dv` round a closed loop is 0).
@@ -113,9 +123,8 @@ impl<'a> Prefix<'a> {
         h*self.ru.iter().map(|&(x,w)| w*self.g(mid+x*h,v)).sum::<f64>()
     }
     /// The span of `knots` holding `t`, the end ones taking what lies past them.
-    fn span(knots: &[f64],t: f64) -> usize { knots.partition_point(|&k| k <= t).clamp(1,knots.len()-1)-1 }
     fn big_g(&mut self,u: f64,v: f64) -> f64 {
-        let (i,j) = (Self::span(&self.us,u),Self::span(&self.vs,v));
+        let (i,j) = (span(&self.us,u),span(&self.vs,v));
         let (v0,v1) = (self.vs[j],self.vs[j+1]);
         let at = |x: f64| (v0+v1)/2.+x*(v1-v0)/2.;
         if self.cols[j].is_none() {
@@ -154,8 +163,12 @@ const SPAN_COS: f64 = 0.9659258262890683;
 /// disc, a thousand stretches, measured in seconds) — but over spans of the points turning a little
 /// (`SPAN_COS`), each by its distance `σ` along its chord `n`: the curve's point at each node is
 /// where it crosses the plane `n·x = σ` (`Traced::across`), and its rate `T / (T·n)` read there,
-/// both as exact as the trace, so each span is one smooth integrand, read by Gauss–Legendre until
-/// two readings agree to rounding. A span the curve does not cross as a graph over its chord (its
+/// both as exact as the trace, so each span is one smooth integrand. It is read by Gauss–Legendre on
+/// cells of its stretches, doubled until two readings agree to rounding or each cell is one stretch:
+/// the march sets its points closer where the curve turns faster, and nodes spread evenly along the
+/// chord read a turn at a span's end too coarsely to settle (the tip of the sliver a plane through
+/// its axis cuts from a screwed rim's ramp, 2e-5 of the span). A span the curve does not cross as
+/// a graph over its chord (its
 /// rate turned past 60° from it, or a crossing found off the stretch it was sought in) is read by
 /// the edge's parameter, stretch by stretch, as before.
 fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,pc: &Pcurve,s: &Surface,vertices: &[super::topo::Vertex],
@@ -192,14 +205,16 @@ fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,pc: &Pcurve,s: &Su
         // each point's distance along the chord, rising from 0 to `len`
         let sig: Vec<f64> = at[i..=j].iter().map(|&(_,x)| dot(n,sub(x,at[i].1))).collect();
         let h0 = dot(n,at[i].1);
-        // `∫ f` over the span on `pieces` pieces, and the mean size of `f` at its nodes; `None` where
-        // a node is not crossed as a graph over the chord
-        let read = |pieces: usize,f: &mut dyn FnMut(Uv,Uv) -> f64| -> Option<(f64,f64)> {
+        // `∫ f` over the span on `cells` cells, each a run of its stretches as near alike in number as
+        // they go, and the size of its rounding: the mean size of `f` at its nodes over the span's
+        // length; `None` where a node is not crossed as a graph over the chord
+        let stretches = j-i;
+        let mut read = |cells: usize| -> Option<(f64,f64)> {
             let (mut size,mut failed) = (0.,false);
             let mut integrand = |x: f64| {
                 if failed { return 0. }
                 // the stretch holding `x`, and the parabola's point there to start from
-                let a = (sig.partition_point(|&y| y <= x).max(1)-1).min(sig.len()-2);
+                let a = span(&sig,x);
                 let w = sig[a+1]-sig[a];
                 let fr = if w > 0. { ((x-sig[a])/w).clamp(0.,1.) } else { 0. };
                 let t = at[i+a].0+fr*(at[i+a+1].0-at[i+a].0);
@@ -212,22 +227,13 @@ fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,pc: &Pcurve,s: &Su
                 size += y.abs();
                 y
             };
-            let v = gauss(0.,len,pieces,&mut integrand);
-            (!failed).then_some((v,size/(10*pieces) as f64))
+            let cells = cells.min(stretches);
+            let ends: Vec<usize> = (0..=cells).map(|k| k*stretches/cells).collect();
+            let v = ends.windows(2).map(|w| gauss(sig[w[0]],sig[w[1]],1,&mut integrand)).sum::<f64>();
+            (!failed).then_some((v,size*len/(GAUSS.len()*cells) as f64))
         };
-        // doubled until two readings agree to the rounding of the integrand's size over the span,
-        // `SETTLE` times at most
-        let mut pieces = 1;
-        let mut value = read(pieces,f).map(|r| r.0);
-        if let Some(mut last) = value {
-            for _ in 0..SETTLE {
-                pieces *= 2;
-                let Some((next,size)) = read(pieces,f) else { value = None; break };
-                if (next-last).abs() <= 1e-13*(size*len).max(1e-300) { break }
-                last = next;
-                value = Some(last);
-            }
-        }
+        // the cells doubled until two readings agree, or each is one stretch
+        let value = settled_by(1,stretches.next_power_of_two().trailing_zeros() as usize,&mut read);
         total += match value { Some(v) => v,None => by_parameter(i,j,f) };
         i = j;
     }
@@ -302,24 +308,18 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
                 if matches!(e.curve,EdgeCurve::Degenerate) && (other == 1 || !matches!(c.pcurve,Pcurve::Line {..})) {
                     row.push((0.,0.)); continue
                 }
+                // `G dv` at a point of the edge on the face, given its parameters and their rate
+                let mut value = |[u,v]: Uv,d: Uv| { let dv = d[other]; if dv == 0. { 0. } else { sign*big_g(u,v)*dv } };
                 // a traced curve inverted onto the face: read across planes, a span of its points
                 // at a time (#798)
                 if let (EdgeCurve::Curve(Curve::Traced(tr)),Pcurve::Inverse {..}) = (&e.curve,&c.pcurve) {
-                    let line = along_trace(tr,e,&c.pcurve,s,&b.vertices,&mut |[u,v]: Uv,d: Uv| {
-                        let dv = d[other];
-                        if dv == 0. { 0. } else { sign*big_g(u,v)*dv }
-                    });
+                    let line = along_trace(tr,e,&c.pcurve,s,&b.vertices,&mut value);
                     row.push((if c.reversed { -line } else { line },0.));
                     continue
                 }
                 let span = e.t[1]-e.t[0];
                 let periodic = pu.is_some() || pv.is_some() || matches!(&e.curve,EdgeCurve::Curve(c) if c.period().is_some());
-                let mut integrand = |t: f64| {
-                    let ([u,v],d) = c.pcurve.at_and_derivative(t,e,s,&b.vertices);
-                    let dv = d[other];
-                    if dv == 0. { return 0. }
-                    sign*big_g(u,v)*dv
-                };
+                let mut integrand = |t: f64| { let (uv,d) = c.pcurve.at_and_derivative(t,e,s,&b.vertices); value(uv,d) };
                 // where the edge's curve or its curve in the face's parameters may jump in a derivative
                 let mut breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
                 if let Pcurve::Curve(p) = &c.pcurve { breaks.extend(p.breaks(e.t)); }
