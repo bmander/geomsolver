@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A loop through a pole is closed along it** (#797): `Brep::close_poles` (**new**), run on every
+  Boolean's result, ends each inverse pcurve reaching a pole at the value it arrives along and
+  runs a degenerate edge along the pole between the use arriving and the use leaving, as a
+  primitive's loop does. `Pcurve::Inverse` ends on a pole at the value its line from `a` to `b`
+  gives, not the one the surface's inverse reads there. Two spherical sectors sharing their apex
+  (brep-bench's singular/sectors-sharing-an-apex) mesh closed, where their pieces' triangles
+  overlapped.
+- **Two cones with one apex meet in lines through it**, exactly (`ssi::intersect`): the meeting
+  had been traced, fitted with tens of thousands of knots, and measured in seconds.
 - **A B-spline sheet lying in a plane is that plane** (`ssi::same`, so `ssi::intersect` answers
   `Same`): every pole within the tolerance of the plane, the sheet within its poles' hull. Two
   faces on them coincide in an arrangement as two planes' do, where they had been two faces
