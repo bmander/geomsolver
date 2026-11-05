@@ -13,6 +13,7 @@
 //! - **consuming**: a witness does, but only at this pose of the drawing.
 
 use super::*;
+use super::claims::claim_holds;
 
 /// What one block came to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

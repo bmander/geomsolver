@@ -242,8 +242,9 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   welds drag parts, or paints Over or Conflict.  `Constraint::acts()` is the named half, asked by
   `hard_constraints`/`hard_ids`; seams needing a row index spell it out inline, as `soft` is.
   Anything learning what determines the drawing (`known_radii`, entity colouring, conflict
-  candidates, `duplicated`) must go through `acts()`.  The diagnosis reads it at the *end* of
-  `diagnose_with` via `System::conditioned_with`, stacking its rows onto the compiled system:
+  candidates, `duplicated`) must go through `acts()`.  The diagnosis reads it in
+  `diagnose::claims`, a phase of `diagnose_with`, via `System::conditioned_with`, stacking its
+  rows onto the compiled system:
   *theorem*, *violated*, or *consuming* (holds only by the pose).  Never judge it by compiling a
   second `System` — a compile calls `locus::forget`.  A claim may not own a `Param` slot nor bind
   a free variable (`CKind::claimable`; E040 at elaboration; document readers drop the flag;
