@@ -1367,8 +1367,17 @@ impl<'a> Located<'a> {
         // where every edge's box is farther than the near-edge reading reaches, the winding
         // decides, as it would with every edge measured
         let near = self.coarse.max(2.*self.drawn(fi).0.sag());
+        // a point past a patch's rim, on its surface's extension, is on no point of the face (#780
+        // L1: a pipe entered stretch by stretch runs on smoothly into the next stretch, whose points
+        // the inverse clamps onto their shared circle, read there as in the face — a ray crossing
+        // the pipe beside the circle counted on both): its foot off it by more than the tolerance,
+        // read from the parameters in hand and held to the surface's own inverse before refused
+        let past = |uv: Uv| f.surface.bounded() && distance(f.surface.point(uv),p) > self.tol.max(1e-9*(1.+norm(p)))
+            && !on_bounded(&f.surface,p,self.tol);
         if f.loops.iter().flatten().all(|c| self.edge_gap(c.edge,p) > near) {
-            let winding = self.drawn(fi).0.winding(self.uv(fi,p));
+            let uv = self.uv(fi,p);
+            if past(uv) { return Place::Out }
+            let winding = self.drawn(fi).0.winding(uv);
             let inside = if f.reversed { winding < 0 } else { winding > 0 };
             return if inside { Place::In } else { Place::Out }
         }
@@ -1385,6 +1394,8 @@ impl<'a> Located<'a> {
         let uv = self.uv(fi,p);
         let e = &self.b.edges[c.edge as usize];
         if d <= self.coarse.max(2.*self.drawn(fi).0.sag()) && t > e.t[0] && t < e.t[1] {
+            // (past the rim, however near its edge)
+            if past(uv) { return Place::Out }
             // near one edge's interior: which side of it, in the face's parameters — the point
             // on the branch beside each use of the edge (a seam is used twice, once each side of
             // the face), inside if beside any use it is on the face's side
@@ -1397,6 +1408,7 @@ impl<'a> Located<'a> {
             });
             return if inside { Place::In } else { Place::Out }
         }
+        if past(uv) { return Place::Out }
         let winding = self.drawn(fi).0.winding(uv);
         // a reversed face's loops turn the other way round
         let inside = if f.reversed { winding < 0 } else { winding > 0 };

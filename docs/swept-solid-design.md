@@ -383,7 +383,73 @@ it. It stays as the fast path where #699 D says so.
    which is a lone screw's.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
    independent volume.
-6. **Fold and branch loci** in the domain, then X2 and X5.
+6. **Fold and branch loci** in the domain, then X2 and X5. *Designed (#780 L1).* A patch's contact
+   is the zero set of `g = n · v` over its domain: the face's own `(θ, h)` (a ring's angle and its
+   height) under a constant twist, which fixes the contact on the tool, or `(θ, h, t)` at each
+   instant under K2. Both loci are zero sets of what that chart already computes, so they are
+   found in the domain, by the same root machinery, and never detected afterwards in space:
+   - **The branch locus**, `g = 0 = ∂g/∂θ` (on a ring `A² + B² = C²`, its two roots one) is a fold
+     of the *chart* over its base, not of the sheet: the `+` and `−` roots are one curve through it,
+     which the height chart reads with a square root's infinite slope. So the patch is read there
+     in the chart transverse to it — `θ` the parameter, the height solved from `g = 0` — and is not
+     cut. Wherever `g` is affine in the height (a cylinder's or a cone's rings under any twist,
+     `g = α(θ) + h β(θ)` with `α, β` sinusoids in `θ`; a torus's latitudes under a slide, where
+     `tan v` is the ratio) that chart is a closed form, `h(θ) = −α/β`, smooth through the locus and
+     singular only where `β = 0` (a ruling in contact all along, AF). Written rationally,
+     `ρ̂ = ((1 − s²) x + 2s y)/(1 + s²)` with `s = tan(θ/2)` about the branch's middle, its jets stay
+     in `turned`'s `Num` (floats and outward intervals), so a meridian read across the locus keeps
+     C3's exact reading. Where no such chart closes, the two roots' patches are cut at the locus
+     and share it as their rim.
+   - **The fold locus**, where `Σ` is singular: the kernel of `dΣ` (the tool's body velocity `w`
+     against the roll) tangent to the contact, `g = 0 = ∂g/∂t − ∇g · w`. Under a constant twist
+     `∂g/∂t = 0`, so it is where the contact curve runs along the motion's flow — a helix's tangent
+     under a screw (a ball reaching its centre's helix's radius of curvature, `(ρ² + κ²)/ρ`), the
+     circle about the axis under a turn (a cusp of the meridian), the slide's direction under a
+     slide (a cusp of the apparent contour). Beyond it the sheet doubles back. The patch is cut
+     there, each side a regular immersion, both entered, and membership drops the side that is
+     buried; a cusp-thin cell between them is `Unsettled`, never kept by guess.
+   - **A sheet meeting itself far along it** (X5's other half) is read in the motion's orbit
+     space, where the patch is its source curve's orbits. Under a screw, in helical coordinates
+     `(ρ, ψ, ζ = z − κψ)`, the screw is a shift in `ψ` and an orbit is `(ρ, ζ mod 2πκ)`: the sheet
+     a curve `c(θ)` screws into meets itself exactly where `c` holds two points at one `ρ` whose
+     `ζ` differ by a whole number of turns' rise, `t = ψ₁ − ψ₂ − 2πm` of the roll apart — each such
+     pair a helix, isolated as the roots of `c(θ₁) = S(t) c(θ₂)` with a bound (#777 M1). So the
+     patch's roll is cut into stretches each shorter than the least such return (`2π − 2w`, `w`
+     the curve's reach round the axis), each embedded, and the stretches are met pairwise like any
+     two candidates: along those helices, and round the curve where two abut. Where the stretches
+     are joined is the build's choice, not the sweep's, and is placed clear of a whole turn from
+     the roll's ends and one another (a joint a turn along from another's curve lies on its
+     returns' helices, a cell too thin to settle). Under a turn every candidate is a whole surface
+     of revolution, so a return is its meridian crossing itself; under a slide nothing returns.
+   - **X2, several contacts per tool point.** A constant twist keeps each tool point in contact for
+     the whole roll or never, so a point has several contacts only in an instant's chart (K2),
+     where the branch locus is a curve in `(t, h)` (`swept::instant::branch_locus`) and the two
+     roots' patches over `(t, h, ±)` are read across it, or cut at it, as above: L3's patches. Under
+     a constant twist what X2 leaves is a ring's two roots meeting on the face. C3's cones do not
+     reach it: in a scan over leans, half-angles and offsets, every cone that level planes can
+     bound (`β + |α| < 90°`, every generator climbing) kept its branch locus off the face, its
+     contact turning back only where a generator lies near level. The case is a torus slid at a lean
+     to its axis (refused `Curved` today): its latitudes' roots meet at its silhouette's top and
+     bottom, and in the angle chart its contact is two smooth closed curves, `tan v(u) = −(D_x cos u +
+     D_y sin u)/D_z` and that turned by `π`, each swept along the slide into a cylinder over its
+     apparent contour — a curve kind of its own, exact as C3's meridian is, whose own fold (the
+     inner contour's cusps where the contact runs along the slide) is the fold locus above. Moved to
+     its own issue with this design.
+
+   *X5 built* (`tests/swept_loci.rs`): a ball screwed through more than a turn at a lead short of
+   its diameter, whose pipe, entered whole, crossed itself and was refused by the judge. Its pipe is
+   entered in stretches of at most half a turn (`closed::pipe_stretches`); two stretches of one pipe
+   meet round the circle they share and along the returns' helices (`ssi`'s `pipes_meeting`), and a
+   plane holding a circle of the pipe — a joint's — meets it in that circle and its level-by-level
+   cut (`pipe_plane`, as a level circle's sheet meets any plane). A turn and a half at 0.2 a radian
+   and two and a half turns at 0.12 (a point of the circle on the helices of two others) are each
+   their volume worked apart in helical coordinates to 1e-11 — at each `(ρ, z)` the angles swept are
+   one interval, the image of the ball's convex slice by `σ = ψ − z/κ` over a strip of heights, and
+   round the circle they cover `min(2π, σ_max − σ_min)` — and agree with a Monte Carlo of the
+   definition and with membership. One reading had to change: a point past a patch's rim, on its
+   surface's extension, had been read as in the face where the inverse clamps it onto the rim, so a
+   ray crossing beside the circle where two stretches abut was counted on both; it is in none of the
+   face (`query::Located::face_place`, the C4 rule read where the face is read).
 7. **The generating and canal classes' sheets as patches**, then **K2's** chart over
    `(t, h, ±)`. *K2's chart built* (`swept::instant`): each ring's roots against the instant's
    twist, carried by the pose, told apart by the contact's rate round the ring, and the branch
@@ -505,8 +571,13 @@ recorded above with what was tried:
   turned 1.5 rad is its sweep by levels to 1e-11, a bull-nose mill to 1e-15, and the bull-nose turned
   partway into the ring sector (`solid_sweeps/stopped_bullnose.sv`) to 1e-9 through the drawing, its
   STL agreeing with the field;
-- **fold and branch loci in a patch's domain (X2)**, which only a sheet read at each instant (K2)
-  has: a constant twist's contacts are fixed on the tool and every candidate above is whole.
+- **fold and branch loci in a patch's domain (X2)**: designed (step 6, #780 L1). A constant twist's
+  contacts are fixed on the tool, so several contacts per tool point are K2's (L3); what X2 leaves
+  under a constant twist is a ring's two roots meeting on a face, a torus slid at a lean, moved to
+  its own issue. *A sheet meeting itself far along it (X5) is built*: a ball screwed past a turn at
+  a lead short of its diameter, its pipe in stretches met along the helices where it returns
+  (`tests/swept_loci.rs`). A pipe that folds (a ball reaching its helix's radius of curvature) is
+  refused by name.
 
 Every step meets the epic's bar: rows in `docs/contract/generating.md` naming the gate test, field
 agreement and an independent volume at the default tolerance, negative controls kept, an example

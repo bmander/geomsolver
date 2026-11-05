@@ -360,6 +360,78 @@ impl Pipe {
         let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&g,&dg,&bound,[0.,1.],1e-12,&|_| true).ok()?;
         Some([0.,1.].into_iter().chain(roots.into_iter().map(|x| x.at)).collect())
     }
+    /// The screw that carries the pipe, a radian of turn at a time (its rise the pitch, a turn's
+    /// rise over `2π`), its axis unit; `None` where it does not turn.
+    pub fn radian(&self) -> Option<Carry> {
+        let Carry::Screw {center,axis,angle,advance} = self.carry else { return None };
+        let k = crate::util::space::normalised(axis)?;
+        (angle != 0.).then(|| Carry::Screw {center,axis:k,angle:1.,advance:advance*dot(axis,k)/angle})
+    }
+    /// The point of the start's circle at its angle `θ` (its frame's `x` towards `y`).
+    pub fn circle(&self,th: f64) -> V {
+        let (s,c) = th.dsin_cos();
+        add(self.frame.o,add(scale(self.frame.x,self.r*c),scale(self.frame.y,self.r*s)))
+    }
+    /// **How far round the screw's axis the pipe's circle reaches** either way from its centre, as
+    /// an angle about the axis (the circle seen from the axis), or `None` where it reaches the axis
+    /// or round it: then two of its points a turn apart along one helix are nearer than a turn.
+    pub fn spread(&self) -> Option<f64> {
+        let Carry::Screw {center,axis,..} = self.carry else { return None };
+        let k = crate::util::space::normalised(axis)?;
+        let perp = |x: V| sub(x,scale(k,dot(x,k)));
+        let c = perp(sub(self.frame.o,center));
+        // the circle's offset from its centre, square to the axis, is at most `r` long
+        let (d,r) = (norm(c),self.r);
+        (r < d).then(|| (r/d).asin())
+    }
+    /// **Where the pipe comes back onto itself** (#780 L1, X5: a ball screwed through more than a
+    /// turn at a lead short of its diameter): the points `c(θ₁)` of the start's circle onto which
+    /// the screw, turned on by `t` radians within `span`, carries a point `c(θ₂)` of the same circle
+    /// — `c(θ₁) = S(t) c(θ₂)`, three equations in `(θ₁, θ₂, t)`. Each root is the foot of a helix
+    /// along which the pipe's stretch at the screw's turn `φ` meets its stretch at `φ + t`: in the
+    /// screw's helical coordinates `(ρ, ψ, ζ = z − κψ)` the screw is a shift in `ψ`, so two of the
+    /// circle's points meet under it where they stand at one `ρ` and their `ζ` differ by a whole
+    /// number of turns' rise, `t` then their `ψ` apart less those turns. Isolated with a bound on
+    /// the second derivatives (`util::isolate::solve`): `c` bends by `r`, `S(t) c` by the circle's
+    /// reach from the axis. The trivial roots (`t = 0`, `θ₁ = θ₂`, the pipe's own points) are kept
+    /// out by `span`: the caller holds it clear of `[−2w, 2w]`, `w` the circle's `spread`, where only
+    /// they and a fold would stand. `None` where the pipe's screw does not turn or the search gave
+    /// up.
+    pub fn returns(&self,span: [f64;2],tol: f64) -> Option<Vec<[f64;3]>> {
+        let screw = self.radian()?;
+        let Carry::Screw {center,axis:k,..} = screw else { return None };
+        let f = |x: [f64;3]| -> ([f64;3],[[f64;3];3]) {
+            let (th1,th2,t) = (x[0],x[1],x[2]);
+            let (s1,c1) = th1.dsin_cos();
+            let (s2,c2) = th2.dsin_cos();
+            let p = self.circle(th1);
+            let q = screw.at(self.circle(th2),t);
+            let dp = add(scale(self.frame.x,-self.r*s1),scale(self.frame.y,self.r*c1));
+            let dq = screw.dir(add(scale(self.frame.x,-self.r*s2),scale(self.frame.y,self.r*c2)),t);
+            let dt = screw.rate(q);
+            (std::array::from_fn(|i| p[i]-q[i]),std::array::from_fn(|i| [dp[i],-dq[i],-dt[i]]))
+        };
+        let reach = norm(sub(sub(self.frame.o,center),scale(k,dot(sub(self.frame.o,center),k))))+self.r;
+        // each component's Hessian entries: `c''` (`r`), `∂²(S c)/∂θ₂²` (`r`), `∂²/∂θ₂∂t` twice
+        // (`r` each), `∂²/∂t²` (the reach: the climb is linear in `t`)
+        let h = 4.*self.r+reach;
+        let second = |_: &[[f64;2];3]| [h;3];
+        let size = reach.max(self.r).max(1e-300);
+        let width = tol*1e-2/size;
+        let near = |x: [f64;3]| { let (v,_) = f(x); norm(v) <= tol };
+        let tau = std::f64::consts::TAU;
+        let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,tau],[0.,tau],span],width,&near).ok()?;
+        // a root on the seam `θ = 0 = 2π` is found at both: once
+        let mut out: Vec<[f64;3]> = Vec::new();
+        for r in found {
+            let x = [r.at[0].rem_euclid(tau),r.at[1].rem_euclid(tau),r.at[2]];
+            let apart = |a: f64,b: f64| { let d = (a-b).rem_euclid(tau); d.min(tau-d) };
+            if !out.iter().any(|y| apart(y[0],x[0])*self.r <= tol && apart(y[1],x[1])*self.r <= tol && (y[2]-x[2]).abs()*size <= tol) {
+                out.push(x)
+            }
+        }
+        Some(out)
+    }
 }
 
 impl Blend {
