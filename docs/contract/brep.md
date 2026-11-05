@@ -214,21 +214,21 @@ points, the ridges (`ridges_from`) and the seeds alike; the branches a point is 
 sampled once into chords filed by their boxes (`meeting::Sampled`), a point held only to the
 chords within reach of it and no foot sought beyond reach of a branch's poles; and a level curve's
 step goes to the point its look-ahead projected, the next station's gradient the one read there.
-The profile counts each (`util::meter::analysis`: critical sets and their jets, branch tests,
-samples and feet, a level curve's readings of `f`). `meeting::meet` reads the ridges on its traced
-road before it marches; an arrangement reads them where its march is refused as nearly touching
-(`Arrangement::traced_meeting`). Both go through **one fallback** (`meeting::marched`, #780 R3):
-the march, and where it is refused as shallow the ridges (where not read yet) and then the level
-curves through the seeds no branch holds, each touch a stretch the march ends at, each seed then
-traced alone and one refused again passed by (`traced_alone`). **The trace's refusal below
+Where the profile is printed it counts each (`util::meter::analysis`: critical sets and their jets,
+branch tests, samples and feet, a level curve's readings of `f`). `meeting::meet` reads the ridges
+on its traced road before it marches; an arrangement reads them where its march is refused as nearly
+touching (`Arrangement::traced_meeting`). Both go through **one fallback** (`meeting::marched`, #780
+R3): the march, and where it is refused as shallow the ridges (where not read yet) and then the
+level curves through the seeds no branch holds, each touch a stretch the march ends at, each seed
+then traced alone and one refused again passed by (`traced_alone`). **The trace's refusal below
 `SHALLOW` is no longer the kernel's answer**: it is where the meeting is read another way, known by
 its type (`ssi::Shallow`: the kinds, the angle, the point), never by its words
-(`touch_curves::a_march_refused_as_shallow_says_so_by_its_type`). The closed forms that know a
-touch — `plane_cylinder`'s, a cone's generator, `parallel_touch`, `ball_in_tube`, `tube_along_torus`, `tori_touching`, `pipe_end`,
-`screwed_circle_round`, and `extruded`'s plane through a spline extrusion — are fast paths, each
-held to the general method with them bypassed (`meeting::meet_with`, an argument, not a switch):
-within 1e-5 (2e-5 on a sheet's rim), a touch being a double root placed to its differences'
-rounding, and each three to five orders faster
+(`touch_curves::a_march_refused_as_shallow_says_so_by_its_type`). The closed forms that know a touch
+— `plane_cylinder`'s, a cone's generator, `parallel_touch`, `ball_in_tube`, `tube_along_torus`,
+`tori_touching`, `pipe_end`, `screwed_circle_round`, and `extruded`'s plane through a spline
+extrusion — are fast paths, each held to the general method with them bypassed
+(`meeting::meet_with`, an argument, not a switch): within 1e-5 (2e-5 on a sheet's rim), a touch
+being a double root placed to its differences' rounding, and each three to five orders faster
 (`touch_curves::each_closed_form_for_a_touch_is_held_to_the_general_method`; every kind touching
 along a curve and crossing at under a degree met completely with and without them,
 `meeting::every_kind_touching_along_a_curve_and_crossing_shallowly_is_met_completely`). Held on

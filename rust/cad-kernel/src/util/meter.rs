@@ -165,10 +165,6 @@ impl Meter {
         for (what,n) in &p.analysis { let _ = writeln!(s,"    {what:<28} {n:>12}"); }
         s
     }
-    /// How many of `what` a meeting's analysis did (`analysis`).
-    pub fn analysed(&self,what: &str) -> u64 {
-        self.profile.lock().unwrap_or_else(|e| e.into_inner()).analysis.get(what).copied().unwrap_or(0)
-    }
     /// The curve–surface searches that sampled, all pairs together (what V1's gate asks to be none
     /// on the surfaces it reads).
     pub fn sampled(&self) -> u64 {
@@ -269,9 +265,10 @@ pub fn crossing(curve: &'static str,surface: &'static str,certified: bool) {
 }
 
 /// `n` more of `what` done by a meeting's analysis (`meeting`: a critical set found, a branch
-/// test asked, a level curve's readings of `f`), for the profile alone: never charged or limited.
+/// test asked, a level curve's readings of `f`), for the profile alone: never charged or limited,
+/// and counted only where the profile is printed (a branch test is asked per cell of a search).
 pub fn analysis(what: &'static str,n: u64) {
-    if n == 0 { return }
+    if n == 0 || !profiling() { return }
     CURRENT.with(|c| if let Some(m) = &*c.borrow() {
         *m.profile.lock().unwrap_or_else(|e| e.into_inner()).analysis.entry(what).or_default() += n;
     })

@@ -248,12 +248,6 @@ pub fn critical_set(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Vec<Crit
     found
 }
 
-/// **The critical points of `f` over the box** (the meeting's Morse analysis in `a`'s parameters):
-/// `critical_set`'s, with `f`'s value at each: zero at a singular point of the meeting.
-pub fn critical_points(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Vec<(Uv,f64)> {
-    critical_set(a,d,b,tol).into_iter().map(|c| (c.uv,c.value)).collect()
-}
-
 /// **A ridge: a critical curve of `f` traced** (#778 T2): the curve `∂f/∂n = 0` continued along the
 /// Hessian's null way `e` from a rank-1 critical point, both ways to the box's edge or back to its
 /// start. At each point, its parameters on `a`, `f`'s value there (the fold's), its way across `n`
@@ -418,29 +412,30 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
             // the step shortened where the level curve turns sharply in the parameters (a parabola's
             // vertex where a plane leans a hair to a vault's crown) and let out again after
             let mut hstep = step;
-            // the look-ahead that let the step be taken, kept (#780 R4): the step is taken to the
-            // point it projected, and the next station's gradient is the one it read there
-            let mut held: Option<(Uv,(f64,[f64;2],[f64;2]))> = None;
+            // the station's gradient where the step before read it, at the point it was taken to
+            // (#780 R4)
+            let mut held: Option<(f64,[f64;2],[f64;2])> = None;
             for _ in 0..100_000 {
                 if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (a.point(uv),format!("{} × {} (a level curve)",a.kind(),b.kind()))) { break }
-                let (_,g,k) = match held.take() { Some((at,jet)) if at == uv => jet,_ => metric_grad(a,b,uv,h) };
+                let (_,g,k) = held.take().unwrap_or_else(|| metric_grad(a,b,uv,h));
                 let gn = g[0].hypot(g[1]);
                 if !(gn > 0.) { break }
                 let t = [-g[1]*sense/gn,g[0]*sense/gn];
-                // the tangent a step on, read before the step is taken: more than a tenth of a radian
-                // off this one, the step halved; one not turned kept with its step, point and jet
-                let mut seen: Option<(f64,Uv,(f64,[f64;2],[f64;2]))> = None;
-                let mut turned = |hs: f64| -> bool {
-                    let ahead = [uv[0]+hs*t[0]/k[0],uv[1]+hs*t[1]/k[1]];
-                    let Some(q) = onto(ahead) else { return true };
+                // the step looked ahead before it is taken, its point pulled onto the curve and the
+                // tangent read there: more than a tenth of a radian off this one (or none), the
+                // step halved; the first not turned is the step's own point and gradient
+                let look = |hs: f64| -> Option<(Uv,(f64,[f64;2],[f64;2]))> {
+                    let q = onto([uv[0]+hs*t[0]/k[0],uv[1]+hs*t[1]/k[1]])?;
                     let jet = metric_grad(a,b,q,h);
-                    let g2 = jet.1;
-                    let n2 = g2[0].hypot(g2[1]);
-                    let bent = !(n2 > 0.) || (g[0]*g2[0]+g[1]*g2[1])/(gn*n2) < 0.995;
-                    if !bent { seen = Some((hs,q,jet)) }
-                    bent
+                    let n2 = jet.1[0].hypot(jet.1[1]);
+                    (n2 > 0. && !((g[0]*jet.1[0]+g[1]*jet.1[1])/(gn*n2) < 0.995)).then_some((q,jet))
                 };
-                while hstep > 1e-7*size && turned(hstep) { hstep *= 0.5 }
+                let mut ahead = None;
+                while hstep > 1e-7*size {
+                    ahead = look(hstep);
+                    if ahead.is_some() { break }
+                    hstep *= 0.5;
+                }
                 let here = hstep;
                 hstep = (hstep*1.5).min(step);
                 let delta = [here*t[0]/k[0],here*t[1]/k[1]];
@@ -455,11 +450,12 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
                     guess = [uv[0]+s*delta[0],uv[1]+s*delta[1]];
                     last = true;
                 }
-                // (the guess is the look-ahead's own point where its step is the one taken whole)
-                let projected = match seen { Some((hs,q,jet)) if hs == here && !last => { held = Some((q,jet)); Some(q) }
-                    _ => onto(guess) };
+                // (a step taken whole is the look-ahead's: its point, and the gradient there where
+                // the box's edge leaves it as it is)
+                let projected = match ahead { Some((q,_)) if !last => Some(q),_ => onto(guess) };
                 let Some(next) = projected else { break };
                 let next = [next[0].clamp(d[0][0],d[0][1]),next[1].clamp(d[1][0],d[1][1])];
+                held = ahead.filter(|&(q,_)| !last && q == next).map(|(_,jet)| jet);
                 let p = a.point(next);
                 if pts.len() > 3 && distance(p,a.point(uv0)) <= 0.75*step { closed = true; break }
                 pts.push(p);
@@ -526,28 +522,28 @@ pub fn exact_distance(s: &Surface) -> bool { matches!(s,Surface::Plane(_) | Surf
 /// point asked; the chords filed by their boxes (`util::bvh`), so a point is held only to those
 /// within reach of it; and each such branch's poles' box, which its curve lies in, so a point
 /// beyond its reach of the box is off the branch with no foot sought.
-#[derive(Clone,Debug,Default)]
+#[derive(Clone,Debug)]
 pub struct Sampled {
     branches: Vec<Branch>,
     /// each chord: its branch, and its ends
     chords: Vec<(usize,V,V)>,
-    boxes: Option<crate::util::bvh::Bvh<3>>,
-    /// each branch's poles' box, where its curve lies within its poles' hull (a B-spline's, its
-    /// weights positive)
+    boxes: crate::util::bvh::Bvh<3>,
+    /// each B-spline branch's poles' box (`Curve::bounds`: its weights are positive, so it lies in
+    /// its poles' hull)
     hulls: Vec<Option<(V,V)>>,
 }
 
 impl Sampled {
     /// `branches` sampled.
     pub fn new(branches: Vec<Branch>) -> Sampled {
-        let mut s = Sampled::default();
+        let mut s = Sampled {branches:Vec::new(),chords:Vec::new(),boxes:crate::util::bvh::Bvh::new(std::iter::empty()),hulls:Vec::new()};
         s.extend(branches);
         s
     }
     /// More branches, sampled, and the chords filed again.
     pub fn extend(&mut self,more: impl IntoIterator<Item=Branch>) {
         use crate::util::bvh::{Bounds,Bvh};
-        let mut sampled = 0;
+        let (before,mut sampled) = (self.branches.len(),0);
         for br in more {
             let i = self.branches.len();
             if let Curve::BSpline(s) = &br.curve {
@@ -555,20 +551,18 @@ impl Sampled {
                 let pts: Vec<V> = (0..=512).map(|k| br.curve.point(t0+(t1-t0)*k as f64/512.)).collect();
                 sampled += pts.len() as u64;
                 self.chords.extend(pts.windows(2).map(|w| (i,w[0],w[1])));
-                let hull = s.weights.as_ref().is_none_or(|w| w.iter().all(|&x| x > 0.)).then(|| super::geom::hull(s.poles.iter().copied()));
-                self.hulls.push(hull);
+                self.hulls.push(Some(br.curve.bounds([t0,t1])));
             } else { self.hulls.push(None) }
             self.branches.push(br);
         }
+        if self.branches.len() == before { return }
         crate::util::meter::analysis("branch samples",sampled);
-        self.boxes = Some(Bvh::new(self.chords.iter().map(|&(_,p,q)| { let (lo,hi) = super::geom::hull([p,q]); Bounds {lo,hi} })));
+        self.boxes = Bvh::new(self.chords.iter().map(|&(_,p,q)| { let (lo,hi) = super::geom::hull([p,q]); Bounds {lo,hi} }));
     }
     /// The branches.
     pub fn branches(&self) -> &[Branch] { &self.branches }
     /// The branches, given back.
     pub fn into_branches(self) -> Vec<Branch> { self.branches }
-    /// Whether there are none.
-    pub fn is_empty(&self) -> bool { self.branches.is_empty() }
 }
 
 /// Whether `p` lies on one of `branches`: within `8 tol / sin θ` of it, `θ` the two surfaces'
@@ -576,41 +570,33 @@ impl Sampled {
 /// `on_meeting`), and a touch's to the square root of the tolerance, beside its own radius. How far
 /// `p` stands from a B-spline branch is the nearer of its sampled chords and the curve's own foot,
 /// from another branch its foot alone.
-pub fn on_a_branch(a: &Surface,b: &Surface,branches: &Sampled,p: V,tol: f64) -> bool { on_a_branch_past(a,b,branches,0,p,tol) }
-
-/// `on_a_branch`, among `branches`' own from the `from`th on (those gathered after the first
-/// `from`), each sampled once all the same.
-pub fn on_a_branch_past(a: &Surface,b: &Surface,branches: &Sampled,from: usize,p: V,tol: f64) -> bool {
+pub fn on_a_branch(a: &Surface,b: &Surface,branches: &Sampled,p: V,tol: f64) -> bool {
+    use crate::util::bvh::Bounds;
     crate::util::meter::analysis("branch tests",1);
-    if branches.branches.len() <= from { return false }
+    if branches.branches.is_empty() { return false }
     let sine = norm(cross(unit_or(a.gradient(p)),unit_or(b.gradient(p)))).max(1e-6);
     // (a point where the two stand tangent within a few of a ridge's steps of a touch is that
     // touch: a ridge's step is a forty-eighth of their finer feature)
     let feature = a.feature().min(b.feature()).min(1e6);
-    let reach: Vec<f64> = branches.branches.iter().map(|br| match br.contact {
-        Contact::Crossing => 8.*tol/sine,
-        Contact::Touching if sine < super::ssi::SHALLOW => (8.*tol*feature).sqrt().max(feature/12.),
-        Contact::Touching => (8.*tol*feature).sqrt().max(8.*tol),
-    }).collect();
-    // a chord within its branch's reach (those whose boxes come within the farthest reach asked,
-    // a hair past it for rounding)
-    let far = reach.iter().fold(0f64,|m,&r| m.max(r))*(1.+1e-9);
+    let (crossing,touching) = (8.*tol/sine,if sine < super::ssi::SHALLOW { (8.*tol*feature).sqrt().max(feature/12.) }
+        else { (8.*tol*feature).sqrt().max(8.*tol) });
+    let reach = |i: usize| match branches.branches[i].contact { Contact::Crossing => crossing,Contact::Touching => touching };
+    // a chord within its branch's reach (those whose boxes come within the farther reach, a hair
+    // past it for rounding)
+    let far = crossing.max(touching)*(1.+1e-9);
     let mut on = false;
-    if let Some(boxes) = &branches.boxes {
-        boxes.query_box(crate::util::bvh::Bounds {lo:p.map(|x| x-far),hi:p.map(|x| x+far)},|j| if !on {
-            let (i,u,v) = branches.chords[j];
-            on = i >= from && crate::util::space::segment_distance(p,u,v) <= reach[i];
-        });
-    }
+    branches.boxes.query_box(Bounds {lo:p.map(|x| x-far),hi:p.map(|x| x+far)},|j| if !on {
+        let (i,u,v) = branches.chords[j];
+        on = crate::util::space::segment_distance(p,u,v) <= reach(i);
+    });
     if on { return true }
     // else a branch's own foot, none sought beyond its reach of the box its curve lies in
-    branches.branches.iter().enumerate().skip(from).any(|(i,br)| {
+    branches.branches.iter().enumerate().any(|(i,br)| {
         if let Some((lo,hi)) = branches.hulls[i] {
-            let gap: [f64;3] = std::array::from_fn(|k| (lo[k]-p[k]).max(p[k]-hi[k]).max(0.));
-            if norm(gap)*(1.-1e-12) > reach[i] { return false }
+            if (Bounds {lo,hi}).gap(Bounds {lo:p,hi:p})*(1.-1e-12) > reach(i) { return false }
         }
         crate::util::meter::analysis("branch feet",1);
-        distance(br.curve.point(br.curve.inverse(p)),p) <= reach[i]
+        distance(br.curve.point(br.curve.inverse(p)),p) <= reach(i)
     })
 }
 
@@ -756,7 +742,7 @@ impl From<Unmarched> for String {
 pub(crate) fn marched<'s>(ridged: Option<Sampled>,tol: f64,past_inputs: impl FnOnce() -> ([(&'s Surface,[[f64;2];2]);2],Vec<V>),
     march: &mut dyn FnMut(&Sampled,bool) -> Result<Vec<Curve>,Unmarched>) -> Result<(Vec<Curve>,Vec<Branch>),String> {
     let read = ridged.is_some();
-    let mut branches = ridged.unwrap_or_default();
+    let mut branches = ridged.unwrap_or_else(|| Sampled::new(Vec::new()));
     let refused = match march(&branches,false) {
         Ok(t) => return Ok((t,branches.into_branches())),
         Err(Unmarched::Shallow(e)) => e,
@@ -765,14 +751,16 @@ pub(crate) fn marched<'s>(ridged: Option<Sampled>,tol: f64,past_inputs: impl FnO
     let known = branches.branches().len();
     let ([(a,da),(b,db)],seeds) = past_inputs();
     if !read {
+        let sides = [(a,da,b),(b,db,a)];
         let mut fresh: Vec<Branch> = Vec::new();
-        for (s,d,o) in ridge_order(a,da,b,db) {
+        for (s,d,o) in ridge_order(a,b).map(|k| sides[k]) {
             for r in ridges(s,d,o,tol)? { fresh.extend(ridge_branches(s,d,o,&r,tol)) }
             if !fresh.is_empty() { break }
         }
         branches.extend(fresh);
     }
-    let free: Vec<V> = seeds.into_iter().filter(|&p| !on_a_branch_past(a,b,&branches,known,p,tol)).collect();
+    // (the seeds are clear of the branches known before: whichever they are on is a new one)
+    let free: Vec<V> = seeds.into_iter().filter(|&p| !on_a_branch(a,b,&branches,p,tol)).collect();
     for (s,d,o) in [(a,da,b),(b,db,a)] {
         let level = level_curves(s,d,o,&free,tol);
         if !level.is_empty() { branches.extend(level); break }
@@ -790,9 +778,9 @@ pub(crate) fn marched<'s>(ridged: Option<Sampled>,tol: f64,past_inputs: impl FnO
 
 /// The sides a meeting's ridges are read over, in the order they are tried: first the one whose
 /// partner's distance is exact (a plane's, a quadric's, a torus's) where only one's is — a sheet's
-/// is a numerical foot, too rough to difference twice — each with its box and its partner.
-pub(crate) fn ridge_order<'s>(a: &'s Surface,da: [[f64;2];2],b: &'s Surface,db: [[f64;2];2]) -> [(&'s Surface,[[f64;2];2],&'s Surface);2] {
-    if exact_distance(a) && !exact_distance(b) { [(b,db,a),(a,da,b)] } else { [(a,da,b),(b,db,a)] }
+/// is a numerical foot, too rough to difference twice — as indices of `[a, b]`.
+pub(crate) fn ridge_order(a: &Surface,b: &Surface) -> [usize;2] {
+    if exact_distance(a) && !exact_distance(b) { [1,0] } else { [0,1] }
 }
 
 /// **Each seed traced alone, past a refusal** (`marched`): one on a curve `found` already holds
@@ -840,22 +828,19 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
     let start = crate::util::clock::Instant::now();
     let met = if closed_forms { intersect(a,b,tol) } else { Ssi::Traced };
     crate::util::meter::meeting(a.kind(),b.kind(),!matches!(met,Ssi::Traced),start.elapsed());
-    // the ridges of the meeting, in `a`'s parameters (#778 T2, T3): its touches along curves, and
-    // the crossings beside them however shallow, read from the critical set — the general road
-    let mut ridged: Vec<Branch> = Vec::new();
-    if matches!(met,Ssi::Traced) {
-        // over the parameters of the side read first (`ridge_order`), its critical set the one
-        // found above
-        let [(s,d,o),_] = ridge_order(a,da,b,db);
-        let set = if std::ptr::eq(s,a) { &sets[0] } else { &sets[1] };
-        for r in ridges_from(s,d,o,set,tol)? { ridged.extend(ridge_branches(s,d,o,&r,tol)) }
-    }
-    // (sampled once, for every seed and cell asked whether it lies on one, #780 R4)
-    let from_ridges = Sampled::new(ridged);
     let (curves,closed_form,ridged) = match met {
         Ssi::Same => return Ok(Meeting {same:true,branches:Vec::new(),singular:Vec::new(),closed_form:true}),
-        Ssi::Curves(cs) => (cs,true,from_ridges.into_branches()),
+        Ssi::Curves(cs) => (cs,true,Vec::new()),
         Ssi::Traced => {
+            // the ridges of the meeting (#778 T2, T3): its touches along curves, and the crossings
+            // beside them however shallow, read from the critical set found above — the general
+            // road — over the parameters of the side read first (`ridge_order`); sampled once, for
+            // every seed and cell asked whether it lies on one (#780 R4)
+            let k = ridge_order(a,b)[0];
+            let (s,d,o) = [(a,da,b),(b,db,a)][k];
+            let mut ridged: Vec<Branch> = Vec::new();
+            for r in ridges_from(s,d,o,&sets[k],tol)? { ridged.extend(ridge_branches(s,d,o,&r,tol)) }
+            let from_ridges = Sampled::new(ridged);
             let mut seeds = boundary_seeds(a,da,b);
             seeds.extend(boundary_seeds(b,db,a));
             for ((s,d,o),set) in [(a,da,b),(b,db,a)].into_iter().zip(&sets) {
@@ -876,11 +861,10 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
             // the meeting over both boxes: a seed on one's edge outside the other's box is none of it
             seeds.retain(|&p| in_box(a,da,p,tol) && in_box(b,db,p,tol));
             // marched through the seeds, and read past a march refused as shallow (`marched`)
-            let ridged = from_ridges.branches().len();
             let (traced,branches) = marched(Some(from_ridges),tol,|| ([(a,da),(b,db)],seeds.clone()),&mut |known,past| {
                 let mut traced = if past {
                     // (the seeds are clear of the ridges' branches: of the level curves' too)
-                    let seeds: Vec<V> = seeds.iter().copied().filter(|&p| !on_a_branch_past(a,b,known,ridged,p,tol)).collect();
+                    let seeds: Vec<V> = seeds.iter().copied().filter(|&p| !on_a_branch(a,b,known,p,tol)).collect();
                     let mut found = Vec::new();
                     traced_alone(&seeds,&mut found,&mut |p| super::ssi::trace(a,b,&[p],lo,hi,tol),tol);
                     found
