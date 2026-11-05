@@ -208,11 +208,15 @@ however shallow, the fold solved in its two-root form. A crossing with no ridge,
 the march along `∇a × ∇b`, is traced as `f = 0` in either surface's own parameters
 (`level_curves`: one scalar equation, its tangent square to `∇f`, its step halved where it turns
 sharply, as at a parabola's vertex where a plane leans a hair to a vault's crown). A point is on
-such a branch within `8 tol / sin θ` (`on_a_branch`, A3's reach). `meeting::meet` reads them on its
-traced road; an arrangement reads them where its march is refused as nearly touching
-(`Arrangement::traced_meeting`), each touch a stretch its march ends at, each seed then traced
-alone. **The trace's refusal below `SHALLOW` is no longer the kernel's answer**: it is where the
-meeting is read another way. The closed forms that know a touch — `plane_cylinder`'s, a cone's
+such a branch within `8 tol / sin θ` (`on_a_branch`, A3's reach). `meeting::meet` reads the ridges
+on its traced road before it marches; an arrangement reads them where its march is refused as
+nearly touching (`Arrangement::traced_meeting`). Both go through **one fallback**
+(`meeting::marched`, #780 R3): the march, and where it is refused as shallow the ridges (where not
+read yet) and then the level curves through the seeds no branch holds, each touch a stretch the
+march ends at, each seed then traced alone and one refused again passed by (`traced_alone`).
+**The trace's refusal below `SHALLOW` is no longer the kernel's answer**: it is where the meeting
+is read another way, known by its type (`ssi::Shallow`: the kinds, the angle, the point), never by
+its words (`touch_curves::a_march_refused_as_shallow_says_so_by_its_type`). The closed forms that know a touch — `plane_cylinder`'s, a cone's
 generator, `parallel_touch`, `ball_in_tube`, `tube_along_torus`, `tori_touching`, `pipe_end`,
 `screwed_circle_round`, and `extruded`'s plane through a spline extrusion — are fast paths, each
 held to the general method with them bypassed (`meeting::meet_with`, an argument, not a switch):

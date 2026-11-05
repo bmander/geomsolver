@@ -329,11 +329,15 @@ impl Blend {
     /// (`turned_to`): a grid spaced along `v` alone would start on the next turn of a coil as
     /// readily as on its own.
     pub fn inverse(&self,p: V) -> Uv {
-        crate::util::meter::charge(crate::util::meter::Stage::Inverse,1,|| (p,"a swept sheet's inverse".into()));
+        let key = self as *const Blend as usize;
+        // a build past its budget searches no further (#780 R3): the last foot found, or the patch's
+        // middle, stands for it, and the build is refused by its budget whatever it makes of it
+        if !crate::util::meter::charge(crate::util::meter::Stage::Inverse,1,|| (p,"a swept sheet's inverse".into())) {
+            return crate::util::warm::get(crate::util::warm::Kind::Blend,key).unwrap_or([0.5,0.5])
+        }
         // a level circle's sheet is read level with `p` first: a sheet thinner than the warm start's
         // reach (a round rim screwed a short lead) has its other side within it
         if let Some(uv) = self.level_circle_uv(p) { return self.newton(p,uv) }
-        let key = self as *const Blend as usize;
         let near = 1e-3*(1.+dot(p,p).sqrt());
         let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
             .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= near);

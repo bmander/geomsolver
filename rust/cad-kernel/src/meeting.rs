@@ -634,6 +634,78 @@ fn contact(a: &Surface,b: &Surface,c: &Curve,(lo,hi): (V,V)) -> Contact {
     if any { Contact::Touching } else { Contact::Crossing }
 }
 
+/// **Why a meeting's march answered nothing** (#780 R3): refused as shallow (`ssi::Shallow`), which
+/// the meeting is read past (`marched`), or for any other reason, which stands.
+#[derive(Clone,Debug)]
+pub(crate) enum Unmarched { Shallow(super::ssi::Shallow),Failed(String) }
+
+impl From<super::ssi::Shallow> for Unmarched { fn from(e: super::ssi::Shallow) -> Unmarched { Unmarched::Shallow(e) } }
+impl From<String> for Unmarched { fn from(e: String) -> Unmarched { Unmarched::Failed(e) } }
+impl From<Unmarched> for String {
+    fn from(e: Unmarched) -> String { match e { Unmarched::Shallow(e) => e.into(),Unmarched::Failed(e) => e } }
+}
+
+/// **A meeting marched, and read past a march refused as shallow** (#778 T3, T4): the one fallback
+/// for every meeting with no closed form (#780 R3) — ridges, then the trace, then level curves for
+/// what it refuses. `march(known, past)` traces the meeting of `a` over `da` and `b` over `db`
+/// (`sides`) through its seeds, the branches `known` already held (a march ends where it comes to
+/// one); `past` once a refusal has been read past, where a seed whose march is refused again stands
+/// where the branches read the meeting and is passed by (`traced_alone`).
+///
+/// It is marched first with the meeting's ridges where the caller read them before (`ridged`),
+/// else with none. Refused as shallow, the meeting is read from its critical set: its ridges, where
+/// the caller had not read them — over the parameters of the side whose partner's distance is exact
+/// (a plane's, a quadric's, a torus's: a sheet's is a numerical foot, too rough to difference
+/// twice), the other's where those hold none — and the level curves `f = 0` through the `seeds`
+/// no branch holds, in either's parameters; then it is marched again with them known. Refused as
+/// before where that reads no branch the march did not know. The march's answer, and every branch
+/// known.
+pub(crate) fn marched<T>(sides: [(&Surface,[[f64;2];2]);2],ridged: Option<Vec<Branch>>,seeds: &[V],tol: f64,
+    march: &mut dyn FnMut(&[Branch],bool) -> Result<T,Unmarched>) -> Result<(T,Vec<Branch>),String> {
+    let read = ridged.is_some();
+    let mut branches = ridged.unwrap_or_default();
+    let refused = match march(&branches,false) {
+        Ok(t) => return Ok((t,branches)),
+        Err(Unmarched::Shallow(e)) => e,
+        Err(Unmarched::Failed(e)) => return Err(e),
+    };
+    let known = branches.len();
+    let [(a,da),(b,db)] = sides;
+    if !read {
+        let mut order = [(a,da,b),(b,db,a)];
+        if exact_distance(a) && !exact_distance(b) { order.swap(0,1) }
+        for (s,d,o) in order {
+            for r in ridges(s,d,o,tol)? { branches.extend(ridge_branches(s,d,o,&r,tol)) }
+            if !branches.is_empty() { break }
+        }
+    }
+    let free: Vec<V> = seeds.iter().copied().filter(|&p| !on_a_branch(a,b,&branches,p,tol)).collect();
+    for (s,d,o) in [(a,da,b),(b,db,a)] {
+        let level = level_curves(s,d,o,&free,tol);
+        if !level.is_empty() { branches.extend(level); break }
+    }
+    if branches.len() == known { return Err(refused.into()) }
+    if super::debug() {
+        eprintln!("brep: a meeting read from its ridges and level curves: {} branches",branches.len());
+        for br in &branches { if let Curve::BSpline(s) = &br.curve { let [t0,t1] = s.domain();
+            eprintln!("brep:   {:?} from {:?} to {:?}",br.contact,br.curve.point(t0),br.curve.point(t1)) } }
+        for s in &free { eprintln!("brep:   seed {s:?}") }
+    }
+    let t = march(&branches,true)?;
+    Ok((t,branches))
+}
+
+/// **Each seed traced alone, past a refusal** (`marched`): one on a curve `found` already holds
+/// passed by, and one whose march is refused as shallow again — standing where the ridges and level
+/// curves read the meeting (a branch arriving tangent at a touch) — passed by too.
+pub(crate) fn traced_alone(seeds: &[V],found: &mut Vec<Curve>,trace: &mut dyn FnMut(V) -> Result<Vec<Curve>,super::ssi::Shallow>,
+    tol: f64) {
+    for &p in seeds {
+        if found.iter().any(|c| distance(c.point(c.inverse(p)),p) <= 8.*tol) { continue }
+        if let Ok(more) = trace(p) { found.extend(more) }
+    }
+}
+
 /// **The meeting of `a` over the box `da` of its parameters and `b` over `db`**, to `tol` (the
 /// module's account).
 pub fn meet(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f64) -> Result<Meeting,String> { meet_with(a,da,b,db,tol,true) }
@@ -698,50 +770,40 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
             seeds.retain(|&p| !on_a_branch(a,b,&from_ridges,p,tol));
             // the meeting over both boxes: a seed on one's edge outside the other's box is none of it
             seeds.retain(|&p| in_box(a,da,p,tol) && in_box(b,db,p,tol));
-            // a march refused where the two cross too shallowly for it: the meeting traced as `f = 0`
-            // in either's own parameters through the same seeds, and the rest traced as before
-            let mut traced = match super::ssi::trace(a,b,&seeds,lo,hi,tol) {
-                Err(e) if super::ssi::refused_as_shallow(&e) => {
-                    let mut level = level_curves(a,da,b,&seeds,tol);
-                    if level.is_empty() { level = level_curves(b,db,a,&seeds,tol) }
-                    if level.is_empty() { return Err(e) }
-                    from_ridges.extend(level);
-                    seeds.retain(|&p| !on_a_branch(a,b,&from_ridges,p,tol));
-                    // each seed left traced alone: one whose march is refused as shallow again
-                    // stands where the level curves read the meeting (a branch arriving tangent at
-                    // a touch), and is passed by
-                    let mut more: Vec<Curve> = Vec::new();
-                    for &p in &seeds {
-                        if more.iter().any(|c| distance(c.point(c.inverse(p)),p) <= 8.*tol) { continue }
-                        match super::ssi::trace(a,b,&[p],lo,hi,tol) {
-                            Ok(found) => more.extend(found),
-                            Err(e) if super::ssi::refused_as_shallow(&e) => {}
-                            Err(e) => return Err(e),
+            // marched through the seeds, and read past a march refused as shallow (`marched`)
+            let (traced,branches) = marched([(a,da),(b,db)],Some(from_ridges),&seeds,tol,&mut |known,past| {
+                let seeds: Vec<V> = seeds.iter().copied().filter(|&p| !on_a_branch(a,b,known,p,tol)).collect();
+                let mut traced = if past {
+                    let mut found = Vec::new();
+                    traced_alone(&seeds,&mut found,&mut |p| super::ssi::trace(a,b,&[p],lo,hi,tol),tol);
+                    found
+                } else { super::ssi::trace(a,b,&seeds,lo,hi,tol)? };
+                let curves: Vec<Curve> = known.iter().map(|br| br.curve.clone()).collect();
+                // what no seed reached, proved absent cell by cell between analytic surfaces
+                if super::ssi::searchable(a) && super::ssi::searchable(b) {
+                    let mut more = 0;
+                    // a ridge's touches are stretches the two touch along, and a cell beside a branch
+                    // a ridge holds is beside a known meeting
+                    let stretches: Vec<(&Curve,[f64;2])> = known.iter().filter(|br| br.contact == Contact::Touching)
+                        .filter_map(|br| if let Curve::BSpline(s) = &br.curve { Some((&br.curve,s.domain())) } else { None }).collect();
+                    let mut beside = |p: V| on_a_branch(a,b,known,p,tol);
+                    while let Some(p) = super::ssi::unseen_beside(a,da,b,&[traced.clone(),curves.clone()].concat(),&stretches,&mut beside,lo,hi,tol)? {
+                        more += 1;
+                        if more > 64 { return Err(format!("a {} and a {} meet in more than 64 curves no seed reaches",a.kind(),b.kind()).into()) }
+                        let found = match super::ssi::trace(a,b,&[p],lo,hi,tol) {
+                            // past a refusal, one refused again stands where the branches read it
+                            Err(_) if past => break,
+                            found => found?,
+                        };
+                        if found.is_empty() {
+                            return Err(format!("a {} and a {} meet at {p:?} in a curve that could not be traced",a.kind(),b.kind()).into())
                         }
+                        traced.extend(found);
                     }
-                    more
                 }
-                other => other?,
-            };
-            let known: Vec<Curve> = from_ridges.iter().map(|br| br.curve.clone()).collect();
-            // what no seed reached, proved absent cell by cell between analytic surfaces
-            if super::ssi::searchable(a) && super::ssi::searchable(b) {
-                let mut more = 0;
-                // a ridge's touches are stretches the two touch along, and a cell beside a branch a
-                // ridge holds is beside a known meeting
-                let stretches: Vec<(&Curve,[f64;2])> = from_ridges.iter().filter(|br| br.contact == Contact::Touching)
-                    .filter_map(|br| if let Curve::BSpline(s) = &br.curve { Some((&br.curve,s.domain())) } else { None }).collect();
-                let mut beside = |p: V| on_a_branch(a,b,&from_ridges,p,tol);
-                while let Some(p) = super::ssi::unseen_beside(a,da,b,&[traced.clone(),known.clone()].concat(),&stretches,&mut beside,lo,hi,tol)? {
-                    more += 1;
-                    if more > 64 { return Err(format!("a {} and a {} meet in more than 64 curves no seed reaches",a.kind(),b.kind())) }
-                    let found = super::ssi::trace(a,b,&[p],lo,hi,tol)?;
-                    if found.is_empty() {
-                        return Err(format!("a {} and a {} meet at {p:?} in a curve that could not be traced",a.kind(),b.kind()))
-                    }
-                    traced.extend(found);
-                }
-            }
+                Ok(traced)
+            })?;
+            from_ridges = branches;
             (traced,false)
         }
     };

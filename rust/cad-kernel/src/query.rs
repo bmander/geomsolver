@@ -7,6 +7,7 @@ use super::geom::{Curve,Surface,Uv,V};
 use super::topo::{unwrap,Brep,EdgeCurve,Face};
 use super::plane2::{chord,Chord,Touch};
 use crate::util::roots::sampled_roots;
+use crate::util::isolate::GaveUp;
 use crate::util::space::{add,distance,dot,norm,scale};
 
 /// Where a point stands against a face or a solid.
@@ -266,13 +267,19 @@ fn read(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Option<Vec
         return read(&back,[al*t0+be,al*t1+be],&m.of,tol/m.stretch[1]).map(|at| at.into_iter().map(|(t,k)| ((t-be)/al,k)).collect())
     }
     // each search counted against the build's budget (#777 V3), and in its profile as certified
-    // or sampled (V4)
-    crate::util::meter::tick(crate::util::meter::Stage::Ray);
+    // or sampled (V4); a build past it reads no more (#780 R3)
+    if !crate::util::meter::tick(crate::util::meter::Stage::Ray) { return Some(Vec::new()) }
     // a curve lying in the surface is along it, whoever reads it
     if along(curve,[t0,t1],surface,tol) { return None }
     let found = match certified(curve,[t0,t1],surface,tol) {
-        Some(m) => { crate::util::meter::crossing(curve.kind(),surface.kind(),true); m }
-        None => { crate::util::meter::crossing(curve.kind(),surface.kind(),false); sampled(curve,[t0,t1],surface,tol) }
+        Ok(m) => { crate::util::meter::crossing(curve.kind(),surface.kind(),true); m }
+        // a build past its budget reads nothing more (#780 R3): no sampled search in its place
+        Err(Uncertified::GaveUp(GaveUp::Stopped)) => return Some(Vec::new()),
+        // no form for the pair, or a bounded search past its most boxes: the sampled search
+        Err(Uncertified::NoForm | Uncertified::GaveUp(GaveUp::Most)) => {
+            crate::util::meter::crossing(curve.kind(),surface.kind(),false);
+            sampled(curve,[t0,t1],surface,tol)
+        }
     };
     match found { Meets::At(roots) => Some(roots),Meets::Along => None }
 }
@@ -353,24 +360,39 @@ fn settled(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,roots: Vec<
     runs
 }
 
+/// **Why a curve and a surface have no certified reading** (#780 R3), told apart so each is
+/// answered its own way: no form for the pair (`NoForm`), which the sampled search reads, or a
+/// bounded search that gave up (`util::isolate::GaveUp`) — under a stopped build, which then reads
+/// nothing more, or past its most boxes, read as a pair with no form is.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum Uncertified { NoForm,GaveUp(GaveUp) }
+
+impl From<GaveUp> for Uncertified { fn from(g: GaveUp) -> Uncertified { Uncertified::GaveUp(g) } }
+
+/// A certified reading of a curve against a surface, or why there is none.
+type Certified = Result<Meets,Uncertified>;
+
 /// **Where `curve` meets `surface`, certified** (#777 V1, M1): in closed form, or its roots isolated
 /// with a bound on the derivatives of a function whose zeros they are (`util::isolate`), so no root
-/// is missed between samples however thin the sheet. `None` where no certified reading of the pair
-/// is known: the caller samples (`sampled`), and the profile says so. What it returns `meets`
-/// settles (`settled`).
-fn certified(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Option<Meets> {
+/// is missed between samples however thin the sheet. `Uncertified` where no certified reading of
+/// the pair is known, or its search gave up: the caller samples (`sampled`) or, under a stopped
+/// build, stops, and the profile says so. What it returns `meets` settles (`settled`).
+fn certified(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certified {
     match (curve,surface) {
         (&Curve::Line {p,d},Surface::Plane(f)) => line_poly(&[dot(f.z,crate::util::space::sub(p,f.o)),dot(f.z,d)],p,d,[t0,t1],surface,tol,&|_| true),
-        (&Curve::Line {p,d},Surface::Cylinder(c,r)) => Some(line_cylinder(p,d,c,*r,tol)),
+        (&Curve::Line {p,d},Surface::Cylinder(c,r)) => Ok(line_cylinder(p,d,c,*r,tol)),
         (&Curve::Line {p,d},Surface::Cone(f,r,a)) => line_cone(p,d,[t0,t1],f,*r,*a,surface,tol),
-        (&Curve::Line {p,d},Surface::Sphere(c,r)) => Some(line_sphere(p,d,c.o,*r,tol)),
+        (&Curve::Line {p,d},Surface::Sphere(c,r)) => Ok(line_sphere(p,d,c.o,*r,tol)),
         (&Curve::Line {p,d},Surface::Torus(f,big,r)) => line_torus(p,d,[t0,t1],f,big.abs(),r.abs(),surface,tol),
         (&Curve::Line {p,d},Surface::Revolution(f,c)) => line_revolution(p,d,f,c,surface,tol),
         // a level circle's sheet in closed form, measured faster than the general search and held
         // to it (`swept_closed::every_surface_the_closed_class_emits_locates_points_exactly`); any
         // other sheet by the search
-        (&Curve::Line {p,d},Surface::Blend(_,b)) => b.level_circle().and_then(|c| line_screwed_circle(p,d,[t0,t1],&c,tol))
-            .or_else(|| curve_sheet(curve,[t0,t1],surface,tol)),
+        // (a level circle's search past its most boxes is read by the general one)
+        (&Curve::Line {p,d},Surface::Blend(_,b)) => match b.level_circle().map(|c| line_screwed_circle(p,d,[t0,t1],&c,tol)) {
+            None | Some(Err(Uncertified::GaveUp(GaveUp::Most))) => curve_sheet(curve,[t0,t1],surface,tol),
+            Some(read) => read,
+        },
         (Curve::Circle(f,big),Surface::Blend(_,b)) => circle_round_screwed(f,big.abs(),b,[t0,t1],tol),
         (Curve::Line {..},Surface::BSpline(..)) => curve_sheet(curve,[t0,t1],surface,tol),
         (Curve::Iso(b,u),Surface::Sphere(c,r)) => helix_sphere(b,*u,c.o,r.abs(),[t0,t1],tol),
@@ -378,7 +400,7 @@ fn certified(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Optio
         // drum, a fillet's rim or a section's arc (#780 R2)
         (Curve::Circle(..) | Curve::Ellipse(..),_) => conic_algebraic(curve,[t0,t1],surface,tol),
         (Curve::BSpline(sp),Surface::Plane(f)) => spline_plane(sp,[t0,t1],f,surface,tol),
-        _ => None,
+        _ => Err(Uncertified::NoForm),
     }
 }
 
@@ -414,9 +436,9 @@ fn algebraic(surface: &Surface,tol: f64) -> Option<(usize,Box<dyn Fn(V) -> f64 +
 /// evenly round it; its derivatives are bounded by its amplitudes, `|g'| ≤ Σ k √(a_k² + b_k²)` and
 /// `|g''| ≤ Σ k² √(a_k² + b_k²)`, and its roots isolated with them (`util::isolate`), a touch
 /// accepted where the surface's distance is within `tol`. Each kept where the surface's points are.
-fn conic_algebraic(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Option<Meets> {
+fn conic_algebraic(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certified {
     use std::f64::consts::TAU;
-    let (n,form,keep) = algebraic(surface,tol)?;
+    let (n,form,keep) = algebraic(surface,tol).ok_or(Uncertified::NoForm)?;
     let at = |t: f64| curve.point(t);
     let m = 2*n+1;
     let ys: Vec<f64> = (0..m).map(|j| form(at(TAU*j as f64/m as f64))).collect();
@@ -430,7 +452,7 @@ fn conic_algebraic(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) ->
     let dg = |t: f64| terms.iter().enumerate().map(|(i,&(x,y))| { let k = (i+1) as f64; let (s,c) = (k*t).dsin_cos(); k*(y*c-x*s) }).sum::<f64>();
     let (d1,d2) = terms.iter().enumerate().fold((0.,0.),|(p,q),(i,&(x,y))| { let (k,amp) = ((i+1) as f64,x.dhypot(y)); (p+k*amp,q+k*k*amp) });
     let found = crate::util::isolate::roots(&g,&dg,&|_,_| [d1,d2],[t0,t1],tol*1e-3/curve.speed().max(1e-300),&|t| surface.implicit(at(t)).abs() <= tol)?;
-    Some(Meets::At(found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at,r.touch)).collect()))
+    Ok(Meets::At(found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at,r.touch)).collect()))
 }
 
 /// **A B-spline curve against a plane** (#780 R2): its points' heights over the plane, weighed, are
@@ -438,7 +460,7 @@ fn conic_algebraic(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) ->
 /// in the hull of its derivatives' coefficients there, so its roots are isolated span by span
 /// (`util::isolate`; a root at a knot both spans share `settled` reads once), a touch accepted
 /// where the plane's distance is within `tol`.
-fn spline_plane(sp: &super::nurbs::BSpline,[t0,t1]: [f64;2],f: &super::geom::Frame,surface: &Surface,tol: f64) -> Option<Meets> {
+fn spline_plane(sp: &super::nurbs::BSpline,[t0,t1]: [f64;2],f: &super::geom::Frame,surface: &Surface,tol: f64) -> Certified {
     let h = sp.heights(f.z,f.o);
     let [lo,hi] = sp.domain();
     let (a,b) = (t0.max(lo),t1.min(hi));
@@ -453,7 +475,7 @@ fn spline_plane(sp: &super::nurbs::BSpline,[t0,t1]: [f64;2],f: &super::geom::Fra
         let found = crate::util::isolate::roots(&g,&dg,&|x,y| h.bounds([x,y]),[w[0],w[1]],tol*1e-3/reach,&|t| surface.implicit(sp.point(t)).abs() <= tol)?;
         out.extend(found.into_iter().map(|r| (r.at,r.touch)));
     }
-    Some(Meets::At(out))
+    Ok(Meets::At(out))
 }
 
 /// Whether `curve` over `[t0, t1]` lies in `surface` to `tol`, read at its ends, middle and
@@ -474,7 +496,7 @@ fn on_bounded(surface: &Surface,p: V,tol: f64) -> bool {
 /// accepted where the surface's distance there is within `tol`, and each kept where `keep` takes
 /// its point (a cone's one sheet), over the stretch reached a tolerance past either end (what is
 /// past an end, and roots a hair apart, `settled` reads).
-fn line_poly(c: &[f64],p: V,d: V,[t0,t1]: [f64;2],surface: &Surface,tol: f64,keep: &dyn Fn(V) -> bool) -> Option<Meets> {
+fn line_poly(c: &[f64],p: V,d: V,[t0,t1]: [f64;2],surface: &Surface,tol: f64,keep: &dyn Fn(V) -> bool) -> Certified {
     let at = |t: f64| add(p,scale(d,t));
     let speed = norm(d).max(1e-300);
     let slack = tol/speed;
@@ -483,15 +505,15 @@ fn line_poly(c: &[f64],p: V,d: V,[t0,t1]: [f64;2],surface: &Surface,tol: f64,kee
     let dg = |t: f64| crate::util::isolate::poly_d(c,t);
     let bound = |a: f64,b: f64| crate::util::isolate::poly_bounds(c,a,b);
     let found = crate::util::isolate::roots(&g,&dg,&bound,[lo,hi],tol*1e-3/speed,&|t| surface.implicit(at(t)).abs() <= tol)?;
-    Some(Meets::At(found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at,r.touch)).collect()))
+    Ok(Meets::At(found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at,r.touch)).collect()))
 }
 
 /// A line against a cone (`Surface::Cone`, its frame `f`, radius `r` at the origin, half-angle
 /// `a`): `x² + y² − (r + z tan a)²` along it, a quadratic, on the one sheet the cone's parameters
 /// reach (`r + z tan a ≥ 0`).
-fn line_cone(p: V,d: V,t: [f64;2],f: &super::geom::Frame,r: f64,a: f64,surface: &Surface,tol: f64) -> Option<Meets> {
+fn line_cone(p: V,d: V,t: [f64;2],f: &super::geom::Frame,r: f64,a: f64,surface: &Surface,tol: f64) -> Certified {
     let (sa,ca) = a.dsin_cos();
-    if !(ca.abs() > 1e-9) { return None }
+    if !(ca.abs() > 1e-9) { return Err(Uncertified::NoForm) }
     let k = sa/ca;
     let (q,e) = (f.local(p),f.dir_local(d));
     // (r + z k)² with z = q₂ + t e₂, and x² + y²
@@ -502,7 +524,7 @@ fn line_cone(p: V,d: V,t: [f64;2],f: &super::geom::Frame,r: f64,a: f64,surface: 
 
 /// A line against a torus about `f`'s axis, its tube's middle radius `big` and the tube's `r`:
 /// `(|w|² + R² − r²)² − 4R² (x² + y²)` along it, a quartic.
-fn line_torus(p: V,d: V,t: [f64;2],f: &super::geom::Frame,big: f64,r: f64,surface: &Surface,tol: f64) -> Option<Meets> {
+fn line_torus(p: V,d: V,t: [f64;2],f: &super::geom::Frame,big: f64,r: f64,surface: &Surface,tol: f64) -> Certified {
     use crate::util::isolate::{poly_mul,poly_sum};
     let (q,e) = (f.local(p),f.dir_local(d));
     let sq = |i: usize| [q[i]*q[i],2.*q[i]*e[i],e[i]*e[i]];
@@ -521,12 +543,12 @@ fn line_torus(p: V,d: V,t: [f64;2],f: &super::geom::Frame,big: f64,r: f64,surfac
 /// line climbs (`z' = D ≠ 0`) its parameter at the meridian's height is `t = N / (W D)`, `N = Z −
 /// z₀ W`, and it meets the surface where the quartic `a N² + b D N W + c D² W² − D² X²` is nought,
 /// its roots isolated (`util::isolate`); a level line meets the circles at the roots of `N`, each
-/// a chord. `None` for a meridian of higher degree. (A line lying in it, a hyperboloid's ruling,
+/// a chord. `NoForm` for a meridian of higher degree. (A line lying in it, a hyperboloid's ruling,
 /// `meets` has read as along it already.)
-fn line_revolution(p: V,d: V,f: &super::geom::Frame,c: &Curve,surface: &Surface,tol: f64) -> Option<Meets> {
+fn line_revolution(p: V,d: V,f: &super::geom::Frame,c: &Curve,surface: &Surface,tol: f64) -> Certified {
     use crate::util::isolate::{poly_mul,poly_sum,poly};
-    let Curve::BSpline(sp) = c else { return None };
-    if sp.degree > 2 { return None }
+    let Curve::BSpline(sp) = c else { return Err(Uncertified::NoForm) };
+    if sp.degree > 2 { return Err(Uncertified::NoForm) }
     let (q,e) = (f.local(p),f.dir_local(d));
     let speed = norm(d).max(1e-300);
     let (a,b,cc) = (e[0]*e[0]+e[1]*e[1],2.*(q[0]*e[0]+q[1]*e[1]),q[0]*q[0]+q[1]*q[1]);
@@ -536,7 +558,7 @@ fn line_revolution(p: V,d: V,f: &super::geom::Frame,c: &Curve,surface: &Surface,
     knots.extend(sp.breaks([k0,k1]));
     knots.push(k1);
     // a line all but level is read neither way well: sampled
-    if dz.abs() > 1e-12*speed && dz.abs() < 1e-7*speed { return None }
+    if dz.abs() > 1e-12*speed && dz.abs() < 1e-7*speed { return Err(Uncertified::NoForm) }
     let width = 1e-12;
     // a level line's direction and foot, square to the axis
     let (flat,from) = (f.dir([e[0],e[1],0.]),f.dir([q[0],q[1],0.]));
@@ -569,7 +591,7 @@ fn line_revolution(p: V,d: V,f: &super::geom::Frame,c: &Curve,surface: &Surface,
             }
         }
     }
-    Some(Meets::At(out))
+    Ok(Meets::At(out))
 }
 
 /// **`curve_surface` by the general search alone** (`curve_sheet`), whatever closed form the pair
@@ -577,7 +599,7 @@ fn line_revolution(p: V,d: V,f: &super::geom::Frame,c: &Curve,surface: &Surface,
 /// against (#777 M3's fast paths). `None` where the search does not take the pair.
 pub fn curve_surface_searched(curve: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> Option<Meets> {
     if along(curve,t,surface,tol) { return Some(Meets::Along) }
-    curve_sheet(curve,t,surface,tol).map(|m| match m { Meets::At(r) => Meets::At(settled(curve,t,surface,tol,r)),m => m })
+    curve_sheet(curve,t,surface,tol).ok().map(|m| match m { Meets::At(r) => Meets::At(settled(curve,t,surface,tol,r)),m => m })
 }
 
 /// **A line or a circle against a swept sheet or a B-spline sheet**, by the general search
@@ -588,21 +610,21 @@ pub fn curve_surface_searched(curve: &Curve,t: [f64;2],surface: &Surface,tol: f6
 /// certifies; a touch a root no box can part from its neighbours, its point on both to `tol`.
 /// The sheets: a section's edge and its image carried along a line or by a screw (`Blend`, its
 /// edges lines or circles — a screwed line's sheet, a ball's pipe, a leaning rim's), and a
-/// B-spline net not rational. `None` for any other, or where the search gives up.
-fn curve_sheet(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Option<Meets> {
-    let bend = match curve { Curve::Line {..} => 0.,Curve::Circle(_,r) => r.abs(),_ => return None };
+/// B-spline net not rational. `NoForm` for any other, `GaveUp` where the search gives up.
+fn curve_sheet(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certified {
+    let bend = match curve { Curve::Line {..} => 0.,Curve::Circle(_,r) => r.abs(),_ => return Err(Uncertified::NoForm) };
     let (domain,d1,second): ([[f64;2];2],Box<dyn Fn([f64;2]) -> (V,V,V) + '_>,Box<dyn Fn([f64;2],[f64;2]) -> Option<[f64;3]> + '_>) = match surface {
         Surface::Blend(_,b) => (([[0.,1.],[0.,1.]])
             ,Box::new(move |uv| b.d1(uv)),Box::new(move |u,v| blend_bounds(b,u,v))),
-        Surface::BSpline(_,n) => { if n.is_rational() { return None }
+        Surface::BSpline(_,n) => { if n.is_rational() { return Err(Uncertified::NoForm) }
             (n.domain(),Box::new(move |[u,v]| n.d1(u,v)),Box::new(move |u,v| n.second_bounds(u,v))) }
-        _ => return None,
+        _ => return Err(Uncertified::NoForm),
     };
     let span = t1-t0;
-    if !(span > 0.) { return None }
+    if !(span > 0.) { return Err(Uncertified::NoForm) }
     // a curve lying in the sheet (a ruling, a helix it carries) `meets` has read as along it; one
     // within the tolerance of it at its quarters but not between is the sampled reading's
-    if lies_along(curve,[t0,t1],surface,tol) { return None }
+    if lies_along(curve,[t0,t1],surface,tol) { return Err(Uncertified::NoForm) }
     let speed = curve.d1(0.5*(t0+t1)).1;
     let reach = norm(speed)*span+{ let (s0,_,_) = d1([domain[0][0],domain[1][0]]); let (s1,_,_) = d1([domain[0][1],domain[1][1]]); distance(s0,s1) };
     let f = |x: [f64;3]| -> ([f64;3],[[f64;3];3]) {
@@ -611,7 +633,7 @@ fn curve_sheet(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Opt
         (std::array::from_fn(|i| q[i]-s[i]),std::array::from_fn(|i| [dq[i]*span,-su[i],-sv[i]]))
     };
     // a box the sheet bounds nothing over is read by the whole domain's bound
-    let whole = second(domain[0],domain[1])?;
+    let whole = second(domain[0],domain[1]).ok_or(Uncertified::NoForm)?;
     let second = |bx: &[[f64;2];3]| -> [f64;3] {
         let [uu,uv,vv] = second(bx[1],bx[2]).unwrap_or(whole);
         let h = bend*span*span+uu+2.*uv+vv;
@@ -620,7 +642,7 @@ fn curve_sheet(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Opt
     let width = tol*1e-2/reach.max(1e-300);
     let near = |x: [f64;3]| { let (fx,_) = f(x); norm(fx) <= tol };
     let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,1.],domain[0],domain[1]],width,&near)?;
-    Some(Meets::At(found.into_iter().map(|r| (t0+r.at[0].clamp(0.,1.)*span,r.touch)).collect()))
+    Ok(Meets::At(found.into_iter().map(|r| (t0+r.at[0].clamp(0.,1.)*span,r.touch)).collect()))
 }
 
 /// **Bounds on a blend's second derivatives over `u × v`** — `|S_uu|`, `|S_uv|`, `|S_vv|` — for
@@ -732,22 +754,22 @@ fn line_chord(w: V,e: V,r: f64,tol: f64) -> Meets {
 /// turn it by (`G` monotone: a root where its ends differ in sign), and halved otherwise. Square to
 /// the axis the line is level and meets the one circle there as a chord. A thin sheet's two
 /// crossings a hair apart are both found: no step need land between them.
-fn line_screwed_circle(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::LevelCircle,tol: f64) -> Option<Meets> {
+fn line_screwed_circle(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::LevelCircle,tol: f64) -> Certified {
     use crate::util::space::{cross,sub};
     let k = c.axis;
     let perp = |x: V| sub(x,scale(k,dot(x,k)));
     let (v0,v1) = (c.v_at(p),dot(d,k)/c.rise);
     // the stretch of the line level with the sheet, `v` in `[0, 1]`
     if v1.abs()*(t1-t0).abs() <= 1e-15 {
-        if !(0.0..=1.0).contains(&v0) { return Some(Meets::At(Vec::new())) }
+        if !(0.0..=1.0).contains(&v0) { return Ok(Meets::At(Vec::new())) }
         let o = c.back(c.frame.o,-v0);
-        return Some(line_chord(sub(p,o),perp(d),c.r,tol))
+        return Ok(line_chord(sub(p,o),perp(d),c.r,tol))
     }
     // (the sheet's ends held a tolerance wide: a line ending on an end circle meets it there)
     let slack = tol/(c.rise.abs()*v1.abs().max(1e-300)*norm(d).max(1e-300)).max(1e-300)*v1.abs();
     let (ta,tb) = ((0.-v0-slack)/v1,(1.-v0+slack)/v1);
     let (lo,hi) = (ta.min(tb).max(t0),ta.max(tb).min(t1));
-    if lo > hi { return Some(Meets::At(Vec::new())) }
+    if lo > hi { return Ok(Meets::At(Vec::new())) }
     let omega = c.angle*v1;
     let (dp,cp) = (perp(d),perp(sub(c.frame.o,c.centre)));
     let a = |t: f64| -> (V,V) {
@@ -779,7 +801,7 @@ fn line_screwed_circle(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::LevelCircle,t
         let near = roots.iter().any(|&(t,_)| (t-end).abs()*norm(d) <= tol);
         if !near && g(end).abs() <= 2.*c.r*tol { roots.push((end,false)) }
     }
-    Some(Meets::At(roots))
+    Ok(Meets::At(roots))
 }
 
 /// **A circle about a screw's axis against the sheet a circle screws into**, exactly (#721 F2c5: a
@@ -787,18 +809,18 @@ fn line_screwed_circle(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::LevelCircle,t
 /// its axis, so the sheet meets the circle's cylinder in the helices of its circle's points at that
 /// radius (`ssi`'s `screwed_circle_round`), and the circle where each helix reaches its height
 /// within the sheet. Where the helix is one the sheet touches the cylinder along, the circle,
-/// lying in the cylinder, touches the sheet there. `None` for a circle not about the screw's axis,
+/// lying in the cylinder, touches the sheet there. `NoForm` for a circle not about the screw's axis,
 /// or a sheet no circle screws into.
-fn circle_round_screwed(f: &super::geom::Frame,big: f64,b: &std::sync::Arc<super::geom::Blend>,[t0,t1]: [f64;2],tol: f64) -> Option<Meets> {
+fn circle_round_screwed(f: &super::geom::Frame,big: f64,b: &std::sync::Arc<super::geom::Blend>,[t0,t1]: [f64;2],tol: f64) -> Certified {
     use crate::util::space::{cross,sub};
-    let super::geom::Carry::Screw {center,axis,angle,advance} = b.carry else { return None };
-    let k = crate::util::space::normalised(axis)?;
-    if norm(cross(f.z,k)) > 1e-12 { return None }
+    let super::geom::Carry::Screw {center,axis,angle,advance} = b.carry else { return Err(Uncertified::NoForm) };
+    let k = crate::util::space::normalised(axis).ok_or(Uncertified::NoForm)?;
+    if norm(cross(f.z,k)) > 1e-12 { return Err(Uncertified::NoForm) }
     let perp = |x: V| sub(x,scale(k,dot(x,k)));
-    if norm(perp(sub(f.o,center))) > tol || angle == 0. { return None }
-    let helices = super::ssi::screwed_circle_round(b,&super::geom::Frame::about(center,k),big,tol)?;
+    if norm(perp(sub(f.o,center))) > tol || angle == 0. { return Err(Uncertified::NoForm) }
+    let helices = super::ssi::screwed_circle_round(b,&super::geom::Frame::about(center,k),big,tol).ok_or(Uncertified::NoForm)?;
     let rise = advance*dot(axis,k);
-    if rise == 0. { return None }
+    if rise == 0. { return Err(Uncertified::NoForm) }
     let h = dot(sub(f.o,center),k);
     let mut roots = Vec::new();
     for c in &helices {
@@ -819,7 +841,7 @@ fn circle_round_screwed(f: &super::geom::Frame,big: f64,b: &std::sync::Arc<super
         let radial = crate::util::space::normalised(perp(sub(p,center))).unwrap_or([0.;3]);
         roots.push((t.clamp(t0,t1),norm(cross(n,radial)) <= 1e-6));
     }
-    Some(Meets::At(roots))
+    Ok(Meets::At(roots))
 }
 
 /// **A helix against a ball**, its roots isolated with a bound (#721 F2c5: the helix a ball's pipe
@@ -830,13 +852,13 @@ fn circle_round_screwed(f: &super::geom::Frame,big: f64,b: &std::sync::Arc<super
 /// distance from the axis), so `|G'| ≤ 2|p − c||p'|` and `|G''| ≤ 2(|p'|² + |p − c||p''|)` bound it as
 /// `line_screwed_circle` does: a stretch dropped where `G` cannot reach nought across it, read as one
 /// root where it is monotone, halved otherwise, a touch where it only reaches nought.
-fn helix_sphere(b: &super::geom::Blend,u: f64,c: V,r: f64,[t0,t1]: [f64;2],tol: f64) -> Option<Meets> {
+fn helix_sphere(b: &super::geom::Blend,u: f64,c: V,r: f64,[t0,t1]: [f64;2],tol: f64) -> Certified {
     use crate::util::space::sub;
-    let super::geom::Carry::Screw {center,axis,angle,advance} = b.carry else { return None };
+    let super::geom::Carry::Screw {center,axis,angle,advance} = b.carry else { return Err(Uncertified::NoForm) };
     let p0 = b.d1([u,0.]).0;
     let same = |q: V,p: V| distance(q,p) <= 1e-9*(1.+norm(p));
-    if !same(b.d1([u,1.]).0,b.carry.at(p0,1.)) || !same(b.d1([u,0.5]).0,b.carry.at(p0,0.5)) { return None }
-    let k = crate::util::space::normalised(axis)?;
+    if !same(b.d1([u,1.]).0,b.carry.at(p0,1.)) || !same(b.d1([u,0.5]).0,b.carry.at(p0,0.5)) { return Err(Uncertified::NoForm) }
+    let k = crate::util::space::normalised(axis).ok_or(Uncertified::NoForm)?;
     let rho = norm(sub(sub(p0,center),scale(k,dot(sub(p0,center),k))));
     let (a,h) = (angle.abs(),(advance*norm(axis)).abs());
     let p = |v: f64| b.carry.at(p0,v);
@@ -848,7 +870,7 @@ fn helix_sphere(b: &super::geom::Blend,u: f64,c: V,r: f64,[t0,t1]: [f64;2],tol: 
     let bound = |x0: f64,x1: f64| { let q = reach(x0).max(reach(x1))+s1*(x1-x0); [2.*q*s1,2.*(s1*s1+q*s2)] };
     // (an end on the ball, the touch beside it there taken in, `settled` reads)
     let roots = crate::util::isolate::roots(&g,&dg,&bound,[t0,t1],step,&|m| g(m).abs() <= 2.*r*tol)?;
-    Some(Meets::At(roots.into_iter().map(|x| (x.at,x.touch)).collect()))
+    Ok(Meets::At(roots.into_iter().map(|x| (x.at,x.touch)).collect()))
 }
 
 /// A face's box in space, from its edges and a grid across its parameters, grown by what the
