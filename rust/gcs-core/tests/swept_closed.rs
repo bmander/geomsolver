@@ -24,7 +24,7 @@ fn slide(d: [f64;3]) -> Trajectory {
 
 /// `built`, the closed sweep of `tool` under `path`, read against membership at seeded points of
 /// its box: every settled point inside it a member, every one outside not.
-fn agrees(built: &Brep,tool: &Brep,path: &Trajectory) { agrees_over(built,tool,path,[0.,1.]) }
+pub(crate) fn agrees(built: &Brep,tool: &Brep,path: &Trajectory) { agrees_over(built,tool,path,[0.,1.]) }
 
 /// `agrees` over the roll `roll`.
 fn agrees_over(built: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {
@@ -67,7 +67,7 @@ fn an_l_shaped_prism_slid_is_its_blocks_sweeps_united() {
 }
 
 /// The turn about the line through `o` along `axis` by `angle` radians over the roll `[0, 1]`.
-fn turn(o: [f64;3],axis: [f64;3],angle: f64) -> Trajectory {
+pub(crate) fn turn(o: [f64;3],axis: [f64;3],angle: f64) -> Trajectory {
     Trajectory::Twist(Screw {origin:o,axis:unit(axis),ratio:angle,advance:0.})
 }
 
@@ -1900,7 +1900,7 @@ fn screwed_mill_holds(p: [f64;3],roll: [f64;2]) -> bool {
 
 /// A Monte Carlo of a sweep's volume: `n` points uniform in the box `lo`–`hi`, the share `holds`
 /// says are in, and that estimate's standard error.
-fn monte_carlo(lo: [f64;3],hi: [f64;3],n: usize,seed: u32,holds: &dyn Fn([f64;3]) -> bool) -> (f64,f64) {
+pub(crate) fn monte_carlo(lo: [f64;3],hi: [f64;3],n: usize,seed: u32,holds: &dyn Fn([f64;3]) -> bool) -> (f64,f64) {
     let mut rng = gcs_core::rng::Rng::new(seed);
     let size: f64 = (0..3).map(|j| hi[j]-lo[j]).product();
     let inside = (0..n).filter(|_| holds(std::array::from_fn(|j| rng.uniform(lo[j],hi[j])))).count() as f64;

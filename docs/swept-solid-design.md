@@ -411,12 +411,20 @@ recorded above with what was tried:
 - **a candidate bounded inside the domain** — a leaning edge under a screw (whose whole sheet
   crosses itself) — waits on the arrangement holding a face with a slit, or a sheet whose rim
   stands inside a cell (F5's A1);
-- **a meeting with no closed form near a touch** — a ball screwed, a round face about an
-  axis leaning to a turn's (its contact a curve, its
-  surface of revolution's meridian fitted), a fitted sheet lying in a candidate's plane, and K2's
-  patches (each instant's contact swept, fitted) — is refused as nearly touching: each needs its
+- **a meeting with no closed form near a touch** — a fitted sheet lying in a candidate's plane, and
+  K2's patches (each instant's contact swept, fitted) — is refused as nearly touching: each needs its
   closed form (as the parallel cones', the ball's in a torus, the meridian's cylinder were), or the
-  tracer holding a near-tangent meeting (F4, #699 E). *A circle screwed is built* (a round tool's
+  tracer holding a near-tangent meeting (F4, #699 E). *A round face about an axis leaning to a
+  turn's is built* (#780 C3): its contact, on each ring `A cos u + B sin u = C`, is two curves along
+  the face, each turned into the surface of revolution of its meridian read exactly — a closed form
+  in the face's slant with its derivatives, read in floats and in outward-rounded intervals
+  (`turned::Turned`), not fitted — which a line meets certified (`query::line_turned`), coaxial
+  surfaces meet in circles where the meridians cross, and the face at each end pose touches along
+  its contact turned there in closed form (`ssi`'s `own_contact`). A whole turn takes no face at its
+  end poses (its sweep is the tool's solid of revolution, which they only touch). A leaning drum, a
+  leaning frustum and a rounded key are built turned whole and 100°, and a ball on a leaning stem
+  turned whole, each to a volume worked apart to 1e-9 (`tests/swept_turned.rs`); the ball on its
+  stem turned 100° is refused by name at its concave seam (`Unsettled`). *A circle screwed is built* (a round tool's
   rim under a screw: helical milling): its sheet's
   meetings with a level plane, a cylinder about the axis, a round tool's own side at an end pose and
   a plane through the axis are closed forms (`ssi::screwed_circle_meeting`), a line meets it exactly

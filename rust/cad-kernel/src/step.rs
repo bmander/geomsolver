@@ -41,13 +41,13 @@ impl Out {
     fn surface(&mut self,s: &Surface) -> Result<usize,String> {
         match s {
             Surface::Extrusion(f,c) => {
-                let c = self.swept(c);
+                let c = self.swept(c)?;
                 let d = self.direction(f.z);
                 let v = self.add(format!("VECTOR('',#{d},1.)"));
                 return Ok(self.add(format!("SURFACE_OF_LINEAR_EXTRUSION('',#{c},#{v})")))
             }
             Surface::Revolution(f,c) => {
-                let c = self.swept(c);
+                let c = self.swept(c)?;
                 let (o,z) = (self.point(f.o),self.direction(f.z));
                 let a = self.add(format!("AXIS1_PLACEMENT('',#{o},#{z})"));
                 return Ok(self.add(format!("SURFACE_OF_REVOLUTION('',#{c},#{a})")))
@@ -95,11 +95,28 @@ impl Out {
             list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0))))
     }
     /// The curve a swept surface sweeps (a B-spline, as a profile gives one).
-    fn swept(&mut self,c: &Curve) -> usize {
+    fn swept(&mut self,c: &Curve) -> Result<usize,String> {
+        // a turned contact's meridian (#780 C3), which no entity of the standard writes: the cubic
+        // through it over its span, fitted within `FIT`, its knots its own parameters
+        if let Curve::Turned(t) = c { return fitted(self,c,t.span,"a turned contact's") }
         let Curve::BSpline(b) = c else { unreachable!("a swept surface's curve is a profile's B-spline") };
         let ids: Vec<String> = b.poles.iter().map(|&p| format!("#{}",self.point(p))).collect();
-        spline(self,b.degree,&ids,&b.knots,b.weights.as_deref())
+        Ok(spline(self,b.degree,&ids,&b.knots,b.weights.as_deref()))
     }
+}
+
+/// **`c` over `[t0, t1]` as the cubic through it**, fitted within `FIT` (a curve no entity of the
+/// standard writes: a family's rail or rim, an affine image, a screwed sheet's cut, a turned
+/// contact's meridian), its knots the curve's own parameters; refused naming `whose` it is.
+fn fitted(o: &mut Out,c: &Curve,[t0,t1]: [f64;2],whose: &str) -> Result<usize,String> {
+    let fit = match super::nurbs::fit_curve(&|f| c.point(t0+(t1-t0)*f),3,8,FIT) {
+        Some((fit,err)) if err <= FIT => fit,
+        Some((_,err)) => return Err(format!("{whose} {} is fitted no nearer than {err:.3e} mm, past the file's {FIT:e}",c.kind())),
+        None => return Err(format!("{whose} {} could not be fitted (it is degenerate)",c.kind())),
+    };
+    let knots: Vec<f64> = fit.knots.iter().map(|k| t0+(t1-t0)*k).collect();
+    let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
+    Ok(spline(o,fit.degree,&ids,&knots,None))
 }
 
 /// A B-spline of `degree` through the poles `ids` over the full knot vector `knots` (written as
@@ -673,18 +690,9 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
             }
             // a family's rail or rim likewise, its parameter the rail's or the rim's; an affine image
             // of a curve (a rail under a shear); and a plane's cut of a screwed sheet
-            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) => {
-                let [t0,t1] = e.t;
-                let whose = if matches!(c,Curve::SheetCut(..)) { "a screwed sheet's" } else { "a face family's" };
-                let fit = match super::nurbs::fit_curve(&|f| c.point(t0+(t1-t0)*f),3,8,FIT) {
-                    Some((fit,err)) if err <= FIT => fit,
-                    Some((_,err)) => return Err(format!("{whose} {} is fitted no nearer than {err:.3e} mm, past the file's {FIT:e}",c.kind())),
-                    None => return Err(format!("{whose} {} could not be fitted (it is degenerate)",c.kind())),
-                };
-                // its knots the edge's own parameters
-                let knots: Vec<f64> = fit.knots.iter().map(|k| t0+(t1-t0)*k).collect();
-                let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                spline(o,fit.degree,&ids,&knots,None)
+            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) | Curve::Turned(..) => {
+                let whose = match c { Curve::SheetCut(..) => "a screwed sheet's",Curve::Turned(..) => "a turned contact's",_ => "a face family's" };
+                fitted(o,c,e.t,whose)?
             }
             Curve::Traced(_) => {
                 let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::util::space::lerp(c.point(a),c.point(z),0.5)));

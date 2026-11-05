@@ -78,6 +78,9 @@ fn curve(c: &Curve) -> Result<Json,String> {
         Curve::BSpline(b) => { let mut o = bspline(b); o.set("kind","bspline".into()); o }
         Curve::Iso(b,u) => object([("kind","iso".into()),("blend",blend(b)?),("u",(*u).into())]),
         Curve::Affine(m) => object([("kind","affine".into()),("map",affine(&m.map)),("of",curve(&m.of)?),("at",reals(&m.at))]),
+        Curve::Turned(t) => { let c = &t.contact;
+            object([("kind","turned".into()),("frame",frame(&t.frame)),("o",v3(c.o)),("a",v3(c.a)),("r",c.r.into()),("sa",c.sa.into()),
+                ("ca",c.ca.into()),("side",c.side.into()),("span",reals(&t.span)),("posed",t.posed.into())]) }
         other => return Err(format!("sweep dump: a {} curve is not written",other.kind())),
     })
 }
@@ -90,6 +93,10 @@ fn rcurve(j: &Json) -> Result<Curve,String> {
         "iso" => Curve::Iso(Arc::new(rblend(field(j,"blend")?)?),num(j,"u")?),
         "affine" => { let at = rreals(field(j,"at")?);
             Curve::Affine(Arc::new(crate::affine::MappedCurve::new(raffine(field(j,"map")?)?,rcurve(field(j,"of")?)?,[at[0],at[1]]))) }
+        "turned" => { let span = rreals(field(j,"span")?);
+            let contact = crate::turned::Contact {o:rv3(field(j,"o")?),a:rv3(field(j,"a")?),r:num(j,"r")?,sa:num(j,"sa")?,ca:num(j,"ca")?,side:num(j,"side")?};
+            let posed = j.get("posed").is_some_and(|p| p.as_bool());
+            Curve::Turned(Arc::new(crate::turned::Turned {frame:rframe(field(j,"frame")?)?,contact,span:[span[0],span[1]],posed})) }
         k => return Err(format!("sweep dump: a curve of kind `{k}`")),
     })
 }

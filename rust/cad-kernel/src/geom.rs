@@ -933,6 +933,13 @@ impl Surface {
                 let uv = self.swept_inverse(p,&|q,k| b.refined(q,hint[k])).expect("a swept curve");
                 if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
             }
+            // a turned contact's meridian likewise, by Newton from the hint's slant (#780 C3: read
+            // afresh, its samples were most of a turned build's time)
+            Surface::Revolution(_,c) if matches!(**c,Curve::Turned(_)) => {
+                let Curve::Turned(t) = &**c else { unreachable!() };
+                let uv = self.swept_inverse(p,&|q,k| t.newton(q,hint[k])).expect("a swept curve");
+                if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
+            }
             _ => self.inverse(p),
         }
     }
@@ -1503,17 +1510,21 @@ pub enum Curve {
     /// map that does not carry its surface to its own kind, or a pcurve read at its edge's
     /// parameter once the edge's curve is written anew (`Curve::mapped`).
     Affine(Arc<super::affine::MappedCurve>),
+    /// A round face's contact under a turn, turned (#780 C3, `turned::Turned`): its meridian in the
+    /// half-plane of its frame, read in closed form, the curve's parameter the face's slant.
+    Turned(Arc<super::turned::Turned>),
 }
 
 impl Curve {
     pub fn kind(&self) -> &'static str {
         match self { Curve::Line {..} => "line",Curve::Circle(..) => "circle",Curve::Ellipse(..) => "ellipse",
             Curve::Traced(..) => "traced",Curve::BSpline(..) => "bspline",Curve::Iso(..) => "iso",
-            Curve::Rail(..) => "rail",Curve::Rim(..) => "rim",Curve::Affine(..) => "affine",Curve::SheetCut(..) => "sheet cut" }
+            Curve::Rail(..) => "rail",Curve::Rim(..) => "rim",Curve::Affine(..) => "affine",Curve::SheetCut(..) => "sheet cut",
+            Curve::Turned(..) => "turned" }
     }
     pub fn period(&self) -> Option<f64> {
         match self {
-            Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) => None,
+            Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) | Curve::Turned(..) => None,
             Curve::Rim(ref w,_) => w.period(),
             Curve::Traced(c) => c.closed.then(|| c.segments() as f64),
             Curve::Affine(m) => m.period(),
@@ -1542,6 +1553,7 @@ impl Curve {
             Curve::Rail(ref w,u) => w.rail(u,t),
             Curve::Rim(ref w,s) => w.rim(t,s),
             Curve::Affine(ref m) => m.d2(t),
+            Curve::Turned(ref m) => m.d2(t),
             Curve::Line {p,d} => (add(p,scale(d,t)),d,[0.;3]),
             Curve::Circle(f,r) => {
                 let (s,c) = t.dsin_cos();
@@ -1626,6 +1638,7 @@ impl Curve {
             // the nearest of samples across every knot span, then Newton: once a point
             Curve::BSpline(ref b) => nearest_held(b,p),
             Curve::Affine(ref m) => m.inverse(p),
+            Curve::Turned(ref m) => m.inverse(p),
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.datan2(x)) }
             Curve::Ellipse(f,a,b) => {
@@ -1682,6 +1695,7 @@ impl Curve {
             }
             Curve::Rim(ref w,s) => (0..=64).map(|j| norm(w.rim(j as f64/64.,s).1)).fold(0.,f64::max),
             Curve::Affine(ref m) => m.speed(),
+            Curve::Turned(ref m) => m.speed(),
         }
     }
     /// A box about the curve over `[t0, t1]`, never smaller than it: exact for a line, circle and
@@ -1720,6 +1734,7 @@ impl Curve {
             Curve::Rail(ref w,_) => w.bounds([t0,t1]),
             Curve::Rim(ref w,s) => w.rim_bounds(s,[t0,t1]),
             Curve::Affine(ref m) => m.bounds([t0,t1]),
+            Curve::Turned(ref m) => m.bounds([t0,t1]),
             Curve::Traced(ref c) => {
                 // the chords reaching the interval, so its ends' too
                 let m = c.segments();
@@ -1751,6 +1766,7 @@ impl Curve {
             Curve::SheetCut(ref c) => Curve::SheetCut(Arc::new(c.moved(m))),
             Curve::Rail(ref w,u) => Curve::Rail(Arc::new(w.moved(m)),u),
             Curve::Rim(ref w,s) => Curve::Rim(Arc::new(w.moved(m)),s),
+            Curve::Turned(ref t) => Curve::Turned(Arc::new(t.moved(m).expect("a rigid motion keeps a frame's hand"))),
             Curve::Affine(ref a) => Curve::Affine(Arc::new(super::affine::MappedCurve::new(
                 a.map.then(&super::affine::Affine::of_rigid(m)),a.of.clone(),a.at))),
         }
@@ -1767,6 +1783,11 @@ impl Curve {
             Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced {a:c.a.reflected(m)?.0,
                 b:c.b.reflected(m)?.0,pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
             Curve::Affine(_) => self.moved(m),
+            // (a meridian's points read its frame's `x` and `z` alone: reflected, carried)
+            Curve::Turned(ref t) => match t.moved(m) {
+                Some(t) => Curve::Turned(Arc::new(t)),
+                None => return Err("a turned contact posed is not reflected yet".to_string()),
+            },
             Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::SheetCut(..) => return Err(
                 "a swept section's edge is not reflected yet".to_string()),
         })

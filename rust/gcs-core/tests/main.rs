@@ -299,6 +299,7 @@ mod surfaces;
 mod swept_faces;
 mod swept_over_parameters;
 mod swept_speed;
+mod swept_turned;
 mod symbols;
 mod symmetric;
 mod tangent_at;

@@ -429,7 +429,7 @@ impl Node {
                         Some((c,q)) => if norm(sub(c,frame.o)) > tol || (q-r).abs() > tol { return Ok(None) },
                     }
                 }
-                ProfileEdge::Spline(_) => return Ok(None),
+                ProfileEdge::Spline(_) | ProfileEdge::Turned(_) => return Ok(None),
             }
         }
         Ok(found)
@@ -487,7 +487,7 @@ pub(super) fn meridian_of(profile: &Profile,o: V,a: V,tol: f64,conics: bool) -> 
                 (0..=16).map(|k| arc_at(&frame,r,a0+(a1-a0)*k as f64/16.)).collect()
             }
             ProfileEdge::Spline(ref b) if conic(b).is_some() => b.poles.clone(),
-            ProfileEdge::Spline(_) => return Err(Unread::Spline),
+            ProfileEdge::Spline(_) | ProfileEdge::Turned(_) => return Err(Unread::Spline),
         };
         for p in pts {
             let d = sub(p,o);
@@ -510,6 +510,7 @@ pub(super) fn meridian_of(profile: &Profile,o: V,a: V,tol: f64,conics: bool) -> 
             let sense = (x[0]*y[1]-x[1]*y[0]).signum();
             Seg::Arc {c,r,a0:(p0[1]-c[1]).datan2(p0[0]-c[0]),sweep:sense*(w1-w0)}
         }
+        ProfileEdge::Turned(_) => unreachable!("refused above"),
         ProfileEdge::Spline(ref b) => {
             let ([a,m,c],w) = conic(b).expect("refused above");
             Seg::Conic {a:q(a),m:q(m),b:q(c),w}
