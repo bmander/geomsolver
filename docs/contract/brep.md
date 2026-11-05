@@ -785,6 +785,23 @@ collapses there** (`brep::mesh`): a horn torus's pinch, every `u` one point, wou
 nothing over the whole face; there the mean speed over the box is taken.
 `brep_offset::an_elliptic_bore_cuts_through_its_plate`, `a_horn_torus_meshes_within_its_sag`.
 
+**A loop through a pole is closed along it** (#797; brep-bench's singular/sectors-sharing-an-apex).
+Two cones with one apex meet in the generators of the first that the second holds, exactly
+(`ssi`'s `cones_at_one_apex`: `A + R cos(u − φ) = ±cos β`, none where the cones touch along a
+generator); traced, the meeting of two spherical sectors sharing their apex crowded its steps
+toward the apex and was fitted with 36 000 knots a curve, and each face's area took seconds. A
+pcurve read through the surface's inverse ends on a pole at the value its line from `a` to `b`
+gives (`topo`'s `on_pole`: at a pole every value of the collapsed parameter is the one point, and
+the inverse reads one value whatever the curve, a cone's apex `u = 0`), and a Boolean's result
+closes every loop that passes through a pole along it (`Brep::close_poles`): each use the inverse
+carries there ends at the value its tangent points along, and between the use arriving and the
+use leaving a degenerate edge runs from the one to the other — an operand's pole edge kept, cut
+to the span the face reaches, or one laid — as a primitive's loop does. It mends the parameters alone: which use follows which at the pole is the face's split as walked. Unclosed, a cone's piece
+through the apex was walked across the pole by a jump in its last use's last instant, or by its
+operand's pole kept whole across a turn the piece does not span: its pieces' triangles overlapped,
+265 triangle sides of the sectors' common not shared by two. `brep::two_sectors_sharing_an_apex_meet_in_lines_and_mesh_closed`
+(the common's volume and areas their closed forms by Gauss–Bonnet, its mesh closed) is the gate.
+
 **Faces built apart are sewn into a solid by tolerant topology** (`sew::sewn`; brep-bench's
 geometry/nurbs-cone): a rational net whose last row is nine copies of its apex (`build::sheet`)
 and the disc closing its base (`build::face`, a profile's region of its plane alone), or any

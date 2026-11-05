@@ -2639,3 +2639,75 @@ fn an_edge_used_twice_each_way_touches_and_one_used_once_is_open() {
     assert_eq!(e.kind,Kind::Open,"{e}");
     assert!(e.msg.starts_with("not closed: "),"{e}");
 }
+
+
+/// **Two spherical sectors sharing their apex** (#797, brep-bench's singular/sectors-sharing-an-apex):
+/// of radius `R = 10` and half-angle `α = 45°`, one about z and one about z turned `γ = 60°` about y.
+/// Their cones meet in two generators through the apex, exactly (`ssi`'s `cones_at_one_apex`), and
+/// each cone's piece passes through the apex, its loop closed along the pole there by a degenerate
+/// edge (`Brep::close_poles`). Their common is the cone over the lens two caps of angular radius
+/// `α` with centres `γ` apart cut from the sphere: by Gauss–Bonnet its solid angle is `Ω = 2ψ −
+/// 4θ cos α`, `ψ = π − δ` the lens's corner (`cos δ = (cos γ − cos² α)/sin² α`) and `2θ` the arc each
+/// cap's circle turns about its centre (`cos θ = tan(γ/2)/tan α`): a volume `R³Ω/3`, the spheres'
+/// area `R²Ω` and each cone's `R² θ sin α`. Traced, the meeting crowded its steps toward the apex,
+/// 36 000 knots a curve, and each loop jumped across the pole in its last use's last instant: the
+/// measures took seconds and the pieces' triangles overlapped, 265 triangle sides not shared by two.
+#[test]
+fn two_sectors_sharing_an_apex_meet_in_lines_and_mesh_closed() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::mesh::mesh;
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    use gcs_core::brep::topo::EdgeCurve;
+    use std::f64::consts::FRAC_PI_4;
+    let (apex,r) = ([0.,0.,0.],10.);
+    let rim = [r*FRAC_PI_4.sin(),0.,r*FRAC_PI_4.cos()];
+    let frame = Frame::new(apex,[0.,-1.,0.],[0.,0.,1.]);
+    let edges = vec![line(apex,rim),ProfileEdge::Arc {frame,r,span:Some([-FRAC_PI_4,0.])},line([0.,0.,r],apex)];
+    let a = revolve(&Profile {origin:apex,normal:[0.,-1.,0.],loops:vec![edges],names:vec![]},apex,[0.,0.,1.],TAU).unwrap();
+    let b = a.moved(&Rigid::turn([0.;3],[0.,1.,0.],60f64.to_radians()));
+    // the two cones' meeting: lines through the apex, each on both
+    let cone = |s: &gcs_core::brep::topo::Brep| s.faces.iter().find(|f| matches!(f.surface,Surface::Cone(..))).unwrap().surface.clone();
+    let (ca,cb) = (cone(&a),cone(&b));
+    let Ssi::Curves(lines) = intersect(&ca,&cb,1e-9) else { panic!("two cones at one apex are met in closed form") };
+    // (`A + R cos(u − φ) = cos β` twice; its other nappe, `−cos β`, is out of the first's reach)
+    assert_eq!(lines.len(),2,"two generators: {lines:?}");
+    for l in &lines {
+        let Curve::Line {p,d} = l else { panic!("{l:?} is no line") };
+        assert!(gcs_core::space::norm(*p) <= 1e-12,"through the apex: {p:?}");
+        for t in [1.,3.,10.] {
+            let q = gcs_core::space::add(*p,scale3(*d,t));
+            for s in [&ca,&cb] { assert!(gcs_core::space::distance(s.point(s.inverse(q)),q) <= 1e-12,"{q:?} off a cone"); }
+        }
+    }
+    let common = combined(&a,&b,Op::Common,0.).unwrap();
+    common.check(1e-9).unwrap();
+    let (alpha,gamma) = (FRAC_PI_4,PI/3.);
+    let delta = ((gamma.cos()-alpha.cos().powi(2))/alpha.sin().powi(2)).acos();
+    let theta = ((gamma/2.).tan()/alpha.tan()).acos();
+    let omega = 2.*(PI-delta)-4.*theta*alpha.cos();
+    close(volume(&common),r.powi(3)*omega/3.);
+    let area = |kind: &str| common.faces.iter().filter(|f| f.surface.kind() == kind).map(|f| gcs_core::brep::props::area(&common,f)).sum::<f64>();
+    close(area("sphere"),r*r*omega);
+    close(area("cone"),2.*r*r*theta*alpha.sin());
+    // the generators are edges, straight; each cone's piece through the apex closed along its pole
+    let straight = common.edges.iter().filter(|e| matches!(&e.curve,EdgeCurve::Curve(Curve::Line {..}))).count();
+    assert_eq!(straight,3,"the seam and the two generators the cones meet in: {straight} lines");
+    for f in common.faces.iter().filter(|f| matches!(f.surface,Surface::Cone(..))) {
+        let poles = f.loops.iter().flatten().filter(|c| matches!(common.edges[c.edge as usize].curve,EdgeCurve::Degenerate)).count();
+        assert_eq!(poles,1,"a cone's piece through the apex has one pole edge");
+    }
+    // brep-bench's bar: a ten-thousandth of the size, or a two-hundredth of the thickness
+    let all = common.faces.iter().map(|f| gcs_core::brep::props::area(&common,f)).sum::<f64>();
+    let bar = (1e-4*common.size()).min(5e-3*volume(&common)/all);
+    let m = mesh(&common,bar,0.1).unwrap();
+    let mut sides: std::collections::BTreeMap<(u32,u32),usize> = Default::default();
+    for t in &m.tris { for k in 0..3 { let (p,q) = (t[k],t[(k+1)%3]); *sides.entry((p.min(q),p.max(q))).or_default() += 1; } }
+    let open = sides.values().filter(|&&n| n != 2).count();
+    assert_eq!(open,0,"{open} of {} triangle sides not shared by two triangles",sides.len());
+    gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&m.triangles(),"sectors")).unwrap();
+    assert!(m.sag <= bar,"sags {} against {bar}",m.sag);
+    assert_eq!(m.turned,0);
+    let (v,w) = (mesh_volume(&m),volume(&common));
+    assert!((v-w).abs() <= 1e-3*w,"the mesh holds {v} against {w}");
+}
