@@ -16,7 +16,7 @@
 // brake disc's six M5 bolts.
 
 use std
-use std.solids
+use std.solids (cut)
 use std.place (horizontal)
 use motor.dims (brg_in, brg_od, brg_w, clear4, disc_bcd, disc_bolts, disc_depth, flange_r, flange_t,
                 half, lip, lip_r, pocket_in, Ro, Rr, screw_r, screws, spigot, spigot_r, spoke_d,

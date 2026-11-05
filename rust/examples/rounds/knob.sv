@@ -9,7 +9,7 @@
 // outer rims too, convex, so cut.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (round)
 
 in std.front {

@@ -24,7 +24,7 @@ use std::f64::consts::{PI, TAU};
 pub const SPACE: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 in std.front {
 o := point
 fix((0, 0)) o

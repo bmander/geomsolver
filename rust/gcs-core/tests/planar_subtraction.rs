@@ -23,7 +23,7 @@ fn wheel(tool: &str, space: &str) -> String {
     format!("\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.place (vertical, coords)
 use std.motion (turns)
 
@@ -282,7 +282,7 @@ fn handle(tool: &str) -> String {
     format!("\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.place (vertical)
 use std.motion (turns)
 
@@ -492,7 +492,7 @@ fn rolled_pinion(m: &str, over: &str, cuts: &str) -> String {
     format!("\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.place (vertical, coords, on_v)
 use std.motion (turns, slides)
 
@@ -713,7 +713,7 @@ fn chamfered() -> String {
     "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.place (vertical, coords, on_v, raised)
 use std.sets
 use std.motion (turns, slides)

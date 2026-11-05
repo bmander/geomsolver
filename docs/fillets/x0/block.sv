@@ -7,7 +7,7 @@
 // `cut` naming one does (§6.9, [0.31]), so the block needs no `pebble := solid(block)`.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.front {
   // a block 40 × 24 × 12
   b0 := point

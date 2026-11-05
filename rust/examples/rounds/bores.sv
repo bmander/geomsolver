@@ -9,7 +9,7 @@
 // cusps meet the faces. Edit a radius and apply (⌘↵).
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.rounds (round)
 
 r := 1mm   // every edge's radius

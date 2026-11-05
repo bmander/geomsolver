@@ -246,7 +246,7 @@ pub fn ring_lens(h: f64) -> String {
     format!("\
 unit mm
 use std
-use std.solids
+use std.solids (common)
 in std.front {{
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -281,7 +281,7 @@ pub fn lens(h: f64,apart: f64,offset: bool) -> String {
     crate::levelled(format!("\
 unit mm
 use std
-use std.solids
+use std.solids (common)
 in std.front {{
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -319,7 +319,7 @@ pub fn post(cx: f64,radius: f64,low: f64,high: f64) -> String {
     let r = cx+radius;
     format!("\
 use std
-use std.solids
+use std.solids (cut)
 in std.front {{
 private q0 := point
 private q1 := point
@@ -354,7 +354,7 @@ pub fn skew_post(x: f64) -> String { post(x,0.4,0.5,2.) }
 pub fn indexed_ring(count: usize,inner: f64,outer: f64,low: f64,high: f64) -> String {
     format!("\
 use std
-use std.solids
+use std.solids (cut)
 in std.front {{
 private q0 := point
 private q1 := point

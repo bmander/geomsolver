@@ -10,7 +10,7 @@
 // sharp outline.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 L := 140mm       // centre to centre
 eB := 30mm       // big-end eye, outside
 eS := 16mm       // small-end eye, outside

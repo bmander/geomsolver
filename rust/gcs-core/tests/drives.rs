@@ -31,10 +31,10 @@ fn lift(t: f64) -> f64 {
 /// A radial cam: the cam turns about the origin in the front view with `t`, and the follower
 /// slides on a stem along `y` (360 mm a turn of its value, so its value in degrees is its lift in
 /// millimetres), driven by the law `lift`.  `ball` is a unit ball centred where the roller is,
-/// `R` that centre drawn in the follower, and `cut` the ball swept over `t` as the cam sees it:
+/// `R` that centre drawn in the follower, and `sweep` the ball swept over `t` as the cam sees it:
 /// what the cam must not hold.  `extra` adds statements.
 fn cam(extra: &str) -> String {
-    format!("unit mm\nuse std\nuse std.solids\nuse std.motion (slides, spins)\nparam t: Angle over (0deg, 360deg)\n\
+    format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.motion (slides, spins)\nparam t: Angle over (0deg, 360deg)\n\
         in std.front {{\n\
         \x20 construction stem := line(std.origin, hint((0, 1)))\n\
         \x20 fix((0, 1)) stem.p2\n\
@@ -56,7 +56,7 @@ fn cam(extra: &str) -> String {
         follower slides(360mm) stem\n\
         fix(value == {RISE}deg * (1 - cos(t))) follower\n\
         R := r0 at follower\n\
-        cut := solid({{ p | some t: p in ball at(under: follower, seen_from: cam) t }})\n{extra}",
+        sweep := solid({{ p | some t: p in ball at(under: follower, seen_from: cam) t }})\n{extra}",
         b = BASE - 1.0, t = BASE + 1.0)
 }
 
@@ -84,7 +84,7 @@ fn point(e: &Elaborated, sk: &gcs_core::model::Sketch, n: &str) -> [f64; 3] {
 
 /// The swept solid's motion: the follower's drive seen from the cam.
 fn swept(e: &Elaborated) -> Family {
-    let i = e.map.ent_named("cut").unwrap().i();
+    let i = e.map.ent_named("sweep").unwrap().i();
     let SolidDef::Swept { motion, .. } = e.sketch.solids[i].def else { panic!("not swept") };
     Family::read(&e.sketch, motion as usize).expect("the drive reads")
 }
@@ -193,7 +193,7 @@ fn a_cam_cut_is_the_ball_swept_along_its_law() {
     for [u, v, y] in [[0.0, 20.0, 0.0], [7.0, 22.5, 0.0], [-24.0, -9.0, 0.3], [0.0, -30.0, 0.5],
                       [12.0, 12.0, -0.4], [0.0, 17.5, 0.0], [3.0, -31.5, 0.0]] {
         let p = [u, y, v];
-        let [lo, hi] = material(&e, "cut", p);
+        let [lo, hi] = material(&e, "sweep", p);
         let want = distance(p);
         assert!(lo - 1e-6 <= want && want <= hi + 1e-6, "at {p:?}: [{lo}, {hi}] against {want}");
     }
@@ -270,7 +270,7 @@ fn a_drive_refuses_what_it_cannot_mean() {
 /// function the interval walker carries — and failing closed for one it does not.
 #[test]
 fn a_laws_jet_and_enclosure_agree_with_its_value() {
-    let e = solved("unit mm\nparam t: Angle over (-90deg, 400deg)\nuse std\nuse std.solids\nuse std.motion (slides, spins)\nin std.front {\n  \
+    let e = solved("unit mm\nparam t: Angle over (-90deg, 400deg)\nuse std\nuse std.solids (cut)\nuse std.motion (slides, spins)\nin std.front {\n  \
         o := point\n  fix((0, 0)) o\n}\n");
     let laws = ["5deg * (1 - cos(t))", "t + 20deg * sin(2 * t) - 3deg", "(t / 90deg) ^ 3 * 10deg",
                 "3 * sqrt(t * t + 1deg * 1deg)", "abs(t - 100deg) / 2",
@@ -305,7 +305,7 @@ fn a_laws_jet_and_enclosure_agree_with_its_value() {
     let law = Law::read(&e.sketch, "tan(t / 8)", "t").unwrap();
     assert!(law.enclose(I::new(0.0, 0.1).unwrap()).is_err());
     // a drive over the roll runs over an angle
-    let scalar = solved("unit mm\nparam s: Scalar over (0, 1)\nuse std\nuse std.solids\nuse std.motion (slides, spins)\nin std.front {\n  \
+    let scalar = solved("unit mm\nparam s: Scalar over (0, 1)\nuse std\nuse std.solids (cut)\nuse std.motion (slides, spins)\nin std.front {\n  \
         o := point\n  fix((0, 0)) o\n}\n");
     assert!(Law::read(&scalar.sketch, "90deg * s", "s").unwrap_err().contains("an angle"));
 }

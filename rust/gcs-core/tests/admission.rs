@@ -155,7 +155,7 @@ fn a_union_tools_members_are_asked_their_own_rows() {
 const ELL: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (union, common)
 in std.front {
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
@@ -233,7 +233,7 @@ fn an_indexed_ring_is_alike_by_its_revolution_and_a_boxed_ring_by_sampling() {
         tools::lens(2.,0.2,false),cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
     let boxed = "\
 use std
-use std.solids
+use std.solids (union, common)
 in std.front {
 private b0 := point
 private b1 := point

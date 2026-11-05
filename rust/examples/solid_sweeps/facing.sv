@@ -12,7 +12,7 @@
 // π/6 (88 − 2/3 tan² 20°) = 46.0306 mm³ of its π/3 · 80 = 83.7758, leaving 37.7452 mm³.
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns)
 

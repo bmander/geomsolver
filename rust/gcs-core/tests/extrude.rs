@@ -14,7 +14,7 @@ use crate::common::gestures::{build, names, near, seen, volume};
 /// On the front: a 60 × 40 rectangle `ab…da` from the origin, swept 5 behind as `block`; a
 /// circle `hole` of radius 5 inside it at (30, 20); and a 10 × 10 square `pq…sp` at (80, 0),
 /// clear of it.
-const DRAWN: &str = "unit mm\nuse std\nuse std.solids\nin std.front {\n\
+const DRAWN: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nin std.front {\n\
     a := point hint((0, 0))\nb := point hint((60, 0))\nc := point hint((60, 40))\n\
     d := point hint((0, 40))\nab := line(a, b)\nbc := line(b, c)\ncd := line(c, d)\n\
     da := line(d, a)\no := point hint((30, 20))\nhole := circle(center: o) hint(r: 5)\n\
@@ -194,7 +194,7 @@ fn the_arrow_runs_from_the_face_to_its_far_end_and_reads_a_drag_back() {
 /// the distance, and a drag on it read back as a distance, either side.
 #[test]
 fn an_offset_planes_arrow_runs_along_the_normal_it_is_set_off_by() {
-    let e = build("unit mm\nuse std\nuse std.solids\n\
+    let e = build("unit mm\nuse std\nuse std.solids (cut, union)\n\
         v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) hint(origin: (0, 0, 12))\n\
         v0 parallel std.top\nstd.top distance(12) v0\n");
     let sk = &e.sketch;

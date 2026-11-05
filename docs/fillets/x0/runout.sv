@@ -7,7 +7,7 @@
 // The stack named an intermediate for the hole (`drilled`, then `vent`); here it is one body.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 in std.front {
   // a wedge 40 long and 24 deep, its top sloping from 20 high to 10
   w0 := point

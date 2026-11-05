@@ -45,7 +45,7 @@ fn frame(sample: &[f64;15]) {
 
 const BOX: &str = "unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.shapes
 profile := std.shapes.CenteredRectangle(std.origin,w: 2mm,h: 2mm) in std.front
 stock := solid(std.solids.Prism(face(profile.loop), from: -2mm, to: 0))
@@ -77,7 +77,7 @@ fn trimmed_cube_and_hole_edges_have_material_normals() {
     for hole in [false,true] {
         let source = format!("{BOX}{}",if hole { "\
 use std
-use std.solids
+use std.solids (cut)
 in std.front {
 c := circle(center: std.origin)
 radius(0.5mm) c
@@ -134,7 +134,7 @@ fn periodic_seams_and_collapsed_poles_remain_explicit() {
     let torus = fixtures::read_beside("\
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.front {
 a := point
 fix((0, 0)) a
@@ -208,7 +208,7 @@ fn native_cutter_edges_agree_with_the_independent_source_material() {
 /// rays along its faces' inward normals, inside and clear of the 0.2 µm the classifier needs.
 #[test]
 fn a_sliver_is_sampled_between_its_faces() {
-    let mut text = String::from("unit mm\nuse std\nuse std.solids\nin std.front {\n");
+    let mut text = String::from("unit mm\nuse std\nuse std.solids (cut)\nin std.front {\n");
     for (name,x,y) in [("a",0.,0.),("b",20.,10.),("c",40.,0.),("d",40.,0.004),("e",20.,10.004),("f",0.,0.004)] {
         text += &format!("{name} := point\nfix(({x}, {y})) {name}\n");
     }

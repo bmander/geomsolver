@@ -11,7 +11,7 @@ use gcs_core::program::Elaborated;
 use crate::common::{close, ent, parse, read, text::solved};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
-const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids (cut)\nuse std.rounds (round, chamfer)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -58,7 +58,9 @@ fn ordered_words() -> String {
 fn ordered(src: &str) -> String {
     let uses = src.lines().find(|l| l.starts_with("use std")).expect("a `use std`");
     let src = src.replace("round(r: ", "ordered_round(r: ").replace("chamfer(d: ", "ordered_chamfer(d: ");
+    // the words written out cut and unite, so the file imports both (#783 P3)
     src.replacen(uses, &format!("use std\nuse std.rounds\n{}\n", ordered_words()), 1)
+        .replace("use std.solids (cut)\n", "use std.solids (cut, union)\n")
 }
 
 /// Solid `name` of `e` built exactly, and its volume.

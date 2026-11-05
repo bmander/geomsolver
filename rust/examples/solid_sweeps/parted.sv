@@ -11,7 +11,7 @@
 // undrafted tooth 83.26. Module 2, 20 teeth, 20° pressure angle in the tooth's own plane.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.motion (spins, slides)
 
 // the tooth's plane: x across it as the front's, its v leaned 15° from up toward the viewer

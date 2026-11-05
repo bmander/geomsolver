@@ -2,7 +2,7 @@
 // Instantiated by Bank in the assembly; the preview below sets up the part drawing.
 
 use std
-use std.solids
+use std.solids (cut)
 use std.place (on_u)
 use std.shapes
 use components.dims (D, H, L, R, a, boltac, boltaf, dport, head, ph, trapfit, traph, trapz, wall)

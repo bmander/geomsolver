@@ -11,7 +11,7 @@
 // `π/3 ∫ ρ (1 + 2 k a(ρ)) dρ = π/3 (20 + k π)` from 9 to 11.
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (screws)
 

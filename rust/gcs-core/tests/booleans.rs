@@ -15,7 +15,7 @@ use std::f64::consts::PI;
 const PARTS: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.front {
 a := point hint((0, 0))
 b := point hint((60, 0))

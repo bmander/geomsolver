@@ -33,7 +33,7 @@ pub(crate) fn turned_bar(lean: f64,corners: [[f64;2];4],half: f64,draft: f64) ->
         else { ("Drafted",format!(", draft: {draft}deg")) };
     format!("unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns)
 
@@ -132,7 +132,7 @@ fn slid_bar(diamond: bool,drop: f64) -> String {
     let length = (0.09+1.+drop*drop).sqrt();
     format!("unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (slides)
 
@@ -293,7 +293,7 @@ impl Bar {
         let (motion,roll) = if self.lead == 0. { ("turns(1)".to_string(),140) } else { (format!("screws({}mm)",self.lead),280) };
         format!("unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns, screws)
 

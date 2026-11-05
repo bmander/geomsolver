@@ -10,7 +10,7 @@
 // through its thickness: 8 × 4 × 4 = 128 mm³ of its 800, leaving 672 mm³.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (slides)
 

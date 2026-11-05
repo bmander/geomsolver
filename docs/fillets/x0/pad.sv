@@ -6,7 +6,7 @@
 // off the geometry: the root is concave, the top edges convex. Nothing says `union` or `cut`.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 width := 60mm
 depth := 40mm
 thickness := 10mm

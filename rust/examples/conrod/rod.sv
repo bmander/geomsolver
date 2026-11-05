@@ -15,7 +15,7 @@
 // number and apply (⌘↵); rod.svd is the drawing.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 use std.rounds (round, chamfer)
 
 L := 140mm       // centre to centre

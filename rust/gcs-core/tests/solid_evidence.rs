@@ -65,7 +65,7 @@ fn parsing_preserves_only_complete_valid_variants() {
     assert!(
         matches!(e.sketch.solid_claims[0].requirement(), SolidRequirement::Clear { gap } if gap.value() == 1.0)
     );
-    let e = read(&src.replace("clear(1mm)", "inside"));
+    let e = read(&src.replace("result clear(1mm) other", "every q in result: q in other"));
     assert!(matches!(e.sketch.solid_claims[0].requirement(), SolidRequirement::Inside));
 }
 
@@ -110,7 +110,12 @@ fn coverage_derives_success_partial_failure_and_counterexamples() {
 }
 
 fn round_claim(form: &str) -> String {
-    format!("unit mm\nuse std\nuse std.solids\nin std.front {{\na := point\nfix((0, 0)) a\nac := circle(center:a)\nradius(1mm) ac\nb := point\nfix((2, 0)) b\nbc := circle(center:b)\nradius(1mm) bc\n}}\naf := face(ac)\nbf := face(bc)\nresult := solid(std.solids.Prism(af, from: -1mm, to: 0))\nother := solid(std.solids.Prism(bf, from: -1mm, to: 0))\nclaim result {form} other\n")
+    // containment is what holds of every point of one, `every q in a: q in b` (#783 P3)
+    let claim = match form {
+        "inside" => "every q in result: q in other".to_string(),
+        _ => format!("result {form} other"),
+    };
+    format!("unit mm\nuse std\nuse std.solids (cut)\nin std.front {{\na := point\nfix((0, 0)) a\nac := circle(center:a)\nradius(1mm) ac\nb := point\nfix((2, 0)) b\nbc := circle(center:b)\nradius(1mm) bc\n}}\naf := face(ac)\nbf := face(bc)\nresult := solid(std.solids.Prism(af, from: -1mm, to: 0))\nother := solid(std.solids.Prism(bf, from: -1mm, to: 0))\nclaim {claim}\n")
 }
 
 #[test]
@@ -192,6 +197,7 @@ fn invalid_geometry_and_invalid_legacy_arguments_have_explicit_failures() {
 fn empty_boundaries_are_explicitly_unbounded_and_cannot_certify() {
     let src = fixture()
         .replace("claim over", "removed := solid(result)\nresult cut removed\nclaim over")
+        .replace("use std.solids\n", "use std.solids (cut)\n")
         .replace("{ result clear(1mm) other }", "{ removed clear(1mm) other }");
     let v = verdict(&src);
     assert_eq!(v.outcome(), SolidOutcome::Indeterminate);

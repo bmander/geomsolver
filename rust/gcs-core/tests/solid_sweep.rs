@@ -6,7 +6,7 @@ mod contacts;
 const SOURCE: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.front {
 center := point
 a := point

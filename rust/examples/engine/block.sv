@@ -15,7 +15,7 @@
 use engine.dims (D, P, back, bulk, capd, deck, front, hw, kw, rail, rbay, rj, rmb, sump, wall, wmb)
 use engine.parts
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.place (horizontal, offset, right_of)
 
 // the oil pan: a casting `pt` thick, hung from a flange `pf` thick under the block's rail, its

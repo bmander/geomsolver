@@ -70,7 +70,7 @@ component Turned(s0: Length) {
 ";
 
 fn doc(defs: &str, body: &str) -> String {
-    format!("unit mm\nuse std\nuse std.solids\nuse std.place (offset, horizontal)\n{defs}\n{body}")
+    format!("unit mm\nuse std\nuse std.solids (union)\nuse std.place (offset, horizontal)\n{defs}\n{body}")
 }
 
 /// The solids built while `work` runs, by index.

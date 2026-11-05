@@ -12,7 +12,7 @@
 // 8 × 8 × 4.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (shell)
 
 wall := 1mm

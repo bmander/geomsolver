@@ -22,7 +22,7 @@ use crate::common::{ent, text::solved};
 fn rim(sink: &str) -> String {
     format!("unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.top {{
   o := point
   fix((0, 0)) o
@@ -118,7 +118,7 @@ fn a_countersink_written_by_hand_is_built_alike() {
 fn a_hole_is_countersunk_on_the_face_it_opens_on() {
     let e = solved("unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.top {
   a := point
   b := point
@@ -179,7 +179,7 @@ sink cut strap
 fn a_countersink_about_a_polygon_is_refused_exactly() {
     let e = solved("unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.top {
   a := point
   b := point

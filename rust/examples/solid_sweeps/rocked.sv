@@ -8,7 +8,7 @@
 // least to the greatest value it reaches. Keep both clear of the block, as `turn.sv` says.
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns)
 

@@ -2,7 +2,7 @@
 // the plate's top and the rod, each running out flush into the plate's ends. Does not parse yet.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 in std.front {
   a := point
   b := point

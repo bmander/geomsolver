@@ -24,7 +24,7 @@
 use engine.dims (L, back, front, pinlen, rp, rpin)
 use engine.parts
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.place (offset, vertical)
 
 // What a rod needs of the pin it rides: the pin in the end view, and in the side view.

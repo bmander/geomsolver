@@ -8,7 +8,7 @@
 // to see the seams filled. Edit `r` or a rod's radius and apply (⌘↵).
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (round)
 
 r := 2mm   // the seams' radius

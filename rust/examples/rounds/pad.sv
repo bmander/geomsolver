@@ -11,7 +11,7 @@
 // `pad.plate.near round(r: edge_radius) pad.plate.cd`, mitred where it meets the side's.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 use std.shapes
 use std.rounds (round)
 

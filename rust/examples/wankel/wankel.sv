@@ -9,7 +9,7 @@
 // the housing's motion, drawn on the page as `flank`. The numbers are in `configuration.sv`.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (horizontal, right_of)
 use std.motion (spins)
 use configuration

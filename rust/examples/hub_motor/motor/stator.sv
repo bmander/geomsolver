@@ -17,7 +17,7 @@
 // hall sensors stand in three slots' mouths.
 
 use std
-use std.solids
+use std.solids (cut, union)
 use std.place (horizontal)
 use motor.dims (bo, end_turn_in, hall_l, hall_r0, hall_r1, hall_w, hs, L, overhang, Rb, Rc, Rs, Ry,
                 slot_pitch, slots, wt)

@@ -8,7 +8,7 @@
 // concave blade and the radius it is cut at. See README.md.
 unit mm
 use std
-use std.solids
+use std.solids (common)
 use std.rounds
 use std.motion (reciprocal, turns)
 use hypoid (GearCone, ToothTrace, PinionCone, Blank, FaceMill, Tooth, Member, Gear)

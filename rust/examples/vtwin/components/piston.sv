@@ -18,7 +18,7 @@
 // #014, selected in `sv`; its groove is derived below. Print it crown down.
 
 use std
-use std.solids
+use std.solids (cut, union)
 use std.place (vertical, on_u)
 use hardware (oring_squeeze, oring_groove_w)
 use components.dims (D, L, clr, groove, oring, ph, pinclr, reye, rt, rw)

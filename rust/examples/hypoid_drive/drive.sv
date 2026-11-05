@@ -16,6 +16,7 @@ use std
 use std.sets
 use std.motion (turns)
 use spiral_bevel.hypoid (HypoidPair)
+use std.solids (cut, union, common)
 
 // -- the pair, as `hypoid.sv` states it --------------------------------------------------------
 // The tooth counts, the module at M, the shafts, the spiral and the allowances; the face mill's

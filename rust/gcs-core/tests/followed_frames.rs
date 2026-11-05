@@ -25,7 +25,7 @@ const K: f64 = 25.0;
 /// The four-bar with a frame on its coupler, `coupler.axes` (its origin at `b`, `u` toward `c`),
 /// and a unit ball centred on the coupler's midpoint `m`; `extra` adds statements.
 fn four_bar(extra: &str) -> String {
-    format!("unit mm\nuse std\nuse std.solids\nparam t: Angle over (0deg, 360deg)\n\
+    format!("unit mm\nuse std\nuse std.solids (cut)\nparam t: Angle over (0deg, 360deg)\n\
         in std.front {{\n\
         \x20 a := point\n  d := point\n  b := point hint(({R}, 0))\n  c := point hint(({G}, {K}))\n\
         \x20 fix((0, 0)) a\n  fix(({G}, 0)) d\n\
@@ -223,9 +223,9 @@ fn instant_centre(t: f64) -> [f64; 2] {
 fn the_envelope_of_a_circle_a_coupler_carries_is_its_closed_form() {
     let r = 3.0;
     let e = solved(&four_bar(&format!("in std.front {{\n  roller := circle(center: m)\n  \
-        radius({r}mm) roller\n}}\ncut := envelope(roller over t, under: coupler.axes)\n")));
+        radius({r}mm) roller\n}}\nprofile := envelope(roller over t, under: coupler.axes)\n")));
     assert!(e.ok(), "{:?}", e.diags);
-    let i = e.map.ent_named("cut").expect("the envelope is a curve").i();
+    let i = e.map.ent_named("profile").expect("the envelope is a curve").i();
     let (mut worst, mut worst_side) = (0.0_f64, 0.0_f64);
     for j in 0..=720 {
         let t = 0.5 * j as f64;
@@ -260,8 +260,8 @@ fn a_frame_the_drawing_moves_refuses_what_it_cannot_mean() {
     let said = |extra: &str| crate::common::lenient::read(&four_bar(extra)).1;
     // the solve holds no relation to a profile read off the march
     let s = said("in std.front {\n  roller := circle(center: m)\n  radius(3mm) roller\n}\n\
-        cut := envelope(roller over t, under: coupler.axes)\n\
-        in std.front {\n  p := point hint((30, 20))\n  p coincident cut\n}\n");
+        profile := envelope(roller over t, under: coupler.axes)\n\
+        in std.front {\n  p := point hint((30, 20))\n  p coincident profile\n}\n");
     assert!(s.len() == 1 && s[0].contains("reads no march"), "{s:?}");
     // a reading over an interval of the roll that names no parameter finds the frame at rest
     let s = said("q := solid({ p | some r in (0deg, 90deg): p in ball at(under: coupler.axes) r })\n");
@@ -294,7 +294,7 @@ const R2: f64 = 35.0;
 const L2: f64 = 55.0;
 
 fn rssr() -> String {
-    format!("unit mm\nuse std\nuse std.solids\nparam t: Angle over (0deg, 360deg)\n\
+    format!("unit mm\nuse std\nuse std.solids (cut)\nparam t: Angle over (0deg, 360deg)\n\
         in std.top {{\n  a := point\n  e := point\n  b := point hint(({R1}, 0))\n  \
         fix((0, 0)) a\n  fix((1, 0)) e\n  ground := line(a, e)\n  crank := line(a, b)\n  \
         length({R1}) crank\n  ground angle(t) crank\n}}\n\

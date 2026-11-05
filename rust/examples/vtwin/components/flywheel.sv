@@ -10,7 +10,7 @@
 // the plate, and the side view there draws its outline.
 
 use std
-use std.solids
+use std.solids (cut)
 use components.dims (dhub, rfw, wfw)
 use components.parts
 

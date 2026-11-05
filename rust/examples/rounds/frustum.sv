@@ -12,7 +12,7 @@
 // alone (`half.cutter round(r: r) half.cone.bc`).
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.rounds (round)
 
 r := 1mm   // every edge's radius

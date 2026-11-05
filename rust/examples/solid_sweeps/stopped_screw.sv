@@ -10,7 +10,7 @@
 // `|Θ| + 2 acos(4 / ρ)`, `Θ` those rolls of the sweep, integrated over the rod.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (screws)
 
@@ -57,9 +57,9 @@ rod := solid(std.solids.Revolution(face(rod_axis, rod_end, rod_wall, rod_top), a
 construction bar := solid(std.solids.Prism(face(lower, end, upper, nose), from: -reach, to: reach))
 
 // the screw about the rod's axis, from a millimetre under the rod to `stop` up it
-cut := frame
-cut screws(lead) ax
+feed := frame
+feed screws(lead) ax
 start := -360deg * (width / 2 + 1mm) / lead
 finish := 360deg * stop / lead
-construction thread := solid({ p | some t in (start, finish): p in bar at(under: cut) t })
+construction thread := solid({ p | some t in (start, finish): p in bar at(under: feed) t })
 thread cut rod

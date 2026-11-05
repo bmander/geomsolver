@@ -10,7 +10,7 @@
 // the plate's.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (round)
 
 r := 2mm   // the fillets' radius

@@ -367,7 +367,7 @@ flank := envelope(bore over t in (10deg, 170deg), under: counter, seen_from: spi
 
 /// A 20 × 10 block on `std.top`, 5 deep below it, and a second one under it — seen from above,
 /// the upper hides the lower — and a third with a bore cut through it, at x = 40.
-const BLOCKS: &str = "unit mm\nuse std\nuse std.solids\nuse std.motion (spins)\n\
+const BLOCKS: &str = "unit mm\nuse std\nuse std.solids (cut)\nuse std.motion (spins)\n\
     component Slab(x: Length) {\n\
       a := point hint((x, 0))\nb := point hint((x + 20mm, 0))\n\
       c := point hint((x + 20mm, 10))\nd := point hint((x, 10))\n\
@@ -571,7 +571,7 @@ fn a_plane_is_picked_by_its_panes_frame() {
 
 /// A line and a circle on the front, a fixed point and a free one, a dimension, an axis standing
 /// up beside them and a disc made of the circle (#678).
-const KINDS: &str = "unit mm\nuse std\nuse std.solids\nuse std.motion (spins)\nin std.front {\n\
+const KINDS: &str = "unit mm\nuse std\nuse std.solids (cut)\nuse std.motion (spins)\nin std.front {\n\
     a := point hint((0, 0))\nfix((0, 0)) a\nb := point hint((40, 0))\nab := line(a, b)\n\
     horizontal ab\na distance(40) b\n\
     o := point hint((20, 30))\nfix((20, 30)) o\nrim := circle(center: o) hint(r: 10)\n}\n\

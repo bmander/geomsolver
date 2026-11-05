@@ -9,7 +9,7 @@
 // see the corners. Edit `r` or the groove's radius and apply (⌘↵).
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.rounds (round)
 
 r := 2mm   // the rims' radius

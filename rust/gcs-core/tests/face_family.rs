@@ -327,7 +327,7 @@ fn a_station_drawn_in_the_document_sweeps_as_its_parameter_runs() {
 const CONE: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.shapes
 use std.stations
 
@@ -407,7 +407,7 @@ fn walls_lie_on_the_surfaces_their_numbers_say() {
 fn a_family_cuts_like_any_solid() {
     // the duct alone: the auger, written last, left off
     let auger = TWISTED.find("// Three and a half turns").expect("the auger");
-    let src = TWISTED[..auger].replacen("use std\n", "use std\nuse std.solids\nuse std.shapes\n", 1) + "in std.top {\n  m := point\n  fix((0mm, 20mm)) m\n}\n\
+    let src = TWISTED[..auger].replacen("use std\n", "use std\nuse std.solids (cut)\nuse std.shapes\n", 1) + "in std.top {\n  m := point\n  fix((0mm, 20mm)) m\n}\n\
         r := std.shapes.CenteredRectangle(m, w: 60mm, h: 20mm) in std.top\nslab := face(r.loop)\n\
         block := solid(std.solids.Prism(slab, from: -30mm, to: 30mm))\nduct cut block\n";
     let e = family(&src);

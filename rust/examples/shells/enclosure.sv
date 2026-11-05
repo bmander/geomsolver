@@ -10,7 +10,7 @@
 // the floor.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (shell)
 
 wall := 2.5mm

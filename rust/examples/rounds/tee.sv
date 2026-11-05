@@ -9,7 +9,7 @@
 // nothing there. Orbit (right-drag) to see the crotch. Edit `r` or a pipe's radius and apply (⌘↵).
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (round)
 
 r := 2mm   // the crotch's radius

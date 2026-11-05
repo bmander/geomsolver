@@ -16,7 +16,7 @@ use crate::common::gestures::{build, names, near, seen, volume};
 
 /// On the front (x, z): a 4 × 4 square `ab…da` with corners (10, 2) and (14, 6); a line `ax`
 /// along z at x = 20; and on the top (x, y) a line `ty` — held, every one.
-const DRAWN: &str = "unit mm\nuse std\nuse std.solids\nin std.front {\n\
+const DRAWN: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nin std.front {\n\
     a := point hint((10, 2))\nb := point hint((14, 2))\nc := point hint((14, 6))\n\
     d := point hint((10, 6))\nab := line(a, b)\nbc := line(b, c)\ncd := line(c, d)\n\
     da := line(d, a)\nq0 := point hint((20, 0))\nq1 := point hint((20, 10))\nax := line(q0, q1)\n\

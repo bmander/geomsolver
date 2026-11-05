@@ -6,7 +6,7 @@
 // part is a union of two regions, and a union is not a region (§6.21: "union is a choice").
 unit mm
 use std
-use std.solids
+use std.solids (union)
 in std.front {
   a0 := point
   a1 := point

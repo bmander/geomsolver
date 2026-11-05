@@ -15,7 +15,7 @@
 // 24²·10 + 8∫₀¹² x(√(225 − x²) − 9) dx = 7632, its area 576 + 960 + 8·90 = 2256.
 unit mm
 use std
-use std.solids
+use std.solids (common)
 
 half := 12mm     // the square is |x|, |y| ≤ half
 spring := 10mm   // where each vault rises from its flat sides

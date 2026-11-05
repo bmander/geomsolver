@@ -10,7 +10,7 @@
 // leaving 1953.812 mm³.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (slides)
 

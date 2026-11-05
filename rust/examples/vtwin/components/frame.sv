@@ -2,7 +2,7 @@
 // exhaust vents, and inlet hardware. One printed part, printed foot down.
 
 use std
-use std.solids
+use std.solids (cut, union)
 use std.place (horizontal)
 use hardware (mplug_body_d, mplug_body_l, mplug_nose_d, mplug_nose_l)
 use components.dims (H, Ty, V, a, alphaL, alphaR, beta, boss, bossh, bossw, bossz, brgpocket, cpl,

@@ -36,7 +36,7 @@
 // or the holes.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 use std.place (coords)
 use std.rounds (round)
 use std.stations

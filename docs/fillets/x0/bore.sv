@@ -7,7 +7,7 @@
 // the one body that is drilled.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.side {
   c1 := point
   main_k := circle(center: c1) hint(r: 10)

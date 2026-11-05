@@ -6,7 +6,7 @@
 // -60 to 60, so it cuts the bar's space turned a quarter turn round the disc: 183.21 mm³ again.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.motion (spins, slides)
 
 in std.top {

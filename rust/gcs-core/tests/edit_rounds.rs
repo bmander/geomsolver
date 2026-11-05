@@ -12,7 +12,7 @@ use crate::common::gestures::{build, seen};
 const BLOCK: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 
 in std.front {
   b0 := point
@@ -154,7 +154,7 @@ fn an_edge_picked_is_rounded_by_the_two_faces_meeting_there() {
                                &[pair("block.near", "block.north")], "2");
     assert!(text.contains("\nblock.near round(r: 2) block.north"), "{text}");
     // the word is brought in by name, beside what the document already used
-    assert!(text.contains("use std\nuse std.solids\nuse std.rounds (round)\n"), "{text}");
+    assert!(text.contains("use std\nuse std.solids (cut)\nuse std.rounds (round)\n"), "{text}");
     // a ball of radius 2 rolled 40 along the edge takes the corner it cannot reach
     let taken = 4.0 * (1.0 - std::f64::consts::FRAC_PI_4) * 40.0;
     assert!((volume(&next, "block") - (whole - taken)).abs() < 1e-6, "{}", volume(&next, "block"));
@@ -162,7 +162,7 @@ fn an_edge_picked_is_rounded_by_the_two_faces_meeting_there() {
     let (text, next) = rounded(&e, "block", EdgeWord::Chamfer, &[],
                                &[pair("block.east", "block.north")], "1mm");
     assert!(text.contains("\nblock.east chamfer(d: 1mm) block.north"), "{text}");
-    assert!(text.contains("use std\nuse std.solids\nuse std.rounds (chamfer)\n"), "{text}");
+    assert!(text.contains("use std\nuse std.solids (cut)\nuse std.rounds (chamfer)\n"), "{text}");
     assert!((volume(&next, "block") - (whole - 0.5 * 12.0)).abs() < 1e-6);
 }
 
@@ -213,7 +213,7 @@ fn a_face_of_a_body_is_named_through_the_operand_that_made_it() {
 
 #[test]
 fn the_import_names_the_word_beside_what_it_named() {
-    let e = build(&BLOCK.replace("use std\nuse std.solids\n", "use std\nuse std.solids\nuse std.place (horizontal)\n"));
+    let e = build(&BLOCK.replace("use std\nuse std.solids (cut)\n", "use std\nuse std.solids (cut)\nuse std.place (horizontal)\n"));
     let (text, next) = rounded(&e, "block", EdgeWord::Round, &["block.far"], &[], "2");
     assert!(text.contains("use std.place (horizontal)\nuse std.rounds (round)\n"), "{text}");
     let (text, _) = rounded(&next, "block", EdgeWord::Chamfer, &["block.near"], &[], "1");

@@ -12,7 +12,7 @@
 // and `down` to cut 2 across the top and 1 down the sides.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.rounds
 
 across := 1mm   // the flat's leg across the top

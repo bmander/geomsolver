@@ -11,7 +11,7 @@ use crate::region_general::field_volume;
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), standing 12 deep along y, and an L of
 /// two such steps whose inner edge is concave.
-const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.sets\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids (cut)\nuse std.sets\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \

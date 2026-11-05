@@ -17,7 +17,7 @@
 
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.motion (spins, slides)
 
 base := 25    // the face's nearest approach to the cam's centre
