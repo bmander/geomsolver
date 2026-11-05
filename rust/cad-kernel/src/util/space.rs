@@ -56,6 +56,20 @@ pub fn closest_on_segment(p: V3,a: V3,b: V3) -> V3 {
 }
 /// The distance from `p` to the segment `ab`.
 pub fn segment_distance(p: V3,a: V3,b: V3) -> f64 { distance(p,closest_on_segment(p,a,b)) }
+/// The distance between the segments `ab` and `cd`: their nearest points' (Ericson's clamped
+/// solve, each parameter clamped to its segment and the other's then read again).
+pub fn segments_distance(a: V3,b: V3,c: V3,d: V3) -> f64 {
+    let (u,v,w) = (sub(b,a),sub(d,c),sub(a,c));
+    let (uu,vv,uv,uw,vw) = (dot(u,u),dot(v,v),dot(u,v),dot(u,w),dot(v,w));
+    if uu <= 0. && vv <= 0. { return distance(a,c) }
+    if uu <= 0. { return segment_distance(a,c,d) }
+    if vv <= 0. { return segment_distance(c,a,b) }
+    let den = uu*vv-uv*uv;
+    let mut s = if den > 1e-300*uu*vv { ((uv*vw-vv*uw)/den).clamp(0.,1.) } else { 0. };
+    let mut t = (uv*s+vw)/vv;
+    if t < 0. { t = 0.; s = (-uw/uu).clamp(0.,1.) } else if t > 1. { t = 1.; s = ((uv-uw)/uu).clamp(0.,1.) }
+    distance(lerp(a,b,s),lerp(c,d,t))
+}
 /// A polyline's length: the sum of its sides, in order.
 pub fn polyline_length(c: &[V3]) -> f64 { c.windows(2).map(|w| distance(w[0],w[1])).sum::<f64>() }
 

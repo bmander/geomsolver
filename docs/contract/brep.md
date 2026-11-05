@@ -358,7 +358,11 @@ wide has its side read along its curves (`fine_area`, a cusp-thin strip between 
 at its end); a meeting off either surface's patch is not laid (a hyperboloid's rulings past its
 heights, which a revolution's inverse puts on its rim); a traced meeting along an edge either face
 has is that edge (`along_an_edge`); two meetings crossing on a face with no closed form for it are
-crossed by search (`meeting::crossings`) and the point polished onto all three surfaces
+crossed by search (`meeting::crossings`: polished from each curve's own ends first, where an end
+on the other curve is the meeting exactly, then from chords standing within reach and their sags,
+where they may cross within those or stand at a least of the chords' distance — #780 C2, whose
+contact ruling's foot a polish from chords crawled toward along two tangent curves and stopped
+4e-4 short of, after three thousand polishes) and the point polished onto all three surfaces
 (`shared_point`); and a cell too thin to mesh is read inside at its faces' points stepped in
 (`Complex::inside_points`). **Points along a shallow meeting are one by its reach** (A3): a
 crossing with a meeting is read to that meeting's `on_meeting` reach at the point, not the pool's
@@ -415,8 +419,18 @@ axis (a round tool's side at an end pose) where the two circles of that level me
 `A(v) cos θ + B(v) sin θ = C(v)`, its two branches joined where they turn and ended at the circle
 where the two coincide — its points written in closed form and handed over as a traced meeting, so
 no near touch is traced (`swept_closed::a_screwed_circle_meets_planes_and_cylinders_in_closed_form`);
+a cone about another line along the axis likewise, its radius `R(v)` the cone's at the height the
+circle has climbed to (#780 C2: a frustum's rim screwed and the frustum at an end pose), each branch
+ending at the coincidence on the roots of the coefficients' rates there — the circle's points square
+to the centre's way on a cylinder, the feet of the cone's contact rulings on a cone, where the sheet
+touches it (`swept_closed::a_frustums_screwed_rim_and_ruling_meet_what_they_touch_in_closed_form`);
 any other plane (a sector's side through the axis) where its line in each level meets the circle,
-the same branches (`branches`). A branch's end at a coincidence is that circle's point square to the
+the same branches (`branches`). **A line screwed meets a level circle screwed by the same screw, and
+a cone, in closed form** (#780 C2): the circle's sheet in the helices of the line's points the screw
+carries to the circle's height onto the circle, `|w(u) − R_{s(u)} c₀|² = r²`, isolated with a bound
+(`ssi::screwed_line_circle`); a cone where each ruling meets it, `A(v) u² + B(v) u + C(v) = 0`, the
+two roots joined where they turn and a ruling the cone holds returned whole, the cut read a hair
+either side of it, where the coefficients vanish (`ssi::screwed_line_cone`). A branch's end at a coincidence is that circle's point square to the
 centre's way there, the way read across it (a one-sided reading leans by the hair and bends the
 first chord, which its projection then slides onto the circle); points are added beside a turn,
 where the roots part as a square root, and wherever either turns by more than `π/1024`, which a

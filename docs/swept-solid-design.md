@@ -403,14 +403,15 @@ it. It stays as the fast path where #699 D says so.
 **Where it stands (F2c5).** Built on the one arrangement: polyhedral tools under a slide, a turn,
 or a screw with nothing leaning to its axis; under a slide, tools of planes, cylinders, cones, balls
 and tori (a torus's axis along the slide or square to it); under a turn, round faces about axes
-along the turn's (cylinders, cones, tori) and balls clear of its axis; under a screw, cylinders about axes along it and
-level circles (a drum, helical milling); paths of slides and turns (K1); a body mixing the
+along the turn's (cylinders, cones, tori) and balls clear of its axis; under a screw, cylinders and cones about axes along it and
+level circles (a drum, helical milling; a frustum, a chamfer mill, its contact rulings screwed into
+patches, #780 C2); paths of slides and turns (K1); a body mixing the
 closed class with another; the blank-scoped decision. What is left meets one of three gaps, each
 recorded above with what was tried:
 - **a candidate bounded inside the domain** — a leaning edge under a screw (whose whole sheet
   crosses itself) — waits on the arrangement holding a face with a slit, or a sheet whose rim
   stands inside a cell (F5's A1);
-- **a meeting with no closed form near a touch** — a cone or a ball screwed, a round face about an
+- **a meeting with no closed form near a touch** — a ball screwed, a round face about an
   axis leaning to a turn's (its contact a curve, its
   surface of revolution's meridian fitted), a fitted sheet lying in a candidate's plane, and K2's
   patches (each instant's contact swept, fitted) — is refused as nearly touching: each needs its

@@ -473,6 +473,34 @@ the axis, screwed a radian at 2 a turn, held to 1e-6 of its volume read in helic
 apart from the kernel and to membership
 (`swept_closed::a_block_leaning_to_a_screws_axis_closes_into_its_helical_sweep`, slow tier).
 
+**A cone under a screw is built (#780 C2)**, about an axis along the screw's: an end mill's
+chamfer, a countersink. Its normal `cos α ρ̂ − sin α z` is square to
+the screw's velocity where `A cos u + B sin u = C`, whatever the height along the ruling: two
+rulings turned off the plane through both axes by `asin(κ tan α / (ω |d|))`, or none (a cone about
+the screw's own axis, or a climb too steep for its lean). Each leans to the axis and screws into
+M5's patch (`Cutter::Patch`), which the cone at each end pose touches along that ruling; its rims'
+discs screw into their ramps (`Cutter::ScrewedDisc`). Each pair meets in closed form: a rim's
+sheet and the cone at an end pose where the two circles of each level meet, the cone's radius read
+at the height the rim has climbed to, its branches ending at the coincidence on the roots of the
+coefficients' rates there — on a cone the feet of its contact rulings, where the sheet touches it
+(`ssi::screwed_circle_meeting`); a patch and a rim's sheet in the helices of the ruling's points
+the screw carries onto the rim (`ssi::screwed_line_circle`); a patch and the cone where each ruling
+meets it, a quadratic along the ruling, the ruling the cone holds returned whole and the cut read a
+hair either side of it (`ssi::screwed_line_cone`). Each is held point by point on both surfaces
+(`swept_closed::a_frustums_screwed_rim_and_ruling_meet_what_they_touch_in_closed_form`). The gate
+is `build::cone`'s frustum, radii 1 and 0.4, 3 out from the axis, screwed a radian at 2 a roll,
+held to 1e-6 of its volume read in helical coordinates by the leaning block's method, run by run
+along `ψ` (`swept_closed::screwed_stadium_volume`, itself held to the frustum's own volume unscrewed
+and to the drum's closed form), which a Monte Carlo of the definition read directly over the roll
+holds in turn, and to membership; it builds in about seven seconds
+(`swept_closed::a_frustum_screwed_beside_the_axis_closes_into_its_helical_sweep`). Not built yet,
+each refused by name, never returned wrong (#780 C2, open): a patch cut from a blank — crossing a
+plane through the axis a contact ruling, turned only a little off it, nearly lies in it, and one of
+a patch's pieces in a plate is read as having no inside — so no drawn example cuts a cone screwed
+from a blank yet; and a drafted prism under a screw, its round ends cones and its flat sides
+leaning planes ("a plane's pieces do not close"). The native path refuses it by name, as every
+closed sweep.
+
 **Which road a body takes (#699 D, decided):** where a class admits a sweep, its blank-scoped sheet
 builds it (the fast path); where every class refuses, the closed class cuts it from the blank on one
 arrangement (`cut_from`, itself blank-scoped: the blank the arrangement's domain). The two agree
@@ -492,7 +520,7 @@ membership along the whole path
 `trajectories::a_twist_after_a_placement_is_the_placement_then_the_twist` holds `Placed`'s pose,
 rate and speed bound by differences). No drawing lowers to pieces yet (a toolpath written as one
 is the language's `path`), so the closed class's admission reads one constant twist.
-A curved tool past these (`Unbuilt::Curved`: any face no plane under a screw; under a turn a cylinder or a cone about an
+A curved tool past these (`Unbuilt::Curved`: under a screw a round face about an axis leaning to it, or a torus; under a turn a cylinder or a cone about an
 axis leaning to it, a ball across its axis, a circle leaning to it, a torus or a free-form face;
 under a slide a torus or a free-form face; an edge no line or circle) are refused by what they
 are, read before any build (`closed::reads`).  The result is the selection's boundary with the candidates that bound nothing healed out of
@@ -521,7 +549,8 @@ into tori about the turn's, and round its top and bottom rings, kept in their pl
 `a_bull_nose_turned_about_an_axis_along_its_own_closes_into_its_sweep`, each to its sweep's
 volume by levels and the membership test; `solid_sweeps_examples::the_bull_nose_turned_partway_stops_inside_the_ring`,
 `solid_sweeps/stopped_bullnose.sv`); under a
-screw, a cylinder about an axis along the screw's and a circle square to it, whose disc screwed is
+screw, a cylinder or a cone about an axis along the screw's (a cone's contact rulings screwed into
+patches, #780 C2) and a circle square to it, whose disc screwed is
 its candidate — a round tool's rim under a screw, helical milling:
 `swept_closed::a_drum_screwed_beside_the_axis_closes_into_its_helical_sweep`,
 `a_drum_screwed_a_short_lead_through_most_of_a_turn_closes`,

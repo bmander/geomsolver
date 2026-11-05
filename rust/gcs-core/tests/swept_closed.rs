@@ -169,16 +169,6 @@ fn leaning_sweep_volume(lean: f64,off: f64,theta: f64,k: f64) -> f64 {
         }
         (lo,hi,(x-off).min(1.-(x-off)).min(hi-lo))
     };
-    // a sign change of `f` on [a, b] settled, and a least of `f` on [a, b]
-    let root = |f: &dyn Fn(f64) -> f64,mut a: f64,mut b: f64| {
-        let fa = f(a) > 0.;
-        for _ in 0..100 { let m = 0.5*(a+b); if (f(m) > 0.) == fa { a = m } else { b = m } }
-        0.5*(a+b)
-    };
-    let least = |f: &dyn Fn(f64) -> f64,mut a: f64,mut b: f64| {
-        for _ in 0..100 { let (m1,m2) = (a+(b-a)*0.381966,a+(b-a)*0.618034); if f(m1) < f(m2) { b = m2 } else { a = m1 } }
-        0.5*(a+b)
-    };
     let corners: Vec<[f64;3]> = (0..8).map(|i| {
         let (x,y,z) = (off+(i&1) as f64,if i&2 == 0 { -0.5 } else { 0.5 },if i&4 == 0 { -0.75 } else { 0.75 });
         [x,cs*y-sn*z,sn*y+cs*z]
@@ -190,66 +180,6 @@ fn leaning_sweep_volume(lean: f64,off: f64,theta: f64,k: f64) -> f64 {
             for (x,g) in gcs_core::integral::GAUSS8 { sum += 0.5*(b-a)*g*f(0.5*(a+b)+0.5*(b-a)*x) }
         } }
         sum
-    };
-    let area = |rho: f64| -> f64 {
-        let at = |p: f64| line(rho*p.cos(),rho*p.sin());
-        let gap = |p: f64| at(p).2;
-        // the runs of ψ where the line meets the block, a run between samples found at its gap's
-        // greatest
-        let n = 1000;
-        let ps: Vec<f64> = (0..=n).map(|i| -0.7+1.4*i as f64/n as f64).collect();
-        let g: Vec<f64> = ps.iter().map(|&p| gap(p)).collect();
-        let mut runs = vec![];
-        let mut start = None;
-        for i in 0..=n {
-            if g[i] > 0. && start.is_none() { start = Some(if i > 0 { root(&gap,ps[i-1],ps[i]) } else { ps[0] }) }
-            if g[i] > 0. && (i == n || g[i+1] <= 0.) {
-                runs.push((start.take().unwrap(),if i < n { root(&gap,ps[i],ps[i+1]) } else { ps[n] }));
-            }
-            if i > 0 && i < n && g[i] <= 0. && g[i] >= g[i-1] && g[i] >= g[i+1] {
-                let p = least(&|q| -gap(q),ps[i-1],ps[i+1]);
-                if gap(p) > 0. { runs.push((root(&gap,ps[i-1],p),root(&gap,ps[i+1],p))) }
-            }
-        }
-        if runs.is_empty() { return 0. }
-        // `z_lo − kψ` and `−(z_hi − kψ)`, each least at a run's ends and its interior minima
-        let bottom = |p: f64| at(p).0-k*p;
-        let top = |p: f64| -(at(p).1-k*p);
-        let ends: [&dyn Fn(f64) -> f64;2] = [&bottom,&top];
-        let minima: Vec<[Vec<(f64,f64)>;2]> = runs.iter().map(|&(a,b)| ends.map(|f| {
-            let m = 200;
-            let qs: Vec<f64> = (0..=m).map(|t| a+(b-a)*t as f64/m as f64).collect();
-            let v: Vec<f64> = qs.iter().map(|&q| f(q)).collect();
-            (1..m).filter(|&t| v[t] <= v[t-1] && v[t] <= v[t+1])
-                .map(|t| { let q = least(f,qs[t-1],qs[t+1]); (q,f(q)) }).collect()
-        })).collect();
-        // the sweep's section at ψ': the union of each run's interval over the window
-        let section = |pp: f64| -> f64 {
-            let mut spans: Vec<(f64,f64)> = vec![];
-            for (&(a,b),mins) in runs.iter().zip(&minima) {
-                let (u,v) = (a.max(pp-theta),b.min(pp));
-                if u > v { continue }
-                let low = |j: usize| mins[j].iter().filter(|&&(q,_)| u < q && q < v).map(|&(_,f)| f)
-                    .fold(ends[j](u).min(ends[j](v)),f64::min);
-                spans.push((low(0),-low(1)));
-            }
-            spans.sort_by(|x,y| x.0.total_cmp(&y.0));
-            let (mut length,mut current) = (0.,None::<(f64,f64)>);
-            for (x,y) in spans {
-                current = match current {
-                    Some((c0,c1)) if x <= c1 => Some((c0,c1.max(y))),
-                    Some((c0,c1)) => { length += c1-c0; Some((x,y)) }
-                    None => Some((x,y)),
-                };
-            }
-            length+current.map_or(0.,|(c0,c1)| c1-c0)
-        };
-        let mut breaks: Vec<f64> = runs.iter().zip(&minima).flat_map(|(&(a,b),mins)|
-            [a,b].into_iter().chain(mins.iter().flatten().map(|&(q,_)| q)).collect::<Vec<_>>())
-            .flat_map(|q| [q,q+theta]).collect();
-        breaks.sort_by(f64::total_cmp);
-        breaks.dedup();
-        pieces(&breaks,4,&section)
     };
     // ρ from the block's face nearest the axis to its farthest corner, broken at the corners' radii
     // and at each edge's point nearest the axis
@@ -269,7 +199,100 @@ fn leaning_sweep_volume(lean: f64,off: f64,theta: f64,k: f64) -> f64 {
     radii.sort_by(f64::total_cmp);
     radii.dedup_by(|a,b| (*a-*b).abs() <= 1e-12);
     debug_assert!(radii.last() == Some(&far));
-    pieces(&radii,64,&|rho| rho*area(rho))
+    pieces(&radii,64,&|rho| rho*helical_section_area(&line,[-0.7,0.7],&[],rho,theta,k))
+}
+
+/// **The area of the slice by the cylinder of radius `rho` about the world's `z` axis of what a
+/// tool sweeps screwed `Θ` about it, climbing `k` a radian**, in helical coordinates
+/// `(ψ, ζ = z − kψ)`: the leaning block's method (`leaning_sweep_volume`), for any tool read by
+/// `line(x, y)`, the tool's bottom and top along the vertical line at `(x, y)` and how far that
+/// line is from missing it (positive where it meets it), whose angles at that radius all lie within
+/// `[p_lo, p_hi]`. The runs of `ψ` where the line meets the tool are found between samples, and the
+/// sweep's section at `ψ'` is the union of each run's interval of `ζ` over the window
+/// `[ψ' − Θ, ψ']`, smooth between the runs' ends and extremes, the angles `kinks` where the tool's
+/// bottom or top turns a corner, and those shifted by `Θ`.
+fn helical_section_area(line: &dyn Fn(f64,f64) -> (f64,f64,f64),[p_lo,p_hi]: [f64;2],kinks: &[f64],rho: f64,theta: f64,k: f64) -> f64 {
+    let root = |f: &dyn Fn(f64) -> f64,mut a: f64,mut b: f64| {
+        let fa = f(a) > 0.;
+        for _ in 0..100 { let m = 0.5*(a+b); if (f(m) > 0.) == fa { a = m } else { b = m } }
+        0.5*(a+b)
+    };
+    let least = |f: &dyn Fn(f64) -> f64,mut a: f64,mut b: f64| {
+        for _ in 0..100 { let (m1,m2) = (a+(b-a)*0.381966,a+(b-a)*0.618034); if f(m1) < f(m2) { b = m2 } else { a = m1 } }
+        0.5*(a+b)
+    };
+    // each piece mapped through `x = a + (b − a)(1 − cos t)/2`, which takes the square roots a run
+    // of a round side brings at its ends
+    let pieces = |breaks: &[f64],n: usize,f: &dyn Fn(f64) -> f64| -> f64 {
+        let mut sum = 0.;
+        for w in breaks.windows(2) { for j in 0..n {
+            let (a,b) = (std::f64::consts::PI*j as f64/n as f64,std::f64::consts::PI*(j+1) as f64/n as f64);
+            for (x,g) in gcs_core::integral::GAUSS8 {
+                let t = 0.5*(a+b)+0.5*(b-a)*x;
+                sum += 0.5*(b-a)*g*f(w[0]+(w[1]-w[0])*0.5*(1.-t.cos()))*(w[1]-w[0])*0.5*t.sin();
+            }
+        } }
+        sum
+    };
+    let at = |p: f64| line(rho*p.cos(),rho*p.sin());
+    let gap = |p: f64| at(p).2;
+    // the runs of ψ where the line meets the block, a run between samples found at its gap's
+    // greatest
+    let n = 1000;
+    let ps: Vec<f64> = (0..=n).map(|i| p_lo+(p_hi-p_lo)*i as f64/n as f64).collect();
+    let g: Vec<f64> = ps.iter().map(|&p| gap(p)).collect();
+    let mut runs = vec![];
+    let mut start = None;
+    for i in 0..=n {
+        if g[i] > 0. && start.is_none() { start = Some(if i > 0 { root(&gap,ps[i-1],ps[i]) } else { ps[0] }) }
+        if g[i] > 0. && (i == n || g[i+1] <= 0.) {
+            runs.push((start.take().unwrap(),if i < n { root(&gap,ps[i],ps[i+1]) } else { ps[n] }));
+        }
+        if i > 0 && i < n && g[i] <= 0. && g[i] >= g[i-1] && g[i] >= g[i+1] {
+            let p = least(&|q| -gap(q),ps[i-1],ps[i+1]);
+            if gap(p) > 0. { runs.push((root(&gap,ps[i-1],p),root(&gap,ps[i+1],p))) }
+        }
+    }
+    if runs.is_empty() { return 0. }
+    // `z_lo − kψ` and `−(z_hi − kψ)`, each least at a run's ends and its interior minima
+    let bottom = |p: f64| at(p).0-k*p;
+    let top = |p: f64| -(at(p).1-k*p);
+    let ends: [&dyn Fn(f64) -> f64;2] = [&bottom,&top];
+    let minima: Vec<[Vec<(f64,f64)>;2]> = runs.iter().map(|&(a,b)| ends.map(|f| {
+        let m = 200;
+        let qs: Vec<f64> = (0..=m).map(|t| a+(b-a)*t as f64/m as f64).collect();
+        let v: Vec<f64> = qs.iter().map(|&q| f(q)).collect();
+        (1..m).filter(|&t| v[t] <= v[t-1] && v[t] <= v[t+1])
+            .map(|t| { let q = least(f,qs[t-1],qs[t+1]); (q,f(q)) }).collect()
+    })).collect();
+    // the sweep's section at ψ': the union of each run's interval over the window
+    let section = |pp: f64| -> f64 {
+        let mut spans: Vec<(f64,f64)> = vec![];
+        for (&(a,b),mins) in runs.iter().zip(&minima) {
+            let (u,v) = (a.max(pp-theta),b.min(pp));
+            if u > v { continue }
+            let low = |j: usize| mins[j].iter().filter(|&&(q,_)| u < q && q < v).map(|&(_,f)| f)
+                .fold(ends[j](u).min(ends[j](v)),f64::min);
+            spans.push((low(0),-low(1)));
+        }
+        spans.sort_by(|x,y| x.0.total_cmp(&y.0));
+        let (mut length,mut current) = (0.,None::<(f64,f64)>);
+        for (x,y) in spans {
+            current = match current {
+                Some((c0,c1)) if x <= c1 => Some((c0,c1.max(y))),
+                Some((c0,c1)) => { length += c1-c0; Some((x,y)) }
+                None => Some((x,y)),
+            };
+        }
+        length+current.map_or(0.,|(c0,c1)| c1-c0)
+    };
+    let mut breaks: Vec<f64> = runs.iter().zip(&minima).flat_map(|(&(a,b),mins)|
+        [a,b].into_iter().chain(mins.iter().flatten().map(|&(q,_)| q)).collect::<Vec<_>>())
+        .chain(kinks.iter().copied().filter(|&q| runs.iter().any(|&(a,b)| a < q && q < b)))
+        .flat_map(|q| [q,q+theta]).collect();
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup();
+    pieces(&breaks,4,&section)
 }
 
 /// A block leaning to the axis: `block` turned `lean` about the world's `x` and moved out `off`.
@@ -772,6 +795,82 @@ fn a_screwed_circle_meets_planes_and_cylinders_in_closed_form() {
     }
 }
 
+/// **A frustum's screwed rim and contact ruling meet what they touch in closed form** (#780 C2, a
+/// cone under a screw; the reduced Booleans its build first failed on, V5's rule): `build::cone`'s
+/// frustum, radii 1 and 0.4 one apart about an upright axis 3 from the screw's, screwed 1.5 rad
+/// climbing 2 a turn. The sheet its foot's rim screws into meets the frustum's side at either end
+/// pose in the rim there and the curve its two branches `θ±(v)` make leaving it, the side's radius
+/// read at the height the rim has climbed to (`ssi::screwed_circle_meeting`); and the patch a
+/// ruling of its side screws into meets that rim's sheet in the helix of the ruling's foot, which
+/// both hold (`ssi::screwed_line_circle`), and in the helix of the ruling's point the screw carries
+/// back onto the rim, 0.2 up it. Every point of each, read along it, on both surfaces to rounding.
+#[test]
+fn a_frustums_screwed_rim_and_ruling_meet_what_they_touch_in_closed_form() {
+    use gcs_core::brep::build::{cone,disc,screwed,Profile,ProfileEdge};
+    use gcs_core::brep::geom::{Curve,Rigid,Surface};
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    use gcs_core::space::{add,scale,sub,cross};
+    let (turn,lift) = (1.5,2./std::f64::consts::TAU*1.5);
+    let face = |b: &Brep,kind: &str| b.faces.iter().find(|f| f.surface.kind() == kind).unwrap().surface.clone();
+    let rim = face(&screwed(&disc([3.,0.,0.],[0.,0.,1.],1.),[0.;3],[0.,0.,1.],turn,lift).unwrap(),"blend");
+    let side = |m: &Rigid| face(&cone([3.,0.,0.],[0.,0.,1.],1.,0.4,1.).unwrap().moved(m),"cone");
+    let end = Rigid::turn([0.;3],[0.,0.,1.],turn).then(&Rigid {t:[0.,0.,lift],..Rigid::identity()});
+    // the patch a ruling of the side at `u` round its axis screws into: from the foot's rim to the
+    // top's, its triangle screwed
+    let patch = |u: f64| {
+        let (sn,cs) = u.sin_cos();
+        let (p,q) = ([3.+cs,sn,0.],[3.+0.4*cs,0.4*sn,1.]);
+        let across = scale(gcs_core::space::unit(cross(sub(q,p),[0.,0.,1.])),0.5);
+        let corners = [p,q,add(p,across)];
+        let triangle = Profile {origin:p,normal:gcs_core::space::unit(cross(sub(q,p),across)),
+            names:vec![vec!["sheet".into(),String::new(),String::new()]],
+            loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
+        screwed(&triangle,[0.;3],[0.,0.,1.],turn,lift).unwrap().faces.into_iter().find(|f| f.name == "sheet").unwrap().surface
+    };
+    // the side's contact ruling: where its normal is square to the screw's velocity, read apart
+    // from the kernel's reading (`(−sin u, cos u)` the side's normal round it, leaning
+    // `tan α = 0.6` out of the axis; the velocity `turn (−y, x) + lift ẑ`)
+    let along = |u: f64| { let (sn,cs) = u.sin_cos(); let (x,y) = (3.+0.7*cs,0.7*sn); turn*(cs*-y+sn*x)+0.6*lift };
+    let contact = {
+        let (mut a,mut b) = (-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2);
+        assert!((along(a) > 0.) != (along(b) > 0.));
+        for _ in 0..100 { let m = 0.5*(a+b); if (along(m) > 0.) == (along(a) > 0.) { a = m } else { b = m } }
+        0.5*(a+b)
+    };
+    let touching = patch(contact);
+    let crossing = patch(2.);
+    let cases: Vec<(&str,&Surface,Surface,&[&str])> = vec![
+        ("the rim's sheet and the side where it starts",&rim,side(&Rigid::identity()),&["circle","traced"]),
+        ("the rim's sheet and the side where it ends",&rim,side(&end),&["circle","traced"]),
+        ("the ruling's patch and the rim's sheet",&crossing,rim.clone(),&["iso","iso"]),
+        ("the contact ruling's patch and the side where it starts",&touching,side(&Rigid::identity()),&["line"]),
+        ("the contact ruling's patch and the side where it ends",&touching,side(&end),&["line"]),
+        ("a ruling's patch and the side it crosses along it",&crossing,side(&Rigid::identity()),&["line"]),
+    ];
+    for (what,sheet,other,kinds) in cases {
+        let Ssi::Curves(curves) = intersect(sheet,&other,1e-6) else { panic!("{what}: curves") };
+        let mut found: Vec<&str> = curves.iter().map(|c| c.kind()).collect();
+        found.sort();
+        // (the cut beside a held ruling, traced pieces as many as it runs in)
+        if kinds == ["line"] { found.retain(|&k| k != "traced") }
+        assert_eq!(found,kinds,"{what}");
+        for c in &curves {
+            let points: Vec<[f64;3]> = match c {
+                Curve::Traced(t) => t.pts.clone(),
+                Curve::Iso(..) => (0..=32).map(|j| c.point(j as f64/32.)).collect(),
+                Curve::Line {..} => (0..=16).map(|j| c.point(-0.25+j as f64/16.)).collect(),
+                _ => (0..64).map(|j| c.point(j as f64*std::f64::consts::TAU/64.)).collect(),
+            };
+            // (a helix of the patch is on the rim's sheet over the heights that sheet climbs,
+            // `[0, lift]`, past which the sheet's turn ends)
+            for p in points {
+                let off = sheet.implicit(p).abs().max(if p[2] > lift+1e-9 { 0. } else { other.implicit(p).abs() });
+                assert!(off <= 1e-9,"{what}: a point of its {} {off:e} off",c.kind());
+            }
+        }
+    }
+}
+
 /// **A drum screwed beside the axis closes into its helical sweep** (#721 F2c5, a round tool under a
 /// screw: helical milling): a drum of radius 1 and height 1 standing 3 from the screw's axis, along
 /// it, screwed 1.5 rad with a step of 2 a roll. Its side's generators in the plane through both axes
@@ -794,6 +893,168 @@ fn a_drum_screwed_beside_the_axis_closes_into_its_helical_sweep() {
     let expected = PI+theta*(6.+k*PI);
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
+}
+
+/// **A frustum screwed beside the axis closes into its helical sweep** (#780 C2, a cone under a
+/// screw: an end mill's chamfer, a countersink screwed): `build::cone`'s frustum, radii 1 and 0.4
+/// one apart along its upright axis 3 from the screw's, screwed a radian while it climbs 2 a roll.
+/// Its side's normal `cos α ρ̂ − sin α z` is square to the screw's velocity along two rulings
+/// turned off the plane through both axes by `asin(κ tan α / (ω d))`, whatever the height along
+/// them; each leans to the axis and screws into a patch of a ruled helicoid (#777 M5's
+/// `Cutter::Patch`), which the frustum at each end pose touches along that ruling. Its rims' discs
+/// screw into their ramps. Held to its volume read in helical coordinates apart from the build
+/// (`screwed_stadium_volume`), which a Monte Carlo of the definition holds in turn
+/// (`screwed_stadium_by_sampling`), and to membership at seeded points.
+#[test]
+fn a_frustum_screwed_beside_the_axis_closes_into_its_helical_sweep() {
+    use std::f64::consts::TAU;
+    let (d,r0,r1,h) = (3.,1.,0.4,1.);
+    let tool = gcs_core::brep::build::cone([d,0.,0.],[0.,0.,1.],r0,r1,h).unwrap();
+    let (theta,advance) = (1.,2.);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance});
+    let k = advance/TAU/theta;
+    let stadium = Stadium {a:[d,0.],b:[d,0.],r0,r1,h};
+    // the method held first where the answer is known: unscrewed, the frustum's own volume; a drum,
+    // `π r² h + Θ (2 d r h + k π r²)`
+    // (`a_drum_screwed_beside_the_axis_closes_into_its_helical_sweep`)
+    let own = std::f64::consts::PI*h*(r0*r0+r0*r1+r1*r1)/3.;
+    let still = screwed_stadium_volume(stadium,0.,k);
+    assert!((still-own).abs() <= 1e-8*own,"unscrewed {still} against {own}");
+    let drum = std::f64::consts::PI*r0*r0*h+theta*(2.*d*r0*h+k*std::f64::consts::PI*r0*r0);
+    let read = screwed_stadium_volume(Stadium {r1:r0,..stadium},theta,k);
+    assert!((read-drum).abs() <= 1e-8*drum,"the drum {read} against {drum}");
+    let expected = screwed_stadium_volume(stadium,theta,k);
+    let (sampled,sigma) = screwed_stadium_by_sampling(stadium,theta,k,100_000);
+    assert!((sampled-expected).abs() <= 4.*sigma+1e-3*expected,"sampled {sampled} ± {sigma} against {expected}");
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
+    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    agrees(&built,&tool,&path);
+}
+
+/// A drafted stadium standing upright: the points within `R(z) = r₀ + (r₁ − r₀) z / h` of the level
+/// segment from `a` to `b` (each `[x, y]`), `z` from 0 to `h` — a frustum where the segment is a
+/// point, a drafted slot or key where it is not, its sides planes leaning the way the frustum's
+/// rulings do. Read by the vertical line at `(x, y)`: its bottom and top there, and how far the
+/// line is from missing it (positive where it meets it; its radius linear in `z`, so one run or
+/// none).
+#[derive(Clone,Copy)]
+pub(crate) struct Stadium { pub a: [f64;2],pub b: [f64;2],pub r0: f64,pub r1: f64,pub h: f64 }
+
+impl Stadium {
+    fn line(&self,x: f64,y: f64) -> (f64,f64,f64) {
+        let Stadium {a,b,r0,r1,h} = *self;
+        let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
+        let q = dx*dx+dy*dy;
+        let t = if q > 0. { (((x-a[0])*dx+(y-a[1])*dy)/q).clamp(0.,1.) } else { 0. };
+        let reach = (x-a[0]-t*dx).hypot(y-a[1]-t*dy);
+        if r1 == r0 { return (0.,h,r0-reach) }
+        // R(z) ≥ reach: below the height it reaches where the stadium narrows upward, above it
+        // where it widens
+        let z = h*(reach-r0)/(r1-r0);
+        let (lo,hi) = if r1 < r0 { (0.,z.min(h)) } else { (z.max(0.),h) };
+        (lo,hi,hi-lo)
+    }
+    /// The angles over `span` where the vertical lines at the radius `rho` about the world's `z`
+    /// axis turn a corner of its bottom or top: where they reach its foot's or its top's rim (the
+    /// run taking the whole height from there in), or pass from its segment's side to round an end
+    /// of it.
+    fn kinks(&self,rho: f64,[lo,hi]: [f64;2]) -> Vec<f64> {
+        let Stadium {a,b,r0,r1,..} = *self;
+        let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
+        let q = dx*dx+dy*dy;
+        let along = |p: f64| ((rho*p.cos()-a[0])*dx+(rho*p.sin()-a[1])*dy)/q.max(1e-300);
+        let reach = |p: f64| { let (x,y) = (rho*p.cos(),rho*p.sin()); let t = along(p).clamp(0.,1.); (x-a[0]-t*dx).hypot(y-a[1]-t*dy) };
+        let mut fs: Vec<Box<dyn Fn(f64) -> f64>> = vec![Box::new(move |p| reach(p)-r0),Box::new(move |p| reach(p)-r1)];
+        if q > 0. { fs.push(Box::new(move |p| along(p))); fs.push(Box::new(move |p| along(p)-1.)) }
+        let n = 2000;
+        let mut out = Vec::new();
+        for f in &fs {
+            for i in 0..n {
+                let (mut x,mut y) = (lo+(hi-lo)*i as f64/n as f64,lo+(hi-lo)*(i+1) as f64/n as f64);
+                if (f(x) > 0.) == (f(y) > 0.) { continue }
+                let fx = f(x) > 0.;
+                for _ in 0..100 { let m = 0.5*(x+y); if (f(m) > 0.) == fx { x = m } else { y = m } }
+                out.push(0.5*(x+y));
+            }
+        }
+        out
+    }
+    /// The radii about the world's `z` axis its sweep's slices change their make-up at: its nearest
+    /// and farthest, and its rims' (each `r` from the segment, at its foot and its top).
+    fn radii(&self) -> Vec<f64> {
+        let Stadium {a,b,r0,r1,..} = *self;
+        let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
+        let q = dx*dx+dy*dy;
+        let t = if q > 0. { (-(a[0]*dx+a[1]*dy)/q).clamp(0.,1.) } else { 0. };
+        let (near,far) = ((a[0]+t*dx).hypot(a[1]+t*dy),a[0].hypot(a[1]).max(b[0].hypot(b[1])));
+        let mut out: Vec<f64> = [r0,r1].iter().flat_map(|&r| [near-r,near+r,far-r,far+r]).collect();
+        out.sort_by(f64::total_cmp);
+        out.dedup_by(|x,y| (*x-*y).abs() <= 1e-12);
+        out
+    }
+}
+
+/// **The volume a drafted stadium beside a screw's axis sweeps** (turned `Θ` about the world's `z`
+/// and climbing `k` a radian), apart from the kernel: the leaning block's method
+/// (`helical_section_area`), in helical coordinates `(ρ, ψ, ζ = z − kψ)` with volume `ρ dρ dψ dζ`,
+/// where the screw is a shift of `ψ` by `[0, Θ]`; each slice's area integrated over `ρ` by
+/// Gauss–Legendre between the radii its make-up changes at, through `ρ = m − w cos φ` over each
+/// stretch, which takes the square roots a round side's nearest and farthest out bring.
+fn screwed_stadium_volume(tool: Stadium,theta: f64,k: f64) -> f64 {
+    let line = |x: f64,y: f64| tool.line(x,y);
+    let radii = tool.radii();
+    let (lo,hi) = (radii[0],radii[radii.len()-1]);
+    // the angles every slice lies within: the stadium's ends' and its middle's, a margin past
+    let reach = tool.r0.max(tool.r1);
+    let angles: Vec<f64> = (0..=16).map(|i| {
+        let t = i as f64/16.;
+        let (x,y) = (tool.a[0]+t*(tool.b[0]-tool.a[0]),tool.a[1]+t*(tool.b[1]-tool.a[1]));
+        y.atan2(x)
+    }).collect();
+    let spread = (reach/lo.max(1e-9)).min(1.).asin()+0.05;
+    let span = [angles.iter().copied().fold(f64::INFINITY,f64::min)-spread,angles.iter().copied().fold(f64::NEG_INFINITY,f64::max)+spread];
+    let (m,w) = (0.5*(lo+hi),0.5*(hi-lo));
+    let mut breaks: Vec<f64> = radii.iter().map(|&r| ((m-r)/w).clamp(-1.,1.).acos()).collect();
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup_by(|x,y| (*x-*y).abs() <= 1e-12);
+    let mut sum = 0.;
+    for v in breaks.windows(2) { for j in 0..16 {
+        let (a,b) = (v[0]+(v[1]-v[0])*j as f64/16.,v[0]+(v[1]-v[0])*(j+1) as f64/16.);
+        for (x,g) in gcs_core::integral::GAUSS8 {
+            let phi = 0.5*(a+b)+0.5*(b-a)*x;
+            let rho = m-w*phi.cos();
+            sum += 0.5*(b-a)*g*rho*helical_section_area(&line,span,&tool.kinks(rho,span),rho,theta,k)*w*phi.sin();
+        }
+    } }
+    sum
+}
+
+/// **The same volume by a Monte Carlo of the sweep's definition**: points drawn in a region of
+/// `(ρ, ψ, z)` holding the sweep, each a member where the stadium, carried back along the roll
+/// (read directly at 600 instants of it, not through `swept::member`), holds it at one of them; the
+/// region's measure times the mean of `ρ` over its members. The estimate and its standard error.
+fn screwed_stadium_by_sampling(tool: Stadium,theta: f64,k: f64,n: usize) -> (f64,f64) {
+    let radii = tool.radii();
+    let (p0,p1) = (radii[0],radii[radii.len()-1]);
+    let angles = [tool.a[1].atan2(tool.a[0]),tool.b[1].atan2(tool.b[0])];
+    let spread = (tool.r0.max(tool.r1)/p0).min(1.).asin();
+    let ([z0,z1],[q0,q1]) = ([angles[0].min(angles[1])-spread,angles[0].max(angles[1])+spread+theta],[0.,tool.h+k*theta]);
+    let measure = (p1-p0)*(z1-z0)*(q1-q0);
+    let mut rng = gcs_core::rng::Rng::new(11);
+    let (mut sum,mut sq) = (0.,0.);
+    for _ in 0..n {
+        let (rho,psi,z) = (rng.uniform(p0,p1),rng.uniform(z0,z1),rng.uniform(q0,q1));
+        let member = (0..=600).any(|i| {
+            let s = theta*i as f64/600.;
+            let (lo,hi,gap) = tool.line(rho*(psi-s).cos(),rho*(psi-s).sin());
+            gap > 0. && (lo..=hi).contains(&(z-k*s))
+        });
+        let x = if member { rho*measure } else { 0. };
+        sum += x;
+        sq += x*x;
+    }
+    let mean = sum/n as f64;
+    (mean,((sq/n as f64-mean*mean)/n as f64).sqrt())
 }
 
 /// A drum of radius 1 and height 1 standing 10 from a screw's axis, along it, its disc screwed by
