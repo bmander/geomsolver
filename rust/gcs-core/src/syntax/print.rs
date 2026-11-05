@@ -278,6 +278,17 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 out.push_str(&format!(" class {}", d.class.0.join(" ")));
             }
         }
+        // the primitive as it was written (#783 P3), else the body word of `std.solids`
+        StmtKind::SolidRel(r) if r.joined => {
+            write_ref(out, &r.body);
+            out.push_str(match r.word {
+                super::BodyWord::Union => " or { p | p in ",
+                super::BodyWord::Cut => " and { p | p not in ",
+                super::BodyWord::Common => " and { p | p in ",
+            });
+            write_ref(out, &r.what);
+            out.push_str(" }");
+        }
         StmtKind::SolidRel(r) => {
             write_ref(out, &r.what);
             out.push(' ');

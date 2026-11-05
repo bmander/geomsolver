@@ -130,7 +130,9 @@ NAME := REF at[(under: M, seen_from: G)] E   a frame, a solid or a point read at
 NAME := REF at F                        the same, drawn in the jointed frame F at its value (1.15)
 NAME := solid({ p | some t[ in (E, E)]: p in SOLID at(under: M, seen_from: G) t })
                                         a solid a frame's motion sweeps                (1.15)
-REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
+REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body:
+                                        words of std.solids, `use std.solids (cut)` (1.14)
+REF or { p | p in REF } | REF and { p | [not] in REF }   the primitive they are (1.14)
 NAME := envelope | meshing | surface(...)                                           (1.15)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
@@ -1322,14 +1324,15 @@ nothing outside it may name a witness (E040), and its relations are claims, so n
 unknown. A precondition is a `when` over the drawing's numbers, `when rb != ra { claim { … } }`:
 where it is false the claim is not made at all.
 
-Three claim words apply only to solids: `claim bore inside stock`, `claim disc clear(2mm) cyl`,
+Three claims apply only to solids: `claim every q in bore: q in stock` (every point of `bore` in
+`stock`; `claim bore inside stock` through 0.205), `claim disc clear(2mm) cyl`,
 `claim head fits(0.15mm) trap`. The report gives the measurement, and one within the faceting of a
 round face is **undecided**. One that does not hold says where to look: the face of each solid by
 its path, and the point where they come nearest — or, overlapping, the deepest of their common
 material:
 
 ```
-  claim bore inside stock — undecided, measured 0 (interval [-0.0006000000000000001, 0.0006000000000000001])
+  claim every q in bore: q in stock — undecided, measured 0 (interval [-0.0006000000000000001, 0.0006000000000000001])
     nearest at (24.9993, 10, 14.9182), between bore.k and stock.far
     unresolved: containment is within curved-faceting uncertainty
   claim bore clear(2mm) stock — refuted, measured -9.999665339174008 (interval [-10.00026533917401, -9.999065339174006])
@@ -2122,10 +2125,17 @@ bore cut body
 ```
 
 `body.volume` is `69643.8` (`72000 − π · 5² · 30`), whichever order the last two lines are in.
+`cut`, `union` and `common` are words of `std.solids` (0.206), imported by the names a file uses:
+`use std.solids (cut)` here, beside `use std`.
 
 **The body words say a set** (0.199): the body is the points inside its stock or anything in
 `union` with it, outside everything that `cut`s it and inside everything it is in `common` with —
-a formula over sets, not an order of steps. The same Boolean written as a set builds as the same
+a formula over sets, not an order of steps. **The words are defined over the primitive** (0.206): a
+body's set may be said where the body is not declared, a disjunct of its stock or a conjunct —
+`body or { p | p in boss }` is `boss union body`, `body and { p | p not in bore }` `bore cut body`
+and `body and { p | p in tip }` `tip common body` — each one membership of a solid. So
+`std.solids` defines `x cut B := B and { p | p not in x }`, and a component may say more of a body
+it was handed the same way. The same Boolean written as a set builds as the same
 body: `solid({ p | p in stock; p not in bore })` is `body` above to the byte, and `solid({ p
 | p outside { q | q not in stock; q not in boss } })` is `stock` with `boss` in union. Every
 solid in such a set is named whole (`p in stock`), and the faces are named through them as a

@@ -2,6 +2,8 @@
 // a solid grown, a solid shelled (`use std.rounds (shell)`), and a round or a chamfer as one more
 // bound of a region.
 
+use std.solids (cut, union)
+
 // -- rounds and chamfers (#183) -----------------------------------------------------------------
 //
 // What a round or a chamfer means is said here, over the language's own words: faces as sets (a

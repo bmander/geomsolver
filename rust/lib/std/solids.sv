@@ -9,6 +9,23 @@
 // and one alone (a countersink's) `near` where it bounds from above and `far` from below; a turn
 // short of a whole one is capped `start` where it begins and `end` where it ends.
 
+// -- the body words (#783 P3) ---------------------------------------------------------------------
+//
+// A body is the points of its stock, or of anything in `union` with it, that are in everything it
+// keeps in `common` and in nothing `cut` from it — `(stock ∪ unions) ∖ cuts ∩ commons`, a formula
+// over sets, never an order of statements, so `bore cut body` may stand fifty lines above `body`.
+// What is in union is a disjunct of the body's set and what is cut or kept a conjunct, said where
+// the body is not declared (`B or S`, `B and S`): the language's primitive, which these name.  So a
+// pocket eats a boss in union with the same body; a part that keeps the boss names the pocketed
+// shell and puts the boss on that.  A word that reads the body's own faces (a round's) acts on the
+// body its other terms make.
+//
+//   use std.solids (cut)
+//   bore cut body
+x union B := B or { p | p in x }
+x cut B := B and { p | p not in x }
+x common B := B and { p | p in x }
+
 
 // A prism: the points the section occupies slid some way along its normal, between the ordinates
 // `from` and `to` along its normal from that plane — `from: -30mm, to: 0mm` the material behind

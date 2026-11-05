@@ -1,7 +1,8 @@
 //! **The signs an editor may draw the notation of sets as** (#783 P2): `in` as ∈, `not in` as ∉,
-//! `some` as ∃.  The document stays ASCII — one spelling, parsed, diffed and typed on any
-//! keyboard — and these are runs of it an editor *draws* as one sign over exactly the characters
-//! they stand for, the ASCII still there beneath for the caret, the selection and the clipboard.
+//! `some` as ∃, and `every` as ∀ (P3).  The document stays ASCII — one spelling, parsed, diffed
+//! and typed on any keyboard — and these are runs of it an editor *draws* as one sign over exactly
+//! the characters they stand for, the ASCII still there beneath for the caret, the selection and
+//! the clipboard.
 //!
 //! Which runs are signs is the core's answer and the colouring's own scan (`highlight::tints`),
 //! never a pattern a front end matches: a word in a comment is no token, and a word the text
@@ -24,6 +25,8 @@ pub enum Ligature {
     NotIn,
     /// `some`, the quantifier: ∃
     Some,
+    /// `every`, the universal one (#783 P3): ∀
+    Every,
 }
 
 impl Ligature {
@@ -33,6 +36,7 @@ impl Ligature {
             Ligature::In => "∈",
             Ligature::NotIn => "∉",
             Ligature::Some => "∃",
+            Ligature::Every => "∀",
         }
     }
 }
@@ -69,12 +73,13 @@ pub fn ligatures(src: &str) -> Vec<(Ligature, Span)> {
             Some("in") if word(i) && i > 0 && ends(i - 1) && starts(i) => {
                 out.push((Ligature::In, t[i].1));
             }
-            // `some t: …`, `some t in (a, b): …` — the quantifier, before the name it binds
-            Some("some") if word_at(t, i + 1).is_some()
+            // `some t: …`, `some t in (a, b): …`, `every q in a: …` — a quantifier, before the
+            // name it binds
+            Some(w @ ("some" | "every")) if word_at(t, i + 1).is_some()
                 && (matches!(t.get(i + 2).map(|x| &x.0), Some(Tok::P(':')))
                     || word_at(t, i + 2) == Some("in")) =>
             {
-                out.push((Ligature::Some, t[i].1));
+                out.push((if w == "some" { Ligature::Some } else { Ligature::Every }, t[i].1));
             }
             _ => {}
         }

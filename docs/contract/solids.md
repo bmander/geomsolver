@@ -12,8 +12,26 @@ with. The word was `bound` through 0.84 (#270: a bound is a dimension choosing a
 is refused naming `common` (`parser/statements.rs`), and `bound` stays reserved. The Rust names
 keep the old word: `SolidDef::Body` carries `bound`; `Term::Inter`; facets, fields and the CAD
 recipe (`"bound"`, `BRepAlgoAPI_Common`) all evaluate it. Union first; `cut` and `common` commute;
-a swept solid may only be `cut`. `common` and `union` (0.32) are body words, not names;
-`coincident` between two solids is refused. Spiral bevel (**one file, `spiral_bevel/hypoid.sv`**, #217: no `project`, no `hint` — every root chosen by a
+a swept solid may only be `cut`. `coincident` between two solids is refused.
+
+**The body words are words of `std.solids`, over a primitive** (#783 P3, [0.206]): `B or { p | p in
+x }` adds a disjunct to the body `B`'s stock and `B and { p | p not in x }` / `B and { p | p in x
+}` a conjunct, said where `B` is not declared; the parser reads one membership of a solid in the
+set (`P::joined`, the notation's `inside`/`outside` it was lowered to) into the body rule's term,
+`SolidRel` marked `joined` so the printer writes the primitive back, and refuses any other set
+naming the three forms.  `std.solids` defines `x cut B := B and { p | p not in x }`, `x union B`
+and `x common B` over it (`rust/lib/std/solids.sv`), so `bore cut body` is a word applied
+(`flatten::words`), its statement identity the use's, reaching the same `SolidRel`, and everything
+past the parser — `program/solids.rs`'s body pass, the stratum, `as_body`, the empty body, face
+paths — is as it was.  The words are no longer reserved (`words::is_name`, `reserved_word`), so a
+file may name a thing `cut`; they are imported by name (`use std.solids (cut, union)`), unimported
+E102 naming the import, and `std.rounds` and `hardware` import the ones they use.  The Boolean
+gesture (`edit::add_body_word`) writes the word and names it in the file's `use std.solids`
+(`edit::solids::imported`), grown or a line of its own.  One solid within another is claimed
+`claim every q in a: q in b` (`notation::every`, lowered to the claim word `inside`, judged as
+before, and reported as written, `describe_solid_claim`); `claim a inside b` is refused naming it,
+and `every` outside a claim is refused.
+`tests/body_words.rs` is the gate. Spiral bevel (**one file, `spiral_bevel/hypoid.sv`**, #217: no `project`, no `hint` — every root chosen by a
 word, the layout solved from them alone; README walks it). **The pair is one component**,
 `pair := HypoidPair(std.top, std.y, std.z, …)` over the root's `param`s (std's datums its
 arguments, its unknowns `mn`, `rp`, `pa` formals the call leaves out), its steps components below
@@ -295,7 +313,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   **The boundary is the feature.**  Which datum, which fit, what is reference or controlling is
   design, which the sheet states.  `tests/sheet.rs` asserts the three it makes and no fourth.
 - **A claim about a solid is judged, and can never act** (Solvent §9.8, `clear.rs`; issue #48).
-  `disc clear(2mm) cyl`, `head fits(0.15mm) trap`, `piston inside bore` compile **no row** —
+  `disc clear(2mm) cyl`, `head fits(0.15mm) trap`, `every q in piston: q in bore` ([0.206])
+  compile **no row** —
   `tests/solid_claim.rs` asserts parameter count, equation count and DOF unchanged.  The words
   are in `constraints::OPERATORS` and settle to no `CKind`; `constraints::solid_word` reads the
   word before the spec, like `gauge_op`.

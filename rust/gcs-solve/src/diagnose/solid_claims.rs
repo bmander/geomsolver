@@ -490,6 +490,13 @@ pub fn describe_solid_claim(sk: &Sketch, c: &SolidClaim) -> String {
             crate::vocab::num(s.to())
         ),
     };
+    // containment is what holds of every point of one (#783 P3): `every q in a: q in b`, its
+    // point named apart from both solids
+    if matches!(c.requirement, crate::model::SolidRequirement::Inside) {
+        let (a, b) = (name(c.a), name(c.b));
+        let q = ["q", "p", "x"].into_iter().find(|v| *v != a && *v != b).unwrap_or("q");
+        return format!("claim {head}every {q} in {a}: {q} in {b}");
+    }
     format!(
         "claim {head}{} {}{gap} {}",
         name(c.a),

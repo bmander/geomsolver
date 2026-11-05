@@ -556,6 +556,9 @@ pub struct SolidRel {
     pub what: Ref,
     pub body: Ref,
     pub span: Span,
+    /// Written as the primitive, `body and { p | p not in what }` (#783 P3), not by a body
+    /// word of `std.solids` — so the printer writes it back as it was written.
+    pub joined: bool,
 }
 
 #[derive(Clone, Debug)]

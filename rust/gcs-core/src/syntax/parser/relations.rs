@@ -27,7 +27,8 @@ impl<'a> P<'a> {
                 (word, Fixity::Call, Vec::new(), args)
             }
             Some(Tok::Ident(w))
-                if (is_operator(&w) && !call_word(&w) || self.defined_prefix_ahead())
+                if (is_operator(&w) && !call_word(&w) && !self.named_operator(&w)
+                    || self.defined_prefix_ahead())
                     && !self.rate_ahead() =>
             {
                 let word = Name { text: w, span: self.here() };
@@ -79,6 +80,17 @@ impl<'a> P<'a> {
             w.rates = rates;
         }
         Some(r)
+    }
+
+    /// Whether the constraint word `w` opening a statement is a name the document gave instead (a
+    /// solid called `inside`, #783 P3): a word with no prefix reading, and two words after it —
+    /// `inside common cavity` relates the solid `inside` by `common`, where `fix a` is still the
+    /// word refused naming what it states.
+    fn named_operator(&self, w: &str) -> bool {
+        let ident = |k: usize| {
+            matches!(self.t.get(self.i + k).map(|(t, _)| t), Some(Tok::Ident(_)))
+        };
+        !crate::syntax::words::prefix_word(w) && ident(1) && ident(2)
     }
 
     /// How a relation word at `span` was written (#783): lowered from the notation of sets, and

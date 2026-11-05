@@ -283,9 +283,12 @@ impl Lowering<'_> {
             let span = t[i].1;
             match word(t, i) {
                 // `inside` and `outside` as a relation's word: after an operand, before one
-                // the claim word `inside` between two solids (§9.8), one within another, is not
-                // membership, and stays
-                Some("inside") if self.claimed(i) => {}
+                // the claim word `inside` between two solids (§9.8), one within another, is
+                // what holds of every point of the one (#783 P3)
+                Some("inside") if self.claimed(i) => {
+                    self.fail(span, "`claim a inside b` is retired (#783): one solid within \
+                        another is what holds of every point of it, `claim every q in a: q in b`");
+                }
                 Some(w @ ("inside" | "outside")) if i > 0
                     && matches!(t[i - 1].0, Tok::Ident(_) | Tok::P(')' | ']'))
                     && matches!(t.get(i + 1).map(|x| &x.0),
@@ -367,20 +370,22 @@ impl Lowering<'_> {
             }
             // a condition is the expression reader's (`expr::parse_cond`): `when w not in A`
             "when" | "repeat" | "cycle" | "claim_over" => None,
+            // more of a body's set, `B or { p | p in x }` (#783 P3): the set's own statements
+            // are lowered where they stand, past its `|`
+            _ if past_ref(t, i).is_some_and(|j| {
+                matches!(word(t, j), Some("and" | "or")) && super::words::set_at(t, j + 1).is_some()
+            }) => None,
             "some" => self.some(i, false, out),
-            // reserved (#783): what holds at every value of a running number, for tolerances
-            "every" if word(t, i + 1).is_some() => {
-                self.fail(t[i].1, "`every` is reserved (#783) for what holds at every value of a \
-                    running number, and not read yet: a claim over a roll is judged at the \
-                    instants a document names");
-                Some(statement_end(t, i))
-            }
+            // what holds of every point of a solid (#783 P3): claimed, one solid within another
+            "every" if word(t, i + 1).is_some() => Some(self.every(i, out)),
             // the complement of the prism through a face, `not some h: p in F at(along: n) h`
             "not" if word(t, i + 1) == Some("some") => self.some(i + 1, true, out),
             _ => self.placement(i, out).or_else(|| self.membership(i, hi, out)).or_else(|| {
                 // `or` joins memberships, and nothing else
+                // to a `:=`, past which a word's body is a statement of its own (`starts`)
                 let end = statement_end(t, i);
                 let depth0 = |k: usize| self.encl[k] == self.encl[i];
+                let end = (i..end).find(|&k| t[k].0 == Tok::Define && depth0(k)).unwrap_or(end);
                 let or = (i..end).find(|&k| word(t, k) == Some("or") && depth0(k))?;
                 self.fail(t[or].1, "each side of `or` is a membership of the set's point: `p in A \
                     or p not in B`; a bound is a set of its own, `{ q | q distance(<= r) c }`");
@@ -438,6 +443,39 @@ impl Lowering<'_> {
                 x.1 = Span::new(x.1.lo as usize, close.1.hi as usize);
             }
         }
+    }
+
+    /// `every q in A: q in B`, claimed (#783 P3): every point of the solid `A` in `B`, one solid
+    /// within another — the claim the solid claims judge (§9.8, `A inside B`), measured and never
+    /// acting.  Read in a claim only, where it states nothing: a statement that every value of a
+    /// running number, or every acceptable part, satisfies something is the tolerances' (#783).
+    fn every(&mut self, i: usize, out: &mut Vec<T>) -> usize {
+        let t = self.t;
+        let end = statement_end(t, i);
+        let shape = "`every` reads one solid within another, claimed: `claim every q in a: q in b`";
+        if !self.claimed(i) {
+            self.fail(t[i].1, "`every` states what holds of every point of a solid, and is read \
+                in a claim for now: `claim every q in a: q in b`, one solid within another");
+            return end;
+        }
+        let parsed = (|| {
+            let q = word(t, i + 1)?;
+            (word(t, i + 2) == Some("in")).then_some(())?;
+            let a1 = past_ref(t, i + 3)?;
+            punct(t, a1, ':').then_some(())?;
+            (word(t, a1 + 1) == Some(q) && word(t, a1 + 2) == Some("in")).then_some(())?;
+            let b1 = past_ref(t, a1 + 3)?;
+            (b1 == end).then_some((a1, b1))
+        })();
+        let Some((a1, b1)) = parsed else {
+            self.fail(t[i].1, shape);
+            return end;
+        };
+        // `A inside B`, the claim word, its span the membership's `in`
+        out.extend(t[i + 3..a1].iter().cloned());
+        out.push(ident("inside", t[a1 + 2].1));
+        out.extend(t[a1 + 3..b1].iter().cloned());
+        b1
     }
 
     /// `boundary(S)` standing as any relation's operand.

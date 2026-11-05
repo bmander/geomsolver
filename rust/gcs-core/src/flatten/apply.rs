@@ -237,6 +237,15 @@ impl<'a> Walk<'a> {
                 *p = u.path.to_vec();
                 continue;
             }
+            // more of a body's set (#783 P3, `bore cut body` applied): the use's, so a body it
+            // refuses, or a cycle it closes, is said where the word is written
+            if let StmtKind::SolidRel(r) = &mut st.kind {
+                st.id = u.st.id;
+                st.span = u.st.span;
+                r.span = u.st.span;
+                *p = u.path.to_vec();
+                continue;
+            }
             let StmtKind::Relation(r) = &mut st.kind else { continue };
             // a set measured from states its point's equalities as bounds at their numbers, but
             // for a use of another set, whose own body is held when it is applied (#192)
