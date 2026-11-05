@@ -1519,6 +1519,19 @@ fn a_failed_builds_arrangement_is_dumped_replayed_and_reduced() {
     assert_eq!(reduce(&loaded,&fails),vec![0,2]);
 }
 
+/// The ball-end mill's numbers: its ball's centre `d` from the screw's axis, its radius `r`, its
+/// side `h` tall above the centre, the screw's climb `k` a radian, and the turn of its roll.
+const MILL: [f64;5] = [10.,1.,3.,0.5,1.5];
+
+/// The ball's pipe of `ball_end_mill_through_a_sector`'s mill: its great circle square to its
+/// centre's velocity at the turn `start`, screwed the roll's turn from there.
+fn ball_pipe(start: f64) -> Brep {
+    use gcs_core::brep::build::{disc,screwed};
+    let [d,r,_,k,turn] = MILL;
+    let (s,c) = start.sin_cos();
+    screwed(&disc([d*c,d*s,k*start],unit([-d*s,d*c,k]),r),[0.;3],[0.,0.,1.],turn,k*turn).unwrap()
+}
+
 /// The ball-end mill of #777 V3's gate: a mill of radius 1, its ball's centre 10 from a screw's
 /// axis and its side 3 tall above it, screwed 1.5 rad climbing half a unit a radian through a
 /// sixth of a ring 8 to 12 across and 4 high, which it passes wholly across. The sector, the mill,
@@ -1527,7 +1540,7 @@ fn ball_end_mill_through_a_sector() -> (Brep,Brep,Trajectory,[f64;2]) {
     use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
     use gcs_core::brep::geom::Frame;
     use std::f64::consts::{FRAC_PI_2,PI};
-    let (d,r,h,turn,k) = (10.,1.,3.,1.5,0.5);
+    let [d,r,h,k,turn] = MILL;
     let at = |x: f64,z: f64| [d+x,0.,z];
     let edges = vec![ProfileEdge::Arc {frame:Frame::new(at(0.,0.),[0.,-1.,0.],[1.,0.,0.]),r,span:Some([-FRAC_PI_2,0.])},
         ProfileEdge::Line {a:at(r,0.),b:at(r,h)},ProfileEdge::Line {a:at(r,h),b:at(0.,h)},ProfileEdge::Line {a:at(0.,h),b:at(0.,-r)}];
@@ -1574,20 +1587,15 @@ fn the_ball_end_mill_screwed_through_a_ring_sector_is_refused_by_its_inverse_map
 /// kψ)` about a screw's axis climbing `k` a radian, the helix of `(ρ, ζ)` passes the ball of radius
 /// `r` about `(d, 0, 0)` at the turns `φ` with `(ζ + kφ)² ≤ R(φ) = 2ρd (cos φ − c)`, `c = (ρ² + d² −
 /// r²)/(2ρd)`, which are `|φ| ≤ acos c`: so it meets the ball where `|ζ| ≤ M(ρ) = max kφ + √R(φ)`,
-/// the most over those turns (the function concave there, its maximum found by golden section);
+/// the most over those turns (the function concave there, its maximum found by Brent's method);
 /// nothing where `|ρ − d| ≥ r`. Also the half-angle `acos c`, over which it stands within the ball's
 /// cylinder.
 fn helix_reach(rho: f64,d: f64,r: f64,k: f64) -> (f64,f64) {
     let c = (rho*rho+d*d-r*r)/(2.*rho*d);
     if !(c < 1.) { return (0.,0.) }
     let a = c.max(-1.).acos();
-    let f = |phi: f64| k*phi+(2.*rho*d*(phi.cos()-c)).max(0.).sqrt();
-    let (mut lo,mut hi) = (0.,a);
-    for _ in 0..120 {
-        let (m1,m2) = (lo+(hi-lo)*0.381966011250105,lo+(hi-lo)*0.618033988749895);
-        if f(m1) < f(m2) { lo = m1 } else { hi = m2 }
-    }
-    (f(0.5*(lo+hi)),a)
+    let less = |phi: f64| -(k*phi+(2.*rho*d*(phi.cos()-c)).max(0.).sqrt());
+    (-gcs_core::roots::brent(&less,0.,a,1e-15,200,|_,_| false).value,a)
 }
 
 /// `∫ ρ f(ρ) dρ` across the ring `d − r ≤ ρ ≤ d + r`, read at `ρ = d + r sin θ`: the square-root
@@ -1601,22 +1609,23 @@ fn across_the_ring(d: f64,r: f64,f: &dyn Fn(f64) -> f64) -> f64 {
 /// Membership in the ball-end mill of `ball_end_mill_through_a_sector`, read directly: within its
 /// side's cylinder from its ball's centre to the side's top, or within its ball.
 fn in_the_mill(p: [f64;3]) -> bool {
-    let (d,r,h) = (10.,1.,3.);
+    let [d,r,h,..] = MILL;
     ((p[0]-d).hypot(p[1]) <= r && (0.0..=h).contains(&p[2])) || (p[0]-d).hypot(p[1]).hypot(p[2]) <= r
 }
 
 /// **The sweep's definition sampled**: whether the mill screwed back by some roll of `roll` (`t`
 /// radians about the axis, `k t` along it) holds `p`, the roll read at 6000 steps — the union over
 /// the roll, read directly, apart from `swept::member`. (The screw keeps a point's distance from its
-/// axis, so a point outside the ring the mill stands in is outside at every roll.)
-fn screwed_mill_holds(p: [f64;3],k: f64,roll: [f64;2]) -> bool {
-    if (p[0].hypot(p[1])-10.).abs() > 1. { return false }
-    let n = 6000;
-    (0..=n).any(|i| {
-        let t = roll[0]+(roll[1]-roll[0])*i as f64/n as f64;
-        let (s,c) = (-t).sin_cos();
-        in_the_mill([c*p[0]-s*p[1],s*p[0]+c*p[1],p[2]-k*t])
-    })
+/// axis, so a point outside the ring the mill stands in is outside at every roll; and the mill stands
+/// within `asin(r/d)` of its own angle, so only the steps that turn `p` within a little more of it
+/// are read.)
+fn screwed_mill_holds(p: [f64;3],roll: [f64;2]) -> bool {
+    let [d,r,_,k,_] = MILL;
+    if (p[0].hypot(p[1])-d).abs() > r { return false }
+    let (n,psi,reach) = (6000,p[1].atan2(p[0]),(r/d).asin()+0.01);
+    let at = |t: f64| (t-roll[0])/(roll[1]-roll[0])*n as f64;
+    let (lo,hi) = (at(psi-reach).ceil().max(0.) as usize,at(psi+reach).floor().min(n as f64).max(-1.));
+    (lo as f64 <= hi) && (lo..=hi as usize).any(|i| in_the_mill(screwed_back(p,1.,k,roll[0]+(roll[1]-roll[0])*i as f64/n as f64)))
 }
 
 /// A Monte Carlo of a sweep's volume: `n` points uniform in the box `lo`–`hi`, the share `holds`
@@ -1647,15 +1656,14 @@ fn monte_carlo(lo: [f64;3],hi: [f64;3],n: usize,seed: u32,holds: &dyn Fn([f64;3]
 fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right() {
     use gcs_core::brep::swept::closed::cut_from;
     use std::f64::consts::PI;
-    let (d,r,h,k) = (10.,1.,3.,0.5);
+    let [d,r,h,k,_] = MILL;
     let (sector,mill,path,roll) = ball_end_mill_through_a_sector();
-    // W's antiderivative's increments, Simpson's rule exact on each linear piece between its corners
+    // W's antiderivative's increments, the trapezoid rule exact on each linear piece between its corners
     let corners = [-2.-k*PI/6.,-2.+k*PI/6.,2.-k*PI/6.,2.+k*PI/6.];
     let w = |zeta: f64| ((PI/6.).min((2.-zeta)/k)-(-PI/6.).max((-2.-zeta)/k)).max(0.);
     let over = |a: f64,b: f64| -> f64 {
-        let mut cuts: Vec<f64> = std::iter::once(a).chain(corners.iter().copied().filter(|&c| c > a && c < b)).chain(std::iter::once(b)).collect();
-        cuts.dedup();
-        cuts.windows(2).map(|x| (x[1]-x[0])/6.*(w(x[0])+4.*w(0.5*(x[0]+x[1]))+w(x[1]))).sum()
+        let cuts: Vec<f64> = std::iter::once(a).chain(corners.iter().copied().filter(|&c| c > a && c < b)).chain(std::iter::once(b)).collect();
+        cuts.windows(2).map(|x| (x[1]-x[0])/2.*(w(x[0])+w(x[1]))).sum()
     };
     let removed = across_the_ring(d,r,&|rho| { let (m,a) = helix_reach(rho,d,r,k); over(-m,h+k*a) });
     let blank = volume(&sector);
@@ -1667,7 +1675,7 @@ fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right() {
     // the definition sampled: points of the sector's box within the sector, in the mill screwed back
     let in_sector = |p: [f64;3]| { let rho = p[0].hypot(p[1]); (8.0..=12.).contains(&rho) && p[1].atan2(p[0]).abs() <= PI/6. && p[2].abs() <= 2. };
     let (sampled,error) = monte_carlo([8.*(PI/6.).cos(),-6.,-2.],[12.,6.,2.],100_000,780,
-        &|p| in_sector(p) && screwed_mill_holds(p,k,roll));
+        &|p| in_sector(p) && screwed_mill_holds(p,roll));
     eprintln!("sampled: removes {sampled} ± {error}");
     assert!((sampled-removed).abs() <= 4.*error,"the definition sampled removes {sampled} ± {error} against {removed}");
     agrees_cut_over(&cut,&sector,&mill,&path,roll);
@@ -1687,7 +1695,7 @@ fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right() {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 seconds: the mill screwed built, judged and sampled")]
 fn the_ball_end_mill_screwed_closes_into_its_helical_sweep() {
     use std::f64::consts::PI;
-    let (d,r,h,k) = (10.,1.,3.,0.5);
+    let [d,r,h,k,_] = MILL;
     let (_,mill,path,roll) = ball_end_mill_through_a_sector();
     let theta = roll[1]-roll[0];
     let tube = theta*across_the_ring(d,r,&|rho| 2.*helix_reach(rho,d,r,k).0);
@@ -1696,7 +1704,7 @@ fn the_ball_end_mill_screwed_closes_into_its_helical_sweep() {
     let expected = theta*across_the_ring(d,r,&|rho| { let (m,a) = helix_reach(rho,d,r,k); h+k*a+m })+PI*r*r*h+2.*PI*r*r*r/3.;
     let built = closed(&mill,&path,roll,0.002,1e-6).unwrap();
     assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
-    let (sampled,error) = monte_carlo([5.8,-8.4,-1.4],[11.1,8.4,3.8],100_000,781,&|p| screwed_mill_holds(p,k,roll));
+    let (sampled,error) = monte_carlo([5.8,-8.4,-1.4],[11.1,8.4,3.8],100_000,781,&|p| screwed_mill_holds(p,roll));
     eprintln!("the mill screwed: {} built, {expected} apart from it, {sampled} ± {error} sampled",volume(&built));
     assert!((sampled-expected).abs() <= 4.*error,"the definition sampled {sampled} ± {error} against {expected}");
     agrees_over(&built,&mill,&path,roll);
@@ -1717,11 +1725,10 @@ fn the_ball_end_mill_screwed_closes_into_its_helical_sweep() {
 #[test]
 fn the_ball_end_mills_pipe_beside_its_side_is_arranged() {
     use gcs_core::brep::boolean::arrangement_within;
-    use gcs_core::brep::build::{disc,prism,screwed};
-    let (d,r,h,k,turn) = (10.,1.,3.,0.5,1.5);
+    use gcs_core::brep::build::{disc,prism};
+    let [d,r,h,k,turn] = MILL;
     let (sector,..) = ball_end_mill_through_a_sector();
-    let (s,c) = (-turn/2f64).sin_cos();
-    let pipe = screwed(&disc([d*c,d*s,-k*turn/2.],unit([-d*s,d*c,k]),r),[0.;3],[0.,0.,1.],turn,k*turn).unwrap();
+    let pipe = ball_pipe(-turn/2.);
     let (s,c) = (turn/2f64).sin_cos();
     let side_at_end = prism(&disc([d*c,d*s,k*turn/2.],[0.,0.,1.],r),0.,h).unwrap();
     assert_eq!(arrangement_within(&sector,&[&pipe,&side_at_end],1e-6).unwrap().cells().unwrap().len(),3);
@@ -1739,52 +1746,28 @@ fn the_ball_end_mills_pipe_beside_its_side_is_arranged() {
 /// leaves, and the sector's part neither holds. Apart from the kernel, in helical coordinates
 /// `(ρ, ψ, ζ = z − kψ)` the screw is a shift in `ψ`, so the pipe within the sector (which it passes
 /// wholly across) is the sector's angle times its meridian section's polar integral `∫∫ ρ dρ dz`,
-/// summed here on a fine grid of the section, each point in the pipe where its distance from the
-/// helix is under the radius.
+/// the heights within `M(ρ)` of the helix's at each radius (`helix_reach`), to rounding.
 #[test]
 fn the_ball_end_mill_screwed_through_a_sector_reduced_to_its_boolean_holds_every_cell() {
     use gcs_core::brep::boolean::selected;
-    use gcs_core::brep::build::{disc,prism,revolve,screwed,Profile,ProfileEdge};
-    use gcs_core::brep::geom::Frame;
+    use gcs_core::brep::build::{disc,prism};
     use std::f64::consts::PI;
-    let (d,r,turn,k) = (10.,1.,1.5,0.5);
-    // the pipe: the ball's great circle square to its centre's velocity, screwed from 0.75 rad
-    // before the sector to 0.75 after, the sector standing from −π/6 to π/6
-    let start: f64 = -0.75;
-    let (s,c) = start.sin_cos();
-    let centre = [d*c,d*s,k*start];
-    let velocity = unit([-d*s,d*c,k]);
-    let pipe = screwed(&disc(centre,velocity,r),[0.;3],[0.,0.,1.],turn,k*turn).unwrap();
+    let [d,r,_,k,turn] = MILL;
+    // the pipe, screwed from 0.75 rad before the sector to 0.75 after, the sector standing from −π/6
+    // to π/6
+    let pipe = ball_pipe(-turn/2.);
     let side = prism(&disc([0.,0.,-3.],[0.,0.,1.],d+r),0.,6.).unwrap();
-    let f = Frame::about([0.;3],[0.,0.,1.]);
-    let at = |x: f64,z: f64| f.at([x,0.,z]);
-    let rect = [at(8.,-2.),at(12.,-2.),at(12.,2.),at(8.,2.)];
-    let profile = Profile {origin:rect[0],normal:f.y,names:Vec::new(),loops:vec![(0..4).map(|j| ProfileEdge::Line {a:rect[j],b:rect[(j+1)%4]}).collect()]};
-    let sector = revolve(&profile,[0.;3],[0.,0.,1.],PI/3.).unwrap().moved(&gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],-PI/6.));
-    // the meridian section's polar integral: points (ρ, z) of the half-plane ψ = 0 within `r` of the
-    // helix (ψ, k ψ) at radius d, its nearest point found over ψ near 0
-    let near = |rho: f64,z: f64| -> f64 {
-        let dist = |psi: f64| { let (sn,cs) = psi.sin_cos(); (rho-d*cs).hypot(d*sn).hypot(z-k*psi) };
-        let (mut a,mut b) = (-0.3,0.3);
-        for _ in 0..80 { let (m1,m2) = (a+(b-a)*0.382,a+(b-a)*0.618); if dist(m1) < dist(m2) { b = m2 } else { a = m1 } }
-        dist(0.5*(a+b))
-    };
-    let n = 1200;
-    let mut moment = 0.;
-    for i in 0..n { for j in 0..n {
-        let (rho,z) = (d-1.2+2.4*(i as f64+0.5)/n as f64,-1.2+2.4*(j as f64+0.5)/n as f64);
-        if near(rho,z) < r { moment += rho }
-    } }
-    let moment = moment*(2.4/n as f64)*(2.4/n as f64);
-    let in_sector = PI/3.*moment;
+    let (sector,..) = ball_end_mill_through_a_sector();
+    // the meridian section's polar integral: across the ring, the heights within `M(ρ)` of the
+    // helix's (`helix_reach`)
+    let in_sector = PI/3.*across_the_ring(d,r,&|rho| 2.*helix_reach(rho,d,r,k).0);
     let sector_volume = PI/3.*(12.*12.-8.*8.)/2.*4.;
     let side_in_sector = PI/3.*((d+r)*(d+r)-64.)/2.*4.;
     let part = |keep: &dyn Fn(&[bool]) -> bool| volume(&selected(&[&pipe,&side,&sector],keep,1e-6).unwrap().brep);
     let pipe_part = part(&|m| m[0] && m[2]);
     let side_part = part(&|m| !m[0] && m[1] && m[2]);
     let rest = part(&|m| !m[0] && !m[1] && m[2]);
-    // the quadrature's own error, a grid of 1200 on the section, about 1e-5 of it
-    assert!((pipe_part-in_sector).abs() <= 1e-4*in_sector,"the pipe within the sector {pipe_part} against {in_sector}");
+    assert!((pipe_part-in_sector).abs() <= 1e-6*in_sector,"the pipe within the sector {pipe_part} against {in_sector}");
     assert!((side_part-(side_in_sector-pipe_part)).abs() <= 1e-6*side_in_sector,"the side's part {side_part} against {}",side_in_sector-pipe_part);
     assert!((rest-(sector_volume-side_in_sector)).abs() <= 1e-6*sector_volume,"the rest {rest} against {}",sector_volume-side_in_sector);
 }
@@ -1795,31 +1778,22 @@ fn the_ball_end_mill_screwed_through_a_sector_reduced_to_its_boolean_holds_every
 /// helix square to it. So a point's nearest point on the patch lies on the circle about one of its
 /// feet on the helix (isolated with a bound, one unknown) or on an end circle, read with no search.
 /// For points near the tube, inside it, on its spine's far side, beyond its ends and far off it,
-/// the point found is a foot — the gap square to the patch, or along it past an end — no farther
-/// than the nearest of a fine grid over the patch, and as near as the nearest of every foot on the
-/// spine (`Pipe::feet`, the whole roll isolated).
+/// the point found is a foot — the gap square to the patch, or along it past an end — and no farther
+/// than the nearest of a fine grid over the patch.
 #[test]
 fn a_balls_pipe_is_inverted_off_its_spine() {
-    use gcs_core::brep::build::{disc,screwed};
     use gcs_core::brep::geom::Surface;
-    use gcs_core::space::{dot,sub};
-    let (d,r,turn,k) = (10.,1.,1.5,0.5);
-    let n = unit([0.,d,k]);
-    let pipe = screwed(&disc([d,0.,0.],n,r),[0.;3],[0.,0.,1.],turn,k*turn).unwrap();
+    use gcs_core::space::{distance,dot,sub};
+    let [d,_,_,k,turn] = MILL;
+    let pipe = ball_pipe(0.);
     let face = pipe.faces.iter().find(|f| f.surface.kind() == "blend").expect("the pipe's side");
     let Surface::Blend(_,b) = &face.surface else { unreachable!() };
-    let pipe = b.pipe().expect("read as a pipe");
+    assert!(b.pipe().is_some(),"read as a pipe");
     let s = &face.surface;
     // the nearest of a grid over the patch (no point of it nearer than the patch's nearest)
-    let gridded = |p: [f64;3]| -> f64 {
-        let (m,l) = (96,48);
-        let mut best = f64::INFINITY;
-        for i in 0..m { for j in 0..=l {
-            let uv = [i as f64/m as f64,j as f64/l as f64];
-            best = best.min(gcs_core::space::distance(s.point(uv),p));
-        } }
-        best
-    };
+    let (m,l) = (96,48);
+    let grid: Vec<[f64;3]> = (0..m).flat_map(|i| (0..=l).map(move |j| [i as f64/m as f64,j as f64/l as f64])).map(|uv| s.point(uv)).collect();
+    let gridded = |p: [f64;3]| grid.iter().map(|&x| distance(x,p)).fold(f64::INFINITY,f64::min);
     let mut rng = gcs_core::rng::Rng::new(780);
     let mut points: Vec<[f64;3]> = Vec::new();
     // about the spine at random roll: near the tube, inside it, through its far side and off it
@@ -1836,12 +1810,9 @@ fn a_balls_pipe_is_inverted_off_its_spine() {
     for p in points {
         let uv = s.inverse(p);
         let (x,su,sv) = (s.point(uv),s.point([uv[0]+1e-7,uv[1]]),s.point([uv[0],(uv[1]+1e-7).min(1.)]));
-        let gap = gcs_core::space::distance(x,p);
-        let grid = gridded(p);
-        assert!(gap <= grid+1e-9,"{p:?}: found {gap} at {uv:?} against the grid's {grid}");
-        // as near as the nearest of every foot on the spine, isolated over the whole roll
-        let every = pipe.feet(p).unwrap().into_iter().map(|v| pipe.off(p,v)).fold(f64::INFINITY,f64::min);
-        assert!((gap-every).abs() <= 1e-12*(1.+gap),"{p:?}: found {gap} against every foot's nearest {every}");
+        let gap = distance(x,p);
+        let nearest = gridded(p);
+        assert!(gap <= nearest+1e-9,"{p:?}: found {gap} at {uv:?} against the grid's {nearest}");
         // a foot: the gap square to the patch across `u`, and along `v` too within the patch's roll
         let e = sub(p,x);
         let (du,dv) = (sub(su,x),sub(sv,x));
@@ -1850,6 +1821,3 @@ fn a_balls_pipe_is_inverted_off_its_spine() {
         if uv[1] > 1e-9 && uv[1] < 1.-1e-9 { assert!(gap < 1e-9 || off(dv) <= 1e-5,"{p:?}: square along v {}",off(dv)) }
     }
 }
-
-
-

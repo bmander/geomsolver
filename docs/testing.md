@@ -334,8 +334,9 @@ until those points are read alike whatever the rounding (#780 R4's neighbourhood
   (slow tier): the build and its Monte Carlo of 100,000 points.
 - `swept_closed::the_ball_end_mill_screwed_closes_into_its_helical_sweep`, about 22 s (slow tier).
 - `swept_closed::the_ball_end_mill_screwed_through_a_sector_reduced_to_its_boolean_holds_every_cell`,
-  15.4 s before and 15.7 s after (the pipe's inverse isolating its feet where a warm start reached
-  one).
+  15.4 s before and 4.4 s after: its section's polar integral read across the ring to rounding
+  (`helix_reach`, held to 1e-6 where the grid of 1,440,000 points held 1e-4), and the pipe's inverse
+  reading each point of the spine once per stretch.
 
 Drawn at 3 mm a turn (a lead other than the gate's) the mill is not yet built: reduced, the pipe
 beside the cylinder its side screws into, within the sector; the pipe's meeting with that

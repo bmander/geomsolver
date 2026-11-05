@@ -80,7 +80,6 @@
 9.557	brep_export::a_sheet_ending_in_the_blank_is_carried_out_of_it
 9.548	flat_faces::a_bull_nose_mill_slid_to_a_stop_inside_the_block
 9.474	fillet_definition::runs_that_end_on_a_face_stop_there
-9.251	swept_closed::the_ball_end_mill_screwed_through_a_sector_reduced_to_its_boolean_holds_every_cell
 9.184	closed_class::a_leaning_bar_turned_wholly_through_a_ring_sector_bores_its_shadow
 9.001	engine::each_part_previews_as_the_assembly_builds_it
 8.824	envelope::paired::caps::end_circles_match_independent_cone_sphere_sections_for_every_pair_configuration
@@ -150,6 +149,7 @@
 4.574	solid_claim::a_claim_over_a_declared_parameter_reads_the_drawing_where_it_stands
 4.570	region_faces::a_run_along_one_edge
 4.554	delaunay::cospherical_and_coplanar_points_triangulate
+4.440	swept_closed::the_ball_end_mill_screwed_through_a_sector_reduced_to_its_boolean_holds_every_cell
 4.320	measured::a_volume_sizes_a_turned_shafts_radius
 4.280	rate_examples::the_housing_is_the_trochoids_parallel_curve
 4.200	hub_motor::each_part_previews_as_the_assembly_builds_it
@@ -1039,7 +1039,6 @@
 0.040	faces_along::a_when_over_faces_met_and_faces_along_is_decided_where_the_drawing_solves
 0.040	functional_solids::front::cases::generic_front_local_probe_recovers_a_curved_boolean_crease
 0.040	slide::dragging_an_end_slides_the_corner_along_the_rail
-0.040	swept_closed::a_balls_pipe_is_inverted_off_its_spine
 0.039	brep::a_box_top_chamfered_unequally_is_ten_planes
 0.039	contact_trace::a_refined_sheet_reads_its_new_nodes_where_the_coarse_one_withheld_them
 0.039	decompose::the_plan_and_the_numeric_path_agree
@@ -1447,6 +1446,7 @@
 0.011	timeline::a_drawing_standing_at_an_instant_writes_no_seeds
 0.011	timeline::a_point_dragged_along_its_track_finds_its_instant
 0.011	witness::witness_of_well_constrained_is_current_and_full_rank
+0.010	swept_closed::a_balls_pipe_is_inverted_off_its_spine
 0.010	axis_sense::an_axis_runs_the_way_its_parallel_says_from_any_seed
 0.010	brep::a_trace_off_a_sheets_patch_ends_at_its_edge
 0.010	brep::an_extruded_spline_meets_surfaces_along_it_in_closed_form

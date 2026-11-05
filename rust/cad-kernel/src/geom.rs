@@ -310,47 +310,54 @@ impl LevelCircle {
 }
 
 /// A ball's pipe (`Blend::pipe`): the screw that carries it, the circle square to its centre's
-/// helix where the patch starts — its frame, `z` along the helix — and its radius; and the helix's
-/// speed `s₁ = |H'|`, the size of its second derivative `s₂ = a² ρ` and of its third `s₃ = |a|³ ρ`
-/// (`a` the screw's turn over the patch, `ρ` the helix's distance from the axis).
+/// helix where the patch starts — its frame, `z` along the helix — and its radius.
 #[derive(Clone,Copy,Debug)]
-pub struct Pipe { pub carry: Carry,pub frame: Frame,pub r: f64,speeds: [f64;3] }
+pub struct Pipe { pub carry: Carry,pub frame: Frame,pub r: f64 }
 
 impl Pipe {
     /// The circle's centre carried to `v`: the spine, the helix the pipe stands about.
     pub fn spine(&self,v: f64) -> V { self.carry.at(self.frame.o,v) }
-    /// `p` screwed back from `v` to the start's circle: the turn and the step along the axis are
-    /// undone together (they commute).
-    pub fn back(&self,p: V,v: f64) -> V {
-        let Carry::Screw {center,axis,angle,advance} = self.carry else { return p };
-        Carry::Screw {center,axis,angle:-angle*v,advance:-advance*v}.at(p,1.)
-    }
-    /// How far `p` stands from the circle at `v`: screwed back to the start's, its height off the
-    /// circle's plane and its reach in it against the radius.
-    pub fn off(&self,p: V,v: f64) -> f64 {
-        let d = sub(self.back(p,v),self.frame.o);
+    /// `p` screwed back from `v` to the start's circle.
+    pub fn back(&self,p: V,v: f64) -> V { self.carry.at(p,-v) }
+    /// How far a point stands from the start's circle, `d` its offset from the circle's centre: its
+    /// height off the circle's plane and its reach in it against the radius.
+    fn off_back(&self,d: V) -> f64 {
         let h = dot(d,self.frame.z);
         let rho = (dot(d,d)-h*h).max(0.).sqrt();
         (rho-self.r).dhypot(h)
     }
-    /// `g(v) = (H(v) − p)·H'(v)`, nought where `p − H(v)` stands square to the helix.
-    fn g(&self,p: V,v: f64) -> f64 { let h = self.spine(v); dot(sub(h,p),self.carry.rate(h)) }
-    /// `g'(v) = s₁² + (H − p)·H''`, `H'' = a k × H'` (`H'·H''` is nought: the helix keeps its speed).
-    fn dg(&self,p: V,v: f64) -> f64 {
-        let Carry::Screw {axis,angle,..} = self.carry else { return f64::NAN };
-        let h = self.spine(v);
-        self.speeds[0]*self.speeds[0]+dot(sub(h,p),scale(cross(axis,self.carry.rate(h)),angle))
-    }
-    /// **Every foot of `p` on the spine over `[0, 1]`**, and its two ends: the roots of `g`
-    /// isolated with a bound (`util::isolate`), `|g'| ≤ s₁² + q s₂` and `|g''| = |(H − p)·H'''| ≤ q
-    /// s₃` over a stretch where `|H − p|` reaches `q` at most. Each stretch read is the inverse
-    /// stage's work (`util::meter`). `None` where the search gave up or the build stopped.
+    /// **Every foot of `p` on the spine over `[0, 1]`**, and its two ends: the roots of `g(v) =
+    /// (H(v) − p)·H'(v)`, nought where `p − H(v)` stands square to the helix, isolated with a bound
+    /// (`util::isolate`). A helix keeps its speed `s₁ = |H'|`, so `g' = s₁² + (H − p)·H''` with `H''
+    /// = a k × H'` of size `s₂ = a² ρ`, and `g'' = (H − p)·H'''` of size `s₃ = |a|³ ρ` (`a` the
+    /// screw's turn over the patch, `ρ` the helix's distance from the axis), each bounded over a
+    /// stretch where `|H − p|` reaches `q` at most. Each stretch read is the inverse stage's work
+    /// (`util::meter`). `None` where the search gave up or the build stopped.
     pub fn feet(&self,p: V) -> Option<Vec<f64>> {
-        let [s1,s2,s3] = self.speeds;
-        let reach = |v: f64| crate::util::space::distance(self.spine(v),p);
+        let Carry::Screw {center,axis,angle,..} = self.carry else { return None };
+        let k = crate::util::space::normalised(axis)?;
+        let o = sub(self.frame.o,center);
+        let rho = norm(sub(o,scale(k,dot(o,k))));
+        let a = angle.abs();
+        let (s1,s2,s3) = (norm(self.carry.rate(self.frame.o)),a*a*rho,a*a*a*rho);
+        // the spine and its velocity at `v`, the last few held: the search reads a stretch's ends by
+        // its bound and again by its tests, and its children's ends are its own points
+        let held = std::cell::RefCell::new(([(f64::NAN,[0.;3],[0.;3]);8],0usize));
+        let jet = |v: f64| -> (V,V) {
+            let mut held = held.borrow_mut();
+            if let Some(&(_,x,dx)) = held.0.iter().find(|e| e.0.to_bits() == v.to_bits()) { return (x,dx) }
+            let x = self.spine(v);
+            let dx = self.carry.rate(x);
+            let next = held.1;
+            held.0[next] = (v,x,dx);
+            held.1 = (next+1)%held.0.len();
+            (x,dx)
+        };
+        let g = |v: f64| { let (x,dx) = jet(v); dot(sub(x,p),dx) };
+        let dg = |v: f64| { let (x,dx) = jet(v); s1*s1+dot(sub(x,p),scale(cross(axis,dx),angle)) };
+        let reach = |v: f64| crate::util::space::distance(jet(v).0,p);
         let bound = |x0: f64,x1: f64| { let q = reach(x0).max(reach(x1))+s1*(x1-x0); [s1*s1+q*s2,q*s3] };
-        let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&|v| self.g(p,v),&|v| self.dg(p,v),
-            &bound,[0.,1.],1e-12,&|_| true).ok()?;
+        let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&g,&dg,&bound,[0.,1.],1e-12,&|_| true).ok()?;
         Some([0.,1.].into_iter().chain(roots.into_iter().map(|x| x.at)).collect())
     }
 }
@@ -387,7 +394,7 @@ impl Blend {
         // a ball's pipe is read off its spine, exactly: no warm start, which may settle on a foot
         // on the far side of the tube or on the next turn of the coil, no search, and no polish
         // (Gauss–Newton from a far point's foot on an end circle, `v` held, swings `u` round it)
-        if let Some(uv) = self.pipe().and_then(|c| self.pipe_uv(&c,p)) { return uv }
+        if let Some(uv) = self.pipe_uv(p) { return uv }
         let near = 1e-3*(1.+dot(p,p).sqrt());
         let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
             .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= near);
@@ -439,10 +446,14 @@ impl Blend {
         let c = self.level_circle()?;
         let v = c.v_at(p);
         if !(0.0..=1.0).contains(&v) { return None }
-        let d = sub(c.back(p,v),c.frame.o);
-        let th = dot(d,c.frame.y).datan2(dot(d,c.frame.x));
-        let span = self.ta[1]-self.ta[0];
-        Some([((th-self.ta[0]).rem_euclid(std::f64::consts::TAU)/span).rem_euclid(1.),v])
+        Some([self.u_round(&c.frame,sub(c.back(p,v),c.frame.o)),v])
+    }
+    /// The `u` of the point of a circle this patch screws that faces `d` (an offset from its centre,
+    /// screwed back to the start's circle, whose frame is `f`) about it: its angle in the circle's
+    /// plane, as a fraction of the edge's run.
+    fn u_round(&self,f: &Frame,d: V) -> f64 {
+        let th = dot(d,f.y).datan2(dot(d,f.x));
+        ((th-self.ta[0]).rem_euclid(std::f64::consts::TAU)/(self.ta[1]-self.ta[0])).rem_euclid(1.)
     }
     /// **The level circle this patch screws, where it is one** (`build::screwed` of a disc: a
     /// circle square to the screw's axis and its own image carried, `S(u, v) = carry_v(c + r (cos θ
@@ -475,25 +486,18 @@ impl Blend {
         let size = 1.+norm(f.o);
         if !(same(g.o,f.o,size) && same(g.x,f.x,1.) && same(g.y,f.y,1.) && (s-r).abs() <= 1e-9*size && self.ta == self.tb) { return None }
         let along = crate::util::space::normalised(self.carry.rate(f.o))?;
-        if norm(cross(f.z,along)) > 1e-9 { return None }
-        let Carry::Screw {center,axis,..} = self.carry else { return None };
-        let k = crate::util::space::normalised(axis)?;
-        let o = sub(f.o,center);
-        let rho = norm(sub(o,scale(k,dot(o,k))));
-        let a = angle.abs();
-        Some(Pipe {carry:self.carry,frame:*f,r:r.abs(),speeds:[norm(self.carry.rate(f.o)),a*a*rho,a*a*a*rho]})
+        (norm(cross(f.z,along)) <= 1e-9).then_some(Pipe {carry:self.carry,frame:*f,r:r.abs()})
     }
     /// **The parameters of a pipe's point nearest `p`, read off its spine** (#780 C1): the tube's
     /// normals all pass through the spine square to it, so each foot of `p` on the patch lies on
     /// the circle about a foot of `p` on the helix, or on an end circle (`Pipe::feet`); the circle's
     /// `v`, and its `u` the angle of `p` screwed back to the start's circle, in its plane. The
-    /// nearest of them. `None` where the spine's search gave up.
-    fn pipe_uv(&self,pipe: &Pipe,p: V) -> Option<Uv> {
-        let v = pipe.feet(p)?.into_iter().map(|v| (pipe.off(p,v),v)).min_by(|x,y| x.0.total_cmp(&y.0))?.1;
-        let d = sub(pipe.back(p,v),pipe.frame.o);
-        let th = dot(d,pipe.frame.y).datan2(dot(d,pipe.frame.x));
-        let span = self.ta[1]-self.ta[0];
-        Some([((th-self.ta[0]).rem_euclid(std::f64::consts::TAU)/span).rem_euclid(1.),v])
+    /// nearest of them. `None` for any other patch, or where the spine's search gave up.
+    fn pipe_uv(&self,p: V) -> Option<Uv> {
+        let pipe = self.pipe()?;
+        let (_,v,d) = pipe.feet(p)?.into_iter().map(|v| { let d = sub(pipe.back(p,v),pipe.frame.o); (pipe.off_back(d),v,d) })
+            .min_by(|x,y| x.0.total_cmp(&y.0))?;
+        Some([self.u_round(&pipe.frame,d),v])
     }
     /// `inverse` from the nearest of the grid and the turned points.
     fn searched(&self,p: V) -> Uv {
