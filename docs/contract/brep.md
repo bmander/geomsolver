@@ -407,7 +407,10 @@ pieces are ordered by their curvature where they leave a point tangent** (`boole
 each half's way out of a node is read a ten-thousandth along its own length, and where two of the
 ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its
 chord) they are read again at one length along each — a ten-thousandth of the shortest of those
-tied, from two readings and the distances they stand at — so two arcs touching there part by their
+tied, each half's chord to its point that far from the node, the part of its way there found by
+halving (a curve's parameter runs at no one speed: a trace's counts its points, which crowd where it
+sets out, and two probes of its parameter there, extrapolated to that length, once read a way 80
+radians off, #791) — so two arcs touching there part by their
 curvature, where an arc of five times another's radius and length read alike to rounding (a drum at
 its end pose and the cylinders its generators turn into, in a plane square to the turn); and a
 fitted round's own small lean off tangent, read at the scale the face is drawn at, does not rule
@@ -441,7 +444,19 @@ screwed back the point's distance from the circle's centre is `|A(t)|`; `G = |A|
 roots isolated by bounds on `G'` and `G''` over each stretch, so a ramp thinner than any sampled
 step has both crossings found — a ray's parity, a solid's point location, by it
 (`swept_closed::a_line_meets_a_screwed_rims_sheet_exactly`: a sampled search was wrong at seven of
-400 points about a ramp half a millimetre a turn). The sheet's inverse starts level with the point
+400 points about a ramp half a millimetre a turn). **A line along the screw's axis meets any circle's
+sheet exactly** (`query::line_along_screw`, #791): the screw keeps a point's distance from the
+axis, so the line meets the sheet only along the helices `ssi::screwed_circle_round` reads on its
+cylinder, each where it has turned round to the line's angle; a touch helix read once and placed
+where the circle's distance from the axis turns, the line tangent there (the seam of the cylinder a
+ball's pipe touches along that helix) meets the sheet at the helix's own point whatever the
+rounding, where searched it was found at one lead and missed at another and the helix crossed the
+seam uncut (`swept_closed::the_drawn_ball_end_mills_pipe_beside_its_screwed_side_is_arranged_at_every_lead`).
+**A circle's sheet meets a plane square to the axis in closed form** (`ssi::screwed_circle_level`),
+each run of the circle's points reaching the plane ended where its `v` reaches the sheet's edge,
+not the tolerance past it: the meeting's end is the vertex where the edge's circle crosses the
+plane, on both (#791: set out a millionth past it, the meeting stood that far off the vertex where
+it, the foot's rim and a touch helix touch). The sheet's inverse starts level with the point
 (`Blend::level_circle`, `LevelCircle`) and not from the last foot found: a ramp thinner than that
 start's reach holds its other side within it.
 **Two tori touching round a meridian meet in closed form** (`ssi`'s `tori_touching`: their axes

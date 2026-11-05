@@ -391,8 +391,13 @@ fn certified(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certi
         // to it (`swept_closed::every_surface_the_closed_class_emits_locates_points_exactly`); any
         // other sheet by the search
         // (a level circle's search past its most boxes is read by the general one)
+        // and a line along a screw's axis against the sheet a circle screws into, along the helices
+        // the sheet meets that line's cylinder along (`line_along_screw`)
         (&Curve::Line {p,d},Surface::Blend(_,b)) => match b.level_circle().map(|c| line_screwed_circle(p,d,[t0,t1],&c,tol)) {
-            None | Some(Err(Uncertified::NoForm)) => curve_sheet(curve,[t0,t1],surface,tol),
+            None | Some(Err(Uncertified::NoForm)) => match line_along_screw(p,d,[t0,t1],b,tol) {
+                Err(Uncertified::NoForm) => curve_sheet(curve,[t0,t1],surface,tol),
+                read => read,
+            },
             Some(read) => read,
         },
         (Curve::Circle(f,big),Surface::Blend(_,b)) => circle_round_screwed(f,big.abs(),b,[t0,t1],tol),
@@ -842,6 +847,54 @@ fn circle_round_screwed(f: &super::geom::Frame,big: f64,b: &std::sync::Arc<super
         let n = crate::util::space::normalised(cross(su,sv)).unwrap_or([0.;3]);
         let radial = crate::util::space::normalised(perp(sub(p,center))).unwrap_or([0.;3]);
         roots.push((t.clamp(t0,t1),norm(cross(n,radial)) <= 1e-6));
+    }
+    Ok(Meets::At(roots))
+}
+
+/// **A line along a screw's axis against the sheet a circle screws into** (#791), in closed form:
+/// the screw keeps a point's distance from its axis, so the line meets the sheet only on the
+/// cylinder about the axis through it, along the helices `ssi::screwed_circle_round` reads there
+/// (the circle's points at the line's radius, carried), and each helix crosses the line where it
+/// has turned round to the line's angle, once a turn: `v = (2πn − φ)/θ`, `φ` its start's angle from
+/// the line's and `θ` the screw's turn. A touch helix is read once and placed where the circle's
+/// distance from the axis turns, so a line tangent to the sheet there — the seam of the cylinder a
+/// ball's pipe touches along that helix — meets it at the helix's own point whatever the rounding,
+/// the vertex the cylinder's meeting with the sheet passes through. Searched (`curve_sheet`), that
+/// double root was found at one lead and missed at another, and the helix, crossing the seam
+/// uncut, split nothing (the ball-end mill at 4 mm a turn,
+/// `swept_closed::the_drawn_ball_end_mills_pipe_beside_its_screwed_side_is_arranged_at_every_lead`).
+/// A touch where the sheet's normal there is the cylinder's. `NoForm` for any other line or sheet.
+fn line_along_screw(p: V,d: V,[t0,t1]: [f64;2],b: &std::sync::Arc<super::geom::Blend>,tol: f64) -> Certified {
+    use crate::util::space::{cross,normalised,sub};
+    let super::geom::Carry::Screw {center,axis,angle,..} = b.carry else { return Err(Uncertified::NoForm) };
+    let k = normalised(axis).ok_or(Uncertified::NoForm)?;
+    let dd = norm(d);
+    if !(dd > 0.) || norm(cross(d,k)) > 1e-12*dd || angle == 0. { return Err(Uncertified::NoForm) }
+    let perp = |x: V| sub(x,scale(k,dot(x,k)));
+    let off = perp(sub(p,center));
+    let big = norm(off);
+    if big <= tol { return Err(Uncertified::NoForm) }
+    let helices = super::ssi::screwed_circle_round(b,&super::geom::Frame::about(center,k),big,tol).ok_or(Uncertified::NoForm)?;
+    let (e1,e2) = (scale(off,1./big),cross(k,scale(off,1./big)));
+    // the turns `θ v` over the sheet, the tolerance's worth past each end
+    let slack = tol/(angle.abs()*big);
+    let (lo,hi) = { let (a,z) = (angle*-slack,angle*(1.+slack)); (a.min(z),a.max(z)) };
+    let tau = std::f64::consts::TAU;
+    let mut roots = Vec::new();
+    for c in &helices {
+        let Curve::Iso(_,u) = *c else { continue };
+        let s = perp(sub(b.d1([u,0.]).0,center));
+        let phi = dot(s,e2).datan2(dot(s,e1));
+        for n in ((lo+phi)/tau).ceil() as i64..=((hi+phi)/tau).floor() as i64 {
+            let v = (tau*n as f64-phi)/angle;
+            let (q,su,sv) = b.d1([u,v.clamp(0.,1.)]);
+            let t = dot(sub(q,p),d)/(dd*dd);
+            if t < t0-tol/dd || t > t1+tol/dd { continue }
+            // on a helix the sheet touches the cylinder along, its normal is the cylinder's own
+            let normal = normalised(cross(su,sv)).unwrap_or([0.;3]);
+            let radial = normalised(perp(sub(q,center))).unwrap_or([0.;3]);
+            roots.push((t,norm(cross(normal,radial)) <= 1e-6));
+        }
     }
     Ok(Meets::At(roots))
 }

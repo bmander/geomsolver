@@ -544,10 +544,16 @@ field; or balls, alone or beside such a side (a ball-end mill), each touching ro
 circle square to its centre's velocity, screwed into the pipe about the centre's helix,
 `Cutter::Pipe`: `swept_closed::a_ball_screwed_closes_into_the_pipe_about_its_centres_helix`,
 Weyl's tube to 1e-9; `the_ball_end_mill_screwed_closes_into_its_helical_sweep`, its helical volume
-to 1e-6, Weyl's tube and a Monte Carlo of the definition, slow tier; not yet drawn: at 3 mm a turn
-the pipe's meeting with the plane of the side's screwed foot sets out a millionth past the pipe's
-start, where it, the foot's rim and the touch helix touch at one point, and the foot's pieces do
-not close (#780 C1's open part). The pipe is inverted
+to 1e-6, Weyl's tube and a Monte Carlo of the definition, slow tier; drawn, `solid_sweeps/ball_end_mill.sv`,
+3 mm a turn, to `π/3 (40 + ∫ ρ M dρ)` within 1e-8, its STL agreeing with the field and the page's
+stepped build held to the export, and at 2 and 4 mm a turn too
+(`solid_sweeps_examples::the_ball_end_mill_screwed_mills_its_helical_groove`,
+`…_at_other_leads_mills_its_groove`, slow tier; #791). There the pipe's meeting with the plane of
+the side's screwed foot, the foot's rim and the touch helix touch at one point at the pipe's start,
+and the cylinder's seam touches the pipe on that helix: read alike whatever the rounding — the
+meeting ended at the vertex, the node's tangent ways read at a length along each, the seam met in
+closed form — and held reduced at three leads, each cell to its closed form
+(`swept_closed::the_drawn_ball_end_mills_pipe_beside_its_screwed_side_is_arranged_at_every_lead`). The pipe is inverted
 off its spine, #780 C1: each foot of a point on the patch lies on the circle about a foot of it on
 the centre's helix or on an end circle, those feet isolated with a bound and the nearest taken,
 `geom::Blend::pipe`, `Pipe::feet`, no warm start and no search;

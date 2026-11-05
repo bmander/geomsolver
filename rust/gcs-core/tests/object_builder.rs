@@ -168,13 +168,13 @@ fn every_static_object_builds_as_the_export_builds_it() {
 /// The documents whose swept objects a test of their own holds — below (`corpus(&[…], true)`), or
 /// an example's that builds it once for its volume and this (`builds_as_exported`): they hold the
 /// kinds of those objects for `the_corpus_holds_every_kind_the_library_builds`.
-const NAMED: [&str; 21] = ["solid_sweeps/vthread.sv","solid_sweeps/bar_end.sv",
+const NAMED: [&str; 22] = ["solid_sweeps/vthread.sv","solid_sweeps/bar_end.sv",
     "solid_sweeps/next_tooth.sv","solid_sweeps/parted.sv","solid_sweeps/whole_turn.sv",
     "solid_sweeps/square_thread.sv","solid_sweeps/rocked.sv","solid_sweeps/flat_end.sv",
     "solid_sweeps/creased.sv","solid_sweeps/facing.sv","solid_sweeps/slot.sv","solid_sweeps/vgroove.sv",
     "solid_sweeps/punch.sv","solid_sweeps/drill.sv","solid_sweeps/spoke.sv","solid_sweeps/plunge.sv",
     "solid_sweeps/stopped_turn.sv","solid_sweeps/stopped_punch.sv","solid_sweeps/stopped_drum.sv",
-    "solid_sweeps/helical_groove.sv","solid_sweeps/stopped_bullnose.sv"];
+    "solid_sweeps/helical_groove.sv","solid_sweeps/stopped_bullnose.sv","solid_sweeps/ball_end_mill.sv"];
 
 /// Where each of `NAMED` is held, its sweep built by the stepped builder as the export builds it:
 /// this file, or an example's own test that builds it once for both (`builds_as_exported`).

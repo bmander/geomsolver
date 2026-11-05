@@ -2380,18 +2380,23 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
         pts.windows(2).map(|w| distance(w[0],w[1])).sum::<f64>().max(1e-300)
     };
     // a half's way leaving its start (or arriving back at its end) read at the length `delta` along
-    // it, from its ways at a ten-thousandth and two of its length
+    // it: its chord to the point that far from the node, the part of its way there found by halving.
+    // A curve's parameter runs at no one speed, so no part of it stands for a length: a trace's
+    // counts its points, which crowd where it sets out, and two probes a ten-thousandth and two of
+    // its parameter along it stood within a millionth of the node, where their ways, extrapolated to
+    // `delta`, read 80 radians (#791: the ball-end mill's pipe meeting its side's foot plane at the
+    // touch helix, tangent there to the foot's rim)
     let way_at = |g: usize,at_start: bool,delta: f64| -> f64 {
-        // the probes' distances from the node, as they stand (a curve's parameter runs at no one
-        // speed)
         let h = &halves[g];
-        let reach = |s: f64| { let e = &out[h.edge as usize]; distance(e.point(param(h,out,if at_start { 0. } else { 1. }),pool),
-            e.point(param(h,out,if at_start { s } else { 1.-s }),pool)) };
-        let (d1,d2) = (reach(1e-4),reach(2e-4));
-        let t1 = if at_start { leave[g] } else { arrive_back[g] };
-        let mut t2 = dir_at(&halves[g],at_start,2e-4);
-        while t2-t1 > 0.5*TAU { t2 -= TAU } while t1-t2 > 0.5*TAU { t2 += TAU }
-        t1+(t2-t1)/(d2-d1)*(delta-d1)
+        let e = &out[h.edge as usize];
+        let node = e.point(param(h,out,if at_start { 0. } else { 1. }),pool);
+        let reach = |s: f64| distance(node,e.point(param(h,out,if at_start { s } else { 1.-s }),pool));
+        // bracket the part: halved until short of `delta`, doubled until past it
+        let (mut lo,mut hi) = (0.,1e-4);
+        while hi > 1e-300 && reach(hi) > delta { hi *= 0.5 }
+        while hi < 1. && reach(hi) < delta { lo = hi; hi = (2.*hi).min(1.) }
+        for _ in 0..60 { let m = 0.5*(lo+hi); if reach(m) < delta { lo = m } else { hi = m } }
+        dir_at(h,at_start,hi)
     };
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new();nodes.len()];
     for (i,&(s,_)) in ends.iter().enumerate() { outgoing[s].push(i); }

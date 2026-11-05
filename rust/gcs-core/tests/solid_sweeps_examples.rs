@@ -503,6 +503,59 @@ fn the_bull_nose_turned_partway_stops_inside_the_ring() {
     crate::object_builder::builds_as_exported("stopped_bullnose.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
 }
 
+/// `ball_end_mill.sv` stated `lead` a turn: its document with the named number replaced, as
+/// `examples::document`'s `with_params` gives a named number the caller's value.
+fn ball_end_mill(lead: f64) -> Elaborated {
+    let text = text("ball_end_mill.sv");
+    assert!(text.contains("lead := 3mm "));
+    fixtures::read(&text.replace("lead := 3mm ",&format!("lead := {lead}mm ")))
+}
+
+/// What `ball_end_mill.sv` stated `lead` a turn leaves of its ring sector (`π/3 · 160`): in helical
+/// coordinates `(ρ, ψ, ζ = z − kψ)`, `k` the lead over `2π`, a point of the sector is removed where
+/// the helix through it meets the mill, which the swing carries wholly across the sector: `ζ`
+/// within `[−M(ρ), 3 + k a]` (the ball's reach below, `swept_closed::helix_reach`, and the side's
+/// above), which within the sector's heights is every point from `kψ − M` up to its top. So each
+/// circle from 9 to 11 loses `2 + M` over the sector's angle (`kψ` averaging out across it), the
+/// ring `π/3 (40 + ∫ ρ M dρ)`.
+fn ball_end_mill_leaves(lead: f64) -> f64 {
+    let k = lead/TAU;
+    PI/3.*160.-PI/3.*(40.+crate::swept_closed::across_the_ring(10.,1.,&|rho| crate::swept_closed::helix_reach(rho,10.,1.,k).0))
+}
+
+/// `ball_end_mill.sv` (the closed class, a ball under a screw, #780 C1, #791): a ball-end mill,
+/// its ball of radius 1 about a point 10 out under a side 3 tall, screwed 3 mm a turn from 60°
+/// short of the sector's middle to 60° past it, wholly across. Its ball sweeps the pipe about its
+/// centre's helix, which touches the cylinder its side screws into along the helix of the ball's
+/// outer equator: at the pipe's start that helix, the cylinder's foot's rim and the pipe's meeting
+/// with the foot's plane touch at one point, where the foot's pieces once did not close (the
+/// meeting read leaving it 80 radians off, by probes of its parameter crowded at its start). The
+/// ring loses `π/3 (40 + ∫ ρ M dρ)` (`ball_end_mill_leaves`), to 1e-8. Built once, within
+/// 0.01 mm: its STL agrees with the field, and the page's stepped builder is held to the same build.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: a ball-end mill screwed on one arrangement")]
+fn the_ball_end_mill_screwed_mills_its_helical_groove() {
+    let e = example("ball_end_mill.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a screw");
+    let exact = exported_within(&e,"block",Some(Tolerance::new(0.01).unwrap()));
+    near(gcs_core::brep::props::volume(&exact.solid),ball_end_mill_leaves(3.),1e-8);
+    crate::object_builder::builds_as_exported("ball_end_mill.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
+}
+
+/// **`ball_end_mill.sv` at other leads** (#791): the point where the pipe's meeting with the foot's
+/// plane, the foot's rim and the touch helix touch is there at every lead, so the build is held at
+/// 2 and 4 mm a turn as well as the document's 3 — a fix that only moved one lead's rounding off
+/// the edge would not hold the others. Each to `π/3 (40 + ∫ ρ M dρ)`, to 1e-8.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: the ball-end mill at two more leads")]
+fn the_ball_end_mill_screwed_at_other_leads_mills_its_groove() {
+    for lead in [2.,4.] {
+        let e = ball_end_mill(lead);
+        near(exported(&e,"block"),ball_end_mill_leaves(lead),1e-8);
+    }
+}
+
 /// `stopped_turn.sv` (the closed class, X1): an upright bar turned from −140° to 30°, halfway into
 /// the sector. The constant-twist class refuses it (it ends in the blank); the closed class cuts it
 /// from the ring on one arrangement, its end pose's faces among the candidates. The ring loses each
