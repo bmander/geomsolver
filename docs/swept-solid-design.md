@@ -464,10 +464,19 @@ recorded above with what was tried:
   whole curve from points crowded where its trace set out, and the circle's tangency to the side's
   cylinder read as four helices. Through the sector it removes its helical-coordinate volume to
   1e-11, in ten seconds; the mill screwed alone, its own to rounding
-  (`swept_closed::the_ball_end_mill_screwed_closes_into_its_helical_sweep`). Drawn at 3 mm a turn
-  it is not yet built: the pipe's meeting with the plane of the side's screwed foot sets out a
-  millionth past the pipe's start, where it, the foot's rim and the touch helix all touch, and the
-  foot's pieces do not close. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
+  (`swept_closed::the_ball_end_mill_screwed_closes_into_its_helical_sweep`). *Drawn since #791*
+  (`solid_sweeps/ball_end_mill.sv`, 3 mm a turn, and at 2 and 4): where the pipe's meeting with the
+  plane of the side's screwed foot, the foot's rim and the touch helix all touch, at the pipe's
+  start, the foot's pieces did not close. The meeting set out a tolerance past the pipe's start and
+  is now ended at the vertex, but that was not the defect: tangent there to the rim, it was read
+  leaving the node 80 radians off, its way extrapolated from two probes of its parameter, which
+  counts its points and so stood within a millionth of the node where they crowd; each tied way is
+  now read at a length along its half. At 4 mm a turn a second rounding-sensitive point showed: the
+  seam of the cylinder the side screws into touches the pipe on that helix, a double root the search
+  found at one lead and missed at another, and the helix, crossing the seam uncut, split nothing, so
+  the cusp-thin corner below it merged with the cell above and was cut away (refused by the judge,
+  not returned wrong); a line along the screw's axis now meets the sheet along the same helices the
+  cylinder's meeting reads, in closed form. *Built, a torus about an axis along a turn's* (a bull-nose's corner turned): it touches
   round its two meridians in the plane through both axes, turned into tori about the turn's, and
   round its top and bottom rings, kept in their planes. The torus at an end pose and a meridian's
   torus touch round that meridian and cross beside it — in each level both are two circles about

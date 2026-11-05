@@ -1005,7 +1005,16 @@ fn screwed_circle_level(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blen
         if !ok[j] { i += 1; continue }
         let first = i;
         while i < N && ok[(start+i)%N] { i += 1 }
-        let refine = |inside: f64,outside: f64| { let (mut a,mut b) = (inside,outside); for _ in 0..60 { let m = 0.5*(a+b); if on(m) { a = m } else { b = m } } a };
+        // a run's end where its `v` reaches the sheet's edge, not the tolerance past it: there the
+        // meeting ends at the vertex where the edge's circle crosses the plane, on both (#791: the
+        // tolerance past, clamped onto that circle, it stood a millionth off the plane, where it, a
+        // cylinder's rim and the helix the sheet touches that cylinder along all touch); a run
+        // wholly within the tolerance past the edge (a graze) is read to the tolerance
+        let refine = |inside: f64,outside: f64| {
+            let (lo,hi) = if (0.0..=1.).contains(&v_of(inside)) { (0.,1.) } else { (-slack,1.+slack) };
+            crate::util::roots::bisect(inside,outside,|a,b| 0.5*(a+b),|a,b| { let m = 0.5*(a+b); m != a && m != b },
+                |m| (lo..=hi).contains(&v_of(m))).0
+        };
         let at = |n: usize| { let x = (start+n) as f64/N as f64; x };
         let (u0,u1) = (refine(at(first),at(first)-1./N as f64),refine(at(i-1),at(i)));
         let mut run: Vec<f64> = vec![u0];

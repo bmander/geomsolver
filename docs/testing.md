@@ -340,14 +340,37 @@ until those points are read alike whatever the rounding (#780 R4's neighbourhood
   (`helix_reach`, held to 1e-6 where the grid of 1,440,000 points held 1e-4), and the pipe's inverse
   reading each point of the spine once per stretch.
 
-Drawn at 3 mm a turn (a lead other than the gate's) the mill is not yet built: reduced, the pipe
+Drawn at 3 mm a turn (a lead other than the gate's) the mill was not yet built: reduced, the pipe
 beside the cylinder its side screws into, within the sector; the pipe's meeting with that
 cylinder's foot plane sets out a millionth past the pipe's start, where it, the foot's rim and the
 touch helix touch at one point, and the foot's pieces do not close.  The touch helix itself is now
 placed where `g'` changes sign (it stood 2.6e-7 off at the run's middle); the trace's start is what
-is left.
+is left.  (Built since #791, below.)
 
 The slow tier of `swept_closed::` after: 42 of 43 in 291 s (939 s before).  The one failure,
 `a_bull_nose_turned_about_an_axis_along_its_own_closes_into_its_sweep`, fails on `main` before
 #780 C1 too, the same way (`Unbuilt::Wrong` at the same witness, 1,072 s there); now in 14 s, the
 crossings' polish no longer walking every near pair.
+
+## The ball-end mill drawn (November 5, 2026, #791)
+
+`solid_sweeps/ball_end_mill.sv` builds at 3 mm a turn, and at 2 and 4, each to its helical volume
+within 1e-11 in about four seconds of build (the four-core container).  What the drawing met, in
+order:
+
+- At 3 mm a turn the foot's pieces did not close.  With the pipe's meeting with the foot's plane
+  ended exactly at the vertex rather than a tolerance past it, every lead failed alike: the node read
+  the meeting's way out at a length extrapolated from probes a ten-thousandth and two of its
+  parameter along, which on a trace whose points crowd at its start stood within a millionth of the
+  node, and read 80 radians.  Each tied way is now read at its point that length along its half.
+- At 4 mm a turn the build was refused by its judge (a point of the corner below the touch helix
+  removed): the cylinder's seam, tangent to the pipe on the touch helix, was met by the general
+  search at one lead and missed at another, so the helix ran through the seam uncut and the corner
+  merged with the cell above it.  A line along the screw's axis is now met in closed form.
+
+- `swept_closed::the_drawn_ball_end_mills_pipe_beside_its_screwed_side_is_arranged_at_every_lead`,
+  about 5 s (fast): the reduced pair at 3, 4 and 5 mm a turn, every cell to its closed form.
+- `solid_sweeps_examples::the_ball_end_mill_screwed_mills_its_helical_groove`, about 9 s alone
+  (slow tier, as `helical_groove.sv`'s): the build, its STL against the field and the stepped build.
+- `solid_sweeps_examples::the_ball_end_mill_screwed_at_other_leads_mills_its_groove`, about 9 s
+  (slow tier): the two further builds.
