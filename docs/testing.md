@@ -256,3 +256,33 @@ What is left, the longest first, and where its time goes:
   3 min: its default budget run down (#780 C1 builds it).
 - `hulls::the_librarys_rod_is_sized_by_its_sag`, 2.4 min: the rod's finite elements.
 - `fillet_definition::`, about two minutes together: the three candidate definitions' volumes.
+
+## The slow tier made green (November 5, 2026, #780 R1)
+
+The nightly had failed every night since it was first scheduled, on three tests outside the
+sweeps, so a new failure there went unseen.  Each was a defect, not a stale tolerance, and each is
+fixed where it lay:
+
+| test | what it met | fixed |
+|---|---|---|
+| `composed_rounds::a_chamfer_spilled_onto_a_rounded_plate_meshes_at_every_radius` | at a boss of 21 the chamfer's foot crosses the plate's tangent seam where the boss's base lies on the plate's top; past it the field named the base, facing down, so the seam was a corner one way and a hand-off the other, and the crease ran twice over the round and ended 3 µm from its start | a followed leaf's own next piece continues a crease (`crease::trace`); held every push by `…_has_one_closed_crease_over_the_seam`, 0.2 s |
+| `gear_crowns::the_fabricated_pair_is_the_drawn_sections_export` | its record is of the pair cut by the mill the drawn sections were cut by; since #283 the pair finds another mill, and another pair (its pinion 147 faces, not 243) | cut by `fixtures::gear::recorded_machine` at 12.5°, as every other suite reads it; agrees to 2e-8 |
+| `hulls::the_librarys_rod_is_sized_by_its_sag` | its drive was never refined past twice a reading's size: the mesh at its own size held three corners of an element 10⁻¹⁵ apart, a surface centre inserted on a vertex already there off its facet's dual edge (a nearly co-circular flat tetrahedron's orthocentre, which rounding puts anywhere on its axis) | refinement inserts no surface centre within its margin of a vertex (`Refiner::crowded`); the rod solves at four, two and one times its size, the web 6.59 mm |
+
+Measured on the four-core container, warm build, after the fixes:
+
+- **The core's suite with the slow tier**, dealt into slow.yml's eight shards and run one after
+  another on one machine: 3,498 passed, one failed, 35.5 minutes (the longest shard 11 minutes).
+  `rust/test-times.tsv` now holds those times.  Run whole on four threads, the suite was killed
+  for memory a few minutes in; a shard at a time it was not.
+- **The CLI's suite with the slow tier**: 50 passed, 174 s.
+- **`swept_closed::`'s slow tier** (the screws and the tori), each alone: 939 s, against 741 s
+  before #777.  The bull-nose turned about an axis along its own is 595 s of it (its row in
+  `rust/test-times.tsv` said 208 s); the ball-end mill's refusal at the default budget 104 s.
+- **The one failure is new**:
+  `prism_twists::a_corner_reaching_a_cap_under_a_screw_is_the_closed_classs` passed the night of #779 and fails on `main` since #782, whose `square_thread.sv` states no roll.
+  The march now ends at the first whole degree that is clear of the rod, the bar's flank 1/60 mm
+  past the rod's end plane, where the stated roll ended 1 mm past it, and the closed arrangement
+  refuses it ("a plane's pieces do not close").  With the end 30 steps further out it builds; 1
+  or 3 steps do not.  It is the kernel's: a sweep whose end pose stands just clear of a face of
+  the blank is a pose any stated roll may take.
