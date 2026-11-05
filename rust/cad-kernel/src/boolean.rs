@@ -560,9 +560,11 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
         // along an edge of it cuts off there (#721 X6), dropped — merged into its edge (#735 A3);
         // whether what is left closes is the result's check
         let Some(&first) = inner.peek() else { continue };
+        // a face of the other on this one's surface holding `p`
+        let partner = |p: V| (0..solids[other].faces.len()).find(|&g|
+            super::ssi::same(&f.surface,&solids[other].faces[g].surface,tol) && located[other].face_holds(g,p));
         let (p,place) = inner.map(|p| (p,located[other].solid_place(p)))
-            .find(|&(p,place)| place != Place::On || (0..solids[other].faces.len()).any(|g|
-                super::ssi::same(&f.surface,&solids[other].faces[g].surface,tol) && located[other].face_holds(g,&f.surface,p)))
+            .find(|&(p,place)| place != Place::On || partner(p).is_some())
             .unwrap_or((first,Place::On));
         match place {
             Place::In => add(piece_face(f,&piece,false),[true;2],None,false,None),
@@ -570,11 +572,7 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
             Place::On => {
                 // on a face of the other on the same surface: one face of the complex, A's piece
                 // standing for both, the other's material behind it where the two face the same way
-                let partner = (0..solids[other].faces.len()).find(|&g| {
-                    super::ssi::same(&f.surface,&solids[other].faces[g].surface,tol)
-                        && located[other].face_holds(g,&f.surface,p)
-                });
-                let Some(g) = partner else {
+                let Some(g) = partner(p) else {
                     // every point read inside the piece on the other's boundary, and on no face of
                     // the other's on its surface: a contact the arrangement did not cut it along
                     let named = |f: &Face| match f.name.is_empty() {
@@ -798,7 +796,7 @@ fn arranged(operands: &[&Brep],within: bool,tol: f64) -> Result<Complex,String> 
         let mut stood_for = false;
         for o in solids.all().filter(|&o| o != s) {
             for (g,h) in solids[o].faces.iter().enumerate() {
-                if !super::ssi::same(&f.surface,&h.surface,tol) || !located[o].face_holds(g,&f.surface,p) { continue }
+                if !super::ssi::same(&f.surface,&h.surface,tol) || !located[o].face_holds(g,p) { continue }
                 if o < s { stood_for = true; }
                 from.push(Origin {operand:o.0,face:g,alike:facing_alike(f,h,p)});
             }
@@ -1595,30 +1593,23 @@ impl<'a> Arrangement<'a> {
                     if on.holds(s,fi).is_none() { continue }
                     for &(piece,_) in &split.pieces_of[e] { if !split.gone[piece as usize] { cut.internal(split.rep[piece as usize].0); } }
                 }
-                // an edge's pieces that lie inside this face, the edge's own face's surface `of`
-                // where it is the same as this face's (`face_holds`: a sheet lying in a plane is
-                // that plane over its patch alone)
-                let inside = |we: usize,of: Option<&Surface>,cut: &mut FaceCut| for &(piece,_) in &split.pieces_of[we] {
+                // an edge's pieces that lie inside this face (on its patch too: a sheet lying in a
+                // plane is that plane over its patch alone, `face_holds`)
+                let inside = |we: usize,cut: &mut FaceCut| for &(piece,_) in &split.pieces_of[we] {
                     if split.gone[piece as usize] { continue }
                     let r = split.rep[piece as usize].0;
                     let w = &split.out[r as usize];
                     if matches!(w.curve,EdgeCurve::Degenerate) { continue }
-                    let m = w.point((w.t[0]+w.t[1])/2.,&self.pool);
-                    let held = match of {
-                        Some(of) => self.located[s].face_holds(fi,of,m),
-                        None => self.located[s].face_place(fi,m) == Place::In,
-                    };
-                    if held { cut.internal(r); }
+                    if self.located[s].face_holds(fi,w.point((w.t[0]+w.t[1])/2.,&self.pool)) { cut.internal(r); }
                 };
                 // a face of the other on this one's surface: its boundary's pieces inside this face
                 for same in &meetings.same_pairs {
                     let Some(k) = same.holds(s,fi) else { continue };
                     let (other,face) = (same.s[1-k],same.f[1-k]);
-                    let of = &self.solids[other].faces[face].surface;
-                    for c in self.solids[other].faces[face].loops.iter().flatten() { inside(self.working(other,c.edge as usize),Some(of),&mut cut); }
+                    for c in self.solids[other].faces[face].loops.iter().flatten() { inside(self.working(other,c.edge as usize),&mut cut); }
                 }
                 // an edge of the other a traced meeting lay along
-                for &(we,_,_) in meetings.along_edges.iter().filter(|&&(_,o,face)| o == s && face == fi) { inside(we,None,&mut cut); }
+                for &(we,_,_) in meetings.along_edges.iter().filter(|&&(_,o,face)| o == s && face == fi) { inside(we,&mut cut); }
                 if s != Side::A { self.say.cut_network(s,fi,f,meetings,split,&self.pool); }
                 for piece in pieces_of_face(f,&cut.halves,&split.out,&self.pool)? { pieces.push((s,fi,piece)); }
             }

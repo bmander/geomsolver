@@ -335,7 +335,7 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
 /// spline whose coefficients are the poles' distances), so nothing that lies in it is missed but
 /// by its fit's rounding.
 fn net_in_plane(n: &super::nurbs::Net,p: &Frame,tol: f64) -> bool {
-    n.poles.iter().flatten().all(|&q| dot(sub(q,p.o),p.z).abs() <= tol)
+    n.poles.iter().flatten().all(|&q| p.local(q)[2].abs() <= tol)
 }
 
 /// Where two surfaces meet (`tol` a length).

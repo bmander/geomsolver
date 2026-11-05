@@ -286,7 +286,6 @@ fn a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves() {
     near(exported(&e,"part"),800.-128.-plunged_away(8.),1e-9);
 }
 
-
 /// **A fitted sheet lying in a candidate's plane is one surface with it** (#780 C4, A2's
 /// coincidence): `punch.sv`'s drum pushed up through its plate leaves a slot whose walls are one
 /// fitted sheet cut into four faces, each end wall a strip of the plane x = 6 or x = 14 its flat end
@@ -316,9 +315,7 @@ fn a_fitted_sheet_lying_in_a_candidates_plane_is_one_surface_with_it() {
     // the reduced Boolean: the plate and the block whose face holds the bar's end face's plane
     let block = crate::brep::block([-42.,-48.,-49.],[6.,48.,47.]);
     let complex = gcs_core::brep::boolean::arrangement_within(&plate,&[&block],1e-6).unwrap();
-    let cells = complex.cells().unwrap();
-    let mut volumes: Vec<f64> = (1..cells.len()).map(|c| cells[c].volume).collect();
-    volumes.sort_by(f64::total_cmp);
+    let volumes = crate::complex::volumes(&complex);
     assert_eq!(volumes.len(),2,"{volumes:?}");
     near(volumes[0],240.,1e-9);
     near(volumes[1],560.-128.,1e-9);
