@@ -308,7 +308,7 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
         (Surface::Cone(_,r,a1),Surface::Cone(_,s,a2)) => {
             if !(parallel && on_axis) { return false }
             // the same apex, half-angle and opening (a cone opens along z where its α is positive)
-            let apex = |f: &Frame,r: f64,a: f64| sub(f.o,scale(f.z,r*a.dcos()/a.dsin()));
+            let apex = |f: &Frame,r: f64,a: f64| cone_apex(f,r,a);
             let opens = |f: &Frame,a: f64| scale(f.z,a.signum());
             norm(sub(apex(f,r,a1),apex(g,s,a2))) <= tol && (a1.abs()-a2.abs()).abs() <= 1e-12
                 && dot(opens(f,a1),opens(g,a2)) > 0.
@@ -338,6 +338,10 @@ fn net_in_plane(n: &super::nurbs::Net,p: &Frame,tol: f64) -> bool {
     n.poles.iter().flatten().all(|&q| p.local(q)[2].abs() <= tol)
 }
 
+/// The apex of the cone of radius `r` at its frame's origin and half-angle `half` (not finite for
+/// a cylinder's half-angle of nothing).
+fn cone_apex(f: &Frame,r: f64,half: f64) -> V { let (sa,ca) = half.dsin_cos(); sub(f.o,scale(f.z,r*ca/sa)) }
+
 /// **Two cones with one apex meet in lines through it** (#797), exactly: the generators of the
 /// first, `d(u) = sin α (cos u x + sin u y) + cos α z` from the apex, that the second holds,
 /// `(d·z′)² = cos² β` — `A + R cos(u − φ) = ±cos β`, two generators a sign or none. Traced, the
@@ -346,7 +350,7 @@ fn net_in_plane(n: &super::nurbs::Net,p: &Frame,tol: f64) -> bool {
 /// the apices part by more than `tol`, the axes are one (the meridians' reading), or the cones
 /// touch along a generator (a double root, left to the trace's reading of a touch).
 fn cones_at_one_apex((c,r,half): (&Frame,f64,f64),(k,s,kalf): (&Frame,f64,f64),tol: f64) -> Option<Vec<Curve>> {
-    let apex = |f: &Frame,r: f64,a: f64| { let (sa,ca) = a.dsin_cos(); (sa.abs() > 1e-12).then(|| sub(f.o,scale(f.z,r*ca/sa))) };
+    let apex = |f: &Frame,r: f64,a: f64| (a.dsin().abs() > 1e-12).then(|| cone_apex(f,r,a));
     let (p,q) = (apex(c,r,half)?,apex(k,s,kalf)?);
     if distance(p,q) > tol || norm(cross(c.z,k.z)) <= 1e-12 { return None }
     let (sa,ca) = half.dsin_cos();
@@ -453,7 +457,7 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             // touching a cylinder is; a cone narrowing along its axis (its half-angle below
             // nothing) alike
             if sa.abs() > 1e-12 && ca > 1e-12 {
-                let apex = sub(c.o,scale(c.z,r*ca/sa));
+                let apex = cone_apex(&c,r,half);
                 let lean = dot(pl.z,c.z).abs()-sa.abs();
                 let radial = sub(pl.z,scale(c.z,dot(pl.z,c.z)));
                 if dot(pl.z,sub(apex,pl.o)).abs() <= tol && lean.abs() <= 1e-9 && norm(radial) > 1e-12 {

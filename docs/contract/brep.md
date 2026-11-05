@@ -785,7 +785,7 @@ the inverse reads one value whatever the curve, a cone's apex `u = 0`), and a Bo
 closes every loop that passes through a pole along it (`Brep::close_poles`): each use the inverse
 carries there ends at the value its tangent points along, and between the use arriving and the
 use leaving a degenerate edge runs from the one to the other — an operand's pole edge kept, cut
-to the span the face reaches, or one laid — as a primitive's loop does. Unclosed, a cone's piece
+to the span the face reaches, or one laid — as a primitive's loop does. It mends the parameters alone: which use follows which at the pole is the face's split as walked. Unclosed, a cone's piece
 through the apex was walked across the pole by a jump in its last use's last instant, or by its
 operand's pole kept whole across a turn the piece does not span: its pieces' triangles overlapped,
 265 triangle sides of the sectors' common not shared by two. `brep::two_sectors_sharing_an_apex_meet_in_lines_and_mesh_closed`
