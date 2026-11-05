@@ -198,10 +198,12 @@ pub fn critical_set(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Vec<Crit
     let h = [w[0]*1e-5,w[1]*1e-5];
     let size = { let (lo,hi) = reach(a,d); norm(sub(hi,lo)).max(1e-300) };
     let mut found: Vec<Critical> = Vec::new();
+    let mut jets = 0u64;
     for i in 0..GRID { for j in 0..GRID {
         let mut uv = [d[0][0]+w[0]*(i as f64+0.5)/GRID as f64,d[1][0]+w[1]*(j as f64+0.5)/GRID as f64];
         let mut settled = false;
         for _ in 0..40 {
+            jets += 1;
             let (_,g,m,k) = metric_jet(a,b,uv,h);
             let (l,vs) = eigen(m);
             let floor = 1e-9/size.max(1e-300);
@@ -227,6 +229,7 @@ pub fn critical_set(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Vec<Crit
         }
         if !settled { continue }
         let p = a.point(uv);
+        jets += 1;
         let (value,g,m,_) = metric_jet(a,b,uv,h);
         // settled on the non-null ways alone, `f` may still slope along the null one: a fold (where
         // a plane leaning a hair crosses a vault's crown), no critical point — read by the level
@@ -239,6 +242,9 @@ pub fn critical_set(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Vec<Crit
         if found.iter().any(|c| distance(a.point(c.uv),p) <= near && c.rank == rank) { continue }
         found.push(Critical {uv,value,rank,n:vs[0],e:vs[1],curvature:l[0]});
     } }
+    // the profile's count (#780 R4)
+    crate::util::meter::analysis("critical sets",1);
+    crate::util::meter::analysis("critical-set jets",jets);
     found
 }
 
@@ -375,6 +381,10 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
     // (fine enough that the cubic through its points stands within 1e-9 of the size off the curve)
     let step = (a.feature().min(b.feature()).min(size)/192.).max(size*1e-5);
     let inside = |uv: Uv| uv[0] >= d[0][0]-1e-12*w[0] && uv[0] <= d[0][1]+1e-12*w[0] && uv[1] >= d[1][0]-1e-12*w[1] && uv[1] <= d[1][1]+1e-12*w[1];
+    // the readings of `f` the march takes, for the profile (#780 R4)
+    let reads = std::cell::Cell::new(0u64);
+    let metric_grad = |a: &Surface,b: &Surface,uv: Uv,h: [f64;2]| { reads.set(reads.get()+5); metric_grad(a,b,uv,h) };
+    let f = |a: &Surface,b: &Surface,uv: Uv| { reads.set(reads.get()+1); f(a,b,uv) };
     // pulled onto `f = 0` along its gradient in the metric
     let onto = |uv: Uv| -> Option<Uv> {
         let mut uv = uv;
@@ -449,6 +459,7 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
         if closed { pts.push(pts[0]) }
         if pts.len() >= 2 { found.push(pts) }
     }
+    crate::util::meter::analysis("level-curve readings of f",reads.get());
     found.into_iter().filter_map(|pts| fitted(&pts).map(|curve| Branch {curve,contact:Contact::Crossing})).collect()
 }
 
@@ -497,6 +508,7 @@ pub fn exact_distance(s: &Surface) -> bool { matches!(s,Surface::Plane(_) | Surf
 /// angle there — a point of a crossing at that angle is placed only so well (#735 A3's
 /// `on_meeting`), and a touch's to the square root of the tolerance, beside its own radius.
 pub fn on_a_branch(a: &Surface,b: &Surface,branches: &[Branch],p: V,tol: f64) -> bool {
+    crate::util::meter::analysis("branch tests",1);
     let sine = norm(cross(unit_or(a.gradient(p)),unit_or(b.gradient(p)))).max(1e-6);
     branches.iter().any(|br| {
         // (a point where the two stand tangent within a few of a ridge's steps of a touch is that
@@ -515,7 +527,9 @@ pub fn on_a_branch(a: &Surface,b: &Surface,branches: &[Branch],p: V,tol: f64) ->
 /// one's too (whose foot a Newton search can settle on the wrong side of its seam), the nearer of
 /// that and the curve's own foot.
 fn branch_distance(c: &Curve,p: V) -> f64 {
+    crate::util::meter::analysis("branch feet",1);
     let [t0,t1] = match c { Curve::BSpline(s) => s.domain(),_ => return distance(c.point(c.inverse(p)),p) };
+    crate::util::meter::analysis("branch samples",513);
     let pts: Vec<V> = (0..=512).map(|k| c.point(t0+(t1-t0)*k as f64/512.)).collect();
     let chords = pts.windows(2).map(|w| crate::util::space::segment_distance(p,w[0],w[1])).fold(f64::INFINITY,f64::min);
     chords.min(distance(c.point(c.inverse(p)),p))

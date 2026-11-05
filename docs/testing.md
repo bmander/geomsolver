@@ -90,9 +90,11 @@ reduced to the smallest Boolean of its candidates and kept as a fast test before
 3. Fix the kernel against that test; then run the sweep's gate.
 
 `SOLVENT_SWEEP_PROFILE=1` prints what a closed build spent per stage and which pairs of surface
-kinds were traced rather than met in closed form: start a performance change from it, and cite it
-before and after. A build past `closed::BUDGET` is refused by the stage that ran away
-(`Unbuilt::Budget`), in seconds rather than hours.
+kinds were traced rather than met in closed form, and what the meetings' analysis did (critical
+sets, branch tests, a level curve's readings): start a performance change from it, and cite it
+before and after. `touch_curves::` prints the same profile for each of its tests under it. A
+build past `closed::BUDGET` is refused by the stage that ran away (`Unbuilt::Budget`), in seconds
+rather than hours.
 
 | tier | tests | typical time | when to run |
 |---|---|---|---|
