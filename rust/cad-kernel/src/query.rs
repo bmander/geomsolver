@@ -1351,13 +1351,11 @@ impl<'a> Located<'a> {
     }
 
     /// **Whether face `fi` holds `p`, a point of a surface the same as the face's** (`ssi::same`):
-    /// in the face (`face_place`), and on the face's own patch where its surface has a rim
-    /// (`on_bounded`). A sheet lying in a plane is that plane over its patch alone (#780 C4): past
-    /// the patch a point's foot is clamped to its edge, which the face's loop may run along, and
-    /// read there the point would be in the face.
-    pub fn face_holds(&self,fi: usize,p: V) -> bool {
-        self.face_place(fi,p) == Place::In && on_bounded(&self.b.faces[fi].surface,p,self.tol)
-    }
+    /// in the face (`face_place`), which holds a point only on the face's own patch where its
+    /// surface has a rim. A sheet lying in a plane is that plane over its patch alone (#780 C4):
+    /// past the patch a point's foot is clamped to its edge, which the face's loop may run along,
+    /// and read there the point would be in the face.
+    pub fn face_holds(&self,fi: usize,p: V) -> bool { self.face_place(fi,p) == Place::In }
 
     /// Where a point of face `fi`'s surface stands against the face: `On` within `tol` of its
     /// boundary. A seam (an edge the face uses twice, once each side) is no boundary: a point on
@@ -1367,8 +1365,17 @@ impl<'a> Located<'a> {
         // where every edge's box is farther than the near-edge reading reaches, the winding
         // decides, as it would with every edge measured
         let near = self.coarse.max(2.*self.drawn(fi).0.sag());
+        // a point past a patch's rim, on its surface's extension, is on no point of the face (#780
+        // L1: a pipe entered stretch by stretch runs on smoothly into the next stretch, whose points
+        // the inverse clamps onto their shared circle, read there as in the face — a ray crossing
+        // the pipe beside the circle counted on both): its foot off it by more than the tolerance,
+        // read from the parameters in hand and held to the surface's own inverse before refused
+        let past = |uv: Uv| f.surface.bounded() && distance(f.surface.point(uv),p) > self.tol.max(1e-9*(1.+norm(p)))
+            && !on_bounded(&f.surface,p,self.tol);
         if f.loops.iter().flatten().all(|c| self.edge_gap(c.edge,p) > near) {
-            let winding = self.drawn(fi).0.winding(self.uv(fi,p));
+            let uv = self.uv(fi,p);
+            if past(uv) { return Place::Out }
+            let winding = self.drawn(fi).0.winding(uv);
             let inside = if f.reversed { winding < 0 } else { winding > 0 };
             return if inside { Place::In } else { Place::Out }
         }
@@ -1383,6 +1390,8 @@ impl<'a> Located<'a> {
         if boundary <= self.tol { return Place::On }
         if d <= self.tol { return Place::In }
         let uv = self.uv(fi,p);
+        // (past the rim, however near its edge)
+        if past(uv) { return Place::Out }
         let e = &self.b.edges[c.edge as usize];
         if d <= self.coarse.max(2.*self.drawn(fi).0.sag()) && t > e.t[0] && t < e.t[1] {
             // near one edge's interior: which side of it, in the face's parameters — the point

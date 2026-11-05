@@ -7,6 +7,7 @@
 119.432	swept_closed::a_block_leaning_to_a_screws_axis_closes_into_its_helical_sweep
 95.028	jacobians::a_cut_and_a_turned_bodys_deflection_agree_with_finite_differences
 93.783	numeric_parts::the_parts_read_the_library_as_the_whole_does
+71.660	swept_loci::a_ball_screwed_past_a_turn_meets_its_own_pipe_and_closes_into_its_sweep
 63.800	prism_twists::a_corner_reaching_a_cap_under_a_screw_is_the_closed_classs
 46.763	envelope::paired::swept::closure::neighbor_closed_gear_space_matches_selected_boundary_and_interior
 45.791	roll_through::members_rolled_through_their_blanks_build_as_their_stated_rolls_did
@@ -164,6 +165,7 @@
 3.947	path_examples::the_coil_is_its_wire_along_the_helix
 3.908	rounds_examples::the_bores_rim_is_the_stacks
 3.795	solid_sweeps_examples::the_next_tooth_leaves_the_bars_space_turned
+3.740	swept_loci::the_worked_volume_of_a_ball_screwed_short_of_a_turn_is_weyls_tube
 3.723	closed_class::a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves
 3.710	swept_faces::a_swept_bodys_faces_lie_on_what_their_names_say
 3.683	helix::a_rigid_screw_lies_on_its_swept_rim
@@ -1467,6 +1469,8 @@
 0.010	rebuild::a_part_pairs_a_contacts_place_on_a_traced_body
 0.010	solid_issue51::penetration_is_a_geometric_thickness_with_a_reported_error_bound
 0.010	units::a_design_tables_figures_carry_their_units
+0.010	swept_loci::a_pipe_comes_back_onto_itself_along_helices
+0.010	swept_loci::two_stretches_of_one_pipe_meet_round_their_circle_and_along_helices
 0.009	ball_paths::a_path_that_comes_back_within_the_diameter_is_refused
 0.009	beams::a_frame_joins_where_its_members_meet
 0.009	brep::a_bosss_rim_and_root_rounded_to_meet_are_two_tori
@@ -1675,6 +1679,8 @@
 0.005	spatial_surfaces::the_named_hypoid_round_trips
 0.005	tangent_at::the_tangent_at_a_pinned_place_is_regular_where_the_pinned_tangency_is_not
 0.005	words_alone::an_angles_bound_is_held_to_the_solves_tolerance
+0.005	swept_loci::a_ball_screwed_tighter_than_its_radius_is_refused_by_name
+0.005	swept_loci::a_point_past_a_patchs_rim_is_in_none_of_its_face
 0.004	admission::a_concave_corner_carried_through_the_blank_is_refused
 0.004	angle_and_arc_words::equal_angles_make_a_bisector
 0.004	applied::a_set_is_written_where_it_is_used

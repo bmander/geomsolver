@@ -294,6 +294,7 @@ mod surface_contact;
 mod swept_closed;
 mod touch_curves;
 mod swept_instant;
+mod swept_loci;
 mod swept_member;
 mod surfaces;
 mod swept_faces;
