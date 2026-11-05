@@ -279,7 +279,9 @@ fn a_chamfer_spilled_onto_a_rounded_plate_has_one_closed_crease_over_the_seam() 
     let e = solved(&spilled(r));
     let field = MaterialField::read(&e.sketch, ent(&e, "boss").i(), 1e-10).unwrap();
     let c = e.sketch.world_point(ent(&e, "centre").i());
-    let out = c[0].hypot(c[2]);
+    // out from the plate's axis
+    let rho = |p: &[f64; 3]| p[0].hypot(p[2]);
+    let out = rho(&c);
     // on the boss's side away from the rim: just in on the chamfer's flat, just out on the plate
     let at = |d: f64, y: f64| [c[0] - c[0] / out * (r + d), y, c[2] - c[2] / out * (r + d)];
     let vertices = [at(1.9, 20.1), at(2.1, 20.0)];
@@ -292,7 +294,6 @@ fn a_chamfer_spilled_onto_a_rounded_plate_has_one_closed_crease_over_the_seam() 
     assert_eq!(found.len(), 1);
     let foot = &found[0];
     // round the plate's top and out over the round: its points either side of the seam
-    let rho = |p: &[f64; 3]| p[0].hypot(p[2]);
     assert!(foot.points.iter().any(|p| rho(p) > 31.0) && foot.points.iter().any(|p| rho(p) < 20.0));
     assert!(foot.closed, "ends {:?}: {:?} and {:?}", foot.ends, foot.points[0], foot.points.last());
 }

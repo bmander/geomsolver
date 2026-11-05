@@ -310,4 +310,3 @@ fn the_fabricated_pair_is_the_drawn_sections_export() {
         assert!((volume-recorded).abs() < 1e-6*recorded,"{member}: {volume} against {recorded}");
     }
 }
-

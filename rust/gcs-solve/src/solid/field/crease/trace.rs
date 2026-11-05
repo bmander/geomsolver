@@ -66,12 +66,12 @@ fn active<S: CreaseSource + ?Sized>(field: &S,p: P,op: OperandId,tolerance: f64)
 
 /// The point between `p`, on the crease, and `q`, pinned onto both operands' carriers past it,
 /// where the crease leaves them: bisected along the chord, each trial pinned onto both, to
-/// `tolerance`. That point with its operands, the point just past it, and the reading of the
-/// operand that took over there: where one of the two leaves has gone inactive (its piece's
-/// carrier runs on past the piece), that leaf's own deciding piece and contact time; otherwise
-/// what decides the whole field.
+/// `tolerance`. That point with its operands; each followed leaf's own deciding piece just past it,
+/// where that is another piece; and the reading of the operand that took over there: where one of
+/// the two leaves has gone inactive (its piece's carrier runs on past the piece), that leaf's own
+/// deciding piece and contact time; otherwise what decides the whole field.
 fn takeover<S: CreaseSource + ?Sized>(field: &S,p: P,ops: [OperandId;2],q: P,options: &CreaseOptions)
-    -> (P,[OperandId;2],P,Reading) {
+    -> (P,[OperandId;2],[Option<OperandId>;2],Reading) {
     let (mut on,mut on_ops,mut off) = (p,ops,q);
     let length = distance(p,q);
     // to a ten-thousandth of the step: a corner there is then found by Newton on all three
@@ -84,9 +84,12 @@ fn takeover<S: CreaseSource + ?Sized>(field: &S,p: P,ops: [OperandId;2],q: P,opt
             None => false,
         }
     });
-    let inactive = on_ops.iter().find_map(|&op| active(field,off,op,options.tolerance).err().flatten());
+    let past = on_ops.map(|op| active(field,off,op,options.tolerance));
+    let inactive = past.iter().find_map(|r| r.err().flatten());
     let reading = inactive.unwrap_or_else(|| field.read(off,super::accuracy(options.tolerance)));
-    (on,on_ops,off,reading)
+    let own = std::array::from_fn(|k| past[k].map_or_else(|r| r,Some).and_then(|r| r.operand)
+        .filter(|n| n.same_leaf(&on_ops[k]) && n.differs(on_ops[k],0.)));
+    (on,on_ops,own,reading)
 }
 
 /// Follow the crease of two operands through `start`, both ways, while it stays on the material's
@@ -147,43 +150,38 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
             };
             if !on_crease(field,q,&trial,options.tolerance) {
                 // A third operand has taken the boundary over, at `at`.
-                let (at,at_ops,off,reading) = takeover(field,p,ops,q,options);
+                let (at,at_ops,own,reading) = takeover(field,p,ops,q,options);
                 // a reading naming no operand (its sweep's pose could not be read) says nothing
                 // of what took over
                 let Some(third) = reading.operand else { break End::Lost };
                 let o = super::accuracy(options.tolerance);
                 // It continues one being followed without a corner — the next piece of a tool's
                 // profile, tangent to the last, or another contact time on one smooth sheet — so
-                // the crease goes on along it from there: `next`, read at `at` as `here`.
-                let tangent_to = |next: OperandId,here: &Option<Reading>,k: usize| {
-                    match (here,field.read_operand(at,at_ops[k],o)) {
-                        (Some(h),Some(r)) => next.differs(at_ops[k],0.)
-                            && dot(r.gradient,h.gradient) > 0. && norm(cross(r.gradient,h.gradient))
-                                <= LEAST_DIHEDRAL.dsin()*norm(r.gradient)*norm(h.gradient),
-                        _ => false,
-                    }
+                // the crease goes on along it from there: `next`, read at `at`, continues the
+                // operand `k` of those followed it is tangent to.
+                let followed = at_ops.map(|op| field.read_operand(at,op,o));
+                let continues = |next: OperandId,ks: &[usize]| {
+                    let h = field.read_operand(at,next,o)?;
+                    let tangent = |r: Reading| dot(r.gradient,h.gradient) > 0.
+                        && norm(cross(r.gradient,h.gradient))
+                            <= LEAST_DIHEDRAL.dsin()*norm(r.gradient)*norm(h.gradient);
+                    ks.iter().copied()
+                        .find(|&k| next.differs(at_ops[k],0.) && followed[k].is_some_and(tangent))
+                        .map(|k| (k,next,h))
                 };
                 // Where two leaves' faces lie on one another (a boss drawn on its plate's plane,
                 // its base on the plate's face) the whole field may name either past `at`, and
-                // the one it names may face the other way: so a followed leaf's own piece past
-                // `at` continues it as well, or the crease would stop there coming one way and
-                // run on going the other (#780 R1).
-                let own = |k: usize| field.read_operand(off,at_ops[k].whole(),o)
-                    .and_then(|r| r.operand).filter(|n| n.same_leaf(&at_ops[k]));
-                let here = field.read_operand(at,third,o);
-                let next = (0..2).find(|&k| tangent_to(third,&here,k)).map(|k| (k,third,here))
-                    .or_else(|| (0..2).find_map(|k| {
-                        let n = own(k)?;
-                        let h = field.read_operand(at,n,o);
-                        tangent_to(n,&h,k).then_some((k,n,h))
-                    }));
-                if let Some((k,next,here)) = next {
+                // the one it names may face the other way: so a followed leaf's own next piece
+                // continues it as well, or the crease would stop there coming one way and run on
+                // going the other (#780 R1).
+                let next = continues(third,&[0,1])
+                    .or_else(|| (0..2).find_map(|k| continues(own[k]?,&[k])));
+                if let Some((k,next,h)) = next {
                     if handed >= 2 { break End::Handoffs; }
                     handed += 1;
                     if distance(at,p) > options.tolerance { halves[side].push(at); walked += distance(at,p); p = at; }
                     ops = at_ops;
-                    ops[k] = next;
-                    if let Some(h) = here { ops[k] = ops[k].at_time(h.time()); }
+                    ops[k] = next.at_time(h.time());
                     continue;
                 }
                 // Otherwise the three meet at a corner of the material, which ends the crease.
