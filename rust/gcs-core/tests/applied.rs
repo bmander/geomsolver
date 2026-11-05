@@ -113,15 +113,15 @@ fix((5, 3)) l.p1
 #[test]
 fn a_set_is_written_where_it_is_used() {
     for (set, r) in [("{ p | p distance(9) c }", 9.0), ("std.sets.Sphere(c, r: 12)", 12.0)] {
-        let e = read(&format!("{SPACE}q coincident {set}\n"));
+        let e = read(&format!("{SPACE}q in {set}\n"));
         let sk = solved(&e);
         let got = norm(sub(at(&sk, &e, "q"), at(&sk, &e, "c")));
         assert!((got - r).abs() < 1e-9, "{set}: {got}");
         let s = said(&e);
-        assert!(s.contains(&format!("q coincident {set}")), "{s:?}");
+        assert!(s.contains(&format!("q in {set}")), "{s:?}");
     }
     // and a tangency to a family written in place
-    let e = read(&format!("{SPACE}l tangent std.sets.Cylinder(bx, r: 12)\n"));
+    let e = read(&format!("{SPACE}l tangent boundary(std.sets.Cylinder(bx, r: 12))\n"));
     let sk = solved(&e);
     let (p, d) = ends(&sk, ent(&e, "bx"));
     let (a, b) = ends(&sk, ent(&e, "l"));
@@ -134,12 +134,12 @@ fn a_set_is_written_where_it_is_used() {
 /// statement the drawing wrote.
 #[test]
 fn words_and_sets_apply_inside_each_other() {
-    let e = read(&format!("{SPACE}shell := {{ p | p near(d: 11) c }}\nq coincident shell\n"));
+    let e = read(&format!("{SPACE}shell := {{ p | p near(d: 11) c }}\nq in shell\n"));
     let sk = solved(&e);
     assert!((norm(sub(at(&sk, &e, "q"), at(&sk, &e, "c"))) - 11.0).abs() < 1e-9);
-    assert!(said(&e).contains(&"q coincident shell".to_string()), "{:?}", said(&e));
+    assert!(said(&e).contains(&"q in shell".to_string()), "{:?}", said(&e));
     let e = read(&format!(
-        "a orbits(r) o := a coincident std.sets.Sphere(o, r: r)\n{SPACE}q orbits(r: 13) c\n"
+        "a orbits(r) o := a in std.sets.Sphere(o, r: r)\n{SPACE}q orbits(r: 13) c\n"
     ));
     let sk = solved(&e);
     assert!((norm(sub(at(&sk, &e, "q"), at(&sk, &e, "c"))) - 13.0).abs() < 1e-9);

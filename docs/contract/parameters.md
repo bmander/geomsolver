@@ -93,10 +93,10 @@ where a rule came from.
   - **`over t in (a, b)`** after the operand that runs (`P::runs_over`, `syntax::RunsOver`):
     `envelope(tool over …)` and `meshing(f1, f2 over …)` an `AngularSpan` with `over` set
     (`AngularSpan::running`, the name the model's `Running` takes).  **[0.199]** (#737) a solid
-    under a motion is a set, `solid({ p | p inside(under:, seen_from:, over t in (a, b)) tool })`,
+    under a motion is a set, `solid({ p | some t in (a, b): p in tool at(under:, seen_from:) t })`,
     which the parser reads as the sweep's tokens (`parser/statements.rs::swept_set`): so
     `Sweep::Swept` (`P::sweep_decl`), with no `over` `Sweep::Rolled`, naming no body (#746), and
-    `solid({ p | p coincident(over s) Comp(…).f })` the face family (`P::family`, told by the
+    `solid({ p | some s: p in Comp(…).f at s })` the face family (`P::family`, told by the
     instance written in place); `sweep(…)` itself is E001 naming the set
     (`parser/statements.rs`).  `trace(C(…).p over u in (a, b))` is the traced curve
     (`curve_spec` in the brackets). The printer writes every one so (`print::instant_text`,
@@ -126,8 +126,9 @@ where a rule came from.
   `n := base in f`).  What its
   `in` block draws stands where the value puts it (#398 B, below); through [0.144] anything drawn
   there was refused.
-  - **`n := x in f`, drawn in a jointed frame** (`P::drawn_in`, a `Decl::carried` whose args are
-    `in: f`; the printer's `print::frame_drawn_in`; the label `syntax::DRAWN_IN`): `x` read at `f`'s
+  - **`n := x at f`, drawn in a jointed frame** ([0.205]; through 0.204 `n := x in f`)
+    (`P::drawn_in`, a `Decl::carried` whose args are `in: f`; the printer's `print::frame_drawn_in`;
+    the label `syntax::DRAWN_IN`): `x` read at `f`'s
     value, the very statements `x at(under: f) τ` writes out (`flatten::carried::ways`, settled as
     an instant is), so it makes a frame, a solid or a point as `x` is.  The elaborator reads `in:`
     as `under:` with the frame's value appended as the stated roll (`relations::carried_motion`),
@@ -137,9 +138,9 @@ where a rule came from.
     observer.  `p := point in P` stays a membership: the parser takes `in` after a reference that is
     no kind word.
   - **The station words are frames whose value is written over `s`** (`std.stations`): `Helix`'s
-    screw `fix(value == 360deg * turns * s)`, `n := base in screw`, `axial := n in stand` (a quarter
-    turn's value); `OnHelix`'s `start := base in tilt` and `n := start in screw`; `Twisted`'s
-    `t := x in turn`, the turn's value `twist * s`.  Their readings at an instant are retired, and
+    screw `fix(value == 360deg * turns * s)`, `n := base at screw`, `axial := n at stand` (a quarter
+    turn's value); `OnHelix`'s `start := base at tilt` and `n := start at screw`; `Twisted`'s
+    `t := x at turn`, the turn's value `twist * s`.  Their readings at an instant are retired, and
     their rows are the readings' row for row, so `tests/carried_frame.rs` (the stations against
     their closed forms to `EXACT`) and `tests/carried_family.rs` (the two springs one tube on one
     screw) pass unchanged.  `tests/parameters.rs` is the gate for the rest
@@ -281,7 +282,7 @@ where a rule came from.
     followed together (each is followed alone, the others at their starts), a trace of a point in
     space (a traced body in space is a component's, §6.5), a trace held to by a relation (built
     by #398 A, below), a sweep
-    of a section over a declared parameter (`solid({ p | p coincident(over s) sec })`, built by
+    of a section over a declared parameter (`solid({ p | some s: p in sec at s })`, built by
     #398 B, below),
     continuation past a singular
     instant onto a chosen branch, and the app's timeline (stage 6, built by #398 L, below).
@@ -403,19 +404,20 @@ where a rule came from.
     at any value, its pose read off the guide's geometry and its derivatives (and for
     `On`/`Minimal`, integrated), so it needs a motion of its own kind in `Family` (the guide
     enclosed over a stretch for its bounds) and a sweep over a declared parameter that is no angle
-    (`solid({ p | p coincident(over s) sec })`, left unbuilt by stage 4); a relation the solve
+    (`solid({ p | some s: p in sec at s })`, left unbuilt by stage 4); a relation the solve
     holds reading a drive (a
     law in a kernel's constants), built for a profile in the plane by #398 G (below) and for nothing
     else; a slide's value written as a length (it is an instant of the roll: `advance: 360mm` makes
     its degrees millimetres); and the app's timeline (stage 6, built by #398 L, below).
 - **Faces swept over a declared parameter** (#398 B, [0.145]): one parameter axis for the face
   families as for the drawing.
-  - **A face family reads its parameter as declared**: `solid({ p | p coincident(over s)
-    Station(…).f })` ([0.199]; `sweep(Station(…).f over s)` through 0.198), `s` a `param
-    s: … over (a, b)` of the document (`Walk::family_parameter`; a component's body sees none,
+  - **A face family reads its parameter as declared**: `solid({ p | some s: p in Station(…).f at
+    s })` ([0.199], [0.205]; `p coincident(over s) Station(…).f` through 0.204;
+    `sweep(Station(…).f over s)` through 0.198), `s` a `param s: … over (a, b)` of the document
+    (`Walk::family_parameter`; a component's body sees none,
     E103, so a family stands in the document), its interval the family's.  The formal that runs
-    is the one the call gives the parameter by name (`p coincident(over s2) Tube(hose, std.x, r:
-    r, s: s2).f`:
+    is the one the call gives the parameter by name (`some s2: p in Tube(hose, std.x, r: r, s:
+    s2).f at s2`:
     the argument is taken off the call, the formal left unbound as before) or else the one named
     as it, and it is of the parameter's kind (E103); the call gives it nothing else (E103).  The
     flattener records the formal by the instance's key (`Held::formals`), and everything after it
@@ -424,7 +426,7 @@ where a rule came from.
     and the printer writes `over s`.  A formal given a text kept over a family's running number
     answers for its name before the document's parameter of that name does (`settle_text`): the
     eased twist's `s: 3 * s^2 - 2 * s^3` reads `#f12.s` though the document declares `s`.
-  - **A face of the drawing itself**: `solid({ p | p coincident(over s) sec })`, the tool a face
+  - **A face of the drawing itself**: `solid({ p | some s: p in sec at s })`, the tool a face
     and no `under:` or
     `seen_from:`, is `SolidDef::Family` over the parameter itself (`build::drawn_family`): its
     `over` the declared `Running`, its station every entity of the drawing, the part its face
@@ -672,7 +674,8 @@ where a rule came from.
     the instant centre (1e-6); an RSSR's coupler midpoint traced in space against its closed form
     (1e-8), drawn in the scene; the refusals.
   - **Not built**: a frame the drawing moves read by a relation the solve holds, a roll through a
-    body under one (the whole roll, `solid({ p | p inside(under: f) tool })` cut from a body,
+    body under one (the whole roll, `solid({ p | some t: p in tool at(under: f) t })` cut from a
+    body,
     reads the roll about 0), a frame riding on one, a
     trace in space held to, and a meshing on one.
 - **A profile in the plane generated under a drive** (#398 G, [0.155], `generate::Drive`): a

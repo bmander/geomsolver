@@ -45,7 +45,7 @@ in screw {
   sq := std.shapes.CenteredRectangle(c, w: size, h: size) in std.front
   sec := face(sq.loop)
 }
-thread := solid({ p | p coincident(over s) sec })
+thread := solid({ p | some s: p in sec at s })
 ";
 
 /// The same thread as `lofts/thread.sv` sweeps it: the square drawn in `std.stations.Helix`'s axial
@@ -68,7 +68,7 @@ component Thread(base: plane, r: Length, size: Length, pitch: Length, turns: Sca
   f := face(sq.loop)
 }
 param s: Scalar over (0, 1)
-thread := solid({ p | p coincident(over s) Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f })
+thread := solid({ p | some s: p in Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f at s })
 ";
 
 fn index(e: &Elaborated, name: &str) -> usize {
@@ -180,8 +180,8 @@ fn a_face_family_reads_its_parameter_as_declared() {
     let s = said(&length);
     assert!(s.iter().any(|m| m.starts_with("E103") && m.contains("a parameter of its kind")),
             "{s:?}");
-    let solid = EPIC.replace("thread := solid({ p | p coincident(over s) sec })",
-                             "bar := solid(std.solids.Prism(sec, from: 0mm, to: 1mm))\nthread := solid({ p | p coincident(over s) bar })");
+    let solid = EPIC.replace("thread := solid({ p | some s: p in sec at s })",
+                             "bar := solid(std.solids.Prism(sec, from: 0mm, to: 1mm))\nthread := solid({ p | some s: p in bar at s })");
     let s = said(&solid);
     assert!(s.iter().any(|m| m.starts_with("E103") && m.contains("is no angle")), "{s:?}");
 }

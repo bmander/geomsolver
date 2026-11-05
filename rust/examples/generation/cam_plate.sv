@@ -58,7 +58,7 @@ fix(value == 360deg * (min(t / 180deg, 1) - sin(360deg * min(t / 180deg, 1)) / (
 
 construction tappet := solid(std.solids.Prism(face(flat, f1, f2, f3, -> close), from: -8mm, to: 8mm))
 plate := solid(std.solids.Prism(face(rim), from: -6mm, to: 0))
-swept := solid({ p | p inside(under: follower, seen_from: cam, over t) tappet })
+swept := solid({ p | some t: p in tappet at(under: follower, seen_from: cam) t })
 swept cut plate
 
 // the plate's rising flank, a surface in space

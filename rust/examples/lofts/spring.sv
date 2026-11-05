@@ -24,4 +24,4 @@ component Coil(r: Length, wire: Length, pitch: Length, turns: Scalar, s: Scalar)
 }
 
 param s: Scalar over (0, 1)
-spring := solid({ p | p coincident(over s) Coil(r: r, wire: wire, pitch: pitch, turns: turns).f })
+spring := solid({ p | some s: p in Coil(r: r, wire: wire, pitch: pitch, turns: turns).f at s })

@@ -672,7 +672,7 @@ fn screwed_lines_meeting(on: &std::sync::Arc<super::geom::Blend>,by: &super::geo
     let size = norm(m.run).max(norm(l.run)).max(reach);
     let width = tol*1e-2/size.max(1e-300);
     let near = |x: [f64;3]| { let (v,_) = f(x); norm(v) <= tol };
-    let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,1.],[0.,1.],span],width,&near)?;
+    let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,1.],[0.,1.],span],width,&near).ok()?;
     let mut us: Vec<f64> = found.into_iter().map(|r| r.at[0].clamp(0.,1.)).collect();
     us.sort_by(f64::total_cmp);
     us.dedup_by(|y,x| (*y-*x).abs()*norm(m.run) <= tol);
@@ -709,7 +709,7 @@ fn screwed_line_circle(on: &std::sync::Arc<super::geom::Blend>,by: &super::geom:
     let (big,lean) = (norm(w0)+norm(m)+norm(c0),norm(m)+s1.abs()*norm(c0));
     let bound = |_: f64,_: f64| [2.*big*lean,2.*lean*lean+2.*s1*s1*big*norm(c0)];
     let size = big.max(c.r).max(1e-300);
-    let roots = crate::util::isolate::roots(&g,&dg,&bound,[0.,1.],tol*1e-3/size,&|u| g(u).abs() <= 2.*c.r*tol)?;
+    let roots = crate::util::isolate::roots(&g,&dg,&bound,[0.,1.],tol*1e-3/size,&|u| g(u).abs() <= 2.*c.r*tol).ok()?;
     // the circle's sheet's `v` at the line's point at `u` carried `t` along the line's sheet
     let v_at = |u: f64,t: f64| (z(u)+l.rise*dot(l.axis,k)*t)/c.rise;
     let slack = 1e-9;
@@ -939,8 +939,29 @@ pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy
     let far = norm(perp(sub(f.o,center)))+r;
     let bound = |_: f64,_: f64| [2.*far*r,2.*(r*r+far*r)];
     let tau = std::f64::consts::TAU;
-    let mut roots: Vec<f64> = crate::util::isolate::roots(&g,&dg,&bound,[0.,tau],tol*1e-3/r.max(1e-300),&|th| g(th).abs() <= 2.*big*tol)?
+    // the circle within the tolerance of the cylinder at `th`, and the angle the tolerance spans
+    let on = |th: f64| g(th).abs() <= 2.*big*tol;
+    let step = tol/r.max(1e-300);
+    let found: Vec<f64> = crate::util::isolate::roots(&g,&dg,&bound,[0.,tau],tol*1e-3/r.max(1e-300),&on).ok()?
         .into_iter().map(|x| x.at).collect();
+    // a run of roots the circle keeps within the tolerance of the cylinder between is one helix
+    // (#780 R2's rule, `query::settled`): a double root rounding parts into several a hair apart —
+    // a ball's great circle tangent to the cylinder its outer equator screws round, four roots
+    // within 5e-8 rad (#780 C1) — is the one helix the sheet touches the cylinder along, and read
+    // four times it left the faces it bounds unclosed. A touch is placed where `g'` changes sign
+    // across the run, a simple root of it settled to rounding (the run's middle only stands within
+    // the square root of rounding of a double root: 2.6e-7 off, where the helix, the cylinder's rim
+    // and the pipe's meeting with the rim's plane all touch at its start); a lone crossing where it
+    // was found
+    let pad = step.min(1e-3);
+    let mut roots: Vec<f64> = found.chunk_by(|&x,&y| (y-x)*r <= tol || (1..4).all(|j| on(x+(y-x)*j as f64/4.))).map(|run| {
+        let (first,last) = (run[0],run[run.len()-1]);
+        let (a,b) = (first-pad,last+pad);
+        let (da,db) = (dg(a),dg(b));
+        let crossing = run.len() == 1 && g(a)*g(b) < 0.;
+        if !crossing && da*db < 0. { crate::util::roots::bracketed_root(|t| Some(dg(t)),a,da,b,db,4e-16*b.abs().max(1.)) }
+        else { 0.5*(first+last) }
+    }).collect();
     // the circle closes: a root at its end is the one at its start
     if roots.len() > 1 && (roots[roots.len()-1]-tau-roots[0]).abs()*r <= tol { roots.pop(); }
     Some(roots.into_iter().map(|th| Curve::Iso(blend.clone(),u_of(th))).collect())
@@ -1578,33 +1599,51 @@ pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
     None
 }
 
-/// Whether a trace was refused for two surfaces nearly touching where it marched (`trace_beside`'s
-/// refusal below `SHALLOW`): what a caller reads the meeting's ridges for (#778 T4).
-pub fn refused_as_shallow(e: &str) -> bool { e.contains("nearly touching: their meeting is ill-conditioned") }
+/// **A trace refused for two surfaces nearly touching where it marched** (`trace_beside`'s refusal
+/// below `SHALLOW`): the surfaces' kinds, the angle they meet at there in degrees, and the point.
+/// What a caller reads the meeting's ridges and level curves for (#778 T4, `meeting::marched`),
+/// known by its type and never by its words (#780 R3); said as before where it stands.
+#[derive(Clone,Debug,PartialEq)]
+pub struct Shallow { pub a: &'static str,pub b: &'static str,pub degrees: f64,pub at: V }
+
+impl Shallow {
+    fn of(a: &Surface,b: &Surface,p: V) -> Shallow {
+        Shallow {a:a.kind(),b:b.kind(),degrees:norm(cross(a.gradient(p),b.gradient(p))).dasin().to_degrees(),at:p}
+    }
+}
+
+impl std::fmt::Display for Shallow {
+    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let p = self.at;
+        write!(f,"a {} and a {} meet at {:.2}° at [{:.4}, {:.4}, {:.4}], nearly touching: their meeting is ill-conditioned \
+            there, not built yet",self.a,self.b,self.degrees,p[0],p[1],p[2])
+    }
+}
+
+impl From<Shallow> for String { fn from(s: Shallow) -> String { s.to_string() } }
 
 /// The curves two surfaces meet in, traced through `seeds` (points on both) within the box
 /// `[lo, hi]`: from each seed not already on a traced curve, a march along `∇a × ∇b` both ways
 /// — each step predicted along the tangent and pulled onto both surfaces, shortened while the
 /// tangent turns more than a few degrees — until it leaves the box or comes back to where it
-/// began. A seed where the two are tangent (their normals parallel) is refused, but for one
-/// `beside` a meeting already known — about a point where the two touch and meet in nothing on
-/// the faces asked of, or along an edge they touch along (`boolean`): there a seed traces nothing
-/// and a march ends.
-pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result<Vec<Curve>,String> {
+/// began. A seed where the two are tangent (their normals parallel) is refused (`Shallow`), but
+/// for one `beside` a meeting already known — about a point where the two touch and meet in nothing
+/// on the faces asked of, or along an edge they touch along (`boolean`): there a seed traces
+/// nothing and a march ends.
+pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result<Vec<Curve>,Shallow> {
     trace_beside(a,b,seeds,&mut |_| false,lo,hi,tol)
 }
 
 /// `trace`, ending where it comes `beside` a known meeting.
 pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn FnMut(V) -> bool,lo: V,hi: V,tol: f64)
-    -> Result<Vec<Curve>,String> {
+    -> Result<Vec<Curve>,Shallow> {
     use super::geom::Traced;
     let tangent = |p: V| -> Option<V> {
         let t = cross(a.gradient(p),b.gradient(p));
         let n = norm(t);
         (n > SHALLOW).then(|| scale(t,1./n))
     };
-    let shallow = |p: V| format!("a {} and a {} meet at {:.2}° at [{:.4}, {:.4}, {:.4}], nearly touching: their meeting is \
-        ill-conditioned there, not built yet",a.kind(),b.kind(),norm(cross(a.gradient(p),b.gradient(p))).dasin().to_degrees(),p[0],p[1],p[2]);
+    let shallow = |p: V| Shallow::of(a,b,p);
     let probe = Traced {a:a.clone(),b:b.clone(),pts:vec![],closed:false};
     let diag = norm(sub(hi,lo)).max(tol);
     let h0 = (a.feature_within(lo,hi).min(b.feature_within(lo,hi))/12.).min(diag/24.).max(diag*1e-4);

@@ -90,9 +90,11 @@ reduced to the smallest Boolean of its candidates and kept as a fast test before
 3. Fix the kernel against that test; then run the sweep's gate.
 
 `SOLVENT_SWEEP_PROFILE=1` prints what a closed build spent per stage and which pairs of surface
-kinds were traced rather than met in closed form: start a performance change from it, and cite it
-before and after. A build past `closed::BUDGET` is refused by the stage that ran away
-(`Unbuilt::Budget`), in seconds rather than hours.
+kinds were traced rather than met in closed form, and what the meetings' analysis did (critical
+sets, branch tests, a level curve's readings): start a performance change from it, and cite it
+before and after. `touch_curves::` prints the same profile for each of its tests under it. A
+build past `closed::BUDGET` is refused by the stage that ran away (`Unbuilt::Budget`), in seconds
+rather than hours.
 
 | tier | tests | typical time | when to run |
 |---|---|---|---|
@@ -253,7 +255,7 @@ What is left, the longest first, and where its time goes:
   near chords walked to its crossing by up to sixty global `Curve::inverse`s, most of them to a
   crossing already found (#780 R4), and the page's stepped builder of it as long again.
 - `swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name`,
-  3 min: its default budget run down (#780 C1 builds it).
+  3 min: its default budget run down (#780 C1 builds it, below).
 - `hulls::the_librarys_rod_is_sized_by_its_sag`, 2.4 min: the rod's finite elements.
 - `fillet_definition::`, about two minutes together: the three candidate definitions' volumes.
 
@@ -287,3 +289,65 @@ Measured on the four-core container, warm build, after the fixes:
   refuses it ("a plane's pieces do not close").  With the end 30 steps further out it builds; 1
   or 3 steps do not.  It is the kernel's: a sweep whose end pose stands just clear of a face of
   the blank is a pose any stated roll may take.
+
+## The ball-end mill built (November 5, 2026, #780 C1)
+
+The issue read the mill's refusal as its pipe's inverse map, a general search on every ray and
+outline; the profile said otherwise.  Under the default budget, before (`SOLVENT_SWEEP_PROFILE=1`,
+the four-core container):
+
+| stage | steps | of |
+|---|---|---|
+| arrangement | 108 | 400,000 |
+| trace | 414 | 4,000,000 |
+| ray | 23,587 | 2,000,000,000 |
+| outline | 10,106 | 20,000,000 |
+| inverse | 201,385,420 | 200,000,000 (refused, 169 s) |
+| membership | 983,073 | 400,000,000 |
+
+With the pipe inverted off its spine alone the inverse stage still ran its whole budget down, and
+slower (476 s): its *calls* ran away, not their cost.  A sampled backtrace put them in one
+`meeting::crossings`: a short arc (0.046 rad) of a circle beside a traced meeting of the pipe and a
+plane, each sampled at 512 points against a reach of 0.08, so every pair of chords within it was
+near — 26,000 pairs, each polished by seven rounds of global `Curve::inverse`s on the trace, each
+point of which projects onto the pipe, and no crossing among them.  Polished only from the pairs
+no neighbour stands closer than, the build went past its arrangement in 13 s; two failures behind
+the budget then showed, each dumped, reduced (`swept_closed::the_ball_end_mills_pipe_beside_its_side_is_arranged`)
+and fixed where it lay.  After, built in about ten seconds:
+
+| stage | steps |
+|---|---|
+| arrangement | 108 |
+| trace | 429 |
+| ray | 209,768 |
+| outline | 25,455 |
+| inverse | 29,626,186 (each stretch of a pipe's foot isolated, now the inverse stage's) |
+| membership | 988,209 |
+| judge | 533 |
+
+A faster pipe inverse, certified on a window about the last foot found (Newton from the warm
+start, `δ = π L / 2 s₁` by the helix's chords, `g` monotone across it), agreed with the full
+isolation to 1e-13 on every call and was 2.5 times quicker, yet flipped both builds to "pieces do
+not close": the mill's ball and side meet the plane of each end pose's foot at points where three
+surfaces touch, and at rounding the arrangement there still reads either way.  It is left out
+until those points are read alike whatever the rounding (#780 R4's neighbourhood).
+
+- `swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right`, about 25 s alone
+  (slow tier): the build and its Monte Carlo of 100,000 points.
+- `swept_closed::the_ball_end_mill_screwed_closes_into_its_helical_sweep`, about 22 s (slow tier).
+- `swept_closed::the_ball_end_mill_screwed_through_a_sector_reduced_to_its_boolean_holds_every_cell`,
+  15.4 s before and 4.4 s after: its section's polar integral read across the ring to rounding
+  (`helix_reach`, held to 1e-6 where the grid of 1,440,000 points held 1e-4), and the pipe's inverse
+  reading each point of the spine once per stretch.
+
+Drawn at 3 mm a turn (a lead other than the gate's) the mill is not yet built: reduced, the pipe
+beside the cylinder its side screws into, within the sector; the pipe's meeting with that
+cylinder's foot plane sets out a millionth past the pipe's start, where it, the foot's rim and the
+touch helix touch at one point, and the foot's pieces do not close.  The touch helix itself is now
+placed where `g'` changes sign (it stood 2.6e-7 off at the run's middle); the trace's start is what
+is left.
+
+The slow tier of `swept_closed::` after: 42 of 43 in 291 s (939 s before).  The one failure,
+`a_bull_nose_turned_about_an_axis_along_its_own_closes_into_its_sweep`, fails on `main` before
+#780 C1 too, the same way (`Unbuilt::Wrong` at the same witness, 1,072 s there); now in 14 s, the
+crossings' polish no longer walking every near pair.

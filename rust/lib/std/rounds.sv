@@ -5,10 +5,11 @@
 // -- rounds and chamfers (#183) -----------------------------------------------------------------
 //
 // What a round or a chamfer means is said here, over the language's own words: faces as sets (a
-// face is its patch, `q coincident a`; `a.surface` the whole surface it lies on; `p inside a` the
-// surface's material side; `a.smooth` that surface carried on across every seam where a face of
-// the body goes on from it tangent), the distance from a set, a bound on measurements, where an
-// edge ends, the material's angle at an edge, words that repeat over faces and make solids.  An
+// face is its patch, `q in a`; `a.side` the side of the surface it lies on that its material is
+// on, and `boundary(a.side)` that whole surface; `a.smooth` that side carried on across every seam
+// where a face of the body goes on from it tangent, `boundary(a.smooth)` its surface), the
+// distance from a set, a bound on measurements, where an edge ends, the material's angle at an
+// edge, words that repeat over faces and make solids.  An
 // evaluator reads the sets (the field); a lowering may build an exact surface for a shape it
 // recognises, and says nothing these do not.  Each is `symmetric` in its faces (#415): the edge of
 // `a` and `b` is the edge of `b` and `a`, so a word that reaches it both ways states it once.
@@ -24,102 +25,104 @@
 // meeting where the body has no edge make nothing); so carried on past each end of the edge and
 // cut off there by the faces it ends on, however they stand.
 component Run(a: face, b: face, r: Length) symmetric(a, b) := { p |
-  p inside a.smooth
-  p inside b.smooth
+  p in a.smooth
+  p in b.smooth
   angle(a, b, at: p) <= 180deg
-  centres := { c | c inside a.smooth; c distance(>= r) a.smooth; c inside b.smooth
-               c distance(>= r) b.smooth }
-  crease := { q | q coincident a; q coincident b }
-  meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
+  centres := { c | c in a.smooth; c distance(>= r) boundary(a.smooth); c in b.smooth
+               c distance(>= r) boundary(b.smooth) }
+  crease := { q | q in a; q in b }
+  meeting := { q | q in boundary(a.side); q in boundary(b.side); q in crease.ends }
   distance(p, centres) >= r
   distance(p, crease) <= distance(p, meeting)
-  p inside crease.ends
+  p in crease.ends
 }
 
 // The same at a concave edge, every side turned round: what the ball rolled outside both faces
 // cannot reach, added.
 component Fill(a: face, b: face, r: Length) symmetric(a, b) := { p |
-  p outside a.smooth
-  p outside b.smooth
+  p not in a.smooth
+  p not in b.smooth
   angle(a, b, at: p) >= 180deg
-  centres := { c | c outside a.smooth; c distance(>= r) a.smooth; c outside b.smooth
-               c distance(>= r) b.smooth }
-  crease := { q | q coincident a; q coincident b }
-  meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
+  centres := { c | c not in a.smooth; c distance(>= r) boundary(a.smooth); c not in b.smooth
+               c distance(>= r) boundary(b.smooth) }
+  crease := { q | q in a; q in b }
+  meeting := { q | q in boundary(a.side); q in boundary(b.side); q in crease.ends }
   distance(p, centres) >= r
   distance(p, crease) <= distance(p, meeting)
-  p inside crease.ends
+  p in crease.ends
 }
 
 // Where three rounded convex edges meet at a corner of the body: what the ball touching all three
 // faces cannot reach, within the three edges' extents.
 component Corner(a: face, b: face, c: face, r: Length) symmetric(a, b, c) := { p |
-  p inside a
-  p inside b
-  p inside c
+  p in a.side
+  p in b.side
+  p in c.side
   angle(a, b, at: p) <= 180deg
   angle(b, c, at: p) <= 180deg
   angle(c, a, at: p) <= 180deg
-  centres := { o | o inside a; o distance(>= r) a.surface; o inside b; o distance(>= r) b.surface
-               o inside c; o distance(>= r) c.surface }
-  vertex := { q | q coincident a; q coincident b; q coincident c }
-  meeting := { q | q coincident a.surface; q coincident b.surface; q coincident c.surface }
-  ab := { q | q coincident a; q coincident b }
-  bc := { q | q coincident b; q coincident c }
-  ca := { q | q coincident c; q coincident a }
+  centres := { o | o in a.side; o distance(>= r) boundary(a.side)
+               o in b.side; o distance(>= r) boundary(b.side)
+               o in c.side; o distance(>= r) boundary(c.side) }
+  vertex := { q | q in a; q in b; q in c }
+  meeting := { q | q in boundary(a.side); q in boundary(b.side); q in boundary(c.side) }
+  ab := { q | q in a; q in b }
+  bc := { q | q in b; q in c }
+  ca := { q | q in c; q in a }
   distance(p, centres) >= r
   distance(p, vertex) <= distance(p, meeting)
-  p inside ab.ends
-  p inside bc.ends
-  p inside ca.ends
+  p in ab.ends
+  p in bc.ends
+  p in ca.ends
 }
 
 // `Corner` at a concave corner, every side turned round.
 component CornerFill(a: face, b: face, c: face, r: Length) symmetric(a, b, c) := { p |
-  p outside a
-  p outside b
-  p outside c
+  p not in a.side
+  p not in b.side
+  p not in c.side
   angle(a, b, at: p) >= 180deg
   angle(b, c, at: p) >= 180deg
   angle(c, a, at: p) >= 180deg
-  centres := { o | o outside a; o distance(>= r) a.surface; o outside b; o distance(>= r) b.surface
-               o outside c; o distance(>= r) c.surface }
-  vertex := { q | q coincident a; q coincident b; q coincident c }
-  meeting := { q | q coincident a.surface; q coincident b.surface; q coincident c.surface }
-  ab := { q | q coincident a; q coincident b }
-  bc := { q | q coincident b; q coincident c }
-  ca := { q | q coincident c; q coincident a }
+  centres := { o | o not in a.side; o distance(>= r) boundary(a.side)
+               o not in b.side; o distance(>= r) boundary(b.side)
+               o not in c.side; o distance(>= r) boundary(c.side) }
+  vertex := { q | q in a; q in b; q in c }
+  meeting := { q | q in boundary(a.side); q in boundary(b.side); q in boundary(c.side) }
+  ab := { q | q in a; q in b }
+  bc := { q | q in b; q in c }
+  ca := { q | q in c; q in a }
   distance(p, centres) >= r
   distance(p, vertex) <= distance(p, meeting)
-  p inside ab.ends
-  p inside bc.ends
-  p inside ca.ends
+  p in ab.ends
+  p in bc.ends
+  p in ca.ends
 }
 
 // A chamfer's flat at a convex edge: the points within both faces nearer them than the flat
 // through each face's point its leg from the other face — `la` on `a`, `lb` on `b` (#183 X1's
 // finding 4).  Between planes the flat, about an axis a cone.
 component Flat(a: face, b: face, la: Length, lb: Length) symmetric((a, la), (b, lb)) := { p |
-  p inside a.smooth
-  p inside b.smooth
+  p in a.smooth
+  p in b.smooth
   angle(a, b, at: p) <= 180deg
   distance(p, a.smooth) / lb + distance(p, b.smooth) / la <= 1
-  crease := { q | q coincident a; q coincident b }
-  meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
+  crease := { q | q in a; q in b }
+  meeting := { q | q in boundary(a.side); q in boundary(b.side); q in crease.ends }
   distance(p, crease) <= distance(p, meeting)
-  p inside crease.ends
+  p in crease.ends
 }
 
 // `Flat` at a concave edge, every side turned round: what the flat adds.
 component FlatFill(a: face, b: face, la: Length, lb: Length) symmetric((a, la), (b, lb)) := { p |
-  p outside a.smooth
-  p outside b.smooth
+  p not in a.smooth
+  p not in b.smooth
   angle(a, b, at: p) >= 180deg
   distance(p, a.smooth) / lb + distance(p, b.smooth) / la <= 1
-  crease := { q | q coincident a; q coincident b }
-  meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
+  crease := { q | q in a; q in b }
+  meeting := { q | q in boundary(a.side); q in boundary(b.side); q in crease.ends }
   distance(p, crease) <= distance(p, meeting)
-  p inside crease.ends
+  p in crease.ends
 }
 
 // `A round(r: 3mm) B`: every edge where a face of `A` meets a face of `B` rounded by a ball of
@@ -188,13 +191,13 @@ chamfer(d) X := X chamfer(d: d) X
 //   window.body cut frame_part
 component Grown(B: solid, d: Length) {
   when d > 0mm {
-    within := { c | c inside B }
+    within := { c | c in B }
     near := { p | distance(p, within) <= d }
     body := solid(near)
   }
   when d < 0mm {
-    beyond := { c | c outside B }
-    kept := { p | p inside B; distance(p, beyond) >= -d }
+    beyond := { c | c not in B }
+    kept := { p | p in B; distance(p, beyond) >= -d }
     body := solid(kept)
   }
   when d == 0mm {
@@ -221,10 +224,10 @@ component Grown(B: solid, d: Length) {
 //   tray.top shell(t: 2mm) tray
 //   shell(t: 1.5mm) float
 A shell(t) B := {
-  within := { c | c inside B }
+  within := { c | c in B }
   cavity := solid(within)
   repeat w in B {
-    when not w in A {
+    when w not in A {
       wall := { p | p distance(<= t) w }
       walled := solid(wall)
       walled cut cavity
@@ -233,8 +236,8 @@ A shell(t) B := {
   cavity cut B.body
 }
 shell(t) X := {
-  beyond := { c | c outside X }
-  kept := { p | p inside X; distance(p, beyond) >= t }
+  beyond := { c | c not in X }
+  kept := { p | p in X; distance(p, beyond) >= t }
   cavity := solid(kept)
   cavity cut X.body
 }
@@ -243,15 +246,17 @@ shell(t) X := {
 //
 // A region is a conjunction, so every edge where two of its bounds meet is convex, and a round or
 // a chamfer there is one more bound on its point: no solid, no body.  `a` and `b` are two of the
-// sets the region is within, as it states them (`{ q | q outside toe }` for the side outside a
+// sets the region is within, as it states them (`{ q | q not in toe }` for the side outside a
 // toe it bounds).
 //
-//   disc := { p | p inside wall; p inside top; p inside bottom
-//                 p inside std.rounds.Rounded(wall, top, r: 2mm) }
+//   disc := { p | p in wall; p in top; p in bottom
+//                 p in std.rounds.Rounded(wall, top, r: 2mm) }
 
-// Within reach of a ball of radius `r` lying within both `a` and `b`.
+// Within reach of a ball of radius `r` lying within both `a` and `b`: the centres at least `r`
+// from everything not in either, and the points within `r` of them — `a` and `b` together,
+// opened by the ball.
 component Rounded(a: set, b: set, r: Length) := { p |
-  centres := { c | c distance(>= r, side: inside) a; c distance(>= r, side: inside) b }
+  centres := { c | c distance(>= r) { q | q not in a }; c distance(>= r) { q | q not in b } }
   distance(p, centres) <= r
 }
 
@@ -262,7 +267,7 @@ component Rounded(a: set, b: set, r: Length) := { p |
 // curved in section it bows with it (on a sphere beside a cone, a parabola's arc turned).
 // Multiplied through by both legs, so a leg of nothing cuts nothing.
 component Chamfered(a: set, b: set, la: Length, lb: Length) := { p |
-  out_a := { q | q outside a }
-  out_b := { q | q outside b }
+  out_a := { q | q not in a }
+  out_b := { q | q not in b }
   la * distance(p, out_a) + lb * distance(p, out_b) >= la * lb
 }

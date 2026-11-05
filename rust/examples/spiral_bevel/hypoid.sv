@@ -176,7 +176,7 @@ component GearCone(P: plane, across: axis, pinion_teeth: Int, gear_teeth: Int,
   to_foot := line(M, foot)
   ax := line(O, foot)
   O level(across) foot
-  foot inside P
+  foot distance(<= 0mm, along: n) P
   to_foot perpendicular ax
   M distance(gear_teeth * mean_module / 2) foot
   O distance(pinion_teeth * mean_module / 2) foot
@@ -224,8 +224,8 @@ component PinionCone(P: plane, up: axis, gear: Gear, trace: Trace, shaft_angle: 
   square perpendicular up
   ax perpendicular square
   virtual_ax perpendicular square
-  foot outside P
-  virtual_foot outside P
+  foot distance(>= 0mm, along: n) P
+  virtual_foot distance(>= 0mm, along: n) P
   gear.M level(ax) foot
   gear.M level(virtual_ax) virtual_foot
   gear.M distance(rp) virtual_foot
@@ -240,19 +240,19 @@ component PinionCone(P: plane, up: axis, gear: Gear, trace: Trace, shaft_angle: 
 // tip's toe and heel corners. Its faces are named by their sets: `material.tip`, `.heel`, `.toe`
 // and `.back`.
 component Blank(rim: line, ax: line, design: BlankDesign) {
-  toe := std.sets.Sphere(rim.p1)
-  heel := std.sets.Sphere(rim.p1)
-  rim.p2 distance(design.width / 2, side: outside) toe
-  rim.p2 distance(design.width / 2, side: inside) heel
+  toe := std.sets.Ball(rim.p1)
+  heel := std.sets.Ball(rim.p1)
+  rim.p2 distance(design.width / 2) toe
+  rim.p2 distance(design.width / 2) { q | q not in heel }
   pitch := std.sets.Cone(ax)
-  rim.p2 coincident pitch
-  tip := std.sets.Offset(pitch, d: design.addendum)
-  back := { q | q distance(<= design.back, side: inside) pitch }
-  beyond_toe := { q | q outside toe }
-  region := { p | p inside tip; p inside heel; p outside toe; p inside back
-                  p inside std.rounds.Chamfered(tip, beyond_toe, la: design.relief,
+  rim.p2 in boundary(pitch)
+  tip := { q | q distance(<= design.addendum) pitch }
+  back := { q | q distance(<= design.back) { r | r not in pitch } }
+  beyond_toe := { q | q not in toe }
+  region := { p | p in tip; p in heel; p not in toe; p in back
+                  p in std.rounds.Chamfered(tip, beyond_toe, la: design.relief,
                                                 lb: design.relief)
-                  p inside std.rounds.Chamfered(tip, heel, la: design.relief, lb: design.relief) }
+                  p in std.rounds.Chamfered(tip, heel, la: design.relief, lb: design.relief) }
   material := solid(region)
 }
 
@@ -293,21 +293,21 @@ component FaceMill(P: plane, gear: Gear, trace: Trace, R: Length, mean_module: L
   cap coincident to_cap
   gear.O distance(1.1 * R + mean_module, along: to_cap) cap
   reach := std.sets.Cylinder(ax)
-  cap coincident reach
+  cap in boundary(reach)
 }
 
 // The crown tooth, the pinion's generator: beyond the flank cone `a` and within `b`, each grown by
 // `grow` (a quarter of the backlash: the envelope of an offset is the offset of the envelope),
 // above `lo` and below `hi`, its tip's edges rounded by `r`. Each set names the face it bounds.
 component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
-  inner := { q | q distance(<= grow, side: inside) a }
-  outer := std.sets.Offset(b, d: grow)
-  base := { q | q outside lo }
-  tip := { q | q inside hi }
+  inner := { q | q distance(<= grow) { r | r not in a } }
+  outer := { q | q distance(<= grow) b }
+  base := { q | q not in lo }
+  tip := { q | q in hi }
   inner_round := std.rounds.Rounded(inner, tip, r: r)
   outer_round := std.rounds.Rounded(outer, tip, r: r)
-  region := { p | p inside inner; p inside outer; p inside base; p inside tip
-                  p inside inner_round; p inside outer_round }
+  region := { p | p in inner; p in outer; p in base; p in tip
+                  p in inner_round; p in outer_round }
   construction crown := solid(region)
 }
 // The crown space, the gear's generator: the tooth's mate on the same cones, tip down, so the two
@@ -316,14 +316,14 @@ component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
 // `step`).
 component Space(a: set, b: set, lo: set, hi: set, cap: set, step: frame, pitch: Angle,
     grow: Length, r: Length) {
-  inner := { q | q distance(<= grow, side: inside) a }
-  outer := std.sets.Offset(b, d: grow)
-  tip := { q | q outside lo }
-  base := { q | q inside hi }
+  inner := { q | q distance(<= grow) { r | r not in a } }
+  outer := { q | q distance(<= grow) b }
+  tip := { q | q not in lo }
+  base := { q | q in hi }
   inner_round := std.rounds.Rounded(inner, tip, r: r)
   outer_round := std.rounds.Rounded(outer, tip, r: r)
-  near := { p | p inside inner; p inside cap; p inside tip; p inside base; p inside inner_round }
-  far := { p | p inside outer; p inside tip; p inside base; p inside outer_round }
+  near := { p | p in inner; p in cap; p in tip; p in base; p in inner_round }
+  far := { p | p in outer; p in tip; p in base; p in outer_round }
   private construction outer_crown := solid(near)
   private construction inner_crown := solid(far)
   private construction neighbor := inner_crown at(under: step) pitch
@@ -337,7 +337,7 @@ component Space(a: set, b: set, lo: set, hi: set, cap: set, step: frame, pitch: 
 // `index` at each of `n` teeth. A member is its blank less its crown's cut.
 component Generated(body: solid, tool: solid, under: frame, seen_from: frame, index: frame,
     n: Int) {
-  construction removal := solid({ p | p inside(under: under, seen_from: seen_from) tool })
+  construction removal := solid({ p | some t: p in tool at(under: under, seen_from: seen_from) t })
   repeat n as i {
     private construction indexed := removal at(under: index) i * 360deg / n
     indexed cut body
@@ -358,7 +358,7 @@ component Member(blank: solid, tool: solid, under: frame, seen_from: frame, inde
 component Topping(flank: set, ax: line, n: plane, toward: line, height: Length, half: Angle,
     opens: Scalar) {
   kink := point in n
-  kink coincident flank.surface
+  kink in boundary(flank)
   ax.p1 distance(height, along: ax) kink
   ax.p1 distance(>= 0mm, along: toward) kink
   cone := Blade(ax, kink, half: half, opens: opens)
@@ -381,7 +381,7 @@ component Blade(about: line, q: point, half: Angle, opens: Scalar) := { p |
   across perpendicular about
   construction spine := line(apex, foot)
   private construction g := line(apex, p)
-  spine angle(half) g
+  spine angle(<= half) g
 }
 
 // -- the face mill's settings, found -------------------------------------------------------------
@@ -397,9 +397,9 @@ component Balanced(P: plane, gear: Gear, trace: Trace, ax: line, inner: set, out
     crown_roll: frame, pinion_roll: frame, gear_roll: frame, R: Length, face: Length,
     depth: Length, cutter_radius: Length) {
   gear.M distance(>= R) trace.C
-  pinion_flank := envelope(inner over t in (-30deg, 30deg), under: crown_roll,
+  pinion_flank := envelope(boundary(inner) over t in (-30deg, 30deg), under: crown_roll,
                            seen_from: pinion_roll)
-  gear_flank := envelope(outer over t in (-30deg, 30deg), under: crown_roll, seen_from: gear_roll)
+  gear_flank := envelope(boundary(outer) over t in (-30deg, 30deg), under: crown_roll, seen_from: gear_roll)
   // the normal section through M
   N := plane(u: trace.normal, v: ax)
   mean := Margins(N, gear.M, trace.normal, ax, trace.C, pinion_flank, gear_flank, depth: depth)

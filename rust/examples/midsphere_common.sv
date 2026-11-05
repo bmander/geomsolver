@@ -29,7 +29,7 @@ in std.front {
 }
 
 ball := std.sets.Sphere(std.origin, r: hint(7mm))
-a coincident ball
+a in ball
 
 body := solid(ball)
 cube common body

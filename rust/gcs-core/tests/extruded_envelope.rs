@@ -47,7 +47,7 @@ turn := frame
 turn spins(1) o
 rack := frame
 rack slides(2 * pi * 20mm) slide
-construction space := solid({ p | p inside(under: rack, seen_from: turn, over t in (-60deg, 60deg)) rack_tooth })
+construction space := solid({ p | some t in (-60deg, 60deg): p in rack_tooth at(under: rack, seen_from: turn) t })
 side := surface(rack_tooth, edge: rack_flank)
 flank := envelope(side over t in (-30deg, 30deg), under: rack, seen_from: turn)
 ";

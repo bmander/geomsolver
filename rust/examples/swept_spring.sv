@@ -37,4 +37,4 @@ in std.front {
 
 climb := frame
 climb screws(pitch) spindle
-spring := solid({ p | p inside(under: climb, over t in (0deg, turns * 360deg)) ball.body })
+spring := solid({ p | some t in (0deg, turns * 360deg): p in ball.body at(under: climb) t })

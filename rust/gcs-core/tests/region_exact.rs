@@ -53,8 +53,8 @@ fn an_ellipsoid_by_its_foci_is_an_ellipse_turned() {
     // the bound turned round, the ellipsoid taken out of a ball about it
     let e = solved(&format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
                              f2 := point hint((-3, 0, 0))\nfix((-3, 0, 0)) f2\n\
-                             ball := std.sets.Sphere(c, r: 8)\n\
-                             shell := {{ p | p inside ball; distance(p, f1) + distance(p, f2) >= 10mm }}\n\
+                             ball := std.sets.Ball(c, r: 8)\n\
+                             shell := {{ p | p in ball; distance(p, f1) + distance(p, f2) >= 10mm }}\n\
                              s := solid(shell)\n"));
     let b = exported(&e, "s");
     close(props::volume(&b), 4.0 / 3.0 * PI * (512.0 - 80.0), 1e-9);
@@ -66,9 +66,9 @@ fn an_ellipsoid_by_its_foci_is_an_ellipse_turned() {
 fn a_voronoi_cell_is_a_ball_halved_by_a_plane() {
     let e = solved(&format!("{AXES}a := point hint((2, 0, 0))\nfix((2, 0, 0)) a\n\
                              b := point hint((-2, 0, 0))\nfix((-2, 0, 0)) b\n\
-                             ball := std.sets.Sphere(c, r: 5)\n\
-                             near_a := {{ p | p inside ball; distance(p, a) <= distance(p, b) }}\n\
-                             near_b := {{ p | p inside ball; distance(p, a) >= distance(p, b) }}\n\
+                             ball := std.sets.Ball(c, r: 5)\n\
+                             near_a := {{ p | p in ball; distance(p, a) <= distance(p, b) }}\n\
+                             near_b := {{ p | p in ball; distance(p, a) >= distance(p, b) }}\n\
                              sa := solid(near_a)\nsb := solid(near_b)\n"));
     for (name, x) in [("sa", 1.0), ("sb", -1.0)] {
         let s = ent(&e, name).i();
@@ -95,8 +95,8 @@ fn a_voronoi_cell_is_a_ball_halved_by_a_plane() {
 fn a_hyperboloids_lobe_is_a_hyperbola_turned() {
     let e = solved(&format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
                              f2 := point hint((-3, 0, 0))\nfix((-3, 0, 0)) f2\n\
-                             ball := std.sets.Sphere(c, r: 6)\n\
-                             lobe := {{ p | p inside ball; distance(p, f2) - distance(p, f1) >= 2mm }}\n\
+                             ball := std.sets.Ball(c, r: 6)\n\
+                             lobe := {{ p | p in ball; distance(p, f2) - distance(p, f1) >= 2mm }}\n\
                              s := solid(lobe)\n"));
     let s = ent(&e, "s").i();
     assert!(!gcs_core::solid::region::in_general(&e.sketch, s), "{:?}",
@@ -139,10 +139,10 @@ fn a_sum_no_conic_folds_stays_the_fields() {
 #[test]
 fn two_crossing_cylinders_are_their_common() {
     let e = solved(&format!("{AXES}a := std.sets.Cylinder(xl, r: 2)\nb := std.sets.Cylinder(zl, r: 2)\n\
-                             both := {{ p | p inside a; p inside b }}\nbi := solid(both)\n\
+                             both := {{ p | p in a; p in b }}\nbi := solid(both)\n\
                              o := point hint((2, 0, 0))\nfix((2, 0, 0)) o\n\
-                             ball := std.sets.Sphere(o, r: 5)\nbore := std.sets.Cylinder(zl, r: 1)\n\
-                             bored := {{ p | p inside ball; p outside bore }}\ncored := solid(bored)\n"));
+                             ball := std.sets.Ball(o, r: 5)\nbore := std.sets.Cylinder(zl, r: 1)\n\
+                             bored := {{ p | p in ball; p not in bore }}\ncored := solid(bored)\n"));
     let bi = ent(&e, "bi").i();
     assert!(gcs_core::solid::region::in_general(&e.sketch, bi));
     assert!(matches!(gcs_core::solid::bounded::built(&e.sketch, bi), Some(Ok(_))));

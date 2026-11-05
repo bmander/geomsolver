@@ -24,8 +24,8 @@ fn eased(profile: &str, lengthwise: &str) -> String {
 L := point hint((10, 48, 10))
 fix((10mm, 48mm, 10mm)) L
 lengthwise := line(M, L)
-pinion_flank := envelope(flank over t in (-40deg, 40deg), under: gear_turn, seen_from: pinion_turn)
-contact := meshing(pinion_flank, flank over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn, ease: M,
+pinion_flank := envelope(boundary(flank) over t in (-40deg, 40deg), under: gear_turn, seen_from: pinion_turn)
+contact := meshing(pinion_flank, boundary(flank) over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn, ease: M,
                    along: lengthwise, profile: {profile}, lengthwise: {lengthwise})
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) contact

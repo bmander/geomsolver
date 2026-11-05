@@ -65,5 +65,5 @@ private way := axis
 fix(dir == (1, 0, 0)) way
 feed := frame
 feed slides(30mm) way
-construction slot := solid({ p | p inside(under: feed, over t in (0deg, 360deg)) mill })
+construction slot := solid({ p | some t in (0deg, 360deg): p in mill at(under: feed) t })
 slot cut block

@@ -85,7 +85,7 @@ rail coincident(sense: same) feed.axis; fix(ratio == 0, advance == {advance_mm}m
 pub fn swept(motion: &str,from_deg: f64,to_deg: f64) -> String {
     let reading = if motion.contains(':') { motion.to_string() }
         else { format!("under: {motion}") };
-    format!("swept := solid({{ p | p inside({reading}, over t in ({from_deg}deg, {to_deg}deg)) tool }})\n")
+    format!("swept := solid({{ p | some t in ({from_deg}deg, {to_deg}deg): p in tool at({reading}) t }})\n")
 }
 
 /// A turn about the line through the page points (u0, v0) and (u1, v1)

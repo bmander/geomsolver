@@ -69,5 +69,5 @@ private way := axis
 fix(dir == (1, 0, 0)) way
 feed := frame
 feed slides(36mm) way
-construction groove := solid({ p | p inside(under: feed, over t in (0deg, 360deg)) vwheel })
+construction groove := solid({ p | some t in (0deg, 360deg): p in vwheel at(under: feed) t })
 groove cut block

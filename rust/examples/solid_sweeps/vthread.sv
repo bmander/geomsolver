@@ -73,5 +73,5 @@ grind := frame
 grind screws(lead) ax
 start := -360deg * (wheel + 2mm) / lead
 finish := 360deg * (rod_l + wheel + 2mm) / lead
-construction groove := solid({ p | p inside(under: grind, over t in (start, finish)) vwheel })
+construction groove := solid({ p | some t in (start, finish): p in vwheel at(under: grind) t })
 groove cut rod

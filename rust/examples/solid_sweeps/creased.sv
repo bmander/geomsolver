@@ -84,5 +84,5 @@ wedge common block
 // the turn about the block's axis, and the groove it sweeps
 swing := frame
 swing turns(1) ax
-construction groove := solid({ p | p inside(under: swing, over t in (-140deg, 140deg)) bar })
+construction groove := solid({ p | some t in (-140deg, 140deg): p in bar at(under: swing) t })
 groove cut block

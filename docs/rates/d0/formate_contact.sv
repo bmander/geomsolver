@@ -25,7 +25,7 @@ component Action(cone: set, gear: frame, pinion: frame, phi: Angle, s: Scalar) {
   x := point
   y := point
   y coincident(under: gear, t == -phi) x        // x as the gear sees it
-  y coincident cone                             // on the gear's formed flank
+  y in boundary(cone)                             // on the gear's formed flank
   T := plane
   T.origin coincident y
   T tangent(at: y) cone

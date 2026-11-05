@@ -17,6 +17,19 @@ use std::sync::Arc;
 
 const R: f64 = 15.;
 
+/// Where `SOLVENT_SWEEP_PROFILE` is set, a meter counting the test's work until what is returned
+/// is dropped, its profile printed then — what a meeting's analysis spends (#777 V4; #780 R4 cites
+/// it before and after); else nothing.
+fn profiled(what: &'static str) -> Option<impl Drop> {
+    use gcs_core::meter::{self as meter,Budget,Meter};
+    struct Printed { what: &'static str,m: std::sync::Arc<Meter>,clock: std::time::Instant,_on: meter::Installed }
+    impl Drop for Printed { fn drop(&mut self) { eprintln!("{}: {}  took {:?}",self.what,self.m.report(),self.clock.elapsed()) } }
+    if !meter::profiling() { return None }
+    let m = Meter::new(Budget::UNLIMITED);
+    let _on = meter::installed(&m);
+    Some(Printed {what,m,clock:std::time::Instant::now(),_on})
+}
+
 /// The vault's arc in the plane `x`: the rational quadratic through (y, z) = (−12, 10), (0, 26),
 /// (12, 10), weights 1, 3/5, 1 — a circle of radius 15 about (y, z) = (0, 1).
 fn arch(x: f64) -> BSpline {
@@ -65,6 +78,7 @@ fn seg(delta: f64) -> f64 { R*R*((R-delta)/R).acos()-(R-delta)*(2.*R*delta-delta
 /// of the arc and as the rational sheet. Two vaults crossed (#715) still read rank 2 at their crown.
 #[test]
 fn a_vaults_crown_on_its_tangent_plane_reads_as_a_critical_curve() {
+    let _profile = profiled("the crown's critical curve");
     let plane = Surface::Plane(Frame::about([0.,0.,16.],[0.,0.,1.]));
     let extrusion = Surface::Extrusion(Frame::new([-12.,0.,0.],[1.,0.,0.],[0.,1.,0.]),Arc::new(Curve::BSpline(Arc::new(arch(-12.)))));
     let sheet = vault_sheet().faces.iter().find(|f| matches!(&f.surface,Surface::BSpline(_,n) if n.is_rational())).unwrap().surface.clone();
@@ -103,6 +117,7 @@ fn cut(block: &Brep,o: V,out: V) -> Result<Brep,String> { kept(block,o,[-out[0],
 /// kernel, to 1e-9; each valid.
 #[test]
 fn a_vault_cut_at_and_below_its_crown_is_the_vault_less_its_segment() {
+    let _profile = profiled("the vault cut below its crown");
     for (what,block) in [("the prism",vault_prism()),("the sheet",vault_sheet())] {
         assert!((volume(&block)-whole()).abs() <= 1e-9*whole(),"{what}: {} against {}",volume(&block),whole());
         for delta in [0.,1e-9,1e-7,1e-5,1e-3,1e-2,1e-1] {
@@ -121,6 +136,7 @@ fn a_vault_cut_at_and_below_its_crown_is_the_vault_less_its_segment() {
 /// the cut takes `∫₋₁₂⁰ seg(−x tan α) dx`, by Gauss–Legendre. To 1e-9, both vaults.
 #[test]
 fn a_vault_cut_by_a_tilted_plane_through_its_crown_is_the_vault_less_its_wedge() {
+    let _profile = profiled("the vault cut tilted");
     let nodes = [(-0.906179845938664,0.236926885056189),(-0.538469310105683,0.478628670499366),(0.,0.568888888888889),
         (0.538469310105683,0.478628670499366),(0.906179845938664,0.236926885056189)];
     let mut failed: Vec<String> = Vec::new();
@@ -150,6 +166,7 @@ fn a_vault_cut_by_a_tilted_plane_through_its_crown_is_the_vault_less_its_wedge()
 /// Kept below the plane, the block is whole: its volume and its area to 1e-9.
 #[test]
 fn a_fitted_sheet_touching_a_plane_along_a_wavy_curve_keeps_whole_below_it() {
+    let _profile = profiled("the wavy touch");
     let (x0,x1,y0,y1) = (-6.,6.,-4.,4.);
     let top = |u: f64,v: f64| { let (y,x) = (y1+(y0-y1)*u,x0+(x1-x0)*v); let w = y-0.2*x.sin(); [x,y,16.-w*w/30.] };
     let (net,_) = gcs_core::brep::nurbs::fit_net(&top,3,3,16,16,1e-10).unwrap();
@@ -184,6 +201,7 @@ fn a_fitted_sheet_touching_a_plane_along_a_wavy_curve_keeps_whole_below_it() {
 /// each is measured, and said.
 #[test]
 fn each_closed_form_for_a_touch_is_held_to_the_general_method() {
+    let _profile = profiled("the closed forms held");
     use gcs_core::brep::ssi::{intersect,Ssi};
     let z = [0.,0.,1.];
     let about = |o: V| Frame::about(o,z);
@@ -261,6 +279,7 @@ fn each_closed_form_for_a_touch_is_held_to_the_general_method() {
 /// seven tilted.
 #[test]
 fn the_boolean_reads_touches_and_shallow_crossings_through_each_road() {
+    let _profile = profiled("the Boolean's roads");
     use gcs_core::brep::boolean::{combined,split,Op};
     use gcs_core::brep::build::square;
     let mut counts: Vec<String> = Vec::new();
@@ -289,4 +308,26 @@ fn the_boolean_reads_touches_and_shallow_crossings_through_each_road() {
         }
     }
     assert!(counts.is_empty(),"{}",counts.join("\n"));
+}
+
+/// **A march refused as shallow says so by its type** (#780 R3, `ssi::Shallow`): a plane on a
+/// cylinder's side touches it along a ruling, and a trace seeded there has no tangent to march along
+/// and no touch at a point to end at (`ssi::touch`'s `Q` is singular along a ruling): refused, by
+/// the surfaces' kinds, the angle they meet at and the point — what `meeting::marched` reads the
+/// meeting's ridges and level curves for, by its type and never by its words — and said, where it
+/// stands, as before.
+#[test]
+fn a_march_refused_as_shallow_says_so_by_its_type() {
+    let _profile = profiled("the shallow refusal's type");
+    use gcs_core::brep::ssi::{trace,Shallow};
+    let plane = Surface::Plane(Frame::about([0.,0.,1.],[0.,0.,1.]));
+    let cylinder = Surface::Cylinder(Frame::new([0.;3],[1.,0.,0.],[0.,1.,0.]),1.);
+    let seed = [0.3,0.,1.];
+    let refused = trace(&plane,&cylinder,&[seed],[-2.;3],[2.;3],1e-9).unwrap_err();
+    let Shallow {a,b,degrees,at} = refused.clone();
+    assert_eq!((a,b),("plane","cylinder"));
+    assert!(degrees.abs() < 1e-6 && distance(at,seed) <= 1e-9,"{refused:?}");
+    let said = String::from(refused);
+    assert!(said.starts_with("a plane and a cylinder meet at 0.00°") && said.contains("nearly touching: their meeting is ill-conditioned"),
+        "{said}");
 }

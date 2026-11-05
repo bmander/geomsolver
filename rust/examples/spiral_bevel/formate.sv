@@ -145,13 +145,13 @@ component FormatePair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, s
 // `concave`, the next tooth's concave one.
 component Space(a: set, b: set, lo: set, hi: set, below: set, above: set, cap: set, step: frame,
     pitch: Angle, grow: Length, r: Length) {
-  convex := { q | q distance(<= grow, side: inside) a }
-  concave := std.sets.Offset(b, d: grow)
-  tip := { q | q outside lo }
-  base := { q | q inside hi }
+  convex := { q | q distance(<= grow) { r | r not in a } }
+  concave := { q | q distance(<= grow) b }
+  tip := { q | q not in lo }
+  base := { q | q in hi }
   convex_round := std.rounds.Rounded(convex, tip, r: r)
-  near := { p | p inside convex; p inside cap; p inside tip; p inside base; p inside convex_round }
-  far := { p | p inside concave; p inside cap; p outside below; p inside above }
+  near := { p | p in convex; p in cap; p in tip; p in base; p in convex_round }
+  far := { p | p in concave; p in cap; p not in below; p in above }
   private construction behind := solid(near)
   private construction flank := solid(far)
   private construction ahead := flank at(under: step) pitch

@@ -84,25 +84,25 @@ fn a_set_is_nothing_until_it_is_used() {
 /// and the point in the side — one equation, read as the statement wrote it.
 #[test]
 fn a_point_on_a_sphere_is_its_radius_from_the_centre() {
-    let src = with("a coincident ball");
+    let src = with("a in ball");
     let e = read(&src);
     let sk = solved(&e);
     let got = norm(sub(at(&sk, &e, "a"), at(&sk, &e, "c")));
     assert!((got - 12.0).abs() < 1e-9, "{got}");
     assert_eq!(dof(&with("")) - dof(&src), 1);
-    assert!(described(&e).contains(&"a coincident ball".to_string()), "{:?}", described(&e));
+    assert!(described(&e).contains(&"a in ball".to_string()), "{:?}", described(&e));
 }
 
 /// A set written in place reads the names of the body it stands in, and its point is whatever is
 /// put on it.
 #[test]
 fn a_set_written_in_place_reads_the_names_around_it() {
-    let e = read(&with("near := { p | p distance(20) c }\na coincident near"));
+    let e = read(&with("near := { p | p distance(20) c }\na in near"));
     let sk = solved(&e);
     let got = norm(sub(at(&sk, &e, "a"), at(&sk, &e, "c")));
     assert!((got - 20.0).abs() < 1e-9, "{got}");
     // and a set of two conditions holds both: the point on the sphere and on the shaft
-    let both = "on_both := { p |\n  p coincident ball\n  p coincident shaft\n}\na coincident on_both";
+    let both = "on_both := { p |\n  p in ball\n  p in boundary(shaft)\n}\na in on_both";
     let e = read(&with(both));
     let sk = solved(&e);
     let (p, q) = ends(&sk, ent(&e, "ax"));
@@ -118,7 +118,7 @@ fn a_set_written_in_place_reads_the_names_around_it() {
 fn a_plane_in_a_body_holds_of_a_point_drawn_in_it() {
     let m = "m := point hint((10, 35)) in std.front
 ";
-    let src = with(&format!("{m}m coincident {{ p | p coincident ball; p coincident std.front }}"));
+    let src = with(&format!("{m}m in {{ p | p in ball; p coincident std.front }}"));
     let e = read(&src);
     let sk = solved(&e);
     let got = norm(sub(at(&sk, &e, "m"), at(&sk, &e, "c")));
@@ -127,11 +127,11 @@ fn a_plane_in_a_body_holds_of_a_point_drawn_in_it() {
     assert_eq!(dof(&with(m)) - dof(&src), 1);
     // and a family whose body says so, the instance's point drawn in its plane
     let ring = "component Ring(on: plane, center: point, r: Length) := { p |
-                  p coincident std.sets.Sphere(center, r: r)
+                  p in std.sets.Sphere(center, r: r)
   p coincident on
 }
 ";
-    let src = with(&format!("{ring}{m}m coincident Ring(std.front, c, r: 12)"));
+    let src = with(&format!("{ring}{m}m in Ring(std.front, c, r: 12)"));
     let e = read(&src);
     let sk = solved(&e);
     assert!((norm(sub(at(&sk, &e, "m"), at(&sk, &e, "c"))) - 12.0).abs() < 1e-9);
@@ -198,7 +198,7 @@ fn an_owned_points_seed_is_written_back() {
           fix((30, 30)) o
 }}
 k := Circle(std.front, center: hint((40, 0)), r: 10)
-        q coincident k
+        q in boundary(k)
 o distance(20) k.center
 ");
     let e = read(&src);
@@ -238,10 +238,10 @@ fn what_an_owned_point_formal_refuses() {
 /// member, and with its head written over two lines.
 #[test]
 fn a_set_is_reached_by_any_name_for_it() {
-    let e = read(&with("d := {sph: ball}\na coincident d.sph"));
+    let e = read(&with("d := {sph: ball}\na in d.sph"));
     let sk = solved(&e);
     assert!((norm(sub(at(&sk, &e, "a"), at(&sk, &e, "c"))) - 12.0).abs() < 1e-9);
-    let e = read(&with("near := {\n  p |\n  p distance(20) c\n}\na coincident near"));
+    let e = read(&with("near := {\n  p |\n  p distance(20) c\n}\na in near"));
     let sk = solved(&e);
     assert!((norm(sub(at(&sk, &e, "a"), at(&sk, &e, "c"))) - 20.0).abs() < 1e-9);
 }
@@ -250,21 +250,21 @@ fn a_set_is_reached_by_any_name_for_it() {
 /// with the axis at the apex, on the nappe the axis points into.
 #[test]
 fn a_point_on_a_cylinder_and_on_a_cone() {
-    let e = read(&with("a coincident shaft"));
+    let e = read(&with("a in boundary(shaft)"));
     let sk = solved(&e);
     let (p, q) = ends(&sk, ent(&e, "ax"));
     let got = off_line(at(&sk, &e, "a"), p, sub(q, p));
     assert!((got - 10.0).abs() < 1e-9, "{got}");
-    let e = read(&with("a coincident k"));
+    let e = read(&with("a in boundary(k)"));
     let sk = solved(&e);
     let (apex, q) = ends(&sk, ent(&e, "ax"));
     let w = sub(at(&sk, &e, "a"), apex);
     assert!((angle(w, sub(q, apex)) - 30.0).abs() < 1e-9, "{}", angle(w, sub(q, apex)));
     assert!(dot(w, sub(q, apex)) > 0.0, "on the nappe the axis points into");
-    assert!(described(&e).contains(&"a coincident k".to_string()), "{:?}", described(&e));
+    assert!(described(&e).contains(&"a in boundary(k)".to_string()), "{:?}", described(&e));
     // and a half-angle left unbound is found by the point
     let e = read(&format!(
-        "{VIEWS}k := std.sets.Cone(ax, half: hint(30deg))\nfix((130, 20)) a\na coincident k\n"
+        "{VIEWS}k := std.sets.Cone(ax, half: hint(30deg))\nfix((130, 20)) a\na in boundary(k)\n"
     ));
     let sk = solved(&e);
     let (apex, q) = ends(&sk, ent(&e, "ax"));
@@ -279,7 +279,7 @@ fn a_point_on_a_cylinder_and_on_a_cone() {
 /// the plane's kind.
 #[test]
 fn a_set_is_read_in_space_in_the_view_its_point_is_drawn_in() {
-    let src = with("b := point hint((20, 40)) in std.front\nfix(y == 40) b\nb coincident k");
+    let src = with("b := point hint((20, 40)) in std.front\nfix(y == 40) b\nb in boundary(k)");
     let e = read(&src);
     let kinds: Vec<_> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
     assert_eq!(kinds, [gcs_core::constraints::CKind::Angle3]);
@@ -296,13 +296,13 @@ fn a_set_is_read_in_space_in_the_view_its_point_is_drawn_in() {
         assert!(norm(sub(sk.world_point(i), again.world_point(i))) < 1e-7, "p{i}\n{lifted}");
     }
     // a sphere's distance in the plane is the distance in space: the plane's kind
-    let e = read(&with("b := point hint((20, 40)) in std.front\nb coincident ball"));
+    let e = read(&with("b := point hint((20, 40)) in std.front\nb in ball"));
     let kinds: Vec<_> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
     assert_eq!(kinds, [gcs_core::constraints::CKind::Distance]);
     // and a side, which a line in space has none of, is refused where the set is used
     refused(&with("wall := { q | q distance(5, side: left) ax }\nb := point hint((20, 40)) in \
-                   std.front\nb coincident wall"), "E040", "in space a line has no sides",
-            "coincident");
+                   std.front\nb in wall"), "E040", "in space a line has no sides",
+            "in");
 }
 
 /// The mark goes with the set, not with how it was reached: a set used in a relation word's body
@@ -311,9 +311,9 @@ fn a_set_is_read_in_space_in_the_view_its_point_is_drawn_in() {
 fn a_set_through_a_word_is_read_in_space() {
     let point = "b := point hint((20, 40)) in std.front\nfix(y == 40) b\n";
     for more in [
-        format!("a opens(h) l := a coincident std.sets.Cone(l, half: h)\n{point}b opens(h: 30deg) ax"),
+        format!("a opens(h) l := a in boundary(std.sets.Cone(l, half: h))\n{point}b opens(h: 30deg) ax"),
         format!("a sees(h) l := {{\n  private construction g := line(l.p1, a)\n  l angle(h) g\n}}\n\
-                 wedge := {{ p | p sees(h: 30deg) ax }}\n{point}b coincident wedge"),
+                 wedge := {{ p | p sees(h: 30deg) ax }}\n{point}b in wedge"),
     ] {
         let e = read(&with(&more));
         let kinds: Vec<_> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
@@ -323,8 +323,8 @@ fn a_set_through_a_word_is_read_in_space() {
     }
     // a sense, which an angle in space turns neither way, is refused where the set is used
     refused(&with("fan := { q | ax angle(30deg, sense: cw) (g := line(ax.p1, q)) }\n\
-                   b := point hint((20, 40)) in std.front\nb coincident fan"), "E040",
-            "turn neither way", "coincident");
+                   b := point hint((20, 40)) in std.front\nb in fan"), "E040",
+            "turn neither way", "in");
 }
 
 /// A tangency at a point drawn in the view both spheres' centres are drawn in: each body on its
@@ -335,7 +335,7 @@ fn a_derivative_at_a_point_drawn_in_a_view_is_read_in_space() {
     let src = "unit mm\nuse std\nuse std.sets\nin std.front {\n  c1 := point\n  fix((0, 0)) c1\n  \
                c2 := point\n  fix((10, 0)) c2\n  m := point hint((3, 1))\n}\n\
                s1 := std.sets.Sphere(c1, r: 4)\ns2 := std.sets.Sphere(c2, r: hint(5))\n\
-               m coincident s1\nm coincident s2\ns1 tangent(at: m) s2\n";
+               m in s1\nm in s2\ns1 tangent(at: m) s2\n";
     let e = read(src);
     use gcs_core::constraints::CKind;
     let derived: Vec<_> = e.sketch.constraints.iter().filter(|c| c.along.is_some())
@@ -359,11 +359,11 @@ fn two_tangencies_in_one_body_take_directions_apart() {
                 n := point hint((3, 41))\n  z := point hint((50, 50))\n}\n\
                 s1 := std.sets.Sphere(c1, r: 4)\ns2 := std.sets.Sphere(c2, r: hint(5))\n\
                 s3 := std.sets.Sphere(c3, r: 4)\ns4 := std.sets.Sphere(c4, r: hint(5))\n\
-                m coincident s1\nm coincident s2\nn coincident s3\nn coincident s4\n";
+                m in s1\nm in s2\nn in s3\nn in s4\n";
     let pairs = "s1 tangent(at: m) s2\n  s3 tangent(at: n) s4\n";
     for src in [
         format!("{head}{pairs}"),
-        format!("{head}both := {{ q |\n  {pairs}}}\nz coincident both\n"),
+        format!("{head}both := {{ q |\n  {pairs}}}\nz in both\n"),
     ] {
         let e = read(&src);
         let sk = solved(&e);
@@ -380,13 +380,13 @@ fn two_tangencies_in_one_body_take_directions_apart() {
 #[test]
 fn two_plane_tangencies_in_one_body_take_directions_apart() {
     let head = "unit mm\nuse std\nuse std.sets\nM := point in std.top\nfix((40, 0)) M\n\
-                C := point hint((35, 5, 18))\nb1 := std.sets.Sphere(C, r: 20)\nM coincident b1\n\
+                C := point hint((35, 5, 18))\nb1 := std.sets.Sphere(C, r: 20)\nM in b1\n\
                 N := point in std.top\nfix((-40, 0)) N\nD := point hint((-35, 5, 18))\n\
-                b2 := std.sets.Sphere(D, r: 20)\nN coincident b2\nz := point hint((50, 50, 50))\n";
+                b2 := std.sets.Sphere(D, r: 20)\nN in b2\nz := point hint((50, 50, 50))\n";
     let pairs = "std.top tangent(at: M) b1\n  std.top tangent(at: N) b2\n";
     for src in [
         format!("{head}{pairs}"),
-        format!("{head}both := {{ q |\n  {pairs}}}\nz coincident both\n"),
+        format!("{head}both := {{ q |\n  {pairs}}}\nz in both\n"),
     ] {
         let e = read(&src);
         let sk = solved(&e);
@@ -437,7 +437,7 @@ fn a_line_tangent_to_a_sphere_passes_the_centre_at_its_radius() {
 /// what `axis distance(r) l` states directly, found here at a contact.
 #[test]
 fn a_line_tangent_to_a_cylinder_is_its_radius_from_the_axis() {
-    let src = with("l tangent rod");
+    let src = with("l tangent boundary(rod)");
     let e = read(&src);
     let sk = solved(&e);
     let (p, q) = ends(&sk, ent(&e, "bx"));
@@ -454,7 +454,7 @@ fn a_line_tangent_to_a_cylinder_is_its_radius_from_the_axis() {
 /// it, `30 tan 20°` about where the axis crosses.
 #[test]
 fn a_line_tangent_to_a_cone_touches_without_crossing() {
-    let src = with("l tangent kc");
+    let src = with("l tangent boundary(kc)");
     let e = read(&src);
     let sk = solved(&e);
     let (apex, tip) = ends(&sk, ent(&e, "cx"));
@@ -480,7 +480,7 @@ fn a_line_tangent_to_a_cone_touches_without_crossing() {
 #[test]
 fn a_tangency_finds_an_unbound_half_angle() {
     let src = format!(
-        "{VIEWS}kd := std.sets.Cone(cx, half: hint(25deg))\nfix((5, 30)) l.p2\nl tangent kd\n"
+        "{VIEWS}kd := std.sets.Cone(cx, half: hint(25deg))\nfix((5, 30)) l.p2\nl tangent boundary(kd)\n"
     );
     let e = read(&src);
     assert!(e.sketch.constraints.iter().any(|c| c.along.is_some() && c.free.is_some()));
@@ -546,9 +546,9 @@ fn a_set_with_geometry_of_its_own_is_tangent_to_a_line() {
 #[test]
 fn two_sets_tangent_at_a_point() {
     let src = include_str!("../../examples/hypoid_pitch_cones.sv");
-    assert!(src.contains("\ngc tangent(at: M) pc\n"), "the example states the word");
+    assert!(src.contains("\nboundary(gc) tangent(at: M) boundary(pc)\n"), "the example states the word");
     let e = read(src);
-    assert!(described(&e).contains(&"gc tangent(at: M) pc".to_string()), "{:?}", described(&e));
+    assert!(described(&e).contains(&"boundary(gc) tangent(at: M) boundary(pc)".to_string()), "{:?}", described(&e));
     let mut sk = solved(&e);
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "{d:?}");
@@ -574,7 +574,7 @@ fn two_sets_tangent_at_a_point() {
 #[test]
 fn the_retired_tangent_cones_is_no_name_of_the_library() {
     let src = include_str!("../../examples/hypoid_pitch_cones.sv")
-        .replace("\ngc tangent(at: M) pc\n", "\nstd.TangentCones(gc, pc, M)\n");
+        .replace("\nboundary(gc) tangent(at: M) boundary(pc)\n", "\nstd.TangentCones(gc, pc, M)\n");
     refused(&src, "E103", "`std` defines no component `TangentCones`", "std.TangentCones");
 }
 
@@ -597,7 +597,7 @@ fn a_tangencys_unknowns_go_with_its_rows() {
 /// motion, and the numeric rank agrees with the structural.
 #[test]
 fn a_tangency_adds_one_regular_condition() {
-    for set in ["ball", "rod", "kc"] {
+    for set in ["ball", "boundary(rod)", "boundary(kc)"] {
         let mut sk = solved(&read(&with(&format!("l tangent {set}"))));
         let d = diagnose(&mut sk, DiagnoseOptions::default());
         assert!(d.over.is_empty() && d.implied.is_empty(), "{set}: {d:?}");
@@ -612,7 +612,7 @@ fn a_tangency_adds_one_regular_condition() {
 fn the_derivatives_jacobian_is_its_derivative() {
     let footed: Vec<String> =
         ["", " in std.front"].iter().map(|v| format!("{}l tangent foot", footed(v))).collect();
-    let sets = ["l tangent ball", "l tangent rod", "l tangent kc"];
+    let sets = ["l tangent ball", "l tangent boundary(rod)", "l tangent boundary(kc)"];
     for src in sets.iter().map(|s| s.to_string()).chain(footed) {
         let e = read(&with(&src));
         assert!(e.sketch.constraints.iter().any(|c| c.along.is_some()), "{src}");
@@ -624,7 +624,7 @@ fn the_derivatives_jacobian_is_its_derivative() {
 /// A derivative row travels through a document and a graft with its use's derivative.
 #[test]
 fn a_tangency_travels_through_a_document() {
-    for src in ["l tangent rod".to_string(), format!("{}l tangent foot", footed(" in std.front"))] {
+    for src in ["l tangent boundary(rod)".to_string(), format!("{}l tangent foot", footed(" in std.front"))] {
         let sk = solved(&read(&with(&src)));
         let along = |s: &Sketch| s.constraints.iter().filter_map(|c| c.along).collect::<Vec<_>>();
         assert!(!along(&sk).is_empty());
@@ -648,23 +648,23 @@ fn dof_of(sk: &mut Sketch) -> i64 {
 #[test]
 fn what_a_set_refuses() {
     refused(&with("radius(5) ball"), "E040", "`ball` is a set", "ball");
-    refused(&with("ball coincident rod"), "E040", "or to another set at a point", "ball coincident rod");
+    refused(&with("ball in boundary(rod)"), "E040", "or to another at a point", "ball in boundary(rod)");
     // two sets touch at a point the word names, stated and not claimed, and each body is read at
     // the point, so neither may make geometry of its own
-    refused(&with("k tangent kc"), "E040", "which the word names", "tangent");
+    refused(&with("boundary(k) tangent boundary(kc)"), "E040", "which the word names", "tangent");
     // a tangency at a point reads where it stands in space, so not a row over its place in a
     // view: a level along the front's own `up` has no kind in space to read it in
     refused(&with("shelf := { q | c distance(5, along: up) q }\nm := point hint((3, 35)) in \
-                   std.front\nshelf tangent(at: m) k"), "E040", "reads it in its view",
+                   std.front\nshelf tangent(at: m) boundary(k)"), "E040", "reads it in its view",
             "tangent(at: m)");
-    refused(&with("claim k tangent(at: a) kc"), "E040", "stated, not claimed", "tangent");
+    refused(&with("claim boundary(k) tangent(at: a) boundary(kc)"), "E040", "stated, not claimed", "tangent");
     refused(
-        &with(&format!("{}k tangent(at: a) foot", footed(""))),
+        &with(&format!("{}boundary(k) tangent(at: a) foot", footed(""))),
         "E040",
-        "`k tangent(at: a) foot` reads each set's body at the point, where `foot`'s makes `q`",
+        "`boundary(k) tangent(at: a) foot` reads each set's body at the point, where `foot`'s makes `q`",
         "tangent(at: a)",
     );
-    refused(&with("l coincident ball"), "E040", "puts a point on it, not a line", "coincident");
+    refused(&with("l in ball"), "E040", "puts a point on it, not a line", "in");
     refused(
         &with("kk := circle(center: a) hint(r: 3) in side\nkk tangent ball"),
         "E040",
@@ -672,9 +672,9 @@ fn what_a_set_refuses() {
         "tangent",
     );
     refused(&with("claim l tangent ball"), "E040", "stated, not claimed", "tangent");
-    refused(&with("a coincident(5) ball"), "E040", "takes nothing in its parentheses", "coincident(5)");
-    refused(&with("loop := { p | p coincident loop }\na coincident loop"), "E003",
-        "defined in terms of itself", "a coincident loop");
+    refused(&with("a coincident(5) ball"), "E040", "`coincident` against a set is retired", "coincident(5)");
+    refused(&with("loop := { p | p in loop }\na in loop"), "E003",
+        "defined in terms of itself", "a in loop");
     // and a set says what its points satisfy
     let (_, errs, _) = gcs_core::library::parse_linked("unit mm\nempty := { p | }\n");
     assert!(errs.iter().any(|e| e.message.contains("says what its points satisfy")), "{errs:?}");

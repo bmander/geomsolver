@@ -57,5 +57,5 @@ private up := axis
 fix(dir == (0.3, 0, 0.9539392014169457)) up
 ram := frame
 ram slides(8mm) up
-construction pocket := solid({ p | p inside(under: ram, over t in (0deg, 360deg)) bar })
+construction pocket := solid({ p | some t in (0deg, 360deg): p in bar at(under: ram) t })
 pocket cut plate

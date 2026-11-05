@@ -37,4 +37,4 @@ in std.top {
   length(length) guide
 }
 param s: Scalar over (0, 1)
-body := solid({ p | p coincident(over s) Twisted(guide, std.z, half: half, reach: reach).f })
+body := solid({ p | some s: p in Twisted(guide, std.z, half: half, reach: reach).f at s })

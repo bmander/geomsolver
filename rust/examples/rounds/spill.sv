@@ -25,8 +25,8 @@ plate.rim round(r: 3mm) plate.far
 
 // the boss's plane, on the far face and tangent to it there
 stand := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (-0.110911353, 20, 8.93063091))
-stand.origin coincident plate.far.surface
-stand tangent(at: stand.origin) plate.far.surface
+stand.origin in boundary(plate.far.side)
+stand tangent(at: stand.origin) boundary(plate.far.side)
 
 centre := point hint((-8.4, -6.7)) in stand
 foot := circle(center: centre) hint(r: 21.7) in stand

@@ -75,6 +75,6 @@ in std.front {
 construction pin := solid(std.solids.Revolution(pin_section, about: qa))
 
 // Everything the pin passes through while it meets the wheel's blank, found after the solve.
-construction space := solid({ p | p inside(under: pinion_turn, seen_from: wheel_turn) pin })
+construction space := solid({ p | some t: p in pin at(under: pinion_turn, seen_from: wheel_turn) t })
 wheel := solid(blank)
 space cut wheel

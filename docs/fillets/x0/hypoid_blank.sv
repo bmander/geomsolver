@@ -26,9 +26,9 @@ component MemberBlank(generator: line, cone: line, ax: line, view: plane, design
   generator.p2 coincident pitch
   tip := std.Offset(pitch, d: design.addendum * normal_module)
   region := { p |
-    p inside tip
-    p inside heel
-    p outside toe
+    p in tip
+    p in heel
+    p not in toe
     p outside(design.back * normal_module) pitch
     // the tip's corners at both ends, `end_relief` each way
     tip chamfer(design.end_relief) toe

@@ -455,6 +455,7 @@ pub(crate) fn lift_gauge(name: &str, kind: EntKind, point: usize, held: &[(&str,
         args,
         span: Span::default(),
         rates: Vec::new(),
+        lowered: crate::syntax::Lowered::No,
     }))
 }
 

@@ -111,7 +111,7 @@ fn a_seed_and_a_claim_are_told_apart() {
 /// named so and called is still a call.
 #[test]
 fn a_familys_symmetry_is_a_word() {
-    let src = "component Run(a: face, b: face, r: Length) symmetric(a, b) := { p | p inside a }";
+    let src = "component Run(a: face, b: face, r: Length) symmetric(a, b) := { p | p in a.side }";
     assert_eq!(tint_of(src, "symmetric"), Some(Tint::Word));
     let called = "x := symmetric(a, b)";
     assert_ne!(tint_of(called, "symmetric"), Some(Tint::Word));

@@ -75,7 +75,7 @@ turn := frame
 turn spins(1) o
 rack := frame
 rack slides(2 * pi * rp) slide
-construction space := solid({ p | p inside(under: rack, seen_from: turn) rack_tooth })
+construction space := solid({ p | some t: p in rack_tooth at(under: rack, seen_from: turn) t })
 
 // the flank in space: the prism's side, and what it generates
 side := surface(rack_tooth, edge: rack_flank)

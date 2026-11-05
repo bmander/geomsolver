@@ -241,7 +241,7 @@ component StarterRing(o: point, arm: line, o_s: point, at: Length) {
   turn := frame
   turn spins(1) o
   rack slides(2 * pi * rring) slide
-  construction space := solid({ p | p inside(seen_from: turn) rack_tooth })
+  construction space := solid({ p | some t: p in rack_tooth at(seen_from: turn) t })
   repeat zr as i {
     construction indexed := space at(under: turn) i * 360deg / zr
     indexed cut gear

@@ -170,13 +170,15 @@ capsule, a spline in space, a roll's trochoid, an arc's torus, B1 and B2, each l
 apart) are the gate. Field-path tests sweep a cylinder along its axis instead
 (`solid_sweep.rs::slid`).
 
-**A motion's sweep is a set** (#737 P4, [0.199], [sets.md](sets.md)): `solid({ p | p inside(under:
-m, seen_from: g, over t in (a, b)) tool })` — what the solid `tool` occupies under `m` at some roll
+**A motion's sweep is a set** (#737 P4, [0.199], [sets.md](sets.md)): `solid({ p | some t in (a,
+b): p in tool at(under: m, seen_from: g) t })` ([0.205], lowered to `p inside(under: m,
+seen_from: g, over t in (a, b)) tool`) — what the solid `tool` occupies under `m` at some roll
 of the interval — is read by the parser as the motion sweep of the same points
 (`syntax/parser/statements.rs::swept_ahead`/`swept_set`, its body one statement saying a sweep,
 its parts read where they stand, no token rewritten)
 and built as `SolidDef::Swept` with a stated roll; `over t` reads a declared parameter's interval.
-With no `over` at all, `solid({ p | p inside(under: m) tool })` is what the tool occupies at *any*
+With no `over` at all, `solid({ p | some t: p in tool at(under: m) t })` is what the tool occupies
+at *any*
 roll, the whole roll (`Sweep::Rolled`, `Roll::Through`), which **names no body** (#746): the
 evaluator bounds it by its context, the material of every body it — or a copy of it placed at a
 roll, `tool at(under: m) θ` — is cut from or kept in common with (`solid::applied_to`, the walk
@@ -447,16 +449,28 @@ inverse, membership, judge) against `closed::BUDGET`; past it every metered
 loop winds down and the build is refused as `Unbuilt::Budget {stage, at, what}`, the same way at
 every run (`swept_closed::a_build_past_its_budget_refuses_by_name_within_it`) — a curve's
 crossings' search among them (`meeting::crossings`, #780), whose polish charges the inverse map
-and once walked every pair of near chords on, 23 minutes, after the build was stopped. The run
-#776 saw stall for hours, a ball-end mill screwed through a ring sector (a ball beside a side about
-an axis along the screw's, admitted), is cut to the volume it removes apart from the kernel or
-refused by name, never built wrong — once by its budget naming the stage, a point and the surface,
-the inverse stage at its sheet's inverse map in about three minutes, that stage's limit about four
-times the most any build takes; since a curve's crossings are polished once per least of their
-chords' distance (#780 C2), by its arrangement, a sheet's pieces not closing, in about forty
-seconds (`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name`,
-slow tier); its inverse stage given a thousandth of that, every other stage its whole, it is
-refused there by name in seconds, the same way twice
+and once walked every pair of near chords on, 23 minutes, after the build was stopped; it
+polishes only from a pair of chords no neighbouring pair stands closer than, since every pair of
+two curves running within reach of one another walks to the same place (#780 C1: a short arc
+beside a traced meeting, 26,000 pairs and no crossing among them, ran the build's inverse budget
+down); it polishes first from each curve's own ends, where an end on the other curve is the
+meeting exactly, keeps the nearest of the polishes landing on one crossing, and leaves a pair
+farther apart than the reach and its chords' sags (#780 C2: a cone's contact ruling's foot, which a
+polish from chords crawled toward along two tangent curves and stopped 4e-4 short of). A stopped
+build is told by its type, never its words (#780 R3): every phase between its
+stages asks the one check `util::meter::go_on`, whose `Stopped` names the stage and becomes
+`Unbuilt::Budget`; a bounded search says why it gave up (`util::isolate::GaveUp`), so a certified
+reading stopped by the build reads nothing more where one past its most boxes, or a pair with no
+form, is sampled; and a sheet's inverse map searches no further
+(`swept_closed::a_build_past_its_budget_stops_by_one_typed_check`,
+`roots::a_search_says_why_it_gave_up`). The run #776 saw stall for hours, a ball-end mill screwed
+through a ring sector (a ball beside a side about an axis along the screw's, admitted), is cut to
+the volume it removes apart from the kernel, in helical coordinates to rounding, within a
+millionth, and to a Monte Carlo of the sweep's definition within four of its standard errors
+(`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right`, slow tier, about
+ten seconds of build; until #780 C1 refused by its inverse stage after three minutes); its inverse
+stage given a thousandth of `BUDGET`'s, every other stage its whole, it is refused there by name in
+seconds, the same way twice
 (`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_refused_by_its_inverse_maps_budget`).
 `SOLVENT_SWEEP_PROFILE` prints a build's counts, its meetings in closed form against traced per
 pair of surface kinds and the slowest, its curve–surface searches certified against sampled, and
@@ -560,9 +574,21 @@ its candidate — a round tool's rim under a screw, helical milling:
 `a_drum_screwed_across_a_ring_sector_bores_its_helical_groove`, each to its helical-coordinate
 volume and the membership test; through the drawing,
 `closed_characteristics::the_drum_screwed_bores_its_helical_groove`, its STL agreeing with the
-field; or balls alone among its round faces, each touching round its great circle square to its
-centre's velocity, screwed into the pipe about the centre's helix, `Cutter::Pipe`:
-`swept_closed::a_ball_screwed_closes_into_the_pipe_about_its_centres_helix`, Weyl's tube to 1e-9)
+field; or balls, alone or beside such a side (a ball-end mill), each touching round its great
+circle square to its centre's velocity, screwed into the pipe about the centre's helix,
+`Cutter::Pipe`: `swept_closed::a_ball_screwed_closes_into_the_pipe_about_its_centres_helix`,
+Weyl's tube to 1e-9; `the_ball_end_mill_screwed_closes_into_its_helical_sweep`, its helical volume
+to 1e-6, Weyl's tube and a Monte Carlo of the definition, slow tier; not yet drawn: at 3 mm a turn
+the pipe's meeting with the plane of the side's screwed foot sets out a millionth past the pipe's
+start, where it, the foot's rim and the touch helix touch at one point, and the foot's pieces do
+not close (#780 C1's open part). The pipe is inverted
+off its spine, #780 C1: each foot of a point on the patch lies on the circle about a foot of it on
+the centre's helix or on an end circle, those feet isolated with a bound and the nearest taken,
+`geom::Blend::pipe`, `Pipe::feet`, no warm start and no search;
+`swept_closed::a_balls_pipe_is_inverted_off_its_spine`. The two failures its gate met on the way,
+a traced curve's inverse stepping off along the whole curve where its points crowd and a ball's
+great circle tangent to its side's cylinder read as four helices, are kept reduced:
+`swept_closed::the_ball_end_mills_pipe_beside_its_side_is_arranged`)
 and C2 (one slide, turn or screw; under a screw a face or an edge leaning to its axis screws
 into a patch of a ruled helicoid, `Cutter::Patch`, #777 M5) read the tool's B-rep and the lowered
 trajectory in millimetres, before anything is built (`brep::swept::closed::reads`, its refusal

@@ -4,7 +4,8 @@ This is the record #737's P0 asks for: what was written by hand with the words t
 what was missing or refused, how each of the epic's open questions was decided, and what the
 rewritten corpus costs against today's. The rules themselves are in the contract files
 ([sets.md](contract/sets.md), [solids.md](contract/solids.md),
-[generating.md](contract/generating.md)) and the primer's §1.14.
+[generating.md](contract/generating.md)) and the primer's §1.14. #783's P0, which writes these sets
+in the notation of sets, is recorded beside this one in [sets-in-notation.md](sets-in-notation.md).
 
 ## P0 — what the language could not say before
 

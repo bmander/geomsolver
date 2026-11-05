@@ -25,29 +25,55 @@
 //! be parted before it is `width` wide holds a singular root — two surfaces touching — where `near`
 //! accepts its middle.
 //!
-//! Each stretch or box read is counted against the build's budget (`util::meter`, the ray stage):
-//! past it, or past `MOST` boxes, the search gives up (`None`) and says so, never a guess.
+//! Each stretch or box read is counted against the build's budget (`util::meter`, the ray stage, or
+//! the stage the caller names): past it, or past `MOST` boxes, the search gives up and says which
+//! (`GaveUp`), never a guess.
 
 type Root = super::roots::Root;
 
 /// The most stretches or boxes one search reads.
 pub const MOST: usize = 1 << 16;
 
+/// **Why a search gave up** (#780 R3), apart from finding no root: a caller left with no answer
+/// knows whether the build it serves has stopped, and so whether to read the pair any other way.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum GaveUp {
+    /// It read more than `MOST` stretches or boxes.
+    Most,
+    /// The build it is counted against went past its budget (`util::meter`).
+    Stopped,
+}
+
+/// One more stretch or box read: `read` of them so far, the search giving up past `MOST` or under
+/// a stopped build.
+fn read_one(read: &mut usize,stage: super::meter::Stage) -> Result<(),GaveUp> {
+    *read += 1;
+    if *read > MOST { return Err(GaveUp::Most) }
+    if !super::meter::tick(stage) { return Err(GaveUp::Stopped) }
+    Ok(())
+}
+
 /// **The roots of `g` over `[t0, t1]`**, each isolated with a bound: `bound(a, b)` bounds `|g'|`
 /// and `|g''|` over `[a, b]`; `dg` is `g'`. A stretch narrower than `width` that cannot be parted
 /// holds a touch where `near(t)` says `g` is nought there. Each root once, in order; an end of the
-/// stretch where `g` is nought a root there. `None` where the search read more than `MOST`
+/// stretch where `g` is nought a root there. `GaveUp` where the search read more than `MOST`
 /// stretches or the build stopped.
 pub fn roots(g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,bound: &dyn Fn(f64,f64) -> [f64;2],[t0,t1]: [f64;2],width: f64,
-    near: &dyn Fn(f64) -> bool) -> Option<Vec<Root>> {
+    near: &dyn Fn(f64) -> bool) -> Result<Vec<Root>,GaveUp> {
+    roots_charged(super::meter::Stage::Ray,g,dg,bound,[t0,t1],width,near)
+}
+
+/// `roots`, each stretch read charged to `stage` (a swept sheet's inverse map isolates its foot on
+/// its spine this way, and its work is the inverse stage's, #780 C1).
+pub fn roots_charged(stage: super::meter::Stage,g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,bound: &dyn Fn(f64,f64) -> [f64;2],
+    [t0,t1]: [f64;2],width: f64,near: &dyn Fn(f64) -> bool) -> Result<Vec<Root>,GaveUp> {
     let mut out: Vec<Root> = Vec::new();
-    if !(t1 >= t0) { return Some(out) }
+    if !(t1 >= t0) { return Ok(out) }
     let width = width.max(1e-15*(t0.abs()+t1.abs()).max(1e-300));
     let mut stack = vec![(t0,t1,0usize)];
     let mut read = 0;
     while let Some((a,b,depth)) = stack.pop() {
-        read += 1;
-        if read > MOST || !super::meter::tick(super::meter::Stage::Ray) { return None }
+        read_one(&mut read,stage)?;
         let (m,h) = (0.5*(a+b),0.5*(b-a));
         let [d1,d2] = bound(a,b);
         let gm = g(m);
@@ -109,7 +135,7 @@ pub fn roots(g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,bound: &dyn Fn(f64,f
         if !kept.last().is_some_and(|l| (at-l.at).abs() <= 2.*width) { kept.push(Root {at,touch:true}) }
         k = j+1;
     }
-    Some(kept)
+    Ok(kept)
 }
 
 /// A root of a system: where it is, and whether it is singular (a touch) rather than certified
@@ -121,17 +147,16 @@ pub struct Point<const N: usize> { pub at: [f64;N],pub touch: bool }
 /// isolated by Kantorovich's theorem: `f(x)` gives the values and the Jacobian (rows the
 /// equations), `second(box)` bounds each equation's second derivatives over a box (the sum of its
 /// Hessian's entries' magnitudes). A box narrower than `width` (each side) that cannot be parted
-/// holds a singular root where `near(x)` accepts its middle. Each root once. `None` where the search
-/// read more than `MOST` boxes or the build stopped.
+/// holds a singular root where `near(x)` accepts its middle. Each root once. `GaveUp` where the
+/// search read more than `MOST` boxes or the build stopped.
 pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second: &dyn Fn(&[[f64;2];N]) -> [f64;N],
-    domain: [[f64;2];N],width: f64,near: &dyn Fn([f64;N]) -> bool) -> Option<Vec<Point<N>>> {
+    domain: [[f64;2];N],width: f64,near: &dyn Fn([f64;N]) -> bool) -> Result<Vec<Point<N>>,GaveUp> {
     let mut out: Vec<Point<N>> = Vec::new();
-    if domain.iter().any(|s| !(s[1] >= s[0])) { return Some(out) }
+    if domain.iter().any(|s| !(s[1] >= s[0])) { return Ok(out) }
     let mut stack = vec![(domain,0usize)];
     let mut read = 0;
     while let Some((bx,depth)) = stack.pop() {
-        read += 1;
-        if read > MOST || !super::meter::tick(super::meter::Stage::Ray) { return None }
+        read_one(&mut read,super::meter::Stage::Ray)?;
         let m: [f64;N] = std::array::from_fn(|k| 0.5*(bx[k][0]+bx[k][1]));
         let r = (0..N).map(|k| 0.5*(bx[k][1]-bx[k][0])).fold(0.,f64::max);
         let (fm,jm) = f(m);
@@ -207,7 +232,7 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
             None => kept.push(p),
         }
     }
-    Some(kept)
+    Ok(kept)
 }
 
 /// The largest row sum of `a`'s magnitudes: its norm on the largest-coordinate norm.

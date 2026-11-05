@@ -44,4 +44,4 @@ in std.top {
   starboard_rail := line(r0, r1)
 }
 param s: Scalar over (0, 1)
-blade := solid({ p | p coincident(over s) Blade(spine, std.z, std.top, port_rail, starboard_rail, t: 3mm).f })
+blade := solid({ p | some s: p in Blade(spine, std.z, std.top, port_rail, starboard_rail, t: 3mm).f at s })

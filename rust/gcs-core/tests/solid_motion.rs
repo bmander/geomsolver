@@ -147,7 +147,7 @@ fn solids_bind_final_motion_indices_after_dependency_ordering() {
         z_turn := frame\nax coincident z_turn.axis\nfix(ratio == 2,advance == 0mm) z_turn\n\
         component Copy(stock: solid,movement: frame,seen_from: frame) {{\n\
           moved := stock at(under: movement, seen_from: seen_from) 90deg\n\
-          swept := solid({{ p | p inside(under: movement, seen_from: seen_from, over t in (-10deg, 10deg)) stock }})\n\
+          swept := solid({{ p | some t in (-10deg, 10deg): p in stock at(under: movement, seen_from: seen_from) t }})\n\
         }}\n\
         copy := Copy(stock,z_turn,turn)\n\
         direct := stock at(under: z_turn) 45deg\n"));
@@ -173,7 +173,7 @@ fn solids_bind_final_motion_indices_after_dependency_ordering() {
 fn a_placement_whose_motion_refuses_keys_its_solid_alike_each_read() {
     // a key over a number nothing reads must equal itself, or the solid is built at every ask
     let mut e = read(&format!("{SOURCE}moved := stock at(under: turn) 90deg\n\
-        swept := solid({{ p | p inside(under: turn, over t in (-10deg, 10deg)) stock }})\n"));
+        swept := solid({{ p | some t in (-10deg, 10deg): p in stock at(under: turn) t }})\n"));
     let m = joint(&e,"turn");
     let MotionDef::Rotation {axis,..} = &mut e.sketch.motions[m].def else { unreachable!() };
     *axis = u32::MAX;

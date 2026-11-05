@@ -92,6 +92,10 @@ struct Profile {
     crossings: BTreeMap<(&'static str,&'static str),[u64;2]>,
     /// The deepest an outline's chords were halved.
     outline_depth: usize,
+    /// A meeting's analysis, by what was done (`analysis`, #780 R4): critical sets found, the jets
+    /// their searches read, branch tests asked and the curve points and feet they read, readings
+    /// of `f` a level curve's march took.
+    analysis: BTreeMap<&'static str,u64>,
 }
 
 /// A build's counts against its budget.
@@ -157,6 +161,8 @@ impl Meter {
         let _ = writeln!(s,"  curve–surface searches (certified / sampled):");
         for ((c,f),[x,y]) in &p.crossings { let _ = writeln!(s,"    {c:>10} × {f:<10} {x:>6} / {y:<6}"); }
         let _ = writeln!(s,"  deepest outline: {} halvings",p.outline_depth);
+        let _ = writeln!(s,"  meeting analysis:");
+        for (what,n) in &p.analysis { let _ = writeln!(s,"    {what:<28} {n:>12}"); }
         s
     }
     /// The curve–surface searches that sampled, all pairs together (what V1's gate asks to be none
@@ -169,11 +175,22 @@ impl Meter {
 /// `f` run with `meter` counting this thread's work (and every worker's a parallel map starts
 /// inside it), the meter before it put back after.
 pub fn within<R>(meter: &Arc<Meter>,f: impl FnOnce() -> R) -> R {
-    let before = CURRENT.with(|c| c.replace(Some(meter.clone())));
-    struct Restore(Option<Arc<Meter>>);
-    impl Drop for Restore { fn drop(&mut self) { let m = self.0.take(); CURRENT.with(|c| *c.borrow_mut() = m); } }
-    let _restore = Restore(before);
+    let _restore = installed(meter);
     f()
+}
+
+/// `meter` counting this thread's work until what is returned is dropped, the meter before it put
+/// back then: `within` for a scope, not a closure (a test profiled whole).
+pub fn installed(meter: &Arc<Meter>) -> Installed {
+    Installed(CURRENT.with(|c| c.replace(Some(meter.clone()))))
+}
+
+/// A meter installed for a scope (`installed`): dropped, the one before it is put back.
+#[must_use]
+pub struct Installed(Option<Arc<Meter>>);
+
+impl Drop for Installed {
+    fn drop(&mut self) { let m = self.0.take(); CURRENT.with(|c| *c.borrow_mut() = m); }
 }
 
 /// The meter this thread counts against, if any.
@@ -200,6 +217,32 @@ pub fn tick(stage: Stage) -> bool { charge(stage,1,|| ([f64::NAN;3],String::new(
 #[inline]
 pub fn stopped() -> bool { CURRENT.with(|c| c.borrow().as_ref().is_some_and(|m| m.stopped())) }
 
+/// **A build stopped past its budget** (#780 R3), as a typed answer: the stage that ran away, and
+/// where (`Over`). What `go_on` returns once the build is to stop, carried out by `?` — as a
+/// refusal by budget where a build answers in `swept::closed::Unbuilt`, and as its message where it
+/// answers in text (a Boolean's phases) — never matched by its words.
+#[derive(Clone,Debug,PartialEq)]
+pub struct Stopped(pub Over);
+
+impl std::fmt::Display for Stopped {
+    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f,"the build went past its budget in its {} stage at {:?} ({})",self.0.stage,self.0.at,self.0.what)
+    }
+}
+
+impl From<Stopped> for String { fn from(s: Stopped) -> String { s.to_string() } }
+
+/// **Whether the thread's build goes on** (#780 R3): `Err` once a stage went past its limit, the one
+/// check a metered pipeline makes between its phases (`go_on()?`). With no meter, always on.
+#[inline]
+pub fn go_on() -> Result<(),Stopped> {
+    // (the first stage over names itself before the meter stops: a stopped meter has its `over`)
+    CURRENT.with(|c| match &*c.borrow() {
+        Some(m) if m.stopped() => m.over().map_or(Ok(()),|o| Err(Stopped(o))),
+        _ => Ok(()),
+    })
+}
+
 /// A meeting of surfaces of kinds `a` and `b` found, in closed form or traced, in `took`.
 pub fn meeting(a: &'static str,b: &'static str,exact: bool,took: std::time::Duration) {
     CURRENT.with(|c| if let Some(m) = &*c.borrow() {
@@ -218,6 +261,16 @@ pub fn crossing(curve: &'static str,surface: &'static str,certified: bool) {
     CURRENT.with(|c| if let Some(m) = &*c.borrow() {
         let mut p = m.profile.lock().unwrap_or_else(|e| e.into_inner());
         p.crossings.entry((curve,surface)).or_default()[if certified { 0 } else { 1 }] += 1;
+    })
+}
+
+/// `n` more of `what` done by a meeting's analysis (`meeting`: a critical set found, a branch
+/// test asked, a level curve's readings of `f`), for the profile alone: never charged or limited,
+/// and counted only where the profile is printed (a branch test is asked per cell of a search).
+pub fn analysis(what: &'static str,n: u64) {
+    if n == 0 || !profiling() { return }
+    CURRENT.with(|c| if let Some(m) = &*c.borrow() {
+        *m.profile.lock().unwrap_or_else(|e| e.into_inner()).analysis.entry(what).or_default() += n;
     })
 }
 

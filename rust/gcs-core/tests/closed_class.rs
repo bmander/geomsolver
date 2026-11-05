@@ -276,7 +276,7 @@ fn a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves() {
     let bar = bar.replace("c0 coords(du: 0mm,","c0 coords(du: 3.5mm,").replace("c1 coords(du: 1mm,","c1 coords(du: 4.5mm,")
         .replace("c2 coords(du: 0mm,","c2 coords(du: 3.5mm,").replace("c3 coords(du: -1mm,","c3 coords(du: 2.5mm,")
         .replace("private up :=","private up2 :=").replace(") up\n",") up2\n").replace("ram :=","ram2 :=")
-        .replace("ram slides","ram2 slides").replace("under: ram,","under: ram2,").replace("pocket cut plate","pocket cut part")
+        .replace("ram slides","ram2 slides").replace("under: ram)","under: ram2)").replace("pocket cut plate","pocket cut part")
         .replace("from: 6mm, to: 14mm","from: 3mm, to: 11mm");
     let text = format!("{punch}\n{bar}");
     let e = fixtures::read(&text);

@@ -486,7 +486,7 @@ export class Document {
 
   /** **Sketch on a face**: a plane lying on face `face` (its path, `b0.near`) of object `solid`
    *  (its index), its origin where the eye's ray met it (`at`, in space) or the face's middle,
-   *  touching the surface the face lies on there (`b0.near.surface`) — so it follows the solid.
+   *  touching the surface the face lies on there (`boundary(b0.near.side)`) — so it follows the solid.
    *  `names[0]` is the plane. */
   sketchOnFace(solid: number, face: string, at?: [number, number, number], name?: string): Edit {
     return edit(withJson({ face, at, name },

@@ -81,7 +81,7 @@ handle_turn := frame
 handle_turn turns(1) stem
 wheel_turn := frame
 wheel_turn turns(-4 / 6) spindle
-space := solid({ p | p inside(under: handle_turn, seen_from: wheel_turn, over t in (0deg, 540deg)) star })
+space := solid({ p | some t in (0deg, 540deg): p in star at(under: handle_turn, seen_from: wheel_turn) t })
 wheel := solid(std.solids.Prism(face(rim), from: -15.6mm, to: -0.6mm))
 space cut wheel
 claim wheel clear(0.1mm) star

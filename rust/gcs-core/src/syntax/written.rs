@@ -56,6 +56,32 @@ pub struct Written {
     /// The operands written as a **rate** (#339 D2): `rate(p over s)` is operand `op` read as
     /// its rate along the formal `over`, never as itself.  Empty for every other relation.
     pub rates: Vec<RateOf>,
+    /// Written in the notation of sets (#783), and lowered to this form by the parser
+    /// (`syntax::notation`): `p in S` read as `p inside S`, `p in boundary(S)` as `p coincident
+    /// S.surface`, a distance from what is not in a set as one with `side: inside`.  What the
+    /// flattener refuses of `coincident` against a set and of `side:` on one, the retired
+    /// spellings, it never refuses of the notation's own lowering.
+    pub lowered: Lowered,
+}
+
+/// Whether a relation was written in the notation of sets (#783), and how (`Written::lowered`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Lowered {
+    /// written as it reads: a word between entities, or one the flattener made
+    #[default]
+    No,
+    /// `p in S`, `p not in S` and the rest of the notation, lowered
+    Set,
+    /// `p in a.side`, `p not in a.side`: the side of a face its material is on, the `.side` taken
+    /// off — where `p in a` is the face itself
+    Side,
+}
+
+impl Lowered {
+    /// Whether the relation was written in the notation of sets.
+    pub fn any(self) -> bool {
+        self != Lowered::No
+    }
 }
 
 /// Where a rate in a relation's parentheses (`angle(rate(m over u), l)`, #645) is numbered from:
@@ -225,6 +251,18 @@ impl Written {
     /// plane, lowered to one later — either way no row, and no derivative.
     pub fn states_bound(&self) -> bool {
         self.bound().is_some() || crate::constraints::plane_side_word(&self.word.text).is_some()
+    }
+
+    /// The word as the statement spells it (#783): a relation lowered from the notation of sets
+    /// is `in` or `not in` (`p in S`, `p in boundary(S)`, `p not in a.side`), whatever word it was
+    /// lowered to; any other its own word.  What a statement is described by.
+    pub fn spelled(&self) -> String {
+        let sweep = self.args.iter().any(|a| matches!(a, OpArg::Over { .. }));
+        match (self.lowered.any() && !sweep, self.word.text.as_str()) {
+            (true, "inside" | "coincident") => "in".to_string(),
+            (true, "outside") => "not in".to_string(),
+            (_, w) => w.to_string(),
+        }
     }
 
     /// One selector by name — what `constraints::infix_op` reads to tell `distance … along: u`

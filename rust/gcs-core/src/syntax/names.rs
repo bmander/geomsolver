@@ -60,6 +60,13 @@ pub(super) fn refs_eq(a: &Ref, b: &Ref) -> bool {
 }
 
 pub(super) fn write_ref(out: &mut String, r: &Ref) {
+    // a set's or a face's surface is its boundary (#783): `S.surface` as `boundary(S)`
+    if let Some(of) = r.surface_of() {
+        out.push_str("boundary(");
+        write_ref(out, &of);
+        out.push(')');
+        return;
+    }
     out.push_str(&r.root.text);
     for seg in &r.path {
         match seg {

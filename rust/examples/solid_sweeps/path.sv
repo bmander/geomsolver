@@ -57,5 +57,5 @@ in std.top {
 block := solid(std.solids.Prism(face(s0, s1, s2, s3), from: -8mm, to: 0mm))
 
 // the groove the ball sweeps as its frame runs the whole spline
-construction groove := solid({ p | p inside(under: along.f, over t in (0rad, 1rad)) cutter })
+construction groove := solid({ p | some t in (0rad, 1rad): p in cutter at(under: along.f) t })
 groove cut block

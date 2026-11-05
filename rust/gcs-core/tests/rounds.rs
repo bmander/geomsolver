@@ -119,10 +119,10 @@ const DISC: &str = "unit mm\nuse std\nuse std.sets\nuse std.rounds\n\
 #[test]
 fn a_regions_rim_rounded_and_chamfered_in_its_body() {
     let e = solved(&format!("{DISC}\
-        disc := {{ p | p inside wall; p inside top; p inside bottom }}\n\
-        rounded := {{ p | p inside wall; p inside top; p inside bottom; p inside std.rounds.Rounded(wall, top, r: 2mm) }}\n\
-        chamfered := {{ p | p inside wall; p inside top; p inside bottom; \
-                          p inside std.rounds.Chamfered(wall, top, la: 1mm, lb: 1mm) }}\n\
+        disc := {{ p | p in wall; p in top; p in bottom }}\n\
+        rounded := {{ p | p in wall; p in top; p in bottom; p in std.rounds.Rounded(wall, top, r: 2mm) }}\n\
+        chamfered := {{ p | p in wall; p in top; p in bottom; \
+                          p in std.rounds.Chamfered(wall, top, la: 1mm, lb: 1mm) }}\n\
         sd := solid(disc)\nsr := solid(rounded)\nsc := solid(chamfered)\n"));
     let volume = |name: &str| {
         let f = MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10).unwrap();
@@ -146,9 +146,9 @@ fn a_regions_rim_rounded_and_chamfered_in_its_body() {
 #[test]
 fn a_regions_round_and_chamfer_lower_into_its_meridian() {
     let e = solved(&format!("{DISC}\
-        rounded := {{ p | p inside wall; p inside top; p inside bottom; p inside std.rounds.Rounded(wall, top, r: 2mm) }}\n\
-        chamfered := {{ p | p inside wall; p inside top; p inside bottom; \
-                          p inside std.rounds.Chamfered(wall, top, la: 1mm, lb: 1mm) }}\n\
+        rounded := {{ p | p in wall; p in top; p in bottom; p in std.rounds.Rounded(wall, top, r: 2mm) }}\n\
+        chamfered := {{ p | p in wall; p in top; p in bottom; \
+                          p in std.rounds.Chamfered(wall, top, la: 1mm, lb: 1mm) }}\n\
         sr := solid(rounded)\nsc := solid(chamfered)\n"));
     let (big, r, d) = (10.0, 2.0, 1.0);
     let disc = PI * big * big * 4.0;

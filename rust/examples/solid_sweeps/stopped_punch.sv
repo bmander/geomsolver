@@ -64,5 +64,5 @@ private up := axis
 fix(dir == (0.3, 0, 0.9539392014169457)) up
 ram := frame
 ram slides(8mm) up
-construction slot := solid({ p | p inside(under: ram, over t in (0deg, 360deg)) tool })
+construction slot := solid({ p | some t in (0deg, 360deg): p in tool at(under: ram) t })
 slot cut plate

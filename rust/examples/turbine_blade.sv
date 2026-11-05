@@ -193,7 +193,7 @@ fix((0mm, 0mm, 0mm)) foot0
 fix((0mm, 0mm, span)) tip0
 construction centerline stack := line(foot0, tip0)
 param s: Scalar over (-embed / span, 1)
-airfoil := solid({ p | p coincident(over s) Station(stack, std.y, hub, mean, tip).sec.profile })
+airfoil := solid({ p | some s: p in Station(stack, std.y, hub, mean, tip).sec.profile at s })
 
 // ---- the platform and the seal wings: sectors of the annulus about the engine's axis ----
 in std.front {

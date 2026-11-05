@@ -123,7 +123,7 @@ r1 := point
 port_rail := line(l0, l1)
 starboard_rail := line(r0, r1)
 param s: Scalar over (0, 1)
-blade := solid({ p | p coincident(over s) Blade(spine, std.z, port_rail, starboard_rail, profile, p0, p1).sec.f })
+blade := solid({ p | some s: p in Blade(spine, std.z, port_rail, starboard_rail, profile, p0, p1).sec.f at s })
 ";
 
 const RAILS_IN_PLAN: &str = "fix((-10mm, 0mm, 0mm)) l0
@@ -191,7 +191,7 @@ in std.front {
 }
 prof := face(sq)
 param s: Scalar over (0, 1)
-body := solid({ p | p coincident(over s) Tri(ra, rb, rc, prof, o, x, y).sec.f })
+body := solid({ p | some s: p in Tri(ra, rb, rc, prof, o, x, y).sec.f at s })
 ";
 
 fn index(e: &Elaborated, name: &str) -> usize {
@@ -256,7 +256,7 @@ fn two_faces_drawn_apart_are_lofted_corner_to_corner() {
 fn a_connector_is_where_a_walk_starts() {
     let src = format!("{FRONT}{OUTLET}outlet := face(b1, b2, b3, b0, -> close)
 param s: Scalar over (0, 1)
-body := solid({{ p | p coincident(over s) std.stations.Ruled(inlet, outlet).f }})
+body := solid({{ p | some s: p in std.stations.Ruled(inlet, outlet).f at s }})
 ");
     let e = determined(&src);
     let turned = [DIAMOND[1], DIAMOND[2], DIAMOND[3], DIAMOND[0]];
@@ -272,14 +272,14 @@ body := solid({{ p | p coincident(over s) std.stations.Ruled(inlet, outlet).f }}
 fn an_edge_split_in_the_walk_pairs_faces_of_different_counts() {
     let src = format!("{FRONT}{TRIANGLE}tri := face(t0, t1, t2, m, -> close)
 param s: Scalar over (0, 1)
-body := solid({{ p | p coincident(over s) std.stations.Ruled(inlet, tri).f }})
+body := solid({{ p | some s: p in std.stations.Ruled(inlet, tri).f at s }})
 ");
     let e = determined(&src);
     let tri = [(-10.0, -10.0), (10.0, -10.0), (0.0, 10.0), (-5.0, 0.0)];
     near(volume(&e, "body"), prismatoid(40.0, &SQUARE, &tri), 1e-9, "triangle split");
     let src = format!("{FRONT}{TRIANGLE}tri := face(t0, t1, t2, -> close)
 param s: Scalar over (0, 1)
-body := solid({{ p | p coincident(over s) std.stations.Ruled(inlet, tri).f }})
+body := solid({{ p | some s: p in std.stations.Ruled(inlet, tri).f at s }})
 ");
     refused(&src, "E080", "`inlet` walks 4 links and `tri` 3", "use std.stations");
 }
@@ -292,7 +292,7 @@ fn a_loft_to_a_point_is_a_pyramid() {
     let src = format!("{FRONT}tip := point
 fix((3mm, 30mm, 2mm)) tip
 param s: Scalar over (0, 1)
-body := solid({{ p | p coincident(over s) std.stations.Apex(inlet, tip).f }})
+body := solid({{ p | some s: p in std.stations.Apex(inlet, tip).f at s }})
 ");
     let e = determined(&src);
     near(volume(&e, "body"), 400.0 * 30.0 / 3.0, 1e-9, "pyramid");

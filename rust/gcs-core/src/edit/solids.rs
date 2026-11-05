@@ -535,6 +535,7 @@ fn rounds_edit(
             )],
             span: Span::default(),
             rates: Vec::new(),
+            lowered: crate::syntax::Lowered::No,
         }),
     ));
     let mut stmts: Vec<StmtKind> = Vec::new();

@@ -54,7 +54,7 @@ param t: Angle over (start, finish)
 fluted := solid(stock)
 
 flute_wheel := wheel.GrindingWheel(side, setting: 0deg, wheel: configuration.flute_wheel)
-construction flute := solid({ p | p inside(under: grind, over t) flute_wheel.body })
+construction flute := solid({ p | some t: p in flute_wheel.body at(under: grind) t })
 
 repeat configuration.flutes as i {
   construction flute_at := flute at(under: index) i * 360deg / configuration.flutes

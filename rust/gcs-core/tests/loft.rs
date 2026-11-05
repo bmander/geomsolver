@@ -191,7 +191,7 @@ in std.top {{
   curvy := spline(k0, k1, k2, k3)
 }}
 param s: Scalar over (0, 1)
-tube := solid({{ p | p coincident(over s) Tube({guide}, std.z).f }})
+tube := solid({{ p | some s: p in Tube({guide}, std.z).f at s }})
 ")
 }
 

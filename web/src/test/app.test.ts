@@ -2912,8 +2912,8 @@ test('double-clicking a face of a solid draws on it: a plane written lying on it
   const before = view.source;
   const side = seenAt(view, [10, 10, -2.5]);
   dblclickAt(view, side);
-  assert.ok(view.source.endsWith('v0.origin coincident block.cd.surface\n'
-                                 + 'v0 tangent(at: v0.origin) block.cd.surface\n'), view.source);
+  assert.ok(view.source.endsWith('v0.origin in boundary(block.cd.side)\n'
+                                 + 'v0 tangent(at: v0.origin) boundary(block.cd.side)\n'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   assert.equal(view.planeName, 'v0', 'and drawn on');
   assert.ok(Math.abs(planeNamed(view, 'v0').frame3.o[1] - 10) < 1e-9, 'on the side, at y = 10');

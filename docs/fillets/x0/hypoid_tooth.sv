@@ -17,12 +17,12 @@ component Tooth(a: group, b: group, lo: group, hi: group, grow: Length, r: Lengt
   // `std.Offset` only grows (a negative distance is refused), so the shrunk flank is written out.
   // With no backlash (`fixtures::gear::design`) `grow` is 0, and 0.64 refuses a distance of zero
   // from a set: an offset of zero must be the identity, as a round of zero is (finding 10).
-  private fa := { q | q distance(grow, side: inside) a }
+  private fa := { q | q distance(grow) { r | r not in a } }
   private fb := std.Offset(b, d: grow)
-  p outside fa
-  p inside fb
-  p outside lo
-  p inside hi
+  p not in fa
+  p in fb
+  p not in lo
+  p in hi
   fa round(r) hi
   fb round(r) hi
 }

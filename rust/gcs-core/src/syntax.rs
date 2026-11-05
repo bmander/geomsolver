@@ -7,6 +7,7 @@ mod highlight;
 mod lexer;
 mod measured;
 mod names;
+mod notation;
 mod parser;
 mod print;
 mod scenario;
@@ -29,7 +30,7 @@ pub use scenario::{Item, ItemKind, LoadText, RequirementText, Scenario};
 pub use symbols::{symbols, Occurrence, Symbol, SymbolKind, Symbols};
 pub use source::{line_col, Module, Name, Program, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name, reserved_word};
-pub use written::{OpArg, RateOf, Written, ARG_RATES, WITHIN};
+pub use written::{Lowered, OpArg, RateOf, Written, ARG_RATES, WITHIN};
 pub use crate::vocab::{camel, num, one_of, snake, BodyWord, Cmp, Span};
 
 use crate::constraints::{CKind, Fixity};
@@ -1916,6 +1917,18 @@ impl Ref {
             Some(Seg::Member(m)) => Some(*m),
             _ => None,
         }
+    }
+
+    /// What the reference is the surface of, where it ends in `.surface` — read or as written
+    /// (#783: `S.surface` is `boundary(S)`).
+    pub fn surface_of(&self) -> Option<Ref> {
+        let (last, rest) = self.path.split_last()?;
+        let member = match last {
+            Seg::Field(f) => Member::of(&f.text),
+            Seg::Member(m) => Some(*m),
+            _ => None,
+        };
+        (member == Some(Member::Surface)).then(|| Ref { path: rest.to_vec(), ..self.clone() })
     }
 }
 

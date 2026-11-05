@@ -4,6 +4,35 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.205] Sets in the notation of sets** (#783). A set is written with the words mathematics has
+for one (§6.21): `p in S` puts a point in a set — its statements at the point as written, a
+region's bounds kept — and `p not in S` out of one with an inside; `boundary(S)` is the set's
+boundary, defined once for every set (a ball's sphere, a cylinder's skin, the surface a face lies
+on, `boundary(a.side)`); `or` joins memberships in a set's body, the union (`{ p | p in a or p in b
+}`, De Morgan over what is not in either, so the union of two solids named whole is the body term,
+built exactly); and the existential over a running number is a word: `some t in (a, b): p in X
+at(under: m, seen_from: g) t` is what `X` occupies at some roll of the interval, `some t: … at(…) t`
+at any roll (bounded by what it is cut from), `some s: p in F at s` a face family over a declared
+`param s`, and `some h: p in F at(along: n) h` the prism through a face (`not some …` what is not in
+it). An interval is `(a, b)`, closed at both ends: `[a, b]` is a list, and `some t in [a, b]` is
+refused naming the spelling. `every` is reserved. A face is its patch, `p in a`, and the side of its
+surface its material is on, `p in a.side`. A placement in a jointed frame is `n := x at f`, beside
+the reading at an instant, `x at(under: m) τ`; and a face not among a solid's, in a `when`, is `w
+not in A`. **No number is read as a bound unasked**: through 0.204 `p inside std.sets.Sphere(c, r)`
+read the sphere's radius as one and meant the ball; now `p in std.sets.Sphere(c, r)` is on the
+sphere, and `std.sets` defines regions — `Ball`, `Cylinder`, `Cone`, `ConeThrough`, `HalfSpace`,
+`Rod` — beside the sphere and `Segment`, whose surfaces are their boundaries
+(`l tangent boundary(shaft)`, `M in boundary(gc)`, `envelope(boundary(cutter) over t in (a, b),
+…)`). The distance from a set is the ordinary one, nothing inside it: `p distance(d) ball` is
+outside the ball, and from what is not in it `p distance(d) { q | q not in ball }`. **Retired**, each
+refused naming its replacement: `inside` and `outside` (but `claim a inside b` between solids, one
+within another, which stays), `coincident` against a set, `S.surface`, `over` in a relation's
+parentheses, `side:` on a distance from a set with an inside (a developable sheet, two sides and no
+inside, keeps it), `std.sets.Offset` (a set grown is one statement, `{ q | q distance(<= d) S }`;
+a solid grown, built exactly, is `std.rounds.Grown` as before), `n := x in f` and `when not w in A`. The examples
+are rewritten (`scripts/sets_in_notation.py`), every report, STEP assembly and STL of them the old
+spelling's to the byte.
+
 **[0.204] A face along a direction** (#763). A `when` may ask how a face lies against a direction
 drawn: `f parallel l`, the face's surface holding `l`'s direction at every point (a plane holding
 it, a cylinder about it, a side swept along it), and `f perpendicular l`, the face a plane square to

@@ -94,8 +94,8 @@ pub(super) fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Optio
                 _ => sk.plane_of_origin(from.i()).filter(|_| normal).map(EntRef::frame),
             };
             let Some(along) = along else {
-                return Err("a region's ordinate is along a plane's normal (`inside`/`outside` \
-                            the plane), a line or an axis"
+                return Err("a region's ordinate is along a plane's normal (`along: n`), a \
+                            line or an axis"
                     .to_string());
             };
             RegionShape::Plane {
@@ -439,8 +439,8 @@ pub(super) fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written,
                 let of = vec![(Target::Face(face.clone()), 1.0)];
                 Ok(term(RegionShape::Measured { of }, Cmp::Le, TermNumber::stated(0.0), None))
             }
-            _ => Err(format!("a region's point is `inside`, `outside`, `coincident` with or at a \
-                              `distance` from a face, not `{word}`")),
+            _ => Err(format!("a region's point is `in` or `not in` a face's side (`a.side`), in \
+                              the face, or at a `distance` from it, not `{word}`")),
         }
     })();
     made.map(|t| (probe, t))
@@ -500,10 +500,12 @@ pub(super) fn section_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Writt
             };
             Ok((probe, made))
         }
-        "coincident" => Err("a region's point on a face is in its plane: `p inside sec` with \
-                             `p distance(0mm, along: n) sec`".to_string()),
-        _ => Err(format!("a region's point is `inside` or `outside` a face, or at an ordinate \
-                          from it `along: n`, not `{word}`")),
+        "coincident" => Err("a drawn face has no volume: the prism through it is `some h: p in \
+                             sec at(along: n) h`, at an ordinate `p distance(0mm, along: n) \
+                             sec`".to_string()),
+        _ => Err(format!("a region's point is in the prism through a face (`some h: p in sec \
+                          at(along: n) h`, or `not some …`), or at an ordinate from it `along: \
+                          n`, not `{word}`")),
     }
 }
 
@@ -520,10 +522,10 @@ pub(super) fn ends_term(w: &crate::syntax::Written, point: EntRef, edge: EntRef,
         ));
     }
     let Some((cmp, None)) = w.side() else {
-        return Err("where an edge ends is a side of it: `inside S.ends`".to_string());
+        return Err("where an edge ends is a side of it: `p in S.ends`".to_string());
     };
     if cmp != crate::syntax::Cmp::Le {
-        return Err("past where an edge ends is no region: say `inside S.ends`".to_string());
+        return Err("past where an edge ends is no region: say `p in S.ends`".to_string());
     }
     let shape = RegionShape::Ends {
         edge: Box::new(Target::Set { probe: edge.i() as u32, terms: Vec::new() }),

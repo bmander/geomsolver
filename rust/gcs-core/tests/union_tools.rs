@@ -41,8 +41,8 @@ pub(crate) fn beads_section() -> f64 {
 fn beads_one_after_another() -> String {
     let text = beads();
     let at = text.find("construction groove :=").unwrap();
-    format!("{}construction groove := solid({{ p | p inside(under: feed, over t in (0deg, 360deg)) bead }})\n\
-        construction groove2 := solid({{ p | p inside(under: feed, over t in (0deg, 360deg)) bead2 }})\ngroove cut rod\ngroove2 cut rod\n",&text[..at])
+    format!("{}construction groove := solid({{ p | some t in (0deg, 360deg): p in bead at(under: feed) t }})\n\
+        construction groove2 := solid({{ p | some t in (0deg, 360deg): p in bead2 at(under: feed) t }})\ngroove cut rod\ngroove2 cut rod\n",&text[..at])
 }
 
 /// The union's groove is its members' grooves cut one after another, to the kernel's rounding: the
@@ -71,9 +71,9 @@ fn regroove(text: &str,was: &str,before: &str,tool: &str) -> String {
     let at = text.find("construction groove := solid(").expect("the groove");
     let end = at+text[at..].find('\n').unwrap();
     let line = &text[at..end];
-    let swept = format!(") {was} }})");
-    assert!(line.ends_with(&swept),"{line}");
-    format!("{}{before}{}) {tool} }}){}",&text[..at],&line[..line.len()-swept.len()],&text[end..])
+    let swept = format!("p in {was} at(");
+    assert!(line.contains(&swept),"{line}");
+    format!("{}{before}{}{}",&text[..at],line.replace(&swept,&format!("p in {tool} at(")),&text[end..])
 }
 
 /// A union placed whole is distributed as its members each placed so: the wheel turned about its
@@ -181,10 +181,10 @@ construction bead := solid(std.solids.Revolution(face(ring2), about: taxis))
 construction lump := solid(tool)
 bead union lump
 ",fixtures::tools::torus(2.));
-    let reading = "under: spin, seen_from: observer, over t in (-75deg, 75deg)";
-    let sweeps = if long { format!("construction removal := solid({{ p | p inside({reading}) tool }})\n\
-        construction removal2 := solid({{ p | p inside({reading}) bead }})\nremoval2 cut part\n") }
-        else { format!("construction removal := solid({{ p | p inside({reading}) lump }})\n") };
+    let reading = "under: spin, seen_from: observer";
+    let sweeps = if long { format!("construction removal := solid({{ p | some t in (-75deg, 75deg): p in tool at({reading}) t }})\n\
+        construction removal2 := solid({{ p | some t in (-75deg, 75deg): p in bead at({reading}) t }})\nremoval2 cut part\n") }
+        else { format!("construction removal := solid({{ p | some t in (-75deg, 75deg): p in lump at({reading}) t }})\n") };
     format!("{tools}{}{sweeps}{}",fixtures::motions::cradle_roll(0.25,fixtures::motions::Observer::Skew),fixtures::tools::skew_post(4.))
 }
 

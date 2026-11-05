@@ -83,8 +83,8 @@ const RING: &str = "unit mm\nuse std\nuse std.place (horizontal)\nuse std.motion
 /// section's patch swept over one into a region solid.
 fn readings(m: &str) -> String {
     format!("placed := stock at(under: {m}) 90deg\n\
-        swept := solid({{ p | p inside(under: {m}, over t in (0deg, 90deg)) stock }})\n\
-        patch := solid({{ p | p coincident(under: {m}, over t in (0deg, 90deg)) sec }})\n")
+        swept := solid({{ p | some t in (0deg, 90deg): p in stock at(under: {m}) t }})\n\
+        patch := solid({{ p | some t in (0deg, 90deg): p in sec at(under: {m}) t }})\n")
 }
 
 /// The volume and the world bounds of the solid `name`, its approximation reported.

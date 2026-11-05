@@ -73,8 +73,8 @@ in std.top {
 }
 // a quarter turn
 param s: Scalar over (0, 1)
-duct := solid({ p | p coincident(over s) TwistedSquare(guide, std.z, square, o, x, reach: reach, twist: 90deg).sec })
+duct := solid({ p | some s: p in TwistedSquare(guide, std.z, square, o, x, reach: reach, twist: 90deg).sec at s })
 // three and a half turns: no pairing of two sections can say this
-auger := solid({ p | p coincident(over s) TwistedSquare(guide2, std.z, square, o, x, reach: reach, twist: 1260deg).sec })
+auger := solid({ p | some s: p in TwistedSquare(guide2, std.z, square, o, x, reach: reach, twist: 1260deg).sec at s })
 // a quarter turn, eased in and out
-eased := solid({ p | p coincident(over s) EasedSquare(guide3, std.z, square, o, x, reach: reach, twist: 90deg).sec })
+eased := solid({ p | some s: p in EasedSquare(guide3, std.z, square, o, x, reach: reach, twist: 90deg).sec at s })

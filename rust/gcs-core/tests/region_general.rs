@@ -62,7 +62,7 @@ pub fn field_volume(field: &MaterialField, lo: [f64; 3], hi: [f64; 3], h: f64) -
 #[test]
 fn two_crossing_cylinders_are_a_bicylinder() {
     let e = solved(&format!("{AXES}a := std.sets.Cylinder(xl, r: 2)\nb := std.sets.Cylinder(zl, r: 2)\n\
-                             both := {{ p | p inside a; p inside b }}\nbi := solid(both)\n"));
+                             both := {{ p | p in a; p in b }}\nbi := solid(both)\n"));
     let bi = ent(&e, "bi").i();
     assert!(gcs_core::solid::region::in_general(&e.sketch, bi));
     let field = MaterialField::read(&e.sketch, bi, 1e-10).unwrap();
@@ -88,8 +88,8 @@ fn a_ball_within_two_planes() {
                              zz := axis hint(dir: (0, 0, 1))\nxx := axis hint(dir: (1, 0, 0))\n\
                              fix(dir == (0, 0, 1), origin == (0, 3, 0)) zz\n\
                              fix(dir == (1, 0, 0), origin == (0, 3, 0)) xx\n\
-                             at_y := plane(u: zz, v: xx)\nball := std.sets.Sphere(c, r: 5)\n\
-                             cut := {{ p | p inside ball; p inside at_x; p inside at_y }}\n\
+                             at_y := plane(u: zz, v: xx)\nball := std.sets.Ball(c, r: 5)\n\
+                             cut := {{ p | p in ball; p distance(<= 0mm, along: n) at_x; p distance(<= 0mm, along: n) at_y }}\n\
                              s := solid(cut)\n"));
     let s = ent(&e, "s").i();
     assert!(gcs_core::solid::region::in_general(&e.sketch, s));
@@ -117,9 +117,9 @@ fn a_ball_within_two_planes() {
 #[test]
 fn a_ball_bored_off_its_centre() {
     let e = solved(&format!("{AXES}o := point hint((2, 0, 0))\nfix((2, 0, 0)) o\n\
-                             ball := std.sets.Sphere(o, r: 5)\nbore := std.sets.Cylinder(zl, r: 1)\n\
-                             bored := {{ p | p inside ball; p outside bore }}\nb := solid(bored)\n\
-                             on := std.sets.Sphere(c, r: 5)\nkept := {{ p | p inside on; p outside bore }}\n\
+                             ball := std.sets.Ball(o, r: 5)\nbore := std.sets.Cylinder(zl, r: 1)\n\
+                             bored := {{ p | p in ball; p not in bore }}\nb := solid(bored)\n\
+                             on := std.sets.Ball(c, r: 5)\nkept := {{ p | p in on; p not in bore }}\n\
                              k := solid(kept)\n"));
     let (b, k) = (ent(&e, "b").i(), ent(&e, "k").i());
     assert!(gcs_core::solid::region::in_general(&e.sketch, b));
@@ -135,7 +135,7 @@ fn a_ball_bored_off_its_centre() {
 #[test]
 fn a_region_with_no_end_is_refused() {
     let src = format!("{AXES}a := std.sets.Cylinder(xl, r: 2)\nb := std.sets.Cylinder(xl, r: 1)\n\
-                       pipe := {{ p | p inside a; p outside b }}\nt := solid(pipe)\n");
+                       pipe := {{ p | p in a; p not in b }}\nt := solid(pipe)\n");
     let e = solved(&src);
     let t = ent(&e, "t").i();
     assert!(gcs_core::solid::validate(&e.sketch, t).is_err_and(|m| m.contains("no end")));
@@ -168,9 +168,9 @@ fn an_ellipsoid_by_its_foci() {
 fn a_voronoi_cell_is_half_a_ball() {
     let e = solved(&format!("{AXES}a := point hint((2, 0, 0))\nfix((2, 0, 0)) a\n\
                              b := point hint((-2, 0, 0))\nfix((-2, 0, 0)) b\n\
-                             ball := std.sets.Sphere(c, r: 5)\n\
-                             near_a := {{ p | p inside ball; distance(p, a) <= distance(p, b) }}\n\
-                             near_b := {{ p | p inside ball; distance(p, a) >= distance(p, b) }}\n\
+                             ball := std.sets.Ball(c, r: 5)\n\
+                             near_a := {{ p | p in ball; distance(p, a) <= distance(p, b) }}\n\
+                             near_b := {{ p | p in ball; distance(p, a) >= distance(p, b) }}\n\
                              sa := solid(near_a)\nsb := solid(near_b)\n"));
     let half = 2.0 / 3.0 * std::f64::consts::PI * 125.0;
     for (name, x) in [("sa", 1.0), ("sb", -1.0)] {

@@ -46,13 +46,13 @@ in std.front {
   private nose := line(b3, b0)
 }
 // the rod: within `rod_r` of its axis, between its two ends
-rod := solid({ p | p inside std.sets.Cylinder(ax, r: rod_r)
-                   p outside std.sets.HalfSpace(ax.p1, ax, d: 0mm)
-                   p inside std.sets.HalfSpace(ax.p2, ax, d: 0mm) })
+rod := solid({ p | p in std.sets.Cylinder(ax, r: rod_r)
+                   p not in std.sets.HalfSpace(ax.p1, ax, d: 0mm)
+                   p in std.sets.HalfSpace(ax.p2, ax, d: 0mm) })
 construction bar := solid(std.solids.Prism(face(lower, end, upper, nose), from: -reach, to: reach))
 
 // the screw about the rod's axis, carrying the bar through it
 cut := frame
 cut screws(lead) ax
-construction thread := solid({ p | p inside(under: cut) bar })
+construction thread := solid({ p | some t: p in bar at(under: cut) t })
 thread cut rod

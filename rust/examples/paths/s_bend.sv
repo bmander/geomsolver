@@ -54,4 +54,4 @@ component Tube(g: path, up: axis, r: Length, s: Scalar) {
 }
 
 param s: Scalar over (0, 5)
-tube := solid({ p | p coincident(over s) Tube(route, std.z, r: r).f })
+tube := solid({ p | some s: p in Tube(route, std.z, r: r).f at s })

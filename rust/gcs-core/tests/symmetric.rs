@@ -193,8 +193,8 @@ fn instances_stamped_otherwise_are_their_own() {
 #[test]
 fn a_family_of_many_items_is_one_set_in_any_order() {
     let head = "component Eight(a: face, b: face, c: face, d: face, e: face, f: face, g: face, \
-        h: face) symmetric(a, b, c, d, e, f, g, h) := { p |\n  p inside a\n  p inside b\n  \
-        p inside c\n  p inside d\n  p inside e\n  p inside f\n  p inside g\n  p inside h\n}\n";
+        h: face) symmetric(a, b, c, d, e, f, g, h) := { p |\n  p in a.side\n  p in b.side\n  \
+        p in c.side\n  p in d.side\n  p in e.side\n  p in f.side\n  p in g.side\n  p in h.side\n}\n";
     let body = "        one := Eight(a, b, a, b, a, b, a, b)\n        taken := solid(one)\n        \
         taken cut A.body\n";
     assert_eq!(over_pairs(head, body), 15);

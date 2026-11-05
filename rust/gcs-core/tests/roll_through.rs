@@ -30,7 +30,7 @@ fix((0, 0, 1)) top
 spindle := line(o, top)
 turn := frame
 turn turns(1) spindle
-construction removal := solid({{ p | p inside({reading}) tool }})
+construction removal := solid({{ p | some t: p in tool at({reading}) t }})
 part := solid(blank)
 removal cut part
 ")
@@ -180,10 +180,10 @@ fn a_roll_with_no_engagement_about_0_is_refused() {
 #[test]
 fn through_is_a_roll_of_its_own() {
     let retired = balls("(3, 0, 0)", "under: turn").replace(
-        "solid({ p | p inside(under: turn) tool })", "sweep(tool, through: part, under: turn)");
+        "solid({ p | some t: p in tool at(under: turn) t })", "sweep(tool, through: part, under: turn)");
     let (_, errors) = syntax::parse(&retired);
     assert!(errors.iter().any(|d| d.message.contains("`sweep(…)` is retired")
-        && d.message.contains("`solid({ p | p inside(under: turn) tool })`")), "{errors:?}");
+        && d.message.contains("`solid({ p | some t: p in tool at(under: turn) t })`")), "{errors:?}");
     // the roll is cut from a solid
     crate::common::refused(&balls("(3, 0, 0)", "under: turn").replace("removal cut part",
         "removal cut spindle"), "E080", "relates solids", "removal cut spindle");
@@ -207,7 +207,7 @@ fn a_roll_through_prints_as_written() {
         .find(|st| src[st.span.lo as usize..st.span.hi as usize].starts_with("construction removal")).unwrap();
     let mut printed = String::new();
     syntax::write_stmt_to(&mut printed, &stmt.kind).unwrap();
-    assert!(printed.contains("solid({ p | p inside(under: turn) tool })"), "{printed}");
+    assert!(printed.contains("solid({ p | some t: p in tool at(under: turn) t })"), "{printed}");
     let e = read(&src.replace(&src[stmt.span.lo as usize..stmt.span.hi as usize], &printed));
     let removal = crate::common::ent(&e, "removal").i();
     assert!(matches!(e.sketch.solids[removal].def, SolidDef::Swept { roll: Roll::Through, .. }));

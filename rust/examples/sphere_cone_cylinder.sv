@@ -40,7 +40,7 @@ in std.side {
   fix((30, -10)) l.p1
   l.p1 distance(50) l.p2
 }
-l tangent shaft
+l tangent boundary(shaft)
 
 // a ball centred in the front plane, and a point of the side plane on it
 in std.front {
@@ -49,7 +49,7 @@ in std.front {
 }
 ball := std.sets.Sphere(bc, r: 12)
 pb := point hint((5, 45)) in std.side
-pb coincident ball
+pb in ball
 
 // two cones touching at a point
 in std.front {
@@ -63,6 +63,6 @@ in std.front {
 k1 := std.sets.Cone(kax, half: 30deg)       // its apex is the axis's start; it opens toward the end
 k2 := std.sets.Cone(jax, half: hint(38deg))
 M := point hint((-25, 61)) in std.side
-M coincident k1
-M coincident k2
-k1 tangent(at: M) k2
+M in boundary(k1)
+M in boundary(k2)
+boundary(k1) tangent(at: M) boundary(k2)

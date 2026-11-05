@@ -143,6 +143,11 @@ pub enum Unbuilt {
 
 impl From<String> for Unbuilt { fn from(m: String) -> Unbuilt { Unbuilt::Failed(m) } }
 
+/// A build stopped past its budget is refused by it, naming the stage that ran away (#780 R3).
+impl From<crate::util::meter::Stopped> for Unbuilt {
+    fn from(crate::util::meter::Stopped(o): crate::util::meter::Stopped) -> Unbuilt { Unbuilt::Budget {stage:o.stage,at:o.at,what:o.what} }
+}
+
 /// A plane: a point of it and its unit normal.
 type Plane = (V,V);
 
@@ -417,7 +422,7 @@ fn metered(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: 
     if meter::profiling() {
         eprintln!("{}  took {:?}: {}",m.report(),clock.elapsed(),match &out { Ok(b) => format!("built, {} faces",b.faces.len()),Err(e) => format!("{e:?}") });
     }
-    if let Some(o) = m.over() { return Err(Unbuilt::Budget {stage:o.stage,at:o.at,what:o.what}) }
+    if let Some(o) = m.over() { return Err(meter::Stopped(o).into()) }
     out
 }
 
@@ -986,7 +991,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     let swept = Swept {tool:&solid,path,roll:whole_roll};
     let carrying: Vec<Cutter> = cutters.into_iter().filter(|(_,sites)| carries(&swept,sites,half)).map(|(c,_)| c).collect();
     // a build past its budget goes no further (#777 V3: refused by `metered`, naming the stage)
-    if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
+    crate::util::meter::go_on()?;
     // **the box split by every candidate at once** (#735 A4, `boolean::arrangement_within`): each
     // candidate a solid one of whose faces lies on it across the box — a plane a block standing on
     // it, far wider than the box; a surface of revolution its solid over the heights its source
@@ -1053,7 +1058,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
 /// kept cells' boundary selected and judged: `build` from its arrangement on.
 fn arranged(within: &Brep,refs: &[&Brep],swept: &Swept,blank: Option<&Brep>,tol: f64) -> Result<Brep,Unbuilt> {
     let complex = arrangement_within(within,refs,tol)?;
-    if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
+    crate::util::meter::go_on()?;
     // each cell classified by membership at the deepest of its points that settles (a cusp-thin
     // cell's stand near the swept boundary, and the first may not), and the boundary between the
     // cells kept — the members, or cut from a blank the rest — and the others the result: one
@@ -1064,7 +1069,7 @@ fn arranged(within: &Brep,refs: &[&Brep],swept: &Swept,blank: Option<&Brep>,tol:
     // and those past it kept as witnesses the built solid is judged at
     let read = crate::util::par::indices(cells.saturating_sub(1),|i| -> Result<Option<(bool,Vec<V>)>,Unbuilt> {
         let c = i+1;
-        if crate::util::meter::stopped() { return Err(Unbuilt::Failed("stopped".into())) }
+        crate::util::meter::go_on()?;
         let points = complex.inside_points(c,4)?;
         let Some(&first) = points.first() else { return Ok(None) };
         match points.iter().enumerate().find_map(|(k,&x)| swept.member(x).ok().map(|m| (k,m))) {
@@ -1128,20 +1133,20 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
     // each face turned the way its solid lies: a hair out along its outward normal the solid's own
     // point location reads out, a hair in reads in (a face turned against its neighbours places
     // points as the right one does, but its volume is off: the ring's sweep came out at 3.38 of
-    // 25.13 with every point placed right)
+    // 25.13 with every point placed right) — each face read on its own across the cores, the first
+    // turned in the faces' order refused (#780 R4)
     let size = { let (lo,hi) = built.bounds(); crate::util::space::distance(lo,hi) };
     let hair = (1e-4*size).max(64.*tol);
-    for (fi,f) in built.faces.iter().enumerate() {
+    let turned = crate::util::par::indices(built.faces.len(),|fi| -> Option<V> {
+        let f = &built.faces[fi];
         let [[u0,u1],[v0,v1]] = crate::boolean::face_parameters(built,fi);
-        let at = (1..4).flat_map(|i| (1..4).map(move |j| [u0+(u1-u0)*i as f64/4.,v0+(v1-v0)*j as f64/4.]))
-            .map(|uv| f.surface.point(uv)).find(|&p| solid.face_place(fi,p) == Place::In);
-        let Some(p) = at else { continue };
-        let Some(n) = f.outward(p) else { continue };
+        let p = (1..4).flat_map(|i| (1..4).map(move |j| [u0+(u1-u0)*i as f64/4.,v0+(v1-v0)*j as f64/4.]))
+            .map(|uv| f.surface.point(uv)).find(|&p| solid.face_place(fi,p) == Place::In)?;
+        let n = f.outward(p)?;
         let (outside,inside) = (add(p,scale(n,hair)),sub(p,scale(n,hair)));
-        if solid.solid_place(outside) == Place::In && solid.solid_place(inside) == Place::Out {
-            return Err(Unbuilt::Wrong {at:inside,held:false})
-        }
-    }
+        (solid.solid_place(outside) == Place::In && solid.solid_place(inside) == Place::Out).then_some(inside)
+    });
+    if let Some(at) = turned.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held:false}) }
     // turned inside out: every point it seems to hold, it leaves out
     if crate::props::volume(built) < 0. {
         let inside = points.iter().copied().find(|&p| solid.solid_place(p) == Place::In)

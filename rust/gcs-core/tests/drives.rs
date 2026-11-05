@@ -55,8 +55,8 @@ fn cam(extra: &str) -> String {
         follower := frame\n\
         follower slides(360mm) stem\n\
         fix(value == {RISE}deg * (1 - cos(t))) follower\n\
-        R := r0 in follower\n\
-        cut := solid({{ p | p inside(under: follower, seen_from: cam, over t) ball }})\n{extra}",
+        R := r0 at follower\n\
+        cut := solid({{ p | some t: p in ball at(under: follower, seen_from: cam) t }})\n{extra}",
         b = BASE - 1.0, t = BASE + 1.0)
 }
 
@@ -203,7 +203,7 @@ fn a_cam_cut_is_the_ball_swept_along_its_law() {
 fn a_tool_placed_under_a_drive_stands_where_its_law_puts_it() {
     // read at a roll, the joint stands at the law's value of it; drawn in the frame, at its value
     // where the drawing stands, `t` at its start
-    let e = solved(&cam("placed := ball at(under: follower) 90deg\ndrawn := ball in follower\n"));
+    let e = solved(&cam("placed := ball at(under: follower) 90deg\ndrawn := ball at follower\n"));
     let up = BASE + lift(90.0);
     assert!(material(&e, "placed", [0.0, 0.0, up])[1] < -0.999);
     assert!(material(&e, "placed", [0.0, 0.0, BASE])[0] > 0.5);
@@ -219,7 +219,7 @@ fn a_roll_through_a_body_under_a_drive_is_conservative() {
         k1 := point\n  k2 := point\n  fix((0, {a})) k1\n  fix((0, {b})) k2\n  \
         kd := line(k1, k2)\n  km := arc(center: k0, start: k1, end: k2)\n  radius(3mm) km\n}}\n\
         blank := solid(std.solids.Revolution(face(km, kd), about: kd))\n\
-        rolled := solid({{ p | p inside(under: follower, seen_from: cam) ball }})\n\
+        rolled := solid({{ p | some u: p in ball at(under: follower, seen_from: cam) u }})\n\
         rolled cut blank\n",
         a = BASE - 3.0, b = BASE + 3.0);
     let e = solved(&cam(&blank));
@@ -254,7 +254,7 @@ fn a_drive_refuses_what_it_cannot_mean() {
     // the roll is an angle: a drive over a number of another kind is followed, not swept
     let s = said("param s: Scalar over (0, 1)\nlift := frame\n\
         lift slides(360mm) stem\nfix(value == 90deg * s) lift\n\
-        q := solid({ p | p inside(under: lift, over t) ball })\n");
+        q := solid({ p | some t: p in ball at(under: lift) t })\n");
     assert!(s.len() == 1 && s[0].starts_with("E080") && s[0].contains("a Scalar"), "{s:?}");
     // nor does a relation held to a meshing under the drive, which reads its mesh's turns at a
     // constant ratio (an envelope in space generated under one is held, #398 G)
