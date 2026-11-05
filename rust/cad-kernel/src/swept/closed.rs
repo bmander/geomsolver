@@ -686,6 +686,16 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 if dot(e,axis).abs() <= 1e-9 { return Some(Cutter::Plane((p,axis))) }
                 Some(Cutter::Revolved {o:c,axis,p,e,span})
             };
+            // a segment from `p` to `q` under the twist: turned (`turned`), or under a screw, leaning to
+            // its axis, a patch of the ruled helicoid it sweeps (#777 M5), square to it the helicoidal
+            // sheet it sweeps across the box
+            let line_cutter = |p: V,q: V| -> Option<Cutter> {
+                let e = unit(sub(q,p));
+                if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 {
+                    return Some(if dot(e,axis).abs() > 1e-9 { Cutter::Patch {p,q} } else { Cutter::Screwed {p,e} })
+                }
+                turned(p,sub(q,p),q)
+            };
             // the sites of a line from `p` to `q` turned: its points at each pose, with the normal of
             // the surface it turns into there
             let line_sites = |p: V,q: V,cutter: Cutter| -> Vec<(V,V)> {
@@ -764,6 +774,13 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 let sites_at = |m: &crate::trajectory::Pose| -> Vec<(V,V)> {
                     points.iter().map(|&x| (m.point(x),m.vector(outward(face,x)))).collect()
                 };
+                // the face's ruling at `u` round its axis, where it is on the face, under the twist
+                let ruling = |u: f64| -> Option<(Cutter,Vec<(V,V)>)> {
+                    let (p,q) = (face.surface.point([u,lo]),face.surface.point([u,hi]));
+                    if located.face_place(k,face.surface.point([u,0.5*(lo+hi)])) == crate::query::Place::Out { return None }
+                    let cutter = line_cutter(p,q)?;
+                    Some((cutter,line_sites(p,q,cutter)))
+                };
                 // the way from the axis to the face's own axis or centre, square to the axis
                 let away = |o: V| -> Option<V> { let r = sub(o,c); let w = sub(r,scale(axis,dot(r,axis))); (norm(w) > eps).then(|| unit(w)) };
                 match face.surface {
@@ -775,10 +792,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         // coaxial, the face turns into itself
                         if ways.is_empty() { add_cutter(Cutter::Cylinder {o:f.o,axis:unit(f.z),r:r.abs(),span:[lo,hi]},poses.iter().flat_map(|m| sites_at(m)).collect()) }
                         for w in ways {
-                            let u = dot(w,f.y).datan2(dot(w,f.x));
-                            let (p,q) = (face.surface.point([u,lo]),face.surface.point([u,hi]));
-                            if located.face_place(k,face.surface.point([u,0.5*(lo+hi)])) == crate::query::Place::Out { continue }
-                            if let Some(cutter) = turned(p,sub(q,p),q) { add_cutter(cutter,line_sites(p,q,cutter)) }
+                            if let Some((cutter,sites)) = ruling(dot(w,f.y).datan2(dot(w,f.x))) { add_cutter(cutter,sites) }
                         }
                     }
                     Surface::Cone(f,_,half) => {
@@ -806,10 +820,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                             if !(rr > 1e-12*(screw.ratio.abs()*size+kappa.abs())) || cc.abs() >= rr { continue }
                             let (phi,delta) = (bb.datan2(aa),(cc/rr).clamp(-1.,1.).dacos());
                             for u in [phi+delta,phi-delta] {
-                                let (p,q) = (face.surface.point([u,lo]),face.surface.point([u,hi]));
-                                if located.face_place(k,face.surface.point([u,0.5*(lo+hi)])) == crate::query::Place::Out { continue }
-                                let cutter = Cutter::Patch {p,q};
-                                add_cutter(cutter,line_sites(p,q,cutter));
+                                if let Some((cutter,sites)) = ruling(u) { add_cutter(cutter,sites) }
                             }
                             continue
                         }
@@ -818,10 +829,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                             add_cutter(Cutter::Revolved {o:f.o,axis:f.z,p:p0,e,span:[lo*ca,hi*ca]},poses.iter().flat_map(|m| sites_at(m)).collect())
                         }
                         for w in ways {
-                            let u = dot(w,f.y).datan2(dot(w,f.x));
-                            let (p,q) = (face.surface.point([u,lo]),face.surface.point([u,hi]));
-                            if located.face_place(k,face.surface.point([u,0.5*(lo+hi)])) == crate::query::Place::Out { continue }
-                            if let Some(cutter) = turned(p,sub(q,p),q) { add_cutter(cutter,line_sites(p,q,cutter)) }
+                            if let Some((cutter,sites)) = ruling(dot(w,f.y).datan2(dot(w,f.x))) { add_cutter(cutter,sites) }
                         }
                     }
                     Surface::Sphere(f,r) if !screw.is_turn() => {
@@ -920,16 +928,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 else { add_cutter(Cutter::ScrewedDisc {c:f.o,r:r.abs()},sites) }
             }
             for &(p,q,_) in &edges {
-                let e = unit(sub(q,p));
-                if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 {
-                    // under a screw an edge square to the axis sweeps a helicoidal sheet across the
-                    // box; one leaning to it, a patch of a ruled helicoid bounded inside the domain
-                    // (#777 M5)
-                    let cutter = if dot(e,axis).abs() > 1e-9 { Cutter::Patch {p,q} } else { Cutter::Screwed {p,e} };
-                    add_cutter(cutter,line_sites(p,q,cutter));
-                    continue
-                }
-                if let Some(cutter) = turned(p,sub(q,p),q) { add_cutter(cutter,line_sites(p,q,cutter)) }
+                if let Some(cutter) = line_cutter(p,q) { add_cutter(cutter,line_sites(p,q,cutter)) }
             }
         }
     }

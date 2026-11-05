@@ -566,7 +566,7 @@ fn tori_touching(a: &Surface,b: &Surface,(t,big,small): (&Frame,f64,f64),(u,bog,
             let (sn,cs) = th.dsin_cos();
             add(add(t.o,scale(z,h)),scale(add(scale(x,cs),scale(y,sn)),big+s1*q))
         };
-        out.extend(branches(&coefficients,&[],&point,&|pts,closed| Curve::Traced(std::sync::Arc::new(
+        out.extend(circle_branches(&coefficients,&[],&point,&|pts,closed| Curve::Traced(std::sync::Arc::new(
             super::geom::Traced {a:a.clone(),b:b.clone(),pts,closed}))));
     }
     Some(out)
@@ -692,26 +692,26 @@ fn screwed_lines_meeting(on: &std::sync::Arc<super::geom::Blend>,by: &super::geo
 fn screwed_line_circle(on: &std::sync::Arc<super::geom::Blend>,by: &super::geom::Blend,tol: f64) -> Option<Vec<Curve>> {
     let (l,c) = (on.screwed_line()?,by.level_circle()?);
     let k = c.axis;
-    let off = sub(l.centre,c.centre);
-    if norm(cross(l.axis,k)) > 1e-12 || norm(sub(off,scale(k,dot(off,k)))) > tol || l.angle == 0. || c.angle == 0.
-        || (l.pitch()-c.rise/c.angle).abs() > 1e-12*l.pitch().abs().max(1e-300) { return None }
-    let pitch = c.rise/c.angle;
     let perp = |x: V| sub(x,scale(k,dot(x,k)));
+    if l.angle == 0. || c.angle == 0. { return None }
+    let pitch = c.rise/c.angle;
+    if norm(cross(l.axis,k)) > 1e-12 || norm(perp(sub(l.centre,c.centre))) > tol
+        || (l.pitch()-pitch).abs() > 1e-12*pitch.abs().max(1e-300) { return None }
     let (w0,m) = (perp(sub(l.p0,c.centre)),perp(l.run));
     let c0 = perp(sub(c.frame.o,c.centre));
-    let zc = dot(sub(c.frame.o,c.centre),k);
-    let z = |u: f64| dot(sub(add(l.p0,scale(l.run,u)),c.centre),k);
+    // the line's point's height over the circle's
+    let z = |u: f64| dot(sub(add(l.p0,scale(l.run,u)),c.frame.o),k);
     // the turn that takes the circle's sheet up to the line's point's height, and its rate
-    let (s0,s1) = ((z(0.)-zc)/pitch,dot(l.run,k)/pitch);
+    let (s0,s1) = (z(0.)/pitch,dot(l.run,k)/pitch);
     let turned = |u: f64| { let (sn,cs) = (s0+s1*u).dsin_cos(); add(scale(c0,cs),scale(cross(k,c0),sn)) };
     let g = |u: f64| { let e = sub(add(w0,scale(m,u)),turned(u)); dot(e,e)-c.r*c.r };
-    let dg = |u: f64| { let e = sub(add(w0,scale(m,u)),turned(u)); 2.*dot(e,sub(m,scale(cross(k,turned(u)),s1))) };
+    let dg = |u: f64| { let q = turned(u); 2.*dot(sub(add(w0,scale(m,u)),q),sub(m,scale(cross(k,q),s1))) };
     let (big,lean) = (norm(w0)+norm(m)+norm(c0),norm(m)+s1.abs()*norm(c0));
     let bound = |_: f64,_: f64| [2.*big*lean,2.*lean*lean+2.*s1*s1*big*norm(c0)];
     let size = big.max(c.r).max(1e-300);
     let roots = crate::util::isolate::roots(&g,&dg,&bound,[0.,1.],tol*1e-3/size,&|u| g(u).abs() <= 2.*c.r*tol)?;
     // the circle's sheet's `v` at the line's point at `u` carried `t` along the line's sheet
-    let v_at = |u: f64,t: f64| (z(u)+l.rise*dot(l.axis,k)*t-zc)/c.rise;
+    let v_at = |u: f64,t: f64| (z(u)+l.rise*dot(l.axis,k)*t)/c.rise;
     let slack = 1e-9;
     Some(roots.into_iter().map(|r| r.at).filter(|&u| {
         let (a,b) = (v_at(u,0.),v_at(u,1.));
@@ -804,143 +804,74 @@ fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
 /// under a screw, screwed into a patch, against the cone at an end pose, which holds that ruling
 /// and touches the patch all along it). The sheet's ruling at `v`, `S(u, v) = P(v) + u D(v)`, meets
 /// the cone `|w|² = (r + h tan α)²` where `A(v) u² + B(v) u + C(v) = 0`: two roots `u±(v)` over the
-/// `v` where the discriminant holds, joining where it vanishes (a turn, refined by bisection and
-/// drawn in toward as the square root it parts as) and run off where a root leaves the sheet's
-/// reach. A ruling the cone holds (`A = B = C = 0`, where `C` crosses nought or, touching, turns)
-/// is returned whole, and the cut runs on through it, read a hair either side (the coefficients
-/// there vanish as the way, or its square, so their rounding is read no closer). Its points are
-/// written in closed form and handed over as traced meetings (`Traced`), so no near touch is
-/// traced.
+/// `v` where the discriminant holds (`branches`), run off where a root leaves the sheet's reach. A
+/// ruling the cone holds (`A = B = C = 0`, where `C` crosses nought or, touching, turns:
+/// `roots::sampled_roots`) is returned whole, and the cut runs into it at its limit there, the roots
+/// of the coefficients' first differences across it where the sheet crosses the cone along it, of
+/// their second where it touches (read a hair off it, where the coefficients' rounding is still
+/// below what they have grown to). Its points are written in closed form and handed over as traced
+/// meetings (`Traced`), so no near touch is traced.
 fn screwed_line_cone(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blend>,line: &super::geom::ScrewedLine,other: &Surface,tol: f64)
     -> Option<Vec<Curve>> {
     use super::geom::Traced;
     let Surface::Cone(f,r0,al) = *other else { return None };
     let (t,z) = (al.dtan(),unit(f.z));
     let (p0,run) = (line.p0,line.run);
-    let coefficients = |v: f64| -> (f64,f64,f64) {
+    let coefficients = |v: f64| -> [f64;3] {
         let (p,d) = (blend.carry.at(p0,v),blend.carry.dir(run,v));
         let a0 = sub(p,f.o);
         let (h0,h1) = (dot(a0,z),dot(d,z));
         let (w0,w1) = (sub(a0,scale(z,h0)),sub(d,scale(z,h1)));
         let e = r0+t*h0;
-        (dot(w1,w1)-t*t*h1*h1,2.*(dot(w0,w1)-t*h1*e),dot(w0,w0)-e*e)
+        [dot(w1,w1)-t*t*h1*h1,2.*(dot(w0,w1)-t*h1*e),dot(w0,w0)-e*e]
     };
-    let point = |u: f64,v: f64| add(blend.carry.at(p0,v),scale(blend.carry.dir(run,v),u));
     let size = norm(sub(p0,f.o))+norm(run)+r0.abs();
-    const N: usize = 2048;
-    const DEEP: usize = 32;
     let hair = 1e-4;
-    // the rulings the cone holds: where the ruling's ends' readings `C` and `A + B + C` both
-    // vanish, `C` crossing nought (the sheet crossing the cone along the ruling) or turning there
-    // (touching it all along)
-    let mut held: Vec<f64> = Vec::new();
-    {
-        let c_of = |v: f64| coefficients(v).2;
-        let turning = |v: f64| { let e = 1e-6; (c_of(v+e)-c_of(v-e))/(2.*e) };
-        let settle = |f: &dyn Fn(f64) -> f64,mut a: f64,mut b: f64| {
-            let fa = f(a) > 0.;
-            for _ in 0..80 { let c = 0.5*(a+b); if (f(c) > 0.) == fa { a = c } else { b = c } }
-            0.5*(a+b)
-        };
-        let vs: Vec<f64> = (0..=N).map(|i| i as f64/N as f64).collect();
-        let cs: Vec<f64> = vs.iter().map(|&v| c_of(v)).collect();
-        // (and the sheet's own ends, where a held ruling is no root between samples)
-        let mut found: Vec<f64> = vec![0.,1.];
-        for i in 0..N {
-            if (cs[i] > 0.) != (cs[i+1] > 0.) { found.push(settle(&c_of,vs[i],vs[i+1])) }
-            if i > 0 && cs[i].abs() <= cs[i-1].abs() && cs[i].abs() <= cs[i+1].abs() && (turning(vs[i-1]) > 0.) != (turning(vs[i+1]) > 0.) {
-                found.push(settle(&turning,vs[i-1],vs[i+1]))
-            }
+    // the rulings the cone holds: the roots of `C` (the ruling's foot on the cone), crossings or
+    // touches, and the sheet's own ends, where all three coefficients vanish
+    let held: Vec<f64> = {
+        const N: usize = 2048;
+        let c_of = |v: f64| coefficients(v)[2];
+        let ts: Vec<f64> = (0..=N).map(|i| i as f64/N as f64).collect();
+        let cs: Vec<f64> = ts.iter().map(|&v| c_of(v)).collect();
+        // (a root read within rounding of the squared lengths `C` is: one touching grows as the
+        // square of the way from it, and a looser reading would take a stretch of rulings for it)
+        let found = crate::util::roots::sampled_roots(c_of,|v| (c_of(v+1e-6)-c_of(v-1e-6))/2e-6,&ts,&cs,1e-9*size*size,1e-12);
+        let mut held: Vec<f64> = Vec::new();
+        for v in [0.,1.].into_iter().chain(found.into_iter().map(|r| r.at)) {
+            if coefficients(v).iter().all(|x| x.abs() <= 2.*size*tol) && !held.iter().any(|&w| (w-v).abs() <= hair) { held.push(v) }
         }
-        for v in found {
-            let (a,b,c) = coefficients(v);
-            if a.abs().max(b.abs()).max(c.abs()) <= 2.*size*tol && !held.iter().any(|&w| (w-v).abs() <= 1e-9) { held.push(v) }
-        }
-    }
-    let roots = |v: f64| -> Option<[f64;2]> {
-        let (a,b,c) = coefficients(v);
+        held
+    };
+    // the two roots, larger first (the larger by `quadratic`'s rule, without cancellation; one at
+    // infinity where the ruling runs along the cone's generators)
+    let quadratic = |[a,b,c]: [f64;3]| -> Option<[f64;2]> {
         let disc = b*b-4.*a*c;
         if !(disc >= 0.) { return None }
-        let q = -0.5*(b+b.signum()*disc.sqrt());
+        let q = -0.5*(b+disc.sqrt().copysign(b));
         if q == 0. { return (a != 0.).then(|| [-b/(2.*a);2]) }
         let (x,y) = (q/a,c/q);
-        Some(if x <= y { [x,y] } else { [y,x] })
+        Some(if x >= y { [x,y] } else { [y,x] })
     };
-    let defined = |v: f64| roots(v).is_some();
-    // the samples: even over the sheet, kept a hair clear of each held ruling and drawn in toward
-    // it (where the coefficients vanish their rounding is read no closer; the chord across reads
-    // the cut through the ruling)
-    let mut vs: Vec<f64> = (0..=N).map(|i| i as f64/N as f64).filter(|&v| held.iter().all(|&w| (w-v).abs() >= hair)).collect();
-    // (an end of the sheet on a held ruling: its first sample a hair in)
-    for &w in &held { if w == 0. || w == 1. { vs.push(if w == 0. { hair } else { 1.-hair }) } }
-    for &w in &held {
-        for j in 0..14 { for side in [-1.,1.] { let v = w+side*hair*2f64.powi(j); if (0.0..=1.).contains(&v) { vs.push(v) } } }
-    }
-    vs.sort_by(f64::total_cmp);
-    vs.dedup();
-    let refine = |inside: f64,outside: f64| { let (mut a,mut b) = (inside,outside); for _ in 0..60 { let m = 0.5*(a+b); if defined(m) { a = m } else { b = m } } a };
-    let reach = 1.;
-    let traced = |pts: Vec<V>,closed: bool| Curve::Traced(std::sync::Arc::new(Traced {a:sheet.clone(),b:other.clone(),pts,closed}));
-    // a branch's points over `stretch`, split where its root runs past the sheet's reach
-    let pieces = |samples: &[(f64,f64)]| -> Vec<Vec<V>> {
-        let mut out: Vec<Vec<V>> = vec![Vec::new()];
-        for &(u,v) in samples {
-            if (-reach..=1.+reach).contains(&u) { out.last_mut().unwrap().push(point(u,v)) }
-            else if !out.last().unwrap().is_empty() { out.push(Vec::new()) }
-        }
-        out.retain(|p| p.len() >= 2);
-        out
+    // at a held ruling, approached from `side`, the roots of the first differences across it, or
+    // where they stand within rounding of none (the sheet touching the cone along it), the second
+    let limit = |w: f64,side: f64| -> Option<[f64;2]> {
+        let (q1,q0) = (coefficients(w+hair),coefficients(w-hair));
+        let first: [f64;3] = std::array::from_fn(|k| side*(q1[k]-q0[k]));
+        let second: [f64;3] = std::array::from_fn(|k| q1[k]+q0[k]);
+        let big = |q: &[f64;3]| q.iter().fold(0f64,|m,x| m.max(x.abs()));
+        quadratic(if big(&first) > big(&second) { first } else { second })
     };
+    let reach = |u: f64| (-1.0..=2.).contains(&u);
+    let point = |u: f64,v: f64| reach(u).then(|| add(blend.carry.at(p0,v),scale(blend.carry.dir(run,v),u)));
+    // (no chord longer than a step of the cone's circle: a long sheet's even samples, a turn of a line
+    // screwed across the box, once stood chords a twentieth of its radius apart)
+    let step = std::f64::consts::PI/1024.*r0.abs().max(1e-3*size);
+    let apart = |x: f64,y: f64,v: f64,w: f64| match (point(x,v),point(y,w)) { (Some(p),Some(q)) => distance(p,q) > step,_ => false };
     let mut out: Vec<Curve> = held.iter().map(|&v| Curve::Line {p:blend.carry.at(p0,v),d:unit(blend.carry.dir(run,v))}).collect();
-    let ok: Vec<bool> = vs.iter().map(|&v| defined(v)).collect();
-    let n = vs.len();
-    let mut i = 0;
-    while i < n {
-        if !ok[i] { i += 1; continue }
-        let start = i;
-        while i+1 < n && ok[i+1] { i += 1 }
-        let end = i;
-        i += 1;
-        let lo_v = (start > 0).then(|| refine(vs[start],vs[start-1]));
-        let hi_v = (end+1 < n).then(|| refine(vs[end],vs[end+1]));
-        let mut stretch: Vec<f64> = vs[start..=end].to_vec();
-        if let Some(t) = lo_v { stretch.push(t); stretch.extend((1..DEEP).map(|j| t+(vs[start]-t)*0.5f64.powi((DEEP-j) as i32))) }
-        if let Some(t) = hi_v { stretch.push(t); stretch.extend((1..DEEP).map(|j| t-(t-vs[end])*0.5f64.powi((DEEP-j) as i32))) }
-        stretch.retain(|&v| defined(v));
-        stretch.sort_by(f64::total_cmp);
-        stretch.dedup();
-        // and between two where either root's points stand farther apart than a step of the cone's
-        // circle (`branches`' rule: a long sheet's even samples, a turn of a line screwed across the
-        // box, once stood chords a twentieth of the cone's radius apart)
-        let step = std::f64::consts::PI/1024.*r0.abs().max(1e-3*size);
-        let apart = |x: f64,y: f64| match (roots(x),roots(y)) {
-            (Some(p),Some(q)) => (0..2).any(|k| [p[k],q[k]].iter().all(|u| (-reach..=1.+reach).contains(u))
-                && distance(point(p[k],x),point(q[k],y)) > step),
-            _ => false,
-        };
-        let mut fine: Vec<f64> = vec![stretch[0]];
-        for w in stretch.windows(2) {
-            let mut todo = vec![(w[0],w[1],0)];
-            while let Some((a,b,depth)) = todo.pop() {
-                if depth < 16 && apart(a,b) { let m = 0.5*(a+b); todo.push((m,b,depth+1)); todo.push((a,m,depth+1)) }
-                else { fine.push(b) }
-            }
-        }
-        let stretch = fine;
-        let branch = |k: usize| -> Vec<(f64,f64)> { stretch.iter().filter_map(|&v| roots(v).map(|r| (r[k],v))).collect() };
-        let (minus,plus) = (branch(0),branch(1));
-        // turning at an end, the two branches are one curve through the turn
-        let joined: Vec<(f64,f64)> = match (lo_v.is_some(),hi_v.is_some()) {
-            (true,true) => { let mut pts = plus.clone(); pts.extend(minus.iter().rev().skip(1)); pts }
-            (true,false) => { let mut pts: Vec<(f64,f64)> = minus.iter().rev().copied().collect(); pts.extend(plus.iter().skip(1)); pts }
-            (false,true) => { let mut pts = plus.clone(); pts.extend(minus.iter().rev().skip(1)); pts }
-            (false,false) => { out.extend(pieces(&plus).into_iter().map(|p| traced(p,false))); minus }
-        };
-        let closed = lo_v.is_some() && hi_v.is_some() && joined.iter().all(|&(u,_)| (-reach..=1.+reach).contains(&u));
-        let parts = pieces(&joined);
-        if closed && parts.len() == 1 { out.push(traced(parts[0].clone(),true)) }
-        else { out.extend(parts.into_iter().map(|p| traced(p,false))) }
-    }
+    let roots = |v: f64| quadratic(coefficients(v));
+    out.extend(branches(&Branches {roots:&roots,real:&|v| roots(v).is_some(),point:&point,apart:&apart,coincide:&held,limit:&limit,hair},
+        &|pts,closed| Curve::Traced(std::sync::Arc::new(Traced {a:sheet.clone(),b:other.clone(),pts,closed}))));
     Some(out)
 }
 
@@ -1153,12 +1084,12 @@ fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Bl
         Surface::Cylinder(cy,_) | Surface::Cone(cy,..) if norm(cross(cy.z,k)) <= 1e-12 => {
             // the surface's radius at the height of `c` along its axis: a cylinder's the same at
             // every height, a cone's `r + z tan α` (#780 C2: a cone's own rim, screwed)
-            let radius = |c: V| match *other {
-                Surface::Cone(f,r0,a) => r0+dot(sub(c,f.o),f.z)*a.dtan(),
-                Surface::Cylinder(_,big) => big.abs(),
-                _ => unreachable!(),
+            let (r0,slope,cone) = match *other {
+                Surface::Cone(_,r0,a) => (r0,a.dtan(),true),
+                Surface::Cylinder(_,big) => (big.abs(),0.,false),
+                _ => return None,
             };
-            let cone = matches!(other,Surface::Cone(..));
+            let radius = |c: V| r0+dot(sub(c,cy.o),cy.z)*slope;
             // the circle's own frame and its offset from the surface's axis at `v`, and the
             // coefficients there
             let coefficients = |v: f64| {
@@ -1194,7 +1125,7 @@ fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Bl
                     }
                 }
             }
-            out.extend(branches(&coefficients,&coincide,&point,&|pts,closed| Curve::Traced(
+            out.extend(circle_branches(&coefficients,&coincide,&point,&|pts,closed| Curve::Traced(
                 std::sync::Arc::new(Traced {a:sheet.clone(),b:other.clone(),pts,closed}))));
             Some(out)
         }
@@ -1204,7 +1135,7 @@ fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Bl
             let n = unit(p.z);
             let h = dot(n,p.o);
             let coefficients = |v: f64| { let (c,x,y) = circle_at(v); (r*dot(n,x),r*dot(n,y),h-dot(n,c)) };
-            Some(branches(&coefficients,&[],&point,&|pts,closed| Curve::Traced(std::sync::Arc::new(Traced {a:sheet.clone(),
+            Some(circle_branches(&coefficients,&[],&point,&|pts,closed| Curve::Traced(std::sync::Arc::new(Traced {a:sheet.clone(),
                 b:other.clone(),pts,closed}))))
         }
         _ => None,
@@ -1212,30 +1143,60 @@ fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Bl
 }
 
 /// **The branches of a level circle's meeting under a screw**, `A(v) cos θ + B(v) sin θ = C(v)` over
-/// the sheet's `v` (`coefficients`), as traced curves (`traced`) through the circle's exact points
-/// `point(θ, v)` at `θ = atan2(B, A) ± acos(C/ρ)`: runs of `v` over which the two roots stand, each
-/// end a turn where they join (refined by bisection), the sheet's edge, or one of the `coincide`
-/// heights where the circle is wholly the other surface's — kept clear of it by a hair, the samples
-/// drawn in ever closer to it, and ended at its limit, the circle's points square to the centre's
-/// way there.
-fn branches(coefficients: &dyn Fn(f64) -> (f64,f64,f64),coincide: &[f64],point: &dyn Fn(f64,f64) -> V,
+/// the sheet's `v` (`coefficients`), through the circle's exact points `point(θ, v)` at
+/// `θ = atan2(B, A) ± acos(C/ρ)` (`branches`): each between two where either root turns by more than
+/// `π/1024`, and each end at one of the `coincide` heights, where the circle is wholly the other
+/// surface's, at its limit there: the roots of the coefficients' rates, read across it (`(A, B, C)`
+/// grow from nothing there, so a one-sided reading leans by the hair) — on a cylinder the circle's
+/// points square to the centre's way, where `C` grows as the square of the way; on a cone, whose
+/// radius runs with the height, turned off them to where its normal is square to the screw's
+/// velocity (#780 C2: the feet of its contact rulings, where the sheet touches it).
+fn circle_branches(coefficients: &dyn Fn(f64) -> (f64,f64,f64),coincide: &[f64],point: &dyn Fn(f64,f64) -> V,
     traced: &dyn Fn(Vec<V>,bool) -> Curve) -> Vec<Curve> {
-    const N: usize = 2048;
-    // the most either root turns between two points of a branch
     const STEP: f64 = std::f64::consts::PI/1024.;
+    let hair = 1e-6;
+    let angles = |(a,b,c): (f64,f64,f64)| { let (phi,w) = (b.datan2(a),(c/a.hypot(b).max(1e-300)).clamp(-1.,1.).dacos()); [phi+w,phi-w] };
+    let roots = |v: f64| { let (a,b,c) = coefficients(v); (a.hypot(b) > 0.).then(|| angles((a,b,c))) };
+    let real = |v: f64| { let (a,b,c) = coefficients(v); let rho = a.hypot(b); rho > 0. && c.abs() <= rho };
+    let limit = |w: f64,side: f64| {
+        let ((a1,b1,c1),(a0,b0,c0)) = (coefficients(w+hair),coefficients(w-hair));
+        Some(angles((side*(a1-a0),side*(b1-b0),side*(c1-c0))))
+    };
+    let apart = |x: f64,y: f64,_: f64,_: f64| { let d = (y-x).rem_euclid(std::f64::consts::TAU); d.min(std::f64::consts::TAU-d) > STEP };
+    branches(&Branches {roots:&roots,real:&real,point:&|th,v| Some(point(th,v)),apart:&apart,coincide,limit:&limit,hair},traced)
+}
+
+/// What a meeting read as two roots along a sheet's `v` is (`branches`): `roots(v)`, the two (each
+/// branch at its own index), read where `real(v)` says they are (and clamped a rounding past);
+/// `point(x, v)`, the meeting's point at root `x`, or
+/// none past the sheet's reach; `apart(x, y, v, w)`, whether one branch's points at two samples
+/// stand a step apart; the `coincide` heights, where the meeting is a whole curve of both (a circle
+/// one surface's section, a ruling the other holds), kept clear of by `hair`; and `limit(w, side)`,
+/// the roots a branch ends at there, approached from `side`.
+struct Branches<'a> {
+    roots: &'a dyn Fn(f64) -> Option<[f64;2]>,
+    real: &'a dyn Fn(f64) -> bool,
+    point: &'a dyn Fn(f64,f64) -> Option<V>,
+    apart: &'a dyn Fn(f64,f64,f64,f64) -> bool,
+    coincide: &'a [f64],
+    limit: &'a dyn Fn(f64,f64) -> Option<[f64;2]>,
+    hair: f64,
+}
+
+/// **A meeting's branches over a sheet's `v`** (a level circle's under a screw, a screwed line's
+/// against a cone), as traced curves (`traced`) through their exact points: runs of `v` over which
+/// the two roots stand, each end a turn where they join (refined by bisection), the sheet's edge,
+/// or a coincidence — kept clear of it by a hair, the samples drawn in ever closer to it, and ended
+/// at its limit; points added between two where either branch's stand a step apart; a branch cut
+/// where its point leaves the sheet's reach.
+fn branches(m: &Branches,traced: &dyn Fn(Vec<V>,bool) -> Curve) -> Vec<Curve> {
+    const N: usize = 2048;
     // how many halvings deep the points are drawn in toward a turn or an end where the roots meet,
     // where they part as a square root: a chord there short enough that its sag, quadratic in it,
     // stands far below the roots' parting, linear in it
     const DEEP: usize = 32;
-    let hair = 1e-6;
+    let Branches {roots,real:defined,point,apart,coincide,limit,hair} = *m;
     let mut out = Vec::new();
-    let defined = |v: f64| { let (a,b,c) = coefficients(v); let rho = a.hypot(b); rho > 0. && c.abs() <= rho };
-    let root = |v: f64,branch: f64| -> Option<f64> {
-        let (a,b,c) = coefficients(v);
-        let rho = a.hypot(b);
-        if !(rho > 0.) { return None }
-        Some(b.datan2(a)+branch*(c/rho).clamp(-1.,1.).dacos())
-    };
     let near_coincidence = |v: f64| coincide.iter().any(|&w| (w-v).abs() <= hair);
     let vs: Vec<f64> = (0..=N).map(|i| i as f64/N as f64).collect();
     let ok: Vec<bool> = vs.iter().map(|&v| !near_coincidence(v) && defined(v)).collect();
@@ -1244,18 +1205,11 @@ fn branches(coefficients: &dyn Fn(f64) -> (f64,f64,f64),coincide: &[f64],point: 
         for _ in 0..60 { let m = 0.5*(a+b); if defined(m) { a = m } else { b = m } }
         a
     };
-    // a coincidence's limit: the roots of the coefficients' rates there, read across it
-    // (`(A, B, C)` grow from nothing there, so a one-sided reading leans by the hair) — on a
-    // cylinder the circle's points square to the centre's way, where `C` grows as the square of the
-    // way; on a cone, whose radius runs with the height, turned off them to where its normal is
-    // square to the screw's velocity (#780 C2: the feet of its contact rulings, where the sheet
-    // touches it)
-    let limit = |v: f64,branch: f64| -> Option<V> {
+    // a branch's end at a coincidence: its limit there
+    let end_at = |v: f64,k: usize| -> Option<V> {
         let w = *coincide.iter().find(|&&w| (w-v).abs() <= 2.*hair)?;
         let side = if v < w { -1. } else { 1. };
-        let ((a1,b1,c1),(a0,b0,c0)) = (coefficients(w+hair),coefficients(w-hair));
-        let (a,b,c) = (side*(a1-a0),side*(b1-b0),side*(c1-c0));
-        Some(point(b.datan2(a)+branch*(c/a.hypot(b).max(1e-300)).clamp(-1.,1.).dacos(),w))
+        point(limit(w,side)?[k],w)
     };
     let mut i = 0;
     while i <= N {
@@ -1286,12 +1240,9 @@ fn branches(coefficients: &dyn Fn(f64) -> (f64,f64,f64),coincide: &[f64],point: 
         stretch.sort_by(f64::total_cmp);
         stretch.dedup();
         stretch.push(v1);
-        // and between two where either root turns by more than a step of the circle (a chord a
-        // traced curve's integrals read as one stretch)
-        let turned = |a: f64,b: f64| [1.,-1.].iter().any(|&branch| match (root(a,branch),root(b,branch)) {
-            (Some(x),Some(y)) => { let d = (y-x).rem_euclid(std::f64::consts::TAU); d.min(std::f64::consts::TAU-d) > STEP }
-            _ => false,
-        });
+        // and between two where either branch's points stand a step apart (a chord a traced curve's
+        // integrals read as one stretch)
+        let turned = |a: f64,b: f64| match (roots(a),roots(b)) { (Some(x),Some(y)) => (0..2).any(|k| apart(x[k],y[k],a,b)),_ => false };
         let mut fine: Vec<f64> = vec![stretch[0]];
         for w in stretch.windows(2) {
             let mut todo = vec![(w[0],w[1],0)];
@@ -1301,20 +1252,27 @@ fn branches(coefficients: &dyn Fn(f64) -> (f64,f64,f64),coincide: &[f64],point: 
             }
         }
         let stretch = fine;
-        let branch_pts = |branch: f64| -> Vec<V> {
-            let mut pts: Vec<V> = stretch.iter().filter_map(|&v| root(v,branch).map(|th| point(th,v))).collect();
-            if let Some(p) = limit(v0,branch) { pts.insert(0,p) }
-            if let Some(p) = limit(v1,branch) { pts.push(p) }
+        // each branch's points, `None` where it stands past the sheet's reach
+        let branch_pts = |k: usize| -> Vec<Option<V>> {
+            let mut pts: Vec<Option<V>> = stretch.iter().filter_map(|&v| roots(v).map(|r| point(r[k],v))).collect();
+            if let Some(p) = end_at(v0,k) { pts.insert(0,Some(p)) }
+            if let Some(p) = end_at(v1,k) { pts.push(Some(p)) }
             pts
         };
-        let (plus,minus) = (branch_pts(1.),branch_pts(-1.));
-        match (lo_v.is_some(),hi_v.is_some()) {
-            // turning at both ends: one loop
-            (true,true) => { let mut pts = plus.clone(); pts.extend(minus.iter().rev().skip(1)); out.push(traced(pts,true)) }
-            // turning at one end: one curve through the turn
-            (true,false) => { let mut pts: Vec<V> = minus.iter().rev().copied().collect(); pts.extend(plus.iter().skip(1)); out.push(traced(pts,false)) }
-            (false,true) => { let mut pts = plus.clone(); pts.extend(minus.iter().rev().skip(1)); out.push(traced(pts,false)) }
-            (false,false) => { out.push(traced(plus,false)); out.push(traced(minus,false)) }
+        let (plus,minus) = (branch_pts(0),branch_pts(1));
+        // turning at an end, the two are one curve through the turn; at both, one loop
+        let curves: Vec<Vec<Option<V>>> = match (lo_v.is_some(),hi_v.is_some()) {
+            (true,false) => { let mut pts: Vec<Option<V>> = minus.iter().rev().copied().collect(); pts.extend(plus.iter().skip(1)); vec![pts] }
+            (_,true) => { let mut pts = plus; pts.extend(minus.iter().rev().skip(1)); vec![pts] }
+            (false,false) => vec![plus,minus],
+        };
+        let closed = lo_v.is_some() && hi_v.is_some();
+        for pts in curves {
+            let whole = pts.iter().all(Option::is_some);
+            for run in pts.split(Option::is_none) {
+                let run: Vec<V> = run.iter().flatten().copied().collect();
+                if run.len() >= 2 { out.push(traced(run,closed && whole)) }
+            }
         }
     }
     out

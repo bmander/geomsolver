@@ -221,19 +221,6 @@ fn helical_section_area(line: &dyn Fn(f64,f64) -> (f64,f64,f64),[p_lo,p_hi]: [f6
         for _ in 0..100 { let (m1,m2) = (a+(b-a)*0.381966,a+(b-a)*0.618034); if f(m1) < f(m2) { b = m2 } else { a = m1 } }
         0.5*(a+b)
     };
-    // each piece mapped through `x = a + (b − a)(1 − cos t)/2`, which takes the square roots a run
-    // of a round side brings at its ends
-    let pieces = |breaks: &[f64],n: usize,f: &dyn Fn(f64) -> f64| -> f64 {
-        let mut sum = 0.;
-        for w in breaks.windows(2) { for j in 0..n {
-            let (a,b) = (std::f64::consts::PI*j as f64/n as f64,std::f64::consts::PI*(j+1) as f64/n as f64);
-            for (x,g) in gcs_core::integral::GAUSS8 {
-                let t = 0.5*(a+b)+0.5*(b-a)*x;
-                sum += 0.5*(b-a)*g*f(w[0]+(w[1]-w[0])*0.5*(1.-t.cos()))*(w[1]-w[0])*0.5*t.sin();
-            }
-        } }
-        sum
-    };
     let at = |p: f64| line(rho*p.cos(),rho*p.sin());
     let gap = |p: f64| at(p).2;
     // the runs of ψ where the line meets the block, a run between samples found at its gap's
@@ -292,7 +279,22 @@ fn helical_section_area(line: &dyn Fn(f64,f64) -> (f64,f64,f64),[p_lo,p_hi]: [f6
         .flat_map(|q| [q,q+theta]).collect();
     breaks.sort_by(f64::total_cmp);
     breaks.dedup();
-    pieces(&breaks,4,&section)
+    cos_pieces(&breaks,4,&section)
+}
+
+/// `∫ f` over each window between `breaks`, each in `n` pieces of Gauss–Legendre after the map
+/// `x = a + (b − a)(1 − cos t)/2`, which takes the square roots a round side brings at a window's
+/// ends (where a run of the slice starts or ends, or a rim begins to be reached).
+fn cos_pieces(breaks: &[f64],n: usize,f: &dyn Fn(f64) -> f64) -> f64 {
+    let mut sum = 0.;
+    for w in breaks.windows(2) { for j in 0..n {
+        let (a,b) = (std::f64::consts::PI*j as f64/n as f64,std::f64::consts::PI*(j+1) as f64/n as f64);
+        for (x,g) in gcs_core::integral::GAUSS8 {
+            let t = 0.5*(a+b)+0.5*(b-a)*x;
+            sum += 0.5*(b-a)*g*f(w[0]+(w[1]-w[0])*0.5*(1.-t.cos()))*(w[1]-w[0])*0.5*t.sin();
+        }
+    } }
+    sum
 }
 
 /// A block leaning to the axis: `block` turned `lean` about the world's `x` and moved out `off`.
@@ -831,12 +833,9 @@ fn a_frustums_screwed_rim_and_ruling_meet_what_they_touch_in_closed_form() {
     // from the kernel's reading (`(−sin u, cos u)` the side's normal round it, leaning
     // `tan α = 0.6` out of the axis; the velocity `turn (−y, x) + lift ẑ`)
     let along = |u: f64| { let (sn,cs) = u.sin_cos(); let (x,y) = (3.+0.7*cs,0.7*sn); turn*(cs*-y+sn*x)+0.6*lift };
-    let contact = {
-        let (mut a,mut b) = (-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2);
-        assert!((along(a) > 0.) != (along(b) > 0.));
-        for _ in 0..100 { let m = 0.5*(a+b); if (along(m) > 0.) == (along(a) > 0.) { a = m } else { b = m } }
-        0.5*(a+b)
-    };
+    let (a,b) = (-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2);
+    assert!((along(a) > 0.) != (along(b) > 0.));
+    let contact = gcs_core::roots::bracketed_root(|u| Some(along(u)),a,along(a),b,along(b),1e-15);
     let touching = patch(contact);
     let crossing = patch(2.);
     let cases: Vec<(&str,&Surface,Surface,&[&str])> = vec![
@@ -938,15 +937,22 @@ fn a_frustum_screwed_beside_the_axis_closes_into_its_helical_sweep() {
 /// line is from missing it (positive where it meets it; its radius linear in `z`, so one run or
 /// none).
 #[derive(Clone,Copy)]
-pub(crate) struct Stadium { pub a: [f64;2],pub b: [f64;2],pub r0: f64,pub r1: f64,pub h: f64 }
+struct Stadium { a: [f64;2],b: [f64;2],r0: f64,r1: f64,h: f64 }
 
 impl Stadium {
-    fn line(&self,x: f64,y: f64) -> (f64,f64,f64) {
-        let Stadium {a,b,r0,r1,h} = *self;
+    /// The way along its segment of the foot of `(x, y)`'s perpendicular (unclamped), and its
+    /// distance from the segment.
+    fn foot(&self,x: f64,y: f64) -> (f64,f64) {
+        let Stadium {a,b,..} = *self;
         let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
         let q = dx*dx+dy*dy;
-        let t = if q > 0. { (((x-a[0])*dx+(y-a[1])*dy)/q).clamp(0.,1.) } else { 0. };
-        let reach = (x-a[0]-t*dx).hypot(y-a[1]-t*dy);
+        let s = if q > 0. { ((x-a[0])*dx+(y-a[1])*dy)/q } else { 0. };
+        let t = s.clamp(0.,1.);
+        (s,(x-a[0]-t*dx).hypot(y-a[1]-t*dy))
+    }
+    fn line(&self,x: f64,y: f64) -> (f64,f64,f64) {
+        let Stadium {r0,r1,h,..} = *self;
+        let reach = self.foot(x,y).1;
         if r1 == r0 { return (0.,h,r0-reach) }
         // R(z) ≥ reach: below the height it reaches where the stadium narrows upward, above it
         // where it widens
@@ -957,24 +963,19 @@ impl Stadium {
     /// The angles over `span` where the vertical lines at the radius `rho` about the world's `z`
     /// axis turn a corner of its bottom or top: where they reach its foot's or its top's rim (the
     /// run taking the whole height from there in), or pass from its segment's side to round an end
-    /// of it.
+    /// of it — each sign change of these on samples, settled.
     fn kinks(&self,rho: f64,[lo,hi]: [f64;2]) -> Vec<f64> {
-        let Stadium {a,b,r0,r1,..} = *self;
-        let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
-        let q = dx*dx+dy*dy;
-        let along = |p: f64| ((rho*p.cos()-a[0])*dx+(rho*p.sin()-a[1])*dy)/q.max(1e-300);
-        let reach = |p: f64| { let (x,y) = (rho*p.cos(),rho*p.sin()); let t = along(p).clamp(0.,1.); (x-a[0]-t*dx).hypot(y-a[1]-t*dy) };
-        let mut fs: Vec<Box<dyn Fn(f64) -> f64>> = vec![Box::new(move |p| reach(p)-r0),Box::new(move |p| reach(p)-r1)];
-        if q > 0. { fs.push(Box::new(move |p| along(p))); fs.push(Box::new(move |p| along(p)-1.)) }
+        let at = |p: f64| self.foot(rho*p.cos(),rho*p.sin());
+        let (r0,r1,segment) = (self.r0,self.r1,self.a != self.b);
+        let fs: [&dyn Fn(f64) -> f64;4] = [&|p| at(p).1-r0,&|p| at(p).1-r1,&|p| at(p).0,&|p| at(p).0-1.];
         let n = 2000;
+        let ps: Vec<f64> = (0..=n).map(|i| lo+(hi-lo)*i as f64/n as f64).collect();
         let mut out = Vec::new();
-        for f in &fs {
+        for f in &fs[..if segment { 4 } else { 2 }] {
+            let vs: Vec<f64> = ps.iter().map(|&p| f(p)).collect();
             for i in 0..n {
-                let (mut x,mut y) = (lo+(hi-lo)*i as f64/n as f64,lo+(hi-lo)*(i+1) as f64/n as f64);
-                if (f(x) > 0.) == (f(y) > 0.) { continue }
-                let fx = f(x) > 0.;
-                for _ in 0..100 { let m = 0.5*(x+y); if (f(m) > 0.) == fx { x = m } else { y = m } }
-                out.push(0.5*(x+y));
+                if (vs[i] > 0.) == (vs[i+1] > 0.) { continue }
+                out.push(gcs_core::roots::bracketed_root(|p| Some(f(p)),ps[i],vs[i],ps[i+1],vs[i+1],1e-15));
             }
         }
         out
@@ -997,13 +998,13 @@ impl Stadium {
 /// **The volume a drafted stadium beside a screw's axis sweeps** (turned `Θ` about the world's `z`
 /// and climbing `k` a radian), apart from the kernel: the leaning block's method
 /// (`helical_section_area`), in helical coordinates `(ρ, ψ, ζ = z − kψ)` with volume `ρ dρ dψ dζ`,
-/// where the screw is a shift of `ψ` by `[0, Θ]`; each slice's area integrated over `ρ` by
-/// Gauss–Legendre between the radii its make-up changes at, through `ρ = m − w cos φ` over each
-/// stretch, which takes the square roots a round side's nearest and farthest out bring.
+/// where the screw is a shift of `ψ` by `[0, Θ]`; each slice's area integrated over `ρ` between the
+/// radii its make-up changes at (`cos_pieces`, which takes the square roots a round side's nearest
+/// and farthest out bring).
 fn screwed_stadium_volume(tool: Stadium,theta: f64,k: f64) -> f64 {
     let line = |x: f64,y: f64| tool.line(x,y);
     let radii = tool.radii();
-    let (lo,hi) = (radii[0],radii[radii.len()-1]);
+    let lo = radii[0];
     // the angles every slice lies within: the stadium's ends' and its middle's, a margin past
     let reach = tool.r0.max(tool.r1);
     let angles: Vec<f64> = (0..=16).map(|i| {
@@ -1013,20 +1014,7 @@ fn screwed_stadium_volume(tool: Stadium,theta: f64,k: f64) -> f64 {
     }).collect();
     let spread = (reach/lo.max(1e-9)).min(1.).asin()+0.05;
     let span = [angles.iter().copied().fold(f64::INFINITY,f64::min)-spread,angles.iter().copied().fold(f64::NEG_INFINITY,f64::max)+spread];
-    let (m,w) = (0.5*(lo+hi),0.5*(hi-lo));
-    let mut breaks: Vec<f64> = radii.iter().map(|&r| ((m-r)/w).clamp(-1.,1.).acos()).collect();
-    breaks.sort_by(f64::total_cmp);
-    breaks.dedup_by(|x,y| (*x-*y).abs() <= 1e-12);
-    let mut sum = 0.;
-    for v in breaks.windows(2) { for j in 0..16 {
-        let (a,b) = (v[0]+(v[1]-v[0])*j as f64/16.,v[0]+(v[1]-v[0])*(j+1) as f64/16.);
-        for (x,g) in gcs_core::integral::GAUSS8 {
-            let phi = 0.5*(a+b)+0.5*(b-a)*x;
-            let rho = m-w*phi.cos();
-            sum += 0.5*(b-a)*g*rho*helical_section_area(&line,span,&tool.kinks(rho,span),rho,theta,k)*w*phi.sin();
-        }
-    } }
-    sum
+    cos_pieces(&radii,16,&|rho| rho*helical_section_area(&line,span,&tool.kinks(rho,span),rho,theta,k))
 }
 
 /// **The same volume by a Monte Carlo of the sweep's definition**: points drawn in a region of
@@ -1042,11 +1030,13 @@ fn screwed_stadium_by_sampling(tool: Stadium,theta: f64,k: f64,n: usize) -> (f64
     let measure = (p1-p0)*(z1-z0)*(q1-q0);
     let mut rng = gcs_core::rng::Rng::new(11);
     let (mut sum,mut sq) = (0.,0.);
+    // each instant's turn, `(s, cos s, sin s)`
+    let instants: Vec<(f64,f64,f64)> = (0..=600).map(|i| { let s = theta*i as f64/600.; let (sn,cs) = s.sin_cos(); (s,cs,sn) }).collect();
     for _ in 0..n {
         let (rho,psi,z) = (rng.uniform(p0,p1),rng.uniform(z0,z1),rng.uniform(q0,q1));
-        let member = (0..=600).any(|i| {
-            let s = theta*i as f64/600.;
-            let (lo,hi,gap) = tool.line(rho*(psi-s).cos(),rho*(psi-s).sin());
+        let (x,y) = (rho*psi.cos(),rho*psi.sin());
+        let member = instants.iter().any(|&(s,cs,sn)| {
+            let (lo,hi,gap) = tool.line(x*cs+y*sn,y*cs-x*sn);
             gap > 0. && (lo..=hi).contains(&(z-k*s))
         });
         let x = if member { rho*measure } else { 0. };

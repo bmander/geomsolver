@@ -429,8 +429,10 @@ the same branches (`branches`). **A line screwed meets a level circle screwed by
 a cone, in closed form** (#780 C2): the circle's sheet in the helices of the line's points the screw
 carries to the circle's height onto the circle, `|w(u) − R_{s(u)} c₀|² = r²`, isolated with a bound
 (`ssi::screwed_line_circle`); a cone where each ruling meets it, `A(v) u² + B(v) u + C(v) = 0`, the
-two roots joined where they turn and a ruling the cone holds returned whole, the cut read a hair
-either side of it, where the coefficients vanish (`ssi::screwed_line_cone`). A branch's end at a coincidence is that circle's point square to the
+two roots joined where they turn and a ruling the cone holds returned whole, the cut ended on it
+at its limit — the roots of the coefficients' first differences across it, or where the sheet
+touches the cone along it their second (`ssi::screwed_line_cone`, on `branches`, which reads a
+screwed circle's meetings alike). A branch's end at a coincidence is that circle's point square to the
 centre's way there, the way read across it (a one-sided reading leans by the hair and bends the
 first chord, which its projection then slides onto the circle); points are added beside a turn,
 where the roots part as a square root, and wherever either turns by more than `π/1024`, which a

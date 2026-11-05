@@ -836,33 +836,36 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
     // within about that of its chord, so two chords farther apart than the reach and twice their
     // sags hold no crossing, and are not polished (two curves running alongside a little apart
     // once had nine thousand pairs of chords polished for one crossing, a minute's inverses, #780)
-    let sags = |c: &Curve,s: &[(f64,V)]| -> Vec<f64> {
-        s.windows(2).map(|w| distance(c.point(0.5*(w[0].0+w[1].0)),crate::util::space::lerp(w[0].1,w[1].1,0.5))).collect()
-    };
-    let (ga,gb) = (sags(a,&sa),sags(b,&sb));
+    // (read only of the chords that come near the other curve's, once each)
+    let sag = |c: &Curve,s: &[(f64,V)],cache: &[std::cell::OnceCell<f64>],i: usize| *cache[i].get_or_init(||
+        distance(c.point(0.5*(s[i].0+s[i+1].0)),crate::util::space::lerp(s[i].1,s[i+1].1,0.5)));
+    let (ca,cb): (Vec<std::cell::OnceCell<f64>>,Vec<std::cell::OnceCell<f64>>) = ((0..N).map(|_| Default::default()).collect(),(0..N).map(|_| Default::default()).collect());
     let between = |i: usize,j: usize| crate::util::space::segments_distance(sa[i].1,sa[i+1].1,sb[j].1,sb[j+1].1);
     let wrap = |c: &Curve,t: f64,span: [f64;2]| match c.period() { Some(p) => around(t,span[0],p),None => t };
     let mut out: Vec<(f64,f64,V,f64)> = Vec::new();
     // the polish from a start, kept where it comes within reach inside both stretches, each
     // crossing once: of two polishes landing on one, the nearer
-    let polish = |out: &mut Vec<(f64,f64,V,f64)>,mut s: f64,mut t: f64,first: bool| {
+    let mut polish = |mut s: f64,mut t: f64,first: bool| {
+        // (from an end of `b`, its foot on `a` first; each curve's point carried to the next step)
+        let mut pa = a.point(s);
+        if first { t = wrap(b,b.inverse(pa),tb) }
+        let mut pb = b.point(t);
         let mut last = f64::INFINITY;
         for k in 0..60 {
-            // (from an end of `b`, its foot on `a` first)
-            if k > 0 || first { t = wrap(b,b.inverse(a.point(s)),tb) }
-            s = wrap(a,a.inverse(b.point(t)),ta);
-            let d = distance(a.point(s),b.point(t));
+            if k > 0 { t = wrap(b,b.inverse(pa),tb); pb = b.point(t) }
+            s = wrap(a,a.inverse(pb),ta);
+            pa = a.point(s);
+            let d = distance(pa,pb);
             if !(d < last*(1.-1e-9)) { last = d; break }
             last = d;
         }
         if !(last <= reach) || s < ta[0]-1e-12 || s > ta[1]+1e-12 || t < tb[0]-1e-12 || t > tb[1]+1e-12 { return }
-        let p = a.point(s);
         // two crossing at a shallow angle meet over a stretch `reach / sin θ` long: one crossing
         let (da,db) = (a.tangent(s),b.tangent(t));
         let sine = (norm(cross(da,db))/(norm(da)*norm(db)).max(1e-300)).max(1e-3);
-        match out.iter_mut().find(|x| distance(x.2,p) <= 2.*reach/sine) {
-            Some(x) => if last < x.3 { *x = (s,t,p,last) },
-            None => out.push((s,t,p,last)),
+        match out.iter_mut().find(|x| distance(x.2,pa) <= 2.*reach/sine) {
+            Some(x) => if last < x.3 { *x = (s,t,pa,last) },
+            None => out.push((s,t,pa,last)),
         }
     };
     // first from each curve's own ends: where an end lies on the other curve, that is the meeting
@@ -870,8 +873,8 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
     // run tangent there (a cone's contact ruling's foot under a screw, where its rim's sheet
     // touches it and its helix and the sheet's cut by the cone both end, once placed 4e-4 off,
     // #780)
-    for end in ta { polish(&mut out,end,tb[0],true) }
-    for end in tb { polish(&mut out,ta[0],end,false) }
+    for end in ta { polish(end,tb[0],true) }
+    for end in tb { polish(ta[0],end,false) }
     for (i,wa) in sa.windows(2).enumerate() {
         // a build past its budget goes no further (#777 V3): the inverses below charge it, and
         // walked on, every pair of near chords would still be polished at full cost (#780)
@@ -881,17 +884,17 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
         near.sort_unstable();
         for j in near {
             // the polish, from the chords' middles: each curve's foot of the other's point
-            let apart = between(i,j);
-            if apart > reach+2.*(ga[i]+gb[j]) { continue }
+            let (apart,sags) = (between(i,j),2.*(sag(a,&sa,&ca,i)+sag(b,&sb,&cb,j)));
+            if apart > reach+sags { continue }
             // and where the two curves cannot cross within them (their chords farther apart than
             // twice their sags), only where the chords stand no farther apart than any pair beside
             // them: a polish descends to a least distance of the curves, so one that is no crossing
             // is started once, from the least of the chords' about it (two curves running
             // alongside within reach once had three thousand pairs polished onto it, #780)
-            let beside = (-1i64..=1).flat_map(|di| (-1i64..=1).map(move |dj| (i as i64+di,j as i64+dj)))
-                .filter(|&(x,y)| (x,y) != (i as i64,j as i64) && x >= 0 && y >= 0 && (x as usize) < N && (y as usize) < N);
-            if apart > 2.*(ga[i]+gb[j]) && beside.into_iter().any(|(x,y)| between(x as usize,y as usize) < apart) { continue }
-            polish(&mut out,(wa[0].0+wa[1].0)/2.,(sb[j].0+sb[j+1].0)/2.,true);
+            let mut beside = (i.saturating_sub(1)..(i+2).min(N)).flat_map(|x| (j.saturating_sub(1)..(j+2).min(N)).map(move |y| (x,y)))
+                .filter(|&q| q != (i,j));
+            if apart > sags && beside.any(|(x,y)| between(x,y) < apart) { continue }
+            polish((wa[0].0+wa[1].0)/2.,(sb[j].0+sb[j+1].0)/2.,true);
         }
     }
     out.into_iter().map(|(s,t,p,_)| (s,t,p)).collect()

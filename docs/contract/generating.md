@@ -487,8 +487,9 @@ at the height the rim has climbed to, its branches ending at the coincidence on 
 coefficients' rates there — on a cone the feet of its contact rulings, where the sheet touches it
 (`ssi::screwed_circle_meeting`); a patch and a rim's sheet in the helices of the ruling's points
 the screw carries onto the rim (`ssi::screwed_line_circle`); a patch and the cone where each ruling
-meets it, a quadratic along the ruling, the ruling the cone holds returned whole and the cut read a
-hair either side of it (`ssi::screwed_line_cone`). Each is held point by point on both surfaces
+meets it, a quadratic along the ruling, the ruling the cone holds returned whole and the cut ended
+on it at its limit, the roots of the coefficients' first differences across it or, touching, their
+second (`ssi::screwed_line_cone`, on the branches a screwed circle's meetings are read by). Each is held point by point on both surfaces
 (`swept_closed::a_frustums_screwed_rim_and_ruling_meet_what_they_touch_in_closed_form`). The gate
 is `build::cone`'s frustum, radii 1 and 0.4, 3 out from the axis, screwed a radian at 2 a roll,
 held to 1e-6 of its volume read in helical coordinates by the leaning block's method, run by run
