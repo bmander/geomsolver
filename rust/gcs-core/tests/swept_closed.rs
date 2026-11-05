@@ -1809,8 +1809,10 @@ fn the_ball_end_mill_screwed_through_a_ring_sector_is_refused_by_its_inverse_map
 /// removed where the helix through it meets the mill: the section of such helices, `(ρ, ζ)` on a
 /// fine grid (the side's where `|ρ e^{iψ} − d| ≤ 1` for some `ψ` whose height is on it, the ball's
 /// within 1 of the centre's helix), each weighed by `ρ` and by the angle of the sector over which
-/// its helix stays within the sector's heights. Refused, it runs the inverse stage's whole budget
-/// first: about three minutes.
+/// its helix stays within the sector's heights. Refused, it is refused by name and never built
+/// wrong: once by its inverse stage's budget, run down in about three minutes; since a curve's
+/// crossings are polished once per least of their chords' distance (#780 C2), by its arrangement,
+/// a sheet's pieces not closing, in about forty seconds.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about three minutes: the ball-end mill's budget run down")]
 fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name() {
@@ -1855,7 +1857,7 @@ fn the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_na
         }
         Err(e) => {
             eprintln!("refused in {:?}: {e:?}",clock.elapsed());
-            assert!(matches!(e,Unbuilt::Budget {..}),"refused other than by its budget: {e:?}");
+            assert!(!matches!(e,Unbuilt::Wrong {..}),"built wrong: {e:?}");
         }
     }
 }

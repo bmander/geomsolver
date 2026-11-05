@@ -817,7 +817,7 @@ fn unit_or(v: V) -> V { crate::util::space::normalised(v).unwrap_or(v) }
 /// come within reach of one another, stand within reach and their sags of one another, and either
 /// may hold a crossing within their sags or stand no farther apart than any pair beside them;
 /// kept where the two come within `reach` of one another inside both stretches, each crossing
-/// once. Each crossing's parameter on `a`, on `b`, and
+/// once, the nearest of the polishes landing on it. Each crossing's parameter on `a`, on `b`, and
 /// its point. What `query::crossings_in` leaves (`None`: a spline's or a trace's crossing with
 /// another), found by search, never assumed absent.
 pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<(f64,f64,V)> {
@@ -842,10 +842,10 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
     let (ga,gb) = (sags(a,&sa),sags(b,&sb));
     let between = |i: usize,j: usize| crate::util::space::segments_distance(sa[i].1,sa[i+1].1,sb[j].1,sb[j+1].1);
     let wrap = |c: &Curve,t: f64,span: [f64;2]| match c.period() { Some(p) => around(t,span[0],p),None => t };
-    let mut out: Vec<(f64,f64,V)> = Vec::new();
+    let mut out: Vec<(f64,f64,V,f64)> = Vec::new();
     // the polish from a start, kept where it comes within reach inside both stretches, each
-    // crossing once
-    let polish = |out: &mut Vec<(f64,f64,V)>,mut s: f64,mut t: f64,first: bool| {
+    // crossing once: of two polishes landing on one, the nearer
+    let polish = |out: &mut Vec<(f64,f64,V,f64)>,mut s: f64,mut t: f64,first: bool| {
         let mut last = f64::INFINITY;
         for k in 0..60 {
             // (from an end of `b`, its foot on `a` first)
@@ -860,8 +860,10 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
         // two crossing at a shallow angle meet over a stretch `reach / sin θ` long: one crossing
         let (da,db) = (a.tangent(s),b.tangent(t));
         let sine = (norm(cross(da,db))/(norm(da)*norm(db)).max(1e-300)).max(1e-3);
-        if out.iter().any(|x| distance(x.2,p) <= 2.*reach/sine) { return }
-        out.push((s,t,p));
+        match out.iter_mut().find(|x| distance(x.2,p) <= 2.*reach/sine) {
+            Some(x) => if last < x.3 { *x = (s,t,p,last) },
+            None => out.push((s,t,p,last)),
+        }
     };
     // first from each curve's own ends: where an end lies on the other curve, that is the meeting
     // exactly, which a polish from chords near it crawls toward and stops short of where the two
@@ -892,7 +894,7 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
             polish(&mut out,(wa[0].0+wa[1].0)/2.,(sb[j].0+sb[j+1].0)/2.,true);
         }
     }
-    out
+    out.into_iter().map(|(s,t,p,_)| (s,t,p)).collect()
 }
 
 /// **The widest reach a meeting along any of `curves` has** (each a curve, its stretch, and the

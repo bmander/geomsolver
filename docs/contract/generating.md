@@ -450,9 +450,11 @@ crossings' search among them (`meeting::crossings`, #780), whose polish charges 
 and once walked every pair of near chords on, 23 minutes, after the build was stopped. The run
 #776 saw stall for hours, a ball-end mill screwed through a ring sector (a ball beside a side about
 an axis along the screw's, admitted), is cut to the volume it removes apart from the kernel or
-refused by its budget naming the stage, a point and the surface — today the inverse stage, at its
-sheet's inverse map, in about three minutes, that stage's limit about four times the most any
-build takes (`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name`,
+refused by name, never built wrong — once by its budget naming the stage, a point and the surface,
+the inverse stage at its sheet's inverse map in about three minutes, that stage's limit about four
+times the most any build takes; since a curve's crossings are polished once per least of their
+chords' distance (#780 C2), by its arrangement, a sheet's pieces not closing, in about forty
+seconds (`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_cut_right_or_refused_by_name`,
 slow tier); its inverse stage given a thousandth of that, every other stage its whole, it is
 refused there by name in seconds, the same way twice
 (`swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_refused_by_its_inverse_maps_budget`).
