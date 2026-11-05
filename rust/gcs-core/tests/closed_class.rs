@@ -88,12 +88,15 @@ pub(crate) fn drum_turned_partway_away() -> f64 {
 }
 
 /// What the closed class's rows refuse stands as the class asked first refused it: a tapered mill, a
-/// cone (C1: no cone under a screw), screwed half a millimetre a turn to a stop inside the ring
-/// sector is the constant-twist class's refusal still.
+/// cone about an axis leaning 10° to the screw's (C1: under a screw a cone about an axis along it
+/// only, #780 C2), screwed half a millimetre a turn to a stop inside the ring sector is the
+/// constant-twist class's refusal still.
 #[test]
 fn a_sweep_the_closed_class_refuses_keeps_its_first_refusal() {
+    let (s,c) = 10f64.to_radians().sin_cos();
     let r = refused(admit(&crate::flat_faces::turned_mill(1.,2.,10.,0.).replace("use std.motion (turns)","use std.motion (screws)")
-        .replace("swing turns(1) ax","swing screws(0.5mm) ax").replace("(-140deg, 140deg)","(-140deg, 30deg)")));
+        .replace("swing turns(1) ax","swing screws(0.5mm) ax").replace("(-140deg, 140deg)","(-140deg, 30deg)")
+        .replace("fix(dir == (0, 0, 1)) up",&format!("fix(dir == (0, {s}, {c})) up"))));
     assert_eq!(r.class(),"constant-twist class","{r}");
     assert!(!matches!(r.condition,Condition::Faces | Condition::Constant | Condition::Settled),"{r}");
 }

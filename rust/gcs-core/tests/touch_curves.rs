@@ -192,7 +192,9 @@ fn a_fitted_sheet_touching_a_plane_along_a_wavy_curve_keeps_whole_below_it() {
 /// (`parallel_touch`), a ball in a torus's tube (`ball_in_tube`), a cylinder round a torus's
 /// equator (`tube_along_torus`), two tori round a meridian (`tori_touching`), a ball at a pipe's
 /// end (`pipe_end`), a screwed rim's sheet and the cylinder of its farthest reach
-/// (`screwed_circle_round`) and a plane on a cylinder's side (`plane_cylinder`'s touch) — every
+/// (`screwed_circle_round`), a plane on a cylinder's side (`plane_cylinder`'s touch) and a cone's
+/// contact ruling under a screw, screwed into a patch the cone touches along it
+/// (`screwed_line_cone`'s held ruling, #780 C2) — every
 /// point of it within 1e-5 of the closed form's touch: a touch is a double root, its general
 /// reading `∂f/∂n = 0` by differences, so it is placed only to their rounding (a ball at a pipe's
 /// end, on the sheet's rim, within 2e-5), which is why each closed form stays as the exact road; and
@@ -209,8 +211,24 @@ fn each_closed_form_for_a_touch_is_held_to_the_general_method() {
     let n = unit([0.,10.,0.5]);
     let pipe = gcs_core::brep::build::screwed(&gcs_core::brep::build::disc([10.,0.,0.],n,1.),[0.;3],z,1.5,0.75).unwrap();
     let pipe_sheet = pipe.faces.iter().find(|f| f.surface.kind() == "blend").unwrap().surface.clone();
+    // a frustum's contact ruling under a screw (#780 C2), screwed from a tenth of the roll before
+    // the frustum's pose to past it: its patch touches the frustum's cone along the ruling
+    let (turn,lift) = (1.5,2./TAU*1.5);
+    // (where the side's normal, `ρ̂ + 0.6 ẑ`, is square to the velocity:
+    // `3 turn sin u + 0.6 lift = 0`)
+    let contact = (-(0.6*lift)/(3.*turn)).asin();
+    let ruling = { let (sn,cs) = contact.sin_cos(); ([3.+cs,sn,0.],[3.+0.4*cs,0.4*sn,1.]) };
+    let back = gcs_core::brep::geom::Rigid::turn([0.;3],z,-0.1*turn).then(&gcs_core::brep::geom::Rigid {t:[0.,0.,-0.1*lift],..gcs_core::brep::geom::Rigid::identity()});
+    let (p0,q0) = (back.point(ruling.0),back.point(ruling.1));
+    let across = gcs_core::space::scale(unit(cross(gcs_core::space::sub(q0,p0),z)),0.5);
+    let corners = [p0,q0,gcs_core::space::add(p0,across)];
+    let triangle = Profile {origin:p0,normal:unit(cross(gcs_core::space::sub(q0,p0),across)),names:vec![vec!["sheet".into(),String::new(),String::new()]],
+        loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
+    let patch = gcs_core::brep::build::screwed(&triangle,[0.;3],z,1.2*turn,1.2*lift).unwrap().faces.into_iter().find(|f| f.name == "sheet").unwrap().surface;
+    let frustum = gcs_core::brep::build::cone([3.,0.,0.],z,1.,0.4,1.).unwrap().faces.into_iter().find(|f| f.surface.kind() == "cone").unwrap().surface;
     let full = [0.,TAU];
     let cases: Vec<(&str,Surface,[[f64;2];2],Surface,[[f64;2];2])> = vec![
+        ("a cone's contact ruling screwed and the cone",frustum.clone(),[full,[0.,1.2]],patch,[[0.,1.],[0.,1.]]),
         ("two cones on parallel axes",Surface::Cone(about([0.;3]),1.,lean),[full,[-2.,2.]],Surface::Cone(about([3.,0.,0.]),2.,-lean),[full,[-2.,2.]]),
         ("a ball in a torus's tube",Surface::Torus(about([0.;3]),2.,0.3),[full,full],Surface::Sphere(about([2.,0.,0.]),0.3),[full,[-1.5,1.5]]),
         ("a cylinder round a torus's equator",Surface::Cylinder(about([0.;3]),2.3),[full,[-1.,1.]],Surface::Torus(about([0.;3]),2.,0.3),[full,full]),

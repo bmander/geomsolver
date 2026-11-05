@@ -44,7 +44,15 @@
 //!   the step everywhere); an edge leaning to the axis, and a leaning face's contact line (its
 //!   points where `n · v = 0`, a line of its plane), each screw into a patch of the ruled helicoid
 //!   over the segment and the roll a twentieth past each, its rim inside the domain
-//!   (`Cutter::Patch`, #777 M5).
+//!   (`Cutter::Patch`, #777 M5). A cylinder's face about an axis along the screw's touches along
+//!   its generators in the plane through both axes, screwed into coaxial cylinders; a cone's
+//!   (#780 C2: an end mill's chamfer, a countersink) along the two rulings where its normal
+//!   `cos α ρ̂ − sin α z` is square to the velocity, `A cos u + B sin u = C` whatever the height
+//!   along them — turned off the plane through both axes by `asin(κ tan α / (ω |d|))`, or none (a
+//!   cone about the screw's own axis) — each a line leaning to the axis, screwed into a patch,
+//!   which the cone at each end pose touches along that ruling (met in closed form,
+//!   `ssi::screwed_line_cone`); its rims' discs screw into their ramps, each meeting the cone at an
+//!   end pose in closed form, its radius read at the height the rim has climbed to.
 //!
 //! Only the candidates that carry some of the boundary are kept (`carries`): read at their source's
 //! points carried over the roll, inside the source and the roll, where membership a hair to each
@@ -87,8 +95,9 @@
 //! there are never met.
 //!
 //! **A convex polyhedral tool turned whole is built by another road** (`turned_whole`): its solid
-//! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — a curved
-//! face under a screw, a cylinder's or a cone's about an axis leaning to a turn's, a ball reaching
+//! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — under a
+//! screw a round face about an axis leaning to it, or a torus's; a cylinder's or a cone's about an
+//! axis leaning to a turn's, a ball reaching
 //! across a turn's axis, a torus's under a turn or under a slide leaning to its axis, a free-form
 //! face, a curve no line or circle,
 //! a leaning edge under a screw, another motion — is refused by what it is (`Unbuilt`); those are
@@ -111,8 +120,9 @@ pub enum Unbuilt {
     /// The tool has a face that is no plane, or an edge that is no line, at `at` — under a slide,
     /// a face no plane, cylinder, cone or ball, or an edge no line or circle; under a turn, a
     /// cylinder or a cone about an axis leaning to the turn's, a ball reaching across its axis, or a
-    /// circle leaning to it: its envelope sheets are curved past what the candidates hold, the
-    /// design's later steps.
+    /// circle leaning to it; under a screw, a cylinder or a cone about an axis leaning to the
+    /// screw's, a torus, or a circle leaning to it: its envelope sheets are curved past what the
+    /// candidates hold, the design's later steps.
     Curved { at: V },
     /// The motion is no slide, turn or screw, nor a path of slides and turns (each taken up where
     /// the one before left the tool, `Trajectory::Placed`): the design's later steps.
@@ -199,8 +209,9 @@ pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f6
 /// moves something; every face of the tool a plane and every edge a line bounding two of them
 /// (under a slide, a face a cylinder, a cone or a ball too, and an edge a circle; under a turn, a
 /// cylinder or a cone about an axis along it, a ball, and a circle square to it; under a screw, a
-/// cylinder about an axis along it, and a ball beside planes and such a side). The constant twist
-/// it is, or the first thing that is not, by what it is and where (a point of the face or the edge).
+/// cylinder or a cone about an axis along it, and a ball beside planes and such a cylinder). The
+/// constant twist it is, or the first thing that is not, by what it is and where (a point of the
+/// face or the edge).
 pub fn reads(tool: &Brep,path: &Trajectory) -> Result<crate::trajectory::Screw,Unbuilt> { read(tool,path).map(|r| r.screw) }
 
 /// What `reads` reads of a tool it takes: the constant twist, each face's plane (a point of it and
@@ -251,8 +262,10 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
                 faces.push((at,[0.;3]));
             }
             // under a screw a cylinder's about an axis along it touches along its generators in the
-            // plane through both axes, screwed into coaxial cylinders
-            Surface::Cylinder(g,_) if !screw.is_turn() && !screw.is_slide() && norm(cross(g.z,screw.axis)) <= 1e-9 => {
+            // plane through both axes, screwed into coaxial cylinders; a cone's along the two
+            // rulings where its normal is square to the screw's velocity, turned off that plane,
+            // each screwed into a patch of a ruled helicoid (#780 C2)
+            Surface::Cylinder(g,_) | Surface::Cone(g,..) if !screw.is_turn() && !screw.is_slide() && norm(cross(g.z,screw.axis)) <= 1e-9 => {
                 round.push(k);
                 faces.push((at,[0.;3]));
             }
@@ -678,6 +691,16 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 if dot(e,axis).abs() <= 1e-9 { return Some(Cutter::Plane((p,axis))) }
                 Some(Cutter::Revolved {o:c,axis,p,e,span})
             };
+            // a segment from `p` to `q` under the twist: turned (`turned`), or under a screw, leaning to
+            // its axis, a patch of the ruled helicoid it sweeps (#777 M5), square to it the helicoidal
+            // sheet it sweeps across the box
+            let line_cutter = |p: V,q: V| -> Option<Cutter> {
+                let e = unit(sub(q,p));
+                if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 {
+                    return Some(if dot(e,axis).abs() > 1e-9 { Cutter::Patch {p,q} } else { Cutter::Screwed {p,e} })
+                }
+                turned(p,sub(q,p),q)
+            };
             // the sites of a line from `p` to `q` turned: its points at each pose, with the normal of
             // the surface it turns into there
             let line_sites = |p: V,q: V,cutter: Cutter| -> Vec<(V,V)> {
@@ -756,6 +779,13 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 let sites_at = |m: &crate::trajectory::Pose| -> Vec<(V,V)> {
                     points.iter().map(|&x| (m.point(x),m.vector(outward(face,x)))).collect()
                 };
+                // the face's ruling at `u` round its axis, where it is on the face, under the twist
+                let ruling = |u: f64| -> Option<(Cutter,Vec<(V,V)>)> {
+                    let (p,q) = (face.surface.point([u,lo]),face.surface.point([u,hi]));
+                    if located.face_place(k,face.surface.point([u,0.5*(lo+hi)])) == crate::query::Place::Out { return None }
+                    let cutter = line_cutter(p,q)?;
+                    Some((cutter,line_sites(p,q,cutter)))
+                };
                 // the way from the axis to the face's own axis or centre, square to the axis
                 let away = |o: V| -> Option<V> { let r = sub(o,c); let w = sub(r,scale(axis,dot(r,axis))); (norm(w) > eps).then(|| unit(w)) };
                 match face.surface {
@@ -767,10 +797,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         // coaxial, the face turns into itself
                         if ways.is_empty() { add_cutter(Cutter::Cylinder {o:f.o,axis:unit(f.z),r:r.abs(),span:[lo,hi]},poses.iter().flat_map(|m| sites_at(m)).collect()) }
                         for w in ways {
-                            let u = dot(w,f.y).datan2(dot(w,f.x));
-                            let (p,q) = (face.surface.point([u,lo]),face.surface.point([u,hi]));
-                            if located.face_place(k,face.surface.point([u,0.5*(lo+hi)])) == crate::query::Place::Out { continue }
-                            if let Some(cutter) = turned(p,sub(q,p),q) { add_cutter(cutter,line_sites(p,q,cutter)) }
+                            if let Some((cutter,sites)) = ruling(dot(w,f.y).datan2(dot(w,f.x))) { add_cutter(cutter,sites) }
                         }
                     }
                     Surface::Cone(f,_,half) => {
@@ -781,15 +808,33 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                             add_cutter(Cutter::Revolved {o:pose.point(f.o),axis:pose.vector(f.z),p:pose.point(p0),e:pose.vector(e),span:[lo*ca,hi*ca]},
                                 sites_at(pose));
                         }
+                        if !screw.is_turn() {
+                            // under a screw its normal `cos α ρ̂(u) − sin α z` is square to the
+                            // velocity `ω axis × (x − c) + κ axis` where `A cos u + B sin u = C`,
+                            // whatever the height along the ruling (the turn's part along `ρ̂` is
+                            // `ω ρ̂ · (axis × (o − c))`, the climb's along `z` is `κ`): two rulings
+                            // turned off the plane through both axes by `asin(κ tan α / (ω |d|))`,
+                            // or none (a cone about the screw's own axis, or a climb too steep for
+                            // its lean). Each is a line leaning to the axis, screwed into a patch
+                            // of a ruled helicoid (#777 M5), which the cone at each end pose
+                            // touches along that ruling
+                            let w = cross(axis,sub(f.o,c));
+                            let kappa = screw.advance/std::f64::consts::TAU*dot(f.z,axis).signum();
+                            let (aa,bb,cc) = (screw.ratio*ca*dot(w,f.x),screw.ratio*ca*dot(w,f.y),sa*kappa);
+                            let rr = aa.hypot(bb);
+                            if !(rr > 1e-12*(screw.ratio.abs()*size+kappa.abs())) || cc.abs() >= rr { continue }
+                            let (phi,delta) = (bb.datan2(aa),(cc/rr).clamp(-1.,1.).dacos());
+                            for u in [phi+delta,phi-delta] {
+                                if let Some((cutter,sites)) = ruling(u) { add_cutter(cutter,sites) }
+                            }
+                            continue
+                        }
                         let ways = match away(f.o) { Some(w) => vec![w,scale(w,-1.)],None => vec![] };
                         if ways.is_empty() {
                             add_cutter(Cutter::Revolved {o:f.o,axis:f.z,p:p0,e,span:[lo*ca,hi*ca]},poses.iter().flat_map(|m| sites_at(m)).collect())
                         }
                         for w in ways {
-                            let u = dot(w,f.y).datan2(dot(w,f.x));
-                            let (p,q) = (face.surface.point([u,lo]),face.surface.point([u,hi]));
-                            if located.face_place(k,face.surface.point([u,0.5*(lo+hi)])) == crate::query::Place::Out { continue }
-                            if let Some(cutter) = turned(p,sub(q,p),q) { add_cutter(cutter,line_sites(p,q,cutter)) }
+                            if let Some((cutter,sites)) = ruling(dot(w,f.y).datan2(dot(w,f.x))) { add_cutter(cutter,sites) }
                         }
                     }
                     Surface::Sphere(f,r) if !screw.is_turn() => {
@@ -888,16 +933,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 else { add_cutter(Cutter::ScrewedDisc {c:f.o,r:r.abs()},sites) }
             }
             for &(p,q,_) in &edges {
-                let e = unit(sub(q,p));
-                if !screw.is_turn() && norm(cross(e,axis)) > 1e-9 {
-                    // under a screw an edge square to the axis sweeps a helicoidal sheet across the
-                    // box; one leaning to it, a patch of a ruled helicoid bounded inside the domain
-                    // (#777 M5)
-                    let cutter = if dot(e,axis).abs() > 1e-9 { Cutter::Patch {p,q} } else { Cutter::Screwed {p,e} };
-                    add_cutter(cutter,line_sites(p,q,cutter));
-                    continue
-                }
-                if let Some(cutter) = turned(p,sub(q,p),q) { add_cutter(cutter,line_sites(p,q,cutter)) }
+                if let Some(cutter) = line_cutter(p,q) { add_cutter(cutter,line_sites(p,q,cutter)) }
             }
         }
     }
