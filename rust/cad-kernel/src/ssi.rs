@@ -820,8 +820,22 @@ pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy
     let far = norm(perp(sub(f.o,center)))+r;
     let bound = |_: f64,_: f64| [2.*far*r,2.*(r*r+far*r)];
     let tau = std::f64::consts::TAU;
-    let mut roots: Vec<f64> = crate::util::isolate::roots(&g,&dg,&bound,[0.,tau],tol*1e-3/r.max(1e-300),&|th| g(th).abs() <= 2.*big*tol)?
+    let found: Vec<f64> = crate::util::isolate::roots(&g,&dg,&bound,[0.,tau],tol*1e-3/r.max(1e-300),&|th| g(th).abs() <= 2.*big*tol)?
         .into_iter().map(|x| x.at).collect();
+    // a run of roots the circle keeps within the tolerance of the cylinder between is one helix
+    // (#780 R2's rule, `query::settled`): a double root rounding parts into several a hair apart —
+    // a ball's great circle tangent to the cylinder its outer equator screws round, four roots
+    // within 5e-8 rad (#780 C1) — is the one helix the sheet touches the cylinder along, placed at
+    // the run's middle, and read four times it left the faces it bounds unclosed
+    let within = |a: f64,b: f64| (b-a)*r <= tol || (1..4).all(|j| g(a+(b-a)*j as f64/4.).abs() <= 2.*big*tol);
+    let mut roots: Vec<f64> = Vec::with_capacity(found.len());
+    let mut i = 0;
+    while i < found.len() {
+        let mut j = i;
+        while j+1 < found.len() && within(found[j],found[j+1]) { j += 1 }
+        roots.push(0.5*(found[i]+found[j]));
+        i = j+1;
+    }
     // the circle closes: a root at its end is the one at its start
     if roots.len() > 1 && (roots[roots.len()-1]-tau-roots[0]).abs()*r <= tol { roots.pop(); }
     Some(roots.into_iter().map(|th| Curve::Iso(blend.clone(),u_of(th))).collect())

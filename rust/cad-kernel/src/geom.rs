@@ -309,6 +309,52 @@ impl LevelCircle {
     }
 }
 
+/// A ball's pipe (`Blend::pipe`): the screw that carries it, the circle square to its centre's
+/// helix where the patch starts — its frame, `z` along the helix — and its radius; and the helix's
+/// speed `s₁ = |H'|`, the size of its second derivative `s₂ = a² ρ` and of its third `s₃ = |a|³ ρ`
+/// (`a` the screw's turn over the patch, `ρ` the helix's distance from the axis).
+#[derive(Clone,Copy,Debug)]
+pub struct Pipe { pub carry: Carry,pub frame: Frame,pub r: f64,speeds: [f64;3] }
+
+impl Pipe {
+    /// The circle's centre carried to `v`: the spine, the helix the pipe stands about.
+    pub fn spine(&self,v: f64) -> V { self.carry.at(self.frame.o,v) }
+    /// `p` screwed back from `v` to the start's circle: the turn and the step along the axis are
+    /// undone together (they commute).
+    pub fn back(&self,p: V,v: f64) -> V {
+        let Carry::Screw {center,axis,angle,advance} = self.carry else { return p };
+        Carry::Screw {center,axis,angle:-angle*v,advance:-advance*v}.at(p,1.)
+    }
+    /// How far `p` stands from the circle at `v`: screwed back to the start's, its height off the
+    /// circle's plane and its reach in it against the radius.
+    pub fn off(&self,p: V,v: f64) -> f64 {
+        let d = sub(self.back(p,v),self.frame.o);
+        let h = dot(d,self.frame.z);
+        let rho = (dot(d,d)-h*h).max(0.).sqrt();
+        (rho-self.r).dhypot(h)
+    }
+    /// `g(v) = (H(v) − p)·H'(v)`, nought where `p − H(v)` stands square to the helix.
+    fn g(&self,p: V,v: f64) -> f64 { let h = self.spine(v); dot(sub(h,p),self.carry.rate(h)) }
+    /// `g'(v) = s₁² + (H − p)·H''`, `H'' = a k × H'` (`H'·H''` is nought: the helix keeps its speed).
+    fn dg(&self,p: V,v: f64) -> f64 {
+        let Carry::Screw {axis,angle,..} = self.carry else { return f64::NAN };
+        let h = self.spine(v);
+        self.speeds[0]*self.speeds[0]+dot(sub(h,p),scale(cross(axis,self.carry.rate(h)),angle))
+    }
+    /// **Every foot of `p` on the spine over `[0, 1]`**, and its two ends: the roots of `g`
+    /// isolated with a bound (`util::isolate`), `|g'| ≤ s₁² + q s₂` and `|g''| = |(H − p)·H'''| ≤ q
+    /// s₃` over a stretch where `|H − p|` reaches `q` at most. Each stretch read is the inverse
+    /// stage's work (`util::meter`). `None` where the search gave up or the build stopped.
+    pub fn feet(&self,p: V) -> Option<Vec<f64>> {
+        let [s1,s2,s3] = self.speeds;
+        let reach = |v: f64| crate::util::space::distance(self.spine(v),p);
+        let bound = |x0: f64,x1: f64| { let q = reach(x0).max(reach(x1))+s1*(x1-x0); [s1*s1+q*s2,q*s3] };
+        let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&|v| self.g(p,v),&|v| self.dg(p,v),
+            &bound,[0.,1.],1e-12,&|_| true)?;
+        Some([0.,1.].into_iter().chain(roots.into_iter().map(|x| x.at)).collect())
+    }
+}
+
 impl Blend {
     fn ends(&self,u: f64) -> ((V,V,V),(V,V,V)) {
         (self.a.d2(self.ta[0]+u*(self.ta[1]-self.ta[0])),self.b.d2(self.tb[0]+u*(self.tb[1]-self.tb[0])))
@@ -333,6 +379,10 @@ impl Blend {
         // a level circle's sheet is read level with `p` first: a sheet thinner than the warm start's
         // reach (a round rim screwed a short lead) has its other side within it
         if let Some(uv) = self.level_circle_uv(p) { return self.newton(p,uv) }
+        // a ball's pipe is read off its spine, exactly: no warm start, which may settle on a foot
+        // on the far side of the tube or on the next turn of the coil, no search, and no polish
+        // (Gauss–Newton from a far point's foot on an end circle, `v` held, swings `u` round it)
+        if let Some(uv) = self.pipe().and_then(|c| self.pipe_uv(&c,p)) { return uv }
         let key = self as *const Blend as usize;
         let near = 1e-3*(1.+dot(p,p).sqrt());
         let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
@@ -403,6 +453,42 @@ impl Blend {
         let span = self.ta[1]-self.ta[0];
         if !(0..3).all(|i| same(self.b.point(self.tb[0]+(self.tb[1]-self.tb[0])*i as f64/2.),self.a.point(self.ta[0]+span*i as f64/2.))) { return None }
         Some(LevelCircle {centre:center,axis:k,angle,rise:advance*dot(axis,k),frame:*f,r:r.abs()})
+    }
+    /// **The pipe this patch is, where it is one** (`build::screwed` of a ball's great circle
+    /// square to its centre's velocity: the side of the solid a ball sweeps under a screw, #721
+    /// F2c5, #780 C1): a whole circle and its own image carried by a screw, square to its centre's
+    /// velocity there. The screw carries the circle's plane with the helix its centre runs along,
+    /// so every carried circle stands square to that helix where it is, and the patch is the tube
+    /// of the circle's radius about it. `None` for any other patch.
+    pub fn pipe(&self) -> Option<Pipe> {
+        let Carry::Screw {angle,..} = self.carry else { return None };
+        let (Curve::Circle(f,r),Curve::Circle(g,s)) = (&self.a,&self.b) else { return None };
+        if !self.closed || angle == 0. { return None }
+        // the image carried back the circle itself, read off the two frames (asked at every inverse,
+        // so no point of either circle is evaluated)
+        let same = |q: V,x: V,scale: f64| crate::util::space::distance(q,x) <= 1e-9*scale;
+        let size = 1.+norm(f.o);
+        if !(same(g.o,f.o,size) && same(g.x,f.x,1.) && same(g.y,f.y,1.) && (s-r).abs() <= 1e-9*size && self.ta == self.tb) { return None }
+        let along = crate::util::space::normalised(self.carry.rate(f.o))?;
+        if norm(cross(f.z,along)) > 1e-9 { return None }
+        let Carry::Screw {center,axis,..} = self.carry else { return None };
+        let k = crate::util::space::normalised(axis)?;
+        let o = sub(f.o,center);
+        let rho = norm(sub(o,scale(k,dot(o,k))));
+        let a = angle.abs();
+        Some(Pipe {carry:self.carry,frame:*f,r:r.abs(),speeds:[norm(self.carry.rate(f.o)),a*a*rho,a*a*a*rho]})
+    }
+    /// **The parameters of a pipe's point nearest `p`, read off its spine** (#780 C1): the tube's
+    /// normals all pass through the spine square to it, so each foot of `p` on the patch lies on
+    /// the circle about a foot of `p` on the helix, or on an end circle (`Pipe::feet`); the circle's
+    /// `v`, and its `u` the angle of `p` screwed back to the start's circle, in its plane. The
+    /// nearest of them. `None` where the spine's search gave up.
+    fn pipe_uv(&self,pipe: &Pipe,p: V) -> Option<Uv> {
+        let v = pipe.feet(p)?.into_iter().map(|v| (pipe.off(p,v),v)).min_by(|x,y| x.0.total_cmp(&y.0))?.1;
+        let d = sub(pipe.back(p,v),pipe.frame.o);
+        let th = dot(d,pipe.frame.y).datan2(dot(d,pipe.frame.x));
+        let span = self.ta[1]-self.ta[0];
+        Some([((th-self.ta[0]).rem_euclid(std::f64::consts::TAU)/span).rem_euclid(1.),v])
     }
     /// `inverse` from the nearest of the grid and the turned points.
     fn searched(&self,p: V) -> Uv {
@@ -1494,16 +1580,25 @@ impl Curve {
                     let dist = crate::util::space::distance(p,crate::util::space::lerp(a,b,s));
                     if dist < best.0 { best = (dist,i as f64+s); }
                 }
+                // (each step kept only where it comes no farther from `p`: where the trace stands all
+                // but still — points crowded where it set out past a patch's end — its derivative is
+                // all but nothing and a step runs off along the whole curve, #780 C1, a vertex at a
+                // pipe's start placed at its trace's far end)
                 let mut t = best.1;
+                let mut held = (f64::INFINITY,t);
                 for _ in 0..8 {
                     let (x,dx) = c.d1(t);
+                    let d = crate::util::space::distance(x,p);
+                    if d > held.0 { break }
+                    held = (d,t);
                     let h = dot(dx,dx);
                     if !(h > 0.) { break }
                     let step = dot(sub(x,p),dx)/h;
                     let next = if c.closed { t-step } else { (t-step).clamp(0.,c.segments() as f64) };
-                    if (next-t).abs() < 1e-14 { t = next; break }
+                    if (next-t).abs() < 1e-14 { held.1 = next; break }
                     t = next;
                 }
+                let t = held.1;
                 if c.closed { t.rem_euclid(c.segments() as f64) } else { t }
             }
             // from the sheet's own `v` at the point

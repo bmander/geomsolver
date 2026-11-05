@@ -25,7 +25,8 @@
 //! be parted before it is `width` wide holds a singular root — two surfaces touching — where `near`
 //! accepts its middle.
 //!
-//! Each stretch or box read is counted against the build's budget (`util::meter`, the ray stage):
+//! Each stretch or box read is counted against the build's budget (`util::meter`, the ray stage, or
+//! the stage the caller names):
 //! past it, or past `MOST` boxes, the search gives up (`None`) and says so, never a guess.
 
 type Root = super::roots::Root;
@@ -40,6 +41,13 @@ pub const MOST: usize = 1 << 16;
 /// stretches or the build stopped.
 pub fn roots(g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,bound: &dyn Fn(f64,f64) -> [f64;2],[t0,t1]: [f64;2],width: f64,
     near: &dyn Fn(f64) -> bool) -> Option<Vec<Root>> {
+    roots_charged(super::meter::Stage::Ray,g,dg,bound,[t0,t1],width,near)
+}
+
+/// `roots`, each stretch read charged to `stage` (a swept sheet's inverse map isolates its foot on
+/// its spine this way, and its work is the inverse stage's, #780 C1).
+pub fn roots_charged(stage: super::meter::Stage,g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,bound: &dyn Fn(f64,f64) -> [f64;2],
+    [t0,t1]: [f64;2],width: f64,near: &dyn Fn(f64) -> bool) -> Option<Vec<Root>> {
     let mut out: Vec<Root> = Vec::new();
     if !(t1 >= t0) { return Some(out) }
     let width = width.max(1e-15*(t0.abs()+t1.abs()).max(1e-300));
@@ -47,7 +55,7 @@ pub fn roots(g: &dyn Fn(f64) -> f64,dg: &dyn Fn(f64) -> f64,bound: &dyn Fn(f64,f
     let mut read = 0;
     while let Some((a,b,depth)) = stack.pop() {
         read += 1;
-        if read > MOST || !super::meter::tick(super::meter::Stage::Ray) { return None }
+        if read > MOST || !super::meter::tick(stage) { return None }
         let (m,h) = (0.5*(a+b),0.5*(b-a));
         let [d1,d2] = bound(a,b);
         let gm = g(m);

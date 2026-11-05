@@ -830,8 +830,24 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
         Bounds {lo:lo.map(|x| x-grow),hi:hi.map(|x| x+grow)} };
     let boxes = Bvh::new(sb.windows(2).map(|w| chord(w,pad)));
     let wrap = |c: &Curve,t: f64,span: [f64;2]| match c.period() { Some(p) => around(t,span[0],p),None => t };
+    // the gap between chord `i` of `a` and chord `j` of `b`, and whether no chord pair beside it
+    // stands closer: two curves running within reach of one another for a while have every pair of
+    // their chords there near, and each polished from its own pair walks to the same place (#780
+    // C1: a short arc beside a traced meeting, 26,000 pairs, no crossing among them, the build past
+    // its budget). A crossing lies on a pair whose gap is the chords' sag at most, and the pairs
+    // falling from there end on one standing no farther apart than its neighbours, whose polish
+    // reaches it; a pair beside one closer is left to that one. (A pair at the samples' end has no
+    // neighbour beyond it, so it is polished if nothing closer stands beside it within them.)
+    let gap = |i: usize,j: usize| chord_gap(sa[i].1,sa[i+1].1,sb[j].1,sb[j+1].1);
+    let least = |i: usize,j: usize| {
+        let here = gap(i,j);
+        (-1..=1i64).all(|di| (-1..=1i64).all(|dj| {
+            let (k,l) = (i as i64+di,j as i64+dj);
+            (di == 0 && dj == 0) || k < 0 || l < 0 || k >= N as i64 || l >= N as i64 || gap(k as usize,l as usize) >= here
+        }))
+    };
     let mut out: Vec<(f64,f64,V)> = Vec::new();
-    for wa in sa.windows(2) {
+    for (i,wa) in sa.windows(2).enumerate() {
         // a build past its budget goes no further (#777 V3): the inverses below charge it, and
         // walked on, every pair of near chords would still be polished at full cost (#780)
         if crate::util::meter::stopped() { break }
@@ -839,6 +855,7 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
         boxes.query_box(chord(wa,0.),|j| near.push(j));
         near.sort_unstable();
         for j in near {
+            if !least(i,j) { continue }
             // the polish, from the chords' middles: each curve's foot of the other's point
             let (mut s,mut t) = ((wa[0].0+wa[1].0)/2.,(sb[j].0+sb[j+1].0)/2.);
             let mut last = f64::INFINITY;
@@ -859,6 +876,25 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
         }
     }
     out
+}
+
+/// The least distance between the segments from `a0` to `a1` and from `b0` to `b1`: their closest
+/// points, each held to its own segment (Ericson's, *Real-Time Collision Detection* §5.1.9).
+fn chord_gap(a0: V,a1: V,b0: V,b1: V) -> f64 {
+    use crate::util::space::{add,dot};
+    let (d1,d2,r) = (sub(a1,a0),sub(b1,b0),sub(a0,b0));
+    let (a,e,f) = (dot(d1,d1),dot(d2,d2),dot(d2,r));
+    let (s,t) = if !(a > 0.) && !(e > 0.) { (0.,0.) }
+        else if !(a > 0.) { (0.,(f/e).clamp(0.,1.)) }
+        else if !(e > 0.) { ((-dot(d1,r)/a).clamp(0.,1.),0.) }
+        else {
+            let (b,c) = (dot(d1,d2),dot(d1,r));
+            let denom = a*e-b*b;
+            let s = if denom > 0. { ((b*f-c*e)/denom).clamp(0.,1.) } else { 0. };
+            let t = (b*s+f)/e;
+            if t < 0. { ((-c/a).clamp(0.,1.),0.) } else if t > 1. { (((b-c)/a).clamp(0.,1.),1.) } else { (s,t) }
+        };
+    distance(add(a0,scale(d1,s)),add(b0,scale(d2,t)))
 }
 
 /// **The widest reach a meeting along any of `curves` has** (each a curve, its stretch, and the
