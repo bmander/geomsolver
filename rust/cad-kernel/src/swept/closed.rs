@@ -923,17 +923,18 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         // comes back onto itself (#780 L1, X5)
                         let n = unit(screw.velocity(f.o));
                         let g = Frame::about(f.o,n);
-                        let spans = pipe_stretches(&screw,f.o,n,r,[a,b],eps)?;
-                        for span in spans {
+                        // the circle's points on the face and their normals, carried over each
+                        // stretch's own roll
+                        let ring: Vec<(V,V)> = (0..4*SITES).filter_map(|i| {
+                            let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
+                            let w = add(scale(g.x,cp),scale(g.y,sp));
+                            let x = add(f.o,scale(w,r));
+                            (located.face_place(k,x) != crate::query::Place::Out).then_some((x,w))
+                        }).collect();
+                        for span in pipe_stretches(&screw,f.o,n,r,[a,b],eps)? {
                             let poses: Vec<crate::trajectory::Pose> = (0..=SITES)
                                 .map(|i| pose_at(span[0]+(span[1]-span[0])*within(i))).collect::<Result<_,_>>()?;
-                            let sites: Vec<(V,V)> = (0..4*SITES).flat_map(|i| {
-                                let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
-                                let w = add(scale(g.x,cp),scale(g.y,sp));
-                                let x = add(f.o,scale(w,r));
-                                let on = located.face_place(k,x) != crate::query::Place::Out;
-                                poses.iter().filter(move |_| on).map(move |m| (m.point(x),m.vector(w))).collect::<Vec<_>>()
-                            }).collect();
+                            let sites = ring.iter().flat_map(|&(x,w)| poses.iter().map(move |m| (m.point(x),m.vector(w)))).collect();
                             add_cutter(Cutter::Pipe {c:f.o,n,r,span},sites);
                         }
                     }
@@ -1504,31 +1505,31 @@ fn turned_contacts(add_cutter: &mut dyn FnMut(Cutter,Vec<(V,V)>),located: &crate
 /// `(ρ² + κ²)/ρ`, the design's step after).
 fn pipe_stretches(screw: &crate::trajectory::Screw,c: V,n: V,r: f64,[a,b]: [f64;2],eps: f64) -> Result<Vec<[f64;2]>,Unbuilt> {
     use std::f64::consts::{PI,TAU};
-    let k = unit(screw.axis);
-    let o = sub(c,screw.origin);
-    let rho = norm(sub(o,scale(k,dot(o,k))));
-    let kappa = screw.advance/TAU/screw.ratio;
+    let pipe = crate::geom::Pipe {carry:crate::geom::Carry::Screw {center:screw.origin,axis:unit(screw.axis),angle:screw.ratio,
+        advance:screw.advance/TAU},frame:Frame::about(c,n),r};
+    let refused = || Unbuilt::Curved {at:c};
+    let (Some(rho),Some(crate::geom::Carry::Screw {advance:kappa,..})) = (pipe.offset(),pipe.radian()) else { return Err(refused()) };
     // the helix's radius of curvature, `(ρ² + κ²)/ρ`: a ball reaching it folds its pipe
-    if !(r < (rho*rho+kappa*kappa)/rho.max(1e-300)) { return Err(Unbuilt::Curved {at:c}) }
-    let g = Frame::about(c,n);
-    let pipe = crate::geom::Pipe {carry:crate::geom::Carry::Screw {center:screw.origin,axis:k,angle:screw.ratio,advance:screw.advance/TAU},
-        frame:g,r};
-    let Some(w) = pipe.spread() else { return Err(Unbuilt::Curved {at:c}) };
+    if !(r < (rho*rho+kappa*kappa)/rho.max(1e-300)) { return Err(refused()) }
+    let Some(w) = pipe.spread() else { return Err(refused()) };
+    let turned = (screw.ratio*(b-a)).abs();
     // nor may it meet itself within less than a turn, two of its circle's points at one `ρ` and
     // `ζ` (the circle's orbits crossing; past a thousandth of a radian, where only the circle's own
-    // points stand, the helices crossing its plane all one way)
-    if pipe.returns([1e-3,2.*w+1e-3],eps).is_none_or(|r| !r.is_empty()) { return Err(Unbuilt::Curved {at:c}) }
-    let turned = (screw.ratio*(b-a)).abs();
+    // points stand, the helices crossing its plane all one way), within the roll
+    let near = (2.*w).min(turned)+1e-3;
+    if near > 2e-3 && pipe.returns([1e-3,near],eps).is_none_or(|r| !r.is_empty()) { return Err(refused()) }
     let back = TAU-2.*w;
-    if turned < back-1e-9 || pipe.returns([back-1e-9,turned+1e-9],eps).is_some_and(|r| r.is_empty()) { return Ok(vec![[a,b]]) }
-    // the joints are the build's choice, not the sweep's: placed so that none stands within a
-    // twentieth of a radian of a whole number of turns from an end or another joint, where a joint's
-    // circle would lie a turn along the pipe from another's (two stretches' circles on the helices
-    // of one another's points), which left a cell too thin to settle
-    // (the two ends' own distance, the whole roll, is no joint's)
-    let clear = |n: usize| (1..n).all(|i| { let x = (turned*i as f64/n as f64).rem_euclid(TAU); x.min(TAU-x) > 0.05 });
+    if turned < back-1e-9 { return Ok(vec![[a,b]]) }
+    let returns: Vec<f64> = pipe.returns([back-1e-9,turned+1e-9],eps).ok_or_else(refused)?.into_iter().map(|[..,t]| t).collect();
+    if returns.is_empty() { return Ok(vec![[a,b]]) }
+    // the joints are the build's choice, not the sweep's: placed so that no joint stands within a
+    // twentieth of a radian of a return's turn from an end or another joint, where the two
+    // circles would cross one return's helix at one point (two stretches' joints a degenerate
+    // vertex of three curves), which left a cell too thin to settle. Evenly spaced, those apart
+    // are the spacing's multiples (the two ends' own distance, the whole roll, is no joint's)
+    let clear = |n: usize| (1..n).all(|i| { let x = turned*i as f64/n as f64; returns.iter().all(|&t| (x-t.abs()).abs() > 0.05) });
     let fewest = (turned/PI).ceil().max(2.) as usize;
-    let pieces = (fewest..fewest+16).find(|&n| clear(n)).unwrap_or(fewest);
+    let pieces = (fewest..fewest+16).find(|&n| clear(n)).ok_or_else(refused)?;
     Ok((0..pieces).map(|i| [a+(b-a)*i as f64/pieces as f64,a+(b-a)*(i+1) as f64/pieces as f64]).collect())
 }
 

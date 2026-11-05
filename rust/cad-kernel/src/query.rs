@@ -1351,13 +1351,11 @@ impl<'a> Located<'a> {
     }
 
     /// **Whether face `fi` holds `p`, a point of a surface the same as the face's** (`ssi::same`):
-    /// in the face (`face_place`), and on the face's own patch where its surface has a rim
-    /// (`on_bounded`). A sheet lying in a plane is that plane over its patch alone (#780 C4): past
-    /// the patch a point's foot is clamped to its edge, which the face's loop may run along, and
-    /// read there the point would be in the face.
-    pub fn face_holds(&self,fi: usize,p: V) -> bool {
-        self.face_place(fi,p) == Place::In && on_bounded(&self.b.faces[fi].surface,p,self.tol)
-    }
+    /// in the face (`face_place`), which holds a point only on the face's own patch where its
+    /// surface has a rim. A sheet lying in a plane is that plane over its patch alone (#780 C4):
+    /// past the patch a point's foot is clamped to its edge, which the face's loop may run along,
+    /// and read there the point would be in the face.
+    pub fn face_holds(&self,fi: usize,p: V) -> bool { self.face_place(fi,p) == Place::In }
 
     /// Where a point of face `fi`'s surface stands against the face: `On` within `tol` of its
     /// boundary. A seam (an edge the face uses twice, once each side) is no boundary: a point on
@@ -1392,10 +1390,10 @@ impl<'a> Located<'a> {
         if boundary <= self.tol { return Place::On }
         if d <= self.tol { return Place::In }
         let uv = self.uv(fi,p);
+        // (past the rim, however near its edge)
+        if past(uv) { return Place::Out }
         let e = &self.b.edges[c.edge as usize];
         if d <= self.coarse.max(2.*self.drawn(fi).0.sag()) && t > e.t[0] && t < e.t[1] {
-            // (past the rim, however near its edge)
-            if past(uv) { return Place::Out }
             // near one edge's interior: which side of it, in the face's parameters — the point
             // on the branch beside each use of the edge (a seam is used twice, once each side of
             // the face), inside if beside any use it is on the face's side
@@ -1408,7 +1406,6 @@ impl<'a> Located<'a> {
             });
             return if inside { Place::In } else { Place::Out }
         }
-        if past(uv) { return Place::Out }
         let winding = self.drawn(fi).0.winding(uv);
         // a reversed face's loops turn the other way round
         let inside = if f.reversed { winding < 0 } else { winding > 0 };

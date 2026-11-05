@@ -417,9 +417,9 @@ it. It stays as the fast path where #699 D says so.
      patch's roll is cut into stretches each shorter than the least such return (`2π − 2w`, `w`
      the curve's reach round the axis), each embedded, and the stretches are met pairwise like any
      two candidates: along those helices, and round the curve where two abut. Where the stretches
-     are joined is the build's choice, not the sweep's, and is placed clear of a whole turn from
-     the roll's ends and one another (a joint a turn along from another's curve lies on its
-     returns' helices, a cell too thin to settle). Under a turn every candidate is a whole surface
+     are joined is the build's choice, not the sweep's, and is placed so that no two joints, nor a
+     joint and an end, stand a return's turn `t` apart (their curves would cross one return's
+     helix at one point, a cell too thin to settle); where no spacing does, refused. Under a turn every candidate is a whole surface
      of revolution, so a return is its meridian crossing itself; under a slide nothing returns.
    - **X2, several contacts per tool point.** A constant twist keeps each tool point in contact for
      the whole roll or never, so a point has several contacts only in an instant's chart (K2),

@@ -367,22 +367,26 @@ impl Pipe {
         let k = crate::util::space::normalised(axis)?;
         (angle != 0.).then(|| Carry::Screw {center,axis:k,angle:1.,advance:advance*dot(axis,k)/angle})
     }
-    /// The point of the start's circle at its angle `θ` (its frame's `x` towards `y`).
-    pub fn circle(&self,th: f64) -> V {
+    /// The point of the start's circle at its angle `θ` (its frame's `x` towards `y`), and its
+    /// rate there.
+    pub fn circle(&self,th: f64) -> (V,V) {
         let (s,c) = th.dsin_cos();
-        add(self.frame.o,add(scale(self.frame.x,self.r*c),scale(self.frame.y,self.r*s)))
+        (self.frame.at([self.r*c,self.r*s,0.]),self.frame.dir([-self.r*s,self.r*c,0.]))
+    }
+    /// How far the start's circle's centre stands from the screw's axis; `None` for no screw.
+    pub fn offset(&self) -> Option<f64> {
+        let Carry::Screw {center,axis,..} = self.carry else { return None };
+        let k = crate::util::space::normalised(axis)?;
+        let o = sub(self.frame.o,center);
+        Some(norm(sub(o,scale(k,dot(o,k)))))
     }
     /// **How far round the screw's axis the pipe's circle reaches** either way from its centre, as
     /// an angle about the axis (the circle seen from the axis), or `None` where it reaches the axis
     /// or round it: then two of its points a turn apart along one helix are nearer than a turn.
+    /// (The circle's offset from its centre, square to the axis, is at most `r` long.)
     pub fn spread(&self) -> Option<f64> {
-        let Carry::Screw {center,axis,..} = self.carry else { return None };
-        let k = crate::util::space::normalised(axis)?;
-        let perp = |x: V| sub(x,scale(k,dot(x,k)));
-        let c = perp(sub(self.frame.o,center));
-        // the circle's offset from its centre, square to the axis, is at most `r` long
-        let (d,r) = (norm(c),self.r);
-        (r < d).then(|| (r/d).asin())
+        let d = self.offset()?;
+        (self.r < d).then(|| (self.r/d).asin())
     }
     /// **Where the pipe comes back onto itself** (#780 L1, X5: a ball screwed through more than a
     /// turn at a lead short of its diameter): the points `c(θ₁)` of the start's circle onto which
@@ -399,33 +403,27 @@ impl Pipe {
     /// up.
     pub fn returns(&self,span: [f64;2],tol: f64) -> Option<Vec<[f64;3]>> {
         let screw = self.radian()?;
-        let Carry::Screw {center,axis:k,..} = screw else { return None };
+        let at = |[th1,th2,t]: [f64;3]| { let (p,dp) = self.circle(th1); let (q,dq) = self.circle(th2); (p,dp,screw.at(q,t),screw.dir(dq,t)) };
         let f = |x: [f64;3]| -> ([f64;3],[[f64;3];3]) {
-            let (th1,th2,t) = (x[0],x[1],x[2]);
-            let (s1,c1) = th1.dsin_cos();
-            let (s2,c2) = th2.dsin_cos();
-            let p = self.circle(th1);
-            let q = screw.at(self.circle(th2),t);
-            let dp = add(scale(self.frame.x,-self.r*s1),scale(self.frame.y,self.r*c1));
-            let dq = screw.dir(add(scale(self.frame.x,-self.r*s2),scale(self.frame.y,self.r*c2)),t);
+            let (p,dp,q,dq) = at(x);
             let dt = screw.rate(q);
             (std::array::from_fn(|i| p[i]-q[i]),std::array::from_fn(|i| [dp[i],-dq[i],-dt[i]]))
         };
-        let reach = norm(sub(sub(self.frame.o,center),scale(k,dot(sub(self.frame.o,center),k))))+self.r;
+        let reach = self.offset()?+self.r;
         // each component's Hessian entries: `c''` (`r`), `∂²(S c)/∂θ₂²` (`r`), `∂²/∂θ₂∂t` twice
         // (`r` each), `∂²/∂t²` (the reach: the climb is linear in `t`)
         let h = 4.*self.r+reach;
         let second = |_: &[[f64;2];3]| [h;3];
-        let size = reach.max(self.r).max(1e-300);
+        let size = reach.max(1e-300);
         let width = tol*1e-2/size;
-        let near = |x: [f64;3]| { let (v,_) = f(x); norm(v) <= tol };
+        let near = |x: [f64;3]| { let (p,_,q,_) = at(x); crate::util::space::distance(p,q) <= tol };
         let tau = std::f64::consts::TAU;
         let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,tau],[0.,tau],span],width,&near).ok()?;
         // a root on the seam `θ = 0 = 2π` is found at both: once
+        let apart = |a: f64,b: f64| { let d = (a-b).rem_euclid(tau); d.min(tau-d) };
         let mut out: Vec<[f64;3]> = Vec::new();
         for r in found {
             let x = [r.at[0].rem_euclid(tau),r.at[1].rem_euclid(tau),r.at[2]];
-            let apart = |a: f64,b: f64| { let d = (a-b).rem_euclid(tau); d.min(tau-d) };
             if !out.iter().any(|y| apart(y[0],x[0])*self.r <= tol && apart(y[1],x[1])*self.r <= tol && (y[2]-x[2]).abs()*size <= tol) {
                 out.push(x)
             }
@@ -526,6 +524,12 @@ impl Blend {
     fn u_round(&self,f: &Frame,d: V) -> f64 {
         let th = dot(d,f.y).datan2(dot(d,f.x));
         ((th-self.ta[0]).rem_euclid(std::f64::consts::TAU)/(self.ta[1]-self.ta[0])).rem_euclid(1.)
+    }
+    /// The `u` of a circle's angle `θ` round it, its `ta` the circle's parameters: its parameter
+    /// a turn or less on from `ta[0]`, over the span (past `1` beyond an arc's end).
+    pub(crate) fn u_of_angle(&self,th: f64) -> f64 {
+        let t = self.ta[0]+(th-self.ta[0]).rem_euclid(std::f64::consts::TAU);
+        (t-self.ta[0])/(self.ta[1]-self.ta[0])
     }
     /// **The level circle this patch screws, where it is one** (`build::screwed` of a disc: a
     /// circle square to the screw's axis and its own image carried, `S(u, v) = carry_v(c + r (cos θ

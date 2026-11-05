@@ -681,8 +681,8 @@ screw's helical coordinates the pipe is its circle's points' helices, so it meet
 where the circle holds two points at one distance from the axis whose `z − κψ` differ by a whole
 number of turns' rise, each such pair a helix (`geom::Pipe::returns`, isolated with a bound;
 `swept_loci::a_pipe_comes_back_onto_itself_along_helices`). Such a pipe is entered in stretches of
-the roll of at most half a turn, each meeting itself nowhere, its joints placed clear of a whole
-turn from the ends and one another (`closed::pipe_stretches`); one that does not come back is
+the roll of at most half a turn, each meeting itself nowhere, no two joints, nor a joint and an
+end, a return's turn apart (`closed::pipe_stretches`); one that does not come back is
 entered whole, as before. Two stretches of one pipe meet in closed form, round the circle where
 they abut and along those helices, and a plane holding a circle of the pipe meets it in that circle
 and its level-by-level cut (`ssi`'s `pipes_meeting`, `pipe_plane`;

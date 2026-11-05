@@ -17,31 +17,37 @@ fn screw(theta: f64,k: f64) -> Trajectory {
     Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance:TAU*k*theta})
 }
 
-/// `∫ f` over `[a, b]` by Gauss–Legendre's sixteen points on each of `n` pieces, each read at
-/// `a + (b − a)(1 − cos τ)/2` so that a square-root end is smooth in `τ`.
+/// `∫ f` over `[a, b]` by Gauss–Legendre's eight points (`integral::GAUSS8`) on each of `n` pieces,
+/// each read at `a + (b − a)(1 − cos τ)/2` so that a square-root end is smooth in `τ`.
 fn integral(a: f64,b: f64,n: usize,f: &dyn Fn(f64) -> f64) -> f64 {
-    const X: [f64;8] = [0.0950125098376374,0.2816035507792589,0.4580167776572274,0.6178762444026438,
-        0.7554044083550030,0.8656312023878318,0.9445750230732326,0.9894009349916499];
-    const W: [f64;8] = [0.1894506104550685,0.1826034150449236,0.1691565193950025,0.1495959888165767,
-        0.1246289712555339,0.0951585116824928,0.0622535239386479,0.0271524594117541];
     if !(b > a) { return 0. }
     let g = |t: f64| { let (s,c) = t.sin_cos(); f(0.5*(a+b)-0.5*(b-a)*c)*0.5*(b-a)*s };
     (0..n).map(|i| {
         let (lo,hi) = (PI*i as f64/n as f64,PI*(i+1) as f64/n as f64);
         let (m,h) = (0.5*(lo+hi),0.5*(hi-lo));
-        (0..8).map(|j| W[j]*h*(g(m-h*X[j])+g(m+h*X[j]))).sum::<f64>()
+        gcs_core::integral::GAUSS8.iter().map(|&(x,w)| w*h*g(m+h*x)).sum::<f64>()
     }).sum()
 }
 
-/// The most of a concave `f` over `[a, b]`, by golden sections.
-fn most(a: f64,b: f64,f: &dyn Fn(f64) -> f64) -> f64 {
-    let g = 0.5*(5f64.sqrt()-1.);
-    let (mut a,mut b) = (a,b);
-    for _ in 0..90 {
-        let (c,d) = (b-g*(b-a),a+g*(b-a));
-        if f(c) > f(d) { b = d } else { a = c }
+/// Where a concave `f` is most over `[a, b]`, and how much (`roots::brent` on `−f`, its ends read
+/// too).
+fn most(a: f64,b: f64,f: &dyn Fn(f64) -> f64) -> (f64,f64) {
+    let least = gcs_core::roots::brent(&|x| -f(x),a,b,1e-14*(1.+a.abs().max(b.abs())),200,|_,_| false);
+    [(least.at,-least.value),(a,f(a)),(b,f(b))].into_iter().fold((a,f64::NEG_INFINITY),|m,x| if x.1 > m.1 { x } else { m })
+}
+
+/// Where `f` changes sign between each two of `n + 1` points evenly over each of `pieces`, settled
+/// within that bracket (`roots::bracketed_root`).
+fn sign_changes(pieces: &[f64],n: usize,f: &dyn Fn(f64) -> f64) -> Vec<f64> {
+    let mut out = Vec::new();
+    for w in pieces.windows(2) {
+        let xs: Vec<f64> = (0..=n).map(|i| w[0]+(w[1]-w[0])*i as f64/n as f64).collect();
+        let fs: Vec<f64> = xs.iter().map(|&x| f(x)).collect();
+        for i in 0..n {
+            if fs[i]*fs[i+1] < 0. { out.push(gcs_core::roots::bracketed_root(|x| Some(f(x)),xs[i],fs[i],xs[i+1],fs[i+1],1e-14*(1.+xs[i].abs()))) }
+        }
     }
-    f(0.5*(a+b)).max(f(a)).max(f(b))
+    out
 }
 
 /// **The volume a ball of radius `r` about `(d, 0, 0)` sweeps screwed about the world's `z` through
@@ -55,82 +61,52 @@ fn most(a: f64,b: f64,f: &dyn Fn(f64) -> f64) -> f64 {
 /// the most of the concave `φ_ρ(z_b) − z_b/k` over the strip (`φ_ρ` the slice's half-width, `acos((ρ²
 /// + d² + z_b² − r²)/2ρd)`), `σ_min` the least of `−φ_ρ − z_b/k`. The volume is `∫ ρ ∫ min(2π, L) dz
 /// dρ`: in `z` cut where the strip's ends cross the slice's top and bottom, where each extreme's
-/// inner point enters and leaves the strip, and where `L` crosses `2π`, each piece read by
-/// `integral`; in `ρ` read at `ρ = d + r sin θ`, Simpson's rule on 2000 steps.
-fn swept_volume(r: f64,d: f64,k: f64,theta: f64) -> f64 { swept_volume_at(r,d,k,theta,4,16) }
-
-fn swept_volume_at(r: f64,d: f64,k: f64,theta: f64,zp: usize,n: usize) -> f64 {
+/// inner point enters and leaves the strip, and where `L` crosses `2π`; in `ρ` where the slice's
+/// height is the climb and where `L` first reaches `2π` up a slice; each piece read by `integral`.
+fn swept_volume(r: f64,d: f64,k: f64,theta: f64) -> f64 {
     let rise = k*theta;
     // (the angles a circle's slice covers are at most its own and the roll's: short of a turn
     // together, they never cover it, and `L` has no `2π` to cross)
     let returns = theta+2.*(r/d).asin() >= TAU;
-    let at_rho = |rho: f64| -> f64 {
-        let h2 = r*r-(rho-d)*(rho-d);
-        if !(h2 > 0.) { return 0. }
-        let h = h2.sqrt();
-        let half = |zb: f64| ((rho*rho+d*d+zb*zb-r*r)/(2.*rho*d)).clamp(-1.,1.).acos();
-        let strip = |z: f64| [(z-rise).max(-h),z.min(h)];
-        let upper = |zb: f64| half(zb)-zb/k;
-        let lower = |zb: f64| half(zb)+zb/k;
-        let span = |z: f64| -> f64 {
-            let [lo,hi] = strip(z);
+    // at the radius `ρ`: the slice's half-height, and `L` at the height `z` (`span`, uncapped)
+    let slice = |rho: f64| {
+        let h = (r*r-(rho-d)*(rho-d)).max(0.).sqrt();
+        let half = move |zb: f64| ((rho*rho+d*d+zb*zb-r*r)/(2.*rho*d)).clamp(-1.,1.).acos();
+        let span = move |z: f64| -> f64 {
+            let (lo,hi) = ((z-rise).max(-h),z.min(h));
             if !(hi > lo) { return 0. }
-            (most(lo,hi,&upper)+most(lo,hi,&lower)).min(TAU)
+            most(lo,hi,&|zb| half(zb)-zb/k).1+most(lo,hi,&|zb| half(zb)+zb/k).1
         };
-        // each extreme's inner point over the whole slice, where it is inside
-        let inner = |f: &dyn Fn(f64) -> f64| -> f64 {
-            let g = 0.5*(5f64.sqrt()-1.);
-            let (mut a,mut b) = (-h,h);
-            for _ in 0..90 { let (c,e) = (b-g*(b-a),a+g*(b-a)); if f(c) > f(e) { b = e } else { a = c } }
-            0.5*(a+b)
-        };
-        let (iu,il) = (inner(&upper),inner(&lower));
+        (h,half,span)
+    };
+    let at_rho = |rho: f64| -> f64 {
+        let (h,half,span) = slice(rho);
+        if !(h > 0.) { return 0. }
+        // each extreme's inner point over the whole slice
+        let (iu,il) = (most(-h,h,&|zb| half(zb)-zb/k).0,most(-h,h,&|zb| half(zb)+zb/k).0);
         let mut cuts = vec![-h,h,-h+rise,h+rise,iu,iu+rise,il,il+rise];
         cuts.retain(|&z| z >= -h && z <= h+rise);
         cuts.sort_by(f64::total_cmp);
         cuts.dedup_by(|x,y| (*x-*y).abs() <= 1e-13);
-        // where `L` crosses `2π`: bracketed among 64 samples of each piece, bisected
-        let raw = |z: f64| { let [lo,hi] = strip(z); if hi > lo { most(lo,hi,&upper)+most(lo,hi,&lower)-TAU } else { -TAU } };
-        let mut all = cuts.clone();
-        for w in cuts.windows(2).filter(|_| returns) {
-            let n = 64;
-            for i in 0..n {
-                let (mut a,mut b) = (w[0]+(w[1]-w[0])*i as f64/n as f64,w[0]+(w[1]-w[0])*(i+1) as f64/n as f64);
-                let (fa,fb) = (raw(a),raw(b));
-                if fa*fb >= 0. { continue }
-                for _ in 0..80 { let m = 0.5*(a+b); if (raw(m) > 0.) == (fa > 0.) { a = m } else { b = m } }
-                all.push(0.5*(a+b));
-            }
-        }
-        all.sort_by(f64::total_cmp);
-        all.windows(2).map(|w| integral(w[0],w[1],zp,&span)).sum::<f64>()*rho
+        // and where `L` crosses `2π`
+        if returns { let more = sign_changes(&cuts,64,&|z| span(z)-TAU); cuts.extend(more); cuts.sort_by(f64::total_cmp) }
+        cuts.windows(2).map(|w| integral(w[0],w[1],8,&|z| span(z).min(TAU))).sum::<f64>()*rho
     };
-    // `∫ … dρ` cut where its integrand turns a corner: where the slice's height `2h` is the climb
-    // (the strip's ends trade places), and where `L` first reaches `2π` somewhere up the slice
-    // (the turns first cover a whole circle); each piece by `integral`, its ends smooth in `τ`
     let (lo,hi) = (d-r,d+r);
     let mut cuts = vec![lo,hi];
     if rise < 2.*r { let off = (r*r-0.25*rise*rise).sqrt(); cuts.extend([d-off,d+off]) }
-    let whole = |rho: f64| -> f64 {
-        // the most `L` reaches over the slice, less `2π`: sampled, and polished by golden sections
-        let h = (r*r-(rho-d)*(rho-d)).max(0.).sqrt();
-        let half = |zb: f64| ((rho*rho+d*d+zb*zb-r*r)/(2.*rho*d)).clamp(-1.,1.).acos();
-        let l = |z: f64| { let (a,b) = ((z-rise).max(-h),z.min(h)); if b > a { most(a,b,&|zb| half(zb)-zb/k)+most(a,b,&|zb| half(zb)+zb/k) } else { 0. } };
-        let zs: Vec<f64> = (0..=200).map(|i| -h+(2.*h+rise)*i as f64/200.).collect();
-        let best = zs.iter().copied().max_by(|x,y| l(*x).total_cmp(&l(*y))).unwrap_or(0.);
-        let step = (2.*h+rise)/200.;
-        most(best-step,best+step,&l)-TAU
-    };
-    let rs: Vec<f64> = (0..=400).map(|i| lo+(hi-lo)*i as f64/400.).collect();
-    for w in rs.windows(2).filter(|_| returns) {
-        let (mut a,mut b) = (w[0],w[1]);
-        let (fa,fb) = (whole(a),whole(b));
-        if fa*fb >= 0. { continue }
-        for _ in 0..60 { let m = 0.5*(a+b); if (whole(m) > 0.) == (fa > 0.) { a = m } else { b = m } }
-        cuts.push(0.5*(a+b));
+    if returns {
+        // the most `L` reaches up the slice, less `2π`: sampled, and polished
+        let reaches = |rho: f64| -> f64 {
+            let (h,_,span) = slice(rho);
+            let step = (2.*h+rise)/200.;
+            let best = (0..=200).map(|i| -h+step*i as f64).max_by(|x,y| span(*x).total_cmp(&span(*y))).unwrap_or(0.);
+            most(best-step,best+step,&span).1-TAU
+        };
+        cuts.extend(sign_changes(&[lo,hi],400,&reaches));
     }
     cuts.sort_by(f64::total_cmp);
-    cuts.windows(2).map(|w| integral(w[0],w[1],n,&at_rho)).sum()
+    cuts.windows(2).map(|w| integral(w[0],w[1],32,&at_rho)).sum()
 }
 
 /// **The sweep's definition sampled**: whether the ball of radius `r` about `(d, 0, 0)`, screwed
@@ -208,13 +184,13 @@ fn a_pipe_comes_back_onto_itself_along_helices() {
         let n = gcs_core::space::unit([0.,d,k]);
         Pipe {carry:Carry::Screw {center:[0.;3],axis:[0.,0.,1.],angle:1.,advance:k},frame:Frame::about([d,0.,0.],n),r}
     };
-    let w = pipe(0.2).spread().unwrap();
-    let roots = pipe(0.2).returns([TAU-2.*w-1e-9,2.*TAU],1e-9).unwrap();
-    assert_eq!(roots.len(),2,"{roots:?}");
     let p = pipe(0.2);
+    let w = p.spread().unwrap();
+    let roots = p.returns([TAU-2.*w-1e-9,2.*TAU],1e-9).unwrap();
+    assert_eq!(roots.len(),2,"{roots:?}");
     let s = p.radian().unwrap();
     for [t1,t2,t] in roots {
-        let (a,b) = (p.circle(t1),s.at(p.circle(t2),t));
+        let (a,b) = (p.circle(t1).0,s.at(p.circle(t2).0,t));
         assert!(gcs_core::space::distance(a,b) <= 1e-12,"{a:?} against {b:?}");
         assert!((t-TAU).abs() < 2.*w,"a turn on: {t}");
     }
@@ -264,8 +240,10 @@ fn two_stretches_of_one_pipe_meet_round_their_circle_and_along_helices() {
     use gcs_core::brep::geom::{Curve,Surface};
     use gcs_core::brep::ssi::{Ssi,intersect};
     let [(_,first),(_,second)] = stretches(0.75*TAU,1.5*TAU);
+    let mut shared = None;
     for (a,b) in [(&first,&second),(&second,&first)] {
         let Ssi::Curves(curves) = intersect(a,b,1e-9) else { panic!("not read in closed form") };
+        if let Some(Curve::Circle(f,_)) = curves.iter().find(|c| matches!(c,Curve::Circle(..))) { shared = Some(*f) }
         let circles = curves.iter().filter(|c| matches!(c,Curve::Circle(..))).count();
         let helices = curves.iter().filter(|c| matches!(c,Curve::Iso(..))).count();
         assert_eq!((circles,helices),(1,2),"{curves:?}");
@@ -283,9 +261,8 @@ fn two_stretches_of_one_pipe_meet_round_their_circle_and_along_helices() {
             assert!(both >= 8,"{both} of a helix's points on both");
         }
     }
-    let Ssi::Curves(curves) = intersect(&first,&second,1e-9) else { unreachable!() };
-    let Some(Curve::Circle(f,_)) = curves.iter().find(|c| matches!(c,Curve::Circle(..))) else { unreachable!() };
-    let plane = Surface::Plane(*f);
+    let f = shared.expect("the circle they share");
+    let plane = Surface::Plane(f);
     let Ssi::Curves(cut) = intersect(&first,&plane,1e-9) else { panic!("not read in closed form") };
     assert!(cut.iter().any(|c| matches!(c,Curve::Circle(g,_) if gcs_core::space::distance(g.o,f.o) <= 1e-9)),"{cut:?}");
 }
@@ -309,7 +286,6 @@ fn a_point_past_a_patchs_rim_is_in_none_of_its_face() {
     let span = 0.75*TAU;
     let gcs_core::brep::geom::Surface::Blend(_,earlier) = &first.faces[fi].surface else { unreachable!() };
     let (a,b) = (Located::new(&first,1e-6),Located::new(&second,1e-6));
-    let mut read = 0;
     for i in 0..64 {
         for past in [1e-5,1e-4,1e-3] {
             // past the first's end, on the second; and short of the second's start, on the first
@@ -319,9 +295,7 @@ fn a_point_past_a_patchs_rim_is_in_none_of_its_face() {
             let q = earlier.d1([(i as f64+0.5)/64.,1.-past/span]).0;
             assert_eq!(b.face_place(si,q),Place::Out,"at {q:?}, {past} short");
             assert_eq!(a.face_place(fi,q),Place::In,"at {q:?}, {past} short");
-            read += 1;
         }
     }
-    assert_eq!(read,192);
 }
 
