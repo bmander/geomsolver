@@ -175,3 +175,26 @@ fn a_double_root_a_stretch_ends_on_is_found() {
         }
     }
 }
+
+/// **A search says why it gave up** (#780 R3, `isolate::GaveUp`): one that cannot part a stretch
+/// where the function stays nought reads past `MOST` stretches and gives up as `Most`, where its
+/// caller reads the pair another way; one under a build already past its budget gives up at its
+/// first stretch or box as `Stopped`, where its caller reads nothing more. Without either it finds
+/// its root.
+#[test]
+fn a_search_says_why_it_gave_up() {
+    use gcs_core::isolate::{roots,solve,GaveUp};
+    use gcs_core::meter::{self as meter,Budget,Meter,Stage};
+    let flat = roots(&|_| 0.,&|_| 0.,&|_,_| [1.,1.],[0.,1.],1e-15,&|_| false);
+    assert!(matches!(flat,Err(GaveUp::Most)),"{flat:?}");
+    let g = |t: f64| t-0.5;
+    let line = |x: [f64;1]| ([x[0]-0.5],[[1.]]);
+    let found = roots(&g,&|_| 1.,&|_,_| [1.,0.],[0.,1.],1e-12,&|_| false).expect("a search that stops");
+    assert!(found.len() == 1 && (found[0].at-0.5).abs() <= 1e-12,"{found:?}");
+    let m = Meter::new(Budget::UNLIMITED.with(Stage::Ray,0));
+    let stopped = meter::within(&m,|| roots(&g,&|_| 1.,&|_,_| [1.,0.],[0.,1.],1e-12,&|_| false));
+    assert!(matches!(stopped,Err(GaveUp::Stopped)),"{stopped:?}");
+    let stopped = meter::within(&m,|| solve::<1>(&line,&|_| [0.],[[0.,1.]],1e-12,&|_| false));
+    assert!(matches!(stopped,Err(GaveUp::Stopped)),"{stopped:?}");
+    assert_eq!(m.count(Stage::Ray),2,"one stretch and one box read");
+}
