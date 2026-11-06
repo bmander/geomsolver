@@ -99,6 +99,8 @@ impl Out {
         // a turned contact's meridian (#780 C3), which no entity of the standard writes: the cubic
         // through it over its span, fitted within `FIT`, its knots its own parameters
         if let Curve::Turned(t) = c { return fitted(self,c,t.span,"a turned contact's") }
+        // a slid torus's contour (#805) likewise
+        if let Curve::Slid(t) = c { return fitted(self,c,t.span,"a slid torus's") }
         let Curve::BSpline(b) = c else { unreachable!("a swept surface's curve is a profile's B-spline") };
         let ids: Vec<String> = b.poles.iter().map(|&p| format!("#{}",self.point(p))).collect();
         Ok(spline(self,b.degree,&ids,&b.knots,b.weights.as_deref()))
@@ -690,8 +692,9 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
             }
             // a family's rail or rim likewise, its parameter the rail's or the rim's; an affine image
             // of a curve (a rail under a shear); and a plane's cut of a screwed sheet
-            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) | Curve::Turned(..) => {
-                let whose = match c { Curve::SheetCut(..) => "a screwed sheet's",Curve::Turned(..) => "a turned contact's",_ => "a face family's" };
+            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) | Curve::Turned(..) | Curve::Slid(..) => {
+                let whose = match c { Curve::SheetCut(..) => "a screwed sheet's",Curve::Turned(..) => "a turned contact's",
+                    Curve::Slid(..) => "a slid torus's",_ => "a face family's" };
                 fitted(o,c,e.t,whose)?
             }
             Curve::Traced(_) => {

@@ -535,7 +535,7 @@ fn an_l_shaped_prism_turned_is_its_blocks_sweeps_united() {
 /// `built`, `tool`'s sweep under `path` cut from `blank`, read against the definition at seeded
 /// points of the blank's box: every settled point inside it in the blank and no member of the
 /// sweep, every one outside either out of the blank or a member.
-fn agrees_cut(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory) { agrees_cut_over(built,blank,tool,path,[0.,1.]) }
+pub(crate) fn agrees_cut(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory) { agrees_cut_over(built,blank,tool,path,[0.,1.]) }
 
 /// `agrees_cut` over the roll `roll`.
 fn agrees_cut_over(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {

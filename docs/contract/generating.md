@@ -538,8 +538,9 @@ membership along the whole path
 rate and speed bound by differences). No drawing lowers to pieces yet (a toolpath written as one
 is the language's `path`), so the closed class's admission reads one constant twist.
 A curved tool past these (`Unbuilt::Curved`: under a screw a round face about an axis leaning to it, or a torus; under a turn a ball across its axis, a sharp
-circle leaning to it, a torus leaning to it or a free-form face; under a slide a torus or a
-free-form face; an edge no line or circle) are refused by what they are, read before any build
+circle leaning to it, a torus leaning to it or a free-form face; under a slide a torus's face
+leaning to it that is no whole ring, or a free-form face; an edge no line or circle) are refused by
+what they are, read before any build
 (`closed::reads`); under a turn a cylinder or a cone about a leaning axis whose contact is no curve
 over the face, or whose meridian folds back along the axis, at the build's first step.
 
@@ -588,6 +589,60 @@ spans two apart near the ball's top (`…::a_ball_tilted_on_a_stem_turned_whole_
 cannot settle), never built wrong. Not yet: a drawn example agreeing with the field, a torus about a
 leaning axis under a turn, a sharp circle leaning to it.  The result is the selection's boundary with the candidates that bound nothing healed out of
 its faces (`boolean::selection`): each face as whole as the candidate's it lies on.
+
+**A ring slid at a lean to its axis (#805, #780 L1's X2 under a constant twist, `brep::slid`).** A
+constant twist keeps each tool point in contact for the whole roll or never, so what X2 leaves under
+one is a ring's two roots meeting on a face. On a torus slid along `D`, its normal `cos v ρ̂ + sin v z`
+is square to `D` where `cos v g(u) + sin v D_z = 0`, `g = D_x cos u + D_y sin u`: in the height chart
+two roots on each latitude that meet at the silhouette's top and bottom, the branch locus
+`A² + B² = C²` lying on the face; in the angle chart two smooth closed curves, `n = ±(D_z ρ̂ − g z)/
+√(D_z² + g²)`, the outer and the inner half of the tube. So the patch is read across the locus, not
+cut: each curve rational in `s = tan(u/2)` but for that root, in two halves `s ∈ [−1, 1]`, its jets
+one formula read in floats and in outward intervals (`turned::Num`; `slid::Slid`, `Curve::Slid` —
+the contact itself, or its apparent contour along `D`). Each contact swept along `D` is the cylinder
+over its contour (`Surface::Extrusion` of the contour, `ProfileEdge::Slid`), its candidate the
+contour's region extruded from short of the ring at the start pose to past it at the end
+(`Cutter::Contour`). The inner contour **folds** — cusps where the contact runs along `D`, an
+asymptotic direction of the tube's saddle — from `tan² β = (R − r)/r` (`β` the lean, first at
+`u = ±π/2`): the fold locus, refused by name (`Unbuilt::Folded` at a point of the inner contact,
+read before any build, `closed::reads`, by the contour's tangent held off nought in intervals,
+`Slid::folded`). Short of it every line along `D` through a contact point meets the ring there alone
+— the quartic's other two roots `t² + a t + b`, discriminant `8 (2R² |D_xy|² − |p|² − R² + r²)`, held
+below nought (`Slid::meets_again`) — so the ring at each end pose touches each cylinder along its
+contact there and nowhere else, in closed form (`ssi`'s `slid_meeting`, `Slid::posed`); a plane
+square to `D` meets it in the contour carried onto it, one along `D` in lines through the
+contour's crossings (isolated with the jets' interval bounds), one leaning to `D` in the contour
+sheared along `D` onto it (`affine::MappedCurve`); the two contours' cylinders stand apart; and a
+line meets it certified where it meets the contour in the plane square to `D` (`query::line_slid`).
+Only a whole ring's face is admitted at a lean: a torus face with rims (a bull-nose's round) would
+meet its neighbours' contacts tangentially at their seams, not yet read. Gates
+(`tests/swept_slid.rs`), against a volume worked apart along lines parallel to the slide — every
+such line meets the ring once or not at all short of the fold
+(`a_line_along_the_slide_meets_the_leaning_ring_at_most_once`), so each line's chord lengthened by
+`|D|` sums to `V + |D| A`, `A` the annulus between the contours, `½ ∮ (x y′ − y x′) du` of the
+contact read here in angles (exact to rounding) — and against membership and a Monte Carlo of the
+definition (each point's line back along the slide read against the ring): a ring of middle radius
+3 and tube 1 leaning 35°, slid 6 and 2 (its end poses apart and overlapping), and at 20° slid aslant
+its lean, each to 1e-9 (`a_ring_slid_at_a_lean_closes_into_its_sweep`,
+`a_ring_slid_aslant_its_lean_closes_into_its_sweep`); pushed into a block until wholly in it, the
+block less the centre's depth times `A` and half the ring, `π² R r²` (the ring's symmetry about its
+centre), to 1e-9 (`a_ring_slid_at_a_lean_stops_inside_a_block`); drawn, `solid_sweeps/leaning_ring.sv`,
+to 1e-9 with its STL agreeing with the field
+(`solid_sweeps_examples::the_ring_plunged_at_a_lean_bores_round_its_core`). The curve is held to the
+contact read apart in angles, its jets to its points' differences and its contour to the contact
+less its part along `D` (`the_slid_contact_is_where_the_ring_grazes_the_slide`), and the fold to
+`tan² β = (R − r)/r` for three proportions, the contour's speed nought at its cusp
+(`the_inner_contour_folds_where_the_slide_runs_along_an_asymptote`). Negative control: at 60°, past
+the fold, refused as `Folded` by the build and the admission alike
+(`a_ring_slid_past_its_fold_is_refused_by_name`); a ball's pipe that would fold is refused by the same
+name (`swept_loci::a_ball_screwed_tighter_than_its_radius_is_refused_by_name`). Profiled
+(`SOLVENT_SWEEP_PROFILE`): before, the ring slid 6 was refused as `Curved` in 47 µs; now it builds in
+2.9 s (slid 2, 1.8 s), every meeting of a contour's cylinder in closed form (four with the other
+contour, eight with a plane, eight with the posed ring) and every line read against it certified;
+the ring's seam circles and the contacts' own curves are read against it by the sampled search, and
+the ring at its two poses meets the planes and the other pose by the trace. Not yet: a torus face
+with rims at a lean (a bull-nose's round), whose contact meets its neighbours' at their seams, where
+their swept surfaces touch along lines; and the fold, cut where it lies.
 
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
 the blank, not a box, is the domain the candidates split, and its cells are kept where they are no

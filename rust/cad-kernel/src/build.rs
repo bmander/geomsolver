@@ -20,7 +20,10 @@ const TAU: f64 = std::f64::consts::TAU;
 #[derive(Clone,Debug)]
 pub enum ProfileEdge { Line { a: V,b: V },Arc { frame: Frame,r: f64,span: Option<[f64;2]> },Spline(Arc<BSpline>),
     /// A turned contact's meridian over its span (#780 C3), in the profile's plane: revolved only.
-    Turned(Arc<crate::turned::Turned>) }
+    Turned(Arc<crate::turned::Turned>),
+    /// A slid torus's apparent contour over its span (#805), in the profile's plane: swept along
+    /// the profile's normal only.
+    Slid(Arc<crate::slid::Slid>) }
 
 /// A planar region: an outer loop and its holes, each a closed walk of edges (listed in any
 /// order and direction).
@@ -42,6 +45,7 @@ impl Profile {
                 ProfileEdge::Spline(Arc::new(b))
             }
             ProfileEdge::Turned(t) => ProfileEdge::Turned(Arc::new(t.moved(m).expect("a rigid motion keeps a frame's hand"))),
+            ProfileEdge::Slid(t) => ProfileEdge::Slid(Arc::new(t.moved(m))),
         }).collect()).collect();
         Profile {origin:m.point(self.origin),normal:m.vector(self.normal),loops,names:self.names.clone()}
     }
@@ -112,6 +116,7 @@ impl Profile {
                         o
                     }
                     ProfileEdge::Turned(_) => return Err("a turned contact's meridian has no recipe's form".into()),
+                    ProfileEdge::Slid(_) => return Err("a slid torus's contour has no recipe's form".into()),
                 };
                 let name = self.name(l,k);
                 if !name.is_empty() { j.set("name",name.into()); }
@@ -132,6 +137,9 @@ impl Profile {
             ProfileEdge::Arc {frame,r,..} => s = s.max(norm(sub(frame.o,self.origin))+r),
             ProfileEdge::Spline(ref b) => for &q in &b.poles { s = s.max(norm(sub(q,self.origin))) },
             ProfileEdge::Turned(ref t) => for k in 0..=16 {
+                s = s.max(norm(sub(t.d2(t.span[0]+(t.span[1]-t.span[0])*k as f64/16.).0,self.origin)))
+            },
+            ProfileEdge::Slid(ref t) => for k in 0..=16 {
                 s = s.max(norm(sub(t.d2(t.span[0]+(t.span[1]-t.span[0])*k as f64/16.).0,self.origin)))
             },
         } } }
@@ -170,6 +178,7 @@ pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,
             ProfileEdge::Arc {frame,r,span} => Seg {curve:Curve::Circle(frame,r),t:span.unwrap_or([0.,TAU]),source},
             ProfileEdge::Spline(ref b) => Seg {curve:Curve::BSpline(b.clone()),t:b.domain(),source},
             ProfileEdge::Turned(ref t) => Seg {curve:Curve::Turned(t.clone()),t:t.span,source},
+            ProfileEdge::Slid(ref t) => Seg {curve:Curve::Slid(t.clone()),t:t.span,source},
         }).collect();
         if segs.iter().any(|s| (s.t[1]-s.t[0]).abs() <= tol) { return Err(format!("loop {li} has an edge of no length")) }
         let mut used = vec![false;segs.len()];
@@ -237,7 +246,7 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                 }
                 Curve::Circle(f,r) => (Surface::Cylinder(f,r),!s.forward(),s.t[0],s.t[1]),
                 // C(u) + v n: the step's tangent turned clockwise about n is its normal
-                Curve::BSpline(_) => (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
+                Curve::BSpline(_) | Curve::Slid(_) => (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
                 Curve::Turned(..) => return Err("a turned contact's meridian is turned, not swept along a line".into()),
                 Curve::Ellipse(..) | Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..)
                 | Curve::SheetCut(..) =>
@@ -347,6 +356,7 @@ pub fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
             let gone = || format!("a draft takes {} to nothing",named(s));
             out.loops[li][s.source] = match p.loops[li][s.source] {
                 ProfileEdge::Turned(_) => return Err("a turned contact's meridian is not drafted".into()),
+                ProfileEdge::Slid(_) => return Err("a slid torus's contour is not drafted".into()),
                 ProfileEdge::Line {a,b} => {
                     let (a2,b2) = if s.forward() { (start,end) } else { (end,start) };
                     if dot(sub(b2,a2),sub(b,a)) <= tol*tol { return Err(gone()) }
@@ -402,6 +412,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
         }
         ProfileEdge::Spline(ref b) => b.poles.clone(),
         ProfileEdge::Turned(ref t) => (0..=16).map(|k| t.d2(t.span[0]+(t.span[1]-t.span[0])*k as f64/16.).0).collect(),
+        ProfileEdge::Slid(ref t) => (0..=16).map(|k| t.d2(t.span[0]+(t.span[1]-t.span[0])*k as f64/16.).0).collect(),
     }).map(|q| dot(sub(q,origin),x)).fold(0.,|m: f64,v| if v.abs() > m.abs() { v } else { m });
     if far < 0. { x = scale(x,-1.); }
     let f = Frame::new(origin,z,x);
