@@ -252,10 +252,19 @@ pub fn affine_point(a: &crate::affine::Affine,p: I3) -> I3 { add3(affine_vector(
 /// An affine map's image of a vector, enclosed.
 pub fn affine_vector(a: &crate::affine::Affine,v: I3) -> I3 { std::array::from_fn(|i| dot3(c3(a.m[i]),v)) }
 
-/// A curve read exactly in a frame (`turned::Exact`), its jets in intervals.
-fn exact(c: &dyn ExactJets,t: [f64;2]) -> Patch<1> {
-    let (l,f) = c.jets(Iv::new(t[0],t[1]));
-    Patch {at:frame_at(&f,l[0]),d:[frame_dir(&f,l[1])],proved:true}
+/// A curve read exactly in a frame (`turned::Exact`), its jets in intervals: over a stretch where
+/// a reading leaves its domain (a root of an interval reaching below nought, a quotient by one
+/// holding it — an interval's overestimate over a wide stretch), its halves, eight times at most,
+/// and their hull.
+fn exact(c: &dyn ExactJets,t: [f64;2]) -> Patch<1> { exact_within(c,[t[0].min(t[1]),t[0].max(t[1])],8) }
+
+fn exact_within(c: &dyn ExactJets,[a,b]: [f64;2],depth: usize) -> Patch<1> {
+    let (l,f) = c.jets(Iv::new(a,b));
+    let p = Patch {at:frame_at(&f,l[0]),d:[frame_dir(&f,l[1])],proved:true};
+    if p.bounded() || depth == 0 || !(b > a) { return p }
+    let m = 0.5*(a+b);
+    let (x,y) = (exact_within(c,[a,m],depth-1),exact_within(c,[m,b],depth-1));
+    Patch {at:hull3(x.at,y.at),d:[hull3(x.d[0],y.d[0])],proved:true}
 }
 
 /// What `exact` reads of a `turned::Exact` curve (its generic `local` is not object safe).
@@ -327,14 +336,27 @@ impl SheetCut {
     /// and `r`: `A ∈ α'`, `A' ∈ α''/2` there (Taylor's theorem with the mean value), likewise `B`,
     /// so `u = −A/B` and `u' = −(A'B − AB')/B²`. `None` where `β` (or `B`) may vanish: the curve
     /// runs off to infinity there.
-    pub fn u_enclosed(&self,[a,b]: [f64;2]) -> Option<(Iv,Iv)> {
+    pub fn u_enclosed(&self,[a,b]: [f64;2]) -> Option<(Iv,Iv)> { self.u_within([a,b],8) }
+    /// `u_enclosed`, a stretch whose `β` is not proved off nought (an interval's overestimate over a
+    /// wide one, or a pole) read as its halves, `depth` times at most, and their hull taken.
+    fn u_within(&self,[a,b]: [f64;2],depth: usize) -> Option<(Iv,Iv)> {
+        if let Some(e) = self.u_once([a,b]) { return Some(e) }
+        if depth == 0 || !(b > a) { return None }
+        let m = 0.5*(a+b);
+        let ((u0,d0),(u1,d1)) = (self.u_within([a,m],depth-1)?,self.u_within([m,b],depth-1)?);
+        Some((u0.hull(u1),d0.hull(d1)))
+    }
+    /// `u_enclosed` over the stretch at once, or `None`.
+    fn u_once(&self,[a,b]: [f64;2]) -> Option<(Iv,Iv)> {
         let (al,be) = self.alpha_beta(Jet::at(Iv::new(a,b)));
         if !be.v.has_zero() {
             let u = -(al.v/be.v);
             let du = -((al.d*be.v-al.v*be.d)/(be.v*be.v));
             return (u.0.is_some() && du.0.is_some()).then_some((u,du))
         }
-        let r = self.held.iter().copied().min_by(|x,y| (x-0.5*(a+b)).abs().total_cmp(&(y-0.5*(a+b)).abs()))?;
+        // (only a held ruling within the stretch's reach is read so: beside a far one, halve)
+        let r = self.held.iter().copied().min_by(|x,y| (x-0.5*(a+b)).abs().total_cmp(&(y-0.5*(a+b)).abs()))
+            .filter(|&r| (r-0.5*(a+b)).abs() <= (b-a).max(1e-9))?;
         let (al,be) = self.alpha_beta(Jet::at(Iv::new(a.min(r),b.max(r))));
         let (big_a,big_b) = (al.d,be.d);
         let half = Iv::point(0.5);
