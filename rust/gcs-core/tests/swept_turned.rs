@@ -645,7 +645,7 @@ fn flat_drum_spans(a: V,z: f64) -> (f64,f64) {
 /// farthest or nearest point of a slice passes from its side onto its corner — and each piece read
 /// by Simpson's rule under `z = z₀ + (z₁ − z₀)(1 − cos πs)/2`, which takes the square-root growth at
 /// a slice's first and last height out of the integrand.
-fn flat_drum_whole(a: V) -> f64 {
+pub(crate) fn flat_drum_whole(a: V) -> f64 {
     let o = [5.,1.2,0.];
     let up = unit(sub([0.,0.,1.],scale(a,a[2])));
     let (e1,e2) = (unit(cross(a,[0.,1.,0.])),[0.,1.,0.]);

@@ -503,6 +503,28 @@ fn the_bull_nose_turned_partway_stops_inside_the_ring() {
     crate::object_builder::builds_as_exported("stopped_bullnose.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
 }
 
+/// `leaning_mill.sv` (the closed class, #780 L2: sharp circles leaning to a turn's axis): a
+/// flat-end mill, a drum of radius 1 and 3 long with its ends square to its axis, leaning 25° from
+/// upright 5 out from the turn's axis and 1.2 beside the plane through it, swung 100° wholly inside
+/// a ring of radii 3 and 8 and height 5. Its side's contacts turn into surfaces of revolution held
+/// exactly, its rims into the rings their circles sweep. Each slice of it is convex and clear of the
+/// axis, so the ring loses the mill's own `3π` and `100/360` of the volume it sweeps turned whole,
+/// its slices' radial spans worked in closed form (`swept_turned::flat_drum_whole`), to 1e-9.
+/// Built once, within 0.01 mm: the page's stepped builder is held to the same build
+/// (`object_builder::builds_as_exported`).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier: a leaning flat-end mill turned 100° on one arrangement")]
+fn the_leaning_mill_turned_partway_bores_its_channel() {
+    let e = example("leaning_mill.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert!(found.screw.is_turn(),"a turn");
+    let beta = 25f64.to_radians();
+    let swept = 3.*PI+100./360.*crate::swept_turned::flat_drum_whole([beta.sin(),0.,beta.cos()]);
+    let exact = exported_within(&e,"block",Some(Tolerance::new(0.01).unwrap()));
+    near(gcs_core::brep::props::volume(&exact.solid),275.*PI-swept,1e-9);
+    crate::object_builder::builds_as_exported("leaning_mill.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
+}
+
 /// What `ball_end_mill.sv` stated `lead` a turn leaves of its ring sector (`π/3 · 160`): in helical
 /// coordinates `(ρ, ψ, ζ = z − kψ)`, `k` the lead over `2π`, a point of the sector is removed where
 /// the helix through it meets the mill, which the swing carries wholly across the sector: `ζ`

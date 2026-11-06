@@ -32,6 +32,13 @@
 //! `(ρ² + z², z)` the meridian is an ellipse, so in `(ρ, z)` a simple closed curve wherever that
 //! ellipse is one and the circle stands clear of the axis (`Rim::simple`) — the surface a ring,
 //! held as that closed form in `w`, by the same jets.
+//!
+//! **Where the tool at an end pose meets those surfaces** (#780 L2, posed curves read round an angle
+//! `τ`): a cylinder holding a sharp circle crosses the circle's ring off the circle along one closed
+//! loop (`Crossing`), and a plane not level cuts a contact's surface of revolution (`Section`), each
+//! the root of a function that runs one way over its stretch set equal to `−cos τ`, so the curve is
+//! as smooth through its turning points as anywhere; each read in floats, its derivatives by the
+//! implicit function, its box grown from its samples.
 use crate::geom::{Box3,Frame,Rigid,V};
 use crate::util::interval::Interval;
 use crate::util::space::{dot,sub};

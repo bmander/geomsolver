@@ -537,12 +537,13 @@ membership along the whole path
 `trajectories::a_twist_after_a_placement_is_the_placement_then_the_twist` holds `Placed`'s pose,
 rate and speed bound by differences). No drawing lowers to pieces yet (a toolpath written as one
 is the language's `path`), so the closed class's admission reads one constant twist.
-A curved tool past these (`Unbuilt::Curved`: under a screw a round face about an axis leaning to it, or a torus; under a turn a ball across its axis, a sharp
-circle leaning to it turned part of a turn (#780 L2, at the build's first step) or no whole circle,
-a torus leaning to it or a free-form face; under a slide a torus or a
+A curved tool past these (`Unbuilt::Curved`: under a screw a round face about an axis leaning to it, a torus, or a sharp
+circle leaning to it (#780 L2); under a turn a ball across its axis, a torus leaning to it or a free-form face; under a slide a torus or a
 free-form face; an edge no line or circle) are refused by what they are, read before any build
 (`closed::reads`); under a turn a cylinder or a cone about a leaning axis whose contact is no curve
-over the face, or whose meridian folds back along the axis, at the build's first step.
+over the face, or whose meridian folds back along the axis, and a sharp circle through the axis or
+whose normal lies in the plane through the axis and its centre (`Rim::simple`, #780 L2), at the
+build's first step.
 
 **A round face about an axis leaning to a turn's (#780 C3, `brep::turned`).** On the ring at slant
 `v` of a cylinder or a cone about the axis `a` through `o`, its normal `cos α ρ̂ − sin α a` is
@@ -587,7 +588,7 @@ its part turn slow tier); a ball off the axis tilted on a thinner stem, turned w
 spans two apart near the ball's top (`…::a_ball_tilted_on_a_stem_turned_whole_closes_into_its_solid_of_revolution`, to
 1e-11) — turned 100° it is refused by name (`Unsettled`: a cell at its concave seam the mesh's sag
 cannot settle), never built wrong. Not yet: a drawn example agreeing with the field, a torus about a
-leaning axis under a turn (a sharp circle leaning to it, turned whole: #780 L2, below).  The result is the selection's boundary with the candidates that bound nothing healed out of
+leaning axis under a turn (a sharp circle leaning to it: #780 L2, below).  The result is the selection's boundary with the candidates that bound nothing healed out of
 its faces (`boolean::selection`): each face as whole as the candidate's it lies on.
 
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
@@ -708,39 +709,57 @@ to the velocity `v` are `±T × v`, so a point of the edge is on the fan's conta
 them lies within the arc, and the fan's sheet is the edge's own points swept: it lies on the
 surface the edge sweeps, entered whole as the candidate, and membership keeps what carries
 boundary. Its rim, where the arc's end normal is square to `v`, is where a face's own contact
-reaches the edge, and there the two sheets are tangent (G1). A vertex's cone of normals sweeps no
+reaches the edge, and there the two sheets are tangent. A vertex's cone of normals sweeps no
 sheet: whatever the normal, its image is the vertex's own path, a curve its edges' sheets meet in,
-so no candidate is entered for it. **Under a turn, a sharp circle leaning to the axis** — whole and
-convex, the faces meeting at an angle — **turns into a ring** whose meridian is read exactly
-(`turned::Rim`, `Turned::rim`, `Cutter::Turned` with a `Source::Rim`): measured from a point of the
-axis, `ρ² + z²` and `z` are affine in `(cos w, sin w)`, so in `(ρ² + z², z)` the meridian is an
-ellipse and in `(ρ, z)` a simple closed curve, refused by name (`Curved` at the circle's centre)
-unless proved so — the ellipse's axes parting, the circle's normal off the plane through the axis
-and its centre, and the circle clear of the axis over 64 interval pieces (`Rim::simple`). Its
-candidate is that meridian turned once, a ring (`build::revolve` of one closed `ProfileEdge::Turned`);
-a line meets it certified as any turned meridian (`query::line_turned`, the circle's jets read
-through `Num::sin_cos`, in floats and outward-rounded intervals), and coaxial surfaces meet it in
-circles where meridians cross or touch (`ssi`'s `Meridian::Curve`). A plane face with an edge no
-line has its sites and its contact line's stretch read off its outline (32 points an edge, the
-chord its outline cuts from the line and a twentieth more each way, none where the line misses the
-face), not off its corners, of which a drum's end has one. The gate,
-`swept_turned::a_flat_ended_drum_leaning_to_the_axis_turned_whole_closes_into_its_solid_of_revolution`
-(X4, a flat end whose corners dig past it): a drum of radius 1, 3 long, its ends square to its axis,
-leaning 25° and 1.2 beside the plane through the turn's axis, turned whole, to 1e-9 of `∫ π (ρ_max²
-− ρ_min²) dz` with each slice's radii in closed form (the ellipse's arcs between the end planes, its
-corners and its chords' feet) cut where the rims begin and end and where the side's contact reaches
-them (it agrees to about 3e-12), to membership and to a Monte Carlo of the definition; the ring read
-exactly, `…::a_sharp_circle_turned_is_a_ring_read_exactly` (its jets, intervals and simplicity,
-and a line's crossings against the ring's implicit form worked apart). **Refused by name, never
-built wrong**: turned part of a turn (`Curved` at the rim's centre,
-`…::a_flat_ended_drum_leaning_to_the_axis_turned_part_of_a_turn_is_refused_by_name`) — at each end
-pose the end's plane and the side hold the circle the ring holds, and traced, three meetings along
-one circle do not close (reduced to five candidates: two end planes, the side at an end pose, a
-side contact's turned surface and a ring). The plane meets the ring in that circle and one more of
-its radius, the side in that circle and a curve crossing it where the side's contact reaches the
-rim, each in closed form (design step 5): what the arrangement is to be given next. A
-leaning circle under a screw, an arc of a circle under a turn, and fans under K2 are the steps
-after.
+so no candidate is entered for it. **Under a turn, a sharp circle or arc of one leaning to the axis**
+— convex, the faces meeting at an angle — **turns into its circle's ring**, whose meridian is read
+exactly (`turned::Rim`, `Turned::rim`, `Cutter::Turned` with a `Source::Rim`), its sites the arc's
+own points; two arcs of one circle enter one ring. Measured from a point of the axis, `ρ² + z²` and
+`z` are affine in `(cos w, sin w)`, so in `(ρ² + z², z)` the meridian is an ellipse and in `(ρ, z)`
+a simple closed curve, refused by name (`Curved` at the circle's centre) unless proved so — the
+ellipse's axes parting and the circle clear of the axis over 64 interval pieces (`Rim::simple`).
+Its candidate is that meridian turned once, a ring (`build::revolve` of one closed
+`ProfileEdge::Turned`), periodic round its meridian as a torus is (`Turned::meridian_period`: its
+slant read round it in Newton, so a trace across the meridian's start does not stall there); a line
+meets it certified as any turned meridian (`query::line_turned`, the circle's jets read through
+`Num::sin_cos`, in floats and outward-rounded intervals), and coaxial surfaces meet it in circles
+where meridians cross or touch. **At an end pose** of a part turn, every meeting where the tool's
+faces hold the rim is exact (`ssi`): the end's plane meets the rim's ring in the rim and a second
+circle of its radius (`plane_holding_rim`); the side's cylinder in the rim and the closed loop
+crossing it where the two touch (`turned::Crossing`, read round `τ` with `σ(h) = −cos τ`,
+`side_holding_rim`), the side's surface there reaching past each rim beyond its loop; and any
+plane not level against a contact's surface of revolution (#780 C3) in its cut, read round `τ` with
+`C(v) = −cos τ` where `C` runs one way over the span (`turned::Section`, `plane_contact_section`).
+A circle and a turned curve in its plane cross where the curve meets the circle's cylinder
+(`query::curve_curve`), so their tangency where the side's contact reaches the rim is one vertex;
+a turned loop over a whole turn has its period (`Turned::period`), so its edge is laid round from
+its start, and it is crossed with the rim (`τ = π/2, 3π/2`) as two curves of one meeting are. A
+plane face with an edge no line has its sites and its contact line's stretch read off its outline
+(32 points an edge), not off its corners, of which a drum's end has one. Gates
+(`tests/swept_turned.rs`), each against a volume worked apart from the build, membership and a Monte
+Carlo of the definition: a flat-ended drum (X4: a flat end whose corners dig past it), radius 1 and
+3 long, leaning 25° and 1.2 beside the plane through the axis, turned whole, to 1e-9 of `∫ π (ρ_max²
+− ρ_min²) dz` with each slice's radii in closed form (it agrees to about 3e-12;
+`…::a_flat_ended_drum_leaning_to_the_axis_turned_whole_closes_into_its_solid_of_revolution`), and
+turned 100°, its own volume and `Θ/2π` of that, to 1e-9 (`…_turned_part_of_a_turn_closes_into_its_sweep`,
+slow tier, about 15 s); a half drum (its rims half circles) turned whole, its slices' spans an
+ellipse cut by half-planes, the integrand cut where the point holding an end changes
+(`…::a_half_drum_leaning_to_the_axis_turned_whole_closes_into_its_solid_of_revolution`; that
+reading held to the drum's, `the_worked_volume_of_a_cut_drum_is_the_flat_ended_drums`); drawn,
+`solid_sweeps/leaning_mill.sv`, the drum swung 100° inside a ring, to 1e-9 and its STL agreeing with
+the field, the page's stepped build held to the export
+(`solid_sweeps_examples::the_leaning_mill_turned_partway_bores_its_channel`, slow tier). The ring and
+the closed forms are held apart (`…::a_sharp_circle_turned_is_a_ring_read_exactly`: jets, intervals,
+simplicity, its volume `2π² r² |n · (c × z)|`, the dump, a line's crossings against the ring's
+implicit form; `…::the_meetings_where_a_flat_end_at_an_end_pose_holds_its_rim_are_exact`), and the
+two failures the part turn met kept reduced (`…::a_flat_ends_side_at_an_end_pose_and_its_rims_ring_are_arranged`,
+the loop dropped as no edge; `…::a_plane_cutting_a_rims_ring_across_its_meridians_start_closes`, the
+trace stalled at the meridian's start). **Refused by name, never built wrong**: the half drum turned
+part of a turn (`Unsettled`: where its arcs end at its cut, five candidates meet and a cell is
+thinner than the mesh's sag; `…_is_cut_right_or_refused_by_name`, slow tier); a sharp circle
+leaning to a screw's axis (`Curved` at the circle, `swept_closed::a_ball_with_a_flat_screwed_is_refused_by_name`:
+its sheet meets the ball at an end pose and the ball's pipe in curves not yet given in closed form,
+design step 5).
 
 **K2's chart, contacts read at each instant (#721 K2, `brep::swept::instant`):** under a motion no
 constant twist takes, a face of revolution's contact on each ring is still `A cos θ + B sin θ + C = 0`

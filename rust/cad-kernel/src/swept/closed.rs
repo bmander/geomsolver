@@ -44,9 +44,10 @@
 //!   closed down the axis at both ends and turned once), which the face at each end pose touches
 //!   along its contact turned there (in closed form, `ssi`'s `own_contact`); an axis in one plane
 //!   with the turn's, along its two generators in that plane, turned into hyperboloids. A sharp
-//!   circle leaning to the axis, whole and convex (#780 L2: its fan's contact lies on the surface its
-//!   points sweep), turned into a ring whose meridian is read exactly (`turned::Rim`, an ellipse in
-//!   `(ρ² + z², z)`), under a whole turn only. A whole
+//!   circle or arc of one leaning to the axis, convex (#780 L2: its fan's contact lies on the surface
+//!   its points sweep), turned into its circle's ring, whose meridian is read exactly
+//!   (`turned::Rim`, an ellipse in `(ρ² + z², z)`), the side holding it at an end pose reaching past
+//!   it beyond the loop where the two cross (`turned::Crossing`). A whole
 //!   turn takes no face at its end poses: its sweep is the tool's solid of revolution, which those
 //!   faces only touch. An edge where a round face runs on smoothly (a line into a plane, a circle
 //!   into a ball, however it leans) bounds nothing, nor does a concave one (a stem entering a ball).
@@ -117,9 +118,10 @@
 //! screw a round face about an axis leaning to it, or a torus's; under a turn a cylinder's or a
 //! cone's about a leaning axis whose contact is no curve over the face (its two roots on a ring
 //! meeting, or the curve reaching the axis) or whose meridian folds back along the axis, a ball
-//! reaching across its axis, a torus's leaning to it, a sharp circle leaning to it turned part of a
-//! turn (its end poses' faces meet its ring along the circle, in closed forms not yet given to the
-//! arrangement), an arc of one, or one through the axis; a torus's under a
+//! reaching across its axis, a torus's leaning to it, a sharp circle through it or whose normal lies
+//! in the plane through it and its centre; under a screw a sharp circle leaning to its axis (#780
+//! L2: its screwed sheet's meetings with the faces holding it at an end pose, and with a ball's pipe,
+//! not yet in closed form); a torus's under a
 //! slide leaning to its axis, a free-form face, a curve no line or circle, a leaning edge under a
 //! screw, another motion — is refused by what it is (`Unbuilt`); those are the design's later steps.
 use crate::boolean::arrangement_within;
@@ -141,9 +143,9 @@ pub enum Unbuilt {
     /// a face no plane, cylinder, cone or ball, or an edge no line or circle; under a turn, a
     /// cylinder or a cone about an axis leaning to the turn's whose contact is no curve over the
     /// face or whose meridian folds back along the axis (or crossing the turn's axis within the
-    /// face, #780 C3), a ball reaching across its axis, a torus leaning to it, or a sharp edge no line
-    /// leaning to it but a whole circle turned whole (#780 L2; part of a turn, refused at the rim's
-    /// centre); under a screw, a cylinder or a cone about an axis leaning to the screw's, a
+    /// face, #780 C3), a ball reaching across its axis, a torus leaning to it, a sharp edge no line
+    /// or circle leaning to it, or a sharp circle through the axis or symmetric about the plane through
+    /// it and its centre (#780 L2); under a screw, a cylinder or a cone about an axis leaning to the screw's, a
     /// torus, or a circle leaning to it: its envelope sheets are curved past what the candidates
     /// hold, the design's later steps.
     Curved { at: V },
@@ -239,7 +241,7 @@ pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f6
 /// moves something; every face of the tool a plane and every edge a line bounding two of them
 /// (under a slide, a face a cylinder, a cone or a ball too, and an edge a circle; under a turn, a
 /// cylinder or a cone about any axis (#780 C3), a ball, a sharp curve in a plane square to it, and a
-/// whole sharp circle leaning to it (#780 L2, built only turned whole);
+/// sharp circle or arc of one leaning to it (#780 L2);
 /// under a screw, a
 /// cylinder or a cone about an axis along it, and a ball beside planes and such a cylinder). The
 /// constant twist it is, or the first thing that is not, by what it is and where (a point of the
@@ -251,7 +253,7 @@ pub fn reads(tool: &Brep,path: &Trajectory) -> Result<crate::trajectory::Screw,U
 /// edge's two ends, two faces and their outward normals along it (the same all along a line on a
 /// plane, a cylinder or a cone), each face no plane (`round`) and each circle edge where its faces
 /// meet at an angle (`rims`): under a slide any, under a screw one square to its axis, under a turn
-/// a whole one leaning to it (#780 L2).
+/// one leaning to it, whole or an arc (#780 L2).
 struct Read { screw: crate::trajectory::Screw,faces: Vec<(V,V)>,edges: Vec<(V,V,[usize;2])>,normals: Vec<[V;2]>,
     round: Vec<usize>,rims: Vec<Rim>,
     /// Under a turn, each sharp edge no line lying in a plane square to the axis — a circle about a

@@ -426,23 +426,52 @@ it. It stays as the fast path where #699 D says so.
      with a circle for its source, its jets through `sin_cos` in floats and intervals). A flat-ended
      drum leaning 25° and turned whole closes into its solid of revolution, to 1e-9 of its slices'
      radial spans read in closed form (it agrees to about 3e-12). **Turned part of a turn it is
-     refused by name**: at each end pose the end's plane and the side both hold the circle the ring
-     holds, and three meetings along one circle, two of them traced, do not close. Both meetings
-     have closed forms, worked here for the next step and checked to rounding. On the end's plane,
-     at `c + q`, `(|x − p|², z) = m + L q + (D, 0)`, `D = |q|² − r²` the power of the circle, so the
-     ring is where `|q + D k|² = r²`, `k = L⁻¹ (1, 0)`: `D (1 + 2 q·k + D |k|²) = 0`, the circle and
-     `|q + k/|k|²|² = r²` — **a second circle of the same radius**. On the side's cylinder at the
-     pose, at `c + h a + r (cos φ e₁ + sin φ e₂)`, `(|x − p|², z) = m + r L (cos φ, sin φ) + (δ(h),
-     h a_z)`, `δ` quadratic in `h`; with `u(h) = L⁻¹ (δ, h a_z)` the ring is where `|r (cos φ, sin φ)
-     + u|² = r²`: the circle (`h = 0`), and **`cos(φ − arg u(h)) = −|u(h)| / 2r`**, two branches in
-     `φ` over each `h` where `|u| ≤ 2r`, joined where `|u| = 2r`, which cross the circle at
-     `φ = arg u′(0) ± π/2` — where the side's contact reaches the rim. Given those, the part turn
-     is the arrangement's as any other.
-   - Left after it: a leaning circle under a screw (its sweep a screwed circle's sheet, a `Blend`,
-     entered as M5's patches are); an arc of a circle under a turn (its meridian open, closed down
-     the axis where its height runs one way); a free-form edge; and under K2, where each instant's
-     velocity moves on the tool, the fan's domain `(w, t)` bounded by the two signs' zero sets, L3's
-     chart read at the edge.
+     built too**, once every meeting at its end poses was given in closed form. At each end pose the
+     end's plane and the side both hold the circle the ring holds. On the end's plane, at `c + q`,
+     `(|x − p|², z) = m + L q + (D, 0)`, `D = |q|² − r²` the power of the circle, so the ring is where
+     `|q + D k|² = r²`, `k = L⁻¹ (1, 0)`: `D (1 + 2 q·k + D |k|²) = 0`, the circle and
+     `|q + k/|k|²|² = r²` — **a second circle of the same radius** (`ssi`'s `plane_holding_rim`). On
+     the side's cylinder at the pose, at `c + h a + r (cos φ e₁ + sin φ e₂)`, `(|x − p|², z) = m +
+     r L (cos φ, sin φ) + (δ(h), h a_z)`, `δ` quadratic in `h`; with `u(h) = h v(h)`, `v = M₀ + h k`,
+     the ring is where `|r (cos φ, sin φ) + u|² = r²`: the circle (`h = 0`), and `cos(φ − arg v(h))
+     = −σ(h)`, `σ = h |v| / 2r` — **one closed loop**, read round an angle `τ` with `σ(h) = −cos τ`
+     and `ρ = cos τ v̂ + sin τ v̂⊥` wherever `σ` climbs from −1 to 1 (its rate's sign that of the
+     quadratic `2|M₀|² + 6h M₀·k + 4h²|k|²`, held above nought over the stretch), crossing the circle
+     at `τ = π/2, 3π/2` where the side touches the ring, where the side's contact reaches the rim
+     (`turned::Crossing`, `ssi`'s `side_holding_rim`). And at the point the side's contact reaches the
+     rim three surfaces meet — the end's plane, the side's contact turned (tangent there to the ring)
+     and the ring — so the plane's cut of the contact's surface is given exactly too: at the
+     meridian's height `z(v)` the plane meets the circle of radius `ρ(v)` where `cos(ψ − ψₙ) = C(v) =
+     (d − n_z z) / (|n_h| ρ)`, read round `τ` with `C(v) = −cos τ` wherever `C` runs one way over the
+     span (`turned::Section`). Two readings the part turn needed beside them: a circle and a turned
+     curve in its plane cross where the curve meets the circle's cylinder, so their tangency is one
+     vertex (`query::curve_curve`); and a closed loop (`Turned::period`) and a closed meridian
+     (`Turned::meridian_period`, read round its period in Newton) are periodic — an edge from a loop's
+     start round to its end had been dropped as no edge, and a trace across a ring's meridian's start
+     stalled where its slant was held to the span. The side's surface at an end pose reaches past
+     each rim beyond its loop, so its ends stand clear of where the side and the ring all but touch.
+     The flat-ended drum turned 100° is its own volume and `Θ/2π` of its whole turn's, to 1e-9; drawn
+     (`solid_sweeps/leaning_mill.sv`), swung inside a ring, its STL agrees with the field.
+   - **An arc of a circle**, under a turn: its points sweep part of its circle's ring, so the whole
+     ring is its candidate, read at the arc's own points; membership keeps what bounds the sweep, and
+     two arcs of one circle (a rim a Boolean split) enter one ring. A half drum (a drum cut along its
+     axis) turned whole closes into its solid of revolution, to its slices' spans worked in closed form
+     — an ellipse cut by half-planes, its extremes at its arcs' critical points, its corners, its
+     lines' crossings and feet, the integrand cut wherever the kind of point holding an end changes.
+     Turned part of a turn it is refused by name (`Unsettled`): at an end pose, where its arcs end at
+     its cut's edges, the end's plane, the cut's, a ring and the cut's lines' surfaces all pass, and
+     a cell there is thinner than the mesh's sag can settle — the vertex's path, which the cone above
+     says enters nothing, laid where five candidates meet.
+   - **A leaning circle under a screw** is refused by name (`Curved`, at the circle): its sweep is a
+     screwed circle's sheet, its disc screwed (the pipe's candidate, for any lean, where `v · n` keeps
+     one sign over the disc: `|v(c) · n| > r |ω| |n × axis|`, `v · n` being affine). Tried on a ball
+     with a flat, two meetings were traced and did not close, and want closed forms first: the ball
+     at an end pose holds the circle and meets the sheet in it and a curve read over the roll — at
+     each turn `s`, `A(s) cos w + B(s) sin w = C(s)` round the circle; and the ball's pipe meets the
+     sheet in helices, the points of one circle the screw carries onto the other, isolated in
+     `(θ₁, θ₂, t)` as two screwed lines' are (`screwed_lines_meeting`).
+   - Left after it: a free-form edge; and under K2, where each instant's velocity moves on the tool,
+     the fan's domain `(w, t)` bounded by the two signs' zero sets, L3's chart read at the edge.
 6. **Fold and branch loci** in the domain, then X2 and X5. *Designed (#780 L1).* A patch's contact
    is the zero set of `g = n · v` over its domain: the face's own `(θ, h)` (a ring's angle and its
    height) under a constant twist, which fixes the contact on the tool, or `(θ, h, t)` at each

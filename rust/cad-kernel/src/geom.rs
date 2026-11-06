@@ -1593,7 +1593,9 @@ pub enum Curve {
     /// parameter once the edge's curve is written anew (`Curve::mapped`).
     Affine(Arc<super::affine::MappedCurve>),
     /// A round face's contact under a turn, turned (#780 C3, `turned::Turned`): its meridian in the
-    /// half-plane of its frame, read in closed form, the curve's parameter the face's slant.
+    /// half-plane of its frame, read in closed form, the curve's parameter the face's slant — or a
+    /// sharp circle's, its angle (#780 L2); or, posed, a curve where the tool at an end pose meets
+    /// those surfaces, read round an angle (`turned::Crossing`, `turned::Section`).
     Turned(Arc<super::turned::Turned>),
 }
 
