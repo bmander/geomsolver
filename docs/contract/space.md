@@ -12,11 +12,20 @@ with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with 
 relation reads its place) is a directed line with no start; a drawn line reads as one. A plane
 over a line holds a hidden axis that is the line (`entities::axes_along`: intrinsic `Parallel3`,
 sensed `same` so the axis runs from the line's `p1` toward its `p2` by its row and not its seed
-([0.173], #535), and `PointOnAxis` at its `p1`, or at the end it shares with the plane's other line — each
-line's own image of it, a twin's included (`Sketch::twinned`) — where the
-plane's two `PlaneAxis` rows give way to one intrinsic `Coincident3` of origin and end — four
-rows over three unknowns would be a dependency the structural count cannot see, #88). The lift
-writes both rows (`r parallel l`, `p coincident r`).
+([0.173], #535), and `PointOnAxis` at its `p1`, or at the end where the plane's other axis meets
+it). **A plane whose two axes meet by construction stands there** (#88, #819,
+`entities::meeting`): its two `PlaneAxis` rows give way to one intrinsic `Coincident3` of its
+origin and that point — four rows over three unknowns would be a dependency the structural count
+cannot see, and read as a part's own rows (language.md) the fourth is E109.  An axis along a line
+stands on the line's two ends (each line's own image of one, a twin's included,
+`Sketch::twinned`); any other axis on the place of each frame it is `u`, `v` or normal of, built
+before the plane or held where it stands (so no plane is stood through one stood through it), the
+frame's origin its point there; and a point held at `(0, 0)` in a frame (`std.origin`) stands on
+that frame's place, two held places at one spot being one.  So `plane(u: l, v: std.y)` with `l`
+from `std.origin`, and `plane(u: std.x, v: std.y)` over a seated part's own frame, add no row past
+their unknowns; a plane already held where its axes meet (`origins_on_axes`), or standing where a
+frame does (`plane_at`), keeps what it has.  The lift writes both rows (`r parallel l`, `p
+coincident r`).
 A **plane** is `P := plane(u: r1, v: r2)` (`PlaneE { u, v, o, origin }`): right u, out u × v, up
 out × u; it owns `o` (three unknowns); members `P.u`, `P.v`, `P.origin` (a point drawn in P held at
 (0, 0)), and `P.normal` (below). **Its axes pass through its origin** (0.43, #84): `push_plane` mints two intrinsic

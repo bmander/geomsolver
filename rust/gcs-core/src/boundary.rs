@@ -272,13 +272,21 @@ impl World {
         }
         // a plane's axes are the plane's, and a point's hidden point the point's: what a lift
         // reads of the plane a point is drawn in, or of a point an instance is given, is given
-        // with them, though a row of the instance's reads it in space
+        // with them, though a row of the instance's reads it in space.  An axis is the plane's
+        // that made it, and no other's (#819): one sited of its own (named, or minted by a
+        // plane's statement and recorded with it) is its own, and one a plane was written over —
+        // a frame's `std.x`, another plane's axis — is the first plane's, so a part's plane over
+        // the axes of the frame it stands in does not make them
         let mut with: BTreeMap<EntRef, Vec<u32>> = BTreeMap::new();
+        let mut taken: BTreeSet<u32> = BTreeSet::new();
         for &e in map.of_entity.keys().filter(|e| e.kind == EntKind::Frame) {
             let f = &sk.frames[e.i()];
             let axes = f.chart.iter().flat_map(chart_axes).chain(f.joint.as_ref().map(|j| j.axis));
             for a in axes {
                 let axis = EntRef::new(EntKind::Axis, a as usize);
+                if map.of_entity.contains_key(&axis) || !taken.insert(a) {
+                    continue;
+                }
                 with.entry(e).or_default().extend(sk.own_params(axis));
             }
         }
@@ -446,7 +454,7 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
 /// is drawn in), the origin a plane stands at (not the point it stands on), the axis held through
 /// a point or along a line, a twin held on a plane or folded onto its point.  `None` for a row
 /// whose every entity is what it places.
-fn subject(c: &Constraint) -> Option<EntRef> {
+pub(crate) fn subject(c: &Constraint) -> Option<EntRef> {
     match c.kind {
         CKind::Lift | CKind::ChartLift | CKind::Coincident3 | CKind::Parallel3
         | CKind::PointOnPlane => Some(c.args[0].ent()),
