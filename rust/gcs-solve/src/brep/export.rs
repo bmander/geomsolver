@@ -200,11 +200,10 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
     }
     for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"common")] {
         for &o in operands {
-            let mut operand = part(o as usize)?;
-            // an end all but flush with a face of the body is on it, as the recipe's body has it (#836)
-            if let Some(flush) = super::flush::onto(&built,&operand,0.) { operand = flush; }
+            let operand = part(o as usize)?;
             let name = &sk.solids[o as usize].name;
-            built = super::boolean::combined(&built,&operand,op,0.)
+            // an end all but flush with a face of the body is on it, as the recipe's body has it (#836)
+            built = super::boolean::combined_written(&built,None,&operand,op,0.).map(|(b,_)| b)
                 .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{name}`: {e}",solid.name)))?;
             // the statement that left nothing, named as the document writes it (#617)
             if built.faces.is_empty() {
@@ -458,15 +457,14 @@ pub struct Sliver {
 }
 
 /// **The slivers solid `body`'s exact build holds**, said by face name and with a point (#836): a
-/// face thinner than the export's tolerance (`brep::flush::slivers`, the fabrication tolerance where
+/// face thinner than the export's tolerance (`brep::sliver::slivers`, the fabrication tolerance where
 /// none is named) or an edge shorter than it, wherever the solid stands — the STEP, a written STL and
 /// a picture each say it, where once only an STL that float32 flattened did (`flattened`). An end
 /// all but flush with a face whose walls let it move is moved onto it by the body's Booleans
 /// (`brep::flush`), so what is said here is a step the drawing holds: one end standing off the
 /// other's face by less than can be made. `None` where the solid holds none.
 pub fn slivers(sk: &Sketch,body: usize,exact: &Exact,tolerance: Option<Tolerance>) -> Option<Sliver> {
-    // a pattern's sector, whose faces carry the names
-    said_slivers(sk,body,exact.pattern.as_ref().map_or(&exact.solid,|p| p.sector()),[0.;3],tolerance)
+    said_slivers(sk,body,&exact.solid,[0.;3],tolerance)
 }
 
 /// `slivers` of solid `i` as the drawing holds its exact B-rep (`Sketch::exact_solid`; a swept
@@ -479,17 +477,17 @@ pub fn slivers_drawn(sk: &Sketch,i: usize,tolerance: Option<Tolerance>) -> Optio
 
 /// `slivers` of `b`, a build of solid `body` standing `at` (mm) from where its B-rep is drawn.
 fn said_slivers(sk: &Sketch,body: usize,b: &Brep,at: [f64;3],tolerance: Option<Tolerance>) -> Option<Sliver> {
-    use super::flush::Thin;
+    use super::sliver::Thin;
     use crate::vocab::all_of;
     let bar = tolerance.unwrap_or(Tolerance::FABRICATION).millimetres;
-    let found = super::flush::slivers(b,bar);
+    let found = super::sliver::slivers(b,bar);
     let first = found.first()?;
     let name = |f: usize| face_name(&b.faces,f as u32);
     let names = |of: &[usize]| all_of(&of.iter().map(|&f| name(f)).collect::<Vec<_>>());
     let solid = crate::vocab::public_path(&sk.solids[body].name);
     let faces = found.iter().filter(|s| matches!(s.thin,Thin::Face(_))).count();
     let edges = found.len()-faces;
-    let count = |n: usize,one: &str| if n == 1 { format!("a{} {one}",if one.starts_with('e') { "n" } else { "" }) } else { format!("{n} {one}s") };
+    let count = |n: usize,one: &str| if n == 1 { crate::model::article(one) } else { format!("{n} {one}s") };
     let against = format!("the export's {}",length_text(bar));
     let counted = match (faces,edges) {
         (0,e) => format!("{} shorter than {against}",count(e,"edge")),

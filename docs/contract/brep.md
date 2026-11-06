@@ -603,8 +603,9 @@ check. So a shaper's run of 270 bites against a blank (`bench bites`, in `make b
 where it took 21.8; what remains grows with the blank's two faces every bite meets (each of 744 edges
 by the end, traced again at every bite). `brep::a_run_of_cuts_hands_its_far_faces_on` is the gate.
 **An end all but flush with a face is on it** (#836, `brep::flush`): before a body's written
-operand is combined with the solid (`recipe::body`, and the export's `combine` over swept
-material; never a round's or a chamfer's, built on the faces already), each planar face of the
+operand is combined with the solid (`boolean::combined_written`, which `recipe::body` and the
+export's `combine` over swept material call, at the Boolean's own tolerance; never a round's or a
+chamfer's, built on the faces already, `combined_known`), each planar face of the
 operand standing parallel to a plane of a face of the solid near it, farther than the Boolean's
 tolerance but within `FLUSH` (a thousand) of them — a part in a million of the two solids' size,
 wherever they stand — is moved onto the nearest such plane, with every face of the operand on its
@@ -615,7 +616,7 @@ whose walls are anything else stays as drawn, as does every end farther off. So 
 nanometres past another's floor is cut on it and leaves no strip of wall
 (`brep_flush::an_end_within_reach_of_a_face_is_moved_onto_it`,
 `an_end_whose_walls_lean_is_left_where_it_is`, `brep_export::an_end_all_but_flush_with_a_face_is_cut_on_it`).
-**A sliver is found by its boundary** (`flush::slivers`): a face thinner than a bar somewhere — two
+**A sliver is found by its boundary** (`sliver::slivers`): a face thinner than a bar somewhere — two
 points of its boundary nearer than the bar, on edges sharing no vertex (no corner is a sliver,
 however sharp: a round's run-out meets its fill's cap tangentially, and a seam cut in pieces passes
 a vertex twice), where the boundary between them runs more than four bars and sixteen times their

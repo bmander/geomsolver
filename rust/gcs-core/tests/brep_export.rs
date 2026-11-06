@@ -337,12 +337,7 @@ base := solid(block)
 #[test]
 fn a_sliver_float32_flattens_is_refused_naming_its_faces_and_where() {
     let say = Say {stage:&|_| {},mark:&|_| {}};
-    let stl = |z0: f64,step: f64| {
-        let sk = stepped_pockets(z0,step);
-        let body = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "base").unwrap();
-        let exact = export::exact(&sk,body,None,None,&say).unwrap();
-        export::stl(&sk,body,&exact,None,&say)
-    };
+    let stl = |z0: f64,step: f64| { let (sk,body,exact) = stepped_base(z0,step); export::stl(&sk,body,&exact,None,&say) };
     let e = stl(10000.,2e-4).err().expect("a strip float32 flattens is refused");
     assert_eq!(e.stage,gcs_core::solid::export::Stage::Stl,"{e}");
     for said in ["`base`: ","STL triangles have no area as written, on `bore.","no area once float32 rounds its corners",

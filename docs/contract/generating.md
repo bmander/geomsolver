@@ -110,7 +110,7 @@ and, under the bar, the likely sliver of two cuts ending all but flush. Nothing 
 dropped opens the shell (`brep_export.rs::a_sliver_float32_flattens_is_refused_naming_its_faces_and_where`).
 **A sliver the B-rep holds is said wherever it stands** (#836, `brep::export::slivers`): a face of
 the built solid thinner than the export's tolerance somewhere (the fabrication tolerance where none
-is named), or an edge shorter than it (`brep::flush::slivers`), is said beside every file written of
+is named), or an edge shorter than it (`brep::sliver::slivers`), is said beside every file written of
 it — the STEP, a written STL, `--step-assembly` for each part, and `--png` of a solid drawn from
 its exact build (`slivers_drawn`) — as `solventc: PATH: …`, in the core's words: the solid, how many
 faces and edges, the first by name and how thin, the faces it is thin between, a point on it (the

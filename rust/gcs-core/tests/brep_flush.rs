@@ -3,10 +3,11 @@
 //! parallel plane of the solid onto that plane, exactly, where the face's walls run along its
 //! normal (`flush::flushed`), so no strip is left between them; and what the B-rep holds thinner
 //! than a bar — a face somewhere, an edge — is found by its boundary, not by where it stands
-//! (`flush::slivers`).
-use gcs_core::brep::boolean::{combined,Op};
+//! (`sliver::slivers`).
+use gcs_core::brep::boolean::{combined,combined_written,Op};
 use gcs_core::brep::build::{prism,revolve,Profile,ProfileEdge};
-use gcs_core::brep::flush::{flushed,onto,slivers,Thin,FLUSH};
+use gcs_core::brep::flush::{flushed,FLUSH};
+use gcs_core::brep::sliver::{slivers,Thin};
 use gcs_core::brep::geom::{tolerance,Frame,V};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::Brep;
@@ -43,12 +44,13 @@ fn an_end_within_reach_of_a_face_is_moved_onto_it() {
     let solid = slotted();
     let tol = tolerance(solid.size());
     let reach = FLUSH*tol;
-    let flush = |z: f64| [rod([2.,2.,0.],0.5,[-1.,z]),block([1.5,0.5,-1.],[2.5,3.5,z])];
-    for (k,flush_end) in flush(2.).into_iter().enumerate() {
+    let end = |k: usize,z: f64| if k == 0 { rod([2.,2.,0.],0.5,[-1.,z]) } else { block([1.5,0.5,-1.],[2.5,3.5,z]) };
+    for k in 0..2 {
+        let flush_end = end(k,2.);
         let want = combined(&solid,&flush_end,Op::Cut,0.).unwrap();
         assert!(flushed(&solid,&flush_end,tol).is_none(),"an end on the ceiling already stays");
         for off in [1e-8,-1e-8,0.5*reach,-0.5*reach] {
-            let operand = &flush(2.+off)[k];
+            let operand = &end(k,2.+off);
             let moved = flushed(&solid,operand,tol).unwrap_or_else(|| panic!("{k}: an end {off:e} off the ceiling is moved"));
             moved.check(1e-9).unwrap();
             // every corner that stood at the end stands on the ceiling
@@ -58,11 +60,14 @@ fn an_end_within_reach_of_a_face_is_moved_onto_it() {
             cut.check(1e-8).unwrap();
             assert_eq!((cut.faces.len(),cut.edges.len()),(want.faces.len(),want.edges.len()),"{k} {off:e}");
             close(volume(&cut),volume(&want),1e-12);
-            assert!(onto(&solid,operand,0.).is_some(),"the body's Boolean reads it at its own tolerance");
+            // the body's Boolean of the operand as drawn reads it at its own tolerance
+            let written = combined_written(&solid,None,operand,Op::Cut,0.).unwrap().0;
+            assert_eq!(written.faces.len(),want.faces.len(),"{k} {off:e}");
+            close(volume(&written),volume(&want),1e-12);
         }
         // drawn apart by more than the reach: as drawn
-        assert!(flushed(&solid,&flush(2.+2.*reach)[k],tol).is_none());
-        assert!(flushed(&solid,&flush(2.+1e-3)[k],tol).is_none());
+        assert!(flushed(&solid,&end(k,2.+2.*reach),tol).is_none());
+        assert!(flushed(&solid,&end(k,2.+1e-3),tol).is_none());
     }
 }
 

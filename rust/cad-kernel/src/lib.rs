@@ -15,6 +15,7 @@ pub mod nurbs;
 pub mod topo;
 pub mod boolean;
 pub mod flush;
+pub mod sliver;
 pub mod complex;
 pub mod meeting;
 pub mod tolerant;

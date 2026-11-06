@@ -498,7 +498,22 @@ impl Known {
 /// the result's are.
 pub fn combined_known(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op,floor: f64)
     -> Result<(Brep,Known),super::KernelError> {
+    combined_at(solid,known,operand,op,super::geom::tolerance_over(solid.size().max(operand.size()),floor))
+}
+
+/// `combined_known` of an operand a body's statement writes (#836): each of its planar faces all
+/// but flush with a plane of the solid moved onto it first (`flush::flushed`), at the tolerance the
+/// Boolean is made to, so the two are one plane and leave no sliver. What reads the faces a body
+/// makes (a round's fill and cut) is built on them already, and is combined by `combined_known`.
+pub fn combined_written(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op,floor: f64)
+    -> Result<(Brep,Known),super::KernelError> {
     let tol = super::geom::tolerance_over(solid.size().max(operand.size()),floor);
+    let flush = super::flush::flushed(solid,operand,tol);
+    combined_at(solid,known,flush.as_ref().unwrap_or(operand),op,tol)
+}
+
+/// `combined_known` at `tol`.
+fn combined_at(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op,tol: f64) -> Result<(Brep,Known),super::KernelError> {
     let (mut out,mut known) = boolean_known(solid,known,operand,op,tol)?;
     // material touching itself along a line (two rounds of separate statements meeting where the
     // body they each read leaves them so, #218): each such edge held twice, a solid's boundary

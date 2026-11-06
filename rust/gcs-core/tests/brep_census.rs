@@ -511,6 +511,7 @@ fn exact_census() {
 fn sliver_census() {
     use gcs_core::brep::{export, sweep::Say};
     let statics = std::env::var("SLIVER_STATIC").is_ok();
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     let (mut read, mut said) = (0, 0);
     for (name, e) in fixtures::examples() {
         let Some(e) = e else { continue };
@@ -521,7 +522,6 @@ fn sliver_census() {
         for i in gcs_core::overview::objects(sk) {
             let sliver = if sk.is_swept(i) {
                 if statics { continue; }
-                let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
                 let Ok(x) = export::exact(sk, i, None, None, &say) else { continue };
                 export::slivers(sk, i, &x, None)
             } else {
