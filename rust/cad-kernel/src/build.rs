@@ -19,10 +19,10 @@ const TAU: f64 = std::f64::consts::TAU;
 /// ends are its first and last poles.
 #[derive(Clone,Debug)]
 pub enum ProfileEdge { Line { a: V,b: V },Arc { frame: Frame,r: f64,span: Option<[f64;2]> },Spline(Arc<BSpline>),
-    /// A curve read exactly in a frame over `span`, in the profile's plane (`turned::Exact`): a
-    /// turned contact's meridian (#780 C3), revolved only, or a slid torus's apparent contour
-    /// (#805), swept along the profile's normal only — each refused by the other.
-    Exact { curve: Curve,span: [f64;2] } }
+    /// A curve read exactly in a frame over its own span, in the profile's plane (`turned::Exact`,
+    /// `Curve::exact_span`): a turned contact's meridian (#780 C3), revolved only, or a slid torus's
+    /// apparent contour (#805), swept along the profile's normal only — each refused by the other.
+    Exact(Curve) }
 
 /// A planar region: an outer loop and its holes, each a closed walk of edges (listed in any
 /// order and direction).
@@ -43,7 +43,7 @@ impl Profile {
                 b.poles = b.poles.iter().map(|p| m.point(*p)).collect();
                 ProfileEdge::Spline(Arc::new(b))
             }
-            ProfileEdge::Exact {curve,span} => ProfileEdge::Exact {curve:curve.moved(m),span:*span},
+            ProfileEdge::Exact(curve) => ProfileEdge::Exact(curve.moved(m)),
         }).collect()).collect();
         Profile {origin:m.point(self.origin),normal:m.vector(self.normal),loops,names:self.names.clone()}
     }
@@ -113,7 +113,7 @@ impl Profile {
                         if let Some(weights) = &b.weights { o.set("weights",Json::Arr(weights.iter().map(|&x| x.into()).collect())); }
                         o
                     }
-                    ProfileEdge::Exact {ref curve,..} => return Err(format!("a {} curve has no recipe's form",curve.kind())),
+                    ProfileEdge::Exact(ref curve) => return Err(format!("a {} curve has no recipe's form",curve.kind())),
                 };
                 let name = self.name(l,k);
                 if !name.is_empty() { j.set("name",name.into()); }
@@ -133,12 +133,19 @@ impl Profile {
             ProfileEdge::Line {a,b} => s = s.max(norm(sub(a,self.origin))).max(norm(sub(b,self.origin))),
             ProfileEdge::Arc {frame,r,..} => s = s.max(norm(sub(frame.o,self.origin))+r),
             ProfileEdge::Spline(ref b) => for &q in &b.poles { s = s.max(norm(sub(q,self.origin))) },
-            ProfileEdge::Exact {ref curve,span} => for k in 0..=16 {
-                s = s.max(norm(sub(curve.point(span[0]+(span[1]-span[0])*k as f64/16.),self.origin)))
-            },
+            ProfileEdge::Exact(ref curve) => for q in exact_points(curve) { s = s.max(norm(sub(q,self.origin))) },
         } } }
         s.max(1e-300)
     }
+}
+
+/// An exact profile edge's span (`Curve::exact_span`; a profile holds no other curve as one).
+fn exact_span(c: &Curve) -> [f64;2] { c.exact_span().expect("a curve read exactly in a frame") }
+
+/// Seventeen points evenly along an exact profile edge's span.
+fn exact_points(c: &Curve) -> Vec<V> {
+    let [a,b] = exact_span(c);
+    (0..=16).map(|k| c.point(a+(b-a)*k as f64/16.)).collect()
 }
 
 /// One step of a walk: a curve from `t[0]` to `t[1]` (either way round), and which of its loop's
@@ -171,7 +178,7 @@ pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,
             }
             ProfileEdge::Arc {frame,r,span} => Seg {curve:Curve::Circle(frame,r),t:span.unwrap_or([0.,TAU]),source},
             ProfileEdge::Spline(ref b) => Seg {curve:Curve::BSpline(b.clone()),t:b.domain(),source},
-            ProfileEdge::Exact {ref curve,span} => Seg {curve:curve.clone(),t:span,source},
+            ProfileEdge::Exact(ref curve) => Seg {curve:curve.clone(),t:exact_span(curve),source},
         }).collect();
         if segs.iter().any(|s| (s.t[1]-s.t[0]).abs() <= tol) { return Err(format!("loop {li} has an edge of no length")) }
         let mut used = vec![false;segs.len()];
@@ -348,7 +355,7 @@ pub fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
             let (start,end) = (corners[k],corners[(k+1)%m]);
             let gone = || format!("a draft takes {} to nothing",named(s));
             out.loops[li][s.source] = match p.loops[li][s.source] {
-                ProfileEdge::Exact {ref curve,..} => return Err(format!("a {} curve is not drafted",curve.kind())),
+                ProfileEdge::Exact(ref curve) => return Err(format!("a {} curve is not drafted",curve.kind())),
                 ProfileEdge::Line {a,b} => {
                     let (a2,b2) = if s.forward() { (start,end) } else { (end,start) };
                     if dot(sub(b2,a2),sub(b,a)) <= tol*tol { return Err(gone()) }
@@ -403,14 +410,17 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
             (0..=16).map(|k| { let t = a0+(a1-a0)*k as f64/16.; add(frame.o,add(scale(frame.x,r*t.dcos()),scale(frame.y,r*t.dsin()))) }).collect()
         }
         ProfileEdge::Spline(ref b) => b.poles.clone(),
-        ProfileEdge::Exact {ref curve,span} => (0..=16).map(|k| curve.point(span[0]+(span[1]-span[0])*k as f64/16.)).collect(),
+        ProfileEdge::Exact(ref curve) => exact_points(curve),
     }).map(|q| dot(sub(q,origin),x)).fold(0.,|m: f64,v| if v.abs() > m.abs() { v } else { m });
     if far < 0. { x = scale(x,-1.); }
     let f = Frame::new(origin,z,x);
     let rz = |q: V| { let l = f.local(q); [l[0],l[2]] };
     let walks = walks(p,&rz)?;
     for s in walks.iter().flatten() {
-        if matches!(s.curve,Curve::Slid(_)) { return Err("a slid torus's contour is swept along a line, not turned".into()) }
+        // (what a revolution turns: a line, a circle, a spline, a turned contact's meridian)
+        if !matches!(s.curve,Curve::Line {..} | Curve::Circle(..) | Curve::BSpline(_) | Curve::Turned(_)) {
+            return Err(format!("a {} curve is not turned",s.curve.kind()))
+        }
         if s.samples(64).chain([s.end()]).any(|q| rz(q)[0] < -tol) { return Err("a revolution's profile crosses its axis".into()) }
     }
     let turn = Rigid::turn(origin,z,theta);
@@ -435,7 +445,8 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                 Curve::Line {..} => Swept::Cone,
                 Curve::Circle(c,_) if rz(c.o)[0].abs() <= tol => Swept::Sphere,
                 Curve::BSpline(_) | Curve::Turned(_) => Swept::Spline,
-                _ => Swept::Torus,
+                Curve::Circle(..) => Swept::Torus,
+                _ => unreachable!("refused above"),
             }
         }).collect();
         // the circle each profile vertex off the axis turns through

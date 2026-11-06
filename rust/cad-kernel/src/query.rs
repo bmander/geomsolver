@@ -643,7 +643,6 @@ fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surfac
     let [s0,s1] = m.span;
     let (s0,s1) = (s0.min(s1),s0.max(s1));
     let width = 1e-12*(s1-s0).max(1e-300);
-    let most = |j: Jet<Iv>| match (j.d.most(),j.dd.most()) { (Some(x),Some(y)) => [x,y],_ => [f64::INFINITY;2] };
     let mut out: Vec<(f64,bool)> = Vec::new();
     if dz.abs() > 1e-12*speed {
         // G of the meridian's jet, its radius read squared, in floats or in intervals
@@ -655,7 +654,7 @@ fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surfac
         let jet = |s: f64| big(m.contact.meridian2(Jet::at(s)),k);
         let t_of = |s: f64| (m.contact.meridian2(Jet::at(s))[1].v-q[2])/dz;
         let at = |s: f64| add(p,scale(d,t_of(s)));
-        let bound = |x: f64,y: f64| most(big(m.contact.meridian2(Jet::at(Iv::new(x,y))),k));
+        let bound = |x: f64,y: f64| big(m.contact.meridian2(Jet::at(Iv::new(x,y))),k).most();
         for r in crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|s| surface.implicit(at(s)).abs() <= tol)? {
             out.push((t_of(r.at),r.touch));
         }
@@ -663,7 +662,7 @@ fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surfac
         // a level line: the circles at its height, each met as a chord
         let (flat,from) = (g.dir([e[0],e[1],0.]),g.dir([q[0],q[1],0.]));
         let jet = |s: f64| m.contact.meridian2(Jet::at(s))[1]-Jet::of(q[2]);
-        let bound = |x: f64,y: f64| most(m.contact.meridian2(Jet::at(Iv::new(x,y)))[1]);
+        let bound = |x: f64,y: f64| m.contact.meridian2(Jet::at(Iv::new(x,y)))[1].most();
         for r in crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|_| false)? {
             let rho = m.contact.meridian(Jet::at(r.at))[0].v;
             if let Meets::At(found) = line_chord(from,flat,rho.abs(),tol) { out.extend(found) }
@@ -674,26 +673,26 @@ fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surfac
 
 /// **A line against the cylinder a slid torus's contact sweeps** (#805, `slid::Slid` read as its
 /// apparent contour, extruded along the slide): it meets the cylinder where the contour crosses the
-/// plane holding the line and the slide (`Slid::crossings`, isolated with the contour's jets
+/// plane holding the line and the slide (`Exact::crossings`, isolated with the contour's jets
 /// bounded in outward intervals), its parameter there the line's at that point seen along the
 /// slide. A line along the slide is a ruling or misses: `NoForm` where it stands within the
 /// tolerance of the contour (`meets` has read a ruling as along it already), none where it stands
 /// clear. `NoForm` for the contact itself, read as no contour.
 fn line_slid(p: V,d: V,h: &crate::slid::Slid,surface: &Surface,tol: f64) -> Certified {
     use crate::turned::Exact;
+    use crate::util::space::{cross,sub};
     if !h.contour { return Err(Uncertified::NoForm) }
     let w = h.slide();
-    let flat = |v: V| crate::util::space::sub(v,scale(w,dot(v,w)));
+    let flat = |v: V| sub(v,scale(w,dot(v,w)));
     let e = flat(d);
     let ee = dot(e,e);
     if ee <= 1e-24*dot(d,d) {
         let foot = h.d2(h.inverse(p)).0;
-        return if distance(flat(crate::util::space::sub(foot,p)),[0.;3]) > tol { Ok(Meets::At(Vec::new())) } else { Err(Uncertified::NoForm) }
+        return if norm(flat(sub(foot,p))) > tol { Ok(Meets::At(Vec::new())) } else { Err(Uncertified::NoForm) }
     }
     // the line's parameter at the contour's point `x`, seen along the slide
-    let t_of = |s: f64| dot(flat(crate::util::space::sub(h.d2(s).0,p)),e)/ee;
-    let n = crate::util::space::cross(w,scale(e,1./ee.sqrt()));
-    let found = h.crossings(p,n,&|s| surface.implicit(add(p,scale(d,t_of(s)))).abs() <= tol)?;
+    let t_of = |s: f64| dot(flat(sub(h.d2(s).0,p)),e)/ee;
+    let found = h.crossings(p,cross(w,scale(e,1./ee.sqrt())),&|s| surface.implicit(add(p,scale(d,t_of(s)))).abs() <= tol)?;
     Ok(Meets::At(found.into_iter().map(|r| (t_of(r.at),r.touch)).collect()))
 }
 

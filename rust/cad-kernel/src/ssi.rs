@@ -487,14 +487,16 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:*d}]),
                 Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
                 // a slid torus's contour (#805) carried along the slide onto the plane
-                Curve::Slid(h) => Ssi::Curves(vec![Curve::Slid(std::sync::Arc::new(h.at(lift(h.frame.o),true)))]),
+                Curve::Slid(h) => Ssi::Curves(vec![Curve::Slid(std::sync::Arc::new(h.at(lift(h.frame.o),h.contour)))]),
                 _ => Ssi::Traced,
             }
         }
         (Surface::Extrusion(e,c),ref s) | (ref s,Surface::Extrusion(e,c))
             if let Some(curves) = extruded(&e,&c,s,tol) => Ssi::Curves(curves),
-        (Surface::Extrusion(_,c),ref s) | (ref s,Surface::Extrusion(_,c))
-            if let Curve::Slid(h) = &*c && let Some(curves) = slid_meeting(h,s,tol) => Ssi::Curves(curves),
+        // (two slid contours' cylinders read once, the first against the second)
+        (Surface::Extrusion(_,c),ref s) if let Curve::Slid(h) = &*c && let Some(curves) = slid_meeting(h,s,tol) => Ssi::Curves(curves),
+        (ref s,Surface::Extrusion(_,c)) if !matches!(s,Surface::Extrusion(..)) && let Curve::Slid(h) = &*c
+            && let Some(curves) = slid_meeting(h,s,tol) => Ssi::Curves(curves),
         (Surface::Plane(pl),Surface::BSpline(_,net)) | (Surface::BSpline(_,net),Surface::Plane(pl)) => {
             // a sheet one linear span across, its second row its first moved by one step `d` (a
             // curve swept along a line, as a generating sweep's sheet is), and a plane the step

@@ -32,30 +32,27 @@ impl Ring {
         let (s,c) = beta.sin_cos();
         Ring {big,small,frame:Frame {o:[0.;3],x:[c,0.,-s],y:[0.,1.,0.],z:[s,0.,c]}}
     }
-    fn local(&self,p: V) -> V { self.frame.local(p) }
-    fn at(&self,l: V) -> V { self.frame.at(l) }
     /// Below nought inside the solid ring.
-    fn inside(&self,p: V) -> f64 { let [x,y,z] = self.local(p); (x.hypot(y)-self.big).hypot(z)-self.small }
+    fn inside(&self,p: V) -> f64 { let [x,y,z] = self.frame.local(p); (x.hypot(y)-self.big).hypot(z)-self.small }
     /// **The contact** with the slide `d` (unit), apart from `brep::slid`: at the angle `u` round
     /// the axis, the angle `v` round the tube where the normal `(cos v ρ̂, sin v)` is square to `d`,
     /// `tan v = −g/d_z`, `g = d_x cos u + d_y sin u` — the outer root (`cos v > 0`) or the inner —
     /// and its rate in `u`.
     fn contact(&self,d: V,u: f64,outer: bool) -> (V,V) {
-        let dl = self.local(d);
+        let dl = self.frame.local(d);
         let (su,cu) = u.sin_cos();
         let (g,dg) = (dl[0]*cu+dl[1]*su,dl[1]*cu-dl[0]*su);
         let v = (-g/dl[2]).atan()+if outer { 0. } else { PI };
         let dv = -dg*dl[2]/(dl[2]*dl[2]+g*g);
         let (sv,cv) = v.sin_cos();
         let (reach,dreach) = (self.big+self.small*cv,-self.small*sv*dv);
-        (self.at([reach*cu,reach*su,self.small*sv]),self.at([dreach*cu-reach*su,dreach*su+reach*cu,self.small*cv*dv]))
+        (self.frame.at([reach*cu,reach*su,self.small*sv]),self.frame.at([dreach*cu-reach*su,dreach*su+reach*cu,self.small*cv*dv]))
     }
     /// The area within its contact's apparent contour along `d`, outer or inner: `½ ∮ (x y′ − y x′)
     /// du` in a frame square to `d`, by the trapezoid rule over 512 angles (exact to rounding for a
     /// smooth closed curve).
     fn contour_area(&self,d: V,outer: bool) -> f64 {
-        let e1 = unit(cross(d,if d[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] }));
-        let e2 = cross(d,e1);
+        let (e1,e2) = gcs_core::space::across(d);
         (0..512).map(|k| {
             let (p,dp) = self.contact(d,TAU*k as f64/512.,outer);
             dot(p,e1)*dot(dp,e2)-dot(p,e2)*dot(dp,e1)
@@ -109,9 +106,9 @@ fn the_slid_contact_is_where_the_ring_grazes_the_slide() {
                 let s = -1.+k as f64/10.;
                 let (x,dx,ddx) = h.d2(s);
                 assert!(ring.inside(x).abs() <= 1e-12,"on the ring: {}",ring.inside(x));
-                let l = ring.local(x);
+                let l = ring.frame.local(x);
                 let rho = l[0].hypot(l[1]);
-                let n = ring.at([l[0]/rho*(rho-3.),l[1]/rho*(rho-3.),l[2]]);
+                let n = ring.frame.at([l[0]/rho*(rho-3.),l[1]/rho*(rho-3.),l[2]]);
                 assert!(dot(n,d).abs() <= 1e-12,"square to the slide: {}",dot(n,d));
                 let u = l[1].atan2(l[0]);
                 assert!(norm(sub(x,ring.contact(d,u,outer).0)) <= 1e-12,"the contact read in angles");
@@ -167,16 +164,6 @@ fn a_line_along_the_slide_meets_the_leaning_ring_at_most_once() {
     }
 }
 
-/// `built` read against membership at seeded points of its box (`swept_closed::agrees`), and against
-/// the sweep's definition sampled at `n` points (`swept`) within four standard errors of its volume.
-fn held(built: &gcs_core::brep::topo::Brep,ring: &Ring,tool: &gcs_core::brep::topo::Brep,d: V,n: usize) {
-    let path = slide(d);
-    crate::swept_closed::agrees(built,tool,&path);
-    let (lo,hi) = built.bounds();
-    let (sampled,error) = crate::swept_closed::monte_carlo(lo.map(|x| x-0.1),hi.map(|x| x+0.1),n,805,&|p| swept(ring,d,p));
-    assert!((sampled-volume(built)).abs() <= 4.*error,"sampled {sampled} ± {error} against {}",volume(built));
-}
-
 /// **A ring slid at a lean closes into its sweep** (#805's gate, built alone): a ring of middle
 /// radius 3 and tube 1, its axis leaning 35° from the slide, slid 6, its two end poses apart. Its
 /// sweep is the ring at both end poses and its two contacts swept into the cylinders over their
@@ -200,14 +187,20 @@ fn a_ring_slid_aslant_its_lean_closes_into_its_sweep() {
 }
 
 /// The ring of middle radius 3 and tube 1 leaning `lean` degrees from `z`, slid by `d`, built alone
-/// and held to `V + |D| A` within 1e-9, to membership and to the definition sampled.
+/// and held to `V + |D| A` within 1e-9, to membership at seeded points of its box
+/// (`swept_closed::agrees`), and to the sweep's definition read at 20000 points (`swept`) within four
+/// standard errors of its volume.
 fn slid_closes(lean: f64,d: V) {
     let ring = Ring::leaning(3.,1.,lean.to_radians());
     let tool = torus([0.;3],ring.frame.z,3.,1.).unwrap();
     let built = closed(&tool,&slide(d),[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("slid {d:?}: {e:?}"));
     let expected = ring.volume()+norm(d)*ring.annulus(unit(d));
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"slid {d:?}: {} against {expected}",volume(&built));
-    held(&built,&ring,&tool,d,20000);
+    let path = slide(d);
+    crate::swept_closed::agrees(&built,&tool,&path);
+    let (lo,hi) = built.bounds();
+    let (sampled,error) = crate::swept_closed::monte_carlo(lo.map(|x| x-0.1),hi.map(|x| x+0.1),20000,805,&|p| swept(&ring,d,p));
+    assert!((sampled-volume(&built)).abs() <= 4.*error,"sampled {sampled} ± {error} against {}",volume(&built));
 }
 
 /// What a ring of middle radius `big` and tube `small`, its axis leaning `beta` from upright, pushed
@@ -234,7 +227,7 @@ fn a_ring_slid_past_its_fold_is_refused_by_name() {
         match refused {
             Err(Unbuilt::Folded {at}) => {
                 assert!(ring.inside(at).abs() <= 1e-9,"a point of the ring: {at:?}");
-                let l = ring.local(at);
+                let l = ring.frame.local(at);
                 assert!(l[0].hypot(l[1]) < 3.,"of its inner contact: {at:?}");
             }
             other => panic!("refused by name as folded, not {:?}",other.err()),

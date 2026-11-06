@@ -102,7 +102,7 @@ fn rcurve(j: &Json) -> Result<Curve,String> {
             Curve::Turned(Arc::new(crate::turned::Turned {frame:rframe(field(j,"frame")?)?,contact,span:[span[0],span[1]],posed})) }
         "slid" => { let span = rreals(field(j,"span")?);
             let contact = crate::slid::Contact {big:num(j,"big")?,small:num(j,"small")?,d:rv3(field(j,"d")?),side:num(j,"side")?};
-            let contour = j.get("contour").is_some_and(|p| p.as_bool());
+            let contour = field(j,"contour")?.as_bool();
             Curve::Slid(Arc::new(crate::slid::Slid {frame:rframe(field(j,"frame")?)?,contact,span:[span[0],span[1]],contour})) }
         k => return Err(format!("sweep dump: a curve of kind `{k}`")),
     })

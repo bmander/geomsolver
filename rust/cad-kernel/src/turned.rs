@@ -86,6 +86,12 @@ impl<T: Num> Jet<T> {
     }
 }
 
+impl Jet<Iv> {
+    /// The most magnitude its first and second derivatives hold, unbounded where a reading left its
+    /// domain: what a root's isolation bounds its function by (`util::isolate::roots`).
+    pub fn most(self) -> [f64;2] { [self.d.most().unwrap_or(f64::INFINITY),self.dd.most().unwrap_or(f64::INFINITY)] }
+}
+
 impl<T: Num> Add for Jet<T> { type Output = Jet<T>; fn add(self,b: Jet<T>) -> Jet<T> { Jet {v:self.v+b.v,d:self.d+b.d,dd:self.dd+b.dd} } }
 impl<T: Num> Sub for Jet<T> { type Output = Jet<T>; fn sub(self,b: Jet<T>) -> Jet<T> { Jet {v:self.v-b.v,d:self.d-b.d,dd:self.dd-b.dd} } }
 impl<T: Num> Neg for Jet<T> { type Output = Jet<T>; fn neg(self) -> Jet<T> { Jet {v:-self.v,d:-self.d,dd:-self.dd} } }
@@ -272,6 +278,22 @@ pub trait Exact {
             }
         }
         out
+    }
+    /// **Where it crosses the plane through `o` square to the unit `n`** (both in space), as its
+    /// parameters: the roots of `(C(t) − o) · n` isolated (`util::isolate::roots`) from the first two
+    /// derivatives bounded over each stretch by its jets read in outward-rounded intervals, a stretch
+    /// it cannot part a touch where `near` says so — what a level line meets a turned contact's
+    /// surface at (`query::line_turned`), a line meets a slid contour's cylinder at
+    /// (`query::line_slid`, the plane through the line along the slide), and a plane along the slide
+    /// meets that cylinder in (`ssi`'s `slid_meeting`).
+    fn crossings(&self,o: V,n: V,near: &dyn Fn(f64) -> bool) -> Result<Vec<crate::util::roots::Root>,crate::util::isolate::GaveUp> {
+        let (o,n) = (self.frame().local(o),self.frame().dir_local(n));
+        fn height<T: Num>(l: J3<T>,o: V,n: V) -> Jet<T> { dot3(std::array::from_fn(|i| l[i]-Jet::of(o[i])),constant(n)) }
+        let at = |t: f64| height(self.local(Jet::at(t)),o,n);
+        let bound = |a: f64,b: f64| height(self.local(Jet::at(Iv::new(a,b))),o,n).most();
+        let [a,b] = self.span();
+        let (a,b) = (a.min(b),a.max(b));
+        crate::util::isolate::roots(&|t| at(t).v,&|t| at(t).d,&bound,[a,b],1e-12*(b-a).max(1e-300),near)
     }
     /// The most length per unit of its parameter, read at 65 points of the span.
     fn speed(&self) -> f64 {

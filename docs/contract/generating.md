@@ -612,7 +612,7 @@ read before any build, `closed::reads`, by the contour's tangent held off nought
 below nought (`Slid::meets_again`) — so the ring at each end pose touches each cylinder along its
 contact there and nowhere else, in closed form (`ssi`'s `slid_meeting`, `Slid::at`); a plane
 square to `D` meets it in the contour carried onto it, one along `D` in lines through the
-contour's crossings (`Slid::crossings`, isolated with the jets' interval bounds), one leaning to `D` in the contour
+contour's crossings (`Exact::crossings`, isolated with the jets' interval bounds), one leaning to `D` in the contour
 sheared along `D` onto it (`affine::MappedCurve`); the two contours' cylinders stand apart; and a
 line meets it certified where it meets the contour in the plane square to `D` (`query::line_slid`).
 Only a whole ring's face is admitted at a lean: a torus face with rims (a bull-nose's round) would

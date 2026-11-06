@@ -1012,25 +1012,26 @@ impl Surface {
             // a curve swept or turned likewise — a spline, a turned contact's meridian, a slid
             // torus's contour — its foot refined from the hint's (#780 C3: read afresh, a meridian's
             // samples were most of a turned build's time)
-            Surface::Extrusion(_,c) | Surface::Revolution(_,c) if c.refined(p,0.).is_some() => {
-                let uv = self.swept_inverse(p,&|q,k| c.refined(q,hint[k]).expect("a curve refined")).expect("a swept curve");
-                if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
-            }
+            Surface::Extrusion(_,c) | Surface::Revolution(_,c) => match self.swept_inverse(p,&|q,k| c.refined(q,hint[k])) {
+                Some(uv) if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) => uv,
+                _ => self.inverse(p),
+            },
             _ => self.inverse(p),
         }
     }
     /// A swept or turned curve's parameters of `p`, its curve's at the foot `foot` finds of the
-    /// point in the curve's plane (the curve's parameter the `k`th); `None` for any other surface.
-    fn swept_inverse(&self,p: V,foot: &dyn Fn(V,usize) -> f64) -> Option<Uv> {
+    /// point in the curve's plane (the curve's parameter the `k`th); `None` for any other surface,
+    /// or where `foot` finds none.
+    fn swept_inverse(&self,p: V,foot: &dyn Fn(V,usize) -> Option<f64>) -> Option<Uv> {
         let [x,y,z] = self.frame().local(p);
         match self {
             Surface::Extrusion(f,c) => {
-                let t = foot(f.at([x,y,0.]),0);
+                let t = foot(f.at([x,y,0.]),0)?;
                 Some([t,dot(sub(p,c.point(t)),f.z)])
             }
             Surface::Revolution(f,_) => {
                 let u = if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) };
-                Some([u,foot(f.at([x.dhypot(y),0.,z]),1)])
+                Some([u,foot(f.at([x.dhypot(y),0.,z]),1)?])
             }
             _ => None,
         }
@@ -1044,7 +1045,7 @@ impl Surface {
         let u = if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) };
         let rho = x.dhypot(y);
         match self {
-            Surface::Extrusion(_,c) | Surface::Revolution(_,c) => return self.swept_inverse(p,&|q,_| c.inverse(q)).expect("a swept curve"),
+            Surface::Extrusion(_,c) | Surface::Revolution(_,c) => return self.swept_inverse(p,&|q,_| Some(c.inverse(q))).expect("a swept curve"),
             Surface::Blend(_,b) => return b.inverse(p),
             Surface::BSpline(_,n) => return net_inverse(n,p),
             Surface::Family(_,w) => return w.inverse(p),
@@ -1741,10 +1742,15 @@ impl Curve {
             }
         }
     }
+    /// The span of a curve read exactly in a frame (`turned::Exact`: a turned contact's meridian, a
+    /// slid torus's contact), none for any other.
+    pub fn exact_span(&self) -> Option<[f64;2]> {
+        match self { Curve::Turned(m) => Some(m.span()),Curve::Slid(m) => Some(m.span()),_ => None }
+    }
     /// The parameter of its point nearest `p`, refined from `t`, for a curve that refines its foot
     /// from a hint: a spline (`BSpline::refined`), and a curve read exactly in a frame (Newton,
     /// `turned::Exact`); none for any other.
-    pub fn refined(&self,p: V,t: f64) -> Option<f64> {
+    fn refined(&self,p: V,t: f64) -> Option<f64> {
         match self {
             Curve::BSpline(b) => Some(b.refined(p,t)),
             Curve::Turned(m) => Some(m.newton(p,t)),

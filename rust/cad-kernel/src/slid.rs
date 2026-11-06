@@ -30,6 +30,7 @@
 //! the torus at an end pose along the contact and nowhere else.
 use crate::geom::{Frame,Rigid,V};
 use crate::turned::{Exact,Iv,J3,Jet,Num,dot3,pieces};
+use crate::util::space::scale;
 
 /// **A torus's contact under a slide, on one side** (the module's): the tube's middle radius `big`
 /// and its radius `small`, the slide's unit direction `d` in the torus's frame (its `z` the torus's
@@ -40,16 +41,16 @@ pub struct Contact { pub big: f64,pub small: f64,pub d: V,pub side: f64 }
 impl Contact {
     /// The contact's point at the jet `s = tan(u/2)` of the angle round the axis from the frame's `x`.
     fn point<T: Num>(&self,s: Jet<T>) -> J3<T> {
-        let one = Jet::of(1.);
-        let w = one+s*s;
-        let (c,sn) = ((one-s*s)/w,s.times(2.)/w);
+        let (one,s2) = (Jet::of(1.),s*s);
+        let w = one/(one+s2);
+        let (c,sn) = ((one-s2)*w,s.times(2.)*w);
         let [dx,dy,dz] = self.d;
         let g = c.times(dx)+sn.times(dy);
-        let q = (g*g+Jet::of(dz*dz)).sqrt();
-        // n = σ (D_z ρ̂ − g z)/q, σ the side's sign against D_z's
+        let q = one/(g*g+Jet::of(dz*dz)).sqrt();
+        // n = σ (D_z ρ̂ − g z)/|·|, σ the side's sign against D_z's
         let sigma = self.side*dz.signum();
-        let reach = Jet::of(self.big)+(Jet::of(sigma*self.small*dz)/q);
-        [reach*c,reach*sn,(g/q).times(-sigma*self.small)]
+        let reach = Jet::of(self.big)+q.times(sigma*self.small*dz);
+        [reach*c,reach*sn,(g*q).times(-sigma*self.small)]
     }
     /// The contact's apparent contour at `s`: its point less its part along the slide.
     fn contour<T: Num>(&self,s: Jet<T>) -> J3<T> {
@@ -88,55 +89,38 @@ impl Exact for Slid {
     }
 }
 
-/// Whether `held` holds over `[a, b]`, read over it whole and, where it does not, over its halves,
-/// to `depth` halvings: the first stretch it is not proved over, or none.
-fn proved(held: &dyn Fn(Iv) -> bool,[a,b]: [f64;2],depth: usize) -> Option<f64> {
-    if held(Iv::new(a,b)) { return None }
-    if depth == 0 { return Some(0.5*(a+b)) }
-    let m = 0.5*(a+b);
-    proved(held,[a,m],depth-1).or_else(|| proved(held,[m,b],depth-1))
+/// Where `held` is not proved over `span`: read over each of 64 pieces whole and, where it does not
+/// hold, over its halves, to eight halvings — the middle of the first stretch it is not proved over,
+/// or none.
+fn unproved(held: &dyn Fn(Iv) -> bool,span: [f64;2]) -> Option<f64> {
+    fn within(held: &dyn Fn(Iv) -> bool,[a,b]: [f64;2],depth: usize) -> Option<f64> {
+        if held(Iv::new(a,b)) { return None }
+        let m = 0.5*(a+b);
+        if depth == 0 { return Some(m) }
+        within(held,[a,m],depth-1).or_else(|| within(held,[m,b],depth-1))
+    }
+    pieces(span,64).find_map(|w| within(held,w,8))
 }
 
 impl Slid {
     /// The slide's unit direction, in space.
     pub fn slide(&self) -> V { self.frame.dir(self.contact.d) }
     /// **Where its contour folds** (the fold locus, docs/swept-solid-design.md step 6): the first
-    /// stretch of `span` over which the contour's tangent is not proved off nought — its derivative
-    /// held in outward intervals over each of 64 pieces, halved where that does not prove it, to
-    /// eight halvings — as the parameter there; none where it is regular all along.
+    /// stretch of `span` over which the contour's tangent is not proved off nought, its derivative
+    /// held in outward intervals (`unproved`), as the parameter there; none where it is regular all
+    /// along.
     pub fn folded(&self) -> Option<f64> {
-        let held = |v: Iv| {
+        unproved(&|v| {
             let p = self.contact.contour(Jet::at(v));
             (p[0].d*p[0].d+p[1].d*p[1].d+p[2].d*p[2].d).bounds().is_some_and(|[lo,_]| lo > 0.)
-        };
-        pieces(self.span,64).find_map(|w| proved(&held,w,8))
+        },self.span)
     }
     /// **Where a line along the slide through its contact meets the torus again** (`Contact::again`):
-    /// the first stretch of `span` over which that is not proved nowhere — the discriminant held
-    /// below nought in outward intervals over each of 64 pieces, halved where that does not prove it,
-    /// to eight halvings — as the parameter there; none where each such line touches the torus at
-    /// the contact alone.
+    /// the first stretch of `span` over which that is not proved nowhere, the discriminant held
+    /// below nought in outward intervals (`unproved`), as the parameter there; none where each such
+    /// line touches the torus at the contact alone.
     pub fn meets_again(&self) -> Option<f64> {
-        let held = |v: Iv| self.contact.again(Jet::at(v)).v.bounds().is_some_and(|[_,hi]| hi < 0.);
-        pieces(self.span,64).find_map(|w| proved(&held,w,8))
-    }
-    /// **Where it crosses the plane through `o` square to the unit `n`** (both in space), as its
-    /// parameters: the roots of `(C(s) − o) · n` isolated (`util::isolate::roots`) from the first two
-    /// derivatives bounded over each stretch by its jets read in outward-rounded intervals, a stretch
-    /// it cannot part a touch where `near` says so. What a line meets the contour's cylinder at
-    /// (`query::line_slid`, the plane through the line along the slide) and a plane along the slide
-    /// meets it in (`ssi`'s `slid_meeting`).
-    pub fn crossings(&self,o: V,n: V,near: &dyn Fn(f64) -> bool) -> Result<Vec<crate::util::roots::Root>,crate::util::isolate::GaveUp> {
-        let (o,n) = (self.frame.local(o),self.frame.dir_local(n));
-        fn height<T: Num>(l: J3<T>,o: V,n: V) -> Jet<T> { dot3(std::array::from_fn(|i| l[i]-Jet::of(o[i])),n.map(Jet::of)) }
-        let at = |s: f64| height(self.local(Jet::at(s)),o,n);
-        let bound = |a: f64,b: f64| {
-            let j = height(self.local(Jet::at(Iv::new(a,b))),o,n);
-            [j.d.most().unwrap_or(f64::INFINITY),j.dd.most().unwrap_or(f64::INFINITY)]
-        };
-        let [a,b] = self.span;
-        let (a,b) = (a.min(b),a.max(b));
-        crate::util::isolate::roots(&|s| at(s).v,&|s| at(s).d,&bound,[a,b],1e-12*(b-a).max(1e-300),near)
+        unproved(&|v| self.contact.again(Jet::at(v)).v.bounds().is_some_and(|[_,hi]| hi < 0.),self.span)
     }
     /// The same curve carried by `m`, rigid or a reflection: its frame carried (a frame carried by
     /// a reflection is left-handed, and its points, read off it, the reflection's).
@@ -153,7 +137,7 @@ impl Slid {
 /// apparent contour where `contour`, else as the contact itself.
 pub fn halves(frame: Frame,big: f64,small: f64,d: V,side: f64,contour: bool) -> [Slid;2] {
     [1.,-1.].map(|k| {
-        let f = Frame {x:crate::util::space::scale(frame.x,k),y:crate::util::space::scale(frame.y,k),..frame};
+        let f = Frame {x:scale(frame.x,k),y:scale(frame.y,k),..frame};
         Slid {frame:f,contact:Contact {big,small,d:f.dir_local(d),side},span:[-1.,1.],contour}
     })
 }

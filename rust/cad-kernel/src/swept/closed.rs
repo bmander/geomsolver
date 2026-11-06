@@ -331,7 +331,7 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
             // contact is two closed curves, smooth across the branch locus where each latitude's two
             // roots meet, each swept along the slide into the cylinder over its apparent contour
             // (`slid::Slid`) — refused by name where the inner contour folds (`Unbuilt::Folded`)
-            Surface::Torus(g,big,small) if screw.is_slide() && whole(tool,k) => {
+            Surface::Torus(g,big,small) if screw.is_slide() && whole(f) => {
                 if !(big.abs() > small.abs()) { return Err(Unbuilt::Curved {at}) }
                 if let Some(at) = slid_fold(g,big.abs(),small.abs(),screw.axis) { return Err(Unbuilt::Folded {at}) }
                 round.push(k);
@@ -724,7 +724,6 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                             // over its apparent contour (the contour's region extruded from short of
                             // the torus at the start pose to past it at the end), its sites the
                             // contact's points carried over the roll with the torus's normal there
-                            let placed = crate::geom::Rigid {r:start.r,t:start.p};
                             let reach = big*norm(sub(dd,scale(z,dot(dd,z))))+small;
                             let span = [-(1.+PAST)*reach,len+(1.+PAST)*reach];
                             for side in [1.,-1.] {
@@ -732,8 +731,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                                 let sites: Vec<(V,V)> = on.iter().flat_map(|h| (0..=SITES).map(move |i| h.d2(2.*within(i)-1.).0))
                                     .filter(|&x| located.face_place(k,x) != crate::query::Place::Out)
                                     .flat_map(|x| { let n = outward(face,x); poses.iter().map(move |m| (m.point(x),m.vector(n))) }).collect();
-                                let halves = crate::slid::halves(f.moved(&placed),big,small,dd,side,true);
-                                add_cutter(Cutter::Contour {halves,span},sites);
+                                add_cutter(Cutter::Contour {halves:on.map(|h| h.at(start.point(f.o),true)),span},sites);
                             }
                         } else {
                             // across the axis: its top and bottom rings swept within their level planes
@@ -1606,7 +1604,7 @@ fn turned_solid(t: &crate::turned::Turned) -> Result<Brep,String> {
     let [a,b] = t.span.map(|v| { let l = g.local(t.d2(v).0); [l[0],l[2]] });
     let at = |r: f64,z: f64| g.at([r,0.,z]);
     let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:vec![vec![
-        ProfileEdge::Line {a:at(0.,a[1]),b:at(a[0],a[1])},ProfileEdge::Exact {curve:Curve::Turned(std::sync::Arc::new(*t)),span:t.span},
+        ProfileEdge::Line {a:at(0.,a[1]),b:at(a[0],a[1])},ProfileEdge::Exact(Curve::Turned(std::sync::Arc::new(*t))),
         ProfileEdge::Line {a:at(b[0],b[1]),b:at(0.,b[1])},ProfileEdge::Line {a:at(0.,b[1]),b:at(0.,a[1])}]]};
     crate::build::revolve(&profile,g.o,g.z,std::f64::consts::TAU)
 }
@@ -1617,15 +1615,15 @@ fn turned_solid(t: &crate::turned::Turned) -> Result<Brep,String> {
 /// cylinder over the contour (`Surface::Extrusion` of `geom::Curve::Slid`).
 fn contour_solid(halves: &[crate::slid::Slid;2],[h0,h1]: [f64;2]) -> Result<Brep,String> {
     let profile = Profile {origin:halves[0].frame.o,normal:halves[0].slide(),names:Vec::new(),
-        loops:vec![halves.iter().map(|h| ProfileEdge::Exact {curve:Curve::Slid(std::sync::Arc::new(*h)),span:h.span}).collect()]};
+        loops:vec![halves.iter().map(|h| ProfileEdge::Exact(Curve::Slid(std::sync::Arc::new(*h)))).collect()]};
     prism(&profile,h0,h1)
 }
 
-/// Whether face `k` of `tool` is bounded by its seams alone (each edge of its loops used by it on
-/// both sides): a whole ring.
-fn whole(tool: &Brep,k: usize) -> bool {
-    let uses = tool.uses();
-    tool.faces[k].loops.iter().flatten().all(|c| uses[c.edge as usize].iter().all(|u| u.0 == k))
+/// Whether a face is bounded by its seams alone (each edge of its loops used by it on both sides,
+/// `Face::seams`): a whole ring.
+fn whole(face: &crate::topo::Face) -> bool {
+    let seams = face.seams();
+    face.loops.iter().flatten().all(|c| seams.contains(&c.edge))
 }
 
 /// **Where a ring slid along the unit `d` folds** (#805, the fold locus): the torus about `g`'s axis,
