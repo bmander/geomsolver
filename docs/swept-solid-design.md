@@ -539,9 +539,27 @@ it. It stays as the fast path where #699 D says so.
    cylinder crossing the ring beside its touch) comes only past the fold, which is refused by name
    (`Unbuilt::Folded`) until the patch is cut there. A ring slid 6 and 2 at 35° and aslant at 20° are
    each `V + |D| A` to 1e-9; pushed into a block, it removes the centre's depth times `A` and half the
-   ring (`solid_sweeps/leaning_ring.sv`, its STL agreeing with the field). A torus face with rims (a
-   bull-nose's round) waits: its contact meets the neighbours' at their smooth seams, where their
-   swept cylinders and planes touch along lines.
+   ring (`solid_sweeps/leaning_ring.sv`, its STL agreeing with the field).
+
+   *Touches given by construction, the first gate a bull-nose slid at a lean* (#810, #780 R5): a
+   torus face with rims (a bull-nose's round) has its contact meet the neighbour's at a smooth seam,
+   where the sheet over its contour and the plane the neighbour's ruling sweeps touch along the path
+   of the point where the contact crosses the seam. The sweep knows that line before anything is
+   met, and hands it to the arrangement as a given edge (`boolean::Given`), as it now hands every
+   touch it knows by construction — the torus at each end pose against its contact's sheet (#805),
+   a leaning round face against its contact turned (C3), a face holding a sharp circle against its
+   ring (L2) — each of which `ssi` had recognised pair by pair, and can now be bypassed while the
+   gates still hold. Three things it took besides. The contour's sheet is cut at the seams exactly
+   and run along the slide past the domain, its rims within the domain lying on the given lines: run
+   a little past the seams, as a patch's are, it left a strip inside the sweep whose meetings with
+   the side at the end poses stopped partway across it, a slit the judge caught at most leans. A
+   candidate's seam is turned away from the touches (`seam_away`): a slide across the tool's own
+   seam meridian laid each touch along a candidate's seam. And membership reads the roll best
+   first: a point on the tool's top at the middle pose had spent its reads halving the stretch
+   before it. A bull-nose slid at three leans and a drum rounded at both corners are `V + |D| A` to
+   1e-9, and pushed at a lean into a block until wholly in it, `solid_sweeps/leaning_bullnose.sv`,
+   the block less `V − ∫ z n_z dS` over the mill's faces turned up, to 1e-9; a round meeting a
+   neighbour in a sharp rim at a lean is refused by name until its fan is entered.
 
    *X5 built* (`tests/swept_loci.rs`): a ball screwed through more than a turn at a lead short of
    its diameter, whose pipe, entered whole, crossed itself and was refused by the judge. Its pipe is
@@ -576,7 +594,8 @@ it. It stays as the fast path where #699 D says so.
 **Where it stands (F2c5).** Built on the one arrangement: polyhedral tools under a slide, a turn,
 or a screw with nothing leaning to its axis; under a slide, tools of planes, cylinders, cones, balls
 and tori (a torus's axis along the slide or square to it, or a whole ring at any lean short of its
-fold, #805); under a turn, round faces about axes
+fold, #805, or a band of one between smooth seams — a bull-nose's round — its seams' touches given,
+#810); under a turn, round faces about axes
 along the turn's (cylinders, cones, tori) and balls clear of its axis; under a screw, cylinders and cones about axes along it and
 level circles (a drum, helical milling; a frustum, a chamfer mill, its contact rulings screwed into
 patches, #780 C2); paths of slides and turns (K1); a body mixing the
@@ -683,7 +702,7 @@ recorded above with what was tried:
   contacts are fixed on the tool, so several contacts per tool point are K2's (L3); what X2 leaves
   under a constant twist is a ring's two roots meeting on a face, a torus slid at a lean: *built for a
   whole ring* (#805), read across the branch locus in the angle chart, its inner contour's fold
-  refused by name; a bull-nose's round waits on the touches at its seams. *A sheet meeting itself far along it (X5) is built*: a ball screwed past a turn at
+  refused by name; a bull-nose's round, its seams' touches given by construction (#810). *A sheet meeting itself far along it (X5) is built*: a ball screwed past a turn at
   a lead short of its diameter, its pipe in stretches met along the helices where it returns
   (`tests/swept_loci.rs`). A pipe that folds (a ball reaching its helix's radius of curvature) is
   refused by name.

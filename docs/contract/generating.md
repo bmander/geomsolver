@@ -619,8 +619,8 @@ square to `D` meets it in the contour carried onto it, one along `D` in lines th
 contour's crossings (`Exact::crossings`, isolated with the jets' interval bounds), one leaning to `D` in the contour
 sheared along `D` onto it (`affine::MappedCurve`); the two contours' cylinders stand apart; and a
 line meets it certified where it meets the contour in the plane square to `D` (`query::line_slid`).
-Only a whole ring's face is admitted at a lean: a torus face with rims (a bull-nose's round) would
-meet its neighbours' contacts tangentially at their seams, not yet read. Gates
+A whole ring's face is admitted at a lean, and since #810 a band of one bounded by smooth seams
+(below). Gates
 (`tests/swept_slid.rs`), against a volume worked apart along lines parallel to the slide — every
 such line meets the ring once or not at all short of the fold
 (`a_line_along_the_slide_meets_the_leaning_ring_at_most_once`), so each line's chord lengthened by
@@ -645,9 +645,80 @@ name (`swept_loci::a_ball_screwed_tighter_than_its_radius_is_refused_by_name`). 
 2.9 s (slid 2, 1.8 s), every meeting of a contour's cylinder in closed form (four with the other
 contour, eight with a plane, eight with the posed ring) and every line read against it certified;
 the ring's seam circles and the contacts' own curves are read against it by the sampled search, and
-the ring at its two poses meets the planes and the other pose by the trace. Not yet: a torus face
-with rims at a lean (a bull-nose's round), whose contact meets its neighbours' at their seams, where
-their swept surfaces touch along lines; and the fold, cut where it lies.
+the ring at its two poses meets the planes and the other pose by the trace. Not yet: the fold, cut
+where it lies.
+
+**Touches given by construction, and a bull-nose slid at a lean (#810, #780 R5's first gate).** A
+sweep knows where its candidates touch before any meeting is sought, and hands those touches to the
+arrangement as given edges (`boolean::Given`, `arrangement_given`; `meeting::Shared::give`): curves
+that are two candidates' surfaces' whole meeting, laid as an edge of both with no search for that
+pair, each counted in the profile beside the meetings found in closed form and traced
+(`… / given`). Each touch names its two candidates, and is given between the faces of their solids
+that hold its curves, where both are carried (`closed`'s `Touch`). The closed class gives:
+- **a band's contact where it crosses a smooth seam** — the path along the slide of the point
+  where a torus face's contact runs on into its neighbour's, on which the sheet over the contact's
+  contour and the plane the neighbour's ruling sweeps touch;
+- **the torus at each end pose against its contact's cylinder or sheet** (#805's slid touch, `Slid::at`);
+- **a leaning round face at each end pose of a turn against its contact turned** (C3, the curve
+  `ssi`'s `own_contact` writes, given where it certifies the face on one side of the surface);
+- **a face holding a sharp circle at each end pose against the ring the circle turns into** (L2,
+  `plane_holding_rim`, `side_holding_rim`).
+
+Each pair-by-pair recognition in `ssi::intersect` can be bypassed (`ssi::bypassing`,
+`Recognised::{OwnContact, SlidTouch, RimHeld}`, carried to `util::par`'s workers by `util::bypass`), and each gate
+rebuilt through its given touches alone holds to the same closed form
+(`swept_slid::the_slid_touches_build_through_their_given_touches`,
+`swept_turned::a_leaning_drum_turned_builds_through_its_given_touches`, and in the slow tier
+`…::a_flat_ended_drum_turned_builds_through_its_given_touches`); with nothing given and the
+recognition bypassed each is refused ("a hole in no piece"). A failed build's dump carries its given
+meetings, and its replay meets them (`swept::dump::dump`).
+
+Under a slide at a lean a **band** of a torus's tube is admitted (`closed`'s `Band`): a face that is
+no whole ring, bounded by two latitudes of the tube's outer half (`v ∈ [−π/2, π/2]`), each a smooth
+seam into its neighbour, curving out (a bull-nose's round, a rounded drum's corners). Its contact is
+the outer contact's part on the band, `tan v_lo ≤ −(D_x cos u + D_y sin u)/D_z ≤ tan v_hi`:
+nowhere, the whole contact (the ring's cylinder, `Cutter::Contour`, outer side only), or one arc
+about the least or greatest `w`, crossing one seam at its two ends, where the contact runs on into
+the neighbour's — a cylinder's or a cone's ruling whose normal is square to the slide, swept into
+its tangent plane. That arc swept is the **sheet over its contour** (`Cutter::Sheet`), cut at the
+seams exactly and run along the slide past the domain both ways: its only rims within the domain
+are the seam points' paths, which lie on those planes, given as the sheet's touch with each (a
+sheet run past the seams, as a patch's rims are, left a strip inside the sweep whose meetings with
+the side's cylinders at the end poses stopped partway across them, and the judge refused the build,
+never returned, at four of the six ways it was slid). A solid of revolution among the candidates is turned about its own axis
+so its seam stands in the widest gap between the angles where the touches pass (`seam_away`): a
+slide across the tool's own seam meridian laid a touch along the cylinder's, the torus's and the
+top rim's seams at once. Refused by name (`Unbuilt::Curved`, at a point of the rim): a band meeting
+a neighbour in a sharp rim (its fan not entered yet), a contact crossing both seams (two arcs), and a
+crossed seam's neighbour no cylinder or cone. Membership reads the stretches of the roll best
+first, the deepest bound first (`member::Swept::member`): taken depth first, a point on the tool's top
+at the middle pose spent its reads halving the stretch before it, where it stood within the mesh's
+sag, and never read the one after, where it lay deep inside — the deepest points of the cell between
+the mill's top at its two end poses, slid 1.5 up a leaning way (`membership_reads_the_deepest_pose_first`).
+
+Gates (`tests/swept_slid.rs`), against `V + |D| A` — the mill convex, so every line along the slide
+meets it once — `A` its shadow along the slide read apart from the kernel as `½ ∮ (x y′ − y x′)`
+over its outline (the bottom round's contact arc, the side's two rulings, the top rim's or the top
+round's arc; Gauss–Legendre, exact to rounding, `swept_slid::Mill::shadow`), and against membership
+and a Monte Carlo of the definition: a bull-nose of radius 2, its corner 0.5 and 3 tall, slid 5 down
+a way leaning 29° (`a_bull_nose_slid_at_a_lean_closes_into_its_sweep`), 1.5 up aslant the other way
+(`…_slid_up_aslant_by_less_than_its_reach_…`), across its seam meridian
+(`…_slid_across_its_seam_meridian_…`), and a drum rounded at both corners, two sheets and four
+touches (`a_drum_rounded_at_both_corners_slid_at_a_lean_closes_into_its_sweep`), each to 1e-9. Cut
+from a block, the bull-nose leaning 30° pushed 8 straight down until wholly in it
+(`a_bull_nose_pushed_at_a_lean_into_a_block_stops_inside_it`, and drawn,
+`solid_sweeps/leaning_bullnose.sv`, its STL agreeing with the field,
+`solid_sweeps_examples::the_bull_nose_plunged_at_a_lean_stops_inside_the_block`): every line down the
+push meets the mill once, so the block loses `−∫ z_low dA` over its shadow, by the divergence theorem
+`V − ∫ z n_z dS` over the faces turned up (`Mill::plunged_away`), to 1e-9. Negative control: a round
+spanning only the eighth of the tube above `v = −π/4`, so the flat end meets it in a sharp rim,
+refused as `Curved` at that rim by the build and the admission
+(`a_round_meeting_a_sharp_rim_at_a_lean_is_refused_by_name`). Profiled (`SOLVENT_SWEEP_PROFILE`):
+before, the bull-nose slid 5 at a lean was refused as `Curved` at its round in 53 µs; now it builds
+in 3.4 s, its meetings 107 in closed form, 10 traced (the side's cylinders at the end poses against
+the sheet, where they touch at the seam points; the end poses' tori against the planes and the top
+rim's sheared cylinder) and 4 given (the sheet against each end pose's torus and against each seam's
+plane); pushed into the block, 2.1 s, 139 / 6 / 3.
 
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
 the blank, not a box, is the domain the candidates split, and its cells are kept where they are no

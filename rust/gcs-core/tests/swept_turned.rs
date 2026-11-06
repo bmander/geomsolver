@@ -334,12 +334,18 @@ fn turned_part(what: &str,tool: &Brep,inside: &dyn Fn(V) -> f64,whole: f64,conve
 /// (`turned_both_ways`).
 #[test]
 fn a_leaning_drum_turned_closes_into_its_sweep() {
+    let (tool,inside,whole) = leaning_drum_case();
+    turned_both_ways("a leaning drum",&tool,&inside,whole,true);
+}
+
+/// `a_leaning_drum_turned_closes_into_its_sweep`'s drum, below nought inside it, and its whole
+/// turn's volume worked apart from the build.
+fn leaning_drum_case() -> (Brep,impl Fn(V) -> f64,f64) {
     let a = leaning();
-    let tool = leaning_drum(a);
     let whole = simpson(-1.5,1.5,400,|z| { let (n,f) = drum_spans(a,z); PI*(f*f-n*n) });
     let o = [5.,1.2,0.];
-    let inside = |p: V| { let q = sub(p,o); let t = dot(q,a); (norm(sub(q,scale(a,t)))-1.).max(t.abs()-3.).max(p[2].abs()-1.5) };
-    turned_both_ways("a leaning drum",&tool,&inside,whole,true);
+    let inside = move |p: V| { let q = sub(p,o); let t = dot(q,a); (norm(sub(q,scale(a,t)))-1.).max(t.abs()-3.).max(p[2].abs()-1.5) };
+    (leaning_drum(a),inside,whole)
 }
 
 /// The radii the level slice at height `z` of a convex tool spans about the world's `z` axis, apart
@@ -1054,4 +1060,31 @@ fn a_half_drum_leaning_to_the_axis_turned_part_of_a_turn_is_cut_right_or_refused
         Err(Unbuilt::Unsettled {..}) => {}
         Err(e) => panic!("a half drum turned {PART}: {e:?}"),
     }
+}
+
+/// **A leaning drum turned part of a turn builds through its given touches** (#810, item 5): with
+/// `ssi`'s recognition of a leaning round face at a pose against its own contact turned bypassed
+/// (`Recognised::OwnContact`, C3's `own_contact`), `a_leaning_drum_turned_closes_into_its_sweep`'s
+/// part turn holds its volume to the same `Θ/2π` of the whole and the drum's own, to membership and
+/// to a Monte Carlo — the side at each end pose and its contact's surfaces meeting as the closed
+/// class gives them (`boolean::Given`).
+#[test]
+fn a_leaning_drum_turned_builds_through_its_given_touches() {
+    use gcs_core::brep::ssi::{Recognised,bypassing};
+    let (tool,inside,whole) = leaning_drum_case();
+    bypassing(&[Recognised::OwnContact],|| turned_part("a leaning drum",&tool,&inside,whole,true));
+}
+
+/// **A flat-ended drum turned part of a turn builds through its given touches** (#810, item 5):
+/// with `ssi`'s recognition of a plane or a cylinder holding a sharp circle against that circle's
+/// ring bypassed (`Recognised::RimHeld`, L2's `plane_holding_rim` and `side_holding_rim`),
+/// `a_flat_ended_drum_leaning_to_the_axis_turned_part_of_a_turn_closes_into_its_sweep` holds to the
+/// same figure — each end's plane and the side at each end pose meeting the rims' rings as the
+/// closed class gives them (`boolean::Given`).
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, about 20 s: a flat-ended drum turned 100°, its membership read and sampled")]
+fn a_flat_ended_drum_turned_builds_through_its_given_touches() {
+    use gcs_core::brep::ssi::{Recognised,bypassing};
+    let a = leaning();
+    bypassing(&[Recognised::RimHeld],|| turned_part("a flat-ended drum",&flat_drum(a),&|p| in_flat_drum(a,p),flat_drum_whole(a),true));
 }
