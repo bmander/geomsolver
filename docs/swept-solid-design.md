@@ -39,6 +39,7 @@ curves. The kernel already builds every kind the classes need; X0 names them one
 | a face under a constant twist | (station along the characteristic, roll) | the characteristic carried by the screw | `constant_twist`, `helical` |
 | a face under a relative rotation | (walk length, station) | each tool point at its contact time | `trace::traced_sheet` |
 | a face under a slide or turn of its plane | (curve parameter, extrusion) | the planar cut extruded | `extruded::sheet` |
+| a leaned prism's side under a rack's roll (#826) | (curve parameter, height) | the transverse planar cut carried up its helix | `extruded::screwed` |
 | a face under any other motion (K2) | (roll, ring height, ±) | the ring root `A cos θ + B sin θ + C = 0` at each instant | — (K2) |
 | a fan | (edge parameter, fan angle) | the fan normal's contact time | the walks' fans |
 | an end pose | the face's own `(u, v)` | `M(a)` or `M(b)` applied | `geom::Rigid` |
