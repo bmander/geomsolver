@@ -1,5 +1,5 @@
 //! **What a sweep is built from, the kernel's** (#721 F2): the tool a solid is swept as, read as
-//! its faces (`surface`, `tool`), and what the kernel builds of it along a trajectory — a constant
+//! its faces (`surface`, `tool`), from its own B-rep too (`read`, #721 F1), and what the kernel builds of it along a trajectory — a constant
 //! twist's characteristic walked (`constant_twist`) and its sheet (`helical`), a generating sweep's
 //! contact times (`generating`), its cutter's sections (`cutter`) and their contacts traced
 //! (`trace`), a ball's tube (`canal`), each sheet fitted (`sheet`). The solver reads the tool, the blank and the motion off
@@ -24,3 +24,4 @@ pub mod closed;
 pub mod instant;
 pub mod patches;
 pub mod dump;
+pub mod read;
