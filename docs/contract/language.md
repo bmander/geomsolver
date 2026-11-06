@@ -518,7 +518,13 @@ innermost `Stamps::plane`, the call's own `in` ridden, so `Scope::stands` ends i
 one rule with the body's (`Lookup::frame_datum`). The frame is **square**: `entities::build_plane`
 gives an instance's own frame `Sketch::square_chart`, an intrinsic `Perpendicular3` of its `u` and
 `v`, so it has six freedoms, and names it after the instance (`Sketch::plane_names`), so
-`diagnose::view_freedoms` says `cyl.attitude` and `cyl.origin`. It **starts where the frame around
+`diagnose::view_freedoms` says `cyl.attitude` and `cyl.origin`. A rebuild (`graft`, a `Part`) mints
+a frame's own rows afresh, so it asks `Sketch::chart_square` of the frame it copies and squares the
+copy: a face family's station that reaches a seated instance through the point it is seated on
+(its stations the whole drawing, swept over a declared parameter) holds it as the drawing does,
+and does not leave its frame a shear (#817,
+`a_part_rebuilt_around_a_seated_instance_keeps_its_frame_square`,
+`a_part_seated_off_the_screws_line_leaves_the_station_held`). It **starts where the frame around
 its call stands**: `views::instance_frames`, after the holds, seeds each from the innermost frame
 with axes it rides (`Sketch::seed_at_frame`), a held number left as held; and **a mate on its
 datums seeds it where the mate puts it** (#764): `views::place` reads a point held in a frame — the

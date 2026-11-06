@@ -103,6 +103,18 @@ impl Sketch {
         self.add_quiet(c);
     }
 
+    /// Whether frame `f` is square by construction (`square_chart`): its intrinsic row holding
+    /// its `u` square to its `v`.  What a rebuild asks of the frame it copies, since it mints a
+    /// frame's intrinsic rows afresh rather than carrying them (`graft`, #817).
+    pub fn chart_square(&self, f: usize) -> bool {
+        let Some(c) = self.frames[f].chart.as_ref() else { return false };
+        let axes = [c.u, c.v].map(|a| EntRef::new(EntKind::Axis, a as usize));
+        self.constraints.iter().any(|k| {
+            k.intrinsic && k.kind == crate::constraints::CKind::Perpendicular3
+                && k.entities() == axes
+        })
+    }
+
     /// **Frame `f` seeded where frame `g` stands** (#548): its axes along `g`'s and its place
     /// `g`'s, a number a hold has written left as it is — the start of a frame that rides `g`.
     pub fn seed_at_frame(&mut self, f: usize, g: usize) {

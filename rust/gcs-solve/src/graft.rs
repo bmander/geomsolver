@@ -506,6 +506,12 @@ impl<'a> Walk<'a> {
             if !p.planar {
                 dst.spatial_chart(ni);
             }
+            // an instance's own frame is square (#548): left without its row, a part that reaches
+            // a seated instance has its frame free to shear, a freedom the drawing does not have
+            // (#817)
+            if src.chart_square(i) {
+                dst.square_chart(ni);
+            }
             let normal = p.normal.and_then(axis);
             r.made(EntRef::frame(i), ni);
             // its normal, where it came along too
