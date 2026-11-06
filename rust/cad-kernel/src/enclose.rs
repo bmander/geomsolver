@@ -200,9 +200,21 @@ impl Enclosed<2> for Net {
         let w = |i: usize,j: usize| self.weights.as_ref().map_or(1.,|w| w[i][j]);
         // each row along `v` read over `v`, then the rows read along `u`: the point and `S_v` from
         // the rows' values, `S_u` from their values' differences
-        let rows: Vec<([Iv;4],[Iv;4])> = (0..nu).map(|i| spline(self.dv,&self.vknots,nv,&|j| lift(self.poles[i][j],w(i,j)),v)).collect();
+        // (only the rows the box's `u` reaches: a fitted net has hundreds)
+        let clamp = |x: f64| x.clamp(self.uknots[self.du],self.uknots[nu]);
+        let (first,last) = (span(self.du,&self.uknots,nu,clamp(u[0]))-self.du,span(self.du,&self.uknots,nu,clamp(u[1])));
+        let vclamp = |x: f64| x.clamp(self.vknots[self.dv],self.vknots[nv]);
+        let (vfirst,vlast) = (span(self.dv,&self.vknots,nv,vclamp(v[0]))-self.dv,span(self.dv,&self.vknots,nv,vclamp(v[1])));
+        // a box over many spans either way, of a net not rational: the hull of its poles, and of
+        // its difference nets' (`hulled`), which hold its point and partials there as de Boor's
+        // steps would, at a fraction of the cost
+        if self.weights.is_none() && (last-first > self.du+WIDE || vlast-vfirst > self.dv+WIDE) {
+            return self.hulled([first,last],[vfirst,vlast],u[0] < self.uknots[self.du] || u[1] > self.uknots[nu],
+                v[0] < self.vknots[self.dv] || v[1] > self.vknots[nv])
+        }
+        let rows: Vec<([Iv;4],[Iv;4])> = (first..=last).map(|i| spline(self.dv,&self.vknots,nv,&|j| lift(self.poles[i][j],w(i,j)),v)).collect();
         let at_u = |k: usize| -> ([Iv;4],[Iv;4]) {
-            let pick = |i: usize| if k == 0 { rows[i].0 } else { rows[i].1 };
+            let pick = |i: usize| if k == 0 { rows[i-first].0 } else { rows[i-first].1 };
             spline(self.du,&self.uknots,nu,&pick,u)
         };
         let ((a,au),(av,_)) = (at_u(0),at_u(1));
@@ -210,6 +222,39 @@ impl Enclosed<2> for Net {
         let (_,sv) = quotient(a,av);
         let hull: I3 = std::array::from_fn(|k| Iv::of_all(self.poles_over(u,v).map(|q| q[k])));
         Patch {at:meet3(s,hull),d:[su,sv],proved:true}
+    }
+}
+
+impl Net {
+    /// **A net's point and partials over the poles `rows × cols` reach, by hulls** (not rational):
+    /// its point in its poles' hull, `S_u` in the hull of `p (P_{i+1,j} − P_{i,j}) / (u_{i+p+1} −
+    /// u_{i+1})` over those poles, `S_v` likewise — each difference read in floats and widened by
+    /// its rounding (a subtraction and a division, a few units in its last place), the hull's ends
+    /// exact. A box past the domain, where the net is read clamped, holds nought in that partial too.
+    fn hulled(&self,[i0,i1]: [usize;2],[j0,j1]: [usize;2],past_u: bool,past_v: bool) -> Patch<2> {
+        let widened = |lo: f64,hi: f64| {
+            let e = 8.*f64::EPSILON;
+            Iv::new(lo-e*lo.abs()-f64::MIN_POSITIVE,hi+e*hi.abs()+f64::MIN_POSITIVE)
+        };
+        let mut at = [(f64::INFINITY,f64::NEG_INFINITY);3];
+        let (mut su,mut sv) = ([(f64::INFINITY,f64::NEG_INFINITY);3],[(f64::INFINITY,f64::NEG_INFINITY);3]);
+        let take = |h: &mut [(f64,f64);3],x: V| for k in 0..3 { h[k].0 = h[k].0.min(x[k]); h[k].1 = h[k].1.max(x[k]); };
+        for i in i0..=i1 {
+            for j in j0..=j1 {
+                let q = self.poles[i][j];
+                take(&mut at,q);
+                if i < i1 {
+                    let gap = self.uknots[i+self.du+1]-self.uknots[i+1];
+                    if gap > 0. { let r = self.poles[i+1][j]; take(&mut su,std::array::from_fn(|k| self.du as f64*(r[k]-q[k])/gap)) }
+                }
+                if j < j1 {
+                    let gap = self.vknots[j+self.dv+1]-self.vknots[j+1];
+                    if gap > 0. { let r = self.poles[i][j+1]; take(&mut sv,std::array::from_fn(|k| self.dv as f64*(r[k]-q[k])/gap)) }
+                }
+            }
+        }
+        let iv = |h: (f64,f64),past: bool| if h.0 <= h.1 { let x = widened(h.0,h.1); if past { x.hull(Iv::point(0.)) } else { x } } else { Iv::point(0.) };
+        Patch {at:at.map(|h| Iv::new(h.0,h.1)),d:[su.map(|h| iv(h,past_u)),sv.map(|h| iv(h,past_v))],proved:true}
     }
 }
 
@@ -277,30 +322,37 @@ impl<E: crate::turned::Exact> ExactJets for E {
 }
 
 impl Enclosed<1> for Traced {
-    /// **A trace's own error bound** (the module's): its points at the stretch's ends, its own
-    /// points within it and its middle, hulled and grown by the longest chord between them — what a
-    /// curve between two points pulled onto both surfaces can stray by — and its derivative the
-    /// hull of its central differences there, grown by their spread. Measured: `proved` false.
+    /// **A trace's own error bound** (the module's): its points at five places across the stretch
+    /// and its own points within it (each already on both surfaces), hulled and grown by the
+    /// longest chord between them — what a curve between two points pulled onto both surfaces can
+    /// stray by — and its derivative the hull of its rates at those five places and, over a stretch
+    /// reaching past one segment, of the chords of every segment it reaches (its parameter counts
+    /// its points, so a chord is its mean rate over its segment), grown by twice their spread.
+    /// Measured: `proved` false.
     fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
         let (a,b) = (t[0].min(t[1]),t[0].max(t[1]));
-        let mut ts = vec![a,0.5*(a+b),b];
-        ts.extend((a.ceil() as i64..=b.floor() as i64).map(|k| k as f64).filter(|&k| k > a && k < b));
-        ts.sort_by(f64::total_cmp);
-        let pts: Vec<(V,V)> = ts.iter().map(|&s| self.d1_at(s)).collect();
-        let chord = pts.windows(2).map(|w| crate::util::space::distance(w[0].0,w[1].0)).fold(0.,f64::max);
+        let m = self.pts.len()-1;
+        let samples: Vec<(f64,(V,V))> = (0..5).map(|k| a+(b-a)*k as f64/4.).map(|s| (s,self.d1_at(s))).collect();
+        let at_point = |k: i64| -> V { self.pts[if self.closed { k.rem_euclid(m as i64) as usize } else { k.clamp(0,m as i64) as usize }] };
+        let (lo,hi) = (a.ceil() as i64,b.floor() as i64);
+        let mut pts: Vec<(f64,V)> = samples.iter().map(|e| (e.0,e.1.0)).collect();
+        pts.extend((lo..=hi).filter(|&k| (k as f64) > a && (k as f64) < b).map(|k| (k as f64,at_point(k))));
+        pts.sort_by(|x,y| x.0.total_cmp(&y.0));
+        let mut rates: Vec<V> = samples.iter().map(|e| e.1.1).collect();
+        if b.floor() > a.floor() {
+            rates.extend((a.floor() as i64..=b.ceil() as i64-1).map(|k| crate::util::space::sub(at_point(k+1),at_point(k))));
+        }
+        let chord = pts.windows(2).map(|w| crate::util::space::distance(w[0].1,w[1].1)).fold(0.,f64::max);
+        let scale = pts.iter().map(|p| p.1.iter().fold(0f64,|m,x| m.max(x.abs()))).fold(0.,f64::max);
         let grow = |x: Iv,by: f64| Iv::new(x.lo()-by,x.hi()+by);
-        let at: I3 = std::array::from_fn(|k| grow(Iv::of_all(pts.iter().map(|p| p.0[k])),chord+1e-12*(1.+x_scale(&pts))));
+        let at: I3 = std::array::from_fn(|k| grow(Iv::of_all(pts.iter().map(|p| p.1[k])),chord+1e-12*(1.+scale)));
         let d: I3 = std::array::from_fn(|k| {
-            let h = Iv::of_all(pts.iter().map(|p| p.1[k]));
-            let spread = (h.hi()-h.lo()).max(1e-6*h.mag());
-            grow(h,spread)
+            let h = Iv::of_all(rates.iter().map(|r| r[k]));
+            grow(h,(2.*(h.hi()-h.lo())).max(1e-6*h.mag()))
         });
         Patch {at,d:[d],proved:false}
     }
 }
-
-/// The largest coordinate among some points.
-fn x_scale(pts: &[(V,V)]) -> f64 { pts.iter().map(|p| p.0.iter().fold(0f64,|m,x| m.max(x.abs()))).fold(0.,f64::max) }
 
 impl Enclosed<1> for SheetCut {
     /// `C(v) = S(u(v), v)`, `C' = S_u u' + S_v`, `u = −α/β` (the module's).

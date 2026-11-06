@@ -138,6 +138,11 @@ pub trait Num: Copy+Add<Output=Self>+Sub<Output=Self>+Mul<Output=Self>+Div<Outpu
     fn sin_cos(self) -> (Self,Self);
     /// The float it is, where it is one (an interval is none).
     fn real(self) -> Option<f64>;
+    /// It as an interval (a float the interval holding it alone).
+    fn iv(self) -> Iv;
+    /// The number an interval stands for: the interval itself, or a float its middle (what a reading
+    /// worked in intervals hands back to a float one).
+    fn from_iv(x: Iv) -> Self;
 }
 
 impl Num for f64 {
@@ -145,6 +150,8 @@ impl Num for f64 {
     fn sqrt(self) -> f64 { f64::sqrt(self) }
     fn sin_cos(self) -> (f64,f64) { use crate::util::fmath::Det; self.dsin_cos() }
     fn real(self) -> Option<f64> { Some(self) }
+    fn iv(self) -> Iv { Iv::point(self) }
+    fn from_iv(x: Iv) -> f64 { x.mid() }
 }
 
 /// An outward-rounded interval, or none where an operation left its domain (a division by an
@@ -207,6 +214,8 @@ impl Num for Iv {
         match self.0.and_then(|a| a.sin_cos_periodic().ok()) { Some((s,c)) => (Iv(Some(s)),Iv(Some(c))),None => (Iv(None),Iv(None)) }
     }
     fn real(self) -> Option<f64> { None }
+    fn iv(self) -> Iv { self }
+    fn from_iv(x: Iv) -> Iv { x }
 }
 
 /// A number and its first two derivatives along one parameter.

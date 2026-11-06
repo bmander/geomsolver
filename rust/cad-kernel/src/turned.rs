@@ -174,10 +174,24 @@ fn monotone_root(f: &dyn Fn(f64) -> [f64;2],[a,b]: [f64;2],ends: [f64;2],target:
 /// **A posed curve's point at the jet `t` of its angle**, its parameter `x(τ)` the root of
 /// `f(x) = −cos τ` (`solve`, `f` with its first two rates at a float): `x`'s jet in `τ` by the
 /// implicit function (`f' x' = sin τ`, `f' x'' + f'' x'² = cos τ`) and the chain rule, handed to `at`
-/// with `τ`'s own. Read in floats only: an interval reading is none (NaN), and a box about the curve
-/// is grown from its samples.
-fn implicit<T: Num>(t: Jet<T>,solve: &dyn Fn(f64) -> f64,f: &dyn Fn(f64) -> [f64;3],at: &dyn Fn(Jet<f64>,Jet<f64>) -> J3<f64>) -> J3<T> {
-    let (Some(tv),Some(td),Some(tdd)) = (t.v.real(),t.d.real(),t.dd.real()) else { return [Jet {v:T::of(f64::NAN),d:T::of(f64::NAN),dd:T::of(f64::NAN)};3] };
+/// with `τ`'s own. Read in intervals (#814: what a certified reading encloses the curve by), over a
+/// stretch `T` of `τ`: `f` runs one way over `x`'s bracket, so the `x` it takes over `−cos T` lie
+/// between the roots at that interval's ends — each found in floats, then widened until `f` read in
+/// intervals just outside it is proved past those ends (`bracketed`) — and `x' = sin τ / f'(x)` is
+/// enclosed over them; the point by `at` read in intervals (`at_iv`, `f_iv`: the same formulas over
+/// `Num`). Where that cannot be proved, every number.
+fn implicit<T: Num>(t: Jet<T>,solve: &dyn Fn(f64) -> f64,f: &dyn Fn(f64) -> [f64;3],at: &dyn Fn(Jet<f64>,Jet<f64>) -> J3<f64>,
+    f_iv: &dyn Fn(Jet<Iv>) -> Jet<Iv>,at_iv: &dyn Fn(Jet<Iv>,Jet<Iv>) -> J3<Iv>) -> J3<T> {
+    let (Some(tv),Some(td),Some(tdd)) = (t.v.real(),t.d.real(),t.dd.real()) else {
+        let any = Jet {v:T::from_iv(Iv::ANY),d:T::from_iv(Iv::ANY),dd:T::from_iv(Iv::ANY)};
+        let tj = Jet {v:t.v.iv(),d:t.d.iv(),dd:t.dd.iv()};
+        let (st,ct) = tj.v.sin_cos();
+        let Some(x) = bracketed(-ct,solve,f_iv) else { return [any;3] };
+        let rate = f_iv(Jet::at(x)).d;
+        if rate.has_zero() { return [any;3] }
+        let xj = Jet {v:x,d:st/rate*tj.d,dd:Iv::ANY};
+        return at_iv(xj,tj).map(|j| Jet {v:T::from_iv(j.v),d:T::from_iv(j.d),dd:T::from_iv(j.dd)})
+    };
     use crate::util::fmath::Det;
     let x0 = solve(tv);
     let [_,d1,d2] = f(x0);
@@ -185,6 +199,32 @@ fn implicit<T: Num>(t: Jet<T>,solve: &dyn Fn(f64) -> f64,f: &dyn Fn(f64) -> [f64
     let x1 = st/d1;
     let x2 = (ct-d2*x1*x1)/d1;
     at(Jet {v:x0,d:x1*td,dd:x2*td*td+x1*tdd},Jet {v:tv,d:td,dd:tdd}).map(|j| Jet {v:T::of(j.v),d:T::of(j.d),dd:T::of(j.dd)})
+}
+
+/// **Every root of `f(x) = c` for `c` in `target`, `f` running one way** (`implicit`'s): the roots at
+/// `target`'s ends (`solve`: `solve(τ)` is the root at `−cos τ`, so it is asked at the angles those
+/// ends stand for), widened by a few units of rounding, then more, until `f` read in intervals at
+/// each end of the bracket is proved past the target's end there (or the bracket is the root's own
+/// stretch, which `solve` holds it to). `None` where it cannot be proved.
+fn bracketed(target: Iv,solve: &dyn Fn(f64) -> f64,f_iv: &dyn Fn(Jet<Iv>) -> Jet<Iv>) -> Option<Iv> {
+    let (c0,c1) = (target.lo().max(-1.),target.hi().min(1.));
+    if !(c0 <= c1) { return None }
+    // `solve` is asked at an angle: `−cos τ = c` at `τ = acos(−c)`
+    let (r0,r1) = (solve((-c0).acos()),solve((-c1).acos()));
+    let (lo,hi) = (r0.min(r1),r0.max(r1));
+    let value = |x: f64| f_iv(Jet::at(Iv::point(x))).v;
+    let up = { let (a,b) = (value(lo).mid(),value(hi).mid()); if a == b { value(hi+1e-9*(1.+hi.abs())).mid() >= a } else { b > a } };
+    let mut grow = 4.*f64::EPSILON;
+    for _ in 0..24 {
+        let (x0,x1) = (lo-grow*(1.+lo.abs()),hi+grow*(1.+hi.abs()));
+        // past each end: below the target's least there and above its most, the way `f` runs
+        let (v0,v1) = (value(x0),value(x1));
+        let held = if up { v0.hi() < c0 && v1.lo() > c1 } else { v0.lo() > c1 && v1.hi() < c0 };
+        if held { return Some(Iv::new(x0,x1)) }
+        grow *= 4.;
+    }
+    // (an end the bracket's own: the root clamped there; held where `f` there is past it no further)
+    None
 }
 
 /// **Where a cylinder holding a sharp circle at a pose of the turn crosses the circle's ring, off
@@ -252,20 +292,29 @@ impl Crossing {
         let s = (j*(v0*v0+v1*v1).sqrt()).times(0.5/self.r);
         [s.v,s.d,s.dd]
     }
-    /// Its point at the jet `t` of the angle round it, in the turn's frame (floats only).
+    /// `σ` at the jet `h`, written once over `Num`.
+    fn sigma_jet<T: Num>(&self,j: Jet<T>) -> Jet<T> {
+        let v0 = Jet::of(self.m0[0])+j.times(self.k[0]);
+        let v1 = Jet::of(self.m0[1])+j.times(self.k[1]);
+        (j*(v0*v0+v1*v1).sqrt()).times(0.5/self.r)
+    }
+    /// The loop's point at the jets of its height `h` and its angle `τ`, written once over `Num`.
+    fn at<T: Num>(&self,h: Jet<T>,tau: Jet<T>) -> J3<T> {
+        let (sn,cs) = tau.sin_cos();
+        let v0 = Jet::of(self.m0[0])+h.times(self.k[0]);
+        let v1 = Jet::of(self.m0[1])+h.times(self.k[1]);
+        let len = (v0*v0+v1*v1).sqrt();
+        let (u0,u1) = (v0/len,v1/len);
+        // ρ = cos τ v̂ + sin τ v̂⊥, v̂⊥ = (−v̂₁, v̂₀)
+        let rho = [cs*u0-sn*u1,cs*u1+sn*u0];
+        std::array::from_fn(|i| Jet::of(self.c[i])+h.times(self.a[i])+(rho[0].times(self.e1[i])+rho[1].times(self.e2[i])).times(self.r))
+    }
+    /// Its point at the jet `t` of the angle round it, in the turn's frame, in floats or intervals.
     pub fn point<T: Num>(&self,t: Jet<T>) -> J3<T> {
         use crate::util::fmath::Det;
         let rate = |h: f64| { let [s,d,_] = self.sigma(h); [s,d] };
-        implicit(t,&|tau| monotone_root(&rate,self.h,[-1.,1.],-tau.dcos()),&|h| self.sigma(h),&|h,tau| {
-            let (sn,cs) = tau.sin_cos();
-            let v0 = Jet::of(self.m0[0])+h.times(self.k[0]);
-            let v1 = Jet::of(self.m0[1])+h.times(self.k[1]);
-            let len = (v0*v0+v1*v1).sqrt();
-            let (u0,u1) = (v0/len,v1/len);
-            // ρ = cos τ v̂ + sin τ v̂⊥, v̂⊥ = (−v̂₁, v̂₀)
-            let rho = [cs*u0-sn*u1,cs*u1+sn*u0];
-            std::array::from_fn(|i| Jet::of(self.c[i])+h.times(self.a[i])+(rho[0].times(self.e1[i])+rho[1].times(self.e2[i])).times(self.r))
-        })
+        implicit(t,&|tau| monotone_root(&rate,self.h,[-1.,1.],-tau.dcos()),&|h| self.sigma(h),&|h,tau| self.at(h,tau),
+            &|h| self.sigma_jet(h),&|h,tau| self.at(h,tau))
     }
 }
 
@@ -315,17 +364,21 @@ impl Section {
         };
         Some((k,spans.into_iter().filter(|s| s[1] > s[0]).collect()))
     }
-    /// Its point at the jet `t` of the angle round it, in the turn's frame (floats only).
+    /// The cut's point at the jets of the slant `v` and the angle `τ`, written once over `Num`.
+    fn at<T: Num>(&self,v: Jet<T>,tau: Jet<T>) -> J3<T> {
+        use crate::util::fmath::Det;
+        let way = self.n[1].datan2(self.n[0]);
+        let [r,z] = self.of.meridian(v);
+        let (sn,cs) = (Jet::of(way+std::f64::consts::PI)-tau).sin_cos();
+        [r*cs,r*sn,z]
+    }
+    /// Its point at the jet `t` of the angle round it, in the turn's frame, in floats or intervals.
     pub fn point<T: Num>(&self,t: Jet<T>) -> J3<T> {
         use crate::util::fmath::Det;
         let c = |v: f64| { let j = self.c(Jet::<f64>::at(v)); [j.v,j.d,j.dd] };
         let rate = |v: f64| { let [x,d,_] = c(v); [x,d] };
-        let way = self.n[1].datan2(self.n[0]);
-        implicit(t,&|tau| monotone_root(&rate,self.v,self.ends,-tau.dcos()),&c,&|v,tau| {
-            let [r,z] = self.of.meridian(v);
-            let (sn,cs) = (Jet::of(way+std::f64::consts::PI)-tau).sin_cos();
-            [r*cs,r*sn,z]
-        })
+        implicit(t,&|tau| monotone_root(&rate,self.v,self.ends,-tau.dcos()),&c,&|v,tau| self.at(v,tau),
+            &|v| self.c(v),&|v,tau| self.at(v,tau))
     }
 }
 

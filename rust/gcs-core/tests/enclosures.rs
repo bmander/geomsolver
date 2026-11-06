@@ -304,3 +304,24 @@ fn a_reading_that_proves_nothing_is_refused_with_its_witness() {
     let said = r.to_string();
     assert!(said.contains("line") && said.contains("plane") && said.contains("[0.25, 0.5]"),"{said}");
 }
+
+/// **A curve lying along a surface for a while is one run, proved — not refused, not sampled**
+/// (#814): a polyline lying in a flat net over its middle stretch and leaving it either side, and
+/// the same against the plane read by the general reading alone. No box can part the run's roots nor exclude
+/// them; the search proves the run — the curve held within the tolerance of the surface along a
+/// path of its parameters, piece by piece in intervals — reads its ends, and the reading settles
+/// it as one meeting within the run's stretch.
+#[test]
+fn a_curve_lying_along_a_surface_for_a_while_is_one_run_proved() {
+    let flat = Net {du:1,dv:1,uknots:vec![0.,0.,1.,1.],vknots:vec![0.,0.,1.,1.],
+        poles:vec![vec![[0.,0.,0.],[0.,1.,0.]],vec![[1.,0.,0.],[1.,1.,0.]]],weights:None};
+    let sheet = Surface::BSpline(Frame::WORLD,Arc::new(flat));
+    let line = Curve::BSpline(Arc::new(BSpline::new(1,vec![0.,0.,1.,2.,3.,3.],vec![[-1.,0.5,1.],[0.,0.5,0.],[1.,0.5,0.],[2.,0.5,1.]]).unwrap()));
+    let m = curve_surface(&line,[0.,3.],&sheet,1e-9);
+    let Meets::At(roots) = &m else { panic!("{m:?}") };
+    assert!(!roots.is_empty() && roots.iter().all(|r| r.0 >= 1.-1e-9 && r.0 <= 2.+1e-9),"{m:?}");
+    let bent = Curve::BSpline(Arc::new(BSpline::new(1,vec![0.,0.,1.,2.,3.,3.],vec![[-1.,0.,1.],[0.,0.,0.],[1.,0.,0.],[2.,0.,1.]]).unwrap()));
+    let m = curve_surface_searched(&bent,[0.,3.],&Surface::Plane(Frame::WORLD),1e-9);
+    let Meets::At(roots) = &m else { panic!("{m:?}") };
+    assert!(!roots.is_empty() && roots.iter().all(|r| r.0 >= 1.-1e-9 && r.0 <= 2.+1e-9),"{m:?}");
+}
