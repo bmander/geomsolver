@@ -235,7 +235,7 @@ fn undercut(c: &Generating,patch: usize,inside: &(dyn Fn(V) -> bool+Sync),option
 fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone: Option<&Lone>)
     -> Result<(Reads,Vec<Motion>,[bool;2]),Failure> {
     let tool = c.source_material();
-    let on_tool = |p: V| tool.value(p).abs() < 1e-6;
+    let on_tool = |p: V| c.tool.on(p);
     let domain = c.domain();
     let pose = |t: f64| pose_at(c.motion(),t).map_err(|m| (Row::Motion,m,None));
     let limits = if c.whole() { Vec::new() } else { vec![pose(domain[0])?,pose(domain[1])?] };
@@ -245,6 +245,8 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
     let steps = 64;
     let poses: Vec<Motion> = (0..=steps).map(|k| pose(domain[0]+(domain[1]-domain[0])*k as f64/steps as f64))
         .collect::<Result<_,_>>()?;
+    // where tool point `x` is first carried into the blank over the roll, each read remembered
+    let reaches = |reads: &mut Reads,x: V| poses.iter().map(|m| m.point(x)).find(|&p| reads.read(inside,p));
     for edge in c.edges() {
         let ([a,b],[ua,_]) = (edge.patches,edge.ends);
         let (Some(pa),Some(pb)) = (c.patches().get(a),c.patches().get(b)) else { continue };
@@ -259,7 +261,7 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
             let Ok(point) = pa.at(ua,j as f64/options.coarse_columns as f64) else { continue };
             // (where the corner is the tool's: a face read whole a Boolean trims, #721 F1b)
             if !on_tool(point.position) { continue }
-            if let Some(p) = poses.iter().map(|m| m.point(point.position)).find(|&p| reads.read(inside,p)) {
+            if let Some(p) = reaches(&mut reads,point.position) {
                 return Err((Row::Corner,format!("`{}` meets `{}` at a concave corner",pa.name(),pb.name()),Some(p)));
             }
         }
@@ -276,7 +278,7 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
             if !on_tool(point.position) { continue }
             let chord: V = std::array::from_fn(|k| 0.5*(sa.position[k]+sb.position[k]));
             if tool.value(chord) <= 0. { continue }
-            if let Some(p) = poses.iter().map(|m| m.point(point.position)).find(|&p| reads.read(inside,p)) {
+            if let Some(p) = reaches(&mut reads,point.position) {
                 let said = if pa.name() == pb.name() { format!("the crease across `{}` is concave",pa.name()) }
                     else { format!("`{}` meets `{}` at a concave crease",pa.name(),pb.name()) };
                 return Err((Row::Corner,said,Some(p)));
@@ -316,8 +318,8 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
     for (end,v) in [(0,0.),(1,1.)] {
         let rim = c.patches().iter().enumerate()
             .filter(|&(k,s)| !s.periodic() && s.cap().is_none() && !c.creases().iter().any(|crease| crease[1-end] == k))
-            .find_map(|(_,surface)| (0..=options.coarse_rows).find_map(|i| { let s = surface.at(i as f64/options.coarse_rows as f64,v).ok()?;
-                poses.iter().map(|m| m.point(s.position)).find(|&p| reads.read(inside,p)) }).map(|p| (surface.name(),p)));
+            .find_map(|(_,surface)| (0..=options.coarse_rows).find_map(|i| {
+                reaches(&mut reads,surface.at(i as f64/options.coarse_rows as f64,v).ok()?.position) }).map(|p| (surface.name(),p)));
         let Some((name,p)) = rim else { continue };
         if lone.is_none() {
             return Err((Row::Tool,format!("a cap of the prism `{name}` bounds passes through the blank, and the class cuts \
@@ -335,7 +337,7 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
         let n = CAP_READS;
         let reached = (0..=n).flat_map(|i| (0..=n).map(move |j| (i,j))).find_map(|(i,j)| {
             let s = surface.at(i as f64/n as f64,j as f64/n as f64).ok().filter(|s| on_tool(s.position))?;
-            poses.iter().map(|m| m.point(s.position)).find(|&p| reads.read(inside,p))
+            reaches(&mut reads,s.position)
         });
         if let Some(p) = reached {
             // (a lone prism's cap its rim does not carry into the blank is cut as one its rim does)
@@ -362,7 +364,7 @@ impl Lone {
     /// The tool's cutter (millimetres, carried by the placements) as a lone prism, `scale` the
     /// model's millimetres a unit, or none where it is not one: undrafted (`prism_profile`), its
     /// profile one loop.
-    pub fn new(cutter: Cutter,scale: f64) -> Option<Lone> {
+    fn new(cutter: Cutter,scale: f64) -> Option<Lone> {
         let ([_],_) = cutter.prism_profile()? else { return None };
         Some(Lone {cutter,scale})
     }
@@ -374,9 +376,8 @@ impl Lone {
     /// direction's prism of the nearer cap's loop, however the tool was drawn — a prism, one
     /// placed, a box a Boolean leaves. None for any other tool.
     pub fn read(b: &Brep,tool: &Tool,scale: f64) -> Option<Lone> {
-        use crate::build::{Profile,ProfileEdge};
-        use crate::geom::{Curve,Surface};
-        use crate::topo::EdgeCurve;
+        use crate::build::Profile;
+        use crate::geom::Surface;
         if !tool.creases.is_empty() { return None }
         let (mut along,mut caps) = (None::<V>,0);
         for f in &tool.faces {
@@ -394,27 +395,20 @@ impl Lone {
         }
         if caps != 2 { return None }
         let axis = along.and_then(crate::util::space::normalised)?;
-        // the boundary's planes square to the sides, each one loop: the caps, the nearer first
-        let mut ends: Vec<(f64,usize)> = b.faces.iter().enumerate().filter_map(|(fi,f)| match &f.surface {
+        // the boundary's planes square to the sides, each one loop: the caps, each a point of it
+        // and its height along the sides, the nearer first
+        let mut ends: Vec<(f64,V,usize)> = b.faces.iter().enumerate().filter_map(|(fi,f)| match &f.surface {
             Surface::Plane(frame) if norm(cross(frame.z,axis)) <= 1e-9 && f.loops.len() == 1 => {
-                let v = b.edges[f.loops[0][0].edge as usize].v[0];
-                Some((dot(b.vertices[v as usize].p,axis),fi))
+                let p = b.vertices[b.edges[f.loops[0][0].edge as usize].v[0] as usize].p;
+                Some((dot(p,axis),p,fi))
             }
             _ => None,
         }).collect();
         if ends.len() != 2 { return None }
         ends.sort_by(|x,y| x.0.total_cmp(&y.0));
-        let ([(h0,near),(h1,_)],start) = ([ends[0],ends[1]],&b.faces[ends[0].1]);
+        let [(h0,origin,near),(h1,..)] = [ends[0],ends[1]];
         if !(h1-h0 > 0.) { return None }
-        let edges = start.loops[0].iter().map(|c| {
-            let e = &b.edges[c.edge as usize];
-            match &e.curve {
-                EdgeCurve::Curve(Curve::Line {..}) => Some(ProfileEdge::Line {a:b.vertices[e.v[0] as usize].p,b:b.vertices[e.v[1] as usize].p}),
-                EdgeCurve::Curve(Curve::Circle(frame,r)) => Some(ProfileEdge::Arc {frame:*frame,r:*r,span:Some(e.t)}),
-                _ => None,
-            }
-        }).collect::<Option<Vec<_>>>()?;
-        let origin = b.vertices[b.edges[b.faces[near].loops[0][0].edge as usize].v[0] as usize].p;
+        let edges = crate::offset::plane_loop(b,&b.faces[near].loops[0],axis).ok()?;
         let profile = Profile {origin,normal:axis,loops:vec![edges],names:vec![Vec::new()]};
         Lone::new(Cutter::extruded(profile,0.,h1-h0,None).ok()?,scale)
     }
@@ -473,7 +467,7 @@ impl Lone {
 pub fn check(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone: Option<&Lone>)
     -> Result<(Found,Reads),Failure> {
     let tool = c.source_material();
-    let on_tool = |p: V| tool.value(p).abs() < 1e-6;
+    let on_tool = |p: V| c.tool.on(p);
     let domain = c.domain();
     let middle = 0.5*(domain[0]+domain[1]);
     let pose = |t: f64| pose_at(c.motion(),t).map_err(|m| (Row::Motion,m,None));

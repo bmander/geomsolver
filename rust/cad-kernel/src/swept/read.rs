@@ -25,6 +25,7 @@
 use crate::util::fmath::Det;
 use crate::geom::{Curve,Frame,Surface,Uv};
 use crate::query::{Located,Place};
+use crate::recipe::joined;
 use crate::topo::{unwrap,Brep,EdgeCurve,Face};
 use crate::util::space::{add,cross,distance,dot,norm,normalised,scale,sub};
 use super::surface::{Meridian,RevolvedSurface};
@@ -58,16 +59,6 @@ impl std::fmt::Display for Unread {
             Unread::Meridian {face,kind,..} => write!(f,"its face `{face}` turns {} {kind}, not a line or a circle",article(kind)),
             Unread::Boundary(m) => write!(f,"{m}"),
         }
-    }
-}
-
-/// A face's name as the tool's reading says it: its solid's and its own, a dot between, where the
-/// recipe's build names it so (`recipe::NAMED`) — `mill.bottom`, as the drawing names it — else
-/// its whole name.
-pub fn named(f: &Face) -> String {
-    match crate::recipe::named_parts(&f.name) {
-        (solid,"") => solid.to_string(),
-        (solid,face) => format!("{solid}.{face}"),
     }
 }
 
@@ -143,7 +134,7 @@ impl Tool {
                 continue
             }
             let f = &b.faces[fi];
-            let (face,kind,at) = (named(f),f.surface.kind(),witness(fi));
+            let (face,kind,at) = (joined(&f.name),f.surface.kind(),witness(fi));
             read[fi] = Some(match &f.surface {
                 Surface::Plane(frame) => reader.cap(fi,frame,&read),
                 Surface::Revolution(_,c) if !matches!(**c,Curve::Line {..} | Curve::Circle(..)) =>
@@ -207,17 +198,15 @@ fn once_a_surface(faces: Vec<ToolSurface>,edges: Vec<PatchEdge>,creases: Vec<[us
             (Ok(p),Ok(q)) => distance(p.position,q.position) <= tol,
             _ => false,
         }));
-    let n = faces.len();
-    let mut first: Vec<usize> = (0..n).collect();
-    for k in 0..n {
-        if let Some(j) = (0..k).find(|&j| first[j] == j && same(&faces[j],&faces[k])) { first[k] = j }
+    // each reading's place among those kept: the first reading alike, else its own
+    let (mut kept,mut index): (Vec<ToolSurface>,Vec<usize>) = (Vec::new(),Vec::new());
+    for f in faces {
+        match kept.iter().position(|k| same(k,&f)) {
+            Some(j) => index.push(j),
+            None => { index.push(kept.len()); kept.push(f) }
+        }
     }
-    if first.iter().enumerate().all(|(k,&j)| j == k) { return (faces,edges,creases) }
-    // each reading's place among those kept
-    let mut index = vec![0;n];
-    let mut kept = Vec::new();
-    for k in 0..n { if first[k] == k { index[k] = kept.len(); kept.push(k) } }
-    for k in 0..n { index[k] = index[first[k]] }
+    if kept.len() == index.len() { return (kept,edges,creases) }
     let mut merged: Vec<PatchEdge> = Vec::new();
     for e in edges {
         let patches = e.patches.map(|k| index[k]);
@@ -227,8 +216,7 @@ fn once_a_surface(faces: Vec<ToolSurface>,edges: Vec<PatchEdge>,creases: Vec<[us
         merged.push(PatchEdge {patches,ends:e.ends});
     }
     let creases = creases.into_iter().map(|c| c.map(|k| index[k])).collect();
-    let mut faces: Vec<Option<ToolSurface>> = faces.into_iter().map(Some).collect();
-    (kept.into_iter().map(|k| faces[k].take().expect("each kept once")).collect(),merged,creases)
+    (kept,merged,creases)
 }
 
 /// A face as read, in the boundary's units: a face of revolution, a ruled strip, or a cap.
@@ -251,13 +239,13 @@ impl Read {
                     Meridian::Round {center,a,b,sweep} => Meridian::Round {center:v(center),a:v(a),b:v(b),sweep},
                     Meridian::Conic {a,m,b,w} => Meridian::Conic {a:v(a),m:v(m),b:v(b),w},
                 };
-                ToolSurface::Revolved(RevolvedSurface::new(named(f),meridian,v(s.origin()),s.axis_direction(),s.sweep()))
+                ToolSurface::Revolved(RevolvedSurface::new(joined(&f.name),meridian,v(s.origin()),s.axis_direction(),s.sweep()))
             }
-            Read::Strip(s) => ToolSurface::Extruded(ExtrudedSurface::new(named(f),edge(s.edge),match s.side {
+            Read::Strip(s) => ToolSurface::Extruded(ExtrudedSurface::new(joined(&f.name),edge(s.edge),match s.side {
                 Side::Straight(d) => Side::Straight(v(d)),
                 Side::Leaning(far) => Side::Leaning(edge(far)),
             })),
-            Read::Cap {end,corner,du,dv} => ToolSurface::Cap(CapSurface::new(named(f),end,v(corner),v(du),v(dv))),
+            Read::Cap {end,corner,du,dv} => ToolSurface::Cap(CapSurface::new(joined(&f.name),end,v(corner),v(du),v(dv))),
         }
     }
 }

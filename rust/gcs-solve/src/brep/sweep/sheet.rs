@@ -33,11 +33,27 @@ pub struct SweptCut {
     pub routes: std::collections::BTreeMap<String,String>,
 }
 
+/// A cut's cutter (`SweptCut::cutter`): the one admission read from the tool's B-rep, or one
+/// sectioned off its recipe.
+pub enum Sectioned<'a> { Read(&'a Cutter),Recipe(Cutter) }
+
+impl std::ops::Deref for Sectioned<'_> {
+    type Target = Cutter;
+    fn deref(&self) -> &Cutter { match self { Sectioned::Read(c) => c,Sectioned::Recipe(c) => c } }
+}
+
 impl SweptCut {
-    /// The tool as one prism standing alone, read from its B-rep (`SweepContacts::lone`, #721
-    /// F1b): the cutter its prism sheets are sectioned by, however the tool was drawn. A cutter of
-    /// revolutions is still sectioned off its recipe (`Cutter::read`), until #721 F1c.
-    pub fn lone(&self) -> Option<&crate::brep::swept::admission::Lone> { self.contacts.as_ref().ok()?.lone() }
+    /// **The cutter every sheet of this cut is sectioned by**, chosen once: the prism read from
+    /// the tool's B-rep where it is one standing alone (`SweepContacts::lone`, #721 F1b), however
+    /// the tool was drawn, so admission's band and the sheet's stations are measured from one
+    /// origin; else the recipe's (`Cutter::read`: a cutter of revolutions, or a drafted prism, until
+    /// #721 F1c).
+    pub fn cutter(&self) -> Result<Sectioned<'_>,String> {
+        match self.contacts.as_ref().ok().and_then(SweepContacts::lone) {
+            Some(lone) => Ok(Sectioned::Read(lone.cutter())),
+            None => Cutter::read(&self.recipe).map(Sectioned::Recipe),
+        }
+    }
 
     pub fn read(sk: &Sketch,swept: usize) -> Result<SweptCut,ExportRefusal> {
         let name = sk.solids[swept].name.clone();
@@ -65,8 +81,7 @@ impl SweptCut {
 /// (The roll's clearance of the blank at both limits is admission's row E1, asked before this.)
 pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,say: &Say)
     -> Result<Fitted,ExportRefusal> {
-    if let Some(lone) = cut.lone() { return traced_sheet(cut,lone.cutter(),inside,near,tolerance,say) }
-    let cutter = Cutter::read(&cut.recipe).at(Stage::Reach)?;
+    let cutter = cut.cutter().at(Stage::Reach)?;
     traced_sheet(cut,&cutter,inside,near,tolerance,say)
 }
 
@@ -78,9 +93,7 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
 pub fn capped_sheet(cut: &SweptCut,capped: &crate::solid::admission::Capped,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
     tolerance: Option<Tolerance>,say: &Say) -> Result<Fitted,ExportRefusal> {
     let middle = 0.5*(capped.band[0]+capped.band[1]);
-    let lone = cut.contacts.as_ref().map_err(Clone::clone)
-        .and_then(|c| c.lone().ok_or_else(|| "the tool is read as no prism standing alone".to_string())).at(Stage::Reach)?;
-    let cutter = lone.cutter().across(capped.across,middle).at(Stage::Reach)?;
+    let cutter = cut.cutter().and_then(|c| c.across(capped.across,middle)).at(Stage::Reach)?;
     traced_sheet(cut,&cutter,inside,near,tolerance,say)
 }
 

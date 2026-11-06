@@ -8,10 +8,8 @@
 //! admits has shown no failure at the samples it names, which is not a proof that none exists
 //! between them. Material evaluation answers membership for every sweep, admitted or not; only
 //! boundary construction is restricted.
-#[allow(unused_imports)]
-use super::ReadExtruded;
 use super::{SpatialField,SweepContacts,cad};
-use crate::brep::swept::admission::{self as rows,Lone,Reads};
+use crate::brep::swept::admission::{self as rows,Reads};
 use super::constant_twist::Failure;
 use crate::{envelope::{Motion,SurfacePoint},model::{EntKind,Sketch,SolidDef}};
 use std::{collections::BTreeMap,f64::consts::TAU,fmt};
@@ -464,7 +462,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     order.retain(|s| !matches!(asked[s],Asked::Planar | Asked::Subtraction));
     // a placement's check by the class its motion is in: the kernel's rows (`brep::swept::admission`)
     let mm = cad::millimetres(sk);
-    let check = |contacts: &SweepContacts,lone: Option<&Lone>,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)|
+    let check = |contacts: &SweepContacts,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)|
         -> Result<(SweepEvidence,Reads),Failure> {
         let path = contacts.motion().path().map_err(|e| (Condition::Motion,e,None))?;
         let sweep = rows::Generating {tool:contacts.tool(),path,roll:contacts.domain(),whole:contacts.whole(),mm};
@@ -473,7 +471,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         match contacts.motion().twist() {
             Some(screw) => {
                 let extent = bounds.map(|b| screw.extent(b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1]),pose.inverse()));
-                let (found,spacing,reads) = rows::check_screw(&sweep,inside,extent,&sampling,lone).map_err(failed)?;
+                let (found,spacing,reads) = rows::check_screw(&sweep,inside,extent,&sampling,contacts.lone()).map_err(failed)?;
                 let [first,last] = found.reach;
                 Ok((SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples:found.samples,contacts:last-first+1,
                     spacing,least_area_factor:found.least_factor,near_double_roots:0,near_tangent_pairs:0,
@@ -481,7 +479,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
                     class:Class::ConstantTwist(Box::new(found))},reads))
             }
             None => {
-                let (found,reads) = rows::check(&sweep,inside,&sampling,lone).map_err(failed)?;
+                let (found,reads) = rows::check(&sweep,inside,&sampling,contacts.lone()).map_err(failed)?;
                 Ok((SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples:found.samples,contacts:found.contacts,
                     spacing:found.spacing,least_area_factor:found.least_area_factor,near_double_roots:found.near_double_roots,
                     near_tangent_pairs:found.near_tangent_pairs,basis:Basis::Sampled {rows:options.rows,columns:options.columns},
@@ -506,7 +504,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     let checks = crate::par::indices(order.len(),|k| -> Option<Result<(SweepEvidence,Reads),Error>> {
         let contacts = tools[k].as_ref().ok()?;
         let (swept,pose) = (order[k],by_sweep[&order[k]][0]);
-        Some(check(contacts,contacts.lone(),pose,&inside_at(pose)).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p)))))
+        Some(check(contacts,pose,&inside_at(pose)).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p)))))
     });
     let first: Vec<Result<(SweepContacts,SweepEvidence,Reads),Error>> = tools.into_iter().zip(checks).map(|(tool,check)| {
         let contacts = tool?;
@@ -553,7 +551,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
                 let inside = inside_at(*pose);
                 let same = checked.iter().skip(1).find(|(_,reads)| reads.points.iter().zip(&reads.inside).all(|(p,&i)| inside(*p) == i));
                 if let Some((i,_)) = same { placements.push(Placement {pose:*pose,equivalent_to:Some(*i)}); continue; }
-                let (_,reads) = check(&contacts,contacts.lone(),*pose,&inside).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
+                let (_,reads) = check(&contacts,*pose,&inside).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
                 checked.push((j,reads));
                 placements.push(Placement {pose:*pose,equivalent_to:None});
             }

@@ -32,6 +32,10 @@ impl Tool {
     pub fn edges(&self) -> &[PatchEdge] { &self.edges }
     pub fn creases(&self) -> &[[usize;2]] { &self.creases }
     pub fn material(&self) -> &dyn Material { &*self.material }
+    /// Whether `p` is a point of the tool's boundary: its material nought there, to within
+    /// `ON_TOOL` — what tells a point of a face's chart on the tool from one past a trim, or one a
+    /// Boolean of the tool hides.
+    pub fn on(&self,p: V) -> bool { self.material.value(p).abs() < ON_TOOL }
     /// Where `edge`'s two faces meet, and a point just inside each face beside it, where the
     /// corner lies on the tool: the probe a corner is told by — the chord between the two points in
     /// the tool's material at a convex corner, out of it at a concave one. (At a cap the chord lies
@@ -52,12 +56,10 @@ impl Tool {
         let n = CORNER_PLACES;
         let places = (0..n).map(|k| if pa.periodic() { k as f64/n as f64 }
             else { let d = (k+1)/2; 0.5+if k%2 == 1 { 1. } else { -1. }*d as f64/n as f64 });
-        // (on the tool as admission reads a point on it: `admission::ends`'s `on_tool`)
-        let on = |p: V| self.material.value(p).abs() < 1e-6;
         let mut first = None;
         for v in places {
             let Some(found) = probe(v) else { continue };
-            if on(found.0) { return Some(found) }
+            if self.on(found.0) { return Some(found) }
             first.get_or_insert(found);
         }
         first
@@ -68,8 +70,9 @@ impl Tool {
 /// sides out from their middle.
 const CORNER_PLACES: usize = 64;
 
-impl Tool {
-}
+/// How near nought the tool's material reads at a point of its boundary (`Tool::on`), in the
+/// tool's units.
+const ON_TOOL: f64 = 1e-6;
 
 /// One face of a sweep's tool: a revolution of a profile edge (`u` along the edge, `v` round the
 /// turn, periodic), a side of a prism, drafted or not (`u` along the edge, `v` along the

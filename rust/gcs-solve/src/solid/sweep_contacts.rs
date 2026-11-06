@@ -202,7 +202,7 @@ impl SweepContacts {
     /// `read`, refused with a point of the face no reading takes (the tool's frame), where the
     /// refusal is the reading's.
     pub fn read_witnessed(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,(String,Option<V>)> {
-        let drawn = Self::drawn_motion(sk,solid,axis_tolerance).map_err(|m| (m,None))?;
+        let drawn = Self::motion_read(sk,solid,axis_tolerance).map_err(|m| (m,None))?;
         let SolidDef::Swept {source,..} = &sk.solids[solid].def else { unreachable!("read as a sweep") };
         let name = &sk.solids[*source as usize].name;
         let mm = super::cad::millimetres(sk);
@@ -216,15 +216,17 @@ impl SweepContacts {
     /// The tool as one prism standing alone, where its boundary is one.
     pub fn lone(&self) -> Option<&Lone> { self.lone.as_deref() }
 
-    /// The sweep `solid` with its motion and roll read, and its tool read off the drawing — the
-    /// recipe's revolutions, prisms and placements (`drawn`) — or, where the drawing's reading
-    /// refuses the tool, none of it.
-    fn drawn_motion(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
+    /// The sweep `solid` with its motion, its roll (a whole turn's once round, #684 N) and its
+    /// source's field read, and no face of its tool yet: what `read` and `drawn` each read the tool
+    /// into.
+    fn motion_read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
         super::validate(sk,solid)?;
         let SolidDef::Swept {source,motion,..} = &sk.solids[solid].def else {
             return Err("contact construction requires a continuous swept solid".into());
         };
         let source_field = SpatialField::read(sk,*source as usize,axis_tolerance)?;
+        // a whole turn or more sweeps what one whole turn does, a solid of revolution (#684 N): every
+        // reader of its contacts reads it once round
         let (motion,roll) = (Family::read(sk,*motion as usize)?,super::roll::interval(sk,solid)?);
         let once = motion.twist().and_then(|screw| super::constant_twist::once_round(&screw,roll));
         let source = std::sync::Arc::new(source_field);
@@ -237,11 +239,8 @@ impl SweepContacts {
     /// classes read the tool by its B-rep (`read`); this reading stays beside it only as the
     /// oracle the B-rep reading is held to (`tests/tool_reading.rs`), as #721 F1 decided.
     pub fn drawn(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
-        super::validate(sk,solid)?;
-        let SolidDef::Swept {source,motion,..} = &sk.solids[solid].def else {
-            return Err("contact construction requires a continuous swept solid".into());
-        };
-        let source_field = SpatialField::read(sk,*source as usize,axis_tolerance)?;
+        let read = Self::motion_read(sk,solid,axis_tolerance)?;
+        let SolidDef::Swept {source,..} = &sk.solids[solid].def else { unreachable!("read as a sweep") };
         let mut pending = vec![(*source as usize,Motion::identity())];
         let mut seen = BTreeSet::new();
         let mut patches = Vec::new();
@@ -339,13 +338,8 @@ impl SweepContacts {
                 edges.push(PatchEdge {patches:[a,b],ends:[ua,ub]});
             }
         }
-        // a whole turn or more sweeps what one whole turn does, a solid of revolution (#684 N): every
-        // reader of its contacts reads it once round
-        let (motion,roll) = (Family::read(sk,*motion as usize)?,super::roll::interval(sk,solid)?);
-        let once = motion.twist().and_then(|screw| super::constant_twist::once_round(&screw,roll));
-        let source = std::sync::Arc::new(source_field);
-        let tool = Tool {faces:patches,edges,creases,material:source.clone()};
-        Ok(Self {source,tool,motion,roll:once.unwrap_or(roll),whole:once.is_some(),lone:None})
+        let tool = Tool {faces:patches,edges,creases,material:read.source.clone()};
+        Ok(Self {tool,..read})
     }
     pub fn edges(&self) -> &[PatchEdge] { &self.tool.edges }
     /// The tool as the kernel reads it.

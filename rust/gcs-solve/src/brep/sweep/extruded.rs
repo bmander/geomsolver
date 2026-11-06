@@ -6,7 +6,6 @@
 //! blank under a rack's roll, a helical rack (#826): its sections square to the blank's axis are
 //! read in the plane the roll keeps, the observer's, and the sheet is their envelope carried up
 //! the helix they turn along (`brep::swept::extruded::Screwed`).
-use crate::brep::swept::cutter::Cutter;
 use super::sheet::{Fitted,SweptCut};
 use super::Say;
 use crate::brep::geom::Frame;
@@ -17,9 +16,7 @@ use crate::solid::export::{ExportRefusal,Stage,Tolerance};
 /// motion carries the profile's plane within itself; none otherwise (it is traced). `inside` asks
 /// the blank (mm); `tolerance` sets the fit's bar (half of it), else `FIT`.
 pub fn planar_sheet(cut: &SweptCut,inside: Inside,tolerance: Option<Tolerance>,say: &Say) -> Option<Result<Fitted,ExportRefusal>> {
-    // the prism read from the tool's B-rep (#721 F1b), else the recipe's
-    let read;
-    let cutter = match cut.lone() { Some(lone) => lone.cutter(),None => { read = Cutter::read(&cut.recipe).ok()?; &read } };
+    let cutter = cut.cutter().ok()?;
     let (walks,extent) = cutter.prism_profile()?;
     let frame = Frame::about(cutter.origin,cutter.axis);
     let program = cut.family.in_frame(&frame,cut.scale)?;
@@ -40,7 +37,9 @@ pub fn planar_sheet(cut: &SweptCut,inside: Inside,tolerance: Option<Tolerance>,s
 /// and its extrusion leans along the slide; none otherwise (it is traced). `inside` asks the blank
 /// (mm); `tolerance` sets the fit's bar (half of it), else the kernel's.
 pub fn screwed_sheet(cut: &SweptCut,inside: Inside,tolerance: Option<Tolerance>,say: &Say) -> Option<Result<Fitted,ExportRefusal>> {
-    let cutter = Cutter::read(&cut.recipe).ok()?;
+    // (the recipe's prism: the B-rep's, its extrusion read from the lower cap, lays the helix's net
+    // so a blank face cuts it in no iso line — to be read alike before it switches, #721 F1c)
+    let cutter = crate::brep::swept::cutter::Cutter::read(&cut.recipe).ok()?;
     let (walks,extent) = cutter.prism_profile()?;
     let crate::brep::swept::generating::Form::Rack {observer,..} = crate::brep::swept::generating::Form::of(cut.family.path().ok()?).ok()?
         else { return None };

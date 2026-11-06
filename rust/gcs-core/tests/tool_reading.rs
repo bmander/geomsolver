@@ -385,7 +385,7 @@ fn a_face_no_closed_form_reads_is_refused_by_name() {
     let why = Tool::read(&b,mm).expect_err("an extrusion of an epitrochoid is read");
     let Unread::FreeForm {face,kind,at} = &why else { panic!("refused as {why:?}") };
     assert_eq!(*kind,"extrusion");
-    let f = b.faces.iter().find(|f| gcs_core::brep::swept::read::named(f) == *face).expect("the face it names");
+    let f = b.faces.iter().find(|f| gcs_core::brep::recipe::joined(&f.name) == *face).expect("the face it names");
     let q = at.map(|x| x*mm);
     assert!(norm(sub(f.surface.point(f.surface.inverse(q)),q)) <= 1e-6,"its witness {at:?} is off `{face}`");
     assert_eq!(why.witness(),Some(*at));

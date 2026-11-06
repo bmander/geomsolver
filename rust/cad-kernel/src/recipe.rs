@@ -28,6 +28,15 @@ pub const NAMED: char = '\u{1}';
 /// name and nothing where it was not built so.
 pub fn named_parts(name: &str) -> (&str,&str) { name.split_once(NAMED).unwrap_or((name,"")) }
 
+/// A face's name as a build named it in two halves (`NAMED`), the two joined by a dot: the name
+/// every reader of a B-rep's faces knows it by (`mill.bottom`).
+pub fn joined(name: &str) -> String {
+    match named_parts(name) {
+        (of,"") => of.to_string(),
+        (of,face) => format!("{of}.{face}"),
+    }
+}
+
 /// A face's name under its solid's key (`NAMED`), the inverse of `named_parts`.
 pub fn name_under(key: &str,face: &str) -> String { format!("{key}{NAMED}{face}") }
 
