@@ -3,7 +3,7 @@
 // breaks out of the side rather than passing through.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (right_of)
 
 sphere_r := 20mm   // the sphere's radius

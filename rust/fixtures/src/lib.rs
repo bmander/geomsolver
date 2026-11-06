@@ -24,6 +24,70 @@ pub fn levelled(src: String) -> String {
     out
 }
 
+/// A composed document's body words imported (#783 P3): `cut`, `union` and `common` are words of
+/// `std.solids`, named where a file uses them, and a fixture is written from snippets each of
+/// which says what it needs — so the document they make says it once, `use std.solids (…)` with
+/// every name its statements use and any its snippets named, where the first `use std.solids`
+/// stood (else after `use std`).  A document using none is left as it is.
+pub fn imported(src: &str) -> String {
+    const WORDS: [&str; 3] = ["cut","union","common"];
+    let reference = |t: &str| !t.is_empty()
+        && t.chars().all(|c| c.is_alphanumeric() || "_.[]+-".contains(c));
+    let said = |l: &str| -> Option<&'static str> {
+        let l = l.split("//").next()?.trim().trim_start_matches("private ").trim();
+        match l.split_whitespace().collect::<Vec<_>>().as_slice() {
+            [a,w,b] if reference(a) && reference(b) => WORDS.iter().copied().find(|x| x == w),
+            _ => None,
+        }
+    };
+    let mut names: Vec<String> = src.lines().filter_map(said).map(str::to_string).collect();
+    let solids = |l: &str| {
+        let l = l.trim_start();
+        l.starts_with("use std.solids") && !l.starts_with("use std.solids.")
+    };
+    let uses: Vec<&str> = src.lines().filter(|l| solids(l)).collect();
+    for u in &uses {
+        if let Some((_,list)) = u.split_once('(') {
+            let list = list.trim_end().trim_end_matches(')');
+            names.extend(list.split(',').map(|n| n.trim().to_string()));
+        }
+    }
+    names.retain(|n| !n.is_empty());
+    // the body words first, in their order, then any other the snippets named, each once
+    names.sort_by_key(|n| WORDS.iter().position(|w| w == n).unwrap_or(WORDS.len()));
+    let mut listed: Vec<String> = Vec::new();
+    for n in names {
+        if !listed.contains(&n) {
+            listed.push(n);
+        }
+    }
+    if listed.is_empty() {
+        return src.to_string();
+    }
+    let line = format!("use std.solids ({})",listed.join(", "));
+    let mut out: Vec<String> = Vec::new();
+    let mut placed = false;
+    for l in src.lines() {
+        if solids(l) {
+            if !placed {
+                out.push(line.clone());
+                placed = true;
+            }
+            continue;
+        }
+        out.push(l.to_string());
+        if !placed && uses.is_empty() && l.trim() == "use std" {
+            out.push(line.clone());
+            placed = true;
+        }
+    }
+    let mut text = out.join("\n");
+    if src.ends_with('\n') {
+        text.push('\n');
+    }
+    text
+}
+
 fn level_line(l: &str) -> Option<String> {
     let (a,rest) = l.split_once(" distance(")?;
     let (n,rest) = rest.split_once(", along: ")?;

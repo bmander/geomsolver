@@ -549,6 +549,7 @@ repeat e in S.ends {
 p distance(in: (1mm, 2mm)) a
 when w not in A {
 }
+claim every q in a: q in b
 // p in S, in a comment
 ";
     assert_eq!(signs(src), vec![
@@ -561,6 +562,9 @@ when w not in A {
         ("∈", "in"),
         ("∈", "in"),
         ("∉", "not in"),
+        ("∀", "every"),
+        ("∈", "in"),
+        ("∈", "in"),
     ]);
     // the first `in`, the block's, has no operand before it, and `in:` is a label
     let first = gcs_core::syntax::ligatures(src)[0].1;

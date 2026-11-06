@@ -29,7 +29,7 @@ fn refused(src: &str, code: Code, needle: &str) {
 const RECT: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 in std.front {
 a := point
 b := point hint((60, 0))
@@ -183,7 +183,7 @@ fn inline_sections_resolve_component_formals_and_repeated_instances() {
 
 #[test]
 fn inline_sections_inherit_the_boundary_plane_and_coexist_with_forward_faces() {
-    let src = "unit mm\nuse std\nuse std.solids\n\
+    let src = "unit mm\nuse std\nuse std.solids (cut, union, common)\n\
         back := plane hint(origin: (0, 0, 12))\nfix(origin == (0, 0, 12)) back\nfix(dir == (1, 0, 0)) back.u\nfix(dir == (0, 1, 0)) back.v\n\
         in back {\na := point hint((0, 0))\nb := point hint((60, 0))\n\
         c := point hint((60, 40))\nd := point hint((0, 40))\n}\n\
@@ -309,7 +309,7 @@ fn a_body_keeps_what_it_has_in_common_with_each_solid() {
 const PEGS: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 in std.front {
 construction datum := line(std.origin, hint((50, 0)))
 horizontal datum
@@ -392,7 +392,7 @@ fn a_revolution_turns_about_a_line_in_its_own_plane() {
     let src = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.place (horizontal)
 in std.front {
 p0 := point hint((10, 0))
@@ -539,14 +539,14 @@ fn closing_lines_stay_implicit_across_reconciliation_and_reload() {
         format!("{RECT}quad := face(a, b, c, d, -> close)\n"),
         format!("{RECT}slab := solid(std.solids.Prism(face(a, b, c, d, -> close), from: -2mm, to: 0))\n"),
         format!(
-            "unit mm\nuse std\nuse std.solids\ncomponent Patch(f: plane) {{\n{}\
+            "unit mm\nuse std\nuse std.solids (cut, union, common)\ncomponent Patch(f: plane) {{\n{}\
              slab := solid(std.solids.Prism(face(a, bc, cd, -> close), from: -2mm, to: 0))\n}}\npart := Patch(std.front)\n",
-            RECT.trim_start_matches("unit mm\nuse std\nuse std.solids\n").replace("in std.front", "in f")
+            RECT.trim_start_matches("unit mm\nuse std\nuse std.solids (cut, union, common)\n").replace("in std.front", "in f")
                 .replace("vertical bc\n", "vertical bc\nhorizontal cd\nvertical da\n"),
         ),
         "\
 use std
-use std.solids
+use std.solids (cut, union, common)
 component Patch() {
 a := point
 b := point
@@ -608,7 +608,7 @@ fn an_arc_and_its_chord_share_both_ends_and_still_form_a_loop() {
     let src = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 in std.front {
 o := point hint((0, 0))
 a := point hint((-5, 0))
@@ -698,7 +698,7 @@ fn a_plane_may_be_stood_off_another() {
     let mut e = read("\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 front := plane(u: std.x, v: std.z)
 back := plane hint(origin: (0, -12, 0))
 back.u parallel std.x
@@ -746,7 +746,7 @@ fn named_chains_sweep_the_same_geometry_and_keep_edge_names() {
 fn named_chains_support_anonymous_links_and_constraint_words() {
     let e = read("\
 use std
-use std.solids
+use std.solids (cut, union, common)
 in std.front {
 profile := length(10) line -> equal line -> equal line -> close
 }
@@ -758,21 +758,21 @@ block := solid(std.solids.Prism(profile, from: -8, to: 0))
     assert_eq!(e.sketch.user_constraints().len(), 3);
     assert!(e.map.ent_named("profile").is_some());
     // with no `->` there is no traversal: the definition names the line, which deletes whole
-    let single = read("use std\nuse std.solids\nin std.front {\ntrail := line\n}\n");
+    let single = read("use std\nuse std.solids (cut, union, common)\nin std.front {\ntrail := line\n}\n");
     assert_eq!(single.sketch.lines.len(), 1);
     assert_eq!(single.sketch.faces.len(), 0);
     assert!(single.map.ent_named("trail") == Some(gcs_core::model::EntRef::line(0)));
     let edit = gcs_core::edit::remove(&single, &single.program, &single.sketch,
         &[gcs_core::model::EntRef::line(0)], &[]);
     assert!(edit.refused.is_none());
-    assert_eq!(edit.text.trim(), "use std\nuse std.solids\nin std.front {\n}");
+    assert_eq!(edit.text.trim(), "use std\nuse std.solids (cut, union, common)\nin std.front {\n}");
 }
 
 #[test]
 fn anonymous_chain_sides_have_stable_names_without_hiding_named_sides() {
     let src = "\
 use std
-use std.solids
+use std.solids (cut, union, common)
 in std.front {
 a := point hint((0, 0))
 b := point hint((10, 0))
@@ -800,7 +800,7 @@ fn named_chains_are_component_members_and_resolve_forward_and_through_formals() 
     let src = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 component Shape() {
 a := point hint((0, 0))
 b := point hint((10, 0))
@@ -852,7 +852,7 @@ fn named_open_chains_can_be_closed_explicitly_but_cannot_be_swept_directly() {
 
 #[test]
 fn named_chains_inherit_planes_and_revolve_with_arcs() {
-    let src = "unit mm\nuse std\nuse std.solids\n\
+    let src = "unit mm\nuse std\nuse std.solids (cut, union, common)\n\
         back := plane hint(origin: (0, 0, 12))\nfix(origin == (0, 0, 12)) back\nfix(dir == (1, 0, 0)) back.u\nfix(dir == (0, 1, 0)) back.v\n\
         in back {\na := point hint((0, -5))\nb := point hint((0, 5))\n\
           c := point hint((0, 0))\n\
@@ -878,11 +878,11 @@ fn named_chains_validate_names_links_and_plane_membership() {
     refused("profile := line equal line\n", Code::E100, "every pair");
     refused("component A() { profile := line -> }\na := A()\n",
         Code::E100, "must finish");
-    refused("use std\nuse std.solids\nin std.front {\nprofile := line\nprofile := point\n}\n", Code::E001, "declared twice");
-    refused("use std\nuse std.solids\nin std.front {\nprofile := point\nprofile := line\n}\n", Code::E001, "declared twice");
+    refused("use std\nuse std.solids (cut, union, common)\nin std.front {\nprofile := line\nprofile := point\n}\n", Code::E001, "declared twice");
+    refused("use std\nuse std.solids (cut, union, common)\nin std.front {\nprofile := point\nprofile := line\n}\n", Code::E001, "declared twice");
     refused("\
 use std
-use std.solids
+use std.solids (cut, union, common)
 in std.front {
 p := point
 q := point
@@ -893,7 +893,7 @@ profile := (a := line(p, q)) -> c -> (b := line(q, p)) -> close
         Code::E080, "lines and arcs");
     refused("\
 use std
-use std.solids
+use std.solids (cut, union, common)
 in std.front {
 p := point
 q := point
@@ -912,7 +912,7 @@ profile := (a := line(p, q)) -> profile.nope -> (b := line(q, p)) -> close
 
 #[test]
 fn named_chain_source_is_retained_and_its_binding_is_highlighted() {
-    let src = "use std\nuse std.solids\nin std.front {\nprofile := line -> line -> line -> close\n}\n";
+    let src = "use std\nuse std.solids (cut, union, common)\nin std.front {\nprofile := line -> line -> line -> close\n}\n";
     let (mut p, errors) = parse(src);
     assert!(errors.is_empty(), "{errors:?}");
     assert_eq!(gcs_core::syntax::render_flat(&mut p).unwrap_err().construct, "named chains");
@@ -1057,14 +1057,14 @@ fn through_extent_refuses_mixed_labels_bad_targets_and_real_cycles() {
 
 #[test]
 fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
-    let src = format!("unit mm\nuse std\nuse std.solids\n\
+    let src = format!("unit mm\nuse std\nuse std.solids (cut, union, common)\n\
         front := plane(u: std.x, v: std.y)\nfix(origin == (0, 0, 0)) front\n\
         side := plane hint(origin: (0, -80, 0))\nfix(origin == (0, -80, 0)) side\nfix(dir == (1, 0, 0)) side.u\nfix(dir == (0, 0, 1)) side.v\n\
         {}\n\
         in side {{\nhc := point hint((30, -5))\nh := circle(center: hc) hint(r: 2)\nhf := face(h)\n}}\n\
         stock := solid(std.solids.Prism(sec, from: -10mm, to: 0))\nbody := solid(stock)\n\
         tool := solid(std.solids.Through(hf))\ntool cut body\n",
-        RECT.replace("unit mm\nuse std\nuse std.solids\n", "").replace("in std.front", "in front"));
+        RECT.replace("unit mm\nuse std\nuse std.solids (cut, union, common)\n", "").replace("in std.front", "in front"));
     let mut e = read(&src);
     assert!(src.contains("std.solids.Through(hf)"));
     let explicit = read(&src.replace("std.solids.Through(hf)",
@@ -1108,7 +1108,7 @@ fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
     }
 }
 
-const ANNULUS: &str = "unit mm\nuse std\nuse std.solids\nin std.front {\ncenter := point hint((0, 0))\nouter := circle(center: center) hint(r: 10)\ninner := circle(center: center) hint(r: 5)\n}\nsection := face(outer, holes: inner)\n";
+const ANNULUS: &str = "unit mm\nuse std\nuse std.solids (cut, union, common)\nin std.front {\ncenter := point hint((0, 0))\nouter := circle(center: center) hint(r: 10)\ninner := circle(center: center) hint(r: 5)\n}\nsection := face(outer, holes: inner)\n";
 
 #[test]
 fn section_holes_sweep_and_cut_with_source_face_names() {
@@ -1232,20 +1232,20 @@ fn section_holes_refuse_invalid_boundaries() {
         (4, 3, ", second", "disjoint"),
         (7, 2, ", second", "disjoint"),
     ] {
-        let src = format!("unit mm\nuse std\nuse std.solids\nin std.front {{\no := point hint((0, 0))\nh := point hint(({x}, 0))\nouter := circle(center: o) hint(r: 10)\ninner := circle(center: h) hint(r: {r})\nsecond := circle(center: o) hint(r: 5)\n}}\nsleeve := solid(std.solids.Prism(face(outer, holes: inner{extra}), from: -3mm, to: 0))\n");
+        let src = format!("unit mm\nuse std\nuse std.solids (cut, union, common)\nin std.front {{\no := point hint((0, 0))\nh := point hint(({x}, 0))\nouter := circle(center: o) hint(r: 10)\ninner := circle(center: h) hint(r: {r})\nsecond := circle(center: o) hint(r: 5)\n}}\nsleeve := solid(std.solids.Prism(face(outer, holes: inner{extra}), from: -3mm, to: 0))\n");
         let e = read(&src);
         let err = e.sketch.evaluated_solid(0, Report).err().expect("invalid section must be refused");
         assert!(err.contains(message), "{src}\n{err}");
     }
     refused(&format!("{ANNULUS}bad := line(center, center)\nbadface := face(outer, holes: bad)\n"), Code::E080, "a named closed loop or a face");
-    refused("unit mm\nuse std\nuse std.solids\nother := plane\nin std.front {\no := point\nouter := circle(center: o) hint(r: 10)\n}\nin other { h := point\ninner := circle(center: h) hint(r: 2) }\nbad := face(outer, holes: inner)\n", Code::E080, "one plane");
+    refused("unit mm\nuse std\nuse std.solids (cut, union, common)\nother := plane\nin std.front {\no := point\nouter := circle(center: o) hint(r: 10)\n}\nin other { h := point\ninner := circle(center: h) hint(r: 2) }\nbad := face(outer, holes: inner)\n", Code::E080, "one plane");
 }
 
 #[test]
 fn section_holes_check_source_arc_and_line_tangencies_on_a_placed_plane() {
     use gcs_core::solid::ApproximationPolicy::Report;
     for (x, valid) in [(1, false), (2, true), (4, false)] {
-        let src = format!("unit mm\nuse std\nuse std.solids\n\
+        let src = format!("unit mm\nuse std\nuse std.solids (cut, union, common)\n\
             back := plane hint(origin: (0, 0, 12))\nfix(origin == (0, 0, 12)) back\nfix(dir == (1, 0, 0)) back.u\nfix(dir == (0, 1, 0)) back.v\n\
             in back {{\nc := point hint((0, 0))\n\
             a := point hint((0, -5))\nb := point hint((0, 5))\n\
@@ -1267,7 +1267,7 @@ fn section_holes_keep_component_paths_in_named_and_inline_sections() {
     let e = read("\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 component Bore(x: Length) {
 c := point hint((x, 0))
 bore := circle(center: c) hint(r: 1)
@@ -1304,7 +1304,7 @@ fn section_holes_keep_repeat_paths_stable_when_statements_are_inserted() {
     let source = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 in std.front {
 center := point
 outer := circle(center: center) hint(r: 10)
@@ -1387,7 +1387,7 @@ fn vtwin_intake_passages_connect_without_opening_into_the_exhaust() {
 fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
     use gcs_core::solid::{ApproximationPolicy, WorldPoint};
     for (phi, height, page_x, page_y, offset) in [(0, 0, 0, 0, 0), (35, 72, 100, -80, 7)] {
-        let src = format!("unit mm\nuse std\nuse std.solids\nuse hardware\nuse components.dims\nuse components.parts\nuse components.throttle\n\
+        let src = format!("unit mm\nuse std\nuse std.solids (cut, union, common)\nuse hardware\nuse components.dims\nuse components.parts\nuse components.throttle\n\
             torgb := 2 * components.dims.rbar - 2 * (1 - hardware.oring_squeeze) * components.dims.tor\n\
             torw := hardware.oring_groove_w * components.dims.tor\n\
             front := plane hint(origin: ({page_x}, {back}, {page_y}))\n\
@@ -1445,7 +1445,7 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
 const PARABOLA: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 component Par(o: point, u: Length) {
   p := point(x: o.x + u, y: o.y + u * u / 1mm)
 }

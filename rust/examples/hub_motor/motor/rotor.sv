@@ -8,7 +8,7 @@
 // mid-wall circle.
 
 use std
-use std.solids
+use std.solids (cut, union)
 use std.place (horizontal)
 use motor.dims (half, L, magnet_arc, poles, Rm, Ro, Rr, screw_r, screws, tap4, tap_depth)
 use motor.parts (Datums)

@@ -12,7 +12,7 @@ use crate::common::{at, ent, read, refused};
 
 /// A 40 × 30 rectangle on the front plane (normal −y), a corner held at the origin.
 const PROFILE: &str = "use std
-use std.solids\n\
+use std.solids (cut)\n\
     in std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 30))\n  d := point hint((0, 30))\n  ab := line(a, b)\n  \
     bc := line(b, c)\n  cd := line(c, d)\n  da := line(d, a)\n}\n\
@@ -139,7 +139,7 @@ fn a_drawn_point_is_put_on_a_faces_surface() {
 #[test]
 fn a_curved_side_is_refused() {
     let src = "use std
-use std.solids\nin std.front {\n  o := point hint((0, 0))\n  k := circle(center: o) hint(r: 5)\n}\n\
+use std.solids (cut)\nin std.front {\n  o := point hint((0, 0))\n  k := circle(center: o) hint(r: 5)\n}\n\
                fix((0, 0)) o\nradius(5) k\ng0 := face(k)\nb0 := solid(std.solids.Prism(g0, from: -10, to: 0))\n\
                m := point hint((5, 3, 5))\nm in boundary(b0.k.side)\n";
     refused(src, "E040", "curved side", "boundary(b0.k.side)");

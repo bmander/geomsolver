@@ -50,7 +50,7 @@ fn crossing_bars_are_material_interference_even_without_contained_vertices() {
     );
     close(reversed.measured().unwrap(), v.measured().unwrap());
     let unrelated = read(
-        &(source("cross_clear") + "use std\nuse std.solids\nin std.front {\nremote := point\nfix((1000000000, 1000000000)) remote\n}\n"),
+        &(source("cross_clear") + "use std\nuse std.solids (union)\nin std.front {\nremote := point\nfix((1000000000, 1000000000)) remote\n}\n"),
     );
     close(claim(&unrelated, SolidWord::Clear, 0.1).measured().unwrap(), -1.0);
     close(claim(&case("cross_clear_control"), SolidWord::Clear, 0.1).measured().unwrap(), 2.0);
@@ -312,7 +312,7 @@ fn interference_checks_respect_voids_and_disconnected_material() {
     let v = claim(&e, SolidWord::Clear, 0.1);
     assert_eq!(v.holds(), Some(true));
     close(v.measured().unwrap(), 0.5);
-    let src = "unit mm\nuse std\nuse std.solids\n".to_string()
+    let src = "unit mm\nuse std\nuse std.solids (union)\n".to_string()
         + &box_source("left", 0.0, 0.0, 1.0, 1.0, -1.0, 0.0)
         + &box_source("right", 8.0, 0.0, 1.0, 1.0, -1.0, 0.0)
         + "result := solid(left)\nright union result\nother := solid(result)\n";
@@ -342,7 +342,7 @@ fn negative_clearance_cannot_certify_uncertain_round_surface_contact() {
         "\
 unit mm
 use std
-use std.solids
+use std.solids (union)
 in std.front {
 a := point
 fix((0, 0)) a
@@ -374,7 +374,7 @@ other := solid(std.solids.Prism(bf, from: -1mm, to: 0))
 fn named_profiles_preserve_sweep_cap_collision_diagnostics() {
     let src = source("cap_collision")
         .replace("near := line(a,b)\nright := line(b,c)\ntop := line(c,d)\nleft := line(d,a)\nf := face(near,right,top,left)",
-            "use std\nuse std.solids\nin std.front {\nf := (near := line(a,b)) -> (right := line(b,c)) -> (top := line(c,d)) -> (left := line(d,a)) -> close\n}\n");
+            "use std\nuse std.solids (union)\nin std.front {\nf := (near := line(a,b)) -> (right := line(b,c)) -> (top := line(c,d)) -> (left := line(d,a)) -> close\n}\n");
     let e = read(&src);
     assert!(program::solid_diagnostics(&e.sketch, &e.map, &e.program)
         .iter()

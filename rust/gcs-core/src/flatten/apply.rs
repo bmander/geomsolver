@@ -221,16 +221,22 @@ impl<'a> Walk<'a> {
         // the sets a statement came through (#212): the use's, then those an inner use stamped
         let through_all = |inner: Vec<String>| through.iter().cloned().chain(inner).collect();
         for (i, (st, p, sc)) in self.out.iter_mut().enumerate().skip(from) {
-            // an energy the word states is the use's statement, as its relations are (#121)
-            let energy = match &mut st.kind {
+            // an energy the word states is the use's statement, as its relations are (#121), and
+            // so is more of a body's set (#783 P3, `bore cut body` applied), so a body it refuses
+            // or a cycle it closes is said where the word is written
+            let whole = match &mut st.kind {
                 StmtKind::Measured(m) => {
                     m.through = through_all(std::mem::take(&mut m.through));
                     true
                 }
                 StmtKind::Minimize(_) => true,
+                StmtKind::SolidRel(r) => {
+                    r.span = u.st.span;
+                    true
+                }
                 _ => false,
             };
-            if energy {
+            if whole {
                 sc.pred.written.get_or_insert(st.id);
                 st.id = u.st.id;
                 st.span = u.st.span;

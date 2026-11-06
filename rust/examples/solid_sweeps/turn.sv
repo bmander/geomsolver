@@ -9,7 +9,7 @@
 // they meet: `spoke.sv`, #684 X.) Keep the roll clear of the block at both ends.
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns)
 

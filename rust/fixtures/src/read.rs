@@ -18,6 +18,7 @@ pub fn elaborate(source: &str,resolver: &mut dyn FnMut(&str) -> Option<String>) 
 
 /// Parse one source, link it through `resolver` and elaborate it, left where its seeds put it.
 pub fn unsolved(source: &str,resolver: &mut dyn FnMut(&str) -> Option<String>) -> program::Elaborated {
+    let source = &crate::imported(source);
     let (mut p,errors) = syntax::parse(source);
     // each error beside the line it is on: a generated fixture has no file to look in
     let lines = errors.iter().map(|e| line_at(source,e.span.lo as usize)).collect::<Vec<_>>();

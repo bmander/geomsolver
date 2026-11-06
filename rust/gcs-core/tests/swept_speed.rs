@@ -87,7 +87,7 @@ fn a_cones_feature_is_read_in_the_box_it_is_asked_over() {
 const PLATE: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 in std.front {
 a := point
 b := point hint((60, 0))
@@ -164,7 +164,7 @@ fn a_prism_of_whole_circles_is_the_turn_of_its_section() {
     let src = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.place (vertical, on_v, raised)
 use std.sets
 in std.front {
@@ -210,7 +210,7 @@ chamfers common disc
 const SPURS: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.place (vertical, coords, on_v, raised, seats)
 use std.motion (turns, slides)
 component Spur(N: Int, m: Length, z1: Length) {

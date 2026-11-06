@@ -8,7 +8,7 @@
 // the flat. Edit `d` and apply (⌘↵), or round it instead (`use std.rounds (round)`, `round(r: d)`).
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (chamfer)
 
 d := 1mm   // the flat's legs

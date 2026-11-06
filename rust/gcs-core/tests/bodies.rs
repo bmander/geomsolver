@@ -59,7 +59,7 @@ fn bar(extra: &str) -> String {
     format!("\
 unit mm
 use std
-use std.solids
+use std.solids (union)
 w := 80mm
 h := 30mm
 t := 10mm
@@ -155,7 +155,7 @@ fn what_has_no_answer_in_three_dimensions_says_why() {
     let l = "\
 unit mm
 use std
-use std.solids
+use std.solids (union)
 steel := material(E: 200GPa, nu: 0.3, yield: 250MPa)
 in std.front {
   a := point
@@ -225,7 +225,7 @@ fn a_requirement_sizes_a_plank() {
 /// far block's face named from the body (`bar.tail.right`).
 const UNITED: &str = "unit mm
 use std
-use std.solids
+use std.solids (union)
 w := 80mm
 h := 30mm
 t := 10mm
@@ -303,7 +303,7 @@ fn a_body_of_two_blocks_answers_to_rounding() {
 /// base held along z and its centre's nearest node across, pulled by `−σ` on its head.
 const ROD: &str = "unit mm
 use std
-use std.solids
+use std.solids (union)
 r := 10mm
 L := 100mm
 sigma := 40MPa
@@ -440,7 +440,7 @@ fn stress_is_read_where_no_sharp_edge_reaches() {
     let l = "\
 unit mm
 use std
-use std.solids
+use std.solids (union)
 steel := material(E: 200GPa, nu: 0.3, yield: 250MPa)
 in std.front {
   a := point

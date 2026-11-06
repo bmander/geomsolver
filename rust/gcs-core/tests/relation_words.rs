@@ -701,8 +701,9 @@ fn a_built_in_word_is_imported_by_no_one() {
 
 #[test]
 fn a_module_reads_its_own_words_bare() {
-    // `std.rounds` writes `round` in its own words with no import of its own, and `std.sets`
-    // imports `std.place`'s `horizontal` for its own
+    // `std.rounds` writes `round` in its own words with no import of its own (its material it
+    // says of the body by the primitive, #783 P3), and `std.sets` imports `std.place`'s
+    // `horizontal` for its own
     let rounds = gcs_core::library::module("std.rounds").unwrap();
     assert!(rounds.contains("A round(r) B := {"));
     assert!(rounds.contains("round(r) X := X round(r: r) X"));

@@ -4,7 +4,7 @@
 
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords, on_u, on_v)
 use std.motion (turns)
 in std.front {

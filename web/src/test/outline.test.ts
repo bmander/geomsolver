@@ -25,7 +25,7 @@ await initCore();
 
 /** A component instance, a ring, an object made of two features and `use std` — the core's gate
  *  document (`tests/outline.rs`). */
-const DOC = 'unit mm\nuse std\nuse std.solids\n'
+const DOC = 'unit mm\nuse std\nuse std.solids (cut)\n'
   + 'component Pin(c: point) {\n  q := point hint((3, 0))\n  c distance(3) q\n  arm := line(c, q)\n'
   + '  horizontal arm\n}\n'
   + 'in std.front {\n  hub := point\n  fix((0, 0)) hub\n'

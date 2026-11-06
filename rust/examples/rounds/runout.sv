@@ -14,7 +14,7 @@
 // rim runs all the way round.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 use std.rounds (round)
 
 in std.front {

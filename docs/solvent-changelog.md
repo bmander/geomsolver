@@ -4,6 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.206] The body words are words of `std.solids`** (#783 P3). A body is a set some of whose
+statements are said where it is not declared — the language's primitive: `B or { p | p in x }`
+adds a disjunct to its stock (what is in union with it), `B and { p | p not in x }` and `B and { p
+| p in x }` a conjunct (what is cut from it, what it keeps in common), so the body is `{ p | p in
+stock or p in x₁ …; p not in y₁; …; p in z₁; … }`, its disjunction first — the body rule as it
+was, a pocket eating a boss in union with the same body. `cut`, `union` and `common` are defined in
+`std.solids` over it (`x cut B := B and { p | p not in x }`), no longer the grammar's reserved
+words, and imported bare as any word is: `use std.solids (cut, union, common)`, the names a file
+uses; one used and not imported is E102 naming the import, and a file may name a thing `cut`. One
+solid within another is claimed as what holds of every point of it, `claim every q in a: q in b`;
+`every` is read so, in a claim, and drawn ∀ in the editor; `claim a inside b` is refused naming it.
+The examples import the words they use (`scripts/body_words_imported.py`), every report, STEP
+assembly and STL of them the old spelling's to the byte.
+
 **[0.205] Sets in the notation of sets** (#783). A set is written with the words mathematics has
 for one (§6.21): `p in S` puts a point in a set — its statements at the point as written, a
 region's bounds kept — and `p not in S` out of one with an inside; `boundary(S)` is the set's

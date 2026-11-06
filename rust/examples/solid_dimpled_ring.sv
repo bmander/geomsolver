@@ -5,7 +5,7 @@
 // ball only rests on the ring, and that touch is refused, not built.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (offset, right_of)
 
 ring_r := 30mm     // from the spindle to the middle of the tube

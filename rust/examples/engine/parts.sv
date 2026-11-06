@@ -5,7 +5,7 @@
 
 use engine.dims (D, ch, ph, rpin)
 use std
-use std.solids
+use std.solids (cut)
 use std.place (above, below, left_of, offset, right_of)
 
 // A line tangent to two circles at both ends — a belt run, a crank web's flank, a cam's flank.

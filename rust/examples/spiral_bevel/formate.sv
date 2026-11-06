@@ -12,6 +12,7 @@ use std.sets
 use std.rounds
 use std.motion (turns)
 use hypoid (GearCone, ToothTrace, PinionCone, Blank, FaceMill, Tooth, Topping, Member, Generated)
+use std.solids (cut, common)
 
 // -- the pair as a designer states it ----------------------------------------------------------
 // As `hypoid.sv` states it: the tooth counts, the module at M, the shafts, the spiral and the

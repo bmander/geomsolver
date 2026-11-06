@@ -676,7 +676,7 @@ fn a_flush_boss_tangent_to_a_blocks_side_builds_as_the_block() {
     let e = crate::common::text::solved("\
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.shapes
 in std.top {
   c := point hint((0, 0))

@@ -1283,7 +1283,7 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   // with it.  Both are in the buffers; this checks the *binding* reaches them, which is this
   // layer's business and not the geometry, whose test is `gcs-core/tests/mesh.rs`.
   const src = [
-    'unit mm', 'use std', 'use std.solids', 'in std.front {',
+    'unit mm', 'use std', 'use std.solids (cut)', 'in std.front {',
     'a := point', 'b := point hint((60, 0))',
     'c := point hint((60, 40))', 'd := point hint((0, 40))',
     '(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close',
@@ -2185,6 +2185,8 @@ test('a Boolean is previewed by the core before it is written, and written as on
   const both = d.addBodyWord('union', ['boss', 'pin'], 'plate');
   assert.equal(both.refused, null);
   assert.ok(both.text.endsWith('boss union plate\npin union plate\n'), both.text);
+  // the word written is named in the file's `use std.solids` (#783 P3)
+  assert.ok(/use std\.solids \(union\)\n/.test(both.text), both.text);
   assert.ok(Document.read(both.text).ok);
 });
 

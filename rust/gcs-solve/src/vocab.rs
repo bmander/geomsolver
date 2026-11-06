@@ -101,6 +101,22 @@ impl BodyWord {
         [BodyWord::Union, BodyWord::Cut, BodyWord::Common].into_iter().find(|b| b.as_str() == w)
     }
 
+    /// The primitive the word is defined over (#783 P3): whether it is a disjunct of the body's
+    /// set (`B or { p | p in x }`) rather than a conjunct, and whether its membership is `not in`.
+    pub fn joined(self) -> (bool, bool) {
+        match self {
+            BodyWord::Union => (true, false),
+            BodyWord::Cut => (false, true),
+            BodyWord::Common => (false, false),
+        }
+    }
+
+    /// The word a primitive is, by `joined`'s two answers; `None` for `B or { p | p not in x }`.
+    pub fn of_joined(or: bool, not: bool) -> Option<BodyWord> {
+        [BodyWord::Union, BodyWord::Cut, BodyWord::Common].into_iter()
+            .find(|b| b.joined() == (or, not))
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             BodyWord::Union => "union",

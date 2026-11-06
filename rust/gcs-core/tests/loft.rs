@@ -117,7 +117,7 @@ fn the_sections_follow_their_guide() {
 /// where it is widest, 40 · ∫₀^½ (176 − 96 s) ds = 3040 mm³.
 #[test]
 fn a_running_section_is_a_boolean_operand() {
-    let reducer = REDUCER.replacen("use std\n", "use std\nuse std.solids\n", 1);
+    let reducer = REDUCER.replacen("use std\n", "use std\nuse std.solids (cut)\n", 1);
     let src = format!("{reducer}
 in std.front {{
   q0 := point
@@ -155,7 +155,7 @@ fn along_is_retired_saying_what_to_write() {
 fn tube(word: &str, kind: &str, guide: &str) -> String {
     format!("unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.stations
 
 component Tube(g: {kind}, up: axis, s: Scalar) {{

@@ -9,7 +9,7 @@
 // the point: π radius² thick = π × 2² × 4 = 16π ≈ 50.27 mm³ of its 800, leaving 749.73 mm³.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (slides)
 

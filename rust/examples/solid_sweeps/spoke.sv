@@ -14,7 +14,7 @@
 // the block's 83.78, leaving 53.84 mm³.
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns)
 

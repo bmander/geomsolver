@@ -10,7 +10,7 @@ use crate::common::rounds::{field_is_the_kernels, mitred, root_ring, rounded_box
 use crate::region_general::field_volume;
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
-const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (round, chamfer)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -49,7 +49,7 @@ fn a_block_rounded_all_over_is_steiners() {
 
 /// A tray 60 × 40 × 10 with a pocket 30 × 20 cut 6 into its near face, and a plate the same with
 /// a boss of radius 8 standing 20 on it — each a body over its operands' faces.
-const PARTS: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.front {\n\
+const PARTS: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (round, chamfer)\nin std.front {\n\
     t0 := point\nt1 := point\nt2 := point\nt3 := point\n\
     fix((0, 0)) t0\nfix((60, 0)) t1\nfix((60, 40)) t2\nfix((0, 40)) t3\n\
     (ts := line(t0, t1)) -> (te := line(t1, t2)) -> (tn := line(t2, t3)) -> (tw := line(t3, t0)) -> close\n\

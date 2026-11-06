@@ -75,7 +75,7 @@ fn a_filled_bodys_mesh_moves_with_the_drawing() {
 /// hole driven.
 pub const LUG: &str = "unit mm
 use std
-use std.solids
+use std.solids (cut)
 l := 80mm
 w := 40mm
 t := 10mm
@@ -128,7 +128,7 @@ scenario pull {{
 /// nothing of a narrowing.
 pub const BAR: &str = "unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (horizontal)
 L := 100mm
 P := 10kN

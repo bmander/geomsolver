@@ -38,7 +38,7 @@ fn two(first: &str, second: &str) -> String {
     format!("
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.place (offset)
 {PLATE}
 in (f := frame) {{ one := {first} }}
@@ -168,7 +168,7 @@ fn unequal_arguments_are_two_builds_and_an_open_instance_is_built_as_its_own() {
     let (e, sk) = solved("
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.place (offset)
 component Lug(o: point, h: Length) {
   in std.front {
@@ -207,7 +207,7 @@ two := Lug(q, h: 2mm)
 const RING: &str = "
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.place (offset, right_of)
 component Peg(r: Length) {
   in std.front {
@@ -287,7 +287,7 @@ fn reaching_outside_the_ring_is_still_refused() {
     refused("
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.place (offset)
 component Lug(o: point) {
   in std.front {
@@ -309,7 +309,7 @@ in std.front {
     refused("
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.place (right_of)
 in std.front {
   o := point hint((50, 0))

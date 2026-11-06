@@ -424,7 +424,7 @@ fn the_box_shows_the_object_and_not_its_features() {
     let src = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 in std.front {
   a := point
   b := point hint((60, 0))
@@ -485,7 +485,7 @@ bore cut body
 fn an_object_that_does_not_evaluate_is_reported_with_its_reason() {
     let src = "\
 use std
-use std.solids
+use std.solids (cut, union)
 in std.front {
   a := point hint((-0.4, 0))
   b := point hint((0.28, -0.4))

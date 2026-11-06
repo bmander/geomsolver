@@ -14,7 +14,7 @@ use crate::common::lenient::read;
 use crate::common::{ent, text::solved};
 
 /// A block 40 × 24 × 12 on the front plane: six faces, each meeting four.
-const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -56,7 +56,7 @@ fn faces_meet_where_they_share_an_edge_or_a_corner() {
 #[test]
 fn meets_is_between_two_faces() {
     let refused = |cond: &str, code: &str, words: &str| {
-        let src = format!("unit mm\nuse std\nuse std.solids\nin std.front {{\n\
+        let src = format!("unit mm\nuse std\nuse std.solids (cut, union)\nin std.front {{\n\
                            a := point\nfix((0, 0)) a\nb := point hint((3, 0))\n\
                            when {cond} {{\nq := point hint((8, 3))\n}}\n}}\n");
         let (e, d) = read(&src);
@@ -78,7 +78,7 @@ fn meets_is_between_two_faces() {
 
 /// The disc of #625: its web opened between r 8 and r 15 but for spokes, every edge among the
 /// opening's faces rounded.  `SPOKES` stands for how the spokes are drawn.
-const DISC: &str = "unit mm\nuse std\nuse std.solids\nuse std.place (vertical, coords)\nuse std.rounds (round)\nuse std.motion (turns)\n\
+const DISC: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.place (vertical, coords)\nuse std.rounds (round)\nuse std.motion (turns)\n\
     in std.front {\n  spindle := vertical line(std.origin, hint((0, 10)))\n  length(10mm) spindle\n}\n\
     in std.top {\n\
       edge := circle(center: std.top.origin) hint(r: 20)\n  radius(20mm) edge\n\
@@ -130,7 +130,7 @@ fn a_round_over_four_turned_spokes_builds() {
 /// `whole` rounded all over: `PIN` is drawn in `std.top`, its prism called `pin` and joined to
 /// `whole`.
 fn pinned(pin: &str) -> String {
-    format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords, seats)\nuse std.rounds (round)\n\
+    format!("unit mm\nuse std\nuse std.solids (cut, union)\nuse std.place (coords, seats)\nuse std.rounds (round)\n\
         in std.top {{\n\
         a := point hint((0, 0))\nb := point hint((20, 0))\nc := point hint((20, 20))\n\
         d := point hint((0, 20))\n\
@@ -202,7 +202,7 @@ fn a_part_seated_by_a_mate_rounds_where_it_is_seated() {
 /// to it, and nothing is built of what was made: no E101 for a name the rest would have made.
 #[test]
 fn an_expansion_past_its_limit_is_said_once() {
-    let src = "unit mm\nuse std\nuse std.solids\nrepeat 1000 as i {\n  repeat 300 as j {\n    \
+    let src = "unit mm\nuse std\nuse std.solids (cut, union)\nrepeat 1000 as i {\n  repeat 300 as j {\n    \
                p := point hint((i, j))\n  }\n}\nq := point\n";
     let (e, d) = read(src);
     assert_eq!(d.len(), 1, "{d:?}");

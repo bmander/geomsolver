@@ -2,7 +2,7 @@
 // hollow the shell first, then add the bosses inside the pocket.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 width := 72mm
 height := 48mm
 depth := 16mm

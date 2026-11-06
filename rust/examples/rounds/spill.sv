@@ -16,7 +16,7 @@
 // round, glued to it there.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (round, chamfer)
 
 rim := circle(center: std.front.origin) hint(r: 33.54) in std.front

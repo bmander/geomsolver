@@ -102,7 +102,7 @@ block := solid(std.solids.Prism(face(s0, s1, s2, s3), from: -8mm, to: 0mm))
 /// along x from the origin: the groove is half the capsule.
 #[test]
 fn a_ball_slid_is_a_capsule_its_ends_in_the_blank() {
-    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords)\nuse std.motion (slides)\nball := 3mm\n{}\
+    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.place (coords)\nuse std.motion (slides)\nball := 3mm\n{}\
         in std.front {{\n  construction centerline rail := line(std.origin, hint((1, 0)))\n  fix((1, 0)) rail.p2\n}}\n{BLOCK}\
         feed := frame\nfeed slides(40mm) rail\nconstruction groove := solid({{ p | some t in (0deg, 180deg): p in cutter at(under: feed) t }})\n\
         groove cut block\n", ball("0mm")));
@@ -118,7 +118,7 @@ fn a_ball_slid_is_a_capsule_its_ends_in_the_blank() {
 /// with the cubic's torsion, fitted to it, its length read off the control points.
 #[test]
 fn a_ball_along_a_spline_in_space_is_its_tube() {
-    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords)\nuse std.stations\nball := 2mm\n{}\
+    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.place (coords)\nuse std.stations\nball := 2mm\n{}\
         ka := point hint((0, 0, 0))\nkb := point hint((10, 20, 5))\nkc := point hint((30, 20, 15))\nkd := point hint((40, 0, 30))\n\
         fix((0mm, 0mm, 0mm)) ka\nfix((10mm, 20mm, 5mm)) kb\nfix((30mm, 20mm, 15mm)) kc\nfix((40mm, 0mm, 30mm)) kd\n\
         cubic := spline(ka, kb, kc, kd)\nalong := std.stations.Along(cubic, up: std.z)\n\
@@ -134,7 +134,7 @@ fn a_ball_along_a_spline_in_space_is_its_tube() {
 /// 2 e^{-3it/4}` over a third of a turn, its length integrated from the closed form.
 #[test]
 fn a_ball_rolled_is_its_tube_along_the_trochoid() {
-    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords)\nuse std.motion (turns)\nball := 1mm\n{}\
+    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.place (coords)\nuse std.motion (turns)\nball := 1mm\n{}\
         in std.front {{\n  construction centerline spindle := line(std.origin, hint((0, 1)))\n  fix((0, 1)) spindle.p2\n\
           private h0 := point\n  private h1 := point\n  h0 coords(du: 3mm, dv: 0mm) std.front\n\
           h1 coords(du: 3mm, dv: 5mm) std.front\n  construction centerline own := line(h0, h1)\n}}\n\
@@ -152,7 +152,7 @@ fn a_ball_rolled_is_its_tube_along_the_trochoid() {
 /// arc's quarter turn.
 #[test]
 fn a_ball_along_an_arc_lies_on_its_torus() {
-    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords)\nuse std.stations\nball := 2mm\n{}\
+    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.place (coords)\nuse std.stations\nball := 2mm\n{}\
         in std.top {{\n  private a := point\n  private o := point\n  private e := point\n  fix((0mm, 0mm)) a\n\
           fix((0mm, 15mm)) o\n  fix((15mm, 15mm)) e\n  bend := arc(center: o, start: a, end: e)\n}}\nalong := std.stations.Along(bend, up: std.z)\n\
         bent := solid({{ p | some t in (0rad, 1rad): p in cutter at(under: along.f) t }})\n", ball("0mm")));

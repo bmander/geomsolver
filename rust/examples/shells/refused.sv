@@ -10,7 +10,7 @@
 //   cut's.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 use std.rounds (shell)
 
 in std.top {

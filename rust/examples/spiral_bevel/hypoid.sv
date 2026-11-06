@@ -12,6 +12,7 @@ use std.place (skew)
 use std.sets
 use std.rounds
 use std.motion (turns)
+use std.solids (cut, common)
 
 // -- the pair as a designer states it ----------------------------------------------------------
 param pinion_teeth := 24

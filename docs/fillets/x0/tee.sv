@@ -3,7 +3,7 @@
 // nothing in the source says so. Does not parse yet.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 in std.side {
   c1 := point
   main_k := circle(center: c1) hint(r: 10)

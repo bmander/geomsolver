@@ -17,7 +17,7 @@ const STEEL: &str = "steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, y
 /// A disc of radius `r` and depth `depth`, `of` what `of` says, in a document in `unit`, with
 /// `extra` beside it.
 fn disc(unit: &str, r: &str, depth: &str, of: &str, extra: &str) -> String {
-    format!("unit {unit}\nuse std\nuse std.solids\n{extra}\nin std.top {{\n  \
+    format!("unit {unit}\nuse std\nuse std.solids (cut)\n{extra}\nin std.top {{\n  \
              rim := radius({r}) circle(center: std.top.origin)\n  \
              disc := solid(std.solids.Prism(face(rim), from: -({depth}), to: 0)){of}\n}}\n")
 }
@@ -159,7 +159,7 @@ fn of_names_a_material() {
 /// as a group is the caller's.
 #[test]
 fn a_body_and_an_instance_name_their_material() {
-    let e = built(&format!("unit mm\nuse std\nuse std.solids\n{STEEL}\nin std.top {{\n  \
+    let e = built(&format!("unit mm\nuse std\nuse std.solids (cut)\n{STEEL}\nin std.top {{\n  \
         rim := radius(20mm) circle(center: std.top.origin)\n  \
         hole := radius(5mm) circle(center: std.top.origin)\n  \
         disc := solid(std.solids.Prism(face(rim), from: -5mm, to: 0)) of steel\n  \
@@ -169,7 +169,7 @@ fn a_body_and_an_instance_name_their_material() {
         .map(|s| s.name.as_str()).collect();
     assert_eq!(made, ["disc"]);
     assert!(matches!(sk.solids[solid(sk, "disc")].def, gcs_core::model::SolidDef::Body { .. }));
-    let e = built(&format!("unit mm\nuse std\nuse std.solids\n\
+    let e = built(&format!("unit mm\nuse std\nuse std.solids (cut)\n\
         component Plate(m: group, c: point, r: Length) {{\n  \
           rim := radius(r) circle(center: c)\n  \
           body := solid(std.solids.Prism(face(rim), from: -5mm, to: 0)) of m\n}}\n\

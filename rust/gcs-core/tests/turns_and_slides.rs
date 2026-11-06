@@ -90,7 +90,7 @@ fn admitted_as(source: &str) -> gcs_core::motion::Screw {
 const ROD: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (slides)
 in std.front {
@@ -360,7 +360,7 @@ wedge common ring
     format!("\
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns)
 private tx := axis

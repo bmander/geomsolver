@@ -10,7 +10,7 @@
 // 4 × 3 × 20 = 240 mm³ of its 2000, leaving 1760 mm³.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (slides)
 

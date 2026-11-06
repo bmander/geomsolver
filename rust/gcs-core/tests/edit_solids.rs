@@ -13,7 +13,7 @@ use crate::common::{gestures::{taken, volume}, parsed::{prog_of, read}};
 const PLATE: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.front {
 a := point hint((0, 0))
 b := point hint((60, 0))

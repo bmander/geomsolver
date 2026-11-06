@@ -10,7 +10,7 @@
 // keeps `0 ≤ z ≤ 4`; the plate loses that, integrated across the bar.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (slides)
 

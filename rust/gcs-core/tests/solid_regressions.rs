@@ -231,7 +231,7 @@ fn a_depth_is_retired_naming_its_prism_and_a_prism_swept_nowhere_is_refused() {
 #[test]
 fn geometry_validation_uses_the_solved_shape_instead_of_its_hint() {
     // p2 starts at p1. Its dimensions move it to the fourth corner before validation runs.
-    let e = read("unit mm\nuse std\nuse std.solids\nin std.front {\np0 := point\nfix((0, 0)) p0\np1 := point\nfix((10, 0)) p1\np2 := point hint((10, 0))\np3 := point\nfix((0, 10)) p3\np0 distance(10mm, along: u) p2\np0 distance(10mm, along: v) p2\n}\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(std.solids.Prism(f, from: -5mm, to: 0))\n");
+    let e = read("unit mm\nuse std\nuse std.solids (cut)\nin std.front {\np0 := point\nfix((0, 0)) p0\np1 := point\nfix((10, 0)) p1\np2 := point hint((10, 0))\np3 := point\nfix((0, 10)) p3\np0 distance(10mm, along: u) p2\np0 distance(10mm, along: v) p2\n}\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(std.solids.Prism(f, from: -5mm, to: 0))\n");
     assert!(program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
     near(
         report::positions(&e.sketch, &e.map)

@@ -1,6 +1,6 @@
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.front {
   stockfp0 := point
   fix((0, 0)) stockfp0

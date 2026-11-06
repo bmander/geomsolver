@@ -11,7 +11,7 @@ use gcs_core::syntax::{parse, write_stmt_to, Lowered, OpArg, Seg, StmtKind, Writ
 use crate::common::{refused, text::solved};
 
 /// Two points `c` (the origin) and `e` (30 along `u`) in the front plane, and the line between.
-const HEAD: &str = "unit mm\nuse std\nuse std.sets\nuse std.solids\nuse std.motion (turns)\n\
+const HEAD: &str = "unit mm\nuse std\nuse std.sets\nuse std.solids (union)\nuse std.motion (turns)\n\
     in std.front {\n  c := point\n  fix((0, 0)) c\n  e := point\n  fix((30, 0)) e\n\
     ax := line(c, e)\n}\n";
 
@@ -124,11 +124,14 @@ fn the_retired_spellings_are_refused_naming_their_replacements() {
             "`some s: p in F at s`");
     retired("f := frame\nq := c in f", "`n := x at f`");
     retired("s := { p | some t in [0deg, 90deg]: p in std.sets.Ball(c, r: 1mm) at t }", "`(a, b)`");
-    retired("s := { p | every t in (0deg, 90deg): p in std.sets.Ball(c, r: 1mm) }", "reserved");
+    retired("s := { p | every t in (0deg, 90deg): p in std.sets.Ball(c, r: 1mm) }", "in a claim");
     retired("s := { p | p distance(<= 1mm) c or p distance(<= 1mm) e }", "membership");
-    // the claim word between two solids, one within another, is no membership and stays
+    // one solid within another is what holds of every point of it (#783 P3), and the claim word
+    // it was is refused naming that
     assert!(syntax(&format!("{HEAD}a := solid(std.sets.Ball(c, r: 2mm))\n\
-        b := solid(std.sets.Ball(c, r: 3mm))\nclaim a inside b\n")).is_empty());
+        b := solid(std.sets.Ball(c, r: 3mm))\nclaim every q in a: q in b\n")).is_empty());
+    retired("a := solid(std.sets.Ball(c, r: 2mm))\nb := solid(std.sets.Ball(c, r: 3mm))\n\
+        claim a inside b", "`claim every q in a: q in b`");
 }
 
 #[test]

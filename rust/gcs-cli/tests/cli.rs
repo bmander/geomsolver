@@ -388,7 +388,7 @@ fn explicit_native_stl_never_falls_back_when_occt_is_unavailable() {
     std::fs::write(&model,"\
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 in std.front {
 o := point
 fix((0, 0)) o
@@ -570,7 +570,7 @@ fn a_solid_at_an_unsolved_pose_does_not_hide_the_diagnosis() {
     let dir = std::env::temp_dir().join(format!("solventc-unbuilt-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("a place to write");
     let path = dir.join("hidden.sv");
-    std::fs::write(&path, "unit mm\nuse std\nuse std.solids\nin std.front {\n  p0 := point\n\
+    std::fs::write(&path, "unit mm\nuse std\nuse std.solids (cut, common)\nin std.front {\n  p0 := point\n\
         \x20 p1 := point hint((12, 0))\n  p2 := point hint((12, 5))\n  p3 := point hint((2, 5))\n\
         \x20 fix((2, 0)) p0\n\
         \x20 sec := horizontal (e0 := line(p0, p1)) -> vertical (e1 := line(p1, p2)) ->\n\
@@ -876,7 +876,7 @@ fn a_step_assembly_is_written_in_the_drawings_colours() {
 const PLATES: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (offset)
 component Plate(w: Length, d: Length, h: Length) {
   in std.front {
@@ -911,7 +911,7 @@ fix(origin == (0, 0, -50)) h
 const BORED: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 in std.front {
 o := point
 b := point
@@ -1009,7 +1009,7 @@ fn clearance_document(tag: &str) -> (PathBuf,String) {
          (r{t} := line(c{t}, d{t})) -> (s{t} := line(d{t}, a{t})) -> close\nhorizontal p{t}\nvertical q{t}\n\
          horizontal r{t}\nvertical s{t}\na{t} distance(10) b{t}\na{t} distance(10) d{t}\nfix(({x}, 0)) a{t}\n}}\n\
          f{t} := face(p{t}, q{t}, r{t}, s{t})\ns{t}_ := solid(std.solids.Prism(f{t}, from: -5mm, to: 0mm))\n",x+10.,x+10.);
-    let text = format!("unit mm\nuse std\nuse std.solids\n{}{}claim sA_ clear(2mm) sB_\n",block("A",0.),block("B",13.));
+    let text = format!("unit mm\nuse std\nuse std.solids (cut, common)\n{}{}claim sA_ clear(2mm) sB_\n",block("A",0.),block("B",13.));
     let path = dir.join("blocks.sv");
     std::fs::write(&path,&text).unwrap();
     (path,text)
@@ -1083,7 +1083,7 @@ fn a_scenarios_words_are_said() {
     std::fs::write(&source,"\
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 in std.front {
   b0 := point
   b1 := point
@@ -1314,7 +1314,7 @@ fn a_swept_bodys_empty_common_reads_volume_zero() {
     std::fs::write(&source,"\
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (vertical, coords)
 use std.motion (turns)
 in std.front {
@@ -1484,7 +1484,7 @@ fn middle((w, h, rgb): &(usize, usize, Vec<u8>)) -> [u8; 3] {
 const NESTED: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 in std.top {
   hub := point
   fix((0mm, 0mm)) hub
@@ -1696,7 +1696,7 @@ fn a_slab_keeps_a_thickness_either_side() {
 const STAR_WHEEL: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (vertical)
 use std.shapes
 use std.motion (turns)
@@ -1850,7 +1850,7 @@ fn a_picture_of_a_solid_not_built_says_so() {
     let dir = std::env::temp_dir().join(format!("solventc-png-unbuilt-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let source = dir.join("block.sv");
-    let block = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.front {\n\
+    let block = "unit mm\nuse std\nuse std.solids (cut, common)\nuse std.rounds (shell)\nin std.front {\n\
         \x20 b0 := point\n  b1 := point\n  b2 := point\n  b3 := point\n\
         \x20 fix((0, 0)) b0\n  fix((40, 0)) b1\n  fix((40, 24)) b2\n  fix((0, 24)) b3\n\
         \x20 (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \

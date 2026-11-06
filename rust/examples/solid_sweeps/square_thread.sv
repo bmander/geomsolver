@@ -12,7 +12,7 @@
 // clear above, however long the rod (#271).
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.sets
 use std.place (coords, above)
 use std.motion (screws)
@@ -52,7 +52,7 @@ rod := solid({ p | p in std.sets.Cylinder(ax, r: rod_r)
 construction bar := solid(std.solids.Prism(face(lower, end, upper, nose), from: -reach, to: reach))
 
 // the screw about the rod's axis, carrying the bar through it
-cut := frame
-cut screws(lead) ax
-construction thread := solid({ p | some t: p in bar at(under: cut) t })
+feed := frame
+feed screws(lead) ax
+construction thread := solid({ p | some t: p in bar at(under: feed) t })
 thread cut rod

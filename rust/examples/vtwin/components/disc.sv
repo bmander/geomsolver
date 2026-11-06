@@ -14,7 +14,7 @@
 // captured between its head and the cotter and nothing is threaded into plastic.
 
 use std
-use std.solids
+use std.solids (cut)
 use std.place (vertical, on_u)
 use components.dims (R, dhub, pinclr, pinhead, pinpocket, rdisc, tdisc)
 use components.parts

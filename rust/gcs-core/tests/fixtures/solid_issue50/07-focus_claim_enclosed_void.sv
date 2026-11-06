@@ -1,6 +1,6 @@
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.front {
   stockfp0 := point
   fix((0, 0)) stockfp0
@@ -34,5 +34,5 @@ in std.front {
   fix((4, 16)) resultfp3
   resultf := face(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
   result := solid(std.solids.Prism(resultf, from: -16mm, to: -4mm))
-  claim result inside shell
+  claim every q in result: q in shell
 }

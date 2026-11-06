@@ -24,7 +24,7 @@ use crate::turns_and_slides::{exported,exported_at,near};
 pub(crate) fn slid_mill(r: f64,y: f64,z: f64) -> String {
     format!("unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (slides)
 
@@ -83,7 +83,7 @@ pub(crate) fn turned_mill(r: f64,top: f64,d: f64,z: f64) -> String {
     let block = crate::prism_twists::BLOCK;
     format!("unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (turns)
 

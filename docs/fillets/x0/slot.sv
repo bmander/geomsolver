@@ -8,7 +8,7 @@
 // the boss was added; the ordering proposed here makes one body enough.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 in std.front {
   // the plate, 80 × 50, its top on the page
   p0 := point

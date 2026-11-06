@@ -8,7 +8,7 @@
 // length: 84.35 mm³ taken from 1570.80.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 use std.place (coords)
 use std.motion (slides)
 

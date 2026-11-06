@@ -7,8 +7,8 @@ use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::names::refs_eq;
 use crate::syntax::words::{
-    self, joint_word, link_word, named_link_at, opens_link, past_args, past_bracket, prefix_word,
-    word_at, Brackets, BLOCKS, OPENERS,
+    self, joint_word, link_word, named_link_at, opens_link, past_args, prefix_word,
+    word_at, BLOCKS, OPENERS,
 };
 use crate::syntax::{
     build_rank, ref_text, under_root, Arg, Chained, Decl, DeclName, Fall, Kid, Name, OpArg,
@@ -336,19 +336,8 @@ impl<'a> P<'a> {
 
     /// The token index just past a reference beginning at `j` — a name, then any run of
     /// `.field` and `[index]` — or `None` where no reference begins there.
-    pub(super) fn past_ref(&self, mut j: usize) -> Option<usize> {
-        if !matches!(self.t.get(j).map(|(t, _)| t), Some(Tok::Ident(_))) {
-            return None;
-        }
-        j += 1;
-        loop {
-            match self.t.get(j).map(|(t, _)| t) {
-                Some(Tok::P('.')) => j += 2,
-                // an index unclosed on its line ends the reference there
-                Some(Tok::P('[')) => j = past_bracket(&self.t, j, Brackets::Square),
-                _ => return Some(j),
-            }
-        }
+    pub(super) fn past_ref(&self, j: usize) -> Option<usize> {
+        crate::syntax::words::past_ref(&self.t, j)
     }
 
     /// The identifier at a token position, where there is one — what `opens_link` reads ahead.

@@ -21,7 +21,7 @@
 use engine.dims (P, R, back, front, pinlen, rflange, rfw, rj, rp, rseal, wflange, wfw)
 use engine.parts
 use std
-use std.solids
+use std.solids (cut, union)
 use std.place (horizontal, offset)
 use std.motion (slides, spins)
 
