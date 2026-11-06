@@ -363,7 +363,7 @@ fn a_sliver_float32_flattens_is_refused_naming_its_faces_and_where() {
 fn an_stl_reader_refusing_a_flat_triangle_says_which() {
     let t = [[0.,0.,0.],[1.,0.,0.],[0.,1.,0.],[3.,1.,2.],[4.,1.,2.],[5.,1.,2.]].concat();
     let e = gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&t,"t")).unwrap_err();
-    assert_eq!(e,"binary STL triangle 2 of 2, at (4, 1, 2), has no area");
+    assert_eq!(e,"binary STL triangle 2 of 2, at (4.0000, 1.0000, 2.0000), has no area");
 }
 
 /// **A cube trimmed by its midsphere** (`midsphere_common.sv`, brep-bench's
