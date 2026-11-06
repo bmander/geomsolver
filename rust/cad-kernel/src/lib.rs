@@ -23,6 +23,7 @@ pub mod props;
 pub mod step;
 pub mod step_check;
 pub mod query;
+pub mod enclose;
 pub mod ssi;
 pub mod recipe;
 pub mod json;

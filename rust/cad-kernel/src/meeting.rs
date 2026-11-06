@@ -642,7 +642,14 @@ pub fn ridge_branches(a: &Surface,d: [[f64;2];2],b: &Surface,r: &Ridge,tol: f64)
         let bend = samples.iter().fold(kappa.abs(),|m,&x| m.max(x.abs()))*2.;
         let d0 = dg(0.).abs();
         let bound = |x0: f64,x1: f64| [bend*x0.abs().max(x1.abs())+d0,bend];
-        let roots = crate::util::isolate::roots(&g,&dg,&bound,[-reach,reach],tol*1e-3,&|t| g(t).abs() <= tol).unwrap_or_default();
+        // (a fold of two surfaces' meeting, not a curve against a surface: `f` reads the other
+        // surface's signed distance, a sheet's through a numerical foot that no interval encloses,
+        // so its bounds are measured from its own samples and read as hand bounds are — `Bounded`,
+        // named so; a meeting's crossing beside a fold is a march's, refined by the trace after)
+        let (at_,value) = (|t: f64| (g(t),dg(t)),|t: f64| crate::util::interval::Iv::point(g(t)));
+        let fold = crate::util::isolate::Parts {at:&at_,value:&value,slope:&|_,_| crate::util::interval::Iv::ANY};
+        let roots = crate::util::isolate::roots_by(&crate::util::isolate::Bounded(&bound),crate::util::meter::Stage::Ray,&fold,
+            [-reach,reach],tol*1e-3,&|t| g(t).abs() <= tol).unwrap_or_default();
         let plus = roots.iter().filter(|x| x.at > 0. && !x.touch).map(|x| x.at).fold(f64::INFINITY,f64::min);
         let minus = roots.iter().filter(|x| x.at < 0. && !x.touch).map(|x| x.at).fold(f64::NEG_INFINITY,f64::max);
         if !(plus.is_finite() && minus.is_finite()) || !inside(at(plus)) || !inside(at(minus)) { flush(&mut sides,&mut out); continue }
@@ -900,7 +907,7 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
     // where two branches of a closed form cross (two cylinders of one radius whose axes cross)
     for i in 0..curves.len() { for j in i+1..curves.len() {
         let (Some(pi),Some(pj)) = (curves[i].period(),curves[j].period()) else { continue };
-        for (_,q) in super::query::crossings_in(a,&curves[i],[0.,pi],&curves[j],[0.,pj],tol).unwrap_or_default() {
+        for (_,q) in super::query::crossings_in(a,&curves[i],[0.,pi],&curves[j],[0.,pj],tol).map_err(|r| r.to_string())?.unwrap_or_default() {
             if singular.iter().any(|s| distance(s.at,q) <= 1e3*tol) { continue }
             let ds = [curves[i].tangent(curves[i].inverse(q)),curves[j].tangent(curves[j].inverse(q))];
             singular.push(Point {at:q,kind:Singular::Crossing(ds.iter().flat_map(|&d| [d,scale(d,-1.)]).collect())});
