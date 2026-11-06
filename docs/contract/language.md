@@ -500,7 +500,8 @@ declared (`Frame::path`), so a part that declares the frame makes them (`boundar
 stands at the frame's own place (`Sketch::plane_at`, chosen in `entities::build_plane` by
 `flatten::frame_datum`): no unknown and no row for an axis already through it, so a frame's datums
 add no freedom and no dependency, and `diagnose::view_freedoms` says a chart sharing an earlier
-one's place no more. Drawn in a plane standing where the frame around it does is no W115 (`planes::member`), and
+one's place no more. Drawn in a plane standing where the frame around it does, or declared in it (#820), is no W115
+(`planes::said_nothing`), and
 `drawn_incidences` twins a point onto one as onto the world's. A plane is no frame, so `Tooth(…)
 in top` reads the world's. `tests/frame_datums.rs` is the gate
 (`a_body_reading_its_datums_at_the_root_stands_where_one_handed_them_does`,

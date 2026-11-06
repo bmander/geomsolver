@@ -931,3 +931,66 @@ base seats(turn: 90deg, up: std.z, east: std.x) o
     assert_eq!(rails.len(), 2, "{rails:?}");
     post_at(&e, &format!("{}.rail", rails[1]), &Pose::turned(290.0, [95.0, -15.0, 0.0]));
 }
+
+#[test]
+fn a_plane_a_seated_body_declares_and_draws_in_says_nothing_of_its_frame() {
+    // a body that declares a plane of its own and draws in it (#820): seated, its instance stands
+    // in a frame of its own, around the plane's `in`; the plane was declared standing in that
+    // frame, and rides it, so the frame said where — no W115, seated directly or a part's part
+    let leaned = "\
+unit mm
+use std
+use std.solids
+use std.place (coords, raised, seats, on_v)
+component Leaned() {
+  in std.front {
+    lean_at := point hint((9, 4))
+    lean_at coords(du: 10mm * cos(25deg), dv: 10mm * sin(25deg)) std.front
+    construction lean := line(std.origin, lean_at)
+  }
+  in std.top {
+    radial_at := point hint((0, 10))
+    radial_at on_v(d: 10mm) std.top
+    construction radial := line(std.top.origin, radial_at)
+  }
+  normal := plane(u: hint(dir: lean), v: hint(dir: radial))
+  lean parallel(sense: same) normal.u
+  radial parallel(sense: same) normal.v
+  std.origin coincident normal.origin
+  in normal {
+    a := point hint((0, 5))
+    a coords(du: 0mm, dv: 5mm) normal
+    b := point hint((2, 5))
+    b coords(du: 2mm, dv: 5mm) normal
+    c := point hint((2, 7))
+    c coords(du: 2mm, dv: 7mm) normal
+  }
+  body := solid(std.solids.Prism(face(a, b, c, -> close), from: -1mm, to: 1mm))
+}
+";
+    for tail in [
+        "at := point\nat raised(d: 5mm, along: std.z) std.origin\n\
+         g := Leaned()\ng seats(turn: 30deg, up: std.z, east: std.x) at\n",
+        "component Seated(c: point) {\n  at := point\n  at raised(d: 5mm, along: std.z) c\n  \
+         g := Leaned()\n  g seats(turn: 30deg, up: std.z, east: std.x) at\n}\n\
+         s := Seated(std.origin)\n",
+    ] {
+        let mut e = solved(&format!("{leaned}{tail}"));
+        assert!(e.diags.iter().all(|d| d.code != Code::W115), "{tail}: {:?}", e.diags);
+        assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0, "{tail}");
+    }
+    // a plane of the world's inside the frame is no plane of the frame's: drawn in it, the
+    // frame around says nothing of where, which is said
+    let e = build(&format!("{leaned}\
+w := plane(u: std.x, v: std.z)
+std.origin coincident w.origin
+in (f := frame) {{
+  in w {{
+    p := point hint((1, 1))
+  }}
+}}
+f.origin coincident std.origin
+"));
+    assert!(e.diags.iter().any(|d| d.code == Code::W115 && d.message.contains("`w`")),
+            "{:?}", e.diags);
+}
