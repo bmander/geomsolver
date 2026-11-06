@@ -136,6 +136,27 @@ rounding by `generation::the_kernels_planar_cut_is_the_generated_profiles`; edge
 points over their fans, `generate::cut_at`, Hermite spans, extruded; `Family::in_frame`), else
 traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cut.rs`.
 
+**A helical rack's flank is its transverse envelope carried up a helix (#826):** an undrafted prism
+of straight edges whose extrusion leans along the rack's slide, under a slide seen from a turn (a
+helical rack against the blank it cuts), is the same set slid along its extrusion, so its section
+by a plane square to the turn's axis at height `h` is the base section slid `h·shift` along the
+rack's line, and the roll carries a section so slid to its own envelope turned about the axis:
+`E_h(t − lag·(h − b)) = R(rate·(h − b))·E_b(t)`, `rate` = `tan β / r` for a rack on a pitch circle
+`r` (`brep::swept::extruded::Screwed`, read where `planar_sheet` reads no plane the motion keeps;
+anything else — an arc in the profile, a drafted prism, a lean across the slide, any other
+motion — is traced). The sheet (`brep::sweep::extruded::screwed_sheet`) is the base section's
+envelope read as a prism's is, its Hermite spans joined at knots of multiplicity two within a piece,
+carried by the helix's cubic fitted within an eighth of the bar (`helix_fit`): each section pole
+turned and raised by each helix pole, so the net's height runs with `v` alone. The identity is
+held at both ends of the band to `1e-8 (1 + reach)` mm, the sheet's rims at those heights out of
+the blank, and its contacts' normals are the helicoid's. A plane cutting a net whose height over it
+runs with `v` alone, strictly, is cut along that iso line exactly (`ssi::level_iso`, a net of one
+linear span across left to the case after it), so the blank's faces meet a flank in a pcurve that is
+a line. `tests/helical_rack.rs` is the gate: every exact contact the trace finds within the
+sheet's fit, the space's volume against the transverse tooth's arithmetic, and the 20-tooth gear's
+STEP within twice its spur twin's entities (radiatorbot's 19-tooth, 25° gear: 107 623 entities
+and 9.7 MB traced, 32 155 and 2.7 MB screwed, its spur twin 17 901).
+
 **A ball swept is its tube** (#238, #684 D, `solid::canal`; the tube is the kernel's,
 `brep::swept::canal`, #721 F2c): a sweep whose tool's recipe is one
 ball (`brep::recipe::ball_of`), under any motion, is the points within the radius of its centre's

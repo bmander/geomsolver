@@ -8,6 +8,9 @@
 //! where the edge after leaves it. Read exactly (`planar_cut::cut_at`: `C` and `C'` of a point, line
 //! or arc are exact), interpolated by cubic Hermite spans halved until every span stays within the
 //! fit's bars of the envelope at its quarter points, and extruded linearly over the prism's length.
+//! A prism leaned along a rack's slide under its roll (#826, `Screwed`) is read the same way in the
+//! plane square to the observer's axis, and its envelope carried up the helix every section's turns
+//! along rather than extruded (`screwed`).
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::build::Seg;
@@ -129,10 +132,163 @@ fn turn_between(a: P,b: P) -> f64 {
 #[allow(clippy::too_many_arguments)]
 pub fn sheet(name: &str,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],frame: Frame,program: &[PlanarStep],roll: [f64;2],
     inside: Inside,tolerance: Option<Tolerance>,say: &Say) -> Result<Fitted,Refused> {
+    laid(name,walks,convex,extent,frame,program,roll,inside,tolerance,Along::Line,say)
+}
+
+/// How a section's envelope is laid along the heights of its sheet: extruded straight along the
+/// frame's `z`, or carried up the helix a leaned prism's sections turn along (#826).
+#[derive(Clone,Copy,Debug)]
+enum Along { Line,Helix(Helix) }
+
+/// **The helix a leaned prism's envelope is carried along under a rack's roll** (#826): `centre`
+/// the observer's axis in the frame's plane, the section read at height `base`, and as the height
+/// rises by one millimetre the section carried `shift` across the plane (the extrusion's lean),
+/// so cut by the roll `lag` degrees sooner and its envelope turned `rate` radians about the axis.
+/// The envelope of the section at height `h` at roll `t − lag (h − base)` is the base's at `t`
+/// turned by `rate (h − base)`: a helicoid of lead `2π / rate`.
+#[derive(Clone,Copy,Debug)]
+struct Helix { centre: P,rate: f64,base: f64,shift: P,lag: f64 }
+
+impl Helix {
+    /// The angle the section at height `h` is turned by from the base's.
+    fn angle(&self,h: f64) -> f64 { self.rate*(h-self.base) }
+    /// `p`, a point of the base's envelope, turned to the envelope at height `h`.
+    fn turn(&self,p: P,h: f64) -> P { rotated(p,self.centre,self.angle(h)) }
+}
+
+/// `p` turned by `angle` (radians) about `centre`.
+fn rotated(p: P,centre: P,angle: f64) -> P {
+    let (sn,cs) = angle.dsin_cos();
+    let q = [p[0]-centre[0],p[1]-centre[1]];
+    [centre[0]+cs*q[0]-sn*q[1],centre[1]+sn*q[0]+cs*q[1]]
+}
+
+/// **A leaned prism under a rack's roll, read as a screw's sheet** (#826): a prism of straight
+/// edges extruded along `axis` aslant `frame`'s plane, its lean in the plane along the rack's slide,
+/// under a slide seen from a turn about `frame`'s `z` (a helical rack against the blank it cuts).
+/// The prism is the same set slid along its own extrusion, so its section by a plane square to
+/// the turn at any height is the base's section slid along the rack's line, and the rack's roll
+/// carries a section slid along its line to its own envelope turned about the axis: every
+/// section's envelope is the base's turned, and the sweep's side is that envelope carried up a
+/// helix (`Helix`), as a helical gear's flank is its transverse involute carried up its helix.
+/// What is kept is the section at the middle of the heights over which every edge of the prism
+/// stands (`extent`, the band its sheet spans), its loop walked counter-clockwise about `frame`'s
+/// `z`, each corner's convexity, and the helix.
+pub struct Screwed { pub section: Vec<Vec<Seg>>,pub convex: Vec<Vec<bool>>,pub extent: [f64;2],pub frame: Frame,
+    pub program: Vec<PlanarStep>,helix: Helix }
+
+impl Screwed {
+    /// The prism of one loop `walks` (in a plane square to the unit `axis`, its
+    /// extrusion over `extent` along it) under `program` (the motion in `frame`'s plane) read as a
+    /// screw's sheet; none where it is not one: a loop with an edge that is no line, more than
+    /// one loop, a motion that is no slide seen from a turn, an extrusion square to the turn's
+    /// axis, along it (a prism the motion keeps the plane of, `sheet`'s) or leaning across the
+    /// slide (its sections cut by the rack at another depth, so no turn of one another's envelope).
+    pub fn read(walks: &[Vec<Seg>],axis: V,extent: [f64;2],frame: Frame,program: &[PlanarStep]) -> Option<Screwed> {
+        let [walk] = walks else { return None };
+        let &[PlanarStep::Slide {direction,advance},PlanarStep::Turn {centre,ratio},PlanarStep::Relative] = program else { return None };
+        if !(advance.abs() > 0. && ratio.abs() > 0.) || walk.iter().any(|s| !matches!(s.curve,Curve::Line {..})) { return None }
+        let length = direction[0].dhypot(direction[1]);
+        if !(length > 0.) { return None }
+        let d = [direction[0]/length,direction[1]/length];
+        let e = frame.dir_local(axis);
+        let lean = e[0].dhypot(e[1]);
+        if !(e[2].abs() > 1e-6) || !(lean > 1e-9) || (e[0]*d[1]-e[1]*d[0]).abs() > 1e-9*lean { return None }
+        // each corner's foot on the plane at height `h`: its edge's line, which the prism keeps
+        let corners: Vec<V> = walk.iter().map(|s| frame.local(s.start())).collect();
+        let at = |c: V,h: f64| { let w = (h-c[2])/e[2]; [c[0]+w*e[0],c[1]+w*e[1]] };
+        // the heights over which every corner's line runs within the prism's extent
+        let reach: Vec<[f64;2]> = corners.iter().map(|c| { let [a,b] = extent.map(|w| c[2]+w*e[2]); [a.min(b),a.max(b)] }).collect();
+        let band = [reach.iter().map(|r| r[0]).fold(f64::NEG_INFINITY,f64::max),reach.iter().map(|r| r[1]).fold(f64::INFINITY,f64::min)];
+        if !(band[0] < band[1]) { return None }
+        let base = 0.5*(band[0]+band[1]);
+        let mut points: Vec<P> = corners.iter().map(|&c| at(c,base)).collect();
+        // walked counter-clockwise about the frame's `z` (an extrusion against it walks the other way)
+        let area: f64 = (0..points.len()).map(|k| { let (p,q) = (points[k],points[(k+1)%points.len()]); p[0]*q[1]-p[1]*q[0] }).sum();
+        if !(area.abs() > 0.) { return None }
+        if area < 0. { points.reverse(); }
+        let n = points.len();
+        let section: Vec<Seg> = (0..n).map(|k| {
+            let (a,b) = (points[k],points[(k+1)%n]);
+            let (p,q) = (frame.at([a[0],a[1],base]),frame.at([b[0],b[1],base]));
+            let l = crate::util::space::distance(p,q);
+            Seg {curve:Curve::Line {p,d:crate::util::space::scale(crate::util::space::sub(q,p),1./l)},t:[0.,l],source:k}
+        }).collect();
+        if section.iter().any(|s| !(s.t[1] > 0.)) { return None }
+        // convex where the walk turns left
+        let convex: Vec<bool> = (0..n).map(|k| {
+            let (a,b,c) = (points[k],points[(k+1)%n],points[(k+2)%n]);
+            (b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]) > 0.
+        }).collect();
+        // the section at a height one millimetre up is slid `shift` across the plane, along the
+        // rack's line; the rack reaches it `lag` degrees of the roll sooner, and its envelope is
+        // turned by the observer's turn over those degrees
+        let shift = [e[0]/e[2],e[1]/e[2]];
+        let along = shift[0]*d[0]+shift[1]*d[1];
+        let lag = along*360./advance;
+        let rate = (ratio*std::f64::consts::PI/180.)*lag;
+        Some(Screwed {section:vec![section],convex:vec![convex],extent:band,frame,program:program.to_vec(),
+            helix:Helix {centre,rate,base,shift,lag}})
+    }
+    /// How far its sections turn about the axis a millimetre up (radians): `2π` over the lead.
+    pub fn rate(&self) -> f64 { self.helix.rate }
+}
+
+/// **The sheet of a leaned prism under a rack's roll** (#826): the envelope of its section at the
+/// middle of its band (`Screwed`), read exactly as `sheet` reads a prism's, carried up the helix
+/// its sections turn along — the section's cubic spans by a cubic in the height fitted to the
+/// helix within an eighth of the fit's bar, its poles each section pole turned and raised. The
+/// helix is held to what it claims: at both ends of the band the section's own envelope, slid
+/// and read at its lagging roll, is the base's turned. Refused where the sheet's ends at the
+/// band's heights stand in the blank.
+pub fn screwed(name: &str,screwed: &Screwed,roll: [f64;2],inside: Inside,tolerance: Option<Tolerance>,say: &Say) -> Result<Fitted,Refused> {
+    laid(name,&screwed.section,&screwed.convex,screwed.extent,screwed.frame,&screwed.program,roll,inside,tolerance,
+        Along::Helix(screwed.helix),say)
+}
+
+/// How many points along each span of the helix's fit its error is read at, and the most spans it
+/// may take.
+const HELIX_READS: usize = 16;
+const MOST_HELIX_SPANS: usize = 768;
+
+/// The helix of the band `[lo, hi]` as a cubic in the height: `(cos θ, sin θ, h)` at each height,
+/// `θ` the section's turn there, interpolated at evenly spaced heights, doubled until a point
+/// `reach` from the axis carried by it stands within `bar` of where the helix carries it — its
+/// knots the heights, and the error read.
+fn helix_fit(helix: &Helix,[lo,hi]: [f64;2],reach: f64,bar: f64) -> Result<(crate::nurbs::BSpline,f64),String> {
+    let exact = |s: f64| { let h = lo+(hi-lo)*s; let (sn,cs) = helix.angle(h).dsin_cos(); [cs,sn,h] };
+    let mut n = 3;
+    loop {
+        let t: Vec<f64> = (0..=n).map(|i| i as f64/n as f64).collect();
+        let mut fit = crate::nurbs::interpolate(&t.iter().map(|&s| exact(s)).collect::<Vec<_>>(),&t,3)
+            .ok_or("the helix could not be interpolated")?;
+        let reads = HELIX_READS*n;
+        let error = (0..=reads).map(|k| {
+            let s = k as f64/reads as f64;
+            let (p,q) = (fit.point(s),exact(s));
+            reach*(p[0]-q[0]).dhypot(p[1]-q[1])+(p[2]-q[2]).abs()
+        }).fold(0.,f64::max);
+        if error <= bar {
+            for k in &mut fit.knots { *k = lo+(hi-lo)**k; }
+            return Ok((fit,error))
+        }
+        if n >= MOST_HELIX_SPANS { return Err(format!("the helix needs more than {MOST_HELIX_SPANS} spans to keep within {bar:.2e} mm")) }
+        n *= 2;
+    }
+}
+
+/// The section's envelope laid along its heights as `along` says: `sheet`'s, extruded, or
+/// `screwed`'s, carried up a helix.
+#[allow(clippy::too_many_arguments)]
+fn laid(name: &str,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],frame: Frame,program: &[PlanarStep],roll: [f64;2],
+    inside: Inside,tolerance: Option<Tolerance>,along: Along,say: &Say) -> Result<Fitted,Refused> {
     let refused = |stage: Stage,why: String| Refused::at(stage,format!("`{name}`: {why}"));
     let started = crate::util::clock::Instant::now();
     let local = |p: V| { let l = frame.local(p); [l[0],l[1]] };
-    let lift = |p: P,h: f64| frame.at([p[0],p[1],h]);
+    let lift = |p: P,h: f64| match along {
+        Along::Line => frame.at([p[0],p[1],h]),
+        Along::Helix(helix) => { let q = helix.turn(p,h); frame.at([q[0],q[1],h]) }
+    };
     let stations: Vec<f64> = (0..STATIONS).map(|j| extent[0]+(extent[1]-extent[0])*j as f64/(STATIONS-1) as f64).collect();
     let in_blank = |points: &[P]| -> Result<bool,String> {
         let lifted: Vec<V> = points.iter().flat_map(|&p| stations.iter().map(move |&h| lift(p,h))).collect();
@@ -276,34 +432,104 @@ pub fn sheet(name: &str,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],
     }
     (say.stage)(&format!("`{name}`: the envelope's curve in {spans} spans, within {error:.2e} mm and {turned:.3} degrees of it at their \
         quarter points ({:?})",started.elapsed()));
+    // carried up a helix: held to what it claims at both ends of the band, and its ends there
+    // clear of the blank (#826)
+    if let Along::Helix(helix) = along {
+        let reach = curve.iter().flat_map(|(_,kept)| kept.iter().map(|s| (s.a.c[0]-helix.centre[0]).dhypot(s.a.c[1]-helix.centre[1])))
+            .fold(0.,f64::max);
+        let (mut worst,mut at) = (0_f64,[0.;2]);
+        for h in extent {
+            let (slide,lag) = ([helix.shift[0]*(h-helix.base),helix.shift[1]*(h-helix.base)],helix.lag*(h-helix.base));
+            for (i,kept) in &curve {
+                let slid = match pieces[*i].tool {
+                    Cutting::Point(p) => Cutting::Point([p[0]+slide[0],p[1]+slide[1]]),
+                    Cutting::Line {a,b} => Cutting::Line {a:[a[0]+slide[0],a[1]+slide[1]],b:[b[0]+slide[0],b[1]+slide[1]]},
+                    Cutting::Circle {centre,radius,side} => Cutting::Circle {centre:[centre[0]+slide[0],centre[1]+slide[1]],radius,side},
+                };
+                for node in kept.iter().flat_map(|s| [s.a,s.b]) {
+                    let own = cut_at(slid,&pieces[*i].program,node.t-lag).ok_or_else(|| refused(Stage::Sheet,format!("the section at \
+                        height {h:.4} mm has no cut at roll {:.6} degrees",node.t-lag)))?;
+                    let turned = helix.turn(node.c,h);
+                    let off = (own.c[0]-turned[0]).dhypot(own.c[1]-turned[1]);
+                    if off > worst { (worst,at) = (off,turned); }
+                }
+            }
+        }
+        if worst > 1e-8*(1.+reach) {
+            return Err(refused(Stage::Sheet,format!("the section's envelope at an end of its band stands {worst:.3e} mm from the base's \
+                turned (at {at:?}): the prism's sections do not turn along one helix")))
+        }
+        let rims: Vec<V> = extent.iter().flat_map(|&h| curve.iter().flat_map(move |(_,kept)| kept.iter().map(move |s| (s.a.c,h))))
+            .map(|(c,h)| lift(c,h)).collect();
+        if inside(&rims).at(Stage::Sheet)?.into_iter().any(|b| b) {
+            return Err(refused(Stage::Sheet,format!("the sheet's rim at a height of its band ({:.4} or {:.4} mm) stands in the blank",
+                extent[0],extent[1])))
+        }
+        (say.stage)(&format!("`{name}`: the envelope of each section square to the axis is the base's turned {:.4} degrees a \
+            millimetre up, within {worst:.1e} mm at the ends of its band",helix.rate.to_degrees()));
+    }
     (say.mark)(Stage::Sheet);
     // the Hermite spans as one cubic B-spline, a piece's parameter running with its roll, extruded
-    // linearly over the prism: knots of multiplicity three, the poles each span's Bézier's
+    // linearly over the prism: knots of multiplicity three, the poles each span's Bézier's. Carried
+    // up a helix, two spans of one piece meet at a knot of multiplicity two, its pole between theirs
+    // left out: they share their node's derivative along the roll, which runs evenly with the
+    // parameter over the piece, so the curve is as smooth there and the same (#826)
+    let joined = matches!(along,Along::Helix(_));
     let mut knots = vec![0.;4];
     let mut poles: Vec<P> = vec![ends[0]];
     let mut u = 0.;
     for (_,kept) in &curve {
         let chord: f64 = kept.iter().map(|s| (s.b.c[0]-s.a.c[0]).dhypot(s.b.c[1]-s.a.c[1])).sum();
         let rate = chord.max(1e-12)/(kept[kept.len()-1].b.t-kept[0].a.t).abs();
-        for Span {a,b,..} in kept {
+        for (k,Span {a,b,..}) in kept.iter().enumerate() {
             let dt = b.t-a.t;
             poles.push(std::array::from_fn(|k| a.c[k]+a.dc[k]*dt/3.));
             poles.push(std::array::from_fn(|k| b.c[k]-b.dc[k]*dt/3.));
-            poles.push(b.c);
             u += dt.abs()*rate;
+            if joined && k+1 < kept.len() { knots.extend([u;2]); continue }
+            poles.push(b.c);
             knots.extend([u;3]);
         }
     }
     knots.push(u);
-    let net = Net {du:3,dv:1,uknots:knots,vknots:vec![extent[0],extent[0],extent[1],extent[1]],
-        poles:poles.iter().map(|&p| vec![lift(p,extent[0]),lift(p,extent[1])]).collect(),weights:None};
+    let (net,error) = match along {
+        Along::Line => (Net {du:3,dv:1,uknots:knots,vknots:vec![extent[0],extent[0],extent[1],extent[1]],
+            poles:poles.iter().map(|&p| vec![lift(p,extent[0]),lift(p,extent[1])]).collect(),weights:None},error),
+        // each pole of the section turned and raised by each of the helix's (#826): the net is the
+        // section's curve carried by the helix's fit, which keeps a point within `reach` of the
+        // axis within an eighth of the bar
+        Along::Helix(helix) => {
+            let reach = poles.iter().map(|p| (p[0]-helix.centre[0]).dhypot(p[1]-helix.centre[1])).fold(0.,f64::max);
+            let (fit,carried) = helix_fit(&helix,extent,reach,bar/8.).map_err(|why| refused(Stage::Fit,why))?;
+            let c = helix.centre;
+            let poles = poles.iter().map(|&p| fit.poles.iter().map(|&[cs,sn,h]| {
+                let q = [p[0]-c[0],p[1]-c[1]];
+                frame.at([c[0]+cs*q[0]-sn*q[1],c[1]+sn*q[0]+cs*q[1],h])
+            }).collect()).collect();
+            (say.stage)(&format!("`{name}`: the helix over {:.2} mm in {} poles of degree {}, within {carried:.2e} mm {reach:.2} mm \
+                out",extent[1]-extent[0],fit.poles.len(),fit.degree));
+            (Net {du:3,dv:fit.degree,uknots:knots,vknots:fit.knots,poles,weights:None},error+carried)
+        }
+    };
     let face = crate::build::sheet(net).at(Stage::Fit)?;
     (say.mark)(Stage::Fit);
     // the contacts the sheet carries, for what reads it: its nodes at each station, and the
-    // envelope at each span's middle withheld; a stretch's first node is the one before's last
-    let normal = |d: P,forward: bool| { let l = d[0].dhypot(d[1]).max(1e-300)*if forward { 1. } else { -1. }; frame.dir([d[1]/l,-d[0]/l,0.]) };
-    let mut rows: Vec<(Node,V)> = Vec::new();
-    let mut middles: Vec<(Node,V,usize)> = Vec::new();
+    // envelope at each span's middle withheld; a stretch's first node is the one before's last.
+    // Carried up a helix, the normal is the section's tangent turned crossed with the helix's
+    let normal = |d: P,forward: bool| { let l = d[0].dhypot(d[1]).max(1e-300)*if forward { 1. } else { -1. }; [d[1]/l,-d[0]/l] };
+    let normal_at = |n: P,c: P,h: f64| match along {
+        Along::Line => frame.dir([n[0],n[1],0.]),
+        Along::Helix(helix) => {
+            let (m,q) = (rotated(n,[0.;2],helix.angle(h)),helix.turn(c,h));
+            let (a,b) = (-helix.rate*(q[1]-helix.centre[1]),helix.rate*(q[0]-helix.centre[0]));
+            // (−m_y, m_x) is the tangent the normal `m` is square to; crossed with (a, b, 1)
+            let z = m[0]*a+m[1]*b;
+            let l = (m[0]*m[0]+m[1]*m[1]+z*z).sqrt();
+            frame.dir([m[0]/l,m[1]/l,-z/l])
+        }
+    };
+    let mut rows: Vec<(Node,P)> = Vec::new();
+    let mut middles: Vec<(Node,P,usize)> = Vec::new();
     for (_,kept) in &curve {
         let forward = kept[kept.len()-1].b.t > kept[0].a.t;
         rows.pop();
@@ -319,19 +545,19 @@ pub fn sheet(name: &str,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],
     for (node,n) in &rows {
         for &h in &stations {
             sheet.points.push(lift(node.c,h));
-            sheet.normals.push(*n);
+            sheet.normals.push(normal_at(*n,node.c,h));
             sheet.times.push(node.t.to_radians());
         }
     }
     for (node,n,r) in &middles {
         for (c,&h) in stations.iter().enumerate() {
             sheet.withheld.push(lift(node.c,h));
-            sheet.withheld_normals.push(*n);
+            sheet.withheld_normals.push(normal_at(*n,node.c,h));
             sheet.sites.push([2*r+1,2*c]);
         }
     }
-    (say.stage)(&format!("`{name}`: the sheet extruded from the envelope's curve over {:.2} mm of the prism ({:?})",extent[1]-extent[0],
-        started.elapsed()));
+    (say.stage)(&format!("`{name}`: the sheet {} from the envelope's curve over {:.2} mm of the prism ({:?})",
+        match along { Along::Line => "extruded",Along::Helix(_) => "carried up its helix" },extent[1]-extent[0],started.elapsed()));
     (say.mark)(Stage::Withheld);
     Ok(Fitted::whole(face,sheet,error))
 }

@@ -722,7 +722,11 @@ convex corner as a point between the rolls its sides reach it, read exactly by
 `generate::cut_at`, interpolated by Hermite spans halved to 0.1 µm (or the fit's bar) at their
 quarter points, and extruded linearly over the prism's length. The rack's tooth space is 28 spans
 in 40 ms, and every contact the trace finds lies within 5e-6 mm of it
-(`rack_cut::the_racks_sheet_is_its_planar_envelope_extruded`). Any other motion is traced.
+(`rack_cut::the_racks_sheet_is_its_planar_envelope_extruded`). A prism leaned along the rack's
+slide, a helical rack's tooth, meets every plane square to the blank's axis in the base section
+slid along the rack's line, whose envelope is the base's turned: its sheet is the transverse
+envelope carried up a helix, not traced (#826, `extruded::screwed`; `tests/helical_rack.rs`).
+Any other motion is traced.
 A sector's flat caps join across its sides (`brep::pattern`, `Kept::Flat`): a plane square to
 the axis is kept by the turn, its pcurves turned about the axis's foot, and a ring of it is an
 annulus with no seam. A blank reaching its axis is built whole (neighbouring sectors' sides

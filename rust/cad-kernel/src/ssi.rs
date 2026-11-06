@@ -334,6 +334,37 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
 /// to trace. A sheet lying in the plane has its poles in it too (the distance from the plane is a
 /// spline whose coefficients are the poles' distances), so nothing that lies in it is missed but
 /// by its fit's rounding.
+/// **A plane's cut of a net whose height over it runs with `v` alone** (#826): every column of
+/// poles at one height over the plane (within `tol`), the heights rising or falling strictly down
+/// the columns, as a section carried up a helix stands to a plane square to its axis. The height
+/// on the net is then the B-spline in `v` of the columns' heights, monotone as they are, so the
+/// plane cuts it at one `v`, found by bisection, along the iso line there: its poles each row's
+/// curve in `v` read there, exactly the net's. Nothing where the plane misses the net's span; none
+/// where the net is not such (a rational net too), for the cases after.
+fn level_iso(net: &super::nurbs::Net,pl: &Frame,tol: f64) -> Option<Ssi> {
+    // (a net one linear span across is the case after's, read as it always was)
+    if net.weights.is_some() || net.dv < 2 { return None }
+    let height = |p: V| dot(pl.z,sub(p,pl.o));
+    let heights: Vec<f64> = net.poles[0].iter().map(|&p| height(p)).collect();
+    if net.poles.iter().any(|row| row.iter().zip(&heights).any(|(&p,&h)| (height(p)-h).abs() > tol)) { return None }
+    let rising = heights[1] > heights[0];
+    if heights.windows(2).any(|w| if rising { !(w[1] > w[0]) } else { !(w[1] < w[0]) }) { return None }
+    let [_,[v0,v1]] = net.domain();
+    let g = super::nurbs::BSpline {degree:net.dv,knots:net.vknots.clone(),poles:heights.iter().map(|&h| [h,0.,0.]).collect(),weights:None};
+    let at = |v: f64| g.point(v)[0];
+    let (lo,hi) = (at(v0),at(v1));
+    if lo.min(hi) > tol || lo.max(hi) < -tol { return Some(Ssi::Curves(vec![])) }
+    // the root, to the last bit: an end within `tol` of the plane is the end
+    let v = if lo.abs() <= tol { v0 } else if hi.abs() <= tol { v1 } else {
+        crate::util::roots::bisect(v0,v1,|x,y| 0.5*(x+y),|x,y| { let m = 0.5*(x+y); m != x && m != y },|v| (at(v) > 0.) == (lo > 0.)).0
+    };
+    let poles: Vec<V> = (0..net.poles.len()).map(|i| net.row(i).point(v)).collect();
+    match super::nurbs::BSpline::new(net.du,net.uknots.clone(),poles) {
+        Ok(c) => Some(Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(c))])),
+        Err(_) => None,
+    }
+}
+
 fn net_in_plane(n: &super::nurbs::Net,p: &Frame,tol: f64) -> bool {
     n.poles.iter().flatten().all(|&q| p.local(q)[2].abs() <= tol)
 }
@@ -535,7 +566,10 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             // curve swept along a line, as a generating sweep's sheet is), and a plane the step
             // crosses: the first row's curve carried along the step onto the plane, exactly (the
             // carrying is affine, so its poles carried are the curve's) — where every pole lands
-            // within the sheet's span, nothing where none does, and traced where they part
+            // within the sheet's span, nothing where none does, and traced where they part. A net
+            // whose height over the plane runs with `v` alone, a section carried up a helix
+            // (#826), is cut along one iso line (`level_iso`)
+            if let Some(cut) = level_iso(&net,&pl,tol) { return cut }
             if net.dv != 1 || net.poles[0].len() != 2 || net.weights.is_some() { return Ssi::Traced }
             let d = sub(net.poles[0][1],net.poles[0][0]);
             let along = dot(pl.z,d);
