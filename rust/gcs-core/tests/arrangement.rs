@@ -326,3 +326,50 @@ fn a_split_heals_a_touch_out_of_each_cell() {
         assert_eq!(c.faces.len(),6,"the block's half, its top whole");
     }
 }
+
+/// **A bilinear sheet's block in common with a drum is the drum under the sheet** (#796): the block
+/// under the saddle `z = 10 + xy/8` over the square |x|, |y| ≤ 10, floored at z = −5 (four bilinear
+/// nets round it, lofted along x), and a drum of radius 8 about z standing on z = 0 share the drum
+/// cut by the saddle — its floor, its wall and the saddle's piece over it: 640π by volume, and by
+/// area the floor's 64π, the wall's 160π and the saddle's (128π/3)(2√2 − 1). A ray from inside the
+/// block met its side at the middle of the stretch the side's box clipped it to, on the face the
+/// search for the crossing halved its first box along, and neither half found it: the drum's floor
+/// and the wall below the saddle read outside the block, and the selection refused a shell kept on
+/// one side and dropped on the other (brep-bench's `geometry/saddle-drum`, refused by 0.4.0). Every
+/// point of a grid through the block reads where it stands.
+#[test]
+fn a_bilinear_sheets_block_in_common_with_a_drum_is_the_drum_under_the_sheet() {
+    use gcs_core::brep::build::lofted;
+    use gcs_core::brep::nurbs::Net;
+    use gcs_core::brep::props::area;
+    use std::f64::consts::PI;
+    const HALF: f64 = 10.;
+    const BELOW: f64 = -5.;
+    let saddle = |x: f64,y: f64| 10.+x*y/8.;
+    let net = |a: [[f64;3];2],b: [[f64;3];2]| {
+        let l = vec![0.,0.,1.,1.];
+        Net {du:1,dv:1,uknots:l.clone(),vknots:l,poles:vec![a.to_vec(),b.to_vec()],weights:None}
+    };
+    let floor = |y: f64| [[-HALF,y,BELOW],[HALF,y,BELOW]];
+    let top = |y: f64| [[-HALF,y,saddle(-HALF,y)],[HALF,y,saddle(HALF,y)]];
+    let nets = vec![net(floor(-HALF),floor(HALF)),net(floor(HALF),top(HALF)),net(top(HALF),top(-HALF)),net(top(-HALF),floor(-HALF))];
+    let under = lofted([0.,0.,0.],[1.,0.,0.],[-HALF,HALF],vec![nets]).unwrap();
+    // its inside read as it is, a step clear of its boundary
+    let located = Located::new(&under,gcs_core::brep::geom::tolerance_over(under.size(),0.));
+    let mut misread = Vec::new();
+    for i in 0..13 { for j in 0..13 { for k in 0..13 {
+        let p = [-9.+1.5*i as f64,-9.+1.5*j as f64,-6.+2.5*k as f64];
+        let depth = (p[2]-BELOW).min(saddle(p[0],p[1])-p[2]);
+        if depth.abs() < 0.1 { continue }
+        let place = located.solid_place(p);
+        if place != if depth > 0. { Place::In } else { Place::Out } { misread.push(format!("{p:?} {place:?}")) }
+    } } }
+    assert!(misread.is_empty(),"{} points misread: {}",misread.len(),misread.join(", "));
+    let drum = prism(&disc([0.,0.,0.],[0.,0.,1.],8.),0.,30.).unwrap();
+    let out = combined(&under,&drum,Op::Common,0.).unwrap();
+    out.check(1e-9).unwrap();
+    assert_eq!(out.faces.len(),3,"the drum's floor, its wall and the saddle over it");
+    close(volume(&out),640.*PI,1e-9);
+    let a: f64 = out.faces.iter().map(|f| area(&out,f)).sum();
+    close(a,224.*PI+128.*PI/3.*(2.*2f64.sqrt()-1.),1e-9);
+}

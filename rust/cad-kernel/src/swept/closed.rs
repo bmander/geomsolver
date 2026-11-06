@@ -63,7 +63,11 @@
 //!   cone about the screw's own axis) — each a line leaning to the axis, screwed into a patch,
 //!   which the cone at each end pose touches along that ruling (met in closed form,
 //!   `ssi::screwed_line_cone`); its rims' discs screw into their ramps, each meeting the cone at an
-//!   end pose in closed form, its radius read at the height the rim has climbed to.
+//!   end pose in closed form, its radius read at the height the rim has climbed to. A ball's great
+//!   circle square to its centre's velocity screws into the pipe about the centre's helix
+//!   (`Cutter::Pipe`); a pipe that comes back onto itself, past a turn at a lead short of the
+//!   ball's diameter, is entered in stretches each meeting itself nowhere, met pairwise along the
+//!   helices where it returns (#780 L1, X5: `pipe_stretches`).
 //!
 //! Only the candidates that carry some of the boundary are kept (`carries`): read at their source's
 //! points carried over the roll, inside the source and the roll, where membership a hair to each
@@ -193,10 +197,11 @@ enum Cutter { Plane(Plane),
     /// turn's goes in `(ρ, z)` (`turned::Turned`), its solid that meridian closed down the axis at
     /// both ends and turned once.
     Turned(crate::turned::Turned),
-    /// The disc of radius `r` about `c` square to the unit `n` screwed over the roll: the solid a
-    /// ball's great circle square to its centre's velocity sweeps under a screw, its side the pipe
-    /// about the centre's helix.
-    Pipe { c: V,n: V,r: f64 },
+    /// The disc of radius `r` about `c` square to the unit `n` screwed over the stretch `span` of the
+    /// roll: the solid a ball's great circle square to its centre's velocity sweeps under a screw,
+    /// its side the pipe about the centre's helix — the whole roll, or one of the stretches a pipe
+    /// coming back onto itself is entered in (#780 L1, X5: `pipe_stretches`).
+    Pipe { c: V,n: V,r: f64,span: [f64;2] },
     /// The ball of radius `r` about `c`, its poles on the unit `axis` (a ball's face at an end
     /// pose, its poles where the tool's are).
     Ball { c: V,axis: V,r: f64 },
@@ -913,17 +918,25 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         for pose in &ends {
                             add_cutter(Cutter::Ball {c:pose.point(f.o),axis:pose.vector(f.z),r},sites_at(pose));
                         }
-                        // its great circle square to its centre's velocity, screwed: the pipe
+                        // its great circle square to its centre's velocity, screwed: the pipe —
+                        // entered in stretches of the roll each meeting itself nowhere where it
+                        // comes back onto itself (#780 L1, X5)
                         let n = unit(screw.velocity(f.o));
                         let g = Frame::about(f.o,n);
-                        let sites: Vec<(V,V)> = (0..4*SITES).flat_map(|i| {
+                        // the circle's points on the face and their normals, carried over each
+                        // stretch's own roll
+                        let ring: Vec<(V,V)> = (0..4*SITES).filter_map(|i| {
                             let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
                             let w = add(scale(g.x,cp),scale(g.y,sp));
                             let x = add(f.o,scale(w,r));
-                            let on = located.face_place(k,x) != crate::query::Place::Out;
-                            poses.iter().filter(move |_| on).map(move |m| (m.point(x),m.vector(w)))
+                            (located.face_place(k,x) != crate::query::Place::Out).then_some((x,w))
                         }).collect();
-                        add_cutter(Cutter::Pipe {c:f.o,n,r},sites);
+                        for span in pipe_stretches(&screw,f.o,n,r,[a,b],eps)? {
+                            let poses: Vec<crate::trajectory::Pose> = (0..=SITES)
+                                .map(|i| pose_at(span[0]+(span[1]-span[0])*within(i))).collect::<Result<_,_>>()?;
+                            let sites = ring.iter().flat_map(|&(x,w)| poses.iter().map(move |m| (m.point(x),m.vector(w)))).collect();
+                            add_cutter(Cutter::Pipe {c:f.o,n,r,span},sites);
+                        }
                     }
                     Surface::Sphere(f,r) => {
                         let r = r.abs();
@@ -1093,10 +1106,10 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 let rate = screw.advance/std::f64::consts::TAU;
                 solids.push(crate::build::screwed(&disc(first.point(c),screw.axis,r),screw.origin,screw.axis,screw.ratio*(b-a),rate*(b-a))?)
             }
-            Cutter::Pipe {c,n,r} => {
-                let first = pose_at(a)?;
+            Cutter::Pipe {c,n,r,span:[s0,s1]} => {
+                let first = pose_at(s0)?;
                 let rate = screw.advance/std::f64::consts::TAU;
-                solids.push(crate::build::screwed(&disc(first.point(c),first.vector(n),r),screw.origin,screw.axis,screw.ratio*(b-a),rate*(b-a))?)
+                solids.push(crate::build::screwed(&disc(first.point(c),first.vector(n),r),screw.origin,screw.axis,screw.ratio*(s1-s0),rate*(s1-s0))?)
             }
             Cutter::Torus {c,axis,major,minor} => solids.push(crate::build::torus(c,axis,major,minor)?),
             Cutter::Oblique {c,a,r,d} => {
@@ -1473,6 +1486,51 @@ fn turned_contacts(add_cutter: &mut dyn FnMut(Cutter,Vec<(V,V)>),located: &crate
         if !sites.is_empty() { add_cutter(Cutter::Turned(turned),sites) }
     }
     Ok(())
+}
+
+/// **The stretches of the roll `[a, b]` a ball's pipe is entered in** (#780 L1, X5), the ball of
+/// radius `r` about `c` and its great circle square to the unit `n`, its centre's velocity under
+/// `screw`. In the screw's helical coordinates `(ρ, ψ, ζ = z − κψ)` the screw is a shift in `ψ`, so
+/// the pipe is the circle's points' helices, and two of its stretches `t` of a turn apart meet
+/// where the circle holds two points at one `ρ` whose `ζ` differ by a whole number of turns' rise
+/// (`geom::Pipe::returns`): `t` is then their `ψ` apart less those turns, at least `2π − 2w` (`w`
+/// the circle's reach round the axis from its centre, `Pipe::spread`). A pipe whose roll is short of
+/// that, or whose circle stands at no two such points, meets itself nowhere, and is entered whole,
+/// as before; one that comes back onto itself, in stretches of at most half
+/// a turn each, each meeting itself nowhere, which the arrangement meets pairwise like any two
+/// candidates (`ssi`'s `pipes_meeting`: helices, and the circle where two abut). Refused, by what it
+/// is, where the circle reaches the axis (`w` none: then two points less than a turn apart along
+/// one helix may meet), where two of its points stand on one helix less than a turn apart, or where
+/// the ball's radius reaches the helix's radius of curvature and the pipe folds (its fold locus,
+/// `(ρ² + κ²)/ρ`, the design's step after).
+fn pipe_stretches(screw: &crate::trajectory::Screw,c: V,n: V,r: f64,[a,b]: [f64;2],eps: f64) -> Result<Vec<[f64;2]>,Unbuilt> {
+    use std::f64::consts::{PI,TAU};
+    let pipe = crate::geom::Pipe {carry:crate::geom::Carry::Screw {center:screw.origin,axis:unit(screw.axis),angle:screw.ratio,
+        advance:screw.advance/TAU},frame:Frame::about(c,n),r};
+    let refused = || Unbuilt::Curved {at:c};
+    let (Some(rho),Some(crate::geom::Carry::Screw {advance:kappa,..})) = (pipe.offset(),pipe.radian()) else { return Err(refused()) };
+    // the helix's radius of curvature, `(ρ² + κ²)/ρ`: a ball reaching it folds its pipe
+    if !(r < (rho*rho+kappa*kappa)/rho.max(1e-300)) { return Err(refused()) }
+    let Some(w) = pipe.spread() else { return Err(refused()) };
+    let turned = (screw.ratio*(b-a)).abs();
+    // nor may it meet itself within less than a turn, two of its circle's points at one `ρ` and
+    // `ζ` (the circle's orbits crossing; past a thousandth of a radian, where only the circle's own
+    // points stand, the helices crossing its plane all one way), within the roll
+    let near = (2.*w).min(turned)+1e-3;
+    if near > 2e-3 && pipe.returns([1e-3,near],eps).is_none_or(|r| !r.is_empty()) { return Err(refused()) }
+    let back = TAU-2.*w;
+    if turned < back-1e-9 { return Ok(vec![[a,b]]) }
+    let returns: Vec<f64> = pipe.returns([back-1e-9,turned+1e-9],eps).ok_or_else(refused)?.into_iter().map(|[..,t]| t).collect();
+    if returns.is_empty() { return Ok(vec![[a,b]]) }
+    // the joints are the build's choice, not the sweep's: placed so that no joint stands within a
+    // twentieth of a radian of a return's turn from an end or another joint, where the two
+    // circles would cross one return's helix at one point (two stretches' joints a degenerate
+    // vertex of three curves), which left a cell too thin to settle. Evenly spaced, those apart
+    // are the spacing's multiples (the two ends' own distance, the whole roll, is no joint's)
+    let clear = |n: usize| (1..n).all(|i| { let x = turned*i as f64/n as f64; returns.iter().all(|&t| (x-t.abs()).abs() > 0.05) });
+    let fewest = (turned/PI).ceil().max(2.) as usize;
+    let pieces = (fewest..fewest+16).find(|&n| clear(n)).ok_or_else(refused)?;
+    Ok((0..pieces).map(|i| [a+(b-a)*i as f64/pieces as f64,a+(b-a)*(i+1) as f64/pieces as f64]).collect())
 }
 
 /// **How far past its source's ends a candidate bounded inside the domain reaches**, as a fraction

@@ -14,16 +14,18 @@
 //! routine.
 //!
 //! **Several unknowns** (`solve`): the same over a box of `N` unknowns, by the theorem of
-//! Kantorovich. At the box's middle `m` (half-width `r` in the largest-coordinate norm), with each
-//! equation's second derivatives bounded over the box (`Hᵢ`, the sum of its Hessian's entries'
-//! magnitudes), equation `i` stays off nought across the box where `|Fᵢ(m)| > |∇Fᵢ(m)|₁ r + ½ Hᵢ r²`
-//! and the box is dropped; where the Jacobian `J` at `m` is invertible, with `β = ‖J⁻¹‖`, `η =
-//! ‖J⁻¹ F(m)‖` and `K = maxᵢ Hᵢ` (the Jacobian's Lipschitz constant over the box), `h = β K η ≤ ½`
-//! puts exactly one root within `ρ₋ = (1 − √(1 − 2h)) / (β K)` of `m` and no other within `ρ₊ = (1 +
-//! √(1 − 2h)) / (β K)`: where `ρ₋ ≤ r ≤ ρ₊` the box holds that one root and no other, settled by
-//! Newton's method from `m`. Otherwise the box is halved across its widest side. A box that cannot
-//! be parted before it is `width` wide holds a singular root — two surfaces touching — where `near`
-//! accepts its middle.
+//! Kantorovich. Each box is read grown a little past its sides (`GROW`), so a root on the face two
+//! halves share is inside both. At the box's middle `m` (each unknown reaching `eₖ` across it, the
+//! farthest `r`), with each equation's second derivatives bounded over the box (`Hᵢ`, the sum of
+//! its Hessian's entries' magnitudes), equation `i` stays off nought across the box where `|Fᵢ(m)| >
+//! Σₖ |∂ₖFᵢ(m)| eₖ + ½ Hᵢ r²` and the box is dropped; where the Jacobian `J` at `m` is invertible,
+//! read in the largest-coordinate norm of `(x − m)ₖ / eₖ` (the box its unit ball), with `β =
+//! ‖J⁻¹‖`, `η = ‖J⁻¹ F(m)‖` and `K = r² maxᵢ Hᵢ` (the Jacobian's Lipschitz constant over the box),
+//! `h = β K η ≤ ½` puts exactly one root within `ρ₋ = (1 − √(1 − 2h)) / (β K)` of `m` and no other
+//! within `ρ₊ = (1 + √(1 − 2h)) / (β K)`: where `ρ₋ ≤ 1 ≤ ρ₊` the box holds that one root and no
+//! other, settled by Newton's method from `m`. Otherwise the box is halved across its widest side.
+//! A box that cannot be parted before it is `width` wide holds a singular root — two surfaces
+//! touching — where `near` accepts its middle.
 //!
 //! Each stretch or box read is counted against the build's budget (`util::meter`, the ray stage, or
 //! the stage the caller names): past it, or past `MOST` boxes, the search gives up and says which
@@ -143,33 +145,55 @@ pub fn roots_charged(stage: super::meter::Stage,g: &dyn Fn(f64) -> f64,dg: &dyn 
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Point<const N: usize> { pub at: [f64;N],pub touch: bool }
 
+/// **How far past its sides `solve` reads a box**, as a fraction of its width along each (within
+/// the domain), so the boxes a box is halved into overlap: a root on the face two of them share
+/// lies inside both by this much. Read as halves meeting at a face, such a root stood on the edge
+/// of each: never certified there (the ball Kantorovich puts it in about the middle reaches a hair
+/// past the face its Newton step ends on), each halved again with the root still on its face, until
+/// rounding read it a hair outside both and both were dropped (#796: a ray from inside a saddle
+/// block met the block's side at its stretch's middle, the crossing was lost, and the block's
+/// inside read as out). Far past rounding at the widths a root is certified at, far short of a
+/// box's own width.
+pub const GROW: f64 = 1e-4;
+
 /// **The roots of the system `f` over the box `domain`** (`N` unknowns, `N` equations), each
 /// isolated by Kantorovich's theorem: `f(x)` gives the values and the Jacobian (rows the
 /// equations), `second(box)` bounds each equation's second derivatives over a box (the sum of its
-/// Hessian's entries' magnitudes). A box narrower than `width` (each side) that cannot be parted
-/// holds a singular root where `near(x)` accepts its middle. Each root once. `GaveUp` where the
-/// search read more than `MOST` boxes or the build stopped.
+/// Hessian's entries' magnitudes). Each box is read grown by `GROW` past its sides, and the theorem
+/// read in the norm that box is the unit ball of (each unknown over its own reach from the middle),
+/// so a root it certifies is in the box, and the only one there, however unlike its sides. A box
+/// narrower than `width` (each side) that cannot be parted holds a singular root where `near(x)`
+/// accepts its middle. Each root once: one found in the box another was certified the only root of
+/// is that root. `GaveUp` where the search read more than `MOST` boxes or the build stopped.
 pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second: &dyn Fn(&[[f64;2];N]) -> [f64;N],
     domain: [[f64;2];N],width: f64,near: &dyn Fn([f64;N]) -> bool) -> Result<Vec<Point<N>>,GaveUp> {
-    let mut out: Vec<Point<N>> = Vec::new();
-    if domain.iter().any(|s| !(s[1] >= s[0])) { return Ok(out) }
+    // each root, and for one certified simple the box it was certified the only root of
+    let mut out: Vec<(Point<N>,Option<[[f64;2];N]>)> = Vec::new();
+    if domain.iter().any(|s| !(s[1] >= s[0])) { return Ok(Vec::new()) }
     let mut stack = vec![(domain,0usize)];
     let mut read = 0;
     while let Some((bx,depth)) = stack.pop() {
         read_one(&mut read,super::meter::Stage::Ray)?;
         let m: [f64;N] = std::array::from_fn(|k| 0.5*(bx[k][0]+bx[k][1]));
-        let r = (0..N).map(|k| 0.5*(bx[k][1]-bx[k][0])).fold(0.,f64::max);
+        // the box read: grown by `GROW` of its width past each side, within the domain; and how far
+        // each unknown reaches from the middle across it (`e`), the farthest `r`
+        let grown: [[f64;2];N] = std::array::from_fn(|k| {
+            let g = GROW*(bx[k][1]-bx[k][0]);
+            [(bx[k][0]-g).max(domain[k][0]),(bx[k][1]+g).min(domain[k][1])]
+        });
+        let e: [f64;N] = std::array::from_fn(|k| (m[k]-grown[k][0]).max(grown[k][1]-m[k]).max(1e-300));
+        let r = e.iter().fold(0.,|a: f64,&x| a.max(x));
         let (fm,jm) = f(m);
-        let hs = second(&bx);
-        // an equation off nought across the box (each unknown within its own half-width)
+        let hs = second(&grown);
+        // an equation off nought across the box (each unknown within its own reach)
         let off = (0..N).any(|i| {
-            let reach: f64 = (0..N).map(|k| jm[i][k].abs()*0.5*(bx[k][1]-bx[k][0])).sum();
+            let reach: f64 = (0..N).map(|k| jm[i][k].abs()*e[k]).sum();
             fm[i].abs() > reach+0.5*hs[i]*r*r
         });
         if off { continue }
         let inv = inverse(jm);
         // and preconditioned (Krawczyk's): `G = J(m)⁻¹ F` has `∇G = I` at the middle, so each of its
-        // components moves across the box by its own half-width at first order, and by the second
+        // components moves across the box by its own reach at first order, and by the second
         // derivatives' bound carried through `J(m)⁻¹` beyond — a box whose Newton step reaches past
         // that on any unknown holds no root. Far stronger than `F`'s own components where they
         // couple (a ray against a long sheet), it drops what they leave standing
@@ -177,13 +201,17 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
             let step: [f64;N] = std::array::from_fn(|i| (0..N).map(|k| inv[i][k]*fm[k]).sum());
             let far = (0..N).any(|i| {
                 let bend: f64 = (0..N).map(|k| inv[i][k].abs()*hs[k]).sum();
-                step[i].abs() > 0.5*(bx[i][1]-bx[i][0])+0.5*bend*r*r
+                step[i].abs() > e[i]+0.5*bend*r*r
             });
             if far { continue }
-            // one root, and no other, in the box: Kantorovich at its middle, from the same step
-            let beta = norm_inf(&inv);
-            let eta = step.iter().fold(0f64,|a,&s| a.max(s.abs()));
-            let big = hs.iter().fold(0f64,|a,&h| a.max(h));
+            // one root, and no other, in the box: Kantorovich at its middle, from the same step, in
+            // the largest-coordinate norm of `x − m` each unknown over its reach `e` — the box the
+            // unit ball, its Jacobian `J D` (`D` the reaches), `J⁻¹`'s rows over theirs, and the
+            // second derivatives' bound by `r²` — so the ball the root is put in is within the box
+            // the bounds hold over, the box within the one no other root is in
+            let beta = (0..N).map(|i| inv[i].iter().map(|x| x.abs()).sum::<f64>()/e[i]).fold(0f64,f64::max);
+            let eta = (0..N).map(|i| step[i].abs()/e[i]).fold(0f64,f64::max);
+            let big = hs.iter().fold(0f64,|a,&h| a.max(h))*r*r;
             let bk = beta*big;
             let h = bk*eta;
             // (the nearer radius `(1 − s)/βK` read as `2η/(1 + s)`, which is it exactly and never
@@ -194,7 +222,7 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
                 let s = (1.-2.*h).max(0.).sqrt();
                 (2.*eta/(1.+s),(1.+s)/bk)
             } else { (eta,f64::INFINITY) };
-            if h <= 0.5 && lo <= r && r <= hi {
+            if h <= 0.5 && lo <= 1. && 1. <= hi {
                 // Newton's method from the middle converges to it, within `lo` of the middle
                 let mut x = m;
                 for _ in 0..60 {
@@ -204,16 +232,16 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
                     let next: [f64;N] = std::array::from_fn(|i| x[i]-dx[i]);
                     let moved = (0..N).fold(0f64,|a,i| a.max((next[i]-x[i]).abs()));
                     // held within the root's ball, where it is
-                    if (0..N).any(|i| (next[i]-m[i]).abs() > lo*(1.+1e-9)+1e-300) { break }
+                    if (0..N).any(|i| (next[i]-m[i]).abs() > lo*e[i]*(1.+1e-9)+1e-300) { break }
                     x = next;
                     if moved <= 1e-15*(1.+x.iter().fold(0f64,|a,&v| a.max(v.abs()))) { break }
                 }
-                out.push(Point {at:x,touch:false});
+                out.push((Point {at:x,touch:false},Some(grown)));
                 continue
             }
         }
         if (0..N).all(|k| bx[k][1]-bx[k][0] <= width) || depth >= 200 {
-            if near(m) { out.push(Point {at:m,touch:true}) }
+            if near(m) { out.push((Point {at:m,touch:true},None)) }
             continue
         }
         // halved across its widest side
@@ -224,15 +252,18 @@ pub fn solve<const N: usize>(f: &dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),second
         stack.push((b,depth+1));
         stack.push((a,depth+1));
     }
-    // a root on the face two boxes share is found in both: once, and singular only where both are
-    let mut kept: Vec<Point<N>> = Vec::new();
-    for p in out {
-        match kept.iter_mut().find(|q| (0..N).all(|k| (q.at[k]-p.at[k]).abs() <= 2.*width)) {
-            Some(q) => { if q.touch && !p.touch { *q = p } }
-            None => kept.push(p),
+    // a root on the face two boxes share is found in both: once — within a width of one another,
+    // or either in the box the other was certified the only root of — and singular only where
+    // both are
+    let held = |b: &Option<[[f64;2];N]>,x: &[f64;N]| b.is_some_and(|b| (0..N).all(|k| x[k] >= b[k][0] && x[k] <= b[k][1]));
+    let mut kept: Vec<(Point<N>,Option<[[f64;2];N]>)> = Vec::new();
+    for (p,bp) in out {
+        match kept.iter_mut().find(|(q,bq)| (0..N).all(|k| (q.at[k]-p.at[k]).abs() <= 2.*width) || held(bq,&p.at) || held(&bp,&q.at)) {
+            Some((q,bq)) => { if q.touch && !p.touch { *q = p; *bq = bp; } }
+            None => kept.push((p,bp)),
         }
     }
-    Ok(kept)
+    Ok(kept.into_iter().map(|(p,_)| p).collect())
 }
 
 /// The largest row sum of `a`'s magnitudes: its norm on the largest-coordinate norm.

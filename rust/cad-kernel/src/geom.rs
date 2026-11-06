@@ -418,6 +418,76 @@ impl Pipe {
         }
         Some(out)
     }
+    /// The screw that carries the pipe, a radian of turn at a time (its rise the pitch, a turn's
+    /// rise over `2π`), its axis unit; `None` where it does not turn.
+    pub fn radian(&self) -> Option<Carry> {
+        let Carry::Screw {center,axis,angle,advance} = self.carry else { return None };
+        let k = crate::util::space::normalised(axis)?;
+        (angle != 0.).then(|| Carry::Screw {center,axis:k,angle:1.,advance:advance*dot(axis,k)/angle})
+    }
+    /// The point of the start's circle at its angle `θ` (its frame's `x` towards `y`), and its
+    /// rate there.
+    pub fn circle(&self,th: f64) -> (V,V) {
+        let (s,c) = th.dsin_cos();
+        (self.frame.at([self.r*c,self.r*s,0.]),self.frame.dir([-self.r*s,self.r*c,0.]))
+    }
+    /// How far the start's circle's centre stands from the screw's axis; `None` for no screw.
+    pub fn offset(&self) -> Option<f64> {
+        let Carry::Screw {center,axis,..} = self.carry else { return None };
+        let k = crate::util::space::normalised(axis)?;
+        let o = sub(self.frame.o,center);
+        Some(norm(sub(o,scale(k,dot(o,k)))))
+    }
+    /// **How far round the screw's axis the pipe's circle reaches** either way from its centre, as
+    /// an angle about the axis (the circle seen from the axis), or `None` where it reaches the axis
+    /// or round it: then two of its points a turn apart along one helix are nearer than a turn.
+    /// (The circle's offset from its centre, square to the axis, is at most `r` long.)
+    pub fn spread(&self) -> Option<f64> {
+        let d = self.offset()?;
+        (self.r < d).then(|| (self.r/d).asin())
+    }
+    /// **Where the pipe comes back onto itself** (#780 L1, X5: a ball screwed through more than a
+    /// turn at a lead short of its diameter): the points `c(θ₁)` of the start's circle onto which
+    /// the screw, turned on by `t` radians within `span`, carries a point `c(θ₂)` of the same circle
+    /// — `c(θ₁) = S(t) c(θ₂)`, three equations in `(θ₁, θ₂, t)`. Each root is the foot of a helix
+    /// along which the pipe's stretch at the screw's turn `φ` meets its stretch at `φ + t`: in the
+    /// screw's helical coordinates `(ρ, ψ, ζ = z − κψ)` the screw is a shift in `ψ`, so two of the
+    /// circle's points meet under it where they stand at one `ρ` and their `ζ` differ by a whole
+    /// number of turns' rise, `t` then their `ψ` apart less those turns. Isolated with a bound on
+    /// the second derivatives (`util::isolate::solve`): `c` bends by `r`, `S(t) c` by the circle's
+    /// reach from the axis. The trivial roots (`t = 0`, `θ₁ = θ₂`, the pipe's own points) are kept
+    /// out by `span`: the caller holds it clear of `[−2w, 2w]`, `w` the circle's `spread`, where only
+    /// they and a fold would stand. `None` where the pipe's screw does not turn or the search gave
+    /// up.
+    pub fn returns(&self,span: [f64;2],tol: f64) -> Option<Vec<[f64;3]>> {
+        let screw = self.radian()?;
+        let at = |[th1,th2,t]: [f64;3]| { let (p,dp) = self.circle(th1); let (q,dq) = self.circle(th2); (p,dp,screw.at(q,t),screw.dir(dq,t)) };
+        let f = |x: [f64;3]| -> ([f64;3],[[f64;3];3]) {
+            let (p,dp,q,dq) = at(x);
+            let dt = screw.rate(q);
+            (std::array::from_fn(|i| p[i]-q[i]),std::array::from_fn(|i| [dp[i],-dq[i],-dt[i]]))
+        };
+        let reach = self.offset()?+self.r;
+        // each component's Hessian entries: `c''` (`r`), `∂²(S c)/∂θ₂²` (`r`), `∂²/∂θ₂∂t` twice
+        // (`r` each), `∂²/∂t²` (the reach: the climb is linear in `t`)
+        let h = 4.*self.r+reach;
+        let second = |_: &[[f64;2];3]| [h;3];
+        let size = reach.max(1e-300);
+        let width = tol*1e-2/size;
+        let near = |x: [f64;3]| { let (p,_,q,_) = at(x); crate::util::space::distance(p,q) <= tol };
+        let tau = std::f64::consts::TAU;
+        let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,tau],[0.,tau],span],width,&near).ok()?;
+        // a root on the seam `θ = 0 = 2π` is found at both: once
+        let apart = |a: f64,b: f64| { let d = (a-b).rem_euclid(tau); d.min(tau-d) };
+        let mut out: Vec<[f64;3]> = Vec::new();
+        for r in found {
+            let x = [r.at[0].rem_euclid(tau),r.at[1].rem_euclid(tau),r.at[2]];
+            if !out.iter().any(|y| apart(y[0],x[0])*self.r <= tol && apart(y[1],x[1])*self.r <= tol && (y[2]-x[2]).abs()*size <= tol) {
+                out.push(x)
+            }
+        }
+        Some(out)
+    }
 }
 
 impl Blend {
@@ -512,6 +582,12 @@ impl Blend {
     fn u_round(&self,f: &Frame,d: V) -> f64 {
         let th = dot(d,f.y).datan2(dot(d,f.x));
         ((th-self.ta[0]).rem_euclid(std::f64::consts::TAU)/(self.ta[1]-self.ta[0])).rem_euclid(1.)
+    }
+    /// The `u` of a circle's angle `θ` round it, its `ta` the circle's parameters: its parameter
+    /// a turn or less on from `ta[0]`, over the span (past `1` beyond an arc's end).
+    pub(crate) fn u_of_angle(&self,th: f64) -> f64 {
+        let t = self.ta[0]+(th-self.ta[0]).rem_euclid(std::f64::consts::TAU);
+        (t-self.ta[0])/(self.ta[1]-self.ta[0])
     }
     /// **The level circle this patch screws, where it is one** (`build::screwed` of a disc: a
     /// circle square to the screw's axis and its own image carried, `S(u, v) = carry_v(c + r (cos θ
@@ -684,13 +760,18 @@ fn net_newton(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
         uv = next;
         // still: at a foot, or at the domain's edge with the point beyond it (the nearest the domain has)
         if moved <= 1e-14*size { return Some(uv) }
-        // settled along the edge: the free parameter's gap square to the surface
+        // settled along the edge: the free parameter's gap square to the surface, and the descent
+        // still pushing the held one out. Where it no longer does, the edge is let go and the next
+        // step is a joint one: the free parameter settled first can leave the held one pulled
+        // back in (a point inside a bilinear wall, held at its rim while its height was wrong,
+        // returned on the rim a long way off, and the point read outside the face, #796)
         if held_u || held_v {
             let (x,xu,xv) = n.d1(uv[0],uv[1]);
             let e = sub(x,p);
             let gap = dot(e,e).sqrt();
-            let d = if held_u { xv } else { xu };
-            if dot(e,d).abs() <= 1e-9*gap*dot(d,d).sqrt() { return Some(uv) }
+            let (d,out) = if held_u { (xv,(uv[0] <= u0 && dot(xu,e) > 0.) || (uv[0] >= u1 && dot(xu,e) < 0.)) }
+                else { (xu,(uv[1] <= v0 && dot(xv,e) > 0.) || (uv[1] >= v1 && dot(xv,e) < 0.)) };
+            if out && dot(e,d).abs() <= 1e-9*gap*dot(d,d).sqrt() { return Some(uv) }
         }
     }
     None

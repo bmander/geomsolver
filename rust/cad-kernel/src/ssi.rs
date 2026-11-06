@@ -857,9 +857,13 @@ fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
     if let Surface::Sphere(sp,r) = other { if let Some(circle) = pipe_end(blend,sp.o,r.abs(),tol) {
         return Some(vec![circle]) } }
     if let Surface::Cylinder(cy,r) = other { if let Some(curves) = screwed_circle_round(blend,cy,r.abs(),tol) { return Some(curves) } }
-    if let Surface::Plane(pl) = other { if let Some(curves) = screwed_circle_level(sheet,blend,pl,tol) { return Some(curves) } }
+    if let Surface::Plane(pl) = other {
+        if let Some(curves) = screwed_circle_level(sheet,blend,pl,tol).or_else(|| pipe_plane(sheet,blend,pl,tol)) { return Some(curves) }
+    }
     if let Surface::Blend(_,ob) = other {
-        if let Some(curves) = screwed_line_circle(blend,ob,tol).or_else(|| screwed_line_circle(ob,blend,tol)) { return Some(curves) }
+        if let Some(curves) = pipes_meeting(blend,ob,tol).or_else(|| screwed_line_circle(blend,ob,tol)).or_else(|| screwed_line_circle(ob,blend,tol)) {
+            return Some(curves)
+        }
     }
     let line = blend.screwed_line()?;
     let (o,z,a0,run) = (line.centre,line.axis,line.p0,line.run);
@@ -1003,31 +1007,57 @@ fn screwed_circle(blend: &super::geom::Blend) -> Option<(V,V,f64,f64,Frame,f64)>
     blend.level_circle().map(|c| (c.centre,c.axis,c.angle,c.rise,c.frame,c.r))
 }
 
-/// **Two level circles screwed by one screw, as one surface**: the second's circle, screwed to the
+/// **Two circles screwed by one screw, as one surface**: the second's circle, screwed to the
 /// first's height, is the first's — a sheet a rim screws into, carried on along the screw, holds the
-/// other rim of a tool as tall as a whole number of leads (#721 F2c5). One surface only where the two
-/// sheets share some of the screw's turn: the second reaches the first's circle `turn` back along
-/// the screw, and the sheets cover `[0, a₁]` and `[−turn, a₂ − turn]` of it; apart, they are two
-/// stretches of one helicoidal sheet that do not meet.
+/// other rim of a tool as tall as a whole number of leads (#721 F2c5), and a ball's pipe entered
+/// stretch by stretch is one surface over its stretches (#780 L1). One surface only where the two
+/// sheets share some of the screw's turn (`screwed_overlap`); apart, they are two stretches of one
+/// sheet.
 fn one_screwed_circle(a: &super::geom::Blend,b: &super::geom::Blend,tol: f64) -> bool {
-    screwed_overlap(a,b,tol).is_some_and(|shared| shared > 0.)
+    screwed_overlap(a,b,tol).is_some_and(|o| o.shared > 0.)
 }
 
-/// How much of the screw's turn two sheets of one level circle share (`one_screwed_circle`),
-/// negative where they stand apart; `None` where they are not one circle's under one screw.
-fn screwed_overlap(a: &super::geom::Blend,b: &super::geom::Blend,tol: f64) -> Option<f64> {
-    let ((c1,k1,a1,r1,f1,rad1),(c2,k2,a2,r2,f2,rad2)) = (screwed_circle(a)?,screwed_circle(b)?);
-    let off = sub(c2,c1);
-    if norm(cross(k1,k2)) > 1e-12 || norm(sub(off,scale(k1,dot(off,k1)))) > tol || (rad1-rad2).abs() > tol || r1 == 0. || r2 == 0.
-        || (r1/a1-r2/a2).abs() > 1e-12*(r1/a1).abs() { return None }
-    // the second's circle centre screwed to the first's height
-    let pitch = r1/a1;
-    let turn = dot(sub(f1.o,f2.o),k1)/pitch;
-    let screw = super::geom::Carry::Screw {center:c1,axis:k1,angle:turn,advance:pitch*turn};
-    if norm(sub(screw.at(f2.o,1.),f1.o)) > tol { return None }
-    let (lo1,hi1) = (a1.min(0.),a1.max(0.));
-    let (lo2,hi2) = (a2.min(0.)-turn,a2.max(0.)-turn);
-    Some(hi1.min(hi2)-lo1.max(lo2))
+/// How much of the screw's turn two sheets of one circle under one screw share (`screwed_overlap`),
+/// in the turns of the first's screw, a radian at a time, from the first's circle.
+struct Overlap {
+    /// What they share: nought where they abut, within the turn `tol` makes at the circle's reach
+    /// from the axis; below it where they stand apart.
+    shared: f64,
+    /// The turns the first covers, `[0, A₁]` either way round.
+    mine: [f64;2],
+    /// The turns the second covers, `[−T, A₂ − T]` either way round, `T` the turn that lifts its
+    /// circle onto the first's.
+    theirs: [f64;2],
+}
+
+/// **Two sheets of one circle under one screw** — a level circle's (`Blend::level_circle`) or a
+/// ball's pipe's (`Blend::pipe`) — read in the turns of the first's screw (`Overlap`): the screws'
+/// axes along one line either way (a screw about `−k` turning the other way), the same pitch and
+/// radius, and the second's circle carried by the turn `T` that lifts its centre to the first's
+/// height the first's circle. `None` where they are not.
+fn screwed_overlap(a: &super::geom::Blend,b: &super::geom::Blend,tol: f64) -> Option<Overlap> {
+    use super::geom::Carry;
+    // each one's screw a radian at a time (its centre, unit axis and pitch), its turn about that
+    // axis, and its circle's frame and radius
+    let read = |x: &super::geom::Blend| -> Option<(V,V,f64,f64,Frame,f64)> {
+        if let Some(c) = x.level_circle() { return (c.angle != 0.).then(|| (c.centre,c.axis,c.rise/c.angle,c.angle,c.frame,c.r)) }
+        let p = x.pipe()?;
+        let (Carry::Screw {center,axis:k,advance:pitch,..},Carry::Screw {axis,angle,..}) = (p.radian()?,x.carry) else { return None };
+        Some((center,k,pitch,angle*dot(axis,k).signum(),p.frame,p.r))
+    };
+    let ((c1,k1,pitch1,a1,f1,r1),(c2,k2,pitch2,a2,f2,r2)) = (read(a)?,read(b)?);
+    let perp = |x: V| sub(x,scale(k1,dot(x,k1)));
+    if norm(cross(k1,k2)) > 1e-12 || norm(perp(sub(c2,c1))) > tol || (pitch1-pitch2).abs() > 1e-12*pitch1.abs()
+        || (r1-r2).abs() > tol || pitch1 == 0. { return None }
+    // the turn that lifts the second's circle to the first's: the same circle there
+    let turn = dot(sub(f1.o,f2.o),k1)/pitch1;
+    let screw = Carry::Screw {center:c1,axis:k1,angle:turn,advance:pitch1*turn};
+    if norm(sub(screw.at(f2.o,1.),f1.o)) > tol || norm(cross(screw.dir(f2.z,1.),f1.z)) > 1e-9 { return None }
+    let a2 = a2*dot(k1,k2).signum();
+    let (mine,theirs) = ([a1.min(0.),a1.max(0.)],[a2.min(0.)-turn,a2.max(0.)-turn]);
+    let slack = tol/(norm(perp(sub(f1.o,c1)))+r1).hypot(pitch1);
+    let shared = mine[1].min(theirs[1])-mine[0].max(theirs[0]);
+    Some(Overlap {shared:if shared.abs() <= slack { 0. } else { shared },mine,theirs})
 }
 
 /// **The sheet any circle screws into meets a cylinder about the screw's axis in helices** (#721
@@ -1049,7 +1079,7 @@ pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy
     if !(0..3).all(|i| same(blend.b.point(blend.tb[0]+(blend.tb[1]-blend.tb[0])*i as f64/2.),blend.a.point(blend.ta[0]+span*i as f64/2.))) { return None }
     let r = r.abs();
     let g = |th: f64| { let (sn,cs) = th.dsin_cos(); let d = perp(sub(add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))),center)); dot(d,d)-big*big };
-    let u_of = |th: f64| { let t = blend.ta[0]+(th-blend.ta[0]).rem_euclid(std::f64::consts::TAU); (t-blend.ta[0])/span };
+    let u_of = |th: f64| blend.u_of_angle(th);
     // `g' = 2 d · P'⊥`, `g'' = 2 (|P'⊥|² + d · P''⊥)`, the circle's point `P` at `r` from its
     // centre and `d` its offset from the axis, within `D = |(o − c)⊥| + r`
     let dg = |th: f64| {
@@ -1153,6 +1183,103 @@ fn screwed_circle_level(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blen
     Some(out)
 }
 
+/// **Where two stretches of one ball's pipe meet** (#780 L1, X5: a ball screwed through more than a
+/// turn at a lead short of its diameter, its pipe entered stretch by stretch, each meeting itself
+/// nowhere): where they abut, at the circle they share; and wherever the pipe comes back onto
+/// itself between them, along the helices of the start circle's points the screw carries another
+/// of its points onto, a turn and more on (`Pipe::returns`), each `on`'s rail there
+/// (`Curve::Iso`) — the turns between the two stretches' held clear of the half turn about nought,
+/// where only the pipe's own points stand (the circle clear of the axis, `Pipe::spread`). `None`
+/// for any other two sheets, two stretches sharing some of the screw's turn (one surface), or where
+/// the search gave up.
+fn pipes_meeting(on: &std::sync::Arc<super::geom::Blend>,by: &super::geom::Blend,tol: f64) -> Option<Vec<Curve>> {
+    let p = on.pipe()?;
+    by.pipe()?;
+    let Overlap {shared,mine,theirs} = screwed_overlap(on,by,tol)?;
+    if shared > 0. { return None }
+    p.spread()?;
+    let mut out = Vec::new();
+    if shared == 0. {
+        // abutting: the circle where one ends and the other starts
+        let screw = p.radian()?;
+        let at = if (mine[1]-theirs[0]).abs() <= (mine[0]-theirs[1]).abs() { mine[1] } else { mine[0] };
+        out.push(Curve::Circle(Frame::new(screw.at(p.frame.o,at),screw.dir(p.frame.z,at),screw.dir(p.frame.x,at)),p.r));
+    }
+    // `t = φ₂ − φ₁`, `φ₁` on `on`, `φ₂` on `by`, outside the half turn either side of nought
+    let [lo,hi] = [theirs[0]-mine[1],theirs[1]-mine[0]];
+    let (half,tau) = (std::f64::consts::PI,std::f64::consts::TAU);
+    let mut feet: Vec<f64> = Vec::new();
+    for range in [[lo,hi.min(-half)],[lo.max(half),hi]] {
+        if !(range[1] > range[0]) { continue }
+        // (one foot may meet the helices of several points: its rail once)
+        for [th1,..] in p.returns(range,tol)? {
+            if !feet.iter().any(|&f| { let d = (f-th1).rem_euclid(tau); d.min(tau-d)*p.r <= tol }) { feet.push(th1) }
+        }
+    }
+    out.extend(feet.into_iter().map(|th| Curve::Iso(on.clone(),on.u_of_angle(th))));
+    Some(out)
+}
+
+/// **A ball's pipe meets a plane holding one of its circles** (#780 L1, X5: the plane where one
+/// stretch of a pipe entered stretch by stretch ends and the next starts), in closed form: that
+/// circle, whole, and wherever else the plane cuts the pipe, its line in the plane of each carried
+/// circle meeting the circle, `r n·x_v cos θ + r n·y_v sin θ = h − n·c_v` (`circle_branches`, as a
+/// level circle's sheet meets any plane), run into the held circle at its limit. The circle's plane
+/// turns with the screw at a fixed lean to its axis, so it is the plane's at most once a turn: where
+/// its normal, turned on, is the plane's (either way) and its centre on the plane. `None` for any
+/// other sheet, or a plane holding none of the pipe's circles.
+fn pipe_plane(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blend>,pl: &Frame,tol: f64) -> Option<Vec<Curve>> {
+    use super::geom::Carry;
+    let pipe = blend.pipe()?;
+    let Carry::Screw {axis,angle,..} = blend.carry else { return None };
+    let k = unit(axis);
+    let f = pipe.frame;
+    let n = unit(pl.z);
+    let perp = |x: V| sub(x,scale(k,dot(x,k)));
+    // the turns at which the circle's normal is the plane's, either way (both pass for a plane
+    // square to the axis), and its centre on it
+    let mut coincide: Vec<f64> = Vec::new();
+    for s in [1.,-1.] {
+        let m = scale(n,s);
+        if (dot(m,k)-dot(f.z,k)).abs() > 1e-9 { continue }
+        let (zp,mp) = (perp(f.z),perp(m));
+        if norm(zp) <= 1e-12 || norm(mp) <= 1e-12 { continue }
+        // (`k` parts matched and both unit, the turn about `k` carrying one's square part onto the
+        // other's carries one onto the other)
+        let phi = dot(k,cross(zp,mp)).datan2(dot(zp,mp));
+        let reach = (angle.abs()/std::f64::consts::TAU).ceil() as i64+1;
+        for turns in -reach..=reach {
+            // (the carry turns `angle` a unit of `v` about its axis, read as unit)
+            let v = (phi+std::f64::consts::TAU*turns as f64)/angle;
+            if !(-1e-12..=1.+1e-12).contains(&v) { continue }
+            let v = v.clamp(0.,1.);
+            if (dot(n,blend.carry.at(f.o,v))-dot(n,pl.o)).abs() <= tol && !coincide.iter().any(|&w| (w-v).abs() <= 1e-12) { coincide.push(v) }
+        }
+    }
+    if coincide.is_empty() { return None }
+    let mut out: Vec<Curve> = coincide.iter().map(|&v| {
+        let c = &blend.carry;
+        Curve::Circle(Frame::new(c.at(f.o,v),c.dir(f.z,v),c.dir(f.x,v)),pipe.r)
+    }).collect();
+    out.extend(plane_branches(sheet,blend,&f,pipe.r,pl,&coincide));
+    Some(out)
+}
+
+/// **The plane `pl` cut from a circle's sheet under a screw, level by level**: the circle of radius
+/// `r` in `f` (its plane `f`'s `x` and `y`) carried to each `v` meets the plane's line in its plane
+/// where `r n·x_v cos θ + r n·y_v sin θ = h − n·c_v` (`circle_branches`), run into the `coincide`
+/// heights, where the circle lies in the plane, at their limit. A level circle's sheet against any
+/// plane, a ball's pipe against one holding one of its circles.
+fn plane_branches(sheet: &Surface,blend: &super::geom::Blend,f: &Frame,r: f64,pl: &Frame,coincide: &[f64]) -> Vec<Curve> {
+    let (n,carry) = (unit(pl.z),&blend.carry);
+    let h = dot(n,pl.o);
+    let circle_at = |v: f64| (carry.at(f.o,v),carry.dir(f.x,v),carry.dir(f.y,v));
+    let coefficients = |v: f64| { let (c,x,y) = circle_at(v); (r*dot(n,x),r*dot(n,y),h-dot(n,c)) };
+    let point = |th: f64,v: f64| { let (c,x,y) = circle_at(v); let (sn,cs) = th.dsin_cos(); add(c,add(scale(x,r*cs),scale(y,r*sn))) };
+    circle_branches(&coefficients,coincide,&point,&|pts,closed| Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:sheet.clone(),
+        b:Surface::Plane(*pl),pts,closed})))
+}
+
 /// **A ball touching the pipe its great circle screws into, round that circle** (#721 F2c5: a ball
 /// under a screw touches round its great circle square to its centre's velocity, which the screw
 /// carries into the helical pipe about its centre's path; the ball at either end pose touches the
@@ -1188,21 +1315,19 @@ fn pipe_end(blend: &super::geom::Blend,centre: V,r: f64,tol: f64) -> Option<Curv
 ///   (`Traced`, its chords pulled onto both), so no near touch is traced.
 /// `None` for any other blend or surface: traced.
 fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blend>,other: &Surface,tol: f64) -> Option<Vec<Curve>> {
-    use super::geom::{Blend,Carry,Traced};
+    use super::geom::{Carry,Traced};
     let (center,k,angle,rise,f,r) = screwed_circle(blend)?;
-    let Blend {ta,..} = **blend;
     let perp = |x: V| sub(x,scale(k,dot(x,k)));
     let circle_at = |v: f64| (blend.carry.at(f.o,v),blend.carry.dir(f.x,v),blend.carry.dir(f.y,v));
     let point = |th: f64,v: f64| { let (c,x,y) = circle_at(v); let (sn,cs) = th.dsin_cos(); add(c,add(scale(x,r*cs),scale(y,r*sn))) };
     // the blend's `u` of the circle's angle `θ`
-    let span = ta[1]-ta[0];
-    let u_of = |th: f64| { let t = ta[0]+(th-ta[0]).rem_euclid(std::f64::consts::TAU); (t-ta[0])/span };
+    let u_of = |th: f64| blend.u_of_angle(th);
     match *other {
         Surface::Blend(_,ref other_blend) => {
             // another circle the same screw carries: where this circle's points lie on it, the other's
             // circle screwed to this one's height, each such point's helix
             // (two stretches of one circle's sheet standing apart along the screw meet nowhere)
-            if screwed_overlap(blend,other_blend,tol).is_some_and(|shared| shared <= 0.) { return Some(vec![]) }
+            if screwed_overlap(blend,other_blend,tol).is_some_and(|o| o.shared <= 0.) { return Some(vec![]) }
             let (c2,k2,a2,r2,f2,rad2) = screwed_circle(other_blend)?;
             let off = sub(c2,center);
             if norm(cross(k,k2)) > 1e-12 || norm(sub(off,scale(k,dot(off,k)))) > tol || rise == 0. || r2 == 0.
@@ -1280,15 +1405,8 @@ fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Bl
                 std::sync::Arc::new(Traced {a:sheet.clone(),b:other.clone(),pts,closed}))));
             Some(out)
         }
-        Surface::Plane(p) => {
-            // any other plane: its line in each level meets the level circle where
-            // `r n·x_v cos θ + r n·y_v sin θ = h − n·c_v`
-            let n = unit(p.z);
-            let h = dot(n,p.o);
-            let coefficients = |v: f64| { let (c,x,y) = circle_at(v); (r*dot(n,x),r*dot(n,y),h-dot(n,c)) };
-            Some(circle_branches(&coefficients,&[],&point,&|pts,closed| Curve::Traced(std::sync::Arc::new(Traced {a:sheet.clone(),
-                b:other.clone(),pts,closed}))))
-        }
+        // any other plane: its line in each level meets the level circle
+        Surface::Plane(p) => Some(plane_branches(sheet,blend,&f,r,&p,&[])),
         _ => None,
     }
 }

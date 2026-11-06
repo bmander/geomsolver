@@ -14,18 +14,27 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   coinciding along their shared edges. `query::Located::face_holds` (**new**): whether a face
   holds a point of a surface the same as its own, on its patch too where its surface has a rim,
   which the arrangement's coincidences now ask in place of `face_place`.
+- **A root on the face two halves of a box share is found** (#796, `util::isolate::solve`): each
+  box is read grown past its sides by `isolate::GROW` (**new**), and Kantorovich's theorem read in
+  the norm that box is the unit ball of, so a crossing at the middle of a stretch is certified
+  rather than dropped by both halves. A ray from inside a bilinear B-spline block met its side
+  there and missed it, so points inside the block read as outside, and the block in common with a
+  cylinder (brep-bench's `geometry/saddle-drum`) was refused: built again, as 0.3.0 built it.
+- **A B-spline sheet's foot is not left on its rim** (`Surface::inverse_near`, `inverse`): a
+  parameter held at the patch's edge is let go where the descent pulls it back in, where the foot
+  was returned on the edge a long way from a point of the patch.
 - **A traced edge is measured across planes** (#798, `props::volume`, `props::area`): a traced
   curve inverted onto its face is read over spans of its points, each node the curve's crossing of
   a plane and its rate there, where each of its thousand stretches was read with three projections
-  at each of ten nodes. brep-bench's swept/ball-thread-groove measures in 0.07 s (volume) and 0.12 s
+  at each of ten nodes. brep-bench's swept/ball-thread-groove measures in 0.04 s (volume) and 0.1 s
   (areas) where 0.4.0 took 13 s and 26 s, and its volume no longer moves with the solid (by 2e-10
   of itself, read by central differences). A traced curve's `Curve::point` is one projection, not
   three.
 - **A ball's pipe is inverted off the stretches of its spine that can hold the nearest foot**
   (`geom::Pipe::nearest_feet`, **new**), not the whole coil: its sheet's side and inverse, read at
-  every projection onto a meeting traced on it, about six times faster on a coil of six turns
-  (swept/ball-thread-groove's Boolean 1.5 s to 0.3 s, its check 95 ms to 8 ms, its mesh 0.7 s to
-  0.16 s).
+  every projection onto a meeting traced on it, about twelve times faster on a coil of six turns
+  (swept/ball-thread-groove's Boolean 1.5 s to 0.2 s, its check 95 ms to 4 ms, its mesh 0.7 s to
+  0.12 s).
 
 ## [0.4.0] - 2026-11-05
 

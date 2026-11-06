@@ -15,15 +15,14 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::cgraph::coincident_classes;
-use crate::constraints::{same_constraint, CKind, Constraint};
+use crate::constraints::{CKind, Constraint};
 use crate::graph;
-use crate::linalg::{rank_and_nullspace, Mat};
 use crate::model::{EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
-use crate::system::{Sizes, SparseConditioned, Stop, System};
+use crate::system::{Sizes, Stop, System};
 use crate::system::RANK_TOL;
-use crate::witness::{analyze_with, movable_columns, screen, shaky_warning, WitnessReport};
+use crate::witness::{analyze_with, WitnessReport};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -53,9 +52,6 @@ impl State {
 /// Free parameters up to which the automatic numeric cross-check (a dense SVD) runs.
 pub const NUMERIC_MAX: usize = 300;
 
-/// A null-space entry below this is zero: the parameter does not move, the row takes no part.
-const RTOL: f64 = 1e-8;
-
 /// A connected component of the constraint graph with its own DOF accounting.
 #[derive(Clone, Debug)]
 pub struct Component {
@@ -67,8 +63,12 @@ pub struct Component {
 
 pub mod analysis;
 mod parts;
+mod claims;
+mod numeric;
 mod solid_claims;
 mod witnessed;
+use numeric::{Gate, Numeric};
+pub use numeric::{parts_null_spaces, removable_constraints};
 pub use solid_claims::{
     describe_solid_claim, judge_solids, ClaimJudge, ClaimProgress, SolidOutcome, SolidPose,
     SolidVerdict, SWEEP_STEPS,
@@ -324,204 +324,6 @@ fn unmet(sk: &Sketch, stop: Stop) -> Vec<(u32, String)> {
     }
 }
 
-/// Constraints that could be deleted without losing any information, given `w`, a basis of the
-/// left null space of the Jacobian (one column per dependency).
-///
-/// With W orthonormal, dropping a set of rows R gives
-/// `rank(J minus R) = rank(J) - |R| + rank(W[R])`, so a constraint is free to delete exactly when
-/// its own rows are *independent* in W.  That distinction is the whole point: an arc whose
-/// endpoints are mirrored about a line through its centre makes one of `Symmetric`'s two residuals
-/// implied by the arc's radius equations, but `Symmetric` still carries the perpendicularity — its
-/// two rows are dependent in W, it is doing real work, and telling the user to remove it would be
-/// wrong.  Only a wholly implied constraint is worth naming.
-///
-/// Intrinsic constraints are skipped: they come with the primitive and cannot be deleted.
-pub fn removable_constraints(sk: &Sketch, w: &Mat, row_c: &[u32], rtol: f64) -> Vec<u32> {
-    if w.rows == 0 || w.cols == 0 {
-        return Vec::new();
-    }
-    let mut rows: Vec<(u32, Vec<usize>)> = Vec::new();
-    let mut at: BTreeMap<u32, usize> = BTreeMap::new(); // constraint -> its slot in `rows`
-    for (r, &c) in row_c.iter().enumerate() {
-        match at.get(&c) {
-            Some(&i) => rows[i].1.push(r),
-            None => {
-                at.insert(c, rows.len());
-                rows.push((c, vec![r]));
-            }
-        }
-    }
-    let intrinsic: BTreeSet<u32> =
-        sk.constraints.iter().filter(|c| c.intrinsic).map(|c| c.id).collect();
-    let mut out = Vec::new();
-    for (cid, rs) in rows {
-        if intrinsic.contains(&cid) {
-            continue;
-        }
-        // W is orthonormal, so both tests here are absolute and fair to every row alike
-        let sub = w.select_rows(&rs);
-        let peak = crate::linalg::absmax(&sub.data);
-        if peak <= rtol {
-            continue;
-        }
-        if rank_and_nullspace(&sub, rtol).rank == rs.len() {
-            out.push(cid);
-        }
-    }
-    out
-}
-
-/// Whether constraint `c` says exactly what another that acts says.  `same_constraint` compares
-/// what is said, not whether it is said: a claim restating a relation matches it exactly, and
-/// counted as a duplicate it would move that relation out of `implied` and into `over` — a claim
-/// making the sketch over-constrained, which is the one thing §9.7 promises cannot happen.  Only
-/// what acts can duplicate.
-fn duplicated(sk: &Sketch, c: u32) -> bool {
-    sk.constraint(c).is_some_and(|m| {
-        sk.constraints.iter().any(|o| o.acts() && o.id != c && same_constraint(o, m))
-    })
-}
-
-/// The second-order screen on a numeric reading's null space, as both readings take it: where
-/// the Jacobian claims motions the matching cannot account for, settle-test them — a tangency at
-/// its own contact is a double root whose "motion" walks back.  `screen` owns both guards (only
-/// at a solution, never more than the discrepancy, so a motion the matching also sees is safe).
-/// The rank screened, the motions left, and how many it blocked.
-fn screened(
-    sk: &mut Sketch,
-    sys: &mut System,
-    z: &[f64],
-    null: Mat,
-    rank: usize,
-    structural: usize,
-    warnings: &mut Vec<String>,
-) -> (usize, Mat, usize) {
-    let (null, blocked) = screen(sk, sys, z, null, structural.saturating_sub(rank));
-    if blocked > 0 {
-        warnings.push(shaky_warning(blocked));
-    }
-    (rank + blocked, null, blocked)
-}
-
-/// `implied` and `over` from a numeric reading's dependencies, by whichever reading found them.
-/// W is every dependency at this configuration, so it outranks the matching here exactly as the
-/// numeric rank does: the structural over-block is generic, and where a theorem tips the count it
-/// blames a whole block — a rectangle with three surplus perpendiculars indicts its two side
-/// lengths — so `over` is rebuilt from W's reading alone.  `implied` is what the relations alone
-/// already say; an exact duplicate is never a theorem (two Horizontals on one line match two
-/// variables, so the graph passes them, but a copy is a surplus whatever it is made of).
-#[allow(clippy::too_many_arguments)]
-fn dependencies(
-    sk: &Sketch,
-    removable: Vec<u32>,
-    removable_rel: Vec<u32>,
-    rank: usize,
-    structural: usize,
-    implied: &mut Vec<u32>,
-    over: &mut Vec<u32>,
-    over_set: &mut BTreeSet<u32>,
-    warnings: &mut Vec<String>,
-) {
-    *implied = removable_rel.into_iter().filter(|&c| !duplicated(sk, c)).collect();
-    over.clear();
-    over_set.clear();
-    for c in removable {
-        if !implied.contains(&c) && over_set.insert(c) {
-            over.push(c);
-        }
-    }
-    if rank < structural {
-        warnings.push(format!(
-            "structural rank {structural} but numeric rank {rank}: a dependency the graph cannot \
-             see (theorem-induced or degenerate configuration) — Stage 4"
-        ));
-    }
-}
-
-/// A row that states no number anyone edits — a relation, or a derivative row whatever its row
-/// states (#148) — so a dependency through it is no surplus: the `implied` side of the line.
-fn states_no_number(c: &Constraint) -> bool {
-    !c.kind.has_dimension() || c.along.is_some()
-}
-
-/// What the parts say together (`parts`, #88): the whole Jacobian's rank and null space, and the
-/// constraints wholly implied — by any rows, and by relations alone.
-struct ByParts {
-    rank: usize,
-    /// One column per motion, a row per free column.
-    null: Mat,
-    removable: Vec<u32>,
-    removable_rel: Vec<u32>,
-}
-
-/// The block-triangular order's parts (#88): over first (its rows read nothing else), the square
-/// blocks as they are solved, under last — and each residual row's constraint.
-fn parts_in_order(sys: &mut System, row_c: &[u32]) -> (Vec<parts::Part>, Vec<u32>) {
-    use parts::Part;
-    let order = sys.block_order();
-    let mut of_row = vec![u32::MAX; sys.n_res];
-    for (i, r) in sys.hard_rows().into_iter().enumerate() {
-        of_row[r] = row_c[i];
-    }
-    let mut all = vec![Part { rows: order.over_rows.clone(), cols: order.over_cols.clone() }];
-    all.extend(order.blocks.iter().map(|b| Part { rows: b.rows.clone(), cols: b.cols.clone() }));
-    all.push(Part { rows: order.under_rows.clone(), cols: order.under_cols.clone() });
-    (all, of_row)
-}
-
-/// **What the parts read, for a caller to hold it to the Jacobian itself** (#88, #780): the
-/// conditioned Jacobian where `sk` stands, how many of its rows the parts read (the hard ones),
-/// the motions the parts read (each a value per free column) and the dependencies among those
-/// rows (each a value per residual row) — what `diagnose` reads past `NUMERIC_MAX`, without the
-/// whole SVD it is otherwise held to.
-#[doc(hidden)]
-pub fn parts_null_spaces(sk: &Sketch) -> (SparseConditioned, usize, Vec<Vec<f64>>, Vec<Vec<f64>>) {
-    let mut sys = System::new(sk);
-    let (_, row_c) = sys.structure();
-    let (all, _) = parts_in_order(&mut sys, &row_c);
-    let rows = all.iter().map(|p| p.rows.len()).sum();
-    let z = sys.z0(sk);
-    let j = sys.conditioned_sparse(&z);
-    let (null, left) = (parts::right_null(&j, &all), parts::left_null(&j, &all));
-    (j, rows, null, left)
-}
-
-fn numeric_by_parts(sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64]) -> ByParts {
-    use parts::Part;
-    let (all, of_row) = parts_in_order(sys, row_c);
-    let relation = |r: &usize| sk.constraint(of_row[*r]).is_some_and(states_no_number);
-    let rel: Vec<Part> = all.iter().map(|p| Part {
-        rows: p.rows.iter().copied().filter(relation).collect(),
-        cols: p.cols.clone(),
-    }).collect();
-    let j = sys.conditioned_sparse(z);
-    let null = parts::right_null(&j, &all);
-    // vectors as the columns of a matrix
-    let as_cols = |vs: &[Vec<f64>], n: usize| Mat::from_vec(vs.len(), n, vs.concat()).transpose();
-    // the rows a left null space reaches, and the constraints it may name
-    let removable = |w: &[Vec<f64>]| {
-        let rows: Vec<usize> = (0..sys.n_res).filter(|&r| w.iter().any(|v| v[r] != 0.0)).collect();
-        let m = as_cols(w, sys.n_res).select_rows(&rows);
-        let ids: Vec<u32> = rows.iter().map(|&r| of_row[r]).collect();
-        removable_constraints(sk, &m, &ids, RTOL)
-    };
-    // a dependency among rows only where there are more rows than the rank; among relations
-    // only where there is one among all the rows
-    let rank = sys.n_free - null.len();
-    let rows: usize = all.iter().map(|p| p.rows.len()).sum();
-    let all_rows = if rank < rows { parts::left_null(&j, &all) } else { Vec::new() };
-    let rel_rows = match all_rows.is_empty() {
-        true => Vec::new(),
-        false => parts::left_null(&j, &rel),
-    };
-    ByParts {
-        rank,
-        null: as_cols(&null, sys.n_free),
-        removable: removable(&all_rows),
-        removable_rel: removable(&rel_rows),
-    }
-}
-
 /// Hard constraints whose residual is not (numerically) zero at the current configuration.
 /// Each is judged in its own kernel's units — a radius error is a length, a distance error a
 /// length squared, and one absolute threshold for both calls half of them satisfied — which is
@@ -581,66 +383,254 @@ impl Default for DiagnoseOptions {
 }
 
 /// Structural (and optionally numeric) diagnosis of a sketch at its current configuration.
-/// Whether a claim's row holds (§9.7): the rule `violated_constraints` states against a compiled
-/// system, in the units the row carries — the residual over its own size to its kernel's power
-/// (`Sizes`, #492), no larger than `extent`, never a NaN.  `x` is the drawing's numbers, read
-/// once by the caller for every claim it asks of.
-fn claim_holds(sk: &Sketch, x: &[f64], c: &Constraint, tol: f64, extent: f64, sizes: &Sizes)
-    -> bool {
-    let e = c.error(sk);
-    let size = sizes.size(x, c.params(sk).into_iter().map(|p| p as usize), extent);
-    !e.is_nan() && e <= tol * size.dpowi(c.kernel_in(sk).degree as i32)
-}
-
 pub fn diagnose(sk: &mut Sketch, opts: DiagnoseOptions) -> Diagnosis {
     let mut sys = System::new(sk);
     diagnose_with(sk, &mut sys, opts)
 }
 
+/// The diagnosis of `sk` against `sys`, the system the caller solved it with.  Each reading is a
+/// phase of its own below, taken in this order — the matching, the numeric cross-check, what is
+/// violated and whether a solve could do better, bounds, claims, the conflict search, rigidity,
+/// each entity's state and the status — since the later ones read the earlier ones' answers, and
+/// several share `sys`, whose remembered poses each compile throws away.
 pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -> Diagnosis {
     // the caller hands us the System it solved with; dimensions may have been edited since, and
     // the residuals we are about to judge are read from the compiled constants
     sys.refresh_consts(sk);
-    let (adj, row_c) = sys.structure();
-    let n_cols = sys.n_free;
-    let dm = graph::dulmage_mendelsohn(&adj, n_cols);
-    let free_params: Vec<u32> = sys.free.iter().map(|&i| i as u32).collect();
-
-    let mut over_set: BTreeSet<u32> = BTreeSet::new();
-    let mut over: Vec<u32> = Vec::new();
-    let mut implied: Vec<u32> = Vec::new();
+    let m = Matched::of(sys);
+    let gate = Gate::of(&opts, sys);
     // an entity's own intrinsic rows — the two that make an arc's ends its ends — are not in
     // the document and cannot be removed, so "remove one of these" never names one (#43.17);
     // the numeric path (`removable_constraints`) already leaves them out
     let intrinsic: BTreeSet<u32> =
         sk.constraints.iter().filter(|c| c.intrinsic).map(|c| c.id).collect();
-    for &r in &dm.over_rows {
-        let c = row_c[r];
-        if !intrinsic.contains(&c) && over_set.insert(c) {
-            over.push(c);
-        }
-    }
+    let mut red = Redundancy::matched(&m, &intrinsic);
     // the matching's reading, kept: it is where a redundancy *must* live, so the conflict
     // search below seeds its candidates from it whatever W says about who is removable
-    let structural_over = over.clone();
-    let structural_under: Vec<u32> = dm.under_cols.iter().map(|&j| free_params[j]).collect();
-    let mut under_params = structural_under.clone();
+    let structural_over = red.over.clone();
+    let structural_under = m.params(&m.dm.under_cols);
+    let components = components(&m);
 
-    // -- components --
-    let comps = graph::bipartite_components(&adj, n_cols);
+    let mut warnings = standing_warnings(sk);
+    // the witness analysis (Stage 4), on demand
+    let wit = (opts.witness && m.n_cols > 0 && sys.n_res > 0)
+        .then(|| analyze_with(sk, sys, None, &red.in_over, RANK_TOL, 0));
+    let numeric: Numeric = numeric::read(sk, sys, &m, &gate, wit.as_ref(), &mut warnings);
+    if let Some(d) = numeric.dependencies {
+        red.reread(d);
+    }
+    // where the numeric cross-check read a rank, what it says moves is the truth here
+    let under_params = numeric.movable.unwrap_or_else(|| structural_under.clone());
+
+    let violated = violated_constraints(sk, sys, opts.tol);
+    let reach = reach(sk, sys, &violated, opts.tol);
+    let (bounds_violated, bounds_active) = bounds(sk);
+    let claims = claims::judge(sk, sys, opts.tol, gate.numeric, opts.settled);
+    let (conflicts, stalled) =
+        conflicts(sk, &opts, structural_over, &red.over, &violated, &intrinsic, &reach);
+
+    let contested = |c: &u32| {
+        violated.contains(c) || conflicts.as_ref().is_some_and(|s| s.contains(c))
+    };
+    let expected = red.file(contested, |c| touches_axis(sk, c));
+
+    // -- pebble game on the point-distance graph --
+    let (clusters, redundant) = distance_rigidity(sk);
+
+    let under_set: BTreeSet<u32> = under_params.iter().copied().collect();
+    let blamed: BTreeSet<u32> = match &conflicts {
+        Some(c) => c.iter().copied().collect(),
+        // stalled, the violated rows are no verdict on anything they touch: an entity keeps
+        // the determination the rank gives it, which holds at a non-solution as well
+        None if stalled => BTreeSet::new(),
+        None => violated.iter().copied().collect(),
+    };
+    let entity_state = entity_states(sk, &blamed, &red.in_over, &under_set);
+    if let Some(w) = &wit {
+        warnings.extend(w.warnings.iter().cloned());
+    }
+
+    let parameters = driven(sk, sys, &m.row_c, gate.numeric);
+    // the structural matching is a *generic* upper bound on the rank; where the numeric
+    // cross-check ran it is the truth at this configuration, and it is what decides what moves
+    let effective_rank = numeric.rank.unwrap_or(m.dm.rank);
+    let dof = m.n_cols as i64 - effective_rank as i64;
+    let status = status(opts.settled, stalled, &violated, conflicts.as_deref(), &red.over, dof);
+    Diagnosis {
+        n_params: m.n_cols,
+        n_equations: m.n_rows(),
+        structural_rank: m.dm.rank,
+        numeric_rank: numeric.rank,
+        numeric_skipped: gate.skipped,
+        by_parts: gate.by_parts,
+        geometric_dependency: numeric.rank.map(|nr| m.dm.rank.saturating_sub(nr)).unwrap_or(0),
+        shaky: numeric.shaky,
+        over: red.over,
+        implied: red.implied,
+        expected,
+        claims_theorem: claims.theorem,
+        claims_violated: claims.violated,
+        claims_consuming: claims.consuming,
+        bounds_violated,
+        bounds_active,
+        orientations_violated: crate::solve::orientations_broken(sk),
+        collapsed: crate::solve::collapsed(sk),
+        extrema: crate::variational::extrema(sk),
+        // **judged, at the very end, and never compiled.**  A solid claim reads the solved pose
+        // and the terms over it; it enters no system, so nothing above this line can see it and
+        // nothing it says can move a number.
+        solid_claims: if opts.solid_claims { judge_solids(sk) } else { Vec::new() },
+        under_params,
+        structural_under_params: structural_under,
+        components,
+        entity_state,
+        rigid_clusters: clusters,
+        redundant_distances: redundant,
+        violated,
+        conflicts,
+        out_of_reach: reach.out_of_reach,
+        warnings,
+        witness: wit,
+        dof,
+        structural_dof: m.n_cols as i64 - m.dm.rank as i64,
+        n_redundant: m.n_rows() as i64 - effective_rank as i64,
+        structural_n_redundant: m.n_rows() as i64 - m.dm.rank as i64,
+        status,
+        parameters,
+    }
+}
+
+/// The matching's reading of the compiled system: its rows' graph over the free columns, each
+/// row's constraint, and the Dulmage–Mendelsohn decomposition every later reading starts from.
+struct Matched {
+    adj: Vec<Vec<usize>>,
+    row_c: Vec<u32>,
+    n_cols: usize,
+    dm: graph::Dm,
+    /// Each free column's parameter.
+    free_params: Vec<u32>,
+}
+
+impl Matched {
+    fn of(sys: &System) -> Matched {
+        let (adj, row_c) = sys.structure();
+        let n_cols = sys.n_free;
+        let dm = graph::dulmage_mendelsohn(&adj, n_cols);
+        let free_params = sys.free.iter().map(|&i| i as u32).collect();
+        Matched { adj, row_c, n_cols, dm, free_params }
+    }
+
+    /// The residual rows: the equations.
+    fn n_rows(&self) -> usize {
+        self.adj.len()
+    }
+
+    /// The parameters of free columns `cols`.
+    fn params(&self, cols: &[usize]) -> Vec<u32> {
+        cols.iter().map(|&j| self.free_params[j]).collect()
+    }
+}
+
+/// What the diagnosis finds surplus: the constraints worth removing (`over`, with `in_over` its
+/// set) and those the relations alone already say (`implied`: consistent, nothing to fix).
+#[derive(Default)]
+struct Redundancy {
+    over: Vec<u32>,
+    in_over: BTreeSet<u32>,
+    implied: Vec<u32>,
+}
+
+impl Redundancy {
+    /// The matching's reading: each constraint with a row in the over-determined block, in row
+    /// order, but none of the `intrinsic` rows nobody can remove.
+    fn matched(m: &Matched, intrinsic: &BTreeSet<u32>) -> Redundancy {
+        let mut out = Redundancy::default();
+        for &r in &m.dm.over_rows {
+            let c = m.row_c[r];
+            if !intrinsic.contains(&c) {
+                out.add_over(c);
+            }
+        }
+        out
+    }
+
+    fn add_over(&mut self, c: u32) {
+        if self.in_over.insert(c) {
+            self.over.push(c);
+        }
+    }
+
+    /// `implied` and `over` from a numeric reading's dependencies, by whichever reading found
+    /// them.  W is every dependency at this configuration, so it outranks the matching here
+    /// exactly as the numeric rank does: the structural over-block is generic, and where a
+    /// theorem tips the count it blames a whole block — a rectangle with three surplus
+    /// perpendiculars indicts its two side lengths — so `over` is rebuilt from W's reading alone.
+    fn reread(&mut self, d: numeric::Dependencies) {
+        self.implied = d.implied;
+        self.over.clear();
+        self.in_over.clear();
+        for c in d.removable {
+            if !self.implied.contains(&c) {
+                self.add_over(c);
+            }
+        }
+    }
+
+    /// File what the readings after the numeric one found, and give back what is `expected`.
+    ///
+    /// A dependency whose rows do not hold is no theorem: two tangencies of one pair that cannot
+    /// both be true are dependent in W and carry no dimension, so W's reading files them as
+    /// `implied` — "consistent, nothing to fix" — beside the conflict that names them.  What is
+    /// `contested` (violated, or found in the conflict set) is a surplus and is said so.
+    ///
+    /// What a plane's tangency to a set makes dependent of its own rows is how it is `stated`,
+    /// and said nowhere (#148): taken out of both lists and returned, in their order — but a row
+    /// that does not hold is a conflict's, said as one, and stays.
+    fn file(&mut self, contested: impl Fn(&u32) -> bool, stated: impl Fn(u32) -> bool) -> Vec<u32> {
+        if self.implied.iter().any(&contested) {
+            let (moved, kept): (Vec<u32>, Vec<u32>) =
+                self.implied.iter().copied().partition(|c| contested(c));
+            self.implied = kept;
+            for c in moved {
+                self.add_over(c);
+            }
+        }
+        let expected: Vec<u32> = self.implied.iter().chain(&self.over).copied()
+            .filter(|c| !contested(c) && stated(*c))
+            .collect();
+        if !expected.is_empty() {
+            let set: BTreeSet<u32> = expected.iter().copied().collect();
+            self.implied.retain(|c| !set.contains(c));
+            self.over.retain(|c| !set.contains(c));
+            self.in_over.retain(|c| !set.contains(c));
+        }
+        expected
+    }
+}
+
+/// Whether constraint `c` is a plane's tangency to a set, stated toward an axis (#148).
+fn touches_axis(sk: &Sketch, c: u32) -> bool {
+    sk.constraint(c)
+        .and_then(|c| c.along)
+        .is_some_and(|d| matches!(sk.duals[d].toward, crate::model::Toward::Axis(_)))
+}
+
+/// The constraint graph's connected components, each with its own DOF accounting, largest first.
+fn components(m: &Matched) -> Vec<Component> {
+    let comps = graph::bipartite_components(&m.adj, m.n_cols);
     let n_comp = comps.count;
     let mut comp_params: Vec<Vec<u32>> = vec![Vec::new(); n_comp];
     let mut comp_cs: Vec<Vec<u32>> = vec![Vec::new(); n_comp];
     let mut comp_rank = vec![0usize; n_comp];
-    for j in 0..n_cols {
-        comp_params[comps.comp_col[j]].push(free_params[j]);
-        if dm.mate_col[j] >= 0 {
+    for j in 0..m.n_cols {
+        comp_params[comps.comp_col[j]].push(m.free_params[j]);
+        if m.dm.mate_col[j] >= 0 {
             comp_rank[comps.comp_col[j]] += 1;
         }
     }
     let mut comp_seen: Vec<BTreeSet<u32>> = vec![BTreeSet::new(); n_comp];
-    for r in 0..adj.len() {
-        let (c, k) = (row_c[r], comps.comp_row[r]);
+    for r in 0..m.n_rows() {
+        let (c, k) = (m.row_c[r], comps.comp_row[r]);
         if comp_seen[k].insert(c) {
             comp_cs[k].push(c); // in row order, deduplicated in constant time
         }
@@ -654,348 +644,150 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         })
         .collect();
     components.sort_by_key(|c| std::cmp::Reverse(c.params.len()));
+    components
+}
 
-    // -- witness analysis (Stage 4), on demand --
-    let mut warnings: Vec<String> = Vec::new();
-    // a corner round that does not fit, said by name before the profile it spoils (#576)
-    warnings.extend(crate::model::overruns(sk));
+/// What is said whatever the rank: a corner round that does not fit, said by name before the
+/// profile it spoils (#576), a solid that is refused, and a load no solid bears.
+fn standing_warnings(sk: &Sketch) -> Vec<String> {
+    let mut warnings: Vec<String> = crate::model::overruns(sk);
     for (i, s) in sk.solids.iter().enumerate() {
         if !matches!(s.def, crate::model::SolidDef::Body { .. }) {
             if let Err(message) = crate::solid::validate(sk, i) { warnings.push(message); }
         }
     }
     warnings.extend(crate::solid::bearing_errors(sk).into_iter().map(|(_, message)| message));
-    let mut wit: Option<WitnessReport> = None;
-    if opts.witness && n_cols > 0 && sys.n_res > 0 {
-        wit = Some(analyze_with(sk, sys, None, &over_set, RANK_TOL, 0));
-    }
+    warnings
+}
 
-    // -- numeric cross-check: rank and the parameters that can actually move --
-    let mut numeric_rank: Option<usize> = None;
-    let mut shaky = 0usize;
-    let want_numeric = opts.numeric.unwrap_or(n_cols <= opts.numeric_max);
-    // past the dense limit the whole matrix is not factored, but its parts are (#88)
-    let by_parts = opts.numeric.is_none() && !want_numeric && n_cols > 0 && sys.n_res > 0;
-    let numeric_skipped = opts.numeric.is_none() && !want_numeric && !by_parts;
-    if want_numeric && n_cols > 0 && sys.n_res > 0 {
-        let movable: Vec<usize>;
-        // the conditioned Jacobian at z, kept for the over/implied block below rather than
-        // built a second time at the same pose — the screen leaves both sketch and system as
-        // it found them, so it is still the right matrix afterwards
-        let mut cond: Option<crate::system::Conditioned> = None;
-        match &wit {
-            Some(w) if w.used_current => {
-                numeric_rank = Some(w.numeric_rank); // same J at the same x, screened already
-                movable = w.movable.clone();
-                shaky = w.blocked;
-            }
-            _ => {
-                let z = sys.z0(sk);
-                let c = sys.conditioned(&z);
-                let rn = c.rank_and_nullspace(RANK_TOL);
-                cond = Some(c);
-                if rn.converged {
-                    let (rank, null, blocked) =
-                        screened(sk, sys, &z, rn.null(), rn.rank, dm.rank, &mut warnings);
-                    shaky = blocked;
-                    numeric_rank = Some(rank);
-                    movable = movable_columns(&null, RTOL);
-                } else {
-                    // no rank at all, rather than the zero a failed SVD leaves behind — which
-                    // reads as "every constraint is redundant"
-                    warnings.push(
-                        "numeric rank unavailable: the SVD did not converge (a degenerate or \
-                         non-finite Jacobian) — the structural analysis stands alone"
-                            .to_string(),
-                    );
-                    movable = Vec::new();
-                }
-            }
-        }
-        // Which parameters can actually move: rows of the null space that are nonzero.  Sharper
-        // than the DM under-block (which counts a parameter as free if it could be in some generic
-        // assignment); evaluated at the current configuration.
-        if numeric_rank.is_some() {
-            under_params = movable.iter().map(|&j| free_params[j]).collect();
-        }
-        if numeric_rank.is_some_and(|r| r < adj.len()) {
-            // ...and name the constraints worth removing, or the report would say
-            // "over-constrained" with nothing to point at.  One extra SVD, only where something
-            // is redundant at all — whether the matching saw it or only the Jacobian does.  Run
-            // only on the second case, a determined square with a stated side had every one of
-            // its ten constraints `over`, the side length first: the matching's over-block at
-            // DOF 0 is every row touching the cluster, where W's reading is the relation-only
-            // closure it always was, which is `implied` and nothing to fix (#45.5).
-            let j = cond.unwrap_or_else(|| {
-                let z = sys.z0(sk);
-                sys.conditioned(&z)
-            });
-            let w = j.left_nullspace(RANK_TOL).null();
-            // `implied` is what the relations alone already say: the same test on the left null
-            // space of the relation-only rows (a dependency there embeds in W, so this is a subset
-            // of the removable set).  Whatever is removable only with a dimension's help is `over`.
-            // The static "carries a dimension" test stands in for the witness criterion (the
-            // deficiency survives jittered dimensions) because this runs after every edit.  An
-            // exact duplicate is never a theorem: two Horizontals on one line match two variables,
-            // so the graph passes them, but a copy is a surplus whatever it is made of.
-            let rel_rows: Vec<usize> = (0..j.rows())
-                .filter(|&r| sk.constraint(row_c[r]).is_some_and(states_no_number))
-                .collect();
-            let w_rel = if rel_rows.len() == j.rows() {
-                w.clone()
-            } else {
-                j.select_rows(&rel_rows).left_nullspace(RANK_TOL).null()
-            };
-            let row_c_rel: Vec<u32> = rel_rows.iter().map(|&r| row_c[r]).collect();
-            let removable = removable_constraints(sk, &w, &row_c, RTOL);
-            let removable_rel = removable_constraints(sk, &w_rel, &row_c_rel, RTOL);
-            let rank = numeric_rank.unwrap_or(dm.rank);
-            let (o, i, w) = (&mut over, &mut implied, &mut warnings);
-            dependencies(sk, removable, removable_rel, rank, dm.rank, i, o, &mut over_set, w);
-        }
-    } else if by_parts {
-        // past the dense limit, the same reading part by part (#88)
-        let z = sys.z0(sk);
-        let p = numeric_by_parts(sk, sys, &row_c, &z);
-        let (rank, null, blocked) = screened(sk, sys, &z, p.null, p.rank, dm.rank, &mut warnings);
-        shaky = blocked;
-        numeric_rank = Some(rank);
-        under_params = movable_columns(&null, RTOL).iter().map(|&j| free_params[j]).collect();
-        if rank < adj.len() {
-            let (o, i, w) = (&mut over, &mut implied, &mut warnings);
-            dependencies(sk, p.removable, p.removable_rel, rank, dm.rank, i, o, &mut over_set, w);
-        }
-    }
+/// Where a drawing with violated rows stands: what of it no solve can meet, or whether it is
+/// consistent and merely unsolved.
+#[derive(Default)]
+struct Reach {
+    /// The driven deflections out of reach, each with why (`unmet`).
+    out_of_reach: Vec<(u32, String)>,
+    /// A scratch solve settled: the constraints are consistent and the pose is merely
+    /// *unsolved* — no conflict, no culprits.
+    stalled: bool,
+    /// A scratch solve failed too, with nothing out of reach: a conflict search that then finds
+    /// nothing means `stalled`.
+    unsettled: bool,
+}
 
-    // -- violated --
-    let violated = violated_constraints(sk, sys, opts.tol);
-    // A violated row is evidence about the *geometry* only at a stationary point — where the
-    // solver could go no further, what is left is what the constraints cannot agree on.
-    // Anywhere else it is evidence about the solve, and the diagnosis finds out which it is for
-    // itself rather than guessing: a scratch copy is solved.  If that solves, the constraints
-    // are consistent and the caller's pose is merely *unsolved* — no conflict, no culprits.
-    // If it does not, the search for the minimal conflict set is the last word: it proves a
-    // conflict by finding the subset it cannot add to a feasible pose, and an empty answer
-    // from a pose that was never stationary means it found every constraint feasible after
-    // all.  The search runs from the caller's pose, not the scratch one — a failed solve of
-    // the whole system has pulled everything toward the impossible row, and the trials
-    // warm-start better from where the drawing was.  Read as a conflict directly, a solve that ran out on a consistent four-bar named
-    // three innocent statements to delete (issue #43).  The extra solve is paid only on this
-    // path, which the app is rarely on (it solves before it diagnoses).
-    //
-    // A driven deflection the solve left at the extreme of what drives it, or at the edge of
-    // the mesh it is read on, short of what it states, is the verdict before either (#510 P7,
-    // S2; `unmet`): no solve from here meets it, and every trial of the search would factor its
-    // analysis at every step to find the set it already is — seconds of a page's thread, an edit
-    // at a time.  Read where the drawing stands, or, where that is no stationary point (a page
-    // puts a failed solve's pose back), where the scratch solve stopped.
-    let mut out_of_reach: Vec<(u32, String)> = Vec::new();
-    let mut stalled = false;
-    let mut unsettled = false;
-    if !violated.is_empty() {
-        let z = sys.z0(sk);
-        // where the solve that failed on `sys` began, it said why already
-        let stop = if sys.stopped_from.as_deref() == Some(&sk.get_x()[..]) {
-            sys.stop.clone()
+/// A violated row is evidence about the *geometry* only at a stationary point — where the
+/// solver could go no further, what is left is what the constraints cannot agree on.  Anywhere
+/// else it is evidence about the solve, and the diagnosis finds out which it is for itself
+/// rather than guessing: a scratch copy is solved.  If that solves, the constraints are
+/// consistent and the caller's pose is merely *unsolved* — no conflict, no culprits.  If it does
+/// not, the search for the minimal conflict set is the last word (`conflicts`): it proves a
+/// conflict by finding the subset it cannot add to a feasible pose, and an empty answer from a
+/// pose that was never stationary means it found every constraint feasible after all.  The
+/// search runs from the caller's pose, not the scratch one — a failed solve of the whole system
+/// has pulled everything toward the impossible row, and the trials warm-start better from where
+/// the drawing was.  Read as a conflict directly, a solve that ran out on a consistent four-bar
+/// named three innocent statements to delete (issue #43).  The extra solve is paid only on this
+/// path, which the app is rarely on (it solves before it diagnoses).
+///
+/// A driven deflection the solve left at the extreme of what drives it, or at the edge of the
+/// mesh it is read on, short of what it states, is the verdict before either (#510 P7, S2;
+/// `unmet`): no solve from here meets it, and every trial of the search would factor its
+/// analysis at every step to find the set it already is — seconds of a page's thread, an edit at
+/// a time.  Read where the drawing stands, or, where that is no stationary point (a page puts a
+/// failed solve's pose back), where the scratch solve stopped.
+fn reach(sk: &Sketch, sys: &mut System, violated: &[u32], tol: f64) -> Reach {
+    let mut out = Reach::default();
+    if violated.is_empty() {
+        return out;
+    }
+    let z = sys.z0(sk);
+    // where the solve that failed on `sys` began, it said why already
+    let stop = if sys.stopped_from.as_deref() == Some(&sk.get_x()[..]) {
+        sys.stop.clone()
+    } else {
+        sys.stop_at(sk, &z, tol)
+    };
+    out.out_of_reach = unmet(sk, stop);
+    if out.out_of_reach.is_empty() && !sys.stationary(&z) {
+        let mut scratch = sk.clone();
+        let mut ssys = System::new(&scratch);
+        if ssys.solve(&mut scratch, SolveOpts::default()).settled() {
+            out.stalled = true;
         } else {
-            sys.stop_at(sk, &z, opts.tol)
-        };
-        out_of_reach = unmet(sk, stop);
-        if out_of_reach.is_empty() && !sys.stationary(&z) {
-            let mut scratch = sk.clone();
-            let mut ssys = System::new(&scratch);
-            if ssys.solve(&mut scratch, SolveOpts::default()).settled() {
-                stalled = true;
-            } else {
-                out_of_reach = unmet(sk, ssys.stop.clone());
-                unsettled = out_of_reach.is_empty();
-            }
+            out.out_of_reach = unmet(sk, ssys.stop.clone());
+            out.unsettled = out.out_of_reach.is_empty();
         }
     }
+    out
+}
 
-    // -- claims (Solvent §9.7), judged against the drawing the rest of the document made --
-    //
-    // A claim is no equation, so nothing above has seen one: the system, the matching, the ranks
-    // and every set are exactly what they would be with the claims deleted — which is the
-    // contract, since a claim states only that deleting it changes nothing.  Judging one takes a
-    // second compile that *does* carry its rows (`System::with_claims`), read three ways: its
-    // residual (does it hold?), and the rank of the other rows with and without it (does the
-    // drawing already say it, or would enforcing it have taken a freedom?).  All of it is behind
-    // the emptiness test, so a document with no claim in it pays nothing.
-    //
-    // It is asked of `sys` — the system already compiled, already warm — through
-    // `conditioned_with`, and never of a second `System` built over the claims.  A compile is
-    // what invalidates the remembered trace poses (it calls `locus::forget`, since only a
-    // recompile can put another contact at a given address), so a second system beside a live one
-    // throws that one's poses away and every contact re-walks its march from the home: on
-    // `peaucellier`, a traced document that ends on a claim, 834 µs a diagnosis against 45 µs for
-    // the whole of the rest of it.  The residual is `Constraint::error`, which needs no system at
-    // all.
-    let (mut bounds_violated, mut bounds_active) = (Vec::new(), Vec::new());
+/// The bounds that do not hold, and those that hold at their edge.
+fn bounds(sk: &Sketch) -> (Vec<u32>, Vec<u32>) {
+    let (mut violated, mut active) = (Vec::new(), Vec::new());
     let tol = crate::solve::bound_tol(sk);
     for c in sk.constraints.iter().filter(|c| c.bound.is_some()) {
         match crate::solve::bound_reading(sk, c, tol) {
-            Some(r) if !r.holds => bounds_violated.push(c.id),
-            Some(r) if r.edge => bounds_active.push(c.id),
+            Some(r) if !r.holds => violated.push(c.id),
+            Some(r) if r.edge => active.push(c.id),
             _ => {}
         }
     }
-    let mut claims_theorem: Vec<u32> = Vec::new();
-    let mut claims_violated: Vec<u32> = Vec::new();
-    let mut claims_consuming: Vec<u32> = Vec::new();
-    // a claim with witnesses of its own is judged by its block, below; and none is judged on a
-    // pose no solve settled at, which may not even satisfy the claim's premises (#449)
-    let claims: Vec<&Constraint> =
-        sk.constraints.iter().filter(|c| c.claim && c.witness.is_none()).collect();
-    if !claims.is_empty() && opts.settled {
-        // "does it hold?" is the same rule `violated_constraints` states against a compiled
-        // system, in the units the row carries: the residual over its own size^degree
-        let (extent, sizes, x) = (sk.extent(), Sizes::of(sk), sk.get_x());
-        let held: BTreeSet<u32> = claims
-            .iter()
-            .filter(|c| claim_holds(sk, &x, c, opts.tol, extent, &sizes))
-            .map(|c| c.id)
-            .collect();
-        // The rank question is the numeric cross-check's kind of question, and is gated the same
-        // way; past the limit a claim that holds is reported a theorem, under the same
-        // `numeric_skipped` flag the rest of the numeric reading carries.  Judged against the
-        // claim-free base rather than through `removable_constraints`, which measures each row
-        // against every other row there is: §9.7 asks what the *rest of the document* implies,
-        // so a claim two other claims imply is still consuming.
-        // no `n_res` test: a base with no rows at all is a real case (a lone grounded point), and
-        // a claim over it is exactly the one that adds rank
-        let judged = (want_numeric && sys.n_free > 0).then(|| {
-            let z = sys.z0(sk);
-            let (jc, row_c) = sys.conditioned_with(sk, &z, &claims);
-            let claimed: BTreeSet<u32> = claims.iter().map(|c| c.id).collect();
-            let base: Vec<usize> =
-                (0..jc.rows()).filter(|&r| !claimed.contains(&row_c[r])).collect();
-            let rank = jc.select_rows(&base).rank_rrqr(RANK_TOL);
-            (jc, row_c, base, rank)
-        });
-        // One rank over every row answers the whole question when the answer is "none of them" —
-        // which is the case a claim is written for.  Only when the claims together do add rank
-        // does it cost a factorisation each to say which.
-        let any_adds = judged
-            .as_ref()
-            .is_some_and(|(jc, _, _, rank)| jc.rank_rrqr(RANK_TOL) > *rank);
-        let mut rows: Vec<usize> = Vec::new();
-        for c in &claims {
-            if !held.contains(&c.id) {
-                claims_violated.push(c.id);
-                continue;
-            }
-            let consuming = any_adds
-                && judged.as_ref().is_some_and(|(jc, row_c, base, rank)| {
-                    rows.clear();
-                    rows.extend_from_slice(base);
-                    rows.extend((0..jc.rows()).filter(|&r| row_c[r] == c.id));
-                    jc.select_rows(&rows).rank_rrqr(RANK_TOL) > *rank
-                });
-            if consuming {
-                claims_consuming.push(c.id);
-            } else {
-                claims_theorem.push(c.id);
-            }
-        }
-    }
+    (violated, active)
+}
 
-    // a `claim { … }` block (#460): its witnesses solved after the drawing, the drawing held,
-    // and the block judged as one claim — every statement of it filed under the one verdict
-    let blocks = witnessed::blocks(sk);
-    if !blocks.is_empty() && opts.settled {
-        // read once for every block: the drawing's extent before any witness moves, and its own
-        // rank, which no block's solve changes (a witness is no column of `sys`)
-        let extent = sk.extent();
-        let rank = want_numeric.then(|| match sys.n_free {
-            0 => 0,
-            _ => {
-                let z = sys.z0(sk);
-                sys.conditioned(&z).rank_rrqr(RANK_TOL)
-            }
-        });
-        for (w, rows) in blocks {
-            let into = match witnessed::judge(sk, sys, w, opts.tol, extent, rank) {
-                witnessed::Verdict::Theorem => &mut claims_theorem,
-                witnessed::Verdict::Violated => &mut claims_violated,
-                witnessed::Verdict::Consuming => &mut claims_consuming,
-            };
-            into.extend(rows);
-        }
+/// The conflict set, if there is one to name — what is out of `reach`, else the minimal conflict
+/// set the search proves among the suspects — and whether the drawing is consistent and merely
+/// unsolved: as `reach` found, or where the search finds no conflict from a pose a scratch solve
+/// could not settle either.
+fn conflicts(
+    sk: &mut Sketch,
+    opts: &DiagnoseOptions,
+    structural_over: Vec<u32>,
+    over: &[u32],
+    violated: &[u32],
+    intrinsic: &BTreeSet<u32>,
+    reach: &Reach,
+) -> (Option<Vec<u32>>, bool) {
+    if !reach.out_of_reach.is_empty() {
+        return (Some(reach.out_of_reach.iter().map(|(c, _)| *c).collect()), reach.stalled);
     }
-
-    // -- conflicts --
-    let mut conflict_set: Option<Vec<u32>> = None;
     // a pose no solve settled at is searched too where every row reads as holding there: what
     // reads as holding at that pose's extent may not hold at the drawing's (#449)
     let search = !violated.is_empty() || !opts.settled;
-    if !out_of_reach.is_empty() {
-        conflict_set = Some(out_of_reach.iter().map(|(c, _)| *c).collect());
-    } else if !stalled && opts.conflicts.unwrap_or(search) {
-        // Candidates = the structurally over-determined block (where a redundancy must live)
-        // *together with* whatever is actually violated.  Not just the over-block: a consistent
-        // duplicate (two Horizontals on one line) makes an over-block with nothing to do with an
-        // infeasibility elsewhere, and confining the search to it pins the blame on the harmless
-        // pair — the real conflict is then in the constraints held fixed, so no candidate can be
-        // satisfied and the first one tried wins.  Everything else stays fixed, so the result is
-        // minimal "among the suspects", and the filter costs |candidates| solves, not |all|.
-        let mut cands = structural_over;
-        for &c in over.iter().chain(&violated) {
-            if !cands.contains(&c) {
-                cands.push(c);
-            }
-        }
-        let set = minimal_conflict_set(sk, Some(&cands), opts.tol, Method::DogLeg, 60);
-        // the search found every constraint feasible from a pose that was never stationary:
-        // consistent, and merely unsolved
-        stalled = set.is_empty() && unsettled;
-        // an intrinsic row may be *in* the set the search proves — the radius an arc's ends fix
-        // is what a stray dimension on it contradicts — but it is nobody's statement and
-        // nothing anyone can remove, so the culprits named are the document's own (#45.6)
-        conflict_set = Some(set.into_iter().filter(|c| !intrinsic.contains(c)).collect());
+    if reach.stalled || !opts.conflicts.unwrap_or(search) {
+        return (None, reach.stalled);
     }
-    // a dependency whose rows do not hold is no theorem: two tangencies of one pair that
-    // cannot both be true are dependent in W and carry no dimension, so W's reading files them
-    // as `implied` — "consistent, nothing to fix" — beside the conflict that names them.  What
-    // is violated, or found in the conflict set, is a surplus and is said so.
-    let contested = |c: &u32| {
-        violated.contains(c) || conflict_set.as_ref().is_some_and(|s| s.contains(c))
-    };
-    if implied.iter().any(contested) {
-        let (moved, kept): (Vec<u32>, Vec<u32>) = implied.iter().copied().partition(|c| contested(c));
-        implied = kept;
-        for c in moved {
-            if over_set.insert(c) {
-                over.push(c);
-            }
+    // Candidates = the structurally over-determined block (where a redundancy must live)
+    // *together with* whatever is actually violated.  Not just the over-block: a consistent
+    // duplicate (two Horizontals on one line) makes an over-block with nothing to do with an
+    // infeasibility elsewhere, and confining the search to it pins the blame on the harmless
+    // pair — the real conflict is then in the constraints held fixed, so no candidate can be
+    // satisfied and the first one tried wins.  Everything else stays fixed, so the result is
+    // minimal "among the suspects", and the filter costs |candidates| solves, not |all|.
+    let mut cands = structural_over;
+    for &c in over.iter().chain(violated) {
+        if !cands.contains(&c) {
+            cands.push(c);
         }
     }
+    let set = minimal_conflict_set(sk, Some(&cands), opts.tol, Method::DogLeg, 60);
+    // the search found every constraint feasible from a pose that was never stationary:
+    // consistent, and merely unsolved
+    let stalled = set.is_empty() && reach.unsettled;
+    // an intrinsic row may be *in* the set the search proves — the radius an arc's ends fix
+    // is what a stray dimension on it contradicts — but it is nobody's statement and
+    // nothing anyone can remove, so the culprits named are the document's own (#45.6)
+    (Some(set.into_iter().filter(|c| !intrinsic.contains(c)).collect()), stalled)
+}
 
-    // what a plane's tangency to a set makes dependent of its own rows is how it is stated,
-    // and said nowhere (#148) — but a row that does not hold is a conflict's, said as one
-    let touch_row = |c: &u32| {
-        !contested(c)
-            && sk.constraint(*c).and_then(|c| c.along).is_some_and(|d| {
-                matches!(sk.duals[d].toward, crate::model::Toward::Axis(_))
-            })
-    };
-    let expected: Vec<u32> = implied.iter().chain(&over).copied().filter(touch_row).collect();
-    implied.retain(|c| !touch_row(c));
-    over.retain(|c| !touch_row(c));
-    over_set.retain(|c| !touch_row(c));
-
-    // -- pebble game on the point-distance graph --
-    let (clusters, redundant) = distance_rigidity(sk);
-
-    // -- entity states --
-    let under_set: BTreeSet<u32> = under_params.iter().copied().collect();
-    let conflict_ids: BTreeSet<u32> = match &conflict_set {
-        Some(c) => c.iter().copied().collect(),
-        // stalled, the violated rows are no verdict on anything they touch: an entity keeps
-        // the determination the rank gives it, which holds at a non-solution as well
-        None if stalled => BTreeSet::new(),
-        None => violated.iter().copied().collect(),
-    };
+/// Each primitive's state, by the worst any constraint touching it (or a child of it) says:
+/// `blamed` for a conflict, `in_over`, or a parameter in `under` — and no parent better than its
+/// worst child.
+fn entity_states(
+    sk: &Sketch,
+    blamed: &BTreeSet<u32>,
+    in_over: &BTreeSet<u32>,
+    under: &BTreeSet<u32>,
+) -> BTreeMap<EntRef, State> {
     let mut touched: BTreeMap<EntRef, Vec<u32>> = BTreeMap::new();
     for c in sk.hard_constraints() {
         for e in c.entities() {
@@ -1014,11 +806,11 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     for &e in &ents {
         let empty = Vec::new();
         let cs = touched.get(&e).unwrap_or(&empty);
-        let st = if cs.iter().any(|c| conflict_ids.contains(c)) {
+        let st = if cs.iter().any(|c| blamed.contains(c)) {
             State::Conflict
-        } else if cs.iter().any(|c| over_set.contains(c)) {
+        } else if cs.iter().any(|c| in_over.contains(c)) {
             State::Over
-        } else if sk.entity_params(e).iter().flat_map(|&p| free_of(p)).any(|p| under_set.contains(&p)) {
+        } else if sk.entity_params(e).iter().flat_map(|&p| free_of(p)).any(|p| under.contains(&p)) {
             State::Under
         } else {
             State::Well
@@ -1033,32 +825,29 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             }
         }
     }
-    if let Some(w) = &wit {
-        warnings.extend(w.warnings.iter().cloned());
-    }
+    state
+}
 
-    let parameters = driven(sk, sys, &row_c, want_numeric);
-    // the structural matching is a *generic* upper bound on the rank; where the numeric
-    // cross-check ran it is the truth at this configuration, and it is what decides what moves
-    let effective_rank = numeric_rank.unwrap_or(dm.rank);
-    let dof = n_cols as i64 - effective_rank as i64;
-    let structural_dof = n_cols as i64 - dm.rank as i64;
-    let n_redundant = adj.len() as i64 - effective_rank as i64;
-    let structural_n_redundant = adj.len() as i64 - dm.rank as i64;
-    // `over` only when something is actually worth removing: a rank deficiency alone is not
-    // enough, since a dependency can be shared between a user constraint that is still doing work
-    // and a primitive's own definition, leaving nothing to delete — and a relation-only theorem
-    // leaves `implied` constraints that *could* go but need not, which is not "over" either
+/// The drawing's one word.  `over` only when something is actually worth removing: a rank
+/// deficiency alone is not enough, since a dependency can be shared between a user constraint
+/// that is still doing work and a primitive's own definition, leaving nothing to delete — and a
+/// relation-only theorem leaves `implied` constraints that *could* go but need not, which is not
+/// "over" either.
+fn status(
+    settled: bool,
+    stalled: bool,
+    violated: &[u32],
+    conflicts: Option<&[u32]>,
+    over: &[u32],
+    dof: i64,
+) -> State {
     // a pose no solve settled at, every row reading as holding and no conflict found: unsolved,
     // and no more is known (#449)
-    let unsolved = !opts.settled
-        && violated.is_empty()
-        && conflict_set.as_ref().map(|c| c.is_empty()).unwrap_or(true);
-    let status = if stalled || unsolved {
+    let unsolved =
+        !settled && violated.is_empty() && conflicts.map(|c| c.is_empty()).unwrap_or(true);
+    if stalled || unsolved {
         State::Unsolved
-    } else if conflict_set.as_ref().map(|c| !c.is_empty()).unwrap_or(false)
-        || !violated.is_empty()
-    {
+    } else if conflicts.is_some_and(|c| !c.is_empty()) || !violated.is_empty() {
         State::Conflict
     } else if !over.is_empty() {
         State::Over
@@ -1066,50 +855,6 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         State::Under
     } else {
         State::Well
-    };
-    Diagnosis {
-        n_params: n_cols,
-        n_equations: adj.len(),
-        structural_rank: dm.rank,
-        numeric_rank,
-        numeric_skipped,
-        by_parts,
-        geometric_dependency: numeric_rank
-            .map(|nr| dm.rank.saturating_sub(nr))
-            .unwrap_or(0),
-        shaky,
-        over,
-        implied,
-        expected,
-        claims_theorem,
-        claims_violated,
-        claims_consuming,
-        bounds_violated,
-        bounds_active,
-        orientations_violated: crate::solve::orientations_broken(sk),
-        collapsed: crate::solve::collapsed(sk),
-        extrema: crate::variational::extrema(sk),
-        // **judged, at the very end, and never compiled.**  A solid claim reads the solved pose
-        // and the terms over it; it enters no system, so nothing above this line can see it and
-        // nothing it says can move a number.
-        solid_claims: if opts.solid_claims { judge_solids(sk) } else { Vec::new() },
-        under_params,
-        structural_under_params: structural_under,
-        components,
-        entity_state: state,
-        rigid_clusters: clusters,
-        redundant_distances: redundant,
-        violated,
-        conflicts: conflict_set,
-        out_of_reach,
-        warnings,
-        witness: wit,
-        dof,
-        structural_dof,
-        n_redundant,
-        structural_n_redundant,
-        status,
-        parameters,
     }
 }
 

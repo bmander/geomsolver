@@ -680,6 +680,32 @@ coaxial surfaces of revolution with spline meridians — two edges' hyperboloids
 in closed form (`ssi::spline_spline`, brep.md), where tracing them made the leaning bar's cut 300 s
 of crossing searches against 2400-point traces; it is 12 s.
 
+**A sheet meeting itself (#780 L1, X5; docs/swept-solid-design.md step 6).** A ball's pipe under a
+screw comes back onto itself where its roll passes a turn at a lead short of its diameter. In the
+screw's helical coordinates the pipe is its circle's points' helices, so it meets itself exactly
+where the circle holds two points at one distance from the axis whose `z − κψ` differ by a whole
+number of turns' rise, each such pair a helix (`geom::Pipe::returns`, isolated with a bound;
+`swept_loci::a_pipe_comes_back_onto_itself_along_helices`). Such a pipe is entered in stretches of
+the roll of at most half a turn, each meeting itself nowhere, no two joints, nor a joint and an
+end, a return's turn apart (`closed::pipe_stretches`); one that does not come back is
+entered whole, as before. Two stretches of one pipe meet in closed form, round the circle where
+they abut and along those helices, and a plane holding a circle of the pipe meets it in that circle
+and its level-by-level cut (`ssi`'s `pipes_meeting`, `pipe_plane`;
+`swept_loci::two_stretches_of_one_pipe_meet_round_their_circle_and_along_helices`). A ball reaching
+its centre's helix's radius of curvature, where the pipe folds, or the axis, is refused by what it
+is (`Unbuilt::Curved` at its centre; `a_ball_screwed_tighter_than_its_radius_is_refused_by_name`).
+The gate, `swept_loci::a_ball_screwed_past_a_turn_meets_its_own_pipe_and_closes_into_its_sweep`
+(slow tier): a ball of radius 1 three out from the axis screwed a turn and a half at 0.2 a radian and
+two and a half turns at 0.12, each to 1e-9 of a volume worked apart in helical coordinates (each
+circle's angles covered, `min(2π, σ_max − σ_min)`, integrated with its corners cut; held first to
+Weyl's tube below a turn, `the_worked_volume_of_a_ball_screwed_short_of_a_turn_is_weyls_tube`), to a
+Monte Carlo of the definition and to membership; before L1 the judge refused it (`Unbuilt::Wrong`).
+The failure met on the way, kept reduced: a point past a patch's rim, on its surface's extension,
+is in none of its face (`query::Located::face_place`, its foot off the patch read from the
+parameters in hand and held to the surface's inverse; `a_point_past_a_patchs_rim_is_in_none_of_its_face`)
+— beside the circle where two stretches abut, the one whose rim it was had read it in, and a ray
+crossing there was counted twice.
+
 **K2's chart, contacts read at each instant (#721 K2, `brep::swept::instant`):** under a motion no
 constant twist takes, a face of revolution's contact on each ring is still `A cos θ + B sin θ + C = 0`
 against the instant's twist read on the tool (`Twist::body`, `Surface::ring_contact`), so it sweeps a
