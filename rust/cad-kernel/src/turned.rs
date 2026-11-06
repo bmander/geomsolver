@@ -39,6 +39,8 @@
 //! the root of a function that runs one way over its stretch set equal to `−cos τ`, so the curve is
 //! as smooth through its turning points as anywhere; each read in floats, its derivatives by the
 //! implicit function, its box grown from its samples.
+#[allow(unused_imports)]
+use crate::util::fmath::Det;
 use crate::geom::{Box3,Frame,Rigid,V};
 use crate::util::space::{dot,sub};
 
@@ -335,7 +337,7 @@ impl Section {
     /// `C` at the jet `v`.
     fn c<T: Num>(&self,v: Jet<T>) -> Jet<T> {
         let [r,z] = self.of.meridian(v);
-        (Jet::of(self.d)-z.times(self.n[2]))/r.times(self.n[0].hypot(self.n[1]))
+        (Jet::of(self.d)-z.times(self.n[2]))/r.times(self.n[0].dhypot(self.n[1]))
     }
     /// The cut of the plane `n · x = d` (unit `n`, in the turn's frame) through the surface of
     /// revolution of `of`'s meridian over `span`, as its curves' spans of `τ`: none where the plane is
@@ -343,7 +345,7 @@ impl Section {
     /// one way over the span; no curve where it misses.
     pub fn new(of: Contact,n: V,d: f64,span: [f64;2]) -> Option<(Section,Vec<[f64;2]>)> {
         use std::f64::consts::{PI,TAU};
-        if !(n[0].hypot(n[1]) > 1e-9) { return None }
+        if !(n[0].dhypot(n[1]) > 1e-9) { return None }
         let mut k = Section {of,n,d,v:[span[0].min(span[1]),span[0].max(span[1])],ends:[0.;2]};
         let mut sign = 0.;
         let one_way = pieces(k.v,64).all(|[a,b]| {
@@ -356,7 +358,7 @@ impl Section {
         k.ends = k.v.map(|v| k.c(Jet::<f64>::of(v)).v);
         let (lo,hi) = (k.ends[0].min(k.ends[1]),k.ends[0].max(k.ends[1]));
         if lo >= 1. || hi <= -1. { return Some((k,vec![])) }
-        let (ta,tb) = (if lo <= -1. { 0. } else { (-lo).acos() },if hi >= 1. { PI } else { (-hi).acos() });
+        let (ta,tb) = (if lo <= -1. { 0. } else { (-lo).dacos() },if hi >= 1. { PI } else { (-hi).dacos() });
         let spans = match (ta == 0.,tb == PI) {
             (true,true) => vec![[0.,TAU]],
             (true,false) => vec![[-tb,tb]],

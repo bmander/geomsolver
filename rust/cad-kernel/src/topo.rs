@@ -8,6 +8,8 @@
 //! reversed face's the other way round — which is what lets the volume be read off the loops alone
 //! (`props`). A closed shell uses every edge twice, once each way, except a degenerate edge (a
 //! pole or apex), which its one face uses once.
+#[allow(unused_imports)]
+use crate::util::fmath::Det;
 use super::geom::{include,widen,Box3,Curve,Rigid,Surface,Uv,V,EMPTY};
 use crate::util::space::{add,distance,dot,norm,normalised,scale,sub};
 
@@ -559,7 +561,7 @@ impl Brep {
                 let n = if face.reversed { crate::util::space::scale(n,-1.) } else { n };
                 let way = if co.reversed { crate::util::space::scale(d,-1.) } else { d };
                 let into = crate::util::space::cross(n,way);
-                let angle = dot(into,b).atan2(dot(into,a));
+                let angle = dot(into,b).datan2(dot(into,a));
                 // turning on about `d` from `into`, the material (against `n`) lies ahead or behind
                 let on = dot(crate::util::space::scale(n,-1.),crate::util::space::cross(d,into)) > 0.;
                 round.push((angle,on,k));

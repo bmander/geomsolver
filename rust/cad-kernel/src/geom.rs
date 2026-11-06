@@ -472,7 +472,7 @@ impl Pipe {
     /// (The circle's offset from its centre, square to the axis, is at most `r` long.)
     pub fn spread(&self) -> Option<f64> {
         let d = self.offset()?;
-        (self.r < d).then(|| (self.r/d).asin())
+        (self.r < d).then(|| (self.r/d).dasin())
     }
     /// **Where the pipe comes back onto itself** (#780 L1, X5: a ball screwed through more than a
     /// turn at a lead short of its diameter): the points `c(θ₁)` of the start's circle onto which

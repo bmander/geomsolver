@@ -2496,7 +2496,7 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
         for l in o.loops() {
             for k in 0..l.len() {
                 let (a,b) = (l[k],l[(k+1)%l.len()]);
-                uv_len += (b[0]-a[0]).hypot(b[1]-a[1]);
+                uv_len += (b[0]-a[0]).dhypot(b[1]-a[1]);
                 space_len += distance(f.surface.point(a),f.surface.point(b));
             }
         }

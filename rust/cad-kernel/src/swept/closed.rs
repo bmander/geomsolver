@@ -775,7 +775,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         // the normal `cos α ρ̂(u) − sin α z` square to the slide:
                         // `A cos u + B sin u = C`
                         let (aa,bb,cc) = (ca*dot(d,f.x),ca*dot(d,f.y),sa*dot(d,f.z));
-                        let rr = aa.hypot(bb);
+                        let rr = aa.dhypot(bb);
                         if !(rr > 1e-12*norm(d)) || cc.abs() > rr { continue }
                         let (phi,delta) = (bb.datan2(aa),(cc/rr).clamp(-1.,1.).dacos());
                         for u in [phi+delta,phi-delta] {
@@ -1129,7 +1129,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                             let w = cross(axis,sub(f.o,c));
                             let kappa = screw.advance/std::f64::consts::TAU*dot(f.z,axis).signum();
                             let (aa,bb,cc) = (screw.ratio*ca*dot(w,f.x),screw.ratio*ca*dot(w,f.y),sa*kappa);
-                            let rr = aa.hypot(bb);
+                            let rr = aa.dhypot(bb);
                             if !(rr > 1e-12*(screw.ratio.abs()*size+kappa.abs())) || cc.abs() >= rr { continue }
                             let (phi,delta) = (bb.datan2(aa),(cc/rr).clamp(-1.,1.).dacos());
                             for u in [phi+delta,phi-delta] {
@@ -1329,14 +1329,14 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             let m = pose_at(a+(b-a)*k as f64/STEPS as f64)?;
             for &p in &corners {
                 let x = f.local(m.point(p));
-                reach = reach.max(x[0].hypot(x[1]));
+                reach = reach.max(x[0].dhypot(x[1]));
                 for i in 0..3 { l[i] = l[i].min(x[i]); h[i] = h[i].max(x[i]) }
             }
         }
-        let sag = reach*(1.-(0.5*(screw.ratio*(b-a)).abs()/STEPS as f64).cos());
+        let sag = reach*(1.-(0.5*(screw.ratio*(b-a)).abs()/STEPS as f64).dcos());
         for &p in &held {
             let x = f.local(p);
-            reach = reach.max(x[0].hypot(x[1]));
+            reach = reach.max(x[0].dhypot(x[1]));
             for i in 0..3 { l[i] = l[i].min(x[i]); h[i] = h[i].max(x[i]) }
         }
         let margin = 0.05*(0..3).map(|i| h[i]-l[i]).fold(0.,f64::max)+tol;
@@ -1347,7 +1347,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         let section = Profile {origin:rim[0],normal:screw.axis,names:Vec::new(),
             loops:vec![(0..4).map(|k| ProfileEdge::Line {a:rim[k],b:rim[(k+1)%4]}).collect()]};
         let half = 0.5*(0..3).map(|i| h[i]-l[i]).fold(0.,f64::max);
-        let far = l[0].abs().max(h[0].abs()).hypot(l[1].abs().max(h[1].abs()));
+        let far = l[0].abs().max(h[0].abs()).dhypot(l[1].abs().max(h[1].abs()));
         (prism(&section,0.,h[2]-l[2])?,f.at(std::array::from_fn(|i| 0.5*(l[i]+h[i]))),half,Some((l[2],h[2],far)))
     };
     // only the candidates that carry some of the boundary: membership differing on their two sides
@@ -2034,7 +2034,7 @@ impl Band {
         let a = l[0].dhypot(l[1])/l[2].abs();
         // the angle of the least `w`, where `d_xy` points with `d_z` above nought, else opposite
         let least = l[1].datan2(l[0])+if l[2] < 0. { std::f64::consts::PI } else { 0. };
-        let tan = |v: f64| if v.abs() >= std::f64::consts::FRAC_PI_2-1e-12 { v.signum()*f64::INFINITY } else { v.tan() };
+        let tan = |v: f64| if v.abs() >= std::f64::consts::FRAC_PI_2-1e-12 { v.signum()*f64::INFINITY } else { v.dtan() };
         let (lo,hi) = (tan(self.v[0]),tan(self.v[1]));
         let (crosses_lo,crosses_hi) = (lo > -a,hi < a);
         if hi < -a || lo > a { return Ok(BandContact::None) }
@@ -2057,7 +2057,7 @@ impl Band {
         let (s,c) = centre.dsin_cos();
         let g = self.frame;
         let frame = Frame {o:g.o,x:add(scale(g.x,c),scale(g.y,s)),y:sub(scale(g.y,c),scale(g.x,s)),z:g.z};
-        let t = (0.5*half).tan();
+        let t = (0.5*half).dtan();
         crate::slid::Slid {frame,contact:crate::slid::Contact {big:self.big,small:self.small,d:frame.dir_local(unit(d)),side:1.},
             span:[-t,t],contour:false}
     }

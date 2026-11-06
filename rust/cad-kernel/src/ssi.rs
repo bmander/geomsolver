@@ -1113,10 +1113,10 @@ fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
             // + R₀ = 0`; held where the ruling stands within `tol` of the plane
             let (n,h,angle) = (f.z,dot(f.z,f.o),line.angle);
             let (p,q,r0) = (dot(n,perp(run)),dot(n,cross(z,run)),dot(n,z)*dot(z,run));
-            let amplitude = p.hypot(q);
+            let amplitude = p.dhypot(q);
             let mut held = Vec::new();
             if amplitude > 1e-12*norm(run) && r0.abs() <= amplitude {
-                let (phi,w) = (q.atan2(p),(-r0/amplitude).clamp(-1.,1.).acos());
+                let (phi,w) = (q.datan2(p),(-r0/amplitude).clamp(-1.,1.).dacos());
                 for base in [phi+w,phi-w] {
                     // every turn of the root the sheet's stretch holds, a margin past it
                     let first = ((angle.min(0.)-1e-2*angle.abs()-base)/std::f64::consts::TAU).floor() as i64;
@@ -1273,7 +1273,7 @@ fn screwed_overlap(a: &super::geom::Blend,b: &super::geom::Blend,tol: f64) -> Op
     if norm(sub(screw.at(f2.o,1.),f1.o)) > tol || norm(cross(screw.dir(f2.z,1.),f1.z)) > 1e-9 { return None }
     let a2 = a2*dot(k1,k2).signum();
     let (mine,theirs) = ([a1.min(0.),a1.max(0.)],[a2.min(0.)-turn,a2.max(0.)-turn]);
-    let slack = tol/(norm(perp(sub(f1.o,c1)))+r1).hypot(pitch1);
+    let slack = tol/(norm(perp(sub(f1.o,c1)))+r1).dhypot(pitch1);
     let shared = mine[1].min(theirs[1])-mine[0].max(theirs[0]);
     Some(Overlap {shared:if shared.abs() <= slack { 0. } else { shared },mine,theirs})
 }
@@ -1553,7 +1553,7 @@ fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Bl
             let d = perp(sub(f.o,o2));
             // |d + r (cos θ x + sin θ y)| = rad2: `2 r d·x cos θ + 2 r d·y sin θ = rad2² − |d|² − r²`
             let (a,b,c) = (2.*r*dot(d,f.x),2.*r*dot(d,f.y),rad2*rad2-dot(d,d)-r*r);
-            let rho = a.hypot(b);
+            let rho = a.dhypot(b);
             if rho <= tol*r { return None }
             let ratio = c/rho;
             let phi = b.datan2(a);
@@ -1590,7 +1590,7 @@ fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Bl
             if !cone && norm(perp(sub(cy.o,center))) <= tol {
                 // coaxial: the same at every `v`, helices
                 let (a,b,c) = coefficients(0.);
-                let rho = a.hypot(b);
+                let rho = a.dhypot(b);
                 if rho <= 1e-300 { return Some(vec![]) }
                 let ratio = c/rho;
                 let phi = b.datan2(a);
@@ -1639,8 +1639,8 @@ fn circle_branches(coefficients: &dyn Fn(f64) -> (f64,f64,f64),coincide: &[f64],
     const STEP: f64 = std::f64::consts::PI/1024.;
     let hair = 1e-6;
     let angles = |(a,b,c): (f64,f64,f64)| { let (phi,w) = (b.datan2(a),(c/a.hypot(b).max(1e-300)).clamp(-1.,1.).dacos()); [phi+w,phi-w] };
-    let roots = |v: f64| { let (a,b,c) = coefficients(v); (a.hypot(b) > 0.).then(|| angles((a,b,c))) };
-    let real = |v: f64| { let (a,b,c) = coefficients(v); let rho = a.hypot(b); rho > 0. && c.abs() <= rho };
+    let roots = |v: f64| { let (a,b,c) = coefficients(v); (a.dhypot(b) > 0.).then(|| angles((a,b,c))) };
+    let real = |v: f64| { let (a,b,c) = coefficients(v); let rho = a.dhypot(b); rho > 0. && c.abs() <= rho };
     let limit = |w: f64,side: f64| {
         let ((a1,b1,c1),(a0,b0,c0)) = (coefficients(w+hair),coefficients(w-hair));
         Some(angles((side*(a1-a0),side*(b1-b0),side*(c1-c0))))
@@ -2054,7 +2054,7 @@ pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
         if !(det.abs() > 0.) { return None }
         let (ds,dt) = ((-gs*gtt+gt*gst)/det,(-gt*gss+gs*gst)/det);
         x = on_a(add(x,add(scale(f.x,ds),scale(f.y,dt))));
-        let step = ds.hypot(dt);
+        let step = ds.dhypot(dt);
         if step <= 1e-3*tol || step <= 0.1*tol && step >= 0.5*last { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
         last = step;
     }

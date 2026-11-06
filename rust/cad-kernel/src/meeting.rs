@@ -20,6 +20,8 @@
 //! already traced, and any it cannot clear is traced from in turn, until none is left. Closed forms
 //! (`ssi::intersect`: the quadric pairs, coaxial surfaces of revolution, a screwed line's sheets)
 //! are taken where they exist; the search still runs over them for the critical points.
+#[allow(unused_imports)]
+use crate::util::fmath::Det;
 use super::geom::{Curve,Surface,Uv,V};
 use super::ssi::{intersect,Ssi};
 use crate::util::space::{cross,distance,norm,scale,sub};
@@ -166,8 +168,8 @@ fn eigen(m: [[f64;2];2]) -> ([f64;2],[[f64;2];2]) {
     let (a,b,c) = (m[0][0],m[0][1],m[1][1]);
     let (mean,dev) = (0.5*(a+c),(0.25*(a-c)*(a-c)+b*b).sqrt());
     let (l1,l2) = (mean+dev,mean-dev);
-    let phase = 0.5*(2.*b).atan2(a-c);
-    let (s,co) = phase.sin_cos();
+    let phase = 0.5*(2.*b).datan2(a-c);
+    let (s,co) = phase.dsin_cos();
     let (v1,v2) = ([co,s],[-s,co]);
     if l1.abs() >= l2.abs() { ([l1,l2],[v1,v2]) } else { ([l2,l1],[v2,v1]) }
 }
@@ -217,7 +219,7 @@ pub fn critical_set(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Vec<Crit
                 step[0] += c*vs[q][0];
                 step[1] += c*vs[q][1];
             }
-            let long = step[0].hypot(step[1]);
+            let long = step[0].dhypot(step[1]);
             if long > size/8. { step = [step[0]*size/8./long,step[1]*size/8./long] }
             // back to the parameters
             let raw = [step[0]/k[0],step[1]/k[1]];
@@ -234,7 +236,7 @@ pub fn critical_set(a: &Surface,d: [[f64;2];2],b: &Surface,tol: f64) -> Vec<Crit
         // settled on the non-null ways alone, `f` may still slope along the null one: a fold (where
         // a plane leaning a hair crosses a vault's crown), no critical point — read by the level
         // curves, not as a ridge
-        if g[0].hypot(g[1]) > 1e-7 { continue }
+        if g[0].dhypot(g[1]) > 1e-7 { continue }
         let (l,vs) = eigen(m);
         let rank = rank_of(l,1e-9/size.max(1e-300));
         // a point of a critical curve met before stands for the rest of it near there; a point once
@@ -418,7 +420,7 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
             for _ in 0..100_000 {
                 if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (a.point(uv),format!("{} × {} (a level curve)",a.kind(),b.kind()))) { break }
                 let (_,g,k) = held.take().unwrap_or_else(|| metric_grad(a,b,uv,h));
-                let gn = g[0].hypot(g[1]);
+                let gn = g[0].dhypot(g[1]);
                 if !(gn > 0.) { break }
                 let t = [-g[1]*sense/gn,g[0]*sense/gn];
                 // the step looked ahead before it is taken, its point pulled onto the curve and the
@@ -427,7 +429,7 @@ pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64)
                 let look = |hs: f64| -> Option<(Uv,(f64,[f64;2],[f64;2]))> {
                     let q = onto([uv[0]+hs*t[0]/k[0],uv[1]+hs*t[1]/k[1]])?;
                     let jet = metric_grad(a,b,q,h);
-                    let n2 = jet.1[0].hypot(jet.1[1]);
+                    let n2 = jet.1[0].dhypot(jet.1[1]);
                     (n2 > 0. && !((g[0]*jet.1[0]+g[1]*jet.1[1])/(gn*n2) < 0.995)).then_some((q,jet))
                 };
                 let mut ahead = None;
@@ -668,7 +670,7 @@ fn descents(a: &Surface,d: [[f64;2];2],b: &Surface,uv: Uv,tol: f64) -> Vec<V> {
     let mut out = Vec::new();
     for k in 0..8 {
         let ang = std::f64::consts::TAU*k as f64/8.;
-        let mut x = [uv[0]+0.01*w[0]*ang.cos(),uv[1]+0.01*w[1]*ang.sin()];
+        let mut x = [uv[0]+0.01*w[0]*ang.dcos(),uv[1]+0.01*w[1]*ang.dsin()];
         let sign = f(a,b,uv).signum();
         let mut last = f(a,b,x);
         for _ in 0..400 {
