@@ -108,6 +108,16 @@ triangles with no area as written (`mesh::flat_triangles`), the core's export sa
 near it (the refusal's witness), how long and thin it is, whether the mesh or float32 flattened it,
 and, under the bar, the likely sliver of two cuts ending all but flush. Nothing is dropped: a triangle
 dropped opens the shell (`brep_export.rs::a_sliver_float32_flattens_is_refused_naming_its_faces_and_where`).
+**A sliver the B-rep holds is said wherever it stands** (#836, `brep::export::slivers`): a face of
+the built solid thinner than the export's tolerance somewhere (the fabrication tolerance where none
+is named), or an edge shorter than it (`brep::sliver::slivers`), is said beside every file written of
+it — the STEP, a written STL, `--step-assembly` for each part, and `--png` of a solid drawn from
+its exact build (`slivers_drawn`) — as `solventc: PATH: …`, in the core's words: the solid, how many
+faces and edges, the first by name and how thin, the faces it is thin between, a point on it (the
+witness), and what to move. A warning, not a refusal: the B-rep is exact and holds what was drawn,
+the ends nearer than the Booleans' reach having been made one (brep.md, `brep::flush`), so what is
+said is a step drawn under what can be made
+(`brep_export::a_sliver_the_brep_holds_is_said_wherever_it_stands`).
 The reader's own refusal names the triangle's number and where it is. Failure keeps
 old outputs; renames are atomic per file, not across files. Native-path tests must not hide legacy
 mesh defects.

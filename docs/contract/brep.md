@@ -602,6 +602,27 @@ image in a face's parameters (`Pcurve::straight`) is its corners in `loop_area` 
 check. So a shaper's run of 270 bites against a blank (`bench bites`, in `make bench`) builds in 3.3 s
 where it took 21.8; what remains grows with the blank's two faces every bite meets (each of 744 edges
 by the end, traced again at every bite). `brep::a_run_of_cuts_hands_its_far_faces_on` is the gate.
+**An end all but flush with a face is on it** (#836, `brep::flush`): before a body's written
+operand is combined with the solid (`boolean::combined_written`, which `recipe::body` and the
+export's `combine` over swept material call, at the Boolean's own tolerance; never a round's or a
+chamfer's, built on the faces already, `combined_known`), each planar face of the
+operand standing parallel to a plane of a face of the solid near it, farther than the Boolean's
+tolerance but within `FLUSH` (a thousand) of them — a part in a million of the two solids' size,
+wherever they stand — is moved onto the nearest such plane, with every face of the operand on its
+plane: exactly, its plane, edges and corners carried along its normal and every other edge reaching
+it a line along the normal lengthened or shortened, the faces beside it (planes, cylinders and
+extrusions along the normal, which the move leaves where they were) given their uses anew. A face
+whose walls are anything else stays as drawn, as does every end farther off. So a cut ending a few
+nanometres past another's floor is cut on it and leaves no strip of wall
+(`brep_flush::an_end_within_reach_of_a_face_is_moved_onto_it`,
+`an_end_whose_walls_lean_is_left_where_it_is`, `brep_export::an_end_all_but_flush_with_a_face_is_cut_on_it`).
+**A sliver is found by its boundary** (`sliver::slivers`): a face thinner than a bar somewhere — two
+points of its boundary nearer than the bar, on edges sharing no vertex (no corner is a sliver,
+however sharp: a round's run-out meets its fill's cap tangentially, and a seam cut in pieces passes
+a vertex twice), where the boundary between them runs more than four bars and sixteen times their
+distance (two loops, or one far round) — and an edge shorter than the bar of no such face; a pole
+is none. Read off the B-rep, it is the same wherever the solid
+stands (`brep_flush::a_sliver_is_found_by_its_boundary_wherever_it_stands`).
 **The recipe is read once** (`recipe::Recipe::read`): every reader — this kernel's build and
 meridian, `section`, the swept cutter and sector, `solid::exact`/`canal`, the native host's
 `Session` — matches a typed `recipe::Node`, never the JSON; a profile stays as written
@@ -675,7 +696,9 @@ surface, `Net::extended`, only where what that puts in the blank is within the f
 as it is: an edge in the blank divides nothing; `brep_export.rs`'s 20-tooth gear), blank split
 (`boolean::split`), cells judged by the field (`sweep::sector`; else `sector::whole`), sector
 patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/export-worker.ts`
-(`gcs_solid_exact`), so native and wasm files are byte-identical: the core's trigonometry, `exp`,
+(`gcs_solid_exact`, and `gcs_solid_exact_note` for the sliver its solid holds, `brep::export::slivers`,
+which the page says beside the file as `solventc` does, #836), so native and wasm files are
+byte-identical: the core's trigonometry, `exp`,
 `ln`, `pow`, `hypot` are its own (`fmath`, `x.dsin()` via `Det`; no platform libm). With OCCT and
 `--verify-step full` the CLI reads our STEP back (`cad::read_back`). A face met twice is told apart
 by `cutter::OCCURRENCE`; a trace ends off a sheet's patch (`Surface::off_patch`, a revolution's or

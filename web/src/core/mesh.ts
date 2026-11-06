@@ -11,7 +11,7 @@
  * buffer, and the ragged small thing goes in JSON.  All three calls read one memoised answer. */
 import { Sketch } from './model.js';
 import type { BodyWord } from './program.js';
-import { core, lastError, takeBytes, takeJson, withBuf, withJson } from './wasm.js';
+import { core, lastError, takeBytes, takeJson, takeStr, withBuf, withJson } from './wasm.js';
 
 /** One face of the object, as a run of triangles into the mesh's buffers. */
 export interface Face {
@@ -218,6 +218,13 @@ export function exact(sk: Sketch, idx: number, kind: 'step' | 'stl', tolerance =
   const handle = core().gcs_solid_exact(sk.handle, idx, kind === 'step' ? 0 : 1, tolerance);
   if (!handle) throw new Error(lastError());
   return takeBytes(handle);
+}
+
+/** What the last `exact` export says beside its file (#836): a sliver its solid holds — a face
+ *  thinner than the tolerance somewhere, or an edge shorter — in the core's words, or '' where it
+ *  holds none. The file is written all the same. */
+export function exactNote(): string {
+  return takeStr(core().gcs_solid_exact_note());
 }
 
 /** Whether solid `idx` is drawn from a build of an earlier drawing while its new one is made

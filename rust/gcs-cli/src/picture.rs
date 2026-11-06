@@ -76,6 +76,9 @@ pub struct Ask<'a> {
     pub section: Vec<Basis>,
     /// Each object's colour, its part's (`colours::parts`, #676): the workspace's.
     pub colours: &'a std::collections::BTreeMap<usize, [u8; 3]>,
+    /// The export tolerance a sliver is read against (`--tolerance`; the fabrication tolerance
+    /// where none is given).
+    pub tolerance: Option<gcs_core::solid::export::Tolerance>,
 }
 
 /// The solids a picture draws: the one `--solid` names (else the objects under that name), or
@@ -138,12 +141,15 @@ fn seen(f: &Frame, p: [f64; 3]) -> [f64; 3] {
 }
 
 /// What a picture is, beside its PNG: each solid that did not evaluate, with the core's reason
-/// (left out of the picture, as the box leaves it out), and each drawn from its field or its
-/// facet term rather than its exact build, in the core's words (`report::unbuilt_text`, #762).
+/// (left out of the picture, as the box leaves it out), each drawn from its field or its facet
+/// term rather than its exact build, in the core's words (`report::unbuilt_text`, #762), and each
+/// sliver a drawn solid's exact build holds (`brep::export::slivers_drawn`, #836).
 pub struct Drawn {
     pub png: Vec<u8>,
     pub missing: Vec<String>,
     pub unbuilt: Vec<String>,
+    /// Each sliver a drawn solid's exact build holds, in the core's words (#836).
+    pub slivers: Vec<String>,
 }
 
 /// The picture of what `ask` names, seen from `ask.eye` (`Drawn`).
@@ -156,7 +162,7 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<Drawn, String> {
     gcs_core::brep::export::supply_exact_where(sk, &|i| chosen.contains(&i));
     // each solid evaluated once, its frame, its colour, its cut and its edges in the eye's
     // coordinates; its triangles are read from its own mesh when they are filled, not copied out
-    let (mut solids, mut missing, mut unbuilt) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut solids, mut missing, mut unbuilt, mut slivers) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
     let mut any = false;
     for i in chosen {
@@ -167,6 +173,11 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<Drawn, String> {
         // drawn, but not the solid an export builds: said, so a look is not read as a build
         if let Some(u) = solid.unbuilt() {
             unbuilt.push(gcs_core::report::unbuilt_text(sk, i, u));
+        }
+        // a sliver its exact build holds, thinner than the export's tolerance: said, as an export
+        // of it says it, so a look does not hide what a file of it holds (#836)
+        if let Some(s) = gcs_core::brep::export::slivers_drawn(sk, i, ask.tolerance) {
+            slivers.push(s.message);
         }
         any = true;
         let o = solid.origin().0;
@@ -256,7 +267,7 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<Drawn, String> {
             canvas.line(place(e[0]), place(e[1]), slack);
         }
     }
-    Ok(Drawn { png: crate::png::encode(w, h, &canvas.down()), missing, unbuilt })
+    Ok(Drawn { png: crate::png::encode(w, h, &canvas.down()), missing, unbuilt, slivers })
 }
 
 /// How a triangle is filled: shaded, where it is the solid's own surface, or hatched, where it
