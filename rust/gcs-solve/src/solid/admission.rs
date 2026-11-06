@@ -491,10 +491,11 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     for &swept in order.iter().filter(|s| asked[s] == Asked::Subtraction) { planar.push(subtract(swept)?) }
     order.retain(|s| !matches!(asked[s],Asked::Planar | Asked::Subtraction));
     // a placement's check by the class its motion is in: the kernel's rows (`brep::swept::admission`)
+    let mm = cad::millimetres(sk);
     let check = |contacts: &SweepContacts,lone: Option<&Lone>,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)|
         -> Result<(SweepEvidence,Reads),Failure> {
         let path = contacts.motion().path().map_err(|e| (Condition::Motion,e,None))?;
-        let sweep = rows::Generating {tool:contacts.tool(),path,roll:contacts.domain(),whole:contacts.whole()};
+        let sweep = rows::Generating {tool:contacts.tool(),path,roll:contacts.domain(),whole:contacts.whole(),mm};
         let sampling = options.sampling();
         let failed = |(row,m,w): crate::brep::swept::constant_twist::Failure| (Condition::from(row),m,w);
         match contacts.motion().twist() {

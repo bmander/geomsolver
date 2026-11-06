@@ -30,7 +30,12 @@ draws a point in the **innermost frame of its path with axes** (a plane, or a sp
 a chart), and the path itself is what it rides on; a frame with axes further out says nothing of
 where, which is W115 — but for a plane standing at the outer frame's own place, one of its
 standard datums (#542, [0.169], `Sketch::plane_at`), which is where in it a definition standing
-in the frame draws.  So a body standing in `f` that draws `in std.front { … }` is drawn in `f`'s front and
+in the frame draws, and for a frame declared standing in a spatial outer one, which rides it
+(#820): a body's own `normal := plane(…)` drawn `in normal { … }`, its instance seated in a frame
+of its own, says nothing W115 would say.  A plane is no frame a body stands in, so one declared
+in a view is no plane of the view's and stays warned.  `planes::said_nothing` judges each once
+every frame's path is read, whatever order they are declared in
+(`a_plane_a_seated_body_declares_and_draws_in_says_nothing_of_its_frame`).  So a body standing in `f` that draws `in std.front { … }` is drawn in `f`'s front and
 rides `f` (and whatever `f` rides) by this rule alone: the datums stand at the frame's rest pose,
 built over its chart and riding nothing themselves, and an instance in a frame with a joint is
 carried whole at a roll with no `under:` (`tests/frame_datums.rs`,

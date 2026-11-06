@@ -35,8 +35,9 @@ pub(super) fn memberships(
     let ready: Vec<&&Stmt> = body.iter().filter(first)
         .chain(body.iter().filter(|st| !first(st) && !reads(st))).collect();
     let mut waiting: Vec<&&Stmt> = body.iter().filter(|st| !first(st) && reads(st)).collect();
+    let mut nested: Vec<Nested> = Vec::new();
     for st in ready {
-        member(sk, res, map, st, skip, false, diags);
+        member(sk, res, map, st, skip, false, &mut nested, diags);
     }
     loop {
         let (now, later): (Vec<&&Stmt>, Vec<&&Stmt>) =
@@ -46,12 +47,43 @@ pub(super) fn memberships(
             break;
         }
         for st in now {
-            member(sk, res, map, st, skip, false, diags);
+            member(sk, res, map, st, skip, false, &mut nested, diags);
         }
     }
     for st in waiting {
-        member(sk, res, map, st, skip, true, diags);
+        member(sk, res, map, st, skip, true, &mut nested, diags);
     }
+    // judged once every frame's own path is known, whatever order they are declared in
+    for n in nested {
+        said_nothing(sk, map, n, diags);
+    }
+}
+
+/// A point drawn in a frame with axes inside another with axes (§6.7, #383): drawn in the inner
+/// one, and only riding the outer one.
+struct Nested {
+    inner: usize,
+    outer: usize,
+    at: Span,
+    stmt: StmtId,
+}
+
+/// Whether the outer frame of a `Nested` says nothing of where the point is (W115): it does
+/// when the inner frame is one of its own — a datum standing at its place (#542), or a frame
+/// declared standing in it, which rides it (#820): a body's `normal := plane(…)` and
+/// `in normal { … }`, its instance seated in a frame of its own.  A plane is no frame a body
+/// stands in, so a frame declared in a plane is no plane of its.
+fn said_nothing(sk: &Sketch, map: &SourceMap, n: Nested, diags: &mut Vec<Diag>) {
+    let Nested { inner, outer, at, stmt } = n;
+    let (fi, fo) = (&sk.frames[inner], &sk.frames[outer]);
+    if fi.o == fo.o || (!fo.planar() && fi.rides.contains(&(outer as u32))) {
+        return;
+    }
+    let who = |f: usize| said(sk, map, EntRef::frame(f));
+    diags.push(Diag::within(Code::W115, at, stmt, format!(
+        "drawn in `{}`, so the `{}` around it says nothing of where: a frame with axes \
+         inside another draws what is in it, and the outer one is ridden on",
+        who(inner), who(outer))));
 }
 
 /// Whether statement `st` names a frame through a point not drawn yet (`in o.plane`).
@@ -104,6 +136,7 @@ fn member(
     st: &Stmt,
     skip: &BTreeSet<StmtId>,
     last: bool,
+    nested: &mut Vec<Nested>,
     diags: &mut Vec<Diag>,
 ) {
     let StmtKind::Decl(d) = &st.kind else { return };
@@ -140,20 +173,12 @@ fn member(
         return;
     }
     // it is drawn in the innermost frame of the path with axes; one further out with axes
-    // says nothing, which is said
+    // may say nothing, which is said once every frame's path is read (`said_nothing`)
     let charted = |sk: &Sketch, f: usize| sk.frames[f].planar() || sk.frames[f].chart.is_some();
     let charts: Vec<(usize, Span)> =
         path.iter().copied().filter(|&(f, _)| charted(sk, f)).collect();
-    // — but for one standing where the outer one does, its own datum (#542), which is where in
-    // it a body standing in it draws
     if let [.., (outer, at), (inner, _)] = charts[..] {
-        if sk.frames[inner].o != sk.frames[outer].o {
-            let who = |f: usize| said(sk, map, EntRef::frame(f));
-            fail(Code::W115, at, format!(
-                "drawn in `{}`, so the `{}` around it says nothing of where: a frame with axes \
-                 inside another draws what is in it, and the outer one is ridden on",
-                who(inner), who(outer)));
-        }
+        nested.push(Nested { inner, outer, at, stmt: st.id });
     }
     let (plane, r_span) = charts.last().copied()
         .or_else(|| path.last().copied()).expect("a membership names a frame");
