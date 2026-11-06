@@ -375,6 +375,48 @@ fn cones_at_one_apex((c,r,half): (&Frame,f64,f64),(k,s,kalf): (&Frame,f64,f64),t
     Some(out)
 }
 
+/// **A touch `intersect` recognises pair by pair** (#810, #780 R5): one surface held to stand
+/// where a sweep's construction put it beside another, and their touch written in closed form. The
+/// closed class gives each of these to its arrangement by construction (`boolean::Given`); each
+/// can be bypassed (`bypassing`), so a sweep is shown to build through its given touches alone.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Recognised {
+    /// A leaning round face at a pose of a turn against the surface its own contact turns into
+    /// (#780 C3, `own_contact`).
+    OwnContact = 1,
+    /// A torus at a pose of a slide against the cylinder its contact sweeps (#805, `slid_meeting`).
+    SlidTouch = 2,
+    /// A plane or a cylinder holding a sharp circle against the ring the circle turns into (#780 L2,
+    /// `plane_holding_rim`, `side_holding_rim`).
+    RimHeld = 4,
+}
+
+thread_local! {
+    /// The recognitions bypassed on this thread (`bypassing`), as their bits.
+    static BYPASSED: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+/// **`f` with the recognitions `forms` bypassed** (#810): `intersect` leaves those pairs to be traced
+/// unless their meeting is given, here and on the threads `util::par` runs `f`'s work on.
+pub fn bypassing<R>(forms: &[Recognised],f: impl FnOnce() -> R) -> R {
+    let mask = forms.iter().fold(bypassed_mask(),|m,&r| m | r as u8);
+    under_bypass(mask,f)
+}
+
+/// The recognitions bypassed on this thread, as their bits (what `util::par` hands its workers).
+pub fn bypassed_mask() -> u8 { BYPASSED.with(|b| b.get()) }
+
+/// `f` with exactly the recognitions `mask` bypassed, the thread's own put back after.
+pub fn under_bypass<R>(mask: u8,f: impl FnOnce() -> R) -> R {
+    let before = BYPASSED.with(|b| b.replace(mask));
+    let out = f();
+    BYPASSED.with(|b| b.set(before));
+    out
+}
+
+/// Whether `form` is bypassed on this thread.
+fn bypassed(form: Recognised) -> bool { bypassed_mask() & form as u8 != 0 }
+
 /// Where two surfaces meet (`tol` a length).
 pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
     if let Some(met) = pulled_back(a,b,tol,true) { return met }
@@ -421,11 +463,12 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         (Surface::Cone(c,r,half),Surface::Cone(k,s,kalf)) if let Some(lines) = cones_at_one_apex((&c,r,half),(&k,s,kalf),tol) =>
             Ssi::Curves(lines),
         (s @ (Surface::Cylinder(..) | Surface::Cone(..)),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),s @ (Surface::Cylinder(..) | Surface::Cone(..)))
-            if let Some(curves) = own_contact(&s,&c,tol) => Ssi::Curves(curves),
+            if !bypassed(Recognised::OwnContact) && let Some(curves) = own_contact(&s,&c,tol) => Ssi::Curves(curves),
         (Surface::Plane(pl),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),Surface::Plane(pl))
-            if let Some(curves) = plane_holding_rim(&pl,&c,tol).or_else(|| plane_contact_section(&pl,&c)) => Ssi::Curves(curves),
+            if let Some(curves) = (!bypassed(Recognised::RimHeld)).then(|| plane_holding_rim(&pl,&c,tol)).flatten()
+                .or_else(|| plane_contact_section(&pl,&c)) => Ssi::Curves(curves),
         (Surface::Cylinder(cy,r),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),Surface::Cylinder(cy,r))
-            if let Some(curves) = side_holding_rim(&cy,r,&c,tol) => Ssi::Curves(curves),
+            if !bypassed(Recognised::RimHeld) && let Some(curves) = side_holding_rim(&cy,r,&c,tol) => Ssi::Curves(curves),
         (Surface::Plane(_),Surface::Cylinder(..)) | (Surface::Cylinder(..),Surface::Plane(_)) => {
             let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cylinder(c,r) = cy else { unreachable!() };
@@ -579,7 +622,7 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
 /// radius against the meridian's at its height — so the touch is all they share; else none, and the
 /// two are traced. (Traced, the touch along a curve came apart in two where nothing parted it, and
 /// a face holding it had a hole in no piece.)
-fn own_contact(s: &Surface,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
+pub(crate) fn own_contact(s: &Surface,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
     use crate::turned::{Jet,Turned};
     let Curve::Turned(t) = c else { return None };
     if t.posed { return None }
@@ -656,7 +699,7 @@ fn plane_contact_section(pl: &Frame,c: &Curve) -> Option<Vec<Curve>> {
 /// (`turned::Crossing`), which crosses the circle where the side's contact reaches the rim. None
 /// where the cylinder holds no turned copy of the circle (its axis the circle's normal turned about
 /// the turn's axis, through its centre, of its radius), or the loop is not one `Crossing` reads.
-fn side_holding_rim(cy: &Frame,radius: f64,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
+pub(crate) fn side_holding_rim(cy: &Frame,radius: f64,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
     let Curve::Turned(t) = c else { return None };
     let crate::turned::Source::Rim(rim) = t.source else { return None };
     if t.posed { return None }
@@ -676,7 +719,7 @@ fn side_holding_rim(cy: &Frame,radius: f64,c: &Curve,tol: f64) -> Option<Vec<Cur
 /// `D (1 + 2 q·k + D |k|²) = 0`, the circle itself (`D = 0`) and `|q + k/|k|²|² = r²`, a second
 /// circle of the same radius. None where the plane holds no turned copy of the circle (its normal
 /// the circle's turned about the axis, its centre on it), or `L` cannot be inverted.
-fn plane_holding_rim(pl: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
+pub(crate) fn plane_holding_rim(pl: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
     let Curve::Turned(t) = c else { return None };
     let crate::turned::Source::Rim(rim) = t.source else { return None };
     if t.posed { return None }
@@ -750,6 +793,7 @@ fn slid_meeting(h: &crate::slid::Slid,s: &Surface,tol: f64) -> Option<Vec<Curve>
     let d = h.slide();
     let g = s.frame();
     match *s {
+        Surface::Torus(..) if bypassed(Recognised::SlidTouch) => None,
         Surface::Torus(t,big,small) => {
             let k = h.contact;
             (norm(cross(t.z,h.frame.z)) <= 1e-9 && (big.abs()-k.big).abs() <= tol && (small.abs()-k.small).abs() <= tol

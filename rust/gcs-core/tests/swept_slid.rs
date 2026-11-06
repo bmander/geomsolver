@@ -318,3 +318,281 @@ fn a_slid_contours_cylinder_meets_its_neighbours_in_closed_form() {
         if k < 2 { for i in &inner { assert_eq!(intersect(s,i,1e-9),Ssi::Curves(vec![]),"the outer and the inner contours") } }
     }
 }
+
+/// **A mill with rounded corners** (#810, #780 R5): upright about `z` through the origin, its flat
+/// end on `z = 0`, radius `big`, `h` tall; its bottom corner a quarter round of radius `c` (a band of
+/// the torus of middle radius `big − c` about `z` at height `c`, tube `c`: a bull-nose), and its top
+/// corner one of radius `top` (none: a sharp rim) — held apart from the kernel.
+pub(crate) struct Mill { pub big: f64,pub c: f64,pub top: f64,pub h: f64 }
+
+impl Mill {
+    /// The tool, as the kernel builds it: its section turned once.
+    pub(crate) fn tool(&self) -> gcs_core::brep::topo::Brep {
+        use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+        let (big,c,top,h) = (self.big,self.c,self.top,self.h);
+        let at = |x: f64,z: f64| [x,0.,z];
+        let round = |o: V,r: f64,span: [f64;2]| ProfileEdge::Arc {frame:Frame::new(o,[0.,-1.,0.],[1.,0.,0.]),r,span:Some(span)};
+        let mut edges = vec![ProfileEdge::Line {a:at(0.,0.),b:at(big-c,0.)},round(at(big-c,c),c,[-PI/2.,0.]),
+            ProfileEdge::Line {a:at(big,c),b:at(big,h-top)}];
+        if top > 0. { edges.push(round(at(big-top,h-top),top,[0.,PI/2.])) }
+        edges.extend([ProfileEdge::Line {a:at(big-top,h),b:at(0.,h)},ProfileEdge::Line {a:at(0.,h),b:at(0.,0.)}]);
+        revolve(&Profile {origin:at(0.,0.),normal:[0.,1.,0.],names:Vec::new(),loops:vec![edges]},[0.;3],[0.,0.,1.],TAU).unwrap()
+    }
+    /// Its volume: the drum less the rings its corners' sections `r² (1 − π/4)` turn, each about its
+    /// centroid `r (10 − 3π)/(3 (4 − π))` in from the sharp corner each way, by Pappus.
+    pub(crate) fn volume(&self) -> f64 {
+        let ring = |r: f64| TAU*(self.big-r*(10.-3.*PI)/(3.*(4.-PI)))*r*r*(1.-PI/4.);
+        PI*self.big*self.big*self.h-ring(self.c)-ring(self.top)
+    }
+    /// A bound below the distance from `p` to the tool, nought on it and inside: it is the infinite
+    /// drum rounded at the bottom (its core `ρ ≤ big − c`, `z ≥ c`, grown by `c`) in common with the
+    /// one rounded at the top, and its distance from a common part is at least each's.
+    fn below(&self,p: V) -> f64 {
+        let (r,z) = (p[0].hypot(p[1]),p[2]);
+        let low = (r-(self.big-self.c)).max(0.).hypot((self.c-z).max(0.))-self.c;
+        let high = (r-(self.big-self.top)).max(0.).hypot((z-(self.h-self.top)).max(0.))-self.top;
+        low.max(high).max(0.)
+    }
+    /// **Its shadow along the unit `d`** (leaning off its axis and off square to it): the region its
+    /// outline seen along `d` bounds, `½ ∮ (x y′ − y x′)` over that outline in a frame square to
+    /// `d`. Seen along `d` the bottom and the top of the side are one ellipse shifted, and the
+    /// outline is: the bottom round's outer contact where it lies on the round (`tan v = −(d_x cos u
+    /// + d_y sin u)/d_z`, `v ≤ 0`: the half circle of `u` about the angle opposite where `d_xy`
+    /// points with `d_z` above nought — `[a, b]`), the side's rulings at `b` and `a`, where the
+    /// contact crosses the seam into the side's, and between them the top's: the top round's contact
+    /// where it lies on the round (`v ≥ 0`), or the sharp top rim, over the other half `[b, a + 2π]`.
+    /// Each arc by Gauss–Legendre over 256 pieces (exact to rounding), each ruling exactly.
+    pub(crate) fn shadow(&self,d: V) -> f64 {
+        let (big,h) = (self.big,self.h);
+        let (e1,e2) = gcs_core::space::across(d);
+        let flat = |p: V| [dot(p,e1),dot(p,e2)];
+        // ½ ∫ (x y′ − y x′) over a piece `p(t)`, `t` in `[a, b]`, its derivative `dp`
+        let swept = |p: &dyn Fn(f64) -> V,dp: &dyn Fn(f64) -> V,a: f64,b: f64| -> f64 {
+            const X: [f64;5] = [0.,-0.538469310105683,0.538469310105683,-0.906179845938664,0.906179845938664];
+            const W: [f64;5] = [0.568888888888889,0.478628670499366,0.478628670499366,0.236926885056189,0.236926885056189];
+            let n = 256;
+            (0..n).map(|k| {
+                let (lo,hi) = (a+(b-a)*k as f64/n as f64,a+(b-a)*(k+1) as f64/n as f64);
+                (0..5).map(|i| {
+                    let t = 0.5*(lo+hi)+0.5*(hi-lo)*X[i];
+                    let ([x0,y0],[x1,y1]) = (flat(p(t)),flat(dp(t)));
+                    W[i]*0.5*(hi-lo)*(x0*y1-y0*x1)
+                }).sum::<f64>()
+            }).sum::<f64>()/2.
+        };
+        let seg = |p: V,q: V| { let ([x0,y0],[x1,y1]) = (flat(p),flat(q)); (x0*y1-y0*x1)/2. };
+        let g = |u: f64| d[0]*u.cos()+d[1]*u.sin();
+        let dg = |u: f64| -d[0]*u.sin()+d[1]*u.cos();
+        // a round's outer contact, the round of radius `r` about the circle at height `z0`, and its rate
+        let contact = |r: f64,z0: f64,u: f64| -> (V,V) {
+            let w = -g(u)/d[2];
+            let (v,dv) = (w.atan(),-dg(u)/d[2]/(1.+w*w));
+            let (rho,drho) = (big-r+r*v.cos(),-r*v.sin()*dv);
+            ([rho*u.cos(),rho*u.sin(),z0+r*v.sin()],[drho*u.cos()-rho*u.sin(),drho*u.sin()+rho*u.cos(),r*v.cos()*dv])
+        };
+        let centre = d[1].atan2(d[0])+if d[2] < 0. { PI } else { 0. };
+        let (a,b) = (centre-PI/2.,centre+PI/2.);
+        let (c,top) = (self.c,self.top);
+        let low = swept(&|u| contact(c,c,u).0,&|u| contact(c,c,u).1,a,b);
+        let high = if top > 0. { swept(&|u| contact(top,h-top,u).0,&|u| contact(top,h-top,u).1,b,a+TAU) }
+            else { swept(&|u| [big*u.cos(),big*u.sin(),h],&|u| [-big*u.sin(),big*u.cos(),0.],b,a+TAU) };
+        let side = |u: f64,z: f64| [big*u.cos(),big*u.sin(),z];
+        (low+seg(side(b,c),side(b,h-top))+high+seg(side(a,h-top),side(a,c))).abs()
+    }
+    /// **The sweep's definition, read**: `p` is in the tool slid by `d` where some point of its line
+    /// back along the slide, `p − t D` for `t` in `[0, 1]`, is in the tool — stepped by `below`,
+    /// never less than a ten-thousandth of `D`.
+    pub(crate) fn swept(&self,d: V,p: V) -> bool {
+        let len = norm(d);
+        let mut t = 0.;
+        while t <= 1. {
+            let g = self.below(sub(p,scale(d,t)));
+            if g <= 0. { return true }
+            t += (g/len).max(1e-4);
+        }
+        self.below(sub(p,d)) <= 0.
+    }
+}
+
+/// The mill `mill` slid by `d`, built alone (#810's gate) and held to `V + |D| A` within 1e-9 —
+/// every line along the slide meets the convex mill once or not at all — to membership at seeded
+/// points of its box (`swept_closed::agrees`), and to the sweep's definition read at 20000 points
+/// (`Mill::swept`) within four standard errors of its volume.
+fn mill_closes(mill: &Mill,d: V) {
+    let tool = mill.tool();
+    assert!((volume(&tool)-mill.volume()).abs() <= 1e-12*mill.volume(),"the mill: {} against {}",volume(&tool),mill.volume());
+    let path = slide(d);
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("slid {d:?}: {e:?}"));
+    let expected = mill.volume()+norm(d)*mill.shadow(unit(d));
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"slid {d:?}: {} against {expected}",volume(&built));
+    crate::swept_closed::agrees(&built,&tool,&path);
+    let (lo,hi) = built.bounds();
+    let (sampled,error) = crate::swept_closed::monte_carlo(lo.map(|x| x-0.1),hi.map(|x| x+0.1),20000,810,&|p| mill.swept(d,p));
+    assert!((sampled-volume(&built)).abs() <= 4.*error,"sampled {sampled} ± {error} against {}",volume(&built));
+}
+
+/// **A bull-nose mill slid at a lean closes into its sweep** (#810, #780 R5's first gate): radius 2,
+/// its corner rounded 0.5, 3 tall, slid 5 down a way leaning 29° off its axis. Its round's contact is
+/// the outer contact's half on the round (`v ≤ 0`), ending where it crosses the seam into the side's
+/// two rulings whose normal is square to the slide; swept, it is the sheet over that arc of the
+/// contour (`Cutter::Sheet`), which the planes the rulings sweep touch along the seam points' paths —
+/// given to the arrangement (`boolean::Given`), not sought.
+#[test]
+fn a_bull_nose_slid_at_a_lean_closes_into_its_sweep() {
+    mill_closes(&Mill {big:2.,c:0.5,top:0.,h:3.},scale(unit([0.5,0.2,-1.]),5.));
+}
+
+/// **A bull-nose mill slid up aslant by less than its reach closes into its sweep**: the mill of
+/// `a_bull_nose_slid_at_a_lean_closes_into_its_sweep` slid 1.5 up a way leaning 27° off its axis
+/// the other way, its end poses overlapping — where the deepest points of the cell between its top
+/// at the two end poses stand on its top at the middle pose, whose membership the search took
+/// depth first ran out of reads on (`member`, best first now).
+#[test]
+fn a_bull_nose_slid_up_aslant_by_less_than_its_reach_closes_into_its_sweep() {
+    mill_closes(&Mill {big:2.,c:0.5,top:0.,h:3.},scale(unit([0.3,-0.4,1.]),1.5));
+}
+
+/// **A bull-nose mill whose contact crosses its seams on its own seam meridian closes into its
+/// sweep**: slid across `y`, the contact reaches the side at `u = 0` and `π`, where a solid of
+/// revolution's seam stands — the cylinder's, the torus's and the top rim's at the end poses, each
+/// touched there by a plane a ruling sweeps; each is turned about its axis (`closed`'s `seam_away`)
+/// so no touch runs along a seam.
+#[test]
+fn a_bull_nose_slid_across_its_seam_meridian_closes_into_its_sweep() {
+    mill_closes(&Mill {big:2.,c:0.5,top:0.,h:3.},scale(unit([0.,0.7,-1.]),5.));
+}
+
+/// **A drum rounded at both corners slid at a lean closes into its sweep** (#810's dispatch: a
+/// rounded drum's corners): each corner a band, the bottom's contact on its lower half and the
+/// top's on its upper, each crossing its seam into the side's rulings on opposite sides — two
+/// sheets, four touches given.
+#[test]
+fn a_drum_rounded_at_both_corners_slid_at_a_lean_closes_into_its_sweep() {
+    mill_closes(&Mill {big:2.,c:0.5,top:0.5,h:3.},scale(unit([0.3,-0.4,1.]),5.));
+}
+
+/// **Membership reads its deepest pose first** (#810, `member::Swept::member`): a point on the
+/// bull-nose's top at the middle pose of a slide up, inside it a little further on — the stretch of
+/// roll before the middle, where it stands within the mesh's sag of the top, is halved to `FINEST`
+/// last, after the stretch where it is inside is read.
+#[test]
+fn membership_reads_the_deepest_pose_first() {
+    use gcs_core::brep::swept::member::{Solid,Swept};
+    let mill = Mill {big:2.,c:0.5,top:0.,h:3.};
+    let (tool,d) = (mill.tool(),scale(unit([0.3,-0.4,1.]),1.5));
+    let path = slide(d);
+    let solid = Solid::new(&tool,0.002,1.).unwrap();
+    // on the top at the middle pose
+    let p = add(scale(d,0.5),[0.76,0.28,3.]);
+    assert!(mill.swept(d,p));
+    assert_eq!((Swept {tool:&solid,path:&path,roll:[0.,1.]}).member(p),Ok(true));
+}
+
+/// **A round meeting its neighbour in a sharp rim at a lean is refused by name** (#810's negative
+/// control): a mill whose corner round spans only the eighth of the tube above `v = −π/4`, so the
+/// flat end meets it there at 45° — a sharp circle on the torus, whose fan (the sheet its normals
+/// between the two faces' sweep) is not entered yet. The build and the admission (`closed::reads`)
+/// each refuse it as `Curved` at a point of that rim, never building it wrong.
+#[test]
+fn a_round_meeting_a_sharp_rim_at_a_lean_is_refused_by_name() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::swept::closed::reads;
+    let (big,c,h) = (2.,0.5,3.);
+    let at = |x: f64,z: f64| [x,0.,z];
+    let (s,co) = (-PI/4.).sin_cos();
+    let rim = at(big-c+c*co,c+c*s);
+    let edges = vec![ProfileEdge::Line {a:at(0.,rim[2]),b:rim},
+        ProfileEdge::Arc {frame:Frame::new(at(big-c,c),[0.,-1.,0.],[1.,0.,0.]),r:c,span:Some([-PI/4.,0.])},
+        ProfileEdge::Line {a:at(big,c),b:at(big,h)},ProfileEdge::Line {a:at(big,h),b:at(0.,h)},ProfileEdge::Line {a:at(0.,h),b:at(0.,rim[2])}];
+    let tool = revolve(&Profile {origin:at(0.,0.),normal:[0.,1.,0.],names:Vec::new(),loops:vec![edges]},[0.;3],[0.,0.,1.],TAU).unwrap();
+    let path = slide(scale(unit([0.5,0.2,-1.]),5.));
+    for refused in [closed(&tool,&path,[0.,1.],0.002,1e-6).map(|_| ()),reads(&tool,&path).map(|_| ())] {
+        match refused {
+            Err(Unbuilt::Curved {at}) => assert!((at[0].hypot(at[1])-rim[0]).abs() <= 1e-9 && (at[2]-rim[2]).abs() <= 1e-9,"on the sharp rim: {at:?}"),
+            other => panic!("refused by name as curved, not {:?}",other.err()),
+        }
+    }
+}
+
+impl Mill {
+    /// **What the mill takes from a block pushed straight down into it** until wholly under the
+    /// block's top (`z = 0`), its axis leaning `beta` from upright toward `x`, the middle of its
+    /// flat end at `base` where it stops (`solid_sweeps/leaning_bullnose.sv`'s): every line down
+    /// the push meets the convex mill once or not at all, so the block loses each line's depth to
+    /// the mill's underside, `−∫ z_low dA` over its shadow — by the divergence theorem the flux of
+    /// `(0, 0, z)` out of the faces turned down, `V − ∫ z n_z dS` over those turned up: its top
+    /// disc whole (`n_z = cos β`), the side where its normal climbs (`ρ̂_z = −sin β cos u > 0`) and the
+    /// round above the curve where the normal is level on it (`tan v* = −ρ̂_z / cos β`, `v ≥ v*`)
+    /// — each by Gauss–Legendre over its parameters (smooth, so to rounding). A bottom round alone.
+    pub(crate) fn plunged_away(&self,beta: f64,base: V) -> f64 {
+        assert_eq!(self.top,0.,"a bull-nose");
+        let (big,c,h) = (self.big,self.c,self.h);
+        let (sb,cb) = beta.sin_cos();
+        let (a,x) = ([sb,0.,cb],[cb,0.,-sb]);
+        let rho = |u: f64| add(scale(x,u.cos()),[0.,u.sin(),0.]);
+        // `∫ f` over `[lo, hi]`, Gauss–Legendre over `n` pieces
+        let gl = |f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,n: usize| -> f64 {
+            const X: [f64;5] = [0.,-0.538469310105683,0.538469310105683,-0.906179845938664,0.906179845938664];
+            const W: [f64;5] = [0.568888888888889,0.478628670499366,0.478628670499366,0.236926885056189,0.236926885056189];
+            (0..n).map(|k| {
+                let (p,q) = (lo+(hi-lo)*k as f64/n as f64,lo+(hi-lo)*(k+1) as f64/n as f64);
+                (0..5).map(|i| W[i]*0.5*(q-p)*f(0.5*(p+q)+0.5*(q-p)*X[i])).sum::<f64>()
+            }).sum()
+        };
+        let disc = cb*PI*big*big*(base[2]+h*cb);
+        let (u0,u1) = (PI/2.,3.*PI/2.);
+        let side = gl(&|u| {
+            let up = rho(u)[2];
+            gl(&|z| (base[2]+big*up+z*cb)*up*big,c,h,4)
+        },u0,u1,64);
+        let round = gl(&|u| {
+            let up = rho(u)[2];
+            let low = -(up/cb).atan();
+            gl(&|v| {
+                let (sv,cv) = v.sin_cos();
+                let z = base[2]+(big-c+c*cv)*up+(c+c*sv)*cb;
+                z*(cv*up+sv*cb)*(big-c+c*cv)*c
+            },low,0.,16)
+        },u0,u1,64);
+        self.volume()-(disc+side+round)
+    }
+}
+
+/// **A bull-nose mill pushed at a lean into a block stops inside it** (#810's gate, cut from a
+/// blank): the mill of `a_bull_nose_slid_at_a_lean_closes_into_its_sweep`, its axis leaning 30°,
+/// pushed 8 straight down from clear above a block 16 × 16 × 8 until its flat end's middle is 4 under
+/// the top, wholly within: the block loses `Mill::plunged_away`, to 1e-9, which a Monte Carlo of the
+/// sweep's definition agrees with.
+#[test]
+fn a_bull_nose_pushed_at_a_lean_into_a_block_stops_inside_it() {
+    use gcs_core::brep::build::{prism,square};
+    use gcs_core::brep::swept::closed::cut_from;
+    let mill = Mill {big:2.,c:0.5,top:0.,h:3.};
+    let beta = 30f64.to_radians();
+    let lean = Frame {o:[0.,0.,4.],x:[beta.cos(),0.,-beta.sin()],y:[0.,1.,0.],z:[beta.sin(),0.,beta.cos()]};
+    let tool = mill.tool().moved(&gcs_core::brep::geom::Rigid {r:std::array::from_fn(|i| [lean.x[i],lean.y[i],lean.z[i]]),t:lean.o});
+    let block = prism(&square([0.,0.,-8.],[0.,0.,1.],8.),0.,8.).unwrap();
+    let d = [0.,0.,-8.];
+    let built = cut_from(&block,&tool,&slide(d),[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("{e:?}"));
+    let away = mill.plunged_away(beta,[0.,0.,-4.]);
+    let expected = 16.*16.*8.-away;
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected} ({away} away)",volume(&built));
+    // the definition: the block's points the mill, carried back up the push, holds somewhere
+    let local = lean.dir_local(d);
+    let (sampled,error) = crate::swept_closed::monte_carlo([-8.,-8.,-8.],[8.,8.,0.],20000,810,&|p| mill.swept(local,lean.local(p)));
+    assert!((sampled-away).abs() <= 4.*error,"sampled {sampled} ± {error} against {away}");
+}
+
+/// **The slid touches build through their given touches** (#810, item 5): with `ssi`'s pair-by-pair
+/// recognition of a torus at a pose of a slide against its contact's cylinder bypassed
+/// (`Recognised::SlidTouch`), #805's ring slid at a lean and the bull-nose slid at a lean still close
+/// into their sweeps to the same closed forms — the arrangement holds each touch as the closed
+/// class gives it (`boolean::Given`), not as `intersect` recognised it.
+#[test]
+fn the_slid_touches_build_through_their_given_touches() {
+    use gcs_core::brep::ssi::{Recognised,bypassing};
+    bypassing(&[Recognised::SlidTouch],|| {
+        slid_closes(35.,[0.,0.,6.]);
+        mill_closes(&Mill {big:2.,c:0.5,top:0.,h:3.},scale(unit([0.5,0.2,-1.]),5.));
+    });
+}

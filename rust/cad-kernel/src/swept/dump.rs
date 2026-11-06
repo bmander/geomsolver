@@ -11,7 +11,7 @@
 //! the build met. Every surface and curve a closed build's candidates are made of is written: the
 //! quadrics, the torus, a surface of revolution, a swept sheet (`Blend`), an affine image, a
 //! B-spline; a kind none of them is (a trace) is refused by name.
-use crate::boolean::arrangement_within;
+use crate::boolean::{Given,arrangement_given};
 use crate::complex::Complex;
 use crate::geom::{Blend,Carry,Curve,Frame,Surface,V};
 use crate::nurbs::{BSpline,Net};
@@ -242,15 +242,17 @@ pub fn read(text: &str) -> Result<Brep,String> {
     Ok(Brep {vertices,edges,faces})
 }
 
-/// What an arrangement was given: its domain, its candidates and its tolerance.
+/// What an arrangement was given: its domain, its candidates, the meetings given it (#810) and its
+/// tolerance.
 #[derive(Clone,Debug)]
-pub struct Arrangement { pub domain: Brep,pub candidates: Vec<Brep>,pub tol: f64 }
+pub struct Arrangement { pub domain: Brep,pub candidates: Vec<Brep>,pub given: Vec<Given>,pub tol: f64 }
 
 impl Arrangement {
-    /// The arrangement run again (`boolean::arrangement_within`) over the candidates `keep` keeps.
+    /// The arrangement run again (`boolean::arrangement_given`) over the candidates `keep` keeps,
+    /// with the meetings given it.
     pub fn replay(&self,keep: &[usize]) -> Result<Complex,String> {
         let refs: Vec<&Brep> = keep.iter().map(|&k| &self.candidates[k]).collect();
-        crate::util::warm::fresh(|| arrangement_within(&self.domain,&refs,self.tol))
+        crate::util::warm::fresh(|| arrangement_given(&self.domain,&refs,&self.given,self.tol))
     }
     /// Every candidate's index.
     pub fn all(&self) -> Vec<usize> { (0..self.candidates.len()).collect() }
@@ -259,11 +261,21 @@ impl Arrangement {
 /// **The arrangement written into `dir`**: `domain.json`, `candidate-<k>.json` each, and
 /// `arrangement.json` (the tolerance, the count, and `why`, what the build was refused for).
 pub fn dump(dir: &std::path::Path,domain: &Brep,candidates: &[&Brep],tol: f64,why: &str) -> Result<(),String> {
+    dump_given(dir,domain,candidates,&[],tol,why)
+}
+
+/// `dump`, with the meetings given the arrangement (#810), each written in `arrangement.json` by
+/// its two surfaces and its curves, exactly.
+pub fn dump_given(dir: &std::path::Path,domain: &Brep,candidates: &[&Brep],given: &[Given],tol: f64,why: &str) -> Result<(),String> {
     let io = |e: std::io::Error| format!("sweep dump: {e}");
     std::fs::create_dir_all(dir).map_err(io)?;
     std::fs::write(dir.join("domain.json"),write(domain)?).map_err(io)?;
     for (k,c) in candidates.iter().enumerate() { std::fs::write(dir.join(format!("candidate-{k}.json")),write(c)?).map_err(io)? }
-    let meta = object([("tol",tol.into()),("candidates",candidates.len().into()),("why",why.into())]);
+    let given = given.iter().map(|g| -> Result<Json,String> {
+        Ok(object([("surfaces",Json::Arr(vec![surface(&g.surfaces[0])?,surface(&g.surfaces[1])?])),
+            ("curves",Json::Arr(g.curves.iter().map(curve).collect::<Result<Vec<_>,_>>()?)),("whole",g.whole.into())]))
+    }).collect::<Result<Vec<_>,_>>()?;
+    let meta = object([("tol",tol.into()),("candidates",candidates.len().into()),("given",Json::Arr(given)),("why",why.into())]);
     std::fs::write(dir.join("arrangement.json"),meta.dump(Some(2))).map_err(io)
 }
 
@@ -274,7 +286,16 @@ pub fn load(dir: &std::path::Path) -> Result<Arrangement,String> {
     let n = field(&meta,"candidates")?.as_i64() as usize;
     let domain = read(&std::fs::read_to_string(dir.join("domain.json")).map_err(io)?)?;
     let candidates = (0..n).map(|k| read(&std::fs::read_to_string(dir.join(format!("candidate-{k}.json"))).map_err(io)?)).collect::<Result<Vec<_>,_>>()?;
-    Ok(Arrangement {domain,candidates,tol:num(&meta,"tol")?})
+    // (an arrangement dumped before #810 gave none)
+    let given = match meta.get("given") {
+        None => Vec::new(),
+        Some(g) => g.arr().iter().map(|g| -> Result<Given,String> {
+            let s = field(g,"surfaces")?.arr();
+            Ok(Given {surfaces:[rsurface(&s[0])?,rsurface(&s[1])?],curves:field(g,"curves")?.arr().iter().map(rcurve).collect::<Result<_,_>>()?,
+                whole:field(g,"whole")?.as_bool()})
+        }).collect::<Result<_,_>>()?,
+    };
+    Ok(Arrangement {domain,candidates,given,tol:num(&meta,"tol")?})
 }
 
 /// **The fewest candidates whose arrangement still fails** (`fails` says of a replay whether it

@@ -587,6 +587,22 @@ fn the_ring_plunged_at_a_lean_bores_round_its_core() {
     near(exported(&e,"block"),16.*16.*8.-crate::swept_slid::plunged_away(3.,1.,35f64.to_radians(),4.),1e-9);
 }
 
+/// `leaning_bullnose.sv` (the closed class, a torus's band slid at a lean, #810): a bull-nose mill of
+/// radius 2, its corner rounded 0.5 and 3 tall, its axis leaning 30° from upright, pushed 8 straight
+/// down into a block until wholly in it. The constant-twist class refuses it (it ends in the blank);
+/// the closed class cuts it on one arrangement, its round's contact swept into the sheet over its
+/// outline's arc, which the planes the side's rulings sweep touch along the seam points' paths,
+/// given. The block loses the flux of `(0, 0, z)` out of the mill's faces turned down where it
+/// stops (`swept_slid::Mill::plunged_away`), to 1e-9, its STL agreeing with the field.
+#[test]
+fn the_bull_nose_plunged_at_a_lean_stops_inside_the_block() {
+    let e = example("leaning_bullnose.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    let mill = crate::swept_slid::Mill {big:2.,c:0.5,top:0.,h:3.};
+    near(exported(&e,"block"),16.*16.*8.-mill.plunged_away(30f64.to_radians(),[0.,0.,-4.]),1e-9);
+}
+
 /// `stopped_turn.sv` (the closed class, X1): an upright bar turned from −140° to 30°, halfway into
 /// the sector. The constant-twist class refuses it (it ends in the blank); the closed class cuts it
 /// from the ring on one arrangement, its end pose's faces among the candidates. The ring loses each

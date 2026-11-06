@@ -6,7 +6,8 @@
 //! counted in steps, never seconds, so whether a build is refused depends on its inputs alone.
 //!
 //! The same counts, with what only a person reads beside them (the meetings found in closed form
-//! against those traced, per pair of surface kinds, and the slowest; the curve–surface searches
+//! against those traced and those given by construction (#810), per pair of surface kinds, and the
+//! slowest; the curve–surface searches
 //! that sampled, per pair; the deepest outline), are the build's **profile** (`Meter::report`),
 //! printed where `SOLVENT_SWEEP_PROFILE` is set. A performance change cites it before and after.
 //!
@@ -78,9 +79,10 @@ impl Budget {
 #[derive(Clone,Debug,PartialEq)]
 pub struct Over { pub stage: Stage,pub at: V,pub what: String }
 
-/// One pair of surface kinds' meetings: found in closed form, traced, and the time they took.
+/// One pair of surface kinds' meetings: found in closed form, traced, given before any was sought
+/// (#810), and the time they took.
 #[derive(Clone,Copy,Debug,Default)]
-struct Meetings { exact: u64,traced: u64,nanos: u128,slowest: u128 }
+struct Meetings { exact: u64,traced: u64,given: u64,nanos: u128,slowest: u128 }
 
 /// What only the profile reads.
 #[derive(Clone,Debug,Default)]
@@ -150,9 +152,9 @@ impl Meter {
         }
         if let Some(o) = self.over() { let _ = writeln!(s,"  over budget: {} at {:?} ({})",o.stage,o.at,o.what); }
         let p = self.profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let _ = writeln!(s,"  meetings (exact / traced, ms):");
+        let _ = writeln!(s,"  meetings (exact / traced / given, ms):");
         for ((a,b),m) in &p.meetings {
-            let _ = writeln!(s,"    {a:>10} × {b:<10} {:>6} / {:<6} {:>10.1}",m.exact,m.traced,m.nanos as f64*1e-6);
+            let _ = writeln!(s,"    {a:>10} × {b:<10} {:>6} / {:<6} / {:<6} {:>10.1}",m.exact,m.traced,m.given,m.nanos as f64*1e-6);
         }
         let mut slow: Vec<_> = p.meetings.iter().collect();
         slow.sort_by(|x,y| y.1.slowest.cmp(&x.1.slowest));
@@ -252,6 +254,14 @@ pub fn meeting(a: &'static str,b: &'static str,exact: bool,took: std::time::Dura
         if exact { e.exact += 1 } else { e.traced += 1 }
         e.nanos += took.as_nanos();
         e.slowest = e.slowest.max(took.as_nanos());
+    })
+}
+
+/// A meeting of surfaces of kinds `a` and `b` given before any was sought (#810, `meeting::Shared::give`).
+pub fn given(a: &'static str,b: &'static str) {
+    CURRENT.with(|c| if let Some(m) = &*c.borrow() {
+        let key = if a <= b { (a,b) } else { (b,a) };
+        m.profile.lock().unwrap_or_else(|e| e.into_inner()).meetings.entry(key).or_default().given += 1;
     })
 }
 

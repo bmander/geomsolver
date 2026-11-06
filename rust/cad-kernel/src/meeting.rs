@@ -925,6 +925,8 @@ pub struct Shared {
     of_kind: std::collections::BTreeMap<&'static str,Vec<usize>>,
     meetings: std::collections::BTreeMap<(usize,usize),Ssi>,
     traced: std::collections::BTreeMap<(usize,usize),Vec<Curve>>,
+    /// each pair whose meeting was given whole (#810, `Shared::give`): no search is made for it
+    given: std::collections::BTreeSet<(usize,usize)>,
 }
 
 impl Shared {
@@ -941,7 +943,14 @@ impl Shared {
     /// The meeting of surfaces `i` and `j` (indices), found once: the first surface of each index
     /// met with the other's, in the order asked (a closed form's curves run as the order says).
     pub fn meeting(&mut self,i: usize,j: usize,tol: f64) -> Ssi {
-        if let Some(m) = self.meetings.get(&(i,j)) { return m.clone() }
+        if let Some(m) = self.meetings.get(&(i,j)) {
+            // (a given meeting counted where it is first laid, as the profile counts those it finds)
+            if self.given.remove(&(i,j)) {
+                crate::util::meter::given(self.surfaces[i].kind(),self.surfaces[j].kind());
+                self.given.remove(&(j,i));
+            }
+            return m.clone()
+        }
         let start = crate::util::clock::Instant::now();
         let m = intersect(&self.surfaces[i],&self.surfaces[j],tol);
         // the profile's count of meetings found in closed form and left to a trace (#777 V4)
@@ -954,6 +963,25 @@ impl Shared {
     /// More curves of `i` and `j`'s traced meeting.
     pub fn add_traced(&mut self,i: usize,j: usize,curves: impl IntoIterator<Item=Curve>) {
         self.traced.entry((i.min(j),i.max(j))).or_default().extend(curves)
+    }
+    /// **A meeting given before any is sought** (#810, #780 R5: a touch known by construction):
+    /// `curves` lying on both `a` and `b` — whole curves, as a closed form's are. Given `whole`,
+    /// they are the two surfaces' meeting, laid with no search for it (as a closed form is, in
+    /// either order); else they are a part of it, known to every trace of the rest, which is seeded
+    /// off their ends and ends where it comes to them (`boolean`'s traced meeting).
+    pub fn give(&mut self,a: &Surface,b: &Surface,curves: &[Curve],whole: bool,tol: f64) {
+        let (i,j) = (self.index(a,tol),self.index(b,tol));
+        if whole {
+            // (two touches of one pair given: their curves together)
+            for key in [(i,j),(j,i)] {
+                let mut all = match self.meetings.get(&key) { Some(Ssi::Curves(known)) if self.given.contains(&key) => known.clone(),_ => Vec::new() };
+                all.extend(curves.iter().cloned());
+                self.meetings.insert(key,Ssi::Curves(all));
+                self.given.insert(key);
+            }
+        } else {
+            self.add_traced(i,j,curves.iter().cloned())
+        }
     }
 }
 

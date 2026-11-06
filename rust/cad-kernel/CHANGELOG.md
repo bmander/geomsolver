@@ -8,6 +8,25 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Meetings given to an arrangement** (#810, #780 R5): `boolean::Given` and
+  `boolean::arrangement_given` (**new**) — curves known to lie on two operands' surfaces, laid as an
+  edge of both with no search for that pair where they are its whole meeting, else known to the
+  trace of the rest (`meeting::Shared::give`, **new**). `arrangement_within` is `arrangement_given`
+  with none. The sweep profile counts each pair's meetings given beside those found in closed form
+  and traced. `swept::dump::dump_given` (**new**) writes them and `replay` meets them;
+  `swept::dump::Arrangement` gains `given` (**breaking** for code building one literally).
+- **A bull-nose's round slid at a lean is built** (`swept::closed`): a torus band between two
+  smooth seams, its contact's arc swept into the sheet over that arc of its contour, which the
+  plane the neighbour's ruling sweeps touches along the seam point's path — given, not sought. A
+  band meeting a neighbour in a sharp rim at a lean is refused as `Curved` at the rim. The closed
+  class now gives every touch it knows by construction (#805's, C3's, L2's), and `ssi::bypassing`
+  with `ssi::Recognised` (**new**) turns off `intersect`'s pair-by-pair recognition of each, on the
+  workers `util::par` starts too.
+- **Membership reads its stretches of the roll best first** (`swept::member::Swept::member`), the
+  one whose bound reaches deepest inside first: depth first, a point on the tool at the middle pose
+  could spend its reads halving the stretch before it and never read the one after, where it lay
+  deep inside, and was refused as `Near`.
+
 - **A loop through a pole is closed along it** (#797): `Brep::close_poles` (**new**), run on every
   Boolean's result, ends each inverse pcurve reaching a pole at the value it arrives along and
   runs a degenerate edge along the pole between the use arriving and the use leaving, as a

@@ -7,9 +7,10 @@
 //! test is a branch and bound (`Swept::member`): at a roll the carried point stands at a signed
 //! distance `d`; it moves no faster than the trajectory's speed bound `L`
 //! (`Trajectory::inverse_point_speed_bound`), so over a stretch of half-width `h` about that roll
-//! it stays outside where `d − sag > L h`, and it is inside where `d < −sag`. A point the bound
-//! cannot settle before the stretches shrink to `FINEST` of the roll stands within the mesh's sag
-//! of the swept boundary, and is said so (`Unsettled`) rather than guessed.
+//! it stays outside where `d − sag > L h`, and it is inside where `d < −sag`. The stretches are read
+//! best first, the one whose bound reaches deepest inside first (#810). A point the bound cannot
+//! settle before the stretches shrink to `FINEST` of the roll stands within the mesh's sag of the
+//! swept boundary, and is said so (`Unsettled`) rather than guessed.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::mesh::mesh;
@@ -86,6 +87,17 @@ pub enum Unsettled { Near { at: f64 },Unbounded,Unread(String),
     /// The build reading it went past its budget (`util::meter`): nothing more is read.
     Stopped }
 
+/// A stretch of the roll membership is still to read (`Swept::member`): the least signed distance
+/// its parent's reading allows over it, the order it was pushed in, and its ends. The heap takes
+/// the least key first, and of equal keys the first pushed.
+struct Stretch { key: f64,order: u64,lo: f64,hi: f64 }
+impl PartialEq for Stretch { fn eq(&self,o: &Stretch) -> bool { self.cmp(o) == std::cmp::Ordering::Equal } }
+impl Eq for Stretch {}
+impl PartialOrd for Stretch { fn partial_cmp(&self,o: &Stretch) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
+impl Ord for Stretch {
+    fn cmp(&self,o: &Stretch) -> std::cmp::Ordering { o.key.total_cmp(&self.key).then(o.order.cmp(&self.order)) }
+}
+
 /// A tool carried along a trajectory over a roll: what membership is read of.
 pub struct Swept<'a> { pub tool: &'a Solid,pub path: &'a Trajectory,pub roll: [f64;2] }
 
@@ -114,10 +126,17 @@ impl Swept<'_> {
         let speed = self.path.inverse_point_speed_bound(x,domain).map_err(|_| Unsettled::Unbounded)?;
         let sag = self.tool.sag;
         let finest = FINEST*(b-a).abs().max(1e-300);
-        let mut stack = vec![(a.min(b),a.max(b))];
+        // **best first** (#810): each stretch keyed by the least signed distance its parent's
+        // reading allows over it, `d − L h`, the deepest first, ties in the order pushed — so a pose
+        // where the point is inside is read before a stretch where it stands within the sag of the
+        // boundary is halved down to `FINEST` (taken depth first, the left of the two, such a
+        // stretch ran past `MOST_READS` before the right, where the point lay deep inside, was read)
+        let mut stack = std::collections::BinaryHeap::new();
+        let mut pushed = 0u64;
+        stack.push(Stretch {key:f64::NEG_INFINITY,order:0,lo:a.min(b),hi:a.max(b)});
         let mut near: Option<f64> = None;
         let mut reads = 0;
-        while let Some((lo,hi)) = stack.pop() {
+        while let Some(Stretch {lo,hi,..}) = stack.pop() {
             reads += 1;
             // each stretch read counted against the build's budget (#777 V3)
             if !crate::util::meter::charge(crate::util::meter::Stage::Membership,1,|| (x,"membership".into())) { return Err(Unsettled::Stopped) }
@@ -132,8 +151,8 @@ impl Swept<'_> {
             let h = 0.5*(hi-lo);
             if d-sag > speed*h { continue }
             if h <= finest { near.get_or_insert(m); continue }
-            stack.push((m,hi));
-            stack.push((lo,m));
+            let key = d-speed*h;
+            for (lo,hi) in [(lo,m),(m,hi)] { pushed += 1; stack.push(Stretch {key,order:pushed,lo,hi}) }
         }
         match near { Some(at) => Err(Unsettled::Near {at}),None => Ok(false) }
     }
