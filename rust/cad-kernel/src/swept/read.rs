@@ -20,7 +20,6 @@
 //!
 //! Nothing switches to it yet: the solver still reads the tool off the drawing
 //! (`SweepContacts::read`), and `tests/tool_reading.rs` holds the two readings to one tool.
-#[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::geom::{Curve,Frame,Surface,Uv};
 use crate::query::{Located,Place};
@@ -81,7 +80,7 @@ impl Tool {
         if !(scale > 0. && scale.is_finite()) { return Err(Unread::Boundary(format!("a scale of {scale}"))) }
         let size = b.size();
         let tol = 1e-7*(1.+size);
-        let reader = Reader {b,tol,uses:b.uses(),axes:Default::default()};
+        let reader = Reader {b,tol,uses:b.uses(),axes:Default::default(),parameters:vec![Default::default();b.faces.len()]};
         let order: Vec<usize> = (0..b.faces.len()).filter(|&fi| !matches!(b.faces[fi].surface,Surface::Plane(_)))
             .chain((0..b.faces.len()).filter(|&fi| matches!(b.faces[fi].surface,Surface::Plane(_)))).collect();
         let witness = |fi: usize| reader.witness(fi).map(|x| x/scale);
@@ -93,21 +92,19 @@ impl Tool {
         let options: Vec<Vec<Strip>> = (0..b.faces.len())
             .map(|fi| if read[fi].is_some() { Vec::new() } else { reader.strips(fi) }).collect();
         for &seed in &order {
-            if read[seed].is_some() || options[seed].is_empty() { continue }
+            if read[seed].is_some() { continue }
             let Some(s) = options[seed].iter().find(|s| reader.fits(s,seed,&read)).cloned() else { continue };
-            read[seed] = Some(Read::Strip(s));
+            read[seed] = Some(Read::Strip(s.clone()));
             // the strips beside it along a ruling, or on across a crease, read the same way round
-            let mut pending = vec![seed];
-            while let Some(fi) = pending.pop() {
-                let Some(Read::Strip(s)) = read[fi].clone() else { unreachable!("only a strip is walked from") };
-                let along: Vec<u32> = s.rulings.iter().chain(&s.rims).copied().collect();
-                for e in along {
+            let mut pending = vec![(seed,s)];
+            while let Some((fi,s)) = pending.pop() {
+                for &e in s.rulings.iter().chain(&s.rims) {
                     for &(g,_,_) in &reader.uses[e as usize] {
-                        if g == fi || read[g].is_some() || options[g].is_empty() { continue }
+                        if g == fi || read[g].is_some() { continue }
                         let Some(t) = options[g].iter().find(|t| (t.rulings.contains(&e) || reader.continues(&s,t,e))
                             && reader.fits(t,g,&read)).cloned() else { continue };
-                        read[g] = Some(Read::Strip(t));
-                        pending.push(g);
+                        read[g] = Some(Read::Strip(t.clone()));
+                        pending.push((g,t));
                     }
                 }
             }
@@ -124,25 +121,26 @@ impl Tool {
         // reach, the material telling the face from the rest of the ring
         // (one about each axis it shares a circle with: a plane two crowns about two axes stand on
         // is a flat of each)
+        // (a cap reads only the strips beside it, a flat only the revolutions: one pass reads both)
         let mut more: Vec<(usize,Read)> = Vec::new();
         for fi in 0..b.faces.len() {
             if read[fi].is_some() { continue }
             let mut flats = reader.flats(fi,&read).into_iter().map(Read::Revolved);
-            read[fi] = flats.next();
-            more.extend(flats.map(|r| (fi,r)));
-        }
-        for fi in 0..b.faces.len() {
-            if read[fi].is_some() { continue }
+            if let Some(flat) = flats.next() {
+                read[fi] = Some(flat);
+                more.extend(flats.map(|r| (fi,r)));
+                continue
+            }
             let f = &b.faces[fi];
+            let (face,kind,at) = (f.name.clone(),f.surface.kind(),witness(fi));
             read[fi] = Some(match &f.surface {
                 Surface::Plane(frame) => reader.cap(fi,frame,&read),
-                Surface::Revolution(_,c) if matches!(**c,Curve::Line {..} | Curve::Circle(..)) =>
-                    return Err(Unread::Unfit {face:f.name.clone(),kind:f.surface.kind(),at:witness(fi)}),
-                Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) =>
-                    return Err(Unread::Unfit {face:f.name.clone(),kind:f.surface.kind(),at:witness(fi)}),
-                Surface::Revolution(_,c) => return Err(Unread::Meridian {face:f.name.clone(),kind:c.kind(),at:witness(fi)}),
+                Surface::Revolution(_,c) if !matches!(**c,Curve::Line {..} | Curve::Circle(..)) =>
+                    return Err(Unread::Meridian {face,kind:c.kind(),at}),
+                Surface::Revolution(..) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) =>
+                    return Err(Unread::Unfit {face,kind,at}),
                 Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Affine(..) =>
-                    return Err(Unread::FreeForm {face:f.name.clone(),kind:f.surface.kind(),at:witness(fi)}),
+                    return Err(Unread::FreeForm {face,kind,at}),
             });
         }
         // every reading, each face's first and then the flats beyond a face's first, and the
@@ -181,7 +179,7 @@ impl Tool {
             }
         }
         let faces = read.into_iter().map(|(fi,r)| r.surface(&b.faces[fi],scale)).collect();
-        Ok(Tool {faces,edges,creases,material:Arc::new(Boundary::new(b,scale,tol))})
+        Ok(Tool {faces,edges,creases,material:Arc::new(Boundary::new(b,scale,tol,&reader.uses))})
     }
 }
 
@@ -199,7 +197,14 @@ impl Read {
             Edge::Round {center,a,b,sweep} => Edge::Round {center:v(center),a:v(a),b:v(b),sweep},
         };
         match self {
-            Read::Revolved(s) => ToolSurface::Revolved(scaled_revolution(&s,f.name.clone(),scale)),
+            Read::Revolved(s) => {
+                let meridian = match *s.meridian() {
+                    Meridian::Line {start,delta} => Meridian::Line {start:v(start),delta:v(delta)},
+                    Meridian::Round {center,a,b,sweep} => Meridian::Round {center:v(center),a:v(a),b:v(b),sweep},
+                    Meridian::Conic {a,m,b,w} => Meridian::Conic {a:v(a),m:v(m),b:v(b),w},
+                };
+                ToolSurface::Revolved(RevolvedSurface::new(f.name.clone(),meridian,v(s.origin()),s.axis_direction(),s.sweep()))
+            }
             Read::Strip(s) => ToolSurface::Extruded(ExtrudedSurface::new(f.name.clone(),edge(s.edge),match s.side {
                 Side::Straight(d) => Side::Straight(v(d)),
                 Side::Leaning(far) => Side::Leaning(edge(far)),
@@ -209,32 +214,23 @@ impl Read {
     }
 }
 
-/// A revolution read in the boundary's units, rewritten in units `1/scale` of them.
-fn scaled_revolution(s: &RevolvedSurface,name: String,scale: f64) -> RevolvedSurface {
-    let k = 1./scale;
-    let v = |x: V| x.map(|c| c*k);
-    let meridian = match *s.meridian() {
-        Meridian::Line {start,delta} => Meridian::Line {start:v(start),delta:v(delta)},
-        Meridian::Round {center,a,b,sweep} => Meridian::Round {center:v(center),a:v(a),b:v(b),sweep},
-        Meridian::Conic {a,m,b,w} => Meridian::Conic {a:v(a),m:v(m),b:v(b),w},
-    };
-    RevolvedSurface::new(name,meridian,v(s.origin()),s.axis_direction(),s.sweep())
-}
-
 /// A face read as a ruled strip: its edge at `v = 0` (the use `near` of its loop, walked as the
 /// loop walks it), how it runs to its edge at `v = 1`, the edges at its ends in `u` (`rulings`, at
-/// `u = 0` then `u = 1`) and at its ends in `v` (`rims`), and the vertex each ruling leaves its near
-/// rim from.
+/// `u = 0` then `u = 1`) and at its ends in `v` (`rims`), the vertex each ruling leaves its near
+/// rim from, and the way its rulings run (the sum of its two end rulings' directions).
 #[derive(Clone,Debug)]
-struct Strip { edge: Edge,side: Side,rulings: [u32;2],rims: [u32;2],bases: [u32;2],direction: [V;2] }
+struct Strip { edge: Edge,side: Side,rulings: [u32;2],rims: [u32;2],bases: [u32;2],along: V }
 
-/// What reads a boundary: it, the tolerance its points are matched to, each edge's uses, and the
-/// axes its revolutions turn about, each with the half-plane they start from (`start`).
+/// What reads a boundary: it, the tolerance its points are matched to, each edge's uses, the axes
+/// its revolutions turn about, each with a point of it and the half-plane they start from
+/// (`start`), and each face's parameters.
 struct Reader<'a> {
     b: &'a Brep,
     tol: f64,
     uses: Vec<Vec<(usize,usize,usize)>>,
     axes: std::cell::RefCell<Vec<(V,V,V)>>,
+    /// Each face's parameters (`parameters`), read once.
+    parameters: Vec<std::cell::OnceCell<[[f64;2];2]>>,
 }
 
 impl Reader<'_> {
@@ -249,7 +245,9 @@ impl Reader<'_> {
 
     /// Face `fi`'s parameters over its loops: the least and greatest of each, each loop unwrapped
     /// along itself.
-    fn parameters(&self,fi: usize) -> [[f64;2];2] {
+    fn parameters(&self,fi: usize) -> [[f64;2];2] { *self.parameters[fi].get_or_init(|| self.span(fi)) }
+
+    fn span(&self,fi: usize) -> [[f64;2];2] {
         let f = &self.b.faces[fi];
         let mut span = [[f64::INFINITY,f64::NEG_INFINITY];2];
         for l in &f.loops {
@@ -285,46 +283,40 @@ impl Reader<'_> {
     fn revolved(&self,fi: usize,part: bool) -> Option<RevolvedSurface> {
         let f = &self.b.faces[fi];
         let [[u0,u1],[v0,v1]] = self.parameters(fi);
-        let whole = u1-u0 >= TAU*(1.-1e-9);
-        let read = match &f.surface {
+        let fr = match &f.surface {
             Surface::Plane(_) if part => return None,
             Surface::Plane(frame) => return self.disc(fi,frame),
-            _ if whole == part => return None,
-            Surface::Cylinder(fr,r) => {
-                let ((_,a,x),o) = (self.start(fr),fr.o);
-                Some((o,a,Meridian::Line {start:add(add(o,scale(x,*r)),scale(fr.z,v0)),delta:scale(fr.z,v1-v0)}))
-            }
-            Surface::Cone(fr,r,alpha) => {
-                let ((_,a,x),o) = (self.start(fr),fr.o);
+            _ if (u1-u0 >= TAU*(1.-1e-9)) == part => return None,
+            Surface::Cylinder(fr,..) | Surface::Cone(fr,..) | Surface::Sphere(fr,..) | Surface::Torus(fr,..)
+                | Surface::Revolution(fr,..) => fr,
+            _ => return None,
+        };
+        let ((a,x),o) = (self.start(fr),fr.o);
+        // the meridian's point `ρ` out along the half-plane it starts in and `h` along the axis
+        let at = |rho: f64,h: f64| add(o,add(scale(x,rho),scale(fr.z,h)));
+        let meridian = match &f.surface {
+            Surface::Cylinder(_,r) => Meridian::Line {start:at(*r,v0),delta:scale(fr.z,v1-v0)},
+            Surface::Cone(_,r,alpha) => {
                 let (sn,cs) = alpha.dsin_cos();
-                let at = |v: f64| add(o,add(scale(x,r+v*sn),scale(fr.z,v*cs)));
-                Some((o,a,Meridian::Line {start:at(v0),delta:sub(at(v1),at(v0))}))
+                let (p,q) = (at(r+v0*sn,v0*cs),at(r+v1*sn,v1*cs));
+                Meridian::Line {start:p,delta:sub(q,p)}
             }
-            Surface::Sphere(fr,r) => { let ((_,a,x),o) = (self.start(fr),fr.o); Some((o,a,Meridian::round(o,x,fr.z,*r,v0,v1-v0))) }
-            Surface::Torus(fr,big,r) => {
-                let ((_,a,x),o) = (self.start(fr),fr.o);
-                Some((o,a,Meridian::round(add(o,scale(x,*big)),x,fr.z,*r,v0,v1-v0)))
-            }
-            Surface::Revolution(fr,c) => {
-                let ((_,a,x),o) = (self.start(fr),fr.o);
-                // the curve's point in its half-plane, `ρ` along the frame's `x` and `h` along its
-                // axis, set in the half-plane every revolution starts from
-                let lift = |p: V| { let q = sub(p,fr.o); add(o,add(scale(x,dot(q,fr.x)),scale(fr.z,dot(q,fr.z)))) };
+            Surface::Sphere(_,r) => Meridian::round(o,x,fr.z,*r,v0,v1-v0),
+            Surface::Torus(_,big,r) => Meridian::round(at(*big,0.),x,fr.z,*r,v0,v1-v0),
+            // the curve, which lies in its frame's half-plane, set in the half-plane every
+            // revolution about the axis starts from
+            Surface::Revolution(_,c) => {
+                let lift = |p: V| { let l = fr.local(p); at(l[0],l[2]) };
                 let dir = |d: V| add(scale(x,dot(d,fr.x)),scale(fr.z,dot(d,fr.z)));
                 match **c {
-                    Curve::Line {..} => {
-                        let (p,q) = (lift(c.point(v0)),lift(c.point(v1)));
-                        Some((o,a,Meridian::Line {start:p,delta:sub(q,p)}))
-                    }
-                    Curve::Circle(cf,r) => Some((o,a,Meridian::round(lift(cf.o),dir(cf.x),dir(cf.y),r,v0,v1-v0))),
-                    _ => None,
+                    Curve::Line {..} => { let (p,q) = (lift(c.point(v0)),lift(c.point(v1))); Meridian::Line {start:p,delta:sub(q,p)} }
+                    Curve::Circle(cf,r) => Meridian::round(lift(cf.o),dir(cf.x),dir(cf.y),r,v0,v1-v0),
+                    _ => return None,
                 }
             }
-            _ => None,
+            _ => return None,
         };
-        let (o,a,meridian) = read?;
-        let s = RevolvedSurface::new(f.name.clone(),meridian,o,a,TAU);
-        self.outward(fi,s)
+        self.outward(fi,RevolvedSurface::new(f.name.clone(),meridian,o,a,TAU))
     }
 
     /// A plane face bounded by circles about one centre, square to it: a disc, or a ring between
@@ -349,10 +341,16 @@ impl Reader<'_> {
             [a,b] => (a.min(b),a.max(b)),
             _ => return None,
         };
+        self.flat(fi,frame,o,[inner,outer])
+    }
+
+    /// Plane face `fi` (of `frame`) as a flat turned about the line through `o` square to it, from
+    /// the radius `radii[0]` to `radii[1]`.
+    fn flat(&self,fi: usize,frame: &Frame,o: V,[inner,outer]: [f64;2]) -> Option<RevolvedSurface> {
         if !(outer-inner > self.tol) { return None }
-        let ((_,a,x),o) = (self.start(&Frame {o,..*frame}),o);
-        let s = RevolvedSurface::new(f.name.clone(),Meridian::Line {start:add(o,scale(x,inner)),delta:scale(x,outer-inner)},o,a,TAU);
-        self.outward(fi,s)
+        let (a,x) = self.start(&Frame {o,..*frame});
+        let meridian = Meridian::Line {start:add(o,scale(x,inner)),delta:scale(x,outer-inner)};
+        self.outward(fi,RevolvedSurface::new(self.b.faces[fi].name.clone(),meridian,o,a,TAU))
     }
 
     /// Plane face `fi` as a flat of each revolution it shares a circle with, about that circle's
@@ -379,10 +377,7 @@ impl Reader<'_> {
                 }
             }
             if inner <= 1e2*self.tol { inner = 0. }
-            if !(outer-inner > self.tol) { return None }
-            let ((_,a,x),o) = (self.start(&Frame {o:axis,..*frame}),axis);
-            let meridian = Meridian::Line {start:add(o,scale(x,inner)),delta:scale(x,outer-inner)};
-            self.outward(fi,RevolvedSurface::new(f.name.clone(),meridian,o,a,TAU))
+            self.flat(fi,frame,axis,[inner,outer])
         }).collect()
     }
 
@@ -412,7 +407,7 @@ impl Reader<'_> {
                 EdgeCurve::Curve(Curve::Line {..}) => Some(Edge::Line {start:p,delta:sub(q,p)}),
                 EdgeCurve::Curve(Curve::Circle(cf,r)) => {
                     let (start,sweep) = if c.reversed { (e.t[1],-(e.t[1]-e.t[0])) } else { (e.t[0],e.t[1]-e.t[0]) };
-                    Some(Edge::round(cf.o,*r,start,sweep,|x,y| add(scale(cf.x,x),scale(cf.y,y))))
+                    Some(Edge::round(cf.o,*r,start,sweep,|x,y| cf.dir([x,y,0.])))
                 }
                 _ => None,
             }
@@ -447,9 +442,8 @@ impl Reader<'_> {
             let [p0,p1] = self.b.ends(&l[i%4]);
             let at = |u: f64,v: f64| strip.at(u,v).map(|p| p.position).unwrap_or([f64::NAN;3]);
             let ruling = |u: f64| normalised(sub(at(u,1.),at(u,0.))).unwrap_or([0.;3]);
-            let direction = [ruling(0.),ruling(1.)];
             out.push(Strip {edge:near,side,rulings:[l[(i+3)%4].edge,l[(i+1)%4].edge],rims:[l[i%4].edge,l[(i+2)%4].edge],
-                bases:[p0,p1],direction});
+                bases:[p0,p1],along:add(ruling(0.),ruling(1.))});
         }
         out
     }
@@ -476,8 +470,7 @@ impl Reader<'_> {
     fn continues(&self,s: &Strip,t: &Strip,e: u32) -> bool {
         let (Some(i),Some(j)) = (s.rims.iter().position(|&x| x == e),t.rims.iter().position(|&x| x == e)) else { return false };
         if i == j { return false }
-        let along = |x: &Strip| add(x.direction[0],x.direction[1]);
-        dot(along(s),along(t)) > 0.5*norm(along(s))*norm(along(t))
+        dot(s.along,t.along) > 0.5*norm(s.along)*norm(t.along)
     }
 
     /// Plane face `fi` as a cap: the box its loops lie in within its plane, a little past them,
@@ -488,8 +481,7 @@ impl Reader<'_> {
         for c in f.loops.iter().flatten() {
             let e = &self.b.edges[c.edge as usize];
             for k in 0..=16 {
-                let p = sub(e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/16.,&self.b.vertices),frame.o);
-                let q = [dot(p,frame.x),dot(p,frame.y)];
+                let q = frame.local(e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/16.,&self.b.vertices));
                 lo = [lo[0].min(q[0]),lo[1].min(q[1])];
                 hi = [hi[0].max(q[0]),hi[1].max(q[1])];
             }
@@ -497,7 +489,7 @@ impl Reader<'_> {
         // a little past the loops' points, which their arcs bulge beyond
         let pad = 0.02*(hi[0]-lo[0]).max(hi[1]-lo[1]);
         let (lo,hi) = (lo.map(|x| x-pad),hi.map(|x| x+pad));
-        let lift = |x: f64,y: f64| add(frame.o,add(scale(frame.x,x),scale(frame.y,y)));
+        let lift = |x: f64,y: f64| frame.at([x,y,0.]);
         let (du,dv) = (scale(frame.x,hi[0]-lo[0]),scale(frame.y,hi[1]-lo[1]));
         let end = f.loops.iter().flatten().any(|c| self.uses[c.edge as usize].iter()
             .any(|&(g,_,_)| matches!(&read[g],Some(Read::Strip(t)) if t.rims[1] == c.edge)));
@@ -533,20 +525,19 @@ impl Reader<'_> {
 }
 
 impl Reader<'_> {
-    /// **A revolution's axis, set as every revolution about it reads it**: a point of it, its
-    /// direction, and the direction square to it (a face's meridian is laid from a point of the
-    /// axis its own, along that direction) every revolution's meridian about it starts from —
+    /// **A revolution's axis, set as every revolution about it reads it**: its direction, and the
+    /// direction square to it (a face's meridian is laid from a point of the axis its own, along
+    /// that direction) every revolution's meridian about it starts from —
     /// the first face's about that line, its frame's `x` (for a face a revolution built, its
     /// profile's half-plane) — so faces about one axis share their charts' start, where the walk
     /// reads two faces' corner (`Tool::corner`) and where it starts round a ring.
-    fn start(&self,f: &Frame) -> (V,V,V) {
+    fn start(&self,f: &Frame) -> (V,V) {
         let mut axes = self.axes.borrow_mut();
         for &(o,a,x) in axes.iter() {
-            if norm(cross(a,f.z)) <= 1e-9 && norm(cross(sub(f.o,o),a)) <= 1e2*self.tol { return (o,a,x) }
+            if norm(cross(a,f.z)) <= 1e-9 && norm(cross(sub(f.o,o),a)) <= 1e2*self.tol { return (a,x) }
         }
-        let x = normalised(sub(f.x,scale(f.z,dot(f.x,f.z)))).unwrap_or(f.x);
-        axes.push((f.o,f.z,x));
-        (f.o,f.z,x)
+        axes.push((f.o,f.z,f.x));
+        (f.z,f.x)
     }
 }
 
@@ -556,56 +547,74 @@ impl Reader<'_> {
 /// sum of its faces' where it is inside an edge; where it is a corner's, off a mesh of the boundary
 /// where the point stands clear of it by more than the mesh's sag, and by the boundary's own point
 /// location nearer.
-pub struct Boundary { located: Located<'static>,mesh: Option<Solid>,scale: f64,tol: f64,
-    /// Each edge's uses, and the edges a face uses twice (its seams, which bound nothing).
-    uses: Vec<Vec<(usize,usize,usize)>>,seams: std::collections::BTreeSet<u32> }
+pub struct Boundary {
+    located: Located<'static>,
+    /// The mesh a corner's side is read off, made the first time one is asked.
+    mesh: std::sync::OnceLock<Option<Solid>>,
+    scale: f64,
+    /// Each edge's faces, and the edges that bound something (a seam, an edge a face uses twice,
+    /// bounds nothing).
+    faces: Vec<Vec<usize>>,
+    bounding: Vec<u32>,
+}
 
 impl std::fmt::Debug for Boundary {
     fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f,"Boundary {{ faces: {},scale: {},tol: {} }}",self.located.b.faces.len(),self.scale,self.tol)
+        write!(f,"Boundary {{ faces: {},scale: {},tol: {} }}",self.located.b.faces.len(),self.scale,self.located.tol)
     }
 }
 
+/// The point of a boundary nearest another: a face's foot at its parameters, or an edge's at its.
+enum Foot { Face(usize,Uv),Edge(u32,f64) }
+
 impl Boundary {
     /// `b`'s material, read in units `1/scale` of its own, its points within `tol` (its units) of
-    /// a face on it.
-    pub fn new(b: &Brep,scale: f64,tol: f64) -> Boundary {
-        let size = b.size();
-        let mesh = Solid::new(b,(1e-3*size).max(tol),1.).ok();
-        let seams = b.faces.iter().flat_map(Face::seams).collect();
-        Boundary {located:Located::owned(b.clone(),tol),mesh,scale,tol,uses:b.uses(),seams}
+    /// a face on it; `uses` its edges' (`Brep::uses`).
+    pub fn new(b: &Brep,scale: f64,tol: f64,uses: &[Vec<(usize,usize,usize)>]) -> Boundary {
+        let seams: std::collections::BTreeSet<u32> = b.faces.iter().flat_map(Face::seams).collect();
+        let faces = uses.iter().map(|u| u.iter().map(|x| x.0).collect::<std::collections::BTreeSet<_>>().into_iter().collect())
+            .collect();
+        let bounding = (0..b.edges.len() as u32).filter(|e| !seams.contains(e)).collect();
+        Boundary {located:Located::owned(b.clone(),tol),mesh:Default::default(),scale,faces,bounding}
     }
 
     /// The distance from `q` (the boundary's units) to the boundary: to the foot of the nearest
-    /// face it falls within, or to the nearest edge (a seam bounds nothing); and which side of it
-    /// `q` stands on (below nought within), where a face's foot or an edge's inside is nearest.
+    /// face it falls within (the faces asked nearest box first), or to the nearest edge that bounds
+    /// something; and which side of it `q` stands on (below nought within), where a face's foot or
+    /// an edge's inside is nearest.
     pub fn nearest(&self,q: V) -> (f64,Option<f64>) {
-        let b = &*self.located.b;
-        let (mut best,mut side) = (f64::INFINITY,None);
-        for (fi,f) in b.faces.iter().enumerate() {
-            if self.located.face_gap(fi,q) >= best { continue }
-            let foot = f.surface.point(f.surface.inverse(q));
-            let d = distance(q,foot);
-            if d < best && self.located.face_place(fi,foot) != Place::Out {
-                best = d;
-                side = f.outward(foot).map(|n| dot(sub(q,foot),n));
-            }
+        let (b,l) = (&*self.located.b,&self.located);
+        let mut gaps: Vec<(f64,usize)> = (0..b.faces.len()).map(|fi| (l.face_gap(fi,q),fi)).collect();
+        gaps.sort_by(|x,y| x.0.total_cmp(&y.0));
+        let (mut best,mut foot) = (f64::INFINITY,None);
+        for (gap,fi) in gaps {
+            if gap >= best { break }
+            let surface = &b.faces[fi].surface;
+            let uv = surface.inverse(q);
+            let p = surface.point(uv);
+            let d = distance(q,p);
+            if d < best && l.face_place(fi,p) != Place::Out { (best,foot) = (d,Some(Foot::Face(fi,uv))) }
         }
-        for e in 0..b.edges.len() as u32 {
-            if self.seams.contains(&e) || self.located.edge_gap(e,q) >= best { continue }
-            let (t,d) = self.located.nearest(e,q);
-            if !(d < best) { continue }
-            best = d;
+        for &e in &self.bounding {
+            if l.edge_gap(e,q) >= best { continue }
+            let (t,d) = l.nearest(e,q);
+            if d < best { (best,foot) = (d,Some(Foot::Edge(e,t))) }
+        }
+        let outward = |fi: usize,uv: Uv| { let f = &b.faces[fi]; f.surface.normal(uv).map(|n| if f.reversed { scale(n,-1.) } else { n }) };
+        let side = match foot {
+            Some(Foot::Face(fi,uv)) => outward(fi,uv).map(|n| dot(sub(q,b.faces[fi].surface.point(uv)),n)),
             // beside an edge's inside, the side of the sum of its faces' normals there (its
             // pseudo-normal); beside its end, a corner's, none
-            let edge = &b.edges[e as usize];
-            side = (t > edge.t[0] && t < edge.t[1]).then(|| {
-                let x = edge.point(t,&b.vertices);
-                let faces: std::collections::BTreeSet<usize> = self.uses[e as usize].iter().map(|u| u.0).collect();
-                let n = faces.iter().filter_map(|&fi| b.faces[fi].outward(x)).fold([0.;3],add);
-                dot(sub(q,x),n)
-            }).filter(|s| s.abs() > 0.);
-        }
+            Some(Foot::Edge(e,t)) => {
+                let edge = &b.edges[e as usize];
+                (t > edge.t[0] && t < edge.t[1]).then(|| {
+                    let x = edge.point(t,&b.vertices);
+                    let n = self.faces[e as usize].iter().filter_map(|&fi| b.faces[fi].outward(x)).fold([0.;3],add);
+                    dot(sub(q,x),n)
+                }).filter(|s| s.abs() > 0.)
+            }
+            None => None,
+        };
         (best,side)
     }
 }
@@ -617,11 +626,14 @@ impl Material for Boundary {
         // beside a face, the side of it; beside an edge or a corner, where the point stands
         let inside = match side {
             Some(s) => s < 0.,
-            None if !(d > 1e-3*self.tol) => return d/self.scale,
-            None => match &self.mesh {
-                Some(m) if m.distance(q) > 2.*m.sag+self.tol => m.winding(q) > 0.5,
-                _ => self.located.solid_place(q) == Place::In,
-            },
+            None if !(d > 1e-3*self.located.tol) => return d/self.scale,
+            None => {
+                let b = &*self.located.b;
+                match self.mesh.get_or_init(|| Solid::new(b,(1e-3*b.size()).max(self.located.tol),1.).ok()) {
+                    Some(m) if m.distance(q) > 2.*m.sag+self.located.tol => m.winding(q) > 0.5,
+                    _ => self.located.solid_place(q) == Place::In,
+                }
+            }
         };
         if inside { -d/self.scale } else { d/self.scale }
     }

@@ -15,21 +15,18 @@
 //! Where the two differ the B-rep reading reads more: a drafted prism's caps, which the drawing's
 //! reading leaves to admission (`swept::admission::ends`), and the faces a Boolean of the tool splits.
 use gcs_core::brep::swept::admission::{check_screw,Generating,Sampling};
-use gcs_core::brep::swept::constant_twist::Row;
+use gcs_core::brep::swept::constant_twist::{Characteristic,Row};
 use gcs_core::brep::swept::read::Unread;
 use gcs_core::brep::swept::tool::{Tool,ToolSurface};
 use gcs_core::brep::query::{Located,Place};
 use gcs_core::brep::trajectory::Trajectory;
 use gcs_core::model::{Sketch,SolidDef};
 use gcs_core::solid::{cad,SweepContacts};
+use gcs_core::space::{cross,dot,norm,normalised,segment_distance,sub};
 use std::sync::OnceLock;
 
 type V = [f64;3];
 
-fn sub(a: V,b: V) -> V { [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
-fn dot(a: V,b: V) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
-fn cross(a: V,b: V) -> V { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
-fn norm(a: V) -> f64 { dot(a,a).sqrt() }
 
 /// One sweep of the examples, its tool read both ways: off the drawing (`drawn`) and off its B-rep
 /// (`read`), with its path, roll and blank for the walk.
@@ -81,32 +78,32 @@ fn catalogue() -> &'static Cases {
 fn every() -> Cases { read_cases(|_| true) }
 
 fn read_cases(within: impl Fn(&str) -> bool) -> Cases {
-    {
-        let (mut cases,mut refused) = (Vec::new(),Vec::new());
-        for name in fixtures::example_names().into_iter().filter(|n| within(n)) {
-            let Some(e) = fixtures::example(&name) else { continue };
-            if !e.sketch.solids.iter().any(|s| matches!(s.def,SolidDef::Swept {..})) { continue }
-            let mut sk = e.sketch.clone();
-            gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
-            for swept in 0..sk.solids.len() {
-                let SolidDef::Swept {source,..} = &sk.solids[swept].def else { continue };
-                let Ok(drawn) = SweepContacts::read(&sk,swept,cad::AXIS_TOLERANCE) else { continue };
-                let what = format!("{name}: `{}`",sk.solids[swept].name);
-                let brep = gcs_core::brep::recipe::build(&cad::recipe(&sk,*source as usize).unwrap())
-                    .unwrap_or_else(|m| panic!("{what}: the tool the drawing reads builds no B-rep: {m}"));
-                match Tool::read(&brep,cad::millimetres(&sk)) {
-                    Ok(read) => {
-                        let size = read.faces.iter().filter_map(|f| f.at(0.5,0.5).ok()).map(|p| norm(p.position)).fold(1.,f64::max);
-                        let blank = Blank::read(&sk,swept);
-                        cases.push(Case {what,drawn:drawn.tool().clone(),read,path:drawn.motion().path().ok().cloned(),roll:drawn.domain(),
-                            whole:drawn.whole(),blank,size})
-                    }
-                    Err(why) => refused.push((what,why)),
+    let (mut cases,mut refused) = (Vec::new(),Vec::new());
+    for name in fixtures::example_names().into_iter().filter(|n| within(n)) {
+        let Some(e) = fixtures::example(&name) else { continue };
+        if !e.sketch.solids.iter().any(|s| matches!(s.def,SolidDef::Swept {..})) { continue }
+        let mut sk = e.sketch.clone();
+        gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
+        for swept in 0..sk.solids.len() {
+            let SolidDef::Swept {source,..} = &sk.solids[swept].def else { continue };
+            let Ok(drawn) = SweepContacts::read(&sk,swept,cad::AXIS_TOLERANCE) else { continue };
+            let what = format!("{name}: `{}`",sk.solids[swept].name);
+            let brep = gcs_core::brep::recipe::build(&cad::recipe(&sk,*source as usize).unwrap())
+                .unwrap_or_else(|m| panic!("{what}: the tool the drawing reads builds no B-rep: {m}"));
+            match Tool::read(&brep,cad::millimetres(&sk)) {
+                Ok(read) => {
+                    let size = read.faces.iter().filter_map(|f| f.at(0.5,0.5).ok()).map(|p| norm(p.position)).fold(1.,f64::max);
+                    // (the blank only where the walk is asked: under a constant twist)
+                    let path = drawn.motion().path().ok().cloned();
+                    let blank = path.as_ref().filter(|p| p.screw().is_some()).and_then(|_| Blank::read(&sk,swept));
+                    cases.push(Case {what,drawn:drawn.tool().clone(),read,path,roll:drawn.domain(),
+                        whole:drawn.whole(),blank,size})
                 }
+                Err(why) => refused.push((what,why)),
             }
         }
-        (cases,refused)
     }
+    (cases,refused)
 }
 
 fn kind(s: &ToolSurface) -> &'static str {
@@ -124,7 +121,7 @@ fn nearest(s: &ToolSurface,p: V) -> Option<(f64,[f64;2],V)> {
         matches!((x,y),(Ok(x),Ok(y)) if norm(sub(x.position,y.position)) <= 1e-12*(1.+norm(x.position)))
     };
     let (ru,rv) = (closed(u0,u1,0.5*(v0+v1),true),closed(v0,v1,0.5*(u0+u1),false));
-    let hold = |x: f64,a: f64,b: f64,round: bool| if round { a+(x-a).rem_euclid(b-a) } else { x.clamp(a,b) };
+    let hold = |x: f64,a: f64,b: f64,round: bool| if round { gcs_core::brep::geom::around(x,a,b-a) } else { x.clamp(a,b) };
     let at = |u: f64,v: f64| s.at(hold(u,u0,u1,ru),hold(v,v0,v1,rv)).ok();
     let n = 24;
     let mut best: Option<(f64,[f64;2])> = None;
@@ -148,8 +145,7 @@ fn nearest(s: &ToolSurface,p: V) -> Option<(f64,[f64;2],V)> {
         if du.abs()+dv.abs() < 1e-15 { break }
     }
     let x = at(u,v)?;
-    let n = cross(x.du,x.dv);
-    Some((norm(sub(x.position,p)),[u,v],n.map(|c| c/norm(n))))
+    Some((norm(sub(x.position,p)),[u,v],normalised(cross(x.du,x.dv))?))
 }
 
 /// The points of face `s` on a grid inside its domain where `tool` says they are on the tool.
@@ -159,8 +155,7 @@ fn on_tool(s: &ToolSurface,tool: &Tool,n: usize) -> Vec<(V,V)> {
     for i in 1..n { for j in 1..n {
         let Ok(x) = s.at(u0+(u1-u0)*i as f64/n as f64,v0+(v1-v0)*j as f64/n as f64) else { continue };
         if tool.material().value(x.position).abs() < 1e-6 {
-            let m = cross(x.du,x.dv);
-            if norm(m) > 0. { out.push((x.position,m.map(|c| c/norm(m)))) }
+            if let Some(n) = normalised(cross(x.du,x.dv)) { out.push((x.position,n)) }
         }
     } }
     out
@@ -252,18 +247,19 @@ fn corners_alike(cases: &[Case]) -> (usize,usize) {
         let (drawn,read) = (&c.drawn,&c.read);
         let tol = 1e-7*c.size;
         // the point of face `f` at `uv`, with its unit normal
-        let at = |f: &ToolSurface,uv: [f64;2]| f.at(uv[0],uv[1]).ok().map(|x| { let n = cross(x.du,x.dv); (x.position,n.map(|k| k/norm(n))) });
-        // a corner's points along it, on the tool, where its two faces' normals part
-        let corner = |tool: &Tool,e: &gcs_core::brep::swept::tool::PatchEdge| -> Vec<V> {
+        let at = |f: &ToolSurface,uv: [f64;2]| f.at(uv[0],uv[1]).ok().and_then(|x| Some((x.position,normalised(cross(x.du,x.dv))?)));
+        // a corner's points along it, on the tool, where its two faces' normals part, with the two
+        // normals there
+        let corner = |tool: &Tool,e: &gcs_core::brep::swept::tool::PatchEdge| -> Vec<(V,V,V)> {
             let ([a,b],[ua,_]) = (e.patches,e.ends);
             let [v0,v1] = tool.faces[a].domain()[1];
             (0..=8).filter_map(|i| at(&tool.faces[a],[ua,v0+(v1-v0)*(i as f64+0.5)/9.])).filter_map(|(p,n)| {
                 let (d,_,m) = nearest(&tool.faces[b],p)?;
-                (d <= tol && tool.material().value(p).abs() < 1e-6 && norm(cross(n,m)) > 1e-3).then_some(p)
+                (d <= tol && tool.material().value(p).abs() < 1e-6 && norm(cross(n,m)) > 1e-3).then_some((p,n,m))
             }).collect()
         };
         for e in drawn.edges() {
-            for p in corner(drawn,e) {
+            for (p,..) in corner(drawn,e) {
                 let on = read.edges.iter().any(|f| f.patches.iter().zip(f.ends).all(|(&k,u)|
                     nearest(&read.faces[k],p).is_some_and(|(d,uv,_)| d <= tol && (uv[0]-u).abs() <= 1e-6)));
                 assert!(on,"{what}: the drawing's corner {:?} at {p:?} is no corner of the B-rep's",e.patches);
@@ -271,9 +267,7 @@ fn corners_alike(cases: &[Case]) -> (usize,usize) {
             }
         }
         for e in read.edges.iter() {
-            for p in corner(read,e) {
-                let n = at(&read.faces[e.patches[0]],nearest(&read.faces[e.patches[0]],p).unwrap().1).unwrap().1;
-                let m = at(&read.faces[e.patches[1]],nearest(&read.faces[e.patches[1]],p).unwrap().1).unwrap().1;
+            for (p,n,m) in corner(read,e) {
                 let on: std::collections::BTreeSet<usize> = faces_at(drawn,p,n,c.size).into_iter().chain(faces_at(drawn,p,m,c.size)).collect();
                 assert!(on.len() >= 2,"{what}: the B-rep's corner {:?} at {p:?} lies on {} of the drawing's faces",e.patches,on.len());
             }
@@ -316,14 +310,10 @@ fn walk_alike(cases: &[Case]) -> (usize,usize) {
             }
             (Ok(a),Ok(b)) => {
                 // each walk's nodes in its reach on the other's curve
-                let off = |x: &[V],curve: &[V]| x.iter().map(|&p| curve.windows(2).map(|w| {
-                    let (d,q) = (sub(w[1],w[0]),sub(p,w[0]));
-                    let t = (dot(q,d)/dot(d,d).max(1e-300)).clamp(0.,1.);
-                    norm(sub(q,d.map(|k| k*t)))
-                }).fold(f64::INFINITY,f64::min)).fold(0.,f64::max);
-                let reach = |f: &gcs_core::brep::swept::constant_twist::Characteristic| f.nodes[f.reach[0]..=f.reach[1]].iter()
-                    .map(|n| n.position).collect::<Vec<V>>();
-                let all = |f: &gcs_core::brep::swept::constant_twist::Characteristic| f.nodes.iter().map(|n| n.position).collect::<Vec<V>>();
+                let off = |x: &[V],curve: &[V]| x.iter().map(|&p| curve.windows(2).map(|w| segment_distance(p,w[0],w[1]))
+                    .fold(f64::INFINITY,f64::min)).fold(0.,f64::max);
+                let points = |n: &[gcs_core::brep::swept::constant_twist::Node]| n.iter().map(|n| n.position).collect::<Vec<V>>();
+                let (reach,all) = (|f: &Characteristic| points(&f.nodes[f.reach[0]..=f.reach[1]]),|f: &Characteristic| points(&f.nodes));
                 // (the charts start alike, so the walks step alike: to rounding)
                 let bar = 1e-9*c.size;
                 let (ab,ba) = (off(&reach(&a),&all(&b)),off(&reach(&b),&all(&a)));
