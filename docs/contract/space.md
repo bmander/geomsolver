@@ -8,14 +8,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
 reaches stands in space (`PointE.z`, given by `Sketch::give_place` once memberships are in; its
 own lift, no row); a 2D drawing is `use std` + `in std.front { … }`. There is no page: a point
 with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with no lift. An **axis**
-(`t := axis hint(dir: (x, y, z))`, `AxisE` a[3], d[3]; intrinsics `axis_unit`, `axis_foot` once a
-relation reads its place) is a directed line with no start; a drawn line reads as one. A plane
-over a line holds a hidden axis that is the line (`entities::axes_along`: intrinsic `Parallel3`,
-sensed `same` so the axis runs from the line's `p1` toward its `p2` by its row and not its seed
-([0.173], #535), and `PointOnAxis` at its `p1`, or at the end where the plane's other axis meets
-it). **A plane whose two axes meet by construction stands there** (#88, #819,
-`entities::meeting`): its two `PlaneAxis` rows give way to one intrinsic `Coincident3` of its
-origin and that point — four rows over three unknowns would be a dependency the structural count
+(`t := axis hint(dir: (x, y, z))`, `AxisE` a[3], d[3]; its own rows `axis_unit`, and `axis_foot`
+once a relation reads its place, `AxisE::placed`, `Owner::Axis`) is a directed line with no start;
+a drawn line reads as one. A plane over a line holds a hidden axis that is the line
+(`entities::axes_along` sets `Chart::along`, an `Along { line, at }` per axis, whose rows are the
+plane's own, `Owner::Frame`: `Parallel3`, sensed `same` so the axis runs from the line's `p1` toward
+its `p2` by its row and not its seed ([0.173], #535), and `PointOnAxis` at its `p1`, or at the end
+where the plane's other axis meets it). **A plane whose two axes meet by construction stands
+there** (#88, #819, `entities::meeting`, `Chart::stands_at`): its two `PlaneAxis` rows give way to
+one `Coincident3` of its origin and that point — four rows over three unknowns would be a dependency the structural count
 cannot see, and read as a part's own rows (language.md) the fourth is E109.  An axis along a line
 stands on the line's two ends (each line's own image of one, a twin's included,
 `Sketch::twinned`); any other axis on the place of each frame it is `u`, `v` or normal of, built
@@ -28,10 +29,12 @@ frame does (`plane_at`), keeps what it has.  The lift writes both rows (`r paral
 coincident r`).
 A **plane** is `P := plane(u: r1, v: r2)` (`PlaneE { u, v, o, origin }`): right u, out u × v, up
 out × u; it owns `o` (three unknowns); members `P.u`, `P.v`, `P.origin` (a point drawn in P held at
-(0, 0)), and `P.normal` (below). **Its axes pass through its origin** (0.43, #84): `push_plane` mints two intrinsic
-`PlaneAxis` rows (`point_on_axis` over `o`), placing both axes, standing one it is first to place
-through `o`. A frame's own standard datum (#542, [language.md](language.md)) is the one plane
-that owns no `o`: `Sketch::plane_at` stands it at its frame's place, and an axis already through
+(0, 0)), and `P.normal` (below). **Its axes pass through its origin** (0.43, #84): its two
+`PlaneAxis` rows (`point_on_axis` over `o`; `Owner::Frame`, derived by `push_plane`), placing both
+axes, standing one it is first to place through `o`. A frame's own standard datum (#542,
+[language.md](language.md)) is the one plane that owns no `o`: `Sketch::plane_at` stands it at its
+frame's place (`Chart::place` is `Place::Of(frame)`, so a copy stands it there too, with no place
+of its own), and an axis already through
 that place (the frame's `u`, `v`, normal, or a normal of a plane standing there) takes no
 `PlaneAxis` row, so the datums add no unknown and no row that carries no information. A slot left
 out mints a free axis (`P.u`/`P.v`, `build_plane`): `p := plane` is 7 DOF.
@@ -64,10 +67,12 @@ square to its `normal:` (`Decl::normal`, parsed for a circle as a spline's `thro
 by `rewrite_decl`, read as `Deferred::Normal` once the axes are built; none, E060 saying to give
 one; on a circle drawn in a plane, E040).  The round is drawn over points of its own there — the
 centre the plane's origin, an arc's start on the plane's `u` (a gauge, its `y` held), its end free
-— each tied to the point written by an intrinsic `Coincident3` and recorded in
-`Sketch::stands_for` (so a chain's links still meet: `solids::faces::validate_chain`), the axes
-held square (`Perpendicular3`), and a circle's turn about its normal held square to the world axis
-least along it (a held hidden axis, `Sketch::round_gauges`), a gauge.  No one axis serves every
+— each tied to the point written by a `Coincident3`, the axes held square (`Perpendicular3`), and a
+circle's turn about its normal held square to the world axis least along it (a held hidden axis),
+a gauge: all of it the round's field (`ArcE::round`, `CircleE::round`: a `RoundIn` of its plane,
+its points each with the point written, a circle's normal and gauge), whose rows are its own
+(`Owner::Round`), read as `Sketch::stands_for` (so a chain's links still meet:
+`solids::faces::validate_chain`) and `Sketch::round_gauges`, and copied by `graft` and the JSON.  No one axis serves every
 normal (a field of tangents on the sphere vanishes somewhere), so the gauge follows the normal:
 where a solve ends (`System::solve`, so drags and the plan solver too), a gauge within 45° of its
 normal is turned onto the plane's `v` as it stands, square to `u`, its row still holding
@@ -132,14 +137,14 @@ words.
 the declaration (`fields()` and the JSON keys stay three) but `PlaneE::normal`, minted only where
 a reference reads it — the flattener records each (`Expansion::normals`, in `rewrite`'s `fix`)
 and `build_plane` mints it with the plane (`Sketch::plane_normal`, bound as `P.normal`), so a later
-declaration may name it and an earlier one is E040 (`follow_building`). Its rows are intrinsic:
-`Perpendicular3` to `u`, `PerpendicularAbout(v, n, about: u, ccw)` — square to `v` and a quarter
+declaration may name it and an earlier one is E040 (`follow_building`). Its rows are its own,
+derived from `Chart::normal` (`Owner::Normal`): `Perpendicular3` to `u`, `PerpendicularAbout(v, n, about: u, ccw)` — square to `v` and a quarter
 turn on from it about `u`, so on `u × v`'s side — and `PlaneAxis` through `o`: three rows over its
 direction with the unit row, two over its place, no freedom. **Its sense is a row** (#629): a
 normal against `u × v` is no root but the turn's cut, so a solve cannot turn it over alone and
 leave the plane mirrored with every row holding (a part seated on its frame once stood upside
-down so, solved). `axes_along` keeps its `PlaneAxis` where it swaps the plane's for a
-`Coincident3`. `Sketch::seed_normals` turns it along `u × v` after `axes_along`, in
+down so, solved). A plane standing where its axes meet (`Chart::stands_at`) keeps its normal's
+`PlaneAxis` where its own two give way to a `Coincident3`. `Sketch::seed_normals` turns it along `u × v` after `axes_along`, in
 `views::place` and after `settle_turns`. `place` solves the statements reading a normal without
 its rows, then reads it off the axes again; where a round solved it against them, the plane is
 turned over (`views::turn_over`: its free `v` reversed, else its `u`), so the solve starts on the
@@ -149,7 +154,7 @@ statement's side and not at the cut. `tests/plane_normal.rs`
 sense. `follow` resolves it; `hint(dir: P.normal)` reads the basis as `P.n` does. **Drawn
 nowhere**: `Sketch::drawn` leaves it out (so the workspace's scene, picks and boxes) and
 `nearest_axis` skips it. JSON writes a plane's `"normal"` (an axis index) only where one was read,
-and the reader and `graft` give it its rows again (`stand_normal`); `lift` names it `vK.normal`
+and the reader and `graft` set the field again (`stand_normal`), its rows derived from it; `lift` names it `vK.normal`
 and declares no axis. `tests/plane_normal.rs` is the gate.
 
 **A point drawn in two planes** (0.58, #145): `O := point in P, G` (`Membership::also`). The
@@ -157,10 +162,11 @@ flattener declares a hidden **twin** per further plane beside it (`Walk::twins_o
 `hint(at: O)`, `Expansion::twins`); the elaborator records them (`Sketch::twins`) and, after the
 relations, ties each (`planes::tie_twins`, E040 a plane twice; `planes::parallel_twins` E061 after
 `views::place`, of the planes it placed — `place` says which — and of a plane only seeded where the
-solve leaves it, `views::degenerate`'s twin row, #252): `Sketch::tie_twin`'s two intrinsic rows, the twin on the point's plane and
-`Project`, then `Sketch::hold_twins`' point on the twin's plane — left out where a line the plane is
-built along (`axes_along`'s `Parallel3`) ends at the point or has it stated on it, a dependency the
-structural count cannot see (#88). The crown's normal section N is square so. A point is read where its reader
+solve leaves it, `views::degenerate`'s twin row, #252): its rows, `Owner::Twin` (`Sketch::tie_twin`,
+derived again by `hold_twins` and by every copy), the twin on the point's plane and `Project`, and
+the point on the twin's plane — left out where a stated row holds it there, or a line the plane is
+built along (`Chart::along`, `Sketch::built_through`) ends at the point or has it stated on it, a
+dependency the structural count cannot see (#88). The crown's normal section N is square so. A point is read where its reader
 is drawn: `planes::memberships` puts a twin in a drawn element's slot (`Sketch::twin_in`,
 `replace_point`), `reading::read_twins` in a relation's before `in_space`. A twin goes by its
 point's name (`SourceMap::twin_of`, read by `name_of`/`writable_name`; never filed in `names`, so

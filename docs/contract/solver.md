@@ -5,6 +5,27 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
 `amd.rs`. An issue number (#n) or a spec version ([0.n], see the [language
 changelog](../solvent-changelog.md)) says where a rule came from.
 
+- **An intrinsic row is derived from the model, and stored as a cache of it** (#831,
+  `model/intrinsic.rs`).  A row the drawing adds itself — an axis's unit and foot, an arc's ends
+  on it, a plane's axes through its place, a frame square, along drawn lines or standing where
+  they meet, a normal's three, a lift, a twin's tie, an arc's or a circle's plane in space, a
+  development's held length — follows from a field of the entity it is about, and
+  `Sketch::rows_of(owner)` is the one place one is made: `Owner` (`Axis`, `Arc`, `Frame`,
+  `Normal`, `Lift`, `Twin`, `Round`, `Developed`) is matched exhaustively there, so a new
+  structural fact does not compile without its derivation.  A constructor sets the field and
+  calls `Sketch::derive(owner)`, which replaces the owner's rows with `rows_of` — a row still
+  implied keeps its place and id, one no longer implied gives them to a new row of its kind or
+  goes, the rest are added last — and a pass that changes structure changes the field and
+  derives again; nothing edits an intrinsic row.  Each row says whose it is
+  (`Constraint::origin`, `Origin::Intrinsic(owner)`; `is_intrinsic()` for the readers that ask
+  only stated or not) and stays in `constraints`, so the solve, the block order and the
+  diagnosis read one list.  **No reader infers structure from an intrinsic row**: a plane's
+  axes along lines are `Chart::along` (`Sketch::axes_along`, `built_through`), a frame's
+  squareness `Chart::square`, a round's points and gauge its `RoundIn` (`Sketch::stands_for`,
+  `round_gauges`).  A constraint record from a binding states a row and never an intrinsic one
+  (`report::constraint_from_json`), and `Constraint::remapped` copies none.  Should a cached row
+  ever disagree with its owner, computing the rows inside `System::new` is the further step; the
+  gates in app.md would show it.
 - **A recorded root choice is one record of one triangle** (`decompose::branch_record`).  `ccw(a, b,
   c)` ("c left of a→b") is the same fact as `ccw(a, c, b)` with the sign turned, so a record is
   **canonical**: point indices ascending, the sorting permutation's parity folded into the sign
