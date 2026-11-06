@@ -248,7 +248,8 @@ trait SinCos { fn sin_cos_iv(self) -> (Iv,Iv); }
 impl SinCos for Iv { fn sin_cos_iv(self) -> (Iv,Iv) { use gcs_core::interval::Num; self.sin_cos() } }
 
 /// **The general reading holds every closed form** (#814 P4): random lines, circles and splines
-/// against a plane, a cylinder, a cone, a ball, a torus and a level circle's screwed sheet, read by
+/// against a plane, a cylinder, a cone, a ball, a torus and a level circle's screwed sheet, and
+/// lines against a conic's and a turned contact's revolutions and a slid contour's cylinder, read by
 /// the closed forms where the pair has one (`curve_surface`) and by the general reading alone
 /// (`curve_surface_searched`), find the same meetings, each on both curve and surface.
 #[test]
@@ -257,13 +258,24 @@ fn the_general_reading_holds_every_closed_form() {
     let f = Frame::new([0.2,-0.1,0.3],unit([0.1,-0.2,1.]),unit([1.,0.,-0.1]));
     let rim = Curve::Circle(Frame::about([0.,0.,0.],[0.,0.,1.]),1.5);
     let sheet = Blend {a:rim.clone(),ta:[0.,TAU],b:rim,tb:[0.,TAU],carry:Carry::Screw {center:[0.3,0.,0.],axis:[0.,0.,1.],angle:3.,advance:4.},closed:true};
+    // a conic meridian (a rational quadratic) and a turned contact's, turned; a slid contour's
+    // cylinder
+    let w = std::f64::consts::FRAC_1_SQRT_2;
+    let conic = Curve::BSpline(Arc::new(BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],vec![[2.,0.,-1.],[1.,0.,0.],[2.,0.,1.]],vec![1.,w,1.]).unwrap()));
+    let contact = gcs_core::brep::turned::Contact {o:[5.,1.2,-0.5],a:unit([0.42,-0.1,0.9]),r:1.,sa:0.,ca:1.,side:1.};
+    let turned = Curve::Turned(Arc::new(gcs_core::brep::turned::Turned::meridian(Frame::WORLD,contact,[-1.,1.])));
+    let slide = unit([1.,0.,0.3]);
+    let slid = Curve::Slid(Arc::new(gcs_core::brep::slid::halves(Frame::WORLD,3.,1.,slide,1.,true)[0]));
     let surfaces = [Surface::Plane(f),Surface::Cylinder(f,2.),Surface::Cone(f,1.5,0.4),Surface::Sphere(f,2.),Surface::Torus(f,3.,1.),
-        Surface::Blend(Frame::WORLD,Arc::new(sheet))];
+        Surface::Blend(Frame::WORLD,Arc::new(sheet)),Surface::Revolution(Frame::WORLD,Arc::new(conic)),Surface::Revolution(Frame::WORLD,Arc::new(turned)),
+        Surface::Extrusion(Frame::about([0.;3],slide),Arc::new(slid))];
     let mut rng = Rng::new(4);
     let (mut met,mut read) = (0,0);
     for s in &surfaces {
         for k in 0..30 {
             let p = [rng.uniform(-4.,4.),rng.uniform(-4.,4.),rng.uniform(-2.,4.)];
+            // (lines alone against a revolution and a slid contour: the closed forms there read lines)
+            let k = if matches!(s,Surface::Revolution(..) | Surface::Extrusion(..)) { 0 } else { k };
             let curve = match k%3 {
                 0 => Curve::Line {p,d:unit([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)])},
                 1 => Curve::Circle(Frame::about(p,unit([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)])),rng.uniform(0.5,4.)),
@@ -284,7 +296,7 @@ fn the_general_reading_holds_every_closed_form() {
             met += x.len();
         }
     }
-    assert!(read == 180 && met > 60,"{read} read, {met} met");
+    assert!(read == 270 && met > 90,"{read} read, {met} met");
 }
 
 /// **A reading that proves nothing is refused, with its witness** (#814 P3), whatever reads it:
