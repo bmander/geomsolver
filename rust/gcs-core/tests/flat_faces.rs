@@ -176,7 +176,7 @@ fn bull_nose(slide: f64) -> String {
 fn a_bull_nose_mill_slid_to_a_stop_inside_the_block() {
     let e = fixtures::read(&bull_nose(15.));
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     let (r1,r2) = (5.75+PI/16.,11.125+1./12.+3.*PI/16.);
     near(exported(&e,"part"),2000.-(20.*r1+PI/2.*r2),1e-9);
 }
@@ -226,7 +226,7 @@ fn a_hollow_mill_slid_across_the_block_cuts_a_whole_slot() {
         .replace("face(bottom, side, top, spindle)","face(bottom, side, top, inside)");
     let e = fixtures::read(&hollow);
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     near(exported(&e,"part"),2000.-240.,1e-9);
 }
 

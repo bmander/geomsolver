@@ -4,9 +4,13 @@
 //! a frame along a path, a convex tool of revolution, #780 L3), built by the kernel's one
 //! pipeline (`brep::swept::closed`) — the blank split by every candidate face of the sweep's
 //! boundary at once, each cell kept where the kernel's membership says it is no member of the
-//! sweep. Nothing about the tool's contacts is sampled at admission: what the pipeline asks is the
-//! tool's and the motion's structure (rows C1 and C2, the kernel's `closed::reads`), and what it
-//! cannot settle it refuses while it builds (C3, a cell whose membership stays unsettled, with the
+//! sweep. Under a constant twist nothing about the tool's contacts is sampled at admission: what
+//! the pipeline asks is the tool's and the motion's structure (rows C1 and C2, the kernel's
+//! `closed::reads`). Under any other motion the contact moves on the tool, so its structure is
+//! read at instants along the roll (`closed::reads_general`: one closed curve whose pieces keep
+//! their kinds, a path that comes back nowhere), and a sweep it refuses keeps the refusal of the
+//! class asked first. What it cannot settle it refuses while it builds (C3, a cell whose membership
+//! stays unsettled, with the
 //! point). The solver reads the tool, the motion and the roll off the drawing and says the
 //! kernel's refusals; the geometry is the kernel's.
 use super::admission::{Basis,Class,Condition,Equivalence,Placement,SweepEvidence};
@@ -19,63 +23,23 @@ use crate::model::{Sketch,SolidDef};
 
 type V = [f64;3];
 
-/// What the closed class read of a sweep: its tool's B-rep and name, its motion's constant twist
-/// and the roll it is carried over, in millimetres — what the build hands the kernel. A motion no
-/// constant twist takes (#780 L3, K2: a frame along a path) is `general`, the trajectory itself in
-/// millimetres, its `screw` then moving nothing.
+/// What the closed class read of a sweep: its tool's B-rep and name, its motion and the roll it is
+/// carried over, in millimetres — what the build hands the kernel: a constant twist
+/// (`Trajectory::Twist`), or any other rigid motion (#780 L3, K2: a frame along a path).
 #[derive(Clone,Debug)]
 pub struct Closed {
     pub tool: Brep,
     pub tool_name: String,
-    pub screw: Screw,
+    pub path: Trajectory,
     pub roll: [f64;2],
-    pub general: Option<Trajectory>,
 }
 
 impl Closed {
+    /// The constant twist the motion is, where it is one.
+    pub fn screw(&self) -> Option<Screw> { self.path.screw() }
+
     /// The motion's kind, in the words a report uses.
-    pub fn kind(&self) -> &'static str { if self.general.is_some() { "any rigid motion" } else { self.screw.kind() } }
-
-    /// The motion the kernel builds the sweep under, in millimetres.
-    pub fn path(&self) -> Trajectory { self.general.clone().unwrap_or(Trajectory::Twist(self.screw)) }
-}
-
-/// **A trajectory read in millimetres**: the model's poses with their offsets scaled by `k` (a turn
-/// is a turn in any unit), its speed bounds likewise — what a motion no constant twist takes is
-/// handed the kernel as (`Closed::general`).
-#[derive(Debug)]
-struct Scaled { path: Trajectory,k: f64 }
-
-impl crate::brep::trajectory::Path for Scaled {
-    fn at(&self,t: f64) -> Result<crate::brep::trajectory::Motion,crate::brep::KernelError> {
-        let m = self.path.at(t)?;
-        let p = m.point([0.;3]);
-        let dp = m.velocity([0.;3]);
-        let column = |k: usize| { let mut e = [0.;3]; e[k] = 1.; (crate::space::sub(m.point(e),p),crate::space::sub(m.velocity(e),dp)) };
-        let cols = [column(0),column(1),column(2)];
-        let r = std::array::from_fn(|i| std::array::from_fn(|j| cols[j].0[i]));
-        let dr = std::array::from_fn(|i| std::array::from_fn(|j| cols[j].1[i]));
-        Ok(crate::brep::trajectory::Motion::of_parts(r,dr,p.map(|x| x*self.k),dp.map(|x| x*self.k)))
-    }
-    fn pose(&self,t: f64) -> Result<crate::brep::trajectory::Pose,crate::brep::KernelError> {
-        let q = self.path.pose(t)?;
-        Ok(crate::brep::trajectory::Pose {r:q.r,p:q.p.map(|x| x*self.k)})
-    }
-    fn stretch(&self,a: f64,b: f64) -> Option<crate::brep::trajectory::Stretch> {
-        let Trajectory::General(inner) = &self.path else { return None };
-        let g = inner.stretch(a,b)?;
-        let k = crate::interval::Interval::point(self.k).ok()?;
-        let point = [g.point[0].mul(k).ok()?,g.point[1].mul(k).ok()?,g.point[2].mul(k).ok()?];
-        Some(crate::brep::trajectory::Stretch {point,turn:g.turn,speed:g.speed*self.k,spin:g.spin,origin:g.origin.map(|x| x*self.k)})
-    }
-    fn speed_over(&self,b: [crate::interval::Interval;3],lo: f64,hi: f64,_: &crate::brep::trajectory::Stretch)
-        -> Result<crate::interval::Interval,crate::interval::Error> {
-        let Trajectory::General(inner) = &self.path else { return Err(crate::interval::Error::InvalidBounds) };
-        let g = inner.stretch(lo,hi).ok_or(crate::interval::Error::InvalidBounds)?;
-        let k = crate::interval::Interval::point(self.k)?;
-        let back = crate::interval::Interval::point(1./self.k)?;
-        inner.speed_over([b[0].mul(back)?,b[1].mul(back)?,b[2].mul(back)?],lo,hi,&g)?.mul(k)
-    }
+    pub fn kind(&self) -> &'static str { self.screw().map_or("any rigid motion",|s| s.kind()) }
 }
 
 /// A closed sweep's build refused: its row, what was seen, and where (in the sweep's own
@@ -115,21 +79,16 @@ pub fn admit(sk: &Sketch,swept: usize,placements: &[Motion]) -> Option<SweepEvid
     let (path,roll) = path.unpaced(roll).ok()?;
     let mm = cad::millimetres(sk);
     let tool = crate::brep::recipe::build(&cad::recipe(sk,*source as usize).ok()?).ok()?;
-    // a constant twist, or a frame along a path (K2, #780 L3: each instant's contact swept into a
-    // patch, the tool a convex solid of revolution)
-    let (screw,general) = match path.screw() {
-        Some(s) => { let screw = s.scaled(mm); closed::reads(&tool,&Trajectory::Twist(screw)).ok()?; (screw,None) }
-        None => {
-            let general = if mm == 1. { path.clone() } else {
-                Trajectory::General(std::sync::Arc::new(Scaled {path:path.clone(),k:mm}))
-            };
-            closed::reads_general(&tool,&general,roll).ok()?;
-            (Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:0.},Some(general))
-        }
-    };
+    // a constant twist, or any other motion (K2, #780 L3: each instant's contact swept into a patch,
+    // the tool a convex solid of revolution)
+    let path = path.scaled(mm);
+    match path.screw() {
+        Some(_) => closed::reads(&tool,&path).map(|_| ()),
+        None => closed::reads_general(&tool,&path,roll),
+    }.ok()?;
     Some(SweepEvidence {sweep:swept,name:solid.name.clone(),
         placements:placements.iter().map(|&pose| Placement {pose,equivalent_to:None}).collect(),
         samples:0,contacts:0,spacing:0.,least_area_factor:1.,near_double_roots:0,near_tangent_pairs:0,
         basis:Basis::Sampled {rows:0,columns:0},equivalence:Equivalence::Sampled,
-        class:Class::Closed(Box::new(Closed {tool,tool_name:sk.solids[*source as usize].name.clone(),screw,roll,general}))})
+        class:Class::Closed(Box::new(Closed {tool,tool_name:sk.solids[*source as usize].name.clone(),path,roll}))})
 }

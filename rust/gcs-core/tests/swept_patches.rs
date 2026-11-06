@@ -9,15 +9,15 @@
 //! membership and with a Monte Carlo of the sweep's definition, read over the roll directly.
 use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::closed::{Unbuilt,closed};
-use gcs_core::brep::swept::member::{Solid,Swept};
 use gcs_core::brep::swept::patches::Revolved;
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::{Screw,Trajectory,Twist};
 use gcs_core::model::SolidDef;
 use gcs_core::program::Elaborated;
+use gcs_core::space::dot;
 use std::f64::consts::{PI,TAU};
 
-use crate::swept_closed::monte_carlo;
+use crate::swept_closed::{agrees_over,bull_nose,monte_carlo,slide};
 
 type V = [f64;3];
 
@@ -36,11 +36,16 @@ fn sweep(e: &Elaborated,name: &str) -> (Brep,Trajectory,[f64;2]) {
     (tool,path.clone(),roll)
 }
 
-/// The sweep of the tool whose inside is `inside` under `path` over `roll`, read by the definition:
-/// whether a point is in it, the tool's poses over `n` rolls each carrying it back onto the tool.
-fn defined<'a>(inside: &'a dyn Fn(V) -> bool,path: &Trajectory,[a,b]: [f64;2],n: usize) -> impl Fn(V) -> bool + 'a {
+/// The sweep of the tool `tool` under `path` over `roll`, read by the definition: whether a point is
+/// in it, the tool's poses over `n` rolls each carrying it back onto the tool (`inside_of`) — a pose
+/// carrying it farther than the tool reaches from its centre missing it at once.
+fn defined<'a>(tool: &'a Revolved,path: &Trajectory,[a,b]: [f64;2],n: usize) -> impl Fn(V) -> bool + 'a {
     let back: Vec<gcs_core::brep::trajectory::Pose> = (0..=n).map(|i| path.pose(a+(b-a)*i as f64/n as f64).unwrap().inverse()).collect();
-    move |p: V| back.iter().any(|m| inside(m.point(p)))
+    let inside = inside_of(tool);
+    move |p: V| back.iter().any(|m| {
+        let q = m.point(p);
+        gcs_core::space::norm(gcs_core::space::sub(q,tool.origin())) <= tool.size && inside(q)
+    })
 }
 
 /// The inside of a solid of revolution read off its meridian (`Revolved`): a point's `(ρ, z)` about
@@ -54,25 +59,6 @@ fn inside_of(tool: &Revolved) -> impl Fn(V) -> bool + '_ {
         let (q,..) = tool.cast(d.map(|x| x/r));
         gcs_core::space::norm(gcs_core::space::sub(q,tool.origin())) > r
     }
-}
-
-/// The built solid against membership at seeded points of its box: every settled point inside it a
-/// member, every one outside not.
-fn agrees(built: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {
-    let (solid,body) = (Solid::new(tool,0.002,1.).unwrap(),Solid::new(built,0.002,1.).unwrap());
-    let swept = Swept {tool:&solid,path,roll};
-    let (lo,hi) = built.bounds();
-    let mut rng = gcs_core::rng::Rng::new(11);
-    let mut held = 0;
-    for _ in 0..200 {
-        let p: V = std::array::from_fn(|k| rng.uniform(lo[k]-0.2,hi[k]+0.2));
-        let d = body.signed_distance(p);
-        if d.abs() < 0.01 { continue }
-        let Ok(member) = swept.member(p) else { continue };
-        assert_eq!(member,d < 0.,"at {p:?}: membership {member}, the built solid's distance {d}");
-        held += 1;
-    }
-    assert!(held > 150,"{held} points held");
 }
 
 /// **A ball along a spline frame is its fitted tube** (#780 L3's first gate): `path.sv`'s ball,
@@ -105,29 +91,14 @@ fn a_ball_along_a_spline_frame_is_its_fitted_tube() {
     let (lo,hi) = built.bounds();
     let (mc,sigma) = monte_carlo(lo,hi,40_000,7,&|p| centres.iter().any(|&c| gcs_core::space::norm(gcs_core::space::sub(p,c)) <= r));
     assert!((mc-got).abs() <= 4.*sigma+1e-3*got,"a Monte Carlo of the definition {mc} ± {sigma} against {got}");
-    agrees(&built,&tool,&path,roll);
+    agrees_over(&built,&tool,&path,roll);
 }
 
-/// The slide carrying a tool by `d` over the roll `[0, 1]`, read as a motion no constant twist
-/// takes: seen from a frame standing still (`Relative`), so the kernel reads it instant by instant.
-fn slid_as_any(d: V) -> Trajectory {
-    let l = gcs_core::space::norm(d);
-    let slide = Screw {origin:[0.;3],axis:d.map(|x| x/l),ratio:0.,advance:l*TAU};
+/// `path` read as a motion no constant twist takes: seen from a frame standing still (`Relative`),
+/// so the kernel reads it instant by instant.
+fn as_any(path: Trajectory) -> Trajectory {
     let still = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:0.};
-    Trajectory::Relative {source:Box::new(Trajectory::Twist(slide)),observer:Box::new(Trajectory::Twist(still))}
-}
-
-/// A bull-nose mill of radius `big`, corner `c` and height `h`, about the upright axis through the
-/// origin, its flat end on `z = 0`.
-fn bull_nose(big: f64,c: f64,h: f64) -> Brep {
-    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
-    use gcs_core::brep::geom::Frame;
-    let corner = Frame::new([big-c,0.,c],[0.,-1.,0.],[1.,0.,0.]);
-    let edges = vec![ProfileEdge::Line {a:[0.,0.,0.],b:[big-c,0.,0.]},
-        ProfileEdge::Arc {frame:corner,r:c,span:Some([-PI/2.,0.])},
-        ProfileEdge::Line {a:[big,0.,c],b:[big,0.,h]},ProfileEdge::Line {a:[big,0.,h],b:[0.,0.,h]},ProfileEdge::Line {a:[0.,0.,h],b:[0.,0.,0.]}];
-    let profile = Profile {origin:[0.;3],normal:[0.,1.,0.],names:Vec::new(),loops:vec![edges]};
-    revolve(&profile,[0.;3],[0.,0.,1.],TAU).unwrap()
+    Trajectory::Relative {source:Box::new(path),observer:Box::new(Trajectory::Twist(still))}
 }
 
 /// **A bull-nose slid at a lean, read instant by instant, is the constant twist's sweep**: the mill
@@ -141,15 +112,15 @@ fn bull_nose(big: f64,c: f64,h: f64) -> Brep {
 /// million.
 #[test]
 fn a_bull_nose_slid_at_a_lean_instant_by_instant_is_the_slides_sweep() {
-    let tool = bull_nose(1.,0.3,1.);
+    let tool = bull_nose(0.,1.,0.3,1.);
     let d = [1.8,0.,-2.4];
-    let built = closed(&tool,&slid_as_any(d),[0.,1.],0.002,1e-6).unwrap_or_else(|u| panic!("{u:?}"));
-    let twist = closed(&tool,&crate::swept_closed::slide(d),[0.,1.],0.002,1e-6).unwrap();
+    let built = closed(&tool,&as_any(slide(d)),[0.,1.],0.002,1e-6).unwrap_or_else(|u| panic!("{u:?}"));
+    let twist = closed(&tool,&slide(d),[0.,1.],0.002,1e-6).unwrap();
     let (got,want) = (volume(&built),volume(&twist));
     assert!((got-want).abs() <= 1e-8*want,"{got} against the slide's {want}");
-    let worked = advanced(&Revolved::read(&tool).unwrap(),&tool,&slid_as_any(d),[0.,1.],false);
+    let worked = advanced(&Revolved::read(&tool).unwrap(),&tool,&as_any(slide(d)),[0.,1.],false);
     assert!((got-worked).abs() <= 1e-6*worked,"{got} against the volume worked apart {worked}");
-    agrees(&built,&tool,&slid_as_any(d),[0.,1.]);
+    agrees_over(&built,&tool,&as_any(slide(d)),[0.,1.]);
 }
 
 /// **A bull-nose screwed, read instant by instant**: the mill beside the axis, 4 out, screwed a
@@ -163,21 +134,33 @@ fn a_bull_nose_slid_at_a_lean_instant_by_instant_is_the_slides_sweep() {
 #[test]
 fn a_bull_nose_screwed_instant_by_instant_closes_into_its_sweep() {
     let (d,theta,advance) = (4.,1.,2.);
-    let tool = bull_nose(1.,0.3,1.).moved(&gcs_core::brep::geom::Rigid {r:[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],t:[d,0.,0.]});
+    let tool = bull_nose(d,1.,0.3,1.);
     let screw = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance};
-    let still = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:0.};
-    let path = Trajectory::Relative {source:Box::new(Trajectory::Twist(screw)),observer:Box::new(Trajectory::Twist(still))};
+    let path = as_any(Trajectory::Twist(screw));
     assert!(matches!(closed(&tool,&Trajectory::Twist(screw),[0.,1.],0.002,1e-6),Err(Unbuilt::Curved {..})),
         "the constant twist's road refuses a torus screwed");
     let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap_or_else(|u| panic!("{u:?}"));
     let revolved = Revolved::read(&tool).unwrap();
     let worked = advanced(&revolved,&tool,&path,[0.,1.],false);
     let (lo,hi) = built.bounds();
-    let (mc,sigma) = monte_carlo(lo,hi,40_000,5,&defined(&inside_of(&revolved),&path,[0.,1.],600));
+    let (mc,sigma) = monte_carlo(lo,hi,40_000,5,&defined(&revolved,&path,[0.,1.],600));
     assert!((mc-worked).abs() <= 4.*sigma,"a Monte Carlo of the definition {mc} ± {sigma} against the volume worked apart {worked}");
     let got = volume(&built);
     assert!((got-worked).abs() <= 1e-6*worked,"{got} against the volume worked apart {worked}");
-    agrees(&built,&tool,&path,[0.,1.]);
+    agrees_over(&built,&tool,&path,[0.,1.]);
+}
+
+/// Where `side` changes over `[x0, x1]`, read at `n` even steps and each change bisected to
+/// rounding.
+fn sign_cuts(n: usize,[x0,x1]: [f64;2],side: impl Fn(f64) -> bool) -> Vec<f64> {
+    (0..n).filter_map(|i| {
+        let (a,b) = (x0+(x1-x0)*i as f64/n as f64,x0+(x1-x0)*(i+1) as f64/n as f64);
+        (side(a) != side(b)).then(|| {
+            let (lo,hi) = gcs_core::roots::bisect(a,b,|l,h| 0.5*(l+h),|l,h| { let m = 0.5*(l+h); m > l && m < h },
+                |m| side(m) == side(a));
+            0.5*(lo+hi)
+        })
+    }).collect()
 }
 
 /// The integral over a convex tool of revolution's faces of `f(x, n).0` (`x` the point of the tool,
@@ -195,20 +178,7 @@ fn over_faces(tool: &Revolved,f: &dyn Fn(V,V) -> (f64,[f64;2])) -> f64 {
     let at = |rho: f64,z: f64,nr: f64,nz: f64,w: f64| f(g.at([rho*w.cos(),rho*w.sin(),z]),g.dir([nr*w.cos(),nr*w.sin(),nz]));
     let ring = |rho: f64,z: f64,nr: f64,nz: f64| -> f64 {
         let h = |w: f64| at(rho,z,nr,nz,w);
-        let k = 64;
-        let mut cuts: Vec<f64> = vec![0.];
-        for i in 0..k {
-            let (w0,w1) = (TAU*i as f64/k as f64,TAU*(i+1) as f64/k as f64);
-            for j in 0..2 {
-                let side = |w: f64| h(w).1[j] > 0.;
-                if side(w0) != side(w1) {
-                    let (mut lo,mut hi) = (w0,w1);
-                    for _ in 0..60 { let mid = 0.5*(lo+hi); if side(mid) == side(w0) { lo = mid } else { hi = mid } }
-                    cuts.push(0.5*(lo+hi));
-                }
-            }
-        }
-        cuts.push(TAU);
+        let mut cuts: Vec<f64> = (0..2).flat_map(|j| sign_cuts(64,[0.,TAU],|w| h(w).1[j] > 0.)).chain([0.,TAU]).collect();
         cuts.sort_by(f64::total_cmp);
         cuts.windows(2).map(|s| {
             rule.iter().map(|&(x,wt)| { let w = 0.5*(s[0]+s[1])+0.5*(s[1]-s[0])*x; wt*h(w).0 }).sum::<f64>()*0.5*(s[1]-s[0])
@@ -230,19 +200,7 @@ fn over_faces(tool: &Revolved,f: &dyn Fn(V,V) -> (f64,[f64;2])) -> f64 {
         alpha*alpha-beta*beta-gamma*gamma
     };
     tool.elements.iter().map(|e| {
-        let n = 48;
-        let mut cuts: Vec<f64> = vec![0.,1.];
-        for j in 0..2 {
-            for i in 0..n {
-                let (s0,s1) = (i as f64/n as f64,(i+1) as f64/n as f64);
-                let side = |s: f64| reach(e,s,j) > 0.;
-                if side(s0) != side(s1) {
-                    let (mut lo,mut hi) = (s0,s1);
-                    for _ in 0..60 { let mid = 0.5*(lo+hi); if side(mid) == side(s0) { lo = mid } else { hi = mid } }
-                    cuts.push(0.5*(lo+hi));
-                }
-            }
-        }
+        let mut cuts: Vec<f64> = (0..2).flat_map(|j| sign_cuts(48,[0.,1.],|s| reach(e,s,j) > 0.)).chain([0.,1.]).collect();
         cuts.sort_by(f64::total_cmp);
         cuts.windows(2).map(|c| {
             let (s0,s1) = (c[0],c[1]);
@@ -284,8 +242,6 @@ pub(crate) fn advanced(tool: &Revolved,brep: &Brep,path: &Trajectory,[a,b]: [f64
     }).sum::<f64>()
 }
 
-fn dot(a: V,b: V) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
-
 /// **A bull-nose along a spline frame** (#780 L3's second gate, `solid_sweeps/spline_mill.sv`'s
 /// mill): leaning 30° toward where it goes, riding `std.stations.Along` over `path.sv`'s spline. No
 /// constant twist carries it, so its contact moves on it; the kernel builds its sweep closed on one
@@ -297,15 +253,14 @@ fn a_bull_nose_along_a_spline_frame_closes_into_the_volume_its_faces_advance_thr
     let e = example("spline_mill.sv");
     let (tool,path,roll) = sweep(&e,"groove");
     let revolved = Revolved::read(&tool).unwrap();
-    let inside = inside_of(&revolved);
     let built = closed(&tool,&path,roll,0.002,1e-6).unwrap_or_else(|u| panic!("{u:?}"));
     let worked = advanced(&revolved,&tool,&path,roll,false);
     let (lo,hi) = built.bounds();
-    let (mc,sigma) = monte_carlo(lo,hi,40_000,3,&defined(&inside,&path,roll,600));
+    let (mc,sigma) = monte_carlo(lo,hi,40_000,3,&defined(&revolved,&path,roll,600));
     assert!((mc-worked).abs() <= 4.*sigma,"a Monte Carlo of the definition {mc} ± {sigma} against the volume worked apart {worked}");
     let got = volume(&built);
     assert!((got-worked).abs() <= 1e-6*worked,"{got} against the volume worked apart {worked}");
-    agrees(&built,&tool,&path,roll);
+    agrees_over(&built,&tool,&path,roll);
 }
 
 /// **What K2's reading refuses, by name**: a tool no convex solid of revolution (a box) under a
@@ -321,15 +276,6 @@ fn a_tool_no_convex_revolution_under_any_motion_is_refused_by_name() {
     assert!(matches!(closed(&ring,&path,roll,0.002,1e-6),Err(Unbuilt::Curved {..})),"a ring is no convex solid");
 }
 
-/// A ball of radius `r` about `c`, its turn `ratio` a unit of roll and its advance `advance` a turn
-/// about the upright axis, read as a motion no constant twist takes (seen from a frame standing
-/// still).
-fn screwed_as_any(ratio: f64,advance: f64) -> Trajectory {
-    let screw = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio,advance};
-    let still = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:0.};
-    Trajectory::Relative {source:Box::new(Trajectory::Twist(screw)),observer:Box::new(Trajectory::Twist(still))}
-}
-
 /// **A sheet that folds or comes back onto itself under any motion is refused by name**, never left
 /// to the judge: a ball turned beside the axis nearer it than its radius (its great circle sweeping
 /// a spindle torus, its sheet still where the circle crosses the axis) is `Folded`; a ball screwed
@@ -338,9 +284,9 @@ fn screwed_as_any(ratio: f64,advance: f64) -> Trajectory {
 #[test]
 fn a_sheet_folding_or_coming_back_under_any_motion_is_refused_by_name() {
     let ball = |c: V,r: f64| gcs_core::brep::build::sphere(c,[0.,0.,1.],r).unwrap();
-    let folded = closed(&ball([0.4,0.,0.],0.5),&screwed_as_any(1.,0.),[0.,1.],0.002,1e-6);
+    let folded = closed(&ball([0.4,0.,0.],0.5),&as_any(Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:0.})),[0.,1.],0.002,1e-6);
     assert!(matches!(folded,Err(Unbuilt::Folded {..})),"{folded:?}");
-    let back = closed(&ball([2.,0.,0.],0.5),&screwed_as_any(1.,0.6),[0.,1.5*TAU],0.002,1e-6);
+    let back = closed(&ball([2.,0.,0.],0.5),&as_any(Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:0.6})),[0.,1.5*TAU],0.002,1e-6);
     let Err(Unbuilt::Returns {at}) = back else { panic!("{back:?}") };
     assert!((at[0].hypot(at[1])-2.).abs() <= 0.1,"between the centre's passes: {at:?}");
 }

@@ -27,7 +27,7 @@ pub(crate) fn slide(d: [f64;3]) -> Trajectory {
 pub(crate) fn agrees(built: &Brep,tool: &Brep,path: &Trajectory) { agrees_over(built,tool,path,[0.,1.]) }
 
 /// `agrees` over the roll `roll`.
-fn agrees_over(built: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {
+pub(crate) fn agrees_over(built: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {
     let (solid,body) = (Solid::new(tool,0.002,1.).unwrap(),Solid::new(built,0.002,1.).unwrap());
     let swept = Swept {tool:&solid,path,roll};
     let (lo,hi) = built.bounds();
@@ -1205,7 +1205,7 @@ fn a_ring_turned_about_an_axis_along_its_own_closes_into_its_sweep() {
 
 /// A bull-nose mill of radius `big`, corner `c` and height `h`, standing about an upright axis `d`
 /// out along x, its flat end on `z = 0`.
-fn bull_nose(d: f64,big: f64,c: f64,h: f64) -> Brep {
+pub(crate) fn bull_nose(d: f64,big: f64,c: f64,h: f64) -> Brep {
     use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
     use gcs_core::brep::geom::Frame;
     let at = |x: f64,z: f64| [d+x,0.,z];

@@ -924,9 +924,10 @@ face, `swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by
 whole ring). **The contact is read per tool, at each instant, in a pencil of half-planes** about the
 line through the tool's centre along its velocity: each half-plane cuts the convex tool in an arc
 along which `n · v` changes sign once, its root the contact there (on a sharp edge where the edge's
-fan holds it). A half-plane holding no one root, or a contact whose pieces (each on one face or one
-sharp edge, joined where it crosses a seam or reaches an edge) change over the roll, is refused by
-name (`Curved`). The chart is transverse to the branch locus, so the patch is not cut there; a
+fan holds it). A half-plane holding no one root, a contact crossing a sharp edge straight from one
+face onto the other (a fan of no width, between a fan's piece and none), or a contact whose pieces
+(each on one face or one sharp edge, joined where it crosses a seam or reaches an edge) change over
+the roll, is refused by name (`Curved`). The chart is transverse to the branch locus, so the patch is not cut there; a
 piece on an edge is read along the edge's circle, where the pencil's angle runs as a square root.
 The sheet is a quintic net over (the fraction round the loop, the roll) fitted until halfway
 points stand within a tenth of the arrangement's tolerance (`K2_FIT`), cut into a tube of faces at
@@ -934,8 +935,10 @@ the pieces' joins, its rims the contact at the end rolls. **Every meeting of the
 pose with the sheet is given** (`boolean::Given`, R5): the piece's iso-curve at that roll on the
 faces holding it (an edge's piece on both its faces), nothing on the others — the sheet stands
 nowhere inside the tool at an end pose — so nothing is sought between them (a bull-nose slid at a
-lean, its end poses' touches sought, took 20 s; given, 0.8 s). A ball at an end pose is laid with
-its poles along its centre's velocity, so its touch circle passes no pole (`patches::posed`). The
+lean, its end poses' touches sought, took 20 s; given, 0.8 s). The tool at an end pose is turned
+about its own axis so its seams stand clear of its contact there (#810's `seam_away`), and a ball
+laid anew with its poles along its centre's velocity, so its touch circle passes no pole
+(`patches::posed`). The
 sheet stops at its rims: carried on past them, its flap's section on a blank's face the tool stands
 across where it starts was tangent to the tool's section there, and the cell between them misread
 (refused by the judge, never returned wrong); stopping there, the sheet's section ends on the
@@ -959,10 +962,10 @@ whose motion is no constant twist and which `closed::reads_general` takes — th
 of revolution, its contact read round the pencil at 65 rolls with the same pieces at each, its
 centre's path coming back nowhere (`patches::admits`) — is the closed class's ("any rigid motion");
 otherwise the first class's refusal stands (a lens rolled with its pole in contact at every time,
-its contact's pieces changing over the roll, keeps `Stationary`; a drafted disc whose path loops
+its contact crossing its sharp rim with no fan, keeps `Stationary`; a drafted disc whose path loops
 three times keeps the planar subtraction's `Slabs`); the build carries the blank back into the tool's placing, cuts it there and
 carries it out (`brep::sweep::closed::cut_on`); a model unit other than the millimetre is the
-trajectory scaled (`closed_class::Scaled`). Drawn: `solid_sweeps/spline_mill.sv`, the bull-nose riding
+trajectory scaled, part by part (`Trajectory::scaled`). Drawn: `solid_sweeps/spline_mill.sv`, the bull-nose riding
 `path.sv`'s spline with its round sunk in a block, the block less what the mill holds below its top
 where it starts and `∫ ∫ (n · v)⁺ dA dt` over its faces below the top, to 1e-8, its STL agreeing with
 the field and the page's stepped build held to the export

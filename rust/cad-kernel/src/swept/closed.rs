@@ -216,6 +216,8 @@ pub enum Unbuilt {
 
 impl From<String> for Unbuilt { fn from(m: String) -> Unbuilt { Unbuilt::Failed(m) } }
 
+impl From<crate::KernelError> for Unbuilt { fn from(e: crate::KernelError) -> Unbuilt { Unbuilt::Failed(e.msg) } }
+
 /// A build stopped past its budget is refused by it, naming the stage that ran away (#780 R3).
 impl From<crate::util::meter::Stopped> for Unbuilt {
     fn from(crate::util::meter::Stopped(o): crate::util::meter::Stopped) -> Unbuilt { Unbuilt::Budget {stage:o.stage,at:o.at,what:o.what} }
@@ -612,11 +614,14 @@ fn metered(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: 
 
 /// `closed` over a box holding the sweep, or `cut_from` over `blank`: the pipeline itself.
 fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
-    // any other rigid motion (K2): each instant's contact swept into a patch (#780 L3)
-    if general(path) { return k2(tool,path,roll,bar,tol,blank) }
     // the legs the path is taken in: one constant twist over the roll, or each piece of a path of
-    // pieces over its stretch of it (K1: a sweep is its pieces' sweeps united), every one read
-    let legs = legs(tool,path,roll)?;
+    // pieces over its stretch of it (K1: a sweep is its pieces' sweeps united), every one read —
+    // or, a motion no constant twist and no such path takes, K2's road: each instant's contact swept
+    // into a patch (#780 L3)
+    let legs = match legs(tool,path,roll) {
+        Err(Unbuilt::Motion) if path.screw().is_none() => return k2(tool,path,roll,bar,tol,blank),
+        legs => legs?,
+    };
     let whole_roll = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let size = { let (lo,hi) = tool.bounds(); norm(sub(hi,lo)) };
     let eps = 1e-9*(1.+size);
@@ -670,7 +675,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     };
     // the points the box must hold: the tool's box at each leg's end poses and, about a turn's
     // axis, its reach
-    let box_corners = |(lo,hi): (V,V)| -> Vec<V> { (0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] })).collect() };
+    let box_corners = corners_of;
     let corners = box_corners(tool.bounds());
     let mut held_points: Vec<V> = Vec::new();
     let one = legs.len() == 1;
@@ -696,7 +701,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             }).collect())
         }).collect();
         let corners = box_corners(tool.bounds());
-        let pose_at = |t: f64| path.pose(t).map_err(|e| Unbuilt::Failed(e.msg));
+        let pose_at = |t: f64| path.pose(t);
         let (start,end) = (pose_at(a)?,pose_at(b)?);
         held_points.extend(corners.iter().flat_map(|&p| [start.point(p),end.point(p)]));
         if screw.is_turn() {
@@ -1324,15 +1329,11 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     // turn's step (cut from a blank, the box holds the blank too: every candidate reaching across it)
     let (screw,[a,b]) = (legs[0].0,legs[0].1);
     let path_one = Trajectory::Twist(screw);
-    let pose_at = |t: f64| path_one.pose(t).map_err(|e| Unbuilt::Failed(e.msg));
+    let pose_at = |t: f64| path_one.pose(t).map_err(Unbuilt::from);
     let held: Vec<V> = blank.map(|b| box_corners(b.bounds())).unwrap_or_default();
     let (domain,centre,half,tall) = if legs.iter().all(|l| l.0.is_slide() || l.0.is_turn()) {
-        let points: Vec<V> = held_points.iter().copied().chain(held.iter().copied()).collect();
-        let (blo,bhi) = points.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
-            (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
-        let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));
-        let half = (0..3).map(|k| bhi[k]-blo[k]).fold(0.,f64::max)*0.6+tol;
-        (prism(&square(add(centre,[0.,0.,-half]),[0.,0.,1.],half),0.,2.*half)?,centre,half,None)
+        let (domain,centre,half) = cube_holding(held_points.iter().chain(&held),tol)?;
+        (domain,centre,half,None)
     } else {
         // the tool's box carried over the roll, read at enough poses that the arcs its corners run
         // between them stand within the sagitta added
@@ -1434,8 +1435,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     // (a candidate whose solid stands clear of the domain's box parts none of it: left out, so its
     // meetings with the others there are never sought)
     let within = blank.unwrap_or(&domain);
-    let (dlo,dhi) = within.bounds();
-    let refs: Vec<&Brep> = solids.iter().filter(|s| { let (lo,hi) = s.bounds(); (0..3).all(|k| lo[k] <= dhi[k]+tol && hi[k] >= dlo[k]-tol) }).collect();
+    let refs = clear_of(&solids,within,tol);
     // **the touches given** (#810, #780 R5): each between the faces of its two candidates' solids
     // that hold it, laid with no search for it — where both candidates were carried
     let given: Vec<crate::boolean::Given> = touches.iter().filter_map(|t| {
@@ -1446,11 +1446,38 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         let surface = |r: std::ops::Range<usize>| solids[r].iter().flat_map(|b| &b.faces).map(|f| &f.surface).find(holds).cloned();
         Some(crate::boolean::Given {surfaces:[surface(r0)?,surface(r1)?],curves:t.curves.clone()})
     }).collect();
-    let out = arranged(within,&refs,&given,&swept,blank,tol);
-    // a failed build's arrangement written where `SOLVENT_SWEEP_DUMP` asks (#777 V5), to be
-    // replayed alone and reduced (`swept::dump`)
+    arranged_or_dumped(within,&refs,&given,&swept,blank,tol)
+}
+
+/// A box's eight corners.
+fn corners_of((lo,hi): (V,V)) -> Vec<V> {
+    (0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] })).collect()
+}
+
+/// A cube holding `points` with a fifth of its size to spare each way: the box, its centre and half
+/// its side.
+fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
+    let (blo,bhi) = points.into_iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
+        (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
+    let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));
+    let half = (0..3).map(|k| bhi[k]-blo[k]).fold(0.,f64::max)*0.6+tol;
+    Ok((prism(&square(add(centre,[0.,0.,-half]),[0.,0.,1.],half),0.,2.*half)?,centre,half))
+}
+
+/// The candidates' solids that reach the domain `within`'s box: one standing clear of it parts none
+/// of it, so its meetings with the others there are never sought.
+fn clear_of<'a>(solids: &'a [Brep],within: &Brep,tol: f64) -> Vec<&'a Brep> {
+    let (dlo,dhi) = within.bounds();
+    solids.iter().filter(|s| { let (lo,hi) = s.bounds(); (0..3).all(|k| lo[k] <= dhi[k]+tol && hi[k] >= dlo[k]-tol) }).collect()
+}
+
+/// `arranged`, a failed build's arrangement written where `SOLVENT_SWEEP_DUMP` asks (#777 V5), to be
+/// replayed alone and reduced (`swept::dump`).
+fn arranged_or_dumped(within: &Brep,refs: &[&Brep],given: &[crate::boolean::Given],swept: &Swept,blank: Option<&Brep>,tol: f64)
+    -> Result<Brep,Unbuilt> {
+    let out = arranged(within,refs,given,swept,blank,tol);
     if let (Err(why),Some(dir)) = (&out,super::dump::dump_dir()) {
-        match super::dump::dump(&dir,within,&refs,&given,tol,&format!("{why:?}")) {
+        match super::dump::dump(&dir,within,refs,given,tol,&format!("{why:?}")) {
             Ok(()) => eprintln!("sweep: the failed build's arrangement written to {}",dir.display()),
             Err(e) => eprintln!("sweep: the failed build's arrangement not written: {e}"),
         }
@@ -1458,19 +1485,13 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     out
 }
 
-/// Whether `path` is a rigid motion no constant twist takes, nor a path of pieces, nor a twist
-/// taken up after a placement: K2's (#780 L3), each instant's contact swept into a patch.
-fn general(path: &Trajectory) -> bool {
-    !matches!(path,Trajectory::Twist(_) | Trajectory::Pieces(_) | Trajectory::Placed {..})
-}
-
 /// **Whether the pipeline takes `tool` under `path` over `roll`, a motion no constant twist takes**
 /// (#780 L3): the tool a convex solid of revolution whose contact reads round the pencil at a few
 /// instants and whose centre's path comes back nowhere (`patches::admits`), read before anything is
 /// built, as `reads` reads a constant twist's.
 pub fn reads_general(tool: &Brep,path: &Trajectory,roll: [f64;2]) -> Result<(),Unbuilt> {
-    if !general(path) { return Err(Unbuilt::Motion) }
-    super::patches::admits(tool,path,roll)
+    if path.screw().is_some() { return Err(Unbuilt::Motion) }
+    super::patches::admits(tool,path,[roll[0].min(roll[1]),roll[0].max(roll[1])])
 }
 
 /// How finely K2's sheet is fitted, as a part of the arrangement's tolerance: its touches with the
@@ -1481,44 +1502,31 @@ const K2_FIT: f64 = 0.1;
 const K2_POSES: usize = 128;
 
 /// **`build` under a rigid motion no constant twist takes** (#780 L3, K2): the candidates are the
-/// tool at each end pose, whole, and the sheet its contact sweeps over the roll (`patches`), carried
-/// on a little past each end; the touches between them given (`patches::entered`); the box (or the
-/// blank) split by them at once and classified by membership, as every other build is.
+/// tool at each end pose, whole, and the sheet its contact sweeps over the roll (`patches`); every
+/// meeting between them given (`patches::entered`); the box (or the blank) split by them at once and
+/// classified by membership, as every other build is.
 fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let revolved = super::patches::Revolved::read(tool)?;
     let fit = super::patches::fitted(&revolved,path,[a,b],K2_FIT*tol)?;
     crate::util::meter::go_on()?;
-    let (start,end) = (super::patches::posed(tool,&revolved,path,a)?,super::patches::posed(tool,&revolved,path,b)?);
+    let ends = [a,b].map(|t| super::patches::posed(tool,&revolved,path,&fit,t));
+    let [start,end] = [ends[0].clone()?,ends[1].clone()?];
     let (sheet,given) = super::patches::entered(&fit,&revolved,[&start,&end])?;
-    // a box holding the sweep: the tool's box at poses over the roll, a sheet's reach past it
-    let (lo,hi) = tool.bounds();
-    let corners: Vec<V> = (0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] })).collect();
+    // a box holding the sweep: the tool's box at poses over the roll
+    let corners = corners_of(tool.bounds());
     let mut points: Vec<V> = Vec::new();
     for k in 0..=K2_POSES {
-        let m = path.pose(a+(b-a)*k as f64/K2_POSES as f64).map_err(|e| Unbuilt::Failed(e.msg))?;
+        let m = path.pose(a+(b-a)*k as f64/K2_POSES as f64)?;
         points.extend(corners.iter().map(|&p| m.point(p)));
     }
-    if let Some(bl) = blank { let (l,h) = bl.bounds(); points.extend([l,h]); }
-    let (blo,bhi) = points.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
-        (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
-    let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));
-    let half = (0..3).map(|k| bhi[k]-blo[k]).fold(0.,f64::max)*0.6+tol;
-    let domain = prism(&square(add(centre,[0.,0.,-half]),[0.,0.,1.],half),0.,2.*half)?;
+    if let Some(bl) = blank { points.extend(corners_of(bl.bounds())) }
+    let (domain,..) = cube_holding(&points,tol)?;
     let within = blank.unwrap_or(&domain);
-    let (dlo,dhi) = within.bounds();
     let solids = [start,end,sheet];
-    let refs: Vec<&Brep> = solids.iter().filter(|s| { let (lo,hi) = s.bounds(); (0..3).all(|k| lo[k] <= dhi[k]+tol && hi[k] >= dlo[k]-tol) }).collect();
     let solid = Solid::new(tool,bar,1.)?;
     let swept = Swept {tool:&solid,path,roll:[a,b]};
-    let out = arranged(within,&refs,&given,&swept,blank,tol);
-    if let (Err(why),Some(dir)) = (&out,super::dump::dump_dir()) {
-        match super::dump::dump(&dir,within,&refs,&given,tol,&format!("{why:?}")) {
-            Ok(()) => eprintln!("sweep: the failed build's arrangement written to {}",dir.display()),
-            Err(e) => eprintln!("sweep: the failed build's arrangement not written: {e}"),
-        }
-    }
-    out
+    arranged_or_dumped(within,&clear_of(&solids,within,tol),&given,&swept,blank,tol)
 }
 
 /// The domain `within` split by the candidates `refs` at once, each cell kept by membership, the
@@ -1551,7 +1559,7 @@ fn arranged(within: &Brep,refs: &[&Brep],given: &[crate::boolean::Given],swept: 
     }
     if blank.is_none() && !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
     let out = crate::boolean::selection(&complex,&|c| keep[c])?;
-    out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
+    out.check(tol)?;
     // **judged by its definition before it is returned** (#777 V2): never returned built wrong
     judge(&out,swept,within,blank,&witnesses,tol)?;
     Ok(out)
@@ -1980,7 +1988,7 @@ fn contour_solid(halves: &[crate::slid::Slid;2],[h0,h1]: [f64;2]) -> Result<Brep
 /// the widest gap between the angles round the axis at which they stand, where it is laid at
 /// nothing given (a touch's line along a candidate's seam is an edge lying along a touch, which no
 /// arrangement holds by rounding). Left as it is where nothing is touched beside its axis.
-fn seam_away(solid: Brep,o: V,axis: V,touched: &[V]) -> Brep {
+pub(super) fn seam_away(solid: Brep,o: V,axis: V,touched: &[V]) -> Brep {
     let f = Frame::about(o,axis);
     let angles: Vec<f64> = touched.iter().filter_map(|&p| {
         let l = f.local(p);
@@ -2323,7 +2331,7 @@ fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,
     piece(Reach::Axis,pi[0],po[0])?;
     let profile = Profile {origin:c,normal:f.y,names:Vec::new(),loops:vec![loop_]};
     let out = crate::build::revolve(&profile,c,axis,std::f64::consts::TAU)?;
-    out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
+    out.check(tol)?;
     Ok(out)
 }
 

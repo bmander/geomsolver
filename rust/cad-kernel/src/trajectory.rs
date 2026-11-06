@@ -135,6 +135,11 @@ impl Motion {
     pub fn paced(self, rate: f64) -> Self {
         Self { dr: self.dr.map(|row| scale(row, rate)), dp: scale(self.dp, rate), ..self }
     }
+
+    /// The same motion read in units `k` times as small: its offset and its rate scaled, its turn
+    /// kept (a similarity carries a rigid motion to one).
+    #[inline]
+    pub fn scaled(self, k: f64) -> Self { Self { p: scale(self.p, k), dp: scale(self.dp, k), ..self } }
 }
 
 /// Why a motion's pose or a contact could not be read.
@@ -367,6 +372,14 @@ pub struct Stretch {
 }
 
 impl Stretch {
+    /// The same stretch read in units `k` (positive) times as small: its point, its speed and its
+    /// home scaled, its turn and its spin kept.
+    pub fn scaled(&self, k: f64) -> Result<Stretch, IntervalError> {
+        let i = Interval::point(k)?;
+        Ok(Stretch { point: [self.point[0].mul(i)?, self.point[1].mul(i)?, self.point[2].mul(i)?], turn: self.turn,
+            speed: self.speed*k, spin: self.spin, origin: scale(self.origin, k) })
+    }
+
     /// The farthest the box `b` stands from the path over the stretch, or from the home.
     pub fn far(&self, b: [Interval; 3]) -> Result<Interval, IntervalError> {
         let home = [Interval::point(self.origin[0])?, Interval::point(self.origin[1])?, Interval::point(self.origin[2])?];
@@ -412,6 +425,9 @@ impl Pose {
         Pose {r:std::array::from_fn(|i| std::array::from_fn(|j| next.r[i][0]*self.r[0][j]+next.r[i][1]*self.r[1][j]+next.r[i][2]*self.r[2][j])),
             p:next.point(self.p)}
     }
+    /// The same pose read in units `k` times as small.
+    #[inline]
+    pub fn scaled(self, k: f64) -> Pose { Pose { r: self.r, p: scale(self.p, k) } }
     #[inline]
     pub fn inverse(self) -> Pose {
         let r: M3 = std::array::from_fn(|i| std::array::from_fn(|j| self.r[j][i]));
@@ -562,6 +578,23 @@ impl Trajectory {
         self.inverse_point_speed_bound_over(point,domain)
     }
 
+    /// **The same trajectory read in units `k` (positive) times as small** — a model's motion in
+    /// millimetres: each part scaled as it is (a twist's origin and advance, a placement's offset,
+    /// each piece, both sides of a relative), its structure kept; a path evaluated scaled as it is
+    /// read (`Scaled`), its stretches too.
+    pub fn scaled(&self, k: f64) -> Trajectory {
+        if k == 1. { return self.clone() }
+        match self {
+            Trajectory::Twist(s) => Trajectory::Twist(s.scaled(k)),
+            Trajectory::Relative {source, observer} =>
+                Trajectory::Relative {source: Box::new(source.scaled(k)), observer: Box::new(observer.scaled(k))},
+            Trajectory::Paced {path, pace} => Trajectory::Paced {path: Box::new(path.scaled(k)), pace: pace.clone()},
+            Trajectory::Pieces(p) => Trajectory::Pieces(Pieces(p.0.iter().map(|q| Piece {over: q.over, path: q.path.scaled(k)}).collect())),
+            Trajectory::Placed {twist, at} => Trajectory::Placed {twist: twist.scaled(k), at: at.scaled(k)},
+            Trajectory::General(p) => Trajectory::General(Arc::new(Scaled {path: p.clone(), k})),
+        }
+    }
+
     /// The constant twist this trajectory is, where it is one.
     pub fn screw(&self) -> Option<Screw> {
         match self { Trajectory::Twist(s) => Some(*s), _ => None }
@@ -603,6 +636,23 @@ impl Trajectory {
             }
         }
         Ok(Trajectory::Pieces(Pieces(pieces)))
+    }
+}
+
+/// **A path evaluated, read in units `k` times as small** (`Trajectory::scaled`): its poses' offsets
+/// and rates scaled, and its stretches and speed bounds with them.
+#[derive(Debug)]
+struct Scaled { path: Arc<dyn Path>, k: f64 }
+
+impl Path for Scaled {
+    fn at(&self, t: f64) -> Result<Motion, KernelError> { Ok(self.path.at(t)?.scaled(self.k)) }
+    fn pose(&self, t: f64) -> Result<Pose, KernelError> { Ok(self.path.pose(t)?.scaled(self.k)) }
+    fn stretch(&self, a: f64, b: f64) -> Option<Stretch> { self.path.stretch(a, b)?.scaled(self.k).ok() }
+    /// The path's own bound on the box read back in its units, scaled.
+    fn speed_over(&self, b: [Interval; 3], lo: f64, hi: f64, g: &Stretch) -> Result<Interval, IntervalError> {
+        let back = Interval::point(1./self.k)?;
+        let own = self.path.speed_over([b[0].mul(back)?, b[1].mul(back)?, b[2].mul(back)?], lo, hi, &g.scaled(1./self.k)?)?;
+        own.mul(Interval::point(self.k)?)
     }
 }
 

@@ -340,36 +340,42 @@ const BRACKETS: usize = 16;
 
 /// **The contact in the half-plane at `φ`**: the tool's point there whose outward normal is square
 /// to the instant's velocity, and what it lies on — found as `n · v`'s one change of sign along the
-/// tool's arc in the half-plane from its front (`α = 0`, along the velocity) to its back, by
-/// bisection to rounding (landing on a corner where its fan holds the root). `None` where the arc
-/// does not change sign there once (the motion turning the tool against its own advance).
-fn contact(tool: &Revolved,twist: &Twist,pencil: &Pencil,phi: f64) -> Option<(V,On)> {
+/// tool's arc in the half-plane from its front (`α = 0`, along the velocity) to its back. Bisected
+/// while the bracket stands across a corner of the meridian, to rounding where the root stands on
+/// one (its fan holds it, or a smooth seam); within one face `n · v` runs smoothly along the arc and
+/// its root is settled by the secant (`roots::bracketed_root`) — or, where only what it lies on is
+/// asked (`label`), not settled at all. `None` where the arc does not change sign there once (the
+/// motion turning the tool against its own advance).
+fn contact(tool: &Revolved,twist: &Twist,pencil: &Pencil,phi: f64,label: bool) -> Option<(V,On)> {
+    use crate::util::roots::{bisect,bracketed_root};
     let (s,c) = phi.dsin_cos();
     let e = add(scale(pencil.f1,c),scale(pencil.f2,s));
-    let ray = |alpha: f64| { let (sa,ca) = alpha.dsin_cos(); add(scale(pencil.w,ca),scale(e,sa)) };
     let read = |alpha: f64| -> (f64,V,usize) {
-        let (p,k,n) = tool.cast(ray(alpha));
+        let (sa,ca) = alpha.dsin_cos();
+        let (p,k,n) = tool.cast(add(scale(pencil.w,ca),scale(e,sa)));
         (dot(n,twist.velocity(p)),p,k)
     };
-    let hs: Vec<(f64,f64)> = (0..=BRACKETS).map(|i| { let a = PI*i as f64/BRACKETS as f64; (a,read(a).0) }).collect();
-    let changes: Vec<usize> = (0..BRACKETS).filter(|&i| (hs[i].1 > 0.) != (hs[i+1].1 > 0.)).collect();
+    let hs: Vec<(f64,(f64,V,usize))> = (0..=BRACKETS).map(|i| { let a = PI*i as f64/BRACKETS as f64; (a,read(a)) }).collect();
+    let changes: Vec<usize> = (0..BRACKETS).filter(|&i| (hs[i].1.0 > 0.) != (hs[i+1].1.0 > 0.)).collect();
     let [i] = changes[..] else { return None };
-    if !(hs[0].1 > 0. && hs[BRACKETS].1 <= 0.) { return None }
-    let (mut lo,mut hi) = (hs[i].0,hs[i+1].0);
-    for _ in 0..64 {
-        let mid = 0.5*(lo+hi);
-        if mid <= lo || mid >= hi { break }
-        if read(mid).0 > 0. { lo = mid } else { hi = mid }
-    }
-    let (_,p,klo) = read(lo);
-    let (_,_,khi) = read(hi);
+    if !(hs[0].1.0 > 0. && hs[BRACKETS].1.0 <= 0.) { return None }
+    let middle = |lo: (f64,(f64,V,usize)),hi: (f64,(f64,V,usize))| { let a = 0.5*(lo.0+hi.0); (a,read(a)) };
+    let across = |lo: (f64,(f64,V,usize)),hi: (f64,(f64,V,usize))| {
+        let a = 0.5*(lo.0+hi.0);
+        lo.1.2 != hi.1.2 && a > lo.0 && a < hi.0
+    };
+    let (lo,hi) = bisect(hs[i],hs[i+1],middle,across,|m| m.1.0 > 0.);
+    let ((_,(_,p,klo)),(_,(_,_,khi))) = (lo,hi);
     // a root standing where the arc turns a corner: on its sharp edge (the meridian's element
-    // ending there, walked from the front): the fan's
-    let on = if klo != khi {
+    // ending there, walked from the front), the fan's; or where it runs on smoothly, the seam
+    if klo != khi {
         let k = klo.min(khi);
-        if tool.sharp[k] && klo.abs_diff(khi) == 1 { On::Edge(k) } else { On::Face(klo) }
-    } else { On::Face(klo) };
-    Some((p,on))
+        return Some((p,if tool.sharp[k] && klo.abs_diff(khi) == 1 { On::Edge(k) } else { On::Face(klo) }))
+    }
+    if label { return Some((p,On::Face(klo))) }
+    let root = bracketed_root(|a| Some(read(a).0),lo.0,lo.1.0,hi.0,hi.1.0,1e-15*PI);
+    let (_,p,k) = read(root);
+    Some((p,On::Face(k)))
 }
 
 /// One instant's contact read round the pencil: where its pieces join (`joins`, the angles at
@@ -380,11 +386,12 @@ struct Instant { twist: Twist,pencil: Pencil,joins: Vec<f64>,on: Vec<On> }
 /// How many angles round the pencil an instant's pieces are first told apart at.
 const ROUND: usize = 96;
 
-/// The contact at the instant `twist`, its pieces found round the pencil. `Err` with a point of the
-/// tool where a half-plane holds no one root.
+/// The contact at the instant `twist`, its pieces found round the pencil, each join settled in the
+/// angle to rounding. `Err` with a point of the tool where a half-plane holds no one root, or where
+/// the contact crosses a sharp edge with no fan between its faces.
 fn instant(tool: &Revolved,twist: Twist,across: V) -> Result<Instant,V> {
     let pencil = Pencil::at(tool,&twist,across).ok_or(tool.origin())?;
-    let label = |phi: f64| contact(tool,&twist,&pencil,phi).map(|(_,on)| on).ok_or(tool.cast(pencil.f1).0);
+    let label = |phi: f64| contact(tool,&twist,&pencil,phi,false).map(|(_,on)| on).ok_or_else(|| tool.cast(pencil.f1).0);
     let phis: Vec<f64> = (0..ROUND).map(|i| TAU*i as f64/ROUND as f64).collect();
     let labels: Vec<On> = phis.iter().map(|&p| label(p)).collect::<Result<_,_>>()?;
     let mut joins = Vec::new();
@@ -392,12 +399,16 @@ fn instant(tool: &Revolved,twist: Twist,across: V) -> Result<Instant,V> {
     for i in 0..ROUND {
         let (a,b) = (labels[i],labels[(i+1)%ROUND]);
         if a == b { continue }
-        // bisected in the angle to rounding
-        let (mut lo,mut hi) = (phis[i],phis[i]+TAU/ROUND as f64);
-        for _ in 0..64 {
-            let mid = 0.5*(lo+hi);
-            if mid <= lo || mid >= hi { break }
-            if label(mid)? == a { lo = mid } else { hi = mid }
+        let mut missed = None;
+        let (lo,hi) = crate::util::roots::bisect(phis[i],phis[i]+TAU/ROUND as f64,|l,h| 0.5*(l+h),|l,h| { let m = 0.5*(l+h); m > l && m < h },
+            |m| label(m).map_or_else(|at| { missed.get_or_insert(at); true },|l| l == a));
+        if let Some(at) = missed { return Err(at) }
+        // a contact crossing a sharp edge from one face straight onto the other: its fan there has
+        // no width, between a fan's piece and none — where the patch's pieces change, not yet cut
+        if let (On::Face(x),On::Face(y)) = (a,b) {
+            if x.abs_diff(y) == 1 && tool.sharp[x.min(y)] {
+                return Err(contact(tool,&twist,&pencil,0.5*(lo+hi),true).map_or_else(|| tool.cast(pencil.f1).0,|(p,_)| p))
+            }
         }
         joins.push(0.5*(lo+hi));
         on.push(b);
@@ -407,11 +418,25 @@ fn instant(tool: &Revolved,twist: Twist,across: V) -> Result<Instant,V> {
     Ok(Instant {twist,pencil,joins,on})
 }
 
+/// The instant at the roll `t` (`instant`) and the pose there.
+fn read_instant(tool: &Revolved,path: &Trajectory,across: V,t: f64) -> Result<(Instant,crate::trajectory::Pose),Unbuilt> {
+    let (m,pose) = (path.at(t)?,path.pose(t)?);
+    let i = instant(tool,Twist::body(m),across).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
+    Ok((i,pose))
+}
+
+/// The turns round the loop that carry the pieces `on` an instant reads onto those `first` read:
+/// each `s` with `on[k + s] == first[k]` all round.
+fn turns<'a>(on: &'a [On],first: &'a [On]) -> impl Iterator<Item=usize> + 'a {
+    let n = first.len();
+    (0..n).filter(move |&s| on.len() == n && (0..n).all(|k| on[(k+s)%n] == first[k]))
+}
+
 /// **The sheet K2's contact sweeps, fitted** over `roll`: the net over (the fraction round the
 /// loop, the roll) — its loop parameter running over `[0, pieces]`, a piece a unit — what each
-/// piece lies on, and the error measured halfway between the fitted points.
+/// piece lies on, and the roll.
 #[derive(Clone,Debug)]
-pub struct Fitted { pub net: Net,pub on: Vec<On>,pub error: f64,pub roll: [f64;2] }
+pub struct Fitted { pub net: Net,pub on: Vec<On>,pub roll: [f64;2] }
 
 /// A piece of an instant's contact: over a stretch of the pencil's angles, or along a sharp edge's
 /// circle (its radius and height on the tool's axis) over a stretch of its own angle.
@@ -434,8 +459,7 @@ const MOST_POINTS: usize = 1024;
 fn across(tool: &Revolved,path: &Trajectory,[a,b]: [f64;2]) -> Result<V,Unbuilt> {
     let ws: Vec<V> = (0..=32).map(|i| {
         let t = a+(b-a)*i as f64/32.;
-        let m = path.at(t).map_err(|e| Unbuilt::Failed(e.msg))?;
-        Ok(unit(Twist::body(m).velocity(tool.origin())))
+        Ok(unit(Twist::body(path.at(t)?).velocity(tool.origin())))
     }).collect::<Result<_,Unbuilt>>()?;
     let g = tool.frame;
     Ok([g.z,g.x,g.y].into_iter().max_by(|&p,&q| {
@@ -449,37 +473,25 @@ fn across(tool: &Revolved,path: &Trajectory,[a,b]: [f64;2]) -> Result<V,Unbuilt>
 /// the pencil (`Curved`, at a point of the tool), where its pieces change over the roll — a contact
 /// reaching a seam or an edge partway, where the patch is not yet cut (`Curved`) — or where the fit
 /// will not close within its rows and points.
-pub fn fitted(tool: &Revolved,path: &Trajectory,roll: [f64;2],tol: f64) -> Result<Fitted,Unbuilt> {
-    let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
+pub fn fitted(tool: &Revolved,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<Fitted,Unbuilt> {
     let across = across(tool,path,[a,b])?;
-    let twist_at = |t: f64| -> Result<(Twist,crate::trajectory::Pose),Unbuilt> {
-        let m = path.at(t).map_err(|e| Unbuilt::Failed(e.msg))?;
-        Ok((Twist::body(m),path.pose(t).map_err(|e| Unbuilt::Failed(e.msg))?))
-    };
-    let read = |t: f64| -> Result<(Instant,crate::trajectory::Pose),Unbuilt> {
-        let (twist,pose) = twist_at(t)?;
-        let i = instant(tool,twist,across).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
-        Ok((i,pose))
-    };
-    // the pieces at the first instant, each entered whole or halved until there are enough
-    let (first,_) = read(a)?;
+    // the pieces at the first instant, each entered whole or cut evenly until there are enough
+    let (first,_) = read_instant(tool,path,across,a)?;
     let on = first.on.clone();
-    // each instant's joins, the first of them the one nearest the first instant's first (so the
-    // pieces keep their order round the loop), and the angles of the pieces' ends — evenly round
-    // where no join is
     let m = on.len();
     let per = LEAST_PIECES.div_ceil(m);
-    let ends = |i: &Instant,pose: &crate::trajectory::Pose| -> Result<Vec<Span>,Unbuilt> {
+    let pieces = m*per;
+    // an instant's pieces' ends: its joins turned so the pieces stand in the first instant's order
+    // (of the turns that do, the one whose first join stands nearest the first instant's), each
+    // piece cut evenly into `per`
+    let spans = |i: &Instant,pose: &crate::trajectory::Pose| -> Result<Vec<Span>,Unbuilt> {
         let refused = || Unbuilt::Curved {at:pose.point(tool.cast(i.pencil.f1).0)};
-        // the pieces in the first instant's order: of the turns round that keep it, the one whose
-        // first join stands nearest the first instant's
         let wrap = |x: f64| (x+PI).rem_euclid(TAU)-PI;
-        let s = (0..m).filter(|&s| i.on.len() == m && (0..m).all(|k| i.on[(k+s)%m] == on[k]))
-            .min_by(|&p,&q| wrap(i.joins[p]-first.joins[0]).abs().total_cmp(&wrap(i.joins[q]-first.joins[0]).abs()))
+        let s = turns(&i.on,&on).min_by(|&p,&q| wrap(i.joins[p]-first.joins[0]).abs().total_cmp(&wrap(i.joins[q]-first.joins[0]).abs()))
             .ok_or_else(refused)?;
         let mut joins = i.joins.clone();
         joins.rotate_left(s);
-        let mut out = Vec::with_capacity(m*per);
+        let mut out = Vec::with_capacity(pieces);
         for k in 0..m {
             let p = joins[k];
             let mut q = if k+1 < m { joins[k+1] } else { joins[0]+TAU };
@@ -491,7 +503,7 @@ pub fn fitted(tool: &Revolved,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
                 On::Edge(e) => {
                     let corner = tool.elements[e].ends()[1];
                     let angle = |phi: f64| -> Result<f64,Unbuilt> {
-                        let (x,_) = contact(tool,&i.twist,&i.pencil,phi).ok_or_else(refused)?;
+                        let (x,_) = contact(tool,&i.twist,&i.pencil,phi,false).ok_or_else(refused)?;
                         let l = tool.frame.local(x);
                         Ok(l[1].datan2(l[0]))
                     };
@@ -508,17 +520,24 @@ pub fn fitted(tool: &Revolved,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
         }
         Ok(out)
     };
-    let pieces = m*per;
-    let on_pieces: Vec<On> = (0..m).flat_map(|k| std::iter::repeat_n(on[k],per)).collect();
-    // the sheet's point at the fraction `u` round the loop (`[0, pieces]`) at the roll `t`
+    // each roll's instant, its pose and its pieces' ends, read once over every round of the fit
+    // (a round's rolls are the last round's and their middles)
+    let read = std::sync::Mutex::new(std::collections::BTreeMap::<u64,(Instant,crate::trajectory::Pose,Vec<Span>)>::new());
+    let reading = |t: f64| -> Result<(Instant,crate::trajectory::Pose,Vec<Span>),Unbuilt> {
+        if let Some(r) = read.lock().unwrap().get(&t.to_bits()) { return Ok(r.clone()) }
+        let (i,pose) = read_instant(tool,path,across,t)?;
+        let e = spans(&i,&pose)?;
+        read.lock().unwrap().insert(t.to_bits(),(i.clone(),pose,e.clone()));
+        Ok((i,pose,e))
+    };
+    // the sheet's points at the fractions `us` round the loop (`[0, pieces]`) at the roll `t`
     let row = |t: f64,us: &[f64]| -> Result<Vec<V>,Unbuilt> {
-        let (i,pose) = read(t)?;
-        let e = ends(&i,&pose)?;
+        let (i,pose,e) = reading(t)?;
         us.iter().map(|&u| {
             let k = (u.floor() as usize).min(pieces-1);
             let f = u-k as f64;
             let x = match e[k] {
-                Span::Phi(p,q) => contact(tool,&i.twist,&i.pencil,p+(q-p)*f).ok_or(Unbuilt::Curved {at:pose.point(tool.origin())})?.0,
+                Span::Phi(p,q) => contact(tool,&i.twist,&i.pencil,p+(q-p)*f,false).ok_or_else(|| Unbuilt::Curved {at:pose.point(tool.origin())})?.0,
                 Span::Rim {rho,z,from,sweep} => { let (sw,cw) = (from+sweep*f).dsin_cos(); tool.frame.at([rho*cw,rho*sw,z]) }
             };
             Ok(pose.point(x))
@@ -528,22 +547,25 @@ pub fn fitted(tool: &Revolved,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
     loop {
         crate::util::meter::go_on()?;
         let ts: Vec<f64> = (0..=rows).map(|j| a+(b-a)*j as f64/rows as f64).collect();
-        let us: Vec<f64> = (0..pieces).flat_map(|k| (0..points).map(move |i| k as f64+i as f64/points as f64)).chain([pieces as f64]).collect();
-        let grid: Vec<Vec<V>> = crate::util::par::map(&ts,|&t| row(t,&us)).into_iter().collect::<Result<_,_>>()?;
-        let net = interpolated(&grid,&us,&ts,pieces,points)?;
-        // halfway between the fitted points, each way, and the middles of the cells
-        let half_us: Vec<f64> = (0..us.len()-1).map(|i| 0.5*(us[i]+us[i+1])).collect();
         let half_ts: Vec<f64> = (0..rows).map(|j| 0.5*(ts[j]+ts[j+1])).collect();
-        let err_u = crate::util::par::map(&ts,|&t| -> Result<f64,Unbuilt> {
-            Ok(row(t,&half_us)?.iter().zip(&half_us).map(|(&x,&u)| norm(sub(x,net.point(u,t)))).fold(0.,f64::max))
-        }).into_iter().collect::<Result<Vec<f64>,_>>()?.into_iter().fold(0.,f64::max);
-        let err_t = crate::util::par::map(&half_ts,|&t| -> Result<f64,Unbuilt> {
-            Ok(row(t,&us)?.iter().zip(&us).map(|(&x,&u)| norm(sub(x,net.point(u,t)))).fold(0.,f64::max))
-        }).into_iter().collect::<Result<Vec<f64>,_>>()?.into_iter().fold(0.,f64::max);
+        // round the loop at the fitted fractions and halfway between them (the odd ones)
+        let all: Vec<f64> = (0..=2*pieces*points).map(|i| i as f64/(2*points) as f64).collect();
+        let us: Vec<f64> = all.iter().step_by(2).copied().collect();
+        // every point read at once: the fitted rows and their halfways round the loop, and the
+        // fitted fractions at the halfways along the roll
+        let jobs: Vec<(f64,bool)> = ts.iter().map(|&t| (t,true)).chain(half_ts.iter().map(|&t| (t,false))).collect();
+        let read_rows: Vec<Vec<V>> = crate::util::par::map(&jobs,|&(t,fitted)| row(t,if fitted { &all } else { &us }))
+            .into_iter().collect::<Result<_,_>>()?;
+        let (fitted,halfway) = read_rows.split_at(ts.len());
+        let grid: Vec<Vec<V>> = fitted.iter().map(|r| r.iter().step_by(2).copied().collect()).collect();
+        let net = interpolated(&grid,&us,&ts,pieces,points)?;
+        // the most the net misses the sheet by halfway round the loop, and halfway along the roll
+        let err_u = missed(&net,ts.iter().zip(fitted).flat_map(|(&t,r)| all.iter().zip(r).skip(1).step_by(2).map(move |(&u,&x)| (t,u,x))));
+        let err_t = missed(&net,half_ts.iter().zip(halfway).flat_map(|(&t,r)| us.iter().zip(r).map(move |(&u,&x)| (t,u,x))));
         let (grow_u,grow_t) = (err_u > tol,err_t > tol);
         if !grow_u && !grow_t {
             folds(&net,tool,path,&us,&ts)?;
-            return Ok(Fitted {net,on:on_pieces,error:err_u.max(err_t),roll:[a,b]})
+            return Ok(Fitted {net,on:(0..m).flat_map(|k| std::iter::repeat_n(on[k],per)).collect(),roll:[a,b]})
         }
         if grow_u && points >= MOST_POINTS || grow_t && rows >= MOST_ROWS {
             return Err(Unbuilt::Failed(format!("the contact's sheet fits within {} only to {} along the loop and {} along the roll",
@@ -554,6 +576,11 @@ pub fn fitted(tool: &Revolved,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
     }
 }
 
+/// The most the net misses the sheet's points `(t, u, x)` by.
+fn missed(net: &Net,points: impl Iterator<Item=(f64,f64,V)>) -> f64 {
+    points.map(|(t,u,x)| norm(sub(x,net.point(u,t)))).fold(0.,f64::max)
+}
+
 /// How small a part of its two rates' lengths the sheet's area factor may fall to before it is read
 /// as folding.
 const FOLD: f64 = 1e-3;
@@ -562,15 +589,12 @@ const FOLD: f64 = 1e-3;
 /// every fitted point its normal `Σ_u × Σ_t` faces the way it faces at the first, against the way
 /// out from the tool's centre where it stands there, and its length keeps above `FOLD` of the
 /// rates' (a fold: the contact running along the motion's flow, design step 6, `Folded`); and the
-/// tool's centre, read at the fitted rolls and between, comes back nowhere within twice the tool's
-/// reach of where it was after running more than half a turn of a circle of that reach (`Returns`,
-/// the canal's B2 read for any convex tool). Sampled, so a fold or a return between the points is
-/// the judge's to see.
+/// tool's centre, read at the fitted rolls and between, comes back nowhere within the tool's reach
+/// (`returns`). Sampled, so a fold or a return between the points is the judge's to see.
 fn folds(net: &Net,tool: &Revolved,path: &Trajectory,us: &[f64],ts: &[f64]) -> Result<(),Unbuilt> {
-    let pose = |t: f64| path.pose(t).map_err(|e| Unbuilt::Failed(e.msg));
     let mut sense = 0.;
     for &t in ts {
-        let centre = pose(t)?.point(tool.origin());
+        let centre = path.pose(t)?.point(tool.origin());
         for &u in us {
             let (x,du,dt) = net.d1(u,t);
             let n = cross(du,dt);
@@ -582,51 +606,39 @@ fn folds(net: &Net,tool: &Revolved,path: &Trajectory,us: &[f64],ts: &[f64]) -> R
     returns(tool,path,[ts[0],ts[ts.len()-1]],4*ts.len().max(64))
 }
 
-/// **Whether the tool's centre comes back within twice the tool's reach of where it was** after
-/// running more than half a turn of a circle of that reach, read at `n` rolls over `[a, b]` (the
-/// canal's B2 for any convex tool): `Returns` at a point between the two passes.
+/// **Whether the tool's centre comes back on itself**, read at `n` rolls over `[a, b]`: within
+/// twice the tool's reach after running half a turn of a circle of it (the canal's B2,
+/// `canal::first_return`, for any convex tool), `Returns` at a point between the two passes.
 fn returns(tool: &Revolved,path: &Trajectory,[a,b]: [f64;2],n: usize) -> Result<(),Unbuilt> {
-    let centres: Vec<V> = (0..=n).map(|i| path.pose(a+(b-a)*i as f64/n as f64).map(|m| m.point(tool.origin()))
-        .map_err(|e| Unbuilt::Failed(e.msg))).collect::<Result<_,_>>()?;
+    let centres: Vec<V> = (0..=n).map(|i| path.pose(a+(b-a)*i as f64/n as f64).map(|m| m.point(tool.origin())))
+        .collect::<Result<_,_>>()?;
     let mut along = vec![0.];
     for w in centres.windows(2) { along.push(along.last().unwrap()+norm(sub(w[1],w[0]))) }
-    let reach = tool.size;
-    for i in 0..centres.len() {
-        for j in i+1..centres.len() {
-            if along[j]-along[i] > PI*reach && norm(sub(centres[i],centres[j])) < 2.*reach {
-                return Err(Unbuilt::Returns {at:scale(add(centres[i],centres[j]),0.5)})
-            }
-        }
+    match super::canal::first_return(&centres,&along,tool.size) {
+        Some((i,j,_)) => Err(Unbuilt::Returns {at:scale(add(centres[i],centres[j]),0.5)}),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// How many rolls K2's admission reads the instant's contact at.
 const ADMITTED_AT: usize = 65;
 
-/// **Whether K2's road takes `tool` under `path` over `roll`**, read before anything is fitted
+/// **Whether K2's road takes `tool` under `path` over `[a, b]`**, read before anything is fitted
 /// (what an admission asks, as `closed::reads` asks of a constant twist): the tool a convex solid
 /// of revolution (`Revolved::read`); at `ADMITTED_AT` rolls, the instant's contact one root in each
 /// half-plane of the pencil, its pieces the first's (`Curved` where not); and the centre's path
 /// coming back on itself nowhere (`Returns`).
-pub fn admits(tool: &Brep,path: &Trajectory,roll: [f64;2]) -> Result<(),Unbuilt> {
+pub fn admits(tool: &Brep,path: &Trajectory,[a,b]: [f64;2]) -> Result<(),Unbuilt> {
     let revolved = Revolved::read(tool)?;
-    let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let across = across(&revolved,path,[a,b])?;
+    let ts: Vec<f64> = (0..ADMITTED_AT).map(|k| a+(b-a)*k as f64/(ADMITTED_AT-1) as f64).collect();
+    let read = crate::util::par::map(&ts,|&t| read_instant(&revolved,path,across,t));
     let mut first: Option<Vec<On>> = None;
-    for k in 0..ADMITTED_AT {
-        let t = a+(b-a)*k as f64/(ADMITTED_AT-1) as f64;
-        let m = path.at(t).map_err(|e| Unbuilt::Failed(e.msg))?;
-        let pose = path.pose(t).map_err(|e| Unbuilt::Failed(e.msg))?;
-        let i = instant(&revolved,Twist::body(m),across).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
+    for r in read {
+        let (i,pose) = r?;
         match &first {
-            None => first = Some(i.on.clone()),
-            Some(on) => {
-                let n = on.len();
-                if i.on.len() != n || !(0..n).any(|s| (0..n).all(|k| i.on[(k+s)%n] == on[k])) {
-                    return Err(Unbuilt::Curved {at:pose.point(revolved.cast(i.pencil.f1).0)})
-                }
-            }
+            None => first = Some(i.on),
+            Some(on) => if turns(&i.on,on).next().is_none() { return Err(Unbuilt::Curved {at:pose.point(revolved.cast(i.pencil.f1).0)}) },
         }
     }
     returns(&revolved,path,[a,b],256)
@@ -663,26 +675,30 @@ fn interpolated(grid: &[Vec<V>],us: &[f64],ts: &[f64],pieces: usize,points: usiz
     Ok(net)
 }
 
-/// **The tool at the pose the roll `t` gives it**, as the arrangement takes it: the tool moved, but
-/// a ball laid anew with its poles along its centre's velocity there — the axis of the circle it
-/// touches its sheet round — so no touch given on it passes through a pole of its surface, where it
-/// is laid on no face (a ball drawn turned about a diameter square to its path has its poles on
-/// that circle, `solid_sweeps/path.sv`'s).
-pub fn posed(tool: &Brep,revolved: &Revolved,path: &Trajectory,t: f64) -> Result<Brep,Unbuilt> {
-    let m = path.at(t).map_err(|e| Unbuilt::Failed(e.msg))?;
-    let pose = path.pose(t).map_err(|e| Unbuilt::Failed(e.msg))?;
-    if let ([Element::Arc {c,r,sweep,..}],[_]) = (&revolved.elements[..],&tool.faces[..]) {
+/// **The tool at the pose the roll `t` (an end of the fit's roll) gives it**, as the arrangement takes
+/// it: the tool moved, and turned about its own axis — the same solid — so its seams stand clear of
+/// its contact there, which it is given touching the sheet along (#810's `seam_away`); and a ball,
+/// whose axis is its own to choose, laid anew with its poles along its centre's velocity there, the
+/// axis of the circle it touches its sheet round, so the touch passes through no pole of its
+/// surface, where it would be laid on no face (`solid_sweeps/path.sv`'s ball, drawn turned about a
+/// diameter square to its path, has its poles on that circle).
+pub fn posed(tool: &Brep,revolved: &Revolved,path: &Trajectory,fit: &Fitted,t: f64) -> Result<Brep,Unbuilt> {
+    let pose = path.pose(t)?;
+    if let ([Element::Arc {c,r,sweep,..}],[face]) = (&revolved.elements[..],&tool.faces[..]) {
         if c[0] == 0. && (sweep-PI).abs() <= 1e-9 {
             let centre = revolved.frame.at([0.,0.,c[1]]);
-            let w = Twist::body(m).velocity(centre);
+            let w = Twist::body(path.at(t)?).velocity(centre);
             if norm(w) > 0. {
                 let mut ball = crate::build::sphere(pose.point(centre),unit(pose.vector(w)),*r).map_err(Unbuilt::Failed)?;
-                for f in &mut ball.faces { f.name = tool.faces[0].name.clone() }
+                for f in &mut ball.faces { f.name = face.name.clone() }
                 return Ok(ball)
             }
         }
     }
-    Ok(tool.moved(&crate::geom::Rigid {r:pose.r,t:pose.p}))
+    let n = 8*fit.on.len();
+    let touched: Vec<V> = (0..n).map(|i| fit.net.point(fit.on.len() as f64*i as f64/n as f64,t)).collect();
+    let moved = tool.moved(&crate::geom::Rigid {r:pose.r,t:pose.p});
+    Ok(super::closed::seam_away(moved,pose.point(revolved.origin()),pose.vector(revolved.frame.z),&touched))
 }
 
 /// **The sheet entered as a candidate**: the net cut round the loop at each piece's ends — a tube
@@ -695,25 +711,21 @@ pub fn posed(tool: &Brep,revolved: &Revolved,path: &Trajectory,t: f64) -> Result
 /// or a return the build refuses — so these are their whole meetings: a face beside a piece meets
 /// it only at the end of a curve given (where the contact crosses the seam between them).
 pub fn entered(fit: &Fitted,tool: &Revolved,ends: [&Brep;2]) -> Result<(Brep,Vec<Given>),Unbuilt> {
-    let [a,b] = fit.roll;
     let net = &fit.net;
     let pieces = fit.on.len();
     let us: Vec<f64> = (0..=pieces).map(|k| k as f64).collect();
-    let vs = [a,b];
-    let names: Vec<String> = (0..pieces).map(|_| "sheet".to_string()).collect();
-    let sheet = crate::build::grid_sheet(net,&us,&vs,&names,[true,false]).map_err(Unbuilt::Failed)?;
+    let sheet = crate::build::grid_sheet(net,&us,&fit.roll,&vec!["sheet".to_string();pieces],[true,false]).map_err(Unbuilt::Failed)?;
     let mut given = Vec::new();
-    for (pose,v) in ends.iter().zip([a,b]) {
-        for (k,&on) in fit.on.iter().enumerate() {
-            // the faces holding the piece where the tool stands: its face's, or both of its edge's
-            let holding: Vec<usize> = match on {
-                On::Face(e) => vec![tool.faces[e]],
-                On::Edge(e) => vec![tool.faces[e],tool.faces[e+1]],
-            };
-            // the net's iso-curve at the roll `v`, an end of it: the piece's first column or its
-            // last
-            let piece = net.segment([k as f64,k as f64+1.],[a,b]);
-            let iso = Curve::BSpline(Arc::new(piece.column(if v == a { 0 } else { piece.poles[0].len()-1 })));
+    for (k,&on) in fit.on.iter().enumerate() {
+        // the faces holding the piece where the tool stands: its face's, or both of its edge's
+        let holding: Vec<usize> = match on {
+            On::Face(e) => vec![tool.faces[e]],
+            On::Edge(e) => vec![tool.faces[e],tool.faces[e+1]],
+        };
+        // the net's iso-curves at the ends of the roll: the piece's first column and its last
+        let piece = net.segment([k as f64,k as f64+1.],fit.roll);
+        for (pose,j) in ends.iter().zip([0,piece.poles[0].len()-1]) {
+            let iso = Curve::BSpline(Arc::new(piece.column(j)));
             for (f,face) in pose.faces.iter().enumerate() {
                 let curves = if holding.contains(&f) { vec![iso.clone()] } else { Vec::new() };
                 given.push(Given {surfaces:[face.surface.clone(),sheet.faces[k].surface.clone()],curves});

@@ -211,7 +211,7 @@ fn a_side_square_to_the_turn_cuts_a_floor() {
 fn a_side_along_the_slide_is_the_closed_classs() {
     let e = fixtures::read(&slid_bar(false,0.));
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     near(exported(&e,"part"),980.,1e-9);
 }
 
@@ -230,7 +230,7 @@ fn a_corner_meeting_its_crease_turned_is_the_closed_classs() {
         from:-4.,to:4.,draft:2.,lead:0.};
     let e = fixtures::read(&bar.text());
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_turn(),"a turn");
+    assert!(found.screw().unwrap().is_turn(),"a turn");
     near(exported(&e,"part"),PI/3.*80.-bar.removed(),1e-9);
 }
 
@@ -261,7 +261,7 @@ fn a_corner_reaching_a_cap_under_a_screw_is_the_closed_classs() {
 fn a_cap_in_the_blank_under_a_slide_is_the_closed_classs() {
     let e = fixtures::read(&slid_bar(true,-0.2).replace("from: -8mm, to: 18mm","from: 2mm, to: 8mm"));
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     near(exported(&e,"part"),1000.-capped_slide_removed(-0.2),1e-9);
 }
 

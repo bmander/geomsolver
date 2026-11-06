@@ -81,7 +81,7 @@ fn a_bull_nosed_drum_punches_its_shadow_rounded() {
 fn the_drum_turned_a_whole_turn_bores_the_whole_ring() {
     let e = fixtures::read(&turned_drum().replace("(-140deg, 140deg)","(0deg, 360deg)"));
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_turn(),"a turn");
+    assert!(found.screw().unwrap().is_turn(),"a turn");
     near(exported(&e,"part"),PI/3.*80.-PI/6.*40.,1e-9);
 }
 

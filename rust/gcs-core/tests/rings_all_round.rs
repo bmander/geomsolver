@@ -121,7 +121,7 @@ post := solid(std.solids.Prism(face(q0, q1, q2, q3), from: 0mm, to: 30mm))
 post union part");
     let e = fixtures::read(&post);
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     near(exported(&e,"part"),800.+3.*3.*26.-16.*PI,1e-9);
 }
 
@@ -176,7 +176,7 @@ fn the_upright_torus_turned_across_a_tall_block_grooves_it_by_its_shadow() {
         .replace("from: -3mm, to: 3mm","from: -4mm, to: 4mm");
     let e = fixtures::read(&tall);
     let gcs_core::solid::admission::Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_turn(),"a turn");
+    assert!(found.screw().unwrap().is_turn(),"a turn");
     crate::turns_and_slides::near(crate::turns_and_slides::exported(&e,"part"),80.*PI-PI/6.*(105.+32./3.+38.*PI),1e-8);
 }
 

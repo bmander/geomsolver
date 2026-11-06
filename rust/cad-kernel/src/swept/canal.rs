@@ -327,24 +327,34 @@ fn rows(path: &Centre, r: f64, [from, to]: [f64; 2]) -> Result<Option<Frame>, Wh
 /// `2 r` of each other, with the points' spacing to spare, half a turn on a circle of the radius or
 /// more apart along it.
 fn returns(pts: &[(f64, V, V)], along: &[f64], r: f64) -> Option<Why> {
+    let points: Vec<V> = pts.iter().map(|p| p.1).collect();
+    let (i, j, spacing) = first_return(&points, along, r)?;
+    let ((s, p, _), (sj, q, _)) = (pts[i], pts[j]);
+    Some(Why::Refused(Refusal { row: Row::Return, seen: Seen::Returns { distance: norm(sub(p, q)), from: s, to: sj, spacing },
+        samples: pts.len(), witness: scale(add(p, q), 0.5) }))
+}
+
+/// **Where a path of `points` (`along` its length at each) first comes back on itself** within the
+/// diameter `2 r`, with the points' spacing to spare, half a turn on a circle of the radius or more
+/// along it from where it was: the two points' places and that spacing (B2, read for a ball's tube
+/// here and for any convex tool's centre under K2, `swept::patches`).
+pub fn first_return(points: &[V], along: &[f64], r: f64) -> Option<(usize, usize, f64)> {
     let spacing = along.windows(2).map(|w| w[1] - w[0]).fold(0.0, f64::max);
     let reach = 2.0 * r + spacing;
     let mut grid = Grid::new(reach);
-    for (i, &(_, p, _)) in pts.iter().enumerate() {
+    for (i, &p) in points.iter().enumerate() {
         grid.insert(p, i as u32);
     }
-    for (i, &(s, p, _)) in pts.iter().enumerate() {
+    for (i, &p) in points.iter().enumerate() {
         let mut near = None;
         grid.around(p, |j| {
             let j = j as usize;
-            if near.is_none() && j > i && along[j] - along[i] >= PI * r && norm(sub(p, pts[j].1)) < reach {
+            if near.is_none() && j > i && along[j] - along[i] >= PI * r && norm(sub(p, points[j])) < reach {
                 near = Some(j);
             }
         });
         if let Some(j) = near {
-            let (sj, q, _) = pts[j];
-            return Some(Why::Refused(Refusal { row: Row::Return, seen: Seen::Returns { distance: norm(sub(p, q)),
-                from: s, to: sj, spacing }, samples: pts.len(), witness: scale(add(p, q), 0.5) }));
+            return Some((i, j, spacing));
         }
     }
     None

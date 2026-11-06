@@ -31,7 +31,7 @@ fn a_bar_pushed_aslant_through_a_plate_takes_its_shadow() {
     let text = square_bar().replace("fix(dir == (0, 0, 1)) up",&aslant());
     let e = fixtures::read(&text);
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     assert_eq!((found.tool.faces.len(),found.tool.edges.len()),(6,12),"a bar of six planes and twelve lines");
     near(exported(&e,"part"),800.-plunged_away(16.),1e-9);
 }
@@ -48,7 +48,7 @@ fn a_drum_pushed_aslant_through_a_plate_takes_its_shadow() {
     let drum = crate::closed_characteristics::punch().replace("fix(dir == (0, 0, 1)) up",&aslant());
     let e = fixtures::read(&drum);
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     near(exported(&e,"part"),800.-drum_plunged_away(16.),1e-9);
 }
 
@@ -76,7 +76,7 @@ fn a_drum_pushed_aslant_partway_into_a_plate_leaves_its_end_pose() {
 fn a_drum_turned_partway_into_a_ring_sector_stops_there() {
     let e = fixtures::read(&crate::closed_characteristics::turned_drum().replace("(-140deg, 140deg)","(-140deg, 30deg)"));
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_turn(),"a turn");
+    assert!(found.screw().unwrap().is_turn(),"a turn");
     near(exported(&e,"part"),PI/3.*80.-drum_turned_partway_away(),1e-9);
 }
 
@@ -116,7 +116,7 @@ fn a_leaning_bar_turned_wholly_through_a_ring_sector_bores_its_shadow() {
     let lean = 20.;
     let e = fixtures::read(&crate::prism_twists::turned_bar(lean,[[10.,-0.5],[11.,-0.5],[11.,0.5],[10.,0.5]],0.6,0.));
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_turn(),"a turn");
+    assert!(found.screw().unwrap().is_turn(),"a turn");
     let bar = crate::brep::block([10.,-0.5,-0.6],[11.,0.5,0.6]).moved(&Rigid::turn([0.;3],[1.,0.,0.],-f64::to_radians(lean)));
     let whole = crate::swept_closed::revolved_volume(&bar);
     let ring = std::f64::consts::PI/3.*(144.-64.);
