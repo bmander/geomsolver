@@ -1,8 +1,8 @@
 //! **The tool a solid is swept as**, the kernel's (#721 F2b): its faces — faces of revolution
 //! (`surface`), a prism's sides, drafted or not, and its caps — the edges where two faces of one
 //! profile loop meet, the creases where a drafted prism's halves fold at its parting plane, and its
-//! material, which says which points are of the tool. The solver reads one off a drawing
-//! (the solver's `SweepContacts::read`); nothing here knows how it was drawn.
+//! material, which says which points are of the tool. The kernel reads one off the tool's B-rep
+//! (`read`, #721 F1); nothing here knows how it was drawn.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::contact::SurfacePoint;
@@ -32,19 +32,43 @@ impl Tool {
     pub fn edges(&self) -> &[PatchEdge] { &self.edges }
     pub fn creases(&self) -> &[[usize;2]] { &self.creases }
     pub fn material(&self) -> &dyn Material { &*self.material }
-    /// Where `edge`'s two faces meet, and a point just inside each face beside it, on a
-    /// revolution's charts' start (`v = 0`) and halfway along a prism's sides, clear of its caps:
-    /// the probe a corner is told by — the chord between the two points in the tool's material at a
-    /// convex corner, out of it at a concave one. (At a cap the chord lies on the tool's boundary,
-    /// where the material reads nought either way.)
+    /// Where `edge`'s two faces meet, and a point just inside each face beside it, where the
+    /// corner lies on the tool: the probe a corner is told by — the chord between the two points in
+    /// the tool's material at a convex corner, out of it at a concave one. (At a cap the chord lies
+    /// on the tool's boundary, where the material reads nought either way.) The corner is probed
+    /// first on a revolution's chart's start (`v = 0`) and halfway along a prism's sides, clear of
+    /// its caps, then on round the turn, or out along the sides, at the first place it is on the
+    /// tool (#721 F1b): so a corner a Boolean of the tool trims is told where it is the tool's,
+    /// wherever a face of revolution's chart starts. Where it is nowhere on the tool, at the first
+    /// place.
     pub fn corner(&self,edge: &PatchEdge) -> Option<(V,[V;2])> {
         let ([a,b],[ua,ub]) = (edge.patches,edge.ends);
         let (pa,pb) = (self.faces.get(a)?,self.faces.get(b)?);
         let h = 1e-4;
         let inward = |u: f64| if u < 0.5 { u+h } else { u-h };
-        let v = if pa.periodic() { 0. } else { 0.5 };
-        Some((pa.at(ua,v).ok()?.position,[pa.at(inward(ua),v).ok()?.position,pb.at(inward(ub),v).ok()?.position]))
+        let probe = |v: f64| -> Option<(V,[V;2])> {
+            Some((pa.at(ua,v).ok()?.position,[pa.at(inward(ua),v).ok()?.position,pb.at(inward(ub),v).ok()?.position]))
+        };
+        let n = CORNER_PLACES;
+        let places = (0..n).map(|k| if pa.periodic() { k as f64/n as f64 }
+            else { let d = (k+1)/2; 0.5+if k%2 == 1 { 1. } else { -1. }*d as f64/n as f64 });
+        // (on the tool as admission reads a point on it: `admission::ends`'s `on_tool`)
+        let on = |p: V| self.material.value(p).abs() < 1e-6;
+        let mut first = None;
+        for v in places {
+            let Some(found) = probe(v) else { continue };
+            if on(found.0) { return Some(found) }
+            first.get_or_insert(found);
+        }
+        first
     }
+}
+
+/// How many places along a corner `Tool::corner` probes it at: round a turn, or along a prism's
+/// sides out from their middle.
+const CORNER_PLACES: usize = 64;
+
+impl Tool {
 }
 
 /// One face of a sweep's tool: a revolution of a profile edge (`u` along the edge, `v` round the
@@ -167,6 +191,10 @@ impl ExtrudedSurface {
             }
         })
     }
+
+    /// How far and which way it runs from its edge to its far one, where it runs square along it
+    /// (an undrafted side); none where it leans.
+    pub fn depth(&self) -> Option<V> { match self.side { Side::Straight(d) => Some(d),Side::Leaning(_) => None } }
 
     /// Whether its edge is a line at both its ends (a plane side), so its ends at the caps, and a
     /// drafted half's at its parting plane, are lines too: what the constant twist walks across

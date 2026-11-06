@@ -182,7 +182,9 @@ fn a_rack_tooth_drafted_both_ways_cuts_a_space_widest_at_its_parting_plane() {
     let e = fixtures::read(&parted_space("2deg"));
     assert!(matches!(crate::solid_sweeps_examples::class(&e,"gear"),Class::Generating),"the generating class");
     let contacts = SweepContacts::read(&e.sketch,fixtures::solid(&e,"space"),1e-10).unwrap();
-    assert_eq!((contacts.patches().len(),contacts.creases().len()),(8,4),"each side two halves, folding between them");
+    // read from its B-rep (#721 F1b), its two caps beside its sides
+    let caps = contacts.patches().iter().filter(|p| matches!(p,ToolSurface::Cap(_))).count();
+    assert_eq!((contacts.patches().len()-caps,caps,contacts.creases().len()),(8,2,4),"each side two halves, folding between them");
     let removed = PI*22.*22.*6.-exported(&e,"gear");
     let want = parted_volume(0.,2.,0.,[-3.,3.]);
     eprintln!("removed {removed:.5} mm³, the space {want:.5}, the undrafted {:.5}",6.*space_area(&TOOTH,400,4000));
@@ -239,6 +241,8 @@ construction space := solid({ p | some t in (-60deg, 60deg): p in slot at(under:
     let tool = contacts.source_material();
     let lean = 2f64.to_radians();
     for surface in contacts.patches() {
+        // (read from its B-rep, #721 F1b, its caps beside its sides)
+        if matches!(surface,ToolSurface::Cap(_)) { continue }
         let ToolSurface::Extruded(side) = surface else { panic!("a prism's side") };
         let mut normals = Vec::new();
         // short of the caps, where the field's gradient is a cap's too
@@ -262,22 +266,23 @@ construction space := solid({ p | some t in (-60deg, 60deg): p in slot at(under:
     }
 }
 
-/// **What a drafted tool the class does not read is refused at T1**, saying why: `parted.sv`'s
-/// tooth drafted outward both ways from its plane, its sides meeting there in a concave crease that
-/// would trim the two halves' envelopes against each other, and the tooth drawn as a half disc, its
-/// arc meeting its diameter at a right angle, a corner a draft moves along a curve. (Drafted 0.2°:
+/// **What a drafted tool the class does not read is refused**, saying why: `parted.sv`'s tooth
+/// drafted outward both ways from its plane, its sides meeting there in a concave crease that
+/// would trim the two halves' envelopes against each other (T2, read from its B-rep, #721 F1b), and
+/// the tooth drawn as a half disc, its arc meeting its diameter at a right angle, a corner a draft
+/// moves along a curve, which the kernel builds no boundary of (T1, #721 G8). (Drafted 0.2°:
 /// the faceted reading of the half disc refuses a deeper draft, which eats the arc's facet beside
 /// that corner, before any class is asked.)
 #[test]
-fn a_drafted_tool_the_class_does_not_read_is_refused_at_t1() {
+fn a_drafted_tool_the_class_does_not_read_is_refused() {
     let outward = crate::solid_sweeps_examples::text("parted.sv").replace("draft: 2deg","draft: -2deg");
     let r = refused({
         let e = fixtures::read(&outward);
         admission::admit_body(&e.sketch,fixtures::solid(&e,"gear"),&Options::default())
     });
-    assert_eq!(r.condition,Condition::Tool);
-    assert!(r.message.starts_with("`tooth` is a drafted prism whose sides the class does not read: it runs both ways from its \
-        profile's plane, drafted outward"),"{}",r.message);
+    assert_eq!(r.condition,Condition::Corner);
+    assert!(r.message.starts_with("the crease across `tooth."),"{}",r.message);
+    assert!(r.message.contains("` is concave"),"{}",r.message);
     let half_disc = helical()
         .replace("  t0 := point hint((18, -0.84))\n","")
         .replace("  t1 := point hint((18, 0.84))\n","")
@@ -292,5 +297,5 @@ fn a_drafted_tool_the_class_does_not_read_is_refused_at_t1() {
         admission::admit_body(&e.sketch,fixtures::solid(&e,"gear"),&Options::default())
     });
     assert_eq!((r.condition,r.class()),(Condition::Tool,"generating-sweep class"));
-    assert!(r.message.contains("an arc meets a side at an angle"),"{}",r.message);
+    assert!(r.message.contains("a drafted corner there is a curve where a cone meets a plane, not built yet"),"{}",r.message);
 }

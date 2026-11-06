@@ -14,18 +14,19 @@
 //!
 //! Corners are where two faces read share an edge at the ends of their meridians or edges, creases
 //! where two strips share a rim and their rulings go on across it; each revolution about an axis
-//! starts from the half-plane the first face about it does. The material is the boundary's own
-//! (`Boundary`). What no reading takes is refused by its geometry, naming the face and a point of
-//! it (`Unread`).
+//! starts from the half-plane the first face about it does. Faces a Boolean cuts from one surface
+//! read alike are kept once (`once_a_surface`). The material is the boundary's own (`Boundary`),
+//! its side at a corner the corner's pseudo-normal's. What no reading takes is refused by its
+//! geometry, naming the face and a point of it (`Unread`).
 //!
-//! Nothing switches to it yet: the solver still reads the tool off the drawing
-//! (`SweepContacts::read`), and `tests/tool_reading.rs` holds the two readings to one tool.
+//! The classes read the tool this way (#721 F1b: the solver's `SweepContacts::read`); the drawing's
+//! reading stays beside it only as an oracle (`SweepContacts::drawn`), and `tests/tool_reading.rs`
+//! holds the two readings to one tool.
 use crate::util::fmath::Det;
 use crate::geom::{Curve,Frame,Surface,Uv};
 use crate::query::{Located,Place};
 use crate::topo::{unwrap,Brep,EdgeCurve,Face};
 use crate::util::space::{add,cross,distance,dot,norm,normalised,scale,sub};
-use super::member::Solid;
 use super::surface::{Meridian,RevolvedSurface};
 use super::tool::{CapSurface,Edge,ExtrudedSurface,Material,PatchEdge,Side,Tool,ToolSurface};
 use std::f64::consts::TAU;
@@ -57,6 +58,16 @@ impl std::fmt::Display for Unread {
             Unread::Meridian {face,kind,..} => write!(f,"its face `{face}` turns {} {kind}, not a line or a circle",article(kind)),
             Unread::Boundary(m) => write!(f,"{m}"),
         }
+    }
+}
+
+/// A face's name as the tool's reading says it: its solid's and its own, a dot between, where the
+/// recipe's build names it so (`recipe::NAMED`) — `mill.bottom`, as the drawing names it — else
+/// its whole name.
+pub fn named(f: &Face) -> String {
+    match crate::recipe::named_parts(&f.name) {
+        (solid,"") => solid.to_string(),
+        (solid,face) => format!("{solid}.{face}"),
     }
 }
 
@@ -132,7 +143,7 @@ impl Tool {
                 continue
             }
             let f = &b.faces[fi];
-            let (face,kind,at) = (f.name.clone(),f.surface.kind(),witness(fi));
+            let (face,kind,at) = (named(f),f.surface.kind(),witness(fi));
             read[fi] = Some(match &f.surface {
                 Surface::Plane(frame) => reader.cap(fi,frame,&read),
                 Surface::Revolution(_,c) if !matches!(**c,Curve::Line {..} | Curve::Circle(..)) =>
@@ -179,8 +190,45 @@ impl Tool {
             }
         }
         let faces = read.into_iter().map(|(fi,r)| r.surface(&b.faces[fi],scale)).collect();
+        let (faces,edges,creases) = once_a_surface(faces,edges,creases,1e2*tol/scale);
         Ok(Tool {faces,edges,creases,material:Arc::new(Boundary::new(b,scale,tol,&reader.uses))})
     }
+}
+
+/// **One reading a surface** (#721 F1b): the faces a Boolean cuts from one surface of revolution
+/// are each read as that surface's whole turn (`Reader::revolved`), one reading the same as the
+/// next; each is kept once, the first, and the corners and creases that name the others name it,
+/// each corner once. `tol` is how near two readings' points must lie to be one surface's.
+fn once_a_surface(faces: Vec<ToolSurface>,edges: Vec<PatchEdge>,creases: Vec<[usize;2]>,tol: f64)
+    -> (Vec<ToolSurface>,Vec<PatchEdge>,Vec<[usize;2]>) {
+    // two faces of revolution alike at a grid of their charts: one surface, read alike
+    let same = |a: &ToolSurface,c: &ToolSurface| matches!((a,c),(ToolSurface::Revolved(_),ToolSurface::Revolved(_)))
+        && [0.,0.5,1.].iter().all(|&u| [0.,0.25,0.5,0.75].iter().all(|&v| match (a.at(u,v),c.at(u,v)) {
+            (Ok(p),Ok(q)) => distance(p.position,q.position) <= tol,
+            _ => false,
+        }));
+    let n = faces.len();
+    let mut first: Vec<usize> = (0..n).collect();
+    for k in 0..n {
+        if let Some(j) = (0..k).find(|&j| first[j] == j && same(&faces[j],&faces[k])) { first[k] = j }
+    }
+    if first.iter().enumerate().all(|(k,&j)| j == k) { return (faces,edges,creases) }
+    // each reading's place among those kept
+    let mut index = vec![0;n];
+    let mut kept = Vec::new();
+    for k in 0..n { if first[k] == k { index[k] = kept.len(); kept.push(k) } }
+    for k in 0..n { index[k] = index[first[k]] }
+    let mut merged: Vec<PatchEdge> = Vec::new();
+    for e in edges {
+        let patches = e.patches.map(|k| index[k]);
+        // (a corner between two faces of the one surface is none, but a meridian's seam with itself)
+        if patches[0] == patches[1] && e.patches[0] != e.patches[1] { continue }
+        if merged.iter().any(|m| m.patches == patches && m.ends == e.ends) { continue }
+        merged.push(PatchEdge {patches,ends:e.ends});
+    }
+    let creases = creases.into_iter().map(|c| c.map(|k| index[k])).collect();
+    let mut faces: Vec<Option<ToolSurface>> = faces.into_iter().map(Some).collect();
+    (kept.into_iter().map(|k| faces[k].take().expect("each kept once")).collect(),merged,creases)
 }
 
 /// A face as read, in the boundary's units: a face of revolution, a ruled strip, or a cap.
@@ -203,13 +251,13 @@ impl Read {
                     Meridian::Round {center,a,b,sweep} => Meridian::Round {center:v(center),a:v(a),b:v(b),sweep},
                     Meridian::Conic {a,m,b,w} => Meridian::Conic {a:v(a),m:v(m),b:v(b),w},
                 };
-                ToolSurface::Revolved(RevolvedSurface::new(f.name.clone(),meridian,v(s.origin()),s.axis_direction(),s.sweep()))
+                ToolSurface::Revolved(RevolvedSurface::new(named(f),meridian,v(s.origin()),s.axis_direction(),s.sweep()))
             }
-            Read::Strip(s) => ToolSurface::Extruded(ExtrudedSurface::new(f.name.clone(),edge(s.edge),match s.side {
+            Read::Strip(s) => ToolSurface::Extruded(ExtrudedSurface::new(named(f),edge(s.edge),match s.side {
                 Side::Straight(d) => Side::Straight(v(d)),
                 Side::Leaning(far) => Side::Leaning(edge(far)),
             })),
-            Read::Cap {end,corner,du,dv} => ToolSurface::Cap(CapSurface::new(f.name.clone(),end,v(corner),v(du),v(dv))),
+            Read::Cap {end,corner,du,dv} => ToolSurface::Cap(CapSurface::new(named(f),end,v(corner),v(du),v(dv))),
         }
     }
 }
@@ -544,18 +592,19 @@ impl Reader<'_> {
 /// **A tool's material read from its boundary**: below nought within it and above without, the
 /// distance to the nearest point of its faces and edges, in units `1/scale` of the boundary's. Its
 /// side is read off the nearest face's outward normal where the nearest point is a face's, off the
-/// sum of its faces' where it is inside an edge; where it is a corner's, off a mesh of the boundary
-/// where the point stands clear of it by more than the mesh's sag, and by the boundary's own point
-/// location nearer.
+/// sum of its faces' where it is inside an edge, and off its angle-weighted pseudo-normal where it
+/// is a corner's (Bærentzen and Aanæs 2005: each face's normal there weighted by the angle its
+/// loop turns through at the corner); by the boundary's own point location only where none of
+/// these is read (a point on the boundary, or a corner some face has no normal at, an apex).
 pub struct Boundary {
     located: Located<'static>,
-    /// The mesh a corner's side is read off, made the first time one is asked.
-    mesh: std::sync::OnceLock<Option<Solid>>,
     scale: f64,
     /// Each edge's faces, and the edges that bound something (a seam, an edge a face uses twice,
     /// bounds nothing).
     faces: Vec<Vec<usize>>,
     bounding: Vec<u32>,
+    /// Each vertex's angle-weighted pseudo-normal, where every face meeting there has a normal.
+    corners: Vec<Option<V>>,
 }
 
 impl std::fmt::Debug for Boundary {
@@ -575,7 +624,7 @@ impl Boundary {
         let faces = uses.iter().map(|u| u.iter().map(|x| x.0).collect::<std::collections::BTreeSet<_>>().into_iter().collect())
             .collect();
         let bounding = (0..b.edges.len() as u32).filter(|e| !seams.contains(e)).collect();
-        Boundary {located:Located::owned(b.clone(),tol),mesh:Default::default(),scale,faces,bounding}
+        Boundary {located:Located::owned(b.clone(),tol),scale,faces,bounding,corners:pseudo_normals(b)}
     }
 
     /// The distance from `q` (the boundary's units) to the boundary: to the foot of the nearest
@@ -604,14 +653,17 @@ impl Boundary {
         let side = match foot {
             Some(Foot::Face(fi,uv)) => outward(fi,uv).map(|n| dot(sub(q,b.faces[fi].surface.point(uv)),n)),
             // beside an edge's inside, the side of the sum of its faces' normals there (its
-            // pseudo-normal); beside its end, a corner's, none
+            // pseudo-normal); beside its end, a corner's, the side of the corner's
             Some(Foot::Edge(e,t)) => {
                 let edge = &b.edges[e as usize];
-                (t > edge.t[0] && t < edge.t[1]).then(|| {
+                if t > edge.t[0] && t < edge.t[1] {
                     let x = edge.point(t,&b.vertices);
                     let n = self.faces[e as usize].iter().filter_map(|&fi| b.faces[fi].outward(x)).fold([0.;3],add);
-                    dot(sub(q,x),n)
-                }).filter(|s| s.abs() > 0.)
+                    Some(dot(sub(q,x),n))
+                } else {
+                    let v = edge.v[if t <= edge.t[0] { 0 } else { 1 }] as usize;
+                    self.corners[v].map(|n| dot(sub(q,b.vertices[v].p),n))
+                }.filter(|s| s.abs() > 0.)
             }
             None => None,
         };
@@ -619,21 +671,55 @@ impl Boundary {
     }
 }
 
+/// **Each vertex's angle-weighted pseudo-normal**: the sum, over every corner a face's loop turns
+/// at it, of the face's outward normal there weighted by the angle the face spans there — from the
+/// use leaving the vertex round its normal to the use arriving, reversed, the loop walking with
+/// the face on its left, so a reflex corner of a face weighs more than a half turn. The sign of a
+/// point's offset from the vertex along it says which side of the boundary the point is on where
+/// the vertex is its nearest point of the boundary. None at a vertex where a face has no normal, or
+/// an edge has no curve (an apex, a pole), or where the weights cancel.
+fn pseudo_normals(b: &Brep) -> Vec<Option<V>> {
+    let mut sum: Vec<Option<V>> = vec![Some([0.;3]);b.vertices.len()];
+    // a use's unit direction where it leaves its start (`end` 0) or arrives at its end (1)
+    let direction = |c: &crate::topo::Coedge,end: usize| -> Option<V> {
+        let e = &b.edges[c.edge as usize];
+        let EdgeCurve::Curve(curve) = &e.curve else { return None };
+        let at = if c.reversed { e.t[1-end] } else { e.t[end] };
+        let d = curve.tangent(at);
+        normalised(if c.reversed { scale(d,-1.) } else { d })
+    };
+    for f in &b.faces {
+        for l in &f.loops {
+            for (i,c) in l.iter().enumerate() {
+                let next = &l[(i+1)%l.len()];
+                let v = b.ends(c)[1] as usize;
+                if b.ends(next)[0] as usize != v { continue }
+                let p = b.vertices[v].p;
+                let read = (|| -> Option<V> {
+                    let n = f.outward(p)?;
+                    // each direction laid in the face's tangent plane there
+                    let flat = |d: V| normalised(sub(d,scale(n,dot(d,n))));
+                    let (out,back) = (flat(direction(next,0)?)?,flat(scale(direction(c,1)?,-1.))?);
+                    let angle = dot(n,cross(out,back)).atan2(dot(out,back)).rem_euclid(TAU);
+                    Some(scale(n,angle))
+                })();
+                sum[v] = match (sum[v],read) { (Some(s),Some(w)) => Some(add(s,w)),_ => None };
+            }
+        }
+    }
+    sum.into_iter().map(|s| s.and_then(normalised)).collect()
+}
+
 impl Material for Boundary {
     fn value(&self,p: V) -> f64 {
         let q = p.map(|x| x*self.scale);
         let (d,side) = self.nearest(q);
-        // beside a face, the side of it; beside an edge or a corner, where the point stands
+        // beside a face, an edge or a corner, the side of it; where none is read, where the point
+        // stands
         let inside = match side {
             Some(s) => s < 0.,
             None if !(d > 1e-3*self.located.tol) => return d/self.scale,
-            None => {
-                let b = &*self.located.b;
-                match self.mesh.get_or_init(|| Solid::new(b,(1e-3*b.size()).max(self.located.tol),1.).ok()) {
-                    Some(m) if m.distance(q) > 2.*m.sag+self.located.tol => m.winding(q) > 0.5,
-                    _ => self.located.solid_place(q) == Place::In,
-                }
-            }
+            None => self.located.solid_place(q) == Place::In,
         };
         if inside { -d/self.scale } else { d/self.scale }
     }

@@ -364,13 +364,14 @@ axis starts from the half-plane the first face about it does: its frame's `x`, t
 half-plane for a face a revolution built.  The walk reads two faces' corner there and starts round
 a ring there.  The material is the boundary's (`read::Boundary`): the distance to the nearest
 face's foot or edge, a seam bounding nothing.  It is signed by that face's outward normal, by the
-edge's faces' summed normals inside an edge, and at a corner by a mesh of the boundary, or by its
-point location where the point is within the mesh's sag.  A face no reading takes is refused by its
+edge's faces' summed normals inside an edge, and at a corner by the corner's angle-weighted
+pseudo-normal (each face's normal there weighted by the angle its loop turns through at the corner,
+F1b), or by the boundary's point location where none is read (an apex, a pole).  A face no reading takes is refused by its
 geometry with a witness on it (`Unread::FreeForm`, G10: a B-spline, blend, face family, extrusion
-or affine image; `Unread::Meridian`, G8: a revolution of another curve; `Unread::Unfit`).  Nothing
-switches to it yet: the classes still read the tool off the drawing (`SweepContacts::read`), and
-`tests/tool_reading.rs` holds the two readings to one tool over every sweep the drawing's reading
-reads, as an oracle until F1b switches.  The gates are these:
+or affine image; `Unread::Meridian`, G8: a revolution of another curve; `Unread::Unfit`).  The
+classes read the tool this way since F1b (below); the drawing's reading (`SweepContacts::drawn`)
+stays beside it only as an oracle, and `tests/tool_reading.rs` holds the two readings to one tool
+over every sweep the drawing's reading reads.  The gates are these:
 - `the_two_readings_bound_one_tool`: each point of either reading's faces on the tool lies on a face
   of the other of one kind, square to one normal.
 - `the_two_readings_are_one_material`: the two materials agree in sign off the boundary.
@@ -386,6 +387,39 @@ faces a Boolean of the tool splits, and their corners: a union of two beads is r
 concave corner where they meet, where the drawing's whole tori are refused by a ring in contact all
 round.  `a_face_no_closed_form_reads_is_refused_by_name` holds the Wankel's epitrochoid bore to
 `FreeForm`, its witness on the face.
+
+**The classes switched onto the B-rep reading (#721 F1b):** `SweepContacts::read` builds the tool's
+recipe into a B-rep and reads it (`Tool::read`); its material is the boundary's.  The recipe gates
+`admission::tool` asked of the drawing are retired: T1 is now the reading's refusal, a face no
+reading takes or a tool the kernel builds no boundary of, named with a point of the face where the
+reading gives one (`SweepContacts::read_witnessed`).  A tool is one prism standing alone where its
+B-rep is (`admission::Lone::read`): every face it reads a side running square along one direction,
+no crease, and two caps, the boundary's planes square to that direction, each one loop of lines and
+arcs; its cutter is that direction's prism of the nearer cap's loop (`Cutter::extruded`), however
+the tool was drawn — a prism, one placed, a box a Boolean leaves — and the generating class's
+prism sheets, across a cap (T3) or not, and the planar envelope's, are sectioned by that cutter
+(`SweptCut::lone`), so admission's band and the build's stations are measured from one origin.  A
+cutter of revolutions is still sectioned off its recipe (`Cutter::read`) until F1c.  So G9's
+negative controls are admitted where the B-rep is ordinary faces: a bar a `common` leaves whole is
+the bar, its cap cut as the lone bar's (`prism_caps::a_cap_of_a_prism_a_common_leaves_whole_cuts_as_the_bars`,
+`prism_twists::a_cap_of_a_prism_a_common_leaves_whole_turned_cuts_as_the_bars`), and the rack's
+tooth united with itself is the tooth (`rack_cut::the_tooth_united_with_itself_cuts_as_the_tooth_does`).
+What the class still refuses it refuses by the geometry it reads: a plane that is no side and no
+lone prism's cap passing through the blank (T1, asked by its own points where no strip's rim bounds
+it: a partial revolution's end, a slanted cut, `prism_caps::a_cap_of_a_tool_no_lone_prism_is_refused`);
+a crease where a drafted prism's halves fold, concave where it is drafted outward both ways (T2, as
+a concave corner is, by the chord between points of the two halves beside it); a drafted corner the
+kernel builds no boundary of (T1, G8: `drafted_tools::a_drafted_tool_the_class_does_not_read_is_refused`).
+The faces are named as the B-rep names them (`read::named`: the solid's key and the face's own, a
+dot between), so a prism's caps are `far` (at its least height) and `near`, not the drawing's
+`start` and `end`, and a corner names its faces in the B-rep's order.  Three notes F1a's review
+left are settled here: a corner is probed where it lies on the tool (`Tool::corner`, round the turn
+or out along the sides from the first place), not at a chart's start; a corner's side is its
+pseudo-normal's, which retires the material's mesh; and faces a Boolean cuts from one surface whose
+readings are one surface's alike are kept once (`read::once_a_surface`).  Two stay open: faces of
+one surface over different spans of its meridian are read face by face, since the walk reads a
+corner only at a meridian's end; and the walk still ends at a concave corner by refusing it (T2), so
+a union tool is still swept member by member, as #684 C distributes it, not read whole.
 
 **The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
 every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding
@@ -1448,9 +1482,10 @@ joins two lines or goes on tangent: then each side (each half of it, either side
 plane, where the prism runs both ways from it: below) is
 the ruled surface between its edge's two end sections, a plane or a cone (`ExtrudedSurface::drafted`,
 from the field's `Sections`; `Sections::linear`), its points' normals their own, so its contacts are
-read as an undrafted side's and every row is asked of it. T1 refuses the rest by name: a prism
-drafted outward both ways from its plane (its sides meet there in a concave crease), an arc meeting
-a side at an angle, a side no line, arc or circle. The cutter sections it at a station as the blend of its two end sections
+read as an undrafted side's and every row is asked of it. The rest is refused by name: a prism
+drafted outward both ways from its plane (its sides meet there in a concave crease, T2 since #721
+F1b), an arc meeting a side at an angle (T1: the kernel builds no boundary of it, G8), a side no
+line, arc or circle (T1). The cutter sections it at a station as the blend of its two end sections
 (`cutter::Half::ends`, from `build::offset`), walked by the profile's lengths so a walk length
 is a ruling at every station (by its own, a shrinking section moved where contacts leave the roll's
 window and ended the chart in the blank); the sheet is traced, never the planar envelope extruded
@@ -1479,8 +1514,8 @@ contacts joining E4's. The cutter's stations cross the crease between the halves
 as `CREASE_SCALE` (a millimetre a radian) of stations, and the ordinate above it that much
 further, so the sheet's columns are laid through the fan as through the extrusion; a fan laid much
 longer than the contacts it carries move in space (20 mm a radian) left columns on one curve and
-folded the fit. Drafted outward both ways, the crease is concave and T1 refuses it, as does the
-cutter. `drafted_tools.rs` and `solid_sweeps_examples.rs` (`parted.sv`, the helical tooth drafted
+folded the fit. Drafted outward both ways, the crease is concave and T2 refuses it (#721 F1b), as
+the cutter refuses to section it. `drafted_tools.rs` and `solid_sweeps_examples.rs` (`parted.sv`, the helical tooth drafted
 2° both ways from the blank's mid-plane) are the gate: each space within 2e-4 of arithmetic made
 apart (each section of the blank cut by the tooth's eight half-planes, the material below the plane
 and above it of each side, swept by `rack_cut`'s arithmetic over pieces of the blank split where the
@@ -1500,7 +1535,8 @@ placements between minted again over each, every minted solid keeping the one it
 (`sheet::SweptCut::read`); a refusal says the member (``its tool's member `bead2`: …``), and a
 union whose every member is a ball's tube admits nothing and builds as static material, held to
 the union's field as a swept body is. Not distributed: a union within an intersection or a cut
-(T1 refuses it, saying so; the closed class reads such a tool by its B-rep where it takes its faces,
+(read from its B-rep whole, #721 F1b, the generating rows refuse it; the closed class reads such a
+tool by its B-rep where it takes its faces,
 `union_tools::a_union_within_an_intersection_is_the_closed_classs`; members falling to the closed
 class and another each built by its road, `union_tools::a_member_its_class_refuses_is_the_closed_classs`), and a union of prisms under a motion keeping their plane, which
 `planar_subtraction::asks` reads whole. The native path refuses a distributed cut by name.
@@ -1508,10 +1544,10 @@ class and another each built by its road, `union_tools::a_member_its_class_refus
 against rows across the rod computed apart, placed and turned, against the long form, two balls'
 tubes by Pappus, two tori rolled in the generating class, and the refusals.
 
-**A prism's cap in the blank (#684 F):** a prism standing alone as the tool (its solid the prism
-itself, or the prism placed, #684 AC; undrafted, its profile one loop of lines and arcs:
-`admission::Lone`) whose cap passes through the blank is no longer refused at T1; any other tool's
-cap is, saying so. A placed prism is read through its placements: its faces carried by their pose
+**A prism's cap in the blank (#684 F):** a prism standing alone as the tool (its B-rep one undrafted
+prism, its profile one loop of lines and arcs, however it was drawn: `admission::Lone::read`, #721
+F1b; the prism itself, placed, #684 AC, or what a Boolean leaves of it) whose cap passes through the
+blank is no longer refused at T1; any other tool's cap is, saying so. A placed prism is read through its placements: its faces carried by their pose
 (`SweepContacts::read`), its cutter the prism's with its profile moved by them (`Cutter::prism`
 follows the recipe's `placed` nodes to the prism). The same reading builds a placed prism whose
 caps are clear, which was admitted but whose cutter went unread, so its export was refused

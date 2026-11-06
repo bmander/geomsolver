@@ -34,6 +34,11 @@ pub struct SweptCut {
 }
 
 impl SweptCut {
+    /// The tool as one prism standing alone, read from its B-rep (`SweepContacts::lone`, #721
+    /// F1b): the cutter its prism sheets are sectioned by, however the tool was drawn. A cutter of
+    /// revolutions is still sectioned off its recipe (`Cutter::read`), until #721 F1c.
+    pub fn lone(&self) -> Option<&crate::brep::swept::admission::Lone> { self.contacts.as_ref().ok()?.lone() }
+
     pub fn read(sk: &Sketch,swept: usize) -> Result<SweptCut,ExportRefusal> {
         let name = sk.solids[swept].name.clone();
         let scale = cad::millimetres(sk);
@@ -60,6 +65,7 @@ impl SweptCut {
 /// (The roll's clearance of the blank at both limits is admission's row E1, asked before this.)
 pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,say: &Say)
     -> Result<Fitted,ExportRefusal> {
+    if let Some(lone) = cut.lone() { return traced_sheet(cut,lone.cutter(),inside,near,tolerance,say) }
     let cutter = Cutter::read(&cut.recipe).at(Stage::Reach)?;
     traced_sheet(cut,&cutter,inside,near,tolerance,say)
 }
@@ -67,11 +73,14 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
 /// The sheet of a prism whose cap reaches the blank (#684 F): `swept_sheet`'s, its stations the
 /// prism's sections through its extrusion at distances along the direction admission's row T3
 /// chose, each its chord carried along the extrusion, so the walk runs from a side over a cap's
-/// rim and across the cap.
+/// rim and across the cap. The prism is the one admission read from the tool's B-rep
+/// (`SweepContacts::lone`, #721 F1b), whose origin the band is measured from.
 pub fn capped_sheet(cut: &SweptCut,capped: &crate::solid::admission::Capped,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
     tolerance: Option<Tolerance>,say: &Say) -> Result<Fitted,ExportRefusal> {
     let middle = 0.5*(capped.band[0]+capped.band[1]);
-    let cutter = Cutter::read(&cut.recipe).and_then(|c| c.across(capped.across,middle)).at(Stage::Reach)?;
+    let lone = cut.contacts.as_ref().map_err(Clone::clone)
+        .and_then(|c| c.lone().ok_or_else(|| "the tool is read as no prism standing alone".to_string())).at(Stage::Reach)?;
+    let cutter = lone.cutter().across(capped.across,middle).at(Stage::Reach)?;
     traced_sheet(cut,&cutter,inside,near,tolerance,say)
 }
 

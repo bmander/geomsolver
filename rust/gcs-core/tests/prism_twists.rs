@@ -100,7 +100,7 @@ fn a_drafted_bar_turned_leaves_its_corners_line_turned() {
     let e = fixtures::read(&turned_bar(20.,diamond(10.),4.,2.));
     let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
     // a drafted prism's sides are read loop by loop as its sections walk them
-    assert_eq!(found.fans(),["the corner of `bar.lower` and `bar.under`"]);
+    assert_eq!(found.fans(),["the corner of `bar.under` and `bar.lower`"]);
     let (sl,cl) = 20f64.to_radians().sin_cos();
     let shift = 2f64.sqrt()*2f64.to_radians().tan();
     let r2 = |z: f64| { let s = z/cl; (10.+shift*(s+4.)).powi(2)+(s*sl).powi(2) };
@@ -505,15 +505,14 @@ pub(crate) fn parted(lean: f64,draft: f64) -> Bar {
         names:vec!["lower","outer","upper","inner"],from:-4.,to:4.,draft,lead:0.}
 }
 
-/// The flat end's bar shared with a block (a `common`) is no prism standing alone: its cap in the
-/// block is refused at T1, under a turn as under a relative rotation (#684 F). The closed class
-/// reads it by its B-rep, its faces planes and its edges lines, and builds it (#721): where a face
-/// at an end pose touches its own contact cone along a generator, a cone narrowing along its axis,
-/// the two are met in that line (`ssi`; refused at C3 until the closed form took either sense of
-/// cone). The block is far wider than the bar, so the tool is the bar: the block loses what
-/// `Bar::removed` reads off the bar's half-spaces, as `solid_sweeps/flat_end.sv`'s does.
+/// The flat end's bar shared with a block (a `common`) far wider than it is the bar: read from its
+/// B-rep (#721 F1b) the tool is one prism standing alone, however it was drawn, so its cap in the
+/// block is the constant twist's, walked over its rim as `solid_sweeps/flat_end.sv`'s is, and the
+/// block loses what `Bar::removed` reads off the bar's half-spaces. (Before the tool was read by its
+/// B-rep, the cap of an intersection was refused at T1 and the closed class built it: #721 G9's
+/// negative control, admitted.)
 #[test]
-fn a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs() {
+fn a_cap_of_a_prism_a_common_leaves_whole_turned_cuts_as_the_bars() {
     let text = flat_end(20.,5.).text().replace("construction groove := solid({ p | some t in (-140deg, 140deg): p in bar at(under: swing) t })","in std.top {\n  private k0 := point\n  \
         private k1 := point\n  private k2 := point\n  private k3 := point\n  fix((0, -20)) k0\n  fix((30, -20)) k1\n  \
         fix((30, 20)) k2\n  fix((0, 20)) k3\n}\nconstruction keep := solid(std.solids.Prism(face(k0, k1, k2, k3, -> close), from: -20mm, to: 20mm))\n\
@@ -521,8 +520,9 @@ fn a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs() {
         construction groove := solid({ p | some t in (-140deg, 140deg): p in tool at(under: swing) t })");
     assert!(text.contains("keep common tool"));
     let e = fixtures::read(&text);
-    assert!(matches!(class(&e,"part"),Class::Closed(_)),"the closed class");
-    near(exported(&e,"part"),PI/3.*80.-flat_end(20.,5.).removed(),1e-9);
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert_eq!(found.fans(),["the rim where `bar.inner` meets `bar.far`"]);
+    near(exported_at(&e,"part",0.001),PI/3.*80.-flat_end(20.,5.).removed(),2e-5);
 }
 
 /// The flat end leaning 45° and screwed 8 mm a turn across the block (#684 AE): the screw's advance
@@ -539,7 +539,7 @@ fn a_bars_flat_end_screwed_cuts_a_floor() {
     let e = fixtures::read(&bar.text());
     let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
     assert_eq!(found.screw.kind(),"a screw");
-    assert_eq!(found.fans(),["the rim where `bar.inner` meets `bar.start`"]);
+    assert_eq!(found.fans(),["the rim where `bar.inner` meets `bar.far`"]);
     near(exported_at(&e,"part",0.002),PI/3.*(144.-64.)-bar.screwed_removed(),2e-5);
 }
 
@@ -577,7 +577,7 @@ fn a_side_facing_the_axis_screwed_runs_along_its_ruling() {
     let e = fixtures::read(&bar.text());
     let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
     assert_eq!(found.screw.kind(),"a screw");
-    assert_eq!(found.fans(),["the rim where `bar.inner` meets `bar.start`"]);
+    assert_eq!(found.fans(),["the rim where `bar.inner` meets `bar.far`"]);
     assert_eq!(found.lined(),["`bar.inner`"]);
     near(exported_at(&e,"part",0.002),PI/3.*(144.-64.)-bar.screwed_removed(),2e-5);
 }
@@ -597,7 +597,7 @@ fn a_side_facing_the_axis_turned_onto_its_rim_creases_there() {
     let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
     assert_eq!(found.screw.kind(),"a turn");
     assert!(found.fans().is_empty(),"{:?}",found.fans());
-    assert_eq!(found.sharp(),["the rim where `bar.inner` meets `bar.start`"]);
+    assert_eq!(found.sharp(),["the rim where `bar.inner` meets `bar.far`"]);
     assert_eq!(found.lined(),["`bar.inner`"]);
     assert_eq!(found.creases().len(),1);
     near(exported_at(&e,"part",0.001),PI/3.*(144.-64.)-bar.removed(),2e-5);

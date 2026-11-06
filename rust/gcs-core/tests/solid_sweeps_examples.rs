@@ -282,7 +282,7 @@ fn the_square_tool_leaves_a_groove_widening_outward() {
     let e = example("square_thread.sv");
     let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
     assert_eq!(found.screw.kind(),"a screw");
-    assert_eq!(found.fans(),["the corner of `bar.upper` and `bar.nose`","the corner of `bar.nose` and `bar.lower`"]);
+    assert_eq!(found.fans(),["the corner of `bar.nose` and `bar.lower`","the corner of `bar.nose` and `bar.upper`"]);
     let (r0,r,w,lead,l) = (4_f64,5_f64,2.,6.,20.);
     let turned = r*r/2.*(r0/r).acos()-r0/2.*(r*r-r0*r0).sqrt();
     let groove = TAU*l/lead*(w*(r*r-r0*r0)/2.+lead/PI*turned);
@@ -299,7 +299,7 @@ fn the_flat_end_cuts_a_floor() {
     let e = example("flat_end.sv");
     let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
     assert_eq!(found.screw.kind(),"a turn");
-    assert_eq!(found.fans(),["the rim where `bar.inner_side` meets `bar.start`"]);
+    assert_eq!(found.fans(),["the rim where `bar.inner_side` meets `bar.far`"]);
     near(exported_at(&e,"block",0.001),PI/3.*80.-crate::prism_twists::flat_end(20.,5.).removed(),2e-5);
 }
 
@@ -412,8 +412,8 @@ fn the_spoke_swings_a_slot_ended_by_a_zone_of_a_sphere() {
     let e = example("spoke.sv");
     let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
     assert!(found.screw.is_turn() && !found.closed,"a turn, its characteristic open");
-    assert_eq!(found.rounds(),["a ring of the corner of `pin.side` and `pin.tip` in contact all round"]);
-    assert_eq!(found.sharp(),["the corner of `pin.side` and `pin.tip`"]);
+    assert_eq!(found.rounds(),["a ring of the corner of `pin.tip` and `pin.side` in contact all round"]);
+    assert_eq!(found.sharp(),["the corner of `pin.tip` and `pin.side`"]);
     near(exported(&e,"block"),PI/3.*80.-PI/6.*(57.25-1./12.),1e-5);
 }
 

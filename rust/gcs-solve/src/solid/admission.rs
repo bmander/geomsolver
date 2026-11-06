@@ -38,9 +38,9 @@ impl Condition {
     /// What the row asks, in the words the scope document uses.
     pub fn rule(self) -> &'static str {
         match self {
-            Condition::Tool => "the tool is a full revolution, or a prism (drafted or not), of lines and arcs, or an intersection \
-                of such, its caps clear of the blank unless it is an undrafted prism standing alone or placed, or a union of tools \
-                each in the class",
+            Condition::Tool => "the tool is read from its boundary, every face a face of revolution of lines and arcs, a ruled \
+                side of lines or arcs (drafted or not) or a plane, its planes that are no side clear of the blank unless they are \
+                the caps of one undrafted prism standing alone, or a union of tools each in the class",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
             Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide (a joint driven by a law alone read as its joint over the values the law reaches)",
             Condition::Stationary => "the contact condition depends on the motion",
@@ -370,34 +370,6 @@ fn structurally_alike(sk: &Sketch,root: usize,poses: &BTreeMap<usize,Vec<Motion>
     Some((origin,axis))
 }
 
-/// T1, as a question about the tool's solid graph.
-fn tool(sk: &Sketch,id: usize) -> Result<(),String> {
-    let solid = &sk.solids[id];
-    match &solid.def {
-        SolidDef::Revolve {sweep,..} => if (sweep.value.abs()-TAU).abs() > 1e-9 {
-            Err(format!("`{}` is a partial revolution",solid.name)) } else { Ok(()) },
-        SolidDef::Placed {source,..} => tool(sk,*source as usize),
-        // a region is a full revolution of its meridian
-        SolidDef::Region {..} => super::region::meridian(sk,id).map(|_| ()),
-        SolidDef::Body {stock,on,through,bound} => {
-            // a union that is the whole tool is its members, each swept alone (`distributed`): one
-            // here is within an intersection, which is not distributed
-            if !on.is_empty() { return Err(format!("`{}` adds solids together within an intersection; a union is in the class \
-                only as the whole tool, each member swept alone",solid.name)); }
-            if !through.is_empty() { return Err(format!("`{}` cuts solids; only intersections are in the class",solid.name)); }
-            std::iter::once(stock).chain(bound).try_for_each(|&o| tool(sk,o as usize))
-        }
-        // a drafted prism's sides lean (#684 G): each a plane or a cone, ruled between its sections
-        SolidDef::Prism {draft:Some(_),..} => super::ExtrudedSurface::drafted(sk,id).map(|_| ())
-            .map_err(|e| format!("`{}` is a drafted prism whose sides the class does not read: {e}",solid.name)),
-        // a prism's sides are extrusions of lines and arcs, its contact set fixed by the motion
-        SolidDef::Prism {..} => Ok(()),
-        SolidDef::Family {..} => Err(format!("`{}` is a face family, not a revolution",solid.name)),
-        SolidDef::Through {..} => Err(format!("`{}` is a through prism, not a revolution",solid.name)),
-        SolidDef::Swept {..} => Err(format!("`{}` is itself a sweep",solid.name)),
-    }
-}
-
 /// Admit or refuse every swept cut of the body `root` (the body it places, where `root` is a
 /// placement). The sweeps are checked side by side and a placement's reads against the first
 /// placement's on every core; what is admitted or refused, and with which evidence, is what
@@ -516,17 +488,13 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
             }
         }
     };
-    // a tool that is one prism, whose cap the class may section across (#684 F)
-    let lones: Vec<Option<Lone>> = order.iter().map(|&swept| match &sk.solids[swept].def {
-        SolidDef::Swept {source,..} => lone(sk,*source as usize),
-        _ => None,
-    }).collect();
     let inside_at = |pose: Motion| move |p: V| field.below(pose.point(p),-options.margin);
-    // Each sweep's tool read, then its first placement checked.
+    // Each sweep's tool read from its B-rep (#721 F1b), refused at T1 by the face no reading takes,
+    // then its first placement checked; a tool one prism standing alone is one whose cap the class
+    // may section across (#684 F)
     let tools: Vec<Result<SweepContacts,Error>> = order.iter().map(|&swept| {
-        let SolidDef::Swept {source,..} = &sk.solids[swept].def else { unreachable!("a swept cut is a sweep") };
-        tool(sk,*source as usize).map_err(|m| refuse(swept,Condition::Tool,m,None))?;
-        let contacts = SweepContacts::read(sk,swept,options.axis_tolerance).map_err(|m| refuse(swept,Condition::Tool,m,None))?;
+        let contacts = SweepContacts::read_witnessed(sk,swept,options.axis_tolerance)
+            .map_err(|(m,w)| refuse(swept,Condition::Tool,m,w.map(|p| by_sweep[&swept][0].point(p))))?;
         if contacts.motion().twist().is_none() {
             let probe = SurfacePoint {position:[1.,2.,3.],du:[1.,0.,0.],dv:[0.,1.,0.]};
             contacts.motion().normal_velocity(probe).map_err(|m| refuse(swept,Condition::Motion,m,None))?;
@@ -537,7 +505,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     let checks = crate::par::indices(order.len(),|k| -> Option<Result<(SweepEvidence,Reads),Error>> {
         let contacts = tools[k].as_ref().ok()?;
         let (swept,pose) = (order[k],by_sweep[&order[k]][0]);
-        Some(check(contacts,lones[k].as_ref(),pose,&inside_at(pose)).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p)))))
+        Some(check(contacts,contacts.lone(),pose,&inside_at(pose)).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p)))))
     });
     let first: Vec<Result<(SweepContacts,SweepEvidence,Reads),Error>> = tools.into_iter().zip(checks).map(|(tool,check)| {
         let contacts = tool?;
@@ -584,7 +552,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
                 let inside = inside_at(*pose);
                 let same = checked.iter().skip(1).find(|(_,reads)| reads.points.iter().zip(&reads.inside).all(|(p,&i)| inside(*p) == i));
                 if let Some((i,_)) = same { placements.push(Placement {pose:*pose,equivalent_to:Some(*i)}); continue; }
-                let (_,reads) = check(&contacts,lones[k].as_ref(),*pose,&inside).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
+                let (_,reads) = check(&contacts,contacts.lone(),*pose,&inside).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
                 checked.push((j,reads));
                 placements.push(Placement {pose:*pose,equivalent_to:None});
             }
@@ -608,11 +576,4 @@ pub fn blank_box(sk: &Sketch,root: usize) -> Option<(V,V)> {
     let blank = crate::brep::recipe::build(&cad::recipe_static(sk,root).ok()?.recipe).ok()?;
     let (lo,hi) = blank.bounds();
     Some((lo.map(|x| x/mm),hi.map(|x| x/mm)))
-}
-
-/// Tool `source` as a lone prism, or none where it is not one: its cutter is the one reading of it
-/// (`brep::swept::cutter`), undrafted and its profile one loop. A prism placed (`p in f`, `p at(under:
-/// m) τ`) is one too, its cutter carried by its placements (#684 AC).
-fn lone(sk: &Sketch,source: usize) -> Option<Lone> {
-    Lone::new(crate::brep::swept::cutter::Cutter::read(&cad::recipe(sk,source).ok()?).ok()?,cad::millimetres(sk))
 }

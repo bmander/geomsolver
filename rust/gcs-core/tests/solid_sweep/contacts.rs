@@ -63,7 +63,11 @@ fn source_placements_and_boolean_sharing_preserve_contact_geometry() {
         lens := solid(tool)\noutside cut lens\n\
         swept := solid({{ p | some t in (-60deg, 60deg): p in lens at(under: generating) t }})\n");
     let e = read(&src);
-    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+    // the drawing's reading keeps every operand's faces (the oracle the B-rep reading is held to,
+    // #721 F1b); the two balls part, so the lens is empty, and its B-rep has no face to read
+    let swept = e.map.ent_named("swept").unwrap().i();
+    assert!(SweepContacts::read(&e.sketch,swept,1e-10).unwrap_err().contains("the tool has no face"));
+    let sweep = SweepContacts::drawn(&e.sketch,swept,1e-10).unwrap();
     assert_eq!(sweep.patches().len(),2,"shared Boolean operands contribute their faces once");
     let mut centers = Vec::new();
     for (i,patch) in sweep.patches().iter().enumerate() {
@@ -136,9 +140,16 @@ fn clockwise_source_revolution_keeps_the_same_contact_set() {
     let read = |e: &program::Elaborated| SweepContacts::read(&e.sketch,
         e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
     let (a,b) = (read(&a),read(&b));
+    // (each read from its B-rep, its meridian run whichever way its face's outward normal says: the
+    // ring at `u` of the one is the other's at `u` or at `1 - u`)
     for u in [0.1,0.4,0.8] {
         let left = at(&a,0,u,0.3,1e-10).unwrap();
-        let right = at(&b,0,u,0.3,1e-10).unwrap();
+        let same = |r: &[RevolvedContact]| r.iter().all(|p| left.iter().any(|q| {
+            let (a,b) = (p.contact.position,q.contact.position);
+            (a[0]-b[0]).hypot(a[1]-b[1]).hypot(a[2]-b[2]) < 1e-12
+        }));
+        let right = [u,1.-u].into_iter().map(|v| at(&b,0,v,0.3,1e-10).unwrap()).find(|r| !r.is_empty() && same(r))
+            .unwrap_or_else(|| at(&b,0,u,0.3,1e-10).unwrap());
         assert_eq!(left.len(),right.len());
         for p in left {
             assert!(right.iter().any(|q| {

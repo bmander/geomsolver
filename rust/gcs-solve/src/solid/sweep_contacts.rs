@@ -1,4 +1,6 @@
-//! The contacts of a continuous sweep's tool, read from an ordinary swept-solid definition.
+//! The contacts of a continuous sweep's tool: the tool read from the B-rep the kernel builds of it
+//! (#721 F1b), its motion and roll from the swept-solid definition; and the drawing's own reading of
+//! the tool, kept as the oracle the B-rep reading is held to.
 #[allow(unused_imports)]
 use super::ReadRevolved;
 use crate::fmath::Det;
@@ -163,28 +165,78 @@ impl ReadExtruded for ExtrudedSurface {
 
 }
 
-/// The revolved faces of a continuous sweep's tool and the edges between its faces, with the
-/// motion that carries them. Every source face is retained, including faces hidden by source
-/// Booleans; the source material is what rejects hidden portions.
+/// The faces of a continuous sweep's tool and the edges between them, with the motion that carries
+/// them. Every source face is retained, including faces hidden by source Booleans; the source
+/// material is what rejects hidden portions.
 #[derive(Clone,Debug)]
 pub struct SweepContacts {
     pub(super) source: std::sync::Arc<SpatialField>,
-    /// The tool as the kernel reads it: its faces, where adjacent faces of a profile loop meet, where
-    /// a drafted prism's sides fold, and its material, `source`.
+    /// The tool as the kernel reads it: its faces, where adjacent faces meet, where a drafted
+    /// prism's sides fold, and its material.
     pub(super) tool: Tool,
     pub(super) motion: Family,
     /// The roll it is read over: the sweep's, or a whole turn's once round (`whole`).
     pub(super) roll: [f64;2],
     /// Whether the motion is a turn the sweep's roll carries round a whole turn or more (#684 N).
     pub(super) whole: bool,
+    /// The tool as one prism standing alone, where its boundary is one (`Lone::read`): what the
+    /// generating class sections across where its cap reaches the blank (#684 F).
+    pub(super) lone: Option<std::sync::Arc<Lone>>,
 }
 
 /// A point's contact times, and why it has none, are the kernel's (`brep::swept::generating`, #721
 /// F2c).
 pub use crate::brep::swept::generating::{Chart,PointContactError,TimedContact};
+use crate::brep::swept::admission::Lone;
 
 impl SweepContacts {
+    /// **The sweep `solid`'s tool read from its B-rep** (#721 F1b): the boundary the kernel builds
+    /// of the tool, read by its faces' surfaces and the edges they share (`Tool::read`), never by
+    /// how it was drawn, and its material that boundary's. A tool whose boundary has a face no
+    /// reading takes is refused, naming the face and why. The motion and the roll are the
+    /// drawing's.
     pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
+        Self::read_witnessed(sk,solid,axis_tolerance).map_err(|(m,_)| m)
+    }
+
+    /// `read`, refused with a point of the face no reading takes (the tool's frame), where the
+    /// refusal is the reading's.
+    pub fn read_witnessed(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,(String,Option<V>)> {
+        let drawn = Self::drawn_motion(sk,solid,axis_tolerance).map_err(|m| (m,None))?;
+        let SolidDef::Swept {source,..} = &sk.solids[solid].def else { unreachable!("read as a sweep") };
+        let name = &sk.solids[*source as usize].name;
+        let mm = super::cad::millimetres(sk);
+        let b = crate::brep::recipe::build(&super::cad::recipe(sk,*source as usize).map_err(|m| (m,None))?)
+            .map_err(|e| (format!("`{name}` builds no boundary to read: {e}"),None))?;
+        let tool = Tool::read(&b,mm).map_err(|why| (format!("`{name}` is read by its boundary, but {why}"),why.witness()))?;
+        let lone = Lone::read(&b,&tool,mm).map(std::sync::Arc::new);
+        Ok(Self {tool,lone,..drawn})
+    }
+
+    /// The tool as one prism standing alone, where its boundary is one.
+    pub fn lone(&self) -> Option<&Lone> { self.lone.as_deref() }
+
+    /// The sweep `solid` with its motion and roll read, and its tool read off the drawing — the
+    /// recipe's revolutions, prisms and placements (`drawn`) — or, where the drawing's reading
+    /// refuses the tool, none of it.
+    fn drawn_motion(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
+        super::validate(sk,solid)?;
+        let SolidDef::Swept {source,motion,..} = &sk.solids[solid].def else {
+            return Err("contact construction requires a continuous swept solid".into());
+        };
+        let source_field = SpatialField::read(sk,*source as usize,axis_tolerance)?;
+        let (motion,roll) = (Family::read(sk,*motion as usize)?,super::roll::interval(sk,solid)?);
+        let once = motion.twist().and_then(|screw| super::constant_twist::once_round(&screw,roll));
+        let source = std::sync::Arc::new(source_field);
+        let tool = Tool {faces:Vec::new(),edges:Vec::new(),creases:Vec::new(),material:source.clone()};
+        Ok(Self {source,tool,motion,roll:once.unwrap_or(roll),whole:once.is_some(),lone:None})
+    }
+
+    /// **The sweep `solid`'s tool read off the drawing**: the recipe's revolutions, regions,
+    /// prisms (drafted or not) and placements, face by face, its material the drawing's field. The
+    /// classes read the tool by its B-rep (`read`); this reading stays beside it only as the
+    /// oracle the B-rep reading is held to (`tests/tool_reading.rs`), as #721 F1 decided.
+    pub fn drawn(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
         super::validate(sk,solid)?;
         let SolidDef::Swept {source,motion,..} = &sk.solids[solid].def else {
             return Err("contact construction requires a continuous swept solid".into());
@@ -293,7 +345,7 @@ impl SweepContacts {
         let once = motion.twist().and_then(|screw| super::constant_twist::once_round(&screw,roll));
         let source = std::sync::Arc::new(source_field);
         let tool = Tool {faces:patches,edges,creases,material:source.clone()};
-        Ok(Self {source,tool,motion,roll:once.unwrap_or(roll),whole:once.is_some()})
+        Ok(Self {source,tool,motion,roll:once.unwrap_or(roll),whole:once.is_some(),lone:None})
     }
     pub fn edges(&self) -> &[PatchEdge] { &self.tool.edges }
     /// The tool as the kernel reads it.

@@ -14,7 +14,9 @@ use crate::solid::export::{ExportRefusal,Stage,Tolerance};
 /// motion carries the profile's plane within itself; none otherwise (it is traced). `inside` asks
 /// the blank (mm); `tolerance` sets the fit's bar (half of it), else `FIT`.
 pub fn planar_sheet(cut: &SweptCut,inside: Inside,tolerance: Option<Tolerance>,say: &Say) -> Option<Result<Fitted,ExportRefusal>> {
-    let cutter = Cutter::read(&cut.recipe).ok()?;
+    // the prism read from the tool's B-rep (#721 F1b), else the recipe's
+    let read;
+    let cutter = match cut.lone() { Some(lone) => lone.cutter(),None => { read = Cutter::read(&cut.recipe).ok()?; &read } };
     let (walks,extent) = cutter.prism_profile()?;
     let frame = Frame::about(cutter.origin,cutter.axis);
     let program = cut.family.in_frame(&frame,cut.scale)?;

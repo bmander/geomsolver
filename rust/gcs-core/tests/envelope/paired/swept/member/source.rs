@@ -69,7 +69,10 @@ fn source_contact_curves_reproduce_independent_crown_characteristics() {
         let name = ["pinion","gear"][member];
         let id = e.map.ent_named(&format!("pair.{name}.cut.removal")).unwrap().i();
         let sweep = SweepContacts::read(&e.sketch,id,module*1e-10).unwrap();
-        assert_eq!(sweep.patches().len(),[6,9][member]);
+        // read from its B-rep (#721 F1b): the gear's cutter, an intersection of two crowns, is the
+        // faces its boundary keeps — a crown's cap the other hides is none of them, and the tip and
+        // base the other cuts in two are two faces each
+        assert_eq!(sweep.patches().len(),[6,8][member]);
         for side in 0..2 {
             let edge = if member == side { "outer" } else { "inner" };
             for edge in [edge.to_string(),format!("{edge}_round")] {

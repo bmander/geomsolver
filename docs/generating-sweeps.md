@@ -42,8 +42,8 @@ failure is reported with its witness.
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| T1 | The tool is a full revolution with a line/arc/circle profile — a region solid among them, its profile its meridian (`solid::region::meridian`, its faces `RevolvedSurface::meridian_loops`, #209) — a prism of lines and arcs, drafted or not (a drafted one's corners joining lines or going on tangent, drafted inward where it runs both ways from its parting plane: below), or an intersection (`common`) of such, under fixed placements, its caps clear of the blank over the roll unless it is one undrafted prism standing alone or placed (below, #684 F, AC; under a screw, a turn or a slide, AE); or a union of such tools, each member swept alone (below). | Every face has closed-form contacts. An intersection creates only convex creases. A prism within another tool, or drafted, cuts with its sides only (`ExtrudedSurface`); an undrafted prism alone or placed is sectioned across where its cap reaches the blank (T3), or under a constant twist its characteristic walked over the cap. | The first operand outside the class, a cut in the tool or a union within an intersection, the prism whose cap passes through the blank where it is not an undrafted prism alone or placed, or the drafted prism and why its sides are not read. |
-| T2 | Every profile vertex inside the swept region is convex or tangent. | A convex corner sweeps a fan of normals. A concave corner sweeps nothing, but it trims two envelopes against each other, which is not supported. | The vertex and its turning angle. |
+| T1 | The tool is read from its B-rep (`SweepContacts::read`, `Tool::read`, #721 F1b), whatever drew it — revolutions, regions, prisms drafted or not, placements, intersections — every face a face of revolution of lines and circles, a ruled side of lines or arcs (drafted or not), or a plane; a plane that is no side clear of the blank over the roll unless it is a cap of one undrafted prism standing alone (its B-rep one prism, `admission::Lone::read`; #684 F, AC; under a screw, a turn or a slide, AE); or a union of such tools, each member swept alone (below). | Every face has closed-form contacts. A prism within another tool, or drafted, cuts with its sides only; one prism standing alone is sectioned across where its cap reaches the blank (T3), or under a constant twist its characteristic walked over the cap. | The face no reading takes (a free-form face, a meridian no line or circle, `read::Unread`) with a point of it, a tool the kernel builds no boundary of (a drafted corner where an arc meets a side at an angle, #721 G8), or the plane that passes through the blank where it is no lone prism's cap. |
+| T2 | Every profile vertex inside the swept region is convex or tangent, and so is every crease where a drafted prism's halves fold (#721 F1b: drafted outward both ways, it is concave). | A convex corner sweeps a fan of normals. A concave corner sweeps nothing, but it trims two envelopes against each other, which is not supported. | The vertex and its turning angle. |
 | M1 | The motion is one rotation about a fixed axis, or one rotation (or one translation) relative to another rotation (`motion(about: …)`, `motion(along: …)`, `motion(m, relative_to: n)`), at constant ratios, with a finite increasing roll. | This is the generating motion of a face-milled bevel or hypoid, including skew axes, and of a rack cutting a spur gear. | The motion node outside the class. |
 | M2 | Each tool point's contact condition changes over the roll, or holds a nonzero value. | Where it is zero throughout, the point is on the boundary at every time, and a contact time cannot parameterize the surface; a nonzero constant touches at no time and bounds nothing (#684 F: a prism's side square to a rack's line of centres). A single rotation is like that everywhere (its tool-frame twist is constant), so the generator's motion is a relative one. This is the native path's existing refusal. It is checked at the samples, at a pole (whose normal is the axis), and between samples: the equation is C + a cos + b sin in the roll, and where (a, b) turns right round between two samples, or winds round a sample cell, with roots on every side, a point there has C and the amplitude both zero. That happens where the tool's normal passes through the point where two meeting axes cross. | A tool point whose path reaches the blank. |
 | E1 | The tool at both roll limits has no common volume with the blank. | Then no end caps are needed inside the blank (the existing refusal). A sweep rolling `through:` its body (#271, `solid::roll`) holds it by construction: its roll is found by marching out from 0 until the tool is proved clear of the body's material, so only a stated `from:`/`to:` can fail it. | The limit and the overlap volume. |
@@ -332,8 +332,9 @@ whose advance moves the end's line `k cot 45°` across it, to arithmetic that re
 keeps, `z − kθ`: a block point is removed where that lies within the span the bar's points at its
 radius give, read along each line up through the bar (within 2e-5 at 0.002 mm); and refuses the
 square thread's bar too short to stand past the rod (its corners reach the caps at vertices), the
-bar slid aslant short enough for its caps to stand in the cube (a silhouette over a cap) and the
-flat end's bar within a `common` (T1). Leaning 40° and screwed 6 mm a turn, the bar is admitted
+bar slid aslant short enough for its caps to stand in the cube (a silhouette over a cap); the flat
+end's bar within a `common` that leaves it whole is the bar, read from its B-rep (#721 F1b), and
+cuts as it does. Leaning 40° and screwed 6 mm a turn, the bar is admitted
 but the screw's sheet across the rim's fan misses its normals' bars, and the export refuses it.
 `tests/object_builder.rs` builds `flat_end.sv` at the page's samples.
 
@@ -353,8 +354,8 @@ edge; the flanks either side are near enough alike that neither is read on the o
 what cutting a sharp fan out is for (#684 E). The rows are those above: a corner
 of a half whose root reaches the plane does so at a vertex of the prism (S1), a round side's
 crease is not walked (S1), and under a slide, or a screw along the extrusion, the silhouette turns
-at the crease, which T1 refuses. Drafted outward, the crease is concave, and T1 refuses it as
-before.
+at the crease, which T1 refuses. Drafted outward, the crease is concave, and T2 refuses it, as a
+concave corner (#721 F1b).
 
 `rust/examples/solid_sweeps/creased.sv` is the case: a bar of oblong section leaning 20° across
 the turn, its inner side facing the axis, drafted 2° both ways from the plane its section is
@@ -741,8 +742,8 @@ edge's sections at the prism's two ends: a plane where the edge is a line, a con
 own, the same along each ruling, so its contact condition is read by the motion in closed form as
 an undrafted side's is, and every row is asked of it as of any prism's side: the caps clear of the
 blank (T1), M2, E1–E4. A prism running both ways from its profile's plane is two such halves,
-folding where the draft parts (below, #684 P). T1 refuses, naming the prism and why its sides are
-not read:
+folding where the draft parts (below, #684 P). What the class does not read is refused, saying
+why (the concave crease at T2, the rest at T1, where the kernel builds no boundary of the tool):
 
 - a prism drafted outward both ways from its profile's plane: its sides meet there in a concave
   crease, which trims the two halves' envelopes against each other;
@@ -791,7 +792,7 @@ it must run the same way, or E3 refuses the fold; each fan normal touches the bl
 the fans' contacts join E4's. Under a motion keeping the profile's plane every normal of the fan is
 in contact at the instant both halves are, so the fan carries the contact nowhere, and the halves'
 envelopes meet in a ridge. Drafted outward, the crease is concave and trims the halves' envelopes
-against each other, which T1 refuses.
+against each other, which T2 refuses (#721 F1b).
 
 The cutter's stations run along the extrusion and cross the crease's fan between the halves
 (`brep::sweep::cutter`, `Drafted`): a station below the plane is its ordinate, the fan's turning is
@@ -811,7 +812,8 @@ front cuts 71.84, the undrafted 83.26), and the unleaned rack tooth's drafted th
 blank square to its axis is what of a square the tooth's eight half-planes keep, each side's
 material below the plane and above it, swept by `rack_cut`'s arithmetic, over pieces of the blank
 split where the crease passes a corner of the profile — each STL agreeing with the field, and built
-in the page (`tests/object_builder.rs`). Drafted outward, the tooth is refused at T1.
+in the page (`tests/object_builder.rs`). Drafted outward, the tooth is refused at T2, at its
+concave crease.
 
 ### A prism's cap in the blank (issue #684 F)
 
@@ -872,8 +874,9 @@ its STL agreeing with the field, which reads the placed tool apart from its sect
 (`tests/solid_sweeps_examples.rs`, with the page's stepped build in `tests/object_builder.rs`).
 
 Still refused: a corner of the profile within the band, a vertex of the prism whose path crosses
-the blank (T3); and a cap of a prism within an intersection, a drafted prism or a profile with
-holes (T1). A cap under a screw, a turn or a slide is the constant twist's, which walks it (above,
+the blank (T3); and a cap of a tool whose B-rep is no one undrafted prism of one loop — an end a
+`common` cuts aslant, a drafted prism, a profile with holes (T1). A prism a Boolean leaves whole is
+one, read from its B-rep (#721 F1b). A cap under a screw, a turn or a slide is the constant twist's, which walks it (above,
 #684 AE).
 
 ### Pocketed prisms under a planar motion: the planar generating class
@@ -984,7 +987,8 @@ the field; that union placed half a turn round the rod and turned about its own 
 cuts written one after another, the same solid to 1e-9; two balls swung on one arm, two tubes
 (Pappus); two tori rolled through the post, each admitted to the generating class and built as
 the long form builds them; and a member refused by its own row, and a union within an
-intersection refused at T1.
+intersection, read from its B-rep whole and refused by the generating rows, then built by the
+closed class.
 
 ### A ball along any path: the canal class (issue #684 D)
 
