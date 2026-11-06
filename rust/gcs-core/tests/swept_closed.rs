@@ -1104,7 +1104,8 @@ fn planes_through_the_axis_cut_a_screwed_rims_ramp_in_closed_form() {
     let k = 0.5/std::f64::consts::TAU;
     let r = selected(&[&ramp(0.5,theta,-theta/2.),&sector],&|m| m[0] && m[1],1e-6).unwrap();
     let expected = PI/3.*k*PI;
-    assert!((volume(&r.brep)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&r.brep));
+    // (to 1e-12 since its traced cuts are read across planes, #798: by their stretches, 3e-7)
+    assert!((volume(&r.brep)-expected).abs() <= 1e-12*expected,"{} against {expected}",volume(&r.brep));
 }
 
 /// **A drum screwed a short lead through most of a turn closes into its helical sweep** (#721 F2c5):
@@ -2135,7 +2136,18 @@ fn a_balls_pipe_is_inverted_off_its_spine() {
     // on the screw's axis, and on the spine itself
     points.push([0.,0.,0.3]);
     points.push([d,0.,0.]);
+    // how far `p` stands from the circle about the spine at `v`
+    let pipe = b.pipe().unwrap();
+    let off = |p: [f64;3],v: f64| {
+        let d = sub(pipe.back(p,v),pipe.frame.o);
+        let h = dot(d,pipe.frame.z);
+        ((dot(d,d)-h*h).max(0.).sqrt()-pipe.r).hypot(h)
+    };
     for p in points {
+        // the feet searched where the nearest can stand (#798) hold the nearest of every foot
+        let least = |feet: Vec<f64>| feet.into_iter().map(|v| off(p,v)).fold(f64::INFINITY,f64::min);
+        let (near,all) = (least(pipe.nearest_feet(p).unwrap()),least(pipe.feet(p).unwrap()));
+        assert!((near-all).abs() <= 1e-12*(1.+all),"{p:?}: the nearest feet's {near} against every foot's {all}");
         let uv = s.inverse(p);
         let (x,su,sv) = (s.point(uv),s.point([uv[0]+1e-7,uv[1]]),s.point([uv[0],(uv[1]+1e-7).min(1.)]));
         let gap = distance(x,p);

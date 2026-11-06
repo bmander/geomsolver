@@ -523,6 +523,25 @@ round the circle, a touch where it only reaches nought (`screwed_circle_round`).
 settles** (`props`'s `settled`): read over its pieces, then twice as many, until two readings agree
 to rounding, the coarser kept — a ball's great circle passing within a few degrees of a pole sweeps
 half a turn of `u` there, and a sixteenth of a turn a piece left a ball's piece 0.2% off its area.
+**A traced edge inverted onto its face is measured across planes** (`props`'s `along_trace`,
+#798): Green's integral is the curve's, however parameterised, so it is read not by the trace's
+own parameter — which counts its points, its rate stepping at each, every stretch a rule of its own
+and each node three projections onto both surfaces — but over spans of its points whose chords
+turn within 15° of the first, each by its distance `σ` along its chord `n`: a node is where the
+curve crosses the plane `n·x = σ` (`Traced::across`, Newton on both surfaces and the plane), its
+rate `T / (T·n)` read at that point, as exact as the trace, so each span is one smooth integrand.
+It is read on cells of its stretches, doubled until two readings agree to rounding or each cell is
+one stretch, so its nodes crowd where the march crowded its points: spread evenly along the chord,
+they missed the turn at a span's end, the tip of the sliver a plane through a screwed rim's ramp's
+axis cuts from it, by 2e-5 of the span, and that ramp's volume, held to its closed form within 1e-6
+(`swept_closed::planes_through_the_axis_cut_a_screwed_rims_ramp_in_closed_form`), now holds it to
+3e-14 where the stretches' central differences held it to 3e-7. A span not crossed as a graph over
+its chord (its rate past 60° from it, or a crossing off the stretch it was sought in) is read
+stretch by stretch as before. A canal's
+meeting with an end disc, a thousand stretches, measured in 9 s and does in 30 ms, and the same
+whichever way the solid is moved, where the stretches' central differences moved it by 2e-10
+(`brep::a_rod_grooved_by_a_balls_helix_is_measured_along_its_traced_meetings`, brep-bench's
+swept/ball-thread-groove, its volume and areas in under 5 s, its end discs one area).
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it

@@ -68,15 +68,10 @@ impl Pcurve {
     }
     /// The parameters at the edge's parameter `t` of `edge`, on `surface`.
     pub fn at(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex]) -> Uv {
-        let s = if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. };
         match *self {
             Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
-            Pcurve::Line {a,b} => [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])],
-            Pcurve::Inverse {a,b} => {
-                let near = [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])];
-                let uv = unwrap(surface.inverse_near(edge.point(t,vertices),near),near,surface.periods());
-                if s == 0. || s == 1. { on_pole(surface,uv,near) } else { uv }
-            }
+            Pcurve::Line {a,b} => along(a,b,fraction(t,edge)),
+            Pcurve::Inverse {a,b} => inverse_at(a,b,t,edge.point(t,vertices),edge,surface),
         }
     }
     /// `d(u, v)/dt` at `t`.
@@ -118,6 +113,22 @@ impl Pcurve {
             })),
         }
     }
+}
+
+/// The point the fraction `s` of the way along the line from `a` to `b`.
+fn along(a: Uv,b: Uv,s: f64) -> Uv { [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])] }
+
+/// How far the edge's parameter `t` is along its span, 0 at its first and 1 at its last.
+fn fraction(t: f64,edge: &Edge) -> f64 { if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. } }
+
+/// An inverse curve's parameters at `t` (`Pcurve::Inverse {a, b}`), the edge's point there given as
+/// `x`: `Pcurve::at`, for what reads the edge's curve some other way (`props`, a traced edge read
+/// across planes).
+pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv {
+    let s = fraction(t,edge);
+    let near = along(a,b,s);
+    let uv = unwrap(surface.inverse_near(x,near),near,surface.periods());
+    if s == 0. || s == 1. { on_pole(surface,uv,near) } else { uv }
 }
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters

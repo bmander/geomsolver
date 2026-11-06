@@ -637,7 +637,12 @@ closed form — and held reduced at three leads, each cell to its closed form
 off its spine, #780 C1: each foot of a point on the patch lies on the circle about a foot of it on
 the centre's helix or on an end circle, those feet isolated with a bound and the nearest taken,
 `geom::Blend::pipe`, `Pipe::feet`, no warm start and no search;
-`swept_closed::a_balls_pipe_is_inverted_off_its_spine`. The two failures its gate met on the way,
+`swept_closed::a_balls_pipe_is_inverted_off_its_spine`. Only the spine's stretches that can hold
+the nearest are searched (`Pipe::nearest_feet`, #798): the spine cut a sixteenth of a turn a
+stretch, one is passed by where every circle about it stands farther from the point, by its ends'
+reach and the spine's speed, than the circle about an end of some stretch — a coil of six turns was
+searched whole at every inverse, every projection onto its traced meetings, and the same test holds
+the nearest of these to the nearest of every foot. The two failures its gate met on the way,
 a traced curve's inverse stepping off along the whole curve where its points crowd and a ball's
 great circle tangent to its side's cylinder read as four helices, are kept reduced:
 `swept_closed::the_ball_end_mills_pipe_beside_its_side_is_arranged`)

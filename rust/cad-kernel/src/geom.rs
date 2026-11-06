@@ -333,7 +333,61 @@ impl Pipe {
     /// screw's turn over the patch, `ρ` the helix's distance from the axis), each bounded over a
     /// stretch where `|H − p|` reaches `q` at most. Each stretch read is the inverse stage's work
     /// (`util::meter`). `None` where the search gave up or the build stopped.
-    pub fn feet(&self,p: V) -> Option<Vec<f64>> {
+    pub fn feet(&self,p: V) -> Option<Vec<f64>> { self.feet_over(p,&[[0.,1.]]) }
+    /// **The feet of `p` on the spine its nearest point of the pipe may stand about** (#798), and
+    /// the two ends: `feet` over the stretches of the spine that can hold one, each a sixteenth of
+    /// a turn at most. On a stretch of width `w` whose ends stand `d₀` and `d₁` from `p`, the spine
+    /// keeps within `L = (d₀ + d₁ − s₁ w) / 2` and `U = (d₀ + d₁ + s₁ w) / 2` of it (its speed `s₁`),
+    /// so every circle about it stands at least `max(L − r, r − U, 0)` from `p`; a stretch where
+    /// that is farther than `p` stands from the circle at an end of some stretch is passed by, its
+    /// feet no nearer than a point of the pipe already in hand. The pipe's nearest point is about
+    /// one of these, as it is about one of `feet` — searched over the turn or so of the coil `p`
+    /// stands beside, not all of them (a coil of six turns was searched whole at every point of its
+    /// meetings traced, and a traced meeting with an end disc measured 50 times slower for it).
+    pub fn nearest_feet(&self,p: V) -> Option<Vec<f64>> {
+        let Carry::Screw {center,axis,angle,advance} = self.carry else { return None };
+        let s1 = norm(self.carry.rate(self.frame.o));
+        let n = ((16.*angle.abs()/std::f64::consts::TAU).ceil() as usize).max(1);
+        // the spine's points a stretch apart, each the last screwed on by one stretch's turn (its
+        // sine and cosine found once): each one's reach to `p`, and the nearest point of the pipe in
+        // hand, the circles about them — how far `p` stands from one is its height off the circle's
+        // plane, square to the spine there, and its reach in it against the radius
+        let (sn,cs) = (angle/n as f64).dsin_cos();
+        let rise = scale(axis,advance/n as f64);
+        let (mut x,mut reach,mut best) = (self.frame.o,Vec::with_capacity(n+1),f64::INFINITY);
+        for i in 0..=n {
+            if i > 0 {
+                let d = sub(x,center);
+                x = add(add(center,add(add(scale(d,cs),scale(cross(axis,d),sn)),scale(axis,dot(axis,d)*(1.-cs)))),rise);
+            }
+            let d = sub(p,x);
+            let (q,h) = (norm(d),dot(d,self.carry.rate(x))/s1);
+            let rho = (q*q-h*h).max(0.).sqrt()-self.r;
+            reach.push(q);
+            best = best.min((rho*rho+h*h).sqrt());
+        }
+        // (a hair of slack: a foot at a stretch's end is read there again by the search)
+        let slack = best+1e-9*(1.+best+self.r);
+        let w = s1/n as f64;
+        let can = |i: usize| {
+            let sum = reach[i]+reach[i+1];
+            let (lo,hi) = (0.5*(sum-w),0.5*(sum+w));
+            (lo-self.r).max(self.r-hi).max(0.) <= slack
+        };
+        // each run of neighbouring stretches that can hold one, searched as one
+        let mut runs = Vec::new();
+        let mut i = 0;
+        while i < n {
+            if !can(i) { i += 1; continue }
+            let mut j = i+1;
+            while j < n && can(j) { j += 1 }
+            runs.push([i as f64/n as f64,j as f64/n as f64]);
+            i = j;
+        }
+        self.feet_over(p,&runs)
+    }
+    /// `feet` over each of `spans`, and the spine's two ends.
+    fn feet_over(&self,p: V,spans: &[[f64;2]]) -> Option<Vec<f64>> {
         let Carry::Screw {center,axis,angle,..} = self.carry else { return None };
         let k = crate::util::space::normalised(axis)?;
         let o = sub(self.frame.o,center);
@@ -357,8 +411,12 @@ impl Pipe {
         let dg = |v: f64| { let (x,dx) = jet(v); s1*s1+dot(sub(x,p),scale(cross(axis,dx),angle)) };
         let reach = |v: f64| crate::util::space::distance(jet(v).0,p);
         let bound = |x0: f64,x1: f64| { let q = reach(x0).max(reach(x1))+s1*(x1-x0); [s1*s1+q*s2,q*s3] };
-        let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&g,&dg,&bound,[0.,1.],1e-12,&|_| true).ok()?;
-        Some([0.,1.].into_iter().chain(roots.into_iter().map(|x| x.at)).collect())
+        let mut out = vec![0.,1.];
+        for &span in spans {
+            let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&g,&dg,&bound,span,1e-12,&|_| true).ok()?;
+            out.extend(roots.into_iter().map(|x| x.at));
+        }
+        Some(out)
     }
     /// The screw that carries the pipe, a radian of turn at a time (its rise the pitch, a turn's
     /// rise over `2π`), its axis unit; `None` where it does not turn.
@@ -571,7 +629,7 @@ impl Blend {
     /// nearest of them. `None` for any other patch, or where the spine's search gave up.
     fn pipe_uv(&self,p: V) -> Option<Uv> {
         let pipe = self.pipe()?;
-        let (_,v,d) = pipe.feet(p)?.into_iter().map(|v| { let d = sub(pipe.back(p,v),pipe.frame.o); (pipe.off_back(d),v,d) })
+        let (_,v,d) = pipe.nearest_feet(p)?.into_iter().map(|v| { let d = sub(pipe.back(p,v),pipe.frame.o); (pipe.off_back(d),v,d) })
             .min_by(|x,y| x.0.total_cmp(&y.0))?;
         Some([self.u_round(&pipe.frame,d),v])
     }
@@ -1494,11 +1552,35 @@ impl Traced {
         best.1
     }
     /// `C`: the chord at `t` pulled onto both surfaces.
-    pub(crate) fn at(&self,t: f64) -> V {
+    pub(crate) fn at(&self,t: f64) -> V { self.project(self.guess(t)) }
+    /// The point `at` pulls onto both surfaces: the parabola's at `t` (`between`).
+    pub(crate) fn guess(&self,t: f64) -> V {
         let m = self.segments();
         let t = if self.closed { t.rem_euclid(m as f64) } else { t };
         let i = (t.floor().max(0.) as usize).min(m-1);
-        self.project(self.between(i,t-i as f64))
+        self.between(i,t-i as f64)
+    }
+    /// **The curve's point on the plane `n·x = h` beside `q`, and its rate there per unit of `n·x`**
+    /// (#798): Newton on both surfaces and the plane from `q`, settled as `project` is; the rate
+    /// `T / (T·n)`, `T = ∇a × ∇b`, read at the point itself, so as exact as the point is — where
+    /// `C'` is a difference of two projections. `None` where the curve runs square to `n`.
+    pub(crate) fn across(&self,q: V,n: V,h: f64) -> Option<(V,V)> {
+        let settled = 4.*f64::EPSILON*(1.+crate::util::space::norm(q));
+        let mut p = q;
+        let mut best: (f64,Option<(V,V)>) = (f64::INFINITY,None);
+        for _ in 0..50 {
+            let ((fa,ga),(fb,gb)) = (self.a.side(p),self.b.side(p));
+            let fc = dot(n,p)-h;
+            let off = fa.abs().max(fb.abs()).max(fc.abs());
+            if off >= best.0 { break }
+            let t = cross(ga,gb);
+            let rate = scale(t,1./dot(t,n));
+            best = (off,rate.iter().all(|x| x.is_finite()).then_some((p,rate)));
+            if off <= settled { break }
+            let Some(step) = crate::util::roots::least_norm_step(&[ga,gb,n],&[fa,fb,fc]) else { break };
+            p = sub(p,step);
+        }
+        best.1
     }
     /// The point a fraction `f` along the stretch from point `i` to the next, on the parabola through
     /// it, the next and a neighbour, parameterised by their chords' lengths: a chord's sag, quadratic
@@ -1660,7 +1742,8 @@ impl Curve {
         }
     }
     pub fn point(&self,t: f64) -> V {
-        match self { Curve::BSpline(b) => b.point(t),Curve::SheetCut(c) => c.point(t),_ => self.d2(t).0 }
+        // (a traced curve's point by one projection: its derivative takes two more, #798)
+        match self { Curve::BSpline(b) => b.point(t),Curve::SheetCut(c) => c.point(t),Curve::Traced(c) => c.at(t),_ => self.d2(t).0 }
     }
     pub fn tangent(&self,t: f64) -> V { self.d1(t).1 }
     /// `C`, `C'`: `d2`'s, a B-spline's second derivative not read.

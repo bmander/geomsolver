@@ -2126,6 +2126,52 @@ fn a_canal_touching_its_operands_along_an_edge_is_unioned_with_them() {
     assert!(whole.faces.len() > tee.faces.len());
 }
 
+/// **A rod grooved by a ball's helix is measured along its traced meetings in milliseconds** (#798,
+/// brep-bench's swept/ball-thread-groove): a rod of radius 5 and height 20 cut by the canal of a
+/// ball of radius 1 whose centre runs six turns of the helix of radius 5 rising 4 a turn, from
+/// z = −2. The canal meets each end disc in a traced curve of a thousand stretches, inverted onto
+/// the disc and the canal; read a stretch at a time, three projections onto the pipe at each of ten
+/// nodes of each, its volume took 13 s and its faces' areas 26. Read across planes over spans of
+/// its points (`props`'s `along_trace`), each node one crossing and its rate read there, it is
+/// exact as the trace is: the volume is the same wherever the solid stands (read by the stretches'
+/// central differences it moved by 2e-10 of itself), and the two end discs, one the other's image
+/// under the half turn about the x axis through z = 10 that keeps the helix, have one area.
+#[test]
+fn a_rod_grooved_by_a_balls_helix_is_measured_along_its_traced_meetings() {
+    use gcs_core::brep::affine::Affine;
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::{canal,disc};
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::props::area;
+    use gcs_core::brep::topo::EdgeCurve;
+    let up = [0.,0.,1.];
+    let rod = prism(&disc([0.;3],up,5.),0.,20.).unwrap();
+    let swept = canal([5.,0.,-2.],1.,[0.;3],up,6.*TAU,24.,"groove").unwrap();
+    let cut = combined(&rod,&swept,Op::Cut,0.).unwrap();
+    cut.check(1e-6).unwrap();
+    let traced = cut.edges.iter().filter(|e| matches!(&e.curve,EdgeCurve::Curve(Curve::Traced(_)))).count();
+    assert_eq!((cut.faces.len(),traced),(10,2));
+    let started = std::time::Instant::now();
+    let v = volume(&cut);
+    let areas: Vec<f64> = cut.faces.iter().map(|f| area(&cut,f)).collect();
+    let took = started.elapsed();
+    assert!(took.as_secs_f64() < 5.,"measured in {took:?}");
+    // (0.3.0 read 1343.0088854196 and 0.4.0 1343.0088857561, by B-spline meetings and stretches)
+    assert!((v-1343.0088855).abs() < 1e-6,"{v}");
+    for shift in [[30.,-20.,10.],[-7.,3.,-40.]] {
+        let moved = cut.mapped(&Affine::new([[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],shift).unwrap());
+        let w = volume(&moved);
+        assert!((w-v).abs() <= 1e-11*v,"{w} moved by {shift:?}, against {v} ({:e})",(w-v)/v);
+    }
+    // the end discs: planar, each holding one traced meeting
+    let ends: Vec<f64> = cut.faces.iter().zip(&areas).filter(|(f,_)| f.surface.kind() == "plane"
+        && f.loops.iter().flatten().any(|c| matches!(&cut.edges[c.edge as usize].curve,EdgeCurve::Curve(Curve::Traced(_)))))
+        .map(|(_,&a)| a).collect();
+    assert_eq!(ends.len(),2);
+    assert!((ends[0]-ends[1]).abs() <= 1e-11*ends[0],"{ends:?}");
+    eprintln!("volume {v:.10}, area {:.10}, ends {ends:?} ({:e}), in {took:?}",areas.iter().sum::<f64>(),ends[0]-ends[1]);
+}
+
 /// **A cylinder's rim rounded into a dome** (brep-bench's fillet/cylinder-rim-to-dome): a ball as
 /// wide as the cylinder has its centre on the axis, the cylinder offset by its radius being the
 /// axis itself, so the top shrinks to a point and the round is a hemisphere. The piece is that
