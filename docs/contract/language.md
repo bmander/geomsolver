@@ -399,8 +399,10 @@ own and the frame's placement an input, and the lift of a point another instance
 this one made, or a plane another stands at this one's origin, is not this one's.  An intrinsic
 row with no single subject (an arc's ends on it, a unit direction) is the instance's when it names
 a non-point the instance made.  **What a lift reads is its point's and its plane's** (#501,
-`World::with`): a plane's axes are the plane's numbers and a point's hidden point (`Sketch::lifts`)
-the point's; and a curve's points no name reaches (an arc's centre and ends) and the plane an arc
+`World::with`): a plane's axes are the plane's numbers — the axes it made, unnamed: an axis sited
+of its own (named, or minted by the plane's statement) is its own, and one a plane is written over
+is the first plane's, so a part's plane over its frame's `std.x` does not make the frame's axes
+(#819) — and a point's hidden point (`Sketch::lifts`) the point's; and a curve's points no name reaches (an arc's centre and ends) and the plane an arc
 in space is drawn in (`arcs_in_space`) are the curve's.  Before, those numbers were no entity's,
 so whichever instance read one first took it, and with it every row over them.  Two rules are
 judged over the compiled structure of those rows (`System::structure`,
@@ -408,9 +410,19 @@ judged over the compiled structure of those rows (`System::structure`,
 - **E108** at the definition's name: an own column the matching leaves unmatched, named by its
   entity or its free variable;
 - **E109** at the row's site: a row of no own column or unbound formal, or one of the
-  over-determined block, worded by whether it reads either.
+  over-determined block, worded by whether it reads either.  Said in the names the body reads
+  (`normal.origin`, a frame's datum as `std.origin`), and, where the language built rows of a
+  declaration among them, beside it (“beside what `normal`'s declaration builds”).  A row the
+  language built (an axis's unit row, a plane's `PlaneAxis`, a lift) is named by the declaration
+  that built what it places, at that declaration, only where no written statement is among them
+  — a lift only where nothing else built is — and a plane's says to build it over axes of its own
+  held to what they run along (#819).
 
-Each fault is said once a definition (`said`), against the first instance it is found in.  The
+Each fault is said once a definition and statement (`said`, keyed by the statement and not its
+text, which differs by instance), against the first instance it is found in.  **Innermost first**
+(#819): the rows an inner part's matching leaves unmatched are said there and are no rows of the
+part around it, which would count them again and name its own (`seats`, `raised`) as past what its
+unknowns take.  The
 structure only, so it is deterministic and decided before the solve; nothing changes a row.  A
 flow's home is the body's own (`initially`, from formals); a joint is a relation word (`turns`,
 `spins`, `slides`, `screws`, `rolls`), the components `std.Turn`/`Spin`/`Slide` retired.

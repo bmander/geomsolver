@@ -5,6 +5,7 @@
 //! frame an instance stands in is one of its inputs, and the rows that put what it makes in that
 //! frame are its own.  `part`, which made the promise through 0.175, is refused.
 use gcs_core::program::Elaborated;
+use gcs_core::space::{dot, norm, sub};
 
 use crate::common::{at, read};
 
@@ -578,4 +579,147 @@ w := Twin(std.side, std.top)
     assert!((at(&e, "w.q")[1] - 30.0).abs() < 1e-9, "{:?}", at(&e, "w.q"));
     let twice = errors(&twin("q right_of(d: 30mm) s.origin"));
     assert!(twice.iter().all(|(code, _, _)| code == "E109") && !twice.is_empty(), "{twice:?}");
+}
+
+/// A section in a plane leaned about `std.y` (#819): the plane over a construction line from
+/// `std.origin` and the frame's `y`, which meet there by construction — `tie` said after it, and
+/// `place` how the instance stands (each with `std.place` imported).
+fn leaned(tie: &str, place: &str) -> String {
+    format!("\
+unit mm
+use std
+use std.place (coords, raised, seats)
+component Leaned() {{
+  in std.front {{
+    lean_at := point hint((9, 4))
+    lean_at coords(du: 10mm * cos(25deg), dv: 10mm * sin(25deg)) std.front
+    construction lean := line(std.origin, lean_at)
+  }}
+  normal := plane(u: lean, v: std.y)
+  {tie}
+  in normal {{
+    a := point hint((0, 5))
+    a coords(du: 0mm, dv: 5mm) normal
+    b := point hint((2, 5))
+    b coords(du: 2mm, dv: 5mm) normal
+  }}
+}}
+{place}")
+}
+
+/// The three places a `Leaned` stands in: at the root, seated at the root, and seated by a
+/// definition of its own — each with the name its instance's points are read by.
+const STANDS: [(&str, &str); 3] = [
+    ("x := Leaned()\n", "x"),
+    ("st := point\nfix((0, 0, 12)) st\ng := Leaned()\ng seats(turn: 30deg, up: std.z, east: std.x) st\n",
+     "g"),
+    ("component Wrap() {\n  st := point\n  st raised(d: 12mm, along: std.z) std.origin\n  \
+      g := Leaned()\n  g seats(turn: 30deg, up: std.z, east: std.x) st\n}\nw := Wrap()\n", "w.g"),
+];
+
+/// **A plane over two axes that meet by construction stands where they meet** (#819): a plane
+/// over a line from `std.origin` and `std.y`, and one over a seated part's own `std.x` and
+/// `std.y`, are placed by their own rows wherever the instance stands — three rows on the
+/// plane's place where its two `PlaneAxis` rows were four, and the frame's axes not the part's
+/// for a plane drawn over them — so each solves with every number placed, `b` two along the lean
+/// and five along `y`, the frame's.
+#[test]
+fn a_plane_over_axes_meeting_by_construction_is_the_parts_own() {
+    for (place, inst) in STANDS {
+        let src = leaned("", place);
+        let mut e = read(&src);
+        let mut sk = e.sketch.clone();
+        let d = gcs_core::diagnose::diagnose(&mut sk, Default::default());
+        assert_eq!((d.n_params, d.structural_rank), (d.n_equations, d.n_params), "{src}");
+        assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success, "{src}");
+        // in the frame the instance stands in: its origin and its x and y, read off the frame's
+        // own datums as the body reads them
+        let o = at(&e, &format!("{inst}.normal.origin"));
+        let (a, b) = (at(&e, &format!("{inst}.a")), at(&e, &format!("{inst}.b")));
+        let (along, up) = (sub(b, a), sub(a, o));
+        assert!((norm(along) - 2.0).abs() < 1e-9 && (norm(up) - 5.0).abs() < 1e-9, "{a:?} {b:?}");
+        assert!(dot(along, up).abs() < 1e-9);
+        if inst == "x" {
+            let (c, s) = (25f64.to_radians().cos(), 25f64.to_radians().sin());
+            assert!(norm(o) < 1e-9 && (a[1] - 5.0).abs() < 1e-9, "{o:?} {a:?}");
+            assert!((b[0] - 2.0 * c).abs() < 1e-9 && (b[2] - 2.0 * s).abs() < 1e-9, "{b:?}");
+        }
+    }
+    let flat = "\
+unit mm
+use std
+use std.place (coords, seats)
+component Flat() {
+  normal := plane(u: std.x, v: std.y)
+  in normal {
+    a := point hint((0, 5))
+    a coords(du: 0mm, dv: 5mm) normal
+  }
+}
+st := point
+fix((0, 0, 12)) st
+g := Flat()
+g seats(turn: 30deg, up: std.z, east: std.x) st
+";
+    let mut e = read(flat);
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    let a = at(&e, "g.a");
+    let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+    assert!((a[0] + 5.0 * s).abs() < 1e-9 && (a[1] - 5.0 * c).abs() < 1e-9
+        && (a[2] - 12.0).abs() < 1e-9, "{a:?}");
+}
+
+/// **Each fault said once, at the statement, in the body's names** (#819): tied to where its
+/// axes already stand it, the plane is placed twice, and that is one E109 at the tie — not the
+/// rows the language built, not once a row and an instance, and not again by the definition the
+/// part is seated in — naming the declaration whose construction it repeats.
+#[test]
+fn a_tie_a_plane_says_already_is_said_once_at_the_tie() {
+    let tie = "normal.origin coincident std.origin";
+    for (place, _) in STANDS {
+        let many = format!("{place}y := Leaned()\nz := Leaned()\n");
+        let got = errors(&leaned(tie, &many));
+        assert_eq!(got.len(), 1, "{got:?}");
+        let (code, shown, message) = &got[0];
+        assert_eq!((code.as_str(), shown.as_str()), ("E109", tie), "{message}");
+        assert!(message.contains(&format!("states `{tie}` past what its own unknowns take"))
+            && message.contains("beside what `normal`'s declaration builds"), "{message}");
+    }
+}
+
+/// **A plane whose axes do not meet as given is refused once, at its declaration** (#819): over
+/// an operand line from off `std.y`, what places the plane twice is its own construction — no
+/// statement of the body is among the rows — so it is named by its statement, with the spelling
+/// that places it once.
+#[test]
+fn a_plane_over_axes_that_miss_is_refused_at_its_declaration() {
+    let src = |from: &str| format!("\
+unit mm
+use std
+use std.place (coords)
+component Leaned(lean: line) {{
+  normal := plane(u: lean, v: std.y)
+  in normal {{
+    a := point hint((0, 5))
+    a coords(du: 0mm, dv: 5mm) normal
+  }}
+}}
+in std.front {{
+  p := point
+  fix(({from}, 0)) p
+  q := point
+  fix((9, 4)) q
+  construction l := line(p, q)
+}}
+x := Leaned(l)
+y := Leaned(l)
+");
+    let got = errors(&src("1"));
+    assert_eq!(got.len(), 1, "{got:?}");
+    let (code, shown, message) = &got[0];
+    assert_eq!((code.as_str(), shown.as_str()), ("E109", "normal := plane(u: lean, v: std.y)"));
+    assert!(message.contains("builds `normal` over what places it more than once")
+        && message.contains("plane(u: hint(dir: l))"), "{message}");
+    // from the origin, held where the frame's `y` is: they meet, and it is placed once
+    read(&src("0"));
 }

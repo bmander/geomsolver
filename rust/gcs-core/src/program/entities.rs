@@ -1078,31 +1078,30 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
 /// The hidden axes planes were written over drawn lines with, each now seeded along its line as
 /// the line stands — its points have their places — and held to it, intrinsically: the plane's
 /// own statement, never a relation of the document's.  A hidden axis is the line: parallel to
-/// it, and through one of its ends, the one it shares with the plane's other line where the two
-/// meet at an end (`std.Turned`'s two lines from `o`), else its start.  A plane whose two axes
-/// stand on one point stands there: its origin is that point, three rows in place of the four
-/// `PlaneAxis` rows, which would say one thing twice where no count of columns can see it.
+/// it, and through one of its ends, the one where the plane's other axis meets it (`std.Turned`'s
+/// two lines from `o`, a line from `std.origin` and `std.y`), else its start.  A plane whose two
+/// axes stand on one point by construction stands there: its origin is that point, three rows in
+/// place of the four `PlaneAxis` rows, which would say one thing twice where no count of columns
+/// can see it — read as a part's own rows (#819), the fourth is a row past what its unknowns
+/// take.  Where each axis stands is `meeting`'s.
 pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
     use crate::constraints::{Arg, CKind, Constraint};
     let along: BTreeMap<usize, usize> = deferred.iter()
         .filter_map(|d| match *d { Deferred::Along { axis, line } => Some((axis, line)), _ => None })
         .collect();
-    if along.is_empty() {
-        return;
+    // each plane's `PlaneAxis` rows, by plane and axis: none is added below, so read once
+    let mut through: BTreeMap<usize, Vec<(usize, u32)>> = BTreeMap::new();
+    for c in sk.constraints.iter().filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis) {
+        through.entry(c.args[0].ent().i()).or_default().push((c.args[1].ent().i(), c.id));
     }
-    let ends = |sk: &Sketch, l: usize| [sk.lines[l].p1 as usize, sk.lines[l].p2 as usize];
+    // two held places this close are one (`views::origins_on_axes`'s nearness); the points the
+    // extent is read off are not moved here
+    let tol = super::views::ON_PLANE * sk.extent().max(1.0);
     for p in sk.charted() {
         let (u, v) = (sk.frames[p].u as usize, sk.frames[p].v as usize);
-        let (lu, lv) = (along.get(&u).copied(), along.get(&v).copied());
-        // the end the two lines share, if they meet at one: each line's own image of it, which
-        // for a point drawn in two planes may be its twin (§6.7)
-        let shared = match (lu, lv) {
-            (Some(a), Some(b)) => ends(sk, a).into_iter().find_map(|x| {
-                ends(sk, b).into_iter().find(|&y| sk.twinned(x, y)).map(|y| [x, y])
-            }),
-            _ => None,
-        };
-        for (k, (axis, line)) in [(u, lu), (v, lv)].into_iter().enumerate() {
+        let sides = [(u, along.get(&u).copied()), (v, along.get(&v).copied())];
+        let shared = meeting(sk, p, sides, tol);
+        for (k, (axis, line)) in sides.into_iter().enumerate() {
             let Some(line) = line else { continue };
             // the axis runs from the line's start toward its end, which the row says and no seed
             // has to (#535): the turned-round axis, and the plane over it, are no root
@@ -1124,34 +1123,102 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
             c.intrinsic = true;
             sk.add(c);
         }
-        // both axes on one point, which is drawn elsewhere: the plane stands at it
-        let origin = sk.frames[p].origin as usize;
+        // both axes on one point, which is drawn elsewhere, and the plane neither held where
+        // they meet (`views::origins_on_axes`) nor standing where a frame does (`plane_at`): it
+        // stands at that point, its two `PlaneAxis` rows given way (its normal's stays: it
+        // stands through the origin wherever that is)
         let Some([at, _]) = shared
             .filter(|ends| ends.iter().all(|&x| sk.points[x].plane != Some(p as u32)))
         else {
             continue;
         };
-        let rows: Vec<u32> = sk.constraints.iter()
-            // its normal's stays: it stands through the origin wherever that is
-            .filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis && c.args[0].ent() == EntRef::frame(p)
-                && [u, v].contains(&c.args[1].ent().i()))
-            .map(|c| c.id)
+        let op = sk.frames[p].o;
+        let shares = sk.frames.iter().enumerate()
+            .any(|(g, f)| g != p && f.chart.as_ref().is_some_and(|c| c.o == op));
+        if shares || op.iter().any(|&q| sk.params[q as usize].fixed) {
+            continue;
+        }
+        let rows: Vec<u32> = through.get(&p).into_iter().flatten()
+            .filter(|&&(ax, _)| ax == u || ax == v)
+            .map(|&(_, id)| id)
             .collect();
+        // a plane built some other way (restored, grafted) has no two rows to give way
+        if rows.len() != 2 {
+            continue;
+        }
         for id in rows {
             sk.remove(id);
         }
         let x = sk.world_point(at);
-        for k in 0..3 {
-            let q = sk.frames[p].o[k] as usize;
-            sk.params[q].value = x[k];
+        for (k, &q) in op.iter().enumerate() {
+            sk.params[q as usize].value = x[k];
         }
+        let origin = EntRef::point(sk.frames[p].origin as usize);
         let mut c = Constraint::new(
             CKind::Coincident3,
-            vec![Arg::Ent(EntRef::point(origin)), Arg::Ent(EntRef::point(at))],
+            vec![Arg::Ent(origin), Arg::Ent(EntRef::point(at))],
         );
         c.intrinsic = true;
         sk.add(c);
     }
+}
+
+/// Where a point stands by construction: the place of the frame it is held at the origin of — a
+/// plane's own origin, or a point held at `(0, 0)` in one (`std.origin`, held at its front's) —
+/// and otherwise itself.
+#[derive(Clone, Copy)]
+enum Stands {
+    Place([u32; 3]),
+    Point(usize),
+}
+
+fn stands(sk: &Sketch, x: usize) -> Stands {
+    let chart = sk.points[x].plane.and_then(|q| sk.frames[q as usize].chart.as_ref());
+    let ps = sk.point_all_params(x);
+    match chart {
+        Some(c) if super::views::held(sk, &ps)
+            && ps.iter().all(|&q| sk.params[q as usize].value == 0.0) => Stands::Place(c.o),
+        _ => Stands::Point(x),
+    }
+}
+
+/// **Where plane `p`'s two axes meet by construction** (#819), as the point each side stands
+/// there: an axis along a drawn line stands on the line's two ends, and any other through the
+/// place of each frame it is an axis of — `u`, `v` or normal, standing where the frame does —
+/// whose point there is the frame's origin.  Two lines from one point meet there (a twin of it
+/// is the point), and so do a line from a point held at a frame's origin and an axis of that
+/// frame; two places held within `tol` of one another are one (the world's datums, each at the
+/// origin).  `None` where no such point is seen, the axes then held through the plane's origin
+/// by its own rows.  Only a frame built before `p`, or one held where it stands: the frame that
+/// made an axis was built before any plane written over it, and a plane stands where one built
+/// before it does, so none is placed through one placed through it (a part's own frame is not
+/// stood at a plane over its `std.x`); a held place is placed by nothing.
+fn meeting(sk: &Sketch, p: usize, sides: [(usize, Option<usize>); 2], tol: f64)
+    -> Option<[usize; 2]> {
+    let held = |o: &[u32; 3]| super::views::held(sk, o);
+    let op = sk.frames[p].o;
+    let on = |(ax, line): (usize, Option<usize>)| -> Vec<(Stands, usize)> {
+        if let Some(l) = line {
+            let ends = [sk.lines[l].p1 as usize, sk.lines[l].p2 as usize];
+            return ends.into_iter().map(|x| (stands(sk, x), x)).collect();
+        }
+        sk.frames.iter().enumerate()
+            .filter_map(|(g, f)| f.chart.as_ref().filter(|c| g < p || held(&c.o)))
+            .filter(|c| c.o != op && c.axes().any(|a| a as usize == ax))
+            .map(|c| (Stands::Place(c.o), c.origin as usize))
+            .collect()
+    };
+    let value = |q: u32| sk.params[q as usize].value;
+    let meets = |a: Stands, b: Stands| match (a, b) {
+        (Stands::Point(x), Stands::Point(y)) => sk.twinned(x, y),
+        (Stands::Place(a), Stands::Place(b)) => a == b || held(&a) && held(&b)
+            && a.iter().zip(&b).all(|(&i, &j)| (value(i) - value(j)).abs() <= tol),
+        _ => false,
+    };
+    let (first, second) = (on(sides[0]), on(sides[1]));
+    first.iter().find_map(|&(a, x)| {
+        second.iter().find(|&&(b, _)| meets(a, b)).map(|&(_, y)| [x, y])
+    })
 }
 
 /// Defer geometric seed expressions until all declarations have initial values.
