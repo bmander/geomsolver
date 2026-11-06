@@ -9,7 +9,7 @@
 // face on is `std`'s `Hex`; a washer, a bearing and a pin's head are the circles below.
 
 use std
-use std.solids
+use std.solids (cut)
 use std.shapes
 
 // -- bolts, nuts and washers, 1/4"-20 ----------------------------------------------------------

@@ -8,7 +8,7 @@
 // class, docs/generating-sweeps.md).
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (vertical, coords)
 use std.motion (turns)
 

@@ -176,7 +176,7 @@ fn a_face_read_off_the_direction_where_it_is_seeded_is_read_where_it_solves() {
 /// drawing solves and five points are made, as seeded on the plate.
 #[test]
 fn a_when_over_faces_met_and_faces_along_is_decided_where_the_drawing_solves() {
-    let pin = |at: &str| format!("unit mm\nuse std\nuse std.solids\nuse std.place (coords)\n\
+    let pin = |at: &str| format!("unit mm\nuse std\nuse std.solids (union)\nuse std.place (coords)\n\
         in std.top {{\na := point hint((0, 0))\nb := point hint((20, 0))\n\
         c := point hint((20, 20))\nd := point hint((0, 20))\na coords(du: 0mm, dv: 0mm) std.top\n\
         b coords(du: 20mm, dv: 0mm) std.top\nc coords(du: 20mm, dv: 20mm) std.top\n\

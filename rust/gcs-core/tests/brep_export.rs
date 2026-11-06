@@ -80,7 +80,7 @@ fn far_box(x0: f64) -> Sketch {
     let src = format!("\
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 in std.front {{
 p0 := point
 fix(({x0}, 0)) p0
@@ -155,7 +155,7 @@ fn strip_cut(frame: [[f64; 3]; 2], cutter: &str, cut: bool) -> String {
     let [u, v] = frame;
     format!("unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 su := axis hint(dir: ({}, {}, {}))
 fix(dir == ({}, {}, {})) su
 sv := axis hint(dir: ({}, {}, {}))
@@ -280,7 +280,7 @@ fn a_sheet_ending_in_the_blank_is_carried_out_of_it() {
 /// is refused for its stock.
 #[test]
 fn an_empty_body_is_refused_naming_the_statement_that_emptied_it() {
-    let src = "unit mm\nuse std\nuse std.solids\nuse std.place (coords)\nuse std.shapes\nin std.top {\n  ca := point hint((0, 0))\n  \
+    let src = "unit mm\nuse std\nuse std.solids (cut, common)\nuse std.place (coords)\nuse std.shapes\nin std.top {\n  ca := point hint((0, 0))\n  \
                fix((0mm, 0mm)) ca\n  sa := std.shapes.CenteredRectangle(ca, w: 10mm, h: 10mm)\n  \
                cb := point hint((20, 0))\n  ca distance(20mm, along: u) cb\n  ca level(v) cb\n  \
                sb := std.shapes.CenteredRectangle(cb, w: 10mm, h: 10mm)\n}\n\

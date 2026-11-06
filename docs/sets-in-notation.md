@@ -435,7 +435,7 @@ same report, STEP assembly and STL, byte for byte, before the rewrite and after.
   d) B` written against the solid itself does not say yet. Retiring `std.rounds.Grown` for one word
   over sets and solids needs the distance from a solid to be the ordinary one in the elaborator;
   that is left open.
-- **`claim a inside b` stays.** Between two solids it says one lies within the other — ⊆, not ∈ —
+- **`claim a inside b` stays** (until P3, below). Between two solids it says one lies within the other — ⊆, not ∈ —
   so it is no membership; the notation leaves it, and a spelling for it waits on the body words
   (P3).
 - **`side:` stays where there is no inside**: a developable sheet's band says which side of the
@@ -471,3 +471,59 @@ What was decided as it was built:
   operand after it, so `p in` being typed at a line's end is the word until something follows.
 - **Not a font feature.** The words stay in the copy, ink invisible, and the sign is an absolutely
   placed box over their cells; `npm run overlay` holds that no glyph moves.
+
+## P3 — the body words over a primitive, as built ([0.206])
+
+**The experiment.** The question P0 left was what a body's set "extended by statements written
+elsewhere" is. Read as inclusions, `cut` and `common` are `B ⊆ ∁x` and `B ⊆ x`, but `union` is not
+`x ⊆ B`: the union is taken first, so a pocket cut from the body eats a boss in union with it —
+`(stock ∪ boss) ∖ pocket` — and `boss ⊆ B` is then false (the primer's "name the intermediate").
+So the primitive cannot be a set of facts the body satisfies; it is the body's formula assembled
+from pieces said where the body is not declared: one disjunction, its stock or each union, and one
+conjunct for each cut or common. Written that way it is a statement the parser already had the
+pieces of — a set written in place, after `and` or `or`:
+
+```
+x union B := B or { p | p in x }
+x cut B := B and { p | p not in x }
+x common B := B and { p | p in x }
+```
+
+Each of `std.rounds`' round, chamfer and shell, `hardware`'s groove and bolt pattern, an empty
+body joined by a `repeat`, and a swept solid taking a feature directly was read through the words
+so defined, against the built-in statement: the same `SolidDef::Body`, so the same solid to the bit
+(`tests/body_words.rs`) and the same reports, STEP and STL across the corpus (below).
+
+**What was decided as it was built:**
+
+- **No `open`.** Every body takes contributions, as every one always could; marking the ones that
+  do would have rewritten every body and every swept solid that takes a feature, and said nothing
+  the contributions themselves do not.
+- **The words live in `std.solids` and are imported by name**, as every word of `std` is: there is
+  no prelude, so a file writes `use std.solids (cut, union)`, the names it uses. The corpus gained
+  them by script (`scripts/body_words_imported.py`); `hardware` imports its own, and `std.rounds`
+  writes the primitive, its contributions repeated over pairs and triples of faces.
+  Unimported, the use is E102 naming the import. The words are no longer reserved: a file may name
+  a thing `cut`.
+- **One membership of a solid per contribution, for now.** `B and { p | p not in x; p in y }` or a
+  set with a bound in it would be a body's conjunct as well; the parser refuses them naming the
+  three forms until a body reads them.
+- **The stratum is the primitive's rule.** A contribution whose solid reads the body's own faces (a
+  round's taken and filled solids) is read against the body the others make — the evaluator's
+  rule as it was (`solid::faces::stratum`), now said of the primitive.
+- **`every` lands, in claims.** One solid within another is `claim every q in a: q in b`, lowered to
+  the claim the solid claims judge; `claim a inside b` is refused naming it, and `every` outside a
+  claim is refused (a statement that every value of a running number, or every acceptable part,
+  satisfies something waits on the tolerances). The editor draws it ∀.
+
+- **A thing named for a word is renamed where the file imports the word.** Two documents called a
+  screw's frame `cut` (`solid_sweeps/square_thread.sv`, `stopped_screw.sv`) and cut with the word
+  as well; a file's own name and a word it imports may not share a spelling (E071), so the frame is
+  `feed`. A solid named `inside` (`engine/block.sv`) stays: a constraint word with no prefix
+  reading, read as a reference with a word and an operand after it, is the name it was given
+  (`inside common cavity`).
+- **The report says the containment claim as it is written**, `claim every q in bore: q in stock —
+  …`.
+
+The corpus's outputs did not move: each of the 282 documents of `rust/examples/` gives the same
+report, STEP assembly and STL, byte for byte, before P3 and after.

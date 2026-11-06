@@ -478,7 +478,7 @@ impl Curve {
             Curve::Traced(ref c) => (Curve::Traced(Arc::new(Traced {a:c.a.mapped(a).0,b:c.b.mapped(a).0,
                 pts:c.pts.iter().map(|&p| a.point(p)).collect(),closed:c.closed})),[1.,0.]),
             Curve::Iso(ref b,u) => match b.mapped(a) { Some(b) => (Curve::Iso(Arc::new(b),u),[1.,0.]),None => wrapped() },
-            Curve::Rail(..) | Curve::Rim(..) | Curve::SheetCut(..) | Curve::Turned(..) => match a.similarity() {
+            Curve::Rail(..) | Curve::Rim(..) | Curve::SheetCut(..) | Curve::Turned(..) | Curve::Slid(..) => match a.similarity() {
                 Some((s,r,true)) if (s-1.).abs() <= 1e-15 => (self.moved(&r),[1.,0.]),
                 _ => wrapped(),
             },

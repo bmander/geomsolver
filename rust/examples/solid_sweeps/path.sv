@@ -7,7 +7,7 @@
 // spline's tightest turn, or the tube would fold on itself there.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.stations
 

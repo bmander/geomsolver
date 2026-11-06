@@ -7,7 +7,7 @@
 // space at every tooth: `generation/rack_cut_gear.sv`.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.motion (spins, slides)
 
 in std.front {

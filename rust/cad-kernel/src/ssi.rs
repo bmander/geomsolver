@@ -490,11 +490,17 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                     degree:sp.degree,knots:sp.knots.clone(),weights:sp.weights.clone(),poles:sp.poles.iter().map(|&p| lift(p)).collect()}))]),
                 Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:*d}]),
                 Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
+                // a slid torus's contour (#805) carried along the slide onto the plane
+                Curve::Slid(h) => Ssi::Curves(vec![Curve::Slid(std::sync::Arc::new(h.at(lift(h.frame.o),h.contour)))]),
                 _ => Ssi::Traced,
             }
         }
         (Surface::Extrusion(e,c),ref s) | (ref s,Surface::Extrusion(e,c))
             if let Some(curves) = extruded(&e,&c,s,tol) => Ssi::Curves(curves),
+        // (two slid contours' cylinders read once, the first against the second)
+        (Surface::Extrusion(_,c),ref s) if let Curve::Slid(h) = &*c && let Some(curves) = slid_meeting(h,s,tol) => Ssi::Curves(curves),
+        (ref s,Surface::Extrusion(_,c)) if !matches!(s,Surface::Extrusion(..)) && let Curve::Slid(h) = &*c
+            && let Some(curves) = slid_meeting(h,s,tol) => Ssi::Curves(curves),
         (Surface::Plane(pl),Surface::BSpline(_,net)) | (Surface::BSpline(_,net),Surface::Plane(pl)) => {
             // a sheet one linear span across, its second row its first moved by one step `d` (a
             // curve swept along a line, as a generating sweep's sheet is), and a plane the step
@@ -718,6 +724,71 @@ fn plane_cone_ellipse(pl: &Frame,c: &Frame,r: f64,half: f64,tol: f64) -> Option<
     if dot(sub(centre,apex),k)*sa*ca < 0. { return Some(vec![]) }
     let (big,small) = (d.abs()*ca.abs()*sa.abs()/a2,d.abs()*sa.abs()/a2.sqrt());
     Some(vec![Curve::Ellipse(Frame::new(centre,n,e),big,small)])
+}
+
+/// **A slid torus's contour cylinder against a surface** (#805: `slid::Slid`, a contact of a torus
+/// slid at a lean to its axis swept along the slide), in closed form where it has one:
+/// - **the torus at a pose of the slide** — the same axis's way, radii and centre on the cylinder's
+///   line along the slide — touches it along its contact there (`Slid::at`), and nowhere else:
+///   short of the fold, each line along the slide through a contact point meets the torus at that
+///   point alone (`Slid::meets_again`, which the closed class proves before it builds);
+/// - **a plane along the slide** meets it in the lines along the slide through where the contour
+///   crosses the plane's trace, the crossings isolated with the contour's jets bounded in
+///   outward intervals (`util::isolate`); none where the plane may touch it (left to be traced);
+/// - **a plane leaning to the slide** meets it in the contour carried along the slide onto the
+///   plane, an affine image of it (`affine::MappedCurve`, the shear along the slide that holds the
+///   contour's plane to the plane);
+/// - **another contour's cylinder along the same slide** meets it nowhere where their contours
+///   stand apart in the plane square to the slide, by more than either's chords' sag (two
+///   contours of one ring: the outline and the outline of its hole).
+///
+/// None for any other surface, or where these do not settle it: traced.
+fn slid_meeting(h: &crate::slid::Slid,s: &Surface,tol: f64) -> Option<Vec<Curve>> {
+    use crate::slid::Slid;
+    use crate::turned::Exact;
+    if !h.contour { return None }
+    let d = h.slide();
+    let g = s.frame();
+    match *s {
+        Surface::Torus(t,big,small) => {
+            let k = h.contact;
+            (norm(cross(t.z,h.frame.z)) <= 1e-9 && (big.abs()-k.big).abs() <= tol && (small.abs()-k.small).abs() <= tol
+                && norm(cross(sub(t.o,h.frame.o),d)) <= tol)
+                .then(|| vec![Curve::Slid(std::sync::Arc::new(h.at(t.o,false)))])
+        }
+        Surface::Plane(_) if dot(g.z,d).abs() <= 1e-12 => {
+            let found = h.crossings(g.o,g.z,&|t| s.implicit(h.d2(t).0).abs() <= tol).ok()?;
+            if found.iter().any(|r| r.touch) { return None }
+            Some(found.into_iter().map(|r| Curve::Line {p:h.d2(r.at).0,d}).collect())
+        }
+        Surface::Plane(_) => {
+            // the shear along the slide carrying the contour's plane onto this one: `x ↦ x + d ((p₀ −
+            // x)·n / (d·n) + (x − o)·d)`, the identity along the slide
+            let (n,p0,o) = (g.z,g.o,h.frame.o);
+            let dn = dot(d,n);
+            let k = sub(d,scale(n,1./dn));
+            let m: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j| if i == j { 1. } else { 0. }+d[i]*k[j]));
+            let shear = crate::affine::Affine::new(m,scale(d,dot(p0,n)/dn-dot(o,d))).ok()?;
+            Some(vec![Curve::Affine(std::sync::Arc::new(crate::affine::MappedCurve::new(shear,Curve::Slid(std::sync::Arc::new(*h)),[1.,0.])))])
+        }
+        Surface::Extrusion(_,ref c) => {
+            let Curve::Slid(k) = &**c else { return None };
+            if !k.contour || norm(cross(k.slide(),d)) > 1e-12 { return None }
+            // each contour's points in the plane square to the slide, and its chords' sag
+            let flat = |x: V| sub(x,scale(d,dot(x,d)));
+            let read = |c: &Slid| -> (Vec<V>,f64) {
+                let [a,b] = c.span;
+                let pts: Vec<V> = (0..=256).map(|i| flat(c.d2(a+(b-a)*i as f64/256.).0)).collect();
+                let step = (b-a).abs()/256.;
+                let bend = (0..=16).map(|i| norm(c.d2(a+(b-a)*i as f64/16.).2)).fold(0.,f64::max);
+                (pts,step*step*bend/8.)
+            };
+            let ((p,sp),(q,sq)) = (read(h),read(k));
+            let apart = p.windows(2).flat_map(|u| q.windows(2).map(move |w| crate::util::space::segments_distance(u[0],u[1],w[0],w[1]))).fold(f64::INFINITY,f64::min);
+            (apart > sp+sq+tol).then(Vec::new)
+        }
+        _ => None,
+    }
 }
 
 /// **A ball within a torus's tube touching it round a meridian**: centred on the tube's middle

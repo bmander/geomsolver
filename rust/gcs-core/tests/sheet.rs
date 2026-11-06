@@ -34,7 +34,7 @@ fn read(src: &str) -> Elaborated {
 const PART: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.front {
 a := point
 b := point hint((60, 0))

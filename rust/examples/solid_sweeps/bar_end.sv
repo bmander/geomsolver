@@ -10,7 +10,7 @@
 // at each height the arithmetic `rack.sv`'s space is read by).
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.motion (spins, slides)
 
 in std.top {

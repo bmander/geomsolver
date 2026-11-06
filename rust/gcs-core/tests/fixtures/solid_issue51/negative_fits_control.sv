@@ -23,5 +23,5 @@ in std.front {
   otherf := face(otherfp0, otherfp1, otherfp2, otherfp3, -> close)
   other := solid(std.solids.Prism(otherf, from: -1mm, to: 0mm))
   claim result fits(2mm) other
-  claim result inside other
+  claim every q in result: q in other
 }

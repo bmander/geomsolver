@@ -14,7 +14,7 @@ use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::closed::closed;
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::Trajectory;
-use gcs_core::brep::turned::{Contact,Jet,Turned};
+use gcs_core::brep::turned::{Contact,Exact,Jet,Turned};
 use gcs_core::space::{add,cross,dot,norm,scale,sub,unit};
 use std::f64::consts::{PI,TAU};
 
@@ -727,7 +727,7 @@ fn flat_rim(a: V,t: f64) -> gcs_core::brep::turned::Rim {
 fn flat_ring(a: V,t: f64) -> Brep {
     use gcs_core::brep::build::{Profile,ProfileEdge,revolve};
     let g = Frame::WORLD;
-    let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:vec![vec![ProfileEdge::Turned(std::sync::Arc::new(Turned::rim(g,flat_rim(a,t),[0.,TAU])))]]};
+    let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:vec![vec![ProfileEdge::Exact(Curve::Turned(std::sync::Arc::new(Turned::rim(g,flat_rim(a,t),[0.,TAU]))))]]};
     revolve(&profile,g.o,g.z,TAU).unwrap()
 }
 
@@ -897,7 +897,7 @@ fn a_sharp_circle_turned_is_a_ring_read_exactly() {
     {
         use gcs_core::brep::build::{Profile,ProfileEdge,revolve};
         use gcs_core::brep::swept::dump::{read,write};
-        let profile = Profile {origin:[0.;3],normal:[0.,1.,0.],names:Vec::new(),loops:vec![vec![ProfileEdge::Turned(std::sync::Arc::new(t))]]};
+        let profile = Profile {origin:[0.;3],normal:[0.,1.,0.],names:Vec::new(),loops:vec![vec![ProfileEdge::Exact(Curve::Turned(std::sync::Arc::new(t)))]]};
         let ring = revolve(&profile,[0.;3],[0.,0.,1.],TAU).unwrap();
         let expected = 2.*PI*PI*0.64*dot(n,cross(rim.o,[0.,0.,1.])).abs();
         assert!((volume(&ring)-expected).abs() <= 1e-9*expected,"the ring holds {} against {expected}",volume(&ring));

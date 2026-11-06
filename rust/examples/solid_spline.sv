@@ -2,7 +2,7 @@
 // a vase whose wall is a spline turned about its axis.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 
 // The cam: a base, a spline from its end round to the back, and the back straight down.
 in std.front {

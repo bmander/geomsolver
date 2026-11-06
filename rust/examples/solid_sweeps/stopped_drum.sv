@@ -10,7 +10,7 @@
 // to `a + 30°`: the ring loses `∫ ρ (a(ρ) + π/6) dρ` from 9 to 11, through the drum's 1 mm.
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns)
 

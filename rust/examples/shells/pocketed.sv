@@ -12,7 +12,7 @@
 // 8000 − 180π less 38 × 38 × 3 less 147π (a cylinder of radius 7 through the 3).
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.rounds (shell)
 
 wall := 1mm

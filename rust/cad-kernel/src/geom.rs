@@ -5,6 +5,7 @@
 use crate::util::fmath::Det;
 use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
 use std::sync::Arc;
+use super::turned::Exact;
 pub use super::nurbs::BSpline;
 
 pub type V = [f64;3];
@@ -333,7 +334,61 @@ impl Pipe {
     /// screw's turn over the patch, `ρ` the helix's distance from the axis), each bounded over a
     /// stretch where `|H − p|` reaches `q` at most. Each stretch read is the inverse stage's work
     /// (`util::meter`). `None` where the search gave up or the build stopped.
-    pub fn feet(&self,p: V) -> Option<Vec<f64>> {
+    pub fn feet(&self,p: V) -> Option<Vec<f64>> { self.feet_over(p,&[[0.,1.]]) }
+    /// **The feet of `p` on the spine its nearest point of the pipe may stand about** (#798), and
+    /// the two ends: `feet` over the stretches of the spine that can hold one, each a sixteenth of
+    /// a turn at most. On a stretch of width `w` whose ends stand `d₀` and `d₁` from `p`, the spine
+    /// keeps within `L = (d₀ + d₁ − s₁ w) / 2` and `U = (d₀ + d₁ + s₁ w) / 2` of it (its speed `s₁`),
+    /// so every circle about it stands at least `max(L − r, r − U, 0)` from `p`; a stretch where
+    /// that is farther than `p` stands from the circle at an end of some stretch is passed by, its
+    /// feet no nearer than a point of the pipe already in hand. The pipe's nearest point is about
+    /// one of these, as it is about one of `feet` — searched over the turn or so of the coil `p`
+    /// stands beside, not all of them (a coil of six turns was searched whole at every point of its
+    /// meetings traced, and a traced meeting with an end disc measured 50 times slower for it).
+    pub fn nearest_feet(&self,p: V) -> Option<Vec<f64>> {
+        let Carry::Screw {center,axis,angle,advance} = self.carry else { return None };
+        let s1 = norm(self.carry.rate(self.frame.o));
+        let n = ((16.*angle.abs()/std::f64::consts::TAU).ceil() as usize).max(1);
+        // the spine's points a stretch apart, each the last screwed on by one stretch's turn (its
+        // sine and cosine found once): each one's reach to `p`, and the nearest point of the pipe in
+        // hand, the circles about them — how far `p` stands from one is its height off the circle's
+        // plane, square to the spine there, and its reach in it against the radius
+        let (sn,cs) = (angle/n as f64).dsin_cos();
+        let rise = scale(axis,advance/n as f64);
+        let (mut x,mut reach,mut best) = (self.frame.o,Vec::with_capacity(n+1),f64::INFINITY);
+        for i in 0..=n {
+            if i > 0 {
+                let d = sub(x,center);
+                x = add(add(center,add(add(scale(d,cs),scale(cross(axis,d),sn)),scale(axis,dot(axis,d)*(1.-cs)))),rise);
+            }
+            let d = sub(p,x);
+            let (q,h) = (norm(d),dot(d,self.carry.rate(x))/s1);
+            let rho = (q*q-h*h).max(0.).sqrt()-self.r;
+            reach.push(q);
+            best = best.min((rho*rho+h*h).sqrt());
+        }
+        // (a hair of slack: a foot at a stretch's end is read there again by the search)
+        let slack = best+1e-9*(1.+best+self.r);
+        let w = s1/n as f64;
+        let can = |i: usize| {
+            let sum = reach[i]+reach[i+1];
+            let (lo,hi) = (0.5*(sum-w),0.5*(sum+w));
+            (lo-self.r).max(self.r-hi).max(0.) <= slack
+        };
+        // each run of neighbouring stretches that can hold one, searched as one
+        let mut runs = Vec::new();
+        let mut i = 0;
+        while i < n {
+            if !can(i) { i += 1; continue }
+            let mut j = i+1;
+            while j < n && can(j) { j += 1 }
+            runs.push([i as f64/n as f64,j as f64/n as f64]);
+            i = j;
+        }
+        self.feet_over(p,&runs)
+    }
+    /// `feet` over each of `spans`, and the spine's two ends.
+    fn feet_over(&self,p: V,spans: &[[f64;2]]) -> Option<Vec<f64>> {
         let Carry::Screw {center,axis,angle,..} = self.carry else { return None };
         let k = crate::util::space::normalised(axis)?;
         let o = sub(self.frame.o,center);
@@ -357,8 +412,12 @@ impl Pipe {
         let dg = |v: f64| { let (x,dx) = jet(v); s1*s1+dot(sub(x,p),scale(cross(axis,dx),angle)) };
         let reach = |v: f64| crate::util::space::distance(jet(v).0,p);
         let bound = |x0: f64,x1: f64| { let q = reach(x0).max(reach(x1))+s1*(x1-x0); [s1*s1+q*s2,q*s3] };
-        let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&g,&dg,&bound,[0.,1.],1e-12,&|_| true).ok()?;
-        Some([0.,1.].into_iter().chain(roots.into_iter().map(|x| x.at)).collect())
+        let mut out = vec![0.,1.];
+        for &span in spans {
+            let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&g,&dg,&bound,span,1e-12,&|_| true).ok()?;
+            out.extend(roots.into_iter().map(|x| x.at));
+        }
+        Some(out)
     }
     /// The screw that carries the pipe, a radian of turn at a time (its rise the pitch, a turn's
     /// rise over `2π`), its axis unit; `None` where it does not turn.
@@ -571,7 +630,7 @@ impl Blend {
     /// nearest of them. `None` for any other patch, or where the spine's search gave up.
     fn pipe_uv(&self,p: V) -> Option<Uv> {
         let pipe = self.pipe()?;
-        let (_,v,d) = pipe.feet(p)?.into_iter().map(|v| { let d = sub(pipe.back(p,v),pipe.frame.o); (pipe.off_back(d),v,d) })
+        let (_,v,d) = pipe.nearest_feet(p)?.into_iter().map(|v| { let d = sub(pipe.back(p,v),pipe.frame.o); (pipe.off_back(d),v,d) })
             .min_by(|x,y| x.0.total_cmp(&y.0))?;
         Some([self.u_round(&pipe.frame,d),v])
     }
@@ -1009,34 +1068,29 @@ impl Surface {
                 let uv = b.newton(p,hint);
                 if crate::util::space::distance(b.d1(uv).0,p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { b.inverse(p) }
             }
-            // a spline swept or turned likewise, its curve's foot from the hint's
-            Surface::Extrusion(_,c) | Surface::Revolution(_,c) if matches!(**c,Curve::BSpline(_)) => {
-                let Curve::BSpline(b) = &**c else { unreachable!() };
-                let uv = self.swept_inverse(p,&|q,k| b.refined(q,hint[k])).expect("a swept curve");
-                if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
-            }
-            // a turned contact's meridian likewise, by Newton from the hint's slant (#780 C3: read
-            // afresh, its samples were most of a turned build's time)
-            Surface::Revolution(_,c) if matches!(**c,Curve::Turned(_)) => {
-                let Curve::Turned(t) = &**c else { unreachable!() };
-                let uv = self.swept_inverse(p,&|q,k| t.newton(q,hint[k])).expect("a swept curve");
-                if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
-            }
+            // a curve swept or turned likewise — a spline, a turned contact's meridian, a slid
+            // torus's contour — its foot refined from the hint's (#780 C3: read afresh, a meridian's
+            // samples were most of a turned build's time)
+            Surface::Extrusion(_,c) | Surface::Revolution(_,c) => match self.swept_inverse(p,&|q,k| c.refined(q,hint[k])) {
+                Some(uv) if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) => uv,
+                _ => self.inverse(p),
+            },
             _ => self.inverse(p),
         }
     }
     /// A swept or turned curve's parameters of `p`, its curve's at the foot `foot` finds of the
-    /// point in the curve's plane (the curve's parameter the `k`th); `None` for any other surface.
-    fn swept_inverse(&self,p: V,foot: &dyn Fn(V,usize) -> f64) -> Option<Uv> {
+    /// point in the curve's plane (the curve's parameter the `k`th); `None` for any other surface,
+    /// or where `foot` finds none.
+    fn swept_inverse(&self,p: V,foot: &dyn Fn(V,usize) -> Option<f64>) -> Option<Uv> {
         let [x,y,z] = self.frame().local(p);
         match self {
             Surface::Extrusion(f,c) => {
-                let t = foot(f.at([x,y,0.]),0);
+                let t = foot(f.at([x,y,0.]),0)?;
                 Some([t,dot(sub(p,c.point(t)),f.z)])
             }
             Surface::Revolution(f,_) => {
                 let u = if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) };
-                Some([u,foot(f.at([x.dhypot(y),0.,z]),1)])
+                Some([u,foot(f.at([x.dhypot(y),0.,z]),1)?])
             }
             _ => None,
         }
@@ -1050,7 +1104,7 @@ impl Surface {
         let u = if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) };
         let rho = x.dhypot(y);
         match self {
-            Surface::Extrusion(_,c) | Surface::Revolution(_,c) => return self.swept_inverse(p,&|q,_| c.inverse(q)).expect("a swept curve"),
+            Surface::Extrusion(_,c) | Surface::Revolution(_,c) => return self.swept_inverse(p,&|q,_| Some(c.inverse(q))).expect("a swept curve"),
             Surface::Blend(_,b) => return b.inverse(p),
             Surface::BSpline(_,n) => return net_inverse(n,p),
             Surface::Family(_,w) => return w.inverse(p),
@@ -1495,11 +1549,35 @@ impl Traced {
         best.1
     }
     /// `C`: the chord at `t` pulled onto both surfaces.
-    pub(crate) fn at(&self,t: f64) -> V {
+    pub(crate) fn at(&self,t: f64) -> V { self.project(self.guess(t)) }
+    /// The point `at` pulls onto both surfaces: the parabola's at `t` (`between`).
+    pub(crate) fn guess(&self,t: f64) -> V {
         let m = self.segments();
         let t = if self.closed { t.rem_euclid(m as f64) } else { t };
         let i = (t.floor().max(0.) as usize).min(m-1);
-        self.project(self.between(i,t-i as f64))
+        self.between(i,t-i as f64)
+    }
+    /// **The curve's point on the plane `n·x = h` beside `q`, and its rate there per unit of `n·x`**
+    /// (#798): Newton on both surfaces and the plane from `q`, settled as `project` is; the rate
+    /// `T / (T·n)`, `T = ∇a × ∇b`, read at the point itself, so as exact as the point is — where
+    /// `C'` is a difference of two projections. `None` where the curve runs square to `n`.
+    pub(crate) fn across(&self,q: V,n: V,h: f64) -> Option<(V,V)> {
+        let settled = 4.*f64::EPSILON*(1.+crate::util::space::norm(q));
+        let mut p = q;
+        let mut best: (f64,Option<(V,V)>) = (f64::INFINITY,None);
+        for _ in 0..50 {
+            let ((fa,ga),(fb,gb)) = (self.a.side(p),self.b.side(p));
+            let fc = dot(n,p)-h;
+            let off = fa.abs().max(fb.abs()).max(fc.abs());
+            if off >= best.0 { break }
+            let t = cross(ga,gb);
+            let rate = scale(t,1./dot(t,n));
+            best = (off,rate.iter().all(|x| x.is_finite()).then_some((p,rate)));
+            if off <= settled { break }
+            let Some(step) = crate::util::roots::least_norm_step(&[ga,gb,n],&[fa,fb,fc]) else { break };
+            p = sub(p,step);
+        }
+        best.1
     }
     /// The point a fraction `f` along the stretch from point `i` to the next, on the parabola through
     /// it, the next and a neighbour, parameterised by their chords' lengths: a chord's sag, quadratic
@@ -1597,6 +1675,10 @@ pub enum Curve {
     /// sharp circle's, its angle (#780 L2); or, posed, a curve where the tool at an end pose meets
     /// those surfaces, read round an angle (`turned::Crossing`, `turned::Section`).
     Turned(Arc<super::turned::Turned>),
+    /// A torus's contact under a slide, or its apparent contour along the slide (#805,
+    /// `slid::Slid`): one half of a closed curve read in closed form, the curve's parameter
+    /// `tan(u/2)` of the angle round the torus's axis from the half's middle.
+    Slid(Arc<super::slid::Slid>),
 }
 
 impl Curve {
@@ -1604,11 +1686,11 @@ impl Curve {
         match self { Curve::Line {..} => "line",Curve::Circle(..) => "circle",Curve::Ellipse(..) => "ellipse",
             Curve::Traced(..) => "traced",Curve::BSpline(..) => "bspline",Curve::Iso(..) => "iso",
             Curve::Rail(..) => "rail",Curve::Rim(..) => "rim",Curve::Affine(..) => "affine",Curve::SheetCut(..) => "sheet cut",
-            Curve::Turned(..) => "turned" }
+            Curve::Turned(..) => "turned",Curve::Slid(..) => "slid" }
     }
     pub fn period(&self) -> Option<f64> {
         match self {
-            Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) => None,
+            Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) | Curve::Slid(..) => None,
             Curve::Turned(ref t) => t.period(),
             Curve::Rim(ref w,_) => w.period(),
             Curve::Traced(c) => c.closed.then(|| c.segments() as f64),
@@ -1639,6 +1721,7 @@ impl Curve {
             Curve::Rim(ref w,s) => w.rim(t,s),
             Curve::Affine(ref m) => m.d2(t),
             Curve::Turned(ref m) => m.d2(t),
+            Curve::Slid(ref m) => m.d2(t),
             Curve::Line {p,d} => (add(p,scale(d,t)),d,[0.;3]),
             Curve::Circle(f,r) => {
                 let (s,c) = t.dsin_cos();
@@ -1664,7 +1747,8 @@ impl Curve {
         }
     }
     pub fn point(&self,t: f64) -> V {
-        match self { Curve::BSpline(b) => b.point(t),Curve::SheetCut(c) => c.point(t),_ => self.d2(t).0 }
+        // (a traced curve's point by one projection: its derivative takes two more, #798)
+        match self { Curve::BSpline(b) => b.point(t),Curve::SheetCut(c) => c.point(t),Curve::Traced(c) => c.at(t),_ => self.d2(t).0 }
     }
     pub fn tangent(&self,t: f64) -> V { self.d1(t).1 }
     /// `C`, `C'`: `d2`'s, a B-spline's second derivative not read.
@@ -1724,6 +1808,7 @@ impl Curve {
             Curve::BSpline(ref b) => nearest_held(b,p),
             Curve::Affine(ref m) => m.inverse(p),
             Curve::Turned(ref m) => m.inverse(p),
+            Curve::Slid(ref m) => m.inverse(p),
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.datan2(x)) }
             Curve::Ellipse(f,a,b) => {
@@ -1741,6 +1826,22 @@ impl Curve {
                 }
                 wrap(t)
             }
+        }
+    }
+    /// The span of a curve read exactly in a frame (`turned::Exact`: a turned contact's meridian, a
+    /// slid torus's contact), none for any other.
+    pub fn exact_span(&self) -> Option<[f64;2]> {
+        match self { Curve::Turned(m) => Some(m.span()),Curve::Slid(m) => Some(m.span()),_ => None }
+    }
+    /// The parameter of its point nearest `p`, refined from `t`, for a curve that refines its foot
+    /// from a hint: a spline (`BSpline::refined`), and a curve read exactly in a frame (Newton,
+    /// `turned::Exact`); none for any other.
+    fn refined(&self,p: V,t: f64) -> Option<f64> {
+        match self {
+            Curve::BSpline(b) => Some(b.refined(p,t)),
+            Curve::Turned(m) => Some(m.newton(p,t)),
+            Curve::Slid(m) => Some(m.newton(p,t)),
+            _ => None,
         }
     }
     /// Newton on `(C − p)·C'` from `v`, held to `within` where given.
@@ -1781,6 +1882,7 @@ impl Curve {
             Curve::Rim(ref w,s) => (0..=64).map(|j| norm(w.rim(j as f64/64.,s).1)).fold(0.,f64::max),
             Curve::Affine(ref m) => m.speed(),
             Curve::Turned(ref m) => m.speed(),
+            Curve::Slid(ref m) => m.speed(),
         }
     }
     /// A box about the curve over `[t0, t1]`, never smaller than it: exact for a line, circle and
@@ -1820,6 +1922,7 @@ impl Curve {
             Curve::Rim(ref w,s) => w.rim_bounds(s,[t0,t1]),
             Curve::Affine(ref m) => m.bounds([t0,t1]),
             Curve::Turned(ref m) => m.bounds([t0,t1]),
+            Curve::Slid(ref m) => m.bounds([t0,t1]),
             Curve::Traced(ref c) => {
                 // the chords reaching the interval, so its ends' too
                 let m = c.segments();
@@ -1852,6 +1955,7 @@ impl Curve {
             Curve::Rail(ref w,u) => Curve::Rail(Arc::new(w.moved(m)),u),
             Curve::Rim(ref w,s) => Curve::Rim(Arc::new(w.moved(m)),s),
             Curve::Turned(ref t) => Curve::Turned(Arc::new(t.moved(m).expect("a rigid motion keeps a frame's hand"))),
+            Curve::Slid(ref t) => Curve::Slid(Arc::new(t.moved(m))),
             Curve::Affine(ref a) => Curve::Affine(Arc::new(super::affine::MappedCurve::new(
                 a.map.then(&super::affine::Affine::of_rigid(m)),a.of.clone(),a.at))),
         }
@@ -1867,7 +1971,8 @@ impl Curve {
             Curve::Ellipse(f,a,b) => Curve::Ellipse(f.moved(m).rehanded(false).0,a,b),
             Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced {a:c.a.reflected(m)?.0,
                 b:c.b.reflected(m)?.0,pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
-            Curve::Affine(_) => self.moved(m),
+            // (a slid contact's points are read off its frame, which a reflection carries)
+            Curve::Affine(_) | Curve::Slid(_) => self.moved(m),
             // (a meridian's points read its frame's `x` and `z` alone: reflected, carried)
             Curve::Turned(ref t) => match t.moved(m) {
                 Some(t) => Curve::Turned(Arc::new(t)),

@@ -14,7 +14,7 @@
 // removed, and the ring loses `π/3 (40 + ∫ ρ M dρ)` from 9 to 11: 58.356 mm³.
 unit mm
 use std
-use std.solids
+use std.solids (common, cut)
 use std.place (coords)
 use std.motion (screws)
 

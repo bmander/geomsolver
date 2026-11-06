@@ -7,7 +7,7 @@
 // are the twist drill's own (`configuration.sv`, `wheel.sv`); the end is left square.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.motion (slides, turns)
 use configuration
 use wheel

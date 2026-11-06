@@ -75,12 +75,15 @@ pub enum Lowered {
     /// `p in a.side`, `p not in a.side`: the side of a face its material is on, the `.side` taken
     /// off — where `p in a` is the face itself
     Side,
+    /// `every q in a: q in b`, claimed (#783 P3): one solid within another, the solid claim word
+    /// `inside` it is lowered to — a claim, and no membership the notation's other readers read
+    Every,
 }
 
 impl Lowered {
-    /// Whether the relation was written in the notation of sets.
+    /// Whether the relation was written in the notation of sets, a point's membership.
     pub fn any(self) -> bool {
-        self != Lowered::No
+        matches!(self, Lowered::Set | Lowered::Side)
     }
 }
 

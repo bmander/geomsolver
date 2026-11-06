@@ -7,7 +7,7 @@
 // average by more than its stress concentration.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 
 l := 80mm
 w := 40mm

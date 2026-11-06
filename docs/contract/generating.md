@@ -538,12 +538,15 @@ membership along the whole path
 rate and speed bound by differences). No drawing lowers to pieces yet (a toolpath written as one
 is the language's `path`), so the closed class's admission reads one constant twist.
 A curved tool past these (`Unbuilt::Curved`: under a screw a round face about an axis leaning to it, a torus, or a sharp
-circle leaning to it (#780 L2); under a turn a ball across its axis, a torus leaning to it or a free-form face; under a slide a torus or a
-free-form face; an edge no line or circle) are refused by what they are, read before any build
+circle leaning to it (#780 L2); under a turn a ball across its axis, a torus leaning to it or a free-form face; under a slide a
+torus's face leaning to it that is no whole ring, or a free-form face; an edge no line or circle) are refused by
+what they are, read before any build
 (`closed::reads`); under a turn a cylinder or a cone about a leaning axis whose contact is no curve
-over the face, or whose meridian folds back along the axis, and a sharp circle through the axis or
-whose normal lies in the plane through the axis and its centre (`Rim::simple`, #780 L2), at the
-build's first step.
+over the face, or whose meridian folds back along the axis, at the build's first step. A sharp
+circle through the axis, or whose normal lies in the plane through the axis and its centre (a pin
+along a radius), turns into no ring (`Rim::simple`, #780 L2): refused as it is read, so the sweep is
+not admitted to the closed class and the class asked first keeps its refusal
+(`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`).
 
 **A round face about an axis leaning to a turn's (#780 C3, `brep::turned`).** On the ring at slant
 `v` of a cylinder or a cone about the axis `a` through `o`, its normal `cos α ρ̂ − sin α a` is
@@ -554,7 +557,7 @@ sweeps the surface of revolution of its meridian — where its points go in `(ρ
 closed form in `v` with its derivatives, not fitted (`turned::Turned`, `Curve::Turned`; its jets one
 formula read in floats and in outward-rounded intervals, `turned::Num`). Its candidate (`Cutter::Turned`)
 is that meridian a twentieth past the face's span each way, closed down the axis at both ends and
-turned once (`ProfileEdge::Turned`, `build::revolve`); refused (`Curved`) unless the contact is a
+turned once (`ProfileEdge::Exact`, `build::revolve`); refused (`Curved`) unless the contact is a
 curve all along — its discriminant held above nought and it off the axis, proved over the span by the
 intervals (`Turned::defined`) — and its height climbs one way (`Turned::climbs`). The face at each end
 pose (its own surface a fortieth past its span) touches that surface along its contact turned there,
@@ -590,6 +593,61 @@ spans two apart near the ball's top (`…::a_ball_tilted_on_a_stem_turned_whole_
 cannot settle), never built wrong. Not yet: a drawn example agreeing with the field, a torus about a
 leaning axis under a turn (a sharp circle leaning to it: #780 L2, below).  The result is the selection's boundary with the candidates that bound nothing healed out of
 its faces (`boolean::selection`): each face as whole as the candidate's it lies on.
+
+**A ring slid at a lean to its axis (#805, #780 L1's X2 under a constant twist, `brep::slid`).** A
+constant twist keeps each tool point in contact for the whole roll or never, so what X2 leaves under
+one is a ring's two roots meeting on a face. On a torus slid along `D`, its normal `cos v ρ̂ + sin v z`
+is square to `D` where `cos v g(u) + sin v D_z = 0`, `g = D_x cos u + D_y sin u`: in the height chart
+two roots on each latitude that meet at the silhouette's top and bottom, the branch locus
+`A² + B² = C²` lying on the face; in the angle chart two smooth closed curves, `n = ±(D_z ρ̂ − g z)/
+√(D_z² + g²)`, the outer and the inner half of the tube. So the patch is read across the locus, not
+cut: each curve rational in `s = tan(u/2)` but for that root, in two halves `s ∈ [−1, 1]`, its jets
+one formula read in floats and in outward intervals (`turned::Num`; `slid::Slid`, `Curve::Slid` —
+the contact itself, or its apparent contour along `D` — its point, box, inverse and speed read off
+its jets as a turned contact's are, `turned::Exact`). Each contact swept along `D` is the cylinder
+over its contour (`Surface::Extrusion` of the contour, `ProfileEdge::Exact`), its candidate the
+contour's region extruded from short of the ring at the start pose to past it at the end
+(`Cutter::Contour`). The inner contour **folds** — cusps where the contact runs along `D`, an
+asymptotic direction of the tube's saddle — from `tan² β = (R − r)/r` (`β` the lean, first at
+`u = ±π/2`): the fold locus, refused by name (`Unbuilt::Folded` at a point of the inner contact,
+read before any build, `closed::reads`, by the contour's tangent held off nought in intervals,
+`Slid::folded`). Short of it every line along `D` through a contact point meets the ring there alone
+— the quartic's other two roots `t² + a t + b`, discriminant `8 (2R² |D_xy|² − |p|² − R² + r²)`, held
+below nought (`Slid::meets_again`) — so the ring at each end pose touches each cylinder along its
+contact there and nowhere else, in closed form (`ssi`'s `slid_meeting`, `Slid::at`); a plane
+square to `D` meets it in the contour carried onto it, one along `D` in lines through the
+contour's crossings (`Exact::crossings`, isolated with the jets' interval bounds), one leaning to `D` in the contour
+sheared along `D` onto it (`affine::MappedCurve`); the two contours' cylinders stand apart; and a
+line meets it certified where it meets the contour in the plane square to `D` (`query::line_slid`).
+Only a whole ring's face is admitted at a lean: a torus face with rims (a bull-nose's round) would
+meet its neighbours' contacts tangentially at their seams, not yet read. Gates
+(`tests/swept_slid.rs`), against a volume worked apart along lines parallel to the slide — every
+such line meets the ring once or not at all short of the fold
+(`a_line_along_the_slide_meets_the_leaning_ring_at_most_once`), so each line's chord lengthened by
+`|D|` sums to `V + |D| A`, `A` the annulus between the contours, `½ ∮ (x y′ − y x′) du` of the
+contact read here in angles (exact to rounding) — and against membership and a Monte Carlo of the
+definition (each point's line back along the slide read against the ring): a ring of middle radius
+3 and tube 1 leaning 35°, slid 6 and 2 (its end poses apart and overlapping), and at 20° slid aslant
+its lean, each to 1e-9 (`a_ring_slid_at_a_lean_closes_into_its_sweep`,
+`…_by_less_than_its_reach_closes_into_its_sweep`, `a_ring_slid_aslant_its_lean_closes_into_its_sweep`);
+pushed into a block until wholly in it, drawn (`solid_sweeps/leaning_ring.sv`), the block less the
+centre's depth times `A` and half the ring, `π² R r²` (the ring's symmetry about its centre,
+`swept_slid::plunged_away`), to 1e-9 with its STL agreeing with the field
+(`solid_sweeps_examples::the_ring_plunged_at_a_lean_bores_round_its_core`). The curve is held to the
+contact read apart in angles, its jets to its points' differences and its contour to the contact
+less its part along `D` (`the_slid_contact_is_where_the_ring_grazes_the_slide`), and the fold to
+`tan² β = (R − r)/r` for three proportions, the contour's speed nought at its cusp
+(`the_inner_contour_folds_where_the_slide_runs_along_an_asymptote`). Negative control: at 60°, past
+the fold, refused as `Folded` by the build and the admission alike
+(`a_ring_slid_past_its_fold_is_refused_by_name`); a ball's pipe that would fold is refused by the same
+name (`swept_loci::a_ball_screwed_tighter_than_its_radius_is_refused_by_name`). Profiled
+(`SOLVENT_SWEEP_PROFILE`): before, the ring slid 6 was refused as `Curved` in 47 µs; now it builds in
+2.9 s (slid 2, 1.8 s), every meeting of a contour's cylinder in closed form (four with the other
+contour, eight with a plane, eight with the posed ring) and every line read against it certified;
+the ring's seam circles and the contacts' own curves are read against it by the sampled search, and
+the ring at its two poses meets the planes and the other pose by the trace. Not yet: a torus face
+with rims at a lean (a bull-nose's round), whose contact meets its neighbours' at their seams, where
+their swept surfaces touch along lines; and the fold, cut where it lies.
 
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
 the blank, not a box, is the domain the candidates split, and its cells are kept where they are no
@@ -639,7 +697,12 @@ closed form — and held reduced at three leads, each cell to its closed form
 off its spine, #780 C1: each foot of a point on the patch lies on the circle about a foot of it on
 the centre's helix or on an end circle, those feet isolated with a bound and the nearest taken,
 `geom::Blend::pipe`, `Pipe::feet`, no warm start and no search;
-`swept_closed::a_balls_pipe_is_inverted_off_its_spine`. The two failures its gate met on the way,
+`swept_closed::a_balls_pipe_is_inverted_off_its_spine`. Only the spine's stretches that can hold
+the nearest are searched (`Pipe::nearest_feet`, #798): the spine cut a sixteenth of a turn a
+stretch, one is passed by where every circle about it stands farther from the point, by its ends'
+reach and the spine's speed, than the circle about an end of some stretch — a coil of six turns was
+searched whole at every inverse, every projection onto its traced meetings, and the same test holds
+the nearest of these to the nearest of every foot. The two failures its gate met on the way,
 a traced curve's inverse stepping off along the whole curve where its points crowd and a ball's
 great circle tangent to its side's cylinder read as four helices, are kept reduced:
 `swept_closed::the_ball_end_mills_pipe_beside_its_side_is_arranged`)
@@ -690,7 +753,8 @@ they abut and along those helices, and a plane holding a circle of the pipe meet
 and its level-by-level cut (`ssi`'s `pipes_meeting`, `pipe_plane`;
 `swept_loci::two_stretches_of_one_pipe_meet_round_their_circle_and_along_helices`). A ball reaching
 its centre's helix's radius of curvature, where the pipe folds, or the axis, is refused by what it
-is (`Unbuilt::Curved` at its centre; `a_ball_screwed_tighter_than_its_radius_is_refused_by_name`).
+is (`Unbuilt::Folded` where it folds, by name, `Curved` where it reaches the axis, each at its centre;
+`a_ball_screwed_tighter_than_its_radius_is_refused_by_name`).
 The gate, `swept_loci::a_ball_screwed_past_a_turn_meets_its_own_pipe_and_closes_into_its_sweep`
 (slow tier): a ball of radius 1 three out from the axis screwed a turn and a half at 0.2 a radian and
 two and a half turns at 0.12, each to 1e-9 of a volume worked apart in helical coordinates (each

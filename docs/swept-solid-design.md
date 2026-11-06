@@ -528,6 +528,21 @@ it. It stays as the fast path where #699 D says so.
      inner contour's cusps where the contact runs along the slide) is the fold locus above. Moved to
      its own issue with this design.
 
+   *X2 under a constant twist built* (#805, `tests/swept_slid.rs`): a whole ring slid at a lean, its
+   two contacts read in the angle chart (`slid::Slid`, rational in `tan(u/2)` but for one root, its
+   jets in floats and outward intervals), each swept into the cylinder over its apparent contour,
+   which the ring at each end pose touches along its contact in closed form. The fold comes first at
+   `tan² β = (R − r)/r`, where the slide runs along an asymptotic direction of the tube's saddle at
+   `u = ±π/2`; short of it the contour is regular and every line along the slide through a contact
+   point meets the ring there alone — so no line along the slide meets the ring twice, and the sweep
+   is `V + |D| A` exactly, `A` the annulus between the contours. A line meeting the ring twice (and a
+   cylinder crossing the ring beside its touch) comes only past the fold, which is refused by name
+   (`Unbuilt::Folded`) until the patch is cut there. A ring slid 6 and 2 at 35° and aslant at 20° are
+   each `V + |D| A` to 1e-9; pushed into a block, it removes the centre's depth times `A` and half the
+   ring (`solid_sweeps/leaning_ring.sv`, its STL agreeing with the field). A torus face with rims (a
+   bull-nose's round) waits: its contact meets the neighbours' at their smooth seams, where their
+   swept cylinders and planes touch along lines.
+
    *X5 built* (`tests/swept_loci.rs`): a ball screwed through more than a turn at a lead short of
    its diameter, whose pipe, entered whole, crossed itself and was refused by the judge. Its pipe is
    entered in stretches of at most half a turn (`closed::pipe_stretches`); two stretches of one pipe
@@ -560,7 +575,8 @@ it. It stays as the fast path where #699 D says so.
 
 **Where it stands (F2c5).** Built on the one arrangement: polyhedral tools under a slide, a turn,
 or a screw with nothing leaning to its axis; under a slide, tools of planes, cylinders, cones, balls
-and tori (a torus's axis along the slide or square to it); under a turn, round faces about axes
+and tori (a torus's axis along the slide or square to it, or a whole ring at any lean short of its
+fold, #805); under a turn, round faces about axes
 along the turn's (cylinders, cones, tori) and balls clear of its axis; under a screw, cylinders and cones about axes along it and
 level circles (a drum, helical milling; a frustum, a chamfer mill, its contact rulings screwed into
 patches, #780 C2); paths of slides and turns (K1); a body mixing the
@@ -665,8 +681,9 @@ recorded above with what was tried:
   STL agreeing with the field;
 - **fold and branch loci in a patch's domain (X2)**: designed (step 6, #780 L1). A constant twist's
   contacts are fixed on the tool, so several contacts per tool point are K2's (L3); what X2 leaves
-  under a constant twist is a ring's two roots meeting on a face, a torus slid at a lean, moved to
-  its own issue. *A sheet meeting itself far along it (X5) is built*: a ball screwed past a turn at
+  under a constant twist is a ring's two roots meeting on a face, a torus slid at a lean: *built for a
+  whole ring* (#805), read across the branch locus in the angle chart, its inner contour's fold
+  refused by name; a bull-nose's round waits on the touches at its seams. *A sheet meeting itself far along it (X5) is built*: a ball screwed past a turn at
   a lead short of its diameter, its pipe in stretches met along the helices where it returns
   (`tests/swept_loci.rs`). A pipe that folds (a ball reaching its helix's radius of curvature) is
   refused by name.

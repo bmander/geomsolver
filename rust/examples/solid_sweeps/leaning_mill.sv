@@ -12,7 +12,7 @@
 // own `3π` and `100/360` of `∫ π (ρ_max² − ρ_min²) dz`, the volume it sweeps turned whole.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (turns)
 

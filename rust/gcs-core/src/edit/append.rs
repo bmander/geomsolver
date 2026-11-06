@@ -104,6 +104,36 @@ pub fn add_use(prog: &Program, name: &str) -> Edit {
 
 /// A `use` line written where `add_use` puts one: after the last `use` the document writes, or
 /// else before its first statement (below a heading comment and `unit`).
+/// The `use` of `module` naming `words` bare (§14.4): a line of its own where the document has
+/// none (where `add_use` would put one), the names it lacks added to one it has (`use std.solids`
+/// grows `(cut)`, `use std.rounds (round)` grows `, chamfer`), nothing where it names them all.
+pub(super) fn imported(prog: &Program, module: &str, words: &[&str]) -> Splice {
+    let text = prog.text();
+    let Some(u) = prog.uses.iter().find(|u| u.name == module && (u.span.hi as usize) <= text.len())
+    else {
+        let list = match words {
+            [] => String::new(),
+            _ => format!(" ({})", words.join(", ")),
+        };
+        return use_line(prog, &format!("use {module}{list}"));
+    };
+    let lacking: Vec<&str> = words.iter().copied()
+        .filter(|w| !u.names.iter().any(|n| n.text == *w))
+        .collect();
+    let (lo, hi) = (u.span.lo as usize, u.span.hi as usize);
+    let at = match (lacking.is_empty(), u.names.last()) {
+        (true, _) => hi,
+        (false, Some(n)) => n.span.hi as usize,
+        (false, None) => lo + text[lo..hi].trim_end().len(),
+    };
+    let with = match (lacking.is_empty(), u.names.is_empty()) {
+        (true, _) => String::new(),
+        (false, false) => format!(", {}", lacking.join(", ")),
+        (false, true) => format!(" ({})", lacking.join(", ")),
+    };
+    Splice::within(text, u.span, Span::new(at, at), &with)
+}
+
 pub(super) fn use_line(prog: &Program, line: &str) -> Splice {
     let text = prog.text();
     let at = match prog.uses.iter().map(|u| u.span.hi as usize).filter(|&hi| hi <= text.len()).max() {

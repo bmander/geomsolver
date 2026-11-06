@@ -1,7 +1,7 @@
 // One source cutter, placed by a frame's turn at each index.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (on_u)
 use std.motion (turns)
 

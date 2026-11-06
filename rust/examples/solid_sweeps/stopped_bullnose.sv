@@ -11,7 +11,7 @@
 // covers the sector's angles from 0 to `a + 30°`: the ring loses `∫∫ ρ (a + π/6) dρ dz`.
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns)
 

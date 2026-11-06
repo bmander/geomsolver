@@ -14,7 +14,7 @@
 // (`hub.bar round(r: r) hub.post`) to see the arc filled as well.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (round)
 
 r := 3mm   // the fillets' radius

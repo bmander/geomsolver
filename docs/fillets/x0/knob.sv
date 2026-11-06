@@ -3,7 +3,7 @@
 // (cylinder against sphere) are both filled. Does not parse yet.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 in std.front {
   a0 := point
   a1 := point

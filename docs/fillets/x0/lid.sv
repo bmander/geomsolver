@@ -5,7 +5,7 @@
 // (X2 checks that). Does not parse yet.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 in std.front {
   // a block 40 × 24 × 12
   b0 := point

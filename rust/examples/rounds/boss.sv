@@ -8,7 +8,7 @@
 // round the boss's top rim too: an edge among the boss's own faces, convex, so cut.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (round)
 
 r := 3mm   // the fillet's radius

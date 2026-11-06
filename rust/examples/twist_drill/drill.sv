@@ -11,7 +11,7 @@
 // as the wheel lifts away, which is no rigid motion.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.motion (screws, turns)
 use configuration
 use wheel

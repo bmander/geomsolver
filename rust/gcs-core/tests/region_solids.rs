@@ -33,7 +33,7 @@ fn holds(e: &Elaborated, name: &str, want: f64, inside: &[[f64; 3]], outside: &[
 }
 
 /// A point held at the origin, the axis up from it, and a plane at height 10 square to it.
-const FRAME: &str = "unit mm\nuse std\nuse std.sets\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
+const FRAME: &str = "unit mm\nuse std\nuse std.solids (cut)\nuse std.sets\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
                      t := point hint((0, 0, 1))\nfix((0, 0, 1)) t\nup := line(c, t)\n\
                      lu := axis hint(dir: (1, 0, 0))\nlv := axis hint(dir: (0, 1, 0))\n\
                      fix(dir == (1, 0, 0), origin == (0, 0, 10)) lu\n\

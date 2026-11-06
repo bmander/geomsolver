@@ -18,7 +18,7 @@
 // corners).
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 
 r := 3mm
 

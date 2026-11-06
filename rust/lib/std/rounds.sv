@@ -2,6 +2,7 @@
 // a solid grown, a solid shelled (`use std.rounds (shell)`), and a round or a chamfer as one more
 // bound of a region.
 
+
 // -- rounds and chamfers (#183) -----------------------------------------------------------------
 //
 // What a round or a chamfer means is said here, over the language's own words: faces as sets (a
@@ -137,18 +138,18 @@ A round(r) B := {
       when b != a and b meets a {
         run := Run(a, b, r: r)
         taken := solid(run)
-        taken cut A.body
+        A.body and { p | p not in taken }
         fill := Fill(a, b, r: r)
         filled := solid(fill)
-        filled union A.body
+        A.body or { p | p in filled }
         repeat c in A {
           when c in B and c != a and c != b and c meets a and c meets b {
             corner := Corner(a, b, c, r: r)
             cornered := solid(corner)
-            cornered cut A.body
+            A.body and { p | p not in cornered }
             corner_fill := CornerFill(a, b, c, r: r)
             corner_filled := solid(corner_fill)
-            corner_filled union A.body
+            A.body or { p | p in corner_filled }
           }
         }
       }
@@ -165,10 +166,10 @@ A chamfer(d) B := {
       when b != a and b meets a {
         flat := Flat(a, b, la: d, lb: d)
         taken := solid(flat)
-        taken cut A.body
+        A.body and { p | p not in taken }
         flat_fill := FlatFill(a, b, la: d, lb: d)
         filled := solid(flat_fill)
-        filled union A.body
+        A.body or { p | p in filled }
       }
     }
   }
@@ -230,16 +231,16 @@ A shell(t) B := {
     when w not in A {
       wall := { p | p distance(<= t) w }
       walled := solid(wall)
-      walled cut cavity
+      cavity and { p | p not in walled }
     }
   }
-  cavity cut B.body
+  B.body and { p | p not in cavity }
 }
 shell(t) X := {
   beyond := { c | c not in X }
   kept := { p | p in X; distance(p, beyond) >= t }
   cavity := solid(kept)
-  cavity cut X.body
+  X.body and { p | p not in cavity }
 }
 
 // -- in a region's body ---------------------------------------------------------------------------

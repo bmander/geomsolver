@@ -9,7 +9,7 @@
 // Its volume is the ball less six caps, π(1250 − 2000√2/3) = 965.069.
 unit mm
 use std
-use std.solids
+use std.solids (common)
 use std.sets
 
 side := 10mm   // the cube's side

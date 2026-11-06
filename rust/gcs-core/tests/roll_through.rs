@@ -13,6 +13,7 @@ fn balls(at: &str, reading: &str) -> String {
     format!("\
 unit mm
 use std
+use std.solids (cut)
 use std.sets
 use std.motion (turns)
 tool_c := point

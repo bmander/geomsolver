@@ -17,7 +17,7 @@ fn field(e: &program::Elaborated,name: &str) -> SpatialField {
 const SPHERE: &str = "\
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.motion (turns)
 in std.front {
 o := point
@@ -78,7 +78,7 @@ fn source_bodies_holes_and_nested_placements_keep_material_and_finite_support() 
     let e = read("\
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.motion (turns)
 in std.front {
 o := point
@@ -126,7 +126,7 @@ fn major_arcs_and_reversed_edges_keep_their_finite_sector() {
     let source = "\
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.motion (turns)
 in std.front {
 o := point
@@ -195,7 +195,7 @@ fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
     let e = read("\
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.motion (turns)
 in std.front {
 o := point

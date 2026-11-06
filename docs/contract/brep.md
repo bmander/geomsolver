@@ -132,7 +132,14 @@ level plane's cut of a leaning frustum and the circle it cuts from a surface of 
 to it were sampled apart; `swept_turned::a_plane_cutting_every_generator_of_a_cone_meets_it_in_an_ellipse`),
 and a circle and an ellipse in one plane cross where the ellipse meets the circle's cylinder,
 certified, a touch one root (`query::curve_curve`;
-`swept_turned::a_circle_and_an_ellipse_in_one_plane_cross_where_certified`). Two coaxial surfaces of revolution meet in circles where their meridians cross in one half-plane,
+`swept_turned::a_circle_and_an_ellipse_in_one_plane_cross_where_certified`). The cylinder over a slid
+torus's apparent contour (#805, `ssi`'s `slid_meeting`) meets the torus at a pose along the slide in
+its contact there, touching (each line along the slide through it meeting the torus there alone,
+short of the fold), a plane square to the slide in the contour carried onto it, a plane along it in
+lines along it through the contour's crossings (isolated certified; a touch left traced), a plane
+leaning to it in the contour sheared along the slide onto it (`affine::MappedCurve`), and another
+contour's cylinder along the same slide nowhere where the two contours stand apart
+(`swept_slid::a_slid_contours_cylinder_meets_its_neighbours_in_closed_form`). Two coaxial surfaces of revolution meet in circles where their meridians cross in one half-plane,
 two spline meridians too (a turned contact's meridian read as a spline's, #780 C3) (`ssi::spline_spline`: the first read against the second's signed distance,
 its nearest point's normal; left traced where the two run together over a stretch), so two swept
 edges' hyperboloids meet in exact circles
@@ -178,7 +185,10 @@ switch): a line meets a plane, a cone, a torus and a conic turned (`query::line_
 quartic in the meridian's own parameter) as polynomials along it, and a turned contact's meridian
 (#780 C3, `query::line_turned`) by the same function of the meridian's parameter isolated with its
 first two derivatives bounded by the meridian's jets read in outward-rounded intervals
-(`swept_turned::a_line_meets_a_turned_contacts_surface_where_sampling_finds_it`), a cylinder and a ball as a
+(`swept_turned::a_line_meets_a_turned_contacts_surface_where_sampling_finds_it`), and the cylinder a
+slid torus's contact sweeps (#805, `query::line_slid`) where the line seen along the slide meets
+the contour in the plane square to it, isolated with the contour's jets bounded in outward intervals
+(`swept_slid::a_line_meets_a_slid_contours_cylinder_where_a_scan_finds_it`), a cylinder and a ball as a
 chord, a swept sheet or a B-spline net by the three-unknown search (`query::curve_sheet`, the
 sheet's second derivatives bounded by `blend_bounds` and `Net::second_bounds`); a circle or an
 ellipse meets a plane, a cylinder, a ball, a cone and a torus as the surface's algebraic form
@@ -523,6 +533,25 @@ round the circle, a touch where it only reaches nought (`screwed_circle_round`).
 settles** (`props`'s `settled`): read over its pieces, then twice as many, until two readings agree
 to rounding, the coarser kept — a ball's great circle passing within a few degrees of a pole sweeps
 half a turn of `u` there, and a sixteenth of a turn a piece left a ball's piece 0.2% off its area.
+**A traced edge inverted onto its face is measured across planes** (`props`'s `along_trace`,
+#798): Green's integral is the curve's, however parameterised, so it is read not by the trace's
+own parameter — which counts its points, its rate stepping at each, every stretch a rule of its own
+and each node three projections onto both surfaces — but over spans of its points whose chords
+turn within 15° of the first, each by its distance `σ` along its chord `n`: a node is where the
+curve crosses the plane `n·x = σ` (`Traced::across`, Newton on both surfaces and the plane), its
+rate `T / (T·n)` read at that point, as exact as the trace, so each span is one smooth integrand.
+It is read on cells of its stretches, doubled until two readings agree to rounding or each cell is
+one stretch, so its nodes crowd where the march crowded its points: spread evenly along the chord,
+they missed the turn at a span's end, the tip of the sliver a plane through a screwed rim's ramp's
+axis cuts from it, by 2e-5 of the span, and that ramp's volume, held to its closed form within 1e-6
+(`swept_closed::planes_through_the_axis_cut_a_screwed_rims_ramp_in_closed_form`), now holds it to
+3e-14 where the stretches' central differences held it to 3e-7. A span not crossed as a graph over
+its chord (its rate past 60° from it, or a crossing off the stretch it was sought in) is read
+stretch by stretch as before. A canal's
+meeting with an end disc, a thousand stretches, measured in 9 s and does in 30 ms, and the same
+whichever way the solid is moved, where the stretches' central differences moved it by 2e-10
+(`brep::a_rod_grooved_by_a_balls_helix_is_measured_along_its_traced_meetings`, brep-bench's
+swept/ball-thread-groove, its volume and areas in under 5 s, its end discs one area).
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it

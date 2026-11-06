@@ -6,7 +6,7 @@
 // the groove takes that section's area from every millimetre of the rod.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (screws)
 

@@ -119,6 +119,12 @@ impl<T: Num> Jet<T> {
     }
 }
 
+impl Jet<Iv> {
+    /// The most magnitude its first and second derivatives hold, unbounded where a reading left its
+    /// domain: what a root's isolation bounds its function by (`util::isolate::roots`).
+    pub fn most(self) -> [f64;2] { [self.d.most().unwrap_or(f64::INFINITY),self.dd.most().unwrap_or(f64::INFINITY)] }
+}
+
 impl<T: Num> Add for Jet<T> { type Output = Jet<T>; fn add(self,b: Jet<T>) -> Jet<T> { Jet {v:self.v+b.v,d:self.d+b.d,dd:self.dd+b.dd} } }
 impl<T: Num> Sub for Jet<T> { type Output = Jet<T>; fn sub(self,b: Jet<T>) -> Jet<T> { Jet {v:self.v-b.v,d:self.d-b.d,dd:self.dd-b.dd} } }
 impl<T: Num> Neg for Jet<T> { type Output = Jet<T>; fn neg(self) -> Jet<T> { Jet {v:-self.v,d:-self.d,dd:-self.dd} } }
@@ -138,9 +144,11 @@ impl<T: Num> Div for Jet<T> {
     }
 }
 
-type J3<T> = [Jet<T>;3];
+/// A point's three coordinates, each with its jet.
+pub type J3<T> = [Jet<T>;3];
 
-fn dot3<T: Num>(a: J3<T>,b: J3<T>) -> Jet<T> { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
+/// `a · b`, its jet.
+pub(crate) fn dot3<T: Num>(a: J3<T>,b: J3<T>) -> Jet<T> { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
 fn cross3<T: Num>(a: J3<T>,b: J3<T>) -> J3<T> { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
 fn constant<T: Num>(x: V) -> J3<T> { x.map(Jet::of) }
 
@@ -219,8 +227,8 @@ impl Rim {
     /// axis and its centre, where the circle's two halves would turn into one surface).
     pub fn simple(&self,eps: f64) -> bool {
         rim_inverse(self.o,self.x,self.y,eps*(1.+dot(self.o,self.o).sqrt())/self.r).is_some()
-            && pieces([0.,std::f64::consts::TAU],64).all(|w| {
-                let p = self.point(Jet::at(w));
+            && pieces([0.,std::f64::consts::TAU],64).all(|[a,b]| {
+                let p = self.point(Jet::at(Iv::new(a,b)));
                 (p[0].v*p[0].v+p[1].v*p[1].v).bounds().is_some_and(|[lo,_]| lo > eps*eps)
             })
     }
@@ -388,8 +396,8 @@ impl Section {
         if !(n[0].hypot(n[1]) > 1e-9) { return None }
         let mut k = Section {of,n,d,v:[span[0].min(span[1]),span[0].max(span[1])],ends:[0.;2]};
         let mut sign = 0.;
-        let one_way = pieces(k.v,64).all(|piece| {
-            let rate = match k.c(Jet::at(piece)).d.bounds() { Some([lo,_]) if lo > 0. => 1.,Some([_,hi]) if hi < 0. => -1.,_ => 0. };
+        let one_way = pieces(k.v,64).all(|[a,b]| {
+            let rate = match k.c(Jet::at(Iv::new(a,b))).d.bounds() { Some([lo,_]) if lo > 0. => 1.,Some([_,hi]) if hi < 0. => -1.,_ => 0. };
             let held = rate != 0. && (sign == 0. || rate == sign);
             sign = rate;
             held
@@ -456,22 +464,11 @@ impl Source {
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Turned { pub frame: Frame,pub source: Source,pub span: [f64;2],pub posed: bool }
 
-/// `[a, b]` in `n` pieces, each an interval.
-fn pieces([a,b]: [f64;2],n: usize) -> impl Iterator<Item=Iv> {
-    (0..n).map(move |k| Iv::new(a+(b-a)*k as f64/n as f64,a+(b-a)*(k+1) as f64/n as f64))
-}
-
 impl Turned {
     /// The meridian of `contact` turned about `frame`'s axis, over `span`.
     pub fn meridian(frame: Frame,contact: Contact,span: [f64;2]) -> Turned { Turned {frame,source:Source::Contact(contact),span,posed:false} }
     /// The meridian of the sharp circle `rim` turned about `frame`'s axis, over the angles `span`.
     pub fn rim(frame: Frame,rim: Rim,span: [f64;2]) -> Turned { Turned {frame,source:Source::Rim(rim),span,posed:false} }
-    /// Its period, where it is closed (#780 L2): read over a whole period of its source's parameter
-    /// — a sharp circle's meridian round the circle (a ring, periodic round its meridian as a torus
-    /// is), a side's crossing with its rim's ring, a plane's cut of a contact's surface all round.
-    pub fn period(&self) -> Option<f64> {
-        self.source.period().filter(|&p| (self.span[1]-self.span[0]-p).abs() <= 1e-12)
-    }
     /// The plane it lies in, where it is a plane's cut (`Section`): its unit normal and offset, in
     /// the world.
     pub fn plane(&self) -> Option<(V,f64)> {
@@ -481,18 +478,6 @@ impl Turned {
     }
     /// The round face's contact it is the meridian of, if it is one's.
     pub fn contact(&self) -> Option<Contact> { match self.source { Source::Contact(c) => Some(c),_ => None } }
-    /// Its point at the jet `v`, in its frame's coordinates: the source's own, posed, else
-    /// `(ρ, 0, z)`.
-    fn local<T: Num>(&self,v: Jet<T>) -> J3<T> {
-        if self.posed { return self.source.point(v) }
-        let [r,z] = self.source.meridian(v);
-        [r,Jet::of(0.),z]
-    }
-    /// `M`, `M'`, `M''` at `v`.
-    pub fn d2(&self,v: f64) -> (V,V,V) {
-        let (f,l) = (&self.frame,self.local(Jet::at(v)));
-        (f.at(l.map(|j| j.v)),f.dir(l.map(|j| j.d)),f.dir(l.map(|j| j.dd)))
-    }
     /// `ρ` and `z` with their first two derivatives over the stretch `[a, b]` of `v`, each held in
     /// an interval (none where a reading left its domain over it).
     pub fn bounded(&self,[a,b]: [f64;2]) -> Option<[[[f64;2];3];2]> {
@@ -507,7 +492,7 @@ impl Turned {
     pub fn defined(&self,span: [f64;2]) -> bool {
         let Source::Contact(contact) = self.source else { return false };
         let mut sign = 0.;
-        pieces(span,64).all(|v| {
+        pieces(span,64).map(|[a,b]| Iv::new(a,b)).all(|v| {
             let (x,disc) = contact.point(Jet::at(v));
             let rho2 = x[0].v*x[0].v+x[1].v*x[1].v;
             let climb = match x[2].d.bounds() { Some([lo,_]) if lo > 0. => 1.,Some([_,hi]) if hi < 0. => -1.,_ => 0. };
@@ -516,59 +501,6 @@ impl Turned {
             held && disc.v.bounds().is_some_and(|[lo,_]| lo > 0.) && rho2.bounds().is_some_and(|[lo,_]| lo > 0.)
         })
     }
-    /// Newton on `(M − p) · M'` from `v`, held to the span — or, closed (#780 L2), read round its
-    /// period, across the place its span starts.
-    pub fn newton(&self,p: V,mut v: f64) -> f64 {
-        let [a,b] = self.span;
-        let period = self.period();
-        for _ in 0..30 {
-            let (x,d,dd) = self.d2(v);
-            let e = sub(x,p);
-            let h = dot(d,d)+dot(e,dd);
-            if !(h > 0.) { break }
-            let step = v-dot(e,d)/h;
-            let next = match period { Some(per) => crate::geom::around(step,a.min(b),per),None => step.clamp(a.min(b),a.max(b)) };
-            if !next.is_finite() { break }
-            if (next-v).abs() <= 1e-15*(1.+v.abs()) { v = next; break }
-            v = next;
-        }
-        v
-    }
-    /// The parameter of its point nearest `p`: the nearest of samples across the span (each read
-    /// once, its point alone), then `newton`.
-    pub fn inverse(&self,p: V) -> f64 {
-        let [a,b] = self.span;
-        let off = |v: f64| { let l = self.local(Jet::<f64>::of(v)).map(|j| j.v); let q = sub(self.frame.at(l),p); dot(q,q) };
-        let v = (0..=64).map(|k| a+(b-a)*k as f64/64.).map(|v| (off(v),v)).min_by(|x,y| x.0.total_cmp(&y.0)).map_or(a,|x| x.1);
-        self.newton(p,v)
-    }
-    /// A box about it over `[t0, t1]`, never smaller than it: its point held in intervals over each
-    /// of sixteen pieces, each box's corners placed; where a reading leaves its domain, its samples
-    /// grown by its speed across a piece.
-    pub fn bounds(&self,[t0,t1]: [f64;2]) -> Box3 {
-        const PIECES: usize = 16;
-        let mut out = crate::geom::EMPTY;
-        let mut speed = None;
-        for (k,v) in pieces([t0,t1],PIECES).enumerate() {
-            let l = self.local(Jet::at(v));
-            match (l[0].v.bounds(),l[1].v.bounds(),l[2].v.bounds()) {
-                (Some(x),Some(y),Some(z)) => for c in 0..8 {
-                    crate::geom::include(&mut out,self.frame.at([x[c&1],y[(c>>1)&1],z[c>>2]]))
-                },
-                _ => {
-                    let (s,t) = (t0+(t1-t0)*k as f64/PIECES as f64,t0+(t1-t0)*(k+1) as f64/PIECES as f64);
-                    let reach = (t-s).abs()**speed.get_or_insert_with(|| self.speed());
-                    for v in [s,t] { let p = self.d2(v).0; for k in 0..3 { let mut q = p; q[k] -= reach; crate::geom::include(&mut out,q); q[k] += 2.*reach; crate::geom::include(&mut out,q) } }
-                }
-            }
-        }
-        out
-    }
-    /// The most length per unit of `v`, read at 65 points of the span.
-    pub fn speed(&self) -> f64 {
-        let [a,b] = self.span;
-        (0..=64).map(|k| crate::util::space::norm(self.d2(a+(b-a)*k as f64/64.).1)).fold(0.,f64::max)
-    }
     /// The same curve carried by the rigid `m`, or a meridian reflected by an improper one: its
     /// frame carried (the half-plane's points only read its `x` and `z`), its contact read in it as
     /// before. A posed contact is reflected nowhere yet: none where `m` is improper.
@@ -576,5 +508,114 @@ impl Turned {
         let f = self.frame.moved(m);
         if f.right() { return Some(Turned {frame:f,..*self}) }
         (!self.posed).then(|| Turned {frame:f.rehanded(true).0,..*self})
+    }
+}
+
+impl Exact for Turned {
+    fn frame(&self) -> &Frame { &self.frame }
+    fn span(&self) -> [f64;2] { self.span }
+    /// Its point at the jet `v`, in its frame's coordinates: the source's own, posed, else
+    /// `(ρ, 0, z)`.
+    fn local<T: Num>(&self,v: Jet<T>) -> J3<T> {
+        if self.posed { return self.source.point(v) }
+        let [r,z] = self.source.meridian(v);
+        [r,Jet::of(0.),z]
+    }
+    /// Its period, where it is closed (#780 L2): read over a whole period of its source's parameter
+    /// — a sharp circle's meridian round the circle (a ring, periodic round its meridian as a torus
+    /// is), a side's crossing with its rim's ring, a plane's cut of a contact's surface all round.
+    fn period(&self) -> Option<f64> {
+        self.source.period().filter(|&p| (self.span[1]-self.span[0]-p).abs() <= 1e-12)
+    }
+}
+
+/// `[a, b]` in `n` pieces.
+pub(crate) fn pieces([a,b]: [f64;2],n: usize) -> impl Iterator<Item=[f64;2]> {
+    (0..n).map(move |k| [a+(b-a)*k as f64/n as f64,a+(b-a)*(k+1) as f64/n as f64])
+}
+
+/// **A curve read exactly in a frame** (#780 C3's turned contact, #805's slid one): its point a jet
+/// of its parameter in its frame's coordinates (`local`), read in floats or in outward-rounded
+/// intervals, over its span. What every such curve reads off that, written once.
+pub trait Exact {
+    /// The frame its points are read in.
+    fn frame(&self) -> &Frame;
+    /// The stretch of its parameter it runs over.
+    fn span(&self) -> [f64;2];
+    /// Its point at the jet `t`, in its frame's coordinates.
+    fn local<T: Num>(&self,t: Jet<T>) -> J3<T>;
+    /// The period of its parameter, where it is closed (#780 L2): none by default.
+    fn period(&self) -> Option<f64> { None }
+    /// `C`, `C'`, `C''` at `t`.
+    fn d2(&self,t: f64) -> (V,V,V) {
+        let (f,l) = (self.frame(),self.local(Jet::at(t)));
+        (f.at(l.map(|j| j.v)),f.dir(l.map(|j| j.d)),f.dir(l.map(|j| j.dd)))
+    }
+    /// Newton on `(C − p) · C'` from `t`, held to the span — or, closed (#780 L2), read round its
+    /// period, across the place its span starts.
+    fn newton(&self,p: V,mut t: f64) -> f64 {
+        let [a,b] = self.span();
+        let period = self.period();
+        for _ in 0..30 {
+            let (x,d,dd) = self.d2(t);
+            let e = sub(x,p);
+            let h = dot(d,d)+dot(e,dd);
+            if !(h > 0.) { break }
+            let step = t-dot(e,d)/h;
+            let next = match period { Some(per) => crate::geom::around(step,a.min(b),per),None => step.clamp(a.min(b),a.max(b)) };
+            if !next.is_finite() { break }
+            if (next-t).abs() <= 1e-15*(1.+t.abs()) { t = next; break }
+            t = next;
+        }
+        t
+    }
+    /// The parameter of its point nearest `p`: the nearest of samples across the span (each read
+    /// once, its point alone), then `newton`.
+    fn inverse(&self,p: V) -> f64 {
+        let [a,b] = self.span();
+        let off = |t: f64| { let l = self.local(Jet::<f64>::of(t)).map(|j| j.v); let q = sub(self.frame().at(l),p); dot(q,q) };
+        let t = (0..=64).map(|k| a+(b-a)*k as f64/64.).map(|t| (off(t),t)).min_by(|x,y| x.0.total_cmp(&y.0)).map_or(a,|x| x.1);
+        self.newton(p,t)
+    }
+    /// A box about it over `[t0, t1]`, never smaller than it: its point held in intervals over each
+    /// of sixteen pieces, each box's corners placed; where a reading leaves its domain, its samples
+    /// grown by its speed across a piece.
+    fn bounds(&self,[t0,t1]: [f64;2]) -> Box3 {
+        let mut out = crate::geom::EMPTY;
+        let mut speed = None;
+        for [s,t] in pieces([t0,t1],16) {
+            let l = self.local(Jet::at(Iv::new(s,t)));
+            match (l[0].v.bounds(),l[1].v.bounds(),l[2].v.bounds()) {
+                (Some(x),Some(y),Some(z)) => for c in 0..8 {
+                    crate::geom::include(&mut out,self.frame().at([x[c&1],y[(c>>1)&1],z[c>>2]]))
+                },
+                _ => {
+                    let reach = (t-s).abs()**speed.get_or_insert_with(|| self.speed());
+                    for v in [s,t] { let p = self.d2(v).0; for k in 0..3 { let mut q = p; q[k] -= reach; crate::geom::include(&mut out,q); q[k] += 2.*reach; crate::geom::include(&mut out,q) } }
+                }
+            }
+        }
+        out
+    }
+    /// **Where it crosses the plane through `o` square to the unit `n`** (both in space), as its
+    /// parameters: the roots of `(C(t) − o) · n` isolated (`util::isolate::roots`) from the first two
+    /// derivatives bounded over each stretch by its jets read in outward-rounded intervals, a stretch
+    /// it cannot part a touch where `near` says so — what a level line meets a turned contact's
+    /// surface at (`query::line_turned`), a line meets a slid contour's cylinder at
+    /// (`query::line_slid`, the plane through the line along the slide), and a plane along the slide
+    /// meets that cylinder in (`ssi`'s `slid_meeting`).
+    fn crossings(&self,o: V,n: V,near: &dyn Fn(f64) -> bool) -> Result<Vec<crate::util::roots::Root>,crate::util::isolate::GaveUp> {
+        let (o,n) = (self.frame().local(o),self.frame().dir_local(n));
+        fn height<T: Num>(l: J3<T>,o: V,n: V) -> Jet<T> { dot3(std::array::from_fn(|i| l[i]-Jet::of(o[i])),constant(n)) }
+        let at = |t: f64| height(self.local(Jet::at(t)),o,n);
+        let bound = |a: f64,b: f64| height(self.local(Jet::at(Iv::new(a,b))),o,n).most();
+        let [a,b] = self.span();
+        let (a,b) = (a.min(b),a.max(b));
+        crate::util::isolate::roots(&|t| at(t).v,&|t| at(t).d,&bound,[a,b],1e-12*(b-a).max(1e-300),near)
+    }
+    /// The most length per unit of its parameter, read at 65 points of the span.
+    fn speed(&self) -> f64 {
+        let [a,b] = self.span();
+        (0..=64).map(|k| crate::util::space::norm(self.d2(a+(b-a)*k as f64/64.).1)).fold(0.,f64::max)
     }
 }

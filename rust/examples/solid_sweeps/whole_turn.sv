@@ -10,7 +10,7 @@
 // (Pappus).
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords)
 use std.motion (turns)
 

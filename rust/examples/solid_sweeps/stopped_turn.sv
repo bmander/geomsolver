@@ -10,7 +10,7 @@
 // `√(11² + ½²)`.
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns)
 

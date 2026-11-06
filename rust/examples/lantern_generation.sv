@@ -7,7 +7,7 @@
 
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords, on_u)
 use std.motion (turns, rolls)
 wheel_pitch := 16mm

@@ -23,7 +23,7 @@
 
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (coords, offset, right_of)
 use std.motion (spins, slides)
 

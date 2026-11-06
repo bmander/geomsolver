@@ -92,7 +92,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   append over names (FFI `gcs_elab_add_face`/`_solid`/`_body_word`, `Document.addFace`/
   `addSolid`/`addBodyWord`), each **held to the elaborator before it is handed back**
   (`append_checked`: an error inside the appended text refuses the edit in its words; one
-  elsewhere was there before the gesture).  A hole loop that is not one circle is written as a
+  elsewhere was there before the gesture).  A body word written is named in the file's `use
+  std.solids` ([0.206], `edit::append::imported`: grown, or a line of its own).  A hole loop that
+  is not one circle is written as a
   face first: **a face is a hole as it stands** (`holes: h`, its outer loop; one holed itself, or
   declared after, is E080).  `edit::remove` dooms a body word or a sweep naming a gone solid.
   Fresh names pass every bound name (`taken_names`).  `tests/edit_solids.rs` is the gate.
@@ -462,12 +464,12 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   words are known by the text: those it defines or names in a `use (…)` (`relation_words`); units
   join their number's run; `expr`'s functions, constants and measures are `builtin`.
 - **The notation of sets is drawn as its signs, and written as its words** (#783 P2): `in` as ∈,
-  `not in` as ∉, `some` as ∃.  Which runs are signs is the core's (`syntax::ligatures`, FFI
+  `not in` as ∉, `some` as ∃, and `every` as ∀ ([0.206], read in a claim).  Which runs are signs is the core's (`syntax::ligatures`, FFI
   `gcs_program_ligatures`, `core/program.ts::ligatures`), **standing on the colouring's scan**: `in`
   is one where it stands between two operands and is tinted a word (`p in S`, `t in (a, b)`,
   `repeat e in S`, `p := point in P`), so the block `in P { … }`, a label `in:`, a name and a word
-  in a comment are none; `not in` is one sign over both words; `some` one before the name it binds
-  and its `:` or `in`; `or` stays a word.  The document, the clipboard, undo and every message keep
+  in a comment are none; `not in` is one sign over both words; `some` and `every` one before the
+  name each binds and its `:` or `in`; `or` stays a word.  The document, the clipboard, undo and every message keep
   the ASCII — there is no second spelling to parse.  The editor draws a sign over exactly its
   words' characters (`CodeEditor.ligating`): the words stay in the copy with their ink made
   invisible (`-webkit-text-fill-color`) inside a `.ligature` box whose `::after` is the sign,

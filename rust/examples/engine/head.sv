@@ -24,7 +24,7 @@ use engine.dims (D, P, back, camcap, camh, camx, deck, dev, div, dn_e, dn_i, ece
 use engine.parts
 use engine.valvetrain
 use std
-use std.solids
+use std.solids (cut, union, common)
 use std.place (horizontal, offset, right_of)
 
 // the camshafts' own sizes: the shaft between its journals, and each lobe's width along the axis,

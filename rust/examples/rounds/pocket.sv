@@ -9,7 +9,7 @@
 // convex, so that round cuts.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.rounds (round)
 
 r := 1.5mm   // the pocket's inside radius

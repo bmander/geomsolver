@@ -140,7 +140,7 @@ fn generic_sheet_reproduces_the_gear_tooth_space() { single_space("gear",117.137
 /// closed-form torus check of the arrangement itself lives in `cells.rs`.
 const BEAD: &str = "\
 use std
-use std.solids
+use std.solids (cut)
 
 in std.front {
 private bc := point

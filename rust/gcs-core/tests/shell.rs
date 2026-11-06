@@ -16,7 +16,7 @@ use crate::common::{close, ent, text::solved};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), standing 12 deep along y; an L of two
 /// steps whose inner edge, along y through (10, 110), is concave.
-const BLOCKS: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.front {\n\
+const BLOCKS: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (shell)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -32,7 +32,7 @@ const BLOCKS: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\n
     step := solid(std.solids.Prism(ell, from: -12mm, to: 0))\n";
 
 /// On the top plane a plinth: a slab 40 square and 10 thick, a boss 10 square standing 5 on it.
-const PLINTH: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.top {\n\
+const PLINTH: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (shell)\nin std.top {\n\
     q0 := point\nq1 := point\nq2 := point\nq3 := point\n\
     fix((0, 0)) q0\nfix((40, 0)) q1\nfix((40, 40)) q2\nfix((0, 40)) q3\n\
     (qs := line(q0, q1)) -> (qe := line(q1, q2)) -> (qn := line(q2, q3)) -> (qw := line(q3, q0)) -> close\n\
@@ -46,7 +46,7 @@ const PLINTH: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\n
 
 /// On the top plane a tray: a slab 40 square and 10 thick, a pocket 20 × 16 and 4 deep cut into
 /// its top.
-const STANDING: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.top {\n\
+const STANDING: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (shell)\nin std.top {\n\
     q0 := point\nq1 := point\nq2 := point\nq3 := point\n\
     fix((0, 0)) q0\nfix((40, 0)) q1\nfix((40, 40)) q2\nfix((0, 40)) q3\n\
     (qs := line(q0, q1)) -> (qe := line(q1, q2)) -> (qn := line(q2, q3)) -> (qw := line(q3, q0)) -> close\n\
@@ -59,7 +59,7 @@ const STANDING: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)
     cavity := solid(std.solids.Prism(pocket, from: 6mm, to: 11mm))\ncavity cut tray\n";
 
 /// On the top plane a plate 40 square and 5 thick with a bore of radius 6 through it.
-const BORED: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.top {\n\
+const BORED: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (shell)\nin std.top {\n\
     p0 := point\np1 := point\np2 := point\np3 := point\n\
     fix((80, -20)) p0\nfix((120, -20)) p1\nfix((120, 20)) p2\nfix((80, 20)) p3\n\
     (ps := line(p0, p1)) -> (pe := line(p1, p2)) -> (pn := line(p2, p3)) -> (pw := line(p3, p0)) -> close\n\
@@ -70,7 +70,7 @@ const BORED: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\ni
 
 /// On the front plane a hopper's section, a pentagon whose west wall leans in at 45° under its top,
 /// standing 12 deep.
-const HOPPER: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (shell)\nin std.front {\n\
+const HOPPER: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (shell)\nin std.front {\n\
     h0 := point\nh1 := point\nh2 := point\nh3 := point\nh4 := point\n\
     fix((0, 0)) h0\nfix((30, 0)) h1\nfix((30, 20)) h2\nfix((10, 20)) h3\nfix((0, 10)) h4\n\
     (bottom := line(h0, h1)) -> (east := line(h1, h2)) -> (top := line(h2, h3)) -> (lean := line(h3, h4)) -> \

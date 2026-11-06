@@ -243,16 +243,16 @@ impl<'a> P<'a> {
                 let name = DeclName::Key(Name { text: format!("#a{at}"), span: Span::at(at) });
                 self.derived(name)
             }
-            // `bore cut cyl`, `boss union cyl` — the body rule's own words, and the one statement
-            // whose shape is two names with a word between them that is not a constraint.  Read
-            // by a lookahead rather than by `relation()`, since `cut` relates no geometry and
-            // has no residual to be settled into
+            // `body and { p | p not in bore }`, `body or { p | p in boss }` — more of an open
+            // body's set, said where it is not declared (#783 P3): the primitive the body words
+            // of `std.solids` are defined over (`bore cut body := …`).  Read by a lookahead past
+            // the dotted path, as a set written in place follows the word
+            _ if words::joined_at(&self.t, self.i) => self.joined(next_id),
+            // `through` and `bound`, the body words' spellings before 0.84, refused naming theirs
             // **past the dotted path, not past one token**: an operand may be a dotted path, so
             // the word after it is further away than one token — the lookahead `past_ref`
-            _ if self.past_ref(self.i).and_then(|j| self.t.get(j)).is_some_and(
-                |(t, _)| matches!(t, Tok::Ident(w) if w == "cut" || w == "union" || w == "common" || w == "bound"
-                    || w == "through"),
-            ) =>
+            _ if self.past_ref(self.i).and_then(|j| self.word_at(j))
+                .is_some_and(|w| w == "bound" || w == "through") =>
             {
                 self.body_word()
             }
@@ -406,34 +406,57 @@ impl<'a> P<'a> {
         }))
     }
 
-    /// `X union B`, `X cut B`, `X common B` — a body statement, its first operand next.
+    /// `X through B` and `X bound B`, the body words' retired spellings, refused naming theirs.
     fn body_word(&mut self) -> Option<StmtKind> {
-        let lo = self.here().lo as usize;
-        let what = self.refr()?;
-        let Some(Tok::Ident(w)) = self.peek().cloned() else {
-            self.fail("a body statement is `X union B`, `X cut B` or `X common B`");
-            return None;
-        };
-        if w == "through" {
+        self.refr()?;
+        if self.word_at(self.i) == Some("through") {
             self.fail("Boolean `through` is now `cut`: write `X cut B`; `through:` specifies a cutter's extent");
             return None;
         }
         // through 0.84 the intersection was `bound`, the word a dimension's bound is (#270)
-        if w == "bound" {
-            self.fail("the body word `bound` is now `common`: write `X common B`, the body keeping what \
-                       it has in common with `X`");
-            return None;
-        }
-        let word = BodyWord::parse(&w).unwrap_or(BodyWord::Common);
-        self.i += 1;
+        self.fail("the body word `bound` is now `common`: write `X common B`, the body keeping \
+                   what it has in common with `X`");
+        None
+    }
+
+    /// `B and { p | p not in x }`, `B and { p | p in x }`, `B or { p | p in x }` (#783 P3): more
+    /// of the open body `B`'s set, said where `B` is not declared — a conjunct (`and`), what is
+    /// cut from it or what it keeps in common, or a disjunct (`or`), what is in union with it.
+    /// The body is the points of its stock or of anything in union with it, and of every
+    /// conjunct: `(stock ∪ unions) ∖ cuts ∩ commons`, a formula, never an order of statements.
+    /// One membership of a solid is read in the set for now; it is the body rule's term
+    /// (`SolidRel`), which the printer writes back as the primitive.
+    fn joined(&mut self, next_id: &mut u32) -> Option<StmtKind> {
+        let lo = self.here().lo as usize;
         let body = self.refr()?;
+        let or = self.word_at(self.i) == Some("or");
+        self.i += 1;
+        let lit = self.set_lit(next_id)?;
+        // the membership, lowered by the notation (`syntax::notation`): `p in x` is `p inside x`
+        let member = match lit.body.as_slice() {
+            [Stmt { kind: StmtKind::Relation(r), .. }] => r.form.written().filter(|w| {
+                w.lowered == crate::syntax::Lowered::Set
+                    && matches!(w.ops.as_slice(), [p, _] if p.path.is_empty()
+                                && p.root.text == lit.bound.text)
+            }),
+            _ => None,
+        };
+        let read = member.and_then(|w| {
+            let not = match w.word.text.as_str() {
+                "inside" => false,
+                "outside" => true,
+                _ => return None,
+            };
+            BodyWord::of_joined(or, not).map(|word| (word, w.ops[1].clone()))
+        });
+        let Some((word, what)) = read else {
+            self.fail_at(lit.span, "more of a body's set is one membership of a solid: `B and { \
+                p | p not in x }` (what `x cut B` is), `B and { p | p in x }` (`x common B`), or \
+                `B or { p | p in x }` (`x union B`)");
+            return None;
+        };
         self.end_of_stmt();
-        Some(StmtKind::SolidRel(SolidRel {
-            word,
-            what,
-            body,
-            span: Span::new(lo, self.prev_hi()),
-        }))
+        Some(StmtKind::SolidRel(SolidRel { word, what, body, span: Span::new(lo, self.prev_hi()) }))
     }
 
     /// Whether the statement from here compares two sides outside every bracket (`<` or `>`).

@@ -11,7 +11,7 @@
 // point at radius r and height z where some point of the bar stands, read slice by slice.
 unit mm
 use std
-use std.solids
+use std.solids (cut, common)
 use std.place (coords)
 use std.motion (turns)
 

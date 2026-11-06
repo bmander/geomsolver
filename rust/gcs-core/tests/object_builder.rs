@@ -385,7 +385,7 @@ fn a_closed_sweep_builds_at_the_displays_samples() {
         "solid_sweeps/stopped_punch.sv".to_string(),"solid_sweeps/stopped_drum.sv".to_string()],true),4);
 }
 
-const BLOCK: &str = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
+const BLOCK: &str = "unit mm\nuse std\nuse std.solids (union)\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \
     length(40) l1\n  length(20) l2\n}\nblock := solid(std.solids.Prism(face(l1, l2, l3, l4), from: -10, to: 0))\n";
@@ -457,7 +457,7 @@ fn a_display_crosses_as_one_buffer_and_a_bad_one_is_refused() {
 }
 
 /// Two closed instances of one component, standing apart: one binding, placed twice.
-const PAIR: &str = "unit mm\nuse std\nuse std.solids\nuse std.place (offset)\ncomponent Plate(w: Length) {\n  in std.front {\n    \
+const PAIR: &str = "unit mm\nuse std\nuse std.solids (union)\nuse std.place (offset)\ncomponent Plate(w: Length) {\n  in std.front {\n    \
     a := point hint((1, 1))\n    b := point hint((w, 1))\n    c := point hint((w, w))\n    e := point hint((1, w))\n    \
     a offset(dx: 1mm, dy: 1mm) std.origin\n    b offset(dx: w, dy: 1mm) std.origin\n    c offset(dx: w, dy: w) std.origin\n    \
     e offset(dx: 1mm, dy: w) std.origin\n    ab := line(a, b)\n    bc := line(b, c)\n    ce := line(c, e)\n    \

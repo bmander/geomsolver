@@ -12,7 +12,7 @@
 // the face. Edit the rib's wall or the leg and apply (⌘↵).
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (round, chamfer)
 
 d := 2mm   // the chamfer's legs

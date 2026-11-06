@@ -15,7 +15,7 @@ use std::f64::consts::{PI, TAU};
 use crate::common::{ent, text::solved};
 
 /// A 60 × 40 rectangle `sec` in the front plane, its corner `a` at the origin.
-const RECT: &str = "unit mm\nuse std\nuse std.sets\nuse std.solids\nin std.front {\n\
+const RECT: &str = "unit mm\nuse std\nuse std.sets\nuse std.solids (cut)\nin std.front {\n\
     a := point\n  b := point hint((60, 0))\n  c := point hint((60, 40))\n  d := point hint((0, 40))\n\
     horizontal (ab := line(a, b)) ->\n  vertical (bc := line(b, c)) ->\n\
     horizontal (cd := line(c, d)) ->\n  vertical (da := line(d, a)) -> close\n\
@@ -25,7 +25,7 @@ const RECT: &str = "unit mm\nuse std\nuse std.sets\nuse std.solids\nin std.front
 
 /// A 4 × 6 rectangle `sec` in the front plane, 10 from the vertical line `ax` it turns about.
 const RING: &str = "unit mm\nuse std\nuse std.place (horizontal)\nuse std.motion (turns)\n\
-    use std.solids\nin std.front {\n  p0 := point hint((10, 0))\n  p1 := point hint((14, 0))\n\
+    use std.solids (cut)\nin std.front {\n  p0 := point hint((10, 0))\n  p1 := point hint((14, 0))\n\
     p2 := point hint((14, 6))\n  p3 := point hint((10, 6))\n  horizontal (e0 := line(p0, p1)) ->\n\
     vertical (e1 := line(p1, p2)) ->\n  horizontal (e2 := line(p2, p3)) ->\n\
     vertical (e3 := line(p3, p0)) -> close\n  q0 := point\n  q1 := point hint((0, 10))\n\
@@ -166,7 +166,7 @@ fn a_prism_through_everything_is_bounded_by_what_it_cuts() {
 /// Two plates of radius 20 on the top plane's axis, `low` from -5 to 0 and `high` from 40 to 50,
 /// a third `far` from 100 to 110, a pin of radius 2 through everything on the same axis, and
 /// `feed` sliding 100 a turn up it.
-const STACK: &str = "unit mm\nuse std\nuse std.solids\nuse std.motion (slides)\n\
+const STACK: &str = "unit mm\nuse std\nuse std.solids (cut)\nuse std.motion (slides)\n\
     in std.front {\n  construction centerline shaft := line(std.origin, hint((0, 1)))\n\
     fix((0, 1)) shaft.p2\n}\nfeed := frame\nfeed slides(100mm) shaft\nin std.top {\n\
     rim := radius(20mm) circle(center: std.top.origin)\n\

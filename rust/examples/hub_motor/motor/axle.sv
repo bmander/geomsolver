@@ -8,7 +8,7 @@
 // beside the carrier's web, a hole drawn in the plan and swept straight up.
 
 use std
-use std.solids
+use std.solids (cut)
 use std.place (below, horizontal)
 use motor.dims (axle_half, cable_d, cable_to, d_core, d_end, d_seat, exit_at, exit_d, flats,
                 flats_from, hub_r, key_h, key_l, key_t1, key_w, step_end, step_seat)

@@ -572,6 +572,21 @@ fn the_ball_end_mill_screwed_at_other_leads_mills_its_groove() {
     }
 }
 
+/// `leaning_ring.sv` (the closed class, a torus slid at a lean, #805): a ring of middle radius 3 and
+/// tube 1, its axis leaning 35° from upright, pushed 8 straight down into a block until wholly in it.
+/// The constant-twist class refuses it (it ends in the blank); the closed class cuts it on one
+/// arrangement, its two contacts — smooth across the branch locus where each level's two points of
+/// them meet — swept into the cylinders over their outlines, the hole's wall and its core's. The
+/// block loses the centre's depth times the annulus between the outlines and half the ring
+/// (`swept_slid::plunged_away`), to 1e-9, its STL agreeing with the field.
+#[test]
+fn the_ring_plunged_at_a_lean_bores_round_its_core() {
+    let e = example("leaning_ring.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert!(found.screw.is_slide(),"a slide");
+    near(exported(&e,"block"),16.*16.*8.-crate::swept_slid::plunged_away(3.,1.,35f64.to_radians(),4.),1e-9);
+}
+
 /// `stopped_turn.sv` (the closed class, X1): an upright bar turned from −140° to 30°, halfway into
 /// the sector. The constant-twist class refuses it (it ends in the blank); the closed class cuts it
 /// from the ring on one arrangement, its end pose's faces among the candidates. The ring loses each

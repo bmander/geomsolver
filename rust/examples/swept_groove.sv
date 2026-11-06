@@ -6,7 +6,7 @@
 // block's half width.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (below, right_of)
 use std.shapes
 use std.motion (turns)

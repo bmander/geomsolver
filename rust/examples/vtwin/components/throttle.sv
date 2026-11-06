@@ -4,7 +4,7 @@
 // The end-on sketch remains the assembly drawing and carries the part's dimensions.
 
 use std
-use std.solids
+use std.solids (cut, union)
 use hardware (oring_squeeze, oring_groove_w)
 use components.dims (bossz, hubr, lev, levw, rbar, tback, tor, torz, tretain, wch)
 use components.parts

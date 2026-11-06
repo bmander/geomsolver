@@ -7,7 +7,7 @@
 // disc shrunk by the quarter circle, turned) and its inner disc of radius 4, 7 tall.
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (shell)
 
 wall := 1mm

@@ -11,7 +11,7 @@
 // (⌘↵); the surfaces refine in the background.
 unit mm
 use std
-use std.solids
+use std.solids (cut, union)
 use std.rounds (round)
 
 in std.front {

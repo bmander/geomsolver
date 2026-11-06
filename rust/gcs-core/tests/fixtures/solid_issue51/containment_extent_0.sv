@@ -24,5 +24,5 @@ in std.front {
   other := solid(std.solids.Prism(otherf, from: -1mm, to: 0mm))
   irrelevant := point
   fix((0, 0)) irrelevant
-  claim result inside other
+  claim every q in result: q in other
 }

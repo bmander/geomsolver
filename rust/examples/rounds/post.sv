@@ -8,7 +8,7 @@
 // (right-drag) to see the rounds meet the post. Edit `r` and apply (⌘↵).
 unit mm
 use std
-use std.solids
+use std.solids (union)
 use std.rounds (round)
 
 r := 2mm   // the edge's radius

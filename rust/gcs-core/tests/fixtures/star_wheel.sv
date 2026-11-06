@@ -2,7 +2,7 @@
 // clearance claim between the cut wheel and the star at the drawing's pose.
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 use std.place (vertical)
 use std.motion (turns)
 

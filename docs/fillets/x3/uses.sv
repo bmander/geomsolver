@@ -3,7 +3,7 @@
 // feature in disguise, and does not go in the language (docs/fillets/README.md, X3).
 unit mm
 use std
-use std.solids
+use std.solids (cut)
 
 // [F1] A face is a set: its patch, and its surface. A bolt hole's centre on a plate's top face,
 // a bracket standing on it, a dimension to it.

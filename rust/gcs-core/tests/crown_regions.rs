@@ -23,6 +23,7 @@ use crate::common::{at, ends, ent, off_line, read, text::solved, unit};
 const AXIS: &str = "\
 unit mm
 use std
+use std.solids (cut)
 use std.sets
 use std.rounds
 use std.motion (turns)
@@ -155,7 +156,7 @@ fn round_takes(outer: bool, rho: f64) -> f64 {
 /// planes and two tori, to 1e-9.
 #[test]
 fn the_crown_tooth_region_is_its_closed_form() {
-    let e = solved(&format!("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{TOOTH}{SHARP}{ROUNDED}"));
+    let e = solved(&format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{TOOTH}{SHARP}{ROUNDED}"));
     let volume = |name: &str| {
         let ex = e.sketch.exact_solid(ent(&e, name).i()).unwrap();
         (props::volume(&ex.brep) / ex.mm.powi(3), ex)
@@ -182,6 +183,7 @@ fn the_crown_tooth_region_is_its_closed_form() {
 const SECTION: &str = "\
 unit mm
 use std
+use std.solids (cut)
 use std.rounds
 use std.sets
 use std.motion (turns)
@@ -237,6 +239,7 @@ fn the_land_bound_keeps_a_rough_start_off_the_collapsed_tip() {
 const BEVEL: &str = "\
 unit mm
 use std
+use std.solids (cut)
 use std.rounds
 use std.sets
 use std.motion (turns)
@@ -380,7 +383,7 @@ fn a_rounds_radius_reads_an_unknown() {
     let mut volume = 0.0;
     for r in ["0.3 * m", "0.25 * m + 0.05mm"] {
         let rounded = ROUNDED.replace("r: 0.3mm", &format!("r: {r}"));
-        let e = solved(&format!("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{unknown}{TOOTH}{rounded}"));
+        let e = solved(&format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{unknown}{TOOTH}{rounded}"));
         let ex = e.sketch.exact_solid(ent(&e, "tool").i()).unwrap();
         volume = props::volume(&ex.brep) / ex.mm.powi(3);
         assert!((volume - want).abs() <= 1e-9 * want, "{r}: {volume} against {want}");
@@ -391,7 +394,7 @@ fn a_rounds_radius_reads_an_unknown() {
             tooth := {{ p | p in beyond_g; p in outer_g; p in back; p not in point_\n\
             p in std.rounds.Rounded(beyond_g, above, r: 0.3 * m)\n\
             p in std.rounds.Rounded(outer_g, above, r: 0.3 * m) }}\nconstruction tool := solid(tooth)\n");
-        let e = solved(&format!("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{unknown}{TOOTH}{tooth}"));
+        let e = solved(&format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{unknown}{TOOTH}{tooth}"));
         let ex = e.sketch.exact_solid(ent(&e, "tool").i()).unwrap();
         props::volume(&ex.brep) / ex.mm.powi(3)
     };
@@ -405,7 +408,7 @@ fn a_rounds_radius_reads_an_unknown() {
 /// plane, the step would go nowhere and the cutter's axis would start with no length.
 #[test]
 fn a_seeds_step_is_taken_in_space() {
-    let e = read("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\nin std.top {\n  c := point\n  fix((3, 4)) c\n}\n\
+    let e = read("unit mm\nuse std\nuse std.solids (cut)\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\nin std.top {\n  c := point\n  fix((3, 4)) c\n}\n\
         in std.front {\n  up := line\n  fix((0, 0)) up.p1\n  fix((0, 10)) up.p2\n}\n\
         p := point hint(at: c, along: up, by: 0.5)\n");
     let p = at(&e, "p");
@@ -419,7 +422,7 @@ fn a_seeds_step_is_taken_in_space() {
 /// the closed form, solved as an editor solves it.
 #[test]
 fn a_cone_through_is_held_at_any_size() {
-    let big = "unit mm\nuse std\nuse std.rounds\nuse std.sets\nuse std.motion (turns)\nin std.front {\n  ax := line\n  fix((0, 0)) ax.p1\n  fix((0, 1000)) ax.p2\n  \
+    let big = "unit mm\nuse std\nuse std.solids (cut)\nuse std.rounds\nuse std.sets\nuse std.motion (turns)\nin std.front {\n  ax := line\n  fix((0, 0)) ax.p1\n  fix((0, 1000)) ax.p2\n  \
         q := point\n  fix((20000, 10000)) q\n}\nk := std.sets.ConeThrough(ax, q, lean: -7.5deg)\n";
     let e = solved(big);
     let want = 10000.0 + 20000.0 / 7.5f64.to_radians().tan();
@@ -437,7 +440,7 @@ fn a_cone_through_is_held_at_any_size() {
 #[test]
 fn a_reversed_surface_is_the_surface_run_the_other_way() {
     use gcs_core::solid::RevolvedSurface;
-    let e = solved(&format!("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{TOOTH}{ROUNDED}"));
+    let e = solved(&format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{TOOTH}{ROUNDED}"));
     let m = gcs_core::solid::region::meridian(&e.sketch, ent(&e, "tool").i()).unwrap();
     let faces: Vec<RevolvedSurface> = RevolvedSurface::meridian_loops(&m, "tool").into_iter().flatten().flatten().collect();
     assert_eq!(faces.len(), 6);
