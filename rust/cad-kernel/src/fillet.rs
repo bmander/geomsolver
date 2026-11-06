@@ -378,7 +378,7 @@ fn standing(b: &Brep,m: &Meeting,offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V
     }
     // the centre: where the curve meets the other offset, the meeting nearest the ball in the corner
     let guess = add(*p,scale(unit(add(into[0],into[1])),r/(0.5*theta).dsin()));
-    let centre = nearest_crossing(&closed,&other,tol,b.bounds(),4.*r,guess).ok_or_else(|| {
+    let centre = nearest_crossing(&closed,&other,tol,b.bounds(),4.*r,guess)?.ok_or_else(|| {
         format!("the ball between {names} rolls along what `{}` closes onto, filling it",b.faces[sides_faces[k][0]].name)
     })?.ok_or_else(|| format!("the ball between {names} rolls nowhere"))?;
     // it touches the first face round the circle square to the curve through its centre, from the
@@ -612,6 +612,8 @@ impl<'a> Band<'a> {
             match super::query::curve_surface(c,t,&level,self.tol) {
                 super::query::Meets::At(roots) => roots.iter().any(|&(s,touch)| hit(c.point(s),touch)),
                 super::query::Meets::Along => hit(c.point(t[0]),false),
+                // a reading not proved cannot rule a meeting out (#814): read as one
+                super::query::Meets::Refused(_) => true,
             }
         })
     }
@@ -924,7 +926,7 @@ impl Leg {
     fn of(on: &Surface,off: &Surface,d: f64,bounds: (V,V),p: V,reach: f64,tol: f64,what: &str) -> Result<Leg,String> {
         match off.offset(d,tol) {
             Some(Offset::Surface(s)) => Ok(Leg::Along(super::geom::Traced {a:on.clone(),b:s,pts:Vec::new(),closed:false})),
-            Some(Offset::Curve(c)) => match nearest_crossing(&c,on,tol,bounds,reach,p) {
+            Some(Offset::Curve(c)) => match nearest_crossing(&c,on,tol,bounds,reach,p)? {
                 None => Err(format!("{what} shrinks the {} to what the {} closes onto, which lies in it: no one point \
                     ends its sections",on.kind(),off.kind())),
                 Some(q) => q.map(Leg::At).ok_or_else(|| format!("{what}: the {} offset by its leg closes onto a curve the \
@@ -946,13 +948,15 @@ impl Leg {
 
 /// Where the curve `c` (over its period where it closes) crosses `s` within `grow` of the box
 /// `bx`, the crossing nearest `near`: none where it never does, and `None` where it lies along
-/// `s` — a standing ball's centre, a leg shrunk to a point.
-fn nearest_crossing(c: &Curve,s: &Surface,tol: f64,bx: (V,V),grow: f64,near: V) -> Option<Option<V>> {
+/// `s` — a standing ball's centre, a leg shrunk to a point; the refusal where the reading was not
+/// proved (#814).
+fn nearest_crossing(c: &Curve,s: &Surface,tol: f64,bx: (V,V),grow: f64,near: V) -> Result<Option<Option<V>>,String> {
     let span = c.period().map_or([f64::NEG_INFINITY,f64::INFINITY],|pd| [0.,pd]);
     match super::query::curve_surface_within(c,span,s,tol,bx,grow) {
-        super::query::Meets::Along => None,
-        super::query::Meets::At(roots) => Some(roots.into_iter().map(|(t,_)| c.point(t))
-            .min_by(|x,y| distance(*x,near).total_cmp(&distance(*y,near)))),
+        super::query::Meets::Along => Ok(None),
+        super::query::Meets::At(roots) => Ok(Some(roots.into_iter().map(|(t,_)| c.point(t))
+            .min_by(|x,y| distance(*x,near).total_cmp(&distance(*y,near))))),
+        super::query::Meets::Refused(r) => Err(r.to_string()),
     }
 }
 

@@ -10,6 +10,7 @@
 use crate::util::fmath::Det;
 use super::geom::{Carry,Curve,Frame,Rigid,Surface,V};
 use super::plane2;
+use crate::util::interval::Iv;
 use crate::util::space::{add,cross,distance,dot,norm,scale,segment_distance,sub,unit};
 
 /// What two surfaces share.
@@ -997,8 +998,8 @@ pub(crate) fn helix_between(on: &super::geom::Blend,by: &super::geom::Blend,tol:
 /// its neighbour's sheet, which share the helix of their common corner): a point of `on`'s line,
 /// `p(u) = p₀ + u Δ`, lies on `by`'s sheet where the screw carries some point of `by`'s line onto it,
 /// `p(u) = screw_θ(q(w))` — three equations in `(u, w, θ)`, `θ` over the turns the two sheets' spans
-/// differ by, isolated with a bound (`util::isolate::solve`, #777 M1): `q` is a line, so the second
-/// derivatives are `|∂²/∂w∂θ| ≤ |Δ_by|` and `|∂²/∂θ²| ≤` its reach from the axis. Each root's
+/// differ by, isolated by the Krawczyk operator over the system's own Jacobian enclosed in intervals
+/// (`util::isolate::solve`, #777 M1, #814). Each root's
 /// meeting is the helix of `p(u)`, `on`'s rail there (`Curve::Iso`), exact where a trace would fit it
 /// — and a fit's end, leaning a few degrees off, once ordered the curves leaving a corner wrongly.
 /// `None` for sheets of different screws, or where the search gives up.
@@ -1020,16 +1021,38 @@ fn screwed_lines_meeting(on: &std::sync::Arc<super::geom::Blend>,by: &super::geo
         (std::array::from_fn(|i| p[i]-sq[i]),std::array::from_fn(|i| [m.run[i],-rq[i],-dt[i]]))
     };
     let reach = norm(sub(l.p0,c))+norm(l.run);
-    let h = 2.*norm(l.run)+reach;
-    let second = |_: &[[f64;2];3]| [h;3];
+    // `F` and its Jacobian `[Δ_on, −R(θ) Δ_by, −rate]` in intervals
+    use crate::enclose::{add3,c3,scale3,sub3,Carried};
+    let over = |b: &[[f64;2];3]| -> ([Iv;3],[[Iv;3];3]) {
+        let [u,w,t] = b.map(|s| Iv::new(s[0],s[1]));
+        let screwed = Carried::new(&screw,t);
+        let p = add3(c3(m.p0),scale3(c3(m.run),u));
+        let sq = screwed.at(add3(c3(l.p0),scale3(c3(l.run),w)));
+        let (rq,dt) = (screwed.dir(c3(l.run)),screwed.rate(sq));
+        (sub3(p,sq),std::array::from_fn(|i| [Iv::point(m.run[i]),-rq[i],-dt[i]]))
+    };
+    let sys = crate::util::isolate::Closures {at:&f,over:&over};
     let size = norm(m.run).max(norm(l.run)).max(reach);
     let width = tol*1e-2/size.max(1e-300);
     let near = |x: [f64;3]| { let (v,_) = f(x); norm(v) <= tol };
-    let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,1.],[0.,1.],span],width,&near).ok()?;
+    let found = crate::util::isolate::solve::<3>(&sys,[[0.,1.],[0.,1.],span],width,&near).ok()?;
     let mut us: Vec<f64> = found.into_iter().map(|r| r.at[0].clamp(0.,1.)).collect();
     us.sort_by(f64::total_cmp);
     us.dedup_by(|y,x| (*y-*x).abs()*norm(m.run) <= tol);
     Some(us.into_iter().map(|u| Curve::Iso(on.clone(),u)).collect())
+}
+
+/// `|w₀ + m u − (c₀ cos s(u) + (k × c₀) sin s(u))|² − r²`, `s(u) = s₀ + s₁ u` (`screwed_line_circle`),
+/// written once over `Num`.
+struct LineRound { w0: V,m: V,c0: V,kc0: V,turn: [f64;2],r: f64 }
+
+impl crate::util::isolate::Formula for LineRound {
+    fn jet<T: crate::util::interval::Num>(&self,u: crate::util::interval::Jet<T>) -> crate::util::interval::Jet<T> {
+        use crate::util::interval::Jet;
+        let (sn,cs) = (u.times(self.turn[1])+Jet::of(self.turn[0])).sin_cos();
+        let e: [Jet<T>;3] = std::array::from_fn(|i| Jet::of(self.w0[i])+u.times(self.m[i])-cs.times(self.c0[i])-sn.times(self.kc0[i]));
+        e[0]*e[0]+e[1]*e[1]+e[2]*e[2]-Jet::of(self.r*self.r)
+    }
 }
 
 /// **A sheet a line screws into meets a sheet a level circle screws into by the same screw in
@@ -1039,7 +1062,7 @@ fn screwed_lines_meeting(on: &std::sync::Arc<super::geom::Blend>,by: &super::geo
 /// onto the circle — `g(u) = |w(u) − R_{s(u)} c₀|² − r²`, `w(u)` the point's offset from the axis,
 /// `c₀` the circle's centre's, `s(u)` the turn its climb to the circle's height takes, linear in
 /// `u` — and where the helix of `p(u)` over the line's sheet reaches heights the circle's sheet
-/// holds. Isolated with a bound on its derivatives (`util::isolate`), each root's meeting the
+/// holds. Written once over `Num` and isolated by its enclosures (`util::isolate`, #814), each root's meeting the
 /// line's sheet's rail there (`Curve::Iso`). `None` where the two are not such sheets of one screw,
 /// or where the search gives up.
 fn screwed_line_circle(on: &std::sync::Arc<super::geom::Blend>,by: &super::geom::Blend,tol: f64) -> Option<Vec<Curve>> {
@@ -1056,13 +1079,10 @@ fn screwed_line_circle(on: &std::sync::Arc<super::geom::Blend>,by: &super::geom:
     let z = |u: f64| dot(sub(add(l.p0,scale(l.run,u)),c.frame.o),k);
     // the turn that takes the circle's sheet up to the line's point's height, and its rate
     let (s0,s1) = (z(0.)/pitch,dot(l.run,k)/pitch);
-    let turned = |u: f64| { let (sn,cs) = (s0+s1*u).dsin_cos(); add(scale(c0,cs),scale(cross(k,c0),sn)) };
-    let g = |u: f64| { let e = sub(add(w0,scale(m,u)),turned(u)); dot(e,e)-c.r*c.r };
-    let dg = |u: f64| { let q = turned(u); 2.*dot(sub(add(w0,scale(m,u)),q),sub(m,scale(cross(k,q),s1))) };
-    let (big,lean) = (norm(w0)+norm(m)+norm(c0),norm(m)+s1.abs()*norm(c0));
-    let bound = |_: f64,_: f64| [2.*big*lean,2.*lean*lean+2.*s1*s1*big*norm(c0)];
-    let size = big.max(c.r).max(1e-300);
-    let roots = crate::util::isolate::roots(&g,&dg,&bound,[0.,1.],tol*1e-3/size,&|u| g(u).abs() <= 2.*c.r*tol).ok()?;
+    let formula = crate::util::isolate::Written(LineRound {w0,m,c0,kc0:cross(k,c0),turn:[s0,s1],r:c.r});
+    let g = |u: f64| { use crate::util::isolate::Function; formula.at(u).0 };
+    let size = (norm(w0)+norm(m)+norm(c0)).max(c.r).max(1e-300);
+    let roots = crate::util::isolate::roots(&formula,[0.,1.],tol*1e-3/size,&|u| g(u).abs() <= 2.*c.r*tol).ok()?;
     // the circle's sheet's `v` at the line's point at `u` carried `t` along the line's sheet
     let v_at = |u: f64,t: f64| (z(u)+l.rise*dot(l.axis,k)*t)/c.rise;
     let slack = 1e-9;
@@ -1127,10 +1147,10 @@ fn screwed_meeting(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
             // + R₀ = 0`; held where the ruling stands within `tol` of the plane
             let (n,h,angle) = (f.z,dot(f.z,f.o),line.angle);
             let (p,q,r0) = (dot(n,perp(run)),dot(n,cross(z,run)),dot(n,z)*dot(z,run));
-            let amplitude = p.hypot(q);
+            let amplitude = p.dhypot(q);
             let mut held = Vec::new();
             if amplitude > 1e-12*norm(run) && r0.abs() <= amplitude {
-                let (phi,w) = (q.atan2(p),(-r0/amplitude).clamp(-1.,1.).acos());
+                let (phi,w) = (q.datan2(p),(-r0/amplitude).clamp(-1.,1.).dacos());
                 for base in [phi+w,phi-w] {
                     // every turn of the root the sheet's stretch holds, a margin past it
                     let first = ((angle.min(0.)-1e-2*angle.abs()-base)/std::f64::consts::TAU).floor() as i64;
@@ -1287,7 +1307,7 @@ fn screwed_overlap(a: &super::geom::Blend,b: &super::geom::Blend,tol: f64) -> Op
     if norm(sub(screw.at(f2.o,1.),f1.o)) > tol || norm(cross(screw.dir(f2.z,1.),f1.z)) > 1e-9 { return None }
     let a2 = a2*dot(k1,k2).signum();
     let (mine,theirs) = ([a1.min(0.),a1.max(0.)],[a2.min(0.)-turn,a2.max(0.)-turn]);
-    let slack = tol/(norm(perp(sub(f1.o,c1)))+r1).hypot(pitch1);
+    let slack = tol/(norm(perp(sub(f1.o,c1)))+r1).dhypot(pitch1);
     let shared = mine[1].min(theirs[1])-mine[0].max(theirs[0]);
     Some(Overlap {shared:if shared.abs() <= slack { 0. } else { shared },mine,theirs})
 }
@@ -1296,8 +1316,8 @@ fn screwed_overlap(a: &super::geom::Blend,b: &super::geom::Blend,tol: f64) -> Op
 /// F2c5: a ball's great circle square to its centre's velocity, leaning wherever the screw climbs):
 /// the screw keeps each point's distance from its axis, so the meeting is the helices of the
 /// circle's points at the cylinder's radius, the roots of `|ρ(θ)|² − R²` round the circle — a
-/// trigonometric polynomial of degree two, four roots at most — isolated with a bound on its
-/// derivatives (`util::isolate`), a touch where it only reaches nought (the circle tangent to the
+/// trigonometric polynomial of degree two, four roots at most — isolated by its enclosures, written
+/// once over `Num` (`util::isolate`, #814), a touch where it only reaches nought (the circle tangent to the
 /// cylinder) placed where its derivative changes sign. `None` for any other sheet or cylinder.
 pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy: &Frame,big: f64,tol: f64) -> Option<Vec<Curve>> {
     let super::geom::Carry::Screw {center,axis,..} = blend.carry else { return None };
@@ -1310,22 +1330,18 @@ pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy
     let span = blend.ta[1]-blend.ta[0];
     if !(0..3).all(|i| same(blend.b.point(blend.tb[0]+(blend.tb[1]-blend.tb[0])*i as f64/2.),blend.a.point(blend.ta[0]+span*i as f64/2.))) { return None }
     let r = r.abs();
-    let g = |th: f64| { let (sn,cs) = th.dsin_cos(); let d = perp(sub(add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))),center)); dot(d,d)-big*big };
     let u_of = |th: f64| blend.u_of_angle(th);
-    // `g' = 2 d · P'⊥`, `g'' = 2 (|P'⊥|² + d · P''⊥)`, the circle's point `P` at `r` from its
-    // centre and `d` its offset from the axis, within `D = |(o − c)⊥| + r`
-    let dg = |th: f64| {
-        let (sn,cs) = th.dsin_cos();
-        let d = perp(sub(add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))),center));
-        2.*dot(d,perp(add(scale(f.x,-r*sn),scale(f.y,r*cs))))
-    };
-    let far = norm(perp(sub(f.o,center)))+r;
-    let bound = |_: f64,_: f64| [2.*far*r,2.*(r*r+far*r)];
+    // `|d|² − R²`, `d = (o − c)⊥ + r cos θ x⊥ + r sin θ y⊥` the circle's offset from the axis: a
+    // line screwed against a round (`LineRound`) with no run, written once over `Num` and isolated by
+    // its enclosures (#814)
+    let formula = crate::util::isolate::Written(LineRound {w0:perp(sub(f.o,center)),m:[0.;3],c0:scale(perp(scale(f.x,r)),-1.),
+        kc0:scale(perp(scale(f.y,r)),-1.),turn:[0.,1.],r:big});
+    let (g,dg) = (|th: f64| { use crate::util::isolate::Function; formula.at(th).0 },|th: f64| { use crate::util::isolate::Function; formula.at(th).1 });
     let tau = std::f64::consts::TAU;
     // the circle within the tolerance of the cylinder at `th`, and the angle the tolerance spans
     let on = |th: f64| g(th).abs() <= 2.*big*tol;
     let step = tol/r.max(1e-300);
-    let found: Vec<f64> = crate::util::isolate::roots(&g,&dg,&bound,[0.,tau],tol*1e-3/r.max(1e-300),&on).ok()?
+    let found: Vec<f64> = crate::util::isolate::roots(&formula,[0.,tau],tol*1e-3/r.max(1e-300),&on).ok()?
         .into_iter().map(|x| x.at).collect();
     // a run of roots the circle keeps within the tolerance of the cylinder between is one helix
     // (#780 R2's rule, `query::settled`): a double root rounding parts into several a hair apart —
@@ -1571,7 +1587,7 @@ fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Bl
             let d = perp(sub(f.o,o2));
             // |d + r (cos θ x + sin θ y)| = rad2: `2 r d·x cos θ + 2 r d·y sin θ = rad2² − |d|² − r²`
             let (a,b,c) = (2.*r*dot(d,f.x),2.*r*dot(d,f.y),rad2*rad2-dot(d,d)-r*r);
-            let rho = a.hypot(b);
+            let rho = a.dhypot(b);
             if rho <= tol*r { return None }
             let ratio = c/rho;
             let phi = b.datan2(a);
@@ -1608,7 +1624,7 @@ fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Bl
             if !cone && norm(perp(sub(cy.o,center))) <= tol {
                 // coaxial: the same at every `v`, helices
                 let (a,b,c) = coefficients(0.);
-                let rho = a.hypot(b);
+                let rho = a.dhypot(b);
                 if rho <= 1e-300 { return Some(vec![]) }
                 let ratio = c/rho;
                 let phi = b.datan2(a);
@@ -1656,9 +1672,11 @@ fn circle_branches(coefficients: &dyn Fn(f64) -> (f64,f64,f64),coincide: &[f64],
     traced: &dyn Fn(Vec<V>,bool) -> Curve) -> Vec<Curve> {
     const STEP: f64 = std::f64::consts::PI/1024.;
     let hair = 1e-6;
-    let angles = |(a,b,c): (f64,f64,f64)| { let (phi,w) = (b.datan2(a),(c/a.hypot(b).max(1e-300)).clamp(-1.,1.).dacos()); [phi+w,phi-w] };
-    let roots = |v: f64| { let (a,b,c) = coefficients(v); (a.hypot(b) > 0.).then(|| angles((a,b,c))) };
-    let real = |v: f64| { let (a,b,c) = coefficients(v); let rho = a.hypot(b); rho > 0. && c.abs() <= rho };
+    let angles = |(a,b,c): (f64,f64,f64)| { let (phi,w) = (b.datan2(a),(c/a.dhypot(b).max(1e-300)).clamp(-1.,1.).dacos()); [phi+w,phi-w] };
+    let roots = |v: f64| { let (a,b,c) = coefficients(v); (a.dhypot(b) > 0.).then(|| angles((a,b,c))) };
+    // a touch, `|C| = ρ`, is real whichever way the last bits of `ρ` and `C` round: the circle's
+    // two roots one there, not a turn on one machine and the sheet's edge on another
+    let real = |v: f64| { let (a,b,c) = coefficients(v); let rho = a.dhypot(b); rho > 0. && c.abs()-rho <= 8.*f64::EPSILON*rho.max(c.abs()) };
     let limit = |w: f64,side: f64| {
         let ((a1,b1,c1),(a0,b0,c0)) = (coefficients(w+hair),coefficients(w-hair));
         Some(angles((side*(a1-a0),side*(b1-b0),side*(c1-c0))))
@@ -2072,7 +2090,7 @@ pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
         if !(det.abs() > 0.) { return None }
         let (ds,dt) = ((-gs*gtt+gt*gst)/det,(-gt*gss+gs*gst)/det);
         x = on_a(add(x,add(scale(f.x,ds),scale(f.y,dt))));
-        let step = ds.hypot(dt);
+        let step = ds.dhypot(dt);
         if step <= 1e-3*tol || step <= 0.1*tol && step >= 0.5*last { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
         last = step;
     }

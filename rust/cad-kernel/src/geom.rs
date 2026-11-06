@@ -247,6 +247,20 @@ impl Carry {
                 add(add(center,Carry::turn(axis,angle*v,sub(p,center))),scale(axis,advance*v)),
         }
     }
+    /// `p` carried to the jet `v`, each coordinate with its jet: `at`, written once over `Num` so it
+    /// is read in floats or in outward-rounded intervals alike (#814).
+    pub fn jet<T: crate::util::interval::Num>(&self,p: V,v: crate::util::interval::Jet<T>) -> [crate::util::interval::Jet<T>;3] {
+        use crate::util::interval::Jet;
+        match *self {
+            Carry::Line {delta} => std::array::from_fn(|i| Jet::of(p[i])+v.times(delta[i])),
+            Carry::Screw {center,axis,angle,advance} => {
+                let w = sub(p,center);
+                let (kw,along) = (cross(axis,w),dot(axis,w));
+                let (s,c) = v.times(angle).sin_cos();
+                std::array::from_fn(|i| Jet::of(center[i]+axis[i]*along)+c.times(w[i]-axis[i]*along)+s.times(kw[i])+v.times(axis[i]*advance))
+            }
+        }
+    }
     /// A direction carried to `v` (turned, never moved).
     pub fn dir(&self,d: V,v: f64) -> V {
         match *self {
@@ -315,6 +329,39 @@ impl LevelCircle {
     }
 }
 
+/// `(x(v) − p) · x'(v)`, `x` the point `o` carried to `v` (`Pipe::feet_over`), written once over
+/// `Num` in its own closed form: carried along a line by `δ`, `(o − p)·δ + |δ|² v`; by a screw
+/// (centre `c`, unit axis `k`, turn `θ`, advance `a`), with `d = (o − c)∥ − (p − c)`, `u₁ = (o − c)⊥`
+/// and `u₂ = k × u₁`, `a (d·k) + a² v + θ (d·u₂) cos θv − θ (d·u₁) sin θv` — the helix's own terms
+/// cancelling (`u₁`, `u₂` square to `k` and to one another, the radius kept), so one sine is read
+/// where the carried point's three coordinates' jets were.
+struct Foot { linear: [f64;2],wave: [f64;2],turn: f64 }
+
+impl Foot {
+    fn new(carry: Carry,o: V,p: V) -> Foot {
+        match carry {
+            Carry::Line {delta} => Foot {linear:[dot(sub(o,p),delta),dot(delta,delta)],wave:[0.;2],turn:0.},
+            Carry::Screw {center,axis:k,angle,advance} => {
+                let w = sub(o,center);
+                let along = scale(k,dot(w,k));
+                let (u1,d) = (sub(w,along),sub(along,sub(p,center)));
+                let u2 = cross(k,u1);
+                Foot {linear:[advance*dot(d,k),advance*advance],wave:[angle*dot(d,u2),-angle*dot(d,u1)],turn:angle}
+            }
+        }
+    }
+}
+
+impl crate::util::isolate::Formula for Foot {
+    fn jet<T: crate::util::interval::Num>(&self,v: crate::util::interval::Jet<T>) -> crate::util::interval::Jet<T> {
+        use crate::util::interval::Jet;
+        let line = Jet::of(self.linear[0])+v.times(self.linear[1]);
+        if self.turn == 0. { return line }
+        let (s,c) = v.times(self.turn).sin_cos();
+        line+c.times(self.wave[0])+s.times(self.wave[1])
+    }
+}
+
 /// A ball's pipe (`Blend::pipe`): the screw that carries it, the circle square to its centre's
 /// helix where the patch starts — its frame, `z` along the helix — and its radius.
 #[derive(Clone,Copy,Debug)]
@@ -333,11 +380,9 @@ impl Pipe {
         (rho-self.r).dhypot(h)
     }
     /// **Every foot of `p` on the spine over `[0, 1]`**, and its two ends: the roots of `g(v) =
-    /// (H(v) − p)·H'(v)`, nought where `p − H(v)` stands square to the helix, isolated with a bound
-    /// (`util::isolate`). A helix keeps its speed `s₁ = |H'|`, so `g' = s₁² + (H − p)·H''` with `H''
-    /// = a k × H'` of size `s₂ = a² ρ`, and `g'' = (H − p)·H'''` of size `s₃ = |a|³ ρ` (`a` the
-    /// screw's turn over the patch, `ρ` the helix's distance from the axis), each bounded over a
-    /// stretch where `|H − p|` reaches `q` at most. Each stretch read is the inverse stage's work
+    /// (H(v) − p)·H'(v)`, nought where `p − H(v)` stands square to the helix, isolated by its
+    /// enclosures (`util::isolate`, #814): `g` and `g' = |H'|² + (H − p)·H''` written once over `Num`
+    /// (`Foot`), read in intervals over each stretch. Each stretch read is the inverse stage's work
     /// (`util::meter`). `None` where the search gave up or the build stopped.
     pub fn feet(&self,p: V) -> Option<Vec<f64>> { self.feet_over(p,&[[0.,1.]]) }
     /// **The feet of `p` on the spine its nearest point of the pipe may stand about** (#798), and
@@ -394,32 +439,14 @@ impl Pipe {
     }
     /// `feet` over each of `spans`, and the spine's two ends.
     fn feet_over(&self,p: V,spans: &[[f64;2]]) -> Option<Vec<f64>> {
-        let Carry::Screw {center,axis,angle,..} = self.carry else { return None };
-        let k = crate::util::space::normalised(axis)?;
-        let o = sub(self.frame.o,center);
-        let rho = norm(sub(o,scale(k,dot(o,k))));
-        let a = angle.abs();
-        let (s1,s2,s3) = (norm(self.carry.rate(self.frame.o)),a*a*rho,a*a*a*rho);
-        // the spine and its velocity at `v`, the last few held: the search reads a stretch's ends by
-        // its bound and again by its tests, and its children's ends are its own points
-        let held = std::cell::RefCell::new(([(f64::NAN,[0.;3],[0.;3]);8],0usize));
-        let jet = |v: f64| -> (V,V) {
-            let mut held = held.borrow_mut();
-            if let Some(&(_,x,dx)) = held.0.iter().find(|e| e.0.to_bits() == v.to_bits()) { return (x,dx) }
-            let x = self.spine(v);
-            let dx = self.carry.rate(x);
-            let next = held.1;
-            held.0[next] = (v,x,dx);
-            held.1 = (next+1)%held.0.len();
-            (x,dx)
-        };
-        let g = |v: f64| { let (x,dx) = jet(v); dot(sub(x,p),dx) };
-        let dg = |v: f64| { let (x,dx) = jet(v); s1*s1+dot(sub(x,p),scale(cross(axis,dx),angle)) };
-        let reach = |v: f64| crate::util::space::distance(jet(v).0,p);
-        let bound = |x0: f64,x1: f64| { let q = reach(x0).max(reach(x1))+s1*(x1-x0); [s1*s1+q*s2,q*s3] };
+        let Carry::Screw {..} = self.carry else { return None };
+        // `g(v) = (x(v) − p) · x'(v)`, the spine `x` carried by the screw: written once over `Num`
+        // (`Foot`), its value and rate enclosed over a stretch by the same formula in intervals
+        let g = crate::util::isolate::Written(Foot::new(self.carry,self.frame.o,p));
         let mut out = vec![0.,1.];
         for &span in spans {
-            let roots = crate::util::isolate::roots_charged(crate::util::meter::Stage::Inverse,&g,&dg,&bound,span,1e-12,&|_| true).ok()?;
+            let at = || (p,"a pipe's spine's feet".to_string());
+            let roots = crate::util::isolate::roots_at(&crate::util::isolate::Slope,crate::util::meter::Stage::Inverse,&at,&g,span,1e-12,&|_| true).ok()?;
             out.extend(roots.into_iter().map(|x| x.at));
         }
         Some(out)
@@ -450,7 +477,7 @@ impl Pipe {
     /// (The circle's offset from its centre, square to the axis, is at most `r` long.)
     pub fn spread(&self) -> Option<f64> {
         let d = self.offset()?;
-        (self.r < d).then(|| (self.r/d).asin())
+        (self.r < d).then(|| (self.r/d).dasin())
     }
     /// **Where the pipe comes back onto itself** (#780 L1, X5: a ball screwed through more than a
     /// turn at a lead short of its diameter): the points `c(θ₁)` of the start's circle onto which
@@ -459,9 +486,9 @@ impl Pipe {
     /// along which the pipe's stretch at the screw's turn `φ` meets its stretch at `φ + t`: in the
     /// screw's helical coordinates `(ρ, ψ, ζ = z − κψ)` the screw is a shift in `ψ`, so two of the
     /// circle's points meet under it where they stand at one `ρ` and their `ζ` differ by a whole
-    /// number of turns' rise, `t` then their `ψ` apart less those turns. Isolated with a bound on
-    /// the second derivatives (`util::isolate::solve`): `c` bends by `r`, `S(t) c` by the circle's
-    /// reach from the axis. The trivial roots (`t = 0`, `θ₁ = θ₂`, the pipe's own points) are kept
+    /// number of turns' rise, `t` then their `ψ` apart less those turns. Isolated by the Krawczyk
+    /// operator over the system's Jacobian enclosed in intervals (`util::isolate::solve`, #814). The
+    /// trivial roots (`t = 0`, `θ₁ = θ₂`, the pipe's own points) are kept
     /// out by `span`: the caller holds it clear of `[−2w, 2w]`, `w` the circle's `spread`, where only
     /// they and a fold would stand. `None` where the pipe's screw does not turn or the search gave
     /// up.
@@ -474,15 +501,23 @@ impl Pipe {
             (std::array::from_fn(|i| p[i]-q[i]),std::array::from_fn(|i| [dp[i],-dq[i],-dt[i]]))
         };
         let reach = self.offset()?+self.r;
-        // each component's Hessian entries: `c''` (`r`), `∂²(S c)/∂θ₂²` (`r`), `∂²/∂θ₂∂t` twice
-        // (`r` each), `∂²/∂t²` (the reach: the climb is linear in `t`)
-        let h = 4.*self.r+reach;
-        let second = |_: &[[f64;2];3]| [h;3];
+        // `F` and its Jacobian `[c'(θ₁), −S(t) c'(θ₂), −rate]` in intervals (#814)
+        use crate::enclose::{conic_at,sub3,Carried};
+        use crate::util::interval::Iv;
+        let over = |b: &[[f64;2];3]| -> ([Iv;3],[[Iv;3];3]) {
+            let [a,b,t] = b.map(|s| Iv::new(s[0],s[1]));
+            let ((p,dp),(q,dq)) = (conic_at(&self.frame,self.r,self.r,a),conic_at(&self.frame,self.r,self.r,b));
+            let screwed = Carried::new(&screw,t);
+            let sq = screwed.at(q);
+            let (rq,dt) = (screwed.dir(dq),screwed.rate(sq));
+            (sub3(p,sq),std::array::from_fn(|i| [dp[i],-rq[i],-dt[i]]))
+        };
+        let sys = crate::util::isolate::Closures {at:&f,over:&over};
         let size = reach.max(1e-300);
         let width = tol*1e-2/size;
         let near = |x: [f64;3]| { let (p,_,q,_) = at(x); crate::util::space::distance(p,q) <= tol };
         let tau = std::f64::consts::TAU;
-        let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,tau],[0.,tau],span],width,&near).ok()?;
+        let found = crate::util::isolate::solve::<3>(&sys,[[0.,tau],[0.,tau],span],width,&near).ok()?;
         // a root on the seam `θ = 0 = 2π` is found at both: once
         let apart = |a: f64,b: f64| { let d = (a-b).rem_euclid(tau); d.min(tau-d) };
         let mut out: Vec<[f64;3]> = Vec::new();
@@ -1503,6 +1538,8 @@ impl SheetCut {
     }
     /// The curve's point at `v`.
     pub fn point(&self,v: f64) -> V { self.d1(v).0 }
+    /// The screwed line whose sheet it cuts.
+    pub fn line(&self) -> &ScrewedLine { &self.line }
     /// `C` and `C'` at `v`.
     fn d1(&self,v: f64) -> (V,V) {
         let (u,du) = self.u(v);
@@ -1621,6 +1658,7 @@ impl Traced {
     /// `C` and `C'`, the derivative the central difference of `C` itself (the projection of a
     /// chord's point is not the curve's tangent times its speed off the curve): consistent with
     /// the points to ~1e-10 of the speed, which is what an integral along it needs.
+    pub(crate) fn d1_at(&self,t: f64) -> (V,V) { self.d1(t) }
     fn d1(&self,t: f64) -> (V,V) {
         const H: f64 = 1e-6;
         let (lo,hi) = if self.closed { (t-H,t+H) } else {

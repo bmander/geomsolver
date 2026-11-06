@@ -942,7 +942,7 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],
     let mut arr = Arrangement::new(solids,known,tol);
     for g in given { arr.shared.give(&g.surfaces[0],&g.surfaces[1],&g.curves,tol); }
     // 1. every edge against every face of the other solid: where it crosses, a vertex on both
-    let mut crossings = arr.crossings();
+    let mut crossings = arr.crossings()?;
     // a root met flatly that is a crossing found besides is that crossing (`flat_roots`)
     let gone = arr.flat_roots(&mut crossings);
     arr.say.lap();
@@ -953,7 +953,7 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],
     crate::util::meter::go_on()?;
     // 2a. where three faces of three operands meet at a point no edge passes: two meetings laid
     // on one face, with faces of two other operands, crossing there (#735 A4)
-    if arr.solids.0.len() > 2 { arr.triple_points(&meetings); }
+    if arr.solids.0.len() > 2 { arr.triple_points(&meetings)?; }
     // 2b. every vertex, either solid's or a crossing's, cuts an edge it lies inside, the faces'
     // meetings among them: two edges running along one another (a shared circle, each solid
     // seamed at its own angle; a meeting traced along an edge already there) then share their
@@ -1095,7 +1095,7 @@ impl<'a> Arrangement<'a> {
     /// **Phase 1**: every edge against every face of the other solid. Where it crosses, a vertex
     /// on both, the edge cut there; where it lies in the face's surface, cut only where it crosses
     /// the face's own edges.
-    fn crossings(&mut self) -> Crossings {
+    fn crossings(&mut self) -> Result<Crossings,String> {
         let (tol,pad) = (self.tol,self.pad);
         let n = self.solids.0.len();
         let mut found = Crossings {
@@ -1150,7 +1150,7 @@ impl<'a> Arrangement<'a> {
                                 // (where neither is a line or a circle — a spline sweep's rail along a
                                 // side — it is left unsplit, as every edge along a face was before; that
                                 // crossing wants a general curve–curve root, not yet written)
-                                for (t,q) in crossings_in(&f.surface,c,e.t,gc,ge.t,tol).unwrap_or_default() {
+                                for (t,q) in crossings_in(&f.surface,c,e.t,gc,ge.t,tol).map_err(|r| r.to_string())?.unwrap_or_default() {
                                     self.say.along_crosses(s,i,c,fi,g,q);
                                     let v = self.pool.at(q);
                                     self.cuts[we].push((t,v));
@@ -1163,6 +1163,8 @@ impl<'a> Arrangement<'a> {
                                 }
                             }
                         }
+                        // a reading not proved refuses the Boolean, with its witness (#814 P3)
+                        Meets::Refused(r) => return Err(format!("an edge met with a face: {r}")),
                         Meets::At(roots) => for (t,touch) in roots {
                             // a touch is a double root, placed only to the square root of the
                             // tolerance: where a face of the edge's own touches the surface along a
@@ -1184,7 +1186,7 @@ impl<'a> Arrangement<'a> {
             }
           }
         }
-        found
+        Ok(found)
     }
 
     /// **A root found where an edge meets a surface flatly is known only as the stretch of the edge
@@ -1271,7 +1273,7 @@ impl<'a> Arrangement<'a> {
             // two curves of one meeting in closed form may cross one another (`crossings_among`)
             let (curves,crossed) = match self.shared.meeting(ids[0],ids[1],self.tol) {
                 Ssi::Curves(cs) => {
-                    let mut x = crossings_among(surfaces[0],&cs,self.shared(faces),self.pad,self.tol);
+                    let mut x = crossings_among(surfaces[0],&cs,self.shared(faces),self.pad,self.tol)?;
                     ends_on_one_another(&cs,&mut x,self.tol);
                     (cs,x)
                 }
@@ -1351,7 +1353,7 @@ impl<'a> Arrangement<'a> {
     /// face, every two meetings laid across it with faces of two other operands, crossing — a
     /// point no edge of any operand passes, so no crossing of phase 1 made it — cut at a vertex
     /// they share.
-    fn triple_points(&mut self,meetings: &Meetings) {
+    fn triple_points(&mut self,meetings: &Meetings) -> Result<(),String> {
         let tol = self.tol;
         // **each point three surfaces share computed once** (#711, #777 M2): found from each of the
         // three faces it lies on (each holds two of its three meetings), it is solved the first
@@ -1381,7 +1383,7 @@ impl<'a> Arrangement<'a> {
                 // as the shallower of the two meetings anywhere along them is known, each candidate
                 // then held to the reach of the two at it
                 let widest = super::meeting::reach_along(&[(ci,ti,si),(cj,tj,sj)],&|o,p| reach_of(o,p));
-                let found: Vec<(f64,V)> = crossings_in(surface,ci,ti,cj,tj,tol).unwrap_or_else(||
+                let found: Vec<(f64,V)> = crossings_in(surface,ci,ti,cj,tj,tol).map_err(|r| r.to_string())?.unwrap_or_else(||
                     super::meeting::crossings(ci,ti,cj,tj,widest).into_iter()
                         .filter(|&(t,u,_)| distance(ci.point(t),cj.point(u)) <= reach_of(si,ci.point(t)).max(reach_of(sj,cj.point(u))))
                         .map(|(t,_,q)| (t,q)).collect());
@@ -1420,6 +1422,7 @@ impl<'a> Arrangement<'a> {
                 }
             } }
         }
+        Ok(())
     }
 
     /// **Where two meetings tangent at a crossing cross** (`triple_points`, its three surfaces'
@@ -2217,19 +2220,19 @@ fn merged(out: &[WEdge],tol: f64) -> Vec<(u32,bool)> {
 /// (#735 A2): two cylinders of one radius whose axes cross meet in two ellipses crossing where both
 /// touch, a plane tangent to a hyperboloid in the two rulings through the point it touches at — and
 /// there each is split as at an edge.
-fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],bx: Box3,pad: f64,tol: f64) -> Vec<Vec<V>> {
+fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],bx: Box3,pad: f64,tol: f64) -> Result<Vec<Vec<V>>,String> {
     let mut crossed = vec![Vec::new();curves.len()];
     let stretches: Vec<Option<[f64;2]>> = curves.iter().map(|c| stretch_in(c,bx,pad)).collect();
     for i in 0..curves.len() {
         for j in i+1..curves.len() {
             let (Some(ti),Some(tj)) = (stretches[i],stretches[j]) else { continue };
-            for (_,q) in crossings_in(surface,&curves[i],ti,&curves[j],tj,tol).unwrap_or_default() {
+            for (_,q) in crossings_in(surface,&curves[i],ti,&curves[j],tj,tol).map_err(|r| r.to_string())?.unwrap_or_default() {
                 crossed[i].push(q);
                 crossed[j].push(q);
             }
         }
     }
-    crossed
+    Ok(crossed)
 }
 
 /// The stretch of a closed-form curve to read for crossings within the box `bx` grown by `pad`: a
@@ -2508,7 +2511,7 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
         for l in o.loops() {
             for k in 0..l.len() {
                 let (a,b) = (l[k],l[(k+1)%l.len()]);
-                uv_len += (b[0]-a[0]).hypot(b[1]-a[1]);
+                uv_len += (b[0]-a[0]).dhypot(b[1]-a[1]);
                 space_len += distance(f.surface.point(a),f.surface.point(b));
             }
         }

@@ -22,6 +22,8 @@
 //! `build::sphere`), and combined by its Booleans.  A face whose normal sweep has no exact
 //! construction here yet — a curved face not bounded by its own parameter lines, a surface with no
 //! offset in closed form — is refused, naming it and a point on it.
+#[allow(unused_imports)]
+use crate::util::fmath::Det;
 use super::boolean::{combined,combined_known,Known,Op};
 use super::build::{kept,prism,revolve,sphere,square,disc,Profile,ProfileEdge};
 use super::geom::{tolerance,Curve,Frame,Rigid,Surface,Uv,V};
@@ -321,17 +323,17 @@ fn tube(c: &Curve,t: [f64;2],d: f64) -> Result<Brep,String> {
             prism(&disc(a,unit(sub(z,a)),d),0.,distance(a,z))
         }
         Curve::Circle(f,r) => {
-            let e = add(scale(f.x,t[0].cos()),scale(f.y,t[0].sin()));
+            let e = add(scale(f.x,t[0].dcos()),scale(f.y,t[0].dsin()));
             let centre = add(f.o,scale(e,r));
             let n = cross(f.z,e);
             let plane = Frame::new(centre,n,e);
             // the disc clear of the axis: where it reaches past it, the arc on its side of it, shut
             // along the axis
-            let c0 = (-r/d).clamp(-1.,1.).acos();
+            let c0 = (-r/d).clamp(-1.,1.).dacos();
             let loops = if d < r-tolerance(r+d) || c0 >= PI-1e-12 {
                 vec![vec![ProfileEdge::Arc {frame:plane,r:d,span:None}]]
             } else {
-                let at = |a: f64| plane.at([d*a.cos(),d*a.sin(),0.]);
+                let at = |a: f64| plane.at([d*a.dcos(),d*a.dsin(),0.]);
                 vec![vec![ProfileEdge::Arc {frame:plane,r:d,span:Some([-c0,c0])},ProfileEdge::Line {a:at(c0),b:at(-c0)}]]
             };
             revolve(&profile(centre,n,loops),f.o,f.z,(t[1]-t[0]).min(TAU))
@@ -347,7 +349,7 @@ fn wedge(c: &Curve,t: [f64;2],d: f64,n: [V;2]) -> Result<Brep,String> {
     let a = c.point(t[0]);
     // the sector turns from `n[0]` to `n[1]` about the side `n[0] × n[1]` points along
     let axis = unit(cross(n[0],n[1]));
-    let angle = dot(n[0],n[1]).clamp(-1.,1.).acos();
+    let angle = dot(n[0],n[1]).clamp(-1.,1.).dacos();
     if !(angle > 1e-9) { return Err("its faces' normals are one: nothing to join".into()) }
     let far = add(a,scale(n[1],d));
     let sector = profile(a,axis,vec![vec![ProfileEdge::Line {a,b:add(a,scale(n[0],d))},
@@ -492,15 +494,15 @@ fn revolved_sweep(b: &Brep,f: &Face,s: [f64;2],reach: Reach) -> Result<Option<Br
     match f.surface {
         Surface::Sphere(..) => { if vl { v0 = -FRAC_PI_2; } if vh { v1 = FRAC_PI_2; } }
         Surface::Torus(..) => if vl || vh { v1 = v0+TAU; },
-        Surface::Cone(_,r,a) if a.sin().abs() > 1e-12 => {
+        Surface::Cone(_,r,a) if a.dsin().abs() > 1e-12 => {
             // not past the apex
-            let apex = -r/a.sin();
+            let apex = -r/a.dsin();
             if vl { v0 = if apex < v0 { apex.max(v0-long) } else { v0-long }; }
             if vh { v1 = if apex > v1 { apex.min(v1+long) } else { v1+long }; }
         }
         _ => { if vl { v0 -= long; } if vh { v1 += long; } }
     }
-    let e = add(scale(fr.x,u0.cos()),scale(fr.y,u0.sin()));
+    let e = add(scale(fr.x,u0.dcos()),scale(fr.y,u0.dsin()));
     let plane_normal = cross(fr.z,e);
     let at = |v: f64| f.surface.point([u0,v]);
     let n_at = |v: f64| f.surface.normal([u0,v]).map(|n| scale(n,out)).ok_or("no normal");
@@ -551,7 +553,7 @@ fn revolved_sweep(b: &Brep,f: &Face,s: [f64;2],reach: Reach) -> Result<Option<Br
     // the section's frame turns about the profile's normal, `z × e`, so its `y` is the axis's
     // opposite: the surface's `v` is the arc's `−v`
     let frame = Frame::new(centre,plane_normal,e);
-    let pt = |q: f64,v: f64| add(centre,add(scale(e,q*v.cos()),scale(fr.z,q*v.sin())));
+    let pt = |q: f64,v: f64| add(centre,add(scale(e,q*v.dcos()),scale(fr.z,q*v.dsin())));
     if matches!(f.surface,Surface::Torus(..)) && [v0,v1].iter().flat_map(|&v| radii.map(|q| pt(q,v)))
         .chain(radii.iter().map(|&q| sub(centre,scale(e,q)))).any(|q| dot(sub(q,fr.o),e) < -tol) {
         return Err("its sweep passes the axis of its torus".into())

@@ -133,22 +133,37 @@ fn newton_onto_two_spheres_lands_on_their_circle_and_three_on_their_point() {
     assert!(newton_onto([0.;3],0.5,|_| None::<[([f64;3],f64);2]>,|_| true).is_none());
 }
 
-/// **A root certified by Kantorovich's theorem is the root, however flat the system** (#780 R2,
-/// `isolate::solve`): a system all but linear — its second derivatives' bound a rounding's, as a
-/// line's against a B-spline sheet fitted flat is — has its one root found where it is. The ball
-/// the theorem holds it in was once read as `(1 − √(1 − 2h))/βK`, which cancels to nothing when
-/// `βK` is rounding's: Newton's first step left the empty ball, and the box's middle came back as
-/// a crossing a long way off (a slid bar's edge met its plane at 7.86 rather than 9).
+/// A linear system `A (x − root)` as `isolate` reads one: its values and Jacobian in floats, and
+/// over a box in outward-rounded intervals.
+type Over3 = ([gcs_core::interval::Iv;3],[[gcs_core::interval::Iv;3];3]);
+fn linear<'a>(a: &'a [[f64;3];3],root: &'a [f64;3]) -> (impl Fn([f64;3]) -> ([f64;3],[[f64;3];3]) + 'a,impl Fn(&[[f64;2];3]) -> Over3 + 'a) {
+    use gcs_core::interval::Iv;
+    (move |x: [f64;3]| (std::array::from_fn(|i| (0..3).map(|k| a[i][k]*(x[k]-root[k])).sum()),*a),
+     move |bx: &[[f64;2];3]| (std::array::from_fn(|i| (0..3).fold(Iv::point(0.),|s,k| s+Iv::point(a[i][k])*(Iv::new(bx[k][0],bx[k][1])-Iv::point(root[k])))),
+         std::array::from_fn(|i| std::array::from_fn(|k| Iv::point(a[i][k])))))
+}
+
+/// **A root certified is the root, however flat the system** (#780 R2, #814, `isolate::solve`): a
+/// system all but linear — its second derivatives' bound a rounding's, as a line's against a
+/// B-spline sheet fitted flat is — has its one root found where it is, by either test behind the
+/// boundary (`Krawczyk`, and `Kantorovich` from hand bounds). The ball Kantorovich's theorem holds
+/// it in was once read as `(1 − √(1 − 2h))/βK`, which cancels to nothing when `βK` is rounding's:
+/// Newton's first step left the empty ball, and the box's middle came back as a crossing a long
+/// way off (a slid bar's edge met its plane at 7.86 rather than 9).
 #[test]
 fn a_root_certified_over_a_flat_system_is_where_it_is() {
-    use gcs_core::isolate::solve;
+    use gcs_core::isolate::{solve,solve_by,Closures,Kantorovich};
     let root = [0.27,0.81,0.64];
     let a = [[2.,-0.3,0.1],[0.4,-1.,0.2],[0.,0.5,-3.]];
-    let f = |x: [f64;3]| -> ([f64;3],[[f64;3];3]) {
-        (std::array::from_fn(|i| (0..3).map(|k| a[i][k]*(x[k]-root[k])).sum()),a)
-    };
+    let (f,over) = linear(&a,&root);
+    let sys = Closures {at:&f,over:&over};
+    let near = |x: [f64;3]| f(x).0.iter().all(|v| v.abs() <= 1e-12);
+    let found = solve::<3>(&sys,[[0.,1.];3],1e-12,&near).expect("a search that stops");
+    assert_eq!(found.len(),1,"{found:?}");
+    assert!(!found[0].touch && (0..3).all(|k| (found[0].at[k]-root[k]).abs() <= 1e-12),"{found:?}");
     for bend in [0.,1e-30,1e-17,1e-9] {
-        let found = solve::<3>(&f,&|_| [bend;3],[[0.,1.];3],1e-12,&|_| false).expect("a search that stops");
+        let second = |_: &[[f64;2];3]| [bend;3];
+        let found = solve_by(&Kantorovich(&second),&sys,[[0.,1.];3],1e-12,&near).expect("a search that stops");
         assert_eq!(found.len(),1,"bent by {bend}: {found:?}");
         assert!(!found[0].touch && (0..3).all(|k| (found[0].at[k]-root[k]).abs() <= 1e-12),"bent by {bend}: {found:?}");
     }
@@ -215,9 +230,15 @@ fn a_crossing_beside_a_sheets_kink_is_read_on_the_sheet() {
     net.check().unwrap();
     assert_eq!(net.kinks(0),vec![0.7]);
     assert!(net.kinks(1).is_empty());
-    assert_eq!(net.second_bounds([0.5,1.5],[0.,1.]),None,"no bound across the kink");
-    let flat = net.second_bounds([0.,0.7],[0.,1.]).expect("a bound up to it");
-    assert!(flat.iter().all(|&b| b <= 1e-12),"flat up to it: {flat:?}");
+    // across the kink the enclosure of `S_u` is the hull of both one-sided slopes (#814): `x` runs
+    // 4/0.7 a unit of `u` before it and 1/1.3 after, both held
+    use gcs_core::brep::enclose::Enclosed;
+    let across = net.enclose([[0.5,1.5],[0.,1.]]);
+    for slope in [4./0.7,1./1.3] { assert!(across.d[0][0].lo() <= slope && slope <= across.d[0][0].hi(),"{slope} in {:?}",across.d[0][0]) }
+    // short of it, the one slope (a box reaching the kink itself holds both: its derivative there is
+    // either one-sided slope)
+    let before = net.enclose([[0.,0.69],[0.,1.]]);
+    assert!((before.d[0][0].lo()-4./0.7).abs() <= 1e-9 && (before.d[0][0].hi()-4./0.7).abs() <= 1e-9,"one slope short of it: {:?}",before.d[0][0]);
     let sheet = Surface::BSpline(Frame::WORLD,std::sync::Arc::new(net));
     let (mut failed,mut read) = (Vec::new(),0);
     for x in [4.3,4.05,4.0004,3.99,3.9,2.,4.8] {
@@ -246,16 +267,22 @@ fn a_crossing_beside_a_sheets_kink_is_read_on_the_sheet() {
 /// nowhere, built the frustum's sweep wrong. A touch, once, at the turn.
 #[test]
 fn a_double_root_a_stretch_ends_on_is_found() {
-    use gcs_core::isolate::roots;
+    use gcs_core::isolate::{roots,roots_by,Bounded,Formula,Function,Written};
+    use gcs_core::interval::{Jet,Num};
     use std::f64::consts::{PI,TAU};
+    struct Dip { c: f64,amp: f64 }
+    impl Formula for Dip { fn jet<T: Num>(&self,t: Jet<T>) -> Jet<T> { Jet::of(self.c)-t.sin_cos().0.times(self.amp) } }
     for amp in [1.8973665961010275,1.,3.7,0.25] {
         for eps in [4e-16,1e-15,1e-13,1e-10] {
-            let c = -amp*(1.+eps);
-            let g = |t: f64| c-amp*t.sin();
-            let dg = |t: f64| -amp*t.cos();
-            let found = roots(&g,&dg,&|_,_| [amp,amp],[0.,TAU],1e-12,&|t| g(t).abs() <= 1e-9).expect("a search that stops");
-            assert_eq!(found.len(),1,"{amp}, {eps}: {found:?}");
-            assert!(found[0].touch && (found[0].at-1.5*PI).abs() <= 1e-4,"{amp}, {eps}: {found:?}");
+            let g = Written(Dip {c:-amp*(1.+eps),amp});
+            let near = |t: f64| g.at(t).0.abs() <= 1e-9;
+            let bound = |_: f64,_: f64| [amp,amp];
+            // by the interval slope, and by hand bounds: one touch, at the turn, either way
+            for found in [roots(&g,[0.,TAU],1e-12,&near),roots_by(&Bounded(&bound),gcs_core::meter::Stage::Ray,&g,[0.,TAU],1e-12,&near)] {
+                let found = found.expect("a search that stops");
+                assert_eq!(found.len(),1,"{amp}, {eps}: {found:?}");
+                assert!(found[0].touch && (found[0].at-1.5*PI).abs() <= 1e-4,"{amp}, {eps}: {found:?}");
+            }
         }
     }
 }
@@ -267,18 +294,21 @@ fn a_double_root_a_stretch_ends_on_is_found() {
 /// its root.
 #[test]
 fn a_search_says_why_it_gave_up() {
-    use gcs_core::isolate::{roots,solve,GaveUp};
+    use gcs_core::isolate::{roots,solve,Closures,GaveUp,Poly};
+    use gcs_core::interval::Iv;
     use gcs_core::meter::{self as meter,Budget,Meter,Stage};
-    let flat = roots(&|_| 0.,&|_| 0.,&|_,_| [1.,1.],[0.,1.],1e-15,&|_| false);
+    let flat = roots(&Poly(&[0.]),[0.,1.],1e-15,&|_| false);
     assert!(matches!(flat,Err(GaveUp::Most)),"{flat:?}");
-    let g = |t: f64| t-0.5;
-    let line = |x: [f64;1]| ([x[0]-0.5],[[1.]]);
-    let found = roots(&g,&|_| 1.,&|_,_| [1.,0.],[0.,1.],1e-12,&|_| false).expect("a search that stops");
+    let g = Poly(&[-0.5,1.]);
+    let at = |x: [f64;1]| ([x[0]-0.5],[[1.]]);
+    let over = |b: &[[f64;2];1]| ([Iv::new(b[0][0],b[0][1])-Iv::point(0.5)],[[Iv::point(1.)]]);
+    let line = Closures {at:&at,over:&over};
+    let found = roots(&g,[0.,1.],1e-12,&|_| false).expect("a search that stops");
     assert!(found.len() == 1 && (found[0].at-0.5).abs() <= 1e-12,"{found:?}");
     let m = Meter::new(Budget::UNLIMITED.with(Stage::Ray,0));
-    let stopped = meter::within(&m,|| roots(&g,&|_| 1.,&|_,_| [1.,0.],[0.,1.],1e-12,&|_| false));
+    let stopped = meter::within(&m,|| roots(&g,[0.,1.],1e-12,&|_| false));
     assert!(matches!(stopped,Err(GaveUp::Stopped)),"{stopped:?}");
-    let stopped = meter::within(&m,|| solve::<1>(&line,&|_| [0.],[[0.,1.]],1e-12,&|_| false));
+    let stopped = meter::within(&m,|| solve::<1>(&line,[[0.,1.]],1e-12,&|_| false));
     assert!(matches!(stopped,Err(GaveUp::Stopped)),"{stopped:?}");
     assert_eq!(m.count(Stage::Ray),2,"one stretch and one box read");
 }

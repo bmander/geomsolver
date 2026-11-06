@@ -8,7 +8,7 @@
 //! The same counts, with what only a person reads beside them (the meetings found in closed form
 //! against those traced and those given by construction (#810), per pair of surface kinds, and the
 //! slowest; the curve–surface searches
-//! that sampled, per pair; the deepest outline), are the build's **profile** (`Meter::report`),
+//! proved and measured, per pair; the deepest outline), are the build's **profile** (`Meter::report`),
 //! printed where `SOLVENT_SWEEP_PROFILE` is set. A performance change cites it before and after.
 //!
 //! The meter is the thread's: `util::par` hands it to every worker a parallel map starts, so the
@@ -27,8 +27,8 @@ pub enum Stage {
     Arrangement = 0,
     /// Steps of the traces of meetings with no closed form (`ssi::trace`).
     Trace = 1,
-    /// A curve's crossings with a surface sought — a ray's, an edge's — and the samples a sampled
-    /// search takes (`query::curve_surface`).
+    /// A curve's crossings with a surface sought — a ray's, an edge's — each stretch or box its
+    /// certified search reads (`query::curve_surface`, `util::isolate`).
     Ray = 2,
     /// Chords an outline is cut in (`query::Outline`).
     Outline = 3,
@@ -89,8 +89,8 @@ struct Meetings { exact: u64,traced: u64,given: u64,nanos: u128,slowest: u128 }
 struct Profile {
     /// Meetings by the two surfaces' kinds, the pair sorted.
     meetings: BTreeMap<(&'static str,&'static str),Meetings>,
-    /// Curve–surface searches by the curve's and the surface's kinds: certified (closed form or a
-    /// bounded isolation) and sampled.
+    /// Curve–surface searches by the curve's and the surface's kinds: certified (closed form or an
+    /// isolation proved in intervals) and measured (through a trace's measured enclosure).
     crossings: BTreeMap<(&'static str,&'static str),[u64;2]>,
     /// The deepest an outline's chords were halved.
     outline_depth: usize,
@@ -140,7 +140,7 @@ impl Meter {
     }
     /// The counts and what the profile keeps, for a person: each stage's steps against its
     /// limit, the meetings exact and traced per pair of surface kinds, the slowest pairs, the
-    /// curve–surface searches certified and sampled per pair, and the deepest outline.
+    /// curve–surface searches certified and measured per pair, and the deepest outline.
     pub fn report(&self) -> String {
         use std::fmt::Write;
         let mut s = String::new();
@@ -160,16 +160,17 @@ impl Meter {
         slow.sort_by(|x,y| y.1.slowest.cmp(&x.1.slowest));
         let _ = writeln!(s,"  slowest pairs (one meeting, ms): {}",slow.iter().take(5)
             .map(|((a,b),m)| format!("{a} × {b} {:.1}",m.slowest as f64*1e-6)).collect::<Vec<_>>().join(", "));
-        let _ = writeln!(s,"  curve–surface searches (certified / sampled):");
+        let _ = writeln!(s,"  curve–surface searches (proved / measured):");
         for ((c,f),[x,y]) in &p.crossings { let _ = writeln!(s,"    {c:>10} × {f:<10} {x:>6} / {y:<6}"); }
         let _ = writeln!(s,"  deepest outline: {} halvings",p.outline_depth);
         let _ = writeln!(s,"  meeting analysis:");
         for (what,n) in &p.analysis { let _ = writeln!(s,"    {what:<28} {n:>12}"); }
         s
     }
-    /// The curve–surface searches that sampled, all pairs together (what V1's gate asks to be none
-    /// on the surfaces it reads).
-    pub fn sampled(&self) -> u64 {
+    /// The curve–surface searches read through a measured enclosure (a trace's own error bound,
+    /// `enclose`), not a proved one, all pairs together (what V1's gate asks to be none on the
+    /// surfaces it reads; #814 retired the sampled search these once counted).
+    pub fn measured(&self) -> u64 {
         self.profile.lock().unwrap_or_else(|e| e.into_inner()).crossings.values().map(|c| c[1]).sum()
     }
 }
@@ -267,7 +268,8 @@ fn meetings_of(a: &'static str,b: &'static str,count: impl FnOnce(&mut Meetings)
 }
 
 /// A curve of kind `curve` sought against a surface of kind `surface`: certified (a closed form or
-/// a bounded isolation, `util::isolate`) or sampled.
+/// an isolation proved in intervals, `util::isolate`) or measured (through a trace's measured
+/// enclosure, `enclose`).
 pub fn crossing(curve: &'static str,surface: &'static str,certified: bool) {
     CURRENT.with(|c| if let Some(m) = &*c.borrow() {
         let mut p = m.profile.lock().unwrap_or_else(|e| e.into_inner());

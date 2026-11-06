@@ -127,6 +127,9 @@ impl Stations {
         }
         Ok(Stations {spans,at,inv})
     }
+    /// The inverse of piece `j`'s nodes' Vandermonde matrix (row `k` the coefficient of `tᵏ`, `t` the
+    /// piece's own variable): what reads a number as a polynomial (`enclose`).
+    pub(crate) fn inverse(&self,j: usize) -> &[[f64;6];6] { &self.inv[j] }
     /// The interval.
     pub fn span(&self) -> [f64;2] { [self.spans[0][0],self.spans[self.spans.len()-1][1]] }
     /// The piece holding `s`, the end ones taking what lies past them.
