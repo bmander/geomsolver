@@ -401,7 +401,7 @@ pub fn written_within(bytes: &[u8],sag: f64,bar: f64) -> Result<f64,ExportRefusa
 /// often a sliver the B-rep holds — one cut ending all but flush with another's face — and the
 /// refusal says so, and what to move: the model mends it, not the mesh, which drops nothing, since
 /// a triangle dropped opens the shell.
-pub fn flattened(m: &super::mesh::Mesh,faces: &[super::topo::Face],solid: &str,bar: f64,scale: f64) -> Result<(),ExportRefusal> {
+fn flattened(m: &super::mesh::Mesh,faces: &[super::topo::Face],solid: &str,bar: f64,scale: f64) -> Result<(),ExportRefusal> {
     use crate::space::{cross,distance,norm,sub};
     let corners = |i: usize| m.tris[i].map(|v| m.pts[v as usize]);
     let written = |i: usize| corners(i).map(|p| p.map(|x| x as f32 as f64));
@@ -437,7 +437,7 @@ pub fn flattened(m: &super::mesh::Mesh,faces: &[super::topo::Face],solid: &str,b
     let c = corners(first);
     let at = [0,1,2].map(|k| (c[0][k]+c[1][k]+c[2][k])/3.);
     let (long,thick) = measure(c);
-    let how = if c.iter().flatten().any(|x| !x.is_finite()) { "a corner that is no number" }
+    let how = if c.iter().flatten().any(|x| !x.is_finite()) { "a nonfinite corner" }
         else if crate::mesh::degenerate(c[0],c[1],c[2]) { "no area as the mesh made it" }
         else { "no area once float32 rounds its corners" };
     let beside = beside.iter().map(|&f| name(f)).collect::<Vec<_>>();

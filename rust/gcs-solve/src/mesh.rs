@@ -476,7 +476,7 @@ fn stl_indices(bytes: &[u8]) -> Result<(usize,Vec<[usize;3]>),String> {
     for (i,p) in points.enumerate() {
         // where, so a refusal of a file with no faces to name still says which triangle (#821)
         if p.iter().flatten().any(|x| !x.is_finite()) {
-            return Err(format!("binary STL triangle {} of {count} has a coordinate that is no number",i+1));
+            return Err(format!("binary STL triangle {} of {count} has a nonfinite coordinate",i+1));
         }
         if degenerate(p[0],p[1],p[2]) {
             let at = [0,1,2].map(|k| (p[0][k]+p[1][k]+p[2][k])/3.);
