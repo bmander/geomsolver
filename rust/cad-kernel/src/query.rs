@@ -673,41 +673,27 @@ fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surfac
 }
 
 /// **A line against the cylinder a slid torus's contact sweeps** (#805, `slid::Slid` read as its
-/// apparent contour, extruded along the slide): the line seen along the slide, in the contour's
-/// plane, meets the contour where `G(s) = (P(s) − q) · m` is nought, `q` the line's point and `m`
-/// the unit normal to its way there, its parameter `(P(s) − q) · e / |e|²` along it. The roots are
-/// isolated (`util::isolate::roots`) from `G'` and `G''` bounded over each stretch by the contour's
-/// jets read in outward-rounded intervals (`turned::Iv`), as a turned contact's are. A line along
-/// the slide is a ruling or misses: `NoForm` where it stands within the tolerance of the contour
-/// (`meets` has read a ruling as along it already), none where it stands clear. `NoForm` for the
-/// contact itself, read as no contour.
+/// apparent contour, extruded along the slide): it meets the cylinder where the contour crosses the
+/// plane holding the line and the slide (`Slid::crossings`, isolated with the contour's jets
+/// bounded in outward intervals), its parameter there the line's at that point seen along the
+/// slide. A line along the slide is a ruling or misses: `NoForm` where it stands within the
+/// tolerance of the contour (`meets` has read a ruling as along it already), none where it stands
+/// clear. `NoForm` for the contact itself, read as no contour.
 fn line_slid(p: V,d: V,h: &crate::slid::Slid,surface: &Surface,tol: f64) -> Certified {
-    use crate::turned::{Iv,Jet,Num};
+    use crate::turned::Exact;
     if !h.contour { return Err(Uncertified::NoForm) }
-    let g = &h.frame;
-    let w = h.contact.d;
+    let w = h.slide();
     let flat = |v: V| crate::util::space::sub(v,scale(w,dot(v,w)));
-    let (q,e) = (flat(g.local(p)),flat(g.dir_local(d)));
-    let [s0,s1] = h.span;
-    let (s0,s1) = (s0.min(s1),s0.max(s1));
+    let e = flat(d);
     let ee = dot(e,e);
     if ee <= 1e-24*dot(d,d) {
-        let foot = h.inverse(g.at(q));
-        return if distance(h.d2(foot).0,g.at(q)) > tol { Ok(Meets::At(Vec::new())) } else { Err(Uncertified::NoForm) }
+        let foot = h.d2(h.inverse(p)).0;
+        return if distance(flat(crate::util::space::sub(foot,p)),[0.;3]) > tol { Ok(Meets::At(Vec::new())) } else { Err(Uncertified::NoForm) }
     }
-    let m = crate::util::space::cross(w,scale(e,1./ee.sqrt()));
-    fn big<T: Num>(l: [Jet<T>;3],q: V,m: V) -> Jet<T> {
-        (l[0]-Jet::of(q[0])).times(m[0])+(l[1]-Jet::of(q[1])).times(m[1])+(l[2]-Jet::of(q[2])).times(m[2])
-    }
-    let jet = |s: f64| big(h.jet(Jet::at(s)),q,m);
-    let t_of = |s: f64| { let l = h.jet(Jet::<f64>::at(s)).map(|j| j.v); dot(crate::util::space::sub(l,q),e)/ee };
-    let at = |s: f64| add(p,scale(d,t_of(s)));
-    let bound = |x: f64,y: f64| {
-        let j = big(h.jet(Jet::at(Iv::new(x,y))),q,m);
-        match (j.d.most(),j.dd.most()) { (Some(a),Some(b)) => [a,b],_ => [f64::INFINITY;2] }
-    };
-    let width = 1e-12*(s1-s0).max(1e-300);
-    let found = crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|s| surface.implicit(at(s)).abs() <= tol)?;
+    // the line's parameter at the contour's point `x`, seen along the slide
+    let t_of = |s: f64| dot(flat(crate::util::space::sub(h.d2(s).0,p)),e)/ee;
+    let n = crate::util::space::cross(w,scale(e,1./ee.sqrt()));
+    let found = h.crossings(p,n,&|s| surface.implicit(add(p,scale(d,t_of(s)))).abs() <= tol)?;
     Ok(Meets::At(found.into_iter().map(|r| (t_of(r.at),r.touch)).collect()))
 }
 

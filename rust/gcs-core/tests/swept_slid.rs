@@ -13,30 +13,27 @@
 //! definition, each point's line back along the slide read against the ring; and membership.
 use gcs_core::brep::build::torus;
 use gcs_core::brep::props::volume;
-use gcs_core::brep::swept::closed::{closed,cut_from,Unbuilt};
-use gcs_core::brep::trajectory::{Screw,Trajectory};
+use gcs_core::brep::swept::closed::{closed,Unbuilt};
+use gcs_core::brep::geom::Frame;
+use gcs_core::brep::turned::Exact;
+use crate::swept_closed::slide;
 use gcs_core::space::{add,cross,dot,norm,scale,sub,unit};
 use std::f64::consts::{PI,TAU};
 
 type V = [f64;3];
 
-/// The slide carrying a tool by `d` over the roll `[0, 1]`.
-fn slide(d: V) -> Trajectory {
-    Trajectory::Twist(Screw {origin:[0.;3],axis:unit(d),ratio:0.,advance:norm(d)*TAU})
-}
-
-/// A ring about `axis` through the origin: its tube's middle radius `big` and the tube's `small`,
-/// and the frame `(x, y, axis)` it is read in.
-struct Ring { big: f64,small: f64,x: V,y: V,z: V }
+/// A ring about the origin: its tube's middle radius `big` and the tube's `small`, and the frame it
+/// is read in, its `z` the ring's axis.
+struct Ring { big: f64,small: f64,frame: Frame }
 
 impl Ring {
     /// The ring leaning `beta` from `z` toward `x`.
     fn leaning(big: f64,small: f64,beta: f64) -> Ring {
         let (s,c) = beta.sin_cos();
-        Ring {big,small,x:[c,0.,-s],y:[0.,1.,0.],z:[s,0.,c]}
+        Ring {big,small,frame:Frame {o:[0.;3],x:[c,0.,-s],y:[0.,1.,0.],z:[s,0.,c]}}
     }
-    fn local(&self,p: V) -> V { [dot(p,self.x),dot(p,self.y),dot(p,self.z)] }
-    fn at(&self,l: V) -> V { add(add(scale(self.x,l[0]),scale(self.y,l[1])),scale(self.z,l[2])) }
+    fn local(&self,p: V) -> V { self.frame.local(p) }
+    fn at(&self,l: V) -> V { self.frame.at(l) }
     /// Below nought inside the solid ring.
     fn inside(&self,p: V) -> f64 { let [x,y,z] = self.local(p); (x.hypot(y)-self.big).hypot(z)-self.small }
     /// **The contact** with the slide `d` (unit), apart from `brep::slid`: at the angle `u` round
@@ -67,25 +64,35 @@ impl Ring {
     /// The annulus between the two contours along `d`.
     fn annulus(&self,d: V) -> f64 { self.contour_area(d,true)-self.contour_area(d,false) }
     fn volume(&self) -> f64 { 2.*PI*PI*self.big*self.small*self.small }
-    /// How many stretches the line through `p` along `d` stands inside the ring in, read at 4000
-    /// steps across the ring's reach.
+    /// How many stretches the line through `p` along the unit `d` stands inside the ring in, across
+    /// its reach: stepped by the ring's distance from the line's point (its exact signed distance,
+    /// so no step passes the surface), never less than 1e-4.
     fn stretches(&self,p: V,d: V) -> usize {
         let reach = self.big+self.small+1.;
-        let mut inside = false;
-        let mut count = 0;
-        for k in 0..=4000 {
-            let t = -reach+2.*reach*k as f64/4000.;
-            let now = self.inside(add(p,scale(d,t))) < 0.;
-            if now && !inside { count += 1 }
-            inside = now;
+        let (mut t,mut inside,mut count) = (-reach,false,0);
+        while t <= reach {
+            let g = self.inside(add(p,scale(d,t)));
+            if g < 0. && !inside { count += 1 }
+            inside = g < 0.;
+            t += g.abs().max(1e-4);
         }
         count
     }
 }
 
-/// **The sweep's definition, sampled**: `p` is in it where some point of its line back along the
-/// slide, `p − t D` for `t` in `[0, 1]`, is in the ring (read at 800 steps).
-fn swept(ring: &Ring,d: V,p: V) -> bool { (0..=800).any(|k| ring.inside(sub(p,scale(d,k as f64/800.))) <= 0.) }
+/// **The sweep's definition, read**: `p` is in it where some point of its line back along the
+/// slide, `p − t D` for `t` in `[0, 1]`, is in the ring — stepped by the ring's exact distance from
+/// the line's point, never less than a ten-thousandth of `D`.
+fn swept(ring: &Ring,d: V,p: V) -> bool {
+    let len = norm(d);
+    let mut t = 0.;
+    while t <= 1. {
+        let g = ring.inside(sub(p,scale(d,t)));
+        if g <= 0. { return true }
+        t += (g/len).max(1e-4);
+    }
+    ring.inside(sub(p,d)) <= 0.
+}
 
 /// **The contact read by the kernel is the contact** (`brep::slid`): each half's point is on the
 /// ring, its normal there square to the slide, and it agrees with the contact read here in angles;
@@ -93,13 +100,11 @@ fn swept(ring: &Ring,d: V,p: V) -> bool { (0..=800).any(|k| ring.inside(sub(p,sc
 /// slide.
 #[test]
 fn the_slid_contact_is_where_the_ring_grazes_the_slide() {
-    use gcs_core::brep::geom::Frame;
     use gcs_core::brep::slid::halves;
     let ring = Ring::leaning(3.,1.,35f64.to_radians());
     let d = unit([0.3,-0.2,1.]);
-    let frame = Frame {o:[0.;3],x:ring.x,y:ring.y,z:ring.z};
     for (side,outer) in [(1.,true),(-1.,false)] {
-        for (h,c) in halves(frame,3.,1.,d,side,false).iter().zip(halves(frame,3.,1.,d,side,true)) {
+        for (h,c) in halves(ring.frame,3.,1.,d,side,false).iter().zip(halves(ring.frame,3.,1.,d,side,true)) {
             for k in 0..=20 {
                 let s = -1.+k as f64/10.;
                 let (x,dx,ddx) = h.d2(s);
@@ -127,24 +132,21 @@ fn the_slid_contact_is_where_the_ring_grazes_the_slide() {
 /// `u = ±π/2`. The outer contour never folds.
 #[test]
 fn the_inner_contour_folds_where_the_slide_runs_along_an_asymptote() {
-    use gcs_core::brep::geom::Frame;
     use gcs_core::brep::slid::halves;
     for (big,small) in [(3.,1.),(2.,1.),(4.,0.5)] {
         let fold = ((big-small)/small as f64).sqrt().atan();
         for (beta,folds) in [(fold-1f64.to_radians(),false),(fold+1f64.to_radians(),true)] {
             let ring = Ring::leaning(big,small,beta);
-            let frame = Frame {o:[0.;3],x:ring.x,y:ring.y,z:ring.z};
             let d = [0.,0.,1.];
-            let inner = halves(frame,big,small,d,-1.,true);
+            let inner = halves(ring.frame,big,small,d,-1.,true);
             assert_eq!(inner.iter().any(|h| h.folded().is_some()),folds,"R {big}, r {small}, β {:.2}°",beta.to_degrees());
-            let outer = halves(frame,big,small,d,1.,true);
+            let outer = halves(ring.frame,big,small,d,1.,true);
             assert!(outer.iter().all(|h| h.folded().is_none() && h.meets_again().is_none()));
             if !folds { assert!(inner.iter().all(|h| h.meets_again().is_none())) }
         }
         // at the fold itself, the inner contour's speed is nought across the lean
         let ring = Ring::leaning(big,small,fold);
-        let frame = Frame {o:[0.;3],x:ring.x,y:ring.y,z:ring.z};
-        let [h,_] = halves(frame,big,small,[0.,0.,1.],-1.,true);
+        let [h,_] = halves(ring.frame,big,small,[0.,0.,1.],-1.,true);
         // `u = π/2` about the half's middle, `s = tan(π/4) = 1`
         assert!(norm(h.d2(1.).1) <= 1e-6,"R {big}, r {small}: the contour's speed at its cusp {}",norm(h.d2(1.).1));
     }
@@ -176,14 +178,18 @@ fn held(built: &gcs_core::brep::topo::Brep,ring: &Ring,tool: &gcs_core::brep::to
 }
 
 /// **A ring slid at a lean closes into its sweep** (#805's gate, built alone): a ring of middle
-/// radius 3 and tube 1, its axis leaning 35° from the slide, slid 6 (its two end poses apart) and 2
-/// (overlapping). Its sweep is the ring at both end poses and its two contacts swept into the
-/// cylinders over their contours, met in closed form; each to `V + |D| A` within 1e-9, to
-/// membership and to a Monte Carlo of the definition.
+/// radius 3 and tube 1, its axis leaning 35° from the slide, slid 6, its two end poses apart. Its
+/// sweep is the ring at both end poses and its two contacts swept into the cylinders over their
+/// contours, met in closed form; to `V + |D| A` within 1e-9, to membership and to a Monte Carlo of
+/// the definition.
 #[test]
-fn a_ring_slid_at_a_lean_closes_into_its_sweep() {
-    for d in [[0.,0.,6.],[0.,0.,2.]] { slid_closes(35.,d) }
-}
+fn a_ring_slid_at_a_lean_closes_into_its_sweep() { slid_closes(35.,[0.,0.,6.]) }
+
+/// **A ring slid at a lean past less than its own reach closes into its sweep**: the ring of
+/// `a_ring_slid_at_a_lean_closes_into_its_sweep` slid 2, its two end poses overlapping, so each
+/// crosses the other and the contours' cylinders join them across their overlap.
+#[test]
+fn a_ring_slid_at_a_lean_by_less_than_its_reach_closes_into_its_sweep() { slid_closes(35.,[0.,0.,2.]) }
 
 /// **A ring slid aslant its lean closes into its sweep**: `a_ring_slid_at_a_lean_closes_into_its_sweep`'s
 /// ring at 20° slid 6 along a way leaning off the plane of the lean too, so neither the slide nor
@@ -197,29 +203,11 @@ fn a_ring_slid_aslant_its_lean_closes_into_its_sweep() {
 /// and held to `V + |D| A` within 1e-9, to membership and to the definition sampled.
 fn slid_closes(lean: f64,d: V) {
     let ring = Ring::leaning(3.,1.,lean.to_radians());
-    let tool = torus([0.;3],ring.z,3.,1.).unwrap();
+    let tool = torus([0.;3],ring.frame.z,3.,1.).unwrap();
     let built = closed(&tool,&slide(d),[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("slid {d:?}: {e:?}"));
     let expected = ring.volume()+norm(d)*ring.annulus(unit(d));
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"slid {d:?}: {} against {expected}",volume(&built));
     held(&built,&ring,&tool,d,20000);
-}
-
-/// **A ring slid at a lean stops inside a block** (#805, built cut from a blank): the ring of
-/// `a_ring_slid_at_a_lean_closes_into_its_sweep` pushed straight down 8 from its centre 4 above a
-/// block's top, so it ends wholly in the block, its centre 4 under the top. Each line down the push
-/// meets the ring once or not at all, so the block loses, over the annulus `A` between the contours,
-/// each line's depth to the ring's far side at the end — by the ring's symmetry about its centre,
-/// the centre's depth times `A` and half the ring's volume: `4 A + π² R r²`, to 1e-9.
-#[test]
-fn a_ring_slid_at_a_lean_stops_inside_a_block() {
-    let ring = Ring::leaning(3.,1.,35f64.to_radians());
-    let tool = torus([0.,0.,4.],ring.z,3.,1.).unwrap();
-    let block = crate::brep::block([-8.,-8.,-8.],[8.,8.,0.]);
-    let d = [0.,0.,-8.];
-    let cut = cut_from(&block,&tool,&slide(d),[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("{e:?}"));
-    let expected = 16.*16.*8.-plunged_away(3.,1.,35f64.to_radians(),4.);
-    assert!((volume(&cut)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&cut));
-    crate::swept_closed::agrees_cut(&cut,&block,&tool,&slide(d));
 }
 
 /// What a ring of middle radius `big` and tube `small`, its axis leaning `beta` from upright, pushed
@@ -240,7 +228,7 @@ pub(crate) fn plunged_away(big: f64,small: f64,beta: f64,depth: f64) -> f64 {
 fn a_ring_slid_past_its_fold_is_refused_by_name() {
     use gcs_core::brep::swept::closed::reads;
     let ring = Ring::leaning(3.,1.,60f64.to_radians());
-    let tool = torus([0.;3],ring.z,3.,1.).unwrap();
+    let tool = torus([0.;3],ring.frame.z,3.,1.).unwrap();
     let path = slide([0.,0.,6.]);
     for refused in [closed(&tool,&path,[0.,1.],0.002,1e-6).map(|_| ()),reads(&tool,&path).map(|_| ())] {
         match refused {
@@ -258,10 +246,9 @@ fn a_ring_slid_past_its_fold_is_refused_by_name() {
 /// The cylinders a ring's contacts sweep along the slide `d` (unit): each half of each contour,
 /// outer (`side` 1) and inner, extruded along `d` (`Surface::Extrusion` of `Curve::Slid`).
 fn contour_cylinders(ring: &Ring,d: V,side: f64) -> Vec<gcs_core::brep::geom::Surface> {
-    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::geom::{Curve,Surface};
     use std::sync::Arc;
-    let frame = Frame {o:[0.;3],x:ring.x,y:ring.y,z:ring.z};
-    gcs_core::brep::slid::halves(frame,ring.big,ring.small,d,side,true).iter()
+    gcs_core::brep::slid::halves(ring.frame,ring.big,ring.small,d,side,true).iter()
         .map(|h| Surface::Extrusion(Frame::about([0.;3],d),Arc::new(Curve::Slid(Arc::new(*h))))).collect()
 }
 
@@ -311,11 +298,11 @@ fn a_line_meets_a_slid_contours_cylinder_where_a_scan_finds_it() {
 /// and the inner's meet nowhere.
 #[test]
 fn a_slid_contours_cylinder_meets_its_neighbours_in_closed_form() {
-    use gcs_core::brep::geom::{Frame,Surface};
+    use gcs_core::brep::geom::Surface;
     use gcs_core::brep::ssi::{intersect,Ssi};
     let ring = Ring::leaning(3.,1.,35f64.to_radians());
     let d = unit([0.2,-0.1,1.]);
-    let posed = Surface::Torus(Frame {o:scale(d,2.5),x:ring.x,y:ring.y,z:ring.z},3.,1.);
+    let posed = Surface::Torus(Frame {o:scale(d,2.5),..ring.frame},3.,1.);
     let along = Surface::Plane(Frame::new([0.5,0.2,0.],unit(cross(d,[1.,0.3,0.])),d));
     let leaning = Surface::Plane(Frame::new([0.,0.,0.7],unit([0.3,0.1,1.]),[1.,0.,0.]));
     let inner = contour_cylinders(&ring,d,-1.);

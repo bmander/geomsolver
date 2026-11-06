@@ -105,9 +105,11 @@ impl<T: Num> Div for Jet<T> {
     }
 }
 
-type J3<T> = [Jet<T>;3];
+/// A point's three coordinates, each with its jet.
+pub type J3<T> = [Jet<T>;3];
 
-fn dot3<T: Num>(a: J3<T>,b: J3<T>) -> Jet<T> { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
+/// `a · b`, its jet.
+pub(crate) fn dot3<T: Num>(a: J3<T>,b: J3<T>) -> Jet<T> { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
 fn cross3<T: Num>(a: J3<T>,b: J3<T>) -> J3<T> { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
 fn constant<T: Num>(x: V) -> J3<T> { x.map(Jet::of) }
 
@@ -162,26 +164,9 @@ impl Contact {
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Turned { pub frame: Frame,pub contact: Contact,pub span: [f64;2],pub posed: bool }
 
-/// `[a, b]` in `n` pieces, each an interval.
-fn pieces([a,b]: [f64;2],n: usize) -> impl Iterator<Item=Iv> {
-    (0..n).map(move |k| Iv::new(a+(b-a)*k as f64/n as f64,a+(b-a)*(k+1) as f64/n as f64))
-}
-
 impl Turned {
     /// The meridian of `contact` turned about `frame`'s axis, over `span`.
     pub fn meridian(frame: Frame,contact: Contact,span: [f64;2]) -> Turned { Turned {frame,contact,span,posed:false} }
-    /// Its point at the jet `v`, in its frame's coordinates: the contact's own, posed, else
-    /// `(ρ, 0, z)`.
-    fn local<T: Num>(&self,v: Jet<T>) -> J3<T> {
-        if self.posed { return self.contact.point(v).0 }
-        let [r,z] = self.contact.meridian(v);
-        [r,Jet::of(0.),z]
-    }
-    /// `M`, `M'`, `M''` at `v`.
-    pub fn d2(&self,v: f64) -> (V,V,V) {
-        let (f,l) = (&self.frame,self.local(Jet::at(v)));
-        (f.at(l.map(|j| j.v)),f.dir(l.map(|j| j.d)),f.dir(l.map(|j| j.dd)))
-    }
     /// `ρ` and `z` with their first two derivatives over the stretch `[a, b]` of `v`, each held in
     /// an interval (none where a reading left its domain over it).
     pub fn bounded(&self,[a,b]: [f64;2]) -> Option<[[[f64;2];3];2]> {
@@ -194,7 +179,7 @@ impl Turned {
     /// turn's axis, and `z'` held off nought, one sign all along.
     pub fn defined(&self,span: [f64;2]) -> bool {
         let mut sign = 0.;
-        pieces(span,64).all(|v| {
+        pieces(span,64).map(|[a,b]| Iv::new(a,b)).all(|v| {
             let (x,disc) = self.contact.point(Jet::at(v));
             let rho2 = x[0].v*x[0].v+x[1].v*x[1].v;
             let climb = match x[2].d.bounds() { Some([lo,_]) if lo > 0. => 1.,Some([_,hi]) if hi < 0. => -1.,_ => 0. };
@@ -203,56 +188,6 @@ impl Turned {
             held && disc.v.bounds().is_some_and(|[lo,_]| lo > 0.) && rho2.bounds().is_some_and(|[lo,_]| lo > 0.)
         })
     }
-    /// Newton on `(M − p) · M'` from `v`, held to the span.
-    pub fn newton(&self,p: V,mut v: f64) -> f64 {
-        let [a,b] = self.span;
-        for _ in 0..30 {
-            let (x,d,dd) = self.d2(v);
-            let e = sub(x,p);
-            let h = dot(d,d)+dot(e,dd);
-            if !(h > 0.) { break }
-            let next = (v-dot(e,d)/h).clamp(a.min(b),a.max(b));
-            if !next.is_finite() { break }
-            if (next-v).abs() <= 1e-15*(1.+v.abs()) { v = next; break }
-            v = next;
-        }
-        v
-    }
-    /// The parameter of its point nearest `p`: the nearest of samples across the span (each read
-    /// once, its point alone), then `newton`.
-    pub fn inverse(&self,p: V) -> f64 {
-        let [a,b] = self.span;
-        let off = |v: f64| { let l = self.local(Jet::<f64>::of(v)).map(|j| j.v); let q = sub(self.frame.at(l),p); dot(q,q) };
-        let v = (0..=64).map(|k| a+(b-a)*k as f64/64.).map(|v| (off(v),v)).min_by(|x,y| x.0.total_cmp(&y.0)).map_or(a,|x| x.1);
-        self.newton(p,v)
-    }
-    /// A box about it over `[t0, t1]`, never smaller than it: its point held in intervals over each
-    /// of sixteen pieces, each box's corners placed; where a reading leaves its domain, its samples
-    /// grown by its speed across a piece.
-    pub fn bounds(&self,[t0,t1]: [f64;2]) -> Box3 {
-        const PIECES: usize = 16;
-        let mut out = crate::geom::EMPTY;
-        let mut speed = None;
-        for (k,v) in pieces([t0,t1],PIECES).enumerate() {
-            let l = self.local(Jet::at(v));
-            match (l[0].v.bounds(),l[1].v.bounds(),l[2].v.bounds()) {
-                (Some(x),Some(y),Some(z)) => for c in 0..8 {
-                    crate::geom::include(&mut out,self.frame.at([x[c&1],y[(c>>1)&1],z[c>>2]]))
-                },
-                _ => {
-                    let (s,t) = (t0+(t1-t0)*k as f64/PIECES as f64,t0+(t1-t0)*(k+1) as f64/PIECES as f64);
-                    let reach = (t-s).abs()**speed.get_or_insert_with(|| self.speed());
-                    for v in [s,t] { let p = self.d2(v).0; for k in 0..3 { let mut q = p; q[k] -= reach; crate::geom::include(&mut out,q); q[k] += 2.*reach; crate::geom::include(&mut out,q) } }
-                }
-            }
-        }
-        out
-    }
-    /// The most length per unit of `v`, read at 65 points of the span.
-    pub fn speed(&self) -> f64 {
-        let [a,b] = self.span;
-        (0..=64).map(|k| crate::util::space::norm(self.d2(a+(b-a)*k as f64/64.).1)).fold(0.,f64::max)
-    }
     /// The same curve carried by the rigid `m`, or a meridian reflected by an improper one: its
     /// frame carried (the half-plane's points only read its `x` and `z`), its contact read in it as
     /// before. A posed contact is reflected nowhere yet: none where `m` is improper.
@@ -260,5 +195,87 @@ impl Turned {
         let f = self.frame.moved(m);
         if f.right() { return Some(Turned {frame:f,..*self}) }
         (!self.posed).then(|| Turned {frame:f.rehanded(true).0,..*self})
+    }
+}
+
+impl Exact for Turned {
+    fn frame(&self) -> &Frame { &self.frame }
+    fn span(&self) -> [f64;2] { self.span }
+    /// Its point at the jet `v`, in its frame's coordinates: the contact's own, posed, else
+    /// `(ρ, 0, z)`.
+    fn local<T: Num>(&self,v: Jet<T>) -> J3<T> {
+        if self.posed { return self.contact.point(v).0 }
+        let [r,z] = self.contact.meridian(v);
+        [r,Jet::of(0.),z]
+    }
+}
+
+/// `[a, b]` in `n` pieces.
+pub(crate) fn pieces([a,b]: [f64;2],n: usize) -> impl Iterator<Item=[f64;2]> {
+    (0..n).map(move |k| [a+(b-a)*k as f64/n as f64,a+(b-a)*(k+1) as f64/n as f64])
+}
+
+/// **A curve read exactly in a frame** (#780 C3's turned contact, #805's slid one): its point a jet
+/// of its parameter in its frame's coordinates (`local`), read in floats or in outward-rounded
+/// intervals, over its span. What every such curve reads off that, written once.
+pub trait Exact {
+    /// The frame its points are read in.
+    fn frame(&self) -> &Frame;
+    /// The stretch of its parameter it runs over.
+    fn span(&self) -> [f64;2];
+    /// Its point at the jet `t`, in its frame's coordinates.
+    fn local<T: Num>(&self,t: Jet<T>) -> J3<T>;
+    /// `C`, `C'`, `C''` at `t`.
+    fn d2(&self,t: f64) -> (V,V,V) {
+        let (f,l) = (self.frame(),self.local(Jet::at(t)));
+        (f.at(l.map(|j| j.v)),f.dir(l.map(|j| j.d)),f.dir(l.map(|j| j.dd)))
+    }
+    /// Newton on `(C − p) · C'` from `t`, held to the span.
+    fn newton(&self,p: V,mut t: f64) -> f64 {
+        let [a,b] = self.span();
+        for _ in 0..30 {
+            let (x,d,dd) = self.d2(t);
+            let e = sub(x,p);
+            let h = dot(d,d)+dot(e,dd);
+            if !(h > 0.) { break }
+            let next = (t-dot(e,d)/h).clamp(a.min(b),a.max(b));
+            if !next.is_finite() { break }
+            if (next-t).abs() <= 1e-15*(1.+t.abs()) { t = next; break }
+            t = next;
+        }
+        t
+    }
+    /// The parameter of its point nearest `p`: the nearest of samples across the span (each read
+    /// once, its point alone), then `newton`.
+    fn inverse(&self,p: V) -> f64 {
+        let [a,b] = self.span();
+        let off = |t: f64| { let l = self.local(Jet::<f64>::of(t)).map(|j| j.v); let q = sub(self.frame().at(l),p); dot(q,q) };
+        let t = (0..=64).map(|k| a+(b-a)*k as f64/64.).map(|t| (off(t),t)).min_by(|x,y| x.0.total_cmp(&y.0)).map_or(a,|x| x.1);
+        self.newton(p,t)
+    }
+    /// A box about it over `[t0, t1]`, never smaller than it: its point held in intervals over each
+    /// of sixteen pieces, each box's corners placed; where a reading leaves its domain, its samples
+    /// grown by its speed across a piece.
+    fn bounds(&self,[t0,t1]: [f64;2]) -> Box3 {
+        let mut out = crate::geom::EMPTY;
+        let mut speed = None;
+        for [s,t] in pieces([t0,t1],16) {
+            let l = self.local(Jet::at(Iv::new(s,t)));
+            match (l[0].v.bounds(),l[1].v.bounds(),l[2].v.bounds()) {
+                (Some(x),Some(y),Some(z)) => for c in 0..8 {
+                    crate::geom::include(&mut out,self.frame().at([x[c&1],y[(c>>1)&1],z[c>>2]]))
+                },
+                _ => {
+                    let reach = (t-s).abs()**speed.get_or_insert_with(|| self.speed());
+                    for v in [s,t] { let p = self.d2(v).0; for k in 0..3 { let mut q = p; q[k] -= reach; crate::geom::include(&mut out,q); q[k] += 2.*reach; crate::geom::include(&mut out,q) } }
+                }
+            }
+        }
+        out
+    }
+    /// The most length per unit of its parameter, read at 65 points of the span.
+    fn speed(&self) -> f64 {
+        let [a,b] = self.span();
+        (0..=64).map(|k| crate::util::space::norm(self.d2(a+(b-a)*k as f64/64.).1)).fold(0.,f64::max)
     }
 }

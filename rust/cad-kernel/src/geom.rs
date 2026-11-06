@@ -5,6 +5,7 @@
 use crate::util::fmath::Det;
 use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
 use std::sync::Arc;
+use super::turned::Exact;
 pub use super::nurbs::BSpline;
 
 pub type V = [f64;3];
@@ -1008,23 +1009,11 @@ impl Surface {
                 let uv = b.newton(p,hint);
                 if crate::util::space::distance(b.d1(uv).0,p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { b.inverse(p) }
             }
-            // a spline swept or turned likewise, its curve's foot from the hint's
-            Surface::Extrusion(_,c) | Surface::Revolution(_,c) if matches!(**c,Curve::BSpline(_)) => {
-                let Curve::BSpline(b) = &**c else { unreachable!() };
-                let uv = self.swept_inverse(p,&|q,k| b.refined(q,hint[k])).expect("a swept curve");
-                if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
-            }
-            // a turned contact's meridian likewise, by Newton from the hint's slant (#780 C3: read
-            // afresh, its samples were most of a turned build's time)
-            Surface::Revolution(_,c) if matches!(**c,Curve::Turned(_)) => {
-                let Curve::Turned(t) = &**c else { unreachable!() };
-                let uv = self.swept_inverse(p,&|q,k| t.newton(q,hint[k])).expect("a swept curve");
-                if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
-            }
-            // a slid torus's contour swept along the slide likewise (#805)
-            Surface::Extrusion(_,c) if matches!(**c,Curve::Slid(_)) => {
-                let Curve::Slid(t) = &**c else { unreachable!() };
-                let uv = self.swept_inverse(p,&|q,k| t.newton(q,hint[k])).expect("a swept curve");
+            // a curve swept or turned likewise — a spline, a turned contact's meridian, a slid
+            // torus's contour — its foot refined from the hint's (#780 C3: read afresh, a meridian's
+            // samples were most of a turned build's time)
+            Surface::Extrusion(_,c) | Surface::Revolution(_,c) if c.refined(p,0.).is_some() => {
+                let uv = self.swept_inverse(p,&|q,k| c.refined(q,hint[k]).expect("a curve refined")).expect("a swept curve");
                 if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
             }
             _ => self.inverse(p),
@@ -1750,6 +1739,17 @@ impl Curve {
                 }
                 wrap(t)
             }
+        }
+    }
+    /// The parameter of its point nearest `p`, refined from `t`, for a curve that refines its foot
+    /// from a hint: a spline (`BSpline::refined`), and a curve read exactly in a frame (Newton,
+    /// `turned::Exact`); none for any other.
+    pub fn refined(&self,p: V,t: f64) -> Option<f64> {
+        match self {
+            Curve::BSpline(b) => Some(b.refined(p,t)),
+            Curve::Turned(m) => Some(m.newton(p,t)),
+            Curve::Slid(m) => Some(m.newton(p,t)),
+            _ => None,
         }
     }
     /// Newton on `(C − p)·C'` from `v`, held to `within` where given.

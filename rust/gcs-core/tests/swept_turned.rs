@@ -14,7 +14,7 @@ use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::closed::closed;
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::Trajectory;
-use gcs_core::brep::turned::{Contact,Jet,Turned};
+use gcs_core::brep::turned::{Contact,Exact,Jet,Turned};
 use gcs_core::space::{add,cross,dot,norm,scale,sub,unit};
 use std::f64::consts::{PI,TAU};
 

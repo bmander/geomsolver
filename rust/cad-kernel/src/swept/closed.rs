@@ -129,6 +129,7 @@
 use crate::boolean::arrangement_within;
 use crate::build::{Profile,ProfileEdge,disc,prism,square};
 use crate::geom::{Curve,Frame,Surface};
+use crate::turned::Exact;
 use crate::topo::{Brep,EdgeCurve};
 use crate::trajectory::Trajectory;
 use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
@@ -1605,7 +1606,7 @@ fn turned_solid(t: &crate::turned::Turned) -> Result<Brep,String> {
     let [a,b] = t.span.map(|v| { let l = g.local(t.d2(v).0); [l[0],l[2]] });
     let at = |r: f64,z: f64| g.at([r,0.,z]);
     let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:vec![vec![
-        ProfileEdge::Line {a:at(0.,a[1]),b:at(a[0],a[1])},ProfileEdge::Turned(std::sync::Arc::new(*t)),
+        ProfileEdge::Line {a:at(0.,a[1]),b:at(a[0],a[1])},ProfileEdge::Exact {curve:Curve::Turned(std::sync::Arc::new(*t)),span:t.span},
         ProfileEdge::Line {a:at(b[0],b[1]),b:at(0.,b[1])},ProfileEdge::Line {a:at(0.,b[1]),b:at(0.,a[1])}]]};
     crate::build::revolve(&profile,g.o,g.z,std::f64::consts::TAU)
 }
@@ -1616,7 +1617,7 @@ fn turned_solid(t: &crate::turned::Turned) -> Result<Brep,String> {
 /// cylinder over the contour (`Surface::Extrusion` of `geom::Curve::Slid`).
 fn contour_solid(halves: &[crate::slid::Slid;2],[h0,h1]: [f64;2]) -> Result<Brep,String> {
     let profile = Profile {origin:halves[0].frame.o,normal:halves[0].slide(),names:Vec::new(),
-        loops:vec![halves.iter().map(|h| ProfileEdge::Slid(std::sync::Arc::new(*h))).collect()]};
+        loops:vec![halves.iter().map(|h| ProfileEdge::Exact {curve:Curve::Slid(std::sync::Arc::new(*h)),span:h.span}).collect()]};
     prism(&profile,h0,h1)
 }
 
@@ -1634,9 +1635,8 @@ fn whole(tool: &Brep,k: usize) -> bool {
 /// `tan² β ≥ (R − r)/r`), or where a line along the slide through it is not proved to meet the
 /// torus there alone (`Slid::meets_again`, which comes only past the fold) — or none.
 fn slid_fold(g: &Frame,big: f64,small: f64,d: V) -> Option<V> {
-    [1.,-1.].into_iter().flat_map(|side| crate::slid::halves(*g,big,small,unit(d),side,true)).find_map(|h| {
-        let s = h.folded().or_else(|| h.meets_again())?;
-        Some(h.posed(h.frame.o).d2(s).0)
+    [1.,-1.].into_iter().flat_map(|side| crate::slid::halves(*g,big,small,unit(d),side,false)).find_map(|h| {
+        Some(h.d2(h.folded().or_else(|| h.meets_again())?).0)
     })
 }
 

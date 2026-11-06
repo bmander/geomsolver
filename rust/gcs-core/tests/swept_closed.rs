@@ -18,7 +18,7 @@ use gcs_core::brep::trajectory::{Screw,Trajectory};
 use gcs_core::space::{norm,unit};
 
 /// The slide carrying a tool by `d` over the roll `[0, 1]`.
-fn slide(d: [f64;3]) -> Trajectory {
+pub(crate) fn slide(d: [f64;3]) -> Trajectory {
     Trajectory::Twist(Screw {origin:[0.;3],axis:unit(d),ratio:0.,advance:norm(d)*std::f64::consts::TAU})
 }
 
@@ -535,7 +535,7 @@ fn an_l_shaped_prism_turned_is_its_blocks_sweeps_united() {
 /// `built`, `tool`'s sweep under `path` cut from `blank`, read against the definition at seeded
 /// points of the blank's box: every settled point inside it in the blank and no member of the
 /// sweep, every one outside either out of the blank or a member.
-pub(crate) fn agrees_cut(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory) { agrees_cut_over(built,blank,tool,path,[0.,1.]) }
+fn agrees_cut(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory) { agrees_cut_over(built,blank,tool,path,[0.,1.]) }
 
 /// `agrees_cut` over the roll `roll`.
 fn agrees_cut_over(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {

@@ -487,8 +487,7 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:*d}]),
                 Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
                 // a slid torus's contour (#805) carried along the slide onto the plane
-                Curve::Slid(h) => Ssi::Curves(vec![Curve::Slid(std::sync::Arc::new(h.moved(&Rigid {r:Rigid::identity().r,
-                    t:sub(lift(h.frame.o),h.frame.o)})))]),
+                Curve::Slid(h) => Ssi::Curves(vec![Curve::Slid(std::sync::Arc::new(h.at(lift(h.frame.o),true)))]),
                 _ => Ssi::Traced,
             }
         }
@@ -669,7 +668,7 @@ fn plane_cone_ellipse(pl: &Frame,c: &Frame,r: f64,half: f64,tol: f64) -> Option<
 /// **A slid torus's contour cylinder against a surface** (#805: `slid::Slid`, a contact of a torus
 /// slid at a lean to its axis swept along the slide), in closed form where it has one:
 /// - **the torus at a pose of the slide** — the same axis's way, radii and centre on the cylinder's
-///   line along the slide — touches it along its contact there (`Slid::posed`), and nowhere else:
+///   line along the slide — touches it along its contact there (`Slid::at`), and nowhere else:
 ///   short of the fold, each line along the slide through a contact point meets the torus at that
 ///   point alone (`Slid::meets_again`, which the closed class proves before it builds);
 /// - **a plane along the slide** meets it in the lines along the slide through where the contour
@@ -685,6 +684,7 @@ fn plane_cone_ellipse(pl: &Frame,c: &Frame,r: f64,half: f64,tol: f64) -> Option<
 /// None for any other surface, or where these do not settle it: traced.
 fn slid_meeting(h: &crate::slid::Slid,s: &Surface,tol: f64) -> Option<Vec<Curve>> {
     use crate::slid::Slid;
+    use crate::turned::Exact;
     if !h.contour { return None }
     let d = h.slide();
     let g = s.frame();
@@ -693,24 +693,10 @@ fn slid_meeting(h: &crate::slid::Slid,s: &Surface,tol: f64) -> Option<Vec<Curve>
             let k = h.contact;
             (norm(cross(t.z,h.frame.z)) <= 1e-9 && (big.abs()-k.big).abs() <= tol && (small.abs()-k.small).abs() <= tol
                 && norm(cross(sub(t.o,h.frame.o),d)) <= tol)
-                .then(|| vec![Curve::Slid(std::sync::Arc::new(h.posed(t.o)))])
+                .then(|| vec![Curve::Slid(std::sync::Arc::new(h.at(t.o,false)))])
         }
         Surface::Plane(_) if dot(g.z,d).abs() <= 1e-12 => {
-            // the contour's height over the plane, its jets read in floats and in intervals
-            use crate::turned::{Iv,Jet,Num};
-            fn height<T: Num>(l: [Jet<T>;3],n: V,o: V) -> Jet<T> {
-                (l[0]-Jet::of(o[0])).times(n[0])+(l[1]-Jet::of(o[1])).times(n[1])+(l[2]-Jet::of(o[2])).times(n[2])
-            }
-            let (n,o) = (h.frame.dir_local(g.z),h.frame.local(g.o));
-            let gap = |t: f64| height(h.jet(Jet::at(t)),n,o).v;
-            let rate = |t: f64| height(h.jet(Jet::at(t)),n,o).d;
-            let bound = |a: f64,b: f64| {
-                let j = height(h.jet(Jet::at(Iv::new(a,b))),n,o);
-                [j.d.most().unwrap_or(f64::INFINITY),j.dd.most().unwrap_or(f64::INFINITY)]
-            };
-            let [a,b] = h.span;
-            let width = 1e-12*(b-a).abs();
-            let found = crate::util::isolate::roots(&gap,&rate,&bound,[a.min(b),a.max(b)],width,&|t| gap(t).abs() <= tol).ok()?;
+            let found = h.crossings(g.o,g.z,&|t| s.implicit(h.d2(t).0).abs() <= tol).ok()?;
             if found.iter().any(|r| r.touch) { return None }
             Some(found.into_iter().map(|r| Curve::Line {p:h.d2(r.at).0,d}).collect())
         }

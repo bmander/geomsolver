@@ -553,7 +553,7 @@ sweeps the surface of revolution of its meridian — where its points go in `(ρ
 closed form in `v` with its derivatives, not fitted (`turned::Turned`, `Curve::Turned`; its jets one
 formula read in floats and in outward-rounded intervals, `turned::Num`). Its candidate (`Cutter::Turned`)
 is that meridian a twentieth past the face's span each way, closed down the axis at both ends and
-turned once (`ProfileEdge::Turned`, `build::revolve`); refused (`Curved`) unless the contact is a
+turned once (`ProfileEdge::Exact`, `build::revolve`); refused (`Curved`) unless the contact is a
 curve all along — its discriminant held above nought and it off the axis, proved over the span by the
 intervals (`Turned::defined`) — and its height climbs one way (`Turned::climbs`). The face at each end
 pose (its own surface a fortieth past its span) touches that surface along its contact turned there,
@@ -599,8 +599,9 @@ two roots on each latitude that meet at the silhouette's top and bottom, the bra
 √(D_z² + g²)`, the outer and the inner half of the tube. So the patch is read across the locus, not
 cut: each curve rational in `s = tan(u/2)` but for that root, in two halves `s ∈ [−1, 1]`, its jets
 one formula read in floats and in outward intervals (`turned::Num`; `slid::Slid`, `Curve::Slid` —
-the contact itself, or its apparent contour along `D`). Each contact swept along `D` is the cylinder
-over its contour (`Surface::Extrusion` of the contour, `ProfileEdge::Slid`), its candidate the
+the contact itself, or its apparent contour along `D` — its point, box, inverse and speed read off
+its jets as a turned contact's are, `turned::Exact`). Each contact swept along `D` is the cylinder
+over its contour (`Surface::Extrusion` of the contour, `ProfileEdge::Exact`), its candidate the
 contour's region extruded from short of the ring at the start pose to past it at the end
 (`Cutter::Contour`). The inner contour **folds** — cusps where the contact runs along `D`, an
 asymptotic direction of the tube's saddle — from `tan² β = (R − r)/r` (`β` the lean, first at
@@ -609,9 +610,9 @@ read before any build, `closed::reads`, by the contour's tangent held off nought
 `Slid::folded`). Short of it every line along `D` through a contact point meets the ring there alone
 — the quartic's other two roots `t² + a t + b`, discriminant `8 (2R² |D_xy|² − |p|² − R² + r²)`, held
 below nought (`Slid::meets_again`) — so the ring at each end pose touches each cylinder along its
-contact there and nowhere else, in closed form (`ssi`'s `slid_meeting`, `Slid::posed`); a plane
+contact there and nowhere else, in closed form (`ssi`'s `slid_meeting`, `Slid::at`); a plane
 square to `D` meets it in the contour carried onto it, one along `D` in lines through the
-contour's crossings (isolated with the jets' interval bounds), one leaning to `D` in the contour
+contour's crossings (`Slid::crossings`, isolated with the jets' interval bounds), one leaning to `D` in the contour
 sheared along `D` onto it (`affine::MappedCurve`); the two contours' cylinders stand apart; and a
 line meets it certified where it meets the contour in the plane square to `D` (`query::line_slid`).
 Only a whole ring's face is admitted at a lean: a torus face with rims (a bull-nose's round) would
@@ -624,10 +625,10 @@ contact read here in angles (exact to rounding) — and against membership and a
 definition (each point's line back along the slide read against the ring): a ring of middle radius
 3 and tube 1 leaning 35°, slid 6 and 2 (its end poses apart and overlapping), and at 20° slid aslant
 its lean, each to 1e-9 (`a_ring_slid_at_a_lean_closes_into_its_sweep`,
-`a_ring_slid_aslant_its_lean_closes_into_its_sweep`); pushed into a block until wholly in it, the
-block less the centre's depth times `A` and half the ring, `π² R r²` (the ring's symmetry about its
-centre), to 1e-9 (`a_ring_slid_at_a_lean_stops_inside_a_block`); drawn, `solid_sweeps/leaning_ring.sv`,
-to 1e-9 with its STL agreeing with the field
+`…_by_less_than_its_reach_closes_into_its_sweep`, `a_ring_slid_aslant_its_lean_closes_into_its_sweep`);
+pushed into a block until wholly in it, drawn (`solid_sweeps/leaning_ring.sv`), the block less the
+centre's depth times `A` and half the ring, `π² R r²` (the ring's symmetry about its centre,
+`swept_slid::plunged_away`), to 1e-9 with its STL agreeing with the field
 (`solid_sweeps_examples::the_ring_plunged_at_a_lean_bores_round_its_core`). The curve is held to the
 contact read apart in angles, its jets to its points' differences and its contour to the contact
 less its part along `D` (`the_slid_contact_is_where_the_ring_grazes_the_slide`), and the fold to
@@ -743,7 +744,8 @@ they abut and along those helices, and a plane holding a circle of the pipe meet
 and its level-by-level cut (`ssi`'s `pipes_meeting`, `pipe_plane`;
 `swept_loci::two_stretches_of_one_pipe_meet_round_their_circle_and_along_helices`). A ball reaching
 its centre's helix's radius of curvature, where the pipe folds, or the axis, is refused by what it
-is (`Unbuilt::Curved` at its centre; `a_ball_screwed_tighter_than_its_radius_is_refused_by_name`).
+is (`Unbuilt::Folded` where it folds, by name, `Curved` where it reaches the axis, each at its centre;
+`a_ball_screwed_tighter_than_its_radius_is_refused_by_name`).
 The gate, `swept_loci::a_ball_screwed_past_a_turn_meets_its_own_pipe_and_closes_into_its_sweep`
 (slow tier): a ball of radius 1 three out from the axis screwed a turn and a half at 0.2 a radian and
 two and a half turns at 0.12, each to 1e-9 of a volume worked apart in helical coordinates (each
