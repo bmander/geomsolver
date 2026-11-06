@@ -1199,6 +1199,14 @@ fn a_ring_turned_about_an_axis_along_its_own_closes_into_its_sweep() {
     let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance:0.});
     let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
     let expected = PI*(2.*r*big*big+PI*big*r*r+4.*r*r*r/3.)+2.*d*theta*(2.*r*big+PI*r*r/2.);
+    {
+        let fluxes = gcs_core::brep::props::fluxes(&built);
+        for (fi,f) in built.faces.iter().enumerate() {
+            eprintln!("face {fi} {} reversed {} loops {:?} flux {:.12}",f.surface.kind(),f.reversed,
+                f.loops.iter().map(|l| l.len()).collect::<Vec<_>>(),fluxes[fi]);
+        }
+        eprintln!("{} edges, {} vertices",built.edges.len(),built.vertices.len());
+    }
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
     agrees(&built,&tool,&path);
 }
