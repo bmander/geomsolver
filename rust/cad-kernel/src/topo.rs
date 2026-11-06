@@ -9,7 +9,7 @@
 //! (`props`). A closed shell uses every edge twice, once each way, except a degenerate edge (a
 //! pole or apex), which its one face uses once.
 use super::geom::{include,widen,Box3,Curve,Rigid,Surface,Uv,V,EMPTY};
-use crate::util::space::{distance,dot,norm,sub};
+use crate::util::space::{add,distance,dot,norm,normalised,scale,sub};
 
 /// A point of the boundary, and the tolerance it was built to (#735 A3): the farthest any point
 /// merged into it stood, or any edge's curve ends from it (`Brep::measure_tolerances`); 0 for a
@@ -70,7 +70,7 @@ impl Pcurve {
     pub fn at(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex]) -> Uv {
         match *self {
             Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
-            Pcurve::Line {a,b} => along(a,b,t,edge),
+            Pcurve::Line {a,b} => along(a,b,fraction(t,edge)),
             Pcurve::Inverse {a,b} => inverse_at(a,b,t,edge.point(t,vertices),edge,surface),
         }
     }
@@ -115,18 +115,20 @@ impl Pcurve {
     }
 }
 
-/// The point the edge's parameter `t` reaches on the line from `a` (at its first) to `b` (its last).
-fn along(a: Uv,b: Uv,t: f64,edge: &Edge) -> Uv {
-    let s = if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. };
-    [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])]
-}
+/// The point the fraction `s` of the way along the line from `a` to `b`.
+fn along(a: Uv,b: Uv,s: f64) -> Uv { [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])] }
+
+/// How far the edge's parameter `t` is along its span, 0 at its first and 1 at its last.
+fn fraction(t: f64,edge: &Edge) -> f64 { if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. } }
 
 /// An inverse curve's parameters at `t` (`Pcurve::Inverse {a, b}`), the edge's point there given as
 /// `x`: `Pcurve::at`, for what reads the edge's curve some other way (`props`, a traced edge read
 /// across planes).
 pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv {
-    let near = along(a,b,t,edge);
-    unwrap(surface.inverse_near(x,near),near,surface.periods())
+    let s = fraction(t,edge);
+    let near = along(a,b,s);
+    let uv = unwrap(surface.inverse_near(x,near),near,surface.periods());
+    if s == 0. || s == 1. { on_pole(surface,uv,near) } else { uv }
 }
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters
@@ -152,6 +154,33 @@ pub fn unwrap(mut uv: Uv,near: Uv,periods: [Option<f64>;2]) -> Uv {
         if let Some(p) = periods[k] { uv[k] += ((near[k]-uv[k])/p).round()*p; }
     }
     uv
+}
+
+/// `uv` with a parameter the surface's chart collapses there (a pole's or an apex's: every value of
+/// it the one point) taken from `near` instead: where an inverse curve ends on a pole, the surface's
+/// inverse of the point says nothing of which value the curve arrives along (a cone's apex reads
+/// `u = 0` whatever the generator), and the end its pcurve is given there does (#797).
+fn on_pole(surface: &Surface,uv: Uv,near: Uv) -> Uv {
+    let (mut out,mut p) = (uv,None);
+    for k in 0..2 {
+        if !((uv[k]-near[k]).abs() > 1e-6) { continue }
+        let mut alt = uv;
+        alt[k] = near[k];
+        let p = *p.get_or_insert_with(|| surface.point(uv));
+        if distance(surface.point(alt),p) <= 1e-9*(1.+norm(p)) { out[k] = near[k]; }
+    }
+    out
+}
+
+/// The parameter (0 for `u`, 1 for `v`) the chart of `surface` collapses along at `uv` — the
+/// surface's derivative along it so small that half a turn of it moves the point less than
+/// `within` (a cone's apex, a sphere's pole) — if any.
+pub(crate) fn pole_at(surface: &Surface,uv: Uv,within: f64) -> Option<usize> {
+    let (_,su,sv) = surface.d1(uv);
+    let (lu,lv) = (norm(su),norm(sv));
+    if lu*std::f64::consts::PI <= within && lv > lu { Some(0) }
+    else if lv*std::f64::consts::PI <= within && lu > lv { Some(1) }
+    else { None }
 }
 
 /// One use of an edge by a face's loop: along the edge (`!reversed`) or against it.
@@ -231,6 +260,104 @@ impl Brep {
         let e = &self.edges[c.edge as usize];
         let ends = [c.pcurve.at(e.t[0],e,&face.surface,&self.vertices),c.pcurve.at(e.t[1],e,&face.surface,&self.vertices)];
         if c.reversed { [ends[1],ends[0]] } else { ends }
+    }
+    /// The parameters of one end of a use, in the use's direction: its first (`last` false) or its last.
+    fn uv_end(&self,face: &Face,c: &Coedge,last: bool) -> Uv {
+        let e = &self.edges[c.edge as usize];
+        c.pcurve.at(e.t[(last != c.reversed) as usize],e,&face.surface,&self.vertices)
+    }
+    /// **A loop passing through a pole of its face's surface is closed along it** (#797), as a
+    /// primitive's is: each use reaching the pole along its edge's inverse ends there at the value
+    /// of the collapsed parameter it arrives along — the one its tangent points along, read off the
+    /// point a step out along it — and between two uses reaching it at different values a
+    /// degenerate edge runs along the pole from the one to the other: the one already there, or one
+    /// laid. A loop whose uses the surface's inverse read at the pole alone (a cone's apex at `u = 0`,
+    /// whatever generator a meeting arrives along) was closed in its parameters by a jump in its last
+    /// use's last instant, or by an operand's pole edge kept whole across a turn the face does not
+    /// span: its pieces' parameters overlapped, and its mesh with them. It mends the parameters
+    /// alone: which use follows which at the pole is the loop's as built. A corner with more than one
+    /// degenerate edge is left as it is.
+    pub fn close_poles(&mut self) {
+        for fi in 0..self.faces.len() {
+            // (a surface no chart of which collapses anywhere has no pole: a ring torus's neither)
+            match self.faces[fi].surface {
+                Surface::Plane(_) | Surface::Cylinder(..) | Surface::Extrusion(..) => continue,
+                Surface::Torus(_,big,small) if big > small.abs() => continue,
+                _ => {}
+            }
+            for li in 0..self.faces[fi].loops.len() {
+                // (the loop grows where an edge is laid, which the next corner then passes by)
+                let mut k = 0;
+                while k < self.faces[fi].loops[li].len() {
+                    self.close_pole_after(fi,li,k);
+                    k += 1;
+                }
+            }
+        }
+    }
+
+    /// `close_poles` at the corner after use `k` of face `fi`'s loop `li`.
+    fn close_pole_after(&mut self,fi: usize,li: usize,k: usize) {
+        let l = &self.faces[fi].loops[li];
+        let n = l.len();
+        let degenerate = |c: &Coedge| matches!(self.edges[c.edge as usize].curve,EdgeCurve::Degenerate);
+        if degenerate(&l[k]) { return }
+        // the use leaving the pole, past the pole edge already there, if one is
+        let pole = degenerate(&l[(k+1)%n]).then_some((k+1)%n);
+        let j = (k+1+pole.is_some() as usize)%n;
+        if j == k || degenerate(&l[j]) { return }
+        let (c,next) = (l[k].clone(),l[j].clone());
+        let v = self.ends(&c)[1];
+        let f = &self.faces[fi];
+        let vertex = self.vertices[v as usize];
+        let within = (1e-9*(1.+norm(vertex.p))).max(vertex.tol);
+        let a = self.uv_end(f,&c,true);
+        let Some(along) = pole_at(&f.surface,a,within) else { return };
+        let b = self.uv_end(f,&next,false);
+        // each use's end there: an inverse's at the value it arrives along, any other's its own
+        let arriving = |c: &Coedge,at_end: bool| -> Option<(Pcurve,Uv)> {
+            let e = &self.edges[c.edge as usize];
+            let (EdgeCurve::Curve(curve),Pcurve::Inverse {a:from,b:to}) = (&e.curve,&c.pcurve) else { return None };
+            // the end of the edge at the pole (0 its first, 1 its last), and the way along the edge
+            // from it into the face, a step out along which the value it arrives along is read
+            let end = (at_end != c.reversed) as usize;
+            let into = if end == 0 { 1. } else { -1. };
+            let d = normalised(curve.tangent(e.t[end]))?;
+            let out = add(vertex.p,scale(d,into*1e-6*(1.+norm(vertex.p))));
+            // beside the use's own value a little way in, on its branch of the periods
+            let inner = c.pcurve.at(e.t[end]+into*1e-3*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices);
+            let limit = unwrap(f.surface.inverse_near(out,inner),inner,f.surface.periods())[along];
+            let mut ends = [*from,*to];
+            // (an end already there, to a hair, is kept as it was)
+            if (ends[end][along]-limit).abs() <= 1e-9 { return None }
+            ends[end][along] = limit;
+            let pcurve = Pcurve::Inverse {a:ends[0],b:ends[1]};
+            let uv = pcurve.at(e.t[end],e,&f.surface,&self.vertices);
+            Some((pcurve,uv))
+        };
+        let (into,from) = (arriving(&c,true),arriving(&next,false));
+        let a = into.as_ref().map_or(a,|x| x.1);
+        let b = from.as_ref().map_or(b,|x| x.1);
+        let gap = (b[along]-a[along]).abs();
+        // the two ends one place on the pole: nothing to lay
+        let apart = gap > 1e-9 && distance(f.surface.point(a),f.surface.point(b)) <= within;
+        let old = pole.map(|at| self.uv_ends(f,&self.faces[fi].loops[li][at]));
+        if let Some((p,_)) = into { self.faces[fi].loops[li][k].pcurve = p; }
+        if let Some((p,_)) = from { self.faces[fi].loops[li][j].pcurve = p; }
+        if let (Some(at),Some([p,q])) = (pole,old) {
+            // the pole edge there runs from the one's end to the other's start (where it does
+            // already, it is left as it was)
+            let moved = |x: Uv,y: Uv| (x[0]-y[0]).abs().max((x[1]-y[1]).abs()) > 1e-12;
+            if !moved(p,a) && !moved(q,b) { return }
+            let e = self.faces[fi].loops[li][at].edge as usize;
+            self.edges[e].t = [0.,gap.max(1e-12)];
+            let co = &mut self.faces[fi].loops[li][at];
+            co.reversed = false;
+            co.pcurve = Pcurve::Line {a,b};
+        } else if apart {
+            let e = self.edge(EdgeCurve::Degenerate,[0.,gap],[v,v]);
+            self.faces[fi].loops[li].insert(k+1,Coedge {edge:e,reversed:false,pcurve:Pcurve::Line {a,b}});
+        }
     }
     /// Every geometric position moved by `m`.
     pub fn moved(&self,m: &Rigid) -> Brep {

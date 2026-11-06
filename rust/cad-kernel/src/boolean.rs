@@ -638,12 +638,15 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
 }
 
 /// `faces` as one boundary over `edges` (`assemble`), the meetings that part nothing healed out
-/// first (`heal`, each face's operand face `origin`, each edge's meeting `laid`), and a loop a healed
-/// meeting parted in two given the one enclosing the other as its outer.
+/// first (`heal`, each face's operand face `origin`, each edge's meeting `laid`), a loop a healed
+/// meeting parted in two given the one enclosing the other as its outer, and a loop through a pole
+/// closed along it (`Brep::close_poles`).
 fn healed(edges: &[WEdge],pool: &Pool,mut faces: Vec<Face>,origin: &[(usize,usize)],laid: &[Option<u32>],handed: &mut Known) -> Brep {
     let parted = heal(&mut faces,handed,origin,laid);
     let mut result = assemble(edges,pool,faces);
     outer_first(&mut result,&parted);
+    // a loop through a pole of its surface, a meeting arriving there, closed along it (#797)
+    result.close_poles();
     result
 }
 
