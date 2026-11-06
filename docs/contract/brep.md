@@ -190,7 +190,12 @@ slid torus's contact sweeps (#805, `query::line_slid`) where the line seen along
 the contour in the plane square to it, isolated with the contour's jets bounded in outward intervals
 (`swept_slid::a_line_meets_a_slid_contours_cylinder_where_a_scan_finds_it`), a cylinder and a ball as a
 chord, a swept sheet or a B-spline net by the three-unknown search (`query::curve_sheet`, the
-sheet's second derivatives bounded by `blend_bounds` and `Net::second_bounds`); a circle or an
+sheet's second derivatives bounded by `blend_bounds` and `Net::second_bounds`; **a net is searched
+kink to kink**, #812 — its knots of the degree's multiplicity, `Net::kinks`, where its first
+derivative may jump and no bound on the second holds, so `second_bounds` gives none for a box
+reaching across one: read by the slope at its middle, a box straddling a fitted flank's kink lost a
+crossing beside it, or certified it 1e-3 off the flank, and a 64-tooth gear's material cell read as
+out, `roots::a_crossing_beside_a_sheets_kink_is_read_on_the_sheet`); a circle or an
 ellipse meets a plane, a cylinder, a ball, a cone and a torus as the surface's algebraic form
 along it, a trigonometric polynomial bounded by its amplitudes (`query::conic_algebraic`); and a
 B-spline curve meets a plane as its poles' heights, a scalar B-spline bounded by its
@@ -384,7 +389,11 @@ a point deep inside. **A Boolean is a selection over it**: each piece's two side
 as before, the complex formed, each shell kept as the operation keeps its sides — which agree round
 it, with no face kept by its own sides instead: a shell kept on one side and dropped on another is
 refused, two cells joined round an edge — and the result touching itself along an edge given an edge for each
-wedge; `split` is the complex's shells inside the solid. **Every arrangement lays its touches as
+wedge; `split` is the complex's shells inside the solid, but for a shell holding every face of it
+by both sides — a sheet's piece inside a cell that parts nothing, touching none of its faces: it
+bounds nothing and is no cell (#812, `arrangement::a_sheets_piece_parting_nothing_is_no_cell`;
+returned as one, of volume nought and no point inside, it refused a gear built whole), while a
+piece slit into a cell from its boundary is of the cell's shell. **Every arrangement lays its touches as
 edges, and a selection's result heals what parts nothing** (`heal`, `boolean::selection`): a span
 two faces only touch along is laid as an edge (a Boolean's, a split's and an arrangement's alike),
 so the cells either side are classified apart; then, in a Boolean's or a split's result or a swept

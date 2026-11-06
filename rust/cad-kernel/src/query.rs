@@ -723,7 +723,10 @@ pub fn curve_surface_searched(curve: &Curve,t: [f64;2],surface: &Surface,tol: f6
 /// certifies; a touch a root no box can part from its neighbours, its point on both to `tol`.
 /// The sheets: a section's edge and its image carried along a line or by a screw (`Blend`, its
 /// edges lines or circles — a screwed line's sheet, a ball's pipe, a leaning rim's), and a
-/// B-spline net not rational. `NoForm` for any other, `Stopped` where the build has stopped.
+/// B-spline net not rational, searched piece by piece between its kinks (`Net::kinks`), across
+/// which its first derivative jumps and the theorem's bound on the second holds on neither side
+/// (#812); a root on a kink two pieces share `settled` reads once. `NoForm` for any other,
+/// `Stopped` where the build has stopped.
 fn curve_sheet(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certified {
     let bend = match curve { Curve::Line {..} => 0.,Curve::Circle(_,r) => r.abs(),_ => return Err(Uncertified::NoForm) };
     let (domain,d1,second): ([[f64;2];2],Box<dyn Fn([f64;2]) -> (V,V,V) + '_>,Box<dyn Fn([f64;2],[f64;2]) -> Option<[f64;3]> + '_>) = match surface {
@@ -745,16 +748,26 @@ fn curve_sheet(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Cer
         let (s,su,sv) = d1([x[1],x[2]]);
         (std::array::from_fn(|i| q[i]-s[i]),std::array::from_fn(|i| [dq[i]*span,-su[i],-sv[i]]))
     };
-    // a box the sheet bounds nothing over is read by the whole domain's bound
-    let whole = second(domain[0],domain[1]).ok_or(Uncertified::NoForm)?;
-    let second = |bx: &[[f64;2];3]| -> [f64;3] {
-        let [uu,uv,vv] = second(bx[1],bx[2]).unwrap_or(whole);
-        let h = bend*span*span+uu+2.*uv+vv;
-        [h;3]
-    };
     let width = tol*1e-2/reach.max(1e-300);
     let near = |x: [f64;3]| { let (fx,_) = f(x); norm(fx) <= tol };
-    let found = crate::util::isolate::solve::<3>(&f,&second,[[0.,1.],domain[0],domain[1]],width,&near)?;
+    // the domain's pieces between the kinks, each way
+    let pieces = |k: usize| -> Vec<[f64;2]> {
+        let [a,b] = domain[k];
+        let kinks = match surface { Surface::BSpline(_,n) => n.kinks(k),_ => Vec::new() };
+        let ends: Vec<f64> = std::iter::once(a).chain(kinks).chain(std::iter::once(b)).collect();
+        ends.windows(2).map(|w| [w[0],w[1]]).collect()
+    };
+    let mut found = Vec::new();
+    for pu in pieces(0) { for &pv in &pieces(1) {
+        // a box the sheet bounds nothing over is read by the whole piece's bound
+        let whole = second(pu,pv).ok_or(Uncertified::NoForm)?;
+        let second = |bx: &[[f64;2];3]| -> [f64;3] {
+            let [uu,uv,vv] = second(bx[1],bx[2]).unwrap_or(whole);
+            let h = bend*span*span+uu+2.*uv+vv;
+            [h;3]
+        };
+        found.extend(crate::util::isolate::solve::<3>(&f,&second,[[0.,1.],pu,pv],width,&near)?);
+    } }
     Ok(Meets::At(found.into_iter().map(|r| (t0+r.at[0].clamp(0.,1.)*span,r.touch)).collect()))
 }
 

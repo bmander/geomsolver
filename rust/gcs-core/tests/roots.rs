@@ -192,6 +192,52 @@ fn a_crossing_on_the_face_two_halves_share_is_found_once() {
     assert!(read > 20 && failed.is_empty(),"{} of {read}:\n{}",failed.len(),failed.join("\n"));
 }
 
+/// **A crossing beside a sheet's kink is read on the sheet** (#812, `query::curve_sheet`): a flat
+/// cubic sheet in two pieces meeting at a knot of the degree's multiplicity, off the middle of its
+/// domain (where the search's first halving would part it), `x` running a fifth as fast past it as
+/// before, so `S_u` jumps there (a gear's flank fitted patch by patch). Across the kink no bound
+/// on the second derivatives holds, but the differences' net put the jump's at nought, and a box
+/// straddling it was read by the slope at its middle alone: here a crossing a box held was dropped
+/// as out of reach; on a 64-tooth gear's flank one was certified, Newton's step from the middle
+/// left the theorem's ball and was returned where it stopped, 1e-3 off the flank — either way a
+/// crossing lost, and the gear's material cell read as out. The bound refuses a box across a kink,
+/// the sheet is searched kink to kink, and each crossing is where it is, by rays from either side.
+#[test]
+fn a_crossing_beside_a_sheets_kink_is_read_on_the_sheet() {
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::nurbs::Net;
+    use gcs_core::brep::query::{curve_surface,Meets};
+    // x from 0 to 4 over u in [0, 0.7], on to 5 over [0.7, 2], each piece in step with u (its poles
+    // evenly along it); y = 2v − 1; in the plane z = 0
+    let xs = [0.,4./3.,8./3.,4.,13./3.,14./3.,5.];
+    let net = Net {du:3,dv:1,uknots:vec![0.,0.,0.,0.,0.7,0.7,0.7,2.,2.,2.,2.],vknots:vec![0.,0.,1.,1.],
+        poles:xs.iter().map(|&x| vec![[x,-1.,0.],[x,1.,0.]]).collect(),weights:None};
+    net.check().unwrap();
+    assert_eq!(net.kinks(0),vec![0.7]);
+    assert!(net.kinks(1).is_empty());
+    assert_eq!(net.second_bounds([0.5,1.5],[0.,1.]),None,"no bound across the kink");
+    let flat = net.second_bounds([0.,0.7],[0.,1.]).expect("a bound up to it");
+    assert!(flat.iter().all(|&b| b <= 1e-12),"flat up to it: {flat:?}");
+    let sheet = Surface::BSpline(Frame::WORLD,std::sync::Arc::new(net));
+    let (mut failed,mut read) = (Vec::new(),0);
+    for x in [4.3,4.05,4.0004,3.99,3.9,2.,4.8] {
+        for d in [[0.5773,0.6124,0.5402],[-0.3172,0.8123,0.4893],[0.1,-0.2,0.97]] {
+            let d = gcs_core::space::normalised(d).unwrap();
+            // from a point under the sheet, a long way back along the ray
+            let t = 37.;
+            let p = [x-d[0]*t,0.2-d[1]*t,-d[2]*t];
+            for span in [[0.,200.],[t-1.,t+1.],[0.,t+0.5]] {
+                read += 1;
+                match curve_surface(&Curve::Line {p,d},span,&sheet,1e-9) {
+                    Meets::At(r) if r.len() == 1 && !r[0].1 && (r[0].0-t).abs() <= 1e-9 => {}
+                    m => failed.push(format!("crossing at x = {x} along {d:?} over {span:?}: {m:?}")),
+                }
+            }
+        }
+    }
+    assert!(failed.is_empty(),"{} of {read}:\n{}",failed.len(),failed.join("\n"));
+}
+
 /// **A double root a stretch ends on is found** (#780 R2, `isolate::roots`): `g = −A(1 + ε) − A
 /// sin t` over `[0, 2π]`, its turn at `3π/2` a hair below nought — the middle of the stretch's
 /// second half, so halving leaves it at the end of the stretches either side. There `|g'(m)|` is
