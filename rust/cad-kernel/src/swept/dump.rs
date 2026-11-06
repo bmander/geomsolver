@@ -81,6 +81,9 @@ fn curve(c: &Curve) -> Result<Json,String> {
         Curve::Turned(t) => { let c = &t.contact;
             object([("kind","turned".into()),("frame",frame(&t.frame)),("o",v3(c.o)),("a",v3(c.a)),("r",c.r.into()),("sa",c.sa.into()),
                 ("ca",c.ca.into()),("side",c.side.into()),("span",reals(&t.span)),("posed",t.posed.into())]) }
+        Curve::Slid(t) => { let c = &t.contact;
+            object([("kind","slid".into()),("frame",frame(&t.frame)),("big",c.big.into()),("small",c.small.into()),("d",v3(c.d)),
+                ("side",c.side.into()),("span",reals(&t.span)),("contour",t.contour.into())]) }
         other => return Err(format!("sweep dump: a {} curve is not written",other.kind())),
     })
 }
@@ -97,6 +100,10 @@ fn rcurve(j: &Json) -> Result<Curve,String> {
             let contact = crate::turned::Contact {o:rv3(field(j,"o")?),a:rv3(field(j,"a")?),r:num(j,"r")?,sa:num(j,"sa")?,ca:num(j,"ca")?,side:num(j,"side")?};
             let posed = j.get("posed").is_some_and(|p| p.as_bool());
             Curve::Turned(Arc::new(crate::turned::Turned {frame:rframe(field(j,"frame")?)?,contact,span:[span[0],span[1]],posed})) }
+        "slid" => { let span = rreals(field(j,"span")?);
+            let contact = crate::slid::Contact {big:num(j,"big")?,small:num(j,"small")?,d:rv3(field(j,"d")?),side:num(j,"side")?};
+            let contour = field(j,"contour")?.as_bool();
+            Curve::Slid(Arc::new(crate::slid::Slid {frame:rframe(field(j,"frame")?)?,contact,span:[span[0],span[1]],contour})) }
         k => return Err(format!("sweep dump: a curve of kind `{k}`")),
     })
 }

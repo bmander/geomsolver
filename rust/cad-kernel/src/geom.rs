@@ -5,6 +5,7 @@
 use crate::util::fmath::Det;
 use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
 use std::sync::Arc;
+use super::turned::Exact;
 pub use super::nurbs::BSpline;
 
 pub type V = [f64;3];
@@ -1066,34 +1067,29 @@ impl Surface {
                 let uv = b.newton(p,hint);
                 if crate::util::space::distance(b.d1(uv).0,p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { b.inverse(p) }
             }
-            // a spline swept or turned likewise, its curve's foot from the hint's
-            Surface::Extrusion(_,c) | Surface::Revolution(_,c) if matches!(**c,Curve::BSpline(_)) => {
-                let Curve::BSpline(b) = &**c else { unreachable!() };
-                let uv = self.swept_inverse(p,&|q,k| b.refined(q,hint[k])).expect("a swept curve");
-                if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
-            }
-            // a turned contact's meridian likewise, by Newton from the hint's slant (#780 C3: read
-            // afresh, its samples were most of a turned build's time)
-            Surface::Revolution(_,c) if matches!(**c,Curve::Turned(_)) => {
-                let Curve::Turned(t) = &**c else { unreachable!() };
-                let uv = self.swept_inverse(p,&|q,k| t.newton(q,hint[k])).expect("a swept curve");
-                if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
-            }
+            // a curve swept or turned likewise — a spline, a turned contact's meridian, a slid
+            // torus's contour — its foot refined from the hint's (#780 C3: read afresh, a meridian's
+            // samples were most of a turned build's time)
+            Surface::Extrusion(_,c) | Surface::Revolution(_,c) => match self.swept_inverse(p,&|q,k| c.refined(q,hint[k])) {
+                Some(uv) if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) => uv,
+                _ => self.inverse(p),
+            },
             _ => self.inverse(p),
         }
     }
     /// A swept or turned curve's parameters of `p`, its curve's at the foot `foot` finds of the
-    /// point in the curve's plane (the curve's parameter the `k`th); `None` for any other surface.
-    fn swept_inverse(&self,p: V,foot: &dyn Fn(V,usize) -> f64) -> Option<Uv> {
+    /// point in the curve's plane (the curve's parameter the `k`th); `None` for any other surface,
+    /// or where `foot` finds none.
+    fn swept_inverse(&self,p: V,foot: &dyn Fn(V,usize) -> Option<f64>) -> Option<Uv> {
         let [x,y,z] = self.frame().local(p);
         match self {
             Surface::Extrusion(f,c) => {
-                let t = foot(f.at([x,y,0.]),0);
+                let t = foot(f.at([x,y,0.]),0)?;
                 Some([t,dot(sub(p,c.point(t)),f.z)])
             }
             Surface::Revolution(f,_) => {
                 let u = if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) };
-                Some([u,foot(f.at([x.dhypot(y),0.,z]),1)])
+                Some([u,foot(f.at([x.dhypot(y),0.,z]),1)?])
             }
             _ => None,
         }
@@ -1107,7 +1103,7 @@ impl Surface {
         let u = if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) };
         let rho = x.dhypot(y);
         match self {
-            Surface::Extrusion(_,c) | Surface::Revolution(_,c) => return self.swept_inverse(p,&|q,_| c.inverse(q)).expect("a swept curve"),
+            Surface::Extrusion(_,c) | Surface::Revolution(_,c) => return self.swept_inverse(p,&|q,_| Some(c.inverse(q))).expect("a swept curve"),
             Surface::Blend(_,b) => return b.inverse(p),
             Surface::BSpline(_,n) => return net_inverse(n,p),
             Surface::Family(_,w) => return w.inverse(p),
@@ -1676,6 +1672,10 @@ pub enum Curve {
     /// A round face's contact under a turn, turned (#780 C3, `turned::Turned`): its meridian in the
     /// half-plane of its frame, read in closed form, the curve's parameter the face's slant.
     Turned(Arc<super::turned::Turned>),
+    /// A torus's contact under a slide, or its apparent contour along the slide (#805,
+    /// `slid::Slid`): one half of a closed curve read in closed form, the curve's parameter
+    /// `tan(u/2)` of the angle round the torus's axis from the half's middle.
+    Slid(Arc<super::slid::Slid>),
 }
 
 impl Curve {
@@ -1683,11 +1683,12 @@ impl Curve {
         match self { Curve::Line {..} => "line",Curve::Circle(..) => "circle",Curve::Ellipse(..) => "ellipse",
             Curve::Traced(..) => "traced",Curve::BSpline(..) => "bspline",Curve::Iso(..) => "iso",
             Curve::Rail(..) => "rail",Curve::Rim(..) => "rim",Curve::Affine(..) => "affine",Curve::SheetCut(..) => "sheet cut",
-            Curve::Turned(..) => "turned" }
+            Curve::Turned(..) => "turned",Curve::Slid(..) => "slid" }
     }
     pub fn period(&self) -> Option<f64> {
         match self {
-            Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) | Curve::Turned(..) => None,
+            Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) | Curve::Turned(..)
+            | Curve::Slid(..) => None,
             Curve::Rim(ref w,_) => w.period(),
             Curve::Traced(c) => c.closed.then(|| c.segments() as f64),
             Curve::Affine(m) => m.period(),
@@ -1717,6 +1718,7 @@ impl Curve {
             Curve::Rim(ref w,s) => w.rim(t,s),
             Curve::Affine(ref m) => m.d2(t),
             Curve::Turned(ref m) => m.d2(t),
+            Curve::Slid(ref m) => m.d2(t),
             Curve::Line {p,d} => (add(p,scale(d,t)),d,[0.;3]),
             Curve::Circle(f,r) => {
                 let (s,c) = t.dsin_cos();
@@ -1803,6 +1805,7 @@ impl Curve {
             Curve::BSpline(ref b) => nearest_held(b,p),
             Curve::Affine(ref m) => m.inverse(p),
             Curve::Turned(ref m) => m.inverse(p),
+            Curve::Slid(ref m) => m.inverse(p),
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.datan2(x)) }
             Curve::Ellipse(f,a,b) => {
@@ -1820,6 +1823,22 @@ impl Curve {
                 }
                 wrap(t)
             }
+        }
+    }
+    /// The span of a curve read exactly in a frame (`turned::Exact`: a turned contact's meridian, a
+    /// slid torus's contact), none for any other.
+    pub fn exact_span(&self) -> Option<[f64;2]> {
+        match self { Curve::Turned(m) => Some(m.span()),Curve::Slid(m) => Some(m.span()),_ => None }
+    }
+    /// The parameter of its point nearest `p`, refined from `t`, for a curve that refines its foot
+    /// from a hint: a spline (`BSpline::refined`), and a curve read exactly in a frame (Newton,
+    /// `turned::Exact`); none for any other.
+    fn refined(&self,p: V,t: f64) -> Option<f64> {
+        match self {
+            Curve::BSpline(b) => Some(b.refined(p,t)),
+            Curve::Turned(m) => Some(m.newton(p,t)),
+            Curve::Slid(m) => Some(m.newton(p,t)),
+            _ => None,
         }
     }
     /// Newton on `(C − p)·C'` from `v`, held to `within` where given.
@@ -1860,6 +1879,7 @@ impl Curve {
             Curve::Rim(ref w,s) => (0..=64).map(|j| norm(w.rim(j as f64/64.,s).1)).fold(0.,f64::max),
             Curve::Affine(ref m) => m.speed(),
             Curve::Turned(ref m) => m.speed(),
+            Curve::Slid(ref m) => m.speed(),
         }
     }
     /// A box about the curve over `[t0, t1]`, never smaller than it: exact for a line, circle and
@@ -1899,6 +1919,7 @@ impl Curve {
             Curve::Rim(ref w,s) => w.rim_bounds(s,[t0,t1]),
             Curve::Affine(ref m) => m.bounds([t0,t1]),
             Curve::Turned(ref m) => m.bounds([t0,t1]),
+            Curve::Slid(ref m) => m.bounds([t0,t1]),
             Curve::Traced(ref c) => {
                 // the chords reaching the interval, so its ends' too
                 let m = c.segments();
@@ -1931,6 +1952,7 @@ impl Curve {
             Curve::Rail(ref w,u) => Curve::Rail(Arc::new(w.moved(m)),u),
             Curve::Rim(ref w,s) => Curve::Rim(Arc::new(w.moved(m)),s),
             Curve::Turned(ref t) => Curve::Turned(Arc::new(t.moved(m).expect("a rigid motion keeps a frame's hand"))),
+            Curve::Slid(ref t) => Curve::Slid(Arc::new(t.moved(m))),
             Curve::Affine(ref a) => Curve::Affine(Arc::new(super::affine::MappedCurve::new(
                 a.map.then(&super::affine::Affine::of_rigid(m)),a.of.clone(),a.at))),
         }
@@ -1946,7 +1968,8 @@ impl Curve {
             Curve::Ellipse(f,a,b) => Curve::Ellipse(f.moved(m).rehanded(false).0,a,b),
             Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced {a:c.a.reflected(m)?.0,
                 b:c.b.reflected(m)?.0,pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
-            Curve::Affine(_) => self.moved(m),
+            // (a slid contact's points are read off its frame, which a reflection carries)
+            Curve::Affine(_) | Curve::Slid(_) => self.moved(m),
             // (a meridian's points read its frame's `x` and `z` alone: reflected, carried)
             Curve::Turned(ref t) => match t.moved(m) {
                 Some(t) => Curve::Turned(Arc::new(t)),

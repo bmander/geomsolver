@@ -18,7 +18,7 @@ use gcs_core::brep::trajectory::{Screw,Trajectory};
 use gcs_core::space::{norm,unit};
 
 /// The slide carrying a tool by `d` over the roll `[0, 1]`.
-fn slide(d: [f64;3]) -> Trajectory {
+pub(crate) fn slide(d: [f64;3]) -> Trajectory {
     Trajectory::Twist(Screw {origin:[0.;3],axis:unit(d),ratio:0.,advance:norm(d)*std::f64::consts::TAU})
 }
 

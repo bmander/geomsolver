@@ -132,7 +132,14 @@ level plane's cut of a leaning frustum and the circle it cuts from a surface of 
 to it were sampled apart; `swept_turned::a_plane_cutting_every_generator_of_a_cone_meets_it_in_an_ellipse`),
 and a circle and an ellipse in one plane cross where the ellipse meets the circle's cylinder,
 certified, a touch one root (`query::curve_curve`;
-`swept_turned::a_circle_and_an_ellipse_in_one_plane_cross_where_certified`). Two coaxial surfaces of revolution meet in circles where their meridians cross in one half-plane,
+`swept_turned::a_circle_and_an_ellipse_in_one_plane_cross_where_certified`). The cylinder over a slid
+torus's apparent contour (#805, `ssi`'s `slid_meeting`) meets the torus at a pose along the slide in
+its contact there, touching (each line along the slide through it meeting the torus there alone,
+short of the fold), a plane square to the slide in the contour carried onto it, a plane along it in
+lines along it through the contour's crossings (isolated certified; a touch left traced), a plane
+leaning to it in the contour sheared along the slide onto it (`affine::MappedCurve`), and another
+contour's cylinder along the same slide nowhere where the two contours stand apart
+(`swept_slid::a_slid_contours_cylinder_meets_its_neighbours_in_closed_form`). Two coaxial surfaces of revolution meet in circles where their meridians cross in one half-plane,
 two spline meridians too (a turned contact's meridian read as a spline's, #780 C3) (`ssi::spline_spline`: the first read against the second's signed distance,
 its nearest point's normal; left traced where the two run together over a stretch), so two swept
 edges' hyperboloids meet in exact circles
@@ -178,7 +185,10 @@ switch): a line meets a plane, a cone, a torus and a conic turned (`query::line_
 quartic in the meridian's own parameter) as polynomials along it, and a turned contact's meridian
 (#780 C3, `query::line_turned`) by the same function of the meridian's parameter isolated with its
 first two derivatives bounded by the meridian's jets read in outward-rounded intervals
-(`swept_turned::a_line_meets_a_turned_contacts_surface_where_sampling_finds_it`), a cylinder and a ball as a
+(`swept_turned::a_line_meets_a_turned_contacts_surface_where_sampling_finds_it`), and the cylinder a
+slid torus's contact sweeps (#805, `query::line_slid`) where the line seen along the slide meets
+the contour in the plane square to it, isolated with the contour's jets bounded in outward intervals
+(`swept_slid::a_line_meets_a_slid_contours_cylinder_where_a_scan_finds_it`), a cylinder and a ball as a
 chord, a swept sheet or a B-spline net by the three-unknown search (`query::curve_sheet`, the
 sheet's second derivatives bounded by `blend_bounds` and `Net::second_bounds`); a circle or an
 ellipse meets a plane, a cylinder, a ball, a cone and a torus as the surface's algebraic form

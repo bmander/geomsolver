@@ -198,14 +198,15 @@ fn a_pipe_comes_back_onto_itself_along_helices() {
     assert!(pipe(0.4).returns([TAU-2.*w-1e-9,2.*TAU],1e-9).unwrap().is_empty());
 }
 
-/// **A ball's pipe that would fold is refused by what it is**: a ball reaching past its centre's
-/// helix's radius of curvature, `(ρ² + κ²)/ρ`, would fold its pipe (its fold locus, the design's
-/// step after) — refused as `Curved` at the ball's centre, not built and not returned wrong.
+/// **A ball's pipe that would fold is refused by name**: a ball reaching past its centre's helix's
+/// radius of curvature, `(ρ² + κ²)/ρ`, would fold its pipe (its fold locus, the design's step after)
+/// — refused as `Folded` at the ball's centre (#805: the fold's one name, a slid ring's too), not
+/// built and not returned wrong.
 #[test]
 fn a_ball_screwed_tighter_than_its_radius_is_refused_by_name() {
     let tool = gcs_core::brep::build::sphere([0.5,0.,0.],[0.,0.,1.],1.2).unwrap();
     match closed(&tool,&screw(2.,0.1),[0.,1.],0.002,1e-6) {
-        Err(Unbuilt::Curved {at}) => assert!(gcs_core::space::distance(at,[0.5,0.,0.]) <= 1e-12),
+        Err(Unbuilt::Folded {at}) => assert!(gcs_core::space::distance(at,[0.5,0.,0.]) <= 1e-12),
         other => panic!("{other:?}"),
     }
 }

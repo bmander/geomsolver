@@ -96,13 +96,20 @@ impl Out {
     }
     /// The curve a swept surface sweeps (a B-spline, as a profile gives one).
     fn swept(&mut self,c: &Curve) -> Result<usize,String> {
-        // a turned contact's meridian (#780 C3), which no entity of the standard writes: the cubic
-        // through it over its span, fitted within `FIT`, its knots its own parameters
-        if let Curve::Turned(t) = c { return fitted(self,c,t.span,"a turned contact's") }
+        // a curve read exactly in a frame (a turned contact's meridian, #780 C3; a slid torus's
+        // contour, #805), which no entity of the standard writes: the cubic through it over its
+        // span, fitted within `FIT`, its knots its own parameters
+        if let Some(span) = c.exact_span() { return fitted(self,c,span,whose(c)) }
         let Curve::BSpline(b) = c else { unreachable!("a swept surface's curve is a profile's B-spline") };
         let ids: Vec<String> = b.poles.iter().map(|&p| format!("#{}",self.point(p))).collect();
         Ok(spline(self,b.degree,&ids,&b.knots,b.weights.as_deref()))
     }
+}
+
+/// Whose curve `c` is, as a fitted curve's refusal names it.
+fn whose(c: &Curve) -> &'static str {
+    match c { Curve::SheetCut(..) => "a screwed sheet's",Curve::Turned(..) => "a turned contact's",Curve::Slid(..) => "a slid torus's",
+        _ => "a face family's" }
 }
 
 /// **`c` over `[t0, t1]` as the cubic through it**, fitted within `FIT` (a curve no entity of the
@@ -690,9 +697,8 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
             }
             // a family's rail or rim likewise, its parameter the rail's or the rim's; an affine image
             // of a curve (a rail under a shear); and a plane's cut of a screwed sheet
-            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) | Curve::Turned(..) => {
-                let whose = match c { Curve::SheetCut(..) => "a screwed sheet's",Curve::Turned(..) => "a turned contact's",_ => "a face family's" };
-                fitted(o,c,e.t,whose)?
+            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) | Curve::Turned(..) | Curve::Slid(..) => {
+                fitted(o,c,e.t,whose(c))?
             }
             Curve::Traced(_) => {
                 let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::util::space::lerp(c.point(a),c.point(z),0.5)));

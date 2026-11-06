@@ -7,7 +7,8 @@
 //! **Built here: a polyhedral tool** (every face a plane, every edge a line) **under a slide or a
 //! turn**, however its edges lean to the axis, **and under a screw where its edges run along the
 //! axis or square to it** (and so its faces); **and under a slide a tool whose faces are planes,
-//! cylinders, cones and balls and whose edges are lines and circles**, **and under a turn one
+//! cylinders, cones, balls and tori (a whole ring at any lean) and whose edges are lines and
+//! circles**, **and under a turn one
 //! whose round faces stand about axes along the turn's, or are balls**. Under a turn, every line
 //! turns into a surface of revolution held exactly over the heights its source spans (heights along
 //! the axis are kept by the turn): a cylinder (a line along the axis), a plane square to the axis
@@ -27,7 +28,14 @@
 //!   a torus's face (under a slide along its axis or square to it) at both end poses, and its
 //!   contact circles swept: along its axis its equators, into coaxial cylinders; across it its top
 //!   and bottom rings, within their level planes, and its meridians square to `D`, into cylinders
-//!   along `D` (each touching the torus round its meridian, met in closed form, `ssi`);
+//!   along `D` (each touching the torus round its meridian, met in closed form, `ssi`); a whole
+//!   ring's face under a slide leaning to its axis (#805) at both end poses, and its two contacts —
+//!   closed curves smooth across the branch locus, where each latitude's two roots meet, read in the
+//!   angle chart (`slid::Slid`) — each swept into the cylinder over its apparent contour, its solid
+//!   the contour's region extruded along `D` from short of the ring at the start pose to past it at
+//!   the end (`Cutter::Contour`), which the ring at each end pose touches along its contact there
+//!   (met in closed form, `ssi`'s `slid_meeting`); refused by name where the inner contour folds
+//!   (`Unbuilt::Folded`, `tan² β ≥ (R − r)/r`);
 //! - under a turn: every face at both end poses; every edge turned; a face square to the axis, its
 //!   own plane (kept in itself, O); every other face's contact line (its points whose normal passes
 //!   through the axis; it meets the axis or runs along it) turned, over the stretch the face spans;
@@ -114,12 +122,14 @@
 //! screw a round face about an axis leaning to it, or a torus's; under a turn a cylinder's or a
 //! cone's about a leaning axis whose contact is no curve over the face (its two roots on a ring
 //! meeting, or the curve reaching the axis) or whose meridian folds back along the axis, a ball
-//! reaching across its axis, a torus's leaning to it, a sharp circle leaning to it; a torus's under a
-//! slide leaning to its axis, a free-form face, a curve no line or circle, a leaning edge under a
+//! reaching across its axis, a torus's leaning to it, a sharp circle leaning to it; under a slide a
+//! torus's face leaning to its axis that is no whole ring, or a whole ring's whose inner contour
+//! folds (by name, `Folded`); a free-form face, a curve no line or circle, a leaning edge under a
 //! screw, another motion — is refused by what it is (`Unbuilt`); those are the design's later steps.
 use crate::boolean::arrangement_within;
 use crate::build::{Profile,ProfileEdge,disc,prism,square};
 use crate::geom::{Curve,Frame,Surface};
+use crate::turned::Exact;
 use crate::topo::{Brep,EdgeCurve};
 use crate::trajectory::Trajectory;
 use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
@@ -133,7 +143,8 @@ type V = [f64;3];
 #[derive(Clone,Debug,PartialEq)]
 pub enum Unbuilt {
     /// The tool has a face that is no plane, or an edge that is no line, at `at` — under a slide,
-    /// a face no plane, cylinder, cone or ball, or an edge no line or circle; under a turn, a
+    /// a face no plane, cylinder, cone, ball or torus, a torus's leaning to the slide that is no
+    /// whole ring, or an edge no line or circle; under a turn, a
     /// cylinder or a cone about an axis leaning to the turn's whose contact is no curve over the
     /// face or whose meridian folds back along the axis (or crossing the turn's axis within the
     /// face, #780 C3), a ball reaching across its axis, a torus leaning to it, or a sharp edge no line
@@ -141,6 +152,12 @@ pub enum Unbuilt {
     /// torus, or a circle leaning to it: its envelope sheets are curved past what the candidates
     /// hold, the design's later steps.
     Curved { at: V },
+    /// A contact's swept sheet folds (docs/swept-solid-design.md step 6, the fold locus): at `at`,
+    /// a point of the tool's contact, the sheet would double back on itself, which its patch is not
+    /// yet cut at — a torus slid at a lean steep enough that the apparent contour of its inner
+    /// contact cusps (#805, `slid::Slid::folded`), or a ball screwed whose radius reaches its
+    /// centre's helix's radius of curvature (#780 L1, X5). Never built wrong.
+    Folded { at: V },
     /// The motion is no slide, turn or screw, nor a path of slides and turns (each taken up where
     /// the one before left the tool, `Trajectory::Placed`): the design's later steps.
     Motion,
@@ -207,7 +224,11 @@ enum Cutter { Plane(Plane),
     Ball { c: V,axis: V,r: f64 },
     /// The circle of radius `r` about `c` square to the unit `a`, carried along `d`: an oblique
     /// cylinder, the solid the circle's disc sweeps (a cylinder's solid sheared along `d`).
-    Oblique { c: V,a: V,r: f64,d: V } }
+    Oblique { c: V,a: V,r: f64,d: V },
+    /// A slid torus's contact swept along the slide (#805): the cylinder over its apparent contour,
+    /// its two halves (`slid::halves`, each read as the contour), over the heights `span` along the
+    /// slide from the torus's centre at the start pose — its solid the contour's region extruded.
+    Contour { halves: [crate::slid::Slid;2],span: [f64;2] } }
 
 /// **The closed solid `tool` sweeps under `path` over `roll`** (the module's cases), its tool,
 /// motion and solid in one set of units, built to `tol`; membership read on the tool meshed within
@@ -230,7 +251,8 @@ pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f6
 /// **Whether the pipeline takes `tool` under `path`**, read off their structure before anything is
 /// built (what an admission asks, #721's dispatch): the motion a slide, a turn or a screw that
 /// moves something; every face of the tool a plane and every edge a line bounding two of them
-/// (under a slide, a face a cylinder, a cone or a ball too, and an edge a circle; under a turn, a
+/// (under a slide, a face a cylinder, a cone or a ball too, a torus about an axis along it or square
+/// to it, or a whole ring at any lean short of its fold (#805), and an edge a circle; under a turn, a
 /// cylinder or a cone about any axis (#780 C3), a ball, and a sharp curve in a plane square to it;
 /// under a screw, a
 /// cylinder or a cone about an axis along it, and a ball beside planes and such a cylinder). The
@@ -302,6 +324,16 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
             // equators along it, swept into cylinders; across it its top and bottom rings, swept
             // into level planes, and its meridians square to the slide, swept into cylinders
             Surface::Torus(g,..) if screw.is_slide() && (dot(g.z,screw.axis).abs() <= 1e-9 || norm(cross(g.z,screw.axis)) <= 1e-9) => {
+                round.push(k);
+                faces.push((at,[0.;3]));
+            }
+            // under a slide leaning to a whole ring's axis (#805, X2 under a constant twist), its
+            // contact is two closed curves, smooth across the branch locus where each latitude's two
+            // roots meet, each swept along the slide into the cylinder over its apparent contour
+            // (`slid::Slid`) — refused by name where the inner contour folds (`Unbuilt::Folded`)
+            Surface::Torus(g,big,small) if screw.is_slide() && whole(f) => {
+                if !(big.abs() > small.abs()) { return Err(Unbuilt::Curved {at}) }
+                if let Some(at) = slid_fold(g,big.abs(),small.abs(),screw.axis) { return Err(Unbuilt::Folded {at}) }
                 round.push(k);
                 faces.push((at,[0.;3]));
             }
@@ -686,6 +718,21 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                             for r in [big+small,big-small] {
                                 add_cutter(Cutter::Cylinder {o:start.point(f.o),axis:z,r,span:[s.min(0.),s.max(0.)]},circle(f.o,z,r));
                             }
+                        } else if dot(z,dd).abs() > 1e-9 {
+                            // leaning to the axis (#805): each contact, outer and inner, a closed curve
+                            // smooth across the branch locus, swept along the slide into the cylinder
+                            // over its apparent contour (the contour's region extruded from short of
+                            // the torus at the start pose to past it at the end), its sites the
+                            // contact's points carried over the roll with the torus's normal there
+                            let reach = big*norm(sub(dd,scale(z,dot(dd,z))))+small;
+                            let span = [-(1.+PAST)*reach,len+(1.+PAST)*reach];
+                            for side in [1.,-1.] {
+                                let on = crate::slid::halves(f,big,small,dd,side,false);
+                                let sites: Vec<(V,V)> = on.iter().flat_map(|h| (0..=SITES).map(move |i| h.d2(2.*within(i)-1.).0))
+                                    .filter(|&x| located.face_place(k,x) != crate::query::Place::Out)
+                                    .flat_map(|x| { let n = outward(face,x); poses.iter().map(move |m| (m.point(x),m.vector(n))) }).collect();
+                                add_cutter(Cutter::Contour {halves:on.map(|h| h.at(start.point(f.o),true)),span},sites);
+                            }
                         } else {
                             // across the axis: its top and bottom rings swept within their level planes
                             for side in [1.,-1.] {
@@ -788,7 +835,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                         Cutter::Screwed {e,..} => unit(cross(e,screw.velocity(x))),
                         Cutter::Patch {p,q} => unit(cross(unit(sub(q,p)),screw.velocity(x))),
                         Cutter::Oblique {..} | Cutter::Ball {..} | Cutter::Torus {..} | Cutter::ScrewedDisc {..} | Cutter::Pipe {..}
-                            | Cutter::Turned(_) => unreachable!("a line turns into none of these"),
+                            | Cutter::Turned(_) | Cutter::Contour {..} => unreachable!("a line turns into none of these"),
                     };
                     poses.iter().map(move |m| (m.point(x),m.vector(normal)))
                 }).collect()
@@ -1100,6 +1147,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             Cutter::Cylinder {o,axis,r,span} => solids.push(prism(&disc(add(o,scale(axis,span[0])),axis,r),0.,span[1]-span[0])?),
             Cutter::Revolved {o,axis,p,e,span} => solids.extend(revolved(o,axis,p,e,span,eps)?),
             Cutter::Turned(t) => solids.push(turned_solid(&t)?),
+            Cutter::Contour {halves,span} => solids.push(contour_solid(&halves,span)?),
             Cutter::Ball {c,axis,r} => solids.push(crate::build::sphere(c,axis,r)?),
             Cutter::ScrewedDisc {c,r} => {
                 let first = pose_at(a)?;
@@ -1500,9 +1548,9 @@ fn turned_contacts(add_cutter: &mut dyn FnMut(Cutter,Vec<(V,V)>),located: &crate
 /// a turn each, each meeting itself nowhere, which the arrangement meets pairwise like any two
 /// candidates (`ssi`'s `pipes_meeting`: helices, and the circle where two abut). Refused, by what it
 /// is, where the circle reaches the axis (`w` none: then two points less than a turn apart along
-/// one helix may meet), where two of its points stand on one helix less than a turn apart, or where
-/// the ball's radius reaches the helix's radius of curvature and the pipe folds (its fold locus,
-/// `(ρ² + κ²)/ρ`, the design's step after).
+/// one helix may meet) or where two of its points stand on one helix less than a turn apart; and by
+/// name (`Unbuilt::Folded`) where the ball's radius reaches the helix's radius of curvature and the
+/// pipe folds (its fold locus, `(ρ² + κ²)/ρ`, the design's step after).
 fn pipe_stretches(screw: &crate::trajectory::Screw,c: V,n: V,r: f64,[a,b]: [f64;2],eps: f64) -> Result<Vec<[f64;2]>,Unbuilt> {
     use std::f64::consts::{PI,TAU};
     let pipe = crate::geom::Pipe {carry:crate::geom::Carry::Screw {center:screw.origin,axis:unit(screw.axis),angle:screw.ratio,
@@ -1510,7 +1558,7 @@ fn pipe_stretches(screw: &crate::trajectory::Screw,c: V,n: V,r: f64,[a,b]: [f64;
     let refused = || Unbuilt::Curved {at:c};
     let (Some(rho),Some(crate::geom::Carry::Screw {advance:kappa,..})) = (pipe.offset(),pipe.radian()) else { return Err(refused()) };
     // the helix's radius of curvature, `(ρ² + κ²)/ρ`: a ball reaching it folds its pipe
-    if !(r < (rho*rho+kappa*kappa)/rho.max(1e-300)) { return Err(refused()) }
+    if !(r < (rho*rho+kappa*kappa)/rho.max(1e-300)) { return Err(Unbuilt::Folded {at:c}) }
     let Some(w) = pipe.spread() else { return Err(refused()) };
     let turned = (screw.ratio*(b-a)).abs();
     // nor may it meet itself within less than a turn, two of its circle's points at one `ρ` and
@@ -1556,9 +1604,38 @@ fn turned_solid(t: &crate::turned::Turned) -> Result<Brep,String> {
     let [a,b] = t.span.map(|v| { let l = g.local(t.d2(v).0); [l[0],l[2]] });
     let at = |r: f64,z: f64| g.at([r,0.,z]);
     let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:vec![vec![
-        ProfileEdge::Line {a:at(0.,a[1]),b:at(a[0],a[1])},ProfileEdge::Turned(std::sync::Arc::new(*t)),
+        ProfileEdge::Line {a:at(0.,a[1]),b:at(a[0],a[1])},ProfileEdge::Exact(Curve::Turned(std::sync::Arc::new(*t))),
         ProfileEdge::Line {a:at(b[0],b[1]),b:at(0.,b[1])},ProfileEdge::Line {a:at(0.,b[1]),b:at(0.,a[1])}]]};
     crate::build::revolve(&profile,g.o,g.z,std::f64::consts::TAU)
+}
+
+/// **The solid a slid torus's contact sweeps a cylinder of** (#805, `Cutter::Contour`): the region
+/// within the contact's apparent contour, its two halves read in the plane through the torus's
+/// centre square to the slide, extruded along the slide over `[h0, h1]` — exact, its side the
+/// cylinder over the contour (`Surface::Extrusion` of `geom::Curve::Slid`).
+fn contour_solid(halves: &[crate::slid::Slid;2],[h0,h1]: [f64;2]) -> Result<Brep,String> {
+    let profile = Profile {origin:halves[0].frame.o,normal:halves[0].slide(),names:Vec::new(),
+        loops:vec![halves.iter().map(|h| ProfileEdge::Exact(Curve::Slid(std::sync::Arc::new(*h)))).collect()]};
+    prism(&profile,h0,h1)
+}
+
+/// Whether a face is bounded by its seams alone (each edge of its loops used by it on both sides,
+/// `Face::seams`): a whole ring.
+fn whole(face: &crate::topo::Face) -> bool {
+    let seams = face.seams();
+    face.loops.iter().flatten().all(|c| seams.contains(&c.edge))
+}
+
+/// **Where a ring slid along the unit `d` folds** (#805, the fold locus): the torus about `g`'s axis,
+/// its tube's middle radius `big` and radius `small`, its contacts' apparent contours read in the
+/// angle chart (`slid::Slid`). The first point of a contact where its contour is not proved regular
+/// (`Slid::folded`: the inner contour cusps once the slide leans `β` from the axis with
+/// `tan² β ≥ (R − r)/r`), or where a line along the slide through it is not proved to meet the
+/// torus there alone (`Slid::meets_again`, which comes only past the fold) — or none.
+fn slid_fold(g: &Frame,big: f64,small: f64,d: V) -> Option<V> {
+    [1.,-1.].into_iter().flat_map(|side| crate::slid::halves(*g,big,small,unit(d),side,false)).find_map(|h| {
+        Some(h.d2(h.folded().or_else(|| h.meets_again())?).0)
+    })
 }
 
 /// The radius `√(throat² + k² (z − height)²)` of the meridian `(throat, height, k)` at height `z`.
