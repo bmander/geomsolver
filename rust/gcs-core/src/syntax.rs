@@ -1305,6 +1305,16 @@ impl Membership {
         self.rides.insert(0, frame.clone());
     }
 
+    /// Leave the frames `gone` says of: out of the frames it rides on, and out of its plane,
+    /// where the innermost frame it still rides on takes the plane's place (none where it rides
+    /// on none, and it is then in no frame at all).
+    pub fn leave(&mut self, gone: impl Fn(&Ref) -> bool) {
+        self.rides.retain(|r| !gone(r));
+        if self.plane.as_ref().is_some_and(&gone) {
+            self.plane = self.rides.pop();
+        }
+    }
+
     /// Every frame it is in, outermost first: the blocks' and then its plane.
     pub fn path(&self) -> impl Iterator<Item = &Ref> {
         self.rides.iter().chain(self.plane.as_ref())

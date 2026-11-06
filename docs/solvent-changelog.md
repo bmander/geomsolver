@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.207] A planet rides its valued carrier** (#823). A frame declared in a valued frame's `in`
+block is drawn there as the rest of the block is (§6.14): it rides on the valued frame no more, its
+joint turns about its axis where the relations hold it (a pin the block draws, where the value puts
+it), and its own block's planes are those of the outer block as the value carries them; where it
+has a value too, `(P in carrier) in planet`. So an epicyclic train scrubbed by one parameter is
+drawn as it is built, the planet in its carrier, every joint `fix(value == t)`. Through 0.206 the
+frame rode on the valued frame and was E080, and the elaborator read the inner frame as a plane,
+saying a stray E105 and naming hidden twins (`#in362`); a plane so carried is now named as the
+source reads it, `std.top in carrier`. A statement in two valued frames the inner of which is
+declared outside the outer's block is E080, and so is one in the inner frame's block outside the
+outer's.
+
 **[0.206] The body words are words of `std.solids`** (#783 P3). A body is a set some of whose
 statements are said where it is not declared — the language's primitive: `B or { p | p in x }`
 adds a disjunct to its stock (what is in union with it), `B and { p | p not in x }` and `B and { p

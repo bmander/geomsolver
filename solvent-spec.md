@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.206 — November 2026**
+**Specification, Draft 0.207 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1586,7 +1586,8 @@ reading `x at(under: f) τ` whose instant is the frame's value rather than the s
 makes what `x` is, as `x at τ` does: a frame carried whole, a solid placed, a point held. `x` is
 carried from where it is drawn, whatever it rides on, and what the reading makes rides on nothing.
 A value is a jointed frame's (**E080** otherwise) and is stated once (**E040**). A frame with a
-value rides on no frame, and no frame rides on it (**E080**, naming `n := base in f`).
+value rides on no frame, and no frame rides on it (**E080**, naming `n := base in f`) **[0.207]** but
+one declared in its block, which is drawn there (below).
 `p := point in P` remains a point's membership: `in` after a kind is the plane it is drawn in.
 
 **[0.145] Drawn in a frame with a value.** What a jointed frame with a value draws in its `in`
@@ -1595,8 +1596,8 @@ read as that plane drawn in the frame, `P in f`, and so is every reference to it
 block writes — the block is the drawing at rest, carried whole by the frame's joint at its value,
 read again wherever the value is (a station of a family). What it declares rides on nothing more.
 A declaration drawn in the valued frame and in no plane of it is **E080** (a value carries a
-plane), and a frame declared in the block still rides on the valued frame (**E080**). So the helix
-of issue #391 is written as it is drawn:
+plane); through 0.206 a frame declared in the block rode on the valued frame and was **E080** too.
+So the helix of issue #391 is written as it is drawn:
 
 ```
 param s: Scalar over (0, 1)
@@ -1613,6 +1614,46 @@ in screw {
 }
 thread := solid({ p | some s: p in sec at s })   // §6.9: the drawing's face as `s` runs
 ```
+
+**[0.207] A frame declared in a valued frame's block** (issue #823) is drawn there as the rest of
+the block is, and rides on the valued frame no more: its joint turns about its axis where the
+relations hold it — held to what the block draws, where the value puts that — and what its own
+block draws is drawn in the planes of that block as the outer frame's value carries them, and
+rides on it. Where it has a value too, each such plane is read as drawn in the outer frame and then
+in it, `(P in carrier) in planet`: carried, then turned about the carried axis, which is turning
+about the axis at rest and then carrying — the outer frame's turn and then the inner's, as riding
+at a roll composes them. So an epicyclic train scrubbed by one parameter is drawn as it is built,
+each planet in its carrier's block on the carrier's pin:
+
+```
+param t: Angle over (0deg, 360deg)
+in (carrier := frame) {
+  in std.top {
+    pin := point
+    pin coords(du: 20mm, dv: 0mm) std.top
+  }
+  in (planet := frame) {
+    in std.top {
+      c := point
+      c coords(du: 20mm, dv: 0mm) std.top
+      rim := circle(center: c)
+      radius(5mm) rim
+    }
+    planet_body := solid(std.solids.Prism(face(rim), from: 0mm, to: 3mm))
+  }
+}
+carrier spins(1) o
+planet spins(-3) pin
+fix(value == t) carrier
+fix(value == t) planet
+```
+
+What is not drawn (a solid, a face, an instance making one) declared in the inner frame's block and
+in no plane rides on the inner frame alone. A statement drawn in two valued frames the inner of
+which is declared outside the outer one's block is **E080**: that frame's axis is not carried by the
+outer one; so is one drawn in the inner frame's block outside the outer one's, which its value would
+not carry. A plane so carried is named in what is said of it as the source reads it, `std.top in
+carrier`.
 
 **[0.145] A frame along a path.** A frame's joint may be held **along a path** — a line, an arc, a
 spline in a plane or over points in space, a curve traced in space — rather than about a line: `g
