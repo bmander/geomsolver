@@ -185,3 +185,59 @@ fn a_face_family_reads_its_parameter_as_declared() {
     let s = said(&solid);
     assert!(s.iter().any(|m| m.starts_with("E103") && m.contains("is no angle")), "{s:?}");
 }
+
+/// **A seated part elsewhere in the drawing leaves the station held** (#817): a triangle in the
+/// top carried 36° up a screw about a line through `p_c` and 100 a turn, its stations the whole
+/// drawing — and a disc seated on a point raised from `p_c`, which the station's part reaches
+/// through `p_c`.  The disc's frame comes into the part square, as it was drawn, so the station
+/// has no shear of it to turn, and the family sweeps the triangle's 2 mm² through the screw's
+/// 10 mm.
+#[test]
+fn a_part_seated_off_the_screws_line_leaves_the_station_held() {
+    const SEATED: &str = "unit mm
+use std
+use std.place (coords, raised, seats)
+use std.motion (screws)
+use std.solids
+
+in std.top {
+  p_c := point hint((5, 5))
+  p_c coords(du: 5mm, dv: 5mm) std.top
+}
+p_up := point
+p_up raised(d: 10mm, along: std.z) p_c
+construction ax := line(p_c, p_up)
+param s: Scalar over (0, 1)
+screw := frame
+screw screws(100mm) ax
+fix(value == 36deg * s) screw
+in screw {
+  in std.top {
+    a := point hint((10, 0))
+    a coords(du: 10mm, dv: 0mm) std.top
+    b := point hint((12, 0))
+    b coords(du: 12mm, dv: 0mm) std.top
+    c := point hint((12, 2))
+    c coords(du: 12mm, dv: 2mm) std.top
+  }
+  sec := face(a, b, c, -> close)
+}
+body := solid({ p | some s: p in sec at s })
+
+disc_at := point
+disc_at raised(d: 50mm, along: std.z) p_c
+g := Disc()
+g seats(turn: 0deg, up: std.z, east: std.x) disc_at
+
+component Disc() {
+  in std.top {
+    rim := circle(center: std.top.origin) hint(r: 3)
+    radius(3mm) rim
+  }
+  body := solid(std.solids.Prism(face(rim), from: 0mm, to: 2mm))
+}
+";
+    let e = determined(SEATED);
+    let v = gcs_core::brep::props::volume(&brep(&e, "body"));
+    assert!((v - 20.0).abs() <= 1e-6 * 20.0, "{v} against 20");
+}

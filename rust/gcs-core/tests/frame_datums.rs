@@ -717,6 +717,31 @@ st raised(d: -10mm, along: tilt) base
     assert!(near(at(&e, "st"), [4.0, 20.0, -8.0]), "{:?}", at(&e, "st"));
 }
 
+#[test]
+fn a_part_rebuilt_around_a_seated_instance_keeps_its_frame_square() {
+    // the rebuild mints a frame's own rows afresh: an instance's frame comes square, as it was
+    // drawn (#548), or a station's part that reaches the seat leaves it a shear to turn (#817)
+    let src = format!("{READS}\
+in std.top {{
+  base := point
+  fix((10, 20)) base
+}}
+st := point
+st raised(d: 25mm, along: std.z) base
+p := Post(len: 40mm)
+p seats(turn: 30deg, up: std.z, east: std.x) st
+").replace("use std\n", "use std\nuse std.place (seats, raised)\n");
+    let e = solved(&src);
+    let frame = crate::common::ent(&e, "p#frame");
+    assert!(e.sketch.chart_square(frame.i()));
+    // the part a walk from the station makes, reaching the seat through the point it is on
+    let mut part = gcs_core::graft::Part::around_all(&e.sketch, &[crate::common::ent(&e, "st")]);
+    let pf = part.entity_in(frame).expect("the seat brings the frame along");
+    assert!(part.sketch.chart_square(pf.i()));
+    let d = diagnose(&mut part.sketch, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{:?}", view_freedoms(&part.sketch, &d));
+}
+
 /// A disc of radius 1 about (3, 1) in its part's top, and a station 75 above a point drawn in the
 /// world's (#629).
 const DISC: &str = "\
