@@ -292,12 +292,6 @@ impl<T: Num> Jet<T> {
     }
 }
 
-impl Jet<Iv> {
-    /// The most magnitude its first and second derivatives hold, unbounded where a reading left its
-    /// domain: what a root's isolation bounds its function by (`util::isolate::roots`).
-    pub fn most(self) -> [f64;2] { [self.d.most().unwrap_or(f64::INFINITY),self.dd.most().unwrap_or(f64::INFINITY)] }
-}
-
 impl<T: Num> Add for Jet<T> { type Output = Jet<T>; fn add(self,b: Jet<T>) -> Jet<T> { Jet {v:self.v+b.v,d:self.d+b.d,dd:self.dd+b.dd} } }
 impl<T: Num> Sub for Jet<T> { type Output = Jet<T>; fn sub(self,b: Jet<T>) -> Jet<T> { Jet {v:self.v-b.v,d:self.d-b.d,dd:self.dd-b.dd} } }
 impl<T: Num> Neg for Jet<T> { type Output = Jet<T>; fn neg(self) -> Jet<T> { Jet {v:-self.v,d:-self.d,dd:-self.dd} } }

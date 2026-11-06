@@ -223,7 +223,7 @@ impl BSpline {
 }
 
 /// The knot span holding `t`, for `count` poles of `degree`.
-fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
+pub(crate) fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
     let (p,n) = (degree,count);
     if t >= knots[n] { return n-1 }
     if t <= knots[p] { return p }

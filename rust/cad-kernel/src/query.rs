@@ -360,7 +360,6 @@ fn read(reader: &dyn Reader,curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol
         }
         // a build past its budget reads nothing more (#780 R3): the build is refused by its budget
         Err(Uncertified::Stopped) => Ok(Some(Vec::new())),
-        Err(Uncertified::Refused(r)) => Err(r),
         Err(Uncertified::Gave(g)) => Err(Refusal::of(curve,[t0,t1],surface,g)),
         Err(Uncertified::NoForm) => Err(Refusal::unbounded(curve,[t0,t1],surface)),
     }
@@ -514,10 +513,11 @@ fn settled(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,roots: Vec<
 /// **Why a reader has no answer** (#780 R3, #814), told apart so each is answered its own way: no
 /// closed form for the pair (`NoForm`, and a closed form's search past its most boxes), which the
 /// general reading then reads; a build stopped past its budget (`Stopped`), which reads nothing
-/// more; or a search that proved nothing (`Gave`, its box, and `Refused`, with its witness), which
-/// is the answer.
+/// more; or a search that proved nothing (`Gave`, with its box), which is the answer — `read` makes
+/// it the refusal, with its witness. The general reading's `NoForm` is a pair with nothing bounded
+/// to search over, refused too.
 #[derive(Clone,Debug)]
-pub enum Uncertified { NoForm,Stopped,Gave(GaveUp),Refused(Refusal) }
+pub enum Uncertified { NoForm,Stopped,Gave(GaveUp) }
 
 impl From<GaveUp> for Uncertified {
     fn from(g: GaveUp) -> Uncertified { match g { GaveUp::Most => Uncertified::NoForm,GaveUp::Stopped => Uncertified::Stopped,g => Uncertified::Gave(g) } }
@@ -552,36 +552,25 @@ fn closed(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certifie
         (Curve::Iso(b,u),Surface::Sphere(c,r)) => helix_sphere(b,*u,c.o,r.abs(),[t0,t1],tol),
         // a circle's or an ellipse's on any surface with an algebraic form here, an edge of a
         // drum, a fillet's rim or a section's arc (#780 R2)
-        (Curve::Circle(..) | Curve::Ellipse(..),_) if algebraic(surface,tol).is_some() => conic_algebraic(curve,[t0,t1],surface,tol),
+        (Curve::Circle(..) | Curve::Ellipse(..),_) if degree(surface).is_some() => conic_algebraic(curve,[t0,t1],surface,tol),
         (Curve::BSpline(sp),Surface::Plane(f)) => spline_plane(sp,[t0,t1],f,surface,tol),
         _ => Err(Uncertified::NoForm),
     }
 }
 
-/// **A surface's algebraic form**, where it has one here: its degree, the polynomial whose zero set
-/// it is (in its frame's coordinates — a plane's height, `ρ² − r²` a cylinder's, `|q|² − r²` a
-/// ball's, `ρ² − (r + z tan a)²` a cone's, `(|q|² + R² − r²)² − 4R²ρ²` a torus's), and which of its
-/// points are the surface's (a cone's one sheet). `None` for a surface with none.
-fn algebraic(surface: &Surface,tol: f64) -> Option<(usize,Box<dyn Fn(V) -> f64 + '_>,Box<dyn Fn(V) -> bool + '_>)> {
-    let all: Box<dyn Fn(V) -> bool> = Box::new(|_| true);
-    Some(match *surface {
-        Surface::Plane(ref f) => (1,Box::new(move |p| f.local(p)[2]),all),
-        Surface::Cylinder(ref f,r) => (2,Box::new(move |p| { let q = f.local(p); q[0]*q[0]+q[1]*q[1]-r*r }),all),
-        Surface::Sphere(ref f,r) => (2,Box::new(move |p| { let q = f.local(p); q[0]*q[0]+q[1]*q[1]+q[2]*q[2]-r*r }),all),
-        Surface::Cone(ref f,r,a) => {
-            let (sa,ca) = a.dsin_cos();
-            if !(ca.abs() > 1e-9) { return None }
-            let k = sa/ca;
-            (2,Box::new(move |p| { let q = f.local(p); let w = r+k*q[2]; q[0]*q[0]+q[1]*q[1]-w*w }),
-                Box::new(move |p| r+k*f.local(p)[2] >= -tol))
-        }
-        Surface::Torus(ref f,big,r) => {
-            let (big,r) = (big.abs(),r.abs());
-            (4,Box::new(move |p| { let q = f.local(p); let (flat,s) = (q[0]*q[0]+q[1]*q[1],q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+big*big-r*r);
-                s*s-4.*big*big*flat }),all)
-        }
-        _ => return None,
-    })
+/// **A surface's algebraic form's degree**, where it has one here (`form`: a plane's height, `ρ² −
+/// r²` a cylinder's, `|q|² − r²` a ball's, `ρ² − (r + z tan a)²` a cone's, `(|q|² + R² − r²)² −
+/// 4R²ρ²` a torus's). `None` for a surface with none.
+fn degree(surface: &Surface) -> Option<usize> {
+    form::<f64>(surface,surface.frame().o)?;
+    Some(match surface { Surface::Plane(_) => 1,Surface::Torus(..) => 4,_ => 2 })
+}
+
+/// Whether `p`, a zero of a surface's algebraic form, is a point of the surface: on a cone, of its
+/// one sheet (`r + z tan a ≥ 0`); on any other, any.
+fn kept(surface: &Surface,tol: f64,p: V) -> bool {
+    use crate::util::fmath::Det;
+    match *surface { Surface::Cone(ref f,r,a) => { let (sa,ca) = a.dsin_cos(); r+sa/ca*f.local(p)[2] >= -tol },_ => true }
 }
 
 /// **A circle or an ellipse (`o + a cos t + b sin t`) against a surface with an algebraic form of
@@ -592,19 +581,19 @@ fn algebraic(surface: &Surface,tol: f64) -> Option<(usize,Box<dyn Fn(V) -> f64 +
 /// accepted where the surface's distance is within `tol`. Each kept where the surface's points are.
 fn conic_algebraic(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certified {
     use std::f64::consts::TAU;
-    let (n,form,keep) = algebraic(surface,tol).ok_or(Uncertified::NoForm)?;
+    let n = degree(surface).ok_or(Uncertified::NoForm)?;
     let at = |t: f64| curve.point(t);
     let m = 2*n+1;
-    let ys: Vec<f64> = (0..m).map(|j| form(at(TAU*j as f64/m as f64))).collect();
+    let ys: Vec<f64> = (0..m).map(|j| form(surface,at(TAU*j as f64/m as f64)).map_or(f64::NAN,|x| x.0)).collect();
     let c0 = ys.iter().sum::<f64>()/m as f64;
     let terms: Vec<(f64,f64)> = (1..=n).map(|k| {
         let (mut x,mut y) = (0.,0.);
         for (j,v) in ys.iter().enumerate() { let (s,c) = (TAU*(k*j) as f64/m as f64).dsin_cos(); x += v*c; y += v*s; }
         (2.*x/m as f64,2.*y/m as f64)
     }).collect();
-    let g = Banded {f:crate::util::isolate::Written(Trig {c0,terms:&terms}),by:Implicit {curve,surface,tol}};
+    let g = Banded {f:crate::util::isolate::Written(Trig {c0,terms:&terms}),by:Implicit::new(curve,surface,tol)};
     let found = crate::util::isolate::roots(&g,[t0,t1],tol*1e-3/curve.speed().max(1e-300),&|t| surface.implicit(at(t)).abs() <= tol)?;
-    Ok(Meets::At(found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at,r.touch)).collect()))
+    Ok(Meets::At(found.into_iter().filter(|r| kept(surface,tol,at(r.at))).map(|r| (r.at,r.touch)).collect()))
 }
 
 /// **A closed form's function, its runs read by the general reading's** (`Implicit::within`): where
@@ -647,8 +636,8 @@ fn spline_plane(sp: &super::nurbs::BSpline,[t0,t1]: [f64;2],f: &super::geom::Fra
     cuts.push(b);
     let c = h.coefficients();
     let at = |t: f64| h.at(t);
-    let value = |t: f64| crate::enclose::scalar(sp.degree,&sp.knots,c,[t,t]).0;
-    let slope = |a: f64,b: f64| crate::enclose::scalar(sp.degree,&sp.knots,c,[a,b]).1;
+    let value = |t: f64| crate::enclose::scalar(sp.degree,&sp.knots,c,[t,t],false).0;
+    let slope = |a: f64,b: f64| crate::enclose::scalar(sp.degree,&sp.knots,c,[a,b],true).1;
     let g = crate::util::isolate::Parts {at:&at,value:&value,slope:&slope};
     let reach = sp.hull_length().max(1e-300)/(hi-lo).max(1e-300);
     let mut out = Vec::new();
@@ -683,7 +672,7 @@ fn line_poly(c: &[f64],p: V,d: V,[t0,t1]: [f64;2],surface: &Surface,tol: f64,kee
     let slack = tol/speed;
     let (lo,hi) = (t0-slack,t1+slack);
     let line = Curve::Line {p,d};
-    let g = Banded {f:crate::util::isolate::Poly(c),by:Implicit {curve:&line,surface,tol}};
+    let g = Banded {f:crate::util::isolate::Poly(c),by:Implicit::new(&line,surface,tol)};
     let found = crate::util::isolate::roots(&g,[lo,hi],tol*1e-3/speed,&|t| surface.implicit(at(t)).abs() <= tol)?;
     Ok(Meets::At(found.into_iter().filter(|r| keep(at(r.at))).map(|r| (r.at,r.touch)).collect()))
 }
@@ -868,20 +857,19 @@ pub fn curve_surface_searched(curve: &Curve,t: [f64;2],surface: &Surface,tol: f6
 /// A stretch with no end is the curve's within the surface's own box where it is a line and the
 /// surface is bounded, and refused otherwise; a search that proves nothing is refused, with its box.
 fn general(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Result<(Meets,bool),Uncertified> {
-    let refuse = |g: GaveUp| Uncertified::Refused(Refusal::of(curve,[t0,t1],surface,g));
-    let Some([a,b]) = bounded_stretch(curve,[t0,t1],surface,tol) else {
-        return Err(Uncertified::Refused(Refusal::unbounded(curve,[t0,t1],surface)))
-    };
+    // (`Most` given up here is the answer, never the general reading's to try again: not `From`)
+    let refuse = Uncertified::Gave;
+    let Some([a,b]) = bounded_stretch(curve,[t0,t1],surface,tol) else { return Err(Uncertified::NoForm) };
     if !(b > a) { return Ok((Meets::At(Vec::new()),true)) }
     let whole = curve.enclose([[a,b]]);
     let proved = whole.proved;
-    if let Some((_,_,keep)) = algebraic(surface,tol) {
-        let g = Implicit {curve,surface,tol};
+    if degree(surface).is_some() {
+        let g = Implicit::new(curve,surface,tol);
         let speed = norm(whole.d[0].map(|x| x.mag()));
         let speed = if speed.is_finite() { speed } else { curve.speed() };
         let found = crate::util::isolate::roots(&g,[a,b],tol*1e-3/speed.max(1e-300),&|t| surface.implicit(curve.point(t)).abs() <= tol)
             .map_err(refuse)?;
-        return Ok((Meets::At(found.into_iter().filter(|r| keep(curve.point(r.at))).map(|r| (r.at,r.touch)).collect()),proved))
+        return Ok((Meets::At(found.into_iter().filter(|r| kept(surface,tol,curve.point(r.at))).map(|r| (r.at,r.touch)).collect()),proved))
     }
     // a surface swept by a curve, against that curve: two unknowns
     if let Surface::Extrusion(f,c) | Surface::Revolution(f,c) = surface {
@@ -889,7 +877,7 @@ fn general(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Result<
         // a line along an extrusion's way stays one point of its profile's plane: on the surface
         // all along (`along` has read it) or nowhere
         if let (false,&Curve::Line {d,..}) = (turned,curve) { if norm(crate::util::space::cross(d,f.z)) <= 1e-12*norm(d) { return Ok((Meets::At(Vec::new()),true)) } }
-        let Some([pu,pv]) = reach_of(surface,&whole) else { return Err(Uncertified::Refused(Refusal::unbounded(curve,[t0,t1],surface))) };
+        let Some([pu,pv]) = reach_of(surface,&whole) else { return Err(Uncertified::NoForm) };
         let sys = Profiled {curve,profile:c,frame:*f,turned,range:[[a,b],if turned { pv } else { pu }]};
         let reach = (0..5).map(|k| {
             let x = if k == 4 { [0.5;2] } else { [(k&1) as f64,((k>>1)&1) as f64] };
@@ -901,7 +889,7 @@ fn general(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Result<
         let found = crate::util::isolate::solve::<2>(&sys,[[0.,1.];2],width,&|x| sys.near(x,tol)).map_err(refuse)?;
         return Ok((Meets::At(found.into_iter().map(|r| (sys.natural(0,r.at[0].clamp(0.,1.)),r.touch)).collect()),proved && c.enclose([sys.range[1]]).proved))
     }
-    let Some([pu,pv]) = reach_of(surface,&whole) else { return Err(Uncertified::Refused(Refusal::unbounded(curve,[t0,t1],surface))) };
+    let Some([pu,pv]) = reach_of(surface,&whole) else { return Err(Uncertified::NoForm) };
     let sys = Meeting {curve,surface,range:[[a,b],pu,pv],tol};
     // the resolution a touch is read to: the tolerance over the farthest any unknown carries a
     // point across the box (read at its middle and corners)
@@ -920,7 +908,6 @@ fn general(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Result<
 /// the gradient carried back to space), written once over `Num`: read in floats, or in intervals
 /// over a box. `None` for a surface with none.
 fn form<T: Num>(surface: &Surface,x: [T;3]) -> Option<(T,[T;3])> {
-    use crate::util::fmath::Det;
     let f = surface.frame();
     let c = |v: f64| T::of(v);
     let d: [T;3] = std::array::from_fn(|i| x[i]-c(f.o[i]));
@@ -953,7 +940,20 @@ fn form<T: Num>(surface: &Surface,x: [T;3]) -> Option<(T,[T;3])> {
 
 /// **A surface's algebraic form along a curve** (`general`'s one unknown): `F(C(t))` and its rate,
 /// enclosed from the curve's enclosure (`enclose`) and the form read in intervals (`form`).
-struct Implicit<'a> { curve: &'a Curve,surface: &'a Surface,tol: f64 }
+struct Implicit<'a> { curve: &'a Curve,surface: &'a Surface,tol: f64,held: std::cell::Cell<Option<([u64;2],crate::enclose::Patch<1>)>> }
+
+impl<'a> Implicit<'a> {
+    fn new(curve: &'a Curve,surface: &'a Surface,tol: f64) -> Implicit<'a> { Implicit {curve,surface,tol,held:std::cell::Cell::new(None)} }
+    /// The curve's enclosure over `[a, b]`, the last one held (a stretch's run test and its slope
+    /// read the same one).
+    fn over(&self,a: f64,b: f64) -> crate::enclose::Patch<1> {
+        let key = [a.to_bits(),b.to_bits()];
+        if let Some((k,e)) = self.held.get() { if k == key { return e } }
+        let e = self.curve.enclose([[a,b]]);
+        self.held.set(Some((key,e)));
+        e
+    }
+}
 
 impl crate::util::isolate::Function for Implicit<'_> {
     fn at(&self,t: f64) -> (f64,f64) {
@@ -962,14 +962,14 @@ impl crate::util::isolate::Function for Implicit<'_> {
     }
     fn value(&self,t: f64) -> Iv { form(self.surface,self.curve.enclose([[t,t]]).at).map_or(Iv::ANY,|(f,_)| f) }
     fn slope(&self,a: f64,b: f64) -> Iv {
-        let e = self.curve.enclose([[a,b]]);
+        let e = self.over(a,b);
         form(self.surface,e.at).map_or(Iv::ANY,|(_,g)| crate::enclose::dot3(g,e.d[0]))
     }
     /// Within the tolerance all along: the form over the curve's enclosure within half the
     /// tolerance times the least its gradient's length can be there (to first order, the surface's
     /// distance).
     fn within(&self,a: f64,b: f64) -> bool {
-        let e = self.curve.enclose([[a,b]]);
+        let e = self.over(a,b);
         let Some((f,g)) = form(self.surface,e.at) else { return false };
         let least = |x: Iv| if x.has_zero() { 0. } else { x.lo().abs().min(x.hi().abs()) };
         let grad = g.iter().map(|&x| least(x).powi(2)).sum::<f64>().sqrt();
@@ -983,24 +983,24 @@ impl crate::util::isolate::Function for Implicit<'_> {
 /// enclosures (`enclose`).
 struct Meeting<'a> { curve: &'a Curve,surface: &'a Surface,range: [[f64;2];3],tol: f64 }
 
-impl Meeting<'_> {
-    /// Unknown `k`'s own parameter at `x` across its stretch.
-    fn natural(&self,k: usize,x: f64) -> f64 { let [a,b] = self.range[k]; a+x*(b-a) }
-    /// The parameters a box of the unknowns reaches, outward.
-    fn natural_box(&self,bx: &[[f64;2];3]) -> [[f64;2];3] {
-        std::array::from_fn(|k| {
-            let [a,b] = self.range[k];
-            let x = Iv::point(a)+Iv::new(bx[k][0],bx[k][1])*(Iv::point(b)-Iv::point(a));
-            [x.lo().max(a.min(b)),x.hi().min(a.max(b))]
-        })
-    }
-    /// Each unknown's stretch's length, enclosed.
-    fn widths(&self) -> [Iv;3] { std::array::from_fn(|k| Iv::point(self.range[k][1])-Iv::point(self.range[k][0])) }
+/// Unknown `k`'s own parameter at `x` across its stretch of `range` (a search reads each unknown
+/// from nought to one: `Meeting`'s, `Profiled`'s).
+fn natural<const N: usize>(range: &[[f64;2];N],k: usize,x: f64) -> f64 { let [a,b] = range[k]; a+x*(b-a) }
+
+/// The parameters a box of the unknowns reaches across `range`, outward.
+fn natural_box<const N: usize>(range: &[[f64;2];N],bx: &[[f64;2];N]) -> [[f64;2];N] {
+    std::array::from_fn(|k| {
+        let [a,b] = range[k];
+        let x = Iv::point(a)+Iv::new(bx[k][0],bx[k][1])*(Iv::point(b)-Iv::point(a));
+        [x.lo().max(a.min(b)),x.hi().min(a.max(b))]
+    })
 }
 
+/// Each unknown's stretch's length across `range`, enclosed.
+fn widths<const N: usize>(range: &[[f64;2];N]) -> [Iv;N] { std::array::from_fn(|k| Iv::point(range[k][1])-Iv::point(range[k][0])) }
+
 impl Meeting<'_> {
-    /// The tolerance a run is held to (`run`).
-    fn tolerance(&self) -> f64 { self.tol }
+    fn natural(&self,k: usize,x: f64) -> f64 { natural(&self.range,k,x) }
     /// The feet of `p` on the surface from `uv`, by Gauss–Newton held to the surface's stretches,
     /// and how far it stands off there.
     fn foot(&self,p: V,mut uv: [f64;2]) -> ([f64;2],f64) {
@@ -1039,7 +1039,7 @@ impl Meeting<'_> {
         let slope = sub3(c.d[0],add3(scale3(s.d[0],rate[0]),scale3(s.d[1],rate[1])));
         let half = Iv::new(lo,hi)-Iv::point(mid);
         let g: [Iv;3] = std::array::from_fn(|i| value[i]+slope[i]*half);
-        let bound = self.tolerance()/3f64.sqrt();
+        let bound = self.tol/3f64.sqrt();
         g.iter().all(|x| x.mag() <= bound)
     }
     /// `run`, the stretch in the search's own unknowns.
@@ -1049,7 +1049,7 @@ impl Meeting<'_> {
         let t = self.natural(0,x[0]);
         let f0 = [self.natural(1,x[1]),self.natural(2,x[2])];
         // (as fine as the search reads: the tolerance's hundredth over the curve's speed)
-        let resolution = (1e-2*self.tolerance()/norm(self.curve.d1(t).1).max(1e-300)).max(1e-15*(hi-lo).max(1e-300));
+        let resolution = (1e-2*self.tol/norm(self.curve.d1(t).1).max(1e-300)).max(1e-15*(hi-lo).max(1e-300));
         let reach = |way: f64| -> f64 {
             let (mut at,mut foot) = (t,f0);
             let mut step = 1e-6*(hi-lo);
@@ -1058,7 +1058,7 @@ impl Meeting<'_> {
                 let next = (at+way*step).clamp(lo,hi);
                 if next == at || pieces > 4096 { return at }
                 let (fb,off) = self.foot(self.curve.point(next),foot);
-                if off <= self.tolerance() && self.piece([at,next],foot,fb) {
+                if off <= self.tol && self.piece([at,next],foot,fb) {
                     at = next;
                     foot = fb;
                     pieces += 1;
@@ -1086,15 +1086,14 @@ impl crate::util::isolate::System<3> for Meeting<'_> {
         (std::array::from_fn(|i| q[i]-s[i]),std::array::from_fn(|i| [dq[i]*w[0],-su[i]*w[1],-sv[i]*w[2]]))
     }
     fn value(&self,x: [f64;3]) -> [Iv;3] {
-        let n = self.natural_box(&x.map(|y| [y,y]));
+        let n = natural_box(&self.range,&x.map(|y| [y,y]));
         let (c,s) = (self.curve.enclose([n[0]]),self.surface.enclose([n[1],n[2]]));
         crate::enclose::sub3(c.at,s.at)
     }
-    fn jacobian(&self,bx: &[[f64;2];3]) -> [[Iv;3];3] { self.over(bx).1 }
     fn over(&self,bx: &[[f64;2];3]) -> ([Iv;3],[[Iv;3];3]) {
-        let n = self.natural_box(bx);
+        let n = natural_box(&self.range,bx);
         let (c,s) = (self.curve.enclose([n[0]]),self.surface.enclose([n[1],n[2]]));
-        let w = self.widths();
+        let w = widths(&self.range);
         (crate::enclose::sub3(c.at,s.at),std::array::from_fn(|i| [c.d[0][i]*w[0],-(s.d[0][i]*w[1]),-(s.d[1][i]*w[2])]))
     }
     /// **A run of the curve along the surface through `x`** (#814: what no box can part): from `x`,
@@ -1126,14 +1125,7 @@ impl crate::util::isolate::System<3> for Meeting<'_> {
 struct Profiled<'a> { curve: &'a Curve,profile: &'a Curve,frame: super::geom::Frame,turned: bool,range: [[f64;2];2] }
 
 impl Profiled<'_> {
-    fn natural(&self,k: usize,x: f64) -> f64 { let [a,b] = self.range[k]; a+x*(b-a) }
-    fn natural_box(&self,bx: &[[f64;2];2]) -> [[f64;2];2] {
-        std::array::from_fn(|k| {
-            let [a,b] = self.range[k];
-            let x = Iv::point(a)+Iv::new(bx[k][0],bx[k][1])*(Iv::point(b)-Iv::point(a));
-            [x.lo().max(a.min(b)),x.hi().min(a.max(b))]
-        })
-    }
+    fn natural(&self,k: usize,x: f64) -> f64 { natural(&self.range,k,x) }
     /// `G` and its Jacobian from the two curves' points and rates in the frame, `w` the stretches'
     /// lengths: written once over `Num`.
     fn of<T: Num>(&self,q: [T;3],dq: [T;3],m: [T;3],dm: [T;3],w: [T;2]) -> ([T;2],[[T;2];2]) {
@@ -1162,19 +1154,18 @@ impl crate::util::isolate::System<2> for Profiled<'_> {
         self.of(f.local(q),f.dir_local(dq),f.local(m),f.dir_local(dm),w)
     }
     fn value(&self,x: [f64;2]) -> [Iv;2] {
-        let n = self.natural_box(&x.map(|y| [y,y]));
+        let n = natural_box(&self.range,&x.map(|y| [y,y]));
         let (c,p) = (self.curve.enclose([n[0]]),self.profile.enclose([n[1]]));
         let f = &self.frame;
         let one = Iv::point(1.);
         self.of(crate::enclose::frame_local(f,c.at),crate::enclose::frame_dir_local(f,c.d[0]),
             crate::enclose::frame_local(f,p.at),crate::enclose::frame_dir_local(f,p.d[0]),[one,one]).0
     }
-    fn jacobian(&self,bx: &[[f64;2];2]) -> [[Iv;2];2] { self.over(bx).1 }
     fn over(&self,bx: &[[f64;2];2]) -> ([Iv;2],[[Iv;2];2]) {
-        let n = self.natural_box(bx);
+        let n = natural_box(&self.range,bx);
         let (c,p) = (self.curve.enclose([n[0]]),self.profile.enclose([n[1]]));
         let f = &self.frame;
-        let w = [0,1].map(|k| Iv::point(self.range[k][1])-Iv::point(self.range[k][0]));
+        let w = widths(&self.range);
         self.of(crate::enclose::frame_local(f,c.at),crate::enclose::frame_dir_local(f,c.d[0]),
             crate::enclose::frame_local(f,p.at),crate::enclose::frame_dir_local(f,p.d[0]),w)
     }
@@ -1186,18 +1177,23 @@ impl crate::util::isolate::System<2> for Profiled<'_> {
 fn bounded_stretch(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Option<[f64;2]> {
     if t0.is_finite() && t1.is_finite() { return Some([t0,t1]) }
     let &Curve::Line {p,d} = curve else { return None };
-    let dom = domain(surface)?;
-    let e = surface.enclose(dom);
+    let e = surface.enclose(domain(surface)?);
+    let (lo,hi): (V,V) = (e.at.map(|x| x.lo()-tol),e.at.map(|x| x.hi()+tol));
+    if !lo.iter().chain(&hi).all(|x| x.is_finite()) { return None }
+    Some(line_in_box(p,d,[t0,t1],(lo,hi)).unwrap_or([0.,0.]))
+}
+
+/// The stretch of the line `p + t d` over `[t0, t1]` within the box `(lo, hi)`, slab by slab; `None`
+/// where it misses it.
+fn line_in_box(p: V,d: V,[t0,t1]: [f64;2],(lo,hi): (V,V)) -> Option<[f64;2]> {
     let (mut a,mut z) = (t0,t1);
     for k in 0..3 {
-        let (lo,hi) = (e.at[k].lo()-tol,e.at[k].hi()+tol);
-        if !(lo.is_finite() && hi.is_finite()) { return None }
-        if d[k].abs() < 1e-300 { if p[k] < lo || p[k] > hi { return Some([0.,0.]) } continue }
-        let (u,v) = ((lo-p[k])/d[k],(hi-p[k])/d[k]);
+        if d[k].abs() < 1e-300 { if p[k] < lo[k] || p[k] > hi[k] { return None } continue }
+        let (u,v) = ((lo[k]-p[k])/d[k],(hi[k]-p[k])/d[k]);
         a = a.max(u.min(v));
         z = z.min(u.max(v));
     }
-    Some(if a < z { [a,z] } else { [0.,0.] })
+    (a < z).then_some([a,z])
 }
 
 /// **The parameters a surface runs over**, where they are bounded: a ball's and a torus's angles, a
@@ -1566,19 +1562,7 @@ fn within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3]
     let (lo,hi) = (bx.0.map(|x| x-grow-tol),bx.1.map(|x| x+grow+tol));
     let mut stretches: Vec<[f64;2]> = Vec::new();
     match curve {
-        Curve::Line {p,d} => {
-            let (mut a,mut z) = (t0,t1);
-            for k in 0..3 {
-                if d[k].abs() < 1e-300 {
-                    if p[k] < lo[k] || p[k] > hi[k] { return Meets::At(Vec::new()) }
-                } else {
-                    let (u,v) = ((lo[k]-p[k])/d[k],(hi[k]-p[k])/d[k]);
-                    a = a.max(u.min(v));
-                    z = z.min(u.max(v));
-                }
-            }
-            if a < z { stretches.push([a,z]); }
-        }
+        &Curve::Line {p,d} => stretches.extend(line_in_box(p,d,[t0,t1],(lo,hi))),
         _ if !(t0.is_finite() && t1.is_finite()) => stretches.push([t0,t1]),
         _ => {
             const N: usize = 64;

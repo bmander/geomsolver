@@ -133,14 +133,14 @@ fn newton_onto_two_spheres_lands_on_their_circle_and_three_on_their_point() {
     assert!(newton_onto([0.;3],0.5,|_| None::<[([f64;3],f64);2]>,|_| true).is_none());
 }
 
-/// A linear system `A (x − root)` as `isolate` reads one: its values and Jacobian in floats and in
-/// outward-rounded intervals.
-fn linear<'a>(a: &'a [[f64;3];3],root: &'a [f64;3]) -> (impl Fn([f64;3]) -> ([f64;3],[[f64;3];3]) + 'a,
-    impl Fn([f64;3]) -> [gcs_core::interval::Iv;3] + 'a,impl Fn(&[[f64;2];3]) -> [[gcs_core::interval::Iv;3];3] + 'a) {
+/// A linear system `A (x − root)` as `isolate` reads one: its values and Jacobian in floats, and
+/// over a box in outward-rounded intervals.
+type Over3 = ([gcs_core::interval::Iv;3],[[gcs_core::interval::Iv;3];3]);
+fn linear<'a>(a: &'a [[f64;3];3],root: &'a [f64;3]) -> (impl Fn([f64;3]) -> ([f64;3],[[f64;3];3]) + 'a,impl Fn(&[[f64;2];3]) -> Over3 + 'a) {
     use gcs_core::interval::Iv;
     (move |x: [f64;3]| (std::array::from_fn(|i| (0..3).map(|k| a[i][k]*(x[k]-root[k])).sum()),*a),
-     move |x: [f64;3]| std::array::from_fn(|i| (0..3).fold(Iv::point(0.),|s,k| s+Iv::point(a[i][k])*(Iv::point(x[k])-Iv::point(root[k])))),
-     move |_: &[[f64;2];3]| std::array::from_fn(|i| std::array::from_fn(|k| Iv::point(a[i][k]))))
+     move |bx: &[[f64;2];3]| (std::array::from_fn(|i| (0..3).fold(Iv::point(0.),|s,k| s+Iv::point(a[i][k])*(Iv::new(bx[k][0],bx[k][1])-Iv::point(root[k])))),
+         std::array::from_fn(|i| std::array::from_fn(|k| Iv::point(a[i][k])))))
 }
 
 /// **A root certified is the root, however flat the system** (#780 R2, #814, `isolate::solve`): a
@@ -155,8 +155,8 @@ fn a_root_certified_over_a_flat_system_is_where_it_is() {
     use gcs_core::isolate::{solve,solve_by,Closures,Kantorovich};
     let root = [0.27,0.81,0.64];
     let a = [[2.,-0.3,0.1],[0.4,-1.,0.2],[0.,0.5,-3.]];
-    let (f,value,jacobian) = linear(&a,&root);
-    let sys = Closures {at:&f,value:&value,jacobian:&jacobian};
+    let (f,over) = linear(&a,&root);
+    let sys = Closures {at:&f,over:&over};
     let near = |x: [f64;3]| f(x).0.iter().all(|v| v.abs() <= 1e-12);
     let found = solve::<3>(&sys,[[0.,1.];3],1e-12,&near).expect("a search that stops");
     assert_eq!(found.len(),1,"{found:?}");
@@ -301,9 +301,8 @@ fn a_search_says_why_it_gave_up() {
     assert!(matches!(flat,Err(GaveUp::Most)),"{flat:?}");
     let g = Poly(&[-0.5,1.]);
     let at = |x: [f64;1]| ([x[0]-0.5],[[1.]]);
-    let value = |x: [f64;1]| [Iv::point(x[0])-Iv::point(0.5)];
-    let jacobian = |_: &[[f64;2];1]| [[Iv::point(1.)]];
-    let line = Closures {at:&at,value:&value,jacobian:&jacobian};
+    let over = |b: &[[f64;2];1]| ([Iv::new(b[0][0],b[0][1])-Iv::point(0.5)],[[Iv::point(1.)]]);
+    let line = Closures {at:&at,over:&over};
     let found = roots(&g,[0.,1.],1e-12,&|_| false).expect("a search that stops");
     assert!(found.len() == 1 && (found[0].at-0.5).abs() <= 1e-12,"{found:?}");
     let m = Meter::new(Budget::UNLIMITED.with(Stage::Ray,0));

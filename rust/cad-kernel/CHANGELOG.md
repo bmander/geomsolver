@@ -16,15 +16,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   second-derivative and `[|g'|, |g''|]` bound arguments are gone, `roots_charged` and
   `poly_bounds` with them). A root is returned only once settled within its certified box;
   otherwise the search gives up as `GaveUp::Unsettled { at }` (**new**; `GaveUp` is no longer
-  `Copy`). A `System` may enclose its values with its Jacobian (`over`), offer a frame its
-  equations are read in (`frame`) and prove a run through a point (`run`); a `Function` may prove a
-  stretch within the tolerance (`within`): a run is proved, its ends read as touches, never
+  `Copy`). A `System` encloses its values with its Jacobian over a box (`over`; `Closures` takes
+  `at` and `over`), and may offer a frame its equations are read in (`frame`) and prove a run
+  through a point (`run`); a `Function` may prove a stretch within the tolerance (`within`); a
+  `Test1`'s monotone verdict carries the slope it was proved by (`Stretch::Monotone(Iv)`): a run is proved, its ends read as touches, never
   parted. A stretch's ends' signs are proved by enclosures, and two crossings a hair apart the
   opposite ways are kept as a pair. `util::interval` holds `Iv`, `Num` and `Jet` (**moved** from
   `turned`, which re-exports them) with `Iv`'s hull, meet and ends; `Num` gains `iv` and `from_iv`
   (**breaking** for an implementor). A posed turned curve (`turned::Crossing`, `Section`) reads
   in intervals. `enclose` (**new**): `Enclosed<P>` and `Patch<P>`, an
-  enclosure of every `Curve` and `Surface` kind's point and first derivatives over a box.
+  enclosure of every `Curve` and `Surface` kind's point and first derivatives over a box, with
+  `Carried` (a carry read over an interval, its turn's sine read once), `conic_at` and `scalar`.
   `query::curve_surface` reads every pair: the closed forms as fast paths, the general reading
   (`General`) for every other, through `Reader` (**new**, with `Fast` and `curve_surface_by`);
   `curve_surface_searched` returns `Meets` (**breaking**). The sampled search is retired: a reading

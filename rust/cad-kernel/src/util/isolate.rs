@@ -79,10 +79,7 @@ pub enum GaveUp {
 }
 
 /// One more stretch or box read: `read` of them so far, the search giving up past `MOST` or under
-/// a stopped build.
-fn read_one(read: &mut usize,stage: super::meter::Stage) -> Result<(),GaveUp> { read_at(read,stage,&nowhere) }
-
-/// `read_one`, the build told where should it stop there.
+/// a stopped build, told where (`at`) should it stop there.
 fn read_at(read: &mut usize,stage: super::meter::Stage,at: &dyn Fn() -> ([f64;3],String)) -> Result<(),GaveUp> {
     *read += 1;
     if *read > MOST { return Err(GaveUp::Most) }
@@ -143,7 +140,7 @@ impl Function for Parts<'_> {
 }
 
 /// A function its search reads, each point's value enclosed once (`roots_at`).
-struct Held<'a> { g: &'a dyn Function,values: std::cell::RefCell<std::collections::BTreeMap<u64,Iv>>,slope: std::cell::Cell<Option<([u64;2],Iv)>> }
+struct Held<'a> { g: &'a dyn Function,values: std::cell::RefCell<std::collections::BTreeMap<u64,Iv>> }
 
 impl Function for Held<'_> {
     fn at(&self,t: f64) -> (f64,f64) { self.g.at(t) }
@@ -153,13 +150,7 @@ impl Function for Held<'_> {
         self.values.borrow_mut().insert(t.to_bits(),v);
         v
     }
-    fn slope(&self,a: f64,b: f64) -> Iv {
-        let key = [a.to_bits(),b.to_bits()];
-        if let Some((k,s)) = self.slope.get() { if k == key { return s } }
-        let s = self.g.slope(a,b);
-        self.slope.set(Some((key,s)));
-        s
-    }
+    fn slope(&self,a: f64,b: f64) -> Iv { self.g.slope(a,b) }
     fn within(&self,a: f64,b: f64) -> bool { self.g.within(a,b) }
 }
 
@@ -171,23 +162,24 @@ impl Function for Poly<'_> {
     fn at(&self,t: f64) -> (f64,f64) { (poly(self.0,t),poly_d(self.0,t)) }
     fn value(&self,t: f64) -> Iv { poly_iv(self.0,Iv::point(t)) }
     fn slope(&self,a: f64,b: f64) -> Iv {
-        let d: Vec<f64> = self.0.iter().enumerate().skip(1).map(|(k,&x)| k as f64*x).collect();
         // (each coefficient `k cₖ` rounded: enclosed a hair outward)
         let t = Iv::new(a,b);
-        d.iter().rev().fold(Iv::point(0.),|acc,&x| acc*t+Iv::new(x,x).hull(Iv::new(x.next_down(),x.next_up())))
+        self.0.iter().enumerate().skip(1).rev()
+            .fold(Iv::point(0.),|acc,(k,&x)| { let d = k as f64*x; acc*t+Iv::new(d.next_down(),d.next_up()) })
     }
 }
 
 /// The polynomial `c` over the interval `t`, by Horner's rule.
-pub fn poly_iv(c: &[f64],t: Iv) -> Iv { c.iter().rev().fold(Iv::point(0.),|acc,&x| acc*t+Iv::point(x)) }
+fn poly_iv(c: &[f64],t: Iv) -> Iv { c.iter().rev().fold(Iv::point(0.),|acc,&x| acc*t+Iv::point(x)) }
 
 /// What a one-unknown test makes of a stretch.
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq)]
 pub enum Stretch {
     /// The function is off nought across it.
     Off,
-    /// The function runs one way across it: one root at most, where its ends differ in sign.
-    Monotone,
+    /// The function runs one way across it: one root at most, where its ends differ in sign; with
+    /// the enclosure of its rate the test proved it by, where it has one (`Iv::ANY` where not).
+    Monotone(Iv),
     /// Neither, proved: halved.
     Unsure,
 }
@@ -197,9 +189,6 @@ pub enum Stretch {
 /// stretch it is off: a line passing a hair from tangent).
 pub trait Test1 {
     fn read(&self,g: &dyn Function,a: f64,b: f64) -> (Stretch,f64);
-    /// The enclosure of `g'` over the stretch it read, where it has one (what proves a monotone
-    /// stretch's ends' signs from its middle's value). By default none.
-    fn slope_read(&self,_g: &dyn Function,_a: f64,_b: f64) -> Iv { Iv::ANY }
 }
 
 /// **The interval slope** (interval Newton in one unknown): off where `0 ∉ g(m) + g'(X)(X − m)`,
@@ -212,11 +201,10 @@ impl Test1 for Slope {
         let s = g.slope(a,b);
         let reach = s*(Iv::new(a,b)-Iv::point(m));
         // (monotone read first: its ends' values its neighbours share, where the middle's is its own)
-        if !s.has_zero() { return (Stretch::Monotone,reach.mag()) }
+        if !s.has_zero() { return (Stretch::Monotone(s),reach.mag()) }
         let around = g.value(m)+reach;
         (if !around.has_zero() { Stretch::Off } else { Stretch::Unsure },reach.mag())
     }
-    fn slope_read(&self,g: &dyn Function,a: f64,b: f64) -> Iv { g.slope(a,b) }
 }
 
 /// **Hand bounds** `[|g'|, |g''|]` over a stretch (the way every reading was proved before #814;
@@ -229,7 +217,7 @@ impl Test1 for Bounded<'_> {
         let (m,h) = (0.5*(a+b),0.5*(b-a));
         let [d1,d2] = (self.0)(a,b);
         let (gm,dm) = g.at(m);
-        let verdict = if gm.abs() > d1*h { Stretch::Off } else if dm.abs() > d2*h*(1.+1e-9)+1e-12*d1 { Stretch::Monotone } else { Stretch::Unsure };
+        let verdict = if gm.abs() > d1*h { Stretch::Off } else if dm.abs() > d2*h*(1.+1e-9)+1e-12*d1 { Stretch::Monotone(Iv::ANY) } else { Stretch::Unsure };
         (verdict,d1*h)
     }
 }
@@ -255,7 +243,7 @@ pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f
     width: f64,near: &dyn Fn(f64) -> bool) -> Result<Vec<Root>,GaveUp> {
     // (each point's value enclosed once: a stretch's ends and middle are its neighbours' and its
     // halves' too)
-    let g = &Held {g,values:std::cell::RefCell::new(std::collections::BTreeMap::new()),slope:std::cell::Cell::new(None)};
+    let g = &Held {g,values:std::cell::RefCell::new(std::collections::BTreeMap::new())};
     let mut out: Vec<Root> = Vec::new();
     if !(t1 >= t0) { return Ok(out) }
     let width = width.max(1e-15*(t0.abs()+t1.abs()).max(1e-300));
@@ -272,51 +260,43 @@ pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f
             continue
         }
         let (verdict,reach) = test.read(g,a,b);
-        match verdict {
+        let sign = |v: Iv| if v.lo() > 0. { 1 } else if v.hi() < 0. { -1 } else { 0 };
+        // monotone across it: one root at most, where its ends differ in sign — each end's sign
+        // proved by its value's enclosure (#814: read in floats, rounding's noise beside a double
+        // root flipped them, and a touch came back as dozens of crossings a hair apart): from the
+        // middle's value and the slope (`g(a) ∈ g(m) + g'(X)(a − m)`), each end's own where that
+        // proves no sign. A stretch whose two ends are both within rounding of nought is unsure.
+        let ends = match verdict {
+            Stretch::Monotone(slope) => {
+                let gm = if slope.0.is_some() { g.value(m) } else { Iv::ANY };
+                let end = |x: f64| { let v = gm+slope*(Iv::point(x)-Iv::point(m)); if sign(v) != 0 { sign(v) } else { sign(g.value(x)) } };
+                Some((end(a),end(b))).filter(|&e| e != (0,0))
+            }
+            _ => None,
+        };
+        let halve = |stack: &mut Vec<(f64,f64,usize)>| if b-a > width && depth < 96 { stack.push((m,b,depth+1)); stack.push((a,m,depth+1)); true } else { false };
+        match (verdict,ends) {
             // nought nowhere across the stretch: but where it comes within the tolerance of nought
             // and turns back there (`near` at the turn, `g'` changing sign), a touch to the
             // tolerance — a line passing a hair from tangent, which the caller reads as touching
-            Stretch::Off => {
+            (Stretch::Off,_) => {
                 let (da,db) = (dg(a),dg(b));
                 if (da < 0.) != (db < 0.) && (gv(m).abs() <= reach*4. || near(m)) {
                     let at = super::roots::bracketed_root(|t| Some(dg(t)),a,da,b,db,width*1e-3);
                     if near(at) { out.push(Root {at,touch:true}) }
                 }
             }
-            // monotone across it: one root at most, where its ends differ in sign — each end's sign
-            // proved by its value's enclosure (#814: read in floats, rounding's noise beside a double
-            // root flipped them, and a touch came back as dozens of crossings a hair apart). An end
-            // within rounding of nought is the root's where the function runs on past nought from
-            // it across the stretch — so a root on an end two stretches share is read by one — and a
-            // stretch whose two ends both are is halved toward a touch.
-            Stretch::Monotone => {
-                let sign = |v: Iv| if v.lo() > 0. { 1 } else if v.hi() < 0. { -1 } else { 0 };
-                // the ends' values from the middle's and the slope (`g(a) ∈ g(m) + g'(X)(a − m)`),
-                // each end's own where that proves no sign
-                let slope = test.slope_read(g,a,b);
-                let gm = if slope.0.is_some() { g.value(m) } else { Iv::ANY };
-                let end = |x: f64| { let v = gm+slope*(Iv::point(x)-Iv::point(m)); if sign(v) != 0 { sign(v) } else { sign(g.value(x)) } };
-                let (sa,sb) = (end(a),end(b));
-                if sa == 0 && sb == 0 {
-                    if b-a <= width || depth >= 96 {
-                        if near(m) { out.push(Root {at:m,touch:true}) }
-                        continue
-                    }
-                    stack.push((m,b,depth+1));
-                    stack.push((a,m,depth+1));
-                    continue
-                }
+            (Stretch::Monotone(_),Some((sa,sb))) => {
                 let up = dg(m) > 0.;
                 let (lo,hi) = if up { (-1,1) } else { (1,-1) };
                 // an end within rounding of nought, the function running on past it: a crossing
                 // where it is proved on the other side of nought a stretch's width back (or the end
-                // is the search's own), a touch where it is proved on this side, halved otherwise
+                // is the search's own), a touch where it is proved on this side, halved otherwise —
+                // so a root on an end two stretches share is read by one
                 if sa == 0 && sb == hi {
                     let back = if a <= t0 { lo } else { sign(g.value((a-(b-a)).max(t0))) };
                     if back == lo || a <= t0 { out.push(Root {at:a,touch:false}) }
-                    else if back == hi { if near(a) { out.push(Root {at:a,touch:true}) } }
-                    else if b-a > width && depth < 96 { stack.push((m,b,depth+1)); stack.push((a,m,depth+1)); }
-                    else if near(a) { out.push(Root {at:a,touch:true}) }
+                    else if (back == hi || !halve(&mut stack)) && near(a) { out.push(Root {at:a,touch:true}) }
                 }
                 else if sa == lo && sb == hi {
                     let (ga,gb) = (gv(a),gv(b));
@@ -330,15 +310,8 @@ pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f
                 }
                 else if sa == lo && sb == 0 && b == t1 { out.push(Root {at:b,touch:false}) }
             }
-            Stretch::Unsure => {
-                // too narrow to part: a double root where the function is nought there
-                if b-a <= width || depth >= 96 {
-                    if near(m) { out.push(Root {at:m,touch:true}) }
-                    continue
-                }
-                stack.push((m,b,depth+1));
-                stack.push((a,m,depth+1));
-            }
+            // unsure, or too narrow to part: a double root where the function is nought there
+            _ => if !halve(&mut stack) && near(m) { out.push(Root {at:m,touch:true}) },
         }
     }
     // an end where the function is nought is a root there
@@ -383,20 +356,17 @@ pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f
 pub struct Point<const N: usize> { pub at: [f64;N],pub touch: bool }
 
 /// **A system of `N` equations in `N` unknowns as a search reads it**: its values and Jacobian at a
-/// point in floats (Newton's polish), its values at a point and its Jacobian over a box enclosed in
-/// outward-rounded intervals (the proof).
+/// point in floats (Newton's polish), its values at a point, and its values and Jacobian over a box,
+/// enclosed in outward-rounded intervals (the proof).
 pub trait System<const N: usize> {
     /// `F(x)` and its Jacobian (rows the equations).
     fn at(&self,x: [f64;N]) -> ([f64;N],[[f64;N];N]);
     /// An enclosure of `F(x)`, its rounding inside it.
     fn value(&self,x: [f64;N]) -> [Iv;N];
-    /// An enclosure of the Jacobian over the box `bx` (an entry `Iv::ANY` where none is known).
-    fn jacobian(&self,bx: &[[f64;2];N]) -> [[Iv;N];N];
-    /// An enclosure of `F` itself over the box, with the Jacobian's: a system whose enclosures of
-    /// its values come with its Jacobian's (a curve's and a surface's points over a box, beside
-    /// their derivatives) answers both at once, and a box whose values miss nought is dropped
-    /// before any mean-value form is read. By default `F` unknown there (`Iv::ANY`).
-    fn over(&self,bx: &[[f64;2];N]) -> ([Iv;N],[[Iv;N];N]) { ([Iv::ANY;N],self.jacobian(bx)) }
+    /// Enclosures of `F` and its Jacobian over the box `bx`, read together (a curve's and a
+    /// surface's points over a box come with their derivatives): a box whose values miss nought is
+    /// dropped before any mean-value form is read. An entry `Iv::ANY` where none is known.
+    fn over(&self,bx: &[[f64;2];N]) -> ([Iv;N],[[Iv;N];N]);
     /// **An orthogonal frame its equations are read in besides their own**, at the box's middle `m`:
     /// `F = 0` where `R F = 0`, and where its Jacobian is all but singular there (a curve running
     /// all but tangent to a surface), its components along the frame — the surface's normal first —
@@ -410,17 +380,17 @@ pub trait System<const N: usize> {
     fn run(&self,_x: [f64;N]) -> Option<[f64;2]> { None }
 }
 
-/// **A system from its parts**, for a caller that writes its three readings apart.
+/// **A system from its parts**, for a caller that writes its readings apart: `over` encloses `F`
+/// and its Jacobian over a box, and `F` at a point is its reading over that point's box.
 pub struct Closures<'a,const N: usize> {
     pub at: &'a dyn Fn([f64;N]) -> ([f64;N],[[f64;N];N]),
-    pub value: &'a dyn Fn([f64;N]) -> [Iv;N],
-    pub jacobian: &'a dyn Fn(&[[f64;2];N]) -> [[Iv;N];N],
+    pub over: &'a dyn Fn(&[[f64;2];N]) -> ([Iv;N],[[Iv;N];N]),
 }
 
 impl<const N: usize> System<N> for Closures<'_,N> {
     fn at(&self,x: [f64;N]) -> ([f64;N],[[f64;N];N]) { (self.at)(x) }
-    fn value(&self,x: [f64;N]) -> [Iv;N] { (self.value)(x) }
-    fn jacobian(&self,bx: &[[f64;2];N]) -> [[Iv;N];N] { (self.jacobian)(bx) }
+    fn value(&self,x: [f64;N]) -> [Iv;N] { (self.over)(&x.map(|v| [v,v])).0 }
+    fn over(&self,bx: &[[f64;2];N]) -> ([Iv;N],[[Iv;N];N]) { (self.over)(bx) }
 }
 
 /// What a test makes of a box (read grown, `GROW`).
@@ -620,7 +590,7 @@ pub fn solve_by<const N: usize>(test: &dyn Test<N>,sys: &dyn System<N>,domain: [
     let mut tried: Vec<f64> = Vec::new();
     while let Some((bx,depth)) = stack.pop() {
         if runs.iter().any(|r| bx[0][0] >= r[0] && bx[0][1] <= r[1]) { continue }
-        read_one(&mut read,super::meter::Stage::Ray)?;
+        read_at(&mut read,super::meter::Stage::Ray,&nowhere)?;
         let m: [f64;N] = std::array::from_fn(|k| 0.5*(bx[k][0]+bx[k][1]));
         // the box read: grown by `GROW` of its width past each side, within the domain
         let grown: [[f64;2];N] = std::array::from_fn(|k| {
@@ -634,31 +604,21 @@ pub fn solve_by<const N: usize>(test: &dyn Test<N>,sys: &dyn System<N>,domain: [
                 // certified, but not settled where the caller's tolerance accepts it: refused
                 _ => return Err(GaveUp::Unsettled {at:within.to_vec()}),
             },
-            Verdict::Unsure => {
-                // a run through it, tried once a place: what no box beside it could part
-                if near(m) && !tried.iter().any(|&x: &f64| (x-m[0]).abs() <= (bx[0][1]-bx[0][0]).max(width)) {
-                    tried.push(m[0]);
-                    if let Some(r) = sys.run(m).filter(|r| r[1]-r[0] > width) {
-                        for end in r { let mut at = m; at[0] = end; out.push((Point {at,touch:true},None)) }
-                        runs.push(r);
-                        continue
-                    }
-                }
+            Verdict::Unsure => {}
+        }
+        // a run through it, tried once a place: what no box beside it could part
+        if near(m) && !tried.iter().any(|&x: &f64| (x-m[0]).abs() <= (bx[0][1]-bx[0][0]).max(width)) {
+            tried.push(m[0]);
+            if let Some(r) = sys.run(m).filter(|r| r[1]-r[0] > width) {
+                for end in r { let mut at = m; at[0] = end; out.push((Point {at,touch:true},None)) }
+                runs.push(r);
+                continue
             }
         }
         if (0..N).all(|k| bx[k][1]-bx[k][0] <= width) || depth >= 200 {
-            if near(m) {
-                if let Some(r) = sys.run(m).filter(|r| r[1]-r[0] > width) {
-                    for end in r { let mut at = m; at[0] = end; out.push((Point {at,touch:true},None)) }
-                    runs.push(r);
-                    continue
-                }
-                out.push((Point {at:m,touch:true},None));
-                continue
-            }
+            if near(m) { out.push((Point {at:m,touch:true},None)); continue }
             // too narrow to part and off the caller's tolerance, yet not proved off: the
             // enclosure proved nothing here (it left its domain), and no root is no answer
-            if let Ok(None) = krawczyk(sys,&grown) { continue }
             return Err(GaveUp::Unsettled {at:grown.to_vec()})
         }
         // halved across its widest side

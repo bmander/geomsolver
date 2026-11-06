@@ -192,15 +192,13 @@ fn the_tests_behind_the_boundary_find_the_same_roots() {
         let (cx,cy,r) = (rng.uniform(-0.3,0.3),rng.uniform(-0.3,0.3),rng.uniform(0.2,0.9));
         let (a,b,c) = (rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-0.3,0.3));
         let at = |x: [f64;2]| ([(x[0]-cx).powi(2)+(x[1]-cy).powi(2)-r*r,a*x[0]+b*x[1]-c],[[2.*(x[0]-cx),2.*(x[1]-cy)],[a,b]]);
-        let value = |x: [f64;2]| {
-            let (dx,dy) = (Iv::point(x[0])-Iv::point(cx),Iv::point(x[1])-Iv::point(cy));
-            [dx*dx+dy*dy-Iv::point(r*r),Iv::point(a)*Iv::point(x[0])+Iv::point(b)*Iv::point(x[1])-Iv::point(c)]
-        };
-        let jacobian = |bx: &[[f64;2];2]| {
+        let over = |bx: &[[f64;2];2]| {
             let (x,y) = (Iv::new(bx[0][0],bx[0][1]),Iv::new(bx[1][0],bx[1][1]));
-            [[(x-Iv::point(cx)).times(2.),(y-Iv::point(cy)).times(2.)],[Iv::point(a),Iv::point(b)]]
+            let (dx,dy) = (x-Iv::point(cx),y-Iv::point(cy));
+            ([dx*dx+dy*dy-Iv::point(r*r),Iv::point(a)*x+Iv::point(b)*y-Iv::point(c)],
+             [[dx.times(2.),dy.times(2.)],[Iv::point(a),Iv::point(b)]])
         };
-        let sys = Closures {at:&at,value:&value,jacobian:&jacobian};
+        let sys = Closures {at:&at,over:&over};
         let near = |x: [f64;2]| at(x).0.iter().all(|v| v.abs() <= 1e-10);
         let domain = [[-1.5,1.5],[-1.5,1.5]];
         let k = solve(&sys,domain,1e-12,&near).expect("Krawczyk's search stops");
@@ -227,9 +225,8 @@ fn the_tests_behind_the_boundary_find_the_same_roots() {
 fn a_root_that_cannot_be_settled_is_refused_never_returned() {
     use gcs_core::isolate::{solve,solve_by,Closures,GaveUp,Kantorovich};
     let at = |x: [f64;1]| ([(20.*x[0]).sin()-0.5],[[20.*(20.*x[0]).cos()]]);
-    let value = |x: [f64;1]| [(Iv::point(x[0]).times(20.)).sin_cos_iv().0-Iv::point(0.5)];
-    let jacobian = |b: &[[f64;2];1]| [[(Iv::new(b[0][0],b[0][1]).times(20.)).sin_cos_iv().1.times(20.)]];
-    let sys = Closures {at:&at,value:&value,jacobian:&jacobian};
+    let over = |b: &[[f64;2];1]| { let (s,c) = Iv::new(b[0][0],b[0][1]).times(20.).sin_cos_iv(); ([s-Iv::point(0.5)],[[c.times(20.)]]) };
+    let sys = Closures {at:&at,over:&over};
     let near = |x: [f64;1]| at(x).0[0].abs() <= 1e-9;
     let lying = |_: &[[f64;2];1]| [0.];
     match solve_by(&Kantorovich(&lying),&sys,[[0.,1.]],1e-12,&near) {

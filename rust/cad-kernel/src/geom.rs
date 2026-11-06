@@ -497,17 +497,17 @@ impl Pipe {
         };
         let reach = self.offset()?+self.r;
         // `F` and its Jacobian `[c'(θ₁), −S(t) c'(θ₂), −rate]` in intervals (#814)
-        use crate::enclose::{carry_at,carry_dir,carry_rate,circle_at,sub3};
-        let enclosed = |[a,b,t]: [crate::util::interval::Iv;3]| {
-            let ((p,dp),(q,dq)) = (circle_at(&self.frame,self.r,a),circle_at(&self.frame,self.r,b));
-            let sq = carry_at(&screw,q,t);
-            let (rq,dt) = (carry_dir(&screw,dq,t),carry_rate(&screw,sq));
+        use crate::enclose::{conic_at,sub3,Carried};
+        use crate::util::interval::Iv;
+        let over = |b: &[[f64;2];3]| -> ([Iv;3],[[Iv;3];3]) {
+            let [a,b,t] = b.map(|s| Iv::new(s[0],s[1]));
+            let ((p,dp),(q,dq)) = (conic_at(&self.frame,self.r,self.r,a),conic_at(&self.frame,self.r,self.r,b));
+            let screwed = Carried::new(&screw,t);
+            let sq = screwed.at(q);
+            let (rq,dt) = (screwed.dir(dq),screwed.rate(sq));
             (sub3(p,sq),std::array::from_fn(|i| [dp[i],-rq[i],-dt[i]]))
         };
-        use crate::util::interval::Iv;
-        let value = |x: [f64;3]| enclosed(x.map(Iv::point)).0;
-        let jacobian = |b: &[[f64;2];3]| enclosed(b.map(|s| Iv::new(s[0],s[1]))).1;
-        let sys = crate::util::isolate::Closures {at:&f,value:&value,jacobian:&jacobian};
+        let sys = crate::util::isolate::Closures {at:&f,over:&over};
         let size = reach.max(1e-300);
         let width = tol*1e-2/size;
         let near = |x: [f64;3]| { let (p,_,q,_) = at(x); crate::util::space::distance(p,q) <= tol };

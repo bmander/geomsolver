@@ -988,16 +988,16 @@ fn screwed_lines_meeting(on: &std::sync::Arc<super::geom::Blend>,by: &super::geo
     };
     let reach = norm(sub(l.p0,c))+norm(l.run);
     // `F` and its Jacobian `[Δ_on, −R(θ) Δ_by, −rate]` in intervals
-    use crate::enclose::{add3,c3,carry_at,carry_dir,carry_rate,scale3,sub3};
-    let enclosed = |u: Iv,w: Iv,t: Iv| -> ([Iv;3],[[Iv;3];3]) {
+    use crate::enclose::{add3,c3,scale3,sub3,Carried};
+    let over = |b: &[[f64;2];3]| -> ([Iv;3],[[Iv;3];3]) {
+        let [u,w,t] = b.map(|s| Iv::new(s[0],s[1]));
+        let screwed = Carried::new(&screw,t);
         let p = add3(c3(m.p0),scale3(c3(m.run),u));
-        let sq = carry_at(&screw,add3(c3(l.p0),scale3(c3(l.run),w)),t);
-        let (rq,dt) = (carry_dir(&screw,c3(l.run),t),carry_rate(&screw,sq));
+        let sq = screwed.at(add3(c3(l.p0),scale3(c3(l.run),w)));
+        let (rq,dt) = (screwed.dir(c3(l.run)),screwed.rate(sq));
         (sub3(p,sq),std::array::from_fn(|i| [Iv::point(m.run[i]),-rq[i],-dt[i]]))
     };
-    let value = |x: [f64;3]| enclosed(Iv::point(x[0]),Iv::point(x[1]),Iv::point(x[2])).0;
-    let jacobian = |b: &[[f64;2];3]| enclosed(Iv::new(b[0][0],b[0][1]),Iv::new(b[1][0],b[1][1]),Iv::new(b[2][0],b[2][1])).1;
-    let sys = crate::util::isolate::Closures {at:&f,value:&value,jacobian:&jacobian};
+    let sys = crate::util::isolate::Closures {at:&f,over:&over};
     let size = norm(m.run).max(norm(l.run)).max(reach);
     let width = tol*1e-2/size.max(1e-300);
     let near = |x: [f64;3]| { let (v,_) = f(x); norm(v) <= tol };
@@ -1018,18 +1018,6 @@ impl crate::util::isolate::Formula for LineRound {
         let (sn,cs) = (u.times(self.turn[1])+Jet::of(self.turn[0])).sin_cos();
         let e: [Jet<T>;3] = std::array::from_fn(|i| Jet::of(self.w0[i])+u.times(self.m[i])-cs.times(self.c0[i])-sn.times(self.kc0[i]));
         e[0]*e[0]+e[1]*e[1]+e[2]*e[2]-Jet::of(self.r*self.r)
-    }
-}
-
-/// `|a + b cos θ + c sin θ|² − R²` (`screwed_circle_round`), written once over `Num`.
-struct RoundRound { a: V,b: V,c: V,big: f64 }
-
-impl crate::util::isolate::Formula for RoundRound {
-    fn jet<T: crate::util::interval::Num>(&self,th: crate::util::interval::Jet<T>) -> crate::util::interval::Jet<T> {
-        use crate::util::interval::Jet;
-        let (sn,cs) = th.sin_cos();
-        let d: [Jet<T>;3] = std::array::from_fn(|i| Jet::of(self.a[i])+cs.times(self.b[i])+sn.times(self.c[i]));
-        d[0]*d[0]+d[1]*d[1]+d[2]*d[2]-Jet::of(self.big*self.big)
     }
 }
 
@@ -1057,9 +1045,8 @@ fn screwed_line_circle(on: &std::sync::Arc<super::geom::Blend>,by: &super::geom:
     let z = |u: f64| dot(sub(add(l.p0,scale(l.run,u)),c.frame.o),k);
     // the turn that takes the circle's sheet up to the line's point's height, and its rate
     let (s0,s1) = (z(0.)/pitch,dot(l.run,k)/pitch);
-    let turned = |u: f64| { let (sn,cs) = (s0+s1*u).dsin_cos(); add(scale(c0,cs),scale(cross(k,c0),sn)) };
-    let g = |u: f64| { let e = sub(add(w0,scale(m,u)),turned(u)); dot(e,e)-c.r*c.r };
     let formula = crate::util::isolate::Written(LineRound {w0,m,c0,kc0:cross(k,c0),turn:[s0,s1],r:c.r});
+    let g = |u: f64| { use crate::util::isolate::Function; formula.at(u).0 };
     let size = (norm(w0)+norm(m)+norm(c0)).max(c.r).max(1e-300);
     let roots = crate::util::isolate::roots(&formula,[0.,1.],tol*1e-3/size,&|u| g(u).abs() <= 2.*c.r*tol).ok()?;
     // the circle's sheet's `v` at the line's point at `u` carried `t` along the line's sheet
@@ -1309,12 +1296,13 @@ pub(crate) fn screwed_circle_round(blend: &std::sync::Arc<super::geom::Blend>,cy
     let span = blend.ta[1]-blend.ta[0];
     if !(0..3).all(|i| same(blend.b.point(blend.tb[0]+(blend.tb[1]-blend.tb[0])*i as f64/2.),blend.a.point(blend.ta[0]+span*i as f64/2.))) { return None }
     let r = r.abs();
-    let g = |th: f64| { let (sn,cs) = th.dsin_cos(); let d = perp(sub(add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))),center)); dot(d,d)-big*big };
     let u_of = |th: f64| blend.u_of_angle(th);
-    // `d = (o − c)⊥ + r cos θ x⊥ + r sin θ y⊥`, the circle's offset from the axis, written once over
-    // `Num` and isolated by its enclosures (#814)
-    let formula = crate::util::isolate::Written(RoundRound {a:perp(sub(f.o,center)),b:perp(scale(f.x,r)),c:perp(scale(f.y,r)),big});
-    let dg = |th: f64| { use crate::util::isolate::Function; formula.at(th).1 };
+    // `|d|² − R²`, `d = (o − c)⊥ + r cos θ x⊥ + r sin θ y⊥` the circle's offset from the axis: a
+    // line screwed against a round (`LineRound`) with no run, written once over `Num` and isolated by
+    // its enclosures (#814)
+    let formula = crate::util::isolate::Written(LineRound {w0:perp(sub(f.o,center)),m:[0.;3],c0:scale(perp(scale(f.x,r)),-1.),
+        kc0:scale(perp(scale(f.y,r)),-1.),turn:[0.,1.],r:big});
+    let (g,dg) = (|th: f64| { use crate::util::isolate::Function; formula.at(th).0 },|th: f64| { use crate::util::isolate::Function; formula.at(th).1 });
     let tau = std::f64::consts::TAU;
     // the circle within the tolerance of the cylinder at `th`, and the angle the tolerance spans
     let on = |th: f64| g(th).abs() <= 2.*big*tol;

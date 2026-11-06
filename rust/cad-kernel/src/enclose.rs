@@ -30,7 +30,7 @@
 //!   stretch, grown by the chords between them — measured, not proved, and said so (`Patch::proved`
 //!   false), so a reading through it is profiled as measured.
 use crate::geom::{Blend,Carry,Curve,Frame,SheetCut,Surface,Traced,V};
-use crate::nurbs::{BSpline,Net};
+use crate::nurbs::{span,BSpline,Net,MAX_DEGREE};
 use crate::util::interval::{Iv,Jet,Num};
 
 /// Three intervals: a point or a vector enclosed.
@@ -45,6 +45,10 @@ pub struct Patch<const P: usize> { pub at: I3,pub d: [I3;P],pub proved: bool }
 impl<const P: usize> Patch<P> {
     /// Nothing known: every number.
     pub const ANY: Patch<P> = Patch {at:[Iv::ANY;3],d:[[Iv::ANY;3];P],proved:true};
+    /// The least patch holding both (over two boxes side by side).
+    pub fn hull(self,b: Patch<P>) -> Patch<P> {
+        Patch {at:hull3(self.at,b.at),d:std::array::from_fn(|k| hull3(self.d[k],b.d[k])),proved:self.proved && b.proved}
+    }
     /// Whether every interval of it is one (none left its domain).
     pub fn bounded(&self) -> bool { self.at.iter().chain(self.d.iter().flatten()).all(|x| x.0.is_some()) }
 }
@@ -81,21 +85,9 @@ pub fn turn3(k: V,(s,c): (Iv,Iv),w: I3) -> I3 {
 }
 /// The interval `[a, b]` either way round.
 fn iv([a,b]: [f64;2]) -> Iv { Iv::new(a,b) }
-/// An interval's ends, where it is one.
-fn ends(x: Iv) -> Option<[f64;2]> { x.bounds() }
 
 // ---------------------------------------------------------------------------------------------
 // B-splines
-
-/// The knot span holding `t`, for `count` coefficients of `degree`.
-fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
-    let (p,n) = (degree,count);
-    if t >= knots[n] { return n-1 }
-    if t <= knots[p] { return p }
-    let (mut lo,mut hi) = (p,n);
-    while hi-lo > 1 { let mid = (lo+hi)/2; if t < knots[mid] { hi = mid } else { lo = mid } }
-    lo
-}
 
 /// The hull of some interval vectors.
 fn hull_k<const K: usize>(c: &[[Iv;K]]) -> [Iv;K] {
@@ -107,7 +99,8 @@ fn hull_k<const K: usize>(c: &[[Iv;K]]) -> [Iv;K] {
 /// parameter is within the span, so every ratio is), each step's result within its two
 /// coefficients' hull — so the whole within theirs.
 fn deboor<const K: usize>(p: usize,knots: &[f64],s: usize,coeffs: &[[Iv;K]],t: Iv) -> [Iv;K] {
-    let mut d = coeffs.to_vec();
+    let mut d = [[Iv::ANY;K];MAX_DEGREE+1];
+    d[..=p].copy_from_slice(&coeffs[..=p]);
     let unit = Iv::new(0.,1.);
     for r in 1..=p {
         for j in (r..=p).rev() {
@@ -122,12 +115,12 @@ fn deboor<const K: usize>(p: usize,knots: &[f64],s: usize,coeffs: &[[Iv;K]],t: I
 
 /// The coefficients of a spline's derivative reaching span `s`: `p (c_{i+1} − c_i) / (t_{i+p+1} −
 /// t_{i+1})` for `i` in `s − p .. s` (the span is not empty, so neither is any gap).
-fn differences<const K: usize>(p: usize,knots: &[f64],s: usize,c: &[[Iv;K]]) -> Vec<[Iv;K]> {
-    (0..p).map(|j| {
+fn differences<const K: usize>(p: usize,knots: &[f64],s: usize,c: &[[Iv;K]]) -> [[Iv;K];MAX_DEGREE] {
+    std::array::from_fn(|j| if j >= p { [Iv::ANY;K] } else {
         let i = s-p+j;
         let gap = Iv::point(knots[i+p+1])-Iv::point(knots[i+1]);
         std::array::from_fn(|k| (c[j+1][k]-c[j][k])*Iv::point(p as f64)/gap)
-    }).collect()
+    })
 }
 
 /// **A spline's value and derivative over `[a, b]`, enclosed** (the module's): `coeff(i)` its
@@ -136,35 +129,35 @@ fn differences<const K: usize>(p: usize,knots: &[f64],s: usize,c: &[[Iv;K]]) -> 
 /// on the knots but the first and last), and the hull taken; over more than `WIDE` spans, the hull
 /// of the coefficients and of their differences, which hold the spline and its derivative too. A
 /// stretch past the domain is clamped, as the spline's own reading is, its derivative there the
-/// hull with nought.
+/// hull with nought. Its derivative read only where `rate` asks (`Iv::ANY` where not).
 const WIDE: usize = 4;
-fn spline<const K: usize>(p: usize,knots: &[f64],count: usize,coeff: &dyn Fn(usize) -> [Iv;K],[a,b]: [f64;2]) -> ([Iv;K],[Iv;K]) {
+fn spline<const K: usize>(p: usize,knots: &[f64],count: usize,coeff: &dyn Fn(usize) -> [Iv;K],[a,b]: [f64;2],rate: bool) -> ([Iv;K],[Iv;K]) {
     let (lo,hi) = (knots[p],knots[count]);
     let past = a < lo || b > hi;
     let (a,b) = (a.clamp(lo,hi),b.clamp(lo,hi));
     let (s0,s1) = (span(p,knots,count,a),span(p,knots,count,b));
-    let reach: Vec<usize> = (s0..=s1).filter(|&s| knots[s] < knots[s+1] && knots[s] <= b && knots[s+1] >= a).collect();
+    let reach = (s0..=s1).filter(|&s| knots[s] < knots[s+1] && knots[s] <= b && knots[s+1] >= a);
     let coeffs: Vec<[Iv;K]> = (s0-p..=s1).map(coeff).collect();
-    let (mut value,mut rate): (Option<[Iv;K]>,Option<[Iv;K]>) = (None,None);
-    let mut take = |v: [Iv;K],d: [Iv;K]| {
-        value = Some(value.map_or(v,|h| std::array::from_fn(|k| h[k].hull(v[k]))));
-        rate = Some(rate.map_or(d,|h| std::array::from_fn(|k| h[k].hull(d[k]))));
-    };
-    if reach.len() > WIDE {
-        let diffs: Vec<[Iv;K]> = (s0..=s1).flat_map(|s| differences(p,knots,s,&coeffs[s-s0..=s-s0+p])).collect();
-        take(hull_k(&coeffs),hull_k(&diffs));
+    let hull = |h: Option<[Iv;K]>,x: [Iv;K]| Some(h.map_or(x,|h| std::array::from_fn(|k| h[k].hull(x[k]))));
+    let (mut value,mut slope): (Option<[Iv;K]>,Option<[Iv;K]>) = (None,None);
+    if reach.clone().count() > WIDE {
+        value = Some(hull_k(&coeffs));
+        // (the differences of neighbouring coefficients, each once)
+        if rate { for s in s0..=s1 { let dc = differences(p,knots,s,&coeffs[s-s0..=s-s0+p]); slope = hull(slope,hull_k(&dc[..p])) } }
     } else {
-        for &s in &reach {
+        for s in reach {
             let c = &coeffs[s-s0..=s-s0+p];
             let t = Iv::new(a.max(knots[s]),b.min(knots[s+1]));
-            let v = deboor(p,knots,s,c,t);
-            let v: [Iv;K] = std::array::from_fn(|k| v[k].meet(hull_k(c)[k]));
+            let (v,hc) = (deboor(p,knots,s,c,t),hull_k(c));
+            value = hull(value,std::array::from_fn(|k| v[k].meet(hc[k])));
+            if !rate { continue }
             let dc = differences(p,knots,s,c);
-            let d = if p == 1 { dc[0] } else { deboor(p-1,&knots[1..],s-1,&dc,t) };
-            let d: [Iv;K] = std::array::from_fn(|k| d[k].meet(hull_k(&dc)[k]));
-            take(v,d);
+            let d = if p == 1 { dc[0] } else { deboor(p-1,&knots[1..],s-1,&dc[..p],t) };
+            let hd = hull_k(&dc[..p]);
+            slope = hull(slope,std::array::from_fn(|k| d[k].meet(hd[k])));
         }
     }
+    let rate = slope;
     let (v,mut d) = (value.unwrap_or([Iv::ANY;K]),rate.unwrap_or([Iv::ANY;K]));
     if past { d = d.map(|x| x.hull(Iv::point(0.))) }
     (v,d)
@@ -184,7 +177,7 @@ fn lift(q: V,w: f64) -> [Iv;4] { let w = Iv::point(w); [Iv::point(q[0])*w,Iv::po
 impl Enclosed<1> for BSpline {
     fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
         let w = |i: usize| self.weights.as_ref().map_or(1.,|w| w[i]);
-        let (a,d) = spline(self.degree,&self.knots,self.poles.len(),&|i| lift(self.poles[i],w(i)),[t[0].min(t[1]),t[0].max(t[1])]);
+        let (a,d) = spline(self.degree,&self.knots,self.poles.len(),&|i| lift(self.poles[i],w(i)),[t[0].min(t[1]),t[0].max(t[1])],true);
         let (at,d) = quotient(a,d);
         // (a curve keeps within its poles' hull: its weights are positive)
         let poles = self.poles_over(t);
@@ -212,12 +205,9 @@ impl Enclosed<2> for Net {
             return self.hulled([first,last],[vfirst,vlast],u[0] < self.uknots[self.du] || u[1] > self.uknots[nu],
                 v[0] < self.vknots[self.dv] || v[1] > self.vknots[nv])
         }
-        let rows: Vec<([Iv;4],[Iv;4])> = (first..=last).map(|i| spline(self.dv,&self.vknots,nv,&|j| lift(self.poles[i][j],w(i,j)),v)).collect();
-        let at_u = |k: usize| -> ([Iv;4],[Iv;4]) {
-            let pick = |i: usize| if k == 0 { rows[i-first].0 } else { rows[i-first].1 };
-            spline(self.du,&self.uknots,nu,&pick,u)
-        };
-        let ((a,au),(av,_)) = (at_u(0),at_u(1));
+        let rows: Vec<([Iv;4],[Iv;4])> = (first..=last).map(|i| spline(self.dv,&self.vknots,nv,&|j| lift(self.poles[i][j],w(i,j)),v,true)).collect();
+        let (a,au) = spline(self.du,&self.uknots,nu,&|i| rows[i-first].0,u,true);
+        let (av,_) = spline(self.du,&self.uknots,nu,&|i| rows[i-first].1,u,false);
         let (s,su) = quotient(a,au);
         let (_,sv) = quotient(a,av);
         let hull: I3 = std::array::from_fn(|k| Iv::of_all(self.poles_over(u,v).map(|q| q[k])));
@@ -264,11 +254,7 @@ impl Net {
 impl Enclosed<1> for Curve {
     fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
         let tv = iv(t);
-        let conic = |f: &Frame,a: f64,b: f64| {
-            let (s,c) = tv.sin_cos();
-            let (a,b) = (Iv::point(a),Iv::point(b));
-            Patch {at:frame_at(f,[a*c,b*s,Iv::point(0.)]),d:[frame_dir(f,[-(a*s),b*c,Iv::point(0.)])],proved:true}
-        };
+        let conic = |f: &Frame,a: f64,b: f64| { let (at,d) = conic_at(f,a,b,tv); Patch {at,d:[d],proved:true} };
         match self {
             Curve::Line {p,d} => Patch {at:add3(c3(*p),scale3(c3(*d),tv)),d:[c3(*d)],proved:true},
             Curve::Circle(f,r) => conic(f,*r,*r),
@@ -282,7 +268,7 @@ impl Enclosed<1> for Curve {
             Curve::Affine(m) => {
                 // the preimage's parameter `(t − b)/a`, and the derivative over `a`
                 let (a,b) = (Iv::point(m.at[0]),Iv::point(m.at[1]));
-                let Some(local) = ends((tv-b)/a) else { return Patch::ANY };
+                let Some(local) = ((tv-b)/a).bounds() else { return Patch::ANY };
                 let p = m.of.enclose([local]);
                 Patch {at:affine_point(&m.map,p.at),d:[scale3(affine_vector(&m.map,p.d[0]),Iv::point(1.)/a)],proved:p.proved}
             }
@@ -309,7 +295,7 @@ fn exact_within(c: &dyn ExactJets,[a,b]: [f64;2],depth: usize) -> Patch<1> {
     if p.bounded() || depth == 0 || !(b > a) { return p }
     let m = 0.5*(a+b);
     let (x,y) = (exact_within(c,[a,m],depth-1),exact_within(c,[m,b],depth-1));
-    Patch {at:hull3(x.at,y.at),d:[hull3(x.d[0],y.d[0])],proved:true}
+    x.hull(y)
 }
 
 /// What `exact` reads of a `turned::Exact` curve (its generic `local` is not object safe).
@@ -332,7 +318,8 @@ impl Enclosed<1> for Traced {
     fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
         let (a,b) = (t[0].min(t[1]),t[0].max(t[1]));
         let m = self.pts.len()-1;
-        let samples: Vec<(f64,(V,V))> = (0..5).map(|k| a+(b-a)*k as f64/4.).map(|s| (s,self.d1_at(s))).collect();
+        // (a point read once: its five places are one)
+        let samples: Vec<(f64,(V,V))> = (0..if b > a { 5 } else { 1 }).map(|k| a+(b-a)*k as f64/4.).map(|s| (s,self.d1_at(s))).collect();
         let at_point = |k: i64| -> V { self.pts[if self.closed { k.rem_euclid(m as i64) as usize } else { k.clamp(0,m as i64) as usize }] };
         let (lo,hi) = (a.ceil() as i64,b.floor() as i64);
         let mut pts: Vec<(f64,V)> = samples.iter().map(|e| (e.0,e.1.0)).collect();
@@ -361,7 +348,7 @@ impl Enclosed<1> for SheetCut {
     fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
         let (a,b) = (t[0].min(t[1]),t[0].max(t[1]));
         let Some((u,du)) = self.u_enclosed([a,b]) else { return Patch::ANY };
-        let Some(us) = ends(u) else { return Patch::ANY };
+        let Some(us) = u.bounds() else { return Patch::ANY };
         let s = self.blend.enclose([us,[a,b]]);
         Patch {at:s.at,d:[add3(scale3(s.d[0],du),s.d[1])],proved:s.proved}
     }
@@ -486,7 +473,7 @@ impl Enclosed<2> for Blend {
         let (uv,vv) = (iv(u),iv(v));
         let edge = |c: &Curve,t: [f64;2]| -> Option<(Patch<1>,Iv)> {
             let (t0,dt) = (Iv::point(t[0]),Iv::point(t[1])-Iv::point(t[0]));
-            let over = ends(t0+uv*dt)?;
+            let over = (t0+uv*dt).bounds()?;
             Some((c.enclose([over]),dt))
         };
         let (Some((a,da)),Some((b,db))) = (edge(&self.a,self.ta),edge(&self.b,self.tb)) else { return Patch::ANY };
@@ -495,16 +482,9 @@ impl Enclosed<2> for Blend {
         let pu = add3(scale3(a.d[0],da*(one-vv)),scale3(b.d[0],db*vv));
         let pv = sub3(b.at,a.at);
         let proved = a.proved && b.proved;
-        match self.carry {
-            Carry::Line {delta} => Patch {at:add3(p,scale3(c3(delta),vv)),d:[pu,add3(pv,c3(delta))],proved},
-            Carry::Screw {center,axis,angle,advance} => {
-                let sc = (vv*Iv::point(angle)).sin_cos();
-                let q = add3(add3(c3(center),turn3(axis,sc,sub3(p,c3(center)))),scale3(c3(axis),vv*Iv::point(advance)));
-                // the carry's rate at `q`: `angle axis × (q − c) + advance axis`
-                let rate = add3(scale3(cross3(c3(axis),sub3(q,c3(center))),Iv::point(angle)),scale3(c3(axis),Iv::point(advance)));
-                Patch {at:q,d:[turn3(axis,sc,pu),add3(turn3(axis,sc,pv),rate)],proved}
-            }
-        }
+        let carried = Carried::new(&self.carry,vv);
+        let q = carried.at(p);
+        Patch {at:q,d:[carried.dir(pu),add3(carried.dir(pv),carried.rate(q))],proved}
     }
 }
 
@@ -535,7 +515,7 @@ impl Enclosed<2> for crate::family::Sheet {
                 (value,rate)
             }).unzip();
             let p = run_enclosed(&self.run,&n,&dn,uv);
-            out = Some(match out { None => p,Some(h) => Patch {at:hull3(h.at,p.at),d:[hull3(h.d[0],p.d[0]),hull3(h.d[1],p.d[1])],proved:true} });
+            out = Some(match out { None => p,Some(h) => h.hull(p) });
         }
         out.unwrap_or(Patch::ANY)
     }
@@ -565,12 +545,12 @@ fn run_enclosed(run: &crate::family::Run,n: &[Iv],dn: &[Iv],u: Iv) -> Patch<2> {
             let w = |i: usize| weights.as_ref().map_or(1.,|w| w[i]);
             let (t0,t1,dt0,dt1) = (n[k-2],n[k-1],dn[k-2],dn[k-1]);
             let tt = t0+u*(t1-t0);
-            let Some(over) = ends(tt) else { return Patch::ANY };
+            let Some(over) = tt.bounds() else { return Patch::ANY };
             let lifted = |src: &[Iv],i: usize| -> [Iv;4] { let wi = Iv::point(w(i)); [src[3*i]*wi,src[3*i+1]*wi,src[3*i+2]*wi,wi] };
-            let (a,d) = spline(*degree,knots,count,&|i| lifted(n,i),over);
+            let (a,d) = spline(*degree,knots,count,&|i| lifted(n,i),over,true);
             let (x,xt) = quotient(a,d);
             // the poles' rates read by the same basis (the weights stand still)
-            let (ra,_) = spline(*degree,knots,count,&|i| lifted(dn,i),over);
+            let (ra,_) = spline(*degree,knots,count,&|i| lifted(dn,i),over,false);
             let moved: I3 = std::array::from_fn(|c| ra[c]/ra[3]);
             let dt = dt0+u*(dt1-dt0);
             Patch {at:x,d:[scale3(xt,t1-t0),add3(moved,scale3(xt,dt))],proved:true}
@@ -581,46 +561,47 @@ fn run_enclosed(run: &crate::family::Run,n: &[Iv],dn: &[Iv],u: Iv) -> Patch<2> {
 // ---------------------------------------------------------------------------------------------
 // Carries
 
-/// The angle a carry turns by at `v`, its sine and cosine enclosed (none for a step along a line).
-fn carry_turn(c: &Carry,v: Iv) -> Option<(V,(Iv,Iv))> {
-    match *c { Carry::Line {..} => None,Carry::Screw {axis,angle,..} => Some((axis,(v*Iv::point(angle)).sin_cos())) }
-}
+/// **A carry read at `v` over an interval** (`Carry::at`, `dir`, `rate`, enclosed), its turn's sine
+/// and cosine read once for all three.
+pub struct Carried<'a> { carry: &'a Carry,v: Iv,turn: (Iv,Iv) }
 
-/// `p` carried to `v` (`Carry::at`), enclosed.
-pub fn carry_at(c: &Carry,p: I3,v: Iv) -> I3 {
-    match *c {
-        Carry::Line {delta} => add3(p,scale3(c3(delta),v)),
-        Carry::Screw {center,axis,advance,..} => {
-            let (_,sc) = carry_turn(c,v).expect("a screw turns");
-            add3(add3(c3(center),turn3(axis,sc,sub3(p,c3(center)))),scale3(c3(axis),v*Iv::point(advance)))
+impl<'a> Carried<'a> {
+    pub fn new(carry: &'a Carry,v: Iv) -> Carried<'a> {
+        let turn = match *carry { Carry::Line {..} => (Iv::point(0.),Iv::point(1.)),Carry::Screw {angle,..} => (v*Iv::point(angle)).sin_cos() };
+        Carried {carry,v,turn}
+    }
+    /// `p` carried to `v`.
+    pub fn at(&self,p: I3) -> I3 {
+        match *self.carry {
+            Carry::Line {delta} => add3(p,scale3(c3(delta),self.v)),
+            Carry::Screw {center,axis,advance,..} =>
+                add3(add3(c3(center),turn3(axis,self.turn,sub3(p,c3(center)))),scale3(c3(axis),self.v*Iv::point(advance))),
+        }
+    }
+    /// A direction carried to `v` (turned, never moved).
+    pub fn dir(&self,d: I3) -> I3 { match *self.carry { Carry::Line {..} => d,Carry::Screw {axis,..} => turn3(axis,self.turn,d) } }
+    /// The carry's rate at the carried point `q`.
+    pub fn rate(&self,q: I3) -> I3 {
+        match *self.carry {
+            Carry::Line {delta} => c3(delta),
+            Carry::Screw {center,axis,angle,advance} =>
+                add3(scale3(cross3(c3(axis),sub3(q,c3(center))),Iv::point(angle)),scale3(c3(axis),Iv::point(advance))),
         }
     }
 }
 
-/// A direction carried to `v` (`Carry::dir`), enclosed.
-pub fn carry_dir(c: &Carry,d: I3,v: Iv) -> I3 {
-    match carry_turn(c,v) { None => d,Some((axis,sc)) => turn3(axis,sc,d) }
-}
-
-/// The carry's rate at the carried point `q` (`Carry::rate`), enclosed.
-pub fn carry_rate(c: &Carry,q: I3) -> I3 {
-    match *c {
-        Carry::Line {delta} => c3(delta),
-        Carry::Screw {center,axis,angle,advance} =>
-            add3(scale3(cross3(c3(axis),sub3(q,c3(center))),Iv::point(angle)),scale3(c3(axis),Iv::point(advance))),
-    }
-}
-
-/// A point of the circle `o + r (cos θ x + sin θ y)` in `f` over `θ`, and its rate, enclosed.
-pub fn circle_at(f: &Frame,r: f64,th: Iv) -> (I3,I3) {
+/// A point of the conic `o + a cos θ x + b sin θ y` in `f` over `θ`, and its rate, enclosed (a
+/// circle's where `a = b`).
+pub fn conic_at(f: &Frame,a: f64,b: f64,th: Iv) -> (I3,I3) {
     let (s,c) = th.sin_cos();
-    let r = Iv::point(r);
-    (frame_at(f,[r*c,r*s,Iv::point(0.)]),frame_dir(f,[-(r*s),r*c,Iv::point(0.)]))
+    let (a,b) = (Iv::point(a),Iv::point(b));
+    (frame_at(f,[a*c,b*s,Iv::point(0.)]),frame_dir(f,[-(a*s),b*c,Iv::point(0.)]))
 }
 
 /// **A scalar spline's value and rate over `[a, b]`, enclosed** (`spline`, its coefficients `c`):
 /// what a B-spline curve's heights over a plane are read by (`query::spline_plane`).
-pub fn scalar(degree: usize,knots: &[f64],c: &[f64],t: [f64;2]) -> (Iv,Iv) {
-    let (v,d) = spline::<1>(degree,knots,c.len(),&|i| [Iv::point(c[i])],[t[0].min(t[1]),t[0].max(t[1])]);
+/// Its rate read only where `rate` asks.
+pub fn scalar(degree: usize,knots: &[f64],c: &[f64],t: [f64;2],rate: bool) -> (Iv,Iv) {
+    let (v,d) = spline::<1>(degree,knots,c.len(),&|i| [Iv::point(c[i])],[t[0].min(t[1]),t[0].max(t[1])],rate);
     (v[0],d[0])
 }
