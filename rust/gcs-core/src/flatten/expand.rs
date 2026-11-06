@@ -124,7 +124,7 @@ impl<'a> Walk<'a> {
             self.file_vals = scope.vals.clone();
         }
         // what a frame with a value draws in its block, read where the value puts it (#398 B)
-        let lowered = self.valued_blocks(body);
+        let lowered = self.valued_blocks(body, scope.prefix());
         let body: &[Stmt] = lowered.as_deref().unwrap_or(body);
         for st in body {
             if depth == 0 {

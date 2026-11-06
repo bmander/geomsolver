@@ -2890,8 +2890,9 @@ n := base at screw// `Helix`'s station: base where the screw stands
 ```
 
 `std.stations.Helix`, `std.stations.OnHelix` and `std.stations.Twisted` are written so. A frame with
-a value rides on none, and no frame rides on it. A value over a declared `param t: … over (a, b)`
-holds for every `t` (1.6): what is drawn in the frame is a trajectory.
+a value rides on none, and no frame rides on it but one declared in its block (below). A value over
+a declared `param t: … over (a, b)` holds for every `t` (1.6): what is drawn in the frame is a
+trajectory.
 
 **Drawn in a frame with a value**: what its `in` block draws stands where the
 value puts it. Each plane the block draws in is read as that plane drawn in the frame (`P in f`),
@@ -2914,8 +2915,56 @@ in screw {
 thread := solid({ p | some s: p in sec at s })
 ```
 
-Drawn in the valued frame and no plane of it is E080 (a value carries a plane); a frame declared
-in the block still rides on the frame with the value (E080).
+Drawn in the valued frame and no plane of it is E080 (a value carries a plane).
+
+**A train: a planet riding a valued carrier** (0.207). A frame declared in a valued frame's
+block is drawn there as the rest of the block is: the pin the carrier's block draws stands where
+the carrier's value puts it, the planet's joint turns about it, and what the planet's block draws
+is carried by the carrier's value and then turned on the pin by the planet's — the carrier's turn,
+then the planet's, as riding at a roll composes them. So an epicyclic train scrubbed by one
+parameter is drawn as it is built, every joint driven by it:
+
+```sv
+param t: Angle over (0deg, 360deg)
+in (carrier := frame) {
+  in std.top {
+    pin := point
+    pin coords(du: 20mm, dv: 0mm) std.top
+  }
+  in (planet := frame) {
+    in std.top {
+      c := point                                  // the planet's centre: on the pin
+      c coords(du: 20mm, dv: 0mm) std.top
+      rim := circle(center: c)
+      radius(5mm) rim
+    }
+    planet_body := solid(std.solids.Prism(face(rim), from: 0mm, to: 3mm))
+  }
+}
+carrier spins(1) o
+planet spins(-3) pin                              // the carrier's pin, where the carrier stands
+fix(value == t) carrier
+fix(value == t) planet
+```
+
+Blocks of valued frames nest as deep as a train does, the outer frame's value first; a valued frame
+named in another's block but declared outside it turns about an axis the outer one does not carry
+(E080). The planet's points are drawn in its own block: the carrier's pin is drawn in the
+carrier's plane, so `circle(center: pin)` there is E060 (the pin is already in `std.top in
+carrier`) — draw the centre on it, as `c` is. Without riding, the same pose is the rest pose spun
+on its pin and the copy carried round: a placed copy may be placed again (`tests/epicyclic.rs`
+holds the two to one another, corner for corner):
+
+```sv
+spin := frame
+spin spins(-3) pin0                               // the planet's pin, drawn at rest
+fix(value == t) spin
+orbit := frame
+orbit spins(1) o
+fix(value == t) orbit
+spun := part at spin                              // `part` drawn at rest, turned on its pin
+shown := spun at orbit                            // ... and carried round
+```
 
 **A frame along a path**: a joint held along a path rather than about a line, `g
 coincident f.axis` with `fix(ratio == 0, advance == 0mm) f`, stands where the path's parameter puts

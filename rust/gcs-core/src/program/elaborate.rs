@@ -109,6 +109,12 @@ pub(super) fn elaborate_in(
     let skip = names(&mut cx, &body);
     let flat = Flat { expansion: &expansion, body, stating, skip };
     let deferred = geometry(&mut cx, &flat);
+    // a plane a valued frame's block draws in is shown as the source reads it (#823)
+    for (key, said) in &expansion.carried_planes {
+        if let Some(f) = cx.res.of.get(key).filter(|e| e.kind == crate::model::EntKind::Frame) {
+            cx.sk.plane_names.insert(f.i() as u32, said.clone());
+        }
+    }
     // a development's laid rails, curves over what the geometry built (#645)
     super::developed::developments(&mut cx, &expansion.developed, &flat.body);
     super::developed::panels(&mut cx, &expansion.panels);

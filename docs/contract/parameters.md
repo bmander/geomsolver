@@ -123,7 +123,7 @@ where a rule came from.
   (`a_joints_value_survives_a_reconcile`).  An Angle, checked there once (E103, as is a declared
   parameter read in it); refused: a value of anything but a jointed frame (E080), one given twice
   (E040), a frame with a value riding on another, and one a frame rides on (E080, naming
-  `n := base in f`).  What its
+  `n := base in f`) — a frame declared in its block rides on it no more (#823, below).  What its
   `in` block draws stands where the value puts it (#398 B, below); through [0.144] anything drawn
   there was refused.
   - **`n := x at f`, drawn in a jointed frame** ([0.205]; through 0.204 `n := x in f`)
@@ -446,11 +446,29 @@ where a rule came from.
     block — a declaration's children and membership, an instance's arguments, a relation's
     operands and arguments — reads the twin (`syntax::Relation::within`, stamped by the parser,
     keeps the blocks around a relation).  The twin's rows are `x in f`'s, row for row: its value
-    read again at every station.  Refused: a declaration in two valued frames, one drawn in the
-    valued frame and no plane of it (E080).  A frame declared in the block is left to
-    `motions::values`'s refusal.  `std.stations.Twisted` stays a point drawn in `n` (`t := x in
-    turn`): drawn in the block it would stand in the twin, and `mapped` reads its targets in one
-    plane.
+    read again at every station.  Refused: one drawn in the valued frame and no plane of it
+    (E080).  `std.stations.Twisted` stays a point drawn in `n` (`t := x in turn`): drawn in the
+    block it would stand in the twin, and `mapped` reads its targets in one plane.
+  - **A frame declared in a valued frame's block** (#823, [0.207]): a frame declared bare in the
+    block (`in (planet := frame)`) is ridden on and never read as a plane; it leaves the valued
+    frames of its membership (`Membership::leave`), so it rides on none of them, and its joint
+    turns about its axis as the relations hold it — held to what the block draws (the carrier's
+    pin), where the value puts that.  A declaration in its block is drawn in the twins of the
+    planes of its path, one per **train** of valued frames: `#in<offset> := P in carrier`, and
+    where the inner frame has a value too `#in<offset>_2 := #in<offset> in planet` — turned about
+    the carried pin after carrying, which is carrying after turning about the pin at rest — and
+    rides on the inner frame where it has none.  A declaration in its block in no plane and
+    not drawn (a solid, a face, an instance) rides on the inner frame alone.  Refused (E080): a
+    statement in two valued frames the inner of which is declared outside the outer's block, and
+    one in the inner frame's block outside the outer's, which no value would carry.  Each
+    twin's key is hidden, and what the source calls it (`std.top in carrier`, `(std.top in
+    carrier) in planet`) is `Expansion::carried_planes`, the plane's name a diagnostic says
+    (`Sketch::plane_names`, `planes::said`).
+  - **Gate** (#823): `tests/epicyclic.rs` — a carrier and its planet, both valued over `t`, the
+    planet's point and centre against the train's closed form at stations of the march to
+    `EXACT`; the rest pose spun on its pin and the copy carried round (`spun := part at spin`,
+    `shown := spun at orbit`) corner for corner the riding planet's exact B-rep at every station;
+    and the issue's source, which says nothing, and twins named as the source reads them.
   - **Gate**: `tests/swept_over_parameters.rs` — the epic's helix as written (its value in the
     `fix` stage 3 settled on) against the screw's closed form at stations of the march along `s`
     to `EXACT`, against Pappus off its exact B-rep, every wall the surface its first rim sweeps,

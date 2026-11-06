@@ -383,6 +383,10 @@ pub struct Expansion {
     pub panels: Vec<(String, [developable::RailInfo; 2])>,
     /// Every point drawn in further planes and each of its twins, by absolute key (§6.7).
     pub twins: Vec<(String, String)>,
+    /// Every plane a valued frame's block draws in, read as drawn in the frame (#398 B): the
+    /// hidden twin's absolute key, and what the source calls it, `std.top in carrier` — the name
+    /// a diagnostic gives it (#823).
+    pub carried_planes: BTreeMap<String, String>,
     /// What every reference reading a member `normal` reads it of, absolute (`P.normal` gives
     /// `P`): the planes among them mint their normal as they are built
     /// (`Sketch::plane_normal`), and the rest are said to have none where they are read.
@@ -760,6 +764,8 @@ struct Walk<'a> {
     sets: SetState<'a>,
     /// Every point drawn in further planes and each of its twins — see `Expansion::twins`.
     twins: Vec<(String, String)>,
+    /// See `Expansion::carried_planes`.
+    carried_planes: BTreeMap<String, String>,
     /// See `Expansion::normals`.
     normals: BTreeSet<String>,
     /// See `Expansion::charts`.
@@ -1079,6 +1085,7 @@ impl<'a> Walk<'a> {
             panels: Vec::new(),
             rails_seen: Default::default(),
             twins: Vec::new(),
+            carried_planes: BTreeMap::new(),
             normals: BTreeSet::new(),
             charts: BTreeSet::new(),
             joints: BTreeSet::new(),
@@ -1201,6 +1208,7 @@ impl<'a> Walk<'a> {
             rings: self.rings.infos,
             lowered,
             twins: self.twins,
+            carried_planes: self.carried_planes,
             normals: self.normals,
             charts: self.charts,
             joints: self.joints,

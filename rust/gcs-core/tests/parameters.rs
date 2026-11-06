@@ -440,8 +440,8 @@ std.origin distance(5mm, along: std.y) X
 
 /// **A value and what is drawn in its frame print as written** and read back the same; a value
 /// is a jointed frame's, stated once, an angle, never a declared parameter's (a relation holding
-/// for every value of one is stage 4's); and a frame with a value rides on none and carries
-/// nothing drawn in its block, which would stand where it is drawn and not where the value puts it.
+/// for every value of one is stage 4's); and a frame with a value rides on none, and carries what
+/// is drawn in a plane of its block (#398 B) — a point drawn in it and in no plane is refused.
 #[test]
 fn a_joints_value_prints_back_and_refuses_what_it_cannot_mean() {
     // the flat form prints no instance: the joint written out as `std.Turn` writes it, its value
@@ -471,7 +471,7 @@ fn a_joints_value_prints_back_and_refuses_what_it_cannot_mean() {
     refused("fix(value == 10deg) screw\nfix(value == 20deg) screw", "E040", "given twice");
     refused("fix(value == 10mm) screw", "E103", "`value` is Angle, and this is Length");
     refused("fix(value == 10deg) screw\nin screw {\n  p := point\n}", "E080",
-            "rides on `screw`, which has a value");
+            "which has a value, and in no plane of it");
     refused("in (arm := frame) {\n  planet := frame\n}\narm turns(1) ax\n\
              planet turns(2) ax\nfix(value == 10deg) planet", "E080",
             "a frame with a value rides on none");

@@ -93,6 +93,7 @@ mod drafted_tools;
 mod drag;
 mod drawing;
 mod drawn_mesh;
+mod epicyclic;
 mod part_colours;
 mod drift;
 mod driven;

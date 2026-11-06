@@ -158,8 +158,9 @@ fn a_valued_frames_block_is_its_drawing_at_rest_carried() {
 }
 
 /// **What a valued frame's block cannot mean is said**: a declaration drawn in the frame and in no
-/// plane of it (a value carries a plane), and a frame declared in the block, which would ride on
-/// the frame with a value.
+/// plane of it (a value carries a plane).  A frame declared in the block is no refusal (#823): it
+/// rides on the valued frame as the rest of the block does, drawn where the value puts it, and so
+/// rides on nothing (`tests/epicyclic.rs`).
 #[test]
 fn a_valued_frames_block_refuses_what_it_cannot_mean() {
     let bare = EPIC.replace("in screw {\n  in std.front {\n    c := point",
@@ -168,7 +169,9 @@ fn a_valued_frames_block_refuses_what_it_cannot_mean() {
     assert!(s.iter().any(|m| m.starts_with("E080") && m.contains("in no plane of it")), "{s:?}");
     let framed = EPIC.replace("in screw {\n", "in screw {\n  g := frame\n");
     let s = said(&framed);
-    assert!(s.iter().any(|m| m.starts_with("E080") && m.contains("rides on `screw`")), "{s:?}");
+    assert!(s.is_empty(), "{s:?}");
+    let e = determined(&framed);
+    assert!(e.sketch.frames[index(&e, "g")].rides.is_empty());
 }
 
 /// **A face family reads its parameter as declared**: a formal of another kind than the parameter

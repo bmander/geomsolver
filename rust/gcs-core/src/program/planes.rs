@@ -5,7 +5,7 @@ use super::{Code, Diag, SourceMap};
 use crate::ir::{Operation as StmtKind, Statement as Stmt};
 use crate::constraints::CKind;
 use crate::model::{entity_name, EntKind, EntRef, Sketch};
-use crate::syntax::{Span, StmtId};
+use crate::syntax::{hidden, Span, StmtId};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn memberships(
@@ -79,8 +79,7 @@ fn said_nothing(sk: &Sketch, map: &SourceMap, n: Nested, diags: &mut Vec<Diag>) 
     if fi.o == fo.o || (!fo.planar() && fi.rides.contains(&(outer as u32))) {
         return;
     }
-    let who = |f: usize| map.name_of(EntRef::frame(f)).cloned()
-        .unwrap_or_else(|| entity_name(EntRef::frame(f)));
+    let who = |f: usize| said(sk, map, EntRef::frame(f));
     diags.push(Diag::within(Code::W115, at, stmt, format!(
         "drawn in `{}`, so the `{}` around it says nothing of where: a frame with axes \
          inside another draws what is in it, and the outer one is ridden on",
@@ -117,6 +116,15 @@ fn frame_of(sk: &Sketch, res: &Resolver, r: &crate::syntax::Ref, last: bool)
              name the plane itself"))),
         Err(m) => Err((Code::E040, format!("`{name}`: {m}"))),
     }
+}
+
+/// What a diagnostic calls `e`: what the source calls it, and a plane a valued frame's block draws
+/// in, which the source names by no key of its own, as it reads it, `std.top in carrier` (#823).
+fn said(sk: &Sketch, map: &SourceMap, e: EntRef) -> String {
+    let name = map.name_of(e);
+    let shown = (e.kind == EntKind::Frame && name.is_none_or(|n| hidden(n)))
+        .then(|| sk.plane_names.get(&(e.i() as u32))).flatten().filter(|n| !hidden(n));
+    shown.or(name).cloned().unwrap_or_else(|| entity_name(e))
 }
 
 /// One declaration's membership (§6.7): the frames of its path, outermost first, and the plane
@@ -193,8 +201,7 @@ fn member(
             let at = EntRef::point(p);
             match sk.rides.get(&at) {
                 Some(was) if *was != frames => {
-                    let who = |e: EntRef| map.name_of(e).cloned()
-                        .unwrap_or_else(|| entity_name(e));
+                    let who = |e: EntRef| said(sk, map, e);
                     fail(Code::E060, r.span, format!("`{}` rides on frames of its own \
                         already: it is drawn once, where it is declared", who(at)));
                 }
@@ -211,8 +218,7 @@ fn member(
         let charted = sk.frames[plane].chart.is_some();
         for p in points {
             if let Some(q) = sk.plane_of(p) {
-                let who =
-                    |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
+                let who = |e: EntRef| said(sk, map, e);
                 fail(Code::E060, r.span, format!("`{}` is already in `{}`",
                     who(EntRef::point(p)), who(EntRef::frame(q))));
             } else if charted {
@@ -229,8 +235,7 @@ fn member(
                 sk.replace_point(me, p, twin.expect("matched"));
             }
             Some(q) if q != plane => {
-                let who =
-                    |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
+                let who = |e: EntRef| said(sk, map, e);
                 fail(
                     Code::E060,
                     // the ref's own span: the clause's word, or the block header's

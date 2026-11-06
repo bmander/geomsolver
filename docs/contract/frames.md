@@ -177,8 +177,10 @@ point carried to a roll and its rate, the law carried in the row's constants (#3
 **Drawn in a frame with a value** (#398 B, [0.145]): what a valued frame's `in` block draws
 stands where the value puts it — the planes it draws in read as those planes drawn in the frame
 (`flatten::valued`, a twin `P in f` per plane), so it rides on the valued frame no more; the rules
-are [parameters.md](parameters.md)'s.  A frame declared in such a block still rides on it and is
-refused (`motions::values`).
+are [parameters.md](parameters.md)'s.  **A frame declared in such a block** (#823, [0.207]) rides
+on it no more either: a planet in its carrier, its joint about the pin the carrier's block draws
+where the value puts it, its own block drawn in the carrier's twins and riding on the planet — or,
+the planet valued too, in twins of those, `(P in carrier) in planet` (`tests/epicyclic.rs`).
 
 **A frame along a path** (#398 C, [0.145]): a joint held along a path, `g coincident f.axis`
 (`std.stations.Along`, `std.stations.AlongFrenet`, each making the frame `f` it holds), is no turn
