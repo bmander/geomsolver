@@ -85,13 +85,7 @@ fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) 
     // a prism through everything (#737, `std.solids.Through`) is bounded by the body it is cut
     // from: through a body, it is cut from that body
     if let Some(body) = &how.through {
-        stmts.push(StmtKind::SolidRel(syntax::SolidRel {
-            word: syntax::BodyWord::Cut,
-            what: syntax::Ref::new(name.clone()),
-            body: syntax::Ref::new(body.clone()),
-            span: Span::default(),
-            joined: false,
-        }));
+        stmts.push(body_word(syntax::BodyWord::Cut, &name, body));
     }
     append_solids(prog, &stmts, vec![name])
 }
@@ -102,20 +96,35 @@ fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) 
 fn append_solids(prog: &Program, stmts: &[StmtKind], names: Vec<String>) -> Result<Edit, String> {
     let mut words: Vec<&str> = Vec::new();
     for st in stmts {
-        if let StmtKind::SolidRel(r) = st {
-            if !r.joined && !words.contains(&r.word.as_str()) {
-                words.push(r.word.as_str());
-            }
+        let StmtKind::Relation(r) = st else { continue };
+        let Some(w) = r.form.written().and_then(|w| syntax::BodyWord::parse(&w.word.text)) else {
+            continue;
+        };
+        if !words.contains(&w.as_str()) {
+            words.push(w.as_str());
         }
     }
-    solids_checked(prog, appending(prog, stmts)?, names, &words)
+    checked_using(prog, appending(prog, stmts)?, "std.solids", &words, names)
 }
 
-/// `splice`, which writes words of `std.solids`, made — and `use std.solids` naming the body
-/// `words` it writes where the document's does not — held to the elaborator.
-fn solids_checked(prog: &Program, splice: Splice, names: Vec<String>, words: &[&str])
+/// `what WORD body`, a body word of `std.solids` (#783 P3): the relation the word is, written so.
+fn body_word(word: syntax::BodyWord, what: &str, body: &str) -> StmtKind {
+    StmtKind::Relation(syntax::Relation::of(syntax::RelationForm::Written(syntax::Written {
+        word: syntax::Name::new(word.as_str()),
+        fixity: crate::constraints::Fixity::Infix,
+        ops: vec![syntax::Ref::new(what.to_string()), syntax::Ref::new(body.to_string())],
+        args: Vec::new(),
+        span: Span::default(),
+        rates: Vec::new(),
+        lowered: crate::syntax::Lowered::No,
+    })))
+}
+
+/// `splice`, which writes words of `module`, made — and the `use` of `module` naming the `words`
+/// it writes where the document's does not (`append::imported`) — held to the elaborator.
+fn checked_using(prog: &Program, splice: Splice, module: &str, words: &[&str], names: Vec<String>)
     -> Result<Edit, String> {
-    let splices = vec![splice, imported(prog, "std.solids", words)];
+    let splices = vec![splice, imported(prog, module, words)];
     let (text, landed) = splice_landing(prog.text(), splices);
     let regions: Vec<Span> = landed.into_iter()
         .map(|l| l.ok_or("the edit is no place in the source"))
@@ -238,13 +247,7 @@ fn region_solid(
     let solid = chosen_name(&mut taken, None, EntKind::Solid)?;
     stmts.push(solid_stmt(&solid, &faces[0], how.sweep()?));
     if let Some((word, body)) = with {
-        stmts.push(StmtKind::SolidRel(syntax::SolidRel {
-            word,
-            what: syntax::Ref::new(solid.clone()),
-            body: syntax::Ref::new(body.to_string()),
-            span: Span::default(),
-            joined: false,
-        }));
+        stmts.push(body_word(word, &solid, body));
     }
     let mut names = vec![solid];
     names.extend(faces);
@@ -390,7 +393,7 @@ fn reworded(prog: &Program, solid: syntax::StmtId,
     Some((|| {
         let new = with(&was)?;
         let text = syntax::solid_word(&new, &face).ok_or("that solid is no sweep of a face")?;
-        solids_checked(prog, Splice { at: inst.span, with: text }, Vec::new(), &[])
+        checked_using(prog, Splice { at: inst.span, with: text }, "std.solids", &[], Vec::new())
     })())
 }
 
@@ -400,13 +403,7 @@ pub fn add_body_word(prog: &Program, word: syntax::BodyWord, what: &[&str], body
     if what.is_empty() {
         return Edit::none(prog, Some(format!("nothing to {} `{body}`", word.as_str())));
     }
-    let stmts: Vec<StmtKind> = what.iter().map(|w| StmtKind::SolidRel(syntax::SolidRel {
-        word,
-        what: syntax::Ref::new(w.to_string()),
-        body: syntax::Ref::new(body.to_string()),
-        span: Span::default(),
-        joined: false,
-    })).collect();
+    let stmts: Vec<StmtKind> = what.iter().map(|w| body_word(word, w, body)).collect();
     Edit::refused_or(prog, append_solids(prog, &stmts, Vec::new()))
 }
 
@@ -571,12 +568,7 @@ fn rounds_edit(
     // what the word's own body refuses is said at the `use` that brought `std.rounds` in: the
     // statements and the `use` — grown, or a line of its own — are both what this edit wrote,
     // where they landed
-    let import = imports(prog, word);
-    let (text, landed) = splice_landing(prog.text(), vec![appending(prog, &stmts)?, import]);
-    let regions: Vec<Span> = landed.into_iter()
-        .map(|l| l.ok_or("the edit is no place in the source"))
-        .collect::<Result<_, _>>()?;
-    checked_in(prog, text, &regions, Vec::new())
+    checked_using(prog, appending(prog, &stmts)?, word.module(), &[word.as_str()], Vec::new())
 }
 
 /// A round or chamfer's size to start from on object `solid`: a tenth of its least extent, to one
@@ -587,36 +579,4 @@ pub fn round_size(sk: &Sketch, solid: usize) -> Option<f64> {
     let least = (0..3).map(|k| b.hi[k] - b.lo[k]).filter(|d| *d > 0.0)
         .fold(f64::INFINITY, f64::min);
     least.is_finite().then(|| round_sig(least / 10.0, 1))
-}
-
-/// The splice that has the document's `use std.rounds` name `word` bare (§14.4) — the whole
-/// `use std.rounds` the document writes, its list grown, one written (`use std.rounds` becomes
-/// `use std.rounds (round)`) or as it stands where it already does; else a line of its own where
-/// `add_use` would put one.
-fn imports(prog: &Program, word: EdgeWord) -> Splice {
-    imported(prog, word.module(), &[word.as_str()])
-}
-
-/// The `use` of `module` naming `words` bare: a line of its own where the document has none, the
-/// names it lacks added to one it has (`use std.solids` grows `(cut)`), nothing where it names
-/// them all.
-fn imported(prog: &Program, module: &str, words: &[&str]) -> Splice {
-    let text = prog.text();
-    let Some(u) = prog.uses.iter().find(|u| u.name == module && (u.span.hi as usize) <= text.len())
-    else {
-        return match words {
-            [] => use_line(prog, &format!("use {module}")),
-            _ => use_line(prog, &format!("use {module} ({})", words.join(", "))),
-        };
-    };
-    let (lo, hi) = (u.span.lo as usize, u.span.hi as usize);
-    let lacking: Vec<&str> = words.iter().copied()
-        .filter(|w| !u.names.iter().any(|n| n.text == *w))
-        .collect();
-    let (at, with) = match (lacking.as_slice(), u.names.last()) {
-        ([], _) => (hi, String::new()),
-        (more, Some(n)) => (n.span.hi as usize, format!(", {}", more.join(", "))),
-        (more, None) => (lo + text[lo..hi].trim_end().len(), format!(" ({})", more.join(", "))),
-    };
-    Splice::within(text, u.span, Span::new(at, at), &with)
 }

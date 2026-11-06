@@ -701,14 +701,13 @@ fn a_built_in_word_is_imported_by_no_one() {
 
 #[test]
 fn a_module_reads_its_own_words_bare() {
-    // `std.rounds` writes `round` in its own words with no import of its own — but the body words
-    // of `std.solids` it cuts and unites by (#783 P3) — and `std.sets` imports `std.place`'s
+    // `std.rounds` writes `round` in its own words with no import of its own (its material it
+    // says of the body by the primitive, #783 P3), and `std.sets` imports `std.place`'s
     // `horizontal` for its own
     let rounds = gcs_core::library::module("std.rounds").unwrap();
     assert!(rounds.contains("A round(r) B := {"));
     assert!(rounds.contains("round(r) X := X round(r: r) X"));
-    assert!(rounds.lines().filter(|l| l.starts_with("use ")).eq(["use std.solids (cut, union)"]),
-            "std.rounds imports the body words alone");
+    assert!(!rounds.lines().any(|l| l.starts_with("use ")), "std.rounds imports nothing");
     let sets = gcs_core::library::module("std.sets").unwrap();
     assert!(sets.contains("use std.place (horizontal)") && sets.contains("k.center horizontal q"));
     // `lib.words`' `Rung` writes `above` bare, and a file importing only `Rung` draws it

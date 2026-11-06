@@ -17,20 +17,24 @@ a swept solid may only be `cut`. `coincident` between two solids is refused.
 **The body words are words of `std.solids`, over a primitive** (#783 P3, [0.206]): `B or { p | p in
 x }` adds a disjunct to the body `B`'s stock and `B and { p | p not in x }` / `B and { p | p in x
 }` a conjunct, said where `B` is not declared; the parser reads one membership of a solid in the
-set (`P::joined`, the notation's `inside`/`outside` it was lowered to) into the body rule's term,
-`SolidRel` marked `joined` so the printer writes the primitive back, and refuses any other set
-naming the three forms.  `std.solids` defines `x cut B := B and { p | p not in x }`, `x union B`
-and `x common B` over it (`rust/lib/std/solids.sv`), so `bore cut body` is a word applied
+set (`P::joined`, the notation's `inside`/`outside` it was lowered to, `BodyWord::of_joined`) into
+the body rule's term, `SolidRel`, and refuses any other set naming the three forms; the lookahead
+is `words::joined_at`, which the notation asks too.  `std.solids` defines `x cut B := B and { p |
+p not in x }`, `x union B` and `x common B` over it (`rust/lib/std/solids.sv`), so `bore cut body` is a word applied
 (`flatten::words`), its statement identity the use's, reaching the same `SolidRel`, and everything
 past the parser — `program/solids.rs`'s body pass, the stratum, `as_body`, the empty body, face
 paths — is as it was.  The words are no longer reserved (`words::is_name`, `reserved_word`), so a
 file may name a thing `cut`; they are imported by name (`use std.solids (cut, union)`), unimported
-E102 naming the import, and `std.rounds` and `hardware` import the ones they use.  The Boolean
-gesture (`edit::add_body_word`) writes the word and names it in the file's `use std.solids`
-(`edit::solids::imported`), grown or a line of its own.  One solid within another is claimed
-`claim every q in a: q in b` (`notation::every`, lowered to the claim word `inside`, judged as
-before, and reported as written, `describe_solid_claim`); `claim a inside b` is refused naming it,
-and `every` outside a claim is refused.
+E102 naming the import.  `std.rounds` says its material of the body by the primitive itself
+(`A.body and { p | p not in taken }`), its contributions repeated over pairs and triples of faces,
+where a word applied would add an application each; `hardware` imports the words it uses.  The
+Boolean gesture (`edit::add_body_word`) writes the word, as the relation it is, and names it in the
+file's `use std.solids` (`edit::append::imported`), grown or a line of its own; the parser writes
+`SolidRel` only from the primitive, which the printer writes back.  One solid within another is
+claimed `claim every q in a: q in b` (`notation::every`, lowered to the claim word `inside` and
+marked `Lowered::Every`, judged as before; the printer and the report write it as written,
+`print::notation_text`, `describe_solid_claim`); `claim a inside b` is refused naming it, and
+`every` outside a claim is refused.
 `tests/body_words.rs` is the gate. Spiral bevel (**one file, `spiral_bevel/hypoid.sv`**, #217: no `project`, no `hint` — every root chosen by a
 word, the layout solved from them alone; README walks it). **The pair is one component**,
 `pair := HypoidPair(std.top, std.y, std.z, …)` over the root's `param`s (std's datums its

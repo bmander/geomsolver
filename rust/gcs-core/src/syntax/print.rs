@@ -278,23 +278,14 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 out.push_str(&format!(" class {}", d.class.0.join(" ")));
             }
         }
-        // the primitive as it was written (#783 P3), else the body word of `std.solids`
-        StmtKind::SolidRel(r) if r.joined => {
+        // the primitive, as only it is written (#783 P3): a body word is a relation
+        StmtKind::SolidRel(r) => {
+            let (or, not) = r.word.joined();
             write_ref(out, &r.body);
-            out.push_str(match r.word {
-                super::BodyWord::Union => " or { p | p in ",
-                super::BodyWord::Cut => " and { p | p not in ",
-                super::BodyWord::Common => " and { p | p in ",
-            });
+            out.push_str(if or { " or" } else { " and" });
+            out.push_str(if not { " { p | p not in " } else { " { p | p in " });
             write_ref(out, &r.what);
             out.push_str(" }");
-        }
-        StmtKind::SolidRel(r) => {
-            write_ref(out, &r.what);
-            out.push(' ');
-            out.push_str(r.word.as_str());
-            out.push(' ');
-            write_ref(out, &r.body);
         }
         StmtKind::Instance(i) => {
             i.annotations.write(out);
@@ -1233,6 +1224,12 @@ fn write_written(out: &mut String, w: &Written) {
 /// is printed parses back to what was read.  `None` for any other relation.
 fn notation_text(w: &Written) -> Option<String> {
     use super::Lowered;
+    // one solid within another, what holds of every point of it, its point named apart from both
+    if let (Lowered::Every, [a, b]) = (w.lowered, w.ops.as_slice()) {
+        let (a, b) = (super::ref_text(a), super::ref_text(b));
+        let q = ["q", "p", "x"].into_iter().find(|v| *v != a && *v != b).unwrap_or("q");
+        return Some(format!("every {q} in {a}: {q} in {b}"));
+    }
     if !w.lowered.any() || w.fixity != Fixity::Infix {
         return None;
     }

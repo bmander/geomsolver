@@ -53,10 +53,12 @@ pub fn imported(src: &str) -> String {
         }
     }
     names.retain(|n| !n.is_empty());
+    // the body words first, in their order, then any other the snippets named, each once
+    names.sort_by_key(|n| WORDS.iter().position(|w| w == n).unwrap_or(WORDS.len()));
     let mut listed: Vec<String> = Vec::new();
-    for w in WORDS.iter().map(|w| w.to_string()).chain(names.iter().cloned()) {
-        if names.contains(&w) && !listed.contains(&w) {
-            listed.push(w);
+    for n in names {
+        if !listed.contains(&n) {
+            listed.push(n);
         }
     }
     if listed.is_empty() {

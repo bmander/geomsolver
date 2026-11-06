@@ -501,7 +501,8 @@ so defined, against the built-in statement: the same `SolidDef::Body`, so the sa
   the contributions themselves do not.
 - **The words live in `std.solids` and are imported by name**, as every word of `std` is: there is
   no prelude, so a file writes `use std.solids (cut, union)`, the names it uses. The corpus gained
-  them by script (`scripts/body_words_imported.py`); `std.rounds` and `hardware` import theirs.
+  them by script (`scripts/body_words_imported.py`); `hardware` imports its own, and `std.rounds`
+  writes the primitive, its contributions repeated over pairs and triples of faces.
   Unimported, the use is E102 naming the import. The words are no longer reserved: a file may name
   a thing `cut`.
 - **One membership of a solid per contribution, for now.** `B and { p | p not in x; p in y }` or a
@@ -519,7 +520,8 @@ so defined, against the built-in statement: the same `SolidDef::Body`, so the sa
   screw's frame `cut` (`solid_sweeps/square_thread.sv`, `stopped_screw.sv`) and cut with the word
   as well; a file's own name and a word it imports may not share a spelling (E071), so the frame is
   `feed`. A solid named `inside` (`engine/block.sv`) stays: a constraint word with no prefix
-  reading, two words after it, is the name it was given (`inside common cavity`).
+  reading, read as a reference with a word and an operand after it, is the name it was given
+  (`inside common cavity`).
 - **The report says the containment claim as it is written**, `claim every q in bore: q in stock —
   …`.
 

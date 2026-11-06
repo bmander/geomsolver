@@ -372,9 +372,7 @@ impl Lowering<'_> {
             "when" | "repeat" | "cycle" | "claim_over" => None,
             // more of a body's set, `B or { p | p in x }` (#783 P3): the set's own statements
             // are lowered where they stand, past its `|`
-            _ if past_ref(t, i).is_some_and(|j| {
-                matches!(word(t, j), Some("and" | "or")) && super::words::set_at(t, j + 1).is_some()
-            }) => None,
+            _ if super::words::joined_at(t, i) => None,
             "some" => self.some(i, false, out),
             // what holds of every point of a solid (#783 P3): claimed, one solid within another
             "every" if word(t, i + 1).is_some() => Some(self.every(i, out)),
@@ -471,8 +469,10 @@ impl Lowering<'_> {
             self.fail(t[i].1, shape);
             return end;
         };
-        // `A inside B`, the claim word, its span the membership's `in`
+        // `A inside B`, the claim word, its span the membership's `in`, marked so the printer
+        // writes the claim back as written
         out.extend(t[i + 3..a1].iter().cloned());
+        self.words.insert(t[a1 + 2].1.lo, Lowered::Every);
         out.push(ident("inside", t[a1 + 2].1));
         out.extend(t[a1 + 3..b1].iter().cloned());
         b1

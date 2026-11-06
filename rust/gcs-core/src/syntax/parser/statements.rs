@@ -247,12 +247,7 @@ impl<'a> P<'a> {
             // body's set, said where it is not declared (#783 P3): the primitive the body words
             // of `std.solids` are defined over (`bore cut body := …`).  Read by a lookahead past
             // the dotted path, as a set written in place follows the word
-            _ if self.past_ref(self.i).is_some_and(|j| {
-                matches!(self.word_at(j), Some("and" | "or")) && self.set_at(j + 1)
-            }) =>
-            {
-                self.joined(next_id)
-            }
+            _ if words::joined_at(&self.t, self.i) => self.joined(next_id),
             // `through` and `bound`, the body words' spellings before 0.84, refused naming theirs
             // **past the dotted path, not past one token**: an operand may be a dotted path, so
             // the word after it is further away than one token — the lookahead `past_ref`
@@ -430,16 +425,13 @@ impl<'a> P<'a> {
     /// The body is the points of its stock or of anything in union with it, and of every
     /// conjunct: `(stock ∪ unions) ∖ cuts ∩ commons`, a formula, never an order of statements.
     /// One membership of a solid is read in the set for now; it is the body rule's term
-    /// (`SolidRel`), marked as written so (`joined`) so the printer writes it back so.
+    /// (`SolidRel`), which the printer writes back as the primitive.
     fn joined(&mut self, next_id: &mut u32) -> Option<StmtKind> {
         let lo = self.here().lo as usize;
         let body = self.refr()?;
         let or = self.word_at(self.i) == Some("or");
         self.i += 1;
         let lit = self.set_lit(next_id)?;
-        let shape = "more of a body's set is one membership of a solid: `B and { p | p not in \
-            x }` (what `x cut B` is), `B and { p | p in x }` (`x common B`), or `B or { p | p in x \
-            }` (`x union B`)";
         // the membership, lowered by the notation (`syntax::notation`): `p in x` is `p inside x`
         let member = match lit.body.as_slice() {
             [Stmt { kind: StmtKind::Relation(r), .. }] => r.form.written().filter(|w| {
@@ -449,28 +441,22 @@ impl<'a> P<'a> {
             }),
             _ => None,
         };
-        let Some(w) = member else {
-            self.fail_at(lit.span, shape);
+        let read = member.and_then(|w| {
+            let not = match w.word.text.as_str() {
+                "inside" => false,
+                "outside" => true,
+                _ => return None,
+            };
+            BodyWord::of_joined(or, not).map(|word| (word, w.ops[1].clone()))
+        });
+        let Some((word, what)) = read else {
+            self.fail_at(lit.span, "more of a body's set is one membership of a solid: `B and { \
+                p | p not in x }` (what `x cut B` is), `B and { p | p in x }` (`x common B`), or \
+                `B or { p | p in x }` (`x union B`)");
             return None;
         };
-        let word = match (or, w.word.text.as_str()) {
-            (false, "outside") => BodyWord::Cut,
-            (false, "inside") => BodyWord::Common,
-            (true, "inside") => BodyWord::Union,
-            _ => {
-                self.fail_at(lit.span, shape);
-                return None;
-            }
-        };
-        let what = w.ops[1].clone();
         self.end_of_stmt();
-        Some(StmtKind::SolidRel(SolidRel {
-            word,
-            what,
-            body,
-            span: Span::new(lo, self.prev_hi()),
-            joined: true,
-        }))
+        Some(StmtKind::SolidRel(SolidRel { word, what, body, span: Span::new(lo, self.prev_hi()) }))
     }
 
     /// Whether the statement from here compares two sides outside every bracket (`<` or `>`).

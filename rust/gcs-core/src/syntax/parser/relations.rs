@@ -83,14 +83,15 @@ impl<'a> P<'a> {
     }
 
     /// Whether the constraint word `w` opening a statement is a name the document gave instead (a
-    /// solid called `inside`, #783 P3): a word with no prefix reading, and two words after it —
-    /// `inside common cavity` relates the solid `inside` by `common`, where `fix a` is still the
-    /// word refused naming what it states.
+    /// solid called `inside`, #783 P3): a word with no prefix reading, read as a reference (a
+    /// path, `inside.body`) with a word and an operand after it — `inside common cavity` relates
+    /// the solid `inside` by `common`, where `fix a` is still the word refused naming what it
+    /// states.
     fn named_operator(&self, w: &str) -> bool {
-        let ident = |k: usize| {
-            matches!(self.t.get(self.i + k).map(|(t, _)| t), Some(Tok::Ident(_)))
-        };
-        !crate::syntax::words::prefix_word(w) && ident(1) && ident(2)
+        !crate::syntax::words::prefix_word(w)
+            && self.past_ref(self.i).is_some_and(|j| {
+                self.word_at(j).is_some() && self.past_ref(j + 1).is_some()
+            })
     }
 
     /// How a relation word at `span` was written (#783): lowered from the notation of sets, and

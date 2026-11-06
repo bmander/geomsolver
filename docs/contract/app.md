@@ -93,7 +93,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `addSolid`/`addBodyWord`), each **held to the elaborator before it is handed back**
   (`append_checked`: an error inside the appended text refuses the edit in its words; one
   elsewhere was there before the gesture).  A body word written is named in the file's `use
-  std.solids` ([0.206], `edit::solids::imported`: grown, or a line of its own).  A hole loop that
+  std.solids` ([0.206], `edit::append::imported`: grown, or a line of its own).  A hole loop that
   is not one circle is written as a
   face first: **a face is a hole as it stands** (`holes: h`, its outer loop; one holed itself, or
   declared after, is E080).  `edit::remove` dooms a body word or a sweep naming a gone solid.

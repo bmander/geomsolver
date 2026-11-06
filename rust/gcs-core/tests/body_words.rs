@@ -105,6 +105,11 @@ fn every_point_of_a_solid_within_another_is_claimed() {
     let v = gcs_core::diagnose::judge_solids(&e.sketch);
     let text = gcs_core::report::solid_claim_text(&v[0]);
     assert!(text.starts_with("claim every q in boss: q in bore — "), "{text}");
+    // the printer writes it back as written, so a statement the app writes parses to what it read
+    let (prog, _) = crate::common::parse("claim every q in boss: q in bore\n");
+    let mut text = String::new();
+    gcs_core::syntax::write_stmt_to(&mut text, &prog.root().body[0].kind).unwrap();
+    assert_eq!(text, "claim every q in boss: q in bore");
     let (_, said) = lenient::read(&format!("{PARTS}claim boss inside bore\n"));
     assert!(said.iter().any(|m| m.contains("`claim every q in a: q in b`")), "{said:?}");
     let (_, said) = lenient::read(&format!("{PARTS}every q in boss: q in bore\n"));

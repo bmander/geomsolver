@@ -137,6 +137,31 @@ pub(super) fn prefix_word(w: &str) -> bool {
             .any(|&k| prefix_op(w, k).is_some() || retired_prefix(w, k).is_some())
 }
 
+/// The token index just past a reference beginning at `j` — a name, then any run of `.field` and
+/// `[index]` — or `None` where no reference begins there.  The parser's lookaheads ask it, and
+/// the notation's (`joined_at`).
+pub(super) fn past_ref(toks: &[(Tok, Span)], mut j: usize) -> Option<usize> {
+    word_at(toks, j)?;
+    j += 1;
+    loop {
+        match toks.get(j).map(|(t, _)| t) {
+            Some(Tok::P('.')) => j += 2,
+            // an index unclosed on its line ends the reference there
+            Some(Tok::P('[')) => j = past_bracket(toks, j, Brackets::Square),
+            _ => return Some(j),
+        }
+    }
+}
+
+/// **More of a body's set said at `i`** (#783 P3): `B and { p | … }`, `B or { p | … }` — a
+/// reference, the word, and a set written in place.  The parser reads the statement so and the
+/// notation leaves it to the parser, both by asking this.
+pub(super) fn joined_at(toks: &[(Tok, Span)], i: usize) -> bool {
+    past_ref(toks, i).is_some_and(|j| {
+        matches!(word_at(toks, j), Some("and" | "or")) && set_at(toks, j + 1).is_some()
+    })
+}
+
 /// The identifier at a token position, shared by parsing and highlighting.
 pub(super) fn word_at(toks: &[(Tok, Span)], i: usize) -> Option<&str> {
     match toks.get(i).map(|(t, _)| t) {
