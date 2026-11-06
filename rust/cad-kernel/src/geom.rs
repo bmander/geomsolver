@@ -325,17 +325,35 @@ impl LevelCircle {
 }
 
 /// `(x(v) − p) · x'(v)`, `x` the point `o` carried to `v` (`Pipe::feet_over`), written once over
-/// `Num`: its rate `|x'|² + (x − p) · x''` read off the carried point's jet (the jet's own second
-/// derivative is not read, and is left nought).
-struct Foot { carry: Carry,o: V,p: V }
+/// `Num` in its own closed form: carried along a line by `δ`, `(o − p)·δ + |δ|² v`; by a screw
+/// (centre `c`, unit axis `k`, turn `θ`, advance `a`), with `d = (o − c)∥ − (p − c)`, `u₁ = (o − c)⊥`
+/// and `u₂ = k × u₁`, `a (d·k) + a² v + θ (d·u₂) cos θv − θ (d·u₁) sin θv` — the helix's own terms
+/// cancelling (`u₁`, `u₂` square to `k` and to one another, the radius kept), so one sine is read
+/// where the carried point's three coordinates' jets were.
+struct Foot { linear: [f64;2],wave: [f64;2],turn: f64 }
+
+impl Foot {
+    fn new(carry: Carry,o: V,p: V) -> Foot {
+        match carry {
+            Carry::Line {delta} => Foot {linear:[dot(sub(o,p),delta),dot(delta,delta)],wave:[0.;2],turn:0.},
+            Carry::Screw {center,axis:k,angle,advance} => {
+                let w = sub(o,center);
+                let along = scale(k,dot(w,k));
+                let (u1,d) = (sub(w,along),sub(along,sub(p,center)));
+                let u2 = cross(k,u1);
+                Foot {linear:[advance*dot(d,k),advance*advance],wave:[angle*dot(d,u2),-angle*dot(d,u1)],turn:angle}
+            }
+        }
+    }
+}
 
 impl crate::util::isolate::Formula for Foot {
     fn jet<T: crate::util::interval::Num>(&self,v: crate::util::interval::Jet<T>) -> crate::util::interval::Jet<T> {
-        let x = self.carry.jet(self.o,v);
-        let off: [T;3] = std::array::from_fn(|i| x[i].v-T::of(self.p[i]));
-        let dot = |a: [T;3],b: [T;3]| a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
-        let (d,dd) = (x.map(|j| j.d),x.map(|j| j.dd));
-        crate::util::interval::Jet {v:dot(off,d),d:dot(d,d)+dot(off,dd),dd:T::of(0.)}
+        use crate::util::interval::Jet;
+        let line = Jet::of(self.linear[0])+v.times(self.linear[1]);
+        if self.turn == 0. { return line }
+        let (s,c) = v.times(self.turn).sin_cos();
+        line+c.times(self.wave[0])+s.times(self.wave[1])
     }
 }
 
@@ -419,7 +437,7 @@ impl Pipe {
         let Carry::Screw {..} = self.carry else { return None };
         // `g(v) = (x(v) − p) · x'(v)`, the spine `x` carried by the screw: written once over `Num`
         // (`Foot`), its value and rate enclosed over a stretch by the same formula in intervals
-        let g = crate::util::isolate::Written(Foot {carry:self.carry,o:self.frame.o,p});
+        let g = crate::util::isolate::Written(Foot::new(self.carry,self.frame.o,p));
         let mut out = vec![0.,1.];
         for &span in spans {
             let at = || (p,"a pipe's spine's feet".to_string());

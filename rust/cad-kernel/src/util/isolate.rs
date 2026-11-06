@@ -142,6 +142,27 @@ impl Function for Parts<'_> {
     fn slope(&self,a: f64,b: f64) -> Iv { (self.slope)(a,b) }
 }
 
+/// A function its search reads, each point's value enclosed once (`roots_at`).
+struct Held<'a> { g: &'a dyn Function,values: std::cell::RefCell<std::collections::BTreeMap<u64,Iv>>,slope: std::cell::Cell<Option<([u64;2],Iv)>> }
+
+impl Function for Held<'_> {
+    fn at(&self,t: f64) -> (f64,f64) { self.g.at(t) }
+    fn value(&self,t: f64) -> Iv {
+        if let Some(&v) = self.values.borrow().get(&t.to_bits()) { return v }
+        let v = self.g.value(t);
+        self.values.borrow_mut().insert(t.to_bits(),v);
+        v
+    }
+    fn slope(&self,a: f64,b: f64) -> Iv {
+        let key = [a.to_bits(),b.to_bits()];
+        if let Some((k,s)) = self.slope.get() { if k == key { return s } }
+        let s = self.g.slope(a,b);
+        self.slope.set(Some((key,s)));
+        s
+    }
+    fn within(&self,a: f64,b: f64) -> bool { self.g.within(a,b) }
+}
+
 /// **A polynomial** (coefficients lowest first) as a `Function`: Horner's rule in floats and in
 /// intervals.
 pub struct Poly<'a>(pub &'a [f64]);
@@ -176,6 +197,9 @@ pub enum Stretch {
 /// stretch it is off: a line passing a hair from tangent).
 pub trait Test1 {
     fn read(&self,g: &dyn Function,a: f64,b: f64) -> (Stretch,f64);
+    /// The enclosure of `g'` over the stretch it read, where it has one (what proves a monotone
+    /// stretch's ends' signs from its middle's value). By default none.
+    fn slope_read(&self,_g: &dyn Function,_a: f64,_b: f64) -> Iv { Iv::ANY }
 }
 
 /// **The interval slope** (interval Newton in one unknown): off where `0 ∉ g(m) + g'(X)(X − m)`,
@@ -187,10 +211,12 @@ impl Test1 for Slope {
         let m = 0.5*(a+b);
         let s = g.slope(a,b);
         let reach = s*(Iv::new(a,b)-Iv::point(m));
+        // (monotone read first: its ends' values its neighbours share, where the middle's is its own)
+        if !s.has_zero() { return (Stretch::Monotone,reach.mag()) }
         let around = g.value(m)+reach;
-        let verdict = if !around.has_zero() { Stretch::Off } else if !s.has_zero() { Stretch::Monotone } else { Stretch::Unsure };
-        (verdict,reach.mag())
+        (if !around.has_zero() { Stretch::Off } else { Stretch::Unsure },reach.mag())
     }
+    fn slope_read(&self,g: &dyn Function,a: f64,b: f64) -> Iv { g.slope(a,b) }
 }
 
 /// **Hand bounds** `[|g'|, |g''|]` over a stretch (the way every reading was proved before #814;
@@ -227,6 +253,9 @@ pub fn roots_by(test: &dyn Test1,stage: super::meter::Stage,g: &dyn Function,[t0
 /// `roots_by`, a build stopped by this search told where (`at`: a point and what was sought there).
 pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f64;3],String),g: &dyn Function,[t0,t1]: [f64;2],
     width: f64,near: &dyn Fn(f64) -> bool) -> Result<Vec<Root>,GaveUp> {
+    // (each point's value enclosed once: a stretch's ends and middle are its neighbours' and its
+    // halves' too)
+    let g = &Held {g,values:std::cell::RefCell::new(std::collections::BTreeMap::new()),slope:std::cell::Cell::new(None)};
     let mut out: Vec<Root> = Vec::new();
     if !(t1 >= t0) { return Ok(out) }
     let width = width.max(1e-15*(t0.abs()+t1.abs()).max(1e-300));
@@ -262,7 +291,12 @@ pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f
             // stretch whose two ends both are is halved toward a touch.
             Stretch::Monotone => {
                 let sign = |v: Iv| if v.lo() > 0. { 1 } else if v.hi() < 0. { -1 } else { 0 };
-                let (sa,sb) = (sign(g.value(a)),sign(g.value(b)));
+                // the ends' values from the middle's and the slope (`g(a) ∈ g(m) + g'(X)(a − m)`),
+                // each end's own where that proves no sign
+                let slope = test.slope_read(g,a,b);
+                let gm = if slope.0.is_some() { g.value(m) } else { Iv::ANY };
+                let end = |x: f64| { let v = gm+slope*(Iv::point(x)-Iv::point(m)); if sign(v) != 0 { sign(v) } else { sign(g.value(x)) } };
+                let (sa,sb) = (end(a),end(b));
                 if sa == 0 && sb == 0 {
                     if b-a <= width || depth >= 96 {
                         if near(m) { out.push(Root {at:m,touch:true}) }

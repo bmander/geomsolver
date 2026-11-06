@@ -11,6 +11,16 @@ pub mod minimum;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Error { InvalidBounds, Overflow, DivisionByZero, OutsideDomain }
 
+/// `1/n!` for `n` from 0 to 21, each enclosed in outward-rounded division, read once.
+fn reciprocals() -> &'static [Interval;22] {
+    static TABLE: std::sync::OnceLock<[Interval;22]> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut out = [Interval::ONE;22];
+        for n in 1..22 { out[n] = out[n-1].div(Interval {lo:n as f64,hi:n as f64}).expect("a positive factorial"); }
+        out
+    })
+}
+
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Interval { lo: f64,hi: f64 }
 
@@ -82,6 +92,28 @@ impl Interval {
         self.sub(turn.mul(Self::point(k)?)?)?.sin_cos()
     }
 
+    /// Enclose sin and cos over an interval within 0.8 of nought (a hair past an eighth of a turn):
+    /// Taylor polynomials of degrees 21 (sin) and 20 (cos), their Lagrange remainders at most
+    /// `r²¹/21!` and `r²²/22!` (every derivative of sin and cos at most 1; a sine's next term is of
+    /// degree 23), `r ≤ 0.8` their radius — both below 1e-21, which bounds them.
+    fn quarter(self) -> Result<(Self,Self),Error> {
+        // the series by Horner's rule in x², its coefficients ±1/n! enclosed once (`RECIPROCALS`)
+        let f = reciprocals();
+        let x2 = self.square()?;
+        let mut sine = f[21];
+        let mut cosine = f[20];
+        for n in (1..=10).rev() {
+            sine = f[2*n-1].sub(x2.mul(sine)?)?;
+            cosine = f[2*n-2].sub(x2.mul(cosine)?)?;
+        }
+        let sine = self.mul(sine)?;
+        // (0.8²¹/21! < 1.8e-22 and 0.8²²/22! smaller still: one constant bounds both)
+        let remainder = Self::new(-1e-21,1e-21)?;
+        let (sine,cosine) = (sine.add(remainder)?,cosine.add(remainder)?);
+        let clip = |x: Self| Self::new(x.lo.max(-1.),x.hi.min(1.));
+        Ok((clip(sine)?,clip(cosine)?))
+    }
+
     /// Enclose sin and cos for the entire input interval in [-8,8] radians.
     /// No argument reduction or approximate pi enters the guarantee. Larger
     /// inputs are refused; callers must supply a separately justified reduction.
@@ -106,6 +138,21 @@ impl Interval {
             let clip = |x: Self| Self::new(x.lo.max(-1.),x.hi.min(1.));
             return Ok((clip(sine)?,clip(cosine)?));
         }
+        // a point past an eighth of a turn: shifted by whole quarter turns into [−π/4, π/4] — π/2
+        // enclosed between the doubles either side of it, the shift made in outward-rounded
+        // arithmetic, so the result holds x − kπ/2 for the exact x — where the series needs ten
+        // terms each, not twenty-four (#814: a certified search reads sines at every stretch), and
+        // the quadrant's sine and cosine read back exactly (a swap and a sign)
+        if radius > std::f64::consts::FRAC_PI_4 {
+            let k = (self.lo/std::f64::consts::FRAC_PI_2).round();
+            let half_pi = Self::new(std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2.next_up())?;
+            let reduced = self.sub(half_pi.mul(Self::point(k)?)?)?;
+            if reduced.lo.abs().max(reduced.hi.abs()) <= 0.8 {
+                let (s,c) = reduced.quarter()?;
+                return Ok(match (k as i64).rem_euclid(4) { 0 => (s,c),1 => (c,s.neg()),2 => (s.neg(),c.neg()),_ => (c.neg(),s) })
+            }
+        }
+        if radius <= 0.8 { return self.quarter() }
         let x2 = self.square()?;
         let (mut sine,mut cosine) = (self,Self::ONE);
         let (mut st,mut ct) = (self,Self::ONE);
