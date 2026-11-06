@@ -22,17 +22,17 @@ This plan makes every intrinsic row derived, and makes a record impossible to wr
 - **Each fact is stated once, and everything else is derived** (principle 2, "Solvent shrinks").
   A row that is the only record of a fact is the fact stated in the wrong place: a reader has to
   invert the derivation to recover it. `chart_square` and `graft::axes_along` are those inversions.
-- **Redundancy and regular structure are found from the rank of the equations, not from flags or
-  shape-specific code.** Matching rows by kind and argument order is shape-specific code.
+- **Redundancy and structure are found from the facts themselves, not from flags or special
+  cases** (the same principle). Matching rows by kind and argument order is a special case.
 - **Silently wrong geometry is the worst failure** (principle 1). A dropped row is silent. The part
   solves, a drag moves what the drawing holds, and the only symptom is a count of freedoms nobody
   can trace (#817 took a bisection of a 5 500-unknown document).
 - **Do it right even if it's hard.** A test net alone catches the class after the fact. The
   principled fix makes a new structural fact unable to compile without its derivation, then keeps
   the net as the independent check.
-- **Frames are the unit of placement and of motion; frames compose by nesting.** Most of the
-  records are facts about frames: square, standing along lines, sharing a place. Recording them on
-  the frame makes the frame the one owner of its structure.
+- **Placement and motion are expressed with frames,** which compose by nesting (principle 4).
+  Most of the records are facts about frames: square, standing along lines, sharing a place.
+  Recording them on the frame makes the frame the one owner of its structure.
 
 ## The inventory
 
@@ -171,7 +171,7 @@ Each stage leaves the suite green and lands on its own.
 ## Not in this plan
 
 - **Square is not a property of frames.** A frame need not be orthogonal, and a plane is a set,
-  not a frame; the Bible's wording that says otherwise is to be corrected. What is square is an
+  not a frame. What is square is an
   instance's *placement*: a component drawn once and carried to where it stands keeps its
   distances only if the carry is rigid. So `Chart::square` records "this frame places an instance
   rigidly" (#548), not a kind of frame, and no other chart takes the row.
