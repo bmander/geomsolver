@@ -743,12 +743,28 @@ impl Net {
         let (j0,j1) = (span(self.dv,&self.vknots,nv,v0.min(v1))-self.dv,span(self.dv,&self.vknots,nv,v0.max(v1)));
         self.poles[i0..=i1].iter().flat_map(move |row| row[j0..=j1].iter().copied())
     }
+    /// **The knots inside the domain at which the sheet is no more than continuous**, along `u`
+    /// (`k` 0) or `v` (1): each one `degree` times or more, where the sheet's derivative across them
+    /// may jump (a net fitted patch by patch, its knots each the degree's multiplicity), distinct
+    /// and rising.
+    pub fn kinks(&self,k: usize) -> Vec<f64> {
+        let (p,t) = if k == 0 { (self.du,&self.uknots) } else { (self.dv,&self.vknots) };
+        let [a,b] = self.domain()[k];
+        let mut out: Vec<f64> = t.windows(p).filter(|w| w[0] == w[p-1] && w[0] > a && w[0] < b).map(|w| w[0]).collect();
+        out.dedup();
+        out
+    }
     /// **Bounds on the sheet's second derivatives over `[u0, u1] × [v0, v1]`** — `|S_uu|`, `|S_uv|`,
     /// `|S_vv|` — from its derivatives' own nets (a B-spline's derivative is a B-spline whose poles
     /// are its differences, and lies in their hull), read over the poles reaching the box. `None`
-    /// for a rational sheet, whose derivatives are quotients.
+    /// for a rational sheet, whose derivatives are quotients, and for a box reaching across a kink
+    /// (`kinks`): its derivatives' nets hold either side of it, but across it the first derivative
+    /// jumps and no bound on the second holds (#812: a ray's crossing just past a kink of a gear's
+    /// fitted flank certified a box's width off the flank by a bound that held on one side alone).
     pub fn second_bounds(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Option<[f64;3]> {
         if self.weights.is_some() { return None }
+        let across = |k: usize,a: f64,b: f64| self.kinks(k).iter().any(|&x| x > a.min(b) && x < a.max(b));
+        if across(0,u0,u1) || across(1,v0,v1) { return None }
         let (nu,nv) = (self.poles.len(),self.poles[0].len());
         let (i0,i1) = (span(self.du,&self.uknots,nu,u0.min(u1))-self.du,span(self.du,&self.uknots,nu,u0.max(u1)));
         let (j0,j1) = (span(self.dv,&self.vknots,nv,v0.min(v1))-self.dv,span(self.dv,&self.vknots,nv,v0.max(v1)));

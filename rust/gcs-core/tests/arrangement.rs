@@ -327,6 +327,32 @@ fn a_split_heals_a_touch_out_of_each_cell() {
     }
 }
 
+/// **A sheet's piece that parts nothing is no cell** (#812, `boolean::split`): a block split by a
+/// plane across it and by a square standing wholly inside its upper half, touching nothing — the
+/// square's two sides a shell of their own, which was returned as a cell of volume nought with no
+/// point inside it, and a 64-tooth gear built whole was refused for it. Two cells of half the block
+/// each, six faces each. A square slit into the block from its top is of its cell: one cell of
+/// eight faces, the slit's two sides among them.
+#[test]
+fn a_sheets_piece_parting_nothing_is_no_cell() {
+    use gcs_core::brep::build::{face,square};
+    let block = block([-2.,-2.,-2.],[2.,2.,2.]);
+    let across = face(&square([0.,0.,0.],[0.,0.,1.],3.)).unwrap();
+    let fin = face(&square([0.,0.,1.],[1.,0.,0.],0.5)).unwrap();
+    let cells = gcs_core::brep::boolean::split(&block,&across.joined(&fin),1e-9).unwrap();
+    assert_eq!(cells.len(),2,"{:?}",cells.iter().map(|c| (volume(c),c.faces.len())).collect::<Vec<_>>());
+    for c in &cells {
+        c.check(1e-9).unwrap();
+        close(volume(c),32.,1e-12);
+        assert_eq!(c.faces.len(),6,"the block's half, the fin no face of it");
+    }
+    let slit = face(&square([0.5,0.,2.],[1.,0.,0.],1.)).unwrap();
+    let cells = gcs_core::brep::boolean::split(&block,&slit,1e-9).unwrap();
+    assert_eq!(cells.len(),1);
+    close(volume(&cells[0]),64.,1e-12);
+    assert_eq!(cells[0].faces.len(),8,"the block's six, the slit's two sides");
+}
+
 /// **A bilinear sheet's block in common with a drum is the drum under the sheet** (#796): the block
 /// under the saddle `z = 10 + xy/8` over the square |x|, |y| ≤ 10, floored at z = −5 (four bilinear
 /// nets round it, lofted along x), and a drum of radius 8 about z standing on z = 0 share the drum

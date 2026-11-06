@@ -2637,7 +2637,10 @@ mod reading {
 /// cells, each a connected closed shell. The faces are split where they cross; the sheets' pieces
 /// inside the solid are kept, both ways round; and at every edge the pieces meeting there are taken
 /// in turn about it, each two neighbours bounding one cell by the sides that face the gap between
-/// them. A cell holding a solid face's outside is the outside, left out.
+/// them. A cell holding a solid face's outside is the outside, left out; so is a shell every face of
+/// which it holds by both sides — a sheet's piece inside a cell that parts nothing, a fin with no
+/// edge on the cell's boundary (one an earlier sheet cut off already reaching it, #812): it bounds
+/// nothing, and is no cell. A piece slit into a cell from its boundary is of the cell's shell.
 pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
     // a sheet has no material side, but its faces are split as any face is, the material left of its
     // outer loop in its parameters: one handed over wound the other way is turned round
@@ -2706,7 +2709,7 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
     }
     let mut cells = Vec::new();
     for (k,shell) in complex.shells.iter().enumerate() {
-        if outside.contains(&k) { continue }
+        if outside.contains(&k) || shell.iter().all(|&(f,front)| shell.contains(&(f,!front))) { continue }
         let own: Vec<usize> = shell.iter().filter(|&&(f,front)| !(front && pieces[kept[f]].0 == Side::A)).map(|&(f,_)| f).collect();
         let faces: Vec<Face> = shell.iter().filter(|&&(f,front)| !(front && pieces[kept[f]].0 == Side::A))
             .map(|&(f,front)| face_of(kept[f],front)).collect();
