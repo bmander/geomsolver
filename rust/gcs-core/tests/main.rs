@@ -293,6 +293,7 @@ mod style;
 mod sundial;
 mod surface_contact;
 mod swept_closed;
+mod tool_reading;
 mod touch_curves;
 mod swept_instant;
 mod swept_loci;

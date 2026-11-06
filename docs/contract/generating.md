@@ -345,6 +345,48 @@ precision before and after, the same to the bit.  (Read through `Twist::body` an
 instead, the walk moves by an ulp, and that alone turns three triangles of the whole turn's mesh over
 (`the_wheel_turned_once_leaves_its_shadow_all_round`): the mesher's, F4's to mend.)
 
+**The tool read from its B-rep (#721 F1, #828 F1a; `brep::swept::read`, `Tool::read(&Brep, scale)`):**
+the kernel reads a sweep's tool off the boundary it builds, by its faces' surfaces and the edges
+they share, never by how it was drawn.  A face of revolution spanning a whole turn is read about
+its own axis (`Cylinder`, `Cone`, `Sphere`, `Torus`, a `Revolution` of a line or a circle), and so
+is a plane bounded by circles about one centre (#684 O).  A face whose one loop is two lines or two
+coaxial arcs joined end to end by two lines is a strip (`ToolSurface::Extruded`, `Side::Straight`
+where the far edge is the near one carried, `Side::Leaning` where not).  Strips sharing a ruling
+are read one way round, each the way its neighbour reads the ruling, so a box is a prism one way of
+three.  A face of revolution trimmed to part of a turn is its surface's whole turn, and a plane
+sharing a circle with a revolution is a flat of it, one flat for each axis it shares a circle
+with; in both cases the material tells the face from the rest, as the tool keeps the faces a
+Boolean hides.  Any other plane is a cap, at the strips' far end where it meets a far rim.
+Corners (`PatchEdge`) are two readings sharing an edge at an end of each one's meridian or edge,
+and a meridian closed on itself meets itself at its seam.  Creases are two strips sharing a rim,
+the one's far and the other's near, their rulings going on across it.  Each revolution about an
+axis starts from the half-plane the first face about it does: its frame's `x`, the profile's
+half-plane for a face a revolution built.  The walk reads two faces' corner there and starts round
+a ring there.  The material is the boundary's (`read::Boundary`): the distance to the nearest
+face's foot or edge, a seam bounding nothing.  It is signed by that face's outward normal, by the
+edge's faces' summed normals inside an edge, and at a corner by a mesh of the boundary, or by its
+point location where the point is within the mesh's sag.  A face no reading takes is refused by its
+geometry with a witness on it (`Unread::FreeForm`, G10: a B-spline, blend, face family, extrusion
+or affine image; `Unread::Meridian`, G8: a revolution of another curve; `Unread::Unfit`).  Nothing
+switches to it yet: the classes still read the tool off the drawing (`SweepContacts::read`), and
+`tests/tool_reading.rs` holds the two readings to one tool over every sweep the drawing's reading
+reads, as an oracle until F1b switches.  The gates are these:
+- `the_two_readings_bound_one_tool`: each point of either reading's faces on the tool lies on a face
+  of the other of one kind, square to one normal.
+- `the_two_readings_are_one_material`: the two materials agree in sign off the boundary.
+- `the_two_readings_turn_their_corners_alike`: sharp corners and creases are each other's.
+- `the_two_readings_walk_alike`: under a constant twist the walks through the blank agree node for
+  node to rounding, or are refused by one row.
+
+These run over the sweep catalogue.  `every_examples_tools_read_alike` is the slow tier's, over
+every example: 67 tools, the hypoid crowns standing about two axes on one plane, the twist drills.
+The B-rep reading reads more than the drawing's in two places.  It reads a drafted prism's caps,
+which the drawing's reading leaves to admission (`swept::admission::ends`).  It also reads the
+faces a Boolean of the tool splits, and their corners: a union of two beads is refused at the
+concave corner where they meet, where the drawing's whole tori are refused by a ring in contact all
+round.  `a_face_no_closed_form_reads_is_refused_by_name` holds the Wankel's epitrochoid bore to
+`FreeForm`, its witness on the face.
+
 **The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
 every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding
 the sweep split by all of them, each cell classified by the kernel's membership test
