@@ -171,7 +171,21 @@ a swap made without its callers knowing:
   search can be read both ways and held to the same roots
   (`enclosures::the_tests_behind_the_boundary_find_the_same_roots`); no curve–surface reading uses
   them. A box is halved otherwise; one narrower than its width that cannot be parted is a touch
-  where the caller's tolerance accepts its middle. **A box is read grown past its sides**
+  where the caller's tolerance accepts its middle. A stretch's sign at its ends is proved by its
+  value's enclosure, never read in floats — rounding's noise beside a double root once made a
+  circle's tangency to a torus dozens of crossings — and two crossings a hair apart the opposite
+  ways are kept as the pair they are: merged into one, a trace touching a plane flipped a ray's
+  count and a ring turned about an axis built three times its volume
+  (`swept_closed::a_ring_turned_about_an_axis_along_its_own_closes_into_its_sweep`). **A run is
+  proved, not parted**: where a curve keeps within the tolerance of a surface for a while, no box
+  can part its roots nor exclude them, so the run is proved — along the curve against an
+  algebraic surface by the form's enclosure over a whole stretch (`Function::within`), against a
+  sheet piece by piece along a straight path of its parameters between feet found by
+  Gauss–Newton, `C(t) − S(path(t))` enclosed so the tangents cancel (`System::run`) — its ends read
+  as touches and nothing inside it searched again
+  (`enclosures::a_curve_lying_along_a_surface_for_a_while_is_one_run_proved`; a tee's crotch, a
+  canal touching its operands, a conrod's pocket rims). A curve all but tangent to a sheet is told
+  off it along the sheet's normal (`System::frame`), where the world axes' components are not. **A box is read grown past its sides**
   (`isolate::GROW`), so a root on the face two halves share is inside both and the two that find it
   are one (`roots::a_crossing_on_the_face_two_halves_share_is_found_once`,
   `arrangement::a_bilinear_sheets_block_in_common_with_a_drum_is_the_drum_under_the_sheet`).
@@ -204,9 +218,11 @@ a swap made without its callers knowing:
   and rate enclosed by the same formula in intervals.
 - **How a pair is read** (`query::Reader`): `General`, **the general reading every pair has** — a
   surface with an algebraic form (a plane, a quadric, a torus) along the curve, one unknown, `F(C(t))`
-  and `∇F · C'` enclosed from the curve's enclosure; any other as `C(t) = S(u, v)`, three unknowns
-  over the curve's stretch and the parameters the surface reaches, a line with no end clipped to a
-  bounded surface's own box — and `Fast` (what `curve_surface` reads by), **the closed forms kept
+  and `∇F · C'` enclosed from the curve's enclosure; an extrusion and a revolution, two unknowns,
+  the curve against the profile seen along the way or against the meridian in `(ρ², z)` (no
+  singularity on the axis, and a line along an extrusion's way no singular system); any other as
+  `C(t) = S(u, v)`, three unknowns over the curve's stretch and the parameters the surface reaches,
+  a line with no end clipped to a bounded surface's own box — and `Fast` (what `curve_surface` reads by), **the closed forms kept
   as fast paths**, each held to the general reading: a line against a plane, a cone, a torus and a
   conic turned as polynomials along it (`query::line_revolution`, a quartic in the meridian's own
   parameter), against a turned contact's meridian (#780 C3, `query::line_turned`) and the cylinder a
@@ -230,7 +246,10 @@ curve lying in the surface (read at its quarters, then at steps a fraction of th
 feature apart) is `Along` before any reader is asked; a root past either end by more than the
 tolerance is no meeting, one within it is at the end; a run of roots the curve stays within the
 tolerance of the surface between is one meeting — a crossing where the surface's side changes
-across it, read where the curve has left the tolerance, a touch at its middle where it does not (a
+across it, read where the curve has left the tolerance, a touch where it does not — standing where
+the surface's distance turns along the run (a tangency, its rate past rounding's turning once
+across the run as far as the curve keeps within the tolerance), or one at each end where the curve
+lies in the surface along it (its rate rounding's) — (a
 double root rounding parts, a root two spans or stretches both find, and the noise a polynomial's
 rounding makes where a line runs along a torus's tube top, its distance the fourth power of the
 way: hundreds of crossings a micrometre apart before); and an end on the surface is a crossing

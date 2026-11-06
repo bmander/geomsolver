@@ -422,7 +422,8 @@ impl Pipe {
         let g = crate::util::isolate::Written(Foot {carry:self.carry,o:self.frame.o,p});
         let mut out = vec![0.,1.];
         for &span in spans {
-            let roots = crate::util::isolate::roots_by(&crate::util::isolate::Slope,crate::util::meter::Stage::Inverse,&g,span,1e-12,&|_| true).ok()?;
+            let at = || (p,"a pipe's spine's feet".to_string());
+            let roots = crate::util::isolate::roots_at(&crate::util::isolate::Slope,crate::util::meter::Stage::Inverse,&at,&g,span,1e-12,&|_| true).ok()?;
             out.extend(roots.into_iter().map(|x| x.at));
         }
         Some(out)

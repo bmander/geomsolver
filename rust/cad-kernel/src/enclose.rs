@@ -345,10 +345,12 @@ impl Enclosed<1> for Traced {
         let chord = pts.windows(2).map(|w| crate::util::space::distance(w[0].1,w[1].1)).fold(0.,f64::max);
         let scale = pts.iter().map(|p| p.1.iter().fold(0f64,|m,x| m.max(x.abs()))).fold(0.,f64::max);
         let grow = |x: Iv,by: f64| Iv::new(x.lo()-by,x.hi()+by);
-        let at: I3 = std::array::from_fn(|k| grow(Iv::of_all(pts.iter().map(|p| p.1[k])),chord+1e-12*(1.+scale)));
+        // (a point of it its projected point, to a few units of the coordinates' rounding: a wider
+        // margin, read through a quartic's cancelling terms, proved no sign anywhere near nought)
+        let at: I3 = std::array::from_fn(|k| grow(Iv::of_all(pts.iter().map(|p| p.1[k])),chord+16.*f64::EPSILON*(1.+scale)));
         let d: I3 = std::array::from_fn(|k| {
             let h = Iv::of_all(rates.iter().map(|r| r[k]));
-            grow(h,(2.*(h.hi()-h.lo())).max(1e-6*h.mag()))
+            grow(h,(2.*(h.hi()-h.lo())).max(1e-9*h.mag()))
         });
         Patch {at,d:[d],proved:false}
     }

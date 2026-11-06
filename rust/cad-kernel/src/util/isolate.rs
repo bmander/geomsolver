@@ -34,6 +34,19 @@
 //! A box or a stretch neither test decides is halved; one that cannot be parted before it is
 //! `width` wide holds a singular root — a touch — where `near` accepts its middle. Each box is read
 //! grown a little past its sides (`GROW`), so a root on the face two halves share is inside both.
+//! A stretch's sign at its ends is proved by its value's enclosure, not read in floats (rounding's
+//! noise beside a double root made a touch dozens of crossings), and two crossings a hair apart
+//! the opposite ways are kept as the pair they are (one crossing in their place flips a ray's
+//! count).
+//!
+//! **A run is proved, not parted** (#814): where the function stays within the caller's tolerance
+//! of nought along a stretch — a curve lying along a surface for a while — no box can part its
+//! roots nor exclude them. A `Function` says when a whole stretch is within the tolerance
+//! (`within`), a `System` proves a run through a point its tolerance accepts (`run`); the search
+//! reads its ends as touches, which the caller settles as one meeting, and no box inside it again.
+//! A system may also offer an orthogonal frame its equations are read in besides their own
+//! (`frame`): a curve all but tangent to a surface is told off it along the surface's normal,
+//! where its world axes' components are not.
 //!
 //! **Not proved means refused** (#814 P0): a root a test certifies is returned only once it is
 //! settled within the box it was certified in and `near` accepts it there; a Newton iterate that
@@ -67,12 +80,18 @@ pub enum GaveUp {
 
 /// One more stretch or box read: `read` of them so far, the search giving up past `MOST` or under
 /// a stopped build.
-fn read_one(read: &mut usize,stage: super::meter::Stage) -> Result<(),GaveUp> {
+fn read_one(read: &mut usize,stage: super::meter::Stage) -> Result<(),GaveUp> { read_at(read,stage,&nowhere) }
+
+/// `read_one`, the build told where should it stop there.
+fn read_at(read: &mut usize,stage: super::meter::Stage,at: &dyn Fn() -> ([f64;3],String)) -> Result<(),GaveUp> {
     *read += 1;
     if *read > MOST { return Err(GaveUp::Most) }
-    if !super::meter::tick(stage) { return Err(GaveUp::Stopped) }
+    if !super::meter::charge(stage,1,at) { return Err(GaveUp::Stopped) }
     Ok(())
 }
+
+/// Nowhere to name.
+fn nowhere() -> ([f64;3],String) { ([f64::NAN;3],String::new()) }
 
 // ---------------------------------------------------------------------------------------------
 // One unknown
@@ -202,6 +221,12 @@ pub fn roots(g: &dyn Function,[t0,t1]: [f64;2],width: f64,near: &dyn Fn(f64) -> 
 /// C1).
 pub fn roots_by(test: &dyn Test1,stage: super::meter::Stage,g: &dyn Function,[t0,t1]: [f64;2],width: f64,
     near: &dyn Fn(f64) -> bool) -> Result<Vec<Root>,GaveUp> {
+    roots_at(test,stage,&nowhere,g,[t0,t1],width,near)
+}
+
+/// `roots_by`, a build stopped by this search told where (`at`: a point and what was sought there).
+pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f64;3],String),g: &dyn Function,[t0,t1]: [f64;2],
+    width: f64,near: &dyn Fn(f64) -> bool) -> Result<Vec<Root>,GaveUp> {
     let mut out: Vec<Root> = Vec::new();
     if !(t1 >= t0) { return Ok(out) }
     let width = width.max(1e-15*(t0.abs()+t1.abs()).max(1e-300));
@@ -210,7 +235,7 @@ pub fn roots_by(test: &dyn Test1,stage: super::meter::Stage,g: &dyn Function,[t0
     let mut stack = vec![(t0,t1,0usize)];
     let mut read = 0;
     while let Some((a,b,depth)) = stack.pop() {
-        read_one(&mut read,stage)?;
+        read_at(&mut read,stage,at)?;
         let m = 0.5*(a+b);
         if g.within(a,b) {
             out.push(Root {at:a,touch:true});
