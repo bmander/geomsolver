@@ -912,6 +912,73 @@ tool; the roots meet on the locus; and a ball's contacts under a tumble (a turn 
 across it) bound what it sweeps, a hair inside a member and a hair outside not, by the kernel's
 membership (`a_balls_contacts_bound_what_it_sweeps`).  Sampled where it samples.
 
+**K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
+sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame
+along a path #398; a `Relative`), is built on the closed class's one arrangement
+(`swept::closed::closed`, `cut_from`) from three candidates: the tool where it starts and where it
+stops, whole, and the sheet its contact sweeps over the roll. The tool must be a **convex solid of
+revolution** (`Revolved::read`: every face a plane square to one axis, a cylinder, a cone or a torus
+about it, or a ball centred on it, its meridian one chain from the axis round to the axis turning one
+way); anything else is refused by name before anything is built (`Unbuilt::Curved` at a point of the
+face, `swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`: a box, a
+whole ring). **The contact is read per tool, at each instant, in a pencil of half-planes** about the
+line through the tool's centre along its velocity: each half-plane cuts the convex tool in an arc
+along which `n · v` changes sign once, its root the contact there (on a sharp edge where the edge's
+fan holds it). A half-plane holding no one root, a contact crossing a sharp edge straight from one
+face onto the other (a fan of no width, between a fan's piece and none), or a contact whose pieces
+(each on one face or one sharp edge, joined where it crosses a seam or reaches an edge) change over
+the roll, is refused by name (`Curved`). The chart is transverse to the branch locus, so the patch is not cut there; a
+piece on an edge is read along the edge's circle, where the pencil's angle runs as a square root.
+The sheet is a quintic net over (the fraction round the loop, the roll) fitted until halfway
+points stand within a tenth of the arrangement's tolerance (`K2_FIT`), cut into a tube of faces at
+the pieces' joins, its rims the contact at the end rolls. **Every meeting of the tool at an end
+pose with the sheet is given** (`boolean::Given`, R5): the piece's iso-curve at that roll on the
+faces holding it (an edge's piece on both its faces), nothing on the others — the sheet stands
+nowhere inside the tool at an end pose — so nothing is sought between them (a bull-nose slid at a
+lean, its end poses' touches sought, took 20 s; given, 0.8 s). The tool at an end pose is turned
+about its own axis so its seams stand clear of its contact there (#810's `seam_away`), and a ball
+laid anew with its poles along its centre's velocity, so its touch circle passes no pole
+(`patches::posed`). The
+sheet stops at its rims: carried on past them, its flap's section on a blank's face the tool stands
+across where it starts was tangent to the tool's section there, and the cell between them misread
+(refused by the judge, never returned wrong); stopping there, the sheet's section ends on the
+tool's. Held (`tests/swept_patches.rs`): **a ball along a
+spline frame is its fitted tube** — `path.sv`'s ball, to 1.2e-9 of the canal class's own fitted
+tube built apart (`swept::canal::tube`) and of `π r² L + 4/3 π r³`, to a Monte Carlo of the definition
+and to membership (`a_ball_along_a_spline_frame_is_its_fitted_tube`); a bull-nose slid at a lean
+read instant by instant is the constant twist's build to 1e-8
+(`a_bull_nose_slid_at_a_lean_instant_by_instant_is_the_slides_sweep`); a bull-nose screwed beside
+the axis, which the constant twist's road refuses (`Curved`), to 1e-6 of a volume worked apart
+(`a_bull_nose_screwed_instant_by_instant_closes_into_its_sweep`); and **a bull-nose along a spline
+frame** leaning 30° toward where it goes, to 1e-6
+(`a_bull_nose_along_a_spline_frame_closes_into_the_volume_its_faces_advance_through`). The volume
+worked apart (`swept_patches::advanced`) holds where the tool enters each point once and leaves it
+once: what the tool holds where it starts and `∫ ∫ (n · v)⁺ dA dt` over its faces, each ring's angle
+cut where `n · v` or a clipping height changes sign and the meridian where either first reaches a
+ring, read in a cosine substitution that takes the square root out; each such volume is itself held
+to a Monte Carlo of the definition (the tool's poses over the roll carrying each point back).
+**Dispatch** (`solid::closed_class::admit`, `Closed::general`): a sweep every other class refuses,
+whose motion is no constant twist and which `closed::reads_general` takes — the tool a convex solid
+of revolution, its contact read round the pencil at 65 rolls with the same pieces at each, its
+centre's path coming back nowhere (`patches::admits`) — is the closed class's ("any rigid motion");
+otherwise the first class's refusal stands (a lens rolled with its pole in contact at every time,
+its contact crossing its sharp rim with no fan, keeps `Stationary`; a drafted disc whose path loops
+three times keeps the planar subtraction's `Slabs`); the build carries the blank back into the tool's placing, cuts it there and
+carries it out (`brep::sweep::closed::cut_on`); a model unit other than the millimetre is the
+trajectory scaled, part by part (`Trajectory::scaled`). Drawn: `solid_sweeps/spline_mill.sv`, the bull-nose riding
+`path.sv`'s spline with its round sunk in a block, the block less what the mill holds below its top
+where it starts and `∫ ∫ (n · v)⁺ dA dt` over its faces below the top, to 1e-8, its STL agreeing with
+the field and the page's stepped build held to the export
+(`solid_sweeps_examples::the_bull_nose_along_a_spline_cuts_what_its_faces_advance_through`). A sheet
+that folds (its area factor `|Σ_u × Σ_t|` below a thousandth of its rates', or its normal turning
+against the way out from the tool's centre: `Folded`) or comes back onto itself (the tool's centre
+back within twice its reach after running half a turn of a circle of it, the canal's B2 for any
+convex tool: `Returns`) is refused by name at the fitted points, sampled, the judge seeing what falls
+between (`a_sheet_folding_or_coming_back_under_any_motion_is_refused_by_name`). **Left open**: a tool
+no convex solid of revolution; a contact whose pieces change over the roll (a contact reaching an
+edge or a seam partway: the patch cut there, step 6); a fold cut where it lies and a returning sheet
+entered in stretches (L1's, under such a motion); and the sheet carried past its rims.
+
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:
 a turn, or a turn seen from a turn, a sinusoid in the roll; a slide seen from a turn, a rack, a

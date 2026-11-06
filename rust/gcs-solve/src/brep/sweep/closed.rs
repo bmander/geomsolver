@@ -38,11 +38,19 @@ pub fn cut_on(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,
         let Class::Closed(found) = &prepared.classes[k] else { continue };
         for c in recipe.sweeps.iter().filter(|c| c.swept == swept) {
             let clock = crate::clock::Instant::now();
-            // the tool and its screw placed where the body cuts it, the blank left where it stands
+            // the tool and its screw placed where the body cuts it, the blank left where it stands —
+            // under a motion no constant twist takes (K2), the blank carried back into the tool's
+            // placing instead, cut there and carried out again
             let place = super::sector::placed(c.pose,scale);
-            let path = crate::brep::trajectory::Trajectory::Twist(found.screw.moved(&place));
-            solid = crate::brep::swept::closed::cut_from(&solid,&found.tool.moved(&place),&path,found.roll,MEMBERSHIP_BAR,ARRANGED)
-                .map_err(|u| {
+            let cut = match found.screw() {
+                Some(screw) => {
+                    let path = crate::brep::trajectory::Trajectory::Twist(screw.moved(&place));
+                    crate::brep::swept::closed::cut_from(&solid,&found.tool.moved(&place),&path,found.roll,MEMBERSHIP_BAR,ARRANGED)
+                }
+                None => crate::brep::swept::closed::cut_from(&solid.moved(&place.inverse()),&found.tool,&found.path,found.roll,
+                    MEMBERSHIP_BAR,ARRANGED).map(|b| b.moved(&place)),
+            };
+            solid = cut.map_err(|u| {
                     let (condition,message,at) = closed_class::said(u,&found.tool_name);
                     let at = at.map_or(String::new(),|p| format!(" at ({:.4}, {:.4}, {:.4}) mm",p[0],p[1],p[2]));
                     ExportRefusal::at(Stage::Split,format!("`{}`: less `{name}` ({}: {}): {message}{at}",sk.solids[body].name,

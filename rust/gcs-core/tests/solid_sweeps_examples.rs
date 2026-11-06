@@ -426,7 +426,7 @@ fn the_spoke_swings_a_slot_ended_by_a_zone_of_a_sphere() {
 fn the_bar_plunged_aslant_stops_inside_the_plate() {
     let e = example("plunge.sv");
     let Class::Closed(found) = class(&e,"plate") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     assert_eq!((found.tool.faces.len(),found.tool.edges.len()),(6,12));
     near(exported(&e,"plate"),800.-crate::closed_class::plunged_away(8.),1e-9);
 }
@@ -442,7 +442,7 @@ fn the_bar_plunged_aslant_stops_inside_the_plate() {
 fn the_drum_plunged_aslant_stops_inside_the_plate() {
     let e = example("stopped_punch.sv");
     let Class::Closed(found) = class(&e,"plate") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     near(exported(&e,"plate"),800.-crate::closed_class::drum_plunged_away(8.),1e-9);
 }
 
@@ -455,7 +455,7 @@ fn the_drum_plunged_aslant_stops_inside_the_plate() {
 fn the_drum_turned_partway_stops_inside_the_ring() {
     let e = example("stopped_drum.sv");
     let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
-    assert!(found.screw.is_turn(),"a turn");
+    assert!(found.screw().unwrap().is_turn(),"a turn");
     near(exported(&e,"block"),PI/3.*80.-crate::closed_class::drum_turned_partway_away(),1e-9);
 }
 
@@ -494,7 +494,7 @@ fn the_drum_screwed_mills_a_helical_groove() {
 fn the_bull_nose_turned_partway_stops_inside_the_ring() {
     let e = example("stopped_bullnose.sv");
     let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
-    assert!(found.screw.is_turn(),"a turn");
+    assert!(found.screw().unwrap().is_turn(),"a turn");
     let (d,big,c,h) = (10.,1.,0.3,1.);
     let rz = (big-c)*c+PI*c*c/4.+big*(h-c);
     let r2z = (big-c)*(big-c)*c+(big-c)*PI*c*c/2.+2.*c*c*c/3.+big*big*(h-c);
@@ -517,7 +517,7 @@ fn the_bull_nose_turned_partway_stops_inside_the_ring() {
 fn the_leaning_mill_turned_partway_bores_its_channel() {
     let e = example("leaning_mill.sv");
     let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
-    assert!(found.screw.is_turn(),"a turn");
+    assert!(found.screw().unwrap().is_turn(),"a turn");
     let beta = 25f64.to_radians();
     let swept = 3.*PI+100./360.*crate::swept_turned::flat_drum_whole([beta.sin(),0.,beta.cos()]);
     let exact = exported_within(&e,"block",Some(Tolerance::new(0.01).unwrap()));
@@ -583,7 +583,7 @@ fn the_ball_end_mill_screwed_at_other_leads_mills_its_groove() {
 fn the_ring_plunged_at_a_lean_bores_round_its_core() {
     let e = example("leaning_ring.sv");
     let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     near(exported(&e,"block"),16.*16.*8.-crate::swept_slid::plunged_away(3.,1.,35f64.to_radians(),4.),1e-9);
 }
 
@@ -598,9 +598,30 @@ fn the_ring_plunged_at_a_lean_bores_round_its_core() {
 fn the_bull_nose_plunged_at_a_lean_stops_inside_the_block() {
     let e = example("leaning_bullnose.sv");
     let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     let mill = crate::swept_slid::Mill {big:2.,c:0.5,top:0.,h:3.};
     near(exported(&e,"block"),16.*16.*8.-mill.plunged_away(30f64.to_radians(),[0.,0.,-4.]),1e-9);
+}
+
+/// `spline_mill.sv` (the closed class under any rigid motion, #780 L3): a bull-nose mill leaning
+/// 30° toward where it goes, riding a frame along `path.sv`'s spline with its round sunk 1 mm in a
+/// block. No constant twist carries it, and the generating class reads no frame along a path; the
+/// closed class reads each instant's contact round the mill, fits the sheet it sweeps, and cuts the
+/// block on one arrangement. The block loses what the mill holds below its top where it starts and
+/// `∫ ∫ (n · v)⁺ dA dt` over its faces below the top (`swept_patches::advanced`), to a part in a
+/// hundred million of what is left, its STL agreeing with the field. Built once, within 0.01 mm: the
+/// page's stepped builder is held to the same build (`object_builder::builds_as_exported`).
+#[test]
+fn the_bull_nose_along_a_spline_cuts_what_its_faces_advance_through() {
+    let e = example("spline_mill.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"any rigid motion");
+    let path = found.path.clone();
+    let revolved = gcs_core::brep::swept::patches::Revolved::read(&found.tool).unwrap();
+    let groove = crate::swept_patches::advanced(&revolved,&found.tool,&path,found.roll,true);
+    let exact = exported_within(&e,"block",Some(Tolerance::new(0.01).unwrap()));
+    near(gcs_core::brep::props::volume(&exact.solid),42.*32.*8.-groove,1e-8);
+    crate::object_builder::builds_as_exported("spline_mill.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
 }
 
 /// `stopped_turn.sv` (the closed class, X1): an upright bar turned from −140° to 30°, halfway into
@@ -611,7 +632,7 @@ fn the_bull_nose_plunged_at_a_lean_stops_inside_the_block() {
 fn the_bar_turned_partway_stops_inside_the_ring() {
     let e = example("stopped_turn.sv");
     let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
-    assert!(found.screw.is_turn(),"a turn");
+    assert!(found.screw().unwrap().is_turn(),"a turn");
     near(exported(&e,"block"),PI/3.*80.-crate::closed_class::turned_partway_away(),1e-9);
 }
 

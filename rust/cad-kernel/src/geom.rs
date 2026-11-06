@@ -181,6 +181,11 @@ impl Rigid {
     }
     pub fn vector(&self,v: V) -> V { [dot(self.r[0],v),dot(self.r[1],v),dot(self.r[2],v)] }
     pub fn point(&self,p: V) -> V { add(self.vector(p),self.t) }
+    /// The motion undone.
+    pub fn inverse(&self) -> Rigid {
+        let r: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j| self.r[j][i]));
+        Rigid {r,t:scale([dot(r[0],self.t),dot(r[1],self.t),dot(r[2],self.t)],-1.)}
+    }
     /// First `self`, then `next`.
     pub fn then(&self,next: &Rigid) -> Rigid {
         let r = std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| next.r[i][k]*self.r[k][j]).sum()));

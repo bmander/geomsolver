@@ -22,4 +22,5 @@ pub mod extruded;
 pub mod member;
 pub mod closed;
 pub mod instant;
+pub mod patches;
 pub mod dump;

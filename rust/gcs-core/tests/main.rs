@@ -297,6 +297,7 @@ mod touch_curves;
 mod swept_instant;
 mod swept_loci;
 mod swept_member;
+mod swept_patches;
 mod surfaces;
 mod swept_faces;
 mod swept_over_parameters;

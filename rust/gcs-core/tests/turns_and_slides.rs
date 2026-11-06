@@ -499,7 +499,7 @@ fn the_turn_and_slide_rows_refuse_by_name() {
 fn a_torus_turned_to_a_stop_inside_the_ring_is_cut_on_one_arrangement() {
     let e = fixtures::read(&turned(Lean::Across(0.),-130.,30.));
     let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_turn(),"a turn");
+    assert!(found.screw().unwrap().is_turn(),"a turn");
     let (cos30,beta) = ((PI/6.).cos(),|rho: f64,big: f64| ((rho*rho+25.-big*big)/(10.*rho)).clamp(-1.,1.).acos());
     let away = crate::brep::simpson(-1.,1.,400,|z: f64| {
         let big = 2.5+(4.-z*z).sqrt();
@@ -522,7 +522,7 @@ fn a_torus_turned_to_a_stop_inside_the_ring_is_cut_on_one_arrangement() {
 fn a_torus_slid_through_the_rods_middle_grooves_its_shadow() {
     let e = fixtures::read(&slid(0.,0.,Wheel::Torus));
     let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     // the strip: 4 wide to x = √21, then the disc's segment
     let c = 21f64.sqrt();
     let segment = |x: f64| x*(25.-x*x).max(0.).sqrt()+25.*(x/5.).asin();
@@ -545,7 +545,7 @@ fn a_torus_slid_through_the_rods_middle_grooves_its_shadow() {
 fn an_engraving_bit_slid_square_to_its_axis_grooves_its_shadow() {
     let e = fixtures::read(&slid(0.,4.,Wheel::Bit));
     let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw.is_slide(),"a slide");
+    assert!(found.screw().unwrap().is_slide(),"a slide");
     // `(x − 4)² tan² 30° = 25 − x²`, with `tan² 30° = 1/3`: `4x² − 8x − 59 = 0`
     let t = (PI/6.).tan();
     let x = (8.+(64_f64+16.*59.).sqrt())/8.;
