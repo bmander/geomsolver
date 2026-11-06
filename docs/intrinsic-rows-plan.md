@@ -170,11 +170,12 @@ Each stage leaves the suite green and lands on its own.
 
 ## Not in this plan
 
-- **Square is not a property of frames.** A frame need not be orthogonal, and a plane is a set,
-  not a frame; the Bible's wording that says otherwise is to be corrected. What is square is an
-  instance's *placement*: a component drawn once and carried to where it stands keeps its
-  distances only if the carry is rigid. So `Chart::square` records "this frame places an instance
-  rigidly" (#548), not a kind of frame, and no other chart takes the row.
+- **Whether every frame is square.** The Bible defines a frame as "an origin with three
+  right-handed axes" and says "a plane is a frame", but the language gives `P := plane` seven
+  freedoms: `plane(u: a, v: b)` spans two lines at any angle, and only an instance's frame is
+  square. Deciding that every chart is square is a language change, with a changelog entry and a
+  meaning for a plane over two lines that are not square. After this plan it is one line of
+  `rows_of`. It is the owner's decision and is left open here.
 - **Naming what a station leaves free** (#817's second ask). A refusal that carries the free
   entities, not a string, so the core names them as the author wrote them. That is a separate
   change to how a solid's refusal reaches `program::refused`.
