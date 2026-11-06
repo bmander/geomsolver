@@ -197,6 +197,15 @@ pub fn counted<T>(work: impl FnOnce() -> T) -> (T, Vec<(gcs_core::progress::Kind
 }
 
 /// The freedom a sketch has left.
+/// What `sk`'s freedoms are, as the structure of its rows says: its unknowns less the rank its
+/// rows take of them, and that rank.
+pub fn freedoms(sk: &Sketch) -> (i64, usize) {
+    let opts = DiagnoseOptions { numeric: Some(false), conflicts: Some(false),
+                                 solid_claims: false, ..DiagnoseOptions::default() };
+    let d = diagnose(&mut sk.clone(), opts);
+    (d.dof, d.structural_rank)
+}
+
 pub fn dof(sk: &mut Sketch) -> i64 {
     diagnose(sk, DiagnoseOptions::default()).dof
 }

@@ -120,11 +120,12 @@ impl Constraint {
     /// for it to give: its id (`Sketch::add_quiet`), its free variable (`expr::evaluate`).
     pub fn remapped(&self, map: &crate::model::Remap, param: &dyn Fn(u32) -> Arg,
                     dual: &dyn Fn(usize) -> Option<usize>) -> Option<Constraint> {
-        let Constraint { id: _, kind, args, soft, origin, claim, free: _, class, written,
+        let Constraint { id: _, kind, args, soft, origin: _, claim, free: _, class, written,
                          repeated, elsewhere, word, along, bound, initially, carried: _,
                          witness } = self;
         // an intrinsic row is its owner's, derived again where the copy lands (`derive_all`)
-        if *origin != crate::model::Origin::Stated {
+        debug_assert!(!self.is_intrinsic(), "an intrinsic row is derived where a copy lands");
+        if self.is_intrinsic() {
             return None;
         }
         let args = args.iter().map(|a| match a {

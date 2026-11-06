@@ -685,7 +685,8 @@ o := point
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert!(!d.over.is_empty(), "{}", summary(&d));
     for c in d.over.iter().chain(d.conflicts.iter().flatten()).chain(d.violated.iter()) {
-        assert!(!sk.constraint(*c).unwrap().is_intrinsic(), "named an intrinsic row: {}", summary(&d));
+        assert!(!sk.constraint(*c).unwrap().is_intrinsic(), "named an intrinsic row: {}",
+                summary(&d));
     }
 }
 

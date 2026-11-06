@@ -367,12 +367,8 @@ impl<'a> Walk<'a> {
             }
             // each number held as the source holds it: a point held in one coordinate alone (an
             // arc's start on its plane's `u`, the gauge of the plane it is drawn in, #363 S6)
-            let (from, to) = (&src.points[i], &dst.points[n]);
-            let pairs = [(Some(from.x), Some(to.x)), (Some(from.y), Some(to.y)), (from.z, to.z)];
-            for (a, b) in pairs {
-                if let (Some(a), Some(b)) = (a, b) {
-                    dst.params[b as usize].fixed = src.params[a as usize].fixed;
-                }
+            for (a, b) in src.point_all_params(i).into_iter().zip(dst.point_all_params(n)) {
+                dst.params[b as usize].fixed = src.params[a as usize].fixed;
             }
             debug_assert_eq!(r.point(i), Some(n));
             r.made(EntRef::point(i), n);
@@ -561,13 +557,11 @@ impl<'a> Walk<'a> {
                 continue;
             }
             let Some(ni) = r.ent(EntRef::frame(i)).map(EntRef::i) else { continue };
-            let point = |p: u32| r.point(p as usize).map(|q| q as u32);
+            let map = |e| r.ent(e);
             let chart = dst.frames[ni].chart.as_mut().expect("charted");
-            chart.along = c.along.map(|a| a.and_then(|a| Some(crate::model::Along {
-                line: r.ent(EntRef::line(a.line as usize))?.idx,
-                at: point(a.at)?,
-            })));
-            chart.stands_at = c.stands_at.and_then(point);
+            chart.along = c.along.map(|a| a.and_then(|a| a.remapped(&map)));
+            chart.stands_at =
+                c.stands_at.and_then(|p| crate::model::renumbered(&map, EntKind::Point, p));
             dst.derive(crate::model::Owner::Frame(ni as u32));
         }
     }
@@ -575,14 +569,11 @@ impl<'a> Walk<'a> {
     /// An arc's or a circle's plane in space (#363 S6), where everything it names came along.
     fn rounds(&mut self) {
         let (src, dst, r) = (self.src, &mut *self.dst, &self.r);
-        for (i, a) in src.arcs.iter().enumerate() {
-            if let (Some(round), Some(ni)) = (&a.round, r.ent(EntRef::arc(i))) {
-                dst.arcs[ni.i()].round = round.remapped(&|e| r.ent(e));
-            }
-        }
-        for (i, c) in src.circles.iter().enumerate() {
-            if let (Some(round), Some(ni)) = (&c.round, r.ent(EntRef::circle(i))) {
-                dst.circles[ni.i()].round = round.remapped(&|e| r.ent(e));
+        let rounded = (0..src.arcs.len()).map(EntRef::arc)
+            .chain((0..src.circles.len()).map(EntRef::circle));
+        for e in rounded {
+            if let (Some(round), Some(to)) = (src.round(e), r.ent(e)) {
+                *dst.round_mut(to).expect("an arc or a circle") = round.remapped(&|e| r.ent(e));
             }
         }
     }

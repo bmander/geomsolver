@@ -837,6 +837,21 @@ fn a_documents_structure_survives_its_json() {
         let e = crate::common::linked::build(src);
         assert!(e.ok(), "{built}: {:?}", e.diags);
         let sk = e.sketch;
+        // each fact is there to keep
+        let charts: Vec<&model::Chart> =
+            sk.frames.iter().filter_map(|f| f.chart.as_ref()).collect();
+        match built {
+            "in space" => {
+                assert!(charts.iter().any(|c| c.along.iter().all(Option::is_some)
+                    && c.stands_at.is_some()));
+                assert!(sk.arcs.iter().all(|a| a.round.is_some())
+                    && sk.circles.iter().all(|c| c.round.is_some()));
+            }
+            _ => {
+                assert!(charts.iter().any(|c| c.square));
+                assert!(charts.iter().any(|c| matches!(c.place, model::Place::Of(_))));
+            }
+        }
         let back = io::from_json(&io::to_json(&sk)).expect("reads back");
         assert_eq!(back.frames.len(), sk.frames.len(), "{built}");
         for (f, g) in sk.frames.iter().zip(&back.frames) {
@@ -851,27 +866,14 @@ fn a_documents_structure_survives_its_json() {
             assert_eq!(a.round, b.round, "{built}");
         }
         let rows = |sk: &Sketch| {
-            let mut r: Vec<String> = sk.constraints.iter().filter(|c| c.is_intrinsic() && c.along.is_none())
+            let mut r: Vec<String> = sk.constraints.iter()
+                .filter(|c| c.is_intrinsic() && c.along.is_none())
                 .map(|c| format!("{:?} {:?} {:?}", c.origin, c.kind.attitude_twin(false), c.args))
                 .collect();
             r.sort();
             r
         };
         assert_eq!(rows(&back), rows(&sk), "{built}");
-        let freedoms = |sk: &Sketch| {
-            let opts = DiagnoseOptions { numeric: Some(false), ..DiagnoseOptions::default() };
-            let d = diagnose(&mut sk.clone(), opts);
-            (d.dof, d.structural_rank)
-        };
-        assert_eq!(freedoms(&back), freedoms(&sk), "{built}");
+        assert_eq!(crate::common::freedoms(&back), crate::common::freedoms(&sk), "{built}");
     }
-    // and each fact was there to keep
-    let sk = crate::common::linked::build(BUILT_IN_SPACE).sketch;
-    assert!(sk.frames.iter().filter_map(|f| f.chart.as_ref())
-        .any(|c| c.along.iter().all(Option::is_some) && c.stands_at.is_some()));
-    assert!(sk.arcs.iter().all(|a| a.round.is_some()) && sk.circles.iter().all(|c| c.round.is_some()));
-    let sk = crate::common::linked::build(SEATED).sketch;
-    assert!(sk.frames.iter().filter_map(|f| f.chart.as_ref()).any(|c| c.square));
-    assert!(sk.frames.iter().filter_map(|f| f.chart.as_ref())
-        .any(|c| matches!(c.place, model::Place::Of(_))));
 }

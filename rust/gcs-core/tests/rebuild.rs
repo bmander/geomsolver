@@ -5,10 +5,11 @@
 //! everything where it was, what a removal takes with it is what `Sketch::children` says depends
 //! on what was removed, and the things the walk says as a whole — the unit a paste lands in, the
 //! pictures, the numbers a drag writes back — come out as the document has them.
+use crate::common::freedoms;
 use gcs_core::constraints::CKind;
-use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::graft::{self, Part};
-use gcs_core::model::{CurveBody, DerivedE, Origin, Owner, EntKind, EntRef, RegionShape, SolidDef, Sketch, Target};
+use gcs_core::model::{CurveBody, DerivedE, EntKind, EntRef, Origin, Owner, RegionShape, SolidDef,
+                      Sketch, Target};
 use gcs_core::units::Units;
 use gcs_core::par;
 
@@ -207,15 +208,6 @@ fn a_part_pairs_a_contacts_place_on_a_traced_body() {
     assert_eq!(part.entity_in(contact.entities()[1]).map(|e| e.kind), Some(EntKind::Traced));
 }
 
-/// What a document's freedoms are, as the structure of its rows says: its unknowns less the
-/// rank its rows take of them, and that rank.
-fn freedoms(sk: &Sketch) -> (i64, usize) {
-    let opts = DiagnoseOptions { numeric: Some(false), conflicts: Some(false),
-                                 solid_claims: false, ..DiagnoseOptions::default() };
-    let d = diagnose(&mut sk.clone(), opts);
-    (d.dof, d.structural_rank)
-}
-
 /// The intrinsic rows of `sk`, each by its owner renumbered through `map` and its kind, sorted:
 /// what two copies of one document must agree on.
 fn intrinsic_rows(sk: &Sketch, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Vec<String> {
@@ -237,7 +229,9 @@ fn intrinsic_rows(sk: &Sketch, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Vec<St
         .filter(|c| c.along.is_none())
         .filter_map(|c| match c.origin {
             // the twin a statement's planes feed is one statement (`CKind::attitude_twin`)
-            Origin::Intrinsic(o) => Some(format!("{:?} {:?}", owner(o), c.kind.attitude_twin(false))),
+            Origin::Intrinsic(o) => {
+                Some(format!("{:?} {:?}", owner(o), c.kind.attitude_twin(false)))
+            }
             Origin::Stated => None,
         })
         .collect();
@@ -313,7 +307,8 @@ fn keeps_every_freedom(name: &str) -> Vec<String> {
                 if let Some(want) = want {
                     let got = freedoms(&back);
                     if got != want {
-                        wrong.push(format!("{name}: read back from JSON, (dof, rank) {got:?} of {want:?}"));
+                        wrong.push(format!("{name}: read back from JSON, (dof, rank) {got:?} \
+                                            of {want:?}"));
                     }
                 }
             }

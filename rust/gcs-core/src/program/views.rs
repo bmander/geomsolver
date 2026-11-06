@@ -31,7 +31,8 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
                 // a point drawn in two planes the solve turned parallel: said where the point is
                 // declared, as it is of two planes placed parallel before the solve (§6.7)
                 let (p, t) = (c.args[0].ent().i(), c.args[1].ent().i());
-                let fold = crate::model::Origin::Intrinsic(crate::model::Owner::Twin(p as u32, t as u32));
+                let fold = crate::model::Owner::Twin(p as u32, t as u32);
+                let fold = crate::model::Origin::Intrinsic(fold);
                 if parallel && c.origin == fold {
                     out.extend(super::planes::twin_parallel(sk, map, p, a, b));
                     continue;
@@ -379,7 +380,8 @@ fn statements(sk: &Sketch) -> Vec<Reads> {
         }
         // a row of the drawing's own over a normal (`Chart::normal`): its own rows, and those of a
         // plane built over one, which a normal read off its plane's axes places
-        if c.is_intrinsic() && c.entities().iter().any(|e| e.kind == EntKind::Axis && normals.contains(&e.i())) {
+        let normal = |e: &EntRef| e.kind == EntKind::Axis && normals.contains(&e.i());
+        if c.is_intrinsic() && c.entities().iter().any(normal) {
             continue;
         }
         // a point measured from a frame's own point in space — an ordinate, a height off its

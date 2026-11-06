@@ -933,12 +933,7 @@ impl Sketch {
             self.constraint(id).map(|c| c.axes_placed_by().collect()).unwrap_or_default();
         let dual = self.constraint(id).and_then(|c| c.along);
         self.constraints.retain(|c| c.id != id);
-        // an axis whose place nothing reads now is held again: its place is no freedom
-        for r in placed {
-            if !self.constraints.iter().any(|c| c.axes_placed_by().any(|s| s == r)) {
-                self.unplace_axis(r);
-            }
-        }
+        self.release_axes(placed);
         // a shared unknown stays free while another contact still owns it — one shared by name
         // (`t == s`) or a contact's place read by a tangent at its point (#251)
         for p in own {
@@ -955,6 +950,16 @@ impl Sketch {
             crate::expr::evaluate(self);
         }
         self.settle_variational();
+    }
+
+    /// Each of the axes `placed` whose place nothing reads now held again: its place is no
+    /// freedom (`unplace_axis`).
+    pub(super) fn release_axes(&mut self, placed: Vec<usize>) {
+        for r in placed {
+            if !self.constraints.iter().any(|c| c.axes_placed_by().any(|s| s == r)) {
+                self.unplace_axis(r);
+            }
+        }
     }
 
     pub fn constraint(&self, id: u32) -> Option<&Constraint> {

@@ -177,9 +177,8 @@ pub fn to_json(sk: &Sketch) -> Json {
             }
             // held in some of its numbers and not the others — an arc's start on its plane's `u`,
             // the gauge of the plane it is drawn in (#363 S6) — each number's hold, only then
-            let pt = &sk.points[i];
-            let held: Vec<bool> = [Some(pt.x), Some(pt.y), pt.z].into_iter().flatten()
-                .map(|q| sk.params[q as usize].fixed).collect();
+            let held: Vec<bool> =
+                sk.point_all_params(i).iter().map(|&q| sk.params[q as usize].fixed).collect();
             if held.iter().any(|&h| h != sk.point_fixed(i)) {
                 o.set("held", Json::Arr(held.into_iter().map(Json::Bool).collect()));
             }
@@ -298,7 +297,8 @@ pub fn to_json(sk: &Sketch) -> Json {
             }
             if along.iter().any(Option::is_some) {
                 o.set("along", Json::Arr(along.iter().map(|a| match a {
-                    Some(a) => object([("line", (a.line as i64).into()), ("at", (a.at as i64).into())]),
+                    Some(a) => object([("line", (a.line as i64).into()),
+                                       ("at", (a.at as i64).into())]),
                     None => Json::Null,
                 }).collect()));
             }
@@ -561,8 +561,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         }
         // a point held in some of its numbers alone
         if let Some(held) = p.get("held") {
-            let pt = &sk.points[k];
-            for (q, h) in [Some(pt.x), Some(pt.y), pt.z].into_iter().flatten().zip(held.arr()) {
+            for (q, h) in sk.point_all_params(k).into_iter().zip(held.arr()) {
                 sk.params[q as usize].fixed = h.as_bool();
             }
         }
@@ -682,7 +681,8 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
                 if omitted(Some(a)) {
                     continue;
                 }
-                let line = index(a.get("line").map_or(-1, |v| v.as_i64()), sk.lines.len(), "along.line")?;
+                let line = a.get("line").map_or(-1, |v| v.as_i64());
+                let line = index(line, sk.lines.len(), "along.line")?;
                 let at = index(a.get("at").map_or(-1, |v| v.as_i64()), np, "along.at")?;
                 along[k] = Some(crate::model::Along { line: line as u32, at: at as u32 });
             }
@@ -712,13 +712,13 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.place_restored(ri, a, held);
     }
     // an arc's or a circle's plane in space (#363 S6), once its plane and its axes are read
-    for (key, n) in [("arcs", sk.arcs.len()), ("circles", sk.circles.len())] {
-        for (i, a) in d.get(key).unwrap_or(&empty).arr().iter().enumerate().take(n) {
+    let rounds = [("arcs", EntRef::arc as fn(usize) -> EntRef), ("circles", EntRef::circle)];
+    for (key, ent) in rounds {
+        for (i, a) in d.get(key).unwrap_or(&empty).arr().iter().enumerate() {
             let Some(r) = a.get("round").filter(|v| !omitted(Some(v))) else { continue };
             let round = round_from_json(&sk, r)?;
-            match key {
-                "arcs" => sk.arcs[i].round = Some(round),
-                _ => sk.circles[i].round = Some(round),
+            if let Some(slot) = sk.round_mut(ent(i)) {
+                *slot = Some(round);
             }
         }
     }
@@ -957,7 +957,9 @@ fn round_from_json(sk: &Sketch, j: &Json) -> Result<crate::model::RoundIn, Strin
     let mut ties = Vec::new();
     for t in j.get("ties").map(|v| v.arr().to_vec()).unwrap_or_default() {
         let t = t.arr();
-        let at = |k: usize| index(t.get(k).map_or(-1, |v| v.as_i64()), sk.points.len(), "round.ties");
+        let at = |k: usize| {
+            index(t.get(k).map_or(-1, |v| v.as_i64()), sk.points.len(), "round.ties")
+        };
         ties.push([at(0)? as u32, at(1)? as u32]);
     }
     let normal = match j.get("normal").filter(|v| !omitted(Some(v))) {

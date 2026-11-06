@@ -88,46 +88,66 @@ impl RoundIn {
     /// The same plane over the entities `map` renumbers, or `None` where one did not come.
     pub fn remapped(&self, map: &Remap) -> Option<RoundIn> {
         let RoundIn { plane, ties, normal } = self;
-        let point = |p: u32| map(EntRef::point(p as usize)).map(|e| e.idx);
+        let point = |p: u32| renumbered(map, EntKind::Point, p);
         Some(RoundIn {
-            plane: map(EntRef::frame(*plane as usize))?.idx,
+            plane: renumbered(map, EntKind::Frame, *plane)?,
             ties: ties.iter().map(|&[a, b]| Some([point(a)?, point(b)?])).collect::<Option<_>>()?,
             normal: match normal {
-                Some((n, g)) => Some((map(*n)?, map(EntRef::new(EntKind::Axis, *g as usize))?.idx)),
+                Some((n, g)) => Some((map(*n)?, renumbered(map, EntKind::Axis, *g)?)),
                 None => None,
             },
         })
     }
 }
 
+impl Along {
+    /// The same line and point over the entities `map` renumbers, or `None` where one did not
+    /// come.
+    pub fn remapped(&self, map: &Remap) -> Option<Along> {
+        let Along { line, at } = *self;
+        Some(Along { line: renumbered(map, EntKind::Line, line)?,
+                     at: renumbered(map, EntKind::Point, at)? })
+    }
+}
+
+/// Whether `c` is `of` stated again as its derivative under a use (§6.21, `twin_intrinsics`).
+fn derives_from(c: &Constraint, of: &Constraint) -> bool {
+    c.origin == of.origin && c.along.is_some() && c.kind == of.kind && c.args == of.args
+}
+
+/// The same row whatever twin its planes feed (`CKind::attitude_twin`): what a derived row is
+/// compared by.
+pub fn same_row(a: &Constraint, b: &Constraint) -> bool {
+    a.kind.attitude_twin(false) == b.kind.attitude_twin(false) && a.args == b.args
+}
+
 impl Sketch {
     /// **The rows `owner` implies, as the model now says** — the only place an intrinsic row is
     /// made.  Empty for an owner that implies none now (an image's axis, a frame with no chart).
     pub fn rows_of(&self, owner: Owner) -> Vec<Constraint> {
-        let axis = |a: u32| Arg::Ent(EntRef::new(EntKind::Axis, a as usize));
-        let row = |kind: CKind, args: Vec<Arg>| Constraint::new(kind, args);
+        let axis = |a: u32| EntRef::axis(a as usize);
+        let ent = |e: EntRef| Arg::Ent(e);
+        let point = |p: u32| Arg::Ent(EntRef::point(p as usize));
+        let square = |a: EntRef, b: EntRef| Constraint::two_line(CKind::Perpendicular3, a, b);
         match owner {
             Owner::Axis(i) => {
-                let e = EntRef::new(EntKind::Axis, i as usize);
+                let e = axis(i);
                 if i as usize >= self.axes.len() || self.imaged(e) {
                     return Vec::new();
                 }
-                let mut rows = vec![row(CKind::AxisUnit, vec![Arg::Ent(e)])];
+                let mut rows = vec![Constraint::new(CKind::AxisUnit, vec![ent(e)])];
                 if self.axes[i as usize].placed {
-                    rows.push(row(CKind::AxisFoot, vec![Arg::Ent(e)]));
+                    rows.push(Constraint::new(CKind::AxisFoot, vec![ent(e)]));
                 }
                 rows
             }
             Owner::Arc(i) => {
                 let e = EntRef::arc(i as usize);
-                if i as usize >= self.arcs.len() || self.imaged(e)
-                    || self.turns.iter().any(|t| t.copy == e)
-                {
+                if i as usize >= self.arcs.len() || self.imaged(e) || self.turn_of(e).is_some() {
                     return Vec::new();
                 }
                 let a = &self.arcs[i as usize];
-                [a.start, a.end].map(|p| row(CKind::PointOnCircle,
-                                             vec![Arg::Ent(EntRef::point(p as usize)), Arg::Ent(e)]))
+                [a.start, a.end].map(|p| Constraint::point_on_circle(EntRef::point(p as usize), e))
                     .into()
             }
             Owner::Frame(f) => {
@@ -147,25 +167,26 @@ impl Sketch {
                         .flat_map(|g| g.axes())
                         .collect(),
                 };
-                let plane = Arg::Ent(EntRef::frame(f as usize));
+                let plane = ent(EntRef::frame(f as usize));
                 let mut rows = Vec::new();
                 for ax in [c.u, c.v] {
                     if c.stands_at.is_none() && !through.contains(&ax) {
-                        rows.push(row(CKind::PlaneAxis, vec![plane.clone(), axis(ax)]));
+                        rows.push(Constraint::new(CKind::PlaneAxis,
+                                                  vec![plane.clone(), ent(axis(ax))]));
                     }
                 }
                 if c.square {
-                    rows.push(row(CKind::Perpendicular3, vec![axis(c.u), axis(c.v)]));
+                    rows.push(square(axis(c.u), axis(c.v)));
                 }
                 for (ax, along) in [c.u, c.v].into_iter().zip(c.along) {
                     let Some(Along { line, at }) = along else { continue };
-                    rows.push(row(CKind::Parallel3, vec![axis(ax), Arg::Ent(EntRef::line(line as usize)),
-                                                        Arg::Str("same".to_string())]));
-                    rows.push(row(CKind::PointOnAxis, vec![Arg::Ent(EntRef::point(at as usize)), axis(ax)]));
+                    rows.push(Constraint::new(CKind::Parallel3, vec![
+                        ent(axis(ax)), ent(EntRef::line(line as usize)), Arg::Str("same".into())]));
+                    rows.push(Constraint::new(CKind::PointOnAxis, vec![point(at), ent(axis(ax))]));
                 }
                 if let Some(at) = c.stands_at {
-                    rows.push(row(CKind::Coincident3, vec![Arg::Ent(EntRef::point(c.origin as usize)),
-                                                          Arg::Ent(EntRef::point(at as usize))]));
+                    rows.push(Constraint::new(CKind::Coincident3,
+                                              vec![point(c.origin), point(at)]));
                 }
                 rows
             }
@@ -175,72 +196,64 @@ impl Sketch {
                 };
                 let Some(n) = c.normal else { return Vec::new() };
                 vec![
-                    row(CKind::Perpendicular3, vec![axis(n), axis(c.u)]),
-                    row(CKind::PerpendicularAbout,
-                        vec![axis(c.v), axis(n), axis(c.u), Arg::Str("ccw".into())]),
-                    row(CKind::PlaneAxis, vec![Arg::Ent(EntRef::frame(f as usize)), axis(n)]),
+                    square(axis(n), axis(c.u)),
+                    Constraint::new(CKind::PerpendicularAbout, vec![
+                        ent(axis(c.v)), ent(axis(n)), ent(axis(c.u)), Arg::Str("ccw".into())]),
+                    Constraint::new(CKind::PlaneAxis,
+                                    vec![ent(EntRef::frame(f as usize)), ent(axis(n))]),
                 ]
             }
             Owner::Lift(p) => {
-                let p = p as usize;
-                if p >= self.points.len() || self.lift_of(p).is_none() {
+                if p as usize >= self.points.len() || self.lift_of(p as usize).is_none() {
                     return Vec::new();
                 }
-                let pt = &self.points[p];
+                let pt = &self.points[p as usize];
                 let (kind, frame) = match (pt.z, pt.chart, pt.plane) {
                     (Some(_), Some(f), _) => (CKind::ChartLift, f),
                     (None, _, Some(v)) => (CKind::Lift, v),
                     _ => return Vec::new(),
                 };
-                vec![row(kind, vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::frame(frame as usize))])]
+                vec![Constraint::new(kind, vec![point(p), ent(EntRef::frame(frame as usize))])]
             }
             Owner::Twin(p, t) => {
-                let (p, t) = (p as usize, t as usize);
-                if !self.twins.get(&p).is_some_and(|ts| ts.contains(&t)) {
+                if !self.twins.get(&(p as usize)).is_some_and(|ts| ts.contains(&(t as usize))) {
                     return Vec::new();
                 }
+                let on = |q: u32, plane: usize| Constraint::new(CKind::PointOnPlane,
+                    vec![point(q), ent(EntRef::frame(plane))]);
                 let mut rows = Vec::new();
-                if let Some(plane) = self.plane_of(p) {
-                    rows.push(row(CKind::PointOnPlane,
-                                  vec![Arg::Ent(EntRef::point(t)), Arg::Ent(EntRef::frame(plane))]));
-                    if let Ok(fold) = Constraint::project(self, EntRef::point(p), EntRef::point(t)) {
+                if let Some(plane) = self.plane_of(p as usize) {
+                    rows.push(on(t, plane));
+                    let (a, b) = (EntRef::point(p as usize), EntRef::point(t as usize));
+                    if let Ok(fold) = Constraint::project(self, a, b) {
                         rows.push(fold);
                     }
                 }
                 // the point on its twin's plane, but where the plane already holds it: a row
                 // saying so again would be a dependency the structural count cannot see (#88)
-                if let Some(plane) = self.plane_of(t) {
-                    let on = |c: &Constraint| c.kind == CKind::PointOnPlane
-                        && c.args[0].ent() == EntRef::point(p) && c.args[1].ent() == EntRef::frame(plane);
+                if let Some(plane) = self.plane_of(t as usize) {
+                    let row = on(p, plane);
                     let held = self.constraints.iter()
-                        .any(|c| on(c) && c.origin != Origin::Intrinsic(owner));
-                    if !held && !self.built_through(p, plane) {
-                        rows.push(row(CKind::PointOnPlane,
-                                      vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::frame(plane))]));
+                        .any(|c| c.kind == row.kind && c.args == row.args
+                            && c.origin != Origin::Intrinsic(owner));
+                    if !held && !self.built_through(p as usize, plane) {
+                        rows.push(row);
                     }
                 }
                 rows
             }
             Owner::Round(e) => {
-                let round = match e.kind {
-                    EntKind::Arc => self.arcs.get(e.i()).and_then(|a| a.round.as_ref()),
-                    EntKind::Circle => self.circles.get(e.i()).and_then(|c| c.round.as_ref()),
-                    _ => None,
-                };
-                let Some(r) = round else { return Vec::new() };
-                let Some(c) = self.frames.get(r.plane as usize).and_then(|f| f.chart.as_ref()) else {
-                    return Vec::new();
-                };
-                let mut rows: Vec<Constraint> = r.ties.iter().map(|&[p, q]| {
-                    row(CKind::Coincident3, vec![Arg::Ent(EntRef::point(p as usize)),
-                                                 Arg::Ent(EntRef::point(q as usize))])
-                }).collect();
-                let square = |a: Arg, b: Arg| row(CKind::Perpendicular3, vec![a, b]);
+                let Some(r) = self.round(e) else { return Vec::new() };
+                let plane = self.frames.get(r.plane as usize).and_then(|f| f.chart.as_ref());
+                let Some(c) = plane else { return Vec::new() };
+                let mut rows: Vec<Constraint> = r.ties.iter()
+                    .map(|&[p, q]| Constraint::new(CKind::Coincident3, vec![point(p), point(q)]))
+                    .collect();
                 match r.normal {
                     None => rows.push(square(axis(c.u), axis(c.v))),
                     Some((n, g)) => rows.extend([
-                        square(axis(c.u), Arg::Ent(n)),
-                        square(axis(c.v), Arg::Ent(n)),
+                        square(axis(c.u), n),
+                        square(axis(c.v), n),
                         square(axis(c.u), axis(c.v)),
                         square(axis(c.u), axis(g)),
                     ]),
@@ -250,8 +263,10 @@ impl Sketch {
             Owner::Developed(i) => {
                 let Some(cv) = self.curves.get(i as usize) else { return Vec::new() };
                 match &self.curve_defs[cv.def as usize].body {
-                    CurveBody::Developed(d) if d.which == 0 => vec![row(CKind::DevelopedLength,
-                        vec![Arg::Ent(EntRef::new(EntKind::Curve, i as usize))])],
+                    CurveBody::Developed(d) if d.which == 0 => {
+                        let curve = ent(EntRef::new(EntKind::Curve, i as usize));
+                        vec![Constraint::new(CKind::DevelopedLength, vec![curve])]
+                    }
                     _ => Vec::new(),
                 }
             }
@@ -259,8 +274,31 @@ impl Sketch {
     }
 
     /// Whether `e` is a mirrored instance's image (#578), whose rows are its representative's.
-    fn imaged(&self, e: EntRef) -> bool {
-        self.mirrors.iter().any(|m| m.copy == e)
+    pub fn imaged(&self, e: EntRef) -> bool {
+        self.mirror_of_entity(e).is_some()
+    }
+
+    /// An arc's or a circle's plane in space (`RoundIn`), where it is drawn in one.
+    pub fn round(&self, e: EntRef) -> Option<&RoundIn> {
+        match e.kind {
+            EntKind::Arc => self.arcs.get(e.i())?.round.as_ref(),
+            EntKind::Circle => self.circles.get(e.i())?.round.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Where an arc's or a circle's plane in space is kept, to set it.
+    pub fn round_mut(&mut self, e: EntRef) -> Option<&mut Option<RoundIn>> {
+        match e.kind {
+            EntKind::Arc => Some(&mut self.arcs.get_mut(e.i())?.round),
+            EntKind::Circle => Some(&mut self.circles.get_mut(e.i())?.round),
+            _ => None,
+        }
+    }
+
+    /// Every arc and circle, the arcs first: the entities a `RoundIn` may be of.
+    fn rounded(&self) -> impl Iterator<Item = EntRef> + '_ {
+        (0..self.arcs.len()).map(EntRef::arc).chain((0..self.circles.len()).map(EntRef::circle))
     }
 
     /// **Replace `owner`'s rows with `rows_of(owner)`.**  A row it still implies stays where it
@@ -273,29 +311,25 @@ impl Sketch {
             w.kind = self.settled_kind(w);
             w.origin = Origin::Intrinsic(owner);
         }
-        let have: Vec<u32> = self.constraints.iter()
-            .filter(|c| c.origin == Origin::Intrinsic(owner) && c.along.is_none())
-            .map(|c| c.id)
+        // where its rows stand: nothing moves while they are matched
+        let have: Vec<usize> = (0..self.constraints.len())
+            .filter(|&i| self.constraints[i].origin == Origin::Intrinsic(owner)
+                && self.constraints[i].along.is_none())
             .collect();
         let mut kept = vec![false; have.len()];
         let mut fresh = Vec::new();
         for w in want {
-            // the twin a statement's planes feed is one statement (`CKind::attitude_twin`)
-            let same = have.iter().enumerate().position(|(k, &id)| {
-                !kept[k] && self.constraint(id).is_some_and(|c| {
-                    c.kind.attitude_twin(false) == w.kind.attitude_twin(false) && c.args == w.args
-                })
-            });
-            match same {
+            match (0..have.len()).find(|&k| !kept[k] && same_row(&self.constraints[have[k]], &w)) {
                 Some(k) => kept[k] = true,
                 None => fresh.push(w),
             }
         }
-        let mut stale: Vec<u32> =
-            have.iter().zip(&kept).filter(|(_, &k)| !k).map(|(&id, _)| id).collect();
+        let mut stale: Vec<u32> = (0..have.len()).filter(|&k| !kept[k])
+            .map(|k| self.constraints[have[k]].id).collect();
         let mut added = Vec::new();
         for w in fresh {
-            match stale.iter().position(|&id| self.constraint(id).is_some_and(|c| c.kind == w.kind)) {
+            let like = |id: &u32| self.constraint(*id).is_some_and(|c| c.kind == w.kind);
+            match stale.iter().position(like) {
                 Some(k) => {
                     let id = stale.remove(k);
                     self.restate(id, w.args);
@@ -307,18 +341,15 @@ impl Sketch {
             self.add_quiet(w);
         }
         for id in stale {
-            let gone = self.constraint(id).cloned();
+            let Some(gone) = self.constraint(id).cloned() else { continue };
             self.remove(id);
             // and its derivatives under the uses that move what it reads (§6.21)
-            if let Some(g) = gone {
-                let twins: Vec<u32> = self.constraints.iter()
-                    .filter(|c| c.origin == g.origin && c.along.is_some() && c.kind == g.kind
-                        && c.args == g.args)
-                    .map(|c| c.id)
-                    .collect();
-                for t in twins {
-                    self.remove(t);
-                }
+            let twins: Vec<u32> = self.constraints.iter()
+                .filter(|c| derives_from(c, &gone))
+                .map(|c| c.id)
+                .collect();
+            for t in twins {
+                self.remove(t);
             }
         }
     }
@@ -329,28 +360,23 @@ impl Sketch {
     fn restate(&mut self, id: u32, args: Vec<Arg>) {
         let Some(at) = self.index_of(id) else { return };
         let old = self.constraints[at].clone();
-        let placed: Vec<usize> = old.axes_placed_by().collect();
         for c in self.constraints.iter_mut() {
-            if c.id == id || c.origin == old.origin && c.along.is_some() && c.kind == old.kind
-                && c.args == old.args
-            {
+            if c.id == id || derives_from(c, &old) {
                 c.args = args.clone();
             }
         }
-        let c = self.constraints[at].clone();
-        for p in c.lifted_points(self) {
+        let c = &self.constraints[at];
+        let (lifted, placed): (Vec<usize>, Vec<usize>) =
+            (c.lifted_points(self), c.axes_placed_by().collect());
+        for p in lifted {
             self.lift_point(p);
         }
-        for r in c.axes_placed_by() {
+        for r in placed {
             if r < self.axes.len() {
                 self.place_axis(r);
             }
         }
-        for r in placed {
-            if !self.constraints.iter().any(|c| c.axes_placed_by().any(|s| s == r)) {
-                self.unplace_axis(r);
-            }
-        }
+        self.release_axes(old.axes_placed_by().collect());
     }
 
     /// **Every owner's rows**, in a fixed order — axes, arcs, frames, normals, lifts, twins,
@@ -359,11 +385,11 @@ impl Sketch {
     /// through have derived what they make, so a stated row keeps the id the source's order gave
     /// it.
     pub fn derive_all(&mut self) {
-        let owners = self.owners();
-        for o in owners {
+        for o in self.owners() {
             self.derive(o);
         }
-        // an owner a copy brought but nothing implies now: a row of it goes
+        // an owner a copy brought but nothing implies now: a row of it goes — asked again, since
+        // deriving mints the lifts the rows read (`add_quiet`), which are owners too
         let owners: std::collections::BTreeSet<Owner> = self.owners().into_iter().collect();
         let orphans: Vec<u32> = self.constraints.iter()
             .filter(|c| matches!(c.origin, Origin::Intrinsic(o) if !owners.contains(&o)))
@@ -374,19 +400,24 @@ impl Sketch {
         }
     }
 
-    /// Every owner the model has, in `derive_all`'s order.
+    /// Every owner the model has, in `derive_all`'s order: each entity whose kind owns rows, and
+    /// the normals, lifts, twins, rounds and developments it has.
     pub fn owners(&self) -> Vec<Owner> {
         let n = |k: usize| 0..k as u32;
         let mut out: Vec<Owner> = n(self.axes.len()).map(Owner::Axis).collect();
         out.extend(n(self.arcs.len()).map(Owner::Arc));
         out.extend(n(self.frames.len()).map(Owner::Frame));
-        out.extend(n(self.frames.len()).map(Owner::Normal));
+        out.extend(n(self.frames.len())
+            .filter(|&f| self.frames[f as usize].chart.as_ref().is_some_and(|c| c.normal.is_some()))
+            .map(Owner::Normal));
         out.extend(self.lifts.iter().map(|l| Owner::Lift(l.point)));
         out.extend(self.twins.iter()
             .flat_map(|(&p, ts)| ts.iter().map(move |&t| Owner::Twin(p as u32, t as u32))));
-        out.extend((0..self.arcs.len()).map(|i| Owner::Round(EntRef::arc(i))));
-        out.extend((0..self.circles.len()).map(|i| Owner::Round(EntRef::circle(i))));
-        out.extend(n(self.curves.len()).map(Owner::Developed));
+        out.extend(self.rounded().filter(|&e| self.round(e).is_some()).map(Owner::Round));
+        out.extend(n(self.curves.len())
+            .filter(|&i| matches!(self.curve_defs[self.curves[i as usize].def as usize].body,
+                                  CurveBody::Developed(_)))
+            .map(Owner::Developed));
         out
     }
 
@@ -416,9 +447,8 @@ impl Sketch {
     /// **The point in space point `p` is drawn for** (#363 S6): a round's own point tied to the
     /// point the document wrote (`RoundIn::ties`), or `None`.
     pub fn stands_for(&self, p: u32) -> Option<u32> {
-        let rounds = self.arcs.iter().filter_map(|a| a.round.as_ref())
-            .chain(self.circles.iter().filter_map(|c| c.round.as_ref()));
-        rounds.flat_map(|r| r.ties.iter()).find(|t| t[0] == p).map(|t| t[1])
+        self.rounded().filter_map(|e| self.round(e))
+            .flat_map(|r| r.ties.iter()).find(|t| t[0] == p).map(|t| t[1])
     }
 
     /// The gauges circles about points in space hold their planes' turn by: each gauge axis with

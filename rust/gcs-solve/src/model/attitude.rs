@@ -263,8 +263,8 @@ impl Sketch {
 
     /// The hidden point in space that point `p` stands at, minted once.  A point drawn in a
     /// plane gets three Params seeded where it stands and its `lift` row holding them there, over
-    /// the plane's axes and origin (`Owner::Lift`).  A **point in space** is its own lift: its three
-    /// Params, and no row.  `None` for a point of a 2D sketch, which has no place in space
+    /// the plane's axes and origin (`Owner::Lift`).  A **point in space** is its own lift: its
+    /// three Params, and no row.  `None` for a point of a 2D sketch, which has no place in space
     /// (`program::reading` refuses one).
     pub fn lift_point(&mut self, p: usize) -> Option<usize> {
         if let Some(k) = self.lift_of(p) {

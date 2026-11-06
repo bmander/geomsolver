@@ -852,7 +852,7 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
         let u = to_s.map(|x| x / norm(to_s));
         let w = cross(n, to_s);
         let v = w.map(|x| x / norm(w));
-        let (_, _, pi, origin) = round_plane(sk, &name, [u, v], c);
+        let (pi, origin) = round_plane(sk, &name, [u, v], c);
         let start = sk.point(norm(to_s), 0.0, false, &format!("{name}#start"));
         sk.params[sk.points[start].y as usize].fixed = true;
         let end = sk.point(dot(to_e, u), dot(to_e, v), false, &format!("{name}#end"));
@@ -869,7 +869,6 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
         let ties = [[origin, pts[0]], [start, pts[1]], [end, pts[2]]].map(|t| t.map(|p| p as u32));
         sk.arcs[i].round = Some(RoundIn { plane: pi as u32, ties: ties.to_vec(), normal: None });
         sk.derive(Owner::Round(arc));
-        sk.settle_variational();
     }
 }
 
@@ -982,7 +981,7 @@ pub(super) fn circles_in_space(
         let at = sk.world_point(c);
         let name = map.name_of(EntRef::circle(i)).cloned()
             .unwrap_or_else(|| entity_name(EntRef::circle(i)));
-        let (_, _, pi, origin) = round_plane(sk, &name, [u, v], at);
+        let (pi, origin) = round_plane(sk, &name, [u, v], at);
         // the gauge: the world's axis least along the normal, held, and taken again where a
         // solve leaves the normal near it (`Sketch::retake_round_gauges`)
         let gauge = sk.axis(e, &format!("{name}#gauge"));
@@ -990,22 +989,21 @@ pub(super) fn circles_in_space(
             sk.params[p as usize].fixed = true;
         }
         sk.circles[i].center = origin as u32;
-        sk.circles[i].round = Some(RoundIn { plane: pi as u32, ties: vec![[origin as u32, c as u32]],
+        sk.circles[i].round = Some(RoundIn { plane: pi as u32,
+                                             ties: vec![[origin as u32, c as u32]],
                                              normal: Some((axis, gauge as u32)) });
         sk.derive(Owner::Round(EntRef::circle(i)));
-        sk.settle_variational();
     }
 }
 
 /// The plane a round over points in space is drawn in (#363 S6): its axes along `u` and `v`,
-/// through `at`, named under the round's `name` — its axes, the plane and its origin.
-fn round_plane(sk: &mut Sketch, name: &str, [u, v]: [[f64; 3]; 2], at: [f64; 3])
-    -> (usize, usize, usize, usize) {
+/// through `at`, named under the round's `name` — the plane and its origin.
+fn round_plane(sk: &mut Sketch, name: &str, [u, v]: [[f64; 3]; 2], at: [f64; 3]) -> (usize, usize) {
     let ua = sk.axis(u, &format!("{name}#plane.u"));
     let va = sk.axis(v, &format!("{name}#plane.v"));
     let pi = sk.plane(ua, va, at, &format!("{name}#plane"));
     sk.set_plane_origin(pi, at);
-    (ua, va, pi, sk.frames[pi].origin as usize)
+    (pi, sk.frames[pi].origin as usize)
 }
 
 /// A circle, an arc and a spline are drawn in a plane: one over a point standing in space has
@@ -1055,7 +1053,6 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
 /// no count of columns can see it — read as a part's own rows (#819), the fourth is a row past
 /// what its unknowns take.  Where each axis stands is `meeting`'s.
 pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
-    use crate::constraints::CKind;
     use crate::model::{Along, Owner, Place};
     let along: BTreeMap<usize, usize> = deferred.iter()
         .filter_map(|d| match *d { Deferred::Along { axis, line } => Some((axis, line)), _ => None })
@@ -1086,14 +1083,13 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
             .filter(|ends| ends.iter().all(|&x| sk.points[x].plane != Some(p as u32)))
             .map(|[at, _]| at);
         let op = sk.frames[p].o;
-        let shares = sk.frames.iter().enumerate()
-            .any(|(g, f)| g != p && f.chart.as_ref().is_some_and(|c| c.o == op));
-        // a plane built some other way (an image's) has no two rows to give way
-        let through = sk.rows_of(Owner::Frame(p as u32)).iter()
-            .filter(|c| c.kind == CKind::PlaneAxis).count();
-        if let Some(at) = at.filter(|_| !shares && sk.frames[p].place == Place::Own && through == 2
-            && !op.iter().any(|&q| sk.params[q as usize].fixed))
-        {
+        // a plane sharing its place, built some other way (an image's) or held keeps its rows
+        let stands = |sk: &Sketch| sk.frames[p].place == Place::Own
+            && !sk.imaged(EntRef::frame(p))
+            && !op.iter().any(|&q| sk.params[q as usize].fixed)
+            && !sk.frames.iter().enumerate()
+                .any(|(g, f)| g != p && f.chart.as_ref().is_some_and(|c| c.o == op));
+        if let Some(at) = at.filter(|_| stands(sk)) {
             let x = sk.world_point(at);
             for (k, &q) in op.iter().enumerate() {
                 sk.params[q as usize].value = x[k];
@@ -1102,7 +1098,6 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
         }
         if (sk.frames[p].along, sk.frames[p].stands_at) != was {
             sk.derive(Owner::Frame(p as u32));
-            sk.settle_variational();
         }
     }
 }

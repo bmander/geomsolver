@@ -45,10 +45,11 @@ pub use entities::{
     FrameE, Chart, Joint,
     LiftE, article, entity_name, kind_initial, Remap,
 };
+
 pub(crate) use entities::{renumbered, renumbered_opt, renumbered_all};
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
 pub use developed::{developed_def, Developed, Panel, Rail};
-pub use intrinsic::{Along, Origin, Owner, Place, RoundIn};
+pub use intrinsic::{same_row, Along, Origin, Owner, Place, RoundIn};
 pub use solids::{
     FaceLoop, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Roll, Sense, SolidDef, SolidE, EnvelopeE,
