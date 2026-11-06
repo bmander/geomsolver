@@ -422,6 +422,10 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             Ssi::Curves(lines),
         (s @ (Surface::Cylinder(..) | Surface::Cone(..)),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),s @ (Surface::Cylinder(..) | Surface::Cone(..)))
             if let Some(curves) = own_contact(&s,&c,tol) => Ssi::Curves(curves),
+        (Surface::Plane(pl),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),Surface::Plane(pl))
+            if let Some(curves) = plane_holding_rim(&pl,&c,tol).or_else(|| plane_contact_section(&pl,&c)) => Ssi::Curves(curves),
+        (Surface::Cylinder(cy,r),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),Surface::Cylinder(cy,r))
+            if let Some(curves) = side_holding_rim(&cy,r,&c,tol) => Ssi::Curves(curves),
         (Surface::Plane(_),Surface::Cylinder(..)) | (Surface::Cylinder(..),Surface::Plane(_)) => {
             let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cylinder(c,r) = cy else { unreachable!() };
@@ -579,7 +583,7 @@ fn own_contact(s: &Surface,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
     use crate::turned::{Jet,Turned};
     let Curve::Turned(t) = c else { return None };
     if t.posed { return None }
-    let (g,k) = (t.frame,t.contact);
+    let (g,Some(k)) = (t.frame,t.contact()) else { return None };
     let (f,r,tan) = match *s {
         Surface::Cylinder(f,r) => (f,r.abs(),0.),
         Surface::Cone(f,r,half) => { let (sa,ca) = half.dsin_cos(); (f,r,sa/ca) }
@@ -630,6 +634,61 @@ fn own_contact(s: &Surface,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
     // posed: the contact itself, read in the turn's frame turned by the pose
     let frame = Frame {o:g.o,x:g.dir(pose.vector([1.,0.,0.])),y:g.dir(pose.vector([0.,1.,0.])),z:g.z};
     Some(vec![Curve::Turned(std::sync::Arc::new(Turned {frame,posed:true,..**t}))])
+}
+
+/// **A plane against the surface of revolution of a round face's contact** (#780 L2), exactly:
+/// its cut, read round the angle `τ` where `cos(ψ − ψₙ) = C(v) = −cos τ` (`turned::Section`). None
+/// where `C` is not proved to run one way over the meridian's span, or the plane is all but level
+/// (read as meridians are): traced.
+fn plane_contact_section(pl: &Frame,c: &Curve) -> Option<Vec<Curve>> {
+    let Curve::Turned(t) = c else { return None };
+    let (Some(of),false) = (t.contact(),t.posed) else { return None };
+    let g = t.frame;
+    let n = g.dir_local(unit(pl.z));
+    let (k,spans) = crate::turned::Section::new(of,n,dot(n,g.local(pl.o)),t.span)?;
+    Some(spans.into_iter().map(|span| Curve::Turned(std::sync::Arc::new(crate::turned::Turned {frame:g,
+        source:crate::turned::Source::Section(k),span,posed:true}))).collect())
+}
+
+/// **A cylinder holding a sharp circle's ring at some pose of the turn** (#780 L2: a flat-ended
+/// tool's side at an end pose, its rim on the ring that rim turns into), against that ring,
+/// exactly: the circle itself, and the loop where the side crosses the ring off it
+/// (`turned::Crossing`), which crosses the circle where the side's contact reaches the rim. None
+/// where the cylinder holds no turned copy of the circle (its axis the circle's normal turned about
+/// the turn's axis, through its centre, of its radius), or the loop is not one `Crossing` reads.
+fn side_holding_rim(cy: &Frame,radius: f64,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
+    let Curve::Turned(t) = c else { return None };
+    let crate::turned::Source::Rim(rim) = t.source else { return None };
+    if t.posed { return None }
+    let g = t.frame;
+    let looped = crate::turned::Crossing::held(&rim,g.dir_local(unit(cy.z)),g.local(cy.o),radius,tol)?;
+    Some(vec![Curve::Circle(Frame::about(g.at(looped.c),g.dir(looped.a)),rim.r),
+        Curve::Turned(std::sync::Arc::new(crate::turned::Turned {frame:g,source:crate::turned::Source::Crossing(looped),
+            span:[0.,std::f64::consts::TAU],posed:true}))])
+}
+
+/// **A plane holding a sharp circle's ring at some pose of the turn** (#780 L2: a flat end at an end
+/// pose, its rim on the ring that rim turns into), against that ring, exactly: two circles of the
+/// circle's radius. Measured from the turn's origin, at `c + q` of the plane (`q` in the posed
+/// circle's own frame `e₁, e₂` about its centre `c`), `(|x|², z) = m + L q + (D, 0)`, `L = [[2 c·e₁,
+/// 2 c·e₂], [e₁_z, e₂_z]]` and `D = |q|² − r²` the circle's power, while the ring is `m + L q` over
+/// `|q| = r`: so the plane's point is on the ring where `|q + D k|² = r²`, `k = L⁻¹ (1, 0)` —
+/// `D (1 + 2 q·k + D |k|²) = 0`, the circle itself (`D = 0`) and `|q + k/|k|²|² = r²`, a second
+/// circle of the same radius. None where the plane holds no turned copy of the circle (its normal
+/// the circle's turned about the axis, its centre on it), or `L` cannot be inverted.
+fn plane_holding_rim(pl: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
+    let Curve::Turned(t) = c else { return None };
+    let crate::turned::Source::Rim(rim) = t.source else { return None };
+    if t.posed { return None }
+    let g = t.frame;
+    let (o,e1,e2) = rim.posed(g.dir_local(unit(pl.z))).into_iter().find(|&(o,..)| dot(sub(g.at(o),pl.o),unit(pl.z)).abs() <= tol)?;
+    // k = L⁻¹ (1, 0), the first column of the inverse
+    let inv = crate::turned::rim_inverse(o,e1,e2,1e-12*(1.+norm(o)))?;
+    let k = [inv[0][0],inv[1][0]];
+    let kk = k[0]*k[0]+k[1]*k[1];
+    let other = sub(o,add(scale(e1,k[0]/kk),scale(e2,k[1]/kk)));
+    let n = g.dir(cross(e1,e2));
+    Some([o,other].iter().map(|&q| Curve::Circle(Frame::about(g.at(q),n),rim.r)).collect())
 }
 
 /// **A plane cutting every generator of a cone, in an ellipse** (#780 C3: a leaning frustum cut by

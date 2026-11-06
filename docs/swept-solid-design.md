@@ -21,7 +21,8 @@ Wang 1997 — the sweep-envelope differential equation; for free-form tools, Mac
 2. **A fan point**: on a convex edge `e(w)` every normal between its two faces' is carried; the
    contact set is `{(w, θ, t) : n(θ)·v = 0}`, θ across the fan — the edge's **fan sheet** (the
    walks' `Fan`, a cap's rim, a drafted prism's crease). A vertex carries a cone of normals: its
-   contact set is a curve family over the cone (G1), a **cone sheet**.
+   contact set is a curve family over the cone (G1), a **cone sheet** — in the normals; its image in
+   space is the vertex's path alone, a curve (step 5).
 3. **An end point**: `M(a)·∂S` where the tool is entering (`n·v ≤ 0`) or `M(b)·∂S` where it is
    leaving (`n·v ≥ 0`): the **end faces** (X1). A whole turn has none (#684 N).
 
@@ -382,7 +383,98 @@ it. It stays as the fast path where #699 D says so.
    its pieces' sweeps united, `5 + π/2`, to 1e-9. Screws among the pieces wait on the screw's box,
    which is a lone screw's.
 5. **Fans and cones** (G1) as patches. X3 and X4 follow, held by field agreement and an
-   independent volume.
+   independent volume. *Designed (#780 L2).* §1's fan and cone, read where their contact lands:
+   - **A fan's sheet lies on the surface its edge sweeps.** At a point `e(w)` of a sharp edge, tangent
+     `T`, the fan is the arc of unit normals from one face's `n₁` to the other's `n₂`, all square to
+     `T`. The normals square to both `T` and the velocity `v` are `±T × v`, so `(w, θ, t)` is in the
+     contact set exactly where one of them is in the arc, and then `θ` is fixed by `(w, t)`: the
+     contact set is the set of `(w, t)` where `n₁ · v` and `n₂ · v` differ in sign (the slide's
+     silhouette-edge rule, read under any motion), and its image is the edge's own points carried.
+     So the fan's patch is a patch of the edge's sweep `∪ₜ M(t) e`, over the domain `(w, t)` that
+     rule bounds. Its rim inside the domain is where `n₁ · v = 0` or `n₂ · v = 0`: where a face's own
+     contact reaches the edge, and there the fan's sheet and that face's envelope sheet share their
+     normal — they are **tangent along the curve that point sweeps**.
+     The arrangement must hold that touch as one edge, as it holds a face at an end pose touching its
+     own contact's surface (C3's `own_contact`). Under a constant twist the domain is fixed on the
+     tool (each point's velocity is), so the patch is the edge's sweep over arcs of the edge, and
+     the candidate is entered whole or a little past those arcs, as M5's patches are, with
+     membership dropping what bounds nothing: a line's sweep (a plane under a slide; a cylinder, a
+     cone or a hyperboloid under a turn; a helicoid's sheet or patch under a screw, all built), and
+     a circle's (an oblique cylinder under a slide, a plane under a turn where it is level, a screwed
+     disc's side under a screw where it is level, all built; **a ring under a turn where it leans**,
+     built here).
+   - **A vertex's cone sweeps no sheet.** Its contact set `{(n, t) : n in the cone, n · v(p, t) = 0}`
+     is two-dimensional in the normals, but every point of it maps to `M(t) p`: its image is the
+     vertex's path, one curve. That curve is where the sweeps of the vertex's edges (and of its faces'
+     contacts) meet, and the arrangement already lays it there, each of those candidates reaching a
+     little past the vertex. So nothing is entered for a vertex, and §1's "cone sheet" is a sheet in
+     the normals, not in space.
+   - **X3, a concave edge.** Its faces' material wraps round it more than half a turn, so its fan is
+     empty: it carries no boundary, and `reads` enters nothing for it (a stem entering a ball, C3).
+     What bounds the sweep near it is its two faces' sheets, which cross; the arrangement splits them
+     where they cross and membership drops the buried parts (an L-shaped prism under a slide and a
+     turn, built at step 4).
+   - **X4, a flat end whose corners dig past it.** A flat end's own contact (a line of its plane)
+     misses the face, or reaches only part of it, and its rim's fan carries the boundary beyond.
+     *Built under a turn* (`tests/swept_turned.rs`): a sharp circle leaning to the turn's axis
+     sweeps a ring. Measured from a point `p` of the axis, `ρ² + z² = |x − p|²` and `z` are affine in
+     the circle's own coordinates `q` about its centre `c` (`|q| = r`): `(|x − p|², z) = m + L q`
+     on it, `L = [[2 (c − p)·e₁, 2 (c − p)·e₂], [e₁_z, e₂_z]]`, so in `(ρ² + z², z)` its meridian is
+     the ellipse `m + L (circle)`, and in `(ρ, z)` a simple closed curve wherever `L` is invertible
+     (the circle's normal off the plane through the axis and its centre, where its two halves would
+     turn into one surface) and the circle stands clear of the axis (`turned::Rim`, C3's `Turned`
+     with a circle for its source, its jets through `sin_cos` in floats and intervals). A flat-ended
+     drum leaning 25° and turned whole closes into its solid of revolution, to 1e-9 of its slices'
+     radial spans read in closed form (it agrees to about 3e-12). **Turned part of a turn it is
+     built too**, once every meeting at its end poses was given in closed form. At each end pose the
+     end's plane and the side both hold the circle the ring holds. On the end's plane, at `c + q`,
+     `(|x − p|², z) = m + L q + (D, 0)`, `D = |q|² − r²` the power of the circle, so the ring is where
+     `|q + D k|² = r²`, `k = L⁻¹ (1, 0)`: `D (1 + 2 q·k + D |k|²) = 0`, the circle and
+     `|q + k/|k|²|² = r²` — **a second circle of the same radius** (`ssi`'s `plane_holding_rim`). On
+     the side's cylinder at the pose, at `c + h a + r (cos φ e₁ + sin φ e₂)`, `(|x − p|², z) = m +
+     r L (cos φ, sin φ) + (δ(h), h a_z)`, `δ` quadratic in `h`; with `u(h) = h v(h)`, `v = M₀ + h k`,
+     the ring is where `|r (cos φ, sin φ) + u|² = r²`: the circle (`h = 0`), and `cos(φ − arg v(h))
+     = −σ(h)`, `σ = h |v| / 2r` — **one closed loop**, read round an angle `τ` with `σ(h) = −cos τ`
+     and `ρ = cos τ v̂ + sin τ v̂⊥` wherever `σ` climbs from −1 to 1 (its rate's sign that of the
+     quadratic `2|M₀|² + 6h M₀·k + 4h²|k|²`, held above nought over the stretch), crossing the circle
+     at `τ = π/2, 3π/2` where the side touches the ring, where the side's contact reaches the rim
+     (`turned::Crossing`, `ssi`'s `side_holding_rim`). And at the point the side's contact reaches the
+     rim three surfaces meet — the end's plane, the side's contact turned (tangent there to the ring)
+     and the ring — so the plane's cut of the contact's surface is given exactly too: at the
+     meridian's height `z(v)` the plane meets the circle of radius `ρ(v)` where `cos(ψ − ψₙ) = C(v) =
+     (d − n_z z) / (|n_h| ρ)`, read round `τ` with `C(v) = −cos τ` wherever `C` runs one way over the
+     span (`turned::Section`). Two readings the part turn needed beside them: a circle and a turned
+     curve in its plane cross where the curve meets the circle's cylinder, so their tangency is one
+     vertex (`query::curve_curve`); and a closed loop and a closed meridian are periodic, one rule
+     for both (`Turned::period`: a whole period of its source's angle, read round it in Newton) — an
+     edge from a loop's
+     start round to its end had been dropped as no edge, and a trace across a ring's meridian's start
+     stalled where its slant was held to the span. The side's surface at an end pose reaches past
+     each rim beyond its loop, so its ends stand clear of where the side and the ring all but touch.
+     A rim beside a cone or a ball is refused by name part of a turn, that face's meeting with the
+     ring the next closed form to give.
+     The flat-ended drum turned 100° is its own volume and `Θ/2π` of its whole turn's, to 1e-9; drawn
+     (`solid_sweeps/leaning_mill.sv`), swung inside a ring, its STL agrees with the field.
+   - **An arc of a circle**, under a turn: its points sweep part of its circle's ring, so the whole
+     ring is its candidate, read at the arc's own points; membership keeps what bounds the sweep, and
+     two arcs of one circle (a rim a Boolean split) enter one ring. A half drum (a drum cut along its
+     axis) turned whole closes into its solid of revolution, to its slices' spans worked in closed form
+     — an ellipse cut by half-planes, its extremes at its arcs' critical points, its corners, its
+     lines' crossings and feet, the integrand cut wherever the kind of point holding an end changes.
+     Turned part of a turn it is refused by name (`Unsettled`): at an end pose, where its arcs end at
+     its cut's edges, the end's plane, the cut's, a ring and the cut's lines' surfaces all pass, and
+     a cell there is thinner than the mesh's sag can settle — the vertex's path, which the cone above
+     says enters nothing, laid where five candidates meet.
+   - **A leaning circle under a screw** is refused by name (`Curved`, at the circle): its sweep is a
+     screwed circle's sheet, its disc screwed (the pipe's candidate, for any lean, where `v · n` keeps
+     one sign over the disc: `|v(c) · n| > r |ω| |n × axis|`, `v · n` being affine). Tried on a ball
+     with a flat, two meetings were traced and did not close, and want closed forms first: the ball
+     at an end pose holds the circle and meets the sheet in it and a curve read over the roll — at
+     each turn `s`, `A(s) cos w + B(s) sin w = C(s)` round the circle; and the ball's pipe meets the
+     sheet in helices, the points of one circle the screw carries onto the other, isolated in
+     `(θ₁, θ₂, t)` as two screwed lines' are (`screwed_lines_meeting`).
+   - Left after it: a free-form edge; and under K2, where each instant's velocity moves on the tool,
+     the fan's domain `(w, t)` bounded by the two signs' zero sets, L3's chart read at the edge.
 6. **Fold and branch loci** in the domain, then X2 and X5. *Designed (#780 L1).* A patch's contact
    is the zero set of `g = n · v` over its domain: the face's own `(θ, h)` (a ring's angle and its
    height) under a constant twist, which fixes the contact on the tool, or `(θ, h, t)` at each
