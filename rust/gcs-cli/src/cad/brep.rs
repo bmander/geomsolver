@@ -3,7 +3,7 @@
 //! generating class as one sector patterned — its STEP written and parsed back against it, its STL
 //! meshed within the tolerance's deflection and a swept body's held to its material field, by the
 //! same functions the browser's export calls (`brep::export`); staged, so a failure anywhere leaves
-//! every output as it was.
+//! every output as it was, and a sliver the solid holds said against each file written (#836).
 use super::{output,progress::stage,Body,ExportRefusal,Stage};
 use gcs_core::brep;
 use gcs_core::model::Sketch;
@@ -41,6 +41,11 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     }
     staged.commit().map_err(|e| ExportRefusal::at(Stage::Written,e))?;
     super::mark(Stage::Written);
+    // a sliver the solid holds, said against each file written of it (#836): the files are
+    // written, the B-rep being exact, and the core says what of it is thinner than can be made
+    if let Some(sliver) = brep::export::slivers(sk,body.index,&exact,tolerance) {
+        for path in step.into_iter().chain(stl) { super::progress::note(&format!("{path}: {}",sliver.message)); }
+    }
     // the run's pictures read this build of the body (#592)
     if let Some(seen) = seen { brep::export::supply(seen,body.index,&exact); }
     Ok(())
@@ -54,7 +59,9 @@ pub fn export_assembly(sk: &Sketch,objects: &[usize],name: &str,path: &str,toler
     colour: &dyn Fn(usize) -> Option<[f64;3]>,seen: Option<&Sketch>) -> Result<(),(Option<usize>,ExportRefusal)> {
     super::progress::start();
     let say = brep::sweep::Say {stage:&|line: &str| stage(line),mark:&|m| super::mark(m)};
+    let mut slivers = Vec::new();
     let assembly = brep::export::assembly(sk,objects,name,tolerance,colour,&say,&mut |i,built| {
+        slivers.extend(brep::export::slivers(sk,i,built,tolerance));
         // the run's pictures read this build of the part (#592)
         if let Some(seen) = seen { brep::export::supply(seen,i,built); }
     }).map_err(|(i,e)| (Some(i),e))?;
@@ -64,5 +71,7 @@ pub fn export_assembly(sk: &Sketch,objects: &[usize],name: &str,path: &str,toler
     stage("staged the STEP output");
     staged.commit().map_err(|e| (None,ExportRefusal::at(Stage::Written,e)))?;
     super::mark(Stage::Written);
+    // a sliver a part holds, said against the file (#836)
+    for sliver in slivers { super::progress::note(&format!("{path}: {}",sliver.message)); }
     Ok(())
 }

@@ -200,7 +200,9 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
     }
     for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"common")] {
         for &o in operands {
-            let operand = part(o as usize)?;
+            let mut operand = part(o as usize)?;
+            // an end all but flush with a face of the body is on it, as the recipe's body has it (#836)
+            if let Some(flush) = super::flush::onto(&built,&operand,0.) { operand = flush; }
             let name = &sk.solids[o as usize].name;
             built = super::boolean::combined(&built,&operand,op,0.)
                 .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{name}`: {e}",solid.name)))?;
@@ -408,8 +410,7 @@ fn flattened(m: &super::mesh::Mesh,faces: &[super::topo::Face],flat: &[usize],so
     use crate::space::{altitude,distance};
     use crate::vocab::all_of;
     let first = flat[0];
-    let name = |f: u32| faces.get(f as usize).map(|x| crate::vocab::public_path(&crate::solid::exact::joined(&x.name)))
-        .filter(|n| !n.is_empty()).map_or_else(|| format!("face {f}"),|n| format!("`{n}`"));
+    let name = |f: u32| face_name(faces,f);
     // the faces the flat triangles are of, the most first
     let mut count: std::collections::BTreeMap<u32,usize> = Default::default();
     for &i in flat { *count.entry(m.of[i]).or_default() += 1; }
@@ -446,9 +447,78 @@ fn flattened(m: &super::mesh::Mesh,faces: &[super::topo::Face],flat: &[usize],so
             at[0],at[1],at[2],name(of))}
 }
 
+/// **A sliver the built solid holds, said** (#836): what `slivers` finds, as a host says it
+/// beside the file it wrote — a warning, not a refusal: the B-rep is exact, and what it holds is
+/// what was drawn.
+#[derive(Clone,Debug)]
+pub struct Sliver {
+    pub message: String,
+    /// A point of the first sliver, in model units (`flattened`'s witness).
+    pub witness: [f64;3],
+}
+
+/// **The slivers solid `body`'s exact build holds**, said by face name and with a point (#836): a
+/// face thinner than the export's tolerance (`brep::flush::slivers`, the fabrication tolerance where
+/// none is named) or an edge shorter than it, wherever the solid stands — the STEP, a written STL and
+/// a picture each say it, where once only an STL that float32 flattened did (`flattened`). An end
+/// all but flush with a face whose walls let it move is moved onto it by the body's Booleans
+/// (`brep::flush`), so what is said here is a step the drawing holds: one end standing off the
+/// other's face by less than can be made. `None` where the solid holds none.
+pub fn slivers(sk: &Sketch,body: usize,exact: &Exact,tolerance: Option<Tolerance>) -> Option<Sliver> {
+    // a pattern's sector, whose faces carry the names
+    said_slivers(sk,body,exact.pattern.as_ref().map_or(&exact.solid,|p| p.sector()),[0.;3],tolerance)
+}
+
+/// `slivers` of solid `i` as the drawing holds its exact B-rep (`Sketch::exact_solid`; a swept
+/// one's as an export or a picture supplied it): what a picture of it says beside it. `None` where
+/// it holds none, or the drawing holds no exact build of it.
+pub fn slivers_drawn(sk: &Sketch,i: usize,tolerance: Option<Tolerance>) -> Option<Sliver> {
+    let x = sk.exact_solid(i).ok()?;
+    said_slivers(sk,i,&x.brep,x.origin.map(|k| k*x.mm),tolerance)
+}
+
+/// `slivers` of `b`, a build of solid `body` standing `at` (mm) from where its B-rep is drawn.
+fn said_slivers(sk: &Sketch,body: usize,b: &Brep,at: [f64;3],tolerance: Option<Tolerance>) -> Option<Sliver> {
+    use super::flush::Thin;
+    use crate::vocab::all_of;
+    let bar = tolerance.unwrap_or(Tolerance::FABRICATION).millimetres;
+    let found = super::flush::slivers(b,bar);
+    let first = found.first()?;
+    let name = |f: usize| face_name(&b.faces,f as u32);
+    let names = |of: &[usize]| all_of(&of.iter().map(|&f| name(f)).collect::<Vec<_>>());
+    let solid = crate::vocab::public_path(&sk.solids[body].name);
+    let faces = found.iter().filter(|s| matches!(s.thin,Thin::Face(_))).count();
+    let edges = found.len()-faces;
+    let count = |n: usize,one: &str| if n == 1 { format!("a{} {one}",if one.starts_with('e') { "n" } else { "" }) } else { format!("{n} {one}s") };
+    let against = format!("the export's {}",length_text(bar));
+    let counted = match (faces,edges) {
+        (0,e) => format!("{} shorter than {against}",count(e,"edge")),
+        (f,0) => format!("{} thinner than {against}",count(f,"face")),
+        (f,e) => format!("{} thinner than {against} and {} shorter than it",count(f,"face"),count(e,"edge")),
+    };
+    let what = match first.thin {
+        Thin::Face(f) => format!("{}, {} across",name(f),length_text(first.size)),
+        Thin::Edge(_) => format!("an edge of {}, {} long",names(&first.of),length_text(first.size)),
+    };
+    let beside = if first.beside.is_empty() { String::new() } else { format!(", beside {}",names(&first.beside)) };
+    let at = crate::space::add(first.at,at);
+    let scale = cad::millimetres(sk);
+    Some(Sliver {witness:at.map(|x| x/scale),
+        message:format!("`{solid}` holds {counted}: the first, {what}{beside}, near ({:.4}, {:.4}, {:.4}) mm. A sliver that \
+            thin is most often where one cut ends all but flush with another's face: move that end onto the face or clear of it",
+            at[0],at[1],at[2])})
+}
+
+/// A face of a built solid as a reader writes it (`face 3` where it has no name).
+fn face_name(faces: &[super::topo::Face],f: u32) -> String {
+    faces.get(f as usize).map(|x| crate::vocab::public_path(&crate::solid::exact::joined(&x.name)))
+        .filter(|n| !n.is_empty()).map_or_else(|| format!("face {f}"),|n| format!("`{n}`"))
+}
+
 /// A length in millimetres, written in the unit that suits it.
 fn length_text(mm: f64) -> String {
-    if mm >= 1. { format!("{mm:.3} mm") } else if mm >= 1e-3 { format!("{:.3} µm",mm*1e3) } else { format!("{:.3} nm",mm*1e6) }
+    // read after rounding to three places, so a micrometre is never `1000.000 nm`
+    if mm >= 0.9995 { format!("{mm:.3} mm") } else if mm >= 0.9995e-3 { format!("{:.3} µm",mm*1e3) } else { format!("{:.3} nm",mm*1e6) }
 }
 
 /// A swept body's STL held to its material field: no cluster of microscopic triangles, and every

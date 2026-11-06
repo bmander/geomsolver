@@ -312,6 +312,10 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
         for x in list {
             let operand = built.get(x).ok_or(format!("recipe: an operand not built before its body"))?;
             let name = built_names.get(x).cloned().unwrap_or_default();
+            // a written operand's end all but flush with a face of the body is on it (#836); what
+            // reads the faces is built on them already
+            let flush = if written { super::flush::onto(&solid,operand,floor) } else { None };
+            let operand = flush.as_ref().unwrap_or(operand);
             let (s,k) = super::boolean::combined_known(&solid,known.as_ref(),operand,op,floor).map_err(|e| {
                 // **what the stratum leaves**: each round or chamfer is read off the body as the
                 // terms before them leave it, never off another, so two of separate statements

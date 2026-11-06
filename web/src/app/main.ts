@@ -260,7 +260,9 @@ function exactExport(kind: 'step' | 'stl'): void {
       exportsWaiting.delete(reply.id);
       if ('error' in reply) { toast(`cannot export ${asked.name}: ${reply.error}`); return; }
       download(`${asked.name}.${asked.kind}`, reply.bytes);
-      toast(`exported ${asked.name}.${asked.kind} — by the core's kernel, its file checked`);
+      // a sliver the solid holds is said beside the file, as `solventc` says it (#836)
+      if (reply.note) toast(`exported ${asked.name}.${asked.kind}, but ${reply.note}`, 30000);
+      else toast(`exported ${asked.name}.${asked.kind} — by the core's kernel, its file checked`);
     };
     w.onerror = (ev) => { exportsWaiting.clear(); toast(`the export stopped: ${ev.message || 'its worker failed'}`); exporter = null; };
     exporter = w;

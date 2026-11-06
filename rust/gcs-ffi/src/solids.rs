@@ -612,15 +612,35 @@ pub unsafe extern "C" fn gcs_solid_exact(h: *mut Sketch, idx: i32, kind: i32, to
             match gcs_core::solid::export::Tolerance::new(tolerance) { Ok(t) => Some(t), Err(m) => { set_error(m); return std::ptr::null_mut() } }
         } else { None };
         let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
-        let made = gcs_core::brep::export::exact(s, i, None, tolerance, &say).and_then(|exact| match kind {
-            0 => gcs_core::brep::export::step(&exact, &s.solids[i].name, tolerance, &say).map(String::into_bytes),
-            _ => gcs_core::brep::export::stl(s, i, &exact, tolerance, &say),
+        EXACT_NOTE.with(|n| n.borrow_mut().clear());
+        let made = gcs_core::brep::export::exact(s, i, None, tolerance, &say).and_then(|exact| {
+            let bytes = match kind {
+                0 => gcs_core::brep::export::step(&exact, &s.solids[i].name, tolerance, &say).map(String::into_bytes),
+                _ => gcs_core::brep::export::stl(s, i, &exact, tolerance, &say),
+            }?;
+            // a sliver the solid holds, kept to be said beside the file (#836)
+            if let Some(sliver) = gcs_core::brep::export::slivers(s, i, &exact, tolerance) {
+                EXACT_NOTE.with(|n| *n.borrow_mut() = sliver.message);
+            }
+            Ok(bytes)
         });
         match made {
             Ok(bytes) => out_bytes(bytes),
             Err(refusal) => { set_error(format!("{} (at {})", refusal.message, refusal.stage.key())); std::ptr::null_mut() }
         }
     })
+}
+
+thread_local! {
+    static EXACT_NOTE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// **What the last exact export on this thread says beside its file** (#836): a sliver its solid
+/// holds, in the core's words (`brep::export::slivers`), or empty where it holds none or the export
+/// was refused. The file is written all the same; the page says this beside it.
+#[no_mangle]
+pub extern "C" fn gcs_solid_exact_note() -> *mut u8 {
+    out_str(EXACT_NOTE.with(|n| n.borrow().clone()))
 }
 
 /// Whether solid `idx`'s surface is still being refined: 1, 0, or −1 with the reason where it has

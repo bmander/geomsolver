@@ -326,12 +326,14 @@ base := solid(block)
     sk
 }
 
-/// **A triangle float32 flattens is said where it is** (#821): two pockets ending 10 nm apart a
-/// thousand millimetres out, where float32 steps 61 nm, leave the bore's walls a strip 10 nm tall
-/// that binary STL cannot write. The refusal names the solid, the faces its flat triangles are of
-/// and the face beside the first, a point near it (and the witness there), how thin it is and
-/// that float32 flattened it, and the likely cause — where it said only that the file had a
-/// degenerate triangle. The same step near the origin, or 10 µm out there, is written.
+/// **A triangle float32 flattens is said where it is** (#821): two pockets ending 200 nm apart ten
+/// metres out, where float32 steps 977 nm, leave the bore's walls a strip 200 nm tall that binary
+/// STL cannot write — farther apart than the Booleans read as flush (`brep::flush`, a part in a
+/// million of the block's size, 54 nm), so the B-rep holds it. The refusal names the solid, the
+/// faces its flat triangles are of and the face beside the first, a point near it (and the witness
+/// there), how thin it is and that float32 flattened it, and the likely cause — where it said only
+/// that the file had a degenerate triangle. The same step near the origin, or 10 µm out there, is
+/// written.
 #[test]
 fn a_sliver_float32_flattens_is_refused_naming_its_faces_and_where() {
     let say = Say {stage:&|_| {},mark:&|_| {}};
@@ -341,20 +343,90 @@ fn a_sliver_float32_flattens_is_refused_naming_its_faces_and_where() {
         let exact = export::exact(&sk,body,None,None,&say).unwrap();
         export::stl(&sk,body,&exact,None,&say)
     };
-    let e = stl(1000.,1e-5).err().expect("a strip float32 flattens is refused");
+    let e = stl(10000.,2e-4).err().expect("a strip float32 flattens is refused");
     assert_eq!(e.stage,gcs_core::solid::export::Stage::Stl,"{e}");
     for said in ["`base`: ","STL triangles have no area as written, on `bore.","no area once float32 rounds its corners",
         "nm thick) is near (","beside `pocket.near`","most often a sliver","here `bore."] {
         assert!(e.message.contains(said),"{said}: {e}");
     }
-    // on the bore's walls, across the pocket's ceiling, a thousand millimetres out
+    // on the bore's walls, across the pocket's ceiling, ten metres out
     let w = e.witness.expect("a point near the flat triangle");
     let out = w.iter().map(|x| x.abs()).fold(0.,f64::max);
-    assert!((out-1000.).abs() < 1e-3,"{w:?}");
+    assert!((out-10000.).abs() < 1e-3,"{w:?}");
     assert!(w.iter().any(|x| (x.abs()-5.).abs() < 1e-6),"{w:?}: on a wall of the bore, 5 mm from its middle");
     // float32 writes the strip near the origin, and a step it can tell apart out there
-    gcs_core::mesh::stl_shells(&stl(0.,1e-5).unwrap()).unwrap();
+    gcs_core::mesh::stl_shells(&stl(0.,2e-4).unwrap()).unwrap();
     gcs_core::mesh::stl_shells(&stl(1000.,0.01).unwrap()).unwrap();
+}
+
+/// The base of `stepped_pockets(z0, step)` built exactly, and its index.
+fn stepped_base(z0: f64,step: f64) -> (Sketch,usize,export::Exact) {
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    let sk = stepped_pockets(z0,step);
+    let body = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "base").unwrap();
+    let exact = export::exact(&sk,body,None,None,&say).unwrap();
+    (sk,body,exact)
+}
+
+/// **An end all but flush with a face is on it** (#836, the issue's own case): the bore ending
+/// 10 nm over the pocket's ceiling a thousand millimetres out — or 10 nm under it — is cut as if it
+/// ended on the ceiling (`brep::flush`): the same faces and volume as the bore ending there exactly,
+/// no corner standing off the ceiling, no sliver to say, and its STEP and STL written. Where the
+/// float32 STL refused it, and a STEP of 19 faces held the strip silently, the file is what was meant.
+#[test]
+fn an_end_all_but_flush_with_a_face_is_cut_on_it() {
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    let (_,_,flush) = stepped_base(1000.,0.);
+    let b = &flush.solid;
+    for step in [1e-5,-1e-5] {
+        let (sk,body,exact) = stepped_base(1000.,step);
+        let x = &exact.solid;
+        x.check(1e-6).unwrap();
+        assert_eq!((x.faces.len(),x.edges.len(),x.vertices.len()),(b.faces.len(),b.edges.len(),b.vertices.len()),"{step:e}");
+        assert!((props::volume(x)-props::volume(b)).abs() <= 1e-9*props::volume(b),"{step:e}");
+        // every corner on a plane the drawing states: none 10 nm off the ceiling
+        for v in &x.vertices {
+            let off = (v.p.iter().map(|k| k.abs()).fold(0.,f64::max)-1000.).abs();
+            assert!(off <= 1e-9 || off >= 9.9,"{step:e}: {:?}",v.p);
+        }
+        assert!(export::slivers(&sk,body,&exact,None).is_none(),"{step:e}");
+        export::step(&exact,"base",None,&say).unwrap();
+        gcs_core::mesh::stl_shells(&export::stl(&sk,body,&exact,None,&say).unwrap()).unwrap();
+    }
+}
+
+/// **A sliver the B-rep holds is said wherever it stands** (#836): the bore ending 1 µm over the
+/// pocket's ceiling — farther than the Booleans read as flush, so built as drawn, the strip of wall
+/// held exactly — is said by the core in the same words at the origin and a thousand millimetres
+/// out, where float32 tells the ends apart and the STL is written: the solid, how many faces are
+/// thinner than the export's tolerance, the first by name and how thin, the faces it stands between
+/// and a point on it (the witness there). An export asked to 0.5 µm finds nothing so thin, and a
+/// step of 20 µm is none.
+#[test]
+fn a_sliver_the_brep_holds_is_said_wherever_it_stands() {
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    let (_,_,flush) = stepped_base(0.,0.);
+    for z0 in [0.,1000.] {
+        let (sk,body,exact) = stepped_base(z0,1e-3);
+        // the strip held: the bore's 200 mm² a micrometre deeper than flush
+        let deeper = props::volume(&flush.solid)-props::volume(&exact.solid);
+        assert!((deeper-0.2).abs() <= 1e-6,"{z0}: {deeper}");
+        let s = export::slivers(&sk,body,&exact,None).expect("a strip 1 µm tall is a sliver");
+        for said in ["`base` holds 2 faces thinner than the export's 10.000 µm: the first, `bore.","1.000 µm across, beside \
+            `pocket.near` and `bore.near`, near (","move that end onto the face or clear of it"] {
+            assert!(s.message.contains(said),"{said}: {}",s.message);
+        }
+        // on a wall of the bore, midway up the strip
+        let w = s.witness;
+        assert!(w.iter().any(|x| (x.abs()-5.).abs() < 1e-9),"{w:?}");
+        assert!(w.iter().any(|x| (x.abs()-z0-5e-4).abs() < 1e-6),"{w:?}");
+        // the files are written: the STEP of the exact solid, and the STL float32 can write
+        export::step(&exact,"base",None,&say).unwrap();
+        export::stl(&sk,body,&exact,None,&say).unwrap();
+        assert!(export::slivers(&sk,body,&exact,Some(gcs_core::solid::export::Tolerance::new(5e-4).unwrap())).is_none());
+    }
+    let (sk,body,exact) = stepped_base(1000.,0.02);
+    assert!(export::slivers(&sk,body,&exact,None).is_none());
 }
 
 /// A binary STL refused by its reader says which triangle and where (#821), not only that one is

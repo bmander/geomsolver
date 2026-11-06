@@ -500,3 +500,40 @@ fn exact_census() {
         eprintln!("{route}: {file} `{solid}`: {why}");
     }
 }
+
+/// **Every corpus solid's slivers** (#836): each object of every example whose exact B-rep holds a
+/// face thinner than the fabrication tolerance somewhere or an edge shorter than it, said as an
+/// export says it (`brep::export::slivers`, `slivers_drawn`) — what a drawing would be warned of.
+/// A report, ignored: `cargo test sliver_census -- --ignored --nocapture` (minutes; with
+/// `SLIVER_STATIC` set, the static solids alone, in seconds).
+#[test]
+#[ignore = "a tool, minutes: every corpus solid's slivers, as an export says them"]
+fn sliver_census() {
+    use gcs_core::brep::{export, sweep::Say};
+    let statics = std::env::var("SLIVER_STATIC").is_ok();
+    let (mut read, mut said) = (0, 0);
+    for (name, e) in fixtures::examples() {
+        let Some(e) = e else { continue };
+        if !e.ok() { continue; }
+        let mut solved = e.sketch.clone();
+        gcs_core::solve::solve(&mut solved, gcs_core::solve::SolveOpts::default());
+        let sk: &Sketch = &solved;
+        for i in gcs_core::overview::objects(sk) {
+            let sliver = if sk.is_swept(i) {
+                if statics { continue; }
+                let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+                let Ok(x) = export::exact(sk, i, None, None, &say) else { continue };
+                export::slivers(sk, i, &x, None)
+            } else {
+                if sk.exact_solid(i).is_err() { continue; }
+                export::slivers_drawn(sk, i, None)
+            };
+            read += 1;
+            if let Some(s) = sliver {
+                said += 1;
+                eprintln!("{name}: {}", s.message);
+            }
+        }
+    }
+    eprintln!("{said} of {read} objects hold a sliver");
+}
