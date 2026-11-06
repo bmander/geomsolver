@@ -158,21 +158,27 @@ fn the_rest_pose_spun_then_carried_is_the_planet_riding() {
     for t in [0.0, 45.0, 200.0] {
         let mut sk = e.sketch.clone();
         f.put(&mut sk, t).unwrap();
-        let brep = |i: usize| sk.exact_solid(i).unwrap_or_else(|m| panic!("{i}: {m}")).brep.clone();
-        let (a, b) = (brep(body), brep(shown));
-        let v = gcs_core::brep::props::volume(&a);
+        // each solid's exact B-rep, its corners where they stand in the world (`Exact::origin`)
+        let exact = |i: usize| sk.exact_solid(i).unwrap_or_else(|m| panic!("{i}: {m}"));
+        let (a, b) = (exact(body), exact(shown));
+        let corners = |x: &gcs_core::solid::Exact| -> Vec<[f64; 3]> {
+            x.brep.vertices.iter().map(|v| [0, 1, 2].map(|k| x.origin[k] + v.p[k] / x.mm))
+                .collect()
+        };
+        let v = gcs_core::brep::props::volume(&a.brep);
         assert!((v - 75.0 * std::f64::consts::PI).abs() < 1e-9 * v, "{v} against 75π");
-        assert!((gcs_core::brep::props::volume(&b) - v).abs() < 1e-9 * v);
-        assert_eq!(a.vertices.len(), b.vertices.len());
-        for p in &a.vertices {
-            assert!(b.vertices.iter().any(|q| norm(sub(p.p, q.p)) < EXACT),
-                    "t = {t}: {:?} is no corner of the copy carried round", p.p);
+        assert!((gcs_core::brep::props::volume(&b.brep) - v).abs() < 1e-9 * v);
+        let (ca, cb) = (corners(&a), corners(&b));
+        assert!(!ca.is_empty() && ca.len() == cb.len(), "{ca:?} against {cb:?}");
+        for p in &ca {
+            assert!(cb.iter().any(|q| norm(sub(*p, *q)) < EXACT),
+                    "t = {t}: {p:?} is no corner of the copy carried round, {cb:?}");
         }
         // and where the train puts the planet: every corner on its rim, 5 about the carried pin
         let pin = train([20.0, 0.0, 0.0], t);
-        for p in &a.vertices {
-            let r = (p.p[0] - pin[0]).hypot(p.p[1] - pin[1]);
-            assert!((r - 5.0).abs() < EXACT, "t = {t}: {:?} is {r} from the pin", p.p);
+        for p in &ca {
+            let r = (p[0] - pin[0]).hypot(p[1] - pin[1]);
+            assert!((r - 5.0).abs() < EXACT, "t = {t}: {p:?} is {r} from the pin");
         }
     }
 }
