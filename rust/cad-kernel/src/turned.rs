@@ -23,6 +23,15 @@
 //! and in outward-rounded intervals (`util::interval`) for bounds over a stretch of `v` that hold —
 //! what a certified reading of a line against the surface needs (`query::line_revolution`), and the
 //! curve's box (`Turned::bounds`).
+//!
+//! **A sharp circle turned** (#780 L2, a fan's contact as a patch): a circle edge where two faces
+//! meet at an angle carries the fan of normals between theirs, and under a turn every point of it
+//! sweeps its circle about the axis, so its fan's sheet lies on the surface of revolution the circle
+//! sweeps (`Rim`, the circle `o + r (cos w x + sin w y)` read at its angle `w`). Measured from a
+//! point `p` of the axis, `ρ² + z² = |x − p|²` is affine in `(cos w, sin w)`, as `z` is: in
+//! `(ρ² + z², z)` the meridian is an ellipse, so in `(ρ, z)` a simple closed curve wherever that
+//! ellipse is one and the circle stands clear of the axis (`Rim::simple`) — the surface a ring,
+//! held as that closed form in `w`, by the same jets.
 use crate::geom::{Box3,Frame,Rigid,V};
 use crate::util::interval::Interval;
 use crate::util::space::{dot,sub};
@@ -34,11 +43,14 @@ pub trait Num: Copy+Add<Output=Self>+Sub<Output=Self>+Mul<Output=Self>+Div<Outpu
     fn of(x: f64) -> Self;
     /// Its square root.
     fn sqrt(self) -> Self;
+    /// Its sine and cosine.
+    fn sin_cos(self) -> (Self,Self);
 }
 
 impl Num for f64 {
     fn of(x: f64) -> f64 { x }
     fn sqrt(self) -> f64 { f64::sqrt(self) }
+    fn sin_cos(self) -> (f64,f64) { use crate::util::fmath::Det; self.dsin_cos() }
 }
 
 /// An outward-rounded interval, or none where an operation left its domain (a division by an
@@ -64,6 +76,9 @@ impl Neg for Iv { type Output = Iv; fn neg(self) -> Iv { Iv(self.0.map(|a| a.neg
 impl Num for Iv {
     fn of(x: f64) -> Iv { Iv(Interval::point(x).ok()) }
     fn sqrt(self) -> Iv { Iv(self.0.and_then(|a| a.sqrt().ok())) }
+    fn sin_cos(self) -> (Iv,Iv) {
+        match self.0.and_then(|a| a.sin_cos_periodic().ok()) { Some((s,c)) => (Iv(Some(s)),Iv(Some(c))),None => (Iv(None),Iv(None)) }
+    }
 }
 
 /// A number and its first two derivatives along one parameter.
@@ -83,6 +98,13 @@ impl<T: Num> Jet<T> {
         let two = T::of(2.);
         let d = self.d/(two*s);
         Jet {v:s,d,dd:(self.dd-two*d*d)/(two*s)}
+    }
+    /// Its sine and cosine: `sin' = cos x'`, `sin'' = cos x'' − sin x'²`; `cos' = −sin x'`,
+    /// `cos'' = −sin x'' − cos x'²`.
+    pub fn sin_cos(self) -> (Jet<T>,Jet<T>) {
+        let (s,c) = self.v.sin_cos();
+        let d2 = self.d*self.d;
+        (Jet {v:s,d:c*self.d,dd:c*self.dd-s*d2},Jet {v:c,d:-(s*self.d),dd:-(s*self.dd)-c*d2})
     }
 }
 
@@ -153,14 +175,65 @@ impl Contact {
     }
 }
 
-/// **The meridian of a contact turned** (`geom::Curve::Turned`): the curve `frame.at([ρ(v), 0,
-/// z(v)])`, `v` the face's slant over `span`, in the half-plane of `frame`'s `x` and `z` — `frame`
-/// the turn's axis (its origin on it, its `z` along it), the contact read in its coordinates. Or,
-/// `posed`, the contact itself, `frame.at(x(v))`: `frame` then the turn's turned by the pose's angle,
-/// where the face at that pose of the turn touches the meridian's surface of revolution (`ssi`'s
-/// `own_contact`).
+/// **A sharp circle of the tool, under a turn** (the module's): `o + r (cos w x + sin w y)` at its
+/// angle `w`, `x` and `y` unit and square, all in the turn's own frame (its origin on the turn's
+/// axis, its `z` along it).
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub struct Turned { pub frame: Frame,pub contact: Contact,pub span: [f64;2],pub posed: bool }
+pub struct Rim { pub o: V,pub x: V,pub y: V,pub r: f64 }
+
+impl Rim {
+    /// Its point at the jet `w` of its angle.
+    pub fn point<T: Num>(&self,w: Jet<T>) -> J3<T> {
+        let (s,c) = w.sin_cos();
+        std::array::from_fn(|i| Jet::of(self.o[i])+c.times(self.r*self.x[i])+s.times(self.r*self.y[i]))
+    }
+    /// Whether it turns into a ring, proved: clear of the axis (its least distance from it above
+    /// `eps`, read over 64 pieces of the turn in intervals) and its meridian a simple closed curve —
+    /// in `(ρ² + z², z)` an ellipse, `(2 r o·x, r x_z)` and `(2 r o·y, r y_z)` its axes' images,
+    /// which part (their determinant `2 r² o · (x y_z − y x_z)` at least `eps` of `|o| r`: the
+    /// circle's normal off the plane through the axis and its centre, where the circle's two halves
+    /// would turn into one surface).
+    pub fn simple(&self,eps: f64) -> bool {
+        let (o,x,y,r) = (self.o,self.x,self.y,self.r);
+        let det = 2.*r*r*(dot(o,x)*y[2]-dot(o,y)*x[2]);
+        det.abs() > eps*r*(1.+dot(o,o).sqrt()) && pieces([0.,std::f64::consts::TAU],64).all(|w| {
+            let p = self.point(Jet::at(w));
+            (p[0].v*p[0].v+p[1].v*p[1].v).bounds().is_some_and(|[lo,_]| lo > eps*eps)
+        })
+    }
+}
+
+/// What a turned meridian is the meridian of: a round face's contact (#780 C3), or a sharp circle
+/// of the tool (#780 L2).
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum Source { Contact(Contact),Rim(Rim) }
+
+impl Source {
+    /// Its point at the jet of its parameter, in the turn's frame: the contact's at the face's slant,
+    /// the circle's at its angle.
+    pub fn point<T: Num>(&self,v: Jet<T>) -> J3<T> {
+        match self { Source::Contact(c) => c.point(v).0,Source::Rim(c) => c.point(v) }
+    }
+    /// Where its point at `v` goes in `(ρ, z)` about the turn's axis, each with its jet.
+    pub fn meridian<T: Num>(&self,v: Jet<T>) -> [Jet<T>;2] {
+        let [r2,z] = self.meridian2(v);
+        [r2.sqrt(),z]
+    }
+    /// `meridian` with its radius squared, read with no root.
+    pub fn meridian2<T: Num>(&self,v: Jet<T>) -> [Jet<T>;2] {
+        let x = self.point(v);
+        [x[0]*x[0]+x[1]*x[1],x[2]]
+    }
+}
+
+/// **The meridian of a contact or a sharp circle turned** (`geom::Curve::Turned`): the curve
+/// `frame.at([ρ(v), 0, z(v)])`, `v` the face's slant (or the circle's angle) over `span`, in the
+/// half-plane of `frame`'s `x` and `z` — `frame` the turn's axis (its origin on it, its `z` along
+/// it), the source read in its coordinates. Or, `posed`, the contact itself, `frame.at(x(v))`:
+/// `frame` then the turn's turned by the pose's angle, where the face at that pose of the turn
+/// touches the meridian's surface of revolution (`ssi`'s `own_contact`).
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Turned { pub frame: Frame,pub source: Source,pub span: [f64;2],pub posed: bool }
 
 /// `[a, b]` in `n` pieces, each an interval.
 fn pieces([a,b]: [f64;2],n: usize) -> impl Iterator<Item=Iv> {
@@ -169,12 +242,20 @@ fn pieces([a,b]: [f64;2],n: usize) -> impl Iterator<Item=Iv> {
 
 impl Turned {
     /// The meridian of `contact` turned about `frame`'s axis, over `span`.
-    pub fn meridian(frame: Frame,contact: Contact,span: [f64;2]) -> Turned { Turned {frame,contact,span,posed:false} }
-    /// Its point at the jet `v`, in its frame's coordinates: the contact's own, posed, else
+    pub fn meridian(frame: Frame,contact: Contact,span: [f64;2]) -> Turned { Turned {frame,source:Source::Contact(contact),span,posed:false} }
+    /// The meridian of the sharp circle `rim` turned about `frame`'s axis, over the angles `span`.
+    pub fn rim(frame: Frame,rim: Rim,span: [f64;2]) -> Turned { Turned {frame,source:Source::Rim(rim),span,posed:false} }
+    /// The round face's contact it is the meridian of, if it is one's.
+    pub fn contact(&self) -> Option<Contact> { match self.source { Source::Contact(c) => Some(c),Source::Rim(_) => None } }
+    /// Where its source's point at `v` goes in `(ρ, z)`, each with its jet.
+    pub fn meridian_at<T: Num>(&self,v: Jet<T>) -> [Jet<T>;2] { self.source.meridian(v) }
+    /// `meridian_at` with its radius squared, read with no root.
+    pub fn meridian2<T: Num>(&self,v: Jet<T>) -> [Jet<T>;2] { self.source.meridian2(v) }
+    /// Its point at the jet `v`, in its frame's coordinates: the source's own, posed, else
     /// `(ρ, 0, z)`.
     fn local<T: Num>(&self,v: Jet<T>) -> J3<T> {
-        if self.posed { return self.contact.point(v).0 }
-        let [r,z] = self.contact.meridian(v);
+        if self.posed { return self.source.point(v) }
+        let [r,z] = self.source.meridian(v);
         [r,Jet::of(0.),z]
     }
     /// `M`, `M'`, `M''` at `v`.
@@ -185,17 +266,19 @@ impl Turned {
     /// `ρ` and `z` with their first two derivatives over the stretch `[a, b]` of `v`, each held in
     /// an interval (none where a reading left its domain over it).
     pub fn bounded(&self,[a,b]: [f64;2]) -> Option<[[[f64;2];3];2]> {
-        let [r,z] = self.contact.meridian(Jet::at(Iv::new(a,b)));
+        let [r,z] = self.source.meridian(Jet::at(Iv::new(a,b)));
         let three = |j: Jet<Iv>| Some([j.v.bounds()?,j.d.bounds()?,j.dd.bounds()?]);
         Some([three(r)?,three(z)?])
     }
-    /// Whether the contact is a curve over `span`, proved, and its height runs one way: over each of
+    /// Whether the contact is a curve over `span`, proved, and its height runs one way (a contact's
+    /// only): over each of
     /// 64 pieces its discriminant above nought (two contacts on every ring, apart), it off the
     /// turn's axis, and `z'` held off nought, one sign all along.
     pub fn defined(&self,span: [f64;2]) -> bool {
+        let Source::Contact(contact) = self.source else { return false };
         let mut sign = 0.;
         pieces(span,64).all(|v| {
-            let (x,disc) = self.contact.point(Jet::at(v));
+            let (x,disc) = contact.point(Jet::at(v));
             let rho2 = x[0].v*x[0].v+x[1].v*x[1].v;
             let climb = match x[2].d.bounds() { Some([lo,_]) if lo > 0. => 1.,Some([_,hi]) if hi < 0. => -1.,_ => 0. };
             let held = climb != 0. && (sign == 0. || sign == climb);

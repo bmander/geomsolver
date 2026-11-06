@@ -43,7 +43,10 @@
 //!   (`turned::Turned`, `Cutter::Turned`: the meridian a twentieth past the face's span each way,
 //!   closed down the axis at both ends and turned once), which the face at each end pose touches
 //!   along its contact turned there (in closed form, `ssi`'s `own_contact`); an axis in one plane
-//!   with the turn's, along its two generators in that plane, turned into hyperboloids. A whole
+//!   with the turn's, along its two generators in that plane, turned into hyperboloids. A sharp
+//!   circle leaning to the axis, whole and convex (#780 L2: its fan's contact lies on the surface its
+//!   points sweep), turned into a ring whose meridian is read exactly (`turned::Rim`, an ellipse in
+//!   `(ρ² + z², z)`), under a whole turn only. A whole
 //!   turn takes no face at its end poses: its sweep is the tool's solid of revolution, which those
 //!   faces only touch. An edge where a round face runs on smoothly (a line into a plane, a circle
 //!   into a ball, however it leans) bounds nothing, nor does a concave one (a stem entering a ball).
@@ -114,7 +117,9 @@
 //! screw a round face about an axis leaning to it, or a torus's; under a turn a cylinder's or a
 //! cone's about a leaning axis whose contact is no curve over the face (its two roots on a ring
 //! meeting, or the curve reaching the axis) or whose meridian folds back along the axis, a ball
-//! reaching across its axis, a torus's leaning to it, a sharp circle leaning to it; a torus's under a
+//! reaching across its axis, a torus's leaning to it, a sharp circle leaning to it turned part of a
+//! turn (its end poses' faces meet its ring along the circle, in closed forms not yet given to the
+//! arrangement), an arc of one, or one through the axis; a torus's under a
 //! slide leaning to its axis, a free-form face, a curve no line or circle, a leaning edge under a
 //! screw, another motion — is refused by what it is (`Unbuilt`); those are the design's later steps.
 use crate::boolean::arrangement_within;
@@ -137,7 +142,8 @@ pub enum Unbuilt {
     /// cylinder or a cone about an axis leaning to the turn's whose contact is no curve over the
     /// face or whose meridian folds back along the axis (or crossing the turn's axis within the
     /// face, #780 C3), a ball reaching across its axis, a torus leaning to it, or a sharp edge no line
-    /// leaning to it; under a screw, a cylinder or a cone about an axis leaning to the screw's, a
+    /// leaning to it but a whole circle turned whole (#780 L2; part of a turn, refused at the rim's
+    /// centre); under a screw, a cylinder or a cone about an axis leaning to the screw's, a
     /// torus, or a circle leaning to it: its envelope sheets are curved past what the candidates
     /// hold, the design's later steps.
     Curved { at: V },
@@ -195,7 +201,8 @@ enum Cutter { Plane(Plane),
     /// A round face's contact turned (#780 C3): the surface of revolution about the turn's axis
     /// whose meridian is where the contact of a cylinder or a cone about an axis leaning to the
     /// turn's goes in `(ρ, z)` (`turned::Turned`), its solid that meridian closed down the axis at
-    /// both ends and turned once.
+    /// both ends and turned once; or a sharp circle leaning to the turn's axis turned (#780 L2), its
+    /// meridian closed, its solid a ring.
     Turned(crate::turned::Turned),
     /// The disc of radius `r` about `c` square to the unit `n` screwed over the stretch `span` of the
     /// roll: the solid a ball's great circle square to its centre's velocity sweeps under a screw,
@@ -231,7 +238,8 @@ pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f6
 /// built (what an admission asks, #721's dispatch): the motion a slide, a turn or a screw that
 /// moves something; every face of the tool a plane and every edge a line bounding two of them
 /// (under a slide, a face a cylinder, a cone or a ball too, and an edge a circle; under a turn, a
-/// cylinder or a cone about any axis (#780 C3), a ball, and a sharp curve in a plane square to it;
+/// cylinder or a cone about any axis (#780 C3), a ball, a sharp curve in a plane square to it, and a
+/// whole sharp circle leaning to it (#780 L2, built only turned whole);
 /// under a screw, a
 /// cylinder or a cone about an axis along it, and a ball beside planes and such a cylinder). The
 /// constant twist it is, or the first thing that is not, by what it is and where (a point of the
@@ -242,7 +250,8 @@ pub fn reads(tool: &Brep,path: &Trajectory) -> Result<crate::trajectory::Screw,U
 /// its outward unit normal; for a face no plane, a point of it and no normal), each straight
 /// edge's two ends, two faces and their outward normals along it (the same all along a line on a
 /// plane, a cylinder or a cone), each face no plane (`round`) and each circle edge where its faces
-/// meet at an angle (`rims`): those two only under a slide.
+/// meet at an angle (`rims`): under a slide any, under a screw one square to its axis, under a turn
+/// a whole one leaning to it (#780 L2).
 struct Read { screw: crate::trajectory::Screw,faces: Vec<(V,V)>,edges: Vec<(V,V,[usize;2])>,normals: Vec<[V;2]>,
     round: Vec<usize>,rims: Vec<Rim>,
     /// Under a turn, each sharp edge no line lying in a plane square to the axis — a circle about a
@@ -371,6 +380,15 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
                     // any curve in a level plane, under a turn (a circle about a line along the axis,
                     // a leaning round face's rim cut level, #780 C3): within its plane
                     _ if screw.is_turn() && let Some(points) = level() => levels.push(points),
+                    // a sharp circle leaning to a turn's axis, whole and convex (#780 L2: its fan's
+                    // contact, the circle's points whose fan holds a normal square to the turn's
+                    // velocity, lies on the ring the circle turns into): turned, a ring (below)
+                    Curve::Circle(frame,r) if screw.is_turn() && (edge.t[1]-edge.t[0]).abs() >= std::f64::consts::TAU*(1.-1e-12) && {
+                        let use1 = &tool.faces[f1].loops[uses[e][0].1][uses[e][0].2];
+                        let along = c.tangent(0.5*(edge.t[0]+edge.t[1]));
+                        let along = if use1.reversed { scale(along,-1.) } else { along };
+                        dot(cross(n1,along),n2) <= 1e-9
+                    } => rims.push(Rim {frame:*frame,r:*r,span:[edge.t[0].min(edge.t[1]),edge.t[0].max(edge.t[1])]}),
                     // a concave edge, the two faces' material wrapping round it more than half a
                     // turn (a stem entering a ball), carries none of the swept boundary: what
                     // bounds a sweep near it is its faces' contacts. Its first face's way in from
@@ -546,6 +564,17 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         // each face's corners in walk order, what its own sites are read over
         let corners_of: Vec<Vec<V>> = tool.faces.iter().map(|f| f.loops.iter().flatten()
             .map(|c| tool.vertices[tool.ends(c)[0] as usize].p).collect()).collect();
+        // and, for a face with an edge no line (a drum's end, its loop one circle on one vertex),
+        // its outline: 32 points along each edge in walk order (#780 L2) — none where every edge
+        // is a line, whose corners are its outline
+        let outline_of: Vec<Option<Vec<V>>> = tool.faces.iter().map(|f| {
+            let curved = f.loops.iter().flatten().any(|c| !matches!(tool.edges[c.edge as usize].curve,EdgeCurve::Curve(Curve::Line {..})));
+            curved.then(|| f.loops.iter().flatten().flat_map(|c| {
+                let e = &tool.edges[c.edge as usize];
+                let [t0,t1] = if c.reversed { [e.t[1],e.t[0]] } else { e.t };
+                (0..32).map(move |i| e.point(t0+(t1-t0)*i as f64/32.,&tool.vertices))
+            }).collect())
+        }).collect();
         let corners = box_corners(tool.bounds());
         let pose_at = |t: f64| path.pose(t).map_err(|e| Unbuilt::Failed(e.msg));
         let (start,end) = (pose_at(a)?,pose_at(b)?);
@@ -561,7 +590,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         let poses: Vec<crate::trajectory::Pose> = (0..=SITES).map(|k| pose_at(a+(b-a)*within(k))).collect::<Result<_,_>>()?;
         // a face's own points, a grid over each triangle of a fan of its corners
         let face_sites = |k: usize| -> Vec<V> {
-            let c = &corners_of[k];
+            let c = outline_of[k].as_ref().unwrap_or(&corners_of[k]);
             let mut out = Vec::new();
             for w in 1..c.len().saturating_sub(1) {
                 for i in 0..SITES { for j in 0..SITES-i {
@@ -823,9 +852,25 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 // along it
                 if dot(n,sub(o,c)).abs() <= eps { continue }
                 let (x0,e) = (add(c,scale(n,dot(n,sub(o,c)))),unit(cross(n,m)));
-                // the stretch of the contact line the face spans
-                let ts: Vec<f64> = corners_of[k].iter().map(|v| dot(sub(*v,x0),e)).collect();
-                let (t0,t1) = ts.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),&t| (l.min(t),h.max(t)));
+                // the stretch of the contact line the face spans: over its corners, or where a face
+                // with an edge no line has one, the chord its outline cuts from the line, a twentieth
+                // more each way (none where the line misses the face, #780 L2)
+                let (t0,t1) = match &outline_of[k] {
+                    None => corners_of[k].iter().map(|v| dot(sub(*v,x0),e)).fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),t| (l.min(t),h.max(t))),
+                    Some(outline) => {
+                        let across = unit(cross(n,e));
+                        let side = |p: V| dot(sub(p,x0),across);
+                        let cuts: Vec<f64> = (0..outline.len()).filter_map(|i| {
+                            let (p,q) = (outline[i],outline[(i+1)%outline.len()]);
+                            let (sp,sq) = (side(p),side(q));
+                            (sp*sq <= 0. && sp != sq).then(|| dot(sub(add(p,scale(sub(q,p),sp/(sp-sq))),x0),e))
+                        }).collect();
+                        if cuts.is_empty() { continue }
+                        let (lo,hi) = cuts.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),&t| (l.min(t),h.max(t)));
+                        let past = PAST*(hi-lo);
+                        (lo-past,hi+past)
+                    }
+                };
                 let (from,to) = (add(x0,scale(e,t0)),add(x0,scale(e,t1)));
                 if let Some(cutter) = turned(from,e,to) { add_cutter(cutter,line_sites(from,to,cutter)) }
             }
@@ -1001,9 +1046,35 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                     _ => unreachable!("`read` takes only cylinders, cones, balls and tori round"),
                 }
             }
+            // under a turn a sharp circle leaning to the axis (#780 L2): its fan's contact — where
+            // the fan between its faces' normals holds one square to the turn's velocity — lies on
+            // the surface its points sweep, a ring whose meridian is read exactly
+            // (`turned::Rim`, `Cutter::Turned`), its sites the circle's points carried over the
+            // roll, each with the ring's normal there (square to the circle and to the velocity)
+            if screw.is_turn() {
+                let g = Frame::about(c,axis);
+                for rim in &rims {
+                    let (f,r) = (rim.frame,rim.r.abs());
+                    // part of a turn, each end pose's faces at the rim hold the circle the ring
+                    // holds: the end's plane meets the ring in that circle and one more of its
+                    // radius, the side in that circle and a curve crossing it where the side's
+                    // contact reaches the rim — closed forms the arrangement is not given yet, and
+                    // traced the three meetings along one circle do not close (refused by name)
+                    if !whole { return Err(Unbuilt::Curved {at:f.o}) }
+                    let source = crate::turned::Rim {o:g.local(f.o),x:g.dir_local(unit(f.x)),y:g.dir_local(unit(f.y)),r};
+                    if !source.simple(eps) { return Err(Unbuilt::Curved {at:f.o}) }
+                    let sites: Vec<(V,V)> = (0..=4*SITES).flat_map(|i| {
+                        let (sp,cp) = (std::f64::consts::TAU*(i as f64+0.5)/(4*SITES+1) as f64).dsin_cos();
+                        let x = f.at([r*cp,r*sp,0.]);
+                        let n = unit(cross(add(scale(f.x,-sp),scale(f.y,cp)),screw.velocity(x)));
+                        poses.iter().map(move |m| (m.point(x),m.vector(n)))
+                    }).collect();
+                    add_cutter(Cutter::Turned(crate::turned::Turned::rim(g,source,[rim.span[0],rim.span[0]+std::f64::consts::TAU])),sites);
+                }
+            }
             // under a screw a circle square to the axis is screwed, the solid its disc sweeps
             // (`Cutter::ScrewedDisc`; under a turn it is a level curve, below)
-            for rim in &rims {
+            for rim in rims.iter().filter(|_| !screw.is_turn()) {
                 let (f,r) = (rim.frame,rim.r);
                 // the screwed sheet's normal: square to the circle and to the screw's velocity
                 let normal_at = |x: V| unit(cross(cross(axis,unit(sub(x,f.o))),screw.velocity(x)));
@@ -1550,9 +1621,15 @@ fn foot_on(o: V,a: V,c: V,z: V) -> Option<f64> {
 /// **The solid a turned contact's meridian bounds** (#780 C3, `Cutter::Turned`): the meridian from
 /// its span's start to its end, closed down the turn's axis by level lines at both ends, turned once
 /// about the axis — exact, its side the surface of revolution of the meridian itself
-/// (`geom::Curve::Turned`).
+/// (`geom::Curve::Turned`). A sharp circle's meridian is closed already (#780 L2): turned once, a
+/// ring.
 fn turned_solid(t: &crate::turned::Turned) -> Result<Brep,String> {
     let g = t.frame;
+    // a sharp circle's meridian is closed (#780 L2): turned once, a ring
+    if let crate::turned::Source::Rim(_) = t.source {
+        let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:vec![vec![ProfileEdge::Turned(std::sync::Arc::new(*t))]]};
+        return crate::build::revolve(&profile,g.o,g.z,std::f64::consts::TAU)
+    }
     let [a,b] = t.span.map(|v| { let l = g.local(t.d2(v).0); [l[0],l[2]] });
     let at = |r: f64,z: f64| g.at([r,0.,z]);
     let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:vec![vec![

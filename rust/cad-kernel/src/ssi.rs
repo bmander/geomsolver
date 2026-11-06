@@ -573,7 +573,7 @@ fn own_contact(s: &Surface,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
     use crate::turned::{Jet,Turned};
     let Curve::Turned(t) = c else { return None };
     if t.posed { return None }
-    let (g,k) = (t.frame,t.contact);
+    let (g,Some(k)) = (t.frame,t.contact()) else { return None };
     let (f,r,tan) = match *s {
         Surface::Cylinder(f,r) => (f,r.abs(),0.),
         Surface::Cone(f,r,half) => { let (sa,ca) = half.dsin_cos(); (f,r,sa/ca) }

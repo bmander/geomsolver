@@ -78,9 +78,14 @@ fn curve(c: &Curve) -> Result<Json,String> {
         Curve::BSpline(b) => { let mut o = bspline(b); o.set("kind","bspline".into()); o }
         Curve::Iso(b,u) => object([("kind","iso".into()),("blend",blend(b)?),("u",(*u).into())]),
         Curve::Affine(m) => object([("kind","affine".into()),("map",affine(&m.map)),("of",curve(&m.of)?),("at",reals(&m.at))]),
-        Curve::Turned(t) => { let c = &t.contact;
-            object([("kind","turned".into()),("frame",frame(&t.frame)),("o",v3(c.o)),("a",v3(c.a)),("r",c.r.into()),("sa",c.sa.into()),
-                ("ca",c.ca.into()),("side",c.side.into()),("span",reals(&t.span)),("posed",t.posed.into())]) }
+        Curve::Turned(t) => match t.source {
+            crate::turned::Source::Contact(c) =>
+                object([("kind","turned".into()),("frame",frame(&t.frame)),("o",v3(c.o)),("a",v3(c.a)),("r",c.r.into()),("sa",c.sa.into()),
+                    ("ca",c.ca.into()),("side",c.side.into()),("span",reals(&t.span)),("posed",t.posed.into())]),
+            crate::turned::Source::Rim(c) =>
+                object([("kind","turned rim".into()),("frame",frame(&t.frame)),("o",v3(c.o)),("x",v3(c.x)),("y",v3(c.y)),("r",c.r.into()),
+                    ("span",reals(&t.span))]),
+        },
         other => return Err(format!("sweep dump: a {} curve is not written",other.kind())),
     })
 }
@@ -96,7 +101,11 @@ fn rcurve(j: &Json) -> Result<Curve,String> {
         "turned" => { let span = rreals(field(j,"span")?);
             let contact = crate::turned::Contact {o:rv3(field(j,"o")?),a:rv3(field(j,"a")?),r:num(j,"r")?,sa:num(j,"sa")?,ca:num(j,"ca")?,side:num(j,"side")?};
             let posed = j.get("posed").is_some_and(|p| p.as_bool());
-            Curve::Turned(Arc::new(crate::turned::Turned {frame:rframe(field(j,"frame")?)?,contact,span:[span[0],span[1]],posed})) }
+            Curve::Turned(Arc::new(crate::turned::Turned {frame:rframe(field(j,"frame")?)?,source:crate::turned::Source::Contact(contact),
+                span:[span[0],span[1]],posed})) }
+        "turned rim" => { let span = rreals(field(j,"span")?);
+            let rim = crate::turned::Rim {o:rv3(field(j,"o")?),x:rv3(field(j,"x")?),y:rv3(field(j,"y")?),r:num(j,"r")?};
+            Curve::Turned(Arc::new(crate::turned::Turned::rim(rframe(field(j,"frame")?)?,rim,[span[0],span[1]]))) }
         k => return Err(format!("sweep dump: a curve of kind `{k}`")),
     })
 }

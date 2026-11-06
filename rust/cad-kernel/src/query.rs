@@ -651,20 +651,20 @@ fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surfac
             (n*n).times(a)+n.times(b*dz)+Jet::of(cc*dz*dz)-r2.times(dz*dz)
         }
         let k = (a,b,cc,dz,q[2]);
-        let jet = |s: f64| big(m.contact.meridian2(Jet::at(s)),k);
-        let t_of = |s: f64| (m.contact.meridian2(Jet::at(s))[1].v-q[2])/dz;
+        let jet = |s: f64| big(m.meridian2(Jet::at(s)),k);
+        let t_of = |s: f64| (m.meridian2(Jet::at(s))[1].v-q[2])/dz;
         let at = |s: f64| add(p,scale(d,t_of(s)));
-        let bound = |x: f64,y: f64| most(big(m.contact.meridian2(Jet::at(Iv::new(x,y))),k));
+        let bound = |x: f64,y: f64| most(big(m.meridian2(Jet::at(Iv::new(x,y))),k));
         for r in crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|s| surface.implicit(at(s)).abs() <= tol)? {
             out.push((t_of(r.at),r.touch));
         }
     } else {
         // a level line: the circles at its height, each met as a chord
         let (flat,from) = (g.dir([e[0],e[1],0.]),g.dir([q[0],q[1],0.]));
-        let jet = |s: f64| m.contact.meridian2(Jet::at(s))[1]-Jet::of(q[2]);
-        let bound = |x: f64,y: f64| most(m.contact.meridian2(Jet::at(Iv::new(x,y)))[1]);
+        let jet = |s: f64| m.meridian2(Jet::at(s))[1]-Jet::of(q[2]);
+        let bound = |x: f64,y: f64| most(m.meridian2(Jet::at(Iv::new(x,y)))[1]);
         for r in crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|_| false)? {
-            let rho = m.contact.meridian(Jet::at(r.at))[0].v;
+            let rho = m.meridian_at(Jet::at(r.at))[0].v;
             if let Meets::At(found) = line_chord(from,flat,rho.abs(),tol) { out.extend(found) }
         }
     }
