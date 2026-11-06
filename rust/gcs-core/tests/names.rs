@@ -384,15 +384,16 @@ fn a_lifted_program_names_an_instances_unknown_it_can_declare() {
 /// **A name a value reads that nothing answers is E101, naming it** (#824): read as a plain
 /// number of no dimension, `6mm + shieldd_top` used to be said as a length added to a scalar,
 /// which is not the mistake.  The names in scope nearest its spelling are offered, and nothing
-/// more is said — no E103 on the value, nothing where a dimension, a claim, a `when`, a call or
-/// another value reads it.
+/// more is said — no E103 on the value, nothing where a dimension, a claim, a `when`, a call, a
+/// seed, a parameter's interval or another value reads it.
 #[test]
 fn a_value_reading_a_name_nothing_declares_names_it() {
     let doc = format!(
         "{BASE}component T(p: point, q: point, w: Length) {{ p distance(w) q }}\n\
          shield_top := 2mm\nshield_z := 6mm + shieldd_top\nlifted := shield_z * 2\n\
          claim shield_z >= 1mm\na distance(shield_z) b\nt := T(b, c, w: shield_z)\n\
-         when shield_z > 1mm {{\n  a distance(40) c\n}}\n"
+         when shield_z > 1mm {{\n  a distance(40) c\n}}\nd := point hint((shield_z, 0))\n\
+         param s: Length over (0mm, shield_z)\n"
     );
     let (_, d) = read(&doc);
     assert_eq!(d.len(), 1, "{d:?}");

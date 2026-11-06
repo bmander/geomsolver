@@ -1145,8 +1145,6 @@ impl<'a> Walk<'a> {
                     self.body(&b.body, scope, &mut sub, path, depth + 1);
                 }
                 Ok(false) => {}
-                // a definition it reads that did not work out was said where it is (#824)
-                Err(_) if self.decides_unworked(&b.count, vals, scope) => {}
                 Err((code, message)) => self.once(code, b.head, message),
             }
             return;
@@ -2272,6 +2270,10 @@ impl Table for Home<'_> {
     fn under(&self, prefix: &str) -> BTreeMap<String, Aff> {
         self.vals.under(prefix)
     }
+
+    fn failed(&self, name: &str) -> bool {
+        self.vals.failed(name)
+    }
 }
 
 /// The numbers in force as a seed reads them (`settle_seeds`): a value affine in an unknown of
@@ -2320,6 +2322,10 @@ impl Table for Seeded<'_> {
         let held = super::table::prefixed(self.held, prefix);
         out.extend(held.map(|(k, &(dim, v))| (k.clone(), Aff::of_dim(v, dim))));
         out
+    }
+
+    fn failed(&self, name: &str) -> bool {
+        self.vals.failed(name)
     }
 }
 

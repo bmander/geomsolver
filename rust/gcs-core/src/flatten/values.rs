@@ -43,11 +43,17 @@ struct Call {
 
 /// Why a name a text reads is out of this component's reach — a document name it must be
 /// handed as an argument (E103), or a group member the argument does not have, or its
-/// interface does not declare (E101) — or `None`.  Asked of a dimension's text (`settle_text`)
-/// and of a pin to a name (`t == s`) alike.
+/// interface does not declare (E101), or a definition that did not work out (E101, already said
+/// where it is: `unworked`) — or `None`.  Asked of a dimension's text (`settle_text`), of a pin
+/// to a name (`t == s`), of a `when` and of a claim over values alike.
 fn out_of_reach(name: &str, vals: &Vals, scope: &Scope) -> Option<(Code, String)> {
     if vals.contains_key(name) {
         return None;
+    }
+    // a definition that did not work out was said where it is (#824): the statement reading it
+    // is refused as one reading a name nothing declares is, and nothing more said
+    if vals.failed(name) {
+        return Some((Code::E101, unworked(name)));
     }
     if scope.forbidden.contains(name) {
         // a constant of the file is read (#461 PC1): what is out of reach is an unknown, or a
@@ -342,41 +348,59 @@ pub(crate) fn value_read<T: Table + ?Sized>(
     // a group read as a number — `dims.handle_dims` of a module — is said to be one, rather
     // than as a member its owner lacks or a number of no dimension (#594): asked only of a text
     // that does not come to a number
-    let group = || p.body.deps().into_iter().filter(|n| !env.has(n) && !declared.contains_key(n))
-        .find_map(|n| env.under(&format!("{n}.")).into_keys().next().map(|one| format!(
-            "`{n}` is a group, and a group is not a number: read one of its members, as `{one}`")));
-    let a = expr::eval_in(&p.body, &Over { own: &declared, env })
-        .map_err(|e| group().unwrap_or_else(|| e.to_string()))?;
-    match (a.number(), &a.free) {
-        (Some(v), _) if !v.is_finite() => Err(format!("comes to {v}")),
-        // an unknown the scope *bound* — a formal left unbound, a param over one — carries on;
-        // a name nothing binds is the document's, and a component's numbers cannot read it
-        (None, Some(n)) if !declared.contains_key(n) && !env.binds(n) => {
-            if let Some(e) = group() {
-                return Err(e);
-            }
-            // a member a group or a vector does not have — `o.z` of `o := (1, 2)` — is said so
-            if let Some((owner, member)) = n.rsplit_once('.') {
-                let prefix = format!("{owner}.");
-                let mut under = env.under(&prefix);
-                under.extend(declared.under(&prefix));
-                let has: Vec<&str> = under
-                    .keys()
-                    .filter_map(|k| k.strip_prefix(&prefix))
-                    .filter(|m| !m.contains('.'))
-                    .collect();
-                if !has.is_empty() {
-                    let mut has: Vec<String> = has.iter().map(|m| format!("`{m}`")).collect();
-                    let last = has.pop().unwrap_or_default();
-                    let has = if has.is_empty() { last } else { format!("{} and {last}", has.join(", ")) };
-                    return Err(format!("`{owner}` has {has}, not `{member}`"));
-                }
-            }
-            Err(format!("`{n}` is not a number here — nothing in scope gives it one"))
-        }
+    // a name nothing in scope gives a number is said as one before any arithmetic is done
+    // with it (#824): read as the free plain number it would be, `6mm + shieldd_top` failed as
+    // a length added to a scalar.  An unknown the scope *bound* — a formal left unbound, a param
+    // over one — carries on; a name nothing binds is the document's, and a component's numbers
+    // cannot read it
+    let unbound = p.body.deps().into_iter()
+        .find(|n| !env.has(n) && !declared.contains_key(n) && !env.binds(n));
+    if let Some(n) = unbound {
+        return Err(unbound_read(&n, env, &declared));
+    }
+    let a = expr::eval_in(&p.body, &Over { own: &declared, env }).map_err(|e| e.to_string())?;
+    match a.number() {
+        Some(v) if !v.is_finite() => Err(format!("comes to {v}")),
         _ => Ok(a),
     }
 }
+
+/// Why `n`, a name `value_read` reads that nothing in scope binds, gives no number: a definition
+/// that did not work out (said where it is, `UNWORKED`), a group, a member a group or a vector
+/// does not have (`o.z` of `o := (1, 2)`), or nothing in scope.
+fn unbound_read<T: Table + ?Sized>(n: &str, env: &T, declared: &BTreeMap<String, Aff>) -> String {
+    if env.failed(n) {
+        return unworked(n);
+    }
+    if let Some(one) = env.under(&format!("{n}.")).into_keys().next() {
+        return format!("`{n}` is a group, and a group is not a number: read one of its members, \
+                        as `{one}`");
+    }
+    if let Some((owner, member)) = n.rsplit_once('.') {
+        let prefix = format!("{owner}.");
+        let mut under = env.under(&prefix);
+        under.extend(declared.under(&prefix));
+        let mut has: Vec<String> = under.keys()
+            .filter_map(|k| k.strip_prefix(&prefix))
+            .filter(|m| !m.contains('.'))
+            .map(|m| format!("`{m}`"))
+            .collect();
+        if let Some(last) = has.pop() {
+            let has = if has.is_empty() { last } else { format!("{} and {last}", has.join(", ")) };
+            return format!("`{owner}` has {has}, not `{member}`");
+        }
+    }
+    format!("`{n}` is not a number here — nothing in scope gives it one")
+}
+
+/// The words a text reading a definition that did not work out is refused in (#824): marked by
+/// `UNWORKED`, so `Walk::diagnostic` says nothing more — the definition's own error is the one.
+pub(super) fn unworked(name: &str) -> String {
+    format!("`{name}` {UNWORKED}")
+}
+
+/// See `unworked`.
+pub(super) const UNWORKED: &str = "did not work out, and is said where it is defined";
 
 /// A few names of its own, read before a table: the declared unknowns `value_read` adds.
 struct Over<'a, T: ?Sized> {
@@ -739,30 +763,6 @@ impl<'a> Walk<'a> {
         fold(&sub, text, self.units).map_err(|e| (Code::E103, e))
     }
 
-    /// Whether a text reads a definition that did not work out (`Walk::unworked`), through the
-    /// scope's prefixes, and nothing in scope gives that name a number.
-    pub(super) fn reads_unworked(&self, text: &str, vals: &Vals, scope: &Scope) -> bool {
-        if self.unworked.is_empty() {
-            return false;
-        }
-        let Ok(p) = expr::parse_in(text, self.units) else { return false };
-        self.unworked_among(&p.body.deps(), vals, scope)
-    }
-
-    /// `reads_unworked` of a condition (`when`, a claim over values).
-    pub(super) fn decides_unworked(&self, text: &str, vals: &Vals, scope: &Scope) -> bool {
-        if self.unworked.is_empty() {
-            return false;
-        }
-        let Ok(c) = expr::parse_condition_in(text, self.units) else { return false };
-        self.unworked_among(&c.deps(), vals, scope)
-    }
-
-    fn unworked_among(&self, reads: &BTreeSet<String>, vals: &Vals, scope: &Scope) -> bool {
-        reads.iter().any(|n| !vals.contains_key(n)
-            && scope.prefixes.iter().any(|p| self.unworked.contains(&format!("{p}{n}"))))
-    }
-
     /// What a trace kept as text for a name (`Sym::texts`, through the scope's prefixes).
     fn kept(&self, name: &str, scope: &Scope) -> Option<String> {
         let texts = match &self.sym {
@@ -782,10 +782,13 @@ impl<'a> Walk<'a> {
     /// no built-in, no text a trace kept — which is E101 wherever it is read.  A dotted name is
     /// `resolve`'s to judge.
     fn undeclared(&self, name: &str, vals: &Vals, scope: &Scope) -> bool {
-        crate::syntax::is_name(name)
-            && !vals.contains_key(name)
-            && expr::builtin(name).is_none()
-            && self.kept(name, scope).is_none()
+        crate::syntax::is_name(name) && self.unanswered_here(name, vals, scope)
+    }
+
+    /// Whether nothing in scope answers to a name as written — no number or unknown, no
+    /// built-in, no text a trace kept.  `undeclared` of a bare name; a value's dotted read too.
+    fn unanswered_here(&self, name: &str, vals: &Vals, scope: &Scope) -> bool {
+        !vals.contains_key(name) && expr::builtin(name).is_none() && self.kept(name, scope).is_none()
     }
 
     /// A dimension's text settled in place, and its failure said where it is written.  A name
@@ -798,12 +801,6 @@ impl<'a> Walk<'a> {
         vals: &Vals,
         scope: &Scope,
     ) {
-        // a definition that did not work out was said where it is defined (#824): the statement
-        // reading it is refused, as one reading a name nothing declares is, and nothing more said
-        if self.reads_unworked(text, vals, scope) {
-            self.checks.refused.push(span);
-            return;
-        }
         // what it reads is judged once names are known only where the text settles: one it
         // cannot is said here, once
         match self.settle_text(text, vals, scope) {
@@ -1172,9 +1169,7 @@ impl<'a> Walk<'a> {
             return None;
         }
         let root = head(text);
-        let near = |k: String| self.names.contains(&k) || self.group_known(&k);
-        if scope.groups.contains(root) || scope.prefixes.iter().any(|p| near(format!("{p}{root}")))
-        {
+        if self.in_reach(root, scope) {
             return None;
         }
         let module = |k: usize| format!("{}.{text}", self.prog.modules[k].name);
@@ -1447,7 +1442,6 @@ impl<'a> Walk<'a> {
             })
             .collect();
         let mut waiting: Vec<usize> = (0..pending.len()).collect();
-        let mut failed: BTreeSet<String> = BTreeSet::new();
         loop {
             if waiting.is_empty() { break; }
             let names: BTreeSet<&str> = waiting.iter().map(|&i| pending[i].name.as_str()).collect();
@@ -1467,15 +1461,14 @@ impl<'a> Walk<'a> {
                         d.span,
                         format!("`{}` is defined in terms of itself{through}", d.name),
                     );
-                    self.unworked.insert(format!("{prefix}{}", d.name));
+                    vals.fail(d.name.clone());
                 }
                 return false;
             }
             for i in ready {
                 let d = &pending[i];
-                if reads[i].iter().any(|n| failed.contains(n)) {
-                    self.unworked.insert(format!("{prefix}{}", d.name));
-                    failed.insert(d.name.clone());
+                if reads[i].iter().any(|n| vals.failed(n)) {
+                    vals.fail(d.name.clone());
                     continue; // the cause is already reported, at the definition it reads
                 }
                 if let Some(c) = &d.call {
@@ -1489,8 +1482,7 @@ impl<'a> Walk<'a> {
                                 "`{}` is read from outside `{inst}`, and `{comp}`'s `{}` is not \
                                  worked out from what the call gives it: {e}",
                                 d.name, c.member));
-                            self.unworked.insert(format!("{prefix}{}", d.name));
-                            failed.insert(d.name.clone());
+                            vals.fail(d.name.clone());
                         }
                     }
                     continue;
@@ -1524,8 +1516,7 @@ impl<'a> Walk<'a> {
                             let (code, e) = self.unanswered(&name, &reads[i], pending, vals, scope)
                                 .unwrap_or((Code::E103, e));
                             self.err(code, span, format!("`{name}`: {e}"));
-                            self.unworked.insert(format!("{prefix}{name}"));
-                            failed.insert(name);
+                            vals.fail(name);
                         }
                     }
                 }
@@ -1536,15 +1527,11 @@ impl<'a> Walk<'a> {
     }
 
     /// Why a definition that did not work out did not, where the cause is a name it reads that
-    /// nothing answers (#824) — no number in scope, no definition beside it, no built-in, nothing
-    /// declared or drawn by that name anywhere in the program — E101 naming it, with the names
-    /// in scope nearest its spelling; or one out of a component's reach (`out_of_reach`).
-    /// `None` where every name it reads is something, and the arithmetic is what is wrong.
-    ///
-    /// Asked only once the text has failed: a name nothing gives a number reads as a free plain
-    /// number, so `6mm + shieldd_top` failed as a length added to a scalar, which is not the
-    /// mistake.  A dotted name is judged by its head (`shield` of `shield.top`): a member an
-    /// instance or a group lacks is said by what reads the instance.
+    /// nothing answers (#824) — nothing in scope (`unanswered_here`), no definition beside it,
+    /// and nothing declared or drawn by that name anywhere in the program — E101 naming it, with
+    /// the names in scope nearest its spelling.  `None` where every name it reads is something,
+    /// and what `value_read` said is the mistake.  A dotted name is judged by its head (`shield`
+    /// of `shield.top`): a member an instance or a group lacks is said by what reads the instance.
     fn unanswered(
         &self,
         name: &str,
@@ -1553,83 +1540,75 @@ impl<'a> Walk<'a> {
         vals: &Vals,
         scope: &Scope,
     ) -> Option<(Code, String)> {
-        let defined = |n: &str| pending.iter().any(|d| d.name == n);
-        let unread = reads.iter().filter(|n| {
-            !vals.contains_key(n) && !defined(n) && expr::builtin(n).is_none()
-                && self.kept(n, scope).is_none() && !self.held.names.contains_key(n.as_str())
-        });
-        let mut declared: Option<BTreeSet<String>> = None;
-        for n in unread {
-            if let Some(e) = out_of_reach(n, vals, scope) {
-                return Some(e);
-            }
+        let defined = |root: &str| pending.iter().any(|d| head(&d.name) == root);
+        let missing = reads.iter().filter(|n| self.unanswered_here(n, vals, scope)).find(|n| {
             let root = head(n);
-            if !vals.under(&format!("{root}.")).is_empty() || defined(root)
-                || pending.iter().any(|d| d.name.starts_with(&format!("{root}.")))
-                || scope.groups.contains(root)
-                || scope.prefixes.iter().any(|p| {
-                    let k = format!("{p}{root}");
-                    self.names.contains(&k) || self.group_known(&k)
-                })
-            {
-                continue;
-            }
-            let declared = declared.get_or_insert_with(|| self.declared_anywhere());
-            if declared.contains(root) {
-                continue;
-            }
-            let mut m = format!("no such entity: `{root}`");
-            if root != n {
-                m.push_str(&format!(" (read as `{n}`)"));
-            }
-            let mut among = self.names_in_scope(pending, vals, scope);
-            among.remove(name);
-            let near = nearest(root, among);
-            if !near.is_empty() {
-                let near: Vec<String> = near.iter().map(|k| format!("`{k}`")).collect();
-                m.push_str(&format!("; nearest in scope: {}", near.join(", ")));
-            }
-            return Some((Code::E101, m));
+            !defined(root) && !vals.has_under(&format!("{root}."))
+                && !self.held.names.contains_key(n.as_str()) && !self.in_reach(root, scope)
+        })?;
+        let root = head(missing);
+        if self.declared_anywhere().contains(root) {
+            return None;
         }
-        None
+        let mut m = format!("no such entity: `{root}`");
+        if root != missing {
+            m.push_str(&format!(" (read as `{missing}`)"));
+        }
+        let mut among = self.names_in_scope(pending, vals, scope);
+        among.remove(name);
+        let near: Vec<String> = nearest(root, among).iter().map(|k| format!("`{k}`")).collect();
+        if !near.is_empty() {
+            m.push_str(&format!("; nearest in scope: {}", near.join(", ")));
+        }
+        Some((Code::E101, m))
+    }
+
+    /// Whether `root` names a group around the body, or something drawn or a group in force
+    /// under one of the scope's prefixes.
+    fn in_reach(&self, root: &str, scope: &Scope) -> bool {
+        scope.groups.contains(root) || scope.prefixes.iter().any(|p| {
+            let k = format!("{p}{root}");
+            self.names.contains(&k) || self.group_known(&k)
+        })
     }
 
     /// Every name the program declares anywhere, as written: what each statement binds, each
-    /// component and its formals, each module and each name a `use` imports, each relation's
-    /// label.  A name among them is something, wherever it stands, and is never said to be
-    /// nothing (`unanswered`).
+    /// relation's label, each component and its formals, relation word and interface, each module
+    /// and each name a `use` imports.  A name among them is something, wherever it stands, and is
+    /// never said to be nothing (`unanswered`).
     fn declared_anywhere(&self) -> BTreeSet<String> {
-        let mut out = BTreeSet::new();
-        for st in self.prog.stmts() {
-            out.extend(st.kind.bound_name().map(|n| n.text.clone()));
-            if let StmtKind::Relation(r) = &st.kind {
-                out.extend(r.name.as_ref().map(|n| n.text.clone()));
-            }
-        }
-        for c in &self.prog.components {
-            out.extend(c.name.as_ref().map(|n| n.text.clone()));
-            out.extend(c.formals.iter().map(|f| f.name.text.clone()));
-        }
-        for m in &self.prog.modules {
-            out.extend(m.name.split('.').map(str::to_string));
-        }
-        for u in self.prog.uses.iter().chain(self.prog.modules.iter().flat_map(|m| &m.uses)) {
-            out.extend(u.name.split('.').map(str::to_string));
-            out.extend(u.names.iter().map(|n| n.text.clone()));
-        }
-        out
+        let p = self.prog;
+        let stmts = p.stmts().flat_map(|st| {
+            let label = match &st.kind {
+                StmtKind::Relation(r) => r.name.as_ref(),
+                _ => None,
+            };
+            st.kind.bound_name().into_iter().chain(label)
+        });
+        let components = p.components.iter()
+            .flat_map(|c| c.name.iter().chain(c.formals.iter().map(|f| &f.name)));
+        let words = p.words.iter().map(|d| &d.word).chain(p.interfaces.iter().map(|f| &f.name));
+        let uses = p.uses.iter().chain(p.modules.iter().flat_map(|m| &m.uses));
+        let imported = uses.clone().flat_map(|u| &u.names);
+        let paths = p.modules.iter().map(|m| m.name.as_str()).chain(uses.map(|u| u.name.as_str()))
+            .flat_map(|path| path.split('.'));
+        stmts.chain(components).chain(words).chain(imported).map(|n| n.text.as_str())
+            .chain(paths).map(str::to_string).collect()
     }
 
     /// The bare names a definition here could have meant: the numbers in force, the body's own
     /// definitions, and what is drawn under the scope's prefix.
     fn names_in_scope(&self, pending: &[Def], vals: &Vals, scope: &Scope) -> BTreeSet<String> {
         let prefix = scope.prefix();
-        let drawn = self.names.iter().filter_map(|k| k.strip_prefix(prefix))
-            .map(|k| head(k).to_string());
-        vals.under("").into_keys().map(|k| head(&k).to_string())
-            .chain(pending.iter().map(|d| head(&d.name).to_string()))
+        let from = (std::ops::Bound::Included(prefix), std::ops::Bound::Unbounded);
+        let drawn = self.names.range::<str, _>(from).take_while(|k| k.starts_with(prefix))
+            .map(|k| &k[prefix.len()..]);
+        vals.names().map(String::as_str)
+            .chain(pending.iter().map(|d| d.name.as_str()))
             .chain(drawn)
+            .map(head)
             .filter(|k| crate::syntax::is_name(k))
+            .map(str::to_string)
             .collect()
     }
 
@@ -1662,10 +1641,6 @@ impl<'a> Walk<'a> {
         prefix: &str,
     ) {
         if self.sym.is_some() || !self.claims_judged.insert((c.span, prefix.to_string())) {
-            return;
-        }
-        // a definition it reads that did not work out was said where it is defined (#824)
-        if self.decides_unworked(&c.text, vals, scope) {
             return;
         }
         match claimed(&c.text, vals, scope, self.units) {
@@ -1852,8 +1827,10 @@ impl<'a> Walk<'a> {
 /// (one at the least), the closest first and at most three — for E101 to offer (#824).
 fn nearest(name: &str, among: BTreeSet<String>) -> Vec<String> {
     let reach = (name.chars().count() / 3).max(1);
+    let len = name.chars().count();
     let mut near: Vec<(usize, String)> = among.into_iter()
-        .filter(|k| k != name)
+        // a difference in length is that many edits at least
+        .filter(|k| k != name && k.chars().count().abs_diff(len) <= reach)
         .map(|k| (edits(name, &k), k))
         .filter(|(d, _)| *d <= reach)
         .collect();

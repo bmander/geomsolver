@@ -742,10 +742,7 @@ impl<'a> Walk<'a> {
             // under the name the formal has inside the instance; a mistake, on the sheet
             Err(e) => {
                 let abs = formal_name(scope.prefix(), inst, &f.name.text);
-                // a definition it reads that did not work out was said where it is (#824)
-                if !self.keep_text(abs, text, span, vals, scope)
-                    && !self.reads_unworked(text, vals, scope)
-                {
+                if !self.keep_text(abs, text, span, vals, scope) {
                     self.err(Code::E103, span, format!("`{}`: {e}", f.name.text));
                 }
             }
