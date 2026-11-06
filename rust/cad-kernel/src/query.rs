@@ -418,9 +418,8 @@ fn along(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> bool {
 ///   of the last along the curve, or the curve within `tol` of the surface at the quarters
 ///   between them — is one meeting: a crossing where the surface's sign changes across the run,
 ///   read where the curve has left the tolerance on either side, and a touch where it does not —
-///   where the surface's distance turns along the run (a tangency), or, where the curve lies in the
-///   surface along the run (the distance's rate rounding's, wavering about nought), one at each end
-///   of it, where the curve comes onto the surface and leaves it. So a root found twice (at a knot two spans share, from two stretches) is one
+///   where the surface's distance turns along the run, read from its rate at the run's ends, or at
+///   its middle where it does not turn. So a root found twice (at a knot two spans share, from two stretches) is one
 ///   crossing; a double root rounding parts into two simple ones a hair apart, a shallow pair the
 ///   samples bracket, and the noise of a polynomial's rounding where the curve runs within the
 ///   tolerance of the surface for a while (a line along the top of a torus's tube, its distance
@@ -477,26 +476,17 @@ fn settled(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,roots: Vec<
             let touch = out[i..=j].iter().all(|r| r.1) || clear(a,-1.)*clear(b,1.) > 0.;
             let rate = |t: f64| { let (p,d) = curve.d1(t); dot(surface.gradient(p),d) };
             if !touch { runs.push((a,false)) } else {
-                // the run as far as the curve keeps within the tolerance (a run proved whole is
-                // proved short of where it leaves): a tangency, its rate turning once across it,
-                // a touch where it turns; a stretch the curve lies in the surface along, its rate
-                // rounding's wavering about nought, a touch at each end, where the curve comes onto
-                // the surface and leaves it (#814: a run proved whole, placed at its middle, stood
-                // 0.6 of a trace's parameter from where its neighbours met the surface)
+                // one touch, where the surface's distance turns along the run as far as the curve
+                // keeps within the tolerance (a run proved whole is proved short of where it
+                // leaves): its rate is read at the run's ends, where the curve leaves the
+                // tolerance and the rate is past rounding's, and the turn bracketed between them;
+                // at the run's middle where it does not turn (#814: a run proved whole, placed at its
+                // middle, stood 0.6 of a trace's parameter from where its neighbours met the surface;
+                // read as two touches where rounding's flips of the rate inside it were counted, a
+                // last bit's difference between two machines built a turned ring three times its volume)
                 let (a,b) = (left(a,-1.),left(b,1.));
-                let rates: Vec<f64> = (0..=16).map(|k| rate(a+(b-a)*k as f64/16.)).collect();
-                // (a turn counted only among rates past rounding's — a thousandth of the largest —
-                // where a flat tangency's rate is all but nought about its turn and flips there)
-                let most = rates.iter().fold(0f64,|m,r| m.max(r.abs()));
-                let signs: Vec<bool> = rates.iter().filter(|r| r.abs() > 1e-3*most).map(|&r| r < 0.).collect();
-                let turns = signs.windows(2).filter(|w| w[0] != w[1]).count();
-                if turns <= 1 {
-                    let (ra,rb) = (rates[0],rates[16]);
-                    runs.push((if (ra < 0.) != (rb < 0.) { crate::util::roots::bracketed_root(|t| Some(rate(t)),a,ra,b,rb,1e-15*(1.+a.abs().max(b.abs()))) } else { 0.5*(a+b) },true));
-                } else {
-                    runs.push((a,true));
-                    runs.push((b,true));
-                }
+                let (ra,rb) = (rate(a),rate(b));
+                runs.push((if (ra < 0.) != (rb < 0.) { crate::util::roots::bracketed_root(|t| Some(rate(t)),a,ra,b,rb,1e-15*(1.+a.abs().max(b.abs()))) } else { 0.5*(a+b) },true));
             }
         }
         i = j+1;
@@ -972,7 +962,7 @@ impl crate::util::isolate::Function for Implicit<'_> {
         let e = self.over(a,b);
         let Some((f,g)) = form(self.surface,e.at) else { return false };
         let least = |x: Iv| if x.has_zero() { 0. } else { x.lo().abs().min(x.hi().abs()) };
-        let grad = g.iter().map(|&x| least(x).powi(2)).sum::<f64>().sqrt();
+        let grad = g.iter().map(|&x| least(x)*least(x)).sum::<f64>().sqrt();
         f.mag() <= 0.5*self.tol*grad*(1.-1e-9)
     }
 }
@@ -1141,8 +1131,9 @@ impl Profiled<'_> {
     fn near(&self,x: [f64;2],tol: f64) -> bool {
         let f = &self.frame;
         let (q,m) = (f.local(self.curve.point(self.natural(0,x[0]))),f.local(self.profile.point(self.natural(1,x[1]))));
-        if self.turned { (q[0].hypot(q[1])-m[0].hypot(m[1])).abs().max((q[2]-m[2]).abs()) <= tol }
-        else { (q[0]-m[0]).hypot(q[1]-m[1]) <= tol }
+        use crate::util::fmath::Det;
+        if self.turned { (q[0].dhypot(q[1])-m[0].dhypot(m[1])).abs().max((q[2]-m[2]).abs()) <= tol }
+        else { (q[0]-m[0]).dhypot(q[1]-m[1]) <= tol }
     }
 }
 

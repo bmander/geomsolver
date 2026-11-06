@@ -246,10 +246,11 @@ curve lying in the surface (read at its quarters, then at steps a fraction of th
 feature apart) is `Along` before any reader is asked; a root past either end by more than the
 tolerance is no meeting, one within it is at the end; a run of roots the curve stays within the
 tolerance of the surface between is one meeting — a crossing where the surface's side changes
-across it, read where the curve has left the tolerance, a touch where it does not — standing where
-the surface's distance turns along the run (a tangency, its rate past rounding's turning once
-across the run as far as the curve keeps within the tolerance), or one at each end where the curve
-lies in the surface along it (its rate rounding's) — (a
+across it, read where the curve has left the tolerance, a touch where it does not — one, standing
+where the surface's distance turns along the run as far as the curve keeps within the tolerance (its
+rate read at those ends, past rounding's: counted inside the run, rounding's flips read two touches
+on one machine and one on another, and a turned ring built three times its volume on the first),
+at its middle where it does not turn — (a
 double root rounding parts, a root two spans or stretches both find, and the noise a polynomial's
 rounding makes where a line runs along a torus's tube top, its distance the fourth power of the
 way: hundreds of crossings a micrometre apart before); and an end on the surface is a crossing

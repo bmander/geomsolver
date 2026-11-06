@@ -210,7 +210,8 @@ fn bracketed(target: Iv,solve: &dyn Fn(f64) -> f64,f_iv: &dyn Fn(Jet<Iv>) -> Jet
     let (c0,c1) = (target.lo().max(-1.),target.hi().min(1.));
     if !(c0 <= c1) { return None }
     // `solve` is asked at an angle: `−cos τ = c` at `τ = acos(−c)`
-    let (r0,r1) = (solve((-c0).acos()),solve((-c1).acos()));
+    use crate::util::fmath::Det;
+    let (r0,r1) = (solve((-c0).dacos()),solve((-c1).dacos()));
     let (lo,hi) = (r0.min(r1),r0.max(r1));
     let value = |x: f64| f_iv(Jet::at(Iv::point(x))).v;
     let up = { let (a,b) = (value(lo).mid(),value(hi).mid()); if a == b { value(hi+1e-9*(1.+hi.abs())).mid() >= a } else { b > a } };
