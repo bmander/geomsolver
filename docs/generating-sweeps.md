@@ -1091,6 +1091,15 @@ version refuses undercut and requires the design to avoid it. Supporting it mean
 `EnvelopeSeam` already perform that operation. Supporting it is a later, separately gated
 extension. An undeclared crossing stays refused.
 
+A spur rack's undercut is built all the same: its tooth is a prism square to the plane its roll
+keeps, and the planar subtraction class cuts the swept region whole, trochoid and all (#644). A
+helical rack's tooth leans across that plane, so only the generating rows read it, and E3 refuses
+the fold. Where the fold is a rack's straight flank reaching past the line of action's end, E3
+says so by name (#822): which flank, the base circle `R cos αₜ` it undercuts below, how far the
+flank reaches past the pitch line against the `R sin² αₜ` it may, and what fixes it — the rack
+shifted out by the difference, `reach / (R sin² αₜ)` times the teeth, or the straight flank ended
+at that depth.
+
 The classes are implemented as `solid::admission::admit_body`. `solventc --step/--stl` runs it
 before building a body with swept cuts. Placements whose blank reads the same at every point
 the checks read are checked once: the gear's 24 indexed cuts are one check.
