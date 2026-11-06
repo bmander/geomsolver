@@ -23,6 +23,11 @@ pub(crate) trait Table: expr::Env {
     fn binds(&self, unknown: &str) -> bool;
     /// Every name under `prefix` (`o.` reads `o.x` and `o.y`), each with the value it has here.
     fn under(&self, prefix: &str) -> BTreeMap<String, Aff>;
+    /// Whether `name` is a definition here that did not work out (#824): what is wrong with it
+    /// was said where it is defined, so a text reading it is refused without a word more.
+    fn failed(&self, _name: &str) -> bool {
+        false
+    }
 }
 
 impl Table for BTreeMap<String, Aff> {
@@ -54,6 +59,8 @@ pub(crate) struct Vals {
     /// The names in `own` whose value is affine in each unknown, by the unknown: what `binds`
     /// asks without reading every value in force.
     unknowns: BTreeMap<String, BTreeSet<String>>,
+    /// The definitions of this frame that did not work out — see `Table::failed`.
+    failed: BTreeSet<String>,
     outer: Option<Rc<Vals>>,
 }
 
@@ -122,6 +129,21 @@ impl Vals {
         }
     }
 
+    /// `name`, a definition of this frame, did not work out (`Table::failed`).
+    pub(crate) fn fail(&mut self, name: String) {
+        self.failed.insert(name);
+    }
+
+    /// Whether any name in force starts with `prefix`, nothing copied (`under` copies).
+    pub(crate) fn has_under(&self, prefix: &str) -> bool {
+        self.frames().any(|t| prefixed(&t.own, prefix).next().is_some())
+    }
+
+    /// Every name in force, each frame's in order, a name a frame inside hides given again.
+    pub(crate) fn names(&self) -> impl Iterator<Item = &String> {
+        self.frames().flat_map(|t| t.own.keys())
+    }
+
     /// This frame's own names, and nothing further out.
     pub(crate) fn own(&self) -> &BTreeMap<String, Aff> {
         &self.own
@@ -164,5 +186,9 @@ impl Table for Vals {
             }
         }
         out
+    }
+
+    fn failed(&self, name: &str) -> bool {
+        self.frames().any(|t| t.failed.contains(name))
     }
 }

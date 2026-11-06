@@ -135,7 +135,8 @@ fn a_cyclic_param_is_e041_and_a_failed_one_is_reported_once() {
     // `h` reads a `w` whose definition failed: the one error is at `w`
     let (_, d) = read("use std\nw := nosuch * 2\nh := w / 2\nin std.front {\na := point\nfix((0, 0)) a\n}\n");
     assert_eq!(d.len(), 1, "{d:?}");
-    assert!(d[0].contains("`w`: `nosuch` is not a number here"), "{d:?}");
+    // and what failed is the name nothing declares, said as one (#824)
+    assert!(d[0].starts_with("E101") && d[0].contains("`w`: no such entity: `nosuch`"), "{d:?}");
 }
 
 /// #43.19 — a bad key in a `hint(…)` is the mistake, not the declaration: one error, and the

@@ -380,3 +380,48 @@ fn a_lifted_program_names_an_instances_unknown_it_can_declare() {
         assert!((0..3).all(|t| (x[t] - y[t]).abs() < 1e-9), "p{i}: {x:?} {y:?}\n{lifted}");
     }
 }
+
+/// **A name a value reads that nothing answers is E101, naming it** (#824): read as a plain
+/// number of no dimension, `6mm + shieldd_top` used to be said as a length added to a scalar,
+/// which is not the mistake.  The names in scope nearest its spelling are offered, and nothing
+/// more is said — no E103 on the value, nothing where a dimension, a claim, a `when`, a call, a
+/// seed, a parameter's interval or another value reads it.
+#[test]
+fn a_value_reading_a_name_nothing_declares_names_it() {
+    let doc = format!(
+        "{BASE}component T(p: point, q: point, w: Length) {{ p distance(w) q }}\n\
+         shield_top := 2mm\nshield_z := 6mm + shieldd_top\nlifted := shield_z * 2\n\
+         claim shield_z >= 1mm\na distance(shield_z) b\nt := T(b, c, w: shield_z)\n\
+         when shield_z > 1mm {{\n  a distance(40) c\n}}\nd := point hint((shield_z, 0))\n\
+         param s: Length over (0mm, shield_z)\n"
+    );
+    let (_, d) = read(&doc);
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].starts_with("E101") && d[0].contains("no such entity: `shieldd_top`")
+        && d[0].contains("nearest in scope: `shield_top`"), "{d:?}");
+    // a misspelling near nothing in scope is named alone
+    let (_, d) = read(&format!("{BASE}w := 6 + wdth\n"));
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].starts_with("E101") && d[0].ends_with("no such entity: `wdth`"), "{d:?}");
+    // a dimension mismatch between names that are there is still E103
+    let (_, d) = read(&format!("{BASE}s := 6mm\nr := 2deg\nw := s + r\n"));
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].starts_with("E103") && d[0].contains("cannot be added"), "{d:?}");
+}
+
+/// **A field of an instance no longer drawn** (#824): `shield.top` with no `shield` names
+/// `shield` as the thing missing, for each value reading one, and the values' uses say nothing.
+#[test]
+fn a_value_reading_a_field_of_an_instance_not_drawn_names_the_instance() {
+    let doc = format!(
+        "{BASE}board_z := 3mm\nboard_oy := 1mm\nshield_z := board_z + shield.top\n\
+         jack_y := board_oy + redboard.jack_y\na distance(shield_z) b\nb distance(jack_y) c\n"
+    );
+    let (e, d) = read(&doc);
+    assert_eq!(d.len(), 2, "{d:?}");
+    assert!(d.iter().all(|m| m.starts_with("E101")), "{d:?}");
+    assert!(d.iter().any(|m| m.contains("no such entity: `shield` (read as `shield.top`)")),
+        "{d:?}");
+    assert!(d.iter().any(|m| m.contains("no such entity: `redboard`")), "{d:?}");
+    assert!(e.sketch.free_vars.is_empty(), "{:?}", e.sketch.free_vars);
+}

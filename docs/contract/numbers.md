@@ -110,7 +110,17 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   none).  **A name nothing declares is
   E101** — in a dimension (`settle_text`), a pin (`settle_arg`), a dotted read nothing made
   (`resolve`, unless it is an instance's unbound formal) — and the relation is not emitted
-  (`Checks::refused`), so it never reaches the expression graph as an unknown; W111 is gone.  A
+  (`Checks::refused`), so it never reaches the expression graph as an unknown; W111 is gone.
+  **In a value too** (#824): `value_read` says a name nothing in scope binds before it does any
+  arithmetic (`unbound_read`: a group, a member a group lacks, or nothing in scope), never the
+  dimension error the free plain number it would be read as comes to (`6mm + shieldd_top`, a
+  length added to a scalar).  A definition that fails so, over a name declared or drawn nowhere
+  in the program (`Walk::unanswered`; a dotted name judged by its head, `shield` of
+  `shield.top`), is E101 `no such entity: …` naming it, with up to three names in scope within a
+  third of its length in edits (`nearest`).  A definition that did not work out is said once,
+  where it is defined: its frame of `Vals` records it (`Table::failed`), and a text reading it —
+  a dimension, a claim, a `when`, a call's argument, a seed, a parameter's interval, another
+  value — is refused in words marked `values::UNWORKED`, which `Walk::diagnostic` does not say.  A
   dotted name read in a body is made absolute under `Scope::instance_prefix`.  `t == s` over an
   unknown is `Arg::Tie` seeded by the declaration (a `hint(t:)` beside it is E040 in `assemble`).
   `commit_seeds` writes each declared unknown's solved value into its `hint(…)`

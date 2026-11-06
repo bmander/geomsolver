@@ -1102,6 +1102,11 @@ impl<'a> Walk<'a> {
     }
 
     fn diagnostic(&mut self, diag: Diag) {
+        // a text refused for reading a definition that did not work out says nothing (#824):
+        // the definition's own error, where it is written, is the one
+        if diag.message.contains(values::UNWORKED) {
+            return;
+        }
         if self.diagnostics.len() < 200 {
             self.diagnostics.push(diag);
         }
