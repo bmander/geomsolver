@@ -470,9 +470,17 @@ pub(crate) fn first_seen(keys: &[u128]) -> (Vec<usize>,usize) {
 
 fn stl_indices(bytes: &[u8]) -> Result<(usize,Vec<[usize;3]>),String> {
     let mut keys = vec![];
-    for p in stl_points(bytes)? {
-        if p.iter().flatten().any(|x| !x.is_finite()) || degenerate(p[0],p[1],p[2]) {
-            return Err("binary STL has a nonfinite or degenerate triangle".into());
+    let points = stl_points(bytes)?;
+    // (the header checked)
+    let count = (bytes.len()-84)/50;
+    for (i,p) in points.enumerate() {
+        // where, so a refusal of a file with no faces to name still says which triangle (#821)
+        if p.iter().flatten().any(|x| !x.is_finite()) {
+            return Err(format!("binary STL triangle {} of {count} has a coordinate that is no number",i+1));
+        }
+        if degenerate(p[0],p[1],p[2]) {
+            let at = [0,1,2].map(|k| (p[0][k]+p[1][k]+p[2][k])/3.);
+            return Err(format!("binary STL triangle {} of {count}, at ({}, {}, {}), has no area",i+1,at[0],at[1],at[2]));
         }
         keys.extend(p.map(|p| p.map(|v| if v == 0. { 0 } else { (v as f32).to_bits() }))
             .map(|[x,y,z]| (x as u128) << 64 | (y as u128) << 32 | z as u128));

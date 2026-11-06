@@ -300,6 +300,72 @@ fn an_empty_body_is_refused_naming_the_statement_that_emptied_it() {
     export::stl(&sk,at("b"),&b,None,&say).unwrap();
 }
 
+/// A 40 × 30 × 20 mm block standing `z0` mm along the front plane's normal, cut from below by a
+/// 20 × 10 pocket to `z0` and a 10 × 20 bore crossing it to `step` beyond: the bore's walls stand
+/// `step` tall over the pocket's ceiling where they cross it.
+fn stepped_pockets(z0: f64,step: f64) -> Sketch {
+    let src = format!("\
+unit mm
+use std
+use std.solids (cut)
+use std.shapes
+in std.front {{
+  outer := std.shapes.CenteredRectangle(std.origin, w: 40mm, h: 30mm)
+  wide := std.shapes.CenteredRectangle(std.origin, w: 20mm, h: 10mm)
+  tall := std.shapes.CenteredRectangle(std.origin, w: 10mm, h: 20mm)
+}}
+block := solid(std.solids.Prism(face(outer.loop), from: {}mm, to: {}mm))
+pocket := solid(std.solids.Prism(face(wide.loop), from: {}mm, to: {z0}mm))
+bore := solid(std.solids.Prism(face(tall.loop), from: {}mm, to: {z0}mm + {step}mm))
+pocket cut block
+bore cut block
+base := solid(block)
+",z0-10.,z0+10.,z0-20.,z0-20.);
+    let mut sk = crate::common::read(&src).sketch;
+    assert!(gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default()).success);
+    sk
+}
+
+/// **A triangle float32 flattens is said where it is** (#821): two pockets ending 10 nm apart a
+/// thousand millimetres out, where float32 steps 61 nm, leave the bore's walls a strip 10 nm tall
+/// that binary STL cannot write. The refusal names the solid, the faces its flat triangles are of
+/// and the face beside the first, a point near it (and the witness there), how thin it is and
+/// that float32 flattened it, and the likely cause — where it said only that the file had a
+/// degenerate triangle. The same step near the origin, or 10 µm out there, is written.
+#[test]
+fn a_sliver_float32_flattens_is_refused_naming_its_faces_and_where() {
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    let stl = |z0: f64,step: f64| {
+        let sk = stepped_pockets(z0,step);
+        let body = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "base").unwrap();
+        let exact = export::exact(&sk,body,None,None,&say).unwrap();
+        export::stl(&sk,body,&exact,None,&say)
+    };
+    let e = stl(1000.,1e-5).err().expect("a strip float32 flattens is refused");
+    assert_eq!(e.stage,gcs_core::solid::export::Stage::Stl,"{e}");
+    for said in ["`base`: ","STL triangles have no area as written, on `bore.","no area once float32 rounds its corners",
+        "nm thick) is near (","beside `pocket.near`","most often a sliver","here `bore."] {
+        assert!(e.message.contains(said),"{said}: {e}");
+    }
+    // on the bore's walls, across the pocket's ceiling, a thousand millimetres out
+    let w = e.witness.expect("a point near the flat triangle");
+    let out = w.iter().map(|x| x.abs()).fold(0.,f64::max);
+    assert!((out-1000.).abs() < 1e-3,"{w:?}");
+    assert!(w.iter().any(|x| (x.abs()-5.).abs() < 1e-6),"{w:?}: on a wall of the bore, 5 mm from its middle");
+    // float32 writes the strip near the origin, and a step it can tell apart out there
+    gcs_core::mesh::stl_shells(&stl(0.,1e-5).unwrap()).unwrap();
+    gcs_core::mesh::stl_shells(&stl(1000.,0.01).unwrap()).unwrap();
+}
+
+/// A binary STL refused by its reader says which triangle and where (#821), not only that one is
+/// degenerate.
+#[test]
+fn an_stl_reader_refusing_a_flat_triangle_says_which() {
+    let t = [[0.,0.,0.],[1.,0.,0.],[0.,1.,0.],[3.,1.,2.],[4.,1.,2.],[5.,1.,2.]].concat();
+    let e = gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&t,"t")).unwrap_err();
+    assert_eq!(e,"binary STL triangle 2 of 2, at (4, 1, 2), has no area");
+}
+
 /// **A cube trimmed by its midsphere** (`midsphere_common.sv`, brep-bench's
 /// tangent/midsphere-common): the ball's radius is the solve's, through a corner of the cube's
 /// middle section, and the exact common is the closed forms' — six discs and eight patches of the

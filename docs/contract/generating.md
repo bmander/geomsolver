@@ -102,7 +102,13 @@ written STEP is parsed back by `native::step_check`; `--verify-step full`
 (`SOLVENT_STEP_VERIFY=full`, slow tier) also reads it through the kernel. Native `--stl` defaults
 to OCCT (`--stl-backend mesh` legacy). STEP+STL build once, check both, then replace each. Native
 units are mm; STL 0.01 mm deflection, 0.2 rad — settings, not an error bound. Every CAD face must
-be meshed; `mesh::stl_shells` checks every component, cavities included, unwelded. Failure keeps
+be meshed; `mesh::stl_shells` checks every component, cavities included, unwelded. Before it, the
+core's export refuses a triangle that has no area as written by where it is (`brep::export::flattened`,
+#821): the solid, the B-rep faces its flat triangles are of and the faces beside the first, a point
+near it (the refusal's witness), how long and thin it is, whether the mesh or float32 flattened it,
+and, under the bar, the likely sliver of two cuts ending all but flush. Nothing is dropped: a triangle
+dropped opens the shell (`brep_export.rs::a_sliver_float32_flattens_is_refused_naming_its_faces_and_where`).
+The reader's own refusal names the triangle's number and where it is. Failure keeps
 old outputs; renames are atomic per file, not across files. Native-path tests must not hide legacy
 mesh defects.
 

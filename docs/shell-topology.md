@@ -54,7 +54,7 @@ raw triangle list and a separately callable closure assertion are gone. Geometry
 comes from the generated contours, conical connections and spherical end faces.
 
 `mesh::stl_topology` separately reads the actual binary STL. It checks the byte count,
-rejects nonfinite or degenerate triangles, identifies exactly equal encoded positions
+rejects nonfinite or degenerate triangles (naming the triangle and where it is), identifies exactly equal encoded positions
 (`+0` and `-0` are equal), and validates the reconstructed shell. Stored facet normals
 do not establish connectivity or orientation; triangle winding does. No geometric
 tolerance repairs a gap. The gear export must retain genus one after encoding.
