@@ -368,7 +368,13 @@ pub fn stl(sk: &Sketch,body: usize,exact: &Exact,tolerance: Option<Tolerance>,sa
     if m.sag > bar { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh sags {:.3} µm against {:.3} µm",m.sag*1e3,bar*1e3))) }
     let bytes = crate::mesh::stl_of(&m.triangles(),&sk.solids[body].name);
     let rounding = written_within(&bytes,m.sag,bar)?;
-    crate::mesh::stl_shells(&bytes).at(Stage::Stl)?;
+    // a refused shell whose triangles float32 flattened is said by the faces they are of (#821)
+    if let Err(e) = crate::mesh::stl_shells(&bytes) {
+        let flat = crate::mesh::flat_triangles(&bytes).at(Stage::Stl)?;
+        if flat.is_empty() { return Err(ExportRefusal::at(Stage::Stl,e)) }
+        let faces = exact.pattern.as_ref().map_or(&exact.solid.faces,|p| &p.sector().faces);
+        return Err(flattened(&m,faces,&flat,&crate::vocab::public_path(&sk.solids[body].name),bar,cad::millimetres(sk)))
+    }
     (say.stage)(&format!("the STL output: {} triangles, sagging {:.3} µm at most and moved {:.3} µm at most by float32, against \
         {:.3} µm, its shells checked ({:?})",m.tris.len(),m.sag*1e3,rounding*1e3,bar*1e3,started.elapsed()));
     (say.mark)(Stage::Stl);
@@ -387,6 +393,62 @@ pub fn written_within(bytes: &[u8],sag: f64,bar: f64) -> Result<f64,ExportRefusa
             tolerance",rounding*1e3,sag*1e3,bar*1e3)))
     }
     Ok(rounding)
+}
+
+/// **The triangles binary STL wrote with no area, said where** (#821): `flat`, the places in the
+/// file of the triangles of mesh `m` it refused (`mesh::flat_triangles`; `stl_of` writes them in the
+/// mesh's order), said of solid `solid` by the faces of the meshed B-rep they are of (`faces`: a
+/// pattern's sector's), and the first by the faces beside it, a point near it (mm, and as the witness
+/// in model units, `scale` millimetres a unit), how long and how thick it is and whether the mesh
+/// made it flat or float32 did. A triangle thinner than the export's `bar` is most often a sliver the
+/// B-rep holds — one cut ending all but flush with another's face — and the refusal says so, and what
+/// to move: the model mends it, not the mesh, which drops nothing, since a triangle dropped opens the
+/// shell. (A nonfinite coordinate never reaches here: `written_within` refuses it first.)
+fn flattened(m: &super::mesh::Mesh,faces: &[super::topo::Face],flat: &[usize],solid: &str,bar: f64,scale: f64) -> ExportRefusal {
+    use crate::space::{altitude,distance};
+    use crate::vocab::all_of;
+    let first = flat[0];
+    let name = |f: u32| faces.get(f as usize).map(|x| crate::vocab::public_path(&crate::solid::exact::joined(&x.name)))
+        .filter(|n| !n.is_empty()).map_or_else(|| format!("face {f}"),|n| format!("`{n}`"));
+    // the faces the flat triangles are of, the most first
+    let mut count: std::collections::BTreeMap<u32,usize> = Default::default();
+    for &i in flat { *count.entry(m.of[i]).or_default() += 1; }
+    let mut on: Vec<(u32,usize)> = count.into_iter().collect();
+    on.sort_by_key(|&(_,n)| std::cmp::Reverse(n));
+    let on = match on.len() {
+        1 => format!("all on {}",name(on[0].0)),
+        n if n <= 3 => format!("on {}",all_of(&on.iter().map(|f| name(f.0)).collect::<Vec<_>>())),
+        n => format!("on {}, {} and {} faces more",name(on[0].0),name(on[1].0),n-2),
+    };
+    // the first, where it is and what it stands between
+    let of = m.of[first];
+    let tri = m.tris[first];
+    let mut beside: Vec<u32> = Vec::new();
+    for (j,t) in m.tris.iter().enumerate() {
+        if j == first || m.of[j] == of || beside.contains(&m.of[j]) { continue }
+        if t.iter().filter(|v| tri.contains(v)).count() >= 2 { beside.push(m.of[j]); }
+    }
+    let beside = if beside.is_empty() { String::new() } else { all_of(&beside.iter().map(|&f| name(f)).collect::<Vec<_>>()) };
+    let c = tri.map(|v| m.pts[v as usize]);
+    let at = crate::mesh::centroid(&c);
+    let long = distance(c[0],c[1]).max(distance(c[1],c[2])).max(distance(c[2],c[0]));
+    let thick = altitude(c[0],c[1],c[2]);
+    let how = if crate::mesh::degenerate(c[0],c[1],c[2]) { "no area as the mesh made it" } else { "no area once float32 rounds its corners" };
+    let sliver = if thick < bar {
+        let between = if beside.is_empty() { String::new() } else { format!(" (here {} against {beside})",name(of)) };
+        format!(". A triangle that thin, under the export's {}, is most often a sliver the B-rep holds where one cut ends all \
+            but flush with another's face{between}: move that end onto the face or clear of it",length_text(bar))
+    } else { String::new() };
+    let beside = if beside.is_empty() { beside } else { format!(", beside {beside}") };
+    ExportRefusal {stage:Stage::Stl,condition:None,witness:Some(at.map(|x| x/scale)),
+        message:format!("`{solid}`: {} of {} STL triangles have no area as written, {on}; the first ({how}, {} long and {} thick) \
+            is near ({:.4}, {:.4}, {:.4}) mm on {}{beside}{sliver}",flat.len(),m.tris.len(),length_text(long),length_text(thick),
+            at[0],at[1],at[2],name(of))}
+}
+
+/// A length in millimetres, written in the unit that suits it.
+fn length_text(mm: f64) -> String {
+    if mm >= 1. { format!("{mm:.3} mm") } else if mm >= 1e-3 { format!("{:.3} µm",mm*1e3) } else { format!("{:.3} nm",mm*1e6) }
 }
 
 /// A swept body's STL held to its material field: no cluster of microscopic triangles, and every

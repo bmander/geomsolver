@@ -81,7 +81,7 @@ fn fan(pts: &[[f64; 3]], mut emit: impl FnMut([f64; 3], [f64; 3], [f64; 3])) {
     }
 }
 
-fn centroid(pts: &[[f64; 3]]) -> [f64; 3] {
+pub(crate) fn centroid(pts: &[[f64; 3]]) -> [f64; 3] {
     let k = 1.0 / pts.len() as f64;
     let mut c = [0.0; 3];
     for p in pts {
@@ -336,7 +336,7 @@ pub(crate) fn placed_stl(mesh: &Mesh, origin: [f64; 3], name: &str) -> Result<Ve
 pub(crate) fn preview_stl(mesh: &Mesh, origin: [f64; 3], name: &str) -> Result<Vec<u8>, String> {
     let bytes = stl_triangles(&mesh.positions, origin, name);
     let kept: Vec<&[u8]> = stl_points(&bytes)?.zip(bytes[84..].chunks_exact(50))
-        .filter(|(v, _)| v.iter().flatten().all(|x| x.is_finite()) && !degenerate(v[0], v[1], v[2]))
+        .filter(|(v, _)| !unwritable(v))
         .map(|(_, record)| record).collect();
     if kept.is_empty() { return Err(format!("`{name}` has no surface to export yet")); }
     let mut out = bytes[..80].to_vec();
@@ -347,14 +347,23 @@ pub(crate) fn preview_stl(mesh: &Mesh, origin: [f64; 3], name: &str) -> Result<V
 
 fn check_stl(bytes: Vec<u8>, name: &str) -> Result<Vec<u8>, String> {
     for v in stl_points(&bytes)? {
-        if v.iter().flatten().any(|x| !x.is_finite()) || degenerate(v[0], v[1], v[2]) {
+        if unwritable(&v) {
             return Err(format!("`{name}` cannot be represented at this position and scale by float32 STL coordinates; move the solid nearer the origin or change its export units"));
         }
     }
     Ok(bytes)
 }
 
-fn stl_points(bytes: &[u8]) -> Result<impl Iterator<Item=[[f64;3];3]> + '_,String> {
+/// Whether a triangle as binary STL reads it is no triangle: a coordinate nonfinite, or no area.
+fn unwritable(p: &[[f64;3];3]) -> bool { p.iter().flatten().any(|x| !x.is_finite()) || degenerate(p[0],p[1],p[2]) }
+
+/// The triangles of a binary STL, by their place in it, that are no triangle (`unwritable`): what
+/// `stl_shells` refuses first, all of them, for a caller that can say where they came from (#821).
+pub fn flat_triangles(bytes: &[u8]) -> Result<Vec<usize>,String> {
+    Ok(stl_points(bytes)?.enumerate().filter(|(_,p)| unwritable(p)).map(|(i,_)| i).collect())
+}
+
+fn stl_points(bytes: &[u8]) -> Result<impl ExactSizeIterator<Item=[[f64;3];3]> + '_,String> {
     if bytes.len() < 84 { return Err("incomplete binary STL header".into()); }
     let count = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
     let expected = count.checked_mul(50).and_then(|n| n.checked_add(84));
@@ -469,10 +478,17 @@ pub(crate) fn first_seen(keys: &[u128]) -> (Vec<usize>,usize) {
 }
 
 fn stl_indices(bytes: &[u8]) -> Result<(usize,Vec<[usize;3]>),String> {
-    let mut keys = vec![];
-    for p in stl_points(bytes)? {
-        if p.iter().flatten().any(|x| !x.is_finite()) || degenerate(p[0],p[1],p[2]) {
-            return Err("binary STL has a nonfinite or degenerate triangle".into());
+    let points = stl_points(bytes)?;
+    let count = points.len();
+    let mut keys = Vec::with_capacity(3*count);
+    for (i,p) in points.enumerate() {
+        // where, so a refusal of a file with no faces to name still says which triangle (#821)
+        if p.iter().flatten().any(|x| !x.is_finite()) {
+            return Err(format!("binary STL triangle {} of {count} has a nonfinite coordinate",i+1));
+        }
+        if degenerate(p[0],p[1],p[2]) {
+            let at = centroid(&p);
+            return Err(format!("binary STL triangle {} of {count}, at ({:.4}, {:.4}, {:.4}), has no area",i+1,at[0],at[1],at[2]));
         }
         keys.extend(p.map(|p| p.map(|v| if v == 0. { 0 } else { (v as f32).to_bits() }))
             .map(|[x,y,z]| (x as u128) << 64 | (y as u128) << 32 | z as u128));
