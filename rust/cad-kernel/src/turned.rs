@@ -54,8 +54,6 @@ pub trait Num: Copy+Add<Output=Self>+Sub<Output=Self>+Mul<Output=Self>+Div<Outpu
     fn sin_cos(self) -> (Self,Self);
     /// The float it is, where it is one (an interval is none).
     fn real(self) -> Option<f64>;
-    /// A number read nowhere: a float's NaN, an interval's none.
-    fn unknown() -> Self;
 }
 
 impl Num for f64 {
@@ -63,7 +61,6 @@ impl Num for f64 {
     fn sqrt(self) -> f64 { f64::sqrt(self) }
     fn sin_cos(self) -> (f64,f64) { use crate::util::fmath::Det; self.dsin_cos() }
     fn real(self) -> Option<f64> { Some(self) }
-    fn unknown() -> f64 { f64::NAN }
 }
 
 /// An outward-rounded interval, or none where an operation left its domain (a division by an
@@ -93,7 +90,6 @@ impl Num for Iv {
         match self.0.and_then(|a| a.sin_cos_periodic().ok()) { Some((s,c)) => (Iv(Some(s)),Iv(Some(c))),None => (Iv(None),Iv(None)) }
     }
     fn real(self) -> Option<f64> { None }
-    fn unknown() -> Iv { Iv(None) }
 }
 
 /// A number and its first two derivatives along one parameter.
@@ -196,6 +192,20 @@ impl Contact {
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Rim { pub o: V,pub x: V,pub y: V,pub r: f64 }
 
+/// **Where a circle's points go in `(ρ² + z², z)`**, measured from the turn's origin: about its
+/// centre `c` in its frame `e₁, e₂`, its point `c + q` goes to `m + L q`, `L = [[2 c·e₁, 2 c·e₂],
+/// [e₁_z, e₂_z]]` — the inverse of `L`, none where its determinant is not above `floor`. The ring
+/// a sharp circle turns into, the loop where a cylinder holding it crosses that ring and a plane
+/// holding it cuts it are each read through it.
+pub fn rim_inverse(c: V,e1: V,e2: V,floor: f64) -> Option<[[f64;2];2]> {
+    let l = [[2.*dot(c,e1),2.*dot(c,e2)],[e1[2],e2[2]]];
+    let det = l[0][0]*l[1][1]-l[0][1]*l[1][0];
+    (det.abs() > floor).then(|| [[l[1][1]/det,-l[0][1]/det],[-l[1][0]/det,l[0][0]/det]])
+}
+
+/// `m p`, `m` two by two.
+fn times(m: [[f64;2];2],p: [f64;2]) -> [f64;2] { [m[0][0]*p[0]+m[0][1]*p[1],m[1][0]*p[0]+m[1][1]*p[1]] }
+
 impl Rim {
     /// Its point at the jet `w` of its angle.
     pub fn point<T: Num>(&self,w: Jet<T>) -> J3<T> {
@@ -204,36 +214,85 @@ impl Rim {
     }
     /// Whether it turns into a ring, proved: clear of the axis (its least distance from it above
     /// `eps`, read over 64 pieces of the turn in intervals) and its meridian a simple closed curve —
-    /// in `(ρ² + z², z)` an ellipse, `(2 r o·x, r x_z)` and `(2 r o·y, r y_z)` its axes' images,
-    /// which part (their determinant `2 r² o · (x y_z − y x_z)` at least `eps` of `|o| r`: the
-    /// circle's normal off the plane through the axis and its centre, where the circle's two halves
-    /// would turn into one surface).
+    /// in `(ρ² + z², z)` the ellipse `m + L (circle)`, `L` invertible (`rim_inverse`, its determinant
+    /// `2 o · (x y_z − y x_z)` at least `eps` of `|o| / r`: the circle's normal off the plane through the
+    /// axis and its centre, where the circle's two halves would turn into one surface).
     pub fn simple(&self,eps: f64) -> bool {
-        let (o,x,y,r) = (self.o,self.x,self.y,self.r);
-        let det = 2.*r*r*(dot(o,x)*y[2]-dot(o,y)*x[2]);
-        det.abs() > eps*r*(1.+dot(o,o).sqrt()) && pieces([0.,std::f64::consts::TAU],64).all(|w| {
-            let p = self.point(Jet::at(w));
-            (p[0].v*p[0].v+p[1].v*p[1].v).bounds().is_some_and(|[lo,_]| lo > eps*eps)
-        })
+        rim_inverse(self.o,self.x,self.y,eps*(1.+dot(self.o,self.o).sqrt())/self.r).is_some()
+            && pieces([0.,std::f64::consts::TAU],64).all(|w| {
+                let p = self.point(Jet::at(w));
+                (p[0].v*p[0].v+p[1].v*p[1].v).bounds().is_some_and(|[lo,_]| lo > eps*eps)
+            })
     }
+    /// The turns about the axis carrying its normal onto `along` (a unit way in the turn's frame),
+    /// either way round: the circle so carried, its centre and frame. None where its normal runs
+    /// along the axis, or no turn does.
+    pub fn posed(&self,along: V) -> Vec<(V,V,V)> {
+        use crate::util::fmath::Det;
+        let n = crate::util::space::unit(crate::util::space::cross(self.x,self.y));
+        let (h1,h2) = (along[0].dhypot(along[1]),n[0].dhypot(n[1]));
+        if h2 <= 1e-9 { return vec![] }
+        [1.,-1.].iter().filter_map(|&sign| {
+            let m = along.map(|x| x*sign);
+            if (m[2]-n[2]).abs() > 1e-9 || (h1-h2).abs() > 1e-9 { return None }
+            let turn = Rigid::turn([0.;3],[0.,0.,1.],m[1].datan2(m[0])-n[1].datan2(n[0]));
+            Some((turn.point(self.o),turn.vector(self.x),turn.vector(self.y)))
+        }).collect()
+    }
+}
+
+/// **The root of a function running one way over `[a, b]` at `target`**: `f` its value and rate at
+/// a float, `ends` its values at `a` and `b`; the end it reaches past, else Newton held to a
+/// bracket, its middle where Newton leaves it, done where a step is rounding's.
+fn monotone_root(f: &dyn Fn(f64) -> [f64;2],[a,b]: [f64;2],ends: [f64;2],target: f64) -> f64 {
+    let up = ends[1] > ends[0];
+    if (target <= ends[0]) == up { return a }
+    if (target >= ends[1]) == up { return b }
+    let (mut x,mut y) = (a,b);
+    let mut v = 0.5*(a+b);
+    for _ in 0..200 {
+        let [fv,dv] = f(v);
+        let g = fv-target;
+        if g == 0. { return v }
+        if (g < 0.) == up { x = v } else { y = v }
+        let newton = v-g/dv;
+        let next = if newton >= x && newton <= y { newton } else { 0.5*(x+y) };
+        if (next-v).abs() <= 1e-15*(1.+v.abs()) { return next }
+        v = next;
+    }
+    v
+}
+
+/// **A posed curve's point at the jet `t` of its angle**, its parameter `x(τ)` the root of
+/// `f(x) = −cos τ` (`solve`, `f` with its first two rates at a float): `x`'s jet in `τ` by the
+/// implicit function (`f' x' = sin τ`, `f' x'' + f'' x'² = cos τ`) and the chain rule, handed to `at`
+/// with `τ`'s own. Read in floats only: an interval reading is none (NaN), and a box about the curve
+/// is grown from its samples.
+fn implicit<T: Num>(t: Jet<T>,solve: &dyn Fn(f64) -> f64,f: &dyn Fn(f64) -> [f64;3],at: &dyn Fn(Jet<f64>,Jet<f64>) -> J3<f64>) -> J3<T> {
+    let (Some(tv),Some(td),Some(tdd)) = (t.v.real(),t.d.real(),t.dd.real()) else { return [Jet {v:T::of(f64::NAN),d:T::of(f64::NAN),dd:T::of(f64::NAN)};3] };
+    use crate::util::fmath::Det;
+    let x0 = solve(tv);
+    let [_,d1,d2] = f(x0);
+    let (st,ct) = tv.dsin_cos();
+    let x1 = st/d1;
+    let x2 = (ct-d2*x1*x1)/d1;
+    at(Jet {v:x0,d:x1*td,dd:x2*td*td+x1*tdd},Jet {v:tv,d:td,dd:tdd}).map(|j| Jet {v:T::of(j.v),d:T::of(j.d),dd:T::of(j.dd)})
 }
 
 /// **Where a cylinder holding a sharp circle at a pose of the turn crosses the circle's ring, off
 /// the circle** (#780 L2: a flat-ended tool's side at an end pose against its rim's ring). In the
 /// turn's frame, the cylinder's points `c + h a + r (cos φ e₁ + sin φ e₂)` — `c`, `e₁`, `e₂` the posed
 /// circle's centre and frame, `a` its normal, the cylinder's axis — have `(|x|², z) = m + r L (cos φ,
-/// sin φ) + (2h c·a + h², h a_z)`, `L = [[2 c·e₁, 2 c·e₂], [e₁_z, e₂_z]]`, and the ring is `m + r L
-/// (cos w, sin w)`: so the point is on the ring where `|r ρ + u|² = r²`, `u = h v(h)`, `v = M₀ + h k`,
-/// `M₀ = L⁻¹ (2 c·a, a_z)`, `k = L⁻¹ (1, 0)` — `h = 0`, the circle, or `ρ · v̂ = −σ(h)`, `σ = h |v| /
-/// 2r`. Where `σ` climbs from −1 to 1 over `[h₀, h₁]` (`h σ` is `h² |v|²/2r`, a quartic; its rate's
-/// sign is that of the quadratic `2|M₀|² + 6h M₀·k + 4h² |k|²`, held above nought over the stretch)
-/// that is one closed loop, read at the angle `τ` round it: `σ(h) = −cos τ`, `ρ = cos τ v̂ + sin τ
-/// v̂⊥`. It crosses the circle at `τ = π/2, 3π/2` (`h = 0`, `ρ = ±v̂⊥`), where the side's contact
-/// reaches the rim. `h(τ)` is a root found by bisection and Newton, its derivatives by the implicit
-/// function (`σ' h' = sin τ`); read in floats only (an interval reading is none, and a box about the
-/// curve is grown from its samples).
+/// sin φ) + (2h c·a + h², h a_z)` (`rim_inverse`), and the ring is `m + r L (cos w, sin w)`: so the
+/// point is on the ring where `|r ρ + u|² = r²`, `u = h v(h)`, `v = M₀ + h k`, `M₀ = L⁻¹ (2 c·a,
+/// a_z)`, `k = L⁻¹ (1, 0)` — `h = 0`, the circle, or `ρ · v̂ = −σ(h)`, `σ = h |v| / 2r`. Where `σ`
+/// climbs from −1 to 1 over `[h₀, h₁]` (`h σ` is `h² |v|²/2r`, a quartic; its rate's sign is that of
+/// the quadratic `2|M₀|² + 6h M₀·k + 4h² |k|²`, held above nought over the stretch) that is one
+/// closed loop, read at the angle `τ` round it: `σ(h) = −cos τ`, `ρ = cos τ v̂ + sin τ v̂⊥`
+/// (`implicit`). It crosses the circle at `τ = π/2, 3π/2` (`h = 0`, `ρ = ±v̂⊥`), where the side's
+/// contact reaches the rim.
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub struct Crossing { pub c: V,pub e1: V,pub e2: V,pub a: V,pub r: f64,pub m0: [f64;2],pub k: [f64;2],pub h: [f64;2] }
+pub struct Crossing { pub c: V,pub e1: V,pub e2: V,pub a: V,pub r: f64,m0: [f64;2],k: [f64;2],h: [f64;2] }
 
 impl Crossing {
     /// The loop on the cylinder about the line through `c` along `a`, of radius `r`, holding the circle
@@ -241,15 +300,13 @@ impl Crossing {
     /// that circle's ring; none where `L` is all but singular, or `σ` does not climb once from −1
     /// to 1 about `h = 0` (its rate's quadratic reaching nought over the stretch).
     pub fn new(c: V,e1: V,e2: V,a: V,r: f64) -> Option<Crossing> {
-        let l = [[2.*dot(c,e1),2.*dot(c,e2)],[e1[2],e2[2]]];
-        let det = l[0][0]*l[1][1]-l[0][1]*l[1][0];
-        if !(det.abs() > 1e-12*(1.+dot(c,c).sqrt()) && r > 0.) { return None }
-        let inv = |p: [f64;2]| [(l[1][1]*p[0]-l[0][1]*p[1])/det,(-l[1][0]*p[0]+l[0][0]*p[1])/det];
-        let (m0,k) = (inv([2.*dot(c,a),a[2]]),inv([1.,0.]));
+        if !(r > 0.) { return None }
+        let inv = rim_inverse(c,e1,e2,1e-12*(1.+dot(c,c).sqrt()))?;
+        let (m0,k) = (times(inv,[2.*dot(c,a),a[2]]),times(inv,[1.,0.]));
         let q0 = m0[0]*m0[0]+m0[1]*m0[1];
-        let (b,kk) = (m0[0]*k[0]+m0[1]*k[1],k[0]*k[0]+k[1]*k[1]);
         if !(q0 > 0.) { return None }
-        let sigma = |h: f64| { let v = [m0[0]+h*k[0],m0[1]+h*k[1]]; h*v[0].hypot(v[1])/(2.*r) };
+        let mut out = Crossing {c,e1,e2,a,r,m0,k,h:[0.;2]};
+        let sigma = |h: f64| out.sigma(h)[0];
         // `|σ|` grows at least as `|h| (|v| ≥ |M₀| − |h| |k|)`: reach out until it passes 1 each way
         let reach = |sense: f64| -> Option<f64> {
             let mut h = r/q0.sqrt();
@@ -258,13 +315,27 @@ impl Crossing {
         };
         let (lo,hi) = (reach(-1.)?,reach(1.)?);
         // σ's rate's sign over [lo, hi]: the quadratic 2 q0 + 6 h b + 4 h² kk, its least there
+        let (b,kk) = (m0[0]*k[0]+m0[1]*k[1],k[0]*k[0]+k[1]*k[1]);
         let quad = |h: f64| 2.*q0+6.*h*b+4.*h*h*kk;
         let vertex = (-6.*b/(8.*kk)).clamp(lo,hi);
         if !(quad(lo).min(quad(hi)).min(if kk > 0. { quad(vertex) } else { f64::INFINITY }) > 1e-12*q0) { return None }
-        // the ends, σ = ∓1, by bisection (σ climbs over [lo, hi])
-        let root = |target: f64| { let (mut x,mut y) = (lo,hi); for _ in 0..200 { let m = 0.5*(x+y); if sigma(m) < target { x = m } else { y = m } } 0.5*(x+y) };
-        Some(Crossing {c,e1,e2,a,r,m0,k,h:[root(-1.),root(1.)]})
+        // the ends, σ = ∓1 (σ climbs over [lo, hi])
+        let (rate,ends) = (|h: f64| { let [s,d,_] = out.sigma(h); [s,d] },[sigma(lo),sigma(hi)]);
+        out.h = [monotone_root(&rate,[lo,hi],ends,-1.),monotone_root(&rate,[lo,hi],ends,1.)];
+        Some(out)
     }
+    /// **The loop where a cylinder crosses the ring of the sharp circle `rim` it holds at some pose**
+    /// (`Crossing::new`): the cylinder about the line through `through` along the unit `along`, of
+    /// radius `radius` (all in the turn's frame), holding a turned copy of the circle — its normal the
+    /// circle's turned (`Rim::posed`), its centre on the line within `tol`, its radius the circle's.
+    pub fn held(rim: &Rim,along: V,through: V,radius: f64,tol: f64) -> Option<Crossing> {
+        if (radius.abs()-rim.r).abs() > tol { return None }
+        let (o,e1,e2) = rim.posed(along).into_iter()
+            .find(|&(o,..)| crate::util::space::norm(crate::util::space::cross(sub(o,through),along)) <= tol)?;
+        Crossing::new(o,e1,e2,crate::util::space::cross(e1,e2),rim.r)
+    }
+    /// The heights along the axis its loop spans.
+    pub fn heights(&self) -> [f64;2] { self.h }
     /// `σ(h)` and its first two derivatives.
     fn sigma(&self,h: f64) -> [f64;3] {
         let j = Jet::<f64>::at(h);
@@ -273,48 +344,20 @@ impl Crossing {
         let s = (j*(v0*v0+v1*v1).sqrt()).times(0.5/self.r);
         [s.v,s.d,s.dd]
     }
-    /// The height along the axis at the angle `τ`: `σ(h) = −cos τ` over the loop's stretch, by
-    /// bisection to a bracket and Newton.
-    fn height(&self,tau: f64) -> f64 {
-        use crate::util::fmath::Det;
-        let target = -tau.dcos();
-        let [mut x,mut y] = self.h;
-        if target <= -1. { return x }
-        if target >= 1. { return y }
-        let mut h = 0.5*(x+y);
-        for _ in 0..200 {
-            let [s,ds,_] = self.sigma(h);
-            let f = s-target;
-            if f == 0. { return h }
-            if f < 0. { x = h } else { y = h }
-            // Newton within the bracket, else its middle; done where the step is rounding's
-            let newton = h-f/ds;
-            let next = if ds > 0. && newton >= x && newton <= y { newton } else { 0.5*(x+y) };
-            if (next-h).abs() <= 1e-15*(1.+h.abs()) { return next }
-            h = next;
-        }
-        h
-    }
     /// Its point at the jet `t` of the angle round it, in the turn's frame (floats only).
     pub fn point<T: Num>(&self,t: Jet<T>) -> J3<T> {
-        let (Some(tv),Some(td),Some(tdd)) = (t.v.real(),t.d.real(),t.dd.real()) else { return [Jet {v:T::unknown(),d:T::unknown(),dd:T::unknown()};3] };
         use crate::util::fmath::Det;
-        let h0 = self.height(tv);
-        let [_,ds,dds] = self.sigma(h0);
-        let (st,ct) = tv.dsin_cos();
-        // h(τ): σ(h) = −cos τ, so σ' h' = sin τ and σ' h'' + σ'' h'² = cos τ
-        let (h1,h2) = { let h1 = st/ds; (h1,(ct-dds*h1*h1)/ds) };
-        // the jets in τ's own jet, through the chain rule
-        let h = Jet {v:h0,d:h1*td,dd:h2*td*td+h1*tdd};
-        let (sn,cs) = Jet {v:tv,d:td,dd:tdd}.sin_cos();
-        let v0 = Jet::of(self.m0[0])+h.times(self.k[0]);
-        let v1 = Jet::of(self.m0[1])+h.times(self.k[1]);
-        let len = (v0*v0+v1*v1).sqrt();
-        let (u0,u1) = (v0/len,v1/len);
-        // ρ = cos τ v̂ + sin τ v̂⊥, v̂⊥ = (−v̂₁, v̂₀)
-        let rho = [cs*u0-sn*u1,cs*u1+sn*u0];
-        let x: [Jet<f64>;3] = std::array::from_fn(|i| Jet::of(self.c[i])+h.times(self.a[i])+(rho[0].times(self.e1[i])+rho[1].times(self.e2[i])).times(self.r));
-        x.map(|j| Jet {v:T::of(j.v),d:T::of(j.d),dd:T::of(j.dd)})
+        let rate = |h: f64| { let [s,d,_] = self.sigma(h); [s,d] };
+        implicit(t,&|tau| monotone_root(&rate,self.h,[-1.,1.],-tau.dcos()),&|h| self.sigma(h),&|h,tau| {
+            let (sn,cs) = tau.sin_cos();
+            let v0 = Jet::of(self.m0[0])+h.times(self.k[0]);
+            let v1 = Jet::of(self.m0[1])+h.times(self.k[1]);
+            let len = (v0*v0+v1*v1).sqrt();
+            let (u0,u1) = (v0/len,v1/len);
+            // ρ = cos τ v̂ + sin τ v̂⊥, v̂⊥ = (−v̂₁, v̂₀)
+            let rho = [cs*u0-sn*u1,cs*u1+sn*u0];
+            std::array::from_fn(|i| Jet::of(self.c[i])+h.times(self.a[i])+(rho[0].times(self.e1[i])+rho[1].times(self.e2[i])).times(self.r))
+        })
     }
 }
 
@@ -324,18 +367,17 @@ impl Crossing {
 /// plane `n · x = d` meets the circle of radius `ρ(v)` where `cos(ψ − ψₙ) = C(v) = (d − n_z z(v)) /
 /// (|n_h| ρ(v))`, `ψₙ` the way of the normal's level part `n_h`. Where `C` runs one way over the
 /// meridian's span (its rate held off nought by the interval jets), each `C` is one height, and the
-/// cut is read at the angle `τ` round it: `C(v) = −cos τ`, `ψ = ψₙ + π − τ` — through the points
-/// where the plane is tangent to a level circle (`C = ±1`, `sin τ = 0`) as smoothly as anywhere.
-/// `v(τ)` a root found by bisection and Newton, its derivatives by the implicit function (`C' v' =
-/// sin τ`); read in floats only.
+/// cut is read at the angle `τ` round it: `C(v) = −cos τ`, `ψ = ψₙ + π − τ` (`implicit`) — through the
+/// points where the plane is tangent to a level circle (`C = ±1`, `sin τ = 0`) as smoothly as
+/// anywhere.
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub struct Section { pub of: Contact,pub way: [f64;2],pub nh: f64,pub nz: f64,pub d: f64,pub v: [f64;2] }
+pub struct Section { pub of: Contact,pub n: V,pub d: f64,pub v: [f64;2],ends: [f64;2] }
 
 impl Section {
     /// `C` at the jet `v`.
     fn c<T: Num>(&self,v: Jet<T>) -> Jet<T> {
         let [r,z] = self.of.meridian(v);
-        (Jet::of(self.d)-z.times(self.nz))/r.times(self.nh)
+        (Jet::of(self.d)-z.times(self.n[2]))/r.times(self.n[0].hypot(self.n[1]))
     }
     /// The cut of the plane `n · x = d` (unit `n`, in the turn's frame) through the surface of
     /// revolution of `of`'s meridian over `span`, as its curves' spans of `τ`: none where the plane is
@@ -343,20 +385,18 @@ impl Section {
     /// one way over the span; no curve where it misses.
     pub fn new(of: Contact,n: V,d: f64,span: [f64;2]) -> Option<(Section,Vec<[f64;2]>)> {
         use std::f64::consts::{PI,TAU};
-        let nh = n[0].hypot(n[1]);
-        if !(nh > 1e-9) { return None }
-        let k = Section {of,way:[n[0]/nh,n[1]/nh],nh,nz:n[2],d,v:[span[0].min(span[1]),span[0].max(span[1])]};
+        if !(n[0].hypot(n[1]) > 1e-9) { return None }
+        let mut k = Section {of,n,d,v:[span[0].min(span[1]),span[0].max(span[1])],ends:[0.;2]};
         let mut sign = 0.;
-        let n = 64;
-        for i in 0..n {
-            let [a,b] = k.v;
-            let piece = Iv::new(a+(b-a)*i as f64/n as f64,a+(b-a)*(i+1) as f64/n as f64);
-            let rate = match k.c(Jet::at(piece)).d.bounds() { Some([lo,_]) if lo > 0. => 1.,Some([_,hi]) if hi < 0. => -1.,_ => return None };
-            if sign != 0. && rate != sign { return None }
+        let one_way = pieces(k.v,64).all(|piece| {
+            let rate = match k.c(Jet::at(piece)).d.bounds() { Some([lo,_]) if lo > 0. => 1.,Some([_,hi]) if hi < 0. => -1.,_ => 0. };
+            let held = rate != 0. && (sign == 0. || rate == sign);
             sign = rate;
-        }
-        let (c0,c1) = (k.c(Jet::<f64>::of(k.v[0])).v,k.c(Jet::<f64>::of(k.v[1])).v);
-        let (lo,hi) = (c0.min(c1),c0.max(c1));
+            held
+        });
+        if !one_way { return None }
+        k.ends = k.v.map(|v| k.c(Jet::<f64>::of(v)).v);
+        let (lo,hi) = (k.ends[0].min(k.ends[1]),k.ends[0].max(k.ends[1]));
         if lo >= 1. || hi <= -1. { return Some((k,vec![])) }
         let (ta,tb) = (if lo <= -1. { 0. } else { (-lo).acos() },if hi >= 1. { PI } else { (-hi).acos() });
         let spans = match (ta == 0.,tb == PI) {
@@ -367,41 +407,17 @@ impl Section {
         };
         Some((k,spans.into_iter().filter(|s| s[1] > s[0]).collect()))
     }
-    /// The slant at the angle `τ`: `C(v) = −cos τ` over the span (`C` runs one way), by bisection to
-    /// a bracket and Newton.
-    fn slant(&self,tau: f64) -> f64 {
-        use crate::util::fmath::Det;
-        let [a,b] = self.v;
-        let up = self.c(Jet::<f64>::of(b)).v > self.c(Jet::<f64>::of(a)).v;
-        let target = -tau.dcos();
-        let (mut x,mut y) = (a,b);
-        let mut v = 0.5*(a+b);
-        for _ in 0..200 {
-            let j = self.c(Jet::<f64>::at(v));
-            let f = j.v-target;
-            if f == 0. { return v }
-            if (f < 0.) == up { x = v } else { y = v }
-            let newton = v-f/j.d;
-            let next = if newton >= x && newton <= y { newton } else { 0.5*(x+y) };
-            if (next-v).abs() <= 1e-15*(1.+v.abs()) { return next }
-            v = next;
-        }
-        v
-    }
     /// Its point at the jet `t` of the angle round it, in the turn's frame (floats only).
     pub fn point<T: Num>(&self,t: Jet<T>) -> J3<T> {
-        let (Some(tv),Some(td),Some(tdd)) = (t.v.real(),t.d.real(),t.dd.real()) else { return [Jet {v:T::unknown(),d:T::unknown(),dd:T::unknown()};3] };
         use crate::util::fmath::Det;
-        let v0 = self.slant(tv);
-        let j = self.c(Jet::<f64>::at(v0));
-        let (st,ct) = tv.dsin_cos();
-        // C(v(τ)) = −cos τ: C' v' = sin τ, C' v'' + C'' v'² = cos τ
-        let (v1,v2) = { let v1 = st/j.d; (v1,(ct-j.dd*v1*v1)/j.d) };
-        let v = Jet {v:v0,d:v1*td,dd:v2*td*td+v1*tdd};
-        let [r,z] = self.of.meridian(v);
-        let psi = Jet {v:self.way[1].datan2(self.way[0])+std::f64::consts::PI-tv,d:-td,dd:-tdd};
-        let (sn,cs) = psi.sin_cos();
-        [r*cs,r*sn,z].map(|j| Jet {v:T::of(j.v),d:T::of(j.d),dd:T::of(j.dd)})
+        let c = |v: f64| { let j = self.c(Jet::<f64>::at(v)); [j.v,j.d,j.dd] };
+        let rate = |v: f64| { let [x,d,_] = c(v); [x,d] };
+        let way = self.n[1].datan2(self.n[0]);
+        implicit(t,&|tau| monotone_root(&rate,self.v,self.ends,-tau.dcos()),&c,&|v,tau| {
+            let [r,z] = self.of.meridian(v);
+            let (sn,cs) = (Jet::of(way+std::f64::consts::PI)-tau).sin_cos();
+            [r*cs,r*sn,z]
+        })
     }
 }
 
@@ -417,6 +433,8 @@ impl Source {
     pub fn point<T: Num>(&self,v: Jet<T>) -> J3<T> {
         match self { Source::Contact(c) => c.point(v).0,Source::Rim(c) => c.point(v),Source::Crossing(c) => c.point(v),Source::Section(c) => c.point(v) }
     }
+    /// The period of its parameter: an angle's, `2π`, for all but a contact's slant.
+    pub fn period(&self) -> Option<f64> { (!matches!(self,Source::Contact(_))).then_some(std::f64::consts::TAU) }
     /// Where its point at `v` goes in `(ρ, z)` about the turn's axis, each with its jet.
     pub fn meridian<T: Num>(&self,v: Jet<T>) -> [Jet<T>;2] {
         let [r2,z] = self.meridian2(v);
@@ -448,26 +466,21 @@ impl Turned {
     pub fn meridian(frame: Frame,contact: Contact,span: [f64;2]) -> Turned { Turned {frame,source:Source::Contact(contact),span,posed:false} }
     /// The meridian of the sharp circle `rim` turned about `frame`'s axis, over the angles `span`.
     pub fn rim(frame: Frame,rim: Rim,span: [f64;2]) -> Turned { Turned {frame,source:Source::Rim(rim),span,posed:false} }
-    /// Its period, where it is a closed loop read round an angle over a whole turn (#780 L2: a
-    /// side's crossing with its rim's ring, a plane's cut of a contact's surface all round): `2π`,
-    /// every reading of it periodic in its angle. A meridian has none (a sharp circle's, closed
-    /// too, is read as a profile's edge over its span).
+    /// Its period, where it is closed (#780 L2): read over a whole period of its source's parameter
+    /// — a sharp circle's meridian round the circle (a ring, periodic round its meridian as a torus
+    /// is), a side's crossing with its rim's ring, a plane's cut of a contact's surface all round.
     pub fn period(&self) -> Option<f64> {
-        let full = (self.span[1]-self.span[0]-std::f64::consts::TAU).abs() <= 1e-12;
-        (self.posed && full && matches!(self.source,Source::Crossing(_) | Source::Section(_))).then_some(std::f64::consts::TAU)
+        self.source.period().filter(|&p| (self.span[1]-self.span[0]-p).abs() <= 1e-12)
     }
-    /// The period of its meridian's parameter on its surface of revolution: a sharp circle's, read
-    /// over a whole turn of its angle, `2π`; none for a contact's.
-    pub fn meridian_period(&self) -> Option<f64> {
-        let full = (self.span[1]-self.span[0]-std::f64::consts::TAU).abs() <= 1e-12;
-        (!self.posed && full && matches!(self.source,Source::Rim(_))).then_some(std::f64::consts::TAU)
+    /// The plane it lies in, where it is a plane's cut (`Section`): its unit normal and offset, in
+    /// the world.
+    pub fn plane(&self) -> Option<(V,f64)> {
+        let Source::Section(k) = self.source else { return None };
+        let n = self.frame.dir(k.n);
+        Some((n,k.d+dot(n,self.frame.o)))
     }
     /// The round face's contact it is the meridian of, if it is one's.
     pub fn contact(&self) -> Option<Contact> { match self.source { Source::Contact(c) => Some(c),_ => None } }
-    /// Where its source's point at `v` goes in `(ρ, z)`, each with its jet.
-    pub fn meridian_at<T: Num>(&self,v: Jet<T>) -> [Jet<T>;2] { self.source.meridian(v) }
-    /// `meridian_at` with its radius squared, read with no root.
-    pub fn meridian2<T: Num>(&self,v: Jet<T>) -> [Jet<T>;2] { self.source.meridian2(v) }
     /// Its point at the jet `v`, in its frame's coordinates: the source's own, posed, else
     /// `(ρ, 0, z)`.
     fn local<T: Num>(&self,v: Jet<T>) -> J3<T> {
@@ -503,11 +516,11 @@ impl Turned {
             held && disc.v.bounds().is_some_and(|[lo,_]| lo > 0.) && rho2.bounds().is_some_and(|[lo,_]| lo > 0.)
         })
     }
-    /// Newton on `(M − p) · M'` from `v`, held to the span — or, a closed loop or a closed meridian
-    /// (#780 L2), read round its period, across the place its span starts.
+    /// Newton on `(M − p) · M'` from `v`, held to the span — or, closed (#780 L2), read round its
+    /// period, across the place its span starts.
     pub fn newton(&self,p: V,mut v: f64) -> f64 {
         let [a,b] = self.span;
-        let period = self.period().or(self.meridian_period());
+        let period = self.period();
         for _ in 0..30 {
             let (x,d,dd) = self.d2(v);
             let e = sub(x,p);

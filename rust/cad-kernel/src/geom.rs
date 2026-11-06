@@ -830,7 +830,7 @@ impl Surface {
         match self {
             Surface::Plane(_) | Surface::Extrusion(..) => [None,None],
             // a sharp circle's ring is closed round its meridian too, as a torus is (#780 L2)
-            Surface::Revolution(_,c) => [Some(TAU),match &**c { Curve::Turned(t) => t.meridian_period(),_ => None }],
+            Surface::Revolution(_,c) => [Some(TAU),c.period()],
             Surface::Blend(_,b) => [b.closed.then_some(1.),None],
             Surface::Family(_,w) => [w.period(),None],
             Surface::BSpline(..) => [None,None],

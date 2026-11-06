@@ -108,19 +108,12 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
                 Meets::Along => return Some(Vec::new()),
             }
         }
-        // a sharp circle and the loop along which a cylinder holding it crosses its ring (#780 L2,
-        // `turned::Crossing`): two meetings of one pair of faces, crossing where the two surfaces
-        // touch, at the loop's `τ = π/2` and `3π/2` (`h = 0`), exactly
-        (&Curve::Circle(f,r),looped @ Curve::Turned(t)) | (looped @ Curve::Turned(t),&Curve::Circle(f,r))
-            if let crate::turned::Source::Crossing(k) = t.source
-            && distance(t.frame.at(k.c),f.o) <= tol && (r.abs()-k.r).abs() <= tol && norm(cross(f.z,t.frame.dir(k.a))) <= 1e-9 =>
-            [std::f64::consts::FRAC_PI_2,3.*std::f64::consts::FRAC_PI_2].map(|u| looped.point(u)).to_vec(),
-        // a circle and a turned curve in its plane (#780 L2: a flat end at an end pose, its rim the
-        // circle its plane cuts from the rim's ring, and its cut of the side's contact turned,
-        // tangent to it where the side's contact reaches the rim): the curve's roots on the circle's
-        // cylinder, settled as every reading is, so a touch is one root
+        // a circle and a plane's cut of a contact's surface turned, in the circle's plane (#780 L2: a
+        // flat end at an end pose, its rim the circle its plane cuts from the rim's ring, and its cut
+        // of the side's contact turned, tangent to it where the side's contact reaches the rim): the
+        // cut's roots on the circle's cylinder, settled as every reading is, so a touch is one root
         (&Curve::Circle(f,r),turned @ Curve::Turned(t)) | (turned @ Curve::Turned(t),&Curve::Circle(f,r))
-            if t.posed && (0..=8).all(|k| dot(sub(turned.point(t.span[0]+(t.span[1]-t.span[0])*k as f64/8.),f.o),f.z).abs() <= tol) => {
+            if t.plane().is_some_and(|(n,d)| norm(cross(n,f.z)) <= 1e-9 && (dot(n,f.o)-d).abs() <= tol) => {
             match curve_surface(turned,t.span,&Surface::Cylinder(f,r.abs()),tol) {
                 Meets::At(roots) => roots.into_iter().map(|(u,_)| turned.point(u)).collect(),
                 Meets::Along => return Some(Vec::new()),
@@ -669,20 +662,20 @@ fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surfac
             (n*n).times(a)+n.times(b*dz)+Jet::of(cc*dz*dz)-r2.times(dz*dz)
         }
         let k = (a,b,cc,dz,q[2]);
-        let jet = |s: f64| big(m.meridian2(Jet::at(s)),k);
-        let t_of = |s: f64| (m.meridian2(Jet::at(s))[1].v-q[2])/dz;
+        let jet = |s: f64| big(m.source.meridian2(Jet::at(s)),k);
+        let t_of = |s: f64| (m.source.meridian2(Jet::at(s))[1].v-q[2])/dz;
         let at = |s: f64| add(p,scale(d,t_of(s)));
-        let bound = |x: f64,y: f64| most(big(m.meridian2(Jet::at(Iv::new(x,y))),k));
+        let bound = |x: f64,y: f64| most(big(m.source.meridian2(Jet::at(Iv::new(x,y))),k));
         for r in crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|s| surface.implicit(at(s)).abs() <= tol)? {
             out.push((t_of(r.at),r.touch));
         }
     } else {
         // a level line: the circles at its height, each met as a chord
         let (flat,from) = (g.dir([e[0],e[1],0.]),g.dir([q[0],q[1],0.]));
-        let jet = |s: f64| m.meridian2(Jet::at(s))[1]-Jet::of(q[2]);
-        let bound = |x: f64,y: f64| most(m.meridian2(Jet::at(Iv::new(x,y)))[1]);
+        let jet = |s: f64| m.source.meridian2(Jet::at(s))[1]-Jet::of(q[2]);
+        let bound = |x: f64,y: f64| most(m.source.meridian2(Jet::at(Iv::new(x,y)))[1]);
         for r in crate::util::isolate::roots(&|s| jet(s).v,&|s| jet(s).d,&bound,[s0,s1],width,&|_| false)? {
-            let rho = m.meridian_at(Jet::at(r.at))[0].v;
+            let rho = m.source.meridian(Jet::at(r.at))[0].v;
             if let Meets::At(found) = line_chord(from,flat,rho.abs(),tol) { out.extend(found) }
         }
     }

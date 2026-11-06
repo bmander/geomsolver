@@ -591,6 +591,26 @@ fn in_flat_drum(a: V,p: V) -> f64 {
     (norm(sub(q,scale(a,t)))-1.).max(t.abs()-1.5)
 }
 
+/// The slice at height `z` of the cylinder of radius 1 about the axis through `(5, 1.2, 0)` along
+/// `a` (`a_y = 0`): the ellipse `E(φ) = m + (cos φ / cos β) s + sin φ w` about the axis's point `m`
+/// at the height (`s` the axis's shadow, `w` across it), and the angles where `ρ²` along it is least
+/// or most — the roots of its rate, closed form in `φ`, bracketed between 3600 samples and settled
+/// (`roots::bracketed_root`).
+fn slice_ellipse(a: V,z: f64) -> (impl Fn(f64) -> V,Vec<f64>) {
+    let ca = a[2];
+    let m = add([5.,1.2,0.],scale(a,z/ca));
+    let (s,w) = (unit([a[0],a[1],0.]),[-a[1]/a[0].hypot(a[1]),a[0]/a[0].hypot(a[1]),0.]);
+    let e = move |phi: f64| add(m,add(scale(s,phi.cos()/ca),scale(w,phi.sin())));
+    let rate = |phi: f64| { let p = e(phi); let d = add(scale(s,-phi.sin()/ca),scale(w,phi.cos())); 2.*(p[0]*d[0]+p[1]*d[1]) };
+    let n = 3600;
+    let critical = (0..n).filter_map(|k| {
+        let (p0,p1) = (k as f64*TAU/n as f64,(k+1) as f64*TAU/n as f64);
+        let (f0,f1) = (rate(p0),rate(p1));
+        (f0*f1 <= 0. && f0 != f1).then(|| gcs_core::roots::bracketed_root(|x| Some(rate(x)),p0,f0,p1,f1,1e-15))
+    }).collect();
+    (e,critical)
+}
+
 /// The radii squared the level slice at height `z` of `flat_drum` (leaning along `a` in the plane
 /// `y = 1.2`, `a_y = 0`) spans about the world's `z`, in closed form apart from any build. The
 /// slice of its side's cylinder is the ellipse `E(φ) = m + (cos φ / cos β) s + sin φ w` about its
@@ -602,25 +622,13 @@ fn in_flat_drum(a: V,p: V) -> f64 {
 /// chord's foot.
 fn flat_drum_spans(a: V,z: f64) -> (f64,f64) {
     let (ca,ta) = (a[2],a[0]/a[2]);
-    let m = add([5.,1.2,0.],scale(a,z/ca));
-    let (s,w) = (unit([a[0],a[1],0.]),[-a[1]/a[0].hypot(a[1]),a[0]/a[0].hypot(a[1]),0.]);
-    let e = |phi: f64| add(m,add(scale(s,phi.cos()/ca),scale(w,phi.sin())));
+    let (e,critical) = slice_ellipse(a,z);
     let r2 = |phi: f64| { let p = e(phi); p[0]*p[0]+p[1]*p[1] };
     // the ellipse's points within the ends: `cos φ` within `[lo, hi]`
     let (lo,hi) = ((-1.5-z/ca)/ta,(1.5-z/ca)/ta);
     let held = |phi: f64| { let c = phi.cos(); c >= lo-1e-15 && c <= hi+1e-15 };
-    let mut values: Vec<f64> = Vec::new();
-    // the arcs' critical points, by Newton on the rate of `ρ²` (its derivatives in closed form)
-    let rate = |phi: f64| { let p = e(phi); let d = add(scale(s,-phi.sin()/ca),scale(w,phi.cos())); 2.*(p[0]*d[0]+p[1]*d[1]) };
-    let n = 3600;
-    for k in 0..n {
-        let (p0,p1) = (k as f64*TAU/n as f64,(k+1) as f64*TAU/n as f64);
-        if rate(p0)*rate(p1) > 0. { continue }
-        let (mut x,mut y) = (p0,p1);
-        for _ in 0..200 { let mid = 0.5*(x+y); if rate(mid)*rate(x) > 0. { x = mid } else { y = mid } }
-        let phi = 0.5*(x+y);
-        if held(phi) { values.push(r2(phi)) }
-    }
+    // the arcs' critical points
+    let mut values: Vec<f64> = critical.into_iter().filter(|&phi| held(phi)).map(r2).collect();
     // the corners, and each chord's foot where it falls between its corners
     for c in [lo,hi] {
         if !(c > -1. && c < 1.) { continue }
@@ -657,10 +665,10 @@ pub(crate) fn flat_drum_whole(a: V) -> f64 {
         let g = |phi: f64| { let n = add(scale(e1,phi.cos()),scale(e2,phi.sin())); dot(n,cross([0.,0.,1.],add(c,n))) };
         let at = |phi: f64| add(c,add(scale(e1,phi.cos()),scale(e2,phi.sin())))[2];
         for k in 0..720 {
-            let (mut lo,mut hi) = (k as f64*TAU/720.,(k+1) as f64*TAU/720.);
-            if g(lo)*g(hi) > 0. { continue }
-            for _ in 0..80 { let m = 0.5*(lo+hi); if g(m)*g(lo) > 0. { lo = m } else { hi = m } }
-            cuts.push(at(0.5*(lo+hi)));
+            let (lo,hi) = (k as f64*TAU/720.,(k+1) as f64*TAU/720.);
+            let (glo,ghi) = (g(lo),g(hi));
+            if glo*ghi > 0. || glo == ghi { continue }
+            cuts.push(at(gcs_core::roots::bracketed_root(|x| Some(g(x)),lo,glo,hi,ghi,1e-15)));
         }
     }
     cuts.sort_by(f64::total_cmp);
@@ -707,24 +715,19 @@ fn a_flat_ended_drum_leaning_to_the_axis_turned_part_of_a_turn_closes_into_its_s
     turned_part("a flat-ended drum",&flat_drum(a),&|p| in_flat_drum(a,p),flat_drum_whole(a),true);
 }
 
-/// The turn's frame the reduced arrangements read `flat_drum`'s rims in, and the rim at `t` along
-/// its axis (`±1.5`) as a `turned::Rim` there, read from its lowest point, with its centre and frame
-/// in the world.
-fn flat_rim(a: V,t: f64) -> (Frame,gcs_core::brep::turned::Rim,V,V,V) {
-    let g = Frame::about([0.;3],[0.,0.,1.]);
-    let c = add([5.,1.2,0.],scale(a,t));
-    // its angle from its lowest point, as the drum's disc reads it: where a plane's cut of its ring
-    // runs across the place the ring's meridian starts
+/// `flat_drum`'s rim at `t` along its axis (`±1.5`) as a `turned::Rim` in the world (the turn's
+/// frame), read from its lowest point as the drum's disc reads it — where a plane's cut of its ring
+/// runs across the place the ring's meridian starts.
+fn flat_rim(a: V,t: f64) -> gcs_core::brep::turned::Rim {
     let x = unit(sub(scale(a,a[2]),[0.,0.,1.]));
-    let y = cross(a,x);
-    (g,gcs_core::brep::turned::Rim {o:g.local(c),x:g.dir_local(x),y:g.dir_local(y),r:1.},c,x,y)
+    gcs_core::brep::turned::Rim {o:add([5.,1.2,0.],scale(a,t)),x,y:cross(a,x),r:1.}
 }
 
 /// The ring `flat_drum`'s rim at `t` turns into, as `closed` enters it: its meridian turned once.
 fn flat_ring(a: V,t: f64) -> Brep {
     use gcs_core::brep::build::{Profile,ProfileEdge,revolve};
-    let (g,rim,..) = flat_rim(a,t);
-    let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:vec![vec![ProfileEdge::Turned(std::sync::Arc::new(Turned::rim(g,rim,[0.,TAU])))]]};
+    let g = Frame::WORLD;
+    let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:vec![vec![ProfileEdge::Turned(std::sync::Arc::new(Turned::rim(g,flat_rim(a,t),[0.,TAU])))]]};
     revolve(&profile,g.o,g.z,TAU).unwrap()
 }
 
@@ -773,12 +776,10 @@ fn a_plane_cutting_a_rims_ring_across_its_meridians_start_closes() {
     let a = leaning();
     // (the far end's plane at the end pose turned on: the loops the ring's slant, held to its
     // span, stopped short of closing)
-    for (angle,plane,rim) in [(PART,-1.5,1.5)] {
-        let pose = Rigid::turn([0.;3],[0.,0.,1.],angle);
-        let end = gcs_core::brep::build::kept(&block([-12.,-12.,-6.],[12.,12.,6.]),pose.point(add([5.,1.2,0.],scale(a,plane))),pose.vector(a),0.).unwrap();
-        let gaps = fills(&block([-9.,-9.,-4.],[9.,9.,4.]),&[&flat_ring(a,rim),&end]);
-        assert!(gaps[0].abs() <= 1e-6,"the plane of the end at {plane} turned {angle}, the ring of the rim at {rim}: {gaps:?}");
-    }
+    let pose = Rigid::turn([0.;3],[0.,0.,1.],PART);
+    let end = gcs_core::brep::build::kept(&block([-12.,-12.,-6.],[12.,12.,6.]),pose.point(add([5.,1.2,0.],scale(a,-1.5))),pose.vector(a),0.).unwrap();
+    let gaps = fills(&block([-9.,-9.,-4.],[9.,9.,4.]),&[&flat_ring(a,1.5),&end]);
+    assert!(gaps[0].abs() <= 1e-6,"{gaps:?}");
 }
 
 /// **The meetings where a flat end at an end pose holds its rim are exact** (#780 L2), each on both
@@ -793,7 +794,8 @@ fn the_meetings_where_a_flat_end_at_an_end_pose_holds_its_rim_are_exact() {
     use gcs_core::brep::ssi::{Ssi,intersect};
     let a = leaning();
     let pose = Rigid::turn([0.;3],[0.,0.,1.],PART);
-    let (g,rim,c,..) = flat_rim(a,1.5);
+    let (g,rim) = (Frame::WORLD,flat_rim(a,1.5));
+    let c = rim.o;
     let ring = Surface::Revolution(g,std::sync::Arc::new(Curve::Turned(std::sync::Arc::new(Turned::rim(g,rim,[0.,TAU])))));
     let (pc,pa) = (pose.point(c),pose.vector(a));
     let plane = Surface::Plane(Frame::about(pc,pa));
@@ -822,11 +824,11 @@ fn the_meetings_where_a_flat_end_at_an_end_pose_holds_its_rim_are_exact() {
             }
         }
         // the loop crosses the rim where the side touches the ring: at `τ = π/2` and `3π/2`, on it
-        if let Some(Curve::Turned(t)) = curves.get(1) {
+        if let Some(looped @ Curve::Turned(t)) = curves.get(1) {
+            assert!(matches!(t.source,gcs_core::brep::turned::Source::Crossing(_)),"{what}: a loop");
             for u in [std::f64::consts::FRAC_PI_2,3.*std::f64::consts::FRAC_PI_2] {
-                let p = curves[1].point(u);
+                let p = looped.point(u);
                 assert!((norm(sub(p,pc))-1.).abs() <= 1e-12 && dot(sub(p,pc),pa).abs() <= 1e-12,"{what}: the loop at {u} off the rim");
-                assert!(matches!(t.source,gcs_core::brep::turned::Source::Crossing(_)));
             }
         }
     }
@@ -868,7 +870,7 @@ fn a_sharp_circle_turned_is_a_ring_read_exactly() {
     let [[r,dr,ddr],[z,dz,ddz]] = t.bounded([1.,1.6]).unwrap();
     for k in 0..=50 {
         let w = 1.+0.6*k as f64/50.;
-        let [jr,jz] = t.meridian_at(Jet::at(w));
+        let [jr,jz] = t.source.meridian(Jet::at(w));
         for (b,v) in [(r,jr.v),(dr,jr.d),(ddr,jr.dd),(z,jz.v),(dz,jz.d),(ddz,jz.dd)] {
             assert!(b[0] <= v && v <= b[1],"{v} outside {b:?}");
         }
@@ -923,7 +925,6 @@ fn a_sharp_circle_turned_is_a_ring_read_exactly() {
     assert!(met > 20,"{met} crossings read");
 }
 
-
 /// **The radii squared a slice of a leaning drum cut by planes spans about the world's `z`**, in
 /// closed form apart from any build (#780 L2's arcs): the slice at height `z` of the drum of radius
 /// 1 about the axis through `(5, 1.2, 0)` along `a` (`a_y = 0`) is the ellipse `E(φ) = m + (cos φ /
@@ -937,22 +938,12 @@ fn cut_drum_spans(a: V,cuts: &[(V,f64)],z: f64) -> Option<(f64,f64,[(u8,usize,us
     let ca = a[2];
     let m = add([5.,1.2,0.],scale(a,z/ca));
     let (s,w) = (unit([a[0],a[1],0.]),[-a[1]/a[0].hypot(a[1]),a[0]/a[0].hypot(a[1]),0.]);
-    let e = |phi: f64| add(m,add(scale(s,phi.cos()/ca),scale(w,phi.sin())));
+    let (e,critical) = slice_ellipse(a,z);
     let r2 = |p: V| p[0]*p[0]+p[1]*p[1];
     let slack = 1e-12;
     let inside_ellipse = |p: V| { let q = sub(p,m); let (x,y) = (dot(q,s)*ca,dot(q,w)); x*x+y*y <= 1.+slack };
     let kept = |p: V,skip: &[usize]| (0..cuts.len()).all(|i| skip.contains(&i) || dot(cuts[i].0,p) <= cuts[i].1+slack);
-    let mut found: Vec<(f64,(u8,usize,usize))> = Vec::new();
-    let rate = |phi: f64| { let p = e(phi); let d = add(scale(s,-phi.sin()/ca),scale(w,phi.cos())); 2.*(p[0]*d[0]+p[1]*d[1]) };
-    let n = 3600;
-    for k in 0..n {
-        let (p0,p1) = (k as f64*TAU/n as f64,(k+1) as f64*TAU/n as f64);
-        if rate(p0)*rate(p1) > 0. { continue }
-        let (mut x,mut y) = (p0,p1);
-        for _ in 0..200 { let mid = 0.5*(x+y); if rate(mid)*rate(x) > 0. { x = mid } else { y = mid } }
-        let p = e(0.5*(x+y));
-        if kept(p,&[]) { found.push((r2(p),(0,0,0))) }
-    }
+    let mut found: Vec<(f64,(u8,usize,usize))> = critical.into_iter().map(&e).filter(|&p| kept(p,&[])).map(|p| (r2(p),(0,0,0))).collect();
     for (i,&(nn,d)) in cuts.iter().enumerate() {
         // the corners: n · E(φ) = d, `A cos φ + B sin φ = C`
         let (aa,bb,cc) = (dot(nn,s)/ca,dot(nn,w),d-dot(nn,m));
@@ -993,8 +984,7 @@ fn cut_drum_whole(a: V,cuts: &[(V,f64)],[z0,z1]: [f64;2]) -> f64 {
     for w in zs.windows(2) {
         let (ka,kb) = (key(w[0]),key(w[1]));
         if ka == kb { continue }
-        let (mut lo,mut hi) = (w[0],w[1]);
-        for _ in 0..80 { let mid = 0.5*(lo+hi); if key(mid) == ka { lo = mid } else { hi = mid } }
+        let (lo,hi) = gcs_core::roots::bisect(w[0],w[1],|x,y| 0.5*(x+y),|x,y| 0.5*(x+y) != x && 0.5*(x+y) != y,|z| key(z) == ka);
         breaks.push(0.5*(lo+hi));
     }
     breaks.push(z1);

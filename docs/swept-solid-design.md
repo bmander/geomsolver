@@ -445,11 +445,14 @@ it. It stays as the fast path where #699 D says so.
      (d − n_z z) / (|n_h| ρ)`, read round `τ` with `C(v) = −cos τ` wherever `C` runs one way over the
      span (`turned::Section`). Two readings the part turn needed beside them: a circle and a turned
      curve in its plane cross where the curve meets the circle's cylinder, so their tangency is one
-     vertex (`query::curve_curve`); and a closed loop (`Turned::period`) and a closed meridian
-     (`Turned::meridian_period`, read round its period in Newton) are periodic — an edge from a loop's
+     vertex (`query::curve_curve`); and a closed loop and a closed meridian are periodic, one rule
+     for both (`Turned::period`: a whole period of its source's angle, read round it in Newton) — an
+     edge from a loop's
      start round to its end had been dropped as no edge, and a trace across a ring's meridian's start
      stalled where its slant was held to the span. The side's surface at an end pose reaches past
      each rim beyond its loop, so its ends stand clear of where the side and the ring all but touch.
+     A rim beside a cone or a ball is refused by name part of a turn, that face's meeting with the
+     ring the next closed form to give.
      The flat-ended drum turned 100° is its own volume and `Θ/2π` of its whole turn's, to 1e-9; drawn
      (`solid_sweeps/leaning_mill.sv`), swung inside a ring, its STL agrees with the field.
    - **An arc of a circle**, under a turn: its points sweep part of its circle's ring, so the whole

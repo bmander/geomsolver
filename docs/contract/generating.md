@@ -719,7 +719,8 @@ own points; two arcs of one circle enter one ring. Measured from a point of the 
 a simple closed curve, refused by name (`Curved` at the circle's centre) unless proved so — the
 ellipse's axes parting and the circle clear of the axis over 64 interval pieces (`Rim::simple`).
 Its candidate is that meridian turned once, a ring (`build::revolve` of one closed
-`ProfileEdge::Turned`), periodic round its meridian as a torus is (`Turned::meridian_period`: its
+`ProfileEdge::Turned`), periodic round its meridian as a torus is (`Turned::period`, one rule for
+every turned curve read over a whole period of its source's angle: its
 slant read round it in Newton, so a trace across the meridian's start does not stall there); a line
 meets it certified as any turned meridian (`query::line_turned`, the circle's jets read through
 `Num::sin_cos`, in floats and outward-rounded intervals), and coaxial surfaces meet it in circles
@@ -730,12 +731,15 @@ crossing it where the two touch (`turned::Crossing`, read round `τ` with `σ(h)
 `side_holding_rim`), the side's surface there reaching past each rim beyond its loop; and any
 plane not level against a contact's surface of revolution (#780 C3) in its cut, read round `τ` with
 `C(v) = −cos τ` where `C` runs one way over the span (`turned::Section`, `plane_contact_section`).
-A circle and a turned curve in its plane cross where the curve meets the circle's cylinder
-(`query::curve_curve`), so their tangency where the side's contact reaches the rim is one vertex;
-a turned loop over a whole turn has its period (`Turned::period`), so its edge is laid round from
-its start, and it is crossed with the rim (`τ = π/2, 3π/2`) as two curves of one meeting are. A
-plane face with an edge no line has its sites and its contact line's stretch read off its outline
-(32 points an edge), not off its corners, of which a drum's end has one. Gates
+A circle and a plane's cut in its plane (`Turned::plane`) cross where the cut meets the circle's
+cylinder (`query::curve_curve`), so their tangency where the side's contact reaches the rim is one
+vertex; a turned loop over a whole turn has its period, so its edge is laid round from its start,
+and it crosses the rim where it crosses the rim's plane, as two curves of one meeting are crossed.
+Part of a turn, a rim beside a round face other than a cylinder (a cone, a ball) is refused by name
+(`Curved` at its centre), that face's meeting with the ring not yet in closed form. A plane face
+with an edge no line has its sites and its contact line's stretch read off its outline (each edge's
+start, and 32 points along an edge no line, its grid as much finer as its fan has more triangles),
+not off its corners, of which a drum's end has one. Gates
 (`tests/swept_turned.rs`), each against a volume worked apart from the build, membership and a Monte
 Carlo of the definition: a flat-ended drum (X4: a flat end whose corners dig past it), radius 1 and
 3 long, leaning 25° and 1.2 beside the plane through the axis, turned whole, to 1e-9 of `∫ π (ρ_max²

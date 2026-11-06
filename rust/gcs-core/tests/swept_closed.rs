@@ -2152,16 +2152,14 @@ fn a_balls_pipe_is_inverted_off_its_spine() {
 
 /// A ball of radius 1 three out from the world's `z` with a flat: cut by the plane `m · (p − c) =
 /// 0.5`, `m` leaning to the axis, kept below it — its rim a sharp circle leaning to the axis (#780
-/// L2). With `m`, and its own test (below nought within it).
-fn flattened_ball() -> (Brep,[f64;3],impl Fn([f64;3]) -> f64) {
-    use gcs_core::space::{add,dot,scale,sub};
+/// L2). With `m`.
+fn flattened_ball() -> (Brep,[f64;3]) {
+    use gcs_core::space::{add,scale};
     let c = [3.,0.,0.];
     let m = unit([0.35,0.45,0.82]);
     let ball = gcs_core::brep::build::sphere(c,[0.,0.,1.],1.).unwrap();
-    let tool = gcs_core::brep::build::kept(&ball,add(c,scale(m,0.5)),scale(m,-1.),0.).unwrap();
-    (tool,m,move |p: [f64;3]| { let q = sub(p,c); (norm(q)-1.).max(dot(q,m)-0.5) })
+    (gcs_core::brep::build::kept(&ball,add(c,scale(m,0.5)),scale(m,-1.),0.).unwrap(),m)
 }
-
 
 /// **A ball with a flat screwed is refused by name** (#780 L2, left open): its flat's rim is a sharp
 /// circle leaning to the screw's axis, whose fan's sheet is its points screwed — a screwed circle's
@@ -2175,7 +2173,7 @@ fn a_ball_with_a_flat_screwed_is_refused_by_name() {
     use gcs_core::brep::swept::closed::Unbuilt;
     use gcs_core::space::{dot,sub};
     use std::f64::consts::TAU;
-    let (tool,m,_) = flattened_ball();
+    let (tool,m) = flattened_ball();
     let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.5,advance:TAU*0.5*1.5});
     match closed(&tool,&path,[0.,1.],0.002,1e-6) {
         Err(Unbuilt::Curved {at}) => assert!((dot(sub(at,[3.,0.,0.]),m)-0.5).abs() <= 1e-9 && (norm(sub(at,[3.,0.,0.]))-1.).abs() <= 1e-9,"refused at {at:?}, off the rim"),
