@@ -18,6 +18,13 @@ const MEMBERSHIP_BAR: f64 = 2e-3;
 /// The arrangement's tolerance (mm): the kernel's split's own (`swept::sector::SPLIT_TOL`).
 const ARRANGED: f64 = crate::solid::sector::SPLIT_TOL;
 
+/// The placement undone.
+fn inverse(m: &crate::brep::geom::Rigid) -> crate::brep::geom::Rigid {
+    let r: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j| m.r[j][i]));
+    let t = std::array::from_fn(|i| -(r[i][0]*m.t[0]+r[i][1]*m.t[1]+r[i][2]*m.t[2]));
+    crate::brep::geom::Rigid {r,t}
+}
+
 /// Whether every sweep of the body was admitted to the closed class.
 pub fn all(prepared: &Prepared) -> bool { prepared.classes.iter().all(|c| matches!(c,Class::Closed(_))) }
 
@@ -38,11 +45,22 @@ pub fn cut_on(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,
         let Class::Closed(found) = &prepared.classes[k] else { continue };
         for c in recipe.sweeps.iter().filter(|c| c.swept == swept) {
             let clock = crate::clock::Instant::now();
-            // the tool and its screw placed where the body cuts it, the blank left where it stands
+            // the tool and its screw placed where the body cuts it, the blank left where it stands —
+            // under a motion no constant twist takes (K2), the blank carried back into the tool's
+            // placing instead, cut there and carried out again
             let place = super::sector::placed(c.pose,scale);
-            let path = crate::brep::trajectory::Trajectory::Twist(found.screw.moved(&place));
-            solid = crate::brep::swept::closed::cut_from(&solid,&found.tool.moved(&place),&path,found.roll,MEMBERSHIP_BAR,ARRANGED)
-                .map_err(|u| {
+            let cut = match &found.general {
+                None => {
+                    let path = crate::brep::trajectory::Trajectory::Twist(found.screw.moved(&place));
+                    crate::brep::swept::closed::cut_from(&solid,&found.tool.moved(&place),&path,found.roll,MEMBERSHIP_BAR,ARRANGED)
+                }
+                Some(path) => {
+                    let back = inverse(&place);
+                    crate::brep::swept::closed::cut_from(&solid.moved(&back),&found.tool,path,found.roll,MEMBERSHIP_BAR,ARRANGED)
+                        .map(|b| b.moved(&place))
+                }
+            };
+            solid = cut.map_err(|u| {
                     let (condition,message,at) = closed_class::said(u,&found.tool_name);
                     let at = at.map_or(String::new(),|p| format!(" at ({:.4}, {:.4}, {:.4}) mm",p[0],p[1],p[2]));
                     ExportRefusal::at(Stage::Split,format!("`{}`: less `{name}` ({}: {}): {message}{at}",sk.solids[body].name,

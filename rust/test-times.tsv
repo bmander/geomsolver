@@ -81,6 +81,7 @@
 9.557	brep_export::a_sheet_ending_in_the_blank_is_carried_out_of_it
 9.548	flat_faces::a_bull_nose_mill_slid_to_a_stop_inside_the_block
 9.474	fillet_definition::runs_that_end_on_a_face_stop_there
+9.250	solid_sweeps_examples::the_bull_nose_along_a_spline_cuts_what_its_faces_advance_through
 9.184	closed_class::a_leaning_bar_turned_wholly_through_a_ring_sector_bores_its_shadow
 9.001	engine::each_part_previews_as_the_assembly_builds_it
 8.824	envelope::paired::caps::end_circles_match_independent_cone_sphere_sections_for_every_pair_configuration
@@ -98,6 +99,7 @@
 7.615	turns_and_slides::a_torus_turned_to_a_stop_inside_the_ring_is_cut_on_one_arrangement
 7.524	rebuild::a_rebuild_that_removes_nothing_keeps_everything
 7.402	frames::a_tool_riding_its_frame_is_placed_and_swept_as_under_it
+7.229	swept_patches::a_bull_nose_along_a_spline_frame_closes_into_the_volume_its_faces_advance_through
 7.183	round_lowering::a_rim_winding_round_both_faces_is_rolled
 7.079	scenario_view::the_picture_moves_each_point_by_its_answer
 7.023	swept_closed::a_frustum_slid_aslant_closes_into_its_shadow_carried
@@ -127,6 +129,7 @@
 5.364	solid_sweeps_examples::the_plus_leaves_its_conjugate_wheel
 5.327	iterative::the_rods_reading_is_pinned_by_the_work_it_takes
 5.289	swept_closed::the_ball_end_mill_screwed_through_a_ring_sector_is_refused_by_its_inverse_maps_budget
+5.289	swept_patches::a_ball_along_a_spline_frame_is_its_fitted_tube
 5.260	region_faces::a_word_rounds_an_edge
 5.239	path_examples::the_ribbon_faces_its_axis_in_frenets_frame
 5.226	planar_subtraction::the_drafted_star_cuts_its_wheel
@@ -140,6 +143,7 @@
 4.934	accuracy::a_blank_offset_reads_as_its_offset
 4.913	scenario_view::a_scenario_read_progressively_ends_at_the_reading
 4.866	rates::a_minimal_frame_turns_against_frenet_at_the_torsion
+4.855	swept_patches::a_bull_nose_screwed_instant_by_instant_closes_into_its_sweep
 4.839	loft_examples::the_ribbon_is_its_area_times_its_helix_in_either_frame
 4.749	hypoid_layout::a_start_on_the_wrong_side_lands_on_the_recorded_pair
 4.728	drafted_tools::a_rack_tooth_drafted_both_ways_cuts_a_space_widest_at_its_parting_plane
@@ -150,6 +154,7 @@
 4.574	solid_claim::a_claim_over_a_declared_parameter_reads_the_drawing_where_it_stands
 4.570	region_faces::a_run_along_one_edge
 4.554	delaunay::cospherical_and_coplanar_points_triangulate
+4.541	swept_patches::a_bull_nose_slid_at_a_lean_instant_by_instant_is_the_slides_sweep
 4.440	swept_closed::the_ball_end_mill_screwed_through_a_sector_reduced_to_its_boolean_holds_every_cell
 4.320	measured::a_volume_sizes_a_turned_shafts_radius
 4.280	rate_examples::the_housing_is_the_trochoids_parallel_curve
@@ -695,6 +700,7 @@
 0.192	admission::a_single_rotation_of_a_ball_is_its_tube
 0.192	traced_rates::a_curvature_linear_in_arc_length_is_the_clothoid
 0.191	functional_solids::front::cases::generic_front_crosses_discovered_creases_without_averaging_their_faces
+0.191	swept_patches::a_sheet_folding_or_coming_back_under_any_motion_is_refused_by_name
 0.190	loft_examples::the_tapers_are_frusta_and_the_swell_its_integral
 0.189	brep::curved_faces_sewn_across_curves_parametrised_apart
 0.189	drawing::a_parts_extent_is_read_off_its_round_outline
@@ -1385,6 +1391,7 @@
 0.013	step_assembly::each_part_is_written_in_its_colour_and_read_back_so
 0.013	units::the_library_is_unchanged
 0.013	workspace::a_kind_turned_off_is_not_picked_under_or_framed
+0.013	swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name
 0.012	angle_and_arc_words::a_sided_perpendicular_turns_the_way_it_says_from_any_seed
 0.012	complex::two_blocks_meeting_at_a_corner_are_pinched_there
 0.012	crown_regions::the_crown_tooth_region_is_its_closed_form

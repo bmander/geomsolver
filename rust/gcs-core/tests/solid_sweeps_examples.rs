@@ -603,6 +603,27 @@ fn the_bull_nose_plunged_at_a_lean_stops_inside_the_block() {
     near(exported(&e,"block"),16.*16.*8.-mill.plunged_away(30f64.to_radians(),[0.,0.,-4.]),1e-9);
 }
 
+/// `spline_mill.sv` (the closed class under any rigid motion, #780 L3): a bull-nose mill leaning
+/// 30° toward where it goes, riding a frame along `path.sv`'s spline with its round sunk 1 mm in a
+/// block. No constant twist carries it, and the generating class reads no frame along a path; the
+/// closed class reads each instant's contact round the mill, fits the sheet it sweeps, and cuts the
+/// block on one arrangement. The block loses what the mill holds below its top where it starts and
+/// `∫ ∫ (n · v)⁺ dA dt` over its faces below the top (`swept_patches::advanced`), to a part in a
+/// hundred million of what is left, its STL agreeing with the field. Built once, within 0.01 mm: the
+/// page's stepped builder is held to the same build (`object_builder::builds_as_exported`).
+#[test]
+fn the_bull_nose_along_a_spline_cuts_what_its_faces_advance_through() {
+    let e = example("spline_mill.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"any rigid motion");
+    let path = found.path();
+    let revolved = gcs_core::brep::swept::patches::Revolved::read(&found.tool).unwrap();
+    let groove = crate::swept_patches::advanced(&revolved,&found.tool,&path,found.roll,true);
+    let exact = exported_within(&e,"block",Some(Tolerance::new(0.01).unwrap()));
+    near(gcs_core::brep::props::volume(&exact.solid),42.*32.*8.-groove,1e-8);
+    crate::object_builder::builds_as_exported("spline_mill.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
+}
+
 /// `stopped_turn.sv` (the closed class, X1): an upright bar turned from −140° to 30°, halfway into
 /// the sector. The constant-twist class refuses it (it ends in the blank); the closed class cuts it
 /// from the ring on one arrangement, its end pose's faces among the candidates. The ring loses each

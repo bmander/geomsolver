@@ -580,6 +580,33 @@ it. It stays as the fast path where #699 D says so.
    twist, carried by the pose, told apart by the contact's rate round the ring, and the branch
    locus `A² + B² = C²` found in `(t, h)`; a ball's contacts under a tumble bound its sweep by
    membership (`tests/swept_instant.rs`). Its patches in the arrangement follow the patch type.
+   *K2's patches built* (#780 L3, `swept::patches`): under any rigid motion no constant twist takes
+   (a frame along a path, a motion seen from another), a convex tool of revolution's contact is read
+   **per tool, at each instant, in a pencil of half-planes** about the line through its centre along
+   its velocity. Each half-plane cuts the convex tool in an arc from back to front along which the
+   arc's normal turns monotonely and the surface's leans out of the half-plane by a positive factor,
+   so `n · v` changes sign once there: its one root is the contact, landing on a sharp edge where
+   the edge's fan holds it (step 5's rule, read under any motion). The instant's contact is then one
+   closed curve `x(t, φ)` over the pencil's angle, smooth through the branch locus, which this chart
+   is transverse to — the ring chart's `(t, h, ±)` turns back there, the pencil's does not (step
+   6's rule: read the patch in the chart transverse to the locus). It runs in pieces, each on one
+   face or one edge, joined where it crosses a seam or reaches an edge; a face's piece is read at
+   even fractions of its stretch of `φ`, an edge's along the edge's own circle (the pencil's angle
+   runs as a square root along an edge where the edge runs along the velocity, where a face's
+   contact reaches it). The sheet `M(t) · x` is a quintic net over (the fraction round the loop,
+   the roll), fitted within a tenth of the arrangement's tolerance, its rims the contact at the end
+   rolls. With the tool at each end pose, whole, it is all the arrangement takes, and every meeting
+   of the two is given (R5): each piece's iso-curve at that roll on the faces holding it, nothing
+   on the others — the sheet stands inside neither end pose, every point of it on the boundary of
+   the sweep over a roll holding that pose. Carried past its rims (as M5's patches are), its flap's
+   section on a blank's face the tool stood across was tangent to the tool's section there and the
+   cell between misread, so the sheet stops at its rims. A sheet that folds or comes back onto
+   itself is refused by name (`Folded`, `Returns`); one whose pieces change over the roll
+   (`Curved`), as is a tool no convex solid of revolution. A ball along `path.sv`'s spline frame is
+   the canal class's fitted tube to 1.2e-9, a bull-nose slid at a lean read instant by instant the
+   constant twist's build to 1e-8, and a bull-nose screwed (the constant twist's road refuses a
+   torus screwed) and one along a spline frame are each the volume their faces advance through,
+   `V + ∫ ∫ (n · v)⁺ dA dt`, to 1e-6 (`tests/swept_patches.rs`); drawn, `solid_sweeps/spline_mill.sv`.
 8. **The blank-scoped path** as the optimisation of X6 (#699 D). *Decided*: the closed solid cut
    from a blank is itself blank-scoped — `cut_from` takes the blank as the arrangement's domain and
    keeps its cells that are no member, no closed solid built and subtracted — so X6 has two roads
@@ -605,7 +632,8 @@ recorded above with what was tried:
   crosses itself) — waits on the arrangement holding a face with a slit, or a sheet whose rim
   stands inside a cell (F5's A1);
 - **a meeting with no closed form near a touch** — K2's patches (each instant's contact swept,
-  fitted) — is refused as nearly touching: each needs its closed form (as the parallel cones', the
+  fitted), *since #780 L3 built for a convex tool of revolution, its touches with the tool at the
+  end poses given whole* — is refused as nearly touching: each needs its closed form (as the parallel cones', the
   ball's in a torus, the meridian's cylinder were), or the tracer holding a near-tangent meeting
   (F4, #699 E). *A fitted sheet lying in a candidate's plane is built* (#780 C4): it is the plane
   (`ssi::same`, every pole within the tolerance of it, the sheet in its poles' hull), a coincidence

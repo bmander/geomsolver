@@ -136,6 +136,11 @@
 //! blank it passes wholly through) is left out of the arrangement, so its touches with the others
 //! there are never met.
 //!
+//! **Any other rigid motion** (K2, #780 L3: a frame along a path, one motion seen from another) is
+//! built from the sheet each instant's contact sweeps, fitted (`patches`), and the tool where it
+//! starts and where it stops, whole, every meeting of the two given (`k2`): the tool a convex solid
+//! of revolution, its contact read round a pencil of half-planes about its centre's velocity.
+//!
 //! **A convex polyhedral tool turned whole is built by another road** (`turned_whole`): its solid
 //! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — under a
 //! screw a round face about an axis leaning to it, or a torus's; under a turn a cylinder's or a
@@ -149,7 +154,9 @@
 //! fan not entered yet (#810) — or a band whose contact crosses both its seams, or a whole ring's
 //! whose inner contour folds (by name, `Folded`); a free-form face, a curve no line
 //! or circle, a leaning edge under a
-//! screw, another motion — is refused by what it is (`Unbuilt`); those are the design's later steps.
+//! screw; under any other motion a tool no convex solid of revolution, a contact whose pieces change
+//! over the roll, a sheet folding or coming back onto itself (`Folded`, `Returns`) — is refused by
+//! what it is (`Unbuilt`); those are the design's later steps.
 use crate::boolean::arrangement_given;
 use crate::build::{Profile,ProfileEdge,disc,prism,square};
 use crate::geom::{Curve,Frame,Surface};
@@ -184,8 +191,14 @@ pub enum Unbuilt {
     /// contact cusps (#805, `slid::Slid::folded`), or a ball screwed whose radius reaches its
     /// centre's helix's radius of curvature (#780 L1, X5). Never built wrong.
     Folded { at: V },
+    /// A contact's swept sheet comes back onto itself under a motion no constant twist takes (#780
+    /// L3, X5 under K2): at `at`, between two poses the tool's centre comes back within its reach
+    /// of, after running more than half a turn of a circle of that reach — where the sheet is not
+    /// yet entered in stretches, as a screwed ball's pipe is. Never built wrong.
+    Returns { at: V },
     /// The motion is no slide, turn or screw, nor a path of slides and turns (each taken up where
-    /// the one before left the tool, `Trajectory::Placed`): the design's later steps.
+    /// the one before left the tool, `Trajectory::Placed`), and K2's road was not asked (`reads`
+    /// reads a constant twist; `reads_general` any other motion).
     Motion,
     /// A cell's membership could not be settled: its deepest point stands within the mesh's sag
     /// of the swept boundary.
@@ -599,6 +612,8 @@ fn metered(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: 
 
 /// `closed` over a box holding the sweep, or `cut_from` over `blank`: the pipeline itself.
 fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    // any other rigid motion (K2): each instant's contact swept into a patch (#780 L3)
+    if general(path) { return k2(tool,path,roll,bar,tol,blank) }
     // the legs the path is taken in: one constant twist over the roll, or each piece of a path of
     // pieces over its stretch of it (K1: a sweep is its pieces' sweeps united), every one read
     let legs = legs(tool,path,roll)?;
@@ -1434,6 +1449,69 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     let out = arranged(within,&refs,&given,&swept,blank,tol);
     // a failed build's arrangement written where `SOLVENT_SWEEP_DUMP` asks (#777 V5), to be
     // replayed alone and reduced (`swept::dump`)
+    if let (Err(why),Some(dir)) = (&out,super::dump::dump_dir()) {
+        match super::dump::dump(&dir,within,&refs,&given,tol,&format!("{why:?}")) {
+            Ok(()) => eprintln!("sweep: the failed build's arrangement written to {}",dir.display()),
+            Err(e) => eprintln!("sweep: the failed build's arrangement not written: {e}"),
+        }
+    }
+    out
+}
+
+/// Whether `path` is a rigid motion no constant twist takes, nor a path of pieces, nor a twist
+/// taken up after a placement: K2's (#780 L3), each instant's contact swept into a patch.
+fn general(path: &Trajectory) -> bool {
+    !matches!(path,Trajectory::Twist(_) | Trajectory::Pieces(_) | Trajectory::Placed {..})
+}
+
+/// **Whether the pipeline takes `tool` under `path` over `roll`, a motion no constant twist takes**
+/// (#780 L3): the tool a convex solid of revolution whose contact reads round the pencil at a few
+/// instants and whose centre's path comes back nowhere (`patches::admits`), read before anything is
+/// built, as `reads` reads a constant twist's.
+pub fn reads_general(tool: &Brep,path: &Trajectory,roll: [f64;2]) -> Result<(),Unbuilt> {
+    if !general(path) { return Err(Unbuilt::Motion) }
+    super::patches::admits(tool,path,roll)
+}
+
+/// How finely K2's sheet is fitted, as a part of the arrangement's tolerance: its touches with the
+/// tool at the end poses are laid as edges of both within that tolerance.
+const K2_FIT: f64 = 0.1;
+
+/// How many poses over the roll the box holding a K2 sweep is read at.
+const K2_POSES: usize = 128;
+
+/// **`build` under a rigid motion no constant twist takes** (#780 L3, K2): the candidates are the
+/// tool at each end pose, whole, and the sheet its contact sweeps over the roll (`patches`), carried
+/// on a little past each end; the touches between them given (`patches::entered`); the box (or the
+/// blank) split by them at once and classified by membership, as every other build is.
+fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
+    let revolved = super::patches::Revolved::read(tool)?;
+    let fit = super::patches::fitted(&revolved,path,[a,b],K2_FIT*tol)?;
+    crate::util::meter::go_on()?;
+    let (start,end) = (super::patches::posed(tool,&revolved,path,a)?,super::patches::posed(tool,&revolved,path,b)?);
+    let (sheet,given) = super::patches::entered(&fit,&revolved,[&start,&end])?;
+    // a box holding the sweep: the tool's box at poses over the roll, a sheet's reach past it
+    let (lo,hi) = tool.bounds();
+    let corners: Vec<V> = (0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] })).collect();
+    let mut points: Vec<V> = Vec::new();
+    for k in 0..=K2_POSES {
+        let m = path.pose(a+(b-a)*k as f64/K2_POSES as f64).map_err(|e| Unbuilt::Failed(e.msg))?;
+        points.extend(corners.iter().map(|&p| m.point(p)));
+    }
+    if let Some(bl) = blank { let (l,h) = bl.bounds(); points.extend([l,h]); }
+    let (blo,bhi) = points.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
+        (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
+    let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));
+    let half = (0..3).map(|k| bhi[k]-blo[k]).fold(0.,f64::max)*0.6+tol;
+    let domain = prism(&square(add(centre,[0.,0.,-half]),[0.,0.,1.],half),0.,2.*half)?;
+    let within = blank.unwrap_or(&domain);
+    let (dlo,dhi) = within.bounds();
+    let solids = [start,end,sheet];
+    let refs: Vec<&Brep> = solids.iter().filter(|s| { let (lo,hi) = s.bounds(); (0..3).all(|k| lo[k] <= dhi[k]+tol && hi[k] >= dlo[k]-tol) }).collect();
+    let solid = Solid::new(tool,bar,1.)?;
+    let swept = Swept {tool:&solid,path,roll:[a,b]};
+    let out = arranged(within,&refs,&given,&swept,blank,tol);
     if let (Err(why),Some(dir)) = (&out,super::dump::dump_dir()) {
         match super::dump::dump(&dir,within,&refs,&given,tol,&format!("{why:?}")) {
             Ok(()) => eprintln!("sweep: the failed build's arrangement written to {}",dir.display()),
