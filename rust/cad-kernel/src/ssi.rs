@@ -1638,9 +1638,11 @@ fn circle_branches(coefficients: &dyn Fn(f64) -> (f64,f64,f64),coincide: &[f64],
     traced: &dyn Fn(Vec<V>,bool) -> Curve) -> Vec<Curve> {
     const STEP: f64 = std::f64::consts::PI/1024.;
     let hair = 1e-6;
-    let angles = |(a,b,c): (f64,f64,f64)| { let (phi,w) = (b.datan2(a),(c/a.hypot(b).max(1e-300)).clamp(-1.,1.).dacos()); [phi+w,phi-w] };
+    let angles = |(a,b,c): (f64,f64,f64)| { let (phi,w) = (b.datan2(a),(c/a.dhypot(b).max(1e-300)).clamp(-1.,1.).dacos()); [phi+w,phi-w] };
     let roots = |v: f64| { let (a,b,c) = coefficients(v); (a.dhypot(b) > 0.).then(|| angles((a,b,c))) };
-    let real = |v: f64| { let (a,b,c) = coefficients(v); let rho = a.dhypot(b); rho > 0. && c.abs() <= rho };
+    // a touch, `|C| = ρ`, is real whichever way the last bits of `ρ` and `C` round: the circle's
+    // two roots one there, not a turn on one machine and the sheet's edge on another
+    let real = |v: f64| { let (a,b,c) = coefficients(v); let rho = a.dhypot(b); rho > 0. && c.abs()-rho <= 8.*f64::EPSILON*rho.max(c.abs()) };
     let limit = |w: f64,side: f64| {
         let ((a1,b1,c1),(a0,b0,c0)) = (coefficients(w+hair),coefficients(w-hair));
         Some(angles((side*(a1-a0),side*(b1-b0),side*(c1-c0))))
