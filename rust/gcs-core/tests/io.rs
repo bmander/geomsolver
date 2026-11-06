@@ -779,3 +779,99 @@ fn a_paste_draws_in_the_plane_the_document_already_has() {
     graft::paste(&mut empty, &clip, 0.0, 0.0);
     assert_eq!(empty.frames.len(), 1);
 }
+
+/// A plane built on two drawn lines from one point, which it stands at (#535, #819); an arc drawn
+/// through three points in space (#363 S6); and a circle about a point in space square to an axis.
+const BUILT_IN_SPACE: &str = "\
+unit mm
+use std
+a := point hint((0, 0, 0))
+b := point hint((10, 0, 0))
+c := point hint((0, 6, 8))
+fix((0, 0, 0)) a
+fix((10, 0, 0)) b
+fix((0, 6, 8)) c
+across := line(a, b)
+up := line(a, c)
+P := plane(u: across, v: up)
+k := arc(center: a, start: b, end: c)
+ax := axis hint(dir: (0, 0, 1))
+fix(dir == (0, 0, 1), origin == (0, 0, 0)) ax
+o := point hint((5, 5, 5))
+fix((5, 5, 5)) o
+r := circle(center: o, normal: ax)
+radius(4mm) r
+";
+
+/// A post seated in a square frame of its own (#548), drawn in its frame's datums (#542).
+const SEATED: &str = "\
+unit mm
+use std
+use std.place (seats, raised)
+component Post(len: Length) {
+  in std.front {
+    a := point
+    a coincident std.origin
+    b := point hint((3, len))
+    b distance(3mm, along: u) std.front
+    a distance(len) b
+  }
+}
+in std.top {
+  base := point
+  fix((10, 20)) base
+}
+st := point
+st raised(d: 25mm, along: std.z) base
+p := Post(len: 40mm)
+p seats(turn: 30deg, up: std.z, east: std.x) st
+";
+
+/// **A document's structure survives its JSON** (#831): what a frame is built as — standing at a
+/// frame's place, square, along drawn lines, at the point they meet — and an arc's or a circle's
+/// plane in space are fields the JSON writes, so the document read back derives the same rows
+/// from them and keeps every freedom: no row is the one place such a fact is kept.
+#[test]
+fn a_documents_structure_survives_its_json() {
+    for (src, built) in [(BUILT_IN_SPACE, "in space"), (SEATED, "seated")] {
+        let e = crate::common::linked::build(src);
+        assert!(e.ok(), "{built}: {:?}", e.diags);
+        let sk = e.sketch;
+        let back = io::from_json(&io::to_json(&sk)).expect("reads back");
+        assert_eq!(back.frames.len(), sk.frames.len(), "{built}");
+        for (f, g) in sk.frames.iter().zip(&back.frames) {
+            let (Some(f), Some(g)) = (f.chart.as_ref(), g.chart.as_ref()) else { continue };
+            assert_eq!((f.place, f.square, f.along, f.stands_at),
+                       (g.place, g.square, g.along, g.stands_at), "{built}");
+        }
+        for (a, b) in sk.arcs.iter().zip(&back.arcs) {
+            assert_eq!(a.round, b.round, "{built}");
+        }
+        for (a, b) in sk.circles.iter().zip(&back.circles) {
+            assert_eq!(a.round, b.round, "{built}");
+        }
+        let rows = |sk: &Sketch| {
+            let mut r: Vec<String> = sk.constraints.iter().filter(|c| c.is_intrinsic() && c.along.is_none())
+                .map(|c| format!("{:?} {:?} {:?}", c.origin, c.kind.attitude_twin(false), c.args))
+                .collect();
+            r.sort();
+            r
+        };
+        assert_eq!(rows(&back), rows(&sk), "{built}");
+        let freedoms = |sk: &Sketch| {
+            let opts = DiagnoseOptions { numeric: Some(false), ..DiagnoseOptions::default() };
+            let d = diagnose(&mut sk.clone(), opts);
+            (d.dof, d.structural_rank)
+        };
+        assert_eq!(freedoms(&back), freedoms(&sk), "{built}");
+    }
+    // and each fact was there to keep
+    let sk = crate::common::linked::build(BUILT_IN_SPACE).sketch;
+    assert!(sk.frames.iter().filter_map(|f| f.chart.as_ref())
+        .any(|c| c.along.iter().all(Option::is_some) && c.stands_at.is_some()));
+    assert!(sk.arcs.iter().all(|a| a.round.is_some()) && sk.circles.iter().all(|c| c.round.is_some()));
+    let sk = crate::common::linked::build(SEATED).sketch;
+    assert!(sk.frames.iter().filter_map(|f| f.chart.as_ref()).any(|c| c.square));
+    assert!(sk.frames.iter().filter_map(|f| f.chart.as_ref())
+        .any(|c| matches!(c.place, model::Place::Of(_))));
+}

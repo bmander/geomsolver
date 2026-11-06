@@ -361,7 +361,7 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
         // says which root and states no size (§9.6)
         let asked = ids.map(|ids| ids.contains(&c.id));
         if asked == Some(false) || ((c.repeated || c.elsewhere) && asked.is_none()) || c.soft
-            || c.intrinsic || c.along.is_some() || c.bound.is_some()
+            || c.is_intrinsic() || c.along.is_some() || c.bound.is_some()
             || !style_of(sk, c).dimensioned() {
             continue;
         }

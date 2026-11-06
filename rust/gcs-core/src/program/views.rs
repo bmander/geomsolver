@@ -31,7 +31,8 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
                 // a point drawn in two planes the solve turned parallel: said where the point is
                 // declared, as it is of two planes placed parallel before the solve (§6.7)
                 let (p, t) = (c.args[0].ent().i(), c.args[1].ent().i());
-                if parallel && c.intrinsic && sk.twins.get(&p).is_some_and(|ts| ts.contains(&t)) {
+                let fold = crate::model::Origin::Intrinsic(crate::model::Owner::Twin(p as u32, t as u32));
+                if parallel && c.origin == fold {
                     out.extend(super::planes::twin_parallel(sk, map, p, a, b));
                     continue;
                 }
@@ -183,7 +184,7 @@ pub(crate) fn coplanar(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     // the planes each relation reads drawn points of — a plane's own origin is where the plane
     // stands, not drawing in it
     let mut pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
-    for c in sk.constraints.iter().filter(|c| c.acts() && !c.intrinsic) {
+    for c in sk.constraints.iter().filter(|c| c.acts() && !c.is_intrinsic()) {
         let mut planes: BTreeSet<usize> = BTreeSet::new();
         for e in c.entities() {
             let mut pts = Vec::new();
@@ -263,7 +264,7 @@ pub(crate) fn place(sk: &mut Sketch) -> Vec<bool> {
     }
     let reads = statements(sk);
     let mut taken: BTreeSet<u32> = BTreeSet::new();
-    let along = along(sk);
+    let along = sk.axes_along();
     for _ in 0..sk.frames.len() + sk.axes.len() + 1 {
         let newly = placed.carried(sk, &along);
         let before = taken.len();
@@ -376,7 +377,9 @@ fn statements(sk: &Sketch) -> Vec<Reads> {
             | CKind::DragSeen) {
             continue;
         }
-        if c.intrinsic && c.entities().iter().any(|e| e.kind == EntKind::Axis && normals.contains(&e.i())) {
+        // a row of the drawing's own over a normal (`Chart::normal`): its own rows, and those of a
+        // plane built over one, which a normal read off its plane's axes places
+        if c.is_intrinsic() && c.entities().iter().any(|e| e.kind == EntKind::Axis && normals.contains(&e.i())) {
             continue;
         }
         // a point measured from a frame's own point in space — an ordinate, a height off its
@@ -539,26 +542,15 @@ fn turn_over(sk: &mut Sketch, item: &BTreeSet<u32>, placed: &Placed) {
     }
 }
 
-/// Every axis a plane holds along a drawn line (`program::entities::axes_along`) turned to the
-/// line as it now stands — seeded before its line's points were placed, it may stand far from
-/// it, which its row (sensed, #535) would bring back the long way round.
+/// Every axis a plane holds along a drawn line (`Chart::along`) turned to the line as it now
+/// stands — seeded before its line's points were placed, it may stand far from it, which its row
+/// (sensed, #535) would bring back the long way round.
 fn align(sk: &mut Sketch) {
-    for (r, l) in along(sk) {
+    for (r, l) in sk.axes_along() {
         if !sk.axes[r].d.iter().any(|&q| sk.params[q as usize].fixed) {
             sk.turn_axis_along(r, l);
         }
     }
-}
-
-/// The axes held along drawn lines, and their lines.
-fn along(sk: &Sketch) -> Vec<(usize, usize)> {
-    sk.constraints.iter()
-        .filter(|c| c.intrinsic && c.along.is_none() && c.kind == CKind::Parallel3)
-        .filter_map(|c| match (c.args[0].ent(), c.args[1].ent()) {
-            (r, l) if r.kind == EntKind::Axis && l.kind == EntKind::Line => Some((r.i(), l.i())),
-            _ => None,
-        })
-        .collect()
 }
 
 /// Every hidden point put where its point now stands — after a pass that moved planes or

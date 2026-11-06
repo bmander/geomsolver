@@ -6,8 +6,9 @@
 //! on what was removed, and the things the walk says as a whole — the unit a paste lands in, the
 //! pictures, the numbers a drag writes back — come out as the document has them.
 use gcs_core::constraints::CKind;
+use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::graft::{self, Part};
-use gcs_core::model::{DerivedE, EntKind, EntRef, RegionShape, SolidDef, Sketch, Target};
+use gcs_core::model::{CurveBody, DerivedE, Origin, Owner, EntKind, EntRef, RegionShape, SolidDef, Sketch, Target};
 use gcs_core::units::Units;
 use gcs_core::par;
 
@@ -204,4 +205,166 @@ fn a_part_pairs_a_contacts_place_on_a_traced_body() {
         assert_eq!(doc.params[p as usize].value, 0.125 + k as f64, "own unknown {k}");
     }
     assert_eq!(part.entity_in(contact.entities()[1]).map(|e| e.kind), Some(EntKind::Traced));
+}
+
+/// What a document's freedoms are, as the structure of its rows says: its unknowns less the
+/// rank its rows take of them, and that rank.
+fn freedoms(sk: &Sketch) -> (i64, usize) {
+    let opts = DiagnoseOptions { numeric: Some(false), conflicts: Some(false),
+                                 solid_claims: false, ..DiagnoseOptions::default() };
+    let d = diagnose(&mut sk.clone(), opts);
+    (d.dof, d.structural_rank)
+}
+
+/// The intrinsic rows of `sk`, each by its owner renumbered through `map` and its kind, sorted:
+/// what two copies of one document must agree on.
+fn intrinsic_rows(sk: &Sketch, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Vec<String> {
+    let idx = |e: EntRef| map(e).map(|e| e.idx);
+    let owner = |o: Owner| -> Option<Owner> {
+        Some(match o {
+            Owner::Axis(i) => Owner::Axis(idx(EntRef::new(EntKind::Axis, i as usize))?),
+            Owner::Arc(i) => Owner::Arc(idx(EntRef::arc(i as usize))?),
+            Owner::Frame(f) => Owner::Frame(idx(EntRef::frame(f as usize))?),
+            Owner::Normal(f) => Owner::Normal(idx(EntRef::frame(f as usize))?),
+            Owner::Lift(p) => Owner::Lift(idx(EntRef::point(p as usize))?),
+            Owner::Twin(p, t) => Owner::Twin(idx(EntRef::point(p as usize))?,
+                                             idx(EntRef::point(t as usize))?),
+            Owner::Round(e) => Owner::Round(map(e)?),
+            Owner::Developed(i) => Owner::Developed(idx(EntRef::new(EntKind::Curve, i as usize))?),
+        })
+    };
+    let mut rows: Vec<String> = sk.constraints.iter()
+        .filter(|c| c.along.is_none())
+        .filter_map(|c| match c.origin {
+            // the twin a statement's planes feed is one statement (`CKind::attitude_twin`)
+            Origin::Intrinsic(o) => Some(format!("{:?} {:?}", owner(o), c.kind.attitude_twin(false))),
+            Origin::Stated => None,
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+/// Whether the JSON document carries every kind `sk` holds: a sketch of points, lines, circles,
+/// arcs, splines, axes and frames, and no row of a kind it cannot name or a row the Solvent
+/// source alone carries (#510 S1).
+fn json_carries(sk: &Sketch) -> bool {
+    let carried = [EntKind::Point, EntKind::Line, EntKind::Circle, EntKind::Arc, EntKind::Spline,
+                   EntKind::Axis, EntKind::Frame];
+    EntKind::ALL.iter().all(|&k| carried.contains(&k) || sk.count(k) == 0)
+        && sk.constraints.iter().all(|c| {
+            !c.kind.of_source() && c.entities().iter().all(|e| carried.contains(&e.kind))
+        })
+}
+
+/// Whether a rebuild of `sk` leaves something behind on purpose, which the ledger says (`graft`):
+/// a row the source alone carries (#510 S1), a station a chain's later leg carries, whose rows
+/// and unknowns `solid::family::part_of` frees on its own copy (#363 S4), or an unknown the source
+/// declared (`Sketch::declared`, parameters.md).  Its freedoms are not the source's, by design;
+/// its intrinsic rows still are.
+fn leaves_behind(sk: &Sketch) -> bool {
+    !sk.carried.is_empty() || sk.constraints.iter().any(|c| c.kind.of_source())
+        || sk.free_vars.keys().any(|n| sk.declared.contains_key(n))
+}
+
+/// **A rebuild keeps every freedom** (#831): a rebuild that removes nothing, and a JSON round
+/// trip of every document the JSON carries, have the source's freedoms and rank, and the same
+/// intrinsic rows by owner and kind, renumbered.  Copying the model copies entities and their
+/// fields and mints no row of its own (`Sketch::derive_all`), so a structural fact recorded only
+/// as a row would be lost here, whoever adds the next one: the independent check on the
+/// derivation.  A followed point travels unlowered (`graft`'s `curves`), so a document with one
+/// is not solved here, and a document whose rebuild leaves something behind on purpose
+/// (`leaves_behind`) is held to its intrinsic rows alone.
+#[test]
+fn a_rebuild_keeps_every_freedom() {
+    let names = fixtures::example_names();
+    let wrong: Vec<String> = par::map(&names, |name| keeps_every_freedom(name))
+        .into_iter().flatten().collect();
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// What `a_rebuild_keeps_every_freedom` finds wrong with one document.
+fn keeps_every_freedom(name: &str) -> Vec<String> {
+    let Some(sk) = example(name) else { return Vec::new() };
+    if sk.curve_defs.iter().any(|d| matches!(d.body, CurveBody::Followed(_))) {
+        return Vec::new();
+    }
+    let mut wrong = Vec::new();
+    let solved = !leaves_behind(&sk);
+    let want = solved.then(|| freedoms(&sk));
+    let rows = intrinsic_rows(&sk, &|e| Some(e));
+    let (copy, r) = graft::rebuild(&sk, &|_| true, &[]);
+    if intrinsic_rows(&copy, &|e| Some(e)) != intrinsic_rows(&sk, &|e| r.ent(e)) {
+        wrong.push(format!("{name}: rebuilt, its intrinsic rows differ"));
+    }
+    if let Some(want) = want {
+        let got = freedoms(&copy);
+        if got != want {
+            wrong.push(format!("{name}: rebuilt, (dof, rank) {got:?} of {want:?}"));
+        }
+    }
+    if json_carries(&sk) {
+        match gcs_core::io::from_json(&gcs_core::io::to_json(&sk)) {
+            Err(e) => wrong.push(format!("{name}: its JSON reads back as {e}")),
+            Ok(back) => {
+                if intrinsic_rows(&back, &|e| Some(e)) != rows {
+                    wrong.push(format!("{name}: read back from JSON, its intrinsic rows differ"));
+                }
+                if let Some(want) = want {
+                    let got = freedoms(&back);
+                    if got != want {
+                        wrong.push(format!("{name}: read back from JSON, (dof, rank) {got:?} of {want:?}"));
+                    }
+                }
+            }
+        }
+    }
+    wrong
+}
+
+
+/// Where `sk`'s stored rows of an owner are not the rows `rows_of` derives for it now: each owner
+/// whose cache disagrees with its fields, by name.
+fn stale_owners(sk: &Sketch) -> Vec<String> {
+    // the twin a statement's planes feed is one statement (`CKind::attitude_twin`)
+    let key = |c: &gcs_core::constraints::Constraint| {
+        format!("{:?} {:?}", c.kind.attitude_twin(false), c.args)
+    };
+    let mut wrong = Vec::new();
+    for o in sk.owners() {
+        let mut want: Vec<String> = sk.rows_of(o).iter().map(key).collect();
+        let mut have: Vec<String> = sk.constraints.iter()
+            .filter(|c| c.origin == Origin::Intrinsic(o) && c.along.is_none())
+            .map(key)
+            .collect();
+        want.sort();
+        have.sort();
+        if want != have {
+            wrong.push(format!("{o:?} stores {have:?}, derives {want:?}"));
+        }
+    }
+    wrong
+}
+
+/// **A part keeps its owners' rows** (#831): the rows stored for each owner are the rows its
+/// fields imply — in every document of a sample of the corpus as elaborated, and in the part
+/// (`Part::around_all`) taken from each of a sample of its entities, a drag's and a station's
+/// copy.  A row is a cache of `Sketch::rows_of`, and never the one place a fact is kept.
+#[test]
+fn a_part_keeps_its_owners_rows() {
+    let names: Vec<String> = fixtures::example_names().into_iter().step_by(5).collect();
+    let wrong: Vec<String> = par::map(&names, |name| {
+        let Some(sk) = example(name) else { return Vec::new() };
+        let mut wrong: Vec<String> =
+            stale_owners(&sk).into_iter().map(|w| format!("{name}: {w}")).collect();
+        let all = entities(&sk);
+        let step = all.len().div_ceil(6).max(1);
+        for &e in all.iter().step_by(step) {
+            let part = Part::around_all(&sk, &[e]);
+            wrong.extend(stale_owners(&part.sketch).into_iter()
+                .map(|w| format!("{name}, the part around {e:?}: {w}")));
+        }
+        wrong
+    }).into_iter().flatten().collect();
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }

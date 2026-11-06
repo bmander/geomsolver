@@ -336,7 +336,7 @@ pub fn violated_constraints(sk: &Sketch, sys: &mut System, tol: f64) -> Vec<u32>
     // intrinsic row is an entity's own definition: neither is a statement the document made,
     // so neither is named as one it could remove.
     let soft: BTreeSet<u32> =
-        sk.constraints.iter().filter(|c| c.soft || c.intrinsic).map(|c| c.id).collect();
+        sk.constraints.iter().filter(|c| c.soft || c.is_intrinsic()).map(|c| c.id).collect();
     let mut out = Vec::new();
     for (i, &cid) in sys.cids.iter().enumerate() {
         if !soft.contains(&cid) && (err[i].is_nan() || err[i] > tol) {
@@ -403,7 +403,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // the document and cannot be removed, so "remove one of these" never names one (#43.17);
     // the numeric path (`removable_constraints`) already leaves them out
     let intrinsic: BTreeSet<u32> =
-        sk.constraints.iter().filter(|c| c.intrinsic).map(|c| c.id).collect();
+        sk.constraints.iter().filter(|c| c.is_intrinsic()).map(|c| c.id).collect();
     let mut red = Redundancy::matched(&m, &intrinsic);
     // the matching's reading, kept: it is where a redundancy *must* live, so the conflict
     // search below seeds its candidates from it whatever W says about who is removable

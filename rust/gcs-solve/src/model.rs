@@ -38,6 +38,7 @@ mod beam;
 mod rounds;
 mod shown;
 pub mod developed;
+mod intrinsic;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -47,6 +48,7 @@ pub use entities::{
 pub(crate) use entities::{renumbered, renumbered_opt, renumbered_all};
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
 pub use developed::{developed_def, Developed, Panel, Rail};
+pub use intrinsic::{Along, Origin, Owner, Place, RoundIn};
 pub use solids::{
     FaceLoop, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Roll, Sense, SolidDef, SolidE, EnvelopeE,
@@ -237,17 +239,6 @@ pub struct Sketch {
     /// kept so no index moves, is no primitive — neither drawn nor grafted.  Set by the
     /// elaborator (`program::entities::splines_in_space`).
     pub spline_traced: std::collections::BTreeMap<u32, u32>,
-    /// **The points an arc over points in space is drawn over** (#363 S6), each to the point in
-    /// space it stands for: the arc's own centre, start and end in the plane it minted, tied to
-    /// the points written (`program::entities::arcs_in_space`), so a chain's links still meet
-    /// where they were threaded.
-    pub stands_for: std::collections::BTreeMap<u32, u32>,
-    /// **The axes a circle about a point in space is gauged by** (#363 S6), each to the `u` and
-    /// `v` axes of the plane it minted: the plane's turn about the circle's normal is held square
-    /// to it, and it is taken again where a solve ends (`retake_round_gauges`), so a normal that
-    /// swings onto it never leaves that turn unheld at a solved pose.  Set by the elaborator
-    /// (`program::entities::circles_in_space`).
-    pub round_gauges: std::collections::BTreeMap<u32, [u32; 2]>,
     /// **The arcs a chain walks from their end** (#363 S4), each drawn from there: its start and
     /// end swapped and its turn reversed, the same arc, so the chain enters it at its start and a
     /// family runs it forward.  A name still reads the points as written: `k.start` is the end it

@@ -175,6 +175,14 @@ pub fn to_json(sk: &Sketch) -> Json {
             if let Some(f) = sk.points[i].chart {
                 o.set("chart", Json::Int(f as i64));
             }
+            // held in some of its numbers and not the others — an arc's start on its plane's `u`,
+            // the gauge of the plane it is drawn in (#363 S6) — each number's hold, only then
+            let pt = &sk.points[i];
+            let held: Vec<bool> = [Some(pt.x), Some(pt.y), pt.z].into_iter().flatten()
+                .map(|q| sk.params[q as usize].fixed).collect();
+            if held.iter().any(|&h| h != sk.point_fixed(i)) {
+                o.set("held", Json::Arr(held.into_iter().map(Json::Bool).collect()));
+            }
             o
         })
         .collect();
@@ -193,12 +201,18 @@ pub fn to_json(sk: &Sketch) -> Json {
         .circles
         .iter()
         .map(|c| {
-            object([
-                ("center", (c.center as i64).into()),
-                ("r", sk.params[c.radius as usize].value.into()),
-                ("fixed", sk.params[c.radius as usize].fixed.into()),
-                ("class", class_json(&c.class)),
-            ])
+            let crate::model::CircleE { center, radius, class, round } = c;
+            let mut o = object([
+                ("center", (*center as i64).into()),
+                ("r", sk.params[*radius as usize].value.into()),
+                ("fixed", sk.params[*radius as usize].fixed.into()),
+                ("class", class_json(class)),
+            ]);
+            // standing square to an axis through a point in space (#363 S6), only where it does
+            if let Some(r) = round {
+                o.set("round", round_json(r));
+            }
+            o
         })
         .collect();
     let arcs: Vec<Json> = sk
@@ -206,17 +220,22 @@ pub fn to_json(sk: &Sketch) -> Json {
         .iter()
         .enumerate()
         .map(|(i, a)| {
+            let crate::model::ArcE { center, start, end, radius, class, round } = a;
             let mut o = object([
-                ("center", (a.center as i64).into()),
-                ("start", (a.start as i64).into()),
-                ("end", (a.end as i64).into()),
-                ("r", sk.params[a.radius as usize].value.into()),
-                ("fixed", sk.params[a.radius as usize].fixed.into()),
-                ("class", class_json(&a.class)),
+                ("center", (*center as i64).into()),
+                ("start", (*start as i64).into()),
+                ("end", (*end as i64).into()),
+                ("r", sk.params[*radius as usize].value.into()),
+                ("fixed", sk.params[*radius as usize].fixed.into()),
+                ("class", class_json(class)),
             ]);
             // said to turn clockwise and drawn from its end, read as written (#573)
             if sk.arc_reversed(i) {
                 o.set("reversed", true.into());
+            }
+            // drawn in the plane through points in space (#363 S6), only where it is
+            if let Some(r) = round {
+                o.set("round", round_json(r));
             }
             o
         })
@@ -246,24 +265,45 @@ pub fn to_json(sk: &Sketch) -> Json {
                 return object([("bare", true.into()), ("class", class_json(&f.class))]);
             };
             let g = |k: u32| &sk.params[k as usize];
+            // every field of the chart: what it is built as is what its rows are derived from
+            let crate::model::Chart { u, v, o: op, origin, normal, planar, place, square, along,
+                                      stands_at } = p;
             // where it stands under the field names, `EntKind::fields`'s
             let mut o = object([
-                ("u", (p.u as i64).into()),
-                ("v", (p.v as i64).into()),
-                ("origin", (p.origin as i64).into()),
-                ("x", Json::Num(g(p.o[0]).value)),
-                ("y", Json::Num(g(p.o[1]).value)),
-                ("z", Json::Num(g(p.o[2]).value)),
-                ("fixed", Json::Arr(p.o.iter().map(|&k| g(k).fixed.into()).collect())),
+                ("u", (*u as i64).into()),
+                ("v", (*v as i64).into()),
+                ("origin", (*origin as i64).into()),
+                ("x", Json::Num(g(op[0]).value)),
+                ("y", Json::Num(g(op[1]).value)),
+                ("z", Json::Num(g(op[2]).value)),
+                ("fixed", Json::Arr(op.iter().map(|&k| g(k).fixed.into()).collect())),
                 ("class", class_json(&f.class)),
             ]);
             // its normal, by axis, only where one was read — a document with none dumps as it did
-            if let Some(n) = p.normal {
-                o.set("normal", (n as i64).into());
+            if let Some(n) = normal {
+                o.set("normal", (*n as i64).into());
             }
             // a spatial frame's chart: a point in it has three numbers
-            if !p.planar {
+            if !planar {
                 o.set("planar", false.into());
+            }
+            // and each fact it is built by, only where it holds (#831): a datum's frame, whose
+            // place it stands at (#542), an instance's rigid placement (#548), its axes along
+            // drawn lines (#535) and the point it stands at (#819)
+            if let crate::model::Place::Of(g) = place {
+                o.set("at", (*g as i64).into());
+            }
+            if *square {
+                o.set("square", true.into());
+            }
+            if along.iter().any(Option::is_some) {
+                o.set("along", Json::Arr(along.iter().map(|a| match a {
+                    Some(a) => object([("line", (a.line as i64).into()), ("at", (a.at as i64).into())]),
+                    None => Json::Null,
+                }).collect()));
+            }
+            if let Some(p) = stands_at {
+                o.set("stands_at", (*p as i64).into());
             }
             o
         })
@@ -519,6 +559,13 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         if let Some(z) = p.get("z").filter(|v| !omitted(Some(v))) {
             sk.give_place(k, z.as_f64());
         }
+        // a point held in some of its numbers alone
+        if let Some(held) = p.get("held") {
+            let pt = &sk.points[k];
+            for (q, h) in [Some(pt.x), Some(pt.y), pt.z].into_iter().flatten().zip(held.arr()) {
+                sk.params[q as usize].fixed = h.as_bool();
+            }
+        }
     }
     let np = sk.points.len();
     for l in d.get("lines").unwrap_or(&empty).arr() {
@@ -602,6 +649,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     // the planes over their axes, each with its origin a point already read
     let nr = sk.axes.len();
     let mut normals = Vec::new();
+    let mut built_along = Vec::new();
     for p in d.get("planes").unwrap_or(&empty).arr() {
         // a frame declared bare (#383)
         if p.get("bare").is_some_and(|v| v.as_bool()) {
@@ -612,7 +660,40 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let o = ["x", "y", "z"].map(|k| p.get(k).map(|v| v.as_f64()).unwrap_or(0.0));
         let fixed = p.get("fixed").map(|v| v.arr()).unwrap_or_default();
         let held = [0, 1, 2].map(|k| fixed.get(k).map(|v| v.as_bool()).unwrap_or(false));
-        let pi = sk.plane_restored(g("u", nr)?, g("v", nr)?, o, held, g("origin", np)?, read_class(p));
+        // a datum standing at a frame read before it (#542)
+        let at = match p.get("at").filter(|v| !omitted(Some(v))) {
+            Some(f) => Some(index(f.as_i64(), sk.frames.len(), "plane.at")?)
+                .filter(|&f| sk.frames[f].chart.is_some()),
+            None => None,
+        };
+        let (u, v, origin) = (g("u", nr)?, g("v", nr)?, g("origin", np)?);
+        let pi = match at {
+            Some(f) => sk.datum_restored(u, v, f, origin, read_class(p)),
+            None => sk.plane_restored(u, v, o, held, origin, read_class(p)),
+        };
+        if p.get("square").is_some_and(|v| v.as_bool()) {
+            sk.square_chart(pi);
+        }
+        // its axes along drawn lines, held once the stated rows are in, as the elaborator holds
+        // them
+        let mut along = [None; 2];
+        if let Some(a) = p.get("along") {
+            for (k, a) in a.arr().iter().take(2).enumerate() {
+                if omitted(Some(a)) {
+                    continue;
+                }
+                let line = index(a.get("line").map_or(-1, |v| v.as_i64()), sk.lines.len(), "along.line")?;
+                let at = index(a.get("at").map_or(-1, |v| v.as_i64()), np, "along.at")?;
+                along[k] = Some(crate::model::Along { line: line as u32, at: at as u32 });
+            }
+        }
+        let stands_at = match p.get("stands_at").filter(|v| !omitted(Some(v))) {
+            Some(q) => Some(index(q.as_i64(), np, "plane.stands_at")? as u32),
+            None => None,
+        };
+        if along.iter().any(Option::is_some) || stands_at.is_some() {
+            built_along.push((pi, along, stands_at));
+        }
         if p.get("normal").is_some() {
             normals.push((pi, g("normal", nr)?));
         }
@@ -629,6 +710,17 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     }
     for (ri, a, held) in places {
         sk.place_restored(ri, a, held);
+    }
+    // an arc's or a circle's plane in space (#363 S6), once its plane and its axes are read
+    for (key, n) in [("arcs", sk.arcs.len()), ("circles", sk.circles.len())] {
+        for (i, a) in d.get(key).unwrap_or(&empty).arr().iter().enumerate().take(n) {
+            let Some(r) = a.get("round").filter(|v| !omitted(Some(v))) else { continue };
+            let round = round_from_json(&sk, r)?;
+            match key {
+                "arcs" => sk.arcs[i].round = Some(round),
+                _ => sk.circles[i].round = Some(round),
+            }
+        }
     }
     // memberships once the planes exist to be members of: a point's `"plane"` names one by
     // index, and the point was read before any plane was
@@ -726,6 +818,11 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         }
         ids.push(id);
     }
+    for (pi, along, stands_at) in built_along {
+        let c = sk.frames[pi].chart.as_mut().expect("charted");
+        (c.along, c.stands_at) = (along, stands_at);
+        sk.derive(crate::model::Owner::Frame(pi as u32));
+    }
     // each twin tied to its point after the relations, as the elaborator ties it (§6.7), and held
     // on its plane where nothing read above holds it
     for j in d.get("twins").unwrap_or(&empty).arr() {
@@ -734,7 +831,6 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let (p, t) = (at(0)?, at(1)?);
         sk.tie_twin(p, t);
     }
-    sk.hold_twins();
     for j in d.get("materials").unwrap_or(&empty).arr() {
         let m = material_from_json(j)?;
         sk.materials.insert(m.name.clone(), m);
@@ -826,12 +922,56 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     if images.len() != derived.len() || sk.mirrors.iter().any(|m| images.contains(&m.rep)) {
         return Err("an image is reflected once, from an entity that is not itself an image".into());
     }
+    // every owner's rows, from the fields read: the one place a document's are made
+    sk.derive_all();
     sk.settle_turns();
     // a chart a document did not gauge is gauged where its point stands (§6.21)
     sk.choose_charts();
     // each free curve's energy, read again from the statements (#121, #144)
     sk.settle_variational();
     Ok(sk)
+}
+
+/// An arc's or a circle's plane in space as JSON (#363 S6): its plane, each own point with the
+/// point in space it is tied to, and a circle's normal and gauge.
+fn round_json(r: &crate::model::RoundIn) -> Json {
+    let crate::model::RoundIn { plane, ties, normal } = r;
+    let mut o = object([
+        ("plane", (*plane as i64).into()),
+        ("ties", Json::Arr(ties.iter()
+            .map(|t| Json::Arr(t.iter().map(|&p| Json::Int(p as i64)).collect())).collect())),
+    ]);
+    if let Some((n, g)) = normal {
+        o.set("normal", ref_json(*n));
+        o.set("gauge", (*g as i64).into());
+    }
+    o
+}
+
+/// `round_json` read back, every index checked against what the document holds.
+fn round_from_json(sk: &Sketch, j: &Json) -> Result<crate::model::RoundIn, String> {
+    let plane = index(j.get("plane").map_or(-1, |v| v.as_i64()), sk.frames.len(), "round.plane")?;
+    if sk.frames[plane].chart.is_none() {
+        return Err("a round is drawn in a plane".into());
+    }
+    let mut ties = Vec::new();
+    for t in j.get("ties").map(|v| v.arr().to_vec()).unwrap_or_default() {
+        let t = t.arr();
+        let at = |k: usize| index(t.get(k).map_or(-1, |v| v.as_i64()), sk.points.len(), "round.ties");
+        ties.push([at(0)? as u32, at(1)? as u32]);
+    }
+    let normal = match j.get("normal").filter(|v| !omitted(Some(v))) {
+        Some(n) => {
+            let n = ref_from_json(sk, n, "round.normal")?;
+            if !matches!(n.kind, EntKind::Axis | EntKind::Line) {
+                return Err("a round stands square to an axis or a line".into());
+            }
+            let g = index(j.get("gauge").map_or(-1, |v| v.as_i64()), sk.axes.len(), "round.gauge")?;
+            Some((n, g as u32))
+        }
+        None => None,
+    };
+    Ok(crate::model::RoundIn { plane: plane as u32, ties, normal })
 }
 
 pub fn dumps(sk: &Sketch, indent: Option<usize>) -> String {

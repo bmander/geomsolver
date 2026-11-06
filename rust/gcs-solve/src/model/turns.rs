@@ -108,19 +108,15 @@ impl Turn {
 }
 
 impl Sketch {
-    /// Record a turn.  A turned arc's intrinsic rows — its ends on its circle — are the images of
-    /// the representative's, so they go: every reader of the constraints, the solve's and the
-    /// plan's alike, sees the representative's alone.
+    /// Record a turn.  A turned arc's own rows — its ends on its circle — are the images of the
+    /// representative's, so it has none (`Owner::Arc`): every reader of the constraints, the
+    /// solve's and the plan's alike, sees the representative's alone.
     pub fn turn(&mut self, t: Turn) {
-        if t.copy.kind == EntKind::Arc {
-            self.drop_intrinsic(t.copy);
-        }
+        let copy = t.copy;
         self.turns.push(t);
-    }
-
-    /// A copy's intrinsic rows dropped: they are its representative's, turned or reflected.
-    fn drop_intrinsic(&mut self, copy: EntRef) {
-        self.constraints.retain(|c| !(c.intrinsic && c.entities().contains(&copy)));
+        if copy.kind == EntKind::Arc {
+            self.derive(super::Owner::Arc(copy.idx));
+        }
     }
 
     /// The turn copy `e` is, if it is one.
@@ -128,14 +124,17 @@ impl Sketch {
         self.turns.iter().find(|t| t.copy == e)
     }
 
-    /// Record an image (#578).  Its rows are its representative's reflected, so an image arc's
-    /// intrinsic rows go, as a turned arc's do, and an image axis's (its direction's length, its
-    /// foot): the representative's hold for it.
+    /// Record an image (#578).  Its rows are its representative's reflected, so an image arc has
+    /// none of its own, as a turned arc has none, and an image axis none (its direction's length,
+    /// its foot): the representative's hold for it (`Owner::Arc`, `Owner::Axis`).
     pub fn mirror(&mut self, m: Mirror) {
-        if matches!(m.copy.kind, EntKind::Arc | EntKind::Axis) {
-            self.drop_intrinsic(m.copy);
-        }
+        let copy = m.copy;
         self.mirrors.push(m);
+        match copy.kind {
+            EntKind::Arc => self.derive(super::Owner::Arc(copy.idx)),
+            EntKind::Axis => self.derive(super::Owner::Axis(copy.idx)),
+            _ => {}
+        }
     }
 
     /// **An image datum's axis reversed** (#578): axis `of`'s direction negated, standing where it

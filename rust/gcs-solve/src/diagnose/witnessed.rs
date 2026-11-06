@@ -82,7 +82,7 @@ pub(super) fn judge(
         sk.constraints = all;
         let reads = |c: &Constraint| c.params(sk).iter().any(|p| unknowns.binary_search(p).is_ok());
         scratch.constraints = sk.constraints.iter()
-            .filter(|c| c.witness == Some(w) || (c.intrinsic && reads(c)))
+            .filter(|c| c.witness == Some(w) || (c.is_intrinsic() && reads(c)))
             .map(|c| Constraint { claim: false, witness: None, ..c.clone() })
             .collect();
         for (i, p) in scratch.params.iter_mut().enumerate() {

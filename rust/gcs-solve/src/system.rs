@@ -892,7 +892,7 @@ impl System {
                 // true by construction and no equation the drawing answers for.  Counted, it
                 // would stand in the ledger as an equation over the rank.  Not hard, so no count
                 // or rank sees it.  A statement over held numbers stays one: it may be wrong.
-                let held = c.intrinsic && ps.iter().all(|&p| col_of[p as usize] < 0);
+                let held = c.is_intrinsic() && ps.iter().all(|&p| col_of[p as usize] < 0);
                 for p in ps {
                     gidx.push(p as i32);
                 }

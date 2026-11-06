@@ -10,8 +10,11 @@ pub struct Constraint {
     pub args: Vec<Arg>,
     /// Soft constraints (drag targets) do not count toward convergence.
     pub soft: bool,
-    /// Implied by a primitive's definition (an arc's endpoints sit at its radius).
-    pub intrinsic: bool,
+    /// Stated by the document, or **implied by what an entity is** and then whose it is
+    /// (`Origin::Intrinsic`, #831): an arc's ends at its radius, a plane's axes through its
+    /// place.  An intrinsic row is a cache of its owner's `Sketch::rows_of`, made there alone and
+    /// never read back as a fact.
+    pub origin: crate::model::Origin,
     /// A `claim` (Solvent §9.7): stated as *expected to add no rank*.  A claim is no equation —
     /// the solve, the decomposition and the drag walk all leave it out, so it can never move the
     /// geometry or weld two figures — and the diagnosis alone judges it, against the drawing the
@@ -117,9 +120,13 @@ impl Constraint {
     /// for it to give: its id (`Sketch::add_quiet`), its free variable (`expr::evaluate`).
     pub fn remapped(&self, map: &crate::model::Remap, param: &dyn Fn(u32) -> Arg,
                     dual: &dyn Fn(usize) -> Option<usize>) -> Option<Constraint> {
-        let Constraint { id: _, kind, args, soft, intrinsic, claim, free: _, class, written,
+        let Constraint { id: _, kind, args, soft, origin, claim, free: _, class, written,
                          repeated, elsewhere, word, along, bound, initially, carried: _,
                          witness } = self;
+        // an intrinsic row is its owner's, derived again where the copy lands (`derive_all`)
+        if *origin != crate::model::Origin::Stated {
+            return None;
+        }
         let args = args.iter().map(|a| match a {
             Arg::Ent(e) => map(*e).map(Arg::Ent),
             Arg::Param(p) => Some(param(*p)),
@@ -130,7 +137,7 @@ impl Constraint {
             kind: *kind,
             args,
             soft: *soft,
-            intrinsic: *intrinsic,
+            origin: crate::model::Origin::Stated,
             claim: *claim,
             free: None,
             class: class.clone(),
@@ -164,6 +171,11 @@ pub fn side_word(sign: i64) -> &'static str {
 }
 
 impl Constraint {
+    /// Whether it is implied by what an entity is rather than stated (`Origin::Intrinsic`).
+    pub fn is_intrinsic(&self) -> bool {
+        self.origin != crate::model::Origin::Stated
+    }
+
     /// Whether this constraint *acts* on the drawing — the one predicate behind "everything that
     /// must be satisfied".  A soft one is a transient the solve may miss; a claim is a question
     /// about the drawing rather than part of it, and neither is something a consumer asking for
@@ -255,7 +267,7 @@ impl Constraint {
             kind,
             args,
             soft: false,
-            intrinsic: false,
+            origin: crate::model::Origin::Stated,
             claim: false,
             free: None,
             class: Default::default(),
@@ -287,10 +299,8 @@ impl Constraint {
         Constraint::new(kind, vec![Arg::Ent(l1), Arg::Ent(l2)])
     }
 
-    pub fn point_on_circle(p: EntRef, circle: EntRef, intrinsic: bool) -> Constraint {
-        let mut c = Constraint::new(CKind::PointOnCircle, vec![Arg::Ent(p), Arg::Ent(circle)]);
-        c.intrinsic = intrinsic;
-        c
+    pub fn point_on_circle(p: EntRef, circle: EntRef) -> Constraint {
+        Constraint::new(CKind::PointOnCircle, vec![Arg::Ent(p), Arg::Ent(circle)])
     }
 
     pub fn radius(circle: EntRef, r: f64) -> Constraint {

@@ -95,19 +95,17 @@ pub fn to_program(sk: &Sketch) -> Program {
         p.push(StmtKind::Decl(lift_decl(sk, EntRef::frame(f))));
     }
     // and a plane written over a drawn line says so with the axis it gave it: `r parallel l`,
-    // and `p coincident r` for the end it stands on (`entities::axes_along`).  Where both of a
-    // plane's axes stand on one point, the plane stands there by its own rows once read back.
-    let along = sk.constraints.iter().filter(|c| {
-        c.intrinsic
-            && c.along.is_none()
-            && (c.kind == CKind::Parallel3 && c.args[0].ent().kind == EntKind::Axis
-                || c.kind == CKind::PointOnAxis)
-    });
+    // and `p coincident r` for the end it stands on (`Chart::along`).  Where both of a plane's
+    // axes stand on one point, the plane stands there by its own rows once read back.
+    let along: Vec<crate::constraints::Constraint> = (0..sk.frames.len() as u32)
+        .flat_map(|f| sk.rows_of(crate::model::Owner::Frame(f)))
+        .filter(|c| matches!(c.kind, CKind::Parallel3 | CKind::PointOnAxis))
+        .collect();
     // a set's derivative row (§6.21) is one no flat statement spells: a flat program keeps the
     // contact and the set's rows at it, and says nothing of the tangency
     let stated = sk.user_constraints().into_iter()
         .filter(|c| c.along.is_none() && !c.kind.of_source());
-    for c in stated.chain(along) {
+    for c in stated.chain(along.iter()) {
         p.push(StmtKind::Relation(renamed(lift_relation(sk, c), &names)));
     }
     // every held number is said, with what it is held at; a plane's origin is not, since the

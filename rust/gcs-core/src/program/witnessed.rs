@@ -29,7 +29,7 @@ pub(super) fn hold(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
     for c in &sk.constraints {
         // an entity's own intrinsic rows (an arc's ends at its radius) are the witness's own,
         // held with it, and solved with it where its block is
-        if c.intrinsic {
+        if c.is_intrinsic() {
             continue;
         }
         let read: BTreeSet<(EntRef, u32)> =

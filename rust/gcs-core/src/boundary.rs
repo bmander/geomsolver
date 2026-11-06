@@ -423,9 +423,9 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
             // a plane through its axes) are what it made, whatever else they read: an arc about
             // an operand's centre places its ends from it (#461)
             let ours = inside(c.id) || map.site_of_constraint(c.id).is_none()
-                && match c.intrinsic.then(|| subject(c)).flatten() {
+                && match c.is_intrinsic().then(|| subject(c)).flatten() {
                     Some(e) => placed(&e),
-                    None => c.intrinsic
+                    None => c.is_intrinsic()
                         && c.entities().iter().any(|e| e.kind != EntKind::Point && placed(e))
                         || cols.iter().any(|p| aux.contains(p))
                         || cols.iter().any(|p| mine.contains(p))
@@ -580,7 +580,7 @@ fn analyse(
 
     // what it reads of the world
     for c in &rows {
-        if !inside(c.id) || c.intrinsic {
+        if !inside(c.id) || c.is_intrinsic() {
             continue;
         }
         if let Some(what) = reads_axes(c) {

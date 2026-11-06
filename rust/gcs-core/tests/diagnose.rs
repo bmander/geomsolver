@@ -481,7 +481,7 @@ fn tangent_at_a_point_on_the_circle(far_dimension: bool) -> Sketch {
         CKind::Radius,
         vec![Arg::Ent(EntRef::circle(circle)), Arg::Num(17.0)],
     ));
-    sk.add(Constraint::point_on_circle(EntRef::point(p), EntRef::circle(circle), false));
+    sk.add(Constraint::point_on_circle(EntRef::point(p), EntRef::circle(circle)));
     sk.add(Constraint::new(
         CKind::TangentLineCircle,
         vec![Arg::Ent(EntRef::line(line)), Arg::Ent(EntRef::circle(circle)), Arg::Int(1)],
@@ -587,7 +587,7 @@ fn tangency_stated_at_its_contact_is_regular() {
         CKind::Radius,
         vec![Arg::Ent(EntRef::circle(circle)), Arg::Num(17.0)],
     ));
-    sk.add(Constraint::point_on_circle(EntRef::point(p), EntRef::circle(circle), false));
+    sk.add(Constraint::point_on_circle(EntRef::point(p), EntRef::circle(circle)));
     sk.add(Constraint::new(
         CKind::TangentLineCircleAt,
         vec![Arg::Ent(EntRef::line(line)), Arg::Ent(EntRef::circle(circle)), Arg::Str("p1".into())],
@@ -685,7 +685,7 @@ o := point
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert!(!d.over.is_empty(), "{}", summary(&d));
     for c in d.over.iter().chain(d.conflicts.iter().flatten()).chain(d.violated.iter()) {
-        assert!(!sk.constraint(*c).unwrap().intrinsic, "named an intrinsic row: {}", summary(&d));
+        assert!(!sk.constraint(*c).unwrap().is_intrinsic(), "named an intrinsic row: {}", summary(&d));
     }
 }
 
@@ -812,6 +812,6 @@ fix((0, 10)) e
     assert_eq!(set.len(), 2, "{set:?}");
     assert!(set.iter().all(|c| user.contains(c)), "an intrinsic was named: {set:?}");
     for c in &sk.constraints {
-        assert!(!c.intrinsic || !set.contains(&c.id));
+        assert!(!c.is_intrinsic() || !set.contains(&c.id));
     }
 }

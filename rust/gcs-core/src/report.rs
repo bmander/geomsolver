@@ -1103,7 +1103,7 @@ pub fn constraint_json(sk: &Sketch, c: &Constraint) -> Json {
         ("type", c.type_name().into()),
         ("args", Json::Arr(args)),
         ("soft", c.soft.into()),
-        ("intrinsic", c.intrinsic.into()),
+        ("intrinsic", c.is_intrinsic().into()),
         ("claim", c.claim.into()),
     ]);
     // the claim block it was written in (#460), only where there is one
@@ -1535,7 +1535,8 @@ pub fn registry_json() -> Json {
     ])
 }
 
-/// Build a constraint from `{"type": ..., "args": [...], "soft": ?, "intrinsic": ?}`.
+/// Build a constraint from `{"type": ..., "args": [...], "soft": ?, "claim": ?}`: a statement.
+/// An intrinsic row is its owner's (`Sketch::rows_of`), and no record writes one.
 pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String> {
     let name = v.get("type").map(|t| t.as_str().to_string()).unwrap_or_default();
     let kind =
@@ -1602,7 +1603,6 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
     c.claim = v.get("claim").map(|x| x.as_bool()).unwrap_or(false) && kind.claimable();
     c.witness = v.get("witness").filter(|_| c.claim)
         .map(|x| x.as_i64()).and_then(|w| u32::try_from(w).ok());
-    c.intrinsic = v.get("intrinsic").map(|x| x.as_bool()).unwrap_or(false);
     Ok(c)
 }
 

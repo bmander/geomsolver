@@ -114,7 +114,7 @@ fn a_plane_on_two_lines_runs_along_them_whatever_its_start() {
     let p = ent(&e, "P").i();
     let (u, v) = (sk.frames[p].u as usize, sk.frames[p].v as usize);
     let sensed = sk.constraints.iter()
-        .filter(|c| c.intrinsic && c.kind == CKind::Parallel3 && c.side() == Some(1.0))
+        .filter(|c| c.is_intrinsic() && c.kind == CKind::Parallel3 && c.side() == Some(1.0))
         .count();
     assert_eq!(sensed, 2, "each axis held along its line, the line's way");
     turn_back(&mut sk, u);
