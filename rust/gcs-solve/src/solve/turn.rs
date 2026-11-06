@@ -128,7 +128,7 @@ impl TurnDrag {
             let c = ps.frames[f].chart.as_ref().expect("charted");
             places.push((c.o.map(value), held(&c.o)));
             origins.push(c.o);
-            owned.extend([c.u, c.v].into_iter().chain(c.normal).map(|a| a as usize));
+            owned.extend(c.axes().map(|a| a as usize));
         }
         for &a in axes.difference(&owned) {
             let ax = &ps.axes[a];

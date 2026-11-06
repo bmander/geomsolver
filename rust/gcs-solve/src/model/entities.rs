@@ -605,6 +605,14 @@ pub struct Chart {
     pub planar: bool,
 }
 
+impl Chart {
+    /// Its axes: its `u`, its `v` and, where the document reads one, its normal — each through
+    /// where it stands.
+    pub fn axes(&self) -> impl Iterator<Item = u32> {
+        [Some(self.u), Some(self.v), self.normal].into_iter().flatten()
+    }
+}
+
 /// A **hidden point in space**: the lift of one view point, held to it by an intrinsic `lift`
 /// row — three Params and three rows, so it adds no freedom.  What a spatial relation between
 /// two views reads, so its kernel sees three coordinates and never a view's attitude.

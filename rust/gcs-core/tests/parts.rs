@@ -5,6 +5,7 @@
 //! frame an instance stands in is one of its inputs, and the rows that put what it makes in that
 //! frame are its own.  `part`, which made the promise through 0.175, is refused.
 use gcs_core::program::Elaborated;
+use gcs_core::space::{dot, norm, sub};
 
 use crate::common::{at, read};
 
@@ -635,14 +636,12 @@ fn a_plane_over_axes_meeting_by_construction_is_the_parts_own() {
         // own datums as the body reads them
         let o = at(&e, &format!("{inst}.normal.origin"));
         let (a, b) = (at(&e, &format!("{inst}.a")), at(&e, &format!("{inst}.b")));
-        let along = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-        let up = [a[0] - o[0], a[1] - o[1], a[2] - o[2]];
-        let len = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-        assert!((len(along) - 2.0).abs() < 1e-9 && (len(up) - 5.0).abs() < 1e-9, "{a:?} {b:?}");
-        assert!((along[0] * up[0] + along[1] * up[1] + along[2] * up[2]).abs() < 1e-9);
+        let (along, up) = (sub(b, a), sub(a, o));
+        assert!((norm(along) - 2.0).abs() < 1e-9 && (norm(up) - 5.0).abs() < 1e-9, "{a:?} {b:?}");
+        assert!(dot(along, up).abs() < 1e-9);
         if inst == "x" {
             let (c, s) = (25f64.to_radians().cos(), 25f64.to_radians().sin());
-            assert!(len(o) < 1e-9 && (a[1] - 5.0).abs() < 1e-9, "{o:?} {a:?}");
+            assert!(norm(o) < 1e-9 && (a[1] - 5.0).abs() < 1e-9, "{o:?} {a:?}");
             assert!((b[0] - 2.0 * c).abs() < 1e-9 && (b[2] - 2.0 * s).abs() < 1e-9, "{b:?}");
         }
     }

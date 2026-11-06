@@ -137,7 +137,13 @@ pub fn check(e: &Elaborated) -> Vec<Diag> {
         rows_of.entry(id).or_default().push(k);
     }
     let mut out: Vec<Diag> = Vec::new();
-    let mut said: BTreeSet<(usize, &str, Option<StmtId>, String)> = BTreeSet::new();
+    // each fault once a definition: E108 at its name, E109 at a statement or, sited nowhere, by
+    // its text
+    let mut free_said: BTreeSet<usize> = BTreeSet::new();
+    let mut said: BTreeSet<(usize, Result<StmtId, String>)> = BTreeSet::new();
+    // a frame's own datums, which a body reads as `std.origin`, are bound under no name it says:
+    // read off the keys once, where a fault names one
+    let datums: std::cell::OnceCell<BTreeMap<EntRef, String>> = std::cell::OnceCell::new();
     // innermost first (#819): a fault inside a part is said there, and the rows its matching
     // leaves over are no rows of the part around it, which would count them again and say its
     // own rows past what its unknowns take for what is the inner part's to say
@@ -159,19 +165,14 @@ pub fn check(e: &Elaborated) -> Vec<Diag> {
         let n_own = cols.len();
         cols.extend(col_set(&r.unbound).difference(&own_cols));
         let local: BTreeMap<usize, usize> = cols.iter().enumerate().map(|(k, &c)| (c, k)).collect();
-        let mut adj: Vec<Vec<usize>> = Vec::new();
-        let mut row_c: Vec<u32> = Vec::new();
-        let mut row_k: Vec<usize> = Vec::new();
-        for &id in &r.rows {
-            for &k in rows_of.get(&id).map(Vec::as_slice).unwrap_or(&[]) {
-                if spent.contains(&k) {
-                    continue;
-                }
-                adj.push(all[k].iter().filter_map(|c| local.get(c).copied()).collect());
-                row_c.push(id);
-                row_k.push(k);
-            }
-        }
+        // each row by its index in the document's structure, which names its constraint
+        let row_k: Vec<usize> = r.rows.iter()
+            .flat_map(|id| rows_of.get(id).into_iter().flatten().copied())
+            .filter(|k| !spent.contains(k))
+            .collect();
+        let adj: Vec<Vec<usize>> = row_k.iter()
+            .map(|&k| all[k].iter().filter_map(|c| local.get(c).copied()).collect())
+            .collect();
         // PT3 is judged over its own unknowns and the formals the call left unbound, which its
         // rows may determine or leave to the parent, and PT2 over its own alone: the same matching
         // where the call left none
@@ -184,8 +185,19 @@ pub fn check(e: &Elaborated) -> Vec<Diag> {
             let dm = dulmage_mendelsohn(&narrow, n_own);
             (0..n_own).filter(|&c| dm.mate_col[c] < 0).collect()
         };
+        // the rows it leaves over, spent for the parts around it, and those PT3 says: of no own
+        // unknown, or past what they take
         let over: BTreeSet<usize> = wide.over_rows.into_iter().collect();
-        spent.extend((0..adj.len()).filter(|&k| wide.mate_row[k] < 0).map(|k| row_k[k]));
+        let mut fused: Vec<u32> = Vec::new();
+        for (k, cols) in adj.iter().enumerate() {
+            if wide.mate_row[k] < 0 {
+                spent.insert(row_k[k]);
+            }
+            let id = all_c[row_k[k]];
+            if (cols.is_empty() || over.contains(&k)) && !fused.contains(&id) {
+                fused.push(id);
+            }
+        }
 
         // PT2: an own unknown no row reaches, the matching's unmatched columns
         let mut free: Vec<String> = Vec::new();
@@ -198,7 +210,7 @@ pub fn check(e: &Elaborated) -> Vec<Diag> {
                 free.push(what);
             }
         }
-        if left > 0 && said.insert((inst.comp, "E108", None, String::new())) {
+        if left > 0 && free_said.insert(inst.comp) {
             out.push(Diag::new(Code::E108, at, None, format!(
                 "`{word}` leaves {left} of its own unknowns free, moving {} (in `{instance}`): a \
                  definition is a function of what it is given — state what places them inside \
@@ -206,100 +218,98 @@ pub fn check(e: &Elaborated) -> Vec<Diag> {
                 listed(free))));
         }
 
-        // PT3: a row of no own unknown, or past what they take — each said once for its
-        // definition, at the statement it is: a statement's row at the statement, in the names
-        // the definition's body reads (`normal.u`, not `x.normal.u`), and a row the language
-        // built for a declaration (an axis's unit row, a point's lift) at that declaration,
-        // where no statement written is among them
-        let mut fused: Vec<u32> = Vec::new();
-        for (k, cols) in adj.iter().enumerate() {
-            if (cols.is_empty() || over.contains(&k)) && !fused.contains(&row_c[k]) {
-                fused.push(row_c[k]);
+        // PT3, each said once for its definition, at the statement it is: a statement's row at
+        // the statement, in the names the definition's body reads (`normal.u`, not
+        // `x.normal.u`), and a row the language built for a declaration (an axis's unit row, a
+        // point's lift) at that declaration, where no statement written is among them
+        let named = |x: EntRef| map.name_of(x)
+            .map(|n| n.strip_prefix(inst.prefix.as_str()).unwrap_or(n).to_string())
+            .or_else(|| datums.get_or_init(|| map.keys()
+                .filter_map(|(k, x)| {
+                    crate::flatten::frame_datum(k).map(|(_, d)| (x, format!("std.{d}")))
+                })
+                .collect()).get(&x).cloned());
+        let text = |c: &Constraint| crate::io::describe_with(c, &named);
+        let past = |verb: &str, text: &str, beside: &str| format!(
+            "`{word}` {verb} `{text}` past what its own unknowns take (in `{instance}`){beside}: a \
+             definition's rows determine what it makes, and one more says something of what it \
+             is given");
+        let fused: Vec<&Constraint> =
+            fused.into_iter().filter_map(|id| sk.constraint(id)).collect();
+        let mut written: Vec<(&Constraint, &Site)> = Vec::new();
+        let (mut built, mut lifts): (Vec<&Constraint>, Vec<&Constraint>) = (Vec::new(), Vec::new());
+        for c in fused {
+            match map.site_of_constraint(c.id) {
+                Some(site) => written.push((c, site)),
+                None if matches!(c.kind, CKind::Lift | CKind::ChartLift) => lifts.push(c),
+                None => built.push(c),
             }
         }
-        // the frame's own datums a body reads as `std.origin` are bound under no name it says
-        let local_name = |r: EntRef| map.name_of(r)
-            .map(|n| n.strip_prefix(inst.prefix.as_str()).unwrap_or(n).to_string())
-            .or_else(|| map.keys().filter(|&(_, x)| x == r)
-                .find_map(|(k, _)| crate::flatten::frame_datum(k).map(|(_, d)| format!("std.{d}"))));
-        let (written, built): (Vec<u32>, Vec<u32>) =
-            fused.into_iter().partition(|&id| map.site_of_constraint(id).is_some());
-        // each declaration a row the language built for is the row of, by what the row places,
-        // once a declaration: its own entity (`normal`, for its axis's unit row) and its site.  A
+        // each declaration a row the language built is the row of, by what the row places, once
+        // a declaration: its own entity (`normal`, for its axis's unit row) and its site.  A
         // point's lift, which only stands it in its plane, names its point where nothing else
         // the language built is among them
-        let lift = |id: &u32| sk.constraint(*id)
-            .is_some_and(|c| matches!(c.kind, CKind::Lift | CKind::ChartLift));
-        let (lifts, mut built): (Vec<u32>, Vec<u32>) = built.into_iter().partition(lift);
         if built.is_empty() {
             built = lifts;
         }
-        let mut decls: Vec<(String, EntKind, &Site)> = Vec::new();
-        let mut loose: Vec<String> = Vec::new();
-        for id in built {
-            let Some(c) = sk.constraint(id) else { continue };
+        let mut decls: Vec<(EntRef, &Site)> = Vec::new();
+        let mut loose: Vec<&Constraint> = Vec::new();
+        for c in built {
             let site = crate::boundary::subject(c).into_iter().chain(c.entities())
                 .find_map(|x| map.site_of(x).filter(|s| inst.contains(&s.path)));
-            let Some(site) = site else {
-                loose.push(crate::io::describe_with(c, &local_name));
-                continue;
-            };
-            if decls.iter().any(|(_, _, s)| s.stmt == site.stmt) {
-                continue;
+            match site.and_then(|s| map.ents_made_by(s.stmt).next().map(|own| (own, s))) {
+                Some((own, s)) if !decls.iter().any(|(_, d)| d.stmt == s.stmt) => {
+                    decls.push((own, s))
+                }
+                Some(_) => {}
+                None => loose.push(c),
             }
-            let Some(own) = map.ents_made_by(site.stmt).next() else { continue };
-            decls.push((local_name(own).unwrap_or_else(|| entity_name(own)), own.kind, site));
         }
-        // beside what those build, where a statement is among the rows
-        let beside = match &decls[..] {
-            [] => String::new(),
-            [(n, _, _)] => format!(", beside what `{n}`'s declaration builds"),
-            more => format!(", beside what the declarations of {} build",
-                listed(more.iter().map(|(n, _, _)| format!("`{n}`")).collect())),
-        };
-        for &id in &written {
-            let Some(c) = sk.constraint(id) else { continue };
-            let Some(site) = map.site_of_constraint(id) else { continue };
-            let text = crate::io::describe_with(c, &local_name);
-            let mine = |p: &u32| r.own.contains(p) || r.unbound.contains(p);
-            let message = match columns(sk, c).iter().any(mine) {
-                false => format!(
-                    "`{word}` states `{text}`, a fact about what it is given and not about \
-                     anything it makes (in `{instance}`): state it where those are given, or as \
-                     a relation word"),
-                true => format!(
-                    "`{word}` states `{text}` past what its own unknowns take (in \
-                     `{instance}`){beside}: a definition's rows determine what it makes, and one \
-                     more says something of what it is given"),
+        let name = |x: EntRef| named(x).unwrap_or_else(|| entity_name(x));
+        if !written.is_empty() {
+            // beside what those build
+            let beside = match &decls[..] {
+                [] => String::new(),
+                [(x, _)] => format!(", beside what `{}`'s declaration builds", name(*x)),
+                more => format!(", beside what the declarations of {} build",
+                    listed(more.iter().map(|(x, _)| format!("`{}`", name(*x))).collect())),
             };
-            if said.insert((inst.comp, "E109", Some(site.stmt), String::new())) {
+            let mine = |p: &u32| r.own.contains(p) || r.unbound.contains(p);
+            for (c, site) in written {
+                if !said.insert((inst.comp, Ok(site.stmt))) {
+                    continue;
+                }
+                let message = match columns(sk, c).iter().any(mine) {
+                    false => format!(
+                        "`{word}` states `{}`, a fact about what it is given and not about \
+                         anything it makes (in `{instance}`): state it where those are given, or \
+                         as a relation word", text(c)),
+                    true => past("states", &text(c), &beside),
+                };
                 out.push(Diag::new(Code::E109, site.span, Some(site.stmt), message));
             }
-        }
-        if !written.is_empty() {
             continue;
         }
         // no statement among them: the declaration builds what places it twice
-        for (name, kind, site) in decls {
-            let how = match kind {
+        for (x, site) in decls {
+            if !said.insert((inst.comp, Ok(site.stmt))) {
+                continue;
+            }
+            let how = match x.kind {
                 EntKind::Frame => " — a plane over axes of its own, `plane(u: hint(dir: l))`, \
                     each held to what it runs along, `l parallel(sense: same) P.u`",
                 _ => "",
             };
-            if said.insert((inst.comp, "E109", Some(site.stmt), String::new())) {
-                out.push(Diag::new(Code::E109, site.span, Some(site.stmt), format!(
-                    "`{word}` builds `{name}` over what places it more than once (in \
-                     `{instance}`): what it is built over places it already, so building it \
-                     says something of what it is given — that its operands meet, or lie \
-                     square.  Build it over what places it once{how}")));
-            }
+            out.push(Diag::new(Code::E109, site.span, Some(site.stmt), format!(
+                "`{word}` builds `{}` over what places it more than once (in `{instance}`): \
+                 what it is built over places it already, so building it says something of what \
+                 it is given — that its operands meet, or lie square.  Build it over what places \
+                 it once{how}", name(x))));
         }
-        for text in loose {
-            if said.insert((inst.comp, "E109", None, text.clone())) {
-                out.push(Diag::new(Code::E109, at, None, format!(
-                    "`{word}` builds `{text}` past what its own unknowns take (in `{instance}`): \
-                     a definition's rows determine what it makes, and one more says something \
-                     of what it is given")));
+        for c in loose {
+            let text = text(c);
+            if said.insert((inst.comp, Err(text.clone()))) {
+                out.push(Diag::new(Code::E109, at, None, past("builds", &text, "")));
             }
         }
     }

@@ -15,7 +15,7 @@ pub(super) fn held(sk: &Sketch, ps: &[u32]) -> bool {
 }
 
 /// A plane this close to another, in turn and in where it stands, lies on it.
-const ON_PLANE: f64 = 1e-9;
+pub(super) const ON_PLANE: f64 = 1e-9;
 
 /// E065 for every statement a solve left degenerate: a projection whose two planes came out
 /// parallel, a skew distance whose two lines did.

@@ -394,8 +394,7 @@ impl Sketch {
         let op = self.frames[f].o;
         let through: Vec<u32> = self.frames.iter().filter_map(|g| g.chart.as_ref())
             .filter(|c| c.o == op)
-            .flat_map(|c| [Some(c.u), Some(c.v), c.normal])
-            .flatten()
+            .flat_map(|c| c.axes())
             .collect();
         self.hold_origin(origin);
         let pi = self.chart_plane(u, v, op, origin);

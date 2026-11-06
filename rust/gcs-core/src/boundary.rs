@@ -281,7 +281,7 @@ impl World {
         let mut taken: BTreeSet<u32> = BTreeSet::new();
         for &e in map.of_entity.keys().filter(|e| e.kind == EntKind::Frame) {
             let f = &sk.frames[e.i()];
-            let axes = f.chart.iter().flat_map(chart_axes).chain(f.joint.as_ref().map(|j| j.axis));
+            let axes = f.chart.iter().flat_map(Chart::axes).chain(f.joint.as_ref().map(|j| j.axis));
             for a in axes {
                 let axis = EntRef::new(EntKind::Axis, a as usize);
                 if map.of_entity.contains_key(&axis) || !taken.insert(a) {
@@ -312,7 +312,7 @@ impl World {
             }
             let ps = with.entry(e).or_default();
             ps.extend(sk.own_params(EntRef::frame(i)));
-            for a in chart_axes(c) {
+            for a in c.axes() {
                 ps.extend(sk.own_params(EntRef::new(EntKind::Axis, a as usize)));
             }
         }
@@ -358,11 +358,6 @@ impl World {
         }
         World { owner, lengths, free, with, ents, cons, unsited, cols, twins }
     }
-}
-
-/// A chart's axes: its `u`, its `v` and, in space, its normal.
-fn chart_axes(c: &Chart) -> impl Iterator<Item = u32> {
-    [Some(c.u), Some(c.v), c.normal].into_iter().flatten()
 }
 
 /// Every column a row reads: its kernel's, and the free variable its number is written in.

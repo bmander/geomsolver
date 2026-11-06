@@ -1089,11 +1089,19 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
     let along: BTreeMap<usize, usize> = deferred.iter()
         .filter_map(|d| match *d { Deferred::Along { axis, line } => Some((axis, line)), _ => None })
         .collect();
+    // each plane's `PlaneAxis` rows, by plane and axis: none is added below, so read once
+    let mut through: BTreeMap<usize, Vec<(usize, u32)>> = BTreeMap::new();
+    for c in sk.constraints.iter().filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis) {
+        through.entry(c.args[0].ent().i()).or_default().push((c.args[1].ent().i(), c.id));
+    }
+    // two held places this close are one (`views::origins_on_axes`'s nearness); the points the
+    // extent is read off are not moved here
+    let tol = super::views::ON_PLANE * sk.extent().max(1.0);
     for p in sk.charted() {
         let (u, v) = (sk.frames[p].u as usize, sk.frames[p].v as usize);
-        let (lu, lv) = (along.get(&u).copied(), along.get(&v).copied());
-        let shared = meeting(sk, p, [(u, lu), (v, lv)]);
-        for (k, (axis, line)) in [(u, lu), (v, lv)].into_iter().enumerate() {
+        let sides = [(u, along.get(&u).copied()), (v, along.get(&v).copied())];
+        let shared = meeting(sk, p, sides, tol);
+        for (k, (axis, line)) in sides.into_iter().enumerate() {
             let Some(line) = line else { continue };
             // the axis runs from the line's start toward its end, which the row says and no seed
             // has to (#535): the turned-round axis, and the plane over it, are no root
@@ -1117,22 +1125,24 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
         }
         // both axes on one point, which is drawn elsewhere, and the plane neither held where
         // they meet (`views::origins_on_axes`) nor standing where a frame does (`plane_at`): it
-        // stands at that point
-        let origin = sk.frames[p].origin as usize;
+        // stands at that point, its two `PlaneAxis` rows given way (its normal's stays: it
+        // stands through the origin wherever that is)
         let Some([at, _]) = shared
             .filter(|ends| ends.iter().all(|&x| sk.points[x].plane != Some(p as u32)))
         else {
             continue;
         };
-        if sk.frames[p].o.iter().any(|&q| sk.params[q as usize].fixed) {
+        let op = sk.frames[p].o;
+        let shares = sk.frames.iter().enumerate()
+            .any(|(g, f)| g != p && f.chart.as_ref().is_some_and(|c| c.o == op));
+        if shares || op.iter().any(|&q| sk.params[q as usize].fixed) {
             continue;
         }
-        let rows: Vec<u32> = sk.constraints.iter()
-            // its normal's stays: it stands through the origin wherever that is
-            .filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis && c.args[0].ent() == EntRef::frame(p)
-                && [u, v].contains(&c.args[1].ent().i()))
-            .map(|c| c.id)
+        let rows: Vec<u32> = through.get(&p).into_iter().flatten()
+            .filter(|&&(ax, _)| ax == u || ax == v)
+            .map(|&(_, id)| id)
             .collect();
+        // a plane built some other way (restored, grafted) has no two rows to give way
         if rows.len() != 2 {
             continue;
         }
@@ -1140,13 +1150,13 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
             sk.remove(id);
         }
         let x = sk.world_point(at);
-        for k in 0..3 {
-            let q = sk.frames[p].o[k] as usize;
-            sk.params[q].value = x[k];
+        for (k, &q) in op.iter().enumerate() {
+            sk.params[q as usize].value = x[k];
         }
+        let origin = EntRef::point(sk.frames[p].origin as usize);
         let mut c = Constraint::new(
             CKind::Coincident3,
-            vec![Arg::Ent(EntRef::point(origin)), Arg::Ent(EntRef::point(at))],
+            vec![Arg::Ent(origin), Arg::Ent(EntRef::point(at))],
         );
         c.intrinsic = true;
         sk.add(c);
@@ -1156,7 +1166,7 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
 /// Where a point stands by construction: the place of the frame it is held at the origin of — a
 /// plane's own origin, or a point held at `(0, 0)` in one (`std.origin`, held at its front's) —
 /// and otherwise itself.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy)]
 enum Stands {
     Place([u32; 3]),
     Point(usize),
@@ -1164,9 +1174,10 @@ enum Stands {
 
 fn stands(sk: &Sketch, x: usize) -> Stands {
     let chart = sk.points[x].plane.and_then(|q| sk.frames[q as usize].chart.as_ref());
-    let held = |k: &u32| sk.params[*k as usize].fixed && sk.params[*k as usize].value == 0.0;
+    let ps = sk.point_all_params(x);
     match chart {
-        Some(c) if sk.point_all_params(x).iter().all(held) => Stands::Place(c.o),
+        Some(c) if super::views::held(sk, &ps)
+            && ps.iter().all(|&q| sk.params[q as usize].value == 0.0) => Stands::Place(c.o),
         _ => Stands::Point(x),
     }
 }
@@ -1176,36 +1187,32 @@ fn stands(sk: &Sketch, x: usize) -> Stands {
 /// place of each frame it is an axis of — `u`, `v` or normal, standing where the frame does —
 /// whose point there is the frame's origin.  Two lines from one point meet there (a twin of it
 /// is the point), and so do a line from a point held at a frame's origin and an axis of that
-/// frame.  `None` where no such point is seen, the axes then held through the plane's origin by
-/// its own rows.  Only a frame built before `p`, or one held where it stands: the frame that
+/// frame; two places held within `tol` of one another are one (the world's datums, each at the
+/// origin).  `None` where no such point is seen, the axes then held through the plane's origin
+/// by its own rows.  Only a frame built before `p`, or one held where it stands: the frame that
 /// made an axis was built before any plane written over it, and a plane stands where one built
 /// before it does, so none is placed through one placed through it (a part's own frame is not
 /// stood at a plane over its `std.x`); a held place is placed by nothing.
-fn meeting(sk: &Sketch, p: usize, sides: [(usize, Option<usize>); 2]) -> Option<[usize; 2]> {
+fn meeting(sk: &Sketch, p: usize, sides: [(usize, Option<usize>); 2], tol: f64)
+    -> Option<[usize; 2]> {
+    let held = |o: &[u32; 3]| super::views::held(sk, o);
     let op = sk.frames[p].o;
     let on = |(ax, line): (usize, Option<usize>)| -> Vec<(Stands, usize)> {
         if let Some(l) = line {
             let ends = [sk.lines[l].p1 as usize, sk.lines[l].p2 as usize];
             return ends.into_iter().map(|x| (stands(sk, x), x)).collect();
         }
-        let ax = ax as u32;
-        let held = |c: &&crate::model::Chart| c.o.iter().all(|&q| sk.params[q as usize].fixed);
         sk.frames.iter().enumerate()
-            .filter_map(|(g, f)| f.chart.as_ref().filter(|c| g < p || held(c)))
-            .filter(|c| c.o != op && [Some(c.u), Some(c.v), c.normal].contains(&Some(ax)))
+            .filter_map(|(g, f)| f.chart.as_ref().filter(|c| g < p || held(&c.o)))
+            .filter(|c| c.o != op && c.axes().any(|a| a as usize == ax))
             .map(|c| (Stands::Place(c.o), c.origin as usize))
             .collect()
     };
-    // two places held where they are are one where they stand together (the world's datums,
-    // each at the origin)
-    let held = |o: [u32; 3]| o.map(|q| &sk.params[q as usize]);
-    let tol = 1e-12 * sk.extent().max(1.0);
+    let value = |q: u32| sk.params[q as usize].value;
     let meets = |a: Stands, b: Stands| match (a, b) {
         (Stands::Point(x), Stands::Point(y)) => sk.twinned(x, y),
-        (Stands::Place(a), Stands::Place(b)) => a == b || {
-            let (a, b) = (held(a), held(b));
-            (0..3).all(|k| a[k].fixed && b[k].fixed && (a[k].value - b[k].value).abs() <= tol)
-        },
+        (Stands::Place(a), Stands::Place(b)) => a == b || held(&a) && held(&b)
+            && a.iter().zip(&b).all(|(&i, &j)| (value(i) - value(j)).abs() <= tol),
         _ => false,
     };
     let (first, second) = (on(sides[0]), on(sides[1]));
