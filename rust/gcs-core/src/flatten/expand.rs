@@ -1145,6 +1145,8 @@ impl<'a> Walk<'a> {
                     self.body(&b.body, scope, &mut sub, path, depth + 1);
                 }
                 Ok(false) => {}
+                // a definition it reads that did not work out was said where it is (#824)
+                Err(_) if self.decides_unworked(&b.count, vals, scope) => {}
                 Err((code, message)) => self.once(code, b.head, message),
             }
             return;

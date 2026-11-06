@@ -772,6 +772,9 @@ struct Walk<'a> {
     faces: FaceState,
     /// The face families' running numbers — see `Held`.
     held: Held,
+    /// Each definition that did not work out, by absolute name (#824): what is wrong with it is
+    /// said where it is defined, once, and a statement reading it is refused without a word.
+    unworked: BTreeSet<String>,
     /// What the walk found to be one thing stated twice (#415) — see `same`.
     same: same::Same,
 }
@@ -1085,6 +1088,7 @@ impl<'a> Walk<'a> {
             quiet: BTreeSet::new(),
             faces: FaceState::default(),
             held: Held::default(),
+            unworked: BTreeSet::new(),
             same: same::Same::default(),
         }
     }

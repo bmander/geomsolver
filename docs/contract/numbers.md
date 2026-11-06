@@ -110,7 +110,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   none).  **A name nothing declares is
   E101** — in a dimension (`settle_text`), a pin (`settle_arg`), a dotted read nothing made
   (`resolve`, unless it is an instance's unbound formal) — and the relation is not emitted
-  (`Checks::refused`), so it never reaches the expression graph as an unknown; W111 is gone.  A
+  (`Checks::refused`), so it never reaches the expression graph as an unknown; W111 is gone.
+  **In a value too** (#824): a definition that does not work out because a name it reads is
+  nothing — no number in scope, no definition beside it, no built-in, and declared or drawn
+  nowhere in the program (`Walk::unanswered`; a dotted name judged by its head, `shield` of
+  `shield.top`) — is E101 `no such entity: …` naming it, with up to three names in scope within a
+  third of its length in edits (`nearest`), never the E103 the free plain number it was read as
+  came to (`6mm + shieldd_top`, a length added to a scalar).  A definition that did not work out
+  is said once, where it is defined (`Walk::unworked`): a dimension, a claim, a `when`, a call's
+  argument or another value reading it is refused without a word.  A
   dotted name read in a body is made absolute under `Scope::instance_prefix`.  `t == s` over an
   unknown is `Arg::Tie` seeded by the declaration (a `hint(t:)` beside it is E040 in `assemble`).
   `commit_seeds` writes each declared unknown's solved value into its `hint(…)`

@@ -739,6 +739,30 @@ impl<'a> Walk<'a> {
         fold(&sub, text, self.units).map_err(|e| (Code::E103, e))
     }
 
+    /// Whether a text reads a definition that did not work out (`Walk::unworked`), through the
+    /// scope's prefixes, and nothing in scope gives that name a number.
+    pub(super) fn reads_unworked(&self, text: &str, vals: &Vals, scope: &Scope) -> bool {
+        if self.unworked.is_empty() {
+            return false;
+        }
+        let Ok(p) = expr::parse_in(text, self.units) else { return false };
+        self.unworked_among(&p.body.deps(), vals, scope)
+    }
+
+    /// `reads_unworked` of a condition (`when`, a claim over values).
+    pub(super) fn decides_unworked(&self, text: &str, vals: &Vals, scope: &Scope) -> bool {
+        if self.unworked.is_empty() {
+            return false;
+        }
+        let Ok(c) = expr::parse_condition_in(text, self.units) else { return false };
+        self.unworked_among(&c.deps(), vals, scope)
+    }
+
+    fn unworked_among(&self, reads: &BTreeSet<String>, vals: &Vals, scope: &Scope) -> bool {
+        reads.iter().any(|n| !vals.contains_key(n)
+            && scope.prefixes.iter().any(|p| self.unworked.contains(&format!("{p}{n}"))))
+    }
+
     /// What a trace kept as text for a name (`Sym::texts`, through the scope's prefixes).
     fn kept(&self, name: &str, scope: &Scope) -> Option<String> {
         let texts = match &self.sym {
@@ -774,6 +798,12 @@ impl<'a> Walk<'a> {
         vals: &Vals,
         scope: &Scope,
     ) {
+        // a definition that did not work out was said where it is defined (#824): the statement
+        // reading it is refused, as one reading a name nothing declares is, and nothing more said
+        if self.reads_unworked(text, vals, scope) {
+            self.checks.refused.push(span);
+            return;
+        }
         // what it reads is judged once names are known only where the text settles: one it
         // cannot is said here, once
         match self.settle_text(text, vals, scope) {
@@ -1437,12 +1467,14 @@ impl<'a> Walk<'a> {
                         d.span,
                         format!("`{}` is defined in terms of itself{through}", d.name),
                     );
+                    self.unworked.insert(format!("{prefix}{}", d.name));
                 }
                 return false;
             }
             for i in ready {
                 let d = &pending[i];
                 if reads[i].iter().any(|n| failed.contains(n)) {
+                    self.unworked.insert(format!("{prefix}{}", d.name));
                     failed.insert(d.name.clone());
                     continue; // the cause is already reported, at the definition it reads
                 }
@@ -1457,6 +1489,7 @@ impl<'a> Walk<'a> {
                                 "`{}` is read from outside `{inst}`, and `{comp}`'s `{}` is not \
                                  worked out from what the call gives it: {e}",
                                 d.name, c.member));
+                            self.unworked.insert(format!("{prefix}{}", d.name));
                             failed.insert(d.name.clone());
                         }
                     }
@@ -1486,7 +1519,12 @@ impl<'a> Walk<'a> {
                         let abs = format!("{prefix}{}", d.name);
                         let (text, name, span) = (d.text.clone(), d.name.clone(), d.span);
                         if !self.keep_text(abs, &text, span, vals, scope) {
-                            self.err(Code::E103, span, format!("`{name}`: {e}"));
+                            // a name nothing answers is what is wrong, not the arithmetic it
+                            // came to as a plain number of no dimension (#824)
+                            let (code, e) = self.unanswered(&name, &reads[i], pending, vals, scope)
+                                .unwrap_or((Code::E103, e));
+                            self.err(code, span, format!("`{name}`: {e}"));
+                            self.unworked.insert(format!("{prefix}{name}"));
                             failed.insert(name);
                         }
                     }
@@ -1495,6 +1533,104 @@ impl<'a> Walk<'a> {
             waiting = rest;
         }
         true
+    }
+
+    /// Why a definition that did not work out did not, where the cause is a name it reads that
+    /// nothing answers (#824) — no number in scope, no definition beside it, no built-in, nothing
+    /// declared or drawn by that name anywhere in the program — E101 naming it, with the names
+    /// in scope nearest its spelling; or one out of a component's reach (`out_of_reach`).
+    /// `None` where every name it reads is something, and the arithmetic is what is wrong.
+    ///
+    /// Asked only once the text has failed: a name nothing gives a number reads as a free plain
+    /// number, so `6mm + shieldd_top` failed as a length added to a scalar, which is not the
+    /// mistake.  A dotted name is judged by its head (`shield` of `shield.top`): a member an
+    /// instance or a group lacks is said by what reads the instance.
+    fn unanswered(
+        &self,
+        name: &str,
+        reads: &BTreeSet<String>,
+        pending: &[Def],
+        vals: &Vals,
+        scope: &Scope,
+    ) -> Option<(Code, String)> {
+        let defined = |n: &str| pending.iter().any(|d| d.name == n);
+        let unread = reads.iter().filter(|n| {
+            !vals.contains_key(n) && !defined(n) && expr::builtin(n).is_none()
+                && self.kept(n, scope).is_none() && !self.held.names.contains_key(n.as_str())
+        });
+        let mut declared: Option<BTreeSet<String>> = None;
+        for n in unread {
+            if let Some(e) = out_of_reach(n, vals, scope) {
+                return Some(e);
+            }
+            let root = head(n);
+            if !vals.under(&format!("{root}.")).is_empty() || defined(root)
+                || pending.iter().any(|d| d.name.starts_with(&format!("{root}.")))
+                || scope.groups.contains(root)
+                || scope.prefixes.iter().any(|p| {
+                    let k = format!("{p}{root}");
+                    self.names.contains(&k) || self.group_known(&k)
+                })
+            {
+                continue;
+            }
+            let declared = declared.get_or_insert_with(|| self.declared_anywhere());
+            if declared.contains(root) {
+                continue;
+            }
+            let mut m = format!("no such entity: `{root}`");
+            if root != n {
+                m.push_str(&format!(" (read as `{n}`)"));
+            }
+            let mut among = self.names_in_scope(pending, vals, scope);
+            among.remove(name);
+            let near = nearest(root, among);
+            if !near.is_empty() {
+                let near: Vec<String> = near.iter().map(|k| format!("`{k}`")).collect();
+                m.push_str(&format!("; nearest in scope: {}", near.join(", ")));
+            }
+            return Some((Code::E101, m));
+        }
+        None
+    }
+
+    /// Every name the program declares anywhere, as written: what each statement binds, each
+    /// component and its formals, each module and each name a `use` imports, each relation's
+    /// label.  A name among them is something, wherever it stands, and is never said to be
+    /// nothing (`unanswered`).
+    fn declared_anywhere(&self) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        for st in self.prog.stmts() {
+            out.extend(st.kind.bound_name().map(|n| n.text.clone()));
+            if let StmtKind::Relation(r) = &st.kind {
+                out.extend(r.name.as_ref().map(|n| n.text.clone()));
+            }
+        }
+        for c in &self.prog.components {
+            out.extend(c.name.as_ref().map(|n| n.text.clone()));
+            out.extend(c.formals.iter().map(|f| f.name.text.clone()));
+        }
+        for m in &self.prog.modules {
+            out.extend(m.name.split('.').map(str::to_string));
+        }
+        for u in self.prog.uses.iter().chain(self.prog.modules.iter().flat_map(|m| &m.uses)) {
+            out.extend(u.name.split('.').map(str::to_string));
+            out.extend(u.names.iter().map(|n| n.text.clone()));
+        }
+        out
+    }
+
+    /// The bare names a definition here could have meant: the numbers in force, the body's own
+    /// definitions, and what is drawn under the scope's prefix.
+    fn names_in_scope(&self, pending: &[Def], vals: &Vals, scope: &Scope) -> BTreeSet<String> {
+        let prefix = scope.prefix();
+        let drawn = self.names.iter().filter_map(|k| k.strip_prefix(prefix))
+            .map(|k| head(k).to_string());
+        vals.under("").into_keys().map(|k| head(&k).to_string())
+            .chain(pending.iter().map(|d| head(&d.name).to_string()))
+            .chain(drawn)
+            .filter(|k| crate::syntax::is_name(k))
+            .collect()
     }
 
     /// Each definition worked out to a number, recorded under its absolute name for a reader to
@@ -1526,6 +1662,10 @@ impl<'a> Walk<'a> {
         prefix: &str,
     ) {
         if self.sym.is_some() || !self.claims_judged.insert((c.span, prefix.to_string())) {
+            return;
+        }
+        // a definition it reads that did not work out was said where it is defined (#824)
+        if self.decides_unworked(&c.text, vals, scope) {
             return;
         }
         match claimed(&c.text, vals, scope, self.units) {
@@ -1706,6 +1846,43 @@ impl<'a> Walk<'a> {
         a.dim.require(ty.dim(), "a seed")?;
         a.number().ok_or_else(|| "a seed is a number".to_string())
     }
+}
+
+/// The names among `among` nearest `name` in spelling — within a third of its length in edits
+/// (one at the least), the closest first and at most three — for E101 to offer (#824).
+fn nearest(name: &str, among: BTreeSet<String>) -> Vec<String> {
+    let reach = (name.chars().count() / 3).max(1);
+    let mut near: Vec<(usize, String)> = among.into_iter()
+        .filter(|k| k != name)
+        .map(|k| (edits(name, &k), k))
+        .filter(|(d, _)| *d <= reach)
+        .collect();
+    near.sort();
+    near.into_iter().take(3).map(|(_, k)| k).collect()
+}
+
+/// How many single-character insertions, deletions, substitutions and swaps of two neighbours
+/// turn `a` into `b` (the optimal string alignment distance).
+fn edits(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let w = b.len() + 1;
+    let mut d = vec![0usize; (a.len() + 1) * w];
+    for i in 0..=a.len() {
+        for j in 0..=b.len() {
+            d[i * w + j] = if i == 0 || j == 0 {
+                i + j
+            } else {
+                let mut best = (d[(i - 1) * w + j] + 1)
+                    .min(d[i * w + j - 1] + 1)
+                    .min(d[(i - 1) * w + j - 1] + usize::from(a[i - 1] != b[j - 1]));
+                if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                    best = best.min(d[(i - 2) * w + j - 2] + 1);
+                }
+                best
+            };
+        }
+    }
+    d[a.len() * w + b.len()]
 }
 
 /// E103's words for a parameter axis read where the document's relations are not (#391 S1): a
