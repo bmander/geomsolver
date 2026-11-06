@@ -1000,6 +1000,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     hide,
                     section,
                     colours: &colours,
+                    tolerance: tolerance(&sk, opts).ok().flatten(),
                 };
                 match picture::render(seen.as_ref().unwrap_or(&sk), &ask) {
                     Ok(drawn) => {
@@ -1008,7 +1009,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                         // the run fails, since it is not the whole of what was asked (#614); one
                         // drawn from its field or its facets is in the picture, and said against it
                         // as not built, the run not failed: an export of it is refused (#762)
-                        for why in drawn.missing.iter().chain(&drawn.unbuilt) {
+                        for why in drawn.missing.iter().chain(&drawn.unbuilt).chain(&drawn.slivers) {
                             eprintln!("solventc: {path}: {why}");
                         }
                         if !drawn.missing.is_empty() { code = 1; }

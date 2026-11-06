@@ -247,7 +247,7 @@ fn along(path: &Centre, r: f64, face: &str, [from, to]: [f64; 2]) -> Result<Opti
                 miss = miss.max(norm(sub(p, q)));
             }
         }
-        let grow = if miss > 0.0 { 0.9 * (tol / miss).powf(1.0 / 6.0) } else { 2.0 };
+        let grow = if miss > 0.0 { 0.9 * (tol / miss).dpowf(1.0 / 6.0) } else { 2.0 };
         if miss > tol && end - s > finest {
             h = (end - s) * grow.clamp(0.1, 0.5);
             continue;

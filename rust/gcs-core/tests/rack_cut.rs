@@ -445,3 +445,90 @@ fn a_placed_tooth_cuts_as_the_tooth_does() {
     let (tooth, next) = (removed(SPACE), removed(&placed));
     assert!((tooth - next).abs() < 1e-5 * tooth, "the tooth removes {tooth:.6} mm³, the placed tooth {next:.6}");
 }
+
+/// One tooth space of a helical pinion of `n` teeth, module 0.8 in the normal section, 20° there,
+/// cut by its basic rack unshifted (#822): the rack's tooth drawn in its normal section, a plane
+/// leaned 25° about the radius, and extruded square to it, along the tooth; the blank a disc 5 mm
+/// thick about z, the rack's pitch line along x at the transverse pitch radius `m n / (2 cos β)`.
+/// Its tip is the dedendum, 1.25 m inside its pitch line, past the interference depth
+/// `R sin² αₜ` at 14 teeth (0.858 mm) and within it at 17 (1.042 mm).
+fn helical(n: usize) -> String {
+    let beta = 25f64.to_radians();
+    format!("\
+unit mm
+use std
+use std.solids (cut)
+use std.place (vertical, coords, on_v)
+use std.motion (turns, slides)
+
+m := 0.8mm
+N := {n}
+phi := 20deg
+R := m * N / (2 * {cos})
+hw := pi * m / 4
+
+in std.front {{
+  construction spindle := vertical line(std.origin, hint((0, 10)))
+  length(10mm) spindle
+}}
+across := axis
+fix(dir == ({cos}, 0, {sin}), origin == (0, 0, 0)) across
+section := plane(u: across, v: std.y)
+fix(origin == (0, 0, 0)) section
+in section {{
+  a := point hint((-1.07mm, R + 1.2mm))
+  b := point hint((-0.27mm, R - 1mm))
+  c := point hint((0.27mm, R - 1mm))
+  d := point hint((1.07mm, R + 1.2mm))
+  a coords(du: -hw - 1.5 * m * tan(phi), dv: R + 1.5 * m) section
+  b coords(du: -hw + 1.25 * m * tan(phi), dv: R - 1.25 * m) section
+  c coords(du: hw - 1.25 * m * tan(phi), dv: R - 1.25 * m) section
+  d coords(du: hw + 1.5 * m * tan(phi), dv: R + 1.5 * m) section
+  rack_tooth := face(a, b, c, d, -> close)
+}}
+in std.top {{
+  construction rack_line := line(hint((10, R)), hint((0, R)))
+  rack_line.p1 coords(du: 10mm, dv: R) std.top
+  rack_line.p2 on_v(d: R) std.top
+  tip := circle(center: std.top.origin) hint(r: R + m)
+  radius(R + m) tip
+}}
+tooth := solid(std.solids.Prism(rack_tooth, from: -4mm, to: 10mm))
+blank_turn := frame
+blank_turn turns(1) spindle
+rack := frame
+rack slides(2 * pi * R) rack_line
+gear := solid(std.solids.Prism(face(tip), from: 0mm, to: 5mm))
+space := solid({{ p | some t in (-90deg, 90deg): p in tooth at(under: rack, seen_from: blank_turn) t }})
+space cut gear
+",cos=beta.cos(),sin=-beta.sin())
+}
+
+/// **A helical rack's flank reaching past the line of action is said to undercut** (#822): the
+/// 14-tooth pinion's flank reaches 1.25 m = 1 mm past the rack's pitch line, past `R sin² αₜ`, and
+/// its generated flank folds at the base circle.  E3 refuses it as what it is: which flank, the
+/// base circle `R cos αₜ`, how far the flank reaches and how far it may, and how far to shift the
+/// rack or how many more teeth to take.  At 17 teeth the same rack is admitted.
+#[test]
+fn a_helical_racks_undercut_is_said_with_its_numbers() {
+    use gcs_core::solid::admission::Condition;
+    let (beta, phi, m) = (25f64.to_radians(), 20f64.to_radians(), 0.8);
+    let at = (phi.tan() / beta.cos()).atan();
+    let pitch = m * 14. / (2. * beta.cos());
+    let (base, depth) = (pitch * at.cos(), pitch * at.sin().powi(2));
+    let Err(Error::Refused(r)) = admit(&helical(14)) else { panic!("the 14-tooth pinion is refused") };
+    assert_eq!(r.condition, Condition::Fold, "{r}");
+    let said = format!("undercuts the gear below its base circle (r = {base:.3} mm): it reaches 1.000 mm past the \
+        rack's pitch line, where {depth:.3} mm is the most");
+    assert!(r.message.contains(&said), "{r}");
+    assert!(r.message.contains(&format!("({:.2}° across the gear's axis)", at.to_degrees())), "{r}");
+    assert!(r.message.contains(&format!("Shift the rack out {:.3} mm or more, take {:.3} times as many teeth", 1. - depth,
+        1. / depth)), "{r}");
+    assert!(r.message.contains("the flank `tooth.close"), "{r}");
+    assert!(r.message.ends_with("of the pitch line. Its generated flank folds"), "{r}");
+    // the witness on the base circle
+    let w = r.witness.expect("a witness");
+    assert!((w[0].hypot(w[1]) - base).abs() < 0.02, "{w:?} at radius {}, the base circle {base}", w[0].hypot(w[1]));
+    // 17 teeth reach no deeper than the line of action's end
+    admit(&helical(17)).unwrap_or_else(|r| panic!("the 17-tooth pinion: {r}"));
+}

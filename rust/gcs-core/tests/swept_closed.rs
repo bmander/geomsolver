@@ -1318,6 +1318,7 @@ fn a_line_grazing_a_hyperboloid_touches_it_once() {
                     assert!((t-0.7).abs() <= 1e-3,"z {z}, {angle}°: at {t}");
                 }
                 Meets::Along => panic!("z {z}, {angle}°: along"),
+                Meets::Refused(r) => panic!("z {z}, {angle}°: {r}"),
             }
             read += 1;
         }
@@ -1383,7 +1384,7 @@ fn an_edge_is_read_certified_and_settled_as_a_ray_is() {
     assert!(through.len() == 4 && through.iter().all(|x| !x.1),"a line through the ring: {through:?}");
     let (edge,end) = ending(at(3.5,0.4,1.2),at((big+small*0.6f64.cos())*0.3f64.cos(),(big+small*0.6f64.cos())*0.3f64.sin(),small*0.6f64.sin()));
     one_end("an edge ending on the torus",read(&edge,[0.,end],&ring),end);
-    assert_eq!(m.sampled(),0,"a search sampled\n{}",m.report());
+    assert_eq!(m.measured(),0,"a search sampled\n{}",m.report());
 }
 
 /// **A conic edge and a spline edge are read certified too** (#780 R2: the closed class's edges
@@ -1467,7 +1468,7 @@ fn a_conic_and_a_spline_edge_are_read_certified() {
     let Meets::At(found) = read(&Curve::BSpline(std::sync::Arc::new(plain)),[0.,1.],&ground) else { panic!("along") };
     let roots = [0.,(18.-12f64.sqrt())/26.,(18.+12f64.sqrt())/26.];
     assert!(found.len() == 3 && found.iter().zip(roots).all(|(x,y)| !x.1 && (x.0-y).abs() <= 1e-9),"{found:?} against {roots:?}");
-    assert_eq!(m.sampled(),0,"a search sampled\n{}",m.report());
+    assert_eq!(m.measured(),0,"a search sampled\n{}",m.report());
 }
 
 /// **Every surface the closed class emits locates a point exactly** (#777 V1's gate): a ray's
@@ -1579,7 +1580,7 @@ fn every_surface_the_closed_class_emits_locates_points_exactly() {
             if inside { held += 1 }
         }
         assert!(checked > 400 && held > 40,"{what}: {checked} points read, {held} inside");
-        assert_eq!(m.sampled(),0,"{what}: a search sampled\n{}",m.report());
+        assert_eq!(m.measured(),0,"{what}: a search sampled\n{}",m.report());
     }
 }
 
@@ -1605,7 +1606,7 @@ fn a_rims_sheet_in_closed_form_is_held_to_the_general_search() {
         let Meets::At(one) = curve_surface(&line,[-3.,3.],&sheet,1e-7) else { panic!("along") };
         fast += clock.elapsed();
         let clock = std::time::Instant::now();
-        let Some(Meets::At(two)) = curve_surface_searched(&line,[-3.,3.],&sheet,1e-7) else { panic!("the search gave up") };
+        let Meets::At(two) = curve_surface_searched(&line,[-3.,3.],&sheet,1e-7) else { panic!("the search gave up") };
         general += clock.elapsed();
         assert_eq!(one.len(),two.len(),"from {p:?} along {d:?}: {one:?} against {two:?}");
         for (x,y) in one.iter().zip(&two) { assert!((x.0-y.0).abs() <= 1e-6,"from {p:?} along {d:?}: {one:?} against {two:?}") }
@@ -1659,11 +1660,11 @@ fn a_build_past_its_budget_stops_by_one_typed_check() {
     let m = Meter::new(Budget::UNLIMITED);
     let (found,on) = meter::within(&m,|| (curve_surface(&line,[0.,8.],&ring,1e-7),meter::go_on()));
     let Meets::At(found) = found else { panic!("along") };
-    assert_eq!((found.len(),on,m.sampled()),(4,Ok(()),0),"{found:?}");
+    assert_eq!((found.len(),on,m.measured()),(4,Ok(()),0),"{found:?}");
     let m = Meter::new(Budget::UNLIMITED.with(Stage::Ray,1));
     let (found,on) = meter::within(&m,|| (curve_surface(&line,[0.,8.],&ring,1e-7),meter::go_on()));
     assert_eq!(found,Meets::At(Vec::new()));
-    assert_eq!((m.count(Stage::Ray),m.sampled()),(2,0),"read once, one stretch isolated, nothing sampled:\n{}",m.report());
+    assert_eq!((m.count(Stage::Ray),m.measured()),(2,0),"read once, one stretch isolated, nothing sampled:\n{}",m.report());
     let Err(Stopped(over)) = on else { panic!("{on:?}") };
     assert_eq!(over.stage,Stage::Ray);
     let said = String::from(Stopped(over.clone()));

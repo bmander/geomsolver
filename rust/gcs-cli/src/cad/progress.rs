@@ -11,11 +11,19 @@ pub fn stage(message: &str) {
     eprintln!("solventc: [{at:7.1} s] {message}");
 }
 
+/// A note against a file an export wrote (`solventc: PATH: …`, a sliver its solid holds, #836):
+/// held and said in turn with the progress, but carrying no time — it is about the file, not the
+/// timeline.
+pub fn note(message: &str) {
+    if held(|lines| lines.push(Said::Note(message.into()))) { return; }
+    eprintln!("solventc: {message}");
+}
+
 /// Start the timeline now, if nothing has: an export's lines count from its start.
 pub fn start() { START.get_or_init(std::time::Instant::now); }
 
 /// What a task run beside others said, kept to be said once they are done.
-enum Said { Line(String),Trace(String) }
+enum Said { Line(String),Note(String),Trace(String) }
 
 std::thread_local! { static HELD: std::cell::RefCell<Option<Vec<Said>>> = const { std::cell::RefCell::new(None) }; }
 
@@ -61,7 +69,9 @@ fn both<A: Send,B>(there: impl FnOnce() -> A+Send,here: impl FnOnce() -> B) -> (
 }
 
 /// Say again what was held.
-fn speak(said: Vec<Said>) { for s in said { match s { Said::Line(m) => stage(&m), Said::Trace(k) => trace_file(&k) } } }
+fn speak(said: Vec<Said>) {
+    for s in said { match s { Said::Line(m) => stage(&m), Said::Note(m) => note(&m), Said::Trace(k) => trace_file(&k) } }
+}
 
 /// What some work said, held back to be said later (`Held::say`).
 pub struct Held(Vec<Said>);

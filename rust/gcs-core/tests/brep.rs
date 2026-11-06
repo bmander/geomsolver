@@ -2096,14 +2096,14 @@ fn a_traced_edge_lying_in_a_cylinder_crosses_its_seam() {
     let period = crotch.period().expect("a closed loop");
     // the main pipe's seam, where the loop crosses it at x = ±6
     let seam = Curve::Line {p:[0.,0.,10.],d:[1.,0.,0.]};
-    let mut found = crossings_in(&main,&crotch,[0.,period],&seam,[-30.,30.],1e-9).expect("a line carries its crossings");
+    let mut found = crossings_in(&main,&crotch,[0.,period],&seam,[-30.,30.],1e-9).expect("proved").expect("a line carries its crossings");
     found.sort_by(|a,b| a.1[0].total_cmp(&b.1[0]));
     assert_eq!(found.len(),2,"{found:?}");
     for ((_,q),x) in found.iter().zip([-6.,6.]) {
         for (k,want) in [x,0.,10.].into_iter().enumerate() { assert!((q[k]-want).abs() <= 1e-7,"{q:?}"); }
     }
     // and read from the line's side, the same two
-    assert_eq!(crossings_in(&main,&seam,[-30.,30.],&crotch,[0.,period],1e-9).unwrap().len(),2);
+    assert_eq!(crossings_in(&main,&seam,[-30.,30.],&crotch,[0.,period],1e-9).unwrap().unwrap().len(),2);
 }
 
 /// A rolled fillet's canal touches each operand along a whole contact edge: the union traces the

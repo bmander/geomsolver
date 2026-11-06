@@ -108,6 +108,16 @@ triangles with no area as written (`mesh::flat_triangles`), the core's export sa
 near it (the refusal's witness), how long and thin it is, whether the mesh or float32 flattened it,
 and, under the bar, the likely sliver of two cuts ending all but flush. Nothing is dropped: a triangle
 dropped opens the shell (`brep_export.rs::a_sliver_float32_flattens_is_refused_naming_its_faces_and_where`).
+**A sliver the B-rep holds is said wherever it stands** (#836, `brep::export::slivers`): a face of
+the built solid thinner than the export's tolerance somewhere (the fabrication tolerance where none
+is named), or an edge shorter than it (`brep::sliver::slivers`), is said beside every file written of
+it — the STEP, a written STL, `--step-assembly` for each part, and `--png` of a solid drawn from
+its exact build (`slivers_drawn`) — as `solventc: PATH: …`, in the core's words: the solid, how many
+faces and edges, the first by name and how thin, the faces it is thin between, a point on it (the
+witness), and what to move. A warning, not a refusal: the B-rep is exact and holds what was drawn,
+the ends nearer than the Booleans' reach having been made one (brep.md, `brep::flush`), so what is
+said is a step drawn under what can be made
+(`brep_export::a_sliver_the_brep_holds_is_said_wherever_it_stands`).
 The reader's own refusal names the triangle's number and where it is. Failure keeps
 old outputs; renames are atomic per file, not across files. Native-path tests must not hide legacy
 mesh defects.
@@ -135,6 +145,27 @@ prism cutter's sheet the same way: `brep::sweep::extruded` (the kernel's `brep::
 rounding by `generation::the_kernels_planar_cut_is_the_generated_profiles`; edges as lines/arcs, convex corners as
 points over their fans, `generate::cut_at`, Hermite spans, extruded; `Family::in_frame`), else
 traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cut.rs`.
+
+**A helical rack's flank is its transverse envelope carried up a helix (#826):** an undrafted prism
+of straight edges whose extrusion leans along the rack's slide, under a slide seen from a turn (a
+helical rack against the blank it cuts), is the same set slid along its extrusion, so its section
+by a plane square to the turn's axis at height `h` is the base section slid `h·shift` along the
+rack's line, and the roll carries a section so slid to its own envelope turned about the axis:
+`E_h(t − lag·(h − b)) = R(rate·(h − b))·E_b(t)`, `rate` = `tan β / r` for a rack on a pitch circle
+`r` (`brep::swept::extruded::Screwed`, read where `planar_sheet` reads no plane the motion keeps;
+anything else — an arc in the profile, a drafted prism, a lean across the slide, any other
+motion — is traced). The sheet (`brep::sweep::extruded::screwed_sheet`) is the base section's
+envelope read as a prism's is, its Hermite spans joined at knots of multiplicity two within a piece,
+carried by the helix's cubic fitted within an eighth of the bar (`helix_fit`): each section pole
+turned and raised by each helix pole, so the net's height runs with `v` alone. The identity is
+held at both ends of the band to `1e-8 (1 + reach)` mm, the sheet's rims at those heights out of
+the blank, and its contacts' normals are the helicoid's. A plane cutting a net whose height over it
+runs with `v` alone, strictly, is cut along that iso line exactly (`ssi::level_iso`, a net of one
+linear span across left to the case after it), so the blank's faces meet a flank in a pcurve that is
+a line. `tests/helical_rack.rs` is the gate: every exact contact the trace finds within the
+sheet's fit, the space's volume against the transverse tooth's arithmetic, and the 20-tooth gear's
+STEP within twice its spur twin's entities (radiatorbot's 19-tooth, 25° gear: 107 623 entities
+and 9.7 MB traced, 32 155 and 2.7 MB screwed, its spur twin 17 901).
 
 **A ball swept is its tube** (#238, #684 D, `solid::canal`; the tube is the kernel's,
 `brep::swept::canal`, #721 F2c): a sweep whose tool's recipe is one
@@ -242,7 +273,15 @@ checked. A rack is in the class (#61): a prism tool with its caps clear of the b
 roll, `NormalVelocity::Affine`), sectioned along its extrusion (`brep::sweep::cutter`, a station a
 distance), flat caps joined across sector sides (`brep::pattern`, `Kept::Flat`); a blank reaching
 its axis is built whole. `tests/rack_cut.rs`, `examples/generation/rack_cut_gear.sv`. A fold is
-the sign of the area factor times the contact condition's rate. Built in
+the sign of the area factor times the contact condition's rate. A fold on a flat face under a
+rack's roll (a slide square to the turn's axis) whose contacts in the blank reach past `R sin² αₜ`
+inside the pitch line — R the slide's advance a radian over the turn's rate, αₜ the face normal's
+slant from the slide with its part along the axis dropped — is an undercut, and E3 says it so
+(`brep::swept::admission::Undercut`, #822): the flank, the base circle `R cos αₜ`, the reach and
+the depth allowed, in millimetres, and the rack's shift, the teeth and the flank's end that clear
+it; a fold that is not one keeps E3's own words. `a_helical_racks_undercut_is_said_with_its_numbers`
+(14 teeth at 25° refused so, 17 admitted). Building a leaned rack's undercut, as the planar
+subtraction class builds a spur rack's, is left open: its tooth is no prism square to the plane. Built in
 `gcs-cli/src/cad/native/sweep_boundary.rs`: cutters sectioned (`backend/sections.cpp`), contact
 times from `SweepContacts::at_point_normal_over` (`PointContactError`), sheets traced and
 resampled by the core (`solid::contact_trace`, fed section samples and nothing else; rows stop
@@ -565,7 +604,7 @@ the loop is docs/testing.md's).
 face's contact line, screws into a patch of a ruled helicoid over the segment and the roll a
 twentieth past each (`closed::Cutter::Patch`), its rim standing inside a cell; two sheets of one
 screw meet in exact helices (`ssi::screwed_lines_meeting`: the line's points the screw carries onto
-the other sheet, isolated with a bound), never traced ones, whose ends leaning a few degrees off
+the other sheet, isolated by the Krawczyk operator, #814), never traced ones, whose ends leaning a few degrees off
 once ordered the curves leaving a corner wrongly. The gate is a block leaning 0.35 rad, 3 out from
 the axis, screwed a radian at 2 a turn, held to 1e-6 of its volume read in helical coordinates
 apart from the kernel and to membership
@@ -726,7 +765,7 @@ name (`swept_loci::a_ball_screwed_tighter_than_its_radius_is_refused_by_name`). 
 (`SOLVENT_SWEEP_PROFILE`): before, the ring slid 6 was refused as `Curved` in 47 µs; now it builds in
 2.9 s (slid 2, 1.8 s), every meeting of a contour's cylinder in closed form (four with the other
 contour, eight with a plane, eight with the posed ring) and every line read against it certified;
-the ring's seam circles and the contacts' own curves are read against it by the sampled search, and
+the ring's seam circles and the contacts' own curves are read against it by the general reading (#814), and
 the ring at its two poses meets the planes and the other pose by the trace. Not yet: the fold, cut
 where it lies.
 
@@ -848,7 +887,7 @@ meeting ended at the vertex, the node's tangent ways read at a length along each
 closed form — and held reduced at three leads, each cell to its closed form
 (`swept_closed::the_drawn_ball_end_mills_pipe_beside_its_screwed_side_is_arranged_at_every_lead`). The pipe is inverted
 off its spine, #780 C1: each foot of a point on the patch lies on the circle about a foot of it on
-the centre's helix or on an end circle, those feet isolated with a bound and the nearest taken,
+the centre's helix or on an end circle, those feet isolated by their enclosures (#814) and the nearest taken,
 `geom::Blend::pipe`, `Pipe::feet`, no warm start and no search;
 `swept_closed::a_balls_pipe_is_inverted_off_its_spine`. Only the spine's stretches that can hold
 the nearest are searched (`Pipe::nearest_feet`, #798): the spine cut a sixteenth of a turn a
@@ -897,7 +936,7 @@ of crossing searches against 2400-point traces; it is 12 s.
 screw comes back onto itself where its roll passes a turn at a lead short of its diameter. In the
 screw's helical coordinates the pipe is its circle's points' helices, so it meets itself exactly
 where the circle holds two points at one distance from the axis whose `z − κψ` differ by a whole
-number of turns' rise, each such pair a helix (`geom::Pipe::returns`, isolated with a bound;
+number of turns' rise, each such pair a helix (`geom::Pipe::returns`, isolated by the Krawczyk operator, #814;
 `swept_loci::a_pipe_comes_back_onto_itself_along_helices`). Such a pipe is entered in stretches of
 the roll of at most half a turn, each meeting itself nowhere, no two joints, nor a joint and an
 end, a return's turn apart (`closed::pipe_stretches`); one that does not come back is

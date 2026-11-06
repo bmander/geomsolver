@@ -723,7 +723,11 @@ convex corner as a point between the rolls its sides reach it, read exactly by
 `generate::cut_at`, interpolated by Hermite spans halved to 0.1 µm (or the fit's bar) at their
 quarter points, and extruded linearly over the prism's length. The rack's tooth space is 28 spans
 in 40 ms, and every contact the trace finds lies within 5e-6 mm of it
-(`rack_cut::the_racks_sheet_is_its_planar_envelope_extruded`). Any other motion is traced.
+(`rack_cut::the_racks_sheet_is_its_planar_envelope_extruded`). A prism leaned along the rack's
+slide, a helical rack's tooth, meets every plane square to the blank's axis in the base section
+slid along the rack's line, whose envelope is the base's turned: its sheet is the transverse
+envelope carried up a helix, not traced (#826, `extruded::screwed`; `tests/helical_rack.rs`).
+Any other motion is traced.
 A sector's flat caps join across its sides (`brep::pattern`, `Kept::Flat`): a plane square to
 the axis is kept by the turn, its pcurves turned about the axis's foot, and a ring of it is an
 annulus with no seam. A blank reaching its axis is built whole (neighbouring sectors' sides
@@ -1094,6 +1098,15 @@ version refuses undercut and requires the design to avoid it. Supporting it mean
 *declared* intersection between two known envelopes of the same sweep. `BoundarySeam` and
 `EnvelopeSeam` already perform that operation. Supporting it is a later, separately gated
 extension. An undeclared crossing stays refused.
+
+A spur rack's undercut is built all the same: its tooth is a prism square to the plane its roll
+keeps, and the planar subtraction class cuts the swept region whole, trochoid and all (#644). A
+helical rack's tooth leans across that plane, so only the generating rows read it, and E3 refuses
+the fold. Where the fold is a rack's straight flank reaching past the line of action's end, E3
+says so by name (#822): which flank, the base circle `R cos αₜ` it undercuts below, how far the
+flank reaches past the pitch line against the `R sin² αₜ` it may, and what fixes it — the rack
+shifted out by the difference, `reach / (R sin² αₜ)` times the teeth, or the straight flank ended
+at that depth.
 
 The classes are implemented as `solid::admission::admit_body`. `solventc --step/--stl` runs it
 before building a body with swept cuts. Placements whose blank reads the same at every point

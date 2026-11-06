@@ -1878,6 +1878,45 @@ fn a_picture_of_a_solid_not_built_says_so() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// **A sliver the solid holds is said against each file and picture** (#836): a bore ending 1 µm
+/// over a pocket's ceiling leaves a strip of its walls 1 µm tall, which the STEP, the STL and the
+/// picture are each written with and said against, in the core's words — the solid, the faces, the
+/// first by name and how thin, and a point — the exit unchanged. Ending 10 nm over it, the end is
+/// on the ceiling and nothing is said.
+#[test]
+fn a_sliver_is_said_against_each_file_and_picture() {
+    let dir = std::env::temp_dir().join(format!("solventc-sliver-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("pockets.sv");
+    let pockets = |step: &str| format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.shapes\nin std.front {{\n\
+        \x20 outer := std.shapes.CenteredRectangle(std.origin, w: 40mm, h: 30mm)\n\
+        \x20 wide := std.shapes.CenteredRectangle(std.origin, w: 20mm, h: 10mm)\n\
+        \x20 tall := std.shapes.CenteredRectangle(std.origin, w: 10mm, h: 20mm)\n}}\n\
+        block := solid(std.solids.Prism(face(outer.loop), from: -10mm, to: 10mm))\n\
+        pocket := solid(std.solids.Prism(face(wide.loop), from: -20mm, to: 0mm))\n\
+        bore := solid(std.solids.Prism(face(tall.loop), from: -20mm, to: 0mm + {step}))\n\
+        pocket cut block\nbore cut block\nbase := solid(block)\n");
+    let [step, stl, png] = ["p.step", "p.stl", "p.png"].map(|f| dir.join(f).to_str().unwrap().to_string());
+    std::fs::write(&source, pockets("0.001mm")).unwrap();
+    let ask = [source.to_str().unwrap(), "--no-check", "--no-progress", "--size", "120", "--solid", "base",
+               "--step", &step, "--stl", &stl, "--png", &png];
+    let out = run(&ask);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    for path in [&step, &stl, &png] {
+        let said = format!("solventc: {path}: `base` holds 2 faces thinner than the export's 10.000 µm: the first, `bore.");
+        assert!(stderr.contains(&said), "{path}: {stderr}");
+        assert!(std::fs::metadata(path).is_ok_and(|m| m.len() > 0), "{path} written");
+    }
+    assert!(stderr.contains("1.000 µm across"), "{stderr}");
+    std::fs::write(&source, pockets("0.00001mm")).unwrap();
+    let out = run(&ask);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("holds"), "{stderr}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// **A solid read in its plane is said** (#510 S2): the corpus's Kirsch plate, `plane stress
 /// plate` in its scenario, has its factor of safety said under the scenario — kept — and a
 /// buckling asked of it says why it has none; the document still exits 0.

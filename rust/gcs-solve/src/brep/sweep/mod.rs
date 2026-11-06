@@ -148,7 +148,9 @@ fn mixed_cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,t
 }
 
 /// Sweep `k`'s sheet fitted against the blank: a prism's under a motion keeping its profile's
-/// plane, its profile's planar envelope extruded (`extruded::planar_sheet`); traced, under any other
+/// plane, its profile's planar envelope extruded (`extruded::planar_sheet`); a prism leaned along a
+/// rack's slide under its roll, its section's envelope carried up a helix (`extruded::screwed_sheet`,
+/// #826); traced, under any other
 /// relative rotation (`sheet::swept_sheet`), at sections across a prism whose cap reaches the blank
 /// (`sheet::capped_sheet`); or its characteristic carried, under a screw (`helical::helical_sheet`).
 pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<sheet::Fitted,ExportRefusal> {
@@ -156,7 +158,10 @@ pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say
     match &prepared.classes[k] {
         crate::solid::admission::Class::Generating => match extruded::planar_sheet(&prepared.cuts[k],&inside,tolerance,say) {
             Some(fitted) => fitted,
-            None => sheet::swept_sheet(&prepared.cuts[k],&inside,&near,tolerance,say),
+            None => match extruded::screwed_sheet(&prepared.cuts[k],&inside,tolerance,say) {
+                Some(fitted) => fitted,
+                None => sheet::swept_sheet(&prepared.cuts[k],&inside,&near,tolerance,say),
+            },
         },
         // a prism's cap in the blank: its sections across its profile traced (#684 F)
         crate::solid::admission::Class::Capped(capped) => sheet::capped_sheet(&prepared.cuts[k],capped,&inside,&near,tolerance,say),

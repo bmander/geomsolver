@@ -44,7 +44,7 @@ fn tag(leaf: usize,l: usize,k: usize) -> u32 { ((leaf as u32+1) << 16) | edge_ta
 fn reach(region: &Region,at: f64) -> f64 {
     let far = region.loops.iter().flatten()
         .flat_map(|st| (0..=8).map(move |i| st.point(i as f64/8.)))
-        .map(|p| p[0].hypot(p[1])).fold(0.,f64::max);
+        .map(|p| p[0].dhypot(p[1])).fold(0.,f64::max);
     far+at
 }
 

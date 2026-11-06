@@ -12,19 +12,19 @@ use crate::trajectory::{Motion,Trajectory};
 use crate::util::space::{add,cross,dot,norm,scale,sub};
 use super::constant_twist::{Ask,Characteristic,Failure,Row,Sweep,outward};
 use super::cutter::Cutter;
-use super::generating::{Chart,NormalVelocity,PointContactError,TimedContact};
+use super::generating::{Chart,Form,NormalVelocity,PointContactError,TimedContact};
 use super::tool::{Material,PatchEdge,Tool,ToolSurface};
 use crate::topo::Brep;
 use std::collections::BTreeMap;
-use std::f64::consts::PI;
+use std::f64::consts::{PI,TAU};
 
 type V = [f64;3];
 
 /// What a generating sweep's rows read: the tool as the kernel reads it, the trajectory it is
-/// carried along, the roll, and whether that roll carries a turn round a whole turn or more, read
-/// once round (#684 N).
+/// carried along, the roll, whether that roll carries a turn round a whole turn or more, read
+/// once round (#684 N), and the model's millimetres a unit, what a row says a length in.
 #[derive(Clone,Copy)]
-pub struct Generating<'a> { pub tool: &'a Tool,pub path: &'a Trajectory,pub roll: [f64;2],pub whole: bool }
+pub struct Generating<'a> { pub tool: &'a Tool,pub path: &'a Trajectory,pub roll: [f64;2],pub whole: bool,pub mm: f64 }
 
 impl Generating<'_> {
     fn patches(&self) -> &[ToolSurface] { &self.tool.faces }
@@ -156,6 +156,76 @@ struct Hit { source: V,position: V,normal: V }
 #[derive(Clone,Copy)]
 struct Fan { point: V,faces: [(V,V);2],patch: usize,crease: bool }
 
+
+/// **A rack's straight flank undercutting the gear it cuts** (#822): E3's fold said for what it
+/// is, where it is that. Under a slide seen from a turn, the slide square to the turn's axis (a
+/// rack against the blank it cuts), the rack's pitch line rolls on the blank's pitch circle, its
+/// radius R the slide's advance a radian over the turn's rate, and every section square to the
+/// axis is a plane generation by a rack — a helical rack's too, leaned across the section. A flat
+/// flank's trace in a section is a line at the transverse pressure angle αₜ (its normal's slant
+/// from the slide, its part along the axis dropped). It generates the involute of the base circle
+/// R cos αₜ down to where the line of action touches that circle, R sin²αₜ inside the pitch line;
+/// a point of the flank deeper than that generates the involute's folded branch, the undercut.
+/// Lengths are millimetres; `along` is whether the flank faces the way the rack slides as the roll
+/// runs on.
+#[derive(Clone,Debug,PartialEq)]
+pub struct Undercut { pub flank: String,pub along: bool,pub pitch: f64,pub base: f64,pub angle: f64,pub reach: f64,pub depth: f64 }
+
+impl std::fmt::Display for Undercut {
+    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let Undercut {flank,along,pitch,base,angle,reach,depth} = self;
+        let (way,degrees,shift,more) = (if *along { "along" } else { "back along" },angle.to_degrees(),reach-depth,reach/depth);
+        write!(f,"the flank `{flank}`, the rack tooth's side facing {way} its slide, undercuts the gear below its base circle \
+            (r = {base:.3} mm): it reaches {reach:.3} mm past the rack's pitch line, where {depth:.3} mm is the most a straight \
+            flank at this pressure angle ({degrees:.2}° across the gear's axis) takes on this pitch circle (r = {pitch:.3} mm) \
+            without undercut. Shift the rack out {shift:.3} mm or more, take {more:.3} times as many teeth or more at this pitch \
+            (a pitch circle of r = {:.3} mm), or end the straight flank within {depth:.3} mm of the pitch line. Its generated \
+            flank folds",pitch*more)
+    }
+}
+
+/// E3's fold of face `patch`, read as a rack's straight flank undercutting the gear (`Undercut`),
+/// or none where it is not one: the face not flat, the motion no rack's roll, or the flank's
+/// contacts in the blank (`inside`) reaching no deeper than the involute's end. How deep it
+/// reaches is read off the face sampled as the fine pass samples it, its rows by the coarse
+/// pass's columns.
+fn undercut(c: &Generating,patch: usize,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling) -> Option<Undercut> {
+    let ToolSurface::Extruded(flank) = c.patches().get(patch)? else { return None };
+    if !flank.straight() { return None }
+    let Ok(Form::Rack {slide,observer}) = Form::of(c.motion()) else { return None };
+    let (d,s,w) = (slide.axis,slide.advance/TAU,scale(observer.axis,observer.ratio));
+    let rate = norm(w);
+    if !(rate > 0.) || dot(d,w).abs() > 1e-9*rate*norm(d) { return None }
+    let axis = scale(w,1./rate);
+    // from the axis to the pitch point, where the rack's point keeps still in the blank at roll 0
+    let out = scale(cross(d,w),s/(rate*rate));
+    let pitch = norm(out);
+    if !(pitch > 0.) || !pitch.is_finite() { return None }
+    let e = scale(out,1./pitch);
+    let at = flank.at(0.5,0.5).ok()?;
+    let normal = cross(at.du,at.dv);
+    if !(norm(normal) > 0.) { return None }
+    let n = outward(c.source_material(),at.position,crate::util::space::unit(normal));
+    let across = sub(n,scale(axis,dot(n,axis)));
+    if norm(across) < 1e-9 { return None }
+    let cos = (dot(across,d)/(norm(across)*norm(d))).clamp(-1.,1.);
+    let depth = pitch*(1.-cos*cos);
+    let tool = c.source_material();
+    let below = |p: V| pitch-dot(sub(p,observer.origin),e);
+    let (nu,nv) = (options.rows,options.coarse_columns.max(2));
+    let mut reach = f64::NEG_INFINITY;
+    for i in 0..=nu { for j in 0..=nv {
+        let (u,v) = (i as f64/nu as f64,j as f64/nv as f64);
+        let Ok(q) = flank.at(u,v) else { continue };
+        if tool.value(q.position).abs() >= 1e-6 || below(q.position) <= reach { continue }
+        let Ok(list) = c.at_source_over(patch,u,v,c.domain(),options.root_tolerance) else { continue };
+        if list.iter().any(|t| inside(t.contact.position)) { reach = below(q.position) }
+    } }
+    if !(reach-depth > 1e-6*(1.+pitch)) { return None }
+    let mm = c.mm;
+    Some(Undercut {flank:flank.name.clone(),along:dot(n,d)*s > 0.,pitch:pitch*mm,base:pitch*cos.abs()*mm,angle:cos.abs().acos(),
+        reach:reach*mm,depth:depth*mm})
+}
 
 /// T2, E1 and T1 for a prism's caps for one placement, asked of every class before anything that
 /// might be reported in their place: the blank's reads, the poses the roll is sampled at, and
@@ -600,7 +670,9 @@ pub fn check(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling
                     // (`area_factor`), against the tool surface's own.
                     let Some(factor) = factor else { continue };
                     if factor.abs() < options.least_factor {
-                        return Err((Row::Fold,format!("the generated surface's area factor is {factor:.3e}"),Some(t.contact.position)));
+                        let said = undercut(c,patch,inside,options).map_or_else(
+                            || format!("the generated surface's area factor is {factor:.3e}"),|u| u.to_string());
+                        return Err((Row::Fold,said,Some(t.contact.position)));
                     }
                     least = least.min(factor.abs());
                     let e = 1e-6;
@@ -633,8 +705,9 @@ pub fn check(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling
     for ((patch,_),(counts,at)) in &signs {
         if counts[0] > 0 && counts[1] > 0 {
             let minority = usize::from(counts[1] < counts[0]);
-            return Err((Row::Fold,format!("the generated surface of `{}` turns back on itself ({} samples one way, {} the other)",
-                c.patches()[*patch].name(),counts[0],counts[1]),at[minority]));
+            let said = undercut(c,*patch,inside,options).map_or_else(|| format!("the generated surface of `{}` turns back on \
+                itself ({} samples one way, {} the other)",c.patches()[*patch].name(),counts[0],counts[1]),|u| u.to_string());
+            return Err((Row::Fold,said,at[minority]));
         }
     }
     if hits.is_empty() {

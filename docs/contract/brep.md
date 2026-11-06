@@ -143,8 +143,7 @@ contour's cylinder along the same slide nowhere where the two contours stand apa
 two spline meridians too (a turned contact's meridian read as a spline's, #780 C3) (`ssi::spline_spline`: the first read against the second's signed distance,
 its nearest point's normal; left traced where the two run together over a stretch), so two swept
 edges' hyperboloids meet in exact circles
-(`meeting::two_coaxial_hyperboloids_meet_in_circles_in_closed_form`). Any other curve's meeting
-with a surface, a spline meridian's with another and a planar step's with another are read by one search
+(`meeting::two_coaxial_hyperboloids_meet_in_circles_in_closed_form`). A spline meridian's meeting with another and a planar step's with another are read by one search
 (`util::roots::sampled_roots`): sign changes of the distance between samples are crossings, and a
 **touch is a root of the distance's rate**, bracketed where it changes sign beside a sampled
 minimum of the distance's size (ties included) — never a least `|f|`, which a double root places
@@ -153,77 +152,121 @@ vertex (a round's contact on the face it rolls on; a cube's edges touching its m
 twelve touches, and the sphere's pieces a hole meeting an outer cycle at no vertex:
 `roots::sampled_roots_place_a_touch_where_the_derivative_turns`,
 `brep::a_cube_trimmed_by_its_midsphere_is_pinched_at_each_edges_middle`, `midsphere_common.sv`).
-**A curve's meeting with a surface is certified wherever a bound is known** (#777 M1, V1):
-`util::isolate` drops a stretch where the function cannot reach nought across it (its first
-derivative's bound), reads one root where it is monotone (its second's), halves it otherwise, and
-calls a touch only a stretch narrower than its width that cannot be parted; over several unknowns
-it isolates each root by Kantorovich's theorem, and reads a stretch it drops where the function
-turns back within the tolerance of nought as a touch, as a sampled search did. A stretch is read
-monotone only by a margin past rounding — one ending on a double root has `|g'|` at its middle all
-but its bound, and claimed monotone there, its ends a hair below nought, lost the touch to both
-sides (`roots::a_double_root_a_stretch_ends_on_is_found`; a cone's rim circle tangent to a slid
-frustum's side) — and a crossing is polished to rounding, as the sampled search's was (a seam's
-crossing a hair off left a chamfered hemisphere's edge out of order). Its certificate
-is the root: Kantorovich's nearer radius is read as `2η/(1 + √(1 − 2h))`, which over a system
-all but flat (a line against a sheet fitted flat) does not cancel to nothing, and a first Newton
-step out of the ball halves the box rather than returning its middle
-(`roots::a_root_certified_over_a_flat_system_is_where_it_is`; once it put a slid bar's corner
-edge on its plane at 7.86 rather than 9). **A box is read grown past its sides** (#796,
-`isolate::GROW`), the theorem in the norm that box is the unit ball of, so the halves of a box
-overlap and a root on the face they share is inside both, the two that find it one root (each
-certified the only root of its box): read as halves meeting at a face, a crossing there was never
-certified (the ball about the middle reaches a hair past the face its step ends on) and was
-dropped by both once rounding put it a hair outside — a ray from inside a saddle block met the
-block's side at its stretch's middle, the block's inside read as out, and the drum it was cut by
-refused (`roots::a_crossing_on_the_face_two_halves_share_is_found_once`,
-`arrangement::a_bilinear_sheets_block_in_common_with_a_drum_is_the_drum_under_the_sheet`). **A
-B-spline sheet's foot held at its patch's rim is let go once the descent pulls it back in**
+**Every curve's meeting with every surface is certified in outward-rounded arithmetic, or refused
+with a witness — never sampled, never guessed** (#777 M1, V1, #814). Three boundaries hold it, each
+a swap made without its callers knowing:
+
+- **What proves a box** (`util::isolate::Test`, `Test1`). By default **the Krawczyk operator**: a
+  box `X` about its middle `m` holds no root where `0 ∉ F(m) + J(X)(X − m)` or where `K(X) = m − Y
+  F(m) + (I − Y J(X))(X − m)` misses it, and exactly one where `K(X) ⊂ int X`, `F(m)` and the
+  Jacobian `J(X)` enclosed in intervals (`util::interval::Iv`), so rounding is inside the proof
+  (#796, #780 R2), not a margin added after it. Only first derivatives are enclosed, and the
+  mean-value inclusion holds for any Lipschitz function: across a C⁰ knot the enclosure is the hull
+  of both one-sided slopes, so a kink costs nothing (#812: a hand bound of nought across a gear
+  flank's kink certified a crossing 1e-3 off the flank, and a 64-tooth gear's material cell read as
+  out; `roots::a_crossing_beside_a_sheets_kink_is_read_on_the_sheet`). In one unknown, **the
+  interval slope**: a stretch is off where `0 ∉ g(m) + g'(X)(X − m)`, monotone — one root at most,
+  where its ends differ in sign, bisected within them — where `0 ∉ g'(X)`. Kantorovich's theorem
+  and hand bounds on `|g'|`, `|g''|` stay behind the same boundary (`Kantorovich`, `Bounded`) so a
+  search can be read both ways and held to the same roots
+  (`enclosures::the_tests_behind_the_boundary_find_the_same_roots`); no curve–surface reading uses
+  them. A box is halved otherwise; one narrower than its width that cannot be parted is a touch
+  where the caller's tolerance accepts its middle. A stretch's sign at its ends is proved by its
+  value's enclosure, never read in floats — rounding's noise beside a double root once made a
+  circle's tangency to a torus dozens of crossings — and two crossings a hair apart the opposite
+  ways are kept as the pair they are: merged into one, a trace touching a plane flipped a ray's
+  count and a ring turned about an axis built three times its volume
+  (`swept_closed::a_ring_turned_about_an_axis_along_its_own_closes_into_its_sweep`). **A run is
+  proved, not parted**: where a curve keeps within the tolerance of a surface for a while, no box
+  can part its roots nor exclude them, so the run is proved — along the curve against an
+  algebraic surface by the form's enclosure over a whole stretch (`Function::within`), against a
+  sheet piece by piece along a straight path of its parameters between feet found by
+  Gauss–Newton, `C(t) − S(path(t))` enclosed so the tangents cancel (`System::run`) — its ends read
+  as touches and nothing inside it searched again
+  (`enclosures::a_curve_lying_along_a_surface_for_a_while_is_one_run_proved`; a tee's crotch, a
+  canal touching its operands, a conrod's pocket rims). A curve all but tangent to a sheet is told
+  off it along the sheet's normal (`System::frame`), where the world axes' components are not. **A box is read grown past its sides**
+  (`isolate::GROW`), so a root on the face two halves share is inside both and the two that find it
+  are one (`roots::a_crossing_on_the_face_two_halves_share_is_found_once`,
+  `arrangement::a_bilinear_sheets_block_in_common_with_a_drum_is_the_drum_under_the_sheet`).
+- **Not proved means refused** (#814 P0). A root is returned only once it is settled within the box
+  it was certified in — Krawczyk's own contraction `X ← K(X) ∩ X`, then Newton's method within what
+  is left — and the caller's tolerance accepts it there. A Newton step that leaves the certified
+  ball, a polish that does not settle, or a box too narrow to part whose enclosure proved nothing
+  gives up as `GaveUp::Unsettled`, with the box: never the last iterate labelled certified
+  (`enclosures::a_root_that_cannot_be_settled_is_refused_never_returned`,
+  `roots::a_root_certified_over_a_flat_system_is_where_it_is`). A reading that gives up is
+  `Meets::Refused`, its witness (`query::Refusal`) the curve's and the surface's kinds, the stretch
+  and the box: a ray locating a point abandons its direction (`Located::solid_place`), a Boolean is
+  refused with it in words (`boolean`'s edge-against-face phase, an along-face crossing, a triple
+  point; `query::crossings_in` answers the refusal too), and a fillet's leg says so
+  (`enclosures::a_reading_that_proves_nothing_is_refused_with_its_witness`). The sampled search is
+  retired as an answer path; the profile counts each reading proved or measured (`util::meter`).
+- **What a kind of geometry is** (`enclose::Enclosed`): each `Curve` and `Surface` kind encloses,
+  once, its point and first derivatives over a box of its parameters — B-splines (rational too, at
+  any knot multiplicity) by de Boor's algorithm in intervals span by span, the hull over the spans;
+  lines, conics, quadrics, the torus, extrusions, revolutions, blends and their carries, a face
+  family's runs by their own formulas in intervals; affine images through the map; turned and slid
+  contacts by their own jets; a plane's cut of a screwed sheet by `−α/β` and, beside a ruling the
+  plane holds, by divided differences enclosed by the mean value; a trace by its own error bound,
+  its points grown by its chords — measured, not proved, and said so (`Patch::proved`). Each is held
+  to samples of itself over random boxes
+  (`enclosures::every_kind_of_curve_is_held_by_its_enclosure`, `…::every_kind_of_surface_is_held_by_its_enclosure`).
+  No reading depends on a bound written by hand for a pair of types: `Net::second_bounds`,
+  `blend_bounds`, `Heights::bounds` and the amplitude, screw and helix bounds are gone, and every
+  closed form's search reads its function written once over `Num` (`isolate::Formula`), its value
+  and rate enclosed by the same formula in intervals.
+- **How a pair is read** (`query::Reader`): `General`, **the general reading every pair has** — a
+  surface with an algebraic form (a plane, a quadric, a torus) along the curve, one unknown, `F(C(t))`
+  and `∇F · C'` enclosed from the curve's enclosure; an extrusion and a revolution, two unknowns,
+  the curve against the profile seen along the way or against the meridian in `(ρ², z)` (no
+  singularity on the axis, and a line along an extrusion's way no singular system); any other as
+  `C(t) = S(u, v)`, three unknowns over the curve's stretch and the parameters the surface reaches,
+  a line with no end clipped to a bounded surface's own box — and `Fast` (what `curve_surface` reads by), **the closed forms kept
+  as fast paths**, each held to the general reading: a line against a plane, a cone, a torus and a
+  conic turned as polynomials along it (`query::line_revolution`, a quartic in the meridian's own
+  parameter), against a turned contact's meridian (#780 C3, `query::line_turned`) and the cylinder a
+  slid torus's contact sweeps (#805, `query::line_slid`) through their jets in intervals, a cylinder
+  and a ball as a chord, a level circle's screwed sheet on one unknown, a line along a screw's axis
+  along the helices; a circle or an ellipse against an algebraic surface as the form along it, a
+  trigonometric polynomial (`query::conic_algebraic`); a B-spline against a plane as its poles'
+  heights (`query::spline_plane`) (`enclosures::the_general_reading_holds_every_closed_form`,
+  `swept_closed::a_rims_sheet_in_closed_form_is_held_to_the_general_search`,
+  `swept_turned::a_line_meets_a_turned_contacts_surface_where_sampling_finds_it`,
+  `swept_slid::a_line_meets_a_slid_contours_cylinder_where_a_scan_finds_it`,
+  `swept_closed::an_edge_is_read_certified_and_settled_as_a_ray_is`,
+  `…::a_conic_and_a_spline_edge_are_read_certified`).
+
+**A B-spline sheet's foot held at its patch's rim is let go once the descent pulls it back in**
 (`geom::net_newton`): its other parameter settled alone, the foot was returned on the rim a long
-way from a point of the patch, and the point read outside its face. **An edge a Boolean meets with a surface and a ray a
-point is located by are read alike** (#780 R2, `query::curve_surface`; there is no `ray`
-switch): a line meets a plane, a cone, a torus and a conic turned (`query::line_revolution`, a
-quartic in the meridian's own parameter) as polynomials along it, and a turned contact's meridian
-(#780 C3, `query::line_turned`) by the same function of the meridian's parameter isolated with its
-first two derivatives bounded by the meridian's jets read in outward-rounded intervals
-(`swept_turned::a_line_meets_a_turned_contacts_surface_where_sampling_finds_it`), and the cylinder a
-slid torus's contact sweeps (#805, `query::line_slid`) where the line seen along the slide meets
-the contour in the plane square to it, isolated with the contour's jets bounded in outward intervals
-(`swept_slid::a_line_meets_a_slid_contours_cylinder_where_a_scan_finds_it`), a cylinder and a ball as a
-chord, a swept sheet or a B-spline net by the three-unknown search (`query::curve_sheet`, the
-sheet's second derivatives bounded by `blend_bounds` and `Net::second_bounds`; **a net is searched
-kink to kink**, #812 — its knots of the degree's multiplicity, `Net::kinks`, where its first
-derivative may jump and no bound on the second holds, so `second_bounds` gives none for a box
-reaching across one: read by the slope at its middle, a box straddling a fitted flank's kink lost a
-crossing beside it, or certified it 1e-3 off the flank, and a 64-tooth gear's material cell read as
-out, `roots::a_crossing_beside_a_sheets_kink_is_read_on_the_sheet`); a circle or an
-ellipse meets a plane, a cylinder, a ball, a cone and a torus as the surface's algebraic form
-along it, a trigonometric polynomial bounded by its amplitudes (`query::conic_algebraic`); and a
-B-spline curve meets a plane as its poles' heights, a scalar B-spline bounded by its
-differences span by span (`nurbs::Heights`, `query::spline_plane`)
-(`swept_closed::an_edge_is_read_certified_and_settled_as_a_ray_is`,
-`…::a_conic_and_a_spline_edge_are_read_certified`). **Whatever any reader returns is settled by
-one rule** (`query::settled`): a curve lying in the surface (read at its quarters, then at the
-sampled search's steps) is `Along` before any reader is asked; a root past either end by more
-than the tolerance is no meeting, one within it is at the end; a run of roots the curve stays
-within the tolerance of the surface between is one meeting — a crossing where the surface's side
-changes across it, read where the curve has left the tolerance, a touch at its middle where it
-does not (a double root rounding parts, a root two spans or stretches both find, and the noise a
-polynomial's rounding makes where a line runs along a torus's tube top, its distance the fourth
-power of the way: hundreds of crossings a micrometre apart before); and an end on the surface is
-a crossing there, taking the run the curve keeps within the tolerance beside it, as the sampled
-search reads it — not only the roots within the tolerance of it along the curve: a touch rounding
-places a little way in from an end on the surface, kept beside the end's crossing, left a
-plane's pieces open (`round_lowering::rounds_that_run_out_onto_a_face_are_rolled_and_cut_off`,
+way from a point of the patch, and the point read outside its face. **An edge a Boolean meets with
+a surface and a ray a point is located by are read alike** (#780 R2, `query::curve_surface`; there
+is no `ray` switch). **Whatever any reader returns is settled by one rule** (`query::settled`): a
+curve lying in the surface (read at its quarters, then at steps a fraction of the surface's
+feature apart) is `Along` before any reader is asked; a root past either end by more than the
+tolerance is no meeting, one within it is at the end; a run of roots the curve stays within the
+tolerance of the surface between is one meeting — a crossing where the surface's side changes
+across it, read where the curve has left the tolerance, a touch where it does not — one, standing
+where the surface's distance turns along the run as far as the curve keeps within the tolerance (its
+rate read at those ends, past rounding's: counted inside the run, rounding's flips read two touches
+on one machine and one on another, and a turned ring built three times its volume on the first),
+at its middle where it does not turn — (a
+double root rounding parts, a root two spans or stretches both find, and the noise a polynomial's
+rounding makes where a line runs along a torus's tube top, its distance the fourth power of the
+way: hundreds of crossings a micrometre apart before); and an end on the surface is a crossing
+there, taking the run the curve keeps within the tolerance beside it — not only the roots within
+the tolerance of it along the curve: a touch rounding places a little way in from an end on the
+surface, kept beside the end's crossing, left a plane's pieces open
+(`round_lowering::rounds_that_run_out_onto_a_face_are_rolled_and_cut_off`,
 `rounds_examples::the_runouts_are_the_stacks`). An edge clipped to a face's box
-(`query::curve_surface_within`) is read stretch by stretch and settled once over the whole, a
-stretch's end cut at the box no end of the edge. That edges within
-the tolerance of tangent were read one way by the polynomials and another by the samples is why
-a Boolean's edges once sampled the cone, the torus and the sheets
+(`query::curve_surface_within`) is read stretch by stretch — a stretch kept where the curve's
+enclosure reaches the box, never by samples it can leave the box between — and settled once over
+the whole, a stretch's end cut at the box no end of the edge; a stretch refused refuses the whole.
+That edges within the tolerance of tangent were read one way by the polynomials and another by
+samples is why a Boolean's edges once sampled the cone, the torus and the sheets
 (`round_lowering::a_round_across_seams_between_arcs_on_a_drafted_prism_is_glued`,
-`prism_twists::a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs`, both building now). A
-level rim's sheet is met by its own bound on one unknown, kept as the faster road and held to the
-search (`swept_closed::a_rims_sheet_in_closed_form_is_held_to_the_general_search`). Only a pair
-with no certified reading samples, and the build's profile counts it (`util::meter`). **A point
+`prism_twists::a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs`, both building now).
+**A point
 where three surfaces' meetings meet is solved once** (#711, #777 M2:
 `Arrangement::triple_points`, keyed by the three surfaces' indices among the shared meetings), and
 every later finding of it from another of the three faces takes that vertex.
@@ -239,7 +282,9 @@ is a fold, no critical point. From each rank-1 point whose fold stands within re
 **ridge** `∂f/∂n = 0` is traced along the null way to the box's edge or round to its start
 (`ridges`); where its fold is within `tol` of nought it is a touch (`Contact::Touching`), and
 where the fold has the sign opposite `f`'s curvature across it the two crossings beside it are the
-roots of `f` along `n` at each of its points, isolated with a bound (`ridge_branches`, #777 M1) —
+roots of `f` along `n` at each of its points, isolated from bounds measured off `f`'s own samples
+(`ridge_branches`, #777 M1, read by `isolate::Bounded`: a surface's signed distance through a
+numerical foot is no curve's reading and no interval encloses it) —
 however shallow, the fold solved in its two-root form. A crossing with no ridge, too shallow for
 the march along `∇a × ∇b`, is traced as `f = 0` in either surface's own parameters
 (`level_curves`: one scalar equation, its tangent square to `∇f`, its step halved where it turns
@@ -492,8 +537,8 @@ touches it (`swept_closed::a_frustums_screwed_rim_and_ruling_meet_what_they_touc
 any other plane (a sector's side through the axis) where its line in each level meets the circle,
 the same branches (`branches`). **A line screwed meets a level circle screwed by the same screw, and
 a cone, in closed form** (#780 C2): the circle's sheet in the helices of the line's points the screw
-carries to the circle's height onto the circle, `|w(u) − R_{s(u)} c₀|² = r²`, isolated with a bound
-(`ssi::screwed_line_circle`); a cone where each ruling meets it, `A(v) u² + B(v) u + C(v) = 0`, the
+carries to the circle's height onto the circle, `|w(u) − R_{s(u)} c₀|² = r²`, isolated by its enclosure,
+written once over `Num` (`ssi::screwed_line_circle`, #814); a cone where each ruling meets it, `A(v) u² + B(v) u + C(v) = 0`, the
 two roots joined where they turn and a ruling the cone holds returned whole, the cut ended on it
 at its limit — the roots of the coefficients' first differences across it, or where the sheet
 touches the cone along it their second (`ssi::screwed_line_cone`, on `branches`, which reads a
@@ -602,6 +647,27 @@ image in a face's parameters (`Pcurve::straight`) is its corners in `loop_area` 
 check. So a shaper's run of 270 bites against a blank (`bench bites`, in `make bench`) builds in 3.3 s
 where it took 21.8; what remains grows with the blank's two faces every bite meets (each of 744 edges
 by the end, traced again at every bite). `brep::a_run_of_cuts_hands_its_far_faces_on` is the gate.
+**An end all but flush with a face is on it** (#836, `brep::flush`): before a body's written
+operand is combined with the solid (`boolean::combined_written`, which `recipe::body` and the
+export's `combine` over swept material call, at the Boolean's own tolerance; never a round's or a
+chamfer's, built on the faces already, `combined_known`), each planar face of the
+operand standing parallel to a plane of a face of the solid near it, farther than the Boolean's
+tolerance but within `FLUSH` (a thousand) of them — a part in a million of the two solids' size,
+wherever they stand — is moved onto the nearest such plane, with every face of the operand on its
+plane: exactly, its plane, edges and corners carried along its normal and every other edge reaching
+it a line along the normal lengthened or shortened, the faces beside it (planes, cylinders and
+extrusions along the normal, which the move leaves where they were) given their uses anew. A face
+whose walls are anything else stays as drawn, as does every end farther off. So a cut ending a few
+nanometres past another's floor is cut on it and leaves no strip of wall
+(`brep_flush::an_end_within_reach_of_a_face_is_moved_onto_it`,
+`an_end_whose_walls_lean_is_left_where_it_is`, `brep_export::an_end_all_but_flush_with_a_face_is_cut_on_it`).
+**A sliver is found by its boundary** (`sliver::slivers`): a face thinner than a bar somewhere — two
+points of its boundary nearer than the bar, on edges sharing no vertex (no corner is a sliver,
+however sharp: a round's run-out meets its fill's cap tangentially, and a seam cut in pieces passes
+a vertex twice), where the boundary between them runs more than four bars and sixteen times their
+distance (two loops, or one far round) — and an edge shorter than the bar of no such face; a pole
+is none. Read off the B-rep, it is the same wherever the solid
+stands (`brep_flush::a_sliver_is_found_by_its_boundary_wherever_it_stands`).
 **The recipe is read once** (`recipe::Recipe::read`): every reader — this kernel's build and
 meridian, `section`, the swept cutter and sector, `solid::exact`/`canal`, the native host's
 `Session` — matches a typed `recipe::Node`, never the JSON; a profile stays as written
@@ -675,7 +741,9 @@ surface, `Net::extended`, only where what that puts in the blank is within the f
 as it is: an edge in the blank divides nothing; `brep_export.rs`'s 20-tooth gear), blank split
 (`boolean::split`), cells judged by the field (`sweep::sector`; else `sector::whole`), sector
 patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/export-worker.ts`
-(`gcs_solid_exact`), so native and wasm files are byte-identical: the core's trigonometry, `exp`,
+(`gcs_solid_exact`, and `gcs_solid_exact_note` for the sliver its solid holds, `brep::export::slivers`,
+which the page says beside the file as `solventc` does, #836), so native and wasm files are
+byte-identical: the core's trigonometry, `exp`,
 `ln`, `pow`, `hypot` are its own (`fmath`, `x.dsin()` via `Det`; no platform libm). With OCCT and
 `--verify-step full` the CLI reads our STEP back (`cad::read_back`). A face met twice is told apart
 by `cutter::OCCURRENCE`; a trace ends off a sheet's patch (`Surface::off_patch`, a revolution's or

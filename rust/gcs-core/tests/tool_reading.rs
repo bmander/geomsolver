@@ -298,7 +298,7 @@ fn walk_alike(cases: &[Case]) -> (usize,usize) {
         let (Some(path),Some(blank)) = (&c.path,&c.blank) else { continue };
         if path.screw().is_none() { continue }
         let inside = |p: V| blank.holds(p);
-        let walk = |tool: &Tool| check_screw(&Generating {tool,path,roll:c.roll,whole:c.whole},&inside,None,&sampling,None)
+        let walk = |tool: &Tool| check_screw(&Generating {tool,path,roll:c.roll,whole:c.whole,mm:1.},&inside,None,&sampling,None)
             .map(|(found,..)| found);
         match (walk(&c.drawn),walk(&c.read)) {
             (Err(a),Err(b)) => {

@@ -17,13 +17,14 @@ const SMALL: usize = 10;
 pub struct BSpline { pub degree: usize,pub knots: Vec<f64>,pub poles: Vec<V>,pub weights: Option<Vec<f64>> }
 
 /// **A curve's heights over a plane as a scalar B-spline** (`BSpline::heights`; #780 R2, where
-/// `query` meets a B-spline curve with a plane): its coefficients `c`, and its first and second
-/// derivatives' `d` and `e`. Over a stretch inside one knot span it is a polynomial, and its
-/// derivatives lie in the hull of the coefficients reaching the span (`bounds`).
+/// `query` meets a B-spline curve with a plane): its coefficients `c`, its value and rate enclosed
+/// over a stretch by de Boor's algorithm in intervals (`enclose::scalar`, #814).
 #[derive(Clone,Debug)]
-pub struct Heights<'a> { degree: usize,knots: &'a [f64],c: Vec<f64>,d: Vec<f64>,e: Vec<f64> }
+pub struct Heights<'a> { degree: usize,knots: &'a [f64],c: Vec<f64> }
 
 impl Heights<'_> {
+    /// Its coefficients, what its value and rate are enclosed from (`enclose::scalar`).
+    pub fn coefficients(&self) -> &[f64] { &self.c }
     /// The height and its rate at `t`, clamped into the domain.
     pub fn at(&self,t: f64) -> (f64,f64) {
         let (p,n) = (self.degree,self.c.len());
@@ -33,18 +34,6 @@ impl Heights<'_> {
             for j in 0..=p { v += ders[0][j]*self.c[s-p+j]; r += ders[1][j]*self.c[s-p+j] }
             (v,r)
         })
-    }
-    /// Bounds on `|h'|` and `|h''|` over `[a, b]`, a stretch within one knot span: the largest of
-    /// the derivatives' coefficients reaching it.
-    pub fn bounds(&self,[a,b]: [f64;2]) -> [f64;2] {
-        let (p,n) = (self.degree,self.c.len());
-        let s = span(p,self.knots,n,0.5*(a+b));
-        let most = |x: &[f64],hi: usize| -> f64 {
-            let lo = s-p;
-            if lo >= x.len() { return 0. }
-            x[lo..=hi.min(x.len()-1)].iter().fold(0.,|m: f64,v| m.max(v.abs()))
-        };
-        [most(&self.d,s.saturating_sub(1)),if s >= 2 { most(&self.e,s-2) } else { 0. }]
     }
 }
 
@@ -138,24 +127,12 @@ impl BSpline {
     }
     /// **The heights of the curve's points over the plane through `o` square to `n`**, weighed
     /// (`Heights`): `Σ N_i w_i n · (P_i − o)`, a scalar B-spline nought exactly where the curve's
-    /// point is on the plane (its weight is positive), read with bounds on its derivatives.
+    /// point is on the plane (its weight is positive), its value and rate enclosed in intervals.
     pub fn heights(&self,n: V,o: V) -> Heights<'_> {
         let h = crate::util::space::dot(n,o);
         let c: Vec<f64> = self.poles.iter().enumerate()
             .map(|(i,q)| self.weights.as_ref().map_or(1.,|w| w[i])*(crate::util::space::dot(n,*q)-h)).collect();
-        let p = self.degree;
-        let u = &self.knots;
-        // a B-spline's derivative is one of a degree less over the knots but the first and last,
-        // its coefficients its differences: `p (c_{i+1} − c_i) / (u_{i+p+1} − u_{i+1})`
-        let diff = |c: &[f64],p: usize,shift: usize| -> Vec<f64> {
-            (0..c.len().saturating_sub(1)).map(|i| {
-                let gap = u[i+p+1+shift]-u[i+1+shift];
-                if gap > 0. { p as f64*(c[i+1]-c[i])/gap } else { 0. }
-            }).collect()
-        };
-        let d = diff(&c,p,0);
-        let e = if p >= 2 { diff(&d,p-1,1) } else { Vec::new() };
-        Heights {degree:p,knots:&self.knots,c,d,e}
+        Heights {degree:self.degree,knots:&self.knots,c}
     }
     /// The length of the control polygon, a bound on the curve's (a rational one's too: its de
     /// Casteljau steps cut corners).
@@ -246,7 +223,7 @@ impl BSpline {
 }
 
 /// The knot span holding `t`, for `count` poles of `degree`.
-fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
+pub(crate) fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
     let (p,n) = (degree,count);
     if t >= knots[n] { return n-1 }
     if t <= knots[p] { return p }
@@ -753,38 +730,6 @@ impl Net {
         let mut out: Vec<f64> = t.windows(p).filter(|w| w[0] == w[p-1] && w[0] > a && w[0] < b).map(|w| w[0]).collect();
         out.dedup();
         out
-    }
-    /// **Bounds on the sheet's second derivatives over `[u0, u1] × [v0, v1]`** — `|S_uu|`, `|S_uv|`,
-    /// `|S_vv|` — from its derivatives' own nets (a B-spline's derivative is a B-spline whose poles
-    /// are its differences, and lies in their hull), read over the poles reaching the box. `None`
-    /// for a rational sheet, whose derivatives are quotients, and for a box reaching across a kink
-    /// (`kinks`): its derivatives' nets hold either side of it, but across it the first derivative
-    /// jumps and no bound on the second holds (#812: a ray's crossing just past a kink of a gear's
-    /// fitted flank certified a box's width off the flank by a bound that held on one side alone).
-    pub fn second_bounds(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Option<[f64;3]> {
-        if self.weights.is_some() { return None }
-        let across = |k: usize,a: f64,b: f64| self.kinks(k).iter().any(|&x| x > a.min(b) && x < a.max(b));
-        if across(0,u0,u1) || across(1,v0,v1) { return None }
-        let (nu,nv) = (self.poles.len(),self.poles[0].len());
-        let (i0,i1) = (span(self.du,&self.uknots,nu,u0.min(u1))-self.du,span(self.du,&self.uknots,nu,u0.max(u1)));
-        let (j0,j1) = (span(self.dv,&self.vknots,nv,v0.min(v1))-self.dv,span(self.dv,&self.vknots,nv,v0.max(v1)));
-        // the first differences' poles along one parameter: `p (P_{i+1} − P_i) / (t_{i+p+1} − t_{i+1})`
-        let diff = |rows: &[Vec<V>],p: usize,t: &[f64],first: usize| -> Vec<Vec<V>> {
-            (0..rows.len().saturating_sub(1)).map(|i| {
-                let k = first+i;
-                let gap = t[k+p+1]-t[k+1];
-                rows[i].iter().zip(&rows[i+1]).map(|(a,b)| if gap > 0. { std::array::from_fn(|c| p as f64*(b[c]-a[c])/gap) } else { [0.;3] }).collect()
-            }).collect()
-        };
-        let transpose = |g: &[Vec<V>]| -> Vec<Vec<V>> { if g.is_empty() { return Vec::new() } (0..g[0].len()).map(|j| g.iter().map(|r| r[j]).collect()).collect() };
-        let sub: Vec<Vec<V>> = self.poles[i0..=i1].iter().map(|r| r[j0..=j1].to_vec()).collect();
-        let most = |g: &[Vec<V>]| g.iter().flatten().map(|v| (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]).sqrt()).fold(0.,f64::max);
-        let du1 = diff(&sub,self.du,&self.uknots,i0);
-        let uu = if self.du < 2 { 0. } else { most(&diff(&du1,self.du-1,&self.uknots[1..],i0)) };
-        let uv = if du1.is_empty() { 0. } else { most(&diff(&transpose(&du1),self.dv,&self.vknots,j0)) };
-        let dv1 = diff(&transpose(&sub),self.dv,&self.vknots,j0);
-        let vv = if self.dv < 2 { 0. } else { most(&diff(&dv1,self.dv-1,&self.vknots[1..],j0)) };
-        Some([uu,uv,vv])
     }
     /// The distinct knots strictly inside `[a, b]` of parameter `k` (0 for u, 1 for v).
     pub fn breaks(&self,k: usize,[a,b]: [f64;2]) -> Vec<f64> {

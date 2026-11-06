@@ -25,8 +25,9 @@ export interface ExportJob {
   tolerance: number;
 }
 
-/** What the worker hands back: the file, or the export's refusal. */
-export type ExportReply = { id: number; bytes: Uint8Array } | { id: number; error: string };
+/** What the worker hands back: the file and what the core says beside it (a sliver its solid
+ *  holds, #836; '' for nothing), or the export's refusal. */
+export type ExportReply = { id: number; bytes: Uint8Array; note: string } | { id: number; error: string };
 
 const scope = globalThis as unknown as {
   onmessage: ((ev: MessageEvent<ExportJob>) => void) | null;
@@ -42,7 +43,7 @@ scope.onmessage = (ev) => {
     doc.sketch.setX(job.x);
     try {
       const bytes = solids.exact(doc.sketch, job.solid, job.kind, job.tolerance);
-      scope.postMessage({ id: job.id, bytes }, [bytes.buffer]);
+      scope.postMessage({ id: job.id, bytes, note: solids.exactNote() }, [bytes.buffer]);
     } finally { doc.dispose(); }
   }).catch((e: unknown) => scope.postMessage({ id: job.id, error: e instanceof Error ? e.message : String(e) }));
 };

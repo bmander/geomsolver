@@ -185,7 +185,10 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   builds — is in the picture and said against it as not built, in the core's words
   (`EvaluatedSolid::unbuilt`, `report::unbuilt_text`, solids.md; #762), the exit unchanged; a
   `--gltf` and a faceted `--stl` say the same of their files
-  (`a_picture_of_a_solid_not_built_says_so`).  The PNG writer is the CLI's (`png.rs`, fixed-code
+  (`a_picture_of_a_solid_not_built_says_so`).  A sliver an object's exact build holds — a face
+  thinner than the export's tolerance somewhere, an edge shorter (`brep::export::slivers_drawn`,
+  generating.md, #836) — is said against the picture as its export says it against a file, the
+  exit unchanged (`a_sliver_is_said_against_each_file_and_picture`).  The PNG writer is the CLI's (`png.rs`, fixed-code
   deflate); it computes no geometry, and `tests/cli.rs` reads its pictures back.
   **`--section PLANE` cuts what a picture draws** (`EvaluatedSolid::section`, solids.md): a view's
   word through the world origin, its normal toward that view's eye (`front` takes away what is
