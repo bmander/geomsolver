@@ -85,6 +85,13 @@ fn curve(c: &Curve) -> Result<Json,String> {
             crate::turned::Source::Rim(c) =>
                 object([("kind","turned rim".into()),("frame",frame(&t.frame)),("o",v3(c.o)),("x",v3(c.x)),("y",v3(c.y)),("r",c.r.into()),
                     ("span",reals(&t.span))]),
+            crate::turned::Source::Section(c) => { let k = c.of;
+                object([("kind","turned section".into()),("frame",frame(&t.frame)),("o",v3(k.o)),("a",v3(k.a)),("r",k.r.into()),("sa",k.sa.into()),
+                    ("ca",k.ca.into()),("side",k.side.into()),("way",reals(&c.way)),("nh",c.nh.into()),("nz",c.nz.into()),("d",c.d.into()),
+                    ("v",reals(&c.v)),("span",reals(&t.span))]) }
+            crate::turned::Source::Crossing(c) =>
+                object([("kind","turned crossing".into()),("frame",frame(&t.frame)),("c",v3(c.c)),("e1",v3(c.e1)),("e2",v3(c.e2)),
+                    ("a",v3(c.a)),("r",c.r.into()),("m0",reals(&c.m0)),("k",reals(&c.k)),("h",reals(&c.h)),("span",reals(&t.span))]),
         },
         other => return Err(format!("sweep dump: a {} curve is not written",other.kind())),
     })
@@ -103,6 +110,16 @@ fn rcurve(j: &Json) -> Result<Curve,String> {
             let posed = j.get("posed").is_some_and(|p| p.as_bool());
             Curve::Turned(Arc::new(crate::turned::Turned {frame:rframe(field(j,"frame")?)?,source:crate::turned::Source::Contact(contact),
                 span:[span[0],span[1]],posed})) }
+        "turned section" => { let (span,two) = (rreals(field(j,"span")?),|k: &str| -> Result<[f64;2],String> { let r = rreals(field(j,k)?); Ok([r[0],r[1]]) });
+            let of = crate::turned::Contact {o:rv3(field(j,"o")?),a:rv3(field(j,"a")?),r:num(j,"r")?,sa:num(j,"sa")?,ca:num(j,"ca")?,side:num(j,"side")?};
+            let c = crate::turned::Section {of,way:two("way")?,nh:num(j,"nh")?,nz:num(j,"nz")?,d:num(j,"d")?,v:two("v")?};
+            Curve::Turned(Arc::new(crate::turned::Turned {frame:rframe(field(j,"frame")?)?,source:crate::turned::Source::Section(c),
+                span:[span[0],span[1]],posed:true})) }
+        "turned crossing" => { let (span,two) = (rreals(field(j,"span")?),|k: &str| -> Result<[f64;2],String> { let r = rreals(field(j,k)?); Ok([r[0],r[1]]) });
+            let c = crate::turned::Crossing {c:rv3(field(j,"c")?),e1:rv3(field(j,"e1")?),e2:rv3(field(j,"e2")?),a:rv3(field(j,"a")?),r:num(j,"r")?,
+                m0:two("m0")?,k:two("k")?,h:two("h")?};
+            Curve::Turned(Arc::new(crate::turned::Turned {frame:rframe(field(j,"frame")?)?,source:crate::turned::Source::Crossing(c),
+                span:[span[0],span[1]],posed:true})) }
         "turned rim" => { let span = rreals(field(j,"span")?);
             let rim = crate::turned::Rim {o:rv3(field(j,"o")?),x:rv3(field(j,"x")?),y:rv3(field(j,"y")?),r:num(j,"r")?};
             Curve::Turned(Arc::new(crate::turned::Turned::rim(rframe(field(j,"frame")?)?,rim,[span[0],span[1]]))) }

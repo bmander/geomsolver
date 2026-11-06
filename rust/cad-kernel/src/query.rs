@@ -56,7 +56,7 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
     let on = |c: &Curve,q: V| match *c {
         Curve::Line {p,d} => norm(cross(sub(q,p),d)) <= tol,
         Curve::Circle(f,r) => dot(sub(q,f.o),f.z).abs() <= tol && (distance(q,f.o)-r).abs() <= tol,
-        Curve::Ellipse(..) => distance(c.point(c.inverse(q)),q) <= tol,
+        Curve::Ellipse(..) | Curve::Turned(..) => distance(c.point(c.inverse(q)),q) <= tol,
         _ => false,
     };
     let points: Vec<V> = match (a,b) {
@@ -105,6 +105,24 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
                 Meets::At(roots) => roots.into_iter().map(|(t,_)| ellipse.point(t)).collect(),
                 // the ellipse a circle of the same radius about the same centre: running along one
                 // another, they cross nowhere
+                Meets::Along => return Some(Vec::new()),
+            }
+        }
+        // a sharp circle and the loop along which a cylinder holding it crosses its ring (#780 L2,
+        // `turned::Crossing`): two meetings of one pair of faces, crossing where the two surfaces
+        // touch, at the loop's `τ = π/2` and `3π/2` (`h = 0`), exactly
+        (&Curve::Circle(f,r),looped @ Curve::Turned(t)) | (looped @ Curve::Turned(t),&Curve::Circle(f,r))
+            if let crate::turned::Source::Crossing(k) = t.source
+            && distance(t.frame.at(k.c),f.o) <= tol && (r.abs()-k.r).abs() <= tol && norm(cross(f.z,t.frame.dir(k.a))) <= 1e-9 =>
+            [std::f64::consts::FRAC_PI_2,3.*std::f64::consts::FRAC_PI_2].map(|u| looped.point(u)).to_vec(),
+        // a circle and a turned curve in its plane (#780 L2: a flat end at an end pose, its rim the
+        // circle its plane cuts from the rim's ring, and its cut of the side's contact turned,
+        // tangent to it where the side's contact reaches the rim): the curve's roots on the circle's
+        // cylinder, settled as every reading is, so a touch is one root
+        (&Curve::Circle(f,r),turned @ Curve::Turned(t)) | (turned @ Curve::Turned(t),&Curve::Circle(f,r))
+            if t.posed && (0..=8).all(|k| dot(sub(turned.point(t.span[0]+(t.span[1]-t.span[0])*k as f64/8.),f.o),f.z).abs() <= tol) => {
+            match curve_surface(turned,t.span,&Surface::Cylinder(f,r.abs()),tol) {
+                Meets::At(roots) => roots.into_iter().map(|(u,_)| turned.point(u)).collect(),
                 Meets::Along => return Some(Vec::new()),
             }
         }

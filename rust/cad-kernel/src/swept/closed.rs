@@ -380,10 +380,10 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
                     // any curve in a level plane, under a turn (a circle about a line along the axis,
                     // a leaning round face's rim cut level, #780 C3): within its plane
                     _ if screw.is_turn() && let Some(points) = level() => levels.push(points),
-                    // a sharp circle leaning to a turn's axis, whole and convex (#780 L2: its fan's
+                    // a sharp circle or arc of one leaning to a turn's axis, convex (#780 L2: its fan's
                     // contact, the circle's points whose fan holds a normal square to the turn's
                     // velocity, lies on the ring the circle turns into): turned, a ring (below)
-                    Curve::Circle(frame,r) if screw.is_turn() && (edge.t[1]-edge.t[0]).abs() >= std::f64::consts::TAU*(1.-1e-12) && {
+                    Curve::Circle(frame,r) if screw.is_turn() && {
                         let use1 = &tool.faces[f1].loops[uses[e][0].1][uses[e][0].2];
                         let along = c.tangent(0.5*(edge.t[0]+edge.t[1]));
                         let along = if use1.reversed { scale(along,-1.) } else { along };
@@ -532,6 +532,12 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             }
             (Cutter::Torus {c:c1,axis:a1,major:m1,minor:n1},Cutter::Torus {c:c2,axis:a2,major:m2,minor:n2}) =>
                 norm(sub(c1,c2)) <= eps && norm(cross(a1,a2)) <= 1e-9 && (m1-m2).abs() <= eps && (n1-n2).abs() <= eps,
+            // two arcs of one sharp circle turned: one ring (#780 L2)
+            (Cutter::Turned(t1),Cutter::Turned(t2)) => match (t1.source,t2.source) {
+                (crate::turned::Source::Rim(x),crate::turned::Source::Rim(y)) => t1.frame == t2.frame && norm(sub(x.o,y.o)) <= eps
+                    && (x.r-y.r).abs() <= eps && norm(cross(cross(x.x,x.y),cross(y.x,y.y))) <= 1e-9,
+                _ => false,
+            },
             _ => false,
         };
         match cutters.iter_mut().find(|(k,_)| same(k)) {
@@ -908,8 +914,26 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
                 let own = |f: &Frame| if leaning(f) { let past = 0.5*PAST*(hi-lo); [lo-past,hi+past] } else { [lo,hi] };
                 match face.surface {
                     Surface::Cylinder(f,r) => {
+                        // past each sharp circle it holds that turns into a ring (#780 L2), beyond the
+                        // loop along which its surface at an end pose crosses that ring
+                        // (`turned::Crossing`, its heights from the circle the turn keeps): its ends
+                        // there stand clear of that loop, which near the circle runs where the two
+                        // all but touch
+                        let mut span = own(&f);
+                        if leaning(&f) {
+                            let g = Frame::about(c,axis);
+                            let a = unit(f.z);
+                            for rim in &rims {
+                                let n = unit(cross(rim.frame.x,rim.frame.y));
+                                if (rim.r.abs()-r.abs()).abs() > eps || norm(cross(n,a)) > 1e-9 || norm(cross(sub(rim.frame.o,f.o),a)) > eps { continue }
+                                let Some(k) = crate::turned::Crossing::new(g.local(rim.frame.o),g.dir_local(unit(rim.frame.x)),
+                                    g.dir_local(unit(rim.frame.y)),g.dir_local(n),r.abs()) else { continue };
+                                let (at,reach) = (dot(sub(rim.frame.o,f.o),a),1.25*k.h[0].abs().max(k.h[1].abs()));
+                                span = [span[0].min(at-reach),span[1].max(at+reach)];
+                            }
+                        }
                         for pose in &ends {
-                            add_cutter(Cutter::Cylinder {o:pose.point(f.o),axis:pose.vector(unit(f.z)),r:r.abs(),span:own(&f)},sites_at(pose));
+                            add_cutter(Cutter::Cylinder {o:pose.point(f.o),axis:pose.vector(unit(f.z)),r:r.abs(),span},sites_at(pose));
                         }
                         if leaning(&f) { turned_contacts(&mut add_cutter,&located,face,k,&screw,(f,r.abs(),0.,1.),[lo,hi],&poses,&ruling,eps)?; continue }
                         let ways = match away(f.o) { Some(w) => vec![w,scale(w,-1.)],None => vec![] };
@@ -1050,21 +1074,19 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             // the fan between its faces' normals holds one square to the turn's velocity — lies on
             // the surface its points sweep, a ring whose meridian is read exactly
             // (`turned::Rim`, `Cutter::Turned`), its sites the circle's points carried over the
-            // roll, each with the ring's normal there (square to the circle and to the velocity)
+            // roll, each with the ring's normal there (square to the circle and to the velocity).
+            // An arc of one sweeps a part of its circle's ring: the whole ring is its candidate, its
+            // sites the arc's own points, and membership keeps what bounds the sweep; two arcs of
+            // one circle (a rim a Boolean split) enter one ring
             if screw.is_turn() {
                 let g = Frame::about(c,axis);
                 for rim in &rims {
                     let (f,r) = (rim.frame,rim.r.abs());
-                    // part of a turn, each end pose's faces at the rim hold the circle the ring
-                    // holds: the end's plane meets the ring in that circle and one more of its
-                    // radius, the side in that circle and a curve crossing it where the side's
-                    // contact reaches the rim — closed forms the arrangement is not given yet, and
-                    // traced the three meetings along one circle do not close (refused by name)
-                    if !whole { return Err(Unbuilt::Curved {at:f.o}) }
                     let source = crate::turned::Rim {o:g.local(f.o),x:g.dir_local(unit(f.x)),y:g.dir_local(unit(f.y)),r};
                     if !source.simple(eps) { return Err(Unbuilt::Curved {at:f.o}) }
+                    let [w0,w1] = rim.span;
                     let sites: Vec<(V,V)> = (0..=4*SITES).flat_map(|i| {
-                        let (sp,cp) = (std::f64::consts::TAU*(i as f64+0.5)/(4*SITES+1) as f64).dsin_cos();
+                        let (sp,cp) = (w0+(w1-w0)*(i as f64+0.5)/(4*SITES+1) as f64).dsin_cos();
                         let x = f.at([r*cp,r*sp,0.]);
                         let n = unit(cross(add(scale(f.x,-sp),scale(f.y,cp)),screw.velocity(x)));
                         poses.iter().map(move |m| (m.point(x),m.vector(n)))

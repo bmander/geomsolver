@@ -829,7 +829,8 @@ impl Surface {
     pub fn periods(&self) -> [Option<f64>;2] {
         match self {
             Surface::Plane(_) | Surface::Extrusion(..) => [None,None],
-            Surface::Revolution(..) => [Some(TAU),None],
+            // a sharp circle's ring is closed round its meridian too, as a torus is (#780 L2)
+            Surface::Revolution(_,c) => [Some(TAU),match &**c { Curve::Turned(t) => t.meridian_period(),_ => None }],
             Surface::Blend(_,b) => [b.closed.then_some(1.),None],
             Surface::Family(_,w) => [w.period(),None],
             Surface::BSpline(..) => [None,None],
@@ -1605,7 +1606,8 @@ impl Curve {
     }
     pub fn period(&self) -> Option<f64> {
         match self {
-            Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) | Curve::Turned(..) => None,
+            Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) => None,
+            Curve::Turned(ref t) => t.period(),
             Curve::Rim(ref w,_) => w.period(),
             Curve::Traced(c) => c.closed.then(|| c.segments() as f64),
             Curve::Affine(m) => m.period(),

@@ -422,6 +422,12 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             Ssi::Curves(lines),
         (s @ (Surface::Cylinder(..) | Surface::Cone(..)),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),s @ (Surface::Cylinder(..) | Surface::Cone(..)))
             if let Some(curves) = own_contact(&s,&c,tol) => Ssi::Curves(curves),
+        (Surface::Plane(pl),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),Surface::Plane(pl))
+            if let Some(circles) = plane_holding_rim(&pl,&c,tol) => Ssi::Curves(circles),
+        (Surface::Cylinder(cy,r),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),Surface::Cylinder(cy,r))
+            if let Some(curves) = side_holding_rim(&cy,r,&c,tol) => Ssi::Curves(curves),
+        (Surface::Plane(pl),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),Surface::Plane(pl))
+            if let Some(curves) = plane_contact_section(&pl,&c) => Ssi::Curves(curves),
         (Surface::Plane(_),Surface::Cylinder(..)) | (Surface::Cylinder(..),Surface::Plane(_)) => {
             let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cylinder(c,r) = cy else { unreachable!() };
@@ -624,6 +630,79 @@ fn own_contact(s: &Surface,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
     // posed: the contact itself, read in the turn's frame turned by the pose
     let frame = Frame {o:g.o,x:g.dir(pose.vector([1.,0.,0.])),y:g.dir(pose.vector([0.,1.,0.])),z:g.z};
     Some(vec![Curve::Turned(std::sync::Arc::new(Turned {frame,posed:true,..**t}))])
+}
+
+/// **A plane against the surface of revolution of a round face's contact** (#780 L2), exactly:
+/// its cut, read round the angle `τ` where `cos(ψ − ψₙ) = C(v) = −cos τ` (`turned::Section`). None
+/// where `C` is not proved to run one way over the meridian's span, or the plane is all but level
+/// (read as meridians are): traced.
+fn plane_contact_section(pl: &Frame,c: &Curve) -> Option<Vec<Curve>> {
+    let Curve::Turned(t) = c else { return None };
+    let (Some(of),false) = (t.contact(),t.posed) else { return None };
+    let g = t.frame;
+    let n = g.dir_local(unit(pl.z));
+    let (k,spans) = crate::turned::Section::new(of,n,dot(n,g.local(pl.o)),t.span)?;
+    Some(spans.into_iter().map(|span| Curve::Turned(std::sync::Arc::new(crate::turned::Turned {frame:g,
+        source:crate::turned::Source::Section(k),span,posed:true}))).collect())
+}
+
+/// The turn about the axis of `t`'s frame that carries `rim`'s normal onto `along` (in that frame),
+/// either way round, and the rim so carried: its centre, `e₁`, `e₂` and normal; none where no turn
+/// does, or the circle's normal runs along the axis.
+fn rim_posed(rim: &crate::turned::Rim,along: V) -> Vec<(V,V,V,V)> {
+    let n = unit(cross(rim.x,rim.y));
+    let (h1,h2) = (along[0].dhypot(along[1]),n[0].dhypot(n[1]));
+    if h2 <= 1e-9 { return vec![] }
+    [1.,-1.].iter().filter_map(|&sign| {
+        let m = scale(along,sign);
+        if (m[2]-n[2]).abs() > 1e-9 || (h1-h2).abs() > 1e-9 { return None }
+        let turn = Rigid::turn([0.;3],[0.,0.,1.],m[1].datan2(m[0])-n[1].datan2(n[0]));
+        Some((turn.point(rim.o),turn.vector(rim.x),turn.vector(rim.y),turn.vector(n)))
+    }).collect()
+}
+
+/// **A cylinder holding a sharp circle's ring at some pose of the turn** (#780 L2: a flat-ended
+/// tool's side at an end pose, its rim on the ring that rim turns into), against that ring,
+/// exactly: the circle itself, and the loop where the side crosses the ring off it
+/// (`turned::Crossing`), which crosses the circle where the side's contact reaches the rim. None
+/// where the cylinder holds no turned copy of the circle (its axis the circle's normal turned about
+/// the turn's axis, through its centre, of its radius), or the loop is not one `Crossing` reads.
+fn side_holding_rim(cy: &Frame,radius: f64,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
+    let Curve::Turned(t) = c else { return None };
+    let crate::turned::Source::Rim(rim) = t.source else { return None };
+    if t.posed || (radius.abs()-rim.r).abs() > tol { return None }
+    let g = t.frame;
+    let (along,through) = (g.dir_local(unit(cy.z)),g.local(cy.o));
+    let (o,e1,e2,n) = rim_posed(&rim,along).into_iter().find(|&(o,..)| norm(cross(sub(o,through),along)) <= tol)?;
+    let loop_ = crate::turned::Crossing::new(o,e1,e2,n,rim.r)?;
+    Some(vec![Curve::Circle(Frame::about(g.at(o),g.dir(n)),rim.r),
+        Curve::Turned(std::sync::Arc::new(crate::turned::Turned {frame:g,source:crate::turned::Source::Crossing(loop_),
+            span:[0.,std::f64::consts::TAU],posed:true}))])
+}
+
+/// **A plane holding a sharp circle's ring at some pose of the turn** (#780 L2: a flat end at an end
+/// pose, its rim on the ring that rim turns into), against that ring, exactly: two circles of the
+/// circle's radius. Measured from the turn's origin, at `c + q` of the plane (`q` in the posed
+/// circle's own frame `e₁, e₂` about its centre `c`), `(|x|², z) = m + L q + (D, 0)`, `L = [[2 c·e₁,
+/// 2 c·e₂], [e₁_z, e₂_z]]` and `D = |q|² − r²` the circle's power, while the ring is `m + L q` over
+/// `|q| = r`: so the plane's point is on the ring where `|q + D k|² = r²`, `k = L⁻¹ (1, 0)` —
+/// `D (1 + 2 q·k + D |k|²) = 0`, the circle itself (`D = 0`) and `|q + k/|k|²|² = r²`, a second
+/// circle of the same radius. None where the plane holds no turned copy of the circle (its normal
+/// the circle's turned about the axis, its centre on it), or `L` cannot be inverted.
+fn plane_holding_rim(pl: &Frame,c: &Curve,tol: f64) -> Option<Vec<Curve>> {
+    let Curve::Turned(t) = c else { return None };
+    let crate::turned::Source::Rim(rim) = t.source else { return None };
+    if t.posed { return None }
+    let g = t.frame;
+    let (o,e1,e2,n) = rim_posed(&rim,g.dir_local(unit(pl.z))).into_iter().find(|&(o,..)| dot(sub(g.at(o),pl.o),unit(pl.z)).abs() <= tol)?;
+    let l = [[2.*dot(o,e1),2.*dot(o,e2)],[e1[2],e2[2]]];
+    let det = l[0][0]*l[1][1]-l[0][1]*l[1][0];
+    if !(det.abs() > 1e-12*(1.+norm(o))) { return None }
+    // k = L⁻¹ (1, 0)
+    let k = [l[1][1]/det,-l[1][0]/det];
+    let kk = k[0]*k[0]+k[1]*k[1];
+    let other = sub(o,add(scale(e1,k[0]/kk),scale(e2,k[1]/kk)));
+    Some([o,other].iter().map(|&q| Curve::Circle(Frame::about(g.at(q),g.dir(n)),rim.r)).collect())
 }
 
 /// **A plane cutting every generator of a cone, in an ellipse** (#780 C3: a leaning frustum cut by

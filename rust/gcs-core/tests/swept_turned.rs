@@ -692,22 +692,143 @@ fn a_flat_ended_drum_leaning_to_the_axis_turned_whole_closes_into_its_solid_of_r
     turned_whole("a flat-ended drum",&flat_drum(a),&|p| in_flat_drum(a,p),flat_drum_whole(a));
 }
 
-/// **A flat-ended drum leaning to a turn's axis turned part of a turn is refused by name** (#780
-/// L2, left open): at each end pose its end's plane and its side hold the rim the ring holds — the
-/// plane meets the ring in that circle and one more of its radius, the side in that circle and a
-/// curve crossing it where the side's contact reaches the rim — which the arrangement is not given
-/// in closed form, and traced, three meetings along one circle do not close. Refused
-/// (`Unbuilt::Curved`, at the rim's centre), never built wrong.
+/// **A flat-ended drum leaning to a turn's axis turned part of a turn closes into its sweep**
+/// (#780 L2's gate, X4 part of a turn): turned 100°, its ends and side at each end pose, its side's
+/// contacts turned and its rims' rings. At each end pose the end's plane meets its rim's ring in
+/// that circle and a second of its radius, the side meets it in the circle and the loop crossing
+/// it where the side's contact reaches the rim (`turned::Crossing`), and the plane cuts the side's
+/// contact turned in closed form (`turned::Section`), tangent there to the rim: every meeting at
+/// that point exact. Its own volume and `Θ/2π` of its whole turn's (each slice convex and clear of
+/// the axis), membership and a Monte Carlo of the definition (`turned_part`).
 #[test]
-fn a_flat_ended_drum_leaning_to_the_axis_turned_part_of_a_turn_is_refused_by_name() {
-    use gcs_core::brep::swept::closed::Unbuilt;
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, about 20 s: a flat-ended drum turned 100°, its membership read and sampled")]
+fn a_flat_ended_drum_leaning_to_the_axis_turned_part_of_a_turn_closes_into_its_sweep() {
     let a = leaning();
-    match closed(&flat_drum(a),&turn(PART),[0.,1.],0.002,1e-6) {
-        Err(Unbuilt::Curved {at}) => {
-            let along = dot(sub(at,[5.,1.2,0.]),a);
-            assert!((along.abs()-1.5).abs() <= 1e-9 && norm(sub(sub(at,[5.,1.2,0.]),scale(a,along))) <= 1e-9,"refused at {at:?}, no rim's centre");
+    turned_part("a flat-ended drum",&flat_drum(a),&|p| in_flat_drum(a,p),flat_drum_whole(a),true);
+}
+
+/// The turn's frame the reduced arrangements read `flat_drum`'s rims in, and the rim at `t` along
+/// its axis (`±1.5`) as a `turned::Rim` there, read from its lowest point, with its centre and frame
+/// in the world.
+fn flat_rim(a: V,t: f64) -> (Frame,gcs_core::brep::turned::Rim,V,V,V) {
+    let g = Frame::about([0.;3],[0.,0.,1.]);
+    let c = add([5.,1.2,0.],scale(a,t));
+    // its angle from its lowest point, as the drum's disc reads it: where a plane's cut of its ring
+    // runs across the place the ring's meridian starts
+    let x = unit(sub(scale(a,a[2]),[0.,0.,1.]));
+    let y = cross(a,x);
+    (g,gcs_core::brep::turned::Rim {o:g.local(c),x:g.dir_local(x),y:g.dir_local(y),r:1.},c,x,y)
+}
+
+/// The ring `flat_drum`'s rim at `t` turns into, as `closed` enters it: its meridian turned once.
+fn flat_ring(a: V,t: f64) -> Brep {
+    use gcs_core::brep::build::{Profile,ProfileEdge,revolve};
+    let (g,rim,..) = flat_rim(a,t);
+    let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:vec![vec![ProfileEdge::Turned(std::sync::Arc::new(Turned::rim(g,rim,[0.,TAU])))]]};
+    revolve(&profile,g.o,g.z,TAU).unwrap()
+}
+
+/// **Whether every candidate's cells fill it** in their arrangement within `domain`: each candidate
+/// (held inside the domain) the sum of the volumes of the cells whose points are in it (by its own
+/// exact point location, three a cell), to 1e-6 of its volume. A meeting lost leaves a cell
+/// reaching through a candidate's boundary, and its volume counted on the wrong side.
+fn fills(domain: &Brep,candidates: &[&Brep]) -> Vec<f64> {
+    use gcs_core::brep::query::{Located,Place};
+    let c = gcs_core::brep::boolean::arrangement_within(domain,candidates,1e-6).unwrap();
+    let cells = c.cells().unwrap();
+    candidates.iter().map(|k| {
+        let at = Located::new(k,1e-6);
+        let held: f64 = (1..cells.len()).filter(|&i| {
+            let pts = c.inside_points(i,3).unwrap();
+            2*pts.iter().filter(|&&x| at.solid_place(x) == Place::In).count() > pts.len()
+        }).map(|i| cells[i].volume).sum();
+        held-volume(k)
+    }).collect()
+}
+
+/// **A flat end's side at an end pose and its rim's ring are arranged** (#780 L2, reduced from the
+/// gate): the side turned 100° (a cylinder past its rims) holds the rim the ring holds, and meets the
+/// ring in that circle and the loop crossing it at two points where the two touch
+/// (`turned::Crossing`, its period `2π`: read as an open curve from one end to the other, it had been
+/// dropped as no edge, and both solids' cells lost); each fills its cells.
+#[test]
+fn a_flat_ends_side_at_an_end_pose_and_its_rims_ring_are_arranged() {
+    use gcs_core::brep::geom::Rigid;
+    let a = leaning();
+    let pose = Rigid::turn([0.;3],[0.,0.,1.],PART);
+    let side = prism(&disc(pose.point(add([5.,1.2,0.],scale(a,-1.9))),pose.vector(a),1.),0.,3.8).unwrap();
+    for t in [-1.5,1.5] {
+        let gaps = fills(&block([-9.,-9.,-4.],[9.,9.,4.]),&[&side,&flat_ring(a,t)]);
+        assert!(gaps.iter().all(|g| g.abs() <= 1e-6),"the rim at {t}: {gaps:?}");
+    }
+}
+
+/// **A plane cutting a rim's ring, traced across its meridian's start, closes** (#780 L2, reduced
+/// from the gate): the far end's plane at the end pose turned on cuts the near rim's ring in loops
+/// running across the place its meridian starts, at its lowest point; the ring's slant read round its period
+/// there (`Turned::newton`), not held to its span, each loop closes, and the ring fills its cells.
+#[test]
+fn a_plane_cutting_a_rims_ring_across_its_meridians_start_closes() {
+    use gcs_core::brep::geom::Rigid;
+    let a = leaning();
+    // (the far end's plane at the end pose turned on: the loops the ring's slant, held to its
+    // span, stopped short of closing)
+    for (angle,plane,rim) in [(PART,-1.5,1.5)] {
+        let pose = Rigid::turn([0.;3],[0.,0.,1.],angle);
+        let end = gcs_core::brep::build::kept(&block([-12.,-12.,-6.],[12.,12.,6.]),pose.point(add([5.,1.2,0.],scale(a,plane))),pose.vector(a),0.).unwrap();
+        let gaps = fills(&block([-9.,-9.,-4.],[9.,9.,4.]),&[&flat_ring(a,rim),&end]);
+        assert!(gaps[0].abs() <= 1e-6,"the plane of the end at {plane} turned {angle}, the ring of the rim at {rim}: {gaps:?}");
+    }
+}
+
+/// **The meetings where a flat end at an end pose holds its rim are exact** (#780 L2), each on both
+/// surfaces to rounding and its jets agreeing with differences: the end's plane against its rim's
+/// ring, the rim and a second circle of its radius (`ssi`'s `plane_holding_rim`); the side's cylinder
+/// against it, the rim and the loop crossing it where the two touch (`turned::Crossing`, at
+/// `τ = π/2, 3π/2` on the rim); and the plane against the side's contact turned, its cut read round
+/// `τ` (`turned::Section`).
+#[test]
+fn the_meetings_where_a_flat_end_at_an_end_pose_holds_its_rim_are_exact() {
+    use gcs_core::brep::geom::Rigid;
+    use gcs_core::brep::ssi::{Ssi,intersect};
+    let a = leaning();
+    let pose = Rigid::turn([0.;3],[0.,0.,1.],PART);
+    let (g,rim,c,..) = flat_rim(a,1.5);
+    let ring = Surface::Revolution(g,std::sync::Arc::new(Curve::Turned(std::sync::Arc::new(Turned::rim(g,rim,[0.,TAU])))));
+    let (pc,pa) = (pose.point(c),pose.vector(a));
+    let plane = Surface::Plane(Frame::about(pc,pa));
+    let side = Surface::Cylinder(Frame::about(pose.point([5.,1.2,0.]),pa),1.);
+    let contact = Contact {o:[5.,1.2,0.],a,r:1.,sa:0.,ca:1.,side:1.};
+    let turned = Surface::Revolution(g,std::sync::Arc::new(Curve::Turned(std::sync::Arc::new(Turned::meridian(g,contact,[-1.65,1.65])))));
+    let on = |s: &Surface,p: V| norm(sub(s.point(s.inverse(p)),p));
+    for (what,x,y,kinds) in [("the plane and the ring",&plane,&ring,vec!["circle","circle"]),("the side and the ring",&side,&ring,vec!["circle","turned"]),
+        ("the plane and the side's contact",&plane,&turned,vec!["turned"])] {
+        let Ssi::Curves(curves) = intersect(x,y,1e-9) else { panic!("{what}: traced") };
+        assert_eq!(curves.iter().map(|c| c.kind()).collect::<Vec<_>>(),kinds,"{what}");
+        for c in &curves {
+            let span = match c { Curve::Turned(t) => t.span,_ => [0.,TAU] };
+            for k in 0..=64 {
+                let u = span[0]+(span[1]-span[0])*k as f64/64.;
+                let p = c.point(u);
+                assert!(on(x,p) <= 1e-9 && on(y,p) <= 1e-9,"{what}: a {} off by {:.1e} and {:.1e} at {u}",c.kind(),on(x,p),on(y,p));
+                if k == 0 || k == 64 { continue }
+                let (h,(_,d,dd)) = (1e-5,c.d2(u));
+                let (pm,dm) = { let (p,d,_) = c.d2(u-h); (p,d) };
+                let (pp,dp) = { let (p,d,_) = c.d2(u+h); (p,d) };
+                for i in 0..3 {
+                    assert!((d[i]-(pp[i]-pm[i])/(2.*h)).abs() <= 1e-6*(1.+norm(d)),"{what}: {}'s first derivative at {u}",c.kind());
+                    assert!((dd[i]-(dp[i]-dm[i])/(2.*h)).abs() <= 1e-4*(1.+norm(dd)),"{what}: {}'s second derivative at {u}",c.kind());
+                }
+            }
         }
-        other => panic!("a flat-ended drum turned {PART}: {:?}",other.map(|b| volume(&b))),
+        // the loop crosses the rim where the side touches the ring: at `τ = π/2` and `3π/2`, on it
+        if let Some(Curve::Turned(t)) = curves.get(1) {
+            for u in [std::f64::consts::FRAC_PI_2,3.*std::f64::consts::FRAC_PI_2] {
+                let p = curves[1].point(u);
+                assert!((norm(sub(p,pc))-1.).abs() <= 1e-12 && dot(sub(p,pc),pa).abs() <= 1e-12,"{what}: the loop at {u} off the rim");
+                assert!(matches!(t.source,gcs_core::brep::turned::Source::Crossing(_)));
+            }
+        }
     }
 }
 
@@ -800,4 +921,147 @@ fn a_sharp_circle_turned_is_a_ring_read_exactly() {
         met += found.len();
     }
     assert!(met > 20,"{met} crossings read");
+}
+
+
+/// **The radii squared a slice of a leaning drum cut by planes spans about the world's `z`**, in
+/// closed form apart from any build (#780 L2's arcs): the slice at height `z` of the drum of radius
+/// 1 about the axis through `(5, 1.2, 0)` along `a` (`a_y = 0`) is the ellipse `E(φ) = m + (cos φ /
+/// cos β) s + sin φ w` (`flat_drum_spans`) cut by the half-spaces `n · p ≤ d`, each a line in the
+/// slice. `ρ²` is convex, so its least and most over that convex region are among: the ellipse's
+/// critical points (by bisection on the rate of `ρ²` from 3600 samples), its corners on each line
+/// (`A cos φ + B sin φ = C`), two lines' crossings, and each line's foot nearest the axis — each
+/// kept where it lies in every other half-space and the ellipse. With which kind of point held each
+/// end (`key`): where that changes, the integrand's form changes.
+fn cut_drum_spans(a: V,cuts: &[(V,f64)],z: f64) -> Option<(f64,f64,[(u8,usize,usize);2])> {
+    let ca = a[2];
+    let m = add([5.,1.2,0.],scale(a,z/ca));
+    let (s,w) = (unit([a[0],a[1],0.]),[-a[1]/a[0].hypot(a[1]),a[0]/a[0].hypot(a[1]),0.]);
+    let e = |phi: f64| add(m,add(scale(s,phi.cos()/ca),scale(w,phi.sin())));
+    let r2 = |p: V| p[0]*p[0]+p[1]*p[1];
+    let slack = 1e-12;
+    let inside_ellipse = |p: V| { let q = sub(p,m); let (x,y) = (dot(q,s)*ca,dot(q,w)); x*x+y*y <= 1.+slack };
+    let kept = |p: V,skip: &[usize]| (0..cuts.len()).all(|i| skip.contains(&i) || dot(cuts[i].0,p) <= cuts[i].1+slack);
+    let mut found: Vec<(f64,(u8,usize,usize))> = Vec::new();
+    let rate = |phi: f64| { let p = e(phi); let d = add(scale(s,-phi.sin()/ca),scale(w,phi.cos())); 2.*(p[0]*d[0]+p[1]*d[1]) };
+    let n = 3600;
+    for k in 0..n {
+        let (p0,p1) = (k as f64*TAU/n as f64,(k+1) as f64*TAU/n as f64);
+        if rate(p0)*rate(p1) > 0. { continue }
+        let (mut x,mut y) = (p0,p1);
+        for _ in 0..200 { let mid = 0.5*(x+y); if rate(mid)*rate(x) > 0. { x = mid } else { y = mid } }
+        let p = e(0.5*(x+y));
+        if kept(p,&[]) { found.push((r2(p),(0,0,0))) }
+    }
+    for (i,&(nn,d)) in cuts.iter().enumerate() {
+        // the corners: n · E(φ) = d, `A cos φ + B sin φ = C`
+        let (aa,bb,cc) = (dot(nn,s)/ca,dot(nn,w),d-dot(nn,m));
+        let rr = aa.hypot(bb);
+        if rr > 0. && cc.abs() <= rr {
+            let (phi,delta) = (bb.atan2(aa),(cc/rr).clamp(-1.,1.).acos());
+            for f in [phi+delta,phi-delta] { let p = e(f); if kept(p,&[i]) { found.push((r2(p),(1,i,0))) } }
+        }
+        // the line in the slice: its foot nearest the axis
+        let nh = [nn[0],nn[1]];
+        let h2 = nh[0]*nh[0]+nh[1]*nh[1];
+        let level = (d-nn[2]*z)/h2;
+        let foot = [nh[0]*level,nh[1]*level,z];
+        if inside_ellipse(foot) && kept(foot,&[i]) { found.push((r2(foot),(2,i,0))) }
+        // two lines' crossing
+        for (j,&(mm,dj)) in cuts.iter().enumerate().skip(i+1) {
+            let det = nn[0]*mm[1]-nn[1]*mm[0];
+            if det.abs() < 1e-12 { continue }
+            let (bi,bj) = (d-nn[2]*z,dj-mm[2]*z);
+            let p = [(bi*mm[1]-bj*nn[1])/det,(nn[0]*bj-mm[0]*bi)/det,z];
+            if inside_ellipse(p) && kept(p,&[i,j]) { found.push((r2(p),(3,i,j))) }
+        }
+    }
+    let near = found.iter().copied().min_by(|x,y| x.0.total_cmp(&y.0))?;
+    let far = found.iter().copied().max_by(|x,y| x.0.total_cmp(&y.0))?;
+    Some((near.0,far.0,[near.1,far.1]))
+}
+
+/// **The volume a leaning drum cut by planes sweeps turned whole, worked apart from any build**:
+/// `∫ π (ρ_max² − ρ_min²) dz` over its slices (`cut_drum_spans`), cut where the kind of point holding
+/// either end changes (found from 2000 samples over `[z0, z1]`, each change bisected to rounding) and
+/// each piece read by Simpson's rule under `z = z₀ + (z₁ − z₀)(1 − cos πs)/2`.
+fn cut_drum_whole(a: V,cuts: &[(V,f64)],[z0,z1]: [f64;2]) -> f64 {
+    let key = |z: f64| cut_drum_spans(a,cuts,z).map(|s| s.2);
+    let n = 2000;
+    let zs: Vec<f64> = (0..=n).map(|k| z0+(z1-z0)*k as f64/n as f64).collect();
+    let mut breaks = vec![z0];
+    for w in zs.windows(2) {
+        let (ka,kb) = (key(w[0]),key(w[1]));
+        if ka == kb { continue }
+        let (mut lo,mut hi) = (w[0],w[1]);
+        for _ in 0..80 { let mid = 0.5*(lo+hi); if key(mid) == ka { lo = mid } else { hi = mid } }
+        breaks.push(0.5*(lo+hi));
+    }
+    breaks.push(z1);
+    breaks.windows(2).map(|q| simpson(0.,1.,200,|t| {
+        let z = q[0]+(q[1]-q[0])*0.5*(1.-(PI*t).cos());
+        let dz = (q[1]-q[0])*0.5*PI*(PI*t).sin();
+        match cut_drum_spans(a,cuts,z) { Some((n,f,_)) if dz != 0. => PI*(f-n)*dz,_ => 0. }
+    })).sum()
+}
+
+/// The planes `flat_drum` is cut by, as half-spaces `n · p ≤ d`: its ends square to its axis 1.5
+/// from its middle, and `more`.
+fn drum_cuts(a: V,more: &[(V,f64)]) -> Vec<(V,f64)> {
+    let o = [5.,1.2,0.];
+    let mut out = vec![(a,dot(a,o)+1.5),(scale(a,-1.),-dot(a,o)+1.5)];
+    out.extend_from_slice(more);
+    out
+}
+
+/// **The worked volume of a cut drum turned whole is the flat-ended drum's where nothing more cuts
+/// it**: `cut_drum_whole`, its breaks found rather than listed, against `flat_drum_whole`'s, to 1e-10.
+#[test]
+fn the_worked_volume_of_a_cut_drum_is_the_flat_ended_drums() {
+    let a = leaning();
+    let (x,y) = (cut_drum_whole(a,&drum_cuts(a,&[]),[-1.8,1.8]),flat_drum_whole(a));
+    assert!((x-y).abs() <= 1e-10*y,"{x} against {y}");
+}
+
+/// A half drum: `flat_drum` cut along its axis by the plane through it along `y`, kept on the side
+/// away from the turn's axis — its rims half circles, sharp arcs leaning to the turn's axis, joined
+/// by its cut's lines — with the cut's half-space and the tool's own test.
+fn half_drum(a: V) -> (Brep,(V,f64),impl Fn(V) -> f64) {
+    let o = [5.,1.2,0.];
+    let w = unit(cross(a,[0.,1.,0.]));
+    let tool = gcs_core::brep::build::kept(&flat_drum(a),o,scale(w,-1.),0.).unwrap();
+    (tool,(w,dot(w,o)),move |p: V| in_flat_drum(a,p).max(dot(sub(p,o),w)))
+}
+
+/// **A half drum leaning to a turn's axis turned whole closes into its solid of revolution** (#780
+/// L2, a sharp arc under a turn): its rims are half circles, each turned into its whole circle's
+/// ring (`turned::Rim`), its sites the arc's own points, membership keeping what bounds the sweep;
+/// its cut's lines into hyperboloids, its cut's plane's contact turned. Held to `∫ π (ρ_max² − ρ_min²)
+/// dz` over its slices worked apart (`cut_drum_whole`), to membership and a Monte Carlo of the
+/// definition (`turned_whole`).
+#[test]
+fn a_half_drum_leaning_to_the_axis_turned_whole_closes_into_its_solid_of_revolution() {
+    let a = leaning();
+    let (tool,cut,inside) = half_drum(a);
+    turned_whole("a half drum",&tool,&inside,cut_drum_whole(a,&drum_cuts(a,&[cut]),[-1.8,1.8]));
+}
+
+/// **A half drum leaning to a turn's axis turned part of a turn is cut right or refused by name**
+/// (#780 L2, left open): turned 100°, the end of each rim's arc at the cut's edge — its path's
+/// point at an end pose, where the end's plane, the cut's, the rim's ring and the cut's lines'
+/// surfaces all pass — leaves a cell thinner than the mesh's sag can settle: refused
+/// (`Unbuilt::Unsettled`), never built wrong; built, its own volume and `Θ/2π` of its whole turn's
+/// (convex), membership and a Monte Carlo of the definition (`turned_part`).
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, about 35 s: a half drum turned 100°, refused where its arcs end")]
+fn a_half_drum_leaning_to_the_axis_turned_part_of_a_turn_is_cut_right_or_refused_by_name() {
+    use gcs_core::brep::swept::closed::Unbuilt;
+    let a = leaning();
+    let (tool,cut,inside) = half_drum(a);
+    let path = turn(PART);
+    match closed(&tool,&path,[0.,1.],0.002,1e-6) {
+        Ok(_) => turned_part("a half drum",&tool,&inside,cut_drum_whole(a,&drum_cuts(a,&[cut]),[-1.8,1.8]),true),
+        Err(Unbuilt::Unsettled {..}) => {}
+        Err(e) => panic!("a half drum turned {PART}: {e:?}"),
+    }
 }
