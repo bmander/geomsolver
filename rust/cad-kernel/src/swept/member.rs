@@ -131,12 +131,12 @@ impl Swept<'_> {
         // where the point is inside is read before a stretch where it stands within the sag of the
         // boundary is halved down to `FINEST` (taken depth first, the left of the two, such a
         // stretch ran past `MOST_READS` before the right, where the point lay deep inside, was read)
-        let mut stack = std::collections::BinaryHeap::new();
+        let mut frontier = std::collections::BinaryHeap::new();
         let mut pushed = 0u64;
-        stack.push(Stretch {key:f64::NEG_INFINITY,order:0,lo:a.min(b),hi:a.max(b)});
+        frontier.push(Stretch {key:f64::NEG_INFINITY,order:0,lo:a.min(b),hi:a.max(b)});
         let mut near: Option<f64> = None;
         let mut reads = 0;
-        while let Some(Stretch {lo,hi,..}) = stack.pop() {
+        while let Some(Stretch {lo,hi,..}) = frontier.pop() {
             reads += 1;
             // each stretch read counted against the build's budget (#777 V3)
             if !crate::util::meter::charge(crate::util::meter::Stage::Membership,1,|| (x,"membership".into())) { return Err(Unsettled::Stopped) }
@@ -152,7 +152,7 @@ impl Swept<'_> {
             if d-sag > speed*h { continue }
             if h <= finest { near.get_or_insert(m); continue }
             let key = d-speed*h;
-            for (lo,hi) in [(lo,m),(m,hi)] { pushed += 1; stack.push(Stretch {key,order:pushed,lo,hi}) }
+            for (lo,hi) in [(lo,m),(m,hi)] { pushed += 1; frontier.push(Stretch {key,order:pushed,lo,hi}) }
         }
         match near { Some(at) => Err(Unsettled::Near {at}),None => Ok(false) }
     }

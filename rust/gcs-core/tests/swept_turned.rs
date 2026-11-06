@@ -334,12 +334,18 @@ fn turned_part(what: &str,tool: &Brep,inside: &dyn Fn(V) -> f64,whole: f64,conve
 /// (`turned_both_ways`).
 #[test]
 fn a_leaning_drum_turned_closes_into_its_sweep() {
+    let (tool,inside,whole) = leaning_drum_case();
+    turned_both_ways("a leaning drum",&tool,&inside,whole,true);
+}
+
+/// `a_leaning_drum_turned_closes_into_its_sweep`'s drum, below nought inside it, and its whole
+/// turn's volume worked apart from the build.
+fn leaning_drum_case() -> (Brep,impl Fn(V) -> f64,f64) {
     let a = leaning();
-    let tool = leaning_drum(a);
     let whole = simpson(-1.5,1.5,400,|z| { let (n,f) = drum_spans(a,z); PI*(f*f-n*n) });
     let o = [5.,1.2,0.];
-    let inside = |p: V| { let q = sub(p,o); let t = dot(q,a); (norm(sub(q,scale(a,t)))-1.).max(t.abs()-3.).max(p[2].abs()-1.5) };
-    turned_both_ways("a leaning drum",&tool,&inside,whole,true);
+    let inside = move |p: V| { let q = sub(p,o); let t = dot(q,a); (norm(sub(q,scale(a,t)))-1.).max(t.abs()-3.).max(p[2].abs()-1.5) };
+    (leaning_drum(a),inside,whole)
 }
 
 /// The radii the level slice at height `z` of a convex tool spans about the world's `z` axis, apart
@@ -1065,11 +1071,7 @@ fn a_half_drum_leaning_to_the_axis_turned_part_of_a_turn_is_cut_right_or_refused
 #[test]
 fn a_leaning_drum_turned_builds_through_its_given_touches() {
     use gcs_core::brep::ssi::{Recognised,bypassing};
-    let a = leaning();
-    let tool = leaning_drum(a);
-    let whole = simpson(-1.5,1.5,400,|z| { let (n,f) = drum_spans(a,z); PI*(f*f-n*n) });
-    let o = [5.,1.2,0.];
-    let inside = |p: V| { let q = sub(p,o); let t = dot(q,a); (norm(sub(q,scale(a,t)))-1.).max(t.abs()-3.).max(p[2].abs()-1.5) };
+    let (tool,inside,whole) = leaning_drum_case();
     bypassing(&[Recognised::OwnContact],|| turned_part("a leaning drum",&tool,&inside,whole,true));
 }
 

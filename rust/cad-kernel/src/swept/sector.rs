@@ -224,7 +224,7 @@ pub struct Boundary {
 fn wrapped(a: f64,pitch: f64) -> f64 { (a+pitch/2.).rem_euclid(pitch)-pitch/2. }
 
 /// The widest gap between angles taken modulo `pitch`: its start and width.
-fn widest(angles: impl Iterator<Item=f64>,pitch: f64) -> (f64,f64) {
+pub(super) fn widest(angles: impl Iterator<Item=f64>,pitch: f64) -> (f64,f64) {
     let mut a: Vec<f64> = angles.map(|x| x.rem_euclid(pitch)).collect();
     a.sort_by(f64::total_cmp);
     let (mut gap,mut at) = (0_f64,0_f64);

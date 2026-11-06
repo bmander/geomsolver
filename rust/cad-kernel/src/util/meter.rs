@@ -247,10 +247,7 @@ pub fn go_on() -> Result<(),Stopped> {
 
 /// A meeting of surfaces of kinds `a` and `b` found, in closed form or traced, in `took`.
 pub fn meeting(a: &'static str,b: &'static str,exact: bool,took: std::time::Duration) {
-    CURRENT.with(|c| if let Some(m) = &*c.borrow() {
-        let key = if a <= b { (a,b) } else { (b,a) };
-        let mut p = m.profile.lock().unwrap_or_else(|e| e.into_inner());
-        let e = p.meetings.entry(key).or_default();
+    meetings_of(a,b,|e| {
         if exact { e.exact += 1 } else { e.traced += 1 }
         e.nanos += took.as_nanos();
         e.slowest = e.slowest.max(took.as_nanos());
@@ -258,10 +255,14 @@ pub fn meeting(a: &'static str,b: &'static str,exact: bool,took: std::time::Dura
 }
 
 /// A meeting of surfaces of kinds `a` and `b` given before any was sought (#810, `meeting::Shared::give`).
-pub fn given(a: &'static str,b: &'static str) {
+pub fn given(a: &'static str,b: &'static str) { meetings_of(a,b,|e| e.given += 1) }
+
+/// `count` of the profile's meetings of surfaces of kinds `a` and `b` (the pair sorted), where a
+/// meter is installed.
+fn meetings_of(a: &'static str,b: &'static str,count: impl FnOnce(&mut Meetings)) {
     CURRENT.with(|c| if let Some(m) = &*c.borrow() {
         let key = if a <= b { (a,b) } else { (b,a) };
-        m.profile.lock().unwrap_or_else(|e| e.into_inner()).meetings.entry(key).or_default().given += 1;
+        count(m.profile.lock().unwrap_or_else(|e| e.into_inner()).meetings.entry(key).or_default())
     })
 }
 

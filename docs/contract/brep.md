@@ -381,8 +381,8 @@ each operand; a traced meeting along an edge one face already has is that edge, 
 and laid across the other face too wherever it lies inside it (`Meetings::along_edges`: a torus's
 seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_seam_is_half_of_it`); a meeting
 known before any is sought given it (`Given`, `arrangement_given`, #810): curves on two operands'
-surfaces laid as an edge of both with no search for that pair where they are its whole meeting,
-else known to the trace of the rest — what a sweep knows of its candidates' touches by construction
+surfaces that are their whole meeting, laid as an edge of both with no search for that pair —
+what a sweep knows of its candidates' touches by construction
 (generating.md, #810); each cell's membership in each operand read off a face of it bounding the cell, else at
 a point deep inside. **A Boolean is a selection over it**: each piece's two sides' membership read
 as before, the complex formed, each shell kept as the operation keeps its sides — which agree round

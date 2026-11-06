@@ -391,31 +391,17 @@ pub enum Recognised {
     RimHeld = 4,
 }
 
-thread_local! {
-    /// The recognitions bypassed on this thread (`bypassing`), as their bits.
-    static BYPASSED: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
-}
-
 /// **`f` with the recognitions `forms` bypassed** (#810): `intersect` leaves those pairs to be traced
-/// unless their meeting is given, here and on the threads `util::par` runs `f`'s work on.
+/// unless their meeting is given, here and on the threads `util::par` runs `f`'s work on
+/// (`util::bypass`).
 pub fn bypassing<R>(forms: &[Recognised],f: impl FnOnce() -> R) -> R {
-    let mask = forms.iter().fold(bypassed_mask(),|m,&r| m | r as u8);
-    under_bypass(mask,f)
+    crate::util::bypass::under(forms.iter().fold(crate::util::bypass::current(),|m,&r| m | r as u8),f)
 }
 
-/// The recognitions bypassed on this thread, as their bits (what `util::par` hands its workers).
-pub fn bypassed_mask() -> u8 { BYPASSED.with(|b| b.get()) }
-
-/// `f` with exactly the recognitions `mask` bypassed, the thread's own put back after.
-pub fn under_bypass<R>(mask: u8,f: impl FnOnce() -> R) -> R {
-    let before = BYPASSED.with(|b| b.replace(mask));
-    let out = f();
-    BYPASSED.with(|b| b.set(before));
-    out
+/// `found`'s recognition of `form`, or none where it is bypassed on this thread.
+fn recognised<T>(form: Recognised,found: impl FnOnce() -> Option<T>) -> Option<T> {
+    if crate::util::bypass::current() & form as u8 != 0 { None } else { found() }
 }
-
-/// Whether `form` is bypassed on this thread.
-fn bypassed(form: Recognised) -> bool { bypassed_mask() & form as u8 != 0 }
 
 /// Where two surfaces meet (`tol` a length).
 pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
@@ -463,12 +449,12 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         (Surface::Cone(c,r,half),Surface::Cone(k,s,kalf)) if let Some(lines) = cones_at_one_apex((&c,r,half),(&k,s,kalf),tol) =>
             Ssi::Curves(lines),
         (s @ (Surface::Cylinder(..) | Surface::Cone(..)),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),s @ (Surface::Cylinder(..) | Surface::Cone(..)))
-            if !bypassed(Recognised::OwnContact) && let Some(curves) = own_contact(&s,&c,tol) => Ssi::Curves(curves),
+            if let Some(curves) = recognised(Recognised::OwnContact,|| own_contact(&s,&c,tol)) => Ssi::Curves(curves),
         (Surface::Plane(pl),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),Surface::Plane(pl))
-            if let Some(curves) = (!bypassed(Recognised::RimHeld)).then(|| plane_holding_rim(&pl,&c,tol)).flatten()
+            if let Some(curves) = recognised(Recognised::RimHeld,|| plane_holding_rim(&pl,&c,tol))
                 .or_else(|| plane_contact_section(&pl,&c)) => Ssi::Curves(curves),
         (Surface::Cylinder(cy,r),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),Surface::Cylinder(cy,r))
-            if !bypassed(Recognised::RimHeld) && let Some(curves) = side_holding_rim(&cy,r,&c,tol) => Ssi::Curves(curves),
+            if let Some(curves) = recognised(Recognised::RimHeld,|| side_holding_rim(&cy,r,&c,tol)) => Ssi::Curves(curves),
         (Surface::Plane(_),Surface::Cylinder(..)) | (Surface::Cylinder(..),Surface::Plane(_)) => {
             let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cylinder(c,r) = cy else { unreachable!() };
@@ -793,13 +779,12 @@ fn slid_meeting(h: &crate::slid::Slid,s: &Surface,tol: f64) -> Option<Vec<Curve>
     let d = h.slide();
     let g = s.frame();
     match *s {
-        Surface::Torus(..) if bypassed(Recognised::SlidTouch) => None,
-        Surface::Torus(t,big,small) => {
+        Surface::Torus(t,big,small) => recognised(Recognised::SlidTouch,|| {
             let k = h.contact;
             (norm(cross(t.z,h.frame.z)) <= 1e-9 && (big.abs()-k.big).abs() <= tol && (small.abs()-k.small).abs() <= tol
                 && norm(cross(sub(t.o,h.frame.o),d)) <= tol)
                 .then(|| vec![Curve::Slid(std::sync::Arc::new(h.at(t.o,false)))])
-        }
+        }),
         Surface::Plane(_) if dot(g.z,d).abs() <= 1e-12 => {
             let found = h.crossings(g.o,g.z,&|t| s.implicit(h.d2(t).0).abs() <= tol).ok()?;
             if found.iter().any(|r| r.touch) { return None }

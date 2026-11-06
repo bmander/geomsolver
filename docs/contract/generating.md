@@ -651,9 +651,10 @@ where it lies.
 **Touches given by construction, and a bull-nose slid at a lean (#810, #780 R5's first gate).** A
 sweep knows where its candidates touch before any meeting is sought, and hands those touches to the
 arrangement as given edges (`boolean::Given`, `arrangement_given`; `meeting::Shared::give`): curves
-lying on two candidates' surfaces, laid as an edge of both with no search for that pair where they
-are its whole meeting (else known to the trace of the rest, seeded off them), each counted in the
-profile beside the meetings found in closed form and traced (`… / given`). The closed class gives:
+that are two candidates' surfaces' whole meeting, laid as an edge of both with no search for that
+pair, each counted in the profile beside the meetings found in closed form and traced
+(`… / given`). Each touch names its two candidates, and is given between the faces of their solids
+that hold its curves, where both are carried (`closed`'s `Touch`). The closed class gives:
 - **a band's contact where it crosses a smooth seam** — the path along the slide of the point
   where a torus face's contact runs on into its neighbour's, on which the sheet over the contact's
   contour and the plane the neighbour's ruling sweeps touch;
@@ -664,13 +665,13 @@ profile beside the meetings found in closed form and traced (`… / given`). The
   `plane_holding_rim`, `side_holding_rim`).
 
 Each pair-by-pair recognition in `ssi::intersect` can be bypassed (`ssi::bypassing`,
-`Recognised::{OwnContact, SlidTouch, RimHeld}`, carried to `util::par`'s workers), and each gate
+`Recognised::{OwnContact, SlidTouch, RimHeld}`, carried to `util::par`'s workers by `util::bypass`), and each gate
 rebuilt through its given touches alone holds to the same closed form
 (`swept_slid::the_slid_touches_build_through_their_given_touches`,
 `swept_turned::a_leaning_drum_turned_builds_through_its_given_touches`, and in the slow tier
 `…::a_flat_ended_drum_turned_builds_through_its_given_touches`); with nothing given and the
 recognition bypassed each is refused ("a hole in no piece"). A failed build's dump carries its given
-meetings, and its replay meets them (`swept::dump::dump_given`).
+meetings, and its replay meets them (`swept::dump::dump`).
 
 Under a slide at a lean a **band** of a torus's tube is admitted (`closed`'s `Band`): a face that is
 no whole ring, bounded by two latitudes of the tube's outer half (`v ∈ [−π/2, π/2]`), each a smooth

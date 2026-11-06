@@ -259,21 +259,16 @@ impl Arrangement {
 }
 
 /// **The arrangement written into `dir`**: `domain.json`, `candidate-<k>.json` each, and
-/// `arrangement.json` (the tolerance, the count, and `why`, what the build was refused for).
-pub fn dump(dir: &std::path::Path,domain: &Brep,candidates: &[&Brep],tol: f64,why: &str) -> Result<(),String> {
-    dump_given(dir,domain,candidates,&[],tol,why)
-}
-
-/// `dump`, with the meetings given the arrangement (#810), each written in `arrangement.json` by
-/// its two surfaces and its curves, exactly.
-pub fn dump_given(dir: &std::path::Path,domain: &Brep,candidates: &[&Brep],given: &[Given],tol: f64,why: &str) -> Result<(),String> {
+/// `arrangement.json` (the tolerance, the count, the meetings given it (#810) by their two surfaces
+/// and their curves exactly, and `why`, what the build was refused for).
+pub fn dump(dir: &std::path::Path,domain: &Brep,candidates: &[&Brep],given: &[Given],tol: f64,why: &str) -> Result<(),String> {
     let io = |e: std::io::Error| format!("sweep dump: {e}");
     std::fs::create_dir_all(dir).map_err(io)?;
     std::fs::write(dir.join("domain.json"),write(domain)?).map_err(io)?;
     for (k,c) in candidates.iter().enumerate() { std::fs::write(dir.join(format!("candidate-{k}.json")),write(c)?).map_err(io)? }
     let given = given.iter().map(|g| -> Result<Json,String> {
         Ok(object([("surfaces",Json::Arr(vec![surface(&g.surfaces[0])?,surface(&g.surfaces[1])?])),
-            ("curves",Json::Arr(g.curves.iter().map(curve).collect::<Result<Vec<_>,_>>()?)),("whole",g.whole.into())]))
+            ("curves",Json::Arr(g.curves.iter().map(curve).collect::<Result<Vec<_>,_>>()?))]))
     }).collect::<Result<Vec<_>,_>>()?;
     let meta = object([("tol",tol.into()),("candidates",candidates.len().into()),("given",Json::Arr(given)),("why",why.into())]);
     std::fs::write(dir.join("arrangement.json"),meta.dump(Some(2))).map_err(io)
@@ -291,8 +286,7 @@ pub fn load(dir: &std::path::Path) -> Result<Arrangement,String> {
         None => Vec::new(),
         Some(g) => g.arr().iter().map(|g| -> Result<Given,String> {
             let s = field(g,"surfaces")?.arr();
-            Ok(Given {surfaces:[rsurface(&s[0])?,rsurface(&s[1])?],curves:field(g,"curves")?.arr().iter().map(rcurve).collect::<Result<_,_>>()?,
-                whole:field(g,"whole")?.as_bool()})
+            Ok(Given {surfaces:[rsurface(&s[0])?,rsurface(&s[1])?],curves:field(g,"curves")?.arr().iter().map(rcurve).collect::<Result<_,_>>()?})
         }).collect::<Result<_,_>>()?,
     };
     Ok(Arrangement {domain,candidates,given,tol:num(&meta,"tol")?})

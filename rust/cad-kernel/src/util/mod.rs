@@ -3,6 +3,7 @@
 //! algebra, quadrature, exact expansions, a JSON reader and writer, a seeded generator, a clock and
 //! the thread pool.
 pub mod bvh;
+pub mod bypass;
 pub mod clock;
 pub mod expansion;
 pub mod fmath;

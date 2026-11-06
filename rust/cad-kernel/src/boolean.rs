@@ -781,18 +781,16 @@ pub fn arrangement_within(domain: &Brep,operands: &[&Brep],tol: f64) -> Result<C
 
 /// **A meeting known before any is sought** (#810, #780 R5: a touch given by construction): curves
 /// lying on both `surfaces`, surfaces of two of an arrangement's operands' faces — whole curves, as
-/// a closed form's are (a line unbounded, a closed curve whole). `whole`: they are the two surfaces'
-/// meeting, laid as an edge of both with no search for it; else a part of it, every trace of the
-/// rest seeded off them and ending where it comes to them. What a sweep knows of its candidates'
+/// a closed form's are (a line unbounded, a closed curve whole) — that are the two surfaces' whole
+/// meeting, laid as an edge of both with no search for it. What a sweep knows of its candidates'
 /// touches (a contact's path where it crosses a smooth seam into a neighbour's contact, along which
 /// the two contacts' swept sheets touch) is handed in so, not sought where a search would read a
 /// touch as a crossing or miss it.
 #[derive(Clone,Debug)]
-pub struct Given { pub surfaces: [Surface;2],pub curves: Vec<Curve>,pub whole: bool }
+pub struct Given { pub surfaces: [Surface;2],pub curves: Vec<Curve> }
 
 /// **`arrangement_within`, with meetings given** (#810): the domain split by the operands at once,
-/// each pair of surfaces a `Given` names met in the curves it gives — laid with no search where
-/// they are the whole meeting, else known to the search for the rest.
+/// each pair of surfaces a `Given` names met in the curves it gives, with no search.
 pub fn arrangement_given(domain: &Brep,operands: &[&Brep],given: &[Given],tol: f64) -> Result<Complex,String> {
     let all: Vec<&Brep> = std::iter::once(domain).chain(operands.iter().copied()).collect();
     arranged(&all,given,true,tol)
@@ -927,7 +925,7 @@ fn arrange<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],tol: f6
 /// `arrange`'s phases, the meetings `given` known before any is sought (#810).
 fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],tol: f64) -> Result<Arranged<'a>,String> {
     let mut arr = Arrangement::new(solids,known,tol);
-    for g in given { arr.shared.give(&g.surfaces[0],&g.surfaces[1],&g.curves,g.whole,tol); }
+    for g in given { arr.shared.give(&g.surfaces[0],&g.surfaces[1],&g.curves,tol); }
     // 1. every edge against every face of the other solid: where it crosses, a vertex on both
     let mut crossings = arr.crossings();
     // a root met flatly that is a crossing found besides is that crossing (`flat_roots`)

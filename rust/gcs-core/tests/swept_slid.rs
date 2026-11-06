@@ -77,18 +77,27 @@ impl Ring {
     }
 }
 
-/// **The sweep's definition, read**: `p` is in it where some point of its line back along the
-/// slide, `p − t D` for `t` in `[0, 1]`, is in the ring — stepped by the ring's exact distance from
-/// the line's point, never less than a ten-thousandth of `D`.
-fn swept(ring: &Ring,d: V,p: V) -> bool {
+/// **The sweep's definition, read**: `p` is in a tool slid by `d` where some point of its line back
+/// along the slide, `p − t D` for `t` in `[0, 1]`, is in the tool — stepped by `apart`, at most the
+/// distance from the tool (at or below nought in it), never less than a ten-thousandth of `D`.
+fn swept(apart: &dyn Fn(V) -> f64,d: V,p: V) -> bool {
     let len = norm(d);
     let mut t = 0.;
     while t <= 1. {
-        let g = ring.inside(sub(p,scale(d,t)));
+        let g = apart(sub(p,scale(d,t)));
         if g <= 0. { return true }
         t += (g/len).max(1e-4);
     }
-    ring.inside(sub(p,d)) <= 0.
+    apart(sub(p,d)) <= 0.
+}
+
+/// `∫ f` over `[lo, hi]`, by Gauss–Legendre's eight points (`integral::GAUSS8`) on each of `n`
+/// pieces.
+fn gauss(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,n: usize) -> f64 {
+    (0..n).map(|k| {
+        let (p,q) = (lo+(hi-lo)*k as f64/n as f64,lo+(hi-lo)*(k+1) as f64/n as f64);
+        gcs_core::integral::GAUSS8.iter().map(|&(x,w)| w*0.5*(q-p)*f(0.5*(p+q)+0.5*(q-p)*x)).sum::<f64>()
+    }).sum()
 }
 
 /// **The contact read by the kernel is the contact** (`brep::slid`): each half's point is on the
@@ -199,7 +208,7 @@ fn slid_closes(lean: f64,d: V) {
     let path = slide(d);
     crate::swept_closed::agrees(&built,&tool,&path);
     let (lo,hi) = built.bounds();
-    let (sampled,error) = crate::swept_closed::monte_carlo(lo.map(|x| x-0.1),hi.map(|x| x+0.1),20000,805,&|p| swept(&ring,d,p));
+    let (sampled,error) = crate::swept_closed::monte_carlo(lo.map(|x| x-0.1),hi.map(|x| x+0.1),20000,805,&|p| swept(&|x| ring.inside(x),d,p));
     assert!((sampled-volume(&built)).abs() <= 4.*error,"sampled {sampled} ± {error} against {}",volume(&built));
 }
 
@@ -361,24 +370,14 @@ impl Mill {
     /// points with `d_z` above nought — `[a, b]`), the side's rulings at `b` and `a`, where the
     /// contact crosses the seam into the side's, and between them the top's: the top round's contact
     /// where it lies on the round (`v ≥ 0`), or the sharp top rim, over the other half `[b, a + 2π]`.
-    /// Each arc by Gauss–Legendre over 256 pieces (exact to rounding), each ruling exactly.
+    /// Each arc by Gauss–Legendre over 256 pieces (`gauss`, exact to rounding), each ruling exactly.
     pub(crate) fn shadow(&self,d: V) -> f64 {
         let (big,h) = (self.big,self.h);
         let (e1,e2) = gcs_core::space::across(d);
         let flat = |p: V| [dot(p,e1),dot(p,e2)];
         // ½ ∫ (x y′ − y x′) over a piece `p(t)`, `t` in `[a, b]`, its derivative `dp`
         let swept = |p: &dyn Fn(f64) -> V,dp: &dyn Fn(f64) -> V,a: f64,b: f64| -> f64 {
-            const X: [f64;5] = [0.,-0.538469310105683,0.538469310105683,-0.906179845938664,0.906179845938664];
-            const W: [f64;5] = [0.568888888888889,0.478628670499366,0.478628670499366,0.236926885056189,0.236926885056189];
-            let n = 256;
-            (0..n).map(|k| {
-                let (lo,hi) = (a+(b-a)*k as f64/n as f64,a+(b-a)*(k+1) as f64/n as f64);
-                (0..5).map(|i| {
-                    let t = 0.5*(lo+hi)+0.5*(hi-lo)*X[i];
-                    let ([x0,y0],[x1,y1]) = (flat(p(t)),flat(dp(t)));
-                    W[i]*0.5*(hi-lo)*(x0*y1-y0*x1)
-                }).sum::<f64>()
-            }).sum::<f64>()/2.
+            gauss(&|t| { let ([x0,y0],[x1,y1]) = (flat(p(t)),flat(dp(t))); x0*y1-y0*x1 },a,b,256)/2.
         };
         let seg = |p: V,q: V| { let ([x0,y0],[x1,y1]) = (flat(p),flat(q)); (x0*y1-y0*x1)/2. };
         let g = |u: f64| d[0]*u.cos()+d[1]*u.sin();
@@ -399,19 +398,9 @@ impl Mill {
         let side = |u: f64,z: f64| [big*u.cos(),big*u.sin(),z];
         (low+seg(side(b,c),side(b,h-top))+high+seg(side(a,h-top),side(a,c))).abs()
     }
-    /// **The sweep's definition, read**: `p` is in the tool slid by `d` where some point of its line
-    /// back along the slide, `p − t D` for `t` in `[0, 1]`, is in the tool — stepped by `below`,
-    /// never less than a ten-thousandth of `D`.
-    pub(crate) fn swept(&self,d: V,p: V) -> bool {
-        let len = norm(d);
-        let mut t = 0.;
-        while t <= 1. {
-            let g = self.below(sub(p,scale(d,t)));
-            if g <= 0. { return true }
-            t += (g/len).max(1e-4);
-        }
-        self.below(sub(p,d)) <= 0.
-    }
+    /// **The sweep's definition, read** (`swept`, stepped by `below`): whether `p` is in the mill slid
+    /// by `d`.
+    pub(crate) fn swept(&self,d: V,p: V) -> bool { swept(&|x| self.below(x),d,p) }
 }
 
 /// The mill `mill` slid by `d`, built alone (#810's gate) and held to `V + |D| A` within 1e-9 —
@@ -528,17 +517,9 @@ impl Mill {
         assert_eq!(self.top,0.,"a bull-nose");
         let (big,c,h) = (self.big,self.c,self.h);
         let (sb,cb) = beta.sin_cos();
-        let (a,x) = ([sb,0.,cb],[cb,0.,-sb]);
+        let x = [cb,0.,-sb];
         let rho = |u: f64| add(scale(x,u.cos()),[0.,u.sin(),0.]);
-        // `∫ f` over `[lo, hi]`, Gauss–Legendre over `n` pieces
-        let gl = |f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,n: usize| -> f64 {
-            const X: [f64;5] = [0.,-0.538469310105683,0.538469310105683,-0.906179845938664,0.906179845938664];
-            const W: [f64;5] = [0.568888888888889,0.478628670499366,0.478628670499366,0.236926885056189,0.236926885056189];
-            (0..n).map(|k| {
-                let (p,q) = (lo+(hi-lo)*k as f64/n as f64,lo+(hi-lo)*(k+1) as f64/n as f64);
-                (0..5).map(|i| W[i]*0.5*(q-p)*f(0.5*(p+q)+0.5*(q-p)*X[i])).sum::<f64>()
-            }).sum()
-        };
+        let gl = gauss;
         let disc = cb*PI*big*big*(base[2]+h*cb);
         let (u0,u1) = (PI/2.,3.*PI/2.);
         let side = gl(&|u| {
@@ -570,7 +551,7 @@ fn a_bull_nose_pushed_at_a_lean_into_a_block_stops_inside_it() {
     let mill = Mill {big:2.,c:0.5,top:0.,h:3.};
     let beta = 30f64.to_radians();
     let lean = Frame {o:[0.,0.,4.],x:[beta.cos(),0.,-beta.sin()],y:[0.,1.,0.],z:[beta.sin(),0.,beta.cos()]};
-    let tool = mill.tool().moved(&gcs_core::brep::geom::Rigid {r:std::array::from_fn(|i| [lean.x[i],lean.y[i],lean.z[i]]),t:lean.o});
+    let tool = mill.tool().moved(&lean.placing());
     let block = prism(&square([0.,0.,-8.],[0.,0.,1.],8.),0.,8.).unwrap();
     let d = [0.,0.,-8.];
     let built = cut_from(&block,&tool,&slide(d),[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("{e:?}"));
