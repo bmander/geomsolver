@@ -180,9 +180,17 @@ fn declarative_bevel_blank_reads_without_gear_names_or_coordinate_adapters() {
 }
 
 #[test]
-fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
+fn partial_sweeps_and_prisms_and_concave_profiles_read() {
+    // a ball turned a quarter of a turn is read (#721 F1d): material in one quadrant about its axis
+    // alone, the wedge its turn spans
     let e = read(&SPHERE.replace("about: ax)","about: ax, to: 90deg)"));
-    assert!(SpatialField::read(&e.sketch,0,1e-10).unwrap_err().contains("full revolution"));
+    let quarter = SpatialField::read(&e.sketch,0,1e-10).unwrap();
+    let inside = [[0.4,0.4],[0.4,-0.4],[-0.4,0.4],[-0.4,-0.4]].iter().filter(|&&[x,y]| {
+        let got = quarter.bounds(point([3.+x,y,0.])).unwrap().bounds();
+        assert!(got[1] < 0. || got[0] > 0.,"({x}, {y}): {got:?}");
+        got[1] < 0.
+    }).count();
+    assert_eq!(inside,1,"one quadrant of the ball");
     assert!(SpatialField::read(&e.sketch,999,1e-10).is_err());
     // The same half disc extruded 2 behind the page is a prism on x >= 3, y in [0, 2].
     let e = read(&SPHERE.replace("Revolution(face(rim,ax), about: ax)","Prism(face(rim,ax), from: -2, to: 0)"));
