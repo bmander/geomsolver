@@ -75,6 +75,11 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
             SolidDef::Swept { source, .. } => {
                 return face_paths(sk, *source as usize).iter().map(FacePath::text).collect()
             }
+            // a face carried over an interval of a motion (#846): its section's edges, and its
+            // caps where it begins and ends, as the rule names a revolution's
+            SolidDef::Region { .. } if let Some(v) = crate::solid::carried::face_names(sk, p) => {
+                return v;
+            }
             SolidDef::Region { terms, .. } => {
                 // a round's own bounds that no set names (`p inside a`) lie on the faces it
                 // rounds: no face of its own a path could write ([0.149])

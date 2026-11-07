@@ -93,8 +93,26 @@ fn normalized(mut v: Vec<f64>) -> Vec<f64> {
     v
 }
 
+/// **A part cut into the pieces its own structure falls into** (#851): its rows and columns by the
+/// connected components of its rows over its own columns alone.  Over those the part's matrix is
+/// block-diagonal, so each piece is a part of its own, in any order after the parts before it:
+/// its rows read its own columns and earlier parts', never another piece's.  An under-determined
+/// part is often many unrelated pieces — every plane a pass leaves turning — and factored whole
+/// it is the cube of all of them.
+fn pieces(j: &SparseConditioned, rows: &[usize], cols: &[usize]) -> Vec<(Vec<usize>, Vec<usize>)> {
+    let comps = crate::graph::bipartite_components(&j.adjacency(rows, cols), cols.len());
+    let mut out: Vec<(Vec<usize>, Vec<usize>)> = vec![(Vec::new(), Vec::new()); comps.count];
+    for (k, &r) in rows.iter().enumerate() {
+        out[comps.comp_row[k]].0.push(r);
+    }
+    for (k, &c) in cols.iter().enumerate() {
+        out[comps.comp_col[k]].1.push(c);
+    }
+    out
+}
+
 /// The null space of `j`, over the parts in an order where each part's rows read only its own
-/// columns and earlier parts': each vector `j.n_cols` long.
+/// columns and earlier parts', each read piece by piece (`pieces`): each vector `j.n_cols` long.
 fn null_by_parts<'p>(
     j: &SparseConditioned,
     parts: impl Iterator<Item = (&'p [usize], &'p [usize])>,
@@ -104,35 +122,43 @@ fn null_by_parts<'p>(
     // rows a part could not make up exactly: where a combination of candidates may still fail
     let mut short: Vec<usize> = Vec::new();
     for (rows, cols) in parts {
-        if cols.is_empty() {
-            continue;
-        }
-        // what each earlier candidate puts on this part's rows, to be made up here
-        let bs: Vec<Vec<f64>> =
-            cands.iter().map(|v| rows.iter().map(|&r| -j.row_dot(r, v)).collect()).collect();
-        let solves = bs.iter().any(|b| b.iter().any(|x| *x != 0.0));
-        let f = Factored::of(&j.dense(rows, cols), solves);
-        if solves {
-            match f.solve(&bs) {
-                Some(xs) => {
-                    for (v, x) in cands.iter_mut().zip(xs) {
-                        for (&c, y) in cols.iter().zip(x) {
-                            v[c] = y;
+        // a candidate born in one piece of a part is zero on every other piece's rows: only those
+        // of earlier parts are made up
+        let born = cands.len();
+        for (rows, cols) in pieces(j, rows, cols) {
+            let (rows, cols) = (&rows[..], &cols[..]);
+            if cols.is_empty() {
+                // rows that read none of their part's columns make nothing up
+                short.extend(rows);
+                continue;
+            }
+            // what each earlier candidate puts on this piece's rows, to be made up here
+            let bs: Vec<Vec<f64>> = cands[..born].iter()
+                .map(|v| rows.iter().map(|&r| -j.row_dot(r, v)).collect()).collect();
+            let solves = bs.iter().any(|b| b.iter().any(|x| *x != 0.0));
+            let f = Factored::of(&j.dense(rows, cols), solves);
+            if solves {
+                match f.solve(&bs) {
+                    Some(xs) => {
+                        for (v, x) in cands[..born].iter_mut().zip(xs) {
+                            for (&c, y) in cols.iter().zip(x) {
+                                v[c] = y;
+                            }
                         }
                     }
+                    None => short.extend(rows),
                 }
-                None => short.extend(rows),
             }
-        }
-        if f.rank < rows.len() {
-            short.extend(rows);
-        }
-        for nv in f.null {
-            let mut v = vec![0.0; n];
-            for (&c, y) in cols.iter().zip(nv) {
-                v[c] = y;
+            if f.rank < rows.len() {
+                short.extend(rows);
             }
-            cands.push(normalized(v));
+            for nv in f.null {
+                let mut v = vec![0.0; n];
+                for (&c, y) in cols.iter().zip(nv) {
+                    v[c] = y;
+                }
+                cands.push(normalized(v));
+            }
         }
     }
     if cands.is_empty() || short.is_empty() {
@@ -160,4 +186,32 @@ pub(super) fn right_null(j: &SparseConditioned, parts: &[Part]) -> Vec<Vec<f64>>
 /// residual vector's rows.
 pub(super) fn left_null(j: &SparseConditioned, parts: &[Part]) -> Vec<Vec<f64>> {
     null_by_parts(&j.transpose(), parts.iter().rev().map(|p| (&p.cols[..], &p.rows[..])))
+}
+
+/// **The rank of `rows` of `j` over `cols` alone** (#851), read part by part as the whole is past
+/// `NUMERIC_MAX`: the selection taken out of `j` (`SparseConditioned::select`, so every vector
+/// read is the selection's size and not the system's), its structure cut into its own
+/// block-triangular order (over-determined part, square blocks in their solve order,
+/// under-determined part) and its null space read through them, exact as `right_null` is.  So a
+/// reading of one instance of a definition costs what its blocks do, not the cube of everything
+/// it makes: the instance of a definition that seats forty others is forty small blocks, not one
+/// matrix of all of them.  An entry outside `cols` is not read.
+pub fn rank_by_parts(j: &SparseConditioned, rows: &[usize], cols: &[usize]) -> usize {
+    if rows.is_empty() || cols.is_empty() {
+        return 0;
+    }
+    let sub = j.select(rows, cols);
+    let adj: Vec<Vec<usize>> =
+        (0..rows.len()).map(|r| sub.row(r).map(|(c, _)| c).collect()).collect();
+    let dm = crate::graph::dulmage_mendelsohn(&adj, cols.len());
+    let blt = crate::graph::blocks(&adj, &dm);
+    // each part in the order a part's rows read only its own columns and earlier parts'
+    let mut parts = vec![Part { rows: dm.over_rows.clone(), cols: dm.over_cols.clone() }];
+    parts.extend(blt.rows.into_iter().map(|rows| {
+        let mut cols: Vec<usize> = rows.iter().map(|&r| dm.mate_row[r] as usize).collect();
+        cols.sort_unstable();
+        Part { rows, cols }
+    }));
+    parts.push(Part { rows: dm.under_rows, cols: dm.under_cols });
+    cols.len() - right_null(&sub, &parts).len()
 }

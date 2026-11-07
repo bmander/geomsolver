@@ -14,6 +14,18 @@ pub const POSE_CACHE: usize = 4096;
 pub fn millimetres(sk: &Sketch) -> f64 { sk.units.mm_per() }
 
 pub(super) fn vector(v: [f64;3]) -> Json { Json::Arr(v.into_iter().map(Json::from).collect()) }
+
+/// A motion that carries a section (model units), as the recipe writes it by `w`: a point moved
+/// and scaled, a direction as it is, a length scaled (a family's `carry`, a carried profile's, #846).
+pub(super) fn carry_json(c: crate::brep::geom::Carry,w: &Writer) -> Json {
+    match c {
+        crate::brep::geom::Carry::Screw {center,axis,angle,advance} => object([("kind","screw".into()),
+            ("center",w.point(center)),("axis",vector(axis)),("angle",angle.into()),
+            ("advance",(advance*w.scale).into())]),
+        crate::brep::geom::Carry::Line {delta} => object([("kind","line".into()),
+            ("delta",vector(delta.map(|x| x*w.scale)))]),
+    }
+}
 fn ids(v: &[u32]) -> Json { Json::Arr(v.iter().copied().map(Json::from).collect()) }
 
 /// Row-major 3x4 native placement. Rotation is dimensionless; only the
@@ -93,12 +105,27 @@ pub(crate) fn contains_sweep(sk: &Sketch,i: usize) -> bool {
         || sk.solids[i].operands().into_iter().any(|o| contains_sweep(sk,o as usize))
 }
 
+/// Whether solid `i` is a body built of sweeps, or a chain of placements ending in one: swept
+/// material, which a body it cuts subtracts by the kernel's Boolean (#818), as against a sweep,
+/// which a class reads (`swept_cut`).
+pub(crate) fn swept_body(sk: &Sketch,i: usize) -> bool {
+    match &sk.solids[i].def {
+        SolidDef::Body {..} => contains_sweep(sk,i),
+        SolidDef::Placed {source,..} => swept_body(sk,*source as usize),
+        _ => false,
+    }
+}
+
 /// The operands of body `i` that hold swept material where a sweep is not cut: its stock, what is
-/// put on it and what bounds it. A body with any is built from swept material (`drill :=
-/// solid(fluted)`), not one a sweep is cut from.
+/// put on it, what bounds it, and what cuts it where that is a body built of sweeps (`swept_body`;
+/// #818: a gear rack-cut, cut from a ring's blank). A body with any is built from swept material
+/// (`drill := solid(fluted)`), each such operand by its own construction, not one a sweep is cut
+/// from.
 pub(crate) fn swept_operands(sk: &Sketch,i: usize) -> Vec<usize> {
-    let SolidDef::Body {stock,on,bound,..} = &sk.solids[i].def else { return Vec::new() };
-    std::iter::once(stock).chain(on).chain(bound).map(|&o| o as usize).filter(|&o| contains_sweep(sk,o)).collect()
+    let SolidDef::Body {stock,on,through,bound} = &sk.solids[i].def else { return Vec::new() };
+    let cuts = through.iter().filter(|&&o| swept_body(sk,o as usize));
+    std::iter::once(stock).chain(on).chain(bound).map(|&o| o as usize).filter(|&o| contains_sweep(sk,o))
+        .chain(cuts.map(|&o| o as usize)).collect()
 }
 
 /// The solid a chain of placements ends in (`x in f`, `x at(…) τ`) where it holds a continuous
@@ -134,6 +161,10 @@ pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String>
             }
             None => Ok(None),
         },
+        // a body built of sweeps is built by its own road and subtracted (`swept_operands`), which
+        // only the core's kernel does: a recipe, the native path's, holds none
+        _ if swept_body(sk,i) => Err(format!("`{}` is a body built of sweeps, which only the core's kernel cuts from \
+            another body: export it with `--kernel rust`",solid.name)),
         _ if contains_sweep(sk,i) => Err(format!(
             "`{}`: a continuous sweep may only be cut from a body directly or through placements",solid.name)),
         _ => Ok(None),
@@ -350,6 +381,9 @@ impl<'a> Walk<'a> {
                 // and corner, glued to it
                 super::region::Route::Grown(g) => g.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(w)?,
                 super::region::Route::Field(why) => return Err(format!("`{}`: {why}",sk.solid_name(i))),
+                // a face carried over an interval of a constant twist (#846): its profile where the
+                // interval begins, carried to where it ends
+                super::region::Route::Carried(c) => c.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(sk,w)?,
                 // a panel's band (#645): its ruled walls are not yet written exactly
                 super::region::Route::Sheet(_) => return Err(format!("`{}`: a developable panel's \
                     band is faceted from its rulings; its exact ruled walls are not yet written to \
@@ -473,7 +507,7 @@ fn trochoid_halves(sk: &Sketch,i: usize,basis: &crate::plane::Basis,lift: &dyn F
         ("y_dir",vector(basis.v)),("terms",terms.clone()),("span",Json::Arr(vec![s0.into(),s1.into()]))])).collect())
 }
 
-fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String> {
+pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String> {
     let face = &sk.faces[index];
     let p = super::face_poly(sk,index,super::REPORT_UNIT).ok_or("invalid CAD profile")?;
     let scale = w.scale;

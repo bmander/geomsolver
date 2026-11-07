@@ -94,7 +94,7 @@ fn revolution(sk: &Sketch, terms: &[RegionTerm]) -> Option<SolidDef> {
     use std::f64::consts::TAU;
     let [t] = terms else { return None };
     let RegionShape::Swept { motion, roll, face } = t.shape else { return None };
-    if t.cmp != Cmp::Le || t.hi.is_some() || stated(t)? != 0.0 {
+    if !held(t) {
         return None;
     }
     let (axis, a, d, ratio) = turn_of(sk, motion)?;
@@ -145,6 +145,12 @@ pub fn name_terms(sk: &Sketch, terms: &mut [RegionTerm]) {
             }
         }
     }
+}
+
+/// Whether a term holds where its shape is at most nothing, stated: the one way a set is applied to
+/// a region's point (`p in sec at(…) t`).
+pub(crate) fn held(t: &RegionTerm) -> bool {
+    t.cmp == Cmp::Le && t.hi.is_none() && stated(t) == Some(0.0)
 }
 
 /// A stated number of a term, its `lo`, where nothing grows it.

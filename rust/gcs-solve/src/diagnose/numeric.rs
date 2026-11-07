@@ -62,14 +62,60 @@ pub(super) struct Dependencies {
     /// duplicate is never a theorem: two Horizontals on one line match two variables, so the graph
     /// passes them, but a copy is a surplus whatever it is made of.
     pub implied: Vec<u32>,
+    /// The constraints the dependencies no removable one takes are among (`said_twice`), and
+    /// how many such dependencies there are.
+    pub twice: (Vec<u32>, usize),
 }
 
 impl Dependencies {
     fn of(sk: &Sketch, removable: Vec<u32>, removable_rel: Vec<u32>) -> Dependencies {
         let implied = removable_rel.into_iter().filter(|&c| !duplicated(sk, c)).collect();
-        Dependencies { removable, implied }
+        Dependencies { removable, implied, twice: (Vec::new(), 0) }
     }
 }
+
+/// **The constraints a row said twice is among, where no one of them can go** (#850): the
+/// dependencies among the rows (`w`, an orthonormal basis of the left null space, a column each,
+/// a row per residual row of `row_c`) that leaving out every constraint `removable` names would
+/// not take — those of W that vanish on its rows, `W · null(W[R])` — and the constraints whose
+/// rows they reach, intrinsic ones too, in row order, with how many such dependencies there are.
+/// A point held on two axes that meet, and the axes held through a point there: four statements
+/// of two rows over the point's three numbers, each needed, and one row past them — no statement
+/// is implied whole, so `removable` names none, and the count said "1700 equations, structural
+/// rank 1699" and nothing more.
+fn said_twice(w: &Mat, row_c: &[u32], removable: &[u32], rtol: f64) -> (Vec<u32>, usize) {
+    let removable: BTreeSet<u32> = removable.iter().copied().collect();
+    let named: Vec<usize> = (0..w.rows).filter(|&r| removable.contains(&row_c[r])).collect();
+    // every row reached is a removable constraint's: their leaving out takes every dependency
+    if w.cols == 0 || named.len() == w.rows {
+        return (Vec::new(), 0);
+    }
+    // each row of `W · N`, where N spans the dependencies that vanish on the rows named
+    let n = (!named.is_empty()).then(|| {
+        let tol = crate::linalg::Tol::Abs(TWICE);
+        crate::linalg::rank_and_nullspace_with(&w.select_rows(&named), tol).null()
+    });
+    let left = n.as_ref().map_or(w.cols, |n| n.cols);
+    if left == 0 {
+        return (Vec::new(), 0);
+    }
+    let mut ids: Vec<u32> = Vec::new();
+    let mut seen = BTreeSet::new();
+    for r in 0..w.rows {
+        let share = match &n {
+            Some(n) => n.mul_t_vec(w.row(r)),
+            None => w.row(r).to_vec(),
+        };
+        if share.iter().any(|v| v.abs() > rtol) && seen.insert(row_c[r]) {
+            ids.push(row_c[r]);
+        }
+    }
+    (ids, left)
+}
+
+/// A dependency that touches the rows of the constraints named removable less than this (W being
+/// orthonormal, an absolute measure) is one their leaving out does not take (`said_twice`).
+const TWICE: f64 = 1e-6;
 
 /// The numeric cross-check, the whole Jacobian or its parts as `gate` says.
 pub(super) fn read(
@@ -159,7 +205,8 @@ fn whole(
         let row_c_rel: Vec<u32> = rel_rows.iter().map(|&r| m.row_c[r]).collect();
         let removable = removable_constraints(sk, &w, &m.row_c, RTOL);
         let removable_rel = removable_constraints(sk, &w_rel, &row_c_rel, RTOL);
-        Dependencies::of(sk, removable, removable_rel)
+        let twice = said_twice(&w, &m.row_c, &removable, RTOL);
+        Dependencies { twice, ..Dependencies::of(sk, removable, removable_rel) }
     });
     Numeric { rank: Some(rank), shaky, movable: Some(movable), dependencies }
 }
@@ -174,8 +221,10 @@ fn by_parts(
     let z = sys.z0(sk);
     let p = numeric_by_parts(sk, sys, &m.row_c, &z);
     let (rank, null, shaky) = screened(sk, sys, &z, p.null, p.rank, m.dm.rank, warnings);
-    let dependencies =
-        (rank < m.n_rows()).then(|| Dependencies::of(sk, p.removable, p.removable_rel));
+    let dependencies = (rank < m.n_rows()).then(|| Dependencies {
+        twice: p.twice,
+        ..Dependencies::of(sk, p.removable, p.removable_rel)
+    });
     Numeric {
         rank: Some(rank),
         shaky,
@@ -277,6 +326,7 @@ struct ByParts {
     null: Mat,
     removable: Vec<u32>,
     removable_rel: Vec<u32>,
+    twice: (Vec<u32>, usize),
 }
 
 /// The block-triangular order's parts (#88): over first (its rows read nothing else), the square
@@ -324,10 +374,14 @@ fn numeric_by_parts(sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64]) -> 
     // vectors as the columns of a matrix
     let as_cols = |vs: &[Vec<f64>], n: usize| Mat::from_vec(vs.len(), n, vs.concat()).transpose();
     // the rows a left null space reaches, and the constraints it may name
-    let removable = |w: &[Vec<f64>]| {
+    let reached = |w: &[Vec<f64>]| {
         let rows: Vec<usize> = (0..sys.n_res).filter(|&r| w.iter().any(|v| v[r] != 0.0)).collect();
         let m = as_cols(w, sys.n_res).select_rows(&rows);
         let ids: Vec<u32> = rows.iter().map(|&r| of_row[r]).collect();
+        (m, ids)
+    };
+    let removable = |w: &[Vec<f64>]| {
+        let (m, ids) = reached(w);
         removable_constraints(sk, &m, &ids, RTOL)
     };
     // a dependency among rows only where there are more rows than the rank; among relations
@@ -339,10 +393,21 @@ fn numeric_by_parts(sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64]) -> 
         true => Vec::new(),
         false => parts::left_null(&j, &rel),
     };
+    let (m, ids) = reached(&all_rows);
+    let removable_all = removable_constraints(sk, &m, &ids, RTOL);
+    // the parts' reading is a basis and not an orthonormal one, which `said_twice` reads
+    // (spanning what they do, so reaching the same rows, in the same order)
+    let unit: Vec<Vec<f64>> = all_rows.iter().map(|v| (v, crate::linalg::norm(v)))
+        .filter(|&(_, n)| n > 0.0)
+        .map(|(v, n)| v.iter().map(|x| x / n).collect())
+        .collect();
+    let (w, _) = reached(&crate::linalg::orthonormalize(&unit, 1e-10));
+    let twice = said_twice(&w, &ids, &removable_all, RTOL);
     ByParts {
         rank,
         null: as_cols(&null, sys.n_free),
-        removable: removable(&all_rows),
+        removable: removable_all,
         removable_rel: removable(&rel_rows),
+        twice,
     }
 }

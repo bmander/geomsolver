@@ -255,6 +255,14 @@ fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
 /// Which planes stand turned as the statements say, and not merely as they were seeded: each
 /// plane both of whose axes are held or placed here.
 pub(crate) fn place(sk: &mut Sketch) -> Vec<bool> {
+    // a stage of its own (#851): a round's solve and its diagnosis are of everything it places
+    let planes = sk.frames.len();
+    let placing = || crate::progress::Work::place(planes);
+    crate::progress::during(placing, || place_planes(sk))
+}
+
+/// `place`, unsaid.
+fn place_planes(sk: &mut Sketch) -> Vec<bool> {
     align(sk);
     // a plane's normal is read off its axes, never solved for here: placed with them, and turned
     // to them once they are

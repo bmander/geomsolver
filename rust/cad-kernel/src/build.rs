@@ -621,6 +621,23 @@ pub fn screwed(p: &Profile,origin: V,axis: V,angle: f64,advance: f64) -> Result<
     ruled(p,&p.moved(&screw(origin,a,angle,advance)),Carry::Screw {center:origin,axis:a,angle,advance})
 }
 
+/// **The solid `p` sweeps carried by `carry`** (#846): a screw's (`screwed`), a turn's — a screw of
+/// no advance, its axis in the profile's plane (`revolve`) — or a slide's, a step along a line
+/// crossing the profile's plane (`ruled`). Its faces are the section where it starts (`start`) and
+/// where it ends (`end`) and each edge's sheet between them, named by the edge. The caller's to know
+/// it meets itself nowhere: a section square to a screw's axis never does, nor one a slide crosses.
+pub fn carried(p: &Profile,carry: Carry) -> Result<Brep,String> {
+    match carry {
+        Carry::Line {delta} => {
+            if dot(delta,unit(p.normal)).abs() <= 1e-12*norm(delta) { return Err("a slide along its profile's plane sweeps no volume".into()) }
+            ruled(p,&p.moved(&Rigid {r:Rigid::identity().r,t:delta}),carry)
+        }
+        Carry::Screw {axis,angle,advance,..} if angle == 0. => carried(p,Carry::Line {delta:scale(unit(axis),advance)}),
+        Carry::Screw {center,axis,angle,advance} if advance == 0. => revolve(p,center,axis,angle),
+        Carry::Screw {center,axis,angle,advance} => screwed(p,center,axis,angle,advance),
+    }
+}
+
 /// **The tube a ball sweeps along a path no closed form carries** (#684 D): `tube`, the solid a face
 /// family of the ball's disc square to the path bounds (`family`: its one round wall, `loops`, and
 /// the discs where it starts and ends), united with the half ball of radius `r` beyond each end

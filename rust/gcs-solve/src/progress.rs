@@ -33,13 +33,30 @@ pub enum Kind {
     Claim,
     /// A drawing followed along a declared parameter (`follow::followed`).
     Follow,
+    /// The planes placed from the statements about them, before the drawing is solved (#851).
+    Place,
+    /// Each drawn instance of a definition held to being a function of what it is given (PT2,
+    /// PT3; #851).
+    Check,
+    /// The diagnosis read through the drawing's parts (D1–D3; #851).
+    Parts,
+    /// One definition's rows ranked at an instance's inputs (D3; #851): an object, counted once
+    /// an instance.
+    Rank,
+    /// The definitions classified, each read through its first instance (#851).
+    Classify,
+    /// A load scenario read (#851).
+    Scenario,
+    /// A front end's whole run of a document (#851): its own time is what no other stage was,
+    /// so no time goes unsaid, and while nothing else is open it is what is still going.
+    Run,
 }
 
 impl Kind {
-    /// Whether it is work on the drawing's objects — a solid or a claim about solids — rather than
-    /// a stage of the run.
+    /// Whether it is work on the drawing's objects — a solid, a claim about solids or a part's
+    /// rows — rather than a stage of the run.
     pub fn is_object(self) -> bool {
-        matches!(self, Kind::Build | Kind::Evaluate | Kind::Claim)
+        matches!(self, Kind::Build | Kind::Evaluate | Kind::Claim | Kind::Rank)
     }
 }
 
@@ -143,6 +160,41 @@ impl Work {
         Work::of(Kind::Follow, name, None)
     }
 
+    /// A drawing's `n` planes placed before it is solved.
+    pub fn place(n: usize) -> Work {
+        Work::of(Kind::Place, format!("{n} planes"), None)
+    }
+
+    /// `n` drawn instances of definitions checked.
+    pub fn check(n: usize) -> Work {
+        Work::of(Kind::Check, format!("{n} parts"), None)
+    }
+
+    /// The diagnosis read through `n` drawn instances of definitions.
+    pub fn parts(n: usize) -> Work {
+        Work::of(Kind::Parts, format!("{n} parts"), None)
+    }
+
+    /// The rows of an instance of definition `word` ranked at its inputs.
+    pub fn rank(word: &str) -> Work {
+        Work::of(Kind::Rank, format!("the rows of `{word}`"), None)
+    }
+
+    /// `n` definitions classified.
+    pub fn classify(n: usize) -> Work {
+        Work::of(Kind::Classify, format!("{n} definitions"), None)
+    }
+
+    /// Load scenario `name` read.
+    pub fn scenario(name: &str) -> Work {
+        Work::of(Kind::Scenario, name, None)
+    }
+
+    /// Document `name` run, everything in it.
+    pub fn run(name: &str) -> Work {
+        Work::of(Kind::Run, name, None)
+    }
+
     fn verb(&self) -> (&'static str, &'static str) {
         match self.kind {
             Kind::Elaborate => ("elaborated", "elaborating"),
@@ -152,6 +204,13 @@ impl Work {
             Kind::Evaluate => ("evaluated", "evaluating"),
             Kind::Claim => ("judged", "judging"),
             Kind::Follow => ("followed", "following"),
+            Kind::Place => ("placed", "placing"),
+            Kind::Check => ("checked", "checking"),
+            Kind::Parts => ("read the diagnosis through", "reading the diagnosis through"),
+            Kind::Rank => ("ranked", "ranking"),
+            Kind::Classify => ("classified", "classifying"),
+            Kind::Scenario => ("read scenario", "reading scenario"),
+            Kind::Run => ("ran", "running"),
         }
     }
 
@@ -263,35 +322,62 @@ struct Row {
     count: usize,
     total: f64,
     own: f64,
+    /// How many rows there were when it was first done: the order the run first finished each
+    /// piece of work, one inside another before it.
+    first: usize,
 }
 
 impl Timings {
     /// Record one piece of work done: how many times it has been, this one included.
     pub fn add(&mut self, work: &Work, total: f64, own: f64) -> usize {
-        let row = self.rows.entry(work.clone()).or_default();
+        let first = self.rows.len();
+        let row = self.rows.entry(work.clone()).or_insert(Row { first, ..Row::default() });
         row.count += 1;
         row.total += total;
         row.own += own;
         row.count
     }
 
-    /// The solids and claims, the most time of its own first, at most `most` of them: each line
-    /// with the work it is about, for a front end to say where.  `own  total  what (×n)`.
+    /// The solids, claims and parts' rows, the most time of its own first, at most `most` of
+    /// them: each line with the work it is about, for a front end to say where.  `own  total
+    /// what (×n)`.
     pub fn lines(&self, most: usize) -> Vec<(String, &Work)> {
         let mut rows: Vec<_> = self.rows.iter()
             .filter(|(w, _)| w.kind.is_object())
             .collect();
         rows.sort_by(|a, b| b.1.own.total_cmp(&a.1.own).then_with(|| a.0.cmp(b.0)));
-        rows.into_iter().take(most).map(|(w, r)| {
-            let times = if r.count > 1 { format!(" (×{})", r.count) } else { String::new() };
-            (format!("{:>8} {:>8}  {}{times}", seconds(r.own), seconds(r.total), w.text()), w)
-        }).collect()
+        rows.into_iter().take(most).map(|(w, r)| (line(w, r), w)).collect()
     }
 
     /// What `lines` are, said above them.
     pub fn heading(&self) -> String {
         let own: f64 = self.rows.iter().filter(|(w, _)| w.kind.is_object()).map(|(_, r)| r.own).sum();
-        format!("solids and claims, slowest first ({} in all): own time, then with the work it \
-            waited on", seconds(own))
+        format!("solids, claims and parts, slowest first ({} in all): own time, then with the \
+            work it waited on", seconds(own))
     }
+
+    /// **Every stage of the run** (#851), in the order it was first done (one inside another, the
+    /// planes inside the elaboration, before it), each as `lines` words one: the elaboration and
+    /// the planes it placed, the solve, the diagnosis, each march along a parameter, the parts
+    /// checked and the diagnosis read through them — so a run that spent its time somewhere says
+    /// where, whether or not it built a solid.
+    pub fn stages(&self) -> Vec<String> {
+        let mut rows: Vec<_> = self.rows.iter().filter(|(w, _)| !w.kind.is_object()).collect();
+        rows.sort_by_key(|(_, r)| r.first);
+        rows.into_iter().map(|(w, r)| line(w, r)).collect()
+    }
+
+    /// What `stages` are, said above them: and how long the run took, the own time of every piece
+    /// of work it reported.
+    pub fn stages_heading(&self) -> String {
+        let own: f64 = self.rows.values().map(|r| r.own).sum();
+        format!("stages, in the order run ({} in all): own time, then with the work it waited on",
+            seconds(own))
+    }
+}
+
+/// A row of `Timings` as it is said: `own  total  what (×n)`.
+fn line(w: &Work, r: &Row) -> String {
+    let times = if r.count > 1 { format!(" (×{})", r.count) } else { String::new() };
+    format!("{:>8} {:>8}  {}{times}", seconds(r.own), seconds(r.total), w.text())
 }

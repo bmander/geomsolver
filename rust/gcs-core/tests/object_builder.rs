@@ -624,3 +624,44 @@ nested := solid(compound)
     assert_eq!(d.faces.names.iter().filter(|n| *n == "space").count(),2,"{:?}",d.faces.names);
 }
 
+
+/// **A body built of sweeps cut from another body** (#818): a gear rack-cut, its tooth space a
+/// generating sweep, cut from a housing ring of radii 19 and 30 that overlaps it 19 to 22, as a
+/// ring gear is cut by the gear whose teeth are its spaces.  The gear is built by its own road and
+/// subtracted by the kernel's Boolean, in the export and in the page's stepped build alike.  What
+/// the housing keeps of the overlap is what the tooth space removes of it: the same sweep cut
+/// directly from a ring of radii 19 and 22 leaves the rest, so the two sum to the housing's
+/// annulus whole, to 1e-9.
+#[test]
+fn a_body_cut_by_a_gear_whose_space_is_a_sweep_keeps_the_space() {
+    let src = crate::rack_cut::SPACE.to_string() + "\
+in std.front {
+  outer := circle(center: o) hint(r: 30)
+  radius(30mm) outer
+  bore := circle(center: o) hint(r: 19)
+  radius(19mm) bore
+}
+housing := solid(std.solids.Prism(face(outer, holes: bore), from: -6mm, to: 0))
+gear cut housing
+construction ring := solid(std.solids.Prism(face(c, holes: bore), from: -6mm, to: 0))
+piece := solid(ring)
+space cut piece
+";
+    let mut e = crate::common::build(&src);
+    let r = gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default());
+    assert!(r.success,"{}",r.message);
+    let sk = e.sketch;
+    let (housing,piece) = (e.map.ent_named("housing").unwrap().i(),e.map.ent_named("piece").unwrap().i());
+    let (_,kept) = exported(&sk,housing).unwrap();
+    let (_,rest) = exported(&sk,piece).unwrap();
+    // the native path's recipe holds no body built of sweeps, and says so by name
+    let why = gcs_core::solid::cad::recipe_static(&sk,housing).unwrap_err();
+    assert!(why.contains("`gear` is a body built of sweeps") && why.contains("--kernel rust"),"{why}");
+    let annulus = PI*(30.*30.-19.*19.)*6.;
+    assert!((kept+rest-annulus).abs() < 1e-9,"{kept} + {rest} against {annulus}");
+    assert!(kept > PI*(30.*30.-22.*22.)*6.,"the space's share of the overlap kept: {kept}");
+    let (d,doing) = stepped(&sk,housing).unwrap();
+    assert!(doing.iter().any(|d| d.starts_with("admitting its sweeps")),"{doing:?}");
+    let within = export::GROSS/sk.units.mm_per()*area(&d);
+    assert!((d.faces.volume-kept).abs() <= within,"{} against {kept}, within {within}",d.faces.volume);
+}

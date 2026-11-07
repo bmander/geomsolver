@@ -208,7 +208,5 @@ fn construction(sk: &Sketch, solid: usize) -> Option<Result<Bounded, String>> {
 /// the region's own field agrees with it — every probe a little inside its boundary material by
 /// the field, every one a little outside not (`agreement`, sampled by area).
 fn gate(sk: &Sketch, solid: usize, b: &Bounded) -> Result<(), String> {
-    let brep = crate::brep::recipe::node(&b.node(&Writer::world(1.0))?, &Default::default())?;
-    let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
-    super::agreement::gate(&field, &brep, None, "its exact construction disagrees with the field")
+    super::agreement::gate_node(sk, solid, &b.node(&Writer::world(1.0))?)
 }

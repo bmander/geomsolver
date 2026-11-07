@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.207 — November 2026**
+**Specification, Draft 0.208 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2296,9 +2296,15 @@ occupies. Where such a set stands in place in `solid(…)` and its body is that 
 solid is the sweep of the same points (§6.9, §6.14): of a solid under a motion over the interval,
 over a declared parameter's (`over t`), or — no `over` at all, `some t: p in tool at(under: m) t` — over the
 whole roll, bounded by the bodies it is cut from; of a face of an instance written in place, `p
-coincident(over s) Station(…).f`, a face family; of a face of the drawing, `some s: p in sec at s`, as a declared parameter runs. A face's patch swept by a turn is read point by point about a
-line in the face's plane; under any other motion, or about a line off the plane, the solid is
-refused where it is evaluated, naming why (**E080**). A contact over an interval, `p coincident(t
+coincident(over s) Station(…).f`, a face family; of a face of the drawing, `some s: p in sec at s`, as a declared parameter runs. **[0.208]** A face's patch swept over an interval written in place
+under a turn, a screw or a slide at a constant rate is the face as the motion stands it where the
+interval begins, carried to where it ends, and built exactly; it names no parameter, so a
+component's body may write it (a helical gear's tooth space, a thread). The face lies in a plane
+the motion carries each point across: a turn's about a line in it; a screw's square to its axis,
+or holding the axis with the face on one side of it — and, carried more than a turn, spanning less
+along the axis than the screw rises a turn; a slide's crossed by its direction. Under any other
+motion (one of several steps, one driven by a law), or a face lying otherwise, the solid is refused
+where it is evaluated, naming why (**E080**). A contact over an interval, `p coincident(t
 in (0, 1)) line(m, n)` (below), bounds a place, not a roll, and is unchanged.
 
 **How a face path names faces** **[0.70]**. Each face of a solid is named by the route through

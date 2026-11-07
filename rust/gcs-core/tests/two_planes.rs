@@ -82,6 +82,43 @@ fn a_plane_on_two_lines_through_the_point_stands_at_it_once() {
     assert!(o.iter().all(|x| x.abs() < 1e-9), "H stands at O: {o:?}");
 }
 
+/// **A plane over two axes the document holds through one point stands at it** (#850), as one
+/// whose axes meet by construction does: the primer's "a plane is two axes through its origin",
+/// written over axes each held through a held point, is its origin held there — three rows, not
+/// its two axes' four over its three numbers, which said once more what the two statements say.
+/// The same plane placed by seven relations for its seven numbers counts alike.
+#[test]
+fn a_plane_on_two_axes_held_through_one_point_stands_at_it() {
+    let axes = "unit mm\nuse std\nx0 := point\nfix((0mm, 0mm, 50mm)) x0\n\
+                ax := axis hint(dir: (1, 0, 0))\nax parallel std.x\nx0 coincident ax\n\
+                ay := axis hint(dir: (0, 1, 0))\nay parallel std.y\nx0 coincident ay\n";
+    let over = format!("{axes}lvl := plane(u: ax, v: ay)\n");
+    let seven = format!("{axes}lvl := plane\nlvl.origin coincident x0\n\
+                         lvl.u parallel(sense: same) std.x\nlvl.v parallel(sense: same) std.y\n");
+    for text in [over, seven] {
+        let mut e = solved(&text);
+        let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+        assert_eq!((d.dof, d.status), (0, State::Well), "{text}: {:?}", d.warnings);
+        assert_eq!((d.n_equations, d.structural_rank), (d.n_params, d.n_params), "{text}");
+        assert!(d.said_twice.is_empty() && d.over.is_empty() && d.implied.is_empty(), "{text}");
+        let lvl = ent(&e, "lvl").i();
+        let o = e.sketch.frames[lvl].o.map(|q| e.sketch.params[q as usize].value);
+        assert!(o[0].abs() < 1e-9 && o[1].abs() < 1e-9 && (o[2] - 50.0).abs() < 1e-9, "{o:?}");
+    }
+    // stood there, it keeps no `PlaneAxis` row of its own
+    let e = solved(&format!("{axes}lvl := plane(u: ax, v: ay)\n"));
+    let lvl = ent(&e, "lvl").i();
+    assert_eq!(e.sketch.frames[lvl].stands_at, Some(ent(&e, "x0").i() as u32));
+    // and one axis the world's, the other held through the world's origin by a statement
+    let mixed = "unit mm\nuse std\nay := axis hint(dir: (0, 1, 0))\nay parallel std.y\n\
+                 std.origin coincident ay\nlvl := plane(u: std.x, v: ay)\n";
+    let mut e = solved(mixed);
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert_eq!((d.n_equations, d.structural_rank), (d.n_params, d.n_params), "{mixed}");
+    assert!(d.said_twice.is_empty(), "{:?}", d.said_twice);
+    assert!(e.sketch.frames[ent(&e, "lvl").i()].stands_at.is_some());
+}
+
 /// A twin goes by its point's name: a relation read in the second plane names `O`, and a sheet
 /// sketching that plane draws its dimension.
 #[test]

@@ -84,7 +84,11 @@ says.  Recognised by what is stated, never by a word's name.  So `lofts/spring.s
 `swept_spring.sv`'s ball are one tube on one screw (`Blend`), the canal's half balls the only
 difference, and both export alike.  A part walked for a station follows a motion to what it is
 written over (`graft::Part::around_all`: a motion owns no number, so is never a wall).  The gate:
-`tests/carried_family.rs` (the springs, the screw's walls, a station read otherwise).
+`tests/carried_family.rs` (the springs, the screw's walls, a station read otherwise).  A face
+swept over an interval written in place under a screw, a slide or a turn (#846, [0.208]) is the
+same carry with no station to solve: the recipe's `carried` node, the face's profile placed where
+the interval begins and carried by `brep::build::carried` (`screwed`, `ruled` or `revolve`), its
+`carry` written by the one writer a family's is (`cad::carry_json`) — [sets.md](sets.md)'s.
 
 **A frame's numbers are stated or solved** (#383 stages 3 and 5): a ratio or advance measured
 off the solved drawing (`ratio: -length(a) / length(b)`) is E107, as every measurement in a
@@ -1054,11 +1058,38 @@ the sheet, where they touch at the seam points; the end poses' tori against the 
 rim's sheared cylinder) and 4 given (the sheet against each end pose's torus and against each seam's
 plane); pushed into the block, 2.1 s, 139 / 6 / 3.
 
+**A body built of sweeps cuts as any solid does (#818):** a cut operand that is a body built of
+sweeps, or a chain of placements ending in one (`cad::swept_body`) — a gear rack-cut, cut from a
+ring's blank so that the ring's teeth are the gear's spaces — is swept material
+(`cad::swept_operands`), not a swept cut: built by its own road and subtracted by the kernel's
+Boolean (`export::compose`), in the export and the page's stepped build alike.  Only a sweep, or
+a chain of placements ending in one, is a swept cut a class reads.  A sweep cut directly from a
+body so composed is still refused by name (`no_swept_cut`): the body it is cut from is named
+apart.  The native path builds no such body and refuses it by name, `--kernel rust` asked.
+Gates: `object_builder::a_body_cut_by_a_gear_whose_space_is_a_sweep_keeps_the_space`, the housing
+and the same sweep cut from the ring they overlap summing to the housing's annulus to 1e-9;
+`solid_sweeps_examples::the_ring_gear_keeps_the_gears_spaces_as_its_teeth`
+(`solid_sweeps/ring_gear.sv`), a ring cut by a 20-tooth rack-cut gear, held to `rack_cut`'s
+arithmetic for each tooth and to the page's stepped build.
+
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
 the blank, not a box, is the domain the candidates split, and its cells are kept where they are no
 member of the sweep — one arrangement and one classification, with no closed solid built and then
-subtracted by a Boolean. The box the candidates are sized by holds the blank as well as the sweep,
-so each reaches across both (a screwed sheet's ends and rims past the blank). A bar slid along a
+subtracted by a Boolean. **The blank is split within the sweep's reach alone** (#847): the box the
+candidates are sized by holds the sweep, as `closed`'s does, and is the reach of
+`boolean::arrangement_reached` — the blank parted by its boundary too, every candidate's piece
+outside it left out, and a cell a face of it bounds from outside kept with nothing read (the box
+holds the sweep, so nothing outside it is a member). A blank's earlier cuts outside the reach are
+neither split into cells nor read, and what the candidates lay on the blank's faces there (each is
+sized by the box, a plane's block four times as wide) is healed out of its faces and its edges
+(`boolean::rejoined`), so turned copies of one sweep cost about the same each, a little more as the
+blank near the box gains faces, and leave the blank's edges whole: the issue's tube, its slab
+screwed through it and cut at three placements, 141 s (23, 42 and 76 s a cut), 26 faces and 2 446
+edges, 30 under 10 µm, is now 8 s (2.1, 2.5 and 3.0 s), 26 faces and 72 edges, none under 10 µm;
+twelve copies a thirtieth of a turn apart, overlapping, some 8 s each. Gates:
+`screwed_copies::a_turned_copy_of_a_screwed_slot_is_cut_as_the_first` (two copies remove twice
+what one does to 1e-9, adding their own edges alone) and
+`one_screwed_slot_leaves_the_tubes_edges_whole`. A bar slid along a
 block, sunk into its top, cuts a groove of `4 × 1 × 1` from `24`, its result's ten faces whole
 (`a_bar_slid_along_a_block_cuts_a_groove_on_one_arrangement`); a bar beside the axis turned a quarter
 turn through a disc takes its section's polar integral times the disc's thickness

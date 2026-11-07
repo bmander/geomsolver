@@ -633,6 +633,28 @@ solid is one arrangement and one selection, and so is a sweep cut from a blank**
 generating.md);
 `arrangement::three_blocks_arranged_at_once_…`, `every_cells_membership_…`,
 `the_arrangement_is_the_same_in_any_order_…` and `coincident_faces_are_one_face_…` are its own.
+**What a cut from a blank costs is the sweep's, not the blank's** (#847). An arrangement may be met
+within a reach (`arrangement_reached`, its operand 1): the operands after it are left out wherever
+they lie outside it, each piece read against the reach — a box — before the domain, and the pieces
+read across the cores. Two meetings lying along one another on a face (a screwed level edge's sheet
+touching the cylinder its foot runs on along the foot's helix, which a second sheet meets the
+cylinder along too) cross nowhere, and are not searched for crossings (`along_one_another`: every
+point of one within `ON_CURVE` tolerances of the other — the reach at which a vertex cuts an edge it
+lies inside and two edges along one curve are one, which then join them — over more than that
+reach), where every pair of their chords had been cut — hundreds of vertices along one helix
+(`screwed_copies::two_meetings_lying_along_one_helix_are_read_as_one_curve`). A screwed sheet's
+piece, and a helix or a plane's cut on it, is boxed by what its parameters reach of the sheet — its sections
+over the stretch, each corner's arc over the turn there, stepped by the advance — within the ring
+the whole sheet turns in (`Surface::bounds_over`, `Curve::bounds`), where it had been boxed as that
+ring, a sliver of a cell a hundred millimetres across whose interior was sought over all of it
+(`screwed_copies::a_piece_of_a_screwed_sheet_is_boxed_by_what_it_reaches`). A shell's volume is its
+faces' fluxes summed, each face's read once (`props::fluxes`) and turned with it, not each shell
+integrated whole. A selection's edges a healed meeting cut are one again (`rejoined`): two pieces of
+one curve, end to end at a vertex no other edge reaches and walked one after the other by every
+face using them (a seam's two uses in one loop too), are one edge, the vertex and the sliver beside
+a true corner gone. And work asked of the cores from a worker of theirs is done on that worker
+(`util::par::threads` is one there), not on threads started for it, which a cell's interior read
+inside a read of every cell spent most of its time doing.
 **A Boolean's work is where its solids meet** (#589): a face of one whose box misses the box the
 other's faces fill is clear of it (`boolean::Arranged::clear`) — nothing of the other meets it, so
 it is one piece, its own loops, outside the other: kept by a union and by a cut of the solid it
@@ -911,6 +933,27 @@ through the apex was walked across the pole by a jump in its last use's last ins
 operand's pole kept whole across a turn the piece does not span: its pieces' triangles overlapped,
 265 triangle sides of the sectors' common not shared by two. `brep::two_sectors_sharing_an_apex_meet_in_lines_and_mesh_closed`
 (the common's volume and areas their closed forms by Gauss–Bonnet, its mesh closed) is the gate.
+
+**A face is split along a meeting through its pole** (brep-bench's singular cases: a ball halved
+through its poles, a ball cut aslant through one, two balls meeting through a pole of each, a
+napkin ring with its ball's poles on its rims, a cone halved through its apex). In the face's
+parameters a pole is a segment, its degenerate edge running along the collapsed parameter, and a
+meeting through it arrives on that segment where it runs, not at the segment's ends: an edge laid
+across a face (`FaceCut::internal`) ends on a pole at the value it arrives along
+(`topo::leaving_pole`, the foot of a point a hair out along its tangent, which `close_poles` reads
+too), and each pole edge of the face is cut at every such value inside it (`boolean::poles_cut`),
+its pieces no edges of their own (`Half::pole`: a piece's loop leaves them out, and the result's
+`close_poles` — a Boolean's, a split's and a selection's — lays one between the uses arriving and
+leaving). Read at the pole itself, the halving plane's meridian ran aslant across the sphere's
+parameters from one pole to the other and the pole edges were whole: the sphere came out one
+piece the meeting only slit, its sides in two cells at once, and the Boolean was refused ("two of
+its cells joined round an edge"). **A plane through a cone's apex meets it in the generators it
+holds**, exactly (`ssi`'s `plane_through_apex`: `R cos(u − φ) = −cos α (n·z)`, two where the plane
+leans to the axis by more than they do; one, a touch, read as above; none left to the trace);
+traced, a plane cutting a cone aslant through its apex crowded its steps toward the apex past a
+hundred thousand points and was refused there as a near touch. `brep::a_ball_cut_through_its_poles_is_its_part`,
+`meetings_through_a_balls_pole_split_it` and `a_cone_cut_through_its_apex_is_its_part` are the
+gate, each case to its closed forms to 1e-9 and meshed closed at the bench's sag.
 
 **Faces built apart are sewn into a solid by tolerant topology** (`sew::sewn`; brep-bench's
 geometry/nurbs-cone): a rational net whose last row is nine copies of its apex (`build::sheet`)

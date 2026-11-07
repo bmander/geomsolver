@@ -299,9 +299,39 @@ pub struct BlockOrder {
 }
 
 impl BlockOrder {
+    /// The over part as a block (#850): its rows, read by none of the blocks' and reading only
+    /// its columns, the instances making them — solved first, as a block of more rows than
+    /// columns.  `None` where it has no row.
+    pub fn over_block(&self, sys: &System) -> Option<SolveBlock> {
+        if self.over_rows.is_empty() {
+            return None;
+        }
+        let mut instances: Vec<(usize, usize)> =
+            self.over_rows.iter().map(|&r| sys.instance_of(r)).collect();
+        instances.sort_unstable();
+        instances.dedup();
+        Some(SolveBlock { rows: self.over_rows.clone(), cols: self.over_cols.clone(), instances })
+    }
+
     /// The longest chain of blocks, each reading the one before it.
     pub fn depth(&self) -> usize {
         self.level.iter().copied().max().unwrap_or(0)
+    }
+}
+
+/// Columns' places in a list of them, looked up by search: a vector over every column of the
+/// system, made for each of thousands of small selections, is quadratic in the system.
+struct Local(Vec<(usize, usize)>);
+
+impl Local {
+    fn of(cols: &[usize]) -> Local {
+        let mut v: Vec<(usize, usize)> = cols.iter().enumerate().map(|(k, &c)| (c, k)).collect();
+        v.sort_unstable();
+        Local(v)
+    }
+
+    fn get(&self, c: usize) -> Option<usize> {
+        self.0.binary_search_by_key(&c, |e| e.0).ok().map(|k| self.0[k].1)
     }
 }
 
@@ -332,19 +362,51 @@ impl SparseConditioned {
 
     /// The given rows against the given columns, dense, in the given orders.
     pub fn dense(&self, rows: &[usize], cols: &[usize]) -> Mat {
-        let mut local = vec![usize::MAX; self.n_cols];
-        for (k, &c) in cols.iter().enumerate() {
-            local[c] = k;
-        }
+        let local = Local::of(cols);
         let mut m = Mat::zeros(rows.len(), cols.len());
         for (i, &r) in rows.iter().enumerate() {
             for (c, v) in self.row(r) {
-                if local[c] != usize::MAX {
-                    m.data[i * cols.len() + local[c]] = v;
+                if let Some(k) = local.get(c) {
+                    m.data[i * cols.len() + k] = v;
                 }
             }
         }
         m
+    }
+
+    /// The given rows over the given columns, still sparse: row `i` is `rows[i]`, column `k` is
+    /// `cols[k]` (#851) — so what is read of a few rows of a large system is sized to them.
+    pub fn select(&self, rows: &[usize], cols: &[usize]) -> SparseConditioned {
+        let local = Local::of(cols);
+        let mut j = SparseConditioned {
+            n_cols: cols.len(),
+            indptr: Vec::with_capacity(rows.len() + 1),
+            indices: Vec::new(),
+            data: Vec::new(),
+        };
+        j.indptr.push(0);
+        for &r in rows {
+            for (c, v) in self.row(r) {
+                if let Some(k) = local.get(c) {
+                    j.indices.push(k as i32);
+                    j.data.push(v);
+                }
+            }
+            j.indptr.push(j.indices.len() as i32);
+        }
+        j
+    }
+
+    /// Each of the given rows' columns among the given columns, by their place in `cols`: the
+    /// structure of `rows` over `cols` alone.
+    pub fn adjacency(&self, rows: &[usize], cols: &[usize]) -> Vec<Vec<usize>> {
+        let local = Local::of(cols);
+        rows.iter().map(|&r| {
+            let mut a: Vec<usize> = self.row(r).filter_map(|(c, _)| local.get(c)).collect();
+            a.sort_unstable();
+            a.dedup();
+            a
+        }).collect()
     }
 
     /// The transpose: a row per column, a column per row.

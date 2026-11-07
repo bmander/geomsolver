@@ -242,7 +242,16 @@ where a rule came from.
     the drawing solved with it did.  Carried, one row restating what a point's two planes say
     made the order not square, every station's rank read whole and nothing set aside — a march of
     586 unknowns took 44 s rather than 0.2 (`continuation.rs`,
-    `a_statement_the_others_imply_is_left_out_of_the_march`).  The start's
+    `a_statement_the_others_imply_is_left_out_of_the_march`).  **An over part is a part like a
+    block** (#850): where no whole statement squares it — a row said twice across statements
+    each needed (`Diagnosis::said_twice`) — and there is no under part, `Still::of` reads it as
+    the first block, solved first and read by those after, and one the parameter does not reach,
+    whose rows hold and whose columns they place, is set aside as any still block is, so what each
+    station solves is square; and `Jacobian::read` reads one the parameter reaches as a first
+    block of more rows than columns, of full rank where the whole is and oriented by nothing
+    (`BlockOrder::over_block`).  Carried, four statements over a point and two axes left 1 700
+    unknowns read whole at every station: 220 s rather than 0.6
+    (`a_row_said_twice_is_named_and_set_aside_by_the_march`).  The start's
     rank and every orientation are read over what is solved, the rest's blocks of full rank and
     the same at every instant.  Smaller, each station is cheaper: the V-twin's march and a stand
     take half what they did.

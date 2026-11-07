@@ -162,6 +162,16 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                 };
                 Measure::Signed(Signed(std::sync::Arc::new(at)))
             }
+            // a face's patch swept by a screw or a slide (#846): its path crosses the section's
+            // plane once, or once a turn (`carried::Reading`)
+            RegionShape::Swept { motion, roll, face } if let Some(c) =
+                crate::solid::carried::Carried::advancing(sk, motion, roll, face) => {
+                let mut r = c.map_err(named)?.reading(sk).map_err(named)?;
+                if within {
+                    planes.append(&mut r.planes);
+                }
+                Measure::Signed(Signed(std::sync::Arc::new(move |p| r.value(p))))
+            }
             // a face's patch swept by a turn about a line in its plane (#737): within its meridian
             // in the section's half-plane turned through the roll, read on each side of the line
             RegionShape::Swept { motion, roll, face } => {
@@ -169,8 +179,8 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                     crate::solid::field::section(sk, face as usize).map_err(named)?;
                 let Some((_, a, d, ratio)) = crate::solid::defined::turn_of(sk, motion) else {
                     return Err(named("a face swept by a motion is read point by point where the \
-                        motion is a turn about a line: a slide, a screw or a motion of several \
-                        steps is not read yet".to_string()));
+                        motion is a turn, a screw or a slide at a constant rate: a motion of \
+                        several steps, or one driven by a law, is not read yet".to_string()));
                 };
                 if !crate::solid::defined::lies_in(&b, a, d) {
                     return Err(named("a face swept by a turn is read point by point where the \
