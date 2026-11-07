@@ -11,7 +11,7 @@
 //! the build met. Every surface and curve a closed build's candidates are made of is written: the
 //! quadrics, the torus, a surface of revolution, a swept sheet (`Blend`), an affine image, a
 //! B-spline; a kind none of them is (a trace) is refused by name.
-use crate::boolean::{Given,arrangement_given,arrangement_reached};
+use crate::boolean::{Given,arrangement_reached};
 use crate::complex::Complex;
 use crate::geom::{Blend,Carry,Curve,Frame,Surface,V};
 use crate::nurbs::{BSpline,Net};
@@ -253,10 +253,7 @@ impl Arrangement {
     /// reach) over the candidates `keep` keeps, with the meetings given it.
     pub fn replay(&self,keep: &[usize]) -> Result<Complex,String> {
         let refs: Vec<&Brep> = keep.iter().map(|&k| &self.candidates[k]).collect();
-        crate::util::warm::fresh(|| match &self.reach {
-            Some(reach) => arrangement_reached(&self.domain,reach,&refs,&self.given,self.tol),
-            None => arrangement_given(&self.domain,&refs,&self.given,self.tol),
-        })
+        crate::util::warm::fresh(|| arrangement_reached(&self.domain,self.reach.as_ref(),&refs,&self.given,self.tol))
     }
     /// Every candidate's index.
     pub fn all(&self) -> Vec<usize> { (0..self.candidates.len()).collect() }

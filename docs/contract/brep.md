@@ -639,7 +639,8 @@ they lie outside it, each piece read against the reach — a box — before the 
 read across the cores. Two meetings lying along one another on a face (a screwed level edge's sheet
 touching the cylinder its foot runs on along the foot's helix, which a second sheet meets the
 cylinder along too) cross nowhere, and are not searched for crossings (`along_one_another`: every
-point of one within the reach a triple point is found again at of the other, over more than that
+point of one within `ON_CURVE` tolerances of the other — the reach at which a vertex cuts an edge it
+lies inside and two edges along one curve are one, which then join them — over more than that
 reach), where every pair of their chords had been cut — hundreds of vertices along one helix
 (`screwed_copies::two_meetings_lying_along_one_helix_are_read_as_one_curve`). A screwed sheet's
 piece, and a helix or a plane's cut on it, is boxed by what its parameters reach of the sheet — its sections
@@ -650,9 +651,10 @@ ring, a sliver of a cell a hundred millimetres across whose interior was sought 
 faces' fluxes summed, each face's read once (`props::fluxes`) and turned with it, not each shell
 integrated whole. A selection's edges a healed meeting cut are one again (`rejoined`): two pieces of
 one curve, end to end at a vertex no other edge reaches and walked one after the other by every
-face using them, are one edge, the vertex and the sliver beside a true corner gone. And work asked
-of the cores from a worker of theirs is done on that worker (`util::par`), not on threads started
-for it, which a cell's interior read inside a read of every cell spent most of its time doing.
+face using them (a seam's two uses in one loop too), are one edge, the vertex and the sliver beside
+a true corner gone. And work asked of the cores from a worker of theirs is done on that worker
+(`util::par::threads` is one there), not on threads started for it, which a cell's interior read
+inside a read of every cell spent most of its time doing.
 **A Boolean's work is where its solids meet** (#589): a face of one whose box misses the box the
 other's faces fill is clear of it (`boolean::Arranged::clear`) — nothing of the other meets it, so
 it is one piece, its own loops, outside the other: kept by a union and by a cut of the solid it

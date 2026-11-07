@@ -911,7 +911,7 @@ sized by the box, a plane's block four times as wide) is healed out of its faces
 (`boolean::rejoined`), so turned copies of one sweep cost about the same each, a little more as the
 blank near the box gains faces, and leave the blank's edges whole: the issue's tube, its slab
 screwed through it and cut at three placements, 141 s (23, 42 and 76 s a cut), 26 faces and 2 446
-edges, 30 under 10 µm, is now 8 s (2.4, 2.9 and 3.1 s), 26 faces and 81 edges, none under 10 µm;
+edges, 30 under 10 µm, is now 8 s (2.1, 2.5 and 3.0 s), 26 faces and 72 edges, none under 10 µm;
 twelve copies a thirtieth of a turn apart, overlapping, some 8 s each. Gates:
 `screwed_copies::a_turned_copy_of_a_screwed_slot_is_cut_as_the_first` (two copies remove twice
 what one does to 1e-9, adding their own edges alone) and

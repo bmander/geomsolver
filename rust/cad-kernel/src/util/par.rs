@@ -2,25 +2,23 @@
 //! `items.iter().map(f).collect()` whatever the threads did, so a caller's result never depends on
 //! how the work was split. WebAssembly has no threads, and there it is that serial map.
 
-/// How many threads `map` uses at most: the machine's parallelism.
+/// How many threads `map` uses at most: the machine's parallelism — one on a worker of
+/// `indices_with`'s, whose work asked of the cores is done on it, serially: the cores are busy with
+/// the work it is a part of already, and threads started for each piece of work within it cost more
+/// than they save (#847: a cell's interior points read on every core, inside a read of every cell on
+/// every core, spent most of its time starting and stopping threads).
 pub fn threads() -> usize {
     #[cfg(target_arch = "wasm32")]
     { 1 }
     #[cfg(not(target_arch = "wasm32"))]
-    { std::thread::available_parallelism().map_or(1,|n| n.get()) }
+    { if WORKER.with(std::cell::Cell::get) { 1 } else { std::thread::available_parallelism().map_or(1,|n| n.get()) } }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 thread_local! {
     /// Whether this thread is one of `indices_with`'s workers.
     static WORKER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
-
-/// Whether this thread is one of `indices_with`'s workers, whose work asked of the cores is done on
-/// it, serially: the cores are busy with the work it is a part of already, and threads started
-/// for each piece of work within it cost more than they save (#847: a cell's interior points read
-/// on every core, inside a read of every cell on every core, spent most of its time starting and
-/// stopping threads).
-fn on_a_worker() -> bool { WORKER.with(std::cell::Cell::get) }
 
 /// `f` of every item, in the items' order, the items taken one at a time by as many threads as
 /// there are cores (or items).
@@ -36,7 +34,7 @@ pub fn indices<R: Send>(n: usize,f: impl Fn(usize) -> R + Sync) -> Vec<R> {
 /// The same, each thread given its own `state` (made by `init`, once a thread) to work with: a
 /// cache, say, whose contents change how fast `f` answers but never what.
 pub fn indices_with<S,R: Send>(n: usize,init: impl Fn() -> S + Sync,f: impl Fn(&mut S,usize) -> R + Sync) -> Vec<R> {
-    let threads = if on_a_worker() { 1 } else { threads().min(n) };
+    let threads = threads().min(n);
     if threads <= 1 {
         let mut state = init();
         // each item from no warm start, as on many threads (`util::warm`), and the caller's kept

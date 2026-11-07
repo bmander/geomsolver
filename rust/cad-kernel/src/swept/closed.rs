@@ -157,7 +157,6 @@
 //! screw; under any other motion a tool no convex solid of revolution, a contact whose pieces change
 //! over the roll, a sheet folding or coming back onto itself (`Folded`, `Returns`) — is refused by
 //! what it is (`Unbuilt`); those are the design's later steps.
-use crate::boolean::arrangement_given;
 use crate::build::{Profile,ProfileEdge,disc,prism,square};
 use crate::geom::{Curve,Frame,Surface};
 use crate::turned::Exact;
@@ -1429,8 +1428,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     }
     // (a candidate whose solid stands clear of the box parts none of it: left out, so its meetings
     // with the others there are never sought)
-    let within = blank.unwrap_or(&domain);
-    let reached = blank.is_some().then_some(&domain);
+    let (within,reached) = match blank { Some(b) => (b,Some(&domain)),None => (&domain,None) };
     let refs = clear_of(&solids,&domain,tol);
     // **the touches given** (#810, #780 R5): each between the faces of its two candidates' solids
     // that hold it, laid with no search for it — where both candidates were carried
@@ -1532,10 +1530,7 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
 #[allow(clippy::too_many_arguments)]
 fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::boolean::Given],swept: &Swept,blank: Option<&Brep>,
     tol: f64) -> Result<Brep,Unbuilt> {
-    let complex = match reach {
-        Some(reach) => crate::boolean::arrangement_reached(within,reach,refs,given,tol)?,
-        None => arrangement_given(within,refs,given,tol)?,
-    };
+    let complex = crate::boolean::arrangement_reached(within,reach,refs,given,tol)?;
     crate::util::meter::go_on()?;
     // each cell classified by membership at the deepest of its points that settles (a cusp-thin
     // cell's stand near the swept boundary, and the first may not), and the boundary between the
@@ -1545,8 +1540,7 @@ fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::bo
     let cells = found.len();
     // a cell a face of the reach bounds from outside it is outside the reach, which holds the sweep:
     // no member of it, and kept with nothing read (the reach is the complex's operand 1)
-    let outside = |c: usize| reach.is_some() && complex.cell_sides(found,c).iter().any(|&(f,front)|
-        complex.origins[f].iter().any(|o| o.operand == 1 && o.alike == front));
+    let outside = |c: usize| reach.is_some() && complex.in_operand(&complex.cell_sides(found,c),1) == Some(false);
     // each cell read on its own, across the cores (`util::par`, in the cells' order): its points
     // certified by its own exact point location, the first whose membership settles classifying it,
     // and those past it kept as witnesses the built solid is judged at

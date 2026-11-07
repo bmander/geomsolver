@@ -323,6 +323,12 @@ impl Complex {
         cells[c].shells.iter().flat_map(|&k| self.shells[k].iter().copied()).collect()
     }
 
+    /// Whether the cell `sides` bound lies in operand `k`, read off a face of `k`'s bounding it —
+    /// behind the face where it faces the way the operand's did; `None` where none bounds it.
+    pub(crate) fn in_operand(&self,sides: &[(usize,bool)],k: usize) -> Option<bool> {
+        sides.iter().find_map(|&(f,front)| self.origins[f].iter().find(|o| o.operand == k).map(|o| o.alike != front))
+    }
+
     /// **The cells the shells bound**, found once: each shell wound positively (its faces turned
     /// out of it bound a positive volume) the outer shell of a bounded cell; each other the boundary
     /// of a void in the smallest such holding a point of it, or of the unbounded cell, `0`.

@@ -9,13 +9,16 @@
 //! piece is boxed by what it reaches of the sheet, and the edges a healed meeting cut are one again
 //! (`boolean::rejoined`): the copies remove exactly what the first does each, and the tube's edges
 //! are its slots' corners alone.
-use gcs_core::brep::build::{screwed,Profile,ProfileEdge};
-use gcs_core::brep::geom::{Curve,Surface};
+use gcs_core::brep::boolean::along_one_another;
+use gcs_core::brep::geom::{include,Curve,Frame,Surface,EMPTY};
 use gcs_core::brep::props::volume;
-use gcs_core::brep::topo::{Brep,EdgeCurve};
+use gcs_core::brep::sliver::slivers;
+use gcs_core::brep::ssi::{intersect,Ssi};
+use gcs_core::brep::topo::{Brep,Edge,EdgeCurve};
 use gcs_core::solid::admission::Class;
 use gcs_core::space::distance;
 
+use crate::meeting::screwed_sheet;
 use crate::solid_sweeps_examples::class;
 use crate::turns_and_slides::exported_within;
 
@@ -54,28 +57,19 @@ space cut part
 {copies}")
 }
 
-/// The tube with its slots: the exact build, its volume, and its edges' lengths.
-fn slotted(angles: &[f64]) -> (Brep,f64) {
+/// The tube with its slots, built exactly.
+fn slotted(angles: &[f64]) -> Brep {
     let e = fixtures::read(&tube(angles));
     let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
     assert!(found.screw().is_some_and(|s| !s.is_slide() && !s.is_turn()),"a screw");
-    let solid = exported_within(&e,"part",None).solid;
-    let v = volume(&solid);
-    (solid,v)
-}
-
-/// An edge's length, along its curve.
-fn length(b: &Brep,e: usize) -> f64 {
-    let e = &b.edges[e];
-    let EdgeCurve::Curve(c) = &e.curve else { return 0. };
-    (0..32).map(|k| distance(c.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/32.),c.point(e.t[0]+(e.t[1]-e.t[0])*(k+1) as f64/32.))).sum()
+    exported_within(&e,"part",None).solid
 }
 
 /// Every vertex where two edges alone meet: two pieces of one curve end to end there, which
 /// `rejoined` makes one.
 fn split_curves(b: &Brep) -> Vec<V> {
     (0..b.vertices.len()).filter_map(|v| {
-        let at: Vec<&gcs_core::brep::topo::Edge> = b.edges.iter().filter(|e| e.v.contains(&(v as u32))).collect();
+        let at: Vec<&Edge> = b.edges.iter().filter(|e| e.v.contains(&(v as u32))).collect();
         let [x,y] = at[..] else { return None };
         let (EdgeCurve::Curve(cx),EdgeCurve::Curve(cy)) = (&x.curve,&y.curve) else { return None };
         (cx == cy && x.v[0] != x.v[1]).then_some(b.vertices[v].p)
@@ -88,10 +82,9 @@ fn split_curves(b: &Brep) -> Vec<V> {
 /// rulings had been cut 7 µm from their corners, the sheets' touch helix into 400 pieces).
 #[test]
 fn one_screwed_slot_leaves_the_tubes_edges_whole() {
-    let (solid,_) = slotted(&[]);
+    let solid = slotted(&[]);
     assert_eq!(solid.faces.len(),12,"the tube's four faces and the slot's eight");
-    let short: Vec<f64> = (0..solid.edges.len()).map(|e| length(&solid,e)).filter(|&l| l < 0.01).collect();
-    assert!(short.is_empty(),"edges under 10 µm: {short:?}");
+    assert!(slivers(&solid,0.01).is_empty(),"slivers under 10 µm: {:?}",slivers(&solid,0.01));
     assert_eq!(split_curves(&solid),Vec::<V>::new(),"pieces of one curve left end to end");
     assert!(solid.edges.len() <= 40,"{} edges",solid.edges.len());
 }
@@ -103,29 +96,13 @@ fn one_screwed_slot_leaves_the_tubes_edges_whole() {
 #[test]
 fn a_turned_copy_of_a_screwed_slot_is_cut_as_the_first() {
     let whole = std::f64::consts::PI*(144.-90.25)*10.;
-    let (one,v1) = slotted(&[]);
-    let (two,v2) = slotted(&[180.]);
+    let (one,two) = (slotted(&[]),slotted(&[180.]));
+    let (v1,v2) = (volume(&one),volume(&two));
     eprintln!("one slot: {} faces, {} edges; two: {} faces, {} edges",one.faces.len(),one.edges.len(),two.faces.len(),two.edges.len());
     assert!(((whole-v2)-2.*(whole-v1)).abs() <= 1e-9*whole,"two slots remove {} against twice {}",whole-v2,whole-v1);
     assert!(two.faces.len() <= 2*one.faces.len()-4,"{} faces against {} for one",two.faces.len(),one.faces.len());
     assert!(two.edges.len() <= 2*one.edges.len(),"{} edges against {} for one",two.edges.len(),one.edges.len());
     assert_eq!(split_curves(&two),Vec::<V>::new(),"pieces of one curve left end to end");
-}
-
-/// The sheet the level line through `p` along `e` screws into about the `z` axis over `angle` (a
-/// rise of `advance`), from the line screwed back by `from` of that: a level triangle on the line
-/// screwed (`build::screwed`), the sheet its face, the triangle's other faces left off.
-fn sheet(p: V,e: V,reach: f64,angle: f64,advance: f64,from: f64) -> Brep {
-    let away = [-e[1],e[0],0.];
-    let corners = [[p[0]-reach*e[0],p[1]-reach*e[1],p[2]],[p[0]+reach*e[0],p[1]+reach*e[1],p[2]],
-        [p[0]-reach*away[0],p[1]-reach*away[1],p[2]]];
-    let triangle = Profile {origin:corners[0],normal:[0.,0.,1.],names:vec![vec!["sheet".into(),String::new(),String::new()]],
-        loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
-    let back = gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],-from*angle)
-        .then(&gcs_core::brep::geom::Rigid {t:[0.,0.,-from*advance],..gcs_core::brep::geom::Rigid::identity()});
-    let mut b = screwed(&triangle.moved(&back),[0.;3],[0.,0.,1.],angle,advance).unwrap();
-    b.faces.retain(|f| f.name == "sheet");
-    b.compacted()
 }
 
 /// **Two meetings lying along one helix are read as one curve** (#847, `boolean::along_one_another`,
@@ -137,16 +114,13 @@ fn sheet(p: V,e: V,reach: f64,angle: f64,advance: f64,from: f64) -> Brep {
 /// sheet, and a ruling crossing the helix, are not that curve.
 #[test]
 fn two_meetings_lying_along_one_helix_are_read_as_one_curve() {
-    use gcs_core::brep::boolean::along_one_another;
-    use gcs_core::brep::geom::Frame;
-    use gcs_core::brep::ssi::{intersect,Ssi};
     let (angle,advance,tol) = (1.5,1.2,1e-6);
     let reach = 128.*tol;
     // the line x = 2 at z = 0, its foot (2, 0, 0); and the radial line through that foot screwed
     // three tenths of the way on
-    let touching = sheet([2.,0.,0.],[0.,1.,0.],6.,angle,advance,0.5).faces[0].surface.clone();
+    let touching = screwed_sheet([2.,0.,0.],[0.,1.,0.],6.,angle,advance,0.5);
     let (s,c) = (0.3*angle).sin_cos();
-    let radial = sheet([2.*c,2.*s,0.3*advance],[c,s,0.],6.,angle,advance,0.8).faces[0].surface.clone();
+    let radial = screwed_sheet([2.*c,2.*s,0.3*advance],[c,s,0.],6.,angle,advance,0.8);
     let cylinder = |r: f64| Surface::Cylinder(Frame::about([0.;3],[0.,0.,1.]),r);
     let curves = |a: &Surface,b: &Surface| match intersect(a,b,tol) { Ssi::Curves(c) => c,other => panic!("{other:?}") };
     let [foot] = &curves(&touching,&cylinder(2.))[..] else { panic!("the foot's helix, once") };
@@ -168,37 +142,33 @@ fn two_meetings_lying_along_one_helix_are_read_as_one_curve() {
 /// **A piece of a screwed sheet is boxed by what it reaches** (#847, `Surface::bounds_over` of a
 /// blend over a face's parameters): a sliver of a cell beside a screwed slot had been boxed as the
 /// whole sheet turned a full revolution, a hundred millimetres across, and its interior sought over
-/// all of that. Every point of the piece lies in its box, and the box is the piece's own size,
-/// not the ring's; so too a helix on the sheet, and a plane's cut of it, over a stretch.
+/// all of that. Every point of the piece lies in its box, and the box is the piece's own size, not
+/// the ring's; so too a helix on the sheet, and a plane's cut of it, over a stretch.
 #[test]
 fn a_piece_of_a_screwed_sheet_is_boxed_by_what_it_reaches() {
-    let b = sheet([10.,0.,0.],[0.,1.,0.],20.,0.6,5.,0.);
-    let s = &b.faces[0].surface;
-    let Surface::Blend(..) = s else { panic!("a blend") };
+    let s = screwed_sheet([10.,0.,0.],[0.,1.,0.],20.,6.,5.,0.5);
+    let Surface::Blend(_,blend) = &s else { panic!("a blend") };
     let size = |(lo,hi): ([f64;3],[f64;3])| distance(lo,hi);
+    let holds = |b: ([f64;3],[f64;3]),p: [f64;3]| (0..3).all(|k| p[k] >= b.0[k]-1e-12 && p[k] <= b.1[k]+1e-12);
     let ring = s.bounds_over(|| [[0.,1.],[0.,1.]]);
     let range = [[0.45,0.55],[0.3,0.4]];
     let piece = s.bounds_over(|| range);
-    let mut hull = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+    let mut hull = EMPTY;
     for i in 0..=16 { for j in 0..=16 {
         let p = s.point([range[0][0]+(range[0][1]-range[0][0])*i as f64/16.,range[1][0]+(range[1][1]-range[1][0])*j as f64/16.]);
-        for k in 0..3 {
-            assert!(p[k] >= piece.0[k]-1e-12 && p[k] <= piece.1[k]+1e-12,"{p:?} outside {piece:?}");
-            hull.0[k] = hull.0[k].min(p[k]); hull.1[k] = hull.1[k].max(p[k]);
-        }
+        assert!(holds(piece,p),"{p:?} outside {piece:?}");
+        include(&mut hull,p);
     } }
     eprintln!("the ring {:.3}, the piece {:.3}, its points {:.3}",size(ring),size(piece),size(hull));
     assert!(size(piece) <= 1.5*size(hull),"the piece's box {:.3} against its points' {:.3}",size(piece),size(hull));
     assert!(size(piece) < 0.2*size(ring),"the piece's box {:.3} against the ring's {:.3}",size(piece),size(ring));
-    // its curves: the helix of the line's foot, and a level plane's ruling, over a stretch
-    let helix = Curve::Iso(match s { Surface::Blend(_,bl) => bl.clone(),_ => unreachable!() },0.5);
-    for c in [helix] {
+    // the helix of the line's foot, and the cut of the plane along the axis holding its ruling there
+    let Ssi::Curves(cut) = intersect(&Surface::Plane(Frame::about([10.,0.,0.],[1.,0.,0.])),&s,1e-9) else { panic!("a closed form") };
+    let Some(cut) = cut.into_iter().find(|c| matches!(c,Curve::SheetCut(_))) else { panic!("a sheet cut") };
+    for c in [Curve::Iso(blend.clone(),0.5),cut] {
         let t = [0.3,0.4];
         let bx = c.bounds(t);
-        for k in 0..=32 {
-            let p = c.point(t[0]+(t[1]-t[0])*k as f64/32.);
-            for i in 0..3 { assert!(p[i] >= bx.0[i]-1e-12 && p[i] <= bx.1[i]+1e-12,"{p:?} outside {bx:?}") }
-        }
-        assert!(size(bx) < 0.2*size(ring),"a curve's box {:.3} against the ring's {:.3}",size(bx),size(ring));
+        for k in 0..=32 { let p = c.point(t[0]+(t[1]-t[0])*k as f64/32.); assert!(holds(bx,p),"{}: {p:?} outside {bx:?}",c.kind()) }
+        assert!(size(bx) < 0.2*size(ring),"{}'s box {:.3} against the ring's {:.3}",c.kind(),size(bx),size(ring));
     }
 }
