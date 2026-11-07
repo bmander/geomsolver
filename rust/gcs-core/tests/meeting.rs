@@ -186,7 +186,7 @@ fn a_plane_holding_a_hyperboloids_ruling_meets_it_in_two_lines_at_any_tolerance(
 /// `angle` and a rise of `advance` over it, from the line screwed back by `from` of that turn —
 /// the face of a level triangle on the line screwed (`build::screwed`), its stretch of the line
 /// `2 reach` long.
-fn screwed_sheet(p: V,e: V,reach: f64,angle: f64,advance: f64,from: f64) -> Surface {
+pub(crate) fn screwed_sheet(p: V,e: V,reach: f64,angle: f64,advance: f64,from: f64) -> Surface {
     use gcs_core::brep::build::{screwed,Profile,ProfileEdge};
     let off = [p[0]-e[0]*(p[0]*e[0]+p[1]*e[1]),p[1]-e[1]*(p[0]*e[0]+p[1]*e[1]),0.];
     let away = if norm(off) > 1e-9 { unit(off) } else { cross([0.,0.,1.],e) };

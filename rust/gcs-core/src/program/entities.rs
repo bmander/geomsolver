@@ -1053,7 +1053,7 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
 /// no count of columns can see it — read as a part's own rows (#819), the fourth is a row past
 /// what its unknowns take.  Where each axis stands is `meeting`'s.
 pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
-    use crate::model::{Along, Owner, Place};
+    use crate::model::{Along, Owner};
     let along: BTreeMap<usize, usize> = deferred.iter()
         .filter_map(|d| match *d { Deferred::Along { axis, line } => Some((axis, line)), _ => None })
         .collect();
@@ -1064,7 +1064,7 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
         let (u, v) = (sk.frames[p].u as usize, sk.frames[p].v as usize);
         let sides = [(u, along.get(&u).copied()), (v, along.get(&v).copied())];
         let was = (sk.frames[p].along, sk.frames[p].stands_at);
-        let shared = meeting(sk, p, sides, tol);
+        let shared = meeting(sk, p, sides, &BTreeMap::new(), tol);
         for (k, (axis, line)) in sides.into_iter().enumerate() {
             let Some(line) = line else { continue };
             // the axis runs from the line's start toward its end, which the row says and no seed
@@ -1075,31 +1075,73 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
             sk.stand_axis_through(axis, x);
             sk.frames[p].along[k] = Some(Along { line: line as u32, at: at as u32 });
         }
-        // both axes on one point, which is drawn elsewhere, and the plane neither held where
-        // they meet (`views::origins_on_axes`) nor standing where a frame does (`plane_at`): it
-        // stands at that point, its two `PlaneAxis` rows given way (its normal's stays: it
-        // stands through the origin wherever that is)
-        let at = shared
-            .filter(|ends| ends.iter().all(|&x| sk.points[x].plane != Some(p as u32)))
-            .map(|[at, _]| at);
-        let op = sk.frames[p].o;
-        // a plane sharing its place, built some other way (an image's) or held keeps its rows
-        let stands = |sk: &Sketch| sk.frames[p].place == Place::Own
-            && !sk.imaged(EntRef::frame(p))
-            && !op.iter().any(|&q| sk.params[q as usize].fixed)
-            && !sk.frames.iter().enumerate()
-                .any(|(g, f)| g != p && f.chart.as_ref().is_some_and(|c| c.o == op));
-        if let Some(at) = at.filter(|_| stands(sk)) {
-            let x = sk.world_point(at);
-            for (k, &q) in op.iter().enumerate() {
-                sk.params[q as usize].value = x[k];
-            }
-            sk.frames[p].stands_at = Some(at as u32);
-        }
+        stand(sk, p, shared);
         if (sk.frames[p].along, sk.frames[p].stands_at) != was {
             sk.derive(Owner::Frame(p as u32));
         }
     }
+}
+
+/// **A plane whose axes the document holds through one point stands there** (#850), once the
+/// relations are stated: `x coincident a` (`PointOnAxis`, written and acting) puts `x` among the
+/// points axis `a` stands on (`meeting`), so `plane(u: a, v: b)` over axes held through one point
+/// — or one held through a point and the other along a line from it, or through a frame's place
+/// it is held at — stands there as one whose axes meet by construction does (`axes_along`,
+/// `Chart::stands_at`): its origin held at the point, three rows in place of its two `PlaneAxis`
+/// rows' four.  Kept, those four over its origin's three unknowns said once more what the written
+/// statements say, a row past the structure no whole statement can be left out for — a march
+/// along a parameter read every station of the drawing whole, 400 times slower.
+pub(super) fn stood_on_points(sk: &mut Sketch) {
+    use crate::constraints::CKind;
+    use crate::model::Owner;
+    let mut held: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for c in sk.constraints.iter()
+        .filter(|c| c.kind == CKind::PointOnAxis && !c.is_intrinsic() && c.acts()) {
+        held.entry(c.args[1].ent().i()).or_default().push(c.args[0].ent().i());
+    }
+    if held.is_empty() {
+        return;
+    }
+    let tol = super::views::ON_PLANE * sk.extent().max(1.0);
+    for p in sk.charted() {
+        let f = &sk.frames[p];
+        let (u, v) = (f.u as usize, f.v as usize);
+        if f.stands_at.is_some() || !held.contains_key(&u) && !held.contains_key(&v) {
+            continue;
+        }
+        let line = |k: usize| f.along[k].map(|a| a.line as usize);
+        let sides = [(u, line(0)), (v, line(1))];
+        let shared = meeting(sk, p, sides, &held, tol);
+        if stand(sk, p, shared) {
+            sk.derive(Owner::Frame(p as u32));
+        }
+    }
+}
+
+/// Stand plane `p` at the point its two axes meet at (`shared`, `meeting`'s), where that point is
+/// drawn elsewhere and the plane neither held where they meet (`views::origins_on_axes`) nor
+/// standing where a frame does (`plane_at`), an image's or sharing its place: its origin's
+/// numbers there and `Chart::stands_at`, its two `PlaneAxis` rows given way once derived (its
+/// normal's stays: it stands through the origin wherever that is).  Whether it stood.
+fn stand(sk: &mut Sketch, p: usize, shared: Option<[usize; 2]>) -> bool {
+    use crate::model::Place;
+    let Some([at, _]) = shared
+        .filter(|ends| ends.iter().all(|&x| sk.points[x].plane != Some(p as u32))) else {
+        return false;
+    };
+    let op = sk.frames[p].o;
+    if sk.frames[p].place != Place::Own || sk.imaged(EntRef::frame(p))
+        || op.iter().any(|&q| sk.params[q as usize].fixed)
+        || sk.frames.iter().enumerate()
+            .any(|(g, f)| g != p && f.chart.as_ref().is_some_and(|c| c.o == op)) {
+        return false;
+    }
+    let x = sk.world_point(at);
+    for (k, &q) in op.iter().enumerate() {
+        sk.params[q as usize].value = x[k];
+    }
+    sk.frames[p].stands_at = Some(at as u32);
+    true
 }
 
 /// Where a point stands by construction: the place of the frame it is held at the origin of — a
@@ -1131,20 +1173,23 @@ fn stands(sk: &Sketch, x: usize) -> Stands {
 /// by its own rows.  Only a frame built before `p`, or one held where it stands: the frame that
 /// made an axis was built before any plane written over it, and a plane stands where one built
 /// before it does, so none is placed through one placed through it (a part's own frame is not
-/// stood at a plane over its `std.x`); a held place is placed by nothing.
-fn meeting(sk: &Sketch, p: usize, sides: [(usize, Option<usize>); 2], tol: f64)
-    -> Option<[usize; 2]> {
+/// stood at a plane over its `std.x`); a held place is placed by nothing.  An axis also stands
+/// on each point `through` says the document holds it through (#850, `stood_on_points`).
+fn meeting(sk: &Sketch, p: usize, sides: [(usize, Option<usize>); 2],
+           through: &BTreeMap<usize, Vec<usize>>, tol: f64) -> Option<[usize; 2]> {
     let held = |o: &[u32; 3]| super::views::held(sk, o);
     let op = sk.frames[p].o;
     let on = |(ax, line): (usize, Option<usize>)| -> Vec<(Stands, usize)> {
+        let written = through.get(&ax).into_iter().flatten().map(|&x| (stands(sk, x), x));
         if let Some(l) = line {
             let ends = [sk.lines[l].p1 as usize, sk.lines[l].p2 as usize];
-            return ends.into_iter().map(|x| (stands(sk, x), x)).collect();
+            return ends.into_iter().map(|x| (stands(sk, x), x)).chain(written).collect();
         }
         sk.frames.iter().enumerate()
             .filter_map(|(g, f)| f.chart.as_ref().filter(|c| g < p || held(&c.o)))
             .filter(|c| c.o != op && c.axes().any(|a| a as usize == ax))
             .map(|c| (Stands::Place(c.o), c.origin as usize))
+            .chain(written)
             .collect()
     };
     let value = |q: u32| sk.params[q as usize].value;

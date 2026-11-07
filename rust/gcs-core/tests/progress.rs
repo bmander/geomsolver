@@ -139,7 +139,76 @@ fn timings_count_work_done_again_and_rank_by_own_time() {
     let lines = timings.lines(usize::MAX);
     assert!(lines.iter().any(|(l, _)| l.contains("judged claim over reach")), "{lines:?}");
     assert!(lines.iter().any(|(l, _)| l.contains(" (×")), "{lines:?}");
-    assert!(timings.heading().starts_with("solids and claims, slowest first"));
+    assert!(timings.heading().starts_with("solids, claims and parts, slowest first"));
+    // a judgement is an object, not a stage: no stage was run here
+    assert!(timings.stages().is_empty(), "{:?}", timings.stages());
+}
+
+/// A row of discs seated in a component (#851): the row places every disc, so its rows over its
+/// own unknowns are all of theirs.
+const ROW: &str = "\
+unit mm
+use std
+use std.place (seats)
+component Disc(r: Length) {
+  in std.top {
+    rim := circle(center: std.top.origin) hint(r: r)
+    radius(r) rim
+  }
+}
+component Row() {
+  in std.top {
+    repeat 12 as k {
+      o := point hint((30 * k, 0))
+      std.top.origin distance(30mm * k, along: u) o
+      std.top.origin level(v) o
+    }
+  }
+  repeat 12 as k {
+    g := Disc(r: 10mm)
+    g seats(turn: 0deg, up: std.z, east: std.x) o[k]
+  }
+}
+row := Row()
+";
+
+/// **Every stage is said, and the parts' rows by their definitions** (#851): the planes placed
+/// and the parts checked inside the elaboration, and after the diagnosis the reading through
+/// the parts — which a run spent minutes in, after `diagnosed`, saying nothing — with each
+/// part's rows ranked inside it: the row's once, a disc's once a disc, one row of the timings
+/// counted.
+/// `Timings::stages` lists the stages in the order they were done, a stage inside another first.
+#[test]
+fn every_stage_is_said_and_the_parts_rows_by_their_definitions() {
+    let heard = Rc::new(Heard::default());
+    let reading = progress::listen(heard.clone(), || {
+        let e = crate::common::linked::build(ROW);
+        assert!(e.ok(), "{:?}", e.diags);
+        let mut sk = e.sketch.clone();
+        assert!(gcs_core::solve::solve(&mut sk, Default::default()).settled());
+        let d = gcs_core::diagnose::diagnose(&mut sk, Default::default());
+        gcs_core::parts::read(&e, &sk, &d, true)
+    });
+    assert_eq!((reading.instances, reading.definitions), (13, 2), "{reading:?}");
+    assert!(reading.singular.is_empty(), "{reading:?}");
+    let mut timings = Timings::default();
+    for (w, total, own) in heard.times.borrow().iter() {
+        timings.add(w, *total, *own);
+    }
+    let stages: Vec<String> = timings.stages().iter()
+        .map(|l| l.split("  ").last().unwrap().trim().to_string()).collect();
+    let at = |what: &str| stages.iter().position(|s| s.starts_with(what))
+        .unwrap_or_else(|| panic!("`{what}` said: {stages:?}"));
+    assert!(stages.iter().any(|s| s.ends_with("planes")), "{stages:?}");
+    assert!(at("checked 13 parts") < at("read the diagnosis through 13 parts"), "{stages:?}");
+    let lines: Vec<String> = timings.lines(usize::MAX).into_iter().map(|(l, _)| l).collect();
+    assert!(lines.iter().any(|l| l.ends_with("ranked the rows of `Row`")), "{lines:?}");
+    assert!(lines.iter().any(|l| l.ends_with("ranked the rows of `Disc` (×12)")), "{lines:?}");
+    // the ranks are inside the reading
+    let said = heard.said.borrow();
+    let open = said.iter().position(|w| w.as_ref().is_some_and(|w| w.kind == Kind::Parts)).unwrap();
+    let rank = said.iter().position(|w| w.as_ref().is_some_and(|w| w.kind == Kind::Rank)).unwrap();
+    assert!(open < rank, "a rank is said inside the reading");
 }
 
 #[test]

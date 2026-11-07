@@ -18,7 +18,6 @@
 //! wedge's two faces take an edge of their own, so the result is a valid boundary, and it says so
 //! (`Touch`); where it touches itself at a point, it says that too.
 use super::geom::{Surface,V};
-use super::props::volume;
 use super::query::{Located,Place};
 use super::topo::{reverse_loop,Brep,EdgeCurve,Face};
 use crate::util::fmath::Det;
@@ -324,6 +323,12 @@ impl Complex {
         cells[c].shells.iter().flat_map(|&k| self.shells[k].iter().copied()).collect()
     }
 
+    /// Whether the cell `sides` bound lies in operand `k`, read off a face of `k`'s bounding it —
+    /// behind the face where it faces the way the operand's did; `None` where none bounds it.
+    pub(crate) fn in_operand(&self,sides: &[(usize,bool)],k: usize) -> Option<bool> {
+        sides.iter().find_map(|&(f,front)| self.origins[f].iter().find(|o| o.operand == k).map(|o| o.alike != front))
+    }
+
     /// **The cells the shells bound**, found once: each shell wound positively (its faces turned
     /// out of it bound a positive volume) the outer shell of a bounded cell; each other the boundary
     /// of a void in the smallest such holding a point of it, or of the unbounded cell, `0`.
@@ -331,7 +336,13 @@ impl Complex {
         self.cells.get_or_init(|| {
             let size = self.b.size().max(self.tol);
             let shells: Vec<Brep> = (0..self.shells.len()).map(|k| self.shell(k)).collect();
-            let volumes: Vec<f64> = shells.iter().map(volume).collect();
+            // each shell's volume its faces' fluxes summed (#847), each face's read once on every
+            // core (`props::fluxes`) and turned with it where its front faces into the shell: a
+            // face bounds the shells on both its sides, which reading every shell whole integrates
+            // twice
+            let flux = super::props::fluxes(&self.b);
+            let volumes: Vec<f64> = self.shells.iter().map(|sides| sides.iter().map(|&(f,front)| if front { -flux[f] } else { flux[f] })
+                .sum::<f64>()/3.).collect();
             let floor = 1e-12*size*size*size;
             let outer: Vec<usize> = (0..shells.len()).filter(|&c| volumes[c] > floor).collect();
             let is_outer: Vec<bool> = volumes.iter().map(|&v| v > floor).collect();

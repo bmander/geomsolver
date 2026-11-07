@@ -69,6 +69,7 @@ mod solid_claims;
 mod witnessed;
 use numeric::{Gate, Numeric};
 pub use numeric::{parts_null_spaces, removable_constraints};
+pub use parts::rank_by_parts;
 pub use solid_claims::{
     describe_solid_claim, judge_solids, ClaimJudge, ClaimProgress, SolidOutcome, SolidPose,
     SolidVerdict, SWEEP_STEPS,
@@ -108,6 +109,15 @@ pub struct Diagnosis {
     /// concur) rather than a surplus.  Consistent on every solution, nothing to fix; each could be
     /// deleted without changing the sketch, but none has to be.
     pub implied: Vec<u32>,
+    /// **The constraints a row said twice is among, where no one of them can go** (#850): the
+    /// dependencies among the rows that leaving out every constraint `over` and `implied` name
+    /// would not take, by the constraints whose rows they reach — the language's own rows among
+    /// them — in row order, and how many such dependencies there are.  A point held on two axes
+    /// that meet, and the axes held through one point there, is four statements of two rows over
+    /// the point's three numbers: each is needed, none is implied whole, and the fourth row is
+    /// still one past what they take.  Empty where the numeric cross-check did not run.
+    pub said_twice: Vec<u32>,
+    pub n_said_twice: usize,
     /// A plane's tangency to a set made dependent by what the drawing already says along the
     /// plane (#148): the body's derivative along both of the plane's axes, where one is what the
     /// other says — a cone's, its apex on the plane, stationary along the generator.  How the
@@ -259,6 +269,14 @@ pub fn summary(d: &Diagnosis) -> String {
         parts.push(format!(
             "{} motion(s) blocked at second order (a tangency at its contact) — not DOF",
             d.shaky
+        ));
+    }
+    if !d.said_twice.is_empty() {
+        parts.push(format!(
+            "{} equation(s) said twice across {} constraint(s), none of which the others imply \
+             whole",
+            d.n_said_twice,
+            d.said_twice.len()
         ));
     }
     if !d.implied.is_empty() {
@@ -416,9 +434,12 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let wit = (opts.witness && m.n_cols > 0 && sys.n_res > 0)
         .then(|| analyze_with(sk, sys, None, &red.in_over, RANK_TOL, 0));
     let numeric: Numeric = numeric::read(sk, sys, &m, &gate, wit.as_ref(), &mut warnings);
-    if let Some(d) = numeric.dependencies {
+    let mut twice = (Vec::new(), 0);
+    if let Some(mut d) = numeric.dependencies {
+        twice = std::mem::take(&mut d.twice);
         red.reread(d);
     }
+    let (said_twice, n_said_twice) = twice;
     // where the numeric cross-check read a rank, what it says moves is the truth here
     let under_params = numeric.movable.unwrap_or_else(|| structural_under.clone());
 
@@ -467,6 +488,8 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         shaky: numeric.shaky,
         over: red.over,
         implied: red.implied,
+        said_twice,
+        n_said_twice,
         expected,
         claims_theorem: claims.theorem,
         claims_violated: claims.violated,

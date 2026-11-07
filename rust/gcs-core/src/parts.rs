@@ -44,7 +44,7 @@ use crate::json::{self, Json};
 use crate::model::{entity_name, EntKind, EntRef, Sketch};
 use crate::program::{Code, Diag, Elaborated, Instanced, Site};
 use crate::syntax::StmtId;
-use crate::system::{System, RANK_TOL};
+use crate::system::System;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// How many of the unknowns left free, or of the rows, a message names before it counts the rest.
@@ -70,11 +70,7 @@ struct Read<'e> {
 /// share — or `None` where the document draws none.
 fn instances<'e>(e: &'e Elaborated, sk: &Sketch) -> Option<(World, Vec<Read<'e>>)> {
     let prog = &e.program;
-    // a development (#645) is a figure the core lays, its three freedoms the parent's to place
-    let mut drawn = e.map.instances.iter()
-        .filter(|i| i.drawn && prog.components[i.comp].braced()
-            && crate::flatten::developable::development_body(&prog.components[i.comp]).is_none())
-        .peekable();
+    let mut drawn = drawn(e).peekable();
     drawn.peek()?;
     let world = World::of(sk, &e.map);
     let by_id: BTreeMap<u32, &Constraint> = sk.constraints.iter().map(|c| (c.id, c)).collect();
@@ -105,6 +101,14 @@ fn instances<'e>(e: &'e Elaborated, sk: &Sketch) -> Option<(World, Vec<Read<'e>>
     Some((world, read))
 }
 
+/// Every drawn instance of a braced definition in `e`: its parts.  A development (#645) is a
+/// figure the core lays, its three freedoms the parent's to place.
+fn drawn(e: &Elaborated) -> impl Iterator<Item = &Instanced> {
+    let prog = &e.program;
+    e.map.instances.iter().filter(move |i| i.drawn && prog.components[i.comp].braced()
+        && crate::flatten::developable::development_body(&prog.components[i.comp]).is_none())
+}
+
 /// What the document calls entity `r`.
 fn ent_name(e: &Elaborated, r: EntRef) -> String {
     e.map.name_of(r).cloned().unwrap_or_else(|| entity_name(r))
@@ -123,8 +127,18 @@ fn listed(items: Vec<String>) -> String {
     list(&items, NAMED)
 }
 
-/// What is wrong with each part the document instantiates, as diagnostics (PT2, PT3).
+/// What is wrong with each part the document instantiates, as diagnostics (PT2, PT3).  A stage
+/// of the run (#851): said to whoever listens.
 pub fn check(e: &Elaborated) -> Vec<Diag> {
+    // a document with no parts has no such stage
+    match drawn(e).count() {
+        0 => Vec::new(),
+        n => crate::progress::during(|| crate::progress::Work::check(n), || check_parts(e)),
+    }
+}
+
+/// `check`, unsaid.
+fn check_parts(e: &Elaborated) -> Vec<Diag> {
     let prog = &e.program;
     let sk = &e.sketch;
     let map = &e.map;
@@ -331,8 +345,19 @@ pub struct Reading {
 }
 
 /// The diagnosis `d` of the solved sketch `sk`, read through `e`'s parts.  `settled` says whether
-/// the solve settled: a part is judged singular only at a pose that is one.
+/// the solve settled: a part is judged singular only at a pose that is one.  A stage of the run
+/// (#851), and each part's rows ranked an object in it, by its definition: said to whoever
+/// listens, so a reading that takes long says where.
 pub fn read(e: &Elaborated, sk: &Sketch, d: &Diagnosis, settled: bool) -> Reading {
+    match drawn(e).count() {
+        0 => Reading::default(),
+        n => crate::progress::during(|| crate::progress::Work::parts(n),
+            || read_parts(e, sk, d, settled)),
+    }
+}
+
+/// `read`, unsaid.
+fn read_parts(e: &Elaborated, sk: &Sketch, d: &Diagnosis, settled: bool) -> Reading {
     let prog = &e.program;
     let Some((world, read)) = instances(e, sk) else { return Reading::default() };
     let mut out = Reading { instances: read.len(), ..Reading::default() };
@@ -415,16 +440,18 @@ pub fn read(e: &Elaborated, sk: &Sketch, d: &Diagnosis, settled: bool) -> Readin
     }
 
     // D3: a part its rows do not place at its inputs as they stand — the document's Jacobian at
-    // the pose, conditioned once, and each part's rows over its own columns ranked from it
+    // the pose, conditioned once and kept sparse, and each part's rows over its own columns
+    // ranked from it part by part (#851): a dense rank of a part is the cube of everything it
+    // makes, and a part that places forty others makes all of theirs
     if settled {
         let mut sys = System::new(sk);
         let z = sys.z0(sk);
         let hard = sys.hard_rows();
-        let jac = sys.conditioned(&z);
+        let jac = sys.conditioned_sparse(&z);
         let mut rows_of: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
-        for (k, &row) in hard.iter().enumerate() {
+        for &row in &hard {
             let (b, i) = sys.instance_of(row);
-            rows_of.entry(sys.blocks[b].cids[i]).or_default().push(k);
+            rows_of.entry(sys.blocks[b].cids[i]).or_default().push(row);
         }
         for r in &read {
             let cols: Vec<usize> = r.own.iter()
@@ -436,7 +463,9 @@ pub fn read(e: &Elaborated, sk: &Sketch, d: &Diagnosis, settled: bool) -> Readin
             if n == 0 || rows.is_empty() {
                 continue;
             }
-            let rank = jac.select(&rows, &cols).rank_and_nullspace(RANK_TOL).rank.min(n);
+            let ranking = || crate::progress::Work::rank(&prog.component_id(r.inst.comp));
+            let rank = crate::progress::during(ranking,
+                || crate::diagnose::rank_by_parts(&jac, &rows, &cols));
             if rank < n {
                 out.singular.push(format!("{} is singular at what it is given: its rows place \
                     {rank} of its {n} own unknowns here, so a small change to its inputs may move \

@@ -128,6 +128,8 @@ pub(super) fn elaborate_in(
     let extruded = prism_sides(&mut cx, &flat);
     let (generated, held_in_space) = held_envelopes(&mut cx, &flat, &planar, &extruded);
     let (after_solids, on_followed) = constraints(&mut cx, &flat, &drawn, &kept_off);
+    // a plane whose axes the relations just stated hold through one point stands there (#850)
+    entities::stood_on_points(&mut cx.sk);
     walked(&mut cx, &deferred, &held);
     super::rounds::rounds(&mut cx, &flat.body, &deferred, &held);
     twins(&mut cx, &flat);

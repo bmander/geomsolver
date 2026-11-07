@@ -2,12 +2,22 @@
 //! `items.iter().map(f).collect()` whatever the threads did, so a caller's result never depends on
 //! how the work was split. WebAssembly has no threads, and there it is that serial map.
 
-/// How many threads `map` uses at most: the machine's parallelism.
+/// How many threads `map` uses at most: the machine's parallelism — one on a worker of
+/// `indices_with`'s, whose work asked of the cores is done on it, serially: the cores are busy with
+/// the work it is a part of already, and threads started for each piece of work within it cost more
+/// than they save (#847: a cell's interior points read on every core, inside a read of every cell on
+/// every core, spent most of its time starting and stopping threads).
 pub fn threads() -> usize {
     #[cfg(target_arch = "wasm32")]
     { 1 }
     #[cfg(not(target_arch = "wasm32"))]
-    { std::thread::available_parallelism().map_or(1,|n| n.get()) }
+    { if WORKER.with(std::cell::Cell::get) { 1 } else { std::thread::available_parallelism().map_or(1,|n| n.get()) } }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+thread_local! {
+    /// Whether this thread is one of `indices_with`'s workers.
+    static WORKER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// `f` of every item, in the items' order, the items taken one at a time by as many threads as
@@ -44,6 +54,7 @@ pub fn indices_with<S,R: Send>(n: usize,init: impl Fn() -> S + Sync,f: impl Fn(&
         std::thread::scope(|scope| {
             for _ in 0..threads {
                 scope.spawn(|| super::bypass::under(bypass,|| super::meter::under(meter.as_ref(),|| {
+                    WORKER.with(|w| w.set(true));
                     let mut mine = Vec::new();
                     let mut state = init();
                     loop {
