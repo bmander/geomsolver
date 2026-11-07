@@ -33,8 +33,7 @@ fn turn() -> Trajectory { Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.]
 fn swept(tool: &Brep,path: &Trajectory) -> Result<Admitted,Refused> {
     let names = Names {sweep:"groove".into(),tool:"tool".into(),motion:"turn".into()};
     let s = Sweep {tool:Ok(tool),path,roll:[-60f64.to_radians(),60f64.to_radians()],mm:1.,names:&names,pocket:None};
-    let sampling = Sampling {rows:100,columns:400,coarse_rows:24,coarse_columns:1440,root_tolerance:1e-9,least_factor:1e-3};
-    dispatch::sweep(&s,&BLOCK,&Ask {poses:&[Motion::identity()],revolved:None,sampling,margin:1e-6})
+    dispatch::sweep(&s,&BLOCK,&Ask {poses:&[Motion::identity()],revolved:None,sampling:Sampling::default(),margin:1e-6})
 }
 
 /// The region a planar subtraction's one slab sweeps: its loops' areas.
@@ -78,8 +77,7 @@ fn a_ball_is_the_canals_whatever_carries_it() {
 fn a_tool_with_no_boundary_is_refused_at_t1() {
     let names = Names::default();
     let s = Sweep {tool:Err("`tool` builds no boundary to read"),path:&turn(),roll:[0.,1.],mm:1.,names:&names,pocket:None};
-    let sampling = Sampling {rows:100,columns:400,coarse_rows:24,coarse_columns:1440,root_tolerance:1e-9,least_factor:1e-3};
-    let r = dispatch::sweep(&s,&BLOCK,&Ask {poses:&[Motion::identity()],revolved:None,sampling,margin:1e-6}).unwrap_err();
+    let r = dispatch::sweep(&s,&BLOCK,&Ask {poses:&[Motion::identity()],revolved:None,sampling:Sampling::default(),margin:1e-6}).unwrap_err();
     assert_eq!((r.row,r.asked),(dispatch::Row::Tool,dispatch::Asked::ConstantTwist));
     assert!(matches!(&r.seen,dispatch::Seen::Words(m) if m.contains("no boundary")),"{:?}",r.seen);
 }

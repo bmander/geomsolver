@@ -45,18 +45,12 @@ impl SweepContacts {
     /// reading takes is refused, naming the face and why. The motion and the roll are the
     /// drawing's.
     pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
-        Self::read_witnessed(sk,solid,axis_tolerance).map_err(|(m,_)| m)
-    }
-
-    /// `read`, refused with a point of the face no reading takes (the tool's frame), where the
-    /// refusal is the reading's.
-    pub fn read_witnessed(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,(String,Option<V>)> {
-        let drawn = Self::motion_read(sk,solid,axis_tolerance).map_err(|m| (m,None))?;
+        let drawn = Self::motion_read(sk,solid,axis_tolerance)?;
         let SolidDef::Swept {source,..} = &sk.solids[solid].def else { unreachable!("read as a sweep") };
         let name = &sk.solids[*source as usize].name;
         let mm = super::cad::millimetres(sk);
-        let b = super::cad::tool_brep(sk,solid).map_err(|m| (m,None))?;
-        let tool = Tool::read(&b,mm).map_err(|why| (format!("`{name}` is read by its boundary, but {why}"),why.witness()))?;
+        let b = super::cad::tool_brep(sk,solid)?;
+        let tool = Tool::read(&b,mm).map_err(|why| format!("`{name}` is read by its boundary, but {why}"))?;
         let lone = Lone::read(&b,&tool,mm).map(std::sync::Arc::new);
         Ok(Self {tool,lone,..drawn})
     }

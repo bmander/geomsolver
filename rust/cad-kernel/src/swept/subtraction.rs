@@ -37,35 +37,15 @@ use std::sync::{Arc,Mutex};
 type V = [f64;3];
 type P = [f64;2];
 
-/// The rows the class refuses by.
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Row {
-    /// P1: the motion keeps the tool's plane.
-    Plane,
-    /// The roll is no interval, or runs back.
-    Period,
-    /// Q1: the tool stands along the plane's normal.
-    Members,
-    /// Q2: the slabs, and a drafted slab's stations alike.
-    Slabs,
-    /// Q3: a whole period, or clear at both ends.
-    Closes,
-    /// Q4: the region's boundary is regular.
-    Kept,
-    /// The region reaches the blank.
-    Reach,
-}
-
 /// A row that fails, what was seen, and a point of the body where, when there is one.
 pub type Failure = (Row,String,Option<V>);
+
+/// The class's rows are the dispatch's: P1, P3, Q1–Q4 and E0.
+use super::dispatch::Row;
 
 /// What a sweep is called, in the words a refusal says it in: the sweep, its tool and its motion.
 #[derive(Clone,Debug,Default)]
 pub struct Names { pub sweep: String,pub tool: String,pub motion: String }
-
-/// Whether the class says what it reads (`SOLVENT_SUBTRACTION_DEBUG`): each section, each slab's
-/// regions, and the stations of a drafted slab it refuses.
-fn debug() -> bool { std::env::var_os("SOLVENT_SUBTRACTION_DEBUG").is_some() }
 
 /// How near square or along a direction a unit axis must be to be read as such.
 const ALIGNED: f64 = 1e-9;
@@ -99,8 +79,8 @@ fn face_points(b: &Brep,fi: usize) -> Vec<V> {
 /// of the stretches its leaning sides span, how far along the normal it reaches (model units), and
 /// its boundary (millimetres, `mm` a model unit) to section, each section kept once read.
 pub struct Prismatic { pub plane: Plane,caps: Vec<f64>,leaning: Vec<[f64;2]>,span: [f64;2],tool: Brep,mm: f64,
-    /// Each face's box (millimetres), about its edges' points.
-    boxes: Vec<(V,V)>,
+    /// Each side's box (millimetres), about its edges' points; none for a cap.
+    boxes: Vec<Option<(V,V)>>,
     sections: Mutex<BTreeMap<(u64,bool),Result<Vec<Vec<Edge>>,String>>> }
 
 impl std::fmt::Debug for Prismatic {
@@ -127,12 +107,13 @@ impl Prismatic {
             let (lo,hi) = points.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),p|
                 (std::array::from_fn(|k| lo[k].min(p[k])),std::array::from_fn(|k| hi[k].max(p[k]))));
             let pad = 0.01*crate::util::space::distance(lo,hi);
-            boxes.push((lo.map(|x| x-pad),hi.map(|x| x+pad)));
+            let reading = along(&f.surface,n);
+            boxes.push((!matches!(reading,Some(Along::Cap))).then(|| (lo.map(|x| x-pad),hi.map(|x| x+pad))));
             let heights = points.iter().fold([f64::INFINITY,f64::NEG_INFINITY],|[lo,hi],p| { let h = dot(*p,n)/mm; [lo.min(h),hi.max(h)] });
             span = [span[0].min(heights[0]),span[1].max(heights[1])];
             let at = points.first().map_or([0.;3],|p| scale(*p,1./mm));
             let name = crate::recipe::joined(&f.name);
-            match along(&f.surface,n) {
+            match reading {
                 Some(Along::Cap) => caps.push(dot(f.surface.frame().o,n)/mm),
                 Some(Along::Side) => sides.push((heights,0.,name,at)),
                 Some(Along::Leaning) => {
@@ -162,14 +143,8 @@ impl Prismatic {
         Ok(Prismatic {plane,caps,leaning,span,tool:b.clone(),mm,boxes,sections:Mutex::new(BTreeMap::new())})
     }
 
-    /// How far along the normal the tool reaches (model units).
-    pub fn span(&self) -> [f64;2] { self.span }
-
     /// Whether a side leans across height `h`.
     pub fn leans(&self,h: f64) -> bool { self.leaning.iter().any(|s| h > s[0] && h < s[1]) }
-
-    /// The heights of the caps (model units), lowest first.
-    pub fn caps(&self) -> &[f64] { &self.caps }
 
     /// How far the tool's points reach from the plane's normal through its origin (model units).
     pub fn reach(&self) -> f64 {
@@ -189,17 +164,16 @@ impl Prismatic {
         s
     }
 
-    /// The first of the tool's faces a section's step (millimetres) lies on: its middle on the
+    /// The first of the tool's sides a section's step (millimetres) lies on: its middle on the
     /// face's surface.
     fn face_of(&self,s: &Seg) -> usize {
         let q = s.curve.point(0.5*(s.t[0]+s.t[1]));
         let tol = 1e-7*(1.+self.tool.size());
         // (on its surface and within the box its edges span: a surface two faces lie on, as the
         // sides of a plus's opposite arms do, is told apart by where each face is)
-        self.tool.faces.iter().zip(&self.boxes).position(|(f,(lo,hi))| {
-            !matches!(along(&f.surface,self.plane.n),Some(Along::Cap)) && (0..3).all(|k| q[k] >= lo[k]-tol && q[k] <= hi[k]+tol)
-                && crate::util::space::distance(f.surface.point(f.surface.inverse(q)),q) <= tol
-        }).unwrap_or(usize::MAX)
+        self.tool.faces.iter().zip(&self.boxes).position(|(f,boxed)| boxed.is_some_and(|(lo,hi)|
+            (0..3).all(|k| q[k] >= lo[k]-tol && q[k] <= hi[k]+tol) && crate::util::space::distance(f.surface.point(f.surface.inverse(q)),q) <= tol))
+            .unwrap_or(usize::MAX)
     }
 
     fn cut(&self,h: f64,below: bool) -> Result<Vec<Vec<Edge>>,String> {
@@ -249,7 +223,6 @@ impl Prismatic {
             // (its first step still the one it began at)
             if inner { *l = l.drain(..).rev().map(Edge::reversed).collect(); l.rotate_right(1); }
         }
-        if debug() { eprintln!("section at {h} ({below}): {loops:?}") }
         Ok(loops)
     }
 }
@@ -290,8 +263,8 @@ impl Loops {
 
 impl Region for Loops {
     fn value(&self,p: P) -> f64 {
-        let d = self.edges.iter().map(|e| e.distance(p)).fold(f64::INFINITY,f64::min);
-        if self.edges.iter().map(|e| e.crossings(p)).sum::<usize>()%2 == 1 { -d } else { d }
+        let (d,crossed) = self.edges.iter().fold((f64::INFINITY,0),|(d,n),e| (d.min(e.distance(p)),n+e.crossings(p)));
+        if crossed%2 == 1 { -d } else { d }
     }
 }
 
@@ -362,14 +335,6 @@ impl Subtraction {
             cone standing along its normal leaning as every side beside it leans",names.tool,names.motion),Some(at)))
     }
 
-    /// Whether the class reads sweep of tool `b` along `path` over `roll`: P1 and Q1 hold.
-    pub fn asks(b: &Brep,path: &Trajectory,roll: [f64;2],mm: f64) -> bool {
-        Subtraction::read(b,path,roll,mm,Names::default()).is_ok()
-    }
-
-    /// The plane the tool stands square to.
-    pub fn plane(&self) -> Plane { self.tool.plane }
-
     /// What the swept region at height `h` is read from: the section there (from below or above),
     /// the motion, the plane and the roll.
     fn setting(&self,h: f64,below: bool) -> Result<Setting,Failure> {
@@ -435,10 +400,6 @@ impl Subtraction {
             let stations = if drafted { self.drafted(reach,&read,&boxed)? } else { vec![(h,read(h,boxed(1.))?)] };
             found.push(Slab {heights:slab,reach,stations});
         }
-        if debug() {
-            eprintln!("plane {pl:?}, heights {heights:?}, caps {:?}, slabs {:?}",self.tool.caps,
-                found.iter().map(|s| (s.heights,s.reach,s.stations.iter().map(|(z,r)| (*z,r.loops.iter().map(|l| (l.area,l.corners.clone())).collect::<Vec<_>>())).collect::<Vec<_>>())).collect::<Vec<_>>());
-        }
         if found.iter().all(|s| s.stations.iter().all(|(_,r)| r.loops.is_empty())) {
             return Err((Row::Reach,format!("no part of the region `{}` sweeps reaches the blank",names.sweep),None))
         }
@@ -478,11 +439,6 @@ impl Subtraction {
             format!("{n} loop{} of {pieces} pieces{}",if n == 1 { "" } else { "s" },match holes { 0 => String::new(),1 => " (one a hole)".into(),
                 h => format!(" ({h} of them holes)") })
         };
-        if debug() {
-            for (z,r) in at.iter().zip(&first) {
-                eprintln!("station {z}: {:?}",r.loops.iter().map(|l| l.pieces.iter().map(|p| match p { super::region::Piece::Run {candidate,..} => *candidate as i64,_ => -1 }).collect::<Vec<_>>()).collect::<Vec<_>>());
-            }
-        }
         let (a,b) = (shape(&first[j-1]),shape(&first[j]));
         let b = if a == b { format!("{b} of other stretches") } else { b };
         let names = &self.names;

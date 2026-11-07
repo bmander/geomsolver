@@ -21,14 +21,13 @@
 //! The rows are sampled, and the evidence says how. What the caller reads is the drawing: the tool's
 //! B-rep, the motion lowered, the roll, the blank (`Blank`) at its placements, and the names a
 //! refusal says. What it says of a refusal is its words.
-#[allow(unused_imports)]
-use crate::util::fmath::Det;
 use crate::contact::SurfacePoint;
 use crate::topo::Brep;
 use crate::trajectory::{Motion,Trajectory};
 use super::admission::{self as rows,Capped,Generating,Lone,Reads,Sampling};
 use super::canal::{self,Tube};
 use super::constant_twist::{once_round,twist_of,Characteristic};
+use crate::trajectory::Screw;
 use super::generating::{Form,Uncharted};
 use super::pocket::{self,Pocket};
 use super::subtraction::{self,Names,Subtraction};
@@ -66,14 +65,6 @@ impl From<super::constant_twist::Row> for Row {
     }
 }
 
-impl From<subtraction::Row> for Row {
-    fn from(row: subtraction::Row) -> Row {
-        use subtraction::Row as R;
-        match row { R::Plane => Row::Plane,R::Period => Row::Period,R::Members => Row::Members,R::Slabs => Row::Slabs,
-            R::Closes => Row::Closes,R::Kept => Row::Kept,R::Reach => Row::Reach }
-    }
-}
-
 impl From<canal::Row> for Row {
     fn from(row: canal::Row) -> Row { match row { canal::Row::Curvature => Row::Curvature,canal::Row::Return => Row::Return } }
 }
@@ -84,10 +75,10 @@ impl From<canal::Row> for Row {
 pub enum Asked { Generating,ConstantTwist,Planar,Subtraction,Canal }
 
 /// What a refusing row saw, where the kernel does not say it in words: a ball's path (the canal's
-/// rows, `canal::Refusal`) or a motion with no contact chart (`Uncharted`), which the drawing says
-/// in its own.
+/// rows, `canal::Refusal`, and the ball's radius) or a motion with no contact chart (`Uncharted`),
+/// which the drawing says in its own.
 #[derive(Clone,Debug)]
-pub enum Seen { Words(String),Canal(canal::Refusal),Uncharted(Uncharted) }
+pub enum Seen { Words(String),Canal(canal::Refusal,f64),Uncharted(Uncharted) }
 
 /// A sweep refused: the class asked, the row, what was seen, and a point of the body (model units)
 /// where, when there is one.
@@ -169,7 +160,7 @@ pub fn sweep(s: &Sweep,blank: &dyn Blank,ask: &Ask) -> Result<Admitted,Refused> 
         match canal::tube(s.path,centre,radius,&face,s.roll) {
             Ok(Some(tube)) => return Ok(Admitted::whole(Class::Canal(Box::new(tube)),poses.len())),
             Err(canal::Why::Refused(r)) => return Err(Refused {asked:Asked::Canal,row:r.row.into(),
-                witness:Some(first.point(r.witness)),seen:Seen::Canal(r)}),
+                witness:Some(first.point(r.witness)),seen:Seen::Canal(r,radius)}),
             // a screw's tube that meets itself, or a path the tube cannot follow: the other classes'
             Ok(None) | Err(_) => {}
         }
@@ -195,23 +186,21 @@ pub fn sweep(s: &Sweep,blank: &dyn Blank,ask: &Ask) -> Result<Admitted,Refused> 
     let b = s.tool.map_err(|why| Refused::said(asked,(Row::Tool,why.to_string(),None)))?;
     // the planar subtraction class: outright under a constant twist, and in place of the other rows
     // where they refuse; every placement at once
-    let subtraction = || Subtraction::read(b,s.path,s.roll,s.mm,s.names.clone());
+    // (read once, where it is first asked)
+    let read = std::cell::OnceCell::new();
+    let subtraction = || read.get_or_init(|| Subtraction::read(b,s.path,s.roll,s.mm,s.names.clone())).as_ref().ok();
     let subtract = |class: &Subtraction| -> Result<Admitted,Refused> {
-        let found = class.check(poses,&|p| blank.inside(p),blank.boxed())
-            .map_err(|(row,m,w)| Refused::said(Asked::Subtraction,(row.into(),m,w)))?;
+        let found = class.check(poses,&|p| blank.inside(p),blank.boxed()).map_err(|f| Refused::said(Asked::Subtraction,f))?;
         let sampled = class.sampled(&found);
         Ok(Admitted {samples:sampled.candidates,contacts:sampled.runs,spacing:(1./super::region::PER_DEGREE).to_radians(),
             basis:[sampled.candidates,sampled.steps],..Admitted::whole(Class::Subtraction(Box::new(found)),poses.len())})
     };
     let closed = |refused: Refused| closed(s,b,poses.len()).ok_or(refused);
-    if twist.is_some() { if let Ok(class) = subtraction() { return subtract(&class).or_else(closed) } }
-    match rowed(s,b,blank,ask,asked) {
-        Ok(admitted) => Ok(admitted),
-        Err(refused) => match subtraction() {
-            Ok(class) => subtract(&class).or_else(closed),
-            Err(_) => closed(refused),
-        },
-    }
+    if twist.is_some() { if let Some(class) = subtraction() { return subtract(class).or_else(closed) } }
+    rowed(s,b,blank,ask,twist).or_else(|refused| match subtraction() {
+        Some(class) => subtract(class).or_else(closed),
+        None => closed(refused),
+    })
 }
 
 /// The closed class's admission of `s` (C1, C2): its trajectory unpaced, read in millimetres, a
@@ -228,17 +217,18 @@ fn closed(s: &Sweep,b: &Brep,poses: usize) -> Option<Admitted> {
     Some(Admitted::whole(Class::Closed(Box::new(Closed {tool:b.clone(),path,roll})),poses))
 }
 
-/// The constant twist's rows (S1–S4) or the generating class's (M1–E4, T1–T3), `asked` saying
-/// which: the tool read from its B-rep (T1), the motion charted (M1), the first placement asked and
-/// each later one read alike to an earlier, or asked itself.
-fn rowed(s: &Sweep,b: &Brep,blank: &dyn Blank,ask: &Ask,asked: Asked) -> Result<Admitted,Refused> {
+/// The constant twist's rows (S1–S4) under `twist`, the constant twist the motion is, or the
+/// generating class's (M1–E4, T1–T3) where it is none: the tool read from its B-rep (T1), the
+/// motion charted (M1), the first placement asked and each later one read alike to an earlier, or
+/// asked itself.
+fn rowed(s: &Sweep,b: &Brep,blank: &dyn Blank,ask: &Ask,twist: Option<Screw>) -> Result<Admitted,Refused> {
     let (poses,first) = (ask.poses,ask.poses[0]);
+    let asked = if twist.is_some() { Asked::ConstantTwist } else { Asked::Generating };
     let refuse = |pose: Motion| move |(row,m,w): super::constant_twist::Failure|
         Refused::said(asked,(row.into(),m,w.map(|p| pose.point(p))));
     let tool = Tool::read(b,s.mm).map_err(|why| Refused::said(asked,(Row::Tool,format!("`{}` is read by its boundary, but \
         {why}",s.names.tool),why.witness().map(|p| first.point(p)))))?;
     let lone = Lone::read(b,&tool,s.mm);
-    let twist = twist_of(s.path);
     // M1: a motion no constant twist has a contact chart, or is refused by what it is
     if twist.is_none() {
         let form = Form::of(s.path).map_err(|u| Refused {asked,row:Row::Motion,seen:Seen::Uncharted(u),witness:None})?;
@@ -261,10 +251,9 @@ fn rowed(s: &Sweep,b: &Brep,blank: &dyn Blank,ask: &Ask,asked: Asked) -> Result<
             }
             None => {
                 let (found,reads) = rows::check(&sweep,&inside,sampling,lone.as_ref()).map_err(refuse(pose))?;
-                Ok((Admitted {class:Class::Generating(found.capped.map(Box::new)),placements:Vec::new(),samples:found.samples,
-                    contacts:found.contacts,spacing:found.spacing,least_area_factor:found.least_area_factor,
+                Ok((Admitted {samples:found.samples,contacts:found.contacts,spacing:found.spacing,least_area_factor:found.least_area_factor,
                     near_double_roots:found.near_double_roots,near_tangent_pairs:found.near_tangent_pairs,
-                    basis:[sampling.rows,sampling.columns],equivalence:Equivalence::Sampled},reads))
+                    basis:[sampling.rows,sampling.columns],..Admitted::whole(Class::Generating(found.capped.map(Box::new)),0)},reads))
             }
         }
     };

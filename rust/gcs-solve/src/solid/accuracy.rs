@@ -630,11 +630,10 @@ impl Meter {
         swept.sort(); swept.dedup();
         for s in swept {
             let poses: Vec<Motion> = cuts.iter().filter(|c| c.swept == s).map(|c| c.pose).collect();
-            let evidence = super::planar_subtraction::admit(sk,s,&poses,&inside,bounds).map_err(|(_,m,_)| m)?;
-            let super::admission::Class::Subtraction(found) = evidence.class else { return Err("not a subtraction sweep".into()) };
+            let found = super::planar_subtraction::found(sk,s,&poses,&inside,bounds).map_err(|(_,m,_)| m)?;
             let chords: Vec<Vec<Vec<Chords>>> = found.slabs.iter().map(|s| s.stations.iter()
                 .map(|(_,r)| (0..r.loops.len()).map(|l| Chords::of(r,l)).collect()).collect()).collect();
-            let (found,chords) = (std::sync::Arc::new(*found),std::sync::Arc::new(chords));
+            let (found,chords) = (std::sync::Arc::new(found),std::sync::Arc::new(chords));
             surfaces.push(Surface {name:format!("{} flank",sk.solids[s].name),generated:true});
             for pose in poses {
                 removed.push(Removed {found:found.clone(),chords:chords.clone(),pose:(pose,pose.inverse()),surface:surfaces.len()-1});

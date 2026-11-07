@@ -37,12 +37,13 @@ pub fn recipe(sk: &Sketch,root: usize) -> Result<Json,String> {
 }
 
 /// **Sweep `swept`'s tool as the kernel reads it** (#721 F1c): its recipe built into a B-rep
-/// (millimetres), the tool every class reads, remembered against what the sweep reads
-/// (`Caches::tool`); why not where the drawing writes no recipe of it or the kernel builds none.
+/// (millimetres), the tool every class reads, remembered against what the tool reads
+/// (`Caches::tool`, by the tool: every sweep of it shares it, and a sweep's motion or roll moved
+/// keeps it); why not where the drawing writes no recipe of it or the kernel builds none.
 pub fn tool_brep(sk: &Sketch,swept: usize) -> Result<std::sync::Arc<crate::brep::topo::Brep>,String> {
     let SolidDef::Swept {source,..} = &sk.solids[swept].def else { return Err(format!("`{}` is no sweep",sk.solids[swept].name)) };
     let source = *source as usize;
-    sk.caches.tool.get_or(swept,super::MemoKey::of(sk,swept),|| {
+    sk.caches.tool.get_or(source,super::MemoKey::of(sk,source),|| {
         let name = &sk.solids[source].name;
         crate::brep::recipe::build(&recipe(sk,source)?).map(std::sync::Arc::new)
             .map_err(|e| format!("`{name}` builds no boundary to read: {e}"))

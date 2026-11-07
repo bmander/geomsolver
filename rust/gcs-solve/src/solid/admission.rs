@@ -155,17 +155,10 @@ pub enum Basis { Sampled { rows: usize,columns: usize } }
 #[derive(Clone,Debug)]
 pub struct Placement { pub pose: Motion, pub equivalent_to: Option<usize> }
 
-/// How a sweep's later placements were found equivalent to its first.
-#[derive(Clone,Copy,Debug,PartialEq)]
-pub enum Equivalence {
-    /// From the solid graph: every operand of the blank is a full revolution about one line (a
-    /// point of it and its unit direction), and each later placement is the first turned about
-    /// that line, so the blank is the same under the turn and reads alike at every point.
-    Revolved { origin: V,axis: V },
-    /// Sampled: each later placement's blank read at every point the first placement's checks
-    /// read, and found alike there (or checked itself where it was not).
-    Sampled,
-}
+/// How a sweep's later placements were found equivalent to its first is the kernel's
+/// (`dispatch::Equivalence`): proved from the solid graph, the blank every turn about one line's
+/// alike, or sampled at every point the first placement's checks read.
+pub use crate::brep::swept::dispatch::Equivalence;
 
 /// How near the lines and the turns must agree (relative to the blank's size) for the structural
 /// equivalence: the solver's own noise, not a modelling tolerance.
@@ -366,13 +359,7 @@ struct Blank<'a> { field: &'a SpatialField,margin: f64,extent: Option<(V,V)>,rec
 impl dispatch::Blank for Blank<'_> {
     fn inside(&self,p: V) -> bool { self.field.below(p,-self.margin) }
     fn extent(&self) -> Option<(V,V)> { self.extent }
-    fn boxed(&self) -> Option<(V,V)> {
-        *self.boxed.get_or_init(|| {
-            let blank = crate::brep::recipe::build(self.recipe.as_ref()?).ok()?;
-            let (lo,hi) = blank.bounds();
-            Some((lo.map(|x| x/self.mm),hi.map(|x| x/self.mm)))
-        })
-    }
+    fn boxed(&self) -> Option<(V,V)> { *self.boxed.get_or_init(|| boxed(self.recipe.as_ref()?,self.mm)) }
 }
 
 /// What the drawing reads of one sweep for the kernel: its tool's B-rep, its trajectory and roll,
@@ -454,8 +441,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
             let message = match r.seen {
                 dispatch::Seen::Words(m) => m,
                 dispatch::Seen::Uncharted(_) => read.family.uncharted(),
-                dispatch::Seen::Canal(c) => match super::canal::said(crate::brep::swept::canal::Why::Refused(c),
-                    read.tool.as_ref().ok().and_then(|t| crate::brep::swept::canal::ball(t,mm)).map_or(0.,|b| b.1)) {
+                dispatch::Seen::Canal(c,radius) => match super::canal::said(crate::brep::swept::canal::Why::Refused(c),radius) {
                     super::canal::Why::Refused(r) => r.message,
                     super::canal::Why::Failed(m) => m,
                 },
@@ -479,11 +465,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
             placements:poses.iter().zip(&admitted.placements).map(|(&pose,&equivalent_to)| Placement {pose,equivalent_to}).collect(),
             samples:admitted.samples,contacts:admitted.contacts,spacing:admitted.spacing,least_area_factor:admitted.least_area_factor,
             near_double_roots:admitted.near_double_roots,near_tangent_pairs:admitted.near_tangent_pairs,
-            basis:Basis::Sampled {rows:admitted.basis[0],columns:admitted.basis[1]},
-            equivalence:match admitted.equivalence {
-                dispatch::Equivalence::Revolved {origin,axis} => Equivalence::Revolved {origin,axis},
-                dispatch::Equivalence::Sampled => Equivalence::Sampled,
-            },class});
+            basis:Basis::Sampled {rows:admitted.basis[0],columns:admitted.basis[1]},equivalence:admitted.equivalence,class});
     }
     Ok(admission)
 }
@@ -492,8 +474,12 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
 /// its own boundary built by this kernel: a field's support is a construction's box, not the
 /// material's. What the planar classes box the blank by.
 pub fn blank_box(sk: &Sketch,root: usize) -> Option<(V,V)> {
-    let mm = cad::millimetres(sk);
-    let blank = crate::brep::recipe::build(&cad::recipe_static(sk,root).ok()?.recipe).ok()?;
-    let (lo,hi) = blank.bounds();
+    boxed(&cad::recipe_static(sk,root).ok()?.recipe,cad::millimetres(sk))
+}
+
+/// The box static recipe `recipe` (millimetres) stands in, built by this kernel, in model units
+/// (`mm` a unit).
+fn boxed(recipe: &crate::json::Json,mm: f64) -> Option<(V,V)> {
+    let (lo,hi) = crate::brep::recipe::build(recipe).ok()?.bounds();
     Some((lo.map(|x| x/mm),hi.map(|x| x/mm)))
 }

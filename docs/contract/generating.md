@@ -428,7 +428,7 @@ epitrochoid bore to `FreeForm`, its witness on the face.
 recipe into a B-rep and reads it (`Tool::read`); its material is the boundary's.  The recipe gates
 `admission::tool` asked of the drawing are retired: T1 is now the reading's refusal, a face no
 reading takes or a tool the kernel builds no boundary of, named with a point of the face where the
-reading gives one (`SweepContacts::read_witnessed`).  A tool is one prism standing alone where its
+reading gives one (`dispatch::sweep`'s T1, #721 F1c).  A tool is one prism standing alone where its
 B-rep is (`admission::Lone::read`): every face it reads a side running square along one direction,
 no crease, and two caps, the boundary's planes square to that direction, each one loop of lines and
 arcs; its cutter is that direction's prism of the nearer cap's loop (`Cutter::extruded`), however
@@ -1725,7 +1725,7 @@ itself, by its region (`rack_cut::a_rack_with_a_cap_in_the_blank_cuts_the_slab_i
 `the_tooth_united_with_itself_cuts_as_the_tooth_does`: the two classes agree to 1e-5). The slabs are the blank cut at every cap within
 it; a union's faces a Boolean merges leave no cap between bands of one section. In each the
 kernel's `brep::swept::region` reads the region (its refusals typed, their words
-`region::Refusal::words`, said by row by `swept_region::said`; two kept stretches walking one curve,
+`region::Refusal::words`; two kept stretches walking one curve,
 two corners at one distance from a turn's centre, one piece of its boundary) `R = ∪ₜ
 poseₜ(section)` within a box about the blank's shadow at every placement: its candidates are
 each line's contact (the foot of the perpendicular from the instant centre, `ν·(ωJx + b) = 0` in the
@@ -1762,7 +1762,7 @@ shape only where they cut the region is the box's — the measured handle's hub 
 with the draft, crosses them 48 mm about the wheel's centre. A change in every box is the blank's
 own, refused at Q2 naming the height to step the tool at, found between the two stations that
 differ. `accuracy::Subtracted` meters it, reading each sweep by the class's own
-`planar_subtraction::admit`; a whole roll never clear of its body is refused saying the period
+`planar_subtraction::found`; a whole roll never clear of its body is refused saying the period
 to state. Every period is found by one search (`roll::first_alike`: a degree at a time, none for a
 tool the motion does not move) and said in one form (`roll::advice`). `tests/planar_subtraction.rs` is the gate
 (the #585 wheel against arithmetic made apart, the long form, two bands as one, a stepped tool,

@@ -191,7 +191,7 @@ fn period(tool: &SpatialField, support: [I; 3], family: &crate::motion::Family) 
 pub use crate::brep::swept::region::{first_alike, PERIOD_TURNS};
 
 /// What a refusal says to state for a roll through a whole period is the kernel's.
-pub use crate::brep::swept::region::advice;
+use crate::brep::swept::region::advice;
 
 /// Whether `tool` under every pose of `family` over `span` is proved clear of `blank`: the
 /// tool's support and the span split, a box and the poses over its span at a time, until each box

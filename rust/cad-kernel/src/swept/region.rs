@@ -451,19 +451,22 @@ impl SweptRegion {
         // two stretches one curve walked alike — two corners at one distance from a turn's centre
         // tracing one circle — are one piece of the boundary: the second is dropped
         let alike = 1e-7*(1.+s.scale);
-        let mut kept: Vec<Run> = Vec::new();
+        let at = |r: &Run,f: f64| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*f).map(|h| h.at);
+        let mut kept: Vec<(Run,Option<[P;2]>)> = Vec::new();
         for r in runs {
-            let at = |r: &Run,f: f64| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*f).map(|h| h.at);
-            let same = kept.iter().any(|q| {
-                let (Some(a0),Some(a1),Some(b0),Some(b1)) = (at(q,0.),at(q,1.),at(&r,0.),at(&r,1.)) else { return false };
+            // (each run's ends read once; a run's middle read against another's points only where
+            // their ends are one)
+            let ends = at(&r,0.).zip(at(&r,1.)).map(|(a,b)| [a,b]);
+            let same = ends.is_some_and(|[b0,b1]| kept.iter().any(|(q,e)| {
+                let Some([a0,a1]) = *e else { return false };
                 if dist(a0,b0) > alike || dist(a1,b1) > alike { return false }
                 let Some(m) = at(&r,0.5) else { return false };
                 (0..=64).filter_map(|j| at(q,j as f64/64.)).collect::<Vec<_>>().windows(2)
                     .any(|w| crate::plane2::Edge::Line {a:w[0],b:w[1],axis:false}.distance(m) <= alike.max(1e-3*dist(w[0],w[1])))
-            });
-            if !same { kept.push(r) }
+            }));
+            if !same { kept.push((r,ends)) }
         }
-        let mut runs = kept;
+        let mut runs: Vec<Run> = kept.into_iter().map(|(r,_)| r).collect();
         // a fold: a stretch turning back against its own walk
         for r in &runs {
             let n = 32;
