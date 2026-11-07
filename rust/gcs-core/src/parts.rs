@@ -130,8 +130,11 @@ fn listed(items: Vec<String>) -> String {
 /// What is wrong with each part the document instantiates, as diagnostics (PT2, PT3).  A stage
 /// of the run (#851): said to whoever listens.
 pub fn check(e: &Elaborated) -> Vec<Diag> {
-    let checking = || crate::progress::Work::check(drawn(e).count());
-    crate::progress::during(checking, || check_parts(e))
+    // a document with no parts has no such stage
+    match drawn(e).count() {
+        0 => Vec::new(),
+        n => crate::progress::during(|| crate::progress::Work::check(n), || check_parts(e)),
+    }
 }
 
 /// `check`, unsaid.
@@ -346,8 +349,11 @@ pub struct Reading {
 /// (#851), and each part's rows ranked an object in it, by its definition: said to whoever
 /// listens, so a reading that takes long says where.
 pub fn read(e: &Elaborated, sk: &Sketch, d: &Diagnosis, settled: bool) -> Reading {
-    let reading = || crate::progress::Work::parts(drawn(e).count());
-    crate::progress::during(reading, || read_parts(e, sk, d, settled))
+    match drawn(e).count() {
+        0 => Reading::default(),
+        n => crate::progress::during(|| crate::progress::Work::parts(n),
+            || read_parts(e, sk, d, settled)),
+    }
 }
 
 /// `read`, unsaid.

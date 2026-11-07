@@ -1033,8 +1033,8 @@ fn a_run_says_its_stages_and_their_times() {
     assert!(stdout.contains(&format!("{file}: solids, claims and parts, slowest first")),"{stdout}");
     // and every stage before them, in the order run (#851)
     assert!(stdout.contains(&format!("{file}: stages, in the order run")),"{stdout}");
-    for stage in [format!("elaborated {file}"),"solved for".into(),format!("diagnosed {file}")] {
-        assert!(stdout.lines().any(|l| l.starts_with("  ") && l.ends_with(&stage)),
+    for stage in [format!("  elaborated {file}"),"  solved for ".into(),format!("  diagnosed {file}")] {
+        assert!(stdout.lines().any(|l| l.starts_with("  ") && l.contains(&stage)),
             "`{stage}` timed:\n{stdout}");
     }
     let claim = text.lines().position(|l| l.starts_with("claim")).unwrap()+1;
