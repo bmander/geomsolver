@@ -1,9 +1,11 @@
 //! **The numeric rank, part by part** (#88).  Past `NUMERIC_MAX` the whole Jacobian is too large
-//! to factor after every edit, but the block-triangular order (`System::block_order`) cuts it
-//! into parts that are each small, ordered so a part's rows read only its own columns and earlier
-//! parts': the over-determined part (its rows read nothing else), the square blocks in the order
-//! the matching solves them, and the under-determined part last.  Each part is factored on its
-//! own, and what one part leaves free is carried into the parts after it.
+//! to factor after every edit, but its block-triangular order (`order`, of the entries the
+//! Jacobian has where it is taken) cuts it into parts that are each small, ordered so a part's
+//! rows read only its own columns and earlier parts': the over-determined part (its rows read
+//! nothing else), the square blocks in the order the matching solves them, and the
+//! under-determined part last — itself cut the same way (`graph::under_blocks`, #858): its free
+//! columns, then its rows in square blocks over the columns matched to them.  Each part is
+//! factored on its own, and what one part leaves free is carried into the parts after it.
 //!
 //! **The reading is exact, not a bound.**  A vector the whole Jacobian sends to zero is zero on
 //! the first part's rows, so its piece there is in that part's null space; on each later part's
@@ -161,19 +163,27 @@ fn null_by_parts<'p>(
             }
         }
     }
-    if cands.is_empty() || short.is_empty() {
+    if short.is_empty() {
         return cands;
     }
-    // the combinations every short row sends to zero
-    let mut m = Mat::zeros(short.len(), cands.len());
-    for (k, v) in cands.iter().enumerate() {
-        for (i, &r) in short.iter().enumerate() {
-            m.data[i * cands.len() + k] = j.row_dot(r, v);
-        }
+    // the combinations every short row sends to zero: a candidate that puts nothing on any of
+    // them is one already, and only the others are combined (#858) — a chain's candidates born
+    // past its last short row, or in a piece no short row reads
+    let (touch, kept): (Vec<_>, Vec<_>) = cands.into_iter()
+        .map(|v| {
+            let on: Vec<f64> = short.iter().map(|&r| j.row_dot(r, &v)).collect();
+            (v, on)
+        })
+        .partition(|(_, on)| on.iter().any(|&x| x != 0.0));
+    let kept = kept.into_iter().map(|(v, _)| v);
+    if touch.is_empty() {
+        return kept.collect();
     }
-    let kernel = Factored::of(&m, false).null;
-    let combos = Mat::from_vec(cands.len(), n, cands.concat());
-    kernel.iter().map(|c| normalized(combos.mul_t_vec(c))).collect()
+    let (vs, on): (Vec<Vec<f64>>, Vec<Vec<f64>>) = touch.into_iter().unzip();
+    let m = Mat::from_vec(vs.len(), short.len(), on.concat()).transpose();
+    let combos = Mat::from_vec(vs.len(), n, vs.concat());
+    let found = Factored::of(&m, false).null;
+    kept.chain(found.iter().map(|c| normalized(combos.mul_t_vec(c)))).collect()
 }
 
 /// The whole Jacobian's null space over its free columns, part by part: each vector `n_cols` long.
@@ -188,30 +198,47 @@ pub(super) fn left_null(j: &SparseConditioned, parts: &[Part]) -> Vec<Vec<f64>> 
     null_by_parts(&j.transpose(), parts.iter().rev().map(|p| (&p.cols[..], &p.rows[..])))
 }
 
+/// **The parts `rows` of `j` fall into, in an order where a part's rows read only its own columns
+/// and earlier parts'** (#88, #858): the Dulmage–Mendelsohn decomposition of the entries `j` has
+/// where it was taken, not of the rows' structure — the over-determined part, the square blocks
+/// in their solve order (`graph::blocks`), and the under-determined part in its own
+/// (`graph::under_blocks`): its free columns, then its square blocks.  An entry zero where the
+/// drawing stands is none (`System::conditioned_sparse`): a matching of the structure pairs a
+/// unit row with a component of its direction that is zero there, and each such block is
+/// singular — its rows fall to the one matrix every candidate is read against at the end, and a
+/// chain of seated parts, their directions square to the world, is the cube of all of them
+/// again.  Rows and columns are `j`'s.
+pub(super) fn order(j: &SparseConditioned, rows: &[usize]) -> Vec<Part> {
+    let adj: Vec<Vec<usize>> = rows.iter().map(|&r| j.row(r).map(|(c, _)| c).collect()).collect();
+    let dm = crate::graph::dulmage_mendelsohn(&adj, j.n_cols);
+    let blt = crate::graph::blocks(&adj, &dm);
+    let (free, under) = crate::graph::under_blocks(&adj, &dm);
+    let of = |local: &[usize]| local.iter().map(|&r| rows[r]).collect::<Vec<usize>>();
+    // a square block: its rows and the columns matched to them
+    let square = |block: &Vec<usize>| {
+        let mut cols: Vec<usize> = block.iter().map(|&r| dm.mate_row[r] as usize).collect();
+        cols.sort_unstable();
+        Part { rows: of(block), cols }
+    };
+    let mut parts = vec![Part { rows: of(&dm.over_rows), cols: dm.over_cols.clone() }];
+    parts.extend(blt.rows.iter().map(square));
+    parts.push(Part { rows: Vec::new(), cols: free });
+    parts.extend(under.rows.iter().map(square));
+    parts
+}
+
 /// **The rank of `rows` of `j` over `cols` alone** (#851), read part by part as the whole is past
 /// `NUMERIC_MAX`: the selection taken out of `j` (`SparseConditioned::select`, so every vector
-/// read is the selection's size and not the system's), its structure cut into its own
-/// block-triangular order (over-determined part, square blocks in their solve order,
-/// under-determined part) and its null space read through them, exact as `right_null` is.  So a
-/// reading of one instance of a definition costs what its blocks do, not the cube of everything
-/// it makes: the instance of a definition that seats forty others is forty small blocks, not one
-/// matrix of all of them.  An entry outside `cols` is not read.
+/// read is the selection's size and not the system's), cut into its own parts (`order`) and its
+/// null space read through them, exact as `right_null` is.  So a reading of one instance of a
+/// definition costs what its blocks do, not the cube of everything it makes: the instance of a
+/// definition that seats forty others is forty small blocks, not one matrix of all of them.  An
+/// entry outside `cols` is not read.
 pub fn rank_by_parts(j: &SparseConditioned, rows: &[usize], cols: &[usize]) -> usize {
     if rows.is_empty() || cols.is_empty() {
         return 0;
     }
     let sub = j.select(rows, cols);
-    let adj: Vec<Vec<usize>> =
-        (0..rows.len()).map(|r| sub.row(r).map(|(c, _)| c).collect()).collect();
-    let dm = crate::graph::dulmage_mendelsohn(&adj, cols.len());
-    let blt = crate::graph::blocks(&adj, &dm);
-    // each part in the order a part's rows read only its own columns and earlier parts'
-    let mut parts = vec![Part { rows: dm.over_rows.clone(), cols: dm.over_cols.clone() }];
-    parts.extend(blt.rows.into_iter().map(|rows| {
-        let mut cols: Vec<usize> = rows.iter().map(|&r| dm.mate_row[r] as usize).collect();
-        cols.sort_unstable();
-        Part { rows, cols }
-    }));
-    parts.push(Part { rows: dm.under_rows, cols: dm.under_cols });
-    cols.len() - right_null(&sub, &parts).len()
+    let all: Vec<usize> = (0..rows.len()).collect();
+    cols.len() - right_null(&sub, &order(&sub, &all)).len()
 }

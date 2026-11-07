@@ -1626,7 +1626,7 @@ impl System {
 
     /// `conditioned`'s numbers as sparse rows, never made dense: what the diagnosis reads a
     /// system past the dense limit by, part by part (`diagnose::parts`, #88).  Rows are of the
-    /// full residual vector, columns free columns.
+    /// full residual vector, columns free columns; only the entries not zero here are kept.
     pub fn conditioned_sparse(&mut self, z: &[f64]) -> SparseConditioned {
         let mut j = SparseConditioned {
             n_cols: self.n_free,
@@ -1638,14 +1638,19 @@ impl System {
             return j;
         }
         self.compute_csr(z);
-        j.indptr = self.csr_indptr.clone();
-        j.indices = self.csr_indices.clone();
-        j.data = self.csr_data.clone();
+        // an entry zero where the Jacobian is taken is none (#858): a unit row's against a
+        // component of its direction that is zero there, which a reading by its structure would
+        // pair the row with
         for r in 0..self.n_res {
             let inv = self.conditioning(r);
-            for p in j.indptr[r]..j.indptr[r + 1] {
-                j.data[p as usize] *= inv;
+            for p in self.csr_indptr[r] as usize..self.csr_indptr[r + 1] as usize {
+                let v = self.csr_data[p] * inv;
+                if v != 0.0 {
+                    j.indices.push(self.csr_indices[p]);
+                    j.data.push(v);
+                }
             }
+            j.indptr[r + 1] = j.indices.len() as i32;
         }
         j
     }

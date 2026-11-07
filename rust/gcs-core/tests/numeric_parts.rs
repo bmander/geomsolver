@@ -282,3 +282,77 @@ fn a_sub_jacobian_ranked_by_parts_is_its_dense_rank() {
     }).into_iter().flatten().collect();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+/// A chain of `n` parts, each standing on the tip of the one before with its z along the world's
+/// — the mate of `std.place.seats` without its turn — so each turns freely about its seat.
+/// Every part's turn moves every part after it: the drawing's under-determined part is the whole
+/// chain.
+fn turning_chain(n: usize) -> String {
+    let mut src = String::from(
+        "use std\n\ncomponent Part() {\n  in std.top {\n    tip := point\n    \
+         fix((10mm, 0mm)) tip\n  }\n}\n\nin std.top {\n  s := point\n  fix((0mm, 0mm)) s\n}\n",
+    );
+    for k in 0..n {
+        let on = if k == 0 { "s".to_string() } else { format!("p{}.tip", k - 1) };
+        src += &format!(
+            "p{k} := Part()\np{k}.std.origin coincident {on}\n\
+             p{k}.std.z parallel(sense: same) std.z\n"
+        );
+    }
+    src
+}
+
+/// **A chain's under-determined part is read a link at a time** (#858): the under part of the
+/// order, cut into its own (`graph::under_blocks`) — its free columns, then square blocks in a
+/// solve order — over the entries the Jacobian has where the chain stands, is block
+/// lower-triangular, covers the part once, and no block of it is wider than a part's own numbers,
+/// however long the chain; read whole it was one matrix of all of them, and the planes a chain of
+/// seated parts places were its cube (forty links: 0.3 s, a hundred and sixty: 47 s).  Read
+/// so, the chain reads as the whole SVD reads it, and holds on its Jacobian.
+#[test]
+fn a_turning_chain_is_read_a_link_at_a_time() {
+    let n = 24;
+    let mut sk = crate::common::build(&turning_chain(n)).sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let (j, _, _, _) = gcs_core::diagnose::parts_null_spaces(&sk);
+    let rows: Vec<usize> = (0..j.n_rows()).collect();
+    let adj: Vec<Vec<usize>> = rows.iter().map(|&r| j.row(r).map(|(c, _)| c).collect()).collect();
+    let dm = gcs_core::graph::dulmage_mendelsohn(&adj, j.n_cols);
+    let (free, under) = gcs_core::graph::under_blocks(&adj, &dm);
+    // each under column once: free, or matched to a row of exactly one block
+    let mut part_of = vec![usize::MAX; j.n_cols];
+    for &c in &free {
+        part_of[c] = 0;
+    }
+    let mut seen = BTreeSet::new();
+    for (k, block) in under.rows.iter().enumerate() {
+        for &r in block {
+            assert!(seen.insert(r), "row {r} in two blocks");
+            let c = dm.mate_row[r] as usize;
+            assert_eq!(part_of[c], usize::MAX, "column {c} twice");
+            part_of[c] = k + 1;
+        }
+    }
+    assert_eq!(seen, dm.under_rows.iter().copied().collect::<BTreeSet<usize>>());
+    let under_cols: Vec<usize> = (0..j.n_cols).filter(|&c| part_of[c] != usize::MAX).collect();
+    assert_eq!(under_cols, dm.under_cols);
+    // a block's rows read the free columns, earlier blocks' and its own, never a later block's
+    for (k, block) in under.rows.iter().enumerate() {
+        for &r in block {
+            for &c in &adj[r] {
+                assert!(part_of[c] == usize::MAX || part_of[c] <= k + 1,
+                        "block {k} reads block {}'s column {c}", part_of[c] - 1);
+            }
+        }
+    }
+    let widest = under.rows.iter().map(Vec::len).max().unwrap_or(0);
+    assert!(dm.under_cols.len() > 10 * n, "{} under columns", dm.under_cols.len());
+    assert!(widest <= 6, "a block of {widest} rows of {}: the chain is not cut",
+            dm.under_rows.len());
+    // and the reading through those parts is the whole SVD's, every motion a motion
+    let (whole, parts) = both(&mut sk);
+    assert_eq!(said(&whole), said(&parts));
+    assert_eq!(parts.dof, n as i64, "each part turns about its seat");
+    let wrong = held_on_its_jacobian("chain", &sk, &parts);
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}

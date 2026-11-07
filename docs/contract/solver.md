@@ -344,20 +344,30 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   theorem-type dependencies — that residue is Stage 4's corpus, keep logging it
   (`Diagnosis.warnings`).  Above `NUMERIC_MAX` (300) free parameters the whole SVD is not
   taken, since it runs after every edit: the rank is read **part by part** (#88,
-  `diagnose/parts.rs`, `Diagnosis::by_parts`) over `System::block_order` — over part first,
-  square blocks in solve order, under part last — each factored alone (pivoted QR where it is
-  only asked for a null space, `linalg::null_full_row_rank` for the under part, SVD otherwise),
-  each part first cut into the pieces its own structure falls into (`pieces`: the connected
-  components of its rows over its own columns, over which it is block-diagonal, #851 — an under
-  part of every plane a pass of `views::place` leaves turning is many small pieces, not one
-  matrix the cube of all of them; only earlier parts' null vectors are made up in a piece, one
-  piece's being zero on another's rows),
+  `diagnose/parts.rs`, `Diagnosis::by_parts`) over the block-triangular order of the entries
+  the Jacobian has where it is taken (`parts::order`, #858: `System::conditioned_sparse` keeps
+  no entry zero there — a unit row's against a component of its direction that is zero — or the
+  matching pairs the row with it and the block is singular) — over part first, square blocks in solve order, under part
+  last, **itself in a block-triangular order of its own** (`graph::under_blocks`, #858: its
+  columns no row is matched to, each free, then its rows in square blocks over the columns
+  matched to them, so a chain of parts each turning on the one before is a block per link, not
+  one under-determined lump the cube of all of them — the planes a chain of a hundred and sixty
+  seated parts places, 47 s to 0.6 s) — each factored alone (pivoted QR where it is only asked
+  for a null space, `linalg::null_full_row_rank` for a wide one, SVD otherwise), each part first
+  cut into the pieces its own structure falls into (`pieces`: the connected components of its
+  rows over its own columns, over which it is block-diagonal, #851 — an under part of every
+  plane a pass of `views::place` leaves turning is many small pieces, not one matrix the cube of
+  all of them; only earlier parts' null vectors are made up in a piece, one piece's being zero on
+  another's rows),
   every part's null vectors carried into later parts by minimum-norm solves and checked against
-  the rows a part could not make up: exact, not a bound (`tests/numeric_parts.rs` holds it to the
-  whole SVD over the library, forced by parts, and over the large cases up to a thousand columns;
-  past that, the engine's 4,859, to the Jacobian itself — every motion and dependency the parts
-  read sent to zero by it, independent, and the rank read forward over the columns the same as
-  backward over the rows; and Henneberg's frameworks past the limit read as they were built).  The second-order screen runs
+  the rows a part could not make up — only the candidates that put something on one of those
+  rows combined, the rest null vectors already (#858): exact, not a bound
+  (`tests/numeric_parts.rs` holds it to the whole SVD over the library, forced by parts, and over
+  the large cases up to a thousand columns; past that, the engine's 4,859, to the Jacobian itself
+  — every motion and dependency the parts read sent to zero by it, independent, and the rank read
+  forward over the columns the same as backward over the rows; Henneberg's frameworks past the
+  limit read as they were built; and a turning chain's under part cut a link at a time,
+  `a_turning_chain_is_read_a_link_at_a_time`).  The second-order screen runs
   on its null space as on the whole's.  The V-twin (925) reads in ~0.2 s.  A consistent dependency is `over` ("remove one") only when a
   dimension takes part in it — editing that dimension is the next conflict; one among pure
   relations is a theorem that nothing can break, so its wholly-implied constraints are
