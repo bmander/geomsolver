@@ -75,6 +75,14 @@ reading's size held three corners of an element there, and its drive could not b
 exactly, both members, as every object the page draws is. `solventc --stl-backend refine` skips admission, gated by field agreement
 (`SOLVENT_FEATURES=field`).
 
+**A convex meridian's arc ending on the axis about a centre off it is bounded by its tangent there**
+(`solid/field/profile.rs`'s `convex`, #721 G5): the convex construction bounds an arc's disk only
+within its angular sector, and the axis is no wall, so at an ogive's tip nothing bounded the wedge
+between the arc's radius there and the axis — the field read material behind the tip, which a sweep
+carried through a rod's core. The arc's tangent at such an end, a supporting line of the convex
+loop, bounds it: it moves no boundary, and the distance within stays exact (the tangent lies
+outside the loop). Gate: `swept_apex::the_drawings_field_reads_behind_an_ogives_point_as_outside`.
+
 **A drafted prism of any loop is read by its sections** (#607, #588; `solid/field/sections.rs`): a
 convex loop of lines and whole circles is its profile's field moved, exactly (`draftable`); any
 other loop of lines and arcs is read at a point as the signed distance to its section at the

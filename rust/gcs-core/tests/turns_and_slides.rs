@@ -533,12 +533,13 @@ fn a_torus_slid_through_the_rods_middle_grooves_its_shadow() {
     near(exported(&e,"part"),PI*25.*20.-shadow*20.,1e-9);
 }
 
-/// **An engraving bit slid square to its axis grooves the rod by its shadow** (G5, an apex on the
-/// tool's axis, under a slide; a negative control until #721 F2c5). Its cone touches along the two
-/// lines square to the slide, which meet at its point, on its axis: every normal of the cone round
-/// the point is in contact there, and the groove's wall has a sharp edge along its path, which the
-/// constant-twist class builds where a corner turns to a circle (a V wheel's rim, #684 V) and not
-/// at an apex (S1). The closed class builds it: the cone's two rulings swept into their tangent
+/// **An engraving bit slid square to its axis grooves the rod by its shadow** (an apex on the tool's
+/// axis, under a slide; a negative control until #721 F2c5). Its cone touches along the two lines
+/// square to the slide, which meet at its point, on its axis: every normal of the cone round the
+/// point is in contact there, and the groove's wall has a sharp edge along its path, which the
+/// constant-twist walk turns at since G5 (`swept_apex`). But the bit stands along the normal of the
+/// planes the slide keeps, so the dispatch asks the planar subtraction class first, and where it
+/// refuses, the closed class, which builds it: the cone's two rulings swept into their tangent
 /// planes, its rim an oblique cylinder, the arrangement meeting them where they meet. Apart from
 /// the build: the bit, its point 4 out along x and 60° included, 2.5 long, passes wholly up the
 /// rod, so the rod loses its shadow along the slide — the triangle `|y| ≤ (x − 4) tan 30°` — within

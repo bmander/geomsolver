@@ -32,7 +32,10 @@
 //! point's path, a mark on the node there (`Node::sharp`, `Characteristic::sharp`, #684 V). Where
 //! it comes round to where it began without leaving the blank, the characteristic closes on
 //! itself, a tool's passed wholly through the blank: the stretch is the whole loop, begun again at
-//! a crease (`Characteristic::closed`, #684 W). Under a slide along the tool's own axis every ring touches nowhere or all round, and the characteristic
+//! a crease (`Characteristic::closed`, #684 W). Where a face of revolution meets the tool's axis at
+//! an angle, an apex (a cone to a point), every normal of the cone round the apex is the tool's: the
+//! walk runs down one root of the rings beside it to the apex and back up the other
+//! (`Junction::Apex`), the sheet creased along the apex's path (`Node::apex`, #721 G5). Under a slide along the tool's own axis every ring touches nowhere or all round, and the characteristic
 //! is the ring of greatest radius alone, closed, its sheet the cylinder it sweeps
 //! (`along_axis`, #684 X); under a turn about an axis the tool's own meets, the ring whose normals
 //! pass through where they meet touches all round and sweeps a zone of the sphere there, and the
@@ -53,7 +56,7 @@ use super::tool::{ExtrudedSurface,Material,PatchEdge,Tool,ToolSurface};
 use crate::contact::{self as envelope,RingFrame,Sinusoid};
 use crate::trajectory::{Error,Motion,Screw,Trajectory};
 use crate::util::roots::{brent,Least};
-use crate::util::space::{sub,dot,cross,norm,scale,distance};
+use crate::util::space::{add,sub,dot,cross,norm,scale,distance};
 use std::sync::Arc;
 
 type V = [f64;3];
@@ -120,11 +123,11 @@ const SMOOTH_LOOP: &str = "where its sheet would close on itself smoothly, which
 /// Why one under a whole turn is refused (#684 W): its sheet would close round the turn as well.
 const WHOLE_LOOP: &str = "which the class does not split a blank by (not built)";
 
-/// Why the walk ends where a revolution's face meets the tool's axis at an angle: there every
-/// normal of the cone round the apex is the tool's, and the sweep has a sharp edge along the
-/// apex's path, which the class builds only at a corner that turns to a circle (#684 V).
-const APEX: &str = "meets the tool's axis at an apex of its profile, where every normal of the cone round it is in \
-    contact and the sweep has a sharp edge along the apex's path (not built)";
+/// Why the walk ends where a revolution's face meets the tool's axis at an angle and it cannot turn
+/// there: the walk turns at an apex from one root of the rings beside it to the other (#721 G5),
+/// and ends where the ring beside it has no second root, the apex's ring read only as a point.
+const APEX: &str = "meets the tool's axis at an apex of its profile, where the rings beside it have no second root for the \
+    walk to turn back along";
 
 /// Why the walk ends where a revolution's face meets the tool's axis square to it, at a pole (a disc's
 /// centre): the ring there is a point, and the characteristic would run on across the axis, onto
@@ -201,7 +204,11 @@ impl Unrooted {
 pub struct Node { pub patch: usize,pub u: f64,pub from: f64,pub position: V,pub normal: V,pub reach: Option<f64>,sharp: Option<usize>,
     /// Whether the sheet is creased at it where no fan stands: two faces meeting at a concave corner,
     /// their roots at one point there and their normals apart (#721 F1d).
-    crease: bool }
+    crease: bool,
+    /// Whether it is an apex of the profile on the tool's axis that the walk turns at, down one root
+    /// of its face's rings and back up the other (#721 G5): the sweep has a sharp edge along the
+    /// apex's path, and the sheet is creased there.
+    apex: bool }
 
 /// The stretch of a screw sweep's characteristic that reaches the blank, with `MARGIN` rings of
 /// it beyond each end. The parameter `s` runs from 0 to `nodes.len() - 1`: whole values are the
@@ -434,8 +441,22 @@ impl Walker<'_> {
             rings[k][at] = Ring::Roots(ends.iter().map(|&p| Root {position:p,normal:*normal,spread:1.,
                 reach:entering(self.tool,family,screw,ask,p)}).collect());
         } }
+        // a face's ring at an apex on the tool's axis (#721 G5): a point, where every normal of the cone
+        // round it is the tool's; read as the roots the rings beside it come to there (`apex_roots`),
+        // which the walk turns between (`Junction::Apex`)
+        for (k,junctions) in self.junctions.ends.iter().enumerate() { for (end,junction) in junctions.iter().enumerate() {
+            let (Piece::Face(_,surface),Junction::Apex) = (&pieces[k],junction) else { continue };
+            let Some((at,_)) = entered(&stations,k,end as f64) else { continue };
+            rings[k][at] = match apex_roots(surface,end as f64,self.motion,self.tolerance,&outward) {
+                Ok(found) => Ring::Roots(found.into_iter().map(|(position,normal,spread)| Root {position,normal,spread,
+                    reach:entering(self.tool,family,screw,ask,position)}).collect()),
+                Err(why) => Ring::Degenerate(why),
+            };
+        } }
         // S2, ring by ring: two roots of one ring in the blank are two sheets over one station, but
         // where the walk runs from the one across a flat face to the other (asked once it is walked)
+        // (whether the walk turns at an apex between two roots, its ring's at it, #721 G5)
+        let turns = |x: (usize,usize,usize),y: (usize,usize,usize)| x.0 == y.0 && x.1 == y.1 && x.2 != y.2;
         let mut doubled: Vec<(usize,usize,[usize;2])> = Vec::new();
         for (k,face) in rings.iter().enumerate() { for (i,ring) in face.iter().enumerate() {
             let Ring::Roots(roots) = ring else { continue };
@@ -529,8 +550,10 @@ impl Walker<'_> {
             .any(|o| o.contains(&x) && !o.contains(&y));
         for &(k,i,[a,b]) in &doubled {
             let (x,y) = (order.iter().position(|&w| w == (k,i,a)),order.iter().position(|&w| w == (k,i,b)));
+            // (or an apex it turns at, the step between its ring's two roots there, #721 G5)
             let across = match (x,y) { (Some(x),Some(y)) => order[x.min(y)..x.max(y)].iter()
-                .any(|w| matches!(pieces[w.0],Piece::Flat(_) | Piece::Round(_))),_ => cut(&(k,i,a)) || cut(&(k,i,b)) }
+                .any(|w| matches!(pieces[w.0],Piece::Flat(_) | Piece::Round(_)))
+                || order[x.min(y)..=x.max(y)].windows(2).any(|w| turns(w[0],w[1])),_ => cut(&(k,i,a)) || cut(&(k,i,b)) }
                 // (two stretches parted at a concave corner, one point each)
                 || apart((k,i,a),(k,i,b));
             if !across {
@@ -592,7 +615,7 @@ impl Characteristic {
         let found = rounds(&pieces,motion,&screw,tool,scale);
         pieces.extend(found.into_iter().map(Piece::Round));
         // whether the turn's axis meets a revolved face's own (#684 X)
-        let junctions = Junctions::new(contacts,&pieces);
+        let junctions = Junctions::new(contacts,&pieces,tolerance);
         let walker = Walker {contacts,pieces,junctions,ask,screw,motion,tool,scale,tolerance};
         let pieces = &walker.pieces;
         let n = ask.rows;
@@ -665,8 +688,14 @@ impl Characteristic {
             let (k,i,_) = x;
             let u = stations[k][i];
             let r = root(x);
+            // the walk turning at an apex, from its ring's one root to the other at the same point:
+            // the apex once, a crease, the step on starting there (#721 G5)
+            if w > 0 && order[w-1].0 == k && order[w-1].1 == i && order[w-1].2 != x.2 {
+                if let Some(last) = nodes.last_mut() { last.apex = true }
+                continue
+            }
             if let Some(&(_,fan)) = stepped.iter().find(|(pair,_)| w > 0 && (*pair == [order[w-1],x] || *pair == [x,order[w-1]])) {
-                if let Some(&last) = nodes.last() { nodes.push(Node {patch:fan,sharp:None,crease:false,..last}) }
+                if let Some(&last) = nodes.last() { nodes.push(Node {patch:fan,sharp:None,crease:false,apex:false,..last}) }
             }
             if w > 0 && order[w-1].0 != k && from.is_none() && nodes.last().is_some_and(|m: &Node| distance(m.position,r.position) <= 1e-7*scale) {
                 // a crossing straight from one face to the next where they meet at an angle with no
@@ -680,7 +709,7 @@ impl Characteristic {
                 from = Some(u); continue
             }
             let start = from.take().unwrap_or_else(|| nodes.last().map_or(u,|m| m.u));
-            nodes.push(Node {patch:k,u,from:start,position:r.position,normal:r.normal,reach:r.reach,sharp:None,crease:false});
+            nodes.push(Node {patch:k,u,from:start,position:r.position,normal:r.normal,reach:r.reach,sharp:None,crease:false,apex:false});
         }
         // a fan the walk runs round that stands at one point, from the node it runs onto it at to
         // its last: there the fan's edge runs along that point's velocity, every normal between its
@@ -869,6 +898,14 @@ impl Characteristic {
     /// creased along that point's path (`Node::crease`, #721 F1d).
     pub fn concave(&self) -> bool { self.nodes.iter().any(|m| m.crease) }
 
+    /// The faces at whose apex on the tool's axis the characteristic turns, the sheet creased along
+    /// the apex's path (`Node::apex`, #721 G5), each as a message names it.
+    pub fn apexes(&self) -> Vec<String> {
+        let mut walked: Vec<usize> = self.nodes.iter().filter(|m| m.apex).map(|m| m.patch).collect();
+        walked.dedup();
+        walked.into_iter().map(|k| self.pieces[k].named()).collect()
+    }
+
     /// Whether the stretch from node `w − 1` to node `w` runs round a convex corner's fan (it lies
     /// on the later node's piece).
     pub fn on_fan(&self,w: usize) -> bool { self.pieces[self.nodes[w].patch].fan() }
@@ -938,10 +975,12 @@ impl Characteristic {
 /// The nodes at which the sweep is creased, in order: where the walk runs onto or off a flat face
 /// the motion keeps in its own plane (#684 O), those `Node::sharp` marks, where it passes a fan
 /// that stands at one point (#684 V), and those `Node::crease` marks, where it crosses a concave
-/// corner whose faces' points meet (#721 F1d).
+/// corner whose faces' points meet (#721 F1d), and those `Node::apex` marks, where it turns at an
+/// apex on the tool's axis (#721 G5).
 fn creases(nodes: &[Node],pieces: &[Piece]) -> Vec<usize> {
     let flat = |w: usize| matches!(pieces[nodes[w].patch],Piece::Flat(_));
-    (0..nodes.len()).filter(|&w| nodes[w].sharp.is_some() || nodes[w].crease || (w+1 < nodes.len() && flat(w) != flat(w+1))).collect()
+    (0..nodes.len()).filter(|&w| nodes[w].sharp.is_some() || nodes[w].crease || nodes[w].apex || (w+1 < nodes.len() && flat(w) != flat(w+1)))
+        .collect()
 }
 
 /// S1 between the walk's stations: a ring in contact all round, every point of it on the
@@ -1068,7 +1107,7 @@ fn along_axis(contacts: &Sweep,pieces: &[Piece],screw: &Screw,motion: Motion,ask
         let u = i as f64/n as f64;
         let (position,normal) = round.at(u);
         Node {patch,u,from:if i == 0 { 0. } else { (i-1) as f64/n as f64 },position,normal,reach:reach(family,screw,position,ask),sharp:None,
-            crease:false}
+            crease:false,apex:false}
     }).collect();
     nodes[n].position = nodes[0].position;
     nodes[n].normal = nodes[0].normal;
@@ -1201,6 +1240,42 @@ fn ring(piece: &Piece,u: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V)
     }
 }
 
+/// The roots of revolved face `s`'s ring at its end `end`, an apex on its axis (#721 G5), under the
+/// twist `motion` gives: each the apex, a normal of the cone of normals round it in contact there,
+/// and the sine of the half angle between the two. The ring is a point, but the face's normals round
+/// it are those of its meridian's tangent there turned about the axis, each square to that tangent
+/// in its half-plane: the tangent `α a + β e(φ)` in the half-plane whose radial is `e(φ)`, its normal
+/// along `β a − α e(φ)`. With every point of the ring the apex, moving at the one velocity `w` (read
+/// on what the motion carries), the
+/// contact `n·w` is `β a·w − α (cos φ e₀·w + sin φ f₀·w)`, a sinusoid in the angle round the axis
+/// whose roots are found in closed form, as any ring's are. Each normal is turned to the side the
+/// face's normal faces a thousandth of the meridian in (`outward`): the material does not tell the
+/// outside at the apex itself, nor reliably within its probe's step of it.
+fn apex_roots(s: &RevolvedSurface,end: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V) -> V) -> Result<Vec<(V,V,f64)>,Unrooted> {
+    let a = crate::util::space::unit(s.axis_direction());
+    let v0 = s.domain()[1][0];
+    let tip = s.at(end,v0).map_err(Unrooted::Envelope)?;
+    let beside = s.at(if end == 0. { 1e-3 } else { 1.-1e-3 },v0).map_err(Unrooted::Envelope)?;
+    // the radial of the chart's first half-plane, and the meridian's tangent there, at the apex
+    let e0 = { let q = sub(beside.position,tip.position); crate::util::space::unit(sub(q,scale(a,dot(q,a)))) };
+    let f0 = cross(a,e0);
+    let (alpha,beta) = (dot(tip.du,a),dot(tip.du,e0));
+    // which way out the normal `β a − α e` is: as the face's beside the apex, in the first half-plane
+    let n0 = { let (x,y) = (dot(beside.du,a),dot(beside.du,e0)); crate::util::space::unit(sub(scale(a,y),scale(e0,x))) };
+    let out = if dot(outward(beside.position,n0),n0) < 0. { -1. } else { 1. };
+    let w = motion.inverse().vector(motion.velocity(tip.position));
+    // `p cos φ + q sin φ = c`
+    let (p,q,c) = (alpha*dot(e0,w),alpha*dot(f0,w),beta*dot(a,w));
+    let amplitude = p.dhypot(q);
+    if !(amplitude > tolerance*norm(w).max(f64::MIN_POSITIVE)) || (c/amplitude).abs() > 1. { return Ok(Vec::new()) }
+    let (centre,spread) = (q.datan2(p),(c/amplitude).dacos());
+    if spread < 1e-12 { return Err(Unrooted::DoublePoint) }
+    Ok([centre-spread,centre+spread].map(|phi| {
+        let e = add(scale(e0,phi.dcos()),scale(f0,phi.dsin()));
+        (tip.position,scale(crate::util::space::unit(sub(scale(a,beta),scale(e,alpha))),out),spread.dsin())
+    }).to_vec())
+}
+
 /// `n` turned, if need be, to point out of the tool's material at `p`: the faces' parameters
 /// orient their normals each its own way, and the class's signs read the tool's outside.
 pub fn outward(tool: &dyn Material,p: V,n: V) -> V {
@@ -1282,6 +1357,12 @@ enum Junction {
     Edge { next: usize,end: f64,fan: Option<(usize,f64)> },
     /// Off a ring in contact all round onto the branch the boundary takes there (`Arms`, #684 X).
     Arm,
+    /// At an apex of the profile on the tool's axis, a face of revolution meeting it at an angle:
+    /// back along the same face from the ring's other root, which stands at the same point (#721
+    /// G5). Every normal of the cone round the apex is the tool's, and the characteristic turns
+    /// there from the one root of the rings beside it to the other, the sweep's sharp edge along the
+    /// apex's path.
+    Apex,
     /// The walk ends here, and why.
     End(&'static str),
 }
@@ -1307,8 +1388,9 @@ const OFF_FAN: &str = "runs off its fan where no root of the face beyond takes i
 const JUMPS: &str = "jumps at a corner of the profile";
 
 impl Junctions {
-    /// Read the junctions of `pieces`, the walk's, from how `contacts`' faces meet.
-    fn new(contacts: &Sweep,pieces: &[Piece]) -> Junctions {
+    /// Read the junctions of `pieces`, the walk's, from how `contacts`' faces meet, a ring of no
+    /// radius to `tolerance` read as meeting the tool's axis.
+    fn new(contacts: &Sweep,pieces: &[Piece],tolerance: f64) -> Junctions {
         // the piece that is a face of the tool (`Tool::faces`)
         let face = |patch: usize| pieces.iter().position(|p| p.patch() == Some(patch));
         // the rims and creases side `patch` runs to, each with the end of it that meets the side
@@ -1370,8 +1452,12 @@ impl Junctions {
             // a silhouette ruling's ends are the prism's caps
             let Some(patch) = pieces[k].patch() else { return Junction::End(SILHOUETTE_OVER_CAP) };
             // across the edge this end of the face shares with its neighbour in the profile
+            // (or, where it meets no other face, at an apex on the tool's axis, #721 G5)
             let Some((edge,e,s)) = contacts.edges().iter().enumerate().find_map(|(m,e)| (0..2).find(|&s| e.patches[s] == patch && e.ends[s] == end)
-                .map(|s| (m,e,s))) else { return Junction::End("reaches the end of the tool's profile") };
+                .map(|s| (m,e,s))) else { return match &pieces[k] {
+                    Piece::Face(_,surface) if apex(surface,end,tolerance) => Junction::Apex,
+                    _ => Junction::End("reaches the end of the tool's profile"),
+                } };
             across(edge,e,s).unwrap_or(Junction::End(JUMPS))
         };
         let ends = (0..pieces.len()).map(|k| [at(k,0.),at(k,1.)]).collect();
@@ -1516,6 +1602,12 @@ impl Walker<'_> {
                 (None,None) => Step::Concave,
             },
             Junction::Arm => arms.get(&(k,end as usize)).map(|&(x,d)| Step::Next(x,d)).unwrap_or_else(|| Step::End(UNREAD_ARMS.into())),
+            // the ring's other root at the apex, back the way the walk came (#721 G5)
+            Junction::Apex => match &rings[k][i] {
+                Ring::Roots(roots) => (0..roots.len()).find(|&x| x != j && near(roots[x].position)).map(|x| Step::Next((k,i,x),-dir))
+                    .unwrap_or_else(|| Step::End(APEX.into())),
+                Ring::Degenerate(why) => Step::End(why.says()),
+            },
             Junction::End(why) => Step::End((*why).into()),
         } };
         // a corner partway along a face the face goes no further past at this point (#721 F1d)
@@ -1530,6 +1622,13 @@ impl Walker<'_> {
                 Ring::Degenerate(why) => Step::End(why.says()),
                 // a side's root reaching a ruling's end at a cap's rim or a crease: onto that fan
                 Ring::Roots(roots) if roots.is_empty() => first(&along.rims).unwrap_or_else(|| Step::End(off())),
+                // onto or off an apex, the root whose normal is nearest this one's: there every root of
+                // the ring stands at the apex, or as far from it as the other (#721 G5)
+                Ring::Roots(roots) if self.apex_at(k,stations[k][i]) || self.apex_at(k,stations[k][next]) => {
+                    let m = (0..roots.len()).max_by(|&x,&y| dot(roots[x].normal,here.normal).total_cmp(&dot(roots[y].normal,here.normal)))
+                        .expect("a root");
+                    Step::Next((k,next,m),dir)
+                }
                 // the nearest root of the next ring: a label may turn where the amplitude does
                 Ring::Roots(roots) => {
                     let m = (0..roots.len()).min_by(|&x,&y| distance(roots[x].position,here.position)
@@ -1541,6 +1640,11 @@ impl Walker<'_> {
         let end = if dir > 0 { 1. } else { 0. };
         if stations[k][i] != end { return Step::End("runs past the stretch the coarse pass sampled".into()) }
         across(&self.junctions.ends[k][end as usize],end)
+    }
+
+    /// Whether station `u` of piece `k` is an end of it at an apex on the tool's axis (#721 G5).
+    fn apex_at(&self,k: usize,u: f64) -> bool {
+        (u == 0. || u == 1.) && matches!(self.junctions.ends[k][u as usize],Junction::Apex)
     }
 
     /// Where the walk stands at `here` on face `k` at station `u`, a corner partway along its

@@ -1864,7 +1864,13 @@ impl<'a> Located<'a> {
         // (past the rim, however near its edge)
         if past(uv) { return Place::Out }
         let e = &self.b.edges[c.edge as usize];
-        if d <= self.coarse.max(2.*self.drawn(fi).0.sag()) && t > e.t[0] && t < e.t[1] {
+        // near a pole or an apex, a degenerate edge, every edge of the face meets in space, so the
+        // nearest there need be no nearest in the face's parameters: a point of a cone's other nappe
+        // just past its apex was read beside its seam and in the face (#721 G5). There the
+        // parameters decide, the loops drawn in them
+        let pole = f.loops.iter().flatten().any(|c| matches!(self.b.edges[c.edge as usize].curve,super::topo::EdgeCurve::Degenerate)
+            && self.nearest(c.edge,p).1 <= near);
+        if !pole && d <= self.coarse.max(2.*self.drawn(fi).0.sag()) && t > e.t[0] && t < e.t[1] {
             // near one edge's interior: which side of it, in the face's parameters — the point
             // on the branch beside each use of the edge (a seam is used twice, once each side of
             // the face), inside if beside any use it is on the face's side

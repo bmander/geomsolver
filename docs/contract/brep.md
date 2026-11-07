@@ -105,6 +105,22 @@ by a step a thousandth of `tol`, or one within a tenth of it no longer shrinking
 rounding (the crown at a `tol` of 1e-9 cycled through steps of 1.3e-11).
 `brep::a_trace_stepping_across_a_touch_ends_there`, `a_groin_vault_is_four_vaults_meeting_at_the_crown`
 and `brep_export::a_groin_vault_is_built_exactly` (`groin_vault.sv`) are the gate.
+**The point of a cone or a torus nearest a point is read across its axis** (`Surface::inverse`,
+#721 G5): a cone's generator runs on past its apex into the other nappe, and a spindle torus's
+meridian circle (`r > |big|`) crosses its axis to make the lemon, so each one's meridians in the
+half-planes either side of the axis are one curve. The nearest point lies on the meridian in the
+point's own half-plane (`u`) or the opposite one (`u + π`, the point at `−ρ` there), whichever is
+the nearer; where the meridian reaches no farther than the axis (an ordinary torus, `big ≥ r`, the
+near circle always nearer by the triangle inequality) the own one is, as before. Read in its own
+alone, a point behind a pointed tool's apex fell on the generator past it, which the face's
+parameters took for the face. **Near a degenerate edge the face's parameters decide**
+(`Located::face_place`): within the near-edge reach of a pole or an apex every edge of the face
+meets in space, so the side of the edge nearest in space is no reading of where a point is — a
+point of a cone's other nappe just past its apex was read beside its seam, in the face — and the
+winding of the loops drawn in the parameters says. Gate: `swept_apex::behind_a_point_is_outside_the_tool`
+(every point of a cone and a spindle torus its own foot, every point past the apex off the face,
+the tool's material behind its point the distance to the apex).
+
 **A point is read against a face by one drawing of its boundary** (`query::Outline`): each edge
 cut in chords until every chord's middle lies within a bar of the edge in space, carrying its
 `sag`, how far a chord strays at most. Its winding says inside only for a point clear of every

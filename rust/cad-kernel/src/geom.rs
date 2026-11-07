@@ -1189,13 +1189,25 @@ impl Surface {
         match *self {
             Surface::Plane(_) => [x,y],
             Surface::Cylinder(..) => [u,z],
+            // A cone's and a torus's meridians in the half-planes through the axis on either side
+            // of it are one curve running across the axis: a cone's generator runs on past its apex
+            // into the other nappe, a spindle torus's circle (`r > |big|`) crosses the axis to make
+            // the lemon inside the apple. So the point nearest `p` lies on the meridian in its own
+            // half-plane (`u`) or in the opposite one (`u + π`, where `p` stands at `−ρ`), whichever
+            // is nearer (#721 G5: read in its own alone, a point behind a cone's apex fell on the
+            // generator past the apex, which the face's parameters then took for the face). Where
+            // the meridian reaches no farther than the axis the own one is the nearer, as before.
             Surface::Cone(_,r,a) => {
                 // the generator through u, in the (ρ, z) half-plane: (r, 0) + v (sin α, cos α)
                 let (sa,ca) = a.dsin_cos();
-                [u,(rho-r)*sa+z*ca]
+                let off = |rho: f64| ((rho-r)*ca-z*sa).abs();
+                if off(-rho) < off(rho) { [wrap(u+std::f64::consts::PI),(-rho-r)*sa+z*ca] } else { [u,(rho-r)*sa+z*ca] }
             }
             Surface::Sphere(..) => [u,z.datan2(rho)],
-            Surface::Torus(_,big,_) => [u,wrap(z.datan2(rho-big))],
+            Surface::Torus(_,big,r) => {
+                let off = |rho: f64| ((rho-big).dhypot(z)-r).abs();
+                if off(-rho) < off(rho) { [wrap(u+std::f64::consts::PI),wrap(z.datan2(-rho-big))] } else { [u,wrap(z.datan2(rho-big))] }
+            }
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
                 | Surface::Affine(..) => unreachable!(),
         }
