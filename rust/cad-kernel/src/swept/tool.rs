@@ -42,7 +42,8 @@ impl Tool {
     /// on the tool's boundary, where the material reads nought either way.) The corner is probed
     /// first on the first face's chart's start (`v = 0`) and halfway along a prism's sides, clear of
     /// its caps, then on round the turn, or out along the sides, at the first place it is on the
-    /// tool (#721 F1b): so a corner a Boolean of the tool trims is told where it is the tool's. The
+    /// tool, its chord off the boundary where any is (#721 F1b, F1d): so a corner a Boolean of the
+    /// tool trims, or a partial revolution's that its end bounds, is told where it is the tool's. The
     /// second face is probed where the first is, a revolution in the first's half-plane (`turn_of`),
     /// so neither face's chart need start where the other's does (#721 F1d). Where it is nowhere on
     /// the tool, at the first place.
@@ -70,13 +71,19 @@ impl Tool {
         let n = CORNER_PLACES;
         let places = (0..n).map(|k| if pa.periodic() { k as f64/n as f64 }
             else { let d = (k+1)/2; 0.5+if k%2 == 1 { 1. } else { -1. }*d as f64/n as f64 });
-        let mut first = None;
+        // (the first place it is the tool's whose chord lies off the boundary: on a face over part
+        // of a turn the chart starts at the face's own edge, where the chord lies in the face that
+        // bounds the turn and tells nothing, #721 F1d; else the first place it is the tool's)
+        let (mut first,mut on) = (None,None);
         for v in places {
             let Some(found) = probe(v) else { continue };
-            if self.on(found.0) { return Some(found) }
+            if self.on(found.0) {
+                if !self.on(lerp(found.1[0],found.1[1],0.5)) { return Some(found) }
+                on.get_or_insert(found);
+            }
             first.get_or_insert(found);
         }
-        first
+        on.or(first)
     }
 }
 

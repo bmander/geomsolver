@@ -103,12 +103,12 @@ fn the_walk_crosses_a_corner_partway_along_a_face() {
     assert!(back > 0,"walked up the window's back wall");
 }
 
-/// **A partial revolution's strips meet its rounds, and its ends hold no contact**: the
-/// bull-nosed drum (`swept_charts::drum`) turned three quarters of a turn, the quarter it leaves
-/// out about +z, pushed up through the plate. Its side over part of a turn is a strip, which meets
-/// each round, a revolution, along the ring at its meridian's end: the walk crosses from the one to
-/// the other there (`Junctions::new`'s strips on a ring). Its ends are planes through its axis that
-/// pass through the plate, but the push's normals never lie in them, so they hold no
+/// **A partial revolution is read a surface of revolution at a time, and its ends hold no
+/// contact**: the bull-nosed drum (`swept_charts::drum`) turned three quarters of a turn, the
+/// quarter it leaves out about +z, pushed up through the plate. Its rounds can be read only as
+/// revolutions, and its side, which shares their rings, is read about the same axis with them
+/// (`Tool::read`): no strip meets a face of revolution at a ring. Its ends are planes through its
+/// axis that pass through the plate, but the push's normals never lie in them, so they hold no
 /// characteristic and are no refusal (T1 under a constant twist, #721 F1d). Its characteristic is
 /// the whole drum's: the push's silhouette lies in what the three quarters keep.
 #[test]
@@ -119,7 +119,7 @@ fn a_partial_revolutions_strips_cross_onto_its_rounds() {
     let kinds: Vec<&str> = quarters.faces.iter().map(|f| match f { ToolSurface::Revolved(_) => "revolved",ToolSurface::Extruded(_) => "strip",
         ToolSurface::Cap(_) => "cap" }).collect();
     eprintln!("three quarters read as {kinds:?}");
-    assert!(kinds.contains(&"strip") && kinds.contains(&"cap"),"its side a strip, its ends caps");
+    assert!(!kinds.contains(&"strip") && kinds.contains(&"cap"),"its side a revolution, its ends caps");
     // the push up through the plate, walked
     let path = push();
     let screw = path.screw().expect("the push is a slide");
@@ -130,3 +130,48 @@ fn a_partial_revolutions_strips_cross_onto_its_rounds() {
     };
     alike("three quarters",&walk(&Tool::read(&drum(0.),1.).unwrap()),&walk(&quarters));
 }
+
+/// A barrel along x of radius 2 about (0, 0, −6), its side from 7 to 13, its ends balls of radius
+/// √8 about x = 9 and 11 meeting its side at a sharp corner, its profile laid in the half-plane `angle`
+/// radians round x from +z and turned through `sweep`.
+fn barrel(angle: f64,sweep: f64) -> Brep {
+    let (s,c) = angle.sin_cos();
+    let d = [0.,-s,c];
+    let at = |a: f64,r: f64| -> V { [a,r*d[1],-6.+r*d[2]] };
+    let normal = [0.,-d[2],d[1]];
+    let big = 8f64.sqrt();
+    let line = |a: V,b: V| ProfileEdge::Line {a,b};
+    // a ball's meridian about (x, 0) from the axis to the side, `out` the way along x it bulges
+    let ball = |x: f64,out: f64| { let tip = (2./big).asin(); ProfileEdge::Arc {frame:gcs_core::brep::geom::Frame::new(at(x,0.),normal,
+        [out,0.,0.]),r:big,span:Some(if out > 0. { [0.,tip] } else { [-tip,0.] })} };
+    let profile = Profile {origin:at(10.,0.),normal,loops:vec![vec![line(at(9.-big,0.),at(11.+big,0.)),ball(11.,1.),
+        line(at(13.,2.),at(7.,2.)),ball(9.,-1.)]],names:Vec::new()};
+    revolve(&profile,[0.,0.,-6.],[1.,0.,0.],sweep).unwrap()
+}
+
+/// **A corner where the faces' points part is walked round its fan, on a partial revolution too**:
+/// the barrel slid up and a little along x, so on its side the characteristic lies along y and on
+/// its ball where `n·v` turns it below, the two parting at the sharp corner between them, which
+/// the walk runs round on the corner's fan (`Piece::Corner`). Turned three quarters of a turn, the
+/// quarter it leaves out about +z, the side and the balls are read as revolutions about its axis
+/// (before, the side was a strip meeting the balls' rings, and the walk ended there); the blank,
+/// reached by the side's +y half toward the right ball, lies in what the three quarters keep, so
+/// the walk is the whole barrel's.
+#[test]
+fn a_corner_where_the_points_part_is_walked_round_on_a_partial_revolution() {
+    use crate::swept_charts::alike;
+    let a = 0.3_f64;
+    let k = 1./(1.+a*a).sqrt();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[a*k,0.,k],ratio:0.,advance:16.});
+    let blank = |p: V| p[0] > 16. && p[0] < 30. && p[1] > 0.5 && p[1] < 5. && p[2] > 0. && p[2] < 4.;
+    let walk = |tool: &Brep| {
+        let tool = Tool::read(tool,1.).unwrap();
+        let sweep = Generating {tool:&tool,path:&path,roll:[0.,std::f64::consts::TAU],whole:false,mm:1.};
+        check_screw(&sweep,&blank,None,&Sampling::default(),None).unwrap_or_else(|e| panic!("the walk: {e:?}")).0
+    };
+    let whole = walk(&barrel(0.,std::f64::consts::TAU));
+    eprintln!("the whole barrel's fans {:?}",whole.fans());
+    assert!(!whole.fans().is_empty(),"the walk runs round a corner's fan");
+    alike("three quarters",&whole,&walk(&barrel(std::f64::consts::FRAC_PI_4,1.5*std::f64::consts::PI)));
+}
+

@@ -606,11 +606,14 @@ corner's (`cut_at`), and where the walk stands on it and the face goes no furthe
 point (`Walker::partway`, the material read just past it), it crosses the corner as at a face's
 end (`Along::cuts`: onto the face beyond, round the corner's fan, onto a flat's line); onto a face
 partway along it, it goes on the way the face is the tool's from that point (`Walker::onward`).
-`Tool::corner` probes such a corner on the side its face goes on.  Where a strip's rim lies along
-a face of revolution's ring at its meridian's end — a partial revolution's side meeting its rounds
-— the walk crosses from the strip's ruling's end onto the ring and from the ring onto the strip at
-the station whose root is its point, or onto its silhouette ruling under a slide (`Junction::Sides`,
-`Line::of`).  A plane bounded by circles is a flat from its centre where its loops wind about it,
+`Tool::corner` probes such a corner on the side its face goes on, and at the first place round
+the turn where its chord lies off the boundary (a partial revolution's chart starts at its end,
+where the chord lies in the end plane).  No strip meets a face of revolution at a ring: a strip's
+rim lies along a ring only about the strip's own axis, so a face over part of a turn that no strip
+reading takes (a ball's, a ring's, a revolution of an arc) is read as a revolution first, and the
+faces sharing its circles are read about its axis with it; the corner between them is a corner of
+two revolutions, walked straight across where their points meet and round its fan where they
+part.  A plane bounded by circles is a flat from its centre where its loops wind about it,
 whatever radius they reach (a notched disc), and a corner the B-rep's edges split is read once.
 The gates are `tests/swept_partway.rs`: a drum with a window ground down through its side and top
 by a quarter-turn groove, its side read once whole round, the window's floor a flat and its back
@@ -621,7 +624,10 @@ floor and up the back wall, every node on that path to 1e-15
 (`the_walk_crosses_a_corner_partway_along_a_face`); and the bull-nosed drum turned three quarters
 of a turn, its side a strip between its rounds, the push's silhouette in what the three quarters
 keep, pushed through the plate, its characteristic the whole drum's curve to 2e-15
-(`a_partial_revolutions_strips_cross_onto_its_rounds`).
+(`a_partial_revolutions_strips_cross_onto_its_rounds`); and a barrel whose side meets its ball
+ends at a sharp corner, slid aslant so the faces' points part there, turned three quarters, its
+characteristic run round the corner's fan and the whole barrel's curve to 2e-15
+(`a_corner_where_the_points_part_is_walked_round_on_a_partial_revolution`).
 *A partial revolution's ends:* under a constant twist a plane that is no lone prism's cap is asked
 at T1 only where the motion's contact lies on it (`ends`' `twisted`: the contact `n·v` read over its
 points on the tool, one sign throughout a plane that holds none): a partial revolution's end the

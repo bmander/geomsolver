@@ -96,11 +96,19 @@ impl Tool {
         // strips (again those curved first, whose rulings are their own), then what is left
         let mut read: Vec<Option<Read>> = vec![None;b.faces.len()];
         for &fi in &order { read[fi] = reader.revolved(fi,false).map(Read::Revolved) }
+        // and a face over part of a turn no strip reading takes — a ball's, a ring's, a revolution of
+        // an arc — which is its surface's whole turn whatever reads its neighbours
+        for &fi in &order {
+            if read[fi].is_none() && !matches!(b.faces[fi].surface,Surface::Plane(_)) && reader.strips(fi).is_empty() {
+                read[fi] = reader.revolved(fi,true).map(Read::Revolved)
+            }
+        }
         // a face over part of a turn sharing a circle with a face read about that circle's axis — a
         // part of a drum's, a cone's, a ball's or a ring's surface beside it, or a plane square to the
         // axis — is read about the same axis, as a revolution whatever its loop, before any face is
         // read as a strip: the faces of one turn are read alike, and meet at corners along their
-        // meridians (#721 F1d: a part-cylinder's kind no longer its loop's)
+        // meridians (#721 F1d: a part-cylinder's kind no longer its loop's). A strip's rim lies along
+        // a ring only about the strip's own axis, so no strip meets a face of revolution at a ring.
         let mut more: Vec<(usize,Read)> = Vec::new();
         loop {
             let mut found = false;
