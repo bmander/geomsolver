@@ -140,3 +140,70 @@ fn a_cap_of_a_prism_a_common_leaves_whole_cuts_as_the_bars() {
     eprintln!("removed {removed:.6} mm³, the arithmetic {want:.6}");
     assert!((removed-want).abs() <= 2e-6*want,"removed {removed} against {want}");
 }
+
+/// **A bar with a hole cuts as the bar** (#721 F1d, G9): `bar_end.sv`'s bar with a round hole 0.3 in
+/// radius through it at 2.4 above the disc's top, read from its B-rep as one prism standing alone,
+/// its profile two loops (`Lone::read`), so its cap in the disc is sectioned across the disc's
+/// height as the bar's is, each section's chords parted by the hole only above the band the sheet
+/// spans (`Cutter::across`, its hole's ends kept clear as a corner is). The hole stands clear of the
+/// disc, so the disc loses `bar_end_space`.
+#[test]
+fn a_bar_with_a_hole_cuts_the_floor_of_its_space() {
+    let text = bar_end().replace("construction bar := solid(std.solids.Prism(face(b0, b1, b2, b3, -> close)",
+        "  hc := point hint((0, 2.4))\n  fix((0, 2.4)) hc\n  hole := radius(0.3mm) circle(center: hc) hint(r: 0.3)\n  \
+        l0 := line(b0, b1)\n  l1 := line(b1, b2)\n  l2 := line(b2, b3)\n  l3 := line(b3, b0)\n}\n\
+        construction bar := solid(std.solids.Prism(face(l0, l1, l2, l3, holes: hole)")
+        .replace("  fix((-2, 3)) b3\n}\n","  fix((-2, 3)) b3\n");
+    assert!(text.contains("holes: hole"));
+    let e = fixtures::read(&text);
+    let part = fixtures::solid(&e,"part");
+    let a = admission::admit_body(&e.sketch,part,&Options::default()).unwrap_or_else(|r| panic!("{r}"));
+    let [s] = a.sweeps() else { panic!("one sweep") };
+    let Class::Capped(capped) = &s.class else { panic!("{:?}",s.class) };
+    assert!(capped.across[2].abs() > 0.99,"sectioned across the disc's height: {:?}",capped.across);
+    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
+    let exact = export::exact(&e.sketch,part,None,Some(Tolerance::new(0.002).unwrap()),&say).unwrap_or_else(|r| panic!("{}",r.message));
+    exact.solid.check(1e-6).unwrap();
+    let removed = PI*22.*22.*6.-props::volume(&exact.solid);
+    let want = bar_end_space();
+    eprintln!("removed {removed:.6} mm³, the arithmetic {want:.6}");
+    assert!((removed-want).abs() <= 2e-6*want,"removed {removed} against {want}");
+}
+
+/// **A drafted bar's end cuts the floor of its space** (#721 F1d, G9): `bar_end.sv`'s bar drafted
+/// half a degree, its sides narrowing from its profile's plane outward, read from its B-rep as one
+/// prism drafted (`Lone::read`), its cap in the disc sectioned across the disc's height
+/// (`Cutter::across` over its one half: each section's sides the drafted planes' rulings). The
+/// disc loses the arithmetic's figure: at each height the bar's slice is the trapezoid whose
+/// half-width at radius `x` is `w(z) − x tan δ √145 / 12` (a side's run of 12 over its rise of 1
+/// moved `x tan δ` into the bar), rolled as `bar_end_space`'s rectangle is: within 2e-5 at 0.002 mm
+/// (8e-6; 4e-6 either side of it at 0.0005 and 0.0002 mm, the fit's own scatter).
+#[test]
+fn a_drafted_bars_end_cuts_the_floor_of_its_space() {
+    let draft: f64 = 0.5;
+    let text = bar_end().replace("construction bar := solid(std.solids.Prism(face(b0, b1, b2, b3, -> close), from: 18mm, to: 30mm))",
+        &format!("construction bar := solid(std.solids.Drafted(face(b0, b1, b2, b3, -> close), from: 18mm, to: 30mm, draft: {draft}deg))"));
+    assert!(text.contains("Drafted"));
+    let e = fixtures::read(&text);
+    let part = fixtures::solid(&e,"part");
+    let a = admission::admit_body(&e.sketch,part,&Options::default()).unwrap_or_else(|r| panic!("{r}"));
+    let [s] = a.sweeps() else { panic!("one sweep") };
+    let Class::Capped(capped) = &s.class else { panic!("{:?}",s.class) };
+    assert!(capped.across[2].abs() > 0.99,"sectioned across the disc's height: {:?}",capped.across);
+    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
+    let exact = export::exact(&e.sketch,part,None,Some(Tolerance::new(0.002).unwrap()),&say).unwrap_or_else(|r| panic!("{}",r.message));
+    exact.solid.check(1e-6).unwrap();
+    let removed = PI*22.*22.*6.-props::volume(&exact.solid);
+    let lean = draft.to_radians().tan()*145f64.sqrt()/12.;
+    let w = |z: f64,x: f64| 1.+(z+9.)/12.-x*lean;
+    let (slices,h) = (12,0.5);
+    let volume = |radii: usize| (0..=slices).map(|k| {
+        let z = -6.+h*k as f64;
+        let weight = if k == 0 || k == slices { 1. } else if k%2 == 1 { 4. } else { 2. };
+        weight*crate::rack_cut::rack_space(&[(18.,-w(z,18.)),(18.,w(z,18.)),(30.,w(z,30.)),(30.,-w(z,30.))],16.,[18.,22.],[-PI/3.,PI/3.],radii,1000)
+    }).sum::<f64>()*h/3.;
+    let want = 2.*volume(800)-volume(400);
+    eprintln!("removed {removed:.6} mm³, the arithmetic {want:.6}, undrafted {:.6}",bar_end_space());
+    assert!(want < bar_end_space()-0.5,"the draft narrows the bar");
+    assert!((removed-want).abs() <= 2e-5*want,"removed {removed} against {want}");
+}

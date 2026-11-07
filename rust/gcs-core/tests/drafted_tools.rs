@@ -301,8 +301,8 @@ fn a_drafted_tool_the_class_does_not_read_is_refused() {
 /// **A drafted prism's cutter is read from its B-rep** (#721 F1d): the rack's tooth drafted one way
 /// and both ways from its plane is one prism to `Lone::read`, its widest section drafted along its
 /// sides, however it was drawn — what every sheet of its sides is sectioned by (`SweptCut::cutter`),
-/// not the recipe's prism. Its sections across its profile are not built yet, so T3 does not cut
-/// its cap (`Lone::sectioned_across`), and a cap of it reaching the blank is refused at T1.
+/// not the recipe's prism. Its sides are planes, so it is sectioned across its profile where its cap
+/// reaches the blank (`Lone::sectioned_across`, T3).
 #[test]
 fn a_drafted_prisms_cutter_is_read_from_its_brep() {
     for (what,src) in [("one way",drafted_space("2deg")),("both ways",parted_space("2deg"))] {
@@ -313,6 +313,6 @@ fn a_drafted_prisms_cutter_is_read_from_its_brep() {
         eprintln!("{what}: {} loop(s), extent {extent:?}, drafted {drafted}",walks.len());
         assert!(drafted && walks.len() == 1,"{what}: the tooth's one loop, drafted");
         assert!((extent[1]-extent[0]-if what == "one way" { 9. } else { 14. }).abs() < 1e-9,"{what}: its length {extent:?}");
-        assert!(!lone.sectioned_across(),"{what}: not sectioned across");
+        assert!(lone.sectioned_across(),"{what}: sectioned across");
     }
 }

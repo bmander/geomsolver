@@ -2180,6 +2180,10 @@ fn prism(contacts: &Sweep,tool: &dyn Material,motion: Motion,screw: &Screw,speed
         for &(patch,s) in sides.iter().filter(|(k,_)| !flat.contains(k)) {
             let Some(ns) = normal(patch).filter(|_| s.straight()) else { continue };
             let (Ok(a),Ok(b)) = (s.at(0.,c as f64),s.at(1.,c as f64)) else { continue };
+            // (a side's edge on this cap's plane: a half of a prism drafted both ways ends at the
+            // crease at its other `v`, #721 F1d)
+            let off = |q: V| dot(sub(q,p.position),n).abs();
+            if off(a.position).max(off(b.position)) > 1e-9*(1.+norm(a.position)+norm(b.position)) { continue }
             rims.push(Ruling::Rim {side:patch,end:c,across:Across::Cap(c),names:[s.name.clone(),cap.name.clone()],
                 ends:[a.position,b.position],normals:[ns,n]});
         }

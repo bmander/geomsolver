@@ -522,12 +522,26 @@ as how far its ruling runs out across its outward normal square to the axis per 
 Its cutter is that direction's prism of its widest section, the nearer cap's loops undrafted,
 the wider cap's drafted one way, the parting plane's (the low cap's moved out to it) drafted both
 ways (`Cutter::extruded`), laid from the cap the sides' rulings leave so its stations are measured
-as before.  So a drafted prism's sheets are sectioned by the cutter its B-rep reads
-(`SweptCut::cutter`), not the recipe's, and the drafted racks' spaces are cut to the same volumes
-(`drafted_tools`).  Its sections across its profile, a drafted prism's or one a hole parts, are not
-built yet: T3 cuts and the constant twist walks the cap only of a prism that is undrafted and of
-one loop (`Lone::sectioned_across`), and refuses any other's cap at T1 as before.  The gates are
-`drafted_tools::a_drafted_prisms_cutter_is_read_from_its_brep` and
+as before.  A cylinder or cone about a line along the prism is a side of it too (a round hole's
+wall), and a cap a round hole passes through, read as flats of its wall, is a cap.  So a drafted
+prism's sheets are sectioned by the cutter its B-rep reads (`SweptCut::cutter`), not the recipe's,
+and the drafted racks' spaces are cut to the same volumes (`drafted_tools`).  Its caps are cut
+too (G9): the constant twist walks the cap of any prism standing alone, drafted or with holes (a
+drafted plane side's rim is a line, `ExtrudedSurface::straight`; a cap's contact line is cut where
+the material leaves the cap, `cap_lines`), and T3 sections across a prism undrafted or drafted
+with plane sides, of any loops (`Lone::sectioned_across`, `Cutter::across`): each stretch of it
+along its extrusion whose sides run straight between its end sections (`Ends`: the undrafted
+prism's one, a drafted prism's halves) carries each chord's ends up a ruling of each side, the
+halves creased where they meet; a hole parts a section into chords, one loop each, and its ends
+along `across` bound the stations as a corner does (`Spread::corners`, the stations run between the
+nearest ends of holes either side of the band).  A drafted arc's point moves along a conic, whose
+sections across are not built: such a prism's cap is refused at T1 as before.  The gates are
+`drafted_tools::a_drafted_prisms_cutter_is_read_from_its_brep`,
+`prism_twists::a_drafted_bars_flat_end_turned_cuts_a_floor` and
+`a_bar_with_a_hole_turned_cuts_as_the_bar` (a hole clear of the end's contact line; one across it
+parts that line, refused at S2, and the closed class builds it),
+`prism_caps::a_bar_with_a_hole_cuts_the_floor_of_its_space` and
+`a_drafted_bars_end_cuts_the_floor_of_its_space`, and
 `swept_dispatch::a_prism_with_a_hole_is_one_prism`.  The helical rack's screwed sheet
 (`brep::sweep::extruded::screwed_sheet`) takes the B-rep's prism too: its section and band are the
 recipe's to rounding (2e-15), and the blank's faces cut both nets along iso lines alike; only a

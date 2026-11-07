@@ -319,10 +319,9 @@ groove cut part
     }
 
     /// The bar as half-spaces `n·p ≤ c` in space: each side's, moved `|h| tan draft` into the
-    /// material at `h` along the extrusion (one each side of the plane where it runs both ways),
-    /// and its two caps. The bar is convex, so it is their intersection.
+    /// material at `h` along the extrusion (one each way it runs from its plane), and its two caps.
+    /// The bar is convex, so it is their intersection.
     fn halves(&self) -> Vec<(V,f64)> {
-        assert!(self.draft == 0. || (self.from < 0. && self.to > 0.),"drafted, the bar runs both ways from its plane");
         let e = cross(self.across,self.along);
         let (o,n) = (self.origin,self.corners.len());
         let area: f64 = (0..n).map(|k| { let ([x0,y0],[x1,y1]) = (self.corners[k],self.corners[(k+1)%n]); x0*y1-x1*y0 }).sum();
@@ -339,7 +338,10 @@ groove cut part
             let (nx,ny) = (nx/l,ny/l);
             let c = nx*x0+ny*y0;
             // `nx du + ny dv ± h tan ≤ c`, each way from the plane the draft parts at
-            for sign in if self.draft == 0. { vec![0.] } else { vec![1.,-1.] } {
+            // (one way along the extrusion, or both, as the bar runs from its plane)
+            let signs: Vec<f64> = if self.draft == 0. { vec![0.] }
+                else { [(self.to > 0.,1.),(self.from < 0.,-1.)].iter().filter(|w| w.0).map(|w| w.1).collect() };
+            for sign in signs {
                 let normal = lift(nx,ny,sign*tan);
                 out.push((normal,c+dot(normal,o)));
             }
@@ -529,6 +531,20 @@ fn a_cap_of_a_prism_a_common_leaves_whole_turned_cuts_as_the_bars() {
     near(exported_at(&e,"part",0.001),PI/3.*80.-flat_end(20.,5.).removed(),2e-5);
 }
 
+/// **A drafted bar's flat end turned cuts a floor** (#721 F1d, G9): `flat_end`'s bar drafted 2°,
+/// its sides narrowing from its end up — read from its B-rep one prism standing alone, drafted
+/// (`Lone::read`), so its cap in the block is the constant twist's, walked over its rims as the
+/// undrafted bar's is (before, a drafted prism's cap in the blank was refused at T1). The block
+/// loses what `Bar::removed` reads off the drafted bar's half-spaces.
+#[test]
+fn a_drafted_bars_flat_end_turned_cuts_a_floor() {
+    let bar = Bar {draft:2.,..flat_end(20.,5.)};
+    let e = fixtures::read(&bar.text());
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert!(!found.fans().is_empty(),"its cap's rim walked: {:?}",found.fans());
+    near(exported_at(&e,"part",0.001),PI/3.*80.-bar.removed(),2e-5);
+}
+
 /// The flat end leaning 45° and screwed 8 mm a turn across the block (#684 AE): the screw's advance
 /// moves the end's contact line off the plane through the axis, `k cot 45°` across the end, and the
 /// inner side's with it, and the floor and wall are those lines carried along the helix, joined
@@ -689,4 +705,24 @@ fn capped_slide_removed(drop: f64) -> f64 {
         cuts.windows(2).map(|w| { let (m,h) = (0.5*(w[0]+w[1]),w[1]-w[0]); 0.5*h*(span(y,m-g*h)+span(y,m+g*h)) }).sum()
     };
     crate::brep::simpson(0.,10.,4000,across)
+}
+
+/// **A bar with a hole is one prism** (#721 F1d, G9): `flat_end`'s bar with a round hole 0.4 in
+/// radius through it near a corner, clear of its end's contact line, read from its B-rep as one
+/// prism standing alone, its profile two loops (`Lone::read`: its hole's wall a cylinder along it,
+/// its caps flats of that cylinder's), and built: the hole changes no radius the bar reaches at any
+/// height, so the block loses what `Bar::removed` reads off the bar without it.
+#[test]
+fn a_bar_with_a_hole_turned_cuts_as_the_bar() {
+    let text = flat_end(20.,5.).text()
+        .replace("construction bar := solid(std.solids.Prism(face(lower, outer, upper, inner)",
+            "construction bar := solid(std.solids.Prism(face(lower, outer, upper, inner, holes: hole)")
+        .replacen("in holder {\n","in holder {\n  private hc := point\n  hc coords(du: 2.3mm, dv: 1.3mm) holder\n  \
+            private hole := radius(0.4mm) circle(center: hc) hint(r: 0.4)\n",1);
+    assert!(text.contains("holes: hole") && text.contains("private hc"));
+    let e = fixtures::read(&text);
+    let contacts = gcs_core::solid::SweepContacts::read(&e.sketch,fixtures::solid(&e,"groove")).unwrap();
+    let lone = contacts.lone().expect("one prism standing alone");
+    assert_eq!(lone.cutter().prism_walks().map(|w| w.0.len()),Some(2),"its outline and its hole");
+    near(exported_at(&e,"part",0.001),PI/3.*80.-flat_end(20.,5.).removed(),2e-5);
 }

@@ -380,9 +380,9 @@ impl Lone {
     }
 
     /// Whether its sections across its profile are read where its cap reaches the blank (T3): an
-    /// undrafted prism of one loop. A drafted prism's sections across, or one through a hole, are
-    /// not built yet (#721 F1d), and T3 refuses its cap by name.
-    pub fn sectioned_across(&self) -> bool { matches!(self.cutter.prism_profile(),Some(([_],_))) }
+    /// undrafted prism, or one drafted whose sides are planes, of any loops (a hole parts a section
+    /// into chords, a draft creases it at the parting plane, #721 F1d).
+    pub fn sectioned_across(&self) -> bool { self.cutter.spread(crate::util::space::across(self.cutter.axis).0).is_some() }
 
     /// **The tool `tool` read from its boundary `b` (millimetres) as one prism standing alone**
     /// (#721 F1b, F1d), `mm` the model's millimetres a unit: where every face it reads is a side
@@ -397,12 +397,21 @@ impl Lone {
         use crate::build::Profile;
         use crate::geom::Surface;
         use crate::util::space::unit;
-        // the caps' normal is the prism's direction
-        let caps: Vec<V> = tool.faces.iter().filter_map(|f| match f {
-            ToolSurface::Cap(c) => c.at(0.,0.).ok().map(|p| cross(p.du,p.dv)),
-            _ => None,
-        }).collect();
-        let [c0,c1] = caps[..] else { return None };
+        // the caps' normal is the prism's direction: its two planes, each read as a cap or as the
+        // flats of the revolutions it shares circles with (a cap a round hole passes through),
+        // each by its outward normal and a point of it
+        let flat = |f: &ToolSurface| matches!(f,ToolSurface::Revolved(s) if s.flat().is_some());
+        let mut caps: Vec<(V,V)> = Vec::new();
+        for f in tool.faces.iter().filter(|f| matches!(f,ToolSurface::Cap(_)) || flat(f)) {
+            let Ok(p) = f.at(0.5,0.5) else { return None };
+            let n = cross(p.du,p.dv);
+            if !(norm(n) > 0.) { return None }
+            let n = scale(n,1./norm(n));
+            if !caps.iter().any(|&(m,q)| norm(sub(m,n)) <= 1e-9 && dot(sub(p.position,q),n).abs() <= 1e-9*(1.+norm(q))) {
+                caps.push((n,p.position))
+            }
+        }
+        let [(c0,_),(c1,_)] = caps[..] else { return None };
         if !(norm(c0) > 0.) || norm(cross(c0,c1)) > 1e-9*norm(c0)*norm(c1) || dot(c0,c1) >= 0. { return None }
         // (pointing the way the sides' rulings run from their edge, as they were read: the cutter
         // laid from the cap they leave, so its stations are measured from it)
@@ -416,25 +425,33 @@ impl Lone {
         // axis is no side of a prism
         let mut leans: Vec<(f64,f64)> = Vec::new();
         for f in &tool.faces {
-            match f {
-                ToolSurface::Cap(_) => {}
-                ToolSurface::Revolved(_) => return None,
-                ToolSurface::Extruded(s) => {
-                    let (Ok(p),Ok(q)) = (s.at(0.5,0.),s.at(0.5,1.)) else { return None };
-                    let r = sub(q.position,p.position);
-                    let h = dot(r,axis);
-                    if !(h.abs() > 1e-9*norm(r)) { return None }
-                    // how far the ruling runs out across the side's outward normal square to the
-                    // axis (it may slide along the side as well, its edge's ends moving apart or
-                    // together): the tangent of the side's draft
-                    let lateral = sub(r,scale(axis,h));
-                    let n = cross(p.du,p.dv);
-                    let out = sub(n,scale(axis,dot(n,axis)));
-                    if !(norm(out) > 1e-9*norm(n)) { return None }
-                    let out = scale(out,1./norm(out));
-                    leans.push((dot(lateral,out)/h,dot(add(p.position,scale(r,0.5)),axis)));
+            // each side's ruling at its middle: a strip's from its edge at `v = 0` to its far one;
+            // a whole turn of a line about a line along the prism (a round hole's wall, a drum's
+            // side) its meridian, a ruling of the cylinder or cone it is
+            let ruling = match f {
+                ToolSurface::Cap(_) => continue,
+                f if flat(f) => continue,
+                ToolSurface::Revolved(s) => {
+                    if !matches!(s.meridian(),crate::swept::surface::Meridian::Line {..})
+                        || norm(cross(s.axis_direction(),axis)) > 1e-9 { return None }
+                    let (Ok(p),Ok(q)) = (s.at(0.,0.),s.at(1.,0.)) else { return None };
+                    (p,q)
                 }
-            }
+                ToolSurface::Extruded(s) => { let (Ok(p),Ok(q)) = (s.at(0.5,0.),s.at(0.5,1.)) else { return None }; (p,q) }
+            };
+            let (p,q) = ruling;
+            let r = sub(q.position,p.position);
+            let h = dot(r,axis);
+            if !(h.abs() > 1e-9*norm(r)) { return None }
+            // how far the ruling runs out across the side's outward normal square to the
+            // axis (it may slide along the side as well, its edge's ends moving apart or
+            // together): the tangent of the side's draft
+            let lateral = sub(r,scale(axis,h));
+            let n = cross(p.du,p.dv);
+            let out = sub(n,scale(axis,dot(n,axis)));
+            if !(norm(out) > 1e-9*norm(n)) { return None }
+            let out = scale(out,1./norm(out));
+            leans.push((dot(lateral,out)/h,dot(add(p.position,scale(r,0.5)),axis)));
         }
         if leans.is_empty() { return None }
         // the boundary's planes square to the sides, each its loops: the caps, each a point of it
@@ -892,8 +909,9 @@ pub fn check(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling
 /// may reach the blank, and the walk crosses it (#684 AE).
 pub fn check_screw(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),extent: Option<([f64;2],f64)>,options: &Sampling,lone: Option<&Lone>)
     -> Result<(Characteristic,f64,Reads),Failure> {
-    // (a lone prism's cap is walked where it is undrafted and of one loop)
-    let lone = lone.filter(|l| l.sectioned_across());
+    // (a lone prism's cap is walked, drafted or not and of any loops: each side's rim on it, a
+    // straight side's whether it leans or not, and its contact line where it lies on the cap,
+    // #721 F1d)
     let (reads,..) = ends(c,inside,options,lone)?;
     let reads = std::sync::Mutex::new(reads);
     // the blank read outside the lock, the faces' rings side by side
