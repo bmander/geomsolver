@@ -206,27 +206,33 @@ pub fn classify(e: &Elaborated, solved: &Sketch) -> Vec<Classified> {
     used.sort_by_key(|&c| prog.component_id(c));
     used.dedup();
     defs.extend(used);
-    let world = World::of(solved, map);
-    defs.into_iter().map(|c| {
-        let name = prog.component_id(c);
-        let instances: Vec<&Instanced> = map.instances.iter().filter(|i| i.comp == c).collect();
-        let mut out = Classified { comp: c, name, instances: instances.len(), class: Class::Unused,
-                                   analysis: None };
-        if prog.components[c].set.is_some() {
-            out.class = Class::Set;
-            return out;
-        }
-        let Some(first) = instances.iter().find(|i| i.drawn) else {
-            if !instances.is_empty() {
-                out.class = Class::Traced;
+    // a stage of its own (#851): each definition's root search is probe solves
+    let n = defs.len();
+    let classifying = || crate::progress::Work::classify(n);
+    crate::progress::during(classifying, || {
+        let world = World::of(solved, map);
+        defs.into_iter().map(|c| {
+            let name = prog.component_id(c);
+            let instances: Vec<&Instanced> =
+                map.instances.iter().filter(|i| i.comp == c).collect();
+            let mut out = Classified { comp: c, name, instances: instances.len(),
+                                       class: Class::Unused, analysis: None };
+            if prog.components[c].set.is_some() {
+                out.class = Class::Set;
+                return out;
             }
-            return out;
-        };
-        let a = analyse(prog, map, solved, &world, first);
-        out.class = a.class();
-        out.analysis = Some(a);
-        out
-    }).collect()
+            let Some(first) = instances.iter().find(|i| i.drawn) else {
+                if !instances.is_empty() {
+                    out.class = Class::Traced;
+                }
+                return out;
+            };
+            let a = analyse(prog, map, solved, &world, first);
+            out.class = a.class();
+            out.analysis = Some(a);
+            out
+        }).collect()
+    })
 }
 
 /// What every instance's reading shares: which parameters are whose, which are where a point is.

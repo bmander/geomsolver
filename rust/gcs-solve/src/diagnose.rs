@@ -69,6 +69,7 @@ mod solid_claims;
 mod witnessed;
 use numeric::{Gate, Numeric};
 pub use numeric::{parts_null_spaces, removable_constraints};
+pub use parts::rank_by_parts;
 pub use solid_claims::{
     describe_solid_claim, judge_solids, ClaimJudge, ClaimProgress, SolidOutcome, SolidPose,
     SolidVerdict, SWEEP_STEPS,

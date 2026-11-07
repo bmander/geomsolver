@@ -444,7 +444,15 @@ has any).
 - **D2:** a part whose rows `violated` holds is named with its rows and its inputs' places, the
   innermost only, and not where D1 already said why.
 - **D3:** a settled solve's part whose rows, alone with its inputs held, have numeric rank
-  (`System::conditioned`, `RANK_TOL`) short of its own unknowns is said singular with the rank.
+  (`System::conditioned_sparse`, `RANK_TOL`) short of its own unknowns is said singular with the
+  rank.  The rank is read **part by part** (`diagnose::rank_by_parts`, #851): the part's rows over
+  its own columns cut into their own block-triangular order and each piece of it factored alone,
+  exact as the diagnosis's reading past `NUMERIC_MAX` is — never one dense matrix of the part,
+  which for a component seating forty others is all of theirs and took seconds an instance
+  (`tests/numeric_parts.rs` holds it to the dense SVD over sampled rows and columns of the
+  library).  The whole reading is a stage said to whoever listens (`progress::Work::parts`), each
+  part's rank an object in it by its definition (`Work::rank`), and `parts::check` a stage of the
+  elaboration (`Work::check`).
 
 `tests/parts.rs` is the gate.
 

@@ -66,11 +66,14 @@ diagnosed, and the report says where it stands.
                         part whose root its seeds choose, read at the solved pose; advisory, so
                         never a failure
     --allow-unsolved    a document that does not solve is not a failure
-    --progress          say each stage on stderr as it is done: the solve, each solid built and
+    --progress          say each stage on stderr as it is done: the elaboration and the planes
+                        it places, the solve, the diagnosis, each march along a parameter, the
+                        parts checked and the diagnosis read through them, each solid built and
                         each claim judged, with its time; work still going is said again past
                         5 s.  On a terminal, unasked, the stages of a second or more are said
     --no-progress       say nothing on stderr as the run goes, even on a terminal
-    --timings           at the end, the slowest solids and claims, each with its statement
+    --timings           at the end, every stage in the order run, then the slowest solids,
+                        claims and parts' rows, each with its statement
     --components        what each component is against the contract for a reusable solve
                         boundary (#452), read through its first instance: asserts only, leaves
                         freedoms, locally determined, branch chosen, and whether it reads the
@@ -233,7 +236,7 @@ struct Opts {
     drawing: Option<String>,
     /// `--progress`/`--no-progress`, or what a terminal is told unasked.
     say: watch::Say,
-    /// `--timings`: the slowest solids and claims, said at the end.
+    /// `--timings`: the stages, and the slowest solids, claims and parts' rows, said at the end.
     timings: bool,
     /// `--components`: each component classified against the boundary contract (#452).
     components: bool,
@@ -622,24 +625,31 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     }
     let watch = watch::Watch::new(opts.say);
     let mut places = Places::new();
-    let out = progress::listen(watch.clone(), || check_model(s, opts, &mut places));
+    // the whole run is work of its own, so time no stage names is still said (#851)
+    let out = progress::listen(watch.clone(), || {
+        progress::during(|| progress::Work::run(&s.name), || check_model(s, opts, &mut places))
+    });
     if opts.timings {
         timings(s, opts, &watch.timings.borrow(), &places);
     }
     out
 }
 
-/// How many of the slowest solids and claims `--timings` lists.
+/// How many of the slowest solids, claims and parts' rows `--timings` lists.
 const TIMINGS: usize = 12;
 
 /// Where each solid and each claim about solids was written, by `progress::At`: the offset of its
 /// statement in the document, for those the document itself wrote.
 type Places = std::collections::BTreeMap<progress::At, u32>;
 
-/// `--timings`: the core's lines, each at its statement.  Beside the JSON report rather than in
-/// it, as `--measure`'s lines are.
+/// `--timings`: the core's lines, every stage of the run first (#851), then the slowest objects,
+/// each at its statement.  Beside the JSON report rather than in it, as `--measure`'s lines are.
 fn timings(s: &Source, opts: &Opts, timings: &progress::Timings, places: &Places) {
     let line = |l: String| if opts.json { eprintln!("{l}") } else { println!("{l}") };
+    line(format!("{}: {}", s.name, timings.stages_heading()));
+    for text in timings.stages() {
+        line(format!("  {text}"));
+    }
     line(format!("{}: {}", s.name, timings.heading()));
     for (text, work) in timings.lines(TIMINGS) {
         match work.at.and_then(|a| places.get(&a)) {

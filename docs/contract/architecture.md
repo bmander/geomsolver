@@ -214,7 +214,13 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   (`progress::listen`) when work begins and ends — the elaboration, the solve and the diagnosis,
   which the CLI wraps in `progress::during`, and inside them each solid built
   (`Sketch::exact_solid`) or evaluated (`Sketch::evaluated_solid`), each claim about solids
-  judged, and each march along a declared parameter (`follow::followed`, #591) — timed by
+  judged, and each march along a declared parameter (`follow::followed`, #591), and every other
+  stage the core runs (#851): the planes placed before the solve (`Work::place`), the parts
+  checked (`Work::check`), the diagnosis read through the parts (`Work::parts`) with each part's
+  rows ranked inside it by its definition (`Work::rank`), the definitions classified
+  (`Work::classify`) and a load scenario read (`Work::scenario`), all inside the CLI's whole run
+  of the document (`Work::run`), whose own time is what no stage names, so none goes unsaid —
+  timed by
   `clock::Instant` and worded by `progress::Work`; with nobody listening the work is not even
   named.  Work that knows how far it has got says so on its `Gauge` (`progress::gauge`, which sets
   the innermost open work's; shared by every copy, so a listener on another thread reads it, and
@@ -224,8 +230,10 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   time only), and work still going past 5 s is said again, then each time it doubles, so a slow
   boolean, or a long march, is told from a hang; on a terminal,
   unasked, the stages of a second or more are said (`--no-progress` silences it).  `--timings`
-  lists the solids and claims by their own time after the report, each at its statement — a
-  module's solid at the document's instance of it (`Program::document_stmt`).
+  lists every stage in the order run (`Timings::stages`), then the solids, claims and parts' rows
+  by their own time after the report, each at its statement — a module's solid at the document's
+  instance of it (`Program::document_stmt`) — so a run that spends its time anywhere says where
+  (`tests/progress.rs`, `cli.rs`'s `a_run_says_its_stages_and_their_times`).
   **`--no-check` judges no claim about solids** (`DiagnoseOptions::solid_claims` false, as the
   page's diagnosis leaves them to its worker): no solid is built for one, and where their
   verdicts would be the report says how many were left, in the core's words
