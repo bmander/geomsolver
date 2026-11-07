@@ -327,14 +327,18 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
     // meet in, #684 P).
     let mut capped = [false;2];
     for (end,v) in [(0,0.),(1,1.)] {
-        // (a side's rim that lies in a cap's plane: one along a face of revolution's ring is the
-        // walk's to cross, #721 F1d)
-        let caps: Vec<(V,V)> = c.patches().iter().filter(|s| s.cap().is_some()).filter_map(|s| s.at(0.,0.).ok())
-            .map(|p| (p.position,cross(p.du,p.dv))).collect();
+        // (a side's rim that lies in a cap's plane, or a flat's — a cap a round hole passes through,
+        // read as flats of its wall: one along a face of revolution's ring is the walk's to cross,
+        // #721 F1d)
+        let caps: Vec<(V,V)> = c.patches().iter().filter_map(|s| match s {
+            ToolSurface::Revolved(r) => r.flat().map(|(o,a,..)| (o,a)),
+            _ => s.cap().and_then(|_| s.at(0.,0.).ok()).map(|p| (p.position,cross(p.du,p.dv))),
+        }).collect();
         let capped_rim = |s: &ToolSurface| caps.iter().any(|&(o,n)| (0..=4).all(|i| s.at(i as f64/4.,v)
             .is_ok_and(|p| dot(sub(p.position,o),n).abs() <= 1e-7*norm(n)*(1.+norm(p.position)))));
         let rim = c.patches().iter().enumerate()
-            .filter(|&(k,s)| !s.periodic() && s.cap().is_none() && !c.creases().iter().any(|crease| crease[1-end] == k) && capped_rim(s))
+            .filter(|&(k,s)| !s.periodic() && s.cap().is_none() && !c.creases().iter().any(|crease| crease[1-end] == k) && capped_rim(s)
+                && !twisted.is_some_and(|contact| holds_none(s,&on_tool,contact)))
             .find_map(|(_,surface)| (0..=options.coarse_rows).find_map(|i| {
                 reaches(&mut reads,surface.at(i as f64/options.coarse_rows as f64,v).ok()?.position) }).map(|p| (surface.name(),p)));
         let Some((name,p)) = rim else { continue };
@@ -361,13 +365,7 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
             if lone.is_some() { capped[end] = true; continue }
             // under a constant twist, a plane on whose points on the tool the contact keeps one sign
             // holds no characteristic: the walk never reads it (#721 F1d)
-            if let Some(contact) = twisted {
-                let signs = (0..=n).flat_map(|i| (0..=n).map(move |j| (i,j))).filter_map(|(i,j)| {
-                    let s = surface.at(i as f64/n as f64,j as f64/n as f64).ok().filter(|s| on_tool(s.position))?;
-                    Some(contact(s.position,cross(s.du,s.dv)))
-                }).fold([f64::INFINITY,f64::NEG_INFINITY],|[lo,hi],x| [lo.min(x),hi.max(x)]);
-                if signs[0] > 0. || signs[1] < 0. { continue }
-            }
+            if twisted.is_some_and(|contact| holds_none(surface,&on_tool,contact)) { continue }
             return Err((Row::Tool,format!("its plane face `{}` passes through the blank, and the class cuts with a plane \
                 face only as a prism's side, or as a cap of a prism standing alone as the tool or placed, undrafted, its \
                 profile one loop",surface.name()),Some(p)));
@@ -375,6 +373,18 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
     }
     reads.extend(clear(&|s| s.cap().is_some_and(|end| capped[end]))?);
     Ok((reads,poses,capped))
+}
+
+/// Whether `surface` holds no contact under a constant twist (`contact`, `n·v` of a point and its
+/// chart's normal): one sign at each of its points on the tool (`on_tool`) read on a `CAP_READS`
+/// grid, so the walk meets nothing of it (#721 F1d).
+fn holds_none(surface: &ToolSurface,on_tool: &dyn Fn(V) -> bool,contact: &dyn Fn(V,V) -> f64) -> bool {
+    let n = CAP_READS;
+    let [lo,hi] = (0..=n).flat_map(|i| (0..=n).map(move |j| (i,j))).filter_map(|(i,j)| {
+        let s = surface.at(i as f64/n as f64,j as f64/n as f64).ok().filter(|s| on_tool(s.position))?;
+        Some(contact(s.position,cross(s.du,s.dv)))
+    }).fold([f64::INFINITY,f64::NEG_INFINITY],|[lo,hi],x| [lo.min(x),hi.max(x)]);
+    lo > 0. || hi < 0.
 }
 
 /// A tool that is one prism standing alone or placed, drafted or not, its profile any loops: what
