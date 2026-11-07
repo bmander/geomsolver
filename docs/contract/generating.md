@@ -576,7 +576,13 @@ creased along that point's path, as at a fan standing at one point (`Characteris
 revolution of their two discs' outline, or their union within an intersection, which no union
 distributes — is the constant twist's, the rod losing what either bead's shadow covers to 1e-6
 (`union_tools::a_tool_creased_at_a_concave_corner_cuts_as_its_members`,
-`a_union_within_an_intersection_is_the_constant_twists`).  Where the faces' points part at the
+`a_union_within_an_intersection_is_the_constant_twists`).  So a union that is one solid under a
+constant twist is swept whole, as its set (`distributed::whole`: its B-rep's faces joined into one
+solid and read by the kernel), not member by member: `union.sv`'s beads are one sweep, the same
+groove as their members' to 2e-7 (`union_tools::the_union_cuts_what_its_members_cut_in_turn`), and
+the grown bead its class refuses alone is built whole with its twin
+(`a_member_its_class_refuses_alone_is_built_whole`).  A union of separate solids, or one under a
+turn seen from a turn, is still its members' sweeps (#684 C).  Where the faces' points part at the
 corner, the walk ends a stretch there (`Step::Concave`) and walks the others from the roots in the
 blank no stretch holds yet (`Pass::others`, `Characteristic::others`), each ending at a concave
 corner or past the blank; S2 takes a ring's two points in two such stretches.  Each stretch's sheet

@@ -13,7 +13,10 @@
 //!
 //! A union is its members where it is the whole tool, a union within a union or a placement of
 //! one (each member placed as the union is): one within an intersection or a cut (`(A ∪ B) ∩ C`)
-//! is not distributed, and T1 refuses it. A tool of prisms under a motion keeping their plane is
+//! is not distributed, and is read by its B-rep as any tool is. Nor is one solid under a constant
+//! twist whose B-rep the kernel reads (`whole`, #721 F1d): the walk ends a characteristic at the
+//! concave corners where its members meet, so it is swept whole, as its set; a union of separate
+//! solids, or one under any other motion, is still its members'. A tool of prisms under a motion keeping their plane is
 //! not distributed either: the planar subtraction class reads the union's swept region whole
 //! (`planar_subtraction::asks`).
 use crate::model::{Sketch, SolidDef};
@@ -64,9 +67,41 @@ fn union_cuts(sk: &Sketch, body: usize) -> Vec<(usize, Vec<u32>)> {
         let p = *chain.last()? as usize;
         let SolidDef::Swept { source, .. } = sk.solids[p].def else { return None };
         let distributed = members(sk, source as usize).is_some()
-            && !super::planar_subtraction::asks(sk, p);
+            && !super::planar_subtraction::asks(sk, p) && !whole(sk, p);
         distributed.then_some((k, chain))
     }).collect()
+}
+
+/// Whether union sweep `p` is read whole, as its set (#721 F1d): one solid, its B-rep's faces all
+/// joined by the edges they share, swept by a constant twist — a screw, a turn or a slide — whose
+/// walk ends a characteristic at the concave corners where its members meet and trims the sheets
+/// that meet there, wherever the kernel reads that B-rep. A union of separate solids is its
+/// members' sweeps (its characteristic would part into a stretch a member, S2), and so is one under
+/// any other motion (the generating class refuses a concave corner carried through the blank, T2).
+fn whole(sk: &Sketch, p: usize) -> bool {
+    let SolidDef::Swept { motion, .. } = sk.solids[p].def else { return false };
+    let twisted = crate::motion::Family::read(sk, motion as usize).ok().and_then(|f| f.trajectory().ok())
+        .and_then(|t| crate::brep::swept::constant_twist::twist_of(&t)).is_some();
+    twisted && super::cad::tool_brep(sk, p).is_ok_and(|b| connected(&b)
+        && crate::brep::swept::tool::Tool::read(&b, super::cad::millimetres(sk)).is_ok())
+}
+
+/// Whether every face of `b` is joined to every other by a chain of faces sharing edges: one solid.
+fn connected(b: &crate::brep::topo::Brep) -> bool {
+    let n = b.faces.len();
+    if n == 0 { return false }
+    let uses = b.uses();
+    let mut seen = vec![false; n];
+    let mut stack = vec![0usize];
+    seen[0] = true;
+    while let Some(f) = stack.pop() {
+        for c in b.faces[f].loops.iter().flatten() {
+            for &(g, _, _) in &uses[c.edge as usize] {
+                if !seen[g] { seen[g] = true; stack.push(g) }
+            }
+        }
+    }
+    seen.into_iter().all(|x| x)
 }
 
 /// Whether `body` cuts the sweep of a union this distributes, so that it is built from `lowered`.

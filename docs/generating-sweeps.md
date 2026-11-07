@@ -997,13 +997,20 @@ any two placements'. A member refused is refused by its own row, saying so: `` `
 outside the constant-twist class (S1: …): its tool's member `bead2`: … ``.
 
 A union is its members where it is the whole tool, a union within a union, or a placement of
-one, each member placed as it is. Still refused by these classes: a union within an intersection
+one, each member placed as it is — but one solid under a constant twist is swept whole, as its
+set (#721 F1d, `distributed::whole`): its B-rep's faces joined into one solid, read by the kernel,
+the walk ending its characteristic at the concave corners where the members meet and trimming the
+sheets that meet there. A union of separate solids (two balls on one arm) and one under a turn
+seen from a turn (whose class refuses a concave corner carried through the blank, T2) are still
+their members' sweeps. Still refused by these classes: a union within an intersection
 or a cut (`(A ∪ B) ∩ C`, which is not distributed) is read whole by its B-rep, the constant twist
 crossing its concave crease where both faces' points meet it (#721 F1d,
 `union_tools::a_union_within_an_intersection_is_the_constant_twists`), and the closed class reads
 one by its B-rep where no other class takes it;
 a member the closed class takes beside one another class takes, each member its own sweep, built
-by the other's road and then cut on one arrangement (`union_tools::a_member_its_class_refuses_is_the_closed_classs`); and a body that cuts a ball's tube beside a
+by the other's road and then cut on one arrangement (where its union is distributed: the grown bead
+that one class refuses alone is now swept whole with its twin,
+`union_tools::a_member_its_class_refuses_alone_is_built_whole`); and a body that cuts a ball's tube beside a
 sweep of another class, which the static remainder does not read as either form, written as a
 union or as two cuts. A union of prisms under a motion keeping their plane is not distributed:
 the planar subtraction class reads its swept region whole (below). Only the core's kernel builds
@@ -1011,8 +1018,8 @@ a distributed cut; the native path refuses it by name. `tests/union_tools.rs` is
 overlapping tori on one axis slid up a rod (`rust/examples/solid_sweeps/union.sv`), the groove
 what of the rod's disc either tube's shadow covers, computed in rows across the rod apart from
 the core and held to the exact solid (2e-8 off a chord-by-chord integral), whose STL agrees with
-the field; that union placed half a turn round the rod and turned about its own axis; the two
-cuts written one after another, the same solid to 1e-9; two balls swung on one arm, two tubes
+the field, swept whole; that union placed half a turn round the rod and turned about its own
+axis; the two cuts written one after another, the same solid as the union's whole sweep to 2e-7; two balls swung on one arm, two tubes
 (Pappus); two tori rolled through the post, each admitted to the generating class and built as
 the long form builds them; and a member refused by its own row, and a union within an
 intersection, read from its B-rep whole and refused by the generating rows, then built by the

@@ -45,23 +45,23 @@ fn beads_one_after_another() -> String {
         construction groove2 := solid({{ p | some t in (0deg, 360deg): p in bead2 at(under: feed) t }})\ngroove cut rod\ngroove2 cut rod\n",&text[..at])
 }
 
-/// The union's groove is its members' grooves cut one after another, to the kernel's rounding: the
-/// two builds are one construction.
+/// The union's groove, swept whole (#721 F1d), is its members' grooves cut one after another: the
+/// set swept and its members' sweeps, two builds of one set, to 2e-7.
 #[test]
 fn the_union_cuts_what_its_members_cut_in_turn() {
     let (union,long) = (fixtures::read(&beads()),fixtures::read(&beads_one_after_another()));
-    near(exported(&union,"rod"),exported(&long,"rod"),1e-9);
+    near(exported(&union,"rod"),exported(&long,"rod"),2e-7);
 }
 
-/// The beads' groove placed a second time half a turn round the rod: each bead's sweep is minted
-/// once and placed twice, and the second groove takes as much again from the far side.
+/// The beads' groove placed a second time half a turn round the rod: the union's sweep, read whole
+/// (#721 F1d), is placed twice, and the second groove takes as much again from the far side.
 #[test]
 fn a_placed_unions_sweep_places_each_members() {
     let text = beads().replace("(slides)","(slides, turns)")+"rounding := frame\nrounding turns(1) ax\nconstruction far := groove at(under: rounding) 180deg\nfar cut rod\n";
     let e = fixtures::read(&text);
     let a = admit(&e,"rod").unwrap();
-    assert_eq!(a.sweeps().len(),2,"one sweep a bead");
-    assert!(a.sweeps().iter().all(|s| s.placements.len() == 2),"each bead's sweep placed where the union's is");
+    assert_eq!(a.sweeps().len(),1,"the union swept whole");
+    assert!(a.sweeps().iter().all(|s| s.placements.len() == 2),"the union's sweep placed twice");
     near(exported(&e,"rod"),PI*25.*20.-2.*beads_section()*20.,2e-6);
 }
 
@@ -76,14 +76,14 @@ fn regroove(text: &str,was: &str,before: &str,tool: &str) -> String {
     format!("{}{before}{}{}",&text[..at],line.replace(&swept,&format!("p in {tool} at(")),&text[end..])
 }
 
-/// A union placed whole is distributed as its members each placed so: the wheel turned about its
-/// own axis is the same wheel, and cuts the same groove.
+/// A union placed whole is swept as the placed union (#721 F1d): the wheel turned about its own axis
+/// is the same wheel, and cuts the same groove.
 #[test]
 fn a_union_placed_whole_is_its_members_placed() {
     let text = regroove(&beads().replace("(slides)","(slides, turns)"),"wheel","spin := frame\nspin turns(1) wheel_axis\n\
         construction turned := wheel at(under: spin) 30deg\n","turned");
     let e = fixtures::read(&text);
-    assert_eq!(admit(&e,"rod").unwrap().sweeps().len(),2);
+    assert_eq!(admit(&e,"rod").unwrap().sweeps().len(),1,"the placed union swept whole");
     near(exported(&e,"rod"),PI*25.*20.-beads_section()*20.,2e-6);
 }
 
@@ -115,20 +115,20 @@ small union pair
     near(exported(&e,"block"),24.*24.*8.-half(3.,12.)-half(2.,6.),1e-9);
 }
 
-/// A tool's member is asked its own class's rows, and admitted by the closed class where they
-/// refuse it (#721 F2c5, a torus slid square to its axis): the second bead grown to reach the rod
-/// with the rings where its tube lies flat in contact all round (the constant-twist class's S1). Its
-/// other member stays the constant-twist class's: each member its own sweep, the body is built by
-/// that class's road and the closed member cut from what it leaves on one arrangement. The groove is
-/// what of the rod's disc either bead's shadow covers, the second's ring now 7 from the wheel's
-/// axis, through the rod's 20.
+/// **A union is swept as its set, not as its members** (#721 F1d): the second bead grown to reach
+/// the rod with the rings where its tube, alone, lies flat in contact all round (the constant-twist
+/// class's S1, which sent that member to the closed class while the beads were swept member by
+/// member, #721 F2c5). Read whole, one solid under a slide, the walk ends its characteristic at the
+/// concave corner where the beads meet and those rings lie where the other bead covers them: the
+/// constant twist builds the union's groove, what of the rod's disc either bead's shadow covers, the
+/// second's ring now 7 from the wheel's axis, through the rod's 20.
 #[test]
-fn a_member_its_class_refuses_is_the_closed_classs() {
+fn a_member_its_class_refuses_alone_is_built_whole() {
     let text = beads().replace("tc2 coords(du: reach, dv: step) bench","tc2 coords(du: reach - 1mm, dv: step) bench");
     let e = fixtures::read(&text);
     let a = admit(&e,"rod").unwrap();
-    assert!(a.sweeps().iter().any(|s| matches!(s.class,Class::Closed(_))),"a member the closed class's");
-    assert!(a.sweeps().iter().any(|s| !matches!(s.class,Class::Closed(_))),"a member another class's");
+    let [s] = a.sweeps() else { panic!("the union swept whole: {}",a.sweeps().len()) };
+    assert!(matches!(s.class,Class::ConstantTwist(_)),"the constant twist's, whole");
     let hit = |x: f64,y: f64| shadowed(x,y,6.,2.,0.) || shadowed(x,y,7.,1.5,1.5);
     let section = measure([3.,5.],&|x| { let h = (25.-x*x).max(0.).sqrt(); [-h,h] },&hit,&|a,b| b-a);
     near(exported(&e,"rod"),PI*25.*20.-section*20.,2e-6);
