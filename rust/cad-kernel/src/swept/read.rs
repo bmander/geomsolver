@@ -107,8 +107,7 @@ impl Tool {
             for &fi in &order {
                 if read[fi].is_some() { continue }
                 if matches!(b.faces[fi].surface,Surface::Plane(_)) {
-                    let mut flats = reader.flats(fi,&read).into_iter().map(Read::Revolved);
-                    if let Some(flat) = flats.next() { read[fi] = Some(flat); more.extend(flats.map(|r| (fi,r))); found = true }
+                    found |= reader.read_flats(fi,&mut read,&mut more);
                 } else if let Some(s) = reader.revolved(fi,true).filter(|s| reader.beside(fi,s,&read)) {
                     read[fi] = Some(Read::Revolved(s)); found = true
                 }
@@ -150,12 +149,7 @@ impl Tool {
         // (a cap reads only the strips beside it, a flat only the revolutions: one pass reads both)
         for fi in 0..b.faces.len() {
             if read[fi].is_some() { continue }
-            let mut flats = reader.flats(fi,&read).into_iter().map(Read::Revolved);
-            if let Some(flat) = flats.next() {
-                read[fi] = Some(flat);
-                more.extend(flats.map(|r| (fi,r)));
-                continue
-            }
+            if reader.read_flats(fi,&mut read,&mut more) { continue }
             let f = &b.faces[fi];
             let (face,kind,at) = (joined(&f.name),f.surface.kind(),witness(fi));
             read[fi] = Some(match &f.surface {
@@ -229,12 +223,6 @@ fn once_a_surface(faces: Vec<ToolSurface>,edges: Vec<PatchEdge>,creases: Vec<[us
             (first[j],spans[j]) = (i,span);
         }
     }
-    // (a corner once, though the B-rep splits its circle into edges)
-    if (0..n).all(|j| first[j] == j) {
-        let mut once: Vec<PatchEdge> = Vec::new();
-        for e in edges { if !once.iter().any(|m| m.patches == e.patches && m.ends == e.ends) { once.push(e) } }
-        return (faces,once,creases)
-    }
     // each surface's span, the hull of its readings', and its one reading over it
     let mut hull: Vec<[f64;2]> = vec![[0.,1.];n];
     for j in 0..n { let (i,[a,b]) = (first[j],spans[j]); hull[i] = [hull[i][0].min(a.min(b)),hull[i][1].max(a.max(b))] }
@@ -253,13 +241,13 @@ fn once_a_surface(faces: Vec<ToolSurface>,edges: Vec<PatchEdge>,creases: Vec<[us
     let place = |k: usize,u: f64| -> f64 {
         let (i,[a,b]) = (first[k],spans[k]);
         let [lo,hi] = hull[i];
-        if [lo,hi] == [0.,1.] && i == k { return u }
         (a+u*(b-a)-lo)/(hi-lo)
     };
     let mut merged: Vec<PatchEdge> = Vec::new();
     for e in edges {
         let patches = e.patches.map(|k| index[k]);
-        // (a corner between two faces of the one surface is none, but a meridian's seam with itself)
+        // (a corner between two faces of the one surface is none, but a meridian's seam with itself;
+        // and each once, though the B-rep splits its circle into edges)
         if patches[0] == patches[1] && e.patches[0] != e.patches[1] { continue }
         let ends = [place(e.patches[0],e.ends[0]),place(e.patches[1],e.ends[1])].map(|u| if u.abs() <= 1e-12 { 0. }
             else if (u-1.).abs() <= 1e-12 { 1. } else { u });
@@ -473,13 +461,9 @@ impl Reader<'_> {
         let f = &self.b.faces[fi];
         let Surface::Plane(frame) = &f.surface else { return Vec::new() };
         let mut axes: Vec<V> = Vec::new();
-        for c in f.loops.iter().flatten() {
-            let EdgeCurve::Curve(Curve::Circle(cf,_)) = &self.b.edges[c.edge as usize].curve else { continue };
+        for cf in self.shared_circles(fi,read) {
             if norm(cross(cf.z,frame.z)) > 1e-9 || axes.iter().any(|&o| distance(o,cf.o) <= 1e2*self.tol) { continue }
-            if self.uses[c.edge as usize].iter().any(|&(g,_,_)| g != fi && matches!(&read[g],Some(Read::Revolved(s))
-                if norm(cross(s.axis_direction(),cf.z)) <= 1e-9 && norm(cross(sub(s.origin(),cf.o),cf.z)) <= 1e2*self.tol)) {
-                axes.push(cf.o)
-            }
+            axes.push(cf.o)
         }
         axes.into_iter().filter_map(|axis| {
             let (mut inner,mut outer) = (f64::INFINITY,0_f64);
@@ -507,16 +491,31 @@ impl Reader<'_> {
         }).collect()
     }
 
+    /// Plane face `fi` read as its flats (`flats`), where it is any: the first its reading, the rest
+    /// readings beyond it (`more`).
+    fn read_flats(&self,fi: usize,read: &mut [Option<Read>],more: &mut Vec<(usize,Read)>) -> bool {
+        let mut flats = self.flats(fi,read).into_iter().map(Read::Revolved);
+        let Some(flat) = flats.next() else { return false };
+        read[fi] = Some(flat);
+        more.extend(flats.map(|r| (fi,r)));
+        true
+    }
+
     /// Whether face `fi`, read as `s`, shares a circle about `s`'s axis with a face already read as
     /// a revolution about it.
     fn beside(&self,fi: usize,s: &RevolvedSurface,read: &[Option<Read>]) -> bool {
-        let a = s.axis_direction();
-        self.b.faces[fi].loops.iter().flatten().any(|c| {
-            let EdgeCurve::Curve(Curve::Circle(cf,_)) = &self.b.edges[c.edge as usize].curve else { return false };
-            if norm(cross(cf.z,a)) > 1e-9 || s.polar(cf.o).is_none_or(|q| q[0] > 1e2*self.tol) { return false }
+        self.shared_circles(fi,read).iter().any(|cf| norm(cross(cf.z,s.axis_direction())) <= 1e-9
+            && s.polar(cf.o).is_some_and(|q| q[0] <= 1e2*self.tol))
+    }
+
+    /// The circles of face `fi`'s loops it shares with a face already read as a revolution about
+    /// the circle's axis, each its frame.
+    fn shared_circles(&self,fi: usize,read: &[Option<Read>]) -> Vec<Frame> {
+        self.b.faces[fi].loops.iter().flatten().filter_map(|c| {
+            let EdgeCurve::Curve(Curve::Circle(cf,_)) = &self.b.edges[c.edge as usize].curve else { return None };
             self.uses[c.edge as usize].iter().any(|&(g,_,_)| g != fi && matches!(&read[g],Some(Read::Revolved(t))
-                if norm(cross(t.axis_direction(),a)) <= 1e-9 && t.polar(cf.o).is_some_and(|q| q[0] <= 1e2*self.tol)))
-        })
+                if norm(cross(t.axis_direction(),cf.z)) <= 1e-9 && t.polar(cf.o).is_some_and(|q| q[0] <= 1e2*self.tol))).then_some(*cf)
+        }).collect()
     }
 
     /// `s` run so its chart's normal at its middle is face `fi`'s outward one, where it lies on the

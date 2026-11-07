@@ -1010,7 +1010,6 @@ pub fn point_path(flat: &[f64], outer: &[f64]) -> Option<Vec<crate::brep::trocho
         return None;
     }
     let at = |i: usize| outer.get(i).copied().filter(|x| x.is_finite());
-    let turned = |terms: &[Term], by: f64| terms.iter().map(|t| Term { w: t.w + by, ..*t }).collect::<Vec<_>>();
     let mut stack: Vec<(f64, Vec<Term>)> = Vec::new();
     for op in &v.ops {
         let pose = match *op {
@@ -1030,9 +1029,8 @@ pub fn point_path(flat: &[f64], outer: &[f64]) -> Option<Vec<crate::brep::trocho
             Op::Relative => {
                 let (obs, src) = (stack.pop()?, stack.pop()?);
                 // observer⁻¹ ∘ source: R(−ω_o t)(d_s − d_o), at the rate ω_s − ω_o
-                let negated: Vec<Term> = obs.1.iter().map(|t| Term { a: [-t.a[0], -t.a[1]], b: [-t.b[0], -t.b[1]], w: t.w }).collect();
-                let d: Vec<Term> = src.1.iter().copied().chain(negated).collect();
-                (src.0 - obs.0, turned(&d, -obs.0))
+                let negated = obs.1.iter().map(|t| Term { a: [-t.a[0], -t.a[1]], b: [-t.b[0], -t.b[1]], ..*t });
+                (src.0 - obs.0, src.1.iter().copied().chain(negated).map(|t| Term { w: t.w - obs.0, ..t }).collect())
             }
             _ => return None,
         };

@@ -17,7 +17,9 @@ use crate::util::fmath::Det;
 use crate::trajectory::Motion;
 use crate::util::space::{cross,dot,norm};
 use super::dispatch::Row;
-use super::planar::InnerEnvelope;
+use super::planar::{InnerEnvelope,Region};
+use super::subtraction::Loops;
+use crate::plane2::Edge;
 use super::tool::Material;
 use std::sync::Arc;
 
@@ -105,17 +107,17 @@ pub enum Unread { Shape(Failure),Envelope(super::planar::Refusal) }
 /// point's path's halves, read over its whole roll as the drawing reads it), else the `k`th piece
 /// at `s − k`. In page coordinates of `view` (model units, `mm` millimetres a unit).
 #[derive(Debug)]
-struct Hole { pieces: Vec<(crate::geom::Curve,[f64;2])>,whole: Option<[f64;2]>,view: super::planar::View,mm: f64 }
+struct Hole { pieces: Vec<(crate::geom::Curve,[f64;2])>,whole: bool,view: super::planar::View,mm: f64 }
 
 impl super::planar::Section for Hole {
     fn at(&self,s: f64) -> Option<([f64;2],[f64;2])> {
         let (curve,t,rate) = match self.whole {
-            Some(_) => {
+            true => {
                 // the piece whose stretch holds `s`
                 let (c,_) = self.pieces.iter().find(|(_,[a,b])| s >= a.min(*b)-1e-12 && s <= a.max(*b)+1e-12)?;
                 (c,s,1.)
             }
-            None => {
+            false => {
                 let k = (s.floor().max(0.) as usize).min(self.pieces.len()-1);
                 let (c,[a,b]) = &self.pieces[k];
                 (c,a+(b-a)*(s-k as f64),b-a)
@@ -128,39 +130,15 @@ impl super::planar::Section for Hole {
     }
 }
 
-/// The pocket's material in its plane: the signed distance to its loop's chords, below nought within.
+/// The stock's material: its outline's prism — the outline loop's region (`outline`, in the page
+/// of `view`) over its span along `n` — the tool with its pocket filled, whose wall P5 asks of.
 #[derive(Debug)]
-struct Ring { points: Vec<[f64;2]> }
+struct Stock { outline: Loops,view: super::planar::View,n: V,span: [f64;2] }
 
-impl Ring {
-    fn value(&self,p: [f64;2]) -> f64 {
-        let n = self.points.len();
-        let (mut least,mut inside) = (f64::INFINITY,false);
-        for i in 0..n {
-            let (a,b) = (self.points[i],self.points[(i+1)%n]);
-            let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
-            let l2 = dx*dx+dy*dy;
-            let t = if l2 > 0. { (((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2).clamp(0.,1.) } else { 0. };
-            least = least.min((p[0]-a[0]-t*dx).dhypot(p[1]-a[1]-t*dy));
-            if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < a[0]+(p[1]-a[1])*dx/dy { inside = !inside }
-        }
-        if inside { -least } else { least }
-    }
-}
-
-impl super::planar::Region for Ring { fn value(&self,p: [f64;2]) -> f64 { Ring::value(self,p) } }
-
-/// The stock's material: the tool's own boundary's, with its pocket filled — the pocket's prism,
-/// its loop's region grown by `grown` (past its curve, which its chords cut inside of, so that the
-/// curve is the stock's interior) over its span along the normal — united (the lesser of the two).
-#[derive(Debug)]
-struct Filled { tool: super::read::Boundary,ring: Ring,grown: f64,view: super::planar::View,n: V,span: [f64;2] }
-
-impl Material for Filled {
+impl Material for Stock {
     fn value(&self,p: V) -> f64 {
         let h = dot(p,self.n);
-        let prism = (self.ring.value(self.view.page(p))-self.grown).max(self.span[0]-h).max(h-self.span[1]);
-        self.tool.value(p).min(prism)
+        self.outline.value(self.view.page(p)).max(self.span[0]-h).max(h-self.span[1])
     }
 }
 
@@ -197,22 +175,10 @@ impl Pocket {
             };
             if !standing { return None }
         }
-        // the hole: the cap's loop of the lesser reach across the caps' normal, its edges sampled
-        // along their spans (a closed curve is one edge on one vertex), its curves as it walks them
+        // the hole: the cap's loop enclosing the less (`Brep::loop_area`), its curves as it walks them
         let face = &b.faces[c0];
-        let (u,v) = crate::util::space::across(n);
-        let size = |l: &Vec<crate::topo::Coedge>| {
-            let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
-            for c in l {
-                let e = &b.edges[c.edge as usize];
-                for k in 0..=64 {
-                    let p = e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/64.,&b.vertices);
-                    for (j,d) in [u,v].into_iter().enumerate() { lo[j] = lo[j].min(dot(p,d)); hi[j] = hi[j].max(dot(p,d)) }
-                }
-            }
-            (hi[0]-lo[0]).dhypot(hi[1]-lo[1])
-        };
-        let hole = if size(&face.loops[0]) <= size(&face.loops[1]) { &face.loops[0] } else { &face.loops[1] };
+        let [first,second] = [&face.loops[0],&face.loops[1]];
+        let (hole,outline) = if b.loop_area(face,first).abs() <= b.loop_area(face,second).abs() { (first,second) } else { (second,first) };
         let mut pieces: Vec<(Curve,[f64;2])> = Vec::new();
         for c in hole {
             let e = &b.edges[c.edge as usize];
@@ -236,34 +202,28 @@ impl Pocket {
         let height = |fi: usize| dot(b.vertices[b.edges[b.faces[fi].loops[0][0].edge as usize].v[0] as usize].p,n)/mm;
         let (h0,h1) = (height(c0),height(c1));
         let span = [h0.min(h1),h0.max(h1)];
-        // the pocket's material in its plane: its loop's chords, fine
-        let points: Vec<[f64;2]> = pieces.iter().flat_map(|(c,[a,b])| (0..2048).map(move |k| c.point(a+(b-a)*k as f64/2048.)))
-            .map(|p| view.page(p.map(|v| v/mm))).collect();
-        // how far the loop's curve stands outside its chords, at their middles: what the stock's
-        // fill is grown by, so that the pocket's curve itself is within the stock (the rotor's apex
-        // touches its bore, P5)
-        let middles: Vec<[f64;2]> = pieces.iter().flat_map(|(c,[a,b])| (0..2048).map(move |k| c.point(a+(b-a)*(k as f64+0.5)/2048.)))
-            .map(|p| view.page(p.map(|v| v/mm))).collect();
-        let sag = (0..points.len()).map(|k| {
-            let (p,q,m) = (points[k],points[(k+1)%points.len()],middles[k]);
-            let (dx,dy) = (q[0]-p[0],q[1]-p[1]);
-            ((m[0]-p[0])*dy-(m[1]-p[1])*dx).abs()/dx.dhypot(dy).max(1e-300)
-        }).fold(0_f64,f64::max);
+        // a loop's material in the cap's plane: its chords, its edges sampled finely as it walks them
+        let region = |l: &Vec<crate::topo::Coedge>| -> (Vec<[f64;2]>,Loops) {
+            let points: Vec<[f64;2]> = l.iter().flat_map(|c| { let e = &b.edges[c.edge as usize];
+                let [t0,t1] = if c.reversed { [e.t[1],e.t[0]] } else { e.t };
+                (0..2048).map(move |k| e.point(t0+(t1-t0)*k as f64/2048.,&b.vertices)) })
+                .map(|p| view.page(p.map(|v| v/mm))).collect();
+            let edges = (0..points.len()).map(|k| Edge::Line {a:points[k],b:points[(k+1)%points.len()],axis:false}).collect();
+            (points,Loops::new(&[edges]))
+        };
+        let (points,ring) = region(hole);
         let scale = points.iter().fold(0_f64,|m,p| m.max(p[0].dhypot(p[1]))).max(1e-300);
         // the stock's and the pocket's names: the outline's walls' solid and the hole's
         let wall = |l: &Vec<crate::topo::Coedge>| l.iter().find_map(|c| b.uses()[c.edge as usize].iter().map(|u| u.0)
             .find(|&g| g != c0 && g != c1).map(|g| named_parts(&b.faces[g].name).0.to_string())).unwrap_or_default();
-        let outline = if std::ptr::eq(hole,&face.loops[0]) { &face.loops[1] } else { &face.loops[0] };
         let names = [wall(outline),wall(hole)];
-        let ring = Ring {points:points.clone()};
-        let source = Hole {pieces,whole,view,mm};
-        let [s0,s1] = whole.unwrap_or([0.,source.pieces.len() as f64]);
-        let envelope = match InnerEnvelope::new(Arc::new(source),view,path.clone(),&ring,[s0,s1],scale,roll) {
+        let roll_of = whole.unwrap_or([0.,pieces.len() as f64]);
+        let source = Hole {pieces,whole:whole.is_some(),view,mm};
+        let envelope = match InnerEnvelope::new(Arc::new(source),view,path.clone(),&ring,roll_of,scale,roll) {
             Ok(envelope) => envelope,
             Err(r) => return Some(Err(Unread::Envelope(r))),
         };
-        let tol = 1e-7*(1.+b.size());
-        let stock = Filled {tool:super::read::Boundary::new(b,mm,tol,&b.uses()),ring,grown:2.*sag+1e-9*scale,view,n,span};
+        let stock = Stock {outline:region(outline).1,view,n,span};
         let rolls = (((roll[1]-roll[0])/std::f64::consts::TAU*360.).ceil() as usize).max(36);
         let backs = (0..=rolls).map(|k| path.at(roll[0]+(roll[1]-roll[0])*k as f64/rolls as f64).map(|m| m.inverse()))
             .collect::<Result<Vec<_>,_>>();

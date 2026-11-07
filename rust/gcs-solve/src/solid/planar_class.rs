@@ -27,10 +27,9 @@ use crate::space::{cross,dot,norm};
 
 /// What the class finds of one sweep, its rows asked of a placement, and the tool as it reads it
 /// are the kernel's (`brep::swept::pocket`, #721 F1c).
-pub use crate::brep::swept::pocket::{Failure,Found,Pocket};
+pub use crate::brep::swept::pocket::{Failure,Found};
 
 type V = [f64;3];
-
 
 /// Whether `swept`'s rows are this class's: its tool is a prism cut by a pocket. A prism alone (a
 /// rack) cuts with its sides, as the generating class's rows ask of it.
@@ -72,8 +71,8 @@ pub(crate) fn pocket(sk: &Sketch,swept: usize) -> Result<Drawn,Failure> {
     };
     let tool = &sk.solids[*source as usize];
     let pocketed = |why: &str| (Condition::Prisms,format!("`{}` {why}: a planar sweep's tool is a stock cut by one pocket",tool.name),None);
-    let (_,pocket) = match &tool.def {
-        SolidDef::Body {stock,on,through,bound} if on.is_empty() && bound.is_empty() && through.len() == 1 => (*stock as usize,through[0] as usize),
+    let pocket = match &tool.def {
+        SolidDef::Body {on,through,bound,..} if on.is_empty() && bound.is_empty() && through.len() == 1 => through[0] as usize,
         _ => return Err(pocketed("is more than a stock and a pocket")),
     };
     let SolidDef::Prism {face,..} = &sk.solids[pocket].def else { return Err(pocketed("is cut by no prism")) };

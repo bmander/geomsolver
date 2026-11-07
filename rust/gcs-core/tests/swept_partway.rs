@@ -15,6 +15,7 @@ use gcs_core::brep::swept::constant_twist::Characteristic;
 use gcs_core::brep::swept::tool::{Tool,ToolSurface};
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::{Screw,Trajectory};
+use gcs_core::space::segment_distance;
 
 type V = [f64;3];
 
@@ -55,12 +56,7 @@ fn inside(p: V) -> bool {
 /// distance from `p` to that path.
 fn off(p: V) -> f64 {
     let path: [V;4] = [[2.,0.,0.],[2.,0.,3.],[1.5,0.,3.],[1.5,0.,8.]];
-    path.windows(2).map(|w| {
-        let d: V = std::array::from_fn(|k| w[1][k]-w[0][k]);
-        let q: V = std::array::from_fn(|k| p[k]-w[0][k]);
-        let t = (q.iter().zip(&d).map(|(a,b)| a*b).sum::<f64>()/d.iter().map(|x| x*x).sum::<f64>()).clamp(0.,1.);
-        (0..3).map(|k| (q[k]-t*d[k]).powi(2)).sum::<f64>().sqrt()
-    }).fold(f64::INFINITY,f64::min)
+    path.windows(2).map(|w| segment_distance(p,w[0],w[1])).fold(f64::INFINITY,f64::min)
 }
 
 /// **The drum's side is read once, its window's floor and back wall about its axis**: one face of
@@ -117,21 +113,20 @@ fn the_walk_crosses_a_corner_partway_along_a_face() {
 /// the whole drum's: the push's silhouette lies in what the three quarters keep.
 #[test]
 fn a_partial_revolutions_strips_cross_onto_its_rounds() {
-    use crate::swept_charts::{alike,drum,drum_turned};
+    use crate::swept_charts::{alike,drum,drum_turned,push,Plate};
+    use gcs_core::brep::swept::dispatch::Blank;
     let quarters = Tool::read(&drum_turned(std::f64::consts::FRAC_PI_4,1.5*std::f64::consts::PI),1.).unwrap();
     let kinds: Vec<&str> = quarters.faces.iter().map(|f| match f { ToolSurface::Revolved(_) => "revolved",ToolSurface::Extruded(_) => "strip",
         ToolSurface::Cap(_) => "cap" }).collect();
     eprintln!("three quarters read as {kinds:?}");
     assert!(kinds.contains(&"strip") && kinds.contains(&"cap"),"its side a strip, its ends caps");
-    // the push up along z, 16 over a turn of the roll, through the plate x −10 to 10, y −5 to 5,
-    // z 0 to 4
-    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:16.});
-    let plate = |p: V| p[0].abs() < 10. && p[1].abs() < 5. && p[2] > 0. && p[2] < 4.;
+    // the push up through the plate, walked
+    let path = push();
+    let screw = path.screw().expect("the push is a slide");
     let walk = |tool: &Tool| {
         let sweep = Generating {tool,path:&path,roll:[0.,std::f64::consts::TAU],whole:false,mm:1.};
-        let extent = Some(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:16.}
-            .extent([-10.,-5.,0.],[10.,5.,4.],gcs_core::brep::trajectory::Motion::identity()));
-        check_screw(&sweep,&plate,extent,&Sampling::default(),None).unwrap_or_else(|e| panic!("the walk: {e:?}")).0
+        let extent = Plate.extent().map(|(lo,hi)| screw.extent(lo,hi,gcs_core::brep::trajectory::Motion::identity()));
+        check_screw(&sweep,&|p| Plate.inside(p),extent,&Sampling::default(),None).unwrap_or_else(|e| panic!("the walk: {e:?}")).0
     };
     alike("three quarters",&walk(&Tool::read(&drum(0.),1.).unwrap()),&walk(&quarters));
 }

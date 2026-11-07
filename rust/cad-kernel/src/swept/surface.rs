@@ -299,14 +299,21 @@ impl RevolvedSurface {
     /// fraction of its sweep, within one whole turn. None where `p` is on the axis or the meridian
     /// lies along it.
     pub fn turn_of(&self,p: V) -> Option<f64> {
-        let a = crate::trajectory::normalized(self.axis)?;
-        let radial = |x: V| { let q = sub(x,self.origin); sub(q,scale(a,dot(q,a))) };
-        let start = [0.5,0.,1.].into_iter().filter_map(|u| self.full().at(u,0.).ok()).map(|s| radial(s.position))
-            .find(|r| length(*r) > 0.)?;
-        let r = radial(p);
+        let (a,start) = self.half_plane()?;
+        let r = { let q = sub(p,self.origin); sub(q,scale(a,dot(q,a))) };
         if !(length(r) > 0.) || self.sweep == 0. { return None }
         let angle = dot(cross(start,r),a).datan2(dot(start,r));
         Some((angle/self.sweep).rem_euclid(TAU/self.sweep.abs()))
+    }
+
+    /// The unit axis and the radial direction of the half-plane the meridian lies in at its chart's
+    /// start (read at its middle, else an end, off the axis); none where it lies along the axis.
+    fn half_plane(&self) -> Option<(V,V)> {
+        let a = crate::trajectory::normalized(self.axis)?;
+        let x = [0.5,0.,1.].into_iter().filter_map(|u| self.full().at(u,0.).ok()).map(|s| {
+            let q = sub(s.position,self.origin); sub(q,scale(a,dot(q,a)))
+        }).find(|r| length(*r) > 0.)?;
+        Some((a,x))
     }
 
     /// Where `p` is turned to about the axis, read as `(radius, height)`: what tells two faces of
@@ -324,10 +331,7 @@ impl RevolvedSurface {
     /// nearest of a circle's turns to the meridian's middle. None for a conic's meridian, or where
     /// the meridian has no half-plane (it lies along the axis).
     pub fn meridian_param(&self,p: V) -> Option<f64> {
-        let a = crate::trajectory::normalized(self.axis)?;
-        let x = [0.5,0.,1.].into_iter().filter_map(|u| self.full().at(u,0.).ok()).map(|s| {
-            let q = sub(s.position,self.origin); sub(q,scale(a,dot(q,a)))
-        }).find(|r| length(*r) > 0.)?;
+        let (a,x) = self.half_plane()?;
         let x = scale(x,1./length(x));
         let plane = |q: V| [dot(q,x),dot(q,a)];
         let [r,h] = self.polar(p)?;

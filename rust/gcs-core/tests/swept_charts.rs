@@ -21,7 +21,7 @@ use gcs_core::brep::trajectory::{Motion,Screw,Trajectory};
 type V = [f64;3];
 
 /// The plate x −10 to 10, y −5 to 5, z 0 to 4.
-struct Plate;
+pub(crate) struct Plate;
 
 impl Blank for Plate {
     fn inside(&self,p: V) -> bool { p[0].abs() < 10. && p[1].abs() < 5. && p[2] > 0. && p[2] < 4. }
@@ -50,10 +50,10 @@ pub(crate) fn drum_turned(angle: f64,sweep: f64) -> Brep {
 }
 
 /// The push up along z, 16 over a turn of the roll.
-fn push() -> Trajectory { Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:16.}) }
+pub(crate) fn push() -> Trajectory { Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:16.}) }
 
 /// The drum's characteristic as the dispatch walks it, pushed through the plate.
-pub(crate) fn dispatched(tool: &Brep) -> Characteristic {
+fn dispatched(tool: &Brep) -> Characteristic {
     let names = Names {sweep:"slot".into(),tool:"drum".into(),motion:"push".into()};
     let path = push();
     let s = dispatch::Sweep {tool:Ok(tool),path:&path,roll:[0.,std::f64::consts::TAU],mm:1.,names:&names,pocketed:false};
