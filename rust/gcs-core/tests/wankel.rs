@@ -87,8 +87,10 @@ fn each_planar_row_names_what_it_refuses() {
     let r = refused(&edit("some t in (0deg, 1080deg): p in housing",
                           "some t in (0deg, 720deg): p in housing"),&[]);
     assert_eq!(r.condition,admission::Condition::Period,"{r}");
-    // P5: a case too small, its wall reaching the blank as it turns
-    let r = refused(&edit("radius(R + 4 * e) rim","radius(R + e) rim"),&[]);
+    // P5: a blank too large, reaching the case's outer wall as it turns. (A case shrunk to the
+    // bore's reach is no negative control now the bore is carried exactly: its rim touches the bore
+    // at the apexes, a tangency the housing's Boolean refuses at T1 by name, #721 F1d.)
+    let r = refused(&edit("radius(R + e) blank_rim","radius(R + 4 * e) blank_rim"),&[]);
     assert_eq!(r.condition,admission::Condition::Wall,"{r}");
     assert!(r.witness.is_some());
     assert!(r.to_string().contains("planar generating class"),"{r}");
