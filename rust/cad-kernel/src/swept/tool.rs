@@ -50,14 +50,22 @@ impl Tool {
         let ([a,b],[ua,ub]) = (edge.patches,edge.ends);
         let (pa,pb) = (self.faces.get(a)?,self.faces.get(b)?);
         let h = 1e-4;
-        let inward = |u: f64| if u < 0.5 { u+h } else { u-h };
+        // into a face from its corner: from an end, along it; from a corner partway along a face (a
+        // face of one surface read once over the span its faces reach, #721 F1d), the way the face
+        // goes on there, on the tool
+        let inward = |s: &ToolSurface,u: f64,v: f64| -> Option<V> {
+            let at = |u: f64| s.at(u,v).ok().map(|p| p.position);
+            if u <= 0. || u >= 1. { return at(if u < 0.5 { u+h } else { u-h }) }
+            let (down,up) = (at((u-h).max(0.)),at((u+h).min(1.)));
+            match (down.filter(|&p| self.on(p)),up.filter(|&p| self.on(p))) { (Some(p),None) => Some(p),(None,Some(p)) => Some(p),_ => up }
+        };
         // the second face beside the corner where the first is: at the same `v` along a prism's
         // sides, and round a revolution at the first's half-plane, wherever either chart starts
         // (#721 F1d)
         let probe = |v: f64| -> Option<(V,[V;2])> {
             let at = pa.at(ua,v).ok()?.position;
             let w = match pb { ToolSurface::Revolved(s) => s.turn_of(at)?,_ => v };
-            Some((at,[pa.at(inward(ua),v).ok()?.position,pb.at(inward(ub),w).ok()?.position]))
+            Some((at,[inward(pa,ua,v)?,inward(pb,ub,w)?]))
         };
         let n = CORNER_PLACES;
         let places = (0..n).map(|k| if pa.periodic() { k as f64/n as f64 }
@@ -222,7 +230,9 @@ impl ExtrudedSurface {
 }
 
 /// The edge two adjacent patches of a profile loop share: the end `ends[i]` (0 or 1, in `u`) of
-/// patch `patches[i]`, swept — a circle round a revolution, a line along a prism.
+/// patch `patches[i]`, swept — a circle round a revolution, a line along a prism; or, on a face of
+/// revolution read once over the span its faces reach, a ring partway along its meridian (strictly
+/// between 0 and 1, #721 F1d), where another face meets it over part of the turn.
 #[derive(Clone,Copy,Debug)]
 pub struct PatchEdge {
     pub patches: [usize;2],

@@ -44,6 +44,7 @@ pub mod swept;
 pub mod offset;
 pub mod turned;
 pub mod slid;
+pub mod trochoid;
 
 use crate::util::json::Json;
 use std::sync::OnceLock;

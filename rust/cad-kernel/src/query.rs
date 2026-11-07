@@ -1220,6 +1220,7 @@ pub fn curve_domain(c: &Curve) -> Option<[f64;2]> {
         Curve::Affine(m) => { let [a,b] = curve_domain(&m.of)?; let (x,y) = (m.at[0]*a+m.at[1],m.at[0]*b+m.at[1]); [x.min(y),x.max(y)] }
         Curve::Turned(m) => { let [a,b] = m.span; [a.min(b),a.max(b)] }
         Curve::Slid(m) => { use crate::turned::Exact; let [a,b] = m.span(); [a.min(b),a.max(b)] }
+        Curve::Trochoid(m) => { let [a,b] = m.span; [a.min(b),a.max(b)] }
     })
 }
 

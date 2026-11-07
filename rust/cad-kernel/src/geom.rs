@@ -1722,6 +1722,9 @@ pub enum Curve {
     /// `slid::Slid`): one half of a closed curve read in closed form, the curve's parameter
     /// `tan(u/2)` of the angle round the torus's axis from the half's middle.
     Slid(Arc<super::slid::Slid>),
+    /// A point's path under a planar motion of turns and slides (#721 F1d, `trochoid::Trochoid`): a
+    /// sum of terms `(a + b t) e^{iωt}` in its frame's plane, the curve's parameter the motion's.
+    Trochoid(Arc<super::trochoid::Trochoid>),
 }
 
 impl Curve {
@@ -1729,11 +1732,11 @@ impl Curve {
         match self { Curve::Line {..} => "line",Curve::Circle(..) => "circle",Curve::Ellipse(..) => "ellipse",
             Curve::Traced(..) => "traced",Curve::BSpline(..) => "bspline",Curve::Iso(..) => "iso",
             Curve::Rail(..) => "rail",Curve::Rim(..) => "rim",Curve::Affine(..) => "affine",Curve::SheetCut(..) => "sheet cut",
-            Curve::Turned(..) => "turned",Curve::Slid(..) => "slid" }
+            Curve::Turned(..) => "turned",Curve::Slid(..) => "slid",Curve::Trochoid(..) => "trochoid" }
     }
     pub fn period(&self) -> Option<f64> {
         match self {
-            Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) | Curve::Slid(..) => None,
+            Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) | Curve::Slid(..) | Curve::Trochoid(..) => None,
             Curve::Turned(ref t) => t.period(),
             Curve::Rim(ref w,_) => w.period(),
             Curve::Traced(c) => c.closed.then(|| c.segments() as f64),
@@ -1765,6 +1768,7 @@ impl Curve {
             Curve::Affine(ref m) => m.d2(t),
             Curve::Turned(ref m) => m.d2(t),
             Curve::Slid(ref m) => m.d2(t),
+            Curve::Trochoid(ref m) => m.d2(t),
             Curve::Line {p,d} => (add(p,scale(d,t)),d,[0.;3]),
             Curve::Circle(f,r) => {
                 let (s,c) = t.dsin_cos();
@@ -1852,6 +1856,7 @@ impl Curve {
             Curve::Affine(ref m) => m.inverse(p),
             Curve::Turned(ref m) => m.inverse(p),
             Curve::Slid(ref m) => m.inverse(p),
+            Curve::Trochoid(ref m) => m.inverse(p),
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.datan2(x)) }
             Curve::Ellipse(f,a,b) => {
@@ -1874,7 +1879,7 @@ impl Curve {
     /// The span of a curve read exactly in a frame (`turned::Exact`: a turned contact's meridian, a
     /// slid torus's contact), none for any other.
     pub fn exact_span(&self) -> Option<[f64;2]> {
-        match self { Curve::Turned(m) => Some(m.span()),Curve::Slid(m) => Some(m.span()),_ => None }
+        match self { Curve::Turned(m) => Some(m.span()),Curve::Slid(m) => Some(m.span()),Curve::Trochoid(m) => Some(m.span()),_ => None }
     }
     /// The parameter of its point nearest `p`, refined from `t`, for a curve that refines its foot
     /// from a hint: a spline (`BSpline::refined`), and a curve read exactly in a frame (Newton,
@@ -1884,6 +1889,7 @@ impl Curve {
             Curve::BSpline(b) => Some(b.refined(p,t)),
             Curve::Turned(m) => Some(m.newton(p,t)),
             Curve::Slid(m) => Some(m.newton(p,t)),
+            Curve::Trochoid(m) => Some(m.newton(p,t)),
             _ => None,
         }
     }
@@ -1926,6 +1932,7 @@ impl Curve {
             Curve::Affine(ref m) => m.speed(),
             Curve::Turned(ref m) => m.speed(),
             Curve::Slid(ref m) => m.speed(),
+            Curve::Trochoid(ref m) => m.speed(),
         }
     }
     /// A box about the curve over `[t0, t1]`, never smaller than it: exact for a line, circle and
@@ -1966,6 +1973,7 @@ impl Curve {
             Curve::Affine(ref m) => m.bounds([t0,t1]),
             Curve::Turned(ref m) => m.bounds([t0,t1]),
             Curve::Slid(ref m) => m.bounds([t0,t1]),
+            Curve::Trochoid(ref m) => m.bounds([t0,t1]),
             Curve::Traced(ref c) => {
                 // the chords reaching the interval, so its ends' too
                 let m = c.segments();
@@ -1999,6 +2007,7 @@ impl Curve {
             Curve::Rim(ref w,s) => Curve::Rim(Arc::new(w.moved(m)),s),
             Curve::Turned(ref t) => Curve::Turned(Arc::new(t.moved(m).expect("a rigid motion keeps a frame's hand"))),
             Curve::Slid(ref t) => Curve::Slid(Arc::new(t.moved(m))),
+            Curve::Trochoid(ref t) => Curve::Trochoid(Arc::new(t.moved(m))),
             Curve::Affine(ref a) => Curve::Affine(Arc::new(super::affine::MappedCurve::new(
                 a.map.then(&super::affine::Affine::of_rigid(m)),a.of.clone(),a.at))),
         }
@@ -2015,7 +2024,7 @@ impl Curve {
             Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced {a:c.a.reflected(m)?.0,
                 b:c.b.reflected(m)?.0,pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
             // (a slid contact's points are read off its frame, which a reflection carries)
-            Curve::Affine(_) | Curve::Slid(_) => self.moved(m),
+            Curve::Affine(_) | Curve::Slid(_) | Curve::Trochoid(_) => self.moved(m),
             // (a meridian's points read its frame's `x` and `z` alone: reflected, carried)
             Curve::Turned(ref t) => match t.moved(m) {
                 Some(t) => Curve::Turned(Arc::new(t)),

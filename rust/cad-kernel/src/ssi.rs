@@ -553,6 +553,9 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
                 // a slid torus's contour (#805) carried along the slide onto the plane
                 Curve::Slid(h) => Ssi::Curves(vec![Curve::Slid(std::sync::Arc::new(h.at(lift(h.frame.o),h.contour)))]),
+                // a point's path under turns and slides (#721 F1d), its frame carried onto the plane
+                Curve::Trochoid(t) => Ssi::Curves(vec![Curve::Trochoid(std::sync::Arc::new(super::trochoid::Trochoid {
+                    frame:Frame {o:lift(t.frame.o),..t.frame},..(**t).clone()}))]),
                 _ => Ssi::Traced,
             }
         }

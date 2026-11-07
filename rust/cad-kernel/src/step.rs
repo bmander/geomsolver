@@ -109,6 +109,7 @@ impl Out {
 /// Whose curve `c` is, as a fitted curve's refusal names it.
 fn whose(c: &Curve) -> &'static str {
     match c { Curve::SheetCut(..) => "a screwed sheet's",Curve::Turned(..) => "a turned contact's",Curve::Slid(..) => "a slid torus's",
+        Curve::Trochoid(..) => "a point's path's",
         _ => "a face family's" }
 }
 
@@ -697,7 +698,8 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
             }
             // a family's rail or rim likewise, its parameter the rail's or the rim's; an affine image
             // of a curve (a rail under a shear); and a plane's cut of a screwed sheet
-            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) | Curve::Turned(..) | Curve::Slid(..) => {
+            Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) | Curve::Turned(..) | Curve::Slid(..)
+            | Curve::Trochoid(..) => {
                 fitted(o,c,e.t,whose(c))?
             }
             Curve::Traced(_) => {

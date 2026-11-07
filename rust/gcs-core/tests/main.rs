@@ -299,6 +299,7 @@ mod surface_contact;
 mod swept_closed;
 mod swept_charts;
 mod swept_dispatch;
+mod swept_partway;
 mod tool_reading;
 mod touch_curves;
 mod swept_instant;

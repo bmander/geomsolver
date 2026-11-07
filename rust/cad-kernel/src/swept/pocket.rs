@@ -92,3 +92,182 @@ impl Pocket {
         (Found {envelope,heights:checked.heights},contacts,spacing)
     }
 }
+
+/// Why a tool's B-rep, read as a stock cut by one pocket, has no planar class reading: a row its
+/// shape fails (P2, in words with a point), or its pocket's inner envelope refused (P1, P3, P4),
+/// which the solver says in the motion's words.
+#[derive(Clone,Debug)]
+pub enum Unread { Shape(Failure),Envelope(super::planar::Refusal) }
+
+/// The pocket's curve, read off the B-rep's hole loop (millimetres) in the cap's plane: its pieces,
+/// each a curve over the stretch of its parameter its edge runs (walked as the loop walks it); read
+/// at `s`, one curve's own parameter where every piece is a stretch of one curve end to end (a
+/// point's path's halves, read over its whole roll as the drawing reads it), else the `k`th piece
+/// at `s − k`. In page coordinates of `view` (model units, `mm` millimetres a unit).
+#[derive(Debug)]
+struct Hole { pieces: Vec<(crate::geom::Curve,[f64;2])>,whole: Option<[f64;2]>,view: super::planar::View,mm: f64 }
+
+impl super::planar::Section for Hole {
+    fn at(&self,s: f64) -> Option<([f64;2],[f64;2])> {
+        let (curve,t,rate) = match self.whole {
+            Some(_) => {
+                // the piece whose stretch holds `s`
+                let (c,_) = self.pieces.iter().find(|(_,[a,b])| s >= a.min(*b)-1e-12 && s <= a.max(*b)+1e-12)?;
+                (c,s,1.)
+            }
+            None => {
+                let k = (s.floor().max(0.) as usize).min(self.pieces.len()-1);
+                let (c,[a,b]) = &self.pieces[k];
+                (c,a+(b-a)*(s-k as f64),b-a)
+            }
+        };
+        let (p,d,_) = curve.d2(t);
+        let p = self.view.page(p.map(|x| x/self.mm));
+        let d = self.view.vector(d.map(|x| x*rate/self.mm));
+        (p.iter().chain(&d).all(|x| x.is_finite())).then_some((p,d))
+    }
+}
+
+/// The pocket's material in its plane: the signed distance to its loop's chords, below nought within.
+#[derive(Debug)]
+struct Ring { points: Vec<[f64;2]> }
+
+impl Ring {
+    fn value(&self,p: [f64;2]) -> f64 {
+        let n = self.points.len();
+        let (mut least,mut inside) = (f64::INFINITY,false);
+        for i in 0..n {
+            let (a,b) = (self.points[i],self.points[(i+1)%n]);
+            let (dx,dy) = (b[0]-a[0],b[1]-a[1]);
+            let l2 = dx*dx+dy*dy;
+            let t = if l2 > 0. { (((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2).clamp(0.,1.) } else { 0. };
+            least = least.min((p[0]-a[0]-t*dx).dhypot(p[1]-a[1]-t*dy));
+            if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < a[0]+(p[1]-a[1])*dx/dy { inside = !inside }
+        }
+        if inside { -least } else { least }
+    }
+}
+
+impl super::planar::Region for Ring { fn value(&self,p: [f64;2]) -> f64 { Ring::value(self,p) } }
+
+/// The stock's material: the tool's own boundary's, with its pocket filled — the pocket's prism,
+/// its loop's region grown by `grown` (past its curve, which its chords cut inside of, so that the
+/// curve is the stock's interior) over its span along the normal — united (the lesser of the two).
+#[derive(Debug)]
+struct Filled { tool: super::read::Boundary,ring: Ring,grown: f64,view: super::planar::View,n: V,span: [f64;2] }
+
+impl Material for Filled {
+    fn value(&self,p: V) -> f64 {
+        let h = dot(p,self.n);
+        let prism = (self.ring.value(self.view.page(p))-self.grown).max(self.span[0]-h).max(h-self.span[1]);
+        self.tool.value(p).min(prism)
+    }
+}
+
+impl Pocket {
+    /// **A tool's B-rep read as a stock cut by one pocket** (#721 F1d): `b` (millimetres, `mm` a
+    /// model unit) two caps, planes square to one direction each bounded by its outline and one
+    /// hole, every other face standing along that direction — a plane, a cylinder or a sweep of a
+    /// curve along it — so the tool is its outline's prism less its hole's. The pocket is the hole
+    /// read off the B-rep, exactly where the B-rep carries its curve exactly (a point's path under
+    /// turns, `geom::Curve::Trochoid`), its inner envelope under `path` over `roll` read
+    /// (`InnerEnvelope::new`); the stock's material the tool's boundary's with the pocket filled;
+    /// both prisms spanning the caps. `names` the stock's and the pocket's, as a refusal says them.
+    /// None where the B-rep is no such tool (the class is not asked); a refusal by row where its
+    /// envelope is none.
+    pub fn read(b: &crate::topo::Brep,path: &crate::trajectory::Trajectory,roll: [f64;2],mm: f64) -> Option<Result<Pocket,Unread>> {
+        use crate::geom::{Curve,Surface};
+        use crate::recipe::named_parts;
+        use crate::topo::EdgeCurve;
+        // the caps: planes with an outline and one hole, square to one direction
+        let caps: Vec<usize> = (0..b.faces.len()).filter(|&fi| matches!(b.faces[fi].surface,Surface::Plane(_)) && b.faces[fi].loops.len() == 2)
+            .collect();
+        let [c0,c1] = caps[..] else { return None };
+        let normal = |fi: usize| match &b.faces[fi].surface { Surface::Plane(f) => f.z,_ => unreachable!("a plane") };
+        let n = normal(c0);
+        if norm(cross(n,normal(c1))) > 1e-9 { return None }
+        // every other face stands along it
+        let along = |z: V| norm(cross(z,n)) <= 1e-9;
+        for (fi,f) in b.faces.iter().enumerate() {
+            if fi == c0 || fi == c1 { continue }
+            let standing = match &f.surface {
+                Surface::Plane(fr) => dot(fr.z,n).abs() <= 1e-9,
+                Surface::Cylinder(fr,_) | Surface::Extrusion(fr,_) => along(fr.z),
+                _ => false,
+            };
+            if !standing { return None }
+        }
+        // the hole: the cap's loop of the lesser reach across the caps' normal, its edges sampled
+        // along their spans (a closed curve is one edge on one vertex), its curves as it walks them
+        let face = &b.faces[c0];
+        let (u,v) = crate::util::space::across(n);
+        let size = |l: &Vec<crate::topo::Coedge>| {
+            let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+            for c in l {
+                let e = &b.edges[c.edge as usize];
+                for k in 0..=64 {
+                    let p = e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/64.,&b.vertices);
+                    for (j,d) in [u,v].into_iter().enumerate() { lo[j] = lo[j].min(dot(p,d)); hi[j] = hi[j].max(dot(p,d)) }
+                }
+            }
+            (hi[0]-lo[0]).dhypot(hi[1]-lo[1])
+        };
+        let hole = if size(&face.loops[0]) <= size(&face.loops[1]) { &face.loops[0] } else { &face.loops[1] };
+        let mut pieces: Vec<(Curve,[f64;2])> = Vec::new();
+        for c in hole {
+            let e = &b.edges[c.edge as usize];
+            let EdgeCurve::Curve(curve) = &e.curve else { return None };
+            pieces.push((curve.clone(),if c.reversed { [e.t[1],e.t[0]] } else { e.t }));
+        }
+        // read as one curve's parameter where its pieces are stretches of one curve end to end
+        let one = pieces.windows(2).all(|w| w[0].0 == w[1].0) && {
+            let mut spans: Vec<[f64;2]> = pieces.iter().map(|(_,[a,b])| [a.min(*b),a.max(*b)]).collect();
+            spans.sort_by(|x,y| x[0].total_cmp(&y[0]));
+            spans.windows(2).all(|w| (w[0][1]-w[1][0]).abs() <= 1e-9*(1.+w[0][1].abs()))
+        };
+        let whole = one.then(|| pieces.iter().fold([f64::INFINITY,f64::NEG_INFINITY],|[lo,hi],(_,[a,b])| [lo.min(a.min(*b)),hi.max(a.max(*b))]));
+        // the cap's plane in model units, its page its own coordinates
+        let o = b.vertices[b.edges[hole[0].edge as usize].v[0] as usize].p.map(|x| x/mm);
+        // (laid as the curve's own frame is where it is a point's path, so the page turns as the
+        // drawing's did; else square to the caps)
+        let (x,y) = pieces.iter().find_map(|(c,_)| match c { Curve::Trochoid(t) => Some((t.frame.x,t.frame.y)),_ => None })
+            .unwrap_or_else(|| crate::util::space::across(n));
+        let view = super::planar::View {o,cols:[x,y],at:[-dot(x,o),-dot(y,o)],rows:[x,y]};
+        let height = |fi: usize| dot(b.vertices[b.edges[b.faces[fi].loops[0][0].edge as usize].v[0] as usize].p,n)/mm;
+        let (h0,h1) = (height(c0),height(c1));
+        let span = [h0.min(h1),h0.max(h1)];
+        // the pocket's material in its plane: its loop's chords, fine
+        let points: Vec<[f64;2]> = pieces.iter().flat_map(|(c,[a,b])| (0..2048).map(move |k| c.point(a+(b-a)*k as f64/2048.)))
+            .map(|p| view.page(p.map(|v| v/mm))).collect();
+        // how far the loop's curve stands outside its chords, at their middles: what the stock's
+        // fill is grown by, so that the pocket's curve itself is within the stock (the rotor's apex
+        // touches its bore, P5)
+        let middles: Vec<[f64;2]> = pieces.iter().flat_map(|(c,[a,b])| (0..2048).map(move |k| c.point(a+(b-a)*(k as f64+0.5)/2048.)))
+            .map(|p| view.page(p.map(|v| v/mm))).collect();
+        let sag = (0..points.len()).map(|k| {
+            let (p,q,m) = (points[k],points[(k+1)%points.len()],middles[k]);
+            let (dx,dy) = (q[0]-p[0],q[1]-p[1]);
+            ((m[0]-p[0])*dy-(m[1]-p[1])*dx).abs()/dx.dhypot(dy).max(1e-300)
+        }).fold(0_f64,f64::max);
+        let scale = points.iter().fold(0_f64,|m,p| m.max(p[0].dhypot(p[1]))).max(1e-300);
+        // the stock's and the pocket's names: the outline's walls' solid and the hole's
+        let wall = |l: &Vec<crate::topo::Coedge>| l.iter().find_map(|c| b.uses()[c.edge as usize].iter().map(|u| u.0)
+            .find(|&g| g != c0 && g != c1).map(|g| named_parts(&b.faces[g].name).0.to_string())).unwrap_or_default();
+        let outline = if std::ptr::eq(hole,&face.loops[0]) { &face.loops[1] } else { &face.loops[0] };
+        let names = [wall(outline),wall(hole)];
+        let ring = Ring {points:points.clone()};
+        let source = Hole {pieces,whole,view,mm};
+        let [s0,s1] = whole.unwrap_or([0.,source.pieces.len() as f64]);
+        let envelope = match InnerEnvelope::new(Arc::new(source),view,path.clone(),&ring,[s0,s1],scale,roll) {
+            Ok(envelope) => envelope,
+            Err(r) => return Some(Err(Unread::Envelope(r))),
+        };
+        let tol = 1e-7*(1.+b.size());
+        let stock = Filled {tool:super::read::Boundary::new(b,mm,tol,&b.uses()),ring,grown:2.*sag+1e-9*scale,view,n,span};
+        let rolls = (((roll[1]-roll[0])/std::f64::consts::TAU*360.).ceil() as usize).max(36);
+        let backs = (0..=rolls).map(|k| path.at(roll[0]+(roll[1]-roll[0])*k as f64/rolls as f64).map(|m| m.inverse()))
+            .collect::<Result<Vec<_>,_>>();
+        let backs = match backs { Ok(b) => b,Err(e) => return Some(Err(Unread::Shape((Row::Plane,e.msg,None)))) };
+        Some(Ok(Pocket {envelope,u:x,n,spans:[span,span],names,stock:Arc::new(stock),backs}))
+    }
+}

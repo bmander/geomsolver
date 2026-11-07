@@ -356,3 +356,40 @@ fn every_examples_cutters_of_revolution_section_from_their_boundaries() {
     eprintln!("{held} cutters of revolution sectioned alike, {refused} not sectioned from the B-rep");
     assert!(held >= 40 && refused == 0,"{held} held, {refused} refused");
 }
+
+/// **The Wankel's bore is carried into its B-rep exactly** (#721 F1d): the bore is the apex's path
+/// under the shaft's turn seen from the housing's — a point's envelope under turns — so the housing's
+/// recipe writes it as that path's terms (`generate::point_path`, a `trochoid` edge in two halves),
+/// and its B-rep's chamber wall is the extrusion of that curve (`geom::Curve::Trochoid`), not a fit:
+/// the curve's points are the drawing's bore's at every roll to 1e-9 mm.
+#[test]
+fn the_wankels_bore_is_carried_into_its_brep_exactly() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    let e = fixtures::example("wankel/wankel.sv").expect("the Wankel");
+    let mut sk = e.sketch.clone();
+    gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
+    let swept = sk.solids.iter().position(|s| matches!(s.def,SolidDef::Swept {..})).expect("a sweep");
+    let SolidDef::Swept {source,..} = &sk.solids[swept].def else { unreachable!() };
+    let b = gcs_core::brep::recipe::build(&cad::recipe(&sk,*source as usize).unwrap()).unwrap();
+    let walls: Vec<&gcs_core::brep::trochoid::Trochoid> = b.faces.iter().filter_map(|f| match &f.surface {
+        Surface::Extrusion(_,c) => match &**c { Curve::Trochoid(t) => Some(&**t),_ => None },
+        _ => None,
+    }).collect();
+    assert!(!walls.is_empty(),"the chamber's wall an extrusion of the bore's path");
+    let bore = e.map.ent_named("bore").unwrap().i();
+    let (a,b_) = sk.curve_domain(bore);
+    let basis = sk.curve_view(bore).map_or_else(gcs_core::plane::Basis::page,|v| sk.basis(v));
+    let mm = cad::millimetres(&sk);
+    let mut worst = 0f64;
+    for k in 0..=200 {
+        let t = a+(b_-a)*k as f64/200.;
+        let (x,y) = sk.curve_point(bore,t);
+        let drawn = basis.lift(x,y).map(|v| v*mm);
+        let near = walls.iter().map(|w| { let p = w.point(t.clamp(w.span[0].min(w.span[1]),w.span[0].max(w.span[1])));
+            // (each half its own stretch; the other's point is far)
+            let q = [p[0],p[1],drawn[2]]; norm(sub(q,drawn)) }).fold(f64::INFINITY,f64::min);
+        worst = worst.max(near);
+    }
+    eprintln!("the bore's path within {worst:.3e} mm of the drawing's at 201 rolls");
+    assert!(worst <= 1e-9,"{worst}");
+}

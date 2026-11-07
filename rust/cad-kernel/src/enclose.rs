@@ -274,6 +274,7 @@ impl Enclosed<1> for Curve {
             }
             Curve::Turned(m) => exact(&**m,t),
             Curve::Slid(m) => exact(&**m,t),
+            Curve::Trochoid(m) => exact(&**m,t),
         }
     }
 }

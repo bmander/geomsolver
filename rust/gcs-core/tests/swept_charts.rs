@@ -32,7 +32,10 @@ impl Blank for Plate {
 /// A drum of radius 2 lying along x, 8 long about (0, 0, −6), its flat ends rounded into its side
 /// by quarter rounds of radius 0.5 (`closed_characteristics::bull_nosed_punch`'s), its profile laid
 /// in the half-plane `angle` radians round x from +z.
-fn drum(angle: f64) -> Brep {
+pub(crate) fn drum(angle: f64) -> Brep { drum_turned(angle,std::f64::consts::TAU) }
+
+/// `drum`'s profile laid `angle` round, turned through `sweep` from there.
+pub(crate) fn drum_turned(angle: f64,sweep: f64) -> Brep {
     let (s,c) = angle.sin_cos();
     let d = [0.,-s,c];
     let at = |a: f64,r: f64| -> V { [a,r*d[1],-6.+r*d[2]] };
@@ -43,17 +46,17 @@ fn drum(angle: f64) -> Brep {
         span:Some(if out > 0. { [0.,std::f64::consts::FRAC_PI_2] } else { [-std::f64::consts::FRAC_PI_2,0.] })};
     let profile = Profile {origin:at(0.,0.),normal,loops:vec![vec![line(at(-4.,0.),at(-4.,1.5)),round(-3.5,-1.),
         line(at(-3.5,2.),at(3.5,2.)),round(3.5,1.),line(at(4.,1.5),at(4.,0.)),line(at(4.,0.),at(-4.,0.))]],names:Vec::new()};
-    revolve(&profile,[0.,0.,-6.],[1.,0.,0.],std::f64::consts::TAU).unwrap()
+    revolve(&profile,[0.,0.,-6.],[1.,0.,0.],sweep).unwrap()
 }
 
 /// The push up along z, 16 over a turn of the roll.
 fn push() -> Trajectory { Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:0.,advance:16.}) }
 
 /// The drum's characteristic as the dispatch walks it, pushed through the plate.
-fn dispatched(tool: &Brep) -> Characteristic {
+pub(crate) fn dispatched(tool: &Brep) -> Characteristic {
     let names = Names {sweep:"slot".into(),tool:"drum".into(),motion:"push".into()};
     let path = push();
-    let s = dispatch::Sweep {tool:Ok(tool),path:&path,roll:[0.,std::f64::consts::TAU],mm:1.,names:&names,pocket:None};
+    let s = dispatch::Sweep {tool:Ok(tool),path:&path,roll:[0.,std::f64::consts::TAU],mm:1.,names:&names,pocketed:false};
     let a = dispatch::sweep(&s,&Plate,&Ask {poses:&[Motion::identity()],revolved:None,sampling:Sampling::default(),margin:1e-6})
         .unwrap_or_else(|r| panic!("{:?}: {:?}",r.row,r.seen));
     let Class::ConstantTwist(found) = a.class else { panic!("the constant twist's class: {:?}",a.class) };
@@ -84,7 +87,7 @@ fn apart(a: &Characteristic,b: &Characteristic) -> (f64,f64) {
 
 /// Two walks of one tool's characteristic held to one curve: each closed, creased alike, and each
 /// node within a millionth of a step of the other's polyline.
-fn alike(what: &str,a: &Characteristic,b: &Characteristic) {
+pub(crate) fn alike(what: &str,a: &Characteristic,b: &Characteristic) {
     let (gap,step) = apart(a,b);
     eprintln!("{what}: {} nodes against {}, {gap:.3e} apart, steps up to {step:.3e}",b.nodes.len(),a.nodes.len());
     assert_eq!((a.closed,a.sharp().len()),(b.closed,b.sharp().len()),"{what}: closed, and its creases");

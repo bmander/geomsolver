@@ -317,6 +317,52 @@ impl RevolvedSurface {
         let h = dot(q,a);
         Some([length(sub(q,scale(a,h))),h])
     }
+
+    /// **The meridian's parameter at the ring through `p`** (#721 F1d): `u` such that `p` is
+    /// turned from the meridian's point there, read on the meridian's line or circle in the
+    /// half-plane as `(radius, height)` and so past its ends too (below nought or above one), the
+    /// nearest of a circle's turns to the meridian's middle. None for a conic's meridian, or where
+    /// the meridian has no half-plane (it lies along the axis).
+    pub fn meridian_param(&self,p: V) -> Option<f64> {
+        let a = crate::trajectory::normalized(self.axis)?;
+        let x = [0.5,0.,1.].into_iter().filter_map(|u| self.full().at(u,0.).ok()).map(|s| {
+            let q = sub(s.position,self.origin); sub(q,scale(a,dot(q,a)))
+        }).find(|r| length(*r) > 0.)?;
+        let x = scale(x,1./length(x));
+        let plane = |q: V| [dot(q,x),dot(q,a)];
+        let [r,h] = self.polar(p)?;
+        match self.meridian {
+            Meridian::Line {start,delta} => {
+                let (s,d) = (plane(sub(start,self.origin)),plane(delta));
+                let dd = d[0]*d[0]+d[1]*d[1];
+                (dd > 0.).then(|| ((r-s[0])*d[0]+(h-s[1])*d[1])/dd)
+            }
+            Meridian::Round {center,a:ca,b:cb,sweep} => {
+                let (c,pa,pb) = (plane(sub(center,self.origin)),plane(ca),plane(cb));
+                let d = [r-c[0],h-c[1]];
+                if sweep == 0. { return None }
+                let t = (d[0]*pb[0]+d[1]*pb[1]).datan2(d[0]*pa[0]+d[1]*pa[1])/sweep;
+                let period = TAU/sweep.abs();
+                Some(t-((t-0.5)/period).round()*period)
+            }
+            Meridian::Conic {..} => None,
+        }
+    }
+
+    /// **The same surface over `[lo, hi]` of its meridian's parameter** (#721 F1d), past its ends
+    /// where they lie past nought or one, its new `u` running from `lo` to `hi`: the faces a Boolean
+    /// cuts from one surface read once over the span they reach. None for a conic's meridian.
+    pub fn over(&self,[lo,hi]: [f64;2]) -> Option<Self> {
+        let meridian = match self.meridian {
+            Meridian::Line {start,delta} => Meridian::Line {start:add(start,scale(delta,lo)),delta:scale(delta,hi-lo)},
+            Meridian::Round {center,a,b,sweep} => {
+                let (s,c) = (sweep*lo).dsin_cos();
+                Meridian::Round {center,a:add(scale(a,c),scale(b,s)),b:sub(scale(b,c),scale(a,s)),sweep:sweep*(hi-lo)}
+            }
+            Meridian::Conic {..} => return None,
+        };
+        Some(Self {meridian,..self.clone()})
+    }
 }
 
 #[derive(Clone,Debug)]

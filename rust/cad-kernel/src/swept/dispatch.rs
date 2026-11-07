@@ -6,8 +6,8 @@
 //!    ball's tube; one a row refuses is refused here. A screw's tube that would meet itself is the
 //!    constant twist's.
 //! 2. **The planar class** (P1–P5): a stock cut by one pocket under a motion turning its plane in
-//!    itself, read by the drawing until the kernel reads its pocket's curve from the B-rep, which
-//!    fits it (`Sweep::pocket`, #721 F1d). Every placement is asked; what it refuses stands.
+//!    itself, its pocket's curve read from the tool's B-rep, which carries a point's path exactly
+//!    (`Pocket::read`, #721 F1d). Every placement is asked; what it refuses stands.
 //! 3. **The planar subtraction class** (P1, Q1–Q4): under one constant twist, a tool standing along
 //!    a direction whose square plane the twist keeps (`subtraction::Subtraction::read`).
 //! 4. **The constant twist** (S1–S4) under a screw, a turn or a slide, **the generating class**
@@ -65,6 +65,12 @@ impl From<super::constant_twist::Row> for Row {
     }
 }
 
+impl From<super::planar::Row> for Row {
+    fn from(row: super::planar::Row) -> Row {
+        match row { super::planar::Row::Plane => Row::Plane,super::planar::Row::Period => Row::Period,super::planar::Row::Envelope => Row::Envelope }
+    }
+}
+
 impl From<canal::Row> for Row {
     fn from(row: canal::Row) -> Row { match row { canal::Row::Curvature => Row::Curvature,canal::Row::Return => Row::Return } }
 }
@@ -78,7 +84,9 @@ pub enum Asked { Generating,ConstantTwist,Planar,Subtraction,Canal }
 /// rows, `canal::Refusal`, and the ball's radius) or a motion with no contact chart (`Uncharted`),
 /// which the drawing says in its own.
 #[derive(Clone,Debug)]
-pub enum Seen { Words(String),Canal(canal::Refusal,f64),Uncharted(Uncharted) }
+pub enum Seen { Words(String),Canal(canal::Refusal,f64),Uncharted(Uncharted),
+    /// The pocket's inner envelope refused (#721 F1d: read from the B-rep), said in the motion's words.
+    Envelope(super::planar::Refusal) }
 
 /// A sweep refused: the class asked, the row, what was seen, and a point of the body (model units)
 /// where, when there is one.
@@ -93,11 +101,12 @@ impl Refused {
 
 /// A sweep as the kernel reads it: its tool's B-rep (millimetres; or why the drawing has none, the
 /// words T1 refuses a sweep with where no class reads the tool otherwise), its trajectory and its roll
-/// (model units, `mm` a model unit), the names a refusal says, and — read by the drawing until the
-/// kernel reads it from the B-rep (#721 F1d) — the tool as a stock cut by one pocket, or why the
-/// planar class refuses it as one, where the drawing writes it so.
+/// (model units, `mm` a model unit), the names a refusal says, and whether the drawing writes the
+/// tool as a stock cut by one pocket (`pocketed`): the planar class reads the pocket from the tool's
+/// B-rep (`Pocket::read`, #721 F1d) wherever it is one, and its refusal stands where the drawing
+/// writes the tool so; elsewhere a planar refusal leaves the sweep to the other classes.
 pub struct Sweep<'a> { pub tool: Result<&'a Brep,&'a str>,pub path: &'a Trajectory,pub roll: [f64;2],pub mm: f64,pub names: &'a Names,
-    pub pocket: Option<&'a Result<Pocket,pocket::Failure>> }
+    pub pocketed: bool }
 
 /// The blank a sweep cuts, in the body's frame (model units): whether a point is in it, the box its
 /// material's support stands in, and the box its own boundary stands in (each least and greatest
@@ -165,21 +174,39 @@ pub fn sweep(s: &Sweep,blank: &dyn Blank,ask: &Ask) -> Result<Admitted,Refused> 
             Ok(None) | Err(_) => {}
         }
     }
-    // the planar class: every placement, the blank boxed by its own boundary
-    if let Some(pocket) = s.pocket {
+    // the planar class: the pocket read from the tool's B-rep (#721 F1d), every placement, the blank
+    // boxed by its own boundary; its refusal standing where the drawing writes the tool as a stock
+    // cut by one pocket, and leaving the sweep to the other classes elsewhere
+    let planar = || -> Option<Result<Admitted,Refused>> {
         let at = |pose: Motion| move |(row,m,w): pocket::Failure| Refused::said(Asked::Planar,(row,m,w.map(|p| pose.point(p))));
-        let pocket = pocket.as_ref().map_err(|f| at(first)(f.clone()))?;
+        let pocket = match Pocket::read(s.tool.ok()?,s.path,s.roll,s.mm) {
+            None if s.pocketed => return Some(Err(at(first)((Row::Prisms,format!("`{}` is read by its boundary, and is no stock \
+                cut by one pocket: two caps square to one direction, each its outline and one hole, every other face standing \
+                along it",s.names.tool),None)))),
+            None => return None,
+            Some(Ok(pocket)) => pocket,
+            Some(Err(pocket::Unread::Shape(f))) => return Some(Err(at(first)(f))),
+            Some(Err(pocket::Unread::Envelope(r))) => return Some(Err(Refused {asked:Asked::Planar,row:r.seen.row().into(),
+                witness:None,seen:Seen::Envelope(r)})),
+        };
         let side = ask.sampling.coarse_rows.max(8)*2;
         let mut checked = None;
         for &pose in poses {
             let inside = move |p: V| blank.inside(pose.point(p));
-            let c = pocket.check(pose,&inside,blank.boxed(),side,ask.margin).map_err(at(pose))?;
-            checked.get_or_insert(c);
+            match pocket.check(pose,&inside,blank.boxed(),side,ask.margin) {
+                Ok(c) => { checked.get_or_insert(c); }
+                Err(f) => return Some(Err(at(pose)(f))),
+            }
         }
         let checked = checked.expect("a placement");
         let (found,contacts,spacing) = pocket.found(&checked);
-        return Ok(Admitted {contacts,spacing,samples:checked.samples,basis:[checked.rows,checked.columns],
-            ..Admitted::whole(Class::Planar(Box::new(found)),poses.len())})
+        Some(Ok(Admitted {contacts,spacing,samples:checked.samples,basis:[checked.rows,checked.columns],
+            ..Admitted::whole(Class::Planar(Box::new(found)),poses.len())}))
+    };
+    match planar() {
+        Some(Ok(admitted)) => return Ok(admitted),
+        Some(Err(refused)) if s.pocketed => return Err(refused),
+        _ => {}
     }
     let twist = twist_of(s.path);
     let asked = if twist.is_some() { Asked::ConstantTwist } else { Asked::Generating };

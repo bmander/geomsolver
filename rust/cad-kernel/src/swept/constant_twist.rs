@@ -24,7 +24,10 @@
 //! the normals between its faces' (a prism's corner, its ruling; a cap's rim or a drafted crease,
 //! its line, stepped onto partway along a side, #684 AE, AG). Where each piece meets the next is
 //! read once from the pieces, before any pass (`Junctions`), and each step goes on along its piece
-//! or across a junction (`Walker::step`). Where both faces' roots meet the corner at one point, or
+//! or across a junction (`Walker::step`): at a piece's end, or at a corner partway along a face of
+//! revolution's meridian where the face goes no further at the walk's point (`Walker::partway`,
+//! #721 F1d), and from a prism's side onto a face of revolution whose ring its rim lies along and
+//! back (`Junction::Sides`). Where both faces' roots meet the corner at one point, or
 //! a fan it runs round stands at one point, every normal of the fan is in contact there: it steps
 //! straight across, the fan standing there in no steps, and the sheet is creased along that
 //! point's path, a mark on the node there (`Node::sharp`, `Characteristic::sharp`, #684 V). Where
@@ -599,7 +602,8 @@ impl Characteristic {
         if let Some(found) = along_axis(contacts,pieces,&screw,motion,ask,scale,tolerance) { return found }
         // S1 of a prism: no ruling in contact all along it where its path enters the blank
         rulings(pieces,n,motion,&enters,family)?;
-        let coarse = walker.pass((0..pieces.len()).map(|k| crossed(&pieces[k],(0..=n).map(|i| i as f64/n as f64).collect()))
+        let cut = |k: usize,stations: Vec<f64>| cut_at(&walker.junctions.along[k],stations);
+        let coarse = walker.pass((0..pieces.len()).map(|k| cut(k,crossed(&pieces[k],(0..=n).map(|i| i as f64/n as f64).collect())))
             .collect(),None)?;
         let mut samples = coarse.samples();
         let reached = coarse.order.iter().filter(|&&x| coarse.root(x).reach.is_some()).count();
@@ -628,7 +632,7 @@ impl Characteristic {
                     let count = ((length/step).ceil() as usize).max(((hi-lo)*n as f64).round() as usize).max(2);
                     (0..=count).map(|i| lo+(hi-lo)*i as f64/count as f64).collect()
                 }
-            }).enumerate().map(|(k,stations)| crossed(&pieces[k],stations)).collect();
+            }).enumerate().map(|(k,stations)| cut(k,crossed(&pieces[k],stations))).collect();
             let fine = walker.pass(stations,Some(&coarse.sides))?;
             samples += fine.samples();
             fine
@@ -1102,6 +1106,19 @@ fn crossed(piece: &Piece,mut stations: Vec<f64>) -> Vec<f64> {
     stations
 }
 
+/// `stations` with the corners partway along the piece `along` is of among them (#721 F1d), where
+/// they lie within the stretch the stations span: the walk stands on each, to read the corner.
+fn cut_at(along: &Along,mut stations: Vec<f64>) -> Vec<f64> {
+    let (Some(&lo),Some(&hi)) = (stations.first(),stations.last()) else { return stations };
+    for &(u,_) in along.cuts.iter().filter(|&&(u,_)| u >= lo && u <= hi) {
+        stations.retain(|&s| (s-u).abs() > CROSSING_GAP);
+        stations.push(u);
+    }
+    stations.sort_by(f64::total_cmp);
+    stations.dedup();
+    stations
+}
+
 /// How near a station stands to a crossing to give way to it (`crossed`).
 const CROSSING_GAP: f64 = 1e-9;
 
@@ -1251,6 +1268,11 @@ enum Junction {
     /// Onto a prism's side, its piece, partway along it, at the station whose root is the walk's
     /// point, going on the way its root does (#684 AE, AG); else the walk ends (`OFF_FAN`).
     Side(usize),
+    /// From the ring of a face of revolution a prism's side's rim lies along (#721 F1d): onto the
+    /// first of these lined rulings (each its piece and end) ending at the walk's point, else the
+    /// first of these sides whose root is the walk's point, partway along it; else the walk ends
+    /// (`OFF_FAN`).
+    Sides { lines: Vec<(usize,f64)>,sides: Vec<usize> },
     /// Onto a flat face's line, its piece, from whichever of its ends is the walk's point (#684 O).
     Flat(usize),
     /// Off a flat face's line: onto the line of the first of `flats` beside it that ends at the
@@ -1272,9 +1294,11 @@ enum Junction {
 /// station along this one (#684 X); for a prism's side, the rims and creases its root crosses onto
 /// where it reaches a ruling's end, each its piece and the end that meets the side (#684 AE, AG;
 /// none for any other piece); and why the walk ends where the piece's root runs off each end of its
-/// ruling.
+/// ruling; and, for a face of revolution, the corners partway along its meridian (#721 F1d: a
+/// face of one surface read once over the span its faces reach), each its station and the junction
+/// across it where the face goes no further at the walk's point.
 #[derive(Clone,Debug)]
-struct Along { rounds: Vec<(usize,f64)>,rims: Vec<(usize,f64)>,off: [&'static str;2] }
+struct Along { rounds: Vec<(usize,f64)>,rims: Vec<(usize,f64)>,off: [&'static str;2],cuts: Vec<(f64,Junction)> }
 
 /// Every piece's junctions: at each of its ends (its first station's, 0, and its last's, 1), and
 /// along it.
@@ -1293,6 +1317,23 @@ impl Junctions {
         let face = |patch: usize| pieces.iter().position(|p| p.patch() == Some(patch));
         // the rims and creases side `patch` runs to, each with the end of it that meets the side
         let rims = |patch: usize| -> Vec<(usize,f64)> { pieces.iter().enumerate().filter_map(|(r,p)| p.rim_of(patch).map(|end| (r,end)))
+            .collect() };
+        // the faces of revolution whose ring at an end of their meridian a strip's rim lies along,
+        // each its piece and that end, and the strips whose rim lies along a face's ring at its end
+        // `end`: where a prism's side meets a face of revolution along a circle, the walk crosses
+        // from the one to the other (#721 F1d: the corner between a strip and a revolution)
+        let rim_on = |strip: usize,s: &RevolvedSurface,u: f64| -> bool {
+            let (Some(ToolSurface::Extruded(e)),Ok(ring)) = (contacts.patches().get(strip),s.at(u,0.)) else { return false };
+            let Some(want) = s.polar(ring.position) else { return false };
+            [0.,1.].into_iter().any(|v| (0..=4).all(|x| e.at(x as f64/4.,v).ok().and_then(|p| s.polar(p.position))
+                .is_some_and(|q| (q[0]-want[0]).abs() <= 1e-7*(1.+want[0].abs()) && (q[1]-want[1]).abs() <= 1e-7*(1.+want[1].abs()))))
+        };
+        let rings_of = |strip: usize| -> Vec<(usize,f64)> { pieces.iter().enumerate().filter_map(|(k,p)| match p {
+            Piece::Face(_,s) => [0.,1.].into_iter().find(|&u| rim_on(strip,s,u)).map(|u| (k,u)),
+            _ => None,
+        }).collect() };
+        // (the strips' patches)
+        let strips_on = |s: &RevolvedSurface,end: f64| -> Vec<usize> { (0..contacts.patches().len()).filter(|&patch| rim_on(patch,s,end))
             .collect() };
         // both ends of each piece `keep` picks
         let both = |keep: &dyn Fn(&Piece) -> bool| -> Vec<(usize,f64)> { pieces.iter().enumerate().filter(|(_,p)| keep(p))
@@ -1316,7 +1357,10 @@ impl Junctions {
                     } },
                 // a lined side's ruling: off either end, at a cap or a crease, onto the fan of the rim or
                 // the crease its side meets there (#684 AF)
-                Piece::Line(Line {side:Some(patch),..}) => return Junction::Onto(rims(*patch),OVER_CAP),
+                Piece::Line(Line {side:Some(patch),..}) => return Junction::Onto(rims(*patch).into_iter().chain(rings_of(*patch)).collect(),OVER_CAP),
+                // a silhouette ruling of a side: off either end onto a face of revolution whose ring
+                // the side's rim lies along there (#721 F1d), else over a cap
+                Piece::Line(Line {cap:None,side:None,of:Some(patch),..}) => return Junction::Onto(rings_of(*patch),SILHOUETTE_OVER_CAP),
                 // a cap's contact line: off either end onto the fan of the rim it meets there
                 Piece::Line(Line {cap:Some(c),..}) => return Junction::Onto(pieces.iter().enumerate()
                     .filter(|(_,p)| matches!(p,Piece::Ruled(Ruled {ruling:Ruling::Rim {across:Across::Cap(d),..},..}) if d == c))
@@ -1342,7 +1386,16 @@ impl Junctions {
             let Some(patch) = pieces[k].patch() else { return Junction::End(SILHOUETTE_OVER_CAP) };
             // across the edge this end of the face shares with its neighbour in the profile
             let Some((edge,e,s)) = contacts.edges().iter().enumerate().find_map(|(m,e)| (0..2).find(|&s| e.patches[s] == patch && e.ends[s] == end)
-                .map(|s| (m,e,s))) else { return Junction::End("reaches the end of the tool's profile") };
+                .map(|s| (m,e,s))) else {
+                // onto a prism's side whose rim lies along this end's ring, at its root here
+                let strips = match &pieces[k] { Piece::Face(_,s) => strips_on(s,end),_ => Vec::new() };
+                // (a lined side's rulings in contact all along them, #684 AF, or a silhouette's)
+                let lines = both(&|p| matches!(p,Piece::Line(Line {cap:None,of:Some(q),..}) if strips.contains(q)));
+                let sides: Vec<usize> = pieces.iter().enumerate().filter(|(_,p)| matches!(p,Piece::Ruled(Ruled {ruling:Ruling::Side {patch,..},..})
+                    if strips.contains(patch))).map(|(r,_)| r).collect();
+                if lines.is_empty() && sides.is_empty() { return Junction::End("reaches the end of the tool's profile") }
+                return Junction::Sides {lines,sides}
+            };
             let fan = pieces.iter().position(|p| p.edge() == Some(edge));
             let Some(next) = face(e.patches[1-s]) else { return Junction::End(JUMPS) };
             // onto a flat face the motion keeps in its own plane: a sharp edge along this point's path (#684 O)
@@ -1357,11 +1410,23 @@ impl Junctions {
             }).collect();
             // a side's root running off its rulings: over a cap, or across a crease where its halves meet
             let (rims,off) = match piece {
-                Piece::Ruled(Ruled {ruling:Ruling::Side {patch,..},..}) => (rims(*patch),[0,1].map(|end|
+                Piece::Ruled(Ruled {ruling:Ruling::Side {patch,..},..}) => (rims(*patch).into_iter().chain(rings_of(*patch)).collect(),[0,1].map(|end|
                     if contacts.creases().iter().any(|crease| crease[1-end] == *patch) { OVER_CREASE } else { piece.off() })),
                 _ => (Vec::new(),[piece.off();2]),
             };
-            Along {rounds,rims,off}
+            // a face's corners partway along its meridian: across each onto the face beyond, round
+            // the corner's fan where there is one, or onto a flat's line
+            let cuts = match piece {
+                Piece::Face(patch,_) => contacts.edges().iter().enumerate().filter_map(|(m,e)| {
+                    let s = (0..2).find(|&s| e.patches[s] == *patch && e.ends[s] > 0. && e.ends[s] < 1.)?;
+                    let next = face(e.patches[1-s])?;
+                    let fan = pieces.iter().position(|p| p.edge() == Some(m));
+                    Some((e.ends[s],if matches!(pieces[next],Piece::Flat(_)) { Junction::Flat(next) }
+                        else { Junction::Edge {next,end:e.ends[1-s],fan:fan.map(|fan| (fan,s as f64))} }))
+                }).collect(),
+                _ => Vec::new(),
+            };
+            Along {rounds,rims,off,cuts}
         }).collect();
         Junctions {ends,along}
     }
@@ -1401,10 +1466,19 @@ impl Walker<'_> {
         let at_here = |roots: &[Root]| roots.iter().position(|r| near(r.position));
         // the root of `other`'s ring at `their` end at this same point, and the way on along it; none
         // where the characteristic jumps there
+        // (partway along a face, at its station there, on the way the face goes on from the point,
+        // #721 F1d)
         let onto = |other: usize,their: f64| -> Option<Step> {
-            let (at,way) = match entered(other,their) { Ok(entry) => entry,Err(ended) => return Some(ended) };
+            let partway = their > 0. && their < 1.;
+            let entry = if partway { stations[other].iter().position(|&u| u == their).map(|at| (at,0)) } else { entered(other,their).ok() };
+            let Some((at,way)) = entry else { return Some(Step::End(UNSAMPLED.into())) };
             let Ring::Roots(roots) = &rings[other][at] else { return Some(Step::End("meets a degenerate ring where two faces join".into())) };
-            at_here(roots).map(|x| Step::Next((other,at,x),way))
+            let x = at_here(roots)?;
+            if !partway { return Some(Step::Next((other,at,x),way)) }
+            Some(match self.onward(other,their,roots[x].position) {
+                Some(way) => Step::Next((other,at,x),way),
+                None => Step::End(PARTWAY.into()),
+            })
         };
         // the first of `candidates` (a piece and its end) whose root there is this point, else the
         // first that could not be read
@@ -1462,28 +1536,13 @@ impl Walker<'_> {
             };
             along.off[end].into()
         };
-        let n = rings[k].len()-1;
-        let next = i as isize+dir;
-        if (0..=n as isize).contains(&next) {
-            let next = next as usize;
-            return match &rings[k][next] {
-                Ring::Degenerate(why) => Step::End(why.says()),
-                // a side's root reaching a ruling's end at a cap's rim or a crease: onto that fan
-                Ring::Roots(roots) if roots.is_empty() => first(&along.rims).unwrap_or_else(|| Step::End(off())),
-                // the nearest root of the next ring: a label may turn where the amplitude does
-                Ring::Roots(roots) => {
-                    let m = (0..roots.len()).min_by(|&x,&y| distance(roots[x].position,here.position)
-                        .total_cmp(&distance(roots[y].position,here.position))).expect("a root");
-                    Step::Next((k,next,m),dir)
-                }
-            }
-        }
-        // across the junction at this end of the piece, where the stations reach it
-        let end = if dir > 0 { 1. } else { 0. };
-        if stations[k][i] != end { return Step::End("runs past the stretch the coarse pass sampled".into()) }
-        match &self.junctions.ends[k][end as usize] {
+        // across a junction: at an end of the piece, or at a corner partway along a face
+        let across = |junction: &Junction,end: f64| -> Step { match junction {
             Junction::Onto(candidates,none) => first(candidates).unwrap_or_else(|| Step::End((*none).into())),
             Junction::Side(s) => side_at(*s).unwrap_or_else(|| Step::End(OFF_FAN.into())),
+            Junction::Sides {lines,sides} => first(lines).filter(|t| !matches!(t,Step::End(_)))
+                .or_else(|| sides.iter().find_map(|&s| side_at(s).filter(|t| !matches!(t,Step::End(_)))))
+                .unwrap_or_else(|| Step::End(OFF_FAN.into())),
             Junction::Flat(l) => onto_flat(*l),
             Junction::Beside {flats,faces} => match flats.iter().find(|&&l| flat_end(l).1.is_some()) {
                 Some(&l) => onto_flat(l),
@@ -1502,9 +1561,68 @@ impl Walker<'_> {
             },
             Junction::Arm => arms.get(&(k,end as usize)).map(|&(x,d)| Step::Next(x,d)).unwrap_or_else(|| Step::End(UNREAD_ARMS.into())),
             Junction::End(why) => Step::End((*why).into()),
+        } };
+        // a corner partway along a face the face goes no further past at this point (#721 F1d)
+        if let Some(cuts) = self.partway(k,stations[k][i],here.position,dir) {
+            let mut ended = None;
+            for junction in cuts {
+                match across(junction,stations[k][i]) {
+                    found @ (Step::Next(..) | Step::Sharp(..)) => return found,
+                    other => { ended.get_or_insert(other); }
+                }
+            }
+            return ended.unwrap_or_else(|| Step::End(PARTWAY.into()))
         }
+        let n = rings[k].len()-1;
+        let next = i as isize+dir;
+        if (0..=n as isize).contains(&next) {
+            let next = next as usize;
+            return match &rings[k][next] {
+                Ring::Degenerate(why) => Step::End(why.says()),
+                // a side's root reaching a ruling's end at a cap's rim or a crease: onto that fan
+                Ring::Roots(roots) if roots.is_empty() => first(&along.rims).unwrap_or_else(|| Step::End(off())),
+                // the nearest root of the next ring: a label may turn where the amplitude does
+                Ring::Roots(roots) => {
+                    let m = (0..roots.len()).min_by(|&x,&y| distance(roots[x].position,here.position)
+                        .total_cmp(&distance(roots[y].position,here.position))).expect("a root");
+                    Step::Next((k,next,m),dir)
+                }
+            }
+        }
+        let end = if dir > 0 { 1. } else { 0. };
+        if stations[k][i] != end { return Step::End("runs past the stretch the coarse pass sampled".into()) }
+        across(&self.junctions.ends[k][end as usize],end)
+    }
+
+    /// Where the walk stands at `here` on face `k` at station `u`, a corner partway along its
+    /// meridian, and the face goes no further `dir` at that point (#721 F1d): the step across the
+    /// corner there, the first of its junctions that takes the walk on, else why none does; none
+    /// where the face goes on.
+    fn partway(&self,k: usize,u: f64,here: V,dir: isize) -> Option<Vec<&Junction>> {
+        let Piece::Face(_,surface) = &self.pieces[k] else { return None };
+        let cuts: Vec<&Junction> = self.junctions.along[k].cuts.iter().filter(|(c,_)| *c == u).map(|(_,j)| j).collect();
+        if cuts.is_empty() || !(self.tool.value(here).abs() < ON_FACE) { return None }
+        let v = surface.turn_of(here)?;
+        let beyond = surface.at((u+dir as f64*CUT_PROBE).clamp(0.,1.),v).ok()?.position;
+        (!(self.tool.value(beyond).abs() < ON_FACE)).then_some(cuts)
+    }
+
+    /// Which way along face `k`'s meridian it goes on from `p`, a point of the corner at station `u`
+    /// partway along it (#721 F1d): the way it is the tool's, where it is so one way only.
+    fn onward(&self,k: usize,u: f64,p: V) -> Option<isize> {
+        let Piece::Face(_,surface) = &self.pieces[k] else { return None };
+        let v = surface.turn_of(p)?;
+        let on = |w: f64| surface.at(w.clamp(0.,1.),v).is_ok_and(|q| self.tool.value(q.position).abs() < ON_FACE);
+        match (on(u-CUT_PROBE),on(u+CUT_PROBE)) { (false,true) => Some(1),(true,false) => Some(-1),_ => None }
     }
 }
+
+/// How far along a meridian a corner partway along it is probed past (`Walker::partway`).
+const CUT_PROBE: f64 = 1e-4;
+/// How near nought the tool's material reads at a point of a face on the tool.
+const ON_FACE: f64 = 1e-6;
+/// Why the walk ends where it meets a corner partway along a face the face goes on past both ways.
+const PARTWAY: &str = "meets a corner partway along a face where the face goes on past it both ways";
 
 /// A piece of the tool's boundary the characteristic is walked over: a revolved face (patch `k` of
 /// `Tool::faces`), its rings stations along its meridian; a convex corner where two
@@ -1940,9 +2058,10 @@ impl Ruled {
 /// that is nought within the profile, from one rim to another (`cap`, which cap it is on, #684 AE);
 /// and on a lined side (`Ruled::lined`), a ruling in contact all along it, from cap to cap (`side`,
 /// the side's patch, #684 AF). A station on it is the fraction of the way from its first end to its
-/// second.
+/// second. `of` is the side a silhouette ruling lies on, where it is a side's (#721 F1d: its ends
+/// cross onto a face of revolution whose ring the side's rim lies along).
 #[derive(Clone,Debug)]
-struct Line { named: String,ends: [V;2],normal: V,cap: Option<usize>,side: Option<usize> }
+struct Line { named: String,ends: [V;2],normal: V,cap: Option<usize>,side: Option<usize>,of: Option<usize> }
 
 /// The parameters of `[0, 1]` where `at` is nought: read at `RULED_READS` parameters, each a nought
 /// read there or one refined between two that differ in sign, and none twice.
@@ -2198,7 +2317,7 @@ fn prism(contacts: &Sweep,tool: &dyn Material,motion: Motion,screw: &Screw,speed
         lined.push(patch);
         for x in noughts(&|x| at(x).map(|c| c[0])) {
             let Some((a,b,n)) = ruling.line(x) else { continue };
-            lines.push(Line {named:ruling.named(),ends:[a,b],normal:n,cap:None,side:Some(patch)});
+            lines.push(Line {named:ruling.named(),ends:[a,b],normal:n,cap:None,side:Some(patch),of:Some(patch)});
         }
     }
     // a plane side's outward normal, the same all along it
@@ -2290,7 +2409,8 @@ fn silhouette(contacts: &Sweep,rulings: &[Ruling],motion: Motion,speed: f64,ente
             let Some((a,b,n)) = ruling.line(x) else { continue };
             let size = distance(a,b);
             if lines.iter().any(|l| distance(l.ends[0],a) <= 1e-9*size && distance(l.ends[1],b) <= 1e-9*size) { continue }
-            lines.push(Line {named:ruling.named(),ends:[a,b],normal:n,cap:None,side:None});
+            let of = match *ruling { Ruling::Side {patch,..} => Some(patch),_ => None };
+            lines.push(Line {named:ruling.named(),ends:[a,b],normal:n,cap:None,side:None,of});
         }
     }
     Ok(lines.into_iter().map(Piece::Line).collect())
@@ -2323,7 +2443,7 @@ fn cap_lines(tool: &dyn Material,surface: &ToolSurface,c: usize,n: V,sides: &[(u
     crossed.windows(2).filter(|w| {
         let middle = crate::util::space::lerp(w[0],w[1],0.5);
         tool.value(sub(middle,scale(n,1e-6*(1.+norm(middle))))) < 0.
-    }).map(|w| Line {named:format!("`{}`",surface.name()),ends:[w[0],w[1]],normal:n,cap:Some(c),side:None}).collect()
+    }).map(|w| Line {named:format!("`{}`",surface.name()),ends:[w[0],w[1]],normal:n,cap:Some(c),side:None,of:None}).collect()
 }
 
 /// S1 of a prism read ruling by ruling (#684 M): no ruling in contact all along it where its path

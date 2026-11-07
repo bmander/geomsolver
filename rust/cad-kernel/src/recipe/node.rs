@@ -181,6 +181,10 @@ pub enum Stroke {
     Line { start: V,end: V },
     Circle { center: V,normal: V,x_dir: V,radius: f64,angles: Option<[f64;2]> },
     BSpline { degree: usize,knots: Vec<f64>,poles: Vec<V>,weights: Option<Vec<f64>> },
+    /// A point's path under a planar motion of turns and slides, exactly (#721 F1d,
+    /// `trochoid::Trochoid`): its plane's `origin`, `x_dir` and `y_dir`, each term `[re a, im a, re b,
+    /// im b, ω]` of `(a + b t) e^{iωt}` there, and the stretch of `t` it runs over.
+    Trochoid { origin: V,x_dir: V,y_dir: V,terms: Vec<[f64;5]>,span: [f64;2] },
 }
 
 impl Recipe {
@@ -360,6 +364,11 @@ impl Section {
                     knots:of_profile(e,"knots")?.arr().iter().map(Json::as_f64).collect(),
                     poles:of_profile(e,"poles")?.arr().iter().map(vec3).collect(),
                     weights:e.get("weights").map(|w| w.arr().iter().map(Json::as_f64).collect())},
+                "trochoid" => Stroke::Trochoid {origin:at(e,"origin")?,x_dir:at(e,"x_dir")?,y_dir:at(e,"y_dir")?,
+                    terms:of_profile(e,"terms")?.arr().iter().map(|t| {
+                        let t: Vec<f64> = t.arr().iter().map(Json::as_f64).collect();
+                        std::array::from_fn(|k| t.get(k).copied().unwrap_or(f64::NAN))
+                    }).collect(),span:pair(of_profile(e,"span")?)},
                 k => return Err(unread(format!("profile: an edge of kind `{k}`"))),
             };
             Ok(Edge {name:e.get("name").map_or(String::new(),|n| n.as_str().to_string()),shape})

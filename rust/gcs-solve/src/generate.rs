@@ -994,3 +994,51 @@ pub fn planar(tool: Tool, columns: &[f64], side: f64, program: &[crate::motion::
     }
     (Generated::new(columns.len(), tool, side, &ops, &[], 0, ToolBody::None), outer)
 }
+
+/// **A point's envelope as its path, exactly** (#721 F1d): where `flat` is a point carried by turns
+/// and slides at steady rates — no law driving a joint, no table of a frame the drawing moves — its
+/// path in its plane as the terms `(a + b t) e^{iωt}` (`brep::trochoid::Term`), `t` the roll in
+/// degrees, read off `outer` (`[t, columns…, motion numbers…]`, as `point` reads it). Each pose is
+/// a turn's rate and a translation that is itself such a sum: a turn about `c` at `ω` is `ω` and
+/// `c − e^{iωt} c`; a slide `0` and `v t`; a pose seen from another the first's rate less the
+/// second's and its translation less the second's turned back by the second's rate; and the point
+/// `p` is at `e^{iωt} p` plus the translation. None for any other profile.
+pub fn point_path(flat: &[f64], outer: &[f64]) -> Option<Vec<crate::brep::trochoid::Term>> {
+    use crate::brep::trochoid::Term;
+    let v = view(flat)?;
+    if v.tool != Tool::Point || !v.laws.is_empty() {
+        return None;
+    }
+    let at = |i: usize| outer.get(i).copied().filter(|x| x.is_finite());
+    let turned = |terms: &[Term], by: f64| terms.iter().map(|t| Term { w: t.w + by, ..*t }).collect::<Vec<_>>();
+    let mut stack: Vec<(f64, Vec<Term>)> = Vec::new();
+    for op in &v.ops {
+        let pose = match *op {
+            Op::Turn { centre, ratio, law: None } => {
+                let (cx, cy, w) = (at(centre)?, at(centre + 1)?, at(ratio)? * DEG);
+                (w, vec![Term { a: [cx, cy], b: [0.0; 2], w: 0.0 }, Term { a: [-cx, -cy], b: [0.0; 2], w }])
+            }
+            Op::Slide { line, advance, law: None } => {
+                let (ax, ay, bx, by) = (at(line)?, at(line + 1)?, at(line + 2)?, at(line + 3)?);
+                let len = (bx - ax).dhypot(by - ay);
+                if !(len > 0.0) {
+                    return None;
+                }
+                let k = at(advance)? / 360.0 / len;
+                (0.0, vec![Term { a: [0.0; 2], b: [(bx - ax) * k, (by - ay) * k], w: 0.0 }])
+            }
+            Op::Relative => {
+                let (obs, src) = (stack.pop()?, stack.pop()?);
+                // observer⁻¹ ∘ source: R(−ω_o t)(d_s − d_o), at the rate ω_s − ω_o
+                let negated: Vec<Term> = obs.1.iter().map(|t| Term { a: [-t.a[0], -t.a[1]], b: [-t.b[0], -t.b[1]], w: t.w }).collect();
+                let d: Vec<Term> = src.1.iter().copied().chain(negated).collect();
+                (src.0 - obs.0, turned(&d, -obs.0))
+            }
+            _ => return None,
+        };
+        stack.push(pose);
+    }
+    let [(w, d)] = &stack[..] else { return None };
+    let (px, py) = (at(1)?, at(2)?);
+    Some(std::iter::once(Term { a: [px, py], b: [0.0; 2], w: *w }).chain(d.iter().copied()).collect())
+}

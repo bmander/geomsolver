@@ -454,6 +454,26 @@ pub use crate::brep::cubic::fit_sampled;
 /// A profile's cubic B-spline edge as a recipe writes it is the kernel's (`brep::cubic::bspline_edge`).
 pub(crate) use crate::brep::cubic::bspline_edge;
 
+/// **Closed curve `i` of the drawing as its exact path, in two halves** (#721 F1d): where it is a
+/// point's envelope under turns and slides at steady rates (`generate::point_path`), each half of
+/// its roll a trochoid edge (`brep::trochoid::Trochoid`) in its plane as `lift` carries it (model
+/// units to the recipe's millimetres, `scale` a unit), carried into the B-rep exactly where a fit
+/// would stand within `FIT_MM` of it. None for any other curve.
+fn trochoid_halves(sk: &Sketch,i: usize,lift: &dyn Fn((f64,f64)) -> [f64;3],scale: f64) -> Option<Vec<Json>> {
+    let crate::model::CurveBody::Envelope(g) = &sk.curve_defs[sk.curves[i].def as usize].body else { return None };
+    let attached = sk.generated_flat(i,&g.flat).ok()?;
+    let flat = attached.as_deref().map_or(&g.flat[..],|v| &v[..]);
+    let (a,b) = sk.curve_domain(i);
+    let terms = crate::generate::point_path(flat,&sk.curve_vars(i,a))?;
+    let o = lift((0.,0.));
+    let dir = |q: (f64,f64)| { let d = crate::space::sub(lift(q),o); let l = crate::space::norm(d); d.map(|x| x/l) };
+    let terms = Json::Arr(terms.iter().map(|t| Json::Arr([t.a[0]*scale,t.a[1]*scale,t.b[0]*scale,t.b[1]*scale,t.w].iter()
+        .map(|&x| x.into()).collect())).collect());
+    let m = 0.5*(a+b);
+    Some([[a,m],[m,b]].iter().map(|&[s0,s1]| object([("kind","trochoid".into()),("origin",vector(o)),("x_dir",vector(dir((1.,0.)))),
+        ("y_dir",vector(dir((0.,1.)))),("terms",terms.clone()),("span",Json::Arr(vec![s0.into(),s1.into()]))])).collect())
+}
+
 fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String> {
     let face = &sk.faces[index];
     let p = super::face_poly(sk,index,super::REPORT_UNIT).ok_or("invalid CAD profile")?;
@@ -508,6 +528,8 @@ fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String> {
                     if !sk.curve_closed(e.i()) {
                         return Err(format!("`{}`: its curve does not come back to where it started",face.name));
                     }
+                    // a point's path under turns and slides, each half exact (#721 F1d)
+                    if let Some(halves) = trochoid_halves(sk,e.i(),&lift,scale) { return Ok(halves) }
                     let (a,b) = sk.curve_domain(e.i());
                     let m = 0.5*(a+b);
                     let (start,middle) = (sk.curve_point(e.i(),a),sk.curve_point(e.i(),m));
