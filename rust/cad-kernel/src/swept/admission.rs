@@ -8,6 +8,7 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::contact::SurfacePoint;
+use crate::geom::Rigid;
 use crate::trajectory::{Motion,Trajectory};
 use crate::util::space::{add,cross,dot,norm,scale,sub};
 use super::constant_twist::{Ask,Characteristic,Failure,Row,Sweep,outward};
@@ -360,9 +361,10 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
     Ok((reads,poses,capped))
 }
 
-/// A tool that is one prism standing alone or placed, its profile one loop: what the class
-/// sections across where its cap reaches the blank (T3, #684 F, AC) — its cutter (millimetres,
-/// carried by the placements) and the model's millimetres a unit.
+/// A tool that is one prism standing alone or placed, drafted or not, its profile any loops: what
+/// the class sections across where its cap reaches the blank (T3, #684 F, AC), and what every sheet
+/// of the tool's sides is sectioned by (#721 F1d) — its cutter (millimetres, carried by the
+/// placements) and the model's millimetres a unit.
 pub struct Lone { cutter: Cutter,scale: f64 }
 
 impl std::fmt::Debug for Lone {
@@ -371,43 +373,74 @@ impl std::fmt::Debug for Lone {
 
 impl Lone {
     /// The tool's cutter (millimetres, carried by the placements) as a lone prism, `scale` the
-    /// model's millimetres a unit, or none where it is not one: undrafted (`prism_profile`), its
-    /// profile one loop.
+    /// model's millimetres a unit, or none where it is no prism.
     fn new(cutter: Cutter,scale: f64) -> Option<Lone> {
-        let ([_],_) = cutter.prism_profile()? else { return None };
+        cutter.prism_walks()?;
         Some(Lone {cutter,scale})
     }
 
+    /// Whether its sections across its profile are read where its cap reaches the blank (T3): an
+    /// undrafted prism of one loop. A drafted prism's sections across, or one through a hole, are
+    /// not built yet (#721 F1d), and T3 refuses its cap by name.
+    pub fn sectioned_across(&self) -> bool { matches!(self.cutter.prism_profile(),Some(([_],_))) }
+
     /// **The tool `tool` read from its boundary `b` (millimetres) as one prism standing alone**
-    /// (#721 F1b), `scale` the model's millimetres a unit: where every face it reads is a side
-    /// running square along one direction, with no crease, or one of two caps, the boundary's
-    /// planes square to that direction, each one loop of lines and arcs. Its cutter is that
-    /// direction's prism of the nearer cap's loop, however the tool was drawn — a prism, one
-    /// placed, a box a Boolean leaves. None for any other tool.
-    pub fn read(b: &Brep,tool: &Tool,scale: f64) -> Option<Lone> {
+    /// (#721 F1b, F1d), `mm` the model's millimetres a unit: where every face it reads is a side
+    /// running between two caps, the boundary's planes square to one direction, each side's
+    /// rulings along that direction or leaning to it alike — one draft, all one way, or out to a
+    /// parting plane and in again past it, where the sides' halves meet in creases (#684 G, P) —
+    /// and each cap's loops of lines and arcs. Its cutter is that direction's prism of its widest
+    /// section — the nearer cap's loops undrafted, the wider cap's drafted one way, the parting
+    /// plane's drafted both ways — however the tool was drawn: a prism, one placed, one drafted, a
+    /// box a Boolean leaves. None for any other tool.
+    pub fn read(b: &Brep,tool: &Tool,mm: f64) -> Option<Lone> {
         use crate::build::Profile;
         use crate::geom::Surface;
-        if !tool.creases.is_empty() { return None }
-        let (mut along,mut caps) = (None::<V>,0);
+        use crate::util::space::unit;
+        // the caps' normal is the prism's direction
+        let caps: Vec<V> = tool.faces.iter().filter_map(|f| match f {
+            ToolSurface::Cap(c) => c.at(0.,0.).ok().map(|p| cross(p.du,p.dv)),
+            _ => None,
+        }).collect();
+        let [c0,c1] = caps[..] else { return None };
+        if !(norm(c0) > 0.) || norm(cross(c0,c1)) > 1e-9*norm(c0)*norm(c1) || dot(c0,c1) >= 0. { return None }
+        // (pointing the way the sides' rulings run from their edge, as they were read: the cutter
+        // laid from the cap they leave, so its stations are measured from it)
+        let ruled = tool.faces.iter().find_map(|f| match f {
+            ToolSurface::Extruded(s) => Some(sub(s.at(0.5,1.).ok()?.position,s.at(0.5,0.).ok()?.position)),
+            _ => None,
+        })?;
+        let axis = unit(if dot(c0,ruled) < 0. { scale(c0,-1.) } else { c0 });
+        // each side's ruling: how far it leans out from the prism per unit along `axis` (above
+        // nought where it grows going along), and the height of its middle; a side square to the
+        // axis is no side of a prism
+        let mut leans: Vec<(f64,f64)> = Vec::new();
         for f in &tool.faces {
             match f {
-                ToolSurface::Cap(_) => caps += 1,
-                ToolSurface::Extruded(s) => {
-                    let d = s.depth()?;
-                    match along {
-                        Some(a) if norm(cross(a,d)) > 1e-9*norm(a)*norm(d) || dot(a,d) <= 0. => return None,
-                        _ => { along.get_or_insert(d); }
-                    }
-                }
+                ToolSurface::Cap(_) => {}
                 ToolSurface::Revolved(_) => return None,
+                ToolSurface::Extruded(s) => {
+                    let (Ok(p),Ok(q)) = (s.at(0.5,0.),s.at(0.5,1.)) else { return None };
+                    let r = sub(q.position,p.position);
+                    let h = dot(r,axis);
+                    if !(h.abs() > 1e-9*norm(r)) { return None }
+                    // how far the ruling runs out across the side's outward normal square to the
+                    // axis (it may slide along the side as well, its edge's ends moving apart or
+                    // together): the tangent of the side's draft
+                    let lateral = sub(r,scale(axis,h));
+                    let n = cross(p.du,p.dv);
+                    let out = sub(n,scale(axis,dot(n,axis)));
+                    if !(norm(out) > 1e-9*norm(n)) { return None }
+                    let out = scale(out,1./norm(out));
+                    leans.push((dot(lateral,out)/h,dot(add(p.position,scale(r,0.5)),axis)));
+                }
             }
         }
-        if caps != 2 { return None }
-        let axis = along.and_then(crate::util::space::normalised)?;
-        // the boundary's planes square to the sides, each one loop: the caps, each a point of it
+        if leans.is_empty() { return None }
+        // the boundary's planes square to the sides, each its loops: the caps, each a point of it
         // and its height along the sides, the nearer first
         let mut ends: Vec<(f64,V,usize)> = b.faces.iter().enumerate().filter_map(|(fi,f)| match &f.surface {
-            Surface::Plane(frame) if norm(cross(frame.z,axis)) <= 1e-9 && f.loops.len() == 1 => {
+            Surface::Plane(frame) if norm(cross(frame.z,axis)) <= 1e-9 && !f.loops.is_empty() => {
                 let p = b.vertices[b.edges[f.loops[0][0].edge as usize].v[0] as usize].p;
                 Some((dot(p,axis),p,fi))
             }
@@ -415,11 +448,42 @@ impl Lone {
         }).collect();
         if ends.len() != 2 { return None }
         ends.sort_by(|x,y| x.0.total_cmp(&y.0));
-        let [(h0,origin,near),(h1,..)] = [ends[0],ends[1]];
+        let [(h0,low,near),(h1,high,far)] = [ends[0],ends[1]];
         if !(h1-h0 > 0.) { return None }
-        let edges = crate::offset::plane_loop(b,&b.faces[near].loops[0],axis).ok()?;
-        let profile = Profile {origin,normal:axis,loops:vec![edges],names:vec![Vec::new()]};
-        Lone::new(Cutter::extruded(profile,0.,h1-h0,None).ok()?,scale)
+        let cap = |fi: usize,normal: V,origin: V| -> Option<Profile> {
+            let loops = b.faces[fi].loops.iter().map(|l| crate::offset::plane_loop(b,l,normal)).collect::<Result<Vec<_>,_>>().ok()?;
+            let names = vec![Vec::new();loops.len()];
+            Some(Profile {origin,normal,loops,names})
+        };
+        let size = h1-h0;
+        let alike = |a: f64,c: f64| (a-c).abs() <= 1e-7*(1.+a.abs().max(c.abs()));
+        let g = leans[0].0;
+        let cutter = if tool.creases.is_empty() {
+            if !leans.iter().all(|&(x,_)| alike(x,g)) { return None }
+            if g.abs() <= 1e-9 {
+                // undrafted: the nearer cap's loops carried along
+                Cutter::extruded(cap(near,axis,low)?,0.,size,None)
+            } else if g < 0. {
+                // narrowing along the axis: the low cap's loops, drafted into the prism going up
+                Cutter::extruded(cap(near,axis,low)?,0.,size,Some((-g).datan()))
+            } else {
+                // widening along it: the high cap's, drafted going down
+                Cutter::extruded(cap(far,scale(axis,-1.),high)?,0.,size,Some(g.datan()))
+            }
+        } else {
+            // drafted both ways from a parting plane: the sides below it widen to it, those above
+            // narrow from it, all at one draft; its section is the low cap's moved out to it
+            let [below,_] = tool.creases[0];
+            let parting = dot(tool.faces.get(below)?.at(0.5,1.).ok()?.position,axis);
+            if !(parting > h0 && parting < h1) || !(g.abs() > 1e-9) { return None }
+            let taper = g.abs();
+            let way = |&(x,h): &(f64,f64)| if h < parting { alike(x,taper) } else { alike(x,-taper) };
+            if !leans.iter().all(way) { return None }
+            let up = Rigid {r:[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],t:scale(axis,parting-h0)};
+            let profile = crate::build::offset(&cap(near,axis,low)?,-(parting-h0)*taper).ok()?.moved(&up);
+            Cutter::extruded(profile,h0-parting,h1-parting,Some(taper.datan()))
+        };
+        Lone::new(cutter.ok()?,mm)
     }
 
     /// The prism's cutter, in millimetres.
@@ -453,7 +517,10 @@ impl Lone {
                 best = Some((Capped {across:spread.across,band,clearance:near.0},near.1,near.2,need));
             }
         }
-        let (capped,corner,at,need) = best.expect("a lone prism's profile is one loop of lines and arcs, sectioned every way");
+        let Some((capped,corner,at,need)) = best else {
+            return Err((Row::Sections,"the prism's cap reaches the blank, and the class sections a prism across its profile \
+                only undrafted and of one loop (not built)".into(),hits.first().map(|h| h.0.position)))
+        };
         if capped.clearance < need {
             let what = match corner {
                 Some(p) => format!("a corner of the profile, where a section's side leaps from one face's normal to the next's, at \
@@ -482,6 +549,8 @@ pub fn check(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling
     let pose = |t: f64| pose_at(c.motion(),t).map_err(|m| (Row::Motion,m,None));
     let times = [pose(domain[0])?,pose(middle)?,pose(domain[1])?];
     let roots = |patch: usize,u: f64,v: f64| c.at_source_over(patch,u,v,domain,options.root_tolerance);
+    // (a lone prism's cap is cut where it is sectioned across: undrafted, one loop)
+    let lone = lone.filter(|l| l.sectioned_across());
     let (mut reads,poses,capped) = ends(c,inside,options,lone)?;
     // M2 at the poles: where a face's profile meets the tool's axis the surface has no normal of
     // its own, so the sampled checks below cannot evaluate it. Its normal is the axis, the limit
@@ -823,6 +892,8 @@ pub fn check(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling
 /// may reach the blank, and the walk crosses it (#684 AE).
 pub fn check_screw(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),extent: Option<([f64;2],f64)>,options: &Sampling,lone: Option<&Lone>)
     -> Result<(Characteristic,f64,Reads),Failure> {
+    // (a lone prism's cap is walked where it is undrafted and of one loop)
+    let lone = lone.filter(|l| l.sectioned_across());
     let (reads,..) = ends(c,inside,options,lone)?;
     let reads = std::sync::Mutex::new(reads);
     // the blank read outside the lock, the faces' rings side by side

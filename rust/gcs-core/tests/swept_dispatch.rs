@@ -81,3 +81,25 @@ fn a_tool_with_no_boundary_is_refused_at_t1() {
     assert_eq!((r.row,r.asked),(dispatch::Row::Tool,dispatch::Asked::ConstantTwist));
     assert!(matches!(&r.seen,dispatch::Seen::Words(m) if m.contains("no boundary")),"{:?}",r.seen);
 }
+
+/// **A prism with a hole is one prism** (#721 F1d, G9): a square bar 4 across with a square hole 2
+/// across through it, read from its B-rep, is one prism standing alone to `Lone::read`, its cutter's
+/// profile both loops — what its sides' sheets are sectioned by. Its sections across its profile,
+/// which a hole parts, are not built yet (`Lone::sectioned_across`).
+#[test]
+fn a_prism_with_a_hole_is_one_prism() {
+    use gcs_core::brep::swept::admission::Lone;
+    use gcs_core::brep::swept::tool::Tool;
+    let square = |h: f64| -> Vec<ProfileEdge> {
+        let c = [[10.-h,-h,0.],[10.+h,-h,0.],[10.+h,h,0.],[10.-h,h,0.]];
+        (0..4).map(|k| ProfileEdge::Line {a:c[k],b:c[(k+1)%4]}).collect()
+    };
+    let profile = Profile {origin:[10.,0.,0.],normal:[0.,0.,1.],loops:vec![square(2.),square(1.)],names:Vec::new()};
+    let bar = prism(&profile,-1.,1.).unwrap();
+    let tool = Tool::read(&bar,1.).unwrap();
+    let lone = Lone::read(&bar,&tool,1.).expect("one prism");
+    let (walks,extent,drafted) = lone.cutter().prism_walks().expect("a prism");
+    assert_eq!((walks.len(),drafted),(2,false),"its outer loop and its hole, undrafted");
+    assert!((extent[1]-extent[0]-2.).abs() < 1e-12,"{extent:?}");
+    assert!(!lone.sectioned_across());
+}

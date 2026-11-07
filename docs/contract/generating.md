@@ -514,6 +514,39 @@ from face to face by position.  The gate is `tests/swept_charts.rs`
 (`a_walk_is_the_same_curve_wherever_its_charts_start`): a bull-nosed drum pushed through a plate,
 drawn in three half-planes and dispatched, and its reading walked again with each face's chart
 started further round (`RevolvedSurface::started`), every walk one curve to rounding.
+*Prisms drafted and with holes:* `admission::Lone::read` reads one prism standing alone from its
+B-rep drafted or not and of any loops: two caps, the boundary's planes square to the prism's
+direction, every side's rulings along it or leaning to it alike — one draft one way, or out to a
+parting plane and in past it, the halves meeting in creases (#684 G, P) — each side's draft read
+as how far its ruling runs out across its outward normal square to the axis per unit along it.
+Its cutter is that direction's prism of its widest section, the nearer cap's loops undrafted,
+the wider cap's drafted one way, the parting plane's (the low cap's moved out to it) drafted both
+ways (`Cutter::extruded`), laid from the cap the sides' rulings leave so its stations are measured
+as before.  So a drafted prism's sheets are sectioned by the cutter its B-rep reads
+(`SweptCut::cutter`), not the recipe's, and the drafted racks' spaces are cut to the same volumes
+(`drafted_tools`).  Its sections across its profile, a drafted prism's or one a hole parts, are not
+built yet: T3 cuts and the constant twist walks the cap only of a prism that is undrafted and of
+one loop (`Lone::sectioned_across`), and refuses any other's cap at T1 as before.  The gates are
+`drafted_tools::a_drafted_prisms_cutter_is_read_from_its_brep` and
+`swept_dispatch::a_prism_with_a_hole_is_one_prism`.  The helical rack's screwed sheet
+(`brep::sweep::extruded::screwed_sheet`) still takes the recipe's prism: read from the B-rep, its
+section and band are the recipe's to rounding (2e-15), the blank's faces cut both nets along iso
+lines alike, but the outer rim's traced meeting with the flank is fitted in 139 poles where the
+recipe's takes 100, past `helical_rack::a_helical_gears_step_is_about_its_spur_twins_size`'s 120 — a
+fit that sensitive to rounding is F4's.
+*Cutters of revolution off the recipe:* a tool whose B-rep is revolutions about one line — every
+face a whole turn of a cylinder, cone, sphere, torus or revolution of a line or circle about it, or
+a plane square to it bounded by circles about it — is sectioned from its B-rep
+(`Sectioned::of_boundary`, `Cutter::of_boundary`, read once in `SweepContacts::read` as
+`SweepContacts::revolved`): its section by every half-plane is the faces' meridians over the spans
+their B-rep faces reach, each end on the circle its edges lie on, joined end to end and closed along
+the line, each step naming its face.  `SweptCut::cutter` takes the B-rep's prism, else its cutter
+of revolution, and only else the recipe's (`Cutter::read`): a cutter of revolutions about parallel
+lines (a spiral bevel's), which the B-rep does not section yet.  The gate is
+`tool_reading::the_catalogues_cutters_of_revolution_section_from_their_boundaries`: every catalogue
+sweep the recipe sections as revolutions (23) the B-rep sections alike, the two sections at five
+half-planes one region by their exact areas and a grid of points read in space (the slow tier's
+`every_examples_cutters_of_revolution_section_from_their_boundaries` over every example).
 
 **The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
 every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding

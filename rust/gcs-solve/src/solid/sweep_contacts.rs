@@ -26,12 +26,16 @@ pub struct SweepContacts {
     /// The tool as one prism standing alone, where its boundary is one (`Lone::read`): what the
     /// generating class sections across where its cap reaches the blank (#684 F).
     pub(super) lone: Option<std::sync::Arc<Lone>>,
+    /// The tool as a cutter of revolutions about one line, where its boundary is one
+    /// (`Cutter::of_boundary`, #721 F1d): what the generating class's sheets are sectioned by.
+    pub(super) revolved: Option<std::sync::Arc<Cutter>>,
 }
 
 /// A point's contact times, and why it has none, are the kernel's (`brep::swept::generating`, #721
 /// F2c).
 pub use crate::brep::swept::generating::{Chart,PointContactError,TimedContact};
 use crate::brep::swept::admission::Lone;
+use crate::brep::swept::cutter::Cutter;
 
 impl SweepContacts {
     /// **The sweep `solid`'s tool read from its B-rep** (#721 F1b): the boundary the kernel builds
@@ -53,11 +57,14 @@ impl SweepContacts {
         let b = super::cad::tool_brep(sk,solid)?;
         let tool = Tool::read(&b,mm).map_err(|why| format!("`{name}` is read by its boundary, but {why}"))?;
         let lone = Lone::read(&b,&tool,mm).map(std::sync::Arc::new);
-        Ok(Self {tool,motion,roll:once.unwrap_or(roll),whole:once.is_some(),lone})
+        let revolved = lone.is_none().then(|| Cutter::of_boundary(&b).ok()).flatten().map(std::sync::Arc::new);
+        Ok(Self {tool,motion,roll:once.unwrap_or(roll),whole:once.is_some(),lone,revolved})
     }
 
     /// The tool as one prism standing alone, where its boundary is one.
     pub fn lone(&self) -> Option<&Lone> { self.lone.as_deref() }
+    /// The tool as a cutter of revolutions about one line, where its boundary is one.
+    pub fn revolved(&self) -> Option<&Cutter> { self.revolved.as_deref() }
 
     pub fn edges(&self) -> &[PatchEdge] { &self.tool.edges }
     /// The tool as the kernel reads it.

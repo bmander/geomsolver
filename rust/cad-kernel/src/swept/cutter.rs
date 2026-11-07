@@ -297,6 +297,13 @@ enum Kind { Revolved { side: V,sec: Sectioned },Extruded(Extruded),Across(Across
 /// point of its profile's plane).
 pub struct Cutter { pub origin: V,pub axis: V,kind: Kind,sections: std::sync::Mutex<BTreeMap<u64,Vec<Loop>>> }
 
+impl std::fmt::Debug for Cutter {
+    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let kind = match self.kind { Kind::Revolved {..} => "revolved",Kind::Extruded(_) => "extruded",Kind::Across(_) => "across" };
+        write!(f,"Cutter {{ {kind}, origin: {:?}, axis: {:?} }}",self.origin,self.axis)
+    }
+}
+
 impl Cutter {
     /// The cutter of `recipe` (millimetres), or why the core does not section it.
     pub fn read(recipe: &Json) -> Result<Cutter,String> {
@@ -308,6 +315,16 @@ impl Cutter {
                 about parallel lines, or a prism, only: {e}")),
             Err(e) => return Err(e.into()),
         };
+        let (origin,axis) = (sec.origin,unit(sec.axis)?);
+        let seed = if axis[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
+        let side = unit(cross(cross(axis,seed),axis))?;
+        Ok(Cutter {origin,axis,kind:Kind::Revolved {side,sec},sections:Default::default()})
+    }
+    /// **The cutter of revolutions about one line its B-rep `b` (millimetres) is** (#721 F1d): its
+    /// section by every half-plane of the line read from its faces (`Sectioned::of_boundary`),
+    /// however it was drawn, or why it is not one.
+    pub fn of_boundary(b: &crate::topo::Brep) -> Result<Cutter,String> {
+        let sec = Sectioned::of_boundary(b)?;
         let (origin,axis) = (sec.origin,unit(sec.axis)?);
         let seed = if axis[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
         let side = unit(cross(cross(axis,seed),axis))?;
@@ -373,6 +390,12 @@ impl Cutter {
     /// none for a cutter of revolutions, a drafted prism or a prism sectioned across.
     pub fn prism_profile(&self) -> Option<(&[Vec<Seg>],[f64;2])> {
         match &self.kind { Kind::Extruded(x) if x.drafted.is_none() => Some((&x.walks,x.extent)),_ => None }
+    }
+    /// A prism's profile, its loops walked in its plane, the extrusion's extent from that plane, and
+    /// whether it is drafted: what a prism read from a B-rep is held to (`admission::Lone`). None
+    /// for a cutter of revolutions or a prism sectioned across.
+    pub fn prism_walks(&self) -> Option<(&[Vec<Seg>],[f64;2],bool)> {
+        match &self.kind { Kind::Extruded(x) => Some((&x.walks,x.extent,x.drafted.is_some())),_ => None }
     }
     /// Where this prism's sections across `across` (a direction in its profile's plane, made square
     /// to the extrusion and unit) cannot be one regular family (`Spread`): none for a cutter that is

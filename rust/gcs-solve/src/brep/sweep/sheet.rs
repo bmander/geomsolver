@@ -43,15 +43,18 @@ impl std::ops::Deref for Sectioned<'_> {
 }
 
 impl SweptCut {
-    /// **The cutter every sheet of this cut is sectioned by**, chosen once: the prism read from
-    /// the tool's B-rep where it is one standing alone (`SweepContacts::lone`, #721 F1b), however
-    /// the tool was drawn, so admission's band and the sheet's stations are measured from one
-    /// origin; else the recipe's (`Cutter::read`: a cutter of revolutions, or a drafted prism, until
-    /// #721 F1c).
+    /// **The cutter every sheet of this cut is sectioned by**, chosen once and read from the tool's
+    /// B-rep however the tool was drawn (#721 F1b, F1d): the prism, drafted or not, where it is one
+    /// standing alone (`SweepContacts::lone`), so admission's band and the sheet's stations are
+    /// measured from one origin; the cutter of revolutions about one line where it is one
+    /// (`SweepContacts::revolved`); else the recipe's (`Cutter::read`), a cutter of revolutions
+    /// about parallel lines, which the B-rep does not section yet.
     pub fn cutter(&self) -> Result<Sectioned<'_>,String> {
-        match self.contacts.as_ref().ok().and_then(SweepContacts::lone) {
-            Some(lone) => Ok(Sectioned::Read(lone.cutter())),
-            None => Cutter::read(&self.recipe).map(Sectioned::Recipe),
+        let contacts = self.contacts.as_ref().ok();
+        match (contacts.and_then(SweepContacts::lone),contacts.and_then(SweepContacts::revolved)) {
+            (Some(lone),_) => Ok(Sectioned::Read(lone.cutter())),
+            (None,Some(revolved)) => Ok(Sectioned::Read(revolved)),
+            (None,None) => Cutter::read(&self.recipe).map(Sectioned::Recipe),
         }
     }
 
