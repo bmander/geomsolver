@@ -276,9 +276,27 @@ flattener like any dimension.  `p coincident(under: m, over t in (a, b)) sec` at
 point is what the face occupies under the motion at some roll of the interval:
 `relations::shape` names it `Shape::Swept` and `face_or_ends` reads it with every other region
 term — `relations::swept_term` makes it `RegionShape::Swept { motion, roll, face }`, `m` a frame or
-a line it turns about (`motions::reading`, [0.200], frames.md) — read point
-by point about a line in the face's plane; any other motion, or a line off the plane, is refused by
-the field with its reason.  Where such a set is written in place in `solid(…)` and its body is one
+a line it turns about (`motions::reading`, [0.200], frames.md).  **A face carried** (#846,
+[0.208], `solid/carried.rs`): where `m` is a constant twist (`motion::Family::twist`: a turn, a
+screw or a slide), the region whose one term that is is the face's profile where the motion stands
+it at `a` carried to `b` — `region::route` gives it `Route::Carried` ahead of every other entry,
+the recipe's `carried` node (`brep::build::carried`: a screw's `screwed`, a turn's `revolve`, a
+slide's `ruled`), held to the region's field by the agreement gate before it stands
+(`carried::built`, remembered in `Caches::carried`, as `bounded`'s is).  The field reads a screw's
+or a slide's point by point (`carried::Reading`, from `region/general.rs`): a level crossing —
+a slide's face crossed by its direction, a screw's square to its axis — is passed once by each
+point's path, so one roll carries the point back to the face's plane; an axial one — a screw's face
+in a plane holding its axis, on one side of it — once a turn into the face's half-plane, the least
+over the rolls a turn apart that could carry it back within the heights the face spans.  A turn's
+is read about a line in the face's plane as before.  Refused, by `Carried::checked` and so by the
+field and the route alike, with its reason: a screw's face leaning on its axis, an axial face that
+reaches the axis or — carried more than a turn — spans as much as the screw rises a turn (the sweep
+meets itself), a slide along the face's plane, a turn about a line off it; a motion that is no
+constant twist (several steps, a law) is refused by the field.  It names no running parameter, so a
+component's body writes it as the document's does, where a face family cannot stand.  Its faces are
+named off the definition alone (`carried::face_names`, read by `face_paths`): the section's sides
+by their edges, then `start` and `end` (none for a turn through a whole one), as the kernel names
+the build.  `tests/screwed_sets.rs` is the gate.  Where such a set is written in place in `solid(…)` and its body is one
 statement saying a sweep, the parser reads it as the sweep of the same points
 (`syntax/parser/statements.rs::swept_ahead`/`swept_set`): `solid({ p | p inside(under: m,
 seen_from: g, over t in (a, b)) tool })` the motion sweep (`SolidDef::Swept`, a stated roll), `over

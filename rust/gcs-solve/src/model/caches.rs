@@ -119,6 +119,10 @@ pub struct Caches {
     /// (`solid::bounded::built`, #238), against `solid::reads`: the sweep test, the recipe and
     /// the exact boundary each ask it, and its gate reads the field.
     pub(crate) bounded: Memo<Option<Result<Rc<crate::solid::bounded::Bounded>, String>>>,
+    /// Each region solid that is a face carried over an interval of a constant twist built as
+    /// the kernel's carried profile (`solid::carried::built`, #846), against `solid::reads`: the
+    /// sweep test and the recipe each ask it, and its gate reads the field.
+    pub(crate) carried: Memo<Option<Result<Rc<crate::solid::carried::Carried>, String>>>,
     /// Each region solid within reach of a body built as the body and what lies within reach of
     /// each face, edge and corner glued to it (`solid::grown::built`), against `solid::reads`: the
     /// sweep test, the recipe and the exact boundary each ask it, and its gate reads the field.
@@ -205,6 +209,7 @@ impl Caches {
         self.lowering.clear();
         self.gated.borrow_mut().clear();
         self.bounded.clear();
+        self.carried.clear();
         self.grown.clear();
         self.shelled.clear();
         self.canal.clear();

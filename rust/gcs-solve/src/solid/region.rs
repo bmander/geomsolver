@@ -96,8 +96,10 @@ pub fn form(sk: &Sketch, solid: usize) -> Result<Form, String> {
 /// **Which construction builds a region solid** — the one answer every reader of it matches: the
 /// recipe (`cad`), whether its boundary is the field's (`has_sweep`), the facets (`document`).
 /// A region on one axis is its meridian turned; one read in general position is built by an
-/// entry of the lowering table where one recognises it (a region over a body's faces, #194), else
-/// by the common of its terms where each is a primitive (#238), else by the field alone.  An
+/// face carried over an interval of a constant twist is the kernel's carried profile (#846); else
+/// one is built by an entry of the lowering table where one recognises it (a region over a body's
+/// faces, #194), else by the common of its terms where each is a primitive (#238), else by the
+/// field alone.  An
 /// entry that recognises a region and refuses it leaves it the field's, its refusal said.
 #[derive(Clone)]
 pub enum Route {
@@ -117,6 +119,9 @@ pub enum Route {
     /// A developable panel's band (#645): faceted from the panel's rulings, its exact ruled walls
     /// not yet written to STEP.
     Sheet(Rc<super::sheet::Band>),
+    /// A face carried over an interval of a constant twist (#846): the kernel's carried profile,
+    /// or why it is refused.
+    Carried(Result<Rc<super::carried::Carried>, String>),
 }
 
 impl Route {
@@ -129,7 +134,8 @@ impl Route {
     /// entry that recognised it, or that none recognises it.
     pub fn refusal(&self) -> Option<&str> {
         match self {
-            Route::Field(why) | Route::Lowered(Err(why)) | Route::Bounded(Err(why)) | Route::Grown(Err(why)) => Some(why),
+            Route::Field(why) | Route::Lowered(Err(why)) | Route::Bounded(Err(why)) | Route::Grown(Err(why))
+                | Route::Carried(Err(why)) => Some(why),
             _ => None,
         }
     }
@@ -163,6 +169,9 @@ pub fn route(sk: &Sketch, solid: usize) -> Result<Route, String> {
         Form::Meridian(m) => Ok(Route::Meridian(m)),
         Form::Sheet(b) => Ok(Route::Sheet(b)),
         Form::General(_) => {
+            if let Some(c) = super::carried::built(sk, solid) {
+                return Ok(Route::Carried(c));
+            }
             if let Some(l) = super::lowering::lowered(sk, solid) {
                 return Ok(Route::Lowered(l));
             }

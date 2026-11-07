@@ -99,6 +99,11 @@ pub enum Node {
     Lowered(Lowered),
     /// A face family's walls (`solid::family`, #243 L2).
     Family(Family),
+    /// A profile carried rigidly over an interval of a constant twist (`solid::carried`, #846): the
+    /// profile moved by the row-major 3x4 `start` where it has one (the pose where the interval
+    /// begins), then carried by `carry` from there to where it ends — a screw, a turn (a screw of
+    /// no advance) or a slide.
+    Carried { profile: Section,start: Option<[f64;12]>,carry: crate::geom::Carry },
 }
 
 /// The path a ball's centre runs (`Node::Canal`): carried by a screw about the line through
@@ -223,6 +228,13 @@ impl Node {
             "grown" => Node::Grown {body:field(n,"body")?.as_i64(),pieces:each(field(n,"pieces")?.arr(),Node::read)?},
             "glued" => Node::Glued(each(field(n,"pieces")?.arr(),Node::read)?),
             "family" => Node::Family(Family::read(n)?),
+            "carried" => Node::Carried {profile:profile()?,
+                start:match n.get("start") {
+                    None => None,
+                    Some(m) if m.arr().len() == 12 => Some(std::array::from_fn(|k| m.arr()[k].as_f64())),
+                    Some(_) => return Err(unread("recipe: a carried profile's `start` is not three rows of four".into())),
+                },
+                carry:carry(field(n,"carry")?)?},
             k => return Err(unread(format!("recipe: a node of kind `{k}`"))),
         })
     }
@@ -234,7 +246,7 @@ impl Node {
             Node::Placed {..} => "placed",Node::Through {..} => "through",Node::Body(_) => "body",
             Node::Canal {..} => "canal",Node::Region(_) => "region",Node::Grown {..} => "grown",Node::Glued(_) => "glued",
             Node::Lowered(_) => "lowered",
-            Node::Family(_) => "family",
+            Node::Family(_) => "family",Node::Carried {..} => "carried",
         }
     }
 }
@@ -281,16 +293,23 @@ impl Family {
         };
         let carry = match n.get("carry") {
             None => None,
-            Some(c) => Some(match field(c,"kind")?.as_str() {
-                "screw" => crate::geom::Carry::Screw {center:point(c,"center")?,
-                    axis:point(c,"axis")?,angle:number(c,"angle")?,advance:number(c,"advance")?},
-                "line" => crate::geom::Carry::Line {delta:point(c,"delta")?},
-                k => return Err(unread(format!("recipe: a family carried by a `{k}`"))),
-            }),
+            Some(c) => Some(carry(c)?),
         };
         Ok(Family {spans:field(n,"spans")?.arr().iter().map(pair).collect(),at,vanish:number(n,"vanish")?,
             loops:each(field(n,"loops")?.arr(),|l| each(l.arr(),wall))?,carry})
     }
+}
+
+/// A motion that carries a section, as a recipe writes it: a screw about the line through
+/// `center` along the unit `axis`, turning by `angle` and stepping `advance` along it, or a step
+/// `delta` along a line.
+fn carry(c: &Json) -> Read<crate::geom::Carry> {
+    Ok(match field(c,"kind")?.as_str() {
+        "screw" => crate::geom::Carry::Screw {center:point(c,"center")?,
+            axis:point(c,"axis")?,angle:number(c,"angle")?,advance:number(c,"advance")?},
+        "line" => crate::geom::Carry::Line {delta:point(c,"delta")?},
+        k => return Err(unread(format!("recipe: a section carried by a `{k}`"))),
+    })
 }
 
 impl Lowered {

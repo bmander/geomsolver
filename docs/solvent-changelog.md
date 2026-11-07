@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.208] A face swept up a screw, in place** (#846). `some t in (a, b): p in sec at(under: m)
+t`, a face's patch over an interval written in place, is read under a screw or a slide as under a
+turn (§6.21): the face where the motion stands it at `a`, carried to `b`, built exactly by the
+kernel (as a face family over a declared parameter the statements say a screw carries) and read
+point by point by the field, each held to the other. It names no running parameter, so a
+component's body may write it, and a part that cuts a helical tooth space or a thread is one
+component: through 0.207 it was E080 ("a slide, a screw or a motion of several steps is not read
+yet"), and the sweep had to be a face family over a parameter every document drawing the part
+declared, handed in. A screw's face lies square to its axis, or in a plane holding it on one side
+(a thread drawn through its axis), spanning less than the screw rises a turn where it is carried
+more than one; a slide's face is crossed by its direction; anything else is E080 naming why. A
+turn's sweep whose interval begins away from nothing (`std.solids.Revolution(sec, about: ax, from:
+10deg, to: 90deg)`), read by its field alone through 0.207, is built exactly too. Its faces are
+named by the rule a revolution's are: its section's sides by their edges, `start` and `end`.
+
 **[0.207] A planet rides its valued carrier** (#823). A frame declared in a valued frame's `in`
 block is drawn there as the rest of the block is (§6.14): it rides on the valued frame no more, its
 joint turns about its axis where the relations hold it (a pin the block draws, where the value puts

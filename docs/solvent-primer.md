@@ -1932,8 +1932,10 @@ same := solid(slab)
 
 is `block` exactly — its volume, its faces' names and areas, its exact boundary. A set none of them
 recognises stays a region (1.13), read point by point: shown, meshed and measured, its exact export
-refused in the region's own words (`std.solids.Revolution(sec, about: ax, from: 10deg, to: 90deg)`
-is one: neither end of its interval is nothing).
+refused in the region's own words where no construction builds it (a sum of distances from three
+points is one). A face swept over an interval that does not begin at nothing
+(`std.solids.Revolution(sec, about: ax, from: 10deg, to: 90deg)`) is the face carried from where
+the interval begins, built exactly (0.208).
 
 **There is a roll at which.** `some t in (a, b): p in sec at(under: m) t` and `some t in (a, b): p
 in tool at(under: m) t` say that at some roll `t` of the interval the point is where the face (or
@@ -1950,7 +1952,24 @@ turn turns(ratio: 1) ax                     // use std.motion (turns)
 same := solid({ p | some t in (0deg, 90deg): p in sec at(under: turn) t })
 ```
 
-is the quarter ring, capped `hand.start` and `hand.end`. The developables' `coincident(t in (0,
+is the quarter ring, capped `hand.start` and `hand.end`. Under a screw or a slide it is the same
+statement (0.208): the face carried up the screw, built exactly, and — naming no parameter — written
+inside a component as anywhere, so a part that cuts its own helical tooth space or thread is one
+component:
+
+```
+component Space() {
+  …
+  section := face(sq.loop)                   // in std.top, square to the spindle
+  screw := frame
+  screw screws(50mm) spindle                 // use std.motion (screws)
+  space := solid({ p | some t in (0deg, 90deg): p in section at(under: screw) t })
+}
+```
+
+A screw's face is square to its axis, or in a plane holding it with the face on one side (a thread
+drawn through its axis, less tall than the pitch where it runs more than a turn); a slide's face is
+crossed by its direction. Anything else is E080, naming why. The developables' `coincident(t in (0,
 1))` — a contact's place on a curve — is another word, unchanged.
 
 **The labels are retired.** `solid(sec, depth: 30mm)` and every label of the old constructor

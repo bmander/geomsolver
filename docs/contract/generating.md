@@ -84,7 +84,11 @@ says.  Recognised by what is stated, never by a word's name.  So `lofts/spring.s
 `swept_spring.sv`'s ball are one tube on one screw (`Blend`), the canal's half balls the only
 difference, and both export alike.  A part walked for a station follows a motion to what it is
 written over (`graft::Part::around_all`: a motion owns no number, so is never a wall).  The gate:
-`tests/carried_family.rs` (the springs, the screw's walls, a station read otherwise).
+`tests/carried_family.rs` (the springs, the screw's walls, a station read otherwise).  A face
+swept over an interval written in place under a screw, a slide or a turn (#846, [0.208]) is the
+same carry with no station to solve: the recipe's `carried` node, the face's profile placed where
+the interval begins and carried by `brep::build::carried` (`screwed`, `ruled` or `revolve`), its
+`carry` written by the one writer a family's is (`cad::carry_json`) — [sets.md](sets.md)'s.
 
 **A frame's numbers are stated or solved** (#383 stages 3 and 5): a ratio or advance measured
 off the solved drawing (`ratio: -length(a) / length(b)`) is E107, as every measurement in a

@@ -1558,18 +1558,15 @@ pub(crate) fn json(f: &Walls, w: &crate::brep::recipe::Writer) -> crate::json::J
         ("loops", Json::Arr(loops))]);
     // the motion carrying it, where the statements say one (#366): a point moved and scaled, a
     // direction as it is, a length scaled
-    let v3 = |v: V| list(&v);
-    match f.carry {
-        Some(crate::brep::geom::Carry::Screw { center, axis, angle, advance }) => {
-            o.set("carry", object([("kind", "screw".into()),
-                ("center", v3(w.moved(center.map(|x| x * w.scale)))), ("axis", v3(axis)),
-                ("angle", angle.into()), ("advance", (advance * w.scale).into())]));
-        }
-        Some(crate::brep::geom::Carry::Line { delta }) => {
-            o.set("carry", object([("kind", "line".into()),
-                ("delta", v3(delta.map(|x| x * w.scale)))]));
-        }
-        None => {}
+    use crate::brep::geom::Carry;
+    let carry = f.carry.map(|c| match c {
+        Carry::Screw { center, axis, angle, advance } => Carry::Screw {
+            center: w.moved(center.map(|x| x * w.scale)), axis, angle, advance: advance * w.scale,
+        },
+        Carry::Line { delta } => Carry::Line { delta: delta.map(|x| x * w.scale) },
+    });
+    if let Some(c) = carry {
+        o.set("carry", super::cad::carry_json(c));
     }
     o
 }
