@@ -1962,8 +1962,8 @@ impl Corner {
 /// own planes, is in contact at one point all round its fan or nowhere, a sharp edge of the sweep
 /// the walk steps across (#684 O). Each corner's ring is read under `motion`, the walk's.
 fn corners(contacts: &Sweep,tool: &dyn Material,motion: Motion,flats: &[usize]) -> Vec<Corner> {
-    let normal = |s: &RevolvedSurface,u: f64| -> Option<(V,V)> {
-        let p = s.at(u,0.).ok()?;
+    let normal = |s: &RevolvedSurface,u: f64,v: f64| -> Option<(V,V)> {
+        let p = s.at(u,v).ok()?;
         Some((p.position,envelope::contact(p,Motion::identity()).ok()?.normal))
     };
     contacts.edges().iter().enumerate().filter_map(|(edge,e)| {
@@ -1973,11 +1973,15 @@ fn corners(contacts: &Sweep,tool: &dyn Material,motion: Motion,flats: &[usize]) 
         if flats.contains(&a) || flats.contains(&b) { return None }
         let (sa,sb) = (contacts.patches().get(a)?.revolved()?,contacts.patches().get(b)?.revolved()?);
         let ring = sa.ring(ua).ok()?;
-        // each face's normal at the corner, turned out of the tool as it is in the face's middle,
-        // where nothing else is near: the chart orients it the same way all along the face
+        // each face's normal at the corner, in the half-plane of the ring's start, turned out of the
+        // tool as it is in the face's middle, where nothing else is near: the chart orients it the
+        // same way all along the face (the second face read in the first's half-plane, wherever its
+        // chart starts, #721 F1d)
+        let start = sa.at(ua,0.).ok()?.position;
         let out = |s: &RevolvedSurface,u: f64| -> Option<f64> {
-            let (_,n) = normal(s,u)?;
-            let (p,m) = normal(s,0.5)?;
+            let v = s.turn_of(start)?;
+            let (_,n) = normal(s,u,v)?;
+            let (p,m) = normal(s,0.5,v)?;
             let n = if dot(outward(tool,p,m),m) < 0. { n.map(|x| -x) } else { n };
             Some(dot(n,ring.axis).datan2(dot(n,ring.radial)))
         };

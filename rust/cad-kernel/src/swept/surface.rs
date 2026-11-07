@@ -277,6 +277,46 @@ impl RevolvedSurface {
     fn full(&self) -> Self { Self {v_domain:[0.,1.],..self.clone()} }
     /// The revolution's unit axis direction.
     pub fn axis_direction(&self) -> [f64;3] { self.axis }
+
+    /// **The same surface, its chart started `phi` radians further round** (#721 F1d): its meridian
+    /// turned about the axis, so `at(u, v)` is the point that was `phi` further round. The set is
+    /// the same, and nothing the sweep reads of it depends on where its chart starts.
+    pub fn started(&self,phi: f64) -> Self {
+        let Some(a) = crate::trajectory::normalized(self.axis) else { return self.clone() };
+        let (s,c) = phi.dsin_cos();
+        let vector = |x: V| { let along = dot(a,x)*(1.-c); add(add(scale(x,c),scale(cross(a,x),s)),scale(a,along)) };
+        let point = |x: V| add(self.origin,vector(sub(x,self.origin)));
+        let meridian = match self.meridian {
+            Meridian::Line {start,delta} => Meridian::Line {start:point(start),delta:vector(delta)},
+            Meridian::Round {center,a,b,sweep} => Meridian::Round {center:point(center),a:vector(a),b:vector(b),sweep},
+            Meridian::Conic {a,m,b,w} => Meridian::Conic {a:point(a),m:point(m),b:point(b),w},
+        };
+        Self {meridian,..self.clone()}
+    }
+
+    /// **The chart's `v` of the half-plane through `p`** (#721 F1d): how far round from its chart's
+    /// start the meridian is turned to pass through the axis's half-plane that holds `p`, as a
+    /// fraction of its sweep, within one whole turn. None where `p` is on the axis or the meridian
+    /// lies along it.
+    pub fn turn_of(&self,p: V) -> Option<f64> {
+        let a = crate::trajectory::normalized(self.axis)?;
+        let radial = |x: V| { let q = sub(x,self.origin); sub(q,scale(a,dot(q,a))) };
+        let start = [0.5,0.,1.].into_iter().filter_map(|u| self.full().at(u,0.).ok()).map(|s| radial(s.position))
+            .find(|r| length(*r) > 0.)?;
+        let r = radial(p);
+        if !(length(r) > 0.) || self.sweep == 0. { return None }
+        let angle = dot(cross(start,r),a).datan2(dot(start,r));
+        Some((angle/self.sweep).rem_euclid(TAU/self.sweep.abs()))
+    }
+
+    /// Where `p` is turned to about the axis, read as `(radius, height)`: what tells two faces of
+    /// revolution about one axis that lie on one surface, however their charts start.
+    pub fn polar(&self,p: V) -> Option<[f64;2]> {
+        let a = crate::trajectory::normalized(self.axis)?;
+        let q = sub(p,self.origin);
+        let h = dot(q,a);
+        Some([length(sub(q,scale(a,h))),h])
+    }
 }
 
 #[derive(Clone,Debug)]

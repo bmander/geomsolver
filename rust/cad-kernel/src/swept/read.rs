@@ -13,15 +13,15 @@
 //! - Any other plane is a cap.
 //!
 //! Corners are where two faces read share an edge at the ends of their meridians or edges, creases
-//! where two strips share a rim and their rulings go on across it; each revolution about an axis
-//! starts from the half-plane the first face about it does. Faces a Boolean cuts from one surface
-//! read alike are kept once (`once_a_surface`). The material is the boundary's own (`Boundary`),
+//! where two strips share a rim and their rulings go on across it; each revolution's chart starts
+//! where its own surface's frame does, nothing the sweep reads depending on where (#721 F1d). Faces
+//! a Boolean cuts from one surface read alike are kept once (`once_a_surface`). The material is the boundary's own (`Boundary`),
 //! its side at a corner the corner's pseudo-normal's. What no reading takes is refused by its
 //! geometry, naming the face and a point of it (`Unread`).
 //!
-//! The classes read the tool this way (#721 F1b: the solver's `SweepContacts::read`); the drawing's
-//! reading stays beside it only as an oracle (`SweepContacts::drawn`), and `tests/tool_reading.rs`
-//! holds the two readings to one tool.
+//! The classes read the tool this way (#721 F1b: the solver's `SweepContacts::read`), and
+//! `tests/tool_reading.rs` holds the reading to its own B-rep and to the drawing's field; the
+//! drawing's reading of the tool, its oracle while the classes switched, is retired (#721 F1c).
 use crate::util::fmath::Det;
 use crate::geom::{Curve,Frame,Surface,Uv};
 use crate::query::{Located,Place};
@@ -82,7 +82,7 @@ impl Tool {
         if !(scale > 0. && scale.is_finite()) { return Err(Unread::Boundary(format!("a scale of {scale}"))) }
         let size = b.size();
         let tol = 1e-7*(1.+size);
-        let reader = Reader {b,tol,uses:b.uses(),axes:Default::default(),parameters:vec![Default::default();b.faces.len()]};
+        let reader = Reader {b,tol,uses:b.uses(),parameters:vec![Default::default();b.faces.len()]};
         let order: Vec<usize> = (0..b.faces.len()).filter(|&fi| !matches!(b.faces[fi].surface,Surface::Plane(_)))
             .chain((0..b.faces.len()).filter(|&fi| matches!(b.faces[fi].surface,Surface::Plane(_)))).collect();
         let witness = |fi: usize| reader.witness(fi).map(|x| x/scale);
@@ -192,12 +192,22 @@ impl Tool {
 /// each corner once. `tol` is how near two readings' points must lie to be one surface's.
 fn once_a_surface(faces: Vec<ToolSurface>,edges: Vec<PatchEdge>,creases: Vec<[usize;2]>,tol: f64)
     -> (Vec<ToolSurface>,Vec<PatchEdge>,Vec<[usize;2]>) {
-    // two faces of revolution alike at a grid of their charts: one surface, read alike
-    let same = |a: &ToolSurface,c: &ToolSurface| matches!((a,c),(ToolSurface::Revolved(_),ToolSurface::Revolved(_)))
-        && [0.,0.5,1.].iter().all(|&u| [0.,0.25,0.5,0.75].iter().all(|&v| match (a.at(u,v),c.at(u,v)) {
-            (Ok(p),Ok(q)) => distance(p.position,q.position) <= tol,
+    // two faces of revolution alike: about one axis, whole turns, their meridians turned to the same
+    // points of the half-plane — one surface read alike, wherever either chart starts (#721 F1d)
+    let same = |a: &ToolSurface,c: &ToolSurface| {
+        let (ToolSurface::Revolved(a),ToolSurface::Revolved(c)) = (a,c) else { return false };
+        let (x,y) = (a.axis_direction(),c.axis_direction());
+        if norm(cross(x,y)) > 1e-9 || a.sweep().abs() != c.sweep().abs() { return false }
+        let Some(o) = a.polar(c.origin()) else { return false };
+        if o[0] > tol { return false }
+        [0.,0.25,0.5,0.75,1.].iter().all(|&u| match (a.at(u,0.),c.at(u,0.)) {
+            (Ok(p),Ok(q)) => match (a.polar(p.position),a.polar(q.position)) {
+                (Some(p),Some(q)) => (p[0]-q[0]).abs() <= tol && (p[1]-q[1]).abs() <= tol,
+                _ => false,
+            },
             _ => false,
-        }));
+        })
+    };
     // each reading's place among those kept: the first reading alike, else its own
     let (mut kept,mut index): (Vec<ToolSurface>,Vec<usize>) = (Vec::new(),Vec::new());
     for f in faces {
@@ -257,14 +267,12 @@ impl Read {
 #[derive(Clone,Debug)]
 struct Strip { edge: Edge,side: Side,rulings: [u32;2],rims: [u32;2],bases: [u32;2],along: V }
 
-/// What reads a boundary: it, the tolerance its points are matched to, each edge's uses, the axes
-/// its revolutions turn about, each with a point of it and the half-plane they start from
-/// (`start`), and each face's parameters.
+/// What reads a boundary: it, the tolerance its points are matched to, each edge's uses, and each
+/// face's parameters.
 struct Reader<'a> {
     b: &'a Brep,
     tol: f64,
     uses: Vec<Vec<(usize,usize,usize)>>,
-    axes: std::cell::RefCell<Vec<(V,V,V)>>,
     /// Each face's parameters (`parameters`), read once.
     parameters: Vec<std::cell::OnceCell<[[f64;2];2]>>,
 }
@@ -561,20 +569,12 @@ impl Reader<'_> {
 }
 
 impl Reader<'_> {
-    /// **A revolution's axis, set as every revolution about it reads it**: its direction, and the
-    /// direction square to it (a face's meridian is laid from a point of the axis its own, along
-    /// that direction) every revolution's meridian about it starts from —
-    /// the first face's about that line, its frame's `x` (for a face a revolution built, its
-    /// profile's half-plane) — so faces about one axis share their charts' start, where the walk
-    /// reads two faces' corner (`Tool::corner`) and where it starts round a ring.
-    fn start(&self,f: &Frame) -> (V,V) {
-        let mut axes = self.axes.borrow_mut();
-        for &(o,a,x) in axes.iter() {
-            if norm(cross(a,f.z)) <= 1e-9 && norm(cross(sub(f.o,o),a)) <= 1e2*self.tol { return (a,x) }
-        }
-        axes.push((f.o,f.z,f.x));
-        (f.z,f.x)
-    }
+    /// **Where a revolution about `f`'s axis starts its chart**: its axis, and the direction
+    /// square to it its meridian is laid along from a point of the axis, the frame's own `x`. Each
+    /// face starts where its own surface's frame does, since nothing the sweep reads depends on
+    /// where a chart starts (#721 F1d: `Tool::corner` probes a corner's second face at the first's
+    /// half-plane, and the walk crosses from face to face by position).
+    fn start(&self,f: &Frame) -> (V,V) { (f.z,f.x) }
 }
 
 /// **A tool's material read from its boundary**: below nought within it and above without, the

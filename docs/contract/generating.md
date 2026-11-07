@@ -502,6 +502,18 @@ generated foot to the cutter's own boundary, and reads which way it faces, by th
 (`SweepContacts::source_material`), not by the source's `SpatialField`.  It takes no axis tolerance
 for that reason.  (The planar class's stock is still the drawing's field while its pocket is the
 drawing's, below.)
+*The chart's start:* `Tool::read` starts each revolution's chart where its own surface's frame
+does (`Reader::start`), no longer in a half-plane shared by every face about one axis, a convention
+kept only so the walks could be held node for node to the drawing's.  Nothing the sweep reads
+depends on where: a corner is probed with its second face at the first's half-plane
+(`RevolvedSurface::turn_of`, `Tool::corner`); a convex corner's fan reads both faces' normals in the
+half-plane of its ring's start (`constant_twist::corners`, which before read each at its own chart's
+start and saw a fan at a smooth join where two charts started apart); faces a Boolean cuts from one
+surface are told by their meridians about one axis (`read::once_a_surface`); and the walk crosses
+from face to face by position.  The gate is `tests/swept_charts.rs`
+(`a_walk_is_the_same_curve_wherever_its_charts_start`): a bull-nosed drum pushed through a plate,
+drawn in three half-planes and dispatched, and its reading walked again with each face's chart
+started further round (`RevolvedSurface::started`), every walk one curve to rounding.
 
 **The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
 every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding

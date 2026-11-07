@@ -40,18 +40,24 @@ impl Tool {
     /// corner lies on the tool: the probe a corner is told by — the chord between the two points in
     /// the tool's material at a convex corner, out of it at a concave one. (At a cap the chord lies
     /// on the tool's boundary, where the material reads nought either way.) The corner is probed
-    /// first on a revolution's chart's start (`v = 0`) and halfway along a prism's sides, clear of
+    /// first on the first face's chart's start (`v = 0`) and halfway along a prism's sides, clear of
     /// its caps, then on round the turn, or out along the sides, at the first place it is on the
-    /// tool (#721 F1b): so a corner a Boolean of the tool trims is told where it is the tool's,
-    /// wherever a face of revolution's chart starts. Where it is nowhere on the tool, at the first
-    /// place.
+    /// tool (#721 F1b): so a corner a Boolean of the tool trims is told where it is the tool's. The
+    /// second face is probed where the first is, a revolution in the first's half-plane (`turn_of`),
+    /// so neither face's chart need start where the other's does (#721 F1d). Where it is nowhere on
+    /// the tool, at the first place.
     pub fn corner(&self,edge: &PatchEdge) -> Option<(V,[V;2])> {
         let ([a,b],[ua,ub]) = (edge.patches,edge.ends);
         let (pa,pb) = (self.faces.get(a)?,self.faces.get(b)?);
         let h = 1e-4;
         let inward = |u: f64| if u < 0.5 { u+h } else { u-h };
+        // the second face beside the corner where the first is: at the same `v` along a prism's
+        // sides, and round a revolution at the first's half-plane, wherever either chart starts
+        // (#721 F1d)
         let probe = |v: f64| -> Option<(V,[V;2])> {
-            Some((pa.at(ua,v).ok()?.position,[pa.at(inward(ua),v).ok()?.position,pb.at(inward(ub),v).ok()?.position]))
+            let at = pa.at(ua,v).ok()?.position;
+            let w = match pb { ToolSurface::Revolved(s) => s.turn_of(at)?,_ => v };
+            Some((at,[pa.at(inward(ua),v).ok()?.position,pb.at(inward(ub),w).ok()?.position]))
         };
         let n = CORNER_PLACES;
         let places = (0..n).map(|k| if pa.periodic() { k as f64/n as f64 }
