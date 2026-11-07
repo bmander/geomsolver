@@ -93,8 +93,31 @@ fn normalized(mut v: Vec<f64>) -> Vec<f64> {
     v
 }
 
+/// **A part cut into the pieces its own structure falls into** (#851): its rows and columns by the
+/// connected components of its rows over its own columns alone.  Over those the part's matrix is
+/// block-diagonal, so each piece is a part of its own, in any order after the parts before it:
+/// its rows read its own columns and earlier parts', never another piece's.  An under-determined
+/// part is often many unrelated pieces — every plane a pass leaves turning — and factored whole
+/// it is the cube of all of them.
+fn pieces(j: &SparseConditioned, rows: &[usize], cols: &[usize]) -> Vec<(Vec<usize>, Vec<usize>)> {
+    let local: std::collections::BTreeMap<usize, usize> =
+        cols.iter().enumerate().map(|(k, &c)| (c, k)).collect();
+    let adj: Vec<Vec<usize>> = rows.iter()
+        .map(|&r| j.row(r).filter_map(|(c, _)| local.get(&c).copied()).collect())
+        .collect();
+    let comps = crate::graph::bipartite_components(&adj, cols.len());
+    let mut out: Vec<(Vec<usize>, Vec<usize>)> = vec![(Vec::new(), Vec::new()); comps.count];
+    for (k, &r) in rows.iter().enumerate() {
+        out[comps.comp_row[k]].0.push(r);
+    }
+    for (k, &c) in cols.iter().enumerate() {
+        out[comps.comp_col[k]].1.push(c);
+    }
+    out
+}
+
 /// The null space of `j`, over the parts in an order where each part's rows read only its own
-/// columns and earlier parts': each vector `j.n_cols` long.
+/// columns and earlier parts', each read piece by piece (`pieces`): each vector `j.n_cols` long.
 fn null_by_parts<'p>(
     j: &SparseConditioned,
     parts: impl Iterator<Item = (&'p [usize], &'p [usize])>,
@@ -103,8 +126,11 @@ fn null_by_parts<'p>(
     let mut cands: Vec<Vec<f64>> = Vec::new();
     // rows a part could not make up exactly: where a combination of candidates may still fail
     let mut short: Vec<usize> = Vec::new();
-    for (rows, cols) in parts {
+    for (rows, cols) in parts.flat_map(|(rows, cols)| pieces(j, rows, cols)) {
+        let (rows, cols) = (&rows[..], &cols[..]);
         if cols.is_empty() {
+            // rows that read none of their part's columns make nothing up
+            short.extend(rows);
             continue;
         }
         // what each earlier candidate puts on this part's rows, to be made up here
@@ -160,4 +186,39 @@ pub(super) fn right_null(j: &SparseConditioned, parts: &[Part]) -> Vec<Vec<f64>>
 /// residual vector's rows.
 pub(super) fn left_null(j: &SparseConditioned, parts: &[Part]) -> Vec<Vec<f64>> {
     null_by_parts(&j.transpose(), parts.iter().rev().map(|p| (&p.cols[..], &p.rows[..])))
+}
+
+/// **The rank of `rows` of `j` over `cols` alone** (#851), read part by part as the whole is past
+/// `NUMERIC_MAX`: the rows' structure over those columns cut into its own block-triangular order
+/// (over-determined part, square blocks in their solve order, under-determined part) and its null
+/// space read through them, exact as `right_null` is.  So a reading of one instance of a
+/// definition costs what its blocks do, not the cube of everything it makes: the instance of a
+/// definition that seats forty others is forty small blocks, not one matrix of all of them.  An
+/// entry outside `cols` is not read.
+pub fn rank_by_parts(j: &SparseConditioned, rows: &[usize], cols: &[usize]) -> usize {
+    if rows.is_empty() || cols.is_empty() {
+        return 0;
+    }
+    let local: std::collections::BTreeMap<usize, usize> =
+        cols.iter().enumerate().map(|(k, &c)| (c, k)).collect();
+    let adj: Vec<Vec<usize>> = rows.iter().map(|&r| {
+        let mut a: Vec<usize> = j.row(r).filter_map(|(c, _)| local.get(&c).copied()).collect();
+        a.sort_unstable();
+        a.dedup();
+        a
+    }).collect();
+    let dm = crate::graph::dulmage_mendelsohn(&adj, cols.len());
+    let blt = crate::graph::blocks(&adj, &dm);
+    // each part in the order a part's rows read only its own columns and earlier parts', by the
+    // rows and columns of `j`
+    let of_rows = |rs: &[usize]| -> Vec<usize> { rs.iter().map(|&r| rows[r]).collect() };
+    let of_cols = |cs: &[usize]| -> Vec<usize> { cs.iter().map(|&c| cols[c]).collect() };
+    let mut parts = vec![Part { rows: of_rows(&dm.over_rows), cols: of_cols(&dm.over_cols) }];
+    parts.extend(blt.rows.iter().map(|rs| {
+        let mut cs: Vec<usize> = rs.iter().map(|&r| dm.mate_row[r] as usize).collect();
+        cs.sort_unstable();
+        Part { rows: of_rows(rs), cols: of_cols(&cs) }
+    }));
+    parts.push(Part { rows: of_rows(&dm.under_rows), cols: of_cols(&dm.under_cols) });
+    cols.len() - right_null(j, &parts).len().min(cols.len())
 }

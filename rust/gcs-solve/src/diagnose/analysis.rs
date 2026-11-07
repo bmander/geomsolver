@@ -659,6 +659,15 @@ fn read_level(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
 fn scenario_read_with(sk: &Sketch, sc: &Scenario, pictured: bool)
     -> (Vec<String>, crate::beams::Read, crate::deformed::Picture)
 {
+    // a stage of its own (#851): every reader's mesh and factor are in it
+    let reading = || crate::progress::Work::scenario(&sc.name);
+    crate::progress::during(reading, || scenario_read_unsaid(sk, sc, pictured))
+}
+
+/// `scenario_read_with`, unsaid.
+fn scenario_read_unsaid(sk: &Sketch, sc: &Scenario, pictured: bool)
+    -> (Vec<String>, crate::beams::Read, crate::deformed::Picture)
+{
     // every reader at its own size, then, where anything is answered, twice as coarse: the
     // change is the error estimated beside each value (#510 S3)
     let (mut frames, drawn) = read_level(sk, sc, 1.0, pictured);

@@ -240,3 +240,45 @@ fn a_large_twin_reads_as_its_small_one() {
         assert_eq!(d.expected.len(), 1);
     }
 }
+
+/// **A sub-Jacobian's rank, read part by part, is its dense rank** (#851): any rows of a library
+/// case over any of its columns — a part's rows over its own unknowns, as the reading through the
+/// parts asks (`parts::read`, D3) — ranked by `rank_by_parts`, which cuts them into their own
+/// block-triangular order and each part into the pieces its structure falls into, and by one SVD
+/// of the whole selection, agree.  Three draws a case, rows and columns sampled by the seeded rng.
+#[test]
+fn a_sub_jacobian_ranked_by_parts_is_its_dense_rank() {
+    use gcs_core::linalg::{rank_and_nullspace_with, Tol};
+    use gcs_core::system::RANK_TOL;
+    let wrong: Vec<String> = gcs_core::par::map(&examples::CASES, |(_, key, _)| {
+        if examples::left_to_slow_tier(key) {
+            return Vec::new();
+        }
+        let Some(mut sk) = examples::case(key) else { return Vec::new() };
+        solve(&mut sk, SolveOpts::default());
+        if gcs_core::system::System::new(&sk).n_free > NUMERIC_MAX {
+            return Vec::new();
+        }
+        let (j, _, _, _) = gcs_core::diagnose::parts_null_spaces(&sk);
+        let (m, n) = (j.n_rows(), j.n_cols);
+        if m == 0 || n == 0 {
+            return Vec::new();
+        }
+        let mut rng = gcs_core::rng::Rng::new(851);
+        let mut wrong = Vec::new();
+        for draw in 0..3 {
+            let mut rows = rng.sample(m, (3 * m / 4).max(1));
+            let mut cols = rng.sample(n, (n / 2).max(1));
+            rows.sort_unstable();
+            cols.sort_unstable();
+            let by_parts = gcs_core::diagnose::rank_by_parts(&j, &rows, &cols);
+            let dense = rank_and_nullspace_with(&j.dense(&rows, &cols), Tol::Abs(RANK_TOL)).rank;
+            if by_parts != dense {
+                wrong.push(format!("{key}, draw {draw}: rank {by_parts} by parts, {dense} dense \
+                                    ({} rows over {} columns)", rows.len(), cols.len()));
+            }
+        }
+        wrong
+    }).into_iter().flatten().collect();
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}

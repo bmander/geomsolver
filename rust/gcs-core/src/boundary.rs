@@ -206,6 +206,15 @@ pub fn classify(e: &Elaborated, solved: &Sketch) -> Vec<Classified> {
     used.sort_by_key(|&c| prog.component_id(c));
     used.dedup();
     defs.extend(used);
+    // a stage of its own (#851): each definition's root search is probe solves
+    let n = defs.len();
+    let classifying = || crate::progress::Work::classify(n);
+    crate::progress::during(classifying, || classify_defs(e, solved, defs))
+}
+
+/// `classify` over the definitions `defs`, unsaid.
+fn classify_defs(e: &Elaborated, solved: &Sketch, defs: Vec<usize>) -> Vec<Classified> {
+    let (prog, map) = (&e.program, &e.map);
     let world = World::of(solved, map);
     defs.into_iter().map(|c| {
         let name = prog.component_id(c);
