@@ -205,7 +205,7 @@ impl Step {
         match self.chart { None => self.seg.length(),Some(_) => (0..16).map(|k| dist(self.point(k as f64/16.),self.point((k+1) as f64/16.))).sum() }
     }
     pub fn reversed(&self) -> Step { Step {seg:self.seg.reversed(),..*self} }
-    fn part(&self,t0: f64,t1: f64) -> Step { Step {seg:self.seg.part(t0,t1),..*self} }
+    pub(crate) fn part(&self,t0: f64,t1: f64) -> Step { Step {seg:self.seg.part(t0,t1),..*self} }
     pub(crate) fn param(&self,p: P) -> f64 { match self.chart { None => self.seg.param(p),Some(c) => self.seg.param(c.to(p)) } }
     fn distance(&self,p: P) -> f64 {
         match self.chart {
@@ -260,7 +260,7 @@ impl Step {
 /// Fractions along `s` and `q` where they meet: crossings and touches, and the ends of a stretch
 /// they share. Plain steps meet in closed form; a charted one by roots of the other's implicit
 /// along it (and of its implicit along the other).
-fn meets_steps(s: &Step,q: &Step,tol: f64) -> (Vec<f64>,Vec<f64>) {
+pub(crate) fn meets_steps(s: &Step,q: &Step,tol: f64) -> (Vec<f64>,Vec<f64>) {
     let conic = |x: &Step| matches!(x.seg,Seg::Conic {..});
     if s.chart.is_none() && q.chart.is_none() && !conic(s) && !conic(q) { return meets(&s.seg,&q.seg,tol) }
     let (mut on_s,mut on_q) = (Vec::new(),Vec::new());

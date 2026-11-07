@@ -164,7 +164,7 @@ fn a_helical_gears_step_is_about_its_spur_twins_size() {
     let (h, s) = (entities(&text), entities(&spur));
     eprintln!("the helical gear's STEP: {h} entities, {} bytes; its spur twin's: {s}, {} bytes", text.len(), spur.len());
     assert!(h <= 2 * s, "the helical gear's STEP has {h} entities, its spur twin's {s}");
-    // the flanks' nets few poles along the helix, and no curve of many hundred poles
+    // the flanks' nets few poles along the helix, and no curve of many hundred poles (#826's were)
     for l in text.lines().filter(|l| l.contains("B_SPLINE_SURFACE_WITH_KNOTS('',")) {
         let inner = &l[l.find("((").unwrap() + 1..];
         let columns = inner.split("),(").next().unwrap().split(',').count();
@@ -174,5 +174,8 @@ fn a_helical_gears_step_is_about_its_spur_twins_size() {
         let inner = l.split_once("B_SPLINE_CURVE_WITH_KNOTS('',").unwrap().1;
         inner.split_once(",(").map_or(0, |(_, rest)| rest.split(')').next().unwrap().split(',').count())
     }).max().unwrap_or(0);
-    assert!(longest < 120, "a curve of {longest} poles");
+    // (a traced meeting is written as its samples, as many as its chords need, so its count moves
+    // with how the tracer stepped: the outer rim's meeting with a flank takes 139 read from the
+    // tool's B-rep and 100 from its recipe, the two sheets one to 2e-15, #721 F1d)
+    assert!(longest < 200, "a curve of {longest} poles");
 }

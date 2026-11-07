@@ -11,11 +11,9 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::build::{offset,walks as walks_of,Profile,Seg};
-use crate::geom::{Frame,Rigid};
+use crate::geom::Frame;
 use crate::planar::Step;
-use crate::recipe::{Node,Recipe};
 use crate::section::Sectioned;
-use crate::util::json::Json;
 use super::trace::{Sample,TraceError,Tracer};
 use crate::util::space::{add,cross,distance,dot,lerp,norm,scale,sub};
 use std::collections::BTreeMap;
@@ -305,24 +303,10 @@ impl std::fmt::Debug for Cutter {
 }
 
 impl Cutter {
-    /// The cutter of `recipe` (millimetres), or why the core does not section it.
-    pub fn read(recipe: &Json) -> Result<Cutter,String> {
-        let recipe = Recipe::read(recipe)?;
-        if let Some(cutter) = Cutter::prism(&recipe)? { return Ok(cutter) }
-        let sec = match Sectioned::of(&recipe) {
-            Ok(sec) => sec,
-            Err(e) if e.kind == crate::Kind::Refused => return Err(format!("the core sections a cutter of revolutions \
-                about parallel lines, or a prism, only: {e}")),
-            Err(e) => return Err(e.into()),
-        };
-        let (origin,axis) = (sec.origin,unit(sec.axis)?);
-        let seed = if axis[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
-        let side = unit(cross(cross(axis,seed),axis))?;
-        Ok(Cutter {origin,axis,kind:Kind::Revolved {side,sec},sections:Default::default()})
-    }
-    /// **The cutter of revolutions about one line its B-rep `b` (millimetres) is** (#721 F1d): its
-    /// section by every half-plane of the line read from its faces (`Sectioned::of_boundary`),
-    /// however it was drawn, or why it is not one.
+    /// **The cutter of revolutions about parallel lines its B-rep `b` (millimetres) is** (#721 F1d):
+    /// its section by every half-plane of the first line read from its faces
+    /// (`Sectioned::of_boundary`), however it was drawn, or why it is not one. (No recipe is read:
+    /// a prism's cutter is its B-rep's too, `admission::Lone::read`.)
     pub fn of_boundary(b: &crate::topo::Brep) -> Result<Cutter,String> {
         let sec = Sectioned::of_boundary(b)?;
         let (origin,axis) = (sec.origin,unit(sec.axis)?);
@@ -330,24 +314,9 @@ impl Cutter {
         let side = unit(cross(cross(axis,seed),axis))?;
         Ok(Cutter {origin,axis,kind:Kind::Revolved {side,sec},sections:Default::default()})
     }
-    /// A recipe whose root is one prism, or one prism placed (#684 AC), as its sections, its
-    /// profile carried by its placements: none for any other recipe.
-    fn prism(recipe: &Recipe) -> Result<Option<Cutter>,String> {
-        // the placements from the root down, the first met applied last
-        let (mut id,mut placed) = (recipe.root,Rigid::identity());
-        let (profile,from,to,draft) = loop {
-            let Some(node) = recipe.nodes.iter().find(|n| n.id == id) else { return Ok(None) };
-            match &node.node {
-                Node::Prism {profile,from,to,draft} => break (profile,*from,*to,draft),
-                Node::Placed {source,matrix} => { placed = Rigid::from_rows(matrix).then(&placed); id = *source; }
-                _ => return Ok(None),
-            }
-        };
-        Cutter::extruded(Profile::of(profile)?.moved(&placed),from,to,*draft).map(Some)
-    }
     /// The prism of `profile` (millimetres) from `from` to `to` along its normal, drafted `draft`
-    /// where it is, as its sections: what a recipe's prism is read as (`read`), and what a tool's
-    /// B-rep read as one prism standing alone is (`admission::Lone::read`, #721 F1b).
+    /// where it is, as its sections: what a tool's B-rep read as one prism standing alone is
+    /// (`admission::Lone::read`, #721 F1b, F1d).
     pub fn extruded(profile: Profile,from: f64,to: f64,draft: Option<f64>) -> Result<Cutter,String> {
         let axis = unit(profile.normal)?;
         let plane = Frame::about(profile.origin,axis);

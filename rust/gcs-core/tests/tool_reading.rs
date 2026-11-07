@@ -272,21 +272,31 @@ fn a_face_no_closed_form_reads_is_refused_by_name() {
 /// sweep whose tool's recipe is sectioned as revolutions (`Sectioned::read`) has its B-rep sectioned
 /// so too where it is revolutions about one line (`Sectioned::of_boundary`), the two sections at
 /// several half-planes one region — the same area, and every point of a grid over it in both or
-/// in neither, read in space. A tool of revolutions about parallel lines (a spiral bevel's cutter)
-/// the B-rep does not section yet, and it is named. Returns how many cutters were held, and how many
-/// were refused.
+/// in neither, read in space — a cutter of revolutions about parallel lines (a spiral bevel's, a
+/// hypoid's) too, sectioned half-plane by half-plane. Returns how many cutters were held, and how
+/// many the B-rep did not section (each named).
 fn sections_alike(within: impl Fn(&str) -> bool) -> (usize,usize) {
-    use gcs_core::brep::section::Sectioned;
     let (mut held,mut refused) = (0,0);
     for name in fixtures::example_names().into_iter().filter(|n| within(n)) {
         let Some(e) = fixtures::example(&name) else { continue };
         if !e.sketch.solids.iter().any(|s| matches!(s.def,SolidDef::Swept {..})) { continue }
         let mut sk = e.sketch.clone();
         gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
+        let (h,r) = sketch_sections_alike(&name,&sk);
+        (held,refused) = (held+h,refused+r);
+    }
+    (held,refused)
+}
+
+/// `sections_alike` of one solved drawing's sweeps.
+fn sketch_sections_alike(name: &str,sk: &gcs_core::model::Sketch) -> (usize,usize) {
+    use gcs_core::brep::section::Sectioned;
+    let (mut held,mut refused) = (0,0);
+    {
         for swept in 0..sk.solids.len() {
             let SolidDef::Swept {source,..} = &sk.solids[swept].def else { continue };
             let what = format!("{name}: `{}`",sk.solids[swept].name);
-            let Ok(recipe) = cad::recipe(&sk,*source as usize) else { continue };
+            let Ok(recipe) = cad::recipe(sk,*source as usize) else { continue };
             let Ok(drawn) = Sectioned::read(&recipe) else { continue };
             let Ok(brep) = gcs_core::brep::recipe::build(&recipe) else { continue };
             let read = match Sectioned::of_boundary(&brep) {
@@ -344,5 +354,5 @@ fn the_catalogues_cutters_of_revolution_section_from_their_boundaries() {
 fn every_examples_cutters_of_revolution_section_from_their_boundaries() {
     let (held,refused) = sections_alike(|_| true);
     eprintln!("{held} cutters of revolution sectioned alike, {refused} not sectioned from the B-rep");
-    assert!(held >= 5,"{held} held");
+    assert!(held >= 40 && refused == 0,"{held} held, {refused} refused");
 }

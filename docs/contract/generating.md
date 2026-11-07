@@ -529,24 +529,32 @@ built yet: T3 cuts and the constant twist walks the cap only of a prism that is 
 one loop (`Lone::sectioned_across`), and refuses any other's cap at T1 as before.  The gates are
 `drafted_tools::a_drafted_prisms_cutter_is_read_from_its_brep` and
 `swept_dispatch::a_prism_with_a_hole_is_one_prism`.  The helical rack's screwed sheet
-(`brep::sweep::extruded::screwed_sheet`) still takes the recipe's prism: read from the B-rep, its
-section and band are the recipe's to rounding (2e-15), the blank's faces cut both nets along iso
-lines alike, but the outer rim's traced meeting with the flank is fitted in 139 poles where the
-recipe's takes 100, past `helical_rack::a_helical_gears_step_is_about_its_spur_twins_size`'s 120 — a
-fit that sensitive to rounding is F4's.
-*Cutters of revolution off the recipe:* a tool whose B-rep is revolutions about one line — every
-face a whole turn of a cylinder, cone, sphere, torus or revolution of a line or circle about it, or
-a plane square to it bounded by circles about it — is sectioned from its B-rep
+(`brep::sweep::extruded::screwed_sheet`) takes the B-rep's prism too: its section and band are the
+recipe's to rounding (2e-15), and the blank's faces cut both nets along iso lines alike; only a
+traced meeting's sample count moves with how the tracer stepped (the outer rim's with a flank, 139
+poles where the recipe's took 100), so
+`helical_rack::a_helical_gears_step_is_about_its_spur_twins_size` bars a curve of 200 poles, still
+far short of the many hundred #826 removed.
+*Cutters of revolution off the recipe:* a tool whose B-rep is revolutions about parallel lines —
+every face a cylinder, cone, sphere, torus or revolution of a line or circle about a line parallel
+to the first face's, or a plane square to them — is sectioned from its B-rep
 (`Sectioned::of_boundary`, `Cutter::of_boundary`, read once in `SweepContacts::read` as
-`SweepContacts::revolved`): its section by every half-plane is the faces' meridians over the spans
-their B-rep faces reach, each end on the circle its edges lie on, joined end to end and closed along
-the line, each step naming its face.  `SweptCut::cutter` takes the B-rep's prism, else its cutter
-of revolution, and only else the recipe's (`Cutter::read`): a cutter of revolutions about parallel
-lines (a spiral bevel's), which the B-rep does not section yet.  The gate is
+`SweepContacts::revolved`), each face read as its surface's meridian in its own line's half-plane
+over the span of it the face reaches, its ends on the circles its edges lie on, each step naming
+its face.  Where every face is a whole turn about one line, every half-plane's section is the same,
+the meridians joined end to end and closed along the line; else each half-plane is sectioned as it
+is asked: each face's meridian carried into it (a `Chart`), or a plane's line across it, split
+where another meets it, and the pieces whose middles lie on their faces of the B-rep kept and
+joined into loops, so a crown bounded by its neighbour (the spiral bevel's and the hypoid's
+cutters) is sectioned by its faces as its recipe's Boolean was.  `SweptCut::cutter` takes the
+B-rep's prism, else its cutter of revolutions, and reads no recipe: `Cutter::read` and its recipe
+prism are retired, and `Sectioned::read` of a recipe stays only as the oracle the B-rep's sections
+are held to.  The gate is
 `tool_reading::the_catalogues_cutters_of_revolution_section_from_their_boundaries`: every catalogue
 sweep the recipe sections as revolutions (23) the B-rep sections alike, the two sections at five
-half-planes one region by their exact areas and a grid of points read in space (the slow tier's
-`every_examples_cutters_of_revolution_section_from_their_boundaries` over every example).
+half-planes one region by their exact areas and a grid of points read in space; the slow tier's
+`every_examples_cutters_of_revolution_section_from_their_boundaries` holds every example's 43,
+the hypoid's and the spiral bevel's among them, none refused.
 
 **The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
 every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding

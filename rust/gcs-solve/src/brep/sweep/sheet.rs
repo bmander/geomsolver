@@ -33,28 +33,19 @@ pub struct SweptCut {
     pub routes: std::collections::BTreeMap<String,String>,
 }
 
-/// A cut's cutter (`SweptCut::cutter`): the one admission read from the tool's B-rep, or one
-/// sectioned off its recipe.
-pub enum Sectioned<'a> { Read(&'a Cutter),Recipe(Cutter) }
-
-impl std::ops::Deref for Sectioned<'_> {
-    type Target = Cutter;
-    fn deref(&self) -> &Cutter { match self { Sectioned::Read(c) => c,Sectioned::Recipe(c) => c } }
-}
-
 impl SweptCut {
     /// **The cutter every sheet of this cut is sectioned by**, chosen once and read from the tool's
     /// B-rep however the tool was drawn (#721 F1b, F1d): the prism, drafted or not, where it is one
     /// standing alone (`SweepContacts::lone`), so admission's band and the sheet's stations are
-    /// measured from one origin; the cutter of revolutions about one line where it is one
-    /// (`SweepContacts::revolved`); else the recipe's (`Cutter::read`), a cutter of revolutions
-    /// about parallel lines, which the B-rep does not section yet.
-    pub fn cutter(&self) -> Result<Sectioned<'_>,String> {
-        let contacts = self.contacts.as_ref().ok();
-        match (contacts.and_then(SweepContacts::lone),contacts.and_then(SweepContacts::revolved)) {
-            (Some(lone),_) => Ok(Sectioned::Read(lone.cutter())),
-            (None,Some(revolved)) => Ok(Sectioned::Read(revolved)),
-            (None,None) => Cutter::read(&self.recipe).map(Sectioned::Recipe),
+    /// measured from one origin; else the cutter of revolutions about parallel lines it is
+    /// (`SweepContacts::revolved`). The recipe is not read.
+    pub fn cutter(&self) -> Result<&Cutter,String> {
+        let contacts = self.contacts.as_ref().map_err(Clone::clone)?;
+        match (contacts.lone(),contacts.revolved()) {
+            (Some(lone),_) => Ok(lone.cutter()),
+            (None,Some(revolved)) => Ok(revolved),
+            (None,None) => Err(format!("`{}`'s tool is no prism standing alone and no cutter of revolutions about parallel \
+                lines, which the core sections",self.name)),
         }
     }
 
