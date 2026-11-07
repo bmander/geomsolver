@@ -316,9 +316,7 @@ fn a_turning_chain_is_read_a_link_at_a_time() {
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let (j, _, _, _) = gcs_core::diagnose::parts_null_spaces(&sk);
     let rows: Vec<usize> = (0..j.n_rows()).collect();
-    let adj: Vec<Vec<usize>> = rows.iter()
-        .map(|&r| j.row(r).filter(|&(_, v)| v != 0.0).map(|(c, _)| c).collect())
-        .collect();
+    let adj: Vec<Vec<usize>> = rows.iter().map(|&r| j.row(r).map(|(c, _)| c).collect()).collect();
     let dm = gcs_core::graph::dulmage_mendelsohn(&adj, j.n_cols);
     let (free, under) = gcs_core::graph::under_blocks(&adj, &dm);
     // each under column once: free, or matched to a row of exactly one block
@@ -336,8 +334,7 @@ fn a_turning_chain_is_read_a_link_at_a_time() {
         }
     }
     assert_eq!(seen, dm.under_rows.iter().copied().collect::<BTreeSet<usize>>());
-    let mut under_cols: Vec<usize> = (0..j.n_cols).filter(|&c| part_of[c] != usize::MAX).collect();
-    under_cols.sort_unstable();
+    let under_cols: Vec<usize> = (0..j.n_cols).filter(|&c| part_of[c] != usize::MAX).collect();
     assert_eq!(under_cols, dm.under_cols);
     // a block's rows read the free columns, earlier blocks' and its own, never a later block's
     for (k, block) in under.rows.iter().enumerate() {

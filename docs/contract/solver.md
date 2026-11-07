@@ -345,9 +345,9 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   (`Diagnosis.warnings`).  Above `NUMERIC_MAX` (300) free parameters the whole SVD is not
   taken, since it runs after every edit: the rank is read **part by part** (#88,
   `diagnose/parts.rs`, `Diagnosis::by_parts`) over the block-triangular order of the entries
-  the Jacobian has where it is taken (`parts::order`, #858: an entry zero there — a unit row's
-  against a component of its direction that is zero — is none, or the matching pairs the row
-  with it and the block is singular) — over part first, square blocks in solve order, under part
+  the Jacobian has where it is taken (`parts::order`, #858: `System::conditioned_sparse` keeps
+  no entry zero there — a unit row's against a component of its direction that is zero — or the
+  matching pairs the row with it and the block is singular) — over part first, square blocks in solve order, under part
   last, **itself in a block-triangular order of its own** (`graph::under_blocks`, #858: its
   columns no row is matched to, each free, then its rows in square blocks over the columns
   matched to them, so a chain of parts each turning on the one before is a block per link, not

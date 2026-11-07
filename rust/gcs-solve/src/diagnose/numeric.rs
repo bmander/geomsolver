@@ -329,15 +329,6 @@ struct ByParts {
     twice: (Vec<u32>, usize),
 }
 
-/// Each hard row's constraint, by the full residual vector's rows (`u32::MAX` for a soft row).
-fn constraint_rows(sys: &System, row_c: &[u32]) -> Vec<u32> {
-    let mut of_row = vec![u32::MAX; sys.n_res];
-    for (i, r) in sys.hard_rows().into_iter().enumerate() {
-        of_row[r] = row_c[i];
-    }
-    of_row
-}
-
 /// **What the parts read, for a caller to hold it to the Jacobian itself** (#88, #780): the
 /// conditioned Jacobian where `sk` stands, how many of its rows the parts read (the hard ones),
 /// the motions the parts read (each a value per free column) and the dependencies among those
@@ -348,17 +339,22 @@ pub fn parts_null_spaces(sk: &Sketch) -> (SparseConditioned, usize, Vec<Vec<f64>
     let mut sys = System::new(sk);
     let z = sys.z0(sk);
     let j = sys.conditioned_sparse(&z);
-    let all = parts::order(&j, &sys.hard_rows());
-    let rows = all.iter().map(|p| p.rows.len()).sum();
+    let hard = sys.hard_rows();
+    let all = parts::order(&j, &hard);
     let (null, left) = (parts::right_null(&j, &all), parts::left_null(&j, &all));
-    (j, rows, null, left)
+    (j, hard.len(), null, left)
 }
 
 fn numeric_by_parts(sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64]) -> ByParts {
     use parts::Part;
     let j = sys.conditioned_sparse(z);
-    let all = parts::order(&j, &sys.hard_rows());
-    let of_row = constraint_rows(sys, row_c);
+    let hard = sys.hard_rows();
+    let all = parts::order(&j, &hard);
+    // each hard row's constraint, by the full residual vector's rows
+    let mut of_row = vec![u32::MAX; sys.n_res];
+    for (&r, &c) in hard.iter().zip(row_c) {
+        of_row[r] = c;
+    }
     let relation = |r: &usize| sk.constraint(of_row[*r]).is_some_and(states_no_number);
     let rel: Vec<Part> = all.iter().map(|p| Part {
         rows: p.rows.iter().copied().filter(relation).collect(),
@@ -381,7 +377,7 @@ fn numeric_by_parts(sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64]) -> 
     // a dependency among rows only where there are more rows than the rank; among relations
     // only where there is one among all the rows
     let rank = sys.n_free - null.len();
-    let rows: usize = all.iter().map(|p| p.rows.len()).sum();
+    let rows = hard.len();
     let all_rows = if rank < rows { parts::left_null(&j, &all) } else { Vec::new() };
     let rel_rows = match all_rows.is_empty() {
         true => Vec::new(),

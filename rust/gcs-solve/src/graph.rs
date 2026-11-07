@@ -263,14 +263,14 @@ pub fn under_blocks(adj: &[Vec<usize>], dm: &Dm) -> (Vec<usize>, Blt) {
 /// `rows`, each matched to a column (`mate_col`), sorted into the strongly connected blocks of
 /// the square system they make with the columns matched to them, in a solve order (`blocks`).  A
 /// column matched to no row of `rows` is read, never solved for.
-fn blocks_of(adj: &[Vec<usize>], well: &[usize], mate_col: &[i32]) -> Blt {
-    let n = well.len();
+fn blocks_of(adj: &[Vec<usize>], rows: &[usize], mate_col: &[i32]) -> Blt {
+    let n = rows.len();
     let mut pos = vec![usize::MAX; adj.len()];
-    for (i, &r) in well.iter().enumerate() {
+    for (i, &r) in rows.iter().enumerate() {
         pos[r] = i;
     }
-    // v reads w: the row matched to a column v touches, when that row is in the well part
-    let succ: Vec<Vec<usize>> = well
+    // v reads w: the row matched to a column v touches, when that row is one of `rows`
+    let succ: Vec<Vec<usize>> = rows
         .iter()
         .enumerate()
         .map(|(v, &r)| {
@@ -307,7 +307,7 @@ fn blocks_of(adj: &[Vec<usize>], well: &[usize], mate_col: &[i32]) -> Blt {
         }
     }
     let first: Vec<usize> =
-        comps.iter().map(|c| c.iter().map(|&v| well[v]).min().unwrap()).collect();
+        comps.iter().map(|c| c.iter().map(|&v| rows[v]).min().unwrap()).collect();
     let mut waiting: Vec<usize> = needs.iter().map(|s| s.len()).collect();
     let mut ready: BTreeSet<(usize, usize)> =
         (0..comps.len()).filter(|&k| waiting[k] == 0).map(|k| (first[k], k)).collect();
@@ -315,9 +315,9 @@ fn blocks_of(adj: &[Vec<usize>], well: &[usize], mate_col: &[i32]) -> Blt {
     let mut out = Blt::default();
     while let Some((_, k)) = ready.pop_first() {
         level[k] = 1 + needs[k].iter().map(|&j| level[j]).max().unwrap_or(0);
-        let mut rows: Vec<usize> = comps[k].iter().map(|&v| well[v]).collect();
-        rows.sort_unstable();
-        out.rows.push(rows);
+        let mut block: Vec<usize> = comps[k].iter().map(|&v| rows[v]).collect();
+        block.sort_unstable();
+        out.rows.push(block);
         out.level.push(level[k]);
         for &f in &feeds[k] {
             waiting[f] -= 1;

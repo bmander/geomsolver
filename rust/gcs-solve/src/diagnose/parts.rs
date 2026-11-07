@@ -163,31 +163,27 @@ fn null_by_parts<'p>(
             }
         }
     }
-    if cands.is_empty() || short.is_empty() {
+    if short.is_empty() {
         return cands;
     }
     // the combinations every short row sends to zero: a candidate that puts nothing on any of
     // them is one already, and only the others are combined (#858) — a chain's candidates born
     // past its last short row, or in a piece no short row reads
-    let on_short: Vec<Vec<f64>> =
-        cands.iter().map(|v| short.iter().map(|&r| j.row_dot(r, v)).collect()).collect();
-    let touched: Vec<bool> = on_short.iter().map(|o| o.iter().any(|&x| x != 0.0)).collect();
-    let touch: Vec<usize> = (0..cands.len()).filter(|&k| touched[k]).collect();
+    let (touch, kept): (Vec<_>, Vec<_>) = cands.into_iter()
+        .map(|v| {
+            let on: Vec<f64> = short.iter().map(|&r| j.row_dot(r, &v)).collect();
+            (v, on)
+        })
+        .partition(|(_, on)| on.iter().any(|&x| x != 0.0));
+    let kept = kept.into_iter().map(|(v, _)| v);
     if touch.is_empty() {
-        return cands;
+        return kept.collect();
     }
-    let mut m = Mat::zeros(short.len(), touch.len());
-    for (k, &c) in touch.iter().enumerate() {
-        for (i, &x) in on_short[c].iter().enumerate() {
-            m.data[i * touch.len() + k] = x;
-        }
-    }
-    let kernel = Factored::of(&m, false).null;
-    let combos =
-        Mat::from_vec(touch.len(), n, touch.iter().flat_map(|&c| cands[c].clone()).collect());
-    let found: Vec<Vec<f64>> = kernel.iter().map(|c| normalized(combos.mul_t_vec(c))).collect();
-    let kept = cands.into_iter().zip(touched).filter(|(_, t)| !t).map(|(v, _)| v);
-    kept.chain(found).collect()
+    let (vs, on): (Vec<Vec<f64>>, Vec<Vec<f64>>) = touch.into_iter().unzip();
+    let m = Mat::from_vec(vs.len(), short.len(), on.concat()).transpose();
+    let combos = Mat::from_vec(vs.len(), n, vs.concat());
+    let found = Factored::of(&m, false).null;
+    kept.chain(found.iter().map(|c| normalized(combos.mul_t_vec(c)))).collect()
 }
 
 /// The whole Jacobian's null space over its free columns, part by part: each vector `n_cols` long.
@@ -206,31 +202,28 @@ pub(super) fn left_null(j: &SparseConditioned, parts: &[Part]) -> Vec<Vec<f64>> 
 /// and earlier parts'** (#88, #858): the Dulmage–Mendelsohn decomposition of the entries `j` has
 /// where it was taken, not of the rows' structure — the over-determined part, the square blocks
 /// in their solve order (`graph::blocks`), and the under-determined part in its own
-/// (`graph::under_blocks`): its free columns, then its square blocks.  An entry that is zero
-/// where the drawing stands is none: a unit row's against a component of its direction that is
-/// zero there.  A matching of the structure pairs such a row with such a column, and each such
-/// block is singular — its rows fall to the one matrix every candidate is read against at the
-/// end, and a chain of seated parts, their directions square to the world, is the cube of all of
-/// them again.  The entries left out are zero, so the reading is as exact as ever.  Rows and
-/// columns are `j`'s.
+/// (`graph::under_blocks`): its free columns, then its square blocks.  An entry zero where the
+/// drawing stands is none (`System::conditioned_sparse`): a matching of the structure pairs a
+/// unit row with a component of its direction that is zero there, and each such block is
+/// singular — its rows fall to the one matrix every candidate is read against at the end, and a
+/// chain of seated parts, their directions square to the world, is the cube of all of them
+/// again.  Rows and columns are `j`'s.
 pub(super) fn order(j: &SparseConditioned, rows: &[usize]) -> Vec<Part> {
-    let adj: Vec<Vec<usize>> = rows.iter()
-        .map(|&r| j.row(r).filter(|&(_, v)| v != 0.0).map(|(c, _)| c).collect())
-        .collect();
+    let adj: Vec<Vec<usize>> = rows.iter().map(|&r| j.row(r).map(|(c, _)| c).collect()).collect();
     let dm = crate::graph::dulmage_mendelsohn(&adj, j.n_cols);
     let blt = crate::graph::blocks(&adj, &dm);
     let (free, under) = crate::graph::under_blocks(&adj, &dm);
     let of = |local: &[usize]| local.iter().map(|&r| rows[r]).collect::<Vec<usize>>();
     // a square block: its rows and the columns matched to them
-    let square = |block: Vec<usize>| {
+    let square = |block: &Vec<usize>| {
         let mut cols: Vec<usize> = block.iter().map(|&r| dm.mate_row[r] as usize).collect();
         cols.sort_unstable();
-        Part { rows: of(&block), cols }
+        Part { rows: of(block), cols }
     };
     let mut parts = vec![Part { rows: of(&dm.over_rows), cols: dm.over_cols.clone() }];
-    parts.extend(blt.rows.into_iter().map(square));
+    parts.extend(blt.rows.iter().map(square));
     parts.push(Part { rows: Vec::new(), cols: free });
-    parts.extend(under.rows.into_iter().map(square));
+    parts.extend(under.rows.iter().map(square));
     parts
 }
 
