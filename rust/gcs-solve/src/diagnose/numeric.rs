@@ -212,7 +212,7 @@ pub fn removable_constraints(sk: &Sketch, w: &Mat, row_c: &[u32], rtol: f64) -> 
         }
     }
     let intrinsic: BTreeSet<u32> =
-        sk.constraints.iter().filter(|c| c.intrinsic).map(|c| c.id).collect();
+        sk.constraints.iter().filter(|c| c.is_intrinsic()).map(|c| c.id).collect();
     let mut out = Vec::new();
     for (cid, rs) in rows {
         if intrinsic.contains(&cid) {

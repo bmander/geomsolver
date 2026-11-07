@@ -9,7 +9,7 @@
 //! field it holds; the walk decides only the order the kinds are made in and what the
 //! destination's own constructors mint.
 
-use crate::constraints::{Arg, CKind, Constraint};
+use crate::constraints::Constraint;
 use crate::decompose;
 use crate::expr;
 use crate::model::{EntKind, EntRef, Remap, Sketch};
@@ -137,7 +137,8 @@ fn ledger(sk: &Sketch) {
         reversed: _,                  // `arcs`
         duals: _,                     // `duals`
         twins: _,                     // `twins`
-        constraints: _,               // `constraints`, `axes_along`; intrinsic rows minted
+        constraints: _,               // stated rows by `constraints`; intrinsic rows derived from
+                                      // the fields copied (`along`), by `Sketch::derive_all`
         placements: _,                // `constraints`
         rates: _,                     // `rates`
         held: _,                      // `document`, `held_reads`
@@ -188,8 +189,6 @@ fn ledger(sk: &Sketch) {
         solid_bearings: _,
         plane_names: _,
         spline_traced: _,
-        stands_for: _,
-        round_gauges: _,
         walked_back: _,
     } = sk;
 }
@@ -255,6 +254,7 @@ impl<'a> Walk<'a> {
         self.arcs();
         self.splines();
         self.axes_and_planes();
+        self.rounds();
         self.memberships();
         // curves last of what a curve may name: a curve's arguments may be of any kind above
         self.curves();
@@ -270,7 +270,7 @@ impl<'a> Walk<'a> {
         self.roles();
         let duals = self.duals();
         let expr = self.constraints(&duals);
-        self.axes_along();
+        self.along();
         self.rates();
         self.held_reads();
         self.twins();
@@ -280,6 +280,9 @@ impl<'a> Walk<'a> {
         self.choices();
         self.turns_and_mirrors();
         self.pictures();
+        // every owner's rows, from the fields the walk copied: those no constructor derived as it
+        // copied (a round's, a development's) and any a later field changed
+        self.dst.derive_all();
         self.dst.settle_turns();
         // each free curve's energy, its pegs and its definition, read again from what came (#144)
         self.dst.settle_variational();
@@ -362,6 +365,11 @@ impl<'a> Walk<'a> {
             if let Some(z) = src.points[i].z {
                 dst.give_place(n, src.params[z as usize].value);
             }
+            // each number held as the source holds it: a point held in one coordinate alone (an
+            // arc's start on its plane's `u`, the gauge of the plane it is drawn in, #363 S6)
+            for (a, b) in src.point_all_params(i).into_iter().zip(dst.point_all_params(n)) {
+                dst.params[b as usize].fixed = src.params[a as usize].fixed;
+            }
             debug_assert_eq!(r.point(i), Some(n));
             r.made(EntRef::point(i), n);
         }
@@ -390,11 +398,13 @@ impl<'a> Walk<'a> {
             if !(self.keep)(EntRef::circle(i)) {
                 continue;
             }
-            let Some(centre) = r.point(c.center as usize) else { continue };
-            let ni = dst.circle(centre, src.params[c.radius as usize].value, "");
+            // its plane in space comes once the planes have (`rounds`)
+            let crate::model::CircleE { center, radius, class, round: _ } = c;
+            let Some(centre) = r.point(*center as usize) else { continue };
+            let ni = dst.circle(centre, src.params[*radius as usize].value, "");
             let rp = dst.circles[ni].radius as usize;
-            dst.params[rp].fixed = src.params[c.radius as usize].fixed;
-            dst.circles[ni].class = c.class.clone();
+            dst.params[rp].fixed = src.params[*radius as usize].fixed;
+            dst.circles[ni].class = class.clone();
             r.made(EntRef::circle(i), ni);
         }
     }
@@ -406,16 +416,18 @@ impl<'a> Walk<'a> {
             if !(self.keep)(EntRef::arc(i)) {
                 continue;
             }
-            let point = |p: u32| r.point(p as usize);
-            let (Some(c), Some(st), Some(e)) = (point(a.center), point(a.start), point(a.end))
+            // its plane in space comes once the planes have (`rounds`)
+            let crate::model::ArcE { center, start, end, radius, class, round: _ } = a;
+            let point = |p: &u32| r.point(*p as usize);
+            let (Some(c), Some(st), Some(e)) = (point(center), point(start), point(end))
             else {
                 continue;
             };
             let ni = dst.arc(c, st, e, "");
             let rp = dst.arcs[ni].radius as usize;
-            dst.params[rp].value = src.params[a.radius as usize].value;
-            dst.params[rp].fixed = src.params[a.radius as usize].fixed;
-            dst.arcs[ni].class = a.class.clone();
+            dst.params[rp].value = src.params[*radius as usize].value;
+            dst.params[rp].fixed = src.params[*radius as usize].fixed;
+            dst.arcs[ni].class = class.clone();
             // drawn from its end for its sense, it still reads its ends as written (#573)
             if src.arc_reversed(i) {
                 dst.reversed.insert(ni as u32);
@@ -495,24 +507,34 @@ impl<'a> Walk<'a> {
                 continue;
             };
             let axis = |a: u32| r.ent(EntRef::axis(a as usize)).map(EntRef::i);
-            let (Some(u), Some(v), Some(origin)) =
-                (axis(p.u), axis(p.v), r.point(p.origin as usize))
+            // every field of the chart, each copied or renumbered: its rows are derived from them —
+            // its axes along drawn lines and the point it stands at once the stated rows are in,
+            // as the elaborator sets them (`along`)
+            let crate::model::Chart { u, v, o, origin, normal, planar, place, square, along: _,
+                                      stands_at: _ } = p;
+            let (Some(u), Some(v), Some(origin)) = (axis(*u), axis(*v), r.point(*origin as usize))
             else {
                 continue;
             };
-            let ni = dst.plane_restored(u, v, p.o.map(|k| src.params[k as usize].value),
-                                        p.o.map(|k| src.params[k as usize].fixed), origin,
-                                        f.class.clone());
-            if !p.planar {
+            // a datum stands at its frame's place where that came (#542), else at one of its own
+            let of = match place {
+                crate::model::Place::Of(g) => r.ent(EntRef::frame(*g as usize))
+                    .map(EntRef::i).filter(|&g| dst.frames[g].chart.is_some()),
+                crate::model::Place::Own => None,
+            };
+            let ni = match of {
+                Some(g) => dst.datum_restored(u, v, g, origin, f.class.clone()),
+                None => dst.plane_restored(u, v, o.map(|k| src.params[k as usize].value),
+                                           o.map(|k| src.params[k as usize].fixed), origin,
+                                           f.class.clone()),
+            };
+            if !planar {
                 dst.spatial_chart(ni);
             }
-            // an instance's own frame is square (#548): left without its row, a part that reaches
-            // a seated instance has its frame free to shear, a freedom the drawing does not have
-            // (#817)
-            if src.chart_square(i) {
+            if *square {
                 dst.square_chart(ni);
             }
-            let normal = p.normal.and_then(axis);
+            let normal = normal.and_then(axis);
             r.made(EntRef::frame(i), ni);
             // its normal, where it came along too
             if let Some(n) = normal {
@@ -521,6 +543,38 @@ impl<'a> Walk<'a> {
         }
         for (ni, a, held) in places {
             dst.place_restored(ni, a, held);
+        }
+    }
+
+    /// Each plane's axes held along the drawn lines that came, through the points that did, and
+    /// the point it stands at (#535, #819): set once the stated rows are in, where the elaborator
+    /// sets them, and its rows derived again.
+    fn along(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &self.r);
+        for (i, f) in src.frames.iter().enumerate() {
+            let Some(c) = f.chart.as_ref() else { continue };
+            if self.reuse[i].is_some() || (c.along == [None; 2] && c.stands_at.is_none()) {
+                continue;
+            }
+            let Some(ni) = r.ent(EntRef::frame(i)).map(EntRef::i) else { continue };
+            let map = |e| r.ent(e);
+            let chart = dst.frames[ni].chart.as_mut().expect("charted");
+            chart.along = c.along.map(|a| a.and_then(|a| a.remapped(&map)));
+            chart.stands_at =
+                c.stands_at.and_then(|p| crate::model::renumbered(&map, EntKind::Point, p));
+            dst.derive(crate::model::Owner::Frame(ni as u32));
+        }
+    }
+
+    /// An arc's or a circle's plane in space (#363 S6), where everything it names came along.
+    fn rounds(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &self.r);
+        let rounded = (0..src.arcs.len()).map(EntRef::arc)
+            .chain((0..src.circles.len()).map(EntRef::circle));
+        for e in rounded {
+            if let (Some(round), Some(to)) = (src.round(e), r.ent(e)) {
+                *dst.round_mut(to).expect("an arc or a circle") = round.remapped(&|e| r.ent(e));
+            }
         }
     }
 
@@ -753,64 +807,6 @@ impl<'a> Walk<'a> {
         expr
     }
 
-    /// A plane held along drawn lines (`program::entities::axes_along`) came over as a plane of
-    /// its own: its axes' rows to the lines, and the point its origin stands at in place of its
-    /// own `PlaneAxis` rows, are the elaborator's and not a plane's build, so they are carried
-    /// across as they stand, or the copy would turn free of the lines it was drawn along.
-    fn axes_along(&mut self) {
-        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
-        let along: BTreeSet<usize> = src.constraints.iter()
-            .filter(|c| c.intrinsic && c.kind == CKind::Parallel3)
-            .filter(|c| c.args[0].ent().kind == EntKind::Axis)
-            .filter(|c| c.args[1].ent().kind == EntKind::Line)
-            .map(|c| c.args[0].ent().i())
-            .collect();
-        let carried = |c: &&Constraint| match c.kind {
-            CKind::Parallel3 | CKind::PointOnAxis => c.entities().iter()
-                .any(|e| e.kind == EntKind::Axis && along.contains(&e.i())),
-            CKind::Coincident3 => src.plane_of_origin(c.args[0].ent().i()).is_some_and(|p| {
-                let pl = &src.frames[p];
-                along.contains(&(pl.u as usize)) && along.contains(&(pl.v as usize))
-            }),
-            _ => false,
-        };
-        let rows: Vec<&Constraint> =
-            src.constraints.iter().filter(|c| c.intrinsic).filter(carried).collect();
-        for c in rows {
-            // every slot as it states them, its entities the copies: which way an axis runs
-            // along its line among them (#535)
-            let Some(args) = c.args.iter()
-                .map(|a| match a {
-                    Arg::Ent(e) => r.ent(*e).map(Arg::Ent),
-                    a => Some(a.clone()),
-                })
-                .collect::<Option<Vec<_>>>()
-            else {
-                continue;
-            };
-            // a plane standing at a point has no `PlaneAxis` rows of its own for its in-plane
-            // axes: they go, as `axes_along` takes them (its normal's stays)
-            if c.kind == CKind::Coincident3 {
-                if let Some(p) = dst.plane_of_origin(args[0].ent().i()) {
-                    let (u, v) = (dst.frames[p].u as usize, dst.frames[p].v as usize);
-                    let gone: Vec<u32> = dst.constraints.iter()
-                        .filter(|d| d.intrinsic && d.kind == CKind::PlaneAxis)
-                        .filter(|d| d.args[0].ent() == EntRef::frame(p))
-                        .filter(|d| [u, v].contains(&d.args[1].ent().i()))
-                        .map(|d| d.id)
-                        .collect();
-                    for id in gone {
-                        dst.remove(id);
-                    }
-                }
-            }
-            let mut nc = Constraint::new(c.kind, args);
-            nc.intrinsic = true;
-            let id = dst.add_quiet(nc);
-            r.constraints.insert(c.id, id);
-        }
-    }
-
     fn rates(&mut self) {
         for row in &self.src.rates {
             if let Some(row) = row.remapped(&|e| self.r.ent(e)) {
@@ -829,7 +825,8 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Each twin that came along with its point, tied again after the relations (§6.7).
+    /// Each twin that came along with its point, tied again after the relations (§6.7): its rows
+    /// are derived with every other owner's.
     fn twins(&mut self) {
         for (&p, ts) in &self.src.twins {
             let Some(p) = self.r.point(p) else { continue };
@@ -839,7 +836,6 @@ impl<'a> Walk<'a> {
                 }
             }
         }
-        self.dst.hold_twins();
     }
 
     /// Recorded root choices are keyed by sketch point index; grafting renumbers points, so the

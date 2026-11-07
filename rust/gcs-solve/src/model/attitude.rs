@@ -8,7 +8,6 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::*;
-use crate::constraints::CKind;
 
 impl Sketch {
     /// Plane `i` in space: `u` along its first axis, `v` what is left of its second after its
@@ -249,7 +248,7 @@ impl Sketch {
     }
 
     /// Turn axis `r` to drawn line `l` as it now stands, sense and all: the axis a plane holds
-    /// along a line (`program::entities::axes_along`), which takes the line's direction only (its
+    /// along a line (`Chart::along`), which takes the line's direction only (its
     /// place is the plane's to give).  False where the line has no length.
     pub fn turn_axis_along(&mut self, r: usize, l: usize) -> bool {
         let ln = &self.lines[l];
@@ -263,9 +262,9 @@ impl Sketch {
     }
 
     /// The hidden point in space that point `p` stands at, minted once.  A point drawn in a
-    /// plane gets three Params seeded where it stands and the intrinsic `lift` row holding them
-    /// there, over the plane's axes and origin.  A **point in space** is its own lift: its three
-    /// Params, and no row.  `None` for a point of a 2D sketch, which has no place in space
+    /// plane gets three Params seeded where it stands and its `lift` row holding them there, over
+    /// the plane's axes and origin (`Owner::Lift`).  A **point in space** is its own lift: its
+    /// three Params, and no row.  `None` for a point of a 2D sketch, which has no place in space
     /// (`program::reading` refuses one).
     pub fn lift_point(&mut self, p: usize) -> Option<usize> {
         if let Some(k) = self.lift_of(p) {
@@ -273,39 +272,33 @@ impl Sketch {
         }
         if let Some(z) = self.points[p].z {
             // a point in a spatial frame's chart is lifted through it, as one in a plane is
-            if let Some(f) = self.points[p].chart {
+            if self.points[p].chart.is_some() {
                 let at = self.world_point(p);
                 let name = self.point_label(p).to_string();
                 let x = [0, 1, 2].map(|k| {
                     self.param(at[k], false, &format!("{name}.lift.{}", ["x", "y", "z"][k])) as u32
                 });
                 self.lifts.push(LiftE { point: p as u32, x });
-                let mut c = Constraint::new(CKind::ChartLift, vec![
-                    crate::constraints::Arg::Ent(EntRef::point(p)),
-                    crate::constraints::Arg::Ent(EntRef::frame(f as usize)),
-                ]);
-                c.intrinsic = true;
-                self.add(c);
-                return Some(self.lifts.len() - 1);
+                let k = self.lifts.len() - 1;
+                self.derive(super::Owner::Lift(p as u32));
+                self.settle_variational();
+                return Some(k);
             }
             let pt = &self.points[p];
             self.lifts.push(LiftE { point: p as u32, x: [pt.x, pt.y, z] });
             return Some(self.lifts.len() - 1);
         }
-        let v = self.plane_of(p)?;
+        self.plane_of(p)?;
         let at = self.world_point(p);
         let name = self.point_label(p).to_string();
         let x = [0, 1, 2].map(|k| {
             self.param(at[k], false, &format!("{name}.lift.{}", ["x", "y", "z"][k])) as u32
         });
         self.lifts.push(LiftE { point: p as u32, x });
-        let mut c = Constraint::new(CKind::Lift, vec![
-            crate::constraints::Arg::Ent(EntRef::point(p)),
-            crate::constraints::Arg::Ent(EntRef::frame(v)),
-        ]);
-        c.intrinsic = true;
-        self.add(c);
-        Some(self.lifts.len() - 1)
+        let k = self.lifts.len() - 1;
+        self.derive(super::Owner::Lift(p as u32));
+        self.settle_variational();
+        Some(k)
     }
 
     /// Whether point `p`'s hidden point in space is a point of its own, held to it by a row: one

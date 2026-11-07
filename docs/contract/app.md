@@ -59,6 +59,22 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
     reads that `children` does not list — a face's plane, a curve's trim, a region term's set
     probe (`what_a_removal_takes_is_what_depends_on_it`); `copy` and `Part` walk `children`
     alone, so closing one of those is a change to `children`.
+  - **Copying the model never mints a row** (#831): the walk copies entities and their fields —
+    every field of a `Chart`, an `ArcE` and a `CircleE` named with no `..`, so a new one stops the
+    build until it is decided — and each number held as the source holds it (a point held in one
+    coordinate alone).  It makes no row itself: each entity comes through the constructor that
+    derives its rows (`Sketch::derive`), in the elaborator's order so a stated row keeps its id,
+    a plane's axes along drawn lines once the stated rows are in, and once the copy is whole every
+    owner's rows are derived (`Sketch::derive_all`, solver.md).  So nothing recognises a row by its
+    shape to carry a fact across, and a fact is lost only if its field is.  The JSON reader is the
+    same: it reads entities and their fields (a plane's `"at"`, `"square"`, `"along"`,
+    `"stands_at"`, an arc's or a circle's `"round"`, a point's `"held"`) and derives at its end.  Gates: a rebuild that removes nothing, and the JSON of every
+    document it carries, keep the source's freedoms and rank and its intrinsic rows by owner and
+    kind, in every document of the corpus but where the ledger leaves something behind on purpose
+    (a row the source alone carries, a carried station, a declared unknown), which keeps its rows
+    (`a_rebuild_keeps_every_freedom`); a part's stored rows of every owner are those `rows_of`
+    derives from it (`a_part_keeps_its_owners_rows`); the fields come back from JSON
+    (`a_documents_structure_survives_its_json`).
 - **Delete takes everything selected** that has a statement of its own (`edit::remove`): what a
   component or a block made stays, counted in `Edit::kept`, and the rest goes — so a band swept
   over the drawing that also caught `std`'s datums deletes the drawing, and the status line says

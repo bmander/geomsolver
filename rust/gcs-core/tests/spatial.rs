@@ -85,7 +85,7 @@ fn a_lift_follows_its_plane() {
     let (mut sk, pl, [a, c]) = turned();
     let la = sk.lift_point(a).unwrap();
     assert_eq!(sk.constraints.last().unwrap().kind, CKind::Lift);
-    assert!(sk.constraints.last().unwrap().intrinsic);
+    assert!(sk.constraints.last().unwrap().is_intrinsic());
     assert_eq!(sk.lift_point(a), Some(la), "one hidden point per plane point");
     let at = |sk: &Sketch, k: usize| sk.lifts[k].x.map(|p| sk.params[p as usize].value);
     assert_eq!(at(&sk, la), sk.world_point(a), "seeded at the lift");

@@ -484,7 +484,7 @@ fn every_example_lays_out() {
             .iter()
             // a block's later copies are the first copy's callout (`an_array_is_dimensioned_once`),
             // and a part's are drawn in its own file (`a_part_is_dimensioned_in_its_own_file`)
-            .filter(|c| !c.soft && !c.intrinsic && !c.repeated && !c.elsewhere
+            .filter(|c| !c.soft && !c.is_intrinsic() && !c.repeated && !c.elsewhere
                 && c.kind.has_dimension())
             .count();
         assert_eq!(ks.len(), dims, "{name}");

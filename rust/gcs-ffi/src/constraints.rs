@@ -312,7 +312,7 @@ pub unsafe extern "C" fn gcs_constraint_stating(
         let Ok(c) = report::constraint_from_json(s, &v) else { return -1 };
         s.constraints
             .iter()
-            .filter(|k| !(k.intrinsic || k.soft))
+            .filter(|k| !(k.is_intrinsic() || k.soft))
             .find(|k| gcs_core::constraints::same_relation(k, &c))
             .map(|k| k.id as i32)
             .unwrap_or(-1)

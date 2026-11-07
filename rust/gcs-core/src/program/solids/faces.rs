@@ -47,7 +47,7 @@ pub(super) fn validate_chain(
         // an arc over points in space is drawn over points of its own, each standing for the
         // point it was threaded at (#363 S6)
         let same = |p: u32, q: u32| {
-            let at = |x: u32| sk.stands_for.get(&x).copied().unwrap_or(x);
+            let at = |x: u32| sk.stands_for(x).unwrap_or(x);
             at(p) == at(q)
         };
         if previous.is_some_and(|p| !same(p, start)) {

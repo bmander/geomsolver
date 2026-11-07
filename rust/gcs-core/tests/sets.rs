@@ -532,7 +532,7 @@ fn a_set_with_geometry_of_its_own_is_tangent_to_a_line() {
         });
         assert!(moved, "{view:?}: the foot holds still");
         // and drawn in a view, its lift's row moves with it
-        let lifted = sk.constraints.iter().any(|c| c.intrinsic && c.along.is_some());
+        let lifted = sk.constraints.iter().any(|c| c.is_intrinsic() && c.along.is_some());
         assert_eq!(lifted, !view.is_empty(), "{view:?}");
         let said = described(&e);
         assert!(said.iter().all(|s| s == "l tangent foot"), "{said:?}");
@@ -582,7 +582,7 @@ fn the_retired_tangent_cones_is_no_name_of_the_library() {
 #[test]
 fn a_tangencys_unknowns_go_with_its_rows() {
     let mut sk = solved(&read(&with(&format!("{}l tangent foot", footed("")))));
-    let rows: Vec<u32> = sk.constraints.iter().filter(|c| c.along.is_some() && !c.intrinsic)
+    let rows: Vec<u32> = sk.constraints.iter().filter(|c| c.along.is_some() && !c.is_intrinsic())
         .map(|c| c.id).collect();
     let free = |sk: &Sketch| sk.duals.iter().flat_map(|d| d.tangent.values())
         .filter(|&&t| !sk.params[t as usize].fixed).count();

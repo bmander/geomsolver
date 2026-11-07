@@ -1083,7 +1083,7 @@ disc := solid(std.solids.Prism(face(k), from: -10mm, to: 0))", place));
         near(exact(&e, "disc"), PI * 16.0 * 10.0, 1e-9, "the disc");
         let n = unit(sub(e.sketch.world_point(index(&e, "tc")),
                          e.sketch.world_point(index(&e, "oc"))));
-        let (&g, _) = e.sketch.round_gauges.iter().next().expect("a gauge");
+        let (g, _) = *e.sketch.round_gauges().first().expect("a gauge");
         let d = e.sketch.axes[g as usize].d.map(|p| e.sketch.params[p as usize].value);
         assert!(dot(unit(d), n).abs() <= 1e-9, "the gauge {d:?} against the normal {n:?}");
         let again = gcs_core::solve::solve(&mut e.sketch, Default::default());

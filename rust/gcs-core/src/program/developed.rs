@@ -114,14 +114,9 @@ pub(super) fn developments(cx: &mut Elab<'_>, developed: &[DevelopedInfo],
                 slides: Vec::new(),
             });
             let e = EntRef::new(EntKind::Curve, cx.sk.curves.len() - 1);
-            // the home ruling's image as long as the ruling: one row, minted with the first
-            if which == 0 {
-                let mut c = crate::constraints::Constraint::new(
-                    crate::constraints::CKind::DevelopedLength,
-                    vec![crate::constraints::Arg::Ent(e)]);
-                c.intrinsic = true;
-                cx.sk.add_quiet(c);
-            }
+            // the home ruling's image as long as the ruling: one row, the first rail's, which its
+            // body implies (`Owner::Developed`)
+            cx.sk.derive(crate::model::Owner::Developed(e.idx));
             cx.res.of.insert(key.clone(), e);
             cx.map.bind(&key, e, crate::syntax::Named::Written);
             if let Some(st) = st {

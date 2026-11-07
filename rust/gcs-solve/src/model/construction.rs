@@ -92,27 +92,12 @@ impl Sketch {
         self.params[z].fixed = true;
     }
 
-    /// **Frame `f` square by construction** (#548): an intrinsic row holding its `u` square to
+    /// **Frame `f` places an instance rigidly** (#548, `Chart::square`): its `u` held square to
     /// its `v`, so it has the six freedoms of a rigid placement and not a bare frame's seven —
     /// what an instance read as a frame owns, so a datum along `v` cannot shear the body.
     pub fn square_chart(&mut self, f: usize) {
-        let (u, v) = (self.frames[f].u as usize, self.frames[f].v as usize);
-        let mut c = Constraint::two_line(crate::constraints::CKind::Perpendicular3,
-            EntRef::new(EntKind::Axis, u), EntRef::new(EntKind::Axis, v));
-        c.intrinsic = true;
-        self.add_quiet(c);
-    }
-
-    /// Whether frame `f` is square by construction (`square_chart`): its intrinsic row holding
-    /// its `u` square to its `v`.  What a rebuild asks of the frame it copies, since it mints a
-    /// frame's intrinsic rows afresh rather than carrying them (`graft`, #817).
-    pub fn chart_square(&self, f: usize) -> bool {
-        let Some(c) = self.frames[f].chart.as_ref() else { return false };
-        let axes = [c.u, c.v].map(|a| EntRef::new(EntKind::Axis, a as usize));
-        self.constraints.iter().any(|k| {
-            k.intrinsic && k.kind == crate::constraints::CKind::Perpendicular3
-                && k.entities() == axes
-        })
+        self.frames[f].square = true;
+        self.derive(super::Owner::Frame(f as u32));
     }
 
     /// **Frame `f` seeded where frame `g` stands** (#548): its axes along `g`'s and its place
@@ -175,14 +160,15 @@ impl Sketch {
             center: center as u32,
             radius: r as u32,
             class: Classes::default(),
+            round: None,
         });
         self.circles.len() - 1
     }
 
     /// An axis: its direction `d` (normalised here, so a seed need not be a unit vector) and the
     /// point on it nearest the origin, `a`, which stays fixed — no freedom of the drawing's —
-    /// until a relation reads where the axis is (`place_axis`).  The intrinsic `axis_unit` row is
-    /// minted here and nowhere else, since intrinsics are never serialized.
+    /// until a relation reads where the axis is (`place_axis`).  Its unit row is its own
+    /// (`Owner::Axis`).
     pub fn axis(&mut self, d: [f64; 3], name: &str) -> usize {
         self.origin_param();
         // normalised only when it is not unit already, so a direction read back is the bits
@@ -204,9 +190,7 @@ impl Sketch {
         let ap = ["px", "py", "pz"].map(|k| self.param(0.0, true, &format!("{name}.{k}")) as u32);
         self.axes.push(AxisE { d: dp, a: ap, placed: false, class: Classes::default() });
         let ri = self.axes.len() - 1;
-        let mut c = Constraint::new(crate::constraints::CKind::AxisUnit, vec![crate::constraints::Arg::Ent(EntRef::new(EntKind::Axis, ri))]);
-        c.intrinsic = true;
-        self.add_quiet(c);
+        self.derive(super::Owner::Axis(ri as u32));
         ri
     }
 
@@ -222,7 +206,7 @@ impl Sketch {
     pub fn retake_round_gauges(&mut self) -> bool {
         use crate::space::{cross, dot, norm, sub};
         let mut turned = false;
-        for (&g, &[u, v]) in &self.round_gauges.clone() {
+        for (g, [u, v]) in self.round_gauges() {
             if g.max(u).max(v) as usize >= self.axes.len() {
                 continue;
             }
@@ -261,13 +245,11 @@ impl Sketch {
         for p in self.axes[i].a {
             self.params[p as usize].fixed = false;
         }
-        let mut c = Constraint::new(crate::constraints::CKind::AxisFoot, vec![crate::constraints::Arg::Ent(EntRef::new(EntKind::Axis, i))]);
-        c.intrinsic = true;
-        self.add_quiet(c);
+        self.derive(super::Owner::Axis(i as u32));
     }
 
     /// `place_axis` undone: the place held where it stands, and the foot row gone with it.
-    fn unplace_axis(&mut self, i: usize) {
+    pub(super) fn unplace_axis(&mut self, i: usize) {
         if !self.axes[i].placed {
             return;
         }
@@ -275,10 +257,7 @@ impl Sketch {
         for p in self.axes[i].a {
             self.params[p as usize].fixed = true;
         }
-        let axis = EntRef::new(EntKind::Axis, i);
-        self.constraints.retain(|c| {
-            !(c.intrinsic && c.kind == crate::constraints::CKind::AxisFoot && c.args[0].ent() == axis)
-        });
+        self.derive(super::Owner::Axis(i as u32));
     }
 
     /// A fixed Param holding 0, shared by every axis: the kernels that read a line's direction as
@@ -293,7 +272,7 @@ impl Sketch {
         z
     }
 
-    /// An arc plus its two intrinsic `PointOnCircle` constraints.
+    /// An arc, its ends on it its own rows (`Owner::Arc`).
     pub fn arc(&mut self, center: usize, start: usize, end: usize, name: &str) -> usize {
         let (cx, cy) = self.point_xy(center);
         let (sx, sy) = self.point_xy(start);
@@ -305,13 +284,11 @@ impl Sketch {
             end: end as u32,
             radius: rp as u32,
             class: Classes::default(),
+            round: None,
         });
         let ai = self.arcs.len() - 1;
-        let aref = EntRef::arc(ai);
-        let c1 = Constraint::point_on_circle(EntRef::point(start), aref, true);
-        let c2 = Constraint::point_on_circle(EntRef::point(end), aref, true);
-        self.add(c1);
-        self.add(c2);
+        self.derive(super::Owner::Arc(ai as u32));
+        self.settle_variational();
         ai
     }
 
@@ -334,7 +311,8 @@ impl Sketch {
 
     /// A plane over two axes — right along `u`'s, out along `u × v` — standing at `o`, three
     /// Params of its own, and its origin, a point drawn in it and held at `(0, 0)`, minted here.
-    /// No intrinsic row: what the plane is, `Sketch::basis` reads off the axes and `o`.
+    /// What the plane is, `Sketch::basis` reads off the axes and `o`; its axes through its place
+    /// are its own rows (`Owner::Frame`).
     pub fn plane(&mut self, u: usize, v: usize, o: [f64; 3], name: &str) -> usize {
         let op = self.plane_place(o, name);
         let origin = self.point(0.0, 0.0, true, &format!("{name}.origin"));
@@ -397,22 +375,18 @@ impl Sketch {
         }
     }
 
-    /// **A plane standing where frame `f` does** (#542), over axes `u`, `v`: its place is `f`'s
-    /// own three Params, so it adds no unknown, and its origin, a point already made, is put in
-    /// it and held at `(0, 0)`.  An axis already through that place — `f`'s `u`, `v` or normal,
-    /// or one of a plane standing there — is placed by no row of its own; any other is held
-    /// through it as `push_plane` holds a plane's axes.  What a frame's standard datums are.
+    /// **A plane standing where frame `f` does** (#542, `Place::Of`), over axes `u`, `v`: its
+    /// place is `f`'s own three Params, so it adds no unknown, and its origin, a point already
+    /// made, is put in it and held at `(0, 0)`.  An axis already through that place — `f`'s `u`,
+    /// `v` or normal, or one of a plane standing there — is placed by no row of its own; any
+    /// other is held through it as `push_plane` holds a plane's axes.  What a frame's standard
+    /// datums are.
     pub fn plane_at(&mut self, u: usize, v: usize, f: usize, origin: usize) -> usize {
         let op = self.frames[f].o;
-        let through: Vec<u32> = self.frames.iter().filter_map(|g| g.chart.as_ref())
-            .filter(|c| c.o == op)
-            .flat_map(|c| c.axes())
-            .collect();
         self.hold_origin(origin);
         let pi = self.chart_plane(u, v, op, origin);
-        for ax in [u, v].into_iter().filter(|&ax| !through.contains(&(ax as u32))) {
-            self.hold_through(pi, ax);
-        }
+        self.frames[pi].place = super::Place::Of(f as u32);
+        self.stand_axes(pi);
         pi
     }
 
@@ -429,19 +403,25 @@ impl Sketch {
         pi
     }
 
+    /// A datum as a document or another sketch carries it (#542): over axes `u`, `v`, standing
+    /// where frame `f` does, its origin a point already made.
+    pub fn datum_restored(&mut self, u: usize, v: usize, f: usize, origin: usize, class: Classes)
+        -> usize {
+        let pi = self.plane_at(u, v, f, origin);
+        self.frames[pi].class = class;
+        pi
+    }
+
     /// The three Params of where a plane stands, `name.x` … `name.z`.
     pub(super) fn plane_place(&mut self, o: [f64; 3], name: &str) -> [u32; 3] {
         [0, 1, 2].map(|k| self.param(o[k], false, &format!("{name}.{}", ["x", "y", "z"][k])) as u32)
     }
 
     /// A plane over axes `u`, `v`, standing at `op`, its origin drawn in it.
-    /// Its axes pass through its origin: the intrinsic `PlaneAxis` rows, which read (and so place)
-    /// both axes.
+    /// Its axes pass through its origin: its `PlaneAxis` rows, which read (and so place) both.
     fn push_plane(&mut self, u: usize, v: usize, op: [u32; 3], origin: usize) -> usize {
         let pi = self.chart_plane(u, v, op, origin);
-        for ax in [u, v] {
-            self.hold_through(pi, ax);
-        }
+        self.stand_axes(pi);
         pi
     }
 
@@ -450,25 +430,28 @@ impl Sketch {
         let pi = self.frames.len();
         self.points[origin].plane = Some(pi as u32);
         self.frames.push(FrameE::charted(Chart { u: u as u32, v: v as u32, o: op, origin: origin as u32,
-                                                 normal: None, planar: true }));
+                                                 normal: None, planar: true,
+                                                 place: super::Place::Own, square: false,
+                                                 along: [None; 2], stands_at: None }));
         pi
     }
 
-    /// Axis `ax` held through plane `pi`'s origin, the intrinsic `PlaneAxis` rows — and stood
-    /// there first, where `pi` is the first to place it.
-    fn hold_through(&mut self, pi: usize, ax: usize) {
-        if !self.axes[ax].placed {
-            let o = self.frames[pi].o.map(|q| self.params[q as usize].value);
-            self.stand_axis_through(ax, o);
+    /// Plane `pi`'s axes held through its place, its `PlaneAxis` rows (`Owner::Frame`) — each
+    /// stood there first where `pi` is the first to place it.
+    fn stand_axes(&mut self, pi: usize) {
+        let o = self.frames[pi].o.map(|q| self.params[q as usize].value);
+        let reads = self.rows_of(super::Owner::Frame(pi as u32));
+        for c in reads.iter().filter(|c| c.kind == crate::constraints::CKind::PlaneAxis) {
+            let ax = c.args[1].ent().i();
+            if !self.axes[ax].placed {
+                self.stand_axis_through(ax, o);
+            }
         }
-        let mut c = Constraint::new(crate::constraints::CKind::PlaneAxis,
-            vec![Arg::Ent(EntRef::frame(pi)), Arg::Ent(EntRef::new(EntKind::Axis, ax))]);
-        c.intrinsic = true;
-        self.add_quiet(c);
+        self.derive(super::Owner::Frame(pi as u32));
     }
 
     /// **Plane `pi`'s normal, `P.normal`**: an axis along `u × v` through its origin, minted the
-    /// first time it is asked for, under `name`.  Held so by three intrinsic rows — square to `u`
+    /// first time it is asked for, under `name`.  Held so by three rows of its own — square to `u`
     /// (`Perpendicular3`), a quarter turn on from `v` about `u` (`PerpendicularAbout`, `ccw`),
     /// which holds it square to `v` on `u × v`'s side, and through the origin (`PlaneAxis`) — and
     /// seeded along `u × v` (`seed_normals`).  Three unknowns and three rows for its direction,
@@ -487,21 +470,8 @@ impl Sketch {
     /// Axis `n` made plane `pi`'s normal: its rows, and it seeded so (`plane_normal`).  What a
     /// document reader calls with an axis already made.
     pub fn stand_normal(&mut self, pi: usize, n: usize) {
-        use crate::constraints::{Arg, CKind};
         self.frames[pi].normal = Some(n as u32);
-        let [u, v] = [self.frames[pi].u, self.frames[pi].v]
-            .map(|r| EntRef::new(EntKind::Axis, r as usize));
-        let axis = EntRef::new(EntKind::Axis, n);
-        let rows = [
-            Constraint::two_line(CKind::Perpendicular3, axis, u),
-            Constraint::new(CKind::PerpendicularAbout,
-                vec![Arg::Ent(v), Arg::Ent(axis), Arg::Ent(u), Arg::Str("ccw".into())]),
-            Constraint::new(CKind::PlaneAxis, vec![Arg::Ent(EntRef::frame(pi)), Arg::Ent(axis)]),
-        ];
-        for mut c in rows {
-            c.intrinsic = true;
-            self.add_quiet(c);
-        }
+        self.derive(super::Owner::Normal(pi as u32));
         self.seed_normal(pi);
     }
 
@@ -784,14 +754,7 @@ impl Sketch {
     /// dimension whose definition has not been grafted yet briefly a free variable — allocating
     /// an unknown the next pass immediately retires.
     pub fn add_quiet(&mut self, mut c: Constraint) -> u32 {
-        // the twin its planes can feed, decided before anything is minted for it: a projection
-        // where either plane moves in the solve reads both images' lifts and both planes' axes,
-        // and over two fixed planes only the two drawn points (`CKind::attitude_twin`)
-        let reads = c.attitudes_read(self);
-        if !reads.is_empty() {
-            let solved = reads.iter().any(|&v| !self.plane_fixed(v));
-            c.kind = c.kind.attitude_twin(solved);
-        }
+        c.kind = self.settled_kind(&c);
         // an ordinate's form is its operands' (`constraints::ordinate_form`), read here and only
         // here, so whatever a caller handed in — a document, a paste, a binding's record — the
         // kernel is the one the points and the direction give it now
@@ -909,6 +872,17 @@ impl Sketch {
         id
     }
 
+    /// The twin of `c`'s kind its planes can feed, decided before anything is minted for it: a
+    /// projection where either plane moves in the solve reads both images' lifts and both planes'
+    /// axes, and over two fixed planes only the two drawn points (`CKind::attitude_twin`).
+    pub(crate) fn settled_kind(&self, c: &Constraint) -> crate::constraints::CKind {
+        let reads = c.attitudes_read(self);
+        match reads.is_empty() {
+            true => c.kind,
+            false => c.kind.attitude_twin(reads.iter().any(|&v| !self.plane_fixed(v))),
+        }
+    }
+
     /// The place the contact holding point `at` on curve (or envelope) `on` owns: the first such
     /// contact's unknowns, where one is in the sketch.
     pub fn holding(&self, at: usize, on: EntRef) -> Option<Vec<u32>> {
@@ -959,12 +933,7 @@ impl Sketch {
             self.constraint(id).map(|c| c.axes_placed_by().collect()).unwrap_or_default();
         let dual = self.constraint(id).and_then(|c| c.along);
         self.constraints.retain(|c| c.id != id);
-        // an axis whose place nothing reads now is held again: its place is no freedom
-        for r in placed {
-            if !self.constraints.iter().any(|c| c.axes_placed_by().any(|s| s == r)) {
-                self.unplace_axis(r);
-            }
-        }
+        self.release_axes(placed);
         // a shared unknown stays free while another contact still owns it — one shared by name
         // (`t == s`) or a contact's place read by a tangent at its point (#251)
         for p in own {
@@ -981,6 +950,16 @@ impl Sketch {
             crate::expr::evaluate(self);
         }
         self.settle_variational();
+    }
+
+    /// Each of the axes `placed` whose place nothing reads now held again: its place is no
+    /// freedom (`unplace_axis`).
+    pub(super) fn release_axes(&mut self, placed: Vec<usize>) {
+        for r in placed {
+            if !self.constraints.iter().any(|c| c.axes_placed_by().any(|s| s == r)) {
+                self.unplace_axis(r);
+            }
+        }
     }
 
     pub fn constraint(&self, id: u32) -> Option<&Constraint> {
@@ -1019,7 +998,7 @@ impl Sketch {
 
     /// Constraints the user added (excludes intrinsic and soft/transient ones).
     pub fn user_constraints(&self) -> Vec<&Constraint> {
-        self.constraints.iter().filter(|c| !(c.intrinsic || c.soft)).collect()
+        self.constraints.iter().filter(|c| !(c.is_intrinsic() || c.soft)).collect()
     }
 
     /// Everything that must be satisfied: excludes soft ones such as drag targets, and claims,

@@ -477,6 +477,9 @@ pub struct CircleE {
     pub center: u32,
     pub radius: u32,
     pub class: Classes,
+    /// The plane through a point in space it stands square to its `normal:` in (#363 S6), where
+    /// it is drawn so (`RoundIn`).
+    pub round: Option<super::RoundIn>,
 }
 
 
@@ -494,7 +497,7 @@ pub struct AxisE {
 
 /// CCW arc from `start` to `end` about `center`.  The radius is its own Param so Circle and Arc
 /// share every radius-based constraint; the two intrinsic constraints |start-center|² = r² and
-/// |end-center|² = r² are added by `Sketch::arc`.
+/// |end-center|² = r² are its own (`Owner::Arc`).
 #[derive(Clone, Debug)]
 pub struct ArcE {
     pub center: u32,
@@ -502,6 +505,9 @@ pub struct ArcE {
     pub end: u32,
     pub radius: u32,
     pub class: Classes,
+    /// The plane through points in space it is drawn in (#363 S6), where it is drawn so
+    /// (`RoundIn`).
+    pub round: Option<super::RoundIn>,
 }
 
 /// A cubic B-spline over an ordered control polygon.
@@ -588,9 +594,11 @@ impl std::ops::DerefMut for FrameE {
 /// **A frame's chart** (`docs/planes-plan.md`): its attitude is two axes' — right along `u`,
 /// out along `u × v`, up along `out × u` — and where it stands is `o`, three Params of its own.
 /// Its origin is the member point `origin`, drawn in it and held at `(0, 0)` (`(0, 0, 0)` in a
-/// spatial frame), so it stands at `o`.  It owns no intrinsic row: what it is, is read off its
-/// axes and `o` (`Sketch::basis`), and it is **fixed** — its basis constants every row may read —
-/// when all nine are held.
+/// spatial frame), so it stands at `o`.  What it is, is read off its axes and `o`
+/// (`Sketch::basis`), and it is **fixed** — its basis constants every row may read — when all
+/// nine are held.  How it is built — where it stands, whether it places an instance rigidly,
+/// the drawn lines its axes are held along — is said by its fields, whose rows are its own
+/// (`Owner::Frame`, `Sketch::rows_of`).
 #[derive(Clone, Debug)]
 pub struct Chart {
     pub u: u32,
@@ -603,6 +611,19 @@ pub struct Chart {
     /// Whether a point drawn in it has two coordinates (a plane) or three (a spatial frame's,
     /// along `u`, up and out).
     pub planar: bool,
+    /// Where it stands (#542): a place of its own, or a frame's, as a datum of it — `o` are then
+    /// that frame's three Params, the one place both stand at.
+    pub place: super::Place,
+    /// **It places an instance rigidly** (#548): its `u` held square to its `v`, so a component
+    /// drawn once and carried to where it stands keeps its distances — the six freedoms of a
+    /// rigid placement, not a bare frame's seven.  Not a kind of frame: a frame need not be
+    /// orthogonal, and only an instance's own is square.
+    pub square: bool,
+    /// Its `u` and `v`, each where it is held along a drawn line (#535, `Along`).
+    pub along: [Option<super::Along>; 2],
+    /// The point both its axes stand on by construction, where it stands there rather than at a
+    /// place its axes are held through (#819): its origin held at the point.
+    pub stands_at: Option<u32>,
 }
 
 impl Chart {

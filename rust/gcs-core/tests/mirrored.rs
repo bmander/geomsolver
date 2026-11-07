@@ -383,7 +383,7 @@ fn a_mirrored_bodys_dimension_is_laid_out_in_its_images_view() {
     let images = sk.images();
     let std_x = crate::common::at_path(&e, "std.x");
     let axis = |k: &gcs_core::model::EntRef| k.kind == gcs_core::model::EntKind::Axis;
-    for (c, d) in sk.constraints.iter().zip(&plain.constraints).filter(|(c, _)| !c.intrinsic) {
+    for (c, d) in sk.constraints.iter().zip(&plain.constraints).filter(|(c, _)| !c.is_intrinsic()) {
         let drawn = sk.drawn_constraint(c, &images);
         if c.entities().iter().any(axis) {
             let drawn = drawn.expect("the body's ordinate is drawn on its image");

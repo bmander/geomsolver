@@ -733,11 +733,11 @@ p seats(turn: 30deg, up: std.z, east: std.x) st
 ").replace("use std\n", "use std\nuse std.place (seats, raised)\n");
     let e = solved(&src);
     let frame = crate::common::ent(&e, "p#frame");
-    assert!(e.sketch.chart_square(frame.i()));
+    assert!(e.sketch.frames[frame.i()].square);
     // the part a walk from the station makes, reaching the seat through the point it is on
     let mut part = gcs_core::graft::Part::around_all(&e.sketch, &[crate::common::ent(&e, "st")]);
     let pf = part.entity_in(frame).expect("the seat brings the frame along");
-    assert!(part.sketch.chart_square(pf.i()));
+    assert!(part.sketch.frames[pf.i()].square);
     let d = diagnose(&mut part.sketch, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "{:?}", view_freedoms(&part.sketch, &d));
 }

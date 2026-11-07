@@ -227,7 +227,7 @@ impl Sketch {
         let twins: Vec<Constraint> = rows
             .iter()
             .map(|&i| &self.constraints[i])
-            .filter(|c| c.intrinsic && c.along.is_none() && !c.soft)
+            .filter(|c| c.is_intrinsic() && c.along.is_none() && !c.soft)
             .filter(|c| c.params(self).iter().any(|&p| moves.made(p)))
             .map(|c| {
                 let mut t = c.clone();
@@ -244,7 +244,9 @@ impl Sketch {
     /// A row just added, stated again as its derivative under every dual it is the private
     /// geometry's row of — a lift minted after the use was registered.
     pub(crate) fn twin_new_intrinsic(&mut self, at: usize) {
-        if self.duals.is_empty() || !self.constraints[at].intrinsic || self.constraints[at].along.is_some() {
+        if self.duals.is_empty() || !self.constraints[at].is_intrinsic()
+            || self.constraints[at].along.is_some()
+        {
             return;
         }
         for d in 0..self.duals.len() {

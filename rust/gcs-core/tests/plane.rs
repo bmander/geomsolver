@@ -27,7 +27,7 @@ fn a_plane_is_its_axes_and_its_place() {
     let kinds: Vec<CKind> = sk.constraints[before..].iter().map(|c| c.kind).collect();
     assert_eq!(kinds, [CKind::AxisFoot, CKind::PlaneAxis, CKind::AxisFoot, CKind::PlaneAxis],
         "each axis placed, and the origin on it");
-    assert!(sk.constraints.iter().all(|c| c.intrinsic));
+    assert!(sk.constraints.iter().all(|c| c.is_intrinsic()));
     assert!(sk.axes.iter().all(|r| r.placed));
     let b = sk.basis(p);
     assert!(near(b.u[0], 0.8) && near(b.u[1], 0.6) && b.v == [0.0, 0.0, 1.0]);

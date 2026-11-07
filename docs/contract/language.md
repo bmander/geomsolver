@@ -529,11 +529,12 @@ frame its call stands in — put in `Expansion::charts` so it has axes, and stam
 innermost `Stamps::plane`, the call's own `in` ridden, so `Scope::stands` ends in it and the body's
 `std` are its datums (#542 as above). `Lookup::raw` reads the path through `Lookup::instance_datum`,
 one rule with the body's (`Lookup::frame_datum`). The frame is **square**: `entities::build_plane`
-gives an instance's own frame `Sketch::square_chart`, an intrinsic `Perpendicular3` of its `u` and
-`v`, so it has six freedoms, and names it after the instance (`Sketch::plane_names`), so
-`diagnose::view_freedoms` says `cyl.attitude` and `cyl.origin`. A rebuild (`graft`, a `Part`) mints
-a frame's own rows afresh, so it asks `Sketch::chart_square` of the frame it copies and squares the
-copy: a face family's station that reaches a seated instance through the point it is seated on
+gives an instance's own frame `Sketch::square_chart` — `Chart::square`, which says the frame places
+an instance rigidly (a frame need not be orthogonal, and no other chart is square), its row a
+`Perpendicular3` of its `u` and `v` (`Owner::Frame`) — so it has six freedoms, and names it after
+the instance (`Sketch::plane_names`), so `diagnose::view_freedoms` says `cyl.attitude` and
+`cyl.origin`. A rebuild (`graft`, a `Part`) and the JSON copy the field and derive the row from it
+(`Sketch::derive_all`, #831): a face family's station that reaches a seated instance through the point it is seated on
 (its stations the whole drawing, swept over a declared parameter) holds it as the drawing does,
 and does not leave its frame a shear (#817,
 `a_part_rebuilt_around_a_seated_instance_keeps_its_frame_square`,
