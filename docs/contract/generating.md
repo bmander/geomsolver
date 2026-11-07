@@ -1686,18 +1686,19 @@ asked first, the closed class building it); and `object_builder::a_sharp_edge_al
 with no face beyond and its normal there off the axis (`constant_twist::apex`: a cone to a point,
 an ogive; a smooth pole is none), `Junctions::new` reads `Junction::Apex` at that end, and `step`
 crosses it to the apex's ring's other root at the same point, going back the way it came. The
-apex's ring is read in closed form (`apex_roots`): with the apex's velocity `w` read on what the
-motion carries, the face's normal in the half-plane of radial `e(φ)` along `β a − α e(φ)` (the
-meridian's tangent there `α a + β e(φ)`), the contact `β a·w − α (cos φ e₀·w + sin φ f₀·w)` is a
-sinusoid in `φ`, its two roots the normals the walk turns between, each turned outward as the
-face's a thousandth along the meridian is (`outward`); none where the apex is in contact nowhere,
-`Unrooted::DoublePoint` where its roots meet. A step onto or off the apex's station takes the root
-whose normal is nearest the one it stands on (every root there the one point, every root beside
-it as far from it). The nodes hold the apex once, `Node::apex` on it, and the next node's step
-starts at its station; it is a crease (`creases`, `Characteristic::apexes`), built as V's is.
-S2's ring rule lets a ring's two roots stand either side of an apex the walk turns at between them;
-`stationary` reads no pair at one station. `APEX` is said only where the apex's ring has no second
-root. The native path refuses a characteristic that turns at an apex by name (`--kernel rust`). The
+apex's ring is a ring of no radius read as any ring is (`apex_roots`: `RingFrame::coefficients`
+with the face's normal there `nr e + nz a`, `nr = −α` and `nz = β` off the meridian's tangent
+`α a + β e` at the apex, and `Sinusoid::roots`), its two roots the normals the walk turns between,
+each turned outward as the face's a thousandth along the meridian is (`outward`); none where the
+apex is in contact nowhere, `DoublePoint` where its roots meet, `AllRound` where it stands still.
+A step takes the next ring's nearest root and, of roots as near as each other (within 1e-7 of the
+tool's size), the one whose normal is nearest the one it stands on: onto or off an apex every root
+there is the one point, or as far from it. The nodes hold the apex once, `Node::apex` on it, and
+the next node's step starts at its station (`turns`, one ring's two roots in a row); it is a crease
+(`creases`, `Characteristic::apexes`), built as V's is. S2's ring rule lets a ring's two roots
+stand either side of an apex the walk turns at between them; `stationary` reads no pair at one
+station. `APEX` is said where the walk meets an apex it does not turn at (short of a face's end, at
+an end another face meets, or whose ring has no two roots). The native path refuses a characteristic that turns at an apex by name (`--kernel rust`). The
 gate is `swept_apex` (the walk in the kernel under a screw, a turn and a slide, cones of
 30° and 60° and an ogive, each meridian either way: every node in contact within 1e-9 of `|v|`,
 its normal outward, the apex once, the blank reached either side, the sheet creased there alone)

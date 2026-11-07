@@ -1852,10 +1852,13 @@ impl<'a> Located<'a> {
         }
         let mut closest: Option<(f64,&super::topo::Coedge,f64)> = None;
         let mut boundary = f64::INFINITY;
+        // (whether a degenerate edge, a pole or an apex, is within the near-edge reading's reach)
+        let mut pole = false;
         for l in &f.loops { for c in l {
             let (t,d) = self.nearest(c.edge,p);
             if !self.seams[fi].contains(&c.edge) { boundary = boundary.min(d); }
             if closest.is_none_or(|(best,_,_)| d < best) { closest = Some((d,c,t)); }
+            pole |= d <= near && matches!(self.b.edges[c.edge as usize].curve,EdgeCurve::Degenerate);
         } }
         let Some((d,c,t)) = closest else { return Place::Out };
         if boundary <= self.tol { return Place::On }
@@ -1868,9 +1871,7 @@ impl<'a> Located<'a> {
         // nearest there need be no nearest in the face's parameters: a point of a cone's other nappe
         // just past its apex was read beside its seam and in the face (#721 G5). There the
         // parameters decide, the loops drawn in them
-        let pole = f.loops.iter().flatten().any(|c| matches!(self.b.edges[c.edge as usize].curve,super::topo::EdgeCurve::Degenerate)
-            && self.nearest(c.edge,p).1 <= near);
-        if !pole && d <= self.coarse.max(2.*self.drawn(fi).0.sag()) && t > e.t[0] && t < e.t[1] {
+        if !pole && d <= near && t > e.t[0] && t < e.t[1] {
             // near one edge's interior: which side of it, in the face's parameters — the point
             // on the branch beside each use of the edge (a seam is used twice, once each side of
             // the face), inside if beside any use it is on the face's side

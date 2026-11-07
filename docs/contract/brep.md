@@ -111,15 +111,20 @@ meridian circle (`r > |big|`) crosses its axis to make the lemon, so each one's 
 half-planes either side of the axis are one curve. The nearest point lies on the meridian in the
 point's own half-plane (`u`) or the opposite one (`u + π`, the point at `−ρ` there), whichever is
 the nearer; where the meridian reaches no farther than the axis (an ordinary torus, `big ≥ r`, the
-near circle always nearer by the triangle inequality) the own one is, as before. Read in its own
-alone, a point behind a pointed tool's apex fell on the generator past it, which the face's
-parameters took for the face. **Near a degenerate edge the face's parameters decide**
+near circle always nearer by the triangle inequality, the far one not measured) the own one is, as
+before. Read in its own alone, a point behind a pointed tool's apex fell on the generator past it,
+which the face's parameters took for the face. A face trimmed to one side of the axis may hold only
+the other foot: `Surface::feet` gives both, the nearer first, and the tool's material
+(`read::Boundary::nearest`) takes the nearest the face holds; a foot at a pole or an apex (a
+degenerate edge's point) says no side, the face's chart having no normal there (just past a cone's
+apex it reads the other nappe's), and the point's place decides. **Near a degenerate edge the face's parameters decide**
 (`Located::face_place`): within the near-edge reach of a pole or an apex every edge of the face
 meets in space, so the side of the edge nearest in space is no reading of where a point is — a
 point of a cone's other nappe just past its apex was read beside its seam, in the face — and the
 winding of the loops drawn in the parameters says. Gate: `swept_apex::behind_a_point_is_outside_the_tool`
 (every point of a cone and a spindle torus its own foot, every point past the apex off the face,
-the tool's material behind its point the distance to the apex).
+the tool's material behind its point the distance to the apex, and behind it and beside it the
+distance to the face's own nappe).
 
 **A point is read against a face by one drawing of its boundary** (`query::Outline`): each edge
 cut in chords until every chord's middle lies within a bar of the edge in space, carrying its

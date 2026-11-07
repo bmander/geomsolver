@@ -126,7 +126,8 @@ fn convex(edges: &[Edge],direction: f64,join: f64) -> Result<PlanarField,String>
                 else {
                     let (a,b) = if direction > 0. { (e.at(0.),e.at(1.)) }
                         else { (e.at(1.),e.at(0.)) };
-                    let along = |p: [f64;2]| revolved && center[0].abs() <= join && p[0].abs() <= join;
+                    let on_axis = |p: [f64;2]| revolved && p[0].abs() <= join;
+                    let along = |p: [f64;2]| center[0].abs() <= join && on_axis(p);
                     let (on_a,on_b) = (along(a),along(b));
                     let a = delta(a,center); let b = delta(b,center);
                     let before = PlanarField::half_plane(center,[-a[1],a[0]]).map_err(failure)?;
@@ -140,16 +141,14 @@ fn convex(edges: &[Edge],direction: f64,join: f64) -> Result<PlanarField,String>
                         _ if sweep.abs() <= PI => Some(before.union(after).map_err(failure)?),
                         _ => Some(before.intersection(after).map_err(failure)?),
                     };
-                    let arc = match outside { Some(o) => disk.union(o).map_err(failure)?,None => disk };
+                    let mut arc = match outside { Some(o) => disk.union(o).map_err(failure)?,None => disk };
                     // an end on the axis of an arc about a centre off it, a point's tip (an ogive):
                     // past the tip the sector's bounds leave the wedge between its radius there and
                     // the axis unbounded, which no wall closes (the axis is none), so the arc's
                     // tangent there bounds it too — a supporting line of the convex loop, which
                     // moves no boundary and leaves the distance within exact (#721 G5)
-                    let tips: Vec<[f64;2]> = [e.at(0.),e.at(1.)].into_iter()
-                        .filter(|p| revolved && center[0].abs() > join && p[0].abs() <= join).collect();
-                    let mut arc = arc;
-                    for tip in tips {
+                    for tip in [e.at(0.),e.at(1.)] {
+                        if !on_axis(tip) || along(tip) { continue }
                         arc = arc.intersection(PlanarField::half_plane(tip,delta(tip,center)).map_err(failure)?).map_err(failure)?;
                     }
                     arc

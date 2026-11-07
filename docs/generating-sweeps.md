@@ -560,15 +560,16 @@ point, but the apex's ring is a point and there is no corner's circle to step ac
 The walk turns there (`Junction::Apex`, read once where a face of revolution's meridian ends on
 its axis with no face beyond and its normal there off the axis, `constant_twist::apex`): it runs
 down one root of the face's rings to the apex and back up the other, the way it came, at the
-apex's ring's other root. That ring is read in closed form (`apex_roots`): its every point is the
-apex, moving at one velocity `w`, and the face's normals round it are the meridian's tangent there
-`α a + β e(φ)` turned square to itself in each half-plane, along `β a − α e(φ)`, so the contact is
-`β a·w − α (cos φ e₀·w + sin φ f₀·w)`, a sinusoid in the angle round the axis like any ring's, its
-two roots the two normals the characteristic turns between. Each is turned outward as the face's
-normal is a thousandth along the meridian, where the material reads the side; the apex itself does
-not tell it. The walk takes a root onto or off the apex by its normal, nearest the one it stands
-on, since every root of the apex's ring is the one point and every root of the ring beside it as
-far from it. The nodes hold the apex once, marked (`Node::apex`, `Characteristic::apexes`), a crease
+apex's ring's other root. That ring is a ring of no radius, read in closed form as any ring is
+(`apex_roots`, `RingFrame::coefficients` and `Sinusoid::roots`): its every point is the apex, moving
+at one velocity `w`, and the face's normals round it are the meridian's tangent there `α a + β e(φ)`
+turned square to itself in each half-plane, along `β a − α e(φ)`, so the contact is
+`β a·w − α (cos φ e₀·w + sin φ f₀·w)`, a sinusoid in the angle round the axis, its two roots the two
+normals the characteristic turns between. Each is turned outward as the face's normal is a
+thousandth along the meridian, where the material reads the side; the apex itself does not tell it.
+Each step takes the next ring's nearest root and, of roots as near as each other, the one whose
+normal is nearest the one it stands on: onto or off the apex every root of its ring is the one
+point, and every root of the ring beside it as far from it. The nodes hold the apex once, marked (`Node::apex`, `Characteristic::apexes`), a crease
 as V's: the sheet's exact row there, the creased fit, no turn counted across it, no fold read at
 it, the sheet cut into faces along the apex's path. A pointed tool screwed is a thread chased with
 its point; turned, an arc engraved; slid along a line not square to its axis, a V cut with the bit

@@ -14,7 +14,7 @@ use gcs_core::brep::swept::constant_twist::Characteristic;
 use gcs_core::brep::swept::tool::Tool;
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::{Screw,Trajectory};
-use gcs_core::space::{add,distance,dot,norm,scale};
+use gcs_core::space::{add,cross,distance,dot,norm,scale};
 
 type V = [f64;3];
 
@@ -30,7 +30,7 @@ enum Point { Cone(f64),Ogive }
 /// from the apex (`first`) or toward it.
 fn pointed(tip: V,axis: V,out: V,point: Point,apex_first: bool) -> Brep {
     let at = |a: f64,r: f64| -> V { add(add(tip,scale(axis,a)),scale(out,r)) };
-    let normal = gcs_core::space::cross(axis,out);
+    let normal = cross(axis,out);
     let shank = 3.;
     let (lip,edge) = match point {
         Point::Cone(half) => { let lip = shank/half.tan(); (lip,ProfileEdge::Line {a:at(0.,0.),b:at(lip,shank)}) }
@@ -49,22 +49,20 @@ fn pointed(tip: V,axis: V,out: V,point: Point,apex_first: bool) -> Brep {
         ProfileEdge::Line {a:at(back,0.),b:at(0.,0.)}];
     if !apex_first { edges.reverse(); }
     let profile = Profile {origin:at(lip,1.),normal,loops:vec![edges],names:Vec::new()};
-    revolve(&profile,tip,axis,std::f64::consts::TAU).unwrap()
+    revolve(&profile,tip,axis,TAU).unwrap()
 }
 
 /// The walk of `tool` along `path` over `roll` through the blank `inside`, which the solver's
 /// admission asks the same way.
-fn walked(tool: &Brep,path: &Trajectory,roll: [f64;2],inside: &(dyn Fn(V) -> bool+Sync)) -> Characteristic {
-    let tool = Tool::read(tool,1.).unwrap();
-    let sweep = Generating {tool:&tool,path,roll,whole:false,mm:1.};
+fn walked(tool: &Tool,path: &Trajectory,roll: [f64;2],inside: &(dyn Fn(V) -> bool+Sync)) -> Characteristic {
+    let sweep = Generating {tool,path,roll,whole:false,mm:1.};
     check_screw(&sweep,inside,None,&Sampling::default(),None).unwrap_or_else(|e| panic!("the walk: {e:?}")).0
 }
 
 /// Every node of `walked` a point of `tool`'s boundary in contact under `screw`, its normal the
 /// tool's outward one, and the apex `tip` among them where the walk turns there: how far the worst
 /// node is off contact (as `n·v` over `|v|`), and how many apexes it turns at.
-fn held(walked: &Characteristic,tool: &Brep,screw: &Screw,tip: V) -> (f64,usize) {
-    let material = Tool::read(tool,1.).unwrap();
+fn held(walked: &Characteristic,material: &Tool,screw: &Screw,tip: V) -> (f64,usize) {
     let mut worst = 0_f64;
     for n in &walked.nodes {
         let v = screw.velocity(n.position);
@@ -85,7 +83,7 @@ fn held(walked: &Characteristic,tool: &Brep,screw: &Screw,tip: V) -> (f64,usize)
 fn through_its_apex(tip: V,axis: V,out: V,screw: Screw,roll: [f64;2],inside: &(dyn Fn(V) -> bool+Sync)) {
     let path = Trajectory::Twist(screw);
     for point in [Point::Cone(30_f64.to_radians()),Point::Cone(60_f64.to_radians()),Point::Ogive] { for first in [true,false] {
-        let tool = pointed(tip,axis,out,point,first);
+        let tool = Tool::read(&pointed(tip,axis,out,point,first),1.).unwrap();
         let found = walked(&tool,&path,roll,inside);
         let (worst,apexes) = held(&found,&tool,&screw,tip);
         eprintln!("{point:?} (apex first {first}): {} nodes, {apexes} at the apex, {worst:.2e} off contact",found.nodes.len());
@@ -178,6 +176,15 @@ fn behind_a_point_is_outside_the_tool() {
             let value = material.material().value(behind);
             assert!((value-k).abs() <= 1e-9*(1.+k),"{point:?}: {k} behind the apex reads {value}");
         }
+        // behind the apex and beside it, nearest a point of the face on its own nappe: the cone's
+        // generator in the point's half-plane, `ρ cos half + h sin half` from it, though the
+        // generator across the axis, past the apex, is nearer (the face's other foot, `feet`)
+        if let Point::Cone(half) = point {
+            let (rho,h) = (2.,0.5);
+            let value = material.material().value([4.-h,0.,rho]);
+            let face = rho*half.cos()+h*half.sin();
+            assert!((value-face).abs() <= 1e-9,"{point:?}: behind and beside the apex reads {value}, the face {face}");
+        }
     }
 }
 
@@ -207,4 +214,5 @@ fn the_drawings_field_reads_behind_an_ogives_point_as_outside() {
         assert!(lo > 0.,"{k} behind the tip and aside, outside: {lo}");
     }
 }
+
 

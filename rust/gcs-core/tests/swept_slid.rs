@@ -93,7 +93,7 @@ fn swept(apart: &dyn Fn(V) -> f64,d: V,p: V) -> bool {
 
 /// `∫ f` over `[lo, hi]`, by Gauss–Legendre's eight points (`integral::GAUSS8`) on each of `n`
 /// pieces.
-fn gauss(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,n: usize) -> f64 {
+pub(crate) fn gauss(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,n: usize) -> f64 {
     (0..n).map(|k| {
         let (p,q) = (lo+(hi-lo)*k as f64/n as f64,lo+(hi-lo)*(k+1) as f64/n as f64);
         gcs_core::integral::GAUSS8.iter().map(|&(x,w)| w*0.5*(q-p)*f(0.5*(p+q)+0.5*(q-p)*x)).sum::<f64>()

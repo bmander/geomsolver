@@ -53,10 +53,10 @@
 use crate::util::fmath::Det;
 use super::surface::RevolvedSurface;
 use super::tool::{ExtrudedSurface,Material,PatchEdge,Tool,ToolSurface};
-use crate::contact::{self as envelope,RingFrame,Sinusoid};
+use crate::contact::{self as envelope,RingFrame,RingRoots,Sinusoid};
 use crate::trajectory::{Error,Motion,Screw,Trajectory};
 use crate::util::roots::{brent,Least};
-use crate::util::space::{add,sub,dot,cross,norm,scale,distance};
+use crate::util::space::{add,sub,dot,cross,norm,scale,distance,unit};
 use std::sync::Arc;
 
 type V = [f64;3];
@@ -123,11 +123,12 @@ const SMOOTH_LOOP: &str = "where its sheet would close on itself smoothly, which
 /// Why one under a whole turn is refused (#684 W): its sheet would close round the turn as well.
 const WHOLE_LOOP: &str = "which the class does not split a blank by (not built)";
 
-/// Why the walk ends where a revolution's face meets the tool's axis at an angle and it cannot turn
-/// there: the walk turns at an apex from one root of the rings beside it to the other (#721 G5),
-/// and ends where the ring beside it has no second root, the apex's ring read only as a point.
-const APEX: &str = "meets the tool's axis at an apex of its profile, where the rings beside it have no second root for the \
-    walk to turn back along";
+/// Why the walk ends where a revolution's face meets the tool's axis at an angle and it does not turn
+/// there: it turns at an apex at a face's end, from one root of the apex's ring to the other (#721
+/// G5), and ends at one it meets elsewhere (a station short of the end, an end another face meets),
+/// or whose ring has no two roots, its point's path an edge of the sweep it does not build.
+const APEX: &str = "meets the tool's axis at an apex of its profile where it does not turn back along the face, and the sweep \
+    has a sharp edge along the apex's path (not built)";
 
 /// Why the walk ends where a revolution's face meets the tool's axis square to it, at a pole (a disc's
 /// centre): the ring there is a point, and the characteristic would run on across the axis, onto
@@ -432,31 +433,28 @@ impl Walker<'_> {
         // bull-nose's round to its flat end): its ring at the join is in contact all round, its
         // normals the flat's, and the characteristic runs on from the flat's line across it at the
         // line's two ends, which lie on the disc's rim, the join (#684 O)
+        // (and a face's ring at an apex on the tool's axis, #721 G5: a point, where every normal of the
+        // cone round it is the tool's, read as the roots the rings beside it come to there,
+        // `apex_roots`, which the walk turns between, `Junction::Apex`)
         let mut rings = rings;
+        let rooted = |position: V,normal: V,spread: f64| Root {position,normal,spread,reach:entering(self.tool,family,screw,ask,position)};
         for (k,junctions) in self.junctions.ends.iter().enumerate() { for (end,junction) in junctions.iter().enumerate() {
-            let (Piece::Face(..),Junction::Flat(l)) = (&pieces[k],junction) else { continue };
-            let Piece::Flat(Flat {line:Ok(ends),normal,..}) = &pieces[*l] else { continue };
             let Some((at,_)) = entered(&stations,k,end as f64) else { continue };
-            if !matches!(&rings[k][at],Ring::Degenerate(Unrooted::AllRound)) { continue }
-            rings[k][at] = Ring::Roots(ends.iter().map(|&p| Root {position:p,normal:*normal,spread:1.,
-                reach:entering(self.tool,family,screw,ask,p)}).collect());
-        } }
-        // a face's ring at an apex on the tool's axis (#721 G5): a point, where every normal of the cone
-        // round it is the tool's; read as the roots the rings beside it come to there (`apex_roots`),
-        // which the walk turns between (`Junction::Apex`)
-        for (k,junctions) in self.junctions.ends.iter().enumerate() { for (end,junction) in junctions.iter().enumerate() {
-            let (Piece::Face(_,surface),Junction::Apex) = (&pieces[k],junction) else { continue };
-            let Some((at,_)) = entered(&stations,k,end as f64) else { continue };
-            rings[k][at] = match apex_roots(surface,end as f64,self.motion,self.tolerance,&outward) {
-                Ok(found) => Ring::Roots(found.into_iter().map(|(position,normal,spread)| Root {position,normal,spread,
-                    reach:entering(self.tool,family,screw,ask,position)}).collect()),
-                Err(why) => Ring::Degenerate(why),
-            };
+            match (&pieces[k],junction) {
+                (Piece::Face(..),Junction::Flat(l)) => {
+                    let Piece::Flat(Flat {line:Ok(ends),normal,..}) = &pieces[*l] else { continue };
+                    if !matches!(&rings[k][at],Ring::Degenerate(Unrooted::AllRound)) { continue }
+                    rings[k][at] = Ring::Roots(ends.iter().map(|&p| rooted(p,*normal,1.)).collect());
+                }
+                (Piece::Face(_,surface),Junction::Apex) => rings[k][at] = match apex_roots(surface,end as f64,self.motion,self.tolerance,&outward) {
+                    Ok(found) => Ring::Roots(found.into_iter().map(|(p,n,spread)| rooted(p,n,spread)).collect()),
+                    Err(why) => Ring::Degenerate(why),
+                },
+                _ => {}
+            }
         } }
         // S2, ring by ring: two roots of one ring in the blank are two sheets over one station, but
         // where the walk runs from the one across a flat face to the other (asked once it is walked)
-        // (whether the walk turns at an apex between two roots, its ring's at it, #721 G5)
-        let turns = |x: (usize,usize,usize),y: (usize,usize,usize)| x.0 == y.0 && x.1 == y.1 && x.2 != y.2;
         let mut doubled: Vec<(usize,usize,[usize;2])> = Vec::new();
         for (k,face) in rings.iter().enumerate() { for (i,ring) in face.iter().enumerate() {
             let Ring::Roots(roots) = ring else { continue };
@@ -690,7 +688,7 @@ impl Characteristic {
             let r = root(x);
             // the walk turning at an apex, from its ring's one root to the other at the same point:
             // the apex once, a crease, the step on starting there (#721 G5)
-            if w > 0 && order[w-1].0 == k && order[w-1].1 == i && order[w-1].2 != x.2 {
+            if w > 0 && turns(order[w-1],x) {
                 if let Some(last) = nodes.last_mut() { last.apex = true }
                 continue
             }
@@ -849,9 +847,7 @@ impl Characteristic {
     /// The pieces `keep` picks whose stretches the characteristic walks, each once in a row and as a
     /// message names it.
     fn walked_named(&self,keep: impl Fn(&Piece) -> bool) -> Vec<String> {
-        let mut walked: Vec<usize> = self.walked().iter().map(|m| m.patch).filter(|&k| keep(&self.pieces[k])).collect();
-        walked.dedup();
-        walked.into_iter().map(|k| self.pieces[k].named()).collect()
+        self.named_once(self.walked().iter().map(|m| m.patch).filter(|&k| keep(&self.pieces[k])))
     }
 
     /// The lined sides whose ruling in contact all along it the characteristic runs along (#684 AF),
@@ -888,11 +884,7 @@ impl Characteristic {
     /// The convex corners, rims and creases of the tool whose fans stand at one point where the
     /// characteristic passes them, the sheet creased along that point's path (#684 V), each as a
     /// message names it.
-    pub fn sharp(&self) -> Vec<String> {
-        let mut walked: Vec<usize> = self.nodes.iter().filter_map(|m| m.sharp).collect();
-        walked.dedup();
-        walked.into_iter().map(|k| self.pieces[k].named()).collect()
-    }
+    pub fn sharp(&self) -> Vec<String> { self.named_once(self.nodes.iter().filter_map(|m| m.sharp)) }
 
     /// Whether the characteristic crosses a concave corner whose faces' points meet there, the sheet
     /// creased along that point's path (`Node::crease`, #721 F1d).
@@ -900,8 +892,11 @@ impl Characteristic {
 
     /// The faces at whose apex on the tool's axis the characteristic turns, the sheet creased along
     /// the apex's path (`Node::apex`, #721 G5), each as a message names it.
-    pub fn apexes(&self) -> Vec<String> {
-        let mut walked: Vec<usize> = self.nodes.iter().filter(|m| m.apex).map(|m| m.patch).collect();
+    pub fn apexes(&self) -> Vec<String> { self.named_once(self.nodes.iter().filter(|m| m.apex).map(|m| m.patch)) }
+
+    /// The pieces `walked` names, each once in a row and as a message names it.
+    fn named_once(&self,walked: impl Iterator<Item=usize>) -> Vec<String> {
+        let mut walked: Vec<usize> = walked.collect();
         walked.dedup();
         walked.into_iter().map(|k| self.pieces[k].named()).collect()
     }
@@ -971,6 +966,10 @@ impl Characteristic {
         Ok(())
     }
 }
+
+/// Whether the walk turns between `x` and `y`, one ring's two roots: at an apex on the tool's axis,
+/// the only junction that steps from a root to another of the same ring (`Junction::Apex`, #721 G5).
+fn turns(x: (usize,usize,usize),y: (usize,usize,usize)) -> bool { (x.0,x.1) == (y.0,y.1) && x != y }
 
 /// The nodes at which the sweep is creased, in order: where the walk runs onto or off a flat face
 /// the motion keeps in its own plane (#684 O), those `Node::sharp` marks, where it passes a fan
@@ -1245,35 +1244,36 @@ fn ring(piece: &Piece,u: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V)
 /// and the sine of the half angle between the two. The ring is a point, but the face's normals round
 /// it are those of its meridian's tangent there turned about the axis, each square to that tangent
 /// in its half-plane: the tangent `α a + β e(φ)` in the half-plane whose radial is `e(φ)`, its normal
-/// along `β a − α e(φ)`. With every point of the ring the apex, moving at the one velocity `w` (read
-/// on what the motion carries), the
-/// contact `n·w` is `β a·w − α (cos φ e₀·w + sin φ f₀·w)`, a sinusoid in the angle round the axis
-/// whose roots are found in closed form, as any ring's are. Each normal is turned to the side the
-/// face's normal faces a thousandth of the meridian in (`outward`): the material does not tell the
-/// outside at the apex itself, nor reliably within its probe's step of it.
+/// along `β a − α e(φ)`: the ring's normal `nr e + nz a` with `nr = −α` and `nz = β`. With every
+/// point of the ring the apex, it is a ring of no radius (`RingFrame::coefficients`), its contact a
+/// sinusoid in the angle round the axis whose roots are read as any ring's are (`Sinusoid::roots`):
+/// none, two, meeting (`DoublePoint`), or all round where the apex stands still. Each normal is
+/// turned to the side the face's normal faces a thousandth of the meridian in (`outward`): the
+/// material does not tell the outside at the apex itself, nor reliably within its probe's step.
 fn apex_roots(s: &RevolvedSurface,end: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V) -> V) -> Result<Vec<(V,V,f64)>,Unrooted> {
-    let a = crate::util::space::unit(s.axis_direction());
+    let a = unit(s.axis_direction());
     let v0 = s.domain()[1][0];
     let tip = s.at(end,v0).map_err(Unrooted::Envelope)?;
     let beside = s.at(if end == 0. { 1e-3 } else { 1.-1e-3 },v0).map_err(Unrooted::Envelope)?;
-    // the radial of the chart's first half-plane, and the meridian's tangent there, at the apex
-    let e0 = { let q = sub(beside.position,tip.position); crate::util::space::unit(sub(q,scale(a,dot(q,a)))) };
-    let f0 = cross(a,e0);
-    let (alpha,beta) = (dot(tip.du,a),dot(tip.du,e0));
-    // which way out the normal `β a − α e` is: as the face's beside the apex, in the first half-plane
-    let n0 = { let (x,y) = (dot(beside.du,a),dot(beside.du,e0)); crate::util::space::unit(sub(scale(a,y),scale(e0,x))) };
+    // the radial of the chart's first half-plane, and the meridian's tangent there, at the apex: the
+    // ring a point, its normal `β a − α e` away from the axis by `−α` and along it by `β`
+    let e0 = { let q = sub(beside.position,tip.position); unit(sub(q,scale(a,dot(q,a)))) };
+    let length = norm(tip.du);
+    let (nr,nz) = (-dot(tip.du,a)/length,dot(tip.du,e0)/length);
+    // which way out that normal is: as the face's beside the apex, in the first half-plane
+    let n0 = { let (x,y) = (dot(beside.du,a),dot(beside.du,e0)); unit(sub(scale(a,y),scale(e0,x))) };
     let out = if dot(outward(beside.position,n0),n0) < 0. { -1. } else { 1. };
-    let w = motion.inverse().vector(motion.velocity(tip.position));
-    // `p cos φ + q sin φ = c`
-    let (p,q,c) = (alpha*dot(e0,w),alpha*dot(f0,w),beta*dot(a,w));
-    let amplitude = p.dhypot(q);
-    if !(amplitude > tolerance*norm(w).max(f64::MIN_POSITIVE)) || (c/amplitude).abs() > 1. { return Ok(Vec::new()) }
-    let (centre,spread) = (q.datan2(p),(c/amplitude).dacos());
-    if spread < 1e-12 { return Err(Unrooted::DoublePoint) }
-    Ok([centre-spread,centre+spread].map(|phi| {
-        let e = add(scale(e0,phi.dcos()),scale(f0,phi.dsin()));
-        (tip.position,scale(crate::util::space::unit(sub(scale(a,beta),scale(e,alpha))),out),spread.dsin())
-    }).to_vec())
+    let ring = RingFrame {center:tip.position,radius:0.,radial:e0,axis:a};
+    let k = ring.coefficients(nr,nz,motion);
+    match k.roots(tolerance) {
+        RingRoots::None => Ok(Vec::new()),
+        RingRoots::All => Err(Unrooted::AllRound),
+        RingRoots::Double(_) => Err(Unrooted::DoublePoint),
+        RingRoots::Two(angles) => {
+            let spread = (1.-(k.c/k.a.dhypot(k.b)).dpowi(2)).max(0.).sqrt();
+            Ok(angles.map(|phi| { let e = ring.at(phi).1; (tip.position,scale(add(scale(e,nr),scale(a,nz)),out),spread) }).to_vec())
+        }
+    }
 }
 
 /// `n` turned, if need be, to point out of the tool's material at `p`: the faces' parameters
@@ -1604,9 +1604,8 @@ impl Walker<'_> {
             Junction::Arm => arms.get(&(k,end as usize)).map(|&(x,d)| Step::Next(x,d)).unwrap_or_else(|| Step::End(UNREAD_ARMS.into())),
             // the ring's other root at the apex, back the way the walk came (#721 G5)
             Junction::Apex => match &rings[k][i] {
-                Ring::Roots(roots) => (0..roots.len()).find(|&x| x != j && near(roots[x].position)).map(|x| Step::Next((k,i,x),-dir))
-                    .unwrap_or_else(|| Step::End(APEX.into())),
-                Ring::Degenerate(why) => Step::End(why.says()),
+                Ring::Roots(roots) if roots.len() == 2 => Step::Next((k,i,1-j),-dir),
+                _ => Step::End(APEX.into()),
             },
             Junction::End(why) => Step::End((*why).into()),
         } };
@@ -1622,17 +1621,14 @@ impl Walker<'_> {
                 Ring::Degenerate(why) => Step::End(why.says()),
                 // a side's root reaching a ruling's end at a cap's rim or a crease: onto that fan
                 Ring::Roots(roots) if roots.is_empty() => first(&along.rims).unwrap_or_else(|| Step::End(off())),
-                // onto or off an apex, the root whose normal is nearest this one's: there every root of
-                // the ring stands at the apex, or as far from it as the other (#721 G5)
-                Ring::Roots(roots) if self.apex_at(k,stations[k][i]) || self.apex_at(k,stations[k][next]) => {
-                    let m = (0..roots.len()).max_by(|&x,&y| dot(roots[x].normal,here.normal).total_cmp(&dot(roots[y].normal,here.normal)))
-                        .expect("a root");
-                    Step::Next((k,next,m),dir)
-                }
-                // the nearest root of the next ring: a label may turn where the amplitude does
+                // the nearest root of the next ring: a label may turn where the amplitude does. Of roots
+                // as near as each other, the one whose normal is nearest this one's: onto or off an apex
+                // every root of the ring stands at it, or as far from it as the other (#721 G5)
                 Ring::Roots(roots) => {
-                    let m = (0..roots.len()).min_by(|&x,&y| distance(roots[x].position,here.position)
-                        .total_cmp(&distance(roots[y].position,here.position))).expect("a root");
+                    let away = |x: usize| distance(roots[x].position,here.position);
+                    let least = (0..roots.len()).map(away).fold(f64::INFINITY,f64::min);
+                    let m = (0..roots.len()).filter(|&x| away(x) <= least+1e-7*scale)
+                        .max_by(|&x,&y| dot(roots[x].normal,here.normal).total_cmp(&dot(roots[y].normal,here.normal))).expect("a root");
                     Step::Next((k,next,m),dir)
                 }
             }
@@ -1640,11 +1636,6 @@ impl Walker<'_> {
         let end = if dir > 0 { 1. } else { 0. };
         if stations[k][i] != end { return Step::End("runs past the stretch the coarse pass sampled".into()) }
         across(&self.junctions.ends[k][end as usize],end)
-    }
-
-    /// Whether station `u` of piece `k` is an end of it at an apex on the tool's axis (#721 G5).
-    fn apex_at(&self,k: usize,u: f64) -> bool {
-        (u == 0. || u == 1.) && matches!(self.junctions.ends[k][u as usize],Junction::Apex)
     }
 
     /// Where the walk stands at `here` on face `k` at station `u`, a corner partway along its

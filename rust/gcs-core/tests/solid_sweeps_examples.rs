@@ -431,27 +431,14 @@ fn the_spoke_swings_a_slot_ended_by_a_zone_of_a_sphere() {
     near(exported(&e,"block"),PI/3.*80.-PI/6.*(57.25-1./12.),1e-5);
 }
 
-/// The greatest of `f` over `[a, b]`: read at 2000 points, then the best of them refined by golden
-/// section between its neighbours (`f` unimodal there).
+/// The greatest of `f` over `[a, b]`: read at 200 points, the best of them refined by Brent's search
+/// between its neighbours (`f` unimodal there).
 fn greatest(f: &dyn Fn(f64) -> f64,a: f64,b: f64) -> f64 {
-    let n = 2000;
+    let n = 200;
     let x = |k: usize| a+(b-a)*k as f64/n as f64;
-    let k = (0..=n).max_by(|&i,&j| f(x(i)).total_cmp(&f(x(j)))).unwrap();
-    let (mut lo,mut hi) = (x(k.saturating_sub(1)),x((k+1).min(n)));
-    let g = (5f64.sqrt()-1.)/2.;
-    for _ in 0..100 {
-        let (c,d) = (hi-g*(hi-lo),lo+g*(hi-lo));
-        if f(c) > f(d) { hi = d } else { lo = c }
-    }
-    f(0.5*(lo+hi))
-}
-
-/// `∫ f` over `[a, b]` by Gauss–Legendre's five points on each of `n` panels.
-fn integral(f: &dyn Fn(f64) -> f64,a: f64,b: f64,n: usize) -> f64 {
-    const X: [f64;5] = [0.,-0.5384693101056831,0.5384693101056831,-0.9061798459386640,0.9061798459386640];
-    const W: [f64;5] = [0.5688888888888889,0.4786286704993665,0.4786286704993665,0.2369268850561891,0.2369268850561891];
-    let h = (b-a)/n as f64;
-    (0..n).map(|k| { let m = a+h*(k as f64+0.5); X.iter().zip(&W).map(|(x,w)| w*f(m+0.5*h*x)).sum::<f64>()*0.5*h }).sum()
+    let k = (0..=n).map(|k| (k,f(x(k)))).max_by(|p,q| p.1.total_cmp(&q.1)).unwrap().0;
+    let (lo,hi) = (x(k.saturating_sub(1)),x((k+1).min(n)));
+    -gcs_core::roots::brent(&|t| -f(t),lo,hi,1e-15,200,|_,_| false).value
 }
 
 /// What a cone to a point of half angle `half` takes from a rod of radius `rod` and length `length`
@@ -473,7 +460,7 @@ fn chased(rod: f64,length: f64,apex: f64,half: f64,lead: f64) -> f64 {
         (2.*greatest(&w,0.,(apex/r).acos())/h).clamp(0.,TAU)
     };
     // (r = apex + s², the spread rising as a root from the apex's radius)
-    length*integral(&|s: f64| { let r = apex+s*s; spread(r)*r*2.*s },0.,(rod-apex).sqrt(),400)
+    length*crate::swept_slid::gauss(&|s: f64| { let r = apex+s*s; spread(r)*r*2.*s },0.,(rod-apex).sqrt(),60)
 }
 
 /// What a cone to a point of half angle `half` turned about z takes from a ring sector of `sector`
@@ -491,7 +478,7 @@ fn engraved(tip: [f64;3],axis: [f64;3],across: [f64;3],half: f64,top: f64,sector
         (tip[0]+t*d[0]).hypot(tip[1]+t*d[1])
     };
     let width = |z: f64| greatest(&|th| rim(z,th).powi(2),0.,TAU)+greatest(&|th| -rim(z,th).powi(2),0.,TAU);
-    sector/2.*integral(&width,tip[2],top,40)
+    sector/2.*crate::swept_slid::gauss(&width,tip[2],top,8)
 }
 
 /// `chased_point.sv` (#721 G5): a V-bit lying across a rod, its 60° point a millimetre into it,

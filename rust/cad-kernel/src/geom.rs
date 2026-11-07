@@ -1170,6 +1170,50 @@ impl Surface {
             _ => None,
         }
     }
+    /// Whether a cone's or a torus's point at `(ρ, z)` in its frame's cylindrical coordinates is
+    /// nearer its meridian in the opposite half-plane (where it stands at `−ρ`) than in its own.
+    /// Each one's meridians either side of the axis are one curve running across it: a cone's
+    /// generator runs on past its apex into the other nappe, a spindle torus's circle (`r > |big|`)
+    /// crosses the axis to make the lemon (#721 G5: read in its own half-plane alone, a point behind
+    /// a cone's apex fell on the generator past the apex, which the face's parameters took for the
+    /// face). Where the meridian reaches no farther than the axis the own one is the nearer, as it
+    /// always was: a ring torus's (`big ≥ r`), or for a point outside its own circle (`big ≥ 0`),
+    /// by the triangle inequality, and the opposite one is not measured.
+    fn across(&self,rho: f64,z: f64) -> bool {
+        match *self {
+            Surface::Cone(_,r,a) => {
+                let (sa,ca) = a.dsin_cos();
+                let off = |rho: f64| ((rho-r)*ca-z*sa).abs();
+                off(-rho) < off(rho)
+            }
+            Surface::Torus(_,big,r) => {
+                let near = (rho-big).dhypot(z);
+                !(big >= 0. && (big >= r || near >= r)) && ((rho+big).dhypot(z)-r).abs() < (near-r).abs()
+            }
+            _ => false,
+        }
+    }
+    /// A cone's or a torus's parameters of its meridian's foot of the point `(u, ρ, z)`, in the
+    /// point's own half-plane or, `across`, the opposite one (`u + π`, the point at `−ρ`).
+    fn meridian_foot(&self,u: f64,rho: f64,z: f64,across: bool) -> Uv {
+        let (u,rho) = if across { (wrap(u+std::f64::consts::PI),-rho) } else { (u,rho) };
+        match *self {
+            // the generator through u, in the (ρ, z) half-plane: (r, 0) + v (sin α, cos α)
+            Surface::Cone(_,r,a) => { let (sa,ca) = a.dsin_cos(); [u,(rho-r)*sa+z*ca] }
+            Surface::Torus(_,big,_) => [u,wrap(z.datan2(rho-big))],
+            _ => unreachable!("a cone's or a torus's meridian"),
+        }
+    }
+    /// The feet of `p` a face of the surface may hold, the nearest first: `inverse`, and on a cone or
+    /// a torus also its foot on the meridian across the axis (`across`), the nearest the face may
+    /// hold where it is trimmed to the side of the axis the other is not.
+    pub fn feet(&self,p: V) -> [Option<Uv>;2] {
+        let (Surface::Cone(..) | Surface::Torus(..)) = self else { return [Some(self.inverse(p)),None] };
+        let [x,y,z] = self.frame().local(p);
+        let (u,rho) = (if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) },x.dhypot(y));
+        let nearer = self.across(rho,z);
+        [Some(self.meridian_foot(u,rho,z,nearer)),Some(self.meridian_foot(u,rho,z,!nearer))]
+    }
     pub fn inverse(&self,p: V) -> Uv {
         let f = self.frame();
         let [x,y,z] = f.local(p);
@@ -1189,25 +1233,10 @@ impl Surface {
         match *self {
             Surface::Plane(_) => [x,y],
             Surface::Cylinder(..) => [u,z],
-            // A cone's and a torus's meridians in the half-planes through the axis on either side
-            // of it are one curve running across the axis: a cone's generator runs on past its apex
-            // into the other nappe, a spindle torus's circle (`r > |big|`) crosses the axis to make
-            // the lemon inside the apple. So the point nearest `p` lies on the meridian in its own
-            // half-plane (`u`) or in the opposite one (`u + π`, where `p` stands at `−ρ`), whichever
-            // is nearer (#721 G5: read in its own alone, a point behind a cone's apex fell on the
-            // generator past the apex, which the face's parameters then took for the face). Where
-            // the meridian reaches no farther than the axis the own one is the nearer, as before.
-            Surface::Cone(_,r,a) => {
-                // the generator through u, in the (ρ, z) half-plane: (r, 0) + v (sin α, cos α)
-                let (sa,ca) = a.dsin_cos();
-                let off = |rho: f64| ((rho-r)*ca-z*sa).abs();
-                if off(-rho) < off(rho) { [wrap(u+std::f64::consts::PI),(-rho-r)*sa+z*ca] } else { [u,(rho-r)*sa+z*ca] }
-            }
+            // a cone's and a torus's meridians either side of the axis one curve running across it:
+            // the foot on the nearer (`across`)
+            Surface::Cone(..) | Surface::Torus(..) => self.meridian_foot(u,rho,z,self.across(rho,z)),
             Surface::Sphere(..) => [u,z.datan2(rho)],
-            Surface::Torus(_,big,r) => {
-                let off = |rho: f64| ((rho-big).dhypot(z)-r).abs();
-                if off(-rho) < off(rho) { [wrap(u+std::f64::consts::PI),wrap(z.datan2(-rho-big))] } else { [u,wrap(z.datan2(rho-big))] }
-            }
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
                 | Surface::Affine(..) => unreachable!(),
         }

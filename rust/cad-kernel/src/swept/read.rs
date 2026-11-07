@@ -704,6 +704,9 @@ pub struct Boundary {
     bounding: Vec<u32>,
     /// Each vertex's angle-weighted pseudo-normal, where every face meeting there has a normal.
     corners: Vec<Option<V>>,
+    /// The points of its degenerate edges, its poles and apexes, where a face has no normal to say a
+    /// side by (#721 G5: read just past a cone's apex, its chart's normal is the other nappe's).
+    poles: Vec<V>,
 }
 
 impl std::fmt::Debug for Boundary {
@@ -723,7 +726,8 @@ impl Boundary {
         let faces = uses.iter().map(|u| u.iter().map(|x| x.0).collect::<std::collections::BTreeSet<_>>().into_iter().collect())
             .collect();
         let bounding = (0..b.edges.len() as u32).filter(|e| !seams.contains(e)).collect();
-        Boundary {located:Located::owned(b.clone(),tol),scale,faces,bounding,corners:pseudo_normals(b)}
+        let poles = b.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Degenerate)).map(|e| b.vertices[e.v[0] as usize].p).collect();
+        Boundary {located:Located::owned(b.clone(),tol),scale,faces,bounding,corners:pseudo_normals(b),poles}
     }
 
     /// The distance from `q` (the boundary's units) to the boundary: to the foot of the nearest
@@ -737,11 +741,14 @@ impl Boundary {
         let (mut best,mut foot) = (f64::INFINITY,None);
         for (gap,fi) in gaps {
             if gap >= best { break }
+            // (the nearest point of its surface, or where the face is trimmed away from that, of a
+            // cone's or a torus's the nearest on the meridian across the axis, #721 G5)
             let surface = &b.faces[fi].surface;
-            let uv = surface.inverse(q);
-            let p = surface.point(uv);
-            let d = distance(q,p);
-            if d < best && l.face_place(fi,p) != Place::Out { (best,foot) = (d,Some(Foot::Face(fi,uv))) }
+            for uv in surface.feet(q).into_iter().flatten() {
+                let p = surface.point(uv);
+                let d = distance(q,p);
+                if d < best && l.face_place(fi,p) != Place::Out { (best,foot) = (d,Some(Foot::Face(fi,uv))); break }
+            }
         }
         for &e in &self.bounding {
             if l.edge_gap(e,q) >= best { continue }
@@ -750,7 +757,11 @@ impl Boundary {
         }
         let outward = |fi: usize,uv: Uv| { let f = &b.faces[fi]; f.surface.normal(uv).map(|n| if f.reversed { scale(n,-1.) } else { n }) };
         let side = match foot {
-            Some(Foot::Face(fi,uv)) => outward(fi,uv).map(|n| dot(sub(q,b.faces[fi].surface.point(uv)),n)),
+            // (at a pole or an apex none, where the point's place says)
+            Some(Foot::Face(fi,uv)) => {
+                let foot = b.faces[fi].surface.point(uv);
+                if self.poles.iter().any(|&v| distance(foot,v) <= l.tol) { None } else { outward(fi,uv).map(|n| dot(sub(q,foot),n)) }
+            }
             // beside an edge's inside, the side of the sum of its faces' normals there (its
             // pseudo-normal); beside its end, a corner's, the side of the corner's
             Some(Foot::Edge(e,t)) => {
