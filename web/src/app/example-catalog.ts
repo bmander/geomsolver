@@ -63,7 +63,8 @@ const projects: Example[] = [{
     + 'tooth space, a drafted rack '
     + 'tooth leaned across the blank as a helical rack\'s, the tooth drafted both ways from a parting '
     + 'plane through the blank, a bar whose flat end cuts a tooth space\'s '
-    + 'floor, the same bar placed as the rack\'s next tooth, a plus always '
+    + 'floor, the same bar placed as the rack\'s next tooth, a ring gear cut by the gear whose teeth '
+    + 'are its spaces, a plus always '
     + 'in mesh cutting its conjugate wheel, and a wheel of two beads, a union, cut bead by bead. '
     + 'Each file names its class and gives its volume; '
     + 'the README says what each shows and where the larger cases are.',

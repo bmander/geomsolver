@@ -654,6 +654,9 @@ space cut piece
     let (housing,piece) = (e.map.ent_named("housing").unwrap().i(),e.map.ent_named("piece").unwrap().i());
     let (_,kept) = exported(&sk,housing).unwrap();
     let (_,rest) = exported(&sk,piece).unwrap();
+    // the native path's recipe holds no body built of sweeps, and says so by name
+    let why = gcs_core::solid::cad::recipe_static(&sk,housing).unwrap_err();
+    assert!(why.contains("`gear` is a body built of sweeps") && why.contains("--kernel rust"),"{why}");
     let annulus = PI*(30.*30.-19.*19.)*6.;
     assert!((kept+rest-annulus).abs() < 1e-9,"{kept} + {rest} against {annulus}");
     assert!(kept > PI*(30.*30.-22.*22.)*6.,"the space's share of the overlap kept: {kept}");
