@@ -628,14 +628,22 @@ keep, pushed through the plate, its characteristic the whole drum's curve to 2e-
 ends at a sharp corner, slid aslant so the faces' points part there, turned three quarters, its
 characteristic run round the corner's fan and the whole barrel's curve to 2e-15
 (`a_corner_where_the_points_part_is_walked_round_on_a_partial_revolution`).
-*A partial revolution's ends:* under a constant twist a plane that is no lone prism's cap is asked
-at T1 only where the motion's contact lies on it (`ends`' `twisted`: the contact `n·v` read over its
-points on the tool, one sign throughout a plane that holds none): a partial revolution's end the
-motion's normals never lie in holds no characteristic, is nothing of the sweep's boundary but at
-its end poses, and passes through the blank unrefused (the three-quarter drum above).  A plane
-the contact crosses is still refused at T1, the walk reading no line across it but a lone prism's
-cap's; so is any such plane under the generating class, whose contact a turn seen from a turn moves
-across it.
+*A partial revolution's ends:* the drawing's field reads a revolution over part of a turn
+(`RevolvedRegion::spatial`: its whole turn's material in common with the wedge its turn spans, a
+sector about the axis carried along it; `RevolvedRegion::classify` the same), where before it
+refused any but a whole turn; and the kernel reads it by its faces, its ends planes through its
+axis.  A plane that is no lone prism's cap is asked at T1, under either class, only where the
+motion's contact lies on it at some pose of the roll sampled (`admission::holds_none`: `n·v` read
+over its points on the tool at every pose, one sign throughout a plane that holds none): an end
+the motion's normals never lie in is nothing of the sweep's boundary but at its end poses, and
+passes through the blank unrefused (the three-quarter drum above).  A plane the contact crosses is
+still refused at T1, no class reading a contact line across it but a lone prism's cap's; and a
+turn of more than half a turn meets itself along its axis at a concave edge, which the generating
+class refuses at T2 as any concave corner.  The gate is
+`partial_turns::a_pin_turned_part_of_a_turn_is_the_generating_classs`: the lantern pinion's pin
+turned 160° is admitted by the generating class as the whole pin is
+(`revolved_regions::material_queries_are_snapshots_and_refuse_unsupported_or_nonfinite_geometry`
+holds the field's half turn).
 *The planar class's pocket:* read from the tool's B-rep (`pocket::Pocket::read`): two caps, planes
 square to one direction each bounded by an outline and one hole, every other face standing along
 it (a plane, a cylinder or a sweep of a curve along it); the hole the loop enclosing the less

@@ -1,4 +1,5 @@
-//! Material membership of full revolutions, evaluated on analytic profile curves.
+//! Material membership of revolutions, whole or over part of a turn (#721 F1d), evaluated on
+//! analytic profile curves.
 //! This is separate from the faceted CSG kernel: callers must choose which geometry
 //! they mean. It does not silently substitute an analytic surface for a mesh face.
 #[allow(unused_imports)]
@@ -24,7 +25,8 @@ pub struct RegionSample {
     pub signed_distance: f64,
 }
 
-/// A solved snapshot of an unmodified full revolution with line/circular profiles.
+/// A solved snapshot of an unmodified revolution, whole or over part of a turn, with line/circular
+/// profiles.
 /// Profile topology uses the existing solid validator; point membership and distance
 /// use analytic curves and have no tessellation setting. Hole interiors are voids.
 #[derive(Clone,Debug)]
@@ -35,6 +37,10 @@ pub struct RevolvedRegion {
     /// The axis tolerance the snapshot was read with: an endpoint put on the axis
     /// moved by up to this, so its neighbours join it within the same distance.
     pub(crate) axis_tolerance: f64,
+    /// Where it turns over part of a turn (#721 F1d): the unit direction from the axis its
+    /// profile's half-plane starts in, and the signed angle it turns through about `axis`; none
+    /// for a whole turn.
+    pub(crate) turn: Option<(V,f64)>,
 }
 
 impl RevolvedRegion {
@@ -53,8 +59,8 @@ impl RevolvedRegion {
         let SolidDef::Revolve {face,ref sweep,..} = s.def else {
             return Err("analytic material membership requires an unmodified revolution".into());
         };
-        if sweep.value < TAU || !sweep.value.is_finite() {
-            return Err("analytic material membership requires a full revolution".into());
+        if !sweep.value.is_finite() || sweep.value <= 0. {
+            return Err("analytic material membership requires a revolution through some angle".into());
         }
         super::super::validate(sk,solid)?;
         let face = &sk.faces[face as usize];
@@ -105,7 +111,17 @@ impl RevolvedRegion {
                 }
             }
         }
-        Ok(Self {origin,axis,loops,axis_tolerance})
+        // over part of a turn: the half-plane its profile's first face starts in, and how far it
+        // turns, as that face's surface reads them
+        let turn = (sweep.value < TAU).then(|| {
+            let p = first.at(0.5,0.).ok()?.position;
+            let q = sub(p,origin);
+            let r = sub(q,scale(axis,plane::dot(q,axis)));
+            let l = plane::dot(r,r).sqrt();
+            (l > 0.).then(|| (scale(r,1./l),first.sweep()))
+        }).flatten();
+        if sweep.value < TAU && turn.is_none() { return Err("a partial revolution's profile lies on its axis".into()) }
+        Ok(Self {origin,axis,loops,axis_tolerance,turn})
     }
 
     /// A region solid's meridian as analytic membership: its loops' lines and arcs in (radius,
@@ -117,7 +133,7 @@ impl RevolvedRegion {
             Seg::Arc {c,r,a0,sweep} => Edge::Arc {center:c,radius:r,start:a0,sweep,ends:[step.start(),step.end()]},
             Seg::Conic {a,m,b,w} => Edge::Conic {a,m,b,w},
         }).collect()).collect();
-        Self {origin:m.origin,axis:m.axis,loops,axis_tolerance}
+        Self {origin:m.origin,axis:m.axis,loops,axis_tolerance,turn:None}
     }
 
     /// Classify using an explicit boundary band in model length units. Axis edges
@@ -135,7 +151,18 @@ impl RevolvedRegion {
             .fold(f64::INFINITY,f64::min);
         if !distance.is_finite() { return Err(Error::NonFinite); }
         let inside = |edges: &[Edge]| edges.iter().map(|e| e.crossings(p)).sum::<usize>()%2 == 1;
-        let material = inside(&self.loops[0]) && !self.loops[1..].iter().any(|l| inside(l));
+        // (and, over part of a turn, within the wedge it turns through: the distance to the
+        // profile turned to the nearer end beyond it)
+        let (wedged,distance) = match self.turn {
+            None => (true,distance),
+            Some((start,sweep)) => {
+                let w = plane::cross(self.axis,start);
+                let angle = (plane::dot(v,w)*sweep.signum()).datan2(plane::dot(v,start)).rem_euclid(TAU);
+                if angle <= sweep.abs() { (true,distance) }
+                else { (false,distance.max(p[0]*(angle-sweep.abs()).min(TAU-angle).min(std::f64::consts::FRAC_PI_2).sin())) }
+            }
+        };
+        let material = wedged && inside(&self.loops[0]) && !self.loops[1..].iter().any(|l| inside(l));
         let location = if distance <= tolerance { RegionLocation::Boundary }
             else if material { RegionLocation::Inside } else { RegionLocation::Outside };
         Ok(RegionSample {location,signed_distance:if material { -distance } else { distance }})

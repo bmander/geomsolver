@@ -241,10 +241,10 @@ fn undercut(c: &Generating,patch: usize,inside: &(dyn Fn(V) -> bool+Sync),option
 /// might be reported in their place: the blank's reads, the poses the roll is sampled at, and
 /// whether each cap of `lone` (the tool, where it is a prism standing alone; its `start`, then its
 /// `end`) reaches the blank. A whole turn has no ends to clear: the tool at either lies within
-/// what the turn sweeps (`SweepContacts::whole`, #684 N). Under a constant twist (`twisted`, the
-/// tool's pose at the roll's start), a plane is asked only where its contact lies on it.
-fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone: Option<&Lone>,concave: bool,
-    twisted: Option<Motion>) -> Result<(Reads,Vec<Motion>,[bool;2]),Failure> {
+/// what the turn sweeps (`SweepContacts::whole`, #684 N). A plane is asked only where the motion's
+/// contact lies on it at some pose of the roll sampled (#721 F1d).
+fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone: Option<&Lone>,concave: bool)
+    -> Result<(Reads,Vec<Motion>,[bool;2]),Failure> {
     let tool = c.source_material();
     let on_tool = |p: V| c.tool.on(p);
     let domain = c.domain();
@@ -358,9 +358,9 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
         if let Some(p) = reached {
             // (a lone prism's cap its rim does not carry into the blank is cut as one its rim does)
             if lone.is_some() { capped[end] = true; continue }
-            // under a constant twist, a plane on whose points on the tool the contact keeps one sign
-            // holds no characteristic: the walk never reads it (#721 F1d)
-            if twisted.is_some_and(|motion| holds_none(surface,&on_tool,motion)) { continue }
+            // a plane on whose points on the tool the contact keeps one sign at every pose sampled
+            // holds none: nothing of it is the sweep's boundary but at the end poses (#721 F1d)
+            if holds_none(surface,&on_tool,&poses) { continue }
             return Err((Row::Tool,format!("its plane face `{}` passes through the blank, and the class cuts with a plane \
                 face only as a prism's side, or as a cap of a prism standing alone as the tool or placed, undrafted, its \
                 profile one loop",surface.name()),Some(p)));
@@ -377,10 +377,11 @@ fn on_tool_grid<'a>(surface: &'a ToolSurface,on_tool: &'a dyn Fn(V) -> bool) -> 
         .filter_map(move |(i,j)| surface.at(i as f64/n as f64,j as f64/n as f64).ok().filter(|s| on_tool(s.position)))
 }
 
-/// Whether `surface` holds no contact under a constant twist at `motion`: `n·v` one sign at each of
-/// its points on the tool (`on_tool_grid`), so the walk meets nothing of it (#721 F1d).
-fn holds_none(surface: &ToolSurface,on_tool: &dyn Fn(V) -> bool,motion: Motion) -> bool {
-    let [lo,hi] = on_tool_grid(surface,on_tool).filter_map(|s| crate::contact::contact(s,motion).ok().map(|c| c.normal_velocity))
+/// Whether `surface` holds no contact over the roll: `n·v` one sign at each of its points on the
+/// tool (`on_tool_grid`) at every pose of `poses`, so no class's contact meets it (#721 F1d).
+fn holds_none(surface: &ToolSurface,on_tool: &dyn Fn(V) -> bool,poses: &[Motion]) -> bool {
+    let points: Vec<crate::contact::SurfacePoint> = on_tool_grid(surface,on_tool).collect();
+    let [lo,hi] = poses.iter().flat_map(|&m| points.iter().filter_map(move |&s| crate::contact::contact(s,m).ok().map(|c| c.normal_velocity)))
         .fold([f64::INFINITY,f64::NEG_INFINITY],|[lo,hi],x| [lo.min(x),hi.max(x)]);
     lo > 0. || hi < 0.
 }
@@ -592,7 +593,7 @@ pub fn check(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling
     let roots = |patch: usize,u: f64,v: f64| c.at_source_over(patch,u,v,domain,options.root_tolerance);
     // (a lone prism's cap is cut where it is sectioned across: undrafted, one loop)
     let lone = lone.filter(|l| l.sectioned_across());
-    let (mut reads,poses,capped) = ends(c,inside,options,lone,true,None)?;
+    let (mut reads,poses,capped) = ends(c,inside,options,lone,true)?;
     // M2 at the poles: where a face's profile meets the tool's axis the surface has no normal of
     // its own, so the sampled checks below cannot evaluate it. Its normal is the axis, the limit
     // along the profile; a pole whose contact condition is zero at every time and whose path
@@ -941,8 +942,7 @@ pub fn check_screw(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),extent: Opti
     // (a plane no lone prism's cap holds the twist's contact or holds none: where it holds none, a
     // partial revolution's end the motion's normals never lie in, nothing of it is the sweep's
     // boundary but at the end poses, and it is no refusal, #721 F1d)
-    let motion = pose_at(c.motion(),c.domain()[0]).map_err(|m| (Row::Motion,m,None))?;
-    let (reads,..) = ends(c,inside,options,lone,false,Some(motion))?;
+    let (reads,..) = ends(c,inside,options,lone,false)?;
     let reads = std::sync::Mutex::new(reads);
     // the blank read outside the lock, the faces' rings side by side
     let read = |p: V| { let i = inside(p); reads.lock().unwrap_or_else(|e| e.into_inner()).push(p,i); i };

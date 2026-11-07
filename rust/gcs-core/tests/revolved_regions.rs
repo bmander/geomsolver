@@ -1,4 +1,4 @@
-use gcs_core::{envelope::Error,model::SolidDef,program,
+use gcs_core::{envelope::Error,program,
     solid::{RegionLocation,RevolvedRegion},solve};
 
 fn solved(source: &str) -> program::Elaborated {
@@ -147,9 +147,13 @@ fn material_queries_are_snapshots_and_refuse_unsupported_or_nonfinite_geometry()
     let changed = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
     check(&region,[4.5,0.,0.],0.5);
     check(&changed,[4.5,0.,0.],-0.5);
-    let SolidDef::Revolve {sweep,..} = &mut e.sketch.solids[0].def else { panic!() };
-    sweep.value = std::f64::consts::TAU-1e-8;
-    assert!(RevolvedRegion::read(&e.sketch,0,1e-12).unwrap_err().contains("full revolution"));
+    // a revolution over part of a turn is read with its turn (#721 F1d): the ring turned half way
+    // round holds material on the half its turn passes and none on the other
+    let half = solved(&RING.replace("about: ax)","about: ax, to: 180deg)"));
+    let half = RevolvedRegion::read(&half.sketch,0,1e-12).unwrap();
+    let at = |p: [f64;3]| half.classify(p,1e-9).unwrap().location;
+    let sides = [at([0.,3.,0.]),at([0.,-3.,0.])];
+    assert!(sides.contains(&RegionLocation::Inside) && sides.contains(&RegionLocation::Outside),"{sides:?}");
     assert!(RevolvedRegion::read(&e.sketch,999,1e-12).is_err());
     assert!(RevolvedRegion::read(&e.sketch,0,-1.).is_err());
     assert!(RevolvedRegion::read(&e.sketch,0,f64::NAN).is_err());

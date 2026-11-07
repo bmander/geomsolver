@@ -511,4 +511,24 @@ impl RevolvedRegion {
         RevolvedField::new(PlanarField::from_loops(&self.loops,self.axis_tolerance)?,self.origin,self.axis)
             .map_err(failure)
     }
+
+    /// Its material in space: the field turned whole round, and over part of a turn in common with
+    /// the wedge it turns through (#721 F1d) — a sector about the axis, from the half-plane its
+    /// profile starts in through its turn, past the profile's reach, carried along the axis past
+    /// its heights.
+    pub fn spatial(&self) -> Result<super::SpatialField,String> {
+        let whole: super::SpatialField = self.field()?.into();
+        let Some((start,sweep)) = self.turn else { return Ok(whole) };
+        let reach = self.loops.iter().flatten().flat_map(|e| [0.,0.5,1.].map(|t| e.at(t)))
+            .fold(1_f64,|m,q| m.max(q[0].abs()).max(q[1].abs()));
+        let (r,h) = (4.*reach,4.*reach);
+        let turned = crate::plane::cross(self.axis,start);
+        let v = if sweep < 0. { [-turned[0],-turned[1],-turned[2]] } else { turned };
+        let a = sweep.abs();
+        let end = [r*a.cos(),r*a.sin()];
+        let wedge = vec![Edge::Line {a:[0.,0.],b:[r,0.],axis:false},Edge::Arc {center:[0.,0.],radius:r,start:0.,sweep:a,ends:[[r,0.],end]},
+            Edge::Line {a:end,b:[0.,0.],axis:false}];
+        let field = crate::solid::ExtrudedField::new(PlanarField::from_loops(&[wedge],0.)?,self.origin,start,v,[-h,h]).map_err(failure)?;
+        whole.intersection(field.into()).map_err(failure)
+    }
 }
