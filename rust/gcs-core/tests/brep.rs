@@ -2702,7 +2702,6 @@ fn an_edge_used_twice_each_way_touches_and_one_used_once_is_open() {
 fn two_sectors_sharing_an_apex_meet_in_lines_and_mesh_closed() {
     use gcs_core::brep::boolean::{combined,Op};
     use gcs_core::brep::geom::{Curve,Surface};
-    use gcs_core::brep::mesh::mesh;
     use gcs_core::brep::ssi::{intersect,Ssi};
     use gcs_core::brep::topo::EdgeCurve;
     use std::f64::consts::FRAC_PI_4;
@@ -2743,17 +2742,134 @@ fn two_sectors_sharing_an_apex_meet_in_lines_and_mesh_closed() {
         let poles = f.loops.iter().flatten().filter(|c| matches!(common.edges[c.edge as usize].curve,EdgeCurve::Degenerate)).count();
         assert_eq!(poles,1,"a cone's piece through the apex has one pole edge");
     }
+    held_to_the_bench(&common,r.powi(3)*omega/3.,r*r*omega+2.*r*r*theta*alpha.sin());
+}
+
+/// A solid held to brep-bench's bar for a case it has closed forms for: a valid closed boundary,
+/// its volume and area to `1e-9` of theirs, and meshed to the bench's sag (a ten-thousandth of
+/// its size, or a two-hundredth of its thickness) a closed mesh holding its volume.
+fn held_to_the_bench(b: &gcs_core::brep::topo::Brep,v: f64,a: f64) {
+    use gcs_core::brep::mesh::mesh;
+    b.check(1e-9).unwrap();
+    let near = |x: f64,y: f64,what: &str| assert!((x-y).abs() <= 1e-9*y,"{what} {x} against {y} ({:e})",(x-y)/y);
+    near(volume(b),v,"volume");
+    near(total_area(b),a,"area");
     // brep-bench's bar: a ten-thousandth of the size, or a two-hundredth of the thickness
-    let all = common.faces.iter().map(|f| gcs_core::brep::props::area(&common,f)).sum::<f64>();
-    let bar = (1e-4*common.size()).min(5e-3*volume(&common)/all);
-    let m = mesh(&common,bar,0.1).unwrap();
+    let bar = (1e-4*b.size()).min(5e-3*v/a);
+    let m = mesh(b,bar,0.1).unwrap();
     let mut sides: std::collections::BTreeMap<(u32,u32),usize> = Default::default();
     for t in &m.tris { for k in 0..3 { let (p,q) = (t[k],t[(k+1)%3]); *sides.entry((p.min(q),p.max(q))).or_default() += 1; } }
     let open = sides.values().filter(|&&n| n != 2).count();
     assert_eq!(open,0,"{open} of {} triangle sides not shared by two triangles",sides.len());
-    gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&m.triangles(),"sectors")).unwrap();
+    gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&m.triangles(),"bench")).unwrap();
     assert!(m.sag <= bar,"sags {} against {bar}",m.sag);
     assert_eq!(m.turned,0);
-    let (v,w) = (mesh_volume(&m),volume(&common));
-    assert!((v-w).abs() <= 1e-3*w,"the mesh holds {v} against {w}");
+    let w = mesh_volume(&m);
+    assert!((w-v).abs() <= 1e-3*v,"the mesh holds {w} against {v}");
+}
+
+/// The degenerate edges of the faces on a surface of kind `kind`: one for each time a face's loop
+/// passes through a pole.
+fn poles_of(b: &gcs_core::brep::topo::Brep,kind: &str) -> usize {
+    use gcs_core::brep::topo::EdgeCurve;
+    b.faces.iter().filter(|f| f.surface.kind() == kind).flat_map(|f| f.loops.iter().flatten())
+        .filter(|c| matches!(b.edges[c.edge as usize].curve,EdgeCurve::Degenerate)).count()
+}
+
+/// **A ball cut through its poles** (brep-bench's singular/ball-halved-through-its-poles and
+/// singular/ball-cut-aslant-through-a-pole): a meeting running through a pole arrives on it at the
+/// value of `u` it runs along (`topo::leaving_pole`), not where the sphere's inverse reads the pole,
+/// and the pole's degenerate edge is cut there (`boolean::poles_cut`), so the sphere is split along
+/// the meeting and each piece's loop closed along the pole (`Brep::close_poles`). Read at the pole,
+/// the meridian of the halving plane ran aslant across the sphere's parameters from one pole to the
+/// other, the pole edges were whole, and the sphere came out one piece the meridians only slit: its
+/// sides in two cells at once, the Boolean refused ("two of its cells joined round an edge").
+#[test]
+fn a_ball_cut_through_its_poles_is_its_part() {
+    use gcs_core::brep::build::{kept,sphere};
+    let r = 5f64;
+    let ball = sphere([0.;3],[0.,0.,1.],r).unwrap();
+    // halved by the yz plane, which holds both poles: half the sphere and the disc of radius 5
+    let half = kept(&ball,[0.;3],[1.,0.,0.],0.).unwrap();
+    held_to_the_bench(&half,2.*PI*r.powi(3)/3.,3.*PI*r*r);
+    // the half the plane keeps is on both sides of the sphere's seam: two pieces of it, each with
+    // both poles
+    assert_eq!(half.faces.iter().filter(|f| f.surface.kind() == "sphere").count(),2);
+    assert_eq!(poles_of(&half,"sphere"),4);
+    // cut aslant by x + z = 5, which passes through the pole (0, 0, 5) crossing every meridian
+    let s = 0.5f64.sqrt();
+    let rest = kept(&ball,[0.,0.,r],[-s,0.,-s],0.).unwrap();
+    let h = r*(1.-s);
+    held_to_the_bench(&rest,4.*PI*r.powi(3)/3.-PI*h*h*(3.*r-h)/3.,4.*PI*r*r-2.*PI*r*h+PI*r*r/2.);
+}
+
+/// **Balls meeting through their poles** (brep-bench's singular/balls-meeting-through-a-pole and
+/// singular/napkin-ring-poles-on-its-rims): a circle where two balls meet passes through a pole of
+/// each, and a napkin ring's rims through its ball's poles. Each sphere is split along the circle
+/// through its pole as a ball cut through it is (`a_ball_cut_through_its_poles_is_its_part`).
+#[test]
+fn meetings_through_a_balls_pole_split_it() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::{disc,sphere};
+    let r = 5f64;
+    // two balls 6 apart, their poles on the verticals through their centres: the circle of radius
+    // 4 they meet in passes through (0, 0, 5) and (4.8, 0, −1.4)
+    let a = sphere([0.;3],[0.,0.,1.],r).unwrap();
+    let b = sphere([4.8,0.,3.6],[0.,0.,1.],r).unwrap();
+    let both = combined(&a,&b,Op::Union,0.).unwrap();
+    let h = r-3.;
+    held_to_the_bench(&both,8.*PI*r.powi(3)/3.-2.*PI*h*h*(3.*r-h)/3.,8.*PI*r*r-4.*PI*r*h);
+    // a ball bored through along z by a hole of radius 3, its poles at (3, 0, 4) and (−3, 0, −4),
+    // one on each rim of the hole
+    let ball = sphere([0.;3],[3.,0.,4.],r).unwrap();
+    let drill = prism(&disc([0.,0.,-2.*r],[0.,0.,1.],3.),0.,4.*r).unwrap();
+    let ring = combined(&ball,&drill,Op::Cut,0.).unwrap();
+    held_to_the_bench(&ring,PI*512./6.,2.*PI*(r+3.)*8.);
+    // and its poles a little under a degree outside the rims (singular/napkin-ring-poles-near-its-rims),
+    // which no meeting reaches: built as it was
+    let ball = sphere([0.;3],[3.1,0.,4.],r).unwrap();
+    let ring = combined(&ball,&drill,Op::Cut,0.).unwrap();
+    held_to_the_bench(&ring,PI*512./6.,2.*PI*(r+3.)*8.);
+}
+
+/// **A cone cut through its apex** (brep-bench's singular/cone-halved-through-its-apex and
+/// singular/cone-cut-aslant-through-its-apex): a plane through the apex meets the cone in the two
+/// generators it holds, exactly (`ssi`'s `plane_through_apex`; the plane through the axis as before),
+/// each arriving at the apex at its own `u`, where the apex's pole edge is cut. Traced, the
+/// aslant plane's meeting crowded its steps toward the apex past a hundred thousand points and was
+/// refused there as a near touch; read at the apex, the halving plane's generators left the cone's
+/// side one piece, and the Boolean was refused.
+#[test]
+fn a_cone_cut_through_its_apex_is_its_part() {
+    use gcs_core::brep::build::{cone,kept};
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    use gcs_core::brep::topo::EdgeCurve;
+    let (r,h) = (5f64,10f64);
+    let solid = cone([0.;3],[0.,0.,1.],r,0.,h).unwrap();
+    // halved by the yz plane, through its axis: half the side, half the base, and the triangle
+    let half = kept(&solid,[0.;3],[1.,0.,0.],0.).unwrap();
+    held_to_the_bench(&half,PI*r*r*h/6.,PI*r*(r*r+h*h).sqrt()/2.+PI*r*r/2.+r*h);
+    // cut by 4x + z = 10, through the apex and the chord x = 2.5 of the base
+    let n = gcs_core::space::unit([4.,0.,1.]);
+    let side = solid.faces.iter().find(|f| matches!(f.surface,Surface::Cone(..))).unwrap().surface.clone();
+    let plane = Surface::Plane(Frame::new([0.,0.,h],n,[0.,1.,0.]));
+    let Ssi::Curves(lines) = intersect(&plane,&side,1e-9) else { panic!("a plane through the apex is met in closed form") };
+    assert_eq!(lines.len(),2,"two generators: {lines:?}");
+    for l in &lines {
+        let Curve::Line {p,d} = l else { panic!("{l:?} is no line") };
+        // (on the nappe the cone's surface is: below the apex)
+        let down = if d[2] < 0. { 1. } else { -1. };
+        for t in [1.,3.,7.] {
+            let q = gcs_core::space::add(*p,scale3(*d,down*t));
+            for s in [&plane,&side] { assert!(gcs_core::space::distance(s.point(s.inverse(q)),q) <= 1e-12,"{q:?} off a surface"); }
+        }
+    }
+    let rest = kept(&solid,[0.,0.,h],scale3(n,-1.),0.).unwrap();
+    let segment = r*r*(2.*PI/3.-3f64.sqrt()/2.)/2.;
+    let base = PI*r*r-segment;
+    held_to_the_bench(&rest,base*h/3.,base+2.*PI*r*(r*r+h*h).sqrt()/3.+r*3f64.sqrt()*(h*h+r*r/4.).sqrt()/2.);
+    let straight = rest.edges.iter().filter(|e| matches!(&e.curve,EdgeCurve::Curve(Curve::Line {..}))).count();
+    // (the cone's seam, along +x, is in the part cut away)
+    assert_eq!(straight,3,"the chord and the two generators: {straight} lines");
 }

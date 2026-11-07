@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A face is split along a meeting through its pole**: an edge laid across a face ends on a pole
+  of its surface at the value of the collapsed parameter it arrives along, not where the surface's
+  inverse reads the pole, and the face's pole edge is cut there (its pieces closed again by
+  `Brep::close_poles`, which `boolean::selection` now runs too). A ball halved through its poles or
+  cut aslant through one, two balls meeting through a pole of each, a napkin ring with its ball's
+  poles on its rims and a cone halved through its apex (brep-bench's singular cases) are built,
+  where each was refused as "a shell of the arrangement … kept on one side … and dropped on
+  another". `topo::leaving_pole` (**new**, crate-internal) is the value `close_poles` reads too.
+- **A plane through a cone's apex meets it in the generators it holds**, exactly
+  (`ssi::intersect`): two lines through the apex where the plane leans to the axis by more than
+  they do. A cone cut aslant through its apex (brep-bench's
+  singular/cone-cut-aslant-through-its-apex) is built, where the meeting was traced past a hundred
+  thousand points and refused at the apex as a near touch.
 - **Certified readings by interval Newton on per-kind enclosures, never a guess** (#814).
   `util::isolate` reads each box through a test behind one boundary — `Test` (`Krawczyk`, the
   default, and `Kantorovich`) and `Test1` (`Slope`, the default, and `Bounded`) — over a `System` or

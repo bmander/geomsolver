@@ -934,6 +934,27 @@ operand's pole kept whole across a turn the piece does not span: its pieces' tri
 265 triangle sides of the sectors' common not shared by two. `brep::two_sectors_sharing_an_apex_meet_in_lines_and_mesh_closed`
 (the common's volume and areas their closed forms by Gauss–Bonnet, its mesh closed) is the gate.
 
+**A face is split along a meeting through its pole** (brep-bench's singular cases: a ball halved
+through its poles, a ball cut aslant through one, two balls meeting through a pole of each, a
+napkin ring with its ball's poles on its rims, a cone halved through its apex). In the face's
+parameters a pole is a segment, its degenerate edge running along the collapsed parameter, and a
+meeting through it arrives on that segment where it runs, not at the segment's ends: an edge laid
+across a face (`FaceCut::internal`) ends on a pole at the value it arrives along
+(`topo::leaving_pole`, the foot of a point a hair out along its tangent, which `close_poles` reads
+too), and each pole edge of the face is cut at every such value inside it (`boolean::poles_cut`),
+its pieces no edges of their own (`Half::pole`: a piece's loop leaves them out, and the result's
+`close_poles` — a Boolean's, a split's and a selection's — lays one between the uses arriving and
+leaving). Read at the pole itself, the halving plane's meridian ran aslant across the sphere's
+parameters from one pole to the other and the pole edges were whole: the sphere came out one
+piece the meeting only slit, its sides in two cells at once, and the Boolean was refused ("two of
+its cells joined round an edge"). **A plane through a cone's apex meets it in the generators it
+holds**, exactly (`ssi`'s `plane_through_apex`: `R cos(u − φ) = −cos α (n·z)`, two where the plane
+leans to the axis by more than they do; one, a touch, read as above; none left to the trace);
+traced, a plane cutting a cone aslant through its apex crowded its steps toward the apex past a
+hundred thousand points and was refused there as a near touch. `brep::a_ball_cut_through_its_poles_is_its_part`,
+`meetings_through_a_balls_pole_split_it` and `a_cone_cut_through_its_apex_is_its_part` are the
+gate, each case to its closed forms to 1e-9 and meshed closed at the bench's sag.
+
 **Faces built apart are sewn into a solid by tolerant topology** (`sew::sewn`; brep-bench's
 geometry/nurbs-cone): a rational net whose last row is nine copies of its apex (`build::sheet`)
 and the disc closing its base (`build::face`, a profile's region of its plane alone), or any
