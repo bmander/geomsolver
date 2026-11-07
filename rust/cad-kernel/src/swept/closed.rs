@@ -157,7 +157,6 @@
 //! screw; under any other motion a tool no convex solid of revolution, a contact whose pieces change
 //! over the roll, a sheet folding or coming back onto itself (`Folded`, `Returns`) — is refused by
 //! what it is (`Unbuilt`); those are the design's later steps.
-use crate::boolean::arrangement_given;
 use crate::build::{Profile,ProfileEdge,disc,prism,square};
 use crate::geom::{Curve,Frame,Surface};
 use crate::turned::Exact;
@@ -1326,13 +1325,13 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     // about the axis; under a screw (a lone leg), a box square to the axis and as tall along it as
     // the sweep, a little more (`tall`: its heights along the axis and its farthest from it), so a
     // sheet a level edge screws into leaves it within a turn where the sweep climbs less than a
-    // turn's step (cut from a blank, the box holds the blank too: every candidate reaching across it)
+    // turn's step. Cut from a blank, the box is the sweep's reach (#847): every candidate reaches
+    // across it, and the blank is split by them within it alone (`boolean::arrangement_reached`)
     let (screw,[a,b]) = (legs[0].0,legs[0].1);
     let path_one = Trajectory::Twist(screw);
     let pose_at = |t: f64| path_one.pose(t).map_err(Unbuilt::from);
-    let held: Vec<V> = blank.map(|b| box_corners(b.bounds())).unwrap_or_default();
     let (domain,centre,half,tall) = if legs.iter().all(|l| l.0.is_slide() || l.0.is_turn()) {
-        let (domain,centre,half) = cube_holding(held_points.iter().chain(&held),tol)?;
+        let (domain,centre,half) = cube_holding(&held_points,tol)?;
         (domain,centre,half,None)
     } else {
         // the tool's box carried over the roll, read at enough poses that the arcs its corners run
@@ -1350,11 +1349,6 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             }
         }
         let sag = reach*(1.-(0.5*(screw.ratio*(b-a)).abs()/STEPS as f64).dcos());
-        for &p in &held {
-            let x = f.local(p);
-            reach = reach.max(x[0].dhypot(x[1]));
-            for i in 0..3 { l[i] = l[i].min(x[i]); h[i] = h[i].max(x[i]) }
-        }
         let margin = 0.05*(0..3).map(|i| h[i]-l[i]).fold(0.,f64::max)+tol;
         let pad = [sag+margin,sag+margin,margin];
         for i in 0..3 { l[i] -= pad[i]; h[i] += pad[i] }
@@ -1432,10 +1426,10 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         }
         entered[i] = Some(first..solids.len());
     }
-    // (a candidate whose solid stands clear of the domain's box parts none of it: left out, so its
-    // meetings with the others there are never sought)
-    let within = blank.unwrap_or(&domain);
-    let refs = clear_of(&solids,within,tol);
+    // (a candidate whose solid stands clear of the box parts none of it: left out, so its meetings
+    // with the others there are never sought)
+    let (within,reached) = match blank { Some(b) => (b,Some(&domain)),None => (&domain,None) };
+    let refs = clear_of(&solids,&domain,tol);
     // **the touches given** (#810, #780 R5): each between the faces of its two candidates' solids
     // that hold it, laid with no search for it — where both candidates were carried
     let given: Vec<crate::boolean::Given> = touches.iter().filter_map(|t| {
@@ -1446,7 +1440,7 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         let surface = |r: std::ops::Range<usize>| solids[r].iter().flat_map(|b| &b.faces).map(|f| &f.surface).find(holds).cloned();
         Some(crate::boolean::Given {surfaces:[surface(r0)?,surface(r1)?],curves:t.curves.clone()})
     }).collect();
-    arranged_or_dumped(within,&refs,&given,&swept,blank,tol)
+    arranged_or_dumped(within,reached,&refs,&given,&swept,blank,tol)
 }
 
 /// A box's eight corners.
@@ -1473,11 +1467,12 @@ fn clear_of<'a>(solids: &'a [Brep],within: &Brep,tol: f64) -> Vec<&'a Brep> {
 
 /// `arranged`, a failed build's arrangement written where `SOLVENT_SWEEP_DUMP` asks (#777 V5), to be
 /// replayed alone and reduced (`swept::dump`).
-fn arranged_or_dumped(within: &Brep,refs: &[&Brep],given: &[crate::boolean::Given],swept: &Swept,blank: Option<&Brep>,tol: f64)
-    -> Result<Brep,Unbuilt> {
-    let out = arranged(within,refs,given,swept,blank,tol);
+#[allow(clippy::too_many_arguments)]
+fn arranged_or_dumped(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::boolean::Given],swept: &Swept,
+    blank: Option<&Brep>,tol: f64) -> Result<Brep,Unbuilt> {
+    let out = arranged(within,reach,refs,given,swept,blank,tol);
     if let (Err(why),Some(dir)) = (&out,super::dump::dump_dir()) {
-        match super::dump::dump(&dir,within,refs,given,tol,&format!("{why:?}")) {
+        match super::dump::dump(&dir,within,reach,refs,given,tol,&format!("{why:?}")) {
             Ok(()) => eprintln!("sweep: the failed build's arrangement written to {}",dir.display()),
             Err(e) => eprintln!("sweep: the failed build's arrangement not written: {e}"),
         }
@@ -1526,25 +1521,33 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     let solids = [start,end,sheet];
     let solid = Solid::new(tool,bar,1.)?;
     let swept = Swept {tool:&solid,path,roll:[a,b]};
-    arranged_or_dumped(within,&clear_of(&solids,within,tol),&given,&swept,blank,tol)
+    arranged_or_dumped(within,None,&clear_of(&solids,within,tol),&given,&swept,blank,tol)
 }
 
-/// The domain `within` split by the candidates `refs` at once, each cell kept by membership, the
-/// kept cells' boundary selected and judged: `build` from its arrangement on.
-fn arranged(within: &Brep,refs: &[&Brep],given: &[crate::boolean::Given],swept: &Swept,blank: Option<&Brep>,tol: f64) -> Result<Brep,Unbuilt> {
-    let complex = arrangement_given(within,refs,given,tol)?;
+/// The domain `within` split by the candidates `refs` at once — within `reach` alone where there
+/// is one (a sweep cut from a blank, #847: `boolean::arrangement_reached`) — each cell kept by
+/// membership, the kept cells' boundary selected and judged: `build` from its arrangement on.
+#[allow(clippy::too_many_arguments)]
+fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::boolean::Given],swept: &Swept,blank: Option<&Brep>,
+    tol: f64) -> Result<Brep,Unbuilt> {
+    let complex = crate::boolean::arrangement_reached(within,reach,refs,given,tol)?;
     crate::util::meter::go_on()?;
     // each cell classified by membership at the deepest of its points that settles (a cusp-thin
     // cell's stand near the swept boundary, and the first may not), and the boundary between the
     // cells kept — the members, or cut from a blank the rest — and the others the result: one
     // selection, no union, the candidates that bound nothing healed out of its faces
-    let cells = complex.cells()?.len();
+    let found = complex.cells()?;
+    let cells = found.len();
+    // a cell a face of the reach bounds from outside it is outside the reach, which holds the sweep:
+    // no member of it, and kept with nothing read (the reach is the complex's operand 1)
+    let outside = |c: usize| reach.is_some() && complex.in_operand(&complex.cell_sides(found,c),1) == Some(false);
     // each cell read on its own, across the cores (`util::par`, in the cells' order): its points
     // certified by its own exact point location, the first whose membership settles classifying it,
     // and those past it kept as witnesses the built solid is judged at
     let read = crate::util::par::indices(cells.saturating_sub(1),|i| -> Result<Option<(bool,Vec<V>)>,Unbuilt> {
         let c = i+1;
         crate::util::meter::go_on()?;
+        if outside(c) { return Ok(Some((true,Vec::new()))) }
         let points = complex.inside_points(c,4)?;
         let Some(&first) = points.first() else { return Ok(None) };
         match points.iter().enumerate().find_map(|(k,&x)| swept.member(x).ok().map(|m| (k,m))) {

@@ -901,8 +901,21 @@ arithmetic for each tooth and to the page's stepped build.
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
 the blank, not a box, is the domain the candidates split, and its cells are kept where they are no
 member of the sweep — one arrangement and one classification, with no closed solid built and then
-subtracted by a Boolean. The box the candidates are sized by holds the blank as well as the sweep,
-so each reaches across both (a screwed sheet's ends and rims past the blank). A bar slid along a
+subtracted by a Boolean. **The blank is split within the sweep's reach alone** (#847): the box the
+candidates are sized by holds the sweep, as `closed`'s does, and is the reach of
+`boolean::arrangement_reached` — the blank parted by its boundary too, every candidate's piece
+outside it left out, and a cell a face of it bounds from outside kept with nothing read (the box
+holds the sweep, so nothing outside it is a member). A blank's earlier cuts outside the reach are
+neither split into cells nor read, and what the candidates lay on the blank's faces there (each is
+sized by the box, a plane's block four times as wide) is healed out of its faces and its edges
+(`boolean::rejoined`), so turned copies of one sweep cost about the same each, a little more as the
+blank near the box gains faces, and leave the blank's edges whole: the issue's tube, its slab
+screwed through it and cut at three placements, 141 s (23, 42 and 76 s a cut), 26 faces and 2 446
+edges, 30 under 10 µm, is now 8 s (2.1, 2.5 and 3.0 s), 26 faces and 72 edges, none under 10 µm;
+twelve copies a thirtieth of a turn apart, overlapping, some 8 s each. Gates:
+`screwed_copies::a_turned_copy_of_a_screwed_slot_is_cut_as_the_first` (two copies remove twice
+what one does to 1e-9, adding their own edges alone) and
+`one_screwed_slot_leaves_the_tubes_edges_whole`. A bar slid along a
 block, sunk into its top, cuts a groove of `4 × 1 × 1` from `24`, its result's ten faces whole
 (`a_bar_slid_along_a_block_cuts_a_groove_on_one_arrangement`); a bar beside the axis turned a quarter
 turn through a disc takes its section's polar integral times the disc's thickness
