@@ -15,7 +15,9 @@
 //! (`nurbs::interpolate_creased`), the sheet cut into faces there, the flat's strip its plane.
 //! So too where it passes a convex corner, a rim or a crease whose fan stands at one point, every
 //! normal between its faces in contact there (#684 V): the sweep has a sharp edge along that
-//! point's path, between the two faces' sheets, and the sheet is creased there the same way.
+//! point's path, between the two faces' sheets, and the sheet is creased there the same way; and
+//! where it turns at an apex on the tool's axis, from one root of its face's rings to the other
+//! (#721 G5), a sharp edge along the apex's path.
 //! A characteristic that closes on itself within the blank, a tool's passed wholly through it
 //! (#684 W), is begun and ended at a crease (`Characteristic::closed`): its last row is its first,
 //! to the bit, and the sheet, a tube, is cut into faces at its creases that close on each other
@@ -227,7 +229,7 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
     settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {
         if cut.is_empty() && !found.whole && !found.closed { return Ok(fitted) }
         fitted.faces = fitted.named(kind,&|_| String::new(),found.whole.then_some(AROUND),found.closed).at(Stage::Fit)?;
-        let creased = creased_where(!found.flats().is_empty(),!found.sharp().is_empty(),found.concave());
+        let creased = creased_where(found);
         (say.stage)(&format!("`{name}`: the sheet cut into {} faces{}{}",fitted.faces.faces.len(),
             if creases.is_empty() { if cut.is_empty() { "" } else { " where its characteristic runs round a convex corner's fan" } }
                 else { &creased },
@@ -238,10 +240,11 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
 }
 
 /// Where a characteristic's sheet is creased, said: where it runs onto or off a flat face, passes a
-/// fan standing at one point, or crosses a concave corner (#721 F1d), as each is so.
-fn creased_where(flat: bool,sharp: bool,concave: bool) -> String {
-    let said: Vec<&str> = [(flat,"runs onto or off a flat face"),(sharp,"passes a fan standing at one point"),(concave,"crosses a concave corner")]
-        .into_iter().filter(|w| w.0).map(|w| w.1).collect();
+/// fan standing at one point, crosses a concave corner (#721 F1d) or turns at an apex on the tool's
+/// axis (#721 G5), as each is so.
+fn creased_where(found: &Characteristic) -> String {
+    let said: Vec<&str> = [(!found.flats().is_empty(),"runs onto or off a flat face"),(!found.sharp().is_empty(),"passes a fan standing at one point"),
+        (found.concave(),"crosses a concave corner"),(!found.apexes().is_empty(),"turns at an apex")].into_iter().filter(|w| w.0).map(|w| w.1).collect();
     let joined = match said.len() { 0 => return String::new(),1 => said[0].to_string(),
         n => format!("{} or {}",said[..n-1].join(", "),said[n-1]) };
     format!(" where its characteristic {joined}, creased there")

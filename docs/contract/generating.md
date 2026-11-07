@@ -739,9 +739,10 @@ its axis, each to 1e-9 and agreeing with membership
 `a_capsule_slid_aslant_closes_into_its_shadow_carried`, `a_drum_slid_along_its_axis_is_a_longer_drum`).
 The constant-twist class's curved refusals it covers under a slide are its admitted cases now: a
 hollow mill's ring bottom (G6, `flat_faces::a_hollow_mill_slid_across_the_block_cuts_a_whole_slot`,
-a whole slot exactly), an engraving bit's apex on its axis (G5,
+a whole slot exactly), an engraving bit slid square to its axis (G5,
 `turns_and_slides::an_engraving_bit_slid_square_to_its_axis_grooves_its_shadow`, its shadow's
-triangle within the rod's disc in closed form) and a drill beside a post it does not pass wholly
+triangle within the rod's disc in closed form; the dispatch asks no walk of it, the bit standing
+along the normal of the planes its slide keeps) and a drill beside a post it does not pass wholly
 through the heights of (`rings_all_round::a_drill_beside_a_post_bores_its_hole`) and a lens
 stopping in a post at both ends (`admission::a_slide_that_ends_in_the_blank_is_the_closed_classs`),
 each to 1e-9; and under a turn a corner holding the axis and a cap of a tool no lone prism, refused
@@ -1666,9 +1667,8 @@ creased fit (`nurbs::interpolate_creased`), no fold read across its knot, the sh
 there. S2 counts a reaching root of a fan stepped across at the crease's point as on the walk; S3
 is not read at the crease's node. A standing fan among the walk's last `MARGIN` rings is where the
 walk ends, one node at its point (S1 refuses one there that reaches the blank, which the margin
-leaves none). S1 refuses, naming the face, a revolved face reaching the tool's axis with its
-normal off the axis (`APEX`, `constant_twist::apex`: a cone to a point, whose corner turns to no
-circle; a smooth pole is none); a vertex of a prism stays refused (`VERTEX`). The gate is
+leaves none). An apex on the tool's axis is walked by its own junction (G5, below); a vertex of a
+prism stays refused (`VERTEX`). The gate is
 `solid_sweeps_examples::the_v_wheel_slid_square_cuts_a_v_groove` (`solid_sweeps/vgroove.sv`, a V
 wheel slid across a block square to its axis, the groove `2² tan 30° × 20` exactly) and
 `turns_and_slides::a_v_wheel_slid_square_leaves_its_profile_creased_at_the_rim` (up the rod, the
@@ -1679,7 +1679,38 @@ closed form, which `Bar::removed` matches to 1e-9, within 1e-5) and
 `a_side_facing_the_axis_turned_onto_its_rim_creases_there` (`Bar::removed`, within 2e-5 at 0.001
 mm; S1 before, #684 AF), each STL agreeing with the field; the refusal in
 `turns_and_slides::an_engraving_bit_slid_square_to_its_axis_grooves_its_shadow` (an engraving bit
-slid square, S1, apex; the closed class builds it); and `object_builder::a_sharp_edge_along_one_points_path_builds_at_the_displays_samples`.
+slid square, stood along the normal of the planes its slide keeps: the planar subtraction class
+asked first, the closed class building it); and `object_builder::a_sharp_edge_along_one_points_path_builds_at_the_displays_samples`.
+
+**An apex on the tool's axis (#721 G5):** where a face of revolution's meridian ends on its axis
+with no face beyond and its normal there off the axis (`constant_twist::apex`: a cone to a point,
+an ogive; a smooth pole is none), `Junctions::new` reads `Junction::Apex` at that end, and `step`
+crosses it to the apex's ring's other root at the same point, going back the way it came. The
+apex's ring is a ring of no radius read as any ring is (`apex_roots`: `RingFrame::coefficients`
+with the face's normal there `nr e + nz a`, `nr = −α` and `nz = β` off the meridian's tangent
+`α a + β e` at the apex, and `Sinusoid::roots`), its two roots the normals the walk turns between,
+each turned outward as the face's a thousandth along the meridian is (`outward`); none where the
+apex is in contact nowhere, `DoublePoint` where its roots meet, `AllRound` where it stands still.
+A step takes the next ring's nearest root and, of roots as near as each other (within 1e-7 of the
+tool's size), the one whose normal is nearest the one it stands on: onto or off an apex every root
+there is the one point, or as far from it. The nodes hold the apex once, `Node::apex` on it, and
+the next node's step starts at its station (`turns`, one ring's two roots in a row); it is a crease
+(`creases`, `Characteristic::apexes`), built as V's is. S2's ring rule lets a ring's two roots
+stand either side of an apex the walk turns at between them; `stationary` reads no pair at one
+station. `APEX` is said where the walk meets an apex it does not turn at (short of a face's end, at
+an end another face meets, or whose ring has no two roots). The native path refuses a characteristic that turns at an apex by name (`--kernel rust`). The
+gate is `swept_apex` (the walk in the kernel under a screw, a turn and a slide, cones of
+30° and 60° and an ogive, each meridian either way: every node in contact within 1e-9 of `|v|`,
+its normal outward, the apex once, the blank reached either side, the sheet creased there alone)
+and `solid_sweeps_examples::the_pointed_tool_chases_a_thread_its_root_the_apexs_helix`
+(`chased_point.sv`, the rod's loss in helical coordinates within 1e-6, the page's stepped build
+held to the export's), `the_pointed_tool_engraves_an_arc_its_root_the_apexs_circle`
+(`engraved_arc.sv`, the cone's shadow turned within 1e-6) and
+`the_raked_pointed_tool_cuts_a_vee_its_root_the_apexs_path` (`raked_vee.sv`, exactly), each STL
+agreeing with the field. Its point read right is the kernel's and the field's (`brep.md`'s
+inverse across the axis and point location near a pole, `fields.md`'s convex arc at the axis), held
+by `swept_apex::behind_a_point_is_outside_the_tool` and
+`the_drawings_field_reads_behind_an_ogives_point_as_outside`.
 
 **A characteristic that closes on itself (#684 W):** where the walk comes round to the root it
 began at (`next == seed`, the walk back taken first as before), or the walk ahead comes round onto

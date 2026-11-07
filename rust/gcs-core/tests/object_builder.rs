@@ -168,7 +168,7 @@ fn every_static_object_builds_as_the_export_builds_it() {
 /// The documents whose swept objects a test of their own holds — below (`corpus(&[…], true)`), or
 /// an example's that builds it once for its volume and this (`builds_as_exported`): they hold the
 /// kinds of those objects for `the_corpus_holds_every_kind_the_library_builds`.
-const NAMED: [&str; 24] = ["solid_sweeps/vthread.sv","solid_sweeps/bar_end.sv",
+const NAMED: [&str; 25] = ["solid_sweeps/vthread.sv","solid_sweeps/bar_end.sv","solid_sweeps/chased_point.sv",
     "solid_sweeps/next_tooth.sv","solid_sweeps/parted.sv","solid_sweeps/whole_turn.sv",
     "solid_sweeps/square_thread.sv","solid_sweeps/rocked.sv","solid_sweeps/flat_end.sv",
     "solid_sweeps/creased.sv","solid_sweeps/facing.sv","solid_sweeps/slot.sv","solid_sweeps/vgroove.sv",

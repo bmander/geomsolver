@@ -523,12 +523,10 @@ not read at the crease's node. A standing fan among the walk's last rings past t
 the walk ends, one node at its point.
 
 A face that meets the tool's own axis at an angle, a cone to a point (an engraving bit), is the
-same sharp edge at an apex, but the corner turns to no circle there and the walk has no ring to
-step across: it is refused by name. The rows:
+same sharp edge at an apex, walked by its own junction (issue #721 G5, below). The rows:
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| S1 | The walk meets no apex within its margin of the blank: a revolved face reaching the tool's axis with its normal there off the axis. | Every normal of the cone round the apex is the tool's, and the sweep has a sharp edge along the apex's path, but the face's ring there is a point, which the walk does not step across. (A face meeting the axis square to it, a smooth pole, is not an apex.) | The face, and a point of the walk in the blank. |
 | S1 | A fan standing at one point that reaches the blank lies between two faces' nodes. | There it is a crease; at the walk's end it would leave the sheet's edge on that point's path in the blank. The margin leaves none there. | The fan, and its point in the blank. |
 | S2 | Every root that reaches the blank is on the walk, or is a root at a crease's point of the fan the walk stepped across there. | The fan stands at that point, so every station's root there is the crease's point, one point of the sheet. | The second stretch's point. |
 
@@ -545,11 +543,82 @@ block read -2e-6 to -7e-6), and `flat_end.sv`'s bar with its section square turn
 line and its inner side's ruling meeting at the rim, to the bar's half-spaces read slice by slice
 (-4.8e-6 at 0.001 mm). Each STL agrees with the field. The V wheel slid square was refused at S1
 before (`turns_and_slides.rs`'s negative control), and the bar facing the axis turned (#684 AF);
-refused by this class: an engraving bit slid square to its axis, its point on its axis (S1,
-apex), which the closed class builds (`turns_and_slides::an_engraving_bit_slid_square_to_its_axis_grooves_its_shadow`,
-issue #721), and as before a corner's or a rim's root running into a vertex of a prism,
+refused by this class: as before a corner's or a rim's root running into a vertex of a prism,
 where three faces meet (S1, `VERTEX`, `prism_twists.rs`). `tests/object_builder.rs` builds
 `vgroove.sv` at the page's samples.
+
+### An apex on the tool's axis (issue #721 G5)
+
+A face of revolution that meets its own axis at an angle ends in an apex: a cone to a point (an
+engraving bit, a countersink, a pointed thread tool), or an arc to one (an ogive, a spindle
+torus's lemon). Every normal of the cone of normals round the apex is the tool's there, so where
+the motion's velocity at the apex lies square to any of them the apex is on the boundary, and the
+characteristic passes through it: on each ring beside it the two roots lie either side, and they
+meet at the apex. The sweep has a sharp edge along the apex's path, as V's has along a corner's
+point, but the apex's ring is a point and there is no corner's circle to step across.
+
+The walk turns there (`Junction::Apex`, read once where a face of revolution's meridian ends on
+its axis with no face beyond and its normal there off the axis, `constant_twist::apex`): it runs
+down one root of the face's rings to the apex and back up the other, the way it came, at the
+apex's ring's other root. That ring is a ring of no radius, read in closed form as any ring is
+(`apex_roots`, `RingFrame::coefficients` and `Sinusoid::roots`): its every point is the apex, moving
+at one velocity `w`, and the face's normals round it are the meridian's tangent there `α a + β e(φ)`
+turned square to itself in each half-plane, along `β a − α e(φ)`, so the contact is
+`β a·w − α (cos φ e₀·w + sin φ f₀·w)`, a sinusoid in the angle round the axis, its two roots the two
+normals the characteristic turns between. Each is turned outward as the face's normal is a
+thousandth along the meridian, where the material reads the side; the apex itself does not tell it.
+Each step takes the next ring's nearest root and, of roots as near as each other, the one whose
+normal is nearest the one it stands on: onto or off the apex every root of its ring is the one
+point, and every root of the ring beside it as far from it. The nodes hold the apex once, marked (`Node::apex`, `Characteristic::apexes`), a crease
+as V's: the sheet's exact row there, the creased fit, no turn counted across it, no fold read at
+it, the sheet cut into faces along the apex's path. A pointed tool screwed is a thread chased with
+its point; turned, an arc engraved; slid along a line not square to its axis, a V cut with the bit
+raked toward its feed. Each is the constant-twist class's, under any of its three motions. The
+rows, sampled as every row is:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| S1 | The walk turning at an apex finds the apex's ring's second root (`APEX` where it does not: the rings beside it have no second root, the apex's path no edge of the sweep). | The characteristic turns from one root of the rings beside the apex to the other there. | The face, and a point of the walk in the blank. |
+| S2 | A ring's two roots that reach the blank lie either side of an apex the walk turns at, between them on the walk. | They are one characteristic, in along one root and out along the other, not two sheets over one station. | The second root. |
+
+A face meeting the axis square to it, a smooth pole (a disc's centre, a dome's top), is no apex:
+the characteristic runs on across the axis to each ring's other root, and the walk still ends there
+by name (`POLE`, D3).
+
+Reading a pointed tool needed the point read right about its apex, in the kernel and in the
+drawing's field. A cone's and a spindle torus's meridians in the half-planes either side of the
+axis are one curve running across it, so the point of the surface nearest a point lies on the
+meridian in its own half-plane or in the opposite one, whichever is nearer (`Surface::inverse`);
+read in its own alone, a point behind the apex fell on the generator past it, and the tool's
+material read up to a millimetre behind an ogive's point as inside it. Near a degenerate edge, an
+apex or a pole, every edge of a face meets in space, so the face's parameters decide whether a
+point of its surface is on the face (`Located::face_place`), not the side of the edge nearest in
+space. And the drawing's field bounds a convex meridian's arc only within its angular sector, so
+where an arc reaches the axis about a centre off it (an ogive's tip) nothing bounded the wedge
+between its radius there and the axis: the arc's tangent at the tip bounds it, a supporting line of
+the convex loop that moves no boundary. The sweep's field had read the ogive's phantom carried
+through a rod's core.
+
+`rust/examples/solid_sweeps/` holds a case for each motion: `chased_point.sv`, a V-bit with a 60°
+point lying across a rod a millimetre deep, screwed 6 mm a turn, the rod losing in helical
+coordinates what each radius's slice of the cone spans along the helix (`chased`, worked from the
+cone alone, within 1e-6: 4e-7, the fitted sheet's); `engraved_arc.sv`, the bit leaning 25° across a
+turn, its point half a millimetre into a curved block, the block losing its 60° of the cone's
+shadow turned, `π/6 ∫ (ρ_max² − ρ_min²) dz` (`engraved`, within 1e-6: 7e-8); and `raked_vee.sv`,
+the bit leaning 20° along its slide, the walls two planes touching the cone and holding the slide,
+`depth² tan(asin(sin 30° / cos 20°))` along the block's 20, exactly. Each STL agrees with the field
+(`tests/solid_sweeps_examples.rs`), and `object_builder` holds the page's stepped build of
+`chased_point.sv` to the export's. `tests/swept_apex.rs` holds the walk in the kernel alone under a
+screw, a turn and a slide, for cones of 30° and 60° and an ogive, each meridian drawn from the apex
+and toward it: every node a point of the tool in contact (`n·v` within 1e-13 of `|v|`), its normal
+outward, the apex once, the walk reaching the blank either side of it and the sheet creased there
+alone; and the point's reading — every point of the cone and the torus its own foot, every point
+past the apex off the face, the material behind the point the distance to the apex, and the
+drawing's field outside behind an ogive's tip. An engraving bit slid square to its axis stands
+along the normal of the planes its slide keeps, so the dispatch asks the planar subtraction class
+first and, where that refuses, the closed class, which builds it as before
+(`turns_and_slides::an_engraving_bit_slid_square_to_its_axis_grooves_its_shadow`); the walk is
+not asked.
 
 ### A characteristic that closes on itself (issue #684 W)
 

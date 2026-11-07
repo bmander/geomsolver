@@ -431,6 +431,106 @@ fn the_spoke_swings_a_slot_ended_by_a_zone_of_a_sphere() {
     near(exported(&e,"block"),PI/3.*80.-PI/6.*(57.25-1./12.),1e-5);
 }
 
+/// The greatest of `f` over `[a, b]`: read at 200 points, the best of them refined by Brent's search
+/// between its neighbours (`f` unimodal there).
+fn greatest(f: &dyn Fn(f64) -> f64,a: f64,b: f64) -> f64 {
+    let n = 200;
+    let x = |k: usize| a+(b-a)*k as f64/n as f64;
+    let k = (0..=n).map(|k| (k,f(x(k)))).max_by(|p,q| p.1.total_cmp(&q.1)).unwrap().0;
+    let (lo,hi) = (x(k.saturating_sub(1)),x((k+1).min(n)));
+    -gcs_core::roots::brent(&|t| -f(t),lo,hi,1e-15,200,|_,_| false).value
+}
+
+/// What a cone to a point of half angle `half` takes from a rod of radius `rod` and length `length`
+/// screwed about the rod's axis `lead` a turn, its apex `apex` from the rod's axis and its own
+/// axis square to the rod's through it, passing wholly along the rod (`chased_point.sv`). Read in
+/// helical coordinates, worked from the cone alone: a point at radius `r` is removed where its helix
+/// meets the cone. On the cylinder of radius `r` a point of the cone at angle `ψ` from the plane of
+/// the two axes stands `a = r cos ψ − apex` along the cone's axis and `r sin ψ` across, so the cone
+/// holds heights within `w(ψ) = √((a tan half)² − (r sin ψ)²)` of the plane square to the rod
+/// through the cone's axis; a helix `z − h ψ` (`h` the lead over a turn) meets that slice over a
+/// spread of `2 max (w + h ψ)`, which is `2 max (w + h ψ) / h` of angle round the rod, at most a whole
+/// turn. The rod loses that angle at each radius, over its length.
+fn chased(rod: f64,length: f64,apex: f64,half: f64,lead: f64) -> f64 {
+    let h = lead/TAU;
+    let spread = |r: f64| {
+        let w = |psi: f64| { let a = r*psi.cos()-apex; let w2 = (a*half.tan()).powi(2)-(r*psi.sin()).powi(2);
+            if a >= 0. && w2 >= 0. { w2.sqrt()+h*psi } else { f64::NEG_INFINITY } };
+        // (none where the slice holds no point the scan reads, at the apex's own radius)
+        (2.*greatest(&w,0.,(apex/r).acos())/h).clamp(0.,TAU)
+    };
+    // (r = apex + s², the spread rising as a root from the apex's radius)
+    length*crate::swept_slid::gauss(&|s: f64| { let r = apex+s*s; spread(r)*r*2.*s },0.,(rod-apex).sqrt(),60)
+}
+
+/// What a cone to a point of half angle `half` turned about z takes from a ring sector of `sector`
+/// radians standing from `z = -top` to `top` (`engraved_arc.sv`), passing wholly across it: its apex
+/// at `tip`, its axis `axis`, and `across` square to it. Each circle about z that meets the cone
+/// loses the sector's angle, so the sector loses `sector/2 ∫ (ρ_max² − ρ_min²) dz` over the heights
+/// the cone reaches within it, each height's slice of the cone convex and clear of the axis, so its
+/// nearest and farthest radii on its rim: each ruling, `tip + t (axis + tan half (cos θ across + sin
+/// θ (axis × across)))`, meets the height `z` once.
+fn engraved(tip: [f64;3],axis: [f64;3],across: [f64;3],half: f64,top: f64,sector: f64) -> f64 {
+    let other = gcs_core::space::cross(axis,across);
+    let rim = |z: f64,theta: f64| {
+        let d: [f64;3] = std::array::from_fn(|k| axis[k]+half.tan()*(theta.cos()*across[k]+theta.sin()*other[k]));
+        let t = (z-tip[2])/d[2];
+        (tip[0]+t*d[0]).hypot(tip[1]+t*d[1])
+    };
+    let width = |z: f64| greatest(&|th| rim(z,th).powi(2),0.,TAU)+greatest(&|th| -rim(z,th).powi(2),0.,TAU);
+    sector/2.*crate::swept_slid::gauss(&width,tip[2],top,8)
+}
+
+/// `chased_point.sv` (#721 G5): a V-bit lying across a rod, its 60° point a millimetre into it,
+/// screwed along it 6 mm a turn as a thread is chased with a pointed tool. The walk runs in along
+/// one root of the cone's rings, turns at its apex, where every normal of the cone round it is the
+/// bit's, and runs back out along the other: one apex, the sheet creased along its helix. The rod
+/// loses `chased` (`π 5² 20` less, worked in helical coordinates from the cone alone), built within
+/// 0.01 mm, its STL agreeing with the field, the page's stepped builder held to the same build.
+#[test]
+fn the_pointed_tool_chases_a_thread_its_root_the_apexs_helix() {
+    let e = example("chased_point.sv");
+    let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
+    assert!(!found.screw.is_slide() && !found.screw.is_turn(),"read as a screw");
+    assert_eq!(found.apexes(),["`vbit.cone`"]);
+    assert!(found.fans().is_empty() && found.flats().is_empty() && !found.concave());
+    let exact = exported_within(&e,"rod",Some(Tolerance::new(0.01).unwrap()));
+    let removed = chased(5.,20.,4.,PI/6.,6.);
+    assert!(removed > 50. && removed < 60.,"the figure reads a groove: {removed}");
+    near(gcs_core::brep::props::volume(&exact.solid),PI*25.*20.-removed,1e-6);
+    crate::object_builder::builds_as_exported("chased_point.sv",&e.sketch,fixtures::solid(&e,"rod"),&exact);
+}
+
+/// `engraved_arc.sv` (#721 G5): a V-bit leaning 25° across a turn, its 60° point half a millimetre
+/// into a curved block's top, turned wholly across it: the walk turns at the apex, and the wall is
+/// two surfaces of revolution meeting along the circle the apex turns on. The block loses its 60°
+/// of the bit's shadow turned (`engraved`, worked from the cone alone).
+#[test]
+fn the_pointed_tool_engraves_an_arc_its_root_the_apexs_circle() {
+    let e = example("engraved_arc.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_turn(),"read as a turn");
+    assert_eq!(found.apexes(),["`bit.cone`"]);
+    let lean = 25_f64.to_radians();
+    let removed = engraved([10.,0.,0.5],[0.,lean.sin(),lean.cos()],[1.,0.,0.],PI/6.,1.,PI/3.);
+    near(exported(&e,"block"),PI/3.*(144.-64.)-removed,1e-6);
+}
+
+/// `raked_vee.sv` (#721 G5): a V-bit leaning 20° along its slide, its 60° point a millimetre into a
+/// block, slid wholly along it: the walk runs up one ruling square to the slide, turns at the apex
+/// and runs down the other, and the walls are two planes, each holding the slide and touching the
+/// cone, so leaning `asin(sin 30° / cos 20°)` from upright. The block loses that V's section along
+/// its 20, exactly.
+#[test]
+fn the_raked_pointed_tool_cuts_a_vee_its_root_the_apexs_path() {
+    let e = example("raked_vee.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide(),"read as a slide");
+    assert_eq!(found.apexes(),["`bit.cone`"]);
+    let flank = (0.5/20_f64.to_radians().cos()).asin();
+    near(exported(&e,"block"),2000.-20.*flank.tan(),1e-9);
+}
+
 /// `plunge.sv` (the closed class, #721 X1): a bar of square section pushed aslant 8 into the plate,
 /// stopping inside it. The constant-twist class refuses it (its silhouette turns at a vertex onto a
 /// cap, and it ends in the blank); the closed class reads its six planes and twelve lines and cuts
