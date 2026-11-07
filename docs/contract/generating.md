@@ -880,6 +880,16 @@ the sheet, where they touch at the seam points; the end poses' tori against the 
 rim's sheared cylinder) and 4 given (the sheet against each end pose's torus and against each seam's
 plane); pushed into the block, 2.1 s, 139 / 6 / 3.
 
+**A body built of sweeps cuts as any solid does (#818):** a body's swept cut is a sweep, or a
+chain of placements ending in one (`cad::is_sweep`), and only it is read by a class.  A cut operand
+that is a body built of sweeps — a gear rack-cut, cut from a ring's blank so that the ring's teeth
+are the gear's spaces — is swept material (`cad::swept_operands`): built by its own road and
+subtracted by the kernel's Boolean (`export::compose`), in the export and the page's stepped build
+alike.  A sweep cut directly from a body so composed is still refused by name (`no_swept_cut`):
+the body it is cut from is named apart.  Gate:
+`object_builder::a_body_cut_by_a_gear_whose_space_is_a_sweep_keeps_the_space`, the housing and
+the same sweep cut from the ring they overlap in summing to the housing's annulus to 1e-9.
+
 **A sweep cut from a blank on the same arrangement (#699 C, #735 A4, `swept::closed::cut_from`):**
 the blank, not a box, is the domain the candidates split, and its cells are kept where they are no
 member of the sweep — one arrangement and one classification, with no closed solid built and then

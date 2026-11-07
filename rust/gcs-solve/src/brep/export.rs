@@ -218,7 +218,7 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
 fn no_swept_cut(sk: &Sketch,body: usize) -> Result<(),ExportRefusal> {
     let solid = &sk.solids[body];
     let crate::model::SolidDef::Body {through,..} = &solid.def else { unreachable!("a composed solid is a body") };
-    match through.iter().find(|&&c| cad::contains_sweep(sk,c as usize)) {
+    match through.iter().find(|&&c| cad::is_sweep(sk,c as usize)) {
         Some(&c) => Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts the sweep `{}` from swept material: name the body the sweep is \
             cut from, and build `{}` from it",solid.name,sk.solids[c as usize].name,solid.name))),
         None => Ok(()),

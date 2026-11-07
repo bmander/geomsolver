@@ -93,12 +93,25 @@ pub(crate) fn contains_sweep(sk: &Sketch,i: usize) -> bool {
         || sk.solids[i].operands().into_iter().any(|o| contains_sweep(sk,o as usize))
 }
 
+/// Whether solid `i` is a continuous sweep, or a chain of placements ending in one: what a body's
+/// swept cut is (`swept_cut`), as against a body built of sweeps.
+pub(crate) fn is_sweep(sk: &Sketch,i: usize) -> bool {
+    match &sk.solids[i].def {
+        SolidDef::Swept {..} => !super::canal::is_canal(sk,i),
+        SolidDef::Placed {source,..} => is_sweep(sk,*source as usize),
+        _ => false,
+    }
+}
+
 /// The operands of body `i` that hold swept material where a sweep is not cut: its stock, what is
-/// put on it and what bounds it. A body with any is built from swept material (`drill :=
-/// solid(fluted)`), not one a sweep is cut from.
+/// put on it, what bounds it, and what cuts it where that is a body built of sweeps rather than a
+/// sweep (#818: a gear rack-cut, cut from a ring's blank). A body with any is built from swept
+/// material (`drill := solid(fluted)`), each such operand by its own construction, not one a sweep
+/// is cut from.
 pub(crate) fn swept_operands(sk: &Sketch,i: usize) -> Vec<usize> {
-    let SolidDef::Body {stock,on,bound,..} = &sk.solids[i].def else { return Vec::new() };
-    std::iter::once(stock).chain(on).chain(bound).map(|&o| o as usize).filter(|&o| contains_sweep(sk,o)).collect()
+    let SolidDef::Body {stock,on,through,bound} = &sk.solids[i].def else { return Vec::new() };
+    let cuts = through.iter().filter(|&&o| !is_sweep(sk,o as usize));
+    std::iter::once(stock).chain(on).chain(cuts).chain(bound).map(|&o| o as usize).filter(|&o| contains_sweep(sk,o)).collect()
 }
 
 /// The solid a chain of placements ends in (`x in f`, `x at(…) τ`) where it holds a continuous
