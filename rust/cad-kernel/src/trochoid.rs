@@ -47,8 +47,8 @@ impl Trochoid {
     pub fn inverse(&self,p: V) -> f64 {
         let [a,z] = self.span;
         let n = 512;
-        let best = (0..=n).map(|k| a+(z-a)*k as f64/n as f64).min_by(|&x,&y| distance(self.point(x),p).total_cmp(&distance(self.point(y),p)))
-            .unwrap_or(a);
+        let best = (0..=n).map(|k| a+(z-a)*k as f64/n as f64).map(|t| (distance(self.point(t),p),t)).min_by(|x,y| x.0.total_cmp(&y.0))
+            .map_or(a,|(_,t)| t);
         self.newton(p,best)
     }
     /// The same curve carried by `m`.

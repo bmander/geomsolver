@@ -203,18 +203,37 @@ impl Pocket {
         let (h0,h1) = (height(c0),height(c1));
         let span = [h0.min(h1),h0.max(h1)];
         // a loop's material in the cap's plane: its chords, its edges sampled finely as it walks them
-        let region = |l: &Vec<crate::topo::Coedge>| -> (Vec<[f64;2]>,Loops) {
-            let points: Vec<[f64;2]> = l.iter().flat_map(|c| { let e = &b.edges[c.edge as usize];
+        // (a line or a circle in the cap's plane as itself, any other curve by its chords)
+        let page = |p: V| view.page(p.map(|v| v/mm));
+        // (and how far from the page's origin its edges' boxes reach)
+        let region = |l: &Vec<crate::topo::Coedge>| -> (f64,Loops) {
+            let mut edges = Vec::new();
+            for c in l {
+                let e = &b.edges[c.edge as usize];
                 let [t0,t1] = if c.reversed { [e.t[1],e.t[0]] } else { e.t };
-                (0..2048).map(move |k| e.point(t0+(t1-t0)*k as f64/2048.,&b.vertices)) })
-                .map(|p| view.page(p.map(|v| v/mm))).collect();
-            let edges = (0..points.len()).map(|k| Edge::Line {a:points[k],b:points[(k+1)%points.len()],axis:false}).collect();
-            (points,Loops::new(&[edges]))
+                let ends = [page(e.point(t0,&b.vertices)),page(e.point(t1,&b.vertices))];
+                match &e.curve {
+                    EdgeCurve::Curve(Curve::Line {..}) => edges.push(Edge::Line {a:ends[0],b:ends[1],axis:false}),
+                    EdgeCurve::Curve(Curve::Circle(f,r)) if norm(cross(f.z,n)) <= 1e-9 => {
+                        let center = page(f.o);
+                        let start = (ends[0][1]-center[1]).datan2(ends[0][0]-center[0]);
+                        let sweep = (t1-t0)*dot(f.z,view.normal()).signum();
+                        edges.push(Edge::Arc {center,radius:r/mm,start,sweep,ends});
+                    }
+                    _ => {
+                        let at: Vec<[f64;2]> = (0..=2048).map(|k| page(e.point(t0+(t1-t0)*k as f64/2048.,&b.vertices))).collect();
+                        edges.extend(at.windows(2).map(|w| Edge::Line {a:w[0],b:w[1],axis:false}));
+                    }
+                }
+            }
+            let reach = edges.iter().flat_map(|e| e.boxed()).fold(0_f64,|m,q| m.max(q[0].dhypot(q[1])));
+            (reach,Loops::new(&[edges]))
         };
-        let (points,ring) = region(hole);
-        let scale = points.iter().fold(0_f64,|m,p| m.max(p[0].dhypot(p[1]))).max(1e-300);
+        let (scale,ring) = region(hole);
+        let scale = scale.max(1e-300);
         // the stock's and the pocket's names: the outline's walls' solid and the hole's
-        let wall = |l: &Vec<crate::topo::Coedge>| l.iter().find_map(|c| b.uses()[c.edge as usize].iter().map(|u| u.0)
+        let uses = b.uses();
+        let wall = |l: &Vec<crate::topo::Coedge>| l.iter().find_map(|c| uses[c.edge as usize].iter().map(|u| u.0)
             .find(|&g| g != c0 && g != c1).map(|g| named_parts(&b.faces[g].name).0.to_string())).unwrap_or_default();
         let names = [wall(outline),wall(hole)];
         let roll_of = whole.unwrap_or([0.,pieces.len() as f64]);
