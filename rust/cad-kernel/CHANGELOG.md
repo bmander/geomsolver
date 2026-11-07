@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.5.0] - 2026-11-07
+
 - **A face is split along a meeting through its pole**: an edge laid across a face ends on a pole
   of its surface at the value of the collapsed parameter it arrives along, not where the surface's
   inverse reads the pole, and the face's pole edge is cut there (its pieces closed again by
