@@ -35,6 +35,7 @@ export interface Diagnosis {
   shaky: number;                   /* motions blocked at second order: rigid, not DOF */
   over: Constraint[];              /* "remove one of these" */
   implied: Constraint[];           /* implied by a relation-only theorem: consistent, no fix */
+  saidTwice: Constraint[];         /* a row said twice across these, none implied whole (#850) */
   claimsTheorem: Constraint[];     /* `claim ...` statements: hold, and add no rank */
   claimsViolated: Constraint[];    /* do not hold at this solution */
   claimsConsuming: Constraint[];   /* hold only by the pose; enforcing one would take a DOF */
@@ -92,6 +93,7 @@ interface RawDiagnosis {
   shaky: number;
   over: number[];
   implied: number[];
+  saidTwice: number[];
   claimsTheorem: number[];
   claimsViolated: number[];
   claimsConsuming: number[];
@@ -134,6 +136,7 @@ function fromRaw(sk: Sketch, d: RawDiagnosis): Diagnosis {
     shaky: d.shaky,
     over: cons(d.over),
     implied: cons(d.implied),
+    saidTwice: cons(d.saidTwice),
     claimsTheorem: cons(d.claimsTheorem),
     claimsViolated: cons(d.claimsViolated),
     claimsConsuming: cons(d.claimsConsuming),

@@ -356,7 +356,17 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   on its null space as on the whole's.  The V-twin (925) reads in ~0.2 s.  A consistent dependency is `over` ("remove one") only when a
   dimension takes part in it — editing that dimension is the next conflict; one among pure
   relations is a theorem that nothing can break, so its wholly-implied constraints are
-  `implied`: noted, never painted as an error.
+  `implied`: noted, never painted as an error.  **A row said twice where no statement can go is
+  named too** (#850, `Diagnosis::said_twice`, `numeric::said_twice`): the dependencies that
+  leaving out every constraint `over` and `implied` name would not take — those of the left null
+  space that vanish on their rows, `W · null(W[R])`, read whole or by parts alike — by the
+  constraints whose rows they reach, the language's own among them, with how many there are
+  (`n_said_twice`).  A point held on two axes that meet, the axes held through a point there, is
+  four statements of two rows each needed and one row past them: before, the count ("1700
+  equations, structural rank 1699") was all the report said.  `summary` says `1 equation(s) said
+  twice across 4 constraint(s), none of which the others imply whole`, `solventc` names each
+  (`said twice among: …`) and `diagnosis_json` carries `saidTwice`
+  (`continuation.rs`, `a_row_said_twice_is_named_and_set_aside_by_the_march`).
 
 - Decomposition maps constraints onto F–H elements in `cgraph::build`; a new constraint type is
   either an edge (PP/PL), a direction relation, or `unsupported` (numeric residual).  Merge
