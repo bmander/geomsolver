@@ -185,6 +185,18 @@ pub(crate) fn pole_at(surface: &Surface,uv: Uv,within: f64) -> Option<usize> {
     else { None }
 }
 
+/// **The value of a pole's collapsed parameter a curve sets out from it along** (#797): the
+/// parameter `along` (`pole_at`) of the point a hair out from the pole `p` along `d` (the curve's
+/// tangent there, pointing into it), read beside `near` on its branch of the periods. A curve on
+/// the surface through its pole is tangent to it there, so that point's foot is the curve's own to
+/// first order: the value the curve's parameters tend to as it reaches the pole, which the
+/// surface's inverse of the pole itself leaves undefined. None where the curve has no direction.
+pub(crate) fn leaving_pole(surface: &Surface,p: V,d: V,near: Uv,along: usize) -> Option<f64> {
+    let d = normalised(d)?;
+    let out = add(p,scale(d,1e-6*(1.+norm(p))));
+    Some(unwrap(surface.inverse_near(out,near),near,surface.periods())[along])
+}
+
 /// One use of an edge by a face's loop: along the edge (`!reversed`) or against it.
 #[derive(Clone,Debug)]
 pub struct Coedge { pub edge: u32,pub reversed: bool,pub pcurve: Pcurve }
@@ -324,11 +336,9 @@ impl Brep {
             // from it into the face, a step out along which the value it arrives along is read
             let end = (at_end != c.reversed) as usize;
             let into = if end == 0 { 1. } else { -1. };
-            let d = normalised(curve.tangent(e.t[end]))?;
-            let out = add(vertex.p,scale(d,into*1e-6*(1.+norm(vertex.p))));
             // beside the use's own value a little way in, on its branch of the periods
             let inner = c.pcurve.at(e.t[end]+into*1e-3*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices);
-            let limit = unwrap(f.surface.inverse_near(out,inner),inner,f.surface.periods())[along];
+            let limit = leaving_pole(&f.surface,vertex.p,scale(curve.tangent(e.t[end]),into),inner,along)?;
             let mut ends = [*from,*to];
             // (an end already there, to a hair, is kept as it was)
             if (ends[end][along]-limit).abs() <= 1e-9 { return None }

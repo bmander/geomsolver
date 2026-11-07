@@ -80,9 +80,11 @@ impl WEdge {
     }
 }
 
-/// One way along an edge on a face, with its curve in the face's parameters.
+/// One way along an edge on a face, with its curve in the face's parameters; `pole` where it is a
+/// piece of a pole's degenerate edge cut where meetings reach the pole (`poles_cut`), no edge of
+/// its own: a face's loop leaves it out, and the result's `Brep::close_poles` lays one there.
 #[derive(Clone,Debug)]
-struct Half { edge: u32,along: bool,pcurve: Pcurve,from: Uv,to: Uv }
+struct Half { edge: u32,along: bool,pcurve: Pcurve,from: Uv,to: Uv,pole: bool }
 
 /// Whether two boxes meet, each grown by `pad`.
 pub fn overlap(a: &([f64;3],[f64;3]),b: &([f64;3],[f64;3]),pad: f64) -> bool {
@@ -866,6 +868,8 @@ pub fn selection(complex: &Complex,keep: &dyn Fn(usize) -> bool) -> Result<Brep,
     let edges = complex.b.edges.iter().cloned().chain(parts.twins).collect();
     let mut out = Brep {vertices:complex.b.vertices.clone(),edges,faces}.compacted();
     outer_first(&mut out,&parted);
+    // a loop through a pole, a pole edge cut where a meeting reaches it, closed along it (#797)
+    out.close_poles();
     Ok(out)
 }
 
@@ -920,7 +924,7 @@ pub fn selected(operands: &[&Brep],keep: &dyn Fn(&[bool]) -> bool,tol: f64) -> R
 /// with the face's sense where `flip` (a piece of the solid a cut takes away).
 fn piece_face(f: &Face,piece: &[Vec<Half>],flip: bool) -> Face {
     let loops: Vec<Vec<Coedge>> = piece.iter().map(|cycle| {
-        let mut l: Vec<Coedge> = cycle.iter().map(|h| Coedge {edge:h.edge,reversed:!h.along,pcurve:h.pcurve.clone()}).collect();
+        let mut l: Vec<Coedge> = cycle.iter().filter(|h| !h.pole).map(|h| Coedge {edge:h.edge,reversed:!h.along,pcurve:h.pcurve.clone()}).collect();
         if flip { l = reverse_loop(l); }
         l
     }).collect();
@@ -1626,7 +1630,7 @@ impl<'a> Arrangement<'a> {
                     pieces.push((s,fi,piece));
                     continue
                 }
-                let mut cut = FaceCut::new(f,fi,&self.located[s],&split.out,halves);
+                let mut cut = FaceCut::new(f,fi,&self.located[s],&split.out,halves,self.tol);
                 for &(e,on) in &meetings.ssi_edges {
                     if on.holds(s,fi).is_none() { continue }
                     for &(piece,_) in &split.pieces_of[e] { if !split.gone[piece as usize] { cut.internal(split.rep[piece as usize].0); } }
@@ -1677,7 +1681,7 @@ impl<'a> Arrangement<'a> {
                     let pcurve = piece_pcurve(&c.pcurve,&f.surface,merged,ua,ub);
                     let along = !c.reversed != flip;
                     let (from,to) = if c.reversed { (ub,ua) } else { (ua,ub) };
-                    halves.push(Half {edge:r,along,pcurve,from,to});
+                    halves.push(Half {edge:r,along,pcurve,from,to,pole:false});
                 }
             }
             loop_ends.push(halves.len());
@@ -1871,16 +1875,22 @@ struct FaceCut<'s,'a> {
     out: &'s [WEdge],
     halves: Vec<Half>,
     on: Vec<u32>,
+    /// the arrangement's tolerance: how near a pole an end of an edge laid across is on it
+    tol: f64,
 }
 
 impl<'s,'a> FaceCut<'s,'a> {
-    fn new(face: &'s Face,fi: usize,located: &'s Located<'a>,out: &'s [WEdge],halves: Vec<Half>) -> FaceCut<'s,'a> {
+    fn new(face: &'s Face,fi: usize,located: &'s Located<'a>,out: &'s [WEdge],halves: Vec<Half>,tol: f64) -> FaceCut<'s,'a> {
         let on = halves.iter().map(|h| h.edge).collect();
-        FaceCut {face,fi,located,out,halves,on}
+        FaceCut {face,fi,located,out,halves,on,tol}
     }
 
     /// An edge the other solid leaves across the face, unless it is on it already: both ways
-    /// round, its parameters walked from its middle out, each step unwrapped from the last.
+    /// round, its parameters walked from its middle out, each step unwrapped from the last. An end
+    /// on a pole of the surface (a sphere's, a cone's apex) is given the value of the collapsed
+    /// parameter the edge arrives along (`topo::leaving_pole`), which the surface's inverse of the
+    /// pole itself leaves undefined: a meridian ends where it runs, not where the inverse reads the
+    /// pole (#797), so the pole's own edge can be cut there (`poles_cut`).
     fn internal(&mut self,r: u32) {
         if self.on.contains(&r) { return }
         self.on.push(r);
@@ -1890,11 +1900,19 @@ impl<'s,'a> FaceCut<'s,'a> {
         let n = 32;
         let mid = (w.t[0]+w.t[1])/2.;
         let start = self.located.uv(self.fi,c.point(mid));
+        let tol = self.tol;
         let walk = |to: f64| {
             let mut uv = start;
             for j in 1..=n {
                 let t = mid+(to-mid)*j as f64/n as f64;
+                let last = uv;
                 uv = unwrap(f.surface.inverse_near(c.point(t),uv),uv,f.surface.periods());
+                if j < n { continue }
+                let p = c.point(to);
+                let Some(along) = super::topo::pole_at(&f.surface,uv,(1e-9*(1.+norm(p))).max(tol)) else { continue };
+                // the way from the pole into the edge: back along its curve, toward the middle
+                let into = crate::util::space::scale(c.tangent(to),if to > mid { -1. } else { 1. });
+                if let Some(x) = super::topo::leaving_pole(&f.surface,p,into,last,along) { uv[along] = x; }
             }
             uv
         };
@@ -1902,8 +1920,8 @@ impl<'s,'a> FaceCut<'s,'a> {
             Some((a,b)) => (Pcurve::Line {a,b},(a,b)),
             None => { let (a,b) = (walk(w.t[0]),walk(w.t[1])); (Pcurve::Inverse {a,b},(a,b)) }
         };
-        self.halves.push(Half {edge:r,along:true,pcurve:pcurve.clone(),from:ua,to:ub});
-        self.halves.push(Half {edge:r,along:false,pcurve,from:ub,to:ua});
+        self.halves.push(Half {edge:r,along:true,pcurve:pcurve.clone(),from:ua,to:ub,pole:false});
+        self.halves.push(Half {edge:r,along:false,pcurve,from:ub,to:ua,pole:false});
     }
 }
 
@@ -2315,6 +2333,57 @@ fn assemble(out: &[WEdge],pool: &Pool,kept: Vec<Face>) -> Brep {
     result
 }
 
+/// **A face's pole edges cut where meetings reach the pole** (#797): in the face's parameters a
+/// pole is a segment, its degenerate edge running along the collapsed parameter, and a meeting
+/// through the pole (a meridian of a ball halved through its poles, a ruling of a cone halved
+/// through its apex, a circle through a pole) arrives on it at the value it runs along there
+/// (`FaceCut::internal`), not at the segment's ends. Each degenerate half is cut at every value
+/// another half's end at its vertex lies strictly inside it, so the pieces of the face either side
+/// of the meeting close in the parameters; its pieces are no edges of their own (`Half::pole`).
+/// None where no pole edge is cut.
+fn poles_cut(f: &Face,halves: &[Half],out: &[WEdge]) -> Option<Vec<Half>> {
+    let periods = f.surface.periods();
+    let mut cut: Option<Vec<Half>> = None;
+    for (i,h) in halves.iter().enumerate() {
+        let e = &out[h.edge as usize];
+        if !matches!(e.curve,EdgeCurve::Degenerate) { continue }
+        // the parameter the pole runs along, and the other, which holds there
+        let along = if (h.to[0]-h.from[0]).abs() >= (h.to[1]-h.from[1]).abs() { 0 } else { 1 };
+        let (lo,hi) = (h.from[along].min(h.to[along]),h.from[along].max(h.to[along]));
+        let near = |x: f64,y: f64| (x-y).abs() <= 1e-9*(1.+x.abs().max(y.abs()));
+        if near(lo,hi) { continue }
+        let mut at: Vec<f64> = Vec::new();
+        for (j,g) in halves.iter().enumerate() {
+            let ge = &out[g.edge as usize];
+            if j == i || matches!(ge.curve,EdgeCurve::Degenerate) { continue }
+            let (v0,v1) = if g.along { (ge.v[0],ge.v[1]) } else { (ge.v[1],ge.v[0]) };
+            for (v,uv) in [(v0,g.from),(v1,g.to)] {
+                if v != e.v[0] || !near(uv[1-along],h.from[1-along]) { continue }
+                // on the segment's branch of the periods, strictly inside it
+                let mut x = uv[along];
+                if let Some(p) = periods[along] { x += ((0.5*(lo+hi)-x)/p).round()*p; }
+                if x > lo && x < hi && !near(x,lo) && !near(x,hi) && !at.iter().any(|&y| near(x,y)) { at.push(x); }
+            }
+        }
+        if at.is_empty() { continue }
+        // the cuts in the half's own direction, from its start to its end
+        let up = h.to[along] > h.from[along];
+        at.sort_by(|a,b| if up { a.total_cmp(b) } else { b.total_cmp(a) });
+        let mut stops = vec![h.from];
+        stops.extend(at.iter().map(|&x| { let mut uv = h.from; uv[along] = x; uv }));
+        stops.push(h.to);
+        let pieces = stops.windows(2).map(|w| {
+            let (a,b) = if h.along { (w[0],w[1]) } else { (w[1],w[0]) };
+            Half {edge:h.edge,along:h.along,pcurve:Pcurve::Line {a,b},from:w[0],to:w[1],pole:true}
+        });
+        let list = cut.get_or_insert_with(|| halves.to_vec());
+        // (each half's place found again: an earlier half cut has grown the list)
+        let k = list.iter().position(|x| x.edge == h.edge && x.along == h.along && x.from == h.from && x.to == h.to && !x.pole).unwrap();
+        list.splice(k..k+1,pieces);
+    }
+    cut
+}
+
 /// The parameter of a half's edge a fraction `s` of the way along the half.
 fn param(h: &Half,out: &[WEdge],s: f64) -> f64 {
     let e = &out[h.edge as usize];
@@ -2376,6 +2445,8 @@ const TANGENT_TIE: f64 = 1e-3;
 
 /// The face split into pieces by its halves: each piece its outer cycle and its holes.
 fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<Vec<Vec<Vec<Half>>>,String> {
+    let cut = poles_cut(f,halves,out);
+    let halves = cut.as_deref().unwrap_or(halves);
     // nodes: a vertex at one place in the parameters (a seam's vertex is at two, a period apart; the
     // uses of one vertex otherwise agree only as well as their pcurves do, a fitted curve's end to
     // within its fit)

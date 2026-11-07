@@ -407,6 +407,33 @@ fn cones_at_one_apex((c,r,half): (&Frame,f64,f64),(k,s,kalf): (&Frame,f64,f64),t
     Some(out)
 }
 
+/// **A plane through a cone's apex meets it in the generators it holds**, exactly: those of
+/// `d(u) = sin α (cos u x + sin u y) + cos α z` from the apex square to the plane's normal `n`,
+/// `R cos(u − φ) = −cos α (n·z)` with `R cos φ = sin α (n·x)`, `R sin φ = sin α (n·y)` — two
+/// generators where the plane leans to the axis by more than they do (brep-bench's
+/// singular/cone-cut-aslant-through-its-apex). Traced, the meeting crowded its steps toward the
+/// apex, where the cone's curvature grows without bound, past a hundred thousand points, and was
+/// refused there as a near touch it could not resolve. None where the plane misses the apex by
+/// more than `tol`, holds one generator alone (touching along it, read as a touch elsewhere), or
+/// none (the apex its only point on the cone, left to the trace).
+fn plane_through_apex(pl: &Frame,c: &Frame,r: f64,half: f64,tol: f64) -> Option<Vec<Curve>> {
+    let (sa,ca) = half.dsin_cos();
+    if !(sa.abs() > 1e-12) || !(ca.abs() > 1e-12) { return None }
+    let apex = cone_apex(c,r,half);
+    let n = unit(pl.z);
+    if dot(n,sub(apex,pl.o)).abs() > tol { return None }
+    let (ax,ay) = (sa*dot(c.x,n),sa*dot(c.y,n));
+    let big_r = ax.dhypot(ay);
+    if !(big_r > 1e-12) { return None }
+    let x = -ca*dot(c.z,n)/big_r;
+    if !(x.abs() < 1.-1e-9) { return None }
+    let (phi,w) = (ay.datan2(ax),x.dacos());
+    Some([phi-w,phi+w].into_iter().map(|u| {
+        let (su,cu) = u.dsin_cos();
+        Curve::Line {p:apex,d:c.dir([sa*cu,sa*su,ca])}
+    }).collect())
+}
+
 /// **A touch `intersect` recognises pair by pair** (#810, #780 R5): one surface held to stand
 /// where a sweep's construction put it beside another, and their touch written in closed form. The
 /// closed class gives each of these to its arrangement by construction (`boolean::Given`); each
@@ -533,7 +560,9 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 }
             }
             if let Some(e) = plane_cone_ellipse(&pl,&c,r,half,tol) { return Ssi::Curves(e) }
-            if dot(pl.z,c.z).abs() > 1e-12 || dot(pl.z,sub(c.o,pl.o)).abs() > tol { return Ssi::Traced }
+            if dot(pl.z,c.z).abs() > 1e-12 || dot(pl.z,sub(c.o,pl.o)).abs() > tol {
+                return plane_through_apex(&pl,&c,r,half,tol).map_or(Ssi::Traced,Ssi::Curves)
+            }
             let w = unit(cross(pl.z,c.z));
             Ssi::Curves([w,scale(w,-1.)].into_iter()
                 .map(|w| Curve::Line {p:add(c.o,scale(w,r)),d:line(w)}).collect())
