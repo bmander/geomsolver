@@ -1757,7 +1757,7 @@ fn a_failed_builds_arrangement_is_dumped_replayed_and_reduced() {
     let domain = block([7.,-3.,-1.5],[13.,3.,1.5]);
     let refs: Vec<&Brep> = candidates.iter().collect();
     let dir = std::env::temp_dir().join(format!("sweep-dump-{}",std::process::id()));
-    dump(&dir,&domain,&refs,&[],1e-6,"a test").unwrap();
+    dump(&dir,&domain,None,&refs,&[],1e-6,"a test").unwrap();
     let loaded = load(&dir).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
     let direct = arrangement_within(&domain,&refs[..3],1e-6).unwrap();

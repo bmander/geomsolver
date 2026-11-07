@@ -18,7 +18,6 @@
 //! wedge's two faces take an edge of their own, so the result is a valid boundary, and it says so
 //! (`Touch`); where it touches itself at a point, it says that too.
 use super::geom::{Surface,V};
-use super::props::volume;
 use super::query::{Located,Place};
 use super::topo::{reverse_loop,Brep,EdgeCurve,Face};
 use crate::util::fmath::Det;
@@ -331,7 +330,13 @@ impl Complex {
         self.cells.get_or_init(|| {
             let size = self.b.size().max(self.tol);
             let shells: Vec<Brep> = (0..self.shells.len()).map(|k| self.shell(k)).collect();
-            let volumes: Vec<f64> = shells.iter().map(volume).collect();
+            // each shell's volume its faces' fluxes summed (#847), each face's read once on every
+            // core (`props::fluxes`) and turned with it where its front faces into the shell: a
+            // face bounds the shells on both its sides, which reading every shell whole integrates
+            // twice
+            let flux = super::props::fluxes(&self.b);
+            let volumes: Vec<f64> = self.shells.iter().map(|sides| sides.iter().map(|&(f,front)| if front { -flux[f] } else { flux[f] })
+                .sum::<f64>()/3.).collect();
             let floor = 1e-12*size*size*size;
             let outer: Vec<usize> = (0..shells.len()).filter(|&c| volumes[c] > floor).collect();
             let is_outer: Vec<bool> = volumes.iter().map(|&v| v > floor).collect();

@@ -78,6 +78,30 @@ fn screwed(c: V,a: V,advance: f64,b: Box3) -> Box3 {
     out
 }
 
+/// **`screwed`, kept to a stretch of the screw** (#847): the box within which a screw about the line
+/// through `c` along `a`, turned by `turn` (radians, either way) and stepped by `steps` along the
+/// axis over one stretch, carries `b` — each turned box the hull of its corners turned, so the box
+/// of the corners' arcs holds them all, stepped each way. The whole ring where the stretch turns a
+/// revolution or more. What a piece of a sheet, or a curve on one, reaches of the ring its whole
+/// sheet turns in.
+fn screwed_over(c: V,a: V,turn: [f64;2],steps: [f64;2],b: Box3) -> Box3 {
+    let k = unit(a);
+    let turn = [turn[0].min(turn[1]),turn[0].max(turn[1])];
+    let arcs = if turn[1]-turn[0] < TAU {
+        let mut arcs = EMPTY;
+        for i in 0..8 {
+            let p: V = std::array::from_fn(|j| if (i>>j)&1 == 0 { b.0[j] } else { b.1[j] });
+            let w = sub(p,c);
+            let along = scale(k,dot(k,w));
+            widen(&mut arcs,conjugate_bounds(add(c,along),sub(w,along),cross(k,w),turn));
+        }
+        arcs
+    } else { swept(c,k,b) };
+    let mut out = EMPTY;
+    for step in steps { widen(&mut out,(add(arcs.0,scale(k,step)),add(arcs.1,scale(k,step)))); }
+    out
+}
+
 /// Where in `[t0, t1]` `p cos t + q sin t` turns, and whether to its greatest (`φ + 2nπ`, `φ` the
 /// angle of `(p, q)`) or its least (`φ + (2n + 1)π`): none where it does not turn at all.
 pub fn turns(p: f64,q: f64,[t0,t1]: [f64;2]) -> impl Iterator<Item=(f64,bool)> {
@@ -532,6 +556,23 @@ impl Pipe {
 }
 
 impl Blend {
+    /// **The box the patch keeps within over the parameters `[u, v]`** (#847): a face's piece of a
+    /// sheet, where the ring its whole sections turn in (`Surface::bounds_over`) stands for the
+    /// whole sheet turned about its axis — a sliver of a cell beside a screwed edge's sheet read as
+    /// a hundred millimetres across, its interior sought over all of that. `S(u, v)` carries a
+    /// point between the sections' points at `u` (in the box of their stretches over the range,
+    /// which is convex) by the screw at `v`: the turns over the range keep a box within the box of
+    /// its corners' arcs (each turned box the hull of its corners turned), and the advance steps
+    /// that along the axis. `None` for a range that is no range, or a turn of a whole revolution or
+    /// more.
+    fn bounds_in(&self,[[u0,u1],[v0,v1]]: [[f64;2];2]) -> Option<Box3> {
+        let Carry::Screw {center,axis,angle,advance} = self.carry else { return None };
+        if ![u0,u1,v0,v1].iter().all(|x| x.is_finite()) || u0 > u1 || v0 > v1 || !((v1-v0)*angle.abs() < TAU) { return None }
+        let stretch = |t: [f64;2]| { let (a,b) = (t[0]+u0*(t[1]-t[0]),t[0]+u1*(t[1]-t[0])); [a.min(b),a.max(b)] };
+        let mut sections = self.a.bounds(stretch(self.ta));
+        widen(&mut sections,self.b.bounds(stretch(self.tb)));
+        Some(screwed_over(center,axis,[angle*v0,angle*v1],[advance*v0,advance*v1],sections))
+    }
     fn ends(&self,u: f64) -> ((V,V,V),(V,V,V)) {
         (self.a.d2(self.ta[0]+u*(self.ta[1]-self.ta[0])),self.b.d2(self.tb[0]+u*(self.tb[1]-self.tb[0])))
     }
@@ -957,16 +998,21 @@ impl Surface {
     /// face's inner extremes lie on the meridians where it turns (or anywhere, where it does not
     /// turn with `u`, or on the axis: the middle one): each within the range is boxed over its `v`.
     /// An affine image of one likewise (`turned_bounds`), else by its preimage's box carried over.
-    /// A blend screwed about an axis is boxed by the ring its sections turn in; a B-spline by the
-    /// poles reaching the range.
+    /// A blend screwed about an axis is boxed by the ring its sections turn in, and within that by
+    /// what the range reaches of it (`Blend::bounds_in`); a B-spline by the poles reaching the range.
     pub fn bounds_over(&self,range: impl FnOnce() -> [[f64;2];2]) -> Box3 {
         if self.ruled() { return EMPTY }
         if let Surface::Blend(_,b) = self {
             let mut sections = b.a.bounds(b.ta);
             widen(&mut sections,b.b.bounds(b.tb));
-            return match b.carry {
+            let ring = match b.carry {
                 Carry::Screw {center,axis,advance,..} => screwed(center,axis,advance,sections),
                 Carry::Line {..} => unreachable!("a blend carried along a line is ruled"),
+            };
+            // both bound the face, so their common part does
+            return match b.bounds_in(range()) {
+                Some((lo,hi)) => (std::array::from_fn(|k| lo[k].max(ring.0[k])),std::array::from_fn(|k| hi[k].min(ring.1[k]))),
+                None => ring,
             }
         }
         self.bounds_in(range())
@@ -1944,21 +1990,20 @@ impl Curve {
             Curve::Iso(ref b,u) => match b.carry {
                 Carry::Line {..} => hull([t0,t1].map(|v| b.d1([u,v]).0)),
                 // before it is carried, the rail is the straight line between its sections
-                Carry::Screw {center,axis,advance,..} => {
+                Carry::Screw {center,axis,angle,advance} => {
                     let ((a,_,_),(z,_,_)) = b.ends(u);
-                    screwed(center,axis,advance,hull([t0,t1].map(|v| add(scale(a,1.-v),scale(z,v)))))
+                    screwed_over(center,axis,[angle*t0,angle*t1],[advance*t0,advance*t1],hull([t0,t1].map(|v| add(scale(a,1.-v),scale(z,v)))))
                 }
             },
             // the line's stretch the curve reaches over `[t0, t1]` (sampled, and grown by a quarter;
             // the whole line where a ruling there runs parallel to the plane), screwed
             Curve::SheetCut(ref c) => {
-                let ScrewedLine {centre,axis,rise,p0,run,..} = c.line;
+                let ScrewedLine {centre,axis,angle,rise,p0,run} = c.line;
                 let (lo,hi) = (0..=64).map(|j| c.u(t0+(t1-t0)*j as f64/64.).0)
                     .fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),u| (l.min(u),h.max(u)));
                 let wide = 1e6*(1.+norm(p0)/norm(run).max(1e-300));
                 let (lo,hi) = if lo.is_finite() && hi.is_finite() && hi-lo <= wide { (lo-0.25*(hi-lo)-1e-9,hi+0.25*(hi-lo)+1e-9) } else { (-wide,wide) };
-                let lift = scale(axis,rise*t0);
-                screwed(centre,axis,rise*(t1-t0),hull([add(p0,scale(run,lo)),add(p0,scale(run,hi))].map(|q| add(q,lift))))
+                screwed_over(centre,axis,[angle*t0,angle*t1],[rise*t0,rise*t1],hull([add(p0,scale(run,lo)),add(p0,scale(run,hi))]))
             }
             // a rail within its wall's box over the stretch of stations, a rim within its edge's
             Curve::Rail(ref w,_) => w.bounds([t0,t1]),
