@@ -9,8 +9,8 @@ use super::geom::{around,Box3,Curve,Surface,Uv,V};
 use super::query::{crossings_in,curve_surface_within,Located,Meets,Outline,Place};
 use super::ssi::Ssi;
 use super::complex::{Complex,Origin};
-use super::topo::{reverse_loop,unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
-use crate::util::space::{distance,norm};
+use super::topo::{leaving_pole,pole_at,poleless,reverse_loop,unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
+use crate::util::space::{distance,norm,scale};
 use std::cell::Cell;
 use std::collections::BTreeMap;
 
@@ -1900,19 +1900,20 @@ impl<'s,'a> FaceCut<'s,'a> {
         let n = 32;
         let mid = (w.t[0]+w.t[1])/2.;
         let start = self.located.uv(self.fi,c.point(mid));
-        let tol = self.tol;
+        let (tol,poleless) = (self.tol,poleless(&f.surface));
         let walk = |to: f64| {
-            let mut uv = start;
+            let (mut uv,mut before) = (start,start);
             for j in 1..=n {
                 let t = mid+(to-mid)*j as f64/n as f64;
-                let last = uv;
+                before = uv;
                 uv = unwrap(f.surface.inverse_near(c.point(t),uv),uv,f.surface.periods());
-                if j < n { continue }
-                let p = c.point(to);
-                let Some(along) = super::topo::pole_at(&f.surface,uv,(1e-9*(1.+norm(p))).max(tol)) else { continue };
+            }
+            if poleless { return uv }
+            let p = c.point(to);
+            if let Some(along) = pole_at(&f.surface,uv,(1e-9*(1.+norm(p))).max(tol)) {
                 // the way from the pole into the edge: back along its curve, toward the middle
-                let into = crate::util::space::scale(c.tangent(to),if to > mid { -1. } else { 1. });
-                if let Some(x) = super::topo::leaving_pole(&f.surface,p,into,last,along) { uv[along] = x; }
+                let into = scale(c.tangent(to),if to > mid { -1. } else { 1. });
+                if let Some(x) = leaving_pole(&f.surface,p,into,before,along) { uv[along] = x; }
             }
             uv
         };
@@ -2333,55 +2334,59 @@ fn assemble(out: &[WEdge],pool: &Pool,kept: Vec<Face>) -> Brep {
     result
 }
 
+/// How near in a face's parameters two uses of one vertex are one node of its pieces' graph
+/// (`pieces_of_face`): a seam's vertex is at two places a period apart, and the uses of one vertex
+/// otherwise agree only as well as their pcurves do, a fitted curve's end to within its fit.
+const NODE: f64 = 1e-3;
+
 /// **A face's pole edges cut where meetings reach the pole** (#797): in the face's parameters a
 /// pole is a segment, its degenerate edge running along the collapsed parameter, and a meeting
 /// through the pole (a meridian of a ball halved through its poles, a ruling of a cone halved
 /// through its apex, a circle through a pole) arrives on it at the value it runs along there
-/// (`FaceCut::internal`), not at the segment's ends. Each degenerate half is cut at every value
-/// another half's end at its vertex lies strictly inside it, so the pieces of the face either side
-/// of the meeting close in the parameters; its pieces are no edges of their own (`Half::pole`).
-/// None where no pole edge is cut.
+/// (`FaceCut::internal`), not at the segment's ends. Each degenerate half is cut wherever another
+/// half's end at its vertex lies on it, a node (`NODE`) from its ends, so the pieces of the face
+/// either side of the meeting close in the parameters; its pieces are no edges of their own
+/// (`Half::pole`). None where no pole edge is cut.
 fn poles_cut(f: &Face,halves: &[Half],out: &[WEdge]) -> Option<Vec<Half>> {
-    let periods = f.surface.periods();
-    let mut cut: Option<Vec<Half>> = None;
-    for (i,h) in halves.iter().enumerate() {
-        let e = &out[h.edge as usize];
-        if !matches!(e.curve,EdgeCurve::Degenerate) { continue }
-        // the parameter the pole runs along, and the other, which holds there
-        let along = if (h.to[0]-h.from[0]).abs() >= (h.to[1]-h.from[1]).abs() { 0 } else { 1 };
-        let (lo,hi) = (h.from[along].min(h.to[along]),h.from[along].max(h.to[along]));
-        let near = |x: f64,y: f64| (x-y).abs() <= 1e-9*(1.+x.abs().max(y.abs()));
-        if near(lo,hi) { continue }
+    let degenerate = |h: &Half| matches!(out[h.edge as usize].curve,EdgeCurve::Degenerate);
+    if poleless(&f.surface) || !halves.iter().any(degenerate) { return None }
+    // the parameter a pole's half runs along; the other holds there
+    let along_of = |h: &Half| if (h.to[0]-h.from[0]).abs() >= (h.to[1]-h.from[1]).abs() { 0 } else { 1 };
+    // the stops strictly inside a degenerate half where another half's end at its vertex lies on it,
+    // from its start to its end: apart from its ends, and from each other, by more than two uses of
+    // one vertex are one node by (`pieces_of_face`)
+    let stops = |h: &Half| -> Vec<f64> {
+        let along = along_of(h);
+        let pole = out[h.edge as usize].v[0];
+        let (a,b) = (h.from[along],h.to[along]);
+        let inside = |x: f64| (x-a)*(b-x) > 0. && (x-a).abs() >= NODE && (x-b).abs() >= NODE;
         let mut at: Vec<f64> = Vec::new();
-        for (j,g) in halves.iter().enumerate() {
-            let ge = &out[g.edge as usize];
-            if j == i || matches!(ge.curve,EdgeCurve::Degenerate) { continue }
-            let (v0,v1) = if g.along { (ge.v[0],ge.v[1]) } else { (ge.v[1],ge.v[0]) };
+        for g in halves.iter().filter(|g| !degenerate(g)) {
+            let e = &out[g.edge as usize];
+            let (v0,v1) = if g.along { (e.v[0],e.v[1]) } else { (e.v[1],e.v[0]) };
             for (v,uv) in [(v0,g.from),(v1,g.to)] {
-                if v != e.v[0] || !near(uv[1-along],h.from[1-along]) { continue }
-                // on the segment's branch of the periods, strictly inside it
-                let mut x = uv[along];
-                if let Some(p) = periods[along] { x += ((0.5*(lo+hi)-x)/p).round()*p; }
-                if x > lo && x < hi && !near(x,lo) && !near(x,hi) && !at.iter().any(|&y| near(x,y)) { at.push(x); }
+                let x = uv[along];
+                if v == pole && (uv[1-along]-h.from[1-along]).abs() < NODE && inside(x) && at.iter().all(|&y| (x-y).abs() >= NODE) { at.push(x); }
             }
         }
-        if at.is_empty() { continue }
-        // the cuts in the half's own direction, from its start to its end
-        let up = h.to[along] > h.from[along];
-        at.sort_by(|a,b| if up { a.total_cmp(b) } else { b.total_cmp(a) });
-        let mut stops = vec![h.from];
-        stops.extend(at.iter().map(|&x| { let mut uv = h.from; uv[along] = x; uv }));
-        stops.push(h.to);
-        let pieces = stops.windows(2).map(|w| {
+        at.sort_by(|x,y| (x-a).abs().total_cmp(&(y-a).abs()));
+        at
+    };
+    let mut any = false;
+    let cut = halves.iter().flat_map(|h| {
+        let at = if degenerate(h) { stops(h) } else { Vec::new() };
+        if at.is_empty() { return vec![h.clone()] }
+        any = true;
+        let along = along_of(h);
+        let mut ends = vec![h.from];
+        ends.extend(at.iter().map(|&x| { let mut uv = h.from; uv[along] = x; uv }));
+        ends.push(h.to);
+        ends.windows(2).map(|w| {
             let (a,b) = if h.along { (w[0],w[1]) } else { (w[1],w[0]) };
             Half {edge:h.edge,along:h.along,pcurve:Pcurve::Line {a,b},from:w[0],to:w[1],pole:true}
-        });
-        let list = cut.get_or_insert_with(|| halves.to_vec());
-        // (each half's place found again: an earlier half cut has grown the list)
-        let k = list.iter().position(|x| x.edge == h.edge && x.along == h.along && x.from == h.from && x.to == h.to && !x.pole).unwrap();
-        list.splice(k..k+1,pieces);
-    }
-    cut
+        }).collect()
+    }).collect();
+    any.then_some(cut)
 }
 
 /// The parameter of a half's edge a fraction `s` of the way along the half.
@@ -2455,7 +2460,7 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
     let mut of_vertex: BTreeMap<u32,Vec<usize>> = BTreeMap::new();
     let mut node_of = |v: u32,uv: Uv| -> usize {
         let mine = of_vertex.entry(v).or_default();
-        if let Some(&i) = mine.iter().find(|&&i| { let p = nodes[i].1; (p[0]-uv[0]).abs() < 1e-3 && (p[1]-uv[1]).abs() < 1e-3 }) { return i }
+        if let Some(&i) = mine.iter().find(|&&i| { let p = nodes[i].1; (p[0]-uv[0]).abs() < NODE && (p[1]-uv[1]).abs() < NODE }) { return i }
         nodes.push((v,uv));
         mine.push(nodes.len()-1);
         nodes.len()-1

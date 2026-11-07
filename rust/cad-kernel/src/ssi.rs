@@ -385,53 +385,49 @@ fn cones_at_one_apex((c,r,half): (&Frame,f64,f64),(k,s,kalf): (&Frame,f64,f64),t
     let apex = |f: &Frame,r: f64,a: f64| (a.dsin().abs() > 1e-12).then(|| cone_apex(f,r,a));
     let (p,q) = (apex(c,r,half)?,apex(k,s,kalf)?);
     if distance(p,q) > tol || norm(cross(c.z,k.z)) <= 1e-12 { return None }
-    let (sa,ca) = half.dsin_cos();
     let cb = kalf.dcos();
     if !(cb.abs() > 1e-12) { return None }
-    let (a0,ax,ay) = (ca*dot(c.z,k.z),sa*dot(c.x,k.z),sa*dot(c.y,k.z));
+    generators(c,half,scale(add(p,q),0.5),k.z,&[cb,-cb])
+}
+
+/// The generators from `p` (the apex) of the cone about `c` of half-angle `half` whose ways
+/// `d(u) = sin α (cos u x + sin u y) + cos α z` read each of `targets` against `m`: `d·m = t`, that is
+/// `A + R cos(u − φ) = t`, two generators a target or none. None where `R` vanishes (`m` along the
+/// axis: every generator alike) or a target is a double root (the cone touching along one).
+fn generators(c: &Frame,half: f64,p: V,m: V,targets: &[f64]) -> Option<Vec<Curve>> {
+    let (sa,ca) = half.dsin_cos();
+    let (a0,ax,ay) = (ca*dot(c.z,m),sa*dot(c.x,m),sa*dot(c.y,m));
     let big_r = ax.dhypot(ay);
     if !(big_r > 1e-12) { return None }
     let phi = ay.datan2(ax);
-    let o = scale(add(p,q),0.5);
     let mut out = Vec::new();
-    for target in [cb,-cb] {
+    for &target in targets {
         let x = (target-a0)/big_r;
         if (x.abs()-1.).abs() <= 1e-9 { return None }
         if x.abs() > 1. { continue }
         let w = x.dacos();
         for u in [phi-w,phi+w] {
             let (su,cu) = u.dsin_cos();
-            out.push(Curve::Line {p:o,d:c.dir([sa*cu,sa*su,ca])});
+            out.push(Curve::Line {p,d:c.dir([sa*cu,sa*su,ca])});
         }
     }
     Some(out)
 }
 
-/// **A plane through a cone's apex meets it in the generators it holds**, exactly: those of
-/// `d(u) = sin α (cos u x + sin u y) + cos α z` from the apex square to the plane's normal `n`,
-/// `R cos(u − φ) = −cos α (n·z)` with `R cos φ = sin α (n·x)`, `R sin φ = sin α (n·y)` — two
-/// generators where the plane leans to the axis by more than they do (brep-bench's
-/// singular/cone-cut-aslant-through-its-apex). Traced, the meeting crowded its steps toward the
-/// apex, where the cone's curvature grows without bound, past a hundred thousand points, and was
-/// refused there as a near touch it could not resolve. None where the plane misses the apex by
-/// more than `tol`, holds one generator alone (touching along it, read as a touch elsewhere), or
-/// none (the apex its only point on the cone, left to the trace).
+/// **A plane through a cone's apex meets it in the generators it holds**, exactly: those square
+/// to its normal `n` (`generators`, the target `0`), two where the plane leans to the axis by more
+/// than they do (brep-bench's singular/cone-cut-aslant-through-its-apex; the plane through the
+/// axis is read before this, its lines from the rim). Traced, an
+/// aslant plane's meeting crowded its steps toward the apex, where the cone's curvature grows
+/// without bound, past a hundred thousand points, and was refused there as a near touch. None where
+/// the plane misses the apex by more than `tol`, holds one generator alone (touching along it, read
+/// by the gap before this), or none (the apex its only point on the cone, left to the trace).
 fn plane_through_apex(pl: &Frame,c: &Frame,r: f64,half: f64,tol: f64) -> Option<Vec<Curve>> {
-    let (sa,ca) = half.dsin_cos();
-    if !(sa.abs() > 1e-12) || !(ca.abs() > 1e-12) { return None }
+    if !(half.dsin().abs() > 1e-12) || !(half.dcos().abs() > 1e-12) { return None }
     let apex = cone_apex(c,r,half);
     let n = unit(pl.z);
     if dot(n,sub(apex,pl.o)).abs() > tol { return None }
-    let (ax,ay) = (sa*dot(c.x,n),sa*dot(c.y,n));
-    let big_r = ax.dhypot(ay);
-    if !(big_r > 1e-12) { return None }
-    let x = -ca*dot(c.z,n)/big_r;
-    if !(x.abs() < 1.-1e-9) { return None }
-    let (phi,w) = (ay.datan2(ax),x.dacos());
-    Some([phi-w,phi+w].into_iter().map(|u| {
-        let (su,cu) = u.dsin_cos();
-        Curve::Line {p:apex,d:c.dir([sa*cu,sa*su,ca])}
-    }).collect())
+    generators(c,half,apex,n,&[0.]).filter(|g| !g.is_empty())
 }
 
 /// **A touch `intersect` recognises pair by pair** (#810, #780 R5): one surface held to stand
@@ -536,7 +532,6 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             Ssi::Curves(vec![Curve::Circle(Frame::new(sub(c.o,scale(pl.z,dist)),pl.z,pl.x),rho)])
         }
         (Surface::Plane(_),Surface::Cone(..)) | (Surface::Cone(..),Surface::Plane(_)) => {
-            // a plane through the axis: the two lines through the apex, its meridian either side
             let (pl,co) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cone(c,r,half) = co else { unreachable!() };
             let (sa,ca) = half.dsin_cos();
@@ -561,8 +556,10 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             }
             if let Some(e) = plane_cone_ellipse(&pl,&c,r,half,tol) { return Ssi::Curves(e) }
             if dot(pl.z,c.z).abs() > 1e-12 || dot(pl.z,sub(c.o,pl.o)).abs() > tol {
+                // any other plane through the apex: the generators it holds
                 return plane_through_apex(&pl,&c,r,half,tol).map_or(Ssi::Traced,Ssi::Curves)
             }
+            // a plane through the axis: the two lines through the apex, its meridian either side
             let w = unit(cross(pl.z,c.z));
             Ssi::Curves([w,scale(w,-1.)].into_iter()
                 .map(|w| Curve::Line {p:add(c.o,scale(w,r)),d:line(w)}).collect())

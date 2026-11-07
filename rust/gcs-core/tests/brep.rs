@@ -2702,7 +2702,6 @@ fn an_edge_used_twice_each_way_touches_and_one_used_once_is_open() {
 fn two_sectors_sharing_an_apex_meet_in_lines_and_mesh_closed() {
     use gcs_core::brep::boolean::{combined,Op};
     use gcs_core::brep::geom::{Curve,Surface};
-    use gcs_core::brep::mesh::mesh;
     use gcs_core::brep::ssi::{intersect,Ssi};
     use gcs_core::brep::topo::EdgeCurve;
     use std::f64::consts::FRAC_PI_4;
@@ -2743,19 +2742,7 @@ fn two_sectors_sharing_an_apex_meet_in_lines_and_mesh_closed() {
         let poles = f.loops.iter().flatten().filter(|c| matches!(common.edges[c.edge as usize].curve,EdgeCurve::Degenerate)).count();
         assert_eq!(poles,1,"a cone's piece through the apex has one pole edge");
     }
-    // brep-bench's bar: a ten-thousandth of the size, or a two-hundredth of the thickness
-    let all = common.faces.iter().map(|f| gcs_core::brep::props::area(&common,f)).sum::<f64>();
-    let bar = (1e-4*common.size()).min(5e-3*volume(&common)/all);
-    let m = mesh(&common,bar,0.1).unwrap();
-    let mut sides: std::collections::BTreeMap<(u32,u32),usize> = Default::default();
-    for t in &m.tris { for k in 0..3 { let (p,q) = (t[k],t[(k+1)%3]); *sides.entry((p.min(q),p.max(q))).or_default() += 1; } }
-    let open = sides.values().filter(|&&n| n != 2).count();
-    assert_eq!(open,0,"{open} of {} triangle sides not shared by two triangles",sides.len());
-    gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&m.triangles(),"sectors")).unwrap();
-    assert!(m.sag <= bar,"sags {} against {bar}",m.sag);
-    assert_eq!(m.turned,0);
-    let (v,w) = (mesh_volume(&m),volume(&common));
-    assert!((v-w).abs() <= 1e-3*w,"the mesh holds {v} against {w}");
+    held_to_the_bench(&common,r.powi(3)*omega/3.,r*r*omega+2.*r*r*theta*alpha.sin());
 }
 
 /// A solid held to brep-bench's bar for a case it has closed forms for: a valid closed boundary,
@@ -2766,15 +2753,17 @@ fn held_to_the_bench(b: &gcs_core::brep::topo::Brep,v: f64,a: f64) {
     b.check(1e-9).unwrap();
     let near = |x: f64,y: f64,what: &str| assert!((x-y).abs() <= 1e-9*y,"{what} {x} against {y} ({:e})",(x-y)/y);
     near(volume(b),v,"volume");
-    let area = b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum::<f64>();
-    near(area,a,"area");
+    near(total_area(b),a,"area");
+    // brep-bench's bar: a ten-thousandth of the size, or a two-hundredth of the thickness
     let bar = (1e-4*b.size()).min(5e-3*v/a);
     let m = mesh(b,bar,0.1).unwrap();
     let mut sides: std::collections::BTreeMap<(u32,u32),usize> = Default::default();
     for t in &m.tris { for k in 0..3 { let (p,q) = (t[k],t[(k+1)%3]); *sides.entry((p.min(q),p.max(q))).or_default() += 1; } }
     let open = sides.values().filter(|&&n| n != 2).count();
     assert_eq!(open,0,"{open} of {} triangle sides not shared by two triangles",sides.len());
+    gcs_core::mesh::stl_shells(&gcs_core::mesh::stl_of(&m.triangles(),"bench")).unwrap();
     assert!(m.sag <= bar,"sags {} against {bar}",m.sag);
+    assert_eq!(m.turned,0);
     let w = mesh_volume(&m);
     assert!((w-v).abs() <= 1e-3*v,"the mesh holds {w} against {v}");
 }
@@ -2845,8 +2834,8 @@ fn meetings_through_a_balls_pole_split_it() {
 
 /// **A cone cut through its apex** (brep-bench's singular/cone-halved-through-its-apex and
 /// singular/cone-cut-aslant-through-its-apex): a plane through the apex meets the cone in the two
-/// generators it holds, exactly (`ssi`'s `plane_through_apex`, the plane through the axis as one of
-/// them), each arriving at the apex at its own `u`, where the apex's pole edge is cut. Traced, the
+/// generators it holds, exactly (`ssi`'s `plane_through_apex`; the plane through the axis as before),
+/// each arriving at the apex at its own `u`, where the apex's pole edge is cut. Traced, the
 /// aslant plane's meeting crowded its steps toward the apex past a hundred thousand points and was
 /// refused there as a near touch; read at the apex, the halving plane's generators left the cone's
 /// side one piece, and the Boolean was refused.

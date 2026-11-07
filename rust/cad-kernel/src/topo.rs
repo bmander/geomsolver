@@ -185,6 +185,16 @@ pub(crate) fn pole_at(surface: &Surface,uv: Uv,within: f64) -> Option<usize> {
     else { None }
 }
 
+/// Whether `surface` is one no chart of which collapses anywhere, so it has no pole: a plane, a
+/// cylinder, an extrusion, a ring torus.
+pub(crate) fn poleless(surface: &Surface) -> bool {
+    match *surface {
+        Surface::Plane(_) | Surface::Cylinder(..) | Surface::Extrusion(..) => true,
+        Surface::Torus(_,big,small) => big > small.abs(),
+        _ => false,
+    }
+}
+
 /// **The value of a pole's collapsed parameter a curve sets out from it along** (#797): the
 /// parameter `along` (`pole_at`) of the point a hair out from the pole `p` along `d` (the curve's
 /// tangent there, pointing into it), read beside `near` on its branch of the periods. A curve on
@@ -293,12 +303,7 @@ impl Brep {
     /// degenerate edge is left as it is.
     pub fn close_poles(&mut self) {
         for fi in 0..self.faces.len() {
-            // (a surface no chart of which collapses anywhere has no pole: a ring torus's neither)
-            match self.faces[fi].surface {
-                Surface::Plane(_) | Surface::Cylinder(..) | Surface::Extrusion(..) => continue,
-                Surface::Torus(_,big,small) if big > small.abs() => continue,
-                _ => {}
-            }
+            if poleless(&self.faces[fi].surface) { continue }
             for li in 0..self.faces[fi].loops.len() {
                 // (the loop grows where an edge is laid, which the next corner then passes by)
                 let mut k = 0;
