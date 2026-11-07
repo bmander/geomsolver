@@ -2869,8 +2869,10 @@ fn a_cone_cut_through_its_apex_is_its_part() {
     assert_eq!(lines.len(),2,"two generators: {lines:?}");
     for l in &lines {
         let Curve::Line {p,d} = l else { panic!("{l:?} is no line") };
-        for t in [-3.,1.,7.] {
-            let q = gcs_core::space::add(*p,scale3(*d,t));
+        // (on the nappe the cone's surface is: below the apex)
+        let down = if d[2] < 0. { 1. } else { -1. };
+        for t in [1.,3.,7.] {
+            let q = gcs_core::space::add(*p,scale3(*d,down*t));
             for s in [&plane,&side] { assert!(gcs_core::space::distance(s.point(s.inverse(q)),q) <= 1e-12,"{q:?} off a surface"); }
         }
     }
@@ -2879,5 +2881,6 @@ fn a_cone_cut_through_its_apex_is_its_part() {
     let base = PI*r*r-segment;
     held_to_the_bench(&rest,base*h/3.,base+2.*PI*r*(r*r+h*h).sqrt()/3.+r*3f64.sqrt()*(h*h+r*r/4.).sqrt()/2.);
     let straight = rest.edges.iter().filter(|e| matches!(&e.curve,EdgeCurve::Curve(Curve::Line {..}))).count();
-    assert_eq!(straight,4,"the cone's seam, the chord and the two generators: {straight} lines");
+    // (the cone's seam, along +x, is in the part cut away)
+    assert_eq!(straight,3,"the chord and the two generators: {straight} lines");
 }
