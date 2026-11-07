@@ -366,12 +366,12 @@ impl dispatch::Blank for Blank<'_> {
 /// the names its refusals say, and its pocket where the drawing writes its tool as a stock cut by
 /// one (the planar class's reading, #721 F1d) — or why the drawing reads none, refused at T1.
 struct Read { tool: Result<std::sync::Arc<crate::brep::topo::Brep>,String>,path: crate::brep::trajectory::Trajectory,roll: [f64;2],
-    names: crate::brep::swept::subtraction::Names,pocket: Option<Result<crate::brep::swept::pocket::Pocket,crate::brep::swept::pocket::Failure>>,
+    names: crate::brep::swept::subtraction::Names,pocketed: bool,
     family: crate::motion::Family }
 
 /// Sweep `swept` read off the drawing: everything the kernel's dispatch is handed, or the message
 /// T1 refuses it with.
-fn read(sk: &Sketch,swept: usize,options: &Options) -> Result<Read,String> {
+fn read(sk: &Sketch,swept: usize) -> Result<Read,String> {
     let SolidDef::Swept {source,motion,..} = &sk.solids[swept].def else { return Err(format!("`{}` is no sweep",sk.solids[swept].name)) };
     let family = crate::motion::Family::read(sk,*motion as usize)?;
     let path = family.trajectory()?;
@@ -379,8 +379,10 @@ fn read(sk: &Sketch,swept: usize,options: &Options) -> Result<Read,String> {
     let tool = cad::tool_brep(sk,swept);
     let names = crate::brep::swept::subtraction::Names {sweep:sk.solids[swept].name.clone(),tool:sk.solids[*source as usize].name.clone(),
         motion:family.name.clone()};
-    let pocket = super::planar_class::asks(sk,swept).then(|| super::planar_class::read(sk,swept,options));
-    Ok(Read {tool,path,roll,names,pocket,family})
+    // whether the drawing writes the tool as a stock cut by one pocket: the planar class's refusal
+    // stands for it, the pocket read from the tool's B-rep by the kernel (#721 F1d)
+    let pocketed = super::planar_class::asks(sk,swept);
+    Ok(Read {tool,path,roll,names,pocketed,family})
 }
 
 /// Admit or refuse every swept cut of the body `root` (the body it places, where `root` is a
@@ -422,11 +424,11 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     // the blank a solid of revolution about the line every placement turns about: the later
     // placements read it as the first does, proved by the solid graph
     let revolved = structurally_alike(sk,root,&by_sweep,size);
-    let reads: Vec<Result<Read,String>> = order.iter().map(|&swept| read(sk,swept,options)).collect();
+    let reads: Vec<Result<Read,String>> = order.iter().map(|&swept| read(sk,swept)).collect();
     let clock = crate::clock::Instant::now();
     let asked = crate::par::indices(order.len(),|k| -> Option<Result<dispatch::Admitted,dispatch::Refused>> {
         let r = reads[k].as_ref().ok()?;
-        let s = dispatch::Sweep {tool:r.tool.as_deref().map_err(String::as_str),path:&r.path,roll:r.roll,mm,names:&r.names,pocket:r.pocket.as_ref()};
+        let s = dispatch::Sweep {tool:r.tool.as_deref().map_err(String::as_str),path:&r.path,roll:r.roll,mm,names:&r.names,pocketed:r.pocketed};
         let ask = dispatch::Ask {poses:&by_sweep[&order[k]],revolved,sampling:options.sampling(),margin:options.margin};
         Some(dispatch::sweep(&s,&blank,&ask))
     });
@@ -441,6 +443,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
             let message = match r.seen {
                 dispatch::Seen::Words(m) => m,
                 dispatch::Seen::Uncharted(_) => read.family.uncharted(),
+                dispatch::Seen::Envelope(e) => crate::envelope::planar::said(e,&read.family.name).message,
                 dispatch::Seen::Canal(c,radius) => match super::canal::said(crate::brep::swept::canal::Why::Refused(c),radius) {
                     super::canal::Why::Refused(r) => r.message,
                     super::canal::Why::Failed(m) => m,

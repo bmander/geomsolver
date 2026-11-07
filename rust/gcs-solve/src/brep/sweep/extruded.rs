@@ -37,9 +37,8 @@ pub fn planar_sheet(cut: &SweptCut,inside: Inside,tolerance: Option<Tolerance>,s
 /// and its extrusion leans along the slide; none otherwise (it is traced). `inside` asks the blank
 /// (mm); `tolerance` sets the fit's bar (half of it), else the kernel's.
 pub fn screwed_sheet(cut: &SweptCut,inside: Inside,tolerance: Option<Tolerance>,say: &Say) -> Option<Result<Fitted,ExportRefusal>> {
-    // (the recipe's prism: the B-rep's, its extrusion read from the lower cap, lays the helix's net
-    // so a blank face cuts it in no iso line — to be read alike before it switches, #721 F1c)
-    let cutter = crate::brep::swept::cutter::Cutter::read(&cut.recipe).ok()?;
+    // (the prism the tool's B-rep reads, as every sheet of it is sectioned by, #721 F1d)
+    let cutter = cut.cutter().ok()?;
     let (walks,extent) = cutter.prism_profile()?;
     let crate::brep::swept::generating::Form::Rack {observer,..} = crate::brep::swept::generating::Form::of(cut.family.path().ok()?).ok()?
         else { return None };

@@ -139,9 +139,8 @@ impl ReadEnvelope for InnerEnvelope {
     }
 }
 
-/// The kernel's refusal of the envelope of a curve under the motion `name`, said in the drawing's
-/// words.
-fn said(r: kernel::Refusal,name: &str) -> Refusal {
+/// The kernel's refusal of an envelope in the drawing's words, `name` the motion's.
+pub(crate) fn said(r: kernel::Refusal,name: &str) -> Refusal {
     let row = match r.seen.row() {
         kernel::Row::Plane => Condition::Plane,
         kernel::Row::Period => Condition::Period,

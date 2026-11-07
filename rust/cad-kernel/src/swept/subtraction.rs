@@ -253,18 +253,29 @@ fn set_end(e: &mut Edge,end: usize,p: P) {
 }
 
 /// **A section's material** in its plane: the signed distance to its loops, negative inside (an odd
-/// number of them about the point), one-Lipschitz, zero on its boundary.
+/// number of them about the point), one-Lipschitz, zero on its boundary. Its edges are held in a
+/// tree by their boxes, so a reading visits only the edges that may be nearest and those the ray
+/// from the point can cross (a pocket's loop is thousands of chords, #721 F1d).
 #[derive(Clone,Debug)]
-pub struct Loops { edges: Vec<Edge> }
+pub struct Loops { edges: Vec<Edge>,tree: crate::util::bvh::Bvh<2> }
 
 impl Loops {
-    pub fn new(loops: &[Vec<Edge>]) -> Loops { Loops {edges:loops.iter().flatten().cloned().collect()} }
+    pub fn new(loops: &[Vec<Edge>]) -> Loops {
+        let edges: Vec<Edge> = loops.iter().flatten().cloned().collect();
+        let tree = crate::util::bvh::Bvh::new(edges.iter().map(|e| { let [lo,hi] = e.boxed(); crate::util::bvh::Bounds {lo,hi} }));
+        Loops {edges,tree}
+    }
 }
 
 impl Region for Loops {
     fn value(&self,p: P) -> f64 {
-        let (d,crossed) = self.edges.iter().fold((f64::INFINITY,0),|(d,n),e| (d.min(e.distance(p)),n+e.crossings(p)));
-        if crossed%2 == 1 { -d } else { d }
+        let at = crate::util::bvh::Bounds {lo:p,hi:p};
+        let nearest = std::cell::Cell::new(f64::INFINITY);
+        self.tree.query_nearest(|b| b.gap(at),|| nearest.get(),|i| nearest.set(nearest.get().min(self.edges[i].distance(p))));
+        // (the ray runs from the point toward +x: only an edge whose box it meets can cross it)
+        let mut crossed = 0;
+        self.tree.query(|b| b.overlaps(crate::util::bvh::Bounds {lo:p,hi:[f64::INFINITY,p[1]]}),|i| crossed += self.edges[i].crossings(p));
+        if crossed%2 == 1 { -nearest.get() } else { nearest.get() }
     }
 }
 

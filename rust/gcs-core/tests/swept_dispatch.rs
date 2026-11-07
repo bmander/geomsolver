@@ -32,7 +32,7 @@ fn turn() -> Trajectory { Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.]
 /// The sweep of `tool` along `path` over ±60°, cut from `BLOCK` where it stands.
 fn swept(tool: &Brep,path: &Trajectory) -> Result<Admitted,Refused> {
     let names = Names {sweep:"groove".into(),tool:"tool".into(),motion:"turn".into()};
-    let s = Sweep {tool:Ok(tool),path,roll:[-60f64.to_radians(),60f64.to_radians()],mm:1.,names:&names,pocket:None};
+    let s = Sweep {tool:Ok(tool),path,roll:[-60f64.to_radians(),60f64.to_radians()],mm:1.,names:&names,pocketed:false};
     dispatch::sweep(&s,&BLOCK,&Ask {poses:&[Motion::identity()],revolved:None,sampling:Sampling::default(),margin:1e-6})
 }
 
@@ -76,8 +76,30 @@ fn a_ball_is_the_canals_whatever_carries_it() {
 #[test]
 fn a_tool_with_no_boundary_is_refused_at_t1() {
     let names = Names::default();
-    let s = Sweep {tool:Err("`tool` builds no boundary to read"),path:&turn(),roll:[0.,1.],mm:1.,names:&names,pocket:None};
+    let s = Sweep {tool:Err("`tool` builds no boundary to read"),path:&turn(),roll:[0.,1.],mm:1.,names:&names,pocketed:false};
     let r = dispatch::sweep(&s,&BLOCK,&Ask {poses:&[Motion::identity()],revolved:None,sampling:Sampling::default(),margin:1e-6}).unwrap_err();
     assert_eq!((r.row,r.asked),(dispatch::Row::Tool,dispatch::Asked::ConstantTwist));
     assert!(matches!(&r.seen,dispatch::Seen::Words(m) if m.contains("no boundary")),"{:?}",r.seen);
+}
+
+/// **A prism with a hole is one prism** (#721 F1d, G9): a square bar 4 across with a square hole 2
+/// across through it, read from its B-rep, is one prism standing alone to `Lone::read`, its cutter's
+/// profile both loops — what its sides' sheets are sectioned by, and across its profile, where a
+/// hole parts a section into chords (`Lone::sectioned_across`).
+#[test]
+fn a_prism_with_a_hole_is_one_prism() {
+    use gcs_core::brep::swept::admission::Lone;
+    use gcs_core::brep::swept::tool::Tool;
+    let square = |h: f64| -> Vec<ProfileEdge> {
+        let c = [[10.-h,-h,0.],[10.+h,-h,0.],[10.+h,h,0.],[10.-h,h,0.]];
+        (0..4).map(|k| ProfileEdge::Line {a:c[k],b:c[(k+1)%4]}).collect()
+    };
+    let profile = Profile {origin:[10.,0.,0.],normal:[0.,0.,1.],loops:vec![square(2.),square(1.)],names:Vec::new()};
+    let bar = prism(&profile,-1.,1.).unwrap();
+    let tool = Tool::read(&bar,1.).unwrap();
+    let lone = Lone::read(&bar,&tool,1.).expect("one prism");
+    let (walks,extent,drafted) = lone.cutter().prism_walks().expect("a prism");
+    assert_eq!((walks.len(),drafted),(2,false),"its outer loop and its hole, undrafted");
+    assert!((extent[1]-extent[0]-2.).abs() < 1e-12,"{extent:?}");
+    assert!(lone.sectioned_across());
 }

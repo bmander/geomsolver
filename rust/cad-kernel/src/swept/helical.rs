@@ -200,8 +200,11 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
     // its edges out of the blank: the reach's ends and the roll's stretch were chosen so (a whole
     // turn's first and last columns are one, closed, and lie where they will; so too a closed
     // characteristic's first and last rows, #684 W)
+    // (but an end of a stretch at a concave corner, which lies in the blank within the next
+    // stretch's sweep, its sheet trimmed against this one where the body's cells are judged, #721 F1d)
     let edges: Vec<V> = (0..sheet.rows*sheet.columns).filter(|k| { let (r,c) = (k/sheet.columns,k%sheet.columns);
-        (!found.closed && (r == 0 || r+1 == sheet.rows)) || (!found.whole && (c == 0 || c+1 == sheet.columns)) })
+        (!found.closed && ((r == 0 && !found.concave[0]) || (r+1 == sheet.rows && !found.concave[1])))
+            || (!found.whole && (c == 0 || c+1 == sheet.columns)) })
         .map(|k| sheet.points[k]).collect();
     let within = inside(&edges).at(Stage::Sheet)?.iter().filter(|b| **b).count();
     if within > 0 {
@@ -218,19 +221,28 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
         (say.stage)(&format!("`{name}`: the sheet is the cylinder of radius {:.4} mm the ring of greatest radius sweeps, written exactly, \
             in {AROUND} faces round it",radius*scale));
         (say.mark)(Stage::Fit);
-        return Ok(Fitted {face:tube.clone(),sheet,error:0.,faces:tube})
+        return Ok(Fitted {face:tube.clone(),sheet,error:0.,faces:tube,parted:Vec::new()})
     }
     let sides = |grid: &Grid| lay(grid,Withheld::Sides);
     settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {
         if cut.is_empty() && !found.whole && !found.closed { return Ok(fitted) }
         fitted.faces = fitted.named(kind,&|_| String::new(),found.whole.then_some(AROUND),found.closed).at(Stage::Fit)?;
+        let creased = creased_where(!found.flats().is_empty(),!found.sharp().is_empty(),found.concave());
         (say.stage)(&format!("`{name}`: the sheet cut into {} faces{}{}",fitted.faces.faces.len(),
             if creases.is_empty() { if cut.is_empty() { "" } else { " where its characteristic runs round a convex corner's fan" } }
-                else if found.sharp().is_empty() { " where its characteristic runs onto or off a flat face, creased there" }
-                else if found.flats().is_empty() { " where its characteristic passes a fan standing at one point, creased there" }
-                else { " where its characteristic runs onto or off a flat face or passes a fan standing at one point, creased there" },
+                else { &creased },
             if found.whole { " and round the turn, closing on itself" } else if found.closed { ", closing on itself along its characteristic" }
                 else { "" }));
         Ok(fitted)
     })
+}
+
+/// Where a characteristic's sheet is creased, said: where it runs onto or off a flat face, passes a
+/// fan standing at one point, or crosses a concave corner (#721 F1d), as each is so.
+fn creased_where(flat: bool,sharp: bool,concave: bool) -> String {
+    let said: Vec<&str> = [(flat,"runs onto or off a flat face"),(sharp,"passes a fan standing at one point"),(concave,"crosses a concave corner")]
+        .into_iter().filter(|w| w.0).map(|w| w.1).collect();
+    let joined = match said.len() { 0 => return String::new(),1 => said[0].to_string(),
+        n => format!("{} or {}",said[..n-1].join(", "),said[n-1]) };
+    format!(" where its characteristic {joined}, creased there")
 }

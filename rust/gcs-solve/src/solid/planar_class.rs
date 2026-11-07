@@ -13,21 +13,21 @@
 //!   sampled, lies within the stock — so the pocket alone decides what is kept.
 //!
 //! Sampled where the other classes are: P5 on a grid of the blank's section and of the roll, P4
-//! on the envelope's own samples (`envelope::planar`). The kernel asks the rows of each placement
-//! and chooses the class (`brep::swept::dispatch`, #721 F1c); what is here is the drawing's reading
-//! of the pocket (`read`), which the kernel is handed until it reads the pocket from the tool's
-//! B-rep (#721 F1d).
+//! on the envelope's own samples (`envelope::planar`). The kernel reads the pocket from the tool's
+//! B-rep, its curve carried there exactly where it is a point's path under turns (#721 F1d:
+//! `brep::swept::pocket::Pocket::read`), asks the rows of each placement and chooses the class
+//! (`brep::swept::dispatch`, #721 F1c); what is here is whether the drawing writes the tool as a
+//! stock cut by one pocket (`asks`), for which the class's refusal stands, and the drawing's own
+//! reading of the pocket, what the accuracy meter measures a build against (`pocket`, `prism`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::admission::{Condition,Options};
-use crate::envelope::Motion;
-use crate::envelope::planar::{InnerEnvelope,ReadEnvelope};
+use super::admission::Condition;
 use crate::model::{EntKind,Sketch,SolidDef};
 use crate::space::{cross,dot,norm};
 
 /// What the class finds of one sweep, its rows asked of a placement, and the tool as it reads it
 /// are the kernel's (`brep::swept::pocket`, #721 F1c).
-pub use crate::brep::swept::pocket::{Failure,Found,Pocket};
+pub use crate::brep::swept::pocket::{Failure,Found};
 
 type V = [f64;3];
 
@@ -62,7 +62,7 @@ pub(crate) fn prism(sk: &Sketch,id: usize,n: V) -> Result<[f64;2],Failure> {
 /// A planar sweep's tool as the class reads it: a stock cut by one pocket, the pocket's profile one
 /// closed curve, under a motion over a roll — the shape `admit` and the accuracy meter both read.
 #[derive(Clone,Copy,Debug)]
-pub(crate) struct Drawn { pub stock: usize,pub pocket: usize,pub curve: usize,pub motion: usize,pub roll: [f64;2] }
+pub(crate) struct Drawn { pub curve: usize,pub motion: usize,pub roll: [f64;2] }
 
 /// `swept`'s tool read as a pocketed stock, else refused at P2 by name.
 pub(crate) fn pocket(sk: &Sketch,swept: usize) -> Result<Drawn,Failure> {
@@ -71,8 +71,8 @@ pub(crate) fn pocket(sk: &Sketch,swept: usize) -> Result<Drawn,Failure> {
     };
     let tool = &sk.solids[*source as usize];
     let pocketed = |why: &str| (Condition::Prisms,format!("`{}` {why}: a planar sweep's tool is a stock cut by one pocket",tool.name),None);
-    let (stock,pocket) = match &tool.def {
-        SolidDef::Body {stock,on,through,bound} if on.is_empty() && bound.is_empty() && through.len() == 1 => (*stock as usize,through[0] as usize),
+    let pocket = match &tool.def {
+        SolidDef::Body {on,through,bound,..} if on.is_empty() && bound.is_empty() && through.len() == 1 => through[0] as usize,
         _ => return Err(pocketed("is more than a stock and a pocket")),
     };
     let SolidDef::Prism {face,..} = &sk.solids[pocket].def else { return Err(pocketed("is cut by no prism")) };
@@ -82,30 +82,5 @@ pub(crate) fn pocket(sk: &Sketch,swept: usize) -> Result<Drawn,Failure> {
         _ => return Err((Condition::Prisms,format!("`{}`'s profile is not one closed curve",sk.solids[pocket].name),None)),
     };
     let roll = super::roll::interval(sk,swept).map_err(|m| (Condition::Prisms,m,None))?;
-    Ok(Drawn {stock,pocket,curve,motion:*motion as usize,roll})
-}
-
-/// **Sweep `swept`'s tool read off the drawing as the class reads it** (#721 F1c), refusing at
-/// P1–P4 by row: the pocket's inner envelope over the roll (P1, P3, P4), its plane, both prisms'
-/// spans along its normal, the stock's field and the inverse poses of a grid of the roll that P5
-/// reads the blank against — the kernel's `Pocket`, whose rows it asks of each placement
-/// (`brep::swept::pocket`). Read off the drawing until the kernel reads it from the tool's B-rep,
-/// which fits the pocket's curve where the drawing has it exactly (#721 F1d).
-pub fn read(sk: &Sketch,swept: usize,options: &Options) -> Result<Pocket,Failure> {
-    let drawn = pocket(sk,swept)?;
-    let view = sk.curve_view(drawn.curve);
-    let basis = view.map_or_else(crate::plane::Basis::page,|v| sk.basis(v));
-    let n = basis.normal();
-    let n = n.map(|x| x/norm(n));
-    let spans = [prism(sk,drawn.stock,n)?,prism(sk,drawn.pocket,n)?];
-    let envelope = InnerEnvelope::read(sk,drawn.curve,drawn.motion,drawn.roll)
-        .map_err(|r| (r.row,r.message,r.witness.map(|p| sk.world_in(view,(p[0],p[1])))))?;
-    let family = crate::motion::Family::read(sk,drawn.motion).map_err(|e| (Condition::Plane,e,None))?;
-    let stock = super::SpatialField::read(sk,drawn.stock,options.axis_tolerance).map_err(|e| (Condition::Prisms,e,None))?;
-    let [from,to] = drawn.roll;
-    let rolls = (((to-from)/std::f64::consts::TAU*360.).ceil() as usize).max(36);
-    let backs = (0..=rolls).map(|k| family.at(from+(to-from)*k as f64/rolls as f64).map(Motion::inverse))
-        .collect::<Result<_,_>>().map_err(|e| (Condition::Plane,e,None))?;
-    Ok(Pocket {envelope,u:basis.u,n,spans,names:[sk.solids[drawn.stock].name.clone(),sk.solids[drawn.pocket].name.clone()],
-        stock:std::sync::Arc::new(stock),backs})
+    Ok(Drawn {curve,motion:*motion as usize,roll})
 }

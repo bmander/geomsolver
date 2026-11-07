@@ -446,7 +446,8 @@ the bar, its cap cut as the lone bar's (`prism_caps::a_cap_of_a_prism_a_common_l
 tooth united with itself is the tooth (`rack_cut::the_tooth_united_with_itself_cuts_as_the_tooth_does`).
 What the class still refuses it refuses by the geometry it reads: a plane that is no side and no
 lone prism's cap passing through the blank (T1, asked by its own points where no strip's rim bounds
-it: a partial revolution's end, a slanted cut, `prism_caps::a_cap_of_a_tool_no_lone_prism_is_refused`);
+it: a partial revolution's end, a slanted cut, `prism_caps::a_cap_of_a_tool_no_lone_prism_is_refused`;
+under a constant twist only where the motion's contact lies on it, #721 F1d below);
 a crease where a drafted prism's halves fold, concave where it is drafted outward both ways (T2, as
 a concave corner is, by the chord between points of the two halves beside it); a drafted corner the
 kernel builds no boundary of (T1, G8: `drafted_tools::a_drafted_tool_the_class_does_not_read_is_refused`).
@@ -456,10 +457,9 @@ dot between), so a prism's caps are `far` (at its least height) and `near`, not 
 left are settled here: a corner is probed where it lies on the tool (`Tool::corner`, round the turn
 or out along the sides from the first place), not at a chart's start; a corner's side is its
 pseudo-normal's, which retires the material's mesh; and faces a Boolean cuts from one surface whose
-readings are one surface's alike are kept once (`read::once_a_surface`).  Two stay open: faces of
-one surface over different spans of its meridian are read face by face, since the walk reads a
-corner only at a meridian's end; and the walk still ends at a concave corner by refusing it (T2), so
-a union tool is still swept member by member, as #684 C distributes it, not read whole.
+readings are one surface's alike are kept once (`read::once_a_surface`).  The two notes it left —
+faces of one surface over different spans of its meridian, and a concave corner in the walk — are
+settled in F1d, below.
 
 **The dispatch is the kernel's (#721 F1c; `brep::swept::dispatch::sweep`):** one `sweep` takes the
 tool's B-rep (millimetres), its trajectory and its roll (model units), the names a refusal says,
@@ -467,8 +467,7 @@ the blank at its placements (`dispatch::Blank`: membership, its support's box, i
 box) and how finely to sample (`dispatch::Ask`), and asks the classes in order, building by the
 first that admits: the canal (a B-rep every face of which lies on one sphere, `canal::ball`; its
 rows' refusal stands); the planar class (a stock cut by one pocket, every placement asked, its
-refusal standing — the pocket handed in by the drawing, `Sweep::pocket`, until the kernel reads its
-curve from the B-rep, which fits it: F1d); the planar subtraction class outright under a constant
+refusal standing — the pocket read from the tool's B-rep, `Pocket::read`, F1d below); the planar subtraction class outright under a constant
 twist (its tool read from the B-rep, `swept::subtraction`, below); the constant twist's rows under
 a screw, a turn or a slide and the generating class's under any other motion (the tool read by
 `Tool::read`, its refusal T1 with a witness; the motion charted, M1; the first placement asked and
@@ -494,13 +493,188 @@ the planar subtraction class's now, before the constant twist's rows, each to th
 was cut to before; a box rolled by two turns about parallel axes and a stepped disc's concave
 corner, which the generating rows refuse at M2 and T2, are that class's in their place
 (`admission::a_prism_whose_cap_passes_through_the_blank_is_planar_subtractions`,
-`a_concave_corner_carried_through_the_blank_is_planar_subtractions`).  What F1d keeps open stays so:
-cutters of revolutions and drafted prisms sectioned off the recipe (`Cutter::read`), the pocket's
-curve, `SweepContacts::read`'s field of the source, and the walk's concave corners.  The gate is
+`a_concave_corner_carried_through_the_blank_is_planar_subtractions`).  What F1d keeps open is below.  The gate is
 `tests/swept_dispatch.rs`, in the kernel alone: a drum built as a disc's prism and as a rectangle's
 revolution dispatched alike, the region each sweeps through a block one to 1e-9
 (`a_drum_drawn_two_ways_is_one_tool_to_the_dispatch`); a ball the canal's, turned or slid; a tool
 with no B-rep refused at T1 in the drawing's words.
+
+**What F1b left (#721 F1d).**  *The drawing's field:* `SweepContacts::read` reads no field of the
+drawing: the tool's material is its B-rep's (`read::Boundary`), and the accuracy meter trims a
+generated foot to the cutter's own boundary, and reads which way it faces, by that material
+(`SweepContacts::source_material`), not by the source's `SpatialField`.  It takes no axis tolerance
+for that reason, and the planar class's stock is the B-rep's too (its pocket, below).
+*The chart's start:* `Tool::read` starts each revolution's chart where its own surface's frame
+does (`Reader::start`), no longer in a half-plane shared by every face about one axis, a convention
+kept only so the walks could be held node for node to the drawing's.  Nothing the sweep reads
+depends on where: a corner is probed with its second face at the first's half-plane
+(`RevolvedSurface::turn_of`, `Tool::corner`); a convex corner's fan reads both faces' normals in the
+half-plane of its ring's start (`constant_twist::corners`, which before read each at its own chart's
+start and saw a fan at a smooth join where two charts started apart); faces a Boolean cuts from one
+surface are told by their meridians about one axis (`read::once_a_surface`); and the walk crosses
+from face to face by position.  The gate is `tests/swept_charts.rs`
+(`a_walk_is_the_same_curve_wherever_its_charts_start`): a bull-nosed drum pushed through a plate,
+drawn in three half-planes and dispatched, and its reading walked again with each face's chart
+started further round (`RevolvedSurface::started`), every walk one curve to rounding.
+*Prisms drafted and with holes:* `admission::Lone::read` reads one prism standing alone from its
+B-rep drafted or not and of any loops: two caps, the boundary's planes square to the prism's
+direction, every side's rulings along it or leaning to it alike — one draft one way, or out to a
+parting plane and in past it, the halves meeting in creases (#684 G, P) — each side's draft read
+as how far its ruling runs out across its outward normal square to the axis per unit along it.
+Its cutter is that direction's prism of its widest section, the nearer cap's loops undrafted,
+the wider cap's drafted one way, the parting plane's (the low cap's moved out to it) drafted both
+ways (`Cutter::extruded`), laid from the cap the sides' rulings leave so its stations are measured
+as before.  A cylinder or cone about a line along the prism is a side of it too (a round hole's
+wall), and a cap a round hole passes through, read as flats of its wall, is a cap.  So a drafted
+prism's sheets are sectioned by the cutter its B-rep reads (`SweptCut::cutter`), not the recipe's,
+and the drafted racks' spaces are cut to the same volumes (`drafted_tools`).  Its caps are cut
+too (G9): the constant twist walks the cap of any prism standing alone, drafted or with holes (a
+drafted plane side's rim is a line, `ExtrudedSurface::straight`; a cap's contact line is cut where
+the material leaves the cap, `cap_lines`), and T3 sections across a prism undrafted or drafted
+with plane sides, of any loops (`Lone::sectioned_across`, `Cutter::across`): each stretch of it
+along its extrusion whose sides run straight between its end sections (`Ends`: the undrafted
+prism's one, a drafted prism's halves) carries each chord's ends up a ruling of each side, the
+halves creased where they meet; a hole parts a section into chords, one loop each, and its ends
+along `across` bound the stations as a corner does (`Spread::corners`, the stations run between the
+nearest ends of holes either side of the band).  A drafted arc's point moves along a conic, whose
+sections across are not built: such a prism's cap is refused at T1 as before.  The gates are
+`drafted_tools::a_drafted_prisms_cutter_is_read_from_its_brep`,
+`prism_twists::a_drafted_bars_flat_end_turned_cuts_a_floor` and
+`a_bar_with_a_hole_turned_cuts_as_the_bar` (a hole clear of the end's contact line; one across it
+parts that line, refused at S2, and the closed class builds it),
+`prism_caps::a_bar_with_a_hole_cuts_the_floor_of_its_space` and
+`a_drafted_bars_end_cuts_the_floor_of_its_space`, and
+`swept_dispatch::a_prism_with_a_hole_is_one_prism`.  The helical rack's screwed sheet
+(`brep::sweep::extruded::screwed_sheet`) takes the B-rep's prism too: its section and band are the
+recipe's to rounding (2e-15), and the blank's faces cut both nets along iso lines alike; only a
+traced meeting's sample count moves with how the tracer stepped (the outer rim's with a flank, 139
+poles where the recipe's took 100), so
+`helical_rack::a_helical_gears_step_is_about_its_spur_twins_size` bars a curve of 200 poles, still
+far short of the many hundred #826 removed.
+*Cutters of revolution off the recipe:* a tool whose B-rep is revolutions about parallel lines —
+every face a cylinder, cone, sphere, torus or revolution of a line or circle about a line parallel
+to the first face's, or a plane square to them — is sectioned from its B-rep
+(`Sectioned::of_boundary`, `Cutter::of_boundary`, read once in `SweepContacts::read` as
+`SweepContacts::revolved`), each face read as its surface's meridian in its own line's half-plane
+over the span of it the face reaches, its ends on the circles its edges lie on, each step naming
+its face.  Where every face is a whole turn about one line, every half-plane's section is the same,
+the meridians joined end to end and closed along the line; else each half-plane is sectioned as it
+is asked: each face's meridian carried into it (a `Chart`), or a plane's line across it, split
+where another meets it, and the pieces whose middles lie on their faces of the B-rep kept and
+joined into loops, so a crown bounded by its neighbour (the spiral bevel's and the hypoid's
+cutters) is sectioned by its faces as its recipe's Boolean was.  `SweptCut::cutter` takes the
+B-rep's prism, else its cutter of revolutions, and reads no recipe: `Cutter::read` and its recipe
+prism are retired, and `Sectioned::read` of a recipe stays only as the oracle the B-rep's sections
+are held to.  The gate is
+`tool_reading::the_catalogues_cutters_of_revolution_section_from_their_boundaries`: every catalogue
+sweep the recipe sections as revolutions (23) the B-rep sections alike, the two sections at five
+half-planes one region by their exact areas and a grid of points read in space; the slow tier's
+`every_examples_cutters_of_revolution_section_from_their_boundaries` holds every example's 43,
+the hypoid's and the spiral bevel's among them, none refused.
+*Concave corners in the walk:* T2 is the generating class's row alone; the constant twist meets a
+concave corner in its walk.  Where both faces' points meet the corner (`Junction::Edge` with no fan,
+the roots one point), the walk crosses straight from one face to the next and marks the node a
+crease (`Node::crease`), the normals turning there by more than `LEAST_TURN`: the sheet is fitted
+creased along that point's path, as at a fan standing at one point (`Characteristic::creases`,
+`Characteristic::concave`).  So a tool drawn with a concave corner — `union.sv`'s beads as one
+revolution of their two discs' outline, or their union within an intersection, which no union
+distributes — is the constant twist's, the rod losing what either bead's shadow covers to 1e-6
+(`union_tools::a_tool_creased_at_a_concave_corner_cuts_as_its_members`,
+`a_union_within_an_intersection_is_the_constant_twists`).  So a union that is one solid under a
+constant twist is swept whole, as its set (`distributed::whole`: its B-rep's faces joined into one
+solid and read by the kernel), not member by member: `union.sv`'s beads are one sweep, the same
+groove as their members' to 2e-7 (`union_tools::the_union_cuts_what_its_members_cut_in_turn`), and
+the grown bead its class refuses alone is built whole with its twin
+(`a_member_its_class_refuses_alone_is_built_whole`).  A union of separate solids, or one under a
+turn seen from a turn, is still its members' sweeps (#684 C).  Where the faces' points part at the
+corner, the walk ends a stretch there (`Step::Concave`) and walks the others from the roots in the
+blank no stretch holds yet (`Pass::others`, `Characteristic::others`), each ending at a concave
+corner or past the blank; S2 takes a ring's two points in two such stretches.  Each stretch's sheet
+is fitted on its own, its edge at a concave corner left in the blank (`Characteristic::concave`,
+the edge check passing it over), and the blank is split by all of a sweep's sheets at once on one
+arrangement (`Fitted::parted`, each sheet an operand of its own, `sector::whole`), each cell its
+own selection so a sheet's end within a cell bounds nothing, the cells judged by the body's field
+as a split's: so each stretch is trimmed against the next where they cross.  The gate is
+`union_tools::a_characteristic_parted_at_a_concave_corner_cuts_as_its_swept_set`: a drum stepped
+down through a cone, slid aslant past a plate's strip, the contact on the cone leaning off the
+drums' line so the stretches part at the concave corner, built to 6e-7 of what the closed class
+cuts from the plate by the tool's set alone (`closed::cut_from`).
+*One reading a surface:* the faces a Boolean cuts from one surface of revolution are read once,
+over the span of its meridian they reach together (`read::once_a_surface`: a reading lies on
+another's surface where its meridian lies on the other's line or circle about one axis, the charts
+outward alike, `one_surface`; the first's meridian carried past its ends over the hull,
+`RevolvedSurface::meridian_param`, `RevolvedSurface::over`), and a corner where another face meets
+a face of revolution along a ring partway along its meridian is read there (`PatchEdge::ends`
+strictly between nought and one).  A part-cylinder's kind is no longer its loop's: a face over part
+of a turn that shares a circle with a face read about that circle's axis — a part of a drum's,
+cone's, ball's or ring's surface beside it, or a plane square to the axis — is read about the same
+axis before any face is read as a strip (`Reader::beside`), so the faces of one turn read alike and
+meet at corners along their meridians; a part-cylinder no face read whole round meets is a prism's
+side, a strip, as before, and T1 asks a strip's rim only where it lies in a cap's plane (or a
+lone prism's flat's: a cap a round hole passes through).  The walk reads a corner partway along a face: its stations hold the
+corner's (`cut_at`), and where the walk stands on it and the face goes no further its way at that
+point (`Walker::partway`, the material read just past it), it crosses the corner as at a face's
+end (`Along::cuts`: onto the face beyond, round the corner's fan, onto a flat's line); onto a face
+partway along it, it goes on the way the face is the tool's from that point (`Walker::onward`).
+`Tool::corner` probes such a corner on the side its face goes on, and first at its own point
+(`PatchEdge::at`, the middle of the B-rep's edge it is read off, within both faces), so not at a
+partial revolution's chart start, where the chord would lie in its end plane.  No strip meets a face of revolution at a ring: a strip's
+rim lies along a ring only about the strip's own axis, so a face over part of a turn that no strip
+reading takes (a ball's, a ring's, a revolution of an arc) is read as a revolution first, and the
+faces sharing its circles are read about its axis with it; the corner between them is a corner of
+two revolutions, walked straight across where their points meet and round its fan where they
+part.  A plane bounded by circles is a flat from its centre where its loops wind about it,
+whatever radius they reach (a notched disc), and a corner the B-rep's edges split is read once.
+The gates are `tests/swept_partway.rs`: a drum with a window ground down through its side and top
+by a quarter-turn groove, its side read once whole round, the window's floor a flat and its back
+wall a part-cylinder about its axis, the floor's corner partway along the side's meridian and the
+back wall's partway along the top's (`a_windowed_drum_is_read_a_surface_at_a_time`), and turned
+about a line square to its axis through a blank, its characteristic walked up the side, across the
+floor and up the back wall, every node on that path to 1e-15
+(`the_walk_crosses_a_corner_partway_along_a_face`); and the bull-nosed drum turned three quarters
+of a turn, its side read about its axis with its rounds, the push's silhouette in what the three quarters
+keep, pushed through the plate, its characteristic the whole drum's curve to 2e-15
+(`a_partial_revolution_is_walked_as_its_whole_turn`); and a barrel whose side meets its ball
+ends at a sharp corner, slid aslant so the faces' points part there, turned three quarters, its
+characteristic run round the corner's fan and the whole barrel's curve to 2e-15
+(`a_corner_where_the_points_part_is_walked_round_on_a_partial_revolution`).
+*A partial revolution's ends:* the drawing's field reads a revolution over part of a turn
+(`RevolvedRegion::spatial`: its whole turn's material in common with the wedge its turn spans, a
+sector about the axis carried along it; `RevolvedRegion::classify` the same), where before it
+refused any but a whole turn; and the kernel reads it by its faces, its ends planes through its
+axis.  A plane that is no lone prism's cap is asked at T1, under either class, only where the
+motion's contact lies on it at some pose of the roll sampled (`admission::holds_none`: `n·v` read
+over its points on the tool at every pose, one sign throughout a plane that holds none): an end
+the motion's normals never lie in is nothing of the sweep's boundary but at its end poses, and
+passes through the blank unrefused (the three-quarter drum above).  A plane the contact crosses is
+still refused at T1, no class reading a contact line across it but a lone prism's cap's; and a
+turn of more than half a turn meets itself along its axis at a concave edge, which the generating
+class refuses at T2 as any concave corner.  The gate is
+`partial_turns::a_pin_turned_part_of_a_turn_is_the_generating_classs`: the lantern pinion's pin
+turned 160° is admitted by the generating class as the whole pin is
+(`revolved_regions::material_queries_are_snapshots_and_refuse_unsupported_or_nonfinite_geometry`
+holds the field's half turn).
+*The planar class's pocket:* read from the tool's B-rep (`pocket::Pocket::read`): two caps, planes
+square to one direction each bounded by an outline and one hole, every other face standing along
+it (a plane, a cylinder or a sweep of a curve along it); the hole the loop enclosing the less
+(`Brep::loop_area`), its edges' curves walked as the loop walks them and read as one curve's parameter where they are
+stretches of one curve end to end (`Hole`, a `planar::Section`).  The B-rep carries a point's path
+under turns and slides at steady rates exactly: `generate::point_path` reads the drawing's envelope
+of a point as terms `(a + b t) e^{iωt}` off its turn and slide ops (`brep::trochoid::Trochoid`,
+its points and derivatives in closed form at every order, its speed bounded over any stretch, an
+`Exact` curve), the recipe's profile writes its two halves as `trochoid` edges
+(`cad::trochoid_halves`), and the extrusion's side over it is cut by a plane in closed form
+(`ssi`).  So the Wankel's bore is its apex's path in the B-rep to rounding, the housing's volume
+its closed form's to 1e-9 (`wankel::the_housing_is_its_case_less_the_bore`), and the rotor its
+inner envelope read off that curve (`InnerEnvelope::new`), built to 1e-6 of its closed form
+(`wankel::the_rotor_is_admitted_to_the_planar_class_and_built_as_its_closed_form`).  The stock's
+material is its outline's prism (the outline's lines and circles read as themselves), so the bore
+is no boundary of it, where the rotor's apex touches it; a loop's material in the plane is
+`subtraction::Loops`, its edges held in a tree so a reading visits only those that may be nearest
+and those the ray from the point can cross.  The dispatch is told only
+whether the drawing writes the tool as a stock cut by one pocket (`Sweep::pocketed`), for which
+the class's refusal stands; the drawing's `planar_class::read` and `Sweep::pocket` are retired, and
+a refusal of the envelope is said in the motion's words (`Seen::Envelope`).
 
 **The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
 every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding
@@ -1650,11 +1824,14 @@ placements between minted again over each, every minted solid keeping the one it
 (`sheet::SweptCut::read`); a refusal says the member (``its tool's member `bead2`: …``), and a
 union whose every member is a ball's tube admits nothing and builds as static material, held to
 the union's field as a swept body is. Not distributed: a union within an intersection or a cut
-(read from its B-rep whole, #721 F1b, the generating rows refuse it; the closed class reads such a
-tool by its B-rep where it takes its faces,
-`union_tools::a_union_within_an_intersection_is_the_closed_classs`; members falling to the closed
-class and another each built by its road, `union_tools::a_member_its_class_refuses_is_the_closed_classs`), and a union of prisms under a motion keeping their plane, which
-`planar_subtraction::asks` reads whole. The native path refuses a distributed cut by name.
+(read from its B-rep whole, #721 F1b: the generating rows refuse its concave corner at T2, the
+constant twist crosses it where both faces' points meet it, creased there, #721 F1d,
+`union_tools::a_union_within_an_intersection_is_the_constant_twists`, and the closed class reads
+such a tool by its B-rep where it takes its faces; members falling to the closed
+class and another each built by its road, where the union is distributed,
+`union_tools::a_member_its_class_refuses_is_the_closed_classs`); a union of prisms under a motion
+keeping their plane, which `planar_subtraction::asks` reads whole; and a union that is one solid
+under a constant twist, swept whole as its set (`distributed::whole`, #721 F1d). The native path refuses a distributed cut by name.
 `tests/union_tools.rs` and `solid_sweeps_examples.rs` (`union.sv`) are the gate: the beads' groove
 against rows across the rod computed apart, placed and turned, against the long form, two balls'
 tubes by Pappus, two tori rolled in the generating class, and the refusals.
@@ -1726,7 +1903,7 @@ at its middle for the recipe. The rotor is a cut: its blank less the housing's w
 period (`common` with a sweep keeps the union's, another set). A pocketed prism under a planar motion
 is admitted by rows P1–P5 (`solid::planar_class`): the pocket's inner envelope over a whole period
 (`envelope::planar::InnerEnvelope`, the kernel's `brep::swept::planar`, #721 F2c, its curve a
-`Section` and its material a `Region` the solver reads off the drawing, its refusals typed
+`Section` and its material a `Region` the kernel reads off the tool's B-rep, #721 F1d, its refusals typed
 `Seen`/`Row` and said by `envelope::planar`; over a formula or generated source: contact roots per sample,
 kept where inside every pose, corners where an image recurs), built as the blank in common with
 its prism (`brep::sweep::planar`), metered as envelope × slab (`accuracy::Planar`). `claim over

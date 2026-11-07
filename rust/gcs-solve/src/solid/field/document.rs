@@ -245,7 +245,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                         sk.solid_name(i))),
                 },
                 SolidDef::Revolve {..} =>
-                    Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
+                    Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.spatial()?),
                 SolidDef::Prism {face,from,to,draft} => Snapshot::Static(extruded(sk,*face as usize,
                     [from.value,to.value],draft.as_ref().map_or(0.,|d| d.value))?.into()),
                 SolidDef::Through {face} => {
@@ -295,7 +295,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     body
                 }
                 SolidDef::Family {..} => return Err("material fields \
-                    currently require prisms, full revolutions, Boolean bodies or named motions"
+                    currently require prisms, revolutions, Boolean bodies or named motions"
                     .into()),
             })
         })().map_err(|e: String| format!("`{}`: {e}",s.name))?;
@@ -305,7 +305,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
 }
 
 impl SpatialField {
-    /// Read prisms and full revolutions over analytic profile loops, their Boolean
+    /// Read prisms and revolutions (whole or over part of a turn) over analytic profile loops, their Boolean
     /// compositions and fixed motion instances. Unsupported sources fail rather
     /// than substituting a faceted shape. Values use the model's length units.
     pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {

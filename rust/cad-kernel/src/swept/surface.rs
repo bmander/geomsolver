@@ -277,6 +277,96 @@ impl RevolvedSurface {
     fn full(&self) -> Self { Self {v_domain:[0.,1.],..self.clone()} }
     /// The revolution's unit axis direction.
     pub fn axis_direction(&self) -> [f64;3] { self.axis }
+
+    /// **The same surface, its chart started `phi` radians further round** (#721 F1d): its meridian
+    /// turned about the axis, so `at(u, v)` is the point that was `phi` further round. The set is
+    /// the same, and nothing the sweep reads of it depends on where its chart starts.
+    pub fn started(&self,phi: f64) -> Self {
+        let Some(a) = crate::trajectory::normalized(self.axis) else { return self.clone() };
+        let (s,c) = phi.dsin_cos();
+        let vector = |x: V| { let along = dot(a,x)*(1.-c); add(add(scale(x,c),scale(cross(a,x),s)),scale(a,along)) };
+        let point = |x: V| add(self.origin,vector(sub(x,self.origin)));
+        let meridian = match self.meridian {
+            Meridian::Line {start,delta} => Meridian::Line {start:point(start),delta:vector(delta)},
+            Meridian::Round {center,a,b,sweep} => Meridian::Round {center:point(center),a:vector(a),b:vector(b),sweep},
+            Meridian::Conic {a,m,b,w} => Meridian::Conic {a:point(a),m:point(m),b:point(b),w},
+        };
+        Self {meridian,..self.clone()}
+    }
+
+    /// **The chart's `v` of the half-plane through `p`** (#721 F1d): how far round from its chart's
+    /// start the meridian is turned to pass through the axis's half-plane that holds `p`, as a
+    /// fraction of its sweep, within one whole turn. None where `p` is on the axis or the meridian
+    /// lies along it.
+    pub fn turn_of(&self,p: V) -> Option<f64> {
+        let (a,start) = self.half_plane()?;
+        let r = { let q = sub(p,self.origin); sub(q,scale(a,dot(q,a))) };
+        if !(length(r) > 0.) || self.sweep == 0. { return None }
+        let angle = dot(cross(start,r),a).datan2(dot(start,r));
+        Some((angle/self.sweep).rem_euclid(TAU/self.sweep.abs()))
+    }
+
+    /// The unit axis and the radial direction of the half-plane the meridian lies in at its chart's
+    /// start (read at its middle, else an end, off the axis); none where it lies along the axis.
+    fn half_plane(&self) -> Option<(V,V)> {
+        let a = crate::trajectory::normalized(self.axis)?;
+        let x = [0.5,0.,1.].into_iter().filter_map(|u| self.full().at(u,0.).ok()).map(|s| {
+            let q = sub(s.position,self.origin); sub(q,scale(a,dot(q,a)))
+        }).find(|r| length(*r) > 0.)?;
+        Some((a,x))
+    }
+
+    /// Where `p` is turned to about the axis, read as `(radius, height)`: what tells two faces of
+    /// revolution about one axis that lie on one surface, however their charts start.
+    pub fn polar(&self,p: V) -> Option<[f64;2]> {
+        let a = crate::trajectory::normalized(self.axis)?;
+        let q = sub(p,self.origin);
+        let h = dot(q,a);
+        Some([length(sub(q,scale(a,h))),h])
+    }
+
+    /// **The meridian's parameter at the ring through `p`** (#721 F1d): `u` such that `p` is
+    /// turned from the meridian's point there, read on the meridian's line or circle in the
+    /// half-plane as `(radius, height)` and so past its ends too (below nought or above one), the
+    /// nearest of a circle's turns to the meridian's middle. None for a conic's meridian, or where
+    /// the meridian has no half-plane (it lies along the axis).
+    pub fn meridian_param(&self,p: V) -> Option<f64> {
+        let (a,x) = self.half_plane()?;
+        let x = scale(x,1./length(x));
+        let plane = |q: V| [dot(q,x),dot(q,a)];
+        let [r,h] = self.polar(p)?;
+        match self.meridian {
+            Meridian::Line {start,delta} => {
+                let (s,d) = (plane(sub(start,self.origin)),plane(delta));
+                let dd = d[0]*d[0]+d[1]*d[1];
+                (dd > 0.).then(|| ((r-s[0])*d[0]+(h-s[1])*d[1])/dd)
+            }
+            Meridian::Round {center,a:ca,b:cb,sweep} => {
+                let (c,pa,pb) = (plane(sub(center,self.origin)),plane(ca),plane(cb));
+                let d = [r-c[0],h-c[1]];
+                if sweep == 0. { return None }
+                let t = (d[0]*pb[0]+d[1]*pb[1]).datan2(d[0]*pa[0]+d[1]*pa[1])/sweep;
+                let period = TAU/sweep.abs();
+                Some(t-((t-0.5)/period).round()*period)
+            }
+            Meridian::Conic {..} => None,
+        }
+    }
+
+    /// **The same surface over `[lo, hi]` of its meridian's parameter** (#721 F1d), past its ends
+    /// where they lie past nought or one, its new `u` running from `lo` to `hi`: the faces a Boolean
+    /// cuts from one surface read once over the span they reach. None for a conic's meridian.
+    pub fn over(&self,[lo,hi]: [f64;2]) -> Option<Self> {
+        let meridian = match self.meridian {
+            Meridian::Line {start,delta} => Meridian::Line {start:add(start,scale(delta,lo)),delta:scale(delta,hi-lo)},
+            Meridian::Round {center,a,b,sweep} => {
+                let (s,c) = (sweep*lo).dsin_cos();
+                Meridian::Round {center,a:add(scale(a,c),scale(b,s)),b:sub(scale(b,c),scale(a,s)),sweep:sweep*(hi-lo)}
+            }
+            Meridian::Conic {..} => return None,
+        };
+        Some(Self {meridian,..self.clone()})
+    }
 }
 
 #[derive(Clone,Debug)]

@@ -33,25 +33,19 @@ pub struct SweptCut {
     pub routes: std::collections::BTreeMap<String,String>,
 }
 
-/// A cut's cutter (`SweptCut::cutter`): the one admission read from the tool's B-rep, or one
-/// sectioned off its recipe.
-pub enum Sectioned<'a> { Read(&'a Cutter),Recipe(Cutter) }
-
-impl std::ops::Deref for Sectioned<'_> {
-    type Target = Cutter;
-    fn deref(&self) -> &Cutter { match self { Sectioned::Read(c) => c,Sectioned::Recipe(c) => c } }
-}
-
 impl SweptCut {
-    /// **The cutter every sheet of this cut is sectioned by**, chosen once: the prism read from
-    /// the tool's B-rep where it is one standing alone (`SweepContacts::lone`, #721 F1b), however
-    /// the tool was drawn, so admission's band and the sheet's stations are measured from one
-    /// origin; else the recipe's (`Cutter::read`: a cutter of revolutions, or a drafted prism, until
-    /// #721 F1c).
-    pub fn cutter(&self) -> Result<Sectioned<'_>,String> {
-        match self.contacts.as_ref().ok().and_then(SweepContacts::lone) {
-            Some(lone) => Ok(Sectioned::Read(lone.cutter())),
-            None => Cutter::read(&self.recipe).map(Sectioned::Recipe),
+    /// **The cutter every sheet of this cut is sectioned by**, chosen once and read from the tool's
+    /// B-rep however the tool was drawn (#721 F1b, F1d): the prism, drafted or not, where it is one
+    /// standing alone (`SweepContacts::lone`), so admission's band and the sheet's stations are
+    /// measured from one origin; else the cutter of revolutions about parallel lines it is
+    /// (`SweepContacts::revolved`). The recipe is not read.
+    pub fn cutter(&self) -> Result<&Cutter,String> {
+        let contacts = self.contacts.as_ref().map_err(Clone::clone)?;
+        match (contacts.lone(),contacts.revolved()) {
+            (Some(lone),_) => Ok(lone.cutter()),
+            (None,Some(revolved)) => Ok(revolved),
+            (None,None) => Err(format!("`{}`'s tool is no prism standing alone and no cutter of revolutions about parallel \
+                lines, which the core sections",self.name)),
         }
     }
 
@@ -64,7 +58,7 @@ impl SweptCut {
         let recipe = cad::recipe(sk,*source as usize).at(Stage::Clearance)?;
         let family = Family::read(sk,*motion as usize).at(Stage::Clearance)?;
         let limits = crate::solid::roll::interval(sk,swept).at(Stage::Clearance)?;
-        let contacts = SweepContacts::read(sk,swept,cad::AXIS_TOLERANCE);
+        let contacts = SweepContacts::read(sk,swept);
         // a member of a union tool's faces are named by their routes in the union (#684 C)
         let SolidDef::Swept {source:tool,..} = sk.solids[crate::solid::distributed::union_of(sk,swept)].def else {
             unreachable!("a member's union is a sweep")

@@ -79,6 +79,12 @@ impl Profile {
                         };
                         ProfileEdge::Spline(Arc::new(b.map_err(|m| format!("profile: {m}"))?))
                     }
+                    Stroke::Trochoid {origin,x_dir,y_dir,terms,span} => {
+                        let (x,y) = (unit(*x_dir),unit(*y_dir));
+                        let frame = Frame {o:*origin,x,y,z:unit(cross(x,y))};
+                        let terms = terms.iter().map(|&[ar,ai,br,bi,w]| crate::trochoid::Term {a:[ar,ai],b:[br,bi],w}).collect();
+                        ProfileEdge::Exact(Curve::Trochoid(Arc::new(crate::trochoid::Trochoid {frame,terms,span:*span})))
+                    }
                 });
             }
             loops.push(edges);
@@ -112,6 +118,14 @@ impl Profile {
                             ("poles",Json::Arr(b.poles.iter().map(|&p| at(p)).collect()))]);
                         if let Some(weights) = &b.weights { o.set("weights",Json::Arr(weights.iter().map(|&x| x.into()).collect())); }
                         o
+                    }
+                    ProfileEdge::Exact(Curve::Trochoid(ref t)) => {
+                        let f = &t.frame;
+                        // (each term's `a` and `b` lengths, scaled as points are; its rate not)
+                        let terms = t.terms.iter().map(|q| Json::Arr([q.a[0]*scale,q.a[1]*scale,q.b[0]*scale,q.b[1]*scale,q.w].iter()
+                            .map(|&x| x.into()).collect()));
+                        object([("kind","trochoid".into()),("origin",at(f.o)),("x_dir",v(f.x,1.)),("y_dir",v(f.y,1.)),
+                            ("terms",Json::Arr(terms.collect())),("span",Json::Arr(vec![t.span[0].into(),t.span[1].into()]))])
                     }
                     ProfileEdge::Exact(ref curve) => return Err(format!("a {} curve has no recipe's form",curve.kind())),
                 };
@@ -246,7 +260,7 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                 }
                 Curve::Circle(f,r) => (Surface::Cylinder(f,r),!s.forward(),s.t[0],s.t[1]),
                 // C(u) + v n: the step's tangent turned clockwise about n is its normal
-                Curve::BSpline(_) | Curve::Slid(_) => (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
+                Curve::BSpline(_) | Curve::Slid(_) | Curve::Trochoid(_) => (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
                 Curve::Turned(..) => return Err("a turned contact's meridian is turned, not swept along a line".into()),
                 Curve::Ellipse(..) | Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..)
                 | Curve::SheetCut(..) =>

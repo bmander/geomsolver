@@ -6,22 +6,27 @@
 //! - A face whose one loop is two lines or two coaxial arcs joined end to end by two lines is a
 //!   ruled strip, a prism's side, straight or drafted. The strips that share their rulings are read
 //!   one way along them, so a box is a prism one way of the three.
+//! - A face over part of a turn sharing a circle with a face read about that circle's axis — a part
+//!   of a drum's, a cone's, a ball's or a ring's surface beside it, or a plane square to the axis —
+//!   is read about it before any face is read as a strip, whatever its loop (#721 F1d): the faces
+//!   of one turn read alike.
 //! - A face of revolution a Boolean trims to part of a turn is its surface's whole turn, and a
 //!   plane sharing a circle with a revolution a flat of it (one about each axis it shares a circle
-//!   with): every face is kept whole, the material telling the face from the rest, as the tool
-//!   keeps the faces a Boolean hides (`Tool`).
+//!   with, from its centre where its loops wind about it): every face is kept whole, the material
+//!   telling the face from the rest, as the tool keeps the faces a Boolean hides (`Tool`).
 //! - Any other plane is a cap.
 //!
-//! Corners are where two faces read share an edge at the ends of their meridians or edges, creases
-//! where two strips share a rim and their rulings go on across it; each revolution about an axis
-//! starts from the half-plane the first face about it does. Faces a Boolean cuts from one surface
-//! read alike are kept once (`once_a_surface`). The material is the boundary's own (`Boundary`),
-//! its side at a corner the corner's pseudo-normal's. What no reading takes is refused by its
-//! geometry, naming the face and a point of it (`Unread`).
+//! Corners are where two faces read share an edge at the ends of their meridians or edges, or along
+//! a ring partway along a face of revolution's meridian (#721 F1d), creases where two strips share
+//! a rim and their rulings go on across it; each revolution's chart starts where its own surface's
+//! frame does, nothing the sweep reads depending on where (#721 F1d). Faces a Boolean cuts from one
+//! surface are read once, over the span of its meridian they reach (`once_a_surface`). The material
+//! is the boundary's own (`Boundary`), its side at a corner the corner's pseudo-normal's. What no
+//! reading takes is refused by its geometry, naming the face and a point of it (`Unread`).
 //!
-//! The classes read the tool this way (#721 F1b: the solver's `SweepContacts::read`); the drawing's
-//! reading stays beside it only as an oracle (`SweepContacts::drawn`), and `tests/tool_reading.rs`
-//! holds the two readings to one tool.
+//! The classes read the tool this way (#721 F1b: the solver's `SweepContacts::read`), and
+//! `tests/tool_reading.rs` holds the reading to its own B-rep and to the drawing's field; the
+//! drawing's reading of the tool, its oracle while the classes switched, is retired (#721 F1c).
 use crate::util::fmath::Det;
 use crate::geom::{Curve,Frame,Surface,Uv};
 use crate::query::{Located,Place};
@@ -82,7 +87,7 @@ impl Tool {
         if !(scale > 0. && scale.is_finite()) { return Err(Unread::Boundary(format!("a scale of {scale}"))) }
         let size = b.size();
         let tol = 1e-7*(1.+size);
-        let reader = Reader {b,tol,uses:b.uses(),axes:Default::default(),parameters:vec![Default::default();b.faces.len()]};
+        let reader = Reader {b,tol,uses:b.uses(),parameters:vec![Default::default();b.faces.len()]};
         let order: Vec<usize> = (0..b.faces.len()).filter(|&fi| !matches!(b.faces[fi].surface,Surface::Plane(_)))
             .chain((0..b.faces.len()).filter(|&fi| matches!(b.faces[fi].surface,Surface::Plane(_)))).collect();
         let witness = |fi: usize| reader.witness(fi).map(|x| x/scale);
@@ -91,8 +96,35 @@ impl Tool {
         // strips (again those curved first, whose rulings are their own), then what is left
         let mut read: Vec<Option<Read>> = vec![None;b.faces.len()];
         for &fi in &order { read[fi] = reader.revolved(fi,false).map(Read::Revolved) }
+        // each face's readings as a strip, where it has none yet
         let options: Vec<Vec<Strip>> = (0..b.faces.len())
             .map(|fi| if read[fi].is_some() { Vec::new() } else { reader.strips(fi) }).collect();
+        // and a face over part of a turn no strip reading takes — a ball's, a ring's, a revolution of
+        // an arc — which is its surface's whole turn whatever reads its neighbours
+        for &fi in &order {
+            if read[fi].is_none() && !matches!(b.faces[fi].surface,Surface::Plane(_)) && options[fi].is_empty() {
+                read[fi] = reader.revolved(fi,true).map(Read::Revolved)
+            }
+        }
+        // a face over part of a turn sharing a circle with a face read about that circle's axis — a
+        // part of a drum's, a cone's, a ball's or a ring's surface beside it, or a plane square to the
+        // axis — is read about the same axis, as a revolution whatever its loop, before any face is
+        // read as a strip: the faces of one turn are read alike, and meet at corners along their
+        // meridians (#721 F1d: a part-cylinder's kind no longer its loop's). A strip's rim lies along
+        // a ring only about the strip's own axis, so no strip meets a face of revolution at a ring.
+        let mut more: Vec<(usize,Read)> = Vec::new();
+        loop {
+            let mut found = false;
+            for &fi in &order {
+                if read[fi].is_some() { continue }
+                if matches!(b.faces[fi].surface,Surface::Plane(_)) {
+                    found |= reader.read_flats(fi,&mut read,&mut more);
+                } else if let Some(s) = reader.revolved(fi,true).filter(|s| reader.beside(fi,s,&read)) {
+                    read[fi] = Some(Read::Revolved(s)); found = true
+                }
+            }
+            if !found { break }
+        }
         for &seed in &order {
             if read[seed].is_some() { continue }
             let Some(s) = options[seed].iter().find(|s| reader.fits(s,seed,&read)).cloned() else { continue };
@@ -111,8 +143,8 @@ impl Tool {
                 }
             }
         }
-        // a face of revolution over part of a turn that is no strip — a ball's, a ring's or a drum's
-        // a Boolean of the tool trims — is its surface's whole turn over the face's span of its
+        // a face of revolution over part of a turn that no strip reading fits — a drum's a Boolean
+        // of the tool trims — is its surface's whole turn over the face's span of its
         // meridian, the material telling the face from the rest of the turn, as every face a
         // Boolean hides is kept
         for fi in 0..b.faces.len() {
@@ -124,15 +156,9 @@ impl Tool {
         // (one about each axis it shares a circle with: a plane two crowns about two axes stand on
         // is a flat of each)
         // (a cap reads only the strips beside it, a flat only the revolutions: one pass reads both)
-        let mut more: Vec<(usize,Read)> = Vec::new();
         for fi in 0..b.faces.len() {
             if read[fi].is_some() { continue }
-            let mut flats = reader.flats(fi,&read).into_iter().map(Read::Revolved);
-            if let Some(flat) = flats.next() {
-                read[fi] = Some(flat);
-                more.extend(flats.map(|r| (fi,r)));
-                continue
-            }
+            if reader.read_flats(fi,&mut read,&mut more) { continue }
             let f = &b.faces[fi];
             let (face,kind,at) = (joined(&f.name),f.surface.kind(),witness(fi));
             read[fi] = Some(match &f.surface {
@@ -158,12 +184,14 @@ impl Tool {
             let faces: Vec<usize> = uses.iter().map(|u| u.0).collect::<std::collections::BTreeSet<_>>()
                 .into_iter().collect();
             let e = e as u32;
+            // (the middle of the edge: a point of the corner on the tool, within both faces)
+            let at = { let edge = &reader.b.edges[e as usize]; edge.point(0.5*(edge.t[0]+edge.t[1]),&reader.b.vertices).map(|x| x/scale) };
             // a meridian closed on itself (a ring's circle turned whole) meets itself at its seam
             if let ([a],2) = (&faces[..],uses.len()) {
                 for &k in &of[*a] {
                     if let Read::Revolved(s) = &read[k].1 {
                         if reader.on_end(s,e,1.) && reader.on_end(s,e,0.) {
-                            edges.push(PatchEdge {patches:[k,k],ends:[1.,0.]})
+                            edges.push(PatchEdge {patches:[k,k],ends:[1.,0.],at})
                         }
                     }
                 }
@@ -172,7 +200,7 @@ impl Tool {
             let [a,c] = faces[..] else { continue };
             for &ka in &of[a] { for &kc in &of[c] {
                 if let (Some(ua),Some(uc)) = (reader.end_of(&read[ka].1,e),reader.end_of(&read[kc].1,e)) {
-                    edges.push(PatchEdge {patches:[ka,kc],ends:[ua,uc]});
+                    edges.push(PatchEdge {patches:[ka,kc],ends:[ua,uc],at});
                 }
             } }
             if let (Read::Strip(s),Read::Strip(t)) = (&read[a].1,&read[c].1) {
@@ -186,37 +214,88 @@ impl Tool {
     }
 }
 
-/// **One reading a surface** (#721 F1b): the faces a Boolean cuts from one surface of revolution
-/// are each read as that surface's whole turn (`Reader::revolved`), one reading the same as the
-/// next; each is kept once, the first, and the corners and creases that name the others name it,
-/// each corner once. `tol` is how near two readings' points must lie to be one surface's.
+/// **One reading a surface** (#721 F1b, F1d): the faces a Boolean cuts from one surface of
+/// revolution are each read as that surface's whole turn (`Reader::revolved`) over its own span of
+/// the meridian; they are read once, the first's reading over the span they reach together (its
+/// meridian's line or circle carried past its ends, `RevolvedSurface::over`), and the corners and
+/// creases that name the others name it, each corner's place along its meridian read on the one
+/// reading — partway along it where another face of the surface went on past it, which the walk
+/// reads (`constant_twist`'s partway corners). `tol` is how near two readings' points must lie to
+/// be one surface's.
 fn once_a_surface(faces: Vec<ToolSurface>,edges: Vec<PatchEdge>,creases: Vec<[usize;2]>,tol: f64)
     -> (Vec<ToolSurface>,Vec<PatchEdge>,Vec<[usize;2]>) {
-    // two faces of revolution alike at a grid of their charts: one surface, read alike
-    let same = |a: &ToolSurface,c: &ToolSurface| matches!((a,c),(ToolSurface::Revolved(_),ToolSurface::Revolved(_)))
-        && [0.,0.5,1.].iter().all(|&u| [0.,0.25,0.5,0.75].iter().all(|&v| match (a.at(u,v),c.at(u,v)) {
-            (Ok(p),Ok(q)) => distance(p.position,q.position) <= tol,
-            _ => false,
-        }));
-    // each reading's place among those kept: the first reading alike, else its own
-    let (mut kept,mut index): (Vec<ToolSurface>,Vec<usize>) = (Vec::new(),Vec::new());
-    for f in faces {
-        match kept.iter().position(|k| same(k,&f)) {
-            Some(j) => index.push(j),
-            None => { index.push(kept.len()); kept.push(f) }
+    let n = faces.len();
+    // each reading's first of its surface, and where its meridian's ends lie on that one's, alike
+    // wherever either chart starts (#721 F1d)
+    let mut first: Vec<usize> = (0..n).collect();
+    let mut spans: Vec<[f64;2]> = vec![[0.,1.];n];
+    for j in 0..n {
+        if let Some((i,span)) = (0..j).filter(|&i| first[i] == i).find_map(|i| one_surface(&faces[i],&faces[j],tol).map(|s| (i,s))) {
+            (first[j],spans[j]) = (i,span);
         }
     }
-    if kept.len() == index.len() { return (kept,edges,creases) }
+    // each surface's span, the hull of its readings', and its one reading over it
+    let mut hull: Vec<[f64;2]> = vec![[0.,1.];n];
+    for j in 0..n { let (i,[a,b]) = (first[j],spans[j]); hull[i] = [hull[i][0].min(a.min(b)),hull[i][1].max(a.max(b))] }
+    let mut index = vec![0;n];
+    let mut kept: Vec<ToolSurface> = Vec::new();
+    for (i,f) in faces.iter().enumerate() {
+        if first[i] != i { continue }
+        index[i] = kept.len();
+        kept.push(match f {
+            ToolSurface::Revolved(s) if hull[i] != [0.,1.] => ToolSurface::Revolved(s.over(hull[i]).expect("a line's or a circle's meridian")),
+            _ => f.clone(),
+        });
+    }
+    for j in 0..n { index[j] = index[first[j]] }
+    // a reading's `u` on its surface's one reading
+    let place = |k: usize,u: f64| -> f64 {
+        let (i,[a,b]) = (first[k],spans[k]);
+        let [lo,hi] = hull[i];
+        (a+u*(b-a)-lo)/(hi-lo)
+    };
     let mut merged: Vec<PatchEdge> = Vec::new();
     for e in edges {
         let patches = e.patches.map(|k| index[k]);
-        // (a corner between two faces of the one surface is none, but a meridian's seam with itself)
+        // (a corner between two faces of the one surface is none, but a meridian's seam with itself;
+        // and each once, though the B-rep splits its circle into edges)
         if patches[0] == patches[1] && e.patches[0] != e.patches[1] { continue }
-        if merged.iter().any(|m| m.patches == patches && m.ends == e.ends) { continue }
-        merged.push(PatchEdge {patches,ends:e.ends});
+        let ends = [place(e.patches[0],e.ends[0]),place(e.patches[1],e.ends[1])].map(|u| if u.abs() <= 1e-12 { 0. }
+            else if (u-1.).abs() <= 1e-12 { 1. } else { u });
+        if merged.iter().any(|m| m.patches == patches && (0..2).all(|s| (m.ends[s]-ends[s]).abs() <= 1e-9)) { continue }
+        merged.push(PatchEdge {patches,ends,at:e.at});
     }
     let creases = creases.into_iter().map(|c| c.map(|k| index[k])).collect();
     (kept,merged,creases)
+}
+
+/// Whether reading `c` lies on reading `a`'s surface: two faces of revolution about one axis, whole
+/// turns, `c`'s meridian on `a`'s line or circle and their charts' normals (each the face's
+/// outward one) the same way there; where it does, the parameters of `a`'s meridian, carried past
+/// its ends, at `c`'s meridian's two ends.
+fn one_surface(a: &ToolSurface,c: &ToolSurface,tol: f64) -> Option<[f64;2]> {
+    let (ToolSurface::Revolved(a),ToolSurface::Revolved(c)) = (a,c) else { return None };
+    let (x,y) = (a.axis_direction(),c.axis_direction());
+    if norm(cross(x,y)) > 1e-9 || a.sweep().abs() != c.sweep().abs() { return None }
+    if a.polar(c.origin())?[0] > tol { return None }
+    // `a`'s meridian at `t`, past its ends too
+    let on = |t: f64| a.over([t,t+1.]).and_then(|s| s.at(0.,0.).ok());
+    let mut ts = [0.;5];
+    for (k,u) in [0.,0.25,0.5,0.75,1.].into_iter().enumerate() {
+        let p = c.at(u,0.).ok()?;
+        let t = a.meridian_param(p.position)?;
+        let (q,r) = (a.polar(on(t)?.position)?,a.polar(p.position)?);
+        if (q[0]-r[0]).abs() > tol || (q[1]-r[1]).abs() > tol { return None }
+        ts[k] = t;
+    }
+    // the parameter runs along `c`'s alike (a line's or a circle's, each at one pace)
+    let span = (ts[4]-ts[0]).abs().max(1e-300);
+    if (0..5).any(|k| (ts[0]+(ts[4]-ts[0])*k as f64/4.-ts[k]).abs() > 1e-6*span) { return None }
+    // and the face is outward on it as on `a`'s
+    let p = c.at(0.5,0.).ok()?;
+    let q = a.over([ts[2],ts[2]+1.])?.at(0.,a.turn_of(p.position)?).ok()?;
+    if dot(cross(p.du,p.dv),cross(q.du,q.dv)) <= 0. { return None }
+    Some([ts[0],ts[4]])
 }
 
 /// A face as read, in the boundary's units: a face of revolution, a ruled strip, or a cap.
@@ -257,14 +336,12 @@ impl Read {
 #[derive(Clone,Debug)]
 struct Strip { edge: Edge,side: Side,rulings: [u32;2],rims: [u32;2],bases: [u32;2],along: V }
 
-/// What reads a boundary: it, the tolerance its points are matched to, each edge's uses, the axes
-/// its revolutions turn about, each with a point of it and the half-plane they start from
-/// (`start`), and each face's parameters.
+/// What reads a boundary: it, the tolerance its points are matched to, each edge's uses, and each
+/// face's parameters.
 struct Reader<'a> {
     b: &'a Brep,
     tol: f64,
     uses: Vec<Vec<(usize,usize,usize)>>,
-    axes: std::cell::RefCell<Vec<(V,V,V)>>,
     /// Each face's parameters (`parameters`), read once.
     parameters: Vec<std::cell::OnceCell<[[f64;2];2]>>,
 }
@@ -395,25 +472,60 @@ impl Reader<'_> {
         let f = &self.b.faces[fi];
         let Surface::Plane(frame) = &f.surface else { return Vec::new() };
         let mut axes: Vec<V> = Vec::new();
-        for c in f.loops.iter().flatten() {
-            let EdgeCurve::Curve(Curve::Circle(cf,_)) = &self.b.edges[c.edge as usize].curve else { continue };
+        for cf in self.shared_circles(fi,read) {
             if norm(cross(cf.z,frame.z)) > 1e-9 || axes.iter().any(|&o| distance(o,cf.o) <= 1e2*self.tol) { continue }
-            if self.uses[c.edge as usize].iter().any(|&(g,_,_)| g != fi && matches!(&read[g],Some(Read::Revolved(s))
-                if norm(cross(s.axis_direction(),cf.z)) <= 1e-9 && norm(cross(sub(s.origin(),cf.o),cf.z)) <= 1e2*self.tol)) {
-                axes.push(cf.o)
-            }
+            axes.push(cf.o)
         }
         axes.into_iter().filter_map(|axis| {
             let (mut inner,mut outer) = (f64::INFINITY,0_f64);
-            for c in f.loops.iter().flatten() {
-                let e = &self.b.edges[c.edge as usize];
-                for k in 0..=32 {
-                    let r = distance(e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/32.,&self.b.vertices),axis);
-                    (inner,outer) = (inner.min(r),outer.max(r));
+            // (and how many times the loops wind about the axis, walked as they run: a face that
+            // holds the axis's point reaches it, whatever radius its loops' nearest point is at)
+            let mut winding = 0.;
+            for l in &f.loops {
+                let mut last: Option<f64> = None;
+                for c in l {
+                    let e = &self.b.edges[c.edge as usize];
+                    for k in 0..=32 {
+                        let s = k as f64/32.;
+                        let t = if c.reversed { e.t[1]-(e.t[1]-e.t[0])*s } else { e.t[0]+(e.t[1]-e.t[0])*s };
+                        let q = sub(e.point(t,&self.b.vertices),axis);
+                        let r = norm(q);
+                        (inner,outer) = (inner.min(r),outer.max(r));
+                        let angle = dot(q,frame.y).datan2(dot(q,frame.x));
+                        if let Some(a) = last { winding += (angle-a+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI }
+                        last = Some(angle);
+                    }
                 }
             }
-            if inner <= 1e2*self.tol { inner = 0. }
+            if inner <= 1e2*self.tol || winding.abs() > std::f64::consts::PI { inner = 0. }
             self.flat(fi,frame,axis,[inner,outer])
+        }).collect()
+    }
+
+    /// Plane face `fi` read as its flats (`flats`), where it is any: the first its reading, the rest
+    /// readings beyond it (`more`).
+    fn read_flats(&self,fi: usize,read: &mut [Option<Read>],more: &mut Vec<(usize,Read)>) -> bool {
+        let mut flats = self.flats(fi,read).into_iter().map(Read::Revolved);
+        let Some(flat) = flats.next() else { return false };
+        read[fi] = Some(flat);
+        more.extend(flats.map(|r| (fi,r)));
+        true
+    }
+
+    /// Whether face `fi`, read as `s`, shares a circle about `s`'s axis with a face already read as
+    /// a revolution about it.
+    fn beside(&self,fi: usize,s: &RevolvedSurface,read: &[Option<Read>]) -> bool {
+        self.shared_circles(fi,read).iter().any(|cf| norm(cross(cf.z,s.axis_direction())) <= 1e-9
+            && s.polar(cf.o).is_some_and(|q| q[0] <= 1e2*self.tol))
+    }
+
+    /// The circles of face `fi`'s loops it shares with a face already read as a revolution about
+    /// the circle's axis, each its frame.
+    fn shared_circles(&self,fi: usize,read: &[Option<Read>]) -> Vec<Frame> {
+        self.b.faces[fi].loops.iter().flatten().filter_map(|c| {
+            let EdgeCurve::Curve(Curve::Circle(cf,_)) = &self.b.edges[c.edge as usize].curve else { return None };
+            self.uses[c.edge as usize].iter().any(|&(g,_,_)| g != fi && matches!(&read[g],Some(Read::Revolved(t))
+                if norm(cross(t.axis_direction(),cf.z)) <= 1e-9 && t.polar(cf.o).is_some_and(|q| q[0] <= 1e2*self.tol))).then_some(*cf)
         }).collect()
     }
 
@@ -538,14 +650,21 @@ impl Reader<'_> {
     fn end_of(&self,r: &Read,e: u32) -> Option<f64> {
         match r {
             Read::Strip(s) => s.rulings.iter().position(|&x| x == e).map(|i| i as f64),
-            Read::Revolved(s) => [0.,1.].into_iter().find(|&u| self.on_end(s,e,u)),
+            // (or a ring partway along its meridian, where a Boolean cuts the face there over part
+            // of its turn: the walk reads the corner there, #721 F1d)
+            Read::Revolved(s) => [0.,1.].into_iter().find(|&u| self.on_end(s,e,u)).or_else(|| {
+                let edge = &self.b.edges[e as usize];
+                let EdgeCurve::Curve(curve) = &edge.curve else { return None };
+                let u = s.meridian_param(curve.point(0.5*(edge.t[0]+edge.t[1])))?;
+                (u > 1e-9 && u < 1.-1e-9 && self.on_end(s,e,u)).then_some(u)
+            }),
             Read::Cap {..} => None,
         }
     }
 }
 
 impl Reader<'_> {
-    /// Whether edge `e` lies along the circle the end `u` of `s`'s meridian turns.
+    /// Whether edge `e` lies along the circle the meridian of `s` turns at `u` (an end, or partway).
     fn on_end(&self,s: &RevolvedSurface,e: u32,u: f64) -> bool {
         let edge = &self.b.edges[e as usize];
         let EdgeCurve::Curve(curve) = &edge.curve else { return false };
@@ -561,20 +680,12 @@ impl Reader<'_> {
 }
 
 impl Reader<'_> {
-    /// **A revolution's axis, set as every revolution about it reads it**: its direction, and the
-    /// direction square to it (a face's meridian is laid from a point of the axis its own, along
-    /// that direction) every revolution's meridian about it starts from —
-    /// the first face's about that line, its frame's `x` (for a face a revolution built, its
-    /// profile's half-plane) — so faces about one axis share their charts' start, where the walk
-    /// reads two faces' corner (`Tool::corner`) and where it starts round a ring.
-    fn start(&self,f: &Frame) -> (V,V) {
-        let mut axes = self.axes.borrow_mut();
-        for &(o,a,x) in axes.iter() {
-            if norm(cross(a,f.z)) <= 1e-9 && norm(cross(sub(f.o,o),a)) <= 1e2*self.tol { return (a,x) }
-        }
-        axes.push((f.o,f.z,f.x));
-        (f.z,f.x)
-    }
+    /// **Where a revolution about `f`'s axis starts its chart**: its axis, and the direction
+    /// square to it its meridian is laid along from a point of the axis, the frame's own `x`. Each
+    /// face starts where its own surface's frame does, since nothing the sweep reads depends on
+    /// where a chart starts (#721 F1d: `Tool::corner` probes a corner's second face at the first's
+    /// half-plane, and the walk crosses from face to face by position).
+    fn start(&self,f: &Frame) -> (V,V) { (f.z,f.x) }
 }
 
 /// **A tool's material read from its boundary**: below nought within it and above without, the

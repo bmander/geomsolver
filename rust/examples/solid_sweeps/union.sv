@@ -1,8 +1,9 @@
 // A wheel of two beads slid along a rod: two tori on one axis, overlapping, united into one cutter
 // and slid up the rod from clear below to clear above, as `slide.sv`'s wheel is. Where the beads
-// meet, the cutter's profile turns inward, a crease no one tool's characteristic runs over; but a
-// sweep of a union is the union of its members' sweeps, under the same motion over the same roll,
-// so the groove is each bead's groove, each the slide's own and built exactly (#684 C). Square to
+// meet, the cutter's profile turns inward, a concave corner: the slide's characteristic ends there
+// on each bead and the two sheets are trimmed against each other, so the union is swept whole, as
+// the one solid it is (#721 F1d); a sweep of a union is also the union of its members' sweeps,
+// under the same motion over the same roll, and the two agree (#684 C). Square to
 // the slide each bead's shadow is its tube's circle, and the groove's section is the part of the
 // rod's disc either shadow covers (the beads' two lenses less what they share), carried the rod's
 // length: 84.35 mm³ taken from 1570.80.

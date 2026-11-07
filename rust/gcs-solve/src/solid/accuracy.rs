@@ -569,7 +569,7 @@ impl Meter {
                 s.placements.push((cut.pose,cut.pose.inverse()));
                 continue;
             }
-            let contacts = SweepContacts::read(sk,cut.swept,tol)?;
+            let contacts = SweepContacts::read(sk,cut.swept)?;
             let mut faces = Vec::new();
             for patch in contacts.patches() {
                 let super::ToolSurface::Revolved(patch) = patch else {
@@ -802,8 +802,9 @@ impl Meter {
         }
     }
 
-    /// Which side of the blank's boundary a direction points: +1 where the blank's field rises.
-    fn rises(field: &SpatialField,at: V,n: V,step: f64) -> f64 {
+    /// Which side of a boundary a direction points: +1 where its material (below nought within)
+    /// rises.
+    fn rises(field: &dyn super::Material,at: V,n: V,step: f64) -> f64 {
         let up = field.value(add(at,scale(n,step)));
         let down = field.value(sub(at,scale(n,step)));
         if up < down { -1. } else { 1. }
@@ -889,7 +890,8 @@ impl Meter {
         let s = pr.signed_residual;
         if s.abs() > self.options.reach { return None; }
         let f = sub(x,scale(pr.normal,s));
-        // on the cutter's own boundary, where the cutter is itself a Boolean
+        // on the cutter's own boundary, where the cutter is itself a Boolean: its material read from
+        // its B-rep (#721 F1d), not the drawing's field
         let source = sweep.contacts.source_material();
         let trim = self.options.trim;
         if source.value(f).abs() > trim { return None; }

@@ -267,3 +267,129 @@ fn a_face_no_closed_form_reads_is_refused_by_name() {
     eprintln!("{why}");
 }
 
+
+/// **A cutter of revolution is sectioned from its B-rep as from its recipe** (#721 F1d): every
+/// sweep whose tool's recipe is sectioned as revolutions (`Sectioned::read`) has its B-rep sectioned
+/// so too where it is revolutions about one line (`Sectioned::of_boundary`), the two sections at
+/// several half-planes one region — the same area, and every point of a grid over it in both or
+/// in neither, read in space — a cutter of revolutions about parallel lines (a spiral bevel's, a
+/// hypoid's) too, sectioned half-plane by half-plane. Returns how many cutters were held, and how
+/// many the B-rep did not section (each named).
+fn sections_alike(within: impl Fn(&str) -> bool) -> (usize,usize) {
+    let (mut held,mut refused) = (0,0);
+    for name in fixtures::example_names().into_iter().filter(|n| within(n)) {
+        let Some(e) = fixtures::example(&name) else { continue };
+        if !e.sketch.solids.iter().any(|s| matches!(s.def,SolidDef::Swept {..})) { continue }
+        let mut sk = e.sketch.clone();
+        gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
+        let (h,r) = sketch_sections_alike(&name,&sk);
+        (held,refused) = (held+h,refused+r);
+    }
+    (held,refused)
+}
+
+/// `sections_alike` of one solved drawing's sweeps.
+fn sketch_sections_alike(name: &str,sk: &gcs_core::model::Sketch) -> (usize,usize) {
+    use gcs_core::brep::section::Sectioned;
+    let (mut held,mut refused) = (0,0);
+    {
+        for swept in 0..sk.solids.len() {
+            let SolidDef::Swept {source,..} = &sk.solids[swept].def else { continue };
+            let what = format!("{name}: `{}`",sk.solids[swept].name);
+            let Ok(recipe) = cad::recipe(sk,*source as usize) else { continue };
+            let Ok(drawn) = Sectioned::read(&recipe) else { continue };
+            let Ok(brep) = gcs_core::brep::recipe::build(&recipe) else { continue };
+            let read = match Sectioned::of_boundary(&brep) {
+                Ok(read) => read,
+                Err(why) => { eprintln!("{what}: not sectioned from its B-rep: {why}"); refused += 1; continue }
+            };
+            assert!(norm(cross(drawn.axis,read.axis)) <= 1e-9 && norm(cross(sub(read.origin,drawn.origin),drawn.axis)) <= 1e-6,
+                "{what}: about one line");
+            let (e1,e2) = gcs_core::space::across(drawn.axis);
+            for k in 0..5 {
+                let (s,c) = (0.7+1.3*k as f64).sin_cos();
+                let side: V = std::array::from_fn(|i| c*e1[i]+s*e2[i]);
+                let (a,b) = (drawn.section(side).unwrap(),read.section(side).unwrap());
+                // each region's area by Green's theorem over its steps, exactly for lines and arcs
+                // (its own polygon is coarse, and how a Boolean splits an arc moves its chords)
+                let area = |r: &gcs_core::brep::planar::Region| r.loops.iter().flatten().map(|st| {
+                    use gcs_core::brep::planar::Seg;
+                    match (st.chart,st.seg) {
+                        (None,Seg::Line {a,b}) => 0.5*(a[0]*b[1]-b[0]*a[1]),
+                        (None,Seg::Arc {c,r,a0,sweep}) => {
+                            let a1 = a0+sweep;
+                            0.5*(r*r*sweep+r*(c[0]*(a1.sin()-a0.sin())-c[1]*(a1.cos()-a0.cos())))
+                        }
+                        _ => (0..4096).map(|i| { let (p,q) = (st.point(i as f64/4096.),st.point((i+1) as f64/4096.)); 0.5*(p[0]*q[1]-q[0]*p[1]) }).sum(),
+                    }
+                }).sum::<f64>().abs();
+                let (x,y) = (area(&a),area(&b));
+                assert!((x-y).abs() <= 1e-6*x.max(1.),"{what}: the section's area {y} from the B-rep, {x} from the recipe");
+                // a grid over the recipe's section, each point read in the B-rep's section's coordinates
+                let points: Vec<[f64;2]> = a.loops.iter().flatten().flat_map(|st| (0..8).map(move |i| st.point(i as f64/8.))).collect();
+                let lo = points.iter().fold([f64::INFINITY;2],|m,p| [m[0].min(p[0]),m[1].min(p[1])]);
+                let hi = points.iter().fold([f64::NEG_INFINITY;2],|m,p| [m[0].max(p[0]),m[1].max(p[1])]);
+                for i in 0..=20 { for j in 0..=20 {
+                    let p = [lo[0]+(hi[0]-lo[0])*(i as f64+0.37)/21.,lo[1]+(hi[1]-lo[1])*(j as f64+0.61)/21.];
+                    let at: V = std::array::from_fn(|m| drawn.origin[m]+p[0]*side[m]+p[1]*drawn.axis[m]);
+                    let q = [p[0],dot(sub(at,read.origin),read.axis)];
+                    assert_eq!(a.contains(p),b.contains(q),"{what}: the point {at:?} of the half-plane toward {side:?}");
+                } }
+            }
+            held += 1;
+        }
+    }
+    (held,refused)
+}
+
+#[test]
+fn the_catalogues_cutters_of_revolution_section_from_their_boundaries() {
+    let (held,refused) = sections_alike(|name| name.starts_with("solid_sweeps/"));
+    eprintln!("{held} cutters of revolution sectioned alike, {refused} not sectioned from the B-rep");
+    assert!(held >= 5 && refused == 0,"{held} held, {refused} refused");
+}
+
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, every example's cutters of revolution")]
+fn every_examples_cutters_of_revolution_section_from_their_boundaries() {
+    let (held,refused) = sections_alike(|_| true);
+    eprintln!("{held} cutters of revolution sectioned alike, {refused} not sectioned from the B-rep");
+    assert!(held >= 40 && refused == 0,"{held} held, {refused} refused");
+}
+
+/// **The Wankel's bore is carried into its B-rep exactly** (#721 F1d): the bore is the apex's path
+/// under the shaft's turn seen from the housing's — a point's envelope under turns — so the housing's
+/// recipe writes it as that path's terms (`generate::point_path`, a `trochoid` edge in two halves),
+/// and its B-rep's chamber wall is the extrusion of that curve (`geom::Curve::Trochoid`), not a fit:
+/// the curve's points are the drawing's bore's at every roll to 1e-9 mm.
+#[test]
+fn the_wankels_bore_is_carried_into_its_brep_exactly() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    let e = fixtures::example("wankel/wankel.sv").expect("the Wankel");
+    let mut sk = e.sketch.clone();
+    gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
+    let swept = sk.solids.iter().position(|s| matches!(s.def,SolidDef::Swept {..})).expect("a sweep");
+    let SolidDef::Swept {source,..} = &sk.solids[swept].def else { unreachable!() };
+    let b = gcs_core::brep::recipe::build(&cad::recipe(&sk,*source as usize).unwrap()).unwrap();
+    let walls: Vec<&gcs_core::brep::trochoid::Trochoid> = b.faces.iter().filter_map(|f| match &f.surface {
+        Surface::Extrusion(_,c) => match &**c { Curve::Trochoid(t) => Some(&**t),_ => None },
+        _ => None,
+    }).collect();
+    assert!(!walls.is_empty(),"the chamber's wall an extrusion of the bore's path");
+    let bore = e.map.ent_named("bore").unwrap().i();
+    let (a,b_) = sk.curve_domain(bore);
+    let basis = sk.curve_view(bore).map_or_else(gcs_core::plane::Basis::page,|v| sk.basis(v));
+    let mm = cad::millimetres(&sk);
+    let mut worst = 0f64;
+    for k in 0..=200 {
+        let t = a+(b_-a)*k as f64/200.;
+        let (x,y) = sk.curve_point(bore,t);
+        let drawn = basis.lift(x,y).map(|v| v*mm);
+        let near = walls.iter().map(|w| { let p = w.point(t.clamp(w.span[0].min(w.span[1]),w.span[0].max(w.span[1])));
+            // (each half its own stretch; the other's point is far)
+            let q = [p[0],p[1],drawn[2]]; norm(sub(q,drawn)) }).fold(f64::INFINITY,f64::min);
+        worst = worst.max(near);
+    }
+    eprintln!("the bore's path within {worst:.3e} mm of the drawing's at 201 rolls");
+    assert!(worst <= 1e-9,"{worst}");
+}

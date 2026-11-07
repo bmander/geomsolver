@@ -46,8 +46,10 @@ fn the_housing_is_its_case_less_the_bore() {
     built.solid.check(1e-9).unwrap();
     let v = brep::props::volume(&built.solid);
     let want = PI*((R+4.*E).powi(2)-(R*R+3.*E*E))*(W+2.);
-    // the bore fitted within `FIT_MM` along its length, over the case's height
-    assert!((v-want).abs() <= 2.*PI*R*1.1*(W+2.)*gcs_core::solid::cad::FIT_MM,"{v} against {want}");
+    // the bore carried into the B-rep exactly, the path of the apex under the turns (#721 F1d): the
+    // housing's volume its closed form's, to rounding
+    eprintln!("the housing {v} against {want}: {:.2e}",(v-want).abs()/want);
+    assert!((v-want).abs() <= 1e-9*want,"{v} against {want}");
 }
 
 #[test]
@@ -85,8 +87,10 @@ fn each_planar_row_names_what_it_refuses() {
     let r = refused(&edit("some t in (0deg, 1080deg): p in housing",
                           "some t in (0deg, 720deg): p in housing"),&[]);
     assert_eq!(r.condition,admission::Condition::Period,"{r}");
-    // P5: a case too small, its wall reaching the blank as it turns
-    let r = refused(&edit("radius(R + 4 * e) rim","radius(R + e) rim"),&[]);
+    // P5: a blank too large, reaching the case's outer wall as it turns. (A case shrunk to the
+    // bore's reach is no negative control now the bore is carried exactly: its rim touches the bore
+    // at the apexes, a tangency the housing's Boolean refuses at T1 by name, #721 F1d.)
+    let r = refused(&edit("radius(R + e) blank_rim","radius(R + 4 * e) blank_rim"),&[]);
     assert_eq!(r.condition,admission::Condition::Wall,"{r}");
     assert!(r.witness.is_some());
     assert!(r.to_string().contains("planar generating class"),"{r}");
