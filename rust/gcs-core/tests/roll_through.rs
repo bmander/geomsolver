@@ -89,7 +89,7 @@ fn every_reader_reads_one_roll() {
     let e = read(&balls("(3, 0, 0)", "under: turn"));
     let removal = crate::common::ent(&e, "removal").i();
     let roll = solid::roll::interval(&e.sketch, removal).unwrap();
-    let contacts = solid::SweepContacts::read(&e.sketch, removal, 1e-10).unwrap();
+    let contacts = solid::SweepContacts::read(&e.sketch, removal).unwrap();
     assert_eq!(contacts.domain(), roll);
     let field = solid::MaterialField::read(&e.sketch, removal, 1e-10).unwrap();
     let material = |t: f64| {
@@ -244,7 +244,7 @@ fn the_pair_at_ten_teeth_is_admitted_with_no_roll_stated() {
         };
         let blank = solid::SpatialField::read(sk, blank, 1e-10).unwrap();
         let family = gcs_core::motion::Family::read(sk, *motion as usize).unwrap();
-        let contacts = solid::SweepContacts::read(sk, removal, 1e-10).unwrap();
+        let contacts = solid::SweepContacts::read(sk, removal).unwrap();
         let tool = contacts.source_material();
         let mut surface = Vec::new();
         for s in contacts.patches() {

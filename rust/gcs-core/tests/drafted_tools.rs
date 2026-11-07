@@ -180,7 +180,7 @@ fn a_drafted_rack_tooth_cuts_a_narrowing_space() {
 fn a_rack_tooth_drafted_both_ways_cuts_a_space_widest_at_its_parting_plane() {
     let e = fixtures::read(&parted_space("2deg"));
     assert!(matches!(crate::solid_sweeps_examples::class(&e,"gear"),Class::Generating),"the generating class");
-    let contacts = SweepContacts::read(&e.sketch,fixtures::solid(&e,"space"),1e-10).unwrap();
+    let contacts = SweepContacts::read(&e.sketch,fixtures::solid(&e,"space")).unwrap();
     // read from its B-rep (#721 F1b), its two caps beside its sides
     let caps = contacts.patches().iter().filter(|p| matches!(p,ToolSurface::Cap(_))).count();
     assert_eq!((contacts.patches().len()-caps,caps,contacts.creases().len()),(8,2,4),"each side two halves, folding between them");
@@ -232,7 +232,7 @@ rack slides(2 * pi * 20mm) pitch_line
 construction space := solid({ p | some t in (-60deg, 60deg): p in slot at(under: rack, seen_from: turn) t })
 ";
     let e = fixtures::read(src);
-    let contacts = SweepContacts::read(&e.sketch,fixtures::solid(&e,"space"),1e-10).unwrap();
+    let contacts = SweepContacts::read(&e.sketch,fixtures::solid(&e,"space")).unwrap();
     let mut names: Vec<&str> = contacts.patches().iter().filter(|s| !matches!(s,ToolSurface::Cap(_))).map(|s| s.name()).collect();
     names.sort();
     assert_eq!(names,["slot.east","slot.lower","slot.upper","slot.west"]);

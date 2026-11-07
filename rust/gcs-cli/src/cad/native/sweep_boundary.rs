@@ -278,7 +278,7 @@ impl SweptCut {
         let recipe = cad::recipe(sk,*source as usize).at(Stage::Clearance)?;
         let family = Family::read(sk,*motion as usize).at(Stage::Clearance)?;
         let limits = gcs_core::solid::roll::interval(sk,swept).at(Stage::Clearance)?;
-        let contacts = SweepContacts::read(sk,swept,cad::AXIS_TOLERANCE);
+        let contacts = SweepContacts::read(sk,swept);
         Ok(SweptCut {name,scale,recipe,family,limits,contacts})
     }
 }

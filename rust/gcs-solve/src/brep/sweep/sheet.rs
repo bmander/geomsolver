@@ -64,7 +64,7 @@ impl SweptCut {
         let recipe = cad::recipe(sk,*source as usize).at(Stage::Clearance)?;
         let family = Family::read(sk,*motion as usize).at(Stage::Clearance)?;
         let limits = crate::solid::roll::interval(sk,swept).at(Stage::Clearance)?;
-        let contacts = SweepContacts::read(sk,swept,cad::AXIS_TOLERANCE);
+        let contacts = SweepContacts::read(sk,swept);
         // a member of a union tool's faces are named by their routes in the union (#684 C)
         let SolidDef::Swept {source:tool,..} = sk.solids[crate::solid::distributed::union_of(sk,swept)].def else {
             unreachable!("a member's union is a sweep")

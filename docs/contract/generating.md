@@ -490,13 +490,18 @@ the planar subtraction class's now, before the constant twist's rows, each to th
 was cut to before; a box rolled by two turns about parallel axes and a stepped disc's concave
 corner, which the generating rows refuse at M2 and T2, are that class's in their place
 (`admission::a_prism_whose_cap_passes_through_the_blank_is_planar_subtractions`,
-`a_concave_corner_carried_through_the_blank_is_planar_subtractions`).  What F1d keeps open stays so:
-cutters of revolutions and drafted prisms sectioned off the recipe (`Cutter::read`), the pocket's
-curve, `SweepContacts::read`'s field of the source, and the walk's concave corners.  The gate is
+`a_concave_corner_carried_through_the_blank_is_planar_subtractions`).  What F1d keeps open is below.  The gate is
 `tests/swept_dispatch.rs`, in the kernel alone: a drum built as a disc's prism and as a rectangle's
 revolution dispatched alike, the region each sweeps through a block one to 1e-9
 (`a_drum_drawn_two_ways_is_one_tool_to_the_dispatch`); a ball the canal's, turned or slid; a tool
 with no B-rep refused at T1 in the drawing's words.
+
+**What F1b left (#721 F1d).**  *The drawing's field:* `SweepContacts::read` reads no field of the
+drawing: the tool's material is its B-rep's (`read::Boundary`), and the accuracy meter trims a
+generated foot to the cutter's own boundary, and reads which way it faces, by that material
+(`SweepContacts::source_material`), not by the source's `SpatialField`.  It takes no axis tolerance
+for that reason.  (The planar class's stock is still the drawing's field while its pocket is the
+drawing's, below.)
 
 **The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
 every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding

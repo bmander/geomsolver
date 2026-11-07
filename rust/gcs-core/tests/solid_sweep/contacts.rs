@@ -15,7 +15,7 @@ fn swept(extra: &str) -> program::Elaborated {
 #[test]
 fn source_contacts_of_an_orbiting_sphere_are_the_exact_torus() {
     let e = swept("");
-    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i()).unwrap();
     assert_eq!(sweep.patches().len(),1,"the axis diameter is not a boundary face");
     for u in [0.1,0.3,0.5,0.7,0.9] { for t in [-0.7,0.,0.7] {
         let contacts = at(&sweep,0,u,t,1e-10).unwrap();
@@ -33,7 +33,7 @@ fn source_contacts_of_an_orbiting_sphere_are_the_exact_torus() {
 #[test]
 fn contact_coefficients_include_translation_and_both_moving_frames() {
     let e = swept("");
-    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i()).unwrap();
     let surface = &sweep.patches()[0];
     let (mut checked,mut empty) = (0,0);
     for u in [0.15,0.35,0.5,0.65,0.85] { for t in [-0.4,0.,0.3] {
@@ -69,8 +69,8 @@ fn source_placements_and_boolean_sharing_preserve_contact_geometry() {
     // the tool is read from its B-rep (#721 F1b, F1c): the two balls part, so the lens is empty and
     // its B-rep has no face to read; their union is two faces, one a ball, each placed where it stands
     let swept = e.map.ent_named("swept").unwrap().i();
-    assert!(SweepContacts::read(&e.sketch,swept,1e-10).unwrap_err().contains("the tool has no face"));
-    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("pair").unwrap().i(),1e-10).unwrap();
+    assert!(SweepContacts::read(&e.sketch,swept).unwrap_err().contains("the tool has no face"));
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("pair").unwrap().i()).unwrap();
     assert_eq!(sweep.patches().len(),2,"each ball's face once");
     let mut centers = Vec::new();
     for (i,patch) in sweep.patches().iter().enumerate() {
@@ -108,14 +108,14 @@ fn restricted_spans_empty_rings_and_topology_events_are_distinguished() {
     assert!((sweep_span(&e)-2.*PI/3.).abs() < 1e-12);
 }
 fn sweep_span(e: &program::Elaborated) -> f64 {
-    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i()).unwrap();
     let [lo,hi] = sweep.domain(); hi-lo
 }
 
 #[test]
 fn analytic_branch_labels_do_not_swap_at_the_periodic_seam() {
     let e = swept("");
-    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i()).unwrap();
     let patch = &sweep.patches()[0];
     let mut previous: Option<[[f64;3];2]> = None;
     for i in -10..=10 {
@@ -141,7 +141,7 @@ fn clockwise_source_revolution_keeps_the_same_contact_set() {
     let b = read(&format!("{}\nswept := solid({{ p | some t in (-60deg, 60deg): p in tool at(under: generating) t }})\n",
         SOURCE.replace("about: diameter)","about: diameter, from: -360deg, to: 0deg)")));
     let read = |e: &program::Elaborated| SweepContacts::read(&e.sketch,
-        e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+        e.map.ent_named("swept").unwrap().i()).unwrap();
     let (a,b) = (read(&a),read(&b));
     // (each read from its B-rep, its meridian run whichever way its face's outward normal says: the
     // ring at `u` of the one is the other's at `u` or at `1 - u`)

@@ -45,7 +45,7 @@ fn a_flank_offset_reads_as_its_offset() {
     let sk = &e.sketch;
     let recipe = cad::recipe_static(sk,body).unwrap();
     let cut = &recipe.sweeps[5];
-    let contacts = SweepContacts::read(sk,cut.swept,cad::AXIS_TOLERANCE).unwrap();
+    let contacts = SweepContacts::read(sk,cut.swept).unwrap();
     let mut points = Vec::new();
     for (k,patch) in contacts.patches().iter().enumerate() {
         let [v0,v1] = patch.domain()[1];

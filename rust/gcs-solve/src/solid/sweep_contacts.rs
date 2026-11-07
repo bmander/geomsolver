@@ -1,7 +1,7 @@
 //! The contacts of a continuous sweep's tool: the tool read from the B-rep the kernel builds of it
-//! (#721 F1b), its motion and roll from the swept-solid definition. The drawing's own reading of the
-//! tool, the oracle the B-rep reading was held to while the classes switched, is retired (#721 F1c).
-use super::SpatialField;
+//! (#721 F1b), its material that boundary's (#721 F1d), its motion and roll from the swept-solid
+//! definition. The drawing's own reading of the tool, the oracle the B-rep reading was held to while
+//! the classes switched, is retired (#721 F1c), and so is its field (#721 F1d).
 use crate::{model::{Sketch,SolidDef},motion::Family};
 
 type V = [f64;3];
@@ -10,16 +10,11 @@ type V = [f64;3];
 /// is read here is the drawing they are read off.
 pub use crate::brep::swept::tool::{CapSurface,ExtrudedSurface,Material,PatchEdge,Tool,ToolSurface};
 
-impl Material for SpatialField {
-    fn value(&self,p: V) -> f64 { SpatialField::value(self,p) }
-}
-
 /// The faces of a continuous sweep's tool and the edges between them, with the motion that carries
-/// them. Every source face is retained, including faces hidden by source Booleans; the source
-/// material is what rejects hidden portions.
+/// them. Every source face is retained, including faces hidden by source Booleans; the tool's
+/// material, its boundary's (`read::Boundary`), is what rejects hidden portions.
 #[derive(Clone,Debug)]
 pub struct SweepContacts {
-    pub(super) source: std::sync::Arc<SpatialField>,
     /// The tool as the kernel reads it: its faces, where adjacent faces meet, where a drafted
     /// prism's sides fold, and its material.
     pub(super) tool: Tool,
@@ -41,39 +36,28 @@ use crate::brep::swept::admission::Lone;
 impl SweepContacts {
     /// **The sweep `solid`'s tool read from its B-rep** (#721 F1b): the boundary the kernel builds
     /// of the tool, read by its faces' surfaces and the edges they share (`Tool::read`), never by
-    /// how it was drawn, and its material that boundary's. A tool whose boundary has a face no
-    /// reading takes is refused, naming the face and why. The motion and the roll are the
-    /// drawing's.
-    pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
-        let drawn = Self::motion_read(sk,solid,axis_tolerance)?;
-        let SolidDef::Swept {source,..} = &sk.solids[solid].def else { unreachable!("read as a sweep") };
+    /// how it was drawn, and its material that boundary's (#721 F1d: no field of the drawing is
+    /// read). A tool whose boundary has a face no reading takes is refused, naming the face and
+    /// why. The motion and the roll are the drawing's.
+    pub fn read(sk: &Sketch,solid: usize) -> Result<Self,String> {
+        super::validate(sk,solid)?;
+        let SolidDef::Swept {source,motion,..} = &sk.solids[solid].def else {
+            return Err("contact construction requires a continuous swept solid".into());
+        };
+        // a whole turn or more sweeps what one whole turn does, a solid of revolution (#684 N): every
+        // reader of its contacts reads it once round
+        let (motion,roll) = (Family::read(sk,*motion as usize)?,super::roll::interval(sk,solid)?);
+        let once = motion.twist().and_then(|screw| super::constant_twist::once_round(&screw,roll));
         let name = &sk.solids[*source as usize].name;
         let mm = super::cad::millimetres(sk);
         let b = super::cad::tool_brep(sk,solid)?;
         let tool = Tool::read(&b,mm).map_err(|why| format!("`{name}` is read by its boundary, but {why}"))?;
         let lone = Lone::read(&b,&tool,mm).map(std::sync::Arc::new);
-        Ok(Self {tool,lone,..drawn})
+        Ok(Self {tool,motion,roll:once.unwrap_or(roll),whole:once.is_some(),lone})
     }
 
     /// The tool as one prism standing alone, where its boundary is one.
     pub fn lone(&self) -> Option<&Lone> { self.lone.as_deref() }
-
-    /// The sweep `solid` with its motion, its roll (a whole turn's once round, #684 N) and its
-    /// source's field read, and no face of its tool yet: what `read` reads the tool into.
-    fn motion_read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
-        super::validate(sk,solid)?;
-        let SolidDef::Swept {source,motion,..} = &sk.solids[solid].def else {
-            return Err("contact construction requires a continuous swept solid".into());
-        };
-        let source_field = SpatialField::read(sk,*source as usize,axis_tolerance)?;
-        // a whole turn or more sweeps what one whole turn does, a solid of revolution (#684 N): every
-        // reader of its contacts reads it once round
-        let (motion,roll) = (Family::read(sk,*motion as usize)?,super::roll::interval(sk,solid)?);
-        let once = motion.twist().and_then(|screw| super::constant_twist::once_round(&screw,roll));
-        let source = std::sync::Arc::new(source_field);
-        let tool = Tool {faces:Vec::new(),edges:Vec::new(),creases:Vec::new(),material:source.clone()};
-        Ok(Self {source,tool,motion,roll:once.unwrap_or(roll),whole:once.is_some(),lone:None})
-    }
 
     pub fn edges(&self) -> &[PatchEdge] { &self.tool.edges }
     /// The tool as the kernel reads it.
@@ -85,7 +69,8 @@ impl SweepContacts {
     /// it, ending there at `v = 1`, and the side above, starting there at `v = 0`.
     pub fn creases(&self) -> &[[usize;2]] { &self.tool.creases }
     pub fn motion(&self) -> &Family { &self.motion }
-    pub fn source_material(&self) -> &SpatialField { &self.source }
+    /// The tool's material, its boundary's (`read::Boundary`): below nought within it.
+    pub fn source_material(&self) -> &dyn Material { self.tool.material() }
     /// The roll the contacts are read over: the sweep's, or a whole turn's once round from its start.
     pub fn domain(&self) -> [f64;2] { self.roll }
     /// Whether the sweep is a whole turn or more, read once round (`domain`): it has no ends, the

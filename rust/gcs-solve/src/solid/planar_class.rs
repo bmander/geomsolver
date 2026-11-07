@@ -31,6 +31,12 @@ pub use crate::brep::swept::pocket::{Failure,Found,Pocket};
 
 type V = [f64;3];
 
+/// The stock's material as the drawing's field reads it, what the kernel's P5 reads the blank
+/// against while the pocket is read off the drawing.
+impl crate::brep::swept::tool::Material for super::SpatialField {
+    fn value(&self,p: V) -> f64 { super::SpatialField::value(self,p) }
+}
+
 /// Whether `swept`'s rows are this class's: its tool is a prism cut by a pocket. A prism alone (a
 /// rack) cuts with its sides, as the generating class's rows ask of it.
 pub fn asks(sk: &Sketch,swept: usize) -> bool {
