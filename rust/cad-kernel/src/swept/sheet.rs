@@ -277,11 +277,15 @@ impl Tolerance {
 /// sheet as the faces the cutter's faces made (#212), each a stretch of the surface between the
 /// rows where one face of the cutter meets the next (`Sheet::bands`), named by that face's path
 /// in the cutter (`outer_crown.flank`) — one face, unnamed, where the stations name none.
-pub struct Fitted { pub face: Brep,pub sheet: Sheet,pub error: f64,pub faces: Brep }
+pub struct Fitted { pub face: Brep,pub sheet: Sheet,pub error: f64,pub faces: Brep,
+    /// The faces of the other stretches' sheets, where a characteristic parts at a concave corner
+    /// into stretches whose sheets cross, each with an edge there in the blank (#721 F1d): what the
+    /// blank is split by with this one at once on one arrangement, each sheet an operand of its own.
+    pub parted: Vec<Brep> }
 
 impl Fitted {
     /// A fit whose faces are its one face.
-    pub fn whole(face: Brep,sheet: Sheet,error: f64) -> Fitted { let faces = face.clone(); Fitted {face,sheet,error,faces} }
+    pub fn whole(face: Brep,sheet: Sheet,error: f64) -> Fitted { let faces = face.clone(); Fitted {face,sheet,error,faces,parted:Vec::new()} }
 
     /// The sheet cut where the cutter's faces meet (`Sheet::bands`), each band named by `name`
     /// (`UNNAMED`'s empty): segments of the fitted net between the rows' parameters as `kind`

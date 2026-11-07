@@ -200,8 +200,11 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
     // its edges out of the blank: the reach's ends and the roll's stretch were chosen so (a whole
     // turn's first and last columns are one, closed, and lie where they will; so too a closed
     // characteristic's first and last rows, #684 W)
+    // (but an end of a stretch at a concave corner, which lies in the blank within the next
+    // stretch's sweep, its sheet trimmed against this one where the body's cells are judged, #721 F1d)
     let edges: Vec<V> = (0..sheet.rows*sheet.columns).filter(|k| { let (r,c) = (k/sheet.columns,k%sheet.columns);
-        (!found.closed && (r == 0 || r+1 == sheet.rows)) || (!found.whole && (c == 0 || c+1 == sheet.columns)) })
+        (!found.closed && ((r == 0 && !found.concave[0]) || (r+1 == sheet.rows && !found.concave[1])))
+            || (!found.whole && (c == 0 || c+1 == sheet.columns)) })
         .map(|k| sheet.points[k]).collect();
     let within = inside(&edges).at(Stage::Sheet)?.iter().filter(|b| **b).count();
     if within > 0 {
@@ -218,7 +221,7 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
         (say.stage)(&format!("`{name}`: the sheet is the cylinder of radius {:.4} mm the ring of greatest radius sweeps, written exactly, \
             in {AROUND} faces round it",radius*scale));
         (say.mark)(Stage::Fit);
-        return Ok(Fitted {face:tube.clone(),sheet,error:0.,faces:tube})
+        return Ok(Fitted {face:tube.clone(),sheet,error:0.,faces:tube,parted:Vec::new()})
     }
     let sides = |grid: &Grid| lay(grid,Withheld::Sides);
     settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {

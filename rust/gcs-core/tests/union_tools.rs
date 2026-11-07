@@ -280,3 +280,60 @@ fn a_tool_creased_at_a_concave_corner_cuts_as_its_members() {
     assert!(found.screw.is_slide() && !found.creases().is_empty(),"slid, creased at the concave corner");
     near(exported(&e,"rod"),PI*25.*20.-beads_section()*20.,2e-6);
 }
+
+/// `punch.sv`'s drum stepped down through a cone to a narrower drum — radius 2 for 3 mm, a cone to
+/// radius 1 over 1 mm, radius 1 for 4 mm — its concave corner where the cone meets the narrow drum,
+/// and slid aslant, `lean` degrees off the plate's normal along the drum's axis.
+pub(crate) fn stepped_punch(lean: f64) -> String {
+    let (s,c) = lean.to_radians().sin_cos();
+    text("punch.sv")
+        .replace("  e2 coords(du: radius, dv: drum) bench\n","  private f1 := point\n  f1 coords(du: radius, dv: 3mm) bench\n  \
+            private f2 := point\n  f2 coords(du: 1mm, dv: 4mm) bench\n  e2 coords(du: 1mm, dv: drum) bench\n")
+        .replace("  private side := line(e1, e2)\n","  private side := line(e1, f1)\n  private cone := line(f1, f2)\n  private waist := line(f2, e2)\n")
+        .replace("face(near_face, side, far_face, spindle)","face(near_face, side, cone, waist, far_face, spindle)")
+        .replace("fix(dir == (0, 0, 1)) up",&format!("fix(dir == ({s}, 0, {c})) up"))
+        // the plate on the drums' upper side only, from 0.5 mm across their axis, and only from
+        // 10.5 to 14.5 along it, where the cone and the drums near it pass, the ends clear
+        .replace("  b0 coords(du: 0mm, dv: -width / 2) std.top\n  b1 coords(du: length, dv: -width / 2) std.top\n  \
+            b2 coords(du: length, dv: width / 2) std.top\n  b3 coords(du: 0mm, dv: width / 2) std.top\n",
+            "  b0 coords(du: 10.5mm, dv: 0.5mm) std.top\n  b1 coords(du: 14.5mm, dv: 0.5mm) std.top\n  \
+            b2 coords(du: 14.5mm, dv: width / 2) std.top\n  b3 coords(du: 10.5mm, dv: width / 2) std.top\n")
+}
+
+/// **A tool whose characteristic parts at a concave corner cuts as its swept set does** (#721 F1d):
+/// `stepped_punch`'s drum slid 20° aslant past the plate's narrow strip. On the cone the contact
+/// leans off the drums' line `sin θ = −tan α tan β`, so the characteristic's points on the cone and on
+/// the narrow drum part where they meet at the concave corner: the walk ends a stretch there
+/// (`Step::Concave`) and walks the rest from the blank's other roots (`Characteristic::others`),
+/// each sheet with its edge at the corner in the blank (`Characteristic::concave`), the two split
+/// from the blank at once on one arrangement (`Fitted::parted`) and each trimmed against the other
+/// where they cross, the cells judged by the body's field. Built at 0.001 mm, the plate keeps what the
+/// closed class cuts from it on one arrangement by the tool's set alone (`closed::cut_from`), to 1e-6
+/// (6e-7; 7e-6 at the 0.01 mm default, the fit's).
+#[test]
+fn a_characteristic_parted_at_a_concave_corner_cuts_as_its_swept_set() {
+    use gcs_core::brep::{props,swept::closed};
+    use gcs_core::model::SolidDef;
+    let e = fixtures::read(&stepped_punch(20.));
+    let a = admit(&e,"plate").unwrap_or_else(|r| panic!("{r}"));
+    let [s] = a.sweeps() else { panic!("one sweep") };
+    let Class::ConstantTwist(found) = &s.class else { panic!("the constant twist's") };
+    assert!(found.others.len() == 1 && found.concave.contains(&true) && found.others[0].concave.contains(&true),
+        "two stretches, each ending at the concave corner");
+    let built = crate::turns_and_slides::exported_at(&e,"plate",0.001);
+    // the closed class's cut of the same set, from the blank on one arrangement
+    let sk = &e.sketch;
+    let (plate,slot) = (fixtures::solid(&e,"plate"),fixtures::solid(&e,"slot"));
+    let SolidDef::Body {stock,..} = &sk.solids[plate].def else { panic!("the plate a body") };
+    let blank = gcs_core::brep::recipe::build(&gcs_core::solid::cad::recipe(sk,*stock as usize).unwrap()).unwrap();
+    let SolidDef::Swept {motion,..} = &sk.solids[slot].def else { panic!("a sweep") };
+    // (the slide as the constant twist it is, as the closed class is handed it)
+    let path = gcs_core::motion::Family::read(sk,*motion as usize).unwrap().trajectory().unwrap();
+    let path = gcs_core::brep::trajectory::Trajectory::Twist(path.screw().expect("a slide"));
+    let roll = gcs_core::solid::roll::interval(sk,slot).unwrap();
+    let tool = gcs_core::solid::cad::tool_brep(sk,slot).unwrap();
+    let cut = closed::cut_from(&blank,&tool,&path,roll,2e-3,1e-6).unwrap_or_else(|u| panic!("the closed class: {u:?}"));
+    let want = props::volume(&cut);
+    eprintln!("kept {built:.6} mm³, the closed class's {want:.6}");
+    near(built,want,1e-6);
+}

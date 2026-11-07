@@ -579,7 +579,18 @@ revolution of their two discs' outline, or their union within an intersection, w
 distributes — is the constant twist's, the rod losing what either bead's shadow covers to 1e-6
 (`union_tools::a_tool_creased_at_a_concave_corner_cuts_as_its_members`,
 `a_union_within_an_intersection_is_the_constant_twists`).  Where the faces' points part at the
-corner the walk still ends there, refused by name (`CONCAVE`).
+corner, the walk ends a stretch there (`Step::Concave`) and walks the others from the roots in the
+blank no stretch holds yet (`Pass::others`, `Characteristic::others`), each ending at a concave
+corner or past the blank; S2 takes a ring's two points in two such stretches.  Each stretch's sheet
+is fitted on its own, its edge at a concave corner left in the blank (`Characteristic::concave`,
+the edge check passing it over), and the blank is split by all of a sweep's sheets at once on one
+arrangement (`Fitted::parted`, each sheet an operand of its own, `sector::whole`), each cell its
+own selection so a sheet's end within a cell bounds nothing, the cells judged by the body's field
+as a split's: so each stretch is trimmed against the next where they cross.  The gate is
+`union_tools::a_characteristic_parted_at_a_concave_corner_cuts_as_its_swept_set`: a drum stepped
+down through a cone, slid aslant past a plate's strip, the contact on the cone leaning off the
+drums' line so the stretches part at the concave corner, built to 6e-7 of what the closed class
+cuts from the plate by the tool's set alone (`closed::cut_from`).
 
 **The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
 every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding

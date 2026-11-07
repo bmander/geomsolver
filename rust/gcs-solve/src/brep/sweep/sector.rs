@@ -220,9 +220,11 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
     let mut tools = Vec::new();
     for (k,&s) in distinct.iter().enumerate() {
         for cut in recipe.sweeps.iter().filter(|c| c.swept == s) {
-            let tool = keyed(sheets[k].faces.moved(&placed(cut.pose,scale_mm)),&cut.key);
-            let (a,b) = tool.bounds();
-            if (0..3).all(|i| a[i] <= hi[i] && b[i] >= lo[i]) { tools.push((tool,(a,b))); }
+            for faces in std::iter::once(&sheets[k].faces).chain(&sheets[k].parted) {
+                let tool = keyed(faces.moved(&placed(cut.pose,scale_mm)),&cut.key);
+                let (a,b) = tool.bounds();
+                if (0..3).all(|i| a[i] <= hi[i] && b[i] >= lo[i]) { tools.push((tool,(a,b))); }
+            }
         }
     }
     // a solid of revolution made again with its seams opposite the cuts, as a sector's blank is: a
@@ -239,7 +241,16 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
         Err(e) if e.kind == Kind::Refused => blank.clone(),
         Err(e) => return Err(e.into()),
     };
-    let (mut cells,widest) = split_by(vec![blank.clone()],&tools,1e-3*blank.size())?;
+    // the blank split by every sheet; one of stretches that cross where a characteristic parts at a
+    // concave corner, their edges there in the blank, split by all at once on one arrangement (#721
+    // F1d), its bounded cells judged as the splits' are, so each stretch is trimmed against the next
+    let (mut cells,widest) = if sheets.iter().any(|s| !s.parted.is_empty()) {
+        let refs: Vec<&Brep> = tools.iter().map(|(t,_)| t).collect();
+        let complex = crate::brep::boolean::arrangement_within(&blank,&refs,crate::brep::swept::sector::SPLIT_TOL)?;
+        // (each cell its own selection: a sheet's end in it, the same cell either side, bounds nothing)
+        let cells = complex.bounded()?.map(|c| crate::brep::boolean::selection(&complex,&|x| x == c)).collect::<Result<Vec<_>,_>>()?;
+        (cells,tools.len())
+    } else { split_by(vec![blank.clone()],&tools,1e-3*blank.size())? };
     for c in &cells { c.check(1e-6).map_err(|e| format!("a cell of the split is invalid: {e}"))?; }
     let volumes: Vec<f64> = cells.iter().map(volume).collect();
     (say.stage)(&format!("split the blank of {:.6} mm³ by {} placed sheets, {} at once at most, into {} cells ({:?})",volume(&blank),
