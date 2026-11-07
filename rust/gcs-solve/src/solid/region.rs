@@ -95,12 +95,12 @@ pub fn form(sk: &Sketch, solid: usize) -> Result<Form, String> {
 
 /// **Which construction builds a region solid** — the one answer every reader of it matches: the
 /// recipe (`cad`), whether its boundary is the field's (`has_sweep`), the facets (`document`).
-/// A region on one axis is its meridian turned; one read in general position is built by an
-/// face carried over an interval of a constant twist is the kernel's carried profile (#846); else
-/// one is built by an entry of the lowering table where one recognises it (a region over a body's
+/// A region on one axis is its meridian turned; one read in general position that is a face
+/// carried over an interval of a constant twist is the kernel's carried profile (#846); else one
+/// is built by an entry of the lowering table where one recognises it (a region over a body's
 /// faces, #194), else by the common of its terms where each is a primitive (#238), else by the
-/// field alone.  An
-/// entry that recognises a region and refuses it leaves it the field's, its refusal said.
+/// field alone.  An entry that recognises a region and refuses it leaves it the field's, its
+/// refusal said.
 #[derive(Clone)]
 pub enum Route {
     /// Its terms share an axis: its meridian, turned once about it.

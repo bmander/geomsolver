@@ -15,13 +15,15 @@ pub fn millimetres(sk: &Sketch) -> f64 { sk.units.mm_per() }
 
 pub(super) fn vector(v: [f64;3]) -> Json { Json::Arr(v.into_iter().map(Json::from).collect()) }
 
-/// A motion that carries a section, as the recipe writes it: its numbers as they stand, already
-/// in the recipe's units (a family's `carry`, a carried profile's, #846).
-pub(super) fn carry_json(c: crate::brep::geom::Carry) -> Json {
+/// A motion that carries a section (model units), as the recipe writes it by `w`: a point moved
+/// and scaled, a direction as it is, a length scaled (a family's `carry`, a carried profile's, #846).
+pub(super) fn carry_json(c: crate::brep::geom::Carry,w: &Writer) -> Json {
     match c {
         crate::brep::geom::Carry::Screw {center,axis,angle,advance} => object([("kind","screw".into()),
-            ("center",vector(center)),("axis",vector(axis)),("angle",angle.into()),("advance",advance.into())]),
-        crate::brep::geom::Carry::Line {delta} => object([("kind","line".into()),("delta",vector(delta))]),
+            ("center",w.point(center)),("axis",vector(axis)),("angle",angle.into()),
+            ("advance",(advance*w.scale).into())]),
+        crate::brep::geom::Carry::Line {delta} => object([("kind","line".into()),
+            ("delta",vector(delta.map(|x| x*w.scale)))]),
     }
 }
 fn ids(v: &[u32]) -> Json { Json::Arr(v.iter().copied().map(Json::from).collect()) }

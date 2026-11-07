@@ -111,7 +111,7 @@ fn moved(b: &Basis, m: Motion) -> Basis {
 }
 
 /// The plane face `f` is drawn in, in space: the page for a face of none.
-fn face_basis(sk: &Sketch, f: &crate::model::FaceE) -> Basis {
+pub(super) fn face_basis(sk: &Sketch, f: &crate::model::FaceE) -> Basis {
     match f.plane.filter(|&p| (p as usize) < sk.frames.len()) {
         Some(p) => sk.basis(p as usize),
         None => Basis::page(),

@@ -77,11 +77,8 @@ impl Node {
             Node::Lowered(l) => lowered_node(l,built,built_names,floor),
             Node::Family(f) => family_node(f),
             // a profile carried over an interval of a constant twist (#846), from where it begins
-            Node::Carried {profile,start,carry} => {
-                let p = Profile::of(profile)?;
-                let p = match start { Some(m) => p.moved(&Rigid::from_rows(m)),None => p };
-                Ok(super::build::carried(&p,*carry)?)
-            }
+            Node::Carried {profile,start,carry} =>
+                Ok(super::build::carried(&Profile::of(profile)?.moved(&Rigid::from_rows(start)),*carry)?),
         }
     }
 }
