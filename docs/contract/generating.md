@@ -168,8 +168,8 @@ STEP within twice its spur twin's entities (radiatorbot's 19-tooth, 25° gear: 1
 and 9.7 MB traced, 32 155 and 2.7 MB screwed, its spur twin 17 901).
 
 **A ball swept is its tube** (#238, #684 D, `solid::canal`; the tube is the kernel's,
-`brep::swept::canal`, #721 F2c): a sweep whose tool's recipe is one
-ball (`brep::recipe::ball_of`), under any motion, is the points within the radius of its centre's
+`brep::swept::canal`, #721 F2c): a sweep whose tool's B-rep is one
+ball (`brep::swept::canal::ball`: every face on one sphere, however it was drawn, #721 F1c), under any motion, is the points within the radius of its centre's
 path — the ball's disc square to the path carried along it, united with the half ball beyond each
 end: exact, its end poses the construction's own, so no clearance (E1) is asked and a sweep may
 stand alone. Under one turn, screw or slide (`Family::twist`) the path is closed form
@@ -188,7 +188,7 @@ the diameter, so the wall is fitted, and lies on a cylinder or a torus where its
 numbers do (`brep::family`'s `analytic`); built as the family and the end half balls united
 (`build::capped`). Its rows, sampled at points an eighth of the radius apart along the path
 (1024 to 32768) and said so, refuse it by name with a point of the path, in the canal class
-(`admission::Asked::Canal`, asked first by `admit_body` where no other class reads the motion):
+(`dispatch::Asked::Canal`, asked first by the kernel's dispatch, `brep::swept::dispatch::sweep`):
 **B1** the path never stops and turns nowhere tighter than the radius; **B2** it comes back within
 the diameter (and the points' spacing) of itself nowhere half a turn of a circle of the radius
 along it from (`canal::refusal`).  The kernel refuses by `Row` (B1 `Curvature`, B2 `Return`) and
@@ -408,37 +408,34 @@ pseudo-normal (each face's normal there weighted by the angle its loop turns thr
 F1b), or by the boundary's point location where none is read (an apex, a pole).  A face no reading takes is refused by its
 geometry with a witness on it (`Unread::FreeForm`, G10: a B-spline, blend, face family, extrusion
 or affine image; `Unread::Meridian`, G8: a revolution of another curve; `Unread::Unfit`).  The
-classes read the tool this way since F1b (below); the drawing's reading (`SweepContacts::drawn`)
-stays beside it only as an oracle, and `tests/tool_reading.rs` holds the two readings to one tool
-over every sweep the drawing's reading reads.  The gates are these:
-- `the_two_readings_bound_one_tool`: each point of either reading's faces on the tool lies on a face
-  of the other of one kind, square to one normal.
-- `the_two_readings_are_one_material`: the two materials agree in sign off the boundary.
-- `the_two_readings_turn_their_corners_alike`: sharp corners and creases are each other's.
-- `the_two_readings_walk_alike`: under a constant twist the walks through the blank agree node for
-  node to rounding, or are refused by one row.
+classes read the tool this way since F1b (below).  The drawing's reading, the oracle the B-rep
+reading was held to while the classes switched (F1a, F1b: the two readings one boundary, one
+material, one set of corners and one walk over every example), is retired (F1c), and
+`tests/tool_reading.rs` holds the reading to the B-rep it reads.  The gates are these:
+- `the_catalogues_tools_read_from_their_boundaries`: every tool of the sweep catalogue is read, of
+  every kind, and a refusal names a face of the B-rep with a point on it.
+- `the_reading_bounds_its_brep`: each point of a read face on the tool lies on the B-rep's boundary
+  by its point location, and each point of a B-rep face clear of its edges lies on a read face
+  square to its normal.
+- `the_reading_is_its_tools_material`: the reading's material agrees in sign with the drawing's field
+  of the tool, the semantic reference, off the boundary, and reads nought on it.
 
-These run over the sweep catalogue.  `every_examples_tools_read_alike` is the slow tier's, over
-every example: 67 tools, the hypoid crowns standing about two axes on one plane, the twist drills.
-The B-rep reading reads more than the drawing's in two places.  It reads a drafted prism's caps,
-which the drawing's reading leaves to admission (`swept::admission::ends`).  It also reads the
-faces a Boolean of the tool splits, and their corners: a union of two beads is refused at the
-concave corner where they meet, where the drawing's whole tori are refused by a ring in contact all
-round.  `a_face_no_closed_form_reads_is_refused_by_name` holds the Wankel's epitrochoid bore to
-`FreeForm`, its witness on the face.
+These run over the sweep catalogue; `every_examples_tools_read_from_their_boundaries` is the slow
+tier's, over every example.  `a_face_no_closed_form_reads_is_refused_by_name` holds the Wankel's
+epitrochoid bore to `FreeForm`, its witness on the face.
 
 **The classes switched onto the B-rep reading (#721 F1b):** `SweepContacts::read` builds the tool's
 recipe into a B-rep and reads it (`Tool::read`); its material is the boundary's.  The recipe gates
 `admission::tool` asked of the drawing are retired: T1 is now the reading's refusal, a face no
 reading takes or a tool the kernel builds no boundary of, named with a point of the face where the
-reading gives one (`SweepContacts::read_witnessed`).  A tool is one prism standing alone where its
+reading gives one (`dispatch::sweep`'s T1, #721 F1c).  A tool is one prism standing alone where its
 B-rep is (`admission::Lone::read`): every face it reads a side running square along one direction,
 no crease, and two caps, the boundary's planes square to that direction, each one loop of lines and
 arcs; its cutter is that direction's prism of the nearer cap's loop (`Cutter::extruded`), however
 the tool was drawn — a prism, one placed, a box a Boolean leaves — and the generating class's
 prism sheets, across a cap (T3) or not, and the planar envelope's, are sectioned by that cutter
 (`SweptCut::lone`), so admission's band and the build's stations are measured from one origin.  A
-cutter of revolutions is still sectioned off its recipe (`Cutter::read`) until F1c.  So G9's
+cutter of revolutions is still sectioned off its recipe (`Cutter::read`), F1d's.  So G9's
 negative controls are admitted where the B-rep is ordinary faces: a bar a `common` leaves whole is
 the bar, its cap cut as the lone bar's (`prism_caps::a_cap_of_a_prism_a_common_leaves_whole_cuts_as_the_bars`,
 `prism_twists::a_cap_of_a_prism_a_common_leaves_whole_turned_cuts_as_the_bars`), and the rack's
@@ -459,6 +456,47 @@ readings are one surface's alike are kept once (`read::once_a_surface`).  Two st
 one surface over different spans of its meridian are read face by face, since the walk reads a
 corner only at a meridian's end; and the walk still ends at a concave corner by refusing it (T2), so
 a union tool is still swept member by member, as #684 C distributes it, not read whole.
+
+**The dispatch is the kernel's (#721 F1c; `brep::swept::dispatch::sweep`):** one `sweep` takes the
+tool's B-rep (millimetres), its trajectory and its roll (model units), the names a refusal says,
+the blank at its placements (`dispatch::Blank`: membership, its support's box, its own boundary's
+box) and how finely to sample (`dispatch::Ask`), and asks the classes in order, building by the
+first that admits: the canal (a B-rep every face of which lies on one sphere, `canal::ball`; its
+rows' refusal stands); the planar class (a stock cut by one pocket, every placement asked, its
+refusal standing — the pocket handed in by the drawing, `Sweep::pocket`, until the kernel reads its
+curve from the B-rep, which fits it: F1d); the planar subtraction class outright under a constant
+twist (its tool read from the B-rep, `swept::subtraction`, below); the constant twist's rows under
+a screw, a turn or a slide and the generating class's under any other motion (the tool read by
+`Tool::read`, its refusal T1 with a witness; the motion charted, M1; the first placement asked and
+each later one read alike to an earlier, by the drawing's proof where the blank is the same under
+every turn about one line, `Ask::revolved`, else at every point the first's rows read, or asked
+itself); the planar subtraction class in their place where they refuse and it reads the tool; and
+the closed class (`closed::reads`, `closed::reads_general`) where every class asked refuses, its
+own refusal never standing for theirs.  Every refusal is typed (`dispatch::Row`, which the solver's
+`admission::Condition` is; `dispatch::Asked`; `dispatch::Seen`: words, a ball's path the canal
+saw, or a motion with no chart) with a witness in the body.  `admission::admit_body` keeps the
+drawing's reading — each sweep's tool built into its B-rep once (`cad::tool_brep`, remembered
+against what the sweep reads), its motion lowered, its roll, the blank's field and boxes, the
+placements and the proof that they read the blank alike, the pocket — asks the kernel for each
+sweep side by side, and says the refusals in the drawing's words (a ball's path, an uncharted
+motion, a member of a union tool).  A ball's tube the dispatch admits is static material the
+drawing has already lowered; one asked here is one whose tube its gate refused, and admission says
+the gate's refusal.  The recipe reading of the tool is retired (F1 decided): the drawing's reading
+of a sweep's faces (`SweepContacts::drawn`, `ReadCap`, `ReadExtruded`) and its oracle tests are
+gone, the canal reads its ball and the planar subtraction class its section from the B-rep.  A
+sweep depends on the set: an end mill slid square to its axis, a drum turned about a line along
+its own and a bar lying along a turn stand along the normal of a plane their motion keeps, and are
+the planar subtraction class's now, before the constant twist's rows, each to the closed form it
+was cut to before; a box rolled by two turns about parallel axes and a stepped disc's concave
+corner, which the generating rows refuse at M2 and T2, are that class's in their place
+(`admission::a_prism_whose_cap_passes_through_the_blank_is_planar_subtractions`,
+`a_concave_corner_carried_through_the_blank_is_planar_subtractions`).  What F1d keeps open stays so:
+cutters of revolutions and drafted prisms sectioned off the recipe (`Cutter::read`), the pocket's
+curve, `SweepContacts::read`'s field of the source, and the walk's concave corners.  The gate is
+`tests/swept_dispatch.rs`, in the kernel alone: a drum built as a disc's prism and as a rectangle's
+revolution dispatched alike, the region each sweeps through a block one to 1e-9
+(`a_drum_drawn_two_ways_is_one_tool_to_the_dispatch`); a ball the canal's, turned or slid; a tool
+with no B-rep refused at T1 in the drawing's words.
 
 **The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
 every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding
@@ -549,9 +587,10 @@ closed form (brep.md: parallel cylinders and cones touching along a line, a ball
 tube), and a face's pieces leaving one point tangent are ordered by their curvature
 (`boolean::pieces_of_face`, ways within `TANGENT_TIE` read again at one length). Held to Pappus: a
 drum, a frustum and a ball turned 100° (`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`),
-and cut from a ring sector the drum turned whole (`closed_characteristics::the_drum_turned_a_whole_turn_bores_the_whole_ring`,
-the constant-twist class's S1) and turned to a stop partway (`closed_class::a_drum_turned_partway_into_a_ring_sector_stops_there`),
-each to 1e-9.
+and turned to a stop partway (`closed_class::a_drum_turned_partway_into_a_ring_sector_stops_there`),
+each to 1e-9.  (The drum turned whole through a ring sector, the constant-twist class's S1, stands
+along the turn's axis read from its B-rep, and is the planar subtraction class's since #721 F1c,
+`closed_characteristics::the_drum_turned_a_whole_turn_bores_the_whole_ring`, within 1e-6.)
 **A closed build is never returned wrong, and fails in seconds (#777 V).** Every closed or cut
 build is judged by its definition before it is returned (`swept::closed::judge`): at a jittered
 grid over its domain and at each cell's own points past the one that classified it, the solid's
@@ -1078,7 +1117,7 @@ once: what the tool holds where it starts and `∫ ∫ (n · v)⁺ dA dt` over i
 cut where `n · v` or a clipping height changes sign and the meridian where either first reaches a
 ring, read in a cosine substitution that takes the square root out; each such volume is itself held
 to a Monte Carlo of the definition (the tool's poses over the roll carrying each point back).
-**Dispatch** (`solid::closed_class::admit`, `Closed::general`): a sweep every other class refuses,
+**Dispatch** (the kernel's, `brep::swept::dispatch`, #721 F1c; `Closed::general`): a sweep every other class refuses,
 whose motion is no constant twist and which `closed::reads_general` takes — the tool a convex solid
 of revolution, its contact read round the pencil at 65 rolls with the same pieces at each, its
 centre's path coming back nowhere (`patches::admits`) — is the closed class's ("any rigid motion");
@@ -1399,7 +1438,11 @@ the floor, within 1e-5, an S1 refusal before), each STL agreeing with the field;
 the turn's axis passes through, G6's `THROUGH`),
 `flat_faces::a_hollow_mill_slid_across_the_block_cuts_a_whole_slot` (a ring bottom kept in its
 plane, G6) and the side along a slide
-(`prism_twists::a_side_along_the_slide_is_the_closed_classs`); the creased fit's
+(`prism_twists::a_side_along_the_slide_is_planar_subtractions`) — each of these, and the end mill,
+the step, the turned and tapered mills and the bar lying along the turn, standing along the normal
+of a plane the motion keeps read from its B-rep, is the planar subtraction class's since #721 F1c,
+asked before these rows, to the same closed forms; the bull-nose mill, its round a torus, keeps the
+walk gated; the creased fit's
 `brep::a_grid_creased_along_a_row_is_its_stretches_fits_joined_there` (through every point, each
 side its plane to 1e-12); and `object_builder::a_flat_face_kept_in_its_plane_builds_at_the_displays_samples`.
 
@@ -1451,11 +1494,13 @@ S4's section is read as a closed polygon (`crossing_of`, its first and last segm
 columns' ends clear of the blank, adds a cut at its middle row where the loop has no crease but
 the first, and cuts the sheet by `Fitted::named`'s `closed` into bands that close on each other
 (`brep::build::grid_sheet` with `closed: [true, _]`; N's ring is `[_, true]`). The native path
-refuses it by name. The gate is `solid_sweeps_examples::the_drum_punches_its_shadow_through_a_plate`
-(`solid_sweeps/punch.sv`, a drum pushed edge first through a plate, `8 × 4 × 4` exactly) and
-`tests/closed_characteristics.rs` (`a_drum_turned_through_a_ring_sector_bores_a_tunnel`, Pappus within
-1e-5; `a_bull_nosed_drum_punches_its_shadow_rounded`, within 2e-6 at 0.001 mm), each STL agreeing
-with the field; `brep::a_net_closed_along_its_rows_is_a_tube_of_faces` (a cylinder's net closed along
+refuses it by name. The gate is `closed_characteristics::a_bull_nosed_drum_punches_its_shadow_rounded`
+(within 2e-6 at 0.001 mm), its STL agreeing with the field; a plain drum — `solid_sweeps/punch.sv`'s
+pushed edge first through a plate (`solid_sweeps_examples::the_drum_punches_its_shadow_through_a_plate`,
+`8 × 4 × 4` exactly) and one turned through a ring sector
+(`closed_characteristics::a_drum_turned_through_a_ring_sector_bores_a_tunnel`, Pappus within 1e-5) —
+stands along its axis read from its B-rep and is the planar subtraction class's since #721 F1c,
+asked before these rows; `brep::a_net_closed_along_its_rows_is_a_tube_of_faces` (a cylinder's net closed along
 its rows cut four round and two along, its core π r² h); the refusals
 `closed_characteristics::a_square_bar_pushed_square_to_its_length_is_planar_subtractions` (the
 drum screwed, S2, is now the closed class's: `the_drum_screwed_bores_its_helical_groove`; a prism
@@ -1658,19 +1703,30 @@ MOTION` advances the placements under it (`Sweep::motion`). A profile field's wa
 (`Boxes`); `ssi` cuts an extrusion square in closed form and `boolean` gives its iso edges straight
 pcurves. `rust/examples/wankel/`, `fixtures::wankel`, `tests/{bore,planar_envelope,wankel}.rs`.
 
-**Planar subtraction (#606, #607, #590):** a sweep of prisms under a motion that turns their
-plane in itself is the blank less the region its section sweeps, slab by slab
-(`solid::planar_subtraction`, rows P1, Q1–Q4 in [docs/generating-sweeps.md](../generating-sweeps.md)).
-`admit_body` asks it of a prism tool the generating rows refuse at T1, T2, E1 or E2 — a union, or a
-draft the generating class does not read, in the tool, a concave corner, a roll never clear of the
-blank, a second contact — so a rack
+**Planar subtraction (#606, #607, #590):** a sweep of a tool standing along the normal of a plane
+its motion turns in itself is the blank less the region its section sweeps, slab by slab (the
+kernel's `brep::swept::subtraction`, #721 F1c; `solid::planar_subtraction` the drawing's reading;
+rows P1, Q1–Q4 in [docs/generating-sweeps.md](../generating-sweeps.md)).  **The tool is read from its
+B-rep** (`Subtraction::read`, `Prismatic::along`): the plane is square to the first of its plane
+faces' normals the motion keeps at five rolls (P1), and every face is a cap (a plane square to it),
+a side (a plane or a cylinder along it) or a leaning side (a plane, or a cone about a line along
+it), the sides across any one height leaning alike — by one draft, or none (Q1, refused naming the
+face and a point of it: a slanted cut, a side of a prism lying across the plane, a torus).  Its
+section at a height is the face the B-rep, cut there by a half-space (`build::kept`), leaves on the
+plane, read from the slab's side of a cap at a cap's own height; each loop's lines and arcs walked
+with the material on the left from the step on the tool's first face (each face told apart by its
+surface and its box, so a plus's opposite arms' coplanar sides are two), each corner one point, so
+a drafted slab's stations are matched piece for piece; its material is its loops' signed distance
+(`subtraction::Loops`).  The kernel's dispatch asks it outright under a constant twist, and of a
+tool the generating rows refuse — a concave corner, a roll never clear of the blank, a second
+contact — in their place, so a rack
 is still built by its sheet (`extruded`), and a rack tooth with a cap in the blank, or united with
 itself, by its region (`rack_cut::a_rack_with_a_cap_in_the_blank_cuts_the_slab_it_spans`,
-`the_tooth_united_with_itself_cuts_as_the_tooth_does`: the two classes agree to 1e-5). The slabs are the blank cut at every member's cap within
-it, two next to each other with one section (every member undrafted, the same faces joined alike,
-`Subtraction::key`) read as one. In each, `envelope::swept_region` reads the region (the kernel's `brep::swept::region`, #721
-F2c: the section's material its members' `PlanarField`s joined, `swept_region::section`, its
-refusals typed and said by `swept_region::said`) `R = ∪ₜ
+`the_tooth_united_with_itself_cuts_as_the_tooth_does`: the two classes agree to 1e-5). The slabs are the blank cut at every cap within
+it; a union's faces a Boolean merges leave no cap between bands of one section. In each the
+kernel's `brep::swept::region` reads the region (its refusals typed, their words
+`region::Refusal::words`; two kept stretches walking one curve,
+two corners at one distance from a turn's centre, one piece of its boundary) `R = ∪ₜ
 poseₜ(section)` within a box about the blank's shadow at every placement: its candidates are
 each line's contact (the foot of the perpendicular from the instant centre, `ν·(ωJx + b) = 0` in the
 tool's frame), each side of an arc's (`e ∥ ωc − Jb`), each corner's path while the line from the
@@ -1704,9 +1760,9 @@ station (`SweptRegion::matching`). Admission reads its stations within the box g
 `GROWN` in turn until they are alike (#612): the box's sides lie outside the blank, so a change of
 shape only where they cut the region is the box's — the measured handle's hub ring, narrowing
 with the draft, crosses them 48 mm about the wheel's centre. A change in every box is the blank's
-own, refused at Q2 naming the drafted member's depth to step the tool at, found between the two
-stations that differ. `accuracy::Subtracted` meters it, reading each sweep by the class's own
-`planar_subtraction::admit`; a whole roll never clear of its body is refused saying the period
+own, refused at Q2 naming the height to step the tool at, found between the two stations that
+differ. `accuracy::Subtracted` meters it, reading each sweep by the class's own
+`planar_subtraction::found`; a whole roll never clear of its body is refused saying the period
 to state. Every period is found by one search (`roll::first_alike`: a degree at a time, none for a
 tool the motion does not move) and said in one form (`roll::advice`). `tests/planar_subtraction.rs` is the gate
 (the #585 wheel against arithmetic made apart, the long form, two bands as one, a stepped tool,

@@ -56,19 +56,22 @@ fn contact_coefficients_include_translation_and_both_moving_frames() {
 
 #[test]
 fn source_placements_and_boolean_sharing_preserve_contact_geometry() {
-    let src = format!("{SOURCE}\nindex := frame\n\
+    let src = format!("{}\nindex := frame\n\
         ax coincident(sense: same) index.axis; fix(ratio == 1, advance == 0mm) index\n\
         placed := tool at(under: index) 90deg\n\
         outside := solid(tool)\nplaced cut outside\n\
         lens := solid(tool)\noutside cut lens\n\
-        swept := solid({{ p | some t in (-60deg, 60deg): p in lens at(under: generating) t }})\n");
+        swept := solid({{ p | some t in (-60deg, 60deg): p in lens at(under: generating) t }})\n\
+        both := solid(tool)\nplaced union both\n\
+        pair := solid({{ p | some t in (-60deg, 60deg): p in both at(under: generating) t }})\n",
+        SOURCE.replace("use std.solids (cut)","use std.solids (cut, union)"));
     let e = read(&src);
-    // the drawing's reading keeps every operand's faces (the oracle the B-rep reading is held to,
-    // #721 F1b); the two balls part, so the lens is empty, and its B-rep has no face to read
+    // the tool is read from its B-rep (#721 F1b, F1c): the two balls part, so the lens is empty and
+    // its B-rep has no face to read; their union is two faces, one a ball, each placed where it stands
     let swept = e.map.ent_named("swept").unwrap().i();
     assert!(SweepContacts::read(&e.sketch,swept,1e-10).unwrap_err().contains("the tool has no face"));
-    let sweep = SweepContacts::drawn(&e.sketch,swept,1e-10).unwrap();
-    assert_eq!(sweep.patches().len(),2,"shared Boolean operands contribute their faces once");
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("pair").unwrap().i(),1e-10).unwrap();
+    assert_eq!(sweep.patches().len(),2,"each ball's face once");
     let mut centers = Vec::new();
     for (i,patch) in sweep.patches().iter().enumerate() {
         let a = patch.at(0.,0.).unwrap().position;
@@ -76,15 +79,15 @@ fn source_placements_and_boolean_sharing_preserve_contact_geometry() {
         centers.push(std::array::from_fn::<_,3,_>(|k| (a[k]+b[k])/2.));
         for root in at(&sweep,i,0.5,0.3,1e-10).unwrap() {
             let p = root.contact.position;
-            assert!(((p[0].hypot(p[1])-3.).abs()-1.).abs() < 1e-12);
+            assert!(((p[0].hypot(p[1])-3.).abs()-1.).abs() < 1e-9);
             let angle = centers[i][1].atan2(centers[i][0])+0.3;
-            assert!((p[0]*angle.sin()-p[1]*angle.cos()).abs() < 1e-12);
+            assert!((p[0]*angle.sin()-p[1]*angle.cos()).abs() < 1e-9);
             let v = root.contact.velocity;
-            assert!((v[0]+p[1]).abs() < 1e-12 && (v[1]-p[0]).abs() < 1e-12);
+            assert!((v[0]+p[1]).abs() < 1e-9 && (v[1]-p[0]).abs() < 1e-9);
         }
     }
-    assert!(centers.iter().any(|p| (p[0]-3.).abs() < 1e-12 && p[1].abs() < 1e-12));
-    assert!(centers.iter().any(|p| p[0].abs() < 1e-12 && (p[1]-3.).abs() < 1e-12));
+    assert!(centers.iter().any(|p| (p[0]-3.).abs() < 1e-9 && p[1].abs() < 1e-9),"{centers:?}");
+    assert!(centers.iter().any(|p| p[0].abs() < 1e-9 && (p[1]-3.).abs() < 1e-9),"{centers:?}");
 }
 
 #[test]

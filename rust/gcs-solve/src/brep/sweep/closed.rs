@@ -54,7 +54,7 @@ pub fn cut_on(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,
                     let (condition,message,at) = closed_class::said(u,&found.tool_name);
                     let at = at.map_or(String::new(),|p| format!(" at ({:.4}, {:.4}, {:.4}) mm",p[0],p[1],p[2]));
                     ExportRefusal::at(Stage::Split,format!("`{}`: less `{name}` ({}: {}): {message}{at}",sk.solids[body].name,
-                        condition.code(),condition.rule()))
+                        condition.code(),crate::solid::admission::rule(condition)))
                 })?;
             (say.stage)(&format!("`{name}` ({}) cut from the blank on one arrangement: {} faces ({:?})",found.kind(),solid.faces.len(),
                 clock.elapsed()));

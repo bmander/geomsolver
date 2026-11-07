@@ -17,18 +17,6 @@ type V = [f64;3];
 /// tool point is in the blank.
 pub(super) type Failure = (Condition,String,Option<V>);
 
-impl From<Row> for Condition {
-    fn from(row: Row) -> Condition {
-        match row {
-            Row::Motion => Condition::Motion,Row::Reach => Condition::Reach,Row::Regular => Condition::Regular,
-            Row::Once => Condition::Once,Row::Edgewise => Condition::Edgewise,Row::Lead => Condition::Lead,
-            Row::Clearance => Condition::Clearance,Row::Tool => Condition::Tool,
-            Row::Corner => Condition::Corner,Row::Stationary => Condition::Stationary,Row::Single => Condition::Single,
-            Row::Fold => Condition::Fold,Row::Crossing => Condition::Crossing,Row::Sections => Condition::Sections,
-        }
-    }
-}
-
 /// Walk the characteristic of `contacts`' tool under its motion through the blank `ask.inside`
 /// reads (`Characteristic::walk`), or refuse with the row it fails. A motion that could not be
 /// lowered to the kernel's trajectory is no constant twist.

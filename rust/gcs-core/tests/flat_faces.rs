@@ -118,6 +118,11 @@ groove cut part
 ")
 }
 
+/// Whether `part`'s one sweep is the planar subtraction class's: a mill of a cylinder or a cone and
+/// flat ends stands along its axis, and under a turn about a line along it or a slide square to it
+/// the class reads it first, read from its B-rep (#721 F1c).
+fn subtracted(text: &str) -> bool { matches!(class(&fixtures::read(text),"part"),Class::Subtraction(_)) }
+
 /// The constant-twist evidence of `part`'s one sweep, its flat faces walked and how often the walk
 /// runs onto or off one.
 fn walked(text: &str) -> (Vec<String>,usize) {
@@ -132,7 +137,7 @@ fn walked(text: &str) -> (Vec<String>,usize) {
 #[test]
 fn an_end_mill_slid_along_an_edge_cuts_a_step() {
     let text = slid_mill(2.,5.,7.);
-    assert_eq!(walked(&text),(vec!["`mill.bottom`".to_string()],1));
+    assert!(subtracted(&text),"the planar subtraction class");
     near(exported(&fixtures::read(&text),"part"),2000.-20.*2.*3.,1e-6);
 }
 
@@ -187,7 +192,7 @@ fn a_bull_nose_mill_slid_to_a_stop_inside_the_block() {
 #[test]
 fn an_end_mill_turned_cuts_a_ring_groove() {
     let text = turned_mill(1.,1.,10.,0.);
-    assert_eq!(walked(&text),(vec!["`mill.bottom`".to_string()],2));
+    assert!(subtracted(&text),"the planar subtraction class");
     near(exported(&fixtures::read(&text),"part"),PI/3.*80.-PI/6.*40.,1e-5);
 }
 
@@ -206,7 +211,7 @@ fn an_end_mill_turned_a_whole_turn_cuts_the_same_groove() {
 #[test]
 fn a_tapered_mill_turned_cuts_a_groove_between_cones() {
     let text = turned_mill(1.,2.,10.,0.);
-    assert_eq!(walked(&text),(vec!["`mill.bottom`".to_string()],2));
+    assert!(subtracted(&text),"the planar subtraction class");
     near(exported(&fixtures::read(&text),"part"),PI/3.*80.-2.*PI/3.*10.*1.125,1e-5);
 }
 
@@ -225,8 +230,7 @@ fn a_hollow_mill_slid_across_the_block_cuts_a_whole_slot() {
             a0 coords(du: 0mm, dv: 0mm) bench\n  a1 coords(du: 0mm, dv: 1mm) bench\n  private spindle := line(a0, a1)\n}")
         .replace("face(bottom, side, top, spindle)","face(bottom, side, top, inside)");
     let e = fixtures::read(&hollow);
-    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw().unwrap().is_slide(),"a slide");
+    assert!(matches!(class(&e,"part"),Class::Subtraction(_)),"the planar subtraction class");
     near(exported(&e,"part"),2000.-240.,1e-9);
 }
 
@@ -241,8 +245,8 @@ fn a_hollow_mill_slid_across_the_block_cuts_a_whole_slot() {
 fn a_mill_turned_whole_about_an_axis_through_its_bottom_bores_a_disc() {
     let across = turned_mill(1.5,1.5,1.,0.).replace("(-140deg, 140deg)","(0deg, 360deg)").replace("du: 8mm","du: 0mm");
     let r = crate::turns_and_slides::admit(&across);
-    // (the closed class's, after the constant-twist class's refusal)
+    // (the planar subtraction class's, read from its B-rep, #721 F1c)
     let [s] = r.as_ref().unwrap().sweeps() else { panic!("one sweep") };
-    assert!(matches!(s.class,Class::Closed(_)),"the closed class");
+    assert!(matches!(s.class,Class::Subtraction(_)),"the planar subtraction class");
     near(exported(&fixtures::read(&across),"part"),PI/3.*144.-PI/6.*2.5*2.5,1e-9);
 }

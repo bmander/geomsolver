@@ -145,10 +145,6 @@ fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> 
     Ok((basis,loops))
 }
 
-/// A prism's face as the field reads it: the plane its loops are drawn in, and its loops of lines
-/// and arcs in that plane's coordinates (a curve's chords), the first its outer loop.
-pub(crate) fn prism_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> { face_loops(sk,face) }
-
 /// **A drawn face read as a set** (#737 P1): its plane, and the field of its region there in the
 /// plane's own view coordinates — negative within its loops — with the radius about the plane's
 /// origin its material is within, where its construction knows one.

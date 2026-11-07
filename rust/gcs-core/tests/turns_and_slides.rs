@@ -206,11 +206,14 @@ groove cut part
 /// A cylinder slid square to its axis, its flat caps (which the slide keeps in their own planes)
 /// clear of the rod: its axis 5.5 from the rod's along y and its radius 2, its shadow along the
 /// slide a band 4 wide, so it cuts the rod's circular segment beyond 3.5 from its axis, its wall
-/// the nearer generator extruded, a plane.
+/// the nearer generator extruded, a plane. Read from its B-rep (#721 F1c) the cylinder stands along
+/// the normal of the planes the slide keeps, and the planar subtraction class reads its section's
+/// sweep first.
 #[test]
 fn a_slid_cylinder_with_its_caps_clear_grooves_a_rod_by_its_section() {
     let source = slid(0.,5.5,Wheel::Cylinder);
-    assert!(admitted_as(&source).is_slide(),"read as a slide");
+    let a = admit(&source).unwrap();
+    assert!(matches!(a.sweeps()[0].class,Class::Subtraction(_)),"the planar subtraction class");
     let segment = 25.*(0.7f64).acos()-3.5*(25.-3.5*3.5f64).sqrt();
     near(exported(&fixtures::read(&source),"part"),PI*25.*20.-segment*20.,1e-6);
 }

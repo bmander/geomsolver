@@ -67,6 +67,15 @@ fn pose_at(path: &Trajectory,t: f64) -> Result<Motion,String> {
 pub struct Sampling { pub rows: usize,pub columns: usize,pub coarse_rows: usize,pub coarse_columns: usize,
     pub root_tolerance: f64,pub least_factor: f64 }
 
+impl Default for Sampling {
+    /// A revolved face sampled 100 rows along its profile by 400 round the band reaching the blank,
+    /// the band found by a 24 by 1440 pass; roots to 1e-9; a generated area a thousandth of the
+    /// tool's a fold.
+    fn default() -> Sampling {
+        Sampling {rows:100,columns:400,coarse_rows:24,coarse_columns:1440,root_tolerance:1e-9,least_factor:1e-3}
+    }
+}
+
 /// What the generating class's rows found of one placement: the tool points sampled and their
 /// contacts in the blank, how close neighbouring contacts are (the 95th percentile of their gaps),
 /// the least area factor, the samples whose two contact times nearly coincide, the pairs of

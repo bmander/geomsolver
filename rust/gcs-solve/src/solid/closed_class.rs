@@ -13,13 +13,10 @@
 //! stays unsettled, with the
 //! point). The solver reads the tool, the motion and the roll off the drawing and says the
 //! kernel's refusals; the geometry is the kernel's.
-use super::admission::{Basis,Class,Condition,Equivalence,Placement,SweepEvidence};
-use super::cad;
-use crate::brep::swept::closed::{self,Unbuilt};
+use super::admission::Condition;
+use crate::brep::swept::closed::Unbuilt;
 use crate::brep::topo::Brep;
 use crate::brep::trajectory::{Screw,Trajectory};
-use crate::envelope::Motion;
-use crate::model::{Sketch,SolidDef};
 
 type V = [f64;3];
 
@@ -65,30 +62,4 @@ pub fn said(unbuilt: Unbuilt,tool: &str) -> Failure {
             not returned wrong",if held { "holds" } else { "leaves out" },if held { "leaves out" } else { "holds" }),Some(at)),
         Unbuilt::Failed(m) => (Condition::Settled,format!("the kernel could not build it: {m}"),None),
     }
-}
-
-/// The sweep `swept`'s motion, roll and tool read in millimetres and asked the kernel's structural
-/// rows (C1, C2), the motion first, which needs no tool built: the evidence for each of its
-/// `placements` (model units), or none where they refuse (the first class's refusal then stands).
-pub fn admit(sk: &Sketch,swept: usize,placements: &[Motion]) -> Option<SweepEvidence> {
-    let solid = &sk.solids[swept];
-    let SolidDef::Swept {source,motion,..} = &solid.def else { return None };
-    let path = crate::motion::Family::read(sk,*motion as usize).ok()?.trajectory().ok()?;
-    let roll = super::roll::interval(sk,swept).ok()?;
-    // a sweep is its path's, not its pace's (#684 L)
-    let (path,roll) = path.unpaced(roll).ok()?;
-    let mm = cad::millimetres(sk);
-    let tool = crate::brep::recipe::build(&cad::recipe(sk,*source as usize).ok()?).ok()?;
-    // a constant twist, or any other motion (K2, #780 L3: each instant's contact swept into a patch,
-    // the tool a convex solid of revolution)
-    let path = path.scaled(mm);
-    match path.screw() {
-        Some(_) => closed::reads(&tool,&path).map(|_| ()),
-        None => closed::reads_general(&tool,&path,roll),
-    }.ok()?;
-    Some(SweepEvidence {sweep:swept,name:solid.name.clone(),
-        placements:placements.iter().map(|&pose| Placement {pose,equivalent_to:None}).collect(),
-        samples:0,contacts:0,spacing:0.,least_area_factor:1.,near_double_roots:0,near_tangent_pairs:0,
-        basis:Basis::Sampled {rows:0,columns:0},equivalence:Equivalence::Sampled,
-        class:Class::Closed(Box::new(Closed {tool,tool_name:sk.solids[*source as usize].name.clone(),path,roll}))})
 }

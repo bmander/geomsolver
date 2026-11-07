@@ -239,17 +239,17 @@ fn the_partway_figures_reduce_to_the_whole_ones() {
 }
 
 /// **The fast path and the one arrangement agree where both build** (#699 D, docs/swept-solid-design.md
-/// §8, step 8): `punch.sv`'s drum pushed through its plate is the constant-twist class's — its
-/// blank-scoped sheet, the fast path — and, read in the kernel alone, the closed class's too
-/// (`swept::closed::cut_from`, the plate the arrangement's domain). Two builds made apart, one by a
-/// walk and a fitted sheet, the other by an arrangement and membership: each the plate less the
-/// drum's shadow, 672, and the same to 1e-9. (The fast path is the faster by about an order: 0.09 s
-/// against 0.8 s when written.)
+/// §8, step 8): `punch.sv`'s drum pushed through its plate is the planar subtraction class's (read
+/// from its B-rep it stands along its axis, square to which the push keeps every plane, #721 F1c) —
+/// its region carried through the slab, the fast path — and, read in the kernel alone, the closed
+/// class's too (`swept::closed::cut_from`, the plate the arrangement's domain). Two builds made
+/// apart, one by a swept region, the other by an arrangement and membership: each the plate less
+/// the drum's shadow, 672, and the same to 1e-9.
 #[test]
 fn the_fast_path_and_the_one_arrangement_agree_where_both_build() {
     use gcs_core::brep::trajectory::{Screw,Trajectory};
     let e = fixtures::read(&crate::closed_characteristics::punch());
-    assert!(matches!(class(&e,"part"),Class::ConstantTwist(_)),"the constant-twist class's");
+    assert!(matches!(class(&e,"part"),Class::Subtraction(_)),"the planar subtraction class's");
     let fast = exported(&e,"part");
     let drum = gcs_core::brep::build::prism(&gcs_core::brep::build::disc([6.,0.,-5.],[1.,0.,0.],2.),0.,8.).unwrap();
     let plate = crate::brep::block([0.,-5.,0.],[20.,5.,4.]);
@@ -287,9 +287,10 @@ fn a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves() {
 }
 
 /// **A fitted sheet lying in a candidate's plane is one surface with it** (#780 C4, A2's
-/// coincidence): `punch.sv`'s drum pushed up through its plate leaves a slot whose walls are one
-/// fitted sheet cut into four faces, each end wall a strip of the plane x = 6 or x = 14 its flat end
-/// sweeps. A closed sweep cut beside it — `plunge.sv`'s bar, its end face at its start pose in the
+/// coincidence): `punch.sv`'s drum, its ends rounded into its side (the constant twist's, its rounds
+/// tori: the plain drum stands along its axis and is the planar subtraction class's, #721 F1c),
+/// pushed up through its plate leaves a slot whose walls are one fitted sheet cut into four faces, each
+/// end wall a strip of the plane x = 6 or x = 14 its flat end sweeps. A closed sweep cut beside it — `plunge.sv`'s bar, its end face at its start pose in the
 /// plane x = 6 (`a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves`) — splits the plate
 /// by that plane, and its arrangement reduced (`swept::dump`) is the plate and one block whose face
 /// holds it. Read as a near touch, the sheet and the plane were two faces coinciding round the
@@ -298,12 +299,14 @@ fn a_closed_sweep_is_cut_from_what_another_classs_sweep_leaves() {
 /// end wall is a face of the complex naming both. The plane is the sheet over the sheet's patch
 /// alone (`Located::face_holds`): the block's face beside the slot, past the patch, was read on
 /// the end wall where the sheet's foot clamps to its edge, and dropped as one with it. The plate
-/// splits into the part short of x = 6, 6 × 10 × 4, and the rest less the slot, 14 × 10 × 4 − 128.
+/// splits into the part short of x = 6, 6 × 10 × 4, and the rest less the slot, its corners rounded,
+/// `14 × 10 × 4 − 4 (32 − (4 − π)/4)` within 2e-6 at 0.001 mm.
 #[test]
 fn a_fitted_sheet_lying_in_a_candidates_plane_is_one_surface_with_it() {
     use gcs_core::brep::geom::{Frame,Surface};
-    let e = fixtures::read(&crate::closed_characteristics::punch());
-    let plate = crate::turns_and_slides::exported_within(&e,"part",None).solid;
+    let e = fixtures::read(&crate::closed_characteristics::bull_nosed_punch());
+    let tolerance = gcs_core::solid::export::Tolerance::new(0.001).unwrap();
+    let plate = crate::turns_and_slides::exported_within(&e,"part",Some(tolerance)).solid;
     let wall = Surface::Plane(Frame::new([6.,0.,0.],[1.,0.,0.],[0.,1.,0.]));
     let sheets: Vec<usize> = (0..plate.faces.len()).filter(|&f| plate.faces[f].surface.kind() == "bspline").collect();
     assert_eq!(sheets.len(),4,"the slot's walls, one fitted sheet cut into four faces");
@@ -318,7 +321,7 @@ fn a_fitted_sheet_lying_in_a_candidates_plane_is_one_surface_with_it() {
     let volumes = crate::complex::volumes(&complex);
     assert_eq!(volumes.len(),2,"{volumes:?}");
     near(volumes[0],240.,1e-9);
-    near(volumes[1],560.-128.,1e-9);
+    near(volumes[1],560.-4.*(32.-(4.-std::f64::consts::PI)/4.),2e-6);
     // the end wall one face of the complex naming the plate's sheet and the block's face both
     let named = complex.origins.iter().filter(|o| o.len() == 2 && o.iter().any(|x| x.operand == 0 && x.face == lying[0])
         && o.iter().any(|x| x.operand == 1)).count();

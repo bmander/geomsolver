@@ -31,19 +31,16 @@ pub(crate) fn turned_drum() -> String { turned_mill(1.,1.,10.,-0.5).replace("dv:
 /// its side touches along its two lines in the plane through both axes, nearest and farthest the
 /// axis: the characteristic runs up the inner line, across the top along the line from the axis
 /// through its centre, down the outer line and back across the bottom, closing on itself within the
-/// ring sector, creased at four corners. Turned, it bores a tunnel of its section, 2 × 1 from 9 to
-/// 11 from the axis, through the sector's 60°: `π/3 (11² − 9²)/2` by Pappus, `20π/3`.
+/// ring sector, creased at four corners. Read from its B-rep (#721 F1c) the drum stands along the
+/// turn's axis, and the planar subtraction class reads it first. Turned, it bores a tunnel of its
+/// section, 2 × 1 from 9 to 11 from the axis, through the sector's 60°: `π/3 (11² − 9²)/2` by
+/// Pappus, `20π/3`.
 #[test]
 fn a_drum_turned_through_a_ring_sector_bores_a_tunnel() {
     let e = fixtures::read(&turned_drum());
-    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
-    assert!(found.screw.is_turn() && !found.whole && found.closed,"a turn, its characteristic closed");
-    assert_eq!(found.reach,[0,found.nodes.len()-1]);
-    assert_eq!(found.nodes[0].position,found.nodes[found.nodes.len()-1].position,"its last node its first");
-    let mut flats = found.flats();
-    flats.sort();
-    assert_eq!(flats,["`mill.bottom`","`mill.top`"]);
-    assert_eq!(found.creases().len(),4);
+    // read from its B-rep (#721 F1c), the drum stands along the turn's axis, and the planar
+    // subtraction class, asked before the constant twist's, reads its swept region whole
+    assert!(matches!(class(&e,"part"),Class::Subtraction(_)),"the planar subtraction class");
     near(exported(&e,"part"),PI/3.*80.-PI/3.*20.,1e-5);
 }
 
@@ -56,7 +53,16 @@ fn a_drum_turned_through_a_ring_sector_bores_a_tunnel() {
 /// 1.9e-5, as the bull-nose mill's slot reads there, `flat_faces`).
 #[test]
 fn a_bull_nosed_drum_punches_its_shadow_rounded() {
-    let text = punch().replace("  e1 coords(du: radius, dv: 0mm) bench\n  e2 coords(du: radius, dv: drum) bench\n",
+    let e = fixtures::read(&bull_nosed_punch());
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide() && found.closed,"a slide, its characteristic closed");
+    near(exported_at(&e,"part",0.001),800.-4.*(32.-(4.-PI)/4.),2e-6);
+}
+
+/// `punch.sv` with its drum's flat ends rounded into its side by quarter rounds of radius 0.5: a
+/// tool no plane's normal stands along, its rounds tori, so the constant twist walks it.
+pub(crate) fn bull_nosed_punch() -> String {
+    punch().replace("  e1 coords(du: radius, dv: 0mm) bench\n  e2 coords(du: radius, dv: drum) bench\n",
         "  e1 coords(du: 1.5mm, dv: 0mm) bench\n  e2 coords(du: radius, dv: 7.5mm) bench\n  private k1 := point\n  \
         k1 coords(du: 1.5mm, dv: 0.5mm) bench\n  private e5 := point\n  e5 coords(du: radius, dv: 0.5mm) bench\n  \
         private k2 := point\n  k2 coords(du: 1.5mm, dv: 7.5mm) bench\n  private e6 := point\n  e6 coords(du: 1.5mm, dv: drum) bench\n")
@@ -64,25 +70,22 @@ fn a_bull_nosed_drum_punches_its_shadow_rounded() {
         "  private near_round := arc(center: k1, start: e1, end: e5) hint(r: 0.5)\n  radius(0.5mm) near_round\n  \
         private side := line(e5, e2)\n  private far_round := arc(center: k2, start: e2, end: e6) hint(r: 0.5)\n  \
         radius(0.5mm) far_round\n  private far_face := line(e6, e3)\n")
-        .replace("face(near_face, side, far_face, spindle)","face(near_face, near_round, side, far_round, far_face, spindle)");
-    let e = fixtures::read(&text);
-    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
-    assert!(found.screw.is_slide() && found.closed,"a slide, its characteristic closed");
-    near(exported_at(&e,"part",0.001),800.-4.*(32.-(4.-PI)/4.),2e-6);
+        .replace("face(near_face, side, far_face, spindle)","face(near_face, near_round, side, far_round, far_face, spindle)")
 }
 
 /// **The drum turned a whole turn bores the whole ring** (#721 F2c5, a curved tool under a turn): its
 /// sheet would close round the turn as well as along the characteristic, a ring with no edge, which
-/// the constant-twist class refuses (S1); the closed class builds it on one arrangement, the drum's
-/// side's generators in the plane through both axes turned into the cylinders of radii 9 and 11,
-/// its flat ends kept in their planes. The ring loses the annulus between them through the drum's
-/// height within its 60°, `π/6 (11² − 9²)`.
+/// the constant-twist class refuses (S1); read from its B-rep (#721 F1c) the drum stands along the
+/// turn's axis, and the planar subtraction class reads the whole turn of its section. The ring
+/// loses the annulus between radii 9 and 11 through the drum's height within its 60°,
+/// `π/6 (11² − 9²)`, within 1e-6: the region's circles are fitted.
 #[test]
 fn the_drum_turned_a_whole_turn_bores_the_whole_ring() {
     let e = fixtures::read(&turned_drum().replace("(-140deg, 140deg)","(0deg, 360deg)"));
-    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw().unwrap().is_turn(),"a turn");
-    near(exported(&e,"part"),PI/3.*80.-PI/6.*40.,1e-9);
+    // (the planar subtraction class's, read from its B-rep, #721 F1c: a whole turn of its section,
+    // its two circles each fitted within `FIT_MM` as the region's stretches are)
+    assert!(matches!(class(&e,"part"),Class::Subtraction(_)),"the planar subtraction class");
+    near(exported(&e,"part"),PI/3.*80.-PI/6.*40.,1e-6);
 }
 
 /// **The drum screwed half a millimetre a turn bores its helical groove** (#721 F2c5, a round tool
