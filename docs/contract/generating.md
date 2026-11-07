@@ -600,7 +600,8 @@ of a turn that shares a circle with a face read about that circle's axis — a p
 cone's, ball's or ring's surface beside it, or a plane square to the axis — is read about the same
 axis before any face is read as a strip (`Reader::beside`), so the faces of one turn read alike and
 meet at corners along their meridians; a part-cylinder no face read whole round meets is a prism's
-side, a strip, as before, and T1 asks a strip's rim only where it lies in a cap's plane.  The walk reads a corner partway along a face: its stations hold the
+side, a strip, as before, and T1 asks a strip's rim only where it lies in a cap's plane (or a
+lone prism's flat's: a cap a round hole passes through).  The walk reads a corner partway along a face: its stations hold the
 corner's (`cut_at`), and where the walk stands on it and the face goes no further its way at that
 point (`Walker::partway`, the material read just past it), it crosses the corner as at a face's
 end (`Along::cuts`: onto the face beyond, round the corner's fan, onto a flat's line); onto a face
@@ -631,9 +632,8 @@ cap's; so is any such plane under the generating class, whose contact a turn see
 across it.
 *The planar class's pocket:* read from the tool's B-rep (`pocket::Pocket::read`): two caps, planes
 square to one direction each bounded by an outline and one hole, every other face standing along
-it (a plane, a cylinder or a sweep of a curve along it); the hole the loop of the lesser reach
-across the caps (its edges sampled along their spans: a closed curve is one edge on one vertex),
-its edges' curves walked as the loop walks them and read as one curve's parameter where they are
+it (a plane, a cylinder or a sweep of a curve along it); the hole the loop enclosing the less
+(`Brep::loop_area`), its edges' curves walked as the loop walks them and read as one curve's parameter where they are
 stretches of one curve end to end (`Hole`, a `planar::Section`).  The B-rep carries a point's path
 under turns and slides at steady rates exactly: `generate::point_path` reads the drawing's envelope
 of a point as terms `(a + b t) e^{iωt}` off its turn and slide ops (`brep::trochoid::Trochoid`,
@@ -644,8 +644,10 @@ its points and derivatives in closed form at every order, its speed bounded over
 its closed form's to 1e-9 (`wankel::the_housing_is_its_case_less_the_bore`), and the rotor its
 inner envelope read off that curve (`InnerEnvelope::new`), built to 1e-6 of its closed form
 (`wankel::the_rotor_is_admitted_to_the_planar_class_and_built_as_its_closed_form`).  The stock's
-material is the tool's boundary's with the pocket's prism filled, its loop's chords grown by how far
-the curve stands outside them (the rotor's apex touches its bore, P5).  The dispatch is told only
+material is its outline's prism (the outline's lines and circles read as themselves), so the bore
+is no boundary of it, where the rotor's apex touches it; a loop's material in the plane is
+`subtraction::Loops`, its edges held in a tree so a reading visits only those that may be nearest
+and those the ray from the point can cross.  The dispatch is told only
 whether the drawing writes the tool as a stock cut by one pocket (`Sweep::pocketed`), for which
 the class's refusal stands; the drawing's `planar_class::read` and `Sweep::pocket` are retired, and
 a refusal of the envelope is said in the motion's words (`Seen::Envelope`).
