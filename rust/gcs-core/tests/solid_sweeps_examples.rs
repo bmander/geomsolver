@@ -189,6 +189,26 @@ fn the_rack_leaves_one_tooth_space() {
     assert!((removed-want).abs() < 0.03,"removed {removed:.5} mm³, the space being {want:.5}");
 }
 
+/// `ring_gear.sv` (#818): `rack.sv`'s gear, its space cut at 20 teeth, cut from a ring as a body
+/// built of sweeps: the gear's space in the generating class, the ring composed by the kernel's
+/// Boolean. The ring keeps its annulus outside the gear's rim and, inside it, 20 teeth each its
+/// 6 mm thickness times the area the rack tooth removes from the annulus between the ring's bore
+/// and the rim, by `rack_cut`'s arithmetic. Built once: the page's stepped builder is held to the
+/// same build (`object_builder::builds_as_exported`).
+#[test]
+fn the_ring_gear_keeps_the_gears_spaces_as_its_teeth() {
+    let e = example("ring_gear.sv");
+    let a = admission::admit_body(&e.sketch,fixtures::solid(&e,"gear"),&Options::default()).unwrap_or_else(|r| panic!("{r}"));
+    assert!(a.sweeps().iter().all(|s| matches!(s.class,Class::Generating)),"the generating class");
+    let exact = exported_within(&e,"ring",Some(Tolerance::new(0.01).unwrap()));
+    let tooth = 6.*crate::rack_cut::rack_space(&crate::rack_cut::TOOTH,20.,[19.,22.],[-PI/3.,PI/3.],400,4000);
+    let want = PI*(30.*30.-22.*22.)*6.+20.*tooth;
+    let kept = gcs_core::brep::props::volume(&exact.solid);
+    // the arithmetic integrates by midpoints over 400 radii; the two agree within 2e-3
+    assert!((kept-want).abs() < 0.01,"kept {kept:.5} mm³, its teeth being {want:.5}");
+    crate::object_builder::builds_as_exported("ring_gear.sv",&e.sketch,fixtures::solid(&e,"ring"),&exact);
+}
+
 /// `bar_end.sv`: the generating class with a prism's cap in the blank (#684 F), the bar sectioned
 /// across the disc's height; the space each height's slice of the bar rolled on the circle of 16,
 /// by `rack_cut`'s arithmetic (`prism_caps::bar_end_space`), through the disc's 6 mm.
