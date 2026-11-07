@@ -33,7 +33,28 @@ pub struct SweptCut {
     pub routes: std::collections::BTreeMap<String,String>,
 }
 
+/// A cut's cutter (`SweptCut::cutter`): the one admission read from the tool's B-rep, or one
+/// sectioned off its recipe.
+pub enum Sectioned<'a> { Read(&'a Cutter),Recipe(Cutter) }
+
+impl std::ops::Deref for Sectioned<'_> {
+    type Target = Cutter;
+    fn deref(&self) -> &Cutter { match self { Sectioned::Read(c) => c,Sectioned::Recipe(c) => c } }
+}
+
 impl SweptCut {
+    /// **The cutter every sheet of this cut is sectioned by**, chosen once: the prism read from
+    /// the tool's B-rep where it is one standing alone (`SweepContacts::lone`, #721 F1b), however
+    /// the tool was drawn, so admission's band and the sheet's stations are measured from one
+    /// origin; else the recipe's (`Cutter::read`: a cutter of revolutions, or a drafted prism, until
+    /// #721 F1c).
+    pub fn cutter(&self) -> Result<Sectioned<'_>,String> {
+        match self.contacts.as_ref().ok().and_then(SweepContacts::lone) {
+            Some(lone) => Ok(Sectioned::Read(lone.cutter())),
+            None => Cutter::read(&self.recipe).map(Sectioned::Recipe),
+        }
+    }
+
     pub fn read(sk: &Sketch,swept: usize) -> Result<SweptCut,ExportRefusal> {
         let name = sk.solids[swept].name.clone();
         let scale = cad::millimetres(sk);
@@ -60,18 +81,19 @@ impl SweptCut {
 /// (The roll's clearance of the blank at both limits is admission's row E1, asked before this.)
 pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,say: &Say)
     -> Result<Fitted,ExportRefusal> {
-    let cutter = Cutter::read(&cut.recipe).at(Stage::Reach)?;
+    let cutter = cut.cutter().at(Stage::Reach)?;
     traced_sheet(cut,&cutter,inside,near,tolerance,say)
 }
 
 /// The sheet of a prism whose cap reaches the blank (#684 F): `swept_sheet`'s, its stations the
 /// prism's sections through its extrusion at distances along the direction admission's row T3
 /// chose, each its chord carried along the extrusion, so the walk runs from a side over a cap's
-/// rim and across the cap.
+/// rim and across the cap. The prism is the one admission read from the tool's B-rep
+/// (`SweepContacts::lone`, #721 F1b), whose origin the band is measured from.
 pub fn capped_sheet(cut: &SweptCut,capped: &crate::solid::admission::Capped,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
     tolerance: Option<Tolerance>,say: &Say) -> Result<Fitted,ExportRefusal> {
     let middle = 0.5*(capped.band[0]+capped.band[1]);
-    let cutter = Cutter::read(&cut.recipe).and_then(|c| c.across(capped.across,middle)).at(Stage::Reach)?;
+    let cutter = cut.cutter().and_then(|c| c.across(capped.across,middle)).at(Stage::Reach)?;
     traced_sheet(cut,&cutter,inside,near,tolerance,say)
 }
 

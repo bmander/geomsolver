@@ -410,9 +410,10 @@ fn the_rack_cut_gear_example_is_admitted() {
 }
 
 
-/// **Two classes, one cut** (#606): the tooth united with itself is no generating tool (T1 refuses a
-/// union), so the planar subtraction class cuts it, as the region its section sweeps; the tooth
-/// alone the generating class cuts, by its sheet.  What the two remove agrees to the fits'.
+/// **One tool, however it is written** (#606, #721 F1b): the tooth united with itself is the tooth.
+/// Read from its B-rep, it is the one prism the tooth alone is, and the generating class cuts both
+/// by their sheets (once T1 refused the union, and the planar subtraction class cut it as the
+/// region its section sweeps).  What the two remove agrees to the fits'.
 #[test]
 fn the_tooth_united_with_itself_cuts_as_the_tooth_does() {
     let space = "construction space := solid({ p | some t in (-60deg, 60deg): p in rack_tooth \

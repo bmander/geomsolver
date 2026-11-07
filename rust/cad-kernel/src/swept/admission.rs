@@ -14,6 +14,7 @@ use super::constant_twist::{Ask,Characteristic,Failure,Row,Sweep,outward};
 use super::cutter::Cutter;
 use super::generating::{Chart,Form,NormalVelocity,PointContactError,TimedContact};
 use super::tool::{Material,PatchEdge,Tool,ToolSurface};
+use crate::topo::Brep;
 use std::collections::BTreeMap;
 use std::f64::consts::{PI,TAU};
 
@@ -139,6 +140,9 @@ fn coarse_at(at: f64,n: usize) -> f64 { (at/(n.max(2)-1) as f64).clamp(0.,1.) }
 struct Fine { reads: Reads,samples: usize,near_double_roots: usize,hits: Vec<(Hit,usize,usize)>,gaps: Vec<f64>,least: f64,
     signs: BTreeMap<(usize,usize),([usize;2],[Option<V>;2])> }
 
+/// How many steps across a cap no rim bounds `ends` reads it at, each way.
+const CAP_READS: usize = 16;
+
 /// How many normals of a cap's rim's fan E4 reads at each of its points, ends excluded.
 const FAN_READS: usize = 16;
 
@@ -231,7 +235,7 @@ fn undercut(c: &Generating,patch: usize,inside: &(dyn Fn(V) -> bool+Sync),option
 fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone: Option<&Lone>)
     -> Result<(Reads,Vec<Motion>,[bool;2]),Failure> {
     let tool = c.source_material();
-    let on_tool = |p: V| tool.value(p).abs() < 1e-6;
+    let on_tool = |p: V| c.tool.on(p);
     let domain = c.domain();
     let pose = |t: f64| pose_at(c.motion(),t).map_err(|m| (Row::Motion,m,None));
     let limits = if c.whole() { Vec::new() } else { vec![pose(domain[0])?,pose(domain[1])?] };
@@ -241,6 +245,8 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
     let steps = 64;
     let poses: Vec<Motion> = (0..=steps).map(|k| pose(domain[0]+(domain[1]-domain[0])*k as f64/steps as f64))
         .collect::<Result<_,_>>()?;
+    // where tool point `x` is first carried into the blank over the roll, each read remembered
+    let reaches = |reads: &mut Reads,x: V| poses.iter().map(|m| m.point(x)).find(|&p| reads.read(inside,p));
     for edge in c.edges() {
         let ([a,b],[ua,_]) = (edge.patches,edge.ends);
         let (Some(pa),Some(pb)) = (c.patches().get(a),c.patches().get(b)) else { continue };
@@ -253,8 +259,29 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
         if tool.value(chord) <= 0. { continue; }
         for j in 0..options.coarse_columns {
             let Ok(point) = pa.at(ua,j as f64/options.coarse_columns as f64) else { continue };
-            if let Some(p) = poses.iter().map(|m| m.point(point.position)).find(|&p| reads.read(inside,p)) {
+            // (where the corner is the tool's: a face read whole a Boolean trims, #721 F1b)
+            if !on_tool(point.position) { continue }
+            if let Some(p) = reaches(&mut reads,point.position) {
                 return Err((Row::Corner,format!("`{}` meets `{}` at a concave corner",pa.name(),pb.name()),Some(p)));
+            }
+        }
+    }
+    // and a crease where a drafted prism's halves fold (#684 P), concave where it is drafted outward
+    // both ways from its parting plane: the chord between a point of each half beside it out of the
+    // tool's material
+    for &[a,b] in c.creases() {
+        let (Some(pa),Some(pb)) = (c.patches().get(a),c.patches().get(b)) else { continue };
+        let h = 1e-4;
+        for i in 1..options.coarse_rows {
+            let u = i as f64/options.coarse_rows as f64;
+            let (Ok(point),Ok(sa),Ok(sb)) = (pa.at(u,1.),pa.at(u,1.-h),pb.at(u,h)) else { continue };
+            if !on_tool(point.position) { continue }
+            let chord: V = std::array::from_fn(|k| 0.5*(sa.position[k]+sb.position[k]));
+            if tool.value(chord) <= 0. { continue }
+            if let Some(p) = reaches(&mut reads,point.position) {
+                let said = if pa.name() == pb.name() { format!("the crease across `{}` is concave",pa.name()) }
+                    else { format!("`{}` meets `{}` at a concave crease",pa.name(),pb.name()) };
+                return Err((Row::Corner,said,Some(p)));
             }
         }
     }
@@ -291,8 +318,8 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
     for (end,v) in [(0,0.),(1,1.)] {
         let rim = c.patches().iter().enumerate()
             .filter(|&(k,s)| !s.periodic() && s.cap().is_none() && !c.creases().iter().any(|crease| crease[1-end] == k))
-            .find_map(|(_,surface)| (0..=options.coarse_rows).find_map(|i| { let s = surface.at(i as f64/options.coarse_rows as f64,v).ok()?;
-                poses.iter().map(|m| m.point(s.position)).find(|&p| reads.read(inside,p)) }).map(|p| (surface.name(),p)));
+            .find_map(|(_,surface)| (0..=options.coarse_rows).find_map(|i| {
+                reaches(&mut reads,surface.at(i as f64/options.coarse_rows as f64,v).ok()?.position) }).map(|p| (surface.name(),p)));
         let Some((name,p)) = rim else { continue };
         if lone.is_none() {
             return Err((Row::Tool,format!("a cap of the prism `{name}` bounds passes through the blank, and the class cuts \
@@ -300,6 +327,25 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
                 longer than the blank is thick"),Some(p)));
         }
         capped[end] = true;
+    }
+    // and any other plane of the tool's boundary that is no ruled side — a partial revolution's
+    // end, a plane a Boolean of the tool cuts it by — read as a cap (`Tool::read`, #721 F1b):
+    // asked by its own points on the tool, since no rim bounds it
+    for surface in c.patches() {
+        let Some(end) = surface.cap() else { continue };
+        if capped[end] { continue }
+        let n = CAP_READS;
+        let reached = (0..=n).flat_map(|i| (0..=n).map(move |j| (i,j))).find_map(|(i,j)| {
+            let s = surface.at(i as f64/n as f64,j as f64/n as f64).ok().filter(|s| on_tool(s.position))?;
+            reaches(&mut reads,s.position)
+        });
+        if let Some(p) = reached {
+            // (a lone prism's cap its rim does not carry into the blank is cut as one its rim does)
+            if lone.is_some() { capped[end] = true; continue }
+            return Err((Row::Tool,format!("its plane face `{}` passes through the blank, and the class cuts with a plane \
+                face only as a prism's side, or as a cap of a prism standing alone as the tool or placed, undrafted, its \
+                profile one loop",surface.name()),Some(p)));
+        }
     }
     reads.extend(clear(&|s| s.cap().is_some_and(|end| capped[end]))?);
     Ok((reads,poses,capped))
@@ -310,14 +356,65 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
 /// carried by the placements) and the model's millimetres a unit.
 pub struct Lone { cutter: Cutter,scale: f64 }
 
+impl std::fmt::Debug for Lone {
+    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f,"Lone {{ axis: {:?},scale: {} }}",self.cutter.axis,self.scale) }
+}
+
 impl Lone {
     /// The tool's cutter (millimetres, carried by the placements) as a lone prism, `scale` the
     /// model's millimetres a unit, or none where it is not one: undrafted (`prism_profile`), its
     /// profile one loop.
-    pub fn new(cutter: Cutter,scale: f64) -> Option<Lone> {
+    fn new(cutter: Cutter,scale: f64) -> Option<Lone> {
         let ([_],_) = cutter.prism_profile()? else { return None };
         Some(Lone {cutter,scale})
     }
+
+    /// **The tool `tool` read from its boundary `b` (millimetres) as one prism standing alone**
+    /// (#721 F1b), `scale` the model's millimetres a unit: where every face it reads is a side
+    /// running square along one direction, with no crease, or one of two caps, the boundary's
+    /// planes square to that direction, each one loop of lines and arcs. Its cutter is that
+    /// direction's prism of the nearer cap's loop, however the tool was drawn — a prism, one
+    /// placed, a box a Boolean leaves. None for any other tool.
+    pub fn read(b: &Brep,tool: &Tool,scale: f64) -> Option<Lone> {
+        use crate::build::Profile;
+        use crate::geom::Surface;
+        if !tool.creases.is_empty() { return None }
+        let (mut along,mut caps) = (None::<V>,0);
+        for f in &tool.faces {
+            match f {
+                ToolSurface::Cap(_) => caps += 1,
+                ToolSurface::Extruded(s) => {
+                    let d = s.depth()?;
+                    match along {
+                        Some(a) if norm(cross(a,d)) > 1e-9*norm(a)*norm(d) || dot(a,d) <= 0. => return None,
+                        _ => { along.get_or_insert(d); }
+                    }
+                }
+                ToolSurface::Revolved(_) => return None,
+            }
+        }
+        if caps != 2 { return None }
+        let axis = along.and_then(crate::util::space::normalised)?;
+        // the boundary's planes square to the sides, each one loop: the caps, each a point of it
+        // and its height along the sides, the nearer first
+        let mut ends: Vec<(f64,V,usize)> = b.faces.iter().enumerate().filter_map(|(fi,f)| match &f.surface {
+            Surface::Plane(frame) if norm(cross(frame.z,axis)) <= 1e-9 && f.loops.len() == 1 => {
+                let p = b.vertices[b.edges[f.loops[0][0].edge as usize].v[0] as usize].p;
+                Some((dot(p,axis),p,fi))
+            }
+            _ => None,
+        }).collect();
+        if ends.len() != 2 { return None }
+        ends.sort_by(|x,y| x.0.total_cmp(&y.0));
+        let [(h0,origin,near),(h1,..)] = [ends[0],ends[1]];
+        if !(h1-h0 > 0.) { return None }
+        let edges = crate::offset::plane_loop(b,&b.faces[near].loops[0],axis).ok()?;
+        let profile = Profile {origin,normal:axis,loops:vec![edges],names:vec![Vec::new()]};
+        Lone::new(Cutter::extruded(profile,0.,h1-h0,None).ok()?,scale)
+    }
+
+    /// The prism's cutter, in millimetres.
+    pub fn cutter(&self) -> &Cutter { &self.cutter }
 
     /// T3: the direction across the profile whose sections the contacts in the blank (`hits`, at
     /// their tool points) keep farthest from the profile's corners and its ends — a band that
@@ -370,7 +467,7 @@ impl Lone {
 pub fn check(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone: Option<&Lone>)
     -> Result<(Found,Reads),Failure> {
     let tool = c.source_material();
-    let on_tool = |p: V| tool.value(p).abs() < 1e-6;
+    let on_tool = |p: V| c.tool.on(p);
     let domain = c.domain();
     let middle = 0.5*(domain[0]+domain[1]);
     let pose = |t: f64| pose_at(c.motion(),t).map_err(|m| (Row::Motion,m,None));

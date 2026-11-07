@@ -1,8 +1,9 @@
 //! **The tool read from its B-rep, held beside the drawing's reading** (#721 F1, #828 F1a).
 //!
-//! Every sweep of the examples whose tool the solver reads off its drawing (`SweepContacts::read`)
-//! has that tool's recipe built into a B-rep and read by the kernel (`Tool::read`): the sweep
-//! catalogue's (`rust/examples/solid_sweeps/`) in the fast suite, every example's in the slow tier
+//! Every sweep of the examples whose tool the drawing's reading reads (`SweepContacts::drawn`, the
+//! oracle since #721 F1b switched the classes onto the B-rep) has that tool's recipe built into a
+//! B-rep and read by the kernel (`Tool::read`): the sweep catalogue's
+//! (`rust/examples/solid_sweeps/`) in the fast suite, every example's in the slow tier
 //! (`every_examples_tools_read_alike`). The two readings are held to one tool:
 //! - its **boundary**: every point of a face of either reading that is on the tool lies on a face of
 //!   the other, square to the same normal, and of the same kind (a revolution, a strip or a cap);
@@ -86,7 +87,7 @@ fn read_cases(within: impl Fn(&str) -> bool) -> Cases {
         gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
         for swept in 0..sk.solids.len() {
             let SolidDef::Swept {source,..} = &sk.solids[swept].def else { continue };
-            let Ok(drawn) = SweepContacts::read(&sk,swept,cad::AXIS_TOLERANCE) else { continue };
+            let Ok(drawn) = SweepContacts::drawn(&sk,swept,cad::AXIS_TOLERANCE) else { continue };
             let what = format!("{name}: `{}`",sk.solids[swept].name);
             let brep = gcs_core::brep::recipe::build(&cad::recipe(&sk,*source as usize).unwrap())
                 .unwrap_or_else(|m| panic!("{what}: the tool the drawing reads builds no B-rep: {m}"));
@@ -384,7 +385,7 @@ fn a_face_no_closed_form_reads_is_refused_by_name() {
     let why = Tool::read(&b,mm).expect_err("an extrusion of an epitrochoid is read");
     let Unread::FreeForm {face,kind,at} = &why else { panic!("refused as {why:?}") };
     assert_eq!(*kind,"extrusion");
-    let f = b.faces.iter().find(|f| f.name == *face).expect("the face it names");
+    let f = b.faces.iter().find(|f| gcs_core::brep::recipe::joined(&f.name) == *face).expect("the face it names");
     let q = at.map(|x| x*mm);
     assert!(norm(sub(f.surface.point(f.surface.inverse(q)),q)) <= 1e-6,"its witness {at:?} is off `{face}`");
     assert_eq!(why.witness(),Some(*at));

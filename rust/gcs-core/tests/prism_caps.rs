@@ -6,7 +6,8 @@
 //! space its own slice of the bar sweeps; its volume is read slice by slice by `rack_cut`'s
 //! arithmetic (`rack_space`), apart from the code under test. And what the class still refuses: a cap whose
 //! corners dig past it (E3, at its rim), a band of sections meeting a corner of the profile (T3),
-//! and a cap of a tool that is no prism standing alone (T1).
+//! and a cap of a tool that is no prism standing alone (T1); a
+//! prism a Boolean of the tool leaves whole is one standing alone, read from its B-rep (#721 F1b).
 use gcs_core::brep::{export,props,sweep::Say};
 use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
 use gcs_core::solid::export::Tolerance;
@@ -99,16 +100,43 @@ fn a_band_of_sections_meeting_a_corner_is_refused() {
     assert!(r.message.contains("a corner of the profile"),"{}",r.message);
 }
 
-/// The bar shared with a block (a `common`) is an intersection, no prism standing alone: its cap in
-/// the disc is refused at T1, as every cap was before (#684 F).
+/// The same block cutting the bar's end on a slant, about 20 mm from the disc's centre, inside its
+/// rim: the tool is no prism standing alone, its slanted end no cap square to its sides, and that
+/// end passing through the disc is refused at T1, as every cap was before (#684 F).
 #[test]
 fn a_cap_of_a_tool_no_lone_prism_is_refused() {
+    let source = bar_end().replace("construction space := solid({ p | some t in (-60deg, 60deg): p in bar at(under: rack, seen_from: turn) t })","in std.top {\n  k0 := point hint((10, -10))\n  k1 := point hint((21, -10))\n  \
+        k2 := point hint((19, 10))\n  k3 := point hint((10, 10))\n  fix((10, -10)) k0\n  fix((21, -10)) k1\n  fix((19, 10)) k2\n  fix((10, 10)) k3\n}\n\
+        construction keep := solid(std.solids.Prism(face(k0, k1, k2, k3, -> close), from: -20mm, to: 20mm))\nconstruction tool := solid(bar)\nkeep common tool\n\
+        construction space := solid({ p | some t in (-60deg, 60deg): p in tool at(under: rack, seen_from: turn) t })");
+    assert!(source.contains("keep common tool"));
+    assert!(source.contains("keep common tool"));
+    let r = refused(&source,"part");
+    assert_eq!(r.condition,Condition::Tool);
+    assert!(r.message.contains("standing alone"),"{}",r.message);
+}
+
+/// The bar shared with a block (a `common`) that holds it whole is the bar: read from its B-rep
+/// (#721 F1b) it is one prism standing alone, however it was drawn, and its cap in the disc is
+/// sectioned across and cut as the bar's own is, to the same arithmetic. (Before the tool was read
+/// by its B-rep, a cap of an intersection was refused at T1: #721 G9's negative control.)
+#[test]
+fn a_cap_of_a_prism_a_common_leaves_whole_cuts_as_the_bars() {
     let source = bar_end().replace("construction space := solid({ p | some t in (-60deg, 60deg): p in bar at(under: rack, seen_from: turn) t })","in std.top {\n  k0 := point hint((10, -10))\n  k1 := point hint((40, -10))\n  \
         k2 := point hint((40, 10))\n  k3 := point hint((10, 10))\n  fix((10, -10)) k0\n  fix((40, -10)) k1\n  fix((40, 10)) k2\n  fix((10, 10)) k3\n}\n\
         construction keep := solid(std.solids.Prism(face(k0, k1, k2, k3, -> close), from: -20mm, to: 20mm))\nconstruction tool := solid(bar)\nkeep common tool\n\
         construction space := solid({ p | some t in (-60deg, 60deg): p in tool at(under: rack, seen_from: turn) t })");
     assert!(source.contains("keep common tool"));
-    let r = refused(&source,"part");
-    assert_eq!(r.condition,Condition::Tool);
-    assert!(r.message.contains("standing alone"),"{}",r.message);
+    let e = fixtures::read(&source);
+    let part = fixtures::solid(&e,"part");
+    let a = admission::admit_body(&e.sketch,part,&Options::default()).unwrap_or_else(|r| panic!("{r}"));
+    let [s] = a.sweeps() else { panic!("one sweep") };
+    assert!(matches!(s.class,Class::Capped(_)),"sectioned across its cap: {:?}",s.class);
+    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
+    let exact = export::exact(&e.sketch,part,None,Some(Tolerance::new(0.002).unwrap()),&say).unwrap_or_else(|r| panic!("{}",r.message));
+    exact.solid.check(1e-6).unwrap();
+    let removed = PI*22.*22.*6.-props::volume(&exact.solid);
+    let want = bar_end_space();
+    eprintln!("removed {removed:.6} mm³, the arithmetic {want:.6}");
+    assert!((removed-want).abs() <= 2e-6*want,"removed {removed} against {want}");
 }

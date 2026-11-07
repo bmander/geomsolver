@@ -448,35 +448,40 @@ fn sweep(b: &Brep,fi: usize,s: [f64;2],reach: Reach) -> Result<Option<Brep>,Stri
     }
 }
 
+/// A plane face's loop `l` as a profile's edges about `normal`: its lines, its arcs (each frame
+/// turned to the normal) and its whole splines; a degenerate edge is passed over. What a plane face
+/// is swept from (`plane_sweep`), and what a tool's cap is read as one prism's profile from
+/// (`swept::admission::Lone::read`).
+pub(crate) fn plane_loop(b: &Brep,l: &[crate::topo::Coedge],normal: V) -> Result<Vec<ProfileEdge>,String> {
+    let mut edges = Vec::new();
+    for c in l {
+        let e = &b.edges[c.edge as usize];
+        let EdgeCurve::Curve(curve) = &e.curve else { continue };
+        edges.push(match curve {
+            Curve::Line {..} => ProfileEdge::Line {a:b.vertices[e.v[0] as usize].p,b:b.vertices[e.v[1] as usize].p},
+            Curve::Circle(frame,r) => {
+                // the arc's frame turned to the profile's normal: about the other way, its
+                // parameter runs back
+                let (frame,span) = if dot(frame.z,normal) < 0. {
+                    (Frame {y:scale(frame.y,-1.),z:scale(frame.z,-1.),..*frame},[-e.t[1],-e.t[0]])
+                } else { (*frame,e.t) };
+                ProfileEdge::Arc {frame,r:*r,span:(e.t[1]-e.t[0] < TAU-1e-12).then_some(span)}
+            }
+            Curve::BSpline(sp) => {
+                let [lo,hi] = sp.domain();
+                if (e.t[0]-lo).abs() > 1e-12 || (e.t[1]-hi).abs() > 1e-12 { return Err("an edge on a stretch of its spline".into()) }
+                ProfileEdge::Spline(sp.clone())
+            }
+            other => return Err(format!("an edge on a {}",other.kind())),
+        });
+    }
+    Ok(edges)
+}
+
 /// A plane face's sweep: the prism of its loops along its outward normal.
 fn plane_sweep(b: &Brep,f: &Face,fr: Frame,s: [f64;2]) -> Result<Brep,String> {
     let normal = scale(fr.z,if f.reversed { -1. } else { 1. });
-    let mut loops = Vec::new();
-    for l in &f.loops {
-        let mut edges = Vec::new();
-        for c in l {
-            let e = &b.edges[c.edge as usize];
-            let EdgeCurve::Curve(curve) = &e.curve else { continue };
-            edges.push(match curve {
-                Curve::Line {..} => ProfileEdge::Line {a:b.vertices[e.v[0] as usize].p,b:b.vertices[e.v[1] as usize].p},
-                Curve::Circle(frame,r) => {
-                    // the arc's frame turned to the profile's normal: about the other way, its
-                    // parameter runs back
-                    let (frame,span) = if dot(frame.z,normal) < 0. {
-                        (Frame {y:scale(frame.y,-1.),z:scale(frame.z,-1.),..*frame},[-e.t[1],-e.t[0]])
-                    } else { (*frame,e.t) };
-                    ProfileEdge::Arc {frame,r:*r,span:(e.t[1]-e.t[0] < TAU-1e-12).then_some(span)}
-                }
-                Curve::BSpline(sp) => {
-                    let [lo,hi] = sp.domain();
-                    if (e.t[0]-lo).abs() > 1e-12 || (e.t[1]-hi).abs() > 1e-12 { return Err("an edge on a stretch of its spline".into()) }
-                    ProfileEdge::Spline(sp.clone())
-                }
-                other => return Err(format!("an edge on a {}",other.kind())),
-            });
-        }
-        loops.push(edges);
-    }
+    let loops = f.loops.iter().map(|l| plane_loop(b,l,normal)).collect::<Result<_,_>>()?;
     prism(&profile(fr.o,normal,loops),s[0],s[1])
 }
 

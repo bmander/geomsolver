@@ -326,7 +326,12 @@ impl Cutter {
                 _ => return Ok(None),
             }
         };
-        let profile = Profile::of(profile)?.moved(&placed);
+        Cutter::extruded(Profile::of(profile)?.moved(&placed),from,to,*draft).map(Some)
+    }
+    /// The prism of `profile` (millimetres) from `from` to `to` along its normal, drafted `draft`
+    /// where it is, as its sections: what a recipe's prism is read as (`read`), and what a tool's
+    /// B-rep read as one prism standing alone is (`admission::Lone::read`, #721 F1b).
+    pub fn extruded(profile: Profile,from: f64,to: f64,draft: Option<f64>) -> Result<Cutter,String> {
         let axis = unit(profile.normal)?;
         let plane = Frame::about(profile.origin,axis);
         let coords = |q: V| { let l = plane.local(q); [l[0],l[1]] };
@@ -360,8 +365,8 @@ impl Cutter {
                 .collect::<Result<_,String>>()?;
             Some(Drafted {halves,fan:if parted { 2.*draft*CREASE_SCALE } else { 0. },lengths})
         };
-        Ok(Some(Cutter {origin:profile.origin,axis,kind:Kind::Extruded(Extruded {walks,extent,drafted}),
-            sections:Default::default()}))
+        Ok(Cutter {origin:profile.origin,axis,kind:Kind::Extruded(Extruded {walks,extent,drafted}),
+            sections:Default::default()})
     }
     /// A prism's profile, its loops walked in its plane (outer counter-clockwise about the axis),
     /// and the extrusion's extent from that plane, where its section is the same at every station;
