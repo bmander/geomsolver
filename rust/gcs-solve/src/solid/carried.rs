@@ -1,0 +1,319 @@
+//! **A face carried by a constant twist** (#846): a region whose one term is what a drawn face
+//! occupies under a motion over an interval of its roll stated in place — `some t in (a, b): p in
+//! sec at(under: m) t`, `RegionShape::Swept` — where the motion is a screw, a slide or a turn at a
+//! constant rate (`motion::Family::twist`).  The section is rigid, so what it sweeps is the face's
+//! profile where the interval begins carried by the motion to where it ends: built exactly as the
+//! kernel's carried profile (`brep::build::carried`, the recipe's `carried` node) — a screw's walls
+//! the screw's sheets of its edges, as a face family the statements say a screw carries is built
+//! (`family::stated_carry`), with no station solved — and held to its field before it stands
+//! (`built`).  It names no running parameter, so it stands in a component's body as anywhere.
+//!
+//! The field reads a screw's or a slide's point by point (`Reading`).  A slide's face crossed by
+//! its direction, or a screw's square to its axis, is crossed once by each point's path, so one
+//! roll carries the point back to the face's plane; a screw's face in a plane holding its axis (a
+//! thread drawn through it) is reached once a turn, so the rolls a turn apart that could carry the
+//! point back into it are read and the least taken.  Either way the point is within the sweep
+//! where such a roll is in the interval and the point carried back is in the face.  A turn is read
+//! about the line in the face's plane as before (`region::general`); it is built here too, so an
+//! interval that does not begin at nothing is exact.
+//!
+//! Refused, with its reason, where the sweep would meet itself or has no volume: a screw's face
+//! leaning on its axis, one through the axis that reaches it or — carried more than a turn — spans
+//! as much as the screw rises a turn, a slide along the face's own plane, a turn about a line off
+//! it.
+use crate::brep::geom::Carry;
+use crate::brep::recipe::Writer;
+use crate::json::{object, Json};
+use crate::model::{RegionShape, Sketch, SolidDef};
+use crate::motion::Screw;
+use crate::plane::Basis;
+use crate::space::{dot, sub};
+use std::f64::consts::TAU;
+use std::rc::Rc;
+#[allow(unused_imports)]
+use crate::fmath::Det;
+
+type V = [f64; 3];
+
+/// A face carried over an interval of a constant twist: the face, the motion and its screw (a turn
+/// of no advance, a slide of no ratio), the interval of the roll in order (radians), and how the
+/// motion crosses the face's plane — none for a turn, whose field `general` reads.
+#[derive(Clone, Debug)]
+pub struct Carried {
+    pub face: u32,
+    pub motion: u32,
+    pub screw: Screw,
+    pub roll: [f64; 2],
+    crossing: Option<Crossing>,
+}
+
+/// How a screw's or a slide's path crosses the section's plane: once (`Level`: a slide's crossing
+/// plane, a screw's plane square to its axis), or once a turn where the plane holds a screw's axis
+/// (`Axial`: the angle about the axis of the half-plane the section lies in, and the heights along
+/// the axis it spans).
+#[derive(Clone, Copy, Debug)]
+enum Crossing {
+    Level,
+    Axial { side: f64, heights: [f64; 2] },
+}
+
+/// A screw's section in a plane holding its axis: the half-plane it lies in and the heights it
+/// spans, refused where it reaches the axis or across it, or — carried more than a turn — where it
+/// spans as much as the screw rises a turn, so the sweep would meet itself.
+fn axial(sk: &Sketch, face: u32, screw: &Screw, roll: [f64; 2]) -> Result<Crossing, String> {
+    let poly = super::face_poly(sk, face as usize, super::REPORT_UNIT).ok_or("no such face")?;
+    let pts: Vec<V> = poly.pts.iter().map(|&(x, y)| poly.basis.lift(x, y)).collect();
+    // across the plane from the axis, square to it
+    let out = crate::space::cross(poly.basis.normal(), screw.axis);
+    let sides: Vec<f64> = pts.iter().map(|&p| dot(sub(p, screw.origin), out)).collect();
+    let size = pts.iter().map(|&p| crate::space::norm(sub(p, poly.basis.o))).fold(0.0, f64::max);
+    let near = 1e-9 * (1.0 + size);
+    let positive = sides.iter().all(|&x| x > near);
+    if !positive && !sides.iter().all(|&x| x < -near) {
+        return Err("a face swept by a screw about a line in its plane lies on one side of the \
+            line: one that reaches the axis, or across it, sweeps a body that meets itself".into());
+    }
+    let heights = pts.iter().map(|&p| screw.height(p))
+        .fold([f64::INFINITY, f64::NEG_INFINITY], |[a, b], h| [a.min(h), b.max(h)]);
+    // what it rises a turn
+    let rise = (screw.advance / TAU * screw.period()).abs();
+    if roll[1] - roll[0] > screw.period() + 1e-12 && heights[1] - heights[0] >= rise - near {
+        return Err(format!("a face carried more than a turn up a screw spans less along its axis \
+            than the screw rises a turn ({}): this one spans {}, so its sweep meets itself",
+            crate::vocab::num(rise), crate::vocab::num(heights[1] - heights[0])));
+    }
+    let side = screw.angle(crate::space::add(screw.origin, if positive { out } else { out.map(|x| -x) }));
+    Ok(Crossing::Axial { side, heights })
+}
+
+/// The constant twist motion `m` is, where it is one.
+fn twist(sk: &Sketch, m: u32) -> Option<Screw> {
+    crate::motion::Family::read(sk, m as usize).ok()?.twist()
+}
+
+/// Region solid `solid`'s one term, where it is a face swept over an interval of a motion and held
+/// (`defined::held`): the motion, the interval and the face.  Read off the definition alone.
+fn swept(sk: &Sketch, solid: usize) -> Option<(u32, [f64; 2], u32)> {
+    let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
+    let [t] = terms.as_slice() else { return None };
+    let RegionShape::Swept { motion, roll, face } = t.shape else { return None };
+    super::defined::held(t).then_some((motion, roll, face))
+}
+
+impl Carried {
+    /// Face `face` under motion `m` over the interval `roll` of its roll, where `m` advances — a
+    /// screw or a slide, whose field this reads: `None` for a turn as for any motion no constant
+    /// twist, else the sweep or why it is refused.
+    pub fn advancing(sk: &Sketch, m: u32, roll: [f64; 2], face: u32)
+        -> Option<Result<Carried, String>> {
+        twist(sk, m).filter(|s| !s.is_turn()).map(|s| Carried::checked(sk, m, s, roll, face))
+    }
+
+    /// Region solid `solid`, where its one term is a face carried over an interval of a constant
+    /// twist: the sweep, or why it is refused.  `None` for any other region.
+    pub fn of(sk: &Sketch, solid: usize) -> Option<Result<Carried, String>> {
+        let (m, roll, face) = swept(sk, solid)?;
+        twist(sk, m).map(|s| Carried::checked(sk, m, s, roll, face))
+    }
+
+    fn checked(sk: &Sketch, m: u32, screw: Screw, roll: [f64; 2], face: u32)
+        -> Result<Carried, String> {
+        let b = super::reads::face_basis(sk, sk.faces.get(face as usize).ok_or("no such face")?);
+        let roll = [roll[0].min(roll[1]), roll[0].max(roll[1])];
+        if !(roll[1] > roll[0]) || !roll.iter().all(|r| r.is_finite()) {
+            return Err("a face swept over an interval of a roll is swept over one of some length"
+                .into());
+        }
+        let across = dot(b.normal(), screw.axis).abs();
+        let crossing = if screw.is_turn() {
+            if !super::defined::lies_in(&b, screw.origin, screw.axis) {
+                return Err("a face swept by a turn is read point by point where the line it turns \
+                    about lies in the face's plane".into());
+            }
+            None
+        } else if screw.is_slide() {
+            if across <= 1e-9 {
+                return Err("a face slid along its own plane sweeps no volume: a slide sweeps a \
+                    face whose plane its direction crosses".into());
+            }
+            Some(Crossing::Level)
+        } else if (1.0 - across).abs() <= 1e-9 {
+            Some(Crossing::Level)
+        } else if super::defined::lies_in(&b, screw.origin, screw.axis) {
+            Some(axial(sk, face, &screw, roll)?)
+        } else {
+            return Err("a face swept by a screw is read where its plane is square to the screw's \
+                axis or holds it, so the screw carries each point across it once a turn: a \
+                section leaning on the axis is not read yet".into());
+        };
+        Ok(Carried { face, motion: m, screw, roll, crossing })
+    }
+
+    /// The recipe's `carried` node (`brep::build::carried`): the face's profile, the motion's pose
+    /// where the interval begins, and its carry from there to where it ends.
+    pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<Json, String> {
+        let start = crate::motion::Family::read(sk, self.motion as usize)?.at(self.roll[0])?;
+        Ok(object([
+            ("kind", "carried".into()),
+            ("profile", super::cad::profile(sk, self.face as usize, w)?),
+            ("start", w.matrix(super::cad::placement_matrix(start, w.scale))),
+            ("carry", super::cad::carry_json(self.carry(), w)),
+        ]))
+    }
+
+    /// The motion's carry over the interval, in model units: a screw's turn and step, a turn's, or
+    /// a slide's step.
+    pub fn carry(&self) -> Carry {
+        let s = &self.screw;
+        let run = self.roll[1] - self.roll[0];
+        let advance = s.advance * run / TAU;
+        if s.is_slide() {
+            return Carry::Line { delta: s.axis.map(|x| x * advance) };
+        }
+        Carry::Screw { center: s.origin, axis: s.axis, angle: s.ratio * run, advance }
+    }
+
+    /// The field's reading of the sweep (a screw's or a slide's: a turn's is `general`'s): the
+    /// section's plane and region, and the planes the sweep is within.
+    pub(crate) fn reading(&self, sk: &Sketch) -> Result<Reading, String> {
+        let Some(crossing) = self.crossing else {
+            return Err("a face swept by a turn is read about its line by the region's field".into());
+        };
+        let (b, region, reach) = crate::solid::field::section(sk, self.face as usize)?;
+        let s = &self.screw;
+        let along = |t: f64| s.advance * t / TAU;
+        let mut planes = Vec::new();
+        match reach {
+            None => {}
+            // the box of the section's square, at each end of the slide
+            Some(r) if s.is_slide() => for k in 0..3 {
+                let ends = self.roll.map(|t| b.o[k] + s.axis[k] * along(t));
+                let mut e = [0.0; 3];
+                e[k] = 1.0;
+                planes.push((e, ends[0].max(ends[1]) + r));
+                e[k] = -1.0;
+                planes.push((e, -(ends[0].min(ends[1]) - r)));
+            },
+            // within the cylinder about the axis the section's square turns in, between the
+            // heights it is carried to
+            Some(r) => {
+                let (lo, hi) = (b.o.map(|x| x - r), b.o.map(|x| x + r));
+                let (h, reach) = s.extent(lo, hi, crate::envelope::Motion::identity());
+                let (e1, e2) = crate::space::across(s.axis);
+                for e in [e1, e2, e1.map(|x| -x), e2.map(|x| -x)] {
+                    planes.push((e, dot(e, s.origin) + reach));
+                }
+                let steps = self.roll.map(along);
+                planes.push((s.axis, h[1] + steps[0].max(steps[1])));
+                planes.push((s.axis.map(|x| -x), -(h[0] + steps[0].min(steps[1]))));
+            }
+        }
+        let normal = b.normal();
+        let frame = crate::brep::geom::Frame::about(s.origin, s.axis);
+        Ok(Reading { carried: self.clone(), crossing, basis: b, normal, frame, region, planes })
+    }
+}
+
+/// Region solid `solid` built as a face carried over an interval of a constant twist, where it is
+/// one (`Carried::of`): standing only where its field agrees with the kernel's construction
+/// (`agreement::gate_node`), as a region in general position is held (`bounded`).  Remembered
+/// against what it reads (`Caches::carried`).
+pub fn built(sk: &Sketch, solid: usize) -> Option<Result<Rc<Carried>, String>> {
+    swept(sk, solid)?;
+    sk.caches.carried.get_or(solid, super::MemoKey::of(sk, solid), || {
+        Carried::of(sk, solid).map(|c| c.and_then(|c| {
+            super::agreement::gate_node(sk, solid, &c.node(sk, &Writer::world(1.0))?)?;
+            Ok(Rc::new(c))
+        }))
+    })
+}
+
+/// **The faces a carried face's sweep is named by** (`defined`'s rule): region solid `solid`'s,
+/// where its one term is a face swept over an interval of a motion — its section's sides by the
+/// edges they are swept from, then `start` where the interval begins and `end` where it ends, a
+/// turn through a whole one or more capped by neither.  Read off the definition alone, whatever
+/// the motion: what the field reads and what the kernel builds are named alike.
+pub fn face_names(sk: &Sketch, solid: usize) -> Option<Vec<String>> {
+    let (motion, roll, face) = swept(sk, solid)?;
+    let f = sk.faces.get(face as usize)?;
+    let mut v: Vec<String> = f.boundaries().flat_map(|(_, n)| n.iter().cloned()).collect();
+    let whole = twist(sk, motion)
+        .is_some_and(|s| s.is_turn() && roll[1] - roll[0] >= s.period() - 1e-12);
+    if !whole {
+        v.extend(["start".to_string(), "end".to_string()]);
+    }
+    v.dedup();
+    Some(v)
+}
+
+/// **A screw's or a slide's sweep read point by point**: negative within it.  A point's path
+/// crosses the section's plane at one roll (`Crossing::Level`), or once a turn into the half-plane
+/// the section lies in (`Crossing::Axial`); it is within the sweep where such a roll is in the
+/// interval and the motion carries it back there into the face — the region's value at the point
+/// carried back, or how far along its path the roll falls outside the interval, the least over the
+/// rolls that could carry it into the face.
+pub(crate) struct Reading {
+    carried: Carried,
+    crossing: Crossing,
+    basis: Basis,
+    /// The section's plane's normal, and the frame about the screw's axis its angles are read in.
+    normal: V,
+    frame: crate::brep::geom::Frame,
+    region: crate::solid::field::PlanarField,
+    /// The half-spaces the sweep is within, `n · x ≤ d`, where the section's reach is known.
+    pub planes: Vec<(V, f64)>,
+}
+
+impl Reading {
+    /// How far the roll `t` falls outside the interval at `speed` (a length a radian of the roll).
+    fn beyond(&self, t: f64, speed: f64) -> f64 {
+        let [t0, t1] = self.carried.roll;
+        speed * (t0 - t).max(t - t1)
+    }
+
+    /// At `p`, carried back over the roll `t`: the region's value there, or how far the roll falls
+    /// outside the interval.
+    fn at(&self, p: V, t: f64, speed: f64) -> f64 {
+        let (x, y) = self.basis.view_coords(self.carried.screw.carry(p, -t));
+        self.region.value([x, y]).max(self.beyond(t, speed))
+    }
+
+    /// The reading at `p`: negative within the sweep.
+    pub fn value(&self, p: V) -> f64 {
+        let s = &self.carried.screw;
+        let rise = s.advance / TAU;
+        match self.crossing {
+            Crossing::Level => {
+                let rate = dot(self.normal, s.axis) * rise;
+                self.at(p, dot(self.normal, sub(p, self.basis.o)) / rate, rate.abs())
+            }
+            Crossing::Axial { side, heights } => {
+                let period = s.period();
+                let speed = crate::space::norm(s.velocity(p));
+                // the rolls a turn apart carrying `p` into the section's half-plane, those that
+                // carry it back to a height the section spans within a turn of the interval
+                let l = self.frame.local(p);
+                let first = (l[1].datan2(l[0]) - side) / s.ratio;
+                let back = heights.map(|h| -s.time_to(p, h));
+                let [t0, t1] = self.carried.roll;
+                let mut lo = back[0].min(back[1]).max(t0) - period;
+                let mut hi = back[0].max(back[1]).min(t1) + period;
+                if lo > hi {
+                    let mid = ((lo + hi) / 2.0).clamp(t0, t1);
+                    (lo, hi) = (mid - period, mid + period);
+                }
+                let mut best = f64::INFINITY;
+                let mut k = ((lo - first) / period).ceil();
+                while first + k * period <= hi {
+                    let t = first + k * period;
+                    // a roll whose way past the interval already reaches the best reads no more
+                    if self.beyond(t, speed) < best {
+                        best = best.min(self.at(p, t, speed));
+                    }
+                    k += 1.0;
+                }
+                best
+            }
+        }
+    }
+}

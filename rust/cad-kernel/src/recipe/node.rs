@@ -28,6 +28,14 @@ fn listed<'a>(j: &'a Json,k: &str) -> &'a [Json] { j.get(k).map_or(&[][..],Json:
 fn each<T>(list: &[Json],f: impl Fn(&Json) -> Read<T>) -> Read<Vec<T>> { list.iter().map(f).collect() }
 /// Two numbers.
 fn pair(j: &Json) -> [f64;2] { [j.arr()[0].as_f64(),j.arr()[1].as_f64()] }
+/// A row-major 3x4 matrix under `k`, where there is one; `what` names its node in the error.
+fn rows(j: &Json,k: &str,what: &str) -> Read<Option<[f64;12]>> {
+    match j.get(k) {
+        None => Ok(None),
+        Some(m) if m.arr().len() == 12 => Ok(Some(std::array::from_fn(|i| m.arr()[i].as_f64()))),
+        Some(_) => Err(unread(format!("recipe: {what}'s `{k}` is not three rows of four"))),
+    }
+}
 
 /// A whole recipe: its nodes in the order they are built (each built from those before it) and
 /// the id of the one that is the solid.
@@ -46,12 +54,7 @@ pub struct Use { pub sources: Vec<i64>,pub matrix: Option<[f64;12]> }
 
 impl Use {
     fn read(n: &Json) -> Read<Use> {
-        let matrix = match n.get("matrix") {
-            None => None,
-            Some(m) if m.arr().len() == 12 => Some(std::array::from_fn(|k| m.arr()[k].as_f64())),
-            Some(_) => return Err(unread("recipe: a use's `matrix` is not three rows of four".into())),
-        };
-        Ok(Use {sources:ids(n,"sources")?,matrix})
+        Ok(Use {sources:ids(n,"sources")?,matrix:rows(n,"matrix","a use")?})
     }
 
     /// Where the use puts a profile through `origin` square to `normal`: its origin and normal.
@@ -99,6 +102,10 @@ pub enum Node {
     Lowered(Lowered),
     /// A face family's walls (`solid::family`, #243 L2).
     Family(Family),
+    /// A profile carried rigidly over an interval of a constant twist (`solid::carried`, #846): the
+    /// profile moved by the row-major 3x4 `start` (the pose where the interval begins), then carried
+    /// by `carry` from there to where it ends — a screw, a turn (a screw of no advance) or a slide.
+    Carried { profile: Section,start: [f64;12],carry: crate::geom::Carry },
 }
 
 /// The path a ball's centre runs (`Node::Canal`): carried by a screw about the line through
@@ -203,11 +210,8 @@ impl Node {
                 draft:n.get("draft").map(Json::as_f64)},
             "revolve" => Node::Revolve {profile:profile()?,origin:point(n,"origin")?,axis:point(n,"axis")?,
                 angle:number(n,"angle")?},
-            "placed" => {
-                let m = field(n,"matrix")?.arr();
-                if m.len() != 12 { return Err(unread("recipe: a placement's `matrix` is not three rows of four".into())) }
-                Node::Placed {source:field(n,"source")?.as_i64(),matrix:std::array::from_fn(|k| m[k].as_f64())}
-            }
+            "placed" => Node::Placed {source:field(n,"source")?.as_i64(),
+                matrix:rows(n,"matrix","a placement")?.ok_or_else(|| unread("recipe: no `matrix`".into()))?},
             "through" => Node::Through {profile:profile()?,uses:each(listed(n,"uses"),Use::read)?},
             "body" => Node::Body(Body::read(n)?),
             "canal" => Node::Canal {centre:point(n,"centre")?,radius:number(n,"radius")?,
@@ -223,6 +227,9 @@ impl Node {
             "grown" => Node::Grown {body:field(n,"body")?.as_i64(),pieces:each(field(n,"pieces")?.arr(),Node::read)?},
             "glued" => Node::Glued(each(field(n,"pieces")?.arr(),Node::read)?),
             "family" => Node::Family(Family::read(n)?),
+            "carried" => Node::Carried {profile:profile()?,
+                start:rows(n,"start","a carried profile")?.ok_or_else(|| unread("recipe: no `start`".into()))?,
+                carry:carry(field(n,"carry")?)?},
             k => return Err(unread(format!("recipe: a node of kind `{k}`"))),
         })
     }
@@ -234,7 +241,7 @@ impl Node {
             Node::Placed {..} => "placed",Node::Through {..} => "through",Node::Body(_) => "body",
             Node::Canal {..} => "canal",Node::Region(_) => "region",Node::Grown {..} => "grown",Node::Glued(_) => "glued",
             Node::Lowered(_) => "lowered",
-            Node::Family(_) => "family",
+            Node::Family(_) => "family",Node::Carried {..} => "carried",
         }
     }
 }
@@ -281,16 +288,23 @@ impl Family {
         };
         let carry = match n.get("carry") {
             None => None,
-            Some(c) => Some(match field(c,"kind")?.as_str() {
-                "screw" => crate::geom::Carry::Screw {center:point(c,"center")?,
-                    axis:point(c,"axis")?,angle:number(c,"angle")?,advance:number(c,"advance")?},
-                "line" => crate::geom::Carry::Line {delta:point(c,"delta")?},
-                k => return Err(unread(format!("recipe: a family carried by a `{k}`"))),
-            }),
+            Some(c) => Some(carry(c)?),
         };
         Ok(Family {spans:field(n,"spans")?.arr().iter().map(pair).collect(),at,vanish:number(n,"vanish")?,
             loops:each(field(n,"loops")?.arr(),|l| each(l.arr(),wall))?,carry})
     }
+}
+
+/// A motion that carries a section, as a recipe writes it: a screw about the line through
+/// `center` along the unit `axis`, turning by `angle` and stepping `advance` along it, or a step
+/// `delta` along a line.
+fn carry(c: &Json) -> Read<crate::geom::Carry> {
+    Ok(match field(c,"kind")?.as_str() {
+        "screw" => crate::geom::Carry::Screw {center:point(c,"center")?,
+            axis:point(c,"axis")?,angle:number(c,"angle")?,advance:number(c,"advance")?},
+        "line" => crate::geom::Carry::Line {delta:point(c,"delta")?},
+        k => return Err(unread(format!("recipe: a section carried by a `{k}`"))),
+    })
 }
 
 impl Lowered {

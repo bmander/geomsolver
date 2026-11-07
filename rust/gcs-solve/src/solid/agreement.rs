@@ -107,6 +107,15 @@ pub fn gate(field: &super::MaterialField,b: &crate::brep::topo::Brep,back: Optio
     gate_meshed(field,b,&gate_mesh(b)?,back,what)
 }
 
+/// `gate` of the recipe node `node`, written about the world's origin in model units
+/// (`Writer::world(1.0)`), against solid `solid`'s own field: the gate an exact construction of a
+/// region stands by (`bounded`, `carried`).
+pub fn gate_node(sk: &crate::model::Sketch,solid: usize,node: &crate::json::Json) -> Result<(),String> {
+    let brep = crate::brep::recipe::node(node,&Default::default())?;
+    let field = super::MaterialField::read(sk,solid,super::cad::AXIS_TOLERANCE)?;
+    gate(&field,&brep,None,"its exact construction disagrees with the field")
+}
+
 /// `b` meshed as `gate` probes it: no coarser than a twentieth of the probes' offset.
 pub fn gate_mesh(b: &crate::brep::topo::Brep) -> Result<crate::brep::mesh::Mesh,String> {
     let size = b.size().max(f64::MIN_POSITIVE);

@@ -14,6 +14,18 @@ pub const POSE_CACHE: usize = 4096;
 pub fn millimetres(sk: &Sketch) -> f64 { sk.units.mm_per() }
 
 pub(super) fn vector(v: [f64;3]) -> Json { Json::Arr(v.into_iter().map(Json::from).collect()) }
+
+/// A motion that carries a section (model units), as the recipe writes it by `w`: a point moved
+/// and scaled, a direction as it is, a length scaled (a family's `carry`, a carried profile's, #846).
+pub(super) fn carry_json(c: crate::brep::geom::Carry,w: &Writer) -> Json {
+    match c {
+        crate::brep::geom::Carry::Screw {center,axis,angle,advance} => object([("kind","screw".into()),
+            ("center",w.point(center)),("axis",vector(axis)),("angle",angle.into()),
+            ("advance",(advance*w.scale).into())]),
+        crate::brep::geom::Carry::Line {delta} => object([("kind","line".into()),
+            ("delta",vector(delta.map(|x| x*w.scale)))]),
+    }
+}
 fn ids(v: &[u32]) -> Json { Json::Arr(v.iter().copied().map(Json::from).collect()) }
 
 /// Row-major 3x4 native placement. Rotation is dimensionless; only the
@@ -369,6 +381,9 @@ impl<'a> Walk<'a> {
                 // and corner, glued to it
                 super::region::Route::Grown(g) => g.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(w)?,
                 super::region::Route::Field(why) => return Err(format!("`{}`: {why}",sk.solid_name(i))),
+                // a face carried over an interval of a constant twist (#846): its profile where the
+                // interval begins, carried to where it ends
+                super::region::Route::Carried(c) => c.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(sk,w)?,
                 // a panel's band (#645): its ruled walls are not yet written exactly
                 super::region::Route::Sheet(_) => return Err(format!("`{}`: a developable panel's \
                     band is faceted from its rulings; its exact ruled walls are not yet written to \
@@ -473,7 +488,7 @@ pub use crate::brep::cubic::fit_sampled;
 /// A profile's cubic B-spline edge as a recipe writes it is the kernel's (`brep::cubic::bspline_edge`).
 pub(crate) use crate::brep::cubic::bspline_edge;
 
-fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String> {
+pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String> {
     let face = &sk.faces[index];
     let p = super::face_poly(sk,index,super::REPORT_UNIT).ok_or("invalid CAD profile")?;
     let scale = w.scale;
