@@ -6,8 +6,8 @@
 //! further at the walk's point, and crosses it there (`constant_twist`'s partway corners). Held
 //! here in the kernel alone: a drum with a window ground down through its side by a quarter-turn
 //! groove, turned about a line square to its axis, its characteristic run up its side, across the
-//! window's floor and up its back wall; and a partial revolution, its side a strip meeting its
-//! rounds' rings, pushed through a plate as the whole revolution is.
+//! window's floor and up its back wall; and partial revolutions, their sides read about their axes
+//! with their rounds, walked as the whole revolutions are.
 use gcs_core::brep::boolean::{boolean,Op};
 use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
 use gcs_core::brep::swept::admission::{check_screw,Generating,Sampling};
@@ -109,10 +109,10 @@ fn the_walk_crosses_a_corner_partway_along_a_face() {
 /// revolutions, and its side, which shares their rings, is read about the same axis with them
 /// (`Tool::read`): no strip meets a face of revolution at a ring. Its ends are planes through its
 /// axis that pass through the plate, but the push's normals never lie in them, so they hold no
-/// characteristic and are no refusal (T1 under a constant twist, #721 F1d). Its characteristic is
+/// characteristic and are no refusal (T1, #721 F1d). Its characteristic is
 /// the whole drum's: the push's silhouette lies in what the three quarters keep.
 #[test]
-fn a_partial_revolutions_strips_cross_onto_its_rounds() {
+fn a_partial_revolution_is_walked_as_its_whole_turn() {
     use crate::swept_charts::{alike,drum,drum_turned,push,Plate};
     use gcs_core::brep::swept::dispatch::Blank;
     let quarters = Tool::read(&drum_turned(std::f64::consts::FRAC_PI_4,1.5*std::f64::consts::PI),1.).unwrap();
@@ -174,4 +174,3 @@ fn a_corner_where_the_points_part_is_walked_round_on_a_partial_revolution() {
     assert!(!whole.fans().is_empty(),"the walk runs round a corner's fan");
     alike("three quarters",&whole,&walk(&barrel(std::f64::consts::FRAC_PI_4,1.5*std::f64::consts::PI)));
 }
-

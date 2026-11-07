@@ -38,9 +38,9 @@ pub struct RevolvedRegion {
     /// moved by up to this, so its neighbours join it within the same distance.
     pub(crate) axis_tolerance: f64,
     /// Where it turns over part of a turn (#721 F1d): the unit direction from the axis its
-    /// profile's half-plane starts in, and the signed angle it turns through about `axis`; none
-    /// for a whole turn.
-    pub(crate) turn: Option<(V,f64)>,
+    /// profile's half-plane starts in, the unit direction it turns toward (square to that and the
+    /// axis), and how far it turns; none for a whole turn.
+    pub(crate) turn: Option<(V,V,f64)>,
 }
 
 impl RevolvedRegion {
@@ -103,24 +103,21 @@ impl RevolvedRegion {
         if bounds[1].max(-bounds[0]) <= axis_tolerance {
             return Err("the profile has no material away from its axis".into());
         }
+        let reflected = -bounds[0] > bounds[1];
         for edge in loops.iter_mut().flatten() {
-            if -bounds[0] > bounds[1] { edge.reflect(); }
+            if reflected { edge.reflect(); }
             if let Edge::Line {a,b,axis} = edge {
                 if a[0].abs() <= axis_tolerance && b[0].abs() <= axis_tolerance {
                     a[0] = 0.; b[0] = 0.; *axis = true;
                 }
             }
         }
-        // over part of a turn: the half-plane its profile's first face starts in, and how far it
-        // turns, as that face's surface reads them
+        // over part of a turn: the profile's own half-plane (on the side its material is), the way
+        // its faces' surfaces turn from it, and how far
         let turn = (sweep.value < TAU).then(|| {
-            let p = first.at(0.5,0.).ok()?.position;
-            let q = sub(p,origin);
-            let r = sub(q,scale(axis,plane::dot(q,axis)));
-            let l = plane::dot(r,r).sqrt();
-            (l > 0.).then(|| (scale(r,1./l),first.sweep()))
-        }).flatten();
-        if sweep.value < TAU && turn.is_none() { return Err("a partial revolution's profile lies on its axis".into()) }
+            let start = if reflected { scale(radial,-1.) } else { radial };
+            (start,scale(plane::cross(axis,start),first.sweep().signum()),first.sweep().abs())
+        });
         Ok(Self {origin,axis,loops,axis_tolerance,turn})
     }
 
@@ -151,18 +148,14 @@ impl RevolvedRegion {
             .fold(f64::INFINITY,f64::min);
         if !distance.is_finite() { return Err(Error::NonFinite); }
         let inside = |edges: &[Edge]| edges.iter().map(|e| e.crossings(p)).sum::<usize>()%2 == 1;
-        // (and, over part of a turn, within the wedge it turns through: the distance to the
-        // profile turned to the nearer end beyond it)
-        let (wedged,distance) = match self.turn {
-            None => (true,distance),
-            Some((start,sweep)) => {
-                let w = plane::cross(self.axis,start);
-                let angle = (plane::dot(v,w)*sweep.signum()).datan2(plane::dot(v,start)).rem_euclid(TAU);
-                if angle <= sweep.abs() { (true,distance) }
-                else { (false,distance.max(p[0]*(angle-sweep.abs()).min(TAU-angle).min(std::f64::consts::FRAC_PI_2).sin())) }
-            }
-        };
-        let material = wedged && inside(&self.loops[0]) && !self.loops[1..].iter().any(|l| inside(l));
+        // (and, over part of a turn, within the wedge it turns through: past it, how far round
+        // beyond its nearer end, and the distance at least that point's from the end half-plane)
+        let beyond = self.turn.and_then(|(start,toward,angle)| {
+            let round = plane::dot(v,toward).datan2(plane::dot(v,start)).rem_euclid(TAU);
+            (round > angle).then(|| (round-angle).min(TAU-round))
+        });
+        let distance = beyond.map_or(distance,|g| distance.max(p[0]*g.min(std::f64::consts::FRAC_PI_2).sin()));
+        let material = beyond.is_none() && inside(&self.loops[0]) && !self.loops[1..].iter().any(|l| inside(l));
         let location = if distance <= tolerance { RegionLocation::Boundary }
             else if material { RegionLocation::Inside } else { RegionLocation::Outside };
         Ok(RegionSample {location,signed_distance:if material { -distance } else { distance }})

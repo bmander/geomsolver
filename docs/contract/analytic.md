@@ -288,7 +288,8 @@ snapshot: a change to the drawing needs the part made again. `tests/patches.rs` 
 **Trimmed spatial patches:** `patch::TrimmedPatch::of_envelope(name, envelope, inside, outside)` and
 `of_surface` keep a source's points within every `inside` region and outside every `outside` one,
 each a `solid::RevolvedRegion`, with explicit trim and residual tolerances; regions read unmodified
-full revolutions (line/arc/circle profiles, holes) with an explicit axis tolerance.
+revolutions, whole or over part of a turn (line/arc/circle profiles, holes; a partial turn its
+whole turn's material in common with its wedge, #721 F1d) with an explicit axis tolerance.
 `RevolvedRegion` is analytic meridian membership apart from the CSG kernel. Mind full-circle
 seams, arc shared vertices, vanishing axis edges; never turn a sphere's construction diameter into
 a wall. The final root must satisfy trim and envelope; a trial may cross a trim. No branch, face
@@ -314,7 +315,7 @@ must not expand exponentially or conflate transformed coordinates; spatial depth
 from planar. `solid::SweptField` owns a one-Lipschitz source, a motion and a roll domain; its
 `SweepEvaluator` has a capped pose cache. Evidence observers cannot define geometry or prune; do
 not reintroduce a callback-based oracle. `SpatialField::read` takes prisms
-(stated ordinates, or through a body), full revolutions, bodies and placements; `SweptField::read`
+(stated ordinates, or through a body), revolutions (whole or part), bodies and placements; `SweptField::read`
 binds a solid and motion. `solid::ExtrudedField` is the prism leaf (interval Gram–Schmidt frame);
 a through prism spans `support_bounds` (unknown refuses). Profiles go through
 `PlanarField::from_loops`

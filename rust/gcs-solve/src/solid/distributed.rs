@@ -7,9 +7,9 @@
 //! placement of the union's sweep a placement of every member's. Each member's sweep is then
 //! whatever it is alone — a ball's tube (`canal`), a sweep of the generating or the constant-twist
 //! class, admitted by its own rows and refused by them naming the member — and the body is built
-//! and judged as any body cutting several sweeps is. Nothing here reads geometry: the copy's field
-//! is the drawing's, member by member, and the export holds what it builds to the drawing's own
-//! field of the union.
+//! and judged as any body cutting several sweeps is. Nothing here reads geometry but whether a union
+//! is swept whole (`whole`): the copy's field is the drawing's, member by member, and the export
+//! holds what it builds to the drawing's own field of the union.
 //!
 //! A union is its members where it is the whole tool, a union within a union or a placement of
 //! one (each member placed as the union is): one within an intersection or a cut (`(A ∪ B) ∩ C`)
@@ -80,28 +80,18 @@ fn union_cuts(sk: &Sketch, body: usize) -> Vec<(usize, Vec<u32>)> {
 /// any other motion (the generating class refuses a concave corner carried through the blank, T2).
 fn whole(sk: &Sketch, p: usize) -> bool {
     let SolidDef::Swept { motion, .. } = sk.solids[p].def else { return false };
-    let twisted = crate::motion::Family::read(sk, motion as usize).ok().and_then(|f| f.trajectory().ok())
-        .and_then(|t| crate::brep::swept::constant_twist::twist_of(&t)).is_some();
+    let twisted = crate::motion::Family::read(sk, motion as usize).is_ok_and(|f| f.twist().is_some());
     twisted && super::cad::tool_brep(sk, p).is_ok_and(|b| connected(&b)
         && crate::brep::swept::tool::Tool::read(&b, super::cad::millimetres(sk)).is_ok())
 }
 
-/// Whether every face of `b` is joined to every other by a chain of faces sharing edges: one solid.
+/// Whether `b`'s faces are one solid's, each joined to the next by the edges they share.
 fn connected(b: &crate::brep::topo::Brep) -> bool {
-    let n = b.faces.len();
-    if n == 0 { return false }
-    let uses = b.uses();
-    let mut seen = vec![false; n];
-    let mut stack = vec![0usize];
-    seen[0] = true;
-    while let Some(f) = stack.pop() {
-        for c in b.faces[f].loops.iter().flatten() {
-            for &(g, _, _) in &uses[c.edge as usize] {
-                if !seen[g] { seen[g] = true; stack.push(g) }
-            }
-        }
+    let mut joined = crate::graph::UnionFind::new(b.faces.len());
+    for uses in b.uses() {
+        for w in uses.windows(2) { joined.union(w[0].0, w[1].0) }
     }
-    seen.into_iter().all(|x| x)
+    !b.faces.is_empty() && joined.labels().1 == 1
 }
 
 /// Whether `body` cuts the sweep of a union this distributes, so that it is built from `lowered`.

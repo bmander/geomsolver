@@ -263,11 +263,9 @@ fn the_plus_leaves_its_conjugate_wheel() {
 fn the_beads_leave_what_either_shadow_covers() {
     let e = example("union.sv");
     let a = admission::admit_body(&e.sketch,fixtures::solid(&e,"rod"),&Options::default()).unwrap_or_else(|r| panic!("{r}"));
-    assert_eq!(a.sweeps().len(),1,"the union swept whole");
-    for s in a.sweeps() {
-        let Class::ConstantTwist(found) = &s.class else { panic!("a bead's sweep is a slide's") };
-        assert!(s.name == "groove" && found.screw.is_slide(),"read as the union's slide");
-    }
+    let [s] = a.sweeps() else { panic!("the union swept whole") };
+    let Class::ConstantTwist(found) = &s.class else { panic!("the union's sweep is a slide's") };
+    assert!(s.name == "groove" && found.screw.is_slide(),"read as the union's slide");
     near(exported(&e,"rod"),PI*25.*20.-crate::union_tools::beads_section()*20.,2e-6);
 }
 

@@ -612,9 +612,9 @@ corner's (`cut_at`), and where the walk stands on it and the face goes no furthe
 point (`Walker::partway`, the material read just past it), it crosses the corner as at a face's
 end (`Along::cuts`: onto the face beyond, round the corner's fan, onto a flat's line); onto a face
 partway along it, it goes on the way the face is the tool's from that point (`Walker::onward`).
-`Tool::corner` probes such a corner on the side its face goes on, and at the first place round
-the turn where its chord lies off the boundary (a partial revolution's chart starts at its end,
-where the chord lies in the end plane).  No strip meets a face of revolution at a ring: a strip's
+`Tool::corner` probes such a corner on the side its face goes on, and first at its own point
+(`PatchEdge::at`, the middle of the B-rep's edge it is read off, within both faces), so not at a
+partial revolution's chart start, where the chord would lie in its end plane.  No strip meets a face of revolution at a ring: a strip's
 rim lies along a ring only about the strip's own axis, so a face over part of a turn that no strip
 reading takes (a ball's, a ring's, a revolution of an arc) is read as a revolution first, and the
 faces sharing its circles are read about its axis with it; the corner between them is a corner of
@@ -628,9 +628,9 @@ back wall's partway along the top's (`a_windowed_drum_is_read_a_surface_at_a_tim
 about a line square to its axis through a blank, its characteristic walked up the side, across the
 floor and up the back wall, every node on that path to 1e-15
 (`the_walk_crosses_a_corner_partway_along_a_face`); and the bull-nosed drum turned three quarters
-of a turn, its side a strip between its rounds, the push's silhouette in what the three quarters
+of a turn, its side read about its axis with its rounds, the push's silhouette in what the three quarters
 keep, pushed through the plate, its characteristic the whole drum's curve to 2e-15
-(`a_partial_revolutions_strips_cross_onto_its_rounds`); and a barrel whose side meets its ball
+(`a_partial_revolution_is_walked_as_its_whole_turn`); and a barrel whose side meets its ball
 ends at a sharp corner, slid aslant so the faces' points part there, turned three quarters, its
 characteristic run round the corner's fan and the whole barrel's curve to 2e-15
 (`a_corner_where_the_points_part_is_walked_round_on_a_partial_revolution`).
@@ -1797,8 +1797,10 @@ the union's field as a swept body is. Not distributed: a union within an interse
 constant twist crosses it where both faces' points meet it, creased there, #721 F1d,
 `union_tools::a_union_within_an_intersection_is_the_constant_twists`, and the closed class reads
 such a tool by its B-rep where it takes its faces; members falling to the closed
-class and another each built by its road, `union_tools::a_member_its_class_refuses_is_the_closed_classs`), and a union of prisms under a motion keeping their plane, which
-`planar_subtraction::asks` reads whole. The native path refuses a distributed cut by name.
+class and another each built by its road, where the union is distributed,
+`union_tools::a_member_its_class_refuses_is_the_closed_classs`); a union of prisms under a motion
+keeping their plane, which `planar_subtraction::asks` reads whole; and a union that is one solid
+under a constant twist, swept whole as its set (`distributed::whole`, #721 F1d). The native path refuses a distributed cut by name.
 `tests/union_tools.rs` and `solid_sweeps_examples.rs` (`union.sv`) are the gate: the beads' groove
 against rows across the rod computed apart, placed and turned, against the long form, two balls'
 tubes by Pappus, two tori rolled in the generating class, and the refusals.

@@ -96,10 +96,13 @@ impl Tool {
         // strips (again those curved first, whose rulings are their own), then what is left
         let mut read: Vec<Option<Read>> = vec![None;b.faces.len()];
         for &fi in &order { read[fi] = reader.revolved(fi,false).map(Read::Revolved) }
+        // each face's readings as a strip, where it has none yet
+        let options: Vec<Vec<Strip>> = (0..b.faces.len())
+            .map(|fi| if read[fi].is_some() { Vec::new() } else { reader.strips(fi) }).collect();
         // and a face over part of a turn no strip reading takes — a ball's, a ring's, a revolution of
         // an arc — which is its surface's whole turn whatever reads its neighbours
         for &fi in &order {
-            if read[fi].is_none() && !matches!(b.faces[fi].surface,Surface::Plane(_)) && reader.strips(fi).is_empty() {
+            if read[fi].is_none() && !matches!(b.faces[fi].surface,Surface::Plane(_)) && options[fi].is_empty() {
                 read[fi] = reader.revolved(fi,true).map(Read::Revolved)
             }
         }
@@ -122,8 +125,6 @@ impl Tool {
             }
             if !found { break }
         }
-        let options: Vec<Vec<Strip>> = (0..b.faces.len())
-            .map(|fi| if read[fi].is_some() { Vec::new() } else { reader.strips(fi) }).collect();
         for &seed in &order {
             if read[seed].is_some() { continue }
             let Some(s) = options[seed].iter().find(|s| reader.fits(s,seed,&read)).cloned() else { continue };
@@ -142,8 +143,8 @@ impl Tool {
                 }
             }
         }
-        // a face of revolution over part of a turn that is no strip — a ball's, a ring's or a drum's
-        // a Boolean of the tool trims — is its surface's whole turn over the face's span of its
+        // a face of revolution over part of a turn that no strip reading fits — a drum's a Boolean
+        // of the tool trims — is its surface's whole turn over the face's span of its
         // meridian, the material telling the face from the rest of the turn, as every face a
         // Boolean hides is kept
         for fi in 0..b.faces.len() {
@@ -183,12 +184,14 @@ impl Tool {
             let faces: Vec<usize> = uses.iter().map(|u| u.0).collect::<std::collections::BTreeSet<_>>()
                 .into_iter().collect();
             let e = e as u32;
+            // (the middle of the edge: a point of the corner on the tool, within both faces)
+            let at = { let edge = &reader.b.edges[e as usize]; edge.point(0.5*(edge.t[0]+edge.t[1]),&reader.b.vertices).map(|x| x/scale) };
             // a meridian closed on itself (a ring's circle turned whole) meets itself at its seam
             if let ([a],2) = (&faces[..],uses.len()) {
                 for &k in &of[*a] {
                     if let Read::Revolved(s) = &read[k].1 {
                         if reader.on_end(s,e,1.) && reader.on_end(s,e,0.) {
-                            edges.push(PatchEdge {patches:[k,k],ends:[1.,0.]})
+                            edges.push(PatchEdge {patches:[k,k],ends:[1.,0.],at})
                         }
                     }
                 }
@@ -197,7 +200,7 @@ impl Tool {
             let [a,c] = faces[..] else { continue };
             for &ka in &of[a] { for &kc in &of[c] {
                 if let (Some(ua),Some(uc)) = (reader.end_of(&read[ka].1,e),reader.end_of(&read[kc].1,e)) {
-                    edges.push(PatchEdge {patches:[ka,kc],ends:[ua,uc]});
+                    edges.push(PatchEdge {patches:[ka,kc],ends:[ua,uc],at});
                 }
             } }
             if let (Read::Strip(s),Read::Strip(t)) = (&read[a].1,&read[c].1) {
@@ -260,7 +263,7 @@ fn once_a_surface(faces: Vec<ToolSurface>,edges: Vec<PatchEdge>,creases: Vec<[us
         let ends = [place(e.patches[0],e.ends[0]),place(e.patches[1],e.ends[1])].map(|u| if u.abs() <= 1e-12 { 0. }
             else if (u-1.).abs() <= 1e-12 { 1. } else { u });
         if merged.iter().any(|m| m.patches == patches && (0..2).all(|s| (m.ends[s]-ends[s]).abs() <= 1e-9)) { continue }
-        merged.push(PatchEdge {patches,ends});
+        merged.push(PatchEdge {patches,ends,at:e.at});
     }
     let creases = creases.into_iter().map(|c| c.map(|k| index[k])).collect();
     (kept,merged,creases)

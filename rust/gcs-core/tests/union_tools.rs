@@ -1,6 +1,8 @@
 //! **A sweep distributes over union** (#684 C, #586, `solid::distributed`): a body cutting the
-//! sweep of a union cuts each member's sweep, under the union's motion over its roll, each admitted
-//! by its own class and refused by its own rows naming the member. What each cut removes is computed
+//! sweep of a union of separate solids, or of any union under a turn seen from a turn, cuts each
+//! member's sweep, under the union's motion over its roll, each admitted by its own class and
+//! refused by its own rows naming the member; a union that is one solid under a constant twist is
+//! swept whole, as its set (#721 F1d). What each cut removes is computed
 //! here again from the tools and the motion alone and held to the exact solid this kernel builds,
 //! whose STL is held to the field of the union's sweep; and the union cuts what its members cut
 //! written one after another.
@@ -56,12 +58,12 @@ fn the_union_cuts_what_its_members_cut_in_turn() {
 /// The beads' groove placed a second time half a turn round the rod: the union's sweep, read whole
 /// (#721 F1d), is placed twice, and the second groove takes as much again from the far side.
 #[test]
-fn a_placed_unions_sweep_places_each_members() {
+fn a_placed_unions_sweep_is_placed_whole() {
     let text = beads().replace("(slides)","(slides, turns)")+"rounding := frame\nrounding turns(1) ax\nconstruction far := groove at(under: rounding) 180deg\nfar cut rod\n";
     let e = fixtures::read(&text);
     let a = admit(&e,"rod").unwrap();
-    assert_eq!(a.sweeps().len(),1,"the union swept whole");
-    assert!(a.sweeps().iter().all(|s| s.placements.len() == 2),"the union's sweep placed twice");
+    let [s] = a.sweeps() else { panic!("the union swept whole") };
+    assert_eq!(s.placements.len(),2,"the union's sweep placed twice");
     near(exported(&e,"rod"),PI*25.*20.-2.*beads_section()*20.,2e-6);
 }
 
@@ -79,7 +81,7 @@ fn regroove(text: &str,was: &str,before: &str,tool: &str) -> String {
 /// A union placed whole is swept as the placed union (#721 F1d): the wheel turned about its own axis
 /// is the same wheel, and cuts the same groove.
 #[test]
-fn a_union_placed_whole_is_its_members_placed() {
+fn a_union_placed_whole_cuts_the_unions_groove() {
     let text = regroove(&beads().replace("(slides)","(slides, turns)"),"wheel","spin := frame\nspin turns(1) wheel_axis\n\
         construction turned := wheel at(under: spin) 30deg\n","turned");
     let e = fixtures::read(&text);
@@ -113,6 +115,27 @@ small union pair
     assert!(a.sweeps().is_empty(),"each member's sweep is a ball's tube, static material");
     let half = |r: f64,swing: f64| (PI*r*r*swing*PI/2.+4./3.*PI*r*r*r)/2.;
     near(exported(&e,"block"),24.*24.*8.-half(3.,12.)-half(2.,6.),1e-9);
+}
+
+/// A tool's member is asked its own class's rows, and admitted by the closed class where they
+/// refuse it (#721 F2c5, a torus slid square to its axis): the second bead grown to reach the rod
+/// with the rings where its tube lies flat in contact all round (the constant-twist class's S1), and
+/// the first set 3 back along the axis, so the two are separate solids and the union is its
+/// members' sweeps. Its other member stays the constant-twist class's: each member its own sweep,
+/// the body is built by that class's road and the closed member cut from what it leaves on one
+/// arrangement. The groove is what of the rod's disc either bead's shadow covers.
+#[test]
+fn a_member_its_class_refuses_is_the_closed_classs() {
+    let text = beads().replace("tc2 coords(du: reach, dv: step) bench","tc2 coords(du: reach - 1mm, dv: step) bench")
+        .replace("tc coords(du: reach, dv: 0mm) bench","tc coords(du: reach, dv: -3mm) bench");
+    assert!(text.contains("dv: -3mm"));
+    let e = fixtures::read(&text);
+    let a = admit(&e,"rod").unwrap();
+    assert!(a.sweeps().iter().any(|s| matches!(s.class,Class::Closed(_))),"a member the closed class's");
+    assert!(a.sweeps().iter().any(|s| !matches!(s.class,Class::Closed(_))),"a member another class's");
+    let hit = |x: f64,y: f64| shadowed(x,y,6.,2.,-3.) || shadowed(x,y,7.,1.5,1.5);
+    let section = measure([3.,5.],&|x| { let h = (25.-x*x).max(0.).sqrt(); [-h,h] },&hit,&|a,b| b-a);
+    near(exported(&e,"rod"),PI*25.*20.-section*20.,2e-6);
 }
 
 /// **A union is swept as its set, not as its members** (#721 F1d): the second bead grown to reach

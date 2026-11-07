@@ -508,6 +508,7 @@ impl RevolvedRegion {
     /// The field represents this snapshot; source-solve and axis-snapping error
     /// are separate from interval evaluation and are not certified by this conversion.
     pub fn field(&self) -> Result<RevolvedField,String> {
+        if self.turn.is_some() { return Err("a revolution over part of a turn is its whole turn's field in common with a wedge (`spatial`)".into()) }
         RevolvedField::new(PlanarField::from_loops(&self.loops,self.axis_tolerance)?,self.origin,self.axis)
             .map_err(failure)
     }
@@ -517,18 +518,14 @@ impl RevolvedRegion {
     /// profile starts in through its turn, past the profile's reach, carried along the axis past
     /// its heights.
     pub fn spatial(&self) -> Result<super::SpatialField,String> {
-        let whole: super::SpatialField = self.field()?.into();
-        let Some((start,sweep)) = self.turn else { return Ok(whole) };
-        let reach = self.loops.iter().flatten().flat_map(|e| [0.,0.5,1.].map(|t| e.at(t)))
-            .fold(1_f64,|m,q| m.max(q[0].abs()).max(q[1].abs()));
-        let (r,h) = (4.*reach,4.*reach);
-        let turned = crate::plane::cross(self.axis,start);
-        let v = if sweep < 0. { [-turned[0],-turned[1],-turned[2]] } else { turned };
-        let a = sweep.abs();
-        let end = [r*a.cos(),r*a.sin()];
-        let wedge = vec![Edge::Line {a:[0.,0.],b:[r,0.],axis:false},Edge::Arc {center:[0.,0.],radius:r,start:0.,sweep:a,ends:[[r,0.],end]},
+        let whole: super::SpatialField = RevolvedField::new(PlanarField::from_loops(&self.loops,self.axis_tolerance)?,self.origin,
+            self.axis).map_err(failure)?.into();
+        let Some((start,toward,angle)) = self.turn else { return Ok(whole) };
+        let r = 4.*self.loops.iter().flatten().map(Edge::reach).fold(1_f64,f64::max);
+        let end = [r*angle.cos(),r*angle.sin()];
+        let wedge = vec![Edge::Line {a:[0.,0.],b:[r,0.],axis:false},Edge::Arc {center:[0.,0.],radius:r,start:0.,sweep:angle,ends:[[r,0.],end]},
             Edge::Line {a:end,b:[0.,0.],axis:false}];
-        let field = crate::solid::ExtrudedField::new(PlanarField::from_loops(&[wedge],0.)?,self.origin,start,v,[-h,h]).map_err(failure)?;
+        let field = crate::solid::ExtrudedField::new(PlanarField::from_loops(&[wedge],0.)?,self.origin,start,toward,[-r,r]).map_err(failure)?;
         whole.intersection(field.into()).map_err(failure)
     }
 }

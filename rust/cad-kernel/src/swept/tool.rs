@@ -40,10 +40,10 @@ impl Tool {
     /// corner lies on the tool: the probe a corner is told by — the chord between the two points in
     /// the tool's material at a convex corner, out of it at a concave one. (At a cap the chord lies
     /// on the tool's boundary, where the material reads nought either way.) The corner is probed
-    /// first on the first face's chart's start (`v = 0`) and halfway along a prism's sides, clear of
-    /// its caps, then on round the turn, or out along the sides, at the first place it is on the
-    /// tool, its chord off the boundary where any is (#721 F1b, F1d): so a corner a Boolean of the
-    /// tool trims, or a partial revolution's that its end bounds, is told where it is the tool's. The
+    /// first at its own point (`PatchEdge::at`, the middle of the B-rep's edge, within both faces),
+    /// then round the turn from the first face's chart's start, or out along a prism's sides from
+    /// their middle, at the first place it is on the tool (#721 F1b, F1d): so a corner a Boolean of
+    /// the tool trims, or a partial revolution's that its end bounds, is told where it is the tool's. The
     /// second face is probed where the first is, a revolution in the first's half-plane (`turn_of`),
     /// so neither face's chart need start where the other's does (#721 F1d). Where it is nowhere on
     /// the tool, at the first place.
@@ -68,22 +68,21 @@ impl Tool {
             let w = match pb { ToolSurface::Revolved(s) => s.turn_of(at)?,_ => v };
             Some((at,[inward(pa,ua,v)?,inward(pb,ub,w)?]))
         };
+        // first at the corner's own point, the middle of the B-rep's edge (round a revolution, the
+        // half-plane through it; halfway along a prism's sides): on the tool and within both faces,
+        // wherever either chart starts or ends (#721 F1d)
+        let own = match pa { ToolSurface::Revolved(s) => s.turn_of(edge.at),_ => Some(0.5) };
+        if let Some(found) = own.and_then(probe).filter(|f| self.on(f.0)) { return Some(found) }
         let n = CORNER_PLACES;
         let places = (0..n).map(|k| if pa.periodic() { k as f64/n as f64 }
             else { let d = (k+1)/2; 0.5+if k%2 == 1 { 1. } else { -1. }*d as f64/n as f64 });
-        // (the first place it is the tool's whose chord lies off the boundary: on a face over part
-        // of a turn the chart starts at the face's own edge, where the chord lies in the face that
-        // bounds the turn and tells nothing, #721 F1d; else the first place it is the tool's)
-        let (mut first,mut on) = (None,None);
+        let mut first = None;
         for v in places {
             let Some(found) = probe(v) else { continue };
-            if self.on(found.0) {
-                if !self.on(lerp(found.1[0],found.1[1],0.5)) { return Some(found) }
-                on.get_or_insert(found);
-            }
+            if self.on(found.0) { return Some(found) }
             first.get_or_insert(found);
         }
-        on.or(first)
+        first
     }
 }
 
@@ -239,10 +238,12 @@ impl ExtrudedSurface {
 /// The edge two adjacent patches of a profile loop share: the end `ends[i]` (0 or 1, in `u`) of
 /// patch `patches[i]`, swept — a circle round a revolution, a line along a prism; or, on a face of
 /// revolution read once over the span its faces reach, a ring partway along its meridian (strictly
-/// between 0 and 1, #721 F1d), where another face meets it over part of the turn.
+/// between 0 and 1, #721 F1d), where another face meets it over part of the turn. `at` is a point
+/// of it on the tool, within both faces: the middle of the B-rep's edge it is read off.
 #[derive(Clone,Copy,Debug)]
 pub struct PatchEdge {
     pub patches: [usize;2],
     pub ends: [f64;2],
+    pub at: V,
 }
 
