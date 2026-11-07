@@ -47,6 +47,9 @@ pub enum Kind {
     Classify,
     /// A load scenario read (#851).
     Scenario,
+    /// A front end's whole run of a document (#851): its own time is what no other stage was,
+    /// so no time goes unsaid, and while nothing else is open it is what is still going.
+    Run,
 }
 
 impl Kind {
@@ -187,6 +190,11 @@ impl Work {
         Work::of(Kind::Scenario, name, None)
     }
 
+    /// Document `name` run, everything in it.
+    pub fn run(name: &str) -> Work {
+        Work::of(Kind::Run, name, None)
+    }
+
     fn verb(&self) -> (&'static str, &'static str) {
         match self.kind {
             Kind::Elaborate => ("elaborated", "elaborating"),
@@ -202,6 +210,7 @@ impl Work {
             Kind::Rank => ("ranked", "ranking"),
             Kind::Classify => ("classified", "classifying"),
             Kind::Scenario => ("read scenario", "reading scenario"),
+            Kind::Run => ("ran", "running"),
         }
     }
 

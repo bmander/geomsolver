@@ -218,7 +218,9 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   stage the core runs (#851): the planes placed before the solve (`Work::place`), the parts
   checked (`Work::check`), the diagnosis read through the parts (`Work::parts`) with each part's
   rows ranked inside it by its definition (`Work::rank`), the definitions classified
-  (`Work::classify`) and a load scenario read (`Work::scenario`) — timed by
+  (`Work::classify`) and a load scenario read (`Work::scenario`), all inside the CLI's whole run
+  of the document (`Work::run`), whose own time is what no stage names, so none goes unsaid —
+  timed by
   `clock::Instant` and worded by `progress::Work`; with nobody listening the work is not even
   named.  Work that knows how far it has got says so on its `Gauge` (`progress::gauge`, which sets
   the innermost open work's; shared by every copy, so a listener on another thread reads it, and

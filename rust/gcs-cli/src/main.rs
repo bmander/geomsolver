@@ -625,7 +625,10 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     }
     let watch = watch::Watch::new(opts.say);
     let mut places = Places::new();
-    let out = progress::listen(watch.clone(), || check_model(s, opts, &mut places));
+    // the whole run is work of its own, so time no stage names is still said (#851)
+    let out = progress::listen(watch.clone(), || {
+        progress::during(|| progress::Work::run(&s.name), || check_model(s, opts, &mut places))
+    });
     if opts.timings {
         timings(s, opts, &watch.timings.borrow(), &places);
     }

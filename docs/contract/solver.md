@@ -350,7 +350,8 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   each part first cut into the pieces its own structure falls into (`pieces`: the connected
   components of its rows over its own columns, over which it is block-diagonal, #851 — an under
   part of every plane a pass of `views::place` leaves turning is many small pieces, not one
-  matrix the cube of all of them),
+  matrix the cube of all of them; only earlier parts' null vectors are made up in a piece, one
+  piece's being zero on another's rows),
   every part's null vectors carried into later parts by minimum-norm solves and checked against
   the rows a part could not make up: exact, not a bound (`tests/numeric_parts.rs` holds it to the
   whole SVD over the library, forced by parts, and over the large cases up to a thousand columns;
