@@ -329,19 +329,13 @@ struct ByParts {
     twice: (Vec<u32>, usize),
 }
 
-/// The block-triangular order's parts (#88): over first (its rows read nothing else), the square
-/// blocks as they are solved, under last — and each residual row's constraint.
-fn parts_in_order(sys: &mut System, row_c: &[u32]) -> (Vec<parts::Part>, Vec<u32>) {
-    use parts::Part;
-    let order = sys.block_order();
+/// Each hard row's constraint, by the full residual vector's rows (`u32::MAX` for a soft row).
+fn constraint_rows(sys: &System, row_c: &[u32]) -> Vec<u32> {
     let mut of_row = vec![u32::MAX; sys.n_res];
     for (i, r) in sys.hard_rows().into_iter().enumerate() {
         of_row[r] = row_c[i];
     }
-    let mut all = vec![Part { rows: order.over_rows.clone(), cols: order.over_cols.clone() }];
-    all.extend(order.blocks.iter().map(|b| Part { rows: b.rows.clone(), cols: b.cols.clone() }));
-    all.push(Part { rows: order.under_rows.clone(), cols: order.under_cols.clone() });
-    (all, of_row)
+    of_row
 }
 
 /// **What the parts read, for a caller to hold it to the Jacobian itself** (#88, #780): the
@@ -352,24 +346,24 @@ fn parts_in_order(sys: &mut System, row_c: &[u32]) -> (Vec<parts::Part>, Vec<u32
 #[doc(hidden)]
 pub fn parts_null_spaces(sk: &Sketch) -> (SparseConditioned, usize, Vec<Vec<f64>>, Vec<Vec<f64>>) {
     let mut sys = System::new(sk);
-    let (_, row_c) = sys.structure();
-    let (all, _) = parts_in_order(&mut sys, &row_c);
-    let rows = all.iter().map(|p| p.rows.len()).sum();
     let z = sys.z0(sk);
     let j = sys.conditioned_sparse(&z);
+    let all = parts::order(&j, &sys.hard_rows());
+    let rows = all.iter().map(|p| p.rows.len()).sum();
     let (null, left) = (parts::right_null(&j, &all), parts::left_null(&j, &all));
     (j, rows, null, left)
 }
 
 fn numeric_by_parts(sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64]) -> ByParts {
     use parts::Part;
-    let (all, of_row) = parts_in_order(sys, row_c);
+    let j = sys.conditioned_sparse(z);
+    let all = parts::order(&j, &sys.hard_rows());
+    let of_row = constraint_rows(sys, row_c);
     let relation = |r: &usize| sk.constraint(of_row[*r]).is_some_and(states_no_number);
     let rel: Vec<Part> = all.iter().map(|p| Part {
         rows: p.rows.iter().copied().filter(relation).collect(),
         cols: p.cols.clone(),
     }).collect();
-    let j = sys.conditioned_sparse(z);
     let null = parts::right_null(&j, &all);
     // vectors as the columns of a matrix
     let as_cols = |vs: &[Vec<f64>], n: usize| Mat::from_vec(vs.len(), n, vs.concat()).transpose();

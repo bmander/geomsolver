@@ -242,7 +242,28 @@ pub struct Blt {
 }
 
 pub fn blocks(adj: &[Vec<usize>], dm: &Dm) -> Blt {
-    let well = &dm.well_rows;
+    blocks_of(adj, &dm.well_rows, &dm.mate_col)
+}
+
+/// **The under-determined part of a DM decomposition in a block-triangular order of its own**
+/// (#858): its columns no row is matched to, which nothing in the part determines — free, each
+/// one, and so first — and its rows in the strongly connected blocks of the square system they
+/// make with the columns matched to them, in a solve order (`blocks`).  A row of a block reads its
+/// own block's columns, the free ones and those of blocks before it, never a later block's: so
+/// the part is block lower-triangular, its diagonal blocks square, as the well part is.  The
+/// matching holds the part's rows to its columns (an under row's mate is an under column), so
+/// the blocks are of the part alone.  Read whole, a chain of parts each turning on the one before
+/// is one under-determined lump, its factor the cube of all of them; read so, it is a block per
+/// link.
+pub fn under_blocks(adj: &[Vec<usize>], dm: &Dm) -> (Vec<usize>, Blt) {
+    let free = dm.under_cols.iter().copied().filter(|&c| dm.mate_col[c] < 0).collect();
+    (free, blocks_of(adj, &dm.under_rows, &dm.mate_col))
+}
+
+/// `rows`, each matched to a column (`mate_col`), sorted into the strongly connected blocks of
+/// the square system they make with the columns matched to them, in a solve order (`blocks`).  A
+/// column matched to no row of `rows` is read, never solved for.
+fn blocks_of(adj: &[Vec<usize>], well: &[usize], mate_col: &[i32]) -> Blt {
     let n = well.len();
     let mut pos = vec![usize::MAX; adj.len()];
     for (i, &r) in well.iter().enumerate() {
@@ -256,7 +277,7 @@ pub fn blocks(adj: &[Vec<usize>], dm: &Dm) -> Blt {
             let mut s: Vec<usize> = adj[r]
                 .iter()
                 .filter_map(|&c| {
-                    let m = dm.mate_col[c];
+                    let m = mate_col[c];
                     (m >= 0 && pos[m as usize] != usize::MAX).then(|| pos[m as usize])
                 })
                 .filter(|&w| w != v)
