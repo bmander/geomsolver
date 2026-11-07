@@ -247,7 +247,9 @@ where a rule came from.
     each needed (`Diagnosis::said_twice`) — and there is no under part, `Still::of` reads it as
     the first block, solved first and read by those after, and one the parameter does not reach,
     whose rows hold and whose columns they place, is set aside as any still block is, so what each
-    station solves is square.  Carried, four statements over a point and two axes left 1 700
+    station solves is square; and `Jacobian::read` reads one the parameter reaches as a first
+    block of more rows than columns, of full rank where the whole is and oriented by nothing
+    (`BlockOrder::over_block`).  Carried, four statements over a point and two axes left 1 700
     unknowns read whole at every station: 220 s rather than 0.6
     (`a_row_said_twice_is_named_and_set_aside_by_the_march`).  The start's
     rank and every orientation are read over what is solved, the rest's blocks of full rank and

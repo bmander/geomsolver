@@ -68,10 +68,9 @@ pub(super) struct Dependencies {
 }
 
 impl Dependencies {
-    fn of(sk: &Sketch, removable: Vec<u32>, removable_rel: Vec<u32>, twice: (Vec<u32>, usize))
-        -> Dependencies {
+    fn of(sk: &Sketch, removable: Vec<u32>, removable_rel: Vec<u32>) -> Dependencies {
         let implied = removable_rel.into_iter().filter(|&c| !duplicated(sk, c)).collect();
-        Dependencies { removable, implied, twice }
+        Dependencies { removable, implied, twice: (Vec::new(), 0) }
     }
 }
 
@@ -84,67 +83,34 @@ impl Dependencies {
 /// of two rows over the point's three numbers, each needed, and one row past them — no statement
 /// is implied whole, so `removable` names none, and the count said "1700 equations, structural
 /// rank 1699" and nothing more.
-pub fn said_twice(w: &Mat, row_c: &[u32], removable: &[u32], rtol: f64) -> (Vec<u32>, usize) {
-    if w.rows == 0 || w.cols == 0 {
+fn said_twice(w: &Mat, row_c: &[u32], removable: &[u32], rtol: f64) -> (Vec<u32>, usize) {
+    let removable: BTreeSet<u32> = removable.iter().copied().collect();
+    let named: Vec<usize> = (0..w.rows).filter(|&r| removable.contains(&row_c[r])).collect();
+    // every row reached is a removable constraint's: their leaving out takes every dependency
+    if w.cols == 0 || named.len() == w.rows {
         return (Vec::new(), 0);
     }
-    // the parts' reading is a basis, not an orthonormal one: made one, so a row's share of a
-    // dependency reads alike whichever reading found it
-    let w = &orthonormal(w);
-    let named: Vec<usize> = (0..w.rows).filter(|&r| removable.contains(&row_c[r])).collect();
-    let left = match named.is_empty() {
-        true => w.clone(),
-        false => {
-            let rn = crate::linalg::rank_and_nullspace_with(&w.select_rows(&named),
-                                                            crate::linalg::Tol::Abs(TWICE));
-            let n = rn.null();
-            if n.cols == 0 {
-                return (Vec::new(), 0);
-            }
-            let mut out = Mat::zeros(w.rows, n.cols);
-            for i in 0..w.rows {
-                for j in 0..n.cols {
-                    out.data[i * n.cols + j] = (0..w.cols).map(|k| w.at(i, k) * n.at(k, j)).sum();
-                }
-            }
-            out
-        }
-    };
+    // each row of `W · N`, where N spans the dependencies that vanish on the rows named
+    let n = (!named.is_empty()).then(|| {
+        let tol = crate::linalg::Tol::Abs(TWICE);
+        crate::linalg::rank_and_nullspace_with(&w.select_rows(&named), tol).null()
+    });
+    let left = n.as_ref().map_or(w.cols, |n| n.cols);
+    if left == 0 {
+        return (Vec::new(), 0);
+    }
     let mut ids: Vec<u32> = Vec::new();
-    for r in 0..left.rows {
-        if left.row(r).iter().any(|v| v.abs() > rtol) && !ids.contains(&row_c[r]) {
+    let mut seen = BTreeSet::new();
+    for r in 0..w.rows {
+        let share = match &n {
+            Some(n) => n.mul_t_vec(w.row(r)),
+            None => w.row(r).to_vec(),
+        };
+        if share.iter().any(|v| v.abs() > rtol) && seen.insert(row_c[r]) {
             ids.push(row_c[r]);
         }
     }
-    (ids, left.cols)
-}
-
-/// An orthonormal basis of the columns of `w` (modified Gram–Schmidt, twice over), a column
-/// dropped where it is the others'.
-fn orthonormal(w: &Mat) -> Mat {
-    let mut cols: Vec<Vec<f64>> = Vec::new();
-    for j in 0..w.cols {
-        let mut v: Vec<f64> = (0..w.rows).map(|i| w.at(i, j)).collect();
-        let size = v.iter().map(|x| x * x).sum::<f64>().sqrt();
-        for _ in 0..2 {
-            for q in &cols {
-                let d: f64 = q.iter().zip(&v).map(|(a, b)| a * b).sum();
-                v.iter_mut().zip(q).for_each(|(x, a)| *x -= d * a);
-            }
-        }
-        let norm = v.iter().map(|x| x * x).sum::<f64>().sqrt();
-        if norm > 1e-10 * size {
-            v.iter_mut().for_each(|x| *x /= norm);
-            cols.push(v);
-        }
-    }
-    let mut out = Mat::zeros(w.rows, cols.len());
-    for (j, q) in cols.iter().enumerate() {
-        for (i, x) in q.iter().enumerate() {
-            out.data[i * cols.len() + j] = *x;
-        }
-    }
-    out
+    (ids, left)
 }
 
 /// A dependency that touches the rows of the constraints named removable less than this (W being
@@ -240,7 +206,7 @@ fn whole(
         let removable = removable_constraints(sk, &w, &m.row_c, RTOL);
         let removable_rel = removable_constraints(sk, &w_rel, &row_c_rel, RTOL);
         let twice = said_twice(&w, &m.row_c, &removable, RTOL);
-        Dependencies::of(sk, removable, removable_rel, twice)
+        Dependencies { twice, ..Dependencies::of(sk, removable, removable_rel) }
     });
     Numeric { rank: Some(rank), shaky, movable: Some(movable), dependencies }
 }
@@ -255,8 +221,10 @@ fn by_parts(
     let z = sys.z0(sk);
     let p = numeric_by_parts(sk, sys, &m.row_c, &z);
     let (rank, null, shaky) = screened(sk, sys, &z, p.null, p.rank, m.dm.rank, warnings);
-    let dependencies = (rank < m.n_rows())
-        .then(|| Dependencies::of(sk, p.removable, p.removable_rel, p.twice));
+    let dependencies = (rank < m.n_rows()).then(|| Dependencies {
+        twice: p.twice,
+        ..Dependencies::of(sk, p.removable, p.removable_rel)
+    });
     Numeric {
         rank: Some(rank),
         shaky,
@@ -425,14 +393,16 @@ fn numeric_by_parts(sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64]) -> 
         true => Vec::new(),
         false => parts::left_null(&j, &rel),
     };
-    let removable_all = removable(&all_rows);
-    let twice = match all_rows.is_empty() {
-        true => (Vec::new(), 0),
-        false => {
-            let (m, ids) = reached(&all_rows);
-            said_twice(&m, &ids, &removable_all, RTOL)
-        }
-    };
+    let (m, ids) = reached(&all_rows);
+    let removable_all = removable_constraints(sk, &m, &ids, RTOL);
+    // the parts' reading is a basis and not an orthonormal one, which `said_twice` reads
+    // (spanning what they do, so reaching the same rows, in the same order)
+    let unit: Vec<Vec<f64>> = all_rows.iter().map(|v| (v, crate::linalg::norm(v)))
+        .filter(|&(_, n)| n > 0.0)
+        .map(|(v, n)| v.iter().map(|x| x / n).collect())
+        .collect();
+    let (w, _) = reached(&crate::linalg::orthonormalize(&unit, 1e-10));
+    let twice = said_twice(&w, &ids, &removable_all, RTOL);
     ByParts {
         rank,
         null: as_cols(&null, sys.n_free),

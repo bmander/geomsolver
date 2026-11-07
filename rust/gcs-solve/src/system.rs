@@ -299,6 +299,20 @@ pub struct BlockOrder {
 }
 
 impl BlockOrder {
+    /// The over part as a block (#850): its rows, read by none of the blocks' and reading only
+    /// its columns, the instances making them — solved first, as a block of more rows than
+    /// columns.  `None` where it has no row.
+    pub fn over_block(&self, sys: &System) -> Option<SolveBlock> {
+        if self.over_rows.is_empty() {
+            return None;
+        }
+        let mut instances: Vec<(usize, usize)> =
+            self.over_rows.iter().map(|&r| sys.instance_of(r)).collect();
+        instances.sort_unstable();
+        instances.dedup();
+        Some(SolveBlock { rows: self.over_rows.clone(), cols: self.over_cols.clone(), instances })
+    }
+
     /// The longest chain of blocks, each reading the one before it.
     pub fn depth(&self) -> usize {
         self.level.iter().copied().max().unwrap_or(0)

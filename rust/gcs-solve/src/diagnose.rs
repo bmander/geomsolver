@@ -433,11 +433,12 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let wit = (opts.witness && m.n_cols > 0 && sys.n_res > 0)
         .then(|| analyze_with(sk, sys, None, &red.in_over, RANK_TOL, 0));
     let numeric: Numeric = numeric::read(sk, sys, &m, &gate, wit.as_ref(), &mut warnings);
-    let (said_twice, n_said_twice) = numeric.dependencies.as_ref()
-        .map_or((Vec::new(), 0), |d| d.twice.clone());
-    if let Some(d) = numeric.dependencies {
+    let mut twice = (Vec::new(), 0);
+    if let Some(mut d) = numeric.dependencies {
+        twice = std::mem::take(&mut d.twice);
         red.reread(d);
     }
+    let (said_twice, n_said_twice) = twice;
     // where the numeric cross-check read a rank, what it says moves is the truth here
     let under_params = numeric.movable.unwrap_or_else(|| structural_under.clone());
 

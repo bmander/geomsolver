@@ -109,6 +109,14 @@ fn a_plane_on_two_axes_held_through_one_point_stands_at_it() {
     let e = solved(&format!("{axes}lvl := plane(u: ax, v: ay)\n"));
     let lvl = ent(&e, "lvl").i();
     assert_eq!(e.sketch.frames[lvl].stands_at, Some(ent(&e, "x0").i() as u32));
+    // and one axis the world's, the other held through the world's origin by a statement
+    let mixed = "unit mm\nuse std\nay := axis hint(dir: (0, 1, 0))\nay parallel std.y\n\
+                 std.origin coincident ay\nlvl := plane(u: std.x, v: ay)\n";
+    let mut e = solved(mixed);
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert_eq!((d.n_equations, d.structural_rank), (d.n_params, d.n_params), "{mixed}");
+    assert!(d.said_twice.is_empty(), "{:?}", d.said_twice);
+    assert!(e.sketch.frames[ent(&e, "lvl").i()].stands_at.is_some());
 }
 
 /// A twin goes by its point's name: a relation read in the second plane names `O`, and a sheet

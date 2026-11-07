@@ -791,14 +791,7 @@ impl Still {
         // an over part (#850) is a part like a block, solved first and read by those after: one
         // whose rows hold and whose columns they place, that nothing reaches, is set aside as a
         // block is — and what is left is square
-        let over = (!order.over_rows.is_empty()).then(|| {
-            let mut instances: Vec<(usize, usize)> =
-                order.over_rows.iter().map(|&row| sys.instance_of(row)).collect();
-            instances.dedup();
-            crate::system::SolveBlock {
-                rows: order.over_rows.clone(), cols: order.over_cols.clone(), instances,
-            }
-        });
+        let over = order.over_block(&sys);
         let parts: Vec<&crate::system::SolveBlock> = over.iter().chain(&order.blocks).collect();
         if under || parts.len() < 2 {
             return only;
@@ -960,8 +953,10 @@ pub(crate) fn short(sys: &mut System, sk: &Sketch) -> Option<usize> {
 /// where a block on its diagonal is, and its determinant is theirs times the sign of the order,
 /// which is the same at every station of a march (each compiles the same structure) — so the
 /// rank and the orientation are a few small factorisations rather than one of the whole drawing,
-/// which on a drawing of a thousand unknowns was the march's whole cost.  A drawing whose order
-/// is not square (an over or an under part) is read whole.
+/// which on a drawing of a thousand unknowns was the march's whole cost.  An over part is a first
+/// block of more rows than columns (#850): of full rank where the whole is, its rows reading none
+/// of the blocks' columns, and oriented by nothing, the sign then the square blocks'.  A drawing
+/// whose order has an under part is read whole.
 struct Jacobian {
     /// Every block of full rank: the drawing is held.  `false` asks the whole matrix.
     held: bool,
@@ -973,18 +968,23 @@ struct Jacobian {
 impl Jacobian {
     fn read(sys: &mut System, sk: &Sketch) -> Jacobian {
         let order = sys.block_order();
-        let square = order.over_rows.is_empty() && order.over_cols.is_empty()
-            && order.under_rows.is_empty() && order.under_cols.is_empty();
-        if !square || sys.n_free == 0 {
+        if !order.under_rows.is_empty() || !order.under_cols.is_empty() || sys.n_free == 0 {
             return Jacobian { held: false, sign: 0 };
         }
         let z = sys.z0(sk);
         let j = sys.conditioned_sparse(&z);
+        let tol = crate::linalg::Tol::Abs(crate::system::RANK_TOL);
+        // an over part (#850) is a first block of more rows than columns: of full rank where its
+        // columns are, and with no orientation of its own
+        if let Some(b) = order.over_block(sys) {
+            if crate::linalg::rrqr_with(&j.dense(&b.rows, &b.cols), tol).0 < b.cols.len() {
+                return Jacobian { held: false, sign: 0 };
+            }
+        }
         let mut sign = 1;
         for b in &order.blocks {
             let m = j.dense(&b.rows, &b.cols);
             let n = b.cols.len();
-            let tol = crate::linalg::Tol::Abs(crate::system::RANK_TOL);
             if crate::linalg::rrqr_with(&m, tol).0 < n {
                 return Jacobian { held: false, sign: 0 };
             }
