@@ -25,7 +25,12 @@ frame's origin its point there; and a point held at `(0, 0)` in a frame (`std.or
 that frame's place, two held places at one spot being one.  So `plane(u: l, v: std.y)` with `l`
 from `std.origin`, and `plane(u: std.x, v: std.y)` over a seated part's own frame, add no row past
 their unknowns; a plane already held where its axes meet (`origins_on_axes`), or standing where a
-frame does (`plane_at`), keeps what it has.  The lift writes both rows (`r parallel l`, `p
+frame does (`plane_at`), keeps what it has.  **So does a plane whose axes the document holds
+through one point** (#850, `entities::stood_on_points`, once the relations are stated): `x
+coincident a` and `x coincident b` acting, of one point or its twins, and `plane(u: a, v: b)`
+stands at `x` — the primer's "a plane is two axes through its origin" written over axes held
+through a held point counts as the seven relations for its seven numbers do, not one row past
+them (`two_planes.rs`, `a_plane_on_two_axes_held_through_one_point_stands_at_it`).  The lift writes both rows (`r parallel l`, `p
 coincident r`).
 A **plane** is `P := plane(u: r1, v: r2)` (`PlaneE { u, v, o, origin }`): right u, out u × v, up
 out × u; it owns `o` (three unknowns); members `P.u`, `P.v`, `P.origin` (a point drawn in P held at

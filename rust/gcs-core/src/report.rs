@@ -165,6 +165,8 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("shaky", (d.shaky as i64).into()),
         ("over", ids(&d.over)),
         ("implied", ids(&d.implied)),
+        // a row said twice across statements none of which can go whole (#850)
+        ("saidTwice", ids(&d.said_twice)),
         ("expected", ids(&d.expected)),
         ("claimsTheorem", ids(&d.claims_theorem)),
         ("claimsViolated", ids(&d.claims_violated)),

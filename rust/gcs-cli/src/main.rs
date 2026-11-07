@@ -830,6 +830,8 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             }
             report_set(&sk, &e.map, "over", &d.over);
             report_set(&sk, &e.map, "implied", &d.implied);
+            // a row said twice across statements none of which can go whole (#850)
+            report_set(&sk, &e.map, "said twice among", &d.said_twice);
             report_set(&sk, &e.map, "claim refuted", &d.claims_violated);
             report_set(&sk, &e.map, "claim independent", &d.claims_consuming);
             report_set(&sk, &e.map, "bound broken", &d.bounds_violated);

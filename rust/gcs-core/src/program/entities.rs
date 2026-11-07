@@ -1102,6 +1102,46 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
     }
 }
 
+/// **A plane whose two axes the document holds through one point stands there** (#850), once the
+/// relations are stated: `x coincident a` and `x coincident b` (`PointOnAxis`, acting) of one
+/// point — or of a point and its twin — and `plane(u: a, v: b)` stands at `x` as one whose axes
+/// meet by construction does (`axes_along`, `Chart::stands_at`): its origin held at the point,
+/// three rows in place of its two `PlaneAxis` rows' four.  Kept, those four over its origin's
+/// three unknowns said once more what the two written statements say, a row past the structure
+/// no whole statement can be left out for — a march along a parameter read every station of the
+/// drawing whole, 400 times slower.  A plane drawn in, held, standing where a frame does, an
+/// image's, already standing at a point, or the point its own origin keeps its rows.
+pub(super) fn stood_on_points(sk: &mut Sketch) {
+    use crate::constraints::CKind;
+    use crate::model::{Owner, Place};
+    // the points each axis is held through by a written statement that acts
+    let mut on: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for c in sk.constraints.iter().filter(|c| c.kind == CKind::PointOnAxis && !c.is_intrinsic()
+        && c.acts()) {
+        on.entry(c.args[1].ent().i()).or_default().push(c.args[0].ent().i());
+    }
+    for p in sk.charted() {
+        let Some(c) = sk.frames[p].chart.as_ref() else { continue };
+        let (u, v, op, origin) = (c.u as usize, c.v as usize, c.o, c.origin as usize);
+        if c.stands_at.is_some() || c.place != Place::Own || sk.imaged(EntRef::frame(p))
+            || op.iter().any(|&q| sk.params[q as usize].fixed)
+            || sk.frames.iter().enumerate()
+                .any(|(g, f)| g != p && f.chart.as_ref().is_some_and(|c| c.o == op)) {
+            continue;
+        }
+        let (Some(first), Some(second)) = (on.get(&u), on.get(&v)) else { continue };
+        let fit = |x: usize| x != origin && sk.points[x].plane != Some(p as u32);
+        let Some(at) = first.iter().copied().filter(|&x| fit(x))
+            .find(|&x| second.iter().any(|&y| fit(y) && sk.twinned(x, y))) else { continue };
+        let x = sk.world_point(at);
+        for (k, &q) in op.iter().enumerate() {
+            sk.params[q as usize].value = x[k];
+        }
+        sk.frames[p].stands_at = Some(at as u32);
+        sk.derive(Owner::Frame(p as u32));
+    }
+}
+
 /// Where a point stands by construction: the place of the frame it is held at the origin of — a
 /// plane's own origin, or a point held at `(0, 0)` in one (`std.origin`, held at its front's) —
 /// and otherwise itself.

@@ -226,6 +226,54 @@ fn a_statement_the_others_imply_is_left_out_of_the_march() {
     assert!(at(&sk, &e, "b").1 > 9.9, "the crank stands at 90deg");
 }
 
+/// A point held on two axes that meet at a held point, the axes held through it: four statements
+/// of two rows over the point's three numbers and the axes' places, each needed and one row past
+/// them (#850).
+const TWICE: &str = "x0 := point\nfix((0, 0, 50)) x0\nax := axis hint(dir: (1, 0, 0))\n\
+    ax parallel std.x\nx0 coincident ax\nay := axis hint(dir: (0, 1, 0))\nay parallel std.y\n\
+    x0 coincident ay\no := point hint((1, 1, 50))\no coincident ax\no coincident ay\n";
+
+/// **A row said twice across statements none of which can go is named, and left where it stands
+/// by the march** (#850).  No statement of `TWICE` is implied whole, so none is left out (#591)
+/// and the count, one equation past the structural rank, was all the report said; carried, the
+/// order was not square, every station read the whole drawing's rank and set nothing aside, and
+/// the march was four hundred times slower.  The four statements are named, with how many rows
+/// they say twice, and the over part they make — which the crank does not reach — is set aside
+/// as a still block is: the march is the drawing's without it, station for station, and the
+/// point stands where it stood to the bit.
+#[test]
+fn a_row_said_twice_is_named_and_set_aside_by_the_march() {
+    let without = solved(&four_bar_by(100, ""));
+    let mut e = solved(&format!("{}{TWICE}", four_bar_by(100, "")));
+    let d = gcs_core::diagnose::diagnose(&mut e.sketch, Default::default());
+    assert_eq!((d.n_equations, d.structural_rank, d.n_params),
+               (d.n_params + 1, d.n_params, d.n_params));
+    assert!(d.over.is_empty() && d.implied.is_empty(), "{:?} {:?}", d.over, d.implied);
+    let said: Vec<String> = d.said_twice.iter()
+        .map(|&c| gcs_core::io::describe_with(e.sketch.constraint(c).unwrap(),
+                                              &|r| e.map.name_of(r).cloned()))
+        .collect();
+    assert_eq!(d.n_said_twice, 1);
+    for s in ["x0 coincident ax", "x0 coincident ay", "o coincident ax", "o coincident ay"] {
+        assert!(said.iter().any(|t| t == s), "{s} in {said:?}");
+    }
+    assert!(gcs_core::diagnose::summary(&d).contains("1 equation(s) said twice across"),
+            "{}", gcs_core::diagnose::summary(&d));
+    let (was, f) = (follow(&without.sketch, "t").expect("followed"),
+                    follow(&e.sketch, "t").expect("followed"));
+    assert_eq!(f.singular, was.singular);
+    assert_eq!(f.stations.iter().map(|s| s.at).collect::<Vec<_>>(),
+               was.stations.iter().map(|s| s.at).collect::<Vec<_>>());
+    let mut sk = e.sketch.clone();
+    gcs_core::follow::stand(&mut sk, "t", 90.0).expect("stood");
+    let o = e.map.ent_named("o").expect("o").i();
+    for q in sk.point_all_params(o) {
+        let (was, now) = (e.sketch.params[q as usize].value, sk.params[q as usize].value);
+        assert!(was.to_bits() == now.to_bits(), "{was} != {now}");
+    }
+    assert!(at(&sk, &e, "b").1 > 9.9, "the crank stands at 90deg");
+}
+
 /// A statement implied where the drawing starts and nowhere else — the rocker's pin held as far
 /// from the crank's pivot as it stands at home — is left out of each station's solve as well,
 /// and a station where it does not hold does not stand: the march stops where it starts.

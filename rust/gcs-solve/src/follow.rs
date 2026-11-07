@@ -750,9 +750,11 @@ fn implied(sk: &Sketch) -> Vec<u32> {
 /// unknowns' numbers and the constants it compiles to — is otherwise with the parameter held
 /// elsewhere (`ELSEWHERE`).  One that still reads otherwise at a station than at home, a constant
 /// read off where what moves stands, is not set aside there (`missed`), and the march is made
-/// again with it among the readers (`follow`).  Nothing is set aside of a drawing whose order is
-/// not square, whose rank is read whole — once what it implies (`implied`) is left out, which
-/// every station solve leaves out too, and judges where it ends (`implied_hold`).
+/// again with it among the readers (`follow`).  Nothing is set aside of a drawing whose order has
+/// an under part, whose rank is read whole — once what it implies (`implied`) is left out, which
+/// every station solve leaves out too, and judges where it ends (`implied_hold`).  An over part no
+/// whole statement squares (a row said twice across statements each needed, #850) is read as the
+/// first block, and set aside as one where the parameter does not reach it.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Still {
     /// The statements set aside, by id, ascending.
@@ -785,9 +787,20 @@ impl Still {
         };
         let mut sys = System::new(sk);
         let order = sys.block_order();
-        let square = order.over_rows.is_empty() && order.over_cols.is_empty()
-            && order.under_rows.is_empty() && order.under_cols.is_empty();
-        if !square || order.blocks.len() < 2 {
+        let under = !order.under_rows.is_empty() || !order.under_cols.is_empty();
+        // an over part (#850) is a part like a block, solved first and read by those after: one
+        // whose rows hold and whose columns they place, that nothing reaches, is set aside as a
+        // block is — and what is left is square
+        let over = (!order.over_rows.is_empty()).then(|| {
+            let mut instances: Vec<(usize, usize)> =
+                order.over_rows.iter().map(|&row| sys.instance_of(row)).collect();
+            instances.dedup();
+            crate::system::SolveBlock {
+                rows: order.over_rows.clone(), cols: order.over_cols.clone(), instances,
+            }
+        });
+        let parts: Vec<&crate::system::SolveBlock> = over.iter().chain(&order.blocks).collect();
+        if under || parts.len() < 2 {
             return only;
         }
         let z = sys.z0(sk);
@@ -809,12 +822,12 @@ impl Still {
             .map(|(c, _)| c.id)
             .collect();
         let mut block = vec![usize::MAX; sys.n_free];
-        for (k, b) in order.blocks.iter().enumerate() {
+        for (k, b) in parts.iter().enumerate() {
             for &c in &b.cols {
                 block[c] = k;
             }
         }
-        let mut reached: Vec<bool> = order.blocks.iter().map(|b| {
+        let mut reached: Vec<bool> = parts.iter().map(|b| {
             let tol = crate::linalg::Tol::Abs(crate::system::RANK_TOL);
             b.instances.iter().any(|i| reads_t.contains(&cid(i)))
                 || b.rows.iter().any(|&row| !(sys.judged(row, r[row]) < acceptance))
@@ -824,14 +837,14 @@ impl Still {
         let mut more = true;
         while more {
             more = false;
-            for (k, b) in order.blocks.iter().enumerate() {
+            for (k, b) in parts.iter().enumerate() {
                 if !reached[k] && b.rows.iter()
                     .any(|&row| j.row(row).any(|(c, _)| block[c] != k && reached[block[c]])) {
                     (reached[k], more) = (true, true);
                 }
             }
         }
-        let still = order.blocks.iter().zip(&reached).filter(|(_, &r)| !r).map(|(b, _)| b);
+        let still = parts.iter().zip(&reached).filter(|(_, &r)| !r).map(|(b, _)| b);
         let (mut rows, mut params) = (Vec::new(), Vec::new());
         for b in still {
             rows.extend(b.instances.iter().map(cid));
