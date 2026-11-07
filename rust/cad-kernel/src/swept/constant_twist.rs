@@ -196,7 +196,10 @@ impl Unrooted {
 /// has a sharp edge along that point's path, and the sheet is creased at the node. The mark moves
 /// with its node wherever the walk's nodes are dropped or begun again.
 #[derive(Clone,Copy,Debug)]
-pub struct Node { pub patch: usize,pub u: f64,pub from: f64,pub position: V,pub normal: V,pub reach: Option<f64>,sharp: Option<usize> }
+pub struct Node { pub patch: usize,pub u: f64,pub from: f64,pub position: V,pub normal: V,pub reach: Option<f64>,sharp: Option<usize>,
+    /// Whether the sheet is creased at it where no fan stands: two faces meeting at a concave corner,
+    /// their roots at one point there and their normals apart (#721 F1d).
+    crease: bool }
 
 /// The stretch of a screw sweep's characteristic that reaches the blank, with `MARGIN` rings of
 /// it beyond each end. The parameter `s` runs from 0 to `nodes.len() - 1`: whole values are the
@@ -636,13 +639,21 @@ impl Characteristic {
             let u = stations[k][i];
             let r = root(x);
             if let Some(&(_,fan)) = stepped.iter().find(|(pair,_)| w > 0 && (*pair == [order[w-1],x] || *pair == [x,order[w-1]])) {
-                if let Some(&last) = nodes.last() { nodes.push(Node {patch:fan,sharp:None,..last}) }
+                if let Some(&last) = nodes.last() { nodes.push(Node {patch:fan,sharp:None,crease:false,..last}) }
             }
             if w > 0 && order[w-1].0 != k && from.is_none() && nodes.last().is_some_and(|m: &Node| distance(m.position,r.position) <= 1e-7*scale) {
+                // a crossing straight from one face to the next where they meet at an angle with no
+                // fan between, a concave corner: the sheet is creased there (#721 F1d)
+                if let Some(last) = nodes.last_mut() {
+                    let face = |p: &Piece| matches!(p,Piece::Face(..) | Piece::Ruled(Ruled {ruling:Ruling::Side {..},..}));
+                    if face(&pieces[last.patch]) && face(&pieces[k]) && dot(last.normal,r.normal).clamp(-1.,1.).dacos() > LEAST_TURN {
+                        last.crease = true
+                    }
+                }
                 from = Some(u); continue
             }
             let start = from.take().unwrap_or_else(|| nodes.last().map_or(u,|m| m.u));
-            nodes.push(Node {patch:k,u,from:start,position:r.position,normal:r.normal,reach:r.reach,sharp:None});
+            nodes.push(Node {patch:k,u,from:start,position:r.position,normal:r.normal,reach:r.reach,sharp:None,crease:false});
         }
         // a fan the walk runs round that stands at one point, from the node it runs onto it at to
         // its last: there the fan's edge runs along that point's velocity, every normal between its
@@ -823,6 +834,10 @@ impl Characteristic {
         walked.into_iter().map(|k| self.pieces[k].named()).collect()
     }
 
+    /// Whether the characteristic crosses a concave corner whose faces' points meet there, the sheet
+    /// creased along that point's path (`Node::crease`, #721 F1d).
+    pub fn concave(&self) -> bool { self.nodes.iter().any(|m| m.crease) }
+
     /// Whether the stretch from node `w − 1` to node `w` runs round a convex corner's fan (it lies
     /// on the later node's piece).
     pub fn on_fan(&self,w: usize) -> bool { self.pieces[self.nodes[w].patch].fan() }
@@ -890,11 +905,12 @@ impl Characteristic {
 }
 
 /// The nodes at which the sweep is creased, in order: where the walk runs onto or off a flat face
-/// the motion keeps in its own plane (#684 O), and those `Node::sharp` marks, where it passes a fan
-/// that stands at one point (#684 V).
+/// the motion keeps in its own plane (#684 O), those `Node::sharp` marks, where it passes a fan
+/// that stands at one point (#684 V), and those `Node::crease` marks, where it crosses a concave
+/// corner whose faces' points meet (#721 F1d).
 fn creases(nodes: &[Node],pieces: &[Piece]) -> Vec<usize> {
     let flat = |w: usize| matches!(pieces[nodes[w].patch],Piece::Flat(_));
-    (0..nodes.len()).filter(|&w| nodes[w].sharp.is_some() || (w+1 < nodes.len() && flat(w) != flat(w+1))).collect()
+    (0..nodes.len()).filter(|&w| nodes[w].sharp.is_some() || nodes[w].crease || (w+1 < nodes.len() && flat(w) != flat(w+1))).collect()
 }
 
 /// S1 between the walk's stations: a ring in contact all round, every point of it on the
@@ -1020,7 +1036,8 @@ fn along_axis(contacts: &Sweep,pieces: &[Piece],screw: &Screw,motion: Motion,ask
     let mut nodes: Vec<Node> = (0..=n).map(|i| {
         let u = i as f64/n as f64;
         let (position,normal) = round.at(u);
-        Node {patch,u,from:if i == 0 { 0. } else { (i-1) as f64/n as f64 },position,normal,reach:reach(family,screw,position,ask),sharp:None}
+        Node {patch,u,from:if i == 0 { 0. } else { (i-1) as f64/n as f64 },position,normal,reach:reach(family,screw,position,ask),sharp:None,
+            crease:false}
     }).collect();
     nodes[n].position = nodes[0].position;
     nodes[n].normal = nodes[0].normal;

@@ -134,11 +134,12 @@ fn a_member_its_class_refuses_is_the_closed_classs() {
     near(exported(&e,"rod"),PI*25.*20.-section*20.,2e-6);
 }
 
-/// A union within an intersection is not distributed — refused at T1, saying so — but the closed
-/// class reads the tool by its B-rep, two tori's faces and the crease where they meet (#721 F2c5),
-/// and builds it.
+/// A union within an intersection is not distributed, but read whole by its B-rep — two tori's faces
+/// and the concave crease where they meet — it is the constant twist's: both faces' points meet that
+/// corner, and the sheet is creased there (#721 F1d; before, T2 refused the corner and the closed
+/// class built it, #721 F2c5).
 #[test]
-fn a_union_within_an_intersection_is_the_closed_classs() {
+fn a_union_within_an_intersection_is_the_constant_twists() {
     let text = regroove(&beads(),"wheel","\
 in bench {
   private k0 := point
@@ -160,7 +161,8 @@ slab common trimmed
 ","trimmed");
     let e = fixtures::read(&text);
     let a = admit(&e,"rod").unwrap();
-    assert!(matches!(a.sweeps()[0].class,Class::Closed(_)),"the closed class's");
+    let Class::ConstantTwist(found) = &a.sweeps()[0].class else { panic!("the constant twist's") };
+    assert!(found.concave(),"creased at the concave corner");
     // the slab holds the wheel whole: the groove is the beads'
     near(exported(&e,"rod"),PI*25.*20.-beads_section()*20.,2e-6);
 }
@@ -250,4 +252,31 @@ small union pair
         stepped_as_exported(&text,body);
         stepped_as_exported(&format!("{text}made := solid({body})\n"),"made");
     }
+}
+
+/// **A tool with a concave corner is the constant twist's** (#721 F1d): `union.sv`'s two beads drawn
+/// as one tool, the revolution of the outline of their two discs — the first disc's arc below where
+/// they cross, the second's above — so the tool meets itself at a concave corner where the arcs do,
+/// which no union distributes. Read from its B-rep, the characteristic crosses that corner where
+/// both faces' points meet it (`Junction::Edge` with no fan), and the sheet is creased there
+/// (`Node::crease`, `Characteristic::creases`): asked no T2 (a concave corner is the walk's to meet),
+/// it is admitted by the constant twist, and the rod loses what either bead's shadow covers.
+#[test]
+fn a_tool_creased_at_a_concave_corner_cuts_as_its_members() {
+    // where the discs' circles cross, `±√20 / 3` either side of the beads' axis line and `4 / 3` up
+    let (u,v) = (20f64.sqrt()/3.,4./3.);
+    let text = beads().replace("construction bead := solid(std.solids.Revolution(face(rim), about: wheel_axis))\n\
+        construction bead2 := solid(std.solids.Revolution(face(rim2), about: wheel_axis))\nconstruction wheel := solid(bead)\nbead2 union wheel",
+        "construction wheel := solid(std.solids.Revolution(face(below, above), about: wheel_axis))")
+        .replace("  radius(tube2) rim2\n}",&format!("  radius(tube2) rim2\n  private lo := point\n  lo coords(du: reach - {u}mm, dv: {v}mm) bench\n  \
+            private hi := point\n  hi coords(du: reach + {u}mm, dv: {v}mm) bench\n  \
+            private below := arc(center: tc, start: lo, end: hi) hint(r: 2)\n  radius(tube) below\n  \
+            private above := arc(center: tc2, start: hi, end: lo) hint(r: 1.5)\n  radius(tube2) above\n}}"));
+    assert!(text.contains("face(below, above)") && text.contains("private above"));
+    let e = fixtures::read(&text);
+    let a = admit(&e,"rod").unwrap_or_else(|r| panic!("{r}"));
+    let [s] = a.sweeps() else { panic!("one sweep") };
+    let Class::ConstantTwist(found) = &s.class else { panic!("the constant twist's: {:?}",std::mem::discriminant(&s.class)) };
+    assert!(found.screw.is_slide() && !found.creases().is_empty(),"slid, creased at the concave corner");
+    near(exported(&e,"rod"),PI*25.*20.-beads_section()*20.,2e-6);
 }

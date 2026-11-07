@@ -997,8 +997,10 @@ outside the constant-twist class (S1: …): its tool's member `bead2`: … ``.
 
 A union is its members where it is the whole tool, a union within a union, or a placement of
 one, each member placed as it is. Still refused by these classes: a union within an intersection
-or a cut (`(A ∪ B) ∩ C`, T1, which is not distributed yet), which the closed class reads by its
-B-rep where its faces are ones it takes (`union_tools::a_union_within_an_intersection_is_the_closed_classs`);
+or a cut (`(A ∪ B) ∩ C`, which is not distributed) is read whole by its B-rep, the constant twist
+crossing its concave crease where both faces' points meet it (#721 F1d,
+`union_tools::a_union_within_an_intersection_is_the_constant_twists`), and the closed class reads
+one by its B-rep where no other class takes it;
 a member the closed class takes beside one another class takes, each member its own sweep, built
 by the other's road and then cut on one arrangement (`union_tools::a_member_its_class_refuses_is_the_closed_classs`); and a body that cuts a ball's tube beside a
 sweep of another class, which the static remainder does not read as either form, written as a

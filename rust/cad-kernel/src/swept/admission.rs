@@ -242,7 +242,7 @@ fn undercut(c: &Generating,patch: usize,inside: &(dyn Fn(V) -> bool+Sync),option
 /// whether each cap of `lone` (the tool, where it is a prism standing alone; its `start`, then its
 /// `end`) reaches the blank. A whole turn has no ends to clear: the tool at either lies within
 /// what the turn sweeps (`SweepContacts::whole`, #684 N).
-fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone: Option<&Lone>)
+fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone: Option<&Lone>,concave: bool)
     -> Result<(Reads,Vec<Motion>,[bool;2]),Failure> {
     let tool = c.source_material();
     let on_tool = |p: V| c.tool.on(p);
@@ -257,7 +257,7 @@ fn ends(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling,lone
         .collect::<Result<_,_>>()?;
     // where tool point `x` is first carried into the blank over the roll, each read remembered
     let reaches = |reads: &mut Reads,x: V| poses.iter().map(|m| m.point(x)).find(|&p| reads.read(inside,p));
-    for edge in c.edges() {
+    for edge in c.edges().iter().filter(|_| concave) {
         let ([a,b],[ua,_]) = (edge.patches,edge.ends);
         let (Some(pa),Some(pb)) = (c.patches().get(a),c.patches().get(b)) else { continue };
         let Some((corner,[sa,sb])) = c.corner(edge) else { continue };
@@ -568,7 +568,7 @@ pub fn check(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling
     let roots = |patch: usize,u: f64,v: f64| c.at_source_over(patch,u,v,domain,options.root_tolerance);
     // (a lone prism's cap is cut where it is sectioned across: undrafted, one loop)
     let lone = lone.filter(|l| l.sectioned_across());
-    let (mut reads,poses,capped) = ends(c,inside,options,lone)?;
+    let (mut reads,poses,capped) = ends(c,inside,options,lone,true)?;
     // M2 at the poles: where a face's profile meets the tool's axis the surface has no normal of
     // its own, so the sampled checks below cannot evaluate it. Its normal is the axis, the limit
     // along the profile; a pole whose contact condition is zero at every time and whose path
@@ -912,7 +912,9 @@ pub fn check_screw(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),extent: Opti
     // (a lone prism's cap is walked, drafted or not and of any loops: each side's rim on it, a
     // straight side's whether it leans or not, and its contact line where it lies on the cap,
     // #721 F1d)
-    let (reads,..) = ends(c,inside,options,lone)?;
+    // (a concave corner is the walk's to meet: it ends a stretch of the characteristic there, #721
+    // F1d, and under a slide along the tool's own axis it is no part of the characteristic at all)
+    let (reads,..) = ends(c,inside,options,lone,false)?;
     let reads = std::sync::Mutex::new(reads);
     // the blank read outside the lock, the faces' rings side by side
     let read = |p: V| { let i = inside(p); reads.lock().unwrap_or_else(|e| e.into_inner()).push(p,i); i };

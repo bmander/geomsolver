@@ -569,6 +569,17 @@ sweep the recipe sections as revolutions (23) the B-rep sections alike, the two 
 half-planes one region by their exact areas and a grid of points read in space; the slow tier's
 `every_examples_cutters_of_revolution_section_from_their_boundaries` holds every example's 43,
 the hypoid's and the spiral bevel's among them, none refused.
+*Concave corners in the walk:* T2 is the generating class's row alone; the constant twist meets a
+concave corner in its walk.  Where both faces' points meet the corner (`Junction::Edge` with no fan,
+the roots one point), the walk crosses straight from one face to the next and marks the node a
+crease (`Node::crease`), the normals turning there by more than `LEAST_TURN`: the sheet is fitted
+creased along that point's path, as at a fan standing at one point (`Characteristic::creases`,
+`Characteristic::concave`).  So a tool drawn with a concave corner — `union.sv`'s beads as one
+revolution of their two discs' outline, or their union within an intersection, which no union
+distributes — is the constant twist's, the rod losing what either bead's shadow covers to 1e-6
+(`union_tools::a_tool_creased_at_a_concave_corner_cuts_as_its_members`,
+`a_union_within_an_intersection_is_the_constant_twists`).  Where the faces' points part at the
+corner the walk still ends there, refused by name (`CONCAVE`).
 
 **The swept solid closed (#721 X0–X6) is designed in [docs/swept-solid-design.md](../swept-solid-design.md)**:
 every candidate sheet a patch over an explicit domain cut at its branch and fold loci, a box holding
@@ -1691,9 +1702,10 @@ placements between minted again over each, every minted solid keeping the one it
 (`sheet::SweptCut::read`); a refusal says the member (``its tool's member `bead2`: …``), and a
 union whose every member is a ball's tube admits nothing and builds as static material, held to
 the union's field as a swept body is. Not distributed: a union within an intersection or a cut
-(read from its B-rep whole, #721 F1b, the generating rows refuse it; the closed class reads such a
-tool by its B-rep where it takes its faces,
-`union_tools::a_union_within_an_intersection_is_the_closed_classs`; members falling to the closed
+(read from its B-rep whole, #721 F1b: the generating rows refuse its concave corner at T2, the
+constant twist crosses it where both faces' points meet it, creased there, #721 F1d,
+`union_tools::a_union_within_an_intersection_is_the_constant_twists`, and the closed class reads
+such a tool by its B-rep where it takes its faces; members falling to the closed
 class and another each built by its road, `union_tools::a_member_its_class_refuses_is_the_closed_classs`), and a union of prisms under a motion keeping their plane, which
 `planar_subtraction::asks` reads whole. The native path refuses a distributed cut by name.
 `tests/union_tools.rs` and `solid_sweeps_examples.rs` (`union.sv`) are the gate: the beads' groove
