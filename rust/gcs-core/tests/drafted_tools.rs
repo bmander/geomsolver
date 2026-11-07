@@ -1,6 +1,6 @@
 //! **Drafted prisms in the generating class** (#684 G, docs/generating-sweeps.md): a drafted
 //! prism's side is a plane where its edge is a line and a cone where it is an arc, the ruled
-//! surface between its edge's two sections (`ExtrudedSurface::drafted`), and a point of it has a
+//! surface between its edge's two sections (read from the tool's B-rep), and a point of it has a
 //! normal of its own as an undrafted side's has, so its contact is read in closed form as theirs
 //! is. The rack's tooth drafted cuts a tooth space that narrows through the blank; leaned across
 //! the blank as a helical rack's teeth are (`solid_sweeps/helical.sv`, held in
@@ -14,9 +14,8 @@
 //! tooth's eight half-planes, every side's material below the plane and above it. Drafted outward
 //! both ways, the crease is concave, and an arc meeting a side at an angle moves its corner along a
 //! curve: both are refused at T1 by name.
-use gcs_core::solid::ReadExtruded;
 use gcs_core::solid::admission::{self,Class,Condition,Options};
-use gcs_core::solid::{ExtrudedSurface,SweepContacts,ToolSurface};
+use gcs_core::solid::{SweepContacts,ToolSurface};
 use gcs_core::space::{cross,dot,unit};
 use crate::rack_cut::{space_area,TOOTH};
 use crate::turns_and_slides::{exported,refused};
@@ -191,7 +190,7 @@ fn a_rack_tooth_drafted_both_ways_cuts_a_space_widest_at_its_parting_plane() {
     assert!((removed-want).abs() < 2e-4*want,"removed {removed:.5} mm³, the space being {want:.5}");
 }
 
-/// **A drafted side is a plane or a cone of the tool** (`ExtrudedSurface::drafted`): a slot drafted
+/// **A drafted side is a plane or a cone of the tool** (read from its B-rep, `Tool::read`): a slot drafted
 /// 2° from its plane, two lines and two half circles going on tangent, has four sides, each the
 /// ruled surface between its two sections. Every point read on one lies on the tool's boundary (the
 /// field reads a drafted prism's sides exactly) with the field's normal, and a line's normal is
@@ -233,11 +232,10 @@ rack slides(2 * pi * 20mm) pitch_line
 construction space := solid({ p | some t in (-60deg, 60deg): p in slot at(under: rack, seen_from: turn) t })
 ";
     let e = fixtures::read(src);
-    let sides = ExtrudedSurface::drafted(&e.sketch,fixtures::solid(&e,"slot")).unwrap();
-    let mut names: Vec<&str> = sides.iter().flatten().flatten().map(|s| s.name.as_str()).collect();
+    let contacts = SweepContacts::read(&e.sketch,fixtures::solid(&e,"space"),1e-10).unwrap();
+    let mut names: Vec<&str> = contacts.patches().iter().filter(|s| !matches!(s,ToolSurface::Cap(_))).map(|s| s.name()).collect();
     names.sort();
     assert_eq!(names,["slot.east","slot.lower","slot.upper","slot.west"]);
-    let contacts = SweepContacts::read(&e.sketch,fixtures::solid(&e,"space"),1e-10).unwrap();
     let tool = contacts.source_material();
     let lean = 2f64.to_radians();
     for surface in contacts.patches() {

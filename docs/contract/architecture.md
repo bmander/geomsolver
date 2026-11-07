@@ -58,15 +58,19 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   curves traced into a sheet (`swept::trace`); `Family::normal_velocity` says the kernel's
   `Uncharted` in the drawing's words, and `SweepContacts::chart` hands the tracer the lowered
   motion and the roll.  So is a ball's tube (`swept::canal`), its rows typed (`canal::Row`,
-  `Seen`); `solid::canal` reads the ball off the tool's recipe, gates the tube against the sweep's
-  field and says its refusals.  So are the planar classes' readings: a closed curve's inner
+  `Seen`), and the ball read from the tool's B-rep (`canal::ball`, #721 F1c); `solid::canal`
+  gates the tube against the sweep's field and says its refusals.  So are the planar classes' readings: a closed curve's inner
   envelope under a planar motion (`swept::planar`) and the region a planar tool sweeps
-  (`swept::region`), each refusing by a typed row; `envelope::planar` and `envelope::swept_region`
-  read the curve, the section and their material (`PlanarField`) off the drawing and say the
-  refusals.  So are the generating class's rows asked of one placement (`swept::admission`:
+  (`swept::region`), each refusing by a typed row, and the tool a planar subtraction reads, its
+  section at each height cut from its B-rep (`swept::subtraction`, #721 F1c); `envelope::planar`
+  reads the curve and its material (`PlanarField`) off the drawing, and it and
+  `envelope::swept_region` say the refusals.  So are the generating class's rows asked of one placement (`swept::admission`:
   `check` for a relative rotation, `check_screw` for a constant twist, failing by
-  `constant_twist::Row`); `solid::admission::admit_body` reads the body's sweeps, placements and
-  blank off the drawing, hands each placement to the kernel and says its rows as `Condition`s.
+  `constant_twist::Row`), and the choice of a sweep's class: one `swept::dispatch::sweep` reads
+  the tool from its B-rep and the trajectory by its structure, asks the classes in order and admits
+  by the first that takes it, or refuses by a typed `dispatch::Row` with a witness (#721 F1c);
+  `solid::admission::admit_body` reads the body's sweeps, each tool's B-rep, placements and blank
+  off the drawing, hands each sweep to the kernel and says its refusals in the drawing's words.
   So are the planar classes' builds (an envelope's prism, `InnerEnvelope::prism`; a swept
   region's profiles and lofts, `swept::region::profiles` and `lofted`), on the cubic B-spline
   basis and its fit (`cubic`: what a drawing's curves are read by, `curve` re-exporting it), and

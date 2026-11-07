@@ -486,6 +486,17 @@ a mill turned a whole turn about an axis through its bottom (S1), which the clos
 too (`flat_faces::a_mill_turned_whole_about_an_axis_through_its_bottom_bores_a_disc`, the disc it
 covers, exactly), and a bar's side along a slide (S1, `tests/prism_twists.rs`), likewise. `tests/object_builder.rs` builds `slot.sv` at the page's samples.
 
+**Read from its B-rep, a tool standing along the plane its flat face lies in is the planar
+subtraction class's first (#721 F1c).** The kernel's dispatch asks the planar subtraction class
+before the constant twist's rows under a constant twist, of any tool whose B-rep stands along the
+normal of a plane the twist keeps, however it was drawn: an end mill of a cylinder and flat ends
+slid square to its axis or turned about a line along it is such a tool, and so are the tapered
+mill (its cone a draft), the hollow mill and the mill turned whole about an axis through its
+bottom, and the bar lying along the turn. So `slot.sv` and those of `tests/flat_faces.rs` and
+`tests/prism_twists.rs` are that class's now, each to the same closed form; the flat-face walk
+above is held where no class reads the tool before it — a bull-nose mill, its round a torus, which
+stands along no normal (`flat_faces::a_bull_nose_mill_slid_rounds_the_slots_corners`).
+
 ### A sharp edge along one point's path (issue #684 V)
 
 Where both faces' characteristics meet a convex corner of the tool at one point, every normal of
@@ -597,6 +608,13 @@ within stands farthest from the axis at a vertex, where three faces meet. (Pushe
 keeps its section's plane and is the planar subtraction class's.) The row for a loop with no
 crease met its first case in #684 X: a small torus leaning toward the turn's axis wholly within the
 sector, its tube circles' outer halves joined smoothly to its two rings in contact all round. `tests/object_builder.rs` builds `punch.sv` at the page's samples.
+
+Read from its B-rep (#721 F1c), a drum stands along its axis, and a push square to the axis or a
+turn about a line along it keeps the planes square to it, so the kernel's dispatch asks the planar
+subtraction class first: `punch.sv` and the drum turned through the ring sector, partway or whole,
+are that class's now, to the same closed forms (the whole turn within 1e-6, its circles fitted).
+The closed characteristic above is held where no class reads the tool before it: the bull-nosed
+drum, its rounds tori.
 
 ### A ring in contact all round (issue #684 X)
 
@@ -921,16 +939,19 @@ A conjugate wheel (#590) is what a tool would cut if it were a gear shaper: `spa
 cut wheel`. Its tool is always in mesh (E1), its arms' straight sides touch twice in a passage (E2),
 and a stepped handle is no single revolution or prism (T1). Each of those rows exists so
 that no sheet needs trimming; under a motion that keeps the tool's plane the trimming is cheap and
-exact in the plane. Within a slab of the blank that every member spans or misses, the section is
-the same at every height (or, drafted, moves as its draft does), and so is what the sweep removes:
-`R = ∪ₜ poseₜ(section)`, the slab's cut the blank less `R`'s prism. A prism sweep the generating
-rows refuse at T1, T2, E1 or E2 is asked these rows instead (`solid::planar_subtraction`):
+exact in the plane. Within a slab of the blank that no face of the tool square to the plane's
+normal crosses, the section is the same at every height (or, drafted, moves as its draft does), and
+so is what the sweep removes: `R = ∪ₜ poseₜ(section)`, the slab's cut the blank less `R`'s prism.
+The class reads the tool from its B-rep (`brep::swept::subtraction`, #721 F1c), however it was
+drawn — prisms joined, cut or drafted, a disc or an end mill turned — and the kernel's dispatch
+asks it outright under a constant twist, before the constant twist's rows, and in place of the
+generating rows where they refuse (`brep::swept::dispatch`):
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
 | P1 | The motion turns the tools' plane in itself about axes square to it, the same face up. | Every pose is a rigid motion of the plane. | The motion. |
-| Q1 | The tool is prisms square to that plane, their profiles lines and arcs, joined by `union` and `common`; a drafted one is read at stations through its slab (#607). | Each piece's contact is exact. | The member that is not. |
-| Q2 | Every member's caps lie outside the blank, or on a plane where the blank is split into slabs; a drafted slab's region keeps its shape through the slab. | Within a slab the section is one (drafted, one shape lofted); the cap planes inside the blank are the slab planes, so a stepped tool's bands split the blank themselves. | The blank whose extent is unknown; the depth of a drafted member where its region changes, to step the tool at. |
+| Q1 | The tool stands along that plane's normal: every face of its B-rep a plane square to it (a cap), a plane or a cylinder along it, or a plane or a cone about a line along it leaning to it, the sides across any one height leaning alike (by one draft, or none). Its section at a height is the face the B-rep cut there leaves on the plane, lines and arcs; a drafted slab is read at stations through it (#607). | Each piece's contact is exact. | The face that stands along no normal the motion keeps, or leans unlike its neighbours, with a point of it. |
+| Q2 | The blank is split into slabs at every cap within it; a drafted slab's region keeps its shape through the slab. | Within a slab the section is one (drafted, one shape lofted); a stepped tool's bands split the blank themselves. | The blank whose extent is unknown; the height where a drafted slab's region changes, to step the tool at. |
 | Q3 | The roll is a whole period of the motion (the tool stands where it began, its own symmetry counted), or the tool is clear of the blank at both ends. | A whole period closes `R` and leaves no caps (#585). | The roll, the pose in the blank and the period to roll. |
 | Q4 | The kept boundary is regular: its pieces meet at corners or leave the blank's shadow, with no fold and no crossing. | What the region keeps must be loops the builder can fit. | The end that meets nothing, the fold or the crossing. |
 

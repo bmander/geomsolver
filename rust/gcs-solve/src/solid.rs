@@ -103,7 +103,7 @@ pub mod contracts;
 pub mod sector;
 pub mod export;
 pub mod blank_features;
-pub use sweep_contacts::{CapSurface,ExtrudedSurface,Material,ReadCap,ReadExtruded,SweepContacts,TimedContact,PatchEdge,PointContactError,Tool,
+pub use sweep_contacts::{CapSurface,ExtrudedSurface,Material,SweepContacts,TimedContact,PatchEdge,PointContactError,Tool,
     ToolSurface};
 pub use surface::{ReadProjector,ReadRevolved,RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
     SurfaceProjection,SurfaceProjector,RevolvedContact};

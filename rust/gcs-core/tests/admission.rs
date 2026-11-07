@@ -91,15 +91,15 @@ fn a_ball_under_any_motion_is_its_tube() {
 }
 
 /// A prism with no pocket is not asked the planar class's rows (#65). Its cap passes through the
-/// post, which a prism standing alone may now do (#684 F, `tests/prism_caps.rs`), but its top side
-/// lies square to the roll's two axes, so every point of it is in contact at every time: refused
-/// at M2, at a point of that side (z = 0). Before #684 F the cap was refused first, at T1.
+/// post and its top side lies square to the roll's two axes, so every point of it is in contact at
+/// every time, which the generating class refuses at M2. Read from its B-rep (#721 F1c), the box
+/// stands along the axes the roll keeps the plane square to, so the planar subtraction class reads
+/// it in the generating class's place: the post less the region its section sweeps.
 #[test]
-fn a_prism_whose_cap_passes_through_the_blank_is_refused() {
-    let r = refused(admit(&document(tools::BOX,&motions::roll(0.25),ROLLED,-60.,60.)));
-    assert_eq!(r.condition,Condition::Stationary);
-    assert!(r.message.contains("in contact at every time"),"{}",r.message);
-    assert!(r.witness.is_some_and(|p| p[2].abs() < 1e-9),"a point of the top side, at z = 0: {:?}",r.witness);
+fn a_prism_whose_cap_passes_through_the_blank_is_planar_subtractions() {
+    let a = admit(&document(tools::BOX,&motions::roll(0.25),ROLLED,-60.,60.)).unwrap_or_else(|e| panic!("{e}"));
+    let Class::Subtraction(found) = &a.sweeps()[0].class else { panic!("{:?}",a.sweeps()[0].class) };
+    assert!(found.slabs.iter().any(|s| s.stations.iter().any(|(_,r)| !r.loops.is_empty())),"its region reaches the post");
 }
 
 /// A slide is asked the constant-twist class's rows (#684), as a screw is: this one leaves its lens
@@ -181,12 +181,15 @@ private ax := line(l5, l0)
 construction tool := solid(std.solids.Revolution(face(e0, e1, e2, e3, e4, ax), about: ax))
 ";
 
+/// The stepped tool's concave corner the generating class refuses at T2, where it trims two
+/// envelopes against each other; read from its B-rep (#721 F1c), the tool is two discs standing along
+/// the roll's axes, and the planar subtraction class reads each slab's region whole, the step
+/// splitting the post where it stands.
 #[test]
-fn a_concave_corner_carried_through_the_blank_is_refused() {
-    let r = refused(admit(&document(ELL,&motions::roll(0.25),ROLLED,-60.,60.)));
-    assert_eq!(r.condition,Condition::Corner);
-    let p = r.witness.unwrap();
-    assert!((p[0]-3.).hypot(p[1]) < 0.4+1e-6,"the witness is in the post: {p:?}");
+fn a_concave_corner_carried_through_the_blank_is_planar_subtractions() {
+    let a = admit(&document(ELL,&motions::roll(0.25),ROLLED,-60.,60.)).unwrap_or_else(|e| panic!("{e}"));
+    let Class::Subtraction(found) = &a.sweeps()[0].class else { panic!("{:?}",a.sweeps()[0].class) };
+    assert!(found.slabs.len() >= 2,"a slab each side of the step: {}",found.slabs.len());
 }
 
 /// The gear pair at a design (the offset between the shafts in millimetres, the pressure shift

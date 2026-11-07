@@ -189,29 +189,33 @@ fn a_bar_slid_aslant_leaves_a_plane() {
 /// (`lower`) square to the turn's axis: the turn keeps it in its own plane, every point of it in
 /// contact, and it sweeps a region of that plane from its point nearest the axis, where its inner
 /// side's line up the bar (`under`, its rulings' roots at y = 0) meets it, out past the block (box O
-/// of #684, refused at S1 before). The floor is z = 0 and the wall the turn's cylinder of radius 10,
-/// so within its 60° the block loses `π/6 (12² − 10²)` over its top millimetre.
+/// of #684, refused at S1 before). Read from its B-rep (#721 F1c) the bar stands along the turn's
+/// axis, so the planar subtraction class takes it first. The floor is z = 0 and the wall the turn's
+/// cylinder of radius 10, so within its 60° the block loses `π/6 (12² − 10²)` over its top
+/// millimetre.
 #[test]
 fn a_side_square_to_the_turn_cuts_a_floor() {
     let e = fixtures::read(&turned_bar(90.,[[10.,0.],[13.,0.],[13.,-3.],[10.,-3.]],9.,0.));
-    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
-    assert_eq!(found.flats(),["`bar.lower`"]);
-    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    // read from its B-rep (#721 F1c), the bar stands along the turn's axis: the planar subtraction
+    // class, asked before the constant twist's, reads its swept region whole
+    assert!(matches!(class(&e,"part"),Class::Subtraction(_)),"the planar subtraction class");
     near(exported(&e,"part"),PI/3.*80.-PI/6.*44.,1e-5);
 }
 
 /// Flat side down and slid level, the bar's underside runs along the slide: every point of it moves
 /// along it, the face kept in its own plane. Under a slide the constant-twist class reads a prism by
 /// its silhouette, and the line across such a side runs between vertices of the prism, where a cap
-/// meets it, so it reads a prism's flat side only under a turn (S1, #684 O); the closed class (#721)
-/// cuts it on one arrangement, the underside at both end poses among the candidates. The bar's
-/// underside stands 9.8 high and the slide carries it 18 across the cube, its length past the cube
-/// all the way: the cube loses its top 0.2, `1000 − 20`.
+/// meets it, so it reads a prism's flat side only under a turn (S1, #684 O); read from its B-rep
+/// (#721 F1c), the bar stands along the normal of a plane the slide keeps, and the planar
+/// subtraction class, asked first, reads the region its section sweeps. The bar's underside stands
+/// 9.8 high and the slide carries it 18 across the cube, its length past the cube all the way: the
+/// cube loses its top 0.2, `1000 − 20`.
 #[test]
-fn a_side_along_the_slide_is_the_closed_classs() {
+fn a_side_along_the_slide_is_planar_subtractions() {
     let e = fixtures::read(&slid_bar(false,0.));
-    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw().unwrap().is_slide(),"a slide");
+    // (the planar subtraction class's, read from its B-rep, #721 F1c: the bar stands along the
+    // normal of a plane the slide keeps)
+    assert!(matches!(class(&e,"part"),Class::Subtraction(_)),"the planar subtraction class");
     near(exported(&e,"part"),980.,1e-9);
 }
 

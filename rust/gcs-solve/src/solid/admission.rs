@@ -8,71 +8,60 @@
 //! admits has shown no failure at the samples it names, which is not a proof that none exists
 //! between them. Material evaluation answers membership for every sweep, admitted or not; only
 //! boundary construction is restricted.
-use super::{SpatialField,SweepContacts,cad};
-use crate::brep::swept::admission::{self as rows,Reads};
-use super::constant_twist::Failure;
-use crate::{envelope::{Motion,SurfacePoint},model::{EntKind,Sketch,SolidDef}};
+use super::{SpatialField,cad};
+use crate::brep::swept::admission as rows;
+use crate::brep::swept::dispatch;
+use crate::{envelope::Motion,model::{EntKind,Sketch,SolidDef}};
 use std::{collections::BTreeMap,f64::consts::TAU,fmt};
 
 use crate::space::{sub,cross,norm};
 
 type V = [f64;3];
 
-/// The rows of the class, in the order they are asked.
-#[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
-pub enum Condition { Tool, Corner, Motion, Stationary, Reach, Clearance, Single, Fold, Crossing, Sections, Regular, Once, Edgewise, Lead,
-    Plane, Prisms, Period, Envelope, Wall, Members, Slabs, Closes, Kept, Curvature, Return, Faces, Constant, Settled }
+/// The rows of the classes, in the order they are asked, are the kernel's (`dispatch::Row`, #721
+/// F1c): their codes too.
+pub use crate::brep::swept::dispatch::Row as Condition;
 
-impl Condition {
-    pub fn code(self) -> &'static str {
-        match self { Condition::Tool => "T1", Condition::Corner => "T2", Condition::Motion => "M1",
-            Condition::Stationary => "M2", Condition::Reach => "E0", Condition::Clearance => "E1", Condition::Single => "E2",
-            Condition::Fold => "E3", Condition::Crossing => "E4", Condition::Sections => "T3", Condition::Regular => "S1", Condition::Once => "S2",
-            Condition::Edgewise => "S3", Condition::Lead => "S4", Condition::Plane => "P1", Condition::Prisms => "P2",
-            Condition::Period => "P3", Condition::Envelope => "P4", Condition::Wall => "P5", Condition::Members => "Q1",
-            Condition::Slabs => "Q2", Condition::Closes => "Q3", Condition::Kept => "Q4", Condition::Curvature => "B1",
-            Condition::Return => "B2", Condition::Faces => "C1", Condition::Constant => "C2", Condition::Settled => "C3" }
-    }
-    /// What the row asks, in the words the scope document uses.
-    pub fn rule(self) -> &'static str {
-        match self {
-            Condition::Tool => "the tool is read from its boundary, every face a face of revolution of lines and arcs, a ruled \
-                side of lines or arcs (drafted or not) or a plane, its planes that are no side clear of the blank unless they are \
-                the caps of one undrafted prism standing alone, or a union of tools each in the class",
-            Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
-            Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide (a joint driven by a law alone read as its joint over the values the law reaches)",
-            Condition::Stationary => "the contact condition depends on the motion",
-            Condition::Reach => "the sweep's contacts reach the blank",
-            Condition::Clearance => "the tool is clear of the blank at both ends of the roll",
-            Condition::Single => "each tool point touches the blank at most once in the roll",
-            Condition::Fold => "the generated surface does not fold",
-            Condition::Crossing => "the generated surface does not cross itself",
-            Condition::Sections => "a prism whose cap reaches the blank is sectioned through its extrusion in a band clear of its \
-                profile's corners and its ends",
-            Condition::Regular => "the screw's characteristic is a regular curve through the blank",
-            Condition::Once => "the characteristic reaches the blank in one stretch, one point a ring",
-            Condition::Edgewise => "the characteristic never runs along the screw's path",
-            Condition::Lead => "the sweep does not cross itself within a lead, or a turn",
-            Condition::Plane => "the motion turns a plane in itself about axes square to it",
-            Condition::Prisms => "the tool is a stock cut by one pocket, prisms square to that plane through the blank, the \
-                pocket's profile one closed curve",
-            Condition::Period => "the roll is a whole period of the motion",
-            Condition::Envelope => "the pocket's inner envelope is one regular loop that neither folds nor crosses itself",
-            Condition::Wall => "the stock's outer wall never reaches the blank",
-            Condition::Members => "the tool is prisms square to the plane the motion keeps, of lines and arcs, joined by union and \
-                common",
-            Condition::Slabs => "every member's caps lie outside the blank, or on a plane the blank is split at",
-            Condition::Closes => "the roll is a whole period of the motion, or the tool is clear of the blank at both its ends",
-            Condition::Kept => "the swept region's boundary is regular: its pieces meet at corners or leave the blank's shadow, with no \
-                fold and no crossing",
-            Condition::Curvature => "the ball's centre's path never stops and turns nowhere tighter than its radius",
-            Condition::Return => "the ball's centre's path comes back within its diameter of itself nowhere",
-            Condition::Faces => "every face of the tool is a plane and every edge a line",
-            Condition::Constant => "the motion is one slide, turn or screw, and under a screw every face and edge of the tool runs \
-                along its axis or square to it",
-            Condition::Settled => "every cell the sweep's candidate faces split the blank into is read in or out of the sweep at a \
-                point clear of its boundary",
-        }
+/// What row `c` asks, in the words the scope document uses.
+pub fn rule(c: Condition) -> &'static str {
+    match c {
+        Condition::Tool => "the tool is read from its boundary, every face a face of revolution of lines and arcs, a ruled \
+            side of lines or arcs (drafted or not) or a plane, its planes that are no side clear of the blank unless they are \
+            the caps of one undrafted prism standing alone, or a union of tools each in the class",
+        Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
+        Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide (a joint driven by a law alone read as its joint over the values the law reaches)",
+        Condition::Stationary => "the contact condition depends on the motion",
+        Condition::Reach => "the sweep's contacts reach the blank",
+        Condition::Clearance => "the tool is clear of the blank at both ends of the roll",
+        Condition::Single => "each tool point touches the blank at most once in the roll",
+        Condition::Fold => "the generated surface does not fold",
+        Condition::Crossing => "the generated surface does not cross itself",
+        Condition::Sections => "a prism whose cap reaches the blank is sectioned through its extrusion in a band clear of its \
+            profile's corners and its ends",
+        Condition::Regular => "the screw's characteristic is a regular curve through the blank",
+        Condition::Once => "the characteristic reaches the blank in one stretch, one point a ring",
+        Condition::Edgewise => "the characteristic never runs along the screw's path",
+        Condition::Lead => "the sweep does not cross itself within a lead, or a turn",
+        Condition::Plane => "the motion turns a plane in itself about axes square to it",
+        Condition::Prisms => "the tool is a stock cut by one pocket, prisms square to that plane through the blank, the \
+            pocket's profile one closed curve",
+        Condition::Period => "the roll is a whole period of the motion",
+        Condition::Envelope => "the pocket's inner envelope is one regular loop that neither folds nor crosses itself",
+        Condition::Wall => "the stock's outer wall never reaches the blank",
+        Condition::Members => "the tool stands along the normal of a plane the motion keeps: every face of its boundary a plane \
+            square to it, or a plane, a cylinder or a cone standing along it",
+        Condition::Slabs => "the blank is split at every cap of the tool within it, and where a side leans across a slab its \
+            region keeps one shape through it",
+        Condition::Closes => "the roll is a whole period of the motion, or the tool is clear of the blank at both its ends",
+        Condition::Kept => "the swept region's boundary is regular: its pieces meet at corners or leave the blank's shadow, with no \
+            fold and no crossing",
+        Condition::Curvature => "the ball's centre's path never stops and turns nowhere tighter than its radius",
+        Condition::Return => "the ball's centre's path comes back within its diameter of itself nowhere",
+        Condition::Faces => "every face of the tool is a plane and every edge a line",
+        Condition::Constant => "the motion is one slide, turn or screw, and under a screw every face and edge of the tool runs \
+            along its axis or square to it",
+        Condition::Settled => "every cell the sweep's candidate faces split the blank into is read in or out of the sweep at a \
+            point clear of its boundary",
     }
 }
 
@@ -88,9 +77,8 @@ pub struct Refusal {
     pub asked: Asked,
 }
 
-/// The class a sweep's rows are read from.
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Asked { Generating,ConstantTwist,Planar,Subtraction,Canal }
+/// The class a sweep's rows are read from is the kernel's (`dispatch::Asked`).
+pub use crate::brep::swept::dispatch::Asked;
 
 impl Refusal {
     /// The class the sweep was asked to join, by its motion and its tool.
@@ -104,7 +92,7 @@ impl Refusal {
 impl fmt::Display for Refusal {
     fn fmt(&self,f: &mut fmt::Formatter) -> fmt::Result {
         write!(f,"`{}` is outside the {} ({}: {}): {}",
-            self.sweep,self.class(),self.condition.code(),self.condition.rule(),self.message)?;
+            self.sweep,self.class(),self.condition.code(),rule(self.condition),self.message)?;
         if let Some(p) = self.witness { write!(f," at ({:.4}, {:.4}, {:.4})",p[0],p[1],p[2])?; }
         Ok(())
     }
@@ -368,10 +356,51 @@ fn structurally_alike(sk: &Sketch,root: usize,poses: &BTreeMap<usize,Vec<Motion>
     Some((origin,axis))
 }
 
+/// The blank a body's sweeps cut, as the kernel's dispatch reads it (`dispatch::Blank`): its
+/// static remainder's field, a point within `margin` of whose boundary is not in it, the box its
+/// support stands in, and the box its own boundary stands in, built from its recipe the first time
+/// a planar class asks it.
+struct Blank<'a> { field: &'a SpatialField,margin: f64,extent: Option<(V,V)>,recipe: Option<crate::json::Json>,
+    boxed: std::sync::OnceLock<Option<(V,V)>>,mm: f64 }
+
+impl dispatch::Blank for Blank<'_> {
+    fn inside(&self,p: V) -> bool { self.field.below(p,-self.margin) }
+    fn extent(&self) -> Option<(V,V)> { self.extent }
+    fn boxed(&self) -> Option<(V,V)> {
+        *self.boxed.get_or_init(|| {
+            let blank = crate::brep::recipe::build(self.recipe.as_ref()?).ok()?;
+            let (lo,hi) = blank.bounds();
+            Some((lo.map(|x| x/self.mm),hi.map(|x| x/self.mm)))
+        })
+    }
+}
+
+/// What the drawing reads of one sweep for the kernel: its tool's B-rep, its trajectory and roll,
+/// the names its refusals say, and its pocket where the drawing writes its tool as a stock cut by
+/// one (the planar class's reading, #721 F1d) — or why the drawing reads none, refused at T1.
+struct Read { tool: Result<std::sync::Arc<crate::brep::topo::Brep>,String>,path: crate::brep::trajectory::Trajectory,roll: [f64;2],
+    names: crate::brep::swept::subtraction::Names,pocket: Option<Result<crate::brep::swept::pocket::Pocket,crate::brep::swept::pocket::Failure>>,
+    family: crate::motion::Family }
+
+/// Sweep `swept` read off the drawing: everything the kernel's dispatch is handed, or the message
+/// T1 refuses it with.
+fn read(sk: &Sketch,swept: usize,options: &Options) -> Result<Read,String> {
+    let SolidDef::Swept {source,motion,..} = &sk.solids[swept].def else { return Err(format!("`{}` is no sweep",sk.solids[swept].name)) };
+    let family = crate::motion::Family::read(sk,*motion as usize)?;
+    let path = family.trajectory()?;
+    let roll = super::roll::interval(sk,swept)?;
+    let tool = cad::tool_brep(sk,swept);
+    let names = crate::brep::swept::subtraction::Names {sweep:sk.solids[swept].name.clone(),tool:sk.solids[*source as usize].name.clone(),
+        motion:family.name.clone()};
+    let pocket = super::planar_class::asks(sk,swept).then(|| super::planar_class::read(sk,swept,options));
+    Ok(Read {tool,path,roll,names,pocket,family})
+}
+
 /// Admit or refuse every swept cut of the body `root` (the body it places, where `root` is a
-/// placement). The sweeps are checked side by side and a placement's reads against the first
-/// placement's on every core; what is admitted or refused, and with which evidence, is what
-/// checking them one after another in order says.
+/// placement): each sweep read off the drawing and handed to the kernel, which chooses its class
+/// (`brep::swept::dispatch::sweep`, #721 F1c), the sweeps asked side by side. What is admitted or
+/// refused, and with which evidence, is what asking them one after another in order says; what is
+/// here is the drawing's reading and the refusals' words.
 pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission,Error> {
     // a body placed by a rigid motion is the body moved: the body it places is admitted (#619)
     let root = cad::placed_swept(sk,root).map_err(Error::Unreadable)?.map_or(root,|(inner,_)| inner);
@@ -390,179 +419,71 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         if !by_sweep.contains_key(&cut.swept) { order.push(cut.swept); }
         by_sweep.entry(cut.swept).or_default().push(cut.pose);
     }
-    let names: BTreeMap<usize,String> = order.iter().map(|&s| (s,sk.solids[s].name.clone())).collect();
-    // the first ball's sweep its tube's rows refuse (#684 D), along a path no closed form carries
-    let canal = order.iter().find_map(|&s| super::canal::refusal(sk,s).map(|r| (s,r)));
-    let asked: BTreeMap<usize,Asked> = order.iter().map(|&s| (s,if canal.as_ref().is_some_and(|(c,_)| *c == s) { Asked::Canal }
-        else if super::planar_class::asks(sk,s) { Asked::Planar }
-        else { match &sk.solids[s].def {
-            // prisms under a turn or a slide that keeps their plane: the planar subtraction class
-            // reads their swept region whole (#684 M)
-            SolidDef::Swept {motion,..} if crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.twist().is_some()) =>
-                if super::planar_subtraction::asks(sk,s) { Asked::Subtraction } else { Asked::ConstantTwist },
-            _ => Asked::Generating,
-        } })).collect();
     // a sweep of a member of a union tool is refused as the union's, saying the member (#684 C)
-    let members: BTreeMap<usize,String> = order.iter().filter(|&&s| sk.distributed.contains_key(&(s as u32)))
-        .filter_map(|&s| match &sk.solids[s].def { SolidDef::Swept {source,..} => Some((s,sk.solids[*source as usize].name.clone())),
-            _ => None }).collect();
-    let said = |swept: usize,message: String| match members.get(&swept) {
-        Some(member) => format!("its tool's member `{member}`: {message}"),
-        None => message,
+    let said = |swept: usize,message: String| match sk.distributed.contains_key(&(swept as u32)) {
+        true => match &sk.solids[swept].def {
+            SolidDef::Swept {source,..} => format!("its tool's member `{}`: {message}",sk.solids[*source as usize].name),
+            _ => message,
+        },
+        false => message,
     };
-    let refuse = |swept: usize,condition,message: String,witness|
-        Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message:said(swept,message),witness,asked:asked[&swept]});
-    if let Some((swept,r)) = canal {
-        return Err(refuse(swept,r.condition,r.message,r.witness.map(|p| by_sweep[&swept][0].point(p))))
-    }
-    let field = &field;
     let bounds = field.support_bounds().ok().flatten();
-    // a pocketed prism under a planar motion: rows P1–P5, every placement checked, the blank boxed
-    // by its own boundary (a field's support is a construction's box, not the material's)
-    let mut planar: Vec<SweepEvidence> = Vec::new();
-    // built once, where a planar class first asks for it
-    let boxed = std::cell::OnceCell::new();
-    let blank_box = || -> Option<(V,V)> { *boxed.get_or_init(|| blank_box(sk,root)) };
-    let planar_box = order.iter().any(|s| asked[s] == Asked::Planar).then(blank_box).flatten();
-    for &swept in order.iter().filter(|s| asked[s] == Asked::Planar) {
-        let refused = |(c,m,w): super::planar_class::Failure,pose: Motion| refuse(swept,c,m,w.map(|p| pose.point(p)));
-        let class = super::planar_class::Planar::read(sk,swept,options).map_err(|f| refused(f,by_sweep[&swept][0]))?;
-        let mut first = None;
-        for &pose in &by_sweep[&swept] {
-            let inside = move |p: V| field.value(pose.point(p)) < -options.margin;
-            let checked = class.check(sk,pose,&inside,planar_box,options).map_err(|f| refused(f,pose))?;
-            first.get_or_insert(checked);
-        }
-        let mut found = class.evidence(first.expect("a swept cut has a placement"));
-        found.sweep = swept; found.name = names[&swept].clone();
-        found.placements = by_sweep[&swept].iter().map(|&pose| Placement {pose,equivalent_to:None}).collect();
-        planar.push(found);
-    }
-    // a prism sweep under a motion keeping its plane that the generating rows refuse, at any row and
-    // any placement, is asked the planar subtraction class's rows instead (Q1–Q4), every placement
-    // at once: what those rows guard against — a union within an intersection, a draft running both
-    // ways from its plane, a concave corner, a roll never clear, a second contact — its swept region
-    // does not need. One under a turn or a slide keeping its plane is asked them outright (#684 M).
-    // a sweep every class it is asked refuses, of a polyhedral tool under one slide, turn or screw,
-    // is built closed by the kernel's one arrangement (#721, rows C1–C3): its refusal stands where
-    // the closed class's rows refuse it too
-    let closed = |swept: usize,refused: Error| -> Result<SweepEvidence,Error> {
-        match refused {
-            Error::Refused(_) => super::closed_class::admit(sk,swept,&by_sweep[&swept]).ok_or(refused),
-            other => Err(other),
-        }
-    };
-    let subtract = |swept: usize| -> Result<SweepEvidence,Error> {
-        let inside = |p: V| field.value(p) < -options.margin;
-        super::planar_subtraction::admit(sk,swept,&by_sweep[&swept],&inside,blank_box()).map_err(|(condition,message,witness)|
-            Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message:said(swept,message),witness,
-                asked:Asked::Subtraction})).or_else(|e| closed(swept,e))
-    };
-    for &swept in order.iter().filter(|s| asked[s] == Asked::Subtraction) { planar.push(subtract(swept)?) }
-    order.retain(|s| !matches!(asked[s],Asked::Planar | Asked::Subtraction));
-    // a placement's check by the class its motion is in: the kernel's rows (`brep::swept::admission`)
-    let mm = cad::millimetres(sk);
-    let check = |contacts: &SweepContacts,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)|
-        -> Result<(SweepEvidence,Reads),Failure> {
-        let path = contacts.motion().path().map_err(|e| (Condition::Motion,e,None))?;
-        let sweep = rows::Generating {tool:contacts.tool(),path,roll:contacts.domain(),whole:contacts.whole(),mm};
-        let sampling = options.sampling();
-        let failed = |(row,m,w): crate::brep::swept::constant_twist::Failure| (Condition::from(row),m,w);
-        match contacts.motion().twist() {
-            Some(screw) => {
-                let extent = bounds.map(|b| screw.extent(b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1]),pose.inverse()));
-                let (found,spacing,reads) = rows::check_screw(&sweep,inside,extent,&sampling,contacts.lone()).map_err(failed)?;
-                let [first,last] = found.reach;
-                Ok((SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples:found.samples,contacts:last-first+1,
-                    spacing,least_area_factor:found.least_factor,near_double_roots:0,near_tangent_pairs:0,
-                    basis:Basis::Sampled {rows:options.rows,columns:360},equivalence:Equivalence::Sampled,
-                    class:Class::ConstantTwist(Box::new(found))},reads))
-            }
-            None => {
-                let (found,reads) = rows::check(&sweep,inside,&sampling,contacts.lone()).map_err(failed)?;
-                Ok((SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples:found.samples,contacts:found.contacts,
-                    spacing:found.spacing,least_area_factor:found.least_area_factor,near_double_roots:found.near_double_roots,
-                    near_tangent_pairs:found.near_tangent_pairs,basis:Basis::Sampled {rows:options.rows,columns:options.columns},
-                    equivalence:Equivalence::Sampled,class:found.capped.map_or(Class::Generating,|c| Class::Capped(Box::new(c)))},reads))
-            }
-        }
-    };
-    let inside_at = |pose: Motion| move |p: V| field.below(pose.point(p),-options.margin);
-    // Each sweep's tool read from its B-rep (#721 F1b), refused at T1 by the face no reading takes,
-    // then its first placement checked; a tool one prism standing alone is one whose cap the class
-    // may section across (#684 F)
-    let tools: Vec<Result<SweepContacts,Error>> = order.iter().map(|&swept| {
-        let contacts = SweepContacts::read_witnessed(sk,swept,options.axis_tolerance)
-            .map_err(|(m,w)| refuse(swept,Condition::Tool,m,w.map(|p| by_sweep[&swept][0].point(p))))?;
-        if contacts.motion().twist().is_none() {
-            let probe = SurfacePoint {position:[1.,2.,3.],du:[1.,0.,0.],dv:[0.,1.,0.]};
-            contacts.motion().normal_velocity(probe).map_err(|m| refuse(swept,Condition::Motion,m,None))?;
-        }
-        Ok(contacts)
-    }).collect();
-    let clock = crate::clock::Instant::now();
-    let checks = crate::par::indices(order.len(),|k| -> Option<Result<(SweepEvidence,Reads),Error>> {
-        let contacts = tools[k].as_ref().ok()?;
-        let (swept,pose) = (order[k],by_sweep[&order[k]][0]);
-        Some(check(contacts,pose,&inside_at(pose)).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p)))))
-    });
-    let first: Vec<Result<(SweepContacts,SweepEvidence,Reads),Error>> = tools.into_iter().zip(checks).map(|(tool,check)| {
-        let contacts = tool?;
-        let (found,reads) = check.expect("a read tool is checked")?;
-        Ok((contacts,found,reads))
-    }).collect();
-    if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: checked in {:?}",clock.elapsed()); }
-    let clock = crate::clock::Instant::now();
-    // The blank a solid of revolution about the line every placement turns about: the later
-    // placements read it as the first does, proved by the solid graph. Otherwise, whether each
-    // later placement reads the blank as the first did, every point of it.
     let size = bounds.map_or(1.,|b| crate::space::box_centre_diagonal(&b).1);
+    let mm = cad::millimetres(sk);
+    let blank = Blank {field:&field,margin:options.margin,extent:bounds.map(|b| (b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1]))),
+        recipe:cad::recipe_static(sk,root).ok().map(|r| r.recipe),boxed:std::sync::OnceLock::new(),mm};
+    // the blank a solid of revolution about the line every placement turns about: the later
+    // placements read it as the first does, proved by the solid graph
     let revolved = structurally_alike(sk,root,&by_sweep,size);
-    let later: Vec<(usize,usize)> = if revolved.is_some() { Vec::new() } else {
-        first.iter().enumerate().filter(|(_,r)| r.is_ok())
-            .flat_map(|(k,_)| (1..by_sweep[&order[k]].len()).map(move |p| (k,p))).collect()
-    };
-    let alike = crate::par::map(&later,|&(k,p)| {
-        let inside = inside_at(by_sweep[&order[k]][p]);
-        let Ok((_,_,reads)) = &first[k] else { unreachable!("only a checked sweep's placements are compared") };
-        reads.points.iter().zip(&reads.inside).all(|(q,&i)| inside(*q) == i)
+    let reads: Vec<Result<Read,String>> = order.iter().map(|&swept| read(sk,swept,options)).collect();
+    let clock = crate::clock::Instant::now();
+    let asked = crate::par::indices(order.len(),|k| -> Option<Result<dispatch::Admitted,dispatch::Refused>> {
+        let r = reads[k].as_ref().ok()?;
+        let s = dispatch::Sweep {tool:r.tool.as_deref().map_err(String::as_str),path:&r.path,roll:r.roll,mm,names:&r.names,pocket:r.pocket.as_ref()};
+        let ask = dispatch::Ask {poses:&by_sweep[&order[k]],revolved,sampling:options.sampling(),margin:options.margin};
+        Some(dispatch::sweep(&s,&blank,&ask))
     });
-    if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: compared in {:?}",clock.elapsed()); }
-    let mut admission = Admission {body:root,sweeps:planar};
-    // each sweep's later placements, read alike or not
-    let mut by: Vec<Vec<bool>> = vec![Vec::new();order.len()];
-    for (&(k,_),a) in later.iter().zip(alike) { by[k].push(a) }
-    let alike = by;
-    for (k,(result,&swept)) in first.into_iter().zip(&order).enumerate() {
-        let generating = (|| -> Result<SweepEvidence,Error> {
-            let (contacts,found,reads) = result?;
-            let poses = &by_sweep[&swept];
-            let mut placements = vec![Placement {pose:poses[0],equivalent_to:None}];
-            let mut checked: Vec<(usize,Reads)> = vec![(0,reads)];
-            let mut found = found;
-            if let Some((origin,axis)) = revolved {
-                placements.extend(poses.iter().skip(1).map(|pose| Placement {pose:*pose,equivalent_to:Some(0)}));
-                found.sweep = swept; found.name = names[&swept].clone(); found.placements = placements;
-                found.equivalence = Equivalence::Revolved {origin,axis};
-                return Ok(found)
-            }
-            for (j,pose) in poses.iter().enumerate().skip(1) {
-                if alike[k][j-1] { placements.push(Placement {pose:*pose,equivalent_to:Some(0)}); continue; }
-                let inside = inside_at(*pose);
-                let same = checked.iter().skip(1).find(|(_,reads)| reads.points.iter().zip(&reads.inside).all(|(p,&i)| inside(*p) == i));
-                if let Some((i,_)) = same { placements.push(Placement {pose:*pose,equivalent_to:Some(*i)}); continue; }
-                let (_,reads) = check(&contacts,*pose,&inside).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
-                checked.push((j,reads));
-                placements.push(Placement {pose:*pose,equivalent_to:None});
-            }
-            found.sweep = swept; found.name = names[&swept].clone(); found.placements = placements;
-            Ok(found)
-        })();
-        admission.sweeps.push(match generating {
-            Err(Error::Refused(_)) if super::planar_subtraction::asks(sk,swept) => subtract(swept)?,
-            Err(e) => closed(swept,e)?,
-            Ok(found) => found,
-        });
+    if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: asked in {:?}",clock.elapsed()); }
+    let mut admission = Admission {body:root,sweeps:Vec::new()};
+    for ((&swept,read),asked) in order.iter().zip(reads).zip(asked) {
+        let name = sk.solids[swept].name.clone();
+        let poses = &by_sweep[&swept];
+        let read = read.map_err(|m| Error::Refused(Refusal {condition:Condition::Tool,sweep:name.clone(),message:said(swept,m),
+            witness:None,asked:Asked::Generating}))?;
+        let admitted = asked.expect("a read sweep is asked").map_err(|r| {
+            let message = match r.seen {
+                dispatch::Seen::Words(m) => m,
+                dispatch::Seen::Uncharted(_) => read.family.uncharted(),
+                dispatch::Seen::Canal(c) => match super::canal::said(crate::brep::swept::canal::Why::Refused(c),
+                    read.tool.as_ref().ok().and_then(|t| crate::brep::swept::canal::ball(t,mm)).map_or(0.,|b| b.1)) {
+                    super::canal::Why::Refused(r) => r.message,
+                    super::canal::Why::Failed(m) => m,
+                },
+            };
+            Error::Refused(Refusal {condition:r.row,sweep:name.clone(),message:said(swept,message),witness:r.witness,asked:r.asked})
+        })?;
+        let class = match admitted.class {
+            dispatch::Class::Canal(_) => return Err(Error::Unreadable(match super::canal::built(sk,swept) {
+                Some(Err(m)) => m,
+                _ => format!("`{name}` is a ball's tube, which is built as static material, not cut as a sweep"),
+            })),
+            dispatch::Class::Planar(found) => Class::Planar(found),
+            dispatch::Class::Subtraction(found) => Class::Subtraction(found),
+            dispatch::Class::Generating(None) => Class::Generating,
+            dispatch::Class::Generating(Some(capped)) => Class::Capped(capped),
+            dispatch::Class::ConstantTwist(found) => Class::ConstantTwist(found),
+            dispatch::Class::Closed(c) => Class::Closed(Box::new(super::closed_class::Closed {tool:c.tool,tool_name:read.names.tool.clone(),
+                path:c.path,roll:c.roll})),
+        };
+        admission.sweeps.push(SweepEvidence {sweep:swept,name,
+            placements:poses.iter().zip(&admitted.placements).map(|(&pose,&equivalent_to)| Placement {pose,equivalent_to}).collect(),
+            samples:admitted.samples,contacts:admitted.contacts,spacing:admitted.spacing,least_area_factor:admitted.least_area_factor,
+            near_double_roots:admitted.near_double_roots,near_tangent_pairs:admitted.near_tangent_pairs,
+            basis:Basis::Sampled {rows:admitted.basis[0],columns:admitted.basis[1]},
+            equivalence:match admitted.equivalence {
+                dispatch::Equivalence::Revolved {origin,axis} => Equivalence::Revolved {origin,axis},
+                dispatch::Equivalence::Sampled => Equivalence::Sampled,
+            },class});
     }
     Ok(admission)
 }

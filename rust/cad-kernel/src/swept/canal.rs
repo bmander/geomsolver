@@ -93,6 +93,25 @@ impl From<KernelError> for Why {
 /// How many pieces a tube along a path no closed form carries may have.
 pub const MOST_PIECES: usize = 4096;
 
+/// **A ball, read from its B-rep** (#721 F1c): a boundary (millimetres, `mm` a model unit) every
+/// face of which lies on one sphere — its centre and radius (model units) and the name its faces
+/// carry (the face's own half, `recipe::named_parts`), which names every face its tube has. None for
+/// any other tool, however it was drawn: a ball is the set, not the revolution that wrote it.
+pub fn ball(b: &crate::topo::Brep, mm: f64) -> Option<(V, f64, String)> {
+    let tol = 1e-9 * mm.max(1.0);
+    let mut found: Option<(V, f64)> = None;
+    for f in &b.faces {
+        let crate::geom::Surface::Sphere(frame, r) = &f.surface else { return None };
+        match found {
+            None => found = Some((frame.o, *r)),
+            Some((c, q)) => if norm(sub(c, frame.o)) > tol || (q - r).abs() > tol { return None },
+        }
+    }
+    let (c, r) = found?;
+    let name = b.faces.first().map_or(String::new(), |f| crate::recipe::named_parts(&f.name).1.to_string());
+    Some((scale(c, 1.0 / mm), r / mm, name))
+}
+
 /// **The tube the ball of radius `r` about `ball` sweeps** under `path` over `[from, to]`, its
 /// wall named `face`: a constant twist's in closed form, any other's fitted (`along`), the ball
 /// itself where the centre never moves; `None` where it is a screw's that would meet itself.

@@ -44,7 +44,7 @@ fn nearest(a: Carrier,b: Carrier,near: P) -> Option<P> {
 /// A profile's loops (the first its outer loop, the rest holes, in any order and direction, each
 /// closed) each walked with its material on its left: the outer counter-clockwise, a hole
 /// clockwise.
-pub(crate) fn oriented(loops: &[Vec<Edge>]) -> Result<Vec<Vec<Edge>>,String> {
+fn oriented(loops: &[Vec<Edge>]) -> Result<Vec<Vec<Edge>>,String> {
     loops.iter().enumerate().map(|(k,l)| {
         let edges = super::profile::ordered(l,0.)?;
         let area: f64 = edges.iter().map(Edge::area_twice).sum();
@@ -94,16 +94,6 @@ impl Sections {
         s.reach = reach*1.01+far.abs()*mitre;
         Ok(s)
     }
-
-    /// The loops, each walked with its material on its left (`oriented`).
-    pub(crate) fn loops(&self) -> &[Vec<Edge>] { &self.loops }
-
-    /// Whether every corner moves along a line as the draft deepens — where both its sides are
-    /// lines, or they go on tangent — so that every point of a side, at a fixed fraction of it, is
-    /// affine in the offset: a side between two sections is then the ruled surface joining them,
-    /// a line's a plane and an arc's a cone (#684 G). A corner where an arc meets a side at an angle
-    /// moves along the curve its cone and the side's surface meet in.
-    pub(crate) fn linear(&self) -> bool { self.corners.iter().flatten().all(Option::is_some) }
 
     /// Each loop moved `d` into its material: every side along its own normal, each corner where
     /// its moved sides meet, refused where a side the move takes to nothing or turns round.
@@ -209,9 +199,6 @@ impl Sections {
         };
         Some(v/self.lipschitz)
     }
-
-    /// The section at depth `w`: each loop moved `|w| tan` into its material.
-    pub(crate) fn section_at(&self,w: f64) -> Result<Vec<Vec<Edge>>,String> { self.section(w.abs()*self.taper) }
 
     /// How many edges the loops have.
     pub(crate) fn pieces(&self) -> usize { self.loops.iter().map(Vec::len).sum() }

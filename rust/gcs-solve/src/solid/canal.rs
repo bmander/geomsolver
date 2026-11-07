@@ -66,7 +66,7 @@ pub struct Refusal {
 
 /// Why a ball's sweep is no tube: a row refuses it, or it could not be read, built or gated.
 #[derive(Clone, Debug)]
-pub(crate) enum Why {
+pub enum Why {
     Refused(Refusal),
     Failed(String),
 }
@@ -114,23 +114,15 @@ pub fn is_canal(sk: &Sketch, i: usize) -> bool {
     matches!(built(sk, i), Some(Ok(_)))
 }
 
-/// The ball's sweep `swept` is, read off its tool's recipe and its motion where the tool is a ball:
-/// `None` where it is not, or where it is a screw's whose tube would meet itself (the constant
-/// twist's rows are asked of it instead); why not where its path is refused or cannot be read.
+/// The ball's sweep `swept` is, its tool read from its B-rep (`brep::swept::canal::ball`, #721 F1c)
+/// where it is a ball, however it was drawn, and its motion: `None` where it is not, or where it is
+/// a screw's whose tube would meet itself (the constant twist's rows are asked of it instead); why
+/// not where its path is refused or cannot be read.
 fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, Why>> {
-    let SolidDef::Swept { source, motion, .. } = &sk.solids[swept].def else { return None };
+    let SolidDef::Swept { motion, .. } = &sk.solids[swept].def else { return None };
     let family = Family::read(sk, *motion as usize).ok()?;
-    let scale_mm = super::cad::millimetres(sk);
-    // the tool: one node, a ball (millimetres back to the model's units)
-    let recipe = crate::brep::recipe::Recipe::read(&super::cad::recipe(sk, *source as usize).ok()?).ok()?;
-    let [n] = &recipe.nodes[..] else { return None };
-    let (c, r) = n.node.ball(1e-9 * scale_mm.max(1.0)).ok()??;
-    let (c, r) = (c.map(|x| x / scale_mm), r / scale_mm);
-    let crate::brep::recipe::Node::Revolve { profile, .. } = &n.node else { return None };
-    let profile = crate::brep::build::Profile::of(profile).ok()?;
-    let face = (0..profile.loops.len()).flat_map(|l| (0..profile.loops[l].len()).map(move |k| (l, k)))
-        .find(|&(l, k)| matches!(profile.loops[l][k], crate::brep::build::ProfileEdge::Arc { .. }))
-        .map_or(String::new(), |(l, k)| profile.name(l, k));
+    let tool = super::cad::tool_brep(sk, swept).ok()?;
+    let (c, r, face) = kernel::ball(&tool, super::cad::millimetres(sk))?;
     tube(sk, swept, &family, c, r, face).transpose()
 }
 
@@ -144,7 +136,7 @@ fn tube(sk: &Sketch, swept: usize, family: &Family, c: V, r: f64, face: String) 
 }
 
 /// The kernel's refusal of a ball's tube of radius `r`, said in the drawing's words.
-fn said(e: kernel::Why, r: f64) -> Why {
+pub(crate) fn said(e: kernel::Why, r: f64) -> Why {
     let stops = |s: f64| format!("the ball's centre stops at {} of the roll, where its path has no tangent", num(s));
     match e {
         kernel::Why::Refused(kernel::Refusal { row, seen, samples, witness }) => {

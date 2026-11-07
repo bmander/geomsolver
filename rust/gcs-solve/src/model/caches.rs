@@ -131,6 +131,10 @@ pub struct Caches {
     /// D), against `solid::reads`: the sweep test, the recipe, the exact boundary and admission each
     /// ask it, and its gate reads the field.
     pub(crate) canal: Memo<Option<Result<Rc<crate::solid::canal::Canal>, crate::solid::canal::Why>>>,
+    /// Each sweep's tool built into the B-rep the kernel reads it by (`solid::cad::tool_brep`, #721
+    /// F1c), against `solid::reads`: the canal, the planar subtraction class and admission each ask
+    /// it.
+    pub(crate) tool: Memo<Result<std::sync::Arc<crate::brep::topo::Brep>, String>>,
     /// Each sweep's roll through a body (`solid::roll::interval`, #271), against `solid::reads`:
     /// admission, the field and the exact construction each ask it.
     pub(crate) roll: Memo<Result<[f64; 2], String>>,
@@ -204,6 +208,7 @@ impl Caches {
         self.grown.clear();
         self.shelled.clear();
         self.canal.clear();
+        self.tool.clear();
         self.roll.clear();
         self.paced.clear();
         self.faces.clear();

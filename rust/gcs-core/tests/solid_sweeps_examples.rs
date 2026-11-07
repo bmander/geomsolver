@@ -335,15 +335,14 @@ fn the_facing_side_cuts_a_cone() {
 /// `slot.sv` (#684 O): the end mill's flat bottom, which the slide keeps in its own plane, touches
 /// all over and sweeps the slot's floor, the strip its diameter square to the slide carries; its
 /// side's two lines square to the slide are the walls, each meeting the floor in a sharp edge where
-/// the walk runs onto and off the bottom's line. The block loses `4 × 3` along its 20, in closed form.
+/// the walk runs onto and off the bottom's line. Read from its B-rep (#721 F1c), the mill is a
+/// cylinder standing along the normal of the planes the slide keeps, so the planar subtraction class
+/// reads it first, the region its section sweeps carried through the slab its bottom bounds. The
+/// block loses `4 × 3` along its 20, in closed form.
 #[test]
 fn the_end_mill_cuts_a_slot() {
     let e = example("slot.sv");
-    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
-    assert!(found.screw.is_slide(),"read as a slide");
-    assert_eq!(found.flats(),["`mill.bottom`"]);
-    assert_eq!(found.creases().len(),2);
-    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    assert!(matches!(class(&e,"block"),Class::Subtraction(_)),"the planar subtraction class");
     near(exported(&e,"block"),2000.-4.*3.*20.,1e-6);
 }
 
@@ -371,13 +370,9 @@ fn the_v_wheel_slid_square_cuts_a_v_groove() {
 #[test]
 fn the_drum_punches_its_shadow_through_a_plate() {
     let e = example("punch.sv");
-    let Class::ConstantTwist(found) = class(&e,"plate") else { panic!("the constant-twist class") };
-    assert!(found.screw.is_slide() && found.closed,"a slide, its characteristic closed on itself");
-    let mut flats = found.flats();
-    flats.sort();
-    assert_eq!(flats,["`tool.far_face`","`tool.near_face`"]);
-    assert_eq!(found.creases().len(),4);
-    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    // (read from its B-rep, #721 F1c, the drum stands along the normal of the planes the push
+    // keeps: the planar subtraction class reads its shadow first)
+    assert!(matches!(class(&e,"plate"),Class::Subtraction(_)),"the planar subtraction class");
     near(exported(&e,"plate"),20.*10.*4.-8.*4.*4.,1e-6);
 }
 

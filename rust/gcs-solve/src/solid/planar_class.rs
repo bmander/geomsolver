@@ -13,23 +13,23 @@
 //!   sampled, lies within the stock — so the pocket alone decides what is kept.
 //!
 //! Sampled where the other classes are: P5 on a grid of the blank's section and of the roll, P4
-//! on the envelope's own samples (`envelope::planar`).
+//! on the envelope's own samples (`envelope::planar`). The kernel asks the rows of each placement
+//! and chooses the class (`brep::swept::dispatch`, #721 F1c); what is here is the drawing's reading
+//! of the pocket (`read`), which the kernel is handed until it reads the pocket from the tool's
+//! B-rep (#721 F1d).
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::admission::{Basis,Class,Condition,Equivalence,Options,SweepEvidence};
+use super::admission::{Condition,Options};
 use crate::envelope::Motion;
 use crate::envelope::planar::{InnerEnvelope,ReadEnvelope};
 use crate::model::{EntKind,Sketch,SolidDef};
 use crate::space::{cross,dot,norm};
 
-type V = [f64;3];
-pub type Failure = (Condition,String,Option<V>);
+/// What the class finds of one sweep, its rows asked of a placement, and the tool as it reads it
+/// are the kernel's (`brep::swept::pocket`, #721 F1c).
+pub use crate::brep::swept::pocket::{Failure,Found,Pocket};
 
-/// What the class found of one sweep: the pocket's inner envelope, and how far along its plane's
-/// normal the blank reaches in the sweep's frame (model units, measured as the normal's ordinate
-/// in space), which the envelope's prism must span.
-#[derive(Clone,Debug)]
-pub struct Found { pub envelope: InnerEnvelope,pub heights: [f64;2] }
+type V = [f64;3];
 
 /// Whether `swept`'s rows are this class's: its tool is a prism cut by a pocket. A prism alone (a
 /// rack) cuts with its sides, as the generating class's rows ask of it.
@@ -62,10 +62,10 @@ pub(crate) fn prism(sk: &Sketch,id: usize,n: V) -> Result<[f64;2],Failure> {
 /// A planar sweep's tool as the class reads it: a stock cut by one pocket, the pocket's profile one
 /// closed curve, under a motion over a roll — the shape `admit` and the accuracy meter both read.
 #[derive(Clone,Copy,Debug)]
-pub(crate) struct Pocket { pub stock: usize,pub pocket: usize,pub curve: usize,pub motion: usize,pub roll: [f64;2] }
+pub(crate) struct Drawn { pub stock: usize,pub pocket: usize,pub curve: usize,pub motion: usize,pub roll: [f64;2] }
 
 /// `swept`'s tool read as a pocketed stock, else refused at P2 by name.
-pub(crate) fn pocket(sk: &Sketch,swept: usize) -> Result<Pocket,Failure> {
+pub(crate) fn pocket(sk: &Sketch,swept: usize) -> Result<Drawn,Failure> {
     let SolidDef::Swept {source,motion,..} = &sk.solids[swept].def else {
         return Err((Condition::Prisms,"not a sweep".into(),None))
     };
@@ -82,90 +82,30 @@ pub(crate) fn pocket(sk: &Sketch,swept: usize) -> Result<Pocket,Failure> {
         _ => return Err((Condition::Prisms,format!("`{}`'s profile is not one closed curve",sk.solids[pocket].name),None)),
     };
     let roll = super::roll::interval(sk,swept).map_err(|m| (Condition::Prisms,m,None))?;
-    Ok(Pocket {stock,pocket,curve,motion:*motion as usize,roll})
+    Ok(Drawn {stock,pocket,curve,motion:*motion as usize,roll})
 }
 
-/// What the class reads of one sweep, the same at every placement: the pocket, its plane, both
-/// prisms' spans along its normal, the pocket's inner envelope (P1, P3, P4), the stock's field and
-/// the inverse poses of a grid of the roll that P5 reads the blank against.
-pub struct Planar {
-    pocket: Pocket,
-    basis: crate::plane::Basis,
-    n: V,
-    spans: [[f64;2];2],
-    envelope: InnerEnvelope,
-    stock_field: super::SpatialField,
-    backs: Vec<Motion>,
-}
-
-/// One placement's rows held: how far the blank reaches along the normal (P2) and how P5 sampled.
-#[derive(Clone,Copy,Debug)]
-pub struct Checked { heights: [f64;2],samples: usize,rows: usize,columns: usize }
-
-impl Planar {
-    /// Read sweep `swept` for the class, refusing at P1–P4 by row.
-    pub fn read(sk: &Sketch,swept: usize,options: &Options) -> Result<Planar,Failure> {
-        let pocket = pocket(sk,swept)?;
-        let view = sk.curve_view(pocket.curve);
-        let basis = view.map_or_else(crate::plane::Basis::page,|v| sk.basis(v));
-        let n = basis.normal();
-        let n = n.map(|x| x/norm(n));
-        let spans = [prism(sk,pocket.stock,n)?,prism(sk,pocket.pocket,n)?];
-        let envelope = InnerEnvelope::read(sk,pocket.curve,pocket.motion,pocket.roll)
-            .map_err(|r| (r.row,r.message,r.witness.map(|p| sk.world_in(view,(p[0],p[1])))))?;
-        let family = crate::motion::Family::read(sk,pocket.motion).map_err(|e| (Condition::Plane,e,None))?;
-        let stock_field = super::SpatialField::read(sk,pocket.stock,options.axis_tolerance).map_err(|e| (Condition::Prisms,e,None))?;
-        let [from,to] = pocket.roll;
-        let rolls = (((to-from)/std::f64::consts::TAU*360.).ceil() as usize).max(36);
-        let backs = (0..=rolls).map(|k| family.at(from+(to-from)*k as f64/rolls as f64).map(Motion::inverse))
-            .collect::<Result<_,_>>().map_err(|e| (Condition::Plane,e,None))?;
-        Ok(Planar {pocket,basis,n,spans,envelope,stock_field,backs})
-    }
-
-    /// Rows P2 and P5 for one placement (`pose`, the sweep's frame in the body's), the blank read in
-    /// the sweep's frame by `inside` and boxed in the body's by `bounds` (lowest and highest corner).
-    pub fn check(&self,sk: &Sketch,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync),bounds: Option<(V,V)>,options: &Options)
-        -> Result<Checked,Failure> {
-        let n = self.n;
-        // the blank's corners in the sweep's frame, and how far they reach along the normal
-        let Some(bounds) = bounds else { return Err((Condition::Prisms,"the blank's extent is unknown".into(),None)) };
-        let back = pose.inverse();
-        let corners: Vec<V> = (0..8).map(|k| back.point(std::array::from_fn(|i| if (k>>i)&1 == 0 { bounds.0[i] } else { bounds.1[i] }))).collect();
-        let heights = corners.iter().fold([f64::INFINITY,f64::NEG_INFINITY],|[a,b],c| [a.min(dot(*c,n)),b.max(dot(*c,n))]);
-        for (span,what) in [(self.spans[0],self.pocket.stock),(self.spans[1],self.pocket.pocket)] {
-            if span[0] > heights[0] || span[1] < heights[1] {
-                return Err((Condition::Prisms,format!("`{}` does not stand through the blank: it spans {:.4} to {:.4} along the \
-                    pocket's normal, and the blank {:.4} to {:.4}",sk.solids[what].name,span[0],span[1],heights[0],heights[1]),None))
-            }
-        }
-        // P5: the blank's section at mid-height read on a grid, every point of it within the stock at
-        // every pose of a grid of the roll
-        let mid = 0.5*(heights[0]+heights[1]);
-        let (a,b) = { let u = self.basis.u; let u = u.map(|x| x/norm(u)); (u,cross(n,u)) };
-        let (lo,hi) = corners.iter().fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(lo,hi),c| {
-            let (x,y) = (dot(*c,a),dot(*c,b));
-            ([lo[0].min(x),lo[1].min(y)],[hi[0].max(x),hi[1].max(y)])
-        });
-        let side = options.coarse_rows.max(8)*2;
-        let points: Vec<V> = (0..=side).flat_map(|i| (0..=side).map(move |j| (i,j))).map(|(i,j)| {
-            let (x,y) = (lo[0]+(hi[0]-lo[0])*i as f64/side as f64,lo[1]+(hi[1]-lo[1])*j as f64/side as f64);
-            std::array::from_fn(|k| x*a[k]+y*b[k]+mid*n[k])
-        }).filter(|&p| inside(p)).collect();
-        let reached = crate::par::map(&points,|&p| self.backs.iter().find(|m| self.stock_field.value(m.point(p)) > -options.margin).map(|_| p));
-        if let Some(p) = reached.into_iter().flatten().next() {
-            return Err((Condition::Wall,format!("`{}`'s outer wall reaches the blank as it turns",sk.solids[self.pocket.stock].name),Some(p)))
-        }
-        Ok(Checked {heights,samples:points.len(),rows:side+1,columns:self.backs.len()-1})
-    }
-
-    /// The sweep's evidence, its envelope carried as the class's finding, sampled as `checked` says.
-    pub fn evidence(self,checked: Checked) -> SweepEvidence {
-        let envelope = self.envelope;
-        let contacts = envelope.pieces.iter().map(Vec::len).sum();
-        let spacing = envelope.pieces.iter().flat_map(|p| p.windows(2).map(|w| (w[1].at[0]-w[0].at[0]).dhypot(w[1].at[1]-w[0].at[1])))
-            .fold(0.,f64::max);
-        SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples:checked.samples,contacts,spacing,least_area_factor:1.,
-            near_double_roots:0,near_tangent_pairs:0,basis:Basis::Sampled {rows:checked.rows,columns:checked.columns},
-            equivalence:Equivalence::Sampled,class:Class::Planar(Box::new(Found {envelope,heights:checked.heights}))}
-    }
+/// **Sweep `swept`'s tool read off the drawing as the class reads it** (#721 F1c), refusing at
+/// P1–P4 by row: the pocket's inner envelope over the roll (P1, P3, P4), its plane, both prisms'
+/// spans along its normal, the stock's field and the inverse poses of a grid of the roll that P5
+/// reads the blank against — the kernel's `Pocket`, whose rows it asks of each placement
+/// (`brep::swept::pocket`). Read off the drawing until the kernel reads it from the tool's B-rep,
+/// which fits the pocket's curve where the drawing has it exactly (#721 F1d).
+pub fn read(sk: &Sketch,swept: usize,options: &Options) -> Result<Pocket,Failure> {
+    let drawn = pocket(sk,swept)?;
+    let view = sk.curve_view(drawn.curve);
+    let basis = view.map_or_else(crate::plane::Basis::page,|v| sk.basis(v));
+    let n = basis.normal();
+    let n = n.map(|x| x/norm(n));
+    let spans = [prism(sk,drawn.stock,n)?,prism(sk,drawn.pocket,n)?];
+    let envelope = InnerEnvelope::read(sk,drawn.curve,drawn.motion,drawn.roll)
+        .map_err(|r| (r.row,r.message,r.witness.map(|p| sk.world_in(view,(p[0],p[1])))))?;
+    let family = crate::motion::Family::read(sk,drawn.motion).map_err(|e| (Condition::Plane,e,None))?;
+    let stock = super::SpatialField::read(sk,drawn.stock,options.axis_tolerance).map_err(|e| (Condition::Prisms,e,None))?;
+    let [from,to] = drawn.roll;
+    let rolls = (((to-from)/std::f64::consts::TAU*360.).ceil() as usize).max(36);
+    let backs = (0..=rolls).map(|k| family.at(from+(to-from)*k as f64/rolls as f64).map(Motion::inverse))
+        .collect::<Result<_,_>>().map_err(|e| (Condition::Plane,e,None))?;
+    Ok(Pocket {envelope,u:basis.u,n,spans,names:[sk.solids[drawn.stock].name.clone(),sk.solids[drawn.pocket].name.clone()],
+        stock:std::sync::Arc::new(stock),backs})
 }
