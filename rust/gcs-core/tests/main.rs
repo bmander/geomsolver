@@ -304,6 +304,7 @@ mod swept_charts;
 mod swept_dispatch;
 mod swept_partway;
 mod swept_apex;
+mod swept_vertex;
 mod tool_reading;
 mod touch_curves;
 mod swept_instant;

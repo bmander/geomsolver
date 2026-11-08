@@ -322,6 +322,44 @@ fn the_flat_end_cuts_a_floor() {
     near(exported_at(&e,"block",0.001),PI/3.*80.-crate::prism_twists::flat_end(20.,5.).removed(),2e-5);
 }
 
+/// `square_end.sv` (#721 G1): `flat_end.sv`'s bar, its section turned 30° so its corner stands
+/// nearest the axis: the corner's point of contact runs out along it to the bar's far end, a vertex,
+/// and the walk goes round the vertex onto the end's rim, the sheet creased along the vertex's
+/// circle. The block loses what the bar's shadow covers, read slice by slice from the bar's
+/// half-spaces (`prism_twists::Bar::removed`, the same bar as `flat_end(20, 30)`), within 2e-5 at
+/// 0.01 mm, its STL agreeing with the field, the page's stepped builder held to the same build.
+#[test]
+fn the_square_ended_bar_goes_round_its_vertex() {
+    let e = example("square_end.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a turn");
+    assert_eq!(found.vertices(),["the corner of `bar.upper` and `bar.inner_side`"]);
+    assert_eq!(found.fans(),["the corner of `bar.upper` and `bar.inner_side`","the rim where `bar.inner_side` meets `bar.far`"]);
+    let exact = exported_within(&e,"block",Some(Tolerance::new(0.01).unwrap()));
+    near(gcs_core::brep::props::volume(&exact.solid),PI/3.*80.-crate::prism_twists::flat_end(20.,30.).removed(),2e-5);
+    crate::object_builder::builds_as_exported("square_end.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
+}
+
+/// `capped_thread.sv` (#721 G1): `square_thread.sv`'s bar standing only 2.5 either side of its
+/// plane, its ends in the rod: the corners where its tip meets its flanks carry the contact out to
+/// the ends, vertices, and the walk goes round each onto an end's rim, the sheet creased along both
+/// vertices' helices. The rod loses each circle's angle the bar covers over the rolls reaching its
+/// height, the bar's half-angle at radius `ρ` the lesser of its tip's `acos(4 / ρ)` and its end's
+/// `asin(2.5 / ρ)` (`closed_class::screwed_partway_away`, screwed past the rod's top), within 2e-5
+/// at 0.01 mm, the fitted sheets within a micrometre of the contacts; its STL agrees with the
+/// field, and the page's stepped builder is held to the same build. (The closed class built it
+/// before, in 25 s.)
+#[test]
+fn the_capped_thread_goes_round_its_bars_vertices() {
+    let e = example("capped_thread.sv");
+    let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a screw");
+    assert_eq!(found.vertices(),["the rim where `bar.lower` meets `bar.near`","the corner of `bar.nose` and `bar.upper`"]);
+    let exact = exported_within(&e,"rod",Some(Tolerance::new(0.01).unwrap()));
+    near(gcs_core::brep::props::volume(&exact.solid),PI*25.*20.-crate::closed_class::screwed_partway_away(21.,2.5),2e-5);
+    crate::object_builder::builds_as_exported("capped_thread.sv",&e.sketch,fixtures::solid(&e,"rod"),&exact);
+}
+
 /// `creased.sv` (#684 AG): the bar's inner side's halves each touch along a line crossing its
 /// rulings, and the crease where they meet joins the two round its fan. The block loses what the
 /// bar's shadow covers, read slice by slice from its ten half-planes (`prism_twists::Bar::removed`,

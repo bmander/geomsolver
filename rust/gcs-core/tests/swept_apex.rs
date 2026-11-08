@@ -3,7 +3,7 @@
 //! one root of its rings to the apex and back up the other (`Junction::Apex`). Every normal of the
 //! cone round the apex is the tool's there, and the walk turns at it from one root's normal to the
 //! other's: the sweep has a sharp edge along the apex's path, the sheet creased there
-//! (`Node::apex`, `Characteristic::apexes`). Held here in the kernel alone, under every constant
+//! (`Crease::Apex`, `Characteristic::apexes`). Held here in the kernel alone, under every constant
 //! twist and for either end of a meridian: each node of the walk a point of the tool, in contact
 //! (`n·v = 0`), its normal the tool's outward there, and the apex among them, once, the walk passing
 //! through the blank on both of its sides.
@@ -60,9 +60,8 @@ fn walked(tool: &Tool,path: &Trajectory,roll: [f64;2],inside: &(dyn Fn(V) -> boo
 }
 
 /// Every node of `walked` a point of `tool`'s boundary in contact under `screw`, its normal the
-/// tool's outward one, and the apex `tip` among them where the walk turns there: how far the worst
-/// node is off contact (as `n·v` over `|v|`), and how many apexes it turns at.
-fn held(walked: &Characteristic,material: &Tool,screw: &Screw,tip: V) -> (f64,usize) {
+/// tool's outward one: how far the worst node is off contact (as `n·v` over `|v|`).
+pub(crate) fn off_contact(walked: &Characteristic,material: &Tool,screw: &Screw) -> f64 {
     let mut worst = 0_f64;
     for n in &walked.nodes {
         let v = screw.velocity(n.position);
@@ -72,6 +71,13 @@ fn held(walked: &Characteristic,material: &Tool,screw: &Screw,tip: V) -> (f64,us
         let probe = |k: f64| material.material().value(add(n.position,scale(n.normal,k*1e-4)));
         assert!(probe(1.) > probe(-1.),"a node's normal not outward at {:?}: {:?} {} {}",n.position,n.normal,probe(1.),probe(-1.));
     }
+    worst
+}
+
+/// `off_contact`, and the apex `tip` among the nodes where the walk turns there: how far the worst
+/// node is off contact, and how many apexes it turns at.
+fn held(walked: &Characteristic,material: &Tool,screw: &Screw,tip: V) -> (f64,usize) {
+    let worst = off_contact(walked,material,screw);
     let apexes = walked.nodes.iter().filter(|n| distance(n.position,tip) <= 1e-9).count();
     assert_eq!(walked.apexes().len(),apexes.min(1),"the apex the walk turns at, named: {:?}",walked.apexes());
     (worst,apexes)
@@ -97,6 +103,13 @@ fn through_its_apex(tip: V,axis: V,out: V,screw: Screw,roll: [f64;2],inside: &(d
     } }
 }
 
+/// The ring sector of `turn.sv` (`prism_twists::BLOCK`'s): radii 8 and 12, heights ±1, 60° round
+/// from x.
+pub(crate) fn sector(p: V) -> bool {
+    let (r,a) = (p[0].hypot(p[1]),p[1].atan2(p[0]));
+    r > 8. && r < 12. && p[2].abs() < 1. && a > 0. && a < PI/3.
+}
+
 /// The rod of radius 5 about z from 0 to 20.
 fn rod(p: V) -> bool { p[0].hypot(p[1]) < 5. && p[2] > 0. && p[2] < 20. }
 
@@ -120,7 +133,6 @@ fn a_point_screwed_along_a_rod_is_walked_through_its_apex() {
 fn a_point_turned_across_a_ring_is_walked_through_its_apex() {
     let lean = 25_f64.to_radians();
     let screw = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:0.};
-    let sector = |p: V| { let (r,a) = (p[0].hypot(p[1]),p[1].atan2(p[0])); r > 8. && r < 12. && p[2].abs() < 1. && a > 0. && a < PI/3. };
     through_its_apex([10.,0.,0.5],[0.,lean.sin(),lean.cos()],[1.,0.,0.],screw,[-140_f64.to_radians(),140_f64.to_radians()],&sector);
 }
 
