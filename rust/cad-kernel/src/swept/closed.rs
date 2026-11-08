@@ -1508,6 +1508,29 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     let ends = [a,b].map(|t| super::patches::posed(tool,&revolved,path,&fit,t));
     let [start,end] = [ends[0].clone()?,ends[1].clone()?];
     let (sheet,given) = super::patches::entered(&fit,&revolved,[&start,&end])?;
+    candidates(tool,path,[a,b],bar,tol,blank,[start,end],vec![sheet],&given)
+}
+
+/// **A ring under a motion no constant twist takes, built closed** (`swept::rings`, steps 6 and 7
+/// under K2; not yet a class the dispatch admits): the ring where it starts and where it stops and
+/// the tube each of its contact curves sweeps — buried pieces and the bridges across its folds
+/// with the touching ones — their meetings with the ring at the end poses read in the tubes' own
+/// domains and given, the box split by them at once and classified by membership.
+pub fn ring(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
+    let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
+    let ring = super::rings::Ring::read(tool)?;
+    let fit = super::rings::fitted(&ring,path,[a,b],K2_FIT*tol)?;
+    crate::util::meter::go_on()?;
+    let [start,end] = [super::rings::posed(tool,&ring,path,&fit,a)?,super::rings::posed(tool,&ring,path,&fit,b)?];
+    let (sheets,given) = super::rings::entered(&fit,&ring,[&start,&end],tol)?;
+    candidates(tool,path,[a,b],bar,tol,None,[start,end],sheets,&given)
+}
+
+/// K2's build from its candidates: the tool at each end pose and the sheets, their meetings
+/// `given`, a box holding the sweep (or the blank) split by them at once and classified.
+#[allow(clippy::too_many_arguments)]
+fn candidates(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>,[start,end]: [Brep;2],sheets: Vec<Brep>,
+    given: &[crate::boolean::Given]) -> Result<Brep,Unbuilt> {
     // a box holding the sweep: the tool's box at poses over the roll
     let corners = corners_of(tool.bounds());
     let mut points: Vec<V> = Vec::new();
@@ -1518,10 +1541,10 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     if let Some(bl) = blank { points.extend(corners_of(bl.bounds())) }
     let (domain,..) = cube_holding(&points,tol)?;
     let within = blank.unwrap_or(&domain);
-    let solids = [start,end,sheet];
+    let solids: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
     let solid = Solid::new(tool,bar,1.)?;
     let swept = Swept {tool:&solid,path,roll:[a,b]};
-    arranged_or_dumped(within,None,&clear_of(&solids,within,tol),&given,&swept,blank,tol)
+    arranged_or_dumped(within,None,&clear_of(&solids,within,tol),given,&swept,blank,tol)
 }
 
 /// The domain `within` split by the candidates `refs` at once — within `reach` alone where there

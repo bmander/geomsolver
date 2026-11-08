@@ -310,6 +310,7 @@ mod swept_instant;
 mod swept_loci;
 mod swept_member;
 mod swept_patches;
+mod swept_rings;
 mod surfaces;
 mod swept_faces;
 mod swept_over_parameters;

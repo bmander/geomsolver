@@ -802,7 +802,9 @@ pub fn arrangement_within(domain: &Brep,operands: &[&Brep],tol: f64) -> Result<C
 /// meeting, laid as an edge of both with no search for it. What a sweep knows of its candidates'
 /// touches (a contact's path where it crosses a smooth seam into a neighbour's contact, along which
 /// the two contacts' swept sheets touch) is handed in so, not sought where a search would read a
-/// touch as a crossing or miss it.
+/// touch as a crossing or miss it. Its curves may end on one another (a ring's sheet touching the
+/// ring where it starts along its rim and crossing into it beside, read in its own domain,
+/// `swept::rings::met`).
 #[derive(Clone,Debug)]
 pub struct Given { pub surfaces: [Surface;2],pub curves: Vec<Curve> }
 
@@ -2404,9 +2406,15 @@ fn stretch_in(c: &Curve,(lo,hi): Box3,pad: f64) -> Option<[f64;2]> {
 fn ends_on_one_another(curves: &[super::geom::Curve],crossed: &mut [Vec<V>],tol: f64) {
     use super::geom::Curve;
     for i in 0..curves.len() {
-        let Curve::Traced(t) = &curves[i] else { continue };
-        if t.closed { continue }
-        for p in [t.pts[0],t.pts[t.pts.len()-1]] {
+        // a traced curve's ends, or an open spline's (a meeting given as several curves, one
+        // reaching another: a ring's sheet crossing into the tool beside the rim it touches along,
+        // `swept::rings::met`)
+        let ends = match &curves[i] {
+            Curve::Traced(t) if !t.closed => [t.pts[0],t.pts[t.pts.len()-1]],
+            Curve::BSpline(b) if curves[i].period().is_none() && curves.len() > 1 => { let [t0,t1] = b.domain(); [b.point(t0),b.point(t1)] }
+            _ => continue,
+        };
+        for p in ends {
             crossed[i].push(p);
             for (j,c) in curves.iter().enumerate() {
                 if j == i { continue }

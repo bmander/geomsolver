@@ -60,7 +60,7 @@ pub enum Element { Line { a: P2,b: P2 },Arc { c: P2,r: f64,from: f64,sweep: f64 
 
 impl Element {
     /// Where it starts and where it ends.
-    fn ends(&self) -> [P2;2] {
+    pub(super) fn ends(&self) -> [P2;2] {
         match *self {
             Element::Line {a,b} => [a,b],
             Element::Arc {c,r,from,sweep} => {
@@ -69,15 +69,16 @@ impl Element {
             }
         }
     }
-    /// Its outward unit normal in the meridian at its point `p`.
-    fn normal(&self,p: P2) -> P2 {
+    /// Its outward unit normal in the meridian at its point `p`: the right of the way it is walked,
+    /// the solid on its left — an arc turning clockwise (a hollow) faces its centre.
+    pub(super) fn normal(&self,p: P2) -> P2 {
         match *self {
             Element::Line {a,b} => { let (dr,dz) = (b[0]-a[0],b[1]-a[1]); let l = dr.dhypot(dz); [dz/l,-dr/l] }
-            Element::Arc {c,r,..} => [(p[0]-c[0])/r,(p[1]-c[1])/r],
+            Element::Arc {c,r,sweep,..} => { let s = sweep.signum(); [s*(p[0]-c[0])/r,s*(p[1]-c[1])/r] }
         }
     }
     /// Its tangent the way it is walked at its start (`0`) or its end (`1`).
-    fn tangent(&self,end: usize) -> P2 {
+    pub(super) fn tangent(&self,end: usize) -> P2 {
         match *self {
             Element::Line {a,b} => { let (dr,dz) = (b[0]-a[0],b[1]-a[1]); let l = dr.dhypot(dz); [dr/l,dz/l] }
             Element::Arc {from,sweep,..} => {
@@ -146,108 +147,127 @@ pub struct Revolved {
     pub size: f64,
 }
 
+/// **A tool of revolution's meridian, read off its B-rep**: its axis (`frame`, `z` along it), and
+/// each face's piece of the meridian `(ρ, z)` — a plane square to the axis a segment across it, a
+/// cylinder or a cone about it a segment along it, a ball centred on it or a torus about it an arc
+/// (a whole ring its whole circle, turning counter-clockwise) — in the faces' order, not yet walked
+/// round; a point of each face of the tool (`at`), where a refusal says it is; and the tool's size.
+/// Refused (`Unbuilt::Curved`, at a point of the face) where a face is no such piece.
+#[derive(Clone,Debug)]
+pub(super) struct Meridian { pub frame: Frame,pub elements: Vec<Element>,pub faces: Vec<usize>,pub at: Vec<V>,pub size: f64 }
+
+/// The tool's `Meridian`, read.
+pub(super) fn meridian(tool: &Brep) -> Result<Meridian,Unbuilt> {
+    let size = { let (lo,hi) = tool.bounds(); norm(sub(hi,lo)) };
+    let eps = 1e-9*(1.+size);
+    let at_face = |k: usize| -> V {
+        tool.faces[k].loops.iter().flatten().next().map_or_else(|| tool.faces[k].surface.point([0.,0.]),
+            |c| tool.vertices[tool.ends(c)[0] as usize].p)
+    };
+    let at: Vec<V> = (0..tool.faces.len()).map(at_face).collect();
+    // the axis: a round face's own, or through a ball's centre along a plane's normal or the
+    // ball's own pole
+    let mut axis: Option<Frame> = None;
+    for f in &tool.faces {
+        if let Surface::Cylinder(g,_) | Surface::Cone(g,..) | Surface::Torus(g,..) = &f.surface { axis = Some(Frame::about(g.o,unit(g.z))); break }
+    }
+    if axis.is_none() {
+        let ball = tool.faces.iter().find_map(|f| if let Surface::Sphere(g,_) = &f.surface { Some(*g) } else { None });
+        let plane = tool.faces.iter().find_map(|f| if let Surface::Plane(g) = &f.surface { Some(*g) } else { None });
+        axis = match (ball,plane) {
+            (Some(b),Some(p)) => Some(Frame::about(b.o,unit(p.z))),
+            (Some(b),None) => Some(Frame::about(b.o,unit(b.z))),
+            _ => None,
+        };
+    }
+    let Some(g) = axis else { return Err(Unbuilt::Curved {at:at.first().copied().unwrap_or([0.;3])}) };
+    let rz = |p: V| -> P2 { let l = g.local(p); [l[0].dhypot(l[1]),l[2]] };
+    let on_axis = |o: V| { let l = g.local(o); l[0].dhypot(l[1]) <= eps };
+    let along = |z: V| norm(cross(unit(z),g.z)) <= 1e-9;
+    let uses = tool.uses();
+    let located = crate::query::Located::new(tool,eps);
+    let mut elements = Vec::new();
+    let mut faces = Vec::new();
+    for (k,f) in tool.faces.iter().enumerate() {
+        let refused = Err(Unbuilt::Curved {at:at[k]});
+        // the meridian points of its boundary: each edge's (a seam, one face both sides, none)
+        let mut pts: Vec<P2> = Vec::new();
+        for c in f.loops.iter().flatten() {
+            let e = &tool.edges[c.edge as usize];
+            if matches!(e.curve,EdgeCurve::Degenerate) { continue }
+            if uses[c.edge as usize].iter().all(|u| u.0 == k) { continue }
+            for i in 0..=4 { pts.push(rz(e.point(e.t[0]+(e.t[1]-e.t[0])*i as f64/4.,&tool.vertices))) }
+        }
+        let distinct = |pts: &[P2]| -> Vec<P2> {
+            let mut out: Vec<P2> = Vec::new();
+            for &p in pts { if !out.iter().any(|q| (p[0]-q[0]).dhypot(p[1]-q[1]) <= 1e-7*(1.+size)) { out.push(p) } }
+            out
+        };
+        let ends = distinct(&pts);
+        match &f.surface {
+            Surface::Plane(h) => {
+                if !along(h.z) { return refused }
+                let z = rz(h.o)[1];
+                let rmax = ends.iter().map(|p| p[0]).fold(0.,f64::max);
+                let rmin = if f.loops.len() > 1 { ends.iter().map(|p| p[0]).fold(f64::INFINITY,f64::min) } else { 0. };
+                elements.push(Element::Line {a:[rmin,z],b:[rmax,z]});
+            }
+            Surface::Cylinder(h,_) | Surface::Cone(h,..) => {
+                if !along(h.z) || !on_axis(h.o) { return refused }
+                let [Some(lo),Some(hi)] = [ends.iter().copied().reduce(|a,b| if b[1] < a[1] { b } else { a }),
+                    ends.iter().copied().reduce(|a,b| if b[1] > a[1] { b } else { a })] else { return refused };
+                elements.push(Element::Line {a:lo,b:hi});
+            }
+            Surface::Sphere(h,r) | Surface::Torus(h,_,r) => {
+                let c = match &f.surface { Surface::Torus(_,big,_) => [big.abs(),rz(h.o)[1]],_ => [0.,rz(h.o)[1]] };
+                if !on_axis(h.o) || matches!(f.surface,Surface::Torus(..)) && !along(h.z) { return refused }
+                let r = r.abs();
+                // the angles about the meridian's centre of its boundary, and the arc between
+                // them the face holds (tried at its middle); a ball with no boundary pole to
+                // pole
+                let angle = |p: P2| (p[1]-c[1]).datan2(p[0]-c[0]);
+                let mut ws: Vec<f64> = ends.iter().map(|&p| angle(p)).collect();
+                ws.sort_by(f64::total_cmp);
+                ws.dedup_by(|a,b| (*a-*b).abs() <= 1e-9);
+                let holds = |w: f64| -> bool {
+                    let (s,co) = w.dsin_cos();
+                    let (rho,z) = (c[0]+r*co,c[1]+r*s);
+                    rho >= 0. && (0..8).any(|i| {
+                        let (sa,ca) = (i as f64*TAU/8.+0.3).dsin_cos();
+                        located.face_place(k,g.at([rho*ca,rho*sa,z])) == crate::query::Place::In
+                    })
+                };
+                let (from,sweep) = match (ws.len(),&f.surface) {
+                    (0,Surface::Sphere(..)) => (-PI/2.,PI),
+                    // a whole ring: its whole circle
+                    (0,Surface::Torus(..)) => (0.,TAU),
+                    (1,Surface::Sphere(..)) => {
+                        let w = ws[0];
+                        if holds(0.5*(w+PI/2.)) { (w,PI/2.-w) } else { (-PI/2.,w+PI/2.) }
+                    }
+                    (2,_) => {
+                        let (w0,w1) = (ws[0],ws[1]);
+                        if holds(0.5*(w0+w1)) { (w0,w1-w0) } else { (w1,TAU-(w1-w0)) }
+                    }
+                    _ => return refused,
+                };
+                elements.push(Element::Arc {c,r,from,sweep});
+            }
+            _ => return refused,
+        }
+        faces.push(k);
+    }
+    Ok(Meridian {frame:g,elements,faces,at,size})
+}
+
 impl Revolved {
     /// **The tool read as a convex solid of revolution**: every face a plane square to one axis, a
     /// cylinder, a cone or a torus about it, or a ball centred on it; its meridian one chain of
     /// their pieces from the axis round to the axis, turning one way all along (convex). Refused
     /// (`Unbuilt::Curved`, at a point of the face that is not) otherwise.
     pub fn read(tool: &Brep) -> Result<Revolved,Unbuilt> {
-        let size = { let (lo,hi) = tool.bounds(); norm(sub(hi,lo)) };
-        let eps = 1e-9*(1.+size);
-        let at_face = |k: usize| -> V {
-            tool.faces[k].loops.iter().flatten().next().map_or(tool.vertices.first().map_or([0.;3],|v| v.p),
-                |c| tool.vertices[tool.ends(c)[0] as usize].p)
-        };
-        // the axis: a round face's own, or through a ball's centre along a plane's normal or the
-        // ball's own pole
-        let mut axis: Option<Frame> = None;
-        for f in &tool.faces {
-            if let Surface::Cylinder(g,_) | Surface::Cone(g,..) | Surface::Torus(g,..) = &f.surface { axis = Some(Frame::about(g.o,unit(g.z))); break }
-        }
-        if axis.is_none() {
-            let ball = tool.faces.iter().find_map(|f| if let Surface::Sphere(g,_) = &f.surface { Some(*g) } else { None });
-            let plane = tool.faces.iter().find_map(|f| if let Surface::Plane(g) = &f.surface { Some(*g) } else { None });
-            axis = match (ball,plane) {
-                (Some(b),Some(p)) => Some(Frame::about(b.o,unit(p.z))),
-                (Some(b),None) => Some(Frame::about(b.o,unit(b.z))),
-                _ => None,
-            };
-        }
-        let Some(g) = axis else { return Err(Unbuilt::Curved {at:at_face(0)}) };
-        let rz = |p: V| -> P2 { let l = g.local(p); [l[0].dhypot(l[1]),l[2]] };
-        let on_axis = |o: V| { let l = g.local(o); l[0].dhypot(l[1]) <= eps };
-        let along = |z: V| norm(cross(unit(z),g.z)) <= 1e-9;
-        let uses = tool.uses();
-        let located = crate::query::Located::new(tool,eps);
-        let mut elements = Vec::new();
-        let mut faces = Vec::new();
-        for (k,f) in tool.faces.iter().enumerate() {
-            let refused = Err(Unbuilt::Curved {at:at_face(k)});
-            // the meridian points of its boundary: each edge's (a seam, one face both sides, none)
-            let mut pts: Vec<P2> = Vec::new();
-            for c in f.loops.iter().flatten() {
-                let e = &tool.edges[c.edge as usize];
-                if matches!(e.curve,EdgeCurve::Degenerate) { continue }
-                if uses[c.edge as usize].iter().all(|u| u.0 == k) { continue }
-                for i in 0..=4 { pts.push(rz(e.point(e.t[0]+(e.t[1]-e.t[0])*i as f64/4.,&tool.vertices))) }
-            }
-            let distinct = |pts: &[P2]| -> Vec<P2> {
-                let mut out: Vec<P2> = Vec::new();
-                for &p in pts { if !out.iter().any(|q| (p[0]-q[0]).dhypot(p[1]-q[1]) <= 1e-7*(1.+size)) { out.push(p) } }
-                out
-            };
-            let ends = distinct(&pts);
-            match &f.surface {
-                Surface::Plane(h) => {
-                    if !along(h.z) { return refused }
-                    let z = rz(h.o)[1];
-                    let rmax = ends.iter().map(|p| p[0]).fold(0.,f64::max);
-                    let rmin = if f.loops.len() > 1 { ends.iter().map(|p| p[0]).fold(f64::INFINITY,f64::min) } else { 0. };
-                    elements.push(Element::Line {a:[rmin,z],b:[rmax,z]});
-                }
-                Surface::Cylinder(h,_) | Surface::Cone(h,..) => {
-                    if !along(h.z) || !on_axis(h.o) { return refused }
-                    let [Some(lo),Some(hi)] = [ends.iter().copied().reduce(|a,b| if b[1] < a[1] { b } else { a }),
-                        ends.iter().copied().reduce(|a,b| if b[1] > a[1] { b } else { a })] else { return refused };
-                    elements.push(Element::Line {a:lo,b:hi});
-                }
-                Surface::Sphere(h,r) | Surface::Torus(h,_,r) => {
-                    let c = match &f.surface { Surface::Torus(_,big,_) => [big.abs(),rz(h.o)[1]],_ => [0.,rz(h.o)[1]] };
-                    if !on_axis(h.o) || matches!(f.surface,Surface::Torus(..)) && !along(h.z) { return refused }
-                    let r = r.abs();
-                    // the angles about the meridian's centre of its boundary, and the arc between
-                    // them the face holds (tried at its middle); a ball with no boundary pole to
-                    // pole
-                    let angle = |p: P2| (p[1]-c[1]).datan2(p[0]-c[0]);
-                    let mut ws: Vec<f64> = ends.iter().map(|&p| angle(p)).collect();
-                    ws.sort_by(f64::total_cmp);
-                    ws.dedup_by(|a,b| (*a-*b).abs() <= 1e-9);
-                    let holds = |w: f64| -> bool {
-                        let (s,co) = w.dsin_cos();
-                        let (rho,z) = (c[0]+r*co,c[1]+r*s);
-                        rho >= 0. && (0..8).any(|i| {
-                            let (sa,ca) = (i as f64*TAU/8.+0.3).dsin_cos();
-                            located.face_place(k,g.at([rho*ca,rho*sa,z])) == crate::query::Place::In
-                        })
-                    };
-                    let (from,sweep) = match (ws.len(),&f.surface) {
-                        (0,Surface::Sphere(..)) => (-PI/2.,PI),
-                        (1,Surface::Sphere(..)) => {
-                            let w = ws[0];
-                            if holds(0.5*(w+PI/2.)) { (w,PI/2.-w) } else { (-PI/2.,w+PI/2.) }
-                        }
-                        (2,_) => {
-                            let (w0,w1) = (ws[0],ws[1]);
-                            if holds(0.5*(w0+w1)) { (w0,w1-w0) } else { (w1,TAU-(w1-w0)) }
-                        }
-                        _ => return refused,
-                    };
-                    elements.push(Element::Arc {c,r,from,sweep});
-                }
-                _ => return refused,
-            }
-            faces.push(k);
-        }
+        let Meridian {frame:g,elements,faces,at,size} = meridian(tool)?;
+        let at_face = |k: usize| at[k];
         // the chain from the axis below round to the axis above: each piece walked so the solid is
         // on its left, each starting where the one before ends
         let n = elements.len();
@@ -427,7 +447,7 @@ fn read_instant(tool: &Revolved,path: &Trajectory,across: V,t: f64) -> Result<(I
 
 /// The turns round the loop that carry the pieces `on` an instant reads onto those `first` read:
 /// each `s` with `on[k + s] == first[k]` all round.
-fn turns<'a>(on: &'a [On],first: &'a [On]) -> impl Iterator<Item=usize> + 'a {
+pub(super) fn turns<'a>(on: &'a [On],first: &'a [On]) -> impl Iterator<Item=usize> + 'a {
     let n = first.len();
     (0..n).filter(move |&s| on.len() == n && (0..n).all(|k| on[(k+s)%n] == first[k]))
 }
@@ -577,7 +597,7 @@ pub fn fitted(tool: &Revolved,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Resu
 }
 
 /// The most the net misses the sheet's points `(t, u, x)` by.
-fn missed(net: &Net,points: impl Iterator<Item=(f64,f64,V)>) -> f64 {
+pub(super) fn missed(net: &Net,points: impl Iterator<Item=(f64,f64,V)>) -> f64 {
     points.map(|(t,u,x)| norm(sub(x,net.point(u,t)))).fold(0.,f64::max)
 }
 
@@ -651,7 +671,7 @@ const ROUND_DEGREE: usize = 5;
 /// The net through `grid` (a row a roll `ts`, a point a fraction `us` round the loop): each row's
 /// pieces quintic through their points, joined by a knot five times over (continuous, each piece
 /// its own); then each pole's column quintic along the roll.
-fn interpolated(grid: &[Vec<V>],us: &[f64],ts: &[f64],pieces: usize,points: usize) -> Result<Net,Unbuilt> {
+pub(super) fn interpolated(grid: &[Vec<V>],us: &[f64],ts: &[f64],pieces: usize,points: usize) -> Result<Net,Unbuilt> {
     let failed = || Unbuilt::Failed("the contact's sheet could not be interpolated".into());
     let mut rows: Vec<(Vec<f64>,Vec<V>)> = Vec::with_capacity(grid.len());
     for r in grid {

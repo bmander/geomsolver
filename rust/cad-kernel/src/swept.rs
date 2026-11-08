@@ -23,6 +23,7 @@ pub mod member;
 pub mod closed;
 pub mod instant;
 pub mod patches;
+pub mod rings;
 pub mod dump;
 pub mod read;
 pub mod subtraction;
