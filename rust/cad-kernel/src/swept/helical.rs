@@ -244,7 +244,8 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
 /// axis (#721 G5), as each is so.
 fn creased_where(found: &Characteristic) -> String {
     let said: Vec<&str> = [(!found.flats().is_empty(),"runs onto or off a flat face"),(!found.sharp().is_empty(),"passes a fan standing at one point"),
-        (found.concave(),"crosses a concave corner"),(!found.apexes().is_empty(),"turns at an apex")].into_iter().filter(|w| w.0).map(|w| w.1).collect();
+        (found.concave(),"crosses a concave corner"),(!found.apexes().is_empty(),"turns at an apex"),
+        (!found.vertices().is_empty(),"goes round a vertex")].into_iter().filter(|w| w.0).map(|w| w.1).collect();
     let joined = match said.len() { 0 => return String::new(),1 => said[0].to_string(),
         n => format!("{} or {}",said[..n-1].join(", "),said[n-1]) };
     format!(" where its characteristic {joined}, creased there")
