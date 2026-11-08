@@ -1584,7 +1584,13 @@ impl<'a> Arrangement<'a> {
             // a point within the tolerance of both surfaces is that over the sine of the angle
             // they meet at off their meeting
             let sine = norm(crate::util::space::cross(sa.gradient(p),sb.gradient(p)));
-            if distance(c.point(t),p) <= on_meeting(self.tol,sine) && !ts.iter().any(|&(_,w)| w == v) { ts.push((t,v)); }
+            // (the widened reach is across the curve: a point past an open curve's end, its
+            // nearest point that end, is on it only within the tolerance — a meeting given in
+            // curves, one crossing away from where two surfaces touch, ends a way off the touch)
+            let past_end = c.period().is_none() && matches!(c,Curve::BSpline(_))
+                && { let [lo,hi] = match c { Curve::BSpline(b) => b.domain(),_ => unreachable!() }; t <= lo || t >= hi };
+            let reach = if past_end { super::tolerant::ON_CURVE*self.tol } else { on_meeting(self.tol,sine) };
+            if distance(c.point(t),p) <= reach && !ts.iter().any(|&(_,w)| w == v) { ts.push((t,v)); }
         }
         for q in crossed {
             let v = self.pool.at(q);
