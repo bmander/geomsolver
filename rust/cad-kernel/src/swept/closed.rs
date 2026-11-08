@@ -1525,7 +1525,7 @@ pub fn ring(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Re
     crate::util::meter::go_on()?;
     let [start,end] = [super::rings::posed(tool,&ring,path,&fit,a)?,super::rings::posed(tool,&ring,path,&fit,b)?];
     let poses = [path.pose(a)?,path.pose(b)?];
-    let (sheets,given) = super::rings::entered(&fit,&ring,[&start,&end],[&poses[0],&poses[1]],tol)?;
+    let (sheets,given) = super::rings::entered(&fit,&ring,[&start,&end],poses,tol)?;
     if crate::timing() { eprintln!("ring: entered in {:?}",clock.elapsed()) }
     candidates(tool,path,[a,b],bar,tol,None,[start,end],sheets,&given)
 }

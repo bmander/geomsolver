@@ -102,15 +102,12 @@ fn a_tube_that_folds_is_entered_where_it_stands_outside_the_tool() {
     let (tool,path,roll) = tumble();
     let ring = Ring::read(&tool).unwrap();
     let fit = fitted(&ring,&path,roll,1e-6).unwrap();
-    let [start,end] = [roll[0],roll[1]].map(|t| posed(&tool,&ring,&path,&fit,t).unwrap());
-    let poses = [path.pose(roll[0]).unwrap(),path.pose(roll[1]).unwrap()];
-    let (sheets,_) = entered(&fit,&ring,[&start,&end],[&poses[0],&poses[1]],1e-5).unwrap();
+    let [start,end] = roll.map(|t| posed(&tool,&ring,&path,&fit,t).unwrap());
+    let poses = roll.map(|t| path.pose(t).unwrap());
+    let (sheets,_) = entered(&fit,&ring,[&start,&end],poses,1e-5).unwrap();
     assert_eq!(sheets.len(),2,"a tube for each contact curve");
     // the tool's signed distance at each end pose, at a point in space
-    let at = |e: usize,x: [f64;3]| {
-        let (m,d) = (&poses[e],[x[0]-poses[e].p[0],x[1]-poses[e].p[1],x[2]-poses[e].p[2]]);
-        ring.signed(std::array::from_fn(|i| m.r[0][i]*d[0]+m.r[1][i]*d[1]+m.r[2][i]*d[2])).0
-    };
+    let at = |e: usize,x: [f64;3]| ring.signed(poses[e].inverse().point(x)).0;
     let on_tool = |x: [f64;3]| (0..2).any(|e| at(e,x).abs() <= 1e-4);
     for (k,sheet) in sheets.iter().enumerate() {
         let uses = sheet.uses();
