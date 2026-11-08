@@ -1694,7 +1694,7 @@ each turned outward as the face's a thousandth along the meridian is (`outward`)
 apex is in contact nowhere, `DoublePoint` where its roots meet, `AllRound` where it stands still.
 A step takes the next ring's nearest root and, of roots as near as each other (within 1e-7 of the
 tool's size), the one whose normal is nearest the one it stands on: onto or off an apex every root
-there is the one point, or as far from it. The nodes hold the apex once, `Node::apex` on it, and
+there is the one point, or as far from it. The nodes hold the apex once, `Crease::Apex` on it, and
 the next node's step starts at its station (`turns`, one ring's two roots in a row); it is a crease
 (`creases`, `Characteristic::apexes`), built as V's is. S2's ring rule lets a ring's two roots
 stand either side of an apex the walk turns at between them; `stationary` reads no pair at one
@@ -1716,17 +1716,19 @@ by `swept_apex::behind_a_point_is_outside_the_tool` and
 **A vertex of a prism (#721 G1):** a corner's, a rim's or a crease's fan (`Ruling::Rib`,
 `Ruling::Rim`) takes among its stations those where its root reaches either end of its ruling
 (`Ruled::crossing` at both ends, as a side's at its rims), each end a vertex of the prism. For each
-such end `Junctions::new` reads the vertex's fans (`Along::vertices`, by `Piece::ruling_ends` within
-1e-9 of the tool's size) where the vertex is convex and every edge of it is a fan the walk reads: as
+such end `Junctions::new` reads the vertex's fans (`Junction::Vertex` in `Along::off`, the junction
+where a piece's root runs off each end of its ruling, by `Piece::ruling_ends` within 1e-9 of the
+tool's size) where the vertex is convex and every edge of it is a fan the walk reads: as
 many fans as faces meet there — the sides with a corner there and the caps they run to (a drafted
 half's end at its parting plane is a crease, no cap) — and three at least, on a tool every face of
 which is a side or a cap; else none. Where a fan's
-next ring has no root and its root stands at a ruling's end (`step`, `round_vertex`), the walk goes
+next ring has no root, `step` crosses the junction at the ruling's end its root stands nearer: at a
+vertex, the walk goes
 on onto the first of the vertex's other fans with a station whose root is the vertex, the way its
 roots go on (`side_at`, as a side is entered off a rim). Every normal of the cone between the faces
 there is the tool's, and those square to the motion lie on one arc of it, from the fan the walk
 came along to the one it leaves along: all stand at the vertex, so the second root is a crossing's,
-dropped, and the node before it is marked `Node::vertex`, a crease (`creases`,
+dropped, and the node before it is marked `Crease::Vertex`, a crease (`creases`,
 `Characteristic::vertices`), built as V's is. Where some edge of the vertex is no fan (a concave
 corner, a side no line, a cap of a tool no lone prism) the walk ends as before (`VERTEX`). Under a
 slide, or a screw along the extrusion, the silhouette's turn at a vertex is still refused
@@ -1738,8 +1740,8 @@ turned 30°, 45°, 60° and −30° so its corner runs to its far end, and a bar
 corner runs to its crease, each turned and screwed: every node in contact within 1e-9 of `|v|`, its
 normal outward, the sheet creased at a vertex of the prism and nowhere else, the blank reached
 either side of one; a bar whose inner side bulges to an arc still refused, `VERTEX` turned and
-`OVER_CAP` screwed; and drawn, the bar turned and screwed to `Bar::removed` and
-`Bar::screwed_removed` within 2e-5, its STL agreeing with the field),
+`OVER_CAP` screwed; and drawn, the bar turned ±30° and screwed to `Bar::lost` within 2e-5, its STL
+agreeing with the field, `a_bars_corner_running_to_its_end_screwed_cuts_as_the_bar`),
 `prism_twists::a_corner_meeting_its_crease_goes_round_the_vertex` (turned and screwed, within 2e-5)
 and `solid_sweeps_examples::the_square_ended_bar_goes_round_its_vertex` (`square_end.sv`, within
 2e-5) and `the_capped_thread_goes_round_its_bars_vertices` (`capped_thread.sv`, within 2e-5 of

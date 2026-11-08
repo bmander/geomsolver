@@ -572,7 +572,7 @@ normals the characteristic turns between. Each is turned outward as the face's n
 thousandth along the meridian, where the material reads the side; the apex itself does not tell it.
 Each step takes the next ring's nearest root and, of roots as near as each other, the one whose
 normal is nearest the one it stands on: onto or off the apex every root of its ring is the one
-point, and every root of the ring beside it as far from it. The nodes hold the apex once, marked (`Node::apex`, `Characteristic::apexes`), a crease
+point, and every root of the ring beside it as far from it. The nodes hold the apex once, marked (`Crease::Apex`, `Characteristic::apexes`), a crease
 as V's: the sheet's exact row there, the creased fit, no turn counted across it, no fold read at
 it, the sheet cut into faces along the apex's path. A pointed tool screwed is a thread chased with
 its point; turned, an arc engraved; slid along a line not square to its axis, a V cut with the bit
@@ -637,13 +637,13 @@ the vertex is on the boundary all along it and the sweep has a sharp edge along 
 as V's has along a corner's point; past it the characteristic goes on along the other fan, from the
 station whose root is the vertex.
 
-The walk goes round the vertex so (`Along::vertices`, read once in `Junctions::new`): each fan takes
+The walk goes round the vertex so (`Junction::Vertex`, read once in `Junctions::new`): each fan takes
 among its stations those where its root reaches either end of its ruling (`Ruled::crossing`, as a
 side's take those where it reaches a rim), and where its next ring has no root and its root stands
 at a ruling's end, it steps onto the first of the vertex's other fans with a station whose root is
 the vertex, the way its roots go on. The vertex is read only where it is convex and every edge of
 it is a fan the walk reads: as many fans as faces meet there, three at least. The nodes hold the
-vertex once, marked (`Node::vertex`, `Characteristic::vertices`), a crease as V's: the sheet's exact
+vertex once, marked (`Crease::Vertex`, `Characteristic::vertices`), a crease as V's: the sheet's exact
 row there, the creased fit, no turn counted across it, no fold read at it, the sheet cut into faces
 along the vertex's path. A bar whose corner runs to its end in the blank, a square-ended slotting
 bar, and a square thread's bar too short to stand past the rod are each the constant-twist

@@ -69,7 +69,7 @@ groove cut part
 }
 
 /// A bar of square section stood on a corner `inner` from the axis, standing ±4 along its length.
-pub(crate) fn diamond(inner: f64) -> [[f64;2];4] { [[inner,0.],[inner+1.5,1.5],[inner+3.,0.],[inner+1.5,-1.5]] }
+fn diamond(inner: f64) -> [[f64;2];4] { [[inner,0.],[inner+1.5,1.5],[inner+3.,0.],[inner+1.5,-1.5]] }
 
 /// A turn of the leaning bar: within the block the characteristic is the ruling through its inner
 /// corner, round the corner's fan, a line leaning across the turn, so the groove's wall is that
@@ -229,16 +229,23 @@ fn a_side_along_the_slide_is_planar_subtractions() {
 /// mid-side, below.)
 #[test]
 fn a_corner_meeting_its_crease_goes_round_the_vertex() {
-    let (s,c) = 20f64.to_radians().sin_cos();
     for lead in [0.,6.] {
-        let bar = Bar {origin:[0.;3],across:[1.,0.,0.],along:[0.,c,-s],corners:diamond(10.).to_vec(),names:vec!["lower","upper","outer","under"],
-            from:-4.,to:4.,draft:2.,lead};
+        let bar = cornered(lead);
         let e = fixtures::read(&bar.text());
         let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
         assert_eq!(found.vertices(),["the corner of `bar.under` and `bar.lower`"]);
-        let removed = if lead == 0. { bar.removed() } else { bar.screwed_removed() };
-        near(exported(&e,"part"),PI/3.*80.-removed,2e-5);
+        near(exported(&e,"part"),PI/3.*80.-bar.lost(),2e-5);
     }
+}
+
+/// The leaning bar of square section stood on its inner corner 10 from the axis (`diamond`),
+/// leaning 20° across the turn, standing ±4 either side of the plane through x its section is drawn
+/// in and drafted 2° both ways from it, turned or screwed `lead` a turn: its corner's line reaches
+/// that plane at the vertex where the corner meets the crease.
+pub(crate) fn cornered(lead: f64) -> Bar {
+    let (s,c) = 20f64.to_radians().sin_cos();
+    Bar {origin:[0.;3],across:[1.,0.,0.],along:[0.,c,-s],corners:diamond(10.).to_vec(),names:vec!["lower","upper","outer","under"],
+        from:-4.,to:4.,draft:2.,lead}
 }
 
 /// The bar slid aslant made short enough for its caps to stand in the cube: under a slide a cap is
@@ -263,7 +270,6 @@ type V = [f64;3];
 /// the unit `across` and `along`, its sides named `names` from each corner to the next, extruded
 /// along `across × along` from `from` to `to`, drafted `draft` degrees (both ways from the plane
 /// where it runs both ways).
-#[derive(Clone)]
 pub(crate) struct Bar { pub(crate) origin: V,pub(crate) across: V,pub(crate) along: V,pub(crate) corners: Vec<[f64;2]>,
     pub(crate) names: Vec<&'static str>,pub(crate) from: f64,pub(crate) to: f64,pub(crate) draft: f64,pub(crate) lead: f64 }
 
@@ -337,6 +343,10 @@ groove cut part
         out
     }
 
+    /// What the block loses under the bar's motion, read apart from the code under test: what the
+    /// turn removes (`removed`), or the screw (`screwed_removed`).
+    pub(crate) fn lost(&self) -> f64 { if self.lead == 0. { self.removed() } else { self.screwed_removed() } }
+
     /// What the turn removes from the block, read apart from the code under test: the block's
     /// points at radius r and height z within its 60° are removed where some point of the bar
     /// stands at r and z, since the turn carries the bar right across them. The bar's points at
@@ -361,7 +371,7 @@ groove cut part
     /// 2001 angles and refined about the best by four grids of 64 each. The block at r and θ loses
     /// that span raised kθ within its heights, a length linear in θ between where its ends cross
     /// the block's, summed exactly over its 60°, and the radii by Simpson's rule on 4000 steps.
-    pub(crate) fn screwed_removed(&self) -> f64 {
+    fn screwed_removed(&self) -> f64 {
         let halves = self.halves();
         let k = self.lead/TAU;
         // the heights at which the bar meets the line up through radius r at angle a
