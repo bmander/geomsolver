@@ -856,12 +856,41 @@ fn net_newton(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
 /// the surface a local foot need not be the nearest); else from the nearest pole's Greville
 /// parameters (the net of a fitted sheet lies close to it); where that does not settle, from the
 /// nearest of a grid across its knot spans.
-fn net_inverse(n: &super::nurbs::Net,p: V) -> Uv {
+fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv {
+    let n: &super::nurbs::Net = net;
     let key = n as *const _ as usize;
     let near = 1e-3*(1.+dot(p,p).sqrt());
     let warm = crate::util::warm::get(crate::util::warm::Kind::Net,key).and_then(|s| net_newton(n,p,s))
         .filter(|&uv| crate::util::space::distance(n.point(uv[0],uv[1]),p) <= near);
-    let uv = warm.unwrap_or_else(|| {
+    // else from the spans whose boxes stand nearest (each boxed by its Bézier points,
+    // `query::net_index`), found best first by their boxes alone, Newton's method from each one's
+    // middle, the nearest foot it settles on taken — where it stands within `near` of the nearest
+    // box: the surface lies in its spans' boxes, so no foot is nearer than that box, and a foot
+    // farther off is a local one (Newton's method settling on another fold of a fitted sheet,
+    // 1.4 off a point on it), read again by the search below
+    let indexed = || -> Option<Uv> {
+        if n.weights.is_some() { return None }
+        let index = crate::query::net_index(net);
+        let gap = |b: crate::util::bvh::Bounds<3>| {
+            let d: V = std::array::from_fn(|k| (b.lo[k]-p[k]).max(p[k]-b.hi[k]).max(0.));
+            dot(d,d).sqrt()
+        };
+        const NEAREST: usize = 4;
+        let nearest = std::cell::RefCell::new([(f64::INFINITY,usize::MAX);NEAREST]);
+        index.tree.query_nearest(gap,|| nearest.borrow()[NEAREST-1].0,|i| {
+            let g = gap(index.boxes[i]);
+            let mut nearest = nearest.borrow_mut();
+            if g < nearest[NEAREST-1].0 { nearest[NEAREST-1] = (g,i); nearest.sort_by(|a,b| a.0.total_cmp(&b.0)) }
+        });
+        let nearest = nearest.into_inner();
+        let least = nearest[0].0;
+        nearest.iter().filter(|c| c.1 != usize::MAX).filter_map(|&(_,i)| {
+            let [su,sv] = index.spans[i];
+            let uv = net_newton(n,p,[0.5*(su[0]+su[1]),0.5*(sv[0]+sv[1])])?;
+            Some((crate::util::space::distance(n.point(uv[0],uv[1]),p),uv))
+        }).min_by(|a,b| a.0.total_cmp(&b.0)).filter(|&(d,_)| d <= least+near).map(|(_,uv)| uv)
+    };
+    let uv = warm.or_else(indexed).unwrap_or_else(|| {
         let greville = |k: &[f64],d: usize,i: usize| k[i+1..=i+d].iter().sum::<f64>()/d as f64;
         // from the nearest poles' Greville points, the nearest first, then the grid
         let mut nearest = [(f64::INFINITY,(0,0));4];

@@ -1508,6 +1508,33 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     let ends = [a,b].map(|t| super::patches::posed(tool,&revolved,path,&fit,t));
     let [start,end] = [ends[0].clone()?,ends[1].clone()?];
     let (sheet,given) = super::patches::entered(&fit,&revolved,[&start,&end])?;
+    candidates(tool,path,[a,b],bar,tol,blank,[start,end],vec![sheet],&given)
+}
+
+/// **A ring under a motion no constant twist takes, built closed** (`swept::rings`, steps 6 and 7
+/// under K2; not yet a class the dispatch admits): the ring where it starts and where it stops and
+/// the tube each of its contact curves sweeps — buried pieces and the bridges across its folds
+/// with the touching ones — their meetings with the ring at the end poses read in the tubes' own
+/// domains and given, the box split by them at once and classified by membership.
+pub fn ring(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
+    let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
+    let clock = crate::util::clock::Instant::now();
+    let ring = super::rings::Ring::read(tool)?;
+    let fit = super::rings::fitted(&ring,path,[a,b],K2_FIT*tol)?;
+    if crate::timing() { eprintln!("ring: fitted in {:?}",clock.elapsed()) }
+    crate::util::meter::go_on()?;
+    let [start,end] = [super::rings::posed(tool,&ring,path,&fit,a)?,super::rings::posed(tool,&ring,path,&fit,b)?];
+    let poses = [path.pose(a)?,path.pose(b)?];
+    let (sheets,given) = super::rings::entered(&fit,&ring,[&start,&end],poses,tol)?;
+    if crate::timing() { eprintln!("ring: entered in {:?}",clock.elapsed()) }
+    candidates(tool,path,[a,b],bar,tol,None,[start,end],sheets,&given)
+}
+
+/// K2's build from its candidates: the tool at each end pose and the sheets, their meetings
+/// `given`, a box holding the sweep (or the blank) split by them at once and classified.
+#[allow(clippy::too_many_arguments)]
+fn candidates(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>,[start,end]: [Brep;2],sheets: Vec<Brep>,
+    given: &[crate::boolean::Given]) -> Result<Brep,Unbuilt> {
     // a box holding the sweep: the tool's box at poses over the roll
     let corners = corners_of(tool.bounds());
     let mut points: Vec<V> = Vec::new();
@@ -1518,10 +1545,10 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     if let Some(bl) = blank { points.extend(corners_of(bl.bounds())) }
     let (domain,..) = cube_holding(&points,tol)?;
     let within = blank.unwrap_or(&domain);
-    let solids = [start,end,sheet];
+    let solids: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
     let solid = Solid::new(tool,bar,1.)?;
     let swept = Swept {tool:&solid,path,roll:[a,b]};
-    arranged_or_dumped(within,None,&clear_of(&solids,within,tol),&given,&swept,blank,tol)
+    arranged_or_dumped(within,None,&clear_of(&solids,within,tol),given,&swept,blank,tol)
 }
 
 /// The domain `within` split by the candidates `refs` at once — within `reach` alone where there
@@ -1530,7 +1557,9 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
 #[allow(clippy::too_many_arguments)]
 fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::boolean::Given],swept: &Swept,blank: Option<&Brep>,
     tol: f64) -> Result<Brep,Unbuilt> {
+    let clock = crate::util::clock::Instant::now();
     let complex = crate::boolean::arrangement_reached(within,reach,refs,given,tol)?;
+    if crate::timing() { eprintln!("closed: arranged in {:?}",clock.elapsed()) }
     crate::util::meter::go_on()?;
     // each cell classified by membership at the deepest of its points that settles (a cusp-thin
     // cell's stand near the swept boundary, and the first may not), and the boundary between the
@@ -1538,6 +1567,7 @@ fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::bo
     // selection, no union, the candidates that bound nothing healed out of its faces
     let found = complex.cells()?;
     let cells = found.len();
+    if crate::timing() { eprintln!("closed: {cells} cells found in {:?}",clock.elapsed()) }
     // a cell a face of the reach bounds from outside it is outside the reach, which holds the sweep:
     // no member of it, and kept with nothing read (the reach is the complex's operand 1)
     let outside = |c: usize| reach.is_some() && complex.in_operand(&complex.cell_sides(found,c),1) == Some(false);
@@ -1548,7 +1578,9 @@ fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::bo
         let c = i+1;
         crate::util::meter::go_on()?;
         if outside(c) { return Ok(Some((true,Vec::new()))) }
+        let at = crate::util::clock::Instant::now();
         let points = complex.inside_points(c,4)?;
+        if crate::timing() { eprintln!("closed: cell {c}'s points in {:?}",at.elapsed()) }
         let Some(&first) = points.first() else { return Ok(None) };
         match points.iter().enumerate().find_map(|(k,&x)| swept.member(x).ok().map(|m| (k,m))) {
             Some((k,member)) => Ok(Some((member != blank.is_some(),points[k+1..].to_vec()))),
@@ -1560,9 +1592,23 @@ fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::bo
     for (i,r) in read.into_iter().enumerate() {
         if let Some((kept,more)) = r? { keep[i+1] = kept; witnesses.extend(more) }
     }
+    if crate::timing() { eprintln!("closed: {} cells classified in {:?}",cells,clock.elapsed()) }
     if blank.is_none() && !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
     let out = crate::boolean::selection(&complex,&|c| keep[c])?;
-    out.check(tol)?;
+    if let Err(e) = out.check(tol) {
+        if crate::debug() {
+            // each face's loops, where the check failed: their areas and their reach in parameters
+            for (fi,f) in out.faces.iter().enumerate() {
+                for (li,l) in f.loops.iter().enumerate() {
+                    let uv: Vec<[f64;2]> = l.iter().flat_map(|c| out.uv_ends(f,c)).collect();
+                    let (lo,hi) = uv.iter().fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(l,h),p| ([l[0].min(p[0]),l[1].min(p[1])],[h[0].max(p[0]),h[1].max(p[1])]));
+                    eprintln!("closed: face {fi} ({} {}{}) loop {li}: {} uses, area {:.4e}, from {lo:?} to {hi:?}",f.surface.kind(),f.name,
+                        if f.reversed { ", reversed" } else { "" },l.len(),out.loop_area(f,l));
+                }
+            }
+        }
+        return Err(e.into())
+    }
     // **judged by its definition before it is returned** (#777 V2): never returned built wrong
     judge(&out,swept,within,blank,&witnesses,tol)?;
     Ok(out)
