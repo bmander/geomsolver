@@ -864,7 +864,10 @@ fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv {
         .filter(|&uv| crate::util::space::distance(n.point(uv[0],uv[1]),p) <= near);
     // else from the spans whose boxes stand nearest (each boxed by its Bézier points,
     // `query::net_index`), found best first by their boxes alone, Newton's method from each one's
-    // middle, the nearest foot it settles on taken
+    // middle, the nearest foot it settles on taken — where it stands within `near` of the nearest
+    // box: the surface lies in its spans' boxes, so no foot is nearer than that box, and a foot
+    // farther off is a local one (Newton's method settling on another fold of a fitted sheet,
+    // 1.4 off a point on it), read again by the search below
     let indexed = || -> Option<Uv> {
         if n.weights.is_some() { return None }
         let index = crate::query::net_index(net);
@@ -873,17 +876,19 @@ fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv {
             dot(d,d).sqrt()
         };
         const NEAREST: usize = 4;
-        let near = std::cell::RefCell::new([(f64::INFINITY,usize::MAX);NEAREST]);
-        index.tree.query_nearest(gap,|| near.borrow()[NEAREST-1].0,|i| {
+        let nearest = std::cell::RefCell::new([(f64::INFINITY,usize::MAX);NEAREST]);
+        index.tree.query_nearest(gap,|| nearest.borrow()[NEAREST-1].0,|i| {
             let g = gap(index.boxes[i]);
-            let mut near = near.borrow_mut();
-            if g < near[NEAREST-1].0 { near[NEAREST-1] = (g,i); near.sort_by(|a,b| a.0.total_cmp(&b.0)) }
+            let mut nearest = nearest.borrow_mut();
+            if g < nearest[NEAREST-1].0 { nearest[NEAREST-1] = (g,i); nearest.sort_by(|a,b| a.0.total_cmp(&b.0)) }
         });
-        let near = near.into_inner();
-        near.iter().filter(|c| c.1 != usize::MAX).filter_map(|&(_,i)| {
+        let nearest = nearest.into_inner();
+        let least = nearest[0].0;
+        nearest.iter().filter(|c| c.1 != usize::MAX).filter_map(|&(_,i)| {
             let [su,sv] = index.spans[i];
-            net_newton(n,p,[0.5*(su[0]+su[1]),0.5*(sv[0]+sv[1])])
-        }).min_by(|a,b| crate::util::space::distance(n.point(a[0],a[1]),p).total_cmp(&crate::util::space::distance(n.point(b[0],b[1]),p)))
+            let uv = net_newton(n,p,[0.5*(su[0]+su[1]),0.5*(sv[0]+sv[1])])?;
+            Some((crate::util::space::distance(n.point(uv[0],uv[1]),p),uv))
+        }).min_by(|a,b| a.0.total_cmp(&b.0)).filter(|&(d,_)| d <= least+near).map(|(_,uv)| uv)
     };
     let uv = warm.or_else(indexed).unwrap_or_else(|| {
         let greville = |k: &[f64],d: usize,i: usize| k[i+1..=i+d].iter().sum::<f64>()/d as f64;

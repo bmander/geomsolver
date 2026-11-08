@@ -804,7 +804,7 @@ pub fn arrangement_within(domain: &Brep,operands: &[&Brep],tol: f64) -> Result<C
 /// the two contacts' swept sheets touch) is handed in so, not sought where a search would read a
 /// touch as a crossing or miss it. Its curves may end on one another (a ring's sheet touching the
 /// ring where it starts along its rim and crossing into it beside, read in its own domain,
-/// `swept::rings::met`).
+/// `swept::rings::traces`).
 #[derive(Clone,Debug)]
 pub struct Given { pub surfaces: [Surface;2],pub curves: Vec<Curve> }
 
@@ -2414,7 +2414,7 @@ fn ends_on_one_another(curves: &[super::geom::Curve],crossed: &mut [Vec<V>],tol:
     for i in 0..curves.len() {
         // a traced curve's ends, or an open spline's (a meeting given as several curves, one
         // reaching another: a ring's sheet crossing into the tool beside the rim it touches along,
-        // `swept::rings::met`)
+        // `swept::rings::traces`)
         let ends = match &curves[i] {
             Curve::Traced(t) if !t.closed => [t.pts[0],t.pts[t.pts.len()-1]],
             Curve::BSpline(b) if curves[i].period().is_none() && curves.len() > 1 => { let [t0,t1] = b.domain(); [b.point(t0),b.point(t1)] }

@@ -45,18 +45,27 @@
 //! dying partway (a swallowtail point), or a contact reaching a corner partway, is not yet cut where
 //! it starts. The tubes are fitted as K2's sheets are (`patches::interpolated`).
 //!
-//! **Its meetings with the tool where it starts and stops are read in its own domain** (`met`): at
-//! an end pose every piece's rim lies on the tool, touching it, and a tube that folds runs on from
-//! its rim into the tool beside it (near each fold, and wherever the sweep comes back on the ring
-//! where it started). A search for that meeting in space starts beside the touch, where the two are
-//! all but tangent; read as the zero set of the tool's signed distance over the face's parameters,
-//! the touch divided out, it is found exactly, and given with the rim as the whole meeting.
+//! **Its meetings with the tool where it starts and stops are read in its own domain** (`traces`):
+//! at an end pose every piece's rim lies on the tool, touching it, and a tube that folds runs on
+//! from its rim into the tool beside it (near each fold, and wherever the sweep comes back on the
+//! ring where it started). A search for that meeting in space starts beside the touch, where the
+//! two are all but tangent; read as the zero set of the ring's signed distance (`Ring::signed`) over
+//! the face's parameters, the touch divided out, it is found exactly.
 //!
-//! **What is not yet built**: the tumbling torus's arrangement is split and its cells found, but
-//! classifying them (certified point location against the fitted sheets) takes minutes, and the
-//! selected solid fails its check where the ring's kept band at the start pose winds round it; so
-//! the road is not yet a class the dispatch admits (`closed::ring` builds it alone,
-//! `tests/swept_rings.rs`).
+//! **A tube that folds is entered only where it stands outside the tool at both end poses**
+//! (`trimmed`): each face cut along those meetings and the pieces inside dropped — inside the tool
+//! there, inside the sweep, parting nothing of it. Entered from its rim, a fold piece's sheet lay
+//! over its own rim just past it (the contact sliding along itself near a fold), a meeting of the
+//! tube with itself no arrangement seeks: the ring's face was left a slit along a touching piece's
+//! rim, and the sweep's inside one cell with its outside. Trimmed, the tube's every free edge lies
+//! on the tool where it starts or stops — a touching piece's rim, or a cut — and those are given as
+//! its whole meeting with it.
+//!
+//! **Built**: the tumbling torus (`swept_tumble.sv`) closed and judged, its volume the definition's
+//! to within its reading off the fitted sheets (`tests/swept_rings.rs`, slow tier). The road is not
+//! yet a class the dispatch admits: `closed::ring` builds it alone. A ring of several faces whose
+//! sheet crosses the tool at an end pose across two of them is refused by name: the crossing is not
+//! yet cut where it passes from face to face.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::boolean::Given;
@@ -744,42 +753,86 @@ pub fn posed(tool: &Brep,ring: &Ring,path: &Trajectory,fit: &Fitted,t: f64) -> R
     Ok(super::closed::seam_away(moved,pose.point(ring.centre),pose.vector(ring.frame.z),&touched))
 }
 
-/// **Each contact curve's sheet entered as a candidate of its own**: its net cut round at each
-/// piece's ends, a tube of faces named `sheet`, open at both ends of the roll, its rims there the
-/// contact where the tool stands; and the meetings of a face of the tool at an end pose with a face
-/// of the sheet given. A tube touching all round is given as K2's is (`patches::entered`): the
-/// piece's iso-curve at that end on the faces holding it and nothing on the others, its whole
-/// meeting — it stands nowhere inside the tool there. A tube that folds runs on from its rim into
-/// the tool where it starts, near its folds and wherever the ring's sweep comes back on itself: its
-/// whole meeting is read in each face's own domain (`met`) and given, the rim with it — a search in
-/// space would start beside the touch, where the two are all but tangent.
-pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],tol: f64) -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
+/// **Each contact curve's sheet entered as a candidate of its own**, with its meetings with the
+/// tool where it starts and stops given. A tube touching all round stands nowhere inside the tool
+/// at its end poses: its net cut round at each piece's ends, a tube of faces named `sheet`, open at
+/// both ends of the roll, its rims there the contact where the tool stands, given as K2's is
+/// (`patches::entered`) — the piece's iso-curve at that end on the faces holding it and nothing on
+/// the others, its whole meeting.
+///
+/// **A tube that folds is entered where it stands outside the tool at both end poses** (`trimmed`).
+/// At an end pose it runs on from its rim into the tool — a dipped stretch at once, and anywhere
+/// the sweep comes back on the ring where it started — and what lies inside the tool there is
+/// inside the sweep, and parts nothing of it. Entered from its rim, it overlaid itself there: near
+/// a fold the contact slides along itself, and a fold piece's sheet just past its rim lay over the
+/// rim, inside the tool — a meeting of the tube with itself no arrangement seeks, which left the
+/// ring's face a slit along a touching piece's rim and the sweep's inside one cell with its outside
+/// (the tumbling torus, at the fold corners where it starts). So each face is cut where it crosses
+/// the tool at either end pose (`traces`, read in its own domain) and only its pieces outside both
+/// are kept: a touching piece's rim and the curves it is cut along all lie on the tool, and are its
+/// whole meeting with it, given.
+pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [&Pose;2],tol: f64) -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
     let mut sheets = Vec::new();
     let mut given = Vec::new();
     let n = ring.elements.len();
     for ((net,on),sides) in fit.nets.iter().zip(&fit.on).zip(&fit.sides) {
         let pieces = on.len();
-        let us: Vec<f64> = (0..=pieces).map(|k| k as f64).collect();
-        let sheet = crate::build::grid_sheet(net,&us,&fit.roll,&vec!["sheet".to_string();pieces],[true,false]).map_err(Unbuilt::Failed)?;
-        let whole = sides.iter().all(|&s| s == Side::Touching);
-        for (k,&o) in on.iter().enumerate() {
-            let holding: Vec<usize> = match o {
-                On::Face(e) => vec![ring.faces[e]],
-                On::Edge(e) => vec![ring.faces[e],ring.faces[(e+1)%n]],
-            };
-            let piece = net.segment([k as f64,k as f64+1.],fit.roll);
-            for ((pose,j),te) in ends.iter().zip([0,piece.poles[0].len()-1]).zip(fit.roll) {
-                let iso = Curve::BSpline(Arc::new(piece.column(j)));
+        let holding = |k: usize| -> Vec<usize> { match on[k] {
+            On::Face(e) => vec![ring.faces[e]],
+            On::Edge(e) => vec![ring.faces[e],ring.faces[(e+1)%n]],
+        } };
+        if sides.iter().all(|&s| s == Side::Touching) {
+            let us: Vec<f64> = (0..=pieces).map(|k| k as f64).collect();
+            let sheet = crate::build::grid_sheet(net,&us,&fit.roll,&vec!["sheet".to_string();pieces],[true,false]).map_err(Unbuilt::Failed)?;
+            for k in 0..pieces {
+                let piece = net.segment([k as f64,k as f64+1.],fit.roll);
+                for (pose,j) in ends.iter().zip([0,piece.poles[0].len()-1]) {
+                    let iso = Curve::BSpline(Arc::new(piece.column(j)));
+                    for (f,face) in pose.faces.iter().enumerate() {
+                        let curves = if holding(k).contains(&f) { vec![iso.clone()] } else { Vec::new() };
+                        given.push(Given {surfaces:[face.surface.clone(),sheet.faces[k].surface.clone()],curves});
+                    }
+                }
+            }
+            sheets.push(sheet);
+            continue
+        }
+        // a point in space carried back into the tool where it stands at an end pose, and the
+        // tool's signed distance there
+        let back = |pose: &Pose,x: V| -> V {
+            let d = crate::util::space::sub(x,pose.p);
+            std::array::from_fn(|i| pose.r[0][i]*d[0]+pose.r[1][i]*d[1]+pose.r[2][i]*d[2])
+        };
+        let (p0,p1) = (poses[0],poses[1]);
+        let at_ends: [Box<dyn Fn(V) -> f64>;2] = [Box::new(move |x: V| ring.signed(back(p0,x)).0),Box::new(move |x: V| ring.signed(back(p1,x)).0)];
+        let faces: Vec<Trimmed> = (0..pieces).map(|k| -> Result<Trimmed,Unbuilt> {
+            // a touching piece's rim touches the tool, a dipped stretch's crosses it
+            let order = if sides[k] == Side::Touching { 2 } else { 1 };
+            let readings: [Reading;2] = std::array::from_fn(|e| Reading {net,u:[k as f64,k as f64+1.],roll:fit.roll,
+                end:Some((fit.roll[e],order)),sd:&*at_ends[e]});
+            let chords = [traces(&readings[0])?,traces(&readings[1])?];
+            Ok(Trimmed {readings,chords})
+        }).collect::<Result<_,_>>()?;
+        let (sheet,cut) = trimmed(net,pieces,fit.roll,&faces,tol)?;
+        // each face's meeting with the tool at each end: its rim there where it is kept (on the
+        // faces holding the piece), and the curves it is cut along there (on the face each lies on)
+        for k in 0..pieces {
+            let surface = cut.surfaces[k].clone();
+            for (e,pose) in ends.iter().enumerate() {
                 for (f,face) in pose.faces.iter().enumerate() {
-                    let surfaces = [face.surface.clone(),sheet.faces[k].surface.clone()];
-                    let holds = holding.contains(&f);
-                    // a tube touching all round stands nowhere inside the tool there: its touch
-                    // is the whole meeting; any other's is read in the face's domain
-                    let mut curves = if holds { vec![iso.clone()] } else { Vec::new() };
-                    // a touching piece's rim touches the tool, a dipped stretch's crosses it
-                    let order = if sides[k] == Side::Touching { 2 } else { 1 };
-                    if !whole { curves.extend(met(net,[k as f64,k as f64+1.],fit.roll,holds.then_some((te,order)),&face.surface,tol)?) }
-                    given.push(Given {surfaces,curves});
+                    let mut curves: Vec<Curve> = Vec::new();
+                    if holding(k).contains(&f) { curves.extend(cut.rims[k][e].iter().cloned()) }
+                    for (c,xs) in &cut.chords[k][e] {
+                        // (a crossing passing from one of the tool's faces to the next is not yet
+                        // cut where it does: refused, not given to one of them alone)
+                        let on: Vec<usize> = xs.iter().map(|&x| ring.faces[ring.signed(back(poses[e],x)).1]).collect();
+                        if on.iter().any(|&g| g != on[0]) {
+                            return Err(Unbuilt::Failed("a ring's sheet crosses the tool where it starts or stops across two of its faces: not yet \
+                                cut there".into()))
+                        }
+                        if on[0] == f { curves.push(c.clone()) }
+                    }
+                    given.push(Given {surfaces:[face.surface.clone(),surface.clone()],curves});
                 }
             }
         }
@@ -788,45 +841,66 @@ pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],tol: f64) -> Result<(Vec
     Ok((sheets,given))
 }
 
-/// How many points along each rim of a face its meeting with a surface is first bracketed at
-/// (`met`), crowded toward the ends of the roll; the step a trace of it takes across the face, as a
-/// part of the face's domain each way; and the most steps it takes.
+/// How many points along each rim of a face its meeting with the tool is first bracketed at
+/// (`traces`), crowded toward the ends of the roll; the step a trace of it takes across the face, as
+/// a part of the face's domain each way; and the most steps it takes.
 const MET_RIM: usize = 512;
 const MET_STEP: f64 = 2e-3;
 const MET_MOST: usize = 20_000;
 
-/// **Where the face of `net` over `[u0, u1]` × `roll` meets the surface `s`, read in its own
-/// domain**: the zero set of `s`'s signed distance at the face's points (`Surface::implicit`). At
-/// the end of the roll `end` the face's rim lies on `s` — touching it to the `order` 2 where the
-/// face is a touching piece's, the rim the contact where the tool stands, or crossing it, `order`
-/// 1, where it is a dipped stretch's — so that zero is divided out: `G = (F(u, t) − F(u, end)) /
-/// (t − end)^order` (the rim's own fitting error taken off), whose sign is the sheet's side of the
-/// tool beside its rim, carried onto the rim itself from just off it; its zero set reaches that rim
-/// only at the face's corners, where a dipped stretch's rim meets a touching piece's, and a trace
-/// ending beside one ends at it. Each place it crosses a rim of the face is bracketed among `MET_RIM` points
-/// (crowded toward the ends of the roll, where a crossing near a fold runs close beside the touch)
-/// and settled by bisection; from each, the zero set is traced across the face in its normalised
-/// domain — a step along it, then Newton back onto it along its gradient — until it leaves the face,
-/// where it is settled on the rim it crosses; each end met is used once. A trace's points, on the
-/// face exactly and on `s` to rounding, are interpolated in space (a cubic through them). A closed
-/// curve inside the face, crossing no rim, is not read (the judge sees what it misses). The
-/// surface's own extension past its face is read too; the arrangement keeps what lies in both.
-fn met(net: &Net,[u0,u1]: [f64;2],[a,b]: [f64;2],end: Option<(f64,i32)>,s: &crate::geom::Surface,tol: f64) -> Result<Vec<Curve>,Unbuilt> {
-    // the face's domain normalised: x across it, y along the roll
-    let at = |x: f64,y: f64| (u0+(u1-u0)*x,a+(b-a)*y);
-    let f = |x: f64,y: f64| { let (u,t) = at(x,y); s.implicit(net.point(u,t)) };
-    // how near the touching rim the division is not made but carried from just off it
-    let near = 1e-4;
-    let ye = end.map(|(e,order)| ((e-a)/(b-a),order));
-    let g = |x: f64,y: f64| -> f64 {
-        let Some((e,order)) = ye else { return f(x,y) };
-        let raw = |y: f64| (f(x,y)-f(x,e))/(y-e).powi(order);
+/// **A tube's face read against the tool at one end pose, in its own domain**: the face of `net`
+/// over `u` × `roll`, normalised (`x` across it, `y` along the roll), and the tool's signed distance
+/// `sd` at its points, `F`. At the end of the roll `end` the face's rim lies on the tool — touching
+/// it to the `order` 2 where the face is a touching piece's, the rim the contact where the tool
+/// stands, or crossing it, `order` 1, where it is a dipped stretch's — so that zero is divided out:
+/// `G = (F(x, y) − F(x, end)) / (y − end)^order` (the rim's own fitting error taken off), whose
+/// sign is the sheet's side of the tool beside its rim, carried onto the rim itself from just off
+/// it.
+struct Reading<'a> { net: &'a Net,u: [f64;2],roll: [f64;2],end: Option<(f64,i32)>,sd: &'a dyn Fn(V) -> f64 }
+
+impl Reading<'_> {
+    /// The face's point at `(x, y)` and its parameters.
+    fn at(&self,x: f64,y: f64) -> (V,[f64;2]) {
+        let (u,t) = (self.u[0]+(self.u[1]-self.u[0])*x,self.roll[0]+(self.roll[1]-self.roll[0])*y);
+        (self.net.point(u,t),[u,t])
+    }
+    fn f(&self,x: f64,y: f64) -> f64 { (self.sd)(self.at(x,y).0) }
+    /// The end of the roll the touch is divided out at, normalised, and its order.
+    fn end(&self) -> Option<(f64,i32)> { self.end.map(|(e,order)| ((e-self.roll[0])/(self.roll[1]-self.roll[0]),order)) }
+    fn g(&self,x: f64,y: f64) -> f64 {
+        // how near the touching rim the division is not made but carried from just off it
+        let near = 1e-4;
+        let Some((e,order)) = self.end() else { return self.f(x,y) };
+        let raw = |y: f64| (self.f(x,y)-self.f(x,e))/(y-e).powi(order);
         let d = y-e;
         if d.abs() >= near { return raw(y) }
         let w = if e < 0.5 { 1. } else { -1. };
         let (g1,g2) = (raw(e+w*near),raw(e+2.*w*near));
         g1+(g1-g2)*(d-w*near)/(w*near)
-    };
+    }
+    /// Whether the face stands outside the tool at `(x, y)`: `F`'s sign, read off `G`'s (the touch
+    /// at the rim divided out, so it holds beside the rim).
+    fn outside(&self,[x,y]: P2) -> bool {
+        let g = self.g(x,y);
+        match self.end() {
+            Some((e,order)) if order % 2 == 1 && y < e => g < 0.,
+            _ => g > 0.,
+        }
+    }
+}
+
+/// **Where a face crosses the tool at an end pose** (`Reading`): `G`'s zero set, whose curves reach
+/// the rim at that end only at the face's corners — where a dipped stretch's rim meets a touching
+/// piece's — and a trace ending beside one ends at it. Each place it crosses a rim of the face is
+/// bracketed among `MET_RIM` points (crowded toward the ends of the roll, where a crossing near a
+/// fold runs close beside the touch) and settled by bisection; from each, the zero set is traced
+/// across the face in its normalised domain — a step along it, then Newton back onto it along its
+/// gradient — until it leaves the face, where it is settled on the rim it crosses; each end met is
+/// used once. A closed curve inside the face, crossing no rim, is not read (the judge sees what it
+/// misses). Each curve's points in the normalised domain, from one rim to another.
+fn traces(r: &Reading) -> Result<Vec<Vec<P2>>,Unbuilt> {
+    let g = |x: f64,y: f64| r.g(x,y);
+    let ye = r.end();
     // the gradient in the normalised domain, by differences
     let grad = |x: f64,y: f64| -> [f64;2] {
         let h = 1e-6;
@@ -850,19 +924,19 @@ fn met(net: &Net,[u0,u1]: [f64;2],[a,b]: [f64;2],end: Option<(f64,i32)>,s: &crat
     // each crossing of a rim, and the way into the face from that rim
     let mut ends: Vec<([f64;2],[f64;2])> = Vec::new();
     let inward = [[0.,1.],[-1.,0.],[0.,-1.],[1.,0.]];
-    for (r,rim) in rims.iter().enumerate() {
+    for (k,rim) in rims.iter().enumerate() {
         // the rim on the end the zero is divided out at holds none of it but at its corners
-        if ye.is_some_and(|(e,_)| r%2 == 0 && (rim(0.)[1]-e).abs() < 0.5) { continue }
-        let ss: Vec<f64> = (0..=MET_RIM).map(|k| if r%2 == 1 { crowd(k) } else { k as f64/MET_RIM as f64 }).collect();
+        if ye.is_some_and(|(e,_)| k%2 == 0 && (rim(0.)[1]-e).abs() < 0.5) { continue }
+        let ss: Vec<f64> = (0..=MET_RIM).map(|i| if k%2 == 1 { crowd(i) } else { i as f64/MET_RIM as f64 }).collect();
         let vs: Vec<f64> = ss.iter().map(|&s| { let p = rim(s); g(p[0],p[1]) }).collect();
-        for k in 0..MET_RIM {
-            if (vs[k] > 0.) != (vs[k+1] > 0.) { ends.push((settle(rim(ss[k]),rim(ss[k+1])),inward[r])) }
+        for i in 0..MET_RIM {
+            if (vs[i] > 0.) != (vs[i+1] > 0.) { ends.push((settle(rim(ss[i]),rim(ss[i+1])),inward[k])) }
         }
     }
     let inside = |p: [f64;2]| p[0] >= 0. && p[0] <= 1. && p[1] >= 0. && p[1] <= 1.;
     let apart = |p: [f64;2],q: [f64;2]| (p[0]-q[0]).hypot(p[1]-q[1]);
     let debug = std::env::var_os("SOLVENT_RING_DEBUG").is_some();
-    if debug { eprintln!("met: face [{u0}, {u1}] end {end:?} {}: rim crossings {:?}",s.kind(),ends.iter().map(|e| e.0).collect::<Vec<_>>()) }
+    if debug { eprintln!("met: face {:?} end {:?}: rim crossings {:?}",r.u,r.end,ends.iter().map(|e| e.0).collect::<Vec<_>>()) }
     let mut used = vec![false;ends.len()];
     let mut out = Vec::new();
     for start in 0..ends.len() {
@@ -924,28 +998,270 @@ fn met(net: &Net,[u0,u1]: [f64;2],[a,b]: [f64;2],end: Option<(f64,i32)>,s: &crat
         }
         if debug { eprintln!("met:   traced {} points from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]) }
         if closed_at.is_some() || pts.len() < 2 { continue }
-        let xs: Vec<V> = pts.iter().map(|&[x,y]| { let (u,t) = at(x,y); net.point(u,t) }).collect();
-        let mut params = vec![0.];
-        for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
-        let length = *params.last().unwrap();
-        if !(length > tol) { continue }
-        let params: Vec<f64> = params.iter().map(|p| p/length).collect();
-        // a cubic through every `stride`-th point, the coarsest within a quarter of `tol` of all
-        let thinned = |stride: usize| -> Option<crate::nurbs::BSpline> {
-            let mut keep: Vec<usize> = (0..xs.len()).step_by(stride).collect();
-            if *keep.last().unwrap() != xs.len()-1 { keep.push(xs.len()-1) }
-            if keep.len() < 2 { return None }
-            let c = crate::nurbs::interpolate(&keep.iter().map(|&i| xs[i]).collect::<Vec<_>>(),&keep.iter().map(|&i| params[i]).collect::<Vec<_>>(),3)?;
-            xs.iter().zip(&params).all(|(&x,&t)| norm(crate::util::space::sub(c.point(t),x)) <= 0.25*tol).then_some(c)
-        };
-        let curve = [64,32,16,8,4,2,1].into_iter().find_map(thinned).ok_or_else(|| Unbuilt::Failed("a ring's sheet's meeting with the \
-            tool could not be interpolated".into()))?;
-        out.push(Curve::BSpline(Arc::new(curve)));
+        out.push(pts);
     }
     Ok(out)
 }
 
+/// **A trace of a meeting in space**: the face's points along it (`pts`, in its normalised domain;
+/// on the face exactly and on the tool to rounding), interpolated — a cubic through every so many of
+/// them, the coarsest within a quarter of `tol` of all.
+fn chord_curve(r: &Reading,pts: &[P2],tol: f64) -> Result<Curve,Unbuilt> {
+    let xs: Vec<V> = pts.iter().map(|&[x,y]| r.at(x,y).0).collect();
+    let mut params = vec![0.];
+    for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
+    let length = *params.last().unwrap();
+    let params: Vec<f64> = params.iter().map(|p| p/length.max(1e-300)).collect();
+    let thinned = |stride: usize| -> Option<crate::nurbs::BSpline> {
+        let mut keep: Vec<usize> = (0..xs.len()).step_by(stride).collect();
+        if *keep.last().unwrap() != xs.len()-1 { keep.push(xs.len()-1) }
+        if keep.len() < 2 { return None }
+        let c = crate::nurbs::interpolate(&keep.iter().map(|&i| xs[i]).collect::<Vec<_>>(),&keep.iter().map(|&i| params[i]).collect::<Vec<_>>(),3)?;
+        xs.iter().zip(&params).all(|(&x,&t)| norm(crate::util::space::sub(c.point(t),x)) <= 0.25*tol).then_some(c)
+    };
+    let curve = [64,32,16,8,4,2,1].into_iter().find_map(thinned).ok_or_else(|| Unbuilt::Failed("a ring's sheet's meeting with the \
+        tool could not be interpolated".into()))?;
+    Ok(Curve::BSpline(Arc::new(curve)))
+}
+
+/// A tube's face read at both end poses (`Reading`) and the curves it crosses the tool along at
+/// each (`traces`).
+struct Trimmed<'a> { readings: [Reading<'a>;2],chords: [Vec<Vec<P2>>;2] }
+
+/// What a trimmed tube was cut along: each face's surface; its rim at each end where it is kept
+/// (the touch there); and the curves it is cut along at each end, each with the points it was
+/// traced through.
+struct Cut { surfaces: Vec<crate::geom::Surface>,rims: Vec<[Vec<Curve>;2]>,chords: Vec<[Vec<(Curve,Vec<V>)>;2]> }
+
+/// One way round a kept piece of a face: along its square's side from one place round it to the
+/// next (`perimeter`), or along a chord, forward or back.
+#[derive(Clone,Copy,Debug)]
+enum Walk { Side(f64,f64),Chord(usize,bool) }
+
+/// A place on the face's normalised square, as a way round it counter-clockwise from `(0, 0)`:
+/// along the rim at the start, up the far seam, back along the rim at the stop, down the near seam.
+fn perimeter([x,y]: P2) -> f64 {
+    const ON: f64 = 1e-12;
+    if y <= ON { x } else if x >= 1.-ON { 1.+y } else if y >= 1.-ON { 2.+(1.-x) } else { 3.+(1.-y) }
+}
+
+/// The point that far round the square.
+fn round_square(s: f64) -> P2 {
+    let s = s.rem_euclid(4.);
+    if s <= 1. { [s,0.] } else if s <= 2. { [1.,s-1.] } else if s <= 3. { [3.-s,1.] } else { [0.,4.-s] }
+}
+
+/// **A square's pieces, parted by chords**: the face's normalised square cut by curves from one
+/// place on its rim to another (crossing none of the others), each piece walked counter-clockwise —
+/// along the rim to a chord's end, along it to its other end, on round from there — a disc's pieces
+/// between chords that do not cross, each side and each way along a chord walked once.
+fn pieces_of_square(chords: &[Vec<P2>]) -> Result<Vec<Vec<Walk>>,Unbuilt> {
+    // the places marked round it: the corners, and each chord's ends (an end at a corner the corner)
+    let mut marks: Vec<(f64,Option<(usize,usize)>)> = Vec::new();
+    for (i,c) in chords.iter().enumerate() { for (k,p) in [c[0],c[c.len()-1]].into_iter().enumerate() { marks.push((perimeter(p),Some((i,k)))) } }
+    for corner in 0..4 { if !marks.iter().any(|m| (m.0-corner as f64).abs() < 1e-12) { marks.push((corner as f64,None)) } }
+    marks.sort_by(|a,b| a.0.total_cmp(&b.0));
+    if marks.windows(2).any(|w| w[1].0-w[0].0 < 1e-12) {
+        return Err(Unbuilt::Failed("two of a ring's sheet's crossings of the tool end at one place on a face's rim".into()))
+    }
+    let n = marks.len();
+    let place = |end: (usize,usize)| marks.iter().position(|m| m.1 == Some(end)).unwrap();
+    let mut walked = vec![false;n];
+    let mut out = Vec::new();
+    for first in 0..n {
+        if walked[first] { continue }
+        let mut walk = Vec::new();
+        let mut j = first;
+        loop {
+            if walked[j] {
+                if j == first { break }
+                return Err(Unbuilt::Failed("a ring's sheet's face is cut by crossings of the tool that cross".into()))
+            }
+            walked[j] = true;
+            let next = (j+1)%n;
+            walk.push(Walk::Side(marks[j].0,if next == 0 { 4. } else { marks[next].0 }));
+            j = match marks[next].1 {
+                // along the chord to its other end, then on round from there
+                Some((i,k)) => { walk.push(Walk::Chord(i,k == 0)); place((i,1-k)) }
+                None => next,
+            };
+        }
+        out.push(walk);
+    }
+    Ok(out)
+}
+
+/// **A tube's net cut to where its faces stand outside the tool at both end poses**: each face's
+/// square cut by the curves it crosses the tool along at either end (`pieces_of_square`), and the
+/// pieces kept that stand outside at both (`Reading::outside`, read just inside a side of each), as
+/// faces of one sheet named `sheet` — along the face's rims, the net's iso-curves at the ends of the
+/// roll; along its seams, those at the pieces' ends, each shared with the face beside it (the last
+/// face's far seam the first's near one, a tube); along its chords, the crossing interpolated in
+/// space (`chord_curve`). A crossing ending on a seam ends where the face beside it finds its own
+/// (the two read the one curve of the net; within `SNAP` of one another they are one place).
+fn trimmed(net: &Net,pieces: usize,roll: [f64;2],faces: &[Trimmed],tol: f64) -> Result<(Brep,Cut),Unbuilt> {
+    use crate::topo::{Coedge,EdgeCurve,Face,Pcurve};
+    const SNAP: f64 = 1e-7;
+    let [a,b] = roll;
+    let t_of = |y: f64| a+(b-a)*y;
+    // each face's chords, both ends', as one list; and the seams' places, both faces' ends merged
+    let mut chords: Vec<Vec<(usize,Vec<P2>)>> = faces.iter()
+        .map(|f| (0..2).flat_map(|e| f.chords[e].iter().map(move |c| (e,c.clone()))).collect()).collect();
+    let mut seams: Vec<Vec<f64>> = vec![vec![0.,1.];pieces];
+    for (k,cs) in chords.iter().enumerate() {
+        for (_,c) in cs { for p in [c[0],c[c.len()-1]] {
+            if p[0] <= 1e-12 { seams[k].push(p[1]) } else if p[0] >= 1.-1e-12 { seams[(k+1)%pieces].push(p[1]) }
+        } }
+    }
+    for s in &mut seams {
+        s.sort_by(f64::total_cmp);
+        s.dedup_by(|x,y| (*x-*y).abs() <= SNAP);
+    }
+    let snapped = |seam: usize,y: f64| seams[seam].iter().copied().min_by(|p,q| (p-y).abs().total_cmp(&(q-y).abs())).unwrap();
+    for (k,cs) in chords.iter_mut().enumerate() {
+        for (_,c) in cs.iter_mut() {
+            let last = c.len()-1;
+            for i in [0,last] {
+                if c[i][0] <= 1e-12 { c[i] = [0.,snapped(k,c[i][1])] } else if c[i][0] >= 1.-1e-12 { c[i] = [1.,snapped((k+1)%pieces,c[i][1])] }
+            }
+        }
+    }
+    let mut out = Brep::default();
+    let frame = Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]);
+    // the vertices: a seam's at its places, a rim's at a chord's end on it
+    let mut at_seam: std::collections::BTreeMap<(usize,usize),u32> = std::collections::BTreeMap::new();
+    let mut at_rim: Vec<(usize,usize,f64,u32)> = Vec::new();
+    let mut vertex = |out: &mut Brep,k: usize,[x,y]: P2| -> u32 {
+        let seam = if x <= 1e-12 { Some(k) } else if x >= 1.-1e-12 { Some((k+1)%pieces) } else { None };
+        match seam {
+            Some(s) => {
+                let i = seams[s].iter().position(|&q| (q-y).abs() <= SNAP).unwrap_or(0);
+                *at_seam.entry((s,i)).or_insert_with(|| out.vertex(net.point(s as f64,t_of(seams[s][i]))))
+            }
+            None => {
+                let end = usize::from(y > 0.5);
+                if let Some(&(_,_,_,v)) = at_rim.iter().find(|r| r.0 == k && r.1 == end && (r.2-x).abs() <= 1e-12) { return v }
+                let v = out.vertex(net.point(k as f64+x,t_of(y)));
+                at_rim.push((k,end,x,v));
+                v
+            }
+        }
+    };
+    // each seam's iso-curve, and its edges between places, made as they are first walked
+    let seam_curve: Vec<Curve> = (0..pieces).map(|s| Curve::BSpline(Arc::new(net.segment([s as f64,s as f64+1.],roll).row(0)))).collect();
+    let mut seam_edges: std::collections::BTreeMap<(usize,usize),u32> = std::collections::BTreeMap::new();
+    let mut cut = Cut {surfaces:Vec::new(),rims:Vec::new(),chords:Vec::new()};
+    for (k,face) in faces.iter().enumerate() {
+        let piece = net.segment([k as f64,k as f64+1.],roll);
+        let rim: [Curve;2] = [Curve::BSpline(Arc::new(piece.column(0))),Curve::BSpline(Arc::new(piece.column(piece.poles[0].len()-1)))];
+        let surface = crate::geom::Surface::BSpline(frame,Arc::new(piece));
+        let (u0,u1) = (k as f64,k as f64+1.);
+        let polys: Vec<Vec<P2>> = chords[k].iter().map(|(_,c)| c.clone()).collect();
+        let walks = pieces_of_square(&polys)?;
+        // the chords' edges, made once, each walked by the two pieces either side
+        let mut chord_edges: Vec<Option<u32>> = vec![None;polys.len()];
+        let mut rim_kept = [false;2];
+        let mut kept_chords: [Vec<(Curve,Vec<V>)>;2] = [Vec::new(),Vec::new()];
+        for walk in walks {
+            // kept where it stands outside the tool at both ends: read just inside its longest side
+            let Some((s0,s1)) = walk.iter().filter_map(|w| match *w { Walk::Side(s0,s1) => Some((s0,s1)),_ => None })
+                .max_by(|x,y| (x.1-x.0).total_cmp(&(y.1-y.0))) else { continue };
+            let side = s0.floor() as usize;
+            let m = round_square(0.5*(s0+s1));
+            let into = [[0.,1.],[-1.,0.],[0.,-1.],[1.,0.]][side.min(3)];
+            // no farther in than half the way to the nearest chord
+            let clear = polys.iter().flatten().map(|p| (p[0]-m[0]).hypot(p[1]-m[1])).fold(f64::INFINITY,f64::min);
+            let depth = (0.5*clear).min(1e-3).min(0.25*(s1-s0));
+            let probe = [m[0]+into[0]*depth,m[1]+into[1]*depth];
+            if !(face.readings[0].outside(probe) && face.readings[1].outside(probe)) { continue }
+            let mut lp: Vec<Coedge> = Vec::new();
+            for w in walk {
+                match w {
+                    Walk::Side(s0,s1) => {
+                        let (p,q) = (round_square(s0),round_square(s1));
+                        let (vp,vq) = (vertex(&mut out,k,p),vertex(&mut out,k,q));
+                        match s0.floor() as usize {
+                            // along a rim: the iso-curve there, from one place to the other
+                            side @ (0|2) => {
+                                let e = side/2;
+                                let (lo,hi) = if p[0] <= q[0] { ((p,vp),(q,vq)) } else { ((q,vq),(p,vp)) };
+                                let edge = out.edge(EdgeCurve::Curve(rim[e].clone()),[u0+lo.0[0],u0+hi.0[0]],[lo.1,hi.1]);
+                                let t = t_of(e as f64);
+                                lp.push(Coedge {edge,reversed:p[0] > q[0],pcurve:Pcurve::Line {a:[u0+lo.0[0],t],b:[u0+hi.0[0],t]}});
+                                rim_kept[e] = true;
+                            }
+                            // along a seam: its edge between the two places, shared with the face beside
+                            side => {
+                                let (s,u) = if side == 1 { ((k+1)%pieces,u1) } else { (k,u0) };
+                                let (lo,hi) = if p[1] <= q[1] { ((p,vp),(q,vq)) } else { ((q,vq),(p,vp)) };
+                                let i = seams[s].iter().position(|&y| (y-lo.0[1]).abs() <= SNAP).unwrap_or(0);
+                                let edge = *seam_edges.entry((s,i)).or_insert_with(|| out.edge(EdgeCurve::Curve(seam_curve[s].clone()),
+                                    [t_of(lo.0[1]),t_of(hi.0[1])],[lo.1,hi.1]));
+                                lp.push(Coedge {edge,reversed:p[1] > q[1],pcurve:Pcurve::Line {a:[u,t_of(lo.0[1])],b:[u,t_of(hi.0[1])]}});
+                            }
+                        }
+                    }
+                    Walk::Chord(i,forward) => {
+                        let (e,pts) = &chords[k][i];
+                        let reading = &face.readings[*e];
+                        let edge = match chord_edges[i] {
+                            Some(edge) => edge,
+                            None => {
+                                let curve = chord_curve(reading,pts,tol)?;
+                                let (v0,v1) = (vertex(&mut out,k,pts[0]),vertex(&mut out,k,pts[pts.len()-1]));
+                                kept_chords[*e].push((curve.clone(),pts.iter().map(|p| reading.at(p[0],p[1]).0).collect()));
+                                let edge = out.edge(EdgeCurve::Curve(curve),[0.,1.],[v0,v1]);
+                                chord_edges[i] = Some(edge);
+                                edge
+                            }
+                        };
+                        let uv = |p: P2| [u0+p[0],t_of(p[1])];
+                        lp.push(Coedge {edge,reversed:!forward,pcurve:Pcurve::Inverse {a:uv(pts[0]),b:uv(pts[pts.len()-1])}});
+                    }
+                }
+            }
+            out.faces.push(Face {surface:surface.clone(),reversed:false,loops:vec![lp],name:"sheet".into()});
+        }
+        cut.surfaces.push(surface);
+        cut.rims.push(std::array::from_fn(|e| if rim_kept[e] { vec![rim[e].clone()] } else { Vec::new() }));
+        cut.chords.push(kept_chords);
+    }
+    Ok((out.compacted(),cut))
+}
+
 impl Ring {
+    /// **The ring's signed distance at the point `x`** (its own coordinates), and the piece of its
+    /// meridian nearest it: its `(ρ, z)`'s distance from the loop, less than nought inside it — on
+    /// the side of the nearest piece the solid is on (its left, the loop walked counter-clockwise),
+    /// which near the loop is the side the point is on. A torus's is its tube's distance less its
+    /// radius; each piece's the tool face it is (`faces`).
+    pub fn signed(&self,x: V) -> (f64,usize) {
+        let l = self.frame.local(x);
+        let q = [l[0].dhypot(l[1]),l[2]];
+        let mut best = (f64::INFINITY,0,false);
+        for (k,e) in self.elements.iter().enumerate() {
+            let (d,inside) = match *e {
+                Element::Line {a,b} => {
+                    let (ab,aq) = ([b[0]-a[0],b[1]-a[1]],[q[0]-a[0],q[1]-a[1]]);
+                    let s = ((aq[0]*ab[0]+aq[1]*ab[1])/(ab[0]*ab[0]+ab[1]*ab[1]).max(1e-300)).clamp(0.,1.);
+                    ((q[0]-a[0]-s*ab[0]).dhypot(q[1]-a[1]-s*ab[1]),ab[0]*aq[1]-ab[1]*aq[0] > 0.)
+                }
+                Element::Arc {c,r,from,sweep} => {
+                    // how far round from `from` the way it sweeps, past its end to the nearer end
+                    let w = ((q[1]-c[1]).datan2(q[0]-c[0])-from)*sweep.signum();
+                    let w = w.rem_euclid(TAU);
+                    let rho = (q[0]-c[0]).dhypot(q[1]-c[1]);
+                    let d = if w <= sweep.abs() { (rho-r).abs() } else {
+                        e.ends().iter().map(|p| (q[0]-p[0]).dhypot(q[1]-p[1])).fold(f64::INFINITY,f64::min)
+                    };
+                    (d,if sweep > 0. { rho < r } else { rho > r })
+                }
+            };
+            if d < best.0 { best = (d,k,inside) }
+        }
+        (if best.2 { -best.0 } else { best.0 },best.1)
+    }
+
     /// **Whether the ring holds the point `x`** (its own coordinates): its `(ρ, z)` within the
     /// meridian loop, read against the loop drawn finely (each piece in 512 chords) by its winding.
     pub fn holds(&self,x: V) -> bool {

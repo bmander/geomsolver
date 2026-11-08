@@ -562,7 +562,7 @@ it. It stays as the fast path where #699 D says so.
    the block less `V − ∫ z n_z dS` over the mill's faces turned up, to 1e-9; a round meeting a
    neighbour in a sharp rim at a lean is refused by name until its fan is entered.
 
-   *A ring under any rigid motion, its folds read but not yet built* (`swept::rings`,
+   *A ring under any rigid motion, built* (`swept::rings`,
    `tests/swept_rings.rs`): the tumbling torus (`swept_tumble.sv`) and every tool of revolution whose
    meridian is a loop clear of its axis. Such a tool has no pole, so its contact is read meridian by
    meridian in closed form — on an arc `n · v = A cos ψ + B sin ψ`, two roots half a turn apart,
@@ -573,17 +573,26 @@ it. It stays as the fast path where #699 D says so.
    Where it is negative the tool holds the point at the instants beside, and the sheet there is
    buried; where it changes sign, the fold. Under the tumble the contact is two curves at every
    instant, the outer touching all round, the inner folding four times, and each contact is held or
-   not beside its instant as its `s''` says. Two lessons of the build. A sheet cut open at its folds
+   not beside its instant as its `s''` says. Three lessons of the build. A sheet cut open at its folds
    leaves rims inside the sweep that cross the torus where it starts in curves ending inside its
    face, which no arrangement parts space by: each curve is entered whole, a closed tube, its buried
    pieces too, and across each fold a bridge dipped into the tool (inside the sweep, and regular
    where the cuspidal sheet is not). And a search for the tube's meeting with the tool at an end
    pose starts beside the touch along the rim: it is read instead in the tube's own domain, the
-   zero set of the tool's signed distance with the touch divided out, and given whole. What is left
-   is at the end poses near each fold, where the bridge and the torus stand within the
-   arrangement's tolerance over a stretch the tube's edges cross: the torus's face is not parted
-   there. Until it is, the road is not a class the dispatch admits; `closed::ring` builds it alone.
-   The tumble's volume, by a Monte Carlo of the definition, is 25.33 ± 0.05.
+   zero set of the tool's signed distance with the touch divided out. The third lesson closed it. A
+   tube entered from its rim lay over its own rim beside each fold corner at the end poses — near a
+   fold the contact slides along itself, and a fold piece's sheet just past its rim stood over the
+   rim, inside the torus — a meeting of the tube with itself that no arrangement seeks: the
+   torus's face was left a slit along the touching rim beside it, and the sweep's inside one cell
+   with its outside. So a tube that folds is entered only where it stands outside the tool at both
+   end poses (`rings::trimmed`): each face cut along those meetings, the pieces inside dropped (inside
+   the sweep, they part nothing of it), every free edge of the tube on the tool where it starts or
+   stops and given as its whole meeting. The tumbling torus is built closed and judged in some
+   thirty seconds (the slow tier): 25.275, against 25.260 ± 0.005 by a Monte Carlo of the
+   definition (80 million points, the ring's signed distance at 40 001 poses), the two disagreeing
+   at none of 100 000 points read one by one. The road is not yet a class the dispatch admits;
+   `closed::ring` builds it alone, and a ring of several faces whose tube crosses the tool at an end
+   pose across two of them is refused until that crossing is cut where it passes between them.
 
    *X5 built* (`tests/swept_loci.rs`): a ball screwed through more than a turn at a lead short of
    its diameter, whose pipe, entered whole, crossed itself and was refused by the judge. Its pipe is
