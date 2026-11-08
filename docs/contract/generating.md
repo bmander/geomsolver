@@ -1542,8 +1542,9 @@ there, in order along it and paired where the middle lies on the tool, a `Piece:
 (`Ruled::crossing`, `crossed`), so the walk steps from a side's root onto its rim's fan partway
 along the side (`step`, `Piece::rim_of`), off the fan's far end onto the cap's line and off the
 line's end onto the next rim, and off a rim's first end onto its side at the station whose root
-it is (`side_at`). S1 refuses where a corner's, a rim's or a crease's root runs off its line
-(`VERTEX`: the walk reaches a vertex of the prism, a sharp edge of the sweep), where a side's root
+it is (`side_at`). S1 refuses where a corner's, a rim's or a crease's root runs off its line at a
+vertex some edge of which is no fan the walk reads (`VERTEX`; at any other it goes round the
+vertex, G1 below), where a side's root
 runs over a cap with no rim to cross (`OVER_CAP`: a round side's), where a cap's line leaves it
 onto none (`OFF_CAP`), and where a silhouette's ruling runs over a cap under a slide or a screw
 along the extrusion (`SILHOUETTE_OVER_CAP`), each within the walk's margin of the blank. The sheet
@@ -1555,7 +1556,7 @@ slice of its half-spaces bounding what the turn removes there, within 2e-5 at 0.
 0.01 by the fit's bias) and `prism_twists::a_bars_flat_end_screwed_cuts_a_floor` (the bar screwed
 8 mm a turn, held to arithmetic over `z − kθ`, which the screw keeps, within 2e-5 at 0.002 mm), each
 STL agreeing with the field; with the refusals
-`prism_twists::a_corner_reaching_a_cap_under_a_screw_is_refused` (S1, `VERTEX`),
+`solid_sweeps_examples::the_capped_thread_goes_round_its_bars_vertices` (S1, `VERTEX`, before G1),
 `a_cap_in_the_blank_under_a_slide_is_refused` (S1) and
 `a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs` (T1 here; the closed class's), and
 `object_builder::a_flat_end_turned_builds_at_the_displays_samples`.
@@ -1577,7 +1578,7 @@ leaning across the turn drafted 2° both ways, its inner side's halves joined ro
 its shadow from its ten half-spaces within 2e-5 at 0.001 mm) and
 `prism_twists::a_bar_drafted_both_ways_screwed_crosses_its_crease` (screwed 6 mm a turn, by `z − kθ`,
 within 2e-5 at 0.001 mm), each STL agreeing with the field, with the refusal
-`prism_twists::a_corner_meeting_its_crease_turned_is_refused` (S1) and
+`prism_twists::a_corner_meeting_its_crease_goes_round_the_vertex` (S1 before G1) and
 `object_builder::a_creased_bar_turned_builds_at_the_displays_samples`.
 
 **A ruling in contact all along it under a constant twist (#684 AF):** a plane side each of whose
@@ -1667,8 +1668,8 @@ creased fit (`nurbs::interpolate_creased`), no fold read across its knot, the sh
 there. S2 counts a reaching root of a fan stepped across at the crease's point as on the walk; S3
 is not read at the crease's node. A standing fan among the walk's last `MARGIN` rings is where the
 walk ends, one node at its point (S1 refuses one there that reaches the blank, which the margin
-leaves none). An apex on the tool's axis is walked by its own junction (G5, below); a vertex of a
-prism stays refused (`VERTEX`). The gate is
+leaves none). An apex on the tool's axis is walked by its own junction (G5, below), and so is a
+vertex of a prism every edge of which is a fan (G1, below). The gate is
 `solid_sweeps_examples::the_v_wheel_slid_square_cuts_a_v_groove` (`solid_sweeps/vgroove.sv`, a V
 wheel slid across a block square to its axis, the groove `2² tan 30° × 20` exactly) and
 `turns_and_slides::a_v_wheel_slid_square_leaves_its_profile_creased_at_the_rim` (up the rod, the
@@ -1711,6 +1712,40 @@ agreeing with the field. Its point read right is the kernel's and the field's (`
 inverse across the axis and point location near a pole, `fields.md`'s convex arc at the axis), held
 by `swept_apex::behind_a_point_is_outside_the_tool` and
 `the_drawings_field_reads_behind_an_ogives_point_as_outside`.
+
+**A vertex of a prism (#721 G1):** a corner's, a rim's or a crease's fan (`Ruling::Rib`,
+`Ruling::Rim`) takes among its stations those where its root reaches either end of its ruling
+(`Ruled::crossing` at both ends, as a side's at its rims), each end a vertex of the prism. For each
+such end `Junctions::new` reads the vertex's fans (`Along::vertices`, by `Piece::ruling_ends` within
+1e-9 of the tool's size) where the vertex is convex and every edge of it is a fan the walk reads: as
+many fans as faces meet there — the sides with a corner there and the caps they run to (a drafted
+half's end at its parting plane is a crease, no cap) — and three at least, on a tool every face of
+which is a side or a cap; else none. Where a fan's
+next ring has no root and its root stands at a ruling's end (`step`, `round_vertex`), the walk goes
+on onto the first of the vertex's other fans with a station whose root is the vertex, the way its
+roots go on (`side_at`, as a side is entered off a rim). Every normal of the cone between the faces
+there is the tool's, and those square to the motion lie on one arc of it, from the fan the walk
+came along to the one it leaves along: all stand at the vertex, so the second root is a crossing's,
+dropped, and the node before it is marked `Node::vertex`, a crease (`creases`,
+`Characteristic::vertices`), built as V's is. Where some edge of the vertex is no fan (a concave
+corner, a side no line, a cap of a tool no lone prism) the walk ends as before (`VERTEX`). Under a
+slide, or a screw along the extrusion, the silhouette's turn at a vertex is still refused
+(`SILHOUETTE_OVER_CAP`, G4), as are a cap line leaving at a vertex (`OFF_CAP`), a round side's
+crease (`OVER_CREASE`), a flat's line running off at one (`OFF_FLAT`) and the generating class's
+corner in a cap's band (T3). The native path refuses a characteristic that goes round a vertex by
+name (`--kernel rust`). The gate is `swept_vertex` (in the kernel, `flat_end`'s bar with its section
+turned 30°, 45°, 60° and −30° so its corner runs to its far end, and a bar drafted both ways whose
+corner runs to its crease, each turned and screwed: every node in contact within 1e-9 of `|v|`, its
+normal outward, the sheet creased at a vertex of the prism and nowhere else, the blank reached
+either side of one; a bar whose inner side bulges to an arc still refused, `VERTEX` turned and
+`OVER_CAP` screwed; and drawn, the bar turned and screwed to `Bar::removed` and
+`Bar::screwed_removed` within 2e-5, its STL agreeing with the field),
+`prism_twists::a_corner_meeting_its_crease_goes_round_the_vertex` (turned and screwed, within 2e-5)
+and `solid_sweeps_examples::the_square_ended_bar_goes_round_its_vertex` (`square_end.sv`, within
+2e-5) and `the_capped_thread_goes_round_its_bars_vertices` (`capped_thread.sv`, within 2e-5 of
+`closed_class::screwed_partway_away`), each STL agreeing with the field and the page's stepped
+build held to the export's. The fitted sheets come out a few millionths low, as every turned or
+screwed bar's do (F4).
 
 **A characteristic that closes on itself (#684 W):** where the walk comes round to the root it
 began at (`next == seed`, the walk back taken first as before), or the walk ahead comes round onto

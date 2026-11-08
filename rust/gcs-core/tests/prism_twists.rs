@@ -11,10 +11,10 @@
 //! agrees with the field; the square thread (`rust/examples/solid_sweeps/square_thread.sv`) is
 //! `solid_sweeps_examples::the_square_tool_leaves_a_groove_widening_outward`, and the flat end, the
 //! creased bar and the facing side turned (`flat_end.sv`, `creased.sv`, `facing.sv`) are held there
-//! too. What the class refuses of a prism whose faces are planes and edges lines — a side along a
-//! slide, a cap in the blank under a slide, a corner meeting its crease, a corner reaching a cap
-//! under a screw, a corner holding the turn's axis, a cap of a tool no lone prism — the closed
-//! class builds on one arrangement (#721), each held to its own figure.
+//! too. A corner meeting its crease is walked round the vertex there (#721 G1, `swept_vertex.rs`).
+//! What the class refuses of a prism whose faces are planes and edges lines — a side along a
+//! slide, a cap in the blank under a slide, a corner holding the turn's axis, a cap of a tool no
+//! lone prism — the closed class builds on one arrangement (#721), each held to its own figure.
 use gcs_core::solid::admission::Class;
 use std::f64::consts::{PI,TAU};
 
@@ -69,7 +69,7 @@ groove cut part
 }
 
 /// A bar of square section stood on a corner `inner` from the axis, standing ±4 along its length.
-fn diamond(inner: f64) -> [[f64;2];4] { [[inner,0.],[inner+1.5,1.5],[inner+3.,0.],[inner+1.5,-1.5]] }
+pub(crate) fn diamond(inner: f64) -> [[f64;2];4] { [[inner,0.],[inner+1.5,1.5],[inner+3.,0.],[inner+1.5,-1.5]] }
 
 /// A turn of the leaning bar: within the block the characteristic is the ruling through its inner
 /// corner, round the corner's fan, a line leaning across the turn, so the groove's wall is that
@@ -222,38 +222,23 @@ fn a_side_along_the_slide_is_planar_subtractions() {
 /// The leaning bar of square section drafted both ways from its parting plane (#684 P, AG): its
 /// characteristic is its inner corner's line, which reaches the plane partway round the corner's
 /// fan, at the vertex where the corner meets the crease. Every normal between the four faces
-/// meeting there is the tool's, and the sweep has a sharp edge along that point's path, which the
-/// constant-twist class does not build (S1); the closed class does (#721, G1's vertex read by the
-/// arrangement): its eight drafted sides are planes, its edges' hyperboloids and its sides' contact
-/// cones among the candidates. The block loses what the bar's slices span, read from its
-/// half-spaces (`Bar::removed`). (Its flat-sided neighbour crosses the crease mid-side, below.)
+/// meeting there is the tool's, and the walk goes round the vertex onto the fan beyond, the sweep
+/// creased along that point's path (#721 G1: the closed class built it before). Turned, and
+/// screwed 6 a turn, the block loses what the bar's slices span, read from its half-spaces
+/// (`Bar::removed`, `Bar::screwed_removed`). (Its flat-sided neighbour crosses the crease
+/// mid-side, below.)
 #[test]
-fn a_corner_meeting_its_crease_turned_is_the_closed_classs() {
+fn a_corner_meeting_its_crease_goes_round_the_vertex() {
     let (s,c) = 20f64.to_radians().sin_cos();
-    let bar = Bar {origin:[0.;3],across:[1.,0.,0.],along:[0.,c,-s],corners:diamond(10.).to_vec(),names:vec!["lower","upper","outer","under"],
-        from:-4.,to:4.,draft:2.,lead:0.};
-    let e = fixtures::read(&bar.text());
-    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw().unwrap().is_turn(),"a turn");
-    near(exported(&e,"part"),PI/3.*80.-bar.removed(),1e-9);
-}
-
-/// The square thread's bar made too short to stand past the rod either side: its caps pass through
-/// the rod, and the corners where its tip meets its flanks, whose roots run out along their rulings
-/// as their fans turn toward the flanks', reach a cap at a vertex of the prism, where the sweep has
-/// a sharp edge along that point's path, which the constant-twist class refuses (S1: a cap is
-/// crossed only over a rim, mid-side, #684 AE). The closed class cuts it on one arrangement (#721),
-/// every face and edge along the axis or square to it. The rod loses each circle's angle the bar
-/// covers over the rolls reaching its height, the bar's half-angle at radius `ρ` its tip's
-/// `acos(4 / ρ)` or its reach's `asin(2.5 / ρ)`, the less (`closed_class::screwed_partway_away`).
-#[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 25 s: a short bar's screwed sheets cut from a rod on one arrangement")]
-fn a_corner_reaching_a_cap_under_a_screw_is_the_closed_classs() {
-    let text = crate::solid_sweeps_examples::text("square_thread.sv").replace("reach := 8mm","reach := 2.5mm");
-    let e = fixtures::read(&text);
-    let Class::Closed(found) = class(&e,"rod") else { panic!("the closed class") };
-    assert_eq!(found.kind(),"a screw");
-    near(exported(&e,"rod"),PI*25.*20.-crate::closed_class::screwed_partway_away(21.,2.5),1e-9);
+    for lead in [0.,6.] {
+        let bar = Bar {origin:[0.;3],across:[1.,0.,0.],along:[0.,c,-s],corners:diamond(10.).to_vec(),names:vec!["lower","upper","outer","under"],
+            from:-4.,to:4.,draft:2.,lead};
+        let e = fixtures::read(&bar.text());
+        let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+        assert_eq!(found.vertices(),["the corner of `bar.under` and `bar.lower`"]);
+        let removed = if lead == 0. { bar.removed() } else { bar.screwed_removed() };
+        near(exported(&e,"part"),PI/3.*80.-removed,2e-5);
+    }
 }
 
 /// The bar slid aslant made short enough for its caps to stand in the cube: under a slide a cap is
@@ -278,15 +263,16 @@ type V = [f64;3];
 /// the unit `across` and `along`, its sides named `names` from each corner to the next, extruded
 /// along `across × along` from `from` to `to`, drafted `draft` degrees (both ways from the plane
 /// where it runs both ways).
-pub(crate) struct Bar { origin: V,across: V,along: V,corners: Vec<[f64;2]>,names: Vec<&'static str>,from: f64,to: f64,draft: f64,
-    lead: f64 }
+#[derive(Clone)]
+pub(crate) struct Bar { pub(crate) origin: V,pub(crate) across: V,pub(crate) along: V,pub(crate) corners: Vec<[f64;2]>,
+    pub(crate) names: Vec<&'static str>,pub(crate) from: f64,pub(crate) to: f64,pub(crate) draft: f64,pub(crate) lead: f64 }
 
 impl Bar {
     /// The drawing: the block turned past by the bar over (−140°, 140°) about z, as `turned_bar`, or
     /// screwed over (−280°, 280°): the sheet's columns stand at the roll's ends delayed by each
     /// point's climb to the section, so a screw's roll reaches further. A lead longer than the bar
     /// is high keeps every other turn of it clear of the block.
-    fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         let [o,a,b] = [self.origin,self.across,self.along];
         let n = self.corners.len();
         let points: String = self.corners.iter().enumerate().map(|(k,[u,v])| format!("  private c{k} := point\n  \
@@ -375,7 +361,7 @@ groove cut part
     /// 2001 angles and refined about the best by four grids of 64 each. The block at r and θ loses
     /// that span raised kθ within its heights, a length linear in θ between where its ends cross
     /// the block's, summed exactly over its 60°, and the radii by Simpson's rule on 4000 steps.
-    fn screwed_removed(&self) -> f64 {
+    pub(crate) fn screwed_removed(&self) -> f64 {
         let halves = self.halves();
         let k = self.lead/TAU;
         // the heights at which the bar meets the line up through radius r at angle a

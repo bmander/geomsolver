@@ -35,8 +35,14 @@
 //! a crease (`Characteristic::closed`, #684 W). Where a face of revolution meets the tool's axis at
 //! an angle, an apex (a cone to a point), every normal of the cone round the apex is the tool's: the
 //! walk runs down one root of the rings beside it to the apex and back up the other
-//! (`Junction::Apex`), the sheet creased along the apex's path (`Node::apex`, #721 G5). Under a slide along the tool's own axis every ring touches nowhere or all round, and the characteristic
-//! is the ring of greatest radius alone, closed, its sheet the cylinder it sweeps
+//! (`Junction::Apex`), the sheet creased along the apex's path (`Node::apex`, #721 G5). Where a
+//! prism's corner's, rim's or crease's root runs to an end of its ruling, a vertex of the prism
+//! every edge of which is a fan the walk reads, every normal of the cone between the faces meeting
+//! there is the tool's, and those square to the motion lie on one arc of it from this fan's normal
+//! there to another fan's: the walk goes on round the vertex along that fan from the station whose
+//! root is the vertex (`Along::vertices`), the sheet creased along the vertex's path (`Node::vertex`,
+//! #721 G1). Under a slide along the tool's own axis every ring touches nowhere or all round, and
+//! the characteristic is the ring of greatest radius alone, closed, its sheet the cylinder it sweeps
 //! (`along_axis`, #684 X); under a turn about an axis the tool's own meets, the ring whose normals
 //! pass through where they meet touches all round and sweeps a zone of the sphere there, and the
 //! walk turns onto it half round and off onto the branch that leaves the zone, the other branch
@@ -209,7 +215,11 @@ pub struct Node { pub patch: usize,pub u: f64,pub from: f64,pub position: V,pub 
     /// Whether it is an apex of the profile on the tool's axis that the walk turns at, down one root
     /// of its face's rings and back up the other (#721 G5): the sweep has a sharp edge along the
     /// apex's path, and the sheet is creased there.
-    apex: bool }
+    apex: bool,
+    /// Whether it is a vertex of the prism the walk goes round, from one fan's root there onto
+    /// another's (#721 G1): the sweep has a sharp edge along the vertex's path, and the sheet is
+    /// creased there.
+    vertex: bool }
 
 /// The stretch of a screw sweep's characteristic that reaches the blank, with `MARGIN` rings of
 /// it beyond each end. The parameter `s` runs from 0 to `nodes.len() - 1`: whole values are the
@@ -693,7 +703,7 @@ impl Characteristic {
                 continue
             }
             if let Some(&(_,fan)) = stepped.iter().find(|(pair,_)| w > 0 && (*pair == [order[w-1],x] || *pair == [x,order[w-1]])) {
-                if let Some(&last) = nodes.last() { nodes.push(Node {patch:fan,sharp:None,crease:false,apex:false,..last}) }
+                if let Some(&last) = nodes.last() { nodes.push(Node {patch:fan,sharp:None,crease:false,apex:false,vertex:false,..last}) }
             }
             if w > 0 && order[w-1].0 != k && from.is_none() && nodes.last().is_some_and(|m: &Node| distance(m.position,r.position) <= 1e-7*scale) {
                 // a crossing straight from one face to the next where they meet at an angle with no
@@ -703,11 +713,15 @@ impl Characteristic {
                     if face(&pieces[last.patch]) && face(&pieces[k]) && dot(last.normal,r.normal).clamp(-1.,1.).dacos() > LEAST_TURN {
                         last.crease = true
                     }
+                    // (or from one fan's root at a vertex of the prism onto another's, round the
+                    // vertex's cone of normals: a crease along the vertex's path, #721 G1)
+                    if pieces[last.patch].ruling_ends().is_some() && pieces[k].ruling_ends().is_some() { last.vertex = true }
                 }
                 from = Some(u); continue
             }
             let start = from.take().unwrap_or_else(|| nodes.last().map_or(u,|m| m.u));
-            nodes.push(Node {patch:k,u,from:start,position:r.position,normal:r.normal,reach:r.reach,sharp:None,crease:false,apex:false});
+            nodes.push(Node {patch:k,u,from:start,position:r.position,normal:r.normal,reach:r.reach,sharp:None,crease:false,apex:false,
+                vertex:false});
         }
         // a fan the walk runs round that stands at one point, from the node it runs onto it at to
         // its last: there the fan's edge runs along that point's velocity, every normal between its
@@ -894,6 +908,10 @@ impl Characteristic {
     /// the apex's path (`Node::apex`, #721 G5), each as a message names it.
     pub fn apexes(&self) -> Vec<String> { self.named_once(self.nodes.iter().filter(|m| m.apex).map(|m| m.patch)) }
 
+    /// The fans from which the characteristic goes round a vertex of the prism onto another's, the
+    /// sheet creased along the vertex's path (`Node::vertex`, #721 G1), each as a message names it.
+    pub fn vertices(&self) -> Vec<String> { self.named_once(self.nodes.iter().filter(|m| m.vertex).map(|m| m.patch)) }
+
     /// The pieces `walked` names, each once in a row and as a message names it.
     fn named_once(&self,walked: impl Iterator<Item=usize>) -> Vec<String> {
         let mut walked: Vec<usize> = walked.collect();
@@ -978,7 +996,8 @@ fn turns(x: (usize,usize,usize),y: (usize,usize,usize)) -> bool { (x.0,x.1) == (
 /// apex on the tool's axis (#721 G5).
 fn creases(nodes: &[Node],pieces: &[Piece]) -> Vec<usize> {
     let flat = |w: usize| matches!(pieces[nodes[w].patch],Piece::Flat(_));
-    (0..nodes.len()).filter(|&w| nodes[w].sharp.is_some() || nodes[w].crease || nodes[w].apex || (w+1 < nodes.len() && flat(w) != flat(w+1)))
+    (0..nodes.len()).filter(|&w| nodes[w].sharp.is_some() || nodes[w].crease || nodes[w].apex || nodes[w].vertex
+        || (w+1 < nodes.len() && flat(w) != flat(w+1)))
         .collect()
 }
 
@@ -1106,7 +1125,7 @@ fn along_axis(contacts: &Sweep,pieces: &[Piece],screw: &Screw,motion: Motion,ask
         let u = i as f64/n as f64;
         let (position,normal) = round.at(u);
         Node {patch,u,from:if i == 0 { 0. } else { (i-1) as f64/n as f64 },position,normal,reach:reach(family,screw,position,ask),sharp:None,
-            crease:false,apex:false}
+            crease:false,apex:false,vertex:false}
     }).collect();
     nodes[n].position = nodes[0].position;
     nodes[n].normal = nodes[0].normal;
@@ -1375,7 +1394,11 @@ enum Junction {
 /// face of one surface read once over the span its faces reach), each its station and the junction
 /// across it where the face goes no further at the walk's point.
 #[derive(Clone,Debug)]
-struct Along { rounds: Vec<(usize,f64)>,rims: Vec<(usize,f64)>,off: [&'static str;2],cuts: Vec<(f64,Junction)> }
+struct Along { rounds: Vec<(usize,f64)>,rims: Vec<(usize,f64)>,off: [&'static str;2],cuts: Vec<(f64,Junction)>,
+    /// For a corner's, a rim's or a crease's fan, the other fans at each end of its ruling, a vertex of
+    /// the prism every edge of which is a fan the walk reads (#721 G1): the walk goes on round the
+    /// vertex onto the one whose root leaves it there. Empty at an end that is no such vertex.
+    vertices: [Vec<usize>;2] }
 
 /// Every piece's junctions: at each of its ends (its first station's, 0, and its last's, 1), and
 /// along it.
@@ -1461,6 +1484,35 @@ impl Junctions {
             across(edge,e,s).unwrap_or(Junction::End(JUMPS))
         };
         let ends = (0..pieces.len()).map(|k| [at(k,0.),at(k,1.)]).collect();
+        // the fans at a vertex of the prism `p`, where its every edge is one (#721 G1): as many as the
+        // faces that meet there — the sides with a corner there, and the caps they run to there (a
+        // drafted half's end at its parting plane is a crease, no cap) — so the vertex is convex, its
+        // cone of normals bounded by the fans alone; none where some edge there is no fan (a concave
+        // corner, a side no line, a cap the walk does not read), and none on a tool with a face that is
+        // neither a side nor a cap, which this count does not see
+        let size = pieces.iter().filter_map(Piece::ruling_ends).flatten().map(norm).fold(1_f64,f64::max);
+        let prism = contacts.patches().iter().all(|f| matches!(f,ToolSurface::Extruded(_) | ToolSurface::Cap(_)));
+        let vertex = |p: V| -> Option<Vec<usize>> {
+            if !prism { return None }
+            let at = |q: V| distance(p,q) <= 1e-9*size;
+            let fans: Vec<usize> = (0..pieces.len())
+                .filter(|&f| pieces[f].ruling_ends().is_some_and(|ends| ends.iter().any(|&q| at(q)))).collect();
+            let mut faces = 0;
+            let mut caps = [false;2];
+            for (patch,surface) in contacts.patches().iter().enumerate() {
+                let ToolSurface::Extruded(side) = surface else { continue };
+                let ends: Vec<usize> = (0..2).filter(|&v| [0.,1.].iter().any(|&x| side.at(x,v as f64).is_ok_and(|q| at(q.position))))
+                    .collect();
+                if ends.is_empty() { continue }
+                faces += 1;
+                for v in ends {
+                    let creased = contacts.creases().iter().any(|crease| crease[1-v] == patch);
+                    if !creased { caps[v] = true }
+                }
+            }
+            faces += caps.iter().filter(|&&c| c).count();
+            (faces >= 3 && fans.len() == faces).then_some(fans)
+        };
         let along = pieces.iter().enumerate().map(|(k,piece)| {
             let rounds = pieces.iter().enumerate().filter_map(|(r,p)| match p {
                 Piece::Round(Round {of:Some((of,u)),..}) if *of == k => Some((r,*u)),
@@ -1481,7 +1533,12 @@ impl Junctions {
                 }).collect(),
                 _ => Vec::new(),
             };
-            Along {rounds,rims,off,cuts}
+            let vertices = match piece.ruling_ends() {
+                Some(ends) => ends.map(|p| vertex(p).filter(|fans| fans.contains(&k))
+                    .map(|fans| fans.into_iter().filter(|&f| f != k).collect()).unwrap_or_default()),
+                None => [Vec::new(),Vec::new()],
+            };
+            Along {rounds,rims,off,cuts,vertices}
         }).collect();
         Junctions {ends,along}
     }
@@ -1571,6 +1628,16 @@ impl Walker<'_> {
                 _ => Step::End(format!("meets {} at one point of it, where the class does not cross it",pieces[s].named())),
             })
         };
+        // a fan's root at station `i` standing at an end of its ruling, a vertex of the prism every edge
+        // of which is a fan (`Along::vertices`): every normal of the vertex's cone of normals between
+        // this fan's there and another's is the tool's, and those square to the motion stand at the
+        // vertex, so the characteristic goes on along the other fan whose root leaves the vertex, at the
+        // station whose root it is, the sweep creased along the vertex's path (#721 G1)
+        let round_vertex = |i: usize| -> Option<Step> {
+            let (a,b,_) = match &pieces[k] { Piece::Ruled(ruled) => ruled.line(stations[k][i])?,_ => return None };
+            let end = [a,b].iter().position(|&p| near(p))?;
+            taken(along.vertices[end].iter().map(|&f| side_at(f)))
+        };
         // why the walk ends where this piece's root runs off its rulings: at the end of the ruling
         // this point is nearer (a side's, over a cap or across a crease where its halves meet)
         let off = || -> String {
@@ -1619,8 +1686,11 @@ impl Walker<'_> {
             let next = next as usize;
             return match &rings[k][next] {
                 Ring::Degenerate(why) => Step::End(why.says()),
-                // a side's root reaching a ruling's end at a cap's rim or a crease: onto that fan
-                Ring::Roots(roots) if roots.is_empty() => first(&along.rims).unwrap_or_else(|| Step::End(off())),
+                // a side's root reaching a ruling's end at a cap's rim or a crease: onto that fan; a
+                // fan's reaching a vertex of the prism: round it onto the fan whose root leaves it
+                // there (#721 G1)
+                Ring::Roots(roots) if roots.is_empty() => first(&along.rims).or_else(|| round_vertex(i))
+                    .unwrap_or_else(|| Step::End(off())),
                 // the nearest root of the next ring: a label may turn where the amplitude does. Of roots
                 // as near as each other, the one whose normal is nearest this one's: onto or off an apex
                 // every root of the ring stands at it, or as far from it as the other (#721 G5)
@@ -1852,7 +1922,9 @@ const OVER_CREASE: &str = "runs across the crease where the prism's halves meet 
 /// the prism's vertices.
 const SILHOUETTE_OVER_CAP: &str = "runs over a cap of the prism, which the class does not walk under a slide, or a screw along \
     the prism's extrusion: there the silhouette turns at a vertex of the prism, a sharp edge of the sweep (not built)";
-/// Why it ends where a corner's, a rim's or a crease's root runs off its line.
+/// Why it ends where a corner's, a rim's or a crease's root runs off its line at a vertex some edge
+/// of which is no fan the walk reads (a concave corner, a side no line, a cap it does not walk):
+/// at one every edge of which is, it goes on round the vertex (`Along::vertices`, #721 G1).
 const VERTEX: &str = "runs into a vertex of the prism, where a corner meets a cap or a crease, along whose path the sweep has \
     a sharp edge (not built)";
 /// Why it ends where a flat face's line runs off it onto no face whose characteristic meets it there.
@@ -1882,6 +1954,15 @@ impl Piece {
     fn patch(&self) -> Option<usize> {
         match self {
             Piece::Face(k,_) | Piece::Ruled(Ruled {ruling:Ruling::Side {patch:k,..},..}) | Piece::Flat(Flat {patch:k,..}) => Some(*k),
+            _ => None,
+        }
+    }
+
+    /// The ends of its ruling, where it is a corner's, a rim's or a crease's fan: each a vertex of
+    /// the prism, where its root running off the ruling goes on round the vertex (#721 G1).
+    fn ruling_ends(&self) -> Option<[V;2]> {
+        match self {
+            Piece::Ruled(Ruled {ruling:Ruling::Rib {ends,..} | Ruling::Rim {ends,..},..}) => Some(*ends),
             _ => None,
         }
     }
@@ -2065,8 +2146,9 @@ impl Ruled {
     }
 
     /// The piece with the stations where its root reaches its rulings' ends `ends` (each 0 or 1,
-    /// a `v` of its side) among its `crossings`: where the contact at that end is nought, read at
-    /// `RULED_READS` parameters and refined between two that differ in sign.
+    /// a `v` of its side, or an end of a fan's ruling, a vertex of the prism, #721 G1) among its
+    /// `crossings`: where the contact at that end is nought, read at `RULED_READS` parameters and
+    /// refined between two that differ in sign.
     fn crossing(mut self,motion: Motion,ends: &[usize]) -> Ruled {
         for &end in ends {
             let at = |x: f64| self.ruling.line(x).map(|line| contact(motion,line)[end]);
@@ -2428,9 +2510,11 @@ fn prism(contacts: &Sweep,tool: &dyn Material,motion: Motion,screw: &Screw,speed
         }
         Ruling::Side {patch,..} if lined.contains(&patch) => Piece::Ruled(Ruled {lined:true,..Ruled::new(r,motion,speed)}),
         Ruling::Side {patch,..} => { let ends = ends(patch); Piece::Ruled(Ruled::new(r,motion,speed).crossing(motion,&ends)) }
-        r => Piece::Ruled(Ruled::new(r,motion,speed)),
+        // (a corner's ruling with the stations where its root reaches either end, a vertex of the
+        // prism, among its crossings: the walk stands there and goes on round the vertex, #721 G1)
+        r => Piece::Ruled(Ruled::new(r,motion,speed).crossing(motion,&[0,1])),
     }) }
-    pieces.extend(rims.into_iter().map(|r| Piece::Ruled(Ruled::new(r,motion,speed))));
+    pieces.extend(rims.into_iter().map(|r| Piece::Ruled(Ruled::new(r,motion,speed).crossing(motion,&[0,1]))));
     pieces.extend(lines.into_iter().map(Piece::Line));
     Ok(pieces)
 }

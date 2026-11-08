@@ -430,6 +430,13 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
         Err(ExportRefusal::at(Stage::Admission,format!("`{}`: `{}`'s characteristic turns at an apex of its tool on the tool's axis, \
             whose sheet only the core's kernel builds, creased along the apex's path: export it with `--kernel rust`",
             sk.solids[body].name,s.name)))
+    } else if let Some(s) = admission.sweeps().iter().find(|s| matches!(&s.class,gcs_core::solid::admission::Class::ConstantTwist(found)
+        if !found.vertices().is_empty())) {
+        // a vertex of the prism the walk goes round, a crease along its path, which the core's
+        // kernel alone has been held to (#721 G1)
+        Err(ExportRefusal::at(Stage::Admission,format!("`{}`: `{}`'s characteristic goes round a vertex of its tool, where three or \
+            more faces meet, whose sheet only the core's kernel builds, creased along the vertex's path: export it with `--kernel rust`",
+            sk.solids[body].name,s.name)))
     } else { Ok(()) };
     if let Admitted::Already(admission) = admitted { presented(admission)?; }
     // What the sketch says of the blank and the cuts, read here; where it cannot be read, an
