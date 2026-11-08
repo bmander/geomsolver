@@ -573,17 +573,28 @@ impl Complex {
         let located = Located::new(&solid,self.tol);
         // the mesh's points, each certified by the cell's own exact point location (#777 M4): a
         // cusp-thin cell along a touch, whose mesh may fold across it, is read by its definition
-        if let Ok(found) = super::query::interior(&solid,capacity) {
+        let clock = crate::util::clock::Instant::now();
+        let interior = super::query::interior(&solid,capacity);
+        if super::timing() {
+            eprintln!("inside_points: cell {c} of {} faces: interior {:?} in {:?}",solid.faces.len(),interior.as_ref().map(|f| f.len()),clock.elapsed());
+        }
+        if let Ok(found) = interior {
             let found: Vec<V> = found.into_iter().map(|(p,_)| p).filter(|&p| located.solid_place(p) == Place::In).collect();
+            if super::timing() { eprintln!("inside_points: cell {c}: {} placed in, by {:?}",found.len(),clock.elapsed()) }
             if !found.is_empty() { return Ok(found) }
         }
         let size = solid.size();
         let mut out = Vec::new();
-        for (fi,f) in solid.faces.iter().enumerate() {
+        // enough found: as many as asked for over again, the deepest kept (each placement is a
+        // certified read of every face, and a cell of many faces would read thousands)
+        let enough = 4*capacity.max(1);
+        'faces: for (fi,f) in solid.faces.iter().enumerate() {
+            if out.len() >= enough { break 'faces }
             // a point of the face: the middle of a use of it nudged in, else a grid of its parameters
             let [[u0,u1],[v0,v1]] = super::boolean::face_parameters(&solid,fi);
             const N: usize = 9;
             for i in 1..N { for j in 1..N {
+                if out.len() >= enough { break 'faces }
                 let uv = [u0+(u1-u0)*i as f64/N as f64,v0+(v1-v0)*j as f64/N as f64];
                 let p = f.surface.point(uv);
                 if located.face_place(fi,p) != Place::In { continue }

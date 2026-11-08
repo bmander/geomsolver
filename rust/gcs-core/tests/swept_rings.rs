@@ -91,17 +91,18 @@ fn each_contact_is_held_beside_its_instant_as_its_bend_says() {
 /// **The tumbling torus built closed** — not yet. The tubes fit (at the build's tolerance of 1e-5,
 /// each face refined apart: 577 × 257 and 321 × 65 poles, in a second), their meetings with the
 /// torus where it starts and stops are read in their own domains, and the box is split by them all
-/// at once into seven cells (in eleven seconds); but classifying those cells takes some seventeen
-/// minutes — certified point location against the fitted sheets — and the selected solid fails its
-/// check on the start's torus (`loop 1 turns the wrong way`, its kept piece a band round the ring).
+/// at once into seven cells (in twenty seconds); classifying those cells takes under a second —
+/// certified point location against the fitted sheets, each span boxed by its Bézier points and
+/// read only where the ray meets it — but the selected solid fails its check on the start's torus
+/// (`loop 1 turns the wrong way`: the arrangement leaves a slit in its kept band at the fold
+/// corners, so the band's mesh leaks and its cells are read by a grid instead).
 /// Its volume, by a Monte Carlo of the definition apart from the kernel (400 000 points, the
 /// torus's distance over 1201 rolls), is 25.33 ± 0.05.
 #[test]
-#[ignore = "not yet built: classifying the cells takes minutes, and the start's kept band of torus fails its check"]
+#[ignore = "not yet built: the start's kept band of torus fails its check"]
 fn the_tumbling_torus_is_built_closed() {
     let (tool,path,roll) = tumble();
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.002,1e-5).unwrap_or_else(|u| panic!("{u:?}"));
     let v = gcs_core::brep::props::volume(&built);
     assert!((v-25.33).abs() < 0.2,"{v}");
 }
-

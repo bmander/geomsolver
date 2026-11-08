@@ -404,6 +404,16 @@ impl Reader for General {
 /// says so where it can (a line along a cylinder).
 fn along(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> bool {
     if !(t0.is_finite() && t1.is_finite()) { return false }
+    // a net's: a curve whose start stands within `tol` of none of its spans' boxes lies along no
+    // stretch of it (its distance there not read, which a fitted sheet reads by searching it)
+    if let Surface::BSpline(_,net) = surface {
+        if net.weights.is_none() {
+            let p = curve.point(t0);
+            let mut near = false;
+            net_index(net).tree.query_box(crate::util::bvh::Bounds {lo:p.map(|x| x-tol),hi:p.map(|x| x+tol)},|_| near = true);
+            if !near { return false }
+        }
+    }
     if !lies_along(curve,[t0,t1],surface,tol) { return false }
     let n = samples(curve,[t0,t1],surface);
     (0..=n).all(|i| surface.implicit(curve.point(t0+(t1-t0)*i as f64/n as f64)).abs() <= tol)
@@ -880,19 +890,219 @@ fn general(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Result<
         return Ok((Meets::At(found.into_iter().map(|r| (sys.natural(0,r.at[0].clamp(0.,1.)),r.touch)).collect()),proved && c.enclose([sys.range[1]]).proved))
     }
     let Some([pu,pv]) = reach_of(surface,&whole) else { return Err(Uncertified::NoForm) };
-    let sys = Meeting {curve,surface,range:[[a,b],pu,pv],tol};
-    // the resolution a touch is read to: the tolerance over the farthest any unknown carries a
-    // point across the box (read at its middle and corners)
-    let reach = (0..9).map(|k| {
-        let x = if k == 8 { [0.5;3] } else { [(k&1) as f64,((k>>1)&1) as f64,((k>>2)&1) as f64] };
-        let (_,j) = crate::util::isolate::System::at(&sys,x);
-        (0..3).map(|c| norm([j[0][c],j[1][c],j[2][c]])).fold(0.,f64::max)
-    }).fold(0.,f64::max);
-    let width = tol*1e-2/reach.max(1e-300);
-    let near = |x: [f64;3]| { let (fx,_) = crate::util::isolate::System::at(&sys,x); norm(fx) <= tol };
-    let found = crate::util::isolate::solve::<3>(&sys,[[0.,1.];3],width,&near).map_err(refuse)?;
-    Ok((Meets::At(found.into_iter().map(|r| (sys.natural(0,r.at[0].clamp(0.,1.)),r.touch)).collect()),proved))
+    // the meeting over one box of the surface's parameters, isolated and certified
+    let over = |pu: [f64;2],pv: [f64;2],[a,b]: [f64;2]| -> Result<Vec<(f64,bool)>,Uncertified> {
+        let sys = Meeting {curve,surface,range:[[a,b],pu,pv],tol};
+        // the resolution a touch is read to: the tolerance over the farthest any unknown carries a
+        // point across the box (read at its middle and corners)
+        let reach = (0..9).map(|k| {
+            let x = if k == 8 { [0.5;3] } else { [(k&1) as f64,((k>>1)&1) as f64,((k>>2)&1) as f64] };
+            let (_,j) = crate::util::isolate::System::at(&sys,x);
+            (0..3).map(|c| norm([j[0][c],j[1][c],j[2][c]])).fold(0.,f64::max)
+        }).fold(0.,f64::max);
+        let width = tol*1e-2/reach.max(1e-300);
+        let near = |x: [f64;3]| { let (fx,_) = crate::util::isolate::System::at(&sys,x); norm(fx) <= tol };
+        let found = crate::util::isolate::solve::<3>(&sys,[[0.,1.];3],width,&near).map_err(refuse)?;
+        Ok(found.into_iter().map(|r| (sys.natural(0,r.at[0].clamp(0.,1.)),r.touch)).collect())
+    };
+    // **a net read span by span**: its knot spans whose control points' box the curve can reach
+    // (a span of a B-spline net lies in the hull of its poles), each isolated over its own
+    // parameters — a fitted sheet of thousands of spans read whole encloses loosely and halves
+    // deep, where the few a ray passes are each read in a handful of steps
+    if let (Surface::BSpline(_,net),&Curve::Line {p,d}) = (surface,curve) {
+        if net.weights.is_none() {
+            // each span the line meets read whole, the line's stretch narrowed to the span's box,
+            // so a crossing is read in the span holding it and never on the face of a box of the
+            // search's own making. The box is grown by its own size (a flat span's is as thin as
+            // it, and the line's stretch through it a hair beside the span's parameters: the
+            // search's unknowns scaled a billion apart, it certifies nothing)
+            let index = net_index(net);
+            let mut boxes = Vec::new();
+            index.tree.query(|bx| line_meets_box(p,d,[a,b],bx.lo.map(|x| x-tol),bx.hi.map(|x| x+tol)),|i| boxes.push(i));
+            boxes.sort();
+            let mut found = Vec::new();
+            for i in boxes {
+                let bx = index.boxes[i];
+                let grow = (0..3).map(|k| bx.hi[k]-bx.lo[k]).fold(tol,f64::max);
+                let Some(t) = line_in_box(p,d,[a,b],(bx.lo.map(|x| x-grow),bx.hi.map(|x| x+grow))) else { continue };
+                // the span's parameters narrowed to where the line can reach it (`bezier_reach`)
+                let Some([su,sv]) = bezier_reach(net,index.spans[i],p,d,tol) else { continue };
+                found.extend(over(su,sv,t)?);
+            }
+            // a crossing on the knot line two spans share is found by each (each box is read grown
+            // past its sides): the two are one
+            found.sort_by(|x,y| x.0.total_cmp(&y.0));
+            let same = tol/norm(d).max(1e-300);
+            let mut merged: Vec<(f64,bool)> = Vec::with_capacity(found.len());
+            for (t,touch) in found {
+                match merged.last_mut() {
+                    Some(last) if t-last.0 <= same => last.1 &= touch,
+                    _ => merged.push((t,touch)),
+                }
+            }
+            return Ok((Meets::At(merged),proved))
+        }
+    }
+    Ok((Meets::At(over(pu,pv,[a,b])?),proved))
 }
+
+/// **A net's knot spans indexed**: each span's parameters, boxed by its Bézier patch's control
+/// points (`blossom`: the hull its surface lies in, close about it, where the net's own poles reach
+/// over five spans each way), in a bounding-volume hierarchy a ray is read through (`general`), a
+/// point is placed near (`Located::solid_place`) and a foot is sought in (`geom::net_inverse`).
+pub(crate) struct NetIndex { pub spans: Vec<[[f64;2];2]>,pub boxes: Vec<crate::util::bvh::Bounds<3>>,pub tree: crate::util::bvh::Bvh<3> }
+
+/// Whether the line through `p` along `d` over `[a, b]` meets the box `lo`–`hi`.
+fn line_meets_box(p: V,d: V,ab: [f64;2],lo: V,hi: V) -> bool { line_in_box(p,d,ab,(lo,hi)).is_some() }
+
+/// How many nets' indexes are kept at once (`net_index`): past it the store is emptied.
+const INDEXED: usize = 256;
+
+/// **The index of `net`'s spans**, built once for the net and kept, keyed by the net it was built
+/// for (held, so no other net takes its place).
+pub(crate) fn net_index(net: &std::sync::Arc<crate::nurbs::Net>) -> std::sync::Arc<NetIndex> {
+    type Store = std::collections::BTreeMap<usize,(std::sync::Arc<crate::nurbs::Net>,std::sync::Arc<NetIndex>)>;
+    static STORE: std::sync::Mutex<Store> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+    let key = std::sync::Arc::as_ptr(net) as usize;
+    if let Some((_,i)) = STORE.lock().unwrap().get(&key) { return i.clone() }
+    let index = std::sync::Arc::new(indexed(net));
+    let mut store = STORE.lock().unwrap();
+    if store.len() >= INDEXED { store.clear() }
+    store.insert(key,(net.clone(),index.clone()));
+    index
+}
+
+/// `net`'s spans, each boxed by its Bézier points, indexed (`NetIndex`): each row's poles carried to
+/// their Bézier points along each span of v once, then each span's along u.
+fn indexed(net: &crate::nurbs::Net) -> NetIndex {
+    let (du,dv) = (net.du,net.dv);
+    let (nu,nv) = (net.poles.len(),net.poles[0].len());
+    let spans = |knots: &[f64],d: usize,n: usize| -> Vec<([f64;2],usize)> {
+        (d..n).filter(|&k| knots[k+1] > knots[k]).map(|k| ([knots[k],knots[k+1]],k)).collect()
+    };
+    let (us,vs) = (spans(&net.uknots,du,nu),spans(&net.vknots,dv,nv));
+    // rows[i][s]: row i's Bézier points over v's span s
+    let rows: Vec<Vec<Vec<V>>> = (0..nu).map(|i| vs.iter().map(|&(sv,l)| {
+        (0..=dv).map(|j| blossom(&net.vknots,&net.poles[i][l-dv..=l],l,dv,sv,j)).collect()
+    }).collect()).collect();
+    let mut out = Vec::with_capacity(us.len()*vs.len());
+    let mut bounds = Vec::with_capacity(us.len()*vs.len());
+    for &(su,k) in &us {
+        for (s,&(sv,_)) in vs.iter().enumerate() {
+            let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+            for j in 0..=dv {
+                let col: Vec<V> = (k-du..=k).map(|i| rows[i][s][j]).collect();
+                for i in 0..=du {
+                    let q = blossom(&net.uknots,&col,k,du,su,i);
+                    for c in 0..3 { lo[c] = lo[c].min(q[c]); hi[c] = hi[c].max(q[c]) }
+                }
+            }
+            out.push([su,sv]);
+            bounds.push(crate::util::bvh::Bounds {lo,hi});
+        }
+    }
+    NetIndex {spans:out,tree:crate::util::bvh::Bvh::new(bounds.iter().copied()),boxes:bounds}
+}
+
+/// The `j`-th Bézier control point of the span `k` (over `[t0, t1]`) of the B-spline of degree `deg`
+/// on `knots` whose poles over it are `poles`: its blossom at `t0` taken `deg − j` times and `t1`
+/// `j` times, by de Boor's algorithm with those arguments.
+fn blossom(knots: &[f64],poles: &[V],k: usize,deg: usize,[t0,t1]: [f64;2],j: usize) -> V {
+    let mut q: Vec<V> = poles.to_vec();
+    for r in 1..=deg {
+        let arg = if r <= deg-j { t0 } else { t1 };
+        for m in (r..=deg).rev() {
+            let i = k-deg+m;
+            let den = knots[i+deg+1-r]-knots[i];
+            let alpha = if den > 0. { (arg-knots[i])/den } else { 0. };
+            q[m] = std::array::from_fn(|c| (1.-alpha)*q[m-1][c]+alpha*q[m][c]);
+        }
+    }
+    q[deg]
+}
+
+/// How finely a span's Bézier patch is halved toward a line through it, as a part of the span each
+/// way (`bezier_reach`), before what is left of it is isolated and certified.
+const BEZIER_FINEST: f64 = 1./64.;
+
+/// **Where in a span's parameters a line can meet it**: the span of `net` over `[su, sv]` as its
+/// Bézier patch (each control point a blossom of the net at the span's ends, `blossom`), halved —
+/// the longer way in its parameters, by de Casteljau — while its control points stand both sides of
+/// each of two planes holding the line through `p` along `d` (within `tol`); a patch whose points do
+/// not cannot meet it (the patch lies in their hull). Halving stops at `BEZIER_FINEST` of the span,
+/// and what is left is given as one box: the hull of the pieces left, grown by a piece each way
+/// within the span, so no crossing stands on a face of the halving's making. `None`: none is left.
+fn bezier_reach(net: &crate::nurbs::Net,[su,sv]: [[f64;2];2],p: V,d: V,tol: f64) -> Option<[[f64;2];2]> {
+    let (du,dv) = (net.du,net.dv);
+    let span = |knots: &[f64],deg: usize,n: usize,t: f64| (deg..n).rfind(|&k| knots[k] <= t && knots[k+1] > t).unwrap_or(deg);
+    let (nu,nv) = (net.poles.len(),net.poles[0].len());
+    let (k,l) = (span(&net.uknots,du,nu,su[0]),span(&net.vknots,dv,nv,sv[0]));
+    // the patch: each row of the span's poles to its Bézier points along v, then each column along u
+    let rows: Vec<Vec<V>> = (k-du..=k).map(|i| (0..=dv).map(|j| blossom(&net.vknots,&net.poles[i][l-dv..=l],l,dv,sv,j)).collect()).collect();
+    let patch: Vec<Vec<V>> = (0..=du).map(|i| (0..=dv).map(|j| {
+        let col: Vec<V> = rows.iter().map(|r| r[j]).collect();
+        blossom(&net.uknots,&col,k,du,su,i)
+    }).collect()).collect();
+    let d = scale(d,1./norm(d).max(1e-300));
+    let (n1,n2) = crate::util::space::across(d);
+    let straddles = |pts: &[Vec<V>]| {
+        let (mut a1,mut b1,mut a2,mut b2) = (f64::INFINITY,f64::NEG_INFINITY,f64::INFINITY,f64::NEG_INFINITY);
+        for q in pts.iter().flatten() {
+            let r = crate::util::space::sub(*q,p);
+            let (x,y) = (dot(r,n1),dot(r,n2));
+            a1 = a1.min(x); b1 = b1.max(x); a2 = a2.min(y); b2 = b2.max(y);
+        }
+        a1 <= tol && b1 >= -tol && a2 <= tol && b2 >= -tol
+    };
+    let mut out: Option<[[f64;2];2]> = None;
+    let mut stack = vec![(patch,su,sv)];
+    while let Some((pts,bu,bv)) = stack.pop() {
+        if !straddles(&pts) { continue }
+        let (wu,wv) = ((bu[1]-bu[0])/(su[1]-su[0]),(bv[1]-bv[0])/(sv[1]-sv[0]));
+        if wu <= BEZIER_FINEST && wv <= BEZIER_FINEST {
+            let (gu,gv) = (bu[1]-bu[0],bv[1]-bv[0]);
+            let grown = [[(bu[0]-gu).max(su[0]),(bu[1]+gu).min(su[1])],[(bv[0]-gv).max(sv[0]),(bv[1]+gv).min(sv[1])]];
+            out = Some(match out {
+                None => grown,
+                Some([[u0,u1],[v0,v1]]) => [[u0.min(grown[0][0]),u1.max(grown[0][1])],[v0.min(grown[1][0]),v1.max(grown[1][1])]],
+            });
+            continue
+        }
+        if wu >= wv {
+            // halve along u: each column of control points split by de Casteljau
+            let (mut lo,mut hi) = (vec![vec![[0.;3];dv+1];du+1],vec![vec![[0.;3];dv+1];du+1]);
+            for j in 0..=dv {
+                let (a,b) = casteljau(&pts.iter().map(|r| r[j]).collect::<Vec<_>>());
+                for i in 0..=du { lo[i][j] = a[i]; hi[i][j] = b[i] }
+            }
+            let m = 0.5*(bu[0]+bu[1]);
+            stack.push((lo,[bu[0],m],bv));
+            stack.push((hi,[m,bu[1]],bv));
+        } else {
+            let (mut lo,mut hi) = (Vec::with_capacity(du+1),Vec::with_capacity(du+1));
+            for r in &pts { let (a,b) = casteljau(r); lo.push(a); hi.push(b) }
+            let m = 0.5*(bv[0]+bv[1]);
+            stack.push((lo,bu,[bv[0],m]));
+            stack.push((hi,bu,[m,bv[1]]));
+        }
+    }
+    out
+}
+
+/// A Bézier curve's control points split at its middle: the two halves' (de Casteljau).
+fn casteljau(pts: &[V]) -> (Vec<V>,Vec<V>) {
+    let n = pts.len();
+    let mut work = pts.to_vec();
+    let (mut lo,mut hi) = (vec![work[0]],vec![work[n-1]]);
+    for r in 1..n {
+        for m in 0..n-r { work[m] = std::array::from_fn(|c| 0.5*(work[m][c]+work[m+1][c])) }
+        lo.push(work[0]);
+        hi.push(work[n-1-r]);
+    }
+    hi.reverse();
+    (lo,hi)
+}
+
 
 /// A surface's algebraic form and its gradient at `x` (`algebraic`'s, in its frame's coordinates,
 /// the gradient carried back to space), written once over `Num`: read in floats, or in intervals
@@ -1895,6 +2105,19 @@ impl<'a> Located<'a> {
     /// one whose reading against a face was refused, is abandoned for another direction).
     pub fn solid_place(&self,p: V) -> Place {
         for (fi,f) in self.b.faces.iter().enumerate() {
+            // (a face whose box stands farther than the tolerance holds no point on it: its
+            // surface's distance not asked, which a fitted sheet reads by searching its poles)
+            let (lo,hi) = self.space[fi];
+            if (0..3).any(|k| p[k] < lo[k]-self.tol || p[k] > hi[k]+self.tol) { continue }
+            // a net's: where no span's box (its Bézier points', `net_index`) stands within it
+            if let Surface::BSpline(_,net) = &f.surface {
+                if net.weights.is_none() {
+                    let index = net_index(net);
+                    let mut near = false;
+                    index.tree.query_box(crate::util::bvh::Bounds {lo:p.map(|x| x-self.tol),hi:p.map(|x| x+self.tol)},|_| near = true);
+                    if !near { continue }
+                }
+            }
             if f.surface.implicit(p).abs() <= self.tol && self.face_place(fi,p) != Place::Out { return Place::On }
         }
         let reach = 4.*self.size+distance(p,self.b.vertices.first().map_or(p,|v| v.p));
