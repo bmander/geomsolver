@@ -609,9 +609,17 @@ wrong side of the circle it leaves along, and a piece of the arrangement lost
 round the great circle there (`ssi`'s `pipe_end`), and a cylinder about the screw's axis in the
 helices of the circle's points at its radius, the roots of a trigonometric polynomial of degree two
 round the circle, a touch where it only reaches nought (`screwed_circle_round`). **An edge's flux
-settles** (`props`'s `settled`): read over its pieces, then twice as many, until two readings agree
-to rounding, the coarser kept — a ball's great circle passing within a few degrees of a pole sweeps
-half a turn of `u` there, and a sixteenth of a turn a piece left a ball's piece 0.2% off its area.
+settles** (`props`'s `settled`): read over its pieces, then twice as many, the coarser kept where
+the readings agree to rounding. Otherwise the interval whose rule and its two halves disagree
+most is split, against one error budget set by the edge's integrand's mean magnitude. The reading
+with the least estimated error is kept: ever nearer an exact pole the inverse's rounding grows,
+so the finest is not always the best. Refinement ends at that budget, after 32 splits without an
+improvement, or at its depth/work bounds (twenty levels, 4096 splits). A circle close to a ball's
+pole sweeps half a turn of `u` in a tiny part of its span: six doublings of the whole edge still left
+brep-bench's boolean/unequal-lens-aslant 1.5% off its volume. Local refinement resolves that turn
+without refining the whole circle to its width.
+`brep::an_unequal_lens_near_a_pole_measures_its_spherical_caps` holds its volume and area to the
+closed forms of its two caps under three placements of the balls' charts.
 **A traced edge inverted onto its face is measured across planes** (`props`'s `along_trace`,
 #798): Green's integral is the curve's, however parameterised, so it is read not by the trace's
 own parameter — which counts its points, its rate stepping at each, every stretch a rule of its own

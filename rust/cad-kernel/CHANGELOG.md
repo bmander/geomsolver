@@ -8,6 +8,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Measures resolve an edge passing close to a surface's pole** (`props::settled`): where two
+  quadrature readings disagree, refine their intervals locally instead of stopping after six
+  doublings of the whole edge. brep-bench's `boolean/unequal-lens-aslant` now measures its two
+  spherical caps to rounding, where its volume was 1.5% too large and its area 0.28% too large.
+
 ## [0.6.2] - 2026-11-09
 
 - **A ring's sweep cut from a blank** (`swept::closed::ring_cut_from`, **new**): the blank split by
