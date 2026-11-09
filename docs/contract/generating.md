@@ -1571,8 +1571,7 @@ longer refuses it. Its few degrees' fan stays in the faces of the halves either 
 (`helical::SHALLOW_FAN`, a tenth of a radian, `Characteristic::fan_turn`; its ends still exact
 rows): cut out, a band 0.08 mm wide met the block's side plane in the split with a pcurve 3e-5 off
 its edge (first seen at the display's samples, then at a 15° lean in the export). Under a slide, or
-a screw along the extrusion, the silhouette uses the whole-edge reading of G1b below; it is no
-longer categorically refused at T1. A corner of a half meeting the plane is a vertex, and a
+a screw along the extrusion, the silhouette is read by the whole-edge reading of G1b below. A corner of a half meeting the plane is a vertex, and a
 round side's crease is still not walked (S1, `OVER_CREASE`). The gate is
 `solid_sweeps_examples::the_creased_bar_crosses_its_crease` (`solid_sweeps/creased.sv`, a bar
 leaning across the turn drafted 2° both ways, its inner side's halves joined round the crease;
