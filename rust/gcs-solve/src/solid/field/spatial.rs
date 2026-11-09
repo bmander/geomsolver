@@ -128,7 +128,8 @@ impl SpatialField {
         use super::Side;
         match self.node.as_ref() {
             Node::Extruded(source) => source.side_of(p,t),
-            Node::Revolved(_) | Node::Region(_) | Node::Built(_) => Side::of(self.value(p),t),
+            Node::Revolved(source) => source.side(p,t),
+            Node::Region(_) | Node::Built(_) => Side::of(self.value(p),t),
             Node::Transformed {source,pose} => source.side(pose.inverse_point_mid(p),t),
             Node::Union(a,b) => a.side(p,t).min(|| b.side(p,t)),
             Node::Intersection(a,b) => a.side(p,t).max(|| b.side(p,t)),

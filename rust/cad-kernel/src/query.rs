@@ -4,6 +4,7 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::geom::{Curve,Surface,Uv,V};
+use super::nurbs::blossom;
 use super::topo::{unwrap,Brep,EdgeCurve,Face};
 use super::plane2::{chord,Chord,Touch};
 use crate::util::isolate::GaveUp;
@@ -404,16 +405,9 @@ impl Reader for General {
 /// says so where it can (a line along a cylinder).
 fn along(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> bool {
     if !(t0.is_finite() && t1.is_finite()) { return false }
-    // a net's: a curve whose start stands within `tol` of none of its spans' boxes lies along no
-    // stretch of it (its distance there not read, which a fitted sheet reads by searching it)
-    if let Surface::BSpline(_,net) = surface {
-        if net.weights.is_none() {
-            let p = curve.point(t0);
-            let mut near = false;
-            net_index(net).tree.query_box(crate::util::bvh::Bounds {lo:p.map(|x| x-tol),hi:p.map(|x| x+tol)},|_| near = true);
-            if !near { return false }
-        }
-    }
+    // a net's: a curve whose start, middle or end stands within `tol` of none of its spans' boxes
+    // lies along no stretch of it (`near_net`)
+    if ![t0,0.5*(t0+t1),t1].iter().all(|&t| near_net(surface,curve.point(t),tol)) { return false }
     if !lies_along(curve,[t0,t1],surface,tol) { return false }
     let n = samples(curve,[t0,t1],surface);
     (0..=n).all(|i| surface.implicit(curve.point(t0+(t1-t0)*i as f64/n as f64)).abs() <= tol)
@@ -502,12 +496,24 @@ fn settled(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,roots: Vec<
         i = j+1;
     }
     for end in [t0,t1] {
-        if !end.is_finite() || !(side(end).abs() <= tol) || !on_bounded(surface,curve.point(end),tol) { continue }
+        if !end.is_finite() || !near_net(surface,curve.point(end),tol) || !(side(end).abs() <= tol) || !on_bounded(surface,curve.point(end),tol) { continue }
         runs.retain(|r| !joined(r.0,end));
         runs.push((end,false));
     }
     runs.sort_by(|x,y| x.0.total_cmp(&y.0));
     runs
+}
+
+/// **Whether `p` may stand within `tol` of `surface`**, read off a net's spans' boxes alone
+/// (`net_index`): a point within `tol` of none is off the net, its distance not read — which a
+/// fitted sheet reads by searching for its foot, from afar at every span it may be by (each end of a
+/// ray placing a point, at every tooth's sheet it passed). Any other surface: `true`.
+fn near_net(surface: &Surface,p: V,tol: f64) -> bool {
+    let Surface::BSpline(_,net) = surface else { return true };
+    if net.weights.is_some() { return true }
+    let mut near = false;
+    net_index(net).tree.query_box(crate::util::bvh::Bounds {lo:p.map(|x| x-tol),hi:p.map(|x| x+tol)},|_| near = true);
+    near
 }
 
 /// **Why a reader has no answer** (#780 R3, #814), told apart so each is answered its own way: no
@@ -943,7 +949,52 @@ fn general(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Result<
             return Ok((Meets::At(merged),proved))
         }
     }
-    Ok((Meets::At(over(pu,pv,[a,b])?),proved))
+    // **any other curve read once over the whole of the surface's parameters**, and against a net
+    // where that reads past any search's boxes, **over the spans the curve can reach** (`reached`):
+    // a circle along a quintic tube's rim, read over the whole net, may. The whole first: a curve
+    // along a sheet across many spans is one run proved over the whole, which a box cutting the
+    // run proves less readily, or not at all
+    match (over(pu,pv,[a,b]),surface) {
+        (Err(Uncertified::Gave(GaveUp::Most)),Surface::BSpline(_,net)) if net.weights.is_none() =>
+            Ok((Meets::At(reached(curve,[a,b],net,tol,&over)?),proved)),
+        (found,_) => Ok((Meets::At(found?),proved)),
+    }
+}
+
+/// How many times `reached` halves a curve's stretch at most.
+const CURVE_DEEPEST: usize = 6;
+
+/// **Where a curve meets a net, read over the spans it can reach**: its stretch `[a, b]` halved
+/// while its enclosure reaches a span's box (within `tol`, `net_index`) and is wider than the
+/// narrowest it reaches, to `CURVE_DEEPEST` halvings, a piece reaching none dropped (the net lies in
+/// its spans' boxes, so it meets nothing there); and the net read once by `over` over the hull of
+/// the spans the pieces reach, the curve over their stretch.
+fn reached(curve: &Curve,[a,b]: [f64;2],net: &std::sync::Arc<crate::nurbs::Net>,tol: f64,
+           over: &dyn Fn([f64;2],[f64;2],[f64;2]) -> Result<Vec<(f64,bool)>,Uncertified>) -> Result<Vec<(f64,bool)>,Uncertified> {
+    use crate::util::bvh::Bounds;
+    let index = net_index(net);
+    let widest = |lo: V,hi: V| (0..3).map(|k| hi[k]-lo[k]).fold(0.,f64::max);
+    let near = |lo: V,hi: V| Bounds {lo:lo.map(|x| x-tol),hi:hi.map(|x| x+tol)};
+    let (mut t,mut spans) = ([f64::INFINITY,f64::NEG_INFINITY],[[f64::INFINITY,f64::NEG_INFINITY];2]);
+    let mut stack = vec![([a,b],0)];
+    while let Some((s,depth)) = stack.pop() {
+        let e = curve.enclose([s]).at;
+        let (lo,hi): (V,V) = (e.map(|x| x.lo()),e.map(|x| x.hi()));
+        if !lo.iter().chain(&hi).all(|x| x.is_finite()) { return Err(Uncertified::Gave(GaveUp::Most)) }
+        let mut reached: Vec<usize> = Vec::new();
+        index.tree.query_box(near(lo,hi),|i| reached.push(i));
+        if reached.is_empty() { continue }
+        let narrowest = reached.iter().map(|&i| widest(index.boxes[i].lo,index.boxes[i].hi)).fold(f64::INFINITY,f64::min);
+        if widest(lo,hi) > narrowest.max(tol) && depth < CURVE_DEEPEST {
+            let m = 0.5*(s[0]+s[1]);
+            stack.extend([([m,s[1]],depth+1),([s[0],m],depth+1)]);
+            continue
+        }
+        t = [t[0].min(s[0]),t[1].max(s[1])];
+        for i in reached { for k in 0..2 { spans[k] = [spans[k][0].min(index.spans[i][k][0]),spans[k][1].max(index.spans[i][k][1])] } }
+    }
+    if !(t[0] <= t[1]) { return Ok(Vec::new()) }
+    over(spans[0],spans[1],t)
 }
 
 /// **A net's knot spans indexed**: each span's parameters, boxed by its Bézier patch's control
@@ -1002,23 +1053,6 @@ fn indexed(net: &crate::nurbs::Net) -> NetIndex {
         }
     }
     NetIndex {spans:out,tree:crate::util::bvh::Bvh::new(bounds.iter().copied()),boxes:bounds}
-}
-
-/// The `j`-th Bézier control point of the span `k` (over `[t0, t1]`) of the B-spline of degree `deg`
-/// on `knots` whose poles over it are `poles`: its blossom at `t0` taken `deg − j` times and `t1`
-/// `j` times, by de Boor's algorithm with those arguments.
-fn blossom(knots: &[f64],poles: &[V],k: usize,deg: usize,[t0,t1]: [f64;2],j: usize) -> V {
-    let mut q: Vec<V> = poles.to_vec();
-    for r in 1..=deg {
-        let arg = if r <= deg-j { t0 } else { t1 };
-        for m in (r..=deg).rev() {
-            let i = k-deg+m;
-            let den = knots[i+deg+1-r]-knots[i];
-            let alpha = if den > 0. { (arg-knots[i])/den } else { 0. };
-            q[m] = std::array::from_fn(|c| (1.-alpha)*q[m-1][c]+alpha*q[m][c]);
-        }
-    }
-    q[deg]
 }
 
 /// How finely a span's Bézier patch is halved toward a line through it, as a part of the span each
@@ -1967,14 +2001,16 @@ pub struct Located<'a> {
     edge_space: Vec<([f64;3],[f64;3])>,
     /// The solid's size (`Brep::size`), read once.
     size: f64,
+    /// The box its faces' boxes fill: past it no face stands.
+    whole: ([f64;3],[f64;3]),
 }
 
 impl<'a> Located<'a> {
     /// A located boundary that keeps its own copy.
     pub fn owned(b: Brep,tol: f64) -> Located<'static> {
-        let (tol,coarse,drawn,space,seams,edge_space,size) = { let l = Located::new(&b,tol);
-            (l.tol,l.coarse,l.drawn,l.space,l.seams,l.edge_space,l.size) };
-        Located {b:std::borrow::Cow::Owned(b),tol,coarse,drawn,space,seams,edge_space,size}
+        let (tol,coarse,drawn,space,seams,edge_space,size,whole) = { let l = Located::new(&b,tol);
+            (l.tol,l.coarse,l.drawn,l.space,l.seams,l.edge_space,l.size,l.whole) };
+        Located {b:std::borrow::Cow::Owned(b),tol,coarse,drawn,space,seams,edge_space,size,whole}
     }
     pub fn new(b: &'a Brep,tol: f64) -> Located<'a> { Located::boxed(b,tol,&|_| None) }
 
@@ -1984,10 +2020,12 @@ impl<'a> Located<'a> {
         let size = b.size();
         let coarse = (1e-4*size).max(tol*8.);
         let drawn = (0..b.faces.len()).map(|_| std::sync::OnceLock::new()).collect();
-        let space = (0..b.faces.len()).map(|fi| known(fi).unwrap_or_else(|| face_box(b,fi))).collect();
+        let space: Vec<([f64;3],[f64;3])> = (0..b.faces.len()).map(|fi| known(fi).unwrap_or_else(|| face_box(b,fi))).collect();
+        let mut whole = super::geom::EMPTY;
+        for &bx in &space { super::geom::widen(&mut whole,bx) }
         let seams = b.faces.iter().map(Face::seams).collect();
         let edge_space = (0..b.edges.len()).map(|e| edge_box(b,e,size)).collect();
-        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,drawn,space,seams,edge_space,size}
+        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,drawn,space,seams,edge_space,size,whole}
     }
 
     /// Face `fi`'s outline and its parameter box, drawn once.
@@ -2110,21 +2148,21 @@ impl<'a> Located<'a> {
             let (lo,hi) = self.space[fi];
             if (0..3).any(|k| p[k] < lo[k]-self.tol || p[k] > hi[k]+self.tol) { continue }
             // a net's: where no span's box (its Bézier points', `net_index`) stands within it
-            if let Surface::BSpline(_,net) = &f.surface {
-                if net.weights.is_none() {
-                    let index = net_index(net);
-                    let mut near = false;
-                    index.tree.query_box(crate::util::bvh::Bounds {lo:p.map(|x| x-self.tol),hi:p.map(|x| x+self.tol)},|_| near = true);
-                    if !near { continue }
-                }
-            }
+            if !near_net(&f.surface,p,self.tol) { continue }
             if f.surface.implicit(p).abs() <= self.tol && self.face_place(fi,p) != Place::Out { return Place::On }
         }
-        let reach = 4.*self.size+distance(p,self.b.vertices.first().map_or(p,|v| v.p));
+        // past the box the faces fill no face stands: a point off it is outside, and a ray from a
+        // point within it need reach only out of it. The ways out tried shortest first: from a hub
+        // inside a gear's ring, a ray along the axis leaves by its own faces, where one across it
+        // read every tooth's sheet
+        if gap(self.whole,p) > self.tol { return Place::Out }
+        let (lo,hi) = (self.whole.0.map(|x| x-self.tol),self.whole.1.map(|x| x+self.tol));
         const DIRECTIONS: [V;5] = [[0.5773,0.6124,0.5402],[-0.3172,0.8123,-0.4893],[0.7071,-0.3162,0.6325],
             [-0.6412,-0.5123,0.5712],[0.1234,-0.4321,-0.8934]];
-        'dirs: for d in DIRECTIONS {
-            let d = scale(d,1./norm(d));
+        let mut ways = DIRECTIONS.map(|d| { let d = scale(d,1./norm(d)); (line_in_box(p,d,[0.,f64::INFINITY],(lo,hi)).map_or(0.,|s| s[1]),d) });
+        ways.sort_by(|a,b| a.0.total_cmp(&b.0));
+        'dirs: for (exit,d) in ways {
+            let reach = exit+self.tol+1e-9*self.size;
             let ray = Curve::Line {p,d};
             let mut crossings = 0;
             for (fi,f) in self.b.faces.iter().enumerate() {

@@ -237,12 +237,35 @@ pub(crate) fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
 /// table of four, a degree under `SMALL` in a table that size, a higher one (OCCT approximates up
 /// to 25) in one of `W`.
 #[inline]
-fn with_basis<R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
+pub(crate) fn with_basis<R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
     fn tabled<const M: usize,R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
         let (s,d) = basis_ders_in::<M>(p,u,count,t,n);
         f(s,&[&d[0],&d[1],&d[2]])
     }
     if p < 4 { tabled::<4,R>(p,u,count,t,n,f) } else if p < SMALL { tabled::<SMALL,R>(p,u,count,t,n,f) } else { tabled::<W,R>(p,u,count,t,n,f) }
+}
+
+/// **The `j`-th Bézier control point of a polynomial piece restricted to `[t0, t1]`**: the piece
+/// over knot span `k` of the spline of degree `deg` on `knots` whose `deg + 1` poles reaching it
+/// are `poles`, its blossom at `t0` taken `deg − j` times and `t1` `j` times, by de Boor's steps
+/// with those arguments — `[t0, t1]` the span itself (its Bézier points), any stretch within it,
+/// or a point.
+pub(crate) fn blossom(knots: &[f64],poles: &[V],k: usize,deg: usize,t: [f64;2],j: usize) -> V {
+    fn tabled<const M: usize>(knots: &[f64],poles: &[V],k: usize,deg: usize,[t0,t1]: [f64;2],j: usize) -> V {
+        let mut q = [[0.;3];M];
+        q[..=deg].copy_from_slice(&poles[..=deg]);
+        for r in 1..=deg {
+            let arg = if r <= deg-j { t0 } else { t1 };
+            for m in (r..=deg).rev() {
+                let i = k-deg+m;
+                let den = knots[i+deg+1-r]-knots[i];
+                let alpha = if den > 0. { (arg-knots[i])/den } else { 0. };
+                q[m] = std::array::from_fn(|c| (1.-alpha)*q[m-1][c]+alpha*q[m][c]);
+            }
+        }
+        q[deg]
+    }
+    if deg < 4 { tabled::<4>(knots,poles,k,deg,t,j) } else if deg < SMALL { tabled::<SMALL>(knots,poles,k,deg,t,j) } else { tabled::<W>(knots,poles,k,deg,t,j) }
 }
 
 /// A Bézier curve's point at `f`, its poles in homogeneous coordinates: de Casteljau's steps.

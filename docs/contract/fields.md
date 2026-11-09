@@ -160,6 +160,21 @@ in common with the profile's box carried by its frame (`PlanarField::box_bound`:
 disk and where `from_loop` builds any other loop's), wherever every section is within the profile (no draft, or one leaning in) — a plug drawn
 in a placed instance's plane 140mm from its origin was sized to that disk, and the mesher's facets
 with it, and found no boundary (`tests/grown.rs::a_prism_far_from_its_planes_origin_has_its_own_box`).
+**A profile's side reads no distance it need not** (`Profile::side`, the ray's parity and then only
+the edges within the level): an extruded field's side is its profile's at the point's section, a
+revolved field's its meridian profile's at the point's radius and height (`RevolvedField::side`) —
+the swept admission's blank membership read a turned blank's whole distance at every sample —
+and each says what comparing the value says
+(`swept_speed::a_fields_side_of_a_level_is_what_its_value_says`, a pierced sphere and the hypoid
+pinion's blank among them). **A conic wall's distance over a box is bounded by its pieces' control
+triangles, nearest first** (`profile::Wall::conic`): the arc within each piece's triangle, the
+triangle within the piece's bulge of the arc, so a piece's gap is off by its bulge at most, which
+falls with the square of its size; the pieces halved once into a tree (`Conic`), past it as reached,
+read till the nearest left bulges no more than an eighth of the box or the rounding's slack. Read by
+discs about the triangles, whose gaps fall only as their size, a point's box halved a band of pieces
+to the deepest — the hypoid pinion's field agreement read 1 400 pieces a call, 320 million in all,
+where it reads one or two (`swept_speed::a_turned_conics_field_holds_its_values_over_any_box`: every
+box's enclosure holds its sampled values, and a point's is within 10⁻⁸ mm).
 `MaterialEvaluator::boundary` needs that support, complete cells, strict corner signs and two-sided
 distance evidence for `FieldBoundary`. `BoundaryOptions::domain` takes a caller's box instead, but
 it **is** an arbitrary crop: its signs prove nothing beyond it, and closure is the caller's

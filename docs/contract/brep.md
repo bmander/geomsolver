@@ -209,7 +209,13 @@ a swap made without its callers knowing:
   off it along the sheet's normal (`System::frame`), where the world axes' components are not. **A box is read grown past its sides**
   (`isolate::GROW`), so a root on the face two halves share is inside both and the two that find it
   are one (`roots::a_crossing_on_the_face_two_halves_share_is_found_once`,
-  `arrangement::a_bilinear_sheets_block_in_common_with_a_drum_is_the_drum_under_the_sheet`).
+  `arrangement::a_bilinear_sheets_block_in_common_with_a_drum_is_the_drum_under_the_sheet`). **A box
+  is halved across the side it smears farthest along** (`isolate::solve_by`): each side's width
+  times its unknown's Jacobian column at the middle, among the sides still wider than the
+  resolution, the widest side where that is not finite — so a box stays about as wide in what it
+  reads every way. Halved across its widest side in the unknowns' own scales, a short edge against a
+  whole fitted sheet stayed long along the sheet and read ten times the boxes
+  (`brep_export::the_pinion_as_written_is_built_by_sectors`).
 - **Not proved means refused** (#814 P0). A root is returned only once it is settled within the box
   it was certified in — Krawczyk's own contraction `X ← K(X) ∩ X`, then Newton's method within what
   is left — and the caller's tolerance accepts it there. A Newton step that leaves the certified
@@ -218,14 +224,23 @@ a swap made without its callers knowing:
   (`enclosures::a_root_that_cannot_be_settled_is_refused_never_returned`,
   `roots::a_root_certified_over_a_flat_system_is_where_it_is`). A reading that gives up is
   `Meets::Refused`, its witness (`query::Refusal`) the curve's and the surface's kinds, the stretch
-  and the box: a ray locating a point abandons its direction (`Located::solid_place`), a Boolean is
+  and the box: a ray locating a point abandons its direction (`Located::solid_place`: a point off
+  the box its faces' boxes fill is out, past which no face stands, and a ray need reach only out of
+  that box, the five directions tried by how soon they leave it), a Boolean is
   refused with it in words (`boolean`'s edge-against-face phase, an along-face crossing, a triple
   point; `query::crossings_in` answers the refusal too), and a fillet's leg says so
   (`enclosures::a_reading_that_proves_nothing_is_refused_with_its_witness`). The sampled search is
   retired as an answer path; the profile counts each reading proved or measured (`util::meter`).
 - **What a kind of geometry is** (`enclose::Enclosed`): each `Curve` and `Surface` kind encloses,
-  once, its point and first derivatives over a box of its parameters — B-splines (rational too, at
-  any knot multiplicity) by de Boor's algorithm in intervals span by span, the hull over the spans;
+  once, its point and first derivatives over a box of its parameters — a non-rational B-spline
+  curve or net of degree below `enclose::BEZIER`, over a box within its domain and a few spans, by
+  its spans' Bézier forms restricted to the box: their control points blossoms of its poles at the
+  box's ends (the patch over the box in their hull), its partials' the difference nets' alike, each
+  hull widened by a bound on its rounding (`Net::restricted`, `BSpline::restricted`) — tighter than
+  de Boor read in intervals, which loses the blending's dependence on the one parameter, and read
+  in floats; over many spans the hulls of its poles and their differences (`Net::hulled`); a
+  rational one, or one of a higher degree, by de Boor's algorithm in intervals span by span, the
+  hull over the spans;
   lines, conics, quadrics, the torus, extrusions, revolutions, blends and their carries, a face
   family's runs by their own formulas in intervals; affine images through the map; turned and slid
   contacts by their own jets; a plane's cut of a screwed sheet by `−α/β` and, beside a ruling the
@@ -237,13 +252,32 @@ a swap made without its callers knowing:
   `blend_bounds`, `Heights::bounds` and the amplitude, screw and helix bounds are gone, and every
   closed form's search reads its function written once over `Num` (`isolate::Formula`), its value
   and rate enclosed by the same formula in intervals.
+- **An end of a stretch is on a net only near one of its spans** (`query::near_net`): `settled`
+  reads whether each end of the stretch stands on the surface, and a net's distance is a foot
+  searched for — from afar, at every sheet a ray passed, by Newton from four spans and the grid —
+  so an end standing farther than the tolerance from every span's box (`net_index`) is off it
+  unread; likewise `along` reads a curve lying in a net only where its start, middle and end are
+  each by a span. A ray placing a bore's points in a hypoid pinion's part read every tooth's sheet
+  so: the cut of the bore 1.8 s, now 0.19 s.
 - **How a pair is read** (`query::Reader`): `General`, **the general reading every pair has** — a
   surface with an algebraic form (a plane, a quadric, a torus) along the curve, one unknown, `F(C(t))`
   and `∇F · C'` enclosed from the curve's enclosure; an extrusion and a revolution, two unknowns,
   the curve against the profile seen along the way or against the meridian in `(ρ², z)` (no
   singularity on the axis, and a line along an extrusion's way no singular system); any other as
   `C(t) = S(u, v)`, three unknowns over the curve's stretch and the parameters the surface reaches,
-  a line with no end clipped to a bounded surface's own box — and `Fast` (what `curve_surface` reads by), **the closed forms kept
+  a line with no end clipped to a bounded surface's own box. A non-rational net is read by its spans' restricted Bézier
+  patches and its boxes halved by smear (above): the hypoid pinion's side, a spline edge a few
+  spans long hugging its cut's sheet of 240 × 66 poles, read past any search's boxes from #814 until
+  both (`brep_export::the_pinion_as_written_is_built_by_sectors`;
+  `enclosures::a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses`, its roots held to ones
+  found apart from the kernel); a line is read span by span, clipped to each span's box grown by its
+  size (`net_index`); any other curve over the whole net, and only where that reads past any
+  search's boxes (`GaveUp::Most`) over the hull of the spans its pieces reach (`query::reached`:
+  halved about a span across, a piece reaching no span's box dropped). The whole first: a curve
+  along a sheet across many spans is one run proved over the whole, which a box cutting the run
+  proves less readily or not at all; the hull for a circle along a quintic tube's rim, which the
+  whole net read by restricted Bézier patches reads past them
+  (`swept_patches::a_bull_nose_along_a_spline_frame_closes_into_the_volume_its_faces_advance_through`) — and `Fast` (what `curve_surface` reads by), **the closed forms kept
   as fast paths**, each held to the general reading: a line against a plane, a cone, a torus and a
   conic turned as polynomials along it (`query::line_revolution`, a quartic in the meridian's own
   parameter), against a turned contact's meridian (#780 C3, `query::line_turned`) and the cylinder a
@@ -652,6 +686,15 @@ forty points or more at every node of every edge. An area whose `|·|` changes s
 cones (to a point too), tori and cylinders, whole, moved and cut at a slant, agrees with the rule
 to 6e-16, and a cube rounded all over is measured in a millisecond and a half, where its area took
 26 ms.
+**A polynomial net's `G` is tabled from the face's own middle** (`props::Prefix`): `G` from any `u`
+knot differs by a function of `v` alone, which closes to nought round a loop, so each `v` span's
+column is filled out from the knot nearest the face's middle only as far as a `u` asked reaches, a
+span at a time by the net's rows read at that `v` (the sheet and `S_v` B-spline curves in `u`
+there) — a fitted sheet's face was integrated across its hundreds of spans per column, each node a
+2D evaluation. **An inverse edge's nodes are sought from the last** (`Pcurve::at_and_derivative_from`):
+each node's foot from the previous node's, carried along by its rate, where that node is just
+behind it, the branch still the one nearest the line between the ends — from that line, Newton
+took some ten steps a node on a fitted sheet's curved edge.
 **A traced edge inverted onto its face is measured across planes** (`props`'s `along_trace`,
 #798): Green's integral is the curve's, however parameterised, so it is read not by the trace's
 own parameter — which counts its points, its rate stepping at each, every stretch a rule of its own

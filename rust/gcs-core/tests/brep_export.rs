@@ -249,6 +249,27 @@ fn the_relieved_pinion_is_built_by_sectors() {
     exact.solid.check(1e-6).unwrap();
 }
 
+/// **The pinion as its document writes it is built** (the page's `?example=spiral_bevel`): at the
+/// mill the pair finds (#283) its cut's sheet is fitted as one face, a cubic net of 240 × 66
+/// poles, which the spline edges of the sector's side are read against, hugging it. From #814 on
+/// the search over the whole net halved past any search's boxes, enclosing the net by de Boor in
+/// intervals and halving its boxes in the unknowns' own scales, and the pinion was refused; read
+/// by its restricted Bézier patches and halved by smear (`enclose::Net::restricted`,
+/// `isolate::solve_by`), it is built, turned into every copy, and checked, in a few seconds.
+#[test]
+fn the_pinion_as_written_is_built_by_sectors() {
+    let e = fixtures::gear::read_as_configured();
+    let body = fixtures::solid(&e,"pair.pinion.body");
+    let lines = std::sync::Mutex::new(Vec::new());
+    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
+    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
+    let said = lines.lock().unwrap().join("\n");
+    assert!(said.contains("`pair.pinion.cut.removal`: sheet 240x66, one chart"),"{said}");
+    assert!(said.contains("turned the sector into 24 copies"),"{said}");
+    assert_eq!(exact.solid.faces.len(),147,"{said}");
+    exact.solid.check(1e-6).unwrap();
+}
+
 /// The pair with a 20-tooth pinion: at the gear's heel a corner of the cutter grazes the blank's
 /// end relief at some stations and is a fan the sheet's rows stop before at others
 /// (`contact_trace::charted`), so the cut's fitted sheet ends a few microns inside the blank, where

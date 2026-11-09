@@ -363,7 +363,11 @@ kept in its plane) to the root kind that names them (`tests/surface_contact.rs`)
 (`brep::swept::constant_twist`), the sheet fitted and judged (`brep::swept::sheet`: `Sheet`, `Grid`,
 `settle`, `Fitted`, `Tolerance`) and the screw's sheet carried along (`brep::swept::helical`) are
 in `cad-kernel`, on the tool as the kernel reads it (`brep::swept::tool::Tool`: its faces, a face of
-revolution being `brep::swept::surface::RevolvedSurface`, its edges, creases and `Material`) and the
+revolution being `brep::swept::surface::RevolvedSurface`, its edges, creases and `Material`; whether a
+point is on the tool, `Tool::on`, is `Material::near`, which a B-rep's `read::Boundary` reads off
+the faces and edges within the threshold alone, the first within it deciding, where `value` reads
+every face and edge nearer than the best found — a traced edge's foot by projections onto both
+its surfaces, asked at every sample: a hypoid gear's admission 9.6 s, now 3.8 s) and the
 lowered trajectory; `constant_twist::…`, `helical::…` and `sheet::settle` below name them there.
 `solid::constant_twist::walk` hands the kernel the tool and the motion `SweepContacts` read off the
 drawing and says the kernel's `Row` as admission's `Condition`; `brep::sweep::helical` hands it the

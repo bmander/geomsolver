@@ -331,6 +331,10 @@ impl RevolvedField {
     /// The field at a point in plain floating point; see `PlanarField::value`.
     pub fn value(&self,p: [f64;3]) -> f64 { self.profile.value(self.meridian(p)) }
 
+    /// `Side::of(self.value(p), t)`, by the profile's own `side` at the point's meridian (which
+    /// measures only the edges within the level: a point's membership reads no distance).
+    pub(crate) fn side(&self,p: [f64;3],t: f64) -> Side { self.profile.side(self.meridian(p),t) }
+
     /// A point in the profile's (radius, height).
     fn meridian(&self,p: [f64;3]) -> [f64;2] {
         let [origin,axis] = self.plain;

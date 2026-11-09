@@ -95,6 +95,20 @@ impl Pcurve {
             _ => (uv,self.derivative(t,edge,surface,vertices)),
         }
     }
+    /// `at_and_derivative`, an inverse curve's point sought from `seed` where one is given — a
+    /// point near it on the curve, carried along by its rate (`props`, reading an edge's nodes in
+    /// order) — and not from the line between its ends, its branch on a periodic surface still the
+    /// one nearest that line. Newton's method from the line took some ten steps a node on a fitted
+    /// sheet's curved edge.
+    pub fn at_and_derivative_from(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex],seed: Option<Uv>) -> (Uv,Uv) {
+        match *self {
+            Pcurve::Inverse {a,b} => {
+                let uv = inverse_from(a,b,t,edge.point(t,vertices),edge,surface,seed);
+                (uv,inverse_derivative(uv,t,edge,surface))
+            }
+            _ => self.at_and_derivative(t,edge,surface,vertices),
+        }
+    }
     /// The same curve with its `u` negated: what it is on its face's surface placed so that its
     /// `u` runs the other way (`Frame::rehanded`, a revolution's). Negating a coordinate is linear,
     /// so a rational curve's weights are unchanged.
@@ -126,10 +140,15 @@ fn fraction(t: f64,edge: &Edge) -> f64 { if edge.t[1] > edge.t[0] { (t-edge.t[0]
 /// An inverse curve's parameters at `t` (`Pcurve::Inverse {a, b}`), the edge's point there given as
 /// `x`: `Pcurve::at`, for what reads the edge's curve some other way (`props`, a traced edge read
 /// across planes).
-pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv {
+pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv { inverse_from(a,b,t,x,edge,surface,None) }
+
+/// `inverse_at`, the point sought from `seed` where one is given (finite) and not from the line
+/// between the ends, its branch on a periodic surface still the one nearest that line.
+fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Option<Uv>) -> Uv {
     let s = fraction(t,edge);
     let near = along(a,b,s);
-    let uv = unwrap(surface.inverse_near(x,near),near,surface.periods());
+    let from = seed.filter(|q| q.iter().all(|x| x.is_finite())).unwrap_or(near);
+    let uv = unwrap(surface.inverse_near(x,from),near,surface.periods());
     if s == 0. || s == 1. { on_pole(surface,uv,near) } else { uv }
 }
 

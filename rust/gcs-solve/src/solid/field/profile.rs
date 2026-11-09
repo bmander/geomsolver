@@ -192,8 +192,9 @@ enum Wall {
     Segment {a:[I;2],direction:[I;2],length:I},
     Round {center:[I;2],radius:I,ends:[[I;2];2],from:[I;2],to:[I;2],reflex:bool},
     Circle {center:[I;2],radius:I},
-    /// A conic's arc, enclosed by its pieces' control triangles (`Wall::conic`).
-    Conic(crate::brep::planar::Seg),
+    /// A conic's arc, enclosed by its pieces' control triangles (`Wall::conic`), halved once into
+    /// a tree of them (`Conic`).
+    Conic(std::sync::Arc<Conic>),
 }
 
 fn nonnegative(x: I) -> I { I::new(x.bounds()[0].max(0.),x.bounds()[1].max(0.)).unwrap() }
@@ -227,47 +228,52 @@ impl Wall {
                 Self::Round {center,radius,ends:[on_circle(from)?,on_circle(to)?],from,to,
                     reflex:sweep.abs() > PI}
             }
-            Edge::Conic {..} => Self::Conic(edge.conic()),
+            Edge::Conic {..} => Self::Conic(std::sync::Arc::new(Conic::new(&edge.conic()))),
         }))
     }
 
     /// A conic's arc's distance over a box `[lo, hi]`: above by the farthest corner from the
-    /// nearest of its points sampled (each on the arc, read in floating point), below by the
-    /// nearest of its pieces' discs about their control triangles — the arc lies within each
-    /// piece's triangle (positive weights) — split in halves while a piece is wider than an
-    /// eighth of the box and nearer than the bound above.
-    fn conic(seg: &crate::brep::planar::Seg,lo: P,hi: P) -> Result<I,Error> {
-        let crate::brep::planar::Seg::Conic {a,m,b,w} = *seg else { unreachable!("a conic's wall") };
-        let far = |q: P| ((q[0]-lo[0]).abs().max((q[0]-hi[0]).abs())).dhypot((q[1]-lo[1]).abs().max((q[1]-hi[1]).abs()));
-        let near = |q: P| (lo[0]-q[0]).max(q[0]-hi[0]).max(0.).dhypot((lo[1]-q[1]).max(q[1]-hi[1]).max(0.));
-        let scale = a[0].abs().max(a[1].abs()).max(b[0].abs()).max(b[1].abs()).max(m[0].abs()).max(m[1].abs());
-        let slack = 64.*f64::EPSILON*(1.+scale);
-        let mut upper = (0..=8).map(|k| far(seg.point(k as f64/8.))).fold(f64::INFINITY,f64::min);
-        let size = (hi[0]-lo[0]).dhypot(hi[1]-lo[1]);
-        let mut lower = f64::INFINITY;
-        // pieces as homogeneous nets: (x w, y w, w)
-        let mut stack = vec![([a[0],a[1],1.],[w*m[0],w*m[1],w],[b[0],b[1],1.],0usize)];
-        while let Some((h0,h1,h2,depth)) = stack.pop() {
-            let at = |h: [f64;3]| [h[0]/h[2],h[1]/h[2]];
-            let (p0,p1,p2) = (at(h0),at(h1),at(h2));
-            let centre = [(p0[0]+p1[0]+p2[0])/3.,(p0[1]+p1[1]+p2[1])/3.];
-            let radius = distance(centre,p0).max(distance(centre,p1)).max(distance(centre,p2))+slack;
-            let gap = near(centre)-radius;
-            if gap >= upper || gap >= lower { continue }
-            upper = upper.min(far(p0)).min(far(p2));
-            if radius > size/8. && depth < 40 {
-                // de Casteljau at a half in homogeneous coordinates
-                let mid = |x: [f64;3],y: [f64;3]| -> [f64;3] { std::array::from_fn(|i| 0.5*(x[i]+y[i])) };
-                let (l,r) = (mid(h0,h1),mid(h1,h2));
-                let c = mid(l,r);
-                stack.push((h0,l,c,depth+1));
-                stack.push((c,r,h2,depth+1));
-            } else {
-                lower = lower.min(gap.max(0.));
-            }
+    /// nearest of its points sampled (each on the arc, read in floating point) and of the pieces'
+    /// ends read, below by the nearest of its pieces' control triangles — the arc lies within each
+    /// piece's triangle (positive weights), and the triangle within its bulge (its middle control
+    /// point's height over the chord) of the arc, so a piece's gap is its distance to the arc less
+    /// its bulge at most, which falls with the square of the piece's size. The pieces are read
+    /// nearest first, each halved (off the tree halved once, `Conic`, and past it as it is reached),
+    /// till the nearest left bulges no more than an eighth of the box or the rounding's slack, or is
+    /// as deep as a piece goes: every piece left is no nearer, so its gap is the bound below. Read by
+    /// discs about their triangles, whose gaps fall only as their size, a point's box (no width)
+    /// halved every piece of a band about its nearest point to the deepest: the hypoid pinion's
+    /// agreement probes read some 1 400 pieces a call, where they now read one or two.
+    fn conic(c: &Conic,lo: P,hi: P) -> Result<I,Error> {
+        let far2 = |q: P| { let (x,y) = ((q[0]-lo[0]).abs().max((q[0]-hi[0]).abs()),(q[1]-lo[1]).abs().max((q[1]-hi[1]).abs())); x*x+y*y };
+        let mut upper2 = c.samples.iter().map(|&q| far2(q)).fold(f64::INFINITY,f64::min);
+        let mut upper = upper2.sqrt();
+        let fine = ((hi[0]-lo[0]).dhypot(hi[1]-lo[1])/8.).max(c.slack);
+        type Open = std::collections::BinaryHeap<std::cmp::Reverse<(Gap,usize)>>;
+        // the pieces met, each with its node in the tree (none past it), and the ones not yet read
+        // by their gap, nearest first (the earlier met where two tie)
+        let mut met: Vec<(ConicPiece,Option<usize>)> = Vec::with_capacity(64);
+        let mut open: Open = std::collections::BinaryHeap::with_capacity(64);
+        let meet = |piece: (ConicPiece,Option<usize>),met: &mut Vec<(ConicPiece,Option<usize>)>,open: &mut Open| {
+            open.push(std::cmp::Reverse((Gap(triangle_gap(lo,hi,&piece.0.tri)),met.len())));
+            met.push(piece);
+        };
+        meet((c.nodes[0],Some(0)),&mut met,&mut open);
+        let mut lower = upper;
+        while let Some(std::cmp::Reverse((Gap(gap),k))) = open.pop() {
+            // every piece left is at least this far: so is the arc from the box
+            if gap >= upper { break }
+            let (ConicPiece {h,tri,bulge,depth},node) = met[k];
+            let f2 = far2(tri[0]).min(far2(tri[2]));
+            if f2 < upper2 { upper2 = f2; upper = f2.sqrt(); }
+            if bulge+c.slack <= fine || depth >= 40 { lower = gap; break }
+            let halves = match node {
+                Some(i) if 2*i+2 < c.nodes.len() => [(c.nodes[2*i+1],Some(2*i+1)),(c.nodes[2*i+2],Some(2*i+2))],
+                _ => Conic::halves(&h).map(|h| (Conic::piece(h,depth+1),None)),
+            };
+            for half in halves { meet(half,&mut met,&mut open) }
         }
-        let lower = if lower.is_finite() { lower } else { upper };
-        I::new((lower-slack).max(0.).min(upper),upper+slack)
+        I::new((lower-c.slack).max(0.).min(upper),upper+c.slack)
     }
 
     fn distance(&self,p: [I;2]) -> Result<I,Error> {
@@ -296,11 +302,98 @@ impl Wall {
                 let hi = corners.bounds()[1];
                 I::new(ring.bounds()[0].min(hi),hi)
             }
-            Self::Conic(seg) => {
+            Self::Conic(c) => {
                 let (x,y) = (p[0].bounds(),p[1].bounds());
-                Self::conic(seg,[x[0],y[0]],[x[1],y[1]])
+                Self::conic(c,[x[0],y[0]],[x[1],y[1]])
             }
         }
+    }
+}
+
+/// **A conic's arc halved once into a tree of pieces** (`Wall::conic`): its homogeneous control
+/// net (`(x w, y w, w)`) halved by de Casteljau at a half `DEPTH` times, each piece kept with its
+/// control triangle (its points; the first and last on the arc) and its bulge; and nine points on
+/// the arc, the upper bound's samples. Pieces past the tree are halved as a box reaches them.
+#[derive(Debug)]
+struct Conic { nodes: Vec<ConicPiece>,samples: [P;9],slack: f64 }
+
+/// A piece of a conic's arc: its homogeneous control net, its control triangle, how far its middle
+/// control point stands off the chord, and how many halvings deep.
+#[derive(Clone,Copy,Debug)]
+struct ConicPiece { h: [[f64;3];3],tri: [P;3],bulge: f64,depth: usize }
+
+/// A piece's gap from a box, ordered as `f64::total_cmp` orders it.
+#[derive(Clone,Copy,PartialEq)]
+struct Gap(f64);
+impl Eq for Gap {}
+impl PartialOrd for Gap { fn partial_cmp(&self,o: &Gap) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
+impl Ord for Gap { fn cmp(&self,o: &Gap) -> std::cmp::Ordering { self.0.total_cmp(&o.0) } }
+
+/// **The distance from the box `[lo, hi]` to the triangle `t`**, both convex: nought where no axis
+/// of either parts them (the box's two, the triangle's sides' normals), else the nearest of the
+/// triangle's corners to the box and of the box's corners to the triangle's sides.
+fn triangle_gap(lo: P,hi: P,t: &[P;3]) -> f64 {
+    let corners = [lo,[hi[0],lo[1]],hi,[lo[0],hi[1]]];
+    // parted along `n` where the two's projections do not overlap
+    let parted = |n: P| {
+        let along = |q: P| q[0]*n[0]+q[1]*n[1];
+        let (a0,a1) = t.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&q| (a.min(along(q)),b.max(along(q))));
+        let (b0,b1) = corners.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&q| (a.min(along(q)),b.max(along(q))));
+        a1 < b0 || b1 < a0
+    };
+    let sides = [(t[0],t[1]),(t[1],t[2]),(t[2],t[0])];
+    if !parted([1.,0.]) && !parted([0.,1.]) && sides.iter().all(|&(a,b)| !parted([a[1]-b[1],b[0]-a[0]])) { return 0. }
+    let to_box = |q: P| { let (x,y) = ((lo[0]-q[0]).max(q[0]-hi[0]).max(0.),(lo[1]-q[1]).max(q[1]-hi[1]).max(0.)); x*x+y*y };
+    let to_side = |q: P,(a,b): (P,P)| {
+        let (d,r) = (delta(b,a),delta(q,a));
+        let len2 = d[0]*d[0]+d[1]*d[1];
+        let s = if len2 > 0. { ((r[0]*d[0]+r[1]*d[1])/len2).clamp(0.,1.) } else { 0. };
+        let (x,y) = (r[0]-s*d[0],r[1]-s*d[1]);
+        x*x+y*y
+    };
+    let mut nearest = t.iter().map(|&q| to_box(q)).fold(f64::INFINITY,f64::min);
+    for &q in &corners { for &side in &sides { nearest = nearest.min(to_side(q,side)) } }
+    nearest.sqrt()
+}
+
+impl Conic {
+    /// How many times the tree halves the arc: 2¹⁰ pieces at its leaves.
+    const DEPTH: usize = 10;
+
+    fn new(seg: &crate::brep::planar::Seg) -> Conic {
+        let crate::brep::planar::Seg::Conic {a,m,b,w} = *seg else { unreachable!("a conic's wall") };
+        let scale = a[0].abs().max(a[1].abs()).max(b[0].abs()).max(b[1].abs()).max(m[0].abs()).max(m[1].abs());
+        let slack = 64.*f64::EPSILON*(1.+scale);
+        let samples = std::array::from_fn(|k| seg.point(k as f64/8.));
+        let mut nodes: Vec<ConicPiece> = Vec::with_capacity((2 << Self::DEPTH)-1);
+        nodes.push(Conic::piece([[a[0],a[1],1.],[w*m[0],w*m[1],w],[b[0],b[1],1.]],0));
+        // breadth first, so a piece's halves are at `2 i + 1` and `2 i + 2`
+        let mut i = 0;
+        while nodes.len() < (2 << Self::DEPTH)-1 {
+            let n = nodes[i];
+            for half in Conic::halves(&n.h) { nodes.push(Conic::piece(half,n.depth+1)) }
+            i += 1;
+        }
+        Conic {nodes,samples,slack}
+    }
+
+    /// A piece of the net `h`, `depth` halvings deep: its control triangle and its bulge, the
+    /// middle control point's distance from the chord.
+    fn piece(h: [[f64;3];3],depth: usize) -> ConicPiece {
+        let at = |h: [f64;3]| [h[0]/h[2],h[1]/h[2]];
+        let tri = [at(h[0]),at(h[1]),at(h[2])];
+        let (d,r) = (delta(tri[2],tri[0]),delta(tri[1],tri[0]));
+        let chord = (d[0]*d[0]+d[1]*d[1]).sqrt();
+        let bulge = if chord > 0. { cross(d,r).abs()/chord } else { distance(tri[1],tri[0]) };
+        ConicPiece {h,tri,bulge,depth}
+    }
+
+    /// A piece halved at its parameter's half, by de Casteljau in homogeneous coordinates.
+    fn halves(h: &[[f64;3];3]) -> [[[f64;3];3];2] {
+        let mid = |x: [f64;3],y: [f64;3]| -> [f64;3] { std::array::from_fn(|i| 0.5*(x[i]+y[i])) };
+        let (l,r) = (mid(h[0],h[1]),mid(h[1],h[2]));
+        let c = mid(l,r);
+        [[h[0],l,c],[c,r,h[2]]]
     }
 }
 
