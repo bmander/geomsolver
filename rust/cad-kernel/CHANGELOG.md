@@ -8,6 +8,52 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ring swept by a motion no constant twist takes is built closed** (`swept::rings`, **new**;
+  `swept::closed::ring`, **new**, not yet a class the dispatch admits). A tool of revolution whose
+  meridian is a loop clear of its axis (a torus, any ring of lines and arcs) has its contact read in
+  closed form in each half-plane through its axis (`Ring::read`, `contacts`), its folds read from
+  how the tool's distance bends over the roll, and each contact curve entered as a closed tube
+  (`fitted`, `Fitted`, `Side`): its buried stretch dipped so it crosses the tool at the end poses,
+  each face of a folding tube cut where it crosses the tool there and kept only outside it
+  (`traces`, `trimmed`, `entered`, against `Ring::signed` and `Ring::holds`). The tumbling torus is
+  built closed, its volume within the Monte Carlo of its definition. `boolean`'s given curves may
+  end on one another.
+- **The constant twist walks across a concave corner, through an apex and round a vertex**
+  (`swept::constant_twist`). Where both faces' characteristic points meet a concave corner the walk
+  crosses it and creases the sheet; where they part it ends a stretch and walks the others
+  (`Characteristic::others`, `Characteristic::concave`, **new**), each stretch's sheet fitted on its
+  own and the blank split by all of them at once (`swept::sheet::Fitted::parted`, **new**:
+  **breaking** for code building a `Fitted` literally). A face of revolution meeting its own axis (a
+  cone to a point, an ogive) is walked down one root to the apex and up the other
+  (`Characteristic::apexes`, **new**); a prism's corner, rim or crease running to the end of its
+  ruling goes on round the vertex there along the next fan (`Characteristic::vertices`, **new**).
+  `Characteristic::sharp` and `Characteristic::concave()` name the creases.
+- **Cutters are read from the tool's B-rep**: `swept::cutter::Cutter::of_boundary` and
+  `section::Sectioned::of_boundary` (**new**) section a tool of revolutions about one line or about
+  parallel lines (the spiral bevel's and the hypoid's) from its faces; `Cutter::read`, which read a
+  recipe, is gone (**breaking**; `Sectioned::read` of a recipe stays).
+  `swept::admission::Lone::read` reads a prism standing alone drafted (one way, or both from a
+  parting plane), holed, of any loops, its cutter the prism of its widest section, and its caps are
+  cut where it is undrafted or drafted with plane sides (`Lone::sectioned_across`, **new**).
+- **A point's path under turns and slides, exactly** (`trochoid`, **new**): `Trochoid`, a sum of
+  terms `(a + b t) e^{iωt}` in a plane, as `geom::Curve::Trochoid` and a recipe's `trochoid` profile
+  edge (`recipe::node::Stroke::Trochoid`) — both **new** variants, **breaking** for exhaustive
+  matches — cut by a plane in closed form. The planar class's pocket is read from the tool's B-rep
+  (`swept::pocket::Pocket::read`, `pocket::Unread`, **new**), the Wankel housing's volume its closed
+  form's to 1e-9. `swept::dispatch::Sweep`'s `pocket` is `pocketed: bool` (**breaking**), and `Seen`
+  gains `Envelope` (**breaking** for exhaustive matches).
+- **A sweep does not depend on where a revolution's chart starts**: `RevolvedSurface::started`,
+  `turn_of`, `polar`, `meridian_param` and `over` (**new**); faces a Boolean cut from one surface of
+  revolution are read once, over the span of the meridian they reach.
+- **A point's foot on a cone or a torus across its axis**: `Surface::inverse` takes the nearer of
+  the meridians in the point's own half-plane and the opposite one (a cone's generator past its
+  apex, a spindle torus's circle across its axis), and `Surface::feet` (**new**) gives both.
+- **Faster point location against fitted nets**: each net's knot spans are boxed in a
+  bounding-volume hierarchy, so `query::curve_surface` reads a line against only the spans it meets
+  and `Surface::inverse` of a net seeds Newton's method from the nearest;
+  `swept::subtraction::Loops` holds its edges in one too. Classifying the tumbling torus's cells
+  went from some seventeen minutes to a second.
+
 ## [0.5.0] - 2026-11-07
 
 - **A face is split along a meeting through its pole**: an edge laid across a face ends on a pole
