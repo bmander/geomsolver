@@ -677,6 +677,18 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let mut sag = vec![0_f64;t2.tris.len()];
         // points put in for turning alone, at most twice the triangles the loops made
         let (mut turned,budget) = (0usize,2*t2.tris.len()+64);
+        // each point's parameters, place and normal, read once whichever triangles it is a corner of:
+        // the normal `S_u × S_v` and whether it is sound there (not a pole's)
+        let mut at_point: Vec<Option<(Uv,V,V,bool)>> = Vec::new();
+        let read = |at_point: &mut Vec<Option<(Uv,V,V,bool)>>,t2: &Tri2,v: usize| -> (Uv,V,V,bool) {
+            if at_point.len() < t2.pts.len() { at_point.resize(t2.pts.len(),None); }
+            *at_point[v].get_or_insert_with(|| {
+                let uv = if v < n { uvs[v] } else { unplace(t2.pts[v]) };
+                let (_,su,sv) = f.surface.d1(uv);
+                let m = cross(su,sv);
+                (uv,f.surface.point(uv),m,norm(m) > 1e-6*norm(su)*norm(sv))
+            })
+        };
         if curved {
             for _round in 0..64 {
                 let mut added = 0;
@@ -684,11 +696,8 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                     if !inside[ti] || !t2.dirty[ti] { continue }
                     t2.dirty[ti] = false;
                     let t = t2.tris[ti];
-                    let corner = |k: usize| -> (Uv,V) {
-                        let v = t[k] as usize;
-                        let uv = if v < n { uvs[v] } else { unplace(t2.pts[v]) };
-                        (uv,f.surface.point(uv))
-                    };
+                    let read3 = t.map(|v| read(&mut at_point,&t2,v as usize));
+                    let corner = |k: usize| -> (Uv,V) { (read3[k].0,read3[k].1) };
                     let (a,b3,c) = (corner(0),corner(1),corner(2));
                     let centre = [(a.0[0]+b3.0[0]+c.0[0])/3.,(a.0[1]+b3.0[1]+c.0[1])/3.];
                     let mut s = off(f,centre,a.1,b3.1,c.1);
@@ -707,11 +716,13 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                     let n = cross(sub(b3.1,a.1),sub(c.1,a.1));
                     let long = [distance(a.1,b3.1),distance(b3.1,c.1),distance(c.1,a.1)].into_iter().fold(0.,f64::max) > 2.*bar;
                     let out = if f.reversed { -1. } else { 1. };
-                    let cosines: Vec<f64> = [a.0,b3.0,c.0,centre].iter().filter_map(|&q| {
-                        let (_,su,sv) = f.surface.d1(q);
-                        let m = cross(su,sv);
+                    let (_,su,sv) = f.surface.d1(centre);
+                    let m = cross(su,sv);
+                    let normals = [(read3[0].2,read3[0].3),(read3[1].2,read3[1].3),(read3[2].2,read3[2].3),
+                        (m,norm(m) > 1e-6*norm(su)*norm(sv))];
+                    let cosines: Vec<f64> = normals.iter().filter_map(|&(m,sound)| {
                         let l = norm(n)*norm(m);
-                        (norm(m) > 1e-6*norm(su)*norm(sv) && l > 0.).then(|| out*dot(n,m)/l)
+                        (sound && l > 0.).then(|| out*dot(n,m)/l)
                     }).collect();
                     let over = cosines.iter().any(|&c| c < 0.);
                     let turns = over || long && cosines.iter().any(|&c| c.min(1.).dacos() > angular);
@@ -783,11 +794,18 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let first_new = n+3;
         // a new point within `weld` of one already placed (a stretch of the surface's chart where
         // several parameters are one point) is that point, and the triangles it collapses dropped
-        let cell = |p: V| p.map(|x| (x/weld).floor() as i64);
+        // (in cells eight welds wide, a point within a weld of another is in its cell or in the next
+        // one across a side it stands within a weld of: one cell looked in, mostly, not 27)
+        let width = 8.*weld;
+        let cell = |p: V| p.map(|x| (x/width).floor() as i64);
         let mut placed: std::collections::BTreeMap<[i64;3],Vec<(V,u32)>> = std::collections::BTreeMap::new();
         let near = |placed: &std::collections::BTreeMap<[i64;3],Vec<(V,u32)>>,p: V| -> Option<u32> {
             let c = cell(p);
-            for dx in -1..=1 { for dy in -1..=1 { for dz in -1..=1 {
+            let reach = |k: usize| -> std::ops::RangeInclusive<i64> {
+                let x = p[k]-c[k] as f64*width;
+                (if x <= weld { -1 } else { 0 })..=(if x >= width-weld { 1 } else { 0 })
+            };
+            for dx in reach(0) { for dy in reach(1) { for dz in reach(2) {
                 if let Some(list) = placed.get(&[c[0]+dx,c[1]+dy,c[2]+dz]) {
                     if let Some(&(_,id)) = list.iter().find(|(q,_)| distance(*q,p) <= weld) { return Some(id) }
                 }
