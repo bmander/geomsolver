@@ -634,7 +634,8 @@ round the circle, a touch where it only reaches nought (`screwed_circle_round`).
 settles** (`props`'s `settled`): read over its pieces, then twice as many, until two readings agree
 to rounding, the coarser kept — a ball's great circle passing within a few degrees of a pole sweeps
 half a turn of `u` there, and a sixteenth of a turn a piece left a ball's piece 0.2% off its area.
-**A face's inner integral is closed on the analytic surfaces** (`props`'s `closed_g`): Green's `G`,
+**A face's inner integral is closed on the analytic surfaces** (`props`'s `Closed`, prepared once a
+face): Green's `G`,
 the area's `|S_u × S_v|` or the flux's `X · (S_u × S_v)` integrated along one parameter, is read
 in closed form on a plane, a cylinder, a cone, a sphere and a torus (along either parameter) and
 along an extrusion's rulings — in the surface's frame each integrand is a sum of powers and
@@ -787,9 +788,9 @@ chart's normal turned over and the mesher refined into it without end, until flo
 triangles as none, `canal::a_half_balls_pole_is_meshed_as_any_point`, #684 D); slivers get a
 point off the longest side; each point's place and normal are read once, whichever triangles
 it is a corner of, and the refinement asks only the triangle's middles anew; points nearer than
-1e-9 are welded (looked for in cells eight welds wide, a neighbouring cell only across a side the
-point stands within a weld of — one look, mostly, where it was 27: the same triangles, bit for
-bit, a quarter less time), and a vertex a face's loops pass through twice at one place (a hole touching the
+1e-9 are welded (filed in a `util::space::Grid` of cells eight welds wide, each looked for in the
+cells a weld about it meets — its own, mostly, where it was 27; with each point's place read once
+for every pass, the same triangles, bit for bit, in a third less time), and a vertex a face's loops pass through twice at one place (a hole touching the
 outer loop, #597) is one corner of its triangulation. An edge is sampled from first pieces no
 midpoint test can be blind to: a B-spline's knot spans, a family rail's pieces, a screwed rail a
 quarter turn at most (`edge_params`; a coil of four turns has its ends, middle and quarter

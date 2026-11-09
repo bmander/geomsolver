@@ -21,8 +21,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   closed form, where a Gauss rule ran at every node of every edge: the same values to rounding, some
   five to twenty times faster.
 - **Faster meshing, the same triangles**: `mesh` reads each point's place and normal once, however
-  many triangles it is a corner of, and looks for a point to weld to in one cell, mostly, not 27:
-  every mesh bit for bit as before, in about a quarter less time.
+  many triangles and passes ask for it, and looks for a point to weld to in a `util::space::Grid`
+  of cells eight welds wide, one cell mostly, not 27: every mesh bit for bit as before, in about a
+  third less time.
 
 ## [0.6.2] - 2026-11-09
 

@@ -4,26 +4,16 @@
 //! in by `r` bound, grown by the ball, so by Steiner's formula its volume is `V′ + S′ r + M r² +
 //! 4πr³/3` and its area `S′ + 2 M r + 4πr²`, with `M = Σ l (π − θ) / 2` over the inner one's
 //! edges (`θ` the angle between the faces there).
+use crate::brep::{block,poly,total_area};
+use crate::common::rounds::kinds;
 use gcs_core::brep::boolean::{combined,Op};
-use gcs_core::brep::build::{prism,Profile,ProfileEdge};
+use gcs_core::brep::build::{prism,Profile};
 use gcs_core::brep::geom::{tolerance,Rigid,V};
-use gcs_core::brep::props::{area,volume};
+use gcs_core::brep::props::volume;
 use gcs_core::brep::rounds::rounded;
 use gcs_core::brep::topo::Brep;
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
-
-fn polygon(pts: &[[f64;2]]) -> Profile {
-    let p: Vec<V> = pts.iter().map(|q| [q[0],q[1],0.]).collect();
-    Profile {origin:[0.;3],normal:[0.,0.,1.],names:vec![],
-        loops:vec![(0..p.len()).map(|i| ProfileEdge::Line {a:p[i],b:p[(i+1)%p.len()]}).collect()]}
-}
-
-fn block(lo: V,hi: V) -> Brep {
-    let mut p = polygon(&[[lo[0],lo[1]],[hi[0],lo[1]],[hi[0],hi[1]],[lo[0],hi[1]]]);
-    p.origin = [0.;3];
-    prism(&p,lo[2],hi[2]).unwrap()
-}
 
 /// The edges of `b` whose middles `pick` takes.
 fn edges_where(b: &Brep,pick: impl Fn(V) -> bool) -> Vec<usize> {
@@ -31,14 +21,6 @@ fn edges_where(b: &Brep,pick: impl Fn(V) -> bool) -> Vec<usize> {
 }
 
 fn all(b: &Brep) -> Vec<usize> { (0..b.edges.len()).collect() }
-
-fn kinds(b: &Brep) -> BTreeMap<&'static str,usize> {
-    let mut k = BTreeMap::new();
-    for f in &b.faces { *k.entry(f.surface.kind()).or_insert(0) += 1; }
-    k
-}
-
-fn total_area(b: &Brep) -> f64 { b.faces.iter().map(|f| area(b,f)).sum() }
 
 fn close(what: &str,got: f64,want: f64) {
     assert!((got-want).abs() <= 1e-12*want.abs().max(1.),"{what}: {got} against {want} ({:e})",(got-want)/want);
@@ -82,7 +64,8 @@ fn a_box_rounded_on_every_edge_is_planes_cylinders_and_spheres() {
 fn a_triangular_prism_rounded_on_every_edge_is_its_steiner_body() {
     let pts = [[0.,0.],[12.,0.],[3.,8.]];
     let (h,r) = (7.,1.);
-    let p = prism(&polygon(&pts),0.,h).unwrap();
+    let section = Profile {origin:[0.;3],normal:[0.,0.,1.],names:vec![],loops:vec![poly(&pts.map(|q| [q[0],q[1],0.]))]};
+    let p = prism(&section,0.,h).unwrap();
     let round = rounded(&p,&all(&p),r,tolerance(p.size())).unwrap();
     round.check(1e-9).unwrap();
     assert_eq!(kinds(&round),BTreeMap::from([("cylinder",9),("plane",5),("sphere",6)]));

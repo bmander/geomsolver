@@ -433,11 +433,14 @@ fn sliver(t2: &Tri2,t: [u32;3]) -> bool {
 }
 
 /// The distance from the surface at `uv` to the plane of the triangle `a`, `b`, `c` (space).
-fn off(f: &Face,uv: Uv,a: V,b: V,c: V) -> f64 {
+fn off(f: &Face,uv: Uv,a: V,b: V,c: V) -> f64 { off_at(f.surface.point(uv),a,b,c) }
+
+/// The distance from `p` to the plane of the triangle `a`, `b`, `c`.
+fn off_at(p: V,a: V,b: V,c: V) -> f64 {
     let n = cross(sub(b,a),sub(c,a));
     let l = norm(n);
     if !(l > 0.) { return 0. }
-    dot(sub(f.surface.point(uv),a),n).abs()/l
+    dot(sub(p,a),n).abs()/l
 }
 
 /// The mesh of the whole boundary within `bar` (a length) and `angular` (radians an edge's chords
@@ -677,16 +680,22 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let mut sag = vec![0_f64;t2.tris.len()];
         // points put in for turning alone, at most twice the triangles the loops made
         let (mut turned,budget) = (0usize,2*t2.tris.len()+64);
-        // each point's parameters, place and normal, read once whichever triangles it is a corner of:
-        // the normal `S_u × S_v` and whether it is sound there (not a pole's)
-        let mut at_point: Vec<Option<(Uv,V,V,bool)>> = Vec::new();
-        let read = |at_point: &mut Vec<Option<(Uv,V,V,bool)>>,t2: &Tri2,v: usize| -> (Uv,V,V,bool) {
+        // the surface at `uv`: its place, its normal `S_u × S_v` and whether that is sound there (not
+        // a pole's)
+        let lift = |uv: Uv| -> (V,(V,bool)) {
+            let (x,su,sv) = f.surface.d1(uv);
+            let m = cross(su,sv);
+            (x,(m,norm(m) > 1e-6*norm(su)*norm(sv)))
+        };
+        // each point's parameters, place and normal, read once whichever triangles it is a corner of,
+        // and whichever pass asks
+        let mut at_point: Vec<Option<(Uv,V,(V,bool))>> = Vec::new();
+        let read = |at_point: &mut Vec<Option<(Uv,V,(V,bool))>>,t2: &Tri2,v: usize| -> (Uv,V,(V,bool)) {
             if at_point.len() < t2.pts.len() { at_point.resize(t2.pts.len(),None); }
             *at_point[v].get_or_insert_with(|| {
                 let uv = if v < n { uvs[v] } else { unplace(t2.pts[v]) };
-                let (_,su,sv) = f.surface.d1(uv);
-                let m = cross(su,sv);
-                (uv,f.surface.point(uv),m,norm(m) > 1e-6*norm(su)*norm(sv))
+                let (x,normal) = lift(uv);
+                (uv,x,normal)
             })
         };
         if curved {
@@ -697,10 +706,11 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                     t2.dirty[ti] = false;
                     let t = t2.tris[ti];
                     let read3 = t.map(|v| read(&mut at_point,&t2,v as usize));
-                    let corner = |k: usize| -> (Uv,V) { (read3[k].0,read3[k].1) };
-                    let (a,b3,c) = (corner(0),corner(1),corner(2));
+                    let corners = read3.map(|r| (r.0,r.1));
+                    let [a,b3,c] = corners;
                     let centre = [(a.0[0]+b3.0[0]+c.0[0])/3.,(a.0[1]+b3.0[1]+c.0[1])/3.];
-                    let mut s = off(f,centre,a.1,b3.1,c.1);
+                    let (at_centre,centre_normal) = lift(centre);
+                    let mut s = off_at(at_centre,a.1,b3.1,c.1);
                     for (p,q,k) in [(&a,&b3,(0,1)),(&b3,&c,(1,2)),(&c,&a,(2,0))] {
                         if t2.held(t[k.0],t[k.1]) { continue }
                         s = s.max(off(f,[(p.0[0]+q.0[0])/2.,(p.0[1]+q.0[1])/2.],a.1,b3.1,c.1));
@@ -716,10 +726,7 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                     let n = cross(sub(b3.1,a.1),sub(c.1,a.1));
                     let long = [distance(a.1,b3.1),distance(b3.1,c.1),distance(c.1,a.1)].into_iter().fold(0.,f64::max) > 2.*bar;
                     let out = if f.reversed { -1. } else { 1. };
-                    let (_,su,sv) = f.surface.d1(centre);
-                    let m = cross(su,sv);
-                    let normals = [(read3[0].2,read3[0].3),(read3[1].2,read3[1].3),(read3[2].2,read3[2].3),
-                        (m,norm(m) > 1e-6*norm(su)*norm(sv))];
+                    let normals = [read3[0].2,read3[1].2,read3[2].2,centre_normal];
                     let cosines: Vec<f64> = normals.iter().filter_map(|&(m,sound)| {
                         let l = norm(n)*norm(m);
                         (sound && l > 0.).then(|| out*dot(n,m)/l)
@@ -734,7 +741,7 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                         // only gets more from its middle: a point off its longest side not on the
                         // boundary, toward the neighbour across it, gives its corners a third to meet
                         let Some(k) = (0..3).filter(|&k| !t2.held(t[k],t[(k+1)%3]))
-                            .max_by(|&i,&j| distance(corner(i).1,corner((i+1)%3).1).total_cmp(&distance(corner(j).1,corner((j+1)%3).1)))
+                            .max_by(|&i,&j| distance(corners[i].1,corners[(i+1)%3].1).total_cmp(&distance(corners[j].1,corners[(j+1)%3].1)))
                             else { continue };
                         let (a2,b2,c2) = (q[k],q[(k+1)%3],q[(k+2)%3]);
                         let (m,d) = ([(a2[0]+b2[0])/2.,(a2[1]+b2[1])/2.],[b2[0]-a2[0],b2[1]-a2[1]]);
@@ -758,10 +765,8 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
             }
         }
         let worst = (0..t2.tris.len()).filter(|&t| inside[t]).map(|t| sag[t]).fold(0.,f64::max);
-        let facing = |v: u32| { let v = v as usize; if v < n { uvs[v] } else { unplace(t2.pts[v]) } };
         let turned_tris: Vec<usize> = (0..t2.tris.len()).filter(|&ti| inside[ti] && {
-            let [ua,ub,uc] = t2.tris[ti].map(facing);
-            let (pa,pb,pc) = (f.surface.point(ua),f.surface.point(ub),f.surface.point(uc));
+            let [(ua,pa,_),(ub,pb,_),(uc,pc,_)] = t2.tris[ti].map(|v| read(&mut at_point,&t2,v as usize));
             let (_,su,sv) = f.surface.d1([(ua[0]+ub[0]+uc[0])/3.,(ua[1]+ub[1]+uc[1])/3.]);
             // (a triangle thinner than a tenth of the bar is flat within it, and its normal says
             // nothing of the surface's: a sliver a few nanometres off a boundary side, one with two
@@ -794,33 +799,31 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let first_new = n+3;
         // a new point within `weld` of one already placed (a stretch of the surface's chart where
         // several parameters are one point) is that point, and the triangles it collapses dropped
-        // (in cells eight welds wide, a point within a weld of another is in its cell or in the next
-        // one across a side it stands within a weld of: one cell looked in, mostly, not 27)
-        let width = 8.*weld;
-        let cell = |p: V| p.map(|x| (x/width).floor() as i64);
-        let mut placed: std::collections::BTreeMap<[i64;3],Vec<(V,u32)>> = std::collections::BTreeMap::new();
-        let near = |placed: &std::collections::BTreeMap<[i64;3],Vec<(V,u32)>>,p: V| -> Option<u32> {
-            let c = cell(p);
-            let reach = |k: usize| -> std::ops::RangeInclusive<i64> {
-                let x = p[k]-c[k] as f64*width;
-                (if x <= weld { -1 } else { 0 })..=(if x >= width-weld { 1 } else { 0 })
-            };
-            for dx in reach(0) { for dy in reach(1) { for dz in reach(2) {
-                if let Some(list) = placed.get(&[c[0]+dx,c[1]+dy,c[2]+dz]) {
-                    if let Some(&(_,id)) = list.iter().find(|(q,_)| distance(*q,p) <= weld) { return Some(id) }
-                }
-            } } }
-            None
+        // (filed in cells eight welds wide, so the box a weld about a point meets is its own cell,
+        // mostly, and not 27)
+        let mut grid = crate::util::space::Grid::new(8.*weld);
+        let mut placed: Vec<(V,u32)> = Vec::new();
+        let place = |grid: &mut crate::util::space::Grid,placed: &mut Vec<(V,u32)>,p: V,id: u32| {
+            grid.insert(p,placed.len() as u32);
+            placed.push((p,id));
         };
-        for (k,&uv) in uvs.iter().enumerate() { let p = f.surface.point(uv); placed.entry(cell(p)).or_default().push((p,ids[k])); }
+        let near = |grid: &crate::util::space::Grid,placed: &[(V,u32)],p: V| -> Option<u32> {
+            let mut found = None;
+            grid.in_box(sub(p,[weld;3]),add(p,[weld;3]),|i| {
+                let (q,id) = placed[i as usize];
+                if found.is_none() && distance(q,p) <= weld { found = Some(id) }
+            });
+            found
+        };
+        for k in 0..n { let p = read(&mut at_point,&t2,k).1; place(&mut grid,&mut placed,p,ids[k]); }
         let mut new_pts: Vec<V> = Vec::new();
         let mut renamed: Vec<u32> = Vec::with_capacity(t2.pts.len().saturating_sub(first_new));
         for v in first_new..t2.pts.len() {
-            let p = f.surface.point(unplace(t2.pts[v]));
-            let id = near(&placed,p).unwrap_or_else(|| {
+            let p = read(&mut at_point,&t2,v).1;
+            let id = near(&grid,&placed,p).unwrap_or_else(|| {
                 let id = NEW|new_pts.len() as u32;
                 new_pts.push(p);
-                placed.entry(cell(p)).or_default().push((p,id));
+                place(&mut grid,&mut placed,p,id);
                 id
             });
             renamed.push(id);

@@ -12,7 +12,7 @@
 //! the gaps times `G` were 3e-6 of the pinion, and moved with the origin.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use super::geom::{Curve,Surface,Uv};
+use super::geom::{Curve,Surface,Uv,V};
 use super::nurbs::Net;
 use super::topo::{Brep,EdgeCurve,Face,Pcurve};
 use crate::util::space::{cross,dot};
@@ -240,7 +240,7 @@ fn across_span(tr: &super::geom::Traced,at: &[(f64,[f64;3])],n: [f64;3],len: f64
     settled_by(1,stretches.next_power_of_two().trailing_zeros() as usize,&mut read)
 }
 
-/// **`G` in closed form on the analytic surfaces**: `∫_base^x g` along the parameter `along` (0 for
+/// **`G` in closed form on the analytic surfaces** (`Closed`, prepared once a face): `∫_base^x g` along the parameter `along` (0 for
 /// `u`, 1 for `v`), the other held, where `g` is the area's `|S_u × S_v|` or the flux's
 /// `X · (S_u × S_v)`. In the surface's frame, with `P` the world origin's place in it (`X = o + l`,
 /// so `X · N = (P + l) · w` for `N` the frame's image of `w`), each `g` is a sum of powers and
@@ -252,89 +252,120 @@ fn across_span(tr: &super::geom::Traced,at: &[(f64,[f64;3])],n: [f64;3],len: f64
 /// extrusion's rulings, constant. `None` elsewhere, and where an area's `|·|` would change its sign
 /// within the span (a sphere's past a pole, a spindle torus's, a cone's past its apex), which the
 /// rule integrates instead: the same integral, read numerically.
-fn closed_g(s: &Surface,area: bool,along: usize,base: f64,[u,v]: Uv) -> Option<f64> {
-    let x = [u,v][along];
-    let local = |f: &super::geom::Frame| [dot(f.o,f.x),dot(f.o,f.y),dot(f.o,f.z)];
-    // the integral of `cos` and `sin` from the base: `sin x − sin b` and `cos b − cos x`
-    let (sx,cx) = x.dsin_cos();
-    let (sb,cb) = base.dsin_cos();
-    let (int_c,int_s,int_1) = (sx-sb,cb-cx,x-base);
-    Some(match *s {
-        Surface::Plane(f) => if area { int_1 } else { local(&f)[2]*int_1 },
-        Surface::Cylinder(f,r) => {
-            if area { return Some(r*int_1) }
-            let p = local(&f);
-            if along == 0 { r*(p[0]*int_c+p[1]*int_s)+r*r*int_1 } else {
-                let (su,cu) = u.dsin_cos();
-                (r*(p[0]*cu+p[1]*su)+r*r)*int_1
+struct Closed<'a> {
+    s: &'a Surface,
+    area: bool,
+    along: usize,
+    base: f64,
+    /// The world origin's place in the surface's frame (`P`), the base's sine and cosine, and a
+    /// cone's half angle's (nought elsewhere): what every reading of the face shares.
+    p: V,
+    sb: f64,
+    cb: f64,
+    cone: (f64,f64),
+}
+
+impl<'a> Closed<'a> {
+    /// The face's closed form along `along` from `base`, where its surface has one.
+    fn new(s: &'a Surface,area: bool,along: usize,base: f64) -> Option<Closed<'a>> {
+        let cone = match *s {
+            Surface::Cone(_,_,a) => a.dsin_cos(),
+            Surface::Plane(_) | Surface::Cylinder(..) | Surface::Sphere(..) | Surface::Torus(..) => (0.,0.),
+            Surface::Extrusion(..) if along == 1 => (0.,0.),
+            _ => return None,
+        };
+        let f = s.frame();
+        let (sb,cb) = base.dsin_cos();
+        Some(Closed {s,area,along,base,p:f.dir_local(f.o),sb,cb,cone})
+    }
+
+    /// `G` at `(u, v)`; `None` where an area's `|·|` changes sign within the span.
+    fn at(&self,[u,v]: Uv) -> Option<f64> {
+        let (area,along,base,p,(sb,cb)) = (self.area,self.along,self.base,self.p,(self.sb,self.cb));
+        let x = [u,v][along];
+        let int_1 = x-base;
+        // `sin x` and `cos x`, and the integrals of `cos` and `sin` from the base: `sin x − sin b`
+        // and `cos b − cos x`
+        let trig = || { let (sx,cx) = x.dsin_cos(); (sx,cx,sx-sb,cb-cx) };
+        // the integrals of `cos²` and `cos sin` from the base: `x/2 + sin 2x / 4` and `sin² / 2`
+        let squares = |sx: f64,cx: f64| (int_1/2.+(sx*cx-sb*cb)/2.,(sx*sx-sb*sb)/2.);
+        // `P₀ cos u + P₁ sin u`, and its integral along `u` from the integrals of `cos` and `sin`
+        let ring = || { let (su,cu) = u.dsin_cos(); p[0]*cu+p[1]*su };
+        let int_ring = |int_c: f64,int_s: f64| p[0]*int_c+p[1]*int_s;
+        Some(match *self.s {
+            Surface::Plane(_) => if area { int_1 } else { p[2]*int_1 },
+            Surface::Cylinder(_,r) => if area { r*int_1 } else if along == 0 {
+                let (_,_,int_c,int_s) = trig();
+                r*int_ring(int_c,int_s)+r*r*int_1
+            } else { (r*ring()+r*r)*int_1 },
+            Surface::Cone(_,r,_) => {
+                let (sa,ca) = self.cone;
+                let q = |v: f64| r+v*sa;
+                if area {
+                    if along == 0 { q(v).abs()*int_1 }
+                    else if sa == 0. { r.abs()*int_1 }
+                    else {
+                        // `q |q| / (2 sin a)` rises as `|q|` does, across the apex too
+                        let h = |v: f64| q(v)*q(v).abs()/(2.*sa);
+                        h(x)-h(base)
+                    }
+                } else if along == 0 {
+                    let (_,_,int_c,int_s) = trig();
+                    let q = q(v);
+                    q*ca*int_ring(int_c,int_s)+(-q*p[2]*sa+q*q*ca-q*v*ca*sa)*int_1
+                } else {
+                    // a quadratic in `v`: two Gauss points read it exactly
+                    let a = ca*ring()-p[2]*sa;
+                    let g = |v: f64| { let q = q(v); a*q+q*q*ca-q*v*ca*sa };
+                    let (m,h) = ((x+base)/2.,(x-base)/2.);
+                    let k = h/3f64.sqrt();
+                    h*(g(m-k)+g(m+k))
+                }
             }
-        }
-        Surface::Cone(f,r,a) => {
-            let (sa,ca) = a.dsin_cos();
-            let q = |v: f64| r+v*sa;
-            if area {
-                if along == 0 { return Some(q(v).abs()*int_1) }
-                // `q |q| / (2 sin a)` rises as `|q|` does, across the apex too
-                if sa == 0. { return Some(r.abs()*int_1) }
-                let h = |v: f64| q(v)*q(v).abs()/(2.*sa);
-                return Some(h(x)-h(base))
+            Surface::Sphere(_,r) => {
+                let (sv,cv) = v.dsin_cos();
+                if area {
+                    if along == 0 { r*r*cv.abs()*int_1 } else {
+                        let half = std::f64::consts::FRAC_PI_2;
+                        if !(-half..=half).contains(&x) || !(-half..=half).contains(&base) { return None }
+                        r*r*trig().2
+                    }
+                } else if along == 0 {
+                    let (_,_,int_c,int_s) = trig();
+                    r*r*cv*cv*int_ring(int_c,int_s)+(r*r*cv*p[2]*sv+r*r*r*cv)*int_1
+                } else {
+                    let (sx,cx,int_c,_) = trig();
+                    let (c2,cs) = squares(sx,cx);
+                    r*r*(ring()*c2+p[2]*cs)+r*r*r*int_c
+                }
             }
-            let p = local(&f);
-            if along == 0 {
-                let q = q(v);
-                q*ca*(p[0]*int_c+p[1]*int_s)+(-q*p[2]*sa+q*q*ca-q*v*ca*sa)*int_1
-            } else {
-                // a quadratic in `v`: two Gauss points read it exactly
-                let (su,cu) = u.dsin_cos();
-                let a = ca*(p[0]*cu+p[1]*su)-p[2]*sa;
-                let g = |v: f64| { let q = q(v); a*q+q*q*ca-q*v*ca*sa };
-                let (m,h) = ((x+base)/2.,(x-base)/2.);
-                let k = h/3f64.sqrt();
-                h*(g(m-k)+g(m+k))
+            Surface::Torus(_,big,r) => {
+                let (sv,cv) = v.dsin_cos();
+                let q = big+r*cv;
+                if area {
+                    if along == 0 { r*q.abs()*int_1 } else {
+                        if big < r { return None }
+                        r*(big*int_1+r*trig().2)
+                    }
+                } else if along == 0 {
+                    let (_,_,int_c,int_s) = trig();
+                    q*r*cv*int_ring(int_c,int_s)+q*r*(p[2]*sv+q*cv+r*sv*sv)*int_1
+                } else {
+                    let (sx,cx,int_c,int_s) = trig();
+                    let (c2,cs) = squares(sx,cx);
+                    let b = ring()+big;
+                    r*(big*b*int_c+big*p[2]*int_s+big*r*int_1+r*b*c2+r*p[2]*cs+r*r*int_c)
+                }
             }
-        }
-        Surface::Sphere(f,r) => {
-            let (sv,cv) = v.dsin_cos();
-            if area {
-                if along == 0 { return Some(r*r*cv.abs()*int_1) }
-                let half = std::f64::consts::FRAC_PI_2;
-                if !(-half..=half).contains(&x) || !(-half..=half).contains(&base) { return None }
-                return Some(r*r*int_c)
+            // along a ruling `X · (c′ × z)` and `|c′ × z|` stand still
+            Surface::Extrusion(..) => {
+                let (x0,su,sv) = self.s.d1([u,base]);
+                let w = cross(su,sv);
+                (if area { crate::util::space::norm(w) } else { dot(x0,w) })*int_1
             }
-            let p = local(&f);
-            if along == 0 { r*r*cv*cv*(p[0]*int_c+p[1]*int_s)+(r*r*cv*p[2]*sv+r*r*r*cv)*int_1 } else {
-                let (su,cu) = u.dsin_cos();
-                // ∫cos² = v/2 + sin 2v / 4, ∫cos sin = sin² / 2, ∫cos = sin
-                let c2 = int_1/2.+(sx*cx-sb*cb)/2.;
-                let cs = (sx*sx-sb*sb)/2.;
-                r*r*((p[0]*cu+p[1]*su)*c2+p[2]*cs)+r*r*r*int_c
-            }
-        }
-        Surface::Torus(f,big,r) => {
-            let (sv,cv) = v.dsin_cos();
-            let q = big+r*cv;
-            if area {
-                if along == 0 { return Some(r*q.abs()*int_1) }
-                if big < r { return None }
-                return Some(r*(big*int_1+r*int_c))
-            }
-            let p = local(&f);
-            if along == 0 { q*r*cv*(p[0]*int_c+p[1]*int_s)+q*r*(p[2]*sv+q*cv+r*sv*sv)*int_1 } else {
-                let (su,cu) = u.dsin_cos();
-                let b = p[0]*cu+p[1]*su+big;
-                let c2 = int_1/2.+(sx*cx-sb*cb)/2.;
-                let cs = (sx*sx-sb*sb)/2.;
-                r*(big*b*int_c+big*p[2]*int_s+big*r*int_1+r*b*c2+r*p[2]*cs+r*r*int_c)
-            }
-        }
-        // along a ruling `X · (c′ × z)` and `|c′ × z|` stand still
-        Surface::Extrusion(..) if along == 1 => {
-            let (x0,su,sv) = s.d1([u,base]);
-            let w = cross(su,sv);
-            (if area { crate::util::space::norm(w) } else { dot(x0,w) })*int_1
-        }
-        _ => return None,
-    })
+            _ => return None,
+        })
+    }
 }
 
 /// The volume the boundary encloses (negative if it is turned inside out).
@@ -383,10 +414,11 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
         let along = if prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 };
         let base = if prefix.is_some() || !lo[along].is_finite() { 0. } else { (lo[along]+hi[along])/2. };
         let periodic = [pu,pv][along].is_some();
+        let closed = if prefix.is_some() { None } else { Closed::new(s,area,along,base) };
         // ∫ from the base, a stretch at a time between the surface's breaks along it
         let mut big_g = |u: f64,v: f64| {
             if let Some(p) = prefix.as_mut() { return p.big_g(u,v) }
-            if let Some(g) = closed_g(s,area,along,base,[u,v]) { return g }
+            if let Some(g) = closed.as_ref().and_then(|c| c.at([u,v])) { return g }
             let x = [u,v][along];
             let mut at_x = |w: f64| if along == 0 { g(w,v) } else { g(u,w) };
             let cuts = s.breaks(along,[base,x]);
