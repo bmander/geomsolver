@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ring's tubes are refined only where they miss** (`swept::rings::fitted`): each interval along
+  the roll and round each face is halved where the fitted net misses at its middle, with its
+  neighbours kept within twice its length, where every one was halved at once. A quintic's miss
+  falls some sixtyfold a halving, so halving them all overshot the tolerance as much wherever it
+  was barely missed. The tumbling torus's tubes fall from 170 840 poles to about 14 000 (its STEP
+  file from 16.5 MB to 1.6 MB), and its build from about 30 s to 15 s, its volume unchanged.
+
 ## [0.6.0] - 2026-11-09
 
 - **A ring swept by a motion no constant twist takes is built closed** (`swept::rings`, **new**;

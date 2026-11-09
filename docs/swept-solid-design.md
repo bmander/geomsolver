@@ -588,7 +588,7 @@ it. It stays as the fast path where #699 D says so.
    end poses (`rings::trimmed`): each face cut along those meetings, the pieces inside dropped (inside
    the sweep, they part nothing of it), every free edge of the tube on the tool where it starts or
    stops and given as its whole meeting. The tumbling torus is built closed and judged in some
-   thirty seconds (the slow tier): 25.275, against 25.260 ± 0.005 by a Monte Carlo of the
+   fifteen seconds (the slow tier): 25.275, against 25.260 ± 0.005 by a Monte Carlo of the
    definition (80 million points, the ring's signed distance at 40 001 poses), the two disagreeing
    at none of 100 000 points read one by one. The road is not yet a class the dispatch admits;
    `closed::ring` builds it alone, and a ring of several faces whose tube crosses the tool at an end
