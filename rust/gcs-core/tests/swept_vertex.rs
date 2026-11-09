@@ -6,7 +6,7 @@
 //! all stand at the vertex, so the walk goes on along that fan from the station whose root is the
 //! vertex, the sweep with a sharp edge along the vertex's path and the sheet creased there
 //! (`Junction::Vertex`, `Crease::Vertex`, `Characteristic::vertices`). Held here in the kernel alone,
-//! under a turn and a screw, for a bar whose corner runs to its end and a bar drafted both ways
+//! under turns, screws and slides, for a bar whose corner runs to its end and a bar drafted both ways
 //! whose corner runs to its crease: each node of the walk a point of the tool, in contact
 //! (`n·v = 0`), its normal the tool's outward there, and every crease at a vertex of the prism, the
 //! walk reaching the blank on both sides of one. A vertex one of whose edges is no fan the walk
@@ -73,15 +73,16 @@ fn motions() -> [(Screw,[f64;2]);2] {
      (Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:8.},[-screw,screw])]
 }
 
-/// The walk of the prism `b` under `screw` over `roll` through the sector, read as the solver's
-/// admission reads it: the tool from its B-rep and, standing alone, as a lone prism, its caps walked.
-fn walk(b: &Brep,screw: Screw,roll: [f64;2]) -> (Tool,Result<Characteristic,(Row,String)>) {
+/// The walk of the prism `b` under `screw` over `roll` through the blank `inside`, read as the
+/// solver's admission reads it: the tool from its B-rep and, standing alone, as a lone prism, its
+/// caps walked.
+fn walk(b: &Brep,screw: Screw,roll: [f64;2],inside: &(dyn Fn(V) -> bool+Sync)) -> (Tool,Result<Characteristic,(Row,String)>) {
     let tool = Tool::read(b,1.).unwrap();
     let lone = Lone::read(b,&tool,1.);
     assert!(lone.is_some(),"a lone prism");
     let path = Trajectory::Twist(screw);
     let sweep = Generating {tool:&tool,path:&path,roll,whole:false,mm:1.};
-    let found = check_screw(&sweep,&sector,None,&Sampling::default(),lone.as_ref()).map(|f| f.0).map_err(|(row,m,_)| (row,m));
+    let found = check_screw(&sweep,inside,None,&Sampling::default(),lone.as_ref()).map(|f| f.0).map_err(|(row,m,_)| (row,m));
     (tool,found)
 }
 
@@ -97,21 +98,24 @@ fn held(found: &Characteristic,tool: &Tool,b: &Brep,screw: &Screw) -> (f64,Vec<u
     (worst,at)
 }
 
-/// Each bar under each motion: walked round a vertex, every node in contact, the sheet creased at
-/// the vertex and nowhere else, and the walk reaching the blank on both sides of one.
-fn round_its_vertex(b: &Brep,named: &str) {
-    for (screw,roll) in motions() {
-        let (tool,found) = walk(b,screw,roll);
-        let found = found.unwrap_or_else(|e| panic!("{named} under {}: {e:?}",screw.kind()));
-        let (worst,at) = held(&found,&tool,b,&screw);
-        eprintln!("{named} under {}: {} nodes, at a vertex {at:?}, reach {:?}, fans {:?}, {worst:.2e} off contact",screw.kind(),
-            found.nodes.len(),found.reach,found.fans());
-        assert!(!found.vertices().is_empty() && !at.is_empty(),"the walk goes round a vertex");
-        assert!(worst <= 1e-9,"a node {worst:.2e} off contact");
-        let [first,last] = found.reach;
-        assert!(at.iter().any(|&w| first < w && w < last),"the walk reaches the blank on both sides of a vertex: {at:?} in {first}..{last}");
-    }
+/// The bar `b` under `screw` over `roll` through the blank `inside`: walked round a vertex, every
+/// node in contact, the sheet creased at the vertex and nowhere else, and (where `both`) the walk
+/// reaching the blank on both sides of one.
+fn walked_round(b: &Brep,named: &str,(screw,roll): (Screw,[f64;2]),inside: &(dyn Fn(V) -> bool+Sync),both: bool) {
+    let (tool,found) = walk(b,screw,roll,inside);
+    let found = found.unwrap_or_else(|e| panic!("{named} under {}: {e:?}",screw.kind()));
+    let (worst,at) = held(&found,&tool,b,&screw);
+    eprintln!("{named} under {}: {} nodes, at a vertex {at:?}, reach {:?}, fans {:?}, {worst:.2e} off contact",screw.kind(),
+        found.nodes.len(),found.reach,found.fans());
+    assert!(!found.vertices().is_empty() && !at.is_empty(),"the walk goes round a vertex");
+    assert!(worst <= 1e-9,"a node {worst:.2e} off contact");
+    let [first,last] = found.reach;
+    assert!(!both || at.iter().any(|&w| first < w && w < last),
+        "the walk reaches the blank on both sides of a vertex: {at:?} in {first}..{last}");
 }
+
+/// Each bar under each motion through the sector, walked round a vertex (`walked_round`).
+fn round_its_vertex(b: &Brep,named: &str) { for motion in motions() { walked_round(b,named,motion,&sector,true) } }
 
 /// **A bar's corner running to its far end**: `flat_end`'s bar turned so a corner stands nearest the
 /// axis (its section turned 30°, 45° or 60° one way, or 30° the other), turned across the sector
@@ -138,7 +142,7 @@ fn a_corner_running_to_its_crease_is_walked_round_the_vertex() { round_its_verte
 fn a_vertex_with_a_round_sides_rim_ends_the_walk() {
     let [(turn,roll),(screw,roll_screwed)] = motions();
     let refused = |screw: Screw,roll: [f64;2]| -> String {
-        let (_,found) = walk(&turned_end(30.,true),screw,roll);
+        let (_,found) = walk(&turned_end(30.,true),screw,roll,&sector);
         let Err((row,message)) = found else { panic!("refused under {}",screw.kind()) };
         eprintln!("under {}: {row:?} {message}",screw.kind());
         assert_eq!(row,Row::Regular);
@@ -165,4 +169,44 @@ fn a_bars_corner_running_to_its_end_screwed_cuts_as_the_bar() {
         assert!(!found.vertices().is_empty(),"round a vertex");
         near(exported(&e,"part"),PI/3.*80.-bar.lost(),2e-5);
     }
+}
+
+/// A finite diamond bar slid obliquely across a cube: the contact on its bottom rib
+/// reaches the cap at a vertex and continues along a rim. Both are whole edges in
+/// contact, and each transition is a crease of the sheet, independently of its pace.
+#[test]
+fn a_slide_walks_from_a_silhouette_rib_onto_a_cap_rim() {
+    let bar = Bar {origin:[0.,-4.,9.8],across:[0.,1.,0.],along:[0.,0.,1.],
+        corners:vec![[0.,0.],[2.,2.],[0.,4.],[-2.,2.]],names:vec!["a","b","c","d"],
+        from:2.,to:8.,draft:0.,lead:0.};
+    let b = brep(&bar,None);
+    let inside = |p: V| p.iter().all(|&x| x > 0. && x < 10.);
+    for drop in [-0.1_f64,-0.2,-0.3] { for pace in [1.,2.] {
+        let length = (0.09+1.+drop*drop).sqrt();
+        let screw = Screw {origin:[0.;3],axis:[0.3/length,1./length,drop/length],ratio:0.,advance:18.*length*pace};
+        walked_round(&b,&format!("drop {drop}, pace {pace}"),(screw,[0.,2.*PI/pace]),&inside,true);
+    } }
+}
+
+/// The cap's contact line passes exactly through an inner profile corner. Its end
+/// names that corner in the side chart, so it crosses the same vertex junction as a
+/// rib rather than choosing a rim solely by the coincidence of its cap normal.
+#[test]
+fn a_caps_contact_line_leaves_at_a_profile_vertex() {
+    let mut bar = flat_end(20.,30.);
+    bar.origin[1] = -bar.corners[3][1];
+    let b = brep(&bar,None);
+    walked_round(&b,"cap line at a vertex",motions()[0],&sector,false);
+    let e = fixtures::read(&bar.text());
+    assert!(matches!(class(&e,"part"),Class::ConstantTwist(_)));
+    near(exported(&e,"part"),PI/3.*80.-bar.lost(),2e-5);
+}
+
+/// A screw along the prism's extrusion carries whole silhouette rulings, like a
+/// slide, but its cap rims have a root that moves along the edge as the normal turns.
+#[test]
+fn a_screw_along_the_extrusion_connects_its_silhouette_to_the_cap() {
+    let bar = Bar {lead:8.,..flat_end(0.,30.)};
+    let b = brep(&bar,None);
+    walked_round(&b,"axial screw",motions()[1],&sector,false);
 }
