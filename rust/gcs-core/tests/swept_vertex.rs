@@ -6,7 +6,7 @@
 //! all stand at the vertex, so the walk goes on along that fan from the station whose root is the
 //! vertex, the sweep with a sharp edge along the vertex's path and the sheet creased there
 //! (`Junction::Vertex`, `Crease::Vertex`, `Characteristic::vertices`). Held here in the kernel alone,
-//! under a turn and a screw, for a bar whose corner runs to its end and a bar drafted both ways
+//! under turns, screws and slides, for a bar whose corner runs to its end and a bar drafted both ways
 //! whose corner runs to its crease: each node of the walk a point of the tool, in contact
 //! (`n·v = 0`), its normal the tool's outward there, and every crease at a vertex of the prism, the
 //! walk reaching the blank on both sides of one. A vertex one of whose edges is no fan the walk
@@ -165,4 +165,64 @@ fn a_bars_corner_running_to_its_end_screwed_cuts_as_the_bar() {
         assert!(!found.vertices().is_empty(),"round a vertex");
         near(exported(&e,"part"),PI/3.*80.-bar.lost(),2e-5);
     }
+}
+
+/// A finite diamond bar slid obliquely across a cube: the contact on its bottom rib
+/// reaches the cap at a vertex and continues along a rim. Both are whole edges in
+/// contact, and each transition is a crease of the sheet, independently of its pace.
+#[test]
+fn a_slide_walks_from_a_silhouette_rib_onto_a_cap_rim() {
+    let bar = Bar {origin:[0.,-4.,9.8],across:[0.,1.,0.],along:[0.,0.,1.],
+        corners:vec![[0.,0.],[2.,2.],[0.,4.],[-2.,2.]],names:vec!["a","b","c","d"],
+        from:2.,to:8.,draft:0.,lead:0.};
+    let b = brep(&bar,None);
+    let tool = Tool::read(&b,1.).unwrap();
+    let lone = Lone::read(&b,&tool,1.).unwrap();
+    let inside = |p: V| p.iter().all(|&x| x > 0. && x < 10.);
+    for drop in [-0.1_f64,-0.2,-0.3] { for pace in [1.,2.] {
+        let length = (0.09+1.+drop*drop).sqrt();
+        let screw = Screw {origin:[0.;3],axis:[0.3/length,1./length,drop/length],ratio:0.,advance:18.*length*pace};
+        let path = Trajectory::Twist(screw);
+        let sweep = Generating {tool:&tool,path:&path,roll:[0.,2.*PI/pace],whole:false,mm:1.};
+        let found = check_screw(&sweep,&inside,None,&Sampling::default(),Some(&lone))
+            .unwrap_or_else(|e| panic!("drop {drop}, pace {pace}: {e:?}")).0;
+        let (worst,at) = held(&found,&tool,&b,&screw);
+        assert!(worst <= 1e-9,"a node {worst:.2e} off contact");
+        assert!(!found.vertices().is_empty() && !at.is_empty(),"the walk turns at a vertex");
+        let [first,last] = found.reach;
+        assert!(at.iter().any(|&w| first < w && w < last),"the blank on both sides of a vertex");
+    } }
+}
+
+/// The cap's contact line passes exactly through an inner profile corner. Its end
+/// names that corner in the side chart, so it crosses the same vertex junction as a
+/// rib rather than choosing a rim solely by the coincidence of its cap normal.
+#[test]
+fn a_caps_contact_line_leaves_at_a_profile_vertex() {
+    let mut bar = flat_end(20.,30.);
+    bar.origin[1] = -bar.corners[3][1];
+    let b = brep(&bar,None);
+    let (turn,roll) = motions()[0];
+    let (tool,found) = walk(&b,turn,roll);
+    let found = found.unwrap_or_else(|e| panic!("cap line at a vertex: {e:?}"));
+    let (worst,at) = held(&found,&tool,&b,&turn);
+    assert!(worst <= 1e-9,"a node {worst:.2e} off contact");
+    assert!(!at.is_empty() && !found.vertices().is_empty(),"the walk records the vertex");
+    let e = fixtures::read(&bar.text());
+    assert!(matches!(class(&e,"part"),Class::ConstantTwist(_)));
+    near(exported(&e,"part"),PI/3.*80.-bar.lost(),2e-5);
+}
+
+/// A screw along the prism's extrusion carries whole silhouette rulings, like a
+/// slide, but its cap rims have a root that moves along the edge as the normal turns.
+#[test]
+fn a_screw_along_the_extrusion_connects_its_silhouette_to_the_cap() {
+    let bar = Bar {lead:8.,..flat_end(0.,30.)};
+    let b = brep(&bar,None);
+    let (screw,roll) = motions()[1];
+    let (tool,found) = walk(&b,screw,roll);
+    let found = found.unwrap_or_else(|e| panic!("axial screw: {e:?}"));
+    let (worst,at) = held(&found,&tool,&b,&screw);
+    assert!(worst <= 1e-9,"a node {worst:.2e} off contact");
+    assert!(!at.is_empty() && !found.vertices().is_empty(),"the walk goes round a vertex");
 }
