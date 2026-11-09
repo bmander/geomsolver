@@ -2575,7 +2575,7 @@ fn prism(contacts: &Sweep,tool: &dyn Material,motion: Motion,screw: &Screw,speed
     for (k,r) in rulings.iter().chain(&rims).enumerate() {
         let reads = || (0..=RULED_READS).filter_map(|i| r.line(i as f64/RULED_READS as f64).map(|l| contact(motion,l)));
         if !reads().all(|c| (c[0]-c[1]).abs() <= NOUGHT*speed) && !r.isolated(motion,speed) { continue }
-        if reads().all(|c| c[0].abs() <= NOUGHT*speed) && !alike { continue }
+        if !alike && reads().all(|c| c[0].abs() <= NOUGHT*speed) { continue }
         for line in silhouette(contacts,r,motion,speed,enters)? {
             let near = 1e-9*distance(line.ends[0],line.ends[1]);
             if !lines.iter().any(|l| distance(l.ends[0],line.ends[0]) <= near && distance(l.ends[1],line.ends[1]) <= near) {
