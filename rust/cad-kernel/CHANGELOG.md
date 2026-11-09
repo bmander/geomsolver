@@ -12,6 +12,22 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   quadrature readings disagree, refine their intervals locally instead of stopping after six
   doublings of the whole edge. brep-bench's `boolean/unequal-lens-aslant` now measures its two
   spherical caps to rounding, where its volume was 1.5% too large and its area 0.28% too large.
+- **Edges rounded together, in one call** (`rounds::rounded(b, edges, r, tol)`, **new**): where the
+  edges are straight, between planes, and each vertex they reach has all three of its edges among
+  them (all convex or all concave), the solid is built anew by surgery on its boundary: each edge a
+  cylinder, each face shrunk to the contact lines, each corner the triangle of the ball touching its
+  three faces, nothing intersected or fitted. brep-bench's `fillet/box-all-edges` is built in a fifth
+  of a millisecond, twelve cylinders, six planes and eight spheres, its volume and area its closed
+  forms' to 5e-16. A set of edges no two of which share a vertex is rolled edge by edge
+  (`fillet::roll`); anything else is refused by name.
+- **Faster measures on analytic faces**: `props::area`, `volume` and `fluxes` integrate along one
+  parameter of a plane, a cylinder, a cone, a sphere or a torus (and along an extrusion's rulings) in
+  closed form, where a Gauss rule ran at every node of every edge: the same values to rounding, some
+  five to twenty times faster.
+- **Faster meshing, the same triangles**: `mesh` reads each point's place and normal once, however
+  many triangles and passes ask for it, and looks for a point to weld to in a `util::space::Grid`
+  of cells eight welds wide, one cell mostly, not 27: every mesh bit for bit as before, in about a
+  third less time.
 
 ## [0.6.2] - 2026-11-09
 

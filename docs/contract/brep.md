@@ -365,6 +365,28 @@ and its strips exact, no canal fitted. A fitted canal round a circle was a net o
 that every later Boolean cut and every measure integrated: brep-bench's fillet/boss-s-curve took
 8.7 s, most of it its area, and now takes milliseconds, its volume and area to 1e-15
 (`brep::a_bosss_rim_and_root_rounded_to_meet_are_two_tori`; the hole's waist too).
+**Edges rounded together, the kernel placing every piece** (`rounds::rounded(b, edges, r, tol)`,
+brep-bench's fillet/box-all-edges): a set of edges rounded in one call. Where they are straight,
+between planes, and each vertex they reach has three edges, all of them among the set and all
+convex or all concave, the solid is built anew by surgery on its boundary — nothing intersected
+and nothing fitted. Each edge becomes a cylinder about its spine, the edge moved `r / tan(θ/2)`
+along each face (θ the angle the faces span on the ball's side) and `r` off both planes; each face
+keeps its loops, each rounded edge's use replaced by its contact line between the touches of the
+balls at its ends; each vertex becomes the triangle of the ball touching its three faces, bounded
+by the three cylinders' end arcs — each spine runs through that ball's centre, so each run ends in
+the plane through it square to its edge, on a great circle (the sphere's frame turned so the
+triangle stands about `u = π`, clear of its seam and poles). Every edge is shared by construction
+and every pcurve written exactly (a line in a plane's or a cylinder's parameters, a great circle's
+ends on the sphere), so the cube of brep-bench's case is built and checked in a fifth of a
+millisecond, where rolling each edge and cutting each piece and corner cell took seconds and left
+fitted canals. Refused by name: a face no plane carries, an edge no line does, a corner whose
+third edge stays sharp or of other than three edges (the mitre two rounds meet in is rung 3), a
+corner between convex and concave rounds, a round wider than a face beside it holds (a contact
+line run past its corners). A set of which no two edges share a vertex is rolled instead, each
+edge in turn (`fillet::roll`, any faces), each piece cut off a convex edge and filled at a concave
+one. `rounds_together` is the gate: a box (and one turned off the axes), a triangular prism and a
+cavity's twelve concave edges against Steiner's formula — a convex polyhedron rounded all over is
+the one its faces moved in by `r` bound, grown by the ball — to 1e-12, and the refusals.
 `Brep::bounds` encloses (issue #59; through-prism cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
@@ -620,6 +642,16 @@ brep-bench's boolean/unequal-lens-aslant 1.5% off its volume. Local refinement r
 without refining the whole circle to its width.
 `brep::an_unequal_lens_near_a_pole_measures_its_spherical_caps` holds its volume and area to the
 closed forms of its two caps under three placements of the balls' charts.
+**A face's inner integral is closed on the analytic surfaces** (`props`'s `Closed`, prepared once a
+face): Green's `G`, the area's `|S_u × S_v|` or the flux's `X · (S_u × S_v)` integrated along one
+parameter, is read in closed form on a plane, a cylinder, a cone, a sphere and a torus (along either parameter) and
+along an extrusion's rulings — in the surface's frame each integrand is a sum of powers and
+products of the angle's sine and cosine and the length along it — where it was a Gauss rule of
+forty points or more at every node of every edge. An area whose `|·|` changes sign within the span
+(a sphere's past a pole, a spindle torus's) is still read by the rule. Every face of spheres,
+cones (to a point too), tori and cylinders, whole, moved and cut at a slant, agrees with the rule
+to 6e-16, and a cube rounded all over is measured in a millisecond and a half, where its area took
+26 ms.
 **A traced edge inverted onto its face is measured across planes** (`props`'s `along_trace`,
 #798): Green's integral is the curve's, however parameterised, so it is read not by the trace's
 own parameter — which counts its points, its rate stepping at each, every stretch a rule of its own
@@ -761,8 +793,11 @@ surface's outward normal (signed), never at a pole's corner, whose normal is deg
 revolution's sphere holds its `v` to the poles (`build::revolve`: run a rounding past one, its
 chart's normal turned over and the mesher refined into it without end, until float32 wrote the
 triangles as none, `canal::a_half_balls_pole_is_meshed_as_any_point`, #684 D); slivers get a
-point off the longest side; points nearer than
-1e-9 are welded, and a vertex a face's loops pass through twice at one place (a hole touching the
+point off the longest side; each point's place and normal are read once, whichever triangles
+it is a corner of, and the refinement asks only the triangle's middles anew; points nearer than
+1e-9 are welded (filed in a `util::space::Grid` of cells eight welds wide, each looked for in the
+cells a weld about it meets — its own, mostly, where it was 27; with each point's place read once
+for every pass, the same triangles, bit for bit, in a third less time), and a vertex a face's loops pass through twice at one place (a hole touching the
 outer loop, #597) is one corner of its triangulation. An edge is sampled from first pieces no
 midpoint test can be blind to: a B-spline's knot spans, a family rail's pieces, a screwed rail a
 quarter turn at most (`edge_params`; a coil of four turns has its ends, middle and quarter

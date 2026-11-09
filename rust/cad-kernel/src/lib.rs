@@ -35,6 +35,7 @@ pub mod corners;
 pub mod plane2;
 pub mod section;
 pub mod fillet;
+pub mod rounds;
 pub mod spill;
 pub mod family;
 pub mod trajectory;
