@@ -8,6 +8,23 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A hypoid gear's part builds in half the time** — four costs, each measured on geomsolver's
+  hypoid drive and pair:
+  - `swept::tool::Material::near` (**new**, default `|value| < r`): whether a point is within `r`
+    of the material's boundary; `Tool::on` asks it, and `read::Boundary` reads it off the faces and
+    edges within `r` alone, the first found deciding, where `value` read every face and edge nearer
+    than the best found (a traced edge's foot by projections onto both surfaces). A gear's
+    admission: 9.6 s → 3.8 s.
+  - `query::Located::solid_place`: a point off the box its faces' boxes fill is out, and a ray
+    reaches only out of that box, its directions tried by how soon they leave it; `settled` asks
+    whether a stretch's end is on a net only where it stands by one of the net's spans
+    (`near_net`), where it searched for the end's foot on every sheet a ray passed; `along` likewise
+    at a curve's start, middle and end; a ray's readings are not kept. A part's cut of its bore:
+    1.8 s → 0.19 s.
+  - `props`: a polynomial net's `G` tabled from the face's middle, each column filled only as far
+    as asked, a span at a time by the net's rows read at that `v` (curves in `u`), where every
+    column was integrated across the whole net in 2D; an inverse edge's Gauss nodes sought each
+    from the last (`topo::Pcurve::at_and_derivative_from`, **new**).
 - **Certified curve–surface readings several times faster on fitted sheets** (#814's general
   reading): a non-rational B-spline curve or net of degree below `enclose::BEZIER` is enclosed
   over a box by its spans' Bézier forms restricted to the box (`Net::restricted`,

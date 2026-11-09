@@ -821,6 +821,27 @@ fn pseudo_normals(b: &Brep) -> Vec<Option<V>> {
 }
 
 impl Material for Boundary {
+    /// `|value(p)| < r`, read off what stands within `r` alone: a face whose box is within it, by
+    /// its feet (nearest first, as `nearest` reads them) in the face, or an edge bounding
+    /// something whose box is — the first found within `r` deciding. `nearest` reads every face
+    /// and edge nearer than the best found, a traced edge's foot by projections onto both its
+    /// surfaces: asked at every sample of a tool's faces whether it is on the tool (`Tool::on`), it
+    /// was most of a hypoid gear's admission.
+    fn near(&self,p: V,r: f64) -> bool {
+        let (q,r) = (p.map(|x| x*self.scale),r*self.scale);
+        let (b,l) = (&*self.located.b,&self.located);
+        for fi in 0..b.faces.len() {
+            if !(l.face_gap(fi,q) < r) { continue }
+            let surface = &b.faces[fi].surface;
+            // (the feet nearest first, `Surface::feet`: past one `r` off, every one is)
+            for uv in surface.feet(q).into_iter().flatten() {
+                let p = surface.point(uv);
+                if !(distance(q,p) < r) { break }
+                if l.face_place(fi,p) != Place::Out { return true }
+            }
+        }
+        self.bounding.iter().any(|&e| l.edge_gap(e,q) < r && l.nearest(e,q).1 < r)
+    }
     fn value(&self,p: V) -> f64 {
         let q = p.map(|x| x*self.scale);
         let (d,side) = self.nearest(q);

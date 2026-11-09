@@ -18,6 +18,10 @@ type V = [f64;3];
 /// operand), and a face's outward side.
 pub trait Material: Send + Sync + std::fmt::Debug {
     fn value(&self,p: V) -> f64;
+    /// Whether `p` stands within `r` of the material's boundary: `|value(p)| < r`, which a
+    /// material may read without the distance itself (`read::Boundary`: only what stands within
+    /// `r`, the first found deciding).
+    fn near(&self,p: V,r: f64) -> bool { self.value(p).abs() < r }
 }
 
 /// A tool as a sweep reads it: its faces, the edges where two faces of a profile loop meet, the
@@ -35,7 +39,7 @@ impl Tool {
     /// Whether `p` is a point of the tool's boundary: its material nought there, to within
     /// `ON_TOOL` — what tells a point of a face's chart on the tool from one past a trim, or one a
     /// Boolean of the tool hides.
-    pub fn on(&self,p: V) -> bool { self.material.value(p).abs() < ON_TOOL }
+    pub fn on(&self,p: V) -> bool { self.material.near(p,ON_TOOL) }
     /// Where `edge`'s two faces meet, and a point just inside each face beside it, where the
     /// corner lies on the tool: the probe a corner is told by — the chord between the two points in
     /// the tool's material at a convex corner, out of it at a concave one. (At a cap the chord lies

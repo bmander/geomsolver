@@ -224,7 +224,9 @@ a swap made without its callers knowing:
   (`enclosures::a_root_that_cannot_be_settled_is_refused_never_returned`,
   `roots::a_root_certified_over_a_flat_system_is_where_it_is`). A reading that gives up is
   `Meets::Refused`, its witness (`query::Refusal`) the curve's and the surface's kinds, the stretch
-  and the box: a ray locating a point abandons its direction (`Located::solid_place`), a Boolean is
+  and the box: a ray locating a point abandons its direction (`Located::solid_place`: a point off
+  the box its faces' boxes fill is out, past which no face stands, and a ray need reach only out of
+  that box, the five directions tried by how soon they leave it; a ray's readings are not kept), a Boolean is
   refused with it in words (`boolean`'s edge-against-face phase, an along-face crossing, a triple
   point; `query::crossings_in` answers the refusal too), and a fillet's leg says so
   (`enclosures::a_reading_that_proves_nothing_is_refused_with_its_witness`). The sampled search is
@@ -250,6 +252,13 @@ a swap made without its callers knowing:
   `blend_bounds`, `Heights::bounds` and the amplitude, screw and helix bounds are gone, and every
   closed form's search reads its function written once over `Num` (`isolate::Formula`), its value
   and rate enclosed by the same formula in intervals.
+- **An end of a stretch is on a net only near one of its spans** (`query::near_net`): `settled`
+  reads whether each end of the stretch stands on the surface, and a net's distance is a foot
+  searched for — from afar, at every sheet a ray passed, by Newton from four spans and the grid —
+  so an end standing farther than the tolerance from every span's box (`net_index`) is off it
+  unread; likewise `along` reads a curve lying in a net only where its start, middle and end are
+  each by a span. A ray placing a bore's points in a hypoid pinion's part read every tooth's sheet
+  so: the cut of the bore 1.8 s, now 0.19 s.
 - **How a pair is read** (`query::Reader`): `General`, **the general reading every pair has** — a
   surface with an algebraic form (a plane, a quadric, a torus) along the curve, one unknown, `F(C(t))`
   and `∇F · C'` enclosed from the curve's enclosure; an extrusion and a revolution, two unknowns,
@@ -645,6 +654,15 @@ round the circle, a touch where it only reaches nought (`screwed_circle_round`).
 settles** (`props`'s `settled`): read over its pieces, then twice as many, until two readings agree
 to rounding, the coarser kept — a ball's great circle passing within a few degrees of a pole sweeps
 half a turn of `u` there, and a sixteenth of a turn a piece left a ball's piece 0.2% off its area.
+**A polynomial net's `G` is tabled from the face's own middle** (`props::Prefix`): `G` from any `u`
+knot differs by a function of `v` alone, which closes to nought round a loop, so each `v` span's
+column is filled out from the knot nearest the face's middle only as far as a `u` asked reaches, a
+span at a time by the net's rows read at that `v` (the sheet and `S_v` B-spline curves in `u`
+there) — a fitted sheet's face was integrated across its hundreds of spans per column, each node a
+2D evaluation. **An inverse edge's nodes are sought from the last** (`Pcurve::at_and_derivative_from`):
+each node's foot from the previous node's, carried along by its rate, where that node is just
+behind it, the branch still the one nearest the line between the ends — from that line, Newton
+took some ten steps a node on a fitted sheet's curved edge.
 **A traced edge inverted onto its face is measured across planes** (`props`'s `along_trace`,
 #798): Green's integral is the curve's, however parameterised, so it is read not by the trace's
 own parameter — which counts its points, its rate stepping at each, every stretch a rule of its own

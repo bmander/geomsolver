@@ -424,14 +424,20 @@ impl Reader for General {
 /// says so where it can (a line along a cylinder).
 fn along(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> bool {
     if !(t0.is_finite() && t1.is_finite()) { return false }
-    // a net's: a curve whose start stands within `tol` of none of its spans' boxes lies along no
-    // stretch of it (its distance there not read, which a fitted sheet reads by searching it)
+    // a net's: a curve whose start, middle or end stands within `tol` of none of its spans' boxes
+    // lies along no stretch of it (its distance there not read, which a fitted sheet reads by
+    // searching it: a ray clipped to a face's box starts on the box, often by a span, and each
+    // ray a point was placed by read a sheet's foot at every tooth it passed)
     if let Surface::BSpline(_,net) = surface {
         if net.weights.is_none() {
-            let p = curve.point(t0);
-            let mut near = false;
-            net_index(net).tree.query_box(crate::util::bvh::Bounds {lo:p.map(|x| x-tol),hi:p.map(|x| x+tol)},|_| near = true);
-            if !near { return false }
+            let index = net_index(net);
+            let near = |t: f64| {
+                let p = curve.point(t);
+                let mut near = false;
+                index.tree.query_box(crate::util::bvh::Bounds {lo:p.map(|x| x-tol),hi:p.map(|x| x+tol)},|_| near = true);
+                near
+            };
+            if !(near(t0) && near(0.5*(t0+t1)) && near(t1)) { return false }
         }
     }
     if !lies_along(curve,[t0,t1],surface,tol) { return false }
@@ -522,12 +528,24 @@ fn settled(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,roots: Vec<
         i = j+1;
     }
     for end in [t0,t1] {
-        if !end.is_finite() || !(side(end).abs() <= tol) || !on_bounded(surface,curve.point(end),tol) { continue }
+        if !end.is_finite() || !near_net(surface,curve.point(end),tol) || !(side(end).abs() <= tol) || !on_bounded(surface,curve.point(end),tol) { continue }
         runs.retain(|r| !joined(r.0,end));
         runs.push((end,false));
     }
     runs.sort_by(|x,y| x.0.total_cmp(&y.0));
     runs
+}
+
+/// **Whether `p` may stand within `tol` of `surface`**, read off a net's spans' boxes alone
+/// (`net_index`): a point within `tol` of none is off the net, its distance not read — which a
+/// fitted sheet reads by searching for its foot, from afar at every span it may be by (each end of a
+/// ray placing a point, at every tooth's sheet it passed). Any other surface: `true`.
+fn near_net(surface: &Surface,p: V,tol: f64) -> bool {
+    let Surface::BSpline(_,net) = surface else { return true };
+    if net.weights.is_some() { return true }
+    let mut near = false;
+    net_index(net).tree.query_box(crate::util::bvh::Bounds {lo:p.map(|x| x-tol),hi:p.map(|x| x+tol)},|_| near = true);
+    near
 }
 
 /// **Why a reader has no answer** (#780 R3, #814), told apart so each is answered its own way: no
@@ -1902,7 +1920,7 @@ pub(crate) fn edge_box(b: &Brep,e: usize,size: f64) -> ([f64;3],[f64;3]) {
 /// leave the box between).  A stretch lying along the surface is asked of the whole again; a
 /// stretch refused refuses the whole.
 pub fn curve_surface_within(curve: &Curve,t: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3],[f64;3]),grow: f64) -> Meets {
-    within(curve,t,surface,tol,bx,grow)
+    within(curve,t,surface,tol,bx,grow,true)
 }
 
 /// **A reading kept, by what it read**: the curve and the surface by their own identity (a
@@ -1944,8 +1962,8 @@ fn kept_read(curve: &Curve,s: [f64;2],surface: &Surface,tol: f64) -> Result<Opti
 }
 
 /// `curve_surface_within`.
-fn within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3],[f64;3]),grow: f64) -> Meets {
-    let reading = |s: [f64;2]| kept_read(curve,s,surface,tol);
+fn within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3],[f64;3]),grow: f64,keep: bool) -> Meets {
+    let reading = |s: [f64;2]| if keep { kept_read(curve,s,surface,tol) } else { read(&Fast,curve,s,surface,tol) };
     let (lo,hi) = (bx.0.map(|x| x-grow-tol),bx.1.map(|x| x+grow+tol));
     let mut stretches: Vec<[f64;2]> = Vec::new();
     match curve {
@@ -2158,14 +2176,16 @@ pub struct Located<'a> {
     edge_space: Vec<([f64;3],[f64;3])>,
     /// The solid's size (`Brep::size`), read once.
     size: f64,
+    /// The box its faces' boxes fill: past it no face stands.
+    whole: ([f64;3],[f64;3]),
 }
 
 impl<'a> Located<'a> {
     /// A located boundary that keeps its own copy.
     pub fn owned(b: Brep,tol: f64) -> Located<'static> {
-        let (tol,coarse,drawn,space,seams,edge_space,size) = { let l = Located::new(&b,tol);
-            (l.tol,l.coarse,l.drawn,l.space,l.seams,l.edge_space,l.size) };
-        Located {b:std::borrow::Cow::Owned(b),tol,coarse,drawn,space,seams,edge_space,size}
+        let (tol,coarse,drawn,space,seams,edge_space,size,whole) = { let l = Located::new(&b,tol);
+            (l.tol,l.coarse,l.drawn,l.space,l.seams,l.edge_space,l.size,l.whole) };
+        Located {b:std::borrow::Cow::Owned(b),tol,coarse,drawn,space,seams,edge_space,size,whole}
     }
     pub fn new(b: &'a Brep,tol: f64) -> Located<'a> { Located::boxed(b,tol,&|_| None) }
 
@@ -2175,10 +2195,13 @@ impl<'a> Located<'a> {
         let size = b.size();
         let coarse = (1e-4*size).max(tol*8.);
         let drawn = (0..b.faces.len()).map(|_| std::sync::OnceLock::new()).collect();
-        let space = (0..b.faces.len()).map(|fi| known(fi).unwrap_or_else(|| face_box(b,fi))).collect();
+        let space: Vec<([f64;3],[f64;3])> = (0..b.faces.len()).map(|fi| known(fi).unwrap_or_else(|| face_box(b,fi))).collect();
+        let whole = space.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),(a,z)| {
+            (std::array::from_fn(|k| lo[k].min(a[k])),std::array::from_fn(|k| hi[k].max(z[k])))
+        });
         let seams = b.faces.iter().map(Face::seams).collect();
         let edge_space = (0..b.edges.len()).map(|e| edge_box(b,e,size)).collect();
-        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,drawn,space,seams,edge_space,size}
+        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,drawn,space,seams,edge_space,size,whole}
     }
 
     /// Face `fi`'s outline and its parameter box, drawn once.
@@ -2311,15 +2334,24 @@ impl<'a> Located<'a> {
             }
             if f.surface.implicit(p).abs() <= self.tol && self.face_place(fi,p) != Place::Out { return Place::On }
         }
-        let reach = 4.*self.size+distance(p,self.b.vertices.first().map_or(p,|v| v.p));
+        // past the box the faces fill no face stands: a point off it is outside, and a ray from a
+        // point within it need reach only out of it. The ways out tried shortest first: from a hub
+        // inside a gear's ring, a ray along the axis leaves by its own faces, where one across it
+        // read every tooth's sheet
+        let (lo,hi) = (self.whole.0.map(|x| x-self.tol),self.whole.1.map(|x| x+self.tol));
+        if (0..3).any(|k| !(p[k] >= lo[k] && p[k] <= hi[k])) { return Place::Out }
         const DIRECTIONS: [V;5] = [[0.5773,0.6124,0.5402],[-0.3172,0.8123,-0.4893],[0.7071,-0.3162,0.6325],
             [-0.6412,-0.5123,0.5712],[0.1234,-0.4321,-0.8934]];
-        'dirs: for d in DIRECTIONS {
-            let d = scale(d,1./norm(d));
+        let out = |d: V| (0..3).map(|k| if d[k] > 0. { (hi[k]-p[k])/d[k] } else if d[k] < 0. { (lo[k]-p[k])/d[k] } else { f64::INFINITY })
+            .fold(f64::INFINITY,f64::min).max(0.);
+        let mut ways: Vec<(f64,V)> = DIRECTIONS.iter().map(|&d| { let d = scale(d,1./norm(d)); (out(d),d) }).collect();
+        ways.sort_by(|a,b| a.0.total_cmp(&b.0));
+        'dirs: for (exit,d) in ways {
+            let reach = exit+2.*self.tol+1e-9*self.size;
             let ray = Curve::Line {p,d};
             let mut crossings = 0;
             for (fi,f) in self.b.faces.iter().enumerate() {
-                match within(&ray,[0.,reach],&f.surface,self.tol*1e-3,self.space[fi],self.tol) {
+                match within(&ray,[0.,reach],&f.surface,self.tol*1e-3,self.space[fi],self.tol,false) {
                     // lying along a face, or a reading not proved (#814 P3): another direction
                     Meets::Along | Meets::Refused(_) => continue 'dirs,
                     Meets::At(roots) => for (t,touch) in roots {

@@ -237,7 +237,7 @@ pub(crate) fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
 /// table of four, a degree under `SMALL` in a table that size, a higher one (OCCT approximates up
 /// to 25) in one of `W`.
 #[inline]
-fn with_basis<R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
+pub(crate) fn with_basis<R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
     fn tabled<const M: usize,R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
         let (s,d) = basis_ders_in::<M>(p,u,count,t,n);
         f(s,&[&d[0],&d[1],&d[2]])
