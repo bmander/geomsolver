@@ -552,6 +552,39 @@ pub(crate) fn field_only_reasons(sk: &Sketch, operands: &std::collections::BTree
     out
 }
 
+/// The solids solid `i` is evaluated over at the next step down, as `validate_at` walks them: a
+/// sweep's tool and the material its roll is found through, a through-cut's material
+/// (`evaluation_operands`), a placement's source, a body's operands; nothing for a solid drawn
+/// from a face, a family or a region.
+fn operands_of(sk: &Sketch, i: usize) -> Result<Vec<usize>, String> {
+    let s = sk.solids.get(i).ok_or_else(|| format!("no solid at index {i}"))?;
+    let of = |v: Vec<u32>| v.into_iter().map(|o| o as usize).collect();
+    Ok(match &s.def {
+        SolidDef::Swept { .. } | SolidDef::Through { .. } => of(evaluation_operands(sk, i)?),
+        SolidDef::Placed { source, .. } => vec![*source as usize],
+        SolidDef::Body { .. } => of(s.operands()),
+        SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Family { .. }
+            | SolidDef::Region { .. } => Vec::new(),
+    })
+}
+
+/// **Every solid solid `si` is evaluated over, itself among them, validating none**: what
+/// `validate_at` reaches, where nothing is checked — what an object a host builds is drawn with
+/// (`Sketch::awaits_supply`, #671), which the host validated: validating a sweep finds its roll,
+/// a march along its motion (`roll::interval`), seconds of the page's thread.  A cycle is walked
+/// once.
+pub fn operands_reached(sk: &Sketch, si: usize)
+    -> Result<std::collections::BTreeSet<usize>, String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut pending = vec![si];
+    while let Some(i) = pending.pop() {
+        if seen.insert(i) {
+            pending.extend(operands_of(sk, i)?);
+        }
+    }
+    Ok(seen)
+}
+
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {
     let mut pending = vec![(si, false)];
     let mut seen = std::collections::BTreeSet::new();
@@ -573,14 +606,14 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 }
                 let family = crate::motion::Family::read(sk,*motion as usize)?;
                 // its tool, and a body's material its roll through it is found against (#271)
-                pending.extend(evaluation_operands(sk, i)?.into_iter().rev().map(|o| (o as usize, false)));
+                pending.extend(operands_of(sk, i)?.into_iter().rev().map(|o| (o, false)));
                 let [from, to] = roll::interval(sk, i)?;
                 family.at(from)?; family.at(to)?;
                 continue;
             }
-            SolidDef::Placed { source, motion, at } => {
+            SolidDef::Placed { motion, at, .. } => {
                 crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
-                pending.push((*source as usize,false));
+                pending.extend(operands_of(sk, i)?.into_iter().map(|o| (o, false)));
                 continue;
             }
             SolidDef::Prism { face, from, to, .. } => {
@@ -590,7 +623,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 *face
             }
             SolidDef::Through { face, .. } => {
-                pending.extend(evaluation_operands(sk, i)?.into_iter().rev().map(|o| (o as usize, false)));
+                pending.extend(operands_of(sk, i)?.into_iter().rev().map(|o| (o, false)));
                 *face
             }
             SolidDef::Revolve { face, .. } => *face,
@@ -598,7 +631,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 family::built(sk, i, unit).map_err(|m| fail(&m))?;
                 continue;
             }
-            SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
+            SolidDef::Body { .. } => { pending.extend(operands_of(sk, i)?.into_iter().rev().map(|o| (o, false))); continue; }
             // its terms on one axis, bounded all round: what its meridian says; else in general
             // position, bounded all round
             SolidDef::Region { .. } => {

@@ -81,6 +81,16 @@ test('a folder on a branch with a slash opens that folder; a file address select
     assert.equal(file.label, 'o/r/models');
   });
 
+test('each file is said as it arrives, against how many the listing named', async (t) => {
+  t.mock.method(globalThis, 'fetch', served());
+  const heard: [number, number][] = [];
+  const bundle = await githubProject(parseGithub('o/r')!, undefined, (done, total) => {
+    heard.push([done, total]);
+  });
+  const total = Object.keys(bundle.files).length;
+  assert.deepEqual(heard, Array.from({ length: total + 1 }, (_, k) => [k, total]));
+});
+
 test('an address with no Solvent files, or an unknown ref, says so', async (t) => {
   t.mock.method(globalThis, 'fetch', served());
   await assert.rejects(githubProject(parseGithub('github.com/o/r/tree/main/nothing')!), /no \.sv/);

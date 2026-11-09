@@ -384,6 +384,17 @@ pub struct DiagnoseOptions {
     /// well.  The rows can read as holding where they do not: a point run off to infinity widens
     /// the extent every row is measured against.  True where the caller does not say.
     pub settled: bool,
+    /// Whether the constraints worth removing are named where the rank says some row is
+    /// dependent (`over`, `implied`, `said_twice`): an SVD of the left null space and one more
+    /// of the relations'.  A caller reading only what moves (`views::place`, a round of hundreds
+    /// of planes) leaves them out, and those three lists are empty; the rank, the freedoms and
+    /// `under_params` are read as ever.
+    pub dependencies: bool,
+    /// Whether a refused solid is said among the warnings (`solid::validate` of every solid
+    /// that is no body).  A page leaves it to its pool of workers, which validate each object
+    /// they build and say a refusal in the export's words: validating a solid that rolls is a
+    /// march along its motion, seconds an edit on the page's thread.
+    pub refusals: bool,
 }
 
 impl Default for DiagnoseOptions {
@@ -396,6 +407,8 @@ impl Default for DiagnoseOptions {
             numeric_max: NUMERIC_MAX,
             solid_claims: true,
             settled: true,
+            dependencies: true,
+            refusals: true,
         }
     }
 }
@@ -429,7 +442,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let structural_under = m.params(&m.dm.under_cols);
     let components = components(&m);
 
-    let mut warnings = standing_warnings(sk);
+    let mut warnings = standing_warnings(sk, opts.refusals);
     // the witness analysis (Stage 4), on demand
     let wit = (opts.witness && m.n_cols > 0 && sys.n_res > 0)
         .then(|| analyze_with(sk, sys, None, &red.in_over, RANK_TOL, 0));
@@ -671,10 +684,11 @@ fn components(m: &Matched) -> Vec<Component> {
 }
 
 /// What is said whatever the rank: a corner round that does not fit, said by name before the
-/// profile it spoils (#576), a solid that is refused, and a load no solid bears.
-fn standing_warnings(sk: &Sketch) -> Vec<String> {
+/// profile it spoils (#576), a solid that is refused (where `refusals` asks), and a load no
+/// solid bears.
+fn standing_warnings(sk: &Sketch, refusals: bool) -> Vec<String> {
     let mut warnings: Vec<String> = crate::model::overruns(sk);
-    for (i, s) in sk.solids.iter().enumerate() {
+    for (i, s) in sk.solids.iter().enumerate().filter(|_| refusals) {
         if !matches!(s.def, crate::model::SolidDef::Body { .. }) {
             if let Err(message) = crate::solid::validate(sk, i) { warnings.push(message); }
         }

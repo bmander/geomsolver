@@ -81,6 +81,10 @@ export interface DiagnoseOptions {
   /** Whether the pose is a solve's answer (`SolveResult.settled`, the default).  Not, no claim
    *  is judged on it and a drawing whose rows read as holding is `unsolved` (#449). */
   settled?: boolean;
+  /** Whether a refused solid is said among the warnings (the default).  A page leaves it to its
+   *  pool (`app/object-builds.ts`), whose workers validate each object they build and say a
+   *  refusal in the export's words: validating a solid that rolls marches along its motion. */
+  refusals?: boolean;
 }
 
 interface RawDiagnosis {
@@ -187,6 +191,7 @@ export function diagnose(sketch: Sketch, opts: DiagnoseOptions = {}): Diagnosis 
     numericMax: opts.numericMax ?? NUMERIC_MAX,
     solidClaims: opts.solidClaims ?? true,
     settled: opts.settled ?? true,
+    refusals: opts.refusals ?? true,
   };
   const sys = opts.system && opts.system.sketch === sketch ? opts.system : null;
   const raw = withJson(payload, (p, n) => takeJson<RawDiagnosis>(

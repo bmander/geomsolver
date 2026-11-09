@@ -84,9 +84,10 @@ async function tree(base: string, ref: string, token?: string): Promise<Tree | n
   return { entries: r.body.tree ?? [], truncated: !!r.body.truncated };
 }
 
-/** Read the project at a GitHub address, with the person's token where one is given. */
-export async function githubProject(address: GithubAddress, token?: string)
-  : Promise<GithubBundle> {
+/** Read the project at a GitHub address, with the person's token where one is given; `arriving`
+ *  hears how many of its files have arrived of how many, once the listing says, and after each. */
+export async function githubProject(address: GithubAddress, token?: string,
+  arriving: (done: number, total: number) => void = () => {}): Promise<GithubBundle> {
   const { owner, repo } = address;
   const name = `${owner}/${repo}`;
   const base = `https://api.github.com/repos/${encodeURIComponent(owner)}/`
@@ -127,8 +128,10 @@ export async function githubProject(address: GithubAddress, token?: string)
       : await fetch(`${raw}/${segments(p)}`);
     if (!r.ok) throw refused(r.status, p, token);
     files[`${top}/${p.slice(under.length)}`] = await r.text();
+    arriving(Object.keys(files).length, members.length);
   };
   // a few readers drawing from one queue; the first refusal ends the reading
+  arriving(0, members.length);
   const queue = [...members];
   await Promise.all(Array.from({ length: Math.min(AT_ONCE, queue.length) }, async () => {
     for (let p = queue.shift(); p !== undefined; p = queue.shift()) await read(p);

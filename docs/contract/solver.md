@@ -544,7 +544,12 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   so the caller says (`DiagnoseOptions::settled`, true by default; `solventc` and the page pass
   the solve's): where not, no claim is judged on the pose (no list holds it), the conflict
   search runs even where every row reads as holding, and a drawing it finds no conflict in is
-  `Unsolved`.  The diagnosis's own scratch solve (`stationary` above) counts only where it
+  `Unsolved`.  A caller reading only what moves says so (`DiagnoseOptions::dependencies`, true
+  by default; `views::place`'s rounds pass false): no left null space is read, so `over`,
+  `implied` and `said_twice` are empty, and the rank, the freedoms and `under_params` are what
+  the whole reading says, whole and by parts
+  (`reading_only_what_moves_names_no_dependency_and_moves_what_the_whole_reading_moves`).
+  The diagnosis's own scratch solve (`stationary` above) counts only where it
   settles.  `tests/unsettled.rs` is the gate.  A pose *already* far out when the system is
   compiled settled under the old yardstick — every row over an extent that point stretched —
   and so passed every guard here; rows are now judged at their own sizes ("Solved" above,

@@ -816,3 +816,68 @@ fix((0, 10)) e
         assert!(!c.is_intrinsic() || !set.contains(&c.id));
     }
 }
+
+/// **Reading only what moves** (`DiagnoseOptions::dependencies`, what a round of placing the
+/// planes asks): the rank, the freedoms and the parameters free as the whole reading says them,
+/// whole and part by part, with no constraint named as removable — of a theorem among relations
+/// (`implied`) and of a dependency through dimensions (`over`) alike.
+#[test]
+fn reading_only_what_moves_names_no_dependency_and_moves_what_the_whole_reading_moves() {
+    let mut over = Sketch::new();
+    let p = over.point(0.0, 0.0, true, "p");
+    let q = over.point(5.0, 0.0, false, "q");
+    let r = over.point(5.0, 5.0, false, "r");
+    let (l1, l2) = (over.line(p, q), over.line(q, r));
+    over.add(Constraint::distance(EntRef::point(p), EntRef::point(q), 5.0));
+    over.add(Constraint::distance(EntRef::point(q), EntRef::point(r), 5.0));
+    over.add(Constraint::two_line(CKind::EqualLength, EntRef::line(l1), EntRef::line(l2)));
+    for mut sk in [examples::altitudes(), over] {
+        solve(&mut sk, SolveOpts::default());
+        for numeric_max in [gcs_core::diagnose::NUMERIC_MAX, 0] {
+            let all = DiagnoseOptions { numeric_max, ..DiagnoseOptions::default() };
+            let full = diagnose(&mut sk, all);
+            let only = diagnose(&mut sk, DiagnoseOptions { dependencies: false, ..all });
+            assert!(!(full.over.is_empty() && full.implied.is_empty()), "{}", summary(&full));
+            assert_eq!((only.numeric_rank, only.dof, &only.under_params),
+                       (full.numeric_rank, full.dof, &full.under_params), "{}", summary(&full));
+            assert_eq!(only.by_parts, numeric_max == 0);
+            assert!(only.over.is_empty() && only.implied.is_empty() && only.said_twice.is_empty(),
+                    "{}", summary(&only));
+        }
+    }
+}
+
+/// **A refused solid is said where the caller asks** (`DiagnoseOptions::refusals`): among the
+/// warnings by default, as `solventc` says it; left to the host that builds the objects where it
+/// does not — a page, whose pool's workers validate each object they build — and nothing else the
+/// diagnosis says changes.
+#[test]
+fn a_refused_solid_is_said_among_the_warnings_unless_the_host_says_it() {
+    let src = "\
+use std
+use std.solids
+in std.front {
+  a := point hint((-0.4, 0))
+  b := point hint((0.28, -0.4))
+  c := point hint((0.28, 0.38))
+  ab := line(a, b)
+  bc := line(b, c)
+  ca := line(c, a)
+}
+f1 := face(ab, bc, ca)
+b1 := solid(std.solids.Revolution(f1, about: std.x))
+";
+    let (prog, errs, _) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    solve(&mut sk, SolveOpts::default());
+    let refusal = "`b1`: the revolution axis crosses the profile";
+    let said = diagnose(&mut sk, DiagnoseOptions::default());
+    assert!(said.warnings.iter().any(|w| w == refusal), "{:?}", said.warnings);
+    let left = diagnose(&mut sk, DiagnoseOptions { refusals: false, ..DiagnoseOptions::default() });
+    assert!(!left.warnings.iter().any(|w| w == refusal), "{:?}", left.warnings);
+    assert_eq!((left.dof, left.status, left.under_params),
+               (said.dof, said.status, said.under_params));
+}

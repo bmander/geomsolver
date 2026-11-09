@@ -113,10 +113,17 @@ export async function openGithubAddress(text: string,
   if (!address) { loaded(); toast('That is not a GitHub repository address'); return; }
   const request = ++openingRequest;
   try {
-    loading(`fetching ${address.owner}/${address.repo}…`);
-    const bundle = await githubProject(address, githubToken);
+    const name = `${address.owner}/${address.repo}`;
+    loading(`listing ${name}…`);
+    // each file said as it arrives, against how many the listing named
+    const arriving = (done: number, total: number): void => {
+      if (request !== openingRequest) return;
+      loading(`fetching ${name} — ${done} of ${total} files`, done / total);
+    };
+    const bundle = await githubProject(address, githubToken, arriving);
     if (request !== openingRequest) return;
-    loading(`reading ${bundle.label}…`);
+    // the file the address names, else the project: elaborated, solved and diagnosed on this thread
+    loading(`reading ${bundle.source || bundle.label}…`);
     await painted();
     if (!await held(() => openProject(bundle, { directory: bundle.directory }))) return;
     // the address names the project now, an example no longer; what was asked for is the
@@ -377,6 +384,14 @@ export async function showDiagnosis(): Promise<void> {
   // each load scenario's words and its requirements' answers, as `solventc` says them
   for (const s of view.scenarios) lines.push(...s.words, ...s.answers.map((a) => a.text), '');
   lines.push(...d.warnings);
+  // a refused solid is the pool's to say (`diagnose`'s `refusals`): each object its workers
+  // refused, in the export's words, and what they have not built yet
+  const rows = view.builds.rows;
+  for (const r of rows) {
+    if (r.state === 'refused') lines.push(`\`${r.name}\` is not built: ${r.why}`);
+  }
+  const left = rows.filter((r) => r.state === 'waiting' || r.state === 'building').length;
+  if (left) lines.push(`${left} object(s) still being built: a refusal is said once it is`);
   if (view.lastPlan) {
     lines.push('', `Decomposition: ${view.lastPlan.plan.summary}`
       + (view.lastPlan.fellBack ? ' — numeric fallback used' : ''));

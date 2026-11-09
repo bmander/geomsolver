@@ -504,8 +504,17 @@ fn solve_taken(sk: &mut Sketch, reads: &[Reads], taken: &BTreeSet<u32>, placed: 
         sk.params[q as usize].value = part.params[q as usize].value;
     }
     turn_over(sk, &item, placed);
-    // placed: what the statements taken leave no freedom
-    let d = crate::diagnose::diagnose(&mut part, Default::default());
+    // placed: what the statements taken leave no freedom.  Only what moves is read, which the
+    // rank says: no conflict search (a round whose rows do not all meet was searched seconds at
+    // a time), no constraint named as removable (two SVDs more a round), nothing of a solid
+    let opts = crate::diagnose::DiagnoseOptions {
+        conflicts: Some(false),
+        solid_claims: false,
+        dependencies: false,
+        refusals: false,
+        ..Default::default()
+    };
+    let d = crate::diagnose::diagnose(&mut part, opts);
     let under: BTreeSet<u32> = d.under_params.iter().copied().collect();
     let fixed = |ps: &[u32]| ps.iter().all(|q| !under.contains(q));
     for k in 0..sk.axes.len() {

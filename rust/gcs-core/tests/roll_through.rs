@@ -304,3 +304,33 @@ fn members_rolled_through_their_blanks_build_as_their_stated_rolls_did() {
         assert!(volume > 0.0 && faces > 0, "{member}: {volume} mm³, {faces} faces");
     }
 }
+
+/// **An object a host builds is drawn from its build** (#671): the page's sketch, building none
+/// of its own, takes the build a host made of the same text — its roll found there — and draws it,
+/// current and not unbuilt, over what it is evaluated over (`solid::operands_reached`: itself, the
+/// blank, the sweep and its tool), without validating it again: finding the roll is a march along
+/// the turn, which is the host's.
+#[test]
+fn a_rolled_object_a_host_builds_is_drawn_from_its_build() {
+    use gcs_core::brep::export::Builder;
+    use gcs_core::solid::{ApproximationPolicy, ObjectState};
+    let src = balls("(3, 0, 1)", "under: turn");
+    let (host, page) = (read(&src), read(&src));
+    let part = crate::common::ent(&page, "part").i();
+    page.sketch.supply_objects(true);
+    let jobs = page.sketch.object_jobs();
+    let job = jobs.iter().find(|j| j.objects.contains(&part)).expect("a job builds `part`");
+    assert_eq!(page.sketch.object_state(part), ObjectState::Building);
+    let mut b = Builder::new(&host.sketch, job.solid).map_err(|r| r.message).unwrap();
+    while !b.step().map_err(|r| r.message).unwrap() {}
+    assert!(page.sketch.supply_object(job.solid, b.display().unwrap().clone()).unwrap());
+    assert_eq!(page.sketch.object_state(part), ObjectState::Built);
+    let drawn = page.sketch.evaluated_solid(part, ApproximationPolicy::Mesh).unwrap();
+    assert!(!drawn.stale() && drawn.volume() > 0.0, "{}", drawn.volume());
+    assert!(gcs_core::overview::unbuilt(&page.sketch).is_empty());
+    let over: Vec<&str> = solid::operands_reached(&page.sketch, part).unwrap().into_iter()
+        .map(|i| page.sketch.solids[i].name.as_str()).collect();
+    for name in ["part", "blank", "removal", "tool"] {
+        assert!(over.contains(&name), "`{name}` not among {over:?}");
+    }
+}

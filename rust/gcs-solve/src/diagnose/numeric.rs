@@ -24,6 +24,9 @@ pub(super) struct Gate {
     pub by_parts: bool,
     /// Neither reading is taken.
     pub skipped: bool,
+    /// The dependent rows are read for the constraints worth removing
+    /// (`DiagnoseOptions::dependencies`).
+    dependencies: bool,
 }
 
 impl Gate {
@@ -33,7 +36,7 @@ impl Gate {
         let numeric = opts.numeric.unwrap_or(n_cols <= opts.numeric_max);
         let by_parts = opts.numeric.is_none() && !numeric && some;
         let skipped = opts.numeric.is_none() && !numeric && !by_parts;
-        Gate { numeric, whole: numeric && some, by_parts, skipped }
+        Gate { numeric, whole: numeric && some, by_parts, skipped, dependencies: opts.dependencies }
     }
 }
 
@@ -127,9 +130,9 @@ pub(super) fn read(
     warnings: &mut Vec<String>,
 ) -> Numeric {
     let out = if gate.whole {
-        whole(sk, sys, m, wit, warnings)
+        whole(sk, sys, m, gate, wit, warnings)
     } else if gate.by_parts {
-        by_parts(sk, sys, m, warnings)
+        by_parts(sk, sys, m, gate, warnings)
     } else {
         return Numeric::default();
     };
@@ -148,6 +151,7 @@ fn whole(
     sk: &mut Sketch,
     sys: &mut System,
     m: &Matched,
+    gate: &Gate,
     wit: Option<&WitnessReport>,
     warnings: &mut Vec<String>,
 ) -> Numeric {
@@ -185,7 +189,7 @@ fn whole(
     // length first: the matching's over-block at DOF 0 is every row touching the cluster, where
     // W's reading is the relation-only closure it always was, which is `implied` and nothing to
     // fix (#45.5).
-    let dependencies = (rank < m.n_rows()).then(|| {
+    let dependencies = (gate.dependencies && rank < m.n_rows()).then(|| {
         let j = cond.unwrap_or_else(|| {
             let z = sys.z0(sk);
             sys.conditioned(&z)
@@ -216,12 +220,13 @@ fn by_parts(
     sk: &mut Sketch,
     sys: &mut System,
     m: &Matched,
+    gate: &Gate,
     warnings: &mut Vec<String>,
 ) -> Numeric {
     let z = sys.z0(sk);
-    let p = numeric_by_parts(sk, sys, &m.row_c, &z);
+    let p = numeric_by_parts(sk, sys, &m.row_c, &z, gate.dependencies);
     let (rank, null, shaky) = screened(sk, sys, &z, p.null, p.rank, m.dm.rank, warnings);
-    let dependencies = (rank < m.n_rows()).then(|| Dependencies {
+    let dependencies = (gate.dependencies && rank < m.n_rows()).then(|| Dependencies {
         twice: p.twice,
         ..Dependencies::of(sk, p.removable, p.removable_rel)
     });
@@ -345,7 +350,11 @@ pub fn parts_null_spaces(sk: &Sketch) -> (SparseConditioned, usize, Vec<Vec<f64>
     (j, hard.len(), null, left)
 }
 
-fn numeric_by_parts(sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64]) -> ByParts {
+/// `dependencies` false reads the rank and the null space alone: no left null space, so nothing
+/// removable and nothing said twice.
+fn numeric_by_parts(
+    sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64], dependencies: bool,
+) -> ByParts {
     use parts::Part;
     let j = sys.conditioned_sparse(z);
     let hard = sys.hard_rows();
@@ -378,7 +387,8 @@ fn numeric_by_parts(sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64]) -> 
     // only where there is one among all the rows
     let rank = sys.n_free - null.len();
     let rows = hard.len();
-    let all_rows = if rank < rows { parts::left_null(&j, &all) } else { Vec::new() };
+    let all_rows =
+        if dependencies && rank < rows { parts::left_null(&j, &all) } else { Vec::new() };
     let rel_rows = match all_rows.is_empty() {
         true => Vec::new(),
         false => parts::left_null(&j, &rel),
