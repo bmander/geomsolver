@@ -1546,8 +1546,9 @@ it is (`side_at`). S1 refuses where a corner's, a rim's or a crease's root runs 
 vertex some edge of which is no fan the walk reads (`VERTEX`; at any other it goes round the
 vertex, G1 below), where a side's root
 runs over a cap with no rim to cross (`OVER_CAP`: a round side's), where a cap's line leaves it
-onto none (`OFF_CAP`), and where a silhouette's ruling runs over a cap under a slide or a screw
-along the extrusion (`SILHOUETTE_OVER_CAP`), each within the walk's margin of the blank. The sheet
+onto none (`OFF_CAP`), each within the walk's margin of the blank. Whole silhouette ribs under
+a slide or a screw along the extrusion join straight cap rims through their vertices (G1b,
+below). The sheet
 is `brep::sweep::helical`'s, cut into faces at each fan's ends. The gate is
 `solid_sweeps_examples::the_flat_end_cuts_a_floor` (`solid_sweeps/flat_end.sv`, a bar's flat end
 facing down toward the axis turned across `turn.sv`'s block: the end's line turned is the floor, the
@@ -1557,7 +1558,7 @@ slice of its half-spaces bounding what the turn removes there, within 2e-5 at 0.
 8 mm a turn, held to arithmetic over `z − kθ`, which the screw keeps, within 2e-5 at 0.002 mm), each
 STL agreeing with the field; with the refusals
 `solid_sweeps_examples::the_capped_thread_goes_round_its_bars_vertices` (S1, `VERTEX`, before G1),
-`a_cap_in_the_blank_under_a_slide_is_refused` (S1) and
+`a_cap_in_the_blank_under_a_slide_turns_round_its_vertices` (G1b) and
 `a_cap_of_a_tool_no_lone_prism_turned_is_the_closed_classs` (T1 here; the closed class's), and
 `object_builder::a_flat_end_turned_builds_at_the_displays_samples`.
 
@@ -1570,9 +1571,8 @@ longer refuses it. Its few degrees' fan stays in the faces of the halves either 
 (`helical::SHALLOW_FAN`, a tenth of a radian, `Characteristic::fan_turn`; its ends still exact
 rows): cut out, a band 0.08 mm wide met the block's side plane in the split with a pcurve 3e-5 off
 its edge (first seen at the display's samples, then at a 15° lean in the export). Under a slide, or
-a screw along the extrusion (`silhouette`), it is still
-refused at T1, the silhouette turning at the crease; a corner of a half meeting the plane is a
-vertex (S1), a round side's crease is not walked (S1, `OVER_CREASE`). The gate is
+a screw along the extrusion, the silhouette is read by the whole-edge reading of G1b below. A corner of a half meeting the plane is a vertex, and a
+round side's crease is still not walked (S1, `OVER_CREASE`). The gate is
 `solid_sweeps_examples::the_creased_bar_crosses_its_crease` (`solid_sweeps/creased.sv`, a bar
 leaning across the turn drafted 2° both ways, its inner side's halves joined round the crease;
 its shadow from its ten half-spaces within 2e-5 at 0.001 mm) and
@@ -1716,25 +1716,39 @@ by `swept_apex::behind_a_point_is_outside_the_tool` and
 **A vertex of a prism (#721 G1):** a corner's, a rim's or a crease's fan (`Ruling::Rib`,
 `Ruling::Rim`) takes among its stations those where its root reaches either end of its ruling
 (`Ruled::crossing` at both ends, as a side's at its rims), each end a vertex of the prism. For each
-such end `Junctions::new` reads the vertex's fans (`Junction::Vertex` in `Along::off`, the junction
-where a piece's root runs off each end of its ruling, by `Piece::ruling_ends` within 1e-9 of the
-tool's size) where the vertex is convex and every edge of it is a fan the walk reads: as
-many fans as faces meet there — the sides with a corner there and the caps they run to (a drafted
-half's end at its parting plane is a crease, no cap) — and three at least, on a tool every face of
-which is a side or a cap; else none. Where a fan's
-next ring has no root, `step` crosses the junction at the ruling's end its root stands nearer: at a
-vertex, the walk goes
-on onto the first of the vertex's other fans with a station whose root is the vertex, the way its
-roots go on (`side_at`, as a side is entered off a rim). Every normal of the cone between the faces
-there is the tool's, and those square to the motion lie on one arc of it, from the fan the walk
-came along to the one it leaves along: all stand at the vertex, so the second root is a crossing's,
-dropped, and the node before it is marked `Crease::Vertex`, a crease (`creases`,
-`Characteristic::vertices`), built as V's is. Where some edge of the vertex is no fan (a concave
-corner, a side no line, a cap of a tool no lone prism) the walk ends as before (`VERTEX`). Under a
-slide, or a screw along the extrusion, the silhouette's turn at a vertex is still refused
-(`SILHOUETTE_OVER_CAP`, G4), as are a cap line leaving at a vertex (`OFF_CAP`), a round side's
-crease (`OVER_CREASE`), a flat's line running off at one (`OFF_FLAT`) and the generating class's
-corner in a cap's band (T3). The native path refuses a characteristic that goes round a vertex by
+such end `Junctions::new` reads the vertex's fans (`Junction::Vertex` in `Along::off`).
+The vertex is keyed by each side's profile corner and ruling end (`PrismVertices`, #721 G1b):
+adjacent sides are joined by `Tool::edges`, drafted halves by `Tool::creases`. No points are
+matched and no faces counted. Every incident rib and rim must have a read fan, and at least
+three fans must meet; a missing concave rib or round rim still refuses the junction. Where a
+fan's next ring has no root, `step` crosses the junction at the ruling's end its root stands
+nearer. It enters the other fan whose root is there in the direction its roots continue.
+`Step::Vertex` records the crossing and its topology key; `Crossed::Vertex` marks the node as
+`Crease::Vertex` instead of inferring a vertex from coincident fan points. Other incident fan
+roots at that vertex are covered by the same normal-cone crossing (S2), not a second stretch.
+
+**Whole edges and cap-line vertices (#721 G1b, with G4):** a side, rib or rim whose endpoint
+contacts agree all along its parameter is read as whole rulings at the contact's roots
+(`silhouette`, `Line::of`). Rims are constructed before this reading, including under a slide
+or a screw along the extrusion. A whole rib or rim retains its topology and joins the vertex
+at each end; a whole side ruling joins its rims. A fixed edge whose endpoint contact functions
+are positive multiples is read the same way (`Ruling::isolated`): it has no ordinary root on
+the edge, only whole-edge contacts where both functions vanish. Opposite multiples have a
+root inside the edge and branch there, so S1 still refuses them. A cap line ending at a profile
+vertex retains the side-chart endpoint and crosses its vertex junction too (`Line::vertices`).
+Consecutive crossings at the same vertex keep one node and the last piece's starting station;
+a repeated endpoint must not create a zero-length section edge that S4 reads as an intersection.
+The gates are `swept_vertex` (slides at three inclinations and two paces, a screw along the
+extrusion, and a cap contact line ending at a vertex; every node in contact, outward and on the
+tool, every vertex crossing creased; the cap-line cut also held to the bar's half-spaces and its
+STL to the field) and
+`prism_twists::a_cap_in_the_blank_under_a_slide_turns_round_its_vertices` (the exact cut to
+`capped_slide_removed`, the exported STL agreeing with the field).
+
+G1b remains open for concave vertices, round rims and creases, caps of tools no lone prism,
+flat lines leaving at vertices, and the generating class's corner in a cap band (T3). A plane
+no lone prism's cap whose contact reaches the blank remains T1 (G9).
+The native path refuses a characteristic that goes round a vertex by
 name (`--kernel rust`). The gate is `swept_vertex` (in the kernel, `flat_end`'s bar with its section
 turned 30°, 45°, 60° and −30° so its corner runs to its far end, and a bar drafted both ways whose
 corner runs to its crease, each turned and screwed: every node in contact within 1e-9 of `|v|`, its

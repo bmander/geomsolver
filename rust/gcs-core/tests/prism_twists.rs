@@ -13,7 +13,7 @@
 //! creased bar and the facing side turned (`flat_end.sv`, `creased.sv`, `facing.sv`) are held there
 //! too. A corner meeting its crease is walked round the vertex there (#721 G1, `swept_vertex.rs`).
 //! What the class refuses of a prism whose faces are planes and edges lines — a side along a
-//! slide, a cap in the blank under a slide, a corner holding the turn's axis, a cap of a tool no
+//! slide, a corner holding the turn's axis, a cap of a tool no
 //! lone prism — the closed class builds on one arrangement (#721), each held to its own figure.
 use gcs_core::solid::admission::Class;
 use std::f64::consts::{PI,TAU};
@@ -249,15 +249,15 @@ pub(crate) fn cornered(lead: f64) -> Bar {
 }
 
 /// The bar slid aslant made short enough for its caps to stand in the cube: under a slide a cap is
-/// in contact all over or nowhere, so the silhouette runs over a cap only by turning at a vertex of
-/// the prism, a sharp edge of the sweep, which the constant-twist class refuses (S1). The closed
-/// class cuts it on one arrangement (#721), its caps where the slide enters and leaves them among
-/// the candidates, held to `capped_slide_removed`.
+/// in contact all over or nowhere. The silhouette turns at a vertex onto the cap's
+/// rim, then onto another rib (#721 G1b). The constant-twist sheet is creased at
+/// those vertices and held to `capped_slide_removed` and to the drawing's field.
 #[test]
-fn a_cap_in_the_blank_under_a_slide_is_the_closed_classs() {
+fn a_cap_in_the_blank_under_a_slide_turns_round_its_vertices() {
     let e = fixtures::read(&slid_bar(true,-0.2).replace("from: -8mm, to: 18mm","from: 2mm, to: 8mm"));
-    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw().unwrap().is_slide(),"a slide");
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide(),"a slide");
+    assert!(!found.vertices().is_empty(),"the silhouette turns onto the cap rim at a vertex");
     near(exported(&e,"part"),1000.-capped_slide_removed(-0.2),1e-9);
 }
 
