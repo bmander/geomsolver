@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A curve a fitted net is too much for is read over the spans it can reach** (`query::general`;
+  `query::Spanwise`, **new**, the reading span by span as a reader): where the one search over the
+  whole net reads past any search's boxes, the curve is halved into pieces about a span across, a
+  piece reaching no span's box dropped, and the net read once over the hull of the spans the
+  pieces reach — and span by span, as a line is, where that is still too much. A spline edge
+  hugging a fitted sheet of thousands of spans gave up so: geomsolver's hypoid pinion, its cut's
+  sheet a cubic net of 240 × 66 poles, was refused by every build since the certified readings
+  (0.5.0) and is built again, its volume as before them. Every reading the whole net proves is
+  read as before.
 - **A ring's sweep cut from a blank** (`swept::closed::ring_cut_from`, **new**): the blank split by
   the ring's candidates at once and kept where the sweep is not, as `cut_from` cuts any other
   tool's sweep. brep-bench's `swept/ring-pushed-in-at-a-lean` (a torus slid into a block at 35°)

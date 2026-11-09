@@ -8,7 +8,7 @@ use gcs_core::brep::enclose::{Enclosed,Patch};
 use gcs_core::brep::family::{Run,Sheet,Stations,NODES};
 use gcs_core::brep::geom::{Blend,Carry,Curve,Frame,SheetCut,Surface,Traced};
 use gcs_core::brep::nurbs::{BSpline,Net};
-use gcs_core::brep::query::{curve_surface,curve_surface_by,curve_surface_searched,Meets,Reader,Uncertified};
+use gcs_core::brep::query::{curve_surface,curve_surface_by,curve_surface_searched,Meets,Reader,Spanwise,Uncertified};
 use gcs_core::interval::Iv;
 use gcs_core::rng::Rng;
 use std::sync::Arc;
@@ -333,4 +333,64 @@ fn a_curve_lying_along_a_surface_for_a_while_is_one_run_proved() {
     let m = curve_surface_searched(&bent,[0.,3.],&Surface::Plane(Frame::WORLD),1e-9);
     let Meets::At(roots) = &m else { panic!("{m:?}") };
     assert!(!roots.is_empty() && roots.iter().all(|r| r.0 >= 1.-1e-9 && r.0 <= 2.+1e-9),"{m:?}");
+}
+
+/// **A spline edge against a fine fitted net, read whole and span by span** (#814): a cubic net of
+/// 240 × 66 poles — a height field, its poles standing at their knots' Greville abscissae so
+/// `x = u` and `y = v` exactly, its heights a wave with a fitting's noise on it — against a cubic
+/// edge hugging it within microns over a few dozen spans, crossing it shallowly. Read as
+/// `curve_surface` reads it and span by span (`Spanwise`, what a reading falls back to where the
+/// whole net is past any search's boxes, as the hypoid pinion's side against its cut's sheet is:
+/// `brep_export::the_pinion_as_written_is_built_by_sectors`), each crossing is found once — though
+/// the edge's pieces and the spans they reach overlap — against the heights' difference along the
+/// edge bisected apart from the kernel (`z(t) − S(x(t), y(t))`), each on both.
+#[test]
+fn a_spline_edge_meets_a_fine_net_span_by_span() {
+    let mut rng = Rng::new(9);
+    let (nu,nv,deg) = (240,66,3);
+    let knots = |n: usize| -> Vec<f64> {
+        let inner = n-deg;
+        (0..n+deg+1).map(|i| i.saturating_sub(deg).min(inner) as f64).collect()
+    };
+    let (uk,vk) = (knots(nu),knots(nv));
+    let greville = |k: &[f64],i: usize| (1..=deg).map(|j| k[i+j]).sum::<f64>()/deg as f64;
+    let poles: Vec<Vec<V>> = (0..nu).map(|i| (0..nv).map(|j| {
+        let (x,y) = (greville(&uk,i),greville(&vk,j));
+        [x,y,0.4*(0.37*x).sin()*(0.21*y).cos()+rng.uniform(-0.03,0.03)]
+    }).collect()).collect();
+    let net = Net {du:deg,dv:deg,uknots:uk,vknots:vk,poles,weights:None};
+    net.check().unwrap();
+    let sheet = Surface::BSpline(Frame::WORLD,Arc::new(net.clone()));
+    // the edge: a cubic through points on the sheet along a diagonal a few dozen spans long, each
+    // lifted or sunk a few microns, so it hugs the sheet and crosses it shallowly between
+    let n: usize = 30;
+    let edge_poles: Vec<V> = (0..n).map(|i| {
+        let s = i as f64/(n-1) as f64;
+        let (x,y) = (60.+40.*s,20.+12.*s);
+        [x,y,net.point(x,y)[2]+if i%2 == 0 { 4e-3 } else { -4e-3 }]
+    }).collect();
+    let inner = n-3;
+    let edge_knots: Vec<f64> = (0..n+4).map(|i| i.saturating_sub(3).min(inner) as f64/inner as f64).collect();
+    let edge = Curve::BSpline(Arc::new(BSpline::new(3,edge_knots,edge_poles).unwrap()));
+    let tol = 1e-6;
+    // the heights' difference along the edge, bisected wherever it changes sign
+    let gap = |t: f64| { let q = edge.point(t); q[2]-net.point(q[0],q[1])[2] };
+    let steps = 40_000;
+    let bisected: Vec<f64> = (0..steps).filter_map(|i| {
+        let (mut a,mut b) = (i as f64/steps as f64,(i+1) as f64/steps as f64);
+        if gap(a)*gap(b) > 0. { return None }
+        for _ in 0..80 { let c = 0.5*(a+b); if (gap(c) < 0.) == (gap(a) < 0.) { a = c } else { b = c } }
+        Some(0.5*(a+b))
+    }).collect();
+    assert!(bisected.len() >= 10,"{bisected:?}");
+    for (how,m) in [("whole",curve_surface(&edge,[0.,1.],&sheet,tol)),("span by span",curve_surface_by(&Spanwise,&edge,[0.,1.],&sheet,tol))] {
+        let Meets::At(found) = &m else { panic!("{how}: {m:?}") };
+        assert_eq!(found.len(),bisected.len(),"{how}: {found:?} against {bisected:?}");
+        for (&(t,touch),&s) in found.iter().zip(&bisected) {
+            assert!(!touch,"{how}: {found:?}");
+            let q = edge.point(t);
+            assert!(gcs_core::space::distance(q,edge.point(s)) <= 1e-5,"{how}: at {t}, {q:?}, against {s}");
+            assert!(gap(t).abs() <= 1e-5,"{how}: at {t}, {q:?} off the sheet by {}",gap(t));
+        }
+    }
 }

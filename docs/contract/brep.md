@@ -243,7 +243,23 @@ a swap made without its callers knowing:
   the curve against the profile seen along the way or against the meridian in `(ρ², z)` (no
   singularity on the axis, and a line along an extrusion's way no singular system); any other as
   `C(t) = S(u, v)`, three unknowns over the curve's stretch and the parameters the surface reaches,
-  a line with no end clipped to a bounded surface's own box — and `Fast` (what `curve_surface` reads by), **the closed forms kept
+  a line with no end clipped to a bounded surface's own box. **A non-rational net past one search is read
+  where the curve can reach it** (`query::general`): its knot spans boxed by their Bézier points in
+  a hierarchy (`net_index`). A line is read span by span, clipped to each span's box grown by its
+  size. Any other curve is read over the whole net first, and only where that reads past any
+  search's boxes (`GaveUp::Most`) is it halved into pieces about a span across, a piece reaching
+  no span's box dropped (`pieces_near`), and the net read once over the hull of the spans they
+  reach; where that is still past any search's boxes, span by span (`spans_met`, `Spanwise` as a
+  reader), each run of pieces within a span's grown box over the parameters of the span's patch it
+  can reach (`bezier_reach`), a meeting two spans or runs share one. The whole first: a curve along
+  a sheet across many spans (a circle on its rim) is one run proved over the whole, which a box
+  cutting the run proves more slowly or not at all
+  (`swept_patches::a_bull_nose_slid_at_a_lean_instant_by_instant_is_the_slides_sweep`); a spline
+  edge a few spans long, hugging a fitted sheet of thousands, read over the whole net halves past
+  any search's boxes. `brep_export::the_pinion_as_written_is_built_by_sectors` is the gate (the
+  hypoid pinion as its document writes it, its cut's sheet 240 × 66 poles, refused from #814 until
+  its edges were read so), and `enclosures::a_spline_edge_meets_a_fine_net_span_by_span` holds the
+  reading span by span to roots found apart from the kernel — and `Fast` (what `curve_surface` reads by), **the closed forms kept
   as fast paths**, each held to the general reading: a line against a plane, a cone, a torus and a
   conic turned as polynomials along it (`query::line_revolution`, a quartic in the meridian's own
   parameter), against a turned contact's meridian (#780 C3, `query::line_turned`) and the cylinder a
