@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.6.1] - 2026-11-09
+
 - **A ring's tubes are refined only where they miss** (`swept::rings::fitted`): each interval along
   the roll and round each face is halved where the fitted net misses at its middle, with its
   neighbours kept within twice its length, where every one was halved at once. A quintic's miss
