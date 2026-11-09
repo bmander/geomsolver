@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.6.0] - 2026-11-09
+
 - **A ring swept by a motion no constant twist takes is built closed** (`swept::rings`, **new**;
   `swept::closed::ring`, **new**, not yet a class the dispatch admits). A tool of revolution whose
   meridian is a loop clear of its axis (a torus, any ring of lines and arcs) has its contact read in
