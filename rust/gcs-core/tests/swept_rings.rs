@@ -158,3 +158,59 @@ fn the_tumbling_torus_is_built_closed() {
     let v = gcs_core::brep::props::volume(&built);
     assert!((v-25.26).abs() < 0.05,"{v}");
 }
+
+/// The closed polygon through `points` (in a plane), as a profile.
+fn polygon(points: &[[f64;3]]) -> gcs_core::brep::build::Profile {
+    use gcs_core::brep::build::{Profile,ProfileEdge};
+    let n = points.len();
+    let (u,v) = ([points[1][0]-points[0][0],points[1][1]-points[0][1],points[1][2]-points[0][2]],
+        [points[2][0]-points[0][0],points[2][1]-points[0][1],points[2][2]-points[0][2]]);
+    let normal = gcs_core::space::normalised([u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]).unwrap();
+    Profile {origin:points[0],normal,loops:vec![(0..n).map(|k| ProfileEdge::Line {a:points[k],b:points[(k+1)%n]}).collect()],names:Vec::new()}
+}
+
+/// **A ring pushed into a block at a lean, cut from it** (`closed::ring_cut_from`; brep-bench's
+/// `swept/ring-pushed-in-at-a-lean`): the torus about `(sin 35°, 0, cos 35°)` through (0, 0, 4), of
+/// radii 3 and 1, slid straight down 8 into the box (−8, −8, −8)–(8, 8, 0). The blank is split by
+/// the ring's candidates at once, as `cut_from` splits it by any other tool's, and kept where the
+/// sweep is not. What is left, by a Monte Carlo of the definition apart from the kernel (2 million
+/// points of the box, each read against the torus's exact distance at 16 001 places along the push,
+/// none beside where no place of 321 comes within the push's reach): 1881.39 ± 0.40.
+#[test]
+fn a_ring_pushed_in_at_a_lean_is_cut_from_a_block() {
+    use gcs_core::brep::build::{prism,square,torus};
+    use gcs_core::brep::trajectory::Screw;
+    let block = prism(&square([0.,0.,-8.],[0.,0.,1.],8.),0.,8.).unwrap();
+    let lean = 35f64.to_radians();
+    let ring = torus([0.,0.,4.],[lean.sin(),0.,lean.cos()],3.,1.).unwrap();
+    // the push down: a screw that does not turn, advancing 8 over a roll of τ
+    let path = Trajectory::Twist(Screw {origin:[0.,0.,4.],axis:[0.,0.,-1.],ratio:0.,advance:8.});
+    let built = gcs_core::brep::swept::closed::ring_cut_from(&block,&ring,&path,[0.,std::f64::consts::TAU],0.01,1e-5)
+        .unwrap_or_else(|u| panic!("{u:?}"));
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-1881.39).abs() < 1.6,"{v}");
+}
+
+/// **A torus turned across a curved block, cut from it** (the slow tier; brep-bench's
+/// `swept/torus-turned-across-block`): the block everything 8 to 12 from the z axis, with z within 1
+/// and polar angle within 0°–60°; the torus about `(0, sin 25°, cos 25°)` through (5, 0, 0), of radii
+/// 2.5 and 2, turned about the z axis from −140° to 140°. Its axis skew to the turn's, its contact
+/// is read meridian by meridian as a tumble's is. What is left, by a Monte Carlo of the definition
+/// apart from the kernel (2 million points of the block, each read against the torus's exact
+/// distance at 28 001 turns, none beside where no turn of 561 comes within the turn's reach):
+/// 57.566 ± 0.028.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 17 s: a torus turned across a block, cut from it")]
+fn a_torus_turned_across_a_block_is_cut_from_it() {
+    use gcs_core::brep::build::{revolve,torus};
+    use gcs_core::brep::trajectory::Screw;
+    let block = revolve(&polygon(&[[8.,0.,-1.],[12.,0.,-1.],[12.,0.,1.],[8.,0.,1.]]),[0.,0.,0.],[0.,0.,1.],60f64.to_radians()).unwrap();
+    let lean = 25f64.to_radians();
+    let cutter = torus([5.,0.,0.],[0.,lean.sin(),lean.cos()],2.5,2.).unwrap();
+    // the turn about z: a screw that does not advance
+    let path = Trajectory::Twist(Screw {origin:[0.,0.,0.],axis:[0.,0.,1.],ratio:1.,advance:0.});
+    let built = gcs_core::brep::swept::closed::ring_cut_from(&block,&cutter,&path,[-140f64.to_radians(),140f64.to_radians()],0.01,1e-5)
+        .unwrap_or_else(|u| panic!("{u:?}"));
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-57.566).abs() < 0.1,"{v}");
+}

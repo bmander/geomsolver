@@ -591,8 +591,10 @@ it. It stays as the fast path where #699 D says so.
    fifteen seconds (the slow tier): 25.275, against 25.260 ± 0.005 by a Monte Carlo of the
    definition (80 million points, the ring's signed distance at 40 001 poses), the two disagreeing
    at none of 100 000 points read one by one. The road is not yet a class the dispatch admits;
-   `closed::ring` builds it alone, and a ring of several faces whose tube crosses the tool at an end
-   pose across two of them is refused until that crossing is cut where it passes between them.
+   `closed::ring` builds it alone, and `closed::ring_cut_from` cut from a blank (a ring pushed into a
+   block at a lean, a torus turned across one, each within the Monte Carlo of its definition); a
+   ring of several faces whose tube crosses the tool at an end pose across two of them is refused
+   until that crossing is cut where it passes between them.
 
    *X5 built* (`tests/swept_loci.rs`): a ball screwed through more than a turn at a lead short of
    its diameter, whose pipe, entered whole, crossed itself and was refused by the judge. Its pipe is
