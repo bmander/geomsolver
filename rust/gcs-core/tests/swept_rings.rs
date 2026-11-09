@@ -93,7 +93,8 @@ fn each_contact_is_held_beside_its_instant_as_its_bend_says() {
 /// beside its fold corners where it starts — a meeting of the tube with itself, which left the
 /// torus's face a slit and the sweep's inside one cell with its outside. Trimmed, no point of either
 /// tube stands inside the torus where it starts or where it stops, and every edge of each is
-/// shared by two of its faces or lies on the torus at an end pose: a touching rim, or a cut.
+/// shared by two of its faces or lies on the torus at an end pose: a touching rim, or a cut. And the
+/// tubes are no finer than they need be.
 #[test]
 fn a_tube_that_folds_is_entered_where_it_stands_outside_the_tool() {
     use gcs_core::brep::query::{Located,Place};
@@ -102,6 +103,10 @@ fn a_tube_that_folds_is_entered_where_it_stands_outside_the_tool() {
     let (tool,path,roll) = tumble();
     let ring = Ring::read(&tool).unwrap();
     let fit = fitted(&ring,&path,roll,1e-6).unwrap();
+    // refined only where they miss (each interval halved where the net misses at its middle): the
+    // two tubes in some fourteen thousand poles, where halving every interval at once made 170 840
+    let poles: usize = fit.nets.iter().map(|n| n.poles.len()*n.poles[0].len()).sum();
+    assert!(poles < 20_000,"{poles} poles");
     let [start,end] = roll.map(|t| posed(&tool,&ring,&path,&fit,t).unwrap());
     let poses = roll.map(|t| path.pose(t).unwrap());
     let (sheets,_) = entered(&fit,&ring,[&start,&end],poses,1e-5).unwrap();
@@ -135,9 +140,10 @@ fn a_tube_that_folds_is_entered_where_it_stands_outside_the_tool() {
 }
 
 /// **The tumbling torus built closed** (the slow tier): the tubes fit (at the build's tolerance of
-/// 1e-5, each face refined apart: 577 × 257 and 321 × 65 poles, in a second), the inner one cut to
+/// 1e-5, each interval refined only where it misses: 190 × 45 and 166 × 34 points, in a sixth of a
+/// second), the inner one cut to
 /// where it stands outside the torus where it starts and stops, the box split by them and the torus
-/// at both end poses at once into six cells (in some sixteen seconds) and classified (in under a
+/// at both end poses at once into six cells (in some eleven seconds) and classified (in under a
 /// second), the selected solid checked and judged by the definition. Its volume by a Monte Carlo of
 /// the definition apart from the kernel — 80 million points over the sweep's box, each read
 /// against the ring's signed distance at 40 001 poses (where no pose of 401 comes within its
@@ -145,7 +151,7 @@ fn a_tube_that_folds_is_entered_where_it_stands_outside_the_tool() {
 /// 25.275. Read point by point against the definition, 100 000 points apart, the two disagree at
 /// none.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 30 s: the tumbling torus built closed")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: the tumbling torus built closed")]
 fn the_tumbling_torus_is_built_closed() {
     let (tool,path,roll) = tumble();
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.002,1e-5).unwrap_or_else(|u| panic!("{u:?}"));

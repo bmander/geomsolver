@@ -43,7 +43,9 @@
 //! Each tube is its own candidate. Over the roll each instant's pieces must be the first's (their
 //! kinds in order round each curve), or the build is refused by name (`Curved`): a fold born or
 //! dying partway (a swallowtail point), or a contact reaching a corner partway, is not yet cut where
-//! it starts. The tubes are fitted as K2's sheets are (`patches::interpolated`).
+//! it starts. The tubes are fitted as K2's sheets are (`patches::interpolated`), but refined only
+//! where they miss: each interval along the roll and round each face halved where the net misses at
+//! its middle (`halved`), not every one at once.
 //!
 //! **Its meetings with the tool where it starts and stops are read in its own domain** (`traces`):
 //! at an end pose every piece's rim lies on the tool, touching it, and a tube that folds runs on
@@ -651,6 +653,31 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// **Places `x` (in order) with each interval `missed` halved**, and then each interval longer than
+/// twice a neighbour's halved too, until none is: a quintic through places whose spacing jumps
+/// rings between them.
+fn halved(x: &[f64],missed: &[bool]) -> Vec<f64> {
+    let mut out = vec![x[0]];
+    for (i,w) in x.windows(2).enumerate() {
+        if missed[i] { out.push(0.5*(w[0]+w[1])) }
+        out.push(w[1]);
+    }
+    loop {
+        let len: Vec<f64> = out.windows(2).map(|w| w[1]-w[0]).collect();
+        let long: Vec<bool> = (0..len.len()).map(|i| {
+            let near = [i.checked_sub(1),Some(i+1)].into_iter().flatten().filter_map(|j| len.get(j)).fold(f64::INFINITY,|m,&l| m.min(l));
+            len[i] > 2.*near*(1.+1e-12)
+        }).collect();
+        if !long.contains(&true) { return out }
+        let mut next = vec![out[0]];
+        for (i,w) in out.windows(2).enumerate() {
+            if long[i] { next.push(0.5*(w[0]+w[1])) }
+            next.push(w[1]);
+        }
+        out = next;
+    }
+}
+
 /// **The tubes a ring's contact curves sweep under `path` over `roll`, fitted within `tol`**, each
 /// curve that touches anywhere entered whole: refused by name where an instant's contacts change in
 /// number round the axis or in kind over the roll (`Curved`), where a tube folds off its bridges
@@ -671,52 +698,66 @@ pub fn fitted(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<F
             (0..of).map(move |share| Face {piece:i,share,of})
         }).collect();
         let pieces = faces.len();
-        // each face its own count of points round the loop, doubled only where it misses
-        let (mut rows,mut points) = (FIRST_ROWS,vec![FIRST_POINTS;pieces]);
+        // the rolls fitted at, and each face's fractions round the loop: each interval halved only
+        // where the net misses at its middle (a quintic's miss falls some sixty-fold a halving, so
+        // halving all of them at once overshoots the tolerance by as much wherever it was barely
+        // missed), its neighbours kept within twice its length
+        let mut ts: Vec<f64> = (0..=FIRST_ROWS).map(|j| a+(b-a)*j as f64/FIRST_ROWS as f64).collect();
+        let mut fractions: Vec<Vec<f64>> = vec![(0..=FIRST_POINTS).map(|i| i as f64/FIRST_POINTS as f64).collect();pieces];
         let net = loop {
             crate::util::meter::go_on()?;
-            let ts: Vec<f64> = (0..=rows).map(|j| a+(b-a)*j as f64/rows as f64).collect();
-            let half_ts: Vec<f64> = (0..rows).map(|j| 0.5*(ts[j]+ts[j+1])).collect();
-            // round the loop: each face's fitted fractions and halfway between them, its face's
-            let mut all: Vec<(f64,usize)> = Vec::new();
-            for (k,&n) in points.iter().enumerate() {
-                for i in 0..2*n { all.push((k as f64+i as f64/(2*n) as f64,k)) }
+            let mid = |x: &[f64],i: usize| 0.5*(x[i]+x[i+1]);
+            let half_ts: Vec<f64> = (0..ts.len()-1).map(|j| mid(&ts,j)).collect();
+            // round the loop: each face's fitted fractions, and the middle of each interval between
+            // them, its face's and its interval's
+            let mut us: Vec<f64> = Vec::new();
+            let mut middles: Vec<(f64,usize,usize)> = Vec::new();
+            for (k,fr) in fractions.iter().enumerate() {
+                for i in 0..fr.len()-1 {
+                    us.push(k as f64+fr[i]);
+                    middles.push((k as f64+mid(fr,i),k,i));
+                }
             }
-            all.push((pieces as f64,pieces-1));
-            let us: Vec<f64> = all.iter().step_by(2).map(|x| x.0).collect();
+            us.push(pieces as f64);
+            let at_us: Vec<f64> = us.iter().copied().chain(middles.iter().map(|m| m.0)).collect();
             let jobs: Vec<(f64,bool)> = ts.iter().map(|&t| (t,true)).chain(half_ts.iter().map(|&t| (t,false))).collect();
             let read_rows: Vec<Vec<V>> = crate::util::par::map(&jobs,|&(t,fitted)| -> Result<Vec<V>,Unbuilt> {
-                if fitted { all.iter().map(|&(u,_)| reader.point(run,&faces,u,t)).collect() }
+                if fitted { at_us.iter().map(|&u| reader.point(run,&faces,u,t)).collect() }
                 else { us.iter().map(|&u| reader.point(run,&faces,u,t)).collect() }
             }).into_iter().collect::<Result<_,_>>()?;
             let (fitted,halfway) = read_rows.split_at(ts.len());
-            let grid: Vec<Vec<V>> = fitted.iter().map(|r| r.iter().step_by(2).copied().collect()).collect();
-            let net = interpolated_by(&grid,&us,&ts,&points)?;
-            // the most the net misses by halfway round the loop, face by face, and halfway along
-            // the roll
-            let mut err_u = vec![0f64;pieces];
+            let grid: Vec<Vec<V>> = fitted.iter().map(|r| r[..us.len()].to_vec()).collect();
+            let counts: Vec<usize> = fractions.iter().map(|fr| fr.len()-1).collect();
+            let net = interpolated_by(&grid,&us,&ts,&counts)?;
+            // the most the net misses by at each interval's middle: round the loop over the fitted
+            // rolls, and along the roll over the fitted points round it
+            let mut err_u: Vec<Vec<f64>> = fractions.iter().map(|fr| vec![0.;fr.len()-1]).collect();
             for (&t,r) in ts.iter().zip(fitted) {
-                for (&(u,k),&x) in all.iter().zip(r).skip(1).step_by(2) { err_u[k] = err_u[k].max(norm(crate::util::space::sub(x,net.point(u,t)))) }
+                for (&(u,k,i),&x) in middles.iter().zip(&r[us.len()..]) {
+                    err_u[k][i] = err_u[k][i].max(norm(crate::util::space::sub(x,net.point(u,t))));
+                }
             }
-            let err_t = missed(&net,half_ts.iter().zip(halfway).flat_map(|(&t,r)| us.iter().zip(r).map(move |(&u,&x)| (t,u,x))));
-            let grow_u: Vec<bool> = err_u.iter().map(|&e| e > tol).collect();
-            let grow_t = err_t > tol;
+            let err_t: Vec<f64> = half_ts.iter().zip(halfway).map(|(&t,r)| missed(&net,us.iter().zip(r).map(|(&u,&x)| (t,u,x)))).collect();
             if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
-                eprintln!("fit: {pieces} faces, {points:?} points, {rows} rows: {:?} round, {err_t:e} along",err_u.iter().map(|e| format!("{e:.1e}")).collect::<Vec<_>>());
+                eprintln!("fit: {pieces} faces, {counts:?} points, {} rows: {:?} round, {:e} along",ts.len()-1,
+                    err_u.iter().map(|e| format!("{:.1e}",e.iter().fold(0f64,|m,&x| m.max(x)))).collect::<Vec<_>>(),err_t.iter().fold(0f64,|m,&x| m.max(x)));
             }
+            let missed_u: Vec<Vec<bool>> = err_u.iter().map(|e| e.iter().map(|&x| x > tol).collect()).collect();
+            let missed_t: Vec<bool> = err_t.iter().map(|&x| x > tol).collect();
             // a bridge's points, or on the join of one
             let bridge = |k: usize| reader.first[run.curve][run.pieces[faces[k%pieces].piece]].side == Side::Fold;
             let bridged = |u: f64| {
                 let k = (u.floor().max(0.) as usize).min(pieces-1);
                 bridge(k) || (u-u.round()).abs() <= 1e-9 && bridge((u.round() as usize+pieces-1)%pieces)
             };
-            if !grow_u.contains(&true) && !grow_t { reader.folds(&net,&us,&ts,&bridged)?; break net }
-            if (0..pieces).any(|k| grow_u[k] && points[k] >= MOST_POINTS) || grow_t && rows >= MOST_ROWS {
+            if !missed_u.iter().flatten().any(|&m| m) && !missed_t.contains(&true) { reader.folds(&net,&us,&ts,&bridged)?; break net }
+            let refined_u: Vec<Vec<f64>> = fractions.iter().zip(&missed_u).map(|(fr,m)| halved(fr,m)).collect();
+            let refined_t = halved(&ts,&missed_t);
+            if refined_u.iter().any(|fr| fr.len()-1 > MOST_POINTS) || refined_t.len()-1 > MOST_ROWS {
                 return Err(Unbuilt::Failed(format!("a ring's contact's sheet fits within {tol} only to {:e} along the loop and \
-                    {err_t} along the roll",err_u.iter().fold(0f64,|m,&e| m.max(e)))))
+                    {:e} along the roll",err_u.iter().flatten().fold(0f64,|m,&e| m.max(e)),err_t.iter().fold(0f64,|m,&e| m.max(e)))))
             }
-            for k in 0..pieces { if grow_u[k] { points[k] *= 2 } }
-            if grow_t { rows *= 2 }
+            (fractions,ts) = (refined_u,refined_t);
         };
         nets.push(net);
         on.push(faces.iter().map(|f| reader.first[run.curve][run.pieces[f.piece]].label.on).collect());
