@@ -65,9 +65,10 @@
 //!
 //! **Built**: the tumbling torus (`swept_tumble.sv`) closed and judged, its volume the definition's
 //! to within its reading off the fitted sheets (`tests/swept_rings.rs`, slow tier). The road is not
-//! yet a class the dispatch admits: `closed::ring` builds it alone. A ring of several faces whose
-//! sheet crosses the tool at an end pose across two of them is refused by name: the crossing is not
-//! yet cut where it passes from face to face.
+//! yet a class the dispatch admits: `closed::ring` builds it alone, and `closed::ring_cut_from` cut
+//! from a blank (a ring pushed into a block at a lean, a torus turned across one). A ring of several
+//! faces whose sheet crosses the tool at an end pose across two of them is refused by name: the
+//! crossing is not yet cut where it passes from face to face.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::boolean::Given;

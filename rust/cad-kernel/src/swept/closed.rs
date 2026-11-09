@@ -1517,6 +1517,19 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
 /// with the touching ones — their meetings with the ring at the end poses read in the tubes' own
 /// domains and given, the box split by them at once and classified by membership.
 pub fn ring(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
+    ring_built(tool,path,roll,bar,tol,None)
+}
+
+/// **A ring's sweep cut from `blank`**, as `cut_from` cuts any other's: the blank split by the
+/// candidates `ring` splits its box by, all at once, each cell kept where it is no member of the
+/// sweep. No closed solid is built and then subtracted.
+pub fn ring_cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
+    ring_built(tool,path,roll,bar,tol,Some(blank))
+}
+
+/// `ring` and `ring_cut_from`: the ring's candidates, arranged in a box holding the sweep or in
+/// `blank`.
+fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let clock = crate::util::clock::Instant::now();
     let ring = super::rings::Ring::read(tool)?;
@@ -1527,7 +1540,7 @@ pub fn ring(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Re
     let poses = [path.pose(a)?,path.pose(b)?];
     let (sheets,given) = super::rings::entered(&fit,&ring,[&start,&end],poses,tol)?;
     if crate::timing() { eprintln!("ring: entered in {:?}",clock.elapsed()) }
-    candidates(tool,path,[a,b],bar,tol,None,[start,end],sheets,&given)
+    candidates(tool,path,[a,b],bar,tol,blank,[start,end],sheets,&given)
 }
 
 /// K2's build from its candidates: the tool at each end pose and the sheets, their meetings

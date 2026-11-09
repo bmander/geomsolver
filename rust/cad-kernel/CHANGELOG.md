@@ -8,6 +8,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ring's sweep cut from a blank** (`swept::closed::ring_cut_from`, **new**): the blank split by
+  the ring's candidates at once and kept where the sweep is not, as `cut_from` cuts any other
+  tool's sweep. brep-bench's `swept/ring-pushed-in-at-a-lean` (a torus slid into a block at 35°)
+  and `swept/torus-turned-across-block` (a torus turned about an axis skew to its own) are built,
+  each within the Monte Carlo of its definition.
+
 ## [0.6.1] - 2026-11-09
 
 - **A ring's tubes are refined only where they miss** (`swept::rings::fitted`): each interval along
