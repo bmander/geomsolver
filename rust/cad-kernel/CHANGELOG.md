@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.6.2] - 2026-11-09
+
 - **A ring's sweep cut from a blank** (`swept::closed::ring_cut_from`, **new**): the blank split by
   the ring's candidates at once and kept where the sweep is not, as `cut_from` cuts any other
   tool's sweep. brep-bench's `swept/ring-pushed-in-at-a-lean` (a torus slid into a block at 35°)
