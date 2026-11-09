@@ -134,8 +134,10 @@ moved union both
 ";
 
 /// **A field's side of a level is its value's** (`SpatialField::below`): a notched, bored plate
-/// and its turned copy united — arcs, holes, a placement and every Boolean — read at points
-/// all about them, at levels either side of zero, says what comparing the value says.
+/// and its turned copy united — arcs, holes, a placement and every Boolean — a pierced sphere and
+/// the hypoid pinion's blank turned from their meridians (whose side is the profile's own, which
+/// measures only the edges within the level), read at points all about them, at levels either
+/// side of zero, says what comparing the value says.
 #[test]
 fn a_fields_side_of_a_level_is_what_its_value_says() {
     let mut e = build(PLATE);
@@ -154,6 +156,63 @@ fn a_fields_side_of_a_level_is_what_its_value_says() {
         }
         assert!(sides.iter().all(|&n| n > 100), "{sides:?}");
     }
+    // revolved fields, read by their meridian profile's own side: a sphere turned from a half disc
+    // less a prism through it, and the hypoid pinion's blank, its meridian's relief two conics
+    let ball = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/pierced_sphere.sv")).unwrap();
+    let mut ball = build(&ball);
+    assert!(gcs_core::solve::solve(&mut ball.sketch, Default::default()).success);
+    let gears = fixtures::gear::read_as_configured();
+    for (e, name) in [(&ball, "part"), (&gears, "pair.pinion_blank.material")] {
+        let i = e.map.ent_named(name).unwrap().i();
+        let f = gcs_core::solid::SpatialField::read(&e.sketch, i, 1e-10).unwrap();
+        // within the material's support, grown a little (a loose box about a thin ring)
+        let support = f.support_bounds().unwrap().unwrap().map(|x| x.bounds());
+        let mut sides = [0; 2];
+        for _ in 0..40000 {
+            let p: V = std::array::from_fn(|k| rng.uniform(support[k][0] - 2., support[k][1] + 2.));
+            let t = [-3., -1e-3, 0., 1e-3, 2.][rng.uniform(0., 5.) as usize % 5];
+            let below = f.below(p, t);
+            assert_eq!(below, f.value(p) < t, "`{name}` at {p:?} against {t}: {}", f.value(p));
+            sides[usize::from(below)] += 1;
+        }
+        assert!(sides.iter().all(|&n| n > 100), "`{name}`: {sides:?}");
+    }
+}
+
+/// **A turned conic's field holds its values over any box, and a point's to its rounding**
+/// (`profile::Wall::conic`): the hypoid pinion's blank, its meridian's end relief two conics, read
+/// over boxes from a point's to a few millimetres' about its surface — each enclosure holds the
+/// field at points sampled in it, and a point's is within a few nanometres of its value. Each
+/// conic's bound reads its pieces nearest first by their control triangles, whose gaps fall with
+/// the square of their size; read by discs, a point's box halved a band of pieces to the deepest.
+#[test]
+fn a_turned_conics_field_holds_its_values_over_any_box() {
+    use gcs_core::interval::Interval as I;
+    let gears = fixtures::gear::read_as_configured();
+    let i = gears.map.ent_named("pair.pinion_blank.material").unwrap().i();
+    let f = gcs_core::solid::SpatialField::read(&gears.sketch, i, 1e-10).unwrap();
+    let support = f.support_bounds().unwrap().unwrap().map(|x| x.bounds());
+    let mut rng = Rng::new(0xc0ffee);
+    let (mut near, mut points) = (0, 0);
+    for _ in 0..200000 {
+        let c: V = std::array::from_fn(|k| rng.uniform(support[k][0], support[k][1]));
+        // about the surface: where the field is within a few millimetres of nought
+        if f.value(c).abs() > 3. { continue }
+        near += 1;
+        let half = [0., 1e-9, 1e-4, 1e-2, 0.5, 2.][rng.uniform(0., 6.) as usize % 6];
+        let bx: [I; 3] = std::array::from_fn(|k| I::new(c[k] - half, c[k] + half).unwrap());
+        let [lo, hi] = f.bounds(bx).unwrap().bounds();
+        for _ in 0..8 {
+            let p: V = std::array::from_fn(|k| c[k] + rng.uniform(-half, half));
+            let v = f.value(p);
+            assert!(v >= lo - 1e-9 && v <= hi + 1e-9, "at {p:?} in {c:?} ± {half}: {v} outside [{lo}, {hi}]");
+        }
+        if half == 0. {
+            points += 1;
+            assert!(hi - lo <= 1e-8, "a point's enclosure at {c:?}: [{lo}, {hi}]");
+        }
+    }
+    assert!(near > 500 && points > 50, "{near} boxes, {points} points");
 }
 
 /// **A prism of whole circles about the line is turned as its section** (`Recipe::meridian`): a
