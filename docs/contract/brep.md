@@ -631,13 +631,20 @@ wrong side of the circle it leaves along, and a piece of the arrangement lost
 round the great circle there (`ssi`'s `pipe_end`), and a cylinder about the screw's axis in the
 helices of the circle's points at its radius, the roots of a trigonometric polynomial of degree two
 round the circle, a touch where it only reaches nought (`screwed_circle_round`). **An edge's flux
-settles** (`props`'s `settled`): read over its pieces, then twice as many, until two readings agree
-to rounding, the coarser kept — a ball's great circle passing within a few degrees of a pole sweeps
-half a turn of `u` there, and a sixteenth of a turn a piece left a ball's piece 0.2% off its area.
+settles** (`props`'s `settled`): read over its pieces, then twice as many, the coarser kept where
+the readings agree to rounding. Otherwise the interval whose rule and its two halves disagree
+most is split, against one error budget set by the edge's integrand's mean magnitude. The reading
+with the least estimated error is kept: ever nearer an exact pole the inverse's rounding grows,
+so the finest is not always the best. Refinement ends at that budget, after 32 splits without an
+improvement, or at its depth/work bounds (twenty levels, 4096 splits). A circle close to a ball's
+pole sweeps half a turn of `u` in a tiny part of its span: six doublings of the whole edge still left
+brep-bench's boolean/unequal-lens-aslant 1.5% off its volume. Local refinement resolves that turn
+without refining the whole circle to its width.
+`brep::an_unequal_lens_near_a_pole_measures_its_spherical_caps` holds its volume and area to the
+closed forms of its two caps under three placements of the balls' charts.
 **A face's inner integral is closed on the analytic surfaces** (`props`'s `Closed`, prepared once a
-face): Green's `G`,
-the area's `|S_u × S_v|` or the flux's `X · (S_u × S_v)` integrated along one parameter, is read
-in closed form on a plane, a cylinder, a cone, a sphere and a torus (along either parameter) and
+face): Green's `G`, the area's `|S_u × S_v|` or the flux's `X · (S_u × S_v)` integrated along one
+parameter, is read in closed form on a plane, a cylinder, a cone, a sphere and a torus (along either parameter) and
 along an extrusion's rulings — in the surface's frame each integrand is a sum of powers and
 products of the angle's sine and cosine and the length along it — where it was a Gauss rule of
 forty points or more at every node of every edge. An area whose `|·|` changes sign within the span

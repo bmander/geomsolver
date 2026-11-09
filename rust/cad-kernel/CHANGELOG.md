@@ -8,6 +8,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Measures resolve an edge passing close to a surface's pole** (`props::settled`): where two
+  quadrature readings disagree, refine their intervals locally instead of stopping after six
+  doublings of the whole edge. brep-bench's `boolean/unequal-lens-aslant` now measures its two
+  spherical caps to rounding, where its volume was 1.5% too large and its area 0.28% too large.
 - **Edges rounded together, in one call** (`rounds::rounded(b, edges, r, tol)`, **new**): where the
   edges are straight, between planes, and each vertex they reach has all three of its edges among
   them (all convex or all concave), the solid is built anew by surgery on its boundary: each edge a
