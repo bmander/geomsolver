@@ -5,7 +5,8 @@
 //! reads them no member of the sweep (C3). Each is a case another class refuses by name, its STL
 //! held to the material field with no disagreement, and its volume to a figure made apart from the
 //! build (the closed class is asked only where the others refuse, so a sweep read as closed is one
-//! they refuse); and what the class's rows refuse stands as the first class's refusal.
+//! they refuse); and what the class's rows refuse stands as the first class's refusal. The bar
+//! pushed wholly through the plate also holds the dispatch to constant twist once G1b reads it.
 use gcs_core::solid::admission::{Class,Condition};
 use std::f64::consts::PI;
 
@@ -21,18 +22,19 @@ fn aslant() -> String { format!("fix(dir == (0.3, 0, {RISE})) up") }
 
 /// **A bar pushed aslant wholly through a plate takes its shadow**: `closed_characteristics`'s bar
 /// of square section, `|y| + |z + 6| ≤ 1` along x from 6 to 14, pushed 16 up through the 20 × 10 × 4
-/// plate leaning toward x. The constant-twist class refuses it (S1: its silhouette turns at a
-/// vertex onto a cap). Apart from the build: the bar passes wholly through, so each slice of the
-/// sweep within the plate is the bar's shadow along the push, `(x − k z, y)` of the bar's points
+/// plate leaning toward x. G1b's constant-twist class reads its silhouette turning at a vertex
+/// onto a cap's rim, before the closed class is asked. Apart from the build: the bar passes wholly
+/// through, so each slice of the sweep within the plate is the bar's shadow along the push,
+/// `(x − k z, y)` of the bar's points
 /// with `k = Dx / Dz`: across `y` it is `8 + 2 k (1 − |y|)` long, `16 + 2k` in all, through the
 /// plate's 4.
 #[test]
 fn a_bar_pushed_aslant_through_a_plate_takes_its_shadow() {
     let text = square_bar().replace("fix(dir == (0, 0, 1)) up",&aslant());
     let e = fixtures::read(&text);
-    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
-    assert!(found.screw().unwrap().is_slide(),"a slide");
-    assert_eq!((found.tool.faces.len(),found.tool.edges.len()),(6,12),"a bar of six planes and twelve lines");
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide(),"a slide");
+    assert!(!found.vertices().is_empty(),"the silhouette turns onto the cap rim at a vertex");
     near(exported(&e,"part"),800.-plunged_away(16.),1e-9);
 }
 
