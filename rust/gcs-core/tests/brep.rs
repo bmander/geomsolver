@@ -15,6 +15,30 @@ pub(crate) fn poly(pts: &[V]) -> Vec<ProfileEdge> { (0..pts.len()).map(|i| line(
 
 fn close(a: f64,b: f64) { assert!((a-b).abs() <= 1e-11*b.abs().max(1.),"{a} against {b} ({:e})",(a-b)/b); }
 
+/// brep-bench's boolean/unequal-lens-aslant: the meeting passes within 0.0011 of the
+/// smaller ball's south pole. Its parameters turn sharply there, but its measures are the
+/// same two spherical caps however the balls' charts are placed.
+#[test]
+fn an_unequal_lens_near_a_pole_measures_its_spherical_caps() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::sphere;
+    let (r,s) = (5.511f64,3.317f64);
+    let centre = [4.231,3.467,2.653];
+    let d = gcs_core::space::norm(centre);
+    let x = (d*d+r*r-s*s)/(2.*d);
+    let (h,k) = (r-x,s-(d-x));
+    let v = PI*(h*h*(3.*r-h)+k*k*(3.*s-k))/3.;
+    let area = 2.*PI*(r*h+s*k);
+    for axis in [[0.,0.,1.],[1.,0.,0.],[0.3,0.2,1.]] {
+        let a = sphere([0.;3],axis,r).unwrap();
+        let b = sphere(centre,axis,s).unwrap();
+        let lens = combined(&a,&b,Op::Common,0.).unwrap();
+        lens.check(1e-8).unwrap();
+        close(volume(&lens),v);
+        close(total_area(&lens),area);
+    }
+}
+
 const XY: V = [0.,0.,1.];
 /// The plane of x and z, seen from +y: an angle about it turns x toward −z.
 const XZ: V = [0.,1.,0.];

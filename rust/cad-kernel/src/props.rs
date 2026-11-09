@@ -37,12 +37,57 @@ fn gauss(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
     sum*h/2.
 }
 
-/// `gauss` over `pieces`, then twice as many, until two readings agree to rounding (or `SETTLE`
-/// doublings): an edge's integrand runs smooth along it only as fast as its curve in the face's
-/// parameters does, and a circle on a ball passing beside a pole sweeps half a turn of `u` within a
-/// few degrees of its own (a ball at an end pose of a screw, its great circle square to the helix).
+/// `gauss` over `pieces`, then twice as many, keeping the coarser reading where they agree.
+/// Otherwise refine each piece locally: a circle passing close to a ball's pole can sweep half
+/// a turn of `u` in a tiny part of its span, which six doublings of the whole edge still miss.
 fn settled(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
-    settled_by(pieces,SETTLE,&mut |n| { let v = gauss(a,b,n,f); Some((v,v.abs())) }).expect("a reading")
+    let coarse = gauss(a,b,pieces,f);
+    let mut size = 0.;
+    let fine = gauss(a,b,2*pieces,&mut |t| { let y = f(t); size += y.abs(); y });
+    if (fine-coarse).abs() <= 1e-13*fine.abs().max(1e-300) { return coarse }
+    // The mean magnitude of the integrand, including where its signed readings cancel. This
+    // sets one error budget for the edge, not a relative budget for each vanishing contribution
+    // beside a pole: the latter refines rounding noise ever more finely near the singularity.
+    let within = 1e-13*(size*(b-a).abs()/(2*pieces*GAUSS.len()) as f64).max(1e-300);
+    let h = (b-a)/pieces as f64;
+    let mut cells: Vec<_> = (0..pieces).map(|i| {
+        let (x,y) = (a+i as f64*h,a+(i+1) as f64*h);
+        Reading::new(x,y,gauss(x,y,1,f),0,f)
+    }).collect();
+    // Spend the edge's work on the largest estimated error. Keep the best reading if refinement
+    // stops improving it: approaching an exact pole can amplify the inverse's rounding, so the
+    // finest reading need not be the best. Depth and work are bounded as the doublings were.
+    let mut best = cells.iter().map(|c| c.lo+c.hi).sum();
+    let mut error = cells.iter().map(Reading::error).sum::<f64>();
+    let mut stalled = 0;
+    for _ in 0..4096 {
+        if error <= within || stalled == 32 { break }
+        let Some(i) = (0..cells.len()).filter(|&i| cells[i].depth < 20)
+            .max_by(|&i,&j| cells[i].error().total_cmp(&cells[j].error())) else { break };
+        let c = cells.swap_remove(i);
+        let m = (c.a+c.b)/2.;
+        if m == c.a || m == c.b { cells.push(c); break }
+        cells.push(Reading::new(c.a,m,c.lo,c.depth+1,f));
+        cells.push(Reading::new(m,c.b,c.hi,c.depth+1,f));
+        let next = cells.iter().map(Reading::error).sum::<f64>();
+        if next < error {
+            best = cells.iter().map(|c| c.lo+c.hi).sum();
+            error = next;
+            stalled = 0;
+        } else { stalled += 1 }
+    }
+    best
+}
+
+/// One interval's rule and its two halves, reused when that interval is split.
+struct Reading { a: f64,b: f64,whole: f64,lo: f64,hi: f64,depth: usize }
+
+impl Reading {
+    fn new(a: f64,b: f64,whole: f64,depth: usize,f: &mut dyn FnMut(f64) -> f64) -> Reading {
+        let m = (a+b)/2.;
+        Reading {a,b,whole,lo:gauss(a,m,1,f),hi:gauss(m,b,1,f),depth}
+    }
+    fn error(&self) -> f64 { (self.lo+self.hi-self.whole).abs() }
 }
 
 /// `settled` of a reading that may fail, doubled `most` times at most: `read(n)` the integral on `n`
@@ -60,9 +105,6 @@ fn settled_by(pieces: usize,most: usize,read: &mut dyn FnMut(usize) -> Option<(f
     }
     Some(last)
 }
-
-/// How many times `settled` doubles an edge's pieces at most.
-const SETTLE: usize = 6;
 
 /// Pieces for an angle-like span, a sixteenth of a turn each.
 fn pieces(span: f64,periodic: bool) -> usize {
