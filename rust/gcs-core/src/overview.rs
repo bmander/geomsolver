@@ -868,13 +868,11 @@ pub fn shown_objects(sk: &Sketch) -> Vec<usize> {
 /// not one, nor one a host is still building (`FieldMeshing::Supplied`, `Sketch::object_state`):
 /// it is on its way, and the host says so; one whose build the host was refused is, in the
 /// build's words (#671).  Evaluations are the sketch's cached ones, so asking after the box has
-/// drawn costs nothing more.  Whether a host is building it is asked first: whether it is swept
-/// validates it, a march along each motion it rolls on, which the host's build does off the
-/// page's thread.
+/// drawn costs nothing more.
 pub fn unbuilt(sk: &Sketch) -> Vec<(usize, String)> {
-    let meshing = |i: usize| sk.object_state(i) == crate::solid::ObjectState::Building
-        || sk.field_meshing.get() == crate::solid::FieldMeshing::Deferred
-            && sk.supplied_field(i).is_none() && sk.is_swept(i);
+    let meshing = |i: usize| sk.is_swept(i) && sk.supplied_field(i).is_none()
+        && sk.field_meshing.get() == crate::solid::FieldMeshing::Deferred
+        || sk.object_state(i) == crate::solid::ObjectState::Building;
     objects(sk).into_iter().filter(|&i| !meshing(i))
         .filter_map(|i| sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh).err()
             .map(|why| (i, why)))

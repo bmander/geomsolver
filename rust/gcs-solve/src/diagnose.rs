@@ -384,12 +384,6 @@ pub struct DiagnoseOptions {
     /// well.  The rows can read as holding where they do not: a point run off to infinity widens
     /// the extent every row is measured against.  True where the caller does not say.
     pub settled: bool,
-    /// Whether the constraints worth removing are named where the rank says some row is
-    /// dependent (`over`, `implied`, `said_twice`): an SVD of the left null space and one more
-    /// of the relations'.  A caller reading only what moves (`views::place`, a round of hundreds
-    /// of planes) leaves them out, and those three lists are empty; the rank, the freedoms and
-    /// `under_params` are read as ever.
-    pub dependencies: bool,
     /// Whether a refused solid is said among the warnings (`solid::validate` of every solid
     /// that is no body).  A page leaves it to its pool of workers, which validate each object
     /// they build and say a refusal in the export's words: validating a solid that rolls is a
@@ -407,10 +401,22 @@ impl Default for DiagnoseOptions {
             numeric_max: NUMERIC_MAX,
             solid_claims: true,
             settled: true,
-            dependencies: true,
             refusals: true,
         }
     }
+}
+
+/// **The parameters that can move at the configuration**, as the diagnosis reads them
+/// (`Diagnosis::under_params`) past `numeric_max` free parameters part by part, and nothing else
+/// it reads: no constraint named, no conflict searched, no claim judged, no solid validated.  What
+/// a round of placing the planes asks (`views::place`), hundreds of planes at a time.
+pub fn movable(sk: &mut Sketch, numeric_max: usize) -> Vec<u32> {
+    let mut sys = System::new(sk);
+    let m = Matched::of(&sys);
+    let opts = DiagnoseOptions { numeric_max, ..DiagnoseOptions::default() };
+    let gate = Gate::of(&opts, &sys).movable();
+    let numeric = numeric::read(sk, &mut sys, &m, &gate, None, &mut Vec::new());
+    numeric.movable.unwrap_or_else(|| m.params(&m.dm.under_cols))
 }
 
 /// Structural (and optionally numeric) diagnosis of a sketch at its current configuration.
@@ -688,9 +694,11 @@ fn components(m: &Matched) -> Vec<Component> {
 /// solid bears.
 fn standing_warnings(sk: &Sketch, refusals: bool) -> Vec<String> {
     let mut warnings: Vec<String> = crate::model::overruns(sk);
-    for (i, s) in sk.solids.iter().enumerate().filter(|_| refusals) {
-        if !matches!(s.def, crate::model::SolidDef::Body { .. }) {
-            if let Err(message) = crate::solid::validate(sk, i) { warnings.push(message); }
+    if refusals {
+        for (i, s) in sk.solids.iter().enumerate() {
+            if !matches!(s.def, crate::model::SolidDef::Body { .. }) {
+                if let Err(message) = crate::solid::validate(sk, i) { warnings.push(message); }
+            }
         }
     }
     warnings.extend(crate::solid::bearing_errors(sk).into_iter().map(|(_, message)| message));

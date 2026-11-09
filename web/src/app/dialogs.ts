@@ -2,6 +2,8 @@
  * one item's whole behaviour, so the menu tables in `main` stay a list of names. */
 import * as C from '../core/constraints.js';
 import { exampleCases } from './example-catalog.js';
+import { barOf } from './build-bar.js';
+import { unbuilt } from '../core/mesh.js';
 import * as remote from './remote.js';
 import { githubPath, githubProject, parseGithub } from './github.js';
 import { loaded, loading, painted } from './loading.js';
@@ -384,14 +386,13 @@ export async function showDiagnosis(): Promise<void> {
   // each load scenario's words and its requirements' answers, as `solventc` says them
   for (const s of view.scenarios) lines.push(...s.words, ...s.answers.map((a) => a.text), '');
   lines.push(...d.warnings);
-  // a refused solid is the pool's to say (`diagnose`'s `refusals`): each object its workers
-  // refused, in the export's words, and what they have not built yet
-  const rows = view.builds.rows;
-  for (const r of rows) {
-    if (r.state === 'refused') lines.push(`\`${r.name}\` is not built: ${r.why}`);
+  // with a pool, a refused solid is its to say (`diagnose`'s `refusals`): each object not drawn,
+  // in the core's words as the banner says it, and how many are still being built
+  if (view.builds.pooled) {
+    lines.push(...unbuilt(view.sketch).map((u) => u.reason));
+    const { left } = barOf(view.builds.rows);
+    if (left) lines.push(`${left} object(s) still being built: a refusal is said once it is`);
   }
-  const left = rows.filter((r) => r.state === 'waiting' || r.state === 'building').length;
-  if (left) lines.push(`${left} object(s) still being built: a refusal is said once it is`);
   if (view.lastPlan) {
     lines.push('', `Decomposition: ${view.lastPlan.plan.summary}`
       + (view.lastPlan.fellBack ? ' — numeric fallback used' : ''));

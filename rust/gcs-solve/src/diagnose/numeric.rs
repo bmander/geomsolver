@@ -24,8 +24,7 @@ pub(super) struct Gate {
     pub by_parts: bool,
     /// Neither reading is taken.
     pub skipped: bool,
-    /// The dependent rows are read for the constraints worth removing
-    /// (`DiagnoseOptions::dependencies`).
+    /// The dependent rows are read for the constraints worth removing: all but `movable`.
     dependencies: bool,
 }
 
@@ -36,7 +35,12 @@ impl Gate {
         let numeric = opts.numeric.unwrap_or(n_cols <= opts.numeric_max);
         let by_parts = opts.numeric.is_none() && !numeric && some;
         let skipped = opts.numeric.is_none() && !numeric && !by_parts;
-        Gate { numeric, whole: numeric && some, by_parts, skipped, dependencies: opts.dependencies }
+        Gate { numeric, whole: numeric && some, by_parts, skipped, dependencies: true }
+    }
+
+    /// The same reading of the rank and what moves, naming no constraint (`diagnose::movable`).
+    pub(super) fn movable(self) -> Gate {
+        Gate { dependencies: false, ..self }
     }
 }
 
@@ -226,9 +230,9 @@ fn by_parts(
     let z = sys.z0(sk);
     let p = numeric_by_parts(sk, sys, &m.row_c, &z, gate.dependencies);
     let (rank, null, shaky) = screened(sk, sys, &z, p.null, p.rank, m.dm.rank, warnings);
-    let dependencies = (gate.dependencies && rank < m.n_rows()).then(|| Dependencies {
-        twice: p.twice,
-        ..Dependencies::of(sk, p.removable, p.removable_rel)
+    let dependencies = p.dependent.filter(|_| rank < m.n_rows()).map(|d| Dependencies {
+        twice: d.twice,
+        ..Dependencies::of(sk, d.all, d.rel)
     });
     Numeric {
         rank: Some(rank),
@@ -329,8 +333,15 @@ struct ByParts {
     rank: usize,
     /// One column per motion, a row per free column.
     null: Mat,
-    removable: Vec<u32>,
-    removable_rel: Vec<u32>,
+    /// What the dependent rows name, where they were read.
+    dependent: Option<Removable>,
+}
+
+/// The constraints the parts' dependent rows name: removable among all of them, among the
+/// relations', and the constraints a row said twice is among (`said_twice`).
+struct Removable {
+    all: Vec<u32>,
+    rel: Vec<u32>,
     twice: (Vec<u32>, usize),
 }
 
@@ -350,8 +361,7 @@ pub fn parts_null_spaces(sk: &Sketch) -> (SparseConditioned, usize, Vec<Vec<f64>
     (j, hard.len(), null, left)
 }
 
-/// `dependencies` false reads the rank and the null space alone: no left null space, so nothing
-/// removable and nothing said twice.
+/// `dependencies` false reads the rank and the null space alone: no left null space.
 fn numeric_by_parts(
     sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64], dependencies: bool,
 ) -> ByParts {
@@ -386,9 +396,12 @@ fn numeric_by_parts(
     // a dependency among rows only where there are more rows than the rank; among relations
     // only where there is one among all the rows
     let rank = sys.n_free - null.len();
+    let null_cols = as_cols(&null, sys.n_free);
+    if !dependencies {
+        return ByParts { rank, null: null_cols, dependent: None };
+    }
     let rows = hard.len();
-    let all_rows =
-        if dependencies && rank < rows { parts::left_null(&j, &all) } else { Vec::new() };
+    let all_rows = if rank < rows { parts::left_null(&j, &all) } else { Vec::new() };
     let rel_rows = match all_rows.is_empty() {
         true => Vec::new(),
         false => parts::left_null(&j, &rel),
@@ -403,11 +416,6 @@ fn numeric_by_parts(
         .collect();
     let (w, _) = reached(&crate::linalg::orthonormalize(&unit, 1e-10));
     let twice = said_twice(&w, &ids, &removable_all, RTOL);
-    ByParts {
-        rank,
-        null: as_cols(&null, sys.n_free),
-        removable: removable_all,
-        removable_rel: removable(&rel_rows),
-        twice,
-    }
+    let dependent = Removable { all: removable_all, rel: removable(&rel_rows), twice };
+    ByParts { rank, null: null_cols, dependent: Some(dependent) }
 }

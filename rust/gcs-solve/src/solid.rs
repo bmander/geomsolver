@@ -75,7 +75,7 @@ pub use reads::{reads,same_reads,Memo,MemoKey,ShapeKey};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
 pub use document::{applied_to,built_on,evaluation_operands,operand_paths,past_step,reaches,
-                   route_past,step_between,step_labels,step_through,uses,Use};
+                   operands_reached,route_past,step_between,step_labels,step_through,uses,Use};
 use document::{frame_origin,resolve_at};
 mod field;
 pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError,CHORD_SLACK};
@@ -482,8 +482,14 @@ pub fn refusal(sk: &Sketch, si: usize) -> Result<(), String> {
 
 /// Whether a continuous motion sweep is among the solid's operands: its boundary is then the
 /// field's, meshed once whatever approximation is asked for. False for a solid that does not
-/// validate, whose operands are not known.
+/// validate, whose operands are not known, and for an object a host builds
+/// (`Sketch::awaits_supply`, #671): it has no field here, its boundary is its build, and it is not
+/// validated by the sketch awaiting it — validating a sweep finds its roll, a march along its
+/// motion that is the host's work.
 pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
+    if sk.awaits_supply(si) {
+        return false;
+    }
     // asked before every evaluation of the solid, a remembered one too (`Sketch::evaluated_solid`'s
     // slot), and it reads every operand's route: a body rounded all over is a region for each
     // edge and corner, each reading the body's stratum.  Remembered against what the solid reads
@@ -552,39 +558,6 @@ pub(crate) fn field_only_reasons(sk: &Sketch, operands: &std::collections::BTree
     out
 }
 
-/// The solids solid `i` is evaluated over at the next step down, as `validate_at` walks them: a
-/// sweep's tool and the material its roll is found through, a through-cut's material
-/// (`evaluation_operands`), a placement's source, a body's operands; nothing for a solid drawn
-/// from a face, a family or a region.
-fn operands_of(sk: &Sketch, i: usize) -> Result<Vec<usize>, String> {
-    let s = sk.solids.get(i).ok_or_else(|| format!("no solid at index {i}"))?;
-    let of = |v: Vec<u32>| v.into_iter().map(|o| o as usize).collect();
-    Ok(match &s.def {
-        SolidDef::Swept { .. } | SolidDef::Through { .. } => of(evaluation_operands(sk, i)?),
-        SolidDef::Placed { source, .. } => vec![*source as usize],
-        SolidDef::Body { .. } => of(s.operands()),
-        SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Family { .. }
-            | SolidDef::Region { .. } => Vec::new(),
-    })
-}
-
-/// **Every solid solid `si` is evaluated over, itself among them, validating none**: what
-/// `validate_at` reaches, where nothing is checked — what an object a host builds is drawn with
-/// (`Sketch::awaits_supply`, #671), which the host validated: validating a sweep finds its roll,
-/// a march along its motion (`roll::interval`), seconds of the page's thread.  A cycle is walked
-/// once.
-pub fn operands_reached(sk: &Sketch, si: usize)
-    -> Result<std::collections::BTreeSet<usize>, String> {
-    let mut seen = std::collections::BTreeSet::new();
-    let mut pending = vec![si];
-    while let Some(i) = pending.pop() {
-        if seen.insert(i) {
-            pending.extend(operands_of(sk, i)?);
-        }
-    }
-    Ok(seen)
-}
-
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {
     let mut pending = vec![(si, false)];
     let mut seen = std::collections::BTreeSet::new();
@@ -606,14 +579,14 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 }
                 let family = crate::motion::Family::read(sk,*motion as usize)?;
                 // its tool, and a body's material its roll through it is found against (#271)
-                pending.extend(operands_of(sk, i)?.into_iter().rev().map(|o| (o, false)));
+                pending.extend(evaluation_operands(sk, i)?.into_iter().rev().map(|o| (o as usize, false)));
                 let [from, to] = roll::interval(sk, i)?;
                 family.at(from)?; family.at(to)?;
                 continue;
             }
-            SolidDef::Placed { motion, at, .. } => {
+            SolidDef::Placed { source, motion, at } => {
                 crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
-                pending.extend(operands_of(sk, i)?.into_iter().map(|o| (o, false)));
+                pending.push((*source as usize,false));
                 continue;
             }
             SolidDef::Prism { face, from, to, .. } => {
@@ -623,7 +596,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 *face
             }
             SolidDef::Through { face, .. } => {
-                pending.extend(operands_of(sk, i)?.into_iter().rev().map(|o| (o, false)));
+                pending.extend(evaluation_operands(sk, i)?.into_iter().rev().map(|o| (o as usize, false)));
                 *face
             }
             SolidDef::Revolve { face, .. } => *face,
@@ -631,7 +604,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 family::built(sk, i, unit).map_err(|m| fail(&m))?;
                 continue;
             }
-            SolidDef::Body { .. } => { pending.extend(operands_of(sk, i)?.into_iter().rev().map(|o| (o, false))); continue; }
+            SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
             // its terms on one axis, bounded all round: what its meridian says; else in general
             // position, bounded all round
             SolidDef::Region { .. } => {

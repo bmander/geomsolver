@@ -185,10 +185,7 @@ impl Sketch {
     /// view's pixel length: one mesh serves every zoom, rather than a refinement per wheel tick.
     fn solid_slot(&self, i: usize, policy: crate::solid::ApproximationPolicy)
         -> (crate::solid::ApproximationPolicy, (usize, (u8, u64))) {
-        // a swept solid's field is meshed once whatever is asked; an object a host builds is its
-        // build whatever is asked, and is not validated here to know whether it sweeps (#671)
-        let swept = !self.awaits_supply(i) && crate::solid::has_sweep(self, i);
-        let policy = if swept { crate::solid::ApproximationPolicy::Mesh } else { policy };
+        let policy = if crate::solid::has_sweep(self, i) { crate::solid::ApproximationPolicy::Mesh } else { policy };
         (policy, (i, policy.cache_key()))
     }
 
@@ -422,9 +419,7 @@ impl Sketch {
     /// `supply_field`, against what the solid read when the surface was made (`reads`).
     fn supply_at(&self, i: usize, surface: crate::solid::FieldSurface, reads: Vec<f64>) -> Result<(), String> {
         if i >= self.solids.len() { return Err("a supplied surface names no solid of this drawing".into()); }
-        // an exact build is taken for any solid, so whether it sweeps — a validation, a march
-        // along each motion it rolls on — is asked only of a field's surface
-        if surface.exact.is_none() && !self.is_swept(i) {
+        if !self.is_swept(i) && surface.exact.is_none() {
             return Err(format!("`{}`: a supplied surface is for a swept solid, and this one has no sweep",
                 self.solids[i].name));
         }

@@ -29,9 +29,9 @@ host builds is never validated by the sketch that awaits it** (`Sketch::awaits_s
 validated it and says a refusal in its own words, and validating a sweep finds its roll
 (`solid::roll::interval`), a march along its motion that held the page's thread for seconds an
 object.  So `EvaluatedSolid::evaluate` takes its supply before `validate_at`, with the operands
-walked unvalidated (`solid::operands_reached`, the step `validate_at` walks); `solid_slot` does not
-ask whether it sweeps (its build is one surface whatever is asked); and `supply_at` and
-`overview::unbuilt` ask whether it is a host's, or an exact build, before whether it sweeps.  Gate:
+walked unvalidated (`solid::operands_reached`, over `evaluation_operands`), and `solid::has_sweep`
+answers false for it without validating it: it has no field here, its boundary is its build,
+whatever approximation is asked.  Gate:
 `roll_through.rs`'s `a_rolled_object_a_host_builds_is_drawn_from_its_build`.  Until then the
 object is refused, on its way — `overview::unbuilt` leaves it out — and a build refused is unbuilt in
 the export's words (`refuse_object`), never a field meshed in its place; an earlier drawing's build

@@ -283,11 +283,12 @@ impl EvaluatedSolid {
         si: usize,
         policy: ApproximationPolicy,
     ) -> Result<Self, String> {
-        let unit = match policy {
-            ApproximationPolicy::Report => REPORT_UNIT,
-            ApproximationPolicy::Mesh => mesh_unit(sk, si),
-            ApproximationPolicy::View { unit } if unit.is_finite() && unit > 0.0 => unit,
-            _ => return Err("solid approximation requires a finite positive pixel length".into()),
+        // read only where it is used: an object on its way or refused reads no primitive's box
+        let unit = || match policy {
+            ApproximationPolicy::Report => Ok(REPORT_UNIT),
+            ApproximationPolicy::Mesh => Ok(mesh_unit(sk, si)),
+            ApproximationPolicy::View { unit } if unit.is_finite() && unit > 0.0 => Ok(unit),
+            _ => Err("solid approximation requires a finite positive pixel length".to_string()),
         };
         // an object a host builds is what it supplied, or on its way, or refused (#671), and is
         // not validated here: the host validated it and says a refusal in its own words, and
@@ -297,8 +298,8 @@ impl EvaluatedSolid {
         if sk.awaits_supply(si) {
             return match sk.supplied_object(si) {
                 Some(Ok((surface, current))) => match &surface.exact {
-                    Some(exact) => Self::from_exact_surface(sk, si, policy, unit, &surface, exact,
-                        super::operands_reached(sk, si)?, !current),
+                    Some(exact) => Self::from_exact_surface(sk, si, policy, unit()?, &surface,
+                        exact, super::operands_reached(sk, si)?, !current),
                     None => Err(format!("`{}`: its supplied surface is no exact build", sk.solid_name(si))),
                 },
                 Some(Err(why)) => Err(why),
@@ -309,6 +310,7 @@ impl EvaluatedSolid {
                 },
             };
         }
+        let unit = unit()?;
         let operands = validate_at(sk, si, unit)?;
         if sweeps_among(sk, &operands) {
             // a swept solid's exact B-rep where a host supplied one, else its field's surface,

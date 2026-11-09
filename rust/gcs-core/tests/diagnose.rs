@@ -817,12 +817,11 @@ fix((0, 10)) e
     }
 }
 
-/// **Reading only what moves** (`DiagnoseOptions::dependencies`, what a round of placing the
-/// planes asks): the rank, the freedoms and the parameters free as the whole reading says them,
-/// whole and part by part, with no constraint named as removable — of a theorem among relations
-/// (`implied`) and of a dependency through dimensions (`over`) alike.
+/// **Reading only what moves** (`diagnose::movable`, what a round of placing the planes asks): the
+/// parameters free as the whole diagnosis says them, whole and part by part — of a theorem among
+/// relations (`implied`) and of a dependency through dimensions (`over`) alike.
 #[test]
-fn reading_only_what_moves_names_no_dependency_and_moves_what_the_whole_reading_moves() {
+fn reading_only_what_moves_moves_what_the_whole_diagnosis_moves() {
     let mut over = Sketch::new();
     let p = over.point(0.0, 0.0, true, "p");
     let q = over.point(5.0, 0.0, false, "q");
@@ -834,15 +833,13 @@ fn reading_only_what_moves_names_no_dependency_and_moves_what_the_whole_reading_
     for mut sk in [examples::altitudes(), over] {
         solve(&mut sk, SolveOpts::default());
         for numeric_max in [gcs_core::diagnose::NUMERIC_MAX, 0] {
-            let all = DiagnoseOptions { numeric_max, ..DiagnoseOptions::default() };
-            let full = diagnose(&mut sk, all);
-            let only = diagnose(&mut sk, DiagnoseOptions { dependencies: false, ..all });
+            let opts = DiagnoseOptions { numeric_max, ..DiagnoseOptions::default() };
+            let full = diagnose(&mut sk, opts);
             assert!(!(full.over.is_empty() && full.implied.is_empty()), "{}", summary(&full));
-            assert_eq!((only.numeric_rank, only.dof, &only.under_params),
-                       (full.numeric_rank, full.dof, &full.under_params), "{}", summary(&full));
-            assert_eq!(only.by_parts, numeric_max == 0);
-            assert!(only.over.is_empty() && only.implied.is_empty() && only.said_twice.is_empty(),
-                    "{}", summary(&only));
+            assert_eq!(full.by_parts, numeric_max == 0);
+            assert!(!full.under_params.is_empty(), "{}", summary(&full));
+            assert_eq!(gcs_core::diagnose::movable(&mut sk, numeric_max), full.under_params,
+                       "{}", summary(&full));
         }
     }
 }

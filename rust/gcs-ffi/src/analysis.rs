@@ -31,9 +31,6 @@ fn diagnose_options(v: &Json) -> DiagnoseOptions {
     if let Some(x) = v.get("settled") {
         o.settled = x.as_bool();
     }
-    if let Some(x) = v.get("dependencies") {
-        o.dependencies = x.as_bool();
-    }
     if let Some(x) = v.get("refusals") {
         o.refusals = x.as_bool();
     }

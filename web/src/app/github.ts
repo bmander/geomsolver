@@ -121,6 +121,7 @@ export async function githubProject(address: GithubAddress, token?: string,
   const raw = `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/`
     + `${encodeURIComponent(repo)}/${segments(ref)}`;
   const files: Record<string, string> = {};
+  let arrived = 0;
   const read = async (p: string): Promise<void> => {
     const r = token
       ? await fetch(`${base}/contents/${segments(p)}?ref=${encodeURIComponent(ref)}`,
@@ -128,10 +129,10 @@ export async function githubProject(address: GithubAddress, token?: string,
       : await fetch(`${raw}/${segments(p)}`);
     if (!r.ok) throw refused(r.status, p, token);
     files[`${top}/${p.slice(under.length)}`] = await r.text();
-    arriving(Object.keys(files).length, members.length);
+    arriving(++arrived, members.length);
   };
   // a few readers drawing from one queue; the first refusal ends the reading
-  arriving(0, members.length);
+  arriving(arrived, members.length);
   const queue = [...members];
   await Promise.all(Array.from({ length: Math.min(AT_ONCE, queue.length) }, async () => {
     for (let p = queue.shift(); p !== undefined; p = queue.shift()) await read(p);
