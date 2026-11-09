@@ -107,10 +107,13 @@ struct Prefix<'a> {
     nodes: Vec<f64>,
     /// The `u` knot `G` is integrated from.
     base: usize,
-    /// Per `v` span, once asked for: per node, the net's rows there (`Row`) and `G` at each `u`
-    /// knot read so far (from `base`).
-    cols: Vec<Option<Vec<(Vec<Row>,Vec<Option<f64>>)>>>,
+    /// Per `v` span, once asked for, its column (`Column`).
+    cols: Vec<Option<Column>>,
 }
+
+/// A `v` span's column of `Prefix`'s table: per node, the net's rows there (`Row`) and `G` at each
+/// `u` knot, read over the knots `lo..=hi` (about `base`), every node alike.
+struct Column { rows: Vec<Vec<Row>>,g: Vec<Vec<f64>>,lo: usize,hi: usize }
 
 /// A row of a net's poles read at one `v`: the point the row's poles make there, and its rate in
 /// `v` — at that `v` the sheet and `S_v` are B-spline curves in `u` with these poles.
@@ -124,7 +127,7 @@ impl<'a> Prefix<'a> {
         let (us,vs) = (knots(0,du),knots(1,dv));
         let m = 3*net.dv;
         let nodes = (0..m).map(|k| (std::f64::consts::PI*k as f64/(m-1) as f64).dcos()).collect();
-        let cols = vec![None;vs.len()-1];
+        let cols = (1..vs.len()).map(|_| None).collect();
         let base = if from.is_finite() { (0..us.len()).min_by(|&a,&b| (us[a]-from).abs().total_cmp(&(us[b]-from).abs())).unwrap_or(0) } else { 0 };
         Prefix {net,us,vs,ru:rule((3*net.du).div_ceil(2)+1),nodes,base,cols}
     }
@@ -161,23 +164,19 @@ impl<'a> Prefix<'a> {
         let (i,j) = (span(&self.us,u),span(&self.vs,v));
         let (v0,v1) = (self.vs[j],self.vs[j+1]);
         let at = |x: f64| (v0+v1)/2.+x*(v1-v0)/2.;
-        let base = self.base;
-        let n = self.us.len();
-        let mut col = self.cols[j].take().unwrap_or_else(|| self.nodes.iter().map(|&x| {
-            let mut c = vec![None;n];
-            c[base] = Some(0.);
-            (self.rows(at(x)),c)
-        }).collect());
-        // each node's column filled out from the base to knot `i`, a span at a time
-        for (rows,c) in col.iter_mut() {
-            if c[i].is_some() { continue }
-            if i > base {
-                let mut at_k = (base..=i).rev().find(|&m| c[m].is_some()).unwrap();
-                while at_k < i { let next = c[at_k].unwrap()+self.across_rows(self.us[at_k],self.us[at_k+1],rows); at_k += 1; c[at_k] = Some(next); }
-            } else {
-                let mut at_k = (i..=base).find(|&m| c[m].is_some()).unwrap();
-                while at_k > i { let next = c[at_k].unwrap()-self.across_rows(self.us[at_k-1],self.us[at_k],rows); at_k -= 1; c[at_k] = Some(next); }
-            }
+        let (base,n) = (self.base,self.us.len());
+        let mut col = self.cols[j].take().unwrap_or_else(|| Column {rows:self.nodes.iter().map(|&x| self.rows(at(x))).collect(),
+            g:vec![vec![0.;n];self.nodes.len()],lo:base,hi:base});
+        // filled out to knot `i`, a span at a time
+        while col.hi < i {
+            let h = col.hi;
+            for (rows,g) in col.rows.iter().zip(&mut col.g) { g[h+1] = g[h]+self.across_rows(self.us[h],self.us[h+1],rows) }
+            col.hi += 1;
+        }
+        while col.lo > i {
+            let l = col.lo;
+            for (rows,g) in col.rows.iter().zip(&mut col.g) { g[l-1] = g[l]-self.across_rows(self.us[l-1],self.us[l],rows) }
+            col.lo -= 1;
         }
         // the polynomial through the nodes at `v` (barycentric, the Chebyshev weights)
         let x = (2.*v-v0-v1)/(v1-v0);
@@ -185,7 +184,7 @@ impl<'a> Prefix<'a> {
         let (mut num,mut den) = (0.,0.);
         let mut exact = None;
         for (k,&xk) in self.nodes.iter().enumerate() {
-            let gk = col[k].1[i].unwrap();
+            let gk = col.g[k][i];
             if x == xk { exact = Some(gk); break }
             let w = if k%2 == 0 { 1. } else { -1. }*if k == 0 || k == m-1 { 0.5 } else { 1. }/(x-xk);
             num += w*gk;
@@ -312,9 +311,6 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
         let s = &f.surface;
         let [pu,pv] = s.periods();
         let g = |u: f64,v: f64| { let (x,su,sv) = s.d1([u,v]); if area { crate::util::space::norm(cross(su,sv)) } else { dot(x,cross(su,sv)) } };
-        // a rational net's `g` is a quotient, which no Gauss rule integrates exactly: it takes the
-        // stretch-by-stretch rule a swept face does
-        let mut prefix: Option<Prefix> = None;
         // The face's box in its parameters. Away from a spline's table, `g` is integrated from the
         // middle of the face's range and across the parameter it spans less: `G` is then as small
         // as the face allows, and an error δ in a use's parameters moves the flux by `G δ` — from 0
@@ -328,8 +324,10 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
                 for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); }
             }
         }
-        // a polynomial net's `G` tabled from the face's middle `u` (`Prefix`)
-        if let Surface::BSpline(_,n) = s { if !n.is_rational() && !area { prefix = Some(Prefix::new(n,(lo[0]+hi[0])/2.)) } }
+        // a polynomial net's `G` tabled from the face's middle `u` (`Prefix`); a rational net's `g`
+        // is a quotient, which no Gauss rule integrates exactly: it takes the stretch-by-stretch
+        // rule a swept face does
+        let mut prefix = match s { Surface::BSpline(_,n) if !n.is_rational() && !area => Some(Prefix::new(n,(lo[0]+hi[0])/2.)),_ => None };
         // the parameter `g` is integrated along (`G` then multiplies the other's derivative)
         let along = if prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 };
         let base = if prefix.is_some() || !lo[along].is_finite() { 0. } else { (lo[along]+hi[along])/2. };

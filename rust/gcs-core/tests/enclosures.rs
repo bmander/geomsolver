@@ -8,7 +8,7 @@ use gcs_core::brep::enclose::{Enclosed,Patch};
 use gcs_core::brep::family::{Run,Sheet,Stations,NODES};
 use gcs_core::brep::geom::{Blend,Carry,Curve,Frame,SheetCut,Surface,Traced};
 use gcs_core::brep::nurbs::{BSpline,Net};
-use gcs_core::brep::query::{curve_surface,curve_surface_by,curve_surface_searched,Meets,Reader,Spanwise,Uncertified};
+use gcs_core::brep::query::{curve_surface,curve_surface_by,curve_surface_searched,Meets,Reader,Uncertified};
 use gcs_core::interval::Iv;
 use gcs_core::rng::Rng;
 use std::sync::Arc;
@@ -134,6 +134,9 @@ fn surfaces() -> Vec<(&'static str,Surface,[[f64;2];2])> {
     // other, and a rational biquadratic (a quarter of a torus's tube, its weights uneven)
     let grid = |nu: usize,nv: usize| -> Vec<Vec<V>> { (0..nu).map(|i| (0..nv).map(|j| { let (x,y) = (i as f64,j as f64); [x,y,(0.7*x).sin()+0.2*x*y-0.1*y*y] }).collect()).collect() };
     let kinked = Net {du:3,dv:3,uknots:vec![0.,0.,0.,0.,0.7,0.7,0.7,2.,2.,2.,2.],vknots:vec![0.,0.,0.,0.,0.4,0.4,1.,1.,1.,1.],poles:grid(7,6),weights:None};
+    // a quintic by quartic net over several spans each way, a knot doubled, as a ring's tube is fitted
+    let quintic = Net {du:5,dv:4,uknots:vec![0.,0.,0.,0.,0.,0.,0.3,0.6,0.6,1.,1.,1.,1.,1.,1.],
+        vknots:vec![0.,0.,0.,0.,0.,0.5,1.,1.,1.,1.,1.],poles:grid(9,6),weights:None};
     let w = std::f64::consts::FRAC_1_SQRT_2;
     let rational = Net {du:2,dv:2,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,0.,1.,1.,1.],
         poles:vec![vec![[3.,0.,0.],[3.,0.,1.],[2.,0.,1.]],vec![[3.,3.,0.],[3.,3.,1.],[2.,2.,1.]],vec![[0.,3.,0.],[0.,3.,1.],[0.,2.,1.]]],
@@ -154,6 +157,7 @@ fn surfaces() -> Vec<(&'static str,Surface,[[f64;2];2])> {
         ("a pipe",Surface::Blend(Frame::WORLD,Arc::new(pipe)),[[0.,1.],[0.,1.]]),
         ("a drafted blend",Surface::Blend(Frame::WORLD,Arc::new(drafted)),[[0.,1.],[0.,1.]]),
         ("a kinked net",Surface::BSpline(Frame::WORLD,Arc::new(kinked)),[[0.,2.],[0.,1.]]),
+        ("a quintic net",Surface::BSpline(Frame::WORLD,Arc::new(quintic)),[[0.,1.],[0.,1.]]),
         ("a rational net",Surface::BSpline(Frame::WORLD,Arc::new(rational)),[[0.,1.],[0.,1.]]),
         ("a family's wall",Surface::Family(Frame::WORLD,Arc::new(wall)),[[0.,1.],ws]),
         ("an affine image",Surface::Affine(Arc::new(ellipsoid)),[[0.,TAU],[0.,TAU]]),
@@ -335,17 +339,15 @@ fn a_curve_lying_along_a_surface_for_a_while_is_one_run_proved() {
     assert!(!roots.is_empty() && roots.iter().all(|r| r.0 >= 1.-1e-9 && r.0 <= 2.+1e-9),"{m:?}");
 }
 
-/// **A spline edge against a fine fitted net, read whole and span by span** (#814): a cubic net of
-/// 240 × 66 poles — a height field, its poles standing at their knots' Greville abscissae so
-/// `x = u` and `y = v` exactly, its heights a wave with a fitting's noise on it — against a cubic
-/// edge hugging it within microns over a few dozen spans, crossing it shallowly. Read as
-/// `curve_surface` reads it and span by span (`Spanwise`, what a reading falls back to where the
-/// whole net is past any search's boxes, as the hypoid pinion's side against its cut's sheet is:
-/// `brep_export::the_pinion_as_written_is_built_by_sectors`), each crossing is found once — though
-/// the edge's pieces and the spans they reach overlap — against the heights' difference along the
-/// edge bisected apart from the kernel (`z(t) − S(x(t), y(t))`), each on both.
+/// **A spline edge hugging a fine fitted net is found where it crosses it** (#814): a cubic net of
+/// 240 × 66 poles — a height field, its poles standing at their knots' Greville abscissae so `x = u`
+/// and `y = v` exactly, its heights a wave with a fitting's noise on it — against a cubic edge
+/// hugging it within microns over a few dozen spans, crossing it shallowly, as the hypoid pinion's
+/// side hugs its cut's sheet (`brep_export::the_pinion_as_written_is_built_by_sectors`). Each
+/// crossing is found once, against the heights' difference along the edge bisected apart from the
+/// kernel (`z(t) − S(x(t), y(t))`), each on both.
 #[test]
-fn a_spline_edge_meets_a_fine_net_span_by_span() {
+fn a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses() {
     let mut rng = Rng::new(9);
     let (nu,nv,deg) = (240,66,3);
     let knots = |n: usize| -> Vec<f64> {
@@ -383,14 +385,13 @@ fn a_spline_edge_meets_a_fine_net_span_by_span() {
         Some(0.5*(a+b))
     }).collect();
     assert!(bisected.len() >= 10,"{bisected:?}");
-    for (how,m) in [("whole",curve_surface(&edge,[0.,1.],&sheet,tol)),("span by span",curve_surface_by(&Spanwise,&edge,[0.,1.],&sheet,tol))] {
-        let Meets::At(found) = &m else { panic!("{how}: {m:?}") };
-        assert_eq!(found.len(),bisected.len(),"{how}: {found:?} against {bisected:?}");
-        for (&(t,touch),&s) in found.iter().zip(&bisected) {
-            assert!(!touch,"{how}: {found:?}");
-            let q = edge.point(t);
-            assert!(gcs_core::space::distance(q,edge.point(s)) <= 1e-5,"{how}: at {t}, {q:?}, against {s}");
-            assert!(gap(t).abs() <= 1e-5,"{how}: at {t}, {q:?} off the sheet by {}",gap(t));
-        }
+    let m = curve_surface(&edge,[0.,1.],&sheet,tol);
+    let Meets::At(found) = &m else { panic!("{m:?}") };
+    assert_eq!(found.len(),bisected.len(),"{found:?} against {bisected:?}");
+    for (&(t,touch),&s) in found.iter().zip(&bisected) {
+        assert!(!touch,"{found:?}");
+        let q = edge.point(t);
+        assert!(gcs_core::space::distance(q,edge.point(s)) <= 1e-5,"at {t}, {q:?}, against {s}");
+        assert!(gap(t).abs() <= 1e-5,"at {t}, {q:?} off the sheet by {}",gap(t));
     }
 }

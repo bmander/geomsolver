@@ -736,25 +736,7 @@ impl Boundary {
     /// an edge's inside is nearest.
     pub fn nearest(&self,q: V) -> (f64,Option<f64>) {
         let (b,l) = (&*self.located.b,&self.located);
-        let mut gaps: Vec<(f64,usize)> = (0..b.faces.len()).map(|fi| (l.face_gap(fi,q),fi)).collect();
-        gaps.sort_by(|x,y| x.0.total_cmp(&y.0));
-        let (mut best,mut foot) = (f64::INFINITY,None);
-        for (gap,fi) in gaps {
-            if gap >= best { break }
-            // (the nearest point of its surface, or where the face is trimmed away from that, of a
-            // cone's or a torus's the nearest on the meridian across the axis, #721 G5)
-            let surface = &b.faces[fi].surface;
-            for uv in surface.feet(q).into_iter().flatten() {
-                let p = surface.point(uv);
-                let d = distance(q,p);
-                if d < best && l.face_place(fi,p) != Place::Out { (best,foot) = (d,Some(Foot::Face(fi,uv))); break }
-            }
-        }
-        for &e in &self.bounding {
-            if l.edge_gap(e,q) >= best { continue }
-            let (t,d) = l.nearest(e,q);
-            if d < best { (best,foot) = (d,Some(Foot::Edge(e,t))) }
-        }
+        let (best,foot) = self.foot_within(q,f64::INFINITY,false);
         let outward = |fi: usize,uv: Uv| { let f = &b.faces[fi]; f.surface.normal(uv).map(|n| if f.reversed { scale(n,-1.) } else { n }) };
         let side = match foot {
             // (at a pole or an apex none, where the point's place says)
@@ -778,6 +760,34 @@ impl Boundary {
             None => None,
         };
         (best,side)
+    }
+    /// The nearest point of the boundary to `q` nearer than `r` (`f64::INFINITY` for any), and its
+    /// distance — `r` where none is: the foot of the nearest face it falls within (the faces asked
+    /// nearest box first, none whose box stands `r` off), or the nearest edge that bounds something.
+    /// With `first`, the first found within `r`, not the nearest.
+    fn foot_within(&self,q: V,r: f64,first: bool) -> (f64,Option<Foot>) {
+        let (b,l) = (&*self.located.b,&self.located);
+        let mut gaps: Vec<(f64,usize)> = (0..b.faces.len()).map(|fi| (l.face_gap(fi,q),fi)).filter(|g| g.0 < r).collect();
+        gaps.sort_by(|x,y| x.0.total_cmp(&y.0));
+        let (mut best,mut foot) = (r,None);
+        for (gap,fi) in gaps {
+            if gap >= best { break }
+            // (the nearest point of its surface, or where the face is trimmed away from that, of a
+            // cone's or a torus's the nearest on the meridian across the axis, #721 G5)
+            let surface = &b.faces[fi].surface;
+            for uv in surface.feet(q).into_iter().flatten() {
+                let p = surface.point(uv);
+                let d = distance(q,p);
+                if d < best && l.face_place(fi,p) != Place::Out { (best,foot) = (d,Some(Foot::Face(fi,uv))); break }
+            }
+            if first && foot.is_some() { return (best,foot) }
+        }
+        for &e in &self.bounding {
+            if l.edge_gap(e,q) >= best { continue }
+            let (t,d) = l.nearest(e,q);
+            if d < best { (best,foot) = (d,Some(Foot::Edge(e,t))); if first { break } }
+        }
+        (best,foot)
     }
 }
 
@@ -821,27 +831,11 @@ fn pseudo_normals(b: &Brep) -> Vec<Option<V>> {
 }
 
 impl Material for Boundary {
-    /// `|value(p)| < r`, read off what stands within `r` alone: a face whose box is within it, by
-    /// its feet (nearest first, as `nearest` reads them) in the face, or an edge bounding
-    /// something whose box is — the first found within `r` deciding. `nearest` reads every face
-    /// and edge nearer than the best found, a traced edge's foot by projections onto both its
-    /// surfaces: asked at every sample of a tool's faces whether it is on the tool (`Tool::on`), it
-    /// was most of a hypoid gear's admission.
-    fn near(&self,p: V,r: f64) -> bool {
-        let (q,r) = (p.map(|x| x*self.scale),r*self.scale);
-        let (b,l) = (&*self.located.b,&self.located);
-        for fi in 0..b.faces.len() {
-            if !(l.face_gap(fi,q) < r) { continue }
-            let surface = &b.faces[fi].surface;
-            // (the feet nearest first, `Surface::feet`: past one `r` off, every one is)
-            for uv in surface.feet(q).into_iter().flatten() {
-                let p = surface.point(uv);
-                if !(distance(q,p) < r) { break }
-                if l.face_place(fi,p) != Place::Out { return true }
-            }
-        }
-        self.bounding.iter().any(|&e| l.edge_gap(e,q) < r && l.nearest(e,q).1 < r)
-    }
+    /// `|value(p)| < r`, read off what stands within `r` alone (`foot_within`): `nearest` reads
+    /// every face and edge nearer than the best found, a traced edge's foot by projections onto
+    /// both its surfaces — asked at every sample of a tool's faces whether it is on the tool
+    /// (`Tool::on`), it was most of a hypoid gear's admission.
+    fn near(&self,p: V,r: f64) -> bool { self.foot_within(p.map(|x| x*self.scale),r*self.scale,true).1.is_some() }
     fn value(&self,p: V) -> f64 {
         let q = p.map(|x| x*self.scale);
         let (d,side) = self.nearest(q);

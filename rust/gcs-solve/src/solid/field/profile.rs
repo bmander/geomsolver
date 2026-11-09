@@ -250,28 +250,26 @@ impl Wall {
         let mut upper = upper2.sqrt();
         let fine = ((hi[0]-lo[0]).dhypot(hi[1]-lo[1])/8.).max(c.slack);
         type Open = std::collections::BinaryHeap<std::cmp::Reverse<(Gap,usize)>>;
-        // the pieces met, and the ones not yet read by their gap, nearest first (the earlier met
-        // where two tie)
-        let mut met: Vec<Piece> = Vec::new();
-        let mut open: Open = std::collections::BinaryHeap::new();
-        let meet = |piece: Piece,met: &mut Vec<Piece>,open: &mut Open| {
-            let gap = triangle_gap(lo,hi,&c.of(&piece).tri);
-            open.push(std::cmp::Reverse((Gap(gap),met.len())));
+        // the pieces met, each with its node in the tree (none past it), and the ones not yet read
+        // by their gap, nearest first (the earlier met where two tie)
+        let mut met: Vec<(ConicPiece,Option<usize>)> = Vec::with_capacity(64);
+        let mut open: Open = std::collections::BinaryHeap::with_capacity(64);
+        let meet = |piece: (ConicPiece,Option<usize>),met: &mut Vec<(ConicPiece,Option<usize>)>,open: &mut Open| {
+            open.push(std::cmp::Reverse((Gap(triangle_gap(lo,hi,&piece.0.tri)),met.len())));
             met.push(piece);
         };
-        meet(Piece::Tree(0),&mut met,&mut open);
+        meet((c.nodes[0],Some(0)),&mut met,&mut open);
         let mut lower = upper;
         while let Some(std::cmp::Reverse((Gap(gap),k))) = open.pop() {
             // every piece left is at least this far: so is the arc from the box
             if gap >= upper { break }
-            let piece = std::mem::replace(&mut met[k],Piece::Tree(0));
-            let ConicPiece {h,tri,bulge,depth} = c.of(&piece);
+            let (ConicPiece {h,tri,bulge,depth},node) = met[k];
             let f2 = far2(tri[0]).min(far2(tri[2]));
             if f2 < upper2 { upper2 = f2; upper = f2.sqrt(); }
-            if bulge <= fine || depth >= 40 { lower = gap.max(0.); break }
-            let halves = match piece {
-                Piece::Tree(i) if 2*i+2 < c.nodes.len() => [Piece::Tree(2*i+1),Piece::Tree(2*i+2)],
-                _ => Conic::halves(&h).map(|h| Piece::Fly(Box::new(Conic::piece(h,depth+1)))),
+            if bulge+c.slack <= fine || depth >= 40 { lower = gap; break }
+            let halves = match node {
+                Some(i) if 2*i+2 < c.nodes.len() => [(c.nodes[2*i+1],Some(2*i+1)),(c.nodes[2*i+2],Some(2*i+2))],
+                _ => Conic::halves(&h).map(|h| (Conic::piece(h,depth+1),None)),
             };
             for half in halves { meet(half,&mut met,&mut open) }
         }
@@ -320,12 +318,9 @@ impl Wall {
 struct Conic { nodes: Vec<ConicPiece>,samples: [P;9],slack: f64 }
 
 /// A piece of a conic's arc: its homogeneous control net, its control triangle, how far its middle
-/// control point stands off the chord (plus the rounding's slack), and how many halvings deep.
+/// control point stands off the chord, and how many halvings deep.
 #[derive(Clone,Copy,Debug)]
 struct ConicPiece { h: [[f64;3];3],tri: [P;3],bulge: f64,depth: usize }
-
-/// A piece of a conic's arc: one of its tree's, or one halved from a leaf as it is reached.
-enum Piece { Tree(usize),Fly(Box<ConicPiece>) }
 
 /// A piece's gap from a box, ordered as `f64::total_cmp` orders it.
 #[derive(Clone,Copy,PartialEq)]
@@ -379,18 +374,11 @@ impl Conic {
             for half in Conic::halves(&n.h) { nodes.push(Conic::piece(half,n.depth+1)) }
             i += 1;
         }
-        let slack_of = slack;
-        for n in &mut nodes { n.bulge += slack_of }
         Conic {nodes,samples,slack}
     }
 
-    /// The piece a `Piece` names.
-    fn of(&self,p: &Piece) -> ConicPiece {
-        match p { Piece::Tree(i) => self.nodes[*i],Piece::Fly(n) => ConicPiece {bulge:n.bulge+self.slack,..**n} }
-    }
-
     /// A piece of the net `h`, `depth` halvings deep: its control triangle and its bulge, the
-    /// middle control point's distance from the chord (the rounding's slack added by the caller).
+    /// middle control point's distance from the chord.
     fn piece(h: [[f64;3];3],depth: usize) -> ConicPiece {
         let at = |h: [f64;3]| [h[0]/h[2],h[1]/h[2]];
         let tri = [at(h[0]),at(h[1]),at(h[2])];

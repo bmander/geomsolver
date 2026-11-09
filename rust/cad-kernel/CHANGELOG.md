@@ -19,7 +19,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
     reaches only out of that box, its directions tried by how soon they leave it; `settled` asks
     whether a stretch's end is on a net only where it stands by one of the net's spans
     (`near_net`), where it searched for the end's foot on every sheet a ray passed; `along` likewise
-    at a curve's start, middle and end; a ray's readings are not kept. A part's cut of its bore:
+    at a curve's start, middle and end. A part's cut of its bore:
     1.8 s → 0.19 s.
   - `props`: a polynomial net's `G` tabled from the face's middle, each column filled only as far
     as asked, a span at a time by the net's rows read at that `v` (curves in `u`), where every
@@ -31,20 +31,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `BSpline::restricted`: blossoms in floats, each hull widened by its rounding), not de Boor in
   intervals — far tighter, so a search reads a fraction of the boxes, and each at a fraction of
   the cost; `isolate::solve_by` halves a box across the side it smears farthest along (its width
-  times its Jacobian column), not the widest in the unknowns' own scales; and a curve's reading
-  against a net is kept while its store holds it (`query::kept_read`), so two Booleans reading one
-  edge against one sheet read it once. geomsolver's hypoid pinion, as its document writes it,
-  splits its sector in 1.7 s where it took 19 (3.2 before the certified readings), and a bull-nose
-  screwed instant by instant builds in 10 s where it took 28.
-- **A curve a fitted net is too much for is read over the spans it can reach** (`query::general`;
-  `query::Spanwise`, **new**, the reading span by span as a reader): where the one search over the
-  whole net reads past any search's boxes, the curve is halved into pieces about a span across, a
-  piece reaching no span's box dropped, and the net read once over the hull of the spans the
-  pieces reach — and span by span, as a line is, where that is still too much. A spline edge
-  hugging a fitted sheet of thousands of spans gave up so: geomsolver's hypoid pinion, its cut's
-  sheet a cubic net of 240 × 66 poles, was refused by every build since the certified readings
-  (0.5.0) and is built again, its volume as before them. Every reading the whole net proves is
-  read as before.
+  times its Jacobian column), not the widest in the unknowns' own scales. geomsolver's hypoid
+  pinion, as its document writes it, refused by every build since the certified readings (0.5.0) —
+  its side's spline edges, hugging its cut's sheet of 240 × 66 poles, read past any search's boxes
+  over the whole net — splits its sector in 1.7 s (3.2 before the certified readings), its volume
+  as before them; a bull-nose screwed instant by instant builds in 10 s where it took 28. Where the
+  whole net still reads past any search's boxes (a circle along a quintic tube's rim), the curve is
+  read over the hull of the spans it can reach (`query::reached`).
 - **A ring's sweep cut from a blank** (`swept::closed::ring_cut_from`, **new**): the blank split by
   the ring's candidates at once and kept where the sweep is not, as `cut_from` cuts any other
   tool's sweep. brep-bench's `swept/ring-pushed-in-at-a-lean` (a torus slid into a block at 35°)

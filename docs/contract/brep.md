@@ -226,7 +226,7 @@ a swap made without its callers knowing:
   `Meets::Refused`, its witness (`query::Refusal`) the curve's and the surface's kinds, the stretch
   and the box: a ray locating a point abandons its direction (`Located::solid_place`: a point off
   the box its faces' boxes fill is out, past which no face stands, and a ray need reach only out of
-  that box, the five directions tried by how soon they leave it; a ray's readings are not kept), a Boolean is
+  that box, the five directions tried by how soon they leave it), a Boolean is
   refused with it in words (`boolean`'s edge-against-face phase, an along-face crossing, a triple
   point; `query::crossings_in` answers the refusal too), and a fillet's leg says so
   (`enclosures::a_reading_that_proves_nothing_is_refused_with_its_witness`). The sampled search is
@@ -265,27 +265,19 @@ a swap made without its callers knowing:
   the curve against the profile seen along the way or against the meridian in `(ρ², z)` (no
   singularity on the axis, and a line along an extrusion's way no singular system); any other as
   `C(t) = S(u, v)`, three unknowns over the curve's stretch and the parameters the surface reaches,
-  a line with no end clipped to a bounded surface's own box. **A non-rational net past one search is read
-  where the curve can reach it** (`query::general`): its knot spans boxed by their Bézier points in
-  a hierarchy (`net_index`). A curve's reading against a net is kept while its store holds
-  it (`query::kept_read`, by the curve's and the net's identity, the stretch and the tolerance):
-  the same edge read against the same sheet by two Booleans — a sector's two cells, each with a
-  face on the sheet that parted them, each split again by the next sheet — is read once. A line is
-  read span by span, clipped to each span's box grown by its size. Any other curve is read over the whole net first, and only where that reads past any
-  search's boxes (`GaveUp::Most`) is it halved into pieces about a span across, a piece reaching
-  no span's box dropped (`pieces_near`), and the net read once over the hull of the spans they
-  reach; where that is still past any search's boxes, span by span (`spans_met`, `Spanwise` as a
-  reader), each run of pieces within a span's grown box over the parameters of the span's patch it
-  can reach (`bezier_reach`), a meeting two spans or runs share one. The whole first: a curve along
-  a sheet across many spans (a circle on its rim) is one run proved over the whole, which a box
-  cutting the run proves more slowly or not at all
-  (`swept_patches::a_bull_nose_slid_at_a_lean_instant_by_instant_is_the_slides_sweep`); the hull
-  and the spans are for a curve a few spans long, hugging a fitted sheet of thousands, which a
-  search over the whole net may read past any search's boxes (the hypoid pinion's side against its
-  cut's sheet, 240 × 66 poles, refused so from #814 until its net was enclosed by restricted
-  Bézier patches and its boxes halved by smear, above:
-  `brep_export::the_pinion_as_written_is_built_by_sectors`), and `enclosures::a_spline_edge_meets_a_fine_net_span_by_span` holds the
-  reading span by span to roots found apart from the kernel — and `Fast` (what `curve_surface` reads by), **the closed forms kept
+  a line with no end clipped to a bounded surface's own box. A non-rational net is read by its spans' restricted Bézier
+  patches and its boxes halved by smear (above): the hypoid pinion's side, a spline edge a few
+  spans long hugging its cut's sheet of 240 × 66 poles, read past any search's boxes from #814 until
+  both (`brep_export::the_pinion_as_written_is_built_by_sectors`;
+  `enclosures::a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses`, its roots held to ones
+  found apart from the kernel); a line is read span by span, clipped to each span's box grown by its
+  size (`net_index`); any other curve over the whole net, and only where that reads past any
+  search's boxes (`GaveUp::Most`) over the hull of the spans its pieces reach (`query::reached`:
+  halved about a span across, a piece reaching no span's box dropped). The whole first: a curve
+  along a sheet across many spans is one run proved over the whole, which a box cutting the run
+  proves less readily or not at all; the hull for a circle along a quintic tube's rim, which the
+  whole net read by restricted Bézier patches reads past them
+  (`swept_patches::a_bull_nose_along_a_spline_frame_closes_into_the_volume_its_faces_advance_through`) — and `Fast` (what `curve_surface` reads by), **the closed forms kept
   as fast paths**, each held to the general reading: a line against a plane, a cone, a torus and a
   conic turned as polynomials along it (`query::line_revolution`, a quartic in the meridian's own
   parameter), against a turned contact's meridian (#780 C3, `query::line_turned`) and the cylinder a
