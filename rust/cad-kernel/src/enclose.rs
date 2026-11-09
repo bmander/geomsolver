@@ -9,6 +9,11 @@
 //! `enclose(box)` with a `Patch` — its point and its `P` partial derivatives, each an interval
 //! vector holding every value they take over the box. What encloses each kind:
 //!
+//! * **Non-rational B-splines of a degree below `BEZIER`** (`BSpline`, `Net`) over a box within
+//!   their domain and a few spans: each span's Bézier form restricted to the box, its control points
+//!   blossoms of the poles at the box's ends, and the derivative's the difference poles' alike — the
+//!   hull of each, widened by a bound on its rounding. Tighter than de Boor in intervals, which
+//!   loses the blending's dependence on the one parameter, and read in floats.
 //! * **B-splines, rational too** (`BSpline`, `Net`, a face family's spline run): over each knot span
 //!   the box reaches, de Boor's algorithm read in intervals — its blending ratios held to `[0, 1]`,
 //!   each step in its coefficients' hull — for the homogeneous point and for the derivative, a
@@ -176,6 +181,11 @@ fn lift(q: V,w: f64) -> [Iv;4] { let w = Iv::point(w); [Iv::point(q[0])*w,Iv::po
 
 impl Enclosed<1> for BSpline {
     fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
+        let [lo,hi] = self.domain();
+        let (a,b) = (t[0].min(t[1]),t[0].max(t[1]));
+        if self.weights.is_none() && self.degree < BEZIER && a >= lo && b <= hi {
+            if let Some(p) = self.restricted([a,b]) { return p }
+        }
         let w = |i: usize| self.weights.as_ref().map_or(1.,|w| w[i]);
         let (a,d) = spline(self.degree,&self.knots,self.poles.len(),&|i| lift(self.poles[i],w(i)),[t[0].min(t[1]),t[0].max(t[1])],true);
         let (at,d) = quotient(a,d);
@@ -205,6 +215,12 @@ impl Enclosed<2> for Net {
             return self.hulled([first,last],[vfirst,vlast],u[0] < self.uknots[self.du] || u[1] > self.uknots[nu],
                 v[0] < self.vknots[self.dv] || v[1] > self.vknots[nv])
         }
+        // a box within the domain of a net not rational, of a degree below `BEZIER`: its spans'
+        // Bézier patches restricted to it, by blossoms (`restricted`)
+        let inside = u[0] >= self.uknots[self.du] && u[1] <= self.uknots[nu] && v[0] >= self.vknots[self.dv] && v[1] <= self.vknots[nv];
+        if self.weights.is_none() && inside && self.du < BEZIER && self.dv < BEZIER {
+            if let Some(p) = self.restricted(u,v) { return p }
+        }
         let rows: Vec<([Iv;4],[Iv;4])> = (first..=last).map(|i| spline(self.dv,&self.vknots,nv,&|j| lift(self.poles[i][j],w(i,j)),v,true)).collect();
         let (a,au) = spline(self.du,&self.uknots,nu,&|i| rows[i-first].0,u,true);
         let (av,_) = spline(self.du,&self.uknots,nu,&|i| rows[i-first].1,u,false);
@@ -215,7 +231,160 @@ impl Enclosed<2> for Net {
     }
 }
 
+/// One more than the highest degree enclosed by restricted Bézier forms (`Net::restricted`,
+/// `BSpline::restricted`): the work arrays' size, past the quintic a ring's tubes are fitted with. A
+/// higher degree is read by de Boor in intervals.
+pub const BEZIER: usize = 8;
+
+/// **The `j`-th Bézier control point of a polynomial piece restricted to `[t0, t1]`**: the piece
+/// over knot span `k` of the spline of degree `deg` (`< BEZIER`) on `knots` whose `deg + 1` poles
+/// reaching it are `poles`, its blossom at `t0` taken `deg − j` times and `t1` `j` times, by de
+/// Boor's steps with those arguments — `[t0, t1]` any stretch within the span, a point too.
+fn blossom(knots: &[f64],poles: &[V],k: usize,deg: usize,[t0,t1]: [f64;2],j: usize) -> V {
+    let mut q = [[0.;3];BEZIER];
+    q[..=deg].copy_from_slice(&poles[..=deg]);
+    for r in 1..=deg {
+        let arg = if r <= deg-j { t0 } else { t1 };
+        for m in (r..=deg).rev() {
+            let i = k-deg+m;
+            let den = knots[i+deg+1-r]-knots[i];
+            let alpha = if den > 0. { (arg-knots[i])/den } else { 0. };
+            q[m] = std::array::from_fn(|c| (1.-alpha)*q[m-1][c]+alpha*q[m][c]);
+        }
+    }
+    q[deg]
+}
+
+/// The least box holding points, read as it is filled.
+#[derive(Clone,Copy)]
+struct Hull { lo: V,hi: V }
+
+impl Hull {
+    const EMPTY: Hull = Hull {lo:[f64::INFINITY;3],hi:[f64::NEG_INFINITY;3]};
+    fn take(&mut self,q: V) { for c in 0..3 { self.lo[c] = self.lo[c].min(q[c]); self.hi[c] = self.hi[c].max(q[c]); } }
+    /// The box grown by `w` each way, as intervals (`Iv::ANY` where it is not finite).
+    fn grown(&self,w: f64) -> I3 {
+        std::array::from_fn(|c| if self.lo[c].is_finite() && self.hi[c].is_finite() && w.is_finite() { Iv::new(self.lo[c]-w,self.hi[c]+w) } else { Iv::ANY })
+    }
+}
+
+/// **What rounding may move a restricted Bézier form's control points by**: blossoming is
+/// `deg` rounds of convex combinations, each a few units in the last place of the largest
+/// coordinate `m` it combines, and the ratios' own rounding as much again — for both ways of a net
+/// `deg` the sum of its degrees. Generous, and far below any tolerance read through it.
+fn rounding(deg: usize,m: f64) -> f64 { 64.*(deg+1) as f64*f64::EPSILON*m+f64::MIN_POSITIVE }
+
+impl BSpline {
+    /// **A non-rational curve's point and rate over `[a, b]` within its domain, by its pieces'
+    /// Bézier forms restricted to the stretch**: over each knot span the stretch reaches, the
+    /// blossoms at its ends (`blossom`) — the piece over the stretch lies in their hull — and its
+    /// rate's, a spline of a degree less on the poles' differences; each hull widened by its
+    /// rounding (`rounding`). `None` where a difference's knot gap is empty.
+    fn restricted(&self,[a,b]: [f64;2]) -> Option<Patch<1>> {
+        let (p,n) = (self.degree,self.poles.len());
+        let (k0,k1) = (span(p,&self.knots,n,a),span(p,&self.knots,n,b));
+        let (mut at,mut d) = (Hull::EMPTY,Hull::EMPTY);
+        let (mut m,mut md) = (0f64,0f64);
+        for k in k0..=k1 {
+            if !(self.knots[k] < self.knots[k+1]) { continue }
+            let t = [a.max(self.knots[k]),b.min(self.knots[k+1])];
+            if !(t[0] <= t[1]) { continue }
+            let poles = &self.poles[k-p..=k];
+            m = poles.iter().flatten().fold(m,|x,y| x.max(y.abs()));
+            for j in 0..=p { at.take(blossom(&self.knots,poles,k,p,t,j)) }
+            let mut q = [[0.;3];BEZIER];
+            for j in 0..p {
+                let i = k-p+j;
+                let gap = self.knots[i+p+1]-self.knots[i+1];
+                if !(gap > 0.) { return None }
+                q[j] = std::array::from_fn(|c| p as f64*(poles[j+1][c]-poles[j][c])/gap);
+                md = md.max(q[j].iter().fold(0f64,|x,y| x.max(y.abs()))+4.*p as f64*m/gap);
+            }
+            if p == 0 { d.take([0.;3]); continue }
+            for j in 0..p { d.take(blossom(&self.knots[1..],&q[..p],k-1,p-1,t,j)) }
+        }
+        Some(Patch {at:at.grown(rounding(p,m)),d:[d.grown(rounding(p,md))],proved:true})
+    }
+}
+
 impl Net {
+    /// **A non-rational net's point and partials over a box within its domain, by its spans'
+    /// Bézier patches restricted to it**: over each span pair the box reaches, each row of poles
+    /// carried to its Bézier points over the box's `v` (`blossom`), then each column of those over
+    /// its `u` — the patch over the box lies in their hull — and `S_u`, `S_v` alike over the
+    /// difference nets each way, splines a degree less; each hull widened by its rounding
+    /// (`rounding`). Tighter than de Boor read in intervals, which loses the blending's dependence
+    /// on the one parameter, and read in floats. `None` where a difference's knot gap is empty.
+    fn restricted(&self,u: [f64;2],v: [f64;2]) -> Option<Patch<2>> {
+        let (du,dv) = (self.du,self.dv);
+        let (nu,nv) = (self.poles.len(),self.poles[0].len());
+        let (uk,vk) = (&self.uknots,&self.vknots);
+        let (k0,k1) = (span(du,uk,nu,u[0]),span(du,uk,nu,u[1]));
+        let (l0,l1) = (span(dv,vk,nv,v[0]),span(dv,vk,nv,v[1]));
+        let (mut at,mut su,mut sv) = (Hull::EMPTY,Hull::EMPTY,Hull::EMPTY);
+        let (mut m,mut mu,mut mv) = (0f64,0f64,0f64);
+        let none = [[0.;3];BEZIER];
+        for k in k0..=k1 {
+            if !(uk[k] < uk[k+1]) { continue }
+            let a = [u[0].max(uk[k]),u[1].min(uk[k+1])];
+            if !(a[0] <= a[1]) { continue }
+            for l in l0..=l1 {
+                if !(vk[l] < vk[l+1]) { continue }
+                let b = [v[0].max(vk[l]),v[1].min(vk[l+1])];
+                if !(b[0] <= b[1]) { continue }
+                let row = |i: usize| &self.poles[k-du+i][l-dv..=l];
+                for i in 0..=du { m = row(i).iter().flatten().fold(m,|x,y| x.max(y.abs())) }
+                // the point: rows over `v`, then columns over `u`
+                let mut rows = [none;BEZIER];
+                for i in 0..=du { for j in 0..=dv { rows[i][j] = blossom(vk,row(i),l,dv,b,j) } }
+                for j in 0..=dv {
+                    let col: [V;BEZIER] = std::array::from_fn(|i| rows[i][j]);
+                    for i in 0..=du { at.take(blossom(uk,&col,k,du,a,i)) }
+                }
+                // `S_u`: the difference net along `u` (degree `du − 1` on the knots but the first),
+                // its rows over `v`, then its columns over `u`
+                if du == 0 { su.take([0.;3]) } else {
+                    let mut rows = [none;BEZIER];
+                    for i in 0..du {
+                        let gap = uk[k-du+i+du+1]-uk[k-du+i+1];
+                        if !(gap > 0.) { return None }
+                        let q: [V;BEZIER] = std::array::from_fn(|j| if j > dv { [0.;3] } else {
+                            std::array::from_fn(|c| du as f64*(row(i+1)[j][c]-row(i)[j][c])/gap)
+                        });
+                        mu = mu.max(q.iter().flatten().fold(0f64,|x,y| x.max(y.abs()))+4.*du as f64*m/gap);
+                        for j in 0..=dv { rows[i][j] = blossom(vk,&q,l,dv,b,j) }
+                    }
+                    for j in 0..=dv {
+                        let col: [V;BEZIER] = std::array::from_fn(|i| rows[i][j]);
+                        for i in 0..du { su.take(blossom(&uk[1..],&col,k-1,du-1,a,i)) }
+                    }
+                }
+                // `S_v`: the difference net along `v`, each row's differences over `v`, then the
+                // columns over `u`
+                if dv == 0 { sv.take([0.;3]) } else {
+                    let mut rows = [none;BEZIER];
+                    for i in 0..=du {
+                        let r = row(i);
+                        let mut q = none;
+                        for j in 0..dv {
+                            let gap = vk[l-dv+j+dv+1]-vk[l-dv+j+1];
+                            if !(gap > 0.) { return None }
+                            q[j] = std::array::from_fn(|c| dv as f64*(r[j+1][c]-r[j][c])/gap);
+                            mv = mv.max(q[j].iter().fold(0f64,|x,y| x.max(y.abs()))+4.*dv as f64*m/gap);
+                        }
+                        for j in 0..dv { rows[i][j] = blossom(&vk[1..],&q,l-1,dv-1,b,j) }
+                    }
+                    for j in 0..dv {
+                        let col: [V;BEZIER] = std::array::from_fn(|i| rows[i][j]);
+                        for i in 0..=du { sv.take(blossom(uk,&col,k,du,a,i)) }
+                    }
+                }
+            }
+        }
+        let deg = du+dv;
+        Some(Patch {at:at.grown(rounding(deg,m)),d:[su.grown(rounding(deg,mu)),sv.grown(rounding(deg,mv))],proved:true})
+    }
+
     /// **A net's point and partials over the poles `rows × cols` reach, by hulls** (not rational):
     /// its point in its poles' hull, `S_u` in the hull of `p (P_{i+1,j} − P_{i,j}) / (u_{i+p+1} −
     /// u_{i+1})` over those poles, `S_v` likewise — each difference read in floats and widened by

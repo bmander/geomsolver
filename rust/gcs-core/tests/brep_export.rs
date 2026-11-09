@@ -251,10 +251,11 @@ fn the_relieved_pinion_is_built_by_sectors() {
 
 /// **The pinion as its document writes it is built** (the page's `?example=spiral_bevel`): at the
 /// mill the pair finds (#283) its cut's sheet is fitted as one face, a cubic net of 240 × 66
-/// poles, which the spline edges of the sector's side are read against. Read as one search over
-/// the whole net they halved past any search's boxes, and from #814 on the pinion was refused;
-/// read over the spans they can reach (`query::general`), it is built, turned into every copy,
-/// and checked.
+/// poles, which the spline edges of the sector's side are read against, hugging it. From #814 on
+/// the search over the whole net halved past any search's boxes, enclosing the net by de Boor in
+/// intervals and halving its boxes in the unknowns' own scales, and the pinion was refused; read
+/// by its restricted Bézier patches and halved by smear (`enclose::Net::restricted`,
+/// `isolate::solve_by`), it is built, turned into every copy, and checked, in a few seconds.
 #[test]
 fn the_pinion_as_written_is_built_by_sectors() {
     let e = fixtures::gear::read_as_configured();

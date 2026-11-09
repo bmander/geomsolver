@@ -621,8 +621,18 @@ pub fn solve_by<const N: usize>(test: &dyn Test<N>,sys: &dyn System<N>,domain: [
             // enclosure proved nothing here (it left its domain), and no root is no answer
             return Err(GaveUp::Unsettled {at:grown.to_vec()})
         }
-        // halved across its widest side
-        let k = (0..N).max_by(|&i,&j| (bx[i][1]-bx[i][0]).total_cmp(&(bx[j][1]-bx[j][0]))).unwrap_or(0);
+        // halved across the side it smears farthest along: each side's width times how far that
+        // unknown carries the system there (its Jacobian's column at the middle), among the sides
+        // still wider than `width` — so a box stays about as wide in what it reads every way, where
+        // halving the widest side in the unknowns' own scales left it long along one that moves
+        // the system far (a short edge read against a whole sheet)
+        let (_,jm) = sys.at(m);
+        let smear = |i: usize| (bx[i][1]-bx[i][0])*(0..N).map(|r| jm[r][i].abs()).fold(0f64,f64::max);
+        let wide = |i: &usize| bx[*i][1]-bx[*i][0] > width;
+        let k = if (0..N).filter(wide).all(|i| smear(i).is_finite() && smear(i) > 0.) {
+            (0..N).filter(wide).max_by(|&i,&j| smear(i).total_cmp(&smear(j)))
+        } else { None };
+        let k = k.unwrap_or_else(|| (0..N).max_by(|&i,&j| (bx[i][1]-bx[i][0]).total_cmp(&(bx[j][1]-bx[j][0]))).unwrap_or(0));
         let (mut a,mut b) = (bx,bx);
         a[k][1] = m[k];
         b[k][0] = m[k];

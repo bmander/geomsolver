@@ -952,10 +952,9 @@ fn general(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Result<
     }
     // **any other curve read once over the whole of the surface's parameters**, and against a net
     // where that reads past any search's boxes, **over the spans the curve can reach**: a spline
-    // edge a few spans long against a fitted sheet of thousands (the hypoid pinion's side against
-    // its cut's sheet) read over the whole net halves past any search's boxes. The whole first: a
-    // curve along a sheet across many spans (a circle on its rim) is one run proved over the
-    // whole, which a box cutting the run proves less readily, or not at all
+    // edge a few spans long hugging a fitted sheet of thousands may read past them over the whole
+    // net. The whole first: a curve along a sheet across many spans (a circle on its rim) is one
+    // run proved over the whole, which a box cutting the run proves less readily, or not at all
     let found = over(pu,pv,[a,b]);
     match (&found,surface) {
         (Err(Uncertified::Gave(GaveUp::Most)),Surface::BSpline(_,net)) if net.weights.is_none() =>
@@ -1906,8 +1905,47 @@ pub fn curve_surface_within(curve: &Curve,t: [f64;2],surface: &Surface,tol: f64,
     within(curve,t,surface,tol,bx,grow)
 }
 
+/// **A reading kept, by what it read**: the curve and the surface by their own identity (a
+/// B-spline's or a net's by the one they share, a line's or a conic's by its numbers), the
+/// stretch and the tolerance — `None` for a pair not kept.
+type KeptKey = (Vec<u64>,Vec<u64>,[u64;3]);
+/// What a kept reading answered, once read: the reading's own result (`read`).
+type KeptRead = std::sync::Arc<std::sync::OnceLock<Result<Option<Vec<(f64,bool)>>,Refusal>>>;
+
+/// How many readings are kept at once (`kept_read`): past it the store is emptied.
+const KEPT: usize = 4096;
+
+/// **A curve's reading against a net, read once while it is kept** (`within`, what a Boolean reads
+/// an edge by): the same edge read against the same sheet by two Booleans — a sector's two cells,
+/// each a face on the sheet that parted them, each split again by another sheet — is read once, the
+/// second asking waiting for the first. Kept for a net's surface alone (the general search's three
+/// unknowns, by far the dearest); each entry holds the curve and the surface it read, so no other
+/// takes their place. A reading is a function of what it read: kept or read again, the same.
+fn kept_read(curve: &Curve,s: [f64;2],surface: &Surface,tol: f64) -> Result<Option<Vec<(f64,bool)>>,Refusal> {
+    type Store = std::collections::BTreeMap<KeptKey,(Curve,Surface,KeptRead)>;
+    static STORE: std::sync::Mutex<Store> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+    let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<u64>>();
+    let frame = |f: &super::geom::Frame| bits(&[f.o,f.x,f.y,f.z].concat());
+    let c = match curve {
+        Curve::Line {p,d} => [vec![0],bits(&[*p,*d].concat())].concat(),
+        Curve::Circle(f,r) => [vec![1],frame(f),bits(&[*r])].concat(),
+        Curve::Ellipse(f,a,b) => [vec![2],frame(f),bits(&[*a,*b])].concat(),
+        Curve::BSpline(b) => vec![3,std::sync::Arc::as_ptr(b) as usize as u64],
+        _ => return read(&Fast,curve,s,surface,tol),
+    };
+    let Surface::BSpline(f,net) = surface else { return read(&Fast,curve,s,surface,tol) };
+    let key = (c,[vec![std::sync::Arc::as_ptr(net) as usize as u64],frame(f)].concat(),[s[0].to_bits(),s[1].to_bits(),tol.to_bits()]);
+    let cell = {
+        let mut store = STORE.lock().unwrap();
+        if !store.contains_key(&key) && store.len() >= KEPT { store.clear() }
+        store.entry(key).or_insert_with(|| (curve.clone(),surface.clone(),Default::default())).2.clone()
+    };
+    cell.get_or_init(|| read(&Fast,curve,s,surface,tol)).clone()
+}
+
 /// `curve_surface_within`.
 fn within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3],[f64;3]),grow: f64) -> Meets {
+    let reading = |s: [f64;2]| kept_read(curve,s,surface,tol);
     let (lo,hi) = (bx.0.map(|x| x-grow-tol),bx.1.map(|x| x+grow+tol));
     let mut stretches: Vec<[f64;2]> = Vec::new();
     match curve {
@@ -1929,11 +1967,17 @@ fn within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64,bx: ([f64;3]
             }
         }
     }
-    if stretches.len() == 1 && stretches[0] == [t0,t1] { return meets(&Fast,curve,[t0,t1],surface,tol) }
+    // the whole stretch read as `meets` reads it
+    let whole = |r: Result<Option<Vec<(f64,bool)>>,Refusal>| match r {
+        Ok(None) => Meets::Along,
+        Ok(Some(roots)) => Meets::At(settled(curve,[t0,t1],surface,tol,roots)),
+        Err(r) => Meets::Refused(r),
+    };
+    if stretches.len() == 1 && stretches[0] == [t0,t1] { return whole(reading([t0,t1])) }
     let mut roots = Vec::new();
     for s in stretches {
-        match read(&Fast,curve,s,surface,tol) {
-            Ok(None) => return meets(&Fast,curve,[t0,t1],surface,tol),
+        match reading(s) {
+            Ok(None) => return whole(reading([t0,t1])),
             Ok(Some(r)) => roots.extend(r),
             Err(r) => return Meets::Refused(r),
         }

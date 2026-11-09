@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Certified curve–surface readings several times faster on fitted sheets** (#814's general
+  reading): a non-rational B-spline curve or net of degree below `enclose::BEZIER` is enclosed
+  over a box by its spans' Bézier forms restricted to the box (`Net::restricted`,
+  `BSpline::restricted`: blossoms in floats, each hull widened by its rounding), not de Boor in
+  intervals — far tighter, so a search reads a fraction of the boxes, and each at a fraction of
+  the cost; `isolate::solve_by` halves a box across the side it smears farthest along (its width
+  times its Jacobian column), not the widest in the unknowns' own scales; and a curve's reading
+  against a net is kept while its store holds it (`query::kept_read`), so two Booleans reading one
+  edge against one sheet read it once. geomsolver's hypoid pinion, as its document writes it,
+  splits its sector in 1.7 s where it took 19 (3.2 before the certified readings), and a bull-nose
+  screwed instant by instant builds in 10 s where it took 28.
 - **A curve a fitted net is too much for is read over the spans it can reach** (`query::general`;
   `query::Spanwise`, **new**, the reading span by span as a reader): where the one search over the
   whole net reads past any search's boxes, the curve is halved into pieces about a span across, a
