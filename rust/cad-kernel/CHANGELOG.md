@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.6.3] - 2026-11-09
+
 - **Measures resolve an edge passing close to a surface's pole** (`props::settled`): where two
   quadrature readings disagree, refine their intervals locally instead of stopping after six
   doublings of the whole edge. brep-bench's `boolean/unequal-lens-aslant` now measures its two
