@@ -504,9 +504,11 @@ fn solve_taken(sk: &mut Sketch, reads: &[Reads], taken: &BTreeSet<u32>, placed: 
         sk.params[q as usize].value = part.params[q as usize].value;
     }
     turn_over(sk, &item, placed);
-    // placed: what the statements taken leave no freedom
-    let d = crate::diagnose::diagnose(&mut part, Default::default());
-    let under: BTreeSet<u32> = d.under_params.iter().copied().collect();
+    // placed: what the statements taken leave no freedom, which is all a round reads of the
+    // diagnosis — the rest of it (a conflict searched, the constraints worth removing named) took
+    // seconds a round of a document of hundreds of planes
+    let moves = crate::diagnose::movable(&mut part, crate::diagnose::NUMERIC_MAX);
+    let under: BTreeSet<u32> = moves.into_iter().collect();
     let fixed = |ps: &[u32]| ps.iter().all(|q| !under.contains(q));
     for k in 0..sk.axes.len() {
         if !placed.axes[k] && sk.axes[k].d.iter().all(|q| item.contains(q)) {

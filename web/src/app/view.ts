@@ -1281,9 +1281,12 @@ export class SketchView {
   private rediagnose(system: System | null, settled: boolean): void {
     // the claims about solids are the worker's (`claims`): judged here they held the thread
     // for seconds an edit, and nothing else the diagnosis says reads them; and a pose no solve
-    // settled at is judged for nothing (#449)
+    // settled at is judged for nothing (#449).  A refused solid is the pool's to say, where
+    // there is one: its workers validate each object they build, and validating every solid
+    // here — a march along each motion one rolls on — held the thread for seconds an edit
+    const refusals = !this.builds.pooled;
     this.diagnosis = this.sketch.constraints.length
-      ? diagnose(this.sketch, { system, solidClaims: false, settled }) : null;
+      ? diagnose(this.sketch, { system, solidClaims: false, settled, refusals }) : null;
     this.staleDiagnosis = false;
   }
 

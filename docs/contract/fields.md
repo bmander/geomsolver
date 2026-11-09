@@ -24,7 +24,15 @@ reads, and asked of no worker.  `app/object-builds.ts` hands the jobs, swept fir
 `min(hardwareConcurrency − 1, 4)` workers (`app/build-work.ts` in `app/mesh-worker.ts`, a core each,
 keeping its document between jobs and reading again only for a structural edit or other modules),
 each stepping `brep::export::Builder` to the end; the build crosses as one buffer
-(`Display::bytes`) and is supplied (`Sketch::supply_object`, `from_exact_surface`).  Until then the
+(`Display::bytes`) and is supplied (`Sketch::supply_object`, `from_exact_surface`).  **An object a
+host builds is never validated by the sketch that awaits it** (`Sketch::awaits_supply`): the host
+validated it and says a refusal in its own words, and validating a sweep finds its roll
+(`solid::roll::interval`), a march along its motion that held the page's thread for seconds an
+object.  So `EvaluatedSolid::evaluate` takes its supply before `validate_at`, with the operands
+walked unvalidated (`solid::operands_reached`, over `evaluation_operands`), and `solid::has_sweep`
+answers false for it without validating it: it has no field here, its boundary is its build,
+whatever approximation is asked.  Gate:
+`roll_through.rs`'s `a_rolled_object_a_host_builds_is_drawn_from_its_build`.  Until then the
 object is refused, on its way — `overview::unbuilt` leaves it out — and a build refused is unbuilt in
 the export's words (`refuse_object`), never a field meshed in its place; an earlier drawing's build
 is drawn stale (`EvaluatedSolid::stale`) till the new one arrives; a swept solid that is no object

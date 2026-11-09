@@ -75,7 +75,7 @@ pub use reads::{reads,same_reads,Memo,MemoKey,ShapeKey};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
 pub use document::{applied_to,built_on,evaluation_operands,operand_paths,past_step,reaches,
-                   route_past,step_between,step_labels,step_through,uses,Use};
+                   operands_reached,route_past,step_between,step_labels,step_through,uses,Use};
 use document::{frame_origin,resolve_at};
 mod field;
 pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError,CHORD_SLACK};
@@ -482,8 +482,14 @@ pub fn refusal(sk: &Sketch, si: usize) -> Result<(), String> {
 
 /// Whether a continuous motion sweep is among the solid's operands: its boundary is then the
 /// field's, meshed once whatever approximation is asked for. False for a solid that does not
-/// validate, whose operands are not known.
+/// validate, whose operands are not known, and for an object a host builds
+/// (`Sketch::awaits_supply`, #671): it has no field here, its boundary is its build, and it is not
+/// validated by the sketch awaiting it — validating a sweep finds its roll, a march along its
+/// motion that is the host's work.
 pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
+    if sk.awaits_supply(si) {
+        return false;
+    }
     // asked before every evaluation of the solid, a remembered one too (`Sketch::evaluated_solid`'s
     // slot), and it reads every operand's route: a body rounded all over is a region for each
     // edge and corner, each reading the body's stratum.  Remembered against what the solid reads

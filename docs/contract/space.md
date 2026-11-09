@@ -61,7 +61,11 @@ An origin already on one axis is placed in fewer rows than three (`P.origin coin
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
 another. `views::place`
 settles axes and plane origins before the solve, round by round with seed settlement; they stay
-unknowns. A point held in a frame (its origin, an instance's `std.origin`) stands for the frame
+unknowns.  A round reads of its solve only what moves (`diagnose::movable`): the rest of a
+diagnosis — a conflict searched, the constraints worth removing named — took seconds a round of a
+document of hundreds of planes, read for nothing (`diagnose.rs`'s
+`reading_only_what_moves_moves_what_the_whole_diagnosis_moves`).
+A point held in a frame (its origin, an instance's `std.origin`) stands for the frame
 there, a spatial chart's as a plane's, so a statement on it places the frame (#764,
 [language.md](language.md)); one drawn in a frame and not held is read through it once it stands. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u` (`CKind::Ordinate`,
 in space across planes with no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles and

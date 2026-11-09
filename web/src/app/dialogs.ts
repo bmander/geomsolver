@@ -2,6 +2,8 @@
  * one item's whole behaviour, so the menu tables in `main` stay a list of names. */
 import * as C from '../core/constraints.js';
 import { exampleCases } from './example-catalog.js';
+import { barOf } from './build-bar.js';
+import { unbuilt } from '../core/mesh.js';
 import * as remote from './remote.js';
 import { githubPath, githubProject, parseGithub } from './github.js';
 import { loaded, loading, painted } from './loading.js';
@@ -113,10 +115,17 @@ export async function openGithubAddress(text: string,
   if (!address) { loaded(); toast('That is not a GitHub repository address'); return; }
   const request = ++openingRequest;
   try {
-    loading(`fetching ${address.owner}/${address.repo}…`);
-    const bundle = await githubProject(address, githubToken);
+    const name = `${address.owner}/${address.repo}`;
+    loading(`listing ${name}…`);
+    // each file said as it arrives, against how many the listing named
+    const arriving = (done: number, total: number): void => {
+      if (request !== openingRequest) return;
+      loading(`fetching ${name} — ${done} of ${total} files`, done / total);
+    };
+    const bundle = await githubProject(address, githubToken, arriving);
     if (request !== openingRequest) return;
-    loading(`reading ${bundle.label}…`);
+    // the file the address names, else the project: elaborated, solved and diagnosed on this thread
+    loading(`reading ${bundle.source || bundle.label}…`);
     await painted();
     if (!await held(() => openProject(bundle, { directory: bundle.directory }))) return;
     // the address names the project now, an example no longer; what was asked for is the
@@ -377,6 +386,13 @@ export async function showDiagnosis(): Promise<void> {
   // each load scenario's words and its requirements' answers, as `solventc` says them
   for (const s of view.scenarios) lines.push(...s.words, ...s.answers.map((a) => a.text), '');
   lines.push(...d.warnings);
+  // with a pool, a refused solid is its to say (`diagnose`'s `refusals`): each object not drawn,
+  // in the core's words as the banner says it, and how many are still being built
+  if (view.builds.pooled) {
+    lines.push(...unbuilt(view.sketch).map((u) => u.reason));
+    const { left } = barOf(view.builds.rows);
+    if (left) lines.push(`${left} object(s) still being built: a refusal is said once it is`);
+  }
   if (view.lastPlan) {
     lines.push('', `Decomposition: ${view.lastPlan.plan.summary}`
       + (view.lastPlan.fellBack ? ' — numeric fallback used' : ''));

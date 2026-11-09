@@ -162,6 +162,22 @@ pub fn built_on(sk: &Sketch, i: usize) -> Vec<usize> {
     on
 }
 
+/// **Every solid solid `si` is evaluated over, itself among them, validating none**: the solids
+/// `evaluation_operands` reaches from it, as `validate_at` walks them with nothing checked — what
+/// an object a host builds is drawn with (`Sketch::awaits_supply`, #671), which the host
+/// validated.  A cycle is walked once.
+pub fn operands_reached(sk: &Sketch, si: usize)
+    -> Result<std::collections::BTreeSet<usize>, String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut pending = vec![si];
+    while let Some(i) = pending.pop() {
+        if seen.insert(i) {
+            pending.extend(evaluation_operands(sk, i)?.into_iter().map(|o| o as usize));
+        }
+    }
+    Ok(seen)
+}
+
 /// Does `from` reach `goal` through its operands?  The guard on the term walk, and the one thing
 /// a document can write that has no object behind it.
 pub fn reaches(sk: &Sketch, from: u32, goal: u32) -> bool {

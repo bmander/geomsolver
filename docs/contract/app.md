@@ -591,7 +591,13 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   drawing, and disposes the outgoing document.
   **Only the reading is modal** (#672): the loading modal covers the core starting and the
   reading (elaboration, solve, diagnosis — `program.ts`'s `held`), and goes once the drawing can be
-  painted, before any object is built.  **The page's own thread builds no object** (#671): its
+  painted, before any object is built.  A GitHub address says each step it waits on: the listing,
+  each file as it arrives against how many the listing named (a fraction,
+  `githubProject`'s `arriving`), then the file it reads.  **Nothing of a solid is read on the
+  page's thread before its objects are built**: the diagnosis leaves refused solids to the pool
+  (`refusals: false`, solids.md), and an object the pool builds is not validated here (fields.md),
+  so a sweep's roll is found by the worker building it, never by the page drawing it.
+  **The page's own thread builds no object** (#671): its
   objects are built by the pool (`SketchView.builds`, `app/object-builds.ts`; fields.md, "The page
   never does") and drawn as they arrive, an object not yet built drawn as nothing and its outline
   row marked *building…* (`.outline-row.building`), one refused marked *not built* with the

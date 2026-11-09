@@ -379,6 +379,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   `.claim-refuted`, `.claim-undecided`; `Document.spanOfStatement`).  Gates:
   `a_judge_stepped_a_pose_at_a_time_comes_to_the_verdicts`,
   `a_diagnosis_asked_not_to_judge_solids_says_the_rest_unchanged`, `claim-judging.test.ts`.
+  **A refused solid is said by whoever builds it**: the diagnosis says one among its warnings
+  (`solid::validate` of each solid that is no body) unless asked not to
+  (`DiagnoseOptions::refusals`, true by default, as `solventc` says it), and nothing else it
+  says changes.  A page with a pool asks not to (`refusals: false`): validating a solid that
+  rolls finds its roll, a march along its motion, seconds an edit on the page's thread, and the
+  pool's workers validate each object they build and say its refusal in the export's words —
+  the outline's *not built*, the build bar's list, and Tools ▸ Diagnose, which lists each object
+  the pool refused and how many are still being built.  Gate:
+  `a_refused_solid_is_said_among_the_warnings_unless_the_host_says_it`.
 - **One builder serves every object, and the page draws only what it builds** (#670, #671):
   `brep::export::Builder` builds any object — a static body as `export::exact` builds it (one stage,
   then its mesh), a swept one by the generating class's stages — to a `Display`: its mesh, each face
