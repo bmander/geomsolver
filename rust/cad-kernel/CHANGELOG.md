@@ -11,6 +11,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 - **Faster Booleans and evaluation on spline patches**: face pairs whose boxes overlap are
   proved apart where subdivided, outward-rounded surface enclosures separate them, avoiding
   expensive intersection seeding on disjoint sheets; unresolved pairs use the ordinary reader.
+  The proof is `boolean::separated_nets` (**new**), made once for every two nets.
   Clamped cubic Bézier basis functions and their first two derivatives are evaluated directly.
   The full brep-bench Utah teapot run falls below one second on the development benchmark,
   preserving the mesh geometry and measurements to rounding (the existing pole-related

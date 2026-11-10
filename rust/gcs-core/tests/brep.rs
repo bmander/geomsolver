@@ -2991,4 +2991,26 @@ fn spline_columns_with_overlapping_boxes_keep_their_meetings() {
         part.check(1e-7).unwrap();
         assert!((volume(&part)-0.1).abs() < 1e-9);
     }
+    // The volumes above hold whether or not a pair is proved apart, so the proof is read itself:
+    // the separated columns' sheets are proved apart, every two of them, within its budget; no
+    // sheet is from one it coincides with, one it crosses, or one nearer than the padding.
+    use gcs_core::brep::{boolean::separated_nets,geom::Surface};
+    let nets = |b: &gcs_core::brep::topo::Brep| -> Vec<Surface> {
+        b.faces.iter().map(|f| f.surface.clone()).filter(|s| matches!(s,Surface::BSpline(..))).collect()
+    };
+    let (below,above) = (nets(&a),nets(&column(0.5,0.7)));
+    assert_eq!((below.len(),above.len()),(2,2));
+    for s in &below { for t in &above {
+        assert!(separated_nets(s,t,4e-7) && separated_nets(t,s,4e-7),"sheets 0.3 apart or more, not proved so");
+        assert!(!separated_nets(s,t,1.),"sheets proved farther apart than they are");
+    } }
+    // `a`'s top sheet is `touching`'s bottom one
+    assert!(!separated_nets(&below[1],&nets(&touching)[0],4e-7));
+    // the same parabola hung the other way up crosses `a`'s top sheet where 6x(1-x) = 0.7
+    let hung = sheet(Net {du:2,dv:1,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,1.,1.],weights:None,
+        poles:[0.,-1.5,0.].iter().enumerate().map(|(i,z)| vec![[0.5*i as f64,0.,z+0.9],[0.5*i as f64,1.,z+0.9]]).collect()}).unwrap();
+    assert!(!separated_nets(&below[1],&hung.faces[0].surface,4e-7));
+    assert!(!separated_nets(&hung.faces[0].surface,&below[1],4e-7));
+    // a surface that is not a net is never proved apart here
+    assert!(!separated_nets(&below[0],&Surface::Plane(Frame::WORLD),4e-7));
 }
