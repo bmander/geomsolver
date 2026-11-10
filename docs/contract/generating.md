@@ -1749,8 +1749,23 @@ STL to the field) and
 `prism_twists::a_cap_in_the_blank_under_a_slide_turns_round_its_vertices` (the exact cut to
 `capped_slide_removed`, the exported STL agreeing with the field).
 
+**A flat's line leaving at a vertex (#721 G1b):** a prism side kept in its own plane
+retains the side-chart corners at the endpoints of its contact line (`Flat::vertices`,
+`side_line`). These join the same `PrismVertices` classes as ribs and rims, without
+matching positions. At a vertex, an edge beside a flat can replace a read fan only
+when its corner's chord is in the tool's material; its cap rim can do so only where
+the lone prism's caps are walked. An unread parting crease still refuses. The
+junction enters the other incident fan or flat line, records `Crossed::Vertex`,
+and creases the sheet along the vertex's path. A line endpoint inside an edge
+keeps the existing `Beside` junction. `swept_vertex::a_flats_line_leaves_through_a_vertex`
+holds the walk to contact within 1e-9 of speed, outward normals and exactly the
+vertex creases, with the profile drawn either way and the turn at two paces and
+either direction. It holds the cut to its annular band's closed form within
+1e-5 relative volume, with zero STL/field disagreement. A concave corner beside
+a flat stays refused (`swept_vertex::a_flat_at_a_concave_vertex_still_ends_the_walk`).
+
 G1b remains open for concave vertices, round rims and creases, caps of tools no lone prism,
-flat lines leaving at vertices, and the generating class's corner in a cap band (T3). A plane
+flat lines ending at unread parting creases, and the generating class's corner in a cap band (T3). A plane
 no lone prism's cap whose contact reaches the blank remains T1 (G9).
 The native path refuses a characteristic that goes round a vertex by
 name (`--kernel rust`). The gate is `swept_vertex` (in the kernel, `flat_end`'s bar with its section
