@@ -328,6 +328,7 @@ fn the_flat_end_cuts_a_floor() {
 #[test]
 fn the_short_screw_carries_its_characteristic_over_the_stated_roll() {
     let e = example("short_screw.sv");
+    assert!(text("short_screw.sv").contains("(-140deg, 140deg)"),"the roll the delays are held against");
     let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
     crate::prism_twists::section_exceeds_roll(&found,280_f64.to_radians());
     // The native path still asks the temporal-contact chart; a screw is refused by name.
@@ -335,7 +336,8 @@ fn the_short_screw_carries_its_characteristic_over_the_stated_roll() {
     use gcs_core::brep::trajectory::Trajectory;
     assert!(matches!(Form::of(&Trajectory::Twist(found.screw)),Err(Uncharted::Motion)));
     let bar = crate::prism_twists::Bar {lead:3.,..crate::prism_twists::flat_end(40.,5.)};
-    let exact = exported_within(&e,"block",Some(Tolerance::new(0.01).unwrap()));
+    let (exact,said) = crate::turns_and_slides::built(&e,"block",Some(Tolerance::new(0.01).unwrap()));
+    assert!(said.contains("over the stated roll"),"{said}");
     near(gcs_core::brep::props::volume(&exact.solid),PI/3.*80.-bar.lost(),2e-5);
     crate::object_builder::builds_as_exported("short_screw.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
 }

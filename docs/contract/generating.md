@@ -1393,20 +1393,28 @@ vertex cuts the edges it lies inside (`boolean`, after the faces' meetings), a t
 graded by length and never crowds a vertex it must pass, a cone at its apex writes radius 0.
 `rust/examples/twist_drill/`, `fixtures::drill`, `tests/twist_drill.rs`.
 
-**A finite screw need not have a common section window (#721 F4):** if carrying every
-characteristic point onto one plane leaves no shared interval within the stated roll,
+**A finite screw's roll need not carry its section past the blank (#721 F4):** a point of
+the section stands for the characteristic's at its own delay, so the section's columns end
+where the roll has carried the latest of them. Where an end of the columns the roll cut short
+stands in the blank, read at the characteristic's nodes, or no column is left,
 `helical_sheet` carries the original characteristic through the actual poses instead:
-`S(s,t) = M(t)·c(s)`, rows by its length and normal turn, columns over exactly that roll.
+`S(s,t) = M(t)·c(s)`, rows by its length and normal turn, columns over exactly that roll,
+whose ends E1 holds clear of the blank.
 E1 and S1–S4, the sheet's edge-clearance check and the fit's withheld-position and normal
 bars still hold. No pose outside the roll is added. The gate is
 `prism_twists::a_screws_section_can_span_more_than_its_roll`: a bar leaning 40° screwed
-±3 mm per turn through 280°, its section's delays spanning over 315°, each cut held to
+±3 mm per turn through 280°, its section's delays spanning over 315°, and 3 mm per turn
+through 400°, where the columns left are 77° of the 240° that pass the block's heights, each
+cut said to be laid over the stated roll and held to
 an independent half-space volume within 3e-5 relative and zero STL/field disagreement at
 0.01 mm. `solid_sweeps_examples::the_short_screw_carries_its_characteristic_over_the_stated_roll`
 holds `short_screw.sv` and its stepped build; the native path's temporal-contact chart
 still refuses a screw (`Uncharted::Motion`). A genuine crossing stays refused at S4
-(`swept_vertex::a_short_screw_whose_section_crosses_still_fails_s4`). This does not settle
-F4's crossed sections, rim fits or inverted triangles at other leads.
+(`swept_vertex::a_short_screw_whose_section_crosses_still_fails_s4`). A stretch of the
+characteristic whose two nodes are one point, a closed face's seam, is that point at every `s`
+between (`Characteristic::at`), not the rings between its last station and its first:
+`turns_and_slides::a_torus_screwed_at_a_short_lead_is_carried_across_its_seam`. This does not
+settle F4's crossed sections, rim fits or inverted triangles at other leads.
 
 **Turns and slides, the constant twist's two limits (#684):** a sweep under one turn with no
 advance (`f turns(r) l`) or one slide (`f slides(a) l`) is asked the screw's rows, S1–S4

@@ -19,7 +19,8 @@ use gcs_core::solid::admission::Class;
 use std::f64::consts::{PI,TAU};
 
 use crate::solid_sweeps_examples::class;
-use crate::turns_and_slides::{exported,exported_at,near};
+use crate::turns_and_slides::{built,exported,exported_at,near};
+use gcs_core::solid::export::Tolerance;
 use gcs_core::space::cross;
 
 /// A bar turned about z across `turn.sv`'s block, a ring sector (radii 8 and 12, heights ±1, 60°
@@ -723,20 +724,26 @@ fn a_bar_with_a_hole_turned_cuts_as_the_bar() {
     near(exported_at(&e,"part",0.001),PI/3.*80.-flat_end(20.,5.).removed(),2e-5);
 }
 
-/// **A finite screw whose section takes longer to reach than its roll** (#721 F4): the
+/// **A finite screw whose roll does not carry its section past the blank** (#721 F4): the
 /// characteristic spans over 315° of delays at either lead, but the tool passes the sector
 /// wholly in 280°. Its sheet must carry the characteristic over the actual roll. Projecting
-/// every point onto one plane leaves no common window, although E1 and S1–S4 hold.
-/// Each cut is held to the bar's half-spaces within 3e-5 relative (the fitted sheets' volume
-/// bias is 1.5e-5 and 2.2e-5), and zero STL/field disagreement at 0.01 mm.
+/// every point onto one plane leaves no common window, although E1 and S1–S4 hold; and over
+/// 400°, the same one pass, the window left is 77° where the section needs 240° to pass the
+/// block's heights, so an end of its columns stands in the block. Each build says it was laid
+/// over the stated roll. Each cut is held to the bar's half-spaces within 3e-5 relative (the
+/// fitted sheets' volume bias is 1.5e-5 and 2.2e-5), and zero STL/field disagreement at 0.01 mm.
 #[test]
 fn a_screws_section_can_span_more_than_its_roll() {
-    for lead in [3.,-3.] {
+    for (lead,roll) in [(3.,140),(-3.,140),(3.,200)] {
         let bar = Bar {lead,..flat_end(40.,5.)};
-        let e = fixtures::read(&bar.text().replace("(-280deg, 280deg)","(-140deg, 140deg)"));
+        let (text,written) = (bar.text(),"(-280deg, 280deg)");
+        assert!(text.contains(written),"the roll `Bar::text` writes");
+        let e = fixtures::read(&text.replace(written,&format!("(-{roll}deg, {roll}deg)")));
         let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
-        section_exceeds_roll(&found,280_f64.to_radians());
-        near(exported(&e,"part"),PI/3.*80.-bar.screwed_removed(),3e-5);
+        if roll == 140 { section_exceeds_roll(&found,f64::from(2*roll).to_radians()); }
+        let (exact,said) = built(&e,"part",Some(Tolerance::new(0.01).unwrap()));
+        assert!(said.contains("over the stated roll"),"{said}");
+        near(gcs_core::brep::props::volume(&exact.solid),PI/3.*80.-bar.screwed_removed(),3e-5);
     }
 }
 

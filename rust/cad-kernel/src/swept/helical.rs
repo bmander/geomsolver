@@ -3,7 +3,7 @@
 //! withheld point is exact: a point of the characteristic is a root of its ring in closed form, and
 //! a pose of the screw is a formula. Nothing is traced. Rows run along the characteristic by
 //! length in space, and columns along the roll over the stretch that carries it past the blank.
-//! Where carrying every point to one section takes longer than the finite roll, rows instead
+//! Where a finite roll ends before it has carried that section past the blank, rows instead
 //! follow the characteristic itself and columns its actual poses, over exactly that roll (#721 F4).
 //! The grid is fitted, judged and refined where it misses (`sheet::settle`), as a traced sheet is.
 //! A turn's and a slide's sheets are built the same way (#684): a turn's section is a half-plane
@@ -75,34 +75,43 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
     // are read along the walk, each the one nearest the one before, as the section is one curve.
     // A whole turn's run once round from the roll's start, as its contacts were read
     // (the roll the caller reads them over): every pose of it is a pose of that one turn.
-    let (mut window,mut step) = if found.whole { ([roll[0],roll[0]+screw.period()],COLUMN_TURN/screw.ratio.abs()) } else {
+    let step_over = |span: f64| if screw.is_slide() { span.max(0.)/SLIDE_COLUMNS } else { COLUMN_TURN/screw.ratio.abs() };
+    let (mut window,mut step,carried) = if found.whole { ([roll[0],roll[0]+screw.period()],step_over(0.),roll) } else {
         let mut delay: Vec<f64> = Vec::with_capacity(found.nodes.len());
         for node in &found.nodes { delay.push(screw.time_to_station(node.position,station,delay.last().copied().unwrap_or(0.))); }
         let (least,most) = delay.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&d| (a.min(d),b.max(d)));
         let carried = [roll[0]-least,roll[1]-most];
-        let base = family.at(0.).at(Stage::Reach)?.point(found.on_section(first as f64,station).at(Stage::Reach)?.0);
+        let base = family.at(0.).at(Stage::Reach)?.point(found.nodes[first].position);
         let passing = heights.and_then(|band| screw.passing(base,band)).unwrap_or([f64::NEG_INFINITY,f64::INFINITY]);
         let window = [passing[0].max(carried[0]),passing[1].min(carried[1])];
-        let step = if screw.is_slide() { (window[1]-window[0]).max(0.)/SLIDE_COLUMNS } else { COLUMN_TURN/screw.ratio.abs() };
-        ([(window[0]-COLUMN_MARGIN*step).max(carried[0]),(window[1]+COLUMN_MARGIN*step).min(carried[1])],step)
+        let step = step_over(window[1]-window[0]);
+        ([(window[0]-COLUMN_MARGIN*step).max(carried[0]),(window[1]+COLUMN_MARGIN*step).min(carried[1])],step,carried)
     };
-    // A finite screw may carry the tool wholly past the blank without carrying every point
-    // of its section to one common height: moving the characteristic onto that section can
-    // take longer than the stated roll. In that case use the defining chart M(t)·c(s), whose
-    // columns are actual poses of the tool, rather than shorten or extend the stated sweep.
-    let sectioned = window[0] < window[1];
+    // A finite screw may carry the tool wholly past the blank without carrying its section past
+    // it: each point of the section stands for the characteristic's at its own delay, so the
+    // section's columns end where the roll has carried the latest of them, and where the delays
+    // spread over much of the roll that is short of the blank's far side, or leaves no column at
+    // all. So where an end of the columns the roll cut short stands in the blank, read at the
+    // characteristic's nodes, the sheet is laid on the defining chart M(t)·c(s) instead, whose
+    // columns are the tool's actual poses over exactly the stated roll, its ends clear of the
+    // blank by E1, rather than shorten or extend the stated sweep (#721 F4).
+    let sectioned = found.whole || window[0] < window[1] && {
+        let mut ends: Vec<V> = Vec::new();
+        for k in (0..2).filter(|&k| window[k] == carried[k] && window[k].is_finite()) {
+            let pose = family.at(window[k]).at(Stage::Reach)?;
+            for w in 0..found.nodes.len() { ends.push(pose.point(found.on_section(w as f64,station).at(Stage::Reach)?.0).map(|x| x*scale)); }
+        }
+        ends.is_empty() || !inside(&ends).at(Stage::Reach)?.contains(&true)
+    };
     if !sectioned {
-        window = roll;
-        step = if screw.is_slide() { (roll[1]-roll[0])/SLIDE_COLUMNS } else { COLUMN_TURN/screw.ratio.abs() };
-    }
-    if !(window[0] < window[1]) {
-        return Err(Refused::at(Stage::Reach,format!("`{name}`: the roll does not carry the characteristic past the blank")))
+        if !(roll[0] < roll[1]) { return Err(Refused::at(Stage::Reach,format!("`{name}`: its roll is empty"))) }
+        (window,step) = (roll,step_over(roll[1]-roll[0]));
     }
     let row_at = |s: f64| if sectioned { found.on_section(s,station) } else { found.at(s) };
     let (section,normals): (Vec<V>,Vec<V>) = (0..found.nodes.len()).map(|w| row_at(w as f64))
         .collect::<Result<Vec<_>,_>>().at(Stage::Reach)?.into_iter().unzip();
     if !sectioned {
-        (say.stage)(&format!("`{name}`: no common section window; carrying the characteristic over the stated roll"));
+        (say.stage)(&format!("`{name}`: the roll does not carry its section past the blank; carrying the characteristic over the stated roll"));
     }
     (say.stage)(&format!("`{name}`: its characteristic reaches the blank over {} of its points, carried over {:.1} degrees of the roll",
         last-first+1,(window[1]-window[0]).to_degrees()));
