@@ -8,6 +8,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Faster Booleans and evaluation on spline patches**: face pairs whose boxes overlap are
+  proved apart where subdivided, outward-rounded surface enclosures separate them, avoiding
+  expensive intersection seeding on disjoint sheets; unresolved pairs use the ordinary reader.
+  Clamped cubic Bézier basis functions and their first two derivatives are evaluated directly.
+  The full brep-bench Utah teapot run falls below one second on the development benchmark,
+  preserving the mesh geometry and measurements to rounding (the existing pole-related
+  measurement discrepancy is unchanged).
+
 - **A hypoid gear's part builds in half the time** — four costs, each measured on geomsolver's
   hypoid drive and pair:
   - `swept::tool::Material::near` (**new**, default `|value| < r`): whether a point is within `r`

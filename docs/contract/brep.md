@@ -68,6 +68,23 @@ where `τ / (1 − τ) = sin(θ/2) / sin((d − θ)/2)`) and measured on the net
 times the volume, mapped back itself, its nets its surfaces, read back from STEP, meshed closed),
 `affine::a_boolean_of_images_is_the_image_of_the_boolean`, `face_family::a_family_mapped_is_its_image`
 and the `ellipsoid::` tests are the gate.
+**Two spline sheets are searched for a meeting only if their enclosures may meet**
+(`boolean::separated_nets`): overlapping face boxes alone need not mean the surfaces meet. Bisect
+whichever parameter's derivative enclosure gives the greatest spatial reach, discarding a box
+pair only when its outward-rounded point enclosures stand apart by more than the arrangement's
+padding. An unbounded enclosure, a box no longer worth splitting, or 256 unresolved readings
+leaves the pair to the ordinary intersection algorithm; uncertainty never means separation.
+The teapot's rim and lid stand apart despite their overlapping boxes: projecting a grid onto
+each other searched for meetings they cannot have. `brep::spline_columns_with_overlapping_boxes_keep_their_meetings`
+holds separated and crossing polynomial sheets to their columns' exact volumes, and keeps the
+existing refusal of coincident spline supports rather than dropping that meeting.
+**A clamped cubic with four poles is evaluated in its Bernstein basis** (`nurbs::with_basis`),
+including the first two derivatives scaled by its knot interval; other knot vectors still use
+Cox–de Boor. Rational curves use the same basis in homogeneous coordinates as before.
+`brep::a_cubic_bezier_and_its_quartic_have_the_same_two_derivatives` checks it against degree
+elevation over translated and scaled domains, with and without weights, at the ends and outside
+the domain, and checks that an unclamped cubic keeps its own basis.
+
 A traced pair is seeded where edges cross faces; between analytic
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),

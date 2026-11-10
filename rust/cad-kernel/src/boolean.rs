@@ -1340,7 +1340,10 @@ impl<'a> Arrangement<'a> {
         let mut pairs: Vec<Two> = Vec::new();
         for (k,&sa) in sides.iter().enumerate() { for &sb in &sides[k+1..] {
             for fa in 0..self.solids[sa].faces.len() { for fb in 0..self.solids[sb].faces.len() {
-                if overlap(&self.boxes[sa][fa],&self.boxes[sb][fb],self.pad) { pairs.push(Two {s:[sa,sb],f:[fa,fb]}) }
+                if overlap(&self.boxes[sa][fa],&self.boxes[sb][fb],self.pad)
+                    && !separated_nets(&self.solids[sa].faces[fa].surface,&self.solids[sb].faces[fb].surface,self.pad) {
+                    pairs.push(Two {s:[sa,sb],f:[fa,fb]})
+                }
             } }
         } }
         // each face's surface's index, and the box the faces on each surface fill: where a meeting of
@@ -3006,4 +3009,39 @@ fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V
         if j < N && (grid[i][j] < 0.) != (grid[i][j+1] < 0.) { root(at(i,j),at(i,j+1),grid[i][j]); }
     } }
     seeds
+}
+
+/// Prove two bounded spline sheets apart before searching for their meeting. A pair of
+/// parameter boxes is discarded only when their outward-rounded enclosures stand farther
+/// apart than `pad`. Otherwise bisect the parameter with the greatest spatial reach. Work is
+/// bounded: any unresolved box leaves the pair to the ordinary intersection algorithm.
+fn separated_nets(a: &Surface,b: &Surface,pad: f64) -> bool {
+    use super::enclose::{Enclosed,Patch};
+    let (Surface::BSpline(_,a),Surface::BSpline(_,b)) = (a,b) else { return false };
+    let nets = [a,b];
+    let ranges = [a.domain(),b.domain()];
+    let mut pending = vec![(ranges,[a.enclose(ranges[0]),b.enclose(ranges[1])])];
+    for _ in 0..256 {
+        let Some((ranges,patches)) = pending.pop() else { return true };
+        if !patches.iter().all(|p| p.proved && p.bounded()) { return false }
+        let bounds = |p: Patch<2>| -> Box3 {
+            (p.at.map(|x| x.lo()),p.at.map(|x| x.hi()))
+        };
+        if !overlap(&bounds(patches[0]),&bounds(patches[1]),pad) { continue }
+        let (s,k,reach) = (0..2).flat_map(|s| (0..2).map(move |k| {
+            let reach = patches[s].d[k].iter().map(|x| x.lo().abs().max(x.hi().abs())).fold(0f64,f64::max);
+            (s,k,(ranges[s][k][1]-ranges[s][k][0])*reach)
+        })).max_by(|a,b| a.2.total_cmp(&b.2)).unwrap();
+        if reach <= pad { return false }
+        let [lo,hi] = ranges[s][k];
+        let mid = lo+(hi-lo)/2.;
+        if mid == lo || mid == hi { return false }
+        for interval in [[lo,mid],[mid,hi]] {
+            let (mut r,mut p) = (ranges,patches);
+            r[s][k] = interval;
+            p[s] = nets[s].enclose(r[s]);
+            pending.push((r,p));
+        }
+    }
+    false
 }

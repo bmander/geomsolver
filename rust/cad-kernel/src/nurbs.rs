@@ -238,6 +238,24 @@ pub(crate) fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
 /// to 25) in one of `W`.
 #[inline]
 pub(crate) fn with_basis<R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
+    // A clamped cubic with four poles is a Bezier segment. Its basis and first two
+    // derivatives are Bernstein polynomials; no recurrence table is needed. Check the
+    // clamping too: four poles alone do not imply a Bernstein basis on an unclamped vector.
+    if p == 3 && count == 4 && u[0] == u[3] && u[4] == u[7] {
+        let h = u[4]-u[3];
+        let (a,b) = ((t-u[3])/h,(u[4]-t)/h);
+        let (aa,bb) = (a*a,b*b);
+        let mut d = [[b*bb,3.*a*bb,3.*aa*b,a*aa],[0.;4],[0.;4]];
+        if n > 0 {
+            let r = 3./h;
+            d[1] = [-r*bb,r*b*(b-2.*a),r*a*(2.*b-a),r*aa];
+        }
+        if n > 1 {
+            let r = 6./h/h;
+            d[2] = [r*b,r*(a-2.*b),r*(b-2.*a),r*a];
+        }
+        return f(3,&[&d[0],&d[1],&d[2]])
+    }
     fn tabled<const M: usize,R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
         let (s,d) = basis_ders_in::<M>(p,u,count,t,n);
         f(s,&[&d[0],&d[1],&d[2]])
