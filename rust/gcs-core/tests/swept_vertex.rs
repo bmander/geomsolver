@@ -252,3 +252,15 @@ fn a_flat_at_a_concave_vertex_still_ends_the_walk() {
     assert_eq!(row,Row::Regular);
     assert!(message.contains("runs off the flat face's line") || message.contains("runs into a vertex of the prism"),"{message}");
 }
+
+/// A shorter lead really crosses its section: changing the finite sheet's chart must not
+/// bypass S4's admission gate (#721 F4).
+#[test]
+fn a_short_screw_whose_section_crosses_still_fails_s4() {
+    let bar = Bar {lead:0.5,..flat_end(40.,5.)};
+    let screw = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:bar.lead};
+    let (_,found) = walk(&brep(&bar,None),screw,[-140_f64.to_radians(),140_f64.to_radians()],&sector);
+    let (row,why) = match found { Err(r) => r,Ok(_) => panic!("a crossing section was admitted") };
+    assert_eq!(row,Row::Lead,"{why}");
+    assert!(why.contains("crosses itself"),"{why}");
+}

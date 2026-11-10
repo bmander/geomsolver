@@ -3,6 +3,8 @@
 //! withheld point is exact: a point of the characteristic is a root of its ring in closed form, and
 //! a pose of the screw is a formula. Nothing is traced. Rows run along the characteristic by
 //! length in space, and columns along the roll over the stretch that carries it past the blank.
+//! Where carrying every point to one section takes longer than the finite roll, rows instead
+//! follow the characteristic itself and columns its actual poses, over exactly that roll (#721 F4).
 //! The grid is fitted, judged and refined where it misses (`sheet::settle`), as a traced sheet is.
 //! A turn's and a slide's sheets are built the same way (#684): a turn's section is a half-plane
 //! through its axis, so its sheet is that section revolved, and a slide's lies square to it, so
@@ -67,27 +69,40 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
     // surface as M(t)·c(s).
     let [first,last] = found.reach;
     let station = screw.station(found.nodes[first].position);
-    let (section,normals): (Vec<V>,Vec<V>) = (0..found.nodes.len()).map(|w| found.on_section(w as f64,station))
-        .collect::<Result<Vec<_>,_>>().at(Stage::Reach)?.into_iter().unzip();
     // σ(s) is carried for M(t) at roll time t+τ(s): the columns run over the stretch that carries
     // the section past the blank's heights (`Screw::passing`: a turn's, the whole roll, as a turn
     // keeps every height), widened, within what the roll carries every row to. A turn's delays
     // are read along the walk, each the one nearest the one before, as the section is one curve.
     // A whole turn's run once round from the roll's start, as its contacts were read
     // (the roll the caller reads them over): every pose of it is a pose of that one turn.
-    let (window,step) = if found.whole { ([roll[0],roll[0]+screw.period()],COLUMN_TURN/screw.ratio.abs()) } else {
+    let (mut window,mut step) = if found.whole { ([roll[0],roll[0]+screw.period()],COLUMN_TURN/screw.ratio.abs()) } else {
         let mut delay: Vec<f64> = Vec::with_capacity(found.nodes.len());
         for node in &found.nodes { delay.push(screw.time_to_station(node.position,station,delay.last().copied().unwrap_or(0.))); }
         let (least,most) = delay.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&d| (a.min(d),b.max(d)));
         let carried = [roll[0]-least,roll[1]-most];
-        let base = family.at(0.).at(Stage::Reach)?.point(section[first]);
+        let base = family.at(0.).at(Stage::Reach)?.point(found.on_section(first as f64,station).at(Stage::Reach)?.0);
         let passing = heights.and_then(|band| screw.passing(base,band)).unwrap_or([f64::NEG_INFINITY,f64::INFINITY]);
         let window = [passing[0].max(carried[0]),passing[1].min(carried[1])];
         let step = if screw.is_slide() { (window[1]-window[0]).max(0.)/SLIDE_COLUMNS } else { COLUMN_TURN/screw.ratio.abs() };
         ([(window[0]-COLUMN_MARGIN*step).max(carried[0]),(window[1]+COLUMN_MARGIN*step).min(carried[1])],step)
     };
+    // A finite screw may carry the tool wholly past the blank without carrying every point
+    // of its section to one common height: moving the characteristic onto that section can
+    // take longer than the stated roll. In that case use the defining chart M(t)·c(s), whose
+    // columns are actual poses of the tool, rather than shorten or extend the stated sweep.
+    let sectioned = window[0] < window[1];
+    if !sectioned {
+        window = roll;
+        step = if screw.is_slide() { (roll[1]-roll[0])/SLIDE_COLUMNS } else { COLUMN_TURN/screw.ratio.abs() };
+    }
     if !(window[0] < window[1]) {
         return Err(Refused::at(Stage::Reach,format!("`{name}`: the roll does not carry the characteristic past the blank")))
+    }
+    let row_at = |s: f64| if sectioned { found.on_section(s,station) } else { found.at(s) };
+    let (section,normals): (Vec<V>,Vec<V>) = (0..found.nodes.len()).map(|w| row_at(w as f64))
+        .collect::<Result<Vec<_>,_>>().at(Stage::Reach)?.into_iter().unzip();
+    if !sectioned {
+        (say.stage)(&format!("`{name}`: no common section window; carrying the characteristic over the stated roll"));
     }
     (say.stage)(&format!("`{name}`: its characteristic reaches the blank over {} of its points, carried over {:.1} degrees of the roll",
         last-first+1,(window[1]-window[0]).to_degrees()));
@@ -158,13 +173,13 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
     let columns: Vec<f64> = (0..columns_n).map(|c| window[0]+(window[1]-window[0])*c as f64/(columns_n-1) as f64).collect();
     let mids = |x: &[f64]| x.windows(2).map(|w| 0.5*(w[0]+w[1])).collect::<Vec<_>>();
     let grid = Grid {row_mids:mids(&rows),rows,column_mids:mids(&columns),columns};
-    // a point of the sheet, in millimetres: the section's point carried, and its normal turned
+    // a point of the sheet, in millimetres: the chosen chart's point carried, and its normal turned
     let carried = |(p,n): (V,V),pose: &Motion| -> (V,V) { (pose.point(p).map(|x| x*scale),pose.vector(n)) };
     let lay = |grid: &Grid,withheld: Withheld| -> Result<Sheet,String> {
-        let mut rows: Vec<(V,V)> = crate::util::par::map(&grid.rows,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
+        let mut rows: Vec<(V,V)> = crate::util::par::map(&grid.rows,|&s| row_at(s)).into_iter().collect::<Result<_,_>>()?;
         // a closed characteristic's last row is its first, to the bit, so the tube closes on one edge
         if found.closed { let first = rows[0]; *rows.last_mut().expect("rows") = first; }
-        let row_mids: Vec<(V,V)> = crate::util::par::map(&grid.row_mids,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
+        let row_mids: Vec<(V,V)> = crate::util::par::map(&grid.row_mids,|&s| row_at(s)).into_iter().collect::<Result<_,_>>()?;
         // one pose a column
         let poses = |times: &[f64]| times.iter().map(|&t| family.at(t)).collect::<Result<Vec<_>,_>>();
         let (mut columns,column_mids) = (poses(&grid.columns)?,poses(&grid.column_mids)?);

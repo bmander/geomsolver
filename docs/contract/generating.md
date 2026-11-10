@@ -1393,6 +1393,21 @@ vertex cuts the edges it lies inside (`boolean`, after the faces' meetings), a t
 graded by length and never crowds a vertex it must pass, a cone at its apex writes radius 0.
 `rust/examples/twist_drill/`, `fixtures::drill`, `tests/twist_drill.rs`.
 
+**A finite screw need not have a common section window (#721 F4):** if carrying every
+characteristic point onto one plane leaves no shared interval within the stated roll,
+`helical_sheet` carries the original characteristic through the actual poses instead:
+`S(s,t) = M(t)·c(s)`, rows by its length and normal turn, columns over exactly that roll.
+E1 and S1–S4, the sheet's edge-clearance check and the fit's withheld-position and normal
+bars still hold. No pose outside the roll is added. The gate is
+`prism_twists::a_screws_section_can_span_more_than_its_roll`: a bar leaning 40° screwed
+±3 mm per turn through 280°, its section's delays spanning over 315°, each cut held to
+an independent half-space volume within 3e-5 relative and zero STL/field disagreement at
+0.01 mm. `solid_sweeps_examples::the_short_screw_carries_its_characteristic_over_the_stated_roll`
+holds `short_screw.sv` and its stepped build; the native path's temporal-contact chart
+still refuses a screw (`Uncharted::Motion`). A genuine crossing stays refused at S4
+(`swept_vertex::a_short_screw_whose_section_crosses_still_fails_s4`). This does not settle
+F4's crossed sections, rim fits or inverted triangles at other leads.
+
 **Turns and slides, the constant twist's two limits (#684):** a sweep under one turn with no
 advance (`f turns(r) l`) or one slide (`f slides(a) l`) is asked the screw's rows, S1–S4
 (`Family::twist`, which reads a slide as a screw of no ratio about the line along it through the

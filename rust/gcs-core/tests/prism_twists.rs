@@ -722,3 +722,28 @@ fn a_bar_with_a_hole_turned_cuts_as_the_bar() {
     assert_eq!(lone.cutter().prism_walks().map(|w| w.0.len()),Some(2),"its outline and its hole");
     near(exported_at(&e,"part",0.001),PI/3.*80.-flat_end(20.,5.).removed(),2e-5);
 }
+
+/// **A finite screw whose section takes longer to reach than its roll** (#721 F4): the
+/// characteristic spans over 315° of delays at either lead, but the tool passes the sector
+/// wholly in 280°. Its sheet must carry the characteristic over the actual roll. Projecting
+/// every point onto one plane leaves no common window, although E1 and S1–S4 hold.
+/// Each cut is held to the bar's half-spaces within 3e-5 relative (the fitted sheets' volume
+/// bias is 1.5e-5 and 2.2e-5), and zero STL/field disagreement at 0.01 mm.
+#[test]
+fn a_screws_section_can_span_more_than_its_roll() {
+    for lead in [3.,-3.] {
+        let bar = Bar {lead,..flat_end(40.,5.)};
+        let e = fixtures::read(&bar.text().replace("(-280deg, 280deg)","(-140deg, 140deg)"));
+        let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+        section_exceeds_roll(&found,280_f64.to_radians());
+        near(exported(&e,"part"),PI/3.*80.-bar.screwed_removed(),3e-5);
+    }
+}
+
+/// This case exercises the finite-roll chart, not the usual section carried along the screw.
+pub(crate) fn section_exceeds_roll(found: &gcs_core::solid::constant_twist::Characteristic,roll: f64) {
+    let station = found.screw.station(found.nodes[found.reach[0]].position);
+    let delays = found.nodes.iter().map(|n| found.screw.time_to_station(n.position,station,0.));
+    let (lo,hi) = delays.fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),t| (lo.min(t),hi.max(t)));
+    assert!(hi-lo > roll,"section delays {} exceed the roll {roll}",hi-lo);
+}

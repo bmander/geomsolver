@@ -322,6 +322,24 @@ fn the_flat_end_cuts_a_floor() {
     near(exported_at(&e,"block",0.001),PI/3.*80.-crate::prism_twists::flat_end(20.,5.).removed(),2e-5);
 }
 
+/// `short_screw.sv` (#721 F4): the bar passes the blank in 280°, though its section
+/// needs 323° of delays. Built over its actual poses at 0.01 mm, to an independent volume
+/// from the bar's half-spaces, with zero STL/field disagreement and the same stepped build.
+#[test]
+fn the_short_screw_carries_its_characteristic_over_the_stated_roll() {
+    let e = example("short_screw.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    crate::prism_twists::section_exceeds_roll(&found,280_f64.to_radians());
+    // The native path still asks the temporal-contact chart; a screw is refused by name.
+    use gcs_core::brep::swept::generating::{Form,Uncharted};
+    use gcs_core::brep::trajectory::Trajectory;
+    assert!(matches!(Form::of(&Trajectory::Twist(found.screw)),Err(Uncharted::Motion)));
+    let bar = crate::prism_twists::Bar {lead:3.,..crate::prism_twists::flat_end(40.,5.)};
+    let exact = exported_within(&e,"block",Some(Tolerance::new(0.01).unwrap()));
+    near(gcs_core::brep::props::volume(&exact.solid),PI/3.*80.-bar.lost(),2e-5);
+    crate::object_builder::builds_as_exported("short_screw.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
+}
+
 /// `square_end.sv` (#721 G1): `flat_end.sv`'s bar, its section turned 30° so its corner stands
 /// nearest the axis: the corner's point of contact runs out along it to the bar's far end, a vertex,
 /// and the walk goes round the vertex onto the end's rim, the sheet creased along the vertex's
