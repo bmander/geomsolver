@@ -200,8 +200,8 @@ fn closeds_candidates_trimmed_are_their_arrangements_solid() {
 /// those points' curve, given too (fitted within 1e-10): it bounds the end pose's leading face
 /// where the ring's own far side shades it. The trim zones, pairs and meets them; what stops it is
 /// the cusp, where the contact, its second meeting and the line along the slide through it are
-/// tangent to one another on the boundary, and no vertex is laid where they meet. Refused, never
-/// built wrong.
+/// tangent to one another on the boundary, and no vertex is laid where they meet (today refused there,
+/// at a face split). Held only to that: refused, or built and judged, never built wrong.
 #[test]
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, about 13 s: the folded ring trimmed to its cusps")]
 fn a_ring_past_its_fold_is_trimmed_up_to_its_cusps() {
@@ -244,11 +244,10 @@ fn a_ring_past_its_fold_is_trimmed_up_to_its_cusps() {
         }
     }
     let out = trim::trimmed(&tool,&path,[0.,TAU],&candidates,&given,0.01,1e-5,Trim {resolution:0.5,hair:1e-3});
-    match out {
-        Ok((b,_)) => panic!("the folded ring trimmed: {:.6} — its cusps laid, this is a gate to write",volume(&b)),
-        Err(Unbuilt::Wrong {at,..}) => panic!("built wrong at {at:?}"),
-        Err(why) => assert!(matches!(why,Unbuilt::Failed(ref m) if m.contains("pieces do not close")),"{why:?}"),
-    }
+    // refused, or built and judged by its definition (`trimmed` returns nothing it has not
+    // judged), never built wrong; built, its cusps are laid and this becomes a gate held to a
+    // volume made apart (#880 T1)
+    if let Err(Unbuilt::Wrong {at,held}) = out { panic!("built wrong at {at:?} (held {held})") }
 
     /// Where a slid contour's speed falls to nought: its cusps, each the least of its speed between
     /// samples, golden-sectioned.
