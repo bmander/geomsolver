@@ -684,6 +684,9 @@ struct Walk<'a> {
     /// A formal bound to an actual: one name for what another names.  Resolved transitively,
     /// after the walk.
     aliases: Vec<(String, Ref, Scope)>,
+    /// Each name a list written in place gives its copies (#882), with the scope it is read in:
+    /// one that names nothing is said at the item once every alias is known (`listed_names`).
+    listed: Vec<(Ref, Scope)>,
     /// Each key of `aliases` with its entries' indices in order, kept up to as many of them as
     /// `resolve::Lazy` last read (only ever added to, so brought up to date from there).
     alias_keys: std::cell::RefCell<(usize, BTreeMap<String, Vec<usize>>)>,
@@ -1040,6 +1043,7 @@ impl<'a> Walk<'a> {
             solid_names: BTreeSet::new(),
             said: BTreeMap::new(),
             aliases: Vec::new(),
+            listed: Vec::new(),
             alias_keys: Default::default(),
             instances: Vec::new(),
             sym,
@@ -1178,6 +1182,7 @@ impl<'a> Walk<'a> {
         self.developments();
         self.expand_pending();
         self.expand_fits();
+        self.listed_names();
         let (mut flat, mut aliases) = self.resolve();
         let lowered = self.to_judge(&aliases);
         if let Some((comp, scope)) = self.datums() {

@@ -713,7 +713,11 @@ group of numbers read by member (`h.x`, `h.y`) and handed on whole (`Hole(h)`). 
 written in place (`repeat d in [2mm, 3mm] { … }`); `as i` is the index as before, and `cycle h in
 LIST` closes. A list is a group whose members are its items by place, so it may be a group's member
 (`board := {holes: [...]}`, read as `board.holes`), imported (`use boards (uno_holes)`) and read in
-a definition's body as the file's constants are. An Uno's four mounting holes:
+a definition's body as the file's constants are. A list may instead name what is drawn —
+`repeat e in [box.near, box.far] { e round(r: 2mm) box.bc }`, or `ends := [box.near, box.far]` and
+`repeat e in ends`, makes a copy per face, `e` that copy's face — but not both: its items are all
+values or all names. An Uno's four mounting
+holes:
 
 ```
 unit mm

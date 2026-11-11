@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.208 — November 2026**
+**Specification, Draft 0.209 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -3314,13 +3314,16 @@ holes := [(-13.97mm, 0mm), (-12.7mm, top_y), (38.1mm, 5.08mm), (38.1mm, 33.02mm)
 repeat h in holes as i { ... }
 cycle h in holes as i { ... }
 repeat d in [2mm, 3mm, 5mm] { ... }
+repeat e in [box.near, box.far] { ... }
 ```
 
 A **list** is values in order, in brackets: each item a number, a vector (§6.4) or a group in braces (§8.1). It is a group whose members are its items by place — `holes.0`, `holes.1`, …, labels no source can write — so it is defined, named again, made a member of a group (`board := {holes: [...]}`), read from a module (`use board (holes)`), read by a definition's body among its file's constants and handed to a `group` formal as any group of numbers is (§8.1 [0.184]). Its items are worked out where it is defined, over the numbers in scope there, and read nothing of the drawing's unknowns.
 
 `repeat h in L`, where `L` names a list or is one written in place, makes one copy per item, in order, with `h` that copy's item: a number, read as `h`, or a group of numbers, read by member (`h.x`, `h.y`, `h.d`) and handed on whole (`Hole(h)`). The count is the list's. `as i` is optional, as before; `cycle h in L` closes, `next` and `prev` in scope. The copies are §12.1's (or §12.2's) in every other respect, §12.7 holds, and a copy is reached from outside by index (`hole[2]`). What a list says is the places a pattern is at: four mounting holes that stand on no grid are four items, never an index's arithmetic (`j * (b - a)`) that hides what the four are.
 
-An item that is not a value is **E103** at the item, and so is a list named past what the name's members are (`repeat h in dims`, a group of labelled members, is iteration over what is not a chain, a face, a solid or a list, §12.8). A labelled item and a `hint` are syntax errors. A body declaration named as the item is **E001**, and an item's name already in scope is **E002**, as an index's is. A `ring` is counted and turned (§12.3), and runs over no list. *Through 0.192 `[` began nothing a value could be, and a pattern off a grid was written as copies of its statements or as a count's arithmetic.*
+An item of a list of values that is not a value is **E103** at the item, and so is a list named past what the name's members are (`repeat h in dims`, a group of labelled members, is iteration over what is not a chain, a face, a solid or a list, §12.8). A labelled item and a `hint` are syntax errors. A body declaration named as the item is **E001**, and an item's name already in scope is **E002**, as an index's is. A `ring` is counted and turned (§12.3), and runs over no list. *Through 0.192 `[` began nothing a value could be, and a pattern off a grid was written as copies of its statements or as a count's arithmetic.*
+
+**[0.209]** A list may instead **name what is drawn** — faces, edges, points, whatever its names stand for: `repeat e in [box.near, box.far] { … }`, or the list defined (`ends := [box.near, box.far]`, a group member as any list is) and walked by its name, makes a copy per name, in order, with `e` that copy's name for it, as a walk over a solid's faces or a chain's edges names its own (§12.8). So the four rounds of a plate's ends to two of its sides are `repeat e in [box.near, box.far] { repeat f in [box.bc, box.da] { e round(r: 2mm) f } }`, not every face walked and kept by a `when`. A list's items are all values or all names: an item that is not the first's kind is **E103** at the item, saying so, and a name that names nothing is **E101** at the item. A defined list's member naming nothing is **E103** as a group member's is (§8.1); a `cycle` over a list of names closes as over any list. *Through 0.208 each name written in place was read as a number, and was E103 as one no number in scope gives; a list of names defined was walked as nothing a block runs over.*
 
 ---
 

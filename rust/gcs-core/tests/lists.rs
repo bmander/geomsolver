@@ -197,3 +197,120 @@ fn what_is_not_a_list_is_refused() {
     let (_, errs) = parse("repeat h in [1mm, a: 2mm] { p := point }\n");
     assert!(errs.iter().any(|e| e.message.contains("in order and unnamed")), "{errs:?}");
 }
+
+/// The plate the issue drew (#882): a box whose four edges between its ends and two of its sides
+/// are rounded.
+const PLATE: &str = "\
+unit mm
+use std
+use std.solids (union, cut)
+use std.rounds (round)
+
+in std.top {
+  loop := step(u: 50mm, v: 0mm) (ab := line) -> step(v: 25mm) (bc := line) ->
+          step(u: 0mm) (cd := line) -> step(v: 0mm) (da := line) -> close
+}
+box := solid(std.solids.Prism(loop, from: 0mm, to: 10mm))
+";
+
+/// A list written in place may name what is drawn (#882): each copy's name an alias to its item,
+/// as a walk over a solid's faces binds its name.  The four rounds named are the four rounds the
+/// same plate makes walking every face and keeping those, to the volume.
+#[test]
+fn a_list_of_faces_runs_a_copy_per_face() {
+    use crate::common::gestures::{build, volume};
+    let listed = build(&format!("{PLATE}\
+repeat e in [box.near, box.far] {{
+  repeat f in [box.bc, box.da] {{
+    e round(r: 2mm) f
+  }}
+}}
+"));
+    let filtered = build(&format!("{PLATE}\
+repeat e in box {{ repeat f in box {{ when (e == box.near or e == box.far) and \
+(f == box.bc or f == box.da) {{ e round(r: 2mm) f }} }} }}
+"));
+    // the box less a quarter square's corner, outside its quarter disc, along four 25mm edges
+    let want = 50.0 * 25.0 * 10.0 - 4.0 * 25.0 * (4.0 - std::f64::consts::PI);
+    let (a, b) = (volume(&listed, "box"), volume(&filtered, "box"));
+    assert!((a - want).abs() <= 1e-6 * want, "{a} against {want}");
+    assert!((a - b).abs() <= 1e-9 * want, "{a} against {b}");
+    // and so the same list defined and walked by its name
+    let defined = build(&format!("{PLATE}\
+ends := [box.near, box.far]
+sides := [box.bc, box.da]
+repeat e in ends {{ repeat f in sides {{ e round(r: 2mm) f }} }}
+"));
+    assert!((volume(&defined, "box") - a).abs() <= 1e-9 * want, "{}", volume(&defined, "box"));
+    // one face named alone is a list too
+    let one = build(&format!("{PLATE}repeat e in [box.near] {{ e round(r: 2mm) box.bc }}\n"));
+    let want = 50.0 * 25.0 * 10.0 - 25.0 * (4.0 - std::f64::consts::PI);
+    assert!((volume(&one, "box") - want).abs() <= 1e-6 * want, "{}", volume(&one, "box"));
+}
+
+/// A list of names is a list of points as readily: each copy's name is the point it names.
+#[test]
+fn a_list_of_points_runs_a_copy_per_point() {
+    let e = solved("\
+unit mm
+use std
+in std.top {
+  a := point
+  b := point
+  fix((2, 3)) a
+  fix((7, 1)) b
+  repeat p in [a, b] {
+    q := point
+    q coincident p
+  }
+}
+");
+    near(&copies(&e, "q"), &[(2.0, 3.0), (7.0, 1.0)]);
+}
+
+/// A list's items are all values or all names, and either way round the one that is not the
+/// first's kind is said where it is written.
+#[test]
+fn a_list_of_values_and_names_is_refused() {
+    let doc = |body: &str| format!("unit mm\nuse std\nin std.top {{ a := point }}\n{body}\n");
+    refused(&doc("repeat h in [a, 2mm] { p := point }"), "E103", "`2mm` is a value");
+    refused(&doc("repeat h in [2mm, a] { p := point }"), "E103", "all names of what is drawn");
+}
+
+/// A name that names nothing is said at the item, whether or not a copy reads it.
+#[test]
+fn a_list_naming_nothing_is_said_at_the_item() {
+    let doc = |body: &str| format!("unit mm\na := point\n{body}\n");
+    refused(&doc("repeat h in [nope] { p := point }"), "E101", "`nope`");
+    refused(&doc("repeat h in [a, nope] { p := point\n p coincident h }"), "E101", "`nope`");
+}
+
+/// A list of names may be defined and walked by its name, as a list of values is — a member of a
+/// group too; a `cycle` closes over it.
+#[test]
+fn a_defined_list_of_names_is_walked_by_its_name() {
+    let e = solved("\
+unit mm
+use std
+in std.top {
+  a := point
+  b := point
+  c := point
+  fix((2, 3)) a
+  fix((7, 1)) b
+  fix((4, 6)) c
+  corners := [a, b, c]
+  parts := {ends: [c, a]}
+  repeat p in corners {
+    q := point
+    q coincident p
+  }
+  cycle p in parts.ends {
+    r := point
+    r coincident p
+  }
+}
+");
+    near(&copies(&e, "q"), &[(2.0, 3.0), (7.0, 1.0), (4.0, 6.0)]);
+    near(&copies(&e, "r"), &[(4.0, 6.0), (2.0, 3.0)]);
+}

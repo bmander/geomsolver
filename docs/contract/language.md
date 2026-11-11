@@ -956,4 +956,16 @@ components.dims.zB)`.
   in place (`Block::items`) is worked out there.  Either is expanded where it stands, never set
   aside: copy `k` binds the item's numbers under the copy's name for it (`h`, `h.x`) as it binds
   its index, and an item with members is a group by that name (`#<id>.<k>.h`), handed on whole.
+  **A list written in place may name what is drawn** (#882, [0.209]): where its first item is a
+  name no value in force answers to (`lists::is_value`), every item is a name
+  (`lists::Items::Names`) and copy `k`'s name is an alias to item `k` read in the block's scope
+  (`Link::Edge`, `#<id>.<k>.e`), as a walk's is to its link — expanded where it stands, since an
+  alias resolves with every other; a name that names nothing is said at the item once every
+  alias is known (`Walk::listed_names`), whether or not a copy reads it.  A value among names, or
+  a name among values, is E103 at the item saying the items are all one or the other.  **A
+  defined list of names** (`ends := [box.near, box.far]`) is a group whose members are
+  references, so aliases (`Checks::group_fields`, E103 where one names nothing): `repeat e in
+  ends` finds no numbers under it, is set aside as a walk is, and `resolve::listed_links` runs it
+  over `ends.0`, `ends.1`, … by absolute name, closed (a `cycle` runs over it).  A list's last
+  item is a reference as the others are (`inst_arg` ends a bare one at `]`).
   `tests/lists.rs` is the gate.

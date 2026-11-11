@@ -6,6 +6,13 @@
 //! a named one is worked out in dependency order, imported from a module and read inside a body
 //! as any group of numbers is, and the numbers in force are where its items are found.  What is
 //! here is reading them off that table, and working out a list written in place.
+//!
+//! **A list written in place may name what is drawn** (#882): `repeat e in [box.near, box.far]`
+//! makes a copy per name, `e` an alias to it in that copy, as a walk over a solid's faces or a
+//! chain's edges binds its name — a face, an edge, a point, whatever the name stands for.  Its
+//! items are all values or all names: one of each is E103 at the first that is not the first's
+//! kind.  A list of names defined has no numbers here: its members are aliases, and the block
+//! over it is set aside and run over them as a walk is (`resolve::listed_links`).
 
 use super::table::{Table, Vals};
 use super::Walk;
@@ -18,18 +25,34 @@ use std::collections::BTreeMap;
 /// an item that is a number, `.x` for a vector's first component, `.at.x` for a group's vector.
 pub(super) type Item = Vec<(String, Aff)>;
 
+/// What a list's copies are each given: an item of numbers, or a name of what is drawn, which
+/// the copy's name is an alias to.
+pub(super) enum Items<'b> {
+    Values(Vec<Item>),
+    Names(Vec<&'b Ref>),
+}
+
+impl Items<'_> {
+    pub(super) fn len(&self) -> usize {
+        match self {
+            Items::Values(v) => v.len(),
+            Items::Names(n) => n.len(),
+        }
+    }
+}
+
 impl Walk<'_> {
     /// The items a block runs over, where it runs over a list, and what each copy calls its item:
     /// `None` where it runs over none — a count, or a chain, a face or a solid, which are set
     /// aside to be found once every name is known — and the first item that cannot be worked
     /// out, at the item.
     pub(super) fn list_of<'b>(&self, b: &'b Block, vals: &Vals)
-        -> Option<Result<(&'b Name, Vec<Item>), (Span, String)>> {
+        -> Option<Result<(&'b Name, Items<'b>), (Span, String)>> {
         if let Some(items) = &b.items {
             return Some(written(&items.list, vals, self.units).map(|l| (&items.var, l)));
         }
         let over = b.over.as_ref().filter(|o| o.zip.is_empty() && b.image.is_none())?;
-        named(&plain(&over.chain)?, vals).map(|l| Ok((&over.var, l)))
+        named(&plain(&over.chain)?, vals).map(|l| Ok((&over.var, Items::Values(l))))
     }
 }
 
@@ -57,13 +80,51 @@ fn named(name: &str, vals: &Vals) -> Option<Vec<Item>> {
     Some(if whole { by_place.into_values().collect() } else { Vec::new() })
 }
 
-/// The items of a list written in place, worked out over the numbers in force.
-fn written(list: &[InstArg], vals: &Vals, units: Units) -> Result<Vec<Item>, (Span, String)> {
+/// The items of a list written in place: worked out over the numbers in force, or — where the
+/// first is a name that is no value — each a name of what is drawn (#882).
+fn written<'b>(list: &'b [InstArg], vals: &Vals, units: Units)
+    -> Result<Items<'b>, (Span, String)> {
+    let named = |f: &'b InstArg| match &f.value {
+        InstVal::Ref(r) => (!is_value(r, vals, units)).then_some(r),
+        _ => None,
+    };
+    if let Some(first) = list.first().and_then(named) {
+        let mut names = vec![first];
+        for f in &list[1..] {
+            match named(f) {
+                Some(r) => names.push(r),
+                None => {
+                    let what = match &f.value {
+                        InstVal::Ref(r) => format!("`{}`", ref_text(r)),
+                        InstVal::Expr(t) => format!("`{t}`"),
+                        _ => "this item".to_string(),
+                    };
+                    return Err((f.span, format!(
+                        "{what} is a value, and `{}` before it names what is drawn: a list's items \
+                         are all values (`[2mm, 3mm]`) or all names (`[box.near, box.far]`)",
+                        ref_text(first))));
+                }
+            }
+        }
+        return Ok(Items::Names(names));
+    }
     list.iter().map(|f| {
         let mut item = Vec::new();
-        value(&f.value, "", f.span, vals, units, &mut item)?;
+        value(&f.value, "", f.span, vals, units, &mut item).map_err(|(at, m)| match &f.value {
+            // a name after a value: perhaps meant as one of a list of names
+            InstVal::Ref(_) => (at, format!("{m}; a list's items are all values (`[2mm, 3mm]`) \
+                or all names of what is drawn (`[box.near, box.far]`), and the first is a value")),
+            _ => (at, m),
+        })?;
         Ok(item)
-    }).collect()
+    }).collect::<Result<_, _>>().map(Items::Values)
+}
+
+/// Whether a name read as an item is a value: a number, or a group of numbers, in force.
+fn is_value(r: &Ref, vals: &Vals, units: Units) -> bool {
+    let t = ref_text(r);
+    vals.has(&t) || !vals.under(&format!("{t}.")).is_empty()
+        || super::values::value_aff(&t, vals, units).is_ok()
 }
 
 /// One item, or one member of it, read as `member` past the copy's name.

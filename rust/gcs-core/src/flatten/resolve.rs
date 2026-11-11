@@ -1266,6 +1266,25 @@ impl<'a> Walk<'a> {
         Some((Ok(vec![(links, false)]), abs, nothing))
     }
 
+    /// The items of a list a block runs over, where the list is defined and its items name what
+    /// is drawn (#882, `fs := [box.near, box.far]`): each a group member that is a reference,
+    /// `fs.0`, `fs.1`, … (`Checks::group_fields`), read by its absolute name.  A list closes, so
+    /// a `cycle` runs over it.  One whose member names nothing was said at the member.
+    fn listed_links(&self, p: &Pending, alias: &dyn Aliases)
+        -> Option<Result<Vec<(Vec<Link>, bool)>, (Span, String)>> {
+        let StmtKind::Block(b) = &p.st.kind else { return None };
+        let over = b.over.as_ref().filter(|o| o.zip.is_empty() && b.image.is_none())?;
+        let sc = self.pending_scope(p);
+        let (abs, rest) = self.look(alias).find(&over.chain, &sc)?;
+        let list = dotted(abs, rest);
+        let key = |k: usize| format!("{list}.{k}");
+        let member = |k: usize| self.checks.group_fields.iter().any(|(f, _)| *f == key(k));
+        let n = (0..).take_while(|&k| member(k)).count();
+        let root = Scope::absolute(sc.access.clone());
+        let links = (0..n).map(|k| Link::Edge(Ref::dotted(&key(k), over.chain.span), root.clone()));
+        (n > 0).then(|| Ok(vec![(links.collect(), true)]))
+    }
+
     /// Expand every block over a chain's edges (`repeat e in rack.profile { … }`), each where
     /// the walk met it, once its chain can be found.  A copy may itself hold such a block, or
     /// make the instance holding another's chain, so this runs until nothing more resolves; what
@@ -1286,6 +1305,7 @@ impl<'a> Walk<'a> {
                     self.walks_of(p, &alias).map(|c| (c, None, None))
                         .or_else(|| self.face_links(p, &alias)
                             .map(|(c, abs, none)| (c, Some(abs), none)))
+                        .or_else(|| self.listed_links(p, &alias).map(|c| (c, None, None)))
                         .map(|c| (i, c))
                 });
             let Some((i, (walks, over, nothing))) = found else { break };
@@ -1340,6 +1360,21 @@ impl<'a> Walk<'a> {
                     let (code, msg) = self.look(&alias).missing(r, &sc);
                     self.err(code, r.span, msg)
                 }
+            }
+        }
+    }
+
+    /// Each name a list written in place gives its copies (#882) that names nothing, said at the
+    /// item as any reference to nothing is — whether or not a copy reads it.
+    pub(super) fn listed_names(&mut self) {
+        if self.listed.is_empty() {
+            return;
+        }
+        let alias = self.alias_table();
+        for (r, sc) in std::mem::take(&mut self.listed) {
+            if self.reading(&alias, &r, &sc).is_none() {
+                let (code, msg) = self.look(&alias).missing(&r, &sc);
+                self.once(code, r.span, msg);
             }
         }
     }
