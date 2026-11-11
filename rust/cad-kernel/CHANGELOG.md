@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.7.0] - 2026-11-11
+
 - **Two rounds tangent to one face union wherever their meeting ends at the touch**
   (`ssi::trace_beside`, `boolean`): two surfaces' meeting through a point where they touch and
   its branches cross ends there, and a march that steps across such a touch lying on a face's own
@@ -18,7 +20,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   refused, the same at its bottom rim built. A closed curve with no period has the vertex both
   its ends are at both of them wherever along it that vertex was read (`boolean`'s `spans`):
   read at its far end, the stretch from the last point on the curve round to it was dropped.
-- `recipe::Named::said` (**new** field) and `Named::called()` (**new**): what a failure to build a
+- `recipe::Named::said` (**new** field, **breaking** for code building a `Named` literally) and
+  `Named::called()` (**new**): what a failure to build a
   node calls it, where the recipe's writer says (`"said"`), else its name between backticks — a
   node named by nothing its author wrote says what it is of. A body's `built_names` hold what
   `called()` gives, no longer bare names it puts backticks round.
@@ -30,7 +33,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   (brep-bench's swept/square-bar-screwed-through-rod) was refused with "a cylinder's pieces do not
   close", and now builds, its volume the closed form's to rounding, and cut from the rod gives
   the bench's settled volume and area.
-
 - **Faster Booleans and evaluation on spline patches**: face pairs whose boxes overlap are
   proved apart where subdivided, outward-rounded surface enclosures separate them, avoiding
   expensive intersection seeding on disjoint sheets; unresolved pairs use the ordinary reader.
@@ -76,6 +78,21 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   as before them; a bull-nose screwed instant by instant builds in 10 s where it took 28. Where the
   whole net still reads past any search's boxes (a circle along a quintic tube's rim), the curve is
   read over the hull of the spans it can reach (`query::reached`).
+- **Closed sweeps by new roads, asked before the arrangement**: a whole turn of any tool is the
+  solid of revolution of its shadow in a half-plane through the axis (`swept::shadow::turned`,
+  **new**, #880 Q1), built from exact curves with no surface met in space; brep-bench's
+  `swept/v-wheel-turned-once-round-rod`, which the arrangement refused, builds in a tenth of a
+  second. A prism under a motion that turns one plane in itself is swept slab by slab as the
+  region its section sweeps in that plane (`swept::planar_solid::swept`, **new**, #880 Q2;
+  `swept::subtraction::kept_normals`, `Prismatic::split`, `slabs`, `setting`, **new**). Candidates may
+  be trimmed by certified membership instead of split on one arrangement (`swept::trim`, **new**:
+  `trimmed`, `Trim`, `Report` and the candidate builders; `boolean::trimmed` and `boolean::Meet`,
+  **new**, the arrangement's phases under a filter of the face pairs met; #880 E1).
+- **A plane's cut of a screwed sheet is crossed with the ruling it holds** (#885): the cut has its
+  domain as its stretch, and its crossing with a held ruling is read in closed form
+  (`geom::SheetCut::held_along`, **new**), so an edge lying along that ruling is cut where the two meet.
+- **The constant twist walks a prism's silhouettes and cap contacts through its vertices** (#721
+  G1b), flat contact lines through convex cap vertices among them.
 
 ## [0.6.3] - 2026-11-09
 
