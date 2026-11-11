@@ -543,7 +543,7 @@ impl Walker<'_> {
                 Crossed::Fan(fan) => x.0 == fan,
                 // All incident fan roots at this vertex belong to the same normal-cone
                 // crossing, including a rim whose cap-normal root was not stepped onto.
-                Crossed::Vertex(key) => meets(&self.junctions.fans,x.0,key),
+                Crossed::Vertex(key) => self.junctions.vertices[x.0].contains(&Some(key)),
             };
             of && distance(root(*x).position,root(a).position) <= 1e-7*self.scale
         });
@@ -851,6 +851,9 @@ impl Characteristic {
         let (a,b) = (&self.nodes[j-1],&self.nodes[j]);
         if f <= 0. { return Ok((a.position,a.normal)) }
         if f >= 1. { return Ok((b.position,b.normal)) }
+        // a stretch whose ends are one point is that point: a closed face's seam, where the walk
+        // steps from its last station to its first, which no station between stands for
+        if distance(a.position,b.position) <= self.tolerance { return Ok(if f < 0.5 { (a.position,a.normal) } else { (b.position,b.normal) }) }
         let u = b.from+(b.u-b.from)*f;
         // the root nearest the chord between the two nodes: labels may change where a ring's
         // amplitude turns, positions do not jump
@@ -1390,12 +1393,12 @@ enum Junction {
     Edge { next: usize,end: f64,fan: Option<(usize,f64)> },
     /// Off a ring in contact all round onto the branch the boundary takes there (`Arms`, #684 X).
     Arm,
-    /// Round a vertex of the prism at an end of a fan's ruling, every edge of which is a fan the walk
-    /// reads (#721 G1): onto the first of these other fans with a station whose root is the walk's
-    /// point, going on the way its roots do; else the walk ends (`VERTEX`). Every normal of the cone
+    /// Round a vertex of the prism, every edge of which has a read fan or bounds a flat
+    /// (#721 G1): onto the first of these other pieces with a root at the walk's point,
+    /// going on the way its roots do; else the walk ends (`VERTEX`). Every normal of the cone
     /// between the faces meeting there is the tool's, and those square to the motion lie on one arc
     /// of it, from the fan the walk came along to the one it leaves along, all standing at the vertex.
-    Vertex { key: [usize;3],fans: Vec<usize> },
+    Vertex { key: [usize;3],pieces: Vec<usize> },
     /// At an apex of the profile on the tool's axis, a face of revolution meeting it at an angle:
     /// back along the same face from the ring's other root, which stands at the same point (#721
     /// G5). Every normal of the cone round the apex is the tool's, and the characteristic turns
@@ -1420,9 +1423,9 @@ struct Along { rounds: Vec<(usize,f64)>,off: [Junction;2],cuts: Vec<(f64,Junctio
 /// along it.
 #[derive(Clone,Debug)]
 struct Junctions { ends: Vec<[Junction;2]>,along: Vec<Along>,
-    /// The prism vertices at the first and last end of each piece that is a rib's or a rim's fan,
-    /// or its whole ruling in contact (`PrismVertices::fan`).
-    fans: Vec<Option<[[usize;3];2]>> }
+    /// The prism vertices at the first and last end of a rib's or rim's fan,
+    /// its whole ruling in contact, or a flat's line (`PrismVertices::ends`).
+    vertices: Vec<[Option<[usize;3]>;2]> }
 
 /// Why the walk ends where it runs off a rim's or a crease's fan and no root beyond takes it on.
 const OFF_FAN: &str = "runs off its fan where no root of the face beyond takes it on";
@@ -1460,23 +1463,21 @@ impl PrismVertices {
         self.keys.iter().filter_map(|(&corner,&vertex)| (vertex == key).then_some(corner)).collect()
     }
 
-    fn fan(&self,piece: &Piece,contacts: &Sweep) -> Option<[[usize;3];2]> {
-        let ruling = piece.ruling()?;
+    fn ends(&self,piece: &Piece,contacts: &Sweep) -> [Option<[usize;3]>;2] {
+        if let Piece::Flat(flat) = piece { return flat.vertices.map(|corner| corner.and_then(|c| self.keys.get(&c).copied())) }
+        let Some(ruling) = piece.ruling() else { return [None;2] };
         let ends = match ruling {
             Ruling::Rib {edge,..} => {
                 let e = &contacts.edges()[*edge];
-                if e.ends[0] != 0. && e.ends[0] != 1. { return None }
+                if e.ends[0] != 0. && e.ends[0] != 1. { return [None;2] }
                 [0,1].map(|v| [e.patches[0],e.ends[0] as usize,v])
             }
             Ruling::Rim {side,end,..} => [0,1].map(|u| [*side,u,*end]),
-            _ => return None,
+            _ => return [None;2],
         };
-        Some([*self.keys.get(&ends[0])?,*self.keys.get(&ends[1])?])
+        ends.map(|corner| self.keys.get(&corner).copied())
     }
 }
-
-/// Whether piece `f`'s fan ends at the prism vertex `key` (`Junctions::fans`).
-fn meets(fans: &[Option<[[usize;3];2]>],f: usize,key: [usize;3]) -> bool { fans[f].is_some_and(|ends| ends.contains(&key)) }
 
 impl Junctions {
     /// Read the junctions of `pieces`, the walk's, from how `contacts`' faces meet, a ring of no
@@ -1512,26 +1513,40 @@ impl Junctions {
         // profile's edges and the pairing of drafted halves. No spatial matching: two
         // separate corners can be arbitrarily close without sharing a normal cone.
         let vertices = PrismVertices::new(contacts);
-        let fans: Vec<_> = pieces.iter().map(|piece| vertices.fan(piece,contacts)).collect();
+        let endpoints: Vec<_> = pieces.iter().map(|piece| vertices.ends(piece,contacts)).collect();
+        let flat: Vec<bool> = (0..contacts.patches().len()).map(|patch|
+            pieces.iter().any(|p| matches!(p,Piece::Flat(f) if f.patch == patch))).collect();
+        // Fans omitted beside flats: read convexity once per rib, and which caps
+        // have read rims once per prism. An unread parting crease stays refused.
+        let flat_ribs: Vec<bool> = contacts.edges().iter().map(|e| e.patches.iter().any(|&p| flat[p])
+            && contacts.corner(e).is_some_and(|(_,p)| contacts.tool.material().value(crate::util::space::lerp(p[0],p[1],0.5)) < 0.)).collect();
+        let caps = [0,1].map(|v| pieces.iter().any(|p| matches!(p.ruling(),Some(Ruling::Rim {across:Across::Cap(c),..}) if *c == v)));
         let vertex = |k: usize,end: usize| -> Option<Junction> {
             let corner = match &pieces[k] { Piece::Line(Line {of:LineOf::Cap(_,corners),..}) => corners[end],_ => None };
-            let key = match corner { Some(corner) => *vertices.keys.get(&corner)?,None => fans[k]?[end] };
+            let key = match corner { Some(corner) => *vertices.keys.get(&corner)?,None => endpoints[k][end]? };
             let corners = vertices.corners(key);
-            // Every edge at this vertex must have a fan. In particular, a concave rib
-            // or an unread round rim must not be crossed as a convex normal cone.
-            let incident: Vec<usize> = (0..pieces.len()).filter(|&f| meets(&fans,f,key)).collect();
+            // Every edge at this vertex must have a fan or bound a flat whose
+            // incident fan collapses there. A concave rib or unread round rim
+            // must not be crossed as a convex normal cone.
+            let incident: Vec<usize> = (0..pieces.len()).filter(|&f| endpoints[f].contains(&Some(key))).collect();
             let complete = corners.iter().all(|&[patch,u,v]| {
-                let rib = incident.iter().any(|&f| pieces[f].edge().is_some_and(|e| {
-                    let e = &contacts.edges()[e];
+                let rib = contacts.edges().iter().enumerate().any(|(edge,e)| {
                     (0..2).any(|j| e.patches[j] == patch && e.ends[j] == u as f64)
-                }));
-                let rim = incident.iter().any(|&f| pieces[f].rim_end(patch) == Some(v));
+                        && (flat_ribs[edge] || incident.iter().any(|&f| pieces[f].edge() == Some(edge)))
+                });
+                // A flat's incident fans collapse at the endpoint of its line. Its
+                // cap rim is convex for a lone prism; a drafted parting edge must
+                // still have a read fan (it can be concave).
+                let rim = incident.iter().any(|&f| pieces[f].rim_end(patch) == Some(v))
+                    || (flat[patch] && caps[v] && !contacts.creases().iter().any(|c| c[1-v] == patch));
                 rib && rim
             });
-            // Each source fan has one ruled piece, even when its contacts are read
-            // as lines. Count that source once, not again for each whole ruling.
+            // With no flat, require three source fans, each counted once rather
+            // than again for every whole ruling. A flat supplies the collapsed
+            // fans beside it, whose convexity was checked above.
             let edges = incident.iter().filter(|&&f| matches!(pieces[f],Piece::Ruled(_))).count();
-            (complete && edges >= 3).then(|| Junction::Vertex {key,fans:incident.into_iter().filter(|&f| f != k).collect()})
+            (complete && (edges >= 3 || incident.iter().any(|&f| matches!(pieces[f],Piece::Flat(_)))))
+                .then(|| Junction::Vertex {key,pieces:incident.into_iter().filter(|&f| f != k).collect()})
         };
         let at = |k: usize,end: f64| -> Junction {
             match &pieces[k] {
@@ -1560,6 +1575,7 @@ impl Junctions {
                 // a flat face's line: off either end onto a face beside it whose characteristic meets the
                 // flat's edge there, at that face's end, or another flat's line (#684 O)
                 Piece::Flat(Flat {patch,..}) => {
+                    if let Some(junction) = vertex(k,end as usize) { return junction }
                     let beside: Vec<(usize,f64)> = contacts.edges().iter().filter_map(|e| (0..2).find(|&s| e.patches[s] == *patch)
                         .and_then(|s| face(e.patches[1-s]).map(|other| (other,e.ends[1-s])))).collect();
                     let flats = beside.iter().filter(|&&(other,_)| matches!(pieces[other],Piece::Flat(_))).map(|&(other,_)| other).collect();
@@ -1611,7 +1627,7 @@ impl Junctions {
             };
             Along {rounds,off,cuts}
         }).collect();
-        Junctions {ends,along,fans}
+        Junctions {ends,along,vertices:endpoints}
     }
 }
 
@@ -1709,7 +1725,11 @@ impl Walker<'_> {
         let across = |junction: &Junction,end: f64| -> Step { match junction {
             Junction::Onto(candidates,none) => first(candidates).unwrap_or_else(|| Step::End((*none).into())),
             Junction::Side(s) => side_at(*s).unwrap_or_else(|| Step::End(OFF_FAN.into())),
-            Junction::Vertex {key,fans} => match taken(fans.iter().map(|&f| side_at(f))) {
+            Junction::Vertex {key,pieces:incident} => match taken(incident.iter().map(|&f| {
+                if matches!(pieces[f],Piece::Flat(_)) {
+                    flat_end(f).1.map(|_| onto_flat(f))
+                } else { side_at(f) }
+            })) {
                 Some(Step::Next(next,d)) => Step::Sharp(next,d,Crossed::Vertex(*key)),
                 Some(other) => other,
                 None => Step::End(VERTEX.into()),
@@ -1968,7 +1988,10 @@ fn arm(stations: &[Vec<f64>],rings: &[Vec<Ring>],round: &Round,end: usize,dir: i
 /// there is no such line, `line` says why: a ring, its hole across it; a revolution only partway
 /// round; a face a turn's axis passes through.
 #[derive(Clone,Debug)]
-struct Flat { patch: usize,named: String,line: Result<[V;2],String>,normal: V }
+struct Flat { patch: usize,named: String,line: Result<[V;2],String>,normal: V,
+    /// Side-chart corners at the line's endpoints, retained by `side_line`.
+    /// An endpoint in the interior of an edge, or on a disc, has no vertex.
+    vertices: [Option<[usize;3]>;2] }
 
 /// Why the walk ends where a prism's characteristic runs off its side over a cap it does not walk.
 const OVER_CAP: &str = "runs over a cap of the prism, which the class walks only across a rim that is a line, of a prism \
@@ -2435,7 +2458,7 @@ fn revolved_flat(k: usize,s: &RevolvedSurface,tool: &dyn Material,motion: Motion
                 Ok([sub(centre,w),crate::util::space::add(centre,w)])
             }
         };
-    Some(Flat {patch:k,named:format!("`{}`",s.name),line,normal})
+    Some(Flat {patch:k,named:format!("`{}`",s.name),line,normal,vertices:[None;2]})
 }
 
 /// A prism's plane side, its corners `q` in order round it and its outward normal `n`, as a flat
@@ -2443,16 +2466,25 @@ fn revolved_flat(k: usize,s: &RevolvedSurface,tool: &dyn Material,motion: Motion
 /// (on one of its edges, the axis passing outside it) to its corner farthest, or from its corner
 /// least across a slide to its corner most. Every point between is on the side (it is convex),
 /// and the line's distance from the axis only grows along it.
-fn side_line(screw: &Screw,n: V,q: [V;4]) -> Result<[V;2],String> {
+fn side_line(screw: &Screw,n: V,q: [V;4]) -> Result<([V;2],[Option<usize>;2]),String> {
     let at = |p: V| across(screw,n,p);
-    let far = q.iter().copied().fold(q[0],|a,b| if at(b) > at(a) { b } else { a });
-    if !screw.is_turn() { return Ok([q.iter().copied().fold(q[0],|a,b| if at(b) < at(a) { b } else { a }),far]) }
+    let far = (0..4).fold(0,|a,b| if at(q[b]) > at(q[a]) { b } else { a });
+    if !screw.is_turn() {
+        let near = (0..4).fold(0,|a,b| if at(q[b]) < at(q[a]) { b } else { a });
+        return Ok(([q[near],q[far]],[Some(near),Some(far)]))
+    }
     // the axis's foot in the side's plane, outside the side
     let foot = crate::util::space::add(screw.origin,scale(screw.axis,screw.height(q[0])));
     let sides: Vec<f64> = (0..4).map(|k| dot(cross(sub(q[(k+1)%4],q[k]),sub(foot,q[k])),n)).collect();
     if sides.iter().all(|&x| x >= 0.) || sides.iter().all(|&x| x <= 0.) { return Err(THROUGH.into()) }
-    let nearest = (0..4).map(|k| crate::util::space::closest_on_segment(foot,q[k],q[(k+1)%4])).fold(q[0],|a,b| if distance(b,foot) < distance(a,foot) { b } else { a });
-    Ok([nearest,far])
+    let nearest = (0..4).map(|k| {
+        let next = (k+1)%4;
+        let d = sub(q[next],q[k]);
+        let t = dot(sub(foot,q[k]),d)/dot(d,d);
+        if t <= 0. { (q[k],Some(k)) } else if t >= 1. { (q[next],Some(next)) }
+        else { (add(q[k],scale(d,t)),None) }
+    }).fold((q[0],Some(0)),|a,b| if distance(b.0,foot) < distance(a.0,foot) { b } else { a });
+    Ok(([nearest.0,q[far]],[nearest.1,Some(far)]))
 }
 
 /// S1 of a flat face the motion keeps in its own plane that the walk cannot read across
@@ -2596,8 +2628,12 @@ fn prism(contacts: &Sweep,tool: &dyn Material,motion: Motion,screw: &Screw,speed
         Ruling::Side {patch,ref surface,..} if flat.contains(&patch) => {
             let Some((_,_,n)) = r.line(0.5) else { continue };
             let corners = [(0.,0.),(1.,0.),(1.,1.),(0.,1.)].map(|(x,y)| surface.at(x,y).map(|p| p.position));
-            let line = match corners { [Ok(a),Ok(b),Ok(c),Ok(d)] => side_line(screw,n,[a,b,c,d]),_ => Err("is read off its side".into()) };
-            let flat = Flat {patch,named:r.named(),line,normal:n};
+            let found = match corners { [Ok(a),Ok(b),Ok(c),Ok(d)] => side_line(screw,n,[a,b,c,d]),_ => Err("is read off its side".into()) };
+            let vertices = found.as_ref().map_or([None;2],|(_,ends)| ends.map(|end| end.map(|i| {
+                let [u,v] = [[0,0],[1,0],[1,1],[0,1]][i];
+                [patch,u,v]
+            })));
+            let flat = Flat {patch,named:r.named(),line:found.map(|(line,_)| line),normal:n,vertices};
             unread_clear(&flat,&|x,y| surface.at(x,y).ok().map(|p| p.position),enters,contacts.motion())?;
             Piece::Flat(flat)
         }

@@ -210,3 +210,57 @@ fn a_screw_along_the_extrusion_connects_its_silhouette_to_the_cap() {
     let b = brep(&bar,None);
     walked_round(&b,"axial screw",motions()[1],&sector,false);
 }
+
+/// A horizontal bar's upper side stays in its plane. Its contact line ends at
+/// profile vertices, where the boundary continues along a cap rim. The lower
+/// side is below the blank, so the reaching characteristic is an open stretch.
+#[test]
+fn a_flats_line_leaves_through_a_vertex() {
+    let bar = Bar {origin:[9.,1.,0.],across:[0.,1.,0.],along:[0.,0.,1.],
+        corners:vec![[-1.,-3.],[2.,-3.],[1.,0.5],[0.,0.5]],names:vec!["a","b","c","d"],
+        from:0.,to:2.,draft:0.,lead:0.};
+    for reverse in [false,true] { for pace in [1.,2.,-1.] {
+        let mut bar = Bar {corners:bar.corners.clone(),names:bar.names.clone(),..bar};
+        if reverse { bar.corners.reverse(); }
+        let (mut screw,roll) = motions()[0];
+        screw.ratio *= pace;
+        let roll = if pace > 0. { roll.map(|t| t/pace) } else { roll };
+        walked_round(&brep(&bar,None),&format!("flat side, reverse {reverse}, pace {pace}"),(screw,roll),&sector,true);
+    } }
+    let e = fixtures::read(&bar.text());
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert_eq!(found.vertices().len(),2);
+    assert_eq!(found.flats().len(),1);
+    // At height z, the bar runs from y = a = (z+3)/3.5 to 3-a.
+    // Its turn removes r² from 9²+a² to 11²+(3-a)², over z=-1..0.5
+    // and 60°: π/6 ∫ (49-6(z+3)/3.5) dz = 155π/14.
+    // The sloping sides keep this out of the planar subtraction class.
+    // `exported` also asks
+    // solid::agreement of the STL, with zero field disagreements.
+    near(exported(&e,"part"),80.*PI/3.-155.*PI/14.,1e-5);
+}
+
+/// The flat's omitted fans do not complete a concave vertex's normal cone.
+#[test]
+fn a_flat_at_a_concave_vertex_still_ends_the_walk() {
+    let bar = Bar {origin:[9.,1.,0.],across:[0.,1.,0.],along:[0.,0.,1.],
+        corners:vec![[0.,-3.],[2.,-3.],[2.,0.5],[1.,0.5],[1.,0.],[0.,0.]],
+        names:vec!["a","b","c","d","e","f"],from:0.,to:2.,draft:0.,lead:0.};
+    let (screw,roll) = motions()[0];
+    let (_,found) = walk(&brep(&bar,None),screw,roll,&sector);
+    let Err((row,message)) = found else { panic!("a concave vertex is still refused") };
+    assert_eq!(row,Row::Regular);
+    assert!(message.contains("runs off the flat face's line") || message.contains("runs into a vertex of the prism"),"{message}");
+}
+
+/// A shorter lead really crosses its section: changing the finite sheet's chart must not
+/// bypass S4's admission gate (#721 F4).
+#[test]
+fn a_short_screw_whose_section_crosses_still_fails_s4() {
+    let bar = Bar {lead:0.5,..flat_end(40.,5.)};
+    let screw = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:bar.lead};
+    let (_,found) = walk(&brep(&bar,None),screw,[-140_f64.to_radians(),140_f64.to_radians()],&sector);
+    let (row,why) = match found { Err(r) => r,Ok(_) => panic!("a crossing section was admitted") };
+    assert_eq!(row,Row::Lead,"{why}");
+    assert!(why.contains("crosses itself"),"{why}");
+}

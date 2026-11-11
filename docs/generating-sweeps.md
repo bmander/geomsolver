@@ -81,6 +81,28 @@ the stretch that carries the section past the blank. It is fitted, judged and re
 the traced sheet shares (`sheet::settle`). The split, cells, agreement and files are the generating
 class's. `rust/examples/twist_drill/` is the worked case (`tests/twist_drill.rs`).
 
+**Finite screws at a short lead (#721 F4).** The roll can fail to carry the section past the
+blank even when E1 and S1–S4 hold: the delays that carry all characteristic points onto one
+plane take their spread out of the finite roll, and can span more than all of it. Where an end
+of the section's columns that the roll cut short stands in the blank (read at the
+characteristic's nodes), or none is left, `helical_sheet` uses `M(t)·c(s)` directly, with rows
+along the original characteristic and columns over exactly the stated roll. It keeps the
+same sampled admission, edge-clearance, withheld-position and normal checks; no extra
+poses or relaxed tolerances are used. `short_screw.sv` advances 3 mm per turn over 280°,
+while its section's delays span 323°; over 400° the same pass leaves the section 77° of the
+240° it needs. Gates:
+`prism_twists::a_screws_section_can_span_more_than_its_roll` (both signs of the lead, and
+the longer roll),
+`solid_sweeps_examples::the_short_screw_carries_its_characteristic_over_the_stated_roll`
+(independent half-space volume, zero STL/field disagreement at 0.01 mm, stepped build),
+`turns_and_slides::a_torus_screwed_at_a_short_lead_is_carried_across_its_seam` (a tool of
+revolution, its characteristic across its face's seam) and
+`swept_vertex::a_short_screw_whose_section_crosses_still_fails_s4` (a genuine crossing
+still refused). The native path retains its temporal-contact refusal for a screw.
+This settles the roll that stops short of the section only: S4 crossings, rim fits and
+inverted triangles remain F4 work; at 2 mm per turn the same bar builds but STL export refuses
+two inverted triangles.
+
 ### Turns and slides: the constant twist's two limits (issue #684)
 
 A turn about one axis (a screw of no advance) and a slide along one line (a screw of no turn) have

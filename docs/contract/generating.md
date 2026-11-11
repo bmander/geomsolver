@@ -1393,6 +1393,29 @@ vertex cuts the edges it lies inside (`boolean`, after the faces' meetings), a t
 graded by length and never crowds a vertex it must pass, a cone at its apex writes radius 0.
 `rust/examples/twist_drill/`, `fixtures::drill`, `tests/twist_drill.rs`.
 
+**A finite screw's roll need not carry its section past the blank (#721 F4):** a point of
+the section stands for the characteristic's at its own delay, so the section's columns end
+where the roll has carried the latest of them. Where an end of the columns the roll cut short
+stands in the blank, read at the characteristic's nodes, or no column is left,
+`helical_sheet` carries the original characteristic through the actual poses instead:
+`S(s,t) = M(t)·c(s)`, rows by its length and normal turn, columns over exactly that roll,
+whose ends E1 holds clear of the blank.
+E1 and S1–S4, the sheet's edge-clearance check and the fit's withheld-position and normal
+bars still hold. No pose outside the roll is added. The gate is
+`prism_twists::a_screws_section_can_span_more_than_its_roll`: a bar leaning 40° screwed
+±3 mm per turn through 280°, its section's delays spanning over 315°, and 3 mm per turn
+through 400°, where the columns left are 77° of the 240° that pass the block's heights, each
+cut said to be laid over the stated roll and held to
+an independent half-space volume within 3e-5 relative and zero STL/field disagreement at
+0.01 mm. `solid_sweeps_examples::the_short_screw_carries_its_characteristic_over_the_stated_roll`
+holds `short_screw.sv` and its stepped build; the native path's temporal-contact chart
+still refuses a screw (`Uncharted::Motion`). A genuine crossing stays refused at S4
+(`swept_vertex::a_short_screw_whose_section_crosses_still_fails_s4`). A stretch of the
+characteristic whose two nodes are one point, a closed face's seam, is that point at every `s`
+between (`Characteristic::at`), not the rings between its last station and its first:
+`turns_and_slides::a_torus_screwed_at_a_short_lead_is_carried_across_its_seam`. This does not
+settle F4's crossed sections, rim fits or inverted triangles at other leads.
+
 **Turns and slides, the constant twist's two limits (#684):** a sweep under one turn with no
 advance (`f turns(r) l`) or one slide (`f slides(a) l`) is asked the screw's rows, S1–S4
 (`Family::twist`, which reads a slide as a screw of no ratio about the line along it through the
@@ -1749,8 +1772,23 @@ STL to the field) and
 `prism_twists::a_cap_in_the_blank_under_a_slide_turns_round_its_vertices` (the exact cut to
 `capped_slide_removed`, the exported STL agreeing with the field).
 
+**A flat's line leaving at a vertex (#721 G1b):** a prism side kept in its own plane
+retains the side-chart corners at the endpoints of its contact line (`Flat::vertices`,
+`side_line`). These join the same `PrismVertices` classes as ribs and rims, without
+matching positions. At a vertex, an edge beside a flat can replace a read fan only
+when its corner's chord is in the tool's material; its cap rim can do so only where
+the lone prism's caps are walked. An unread parting crease still refuses. The
+junction enters the other incident fan or flat line, records `Crossed::Vertex`,
+and creases the sheet along the vertex's path. A line endpoint inside an edge
+keeps the existing `Beside` junction. `swept_vertex::a_flats_line_leaves_through_a_vertex`
+holds the walk to contact within 1e-9 of speed, outward normals and exactly the
+vertex creases, with the profile drawn either way and the turn at two paces and
+either direction. It holds the cut to its annular band's closed form within
+1e-5 relative volume, with zero STL/field disagreement. A concave corner beside
+a flat stays refused (`swept_vertex::a_flat_at_a_concave_vertex_still_ends_the_walk`).
+
 G1b remains open for concave vertices, round rims and creases, caps of tools no lone prism,
-flat lines leaving at vertices, and the generating class's corner in a cap band (T3). A plane
+flat lines ending at unread parting creases, and the generating class's corner in a cap band (T3). A plane
 no lone prism's cap whose contact reaches the blank remains T1 (G9).
 The native path refuses a characteristic that goes round a vertex by
 name (`--kernel rust`). The gate is `swept_vertex` (in the kernel, `flat_end`'s bar with its section
