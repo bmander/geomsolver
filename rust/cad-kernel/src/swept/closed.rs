@@ -651,6 +651,9 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             }
         }
     }
+    // a solid of revolution carried square to its axis: its section along the path and its halves
+    // at the ends, sewn and judged (`upright`), with nothing met in space but the blank
+    if let Some(b) = super::upright::swept(tool,path,roll,bar,tol,blank)? { return Ok(b) }
     build_by(tool,path,roll,bar,tol,blank,None)
 }
 

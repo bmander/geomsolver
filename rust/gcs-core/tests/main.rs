@@ -304,6 +304,7 @@ mod sundial;
 mod surface_contact;
 mod swept_closed;
 mod swept_planar_solid;
+mod swept_upright;
 mod swept_shadow;
 mod swept_charts;
 mod swept_dispatch;

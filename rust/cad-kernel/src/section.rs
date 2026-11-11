@@ -331,6 +331,10 @@ impl Sectioned {
             root:0,tol,faces,cut:None})
     }
 
+    /// Whether every face turns whole about the one line, `origin` along `axis`: every half-plane's
+    /// section the same.
+    pub fn about_its_line(&self) -> bool { self.cut.is_none() }
+
     /// The section by the half-plane of the line towards `side` (unit, square to the line), in its
     /// `(s, z)`: along `side` from the line, and along the line from `origin`.
     pub fn section(&self,side: V) -> Result<Region,String> {

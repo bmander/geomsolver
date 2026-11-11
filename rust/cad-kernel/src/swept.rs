@@ -25,6 +25,7 @@ pub mod trim;
 pub mod contacts;
 pub mod shadow;
 pub mod planar_solid;
+pub mod upright;
 pub mod instant;
 pub mod patches;
 pub mod rings;

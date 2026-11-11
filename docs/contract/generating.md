@@ -1497,6 +1497,33 @@ refused `Folded`, and through the spline's inflection the side is in contact all
 instant (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`, once K2's
 `Curved`).
 
+**A solid of revolution carried square to its axis, swept closed (#721 K1, `brep::swept::upright`):**
+asked first by `closed::build` — before the arrangement, for `closed` and `cut_from` alike — where
+every face of the tool turns whole about one line (`section::Sectioned::of_boundary`,
+`about_its_line`) and its meridian runs up from the line at its foot to the line at its top without
+turning back, off the line between (every slice square to it a disc), and the path over the roll is a
+constant twist or a path of pieces each a slide square to that line or a turn short of a whole turn
+about a line along it. At each height the sweep is then the region within the tool's radius there of
+the axis's path, so it is built in closed form, nothing met in space: under each slide the tool's
+axial section square to it, prismed (`build::prism`), under each turn the section in the plane
+through both lines, revolved (`build::revolve`), and at the path's ends the tool's halves (its
+meridian turned half a turn); every cap on a section plane dropped and the rest sewn into one solid
+(`sew::sewn`), and a blank cut by it once (`boolean::combined`). It is declined — handed on to the
+roads after it, never refused — where a turn's line is no farther from the tool's than the tool is
+wide (`R ≥ d`, the band's inner wall gone), where the direction the line moves breaks where two
+pieces meet, and where the path comes back within the tool's width of itself, read from the axis's
+path sampled (at most `SAMPLES`, an eighth of the width apart): any two samples farther apart along
+it than half a turn of its tightest bend must stand farther apart than the width and the spacing.
+Judged by membership before it is returned (`closed::judge`). Held (`tests/swept_upright.rs`) on
+**brep-bench's bull-nose run along a line, an arc and a line**, which the arrangement refused as
+`Wrong` after about five minutes, to its closed forms at 1e-9 (volume and area; about 0.1 s), cut and
+swept closed; a ball-end mill's section, its two arcs meeting at the pole, along a slide and a half
+turn; and the four readings that hand a sweep on: a corner, a ring for a tool, a U whose return runs
+nearer than the tool is wide, and a turn about a line the tool reaches. **Left open**: a corner in
+the path (each run's sweep and the tool at the corner united, the tool touching both runs' walls
+along a line), a turn about a line the tool reaches (the band's inner wall the line itself), a whole
+turn about another line, and a path that comes back on itself (its band's laps united).
+
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:
 a turn, or a turn seen from a turn, a sinusoid in the roll; a slide seen from a turn, a rack, a
