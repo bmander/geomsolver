@@ -1348,6 +1348,17 @@ fn region_or_row(
         }
         return None;
     }
+    // a point `some` binds on a line (a segment's), its distance from it at nothing: the set it
+    // ranges over may be no solid's ([0.212])
+    if let Some(probe) = probe_of(&cx.sk, &c, &cx.probes).filter(|p| cx.probes.binders.contains_key(p)) {
+        if c.bound.is_none() && matches!(c.kind, CKind::PointLine3 | CKind::PointLineDistance) {
+            let shape = crate::model::RegionShape::Cylinder { line: c.args[1].ent().i() as u32 };
+            let t = crate::model::RegionTerm { shape, cmp: crate::vocab::Cmp::Le,
+                lo: crate::model::TermNumber::stated(0.0), hi: None, grow: None, name: term_name };
+            cx.probes.terms.get_mut(&probe).expect("a probe's terms").push(t);
+            return None;
+        }
+    }
     if let Some(probe) = probe_of(&cx.sk, &c, &cx.probes) {
         match region_term(&cx.sk, &c, probe, grow, term_name) {
             Ok(t) => cx.probes.terms.get_mut(&probe).expect("a probe's terms").push(t),

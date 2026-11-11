@@ -83,7 +83,8 @@ pub(super) fn settle_bound(sk: &Sketch, probes: &mut Probes, diags: &mut Vec<Dia
         let kinds: Vec<&Constraint> = b.stated.iter().map(|(c, _, _)| c).collect();
         // the segment between two points: on the line through them, between them
         let on_line = kinds.iter().find_map(|c| matches!(c.kind, CKind::PointLine3 | CKind::PointLineDistance)
-            .then(|| c.args[1].ent()).filter(|l| l.kind == EntKind::Line && at_nothing(c, crate::vocab::Cmp::Le)));
+            .then(|| c.args[1].ent()).filter(|l| l.kind == EntKind::Line
+                && (c.bound.is_none() || at_nothing(c, crate::vocab::Cmp::Le))));
         let segment = on_line.and_then(|l| {
             let (a, z) = (sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize);
             let along = |from: usize, cmp| kinds.iter().any(|c| c.kind == CKind::Ordinate

@@ -2082,7 +2082,10 @@ impl<'a> P<'a> {
             }
             // the binder: a point of the body's own, held where the solid reads it
             let mut point = crate::syntax::Decl::point(DeclName::Written(var.clone()), [0.0; 2], None);
-            point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
+            // each binder seeded apart from the next, so a line between two has a length: where
+            // it stands is never read, its terms read at the points they range over
+            let k = 1.0 + binders.len() as f64;
+            point.seed = vec![0.7548776662 * k, 0.5698402910 * k * k, 0.4301597090 * k * k * k];
             point.seed_text = vec![None; 3];
             point.annotations.private = true;
             point.annotations.roles.construction = true;

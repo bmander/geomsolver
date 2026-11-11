@@ -411,10 +411,11 @@ impl<'a> Walk<'a> {
             let out = std::mem::take(&mut self.out);
             let mut next = Vec::with_capacity(out.len());
             let mut any = false;
+            // some points of sets ([0.212]): each binder a point the set's is read with
+            let refused = self.register_binders(&out, &alias);
             let mut rest = out.into_iter();
             while let Some((st, path, sc)) = rest.next() {
-                // some points of sets ([0.212]): each binder a point the set's is read with
-                let Some(st) = self.bound_points(st, &sc, &alias) else {
+                let Some((st, sc)) = self.binding(st, sc, &alias, &refused) else {
                     any = true;
                     continue;
                 };
@@ -580,49 +581,80 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// **Some points of sets** ([0.212]): a relation the parser gave binders (`OpArg::Some`), each
-    /// a point the body declared beside it with its membership of its set — registered as a probe
-    /// (a point a region solid's terms are read at, never a row), with the statement binding it
-    /// under the use that applied it (`Expansion::binders`), and the relation then read as the
-    /// membership it is.  The set's own point must be one a solid reads: a drawn point's `some`
-    /// is refused (`None`), since no row says which point of the set it would be.
-    fn bound_points(&mut self, mut st: Stmt, sc: &Scope, alias: &BTreeMap<String, String>) -> Option<Stmt> {
-        let StmtKind::Relation(r) = &mut st.kind else { return Some(st) };
-        let Some(w) = r.form.written_mut() else { return Some(st) };
-        let binders: Vec<Name> = w.args.iter().filter_map(|a| match a {
-            crate::syntax::OpArg::Some { var, .. } => Some(var.clone()),
-            _ => None,
-        }).collect();
-        if binders.is_empty() {
-            return Some(st);
-        }
-        w.args.retain(|a| !matches!(a, crate::syntax::OpArg::Some { .. }));
-        let at = w.word.span;
-        let read = w.ops.first().and_then(|p| self.look(alias).raw(p, sc))
-            .is_some_and(|(p, rest)| rest.is_empty() && self.sets.probes.contains(&p));
-        if !read {
-            let m = "some points of sets are read where a solid reads its set's point: in the body of \
-                     a set a solid is made of, `solid({ p | some q in A: p in Segment(c, q) })`";
-            self.once(Code::E040, at, m);
-            return None;
-        }
-        // the points one quantifier binds, under the use that applied it
-        let group = format!("{}#{}", sc.prefix(), sc.pred.written.unwrap_or(st.id).0);
-        for var in binders {
-            let r = Ref { root: var.clone(), path: Vec::new(), span: var.span };
-            match self.look(alias).raw(&r, sc) {
-                Some((abs, rest)) if rest.is_empty() => {
-                    self.sets.probes.push(abs.clone());
-                    self.sets.binders.push((abs, group.clone()));
-                }
-                _ => {
-                    let m = format!("`{}`, a point `some` binds, names nothing here", var.text);
-                    self.once(Code::E101, var.span, m);
-                    return None;
+    /// **Some points of sets** ([0.212]): each relation the parser gave binders (`OpArg::Some`)
+    /// in this round's statements, its binders registered — each a point the body declared beside
+    /// the relation with its membership of its set, made a probe (a point a region solid's terms
+    /// are read at, never a row), with the statement binding it under the use that applied it
+    /// (`Expansion::binders`) — before any statement is read, since a binder's membership stands
+    /// before the relation binding it.  The set's own point must be one a solid reads: a drawn
+    /// point's `some` is refused, since no row says which point of the set it would be; the
+    /// relation refused is returned, to be dropped where it stands.
+    fn register_binders(&mut self, out: &[(Stmt, Vec<PathStep>, Scope)], alias: &BTreeMap<String, String>)
+        -> BTreeSet<(u32, String)> {
+        let mut refused = BTreeSet::new();
+        for (st, _, sc) in out {
+            let StmtKind::Relation(r) = &st.kind else { continue };
+            let Some(w) = r.form.written() else { continue };
+            let binders: Vec<&Name> = w.args.iter().filter_map(|a| match a {
+                crate::syntax::OpArg::Some { var, .. } => Some(var),
+                _ => None,
+            }).collect();
+            if binders.is_empty() {
+                continue;
+            }
+            let read = w.ops.first().and_then(|p| self.look(alias).raw(p, sc))
+                .is_some_and(|(p, rest)| rest.is_empty() && self.sets.probes.contains(&p));
+            if !read {
+                let m = "some points of sets are read where a solid reads its set's point: in the \
+                         body of a set a solid is made of, `solid({ p | some q in A: p in Segment(c, q) })`";
+                self.once(Code::E040, w.word.span, m);
+                refused.insert((st.id.0, sc.prefix().to_string()));
+                continue;
+            }
+            // the points one quantifier binds, under the use that applied it
+            let group = format!("{}#{}", sc.prefix(), sc.pred.written.unwrap_or(st.id).0);
+            for var in binders {
+                let r = Ref { root: var.clone(), path: Vec::new(), span: var.span };
+                match self.look(alias).raw(&r, sc) {
+                    Some((abs, rest)) if rest.is_empty() => {
+                        if !self.sets.binders.iter().any(|(b, _)| *b == abs) {
+                            self.sets.probes.push(abs.clone());
+                            self.sets.binders.push((abs, group.clone()));
+                        }
+                    }
+                    _ => {
+                        let m = format!("`{}`, a point `some` binds, names nothing here", var.text);
+                        self.once(Code::E101, var.span, m);
+                        refused.insert((st.id.0, sc.prefix().to_string()));
+                    }
                 }
             }
         }
-        Some(st)
+        refused
+    }
+
+    /// A statement read as some points of sets bind it ([0.212]): a relation that binds them, its
+    /// binders put aside (`register_binders` read them), and a binder's membership of its set, each
+    /// applied held — its point's equalities stated as bounds at their numbers, as a set measured
+    /// from is (#192), since each is read at a point no row places.  `None` for one refused.
+    fn binding(&self, mut st: Stmt, mut sc: Scope, alias: &BTreeMap<String, String>,
+               refused: &BTreeSet<(u32, String)>) -> Option<(Stmt, Scope)> {
+        let StmtKind::Relation(r) = &mut st.kind else { return Some((st, sc)) };
+        let Some(w) = r.form.written_mut() else { return Some((st, sc)) };
+        if w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Some { .. })) {
+            if refused.contains(&(st.id.0, sc.prefix().to_string())) {
+                return None;
+            }
+            w.args.retain(|a| !matches!(a, crate::syntax::OpArg::Some { .. }));
+            sc.pred.held = true;
+            return Some((st, sc));
+        }
+        let bound = w.ops.first().and_then(|p| self.look(alias).raw(p, &sc))
+            .is_some_and(|(p, rest)| rest.is_empty() && self.sets.binders.iter().any(|(b, _)| *b == p));
+        if bound {
+            sc.pred.held = true;
+        }
+        Some((st, sc))
     }
 
     /// **Outside a set** (#737 P3): `p outside S` where `S`'s body is several statements, an
