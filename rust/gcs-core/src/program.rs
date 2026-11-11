@@ -38,6 +38,7 @@ mod words;
 mod traced;
 
 pub use diagnostics::{Code, Diag, Severity};
+pub use refused::refusal_site;
 pub use drift::{drift, DRIFT};
 pub use scenarios::{Line, Stated};
 pub use measures::MeasureStated;
@@ -47,21 +48,6 @@ pub use measures::MeasureStated;
 /// nothing is wrong with: what the solids say of that pose is said after the solve's own report
 /// and its diagnosis, as notes under this line, and is never the document's error or its exit.
 pub const NOT_BUILT: &str = "not built: the drawing did not solve";
-
-/// **Where a refusal is said** (#881): the document's statement that made the solid a message
-/// names — the first name in backticks that is a solid's — placed as `solid_diagnostics` places
-/// it (`refused::Placing`: what a word of a module made, at the document's statement that used
-/// it), so a round's piece refused deep in an export (`` `b.#31.0.#…filled`: its exact
-/// construction disagrees with the field ``) is said at its round.  `None` where the message
-/// names no solid, or none the document holds.
-pub fn refusal_site(sk: &crate::model::Sketch, map: &SourceMap, p: &Program, message: &str)
-    -> Option<(crate::syntax::Span, Option<crate::syntax::StmtId>)> {
-    let solid = message.split('`').skip(1).step_by(2)
-        .find_map(|name| sk.solids.iter().position(|s| s.name == name))?;
-    let site = map.site_of(EntRef::solid(solid))?;
-    let (span, stmt) = refused::Placing::new(p).site(Some(site));
-    (p.source_at(span.lo as usize).0.is_none()).then_some((span, stmt))
-}
 
 /// Geometry diagnostics belong after solving: a poor hint is not an invalid final profile.
 ///

@@ -1296,15 +1296,16 @@ fn severity(s: Severity) -> &'static str {
 /// round's piece at its round, #881: `file:line:col`, as every diagnostic), else at the solid's
 /// own statement.
 fn refused(s: &Source,sk: &Sketch,e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core::solid::export::ExportRefusal) {
-    let named = gcs_core::program::refusal_site(sk,&e.map,&e.program,&refusal.message);
-    match named {
-        Some((span,_)) => say(s,span.lo,"error",gcs_core::program::Code::E080.as_str(),&refusal.message),
-        None => eprintln!("solventc: {refusal}"),
-    }
     cad::progress::refused(refusal.stage);
-    let site = named.or_else(|| e.map.site_of(gcs_core::model::EntRef::solid(solid)).map(|s| (s.span,Some(s.stmt))));
-    e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
-        site.map(|s| s.0).unwrap_or_default(),site.and_then(|s| s.1),refusal.message));
+    let named = gcs_core::program::refusal_site(sk,&e.map,&e.program,&refusal.message);
+    let (span,stmt) = named.or_else(|| e.map.site_of(gcs_core::model::EntRef::solid(solid))
+        .map(|s| (s.span,Some(s.stmt)))).unwrap_or_default();
+    let d = gcs_core::program::Diag::new(gcs_core::program::Code::E080,span,stmt,refusal.message);
+    match named {
+        Some(_) => say(s,d.span.lo,severity(d.severity()),d.code.as_str(),&d.message),
+        None => eprintln!("solventc: {}",d.message),
+    }
+    e.diags.push(d);
 }
 
 /// A length as `--tolerance` and `--section` take it: a number, nought or more, and the

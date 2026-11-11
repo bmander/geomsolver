@@ -281,7 +281,7 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
                 return Err("where an edge ends is read of a set".to_string());
             };
             let runs = Arc::new(EndRuns::of(&SetDistance::of(sk, inner, read)?)?);
-            let most = runs.sides.iter().map(Vec::len).max().unwrap_or(0);
+            let most = runs.runs.iter().map(|(_, sides)| sides.len()).max().unwrap_or(0);
             Ok(Some((0..most).map(|k| {
                 let runs = runs.clone();
                 Cond { f: Arc::new(move |x| match runs.nearest(x).get(k) {
@@ -575,7 +575,8 @@ impl Rest {
 pub fn ends(set: &SetDistance) -> Result<impl Fn(V) -> f64 + Send + Sync, String> {
     let runs = EndRuns::of(set)?;
     Ok(move |p: V| {
-        runs.nearest(p).iter().map(|&(c, sign)| sign * runs.body.side(c, p)).fold(f64::NEG_INFINITY, f64::max)
+        runs.nearest(p).iter().map(|&(c, sign)| sign * runs.body.side(c, p))
+            .fold(f64::NEG_INFINITY, f64::max)
     })
 }
 
@@ -589,10 +590,8 @@ pub fn ends(set: &SetDistance) -> Result<impl Fn(V) -> f64 + Send + Sync, String
 /// alike (on the posts' sides, kept outside every post), the same as within all their ends.
 struct EndRuns {
     body: Arc<BodyFaces>,
-    edges: Vec<u32>,
-    /// Each of `edges`' run, by its index in `sides`.
-    run_of: Vec<usize>,
-    sides: Vec<Vec<(usize, f64)>>,
+    /// Each run's edges and the faces it ends on (`BodyFaces::end_runs`).
+    runs: Vec<(Vec<u32>, Vec<(usize, f64)>)>,
 }
 
 impl EndRuns {
@@ -600,21 +599,18 @@ impl EndRuns {
         let SetDistance::Edges { body, edges, faces } = set else {
             return Err("where a set ends is read of an edge: a set on two faces".to_string());
         };
-        let runs = body.runs(edges);
-        let run_of = edges.iter().map(|e| runs.iter().position(|r| r.contains(e)).expect("every edge in a run")).collect();
-        let sides = runs.iter().map(|run| body.end_sides(run, faces)).collect();
-        Ok(EndRuns { body: body.clone(), edges: edges.clone(), run_of, sides })
+        Ok(EndRuns { body: body.clone(), runs: body.end_runs(edges, faces) })
     }
 
     /// The faces the run nearest `p` ends on, and the side it runs on of each (none where the set
-    /// has no edge).
+    /// has no edge; the first of runs equally near).
     fn nearest(&self, p: V) -> &[(usize, f64)] {
-        match &self.sides[..] {
+        match &self.runs[..] {
             [] => &[],
-            [one] => one,
-            _ => self.body.nearest_edge(&self.edges, p)
-                .and_then(|(e, ..)| self.edges.iter().position(|&f| f == e))
-                .map_or(&[], |k| &self.sides[self.run_of[k]]),
+            [(_, one)] => one,
+            runs => runs.iter()
+                .filter_map(|(es, sides)| Some((self.body.nearest_edge(es, p)?.2, sides)))
+                .min_by(|a, b| a.0.total_cmp(&b.0)).map_or(&[], |(_, sides)| sides),
         }
     }
 }
