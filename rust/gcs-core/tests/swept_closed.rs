@@ -2194,36 +2194,23 @@ fn a_ball_with_a_flat_screwed_is_refused_by_name() {
     }
 }
 
-/// The step a radian of #886's screw: the square bar rises 6 a turn.
-const BAR_STEP: f64 = 6./std::f64::consts::TAU;
+/// The rise a turn of #886's screw.
+const BAR_LEAD: f64 = 6.;
 
-/// The sheet the level line through `p` along `e` screws into about `z`, climbing `BAR_STEP` a
-/// radian over the roll `[s0, s1]` (the line at the roll `s` turned by `s` and raised `BAR_STEP s`):
-/// the face of a level triangle on the line, `reach` of it either side of its foot and its third
-/// corner `reach` out past the foot, screwed — a level edge's sheet as `closed` makes it.
-fn screwed_line(p: [f64;3],e: [f64;3],[s0,s1]: [f64;2],reach: f64) -> Brep {
-    use gcs_core::brep::build::{screwed,Profile,ProfileEdge};
-    use gcs_core::brep::geom::Rigid;
-    let along = p[0]*e[0]+p[1]*e[1];
-    let foot = [p[0]-along*e[0],p[1]-along*e[1],p[2]];
-    let away = unit([foot[0],foot[1],0.]);
-    let corners = [[foot[0]-reach*e[0],foot[1]-reach*e[1],p[2]],[foot[0]+reach*e[0],foot[1]+reach*e[1],p[2]],
-        [foot[0]+reach*away[0],foot[1]+reach*away[1],p[2]]];
-    let triangle = Profile {origin:corners[0],normal:[0.,0.,1.],names:vec![vec!["sheet".into(),String::new(),String::new()]],
-        loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
-    let first = Rigid::turn([0.;3],[0.,0.,1.],s0).then(&Rigid {t:[0.,0.,BAR_STEP*s0],..Rigid::identity()});
-    let mut sheet = screwed(&triangle.moved(&first),[0.;3],[0.,0.,1.],s1-s0,BAR_STEP*(s1-s0)).unwrap();
-    sheet.faces.retain(|f| f.name == "sheet");
-    sheet.compacted()
-}
+/// #886's bar, `4 ≤ x ≤ 12, −8 ≤ y ≤ 8, −1 ≤ z ≤ 1`.
+fn square_bar() -> Brep { block([4.,-8.,-1.],[12.,8.,1.]) }
 
-/// #886's sheets, the square bar `4 ≤ x ≤ 12, −8 ≤ y ≤ 8, −1 ≤ z ≤ 1` screwed about `z`: its top
-/// edges along `y = −8` and along `x = 12` screwed from 6.8 below its lowest pose to 4.3 above its
-/// highest over four turns, 5.8 turns of each — two sheets both holding the helix their corner
-/// `(12, −8, 1)` screws along, which lies on the cylinder of the bar's far edges, `ρ = √208`.
+/// #886's sheets, the square bar screwed about `z` rising `BAR_LEAD` a turn: its top edges along
+/// `y = −8` and along `x = 12`, each screwed over the roll `[−8.165, 28.063]` (5.8 turns, from 6.8
+/// below the bar's lowest pose over its four turns to 4.3 above its highest) and reaching 46 either
+/// side of its foot, as `closed` makes them for those four turns (`meeting::screwed_sheet_brep`) —
+/// two sheets both holding the helix their corner `(12, −8, 1)` screws along, which lies on the
+/// cylinder of the bar's far edges, `ρ = √208`.
 fn bar_sheets() -> [Brep;2] {
-    let roll = [-8.165,28.063];
-    [screwed_line([12.,-8.,1.],[1.,0.,0.],roll,46.),screwed_line([12.,-8.,1.],[0.,1.,0.],roll,46.)]
+    use crate::meeting::screwed_sheet_brep;
+    let [s0,s1] = [-8.165,28.063];
+    let (angle,advance) = (s1-s0,BAR_LEAD/std::f64::consts::TAU*(s1-s0));
+    [([0.,-8.,1.],[1.,0.,0.]),([12.,0.,1.],[0.,1.,0.])].map(|(foot,along)| screwed_sheet_brep(foot,along,46.,angle,advance,-s0/angle))
 }
 
 /// **A rail screwed many turns is read on its own turn** (#886): the inverse of a point of a screwed
@@ -2233,12 +2220,12 @@ fn bar_sheets() -> [Brep;2] {
 /// were read a turn off, each Newton's nearest on that turn.
 #[test]
 fn a_rail_screwed_many_turns_is_read_on_its_own_turn() {
+    use gcs_core::brep::geom::Curve;
     use gcs_core::brep::topo::EdgeCurve;
     let mut rails = 0;
     for sheet in bar_sheets() {
         for e in &sheet.edges {
-            let EdgeCurve::Curve(c) = &e.curve else { continue };
-            if c.kind() != "iso" { continue }
+            let EdgeCurve::Curve(c @ Curve::Iso(..)) = &e.curve else { continue };
             rails += 1;
             for j in 0..=1000 {
                 let v = e.t[0]+(e.t[1]-e.t[0])*j as f64/1000.;
@@ -2256,46 +2243,41 @@ fn a_rail_screwed_many_turns_is_read_on_its_own_turn() {
 /// both hold. The corner's helix is one edge of the cylinder's pieces. Its two pieces were never
 /// merged, since `same_edge` read each one's middle on the other's rail a turn away, and the
 /// cylinder's face, its walk meeting two ways leaving each node of the helix as one, did not close.
+/// The cylinder over the bar's heights through the four turns, `−2.5 ≤ z ≤ 23.5`, in a box past it.
 #[test]
 fn two_sheets_meeting_a_cylinder_in_one_helix_split_it_once() {
     use gcs_core::brep::boolean::arrangement_within;
     use gcs_core::brep::build::{disc,prism};
+    use gcs_core::brep::geom::tolerance;
     let [a,b] = bar_sheets();
     let cylinder = prism(&disc([0.,0.,-2.5],[0.,0.,1.],208f64.sqrt()),0.,26.).unwrap();
     let domain = block([-16.,-16.,-4.],[16.,16.,25.]);
-    let complex = arrangement_within(&domain,&[&cylinder,&a,&b],1.8e-8).unwrap();
+    let complex = arrangement_within(&domain,&[&cylinder,&a,&b],tolerance(square_bar().size())).unwrap();
     assert!(!complex.cells().unwrap().is_empty());
 }
 
-/// `∫ ρ f(ρ) dρ` in closed form from `r0` to `r1` for `f` each of `acos(c/ρ)`, `asin(c/ρ)` and
-/// `acos(c/ρ)²`.
-fn moments(c: f64,[r0,r1]: [f64;2]) -> [f64;3] {
-    let root = |r: f64| (r*r-c*c).sqrt();
-    let acos = |r: f64| r*r/2.*(c/r).acos()-c/2.*root(r);
-    let asin = |r: f64| r*r/2.*(c/r).asin()+c/2.*root(r);
-    let acos2 = |r: f64| { let t = (c/r).acos(); r*r*t*t/2.-c*t*root(r)-c*c*(c/r).ln() };
-    [acos(r1)-acos(r0),asin(r1)-asin(r0),acos2(r1)-acos2(r0)]
-}
-
-/// The volume #886's square bar `4 ≤ x ≤ 12, −8 ≤ y ≤ 8, −1 ≤ z ≤ 1` sweeps screwed `Θ` about `z`
-/// rising `k` a radian (`2πk` a turn past its height of 2, so no turn meets the next), apart from
-/// the build. In helical coordinates `(ρ, ψ, ζ = z − k ψ)`, the volume element `ρ dρ dψ dζ`, the
-/// screw is a shift in `ψ`; the helix `(ρ, ζ)` meets the bar where `ψ` is in its arc at `ρ` and in
-/// `[−(1 + ζ)/k, (1 − ζ)/k]`, and the sweep holds of it that stretch of `ψ` lengthened by `Θ` (the
-/// gap between two pieces of it, narrower than `Θ`, filled). Out to `ρ = 12` the arc is one,
-/// `|ψ| ≤ β` (`β = acos(4/ρ)`, then `asin(8/ρ)` past `√80`): the helices meeting it reach `2 + 2kβ`
-/// of `ζ`, and their stretches total the bar's section there, `4β`. Past 12 it is two, `a ≤ |ψ| ≤ b`
-/// (`a = acos(12/ρ)`, `b = asin(8/ρ)`): the helices reach `2 + 2kb` (the two pieces' reaches overlap,
-/// `k a < 1`), and their stretches total `4b − 4k a²`, the gap filled where a helix meets both.
-fn screwed_bar_volume(k: f64,theta: f64) -> f64 {
-    let (r1,r2,r3) = (80f64.sqrt(),12.,208f64.sqrt());
-    let r2s = |a: f64,b: f64| (b*b-a*a)/2.;
-    let [inner,..] = moments(4.,[4.,r1]);
-    let [_,middle,_] = moments(8.,[r1,r2]);
-    let [_,outer,_] = moments(8.,[r2,r3]);
-    let [..,gap] = moments(12.,[r2,r3]);
-    let reach = 2.*r2s(4.,r3)+2.*k*(inner+middle+outer);
-    theta*reach+4.*(inner+middle+outer)-4.*k*gap
+/// The volume #886's square bar sweeps screwed `Θ` about `z` rising `k` a radian (`2πk` a turn,
+/// past its height of 2, so no turn meets the next), apart from the build. In helical coordinates
+/// `(ρ, ψ, ζ = z − k ψ)`, the volume element `ρ dρ dψ dζ`, the screw is a shift in `ψ`; the helix
+/// `(ρ, ζ)` meets the bar where `ψ` is in its arc at `ρ` and in `[−(1 + ζ)/k, (1 − ζ)/k]`, and the
+/// sweep holds of it that stretch of `ψ` lengthened by `Θ` (the gap between two pieces of it,
+/// narrower than `Θ`, filled). Out to `ρ = 12` the arc is one, `|ψ| ≤ β` (`β = acos(4/ρ)`, then
+/// `asin(8/ρ)` past `√80`): the helices meeting it reach `2 + 2kβ` of `ζ`, and their stretches
+/// total the bar's section there, `4β`. Past 12 it is two, `a ≤ |ψ| ≤ b` (`a = acos(12/ρ)`,
+/// `b = asin(8/ρ)`): the helices reach `2 + 2kb` (the two pieces' reaches overlap, `k a < 1`), and
+/// their stretches total `4b − 4k a²`, the gap filled where a helix meets both. Each term is
+/// `∫ ρ f(ρ) dρ` in closed form.
+fn screwed_bar_volume(theta: f64) -> f64 {
+    let k = BAR_LEAD/std::f64::consts::TAU;
+    let root = |c: f64,r: f64| (r*r-c*c).sqrt();
+    let acos = |c: f64,r: f64| r*r/2.*(c/r).acos()-c/2.*root(c,r);
+    let asin = |c: f64,r: f64| r*r/2.*(c/r).asin()+c/2.*root(c,r);
+    let acos2 = |c: f64,r: f64| { let t = (c/r).acos(); r*r*t*t/2.-c*t*root(c,r)-c*c*(c/r).ln() };
+    let (r1,r3) = (80f64.sqrt(),208f64.sqrt());
+    // `∫ ρ β dρ`, `β` the arc's half (or the outer piece's far end) over every radius
+    let beta = acos(4.,r1)-acos(4.,4.)+asin(8.,r3)-asin(8.,r1);
+    let gap = acos2(12.,r3)-acos2(12.,12.);
+    theta*((r3*r3-16.)+2.*k*beta)+4.*beta-4.*k*gap
 }
 
 /// **The square bar screwed four turns closes into its helical sweep** (#886, brep-bench's
@@ -2310,12 +2292,12 @@ fn screwed_bar_volume(k: f64,theta: f64) -> f64 {
 fn the_square_bar_screwed_four_turns_closes_into_its_helical_sweep() {
     use gcs_core::brep::geom::tolerance;
     use gcs_core::brep::swept::closed::{closed_within,BUDGET};
-    let tool = block([4.,-8.,-1.],[12.,8.,1.]);
-    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:6.});
+    let tool = square_bar();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:BAR_LEAD});
     for turns in [1f64,4.] {
         let roll = [-90f64.to_radians(),(360.*turns-90.).to_radians()];
         let built = closed_within(&tool,&path,roll,tool.size(),tolerance(tool.size()),BUDGET).unwrap();
-        let expected = screwed_bar_volume(BAR_STEP,roll[1]-roll[0]);
+        let expected = screwed_bar_volume(roll[1]-roll[0]);
         assert!((volume(&built)-expected).abs() <= 1e-10*expected,"over {turns} turns: {} against {expected}",volume(&built));
         agrees_over(&built,&tool,&path,roll);
     }

@@ -946,9 +946,10 @@ from the thread's last foot on it where that settles near the point (as a family
 evaluated solid asks at every triangle's corners, and searched afresh the spring meshed 6× slower),
 else seeds each `u` where the screw turns it to face the point (`turned_to`; a grid along `v` alone
 starts on a coil's next turn), and a rail (`Curve::Iso`) is read the same way, the nearest of
-its samples and of those turns (#886: from 33 samples along a rail of 5.8 turns rising 6 a turn
-46 out, half its points were read a turn off, so `same_edge` never merged the helix two sheets
-meet a cylinder in and the cylinder's pieces did not close;
+its samples and of those turns, one seeding for both (`Blend::nearest_v`) (#886: a rail of 5.8
+turns rising 6 a turn, its 33 samples 16 apart along it at the radius 14.4 of the helix two sheets
+meet a cylinder in, was read a turn off, so `same_edge` never merged that helix's two pieces and
+the cylinder's pieces did not close;
 `swept_closed::a_rail_screwed_many_turns_is_read_on_its_own_turn`,
 `two_sheets_meeting_a_cylinder_in_one_helix_split_it_once` and, slow tier,
 `the_square_bar_screwed_four_turns_closes_into_its_helical_sweep` are the gate); `inverse_near`
