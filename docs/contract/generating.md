@@ -1427,7 +1427,11 @@ each other and their crossing is found (`region::joined`), where before only `lo
 carrier** (a whole turn, 39 faces) and **the plus in mesh with a wheel** (a whole period of 540°, an
 annulus whose hole is the wheel left standing, 47 faces) each to 1e-6 of the area the definition
 gives in the plane, read line by line on the exact section — the polygon at 9000 poses and each
-edge's quadrilateral between two, so each corner's trace is filled to the square of the step — and
+edge's quadrilateral between two, so each corner's trace is filled to the square of the step — the
+square's surface also to 1e-7 of twice its region's area and its boundary's length through the
+height, both read ray by ray from the axis (`ring_by_rays`: on each ray the poses' intervals run
+together into one, each extreme refined at every local extreme of a grid; #880 E4, where cadrs's
+surface is 0.0705 larger with the same volume) — and
 **the rack's tooth space**, its swept solid cut from the blank by the ordinary Boolean, to 1e-6 of
 the volume next.BREP and cadrs agree on, at a billionth (4e-11 off); each written as a closed STEP B-rep. The
 drawing's sweeps still reach these cases by the blank-scoped planar classes (`cut_from` and
