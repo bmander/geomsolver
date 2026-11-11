@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.7.0] - 2026-11-11
+
 - **Two rounds tangent to one face union wherever their meeting ends at the touch**
   (`ssi::trace_beside`, `boolean`): two surfaces' meeting through a point where they touch and
   its branches cross ends there, and a march that steps across such a touch lying on a face's own
