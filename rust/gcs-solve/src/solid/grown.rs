@@ -535,7 +535,7 @@ fn ball_sector(body: &BodyFaces, v: u32, c: V, edges: &[u32], d: f64) -> Result<
     let out = unit(scale(inward, -1.0));
     // each cut kept on the side of the cone's inside, the sum of the normals spanning it
     let within = body.faces_at(v, &[]).iter().fold([0.0; 3], |s, &f| add(s, body.plane(f).expect("a plane face").0));
-    let cuts = edges.iter().filter_map(|&e| {
+    let cuts: Vec<Cut> = edges.iter().filter_map(|&e| {
         let &[fa, fb] = body.faces_of(e) else { return None };
         let [na, nb] = [fa, fb].map(|f| body.plane(f).expect("a plane face").0);
         let m = cross(na, nb);
@@ -543,8 +543,22 @@ fn ball_sector(body: &BodyFaces, v: u32, c: V, edges: &[u32], d: f64) -> Result<
     }).collect();
     // the ball: turned once about an axis square to `out`, from the half disc square to `out` too,
     // so its poles, its seam and the meridian half a turn on all lie in the plane through the
-    // corner square to `out`, which the cone meets at the corner alone
-    let axis = Frame::about(c, out).x;
+    // corner square to `out`, which the cone meets at the corner alone.  Each cut's plane meets
+    // that plane along a line through the corner: the axis and the seam's start, a quarter turn
+    // apart, are set midway across the widest gap between those lines read round a quarter turn,
+    // so no cut passes through a pole or along where the turn begins (an octahedron's would)
+    let f = Frame::about(c, out);
+    let quarter = std::f64::consts::FRAC_PI_2;
+    let mut lines: Vec<f64> = cuts.iter().map(|cut| {
+        let l = cross(cut.keep, out);
+        dot(l, f.y).atan2(dot(l, f.x)).rem_euclid(quarter)
+    }).collect();
+    lines.sort_by(f64::total_cmp);
+    let n = lines.len();
+    let (gap, from) = (0..n).map(|k| (if k + 1 < n { lines[k + 1] } else { lines[0] + quarter } - lines[k], lines[k]))
+        .fold((f64::NEG_INFINITY, 0.0), |best, g| if g.0 > best.0 { g } else { best });
+    let (sin, cos) = (from + gap / 2.0).dsin_cos();
+    let axis = add(scale(f.x, cos), scale(f.y, sin));
     let start = cross(out, axis);
     let section = crate::brep::build::ball_section(&Frame::new(c, cross(start, axis), start), d);
     Ok(Piece { section, sweep: Sweep::About { origin: c, axis, angle: TAU }, cuts })
