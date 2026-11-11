@@ -594,7 +594,16 @@ they touch. A meeting bounding a face kept on one side only stays an edge, and a
 edge (a seam) is never taken out (`arrangement::a_boolean_lays_a_touch_and_heals_it_where_a_face_is_kept_on_both_sides`,
 a rod lying on a block united and cut either way; `a_hole_whose_caps_touch_the_bore_and_the_rim_is_cut_whole`,
 the V-twin disc's set-screw hole, its caps tangent to the bore and the rim, at twelve angles, to
-its section's run in closed form; `a_split_heals_a_touch_out_of_each_cell`). **A Boolean is the
+its section's run in closed form; `a_split_heals_a_touch_out_of_each_cell`). **A branch arriving
+at a touch along an edge joins it** (`boolean`'s `landing`, `ssi::trace_landing`, #880 Q1b): along
+the edge, one surface stands off the other by `d²(c(s) + O(d))` a distance `d` across it, so a
+transversal branch of the two's meeting leaves the touch where `c` changes sign, and near it the two
+part too slowly for a march to land. A march stopped beside such an edge is followed down to it —
+at gaps halved to the tolerance, the branch's root along the points that far off the edge nearest
+the last — and ends where the last two levels run on to the edge, a point of it, one curve; it
+stopped short before, the stop read as a touch of its own whose other half-branches were traced
+along the edge, and the pieces did not close (`swept_contacts::a_contact_carried_back_through_its_start_pose_is_arranged_with_it`,
+the leaning torus's carried contact re-entering the start pose it touches along its rim). **A Boolean is the
 selection, with no other road**: a shell kept on one side and dropped on another is refused (two
 cells joined round an edge), where each face was once kept by its own sides; the fifteen round
 cases that took that road did so because a fitted round leaves the edge some 1e-5 off the face it is

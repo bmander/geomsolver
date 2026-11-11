@@ -222,3 +222,23 @@ fn a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points() {
         }
     }
 }
+
+
+/// **A branch arriving at a touch along an edge joins it** (#880 Q1b, `boolean::landing`): the
+/// stretch of the leaning torus's carried contact that runs back through the start pose touches
+/// that pose along its rim, and its re-entry into it — a transversal branch of the two's meeting —
+/// runs to the rim, where the two part too slowly for a march to land. Followed down to the rim, it
+/// ends there, one curve; before, it stopped short, the stop read as a touch of its own and its
+/// other half-branches traced along the rim, and the arrangement's pieces did not close.
+#[test]
+fn a_contact_carried_back_through_its_start_pose_is_arranged_with_it() {
+    use gcs_core::brep::boolean::arrangement;
+    use gcs_core::brep::swept::contacts::candidates;
+    use gcs_core::brep::trajectory::Trajectory;
+    let tool = leaning_torus();
+    let path = Trajectory::Twist(rod_screw());
+    let roll = [(-108f64).to_radians(),348f64.to_radians()];
+    let (cands,_) = candidates(&tool,&path,roll,TOL).unwrap();
+    let start = &cands[cands.len()-2];
+    if let Err(e) = arrangement(&[&cands[8],start],TOL) { panic!("the stretch through the start pose arranged with it: {e}") }
+}

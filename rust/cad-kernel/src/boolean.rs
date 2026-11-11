@@ -1792,14 +1792,17 @@ impl<'a> Arrangement<'a> {
         self.say.tracing(faces,surfaces,&seeds);
         let started = crate::util::clock::Instant::now();
         // beside a ridge's or a level curve's branch is beside a known meeting
+        // a march stopped beside a touch along an edge carried on to where it joins that edge
+        let (surfaces,stretches,spread) = (touches.surfaces,touches.stretches,touches.spread.max(8.*tol));
         let beside = &mut |p: V| touches.beside(p) || super::meeting::on_a_branch(sa,sb,ridged,p,tol);
+        let land = &mut |p: V| landing(surfaces,stretches,spread,tol,p);
         let mut traced = known.to_vec();
         traced.extend(ridged.branches().iter().map(|br| br.curve.clone()));
         if past {
             // read from its ridges and level curves (#778): each seed left traced alone
-            super::meeting::traced_alone(&seeds,&mut traced,&mut |p| super::ssi::trace_beside(sa,sb,&[p],beside,lo,hi,tol),tol);
+            super::meeting::traced_alone(&seeds,&mut traced,&mut |p| super::ssi::trace_landing(sa,sb,&[p],beside,land,lo,hi,tol),tol);
         } else {
-            traced.extend(super::ssi::trace_beside(sa,sb,&seeds,beside,lo,hi,tol)?);
+            traced.extend(super::ssi::trace_landing(sa,sb,&seeds,beside,land,lo,hi,tol)?);
         }
         // a closed curve inside both faces crosses no edge and has no seed
         if super::ssi::searchable(sa) && super::ssi::searchable(sb) {
@@ -1817,7 +1820,7 @@ impl<'a> Arrangement<'a> {
                     return Err(format!("a {} and a {} meet in more than {LOOPS} curves no edge crosses, not built yet",
                         sa.kind(),sb.kind()).into())
                 }
-                let more = match super::ssi::trace_beside(sa,sb,&[p],beside,lo,hi,tol) {
+                let more = match super::ssi::trace_landing(sa,sb,&[p],beside,land,lo,hi,tol) {
                     // past a refusal, one refused again stands where the branches read it
                     Err(_) if past => break,
                     other => other?,
@@ -2107,6 +2110,70 @@ impl<'s,'a> Touches<'s,'a> {
         known == Some(true) || self.shallow(p) && (self.on_contact(p) || self.outside(p) || known.is_none() && self.alone(p))
     }
 }
+
+/// **Where a branch stopped beside a touch along an edge joins it** (#880 Q1b): along the edge the
+/// two surfaces touch, one's distance from the other a distance `d` across it is `d²(c(s) + O(d))`
+/// — `c` half their normal curvatures' difference across the edge at `s` — so a branch crossing the
+/// two leaves the touch where `c` changes sign. Followed down from `p` (within `spread` of the edge
+/// nearest it, the touch's): at gaps halved from `p`'s down to the tolerance, the branch's foot `s`
+/// the root of that distance along the line of points `d` from the edge on `p`'s side, in `a`,
+/// nearest the last; each a point of the meeting. The junction is where the last two run on to the
+/// edge, a point of it, so of both surfaces. `None` where no edge is near, or a level has no root
+/// within `spread` of the last.
+fn landing(surfaces: [&Surface;2],stretches: &[(&Curve,[f64;2])],spread: f64,tol: f64,p: V) -> Option<Vec<V>> {
+    use crate::util::space::{add,cross,dot,normalised,sub};
+    let (sa,sb) = (surfaces[0],surfaces[1]);
+    let project = |x: V| sa.point(sa.inverse(x));
+    // the nearest edge they touch along, and `p`'s foot on it
+    let (c,span,s0,gap) = stretches.iter().map(|&(c,span)| {
+        let mut t = c.inverse(p);
+        if let Some(period) = c.period() { t = around(t,span[0],period); }
+        let t = t.clamp(span[0],span[1]);
+        (c,span,t,distance(c.point(t),p))
+    }).min_by(|x,y| x.3.total_cmp(&y.3))?;
+    if !(gap <= spread) || !(gap > tol) { return None }
+    // across the edge in `a`, toward `p`'s side
+    let side = {
+        let q = c.point(s0);
+        let w = cross(normalised(sa.gradient(q))?,c.tangent(s0));
+        if dot(sub(p,q),w) < 0. { -1. } else { 1. }
+    };
+    let at = |s: f64,d: f64| -> Option<V> {
+        let q = c.point(s);
+        let w = normalised(cross(normalised(sa.gradient(q))?,c.tangent(s)))?;
+        Some(project(add(q,scale(w,side*d))))
+    };
+    let speed = norm(c.tangent(s0)).max(1e-300);
+    let mut out = Vec::new();
+    let (mut s,mut d,mut last) = (s0,gap,s0);
+    while d > tol {
+        let (was,dn) = (s,0.5*d);
+        let f = |x: f64| at(x,dn).map(|q| sb.implicit(q));
+        // the root nearest the last, sought out in windows doubling from the step down
+        let mut reach = 4.*(d-dn)/speed;
+        let root = loop {
+            let (lo,hi) = ((s-reach).max(span[0]),(s+reach).min(span[1]));
+            const N: usize = 16;
+            let xs: Vec<(f64,Option<f64>)> = (0..=N).map(|k| { let x = lo+(hi-lo)*k as f64/N as f64; (x,f(x)) }).collect();
+            let found = xs.windows(2).filter_map(|v| match (v[0].1,v[1].1) {
+                (Some(a),Some(b)) if (a < 0.) != (b < 0.) => Some(crate::util::roots::bracketed_root(&f,v[0].0,a,v[1].0,b,1e-13*(1.+s.abs()))),
+                _ => None,
+            }).min_by(|x,y| (x-s).abs().total_cmp(&(y-s).abs()));
+            if found.is_some() { break found }
+            if reach*speed > spread { break None }
+            reach *= 2.;
+        };
+        let x = root?;
+        out.push(at(x,dn)?);
+        (last,s,d) = (was,x,dn);
+    }
+    // the last two levels run on to the edge: `d` halved each, `s` about linear in `d`
+    let junction = c.point((s+(s-last)).clamp(span[0],span[1]));
+    if super::debug() { eprintln!("brep:   landing from {p:?} ({gap:.2e} off the touch) joins it at {junction:?}") }
+    out.push(junction);
+    Some(out)
+}
+
 
 /// A face being split: its halves so far — its boundary's, then each edge laid across it, both
 /// ways round — and the edges they use.

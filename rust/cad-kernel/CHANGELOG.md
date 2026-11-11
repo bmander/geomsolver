@@ -8,6 +8,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A meeting arriving at an edge two surfaces touch along ends on it** (`boolean`'s `landing`,
+  `ssi::trace_landing`): near the junction the two part as the square of the distance, so a march
+  stopped short; the stop was read as a touch of its own, its other branches were traced along the
+  edge, and the arrangement refused ("a blend's pieces do not close"). The branch is now followed
+  down to the edge at halved gaps and ends where it meets it: a screwed torus's carried contact
+  arranges with the start pose it passes back through.
 - **A circle or an ellipse against a surface turned from a conic, in closed form**
   (`query::conic_revolution`): the turned surface's algebraic form, read span by span from each
   arc's Bézier poles (`F(ρ, z) F(−ρ, z)`, or `F` alone for an arc symmetric about the axis), is a
