@@ -618,7 +618,12 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     // or, a motion no constant twist and no such path takes, K2's road: each instant's contact swept
     // into a patch (#780 L3)
     let legs = match legs(tool,path,roll) {
-        Err(Unbuilt::Motion) if path.screw().is_none() => return k2(tool,path,roll,bar,tol,blank),
+        Err(Unbuilt::Motion) if path.screw().is_none() => {
+            // a prism under a motion keeping the plane square to it: its section's planar sweep,
+            // extruded (#880 Q2), before K2's road
+            if blank.is_none() { if let Some(b) = super::planar_solid::swept(tool,path,roll,bar,tol)? { return Ok(b) } }
+            return k2(tool,path,roll,bar,tol,blank)
+        }
         legs => legs?,
     };
     let whole_roll = [roll[0].min(roll[1]),roll[0].max(roll[1])];
@@ -1450,7 +1455,7 @@ fn corners_of((lo,hi): (V,V)) -> Vec<V> {
 
 /// A cube holding `points` with a fifth of its size to spare each way: the box, its centre and half
 /// its side.
-fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
+pub(super) fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
     let (blo,bhi) = points.into_iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
         (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
     let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));

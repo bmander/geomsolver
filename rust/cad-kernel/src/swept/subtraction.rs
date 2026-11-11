@@ -143,6 +143,15 @@ impl Prismatic {
         Ok(Prismatic {plane,caps,leaning,span,tool:b.clone(),mm,boxes,sections:Mutex::new(BTreeMap::new())})
     }
 
+    /// The slabs between the tool's caps, lowest first: heights along the normal over which its
+    /// section is one (or, where a side leans, moves as the side leans).
+    pub fn slabs(&self) -> Vec<[f64;2]> {
+        let mut planes: Vec<f64> = vec![self.span[0],self.span[1]];
+        planes.extend(self.caps.iter().copied().filter(|&h| h > self.span[0]+SAME*(1.+h.abs()) && h < self.span[1]-SAME*(1.+h.abs())));
+        planes.sort_by(f64::total_cmp);
+        planes.windows(2).map(|w| [w[0],w[1]]).collect()
+    }
+
     /// Whether a side leans across height `h`.
     pub fn leans(&self,h: f64) -> bool { self.leaning.iter().any(|s| h > s[0] && h < s[1]) }
 
