@@ -283,8 +283,10 @@ fn the_general_reading_holds_every_closed_form() {
     for s in &surfaces {
         for k in 0..30 {
             let p = [rng.uniform(-4.,4.),rng.uniform(-4.,4.),rng.uniform(-2.,4.)];
-            // (lines alone against a revolution and a slid contour: the closed forms there read lines)
-            let k = if matches!(s,Surface::Revolution(..) | Surface::Extrusion(..)) { 0 } else { k };
+            // (lines and circles against a conic turned, lines alone against a turned contact and a
+            // slid contour: the closed forms there read those)
+            let conic_turned = matches!(s,Surface::Revolution(_,c) if matches!(**c,Curve::BSpline(..)));
+            let k = if conic_turned { k%2 } else if matches!(s,Surface::Revolution(..) | Surface::Extrusion(..)) { 0 } else { k };
             let curve = match k%3 {
                 0 => Curve::Line {p,d:unit([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)])},
                 1 => Curve::Circle(Frame::about(p,unit([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)])),rng.uniform(0.5,4.)),

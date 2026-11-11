@@ -325,7 +325,16 @@ a swap made without its callers knowing:
   slid torus's contact sweeps (#805, `query::line_slid`) through their jets in intervals, a cylinder
   and a ball as a chord, a level circle's screwed sheet on one unknown, a line along a screw's axis
   along the helices; a circle or an ellipse against an algebraic surface as the form along it, a
-  trigonometric polynomial (`query::conic_algebraic`); a B-spline against a plane as its poles'
+  trigonometric polynomial (`query::conic_algebraic`), and against a conic turned as the turned
+  surface's algebraic form, span by span (`query::conic_revolution`: the arc's `F(r, z)` from its
+  Bézier poles' barycentric coordinates, `F(ρ, z) F(−ρ, z)` — `F` alone where the arc is symmetric
+  about the axis, so a contact on it keeps its order — a trigonometric polynomial of degree four
+  along the curve, a run within the tolerance proved by its Taylor model about each stretch's
+  middle, where the polynomial's terms cancel and its interval enclosure does not; a root kept on
+  the bounded surface): the ball's meridian in a paraboloid cup that fits its bottom, within the
+  fourth power of the way from the pole it ends at, which the general reading's two unknowns saw
+  as a patch nearly coinciding and refused (brep-bench's `tangent/ball-in-a-paraboloid-cup`,
+  `brep::a_ball_in_a_paraboloid_cup_that_fits_its_bottom`); a B-spline against a plane as its poles'
   heights (`query::spline_plane`) (`enclosures::the_general_reading_holds_every_closed_form`,
   `swept_closed::a_rims_sheet_in_closed_form_is_held_to_the_general_search`,
   `swept_turned::a_line_meets_a_turned_contacts_surface_where_sampling_finds_it`,
