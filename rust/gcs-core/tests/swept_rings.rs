@@ -176,9 +176,9 @@ fn the_tumbling_torus_is_built_closed() {
 /// the circle and the root were two vertices and the tube's face did not close ("a bspline's pieces
 /// do not close", cad-kernel 0.7.0). The root is that crossing, found beside the circle where the
 /// rim lies along its face (`flat_roots`). Built, it is the solid 0.6.3 built, its volume held to
-/// the one made apart within 1e-4 as the drawing's is (its pockets are R1's).
+/// the one made apart within 1e-4 as the drawing's is (its pockets are R1's). In the fast tier
+/// (about 5 s), so a change to how a Boolean reads a fitted sheet meets it on every push.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: the tumbling torus as the bench spells it")]
 fn the_tumbling_torus_as_the_bench_spells_it_is_built_closed() {
     use gcs_core::brep::trajectory::Screw;
     let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.5).unwrap();
