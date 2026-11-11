@@ -602,24 +602,24 @@ impl<'a> Walk<'a> {
             if binders.is_empty() {
                 continue;
             }
-            let read = w.ops.first().and_then(|p| self.look(alias).raw(p, sc))
-                .is_some_and(|(p, rest)| rest.is_empty() && self.sets.probes.contains(&p));
-            if !read {
+            let owner = w.ops.first().and_then(|p| self.look(alias).raw(p, sc))
+                .filter(|(p, rest)| rest.is_empty() && self.sets.probes.contains(p)).map(|(p, _)| p);
+            let Some(owner) = owner else {
                 let m = "some points of sets are read where a solid reads its set's point: in the \
                          body of a set a solid is made of, `solid({ p | some q in A: p in Segment(c, q) })`";
                 self.once(Code::E040, w.word.span, m);
                 refused.insert((st.id.0, sc.prefix().to_string()));
                 continue;
-            }
+            };
             // the points one quantifier binds, under the use that applied it
             let group = format!("{}#{}", sc.prefix(), sc.pred.written.unwrap_or(st.id).0);
             for var in binders {
                 let r = Ref { root: var.clone(), path: Vec::new(), span: var.span };
                 match self.look(alias).raw(&r, sc) {
                     Some((abs, rest)) if rest.is_empty() => {
-                        if !self.sets.binders.iter().any(|(b, _)| *b == abs) {
+                        if !self.sets.binders.iter().any(|(b, ..)| *b == abs) {
                             self.sets.probes.push(abs.clone());
-                            self.sets.binders.push((abs, group.clone()));
+                            self.sets.binders.push((abs, group.clone(), owner.clone()));
                         }
                     }
                     _ => {
@@ -650,7 +650,7 @@ impl<'a> Walk<'a> {
             return Some((st, sc));
         }
         let bound = w.ops.first().and_then(|p| self.look(alias).raw(p, &sc))
-            .is_some_and(|(p, rest)| rest.is_empty() && self.sets.binders.iter().any(|(b, _)| *b == p));
+            .is_some_and(|(p, rest)| rest.is_empty() && self.sets.binders.iter().any(|(b, ..)| *b == p));
         if bound {
             sc.pred.held = true;
         }

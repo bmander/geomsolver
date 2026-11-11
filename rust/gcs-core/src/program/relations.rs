@@ -868,6 +868,19 @@ fn face_or_ends(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, shape: &Shape) -> bo
         Shape::Face { point, face } => face_term(&cx.sk, &cx.res, w, *point, face, probes)
             .map_err(|m| (None, m)),
         Shape::Ends { point, edge } => ends_term(w, *point, *edge, probes).map_err(|m| (None, m)),
+        // a point `some` binds on a face ([0.212]): within its loops, on its plane
+        Shape::Section { point, face } if w.word.text == "coincident" && w.args.is_empty()
+            && probes.binders.contains_key(&point.i()) => {
+            use crate::model::{RegionShape, RegionTerm, TermNumber};
+            let at = |shape| RegionTerm::new(shape, crate::vocab::Cmp::Le, TermNumber::stated(0.0));
+            let on = RegionTerm { hi: Some(0.0), ..RegionTerm::new(
+                RegionShape::Plane { along: *face, from: u32::MAX, sign: 1.0 }, crate::vocab::Cmp::In,
+                TermNumber::stated(0.0)) };
+            let terms = cx.probes.terms.get_mut(&point.i()).expect("a probe's terms");
+            terms.push(at(RegionShape::Section { face: face.i() as u32 }));
+            terms.push(on);
+            return true;
+        }
         Shape::Section { point, face } => {
             super::regions::section_term(&cx.sk, &cx.res, w, *point, *face, probes)
                 .map_err(|m| (None, m))
@@ -1334,16 +1347,7 @@ fn region_or_row(
         match read {
             Ok(_) if grow.is_some() => cx.diags.push(Diag::on(Code::E040, st, "an offset is of a \
                 cone's surface or a plane's, not of what some points of sets put a point in".into())),
-            Ok((g, owner)) => {
-                let b = &mut cx.probes.bound[g];
-                if b.owner.is_some_and(|o| o != owner) {
-                    cx.diags.push(Diag::on(Code::E040, st, "what one `some` binds is read at one \
-                        set's point".into()));
-                } else {
-                    b.owner = Some(owner);
-                    b.stated.push((c, st.clone(), term_name));
-                }
-            }
+            Ok((g, _)) => cx.probes.bound[g].stated.push((c, st.clone(), term_name)),
             Err(message) => cx.diags.push(Diag::on(Code::E040, st, message)),
         }
         return None;

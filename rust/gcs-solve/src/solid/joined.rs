@@ -94,11 +94,13 @@ fn set_corners(sk: &Sketch, terms: &[RegionTerm], out: &mut Vec<V>, depth: usize
                 return Ok(());
             }
         }
-        // a drawn polygon, its corners turning one way
-        if let RegionShape::Section { face } = t.shape {
-            if at_nothing(t) {
-                return polygon(sk, face as usize, out).ok_or_else(refused);
-            }
+    }
+    // a drawn polygon, its corners turning one way: within its loops, on its plane
+    if let [s, o] = terms {
+        let on_plane = matches!(o.shape, RegionShape::Plane { .. }) && o.cmp == Cmp::In
+            && at(o) == Some(0.0) && o.hi == Some(0.0);
+        if let (RegionShape::Section { face }, true) = (&s.shape, on_plane && at_nothing(s)) {
+            return polygon(sk, *face as usize, out).ok_or_else(refused);
         }
     }
     // a segment: on a line, its ordinate along it bounded at both ends

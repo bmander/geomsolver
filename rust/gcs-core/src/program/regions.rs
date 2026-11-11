@@ -45,19 +45,18 @@ pub(super) fn bound_by(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<R
     let read: std::collections::BTreeSet<usize> = points_read(sk, c)
         .filter(|p| probes.terms.contains_key(p)).collect();
     let groups: std::collections::BTreeSet<usize> = read.iter().filter_map(|p| probes.binders.get(p).copied()).collect();
-    let [g] = groups.iter().copied().collect::<Vec<_>>()[..] else {
-        return (groups.len() > 1).then(|| Err("a relation reads points two `some`s bind: one \
-            quantifier binds every point its membership reads".to_string()));
-    };
-    let owners: Vec<usize> = read.iter().copied().filter(|p| probes.binders.get(p) != Some(&g)).collect();
-    match owners[..] {
-        [] if read.len() == 1 => None,
-        [] => Some(Err("a relation reads the points `some` binds but not the set's point: what \
-            they put in the set is where the set's point is, `p in Segment(q, r)`".to_string())),
-        [owner] => Some(Ok((g, owner))),
-        _ => Some(Err("what some points of sets put in a set is where the set's one point is"
-            .to_string())),
+    if groups.is_empty() || (read.len() == 1 && groups.len() == 1) {
+        return None;
     }
+    // the quantifier whose set's point it reads, and nothing but that and what it binds — where
+    // sets nest, the set's point is another quantifier's binder
+    let mine = groups.iter().copied().find_map(|g| {
+        let owner = probes.bound.get(g)?.owner?;
+        (read.contains(&owner) && read.iter().all(|p| *p == owner || probes.binders.get(p) == Some(&g)))
+            .then_some((g, owner))
+    });
+    Some(mine.ok_or_else(|| "what some points of sets put in a set is where the set's point is: one \
+        quantifier binds every point its relation reads, beside that one".to_string()))
 }
 
 /// **What some points of sets put a set's point in** ([0.212]), read off what the quantifier's
@@ -72,7 +71,9 @@ pub(super) fn settle_bound(sk: &Sketch, probes: &mut Probes, diags: &mut Vec<Dia
     use crate::model::{RegionShape, RegionTerm, Target};
     let bound = std::mem::take(&mut probes.bound);
     for (g, b) in bound.into_iter().enumerate() {
-        let (Some(owner), Some((_, st, name))) = (b.owner, b.stated.first().cloned()) else { continue };
+        let (Some(owner), Some((_, st, name))) = (b.owner, b.stated.first().cloned()) else {
+            continue;
+        };
         let binders: Vec<usize> = probes.binders.iter().filter(|(_, &h)| h == g).map(|(&p, _)| p).collect();
         let operand = |p: usize| if binders.contains(&p) { Target::Set { probe: p as u32, terms: Vec::new() } }
             else { Target::Ent(EntRef::point(p)) };

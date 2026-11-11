@@ -471,13 +471,18 @@ fn memberships(
     };
     // the points `some` binds ([0.212]), each with its quantifier
     let mut groups: BTreeMap<&str, usize> = BTreeMap::new();
-    for (key, group) in &expansion.binders {
-        let Some(p) = cx.res.of.get(key) else { continue };
+    let mut owners: BTreeMap<usize, usize> = BTreeMap::new();
+    for (key, group, owner) in &expansion.binders {
+        let (Some(p), Some(o)) = (cx.res.of.get(key), cx.res.of.get(owner)) else { continue };
         let n = groups.len();
         let g = *groups.entry(group.as_str()).or_insert(n);
         cx.probes.binders.insert(p.i(), g);
+        owners.insert(g, o.i());
     }
     cx.probes.bound.resize_with(groups.len(), Default::default);
+    for (g, o) in owners {
+        cx.probes.bound[g].owner = Some(o);
+    }
     // memberships, once every kind is built and before anything reads one: `point a in top`
     // names a plane built after the point, and `project` infers its planes from these — and then
     // every point no `in` reached stands in space (`places`), and a plane written over a drawn

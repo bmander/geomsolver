@@ -723,13 +723,9 @@ impl Lowering<'_> {
                 r in B: p in X`");
             return end;
         }
-        match self.statement(k, end, out) {
-            Some(next) => {
-                self.range(next, end, out);
-            }
-            None => self.fail(t[k.min(end.saturating_sub(1))].1, "what some points of sets put \
-                the set's point in is a membership: `some q in A: p in Segment(c, q)`"),
-        }
+        // a membership lowered; any other relation (a ball about a bound point) as written
+        let next = self.statement(k, end, out).unwrap_or(k);
+        self.range(next, end, out);
         end
     }
 
