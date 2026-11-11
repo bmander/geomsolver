@@ -16,7 +16,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   about each turn's line, with its halves at the path's ends, sewn into one solid and cut from the
   blank once; judged by membership as every closed sweep is. Brep-bench's
   swept/bull-nose-along-line-arc-line, refused by 0.8.0 as wrong after nearly five minutes, builds
-  in about 0.1 s to its closed forms (volume and area to 1e-15). A path with a corner, a turn about
+  in about 0.1 s to its closed forms (volume and area to 1e-15), and swept/bull-nose-swung-partway-
+  into-ring-sector and swept/drill-swung-partway-into-ring-sector, refused by 0.8.0 after about
+  5 s, build in 0.1 s and 0.02 s to theirs. Every other sweep case on the bench builds as before. A path with a corner, a turn about
   a line the tool reaches, a whole turn and a path coming back within the tool's width of itself
   are handed on to the arrangement as before (`section::Sectioned::about_its_line` is new).
 

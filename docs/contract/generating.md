@@ -1517,7 +1517,8 @@ it than half a turn of its tightest bend must stand farther apart than the width
 Judged by membership before it is returned (`closed::judge`). Held (`tests/swept_upright.rs`) on
 **brep-bench's bull-nose run along a line, an arc and a line**, which the arrangement refused as
 `Wrong` after about five minutes, to its closed forms at 1e-9 (volume and area; about 0.1 s), cut and
-swept closed; a ball-end mill's section, its two arcs meeting at the pole, along a slide and a half
+swept closed (the bench's **bull-nose** and **drill swung partway into a ring sector**, which the
+arrangement refused `Failed`, build by it too, to 6e-11 and 2e-16 of theirs); a ball-end mill's section, its two arcs meeting at the pole, along a slide and a half
 turn; and the four readings that hand a sweep on: a corner, a ring for a tool, a U whose return runs
 nearer than the tool is wide, and a turn about a line the tool reaches. **Left open**: a corner in
 the path (each run's sweep and the tool at the corner united, the tool touching both runs' walls

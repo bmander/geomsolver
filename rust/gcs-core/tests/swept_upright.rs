@@ -24,6 +24,9 @@ use std::f64::consts::{FRAC_PI_2,PI,TAU};
 
 type V = [f64;3];
 
+/// The area of every face of `b`.
+fn surface(b: &Brep) -> f64 { b.faces.iter().map(|f| area(b,f)).sum() }
+
 /// How finely the tool is meshed for the membership the build is judged by.
 const BAR: f64 = 0.002;
 
@@ -84,7 +87,7 @@ fn near(got: f64,want: f64,rel: f64,what: &str) {
 /// (−10, −10, −10)–(40, 40, 0) less the mill run along the line, the arc and the line, to its
 /// closed forms — below the top the mill's radius is `R(z) = 1.5 + √(0.25 − (z + 1)²)` under
 /// `z = −1` and 2 above it, its section's area `A = 2 ∫R = 4 + 2(0.75 + π/16)` and the mill's
-/// volume there `V₀ = π ∫R² = π (2 + 1.25 + 3π/16 − 1/24)`, along `L = 40 + 5π`; the opening, the
+/// volume there `V₀ = π ∫R² = π (4 + 1.25 + 3π/16 − 1/24)`, along `L = 40 + 5π`; the opening, the
 /// floor, the walls and the mill's own faces below the top give the area. Built by this road (it
 /// is asked first), closed and right side out.
 #[test]
@@ -94,12 +97,12 @@ fn the_bull_nose_run_along_a_line_an_arc_and_a_line_cuts_its_groove() {
     let tol = tolerance(stock.size().max(tool.size()));
     let l = 40.+5.*PI;
     let a = 4.+2.*(0.75+PI/16.);
-    let v0 = PI*(2.+1.25+3.*PI/16.-1./24.);
+    let v0 = PI*(4.+1.25+3.*PI/16.-1./24.);
     let s = 7000.-(4.*l+4.*PI)+(3.*l+2.25*PI)+2.*l*(0.5*PI/2.+1.)+2.*PI*0.5*(1.5*PI/2.+0.5)+2.*PI*2.*1.;
     let built = upright::swept(&tool,&path,roll,BAR,tol,Some(&stock)).unwrap().expect("this road takes it");
     built.check(tol).unwrap();
     near(volume(&built),25000.-(a*l+v0),1e-9,"the volume");
-    near(area(&built),s,1e-9,"the area");
+    near(surface(&built),s,1e-9,"the area");
     // and the kernel's closed sweep takes this road
     let cut = cut_from(&stock,&tool,&path,roll,BAR,tol).unwrap();
     near(volume(&cut),25000.-(a*l+v0),1e-9,"the cut's volume");
@@ -121,7 +124,7 @@ fn the_bull_nose_swept_closed_is_its_section_along_the_path_and_itself() {
     let built = closed(&tool,&path,roll,BAR,tol).unwrap();
     built.check(tol).unwrap();
     near(volume(&built),a*l+v,1e-9,"the volume");
-    near(area(&built),s,1e-9,"the area");
+    near(surface(&built),s,1e-9,"the area");
 }
 
 /// **A ball-end mill along a slide and a half turn**: its section's two arcs meet at its pole, one
