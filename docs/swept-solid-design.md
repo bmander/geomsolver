@@ -925,3 +925,101 @@ the arrangement refused, with no blank, judged and to the bench's settled solid.
 designed, and their cost is the trim's cost. P4 holds in count but needs more than touches given by
 construction: a fold's second meetings and its cusp's vertex (T1), and an edge lying in a candidate
 cut where the candidate's meetings cross it (T4; #885 for a screwed line's sheet). Nothing here asks for P2–P4 to be withdrawn.
+
+## 13. Q1b: a slide, a turn or a screw over part of its orbit (#880 Q1b)
+
+Q1b is the closed solid a tool sweeps under a constant twist over a roll that is not a whole turn.
+Under such a motion every point of the tool moves the same way relative to the tool at every
+instant, so the points in contact (`n·v = 0`) form a set fixed on the tool. The swept boundary lies
+in that set carried over the roll, together with the tool at the roll's two ends.
+
+### What was measured
+
+**The 21 cases.** Of cad-kernel 0.7.0's 38 swept failures, 21 are under a slide, a turn or a screw.
+Each case's tool was swept alone over its own roll, with no blank, by the closed class's arrangement
+(`closed::closed`) and by the trim of the same candidates (`closed::trimmed`), and cut from its
+body, where it has one, by the ordinary Boolean:
+
+| what stops it | cases | where |
+|---|---|---|
+| no candidate for a face or an edge (`Curved`) | 14 | `closed::read`, before anything is built, for both methods |
+| the contact folds (`Folded`) | 2 | `closed::read`, for both |
+| a face's pieces do not close | 2 | the meetings, for both |
+| a search not proved | 2 | the meetings, for both |
+| the subtraction | 1 | `frustum-screwed-across-ring-sector`: the swept solid builds alone, the same by both (142.9417233425), and the ordinary Boolean then refuses it |
+
+The trim changes nothing on these 21: it is handed the same candidates. Where both build, it is
+3 to 25 times slower (its zones, §12).
+
+**The walk read whole.** The constant-twist class's walk finds the characteristic on a tool read
+as a profile, revolved or extruded: closed-form roots on rings and rulings, junctions, apexes, fans.
+Asked with a blank that holds everything (`inside` always true, no heights, no radius), and its
+sheet (`helical::helical_sheet`) and the end poses trimmed:
+
+| what stops it | cases |
+|---|---|
+| the tool unread: a blend, an affine sphere, a B-spline extrusion (`Tool::read`, F1e) | 3 |
+| the contact reaches the tool's axis at a pole, or a ring is in contact all round | 7 |
+| the contact runs off a face's rings at a corner | 7 |
+| a double point on a ring | 1 |
+| the contact folds | 2 |
+| the characteristic and its sheet built; the trim's search not proved where a sheet's rim meets an end pose | 1 |
+
+### What it says
+
+1. **Q1b's gap is candidates.** Fourteen of the 21 are refused before anything is built, for want of
+   a closed-form sheet for some face or edge under the motion. Meetings come second.
+2. **The contact set of a whole tool is a graph, not a curve.** The walk follows one regular curve
+   and refuses wherever it branches. Its blank kept most of a tool's singular points out of reach:
+   poles, double points, rings in contact all round, the places where contact leaves a face for an
+   edge's fan. A whole tool meets all of them.
+3. **The trim lets candidates be more than the boundary.** The arrangement needed each candidate's
+   meetings complete, so its candidates had to be exact pieces of the boundary. The trim keeps a
+   piece only where membership differs on its two sides. So a candidate may run past where the
+   boundary turns, through the solid, or out of it. The contact set does not need to be ordered
+   into one curve; each regular piece of it is a candidate of its own.
+
+### The design
+
+The candidates of a sweep under a constant twist over a roll `[a, b]`, short of a whole turn:
+
+- **A face's contact, in pieces.** On each face, the zero set of `g(u, v) = n · v` over the face's
+  domain, cut into regular pieces at the face's boundary and where `∇g = 0` (a double point, a pole,
+  a ring in contact all round). Read in closed form where the surface has one (`contact::Form`: a
+  ring's two roots, a ruling's one, a plane's line) and numerically elsewhere: sign changes of `g`
+  on a grid over the domain, linked cell by cell, each point settled by Newton on `g` across the
+  curve. Each piece is fitted as a curve within a tenth of the tolerance, with its points in the face.
+- **An edge's fan.** On each convex edge, the stretches where its two faces' `n · v` differ in sign:
+  the fan holds a normal square to the motion there. The stretch itself is the piece.
+- **Each piece carried exactly.** Under a slide, the extrusion along the slide (`Surface::Extrusion`,
+  over the piece's shadow on the plane square to it). Under a turn, the revolution of its meridian
+  (`Surface::Revolution`), a pole where the meridian meets the axis. Under a screw, the piece's blend
+  carried by the screw (`Surface::Blend`, `Carry::Screw`). Each is carried over the roll, its rims
+  the piece at `a` and at `b` and its ends' paths.
+- **The end poses.** The tool placed at `a` and at `b`.
+- **The meetings given by construction (P4).** Each piece at `a` lies on the tool at `a`, as the
+  sheet's rim, and likewise at `b`. Two pieces that meet at a point meet along that point's path.
+  Both are given (`boolean::Given`), never searched for. The one walk sheet that built above was
+  refused where such a rim meets an end pose, a meeting searched for and not proved.
+- **Trimmed by membership** (E1's trim), checked, and judged before it is returned.
+
+It is asked by `closed::closed` where `closed::read` refuses a face or an edge, after the shadow and
+the planar classes and before K2's road; T6 later decides by measurement where it replaces the
+arrangement.
+
+### The order to build it in, each step gated
+
+| step | what | gate | first bench cases |
+|---|---|---|---|
+| S1 | a face's contact in pieces, any surface | every point within the tolerance of `g = 0` and inside the face; on revolved faces, the pieces' points agree with the rings' closed-form roots; each piece ends on the face's boundary or at a point where `∇g = 0` | none alone |
+| S2 | an edge's fan stretches | each stretch's ends where `n · v` of one of the two faces is nought | none alone |
+| S3 | each piece carried exactly over the roll | every point of a sheet is a tool point of a piece carried, its normal square to its velocity | none alone |
+| S4 | the candidates, the end poses and the given meetings, trimmed | the swept solid held to a volume made apart from the build (helical coordinates, as #721's), to the judge and to a closed STEP file | `torus-screwed-through-rod`, `v-wheel-screwed-through-rod`, `drum-leaning-to-a-screw` (faces of revolution leaning to a screw; no pole, no fold) |
+| S5 | poles: a piece meeting the turn's or screw's axis, a ring in contact all round | as S4 | `cone-point-screwed-through-rod`, `drum-end-screwed-through-rod`, `pin-swung-through-ring-sector`, `ball-swung-across-its-own-center-line`, `coin-turned-about-a-line-through-its-rim`, `cone-spun-about-a-line-through-it`, `rod-spun-about-a-line-through-it` |
+| S6 | free-form faces in S1 (a B-spline, an affine surface, a blend) | as S4 | `spline-bar-screwed-through-rod`, `spheroid-wheel-screwed-through-rod`, `coil-spring-pushed-aslant-through-plate`, `drafted-slot-screwed-through-rod` |
+
+What Q1b leaves to other boxes: the two folds (`ring-pushed-in-past-its-fold`,
+`ball-screwed-round-a-tight-helix`) are T1's fold cut, with E1's second meetings and cusp. The four
+whose meetings do not close or are not proved (`ball-end-mill-screwed-across-ring-sector`,
+`drill-swung-partway-into-ring-sector`, the two bull-noses) are T4's. The frustum's subtraction is
+#699's and #735's.
