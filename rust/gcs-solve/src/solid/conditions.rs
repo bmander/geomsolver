@@ -273,15 +273,24 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
             };
             Ok(Some(held(m)))
         }
-        // within the faces a run of edges ends on, as it runs: `σ·side ≤ 0` for each
+        // within the faces a run of edges ends on, as it runs: `σ·side ≤ 0` for each — of the run
+        // nearest the point where the edges are in several (`EndRuns`): the `k`th condition the
+        // `k`th face that run ends on, nothing where it ends on fewer
         RegionShape::Ends { edge } => {
             let Target::Set { terms: inner, .. } = edge.as_ref() else {
                 return Err("where an edge ends is read of a set".to_string());
             };
-            let (body, sides) = end_sides(&SetDistance::of(sk, inner, read)?)?;
-            Ok(Some(sides.into_iter().map(|(c, sign)| {
-                let body = body.clone();
-                Cond { f: shift(Arc::new(move |x| body.side_grad(c, x)), 0.0, sign), eq: false }
+            let runs = Arc::new(EndRuns::of(&SetDistance::of(sk, inner, read)?)?);
+            let most = runs.sides.iter().map(Vec::len).max().unwrap_or(0);
+            Ok(Some((0..most).map(|k| {
+                let runs = runs.clone();
+                Cond { f: Arc::new(move |x| match runs.nearest(x).get(k) {
+                    Some(&(c, sign)) => {
+                        let (v, g) = runs.body.side_grad(c, x);
+                        (sign * v, scale(g, sign))
+                    }
+                    None => (-1.0, [0.0; 3]),
+                }), eq: false }
             }).collect()))
         }
         // a ball's, a cylinder's, a cone's or a half-space's: its measure's signed distance
@@ -560,18 +569,52 @@ impl Rest {
 
 /// **Where an edge ends** (#183 F7): for each end of the run of edges a set on two faces is,
 /// each other face at that end, and which side of it the edge runs on (`-1` its material
-/// side): the region within all of them, `max σ·side`.  A closed run ends nowhere.
+/// side): the region within all of them, `max σ·side`.  A closed run ends nowhere.  Where the
+/// edges are in several runs (#881: a crease a slot cuts across), a point is within the ends of
+/// the run nearest it (`EndRuns`).
 pub fn ends(set: &SetDistance) -> Result<impl Fn(V) -> f64 + Send + Sync, String> {
-    let (body, sides) = end_sides(set)?;
+    let runs = EndRuns::of(set)?;
     Ok(move |p: V| {
-        sides.iter().map(|&(c, sign)| sign * body.side(c, p)).fold(f64::NEG_INFINITY, f64::max)
+        runs.nearest(p).iter().map(|&(c, sign)| sign * runs.body.side(c, p)).fold(f64::NEG_INFINITY, f64::max)
     })
 }
 
-/// The faces a run of edges ends on, each with the side the run is on (`-1` its material side).
-fn end_sides(set: &SetDistance) -> Result<(Arc<BodyFaces>, Vec<(usize, f64)>), String> {
-    let SetDistance::Edges { body, edges, faces } = set else {
-        return Err("where a set ends is read of an edge: a set on two faces".to_string());
-    };
-    Ok((body.clone(), body.end_sides(edges, faces)))
+/// **Where each run of a set's edges ends** (#881): the faces each run (`BodyFaces::runs`) ends
+/// on, each with the side the run is on (`-1` its material side), a closed run's none.  A crease
+/// a slot cuts across is in runs, and the runs on either side of the slot end on its sides,
+/// facing each other: within every run's ends at once is within none, and within any run's is
+/// too much — a run ending on a post's side goes on past the next post.  A point is read against
+/// the run nearest it, the run whose edge the round beside it is built along (`lowering`'s
+/// pieces, a run each, each carried on past its own ends and cut off there); where the runs end
+/// alike (on the posts' sides, kept outside every post), the same as within all their ends.
+struct EndRuns {
+    body: Arc<BodyFaces>,
+    edges: Vec<u32>,
+    /// Each of `edges`' run, by its index in `sides`.
+    run_of: Vec<usize>,
+    sides: Vec<Vec<(usize, f64)>>,
+}
+
+impl EndRuns {
+    fn of(set: &SetDistance) -> Result<EndRuns, String> {
+        let SetDistance::Edges { body, edges, faces } = set else {
+            return Err("where a set ends is read of an edge: a set on two faces".to_string());
+        };
+        let runs = body.runs(edges);
+        let run_of = edges.iter().map(|e| runs.iter().position(|r| r.contains(e)).expect("every edge in a run")).collect();
+        let sides = runs.iter().map(|run| body.end_sides(run, faces)).collect();
+        Ok(EndRuns { body: body.clone(), edges: edges.clone(), run_of, sides })
+    }
+
+    /// The faces the run nearest `p` ends on, and the side it runs on of each (none where the set
+    /// has no edge).
+    fn nearest(&self, p: V) -> &[(usize, f64)] {
+        match &self.sides[..] {
+            [] => &[],
+            [one] => one,
+            _ => self.body.nearest_edge(&self.edges, p)
+                .and_then(|(e, ..)| self.edges.iter().position(|&f| f == e))
+                .map_or(&[], |k| &self.sides[self.run_of[k]]),
+        }
+    }
 }

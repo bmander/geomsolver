@@ -4,6 +4,15 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.209] An edge in several runs ends where each run does** (#881). `p in S.ends`, `S` an edge
+whose edges are in several runs (a crease a slot through one face cuts across), holds `p` to the
+ends of the run nearest it (§ Where an edge ends). Through 0.208 it held `p` within the ends of
+every run at once: the runs either side of a slot end on its two square sides, facing each other,
+so `std.rounds`' `Run` and `Fill` held nowhere, and the round, built exactly along each run up to
+the slot's walls, was refused as disagreeing with the field (a fillet where a foot meets a plate,
+with slots in the foot running into the plate's base). Runs ending alike — each on a post's side,
+kept outside every post — read as they did.
+
 **[0.208] A face swept up a screw, in place** (#846). `some t in (a, b): p in sec at(under: m)
 t`, a face's patch over an interval written in place, is read under a screw or a slide as under a
 turn (§6.21): the face where the motion stands it at `a`, carried to `b`, built exactly by the
