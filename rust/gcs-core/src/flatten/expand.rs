@@ -1150,7 +1150,8 @@ impl<'a> Walk<'a> {
             return;
         }
         // a copy per item of a list, named or written in place (§12.10): the items are numbers
-        // in force here, so the block is expanded where it stands
+        // in force here, or names whose aliases resolve with every other, so the block is
+        // expanded where it stands
         let list = match self.list_of(b, vals) {
             Some(Ok((var, items))) => {
                 if self.declares(b, var) {
@@ -1208,8 +1209,24 @@ impl<'a> Walk<'a> {
                 close the copies in a `cycle` or a `ring`");
             return;
         }
-        let items = list.as_ref().map(|(var, items)| (*var, items.as_slice()));
-        self.copies(b, st, scope, path, depth, n, &[], items);
+        // a list of names (#882): each copy's name an alias to its item, as a walk's is to its
+        // link, read in the scope the list is written in
+        let (links, items) = match &list {
+            Some((var, super::lists::Items::Names(names))) => {
+                self.listed.extend(names.iter().map(|r| ((*r).clone(), scope.clone())));
+                let links: Vec<super::Link> = names.iter()
+                    .map(|r| super::Link::Edge((*r).clone(), scope.clone()))
+                    .collect();
+                (Some((*var, links)), None)
+            }
+            Some((var, super::lists::Items::Values(items))) => {
+                (None, Some((*var, items.as_slice())))
+            }
+            None => (None, None),
+        };
+        let edges: Vec<(&Name, &[super::Link])> =
+            links.iter().map(|(v, l)| (*v, l.as_slice())).collect();
+        self.copies(b, st, scope, path, depth, n, &edges, items);
     }
 
     /// Whether the body declares what each copy calls its edge or its item, which would hide it:

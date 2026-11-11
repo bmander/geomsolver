@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.211] A list of names** (#882). A list may name what is drawn (§12.10): `repeat e in
+[box.near, box.far] { … }`, or `ends := [box.near, box.far]` walked as `repeat e in ends`, makes a
+copy per name, `e` that copy's name for it, as a walk over a solid's faces or a chain's edges names
+its own — faces, edges, points alike. A list's items are all values or all names, and an item that
+is not the first's kind is E103 saying so; a name that names nothing is E101 at the item. Through
+0.210 every item was read as a number, so a face path was E103 as one "not a number here — nothing
+in scope gives it one", and a plate's rounds were written out or found by walking every face and
+keeping those a `when` named. A list's last item is read as a reference as the others are, where it
+was read as an expression.
+
 **[0.210] A round over a round's face** (#879). A face a round of a body made is listed to a
 block over the body's faces by the name the body's boundary has for it — a round's `round`, a
 chamfer's `flat`: `box.vert.taken.round` (§6.9) — and a name once, however many edges the round

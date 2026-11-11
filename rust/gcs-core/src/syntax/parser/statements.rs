@@ -2604,14 +2604,14 @@ impl<'a> P<'a> {
             return Some(InstArg { label, value: InstVal::Hint(text, at), span });
         }
         // A whole dotted/indexed path is a reference; a path followed by arithmetic
-        // is an expression, e.g. `dims.bore / 2`.
+        // is an expression, e.g. `dims.bore / 2`.  A list's last item ends at its `]` (#882).
         let checkpoint = self.i;
         let errors = self.errs.len();
         let reference = if matches!(self.peek(), Some(Tok::Ident(_))) {
             self.refr()
         } else { None };
         let bare = reference.is_some()
-            && matches!(self.peek(), Some(Tok::P(',')) | Some(Tok::P(')')) | Some(Tok::P('}')));
+            && matches!(self.peek(), Some(Tok::P(',' | ')' | '}' | ']')));
         let value = if bare {
             InstVal::Ref(reference.unwrap())
         } else {
