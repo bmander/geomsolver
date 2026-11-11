@@ -773,3 +773,126 @@ recorded above with what was tried:
 Every step meets the epic's bar: rows in `docs/contract/generating.md` naming the gate test, field
 agreement and an independent volume at the default tolerance, negative controls kept, an example
 per motion family.
+
+## 12. Trimming by certified membership (#880 E1): the experiment
+
+#880 proposes building the whole swept solid by trimming its candidates by membership, face by
+face (P2), the membership certified rather than sampled (P3), and only the meetings that lie on the
+boundary computed (P4). E1 tries it before anything in T is built, on three refusals of three
+kinds, each built as its closed swept solid alone over the case's whole roll with its candidates
+entered by hand. This section is what was built, what it measured, and what it says about P2–P4.
+
+### What was built
+
+`swept::trim::trimmed(tool, path, roll, candidates, given, bar, tol, Trim {resolution, hair})`. It
+takes no blank. Its candidates are solids or open sheets whose faces may hold the swept boundary:
+the tool at its end poses, and the sheets its contacts and edges sweep. `given` holds the meetings
+known by construction (`boolean::Given`).
+
+1. **Zones (P3).** Each candidate is meshed until its sag is under a quarter of the resolution. Each
+   triangle becomes a ball about its middle, its radius the triangle's circumradius plus the sag.
+   Each ball is read against the sweep's depth `m(x)`, the least signed distance from the tool of
+   `x` carried back over the roll (`member::Swept::beyond`). Where `m < −r` at the ball's middle the
+   ball is proved interior; where `m > r` it is proved exterior. Both proofs cover every point of
+   the ball, because `m` is 1-Lipschitz. A ball proved neither is halved across its triangle's
+   longest edge; one no wider than the resolution is left **near** the boundary. `beyond` reads as
+   `member` does (the mesh's sag, the trajectory's speed bound over each stretch). It halves a
+   stretch no further than `L h ≤ r/4` and reads no more than 256 stretches. Past either limit it
+   answers `None`, which is always safe: it only meets more pairs. The side of a pose is read off
+   the nearest triangle's normal where the nearest point lies inside that triangle, else off the
+   winding number (`member::Solid::signed_near`).
+2. **Pairs (P4).** Two faces of two candidates are met only where a near ball of each stands within
+   reach of the other (read through a grid of the resolution's size).
+3. **The trim** (`boolean::trimmed`). This is the arrangement's own phases, with a filter on which
+   faces are met (`boolean::Meet`): an edge is met with a face only where a face it bounds is paired
+   with it, and two faces only where they are paired. No cell is built. Each piece is kept where
+   membership a hair to one side of it differs from a hair to the other, turned so its member side
+   is behind it. The hair is at least four times the membership mesh's sag, inside which a side does
+   not settle. Pieces lying on another operand's face over one region are stood for by the lowest
+   operand's piece. The kept pieces are assembled on their shared edges, and the meetings that part
+   nothing are healed out, as a selection's are.
+4. **Judged**: `Brep::check`, then `closed::judge`, before anything is returned.
+
+`closed::trimmed` runs the same trim on `closed`'s own candidates and touches, to set the trim
+beside the arrangement case by case. `tests/swept_trim.rs` is the gate.
+
+### What it measured
+
+The three refusals, each over the case's whole roll:
+
+| case | `closed` (the arrangement) | the trim, candidates by hand |
+|---|---|---|
+| the bar of `square-bar-screwed-through-rod` (four turns) | refused after 6.6 s: "a cylinder's pieces do not close" | **built**: 24 faces, volume 8814.5409785942 against the helical integral's 8814.540978594141; judged; its STEP file reads back as the solid. 5.4 s at resolution 1, seeking 146 meetings (all closed form) and meeting 189 of the 226 pairs of faces whose boxes meet. Cut from the rod by the ordinary Boolean, it gives the bench's settled measures, 1300.5502131829 and 821.1671555639 |
+| the ring of `ring-pushed-in-past-its-fold` | `Folded`, before anything is built | **stops at the cusps**: zoned in 8 s, 27 of 40 pairs met, the swallowtail's sheets met; then refused by a face split at a cusp ("an extrusion's pieces do not close"). Never built wrong |
+| `cone-spun-about-a-line-through-it` | `Curved`, before anything is built | **no candidates to enter** (below) |
+
+The trim beside the arrangement, on `closed`'s own candidates; both build the same solid wherever
+both build:
+
+| case | arrangement: meetings / pairs met / time | trim: meetings / pairs met / time |
+|---|---|---|
+| a box slid aslant | 472 / 1038 / 0.10 s | 36 / 36 / 0.09 s |
+| a block turned a quarter turn | 158 / 329 / 0.08 s | 21 / 39 / 0.62 s |
+| the bar screwed two turns | 288 / 512 / 9.7 s | 76 / 104 / 11.9 s |
+| a ring slid at 35° (short of its fold) | 24 / 26 / 0.95 s | refused: not closed (an edge at the end pose used by one face; not examined further) |
+
+The bar screwed two turns, its candidates entered by hand: the same solid (4550.1433221825) in
+2.8 s at resolution 1 and 6.5 s at 0.5, against the arrangement's 9.7–15 s.
+
+### What it says
+
+1. **The bar's refusal was its candidates', not its method's.** The arrangement needs every
+   candidate to cross its box, so it enters each face of an end pose as a half-space block. Those
+   blocks lay full-height rulings across the outer cylinder, and the face split fails there. The
+   trim fails the same way on `closed`'s candidates. A trim needs no candidate to cross anything,
+   so with each end-pose face entered as a sheet a margin past its edges (`trim::planes_past`),
+   the four turns build.
+2. **An end pose cannot be entered as the tool itself, yet.** An edge of the tool at an end pose
+   lies in the sheet it sweeps: it is that sheet's last ruling. The face's cut by that sheet
+   crosses the edge, and the arrangement never looks for that crossing, because an edge lying in a
+   surface is split only where it crosses that surface's own edges. The cut is laid ending at the
+   face's corner instead of at the edge's foot (the bar's end pose, at `(0, −12, 11.5)`). Entered
+   as sheets past their edges, the faces have no such edge. Laying an edge along a surface where
+   that surface's other meetings cross it is T4's.
+3. **P4 holds in count.** On the same candidates the trim seeks 4 to 13 times fewer meetings of
+   surfaces than the arrangement. Every meeting in these cases has a closed form, so this barely
+   shows in time; it will where meetings are traced.
+4. **The cost moved to membership.** Zoning is most of a trim's time (8 of 12 s for the ring; 70–80%
+   for the bar). The resolution trades membership reads against pairs: at resolution 2 the
+   four-turn bar meets 216 of 226 pairs in 4.4 s, at 0.5 it meets 175 in 12.3 s. On small cases
+   with closed forms the trim is slower than the arrangement (0.6 s against 0.08 s). On the bar it
+   is faster, mostly because it enters no blocks and no sheets reaching across the box. R2's
+   profile should start from the zones.
+5. **Pairing is per face, and a pair's meeting is computed whole.** A face that crosses the
+   boundary transversally is paired with the faces there even though its meeting bounds nothing on
+   it (the folded ring's middle arc's sheet, piercing both end poses). Its buried part is met
+   along with the rest. Restricting a meeting to the near zones is the next step of P4, not taken
+   here.
+6. **The fold (X8): the swallowtail is dropped as designed, and two meetings were missing.**
+   - **Second meetings past the fold.** A line along the slide through an inner contact point
+     meets the torus a second time. So each inner sheet crosses each end pose along a second
+     curve, and that curve lies on the boundary: it is where the ring's own far side shades its
+     leading face. Neither a touch given by construction nor `ssi::slid_meeting` (correct only
+     short of the fold) holds it. It has a closed form: on the line `p + t D` the torus's quartic
+     is `t² (t² + 4q t + b)`, so `t = −2q ± √(2 (2R²|D_xy|² − |p|² − R² + r²))`. E1 fits it within
+     1e-10 and gives it.
+   - **The cusp.** The trim then stops there. At a cusp the contact, its second meeting and the
+     line along the slide are mutually tangent (the line has three-point contact), and at the
+     start pose that point lies on the boundary. The arrangement places tangent meetings only to
+     the square root of the tolerance (1.2e-4 here), and lays no vertex where three tangent curves
+     meet. **T1's fold cut must give the cusp's vertex, and the second meetings, by construction.**
+7. **The cone has no candidates to enter.**
+   - **Its base rim.** The rim's normal lies in the plane through the turn's axis and its centre,
+     where `turned::Rim` reads no meridian (#780 L2).
+   - **Its contact.** The contact crosses the turn's axis within the face, so the surface it turns
+     into has a pole, where `turned::Turned` refuses (#780 C3).
+   - Both are T1's: candidates from any face under any trajectory, poles included.
+8. **What is still sampled.** A piece's side is read at up to eight of its inner points, the first
+   that settles taken, and the judge checks the result. The meshes' sags are measured, not proved,
+   as membership's own are.
+
+**E1's reading for the owner.** P2 holds where the candidates exist: the general method built what
+the arrangement refused, with no blank, judged and to the bench's settled solid. P3's zones work as
+designed, and their cost is the trim's cost. P4 holds in count but needs more than touches given by
+construction: a fold's second meetings and its cusp's vertex (T1), and an edge lying in a candidate
+cut where the candidate's meetings cross it (T4). Nothing here asks for P2–P4 to be withdrawn.

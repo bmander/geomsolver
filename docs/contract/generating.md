@@ -822,6 +822,33 @@ writes a failed build's domain and candidates whole (`swept::dump`), replayed al
 to the fewest candidates that still fail (`swept_closed::a_failed_builds_arrangement_is_dumped_replayed_and_reduced`;
 the loop is docs/testing.md's).
 
+**Trimming by certified membership, face by face (#880 E1, `swept::trim`; docs/swept-solid-design.md
+§12).** A closed swept solid is built from candidates given to it — the tool's faces at the end
+poses, the sheets its contacts and edges sweep — and the meetings known by construction, with no
+blank: each candidate meshed and zoned by the sweep's depth (`member::Swept::beyond`: a ball about a
+triangle proved interior where `m < −r` at its middle, exterior where `m > r`, `m` being
+1-Lipschitz, else halved to the resolution and left near; `None` the cautious answer past `L h ≤
+r/4` or 256 stretches); two faces of two candidates met only where near balls of each stand within
+reach (`boolean::trimmed`, the arrangement's phases with `boolean::Meet` filtering its edge–face
+crossings and face pairs; no cell built); each piece kept where membership a hair to either side of
+it differs — the hair at least four times the membership mesh's sag — turned so its member side
+lies behind it; the kept pieces assembled and healed as a selection's are; and the result checked
+and judged by its definition (`closed::judge`) before it is returned. With no filter the
+arrangement is unchanged. The bar of `square-bar-screwed-through-rod`, screwed its four turns — the
+arrangement refusing it ("a cylinder's pieces do not close") — is trimmed from hand-entered
+candidates (each end-pose face a sheet past its edges, `trim::planes_past`; each edge along the axis
+and each long face's contact line its cylinder; each level edge its helicoid's patch,
+`trim::screwed_segment`) to the helical integral worked apart from the build to 1e-9, its STEP file
+reading back, and cut from the rod by the ordinary Boolean it is the bench's settled solid to 1e-10
+(`swept_trim::the_bar_screwed_through_the_rod_is_trimmed_over_its_whole_roll`; two turns,
+`the_bar_screwed_two_turns_is_trimmed_from_hand_entered_candidates`). `closed`'s own candidates
+trimmed (`closed::trimmed`) are the arrangement's solid from fewer meetings
+(`swept_trim::closeds_candidates_trimmed_are_their_arrangements_solid`). The ring pushed past its fold,
+its inner contact entered in arcs cut at its cusps and each sheet's second meeting with each end
+pose given (`t = −2q ± √(2(2R²|D_xy|² − |p|² − R² + r²))` along the slide), is trimmed as far as its
+cusps and refused there, never built wrong (`swept_trim::a_ring_past_its_fold_is_trimmed_up_to_its_cusps`,
+slow tier): the open box is #880 T1's fold cut.
+
 **A tool leaning to a screw's axis is built (#777 M5).** Each leaning edge, and each leaning
 face's contact line, screws into a patch of a ruled helicoid over the segment and the roll a
 twentieth past each (`closed::Cutter::Patch`), its rim standing inside a cell; two sheets of one
