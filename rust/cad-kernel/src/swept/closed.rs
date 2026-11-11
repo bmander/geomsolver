@@ -651,12 +651,42 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
             }
         }
     }
+    build_by(tool,path,roll,bar,tol,blank,None)
+}
+
+/// **`closed`'s candidates, trimmed** (#880 E1): the same candidates and touches `closed` makes,
+/// built by trimming by membership (`trim`) rather than by their arrangement — the two set side by
+/// side on every case `closed` builds. A whole turn is trimmed from its candidates here, not built by
+/// its shadow or its slices as `closed` builds it; a motion `closed` takes K2's road for is refused
+/// (`Unbuilt::Motion`): that road is no arrangement of candidates.
+pub fn trimmed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,trim: super::trim::Trim)
+    -> Result<(Brep,super::trim::Report),Unbuilt> {
+    use crate::util::meter;
+    let m = meter::Meter::new(BUDGET);
+    let clock = crate::util::clock::Instant::now();
+    let report = std::cell::RefCell::new(None);
+    let out = meter::within(&m,|| build_by(tool,path,roll,bar,tol,None,Some((trim,&report))));
+    if meter::profiling() {
+        eprintln!("{}  took {:?}: {}",m.report(),clock.elapsed(),match &out { Ok(b) => format!("trimmed, {} faces",b.faces.len()),Err(e) => format!("{e:?}") });
+    }
+    if let Some(o) = m.over() { return Err(meter::Stopped(o).into()) }
+    let b = out?;
+    let mut report = report.into_inner().ok_or(Unbuilt::Motion)?;
+    report.meetings = m.meetings();
+    report.membership = m.count(meter::Stage::Membership);
+    Ok((b,report))
+}
+
+/// `build`, its candidates arranged, or trimmed (`trim`, its report written back) where asked.
+#[allow(clippy::type_complexity)]
+fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>,
+    trim: Option<(super::trim::Trim,&std::cell::RefCell<Option<super::trim::Report>>)>) -> Result<Brep,Unbuilt> {
     // the legs the path is taken in: one constant twist over the roll, or each piece of a path of
     // pieces over its stretch of it (K1: a sweep is its pieces' sweeps united), every one read —
     // or, a motion no constant twist and no such path takes, K2's road: each instant's contact swept
     // into a patch (#780 L3)
     let legs = match legs(tool,path,roll) {
-        Err(Unbuilt::Motion) if path.screw().is_none() => {
+        Err(Unbuilt::Motion) if path.screw().is_none() && trim.is_none() => {
             // a prism under a motion keeping the plane square to it: its section's planar sweep,
             // extruded (#880 Q2), before K2's road — which is still asked where it refuses, its
             // refusal standing unless K2 cannot read the tool at all
@@ -1481,6 +1511,12 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         let surface = |r: std::ops::Range<usize>| solids[r].iter().flat_map(|b| &b.faces).map(|f| &f.surface).find(holds).cloned();
         Some(crate::boolean::Given {surfaces:[surface(r0)?,surface(r1)?],curves:t.curves.clone()})
     }).collect();
+    if let Some((t,report)) = trim {
+        let owned: Vec<Brep> = refs.into_iter().cloned().collect();
+        let (b,r) = super::trim::trim(tool,path,roll,&owned,&given,bar,tol,t)?;
+        *report.borrow_mut() = Some(r);
+        return Ok(b)
+    }
     arranged_or_dumped(within,reached,&refs,&given,&swept,blank,tol)
 }
 
@@ -1859,7 +1895,7 @@ fn leaning_contact(screw: &crate::trajectory::Screw,o: V,n: V,corners: &[V],eps:
 /// the domain — a sheet bounded inside a cell, whose meetings stop partway across the faces it
 /// meets. It is the face of a triangle on the segment screwed (`build::screwed`), the triangle's
 /// other faces left off.
-fn patch(screw: &crate::trajectory::Screw,pose_at: &dyn Fn(f64) -> Result<crate::trajectory::Pose,Unbuilt>,p: V,q: V,[a,b]: [f64;2])
+pub(crate) fn patch(screw: &crate::trajectory::Screw,pose_at: &dyn Fn(f64) -> Result<crate::trajectory::Pose,Unbuilt>,p: V,q: V,[a,b]: [f64;2])
     -> Result<Brep,Unbuilt> {
     let d = sub(q,p);
     let (p,q) = (sub(p,scale(d,PAST)),add(q,scale(d,PAST)));
@@ -2080,7 +2116,7 @@ fn turned_solid(t: &crate::turned::Turned) -> Result<Brep,String> {
 /// within the contact's apparent contour, its two halves read in the plane through the torus's
 /// centre square to the slide, extruded along the slide over `[h0, h1]` — exact, its side the
 /// cylinder over the contour (`Surface::Extrusion` of `geom::Curve::Slid`).
-fn contour_solid(halves: &[crate::slid::Slid;2],[h0,h1]: [f64;2]) -> Result<Brep,String> {
+pub(crate) fn contour_solid(halves: &[crate::slid::Slid;2],[h0,h1]: [f64;2]) -> Result<Brep,String> {
     let profile = Profile {origin:halves[0].frame.o,normal:halves[0].slide(),names:Vec::new(),
         loops:vec![halves.iter().map(|h| ProfileEdge::Exact(Curve::Slid(std::sync::Arc::new(*h)))).collect()]};
     prism(&profile,h0,h1)
@@ -2112,7 +2148,7 @@ fn only_sheet(mut solid: Brep) -> Brep {
 /// **The sheet a slid torus band's contact sweeps** (#810, `Cutter::Sheet`): the cylinder over the
 /// arc `arc` of the contour, extruded along the slide over `[h0, h1]` — its one face, the other
 /// faces of the prism on the arc and its chord left off, as a patch is (`patch`).
-fn contour_sheet(arc: &crate::slid::Slid,[h0,h1]: [f64;2]) -> Result<Brep,String> {
+pub(crate) fn contour_sheet(arc: &crate::slid::Slid,[h0,h1]: [f64;2]) -> Result<Brep,String> {
     let [a,b] = arc.span;
     let (p,q) = (arc.d2(a).0,arc.d2(b).0);
     let profile = Profile {origin:arc.frame.o,normal:arc.slide(),names:vec![vec!["sheet".into(),String::new()]],

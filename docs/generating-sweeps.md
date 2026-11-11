@@ -1338,6 +1338,18 @@ The solid is judged by membership before it is returned, as every closed build i
 frame (`path.sv`'s) is asked it and refused at R2 (`Folded`): its long sides' contacts stand at their
 corners at every instant, which the region does not yet read.
 
+### Trimming by membership, face by face (issue #880 E1)
+
+The closed class's sweep built by trimming rather than by arranging (`brep::swept::trim`,
+docs/swept-solid-design.md §12): the candidates are given, each zoned by the sweep's depth, only
+the faces whose near zones meet are met, and each piece is kept by membership either side of it — no
+cell, no blank. It is E1's experiment, not yet a class: nothing in the drawing asks it, and its
+candidates are entered by hand (`tests/swept_trim.rs`). It builds the bar of
+`square-bar-screwed-through-rod` over its four turns, which the closed class refuses, and the
+closed class's own candidates to the same solid from 4–13 times fewer meetings; the ring pushed past
+its fold stops at the fold's cusps, and the cone spun about a line through it has no candidates to
+enter yet (#880 T1).
+
 ### Undercut is excluded deliberately
 
 A pinion with few teeth often has some undercut. There, the envelope of the blade tip's

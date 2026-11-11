@@ -552,7 +552,7 @@ known before any is sought given it (`Given`, `arrangement_given`, #810): curves
 surfaces that are their whole meeting, laid as an edge of both with no search for that pair —
 what a sweep knows of its candidates' touches by construction
 (generating.md, #810); each cell's membership in each operand read off a face of it bounding the cell, else at
-a point deep inside. **A Boolean is a selection over it**: each piece's two sides' membership read
+a point deep inside. **A trim is the same phases with no cell** (#880 E1, `boolean::trimmed`): only the pairs of faces a `Meet` names met (an edge with a face only where a face it bounds is), each piece kept, turned or dropped by a side test its caller gives, coincident pieces stood for by the lowest operand's, and the kept pieces assembled and healed as a selection's are; with no `Meet` the arrangement is as it was (generating.md's trimming by membership). **A Boolean is a selection over it**: each piece's two sides' membership read
 as before, the complex formed, each shell kept as the operation keeps its sides — which agree round
 it, with no face kept by its own sides instead: a shell kept on one side and dropped on another is
 refused, two cells joined round an edge — and the result touching itself along an edge given an edge for each
