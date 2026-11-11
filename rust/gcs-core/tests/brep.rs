@@ -3011,3 +3011,40 @@ fn spline_columns_with_overlapping_boxes_keep_their_meetings() {
         poles:[0.,-1.5,0.].iter().enumerate().map(|(i,z)| vec![[0.5*i as f64,0.,z+0.9],[0.5*i as f64,1.,z+0.9]]).collect()};
     assert!(!separated_nets(&below[1],&hung,4e-7) && !separated_nets(&hung,&below[1],4e-7));
 }
+
+/// **A ball in a paraboloid cup that fits its bottom** (brep-bench's tangent/ball-in-a-paraboloid-cup):
+/// the solid paraboloid `x² + y² ≤ 10z`, `z ≤ 5`, its meridian the quadratic Bézier it is, and the
+/// ball of radius 5 about `(0, 0, 5)`, its poles on the axis: its curvature at its bottom pole is
+/// the cup's at its vertex, so every meridian of the ball runs within the fourth power of the way
+/// from that pole of the cup's side (10⁻⁷ a tenth of a unit out). The ball's seam meets the cup's
+/// face only at its end, the pole, read in closed form (`query::conic_revolution`) where the
+/// general reading saw a whole patch nearly coincide and gave up. Union, common and cut, the cup's
+/// seam in the ball's half plane and a quarter turn from it, are their closed forms.
+#[test]
+fn a_ball_in_a_paraboloid_cup_that_fits_its_bottom() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::sphere;
+    use gcs_core::brep::nurbs::BSpline;
+    use gcs_core::brep::props::area;
+    use std::sync::Arc;
+    let rim = 50f64.sqrt();
+    let ball = sphere([0.,0.,5.],[0.,0.,1.],5.).unwrap();
+    for (seam,x,normal) in [("beside the ball's",[1.,0.,0.],[0.,-1.,0.]),("a quarter turn from it",[0.,1.,0.],[1.,0.,0.])] {
+        let at = |r: f64,z: f64| [r*x[0],r*x[1],z];
+        let bezier = BSpline::new(2,vec![0.,0.,0.,1.,1.,1.],vec![at(0.,0.),at(rim/2.,0.),at(rim,5.)]).unwrap();
+        let section = Profile {names:vec![],origin:[0.;3],normal,loops:vec![vec![ProfileEdge::Spline(Arc::new(bezier)),
+            line(at(rim,5.),at(0.,5.)),line(at(0.,5.),at(0.,0.))]]};
+        let cup = revolve(&section,[0.;3],[0.,0.,1.],TAU).unwrap();
+        close(volume(&cup),125.*PI);
+        for (op,want) in [(Op::Union,625.*PI/3.),(Op::Common,250.*PI/3.),(Op::Cut,125.*PI/3.)] {
+            let out = combined(&cup,&ball,op,0.).unwrap_or_else(|e| panic!("the cup's seam {seam}, {op:?}: {e}"));
+            out.check(1e-8).unwrap_or_else(|e| panic!("the cup's seam {seam}, {op:?}: {e}"));
+            assert!((volume(&out)-want).abs() <= 1e-9*want,"the cup's seam {seam}, {op:?}: {} against {want}",volume(&out));
+            if op == Op::Union {
+                let a: f64 = out.faces.iter().map(|f| area(&out,f)).sum();
+                let side = 50.*PI/3.*(3.*3f64.sqrt()-1.);
+                assert!((a-(side+75.*PI)).abs() <= 1e-9*a,"the cup's seam {seam}: area {a} against {}",side+75.*PI);
+            }
+        }
+    }
+}

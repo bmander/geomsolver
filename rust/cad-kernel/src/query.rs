@@ -575,6 +575,8 @@ fn closed(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certifie
         // a circle's or an ellipse's on any surface with an algebraic form here, an edge of a
         // drum, a fillet's rim or a section's arc (#780 R2)
         (Curve::Circle(..) | Curve::Ellipse(..),_) if degree(surface).is_some() => conic_algebraic(curve,[t0,t1],surface,tol),
+        // and against a surface turned from a conic, whose algebraic form is read span by span
+        (Curve::Circle(..) | Curve::Ellipse(..),Surface::Revolution(f,c)) => conic_revolution(curve,[t0,t1],f,c,surface,tol),
         (Curve::BSpline(sp),Surface::Plane(f)) => spline_plane(sp,[t0,t1],f,surface,tol),
         _ => Err(Uncertified::NoForm),
     }
@@ -602,17 +604,9 @@ fn kept(surface: &Surface,tol: f64,p: V) -> bool {
 /// same formula read in intervals, and its roots isolated by it (`util::isolate`, #814), a touch
 /// accepted where the surface's distance is within `tol`. Each kept where the surface's points are.
 fn conic_algebraic(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certified {
-    use std::f64::consts::TAU;
     let n = degree(surface).ok_or(Uncertified::NoForm)?;
     let at = |t: f64| curve.point(t);
-    let m = 2*n+1;
-    let ys: Vec<f64> = (0..m).map(|j| form(surface,at(TAU*j as f64/m as f64)).map_or(f64::NAN,|x| x.0)).collect();
-    let c0 = ys.iter().sum::<f64>()/m as f64;
-    let terms: Vec<(f64,f64)> = (1..=n).map(|k| {
-        let (mut x,mut y) = (0.,0.);
-        for (j,v) in ys.iter().enumerate() { let (s,c) = (TAU*(k*j) as f64/m as f64).dsin_cos(); x += v*c; y += v*s; }
-        (2.*x/m as f64,2.*y/m as f64)
-    }).collect();
+    let (c0,terms) = trig_along(curve,n,&|p| form(surface,p).map_or(f64::NAN,|x| x.0));
     let g = Banded {f:crate::util::isolate::Written(Trig {c0,terms:&terms}),by:Implicit::new(curve,surface,tol)};
     let found = crate::util::isolate::roots(&g,[t0,t1],tol*1e-3/curve.speed().max(1e-300),&|t| surface.implicit(at(t)).abs() <= tol)?;
     Ok(Meets::At(found.into_iter().filter(|r| kept(surface,tol,at(r.at))).map(|r| (r.at,r.touch)).collect()))
@@ -631,9 +625,29 @@ impl<F: crate::util::isolate::Function> crate::util::isolate::Function for Bande
     fn within(&self,a: f64,b: f64) -> bool { self.by.within(a,b) }
 }
 
-/// **A trigonometric polynomial** `c₀ + Σ (a_k cos kt + b_k sin kt)` (`conic_algebraic`), written
-/// once over `Num`.
+/// **A form of degree `n` along a circle or an ellipse** (`o + a cos t + b sin t`) as the
+/// trigonometric polynomial it is, `c₀ + Σ (a_k cos kt + b_k sin kt)`, `k` to `n`: its
+/// coefficients read exactly from `2n + 1` points evenly round it.
+fn trig_along(curve: &Curve,n: usize,form: &dyn Fn(V) -> f64) -> (f64,Vec<(f64,f64)>) {
+    use std::f64::consts::TAU;
+    let m = 2*n+1;
+    let ys: Vec<f64> = (0..m).map(|j| form(curve.point(TAU*j as f64/m as f64))).collect();
+    let c0 = ys.iter().sum::<f64>()/m as f64;
+    let terms = (1..=n).map(|k| {
+        let (mut x,mut y) = (0.,0.);
+        for (j,v) in ys.iter().enumerate() { let (s,c) = (TAU*(k*j) as f64/m as f64).dsin_cos(); x += v*c; y += v*s; }
+        (2.*x/m as f64,2.*y/m as f64)
+    }).collect();
+    (c0,terms)
+}
+
+/// **A trigonometric polynomial** `c₀ + Σ (a_k cos kt + b_k sin kt)` (`conic_algebraic`,
+/// `conic_revolution`), written once over `Num`; its value over a stretch enclosed by its Taylor
+/// model too (`Trig::taylor`), where the formula read in intervals encloses too loosely.
 struct Trig<'a> { c0: f64,terms: &'a [(f64,f64)] }
+
+/// How many terms a Taylor model of a `Trig` keeps before its remainder.
+const TAYLOR: usize = 8;
 
 impl crate::util::isolate::Formula for Trig<'_> {
     fn jet<T: Num>(&self,t: crate::util::interval::Jet<T>) -> crate::util::interval::Jet<T> {
@@ -641,6 +655,174 @@ impl crate::util::isolate::Formula for Trig<'_> {
             let (s,c) = t.times((i+1) as f64).sin_cos();
             acc+c.times(x)+s.times(y)
         })
+    }
+}
+
+impl Trig<'_> {
+    /// The `j`th derivative at `t`, enclosed: each term's turned a quarter `j` times, exactly.
+    fn derivative(&self,j: usize,t: f64) -> Iv {
+        let mut sum = Iv::point(if j == 0 { self.c0 } else { 0. });
+        for (i,&(x,y)) in self.terms.iter().enumerate() {
+            let k = (i+1) as f64;
+            let (s,c) = Num::sin_cos(Iv::point(t).times(k));
+            let (x,y) = (Iv::point(x),Iv::point(y));
+            let term = match j%4 { 0 => x*c+y*s,1 => y*c-x*s,2 => -(x*c+y*s),_ => x*s-y*c };
+            sum = sum+term*Iv::point(k.powi(j as i32));
+        }
+        sum
+    }
+    /// **Its value over `[a, b]` by its Taylor model** about the middle: `TAYLOR` terms read there
+    /// and the remainder bounded by `Σ k^TAYLOR (|a_k| + |b_k|)`, which no derivative of that order
+    /// exceeds anywhere. Where the form has a root of high order (a meridian of a ball meeting the
+    /// paraboloid that fits its bottom, the fourth power of the way from it), its terms cancel, and
+    /// the formula read in intervals encloses each term's spread and not the sum's: this encloses
+    /// the sum.
+    fn taylor(&self,a: f64,b: f64) -> Iv {
+        let m = 0.5*(a+b);
+        let h = Iv::new(a,b)-Iv::point(m);
+        let (mut sum,mut power,mut fact) = (Iv::point(0.),Iv::point(1.),1.);
+        for i in 0..TAYLOR {
+            if i > 0 { power = power*h; fact *= i as f64; }
+            sum = sum+self.derivative(i,m)*power/Iv::point(fact);
+        }
+        let most = self.terms.iter().enumerate().fold(Iv::point(0.),|acc,(i,&(x,y))| {
+            acc+Iv::point(((i+1) as f64).powi(TAYLOR as i32))*(Iv::point(x.abs())+Iv::point(y.abs()))
+        }).hi();
+        let reach = (power*h).mag()/(fact*TAYLOR as f64);
+        let rest = Iv::point(most)*Iv::point(reach);
+        sum+Iv::new(-rest.hi(),rest.hi())
+    }
+}
+
+impl crate::util::isolate::Formula for &Trig<'_> {
+    fn jet<T: Num>(&self,t: crate::util::interval::Jet<T>) -> crate::util::interval::Jet<T> { (**self).jet(t) }
+}
+
+/// **A circle or an ellipse against a surface of revolution whose meridian is a conic** (a
+/// rational B-spline of degree two at most, `Surface::Revolution` about `f`'s axis, its meridian in
+/// the frame's `xz` half plane): the curve's counterpart of `line_revolution`. Over each knot span
+/// the meridian is a conic arc `F(r, z) = 0` in the radius `r` and height `z` — its quadratic
+/// Bézier's, `4 w₁² Λ₀ Λ₂ − w₀ w₂ Λ₁²` in the barycentric coordinates `Λᵢ` of its poles, or the line
+/// through its ends where they lie on one — and the surface turned from it is where `F(ρ, z) F(−ρ, z)
+/// = P² − ρ² O²` is nought, `P` the part of `F` even in `r` and `r O` the odd. A meridian symmetric
+/// about the axis (a paraboloid's, `O` nought) is `P = 0` alone, so a contact on the axis keeps
+/// its own order. Along the curve the form is a trigonometric polynomial of degree four (two for
+/// `P`), its roots isolated (`util::isolate`), and a run the curve keeps within the tolerance
+/// proved by its Taylor model (`Along`) — the ball's meridian in a paraboloid cup that fits its
+/// bottom, within the fourth power of the way from the pole it touches at, which neither the
+/// polynomial's interval enclosures nor the general reading's two unknowns can part or exclude.
+/// Each root kept where it lies on the bounded surface. `NoForm` for a meridian of higher degree or
+/// out of the frame's plane, or a weight not positive.
+fn conic_revolution(curve: &Curve,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Curve,surface: &Surface,
+                    tol: f64) -> Certified {
+    let Curve::BSpline(sp) = c else { return Err(Uncertified::NoForm) };
+    if sp.degree > 2 { return Err(Uncertified::NoForm) }
+    let [k0,k1] = sp.domain();
+    let mut knots = vec![k0];
+    knots.extend(sp.breaks([k0,k1]));
+    knots.push(k1);
+    let at = |t: f64| curve.point(t);
+    let mut out: Vec<(f64,bool)> = Vec::new();
+    for w in knots.windows(2) {
+        let form = Revolved::of(f,|s: f64| sp.homogeneous(w[0]+(w[1]-w[0])*s)).ok_or(Uncertified::NoForm)?;
+        let (c0,terms) = trig_along(curve,if form.even { 2 } else { 4 },&|p| form.at::<f64>(p).0);
+        let g = Along {f:Trig {c0,terms:&terms},curve,form:&form,tol};
+        let near = |t: f64| surface.implicit(at(t)).abs() <= tol;
+        for r in crate::util::isolate::roots(&g,[t0,t1],tol*1e-3/curve.speed().max(1e-300),&near)? {
+            let p = at(r.at);
+            // (a root of the conic past the span, or of its mirror, is off the surface)
+            if distance(p,surface.point(surface.inverse(p))) <= 2.*tol.max(1e-9*(1.+norm(p))) { out.push((r.at,r.touch)) }
+        }
+    }
+    out.sort_by(|x,y| x.0.total_cmp(&y.0));
+    Ok(Meets::At(out))
+}
+
+/// **The algebraic form of a surface turned from a conic arc** (`conic_revolution`): in `frame`'s
+/// coordinates `(x, y, z)`, `ρ² = x² + y²`, it is `P² − ρ² O²` with `P = A ρ² + C z² + E z + G`
+/// and `O = B z + D` — or `P` alone where the arc is symmetric about the axis (`even`) — from the
+/// arc's `F(r, z) = A r² + B r z + C z² + D r + E z + G`.
+struct Revolved { frame: super::geom::Frame,even: bool,a: f64,b: f64,c: f64,d: f64,e: f64,g: f64 }
+
+impl Revolved {
+    /// The form of the surface turned from the conic arc `h` (homogeneous, `σ` over `[0, 1]`, in
+    /// space) about `frame`'s axis; `None` where the arc is no quadratic arc in the frame's `xz`
+    /// plane with positive weights.
+    fn of(frame: &super::geom::Frame,h: impl Fn(f64) -> (V,f64)) -> Option<Revolved> {
+        // the span's poles: its ends, and the middle's from the point halfway, `(P₀ + 2P₁ + P₂)/4`
+        let read = |s: f64| { let (x,w) = h(s); (frame.local(scale(x,1./w)),w) };
+        let ((l0,w0),(lm,wm),(l2,w2)) = (read(0.),read(0.5),read(1.));
+        let reach = [l0,lm,l2].iter().flatten().fold(0.,|m: f64,x| m.max(x.abs())).max(1e-300);
+        if [l0,lm,l2].iter().any(|l| l[1].abs() > 1e-9*reach) { return None }
+        let w1 = 2.*wm-0.5*(w0+w2);
+        if !(w0 > 0. && w1 > 0. && w2 > 0.) { return None }
+        let pole = |l: V,w: f64| [l[0]*w,l[2]*w];
+        let (h0,h2) = (pole(l0,w0),pole(l2,w2));
+        let hm = pole(lm,wm);
+        let p0 = [l0[0],l0[2]];
+        let p2 = [l2[0],l2[2]];
+        let p1 = [(2.*hm[0]-0.5*(h0[0]+h2[0]))/w1,(2.*hm[1]-0.5*(h0[1]+h2[1]))/w1];
+        // a linear form `[r, z, 1]` vanishing on the line through `u` and `v` (`(u − q) × (v − q)`)
+        let cross = |u: [f64;2],v: [f64;2]| u[0]*v[1]-u[1]*v[0];
+        let through = |u: [f64;2],v: [f64;2]| { let w = [v[0]-u[0],v[1]-u[1]]; [-w[1],w[0],cross(u,v)] };
+        // the product of two linear forms, as `[A, B, C, D, E, G]`
+        let times = |x: [f64;3],y: [f64;3]| [x[0]*y[0],x[0]*y[1]+x[1]*y[0],x[1]*y[1],
+            x[0]*y[2]+x[2]*y[0],x[1]*y[2]+x[2]*y[1],x[2]*y[2]];
+        let flat = cross([p1[0]-p0[0],p1[1]-p0[1]],[p2[0]-p0[0],p2[1]-p0[1]]);
+        let f: [f64;6] = if flat.abs() <= 1e-12*reach*reach {
+            // the poles on one line: the arc is a stretch of it
+            let l = through(p0,p2);
+            [0.,0.,0.,l[0],l[1],l[2]]
+        } else {
+            let (q0,q1,q2) = (through(p1,p2),through(p2,p0),through(p0,p1));
+            let (x,y) = (times(q0,q2),times(q1,q1));
+            std::array::from_fn(|i| 4.*w1*w1*x[i]-w0*w2*y[i])
+        };
+        // each coefficient weighed by the power of length it carries
+        let weighed = [f[0]*reach*reach,f[1]*reach*reach,f[2]*reach*reach,f[3]*reach,f[4]*reach,f[5]];
+        let whole = weighed.iter().map(|x| x.abs()).sum::<f64>();
+        if !(whole > 0.) || !whole.is_finite() { return None }
+        let k = 1./whole;
+        let [a,b,c,d,e,g] = f.map(|x| x*k);
+        let even = (weighed[1].abs()+weighed[3].abs())*k <= 1e-9;
+        Some(Revolved {frame:*frame,even,a,b,c,d,e,g})
+    }
+    /// The form and its gradient at `x`, written once over `Num`.
+    fn at<T: Num>(&self,x: [T;3]) -> (T,[T;3]) {
+        let f = &self.frame;
+        let k = |v: f64| T::of(v);
+        let o: [T;3] = std::array::from_fn(|i| x[i]-k(f.o[i]));
+        let along = |e: V| o[0]*k(e[0])+o[1]*k(e[1])+o[2]*k(e[2]);
+        let q = [along(f.x),along(f.y),along(f.z)];
+        let two = k(2.);
+        let rho2 = q[0]*q[0]+q[1]*q[1];
+        let p = k(self.a)*rho2+k(self.c)*q[2]*q[2]+k(self.e)*q[2]+k(self.g);
+        let dp = [two*k(self.a)*q[0],two*k(self.a)*q[1],two*k(self.c)*q[2]+k(self.e)];
+        let (v,g) = if self.even { (p,dp) } else {
+            let odd = k(self.b)*q[2]+k(self.d);
+            let o2 = odd*odd;
+            (p*p-rho2*o2,[two*p*dp[0]-two*q[0]*o2,two*p*dp[1]-two*q[1]*o2,
+                two*p*dp[2]-two*rho2*odd*k(self.b)])
+        };
+        (v,std::array::from_fn(|i| g[0]*k(f.x[i])+g[1]*k(f.y[i])+g[2]*k(f.z[i])))
+    }
+}
+
+/// **A revolved conic's form along a curve** (`conic_revolution`): the trigonometric polynomial it
+/// is, and a run proved within the tolerance where that polynomial's Taylor model over a stretch is
+/// within half the tolerance times the least the form's gradient can be over the curve's enclosure
+/// there (to first order, the surface's distance; `Implicit::within`'s rule).
+struct Along<'a> { f: Trig<'a>,curve: &'a Curve,form: &'a Revolved,tol: f64 }
+
+impl crate::util::isolate::Function for Along<'_> {
+    fn at(&self,t: f64) -> (f64,f64) { crate::util::isolate::Written(&self.f).at(t) }
+    fn value(&self,t: f64) -> Iv { crate::util::isolate::Written(&self.f).value(t) }
+    fn slope(&self,a: f64,b: f64) -> Iv { crate::util::isolate::Written(&self.f).slope(a,b) }
+    fn within(&self,a: f64,b: f64) -> bool {
+        let (_,g) = self.form.at(self.curve.enclose([[a,b]]).at);
+        let least = |x: Iv| if x.has_zero() { 0. } else { x.lo().abs().min(x.hi().abs()) };
+        let grad = g.iter().map(|&x| least(x)*least(x)).sum::<f64>().sqrt();
+        self.f.taylor(a,b).mag() <= 0.5*self.tol*grad*(1.-1e-9)
     }
 }
 

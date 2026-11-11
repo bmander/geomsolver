@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A circle or an ellipse against a surface turned from a conic, in closed form**
+  (`query::conic_revolution`): the turned surface's algebraic form, read span by span from each
+  arc's Bézier poles (`F(ρ, z) F(−ρ, z)`, or `F` alone for an arc symmetric about the axis), is a
+  trigonometric polynomial along the curve, whose roots are isolated and whose runs within the
+  tolerance are proved by its Taylor model. A ball's meridian meets the paraboloid that fits its
+  bottom within the fourth power of the way from the pole it ends at, and the general reading,
+  seeing a whole patch nearly coincide, gave up past its boxes: brep-bench's
+  `tangent/ball-in-a-paraboloid-cup`, refused by 0.7.0 ("where a circle … meets a revolution was
+  not proved"), builds, union, common and cut, to its closed forms.
 - **A root met flatly goes onto a crossing found beside its edge** (`boolean`'s `flat_roots`):
   where an edge of the other operand lying along a face the edge bounds crosses the edge, that
   crossing is one a root met flatly may be, as the edge's own cuts were. A torus's circle at a
