@@ -945,7 +945,14 @@ too: on the sheet's rails a lowered face's area missed by 2e-10.  `Blend::invers
 from the thread's last foot on it where that settles near the point (as a family's wall does: the
 evaluated solid asks at every triangle's corners, and searched afresh the spring meshed 6× slower),
 else seeds each `u` where the screw turns it to face the point (`turned_to`; a grid along `v` alone
-starts on a coil's next turn); `inverse_near` runs Newton from its hint first; `step::blend_net`
+starts on a coil's next turn), and a rail (`Curve::Iso`) is read the same way, the nearest of
+its samples and of those turns (#886: from 33 samples along a rail of 5.8 turns rising 6 a turn
+46 out, half its points were read a turn off, so `same_edge` never merged the helix two sheets
+meet a cylinder in and the cylinder's pieces did not close;
+`swept_closed::a_rail_screwed_many_turns_is_read_on_its_own_turn`,
+`two_sheets_meeting_a_cylinder_in_one_helix_split_it_once` and, slow tier,
+`the_square_bar_screwed_four_turns_closes_into_its_helical_sweep` are the gate); `inverse_near`
+runs Newton from its hint first; `step::blend_net`
 fits quintic along a screw a cubic cannot follow at the fit's cap.  A twisted duct, a thread, an auger's
 flight and a coil lie on blends; a section that changes as it runs stays on its sheets
 (`tests/helix.rs`, `a_rigid_screw_lies_on_its_swept_rim`).

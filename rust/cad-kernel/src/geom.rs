@@ -1947,10 +1947,15 @@ impl Curve {
             Curve::SheetCut(ref c) => self.newton(p,c.v_of(p),None),
             Curve::Rail(ref w,u) => w.rail_inverse(u,p),
             Curve::Rim(ref w,s) => w.rim_inverse(s,p),
+            // the nearest of samples along the rail and of the points where its screw turns it to
+            // face `p` (one a turn, as the patch's `searched`), then Newton: a rail screwed many
+            // turns passes a pitch from `p` on each of them, and where its samples stand farther
+            // apart than that the nearest may be on another turn, whose foot Newton keeps (#886: a
+            // rail of 5.8 turns 46 out, rising 6 a turn, read half its points a turn off, so the
+            // helix two sheets meet a cylinder in was two edges, never merged)
             Curve::Iso(ref b,u) => {
                 let mut best = (f64::INFINITY,0.);
-                for j in 0..=32 {
-                    let v = j as f64/32.;
+                for v in (0..=32).map(|j| j as f64/32.).chain(b.turned_to(u,p)) {
                     let d = crate::util::space::distance(b.d1([u,v]).0,p);
                     if d < best.0 { best = (d,v); }
                 }
