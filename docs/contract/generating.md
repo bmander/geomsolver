@@ -849,6 +849,28 @@ pose given (`t = −2q ± √(2(2R²|D_xy|² − |p|² − R² + r²))` along th
 cusps and refused there, never built wrong (`swept_trim::a_ring_past_its_fold_is_trimmed_up_to_its_cusps`,
 slow tier): the open box is #880 T1's fold cut.
 
+**A face's contact under a constant twist, in pieces (#880 Q1b S1, `swept::contacts`;
+docs/swept-solid-design.md §13).** Under a slide, a turn or a screw the points of a tool in contact are
+fixed on it, and a whole tool's contact is a graph: `contacts::face_contact` reads a face's as the zero
+set of `g = n · v` over its parameters, for any surface. It samples `g` on a grid over the face's
+parameter box (`Located::parameter_box`, its loops' outline's, as many cells each way as the side's
+length in space asks, `CELLS` at least) and closes each change of sign on a cell's edge by bisection.
+It links the roots cell by cell, a cell crossed four times through its double point where `∇g = 0`
+there and `g` is nought (the pieces meeting there end `Singular`), else by its saddle's own value.
+It cuts each polyline where it leaves the face (`Located::holds_parameters`, the outline's winding),
+each end placed on the boundary by bisection along the curve, and settles each point onto `g = 0` by
+Newton across the curve. Points are added until every chord is within the tolerance of the curve,
+and pieces ending at one point either side of a seam are joined, a loop closed. A face the motion keeps
+in its own surface (`g ≡ 0` over it) is `Whole`. A ring's two roots meeting is no branch of the set,
+only where the curve turns back along the ring: the leaning torus of `torus-screwed-through-rod` is in
+contact along one closed curve through both its seams, where the constant-twist class's walk refuses
+it ("a double point on a ring"). Held on that torus, the V wheel of `v-wheel-screwed-through-rod`, a
+box leaning to a screw and a drum turned about its own axis: every point within `1e-9` of `g`'s
+greatest of nought and in its face; no change of sign on a grid four times finer without a piece
+within a cell; each ring's two closed-form roots (`Surface::ring_contact`) on a piece within the
+tolerance; a plane's contact a line across it ending on its boundary; the drum's side `Whole`
+(`swept_contacts`).
+
 **A tool leaning to a screw's axis is built (#777 M5).** Each leaning edge, and each leaning
 face's contact line, screws into a patch of a ruled helicoid over the segment and the roll a
 twentieth past each (`closed::Cutter::Patch`), its rim standing inside a cell; two sheets of one

@@ -309,6 +309,7 @@ mod swept_dispatch;
 mod swept_partway;
 mod swept_apex;
 mod swept_trim;
+mod swept_contacts;
 mod swept_vertex;
 mod tool_reading;
 mod touch_curves;

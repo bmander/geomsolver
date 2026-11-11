@@ -2073,6 +2073,17 @@ impl<'a> Located<'a> {
     /// Face `fi`'s box in space (`face_box`).
     pub fn face_box(&self,fi: usize) -> ([f64;3],[f64;3]) { self.space[fi] }
 
+    /// **Face `fi`'s box in its surface's parameters**: its loops' outline's, on the branch of its
+    /// periods they are drawn on (`uv`).
+    pub fn parameter_box(&self,fi: usize) -> [Uv;2] { self.drawn(fi).1 }
+
+    /// **Whether the parameters `uv` lie in face `fi`**, read off its loops' outline in its
+    /// parameters by their winding, on the branch they are drawn on (`uv`); no point is read in space.
+    pub fn holds_parameters(&self,fi: usize,uv: Uv) -> bool {
+        let winding = self.drawn(fi).0.winding(uv);
+        if self.b.faces[fi].reversed { winding < 0 } else { winding > 0 }
+    }
+
     /// How far edge `e`'s box is from `p`: no point of the edge is nearer.
     pub fn edge_gap(&self,e: u32,p: V) -> f64 { gap(self.edge_space[e as usize],p) }
 
