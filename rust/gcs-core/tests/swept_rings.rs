@@ -145,8 +145,8 @@ fn a_tube_that_folds_is_entered_where_it_stands_outside_the_tool() {
 /// where it stands outside the torus where it starts and stops, the box split by them and the torus
 /// at both end poses at once into six cells (in some eleven seconds) and classified (in under a
 /// second), the selected solid checked and judged by the definition. Its volume made apart from
-/// any kernel (`swept_tumble_apart`, the divergence theorem over the ribbon's offset sheets and the
-/// end poses, each kept where membership says) is 25.2750727653, where cadrs's is within 1.1e-8;
+/// any kernel (#880 E2: the divergence theorem over the ribbon's offset sheets and the end poses,
+/// each kept where membership says) is 25.2750727653, where cadrs's is within 1.1e-8;
 /// the solid's own, read off its fitted faces, is 25.2750394, 3.3e-5 low (1.3e-6) at any fit
 /// tolerance from 1e-5 to 1e-7, and its area 5.6e-4 high. Four of its dipped stretches
 /// (`rings::dip`) stand wholly inside the sweep beside the end poses, up to 3.6e-3 deep, and bound

@@ -319,7 +319,6 @@ mod swept_over_parameters;
 mod swept_slid;
 mod swept_speed;
 mod swept_turned;
-mod swept_tumble_apart;
 mod symbols;
 mod symmetric;
 mod tangent_at;

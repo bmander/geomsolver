@@ -589,8 +589,10 @@ it. It stays as the fast path where #699 D says so.
    the sweep, they part nothing of it), every free edge of the tube on the tool where it starts or
    stops and given as its whole meeting. The tumbling torus is built closed and judged in some
    fifteen seconds (the slow tier): 25.27504, where its volume made apart is 25.2750727653 (#880
-   E2, `tests/swept_tumble_apart.rs`; cadrs's agrees to 1.1e-8). *The build is 3.3e-5 low
-   (1.3e-6) and its area 5.6e-4 high (9.5e-6), and that is no fit's error* — 0.6.3's solid is the
+   E2, by the divergence theorem over the core circle's ribbon offset by the tube's radius and
+   the end poses, each kept where membership says; cadrs's agrees to 1.1e-8). *The build is
+   3.3e-5 low (1.3e-6) and its area 5.6e-4 high (9.5e-6), and that is no fit's error* — 0.6.3's
+   solid is the
    same at every fit tolerance from 1e-5 to 1e-7 and at either membership bar. Its fitted tubes
    stand on the sweep's boundary to 8e-9, but four small faces of the inner tube's dipped
    stretches (`dip`), 0.0105 of area together, two beside each end pose where a stretch meets the
