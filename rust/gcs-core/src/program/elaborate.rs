@@ -468,6 +468,7 @@ fn memberships(
         idle: BTreeMap::new(),
         binders: BTreeMap::new(),
         bound: Vec::new(),
+        refused: Default::default(),
     };
     // the points `some` binds ([0.212]), each with its quantifier
     let mut groups: BTreeMap<&str, usize> = BTreeMap::new();

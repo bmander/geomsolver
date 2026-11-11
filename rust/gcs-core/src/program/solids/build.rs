@@ -395,6 +395,10 @@ fn region(
         say(Code::E040, st.span, m);
         return None;
     }
+    // its set's relation refused already ([0.212]): said once
+    if terms.is_empty() && probes.refused.contains(&p.i()) {
+        return None;
+    }
     if terms.is_empty() {
         let m = "a solid is a region: a set whose body bounds a number (`std.sets.Ball`, not \
                  the sphere it bounds)";

@@ -26,6 +26,9 @@ pub(super) struct Probes {
     pub binders: BTreeMap<usize, usize>,
     /// Each quantifier: what its relation states at the set's point and the points it binds.
     pub bound: Vec<Bound>,
+    /// The set points a quantifier's relation was refused at, said once: no solid of them is
+    /// refused again for want of a term.
+    pub refused: std::collections::BTreeSet<usize>,
 }
 
 /// One quantifier's relation, as it was stated ([0.212]): the set's point it is read at, and each
@@ -113,10 +116,13 @@ pub(super) fn settle_bound(sk: &Sketch, probes: &mut Probes, diags: &mut Vec<Dia
         };
         match term {
             Some(t) => probes.terms.entry(owner).or_default().push(t),
-            None => diags.push(Diag::on(Code::E040, &st, "what some points of sets put the set's \
-                point in is read where it is the segment between them, their join (`some q in A, r \
-                in B: p in Segment(q, r)`), or a ball about one, the set grown (`some q in A: p \
-                distance(<= d) q`): any other is not read yet".to_string())),
+            None => {
+                probes.refused.insert(owner);
+                diags.push(Diag::on(Code::E040, &st, "what some points of sets put the set's point \
+                    in is read where it is the segment between them, their join (`some q in A, r in \
+                    B: p in Segment(q, r)`), or a ball about one, the set grown (`some q in A: p \
+                    distance(<= d) q`): any other is not read yet".to_string()));
+            }
         }
     }
 }

@@ -117,7 +117,12 @@ fn a_ball_about_some_point_of_a_set_is_the_set_grown() {
 fn what_some_points_of_sets_cannot_read_is_refused() {
     let base = "unit mm\nuse std\nuse std.sets\na := point\nb := point\nfix((0, 0, 0)) a\nfix((10, 0, 0)) b\n";
     refused(&format!("{base}far := solid({{ p | some q in std.sets.Segment(a, b): p distance(>= 2mm) q }})\n"),
-        "E040", "is not read yet", "p distance(>= 2mm) q");
+        "E040", "is not read yet", "far := solid({ p | some q in std.sets.Segment(a, b): p distance(>= 2mm) q })");
+    // said once: the solid it was refused in is not refused again for want of a term
+    let (prog, _, _) = gcs_core::library::parse_linked(&format!(
+        "{base}far := solid({{ p | some q in std.sets.Segment(a, b): p distance(>= 2mm) q }})\n"));
+    let e = gcs_core::program::elaborate(&prog);
+    assert_eq!(e.errors().count(), 1, "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     refused(&format!("{base}x := point\nsome q in std.sets.Segment(a, b): x in std.sets.Segment(a, q)\n"),
         "E040", "read where a solid reads its set's point", "in");
     let (_, errs, _) = gcs_core::library::parse_linked(&format!(
@@ -136,4 +141,39 @@ fn what_some_points_of_sets_cannot_read_is_refused() {
     let s = ent(&e, "spire").i();
     let why = MaterialField::read(&e.sketch, s, 1e-10).err().unwrap_or_default();
     assert!(why.contains("convex polygon"), "{why}");
+}
+
+/// What reading a join point by point costs (step 1 of [0.212]'s experiment,
+/// docs/some-points-of-sets.md): the tetrahedron as a join and as the half-spaces behind its
+/// faces' planes, each read where a field is first made and then at a million points.
+#[test]
+#[ignore = "measurement: a join's field read against its half-spaces' (docs/some-points-of-sets.md)"]
+fn a_joins_field_is_measured() {
+    let planes = "unit mm\nuse std\n\
+        a := point\nb := point\nc := point\nd := point\n\
+        fix((3, 3, 3)) a\nfix((3, -3, -3)) b\nfix((-3, 3, -3)) c\nfix((-3, -3, 3)) d\n\
+        ab := line(a, b)\nac := line(a, c)\nad := line(a, d)\nbc := line(b, c)\nbd := line(b, d)\n\
+        fa := plane(u: bd, v: bc)\nfb := plane(u: ac, v: ad)\nfc := plane(u: ad, v: ab)\nfd := plane(u: ab, v: ac)\n\
+        tetrahedron := solid({ p |\n  p distance(<= 0mm, along: n) fa\n  p distance(<= 0mm, along: n) fb\n\
+          p distance(<= 0mm, along: n) fc\n  p distance(<= 0mm, along: n) fd\n})\n";
+    for (name, src) in [("a join", TETRAHEDRON), ("half-spaces", planes)] {
+        let e = solved(src);
+        let s = ent(&e, "tetrahedron").i();
+        let started = std::time::Instant::now();
+        let f = MaterialField::read(&e.sketch, s, 1e-10).unwrap();
+        let made = started.elapsed();
+        let n = 1_000_000;
+        let started = std::time::Instant::now();
+        let mut inside = 0;
+        for i in 0..n {
+            let t = i as f64 / n as f64;
+            let p = [8.0 * (t * 7.0).fract() - 4.0, 8.0 * (t * 13.0).fract() - 4.0, 8.0 * t - 4.0];
+            inside += usize::from(f.side(p) < 0.0);
+        }
+        let read = started.elapsed();
+        let started = std::time::Instant::now();
+        let x = e.sketch.exact_solid(s).unwrap();
+        eprintln!("{name}: made in {made:?}; {:.3} µs a point ({inside} of {n} inside); built in {:?}, {} faces",
+            read.as_secs_f64() * 1e6 / n as f64, started.elapsed(), x.brep.faces.len());
+    }
 }
