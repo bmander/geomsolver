@@ -444,7 +444,7 @@ fn polygon(l: &[Step]) -> Vec<P> {
         (0..n).map(move |k| s.point(k as f64/n as f64))
     }).collect()
 }
-fn signed_area(p: &[P]) -> f64 { (0..p.len()).map(|i| cross(p[i],p[(i+1)%p.len()])).sum::<f64>()/2. }
+pub(crate) fn signed_area(p: &[P]) -> f64 { (0..p.len()).map(|i| cross(p[i],p[(i+1)%p.len()])).sum::<f64>()/2. }
 fn winding(poly: &[P],q: P) -> bool {
     let mut inside = false;
     for i in 0..poly.len() {

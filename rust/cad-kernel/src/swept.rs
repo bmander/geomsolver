@@ -21,6 +21,8 @@ pub mod planar_cut;
 pub mod extruded;
 pub mod member;
 pub mod closed;
+pub mod shadow;
+pub mod planar_solid;
 pub mod instant;
 pub mod patches;
 pub mod rings;

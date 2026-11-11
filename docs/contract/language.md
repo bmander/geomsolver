@@ -956,7 +956,7 @@ components.dims.zB)`.
   in place (`Block::items`) is worked out there.  Either is expanded where it stands, never set
   aside: copy `k` binds the item's numbers under the copy's name for it (`h`, `h.x`) as it binds
   its index, and an item with members is a group by that name (`#<id>.<k>.h`), handed on whole.
-  **A list written in place may name what is drawn** (#882, [0.209]): where its first item is a
+  **A list written in place may name what is drawn** (#882, [0.210]): where its first item is a
   name no value in force answers to (`lists::is_value`), every item is a name
   (`lists::Items::Names`) and copy `k`'s name is an alias to item `k` read in the block's scope
   (`Link::Edge`, `#<id>.<k>.e`), as a walk's is to its link — expanded where it stands, since an

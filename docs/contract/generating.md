@@ -937,6 +937,33 @@ cannot settle), never built wrong. Not yet: a drawn example agreeing with the fi
 leaning axis under a turn (a sharp circle leaning to it: #780 L2, below).  The result is the selection's boundary with the candidates that bound nothing healed out of
 its faces (`boolean::selection`): each face as whole as the candidate's it lies on.
 
+**A whole turn of any tool is built by its shadow (#880 Q1, `brep::swept::shadow`).** Over a whole
+turn the sweep holds each circle about the axis whole or not at all, so it is the solid of
+revolution of the tool's shadow in a half-plane through the axis. `swept::closed::closed` asks this
+road first whenever the roll covers a whole turn (no blank: #880 P1), and its arrangement only where
+it is refused. The candidates are exact curves of the half-plane — each face's contact under the turn
+(a plane's line, a hyperbola's arc; a cylinder's or a cone's along, beside or leaning to the axis,
+`turned::Contact`; a ball's great circle through the axis, mirrored where it reaches across), a face
+kept in itself its own meridian, each sharp edge's image (a line's hyperbola, a circle's
+`turned::Rim`, a level curve's stretch of height), and the axis — each face's contact read over the
+face alone, its ends held onto the edges it crosses by Gauss–Newton. They are split where they cross
+and where one's end stands on another (a contact meets the edge it ends on tangentially there, given
+by construction), each piece kept where membership a hair to each side differs (the hair under a
+third of the way to the nearest other candidate; the tool meshed finer where the sag leaves a reading
+unsettled), the kept pieces linked with the shadow on their left, each region revolved with those
+curves as its meridians, and the solid judged by membership before it is returned (`closed::judge`).
+Refused by what it is (`Unbuilt::Curved`) where a face is no plane, cylinder, cone, ball or torus
+about the axis, an edge no line, circle or level curve, or a leaning round face's contact no curve
+over it, or judged wrong or past its budget, which are the build's refusals. A convex polyhedral
+tool keeps its closed form, asked first (its slices' radial spans, no mesh, about fifty times
+faster). Every other whole turn the arrangement built builds so, to the same gates (the drum, the
+frustum, the rounded key and the ball on its stem to 1e-9 or finer), and brep-bench's `swept/v-wheel-turned-once-round-rod`, which the arrangement
+refused (a turned curve meeting a revolution "was not proved"), builds in a tenth of a second: gate
+`swept_shadow::a_leaning_v_wheel_turned_whole_is_its_shadow_revolved` — the wheel's sweep to the
+volume of its shadow worked apart from the build (each height's radii whose circle meets the wheel's
+analytic margin, by adaptive Simpson) to 1e-6, to membership, to a closed STEP file, and the rod cut by
+it to the same integral within the rod's radius.
+
 **A ring slid at a lean to its axis (#805, #780 L1's X2 under a constant twist, `brep::slid`).** A
 constant twist keeps each tool point in contact for the whole roll or never, so what X2 leaves under
 one is a ring's two roots meeting on a face. On a torus slid along `D`, its normal `cos v ρ̂ + sin v z`
@@ -1348,6 +1375,43 @@ between (`a_sheet_folding_or_coming_back_under_any_motion_is_refused_by_name`). 
 no convex solid of revolution; a contact whose pieces change over the roll (a contact reaching an
 edge or a seam partway: the patch cut there, step 6); a fold cut where it lies and a returning sheet
 entered in stretches (L1's, under such a motion); and the sheet carried past its rims.
+
+**A prism under a motion that keeps a plane, swept closed (#880 Q2, `brep::swept::planar_solid`):**
+a sweep with no blank (`swept::closed::closed`) whose motion is no constant twist nor a path of
+pieces, but every pose of which turns one plane in itself, the same face up (`region::keeps`, at 17
+rolls and then on the region's own grid), of a tool standing along that plane's normal — every face
+a cap square to it or a side along it, read from the B-rep (`subtraction::Prismatic`), no side
+leaning — is asked this before K2's road: the swept solid is, slab by slab between the tool's caps
+(`Prismatic::slabs`), the region its section sweeps in the plane carried through the slab. The
+region is the planar classes' (`region::SweptRegion`): each side's contact, each corner's path,
+each edge at an end pose where the roll is no whole period (`Setting::alike`), kept where it stands
+outside the section at every pose and linked into loops. **It reads no blank**: its box holds every
+pose of the section (sampled four a degree) with a quarter of the section's size and the farthest a
+point moved between two samples to spare, and a loop that runs along the box is refused (`Failed`),
+never built. Each stretch is a cubic B-spline from corner to corner fitted within a tenth of the
+tolerance (`region::profiles`), each loop's prism extruded through its slab (`build::prism`), the
+slabs and pieces united, and the solid judged by membership before it is returned
+(`closed::judge`). A region whose boundary folds is `Folded` with its point; any other refusal of the
+region's is `Failed` saying what it saw and where. Two stretches crossing at a grazing angle — two
+corners' traces at a lobe's apex, each kept past their crossing as far as the keeping test's
+tolerance reaches along so shallow a meeting — are paired where their ends lie within `grazing` of
+each other and their crossing is found (`region::joined`), where before only `loose` was. Held
+(`tests/swept_planar_solid.rs`) on brep-bench's three cases of the kind: **the square on a planet
+carrier** (a whole turn, 39 faces) and **the plus in mesh with a wheel** (a whole period of 540°, an
+annulus whose hole is the wheel left standing, 47 faces) each to 1e-6 of the area the definition
+gives in the plane, read line by line on the exact section — the polygon at 9000 poses and each
+edge's quadrilateral between two, so each corner's trace is filled to the square of the step — and
+**the rack's tooth space**, its swept solid cut from the blank by the ordinary Boolean, to 1e-6 of
+the volume next.BREP and cadrs agree on, at a billionth (4e-11 off); each written as a closed STEP B-rep. The
+drawing's sweeps still reach these cases by the blank-scoped planar classes (`cut_from` and
+`reads_general` do not ask this, #699). **Left open**: a drafted tool (its stations lofted, as the
+subtraction class lofts them); a tool standing along the plane's normal under a constant twist,
+which the arrangement builds exactly; and a side whose contact stands at its corner at every
+instant, which `path.sv`'s frame makes of a box's long sides (its instant centre on the line through
+the corner square to them) — read with the rounding of the side's parameter its walk turns about,
+refused `Folded`, and through the spline's inflection the side is in contact all along for an
+instant (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`, once K2's
+`Curved`).
 
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:

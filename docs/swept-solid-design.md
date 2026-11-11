@@ -200,6 +200,14 @@ it. It stays as the fast path where #699 D says so.
    stretch read at its middle, and turned once (`build::revolve`): exact, and with no Boolean, so
    none of the touches above arise. A leaning block, and a block straddling the axis tipped two
    ways, are each the integral of their slices' spans (`tests/swept_closed.rs`).
+   *Built for a whole turn of any tool, by its shadow* (#880 Q1, `swept::shadow`): the convex road
+   above generalised. The candidates are the tool's contacts, edges and kept faces laid exactly in
+   the half-plane `(ρ, z)` (lines, hyperbolas, circles, turned contacts and rims), arranged there —
+   split where they cross and where one's end stands on another — each piece kept where membership
+   differs a hair to each side, the kept pieces linked into loops and each region revolved: a 2D
+   arrangement in place of the 3D one, so no surface is met in space, and every whole turn the
+   arrangement built builds so. A V wheel leaning across the turn, which the 3D arrangement refused,
+   is its shadow's solid of revolution to 1e-7 of a volume worked apart.
    *Built for a part turn of a leaning tool*, by the arrangement, once three of its touches were
    met. A face at an end pose holds the edge whose hyperboloid is a candidate, so it meets that
    hyperboloid in two rulings; traced, the meeting would not close. A plane meets a quadric of
@@ -588,9 +596,24 @@ it. It stays as the fast path where #699 D says so.
    end poses (`rings::trimmed`): each face cut along those meetings, the pieces inside dropped (inside
    the sweep, they part nothing of it), every free edge of the tube on the tool where it starts or
    stops and given as its whole meeting. The tumbling torus is built closed and judged in some
-   fifteen seconds (the slow tier): 25.275, against 25.260 ± 0.005 by a Monte Carlo of the
-   definition (80 million points, the ring's signed distance at 40 001 poses), the two disagreeing
-   at none of 100 000 points read one by one. The road is not yet a class the dispatch admits;
+   fifteen seconds (the slow tier): 25.27504, where its volume made apart is 25.2750727653 (#880
+   E2, by the divergence theorem over the core circle's ribbon offset by the tube's radius and
+   the end poses, each kept where membership says; cadrs's agrees to 1.1e-8). *The build is
+   3.3e-5 low (1.3e-6) and its area 5.6e-4 high (9.5e-6), and that is no fit's error* — 0.6.3's
+   solid is the
+   same at every fit tolerance from 1e-5 to 1e-7 and at either membership bar. Its fitted tubes
+   stand on the sweep's boundary to 8e-9, but four small faces of the inner tube's dipped
+   stretches (`dip`), 0.0105 of area together, two beside each end pose where a stretch meets the
+   torus there, stand wholly inside the sweep, up to 3.6e-3 deep, with patches of the torus at the
+   end poses beside them inside it too: they bound thin pockets of the sweep the solid leaves out.
+   The dipped stretch is inside the sweep, as `dip` says, but near an end pose nothing kept
+   buries it: which meeting the arrangement lacks there, or which cell it misreads, is not yet
+   read. R1's to mend. Built from the drawing after 0.6.3 it is 25.2750184, 5.4e-5 low; and since
+   the fitted sheets are read through restricted enclosures (0ee5f30, #873) brep-bench's spelling
+   of the same motion is refused ("a bspline's pieces do not close").
+   `the_tumbling_torus_is_built_closed` holds the build within 1e-4 until both are mended. (The Monte
+   Carlo of the definition this paragraph cited, 25.260 ± 0.005, was three of its deviations low;
+   the 100 000 points read one by one met no pocket, each too thin.) The road is not yet a class the dispatch admits;
    `closed::ring` builds it alone, and `closed::ring_cut_from` cut from a blank (a ring pushed into a
    block at a lean, a torus turned across one, each within the Monte Carlo of its definition); a
    ring of several faces whose tube crosses the tool at an end pose across two of them is refused
