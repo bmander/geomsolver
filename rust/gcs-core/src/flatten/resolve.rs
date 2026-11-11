@@ -1267,22 +1267,24 @@ impl<'a> Walk<'a> {
     }
 
     /// The items of a list a block runs over, where the list is defined and its items name what
-    /// is drawn (#882, `fs := [box.near, box.far]`): each a group member that is a reference,
-    /// `fs.0`, `fs.1`, … (`Checks::group_fields`), read by its absolute name.  A list closes, so
-    /// a `cycle` runs over it.  One whose member names nothing was said at the member.
+    /// is drawn (#882, `fs := [box.near, box.far]`): each a group member that is a reference, so
+    /// an alias, `fs.0`, `fs.1`, … (`alias_keys`, which `Lazy` has brought up to date), read by
+    /// its absolute name.  A list closes, so a `cycle` runs over it.  One whose member names
+    /// nothing was said at the member (`check_bindings`).
     fn listed_links(&self, p: &Pending, alias: &dyn Aliases)
         -> Option<Result<Vec<(Vec<Link>, bool)>, (Span, String)>> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
-        let over = b.over.as_ref().filter(|o| o.zip.is_empty() && b.image.is_none())?;
+        let over = super::lists::plain_over(b)?;
         let sc = self.pending_scope(p);
         let (abs, rest) = self.look(alias).find(&over.chain, &sc)?;
         let list = dotted(abs, rest);
-        let key = |k: usize| format!("{list}.{k}");
-        let member = |k: usize| self.checks.group_fields.iter().any(|(f, _)| *f == key(k));
-        let n = (0..).take_while(|&k| member(k)).count();
         let root = Scope::absolute(sc.access.clone());
-        let links = (0..n).map(|k| Link::Edge(Ref::dotted(&key(k), over.chain.span), root.clone()));
-        (n > 0).then(|| Ok(vec![(links.collect(), true)]))
+        let keys = self.alias_keys.borrow();
+        let links: Vec<Link> = (0..).map(|k| format!("{list}.{k}"))
+            .take_while(|k| keys.1.contains_key(k))
+            .map(|k| Link::Edge(Ref::dotted(&k, over.chain.span), root.clone()))
+            .collect();
+        (!links.is_empty()).then(|| Ok(vec![(links, true)]))
     }
 
     /// Expand every block over a chain's edges (`repeat e in rack.profile { … }`), each where
@@ -1367,15 +1369,19 @@ impl<'a> Walk<'a> {
     /// Each name a list written in place gives its copies (#882) that names nothing, said at the
     /// item as any reference to nothing is — whether or not a copy reads it.
     pub(super) fn listed_names(&mut self) {
-        if self.listed.is_empty() {
+        let listed = std::mem::take(&mut self.listed);
+        if listed.is_empty() {
             return;
         }
-        let alias = self.alias_table();
-        for (r, sc) in std::mem::take(&mut self.listed) {
-            if self.reading(&alias, &r, &sc).is_none() {
-                let (code, msg) = self.look(&alias).missing(&r, &sc);
-                self.once(code, r.span, msg);
-            }
+        // asked of the names listed alone (`Lazy`), not of a table of every alias
+        let alias = Lazy::new(self);
+        let missing: Vec<_> = listed.iter()
+            .filter(|(r, sc)| self.reading(&alias, r, sc).is_none())
+            .map(|(r, sc)| (r.span, self.look(&alias).missing(r, sc)))
+            .collect();
+        drop(alias);
+        for (span, (code, msg)) in missing {
+            self.once(code, span, msg);
         }
     }
 

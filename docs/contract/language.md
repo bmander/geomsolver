@@ -964,8 +964,8 @@ components.dims.zB)`.
   alias is known (`Walk::listed_names`), whether or not a copy reads it.  A value among names, or
   a name among values, is E103 at the item saying the items are all one or the other.  **A
   defined list of names** (`ends := [box.near, box.far]`) is a group whose members are
-  references, so aliases (`Checks::group_fields`, E103 where one names nothing): `repeat e in
-  ends` finds no numbers under it, is set aside as a walk is, and `resolve::listed_links` runs it
+  references, so aliases (`alias_keys`; E103 where one names nothing, `check_bindings`):
+  `repeat e in ends` finds no numbers under it, is set aside as a walk is, and `resolve::listed_links` runs it
   over `ends.0`, `ends.1`, … by absolute name, closed (a `cycle` runs over it).  A list's last
   item is a reference as the others are (`inst_arg` ends a bare one at `]`).
   `tests/lists.rs` is the gate.

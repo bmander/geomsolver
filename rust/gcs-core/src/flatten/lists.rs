@@ -17,7 +17,7 @@
 use super::table::{Table, Vals};
 use super::Walk;
 use crate::expr::Aff;
-use crate::syntax::{ref_text, Block, InstArg, InstVal, Name, Ref, Seg, Span};
+use crate::syntax::{ref_text, Block, EdgesOf, InstArg, InstVal, Name, Ref, Seg, Span};
 use crate::units::Units;
 use std::collections::BTreeMap;
 
@@ -51,7 +51,7 @@ impl Walk<'_> {
         if let Some(items) = &b.items {
             return Some(written(&items.list, vals, self.units).map(|l| (&items.var, l)));
         }
-        let over = b.over.as_ref().filter(|o| o.zip.is_empty() && b.image.is_none())?;
+        let over = plain_over(b)?;
         named(&plain(&over.chain)?, vals).map(|l| Ok((&over.var, Items::Values(l))))
     }
 }
@@ -80,6 +80,16 @@ fn named(name: &str, vals: &Vals) -> Option<Vec<Item>> {
     Some(if whole { by_place.into_values().collect() } else { Vec::new() })
 }
 
+/// What a list of values and names mixed is told, after what it mixed.
+const ONE_KIND: &str = "a list's items are all values (`[2mm, 3mm]`) or all names of what is \
+                        drawn (`[box.near, box.far]`)";
+
+/// What a block runs over where it is a single name a list may be (`repeat h in holes`): no
+/// walks in step and no face carried whole.
+pub(super) fn plain_over(b: &Block) -> Option<&EdgesOf> {
+    b.over.as_ref().filter(|o| o.zip.is_empty() && b.image.is_none())
+}
+
 /// The items of a list written in place: worked out over the numbers in force, or — where the
 /// first is a name that is no value — each a name of what is drawn (#882).
 fn written<'b>(list: &'b [InstArg], vals: &Vals, units: Units)
@@ -88,42 +98,33 @@ fn written<'b>(list: &'b [InstArg], vals: &Vals, units: Units)
         InstVal::Ref(r) => (!is_value(r, vals, units)).then_some(r),
         _ => None,
     };
-    if let Some(first) = list.first().and_then(named) {
-        let mut names = vec![first];
-        for f in &list[1..] {
-            match named(f) {
-                Some(r) => names.push(r),
-                None => {
-                    let what = match &f.value {
-                        InstVal::Ref(r) => format!("`{}`", ref_text(r)),
-                        InstVal::Expr(t) => format!("`{t}`"),
-                        _ => "this item".to_string(),
-                    };
-                    return Err((f.span, format!(
-                        "{what} is a value, and `{}` before it names what is drawn: a list's items \
-                         are all values (`[2mm, 3mm]`) or all names (`[box.near, box.far]`)",
-                        ref_text(first))));
-                }
-            }
-        }
-        return Ok(Items::Names(names));
-    }
-    list.iter().map(|f| {
-        let mut item = Vec::new();
-        value(&f.value, "", f.span, vals, units, &mut item).map_err(|(at, m)| match &f.value {
-            // a name after a value: perhaps meant as one of a list of names
-            InstVal::Ref(_) => (at, format!("{m}; a list's items are all values (`[2mm, 3mm]`) \
-                or all names of what is drawn (`[box.near, box.far]`), and the first is a value")),
-            _ => (at, m),
-        })?;
-        Ok(item)
-    }).collect::<Result<_, _>>().map(Items::Values)
+    let Some(first) = list.first().and_then(named) else {
+        return list.iter().map(|f| {
+            let mut item = Vec::new();
+            value(&f.value, "", f.span, vals, units, &mut item).map_err(|(at, m)| match &f.value {
+                // a name after a value: perhaps meant as one of a list of names
+                InstVal::Ref(_) => (at, format!("{m}; {ONE_KIND}, and the first is a value")),
+                _ => (at, m),
+            })?;
+            Ok(item)
+        }).collect::<Result<_, _>>().map(Items::Values);
+    };
+    list.iter().map(|f| named(f).ok_or_else(|| {
+        let what = match &f.value {
+            InstVal::Ref(r) => format!("`{}`", ref_text(r)),
+            InstVal::Expr(t) => format!("`{t}`"),
+            _ => "this item".to_string(),
+        };
+        let m = format!("{what} is a value, and `{}` before it names what is drawn: {ONE_KIND}",
+                        ref_text(first));
+        (f.span, m)
+    })).collect::<Result<_, _>>().map(Items::Names)
 }
 
 /// Whether a name read as an item is a value: a number, or a group of numbers, in force.
 fn is_value(r: &Ref, vals: &Vals, units: Units) -> bool {
     let t = ref_text(r);
-    vals.has(&t) || !vals.under(&format!("{t}.")).is_empty()
+    vals.has(&t) || vals.has_under(&format!("{t}."))
         || super::values::value_aff(&t, vals, units).is_ok()
 }
 

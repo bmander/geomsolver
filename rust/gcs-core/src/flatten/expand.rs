@@ -1209,21 +1209,24 @@ impl<'a> Walk<'a> {
                 close the copies in a `cycle` or a `ring`");
             return;
         }
-        match &list {
-            // a list of names (#882): each copy's name an alias to its item, as a walk's is to
-            // its link, read in the scope the list is written in
+        // a list of names (#882): each copy's name an alias to its item, as a walk's is to its
+        // link, read in the scope the list is written in
+        let (links, items) = match &list {
             Some((var, super::lists::Items::Names(names))) => {
+                self.listed.extend(names.iter().map(|r| ((*r).clone(), scope.clone())));
                 let links: Vec<super::Link> = names.iter()
                     .map(|r| super::Link::Edge((*r).clone(), scope.clone()))
                     .collect();
-                self.listed.extend(names.iter().map(|r| ((*r).clone(), scope.clone())));
-                self.copies(b, st, scope, path, depth, n, &[(*var, &links)], None);
+                (Some((*var, links)), None)
             }
             Some((var, super::lists::Items::Values(items))) => {
-                self.copies(b, st, scope, path, depth, n, &[], Some((*var, items.as_slice())));
+                (None, Some((*var, items.as_slice())))
             }
-            None => self.copies(b, st, scope, path, depth, n, &[], None),
-        }
+            None => (None, None),
+        };
+        let edges: Vec<(&Name, &[super::Link])> =
+            links.iter().map(|(v, l)| (*v, l.as_slice())).collect();
+        self.copies(b, st, scope, path, depth, n, &edges, items);
     }
 
     /// Whether the body declares what each copy calls its edge or its item, which would hide it:
