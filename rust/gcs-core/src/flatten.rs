@@ -443,6 +443,8 @@ pub struct Expansion {
 pub struct Apart {
     pub solid: String,
     pub faces: [String; 2],
+    /// The layer of the solid they were read in (`solid::faces::Layered`).
+    pub layer: usize,
     pub at: Span,
 }
 
@@ -453,6 +455,8 @@ pub struct Apart {
 pub struct AlongRead {
     pub solid: String,
     pub face: String,
+    /// The layer of the solid it was read in (`solid::faces::Layered`).
+    pub layer: usize,
     pub along: crate::expr::Along,
     pub line: String,
     pub held: bool,
@@ -464,7 +468,7 @@ pub struct AlongRead {
 /// or of a body whose boundary does not say, taken to meet.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FaceRead {
-    Meets { solid: String, faces: [String; 2], held: bool },
+    Meets { solid: String, faces: [String; 2], layer: usize, held: bool },
     Along(AlongRead),
     Fixed(bool),
 }
@@ -877,11 +881,23 @@ struct SetState<'a> {
 
 /// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
 /// from the solid, and which of them meet (#625, `Meets`) and how each lies (#763, `Lays`), where
-/// its boundary says.
+/// its boundary says — in each layer the solid's rounds stand in (`Layered`, #879), with the
+/// layer of each use that reads its faces.
 #[derive(Clone, Debug)]
 pub struct Listed {
     pub paths: Vec<crate::solid::faces::FacePath>,
-    pub read: Option<(crate::solid::faces::Meets, crate::solid::faces::Lays)>,
+    pub uses: BTreeMap<String, usize>,
+    pub read: Option<crate::solid::faces::Layered>,
+}
+
+impl Listed {
+    /// The layer a condition asked under the absolute prefix `at` reads the faces `faces` in
+    /// (each by its name from the solid), where the solid's boundary is read.
+    pub fn layer(&self, at: &str, faces: &[&str]) -> usize {
+        let paths: Vec<&crate::solid::faces::FacePath> = faces.iter()
+            .filter_map(|n| self.paths.iter().find(|f| f.text() == *n)).collect();
+        self.read.as_ref().map_or(0, |r| r.layer(at, &paths))
+    }
 }
 
 /// **What the elaborator names for the walk off the drawing** (#183 F4, #763): each solid a

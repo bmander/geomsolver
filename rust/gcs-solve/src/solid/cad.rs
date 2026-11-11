@@ -213,6 +213,14 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
         let mut node = match &shell { Some(s) => s.node(&w)?,None => walk.node(i,&dependencies,&w)? };
         node.set("id",i.into());
         node.set("name",sk.solids[i].name.clone().into());
+        // a round's or a chamfer's solid is named by the use of the word that made it
+        // (`#17.0.….taken`), which no document wrote: a failure to build it says the body it
+        // rounds and the step its faces are named by there (#879)
+        if let Some(b) = super::lowering::body_of(sk,i) {
+            let body = &sk.solids[b];
+            node.set("said",format!("`{}`'s round or chamfer `{}`",crate::vocab::public_path(body.written_name()),
+                super::step_through(body,&sk.solids[i])).into());
+        }
         nodes.push(node);
         seen.insert(i);
     }

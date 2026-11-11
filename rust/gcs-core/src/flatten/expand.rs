@@ -1134,7 +1134,7 @@ impl<'a> Walk<'a> {
             if alone {
                 let at = self.faces.at;
                 self.faces.apart.extend(apart.into_iter()
-                    .map(|(solid, faces)| super::Apart { solid, faces, at }));
+                    .map(|(solid, faces, layer)| super::Apart { solid, faces, layer, at }));
             }
             self.faces.along.extend(along);
             self.faces.wanted.extend(wanted);
@@ -2112,7 +2112,7 @@ struct Asked<'w, 'a> {
     scope: &'w Scope,
     alias: super::resolve::Lazy<'w, 'a>,
     /// Every pair of faces `meets` read apart (#625): the solid, and each face by its name from it.
-    apart: std::cell::RefCell<Vec<(String, [String; 2])>>,
+    apart: std::cell::RefCell<Vec<(String, [String; 2], usize)>>,
     /// Whether every two faces are read as meeting: the condition asked again, to tell whether
     /// the pairs read apart are what left the block out.
     every: std::cell::Cell<bool>,
@@ -2175,17 +2175,20 @@ impl super::values::Names for Asked<'_, '_> {
     fn meets(&self, a: &str, b: &str) -> Option<bool> {
         let ((solid, ra, listed), (other, rb, _)) = (self.face(a)?, self.face(b)?);
         let read = |r| self.reads.borrow_mut().push(r);
-        let Some((meets, _)) = listed.read.as_ref().filter(|_| !self.every.get() && solid == other)
+        let Some(layered) = listed.read.as_ref().filter(|_| !self.every.get() && solid == other)
         else {
             read(super::FaceRead::Fixed(true));
             return Some(true);
         };
-        let met = meets.meets(ra, rb);
+        // in the layer the block's use reads the body in (#879): a round's own faces meet
+        // where it reads them, whatever a round standing over it has since made of their edge
+        let layer = listed.layer(self.scope.prefix(), &[ra, rb]);
+        let met = layered.meets(layer).meets(ra, rb);
         let faces = [ra.to_string(), rb.to_string()];
         if !met {
-            self.apart.borrow_mut().push((solid.to_string(), faces.clone()));
+            self.apart.borrow_mut().push((solid.to_string(), faces.clone(), layer));
         }
-        read(super::FaceRead::Meets { solid: solid.to_string(), faces, held: met });
+        read(super::FaceRead::Meets { solid: solid.to_string(), faces, layer, held: met });
         Some(met)
     }
 
@@ -2201,17 +2204,18 @@ impl super::values::Names for Asked<'_, '_> {
                  frame's axis", crate::program::public_path(line)
             )));
         };
-        let Some((_, lays)) = &listed.read else {
+        let Some(layered) = &listed.read else {
             return Some(Err(format!(
                 "`{}`'s faces are not read where they are named (a body cut by a sweep is its \
                  field's)", crate::program::public_path(solid)
             )));
         };
-        let held = lays.holds(rest, along, d)?;
+        let layer = listed.layer(self.scope.prefix(), &[rest]);
+        let held = layered.lays(layer).holds(rest, along, d)?;
         if let Ok(held) = held {
             self.reads.borrow_mut().push(super::FaceRead::Along(super::AlongRead {
-                solid: solid.to_string(), face: rest.to_string(), along, line: line.to_string(),
-                held,
+                solid: solid.to_string(), face: rest.to_string(), layer, along,
+                line: line.to_string(), held,
             }));
         }
         Some(held)

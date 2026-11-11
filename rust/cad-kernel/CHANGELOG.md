@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two rounds tangent to one face union wherever their meeting ends at the touch**
+  (`ssi::trace_beside`, `boolean`): two surfaces' meeting through a point where they touch and
+  its branches cross ends there, and a march that steps across such a touch lying on a face's own
+  edge now ends at the touch, where it ended a step past it, off that face ("beside a meeting
+  known"). The curve then ran through that vertex twice, one stretch of it was never laid, and
+  the union was refused ("a shell of the arrangement is kept on one side … and dropped on
+  another") or built, as the steps fell: a box's corner rounded 5 and its top rim rounded 1
+  refused, the same at its bottom rim built. A closed curve with no period has the vertex both
+  its ends are at both of them wherever along it that vertex was read (`boolean`'s `spans`):
+  read at its far end, the stretch from the last point on the curve round to it was dropped.
+- `recipe::Named::said` (**new** field, and `Named::said()`): what a failure to build a node
+  calls it, where the recipe's writer says (`"said"`), in place of the node's name between
+  backticks — a node named by nothing its author wrote says what it is of.
 - **A finite screw whose roll does not carry its section past the blank builds**
   (`swept::helical::helical_sheet`): where an end of the section's columns that the roll cut
   short stands in the blank, or no column is left, the sheet is laid on the characteristic

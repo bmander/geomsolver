@@ -72,6 +72,22 @@ A traced pair is seeded where edges cross faces; between analytic
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
+**A march that steps across a touch ends at the touch** (#879, `ssi::trace_beside`). Two rounds
+tangent to one face meet in a curve that ends where both touch it, a point where the two surfaces
+touch and their meeting's branches cross (`ssi::touch`); where that point is on a face's own edge
+(a corner's round ending at the side a rim's round is tangent to), the far side of the crossing is
+off that face, so a step landing there is beside a meeting already known (`Touches::outside`).
+Such a step ends the march at the touch it ran across — a touch behind it with a branch along the
+way it came — not where it landed: ended past it, the curve ran through that vertex, and traced
+the other way round as well, through it twice; an edge laid along it took one passage, the stretch
+from the other was never laid, and two cells of the arrangement joined across it ("a shell … kept
+on one side … and dropped on another"), or not, as the steps fell — a box's top rim refused where
+its bottom rim was built. **A closed curve with no period has its vertex at both ends**
+(`boolean::spans`): the vertex both ends of such a fitted meeting are is set at its start and at
+its end wherever along the curve it was read; read at the far end and set down at the start alone,
+it stood after the points it comes before, and the stretch from the last of them round to it was
+not laid. `tests/rim_rounds.rs` is the gate (a rim's run crossing a corner's round at a box's sharp
+corner, on either cap, to one volume).
 **A traced meeting is one curve, on both surfaces, keeping its turns** (`ssi::trace_beside`,
 #684 E). A march ending at a patch's edge or a touch drops the points crowding that end (within a
 quarter of its step `h0`) only while the chord from the point kept before them to the end passes

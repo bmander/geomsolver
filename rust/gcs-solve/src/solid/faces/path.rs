@@ -84,6 +84,12 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
                 // a round's own bounds that no set names (`p inside a`) lie on the faces it
                 // rounds: no face of its own a path could write ([0.149])
                 let reads = super::terms_read_faces(terms);
+                // a round or a chamfer the table builds leaves the face its construction names
+                // (`round`, `flat`), whatever the set that says it is called (#879): a block
+                // lists the faces the body has, and a body is read off its exact boundary
+                if let Some(face) = crate::solid::lowering::face_name(sk, terms).filter(|_| reads) {
+                    return vec![face.to_string()];
+                }
                 let mut v: Vec<String> = terms.iter().map(|t| t.name.clone())
                     .filter(|n| !(reads && n.is_empty())).collect();
                 v.dedup();
@@ -102,14 +108,24 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
         return Vec::new();
     }
     let readers = own_readers(sk, i);
-    crate::solid::document::operand_primitives(sk, i).into_values().flat_map(|(route, p)| {
+    let mut out: Vec<FacePath> = Vec::new();
+    for (route, p) in crate::solid::document::operand_primitives(sk, i).into_values() {
         let of = readers.contains(&(p as usize)).then(|| use_key(&sk.solids[p as usize].name).to_string());
         // a round of the body no name was given makes faces no block lists: none, so the faces
         // are named as before it was made, and settle a pass sooner
-        let unnamed = of.is_some() && !route.contains('.');
-        own(p as usize).into_iter().filter(move |_| !unnamed)
-            .map(move |f| FacePath { of: of.clone(), ..FacePath::new(&route, &f) })
-    }).collect()
+        if of.is_some() && !route.contains('.') {
+            continue;
+        }
+        for f in own(p as usize) {
+            // a name once, however many solids of one use leave a face of it (a round's every
+            // edge): a block runs over the name, and a reference to it reads them all (#879)
+            let face = FacePath { of: of.clone(), ..FacePath::new(&route, &f) };
+            if !out.contains(&face) {
+                out.push(face);
+            }
+        }
+    }
+    out
 }
 
 /// Whether segment `written` of a face path names segment `mine` of a face's name: the same, or
@@ -138,7 +154,7 @@ fn own_readers(sk: &Sketch, i: usize) -> std::collections::BTreeSet<usize> {
 
 /// The statement a solid was made by, as a key: its name up to the first segment a statement's
 /// use put there (`#17`, or a named use's `rim#17`), or its whole name where none did.
-pub(crate) fn use_key(name: &str) -> &str {
+pub fn use_key(name: &str) -> &str {
     let mut end = 0;
     for seg in name.split('.') {
         end += seg.len();

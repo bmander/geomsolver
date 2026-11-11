@@ -2289,8 +2289,24 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                     break
                 }
                 let Some(tq) = tangent(q) else {
-                    // into a known meeting: what runs on from there is known, or off the faces
-                    if beside(q) { pts.push(q); break }
+                    // into a known meeting: what runs on from there is known, or off the faces.
+                    // **But a step that ran across a touch ends at the touch** (#879): a touch on a
+                    // face's own edge — a round tangent to the face a second round is tangent to,
+                    // the two rounds' meeting ending where both touch it — has the far side of its
+                    // crossing off that face, so a step landing there is beside a meeting known
+                    // (`outside`), and the march ended a step past the vertex its curve ends at. The
+                    // curve then ran through that vertex and, traced the other way round as well,
+                    // through it twice: an edge laid along it took one passage and left the span
+                    // from the other unlaid, two cells of the arrangement joined across it
+                    if beside(q) {
+                        let across = touch_at(q)
+                            .filter(|u| dot(sub(q,u.at),t) > 0. && u.branches.iter().any(|&d| dot(d,t) > 0.9));
+                        match across {
+                            Some(touched) => end_at_touch(&mut pts,&mut touches,touched,h0,tol),
+                            None => pts.push(q),
+                        }
+                        break
+                    }
                     // into a point where the two touch, along one of its branches: ending there
                     let Some(touched) = touch_at(q).filter(|t| !t.branches.is_empty()) else { return Err(shallow(q)) };
                     if !touched.branches.iter().any(|&d| dot(d,t) > 0.9) { return Err(shallow(q)) }

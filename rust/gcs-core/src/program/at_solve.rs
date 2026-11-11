@@ -14,7 +14,7 @@
 use super::{own_values, public_path, Code, Diag, Elaborated, SourceMap, Stood};
 use crate::flatten::{Apart, FaceRead};
 use crate::model::{EntKind, EntRef, Sketch};
-use crate::solid::faces::{face_paths, Lays, ListedFaces, Meets};
+use crate::solid::faces::{face_paths, Layered};
 use crate::syntax::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -52,9 +52,7 @@ pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     }).collect();
     let read: Read = meets.union(&lays).filter_map(|&solid| {
         let e = map.ent_named(solid).filter(|e| e.kind == EntKind::Solid)?;
-        let listed = ListedFaces::read(sk, e.i(), &face_paths(sk, e.i()))?;
-        let (m, l) = (meets.contains(solid), lays.contains(solid));
-        Some((solid, (m.then(|| Meets::of(&listed)), l.then(|| Lays::of(&listed)))))
+        Some((solid, Layered::read(sk, e.i(), &face_paths(sk, e.i()))?))
     }).collect();
     let mut diags = apart(map, &read);
     diags.extend(along(sk, map, &read));
@@ -62,8 +60,9 @@ pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
 }
 
 /// Each solid's faces where the drawing is solved, by its absolute name, where its boundary says:
-/// which meet, where a pair was read of it, and how each lies, where a face was read so.
-type Read<'m> = BTreeMap<&'m str, (Option<Meets>, Option<Lays>)>;
+/// which meet and how each lies, in each of its layers — a read is asked again in the layer it
+/// was read in (#879).
+type Read<'m> = BTreeMap<&'m str, Layered>;
 
 /// One E080 for each statement and solid whose faces read apart meet where the drawing is solved:
 /// the first such pair named, and how many more.
@@ -73,8 +72,7 @@ fn apart(map: &SourceMap, read: &Read) -> Vec<Diag> {
     let met = map.apart.iter().filter(|a| {
         let [x, y] = &a.faces;
         said.insert((a.at, a.solid.as_str(), x.min(y), x.max(y)))
-            && read.get(a.solid.as_str()).and_then(|(m, _)| m.as_ref())
-                .is_some_and(|m| m.meets(x, y))
+            && read.get(a.solid.as_str()).is_some_and(|r| r.meets(a.layer).meets(x, y))
     });
     grouped(met.map(|a: &Apart| (a.at, a.solid.as_str(), a))).into_iter().map(|(at, a, n)| {
         let [x, y] = &a.faces;
@@ -92,11 +90,11 @@ fn apart(map: &SourceMap, read: &Read) -> Vec<Diag> {
 /// the other way round: the first read that came out otherwise named, and how many more.
 fn along(sk: &Sketch, map: &SourceMap, read: &Read) -> Vec<Diag> {
     let solved = |r: &FaceRead| match r {
-        FaceRead::Meets { solid, faces: [x, y], held } => read.get(solid.as_str())
-            .and_then(|(m, _)| m.as_ref()).map_or(*held, |m| m.meets(x, y)),
+        FaceRead::Meets { solid, faces: [x, y], layer, held } => read.get(solid.as_str())
+            .map_or(*held, |r| r.meets(*layer).meets(x, y)),
         FaceRead::Along(a) => (|| {
             let d = direction(sk, |n| map.ent_named(n), &a.line)?;
-            read.get(a.solid.as_str())?.1.as_ref()?.holds(&a.face, a.along, d)?.ok()
+            read.get(a.solid.as_str())?.lays(a.layer).holds(&a.face, a.along, d)?.ok()
         })().unwrap_or(a.held),
         FaceRead::Fixed(held) => *held,
     };
@@ -129,7 +127,7 @@ fn said(r: &FaceRead) -> Option<(&str, String)> {
                  solves", a.face, a.along.word(), public_path(&a.line)
             ))
         }
-        FaceRead::Meets { solid, faces: [x, y], held } => {
+        FaceRead::Meets { solid, faces: [x, y], held, .. } => {
             let (seeded, solved) = if *held { ("meet", "not") } else { ("do not meet", "do") };
             (solid.as_str(), format!(
                 "faces `{x}` and `{y}` {seeded} where the drawing is seeded, but {solved} where it \

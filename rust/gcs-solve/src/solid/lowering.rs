@@ -420,6 +420,24 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
     })))
 }
 
+/// **The face a recognised region leaves on its body, by the name its construction gives it**
+/// (#879): a round's ball `round`, a chamfer's flat `flat` (`Stroke`'s names, the kernel's for a
+/// rolled one and a corner's) — what a block over the body's faces lists it by
+/// (`faces::face_paths`), so a round over another's faces names what the body's boundary has.
+/// `None` for a region no entry recognises.
+pub fn face_name(sk: &Sketch, terms: &[crate::model::RegionTerm]) -> Option<&'static str> {
+    recognise::recognised(sk, terms).map(|(_, section)| match section {
+        Section::Round(_) => "round",
+        Section::Flat { .. } => "flat",
+    })
+}
+
+/// The body a recognised region rounds or chamfers: the solid its faces are of.
+pub fn body_of(sk: &Sketch, solid: usize) -> Option<usize> {
+    let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
+    recognise::recognised(sk, terms).map(|(f, _)| f.faces[0].solid as usize)
+}
+
 /// How many points along each edge `seams_beside` stands a section at (and its ends).
 const SEAM_SAMPLES: usize = 32;
 
