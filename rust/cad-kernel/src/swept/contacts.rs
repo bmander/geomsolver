@@ -66,9 +66,9 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
         (0..16).map(|i| distance(at(i as f64/16.),at((i+1) as f64/16.))).sum::<f64>()
     };
     let (ru,rv) = (reach(0),reach(1));
-    let n = [cells.max((cells as f64*ru/rv.max(1e-300)).min(4.*cells as f64) as usize),cells.max((cells as f64*rv/ru.max(1e-300)).min(4.*cells as f64) as usize)];
+    let n = [(ru,rv),(rv,ru)].map(|(a,b)| cells.max((cells as f64*a/b.max(1e-300)).min(4.*cells as f64) as usize));
     let node = |i: usize,j: usize| -> Uv { [lo[0]+span[0]*i as f64/n[0] as f64,lo[1]+span[1]*j as f64/n[1] as f64] };
-    let values: Vec<Vec<Option<f64>>> = (0..=n[0]).map(|i| (0..=n[1]).map(|j| g(node(i,j))).collect()).collect();
+    let values: Vec<Vec<Option<f64>>> = crate::util::par::indices(n[0]+1,|i| (0..=n[1]).map(|j| g(node(i,j))).collect());
     let most = values.iter().flatten().flatten().fold(0f64,|m,x| m.max(x.abs()));
     // the motion keeps the face in its own surface: in contact everywhere
     let speed = {
@@ -77,47 +77,28 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
     };
     if most <= 1e-12*speed.max(1e-300) { return Contact::Whole }
     let settled = 1e-13*most;
-    // the gradient of `g` in the parameters, by central differences
     let h = [1e-7*span[0],1e-7*span[1]];
-    let grad = |uv: Uv| -> Option<[f64;2]> {
-        let du = (g([uv[0]+h[0],uv[1]])?-g([uv[0]-h[0],uv[1]])?)/(2.*h[0]);
-        let dv = (g([uv[0],uv[1]+h[1]])?-g([uv[0],uv[1]-h[1]])?)/(2.*h[1]);
-        Some([du,dv])
-    };
-    // a point settled onto `g = 0` by Newton across the curve (along the gradient), kept in the box
-    let settle = |mut uv: Uv| -> Uv {
-        for _ in 0..30 {
-            let (Some(v),Some(d)) = (g(uv),grad(uv)) else { break };
-            if v.abs() <= settled { break }
-            let dd = d[0]*d[0]+d[1]*d[1];
-            if !(dd > 0.) { break }
-            let step = [v*d[0]/dd,v*d[1]/dd];
-            uv = [(uv[0]-step[0]).clamp(lo[0],hi[0]),(uv[1]-step[1]).clamp(lo[1],hi[1])];
-            if step[0].abs() <= 1e-15*span[0] && step[1].abs() <= 1e-15*span[1] { break }
-        }
-        uv
-    };
-    // the roots on the cells' edges: a horizontal edge (i, j)–(i+1, j), a vertical one (i, j)–(i, j+1)
+    let grad = |uv: Uv| gradient(surface,twist,uv,h);
+    let settle = |uv: Uv| settled_on(surface,twist,uv,h,Some([lo,hi]),settled);
+    // the roots on the cells' edges, each edge read once: a horizontal one (i, j)–(i+1, j), a vertical
+    // one (i, j)–(i, j+1)
     let mut roots: Vec<Uv> = Vec::new();
-    let mut on_edge: std::collections::BTreeMap<(u8,usize,usize),usize> = std::collections::BTreeMap::new();
-    let mut root_on = |kind: u8,i: usize,j: usize,roots: &mut Vec<Uv>| -> Option<usize> {
-        if let Some(&r) = on_edge.get(&(kind,i,j)) { return Some(r) }
-        let (a,b) = if kind == 0 { (node(i,j),node(i+1,j)) } else { (node(i,j),node(i,j+1)) };
-        let (ga,gb) = if kind == 0 { (values[i][j]?,values[i+1][j]?) } else { (values[i][j]?,values[i][j+1]?) };
+    let mut root_on = |a: Uv,b: Uv,ga: Option<f64>,gb: Option<f64>| -> Option<usize> {
+        let (ga,gb) = (ga?,gb?);
         if (ga < 0.) == (gb < 0.) || ga == 0. && gb == 0. { return None }
-        let at = |x: f64| g([a[0]+(b[0]-a[0])*x,a[1]+(b[1]-a[1])*x]);
-        let x = crate::util::roots::bracketed_root(at,0.,ga,1.,gb,1e-12);
+        let x = crate::util::roots::bracketed_root(|x: f64| g([a[0]+(b[0]-a[0])*x,a[1]+(b[1]-a[1])*x]),0.,ga,1.,gb,1e-12);
         roots.push([a[0]+(b[0]-a[0])*x,a[1]+(b[1]-a[1])*x]);
-        on_edge.insert((kind,i,j),roots.len()-1);
         Some(roots.len()-1)
     };
+    let across: Vec<Vec<Option<usize>>> = (0..n[0]).map(|i| (0..=n[1]).map(|j| root_on(node(i,j),node(i+1,j),values[i][j],values[i+1][j])).collect()).collect();
+    let up: Vec<Vec<Option<usize>>> = (0..=n[0]).map(|i| (0..n[1]).map(|j| root_on(node(i,j),node(i,j+1),values[i][j],values[i][j+1])).collect()).collect();
     // the links: each cell's crossings joined in pairs, a saddle's through its double point where it
     // has one; and the double points, each a node of four links
     let mut links: Vec<[usize;2]> = Vec::new();
     let mut singular: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
     for i in 0..n[0] { for j in 0..n[1] {
         // round the cell: its bottom, right, top and left edges
-        let sides = [root_on(0,i,j,&mut roots),root_on(1,i+1,j,&mut roots),root_on(0,i,j+1,&mut roots),root_on(1,i,j,&mut roots)];
+        let sides = [across[i][j],up[i+1][j],across[i][j+1],up[i][j]];
         let found: Vec<usize> = sides.iter().flatten().copied().collect();
         match found.len() {
             2 => links.push([found[0],found[1]]),
@@ -189,13 +170,8 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
     let holds = |uv: Uv| located.holds_parameters(fi,uv);
     let on_box = |uv: Uv| (0..2).any(|k| (uv[k]-lo[k]).abs() <= 1e-9*span[k] || (uv[k]-hi[k]).abs() <= 1e-9*span[k]);
     let boundary_between = |inn: Uv,out: Uv| -> Uv {
-        let (mut a,mut b) = (inn,out);
-        for _ in 0..60 {
-            let m = settle([(a[0]+b[0])/2.,(a[1]+b[1])/2.]);
-            if holds(m) { a = m } else { b = m }
-            if (a[0]-b[0]).abs() <= 1e-14*span[0] && (a[1]-b[1]).abs() <= 1e-14*span[1] { break }
-        }
-        a
+        let wide = |a: Uv,b: Uv| (a[0]-b[0]).abs() > 1e-14*span[0] || (a[1]-b[1]).abs() > 1e-14*span[1];
+        crate::util::roots::bisect(inn,out,|a,b| settle([(a[0]+b[0])/2.,(a[1]+b[1])/2.]),wide,holds).0
     };
     let mut pieces: Vec<Piece> = Vec::new();
     for (line,closed) in lines {
@@ -236,37 +212,25 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
         }
     }
     // pieces ending at one point either side of a seam, joined
-    let point = |uv: Uv| surface.point(uv);
-    let mut joined = true;
-    while joined {
-        joined = false;
-        'outer: for a in 0..pieces.len() {
-            if pieces[a].closed { continue }
-            for b in 0..pieces.len() {
-                if b == a || pieces[b].closed { continue }
-                let (pa,pb) = (&pieces[a],&pieces[b]);
-                let ends = |p: &Piece| [point(p.uv[0]),point(*p.uv.last().unwrap())];
-                let (ea,eb) = (ends(pa),ends(pb));
-                let seam = |x: Uv,y: Uv| on_box(x) && on_box(y) && ((x[0]-y[0]).abs()/span[0]).max((x[1]-y[1]).abs()/span[1]) > 1e-6;
-                let ([_,a1],[b0,b1]) = ([pa.uv[0],*pa.uv.last().unwrap()],[pb.uv[0],*pb.uv.last().unwrap()]);
-                let near = |x: V,y: V| distance(x,y) <= tol;
-                // a's last onto b's first, else onto b's last (b reversed)
-                let found = if near(ea[1],eb[0]) && seam(a1,b0) { Some(false) } else if near(ea[1],eb[1]) && seam(a1,b1) { Some(true) } else { None };
-                let Some(rev) = found else { continue };
-                let mut tail = pieces[b].clone();
-                if rev { tail.uv.reverse(); tail.ends.reverse(); }
-                let mut head = pieces[a].clone();
-                head.uv.extend(tail.uv);
-                head.ends[1] = tail.ends[1];
-                pieces[a] = head;
-                pieces.remove(b);
-                joined = true;
-                break 'outer;
-            }
-        }
+    let ends_of = |p: &Piece| [surface.point(p.uv[0]),surface.point(*p.uv.last().unwrap())];
+    let seam = |x: Uv,y: Uv| on_box(x) && on_box(y) && ((x[0]-y[0]).abs()/span[0]).max((x[1]-y[1]).abs()/span[1]) > 1e-6;
+    let near = |x: V,y: V| distance(x,y) <= tol;
+    loop {
+        let ends: Vec<[V;2]> = pieces.iter().map(ends_of).collect();
+        // a's last onto b's first, else onto b's last (b reversed)
+        let found = (0..pieces.len()).filter(|&a| !pieces[a].closed).find_map(|a| (0..pieces.len()).filter(|&b| b != a && !pieces[b].closed).find_map(|b| {
+            let (a1,[b0,b1]) = (*pieces[a].uv.last().unwrap(),[pieces[b].uv[0],*pieces[b].uv.last().unwrap()]);
+            if near(ends[a][1],ends[b][0]) && seam(a1,b0) { Some((a,b,false)) } else if near(ends[a][1],ends[b][1]) && seam(a1,b1) { Some((a,b,true)) } else { None }
+        }));
+        let Some((a,b,rev)) = found else { break };
+        let mut tail = pieces.remove(b);
+        if rev { tail.uv.reverse(); tail.ends.reverse(); }
+        let head = &mut pieces[if b < a { a-1 } else { a }];
+        head.uv.extend(tail.uv);
+        head.ends[1] = tail.ends[1];
     }
     for p in &mut pieces {
-        if !p.closed && p.uv.len() > 2 && distance(point(p.uv[0]),point(*p.uv.last().unwrap())) <= tol && on_box(p.uv[0]) { p.closed = true; }
+        if !p.closed && p.uv.len() > 2 && on_box(p.uv[0]) { let e = ends_of(p); if near(e[0],e[1]) { p.closed = true; } }
     }
     // every chord within the tolerance of the curve: points added between, settled
     for p in &mut pieces {
@@ -291,19 +255,26 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
     Contact::Pieces(pieces)
 }
 
-/// `uv` settled onto the contact `g = 0` of `surface` under `twist` by Newton across the curve (along
-/// `g`'s gradient in the parameters, read by central differences `h` apart).
-fn settled_on(surface: &Surface,twist: &Twist,mut uv: Uv,h: [f64;2]) -> Uv {
+/// The gradient of the contact `g` of `surface` under `twist` in its parameters at `uv`, by central
+/// differences `h` apart; none where the normal is not defined there.
+fn gradient(surface: &Surface,twist: &Twist,uv: Uv,h: [f64;2]) -> Option<[f64;2]> {
     let g = |uv: Uv| surface.normal_velocity(uv,twist);
+    Some([(g([uv[0]+h[0],uv[1]])?-g([uv[0]-h[0],uv[1]])?)/(2.*h[0]),(g([uv[0],uv[1]+h[1]])?-g([uv[0],uv[1]-h[1]])?)/(2.*h[1])])
+}
+
+/// `uv` settled onto the contact `g = 0` of `surface` under `twist` by Newton across the curve (along
+/// `g`'s gradient, `gradient`), held within the parameter box `within` where there is one, until `g`
+/// is within `settled` of nought or a step is a hundred-millionth of the differences' `h`.
+fn settled_on(surface: &Surface,twist: &Twist,mut uv: Uv,h: [f64;2],within: Option<[Uv;2]>,settled: f64) -> Uv {
     for _ in 0..30 {
-        let Some(v) = g(uv) else { break };
-        let (Some(a),Some(b),Some(c),Some(d)) = (g([uv[0]+h[0],uv[1]]),g([uv[0]-h[0],uv[1]]),g([uv[0],uv[1]+h[1]]),g([uv[0],uv[1]-h[1]])) else { break };
-        let grad = [(a-b)/(2.*h[0]),(c-d)/(2.*h[1])];
-        let dd = grad[0]*grad[0]+grad[1]*grad[1];
+        let (Some(v),Some(d)) = (surface.normal_velocity(uv,twist),gradient(surface,twist,uv,h)) else { break };
+        if v.abs() <= settled { break }
+        let dd = d[0]*d[0]+d[1]*d[1];
         if !(dd > 0.) { break }
-        let step = [v*grad[0]/dd,v*grad[1]/dd];
+        let step = [v*d[0]/dd,v*d[1]/dd];
         uv = [uv[0]-step[0],uv[1]-step[1]];
-        if step[0].abs() <= 1e-3*h[0] && step[1].abs() <= 1e-3*h[1] { break }
+        if let Some([lo,hi]) = within { uv = [uv[0].clamp(lo[0],hi[0]),uv[1].clamp(lo[1],hi[1])] }
+        if step[0].abs() <= 1e-8*h[0] && step[1].abs() <= 1e-8*h[1] { break }
     }
     uv
 }
@@ -328,11 +299,11 @@ pub fn piece_curve(tool: &Brep,piece: &Piece,twist: &Twist,tol: f64) -> Option<c
         let k = at.partition_point(|&x| x <= s).clamp(1,pts.len()-1);
         let (a,b) = (at[k-1],at[k]);
         let f = if b > a { (s-a)/(b-a) } else { 0. };
-        let (u0,mut u1) = (piece.uv[k-1],piece.uv[k]);
-        for c in 0..2 { if let Some(p) = periods[c] { while u1[c]-u0[c] > 0.5*p { u1[c] -= p } while u0[c]-u1[c] > 0.5*p { u1[c] += p } } }
+        let u0 = piece.uv[k-1];
+        let u1 = crate::topo::unwrap(piece.uv[k],u0,periods);
         let uv = [u0[0]+(u1[0]-u0[0])*f,u0[1]+(u1[1]-u0[1])*f];
         if f == 0. { return pts[k-1] }
-        surface.point(settled_on(surface,twist,uv,h))
+        surface.point(settled_on(surface,twist,uv,h,None,0.))
     };
     let (curve,_) = crate::nurbs::fit_curve(&along,3,16,0.1*tol)?;
     Some(crate::geom::Curve::BSpline(std::sync::Arc::new(curve)))
@@ -340,12 +311,8 @@ pub fn piece_curve(tool: &Brep,piece: &Piece,twist: &Twist,tol: f64) -> Option<c
 
 /// The rigid map carrying what stands at the pose of `t0` to where it stands at `t1` under `path`.
 fn between(path: &crate::trajectory::Trajectory,t0: f64,t1: f64) -> Result<crate::geom::Rigid,super::closed::Unbuilt> {
-    let (a,b) = (path.pose(t0)?,path.pose(t1)?);
-    let rt = |m: [[f64;3];3]| [[m[0][0],m[1][0],m[2][0]],[m[0][1],m[1][1],m[2][1]],[m[0][2],m[1][2],m[2][2]]];
-    let mul = |x: [[f64;3];3],y: [[f64;3];3]| std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| x[i][k]*y[k][j]).sum()));
-    let r: [[f64;3];3] = mul(b.r,rt(a.r));
-    let rp = [0,1,2].map(|i| (0..3).map(|k| r[i][k]*a.p[k]).sum::<f64>());
-    Ok(crate::geom::Rigid {r,t:crate::util::space::sub(b.p,rp)})
+    let m = path.pose(t0)?.inverse().then(path.pose(t1)?);
+    Ok(crate::geom::Rigid {r:m.r,t:m.p})
 }
 
 /// **The sheet `curve` sweeps carried by the constant twist `path` over `roll`** (#880 Q1b S3): the
@@ -353,7 +320,7 @@ fn between(path: &crate::trajectory::Trajectory,t0: f64,t1: f64) -> Result<crate
 /// — one face of a blend (`Surface::Blend`) between the curve and its image, its rails the paths of the
 /// curve's ends (`Curve::Iso`), a closed curve's one rail its seam. The carry is held to the path's own
 /// pose at the roll's end.
-pub fn carried(curve: &crate::geom::Curve,closed: bool,path: &crate::trajectory::Trajectory,roll: [f64;2],tol: f64)
+pub fn carried(curve: &crate::geom::Curve,closed: bool,path: &crate::trajectory::Trajectory,roll: [f64;2])
     -> Result<Carried,super::closed::Unbuilt> {
     use crate::geom::{Blend,Carry,Curve,Frame};
     use crate::topo::EdgeCurve;
@@ -399,7 +366,6 @@ pub fn carried(curve: &crate::geom::Curve,closed: bool,path: &crate::trajectory:
     let face = Face {surface,reversed:false,loops:vec![],name:"contact".into()};
     if b.loop_area(&face,&l) < 0. { l = crate::topo::reverse_loop(l); }
     b.faces.push(Face {loops:vec![l],..face});
-    let _ = tol;
     Ok(Carried {sheet:b,rims})
 }
 
@@ -417,6 +383,16 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),super::closed::Unbuilt> {
     use super::closed::Unbuilt;
     let screw = path.screw().ok_or(Unbuilt::Motion)?;
+    // (refused first, before any face is read: an edge between two faces not smooth there: its fan's contact is S2's)
+    let uses = tool.uses();
+    for (e,edge) in tool.edges.iter().enumerate() {
+        if matches!(edge.curve,crate::topo::EdgeCurve::Degenerate) { continue }
+        let [(f1,..),(f2,..)] = uses[e][..] else { continue };
+        if f1 == f2 { continue }
+        let mid = edge.point(0.5*(edge.t[0]+edge.t[1]),&tool.vertices);
+        let (Some(n1),Some(n2)) = (tool.faces[f1].outward(mid),tool.faces[f2].outward(mid)) else { return Err(Unbuilt::Curved {at:mid}) };
+        if crate::util::space::dot(n1,n2) < 1.-1e-9 { return Err(Unbuilt::Curved {at:mid}) }
+    }
     let twist = screw.twist();
     let located = Located::new(tool,tol);
     let mut out = Vec::new();
@@ -431,23 +407,13 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
             }
             Contact::Pieces(pieces) => for p in pieces {
                 let curve = piece_curve(tool,&p,&twist,tol).ok_or_else(|| Unbuilt::Failed("a piece of contact not fitted".into()))?;
-                let c = carried(&curve,p.closed,path,roll,tol)?;
+                let c = carried(&curve,p.closed,path,roll)?;
                 for (k,rim) in c.rims.iter().enumerate() {
                     given.push(crate::boolean::Given {surfaces:[tool.faces[fi].surface.moved(&ends[k]),c.sheet.faces[0].surface.clone()],curves:vec![rim.clone()]});
                 }
                 out.push(c.sheet);
             },
         }
-    }
-    // (an edge between two faces not smooth there: its fan's contact is S2's)
-    let uses = tool.uses();
-    for (e,edge) in tool.edges.iter().enumerate() {
-        if matches!(edge.curve,crate::topo::EdgeCurve::Degenerate) { continue }
-        let [(f1,..),(f2,..)] = uses[e][..] else { continue };
-        if f1 == f2 { continue }
-        let mid = edge.point(0.5*(edge.t[0]+edge.t[1]),&tool.vertices);
-        let (Some(n1),Some(n2)) = (tool.faces[f1].outward(mid),tool.faces[f2].outward(mid)) else { return Err(Unbuilt::Curved {at:mid}) };
-        if crate::util::space::dot(n1,n2) < 1.-1e-9 { return Err(Unbuilt::Curved {at:mid}) }
     }
     for m in &ends { out.push(tool.moved(m)); }
     Ok((out,given))

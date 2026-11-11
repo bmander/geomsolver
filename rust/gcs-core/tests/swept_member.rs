@@ -74,14 +74,10 @@ fn a_swept_solids_membership_is_the_material_fields() {
 /// pseudo-normal, so the winding is not what is read.
 #[test]
 fn a_points_side_off_its_nearest_feature_is_the_windings() {
-    use gcs_core::brep::build::{prism,revolve,square,torus};
-    let h = (std::f64::consts::TAU*4.5/30.).atan();
-    let axis = [0.,h.cos(),-h.sin()];
-    let half = gcs_core::space::scale(axis,2.5*30f64.to_radians().tan());
-    let tri = crate::swept_rings::polygon(&[[4.,0.,0.],gcs_core::space::add([6.5,0.,0.],half),gcs_core::space::add([6.5,0.,0.],gcs_core::space::scale(half,-1.))]);
+    use gcs_core::brep::build::{prism,square,torus};
     let tools = [
         torus([11.5,0.,0.],[0.,0.7,-0.7],6.,2.).unwrap(),
-        revolve(&tri,[14.,0.,0.],axis,std::f64::consts::TAU).unwrap(),
+        crate::swept_contacts::v_wheel(),
         prism(&square([8.,0.,-1.],[0.3,0.2,1.],1.5),0.,2.).unwrap(),
     ];
     let mut rng = gcs_core::rng::Rng::new(880);

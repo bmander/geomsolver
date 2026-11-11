@@ -120,26 +120,27 @@ pub fn altitude(a: V3,b: V3,c: V3) -> f64 {
     if area2 > 0. && longest > 0. { area2/longest } else { 0. }
 }
 
-/// Which feature of a triangle its nearest point to a query lies on.
+/// Which feature of a triangle its nearest point to a query lies on: a vertex by its place among
+/// `a`, `b`, `c` (0, 1, 2), an edge by its place among `ab`, `bc`, `ca` (0, 1, 2), or the face.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Region { Vertex, Edge, Face }
+pub enum Region { Vertex(u8), Edge(u8), Face }
 
 /// The nearest point of a triangle to `p` and the feature it lies on
 /// (Ericson's Voronoi-region walk).
 pub fn closest_on_triangle(p: V3,a: V3,b: V3,c: V3) -> (V3,Region) {
     let (ab,ac,ap) = (sub(b,a),sub(c,a),sub(p,a));
     let (d1,d2) = (dot(ab,ap),dot(ac,ap));
-    if d1 <= 0. && d2 <= 0. { return (a,Region::Vertex); }
+    if d1 <= 0. && d2 <= 0. { return (a,Region::Vertex(0)); }
     let bp = sub(p,b); let (d3,d4) = (dot(ab,bp),dot(ac,bp));
-    if d3 >= 0. && d4 <= d3 { return (b,Region::Vertex); }
+    if d3 >= 0. && d4 <= d3 { return (b,Region::Vertex(1)); }
     let vc = d1*d4-d3*d2;
-    if vc <= 0. && d1 >= 0. && d3 <= 0. { let v = d1/(d1-d3); return (add(a,scale(ab,v)),Region::Edge); }
+    if vc <= 0. && d1 >= 0. && d3 <= 0. { let v = d1/(d1-d3); return (add(a,scale(ab,v)),Region::Edge(0)); }
     let cp = sub(p,c); let (d5,d6) = (dot(ab,cp),dot(ac,cp));
-    if d6 >= 0. && d5 <= d6 { return (c,Region::Vertex); }
+    if d6 >= 0. && d5 <= d6 { return (c,Region::Vertex(2)); }
     let vb = d5*d2-d1*d6;
-    if vb <= 0. && d2 >= 0. && d6 <= 0. { let w = d2/(d2-d6); return (add(a,scale(ac,w)),Region::Edge); }
+    if vb <= 0. && d2 >= 0. && d6 <= 0. { let w = d2/(d2-d6); return (add(a,scale(ac,w)),Region::Edge(2)); }
     let va = d3*d6-d5*d4;
-    if va <= 0. && d4-d3 >= 0. && d5-d6 >= 0. { let w = (d4-d3)/((d4-d3)+(d5-d6)); return (add(b,scale(sub(c,b),w)),Region::Edge); }
+    if va <= 0. && d4-d3 >= 0. && d5-d6 >= 0. { let w = (d4-d3)/((d4-d3)+(d5-d6)); return (add(b,scale(sub(c,b),w)),Region::Edge(1)); }
     let denom = 1./(va+vb+vc); let (v,w) = (vb*denom,vc*denom);
     (add(a,add(scale(ab,v),scale(ac,w))),Region::Face)
 }

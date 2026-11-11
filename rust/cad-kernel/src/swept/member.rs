@@ -38,7 +38,7 @@ pub struct Solid { pts: Vec<V>,tris: Vec<[u32;3]>,tree: Bvh<3>,pub sag: f64,
     /// not, the winding read instead), and each edge's, the sum of its two triangles' unit normals:
     /// the side of a point whose nearest point of the mesh is on a vertex or an edge read off it
     /// (Bærentzen & Aanæs 2005), exact for a closed mesh turned consistently outward.
-    vertex_normals: Vec<Option<V>>,edge_normals: std::collections::BTreeMap<(u32,u32),V> }
+    vertex_normals: Vec<Option<V>>,edge_normals: Vec<[Option<V>;3]> }
 
 impl Solid {
     /// The B-rep `b` (its units) meshed within `bar` and read in units `1/scale` of its own (a
@@ -83,33 +83,26 @@ impl Solid {
     /// triangle — on a closed mesh turned outward, exactly the side — and off the winding number
     /// where it lies on a triangle's edge or corner, where the triangles there disagree.
     pub fn signed_near(&self,p: V) -> (f64,bool) {
-        let best = std::cell::Cell::new((f64::INFINITY,usize::MAX,crate::util::space::Region::Vertex));
+        let best = std::cell::Cell::new((f64::INFINITY,usize::MAX,[0.;3],crate::util::space::Region::Face));
         self.tree.query_nearest(|b| b.gap(Bounds {lo:p,hi:p}),|| best.get().0,|i| {
             let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
             let (q,region) = closest_on_triangle(p,a,b,c);
             let d = distance(p,q);
-            if d < best.get().0 { best.set((d,i,region)) }
+            if d < best.get().0 { best.set((d,i,q,region)) }
         });
-        let (d,i,region) = best.get();
+        let (d,i,q,region) = best.get();
         if i == usize::MAX { return (d,false) }
-        let [ia,ib,ic] = self.tris[i];
-        let [a,b,c] = [ia,ib,ic].map(|k| self.pts[k as usize]);
-        if region == crate::util::space::Region::Face {
-            let n = cross(sub(b,a),sub(c,a));
-            let side = dot(sub(p,a),n);
+        // on the face, its normal; on a vertex or an edge, its pseudo-normal where the mesh is a
+        // closed manifold there
+        use crate::util::space::Region;
+        let n = match region {
+            Region::Face => { let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]); Some(cross(sub(b,a),sub(c,a))) }
+            Region::Vertex(k) => self.vertex_normals[self.tris[i][k as usize] as usize],
+            Region::Edge(k) => self.edge_normals[i][k as usize],
+        };
+        if let Some(n) = n {
+            let side = dot(sub(p,q),n);
             if side != 0. { return (d,side < 0.) }
-        } else {
-            // on a vertex or an edge of the nearest triangle: its pseudo-normal, where the mesh is a
-            // closed manifold there
-            let (q,feature) = nearest_feature(p,[a,b,c],[ia,ib,ic]);
-            let n = match feature {
-                Feature::Vertex(k) => self.vertex_normals[k as usize],
-                Feature::Edge(x,y) => self.edge_normals.get(&(x.min(y),x.max(y))).copied(),
-            };
-            if let Some(n) = n {
-                let side = dot(sub(p,q),n);
-                if side != 0. { return (d,side < 0.) }
-            }
         }
         (d,self.winding(p) > 0.5)
     }
@@ -268,49 +261,25 @@ impl Swept<'_> {
 }
 
 
-/// The feature of a triangle a point's nearest point of it lies on: a vertex, or an edge by its ends.
-enum Feature { Vertex(u32),Edge(u32,u32) }
-
-/// **The nearest point of triangle `t` (its vertices `k`) to `p`, on a vertex or an edge**: Ericson's
-/// Voronoi-region walk as `closest_on_triangle`'s, naming the vertex or the edge; read where that walk
-/// says the point is not inside the triangle's face.
-fn nearest_feature(p: V,[a,b,c]: [V;3],[ka,kb,kc]: [u32;3]) -> (V,Feature) {
-    use crate::util::space::{add,scale};
-    let (ab,ac,ap) = (sub(b,a),sub(c,a),sub(p,a));
-    let (d1,d2) = (dot(ab,ap),dot(ac,ap));
-    if d1 <= 0. && d2 <= 0. { return (a,Feature::Vertex(ka)) }
-    let bp = sub(p,b); let (d3,d4) = (dot(ab,bp),dot(ac,bp));
-    if d3 >= 0. && d4 <= d3 { return (b,Feature::Vertex(kb)) }
-    let vc = d1*d4-d3*d2;
-    if vc <= 0. && d1 >= 0. && d3 <= 0. { let v = d1/(d1-d3); return (add(a,scale(ab,v)),Feature::Edge(ka,kb)) }
-    let cp = sub(p,c); let (d5,d6) = (dot(ab,cp),dot(ac,cp));
-    if d6 >= 0. && d5 <= d6 { return (c,Feature::Vertex(kc)) }
-    let vb = d5*d2-d1*d6;
-    if vb <= 0. && d2 >= 0. && d6 <= 0. { let w = d2/(d2-d6); return (add(a,scale(ac,w)),Feature::Edge(ka,kc)) }
-    // the edge from b to c, the last region the walk leaves (`closest_on_triangle`'s `va`)
-    let w = ((d4-d3)/((d4-d3)+(d5-d6))).clamp(0.,1.);
-    (add(b,scale(sub(c,b),w)),Feature::Edge(kb,kc))
-}
-
 /// **A mesh's pseudo-normals** (Bærentzen & Aanæs 2005): each vertex's, its triangles' unit normals
-/// weighted by their angles there, and each edge's, its two triangles' summed — `None` at a vertex
-/// with an edge not bounding exactly two triangles, and no edge's for such an edge, where the side is
-/// read by the winding instead.
-fn pseudo_normals(pts: &[V],tris: &[[u32;3]]) -> (Vec<Option<V>>,std::collections::BTreeMap<(u32,u32),V>) {
-    use crate::util::space::{add,scale};
-    let unit = |v: V| { let n = norm(v); if n > 0. { scale(v,1./n) } else { [0.;3] } };
+/// weighted by their angles there, and each triangle's edges' (`ab`, `bc`, `ca`, as
+/// `Region::Edge` numbers them), the two triangles' on the edge summed — `None` at a vertex with an
+/// edge not bounding exactly two triangles, and for such an edge, where the side is read by the
+/// winding instead.
+fn pseudo_normals(pts: &[V],tris: &[[u32;3]]) -> (Vec<Option<V>>,Vec<[Option<V>;3]>) {
+    use crate::util::space::{add,scale,triangle_normal,normalised};
+    let normals: Vec<V> = tris.iter().map(|t| { let [a,b,c] = t.map(|k| pts[k as usize]); triangle_normal(a,b,c).unwrap_or([0.;3]) }).collect();
     let mut vertex: Vec<V> = vec![[0.;3];pts.len()];
     let mut edges: std::collections::BTreeMap<(u32,u32),(V,u32)> = std::collections::BTreeMap::new();
-    for t in tris {
+    let key = |x: u32,y: u32| (x.min(y),x.max(y));
+    for (t,&n) in tris.iter().zip(&normals) {
         let [a,b,c] = t.map(|k| pts[k as usize]);
-        let n = unit(cross(sub(b,a),sub(c,a)));
         for (k,(p,q,r)) in [(a,b,c),(b,c,a),(c,a,b)].into_iter().enumerate() {
-            let (u,v) = (unit(sub(q,p)),unit(sub(r,p)));
-            let angle = dot(u,v).clamp(-1.,1.).acos();
-            vertex[t[k] as usize] = add(vertex[t[k] as usize],scale(n,angle));
+            let (Some(u),Some(v)) = (normalised(sub(q,p)),normalised(sub(r,p))) else { continue };
+            vertex[t[k] as usize] = add(vertex[t[k] as usize],scale(n,dot(u,v).clamp(-1.,1.).acos()));
         }
         for (x,y) in [(t[0],t[1]),(t[1],t[2]),(t[2],t[0])] {
-            let e = edges.entry((x.min(y),x.max(y))).or_insert(([0.;3],0));
+            let e = edges.entry(key(x,y)).or_insert(([0.;3],0));
             e.0 = add(e.0,n);
             e.1 += 1;
         }
@@ -318,6 +287,7 @@ fn pseudo_normals(pts: &[V],tris: &[[u32;3]]) -> (Vec<Option<V>>,std::collection
     let mut sound = vec![true;pts.len()];
     for (&(x,y),&(_,count)) in &edges { if count != 2 { sound[x as usize] = false; sound[y as usize] = false; } }
     let vertex = vertex.into_iter().zip(sound).map(|(n,ok)| (ok && norm(n) > 0.).then_some(n)).collect();
-    let edges = edges.into_iter().filter(|(_,(n,count))| *count == 2 && norm(*n) > 0.).map(|(k,(n,_))| (k,n)).collect();
-    (vertex,edges)
+    let edge = |x: u32,y: u32| edges.get(&key(x,y)).filter(|(n,count)| *count == 2 && norm(*n) > 0.).map(|e| e.0);
+    let per_triangle = tris.iter().map(|t| [edge(t[0],t[1]),edge(t[1],t[2]),edge(t[2],t[0])]).collect();
+    (vertex,per_triangle)
 }
