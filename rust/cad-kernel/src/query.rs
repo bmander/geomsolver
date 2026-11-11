@@ -184,6 +184,19 @@ fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Op
         (o,Curve::SheetCut(x)) => (x,o,false,tb,ta),
         _ => return None,
     };
+    // a ruling the cut's plane holds (laid beside the cut, or an edge lying along it): the cut crosses
+    // it at that ruling's `v`, where the sheet touches the plane (#885) — given by the cut's own
+    // closed form, not sought along a curve that runs off to infinity at its other parallel
+    // rulings; a line that is no held ruling is left to its carrier's roots
+    if let Curve::Line {p,d} = *other {
+        let at = cut.held_along(p,d,tol)?;
+        let q = cut.point(at);
+        let t = other.inverse(q);
+        let slack = tol/other.speed().max(1e-300);
+        let inside = at >= cut_t[0]-1e-12*(1.+at.abs()) && at <= cut_t[1]+1e-12*(1.+at.abs())
+            && t >= other_t[0]-slack && t <= other_t[1]+slack;
+        return Some(if inside { vec![(if cut_is_a { at } else { t },q)] } else { Vec::new() })
+    }
     // the other's rule — a cut's on the same sheet, or a helix's `u` on this one — and whether the
     // two parameters are one (both the sheet's `v`)
     let (second,one): (Result<&SheetCut,f64>,bool) = match other {

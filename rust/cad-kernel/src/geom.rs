@@ -1645,6 +1645,15 @@ impl SheetCut {
     pub fn point(&self,v: f64) -> V { self.d1(v).0 }
     /// The screwed line whose sheet it cuts.
     pub fn line(&self) -> &ScrewedLine { &self.line }
+    /// **The held ruling a line is**: the `v` of the ruling the plane holds that lies along the line
+    /// through `p` along `d` (its points at `u = 0` and `u = 1` each within `tol` of it) — where the
+    /// cut crosses that line, at `point(v)`, the one point the sheet touches the plane at along it.
+    /// `None` where the line is no held ruling.
+    pub fn held_along(&self,p: V,d: V,tol: f64) -> Option<f64> {
+        let d = crate::util::space::normalised(d)?;
+        let off = |q: V| { let w = sub(q,p); norm(sub(w,scale(d,dot(w,d)))) };
+        self.held.iter().copied().find(|&at| { let (s0,su,_) = self.blend.d1([0.,at]); off(s0) <= tol && off(add(s0,su)) <= tol })
+    }
     /// `C` and `C'` at `v`.
     fn d1(&self,v: f64) -> (V,V) {
         let (u,du) = self.u(v);
