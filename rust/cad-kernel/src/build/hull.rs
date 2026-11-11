@@ -40,6 +40,7 @@ pub fn hull(points: &[V]) -> Result<Brep,String> {
     if points.iter().flatten().any(|x| !(x.abs() < 1e12)) { return Err("a hull of a point not finite".into()) }
     let (lo,hi) = crate::geom::hull(points.iter().copied());
     let tol = tolerance(distance(lo,hi));
+    if !(tol > 0.) { return Err("a hull of points that are one point".into()) }
     let mut pool = Pool::new(tol);
     for &p in points { pool.at(p); }
     let pts = pool.pts;
