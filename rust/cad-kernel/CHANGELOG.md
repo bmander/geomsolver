@@ -22,6 +22,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   node calls it, where the recipe's writer says (`"said"`), else its name between backticks — a
   node named by nothing its author wrote says what it is of. A body's `built_names` hold what
   `called()` gives, no longer bare names it puts backticks round.
+- **A rail screwed many turns is inverted on its own turn** (`geom::Curve::inverse` of a
+  `Curve::Iso`): Newton is seeded from the nearest of the rail's samples and of the points where
+  its screw turns it to face the point, one a turn, by the one seeding `Blend`'s own inverse uses.
+  From the samples alone, a rail whose pitch is small beside its radius had half its points read a
+  turn off, so two edges along one helix were never merged: the square bar screwed four turns
+  (brep-bench's swept/square-bar-screwed-through-rod) was refused with "a cylinder's pieces do not
+  close", and now builds, its volume the closed form's to rounding, and cut from the rod gives
+  the bench's settled volume and area.
+
 - **Faster Booleans and evaluation on spline patches**: face pairs whose boxes overlap are
   proved apart where subdivided, outward-rounded surface enclosures separate them, avoiding
   expensive intersection seeding on disjoint sheets; unresolved pairs use the ordinary reader.

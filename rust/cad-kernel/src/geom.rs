@@ -709,17 +709,21 @@ impl Blend {
     /// `inverse` from the nearest of the grid and the turned points.
     fn searched(&self,p: V) -> Uv {
         const N: usize = 16;
-        let mut best = (f64::INFINITY,[0.;2]);
-        let mut try_at = |uv: Uv| {
-            let d = crate::util::space::distance(self.d1(uv).0,p);
-            if d < best.0 { best = (d,uv); }
-        };
-        for i in 0..=N { for j in 0..=N { try_at([i as f64/N as f64,j as f64/N as f64]); } }
-        for i in 0..=N {
-            let u = i as f64/N as f64;
-            for v in self.turned_to(u,p) { try_at([u,v]); }
+        let (_,uv) = (0..=N).map(|i| { let u = i as f64/N as f64; let (d,v) = self.nearest_v(u,p,N); (d,[u,v]) })
+            .fold((f64::INFINITY,[0.;2]),|best,x| if x.0 < best.0 { x } else { best });
+        self.newton(p,uv)
+    }
+    /// The seed along `v` for the point at `u` nearest `p`, and its distance: the nearest of `n + 1`
+    /// samples along `v` and of the points where the screw turns it to face `p` (`turned_to`). A
+    /// rail screwed many turns passes a pitch from `p` on each, and samples standing farther apart
+    /// than that alone may seed the foot on another turn (#886).
+    fn nearest_v(&self,u: f64,p: V,n: usize) -> (f64,f64) {
+        let mut best = (f64::INFINITY,0.);
+        for v in (0..=n).map(|j| j as f64/n as f64).chain(self.turned_to(u,p)) {
+            let d = crate::util::space::distance(self.d1([u,v]).0,p);
+            if d < best.0 { best = (d,v); }
         }
-        self.newton(p,best.1)
+        best
     }
     /// Where along `v` a screw turns the section's point at `u` to face `p` about its axis: every
     /// such `v` in `[0, 1]` (one a turn), none for a step along a line or a point on the axis.
@@ -1959,15 +1963,9 @@ impl Curve {
             Curve::SheetCut(ref c) => self.newton(p,c.v_of(p),None),
             Curve::Rail(ref w,u) => w.rail_inverse(u,p),
             Curve::Rim(ref w,s) => w.rim_inverse(s,p),
-            Curve::Iso(ref b,u) => {
-                let mut best = (f64::INFINITY,0.);
-                for j in 0..=32 {
-                    let v = j as f64/32.;
-                    let d = crate::util::space::distance(b.d1([u,v]).0,p);
-                    if d < best.0 { best = (d,v); }
-                }
-                self.newton(p,best.1,Some([0.,1.]))
-            }
+            // the nearest of samples along the rail and of the turns facing `p`, as the patch's
+            // `searched` seeds each `u`, then Newton (#886)
+            Curve::Iso(ref b,u) => self.newton(p,b.nearest_v(u,p,32).1,Some([0.,1.])),
             // the nearest of samples across every knot span, then Newton: once a point
             Curve::BSpline(ref b) => nearest_held(b,p),
             Curve::Affine(ref m) => m.inverse(p),

@@ -187,6 +187,11 @@ fn a_plane_holding_a_hyperboloids_ruling_meets_it_in_two_lines_at_any_tolerance(
 /// the face of a level triangle on the line screwed (`build::screwed`), its stretch of the line
 /// `2 reach` long.
 pub(crate) fn screwed_sheet(p: V,e: V,reach: f64,angle: f64,advance: f64,from: f64) -> Surface {
+    screwed_sheet_brep(p,e,reach,angle,advance,from).faces[0].surface.clone()
+}
+
+/// `screwed_sheet` as a B-rep: the triangle's screwed face alone, its rails and rulings its edges.
+pub(crate) fn screwed_sheet_brep(p: V,e: V,reach: f64,angle: f64,advance: f64,from: f64) -> gcs_core::brep::topo::Brep {
     use gcs_core::brep::build::{screwed,Profile,ProfileEdge};
     let off = [p[0]-e[0]*(p[0]*e[0]+p[1]*e[1]),p[1]-e[1]*(p[0]*e[0]+p[1]*e[1]),0.];
     let away = if norm(off) > 1e-9 { unit(off) } else { cross([0.,0.,1.],e) };
@@ -196,8 +201,9 @@ pub(crate) fn screwed_sheet(p: V,e: V,reach: f64,angle: f64,advance: f64,from: f
         loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
     let back = gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],-from*angle)
         .then(&gcs_core::brep::geom::Rigid {t:[0.,0.,-from*advance],..gcs_core::brep::geom::Rigid::identity()});
-    let b = screwed(&triangle.moved(&back),[0.;3],[0.,0.,1.],angle,advance).unwrap();
-    b.faces.iter().find(|f| f.name == "sheet").unwrap().surface.clone()
+    let mut b = screwed(&triangle.moved(&back),[0.;3],[0.,0.,1.],angle,advance).unwrap();
+    b.faces.retain(|f| f.name == "sheet");
+    b.compacted()
 }
 
 /// **A screwed line's sheet meets what keeps the screw in helices** (`ssi`'s screwed meetings,
