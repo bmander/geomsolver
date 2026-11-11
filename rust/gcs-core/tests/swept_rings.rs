@@ -144,19 +144,28 @@ fn a_tube_that_folds_is_entered_where_it_stands_outside_the_tool() {
 /// second), the inner one cut to
 /// where it stands outside the torus where it starts and stops, the box split by them and the torus
 /// at both end poses at once into six cells (in some eleven seconds) and classified (in under a
-/// second), the selected solid checked and judged by the definition. Its volume by a Monte Carlo of
-/// the definition apart from the kernel — 80 million points over the sweep's box, each read
-/// against the ring's signed distance at 40 001 poses (where no pose of 401 comes within its
-/// motion's reach, none beside) — is 25.260 ± 0.005; the solid's own, read off its fitted faces,
-/// 25.275. Read point by point against the definition, 100 000 points apart, the two disagree at
-/// none.
+/// second), the selected solid checked and judged by the definition. Its volume made apart from
+/// any kernel (#880 E2: the divergence theorem over the ribbon's offset sheets and the end poses,
+/// each kept where membership says) is 25.2750727653, where cadrs's is within 1.1e-8;
+/// the solid's own, read off its fitted faces, is 25.2750394, 3.3e-5 low (1.3e-6) at any fit
+/// tolerance from 1e-5 to 1e-7, and its area 5.6e-4 high. Four of its dipped stretches
+/// (`rings::dip`) stand wholly inside the sweep beside the end poses, up to 3.6e-3 deep, and bound
+/// pockets of it the solid leaves out (#880 E2, R1's to mend). Built here, from the drawing, after
+/// 0.6.3, it is 25.2750184, 5.4e-5 low; and since the fitted sheets are read through restricted
+/// enclosures (0ee5f30, #873) the bench's spelling of the same motion (two turns as
+/// `Trajectory::Relative`, not through the document) is refused, "a bspline's pieces do not
+/// close". Held here within 1e-4 of the volume made apart, to be tightened to 1e-7 when both are
+/// mended. (A Monte Carlo of the
+/// definition, 80 million points, read 25.260 ± 0.005: three of its deviations low, which the
+/// volume made apart settles. Read point by point, 100 000 points apart, the pockets are too thin
+/// to be met.)
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: the tumbling torus built closed")]
 fn the_tumbling_torus_is_built_closed() {
     let (tool,path,roll) = tumble();
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.002,1e-5).unwrap_or_else(|u| panic!("{u:?}"));
     let v = gcs_core::brep::props::volume(&built);
-    assert!((v-25.26).abs() < 0.05,"{v}");
+    assert!((v-25.2750727653).abs() < 1e-4,"{v}");
 }
 
 /// The closed polygon through `points` (in a plane), as a profile.

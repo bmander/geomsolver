@@ -399,3 +399,64 @@ fn a_bilinear_sheets_block_in_common_with_a_drum_is_the_drum_under_the_sheet() {
     let a: f64 = out.faces.iter().map(|f| area(&out,f)).sum();
     close(a,224.*PI+128.*PI/3.*(2.*2f64.sqrt()-1.),1e-9);
 }
+
+/// **A meeting crossing an edge that lies in the other surface cuts the edge there** (#885): a bar
+/// screwed about `z` at its end pose, arranged with the patch its top edge screws into over the
+/// roll. Each edge of the bar at that pose lies in the sheet it sweeps — its ruling at the roll's
+/// end — and the plane of the face that was `x = 12`, now `y = −12`, holds its top edge so and
+/// touches the sheet at that edge's foot `(0, −12, 11.5)`. The plane meets the sheet in that ruling
+/// and in a cut through the foot (`Curve::SheetCut`), the two crossing there in closed form: the
+/// cut laid from the foot to the face's side edge, where the edge turned back by `Δ` stands at
+/// `x = −12 tan(Δ/2)`, `z = 11.5 − 6Δ/2π`, and the top edge split at the foot — not the cut laid
+/// to the face's corner and the edge left whole, the face's buried rest never parted from its top.
+#[test]
+fn a_meeting_crossing_an_edge_lying_in_the_other_surface_cuts_it_there() {
+    use gcs_core::brep::build::{screwed,Profile,ProfileEdge};
+    use gcs_core::brep::geom::{tolerance,Curve,Rigid};
+    use gcs_core::brep::topo::{Edge,EdgeCurve};
+    use gcs_core::brep::trajectory::{Screw,Trajectory};
+    use gcs_core::space::distance;
+    use std::f64::consts::TAU;
+    let tool = block([4.,-8.,-1.],[12.,8.,1.]);
+    // a radian of the roll a radian of the turn, rising 6 a turn, over [−90°, 630°]
+    let screw = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:6.};
+    let roll = [-90f64.to_radians(),630f64.to_radians()];
+    let m = Trajectory::Twist(screw).pose(roll[1]).unwrap();
+    let end = tool.moved(&Rigid {r:m.r,t:m.p});
+    // the top edge x = 12, z = 1 carried over the roll and a little past its ends and the roll's
+    // (`swept::closed`'s patch): a triangle on it screwed, its one side on the edge kept
+    let (s0,s1) = (roll[0]-0.05*(roll[1]-roll[0]),roll[1]+0.05*(roll[1]-roll[0]));
+    let first = Trajectory::Twist(screw).pose(s0).unwrap();
+    let corners = [[12.,-8.8,1.],[12.,8.8,1.],[20.,-8.8,1.]].map(|x| first.point(x));
+    let triangle = Profile {origin:corners[0],normal:[0.,0.,1.],names:vec![vec!["sheet".into(),String::new(),String::new()]],
+        loops:vec![(0..3).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%3]}).collect()]};
+    let mut patch = screwed(&triangle,screw.origin,screw.axis,s1-s0,6.*(s1-s0)/TAU).unwrap();
+    patch.faces.retain(|f| f.name == "sheet");
+    let patch = patch.compacted();
+    let foot = [0.,-12.,11.5];
+    let delta = 2.*(2f64/3.).atan();
+    let side = [-8.,-12.,11.5-6.*delta/TAU];
+    for tol in [tolerance(tool.size()),1e-6] {
+        let c = arrangement(&[&end,&patch],tol).unwrap();
+        let b = &c.b;
+        let at = |p: [f64;3],q: [f64;3]| distance(p,q) <= 1e-6;
+        let joins = |e: &Edge,p,q| {
+            let [a,z] = e.v.map(|v| b.vertices[v as usize].p);
+            (at(a,p) && at(z,q)) || (at(a,q) && at(z,p))
+        };
+        // a cut of the sheet lying in the plane y = −12 (the plane x = −8 of the face beside it
+        // holds a cut of its own)
+        let cut = |e: &Edge| match &e.curve {
+            EdgeCurve::Curve(c @ Curve::SheetCut(_)) => (c.point(0.5*(e.t[0]+e.t[1]))[1]+12.).abs() <= 1e-6,
+            _ => false,
+        };
+        assert!(b.edges.iter().any(|e| cut(e) && joins(e,foot,side)),"at {tol:e}: no cut from the foot to the side edge");
+        // the top edge in two at the foot, and not whole
+        let (left,right) = ([-8.,-12.,11.5],[8.,-12.,11.5]);
+        assert!(b.edges.iter().any(|e| joins(e,left,foot)) && b.edges.iter().any(|e| joins(e,foot,right)),"at {tol:e}: the top edge not split at the foot");
+        assert!(!b.edges.iter().any(|e| joins(e,left,right)),"at {tol:e}: the top edge left whole");
+        // the foot a vertex where the cut and the edge cross exactly
+        assert!(b.vertices.iter().any(|v| distance(v.p,foot) <= 1e-9),"at {tol:e}: no vertex at the foot");
+        assert!(!b.edges.iter().any(|e| cut(e) && joins(e,side,left)),"at {tol:e}: a cut laid to the face's corner");
+    }
+}

@@ -143,6 +143,26 @@ impl Prismatic {
         Ok(Prismatic {plane,caps,leaning,span,tool:b.clone(),mm,boxes,sections:Mutex::new(BTreeMap::new())})
     }
 
+    /// The heights `[lo, hi]` split into slabs at every cap of the tool strictly within them,
+    /// lowest first: over each the tool's section is one (or, where a side leans, moves as the side
+    /// leans).
+    pub fn split(&self,[lo,hi]: [f64;2]) -> Vec<[f64;2]> {
+        let mut planes: Vec<f64> = vec![lo,hi];
+        planes.extend(self.caps.iter().copied().filter(|&h| h > lo+SAME && h < hi-SAME));
+        planes.sort_by(f64::total_cmp);
+        planes.dedup_by(|a,b| (*a-*b).abs() <= SAME*(1.+a.abs()));
+        planes.windows(2).map(|w| [w[0],w[1]]).collect()
+    }
+
+    /// The tool's own slabs, between its caps over its whole height (`split`).
+    pub fn slabs(&self) -> Vec<[f64;2]> { self.split(self.span) }
+
+    /// What the region the section at height `h` (from below or above) sweeps under `path` over
+    /// `roll` is read from, the tool's reach the length its tolerances are taken against.
+    pub fn setting(&self,h: f64,below: bool,path: &Trajectory,roll: [f64;2]) -> Result<Setting,String> {
+        Ok(Setting {section:section_of(self.section(h,below)?),path:path.clone(),plane:self.plane,roll,scale:self.reach()})
+    }
+
     /// Whether a side leans across height `h`.
     pub fn leans(&self,h: f64) -> bool { self.leaning.iter().any(|s| h > s[0] && h < s[1]) }
 
@@ -279,6 +299,19 @@ impl Region for Loops {
     }
 }
 
+/// The normals of tool `b`'s plane faces (millimetres, `mm` a model unit), each once in the faces'
+/// order, whose planes through the tool's middle every one of `poses` keeps (`region::keeps`, P1).
+pub fn kept_normals(b: &Brep,poses: &[Motion],mm: f64) -> Vec<V> {
+    let (lo,hi) = b.bounds();
+    let o = scale(add(lo,hi),0.5/mm);
+    let mut normals: Vec<V> = Vec::new();
+    for f in &b.faces {
+        let Surface::Plane(fr) = &f.surface else { continue };
+        if !normals.iter().any(|m| norm(cross(*m,fr.z)) <= ALIGNED) { normals.push(fr.z) }
+    }
+    normals.into_iter().filter(|&n| poses.iter().all(|m| keeps(m,o,n,1.+norm(o)))).collect()
+}
+
 /// The section of `loops` as the region reads it: one member, its material their `Loops`.
 pub fn section_of(loops: Vec<Vec<Edge>>) -> Section {
     if loops.is_empty() { return Section::new(vec![None],None) }
@@ -317,17 +350,9 @@ impl Subtraction {
     /// normal the motion keeps.
     pub fn read(b: &Brep,path: &Trajectory,roll: [f64;2],mm: f64,names: Names) -> Result<Subtraction,Failure> {
         let [a,z] = roll;
-        let (lo,hi) = b.bounds();
-        let o = scale(add(lo,hi),0.5/mm);
         let poses: Vec<Motion> = (0..=4).map(|k| path.at(a+(z-a)*k as f64/4.)).collect::<Result<_,_>>()
             .map_err(|e| (Row::Plane,e.msg,None))?;
-        // each plane face's normal once, in the faces' order
-        let mut normals: Vec<V> = Vec::new();
-        for f in &b.faces {
-            let Surface::Plane(fr) = &f.surface else { continue };
-            if !normals.iter().any(|m| norm(cross(*m,fr.z)) <= ALIGNED) { normals.push(fr.z) }
-        }
-        let kept: Vec<V> = normals.into_iter().filter(|&n| poses.iter().all(|m| keeps(m,o,n,1.+norm(o)))).collect();
+        let kept = kept_normals(b,&poses,mm);
         let Some(&first) = kept.first() else {
             return Err((Row::Plane,format!("`{}` keeps no plane a face of `{}` is square to",names.motion,names.tool),None))
         };
@@ -349,8 +374,7 @@ impl Subtraction {
     /// What the swept region at height `h` is read from: the section there (from below or above),
     /// the motion, the plane and the roll.
     fn setting(&self,h: f64,below: bool) -> Result<Setting,Failure> {
-        let loops = self.tool.section(h,below).map_err(|e| (Row::Members,format!("`{}`'s section: {e}",self.names.tool),None))?;
-        Ok(Setting {section:section_of(loops),path:self.path.clone(),plane:self.tool.plane,roll:self.roll,scale:self.scale})
+        self.tool.setting(h,below,&self.path,self.roll).map_err(|e| (Row::Members,format!("`{}`'s section: {e}",self.names.tool),None))
     }
 
     /// Q2–Q4 over every placement (`poses`, the sweep's frame in the body's), the blank read in the
@@ -379,17 +403,13 @@ impl Subtraction {
         };
         // Q2: the slabs, split at every cap within the blank; a slab the tool does not reach cuts
         // nothing
-        let mut planes: Vec<f64> = vec![heights[0],heights[1]];
-        planes.extend(self.tool.caps.iter().copied().filter(|&h| h > heights[0]+SAME && h < heights[1]-SAME));
-        planes.sort_by(f64::total_cmp);
-        planes.dedup_by(|a,b| (*a-*b).abs() <= SAME*(1.+self.scale));
         // each slab the tool reaches: Q3, a whole period of its section or its tool clear of the
         // blank at both ends of the roll; then its region within the box, a drafted slab's at
         // stations through it (#607), from a little past the blank where the slab ends at its face
         let past = PAST*(heights[1]-heights[0]);
         let mut found = Vec::new();
-        for w in planes.windows(2) {
-            let (slab,h) = ([w[0],w[1]],0.5*(w[0]+w[1]));
+        for slab in self.tool.split(heights) {
+            let h = 0.5*(slab[0]+slab[1]);
             let setting = self.setting(h,true)?;
             if setting.section.is_empty() { continue }
             let [a,b] = self.roll;
