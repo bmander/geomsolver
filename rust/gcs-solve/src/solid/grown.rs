@@ -520,7 +520,7 @@ fn cut_back(body: &BodyFaces, fi: usize, l: &[crate::brep::topo::Coedge], n: V, 
 /// the corner, that its wedge ends on.  Turned about an axis square to the way out of the body
 /// (against its edges from the corner, on whose side every normal of the cone stands) from a half
 /// disc square to it too, so its poles and the meridians its turn is read from stand outside the
-/// cone and its sector is one face of the sphere.
+/// cone and its sector is one face of the sphere; both set clear of every cut.
 fn ball_sector(body: &BodyFaces, v: u32, c: V, edges: &[u32], d: f64) -> Result<Piece, &'static str> {
     let b = body.brep().0;
     if body.faces_at(v, &[]).iter().any(|&f| body.plane(f).is_none()) || edges.iter().any(|&e| body.segment(e).is_none()) {
