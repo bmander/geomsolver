@@ -43,6 +43,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   crossing there, 2.7e-4 off the rim's: two vertices, and the sheet's face never closed. brep-bench's
   `swept/tumbling-torus`, built by 0.6.3 and refused by 0.7.0 ("a bspline's pieces do not close"),
   builds again: the same solid, in 6 s on the bench's runner where 0.6.3 took 15.
+- **A face's contact under a slide, a turn or a screw, for any surface, carried over the roll**
+  (`swept::contacts`, **new**, #880 Q1b): `face_contact` reads it as the zero set of `n·v` over
+  the face's parameters in pieces (`Contact`, `Piece`, `End`), whole where the motion keeps the
+  face in its own surface; `piece_curve` fits a piece, `carried` carries it exactly over the roll
+  as one blend face (`Carried`), and `candidates` gives every face's sheets and the tool at both
+  ends with their meetings given. A blend face carried by its own carry is inverted off the
+  motion's invariants, exact to rounding. `query::Located::parameter_box` and `holds_parameters`
+  (**new**) read a face's outline in its parameters.
+- `util::space::Region`'s `Vertex` and `Edge` name which vertex or edge of the triangle,
+  `Vertex(u8)` and `Edge(u8)` (**breaking**). `util::par::map_in_order` and `Meter::mark` /
+  `restore` (**new**): parallel readings under a budget are refused at the same point every run.
 
 ## [0.7.0] - 2026-11-11
 
