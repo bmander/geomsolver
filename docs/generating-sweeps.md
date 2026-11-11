@@ -1334,7 +1334,9 @@ path of pieces, before K2's road, which reads only convex solids of revolution:
 
 The solid is judged by membership before it is returned, as every closed build is. The gate is
 `tests/swept_planar_solid.rs`: brep-bench's `square-on-a-planet-carrier`, `plus-cut-wheel` and
-`rack-cut-tooth-space`, each to 1e-6 of a measure made apart from the build. A box along a spline
+`rack-cut-tooth-space`, each to 1e-6 of a measure made apart from the build, and the square's
+surface besides to 1e-7 of its region's area and boundary read ray by ray from the axis (#880 E4:
+282.19271199, met to 2e-8, where cadrs's is 0.0705 larger with the same volume). A box along a spline
 frame (`path.sv`'s) is asked it and refused at R2 (`Folded`): its long sides' contacts stand at their
 corners at every instant, which the region does not yet read.
 
