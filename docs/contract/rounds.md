@@ -87,7 +87,7 @@ times): a round over another's faces runs once that one is made, a round over an
 rounds' faces included. `rounds/composed.sv`, `tests/composed_rounds.rs` are the gate (the
 chamfer's two edges rounded, the closed form's volume and the hand's intermediate's to 1e-9).
 
-**A round over a round** (#879, [0.209]). **A face a round made is listed by the name the body's
+**A round over a round** (#879, [0.210]). **A face a round made is listed by the name the body's
 boundary has for it**: a region the table recognises leaves a `round` or a `flat`
 (`lowering::face_name`, `Section::face`: the `Stroke`'s name and the kernel's for a rolled one and
 a corner's), so

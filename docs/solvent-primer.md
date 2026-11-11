@@ -2367,7 +2367,9 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   and the two cross there, a mitre.
 - Where two faces meet tangent there is no edge: a chain of tangent edges (an obround's foot, a
   rounded pocket's rim) is rounded as one run. A run that ends on a face it does not round is
-  carried on past its edge's end and cut off by that face, however the face stands.
+  carried on past its edge's end and cut off by that face, however the face stands. A slot that
+  cuts the edge in pieces ends each piece on its walls (0.209: each point is read against the
+  piece nearest it), so a fillet stops flush either side of the slot.
 
 - **Name a round to compose over it** (0.149): `bevel := plate.rim chamfer(d: 4mm) plate.far` puts
   its faces under the name (`plate.bevel.taken.flat`, `plate.bevel` every face it made), and a
@@ -2375,7 +2377,7 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   rounds the two edges the chamfer made, whichever line comes first. A round's face is
   `taken.round`, a chamfer's `taken.flat`, as `--where` lists them. Two named rounds' faces stay
   apart; written bare, every round's are `taken.round`. Rounds that name each other are E041.
-- **Round over a rounded body by rounding a solid of it** (0.209). A box whose upright edges are
+- **Round over a rounded body by rounding a solid of it** (0.210). A box whose upright edges are
   rounded, its top rim then rounded all the way round — along the straight edges and round the
   arcs the first round left, one tangent run:
 
@@ -2410,7 +2412,7 @@ They are written in Solvent (`rust/lib/std/rounds.sv`), from region bodies you c
 | `distance(p, f1) + distance(p, f2) <= 10mm` | a bound on measurements (an ellipsoid by its foci) |
 | `crease := { q \| q coincident a; q coincident b }` | the edge where faces `a` and `b` meet |
 | `angle(a, b, at: p) <= 180deg` | at a convex edge (the material's angle there) |
-| `p in crease.ends` | stopped by the faces the edge ends on (none at a tangent seam) |
+| `p in crease.ends` | stopped by the faces the edge ends on (none at a tangent seam; an edge in pieces, the nearest piece's) |
 | `meeting := { q \| q in boundary(a.side); q in boundary(b.side); q in crease.ends }` | where the surfaces meet, short of where the edge ends |
 | `repeat a in A { repeat b in B { when b != a { … } } }` | a copy per pair of faces, each made where the two differ |
 | `when c in B and c != a { … }` | made where `c` is one of `B`'s faces and not `a` |
