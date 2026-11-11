@@ -141,6 +141,11 @@
 //! starts and where it stops, whole, every meeting of the two given (`k2`): the tool a convex solid
 //! of revolution, its contact read round a pencil of half-planes about its centre's velocity.
 //!
+//! **A prism under a motion that keeps a plane** (#880 Q2), a motion no constant twist takes
+//! nor a path of pieces, is built before K2's road by its section's planar sweep, extruded through
+//! the tool's slabs and judged (`planar_solid`); a tool that stands along no plane the motion keeps
+//! goes on to K2.
+//!
 //! **A convex polyhedral tool turned whole is built by another road** (`turned_whole`): its solid
 //! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — under a
 //! screw a round face about an axis leaning to it, or a torus's; under a turn a cylinder's or a

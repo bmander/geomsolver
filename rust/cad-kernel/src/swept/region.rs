@@ -515,6 +515,8 @@ impl SweptRegion {
         let grazing = (16.*s.tolerance()*(1.+s.scale)).sqrt();
         let handed = |i: usize,j: usize| tangent(&runs[j],&runs[i],0,at[i][1]).is_some()
             || tangent(&runs[i],&runs[j],1,at[j][0]).is_some();
+        let crosses = |i: usize,j: usize| i != j
+            && joined(&point,runs[i].candidate,runs[i].ends[1],runs[j].candidate,runs[j].ends[0],grazing).is_some();
         // where several stretches meet at one point (an end pose's corner, where a held edge, the
         // corner's path and a hair of the next edge the keeping test's tolerance keeps all start),
         // the boundary of a union turns the most to the right: those pairs go first, by that turn
@@ -524,7 +526,10 @@ impl SweptRegion {
             for j in 0..runs.len() {
                 if runs[j].why[0] == End::Box { continue }
                 let d = dist(at[i][1],at[j][0]);
-                if d > loose && !(d <= grazing && handed(i,j)) { continue }
+                // two stretches crossing at a grazing angle (two corners' traces at the apex of a
+                // lobe, each kept on past their crossing as far as the keeping test's tolerance
+                // reaches along so shallow a meeting) are paired where their crossing is found
+                if d > loose && !(d <= grazing && (handed(i,j) || crosses(i,j))) { continue }
                 let turn = if d > join { f64::INFINITY } else {
                     heading(&runs[i],at[i][1],1).zip(heading(&runs[j],at[j][0],0)).map_or(f64::INFINITY,|(x,y)| cross(x,y).datan2(dot(x,y)))
                 };
@@ -541,7 +546,8 @@ impl SweptRegion {
                 runs[i].ends[1] = u; at[i][1] = at[j][0];
             } else if d > join {
                 // two stretches crossing: where their curves meet, solved for both parameters
-                let Some((ui,uj,p)) = joined(&point,runs[i].candidate,runs[i].ends[1],runs[j].candidate,runs[j].ends[0],loose) else { continue };
+                let reach = if d > loose { grazing } else { loose };
+                let Some((ui,uj,p)) = joined(&point,runs[i].candidate,runs[i].ends[1],runs[j].candidate,runs[j].ends[0],reach) else { continue };
                 runs[i].ends[1] = ui; runs[j].ends[0] = uj;
                 at[i][1] = p; at[j][0] = p;
             }

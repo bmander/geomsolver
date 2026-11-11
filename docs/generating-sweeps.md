@@ -1271,6 +1271,24 @@ the heights of, and a lens stopping in a post at both ends
 (`admission::a_slide_that_ends_in_the_blank_is_the_closed_classs`, the post's disc clipped to the
 lens's sections slid, each to 1e-9).
 
+### A prism under a motion that keeps a plane, swept closed (issue #880 Q2)
+
+The kernel's closed sweep (`brep::swept::closed::closed`), which reads no blank, takes a prism under
+a motion that keeps the plane square to it — a rack rolled on a blank, a plus in mesh with a wheel,
+a square carried on a planet — by the planar subtraction class's reading of its section, over the
+whole roll: the region the section sweeps in the plane, carried through each slab between the
+tool's caps (`brep::swept::planar_solid`). It is asked where the motion is no constant twist nor a
+path of pieces, before K2's road, which reads only convex solids of revolution:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| R1 | Every pose turns one plane in itself, the same face up, and the tool stands along its normal: every face a cap square to it or a side along it, no side leaning. | Each point of the tool moves within its own height, so the sweep is a region in the plane carried through each slab. | Not refused: the sweep goes on to K2's road. |
+| R2 | The region's loops close, fold nowhere and cross nowhere, within a box holding every pose of the section, and no loop runs along the box. | What the region keeps must be loops that bound it, all of them the region's. | The fold (`Folded`), or what was seen and where (`Failed`). |
+
+The solid is judged by membership before it is returned, as every closed build is. The gate is
+`tests/swept_planar_solid.rs`: brep-bench's `square-on-a-planet-carrier`, `plus-cut-wheel` and
+`rack-cut-tooth-space`, each to 1e-6 of a measure made apart from the build.
+
 ### Undercut is excluded deliberately
 
 A pinion with few teeth often has some undercut. There, the envelope of the blade tip's

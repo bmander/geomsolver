@@ -2,9 +2,9 @@
 //! the tool's section's planar sweep, read over the whole roll with no blank, extruded through the
 //! tool's slabs. Held on brep-bench's three cases of the kind — `square-on-a-planet-carrier`,
 //! `rack-cut-tooth-space` and `plus-cut-wheel` — to what is known apart from the build: the rack's
-//! tooth space to the volume two other kernels agree on, and each swept solid to a Monte Carlo of
-//! the sweep's definition, read in the plane on the exact section over poses the point's speed
-//! bounds between; each judged by membership before it is returned, and written as a closed STEP
+//! tooth space to the volume two other kernels agree on, and the other two swept solids to the
+//! area the sweep's definition gives in the plane, read line by line on the exact section over
+//! dense poses; each judged by membership before it is returned, and written as a closed STEP
 //! B-rep.
 use gcs_core::brep::boolean::{combined,Op};
 use gcs_core::brep::build::{disc,prism,Profile,ProfileEdge};
@@ -33,51 +33,52 @@ fn seen(source: Trajectory,observer: Trajectory) -> Trajectory {
     Trajectory::Relative {source:Box::new(source),observer:Box::new(observer)}
 }
 
-/// The polygon `corners` (in its plane's coordinates) carried back by the poses of a planar motion
-/// at many rolls: whether the page point `p` lies in it at some roll — the definition, read on the
-/// exact section. The section's signed distance carried back is one-Lipschitz in the point and moves
-/// no faster than `speed` a radian, so between two readings a stretch is settled out where the lesser
-/// less `speed` times half the stretch is positive, and halved otherwise.
-fn swept_polygon(corners: &[[f64;2]],pose: &dyn Fn(f64) -> ([[f64;2];2],[f64;2]),roll: [f64;2],speed: f64,p: [f64;2]) -> bool {
-    let distance = |q: [f64;2]| -> f64 {
-        let n = corners.len();
-        let mut d = f64::INFINITY;
-        let mut inside = false;
-        for k in 0..n {
-            let (a,b) = (corners[k],corners[(k+1)%n]);
-            let (e,w) = ([b[0]-a[0],b[1]-a[1]],[q[0]-a[0],q[1]-a[1]]);
-            let t = ((w[0]*e[0]+w[1]*e[1])/(e[0]*e[0]+e[1]*e[1])).clamp(0.,1.);
-            d = d.min((w[0]-t*e[0]).hypot(w[1]-t*e[1]));
-            if (a[1] > q[1]) != (b[1] > q[1]) && q[0] < a[0]+(q[1]-a[1])*(b[0]-a[0])/(b[1]-a[1]) { inside = !inside }
-        }
-        if inside { -d } else { d }
-    };
-    let read = |t: f64| { let (r,c) = pose(t); let w = [p[0]-c[0],p[1]-c[1]]; distance([r[0][0]*w[0]+r[1][0]*w[1],r[0][1]*w[0]+r[1][1]*w[1]]) };
-    let n = 256;
-    let ts: Vec<f64> = (0..=n).map(|k| roll[0]+(roll[1]-roll[0])*k as f64/n as f64).collect();
-    let vs: Vec<f64> = ts.iter().map(|&t| read(t)).collect();
-    if vs.iter().any(|&v| v <= 0.) { return true }
-    let mut stack: Vec<(f64,f64,f64,f64)> = (0..n).map(|k| (ts[k],ts[k+1],vs[k],vs[k+1])).collect();
-    while let Some((a,b,va,vb)) = stack.pop() {
-        if va.min(vb)-speed*(b-a)/2. > 0. { continue }
-        if b-a < 1e-12 { return true }
-        let m = 0.5*(a+b);
-        let vm = read(m);
-        if vm <= 0. { return true }
-        stack.push((a,m,va,vm));
-        stack.push((m,b,vm,vb));
+/// **The area the polygon `corners` sweeps in its plane, read line by line** — the definition, read
+/// apart from the kernel on the exact section: the polygon at each of `poses` poses over `roll`
+/// (`pose(t)`: the pose's turn and shift, `x ↦ R x + c`) and, between each two, each edge's
+/// quadrilateral from one placing to the next (a bow where the edge passes the instant centre, its two
+/// triangles), so that every point of an edge moves along a chord of its path, the sweep held to the
+/// square of the step — the placings alone would leave each corner's trace notched to the step
+/// itself; on each of `lines` lines across `[y0, y1]` (at their middles) the union of the intervals
+/// these cover, by crossing parity, its length integrated by the midpoint rule.
+fn area_by_lines(corners: &[[f64;2]],pose: &(dyn Fn(f64) -> ([[f64;2];2],[f64;2])+Sync),roll: [f64;2],poses: usize,
+    [y0,y1]: [f64;2],lines: usize) -> f64 {
+    let placed: Vec<Vec<[f64;2]>> = (0..=poses).map(|k| {
+        let (r,c) = pose(roll[0]+(roll[1]-roll[0])*k as f64/poses as f64);
+        corners.iter().map(|p| [r[0][0]*p[0]+r[0][1]*p[1]+c[0],r[1][0]*p[0]+r[1][1]*p[1]+c[1]]).collect()
+    }).collect();
+    let n = corners.len();
+    let mut shapes: Vec<Vec<[f64;2]>> = placed.clone();
+    for w in placed.windows(2) {
+        for k in 0..n { shapes.push(vec![w[0][k],w[0][(k+1)%n],w[1][(k+1)%n],w[1][k]]) }
     }
-    false
-}
-
-/// The area of the region a polygon sweeps, by a Monte Carlo of `swept_polygon` over the box `lo`–
-/// `hi`: the estimate and its standard error.
-fn area_by_definition(lo: [f64;2],hi: [f64;2],n: usize,holds: &(dyn Fn([f64;2]) -> bool+Sync)) -> (f64,f64) {
-    let mut rng = gcs_core::rng::Rng::new(0x9_1880);
-    let points: Vec<[f64;2]> = (0..n).map(|_| [rng.uniform(lo[0],hi[0]),rng.uniform(lo[1],hi[1])]).collect();
-    let inside = gcs_core::par::map(&points,|&p| holds(p)).into_iter().filter(|&h| h).count() as f64;
-    let (size,share) = ((hi[0]-lo[0])*(hi[1]-lo[1]),inside/n as f64);
-    (size*share,size*(share*(1.-share)/n as f64).sqrt())
+    let reach: Vec<[f64;2]> = shapes.iter().map(|h| h.iter().fold([f64::INFINITY,f64::NEG_INFINITY],|[lo,hi],p| [lo.min(p[1]),hi.max(p[1])])).collect();
+    let ys: Vec<f64> = (0..lines).map(|k| y0+(y1-y0)*(k as f64+0.5)/lines as f64).collect();
+    let lengths = gcs_core::par::map(&ys,|&y| {
+        let mut spans: Vec<[f64;2]> = Vec::new();
+        let mut xs: Vec<f64> = Vec::new();
+        for (h,&[lo,hi]) in shapes.iter().zip(&reach) {
+            if y <= lo || y >= hi { continue }
+            xs.clear();
+            for k in 0..h.len() {
+                let (a,b) = (h[k],h[(k+1)%h.len()]);
+                if (a[1] > y) != (b[1] > y) { xs.push(a[0]+(y-a[1])*(b[0]-a[0])/(b[1]-a[1])) }
+            }
+            xs.sort_by(f64::total_cmp);
+            spans.extend(xs.chunks_exact(2).map(|w| [w[0],w[1]]));
+        }
+        spans.sort_by(|a,b| a[0].total_cmp(&b[0]));
+        let (mut total,mut open): (f64,Option<[f64;2]>) = (0.,None);
+        for s in spans {
+            open = match open {
+                Some(o) if s[0] <= o[1] => Some([o[0],o[1].max(s[1])]),
+                Some(o) => { total += o[1]-o[0]; Some(s) }
+                None => Some(s),
+            };
+        }
+        total+open.map_or(0.,|o| o[1]-o[0])
+    });
+    lengths.iter().sum::<f64>()*(y1-y0)/lines as f64
 }
 
 /// A swept solid's checks apart from its volume: valid, closed, and its STEP file the solid's.
@@ -92,7 +93,8 @@ fn holds_as_a_solid(b: &Brep,name: &str) {
 /// (5, 0), carried round the circle of radius 5 about z by t while it turns about its own centre by
 /// −2t, over a whole turn. Before Q2 it took K2's road and was refused at a corner (`Curved`). Its
 /// section's region — the envelopes of its sides and the trochoids its corners trace — extruded
-/// through its height, held to the definition's area in the plane, read on the exact square.
+/// through its height, held to the definition's area in the plane, read line by line on the exact
+/// square.
 #[test]
 fn the_square_on_a_planet_carrier_is_swept_closed() {
     let bar = polygon_prism(&[[4.,-1.,0.],[6.,-1.,0.],[6.,1.,0.],[4.,1.,0.]],[0.,0.,1.],2.);
@@ -114,10 +116,10 @@ fn the_square_on_a_planet_carrier_is_swept_closed() {
         let shift = [5.*c1-(r[0][0]*5.),5.*s1-(r[1][0]*5.)];
         (r,shift)
     };
-    let (area,err) = area_by_definition([-7.5,-7.5],[7.5,7.5],200_000,&|p| swept_polygon(&square,&pose,[0.,TAU],40.,p));
+    let area = area_by_lines(&square,&pose,[0.,TAU],9000,[-7.5,7.5],12000);
     let v = volume(&built);
-    eprintln!("planet: definition's area {area:.4} ± {err:.4}, the build's {:.6}",v/2.);
-    assert!((v/2.-area).abs() <= 4.*err,"the build's area {} against the definition's {area} ± {err}",v/2.);
+    eprintln!("planet: the area read line by line {area:.6}, the build's {:.6}",v/2.);
+    assert!((v/2./area-1.).abs() <= 1e-6,"the build's area {} against the definition's {area}",v/2.);
 }
 
 /// **The rack's tooth space, its sweep built closed and cut by the Boolean** (brep-bench
@@ -176,8 +178,8 @@ fn the_plus_cut_wheel_is_swept_closed() {
         let shift = [cp*50.-50.,sp*50.];
         (r,shift)
     };
-    let (area,err) = area_by_definition([-135.,-85.],[35.,85.],200_000,&|p| swept_polygon(&section,&pose,[0.,3.*PI],200.,p));
+    let area = area_by_lines(&section,&pose,[0.,3.*PI],9000,[-85.,85.],16000);
     let v = volume(&built);
-    eprintln!("plus: definition's area {area:.4} ± {err:.4}, the build's {:.6}",v/10.);
-    assert!((v/10.-area).abs() <= 4.*err,"the build's area {} against the definition's {area} ± {err}",v/10.);
+    eprintln!("plus: the area read line by line {area:.6}, the build's {:.6}",v/10.);
+    assert!((v/10./area-1.).abs() <= 1e-6,"the build's area {} against the definition's {area}",v/10.);
 }
