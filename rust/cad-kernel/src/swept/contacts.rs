@@ -290,3 +290,165 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
     }
     Contact::Pieces(pieces)
 }
+
+/// `uv` settled onto the contact `g = 0` of `surface` under `twist` by Newton across the curve (along
+/// `g`'s gradient in the parameters, read by central differences `h` apart).
+fn settled_on(surface: &Surface,twist: &Twist,mut uv: Uv,h: [f64;2]) -> Uv {
+    let g = |uv: Uv| surface.normal_velocity(uv,twist);
+    for _ in 0..30 {
+        let Some(v) = g(uv) else { break };
+        let (Some(a),Some(b),Some(c),Some(d)) = (g([uv[0]+h[0],uv[1]]),g([uv[0]-h[0],uv[1]]),g([uv[0],uv[1]+h[1]]),g([uv[0],uv[1]-h[1]])) else { break };
+        let grad = [(a-b)/(2.*h[0]),(c-d)/(2.*h[1])];
+        let dd = grad[0]*grad[0]+grad[1]*grad[1];
+        if !(dd > 0.) { break }
+        let step = [v*grad[0]/dd,v*grad[1]/dd];
+        uv = [uv[0]-step[0],uv[1]-step[1]];
+        if step[0].abs() <= 1e-3*h[0] && step[1].abs() <= 1e-3*h[1] { break }
+    }
+    uv
+}
+
+/// **A piece as a curve**: a cubic B-spline over `[0, 1]`, by chord length along the piece, fitted
+/// within a tenth of `tol` of the contact itself — each sample placed along the piece and settled onto
+/// `g = 0` under `twist` (a seam crossed between two points unwrapped by the surface's period) — from
+/// sixteen spans, doubled as the fit asks.
+pub fn piece_curve(tool: &Brep,piece: &Piece,twist: &Twist,tol: f64) -> Option<crate::geom::Curve> {
+    let surface = &tool.faces[piece.face].surface;
+    let periods = surface.periods();
+    let pts = &piece.points;
+    let mut at = vec![0.];
+    for w in pts.windows(2) { let last = *at.last().unwrap(); at.push(last+distance(w[0],w[1])); }
+    let length = *at.last().unwrap();
+    if !(length > 0.) { return None }
+    // the parameters' scale, for the settling's differences
+    let (lo,hi) = piece.uv.iter().fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(lo,hi),p| ([lo[0].min(p[0]),lo[1].min(p[1])],[hi[0].max(p[0]),hi[1].max(p[1])]));
+    let h = [1e-7*(hi[0]-lo[0]).max(1e-3),1e-7*(hi[1]-lo[1]).max(1e-3)];
+    let along = |t: f64| -> V {
+        let s = t.clamp(0.,1.)*length;
+        let k = at.partition_point(|&x| x <= s).clamp(1,pts.len()-1);
+        let (a,b) = (at[k-1],at[k]);
+        let f = if b > a { (s-a)/(b-a) } else { 0. };
+        let (u0,mut u1) = (piece.uv[k-1],piece.uv[k]);
+        for c in 0..2 { if let Some(p) = periods[c] { while u1[c]-u0[c] > 0.5*p { u1[c] -= p } while u0[c]-u1[c] > 0.5*p { u1[c] += p } } }
+        let uv = [u0[0]+(u1[0]-u0[0])*f,u0[1]+(u1[1]-u0[1])*f];
+        if f == 0. { return pts[k-1] }
+        surface.point(settled_on(surface,twist,uv,h))
+    };
+    let (curve,_) = crate::nurbs::fit_curve(&along,3,16,0.1*tol)?;
+    Some(crate::geom::Curve::BSpline(std::sync::Arc::new(curve)))
+}
+
+/// The rigid map carrying what stands at the pose of `t0` to where it stands at `t1` under `path`.
+fn between(path: &crate::trajectory::Trajectory,t0: f64,t1: f64) -> Result<crate::geom::Rigid,super::closed::Unbuilt> {
+    let (a,b) = (path.pose(t0)?,path.pose(t1)?);
+    let rt = |m: [[f64;3];3]| [[m[0][0],m[1][0],m[2][0]],[m[0][1],m[1][1],m[2][1]],[m[0][2],m[1][2],m[2][2]]];
+    let mul = |x: [[f64;3];3],y: [[f64;3];3]| std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| x[i][k]*y[k][j]).sum()));
+    let r: [[f64;3];3] = mul(b.r,rt(a.r));
+    let rp = [0,1,2].map(|i| (0..3).map(|k| r[i][k]*a.p[k]).sum::<f64>());
+    Ok(crate::geom::Rigid {r,t:crate::util::space::sub(b.p,rp)})
+}
+
+/// **The sheet `curve` sweeps carried by the constant twist `path` over `roll`** (#880 Q1b S3): the
+/// curve, on the tool at its own placement, placed at the roll's start and carried exactly to its end
+/// — one face of a blend (`Surface::Blend`) between the curve and its image, its rails the paths of the
+/// curve's ends (`Curve::Iso`), a closed curve's one rail its seam. The carry is held to the path's own
+/// pose at the roll's end.
+pub fn carried(curve: &crate::geom::Curve,closed: bool,path: &crate::trajectory::Trajectory,roll: [f64;2],tol: f64)
+    -> Result<Carried,super::closed::Unbuilt> {
+    use crate::geom::{Blend,Carry,Curve,Frame};
+    use crate::topo::EdgeCurve;
+    use crate::topo::{Coedge,Face,Pcurve};
+    use super::closed::Unbuilt;
+    let screw = path.screw().ok_or(Unbuilt::Motion)?;
+    let start = between(path,0.,roll[0])?;
+    let a = curve.moved(&start);
+    let (span,axis) = (roll[1]-roll[0],crate::util::space::unit(screw.axis));
+    let rise = screw.advance/std::f64::consts::TAU*span;
+    let carry = if screw.is_slide() { Carry::Line {delta:scale(axis,rise)} }
+        else { Carry::Screw {center:screw.origin,axis,angle:screw.ratio*span,advance:rise} };
+    // the carry is the path's: the curve's points carried agree with its pose at the roll's end
+    let whole = between(path,roll[0],roll[1])?;
+    for k in 0..=8 {
+        let p = a.point(k as f64/8.);
+        let (x,y) = (carry.at(p,1.),whole.point(p));
+        if distance(x,y) > 1e-9*(1.+crate::util::space::norm(p)) {
+            return Err(Unbuilt::Failed(format!("a contact's carry is not the path's: {x:?} against {y:?}")))
+        }
+    }
+    let image = a.moved(&whole);
+    let rims = [a.clone(),image.clone()];
+    let blend = std::sync::Arc::new(Blend {a:a.clone(),ta:[0.,1.],b:a.clone(),tb:[0.,1.],carry,closed});
+    let mut b = Brep::default();
+    let p0 = b.vertex(a.point(0.));
+    let p1 = if closed { p0 } else { b.vertex(a.point(1.)) };
+    let q0 = b.vertex(image.point(0.));
+    let q1 = if closed { q0 } else { b.vertex(image.point(1.)) };
+    let ea = b.edge(EdgeCurve::Curve(a.clone()),[0.,1.],[p0,p1]);
+    let eb = b.edge(EdgeCurve::Curve(image),[0.,1.],[q0,q1]);
+    let r0 = b.edge(EdgeCurve::Curve(Curve::Iso(blend.clone(),0.)),[0.,1.],[p0,q0]);
+    let r1 = if closed { r0 } else { b.edge(EdgeCurve::Curve(Curve::Iso(blend.clone(),1.)),[0.,1.],[p1,q1]) };
+    let line = |x: [f64;2],y: [f64;2]| Pcurve::Line {a:x,b:y};
+    let mut l = vec![
+        Coedge {edge:ea,reversed:false,pcurve:line([0.,0.],[1.,0.])},
+        Coedge {edge:r1,reversed:false,pcurve:line([1.,0.],[1.,1.])},
+        Coedge {edge:eb,reversed:true,pcurve:line([0.,1.],[1.,1.])},
+        Coedge {edge:r0,reversed:true,pcurve:line([0.,0.],[0.,1.])},
+    ];
+    let mid = a.point(0.5);
+    let surface = crate::geom::Surface::Blend(Frame::about(mid,axis),blend);
+    let face = Face {surface,reversed:false,loops:vec![],name:"contact".into()};
+    if b.loop_area(&face,&l) < 0. { l = crate::topo::reverse_loop(l); }
+    b.faces.push(Face {loops:vec![l],..face});
+    let _ = tol;
+    Ok(Carried {sheet:b,rims})
+}
+
+/// A piece's sheet carried over the roll (`carried`), and its rims: the piece at the roll's start
+/// and at its end, where the sheet meets the tool placed there.
+pub struct Carried { pub sheet: Brep,pub rims: [crate::geom::Curve;2] }
+
+/// **The candidates of the closed solid `tool` sweeps under the constant twist `path` over `roll`**,
+/// short of a whole turn (#880 Q1b S4): each piece of each face's contact carried over the roll, and
+/// the tool at the roll's two ends. Refused, by name, where a face is in contact all over (`Whole`) or
+/// the tool has an edge whose fan is in contact (S2, not yet read).
+/// With them, the meetings known by construction (P4): each sheet meets its face at either end pose in
+/// that end's rim (`crate::boolean::Given`), never searched for.
+pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2],tol: f64)
+    -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),super::closed::Unbuilt> {
+    use super::closed::Unbuilt;
+    let screw = path.screw().ok_or(Unbuilt::Motion)?;
+    let twist = screw.twist();
+    let located = Located::new(tool,tol);
+    let mut out = Vec::new();
+    let mut given = Vec::new();
+    let posed = |t: f64| -> Result<crate::geom::Rigid,Unbuilt> { let q = path.pose(t)?; Ok(crate::geom::Rigid {r:q.r,t:q.p}) };
+    let ends = [posed(roll[0])?,posed(roll[1])?];
+    for fi in 0..tool.faces.len() {
+        match face_contact(tool,&located,fi,&twist,tol,CELLS) {
+            Contact::Whole => {
+                let at = tool.faces[fi].loops.iter().flatten().next().map_or([0.;3],|c| tool.vertices[tool.ends(c)[0] as usize].p);
+                return Err(Unbuilt::Curved {at})
+            }
+            Contact::Pieces(pieces) => for p in pieces {
+                let curve = piece_curve(tool,&p,&twist,tol).ok_or_else(|| Unbuilt::Failed("a piece of contact not fitted".into()))?;
+                let c = carried(&curve,p.closed,path,roll,tol)?;
+                for (k,rim) in c.rims.iter().enumerate() {
+                    given.push(crate::boolean::Given {surfaces:[tool.faces[fi].surface.moved(&ends[k]),c.sheet.faces[0].surface.clone()],curves:vec![rim.clone()]});
+                }
+                out.push(c.sheet);
+            },
+        }
+    }
+    // (an edge between two faces not smooth there: its fan's contact is S2's)
+    let uses = tool.uses();
+    for (e,edge) in tool.edges.iter().enumerate() {
+        if matches!(edge.curve,crate::topo::EdgeCurve::Degenerate) { continue }
+        let [(f1,..),(f2,..)] = uses[e][..] else { continue };
+        if f1 == f2 { continue }
+        let mid = edge.point(0.5*(edge.t[0]+edge.t[1]),&tool.vertices);
+        let (Some(n1),Some(n2)) = (tool.faces[f1].outward(mid),tool.faces[f2].outward(mid)) else { return Err(Unbuilt::Curved {at:mid}) };
+        if crate::util::space::dot(n1,n2) < 1.-1e-9 { return Err(Unbuilt::Curved {at:mid}) }
+    }
+    for m in &ends { out.push(tool.moved(m)); }
+    Ok((out,given))
+}

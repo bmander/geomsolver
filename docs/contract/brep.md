@@ -980,7 +980,17 @@ meet a cylinder in, was read a turn off, so `same_edge` never merged that helix'
 the cylinder's pieces did not close;
 `swept_closed::a_rail_screwed_many_turns_is_read_on_its_own_turn`,
 `two_sheets_meeting_a_cylinder_in_one_helix_split_it_once` and, slow tier,
-`the_square_bar_screwed_four_turns_closes_into_its_helical_sweep` are the gate); `inverse_near`
+`the_square_bar_screwed_four_turns_closes_into_its_helical_sweep` are the gate). A fitted section
+carried by its own carry (a piece of a tool's contact carried over a roll, `contacts::carried`) is
+read off the motion's invariants before any warm start (`Blend::carried_uv`, #880 Q1b): a slide keeps
+a point's shadow on the plane square to it, a turn its radius and height about the axis, a screw its
+radius and its height along the helix modulo a turn's rise; the section's points, eight a span, are
+read once a section (`carried_samples`, kept by the spline's address with the spline), every local
+least of their gap from the point in those invariants a seed, the four least closed on by golden
+section, each polished by Newton and the nearest in space kept. Seeded from sixteen points round
+the section, the leaning torus's contact under `torus-screwed-through-rod`'s screw — one closed curve
+carried 456° — was read 0.13 to 2.2 off at points of its own sheet
+(`swept_contacts::a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points`); `inverse_near`
 runs Newton from its hint first; `step::blend_net`
 fits quintic along a screw a cubic cannot follow at the fit's cap.  A twisted duct, a thread, an auger's
 flight and a coil lie on blends; a section that changes as it runs stays on its sheets

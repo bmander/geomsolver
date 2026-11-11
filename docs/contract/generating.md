@@ -871,6 +871,37 @@ within a cell; each ring's two closed-form roots (`Surface::ring_contact`) on a 
 tolerance; a plane's contact a line across it ending on its boundary; the drum's side `Whole`
 (`swept_contacts`).
 
+**A piece carried over the roll, and a sweep's candidates under a constant twist (#880 Q1b S3, S4).**
+A piece is fitted as a cubic B-spline by chord length along it (`contacts::piece_curve`), each sample
+settled onto `g = 0` (a seam crossed unwrapped by the surface's period), within a tenth of the
+tolerance from sixteen spans, doubled as the fit asks. It is carried exactly (`contacts::carried`):
+placed at the roll's start and carried to its end as one face of a blend between the curve and its
+image (`Surface::Blend`, `Carry::Line` under a slide, `Carry::Screw` under a turn or a screw), its
+rails the paths of its ends (`Curve::Iso`), a closed piece's one rail its seam; the carry is held to
+the path's own pose at the roll's end. `contacts::candidates` gives each face's pieces carried and
+the tool at the roll's two ends, and with them the meetings known by construction (P4): each sheet
+meets its face at either end pose in that end's rim, given (`boolean::Given`). A face read whole, or
+an edge between faces not smooth there, is refused by name (`Curved`): S2 and a whole face's sweep
+are not read yet. The build's tolerance must be one a fit can hold: a contact fitted within a tenth of
+`geom::tolerance` (5e-10 of the size) takes thousands of spans, and its rim then stands off its face
+past the tolerance (3.7e-8 against 2.45e-8 on the leaning torus), so the edge reads as crossing it.
+Not yet built whole: on the leaning torus the arrangement reads where each rim crosses its end pose's
+seam circles as the rim's roots on each circle's plane, and the rim runs in the plane of the tube's
+meridian seam over a stretch (185 to 309 crossings), which no certified search settles; reading two
+curves lying in one surface in its parameters, where a seam is an iso-line, is the next step.
+
+**A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
+Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
+feature's pseudo-normal — a vertex's, its triangles' unit normals weighted by their angles there; an
+edge's, its two triangles' summed (Bærentzen & Aanæs 2005) — exact for a closed mesh turned
+consistently outward, where it fell to the generalised winding number over every triangle. A vertex
+with an edge not bounding exactly two triangles, and such an edge, has none, and is read by the
+winding. Zoning the leaning torus's sheet, where most of what is read is far from any pose of the
+tool, fell from over twenty-five minutes to thirty-six seconds. Held at four thousand points about a
+torus, a leaning V wheel and a box, every one farther than the mesh's sag from it, to the winding's
+side, on meshes 99% of whose vertices have a pseudo-normal
+(`swept_member::a_points_side_off_its_nearest_feature_is_the_windings`).
+
 **A tool leaning to a screw's axis is built (#777 M5).** Each leaning edge, and each leaning
 face's contact line, screws into a patch of a ruled helicoid over the segment and the roll a
 twentieth past each (`closed::Cutter::Patch`), its rim standing inside a cell; two sheets of one

@@ -65,3 +65,40 @@ fn a_swept_solids_membership_is_the_material_fields() {
     }
     assert!(total > 300,"{total} points held");
 }
+
+/// **A point's side read off the nearest feature's pseudo-normal is the winding number's**
+/// (`Solid::signed_near`, Bærentzen & Aanæs): on a torus, a leaning V wheel and a box, at points
+/// spread through a box twice the tool's, every one farther than the mesh's sag from it, the side
+/// `signed_near` reads — off the nearest triangle's normal, or its vertex's or edge's pseudo-normal —
+/// is the generalised winding number's. The meshes are welded: nearly every vertex has a
+/// pseudo-normal, so the winding is not what is read.
+#[test]
+fn a_points_side_off_its_nearest_feature_is_the_windings() {
+    use gcs_core::brep::build::{prism,revolve,square,torus};
+    let h = (std::f64::consts::TAU*4.5/30.).atan();
+    let axis = [0.,h.cos(),-h.sin()];
+    let half = gcs_core::space::scale(axis,2.5*30f64.to_radians().tan());
+    let tri = crate::swept_rings::polygon(&[[4.,0.,0.],gcs_core::space::add([6.5,0.,0.],half),gcs_core::space::add([6.5,0.,0.],gcs_core::space::scale(half,-1.))]);
+    let tools = [
+        torus([11.5,0.,0.],[0.,0.7,-0.7],6.,2.).unwrap(),
+        revolve(&tri,[14.,0.,0.],axis,std::f64::consts::TAU).unwrap(),
+        prism(&square([8.,0.,-1.],[0.3,0.2,1.],1.5),0.,2.).unwrap(),
+    ];
+    let mut rng = gcs_core::rng::Rng::new(880);
+    for (k,tool) in tools.iter().enumerate() {
+        let solid = Solid::new(tool,0.02,1.).unwrap();
+        assert!(solid.manifold_vertices() as f64 >= 0.99*solid.vertices() as f64,
+            "tool {k}: {} of {} vertices have a pseudo-normal",solid.manifold_vertices(),solid.vertices());
+        let (lo,hi) = tool.bounds();
+        let (mut read,mut inside) = (0,0);
+        for _ in 0..4000 {
+            let p: [f64;3] = std::array::from_fn(|c| { let (m,w) = ((lo[c]+hi[c])/2.,hi[c]-lo[c]); m+w*rng.uniform(-1.,1.) });
+            let (d,inn) = solid.signed_near(p);
+            if d <= 4.*solid.sag { continue }
+            assert_eq!(inn,solid.winding(p) > 0.5,"tool {k}: {p:?} read {} by its nearest feature",if inn { "inside" } else { "outside" });
+            read += 1;
+            if inn { inside += 1 }
+        }
+        assert!(read > 3000 && inside > 10,"tool {k}: {read} points read, {inside} inside");
+    }
+}

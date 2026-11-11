@@ -596,12 +596,104 @@ impl Blend {
         // on the far side of the tube or on the next turn of the coil, no search, and no polish
         // (Gauss–Newton from a far point's foot on an end circle, `v` held, swings `u` round it)
         if let Some(uv) = self.pipe_uv(p) { return uv }
+        // a fitted section carried by its own carry is read off the motion's invariants (#880 Q1b)
+        if let Some(uv) = self.carried_uv(p) { return uv }
         let near = 1e-3*(1.+dot(p,p).sqrt());
         let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
             .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= near);
         let uv = warm.or_else(|| self.from_level(p)).unwrap_or_else(|| self.searched(p));
         crate::util::warm::put(crate::util::warm::Kind::Blend,key,uv);
         uv
+    }
+    /// **`inverse` for a fitted section carried by its own carry, off the motion's invariants** (#880
+    /// Q1b: a piece of a tool's contact carried over a roll, `contacts::carried`): `S(u, v) = carry_v(a(u))`,
+    /// and the carry leaves unchanged a point's shadow on the plane square to a slide, its radius and
+    /// height about a turn's axis, and its radius and its height along the helix (`z − c φ`, `c` the
+    /// rise a radian, modulo a turn's rise) about a screw's. So the point's `u` is where the section
+    /// stands nearest it in those coordinates, sought along the section at eight points a span and
+    /// closed on by golden section, and its `v` the height it is carried to (a turn's, the angle),
+    /// then polished by Newton. A grid spaced along the section seeds a long section's foot on the
+    /// wrong stretch of it (a torus's contact under a screw, one closed curve through both its seams,
+    /// read sixteen points round). `None` for any other patch: a section of another kind, or a blend
+    /// between two curves.
+    fn carried_uv(&self,p: V) -> Option<Uv> {
+        let Curve::BSpline(_) = &self.a else { return None };
+        let scale_of = 1.+norm(p);
+        let same = |x: V,y: V| crate::util::space::distance(x,y) <= 1e-9*scale_of;
+        let mid = 0.5*(self.ta[0]+self.ta[1]);
+        if self.ta != self.tb || ![self.ta[0],mid,self.ta[1]].iter().all(|&t| same(self.a.point(t),self.b.point(t))) { return None }
+        // the invariants of a point, and their distance (a screw's height along the helix modulo a turn's rise)
+        enum Inv { Slide { d: V,len: f64 },Turn { c: V,k: V,angle: f64 },Screw { c: V,k: V,angle: f64,advance: f64,pitch: f64 } }
+        let inv = match self.carry {
+            Carry::Line {delta} => { let len = norm(delta); if !(len > 0.) { return None } Inv::Slide {d:scale(delta,1./len),len} }
+            Carry::Screw {center,axis,angle,advance} if advance == 0. => { if angle == 0. { return None } Inv::Turn {c:center,k:unit(axis),angle} }
+            Carry::Screw {center,axis,angle,advance} => {
+                if angle == 0. { return None }
+                Inv::Screw {c:center,k:unit(axis),angle,advance,pitch:(std::f64::consts::TAU*advance/angle).abs()}
+            }
+        };
+        let frame = |c: V,k: V,x: V| -> (f64,f64,f64) {
+            let d = sub(x,c);
+            let z = dot(d,k);
+            let r = sub(d,scale(k,z));
+            let e1 = unit(if k[0].abs() < 0.9 { cross(k,[1.,0.,0.]) } else { cross(k,[0.,1.,0.]) });
+            let e2 = cross(k,e1);
+            (norm(r),z,dot(r,e2).datan2(dot(r,e1)))
+        };
+        let gap = |x: V| -> f64 {
+            match inv {
+                Inv::Slide {d,..} => { let w = sub(x,p); norm(sub(w,scale(d,dot(w,d)))) }
+                Inv::Turn {c,k,..} => { let ((rx,zx,_),(rp,zp,_)) = (frame(c,k,x),frame(c,k,p)); ((rx-rp).powi(2)+(zx-zp).powi(2)).sqrt() }
+                Inv::Screw {c,k,angle,advance,pitch} => {
+                    let ((rx,zx,fx),(rp,zp,fp)) = (frame(c,k,x),frame(c,k,p));
+                    let lead = advance/angle;
+                    let h = (zx-lead*fx)-(zp-lead*fp);
+                    let h = (h+0.5*pitch).rem_euclid(pitch)-0.5*pitch;
+                    ((rx-rp).powi(2)+h*h).sqrt()
+                }
+            }
+        };
+        // along the section: eight points a span, sampled once a section (`carried_samples`); every
+        // local least of the samples' gap a seed, the four least closed on by golden section, each
+        // polished by Newton, and the nearest in space kept (a long section can come back near
+        // itself in the invariants, its other stretch carried to another height)
+        let Curve::BSpline(spline) = &self.a else { return None };
+        let samples = carried_samples(spline,self.ta);
+        let gaps: Vec<f64> = samples.iter().map(|&(_,x)| gap(x)).collect();
+        let n = gaps.len();
+        let mut seeds: Vec<usize> = (0..n).filter(|&i| (i == 0 || gaps[i] <= gaps[i-1]) && (i+1 == n || gaps[i] <= gaps[i+1])).collect();
+        seeds.sort_by(|&x,&y| gaps[x].total_cmp(&gaps[y]));
+        seeds.truncate(4);
+        let g = (5f64.sqrt()-1.)/2.;
+        let mut best: Option<(f64,Uv)> = None;
+        for k in seeds {
+            let (mut lo,mut hi) = (samples[k.saturating_sub(1)].0,samples[(k+1).min(n-1)].0);
+            let (mut x1,mut x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
+            let (mut f1,mut f2) = (gap(self.a.point(x1)),gap(self.a.point(x2)));
+            for _ in 0..80 {
+                if (hi-lo).abs() <= 1e-15*(1.+hi.abs()) { break }
+                if f1 <= f2 { hi = x2; x2 = x1; f2 = f1; x1 = hi-g*(hi-lo); f1 = gap(self.a.point(x1)) }
+                else { lo = x1; x1 = x2; f1 = f2; x2 = lo+g*(hi-lo); f2 = gap(self.a.point(x2)) }
+            }
+            let t = 0.5*(lo+hi);
+            let x = self.a.point(t);
+            let v = match inv {
+                Inv::Slide {d,len} => dot(sub(p,x),d)/len,
+                Inv::Screw {c,k,advance,..} => (frame(c,k,p).1-frame(c,k,x).1)/advance,
+                Inv::Turn {c,k,angle} => {
+                    // the turn from the section's point to `p`'s, the one in the patch's run nearest it
+                    let dphi = frame(c,k,p).2-frame(c,k,x).2;
+                    let tau = std::f64::consts::TAU;
+                    let turns = (angle.abs()/tau).ceil() as i64+1;
+                    (-turns..=turns).map(|n| (dphi+tau*n as f64)/angle).min_by(|a,b| (a.clamp(0.,1.)-a).abs().total_cmp(&(b.clamp(0.,1.)-b).abs())).unwrap_or(0.)
+                }
+            };
+            let u = (t-self.ta[0])/(self.ta[1]-self.ta[0]);
+            let uv = self.newton(p,[u,v.clamp(0.,1.)]);
+            let d = crate::util::space::distance(self.d1(uv).0,p);
+            if best.is_none_or(|b| d < b.0) { best = Some((d,uv)) }
+        }
+        best.map(|b| b.1)
     }
     /// **`inverse` for a line square to a screw's axis, screwed** (`build::screwed`'s sheet): the
     /// screw lifts every point of the line alike, so the ruling level with `p` is at the `v` its
@@ -2148,4 +2240,27 @@ impl Curve {
                 "a swept section's edge is not reflected yet".to_string()),
         })
     }
+}
+
+
+/// **A fitted section's points, eight a span over `ta`, read once** (`Blend::carried_uv`): kept by the
+/// spline's address while the spline is kept with them, so no other takes its place; emptied past
+/// `KEPT_SECTIONS`. A section's samples are a function of the section: kept or read again, the same.
+fn carried_samples(spline: &std::sync::Arc<super::nurbs::BSpline>,ta: [f64;2]) -> std::sync::Arc<Vec<(f64,V)>> {
+    const KEPT_SECTIONS: usize = 256;
+    type Kept = std::collections::BTreeMap<(usize,[u64;2]),(std::sync::Arc<super::nurbs::BSpline>,std::sync::Arc<Vec<(f64,V)>>)>;
+    static KEPT: std::sync::Mutex<Kept> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+    let key = (std::sync::Arc::as_ptr(spline) as usize,[ta[0].to_bits(),ta[1].to_bits()]);
+    if let Some((_,s)) = KEPT.lock().unwrap_or_else(|e| e.into_inner()).get(&key) { return s.clone() }
+    let curve = Curve::BSpline(spline.clone());
+    let mut ts = vec![ta[0]];
+    for b in curve.breaks(ta).into_iter().chain(std::iter::once(ta[1])) {
+        let a = *ts.last().unwrap();
+        for k in 1..=8 { ts.push(a+(b-a)*k as f64/8.) }
+    }
+    let samples = std::sync::Arc::new(ts.into_iter().map(|t| (t,curve.point(t))).collect::<Vec<_>>());
+    let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
+    if kept.len() >= KEPT_SECTIONS { kept.clear() }
+    kept.insert(key,(spline.clone(),samples.clone()));
+    samples
 }

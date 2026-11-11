@@ -191,3 +191,33 @@ fn a_drum_turned_about_its_own_axis_is_in_contact_all_over_its_side() {
     assert!(matches!(side.1,Contact::Whole),"the side is in contact all over: {:?}",side.1);
 }
 
+
+/// **A piece carried over the roll is a sheet read back exactly** (#880 Q1b S3, `contacts::carried`,
+/// `Blend::carried_uv`): the leaning torus's contact under its screw over `torus-screwed-through-rod`'s
+/// roll, carried 456° — a closed section more than a turn — its sheet inverted at its own points to
+/// rounding (from the screw's invariants: radius and height along the helix), each rim on the sheet
+/// and on the torus placed at its end of the roll, given there (P4) with no search.
+#[test]
+fn a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points() {
+    use gcs_core::brep::swept::contacts::candidates;
+    use gcs_core::brep::trajectory::Trajectory;
+    let tool = leaning_torus();
+    let path = Trajectory::Twist(rod_screw());
+    let roll = [(-108f64).to_radians(),348f64.to_radians()];
+    let (cands,given) = candidates(&tool,&path,roll,TOL).unwrap();
+    assert_eq!((cands.len(),given.len()),(3,2),"one sheet and the two end poses, its two rims given");
+    let sheet = &cands[0].faces[0].surface;
+    for i in 0..=20 { for j in 0..=10 {
+        let uv = [i as f64/20.,j as f64/10.];
+        let p = sheet.point(uv);
+        let back = sheet.inverse(p);
+        assert!(distance(sheet.point(back),p) <= 1e-9,"the sheet at {uv:?} read back at {back:?}");
+    } }
+    for (k,g) in given.iter().enumerate() {
+        for c in &g.curves {
+            let off = |s: &Surface| (0..=200).map(|i| s.implicit(c.point(i as f64/200.)).abs()).fold(0f64,f64::max);
+            assert!(off(&g.surfaces[0]) <= TOL,"rim {k} off its end pose's torus by {:e}",off(&g.surfaces[0]));
+            assert!(off(&g.surfaces[1]) <= 1e-9,"rim {k} off its sheet by {:e}",off(&g.surfaces[1]));
+        }
+    }
+}
