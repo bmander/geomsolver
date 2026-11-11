@@ -904,8 +904,17 @@ it twice and each stretch turning a corner through it — the two stretches' sec
 invariants, as every two curves through one point of the tool do (the invariants' differential has
 the carry's velocity, which lies in the surface there, in its kernel), and their sheets touch along
 that point's path: Newton alone, on that kinked double root, read five paths a hair apart, and
-searched, the march along the one path crossed to the other where the sheets nearly touch between
-(`swept_contacts::every_two_sheets_of_one_carry_are_given_the_paths_they_share`). A rail is one point's
+searched, the march along the one path crossed to the other where the sheets nearly touch between.
+**A contact is cut at its double points** (`face_contact`): it is smooth but where two branches
+cross, so a piece whose polyline turns by more than 30° there has passed one the grid did not see as
+a saddle — the leaning torus's stands on the crossing of its two seams, a node of the grid, where its
+one closed piece ran through it twice and turned a corner each time, and every sheet over such a
+stretch is creased along that point's path. Cut there, the corner placed on the double point where
+Newton finds `∇g = 0` within a cell, each end `Singular`, a closed piece opened at its first corner:
+four stretches then end on the point's path. Every two of those part so slowly from it that the
+sections' own fit can cross them again beside it (7e-3 along, on the torus, where laid as a path it
+was a slit in the sheet), so a valley holding an exact root at an end of both sections is placed
+there (`swept_contacts::every_two_sheets_of_one_carry_are_given_the_paths_they_share`). A rail is one point's
 path and a sheet a union of paths, and two paths of one carry are one or apart, so a rail meets
 another stretch's sheet nowhere or lies in it (`Blend::carried_gap` reads how far apart, in the
 carry's invariants): each cut is moved, within a quarter of its stretch, to the point whose path

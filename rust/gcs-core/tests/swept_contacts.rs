@@ -254,15 +254,14 @@ fn a_contact_carried_back_through_its_start_pose_is_arranged_with_it() {
 /// **Every two sheets of one carry are given the paths they share** (#880 Q1b, `contacts::candidates`'s
 /// `shared_paths`): two sheets a screw sweeps from two curves meet only along whole helices of it,
 /// where the curves cross — or touch — in its invariants, so each pair's meeting is given and not
-/// sought. Of the leaning torus's sixteen stretches, every path given lies in both sheets (in each
-/// sheet's own invariants, `Blend::carried_gap`: a crossing to rounding, a touch within the sections'
-/// fit, a tenth of the tolerance — the two fitted curves pass the contact's double point each within
-/// it, so touch there only so nearly); and the two stretches through its
-/// contact's double point — a saddle of the contact, each turning a corner through it, tangent there
-/// in the invariants as every two branches at one point of the tool are — are given that point's
-/// path once and arrange with it. Sought, the march along one path crossed over to the other between
-/// them, the sheets nearly touching there; and Newton alone, on the kinked double root, read the
-/// touch as five paths a hair apart.
+/// sought. Of the leaning torus's stretches, every path given lies in both sheets (in each sheet's own
+/// invariants, `Blend::carried_gap`: a crossing to rounding, a touch within the sections' fit, a
+/// tenth of the tolerance). Its contact crosses itself at a double point (a saddle of the contact,
+/// on the crossing of the torus's seams, where the grid's node hid it): cut there
+/// (`face_contact`), four stretches end on that point's path, every two of them tangent there in
+/// the invariants as every two branches through one point of the tool are, and every two are given
+/// that path once — where Newton alone read a touch as five paths a hair apart, and the sections'
+/// own fit, parting so slowly from it, crossed again 7e-3 along — and the four arrange with them.
 #[test]
 fn every_two_sheets_of_one_carry_are_given_the_paths_they_share() {
     use gcs_core::brep::boolean::arrangement_given;
@@ -288,16 +287,27 @@ fn every_two_sheets_of_one_carry_are_given_the_paths_they_share() {
             }
         }
     }
-    assert!(paths > cands.len()-2,"the sheets cross back over one another, beyond their rails: {paths} paths");
-    let surface = |k: usize| cands[k].faces[0].surface.clone();
-    let (five,twelve) = (surface(5),surface(12));
-    let pair: Vec<_> = given.iter().filter(|g| {
-        let p = |s: &Surface| s.point([0.37,0.61]);
-        let (a,b) = (p(&g.surfaces[0]),p(&g.surfaces[1]));
-        (a == five.point([0.37,0.61]) && b == twelve.point([0.37,0.61])) || (b == five.point([0.37,0.61]) && a == twelve.point([0.37,0.61]))
-    }).cloned().collect();
-    assert_eq!(pair.len(),1);
-    assert_eq!(pair[0].curves.len(),2,"stretches 5 and 12 cross along one path and touch along the double point's");
+    let sheets = cands.len()-2;
+    assert!(paths > sheets,"the sheets cross back over one another, beyond their rails: {paths} paths");
+    // the double point: where four sections end
+    let ends: Vec<(usize,[f64;3])> = (0..sheets).flat_map(|k| { let a = blend(&cands[k].faces[0].surface).a.clone(); [(k,a.point(0.)),(k,a.point(1.))] }).collect();
+    let at = ends.iter().map(|&(_,p)| p).find(|&p| ends.iter().filter(|&&(_,q)| distance(p,q) <= 1e-9).count() == 4)
+        .expect("the contact cut at its double point, four stretches ending there");
+    let four: Vec<usize> = ends.iter().filter(|&&(_,q)| distance(at,q) <= 1e-9).map(|&(k,_)| k).collect();
+    let key = |s: &Surface| s.point([0.37,0.61]);
+    let of = |i: usize,j: usize| given.iter().find(|g| {
+        let (a,b) = (key(&g.surfaces[0]),key(&g.surfaces[1]));
+        let (x,y) = (key(&cands[i].faces[0].surface),key(&cands[j].faces[0].surface));
+        (a == x && b == y) || (a == y && b == x)
+    }).expect("every two sheets given their meeting").clone();
+    let mut among = Vec::new();
+    for (n,&i) in four.iter().enumerate() { for &j in &four[n+1..] {
+        let g = of(i,j);
+        let on = g.curves.iter().filter(|c| matches!(c,Curve::Iso(_,u) if *u == 0. || *u == 1.)).count();
+        assert_eq!(on,1,"stretches {i} and {j} given the double point's path once: {:?}",g.curves.iter().map(|c| match c { Curve::Iso(_,u) => *u,_ => -1. }).collect::<Vec<_>>());
+        among.push(g);
+    } }
     let domain = prism(&square([0.,0.,-30.],[0.,0.,1.],40.),0.,90.).unwrap();
-    if let Err(e) = arrangement_given(&domain,&[&cands[5],&cands[12]],&pair,TOL) { panic!("the two stretches arranged with their paths: {e}") }
+    let operands: Vec<_> = four.iter().map(|&k| &cands[k]).collect();
+    if let Err(e) = arrangement_given(&domain,&operands,&among,TOL) { panic!("the double point's four stretches arranged with their paths: {e}") }
 }

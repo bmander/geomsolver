@@ -8,6 +8,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A sweep's contact is cut at its double points** (`swept::contacts::face_contact`): a double
+  point standing on a node of the grid (the leaning torus's, on its seams' crossing) was walked
+  through twice as one closed piece with two corners, and every sheet carried from it was creased.
+  A piece turning sharply is now cut there, its ends `Singular`, and the shared paths of the
+  stretches ending there are placed on their exact end. The leaning torus's trim runs in 6 s.
 - **A sweep's contact sheets are fitted at a cubic's rate and given their meetings with one another**
   (`swept::contacts`): a piece of contact is interpolated through points of the contact, refined
   where a span strays from it, where it was read along its polyline and doubled to four thousand

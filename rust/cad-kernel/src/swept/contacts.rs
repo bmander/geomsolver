@@ -92,6 +92,23 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
     };
     let across: Vec<Vec<Option<usize>>> = (0..n[0]).map(|i| (0..=n[1]).map(|j| root_on(node(i,j),node(i+1,j),values[i][j],values[i+1][j])).collect()).collect();
     let up: Vec<Vec<Option<usize>>> = (0..=n[0]).map(|i| (0..n[1]).map(|j| root_on(node(i,j),node(i,j+1),values[i][j],values[i][j+1])).collect()).collect();
+    // where `∇g = 0` near `from`, by Newton
+    let cell = [span[0]/n[0] as f64,span[1]/n[1] as f64];
+    let critical = |from: Uv| -> Uv {
+        let mut p = from;
+        for _ in 0..30 {
+            let (Some(gu0),Some(gu1),Some(gv0),Some(gv1)) = (grad([p[0]-h[0],p[1]]),grad([p[0]+h[0],p[1]]),grad([p[0],p[1]-h[1]]),grad([p[0],p[1]+h[1]])) else { break };
+            let Some(d) = grad(p) else { break };
+            let (a11,a21) = ((gu1[0]-gu0[0])/(2.*h[0]),(gu1[1]-gu0[1])/(2.*h[0]));
+            let (a12,a22) = ((gv1[0]-gv0[0])/(2.*h[1]),(gv1[1]-gv0[1])/(2.*h[1]));
+            let det = a11*a22-a12*a21;
+            if !(det.abs() > 0.) { break }
+            let step = [(a22*d[0]-a12*d[1])/det,(a11*d[1]-a21*d[0])/det];
+            p = [p[0]-step[0],p[1]-step[1]];
+            if step[0].abs() <= 1e-14*span[0] && step[1].abs() <= 1e-14*span[1] { break }
+        }
+        p
+    };
     // the links: each cell's crossings joined in pairs, a saddle's through its double point where it
     // has one; and the double points, each a node of four links
     let mut links: Vec<[usize;2]> = Vec::new();
@@ -106,19 +123,7 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
                 let [b,r,t,l] = sides.map(Option::unwrap);
                 // a double point: `∇g = 0` by Newton from the cell's middle, held where `g` is nought there
                 let mid = [lo[0]+span[0]*(i as f64+0.5)/n[0] as f64,lo[1]+span[1]*(j as f64+0.5)/n[1] as f64];
-                let cell = [span[0]/n[0] as f64,span[1]/n[1] as f64];
-                let mut p = mid;
-                for _ in 0..30 {
-                    let (Some(gu0),Some(gu1),Some(gv0),Some(gv1)) = (grad([p[0]-h[0],p[1]]),grad([p[0]+h[0],p[1]]),grad([p[0],p[1]-h[1]]),grad([p[0],p[1]+h[1]])) else { break };
-                    let Some(d) = grad(p) else { break };
-                    let (a11,a21) = ((gu1[0]-gu0[0])/(2.*h[0]),(gu1[1]-gu0[1])/(2.*h[0]));
-                    let (a12,a22) = ((gv1[0]-gv0[0])/(2.*h[1]),(gv1[1]-gv0[1])/(2.*h[1]));
-                    let det = a11*a22-a12*a21;
-                    if !(det.abs() > 0.) { break }
-                    let step = [(a22*d[0]-a12*d[1])/det,(a11*d[1]-a21*d[0])/det];
-                    p = [p[0]-step[0],p[1]-step[1]];
-                    if step[0].abs() <= 1e-14*span[0] && step[1].abs() <= 1e-14*span[1] { break }
-                }
+                let p = critical(mid);
                 let held = (p[0]-mid[0]).abs() <= cell[0] && (p[1]-mid[1]).abs() <= cell[1]
                     && g(p).is_some_and(|v| v.abs() <= 1e-9*most);
                 if held {
@@ -252,7 +257,63 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
         p.uv = out;
         p.points = p.uv.iter().map(|&uv| surface.point(uv)).collect();
     }
-    Contact::Pieces(pieces)
+    // **a piece turning a corner passes a double point** (#880 Q1b): the contact is smooth but where
+    // two branches cross, so a polyline of it, its chords within the tolerance, turns sharply only
+    // there — a double point the grid has not seen as a saddle, standing on a node (the leaning
+    // torus's, on the crossing of its two seams, where the one closed piece ran through it twice and
+    // turned a corner each time, its sheets creased along that point's path). Cut there, the corner
+    // placed on the double point where Newton finds one within a cell, each end `Singular`; a closed
+    // piece opened at its first corner
+    let size = tool.size();
+    let mut split: Vec<Piece> = Vec::new();
+    for p in pieces {
+        let m = p.points.len();
+        // the turn at point `k`, between the chords to the nearest points either side standing apart from it
+        let turn = |k: usize| -> bool {
+            let apart = 1e-9*size;
+            let step = |d: isize| -> Option<usize> {
+                let mut j = k as isize;
+                loop {
+                    j += d;
+                    let j_ = if p.closed { j.rem_euclid(m as isize-1) as usize } else if j < 0 || j >= m as isize { return None } else { j as usize };
+                    if distance(p.points[j_],p.points[k]) > apart { return Some(j_) }
+                    if (j-k as isize).unsigned_abs() >= m { return None }
+                }
+            };
+            let (Some(a),Some(b)) = (step(-1),step(1)) else { return false };
+            let (d1,d2) = (crate::util::space::sub(p.points[k],p.points[a]),crate::util::space::sub(p.points[b],p.points[k]));
+            crate::util::space::dot(d1,d2) < 0.866*crate::util::space::norm(d1)*crate::util::space::norm(d2)
+        };
+        let last = if p.closed { m-1 } else { m };
+        let corners: Vec<usize> = (if p.closed { 0 } else { 1 }..last.saturating_sub(if p.closed { 0 } else { 1 })).filter(|&k| turn(k)).collect();
+        if corners.is_empty() { split.push(p); continue }
+        let at = |k: usize| -> (Uv,V) {
+            let c = critical(p.uv[k]);
+            let held = (c[0]-p.uv[k][0]).abs() <= cell[0] && (c[1]-p.uv[k][1]).abs() <= cell[1] && g(c).is_some_and(|v| v.abs() <= 1e-9*most);
+            if held { (c,surface.point(c)) } else { (p.uv[k],p.points[k]) }
+        };
+        // the points in order from the first corner (round a closed piece to it again), and the corners along them
+        let (order,cuts): (Vec<usize>,Vec<usize>) = if p.closed {
+            let c0 = corners[0];
+            let order: Vec<usize> = (0..m).map(|i| (c0+i)%(m-1)).collect();
+            (order,corners.iter().map(|&c| (c+m-1-c0)%(m-1)).chain(std::iter::once(m-1)).collect())
+        } else {
+            ((0..m).collect(),std::iter::once(0).chain(corners.iter().copied()).chain(std::iter::once(m-1)).collect())
+        };
+        for (w,pair) in cuts.windows(2).enumerate() {
+            let (s,e) = (pair[0],pair[1]);
+            if e <= s { continue }
+            let mut uv: Vec<Uv> = order[s..=e].iter().map(|&i| p.uv[i]).collect();
+            let mut points: Vec<V> = order[s..=e].iter().map(|&i| p.points[i]).collect();
+            let first = p.closed || w > 0;
+            let final_ = p.closed || w+2 < cuts.len();
+            if first { let (c,x) = at(order[s]); uv[0] = c; points[0] = x; }
+            if final_ { let (c,x) = at(order[e]); *uv.last_mut().unwrap() = c; *points.last_mut().unwrap() = x; }
+            let ends = [if first { End::Singular } else { p.ends[0] },if final_ { End::Singular } else { p.ends[1] }];
+            split.push(Piece {face:p.face,uv,points,ends,closed:false});
+        }
+    }
+    Contact::Pieces(split)
 }
 
 /// The gradient of the contact `g` of `surface` under `twist` in its parameters at `uv`, by central
@@ -591,11 +652,6 @@ fn shared_paths(carry: &crate::trajectory::Screw,a: &crate::geom::Curve,b: &crat
     // (two branches of a tool's contact crossing at a double point, the stretches each taking a
     // corner through it) a kinked one
     found.sort_by(|x,y| x[0].total_cmp(&y[0]));
-    let joined = |p: [f64;2],q: [f64;2]| (1..8).all(|k| { let f = k as f64/8.; size(apart(p[0]+(q[0]-p[0])*f,p[1]+(q[1]-p[1])*f)) <= tol });
-    let mut valleys: Vec<Vec<[f64;2]>> = Vec::new();
-    for p in found {
-        match valleys.iter_mut().find(|v| v.iter().any(|&q| joined(q,p))) { Some(v) => v.push(p),None => valleys.push(vec![p]) }
-    }
     let golden = |f: &dyn Fn(f64) -> f64,mut lo: f64,mut hi: f64| -> f64 {
         for _ in 0..80 {
             let (m1,m2) = (lo+(hi-lo)*0.381966,lo+(hi-lo)*0.618034);
@@ -603,7 +659,29 @@ fn shared_paths(carry: &crate::trajectory::Screw,a: &crate::geom::Curve,b: &crat
         }
         0.5*(lo+hi)
     };
+    // along the valley's floor between two points: at each `u` between, the least gap over `s` about
+    // theirs (the floor bends where a foot turns a corner, and near two images leaving one point
+    // tangent, as every two branches of a double point do)
+    let joined = |p: [f64;2],q: [f64;2]| {
+        let w = (p[1]-q[1]).abs()+1e-6;
+        let (slo,shi) = ((p[1].min(q[1])-w).max(0.),(p[1].max(q[1])+w).min(1.));
+        (1..8).all(|k| {
+            let u = p[0]+(q[0]-p[0])*k as f64/8.;
+            let s = golden(&|s| size(apart(u,s)),slo,shi);
+            size(apart(u,s)) <= tol
+        })
+    };
+    let mut valleys: Vec<Vec<[f64;2]>> = Vec::new();
+    for p in found {
+        match valleys.iter_mut().find(|v| v.iter().any(|&q| joined(q,p))) { Some(v) => v.push(p),None => valleys.push(vec![p]) }
+    }
+    // a valley holding an end of both sections where they meet exactly is placed there: two stretches
+    // ending on one path — the four of a double point, every two branches tangent there in the
+    // invariants — part so slowly that the sections' own fit crosses them again beside it (on the
+    // leaning torus, 7e-3 along, which laid as a path was a slit in the sheet)
+    let end = |x: f64| x <= 1e-9 || x >= 1.-1e-9;
     let place = |v: &[[f64;2]]| -> [f64;2] {
+        if let Some(p) = v.iter().find(|p| end(p[0]) && end(p[1]) && size(apart(p[0],p[1])) <= 1e-12*(1.+reach)) { return *p }
         if v.len() == 1 { return v[0] }
         let bound = |k: usize| v.iter().fold([f64::INFINITY,f64::NEG_INFINITY],|r,p| [r[0].min(p[k]),r[1].max(p[k])]);
         let (ru,rs) = (bound(0),bound(1));
