@@ -875,6 +875,40 @@ fn arranged(operands: &[&Brep],given: &[Given],clips: usize,tol: f64) -> Result<
     Ok(complex)
 }
 
+/// **A trim** (E1, #880; docs/swept-solid-design.md §12): the operands' faces split by one another
+/// only where `meet` asks — the pairs whose meeting may bound what is kept — and each piece kept or
+/// dropped by `side` alone, read at points inside it, with no cell built and no cell classified:
+/// `side` says `Some(false)` for a piece kept facing as its face does, `Some(true)` for one kept
+/// turned, `None` for one dropped, or why it cannot say. Where pieces of several operands lie on
+/// one surface over one region, the lowest operand's stands for all (as in `arranged`). The kept
+/// pieces are assembled on their shared edges, the meetings that part nothing healed out
+/// (`heal`, `rejoined`), as a selection's are. What it returns is the caller's to check: a piece
+/// whose meeting `meet` left out, kept, leaves the boundary open, which `Brep::check` says.
+pub fn trimmed(operands: &[&Brep],given: &[Given],meet: Meet<'_>,side: &(dyn Fn(&Face,&mut dyn Iterator<Item=V>) -> Result<Option<bool>,String>+Sync),
+    tol: f64) -> Result<Brep,String> {
+    let Arranged {solids,located,pool,out,met,pieces,..} = crate::util::warm::fresh(|| arrange_phases(operands,None,given,Some(meet),tol))?;
+    // each piece read on its own, across the cores: stood for by a lower operand's on its surface,
+    // or read by `side` at its inner points
+    let read = crate::util::par::map(&pieces,|&(s,fi,ref piece)| -> Result<Option<bool>,String> {
+        let f = &solids[s].faces[fi];
+        let mut inner = reading::inside(piece,f,&out,&pool).map(|q| q.point()).peekable();
+        let Some(&p) = inner.peek() else { return Ok(None) };
+        let stood_for = solids.all().filter(|&o| o < s).any(|o| solids[o].faces.iter().enumerate().any(|(g,h)|
+            super::ssi::same(&f.surface,&h.surface,tol) && located[o].face_holds(g,p)));
+        if stood_for { return Ok(None) }
+        side(f,&mut inner)
+    });
+    let mut kept: Vec<Face> = Vec::new();
+    let mut origin: Vec<(usize,usize)> = Vec::new();
+    for ((s,fi,piece),r) in pieces.into_iter().zip(read) {
+        let Some(turn) = r? else { continue };
+        kept.push(piece_face(&solids[s].faces[fi],&piece,turn));
+        origin.push((s.0,fi));
+    }
+    let laid: Vec<Option<u32>> = met.iter().enumerate().map(|(e,&m)| m.then_some(e as u32)).collect();
+    Ok(rejoined(healed(&out,&pool,kept,&origin,&laid,&mut Known::default()).compacted()))
+}
+
 /// **A selection's boundary, whole** (#735): the faces between the cells `keep` keeps and the rest
 /// (`Complex::select_cells`), the meetings among them that part nothing taken back out (`heal`:
 /// where one face of an operand is kept on both sides of one), so it is the manifold B-rep the
@@ -1036,12 +1070,18 @@ fn piece_face(f: &Face,piece: &[Vec<Half>],flip: bool) -> Face {
 /// them (`Known`). From no warm start, whatever the thread asked before, and its caller's left as
 /// they were: what an arrangement is depends on its operands alone (`util::warm`).
 fn arrange<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],tol: f64) -> Result<Arranged<'a>,String> {
-    crate::util::warm::fresh(|| arrange_phases(solids,known,given,tol))
+    crate::util::warm::fresh(|| arrange_phases(solids,known,given,None,tol))
 }
 
+/// **Which two faces of two operands are met** (E1, #880): of operand `a[0]`'s face `a[1]` and
+/// operand `b[0]`'s face `b[1]`, whether their meeting is sought — the arrangement's, every two whose
+/// boxes meet; a trim's (`trimmed`), only those whose meeting may bound what it keeps.
+pub type Meet<'m> = &'m (dyn Fn([usize;2],[usize;2]) -> bool+Sync);
+
 /// `arrange`'s phases, the meetings `given` known before any is sought (#810).
-fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],tol: f64) -> Result<Arranged<'a>,String> {
+fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],meet: Option<Meet<'a>>,tol: f64) -> Result<Arranged<'a>,String> {
     let mut arr = Arrangement::new(solids,known,tol);
+    arr.meet = meet;
     for g in given { arr.shared.give(&g.surfaces[0],&g.surfaces[1],&g.curves,tol); }
     // 1. every edge against every face of the other solid: where it crosses, a vertex on both
     let mut crossings = arr.crossings()?;
@@ -1111,6 +1151,8 @@ struct Arrangement<'a> {
     shared: super::meeting::Shared,
     surface_of: BTreeMap<(Side,usize),usize>,
     say: Narration,
+    /// Which two faces are met (a trim's, `trimmed`): every two whose boxes meet where none.
+    meet: Option<Meet<'a>>,
 }
 
 /// Phase 1's findings: every edge against every face of the other solid.
@@ -1175,11 +1217,15 @@ impl<'a> Arrangement<'a> {
         let reach = Sides::new(n,|s| boxes[s].iter().fold(super::geom::EMPTY,|mut r,b| { super::geom::widen(&mut r,*b); r }));
         let clear = Sides::new(n,|s| boxes[s].iter().map(|bx| solids.all().all(|o| o == s || !overlap(bx,&reach[o],pad))).collect::<Vec<_>>());
         Arrangement {solids,located,pool,edges,cuts,first_edge,boxes,reach,clear,tol,pad,
-            shared:Default::default(),surface_of:BTreeMap::new(),say:Narration::new()}
+            shared:Default::default(),surface_of:BTreeMap::new(),say:Narration::new(),meet:None}
     }
 
     /// Edge `i` of solid `s`'s index among the working edges.
     fn working(&self,s: Side,i: usize) -> usize { self.first_edge[s]+i }
+
+    /// Whether operand `s`'s face `f` and operand `o`'s face `g` are met (`Meet`): always, but in a
+    /// trim.
+    fn met(&self,s: Side,f: usize,o: Side,g: usize) -> bool { self.meet.is_none_or(|m| m([s.0,f],[o.0,g])) }
 
     /// A working edge added, cut nowhere yet: its index.
     fn add_edge(&mut self,curve: EdgeCurve,t: [f64;2],v: [u32;2]) -> usize {
@@ -1233,6 +1279,8 @@ impl<'a> Arrangement<'a> {
                 }
                 for (fi,f) in theirs.faces.iter().enumerate() {
                     if !overlap(&ebox,&self.boxes[other][fi],pad+sag) { continue }
+                    // (in a trim, an edge is met with a face only where a face it bounds is)
+                    if !bounded[s][i].iter().any(|&h| self.met(s,h,other,fi)) { continue }
                     let started = crate::util::clock::Instant::now();
                     // an edge measured off its surfaces by more than the tolerance (a fitted contact's
                     // `tol`, `Brep::measure_tolerances`) is read at its own: it lies in a face it is
@@ -1343,7 +1391,7 @@ impl<'a> Arrangement<'a> {
         let mut apart: BTreeMap<[*const super::nurbs::Net;2],bool> = BTreeMap::new();
         for (k,&sa) in sides.iter().enumerate() { for &sb in &sides[k+1..] {
             for fa in 0..self.solids[sa].faces.len() { for fb in 0..self.solids[sb].faces.len() {
-                if !overlap(&self.boxes[sa][fa],&self.boxes[sb][fb],self.pad) { continue }
+                if !overlap(&self.boxes[sa][fa],&self.boxes[sb][fb],self.pad) || !self.met(sa,fa,sb,fb) { continue }
                 if let (Surface::BSpline(_,a),Surface::BSpline(_,b)) = (&self.solids[sa].faces[fa].surface,&self.solids[sb].faces[fb].surface) {
                     if *apart.entry([std::sync::Arc::as_ptr(a),std::sync::Arc::as_ptr(b)]).or_insert_with(|| separated_nets(a,b,self.pad)) { continue }
                 }
@@ -1875,9 +1923,12 @@ fn spans(c: &Curve,domain: Option<[f64;2]>,ts: &mut [(f64,u32)],pool: &mut Pool)
             // its sweep) is closed with no period: round it as a closed curve, its stretches split
             // where its parameter starts again, at the vertex both its ends are
             if let Some([lo,hi]) = domain {
+                // (the vertex is at both ends, wherever along the curve it was read: found at its
+                // far end and set down at `lo` there, it stood after the points it comes before,
+                // and the stretch from the last of them round to it was never laid, #879)
                 let start = pool.at(c.point(lo));
-                let mut at: Vec<(f64,u32)> = ts.iter().map(|&(t,v)| (if v == start { lo } else { t },v)).collect();
-                if at.first().map_or(true,|x| x.1 != start) { at.insert(0,(lo,start)); }
+                let mut at: Vec<(f64,u32)> = vec![(lo,start)];
+                at.extend(ts.iter().copied().filter(|&(_,v)| v != start));
                 at.push((hi,start));
                 for w in at.windows(2) { if w[1].0 > w[0].0 { spans.push(([w[0].0,w[1].0],[w[0].1,w[1].1])); } }
                 return spans
@@ -2393,8 +2444,10 @@ fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],
 }
 
 /// The stretch of a closed-form curve to read for crossings within the box `bx` grown by `pad`: a
-/// closed one's period, a line's run inside the box's slabs, a spline's domain; none for a line
-/// missing the box.
+/// closed one's period, a line's run inside the box's slabs, a spline's domain, a plane's cut of a
+/// screwed sheet's (which crosses the rulings the plane holds, #885); none for a line missing the
+/// box, nor yet for the other open kinds a closed form gives (a helix on a sheet, a turned or a
+/// slid contact, a trochoid), whose crossings with a meeting's other curves are not sought.
 fn stretch_in(c: &Curve,(lo,hi): Box3,pad: f64) -> Option<[f64;2]> {
     if let Some(p) = c.period() { return Some([0.,p]) }
     match *c {
@@ -2407,7 +2460,7 @@ fn stretch_in(c: &Curve,(lo,hi): Box3,pad: f64) -> Option<[f64;2]> {
             }
             (t0 < t1).then_some([t0,t1])
         }
-        Curve::BSpline(ref b) => Some(b.domain()),
+        Curve::BSpline(..) | Curve::SheetCut(..) => super::query::curve_domain(c),
         _ => None,
     }
 }

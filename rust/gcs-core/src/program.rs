@@ -260,7 +260,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 if pose.is_empty() {
                     pose = at_solve::at_solve(&e);
                     if !pose.is_empty() {
+                        // named again from nothing there, so with every pass the first naming had
+                        // (#879): a count carried over left the faces half named, a round over
+                        // another's faces naming none
                         named.clear();
+                        renamed = 0;
                         continue;
                     }
                 }

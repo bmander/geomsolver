@@ -97,6 +97,22 @@ A traced pair is seeded where edges cross faces; between analytic
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
+**A march that steps across a touch ends at the touch** (#879, `ssi::trace_beside`). Two rounds
+tangent to one face meet in a curve that ends where both touch it, a point where the two surfaces
+touch and their meeting's branches cross (`ssi::touch`); where that point is on a face's own edge
+(a corner's round ending at the side a rim's round is tangent to), the far side of the crossing is
+off that face, so a step landing there is beside a meeting already known (`Touches::outside`).
+Such a step ends the march at the touch it ran across — a touch behind it with a branch along the
+way it came — not where it landed: ended past it, the curve ran through that vertex, and traced
+the other way round as well, through it twice; an edge laid along it took one passage, the stretch
+from the other was never laid, and two cells of the arrangement joined across it ("a shell … kept
+on one side … and dropped on another"), or not, as the steps fell — a box's top rim refused where
+its bottom rim was built. **A closed curve with no period has its vertex at both ends**
+(`boolean::spans`): the vertex both ends of such a fitted meeting are is set at its start and at
+its end wherever along the curve it was read; read at the far end and set down at the start alone,
+it stood after the points it comes before, and the stretch from the last of them round to it was
+not laid. `tests/rim_rounds.rs` is the gate (a rim's run crossing a corner's round at a box's sharp
+corner, on either cap, to one volume).
 **A traced meeting is one curve, on both surfaces, keeping its turns** (`ssi::trace_beside`,
 #684 E). A march ending at a patch's edge or a touch drops the points crowding that end (within a
 quarter of its step `h0`) only while the chord from the point kept before them to the end passes
@@ -536,7 +552,7 @@ known before any is sought given it (`Given`, `arrangement_given`, #810): curves
 surfaces that are their whole meeting, laid as an edge of both with no search for that pair —
 what a sweep knows of its candidates' touches by construction
 (generating.md, #810); each cell's membership in each operand read off a face of it bounding the cell, else at
-a point deep inside. **A Boolean is a selection over it**: each piece's two sides' membership read
+a point deep inside. **A trim is the same phases with no cell** (#880 E1, `boolean::trimmed`): only the pairs of faces a `Meet` names met (an edge with a face only where a face it bounds is), each piece kept, turned or dropped by a side test its caller gives, coincident pieces stood for by the lowest operand's, and the kept pieces assembled and healed as a selection's are; with no `Meet` the arrangement is as it was (generating.md's trimming by membership). **A Boolean is a selection over it**: each piece's two sides' membership read
 as before, the complex formed, each shell kept as the operation keeps its sides — which agree round
 it, with no face kept by its own sides instead: a shell kept on one side and dropped on another is
 refused, two cells joined round an edge — and the result touching itself along an edge given an edge for each
@@ -747,7 +763,13 @@ pitch in the helix of the point where the two lines meet carried level, none whe
 parallel there; a level plane in the one ruling at its height; any other plane in its cut
 `S(−α/β, v)` (`Curve::SheetCut`, **a new curve kind**: `α + u β` the ruling's reach to the plane),
 with the rulings it holds as lines, read about the nearest held ruling by differences so the cut
-runs through the point it touches the sheet at as exactly as anywhere. Two curves on one sheet,
+runs through the point it touches the sheet at as exactly as anywhere. **The cut crosses each ruling
+it holds at that ruling's `v`, in closed form** (`SheetCut::held_along`, `query::crossings_in`; #885),
+and the two curves of the meeting are crossed there (`crossings_among`), so an edge lying in the
+sheet along a held ruling — a tool's edge at a sweep's end pose, its own sheet's ruling there — is
+cut where the cut leaves it, by the vertex inside it, and the cut is laid from that point, not to
+the face's corner (`arrangement::a_meeting_crossing_an_edge_lying_in_the_other_surface_cuts_it_there`).
+Two curves on one sheet,
 each a rule `u(v)`, cross where the rules agree, and two planes' cuts of two such sheets on one
 plane where the plane meets the sheets' helix (`query::crossings_in`); a point's foot on such a
 sheet starts from the ruling level with it (`Blend::inverse`), with no search

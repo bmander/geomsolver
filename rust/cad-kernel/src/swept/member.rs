@@ -26,6 +26,9 @@ type V = [f64;3];
 const FINEST: f64 = 1e-9;
 /// The most stretches one point's test reads.
 const MOST_READS: usize = 1 << 16;
+/// The most stretches `Swept::beyond` reads before it says `None`, the cautious answer: a ball near
+/// the boundary whose proof would take more is left near, and its pairs met.
+const BEYOND_READS: usize = 256;
 
 /// A tool read for membership: its boundary meshed, scaled to the trajectory's units, a box
 /// about each triangle, and how far the mesh may stand off the exact boundary (its measured sag,
@@ -49,6 +52,9 @@ impl Solid {
         Ok(Solid {pts,tris:m.tris,tree,sag})
     }
 
+    /// How many triangles the boundary is meshed in.
+    pub fn triangles(&self) -> usize { self.tris.len() }
+
     /// The distance from `p` to the meshed boundary.
     pub fn distance(&self,p: V) -> f64 {
         let best = std::cell::Cell::new(f64::INFINITY);
@@ -58,6 +64,29 @@ impl Solid {
             if d < best.get() { best.set(d) }
         });
         best.get()
+    }
+
+    /// **The distance from `p` to the meshed boundary, and on which side `p` stands** (E1's zones):
+    /// inside or not read off the nearest triangle's normal where the nearest point lies within that
+    /// triangle — on a closed mesh turned outward, exactly the side — and off the winding number
+    /// where it lies on a triangle's edge or corner, where the triangles there disagree.
+    pub fn signed_near(&self,p: V) -> (f64,bool) {
+        let best = std::cell::Cell::new((f64::INFINITY,usize::MAX,crate::util::space::Region::Vertex));
+        self.tree.query_nearest(|b| b.gap(Bounds {lo:p,hi:p}),|| best.get().0,|i| {
+            let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
+            let (q,region) = closest_on_triangle(p,a,b,c);
+            let d = distance(p,q);
+            if d < best.get().0 { best.set((d,i,region)) }
+        });
+        let (d,i,region) = best.get();
+        if i == usize::MAX { return (d,false) }
+        if region == crate::util::space::Region::Face {
+            let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
+            let n = cross(sub(b,a),sub(c,a));
+            let side = dot(sub(p,a),n);
+            if side != 0. { return (d,side < 0.) }
+        }
+        (d,self.winding(p) > 0.5)
     }
 
     /// The generalised winding number at `p`: near 1 inside, near 0 outside.
@@ -155,5 +184,60 @@ impl Swept<'_> {
             for (lo,hi) in [(lo,m),(m,hi)] { pushed += 1; frontier.push(Stretch {key,order:pushed,lo,hi}) }
         }
         match near { Some(at) => Err(Unsettled::Near {at}),None => Ok(false) }
+    }
+
+    /// **Whether `x` stands more than `r` from the swept boundary, and on which side** (E1, #880;
+    /// docs/swept-solid-design.md §12, P3): `Some(true)` where `m(x) < −r`, `m(x)` the least signed
+    /// distance from the tool of `x` carried back over the roll — so every point within `r` of `x`
+    /// is a member, `m` being 1-Lipschitz (a signed distance is, and a rigid motion keeps
+    /// distances); `Some(false)` where `m(x) > r`, so none is; `None` where neither is proved. Read
+    /// as `member` reads (the mesh's sag, the trajectory's speed bound `L` over each stretch), a
+    /// stretch halved no further than `L h ≤ r/4` and no more than `BEYOND_READS` read, past which
+    /// it proves nothing: `None` is the cautious answer, never a wrong one.
+    pub fn beyond(&self,x: V,r: f64) -> Result<Option<bool>,Unsettled> {
+        if let Trajectory::Pieces(pieces) = self.path {
+            let [a,b] = [self.roll[0].min(self.roll[1]),self.roll[0].max(self.roll[1])];
+            let mut out = Some(false);
+            for piece in pieces.pieces() {
+                let (lo,hi) = (piece.over[0].max(a),piece.over[1].min(b));
+                if !(hi > lo) { continue }
+                match (Swept {tool:self.tool,path:&piece.path,roll:[lo,hi]}).beyond(x,r)? {
+                    Some(true) => return Ok(Some(true)),
+                    Some(false) => {}
+                    None => out = None,
+                }
+            }
+            return Ok(out)
+        }
+        let [a,b] = self.roll;
+        let domain = Interval::new(a.min(b),a.max(b)).map_err(|_| Unsettled::Unbounded)?;
+        let speed = self.path.inverse_point_speed_bound(x,domain).map_err(|_| Unsettled::Unbounded)?;
+        let sag = self.tool.sag;
+        let mut frontier = std::collections::BinaryHeap::new();
+        let mut pushed = 0u64;
+        frontier.push(Stretch {key:f64::NEG_INFINITY,order:0,lo:a.min(b),hi:a.max(b)});
+        // whether some pose stands within `r` (and the sag) of the tool, so `m(x) > r` is not proved
+        let mut near = false;
+        let mut reads = 0;
+        while let Some(Stretch {lo,hi,key,..}) = frontier.pop() {
+            // the deepest any stretch left may reach is short of proving `x` inside: nothing more
+            if key >= -r-sag && near { return Ok(None) }
+            reads += 1;
+            if !crate::util::meter::charge(crate::util::meter::Stage::Membership,1,|| (x,"membership".into())) { return Err(Unsettled::Stopped) }
+            if reads > BEYOND_READS { return Ok(None) }
+            let m = 0.5*(lo+hi);
+            let pose = self.path.pose(m).map_err(|e| Unsettled::Unread(e.msg))?;
+            let back = pose.inverse().point(x);
+            let (mut d,inside) = self.tool.signed_near(back);
+            if d > r+sag && inside { d = -d }
+            if d < -r-sag { return Ok(Some(true)) }
+            if d <= r+sag { near = true }
+            let h = 0.5*(hi-lo);
+            if d-sag-speed*h > r { continue }
+            if speed*h <= 0.25*r { near = true; continue }
+            let key = d-sag-speed*h;
+            for (lo,hi) in [(lo,m),(m,hi)] { pushed += 1; frontier.push(Stretch {key,order:pushed,lo,hi}) }
+        }
+        Ok(if near { None } else { Some(false) })
     }
 }

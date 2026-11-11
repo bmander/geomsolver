@@ -153,6 +153,13 @@ impl ListedFaces {
     /// The faces `listed` of solid `body`, or `None` where its boundary is not read here: a body
     /// with a swept cut, whose boundary is the field's, or one that does not build.
     pub fn read(sk: &Sketch, body: usize, listed: &[FacePath]) -> Option<ListedFaces> {
+        ListedFaces::read_above(sk, body, listed, &|_| false)
+    }
+
+    /// `read`, a face made by a use that stands `below` this body (a layer beneath it, whose
+    /// rounds its stratum has) read as the stratum has it: one it has not is no face there.
+    fn read_above(sk: &Sketch, body: usize, listed: &[FacePath], below: &dyn Fn(&str) -> bool)
+        -> Option<ListedFaces> {
         if body >= sk.solids.len() || super::cad::contains_sweep(sk, body) {
             return None;
         }
@@ -165,12 +172,103 @@ impl ListedFaces {
         }
         let faces = listed.iter().map(|f| {
             let own = by_name.get(&(&f.route[..], &f.face[..])).cloned().unwrap_or_default();
-            // a round's face the stratum has not: it cannot say of that one
-            let unread = f.of.is_some() && own.is_empty();
+            // a round's face the stratum has not: it cannot say of that one, unless the round
+            // is of a layer beneath, which the stratum holds whole
+            let unread = own.is_empty() && f.of.as_deref().is_some_and(|of| !below(of));
             (f.text(), (!unread).then_some(own))
         }).collect();
         Some(ListedFaces { read, faces })
     }
+}
+
+/// **A body's layers** ([0.149], #879): a body whose rounds name one another stands in layers
+/// (`layer`), each a body of its name, the stock of the one above — and the layer each use that
+/// reads the body's faces stands in (`use_key`).  One layer where its rounds name nothing of each
+/// other.
+#[derive(Clone, Debug)]
+pub struct Layers {
+    /// The bodies, the lowest first and the body itself the last.
+    bodies: Vec<usize>,
+    uses: std::collections::BTreeMap<String, usize>,
+}
+
+impl Layers {
+    /// Body `body`'s layers.
+    pub fn of(sk: &Sketch, body: usize) -> Layers {
+        let bodies = layer_bodies(sk, body);
+        let mut uses = std::collections::BTreeMap::new();
+        for (k, &b) in bodies.iter().enumerate() {
+            for r in readers_of(sk, b) {
+                uses.insert(path::use_key(&sk.solids[r].name).to_string(), k);
+            }
+        }
+        Layers { bodies, uses }
+    }
+
+    /// Whether `other` stands its uses in the same layers: the faces are named again where not.
+    pub fn same_uses(&self, other: &Layers) -> bool { self.uses == other.uses }
+
+    /// The layer a condition reads the faces `faces` in, asked under the absolute prefix `at`:
+    /// the layer of the use it stands in, where that use reads the body; and never beneath the
+    /// layer above each use that made one of the faces, which no layer under it has.
+    pub fn layer(&self, at: &str, faces: &[&FacePath]) -> usize {
+        if self.bodies.len() == 1 {
+            return 0;
+        }
+        let stands = self.uses.get(path::use_key(at.trim_end_matches('.'))).copied().unwrap_or(0);
+        let made = faces.iter().filter_map(|f| self.uses.get(f.of.as_deref()?)).map(|&l| l + 1);
+        made.fold(stands, usize::max).min(self.bodies.len() - 1)
+    }
+}
+
+/// Body `body` and the bodies of its layers beneath it, the lowest first: each a body of its
+/// name standing as the stock of the one above (`layer`).
+fn layer_bodies(sk: &Sketch, body: usize) -> Vec<usize> {
+    let mut bodies = vec![body];
+    let mut at = body;
+    while let Some(SolidDef::Body { stock, .. }) = sk.solids.get(at).map(|s| &s.def) {
+        let stock = *stock as usize;
+        if stock == at || sk.solids[stock].name != sk.solids[at].name
+            || !matches!(sk.solids[stock].def, SolidDef::Body { .. }) {
+            break;
+        }
+        bodies.push(stock);
+        at = stock;
+    }
+    bodies.reverse();
+    bodies
+}
+
+/// **A body's listed faces read layer by layer** ([0.149], #879): which faces meet (`Meets`) and
+/// how each lies (`Lays`) is a question of the layer asked in (`Layers::layer`).  The faces `ab`
+/// and `bc` of a box meet where a round of their edge reads them, and no longer where a round over
+/// that round's face reads them: read off the top alone, the first round's `when b meets a` came
+/// out false once the second stood over it, and the round was not made.
+#[derive(Clone, Debug)]
+pub struct Layered {
+    /// Each layer's reading, the lowest first.
+    layers: Vec<(Meets, Lays)>,
+}
+
+impl Layered {
+    /// The faces `listed` of solid `body` read in each of its `layers`, or `None` where its
+    /// boundary is not read (`ListedFaces::read`).
+    pub fn read(sk: &Sketch, layers: &Layers, listed: &[FacePath]) -> Option<Layered> {
+        let layers = layers.bodies.iter().enumerate().map(|(k, &b)| {
+            let below = |of: &str| layers.uses.get(of).is_some_and(|&l| l < k);
+            ListedFaces::read_above(sk, b, listed, &below).map(|l| (Meets::of(&l), Lays::of(&l)))
+        }).collect::<Option<Vec<_>>>()?;
+        Some(Layered { layers })
+    }
+
+    /// Layer `layer`'s reading (the top's, past it).
+    fn at(&self, layer: usize) -> &(Meets, Lays) { &self.layers[layer.min(self.layers.len() - 1)] }
+
+    /// Which faces meet in layer `layer`.
+    pub fn meets(&self, layer: usize) -> &Meets { &self.at(layer).0 }
+
+    /// How each face lies in layer `layer`.
+    pub fn lays(&self, layer: usize) -> &Lays { &self.at(layer).1 }
 }
 
 /// `BodyFaces::read`, remembered against what it reads (`Caches::faces`): the stratum, so

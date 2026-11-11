@@ -167,6 +167,12 @@ impl Meter {
         for (what,n) in &p.analysis { let _ = writeln!(s,"    {what:<28} {n:>12}"); }
         s
     }
+    /// The meetings of two surfaces sought, all pairs of kinds together: found in closed form,
+    /// traced, and given by construction (#810) — what a trim (E1, #880) is measured by against an
+    /// arrangement.
+    pub fn meetings(&self) -> [u64;3] {
+        self.profile.lock().unwrap_or_else(|e| e.into_inner()).meetings.values().fold([0;3],|[x,t,g],m| [x+m.exact,t+m.traced,g+m.given])
+    }
     /// The curve–surface searches read through a measured enclosure (a trace's own error bound,
     /// `enclose`), not a proved one, all pairs together (what V1's gate asks to be none on the
     /// surfaces it reads; #814 retired the sampled search these once counted).
