@@ -1728,15 +1728,15 @@ fn line_along_screw(p: V,d: V,[t0,t1]: [f64;2],b: &std::sync::Arc<super::geom::B
 /// of a point's location against a screwed sheet the slowest read of a sweep's build.
 fn line_screwed_line(p: V,d: V,[t0,t1]: [f64;2],b: &super::geom::Blend,tol: f64) -> Certified {
     use crate::util::space::{cross,sub};
-    let (&Curve::Line {p:pa,d:da},&Curve::Line {p:pb,d:db}) = (&b.a,&b.b) else { return Err(Uncertified::NoForm) };
+    let (&Curve::Line {d:da,..},&Curve::Line {d:db,..}) = (&b.a,&b.b) else { return Err(Uncertified::NoForm) };
     if !(t0.is_finite() && t1.is_finite() && t1 > t0) { return Err(Uncertified::NoForm) }
     // the section's edge at `v` before it is carried, `M(v) + u N(v)`, each affine in `v`
-    let (a0,b0) = (add(pa,scale(da,b.ta[0])),add(pb,scale(db,b.tb[0])));
+    let (a0,b0) = (b.a.point(b.ta[0]),b.b.point(b.tb[0]));
     let (al,be) = (scale(da,b.ta[1]-b.ta[0]),scale(db,b.tb[1]-b.tb[0]));
     let f = Ruled::new(b.carry,[a0,sub(b0,a0)],[al,sub(be,al)],p,d).ok_or(Uncertified::NoForm)?;
-    // the sheet's speed along `v`, the most at its corners and middle: a root's resolution
-    let speed = [[0.,0.],[1.,0.],[0.,1.],[1.,1.],[0.5,0.5]].iter().map(|&uv| norm(b.d1(uv).2)).fold(0.,f64::max);
-    let reach = [[0.,0.],[1.,0.],[0.,1.],[1.,1.],[0.5,0.5]].iter().map(|&uv| norm(b.d1(uv).1)).fold(0.,f64::max);
+    // the sheet's speed along `v` and `u`, the most at its corners and middle: a root's resolution
+    let [speed,reach] = [[0.,0.],[1.,0.],[0.,1.],[1.,1.],[0.5,0.5]].iter().map(|&uv| b.d1(uv))
+        .fold([0f64;2],|[s,r],(_,su,sv)| [s.max(norm(sv)),r.max(norm(su))]);
     let dd = norm(d);
     if !(speed > 0. && reach > 0. && dd > 0.) { return Err(Uncertified::NoForm) }
     // how near an end of the sheet or the line a meeting may stand and still be read here: far
@@ -1746,24 +1746,25 @@ fn line_screwed_line(p: V,d: V,[t0,t1]: [f64;2],b: &super::geom::Blend,tol: f64)
     let g = crate::util::isolate::Written(f);
     let gv = |v: f64| { use crate::util::isolate::Function; g.at(v).0 };
     let width = tol*1e-3/speed;
+    let ts = slack*(t1-t0)+1e3*tol/dd;
+    let clear_in = |x: f64,lo: f64,hi: f64,s: f64| x > lo+s && x < hi-s;
+    let clear_out = |x: f64,lo: f64,hi: f64,s: f64| x < lo-s || x > hi+s;
     let found = crate::util::isolate::roots(&g,[-slack,1.+slack],width,&|v| gv(v).abs() <= tol*dd*reach)
         .map_err(|e| if matches!(e,GaveUp::Stopped) { Uncertified::Stopped } else { Uncertified::NoForm })?;
     let mut roots = Vec::new();
     for r in found {
         if r.touch { return Err(Uncertified::NoForm) }
         let v = r.at;
-        let (q,w) = g.0.at(v);
+        // the ruling there: its start `Q` and its run `W`, the sheet at `u = 0`
+        let (q,w,_) = b.d1([0.,v]);
         let n = cross(d,w);
         let nn = dot(n,n);
         // the line along the ruling there: the general reading's
         if !(nn > 1e-12*dd*dd*dot(w,w)) { return Err(Uncertified::NoForm) }
         let qp = sub(q,p);
         let (t,u) = (dot(cross(qp,w),n)/nn,dot(cross(qp,d),n)/nn);
-        let (ts,us) = (slack*(t1-t0)+1e3*tol/dd,slack);
-        let clear_in = |x: f64,lo: f64,hi: f64,s: f64| x > lo+s && x < hi-s;
-        let clear_out = |x: f64,lo: f64,hi: f64,s: f64| x < lo-s || x > hi+s;
-        if clear_out(v,0.,1.,slack) || clear_out(u,0.,1.,us) || clear_out(t,t0,t1,ts) { continue }
-        if !(clear_in(v,0.,1.,slack) && clear_in(u,0.,1.,us) && clear_in(t,t0,t1,ts)) { return Err(Uncertified::NoForm) }
+        if clear_out(v,0.,1.,slack) || clear_out(u,0.,1.,slack) || clear_out(t,t0,t1,ts) { continue }
+        if !(clear_in(v,0.,1.,slack) && clear_in(u,0.,1.,slack) && clear_in(t,t0,t1,ts)) { return Err(Uncertified::NoForm) }
         roots.push((t,false));
     }
     Ok(Meets::At(roots))
@@ -1776,14 +1777,13 @@ fn line_screwed_line(p: V,d: V,[t0,t1]: [f64;2],b: &super::geom::Blend,tol: f64)
 /// cos θv (x·y − (k·x)(k·y)) − sin θv ((k × x)·y)`, **`α(v) + β(v) cos θv − γ(v) sin θv`**, each of
 /// the three a quadratic in `v` — one sine and cosine, written once over `Num`, where reading `Q`
 /// and `W` carried read five, and their product enclosed wide.
-struct Ruled { m: [V;2],n: [V;2],carry: super::geom::Carry,trig: [[f64;3];3],theta: f64 }
+struct Ruled { trig: [[f64;3];3],theta: f64 }
 
 impl Ruled {
     fn new(carry: super::geom::Carry,m: [V;2],n: [V;2],p: V,d: V) -> Option<Ruled> {
         use crate::util::space::{cross,sub};
-        let super::geom::Carry::Screw {center,axis,angle,advance} = carry else { return None };
-        if (norm(axis)-1.).abs() > 1e-12 { return None }
-        let k = axis;
+        let super::geom::Carry::Screw {center,axis:k,angle,advance} = carry else { return None };
+        if (norm(k)-1.).abs() > 1e-12 { return None }
         // `N × A` a quadratic, `N` affine: their coefficients by power of `v`
         let (a0,a1) = (sub(m[0],center),add(m[1],scale(k,advance)));
         let y1 = [cross(n[0],a0),add(cross(n[0],a1),cross(n[1],a0)),cross(n[1],a1)];
@@ -1793,12 +1793,7 @@ impl Ruled {
             let (kx1,kx2,ky1,ky2) = (dot(k,x1),dot(k,x2),dot(k,y1[j]),dot(k,y2[j]));
             [kx1*ky1+kx2*ky2,dot(x1,y1[j])-kx1*ky1+dot(x2,y2[j])-kx2*ky2,dot(cross(k,x1),y1[j])+dot(cross(k,x2),y2[j])]
         });
-        Some(Ruled {m,n,carry,trig,theta:angle})
-    }
-    /// `Q(v)` and `W(v)`, in floats.
-    fn at(&self,v: f64) -> (V,V) {
-        let turned = |x: V| crate::util::space::sub(self.carry.at(x,v),self.carry.at([0.;3],v));
-        (add(self.carry.at(self.m[0],v),scale(turned(self.m[1]),v)),add(turned(self.n[0]),scale(turned(self.n[1]),v)))
+        Some(Ruled {trig,theta:angle})
     }
 }
 
@@ -2340,14 +2335,12 @@ pub fn interior(b: &Brep,capacity: usize) -> Result<Vec<(V,f64)>,String> {
         lo:std::array::from_fn(|a| t[0][a].min(t[1][a]).min(t[2][a])-grow),
         hi:std::array::from_fn(|a| t[0][a].max(t[1][a]).max(t[2][a])+grow),
     }));
-    // its distance from the mesh: the radius of a ball about it no triangle enters
-    let clear = crate::util::par::map(&candidates,|&p| {
+    let depth = crate::util::par::map(&candidates,|&p| {
         let d2 = std::cell::Cell::new(f64::INFINITY);
         boxes.query_nearest(|b| b.gap(crate::util::bvh::Bounds {lo:p,hi:p}),|| d2.get().sqrt(),
             |k| d2.set(d2.get().min(triangle_distance2(p,&tris[k]))));
-        d2.get().sqrt()
+        d2.get().sqrt()-m.sag
     });
-    let depth: Vec<f64> = clear.iter().map(|d| d-m.sag).collect();
     // its winding number, which only a point the choice reaches is asked
     let winding = |p: V| {
         let mut w = 0.;
@@ -2372,9 +2365,11 @@ pub fn interior(b: &Brep,capacity: usize) -> Result<Vec<(V,f64)>,String> {
     // the deepest candidates of a thin cell are mostly outside it, its box's grid far from it, and
     // were read one by one, two thousand windings of every triangle for four points. The rest are
     // read a batch at a time across the cores, ahead of the choice; what is chosen is what reading
-    // every one would choose
+    // every one would choose (one at a time on one thread, so each read settles what it can before
+    // the next is asked)
     let mut inside: Vec<Option<bool>> = vec![None;candidates.len()];
-    let batch = 4*crate::util::par::threads();
+    let threads = crate::util::par::threads();
+    let batch = if threads == 1 { 1 } else { 4*threads };
     let mut chosen: Vec<(V,f64)> = Vec::new();
     for (k,&i) in order.iter().enumerate() {
         if chosen.len() == capacity { break }
@@ -2385,9 +2380,12 @@ pub fn interior(b: &Brep,capacity: usize) -> Result<Vec<(V,f64)>,String> {
             for (&j,w) in asked.iter().zip(read) {
                 inside[j] = Some(w > 0.5);
                 if (w-w.round()).abs() > 1e-6 { continue }
-                let r = clear[j]*(1.-1e-9);
-                for (q,known) in candidates.iter().zip(inside.iter_mut()) {
-                    if known.is_none() && distance(*q,candidates[j]) < r { *known = Some(w > 0.5) }
+                // (the ball's radius the candidate's distance from the mesh, a hair inside it; only
+                // the candidates still ahead are ever asked)
+                let r = (depth[j]+m.sag)*(1.-1e-9);
+                for &q in &order[k..] {
+                    let x = crate::util::space::sub(candidates[q],candidates[j]);
+                    if inside[q].is_none() && dot(x,x) < r*r { inside[q] = Some(w > 0.5) }
                 }
             }
         }

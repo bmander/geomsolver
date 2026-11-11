@@ -37,6 +37,13 @@ fn gauss(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
     sum*h/2.
 }
 
+/// The two-point Gauss rule over `[a, b]`: exact for a cubic.
+fn gauss2(a: f64,b: f64,mut f: impl FnMut(f64) -> f64) -> f64 {
+    let (m,h) = ((a+b)/2.,(b-a)/2.);
+    let k = h/3f64.sqrt();
+    h*(f(m-k)+f(m+k))
+}
+
 /// `gauss` over `pieces`, then twice as many, keeping the coarser reading where they agree.
 /// Otherwise refine each piece locally: a circle passing close to a ball's pole can sweep half
 /// a turn of `u` in a tiny part of its span, which six doublings of the whole edge still miss.
@@ -403,10 +410,7 @@ impl<'a> Closed<'a> {
                 } else {
                     // a quadratic in `v`: two Gauss points read it exactly
                     let a = ca*ring()-p[2]*sa;
-                    let g = |v: f64| { let q = q(v); a*q+q*q*ca-q*v*ca*sa };
-                    let (m,h) = ((x+base)/2.,(x-base)/2.);
-                    let k = h/3f64.sqrt();
-                    h*(g(m-k)+g(m+k))
+                    gauss2(base,x,|v: f64| { let q = q(v); a*q+q*q*ca-q*v*ca*sa })
                 }
             }
             Surface::Sphere(_,r) => {
@@ -516,14 +520,7 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
             let x = [u,v][along];
             let mut at_x = |w: f64| if along == 0 { g(w,v) } else { g(u,w) };
             let cuts = s.breaks(along,[base,x]);
-            if cuts.is_empty() {
-                if ruled {
-                    let (m,h) = ((base+x)/2.,(x-base)/2.);
-                    let d = h/3f64.sqrt();
-                    return h*(at_x(m-d)+at_x(m+d))
-                }
-                return gauss(base,x,pieces(x-base,periodic),&mut at_x)
-            }
+            if cuts.is_empty() { return if ruled { gauss2(base,x,&mut at_x) } else { gauss(base,x,pieces(x-base,periodic),&mut at_x) } }
             let mut at = vec![base];
             if x >= base { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
             at.push(x);

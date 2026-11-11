@@ -14,8 +14,8 @@ use gcs_core::brep::query::{Located,Place};
 use gcs_core::brep::topo::Brep;
 use std::f64::consts::{FRAC_1_SQRT_2,PI};
 use std::sync::Arc;
-use crate::brep::{block,mesh_volume,poly,total_area};
-use gcs_core::space::{cross,dot,scale,sub,unit};
+use crate::brep::{block,mesh_volume,poly,tetrahedron,total_area};
+use gcs_core::space::{cross,sub};
 
 fn close(what: &str,a: f64,b: f64) { assert!((a-b).abs() <= 1e-9*b.abs().max(1.),"{what}: {a} against {b} ({:e})",(a-b)/b); }
 
@@ -68,13 +68,7 @@ fn an_l_grown_rounds_its_convex_edges_and_shrunk_its_concave_one() {
 /// π − acos(1/3) each.
 #[test]
 fn a_tetrahedron_grown_rounds_its_oblique_edges_and_corners() {
-    let corners: [V;4] = [[3.,3.,3.],[3.,-3.,-3.],[-3.,3.,-3.],[-3.,-3.,3.]];
-    let mut t = block([-4.,-4.,-4.],[4.,4.,4.]);
-    for k in 0..4 {
-        let [a,b,c] = [corners[(k+1)%4],corners[(k+2)%4],corners[(k+3)%4]];
-        let n = unit(cross(sub(b,a),sub(c,a)));
-        t = kept(&t,a,if dot(n,sub(corners[k],a)) < 0. { scale(n,-1.) } else { n },0.).unwrap();
-    }
+    let t = tetrahedron([[3.,3.,3.],[3.,-3.,-3.],[-3.,3.,-3.],[-3.,-3.,3.]],[-4.,-4.,-4.],[4.,4.,4.]);
     let e = 6.*2f64.sqrt();
     let want = 72.+72.*3f64.sqrt()+3.*e*(PI-(1f64/3.).acos())+4.*PI/3.;
     close("grown",volume(&grown(&t,1.,Join::Round).unwrap()),want);

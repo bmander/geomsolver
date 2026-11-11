@@ -8,7 +8,7 @@
 //! an L-shaped prism's sweep is its two blocks' sweeps united (`sweep(A ∪ B) = sweep(A) ∪
 //! sweep(B)`), each built alone; and every built solid's points agree with membership at seeded
 //! points. Sampled where it samples.
-use crate::brep::{block,simpson};
+use crate::brep::{block,simpson,tetrahedron,total_area};
 use gcs_core::brep::boolean::{Op,combined};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::closed::{closed,slid};
@@ -1616,21 +1616,6 @@ fn a_rims_sheet_in_closed_form_is_held_to_the_general_search() {
     eprintln!("a screwed rim's sheet against 60 lines: in closed form {fast:?}, by the general search {general:?}");
 }
 
-/// The regular tetrahedron on (5, 1, 1), (5, −1, −1), (3, 1, −1), (3, −1, 1): a block round it
-/// kept on the side of each face's plane its fourth corner is.
-fn tetrahedron() -> Brep {
-    use gcs_core::space::{cross,dot,sub};
-    const CORNERS: [[f64;3];4] = [[5.,1.,1.],[5.,-1.,-1.],[3.,1.,-1.],[3.,-1.,1.]];
-    let mut tool = block([2.,-2.,-2.],[6.,2.,2.]);
-    for k in 0..4 {
-        let [a,b,c] = [CORNERS[(k+1)%4],CORNERS[(k+2)%4],CORNERS[(k+3)%4]];
-        let mut n = unit(cross(sub(b,a),sub(c,a)));
-        if dot(n,sub(CORNERS[k],a)) < 0. { n = n.map(|x| -x) }
-        tool = gcs_core::brep::build::kept(&tool,a,n,0.).unwrap();
-    }
-    tool
-}
-
 /// **A straight edge's sheet in closed form and by the general search agree** (#777 M1: a closed
 /// form kept as a fast path is held to the general method): lines through the sheets a regular
 /// tetrahedron's leaning edges screw into over a turn and a half meet each at the same points by
@@ -1680,11 +1665,11 @@ fn a_straight_edges_sheet_in_closed_form_is_held_to_the_general_search() {
 /// edge-against-face and three-face readings on every core (`boolean`).
 #[test]
 fn a_tetrahedron_screwed_is_built_to_the_benchs_measures() {
-    let tool = tetrahedron();
+    let tool = tetrahedron([[5.,1.,1.],[5.,-1.,-1.],[3.,1.,-1.],[3.,-1.,1.]],[2.,-2.,-2.],[6.,2.,2.]);
     let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:5.});
     let built = closed(&tool,&path,[0.,540f64.to_radians()],tool.size(),gcs_core::brep::geom::tolerance(tool.size())).unwrap();
     let v = volume(&built);
-    let a: f64 = built.faces.iter().map(|f| gcs_core::brep::props::area(&built,f)).sum();
+    let a = total_area(&built);
     assert!((v/153.4631140397-1.).abs() <= 1e-9,"volume {v}");
     assert!((a/324.9050838577-1.).abs() <= 1e-9,"area {a}");
     assert_eq!(built.faces.len(),8);

@@ -32,13 +32,14 @@ pub fn map<T: Sync,R: Send>(items: &[T],f: impl Fn(&T) -> R + Sync) -> Vec<R> {
 /// stood and the items read again one after another, so a build refused by its budget is refused
 /// at the same point every time. Where the meter is not passed, `map`'s answer.
 pub fn map_in_order<T: Sync,R: Send>(items: &[T],f: impl Fn(&T) -> R + Sync) -> Vec<R> {
-    let meter = super::meter::current();
-    let mark = meter.as_ref().filter(|m| !m.stopped()).map(|m| m.mark());
+    // (one thread reads them one after another already; a stopped meter stops every item alike)
+    let Some(m) = super::meter::current().filter(|m| !m.stopped() && threads().min(items.len()) > 1) else { return map(items,f) };
+    let mark = m.mark();
     let out = map(items,&f);
-    match (&meter,mark) {
-        (Some(m),Some(mark)) if m.stopped() => { m.restore(&mark); items.iter().map(f).collect() }
-        _ => out,
-    }
+    if !m.stopped() { return out }
+    m.restore(&mark);
+    // each item from no warm start, as `indices_with` reads one thread's
+    items.iter().map(|x| super::warm::fresh(|| f(x))).collect()
 }
 
 /// `f(0), f(1), …, f(n - 1)`, in that order, spread over the cores as `map` is.
