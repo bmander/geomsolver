@@ -518,8 +518,9 @@ fn cut_back(body: &BodyFaces, fi: usize, l: &[crate::brep::topo::Coedge], n: V, 
 /// the cone its faces' normals span there — the ball cut back to the plane spanned by the normals
 /// of the two faces along each edge `edges` meets there, the plane square to that edge, through
 /// the corner, that its wedge ends on.  Turned about an axis square to the way out of the body
-/// (against its edges from the corner, on whose side every normal of the cone stands), so its
-/// poles and seam stand outside the cone.
+/// (against its edges from the corner, on whose side every normal of the cone stands) from a half
+/// disc square to it too, so its poles and the meridians its turn is read from stand outside the
+/// cone and its sector is one face of the sphere.
 fn ball_sector(body: &BodyFaces, v: u32, c: V, edges: &[u32], d: f64) -> Result<Piece, &'static str> {
     let b = body.brep().0;
     if body.faces_at(v, &[]).iter().any(|&f| body.plane(f).is_none()) || edges.iter().any(|&e| body.segment(e).is_none()) {
@@ -540,11 +541,12 @@ fn ball_sector(body: &BodyFaces, v: u32, c: V, edges: &[u32], d: f64) -> Result<
         let m = cross(na, nb);
         (norm(m) > 1e-9).then(|| { let m = unit(m); Cut { at: c, keep: if dot(m, within) >= 0.0 { m } else { scale(m, -1.0) } } })
     }).collect();
-    // the ball: its half disc on the side away from the cone, turned once about an axis square to
-    // `out`
+    // the ball: turned once about an axis square to `out`, from the half disc square to `out` too,
+    // so its poles, its seam and the meridian half a turn on all lie in the plane through the
+    // corner square to `out`, which the cone meets at the corner alone
     let axis = Frame::about(c, out).x;
-    let back = scale(out, -1.0);
-    let section = crate::brep::build::ball_section(&Frame::new(c, cross(back, axis), back), d);
+    let start = cross(out, axis);
+    let section = crate::brep::build::ball_section(&Frame::new(c, cross(start, axis), start), d);
     Ok(Piece { section, sweep: Sweep::About { origin: c, axis, angle: TAU }, cuts })
 }
 

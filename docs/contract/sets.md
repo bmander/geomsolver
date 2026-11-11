@@ -439,8 +439,9 @@ three faces, one square to the other two — the quarter disc turned about that 
 convex corner** where planes meet along lines (a tetrahedron's, an octahedron's four), the ball cut
 back to the plane each edge's wedge ends on there — spanned by its two faces' normals, square to
 the edge — so its sector is the ball within the cone the normals span and meets each wedge face to
-face (`ball_sector`; the ball turned about an axis square to the way out of the body, so its poles
-and seam stand outside the cone).  `grown::convex_corners_of_any_faces_grown_are_built_exactly` is
+face (`ball_sector`; the ball turned about an axis square to the way out of the body from a half
+disc square to it too, so its poles and the meridians its turn is read from stand outside the cone
+and the sector is one face of the sphere).  `grown::convex_corners_of_any_faces_grown_are_built_exactly` is
 the gate (brep-bench's offset/tetrahedron-grown and an octahedron, to Steiner's).  **A concave
 edge** (two planes along a line) has no wedge: its faces' prisms overlap in a `d × d` column there,
 so each is cut back to the edge's bisector, the plane through it halfway between them
