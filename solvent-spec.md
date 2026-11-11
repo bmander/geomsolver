@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.211 — November 2026**
+**Specification, Draft 0.212 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2091,7 +2091,18 @@ through it (`not some …` what is not in it). The distance from a set is the or
 inside it: `p distance(d) S` is outside a region at `d`, and the distance from what is not in it is
 `p distance(d) { q | q not in S }`; a distance from a set with no inside is refused, having a root
 either side, but for a developable sheet's band, which says its side (§6.9). `every t in …: …` is
-reserved. **Retired** (each refused naming its replacement): `inside` and `outside` between a point
+reserved. **[0.212] Some points of sets.** In a set's body, `some q in A, r in B: p in X` is the
+points `p` that some point `q` of the set `A` and some `r` of `B` put in `X` — a projection, each
+bound point ranging over its set as the running number of a sweep ranges over its interval. Read
+where `X` is the segment between them (`std.sets.Segment(q, r)`, either end a point of the drawing
+instead) — **the join** of the sets, of convex sets their hull: `{ p | some q in Segment(a, b), r
+in Segment(c, d): p in Segment(q, r) }` is the tetrahedron on `a`, `b`, `c`, `d`, and `{ p | some
+q in base: p in Segment(apex, q) }` the pyramid on a face — or where it is a ball about one bound
+point (`p distance(<= d) q`), the set grown. A join is read where each set it is of is the hull of
+finitely many points — a point, a segment, a convex polygon drawn as a face, or another join — and
+built exactly as their hull; anything else a `some` puts its point in is refused by name, and a
+`some` whose set's point is a drawn one rather than a solid's is refused. One `some` binds every
+point its relation reads. **Retired** (each refused naming its replacement): `inside` and `outside` between a point
 and a set (`claim a inside b` between solids stays, §9.8), `coincident` against a set, `S.surface`,
 `over` in a relation's parentheses, `side:` on a distance from a set with an inside,
 `std.sets.Offset`, `n := x in f` for a placement (`n := x at f`), and `when not w in A` (`when w

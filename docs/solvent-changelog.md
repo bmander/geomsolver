@@ -4,6 +4,22 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.212] Some points of sets.** `some` binds points of sets as well as an instant of a running
+number (§6.21): in a set's body, `some q in A, r in B: p in X` is the points `p` that some point of
+each set puts in `X`. Where `X` is the segment between the bound points (`std.sets.Segment(q, r)`,
+either end a point of the drawing instead) it is **the join** of their sets — of convex sets their
+hull — read where each is the hull of finitely many points (a point, a segment, a convex polygon
+drawn as a face, another join) and built exactly as the kernel's hull of them: a tetrahedron is
+`{ p | some q in Segment(a, b), r in Segment(c, d): p in Segment(q, r) }`, a pyramid `{ p | some q
+in base: p in Segment(apex, q) }`, and joins nest, so brep-bench's square-to-octagon transition is
+the join of a square and an octagon each written as one. Where `X` is a ball about one bound point
+(`p distance(<= d) q`) it is that point's set grown, `p distance(<= d) A`. Any other relation, a
+polygon turning both ways, a set with a curved boundary, and a `some` whose set's point is a drawn
+one are refused by name. Through 0.211 `some` read only a running number, and `some q in A: …`
+was E001: "`some` reads one instant of a running number: `some t in (a, b): p in X at(under: m)
+t`, `some s: p in F at s` or `some h: p in F at(along: n) h`"; a convex polyhedron was written as
+the half-spaces behind its faces' planes, which still reads.
+
 **[0.211] A list of names** (#882). A list may name what is drawn (§12.10): `repeat e in
 [box.near, box.far] { … }`, or `ends := [box.near, box.far]` walked as `repeat e in ends`, makes a
 copy per name, `e` that copy's name for it, as a walk over a solid's faces or a chain's edges names

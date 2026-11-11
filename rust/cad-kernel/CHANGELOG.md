@@ -8,6 +8,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A recipe's `hull` node** (`recipe::Node::Hull`): the convex hull of its `points`
+  (`build::hull`), each face called its `face`, so a solid read as the hull of finitely many points
+  is built without a Boolean.
 ## [0.8.0] - 2026-11-11
 
 - **The convex hull of points, as a solid** (`build::hull`): one plane face for each facet, its

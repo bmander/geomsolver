@@ -1976,6 +1976,28 @@ drawn through its axis, less tall than the pitch where it runs more than a turn)
 crossed by its direction. Anything else is E080, naming why. The developables' `coincident(t in (0,
 1))` — a contact's place on a curve — is another word, unchanged.
 
+**There are points of sets at which** ([0.212]). `some` binds points of sets as it binds a roll:
+`some q in A, r in B: p in X` in a set's body is the points some point of each set puts `p` in.
+Where `X` is the segment between them (either end may be a point of the drawing) it is the **join**
+of the sets — of convex sets their hull — and a solid of it is built exactly:
+
+```
+use std.sets
+tetrahedron := solid({ p | some q in std.sets.Segment(a, b), r in std.sets.Segment(c, d):
+  p in std.sets.Segment(q, r) })
+pyramid := solid({ p | some q in base: p in std.sets.Segment(apex, q) })   // `base` a face
+square := { x | some u in std.sets.Segment(s0, s1), v in std.sets.Segment(s2, s3):
+  x in std.sets.Segment(u, v) }
+loft := solid({ p | some q in square, r in octagon: p in std.sets.Segment(q, r) })   // joins nest
+```
+
+Where `X` is a ball about one bound point it is that set grown: `{ p | some q in
+std.sets.Segment(a, b): p distance(<= 2mm) q }` is a capsule.  A join is read where each set is the
+hull of finitely many points: a point, a segment, a convex polygon drawn as a face, another join.
+Anything else — another relation, an L-shaped face, a set bounded by a curve — is refused saying
+which, and so is a `some` outside the set of a solid (`x in …` of a drawn `x`).  One `some` binds
+every point: `some q in A, r in B:`, never one `some` inside another.
+
 **The labels are retired.** `solid(sec, depth: 30mm)` and every label of the old constructor
 (`from:`, `to:`, `depth:`, `draft:`, `about:`, `sweep:`, `sense:`, `through:`) are E001, saying the
 replacement in the document's own arguments: "a solid is the points of a set, and `solid(…)` takes
