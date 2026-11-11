@@ -7,7 +7,7 @@ use crate::common::{ent, text::solved};
 
 /// The regular tetrahedron on (3, 3, 3), (3, −3, −3), (−3, 3, −3), (−3, −3, 3), as the join of two
 /// of its opposite edges.
-const TETRAHEDRON: &str = "unit mm\nuse std\n\
+const TETRAHEDRON: &str = "unit mm\nuse std\nuse std.sets\n\
     a := point\nb := point\nc := point\nd := point\n\
     fix((3, 3, 3)) a\nfix((3, -3, -3)) b\nfix((-3, 3, -3)) c\nfix((-3, -3, 3)) d\n\
     tetrahedron := solid({ p | some q in std.sets.Segment(a, b), r in std.sets.Segment(c, d): \
