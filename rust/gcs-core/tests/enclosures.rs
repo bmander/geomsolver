@@ -249,7 +249,8 @@ trait SinCos { fn sin_cos_iv(self) -> (Iv,Iv); }
 impl SinCos for Iv { fn sin_cos_iv(self) -> (Iv,Iv) { use gcs_core::interval::Num; self.sin_cos() } }
 
 /// **The general reading holds every closed form** (#814 P4): random lines, circles and splines
-/// against a plane, a cylinder, a cone, a ball, a torus and a level circle's screwed sheet, and
+/// against a plane, a cylinder, a cone, a ball, a torus, a level circle's screwed sheet and two
+/// straight edges' (a leaning edge screwed, and a sheet between two edges carried by a screw), and
 /// lines against a conic's and a turned contact's revolutions and a slid contour's cylinder, read by
 /// the closed forms where the pair has one (`curve_surface`) and by the general reading alone
 /// (`curve_surface_searched`), find the same meetings, each on both curve and surface.
@@ -267,9 +268,16 @@ fn the_general_reading_holds_every_closed_form() {
     let turned = Curve::Turned(Arc::new(gcs_core::brep::turned::Turned::meridian(Frame::WORLD,contact,[-1.,1.])));
     let slide = unit([1.,0.,0.3]);
     let slid = Curve::Slid(Arc::new(gcs_core::brep::slid::halves(Frame::WORLD,3.,1.,slide,1.,true)[0]));
+    // a leaning edge screwed two radians about an axis off the origin, and a sheet between two
+    // edges carried by a screw (`query::line_screwed_line`)
+    let leaning = Curve::Line {p:[1.5,-1.,-0.5],d:unit([0.3,1.,0.8])};
+    let screwed = Blend {a:leaning.clone(),ta:[0.,2.5],b:leaning,tb:[0.,2.5],carry:Carry::Screw {center:[0.2,0.1,0.],axis:[0.,0.,1.],angle:2.,advance:1.5},closed:false};
+    let between = Blend {a:Curve::Line {p:[2.,0.,-1.],d:unit([0.,1.,0.6])},ta:[-1.,2.],b:Curve::Line {p:[1.,0.5,0.5],d:unit([0.2,1.,-0.3])},tb:[0.,2.],
+        carry:Carry::Screw {center:[0.;3],axis:unit([0.1,0.,1.]),angle:-1.2,advance:2.},closed:false};
     let surfaces = [Surface::Plane(f),Surface::Cylinder(f,2.),Surface::Cone(f,1.5,0.4),Surface::Sphere(f,2.),Surface::Torus(f,3.,1.),
         Surface::Blend(Frame::WORLD,Arc::new(sheet)),Surface::Revolution(Frame::WORLD,Arc::new(conic)),Surface::Revolution(Frame::WORLD,Arc::new(turned)),
-        Surface::Extrusion(Frame::about([0.;3],slide),Arc::new(slid))];
+        Surface::Extrusion(Frame::about([0.;3],slide),Arc::new(slid)),Surface::Blend(Frame::WORLD,Arc::new(screwed)),
+        Surface::Blend(Frame::WORLD,Arc::new(between))];
     let mut rng = Rng::new(4);
     let (mut met,mut read) = (0,0);
     for s in &surfaces {
@@ -299,7 +307,7 @@ fn the_general_reading_holds_every_closed_form() {
             met += x.len();
         }
     }
-    assert!(read == 270 && met > 90,"{read} read, {met} met");
+    assert!(read == 330 && met > 110,"{read} read, {met} met");
 }
 
 /// **A reading that proves nothing is refused, with its witness** (#814 P3), whatever reads it:

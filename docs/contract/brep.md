@@ -374,7 +374,10 @@ samples is why a Boolean's edges once sampled the cone, the torus and the sheets
 **A point
 where three surfaces' meetings meet is solved once** (#711, #777 M2:
 `Arrangement::triple_points`, keyed by the three surfaces' indices among the shared meetings), and
-every later finding of it from another of the three faces takes that vertex.
+every later finding of it from another of the three faces takes that vertex. Each two meetings'
+crossings on a face are sought on every core, as phase 1 reads every edge against every face —
+each reading the curves and surfaces alone, which nothing it finds changes — and taken in the
+pairs' order, as read one after another: the same vertices, cut in the same order.
 
 **Touch curves are found generally, and shallow crossings built, not refused** (#778, #777 M3).
 A meeting's critical set is read in one surface's parameters, over the one whose partner's
@@ -697,6 +700,18 @@ where the circle's distance from the axis turns, the line tangent there (the sea
 ball's pipe touches along that helix) meets the sheet at the helix's own point whatever the
 rounding, where searched it was found at one lead and missed at another and the helix crossed the
 seam uncut (`swept_closed::the_drawn_ball_end_mills_pipe_beside_its_screwed_side_is_arranged_at_every_lead`).
+**A line meets a straight edge's sheet in closed form where it crosses it cleanly**
+(`query::line_screwed_line`): the sheet is ruled, `S(u, v) = Q(v) + u W(v)`, so a line `p + t d`
+meets the ruling at `v` only where the two are coplanar, `F(v) = (Q − p) · (d × W) = 0`; turned
+back by the screw's turn at `v` the triple product is `α(v) + β(v) cos θv − γ(v) sin θv`, three
+quadratics, its roots isolated by its enclosures, and at a root `F' = det[d, W, S_v]`, so a double
+root is a line tangent to the sheet. Only a reading whose every root is simple, the line across
+its ruling there, and clear inside or clear outside the sheet's square and the line's stretch is
+answered so; a touch, and a meeting at an end of either, are the general reading's, by its rules
+(`enclosures::the_general_reading_holds_every_closed_form`,
+`swept_closed::a_straight_edges_sheet_in_closed_form_is_held_to_the_general_search`). The
+three-unknown search had made a ray of a point's location against a screwed polyhedron's sheet
+the slowest read of its build.
 **A circle's sheet meets a plane square to the axis in closed form** (`ssi::screwed_circle_level`),
 each run of the circle's points reaching the plane ended where its `v` reaches the sheet's edge,
 not the tolerance past it: the meeting's end is the vertex where the edge's circle crosses the
@@ -741,7 +756,13 @@ forty points or more at every node of every edge. An area whose `|·|` changes s
 (a sphere's past a pole, a spindle torus's) is still read by the rule. Every face of spheres,
 cones (to a point too), tori and cylinders, whole, moved and cut at a slant, agrees with the rule
 to 6e-16, and a cube rounded all over is measured in a millisecond and a half, where its area took
-26 ms.
+26 ms. **A sheet carried between two straight edges is integrated along its rulings by two nodes**:
+its point is affine in `u` at every `v` (the carry is rigid, its rate affine in the point), so the
+flux's `g` is a polynomial of degree two at most in `u` and `G` is exact by a two-node Gauss rule,
+read along `u` whichever parameter the face spans less (along `v` the screw's turn makes it no
+polynomial, and the rule read forty nodes a stretch); its area keeps the rule. A tetrahedron
+screwed a turn and a half had its arrangement's 550 faces' fluxes read in 0.41 s, and now in 0.06 s
+(`swept_closed::a_tetrahedron_screwed_is_built_to_the_benchs_measures`).
 **A polynomial net's `G` is tabled from the face's own middle** (`props::Prefix`): `G` from any `u`
 knot differs by a function of `v` alone, which closes to nought round a loop, so each `v` span's
 column is filled out from the knot nearest the face's middle only as far as a `u` asked reaches, a

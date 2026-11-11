@@ -8,7 +8,7 @@
 //! an L-shaped prism's sweep is its two blocks' sweeps united (`sweep(A ∪ B) = sweep(A) ∪
 //! sweep(B)`), each built alone; and every built solid's points agree with membership at seeded
 //! points. Sampled where it samples.
-use crate::brep::{block,simpson};
+use crate::brep::{block,simpson,tetrahedron,total_area};
 use gcs_core::brep::boolean::{Op,combined};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::closed::{closed,slid};
@@ -1614,6 +1614,65 @@ fn a_rims_sheet_in_closed_form_is_held_to_the_general_search() {
     }
     assert!(met > 20,"{met} crossings");
     eprintln!("a screwed rim's sheet against 60 lines: in closed form {fast:?}, by the general search {general:?}");
+}
+
+/// **A straight edge's sheet in closed form and by the general search agree** (#777 M1: a closed
+/// form kept as a fast path is held to the general method): lines through the sheets a regular
+/// tetrahedron's leaning edges screw into over a turn and a half meet each at the same points by
+/// `line_screwed_line`'s one unknown, the ruling's `v`, as by the three-unknown search
+/// (`query::curve_surface_searched`) — and the closed form is the faster, measured here and said.
+#[test]
+fn a_straight_edges_sheet_in_closed_form_is_held_to_the_general_search() {
+    use gcs_core::brep::geom::{Blend,Carry,Curve,Frame,Surface};
+    use gcs_core::brep::query::{curve_surface,curve_surface_searched,Meets};
+    let carry = Carry::Screw {center:[0.;3],axis:[0.,0.,1.],angle:3.*std::f64::consts::PI,advance:7.5};
+    let edges = [([5.,1.,1.],[3.,1.,-1.]),([5.,-1.,-1.],[3.,-1.,1.]),([5.,1.,1.],[3.,-1.,1.])];
+    let mut rng = gcs_core::rng::Rng::new(9);
+    let (mut fast,mut general,mut met) = (std::time::Duration::ZERO,std::time::Duration::ZERO,0);
+    for (a,b) in edges {
+        let line = Curve::Line {p:a,d:unit(gcs_core::space::sub(b,a))};
+        let length = gcs_core::space::distance(a,b);
+        let sheet = Surface::Blend(Frame::WORLD,std::sync::Arc::new(Blend {a:line.clone(),ta:[0.,length],b:line,tb:[0.,length],carry,closed:false}));
+        for _ in 0..40 {
+            let (r,th) = (rng.uniform(2.5,5.5),rng.uniform(0.,std::f64::consts::TAU));
+            let p = [r*th.cos(),r*th.sin(),rng.uniform(-1.,8.)];
+            let d = unit([rng.uniform(-1.,1.),rng.uniform(-1.,1.),rng.uniform(-1.,1.)]);
+            let ray = Curve::Line {p,d};
+            let clock = std::time::Instant::now();
+            let Meets::At(one) = curve_surface(&ray,[-12.,12.],&sheet,1e-7) else { panic!("along") };
+            fast += clock.elapsed();
+            let clock = std::time::Instant::now();
+            let Meets::At(two) = curve_surface_searched(&ray,[-12.,12.],&sheet,1e-7) else { panic!("the search gave up") };
+            general += clock.elapsed();
+            assert_eq!(one.len(),two.len(),"from {p:?} along {d:?}: {one:?} against {two:?}");
+            for (x,y) in one.iter().zip(&two) {
+                assert!((x.0-y.0).abs() <= 1e-6 && x.1 == y.1,"from {p:?} along {d:?}: {one:?} against {two:?}");
+                assert!(sheet.implicit(ray.point(x.0)).abs() <= 1e-7,"from {p:?} along {d:?}: {} off the sheet",x.0);
+            }
+            met += one.len();
+        }
+    }
+    assert!(met > 60,"{met} crossings");
+    eprintln!("a straight edge's sheet against 120 lines: in closed form {fast:?}, by the general search {general:?}");
+}
+
+/// **A regular tetrahedron screwed a turn and a half is built to the bench's measures**
+/// (brep-bench's swept/tetrahedron-screwed, settled where cad-kernel, OCCT and cadrs agree to
+/// 2e-10): its walls the sheets its edges screw into, joined along its corners' helices. Its
+/// build reads every line against those sheets in closed form (`query::line_screwed_line`), their
+/// fluxes by two Gauss nodes along their rulings (`props`), each cell's interior points by a
+/// winding read once for every ball clear of its mesh (`query::interior`), and the arrangement's
+/// edge-against-face and three-face readings on every core (`boolean`).
+#[test]
+fn a_tetrahedron_screwed_is_built_to_the_benchs_measures() {
+    let tool = tetrahedron([[5.,1.,1.],[5.,-1.,-1.],[3.,1.,-1.],[3.,-1.,1.]],[2.,-2.,-2.],[6.,2.,2.]);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:5.});
+    let built = closed(&tool,&path,[0.,540f64.to_radians()],tool.size(),gcs_core::brep::geom::tolerance(tool.size())).unwrap();
+    let v = volume(&built);
+    let a = total_area(&built);
+    assert!((v/153.4631140397-1.).abs() <= 1e-9,"volume {v}");
+    assert!((a/324.9050838577-1.).abs() <= 1e-9,"area {a}");
+    assert_eq!(built.faces.len(),8);
 }
 
 /// **A build past its budget refuses by name, within it** (#777 V3's gate): the ring turned about

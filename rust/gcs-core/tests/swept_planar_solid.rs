@@ -77,6 +77,70 @@ fn area_by_lines(corners: &[[f64;2]],pose: &(dyn Fn(f64) -> ([[f64;2];2],[f64;2]
     lengths.iter().sum::<f64>()*(y1-y0)/lines as f64
 }
 
+/// **The area and the boundary's length of the region the square `[4, 6] × [−1, 1]` sweeps about
+/// the origin, read ray by ray** (#880 E4) — apart from the kernel, on the exact square: placed by
+/// `pose(t)` (`x ↦ R x + c`), the ray from the origin at angle φ crosses it in one interval (two
+/// slabs), and over the poses within `w` of φ — the only ones that reach the ray — those intervals
+/// run together into one, from the least entry to the greatest exit. Each extreme is read on a grid
+/// of 400 poses, every local extreme of it refined by golden section and the greatest kept (the
+/// entry's least is a kink, and the grid's least can lie in another valley); the region is the
+/// polygon through the extremes at `rays` angles, its area and boundary's length the polygon's.
+/// The square on a planet sweeps a ring about the origin, read so; the polygon's length converges
+/// as the square of its step (the solid's area it gives short by 7.9e-4, 1.9e-4 and 4.8e-5 at 2¹⁴,
+/// 2¹⁶ and 2¹⁸ rays).
+fn ring_by_rays(pose: &(dyn Fn(f64) -> ([[f64;2];2],[f64;2])+Sync),w: f64,rays: usize) -> (f64,f64) {
+    // the square's interval along the ray at `phi` placed at `t`: `q = Rᵀ(r u − c)` within it
+    let interval = |phi: f64,t: f64| -> Option<[f64;2]> {
+        let (r,c) = pose(t);
+        let back = |x: [f64;2]| [r[0][0]*x[0]+r[1][0]*x[1],r[0][1]*x[0]+r[1][1]*x[1]];
+        let (a,b) = (back([phi.cos(),phi.sin()]),back(c));
+        let (mut lo,mut hi) = (f64::NEG_INFINITY,f64::INFINITY);
+        for (k,[l,h]) in [[4.,6.],[-1.,1.]].into_iter().enumerate() {
+            if a[k].abs() < 1e-300 { if b[k] < -h || b[k] > -l { return None } continue }
+            let (x,y) = ((l+b[k])/a[k],(h+b[k])/a[k]);
+            lo = lo.max(x.min(y));
+            hi = hi.min(x.max(y));
+        }
+        (lo <= hi && hi > 0.).then_some([lo,hi])
+    };
+    let greatest = |f: &dyn Fn(f64) -> f64,a: f64,b: f64| -> f64 {
+        let n = 400;
+        let h = (b-a)/n as f64;
+        let vals: Vec<f64> = (0..=n).map(|i| f(a+h*i as f64)).collect();
+        let g = (5f64.sqrt()-1.)/2.;
+        let mut best = f64::NEG_INFINITY;
+        for i in 0..=n {
+            let (l,r) = (if i > 0 { vals[i-1] } else { f64::NEG_INFINITY },if i < n { vals[i+1] } else { f64::NEG_INFINITY });
+            if !vals[i].is_finite() || vals[i] < l || vals[i] < r { continue }
+            let (mut lo,mut hi) = ((a+h*(i as f64-1.)).max(a),(a+h*(i as f64+1.)).min(b));
+            let (mut x1,mut x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
+            let (mut f1,mut f2) = (f(x1),f(x2));
+            while hi-lo > 1e-15 {
+                if f1 >= f2 { hi = x2; x2 = x1; f2 = f1; x1 = hi-g*(hi-lo); f1 = f(x1) }
+                else { lo = x1; x1 = x2; f1 = f2; x2 = lo+g*(hi-lo); f2 = f(x2) }
+            }
+            best = best.max(vals[i]).max(f(0.5*(lo+hi)));
+        }
+        best
+    };
+    let angles: Vec<f64> = (0..rays).map(|k| TAU*k as f64/rays as f64).collect();
+    let radii = gcs_core::par::map(&angles,|&phi| {
+        assert!(interval(phi,phi-w).is_none() && interval(phi,phi+w).is_none(),"a pose past {w} of {phi} reaches its ray");
+        let out = greatest(&|t| interval(phi,t).map_or(f64::NEG_INFINITY,|x| x[1]),phi-w,phi+w);
+        let inn = -greatest(&|t| interval(phi,t).map_or(f64::NEG_INFINITY,|x| -x[0]),phi-w,phi+w);
+        [inn,out]
+    });
+    let polygon = |k: usize| -> (f64,f64) {
+        let p: Vec<[f64;2]> = angles.iter().zip(&radii).map(|(&phi,r)| [r[k]*phi.cos(),r[k]*phi.sin()]).collect();
+        (0..p.len()).fold((0.,0.),|(a,l),i| {
+            let (x,y) = (p[i],p[(i+1)%p.len()]);
+            (a+0.5*(x[0]*y[1]-y[0]*x[1]),l+((y[0]-x[0]).powi(2)+(y[1]-x[1]).powi(2)).sqrt())
+        })
+    };
+    let ((ai,li),(ao,lo)) = (polygon(0),polygon(1));
+    (ao-ai,lo+li)
+}
+
 /// A swept solid's checks apart from its volume: valid, closed, and its STEP file the solid's.
 fn holds_as_a_solid(b: &Brep,name: &str) {
     b.check(tolerance(b.size())).unwrap();
@@ -90,7 +154,8 @@ fn holds_as_a_solid(b: &Brep,name: &str) {
 /// −2t, over a whole turn. Before Q2 it took K2's road and was refused at a corner (`Curved`). Its
 /// section's region — the envelopes of its sides and the trochoids its corners trace — extruded
 /// through its height, held to the definition's area in the plane, read line by line on the exact
-/// square.
+/// square, and its surface to the region's area and boundary read ray by ray (`ring_by_rays`, #880
+/// E4): 282.19271199, which the build meets to 2e-8; cadrs's is 0.0705 larger with the same volume.
 #[test]
 fn the_square_on_a_planet_carrier_is_swept_closed() {
     let bar = polygon_prism(&[[4.,-1.,0.],[6.,-1.,0.],[6.,1.,0.],[4.,1.,0.]],[0.,0.,1.],2.);
@@ -116,6 +181,17 @@ fn the_square_on_a_planet_carrier_is_swept_closed() {
     let v = volume(&built);
     eprintln!("planet: the area read line by line {area:.6}, the build's {:.6}",v/2.);
     assert!((v/2./area-1.).abs() <= 1e-6,"the build's area {} against the definition's {area}",v/2.);
+    // its surface (#880 E4: cadrs's is 0.0705 larger, 2.5e-4, its volume the same to 1e-10): the
+    // region's area twice and its boundary's length through the bar's height, read ray by ray at
+    // 2¹⁴ and 2¹⁶ rays and taken to the limit (the length's error a quarter at each), within 1e-7
+    // of the one at 2²⁰ rays, 282.19271199
+    let ((a1,l1),(a2,l2)) = (ring_by_rays(&pose,0.35,1 << 14),ring_by_rays(&pose,0.35,1 << 16));
+    let (region,boundary) = (a2+(a2-a1)/3.,l2+(l2-l1)/3.);
+    assert!((region/area-1.).abs() <= 1e-6,"the region read ray by ray {region} against line by line {area}");
+    let surface = 2.*region+2.*boundary;
+    let s: f64 = built.faces.iter().map(|f| gcs_core::brep::props::area(&built,f)).sum();
+    eprintln!("planet: the surface read ray by ray {surface:.9}, the build's {s:.9}");
+    assert!((s/surface-1.).abs() <= 1e-7,"the build's surface {s} against the definition's {surface}");
 }
 
 /// **The rack's tooth space, its sweep built closed and cut by the Boolean** (brep-bench
