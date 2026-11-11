@@ -1375,11 +1375,16 @@ annulus whose hole is the wheel left standing, 47 faces) each to 1e-6 of the are
 gives in the plane, read line by line on the exact section — the polygon at 9000 poses and each
 edge's quadrilateral between two, so each corner's trace is filled to the square of the step — and
 **the rack's tooth space**, its swept solid cut from the blank by the ordinary Boolean, to 1e-6 of
-the volume next.BREP and cadrs agree on (1.8e-8 off); each written as a closed STEP B-rep. The
+the volume next.BREP and cadrs agree on, at a billionth (4e-11 off); each written as a closed STEP B-rep. The
 drawing's sweeps still reach these cases by the blank-scoped planar classes (`cut_from` and
 `reads_general` do not ask this, #699). **Left open**: a drafted tool (its stations lofted, as the
 subtraction class lofts them); a tool standing along the plane's normal under a constant twist,
-which the arrangement builds exactly.
+which the arrangement builds exactly; and a side whose contact stands at its corner at every
+instant, which `path.sv`'s frame makes of a box's long sides (its instant centre on the line through
+the corner square to them) — read with the rounding of the side's parameter its walk turns about,
+refused `Folded`, and through the spline's inflection the side is in contact all along for an
+instant (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`, once K2's
+`Curved`).
 
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:

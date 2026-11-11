@@ -128,11 +128,12 @@ fn the_square_on_a_planet_carrier_is_swept_closed() {
 /// blank. The swept solid is the trapezoid's planar sweep through the tooth's length — its flanks
 /// the envelopes of the rack's (involutes of the base circle), its root the trochoids of its tip
 /// corners, and its end poses — and the blank less it is held to the volume next.BREP and cadrs
-/// agree on to 8e-11, at a millionth.
+/// agree on to 8e-11, at a billionth (4e-11 off).
 #[test]
 fn the_rack_cut_tooth_space_is_cut_by_the_closed_sweep() {
     // the trapezoid in the plane y = −2, walked counter-clockwise seen from +y, extruded to y = 8
-    let (tip,root) = (PI/2.-2.*20f64.to_radians().tan(),PI/2.+4.*20f64.to_radians().tan());
+    // (the case's corners, as it writes them: `π/2 ∓ k tan 20°` to six places)
+    let (tip,root) = (0.842856,3.026666);
     let tooth = polygon_prism(&[[18.,-2.,tip],[24.,-2.,root],[24.,-2.,-root],[18.,-2.,-tip]],[0.,1.,0.],10.);
     let blank = prism(&disc([0.;3],[0.,1.,0.],22.),0.,6.).unwrap();
     // the blank turns about y while the rack slides along the pitch line x = 20, 2π·20 a turn the
@@ -147,7 +148,7 @@ fn the_rack_cut_tooth_space_is_cut_by_the_closed_sweep() {
     let cut = combined(&blank,&swept,Op::Cut,0.).unwrap();
     let v = volume(&cut);
     eprintln!("rack: the blank less the sweep {v:.9} ({:?})",clock.elapsed());
-    assert!((v/9042.502788955-1.).abs() <= 1e-6,"the tooth space's blank {v} against 9042.502788955");
+    assert!((v/9042.502788955-1.).abs() <= 1e-9,"the tooth space's blank {v} against 9042.502788955");
 }
 
 /// **The wheel's sweep by the plus in mesh with it, built closed** (brep-bench `plus-cut-wheel`):
@@ -183,3 +184,4 @@ fn the_plus_cut_wheel_is_swept_closed() {
     eprintln!("plus: the area read line by line {area:.6}, the build's {:.6}",v/10.);
     assert!((v/10./area-1.).abs() <= 1e-6,"the build's area {} against the definition's {area}",v/10.);
 }
+

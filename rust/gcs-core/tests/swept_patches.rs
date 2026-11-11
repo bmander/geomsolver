@@ -22,10 +22,10 @@ use crate::swept_closed::{agrees_over,bull_nose,monte_carlo,slide};
 type V = [f64;3];
 
 /// The example `name` of the solid sweeps series, elaborated and solved.
-fn example(name: &str) -> Elaborated { fixtures::read(&crate::solid_sweeps_examples::text(name)) }
+pub(crate) fn example(name: &str) -> Elaborated { fixtures::read(&crate::solid_sweeps_examples::text(name)) }
 
 /// The sweep `name` of `e` as the kernel takes it: its tool's B-rep, its trajectory and its roll.
-fn sweep(e: &Elaborated,name: &str) -> (Brep,Trajectory,[f64;2]) {
+pub(crate) fn sweep(e: &Elaborated,name: &str) -> (Brep,Trajectory,[f64;2]) {
     let sk = &e.sketch;
     let swept = fixtures::solid(e,name);
     let SolidDef::Swept {source,motion,..} = &sk.solids[swept].def else { panic!("`{name}` is a sweep") };
@@ -263,15 +263,22 @@ fn a_bull_nose_along_a_spline_frame_closes_into_the_volume_its_faces_advance_thr
     agrees_over(&built,&tool,&path,roll);
 }
 
-/// **What K2's reading refuses, by name**: a tool no convex solid of revolution (a box) under a
+/// **What K2's reading refuses, by name**: a tool no convex solid of revolution (a ring) under a
 /// frame along a spline is `Curved` at a point of the face it cannot read, before anything is
-/// built.
+/// built. A box under that frame was refused so too until #880 Q2: the frame turns about the
+/// spline's plane's normal, so it keeps that plane, and the box standing along it is asked its
+/// section's planar sweep (`swept::planar_solid`) — which refuses it, never building it wrong: the
+/// frame's instant centre stands on the line through the box's corner square to its long sides, so
+/// each side's contact is that corner at every instant (read with the rounding of the side's
+/// parameter, a walk turning about: `Folded`), and through the spline's inflection the side is in
+/// contact all along for an instant. Left open (#880).
 #[test]
 fn a_tool_no_convex_revolution_under_any_motion_is_refused_by_name() {
     let e = example("path.sv");
     let (_,path,roll) = sweep(&e,"groove");
     let tool = crate::brep::block([0.;3],[1.,2.,3.]);
-    assert!(matches!(closed(&tool,&path,roll,0.002,1e-6),Err(Unbuilt::Curved {..})));
+    let boxed = closed(&tool,&path,roll,0.002,1e-6);
+    assert!(matches!(boxed,Err(Unbuilt::Folded {..})),"{boxed:?}");
     let ring = gcs_core::brep::build::torus([0.;3],[0.,0.,1.],2.,0.5).unwrap();
     assert!(matches!(closed(&ring,&path,roll,0.002,1e-6),Err(Unbuilt::Curved {..})),"a ring is no convex solid");
 }
