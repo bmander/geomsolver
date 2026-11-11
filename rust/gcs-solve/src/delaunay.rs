@@ -2,9 +2,8 @@
 //! (docs/field-meshing.md): exact expansions, filtered orientation and power predicates, and
 //! the incremental regular (weighted Delaunay) triangulation that protecting balls need; and a
 //! region of the plane meshed for analysis (`plane`, #510 S2).
-pub use cad_kernel::util::expansion;
+pub use cad_kernel::util::{expansion,predicates};
 pub mod plane;
-pub mod predicates;
 pub mod regular;
 pub mod refine;
 pub mod tetra;

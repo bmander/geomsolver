@@ -41,6 +41,7 @@ mod brep;
 mod brep_census;
 mod brep_export;
 mod brep_flush;
+mod brep_hull;
 mod brep_offset;
 mod callout;
 mod cams;

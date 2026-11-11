@@ -561,18 +561,6 @@ pub(crate) fn block(lo: V,hi: V) -> gcs_core::brep::topo::Brep {
     let p = Profile {names:vec![],origin:[0.,0.,0.],normal:XY,loops:vec![poly(&[[lo[0],lo[1],0.],[hi[0],lo[1],0.],[hi[0],hi[1],0.],[lo[0],hi[1],0.]])]};
     prism(&p,lo[2],hi[2]).unwrap()
 }
-/// The tetrahedron on `corners`: the block from `lo` to `hi` round it kept on the side of each
-/// face's plane its fourth corner is.
-pub(crate) fn tetrahedron(corners: [V;4],lo: V,hi: V) -> gcs_core::brep::topo::Brep {
-    use gcs_core::space::{dot,sub,triangle_normal};
-    let mut t = block(lo,hi);
-    for k in 0..4 {
-        let [a,b,c] = [corners[(k+1)%4],corners[(k+2)%4],corners[(k+3)%4]];
-        let n = triangle_normal(a,b,c).unwrap();
-        t = gcs_core::brep::build::kept(&t,a,if dot(n,sub(corners[k],a)) < 0. { n.map(|x| -x) } else { n },0.).unwrap();
-    }
-    t
-}
 fn rod(c: V,r: f64,z: [f64;2]) -> gcs_core::brep::topo::Brep {
     prism(&Profile {names:vec![],origin:[0.,0.,0.],normal:XY,loops:vec![vec![arc([c[0],c[1],0.],r,XY,[1.,0.,0.],None)]]},z[0],z[1]).unwrap()
 }
