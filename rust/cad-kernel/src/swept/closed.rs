@@ -622,7 +622,7 @@ fn metered(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: 
 }
 
 /// Whether `screw` turns a whole turn or more over `roll`.
-fn whole_turn(screw: &crate::trajectory::Screw,roll: [f64;2]) -> bool {
+pub(super) fn whole_turn(screw: &crate::trajectory::Screw,roll: [f64;2]) -> bool {
     (screw.ratio*(roll[1]-roll[0])).abs() >= std::f64::consts::TAU*(1.-1e-12)
 }
 

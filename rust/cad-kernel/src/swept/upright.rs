@@ -20,38 +20,49 @@
 //! doubling back up the line), a piece no slide square to the line or turn about a line along it, a
 //! turn about a line the tool reaches, a path whose direction breaks where two pieces meet, a whole
 //! turn, or a path coming back within the tool's reach of itself — the band then laps over itself,
-//! the sewn boundary no solid's. That last is read from the axis's path sampled: two of its points
-//! farther apart along it than half a turn of its tightest bend must stand farther apart than the
-//! tool is wide, by the samples' spacing, the most a point between samples may come nearer; nearer
-//! along it than that the path cannot come back, its bends wider than the tool. **Judged before it
-//! is returned**, as every closed build is (`closed::judge`).
+//! the sewn boundary no solid's. That last is read as a ball's tube is (`canal::first_return`), from
+//! the axis's path sampled: two of its points half a turn of the tool's radius or more apart along
+//! it must stand farther apart than the tool is wide, by the samples' spacing. **Judged before it is
+//! returned**, as every closed build is (`closed::judge`).
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use crate::build::{prism,revolve,Profile,ProfileEdge};
-use crate::geom::{Frame,Surface};
-use crate::planar::Seg;
+use crate::build::{prism,revolve,Profile};
+use crate::geom::Surface;
+use crate::planar::{Region,Seg};
+use crate::recipe::region_profile;
 use crate::section::Sectioned;
 use crate::topo::Brep;
-use crate::trajectory::{Pose,Screw,Trajectory};
-use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
-use super::closed::Unbuilt;
+use crate::trajectory::{Screw,Trajectory};
+use crate::util::space::{cross,dot,norm,sub,unit};
+use super::closed::{whole_turn,Unbuilt};
 use super::member::{Solid,Swept};
 use std::f64::consts::{PI,TAU};
 
 type V = [f64;3];
-type P = [f64;2];
 
 /// The most points the axis's path is read at for whether it comes back on itself.
 const SAMPLES: usize = 4096;
 
-/// The tool's meridian: the steps of its outline in `(r, z)` off its line — `r` from the line,
-/// `z` along it from `origin` — from the line at its foot up to the line at its top, and its line.
-struct Meridian { origin: V,axis: V,chain: Vec<Seg>,widest: f64 }
+/// The tool's meridian: its region in `(r, z)` off its line — `r` from the line, `z` along it from
+/// `origin` — and the steps of its outline from the line at its foot up to the line at its top.
+struct Meridian { origin: V,axis: V,region: Region,chain: Vec<Seg>,widest: f64 }
 
-/// One piece of the path over its stretch of the roll: its twist, the tool's line where it takes it
-/// up and where it leaves it, the direction the line moves at each end, and the angle a turn turns
-/// through (`ratio` by the stretch).
-struct Leg { screw: Screw,from: (V,V),to: (V,V),ahead: [V;2],angle: f64 }
+/// One piece of the path: its twist, its stretch of the roll, and where the tool's line stands
+/// as it takes the piece up and as it leaves it.
+struct Leg { screw: Screw,over: [f64;2],from: V,to: V }
+
+impl Leg {
+    /// The length the tool's line runs over the leg.
+    fn length(&self) -> f64 {
+        if self.screw.is_slide() { norm(sub(self.to,self.from)) } else { self.screw.radius(self.from)*self.angle().abs() }
+    }
+    /// The angle a turn turns through.
+    fn angle(&self) -> f64 { self.screw.ratio*(self.over[1]-self.over[0]) }
+    /// The point the tool's line passes at `t` of the leg, from 0 to 1.
+    fn at(&self,t: f64) -> V { self.screw.carry(self.from,t*(self.over[1]-self.over[0])) }
+    /// The direction the tool's line moves where it stands at `p`.
+    fn ahead(&self,p: V) -> V { unit(self.screw.velocity(p)) }
+}
 
 /// `x` within `eps` of zero.
 fn nil(x: f64,eps: f64) -> bool { x.abs() <= eps }
@@ -62,13 +73,23 @@ fn passes(w: f64,lo: f64,hi: f64) -> bool {
     (w > lo+1e-12 && w < hi-1e-12) || w+TAU < hi-1e-12
 }
 
-/// The tool's meridian, where every face of it turns about one line and every slice of it square
-/// to that line is a disc about it (or a point at its ends); none otherwise.
+/// The path's twists over `roll`, each a slide or a turn short of a whole turn: read off its
+/// structure alone, before the tool is.
+fn twists(path: &Trajectory,[a,b]: [f64;2]) -> Option<Vec<(Screw,[f64;2])>> {
+    let twist = |p: &Trajectory| match p { Trajectory::Twist(s) | Trajectory::Placed {twist:s,..} => Some(*s),_ => None };
+    let out: Vec<(Screw,[f64;2])> = match path {
+        Trajectory::Pieces(pieces) => pieces.pieces().iter().filter(|p| p.over[1].min(b) > p.over[0].max(a))
+            .map(|p| twist(&p.path).map(|s| (s,[p.over[0].max(a),p.over[1].min(b)]))).collect::<Option<_>>()?,
+        _ => vec![(twist(path)?,[a,b])],
+    };
+    (!out.is_empty() && out.iter().all(|(s,over)| s.is_slide() || (s.is_turn() && !whole_turn(s,*over)))).then_some(out)
+}
+
+/// The tool's meridian, where it is one revolution's (`Sectioned::meridian`) and every slice of
+/// it square to its line is a disc about it (or a point at its ends); none otherwise.
 fn meridian(tool: &Brep,eps: f64) -> Option<Meridian> {
     let sectioned = Sectioned::of_boundary(tool).ok()?;
-    if !sectioned.about_its_line() { return None }
-    let (origin,axis) = (sectioned.origin,unit(sectioned.axis));
-    let region = sectioned.section(Frame::about(origin,axis).x).ok()?;
+    let region = sectioned.meridian()?.clone();
     let [ref l] = region.loops[..] else { return None };
     if l.iter().any(|s| s.chart.is_some()) { return None }
     let segs: Vec<Seg> = l.iter().map(|s| s.seg).collect();
@@ -100,24 +121,14 @@ fn meridian(tool: &Brep,eps: f64) -> Option<Meridian> {
             Seg::Conic {..} => return None,
         }
     }
-    Some(Meridian {origin,axis,chain,widest})
+    Some(Meridian {origin:sectioned.origin,axis:unit(sectioned.axis),region,chain,widest})
 }
 
-/// A point `(r, z)` of the meridian in space where the tool's line is `(o, a)`, `r` along `x`.
-fn lift(o: V,a: V,x: V,p: P) -> V { add(o,add(scale(x,p[0]),scale(a,p[1]))) }
-
-/// A meridian step carried into space where the tool's line is `(o, a)`, `r` along `x` — or, where
-/// `mirror`, along `−x`. An arc's frame is `(x, a)`, about `x × a`.
-fn edge(s: &Seg,o: V,a: V,x: V,mirror: bool) -> ProfileEdge {
-    let at = |p: P| lift(o,a,x,[if mirror { -p[0] } else { p[0] },p[1]]);
+/// A meridian step mirrored across the line: `(r, z)` at `(−r, z)`, an arc's angle `w` at `π − w`.
+fn mirrored(s: &Seg) -> Seg {
     match *s {
-        Seg::Line {a: p,b: q} => ProfileEdge::Line {a:at(p),b:at(q)},
-        Seg::Arc {c,r,a0,sweep} => {
-            // mirrored, the angle `w` is `π − w`
-            let (w0,w1) = (a0.min(a0+sweep),a0.max(a0+sweep));
-            let span = if mirror { [PI-w1,PI-w0] } else { [w0,w1] };
-            ProfileEdge::Arc {frame:Frame {o:at(c),x,y:a,z:cross(x,a)},r,span:Some(span)}
-        }
+        Seg::Line {a,b} => Seg::Line {a:[-a[0],a[1]],b:[-b[0],b[1]]},
+        Seg::Arc {c,r,a0,sweep} => Seg::Arc {c:[-c[0],c[1]],r,a0:PI-a0,sweep:-sweep},
         Seg::Conic {..} => unreachable!("a meridian has no conic (`meridian`)"),
     }
 }
@@ -128,101 +139,20 @@ fn section(m: &Meridian,o: V,a: V,x: V,eps: f64) -> Profile {
     let k = m.chain.len();
     let level = |s: &Seg| match *s { Seg::Line {a: p,b: q} => (p[1]-q[1]).abs() <= eps,_ => false };
     let (foot,top) = (level(&m.chain[0]),k > 1 && level(&m.chain[k-1]));
-    let mut edges = Vec::new();
-    if foot {
-        let q = m.chain[0].point(1.);
-        edges.push(ProfileEdge::Line {a:lift(o,a,x,[-q[0],q[1]]),b:lift(o,a,x,q)});
-    }
-    for s in &m.chain[usize::from(foot)..k-usize::from(top)] { edges.push(edge(s,o,a,x,false)); edges.push(edge(s,o,a,x,true)); }
-    if top {
-        let p = m.chain[k-1].point(0.);
-        edges.push(ProfileEdge::Line {a:lift(o,a,x,p),b:lift(o,a,x,[-p[0],p[1]])});
-    }
-    Profile {origin:o,normal:cross(x,a),loops:vec![edges],names:Vec::new()}
+    let across = |p: [f64;2]| Seg::Line {a:[-p[0],p[1]],b:p};
+    let inner = &m.chain[usize::from(foot)..k-usize::from(top)];
+    let steps: Vec<Seg> = foot.then(|| across(m.chain[0].point(1.))).into_iter()
+        .chain(inner.iter().flat_map(|s| [*s,mirrored(s)]))
+        .chain(top.then(|| across(m.chain[k-1].point(0.)))).collect();
+    region_profile(&Region::plain(vec![steps]),o,x,a,&|_| String::new())
 }
 
 /// The tool's half beyond its section plane square to `ahead` where its line is `(o, a)`: its
 /// meridian on the side `a × ahead` turned half a turn about the line, back against `ahead` where
 /// `back`, else on along it.
 fn half(m: &Meridian,o: V,a: V,ahead: V,back: bool) -> Result<Brep,String> {
-    let x = unit(cross(a,ahead));
-    let mut edges: Vec<ProfileEdge> = m.chain.iter().map(|s| edge(s,o,a,x,false)).collect();
-    let (foot,top) = (m.chain[0].point(0.),m.chain[m.chain.len()-1].point(1.));
-    edges.push(ProfileEdge::Line {a:lift(o,a,x,[0.,top[1]]),b:lift(o,a,x,[0.,foot[1]])});
-    let profile = Profile {origin:o,normal:cross(x,a),loops:vec![edges],names:Vec::new()};
     // a quarter turn about `a` takes `x = a × ahead` to `−ahead`
-    revolve(&profile,o,a,if back { PI } else { -PI })
-}
-
-impl Leg {
-    /// Under a turn: the foot of the tool's line on the turn's (at the tool's origin's height), the
-    /// line's offset from it where the leg begins, and the angle it turns through.
-    fn turned(&self) -> (V,V,f64) {
-        let a = unit(self.screw.axis);
-        let r = sub(self.from.0,self.screw.origin);
-        let p = sub(r,scale(a,dot(r,a)));
-        (sub(self.from.0,p),p,self.angle)
-    }
-    /// The length the tool's line runs over the leg.
-    fn length(&self) -> f64 {
-        if self.screw.is_slide() { norm(sub(self.to.0,self.from.0)) } else { let (_,r,w) = self.turned(); norm(r)*w.abs() }
-    }
-    /// The point the tool's line passes at `t` of the leg, from 0 to 1.
-    fn at(&self,t: f64) -> V {
-        if self.screw.is_slide() { return add(self.from.0,scale(sub(self.to.0,self.from.0),t)) }
-        let (c,r,w) = self.turned();
-        let (s,cs) = (w*t).dsin_cos();
-        add(c,add(scale(r,cs),scale(cross(unit(self.screw.axis),r),s)))
-    }
-}
-
-/// The path's pieces over `roll`, each a slide square to the tool's line or a turn about a line
-/// along it short of a whole turn, read where the tool stands; none for any other motion.
-fn legs(m: &Meridian,path: &Trajectory,[a,b]: [f64;2],eps: f64) -> Option<Vec<Leg>> {
-    let twist = |p: &Trajectory| match p { Trajectory::Twist(s) | Trajectory::Placed {twist:s,..} => Some(*s),_ => None };
-    let stretches: Vec<(Screw,[f64;2])> = match path {
-        Trajectory::Pieces(pieces) => pieces.pieces().iter().filter(|p| p.over[1].min(b) > p.over[0].max(a))
-            .map(|p| twist(&p.path).map(|s| (s,[p.over[0].max(a),p.over[1].min(b)]))).collect::<Option<_>>()?,
-        _ => vec![(twist(path)?,[a,b])],
-    };
-    if stretches.is_empty() { return None }
-    let line = |q: &Pose| (q.point(m.origin),unit(q.vector(m.axis)));
-    stretches.into_iter().map(|(screw,[lo,hi])| {
-        let (from,to) = (line(&path.pose(lo).ok()?),line(&path.pose(hi).ok()?));
-        let a = from.1;
-        if norm(cross(a,to.1)) > 1e-9 { return None }
-        let ahead = if screw.is_slide() {
-            let d = sub(to.0,from.0);
-            if !(norm(d) > eps) { return None }
-            let d = unit(d);
-            if norm(cross(d,unit(screw.axis))) > 1e-9 || dot(d,a).abs() > 1e-9 { return None }
-            [d,d]
-        } else if screw.is_turn() {
-            let l = unit(screw.axis);
-            if norm(cross(l,a)) > 1e-9 || (screw.ratio*(hi-lo)).abs() >= TAU*(1.-1e-12) { return None }
-            let round = |p: V| { let r = sub(p,screw.origin); unit(scale(cross(l,sub(r,scale(l,dot(r,l)))),screw.ratio.signum())) };
-            [round(from.0),round(to.0)]
-        } else { return None };
-        Some(Leg {screw,from,to,ahead,angle:screw.ratio*(hi-lo)})
-    }).collect()
-}
-
-/// Whether the axis's path over `legs` comes back within `width` of itself (the module's reading),
-/// `bend` the radius of its tightest turn.
-fn laps(legs: &[Leg],width: f64,bend: f64) -> bool {
-    if !bend.is_finite() { return false }
-    let length: f64 = legs.iter().map(Leg::length).sum();
-    let h = (0.125*width).max(length/SAMPLES as f64);
-    let mut pts: Vec<(V,f64)> = Vec::new();
-    let mut along = 0.;
-    for l in legs {
-        let len = l.length();
-        let n = ((len/h).ceil() as usize).max(1);
-        pts.extend((0..=n).map(|k| (l.at(k as f64/n as f64),along+len*k as f64/n as f64)));
-        along += len;
-    }
-    let (apart,near) = (PI*bend,width+h);
-    (0..pts.len()).any(|i| pts[i+1..].iter().any(|&(q,s)| s-pts[i].1 >= apart && norm(sub(q,pts[i].0)) < near))
+    revolve(&region_profile(&m.region,o,unit(cross(a,ahead)),a,&|_| String::new()),o,a,if back { PI } else { -PI })
 }
 
 /// **The closed solid `tool` sweeps under `path` over `roll`, or `blank` cut by it, where the tool is
@@ -232,63 +162,73 @@ fn laps(legs: &[Leg],width: f64,bend: f64) -> bool {
 pub fn swept(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Option<Brep>,Unbuilt> {
     let roll = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let eps = 1e-9*(1.+tool.size());
+    // the motion read first, then the tool
+    let Some(twists) = twists(path,roll) else { return Ok(None) };
     let Some(m) = meridian(tool,eps) else { return Ok(None) };
-    let Some(legs) = legs(&m,path,roll,eps) else { return Ok(None) };
-    // each turn about a line the tool stands clear of, and the path's direction kept where two
-    // pieces meet
-    let mut bend = f64::INFINITY;
-    for l in legs.iter().filter(|l| l.screw.is_turn()) {
-        let d = norm(l.turned().1);
-        if !(d > m.widest+eps) { return Ok(None) }
-        bend = bend.min(d);
+    // the tool's line where each piece takes it up and leaves it, kept upright: each slide square
+    // to it, each turn about a line along it that the tool stands clear of
+    let start = path.pose(roll[0])?;
+    let a = unit(start.vector(m.axis));
+    let mut legs: Vec<Leg> = Vec::with_capacity(twists.len());
+    for (screw,over) in twists {
+        let (from,to) = (path.pose(over[0])?.point(m.origin),path.pose(over[1])?.point(m.origin));
+        let l = unit(screw.axis);
+        let upright = if screw.is_slide() { dot(l,a).abs() <= 1e-9 && norm(sub(to,from)) > eps }
+            else { norm(cross(l,a)) <= 1e-9 && screw.radius(from) > m.widest+eps };
+        if !upright { return Ok(None) }
+        legs.push(Leg {screw,over,from,to});
     }
-    if legs.windows(2).any(|w| dot(w[0].ahead[1],w[1].ahead[0]) < 1.-1e-9) { return Ok(None) }
-    if laps(&legs,2.*m.widest,bend) { return Ok(None) }
-    // the pieces, each with the section planes its caps lie in
-    let mut pieces: Vec<(Brep,Vec<(V,V)>)> = Vec::new();
-    let (first,last) = (&legs[0],&legs[legs.len()-1]);
-    pieces.push((half(&m,first.from.0,first.from.1,first.ahead[0],true)?,vec![(first.from.0,first.ahead[0])]));
+    // the direction kept where two pieces meet, and the path never back within the tool's width
+    if legs.windows(2).any(|w| dot(w[0].ahead(w[0].to),w[1].ahead(w[1].from)) < 1.-1e-9) { return Ok(None) }
+    let length: f64 = legs.iter().map(Leg::length).sum();
+    let h = (0.125*m.widest).max(length/SAMPLES as f64);
+    let (mut points,mut along) = (Vec::new(),Vec::new());
     for l in &legs {
-        let a = l.from.1;
-        let solid = if l.screw.is_slide() {
-            prism(&section(&m,l.from.0,a,unit(cross(a,l.ahead[0])),eps),0.,l.length())?
-        } else {
-            let (_,r,w) = l.turned();
-            revolve(&section(&m,l.from.0,a,unit(r),eps),l.screw.origin,unit(l.screw.axis),w)?
-        };
-        pieces.push((solid,vec![(l.from.0,l.ahead[0]),(l.to.0,l.ahead[1])]));
+        let (len,n) = (l.length(),((l.length()/h).ceil() as usize).max(1));
+        let s0 = along.last().copied().unwrap_or(0.);
+        for k in usize::from(!points.is_empty())..=n { points.push(l.at(k as f64/n as f64)); along.push(s0+len*k as f64/n as f64); }
     }
-    pieces.push((half(&m,last.to.0,last.to.1,last.ahead[1],false)?,vec![(last.to.0,last.ahead[1])]));
+    if super::canal::first_return(&points,&along,m.widest).is_some() { return Ok(None) }
+    // the pieces, each with the section planes its caps lie in
+    let (first,last) = (&legs[0],&legs[legs.len()-1]);
+    let mut pieces: Vec<(Brep,Vec<(V,V)>)> = vec![(half(&m,first.from,a,first.ahead(first.from),true)?,vec![(first.from,first.ahead(first.from))])];
+    for l in &legs {
+        let (enter,leave) = (l.ahead(l.from),l.ahead(l.to));
+        // (the section is its own mirror image across the line, so either side of it serves)
+        let x = unit(cross(a,enter));
+        let solid = if l.screw.is_slide() { prism(&section(&m,l.from,a,x,eps),0.,l.length())? }
+            else { revolve(&section(&m,l.from,a,x,eps),l.screw.origin,unit(l.screw.axis),l.angle())? };
+        pieces.push((solid,vec![(l.from,enter),(l.to,leave)]));
+    }
+    pieces.push((half(&m,last.to,a,last.ahead(last.to),false)?,vec![(last.to,last.ahead(last.to))]));
     // every cap of every piece dropped — each lies on a section plane another piece's cap lies on
     // too, and bounds nothing — and the rest sewn into one boundary
     let reach = tool.size();
-    let open: Vec<Brep> = pieces.into_iter().map(|(b,planes)| {
+    let open: Vec<Brep> = pieces.into_iter().map(|(mut b,planes)| {
+        let faces = std::mem::take(&mut b.faces);
         let cap = |f: &crate::topo::Face| match &f.surface {
             Surface::Plane(fr) => planes.iter().any(|&(o,n)| norm(cross(fr.z,n)) <= 1e-9 && dot(sub(fr.o,o),n).abs() <= 1e2*eps
                 && f.loops.iter().flatten().all(|c| norm(sub(b.vertices[b.ends(c)[0] as usize].p,o)) <= reach)),
             _ => false,
         };
-        let faces = b.faces.iter().filter(|f| !cap(f)).cloned().collect();
+        let faces = faces.into_iter().filter(|f| !cap(f)).collect();
         Brep {faces,..b}
     }).collect();
     let groove = crate::sew::sewn(&open,tol)?;
     crate::util::meter::go_on()?;
+    // (each checked as it is made: the sewn boundary by `sewn`, the cut by the Boolean)
     let out = match blank {
         Some(blank) => crate::boolean::combined(blank,&groove,crate::boolean::Op::Cut,tol)?,
         None => groove,
     };
-    out.check(tol)?;
     // **judged by its definition before it is returned** (#777 V2), over the blank or a box
     // holding the sweep
     let solid = Solid::new(tool,bar,1.)?;
-    let swept = Swept {tool:&solid,path,roll};
-    match blank {
-        Some(blank) => super::closed::judge(&out,&swept,blank,Some(blank),&[],tol)?,
-        None => {
-            let (lo,hi) = out.bounds();
-            let (domain,..) = super::closed::cube_holding(&[lo,hi],tol)?;
-            super::closed::judge(&out,&swept,&domain,None,&[],tol)?;
-        }
-    }
+    let held;
+    let within = match blank {
+        Some(blank) => blank,
+        None => { let (lo,hi) = out.bounds(); held = super::closed::cube_holding(&[lo,hi],tol)?.0; &held }
+    };
+    super::closed::judge(&out,&Swept {tool:&solid,path,roll},within,blank,&[],tol)?;
     Ok(Some(out))
 }

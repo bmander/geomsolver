@@ -13,70 +13,68 @@
 //! a sweep on to the other roads — a broken direction, a ring for a tool, a path that comes back
 //! on itself, a turn about a line the tool reaches.
 use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
-use crate::brep::block;
-use gcs_core::brep::geom::{tolerance,Frame};
-use gcs_core::brep::props::{area,volume};
+use gcs_core::brep::geom::{tolerance,Frame,Rigid};
+use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::closed::{closed,cut_from};
 use gcs_core::brep::swept::upright;
 use gcs_core::brep::topo::Brep;
-use gcs_core::brep::trajectory::{Piece,Pose,Screw,Trajectory};
+use gcs_core::brep::trajectory::{Piece,Screw,Trajectory};
+use crate::brep::{block,total_area};
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 
 type V = [f64;3];
 
-/// The area of every face of `b`.
-fn surface(b: &Brep) -> f64 { b.faces.iter().map(|f| area(b,f)).sum() }
-
 /// How finely the tool is meshed for the membership the build is judged by.
 const BAR: f64 = 0.002;
 
-/// A tool turned about `z` through the origin from its meridian in the half-plane `y = 0`, `x ≥ 0`,
-/// given as `(r, z)` edges: lines, and arcs as `(centre, radius, from, to)` angles.
-enum M { Line([f64;2],[f64;2]),Arc([f64;2],f64,f64,f64) }
-
-fn turned(meridian: &[M]) -> Brep {
-    let at = |p: [f64;2]| [p[0],0.,p[1]];
-    let edges = meridian.iter().map(|e| match *e {
-        M::Line(a,b) => ProfileEdge::Line {a:at(a),b:at(b)},
-        M::Arc(c,r,a0,a1) => ProfileEdge::Arc {frame:Frame::new(at(c),[0.,-1.,0.],[1.,0.,0.]),r,span:Some([a0,a1])},
-    }).collect();
-    let foot = match meridian[0] { M::Line(a,_) => at(a),M::Arc(c,r,a0,_) => at([c[0]+r*a0.cos(),c[1]+r*a0.sin()]) };
-    revolve(&Profile {origin:foot,normal:[0.,1.,0.],loops:vec![edges],names:Vec::new()},foot,[0.,0.,1.],TAU).unwrap()
-}
-
-/// Brep-bench's bull-nose mill: radius 2 from its flat bottom at −1.5 to 5, its bottom corner
-/// rounded 0.5.
+/// Brep-bench's bull-nose mill (`swept_closed::bull_nose`): radius 2 from its flat bottom at −1.5
+/// up to 5, its bottom corner rounded 0.5.
 fn bull_nose() -> Brep {
-    turned(&[M::Line([0.,-1.5],[1.5,-1.5]),M::Arc([1.5,-1.],0.5,-FRAC_PI_2,0.),M::Line([2.,-1.],[2.,5.]),
-        M::Line([2.,5.],[0.,5.]),M::Line([0.,5.],[0.,-1.5])])
+    crate::swept_closed::bull_nose(0.,2.,0.5,6.5).moved(&Rigid {t:[0.,0.,-1.5],..Rigid::identity()})
 }
+
+/// A tool turned about `z` from its meridian's edges in the half-plane `y = 0`, `x ≥ 0`.
+fn turned(edges: Vec<ProfileEdge>) -> Brep {
+    revolve(&Profile {origin:[0.;3],normal:[0.,1.,0.],loops:vec![edges],names:Vec::new()},[0.;3],[0.,0.,1.],TAU).unwrap()
+}
+
+/// `(r, z)` in the half-plane `y = 0`.
+fn at(r: f64,z: f64) -> V { [r,0.,z] }
 
 /// A ball-end mill: a half ball of radius 1 about the origin under a cylinder up to 3.
 fn ball_end() -> Brep {
-    turned(&[M::Arc([0.,0.],1.,-FRAC_PI_2,0.),M::Line([1.,0.],[1.,3.]),M::Line([1.,3.],[0.,3.]),M::Line([0.,3.],[0.,-1.])])
+    turned(vec![ProfileEdge::Arc {frame:Frame::new([0.;3],[0.,-1.,0.],[1.,0.,0.]),r:1.,span:Some([-FRAC_PI_2,0.])},
+        ProfileEdge::Line {a:at(1.,0.),b:at(1.,3.)},ProfileEdge::Line {a:at(1.,3.),b:at(0.,3.)},ProfileEdge::Line {a:at(0.,3.),b:at(0.,-1.)}])
 }
 
-/// The constant twist `twist` taken up at `start` where the piece before left the tool, `left`.
-fn taken_up(twist: Screw,left: Pose,start: f64) -> Trajectory {
-    Trajectory::Placed {twist,at:left.then(twist.pose(-start))}
-}
+/// A step of a path in the plane `z = 0`, taken at unit speed from where the last left the tool:
+/// on along the heading, a turn of a radius through an angle (to the left where it is positive),
+/// or a new heading where it stands — a corner.
+enum Go { Slide(f64),Turn(f64,f64),Head(V) }
 
-/// A slide along `d` (unit) at unit speed.
-fn along(d: V) -> Screw { Screw {origin:[0.;3],axis:d,ratio:0.,advance:TAU} }
-
-/// The bench's path, at unit speed: from the origin along `x` for `first`, a quarter turn of
-/// radius `radius` toward `+y` (about the upright line through `(first, radius)`), and on along `y`
-/// for `last`; and its roll.
-fn line_arc_line(first: f64,radius: f64,last: f64) -> (Trajectory,[f64;2]) {
-    let turn = Screw {origin:[first,radius,0.],axis:[0.,0.,1.],ratio:1./radius,advance:0.};
-    let bends = [first,first+FRAC_PI_2*radius];
-    let end = bends[1]+last;
-    let second = taken_up(turn,along([1.,0.,0.]).pose(bends[0]),bends[0]);
-    let left = second.pose(bends[1]).unwrap();
-    let pieces = vec![Piece {over:[0.,bends[0]],path:Trajectory::Twist(along([1.,0.,0.]))},
-                      Piece {over:bends,path:second},
-                      Piece {over:[bends[1],end],path:taken_up(along([0.,1.,0.]),left,bends[1])}];
-    (Trajectory::pieces(pieces,1e-9,100.).unwrap(),[0.,end])
+/// The path of `steps` from the origin heading along `x`, and its roll.
+fn path(steps: &[Go]) -> (Trajectory,[f64;2]) {
+    let (mut pieces,mut t,mut at,mut heading): (Vec<Piece>,f64,V,V) = (Vec::new(),0.,[0.;3],[1.,0.,0.]);
+    for step in steps {
+        let (twist,length) = match *step {
+            Go::Head(h) => { heading = h; continue }
+            Go::Slide(l) => (Screw {origin:[0.;3],axis:heading,ratio:0.,advance:TAU},l),
+            Go::Turn(r,w) => {
+                let c = [at[0]-r*w.signum()*heading[1],at[1]+r*w.signum()*heading[0],0.];
+                (Screw {origin:c,axis:[0.,0.,1.],ratio:w.signum()/r,advance:0.},r*w.abs())
+            }
+        };
+        // taken up where the last piece left the tool, standing there at `t`
+        let path = match pieces.last() {
+            None => Trajectory::Twist(twist),
+            Some(p) => Trajectory::Placed {twist,at:p.path.pose(t).unwrap().then(twist.pose(-t))},
+        };
+        let end = path.pose(t+length).unwrap();
+        (at,heading) = (end.point([0.;3]),end.vector([1.,0.,0.]));
+        pieces.push(Piece {over:[t,t+length],path});
+        t += length;
+    }
+    (Trajectory::pieces(pieces,1e-9,100.).unwrap(),[0.,t])
 }
 
 fn near(got: f64,want: f64,rel: f64,what: &str) {
@@ -93,7 +91,7 @@ fn near(got: f64,want: f64,rel: f64,what: &str) {
 #[test]
 fn the_bull_nose_run_along_a_line_an_arc_and_a_line_cuts_its_groove() {
     let (stock,tool) = (block([-10.,-10.,-10.],[40.,40.,0.]),bull_nose());
-    let (path,roll) = line_arc_line(20.,10.,20.);
+    let (path,roll) = path(&[Go::Slide(20.),Go::Turn(10.,FRAC_PI_2),Go::Slide(20.)]);
     let tol = tolerance(stock.size().max(tool.size()));
     let l = 40.+5.*PI;
     let a = 4.+2.*(0.75+PI/16.);
@@ -102,7 +100,7 @@ fn the_bull_nose_run_along_a_line_an_arc_and_a_line_cuts_its_groove() {
     let built = upright::swept(&tool,&path,roll,BAR,tol,Some(&stock)).unwrap().expect("this road takes it");
     built.check(tol).unwrap();
     near(volume(&built),25000.-(a*l+v0),1e-9,"the volume");
-    near(surface(&built),s,1e-9,"the area");
+    near(total_area(&built),s,1e-9,"the area");
     // and the kernel's closed sweep takes this road
     let cut = cut_from(&stock,&tool,&path,roll,BAR,tol).unwrap();
     near(volume(&cut),25000.-(a*l+v0),1e-9,"the cut's volume");
@@ -115,7 +113,7 @@ fn the_bull_nose_run_along_a_line_an_arc_and_a_line_cuts_its_groove() {
 #[test]
 fn the_bull_nose_swept_closed_is_its_section_along_the_path_and_itself() {
     let tool = bull_nose();
-    let (path,roll) = line_arc_line(20.,10.,20.);
+    let (path,roll) = path(&[Go::Slide(20.),Go::Turn(10.,FRAC_PI_2),Go::Slide(20.)]);
     let tol = tolerance(tool.size()*10.);
     let l = 40.+5.*PI;
     let a = 24.+2.*(0.75+PI/16.);
@@ -124,7 +122,7 @@ fn the_bull_nose_swept_closed_is_its_section_along_the_path_and_itself() {
     let built = closed(&tool,&path,roll,BAR,tol).unwrap();
     built.check(tol).unwrap();
     near(volume(&built),a*l+v,1e-9,"the volume");
-    near(surface(&built),s,1e-9,"the area");
+    near(total_area(&built),s,1e-9,"the area");
 }
 
 /// **A ball-end mill along a slide and a half turn**: its section's two arcs meet at its pole, one
@@ -132,52 +130,28 @@ fn the_bull_nose_swept_closed_is_its_section_along_the_path_and_itself() {
 /// line again: `(π/2 + 6) L + V`, `L = 10 + 3π` and `V = 2π/3 + 3π`.
 #[test]
 fn a_ball_end_mill_along_a_slide_and_a_half_turn_is_its_section_along_the_path() {
-    let tool = ball_end();
-    let turn = Screw {origin:[10.,3.,0.],axis:[0.,0.,1.],ratio:1./3.,advance:0.};
-    let bends = [10.,10.+3.*PI];
-    let pieces = vec![Piece {over:[0.,10.],path:Trajectory::Twist(along([1.,0.,0.]))},
-                      Piece {over:bends,path:taken_up(turn,along([1.,0.,0.]).pose(10.),10.)}];
-    let path = Trajectory::pieces(pieces,1e-9,100.).unwrap();
+    let (path,roll) = path(&[Go::Slide(10.),Go::Turn(3.,PI)]);
     let tol = tolerance(40.);
-    let built = upright::swept(&tool,&path,[0.,bends[1]],BAR,tol,None).unwrap().expect("this road takes it");
+    let built = upright::swept(&ball_end(),&path,roll,BAR,tol,None).unwrap().expect("this road takes it");
     built.check(tol).unwrap();
-    let l = 10.+3.*PI;
-    near(volume(&built),(PI/2.+6.)*l+2.*PI/3.+3.*PI,1e-9,"the volume");
+    near(volume(&built),(PI/2.+6.)*(10.+3.*PI)+2.*PI/3.+3.*PI,1e-9,"the volume");
 }
 
 /// **What this road hands on**, read before anything is built: two slides meeting at a corner (the
-/// path's direction broken there), a ring for a tool (a slice no disc), a path coming back within the
-/// tool's width of itself (two quarter turns of radius 3 and a slide back beside the first, 1 from
-/// it), and a turn about a line the tool reaches (radius 1.5 for a mill of radius 2).
+/// path's direction broken there), a ring for a tool (a slice no disc), a path coming back onto
+/// itself (round a stadium to where it began), and a turn about a line the tool reaches (radius 1.5
+/// for a mill of radius 2) — while a U whose return runs 6 from its start, wider than the mill's 4,
+/// is taken.
 #[test]
 fn a_broken_path_a_ring_a_path_lapping_itself_and_a_turn_the_tool_reaches_are_handed_on() {
     let mill = bull_nose();
     let tol = tolerance(100.);
-    let corner = Trajectory::pieces(vec![
-        Piece {over:[0.,10.],path:Trajectory::Twist(along([1.,0.,0.]))},
-        Piece {over:[10.,20.],path:taken_up(along([0.,1.,0.]),along([1.,0.,0.]).pose(10.),10.)}],1e-9,100.).unwrap();
-    assert!(upright::swept(&mill,&corner,[0.,20.],BAR,tol,None).unwrap().is_none(),"a corner");
-    let ring = turned(&[M::Line([1.,0.],[2.,0.]),M::Line([2.,0.],[2.,1.]),M::Line([2.,1.],[1.,1.]),M::Line([1.,1.],[1.,0.])]);
-    let (path,roll) = line_arc_line(20.,10.,20.);
-    assert!(upright::swept(&ring,&path,roll,BAR,tol,None).unwrap().is_none(),"a ring");
-    // along x for 10, a half turn of radius 3 about (10, 3), back along −x past the start, 6 from
-    // the first run: wider than the mill's 4, so taken; after a half turn of radius 2.2 the slide
-    // back runs 4.4 from the first, nearer than the mill is wide and its samples' spacing, and is
-    // handed on — as is a half turn of radius 1.5, about a line the mill reaches
-    let u = |radius: f64| {
-        let turn = Screw {origin:[10.,radius,0.],axis:[0.,0.,1.],ratio:1./radius,advance:0.};
-        let bends = [10.,10.+PI*radius];
-        let second = taken_up(turn,along([1.,0.,0.]).pose(10.),10.);
-        let left = second.pose(bends[1]).unwrap();
-        (Trajectory::pieces(vec![Piece {over:[0.,10.],path:Trajectory::Twist(along([1.,0.,0.]))},
-                                 Piece {over:bends,path:second},
-                                 Piece {over:[bends[1],bends[1]+20.],path:taken_up(along([-1.,0.,0.]),left,bends[1])}],1e-9,100.).unwrap(),
-         [0.,bends[1]+20.])
-    };
-    let (wide,roll) = u(3.);
-    assert!(upright::swept(&mill,&wide,roll,BAR,tol,None).unwrap().is_some(),"a U wide enough");
-    let (tight,roll) = u(2.2);
-    assert!(upright::swept(&mill,&tight,roll,BAR,tol,None).unwrap().is_none(),"a U too tight");
-    let (reached,roll) = u(1.5);
-    assert!(upright::swept(&mill,&reached,roll,BAR,tol,None).unwrap().is_none(),"a turn the mill reaches");
+    let handed_on = |tool: &Brep,steps: &[Go]| { let (p,roll) = path(steps); upright::swept(tool,&p,roll,BAR,tol,None).unwrap().is_none() };
+    assert!(handed_on(&mill,&[Go::Slide(10.),Go::Head([0.,1.,0.]),Go::Slide(10.)]),"a corner");
+    let ring = turned(vec![ProfileEdge::Line {a:at(1.,0.),b:at(2.,0.)},ProfileEdge::Line {a:at(2.,0.),b:at(2.,1.)},
+        ProfileEdge::Line {a:at(2.,1.),b:at(1.,1.)},ProfileEdge::Line {a:at(1.,1.),b:at(1.,0.)}]);
+    assert!(handed_on(&ring,&[Go::Slide(20.),Go::Turn(10.,FRAC_PI_2),Go::Slide(20.)]),"a ring");
+    assert!(!handed_on(&mill,&[Go::Slide(10.),Go::Turn(3.,PI),Go::Slide(20.)]),"a U wide enough");
+    assert!(handed_on(&mill,&[Go::Slide(10.),Go::Turn(3.,PI),Go::Slide(10.),Go::Turn(3.,PI)]),"round a stadium");
+    assert!(handed_on(&mill,&[Go::Slide(10.),Go::Turn(1.5,PI),Go::Slide(20.)]),"a turn the mill reaches");
 }

@@ -331,9 +331,12 @@ impl Sectioned {
             root:0,tol,faces,cut:None})
     }
 
-    /// Whether every face turns whole about the one line, `origin` along `axis`: every half-plane's
-    /// section the same.
-    pub fn about_its_line(&self) -> bool { self.cut.is_none() }
+    /// The meridian region of one revolution about `origin` along `axis` alone, in its `(r, z)`:
+    /// every half-plane's section, where there is no other revolution and no cut. None otherwise.
+    pub fn meridian(&self) -> Option<&Region> {
+        let ([leaf],[(_,Term::Leaf(0))],None) = (&self.leaves[..],&self.nodes[..],&self.cut) else { return None };
+        (leaf.o == self.origin && leaf.a == self.axis).then_some(&leaf.region)
+    }
 
     /// The section by the half-plane of the line towards `side` (unit, square to the line), in its
     /// `(s, z)`: along `side` from the line, and along the line from `origin`.

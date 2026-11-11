@@ -20,7 +20,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   into-ring-sector and swept/drill-swung-partway-into-ring-sector, refused by 0.8.0 after about
   5 s, build in 0.1 s and 0.02 s to theirs. Every other sweep case on the bench builds as before. A path with a corner, a turn about
   a line the tool reaches, a whole turn and a path coming back within the tool's width of itself
-  are handed on to the arrangement as before (`section::Sectioned::about_its_line` is new).
+  are handed on to the arrangement as before. `section::Sectioned::meridian` is new: the region of a
+  sectioned solid that is one revolution about its line.
 
 ## [0.8.0] - 2026-11-11
 
