@@ -1,7 +1,7 @@
 //! What the kernel is computed with, and the solver too (it re-exports each by name): the
 //! elementary functions the same bits on every target, vectors and boxes, roots, dense linear
-//! algebra, quadrature, exact expansions, a JSON reader and writer, a seeded generator, a clock and
-//! the thread pool.
+//! algebra, quadrature, exact expansions and the filtered predicates over them, a JSON reader and
+//! writer, a seeded generator, a clock and the thread pool.
 pub mod bvh;
 pub mod bypass;
 pub mod clock;
@@ -13,6 +13,7 @@ pub mod json;
 pub mod linalg;
 pub mod meter;
 pub mod par;
+pub mod predicates;
 pub mod quadrature;
 pub mod rng;
 pub mod roots;

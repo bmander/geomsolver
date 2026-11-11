@@ -66,8 +66,8 @@ compared but not implemented stay with the design notes that made them (the last
 - Kantorovich & Akilov, *Functional Analysis*, 2nd ed., Pergamon, 1982.  Kantorovich's theorem,
   by which `isolate.rs` certifies each root (docs/contract/brep.md).
 - Shewchuk, *Adaptive precision floating-point arithmetic and fast robust geometric predicates*,
-  Discrete & Computational Geometry 18(3), 1997.  `delaunay::predicates`, the exact expansions
-  (docs/field-meshing.md).
+  Discrete & Computational Geometry 18(3), 1997.  `util::predicates` (re-exported as
+  `delaunay::predicates`), the exact expansions (docs/field-meshing.md).
 
 ## Derivatives, rates and extremals
 
@@ -119,6 +119,8 @@ compared but not implemented stay with the design notes that made them (the last
   arrangement.
 - Jackson, *Boundary representation modelling with local tolerances*, Proc. 3rd ACM Symposium on
   Solid Modeling and Applications, 1995.  `tolerant.rs`.
+- Barber, Dobkin & Huhdanpaa, *The quickhull algorithm for convex hulls*, ACM Transactions on
+  Mathematical Software 22(4), 1996.  `hull.rs`, on the exact orientation test.
 - Steiner, *Über parallele Flächen*, Monatsbericht der Akademie der Wissenschaften zu Berlin,
   1840.  The volume of a body grown, its edges' and corners' terms (docs/contract/sets.md).
 
