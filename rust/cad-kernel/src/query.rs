@@ -612,13 +612,17 @@ fn conic_algebraic(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) ->
     Ok(Meets::At(found.into_iter().filter(|r| kept(surface,tol,at(r.at))).map(|r| (r.at,r.touch)).collect()))
 }
 
-/// **A closed form's function, its runs read by the general reading's** (`Implicit::within`): where
-/// a curve lies within the tolerance of an algebraic surface for a while, no stretch of the closed
-/// form's polynomial can be parted or excluded either, and the run is proved the general reading's
-/// way.
-struct Banded<'a,F> { f: F,by: Implicit<'a> }
+/// **A closed form's function, its runs read by another** (`by`): where a curve lies within the
+/// tolerance of an algebraic surface for a while, no stretch of the closed form's polynomial can be
+/// parted or excluded either, and the run is proved by the general reading's form (`Implicit`) or
+/// by the polynomial's Taylor model (`Taylored`).
+struct Banded<F,B> { f: F,by: B }
 
-impl<F: crate::util::isolate::Function> crate::util::isolate::Function for Banded<'_,F> {
+/// **What proves a run** (`Banded`'s `by`): whether a curve is within the tolerance of a surface
+/// over all of `[a, b]`.
+trait Run { fn within(&self,a: f64,b: f64) -> bool; }
+
+impl<F: crate::util::isolate::Function,B: Run> crate::util::isolate::Function for Banded<F,B> {
     fn at(&self,t: f64) -> (f64,f64) { self.f.at(t) }
     fn value(&self,t: f64) -> Iv { self.f.value(t) }
     fn slope(&self,a: f64,b: f64) -> Iv { self.f.slope(a,b) }
@@ -642,12 +646,9 @@ fn trig_along(curve: &Curve,n: usize,form: &dyn Fn(V) -> f64) -> (f64,Vec<(f64,f
 }
 
 /// **A trigonometric polynomial** `c₀ + Σ (a_k cos kt + b_k sin kt)` (`conic_algebraic`,
-/// `conic_revolution`), written once over `Num`; its value over a stretch enclosed by its Taylor
-/// model too (`Trig::taylor`), where the formula read in intervals encloses too loosely.
+/// `conic_revolution`), written once over `Num`.
+#[derive(Clone,Copy)]
 struct Trig<'a> { c0: f64,terms: &'a [(f64,f64)] }
-
-/// How many terms a Taylor model of a `Trig` keeps before its remainder.
-const TAYLOR: usize = 8;
 
 impl crate::util::isolate::Formula for Trig<'_> {
     fn jet<T: Num>(&self,t: crate::util::interval::Jet<T>) -> crate::util::interval::Jet<T> {
@@ -658,45 +659,8 @@ impl crate::util::isolate::Formula for Trig<'_> {
     }
 }
 
-impl Trig<'_> {
-    /// The `j`th derivative at `t`, enclosed: each term's turned a quarter `j` times, exactly.
-    fn derivative(&self,j: usize,t: f64) -> Iv {
-        let mut sum = Iv::point(if j == 0 { self.c0 } else { 0. });
-        for (i,&(x,y)) in self.terms.iter().enumerate() {
-            let k = (i+1) as f64;
-            let (s,c) = Num::sin_cos(Iv::point(t).times(k));
-            let (x,y) = (Iv::point(x),Iv::point(y));
-            let term = match j%4 { 0 => x*c+y*s,1 => y*c-x*s,2 => -(x*c+y*s),_ => x*s-y*c };
-            sum = sum+term*Iv::point(k.powi(j as i32));
-        }
-        sum
-    }
-    /// **Its value over `[a, b]` by its Taylor model** about the middle: `TAYLOR` terms read there
-    /// and the remainder bounded by `Σ k^TAYLOR (|a_k| + |b_k|)`, which no derivative of that order
-    /// exceeds anywhere. Where the form has a root of high order (a meridian of a ball meeting the
-    /// paraboloid that fits its bottom, the fourth power of the way from it), its terms cancel, and
-    /// the formula read in intervals encloses each term's spread and not the sum's: this encloses
-    /// the sum.
-    fn taylor(&self,a: f64,b: f64) -> Iv {
-        let m = 0.5*(a+b);
-        let h = Iv::new(a,b)-Iv::point(m);
-        let (mut sum,mut power,mut fact) = (Iv::point(0.),Iv::point(1.),1.);
-        for i in 0..TAYLOR {
-            if i > 0 { power = power*h; fact *= i as f64; }
-            sum = sum+self.derivative(i,m)*power/Iv::point(fact);
-        }
-        let most = self.terms.iter().enumerate().fold(Iv::point(0.),|acc,(i,&(x,y))| {
-            acc+Iv::point(((i+1) as f64).powi(TAYLOR as i32))*(Iv::point(x.abs())+Iv::point(y.abs()))
-        }).hi();
-        let reach = (power*h).mag()/(fact*TAYLOR as f64);
-        let rest = Iv::point(most)*Iv::point(reach);
-        sum+Iv::new(-rest.hi(),rest.hi())
-    }
-}
-
-impl crate::util::isolate::Formula for &Trig<'_> {
-    fn jet<T: Num>(&self,t: crate::util::interval::Jet<T>) -> crate::util::interval::Jet<T> { (**self).jet(t) }
-}
+/// How many terms a Taylor model of a `Trig` keeps before its remainder.
+const TAYLOR: usize = 8;
 
 /// **A circle or an ellipse against a surface of revolution whose meridian is a conic** (a
 /// rational B-spline of degree two at most, `Surface::Revolution` about `f`'s axis, its meridian in
@@ -708,121 +672,152 @@ impl crate::util::isolate::Formula for &Trig<'_> {
 /// about the axis (a paraboloid's, `O` nought) is `P = 0` alone, so a contact on the axis keeps
 /// its own order. Along the curve the form is a trigonometric polynomial of degree four (two for
 /// `P`), its roots isolated (`util::isolate`), and a run the curve keeps within the tolerance
-/// proved by its Taylor model (`Along`) — the ball's meridian in a paraboloid cup that fits its
+/// proved by its Taylor model (`Taylored`) — the ball's meridian in a paraboloid cup that fits its
 /// bottom, within the fourth power of the way from the pole it touches at, which neither the
 /// polynomial's interval enclosures nor the general reading's two unknowns can part or exclude.
-/// Each root kept where it lies on the bounded surface. `NoForm` for a meridian of higher degree or
-/// out of the frame's plane, or a weight not positive.
+/// Each root kept where it lies on the bounded surface (a root of the conic past the span, or of
+/// its mirror, is off it). `NoForm` for a meridian of higher degree or out of the frame's plane,
+/// or a weight not positive.
 fn conic_revolution(curve: &Curve,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Curve,surface: &Surface,
                     tol: f64) -> Certified {
     let Curve::BSpline(sp) = c else { return Err(Uncertified::NoForm) };
     if sp.degree > 2 { return Err(Uncertified::NoForm) }
-    let [k0,k1] = sp.domain();
-    let mut knots = vec![k0];
-    knots.extend(sp.breaks([k0,k1]));
-    knots.push(k1);
     let at = |t: f64| curve.point(t);
+    let near = |t: f64| surface.implicit(at(t)).abs() <= tol;
     let mut out: Vec<(f64,bool)> = Vec::new();
-    for w in knots.windows(2) {
+    for w in spans(sp).windows(2) {
         let form = Revolved::of(f,|s: f64| sp.homogeneous(w[0]+(w[1]-w[0])*s)).ok_or(Uncertified::NoForm)?;
         let (c0,terms) = trig_along(curve,if form.even { 2 } else { 4 },&|p| form.at::<f64>(p).0);
-        let g = Along {f:Trig {c0,terms:&terms},curve,form:&form,tol};
-        let near = |t: f64| surface.implicit(at(t)).abs() <= tol;
+        let trig = Trig {c0,terms:&terms};
+        let g = Banded {f:crate::util::isolate::Written(trig),by:Taylored::new(trig,curve,&form,tol)};
         for r in crate::util::isolate::roots(&g,[t0,t1],tol*1e-3/curve.speed().max(1e-300),&near)? {
-            let p = at(r.at);
-            // (a root of the conic past the span, or of its mirror, is off the surface)
-            if distance(p,surface.point(surface.inverse(p))) <= 2.*tol.max(1e-9*(1.+norm(p))) { out.push((r.at,r.touch)) }
+            if on_bounded(surface,at(r.at),2.*tol) { out.push((r.at,r.touch)) }
         }
     }
     out.sort_by(|x,y| x.0.total_cmp(&y.0));
     Ok(Meets::At(out))
 }
 
+/// A B-spline's knot spans: its domain's ends and the breaks between.
+fn spans(sp: &super::nurbs::BSpline) -> Vec<f64> {
+    let [k0,k1] = sp.domain();
+    let mut knots = vec![k0];
+    knots.extend(sp.breaks([k0,k1]));
+    knots.push(k1);
+    knots
+}
+
 /// **The algebraic form of a surface turned from a conic arc** (`conic_revolution`): in `frame`'s
 /// coordinates `(x, y, z)`, `ρ² = x² + y²`, it is `P² − ρ² O²` with `P = A ρ² + C z² + E z + G`
 /// and `O = B z + D` — or `P` alone where the arc is symmetric about the axis (`even`) — from the
-/// arc's `F(r, z) = A r² + B r z + C z² + D r + E z + G`.
-struct Revolved { frame: super::geom::Frame,even: bool,a: f64,b: f64,c: f64,d: f64,e: f64,g: f64 }
+/// arc's `F(r, z) = A r² + B r z + C z² + D r + E z + G`, `f` its `[A, B, C, D, E, G]`.
+struct Revolved { frame: super::geom::Frame,even: bool,f: [f64;6] }
 
 impl Revolved {
     /// The form of the surface turned from the conic arc `h` (homogeneous, `σ` over `[0, 1]`, in
     /// space) about `frame`'s axis; `None` where the arc is no quadratic arc in the frame's `xz`
     /// plane with positive weights.
     fn of(frame: &super::geom::Frame,h: impl Fn(f64) -> (V,f64)) -> Option<Revolved> {
-        // the span's poles: its ends, and the middle's from the point halfway, `(P₀ + 2P₁ + P₂)/4`
-        let read = |s: f64| { let (x,w) = h(s); (frame.local(scale(x,1./w)),w) };
-        let ((l0,w0),(lm,wm),(l2,w2)) = (read(0.),read(0.5),read(1.));
+        use super::plane2::{cross,sub};
+        // each point homogeneous in the frame's `(r, z)`: `[r w, z w, w]`, its `y` nought
+        let read = |s: f64| { let (x,w) = h(s); let l = frame.local(scale(x,1./w)); ([l[0]*w,l[2]*w,w],l) };
+        let ((h0,l0),(hm,lm),(h2,l2)) = (read(0.),read(0.5),read(1.));
         let reach = [l0,lm,l2].iter().flatten().fold(0.,|m: f64,x| m.max(x.abs())).max(1e-300);
         if [l0,lm,l2].iter().any(|l| l[1].abs() > 1e-9*reach) { return None }
-        let w1 = 2.*wm-0.5*(w0+w2);
+        // the middle pole from the point halfway, `(P₀ + 2P₁ + P₂)/4`
+        let h1: [f64;3] = std::array::from_fn(|i| 2.*hm[i]-0.5*(h0[i]+h2[i]));
+        let [w0,w1,w2] = [h0[2],h1[2],h2[2]];
         if !(w0 > 0. && w1 > 0. && w2 > 0.) { return None }
-        let pole = |l: V,w: f64| [l[0]*w,l[2]*w];
-        let (h0,h2) = (pole(l0,w0),pole(l2,w2));
-        let hm = pole(lm,wm);
-        let p0 = [l0[0],l0[2]];
-        let p2 = [l2[0],l2[2]];
-        let p1 = [(2.*hm[0]-0.5*(h0[0]+h2[0]))/w1,(2.*hm[1]-0.5*(h0[1]+h2[1]))/w1];
+        let [p0,p1,p2] = [h0,h1,h2].map(|p| [p[0]/p[2],p[1]/p[2]]);
         // a linear form `[r, z, 1]` vanishing on the line through `u` and `v` (`(u − q) × (v − q)`)
-        let cross = |u: [f64;2],v: [f64;2]| u[0]*v[1]-u[1]*v[0];
-        let through = |u: [f64;2],v: [f64;2]| { let w = [v[0]-u[0],v[1]-u[1]]; [-w[1],w[0],cross(u,v)] };
+        let through = |u: [f64;2],v: [f64;2]| { let w = sub(v,u); [-w[1],w[0],cross(u,v)] };
         // the product of two linear forms, as `[A, B, C, D, E, G]`
         let times = |x: [f64;3],y: [f64;3]| [x[0]*y[0],x[0]*y[1]+x[1]*y[0],x[1]*y[1],
             x[0]*y[2]+x[2]*y[0],x[1]*y[2]+x[2]*y[1],x[2]*y[2]];
-        let flat = cross([p1[0]-p0[0],p1[1]-p0[1]],[p2[0]-p0[0],p2[1]-p0[1]]);
-        let f: [f64;6] = if flat.abs() <= 1e-12*reach*reach {
+        let f: [f64;6] = if cross(sub(p1,p0),sub(p2,p0)).abs() <= 1e-12*reach*reach {
             // the poles on one line: the arc is a stretch of it
             let l = through(p0,p2);
             [0.,0.,0.,l[0],l[1],l[2]]
         } else {
-            let (q0,q1,q2) = (through(p1,p2),through(p2,p0),through(p0,p1));
-            let (x,y) = (times(q0,q2),times(q1,q1));
+            let (x,y) = (times(through(p1,p2),through(p0,p1)),times(through(p2,p0),through(p2,p0)));
             std::array::from_fn(|i| 4.*w1*w1*x[i]-w0*w2*y[i])
         };
-        // each coefficient weighed by the power of length it carries
+        // each coefficient weighed by the power of length it carries, the whole scaled to one
         let weighed = [f[0]*reach*reach,f[1]*reach*reach,f[2]*reach*reach,f[3]*reach,f[4]*reach,f[5]];
         let whole = weighed.iter().map(|x| x.abs()).sum::<f64>();
         if !(whole > 0.) || !whole.is_finite() { return None }
-        let k = 1./whole;
-        let [a,b,c,d,e,g] = f.map(|x| x*k);
-        let even = (weighed[1].abs()+weighed[3].abs())*k <= 1e-9;
-        Some(Revolved {frame:*frame,even,a,b,c,d,e,g})
+        let even = (weighed[1].abs()+weighed[3].abs())/whole <= 1e-9;
+        Some(Revolved {frame:*frame,even,f:f.map(|x| x/whole)})
     }
     /// The form and its gradient at `x`, written once over `Num`.
     fn at<T: Num>(&self,x: [T;3]) -> (T,[T;3]) {
-        let f = &self.frame;
         let k = |v: f64| T::of(v);
-        let o: [T;3] = std::array::from_fn(|i| x[i]-k(f.o[i]));
-        let along = |e: V| o[0]*k(e[0])+o[1]*k(e[1])+o[2]*k(e[2]);
-        let q = [along(f.x),along(f.y),along(f.z)];
+        let [a,b,c,d,e,g] = self.f;
+        let q = local(&self.frame,x);
         let two = k(2.);
         let rho2 = q[0]*q[0]+q[1]*q[1];
-        let p = k(self.a)*rho2+k(self.c)*q[2]*q[2]+k(self.e)*q[2]+k(self.g);
-        let dp = [two*k(self.a)*q[0],two*k(self.a)*q[1],two*k(self.c)*q[2]+k(self.e)];
-        let (v,g) = if self.even { (p,dp) } else {
-            let odd = k(self.b)*q[2]+k(self.d);
+        let p = k(a)*rho2+k(c)*q[2]*q[2]+k(e)*q[2]+k(g);
+        let dp = [two*k(a)*q[0],two*k(a)*q[1],two*k(c)*q[2]+k(e)];
+        let (v,grad) = if self.even { (p,dp) } else {
+            let odd = k(b)*q[2]+k(d);
             let o2 = odd*odd;
-            (p*p-rho2*o2,[two*p*dp[0]-two*q[0]*o2,two*p*dp[1]-two*q[1]*o2,
-                two*p*dp[2]-two*rho2*odd*k(self.b)])
+            (p*p-rho2*o2,[two*p*dp[0]-two*q[0]*o2,two*p*dp[1]-two*q[1]*o2,two*p*dp[2]-two*rho2*odd*k(b)])
         };
-        (v,std::array::from_fn(|i| g[0]*k(f.x[i])+g[1]*k(f.y[i])+g[2]*k(f.z[i])))
+        (v,global(&self.frame,grad))
     }
 }
 
-/// **A revolved conic's form along a curve** (`conic_revolution`): the trigonometric polynomial it
-/// is, and a run proved within the tolerance where that polynomial's Taylor model over a stretch is
-/// within half the tolerance times the least the form's gradient can be over the curve's enclosure
-/// there (to first order, the surface's distance; `Implicit::within`'s rule).
-struct Along<'a> { f: Trig<'a>,curve: &'a Curve,form: &'a Revolved,tol: f64 }
+/// **A run along a revolved conic proved by its polynomial's Taylor model** (`conic_revolution`):
+/// the `Trig` the form is along the curve, over a stretch, enclosed about the stretch's middle —
+/// `TAYLOR` terms read there, each term's rotated a quarter per order, and the remainder bounded by
+/// `Σ k^TAYLOR (|a_k| + |b_k|)` (`rest`), which no derivative of that order exceeds anywhere — held
+/// to the form's gradient over the curve's enclosure there (`banded`). Where the form has a root of
+/// high order (the fourth power of the way from it, a ball's meridian in the paraboloid that fits
+/// its bottom) its terms cancel, and the formula read in intervals encloses each term's spread and
+/// not the sum's: this encloses the sum.
+struct Taylored<'a> { trig: Trig<'a>,rest: f64,curve: &'a Curve,form: &'a Revolved,tol: f64 }
 
-impl crate::util::isolate::Function for Along<'_> {
-    fn at(&self,t: f64) -> (f64,f64) { crate::util::isolate::Written(&self.f).at(t) }
-    fn value(&self,t: f64) -> Iv { crate::util::isolate::Written(&self.f).value(t) }
-    fn slope(&self,a: f64,b: f64) -> Iv { crate::util::isolate::Written(&self.f).slope(a,b) }
+impl<'a> Taylored<'a> {
+    fn new(trig: Trig<'a>,curve: &'a Curve,form: &'a Revolved,tol: f64) -> Taylored<'a> {
+        let rest = trig.terms.iter().enumerate().fold(Iv::point(0.),|acc,(i,&(x,y))| {
+            acc+Iv::point(((i+1) as f64).powi(TAYLOR as i32))*(Iv::point(x.abs())+Iv::point(y.abs()))
+        }).hi();
+        Taylored {trig,rest,curve,form,tol}
+    }
+    /// The polynomial's value over `[a, b]`, enclosed by its Taylor model.
+    fn value(&self,a: f64,b: f64) -> Iv {
+        let m = 0.5*(a+b);
+        let h = Iv::new(a,b)-Iv::point(m);
+        // each order's coefficient at the middle, `g⁽ʲ⁾(m) / j!`, the terms' sines read once
+        let mut orders = [Iv::point(0.);TAYLOR];
+        orders[0] = Iv::point(self.trig.c0);
+        for (i,&(x,y)) in self.trig.terms.iter().enumerate() {
+            let k = (i+1) as f64;
+            let (s,c) = Num::sin_cos(Iv::point(m).times(k));
+            let (x,y) = (Iv::point(x),Iv::point(y));
+            let turns = [x*c+y*s,y*c-x*s];
+            let mut scale = Iv::point(1.);
+            for (j,o) in orders.iter_mut().enumerate() {
+                if j > 0 { scale = scale*Iv::point(k)/Iv::point(j as f64); }
+                let term = if j%4 < 2 { turns[j%2] } else { -turns[j%2] };
+                *o = *o+term*scale;
+            }
+        }
+        let (mut sum,mut power) = (Iv::point(0.),Iv::point(1.));
+        for (j,o) in orders.iter().enumerate() {
+            if j > 0 { power = power*h; }
+            sum = sum+*o*power;
+        }
+        let fact: f64 = (1..=TAYLOR).map(|j| j as f64).product();
+        let rest = (Iv::point(self.rest)*Iv::point((power*h).mag())/Iv::point(fact)).hi();
+        sum+Iv::new(-rest,rest)
+    }
+}
+
+impl Run for Taylored<'_> {
     fn within(&self,a: f64,b: f64) -> bool {
         let (_,g) = self.form.at(self.curve.enclose([[a,b]]).at);
-        let least = |x: Iv| if x.has_zero() { 0. } else { x.lo().abs().min(x.hi().abs()) };
-        let grad = g.iter().map(|&x| least(x)*least(x)).sum::<f64>().sqrt();
-        self.f.taylor(a,b).mag() <= 0.5*self.tol*grad*(1.-1e-9)
+        banded(self.value(a,b),g,self.tol)
     }
 }
 
@@ -927,10 +922,7 @@ fn line_revolution(p: V,d: V,f: &super::geom::Frame,c: &Curve,surface: &Surface,
     let speed = norm(d).max(1e-300);
     let (a,b,cc) = (e[0]*e[0]+e[1]*e[1],2.*(q[0]*e[0]+q[1]*e[1]),q[0]*q[0]+q[1]*q[1]);
     let dz = e[2];
-    let [k0,k1] = sp.domain();
-    let mut knots = vec![k0];
-    knots.extend(sp.breaks([k0,k1]));
-    knots.push(k1);
+    let knots = spans(sp);
     // a line all but level is read neither way well: the general reading's
     if dz.abs() > 1e-12*speed && dz.abs() < 1e-7*speed { return Err(Uncertified::NoForm) }
     let width = 1e-12;
@@ -1342,9 +1334,7 @@ fn casteljau(pts: &[V]) -> (Vec<V>,Vec<V>) {
 fn form<T: Num>(surface: &Surface,x: [T;3]) -> Option<(T,[T;3])> {
     let f = surface.frame();
     let c = |v: f64| T::of(v);
-    let d: [T;3] = std::array::from_fn(|i| x[i]-c(f.o[i]));
-    let along = |e: V| d[0]*c(e[0])+d[1]*c(e[1])+d[2]*c(e[2]);
-    let q = [along(f.x),along(f.y),along(f.z)];
+    let q = local(&f,x);
     let two = c(2.);
     let (value,g): (T,[T;3]) = match *surface {
         Surface::Plane(_) => (q[2],[c(0.),c(0.),c(1.)]),
@@ -1367,7 +1357,21 @@ fn form<T: Num>(surface: &Surface,x: [T;3]) -> Option<(T,[T;3])> {
         }
         _ => return None,
     };
-    Some((value,std::array::from_fn(|i| g[0]*c(f.x[i])+g[1]*c(f.y[i])+g[2]*c(f.z[i]))))
+    Some((value,global(&f,g)))
+}
+
+/// A point's coordinates in frame `f`, written over `Num`.
+fn local<T: Num>(f: &super::geom::Frame,x: [T;3]) -> [T;3] {
+    let c = |v: f64| T::of(v);
+    let d: [T;3] = std::array::from_fn(|i| x[i]-c(f.o[i]));
+    let along = |e: V| d[0]*c(e[0])+d[1]*c(e[1])+d[2]*c(e[2]);
+    [along(f.x),along(f.y),along(f.z)]
+}
+
+/// A gradient read in frame `f` carried back to space, written over `Num`.
+fn global<T: Num>(f: &super::geom::Frame,g: [T;3]) -> [T;3] {
+    let c = |v: f64| T::of(v);
+    std::array::from_fn(|i| g[0]*c(f.x[i])+g[1]*c(f.y[i])+g[2]*c(f.z[i]))
 }
 
 /// **A surface's algebraic form along a curve** (`general`'s one unknown): `F(C(t))` and its rate,
@@ -1387,6 +1391,10 @@ impl<'a> Implicit<'a> {
     }
 }
 
+impl Run for Implicit<'_> {
+    fn within(&self,a: f64,b: f64) -> bool { crate::util::isolate::Function::within(self,a,b) }
+}
+
 impl crate::util::isolate::Function for Implicit<'_> {
     fn at(&self,t: f64) -> (f64,f64) {
         let (x,d) = self.curve.d1(t);
@@ -1403,10 +1411,18 @@ impl crate::util::isolate::Function for Implicit<'_> {
     fn within(&self,a: f64,b: f64) -> bool {
         let e = self.over(a,b);
         let Some((f,g)) = form(self.surface,e.at) else { return false };
-        let least = |x: Iv| if x.has_zero() { 0. } else { x.lo().abs().min(x.hi().abs()) };
-        let grad = g.iter().map(|&x| least(x)*least(x)).sum::<f64>().sqrt();
-        f.mag() <= 0.5*self.tol*grad*(1.-1e-9)
+        banded(f,g,self.tol)
     }
+}
+
+/// **Whether a form enclosed as `f` over a stretch, its gradient as `g`, is within `tol` of nought
+/// there**: within half the tolerance times the least the gradient's length can be (to first order,
+/// the surface's distance) — the one rule a run along an algebraic surface is proved by
+/// (`Implicit`, `Taylored`).
+fn banded(f: Iv,g: [Iv;3],tol: f64) -> bool {
+    let least = |x: Iv| if x.has_zero() { 0. } else { x.lo().abs().min(x.hi().abs()) };
+    let grad = g.iter().map(|&x| least(x)*least(x)).sum::<f64>().sqrt();
+    f.mag() <= 0.5*tol*grad*(1.-1e-9)
 }
 
 /// **A curve's point and a surface's equal** (`general`'s three unknowns): `C(t) − S(u, v)` over
