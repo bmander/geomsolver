@@ -8,6 +8,20 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two rounds tangent to one face union wherever their meeting ends at the touch**
+  (`ssi::trace_beside`, `boolean`): two surfaces' meeting through a point where they touch and
+  its branches cross ends there, and a march that steps across such a touch lying on a face's own
+  edge now ends at the touch, where it ended a step past it, off that face ("beside a meeting
+  known"). The curve then ran through that vertex twice, one stretch of it was never laid, and
+  the union was refused ("a shell of the arrangement is kept on one side … and dropped on
+  another") or built, as the steps fell: a box's corner rounded 5 and its top rim rounded 1
+  refused, the same at its bottom rim built. A closed curve with no period has the vertex both
+  its ends are at both of them wherever along it that vertex was read (`boolean`'s `spans`):
+  read at its far end, the stretch from the last point on the curve round to it was dropped.
+- `recipe::Named::said` (**new** field) and `Named::called()` (**new**): what a failure to build a
+  node calls it, where the recipe's writer says (`"said"`), else its name between backticks — a
+  node named by nothing its author wrote says what it is of. A body's `built_names` hold what
+  `called()` gives, no longer bare names it puts backticks round.
 - **Faster Booleans and evaluation on spline patches**: face pairs whose boxes overlap are
   proved apart where subdivided, outward-rounded surface enclosures separate them, avoiding
   expensive intersection seeding on disjoint sheets; unresolved pairs use the ordinary reader.
@@ -16,7 +30,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   The full brep-bench Utah teapot run falls below one second on the development benchmark,
   preserving the mesh geometry and measurements to rounding (the existing pole-related
   measurement discrepancy is unchanged).
-
 - **A finite screw whose roll does not carry its section past the blank builds**
   (`swept::helical::helical_sheet`): where an end of the section's columns that the roll cut
   short stands in the blank, or no column is left, the sheet is laid on the characteristic

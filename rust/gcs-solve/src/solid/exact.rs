@@ -85,9 +85,8 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let floor = 16.0 * f64::EPSILON * origin.iter().fold(0.0f64, |m, x| m.max(x.abs())) * mm;
     let mut built = BTreeMap::new();
     let mut leading = BTreeSet::new();
-    // each node's name, for what a body built of it says
-    let names: BTreeMap<i64, String> =
-        recipe.nodes.iter().map(|n| (n.id, n.name.clone())).collect();
+    // each node as what a body built of it says calls it
+    let names: BTreeMap<i64, String> = recipe.nodes.iter().map(|n| (n.id, n.called())).collect();
     for n in &recipe.nodes {
         let id = n.id;
         // an operand of one binding with others is its representative's B-rep, built once and

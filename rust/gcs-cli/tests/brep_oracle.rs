@@ -128,7 +128,7 @@ fn every_node_the_kernel_builds_is_occts() {
             for (i,n) in nodes.iter().enumerate() {
                 let id = n.get("id").unwrap().as_i64();
                 let label = format!("{name}: `{}` ({})",n.get("name").unwrap().as_str(),n.get("kind").unwrap().as_str());
-                let names: std::collections::BTreeMap<i64,String> = nodes.iter().map(|m| (m.get("id").unwrap().as_i64(),m.get("name").unwrap().as_str().to_string())).collect();
+                let names: std::collections::BTreeMap<i64,String> = recipe::Recipe::read(&r).unwrap().nodes.iter().map(|m| (m.id,m.called())).collect();
                 let b = match recipe::node_named(n,&ours,&names,0.) {
                     Ok(b) => b,
                     // a refusal by name is the kernel saying what it does not build yet

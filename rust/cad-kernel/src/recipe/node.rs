@@ -45,7 +45,23 @@ pub struct Recipe { pub root: i64,pub nodes: Vec<Named> }
 /// A node of a recipe's list: its id, its name (the solid's, as the document spells it) and what
 /// it is.  The step it adds to a face's route is each body's to say (`Body::steps`).
 #[derive(Clone,Debug)]
-pub struct Named { pub id: i64,pub name: String,pub node: Node }
+pub struct Named { pub id: i64,pub name: String,pub node: Node,
+    /// What a failure to build it calls it, where its name is none the document wrote (`"said"`,
+    /// #879): a round's solid is named by the use of the word that made it, which no author
+    /// reads, so whoever wrote the recipe says it by the body it rounds and its label there.
+    pub said: Option<String> }
+
+impl Named {
+    /// How a failure names the node: what its writer said, else its name between backticks
+    /// (nothing for a node of no name) — what a body's `built_names` hold.
+    pub fn called(&self) -> String {
+        match &self.said {
+            Some(said) => said.clone(),
+            None if self.name.is_empty() => String::new(),
+            None => format!("`{}`",self.name),
+        }
+    }
+}
 
 /// A body a `through` prism is applied to: the nodes `sources` its material is made of, and the
 /// row-major 3x4 `matrix` the copy cut from it is placed by (the profile where it is written, none).
@@ -199,7 +215,8 @@ impl Recipe {
     pub fn read(j: &Json) -> Read<Recipe> {
         let nodes = each(field(j,"nodes")?.arr(),|n| {
             let name = n.get("name").map_or("",Json::as_str).to_string();
-            Ok(Named {id:field(n,"id")?.as_i64(),name,node:Node::read(n)?})
+            let said = n.get("said").map(|s| s.as_str().to_string());
+            Ok(Named {id:field(n,"id")?.as_i64(),name,node:Node::read(n)?,said})
         })?;
         Ok(Recipe {root:field(j,"root")?.as_i64(),nodes})
     }

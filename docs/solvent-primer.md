@@ -2361,7 +2361,10 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   (`rust/examples/rounds/hub.sv`); `when f perpendicular std.z` keeps the faces square to it, and
   `when f != hub.bar.near` leaves one out by name. Never split a solid to leave an edge unnamed.
 - Each acts on the body after its other terms: a round reads the faces the cuts and unions left,
-  and not another round's — unless it names that round (below).
+  and not another round's — unless it names that round, or rounds a solid of the rounded body
+  (both below). Two rounds that name nothing of each other each read the body before either,
+  whichever line comes first: where their edges meet at a corner each runs to the sharp corner
+  and the two cross there, a mitre.
 - Where two faces meet tangent there is no edge: a chain of tangent edges (an obround's foot, a
   rounded pocket's rim) is rounded as one run. A run that ends on a face it does not round is
   carried on past its edge's end and cut off by that face, however the face stands. A slot that
@@ -2371,8 +2374,26 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
 - **Name a round to compose over it** (0.149): `bevel := plate.rim chamfer(d: 4mm) plate.far` puts
   its faces under the name (`plate.bevel.taken.flat`, `plate.bevel` every face it made), and a
   round that names them reads the body as that one leaves it: `plate.bevel round(r: 1mm) plate`
-  rounds the two edges the chamfer made, whichever line comes first. Two named rounds' faces stay
+  rounds the two edges the chamfer made, whichever line comes first. A round's face is
+  `taken.round`, a chamfer's `taken.flat`, as `--where` lists them. Two named rounds' faces stay
   apart; written bare, every round's are `taken.round`. Rounds that name each other are E041.
+- **Round over a rounded body by rounding a solid of it** (0.210). A box whose upright edges are
+  rounded, its top rim then rounded all the way round — along the straight edges and round the
+  arcs the first round left, one tangent run:
+
+  ```sv
+  repeat f in box { repeat g in box { when f parallel std.z and g parallel std.z and f != g {
+    f round(r: 5mm) g } } }
+  part := solid(box)                       // the box as its rounds leave it
+  part.box.near round(r: 1mm) part.box     // the top against every face of it, the rounds' too
+  part.box.far chamfer(d: 1mm) part.box
+  ```
+
+  `part.box` is every face of the rounded box, the sides and the faces the round made
+  (`part.box.taken.round`), so the top is paired with all of them (`rust/examples/rounds/rim.sv`).
+  Written on `box` itself (`box.near round(r: 1mm) box`) the rim would read the box before its
+  corners were rounded. With the first round named (`vert := f round(r: 5mm) g`), `box.near
+  round(r: 1mm) box.vert` rounds the four arcs alone, where the top meets `vert`'s faces.
 - **The ball and the flat follow a face across a seam**: where the far face goes on tangent into
   a rim's round, a chamfer at a boss standing near the rim lands its leg on the round
   (`F.smooth`, a face's surface carried across its tangent seams). Where the leg or the ball
