@@ -235,7 +235,7 @@ pub(crate) fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
 /// `f` of the span holding `t`, and there the `degree + 1` basis functions and their derivatives
 /// up to order `n` (at most 2) — Piegl and Tiller's A2.3, on the stack: a cubic's or less in a
 /// table of four, a degree under `SMALL` in a table that size, a higher one (OCCT approximates up
-/// to 25) in one of `W`.
+/// to 25) in one of `W`; a clamped cubic of four poles in its Bernstein basis, with no table.
 #[inline]
 pub(crate) fn with_basis<R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
     // A clamped cubic with four poles is a Bezier segment. Its basis and first two

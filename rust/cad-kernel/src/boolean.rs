@@ -1344,10 +1344,8 @@ impl<'a> Arrangement<'a> {
         for (k,&sa) in sides.iter().enumerate() { for &sb in &sides[k+1..] {
             for fa in 0..self.solids[sa].faces.len() { for fb in 0..self.solids[sb].faces.len() {
                 if !overlap(&self.boxes[sa][fa],&self.boxes[sb][fb],self.pad) { continue }
-                let surfaces = [&self.solids[sa].faces[fa].surface,&self.solids[sb].faces[fb].surface];
-                if let [Surface::BSpline(_,a),Surface::BSpline(_,b)] = surfaces {
-                    let pad = self.pad;
-                    if *apart.entry([std::sync::Arc::as_ptr(a),std::sync::Arc::as_ptr(b)]).or_insert_with(|| separated_nets(surfaces[0],surfaces[1],pad)) { continue }
+                if let (Surface::BSpline(_,a),Surface::BSpline(_,b)) = (&self.solids[sa].faces[fa].surface,&self.solids[sb].faces[fb].surface) {
+                    if *apart.entry([std::sync::Arc::as_ptr(a),std::sync::Arc::as_ptr(b)]).or_insert_with(|| separated_nets(a,b,self.pad)) { continue }
                 }
                 pairs.push(Two {s:[sa,sb],f:[fa,fb]})
             } }
@@ -3025,52 +3023,48 @@ const SEPARATION_READINGS: usize = 256;
 /// budget. The teapot's separated sheets are proved apart by depth 15.
 const SEPARATION_DEPTH: usize = 32;
 
-/// Prove two bounded spline sheets apart before searching for their meeting. A pair of
+/// Prove two spline sheets apart before searching for their meeting. A pair of
 /// parameter boxes is discarded only when their outward-rounded enclosures stand farther
 /// apart than `pad`. Otherwise bisect the parameter that most narrows what they share. Work is
 /// bounded twice: `SEPARATION_READINGS` box pairs read in all, discarded ones counted too, and
 /// `SEPARATION_DEPTH` bisections down any one. `false` proves nothing: a pair past either bound,
 /// with an unbounded enclosure or no longer worth splitting is left to the ordinary
-/// intersection algorithm, as is any surface that is not a B-spline net.
-pub fn separated_nets(a: &Surface,b: &Surface,pad: f64) -> bool {
-    use super::enclose::{Enclosed,Patch};
-    let (Surface::BSpline(_,a),Surface::BSpline(_,b)) = (a,b) else { return false };
+/// intersection algorithm.
+pub fn separated_nets(a: &super::nurbs::Net,b: &super::nurbs::Net,pad: f64) -> bool {
+    use super::enclose::Enclosed;
     let nets = [a,b];
     let ranges = [a.domain(),b.domain()];
-    let mut pending = vec![(ranges,[a.enclose(ranges[0]),b.enclose(ranges[1])],0usize)];
+    // each box pair with its depth and, of a half, the sheet halved: enclosed when it is read,
+    // so that a search given up encloses nothing it leaves unread
+    let mut pending = vec![(ranges,[a.enclose(ranges[0]),b.enclose(ranges[1])],0usize,None::<usize>)];
     for _ in 0..SEPARATION_READINGS {
-        let Some((ranges,patches,depth)) = pending.pop() else { return true };
+        let Some((ranges,mut patches,depth,halved)) = pending.pop() else { return true };
+        if let Some(s) = halved { patches[s] = nets[s].enclose(ranges[s]) }
         if !patches.iter().all(|p| p.proved && p.bounded()) { return false }
-        let bounds = |p: Patch<2>| -> Box3 {
-            (p.at.map(|x| x.lo()),p.at.map(|x| x.hi()))
-        };
-        let boxes = [bounds(patches[0]),bounds(patches[1])];
+        let boxes = patches.map(|p| (p.at.map(|x| x.lo()),p.at.map(|x| x.hi())));
         if !overlap(&boxes[0],&boxes[1],pad) { continue }
         if depth == SEPARATION_DEPTH { return false }
-        // how far a parameter carries its sheet along each axis, over its range
-        let reach = |s: usize,k: usize,x: usize| {
-            let d = patches[s].d[k][x];
-            (ranges[s][k][1]-ranges[s][k][0])*d.lo().abs().max(d.hi().abs())
-        };
-        let each = || (0..2).flat_map(|s| (0..2).map(move |k| (s,k)));
-        if each().all(|(s,k)| (0..3).all(|x| reach(s,k,x) <= pad)) { return false }
+        // how far each parameter carries its sheet along each axis, over its range
+        let reach: [[V;2];2] = std::array::from_fn(|s| std::array::from_fn(|k| std::array::from_fn(|x|
+            (ranges[s][k][1]-ranges[s][k][0])*patches[s].d[k][x].mag())));
+        if reach.iter().flatten().flatten().all(|&r| r <= pad) { return false }
         // the boxes stand apart once they do along one axis: halve the parameter that can take
         // the most of what they share of one (`deep`, the padding in it) — all of it at best — and
         // of those the one of greatest reach, so that a parameter carrying its sheet only along
         // axes the boxes share more of than it reaches waits its turn
-        let deep: [f64;3] = std::array::from_fn(|x| boxes[0].1[x].min(boxes[1].1[x])-boxes[0].0[x].max(boxes[1].0[x])+pad);
-        let (s,k,..) = each().map(|(s,k)| {
-            let share = (0..3).map(|x| (reach(s,k,x)/deep[x].max(f64::MIN_POSITIVE)).min(1.)).fold(0f64,f64::max);
-            (s,k,share,(0..3).map(|x| reach(s,k,x)).fold(0f64,f64::max))
+        let (lo,hi) = super::geom::common(boxes[0],boxes[1]);
+        let greatest = |v: V| v.into_iter().fold(0f64,f64::max);
+        let (s,k,..) = (0..2).flat_map(|s| (0..2).map(move |k| (s,k))).map(|(s,k)| {
+            let r = reach[s][k];
+            (s,k,greatest(std::array::from_fn(|x| (r[x]/(hi[x]-lo[x]+pad).max(f64::MIN_POSITIVE)).min(1.))),greatest(r))
         }).max_by(|a,b| a.2.total_cmp(&b.2).then(a.3.total_cmp(&b.3))).unwrap();
         let [lo,hi] = ranges[s][k];
         let mid = lo+(hi-lo)/2.;
         if mid == lo || mid == hi { return false }
         for interval in [[lo,mid],[mid,hi]] {
-            let (mut r,mut p) = (ranges,patches);
+            let mut r = ranges;
             r[s][k] = interval;
-            p[s] = nets[s].enclose(r[s]);
-            pending.push((r,p,depth+1));
+            pending.push((r,patches,depth+1,Some(s)));
         }
     }
     false
