@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.8.0] - 2026-11-11
+
 - **The convex hull of points, as a solid** (`build::hull`): one plane face for each facet, its
   topology built whole with no block cut and no Boolean, its corners the points given. Quickhull
   on the exact orientation test finds the triangles, so points on one plane never decide by
