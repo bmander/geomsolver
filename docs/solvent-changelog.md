@@ -4,6 +4,23 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.210] A round over a round's face** (#879). A face a round of a body made is listed to a
+block over the body's faces by the name the body's boundary has for it — a round's `round`, a
+chamfer's `flat`: `box.vert.taken.round` (§6.9) — and a name once, however many edges the round
+ran along. Through 0.209 it was listed by the name of the set in the word's body (`taken.run`),
+which the body's boundary does not have: a round over a *chamfer's* face was made, the two names
+being one by chance (`flat`), and a round over a *round's* (`box.near round(r: 1mm) box.vert`) made
+nothing and said nothing. Which faces `meets` and how one lies (`parallel`, `perpendicular`) is
+read in the layer the round that asks stands in: through 0.209 it was read off the finished body,
+where two faces a round parted meet no longer, so a named round over a named round's faces
+unmade the first and ended **W116**, naming faces that were there. Nothing else a document
+writes changes: rounds of one body that name nothing of each other each read it before either, as
+ever, and a round over a rounded body is a round of a solid of it — `part := solid(box)`, then
+`part.box.near round(r: 1mm) part.box`, the rim round the corners' arcs as one tangent run
+(`rust/examples/rounds/rim.sv`), built exactly now that the rounds' faces are among
+`part.box`'s. A round the kernel does not build is said by its body and its label (`` `box`'s
+round or chamfer `vert.taken` ``), not by the name of the use that made its solid.
+
 **[0.209] An edge in several runs ends where each run does** (#881). `p in S.ends`, `S` an edge
 whose edges are in several runs (a crease a slot through one face cuts across), holds `p` to the
 ends of the run nearest it (§ Where an edge ends). Through 0.208 it held `p` within the ends of

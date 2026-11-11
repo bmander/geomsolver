@@ -141,6 +141,11 @@
 //! starts and where it stops, whole, every meeting of the two given (`k2`): the tool a convex solid
 //! of revolution, its contact read round a pencil of half-planes about its centre's velocity.
 //!
+//! **A prism under a motion that keeps a plane** (#880 Q2), a motion no constant twist takes
+//! nor a path of pieces, is built before K2's road by its section's planar sweep, extruded through
+//! the tool's slabs and judged (`planar_solid`); a tool that stands along no plane the motion keeps
+//! goes on to K2.
+//!
 //! **A whole turn of any tool is built first by its shadow** (#880 Q1, `super::shadow`): its
 //! candidates laid in a half-plane through the axis, arranged and kept there by membership, and
 //! revolved, with no surface met in space; the arrangement here is asked only where that is refused.
@@ -651,7 +656,17 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     // or, a motion no constant twist and no such path takes, K2's road: each instant's contact swept
     // into a patch (#780 L3)
     let legs = match legs(tool,path,roll) {
-        Err(Unbuilt::Motion) if path.screw().is_none() => return k2(tool,path,roll,bar,tol,blank),
+        Err(Unbuilt::Motion) if path.screw().is_none() => {
+            // a prism under a motion keeping the plane square to it: its section's planar sweep,
+            // extruded (#880 Q2), before K2's road — which is still asked where it refuses, its
+            // refusal standing unless K2 cannot read the tool at all
+            let planar = if blank.is_none() { super::planar_solid::swept(tool,path,roll,bar,tol) } else { Ok(None) };
+            return match planar {
+                Ok(Some(b)) => Ok(b),
+                Ok(None) => k2(tool,path,roll,bar,tol,blank),
+                Err(why) => k2(tool,path,roll,bar,tol,blank).map_err(|k| if matches!(k,Unbuilt::Curved {..}) { why } else { k }),
+            }
+        }
         legs => legs?,
     };
     let whole_roll = [roll[0].min(roll[1]),roll[0].max(roll[1])];

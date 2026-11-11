@@ -1875,9 +1875,12 @@ fn spans(c: &Curve,domain: Option<[f64;2]>,ts: &mut [(f64,u32)],pool: &mut Pool)
             // its sweep) is closed with no period: round it as a closed curve, its stretches split
             // where its parameter starts again, at the vertex both its ends are
             if let Some([lo,hi]) = domain {
+                // (the vertex is at both ends, wherever along the curve it was read: found at its
+                // far end and set down at `lo` there, it stood after the points it comes before,
+                // and the stretch from the last of them round to it was never laid, #879)
                 let start = pool.at(c.point(lo));
-                let mut at: Vec<(f64,u32)> = ts.iter().map(|&(t,v)| (if v == start { lo } else { t },v)).collect();
-                if at.first().map_or(true,|x| x.1 != start) { at.insert(0,(lo,start)); }
+                let mut at: Vec<(f64,u32)> = vec![(lo,start)];
+                at.extend(ts.iter().copied().filter(|&(_,v)| v != start));
                 at.push((hi,start));
                 for w in at.windows(2) { if w[1].0 > w[0].0 { spans.push(([w[0].0,w[1].0],[w[0].1,w[1].1])); } }
                 return spans
@@ -2393,8 +2396,10 @@ fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],
 }
 
 /// The stretch of a closed-form curve to read for crossings within the box `bx` grown by `pad`: a
-/// closed one's period, a line's run inside the box's slabs, a spline's domain; none for a line
-/// missing the box.
+/// closed one's period, a line's run inside the box's slabs, a spline's domain, a plane's cut of a
+/// screwed sheet's (which crosses the rulings the plane holds, #885); none for a line missing the
+/// box, nor yet for the other open kinds a closed form gives (a helix on a sheet, a turned or a
+/// slid contact, a trochoid), whose crossings with a meeting's other curves are not sought.
 fn stretch_in(c: &Curve,(lo,hi): Box3,pad: f64) -> Option<[f64;2]> {
     if let Some(p) = c.period() { return Some([0.,p]) }
     match *c {
@@ -2407,7 +2412,7 @@ fn stretch_in(c: &Curve,(lo,hi): Box3,pad: f64) -> Option<[f64;2]> {
             }
             (t0 < t1).then_some([t0,t1])
         }
-        Curve::BSpline(ref b) => Some(b.domain()),
+        Curve::BSpline(..) | Curve::SheetCut(..) => super::query::curve_domain(c),
         _ => None,
     }
 }

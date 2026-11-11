@@ -127,7 +127,7 @@ pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, 
             let (fc, fo) = (chain[i].seg.point(tc), other.seg.point(to));
             // from the chain's foot to the other's: the corner's way from `a` to `b`, or back
             let turn = if c == 0 { corner.side } else { -corner.side };
-            (up_to(i, tc), vec![(corners::arc_between(centre, r, fc, fo, turn), "round")], other.seg.part(0.0, to), fc)
+            (up_to(i, tc), vec![(corners::arc_between(centre, r, fc, fo, turn), section.face())], other.seg.part(0.0, to), fc)
         }
         Section::Flat { la, lb } => {
             let legs = [la, lb];
@@ -172,7 +172,7 @@ pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, 
             }
             points.push(po);
             let flats = order.iter().zip(points.windows(2))
-                .map(|(&k, q)| Ok((over(k, q[0], q[1])?, "flat"))).collect::<Result<Vec<_>, String>>()?;
+                .map(|(&k, q)| Ok((over(k, q[0], q[1])?, section.face()))).collect::<Result<Vec<_>, String>>()?;
             (up_to(i, tc), flats, other.seg.part(0.0, to), pc)
         }
     };

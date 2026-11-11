@@ -8,11 +8,25 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two rounds tangent to one face union wherever their meeting ends at the touch**
+  (`ssi::trace_beside`, `boolean`): two surfaces' meeting through a point where they touch and
+  its branches cross ends there, and a march that steps across such a touch lying on a face's own
+  edge now ends at the touch, where it ended a step past it, off that face ("beside a meeting
+  known"). The curve then ran through that vertex twice, one stretch of it was never laid, and
+  the union was refused ("a shell of the arrangement is kept on one side … and dropped on
+  another") or built, as the steps fell: a box's corner rounded 5 and its top rim rounded 1
+  refused, the same at its bottom rim built. A closed curve with no period has the vertex both
+  its ends are at both of them wherever along it that vertex was read (`boolean`'s `spans`):
+  read at its far end, the stretch from the last point on the curve round to it was dropped.
+- `recipe::Named::said` (**new** field) and `Named::called()` (**new**): what a failure to build a
+  node calls it, where the recipe's writer says (`"said"`), else its name between backticks — a
+  node named by nothing its author wrote says what it is of. A body's `built_names` hold what
+  `called()` gives, no longer bare names it puts backticks round.
 - **A rail screwed many turns is inverted on its own turn** (`geom::Curve::inverse` of a
   `Curve::Iso`): Newton is seeded from the nearest of the rail's samples and of the points where
-  its screw turns it to face the point, one a turn, by the one seeding `Blend`'s own inverse uses. From the samples
-  alone, a rail whose pitch is small beside its radius had half its points read a turn off, so two
-  edges along one helix were never merged: the square bar screwed four turns
+  its screw turns it to face the point, one a turn, by the one seeding `Blend`'s own inverse uses.
+  From the samples alone, a rail whose pitch is small beside its radius had half its points read a
+  turn off, so two edges along one helix were never merged: the square bar screwed four turns
   (brep-bench's swept/square-bar-screwed-through-rod) was refused with "a cylinder's pieces do not
   close", and now builds, its volume the closed form's to rounding, and cut from the rod gives
   the bench's settled volume and area.
@@ -25,7 +39,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   The full brep-bench Utah teapot run falls below one second on the development benchmark,
   preserving the mesh geometry and measurements to rounding (the existing pole-related
   measurement discrepancy is unchanged).
-
 - **A finite screw whose roll does not carry its section past the blank builds**
   (`swept::helical::helical_sheet`): where an end of the section's columns that the roll cut
   short stands in the blank, or no column is left, the sheet is laid on the characteristic

@@ -814,13 +814,18 @@ fn solids_and_surfaces(
     solids(sk, res, map, body, skip, probes, diags);
     super::solids::carry_legs(sk);
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
-    let unnamed: Vec<(String, usize, Vec<_>)> = flat.expansion.face_repeats.iter()
+    // (named again too where its rounds have come to stand in other layers, #879: which faces
+    // meet is read in the layer a round stands in)
+    let unnamed: Vec<(String, Vec<_>, crate::solid::faces::Layers)> = flat.expansion
+        .face_repeats.iter()
         .filter(|abs| !(settled && named.faces.contains_key(*abs)))
         .filter_map(|abs| {
             res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < sk.solids.len())
-                .map(|e| (abs.clone(), e.i(), crate::solid::faces::face_paths(sk, e.i())))
+                .map(|e| (abs.clone(), crate::solid::faces::face_paths(sk, e.i()),
+                          crate::solid::faces::Layers::of(sk, e.i())))
         })
-        .filter(|(abs, _, now)| named.faces.get(abs).map(|l| &l.paths) != Some(now))
+        .filter(|(abs, now, layers)| !named.faces.get(abs)
+            .is_some_and(|l| &l.paths == now && l.layers.same_uses(layers)))
         .collect();
     // and each direction a `when` held a face against and was not given (#763), or was before
     // the faces were cleared to be named at another pose: read with them
@@ -833,11 +838,9 @@ fn solids_and_surfaces(
     let stood = !unnamed.is_empty() || !wanted.is_empty();
     let was = if stood { super::stand(sk, map, pose) } else { Vec::new() };
     let unnamed: BTreeMap<String, Listed> = unnamed.into_iter()
-        .map(|(abs, i, paths)| {
-            let read = crate::solid::faces::ListedFaces::read(sk, i, &paths).map(|l| {
-                (crate::solid::faces::Meets::of(&l), crate::solid::faces::Lays::of(&l))
-            });
-            (abs, Listed { paths, read })
+        .map(|(abs, paths, layers)| {
+            let read = crate::solid::faces::Layered::read(sk, &layers, &paths);
+            (abs, Listed { paths, layers, read })
         })
         .collect();
     let drawn: Directions = wanted.into_iter().filter_map(|name| {

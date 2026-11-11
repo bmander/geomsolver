@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.209 — November 2026**
+**Specification, Draft 0.210 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -978,7 +978,16 @@ as its other terms and every layer beneath it make it, and acts on it after them
 layer, as ever, blind to each other. Nothing is ordered by where a statement stands, only by what it
 names; rounds that name each other are **E041**. A face a round of the body made is among the faces
 `repeat a in X` runs over only where `X` names that round by its name, so `round(r) block` never
-rounds its own faces or another round's. **[0.149]** **Against the smooth surface**: the ball and
+rounds its own faces or another round's. **[0.210]** A face a round made is the face its body
+has: a round's `round` and a chamfer's `flat` (`plate.rim.taken.round`), named so to a block as
+to a report, whatever set the word's body says it by — so a round over a round's face
+(`box.near round(r: 1mm) box.vert`, the arc where the top meets the round of an upright edge) is
+made as one over a chamfer's is; and which faces meet (`meets`) and how a face lies (`parallel`,
+`perpendicular`) is read in the layer the round that asks stands in, the body that round reads.
+**A round over a rounded body** is a round of a solid of it: `part := solid(box)` is `box` as its
+rounds leave it, the faces they made among `part.box`'s, and `part.box.near round(r: 1mm)
+part.box` rounds the top's whole rim, round the arcs of the rounds that came to it, one tangent
+run. **[0.149]** **Against the smooth surface**: the ball and
 the flat stand against each face's `F.smooth` (§6.21), so where a face goes on tangent into another
 — the far face of a plate into its rim's round — a chamfer's leg, or a ball rolled along an edge on
 it, follows it across the seam, and what a concave chamfer adds rests on the round rather than on
