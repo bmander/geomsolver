@@ -151,11 +151,9 @@ fn a_tube_that_folds_is_entered_where_it_stands_outside_the_tool() {
 /// tolerance from 1e-5 to 1e-7, and its area 5.6e-4 high. Four of its dipped stretches
 /// (`rings::dip`) stand wholly inside the sweep beside the end poses, up to 3.6e-3 deep, and bound
 /// pockets of it the solid leaves out (#880 E2, R1's to mend). Built here, from the drawing, after
-/// 0.6.3, it is 25.2750184, 5.4e-5 low; and since the fitted sheets are read through restricted
-/// enclosures (0ee5f30, #873) the bench's spelling of the same motion (two turns as
-/// `Trajectory::Relative`, not through the document) is refused, "a bspline's pieces do not
-/// close". Held here within 1e-4 of the volume made apart, to be tightened to 1e-7 when both are
-/// mended. (A Monte Carlo of the
+/// 0.6.3, it is 25.2750184, 5.4e-5 low; the bench's spelling of the same motion is held below
+/// (`the_tumbling_torus_as_the_bench_spells_it_is_built_closed`). Held here within 1e-4 of the
+/// volume made apart, to be tightened to 1e-7 when the pockets are mended. (A Monte Carlo of the
 /// definition, 80 million points, read 25.260 ± 0.005: three of its deviations low, which the
 /// volume made apart settles. Read point by point, 100 000 points apart, the pockets are too thin
 /// to be met.)
@@ -163,6 +161,31 @@ fn a_tube_that_folds_is_entered_where_it_stands_outside_the_tool() {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: the tumbling torus built closed")]
 fn the_tumbling_torus_is_built_closed() {
     let (tool,path,roll) = tumble();
+    let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.002,1e-5).unwrap_or_else(|u| panic!("{u:?}"));
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-25.2750727653).abs() < 1e-4,"{v}");
+}
+
+/// **The tumbling torus as brep-bench spells it** (`swept/tumbling-torus`; #880 R1): the same torus
+/// and roll, its motion two turns read as `Trajectory::Relative` — turned by t/4 about the vertical
+/// line through (2, 0, 0), seen from a frame turned by t about the line through (0, 0.5, 0.5) along
+/// x — not through the document. At the start pose a circle of the torus meets the inner tube's
+/// fitted sheet flatly, where the sheet touches the torus along its rim: the fit crosses the circle
+/// twice within the tolerance of the touch, and a search proving each crossing (restricted Bézier
+/// enclosures, #873) found the one inside the sheet's domain, 2.7e-4 off, so the rim's crossing of
+/// the circle and the root were two vertices and the tube's face did not close ("a bspline's pieces
+/// do not close", cad-kernel 0.7.0). The root is that crossing, found beside the circle where the
+/// rim lies along its face (`flat_roots`). Built, it is the solid 0.6.3 built, its volume held to
+/// the one made apart within 1e-4 as the drawing's is (its pockets are R1's). In the fast tier
+/// (about 5 s), so a change to how a Boolean reads a fitted sheet meets it on every push.
+#[test]
+fn the_tumbling_torus_as_the_bench_spells_it_is_built_closed() {
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.5).unwrap();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.5,0.5],axis:[1.,0.,0.],ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let roll = [-75f64.to_radians(),75f64.to_radians()];
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.002,1e-5).unwrap_or_else(|u| panic!("{u:?}"));
     let v = gcs_core::brep::props::volume(&built);
     assert!((v-25.2750727653).abs() < 1e-4,"{v}");
