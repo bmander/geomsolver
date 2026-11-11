@@ -265,7 +265,8 @@ fn the_wankel_rotor_and_housing_export_and_measure_within_their_tolerance() {
 /// saddle, `bullnose.sv`'s root rolled across a tangent seam onto a ring's stretch and `spill.sv`'s
 /// chamfer spilled onto the plate's rim round, a ring glued to the flat beyond the seam, and
 /// `ledge.sv`'s along a straight edge, a prism of a line and a conic (#422), and `hub.sv`'s sides
-/// alone filled into its post, picked by the faces along the post's axis (#763).
+/// alone filled into its post, picked by the faces along the post's axis (#763), and `bracket.sv`'s
+/// runs a slot cuts apart, each ending on the slot's sides (#881).
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: the rounds exported and measured")]
 fn the_rounds_export_and_measure_within_their_tolerance() {
@@ -274,7 +275,7 @@ fn the_rounds_export_and_measure_within_their_tolerance() {
     let files = ["block","by_hand","pocket","boss","blank","slot","pad","rail","knob","tee","bore","twin","post","dshaft","hub"].map(|f| (f,None));
     let more = [("runout",Some("lug")),("runout",Some("vent")),("groove",Some("part")),("bores",Some("slab")),
         ("frustum",Some("half")),("crotch",Some("tee")),("bullnose",Some("part")),("spill",Some("boss")),
-        ("ledge",Some("part"))];
+        ("ledge",Some("part")),("bracket",Some("bracket.body"))];
     for (file,solid) in files.into_iter().chain(more) {
         let name = solid.unwrap_or(file);
         let source = doc(&format!("rounds/{file}.sv"));

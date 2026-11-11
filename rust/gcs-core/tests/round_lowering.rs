@@ -564,6 +564,60 @@ fn a_run_cut_off_by_a_post_it_runs_into() {
     assert!(before.iter().zip(&after).all(|(p, q)| (0..3).all(|k| (p[k] - by[k] - q[k]).abs() < 1e-12)));
 }
 
+/// **A crease a slot cuts across** (#881), `bracket.sv`: the round where a foot meets a plate,
+/// the edge cut in three by two slots through the foot, each reaching into the plate's base. The
+/// runs either side of a slot end on its two square sides, facing each other: within the ends of
+/// every run at once is within none, so the field read nothing and refused the build. A point is
+/// read against the run nearest it (`conditions::ends`): each run filled up to the slot's walls,
+/// the closed form's volume — the bracket less the slots (7 deep in the plate, 6 in the foot)
+/// and the round's section `(1 − π/4) r²` along the three runs, `6.3 + 20.6 + 6.3`.
+#[test]
+fn a_round_a_slot_cuts_ends_on_the_slots_sides() {
+    let src = include_str!("../../examples/rounds/bracket.sv");
+    let e = solved(src);
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "bracket.body");
+    let (half, r) = (PI * 1.7 * 1.7 / 2.0, 3.0);
+    let slot = (half + 3.4) * 7.0 + (16.0 * 3.4 + half) * 6.0;
+    let round = (1.0 - PI / 4.0) * r * r * (6.3 + 20.6 + 6.3);
+    close(props::volume(&b), 6.0 * 40.0 * 60.0 + 22.0 * 40.0 * 6.0 - 2.0 * slot + round);
+    // the field fills the round beside each run, and leaves each slot open above the foot
+    let field = MaterialField::read(&e.sketch, ent(&e, "bracket.body").i(), 1e-10).unwrap();
+    for y in [-17.9, 0.0, 17.9] {
+        assert!(field.side([7.0, y, 6.2]) < 0.0, "no round at y = {y}");
+    }
+    for y in [-12.0, 12.0] {
+        assert!(field.side([7.0, y, 6.2]) > 0.0, "the slot at y = {y} filled");
+    }
+    // starting at 7.5 the slots reach 0.2 into the plate, and each run ends on a slot's round end
+    // instead, carried on into it and kept outside it: the runs all end alike, read as before
+    let e = solved(&src.replace("start := 5mm", "start := 7.5mm"));
+    assert_eq!(lowered(&e).0, 1);
+    exported(&e, "bracket.body");
+}
+
+/// A refusal deep in an export (#881) is said at the document's statement that made the solid it
+/// names: a round's piece, at its round (`program::refusal_site`), not by its path through
+/// `std.rounds`' words (`b.#26.0.#….filled`).  A pin through the crease ends the run on a
+/// cylinder its section reaches past, which no construction builds yet.
+#[test]
+fn a_refused_rounds_piece_is_said_at_its_round() {
+    let src = include_str!("../../examples/rounds/bracket.sv");
+    let slots = src.find("  // a slot along the foot").unwrap();
+    let round = src.find("  body.foot round").unwrap();
+    let src = format!("{}  pin := Post(x: 6mm, y: 0mm, d: 1mm, z0: -1mm, z1: 7mm)\n  pin.body cut body\n{}",
+        &src[..slots], &src[round..]);
+    let e = solved(&src);
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let why = export::exact(&e.sketch, ent(&e, "bracket.body").i(), None, None, &say).err().expect("refused").message;
+    assert!(why.contains("a run its curved end does not cut off"), "{why}");
+    let (span, _) = gcs_core::program::refusal_site(&e.sketch, &e.map, &e.program, &why).expect("placed");
+    let (line, _) = gcs_core::syntax::line_col(e.program.text(), span.lo);
+    assert_eq!(src.lines().nth(line as usize - 1).map(str::trim), Some("body.foot round(r: r) body.plate"));
+    // a message naming no solid is placed nowhere
+    assert!(gcs_core::program::refusal_site(&e.sketch, &e.map, &e.program, "nothing named").is_none());
+}
+
 /// The same within a curved face: a D-shaped shaft (a round of 10 about its axis with a flat 6
 /// from it), the flat's top edge rounded. The run ends on the round at both ends, from inside:
 /// carried on out of the shaft past its wall and kept within it. At depth `u` in from the flat its
