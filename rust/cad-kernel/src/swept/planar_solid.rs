@@ -24,14 +24,12 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::build::{Profile,prism};
-use crate::geom::Surface;
 use crate::topo::Brep;
 use crate::trajectory::Trajectory;
-use crate::util::space::{add,cross,norm,scale,sub};
 use super::closed::Unbuilt;
 use super::member::{Solid,Swept};
-use super::region::{keeps,profiles,Piece,Setting,SweptRegion};
-use super::subtraction::{section_of,Prismatic};
+use super::region::{profiles,Piece,Setting,SweptRegion};
+use super::subtraction::{kept_normals,Prismatic};
 
 type V = [f64;3];
 type P = [f64;2];
@@ -44,31 +42,18 @@ const BOX_PER_DEGREE: f64 = 4.;
 /// How finely each stretch of the region is fitted, as a part of the tolerance.
 const FIT: f64 = 0.1;
 
-/// What `read` found: the plane the motion keeps and the tool standing along its normal, its slabs
-/// between its caps (heights along the normal, from the plane's origin).
-pub struct Read { pub tool: Prismatic,pub slabs: Vec<[f64;2]> }
-
 /// **Whether the motion keeps a plane the tool stands along**: the first normal of a plane face of
-/// `tool` whose plane every pose of `path` over `roll` keeps (`region::keeps`, at `KEPT_POSES`), the
-/// tool read as standing along it (`subtraction::Prismatic`) with no side leaning. None where there
-/// is no such plane, or the tool stands along none of them, or its section changes with the height.
-pub fn read(tool: &Brep,path: &Trajectory,roll: [f64;2]) -> Option<Read> {
-    let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
+/// `tool` whose plane every pose of `path` over the increasing `roll` keeps (`kept_normals`, at
+/// `KEPT_POSES`), the tool read as standing along it (`subtraction::Prismatic`), and its slabs
+/// between its caps, none with a side leaning. None where there is no such plane, or the tool
+/// stands along none of them, or its section changes with the height.
+fn read(tool: &Brep,path: &Trajectory,[a,b]: [f64;2]) -> Option<(Prismatic,Vec<[f64;2]>)> {
     if !(a < b) { return None }
-    let (lo,hi) = tool.bounds();
-    let o = scale(add(lo,hi),0.5);
-    let size = 1.+norm(sub(hi,lo))+norm(o);
     let poses: Vec<_> = (0..KEPT_POSES).map(|k| path.at(a+(b-a)*k as f64/(KEPT_POSES-1) as f64)).collect::<Result<_,_>>().ok()?;
-    // each plane face's normal once, in the faces' order
-    let mut normals: Vec<V> = Vec::new();
-    for f in &tool.faces {
-        let Surface::Plane(fr) = &f.surface else { continue };
-        if !normals.iter().any(|m| norm(cross(*m,fr.z)) <= 1e-9) { normals.push(fr.z) }
-    }
-    normals.into_iter().filter(|&n| poses.iter().all(|m| keeps(m,o,n,size))).find_map(|n| {
+    kept_normals(tool,&poses,1.).into_iter().find_map(|n| {
         let tool = Prismatic::along(tool,n,1.).ok()?;
         let slabs = tool.slabs();
-        (!slabs.iter().any(|s| tool.leans(0.5*(s[0]+s[1])))).then_some(Read {tool,slabs})
+        (!slabs.iter().any(|s| tool.leans(0.5*(s[0]+s[1])))).then_some((tool,slabs))
     })
 }
 
@@ -76,16 +61,14 @@ pub fn read(tool: &Brep,path: &Trajectory,roll: [f64;2]) -> Option<Read> {
 /// tool stands along** (the module's method), built to `tol` and judged by membership read on the
 /// tool meshed within `bar`; none where `read` finds no such plane.
 pub fn swept(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Option<Brep>,Unbuilt> {
-    let Some(Read {tool:standing,slabs}) = read(tool,path,roll) else { return Ok(None) };
     let roll = [roll[0].min(roll[1]),roll[0].max(roll[1])];
+    let Some((standing,slabs)) = read(tool,path,roll) else { return Ok(None) };
     let plane = standing.plane;
-    let scale_of = standing.reach();
     let mut solids: Vec<Brep> = Vec::new();
     let mut held: Vec<V> = Vec::new();
     for &[h0,h1] in &slabs {
         let h = 0.5*(h0+h1);
-        let loops = standing.section(h,true).map_err(|e| Unbuilt::Failed(format!("the tool's section at height {h}: {e}")))?;
-        let setting = Setting {section:section_of(loops),path:path.clone(),plane,roll,scale:scale_of};
+        let setting = standing.setting(h,true,path,roll).map_err(|e| Unbuilt::Failed(format!("the tool's section at height {h}: {e}")))?;
         if setting.section.is_empty() { continue }
         let whole = setting.alike(roll[0],roll[1]);
         let bounds = holding(&setting,roll);
@@ -109,9 +92,8 @@ pub fn swept(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> R
         }
         held.extend([bounds[0],bounds[1]].iter().flat_map(|&p| [plane.world(p,h0),plane.world(p,h1)]));
     }
-    let Some(first) = solids.first().cloned() else { return Err(Unbuilt::Failed("the tool has no section".into())) };
-    let mut out = first;
-    for s in &solids[1..] { out = crate::boolean::combined(&out,s,crate::boolean::Op::Union,tol)?; }
+    let out = solids.into_iter().map(Ok).reduce(|a: Result<Brep,Unbuilt>,b| Ok(crate::boolean::combined(&a?,&b?,crate::boolean::Op::Union,tol)?))
+        .ok_or_else(|| Unbuilt::Failed("the tool has no section".into()))??;
     out.check(tol)?;
     // **judged by its definition before it is returned** (#777 V2), over a box holding it
     let (domain,..) = super::closed::cube_holding(&held,tol)?;
@@ -125,11 +107,14 @@ pub fn swept(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> R
 /// farthest one of them moved between two poses to spare.
 fn holding(setting: &Setting,roll: [f64;2]) -> [P;2] {
     let n = (((roll[1]-roll[0]).to_degrees()*BOX_PER_DEGREE).ceil() as usize).max(64);
-    let poses: Vec<Vec<P>> = (0..=n).map(|k| setting.covered(roll[0]+(roll[1]-roll[0])*k as f64/n as f64,4)).collect();
-    let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
-    for p in poses.iter().flatten() { for k in 0..2 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]) } }
-    let span = |ps: &[P]| ps.iter().fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(l,h),p| ([l[0].min(p[0]),l[1].min(p[1])],[h[0].max(p[0]),h[1].max(p[1])]));
-    let (slo,shi) = span(&poses[0]);
+    // the section's points read once, each pose carrying them
+    let local = setting.points(4);
+    let pl = &setting.plane;
+    let poses: Vec<Vec<P>> = crate::util::par::indices(n+1,|k| setting.path.pose(roll[0]+(roll[1]-roll[0])*k as f64/n as f64)
+        .map_or(Vec::new(),|m| local.iter().map(|&x| pl.page(m.point(pl.world(x,0.)))).collect()));
+    let span = |ps: &mut dyn Iterator<Item=&P>| ps.fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(l,h),p| ([l[0].min(p[0]),l[1].min(p[1])],[h[0].max(p[0]),h[1].max(p[1])]));
+    let (lo,hi) = span(&mut poses.iter().flatten());
+    let (slo,shi) = span(&mut local.iter());
     let size = (shi[0]-slo[0]).dhypot(shi[1]-slo[1]);
     let moved = poses.windows(2).flat_map(|w| w[0].iter().zip(&w[1]).map(|(p,q)| (p[0]-q[0]).dhypot(p[1]-q[1]))).fold(0.,f64::max);
     let pad = 0.25*size+moved+1e-6*(1.+setting.scale);

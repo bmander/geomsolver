@@ -7,7 +7,7 @@
 //! dense poses; each judged by membership before it is returned, and written as a closed STEP
 //! B-rep.
 use gcs_core::brep::boolean::{combined,Op};
-use gcs_core::brep::build::{disc,prism,Profile,ProfileEdge};
+use gcs_core::brep::build::{disc,prism,Profile};
 use gcs_core::brep::geom::tolerance;
 use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::closed::closed;
@@ -15,18 +15,15 @@ use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::{Screw,Trajectory};
 use std::f64::consts::{PI,TAU};
 
+use crate::swept_closed::turn;
+
 type V = [f64;3];
 
 /// The prism on the polygon `corners` (counter-clockwise seen from `+normal`'s side, in the plane
 /// through the first), from it to `depth` along the normal.
 fn polygon_prism(corners: &[V],normal: V,depth: f64) -> Brep {
-    let n = corners.len();
-    let edges = (0..n).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%n]}).collect();
-    prism(&Profile {origin:corners[0],normal,loops:vec![edges],names:Vec::new()},0.,depth).unwrap()
+    prism(&Profile {origin:corners[0],normal,loops:vec![crate::brep::poly(corners)],names:Vec::new()},0.,depth).unwrap()
 }
-
-/// A turn about the line through `origin` along `axis`, `ratio` radians a radian.
-fn turn(origin: V,axis: V,ratio: f64) -> Trajectory { Trajectory::Twist(Screw {origin,axis,ratio,advance:0.}) }
 
 /// `source` seen from `observer`.
 fn seen(source: Trajectory,observer: Trajectory) -> Trajectory {
@@ -48,10 +45,9 @@ fn area_by_lines(corners: &[[f64;2]],pose: &(dyn Fn(f64) -> ([[f64;2];2],[f64;2]
         corners.iter().map(|p| [r[0][0]*p[0]+r[0][1]*p[1]+c[0],r[1][0]*p[0]+r[1][1]*p[1]+c[1]]).collect()
     }).collect();
     let n = corners.len();
-    let mut shapes: Vec<Vec<[f64;2]>> = placed.clone();
-    for w in placed.windows(2) {
-        for k in 0..n { shapes.push(vec![w[0][k],w[0][(k+1)%n],w[1][(k+1)%n],w[1][k]]) }
-    }
+    let mut shapes: Vec<Vec<[f64;2]>> = placed.windows(2)
+        .flat_map(|w| (0..n).map(move |k| vec![w[0][k],w[0][(k+1)%n],w[1][(k+1)%n],w[1][k]])).collect();
+    shapes.extend(placed);
     let reach: Vec<[f64;2]> = shapes.iter().map(|h| h.iter().fold([f64::INFINITY,f64::NEG_INFINITY],|[lo,hi],p| [lo.min(p[1]),hi.max(p[1])])).collect();
     let ys: Vec<f64> = (0..lines).map(|k| y0+(y1-y0)*(k as f64+0.5)/lines as f64).collect();
     let lengths = gcs_core::par::map(&ys,|&y| {

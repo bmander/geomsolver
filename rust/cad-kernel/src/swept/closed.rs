@@ -625,9 +625,14 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     let legs = match legs(tool,path,roll) {
         Err(Unbuilt::Motion) if path.screw().is_none() => {
             // a prism under a motion keeping the plane square to it: its section's planar sweep,
-            // extruded (#880 Q2), before K2's road
-            if blank.is_none() { if let Some(b) = super::planar_solid::swept(tool,path,roll,bar,tol)? { return Ok(b) } }
-            return k2(tool,path,roll,bar,tol,blank)
+            // extruded (#880 Q2), before K2's road — which is still asked where it refuses, its
+            // refusal standing unless K2 cannot read the tool at all
+            let planar = if blank.is_none() { super::planar_solid::swept(tool,path,roll,bar,tol) } else { Ok(None) };
+            return match planar {
+                Ok(Some(b)) => Ok(b),
+                Ok(None) => k2(tool,path,roll,bar,tol,blank),
+                Err(why) => k2(tool,path,roll,bar,tol,blank).map_err(|k| if matches!(k,Unbuilt::Curved {..}) { why } else { k }),
+            }
         }
         legs => legs?,
     };

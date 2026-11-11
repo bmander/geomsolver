@@ -22,10 +22,10 @@ use crate::swept_closed::{agrees_over,bull_nose,monte_carlo,slide};
 type V = [f64;3];
 
 /// The example `name` of the solid sweeps series, elaborated and solved.
-pub(crate) fn example(name: &str) -> Elaborated { fixtures::read(&crate::solid_sweeps_examples::text(name)) }
+fn example(name: &str) -> Elaborated { fixtures::read(&crate::solid_sweeps_examples::text(name)) }
 
 /// The sweep `name` of `e` as the kernel takes it: its tool's B-rep, its trajectory and its roll.
-pub(crate) fn sweep(e: &Elaborated,name: &str) -> (Brep,Trajectory,[f64;2]) {
+fn sweep(e: &Elaborated,name: &str) -> (Brep,Trajectory,[f64;2]) {
     let sk = &e.sketch;
     let swept = fixtures::solid(e,name);
     let SolidDef::Swept {source,motion,..} = &sk.solids[swept].def else { panic!("`{name}` is a sweep") };

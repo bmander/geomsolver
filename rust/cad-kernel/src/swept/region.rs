@@ -258,6 +258,12 @@ impl Setting {
     pub fn covered(&self,t: f64,grid: usize) -> Vec<P> {
         let Some(m) = self.path.pose(t).ok() else { return Vec::new() };
         let pl = &self.plane;
+        self.points(grid).into_iter().map(|x| pl.page(m.point(pl.world(x,0.)))).collect()
+    }
+
+    /// The section's points `covered` carries, in its own frame: a hair inside its boundary, and a
+    /// `grid` by `grid` lattice over its box inside it.
+    pub fn points(&self,grid: usize) -> Vec<P> {
         let mut inside: Vec<P> = self.samples(16).into_iter().map(|(_,q)| q).collect();
         // a grid over the section's own box
         let (lo,hi) = self.section.members.iter().flatten().flatten().flatten().flat_map(|e| (0..=8).map(move |k| e.at(k as f64/8.)))
@@ -266,7 +272,7 @@ impl Setting {
             let p = [lo[0]+(hi[0]-lo[0])*i as f64/grid as f64,lo[1]+(hi[1]-lo[1])*j as f64/grid as f64];
             if self.section.value(p) < 0. { inside.push(p) }
         } }
-        inside.into_iter().map(|x| pl.page(m.point(pl.world(x,0.)))).collect()
+        inside
     }
 }
 
@@ -515,12 +521,13 @@ impl SweptRegion {
         let grazing = (16.*s.tolerance()*(1.+s.scale)).sqrt();
         let handed = |i: usize,j: usize| tangent(&runs[j],&runs[i],0,at[i][1]).is_some()
             || tangent(&runs[i],&runs[j],1,at[j][0]).is_some();
-        let crosses = |i: usize,j: usize| i != j
-            && joined(&point,runs[i].candidate,runs[i].ends[1],runs[j].candidate,runs[j].ends[0],grazing).is_some();
+        // (only between ends the keeping test cut, which is what overshoots: solved once, here)
+        let crosses = |i: usize,j: usize| (i != j && runs[i].why[1] == End::Kept && runs[j].why[0] == End::Kept)
+            .then(|| joined(&point,runs[i].candidate,runs[i].ends[1],runs[j].candidate,runs[j].ends[0],grazing)).flatten();
         // where several stretches meet at one point (an end pose's corner, where a held edge, the
         // corner's path and a hair of the next edge the keeping test's tolerance keeps all start),
         // the boundary of a union turns the most to the right: those pairs go first, by that turn
-        let mut pairs: Vec<(f64,f64,usize,usize)> = Vec::new();
+        let mut pairs: Vec<(f64,f64,usize,usize,Option<(f64,f64,P)>)> = Vec::new();
         for i in 0..runs.len() {
             if runs[i].why[1] == End::Box { continue }
             for j in 0..runs.len() {
@@ -529,16 +536,20 @@ impl SweptRegion {
                 // two stretches crossing at a grazing angle (two corners' traces at the apex of a
                 // lobe, each kept on past their crossing as far as the keeping test's tolerance
                 // reaches along so shallow a meeting) are paired where their crossing is found
-                if d > loose && !(d <= grazing && (handed(i,j) || crosses(i,j))) { continue }
+                let mut crossing = None;
+                if d > loose {
+                    if d > grazing { continue }
+                    if !handed(i,j) { crossing = crosses(i,j); if crossing.is_none() { continue } }
+                }
                 let turn = if d > join { f64::INFINITY } else {
                     heading(&runs[i],at[i][1],1).zip(heading(&runs[j],at[j][0],0)).map_or(f64::INFINITY,|(x,y)| cross(x,y).datan2(dot(x,y)))
                 };
-                pairs.push((d,turn,i,j))
+                pairs.push((d,turn,i,j,crossing))
             }
         }
         let rank = |d: f64| if d <= join { 0. } else { d };
         pairs.sort_by(|x,y| rank(x.0).total_cmp(&rank(y.0)).then(x.1.total_cmp(&y.1)).then(x.2.cmp(&y.2)).then(x.3.cmp(&y.3)));
-        for (d,_,i,j) in pairs {
+        for (d,_,i,j,crossing) in pairs {
             if next[i].is_some() || taken[j] { continue }
             if let Some(u) = tangent(&runs[j],&runs[i],0,at[i][1]) {
                 runs[j].ends[0] = u; at[j][0] = at[i][1];
@@ -546,8 +557,8 @@ impl SweptRegion {
                 runs[i].ends[1] = u; at[i][1] = at[j][0];
             } else if d > join {
                 // two stretches crossing: where their curves meet, solved for both parameters
-                let reach = if d > loose { grazing } else { loose };
-                let Some((ui,uj,p)) = joined(&point,runs[i].candidate,runs[i].ends[1],runs[j].candidate,runs[j].ends[0],reach) else { continue };
+                let Some((ui,uj,p)) = crossing.or_else(|| joined(&point,runs[i].candidate,runs[i].ends[1],runs[j].candidate,runs[j].ends[0],loose))
+                    else { continue };
                 runs[i].ends[1] = ui; runs[j].ends[0] = uj;
                 at[i][1] = p; at[j][0] = p;
             }
