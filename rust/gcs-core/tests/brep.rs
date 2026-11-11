@@ -2897,3 +2897,117 @@ fn a_cone_cut_through_its_apex_is_its_part() {
     // (the cone's seam, along +x, is in the part cut away)
     assert_eq!(straight,3,"the chord and the two generators: {straight} lines");
 }
+
+/// A cubic's Bernstein evaluation agrees with the same curve degree-elevated to a quartic,
+/// which uses the general B-spline recurrence. Weights are elevated in homogeneous space.
+#[test]
+fn a_cubic_bezier_and_its_quartic_have_the_same_two_derivatives() {
+    use gcs_core::brep::nurbs::BSpline;
+    let poles = [[-1.,2.,0.],[3.,-4.,2.],[0.5,1.,-3.],[2.,3.,1.]];
+    for [a,b] in [[0.,1.],[-3.,2.],[1e6,1e6+0.125]] {
+        for weights in [None,Some(vec![1.,0.4,2.,1.3])] {
+            let knots = |degree: usize| [vec![a;degree+1],vec![b;degree+1]].concat();
+            let cubic = BSpline {degree:3,knots:knots(3),poles:poles.to_vec(),weights:weights.clone()};
+            let h: Vec<[f64;4]> = poles.iter().enumerate().map(|(i,p)| {
+                let w = weights.as_ref().map_or(1.,|ws| ws[i]);
+                [p[0]*w,p[1]*w,p[2]*w,w]
+            }).collect();
+            let q: Vec<[f64;4]> = (0..5).map(|i| {
+                if i == 0 { h[0] } else if i == 4 { h[3] } else {
+                    let t = i as f64/4.;
+                    std::array::from_fn(|k| t*h[i-1][k]+(1.-t)*h[i][k])
+                }
+            }).collect();
+            let quartic = BSpline {degree:4,knots:knots(4),
+                poles:q.iter().map(|p| [p[0]/p[3],p[1]/p[3],p[2]/p[3]]).collect(),
+                weights:weights.as_ref().map(|_| q.iter().map(|p| p[3]).collect())};
+            // Include the ends, points a rounding away from them, and clamping outside.
+            for t in [a-1.,a,a.next_up(),a+(b-a)*0.13,a+(b-a)*0.5,b.next_down(),b,b+1.] {
+                let (p,d,dd) = cubic.d2(t);
+                let (q,e,ee) = quartic.d2(t);
+                for (x,y) in [(p,q),(d,e),(dd,ee)] { for k in 0..3 {
+                    assert!((x[k]-y[k]).abs() < 2e-11*(1.+y[k].abs()),"at {t}: {x:?} != {y:?}");
+                } }
+                assert_eq!(cubic.point(t),p);
+                assert_eq!(cubic.d1(t),(p,d));
+            }
+        }
+    }
+    // Four poles without clamping are not a Bezier segment.
+    let s = BSpline::new(3,vec![-3.,-2.,-1.,0.,1.,2.,3.,4.],poles.to_vec()).unwrap();
+    for k in 0..3 { close(s.point(0.)[k],(poles[0][k]+4.*poles[1][k]+poles[2][k])/6.); }
+}
+
+/// Two polynomial patches bound a unit-square column whose bottom and top both follow
+/// z = 3x(1-x). Their boxes overlap even when the columns stand apart. Subdivision may prove
+/// separation, but must keep crossings and coincident faces for the ordinary Boolean reader.
+#[test]
+fn spline_columns_with_overlapping_boxes_keep_their_meetings() {
+    use gcs_core::brep::{boolean::{combined,Op},build::{face,sheet},nurbs::{BSpline,Net},sew::sewn};
+    let column = |lo: f64,hi: f64| {
+        let x = [0.,0.5,1.];
+        let z = [0.,1.5,0.];
+        let patch = |du,dv,poles| sheet(Net {du,dv,
+            uknots:[vec![0.;du+1],vec![1.;du+1]].concat(),
+            vknots:[vec![0.;dv+1],vec![1.;dv+1]].concat(),poles,weights:None}).unwrap();
+        let mut faces = Vec::new();
+        for h in [lo,hi] {
+            faces.push(patch(2,1,(0..3).map(|i| vec![[x[i],0.,z[i]+h],[x[i],1.,z[i]+h]]).collect()));
+        }
+        // The four walls are planes, bounded by the same parabolic edges as the sheets.
+        for y in [0.,1.] {
+            let curve = |h: f64,reverse: bool| {
+                let mut p: Vec<V> = (0..3).map(|i| [x[i],y,z[i]+h]).collect();
+                if reverse { p.reverse() }
+                ProfileEdge::Spline(std::sync::Arc::new(BSpline::new(2,vec![0.,0.,0.,1.,1.,1.],p).unwrap()))
+            };
+            faces.push(face(&Profile {names:vec![],origin:[0.,y,lo],normal:XZ,loops:vec![vec![
+                curve(hi,false),line([1.,y,hi],[1.,y,lo]),curve(lo,true),line([0.,y,lo],[0.,y,hi])]]}).unwrap());
+        }
+        for x in [0.,1.] {
+            faces.push(face(&Profile {names:vec![],origin:[x,0.,lo],normal:[1.,0.,0.],
+                loops:vec![poly(&[[x,0.,lo],[x,1.,lo],[x,1.,hi],[x,0.,hi]])]}).unwrap());
+        }
+        sewn(&faces,1e-8).unwrap()
+    };
+    let a = column(0.,0.2);
+    close(volume(&a),0.2);
+    for (lo,expected) in [(0.5,0.4),(0.1,0.3)] {
+        let b = column(lo,lo+0.2);
+        for (a,b) in [(&a,&b),(&b,&a)] {
+            let union = combined(a,b,Op::Union,0.).unwrap();
+            union.check(1e-7).unwrap();
+            assert!((volume(&union)-expected).abs() < 1e-9);
+        }
+    }
+    // Coincident spline supports are currently refused. In particular, an unresolved
+    // enclosure must not silently discard that meeting and report two separate solids.
+    let touching = column(0.2,0.4);
+    let error = combined(&a,&touching,Op::Union,0.).unwrap_err();
+    assert!(error.to_string().contains("coincide or touch to higher order"),"{error}");
+    let b = column(0.1,0.3);
+    for op in [Op::Common,Op::Cut] {
+        let part = combined(&a,&b,op,0.).unwrap();
+        part.check(1e-7).unwrap();
+        assert!((volume(&part)-0.1).abs() < 1e-9);
+    }
+    // The volumes above hold whether or not a pair is proved apart, so the proof is read itself:
+    // the separated columns' sheets are proved apart, every two of them, within its budget; no
+    // sheet is from one it coincides with, one it crosses, or one nearer than the padding.
+    use gcs_core::brep::{boolean::separated_nets,geom::Surface};
+    let nets = |b: &gcs_core::brep::topo::Brep| -> Vec<std::sync::Arc<Net>> {
+        b.faces.iter().filter_map(|f| match &f.surface { Surface::BSpline(_,n) => Some(n.clone()),_ => None }).collect()
+    };
+    let (below,above) = (nets(&a),nets(&column(0.5,0.7)));
+    assert_eq!((below.len(),above.len()),(2,2));
+    for s in &below { for t in &above {
+        assert!(separated_nets(s,t,4e-7) && separated_nets(t,s,4e-7),"sheets 0.3 apart or more, not proved so");
+        assert!(!separated_nets(s,t,1.),"sheets proved farther apart than they are");
+    } }
+    // `a`'s top sheet is `touching`'s bottom one
+    assert!(!separated_nets(&below[1],&nets(&touching)[0],4e-7));
+    // the same parabola hung the other way up crosses `a`'s top sheet where 6x(1-x) = 0.7
+    let hung = Net {du:2,dv:1,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,1.,1.],weights:None,
+        poles:[0.,-1.5,0.].iter().enumerate().map(|(i,z)| vec![[0.5*i as f64,0.,z+0.9],[0.5*i as f64,1.,z+0.9]]).collect()};
+    assert!(!separated_nets(&below[1],&hung,4e-7) && !separated_nets(&hung,&below[1],4e-7));
+}
