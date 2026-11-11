@@ -859,7 +859,7 @@ fn a_grooves_rims_are_rounded_away() {
 }
 
 /// `∫ f` over `[a, b]` by adaptive Simpson's rule, to `tol`.
-fn simpson(f: &dyn Fn(f64) -> f64, a: f64, b: f64, tol: f64) -> f64 {
+pub(crate) fn simpson(f: &dyn Fn(f64) -> f64, a: f64, b: f64, tol: f64) -> f64 {
     fn step(f: &dyn Fn(f64) -> f64, a: f64, b: f64, fa: f64, fm: f64, fb: f64, whole: f64, tol: f64, depth: u32) -> f64 {
         let m = 0.5 * (a + b);
         let (lm, rm) = (f(0.5 * (a + m)), f(0.5 * (m + b)));
