@@ -1163,6 +1163,10 @@ struct Crossings {
     along_face: Sides<Vec<Vec<usize>>>,
     /// each root an edge meets a face at by its distance from the surface, at a vertex of its own
     loose: Vec<Loose>,
+    /// each working edge's vertices found on it by another operand's edge lying along a face it
+    /// bounds, where that edge crosses it (`Meets::Along`): crossings found beside the edge's own
+    /// reading of the other's faces, which `flat_roots` takes a root met flatly to
+    beside: Vec<Vec<u32>>,
 }
 
 /// Phase 2's findings: every pair of faces.
@@ -1250,6 +1254,7 @@ impl<'a> Arrangement<'a> {
             on_face: Sides::new(n,|s| vec![Vec::new();self.solids[s].faces.len()]),
             along_face: Sides::new(n,|s| vec![Vec::new();self.solids[s].faces.len()]),
             loose: Vec::new(),
+            beside: vec![Vec::new();self.edges.len()],
         };
         // the faces each edge bounds
         let bounded: Sides<Vec<Vec<usize>>> = Sides::new(n,|s| {
@@ -1304,6 +1309,8 @@ impl<'a> Arrangement<'a> {
                                     self.say.along_crosses(s,i,c,fi,g,q);
                                     let v = self.pool.at(q);
                                     self.cuts[we].push((t,v));
+                                    let wg = self.working(other,g as usize);
+                                    if !found.beside[wg].contains(&v) { found.beside[wg].push(v); }
                                     // on the boundary of every face that edge bounds: a meeting of the
                                     // face beside it may end there (two fillets' faces and the face both
                                     // roll on, touching one another at one point)
@@ -1344,13 +1351,22 @@ impl<'a> Arrangement<'a> {
     /// fillet's contact, where its canal lies tangent to the face the edge lies in) is that root, and
     /// the vertex the root minted is no vertex at all. Returns those vertices: each such root's
     /// crossing takes its place in `cuts` and `on_face`.
+    ///
+    /// The crossing may be the edge's own cut, or one found beside it (`Crossings::beside`): where
+    /// the other operand's edge lies along a face this edge bounds, and crosses this edge there. A
+    /// circle on a torus at a sweep's end pose meets the fitted sheet that touches the torus along
+    /// its rim (#880 R1, the tumbling torus): the sheet, a fit, crosses the circle twice within the
+    /// tolerance of the touch, and a search proving each crossing (restricted Bézier enclosures,
+    /// #873) finds the one inside the sheet's domain, 2.7e-4 off; the rim, lying along the torus's
+    /// face, crosses the circle at the touch itself, and that crossing is the root.
     fn flat_roots(&mut self,crossings: &mut Crossings) -> std::collections::BTreeSet<u32> {
         let tol = self.tol;
         let loose = &crossings.loose;
         let rooted: std::collections::BTreeSet<(usize,u32)> = loose.iter().map(|l| (l.edge,l.vertex)).collect();
         let mut gone = std::collections::BTreeSet::new();
         for l in loose {
-            if self.cuts[l.edge].len() < 2 { continue }
+            let beside = &crossings.beside[l.edge];
+            if self.cuts[l.edge].len() < 2 && beside.is_empty() { continue }
             let e = &self.solids[l.side].edges[l.index];
             let EdgeCurve::Curve(c) = &e.curve else { continue };
             let s = &self.solids[l.against].faces[l.face].surface;
@@ -1367,11 +1383,17 @@ impl<'a> Arrangement<'a> {
                 }
             };
             let (lo,hi) = (reach(-1.),reach(1.));
-            let exact = self.cuts[l.edge].iter().filter(|&&(t,w)| w != l.vertex && !rooted.contains(&(l.edge,w)) && t >= lo && t <= hi)
-                .min_by(|x,y| (x.0-l.t).abs().total_cmp(&(y.0-l.t).abs())).map(|x| x.1);
-            let Some(w) = exact else { continue };
+            // the edge's own cuts, then the crossings found beside it, each where it stands on the
+            // edge's stretch
+            let found_beside = beside.iter().filter(|&&w| !self.cuts[l.edge].iter().any(|&(_,u)| u == w))
+                .filter_map(|&w| super::tolerant::on_stretch(c,e.t,self.pool.pts[w as usize],tol.max(e.tol)).map(|t| (t,w)));
+            let exact = self.cuts[l.edge].iter().copied().chain(found_beside)
+                .filter(|&(t,w)| w != l.vertex && !rooted.contains(&(l.edge,w)) && t >= lo && t <= hi)
+                .min_by(|x,y| (x.0-l.t).abs().total_cmp(&(y.0-l.t).abs()));
+            let Some((at,w)) = exact else { continue };
             self.say.flat_root(self.pool.pts[l.vertex as usize],self.pool.pts[w as usize]);
             self.cuts[l.edge].retain(|&(_,u)| u != l.vertex);
+            if !self.cuts[l.edge].iter().any(|&(_,u)| u == w) { self.cuts[l.edge].push((at,w)); }
             for u in crossings.on_face[l.against][l.face].iter_mut() { if *u == l.vertex { *u = w } }
             gone.insert(l.vertex);
         }

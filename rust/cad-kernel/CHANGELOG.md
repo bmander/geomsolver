@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A root met flatly goes onto a crossing found beside its edge** (`boolean`'s `flat_roots`):
+  where an edge of the other operand lying along a face the edge bounds crosses the edge, that
+  crossing is one a root met flatly may be, as the edge's own cuts were. A torus's circle at a
+  sweep's start pose meets the fitted sheet touching the torus along its rim within the tolerance
+  of the touch, and since 0.7.0's restricted Bézier enclosures the search proves the fit's own
+  crossing there, 2.7e-4 off the rim's: two vertices, and the sheet's face never closed. brep-bench's
+  `swept/tumbling-torus`, built by 0.6.3 and refused by 0.7.0 ("a bspline's pieces do not close"),
+  builds again: the same solid, in 6 s on the bench's runner where 0.6.3 took 15.
+
 ## [0.7.0] - 2026-11-11
 
 - **Two rounds tangent to one face union wherever their meeting ends at the touch**

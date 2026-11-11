@@ -537,7 +537,13 @@ the same in one place — a point onto a vertex within `tol` (`Pool`, each verte
 farthest point merged into it stood: `topo::Vertex::tol`, which `check` reads an edge's end
 against), a vertex onto an edge and an edge onto an edge within `ON_CURVE` tolerances, a point onto
 a meeting within `on_meeting`, a flat root onto a crossing within `FLAT`, a sliver into its edge —
-applied once, in that order. A search's warm start (`util::warm`: a sheet's, a blend's, a wall's
+applied once, in that order. The crossing a flat root goes onto is one of its edge's own cuts, or
+one found beside the edge (`Crossings::beside`): where an edge of the other operand lying along a
+face the edge bounds crosses it. A circle of a torus at a sweep's end pose meets the fitted sheet
+that touches the torus along its rim flatly; the fit crosses the circle within the tolerance of the
+touch, a proved search finds that crossing 2.7e-4 off, and the rim's own crossing of the circle is
+the root (#880 R1, brep-bench's `swept/tumbling-torus`, refused by 0.7.0;
+`swept_rings::the_tumbling_torus_as_the_bench_spells_it_is_built_closed`). A search's warm start (`util::warm`: a sheet's, a blend's, a wall's
 last foot) is forgotten at every arrangement and every parallel item and kept as it was across
 narration, so a split is the same bits with `SOLVENT_BREP_DEBUG` set and unset and on any thread
 (`arrangement::a_split_is_the_same_narrated_or_not_on_any_thread`). **A4, the arrangement**
