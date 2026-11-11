@@ -317,20 +317,22 @@ point of the body with its membership of its set beside it, both held in the tex
 they bind (`Chained::InPlace`), which carries them (`OpArg::Some`) so the printer writes the
 quantifier back.  The flattener registers each binder, in every round before any statement is
 read (`sets::register_binders`: a binder's membership stands before the relation binding it), as
-a probe with its quantifier (`Expansion::binders`), and applies the binders' memberships and the
+a probe with its quantifier and the set's point its relation reads (`Expansion::binders`; where
+sets nest, another quantifier's binder), and applies the binders' memberships and the
 relation **held** (`binding`), as a set measured from is (#192); a `some` whose set's point is no
 probe — a drawn point's, outside a solid's set — is E040.  At a binder a point on a line with no
 number is a term at nothing (`PointOnLine3`, a segment's own), since the set a binder ranges over
 may be no solid's.  The elaborator routes each constraint reading a binder (`regions::bound_by`):
-one reading a binder alone is that binder's term, as any probe's; one reading a quantifier's
-binders with one other probe — the set's point — is the quantifier's, never a row; two
-quantifiers' or several set points' is E040.  Once every relation is stated (`settle_bound`) each
+one reading a binder alone is that binder's term, as any probe's; one reading a quantifier's set's
+point and nothing else but what it binds is the quantifier's, never a row (so a join nested in
+another's set is read as its own); any other is E040.  Once every relation is stated (`settle_bound`) each
 quantifier's constraints are read by their kinds, never a word's name: a point on the line through
 two points, its ordinate along it from the first at least nothing and from the second at most
 nothing — the segment between them — each a binder or a point of the drawing, is **the join** of
 what they range over (`RegionShape::Join`, its operands `Target::Set` for a binder, filled and
 held as a set measured from is, `fill_sets`); a distance from one binder at most a number is the
-distance from its set (`RegionShape::Measured`), the set grown; anything else is E040 saying so.
+distance from its set (`RegionShape::Measured`), the set grown; anything else is E040 saying so,
+once: the solid it was refused in is not refused again for want of a term (`Probes::refused`).
 A join is read where each operand is the hull of finitely many points (`solid::joined`: a point of
 the drawing, a set of one point, a segment — on a line, its ordinate along it bounded at both ends
 — a drawn polygon of lines with no hole whose corners turn one way, or another join), the hull of
@@ -343,7 +345,10 @@ the field as every route is; grown or shrunk by a number it is the field's.
 `tests/joins.rs` is the gate: a tetrahedron the join of two opposite edges (its volume, area and
 field, and grown by 1 to brep-bench's offset/tetrahedron-grown), brep-bench's square-to-octagon
 transition a join of joins to its closed forms, a pyramid the join of its apex and a drawn face,
-a capsule a ball about some point of a segment, and each refusal.
+a capsule a ball about some point of a segment, and each refusal.  The experiment the syntax
+waited for — the cases before and after, what a join's field costs against its half-spaces', and
+what is left (a relation read by searching every bound point; joins of curved sets, by support
+functions) — is [some-points-of-sets.md](../some-points-of-sets.md).
 
 **Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
 reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.boss` every face
