@@ -598,7 +598,10 @@ it. It stays as the fast path where #699 D says so.
    end poses beside them inside it too: they bound thin pockets of the sweep the solid leaves out.
    The dipped stretch is inside the sweep, as `dip` says, but near an end pose nothing kept
    buries it: which meeting the arrangement lacks there, or which cell it misreads, is not yet
-   read. R1's to mend; `the_tumbling_torus_is_built_closed` holds the build within 5e-5 until then. (The Monte
+   read. R1's to mend. Built from the drawing after 0.6.3 it is 25.2750184, 5.4e-5 low; and since
+   the fitted sheets are read through restricted enclosures (0ee5f30, #873) brep-bench's spelling
+   of the same motion is refused ("a bspline's pieces do not close").
+   `the_tumbling_torus_is_built_closed` holds the build within 1e-4 until both are mended. (The Monte
    Carlo of the definition this paragraph cited, 25.260 ± 0.005, was three of its deviations low;
    the 100 000 points read one by one met no pocket, each too thin.) The road is not yet a class the dispatch admits;
    `closed::ring` builds it alone, and `closed::ring_cut_from` cut from a blank (a ring pushed into a
