@@ -270,14 +270,13 @@ fn edges_chamfered_one_after_another_mitre_at_their_corners() {
     assert_eq!(cube.faces.len(),18);
     close("cube",volume(&cube),1000.-6.*10.*4.+6.*8.);
     let octahedron = hull(&[[10.,0.,0.],[-10.,0.,0.],[0.,10.,0.],[0.,-10.,0.],[0.,0.,10.],[0.,0.,-10.]]).unwrap();
-    let k = 1./3f64.sqrt();
     let mut edges = Vec::new();
     for (i,j) in [(0,1),(1,2),(2,0)] { for si in [-1.,1.] { for sj in [-1.,1.] {
         let mut at = [0.;3];
         (at[i],at[j]) = (si*5.,sj*5.);
         edges.push(at);
     } } }
-    let octahedron = chamfered(octahedron,&edges,4.*k);
+    let octahedron = chamfered(octahedron,&edges,4./3f64.sqrt());
     assert_eq!(octahedron.faces.len(),20);
     close("octahedron",volume(&octahedron),4000./3.-8.*(52.-8.));
 }

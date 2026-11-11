@@ -4,10 +4,11 @@
 //! area the closed form, read off its faces with nothing meshed.
 use gcs_core::brep::build::hull;
 use gcs_core::brep::geom::{tolerance,Surface,V};
-use gcs_core::brep::props::{area,volume};
+use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::Brep;
 use gcs_core::rng::Rng;
-use gcs_core::space::{add,distance,dot,norm,scale,sub};
+use gcs_core::space::{add,dot,norm,scale,sub};
+use crate::brep::total_area;
 use std::collections::BTreeSet;
 
 fn close(what: &str,a: f64,b: f64) { assert!((a-b).abs() <= 1e-12*b.abs().max(1.),"{what}: {a} against {b} ({:e})",(a-b)/b); }
@@ -27,9 +28,8 @@ fn corners(b: &Brep) -> Vec<BTreeSet<u32>> {
 
 /// What every hull holds (the module's properties), and its volume and area.
 fn holds(b: &Brep,points: &[V]) -> (f64,f64) {
-    let (lo,hi) = points.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),p|
-        ([0,1,2].map(|k| lo[k].min(p[k])),[0,1,2].map(|k| hi[k].max(p[k]))));
-    let tol = tolerance(distance(lo,hi));
+    // the hull's box is the points'
+    let tol = tolerance(b.size());
     b.check(tol).unwrap();
     assert!(b.faces.iter().all(|f| f.loops.len() == 1),"a hull's face has one loop");
     assert_eq!(b.vertices.len() as i64-b.edges.len() as i64+b.faces.len() as i64,2,"V − E + F");
@@ -44,14 +44,14 @@ fn holds(b: &Brep,points: &[V]) -> (f64,f64) {
     for (f,(n,o)) in planes.iter().enumerate() {
         for &v in &corners[f] { assert!(dot(sub(b.vertices[v as usize].p,*o),*n).abs() <= tol,"face {f}: a corner off its plane"); }
     }
-    for e in 0..b.edges.len() as u32 {
-        let fs: Vec<usize> = (0..b.faces.len()).filter(|&f| b.faces[f].loops.iter().flatten().any(|c| c.edge == e)).collect();
+    for (e,uses) in b.uses().into_iter().enumerate() {
+        let fs: Vec<usize> = uses.iter().map(|u| u.0).collect();
         assert_eq!(fs.len(),2);
         let (n,o) = planes[fs[0]];
         let below = corners[fs[1]].iter().map(|&v| -dot(sub(b.vertices[v as usize].p,o),n)).fold(0.,f64::max);
         assert!(below > tol,"edge {e}: faces {} and {} are one plane",fs[0],fs[1]);
     }
-    (volume(b),b.faces.iter().map(|f| area(b,f)).sum())
+    (volume(b),total_area(b))
 }
 
 fn signs(k: usize) -> impl Iterator<Item = [f64;3]> { (0..1usize << k).map(move |m| [0,1,2].map(|i| if i < k && m >> i & 1 == 1 { -1. } else { 1. })) }
@@ -72,13 +72,12 @@ fn the_platonic_solids_are_the_hulls_of_their_corners() {
     let icosahedron: Vec<V> = signs(2).flat_map(|s| cyclic([0.,s[0],s[1]*phi])).collect();
     let mut dodecahedron: Vec<V> = signs(3).collect();
     dodecahedron.extend(signs(2).flat_map(|s| cyclic([0.,s[0]/phi,s[1]*phi])));
-    let edge = |a: f64| a;
     for (name,points,faces,v,s) in [
         ("tetrahedron",tetrahedron,4,72.,72.*3f64.sqrt()),
         ("cube",cube,6,64.,96.),
         ("octahedron",octahedron,8,4000./3.,2.*3f64.sqrt()*200.),
         ("icosahedron",icosahedron,20,5.*(3.+s5)/12.*8.,5.*3f64.sqrt()*4.),
-        ("dodecahedron",dodecahedron,12,(15.+7.*s5)/4.*edge(2./phi).powi(3),3.*(25.+10.*s5).sqrt()*(2./phi).powi(2)),
+        ("dodecahedron",dodecahedron,12,(15.+7.*s5)/4.*(2./phi).powi(3),3.*(25.+10.*s5).sqrt()*(2./phi).powi(2)),
     ] {
         let b = hull(&points).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(b.faces.len(),faces,"{name}'s faces");
@@ -152,10 +151,10 @@ fn a_cloud_of_points_gives_one_hull_in_any_order() {
     let (v,_) = holds(&b,&points);
     assert!(v < 4./3.*std::f64::consts::PI && v > 3.,"{v}");
     let mut turned = points.clone();
-    for k in (1..turned.len()).rev() { let j = (rng.next()*(k+1) as f64) as usize; turned.swap(k,j.min(k)); }
+    for k in (1..turned.len()).rev() { let j = rng.int(k+1); turned.swap(k,j); }
     let c = hull(&turned).unwrap();
-    let corners = |b: &Brep| b.vertices.iter().map(|v| v.p.map(f64::to_bits)).collect::<BTreeSet<_>>();
-    assert_eq!(corners(&b),corners(&c));
+    let points_of = |b: &Brep| b.vertices.iter().map(|v| v.p.map(f64::to_bits)).collect::<BTreeSet<_>>();
+    assert_eq!(points_of(&b),points_of(&c));
     assert_eq!(b.faces.len(),c.faces.len());
     close("the cloud turned",holds(&c,&turned).0,v);
 }

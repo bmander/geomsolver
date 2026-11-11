@@ -8,11 +8,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
-- **The convex hull of points, as a solid** (`build::hull`, the `hull` module): one plane face
-  for each facet, its topology built whole with no block cut and no Boolean, its corners the
-  points given. Quickhull on the exact orientation test finds the triangles, so points on one
-  plane never decide by rounding; the triangles within the tolerance of one plane are one face,
-  grown from the largest's plane, and a point midway along an edge is no corner. A tetrahedron,
+- **The convex hull of points, as a solid** (`build::hull`): one plane face for each facet, its
+  topology built whole with no block cut and no Boolean, its corners the points given. Quickhull
+  on the exact orientation test finds the triangles, so points on one plane never decide by
+  rounding; the triangles within the tolerance of one plane are one face, grown from the
+  largest's plane and kept a disc, and a point midway along an edge is no corner. A tetrahedron,
   an octahedron or a pyramid is its corners' hull where it was a block cut by each face's plane
   (brep-bench's offset/tetrahedron-grown, swept/tetrahedron-screwed and the octahedra), and a
   convex solid slid along a line the hull of where it starts and where it stops. The filtered

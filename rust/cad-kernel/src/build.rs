@@ -2,8 +2,8 @@
 //! drafted or not), turned about a line in its plane (a revolution), or a ball's disc screwed along
 //! a helix (a canal), from the loops of lines, arcs, circles and B-splines the CAD recipe carries
 //! (`solid::cad::recipe`); the sphere, the cone and the torus by their numbers (`sphere`,
-//! `cone`, `torus`), each its meridian turned; and the convex hull of points (`hull`, the
-//! `hull` module's), a face for each of its facets.
+//! `cone`, `torus`), each its meridian turned; and the convex hull of points (`hull`), a face for
+//! each of its facets.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::geom::{tolerance,BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
@@ -12,7 +12,8 @@ use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use super::recipe::Writer;
 use crate::util::json::Json;
 use crate::util::space::{add,cross,distance,dot,norm,scale,sub,unit};
-pub use super::hull::hull;
+mod hull;
+pub use hull::hull;
 
 const TAU: f64 = std::f64::consts::TAU;
 

@@ -1163,30 +1163,30 @@ hundred thousand points and was refused there as a near touch. `brep::a_ball_cut
 `meetings_through_a_balls_pole_split_it` and `a_cone_cut_through_its_apex_is_its_part` are the
 gate, each case to its closed forms to 1e-9 and meshed closed at the bench's sag.
 
-**The convex hull of points is a solid of plane faces, one a facet** (`build::hull`, the
-`hull` module; brep-bench's offset/tetrahedron-grown, swept/box-slid-aslant, loft/square-to-octagon
-and the octahedra are each the hull of their corners): built with its topology whole, no block
-cut and no Boolean. The triangles are found exactly, by quickhull on the filtered orientation
-test (`util::predicates::orient`, moved down from the solver's Delaunay machinery, which
-re-exports it): a point is placed beyond a triangle only when it stands strictly past its plane,
-so what lies on one plane never decides by rounding, and a point left loose by a triangle taken
-off that lies on a new one's plane is asked of the whole hull, not dropped. They are then made
-faces at the kernel's tolerance of the points' box: a face grows from its largest triangle across
-each edge to a neighbour whose corners all lie within the tolerance of *that first triangle's*
-plane — never a run of neighbours each nearly level with the next — and a corner on the edge
-between two faces only, within the tolerance of the line through its neighbours there, is
-dropped from both. Points within the tolerance of one kept are dropped; each face is the plane
-its corners fit best (Newell's normal through their centroid), its edges lines between them,
-and every corner a point given. Fewer than four points, points on one point, one line or one
-plane (within the tolerance), and a point not finite are refused by what they are.
-`brep_hull::the_platonic_solids_are_the_hulls_of_their_corners` (the dodecahedron's pentagons on
-their planes only to rounding), `points_inside_on_a_face_or_along_an_edge_are_no_corners` (a
-cube's corners given twice, a hair off, with its centre, its faces' and edges' middles and a
-lattice through it: eight corners, twelve edges, six faces),
-`the_benchs_slid_box_and_lofted_octagon_are_hulls` (to the bench's closed forms),
-`a_cloud_of_points_gives_one_hull_in_any_order` and `points_bounding_nothing_are_refused` are the
-gate, each hull checked closed, every point given on or beneath every face, no two faces across an
-edge one plane, and `V − E + F = 2`.
+**The convex hull of points is a solid of plane faces, one a facet** (`build::hull`;
+brep-bench's offset/tetrahedron-grown, swept/box-slid-aslant, loft/square-to-octagon and the
+octahedra are each the hull of their corners): built with its topology whole, no block cut and no
+Boolean. The triangles are found exactly, by quickhull on the filtered orientation test
+(`util::predicates::orient`, moved down from the solver's Delaunay machinery, which re-exports
+it): a point is placed beyond a triangle only when it stands strictly past its plane, so what lies
+on one plane never decides by rounding, and a point on a triangle's plane is no corner. They are
+then made faces at the kernel's tolerance of the points' box: a face grows from its largest
+triangle across each edge to a neighbour whose corners all lie within the tolerance of *that
+first triangle's* plane — never a run of neighbours each nearly level with the next — and only
+while it stays a disc (a neighbour met along one edge adds a corner the face does not have), so
+its rim is one cycle; a corner on the edge between two faces only, within the tolerance of the
+line through its neighbours there, is dropped from both. Points within the tolerance of one kept
+are merged into it (`tolerant::Pool`, the first given kept); each face is the plane of its
+largest triangle, its edges lines between its corners, and every corner a point given. Fewer
+than four points, points on one point, one line or one plane (within the tolerance), and a point
+not finite are refused by what they are. `brep_hull::the_platonic_solids_are_the_hulls_of_their_corners`
+(the dodecahedron's pentagons on their planes only to rounding),
+`points_inside_on_a_face_or_along_an_edge_are_no_corners` (a cube's corners given twice, a hair
+off, with its centre, its faces' and edges' middles and a lattice through it: eight corners,
+twelve edges, six faces), `the_benchs_slid_box_and_lofted_octagon_are_hulls` (to the bench's
+closed forms), `a_cloud_of_points_gives_one_hull_in_any_order` and
+`points_bounding_nothing_are_refused` are the gate, each hull checked closed, every point given on
+or beneath every face, no two faces across an edge one plane, and `V − E + F = 2`.
 
 **Faces built apart are sewn into a solid by tolerant topology** (`sew::sewn`; brep-bench's
 geometry/nurbs-cone): a rational net whose last row is nine copies of its apex (`build::sheet`)
