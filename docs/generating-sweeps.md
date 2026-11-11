@@ -1305,10 +1305,11 @@ surface met in space and no blank:
 | W3 | Every piece's sides settle, and the kept pieces close into loops. | Membership is read on the tool's mesh, refined twice where it is unsettled; a boundary that does not close is not guessed. | The point, or the vertex where it does not close. |
 | W4 | The solid revolved agrees with membership at the judge's points. | Never built wrong (#777). | The point and how it was placed. |
 
-Where W1–W3 refuse, the closed class's arrangement is asked as before; W4's refusal is the build's.
-Every whole turn the arrangement built before builds this way, held to the same gates
-(`swept_closed::a_block_leaning_to_the_axis_turned_whole_…`, `…_straddling_the_axis_…`,
-`swept_turned::a_leaning_drum_turned_closes_into_its_sweep`, the frustum, the rounded key and the
+Where W1–W3 refuse, the closed class's arrangement is asked as before; W4's refusal, and a budget
+run out, are the build's. A convex polyhedral tool keeps its closed form (its slices' radial spans,
+`turned_whole`), asked before this road: no mesh and no membership, about fifty times faster. Every
+other whole turn the arrangement built before builds this way, held to the same gates
+(`swept_turned::a_leaning_drum_turned_closes_into_its_sweep`, the frustum, the rounded key and the
 ball on its stem, each to 1e-9 or finer), and so does brep-bench's
 `swept/v-wheel-turned-once-round-rod`, which the arrangement refused: a V wheel leaning 20° across
 the turn, its flanks' and bore's contacts and three sharp circles in the half-plane, 11 faces in a

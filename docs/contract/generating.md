@@ -954,9 +954,10 @@ unsettled), the kept pieces linked with the shadow on their left, each region re
 curves as its meridians, and the solid judged by membership before it is returned (`closed::judge`).
 Refused by what it is (`Unbuilt::Curved`) where a face is no plane, cylinder, cone, ball or torus
 about the axis, an edge no line, circle or level curve, or a leaning round face's contact no curve
-over it. Every whole turn the arrangement built builds so, to the same gates (the leaning and
-straddling blocks to their slices' spans, the drum, the frustum, the rounded key and the ball on its
-stem to 1e-9 or finer), and brep-bench's `swept/v-wheel-turned-once-round-rod`, which the arrangement
+over it, or judged wrong or past its budget, which are the build's refusals. A convex polyhedral
+tool keeps its closed form, asked first (its slices' radial spans, no mesh, about fifty times
+faster). Every other whole turn the arrangement built builds so, to the same gates (the drum, the
+frustum, the rounded key and the ball on its stem to 1e-9 or finer), and brep-bench's `swept/v-wheel-turned-once-round-rod`, which the arrangement
 refused (a turned curve meeting a revolution "was not proved"), builds in a tenth of a second: gate
 `swept_shadow::a_leaning_v_wheel_turned_whole_is_its_shadow_revolved` — the wheel's sweep to the
 volume of its shadow worked apart from the build (each height's radii whose circle meets the wheel's

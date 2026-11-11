@@ -44,7 +44,8 @@ use crate::query::{Located,Place};
 use crate::topo::{Brep,EdgeCurve};
 use crate::trajectory::{Screw,Trajectory};
 use crate::turned::{Contact,Iv,Jet,Rim,Turned};
-use crate::util::space::{cross,dot,norm,scale,sub,unit};
+use crate::plane2::{add as add2,cross as cross2,dist,left,scale as scale2};
+use crate::util::space::{add,cross,dot,lerp,norm,scale,sub,unit};
 use super::closed::Unbuilt;
 use super::member::{Solid,Swept};
 use std::f64::consts::{PI,TAU};
@@ -56,9 +57,10 @@ type P = [f64;2];
 /// How many points each curved candidate is sampled at, for its crossings with the others and its
 /// stretches within its face.
 const SAMPLES: usize = 160;
+/// How far past a chord's ends, as a part of it, two chords are still read as crossing.
+const SLACK: f64 = 1e-9;
 
 /// **A candidate of the shadow's boundary**, in the half-plane `(ρ, z)` about the turn's axis.
-#[derive(Clone,Debug)]
 enum Meridian {
     /// The straight stretch from `a` to `b` (its parameter from 0 to 1): a face kept in itself (a
     /// plane square to the axis, a cylinder or a cone about it), a level circle's stretch, a line's
@@ -87,7 +89,7 @@ impl Meridian {
         match *self {
             Meridian::Segment {a,b} => ([a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])],[b[0]-a[0],b[1]-a[1]]),
             Meridian::Line {p,e,..} => {
-                let x = [p[0]+t*e[0],p[1]+t*e[1],p[2]+t*e[2]];
+                let x = add(p,scale(e,t));
                 let r = x[0].dhypot(x[1]);
                 let dr = if r > 0. { (x[0]*e[0]+x[1]*e[1])/r } else { e[0].dhypot(e[1]) };
                 ([r,x[2]],[dr,e[2]])
@@ -107,22 +109,17 @@ impl Meridian {
     /// edge of a profile in the half-plane `g`'s `x` and `z` span.
     fn edge(&self,[t0,t1]: [f64;2],a: P,b: P,g: &Frame) -> Result<ProfileEdge,String> {
         let at = |r: f64,z: f64| g.at([r,0.,z]);
-        let line = ProfileEdge::Line {a:at(a[0],a[1]),b:at(b[0],b[1])};
+        let span = [t0.min(t1),t0.max(t1)];
         Ok(match *self {
-            Meridian::Segment {..} => line,
-            Meridian::Line {p,e,..} => {
-                let (ez,eh) = (e[2],e[0].dhypot(e[1]));
-                if ez.abs() <= 1e-12 || eh <= 1e-12 { return Ok(line) }
-                // the hyperbola `ρ² = throat² + k² (z − height)²`
-                let s = -(p[0]*e[0]+p[1]*e[1])/(eh*eh);
-                let throat = (p[0]+s*e[0]).dhypot(p[1]+s*e[1]);
-                super::closed::meridian_arc(&at,(throat,p[2]+s*ez,eh/ez.abs()),a,b)?
-            }
+            Meridian::Segment {..} => ProfileEdge::Line {a:at(a[0],a[1]),b:at(b[0],b[1])},
+            // the hyperbola `ρ² = throat² + k² (z − height)²` (a line no level, along nor through the
+            // axis: `Reader::line` made those segments)
+            Meridian::Line {p,e,..} => super::closed::meridian_arc(&at,super::closed::meridian([0.;3],[0.,0.,1.],p,e),a,b)?,
             Meridian::Circle {c,r,..} => {
                 let frame = Frame {o:at(c[0],c[1]),x:g.x,y:g.z,z:cross(g.x,g.z)};
-                ProfileEdge::Arc {frame,r,span:Some([t0.min(t1),t0.max(t1)])}
+                ProfileEdge::Arc {frame,r,span:Some(span)}
             }
-            Meridian::Turned(tu) => ProfileEdge::Exact(Curve::Turned(Arc::new(Turned {span:[t0.min(t1),t0.max(t1)],..tu}))),
+            Meridian::Turned(tu) => ProfileEdge::Exact(Curve::Turned(Arc::new(Turned {span,..tu}))),
         })
     }
     /// The parameter of its point nearest `q`, near `t` (Gauss–Newton held to its span).
@@ -146,70 +143,65 @@ impl Meridian {
     }
 }
 
-/// `a` to `b`, the stretches of `[a, b]` where `inside` holds, each end found by bisection between
-/// samples that differ (`cuts`, where known, are where it may change: each stretch between two is
-/// read at its middle alone).
-fn stretches(inside: &dyn Fn(f64) -> bool,[a,b]: [f64;2],cuts: Option<Vec<f64>>) -> Vec<[f64;2]> {
-    let mut out: Vec<[f64;2]> = Vec::new();
-    let mut push = |s: [f64;2]| match out.last_mut() {
-        Some(last) if last[1] == s[0] => last[1] = s[1],
-        _ => if s[1] > s[0] { out.push(s) },
-    };
-    if let Some(mut cuts) = cuts {
-        cuts.retain(|t| *t > a && *t < b);
-        cuts.extend([a,b]);
-        cuts.sort_by(f64::total_cmp);
-        cuts.dedup_by(|x,y| (*x-*y).abs() <= 1e-13*(1.+x.abs()));
-        for w in cuts.windows(2) { if inside(0.5*(w[0]+w[1])) { push([w[0],w[1]]) } }
-        return out
-    }
+/// The stretches of `[a, b]` where `inside` holds, each end found by bisection between samples that
+/// differ.
+fn stretches(inside: &dyn Fn(f64) -> bool,[a,b]: [f64;2]) -> Vec<[f64;2]> {
     let ts: Vec<f64> = (0..=SAMPLES).map(|k| a+(b-a)*k as f64/SAMPLES as f64).collect();
     let ins: Vec<bool> = ts.iter().map(|&t| inside(t)).collect();
-    let edge = |mut lo: f64,mut hi: f64,lo_in: bool| {
-        for _ in 0..60 { let m = 0.5*(lo+hi); if inside(m) == lo_in { lo = m } else { hi = m } }
+    let edge = |lo: f64,hi: f64,lo_in: bool| {
+        let (lo,hi) = crate::util::roots::bisect(lo,hi,|x,y| 0.5*(x+y),|x,y| y-x > 1e-15*(1.+x.abs()),|m| inside(m) == lo_in);
         0.5*(lo+hi)
     };
+    let mut out = Vec::new();
     let mut start = ins[0].then_some(a);
     for k in 1..ts.len() {
         if ins[k] == ins[k-1] { continue }
         let at = edge(ts[k-1],ts[k],ins[k-1]);
-        if ins[k] { start = Some(at) } else if let Some(s) = start.take() { push([s,at]) }
+        if ins[k] { start = Some(at) } else if let Some(s) = start.take() { out.push([s,at]) }
     }
-    if let Some(s) = start { push([s,b]) }
+    if let Some(s) = start { out.push([s,b]) }
     out
 }
 
-/// The parameters along the line `x0 + s d` where it meets the edges of the tool's face `k` (all
-/// in a plane): each line edge's crossing, each circle's two; none where an edge is another curve
-/// (`None`: the stretches are then read on samples).
-fn cuts_on_line(tool: &Brep,k: usize,x0: V,d: V) -> Option<Vec<f64>> {
+/// The stretches of `[a, b]` between the `cuts` (where `inside` may change) where it holds, each
+/// read at its middle, those that run on merged.
+fn between(inside: &dyn Fn(f64) -> bool,[a,b]: [f64;2],mut cuts: Vec<f64>) -> Vec<[f64;2]> {
+    cuts.retain(|t| *t > a && *t < b);
+    cuts.extend([a,b]);
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup_by(|x,y| (*x-*y).abs() <= 1e-13*(1.+x.abs()));
+    let mut out: Vec<[f64;2]> = Vec::new();
+    for w in cuts.windows(2).filter(|w| inside(0.5*(w[0]+w[1]))) {
+        match out.last_mut() { Some(last) if last[1] == w[0] => last[1] = w[1],_ => out.push([w[0],w[1]]) }
+    }
+    out
+}
+
+/// The cuts of `[w0, w1]` at `w` and the angles a half turn apart from it within: where a circle's
+/// radius from the axis, or its height, is least or greatest.
+fn folds(w: f64,[w0,w1]: [f64;2]) -> Vec<f64> {
+    let mut cuts = vec![w0,w1];
+    cuts.extend((-3..=3).map(|k| w+k as f64*PI).filter(|&c| c > w0 && c < w1));
+    cuts.sort_by(f64::total_cmp);
+    cuts
+}
+
+/// The parameters along the line `x0 + s d` (over `span`) where it meets the edges of the tool's
+/// face `k` (all in a plane), in closed form (`query::curve_curve`: a line's crossing, a circle's
+/// two); none where an edge is another curve (the stretches are then read on samples).
+fn cuts_on_line(tool: &Brep,k: usize,x0: V,d: V,span: [f64;2],tol: f64) -> Option<Vec<f64>> {
+    let line = Curve::Line {p:x0,d};
     let mut out = Vec::new();
     for c in tool.faces[k].loops.iter().flatten() {
-        match &tool.edges[c.edge as usize].curve {
-            EdgeCurve::Curve(Curve::Line {p,d:e}) => {
-                // x0 + s d = p + t e, in the plane: least squares
-                let w = sub(*p,x0);
-                let (dd,de,ee) = (dot(d,d),dot(d,*e),dot(*e,*e));
-                let det = dd*ee-de*de;
-                if det.abs() <= 1e-14*dd*ee { continue }
-                out.push((dot(w,d)*ee-dot(w,*e)*de)/det);
-            }
-            EdgeCurve::Curve(Curve::Circle(f,r)) => {
-                let w = sub(x0,f.o);
-                let (qa,qb,qc) = (dot(d,d),2.*dot(w,d),dot(w,w)-r*r);
-                out.extend(crate::util::roots::quadratic(qa,qb,qc));
-            }
-            EdgeCurve::Degenerate => {}
-            _ => return None,
-        }
+        let e = &tool.edges[c.edge as usize];
+        let EdgeCurve::Curve(curve) = &e.curve else { continue };
+        out.extend(crate::query::curve_curve(&line,span,curve,e.t,tol)?.into_iter().map(|(s,_)| s));
     }
     Some(out)
 }
 
-fn sub3(a: &V,b: &V) -> V { [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
-
 /// The tool's points `x` whose image is read, each in the turn's frame `g`.
-struct Reader<'a> { tool: &'a Brep,g: Frame,located: Located<'a>,eps: f64 }
+struct Reader<'a> { tool: &'a Brep,g: Frame,located: Located<'a>,eps: f64,tol: f64 }
 
 impl Reader<'_> {
     fn image(&self,x: V) -> P { let l = self.g.local(x); [l[0].dhypot(l[1]),l[2]] }
@@ -218,9 +210,9 @@ impl Reader<'_> {
     /// that falls inside it, and straight where it runs along the axis, level, or through the axis.
     fn line(&self,a: V,b: V,out: &mut Vec<Meridian>) {
         let (p,q) = (self.g.local(a),self.g.local(b));
-        let len = norm(sub3(&q,&p));
+        let len = norm(sub(q,p));
         if !(len > self.eps) { return }
-        let e = scale(sub3(&q,&p),1./len);
+        let e = scale(sub(q,p),1./len);
         let eh = e[0].dhypot(e[1]);
         let seg = |s0: f64,s1: f64,out: &mut Vec<Meridian>| {
             let m = Meridian::Line {p,e,span:[s0,s1]};
@@ -243,7 +235,7 @@ impl Reader<'_> {
     /// E(s)` (point location reads a point a tolerance off an edge as on it, so a bisected end
     /// stands up to that far past the face).
     fn within(&self,k: usize,x: &dyn Fn(f64) -> (V,V),[a,b]: [f64;2]) -> Vec<[f64;2]> {
-        let mut out = stretches(&|t| self.in_face(k,x(t).0),[a,b],None);
+        let mut out = stretches(&|t| self.in_face(k,x(t).0),[a,b]);
         for s in out.iter_mut() {
             for end in 0..2 {
                 if s[end] == a || s[end] == b { continue }
@@ -286,10 +278,8 @@ impl Reader<'_> {
     }
     /// The 3D line along the surface of face `k` from `a` to `b`, within the face.
     fn ruling(&self,k: usize,a: V,b: V,out: &mut Vec<Meridian>) {
-        let d = sub3(&b,&a);
-        for [s0,s1] in self.within(k,&|s| ([a[0]+s*d[0],a[1]+s*d[1],a[2]+s*d[2]],d),[0.,1.]) {
-            self.line([a[0]+s0*d[0],a[1]+s0*d[1],a[2]+s0*d[2]],[a[0]+s1*d[0],a[1]+s1*d[1],a[2]+s1*d[2]],out)
-        }
+        let d = sub(b,a);
+        for [s0,s1] in self.within(k,&|s| (lerp(a,b,s),d),[0.,1.]) { self.line(lerp(a,b,s0),lerp(a,b,s1),out) }
     }
     /// The distinct values the face `k`'s edges take of its surface's parameter `which` (each
     /// edge's at its middle: the meridian parameter of a face bounded by circles about its axis).
@@ -315,7 +305,6 @@ impl Reader<'_> {
 /// **Every candidate of the shadow's boundary**, read off the tool's B-rep (the module's step 1).
 fn candidates(r: &Reader) -> Result<Vec<Meridian>,Unbuilt> {
     let (tool,g,eps) = (r.tool,r.g,r.eps);
-    let z_axis = g.z;
     let mut out: Vec<Meridian> = Vec::new();
     // each sharp edge's image
     let uses = tool.uses();
@@ -341,10 +330,7 @@ fn candidates(r: &Reader) -> Result<Vec<Meridian>,Unbuilt> {
                     // a level circle: the stretches of its height between its nearest and farthest
                     // points from the axis; a circle about the axis, a point
                     if o[0].dhypot(o[1]) <= eps { continue }
-                    let w = (o[0]*y[0]+o[1]*y[1]).datan2(o[0]*x[0]+o[1]*x[1]);
-                    let mut cuts = vec![w0,w1];
-                    for k in -3..=3 { let c = w+k as f64*PI; if c > w0 && c < w1 { cuts.push(c) } }
-                    cuts.sort_by(f64::total_cmp);
+                    let cuts = folds((o[0]*y[0]+o[1]*y[1]).datan2(o[0]*x[0]+o[1]*x[1]),e.t);
                     let at = |w: f64| { let (s,c) = w.dsin_cos(); r.image(f.at([rad*c,rad*s,0.])) };
                     for c in cuts.windows(2) { out.push(Meridian::Segment {a:at(c[0]),b:at(c[1])}) }
                     continue
@@ -360,11 +346,7 @@ fn candidates(r: &Reader) -> Result<Vec<Meridian>,Unbuilt> {
                 // its normal in the plane through the axis and its centre: its two halves turn into
                 // one surface, each half's meridian the other's, folded where its height is least
                 // and greatest
-                let w = (y[2]).datan2(x[2]);
-                let mut cuts = vec![w0,w1];
-                for k in -3..=3 { let c = w+k as f64*PI; if c > w0 && c < w1 { cuts.push(c) } }
-                cuts.sort_by(f64::total_cmp);
-                for c in cuts.windows(2) { out.push(Meridian::Turned(Turned::rim(g,rim,[c[0],c[1]]))) }
+                for c in folds(y[2].datan2(x[2]),e.t).windows(2) { out.push(Meridian::Turned(Turned::rim(g,rim,[c[0],c[1]]))) }
             }
             // any other curve lying level (a leaning round face's rim cut level: an ellipse, a
             // conic's spline) turns within its plane: its height's stretches between its nearest
@@ -384,7 +366,7 @@ fn candidates(r: &Reader) -> Result<Vec<Meridian>,Unbuilt> {
         match face.surface {
             Surface::Plane(f) => {
                 let n = unit(f.z);
-                let m = cross(n,z_axis);
+                let m = cross(n,g.z);
                 if norm(m) <= 1e-12 {
                     // level: its own height, from the axis (where it holds the axis) out as far as
                     // its edges reach (their own stretches, exact, reach the rest)
@@ -400,50 +382,45 @@ fn candidates(r: &Reader) -> Result<Vec<Meridian>,Unbuilt> {
                 }
                 // its contact: the line of its points in the plane through the axis square to `n × Z`
                 let d = unit(cross(n,m));
-                let x0 = { let c = g.o; let w = dot(sub(f.o,c),n); [c[0]+w*n[0],c[1]+w*n[1],c[2]+w*n[2]] };
-                let along = |s: f64| [x0[0]+s*d[0],x0[1]+s*d[1],x0[2]+s*d[2]];
-                let reach = { let (lo,hi) = tool.bounds(); 2.*(norm(sub(hi,lo))+norm(sub(x0,lo))) };
-                let cuts = cuts_on_line(tool,k,x0,d);
-                let spans = match cuts { Some(_) => stretches(&|s| r.in_face(k,along(s)),[-reach,reach],cuts),None => r.within(k,&|s| (along(s),d),[-reach,reach]) };
-                for [s0,s1] in spans {
-                    r.line(along(s0),along(s1),&mut out)
-                }
+                let x0 = add(g.o,scale(n,dot(sub(f.o,g.o),n)));
+                let along = |s: f64| add(x0,scale(d,s));
+                let span = { let (lo,hi) = tool.bounds(); let reach = 2.*(norm(sub(hi,lo))+norm(sub(x0,lo))); [-reach,reach] };
+                let spans = match cuts_on_line(tool,k,x0,d,span,r.tol) {
+                    Some(cuts) => between(&|s| r.in_face(k,along(s)),span,cuts),
+                    None => r.within(k,&|s| (along(s),d),span),
+                };
+                for [s0,s1] in spans { r.line(along(s0),along(s1),&mut out) }
             }
-            Surface::Cylinder(f,_) | Surface::Cone(f,..) => {
-                let (rad,sa,ca) = match face.surface {
-                    Surface::Cone(_,rad,half) => { let (s,c) = half.dsin_cos(); (rad,s,c) }
-                    Surface::Cylinder(_,rad) => (rad.abs(),0.,1.),
+            Surface::Cylinder(..) | Surface::Cone(..) => {
+                let (f,rad,sa,ca) = match face.surface {
+                    Surface::Cone(f,rad,half) => { let (s,c) = half.dsin_cos(); (f,rad,s,c) }
+                    Surface::Cylinder(f,rad) => (f,rad.abs(),0.,1.),
                     _ => unreachable!(),
                 };
                 let a = unit(f.z);
-                let (lo,hi) = rulings(tool,k);
-                let gen = |u: f64| (face.surface.point([u,lo]),face.surface.point([u,hi]));
-                let np = cross(a,z_axis);
+                let (lo,hi) = super::closed::rulings_span(tool,k);
+                // its two generators along `±w`, each within the face
+                let both = |w: V,out: &mut Vec<Meridian>| for w in [w,scale(w,-1.)] {
+                    let u = dot(w,f.y).datan2(dot(w,f.x));
+                    r.ruling(k,face.surface.point([u,lo]),face.surface.point([u,hi]),out)
+                };
+                let np = cross(a,g.z);
                 if norm(np) <= 1e-9 {
                     let ol = g.local(f.o);
                     if ol[0].dhypot(ol[1]) <= eps {
                         // about the axis: kept in itself, its meridian
-                        let (p,q) = gen(0.);
-                        out.push(Meridian::Segment {a:r.image(p),b:r.image(q)});
+                        out.push(Meridian::Segment {a:r.image(face.surface.point([0.,lo])),b:r.image(face.surface.point([0.,hi]))});
                     } else {
                         // along it: its generators in the plane through both axes
-                        let w = unit(sub(f.o,g.at([0.,0.,ol[2]])));
-                        for w in [w,scale(w,-1.)] {
-                            let (p,q) = gen(dot(w,f.y).datan2(dot(w,f.x)));
-                            r.ruling(k,p,q,&mut out)
-                        }
+                        both(unit(sub(f.o,g.at([0.,0.,ol[2]]))),&mut out)
                     }
                     continue
                 }
                 if dot(unit(np),sub(f.o,g.o)).abs() <= eps {
                     // its axis in a plane with the turn's: its generators in that plane — where it
                     // crosses the turn's axis within the face, a ring there touches all round
-                    if let Some(v) = crossing(f.o,a,g.o,z_axis) { if v >= lo*ca-eps && v <= hi*ca+eps { return Err(Unbuilt::Curved {at:f.o}) } }
-                    let w = unit(cross(np,a));
-                    for w in [w,scale(w,-1.)] {
-                        let (p,q) = gen(dot(w,f.y).datan2(dot(w,f.x)));
-                        r.ruling(k,p,q,&mut out)
-                    }
+                    if super::closed::foot_on(f.o,a,g.o,g.z).is_some_and(|v| v >= lo*ca-eps && v <= hi*ca+eps) { return Err(Unbuilt::Curved {at:f.o}) }
+                    both(unit(cross(np,a)),&mut out);
                     continue
                 }
                 // leaning: its two contacts, read in closed form, over the stretches within the face
@@ -470,9 +447,9 @@ fn candidates(r: &Reader) -> Result<Vec<Meridian>,Unbuilt> {
                 let (rc,zc) = (m[0].dhypot(m[1]),m[2]);
                 if rc <= eps {
                     // about the axis: kept in itself, its meridian over the latitudes it spans
-                    let sign = dot(unit(f.z),z_axis);
-                    if sign.abs() < 1.-1e-9 && !r.bounds_of(k,1).is_empty() { return Err(Unbuilt::Curved {at:f.o}) }
+                    let sign = dot(unit(f.z),g.z);
                     let mut vs = r.bounds_of(k,1);
+                    if sign.abs() < 1.-1e-9 && !vs.is_empty() { return Err(Unbuilt::Curved {at:f.o}) }
                     vs.extend([-PI/2.,PI/2.]);
                     vs.sort_by(f64::total_cmp);
                     vs.dedup_by(|x,y| (*x-*y).abs() <= 1e-9);
@@ -503,7 +480,7 @@ fn candidates(r: &Reader) -> Result<Vec<Meridian>,Unbuilt> {
             }
             Surface::Torus(f,big,small) => {
                 let m = g.local(f.o);
-                let sign = dot(unit(f.z),z_axis);
+                let sign = dot(unit(f.z),g.z);
                 if m[0].dhypot(m[1]) > eps || sign.abs() < 1.-1e-9 || small.abs() >= big.abs() { return Err(Unbuilt::Curved {at}) }
                 // about the axis: kept in itself, its tube's circle over the stretches it spans
                 let mut vs = r.bounds_of(k,1);
@@ -522,8 +499,7 @@ fn candidates(r: &Reader) -> Result<Vec<Meridian>,Unbuilt> {
         }
     }
     // the axis, over the heights the tool spans
-    let (lo,hi) = tool.bounds();
-    let zs: Vec<f64> = (0..8).map(|c| g.local([[lo[0],hi[0]][c&1],[lo[1],hi[1]][(c>>1)&1],[lo[2],hi[2]][c>>2]])[2]).collect();
+    let zs: Vec<f64> = super::closed::corners_of(tool.bounds()).into_iter().map(|x| g.local(x)[2]).collect();
     let (zl,zh) = (zs.iter().copied().fold(f64::INFINITY,f64::min),zs.iter().copied().fold(f64::NEG_INFINITY,f64::max));
     out.push(Meridian::Segment {a:[0.,zh],b:[0.,zl]});
     Ok(united(out,eps))
@@ -565,24 +541,6 @@ fn level(curve: &Curve,[t0,t1]: [f64;2],g: Frame,eps: f64) -> Option<Vec<f64>> {
     Some(out)
 }
 
-/// Where the line through `o` along the unit `a` crosses the line through `c` along the unit `z`
-/// (the two in one plane), as its distance along `a` from `o`; none where the two run parallel.
-fn crossing(o: V,a: V,c: V,z: V) -> Option<f64> {
-    let (b,w) = (dot(a,z),sub(o,c));
-    let den = 1.-b*b;
-    (den > 1e-12).then(|| (b*dot(w,z)-dot(w,a))/den)
-}
-
-/// The span of a cylinder's or a cone's face along its rulings (its surface's `v`), read off its
-/// boundary edges.
-fn rulings(tool: &Brep,k: usize) -> (f64,f64) {
-    let face = &tool.faces[k];
-    face.loops.iter().flatten().flat_map(|c| {
-        let e = &tool.edges[c.edge as usize];
-        (0..=8).map(move |i| e.point(e.t[0]+(e.t[1]-e.t[0])*i as f64/8.,&tool.vertices))
-    }).fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),p| { let v = face.surface.inverse(p)[1]; (lo.min(v),hi.max(v)) })
-}
-
 /// The candidates with their straight pieces along one line united: each such line's stretches
 /// merged where they overlap, so no two candidates lie along one another.
 fn united(cands: Vec<Meridian>,eps: f64) -> Vec<Meridian> {
@@ -590,7 +548,7 @@ fn united(cands: Vec<Meridian>,eps: f64) -> Vec<Meridian> {
     let mut lines: Vec<(P,P,Vec<[f64;2]>)> = Vec::new();
     for s in segs {
         let Meridian::Segment {a,b} = s else { unreachable!() };
-        let len = (b[0]-a[0]).dhypot(b[1]-a[1]);
+        let len = dist(a,b);
         if !(len > eps) { continue }
         let d = [(b[0]-a[0])/len,(b[1]-a[1])/len];
         let found = lines.iter().position(|(o,e,_)| {
@@ -621,6 +579,7 @@ fn crossings(a: &Meridian,b: &Meridian,sa: &[(f64,P)],sb: &[(f64,P)],near: f64) 
     let boxed = |s: &[(f64,P)]| s.iter().fold([[f64::INFINITY;2],[f64::NEG_INFINITY;2]],|[lo,hi],(_,p)| [[lo[0].min(p[0]),lo[1].min(p[1])],[hi[0].max(p[0]),hi[1].max(p[1])]]);
     let ([la,ha],[lb,hb]) = (boxed(sa),boxed(sb));
     if la[0] > hb[0]+near || lb[0] > ha[0]+near || la[1] > hb[1]+near || lb[1] > ha[1]+near { return vec![] }
+    let ([a0,a1],[b0,b1]) = (a.span(),b.span());
     let mut out: Vec<[f64;2]> = Vec::new();
     for i in 0..sa.len()-1 {
         let (p0,p1) = (sa[i].1,sa[i+1].1);
@@ -631,25 +590,19 @@ fn crossings(a: &Meridian,b: &Meridian,sa: &[(f64,P)],sb: &[(f64,P)],near: f64) 
             if den.abs() <= 1e-300 { continue }
             let w = [q0[0]-p0[0],q0[1]-p0[1]];
             let (s,t) = ((w[0]*e[1]-w[1]*e[0])/den,(w[0]*d[1]-w[1]*d[0])/den);
-            let slack = 1e-9;
-            if s < -slack || s > 1.+slack || t < -slack || t > 1.+slack { continue }
+            if s < -SLACK || s > 1.+SLACK || t < -SLACK || t > 1.+SLACK { continue }
             let mut x = [sa[i].0+s*(sa[i+1].0-sa[i].0),sb[j].0+t*(sb[j+1].0-sb[j].0)];
-            let ([a0,a1],[b0,b1]) = (a.span(),b.span());
-            let mut ok = false;
+            // Newton on `a(x₀) − b(x₁) = 0`: `da dx₀ − db dx₁ = −f`, by Cramer's rule
             for _ in 0..50 {
                 let ((pa,da),(pb,db)) = (a.at(x[0]),b.at(x[1]));
                 let f = [pa[0]-pb[0],pa[1]-pb[1]];
-                if f[0].dhypot(f[1]) <= 1e-13*(1.+pa[0].abs()+pa[1].abs()) { ok = true; break }
-                let det = -da[0]*db[1]+da[1]*db[0];
+                if f[0].dhypot(f[1]) <= 1e-13*(1.+pa[0].abs()+pa[1].abs()) { break }
+                let det = cross2(db,da);
                 if det.abs() <= 1e-300 { break }
-                let dx = [(-f[0]*(-db[1])+f[1]*(-db[0]))/det,(-da[0]*f[1]+da[1]*f[0])/det];
+                let dx = [cross2(f,db)/det,cross2(f,da)/det];
                 x = [(x[0]+dx[0]).clamp(a0,a1),(x[1]+dx[1]).clamp(b0,b1)];
             }
-            if !ok {
-                let (pa,pb) = (a.point(x[0]),b.point(x[1]));
-                ok = (pa[0]-pb[0]).dhypot(pa[1]-pb[1]) <= near;
-            }
-            if ok { out.push(x) }
+            if dist(a.point(x[0]),b.point(x[1])) <= near { out.push(x) }
         }
     }
     out
@@ -657,7 +610,6 @@ fn crossings(a: &Meridian,b: &Meridian,sa: &[(f64,P)],sb: &[(f64,P)],near: f64) 
 
 /// A piece of the arrangement kept on the shadow's boundary: the candidate, its stretch (walked
 /// from `t[0]` to `t[1]`, the shadow on its left) and its ends' places among the vertices.
-#[derive(Clone,Debug)]
 struct Kept { m: usize,t: [f64;2],ends: [usize;2] }
 
 /// **The closed solid `tool` sweeps turned a whole turn about the unit `axis` through `c`**, by its
@@ -666,7 +618,7 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
     let g = Frame::about(c,axis);
     let size = { let (lo,hi) = tool.bounds(); norm(sub(hi,lo)) };
     let eps = 1e-9*(1.+size);
-    let reader = Reader {tool,g,located:Located::new(tool,tol),eps};
+    let reader = Reader {tool,g,located:Located::new(tool,tol),eps,tol};
     let cands = candidates(&reader)?;
     let solid = Solid::new(tool,bar,1.).map_err(Unbuilt::Failed)?;
     let path = Trajectory::Twist(Screw {origin:c,axis:unit(axis),ratio:1.,advance:0.});
@@ -683,50 +635,35 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
     // each candidate's ends standing on another
     let ends: Vec<P> = cands.iter().flat_map(|m| { let [a,b] = m.span(); [m.point(a),m.point(b)] }).collect();
     for (i,m) in cands.iter().enumerate() {
-        for &q in &ends {
-            let best = samples[i].iter().map(|&(t,p)| ((p[0]-q[0]).dhypot(p[1]-q[1]),t)).min_by(|x,y| x.0.total_cmp(&y.0)).unwrap().1;
+        for (j,&q) in ends.iter().enumerate() {
+            if j/2 == i { continue }
+            let best = samples[i].iter().map(|&(t,p)| (dist(p,q),t)).min_by(|x,y| x.0.total_cmp(&y.0)).unwrap().1;
             let t = m.nearest(q,best);
-            let p = m.point(t);
-            if (p[0]-q[0]).dhypot(p[1]-q[1]) <= near { splits[i].push(t) }
+            if dist(m.point(t),q) <= near { splits[i].push(t) }
         }
     }
     // (3) each piece kept where the shadow lies on one side of it alone: read a hair to each side,
     // the hair under a third of the way to the nearest other candidate (so it stands in the cells
     // beside the piece, however thin), on the tool meshed finer where the mesh's sag leaves a
     // reading unsettled
-    let finer = std::cell::RefCell::new(Vec::<Solid>::new());
-    let shadow = |p: P| -> Result<bool,Unbuilt> {
+    let member = |solid: &Solid,x: V| (Swept {tool:solid,path:&path,roll:[0.,TAU]}).member(x);
+    let mut finer: Option<Solid> = None;
+    let mut shadow = |p: P| -> Result<bool,Unbuilt> {
         let x = g.at([p[0],0.,p[1]]);
-        let mut last = match swept.member(x) { Ok(b) => return Ok(b),Err(e) => e };
-        for k in 0..2 {
-            if finer.borrow().len() <= k {
-                let s = Solid::new(tool,bar/8f64.powi(k as i32+1),1.).map_err(Unbuilt::Failed)?;
-                finer.borrow_mut().push(s);
-            }
-            let fine = finer.borrow();
-            match (Swept {tool:&fine[k],path:&path,roll:[0.,TAU]}).member(x) { Ok(b) => return Ok(b),Err(e) => last = e }
-        }
-        Err(Unbuilt::Failed(format!("the shadow at ({}, {}) is not settled: {last:?}",p[0],p[1])))
+        if let Ok(b) = member(&solid,x) { return Ok(b) }
+        if finer.is_none() { finer = Some(Solid::new(tool,bar/8.,1.).map_err(Unbuilt::Failed)?) }
+        member(finer.as_ref().unwrap(),x).map_err(|_| Unbuilt::Unsettled {at:x})
     };
     // the distance from `p` to the candidates but the piece `[t0, t1]` of candidate `i` it is on
     let clearance = |i: usize,[t0,t1]: [f64;2],p: P| -> f64 {
         let (lo,hi) = (t0.min(t1),t0.max(t1));
-        let mut best = f64::INFINITY;
-        for (j,s) in samples.iter().enumerate() {
-            for w in s.windows(2) {
-                if j == i && w[1].0 > lo && w[0].0 < hi { continue }
-                let (a,b) = (w[0].1,w[1].1);
-                let d = [b[0]-a[0],b[1]-a[1]];
-                let dd = d[0]*d[0]+d[1]*d[1];
-                let f = if dd > 0. { (((p[0]-a[0])*d[0]+(p[1]-a[1])*d[1])/dd).clamp(0.,1.) } else { 0. };
-                best = best.min((p[0]-a[0]-f*d[0]).dhypot(p[1]-a[1]-f*d[1]));
-            }
-        }
-        best
+        let lift = |q: P| [q[0],q[1],0.];
+        samples.iter().enumerate().flat_map(|(j,s)| s.windows(2).filter(move |w| j != i || w[1].0 <= lo || w[0].0 >= hi))
+            .map(|w| crate::util::space::segment_distance(lift(p),lift(w[0].1),lift(w[1].1))).fold(f64::INFINITY,f64::min)
     };
     let mut vertices: Vec<P> = Vec::new();
     let mut vertex = |p: P| -> usize {
-        match vertices.iter().position(|v| (v[0]-p[0]).dhypot(v[1]-p[1]) <= near) {
+        match vertices.iter().position(|&v| dist(v,p) <= near) {
             Some(i) => i,
             None => { vertices.push(p); vertices.len()-1 }
         }
@@ -735,25 +672,24 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
     for (i,m) in cands.iter().enumerate() {
         let mut ts = std::mem::take(&mut splits[i]);
         ts.sort_by(f64::total_cmp);
-        ts.dedup_by(|x,y| { let (p,q) = (m.point(*x),m.point(*y)); (p[0]-q[0]).dhypot(p[1]-q[1]) <= near });
+        ts.dedup_by(|x,y| dist(m.point(*x),m.point(*y)) <= near);
         let axis_piece = matches!(m,Meridian::Segment {a,b} if a[0] == 0. && b[0] == 0.);
         for w in ts.windows(2) {
             let (pa,pb) = (m.point(w[0]),m.point(w[1]));
-            if (pa[0]-pb[0]).dhypot(pa[1]-pb[1]) <= near { continue }
+            if dist(pa,pb) <= near { continue }
             // read at its middle, and where that is not settled at a third and two thirds along
-            let mut sides = None;
+            let mut sides: Result<Option<(bool,bool)>,Unbuilt> = Ok(None);
             for f in [0.5,1./3.,2./3.] {
                 let (p,d) = m.at(w[0]+f*(w[1]-w[0]));
                 let l = d[0].dhypot(d[1]);
                 if !(l > 0.) { continue }
-                let n = [-d[1]/l,d[0]/l];
+                let n = scale2(left(d),1./l);
                 let hair = (0.3*clearance(i,[w[0],w[1]],p)).min((8.*solid.sag).max(1e-6*(1.+size))).max(1e-9*(1.+size));
-                let left = shadow([p[0]+hair*n[0],p[1]+hair*n[1]]);
-                let right = if axis_piece { Ok(false) } else { shadow([p[0]-hair*n[0],p[1]-hair*n[1]]) };
-                if let (Ok(l),Ok(r)) = (&left,&right) { sides = Some((*l,*r)); break }
-                if f == 2./3. { left?; right?; }
+                let read = shadow(add2(p,scale2(n,hair))).and_then(|l| Ok((l,!axis_piece && shadow(add2(p,scale2(n,-hair)))?)));
+                match read { Ok(both) => { sides = Ok(Some(both)); break }
+                    Err(e) => sides = Err(e) }
             }
-            let Some((left,right)) = sides else { continue };
+            let Some((left,right)) = sides? else { continue };
             if left == right { continue }
             let (a,b) = (vertex(pa),vertex(pb));
             kept.push(if left { Kept {m:i,t:[w[0],w[1]],ends:[a,b]} } else { Kept {m:i,t:[w[1],w[0]],ends:[b,a]} });
@@ -765,7 +701,7 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
         let mid = cands[k.m].point(0.5*(k.t[0]+k.t[1]));
         let twin = unique.iter().any(|u| u.ends == k.ends && {
             let q = cands[u.m].point(0.5*(u.t[0]+u.t[1]));
-            (q[0]-mid[0]).dhypot(q[1]-mid[1]) <= 1e3*near
+            dist(q,mid) <= 1e3*near
         });
         if !twin { unique.push(k) }
     }
@@ -802,13 +738,12 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
         loops.push(walk);
     }
     // each loop's polyline and its signed area: counter-clockwise a region, clockwise a hole
-    let (cs,ks) = (&cands,&kept);
+    let (cands,kept) = (&cands,&kept);
     let polyline = |l: &[usize]| -> Vec<P> {
-        l.iter().flat_map(|&k| { let p = &ks[k]; (0..16).map(move |i| cs[p.m].point(p.t[0]+(p.t[1]-p.t[0])*i as f64/16.)) }).collect()
+        l.iter().flat_map(|&k| { let p = &kept[k]; (0..16).map(move |i| cands[p.m].point(p.t[0]+(p.t[1]-p.t[0])*i as f64/16.)) }).collect()
     };
-    let area = |poly: &[P]| -> f64 { (0..poly.len()).map(|i| { let (a,b) = (poly[i],poly[(i+1)%poly.len()]); a[0]*b[1]-a[1]*b[0] }).sum::<f64>()/2. };
     let polys: Vec<Vec<P>> = loops.iter().map(|l| polyline(l)).collect();
-    let areas: Vec<f64> = polys.iter().map(|p| area(p)).collect();
+    let areas: Vec<f64> = polys.iter().map(|p| crate::planar::signed_area(p)).collect();
     let outers: Vec<usize> = (0..loops.len()).filter(|&i| areas[i] > 0.).collect();
     let mut holes: Vec<Vec<usize>> = vec![Vec::new();loops.len()];
     for h in (0..loops.len()).filter(|&i| areas[i] < 0.) {
@@ -817,11 +752,11 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
         let Some(o) = inside else { return Err(Unbuilt::Failed("a hole in the tool's shadow lies in no region of it".into())) };
         holes[o].push(h);
     }
+    let edges = |l: &[usize]| -> Result<Vec<ProfileEdge>,Unbuilt> {
+        l.iter().map(|&k| { let p = &kept[k]; cands[p.m].edge(p.t,vertices[p.ends[0]],vertices[p.ends[1]],&g).map_err(Unbuilt::Failed) }).collect()
+    };
     let mut out = Brep::default();
     for &o in &outers {
-        let edges = |l: &[usize]| -> Result<Vec<ProfileEdge>,Unbuilt> {
-            l.iter().map(|&k| { let p = &kept[k]; cands[p.m].edge(p.t,vertices[p.ends[0]],vertices[p.ends[1]],&g).map_err(Unbuilt::Failed) }).collect()
-        };
         let mut ls = vec![edges(&loops[o])?];
         for &h in &holes[o] { ls.push(edges(&loops[h])?) }
         let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:ls};
@@ -830,8 +765,10 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
     }
     out.check(tol).map_err(|e| Unbuilt::Failed(e.msg))?;
     // judged by the definition before it is returned
-    let (lo,hi) = out.bounds();
-    let corners: Vec<V> = (0..8).map(|c| [[lo[0],hi[0]][c&1],[lo[1],hi[1]][(c>>1)&1],[lo[2],hi[2]][c>>2]]).collect();
+    // (the box holding it read in the half-plane: its reach from the axis and its heights)
+    let reach = vertices.iter().chain(polys.iter().flatten()).fold(0_f64,|r,p| r.max(p[0]));
+    let heights = polys.iter().flatten().fold([f64::INFINITY,f64::NEG_INFINITY],|[l,h],p| [l.min(p[1]),h.max(p[1])]);
+    let corners: Vec<V> = [-reach,reach].into_iter().flat_map(|x| [-reach,reach].into_iter().flat_map(move |y| heights.map(|z| g.at([x,y,z])))).collect();
     let (domain,..) = super::closed::cube_holding(&corners,tol)?;
     super::closed::judge(&out,&swept,&domain,None,&[],tol)?;
     Ok(out)

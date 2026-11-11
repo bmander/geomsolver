@@ -1,5 +1,6 @@
 //! **A whole turn of any tool, by its shadow** (#880 Q1, `swept::shadow`): the tool's shadow in a
 //! half-plane through the turn's axis arranged in that half-plane, kept by membership and revolved.
+use crate::swept_rings::polygon;
 use gcs_core::brep::build::revolve;
 use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::shadow::turned;
@@ -7,16 +8,6 @@ use gcs_core::brep::topo::Brep;
 use std::f64::consts::TAU;
 
 type V = [f64;3];
-
-/// The closed polygon through `points` (in a plane), as a profile.
-fn polygon(points: &[V]) -> gcs_core::brep::build::Profile {
-    use gcs_core::brep::build::{Profile,ProfileEdge};
-    let n = points.len();
-    let (u,v) = ([points[1][0]-points[0][0],points[1][1]-points[0][1],points[1][2]-points[0][2]],
-        [points[2][0]-points[0][0],points[2][1]-points[0][1],points[2][2]-points[0][2]]);
-    let normal = gcs_core::space::normalised([u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]).unwrap();
-    Profile {origin:points[0],normal,loops:vec![(0..n).map(|k| ProfileEdge::Line {a:points[k],b:points[(k+1)%n]}).collect()],names:Vec::new()}
-}
 
 /// brep-bench's `swept/v-wheel-turned-once-round-rod`'s wheel: the triangle (4, 0, 10), (6.5, 0,
 /// 10) ± 2.5 tan 30°·a turned about the line through (14, 0, 10) along a = (0, sin 20°, cos 20°).
@@ -42,7 +33,7 @@ fn v_wheel_margin(x: V) -> f64 {
 
 /// **The volume a tool sweeps turned a whole turn about `z`, worked apart from the build**: at each
 /// height of `[z0, z1]` (Simpson's rule over `n` stretches of `θ`, `z = m − c cos θ`), the radii whose circle about `z` meets
-/// the tool (`margin` at most nought somewhere round it: its least over 512 angles, each of the
+/// the tool (`margin` at most nought somewhere round it: its least over 256 angles, each of the
 /// three least then narrowed by golden sections) — found on a grid of radii out to `reach` and their
 /// ends by bisection — weighed by `2πρ`: the sweep within the cylinder of radius `reach`.
 fn turned_volume_apart(margin: &dyn Fn(V) -> f64,reach: f64,[z0,z1]: [f64;2],n: usize,tol: f64) -> f64 {
@@ -82,23 +73,12 @@ fn turned_volume_apart(margin: &dyn Fn(V) -> f64,reach: f64,[z0,z1]: [f64;2],n: 
         area
     };
     // over `z = m − c cos θ`, so a slice's area running to nought as a square root at either end
-    // of the tool's heights is smooth in `θ`; adaptive Simpson, halving where the slices kink
+    // of the tool's heights is smooth in `θ`; adaptive Simpson over `n` stretches of it, halving
+    // where the slices kink
     let (m,c) = (0.5*(z0+z1),0.5*(z1-z0));
     let f = |t: f64| { let (s,co) = t.sin_cos(); c*s*slice(m-c*co) };
-    fn adapt(f: &dyn Fn(f64) -> f64,a: f64,b: f64,[fa,fm,fb]: [f64;3],whole: f64,tol: f64,depth: u32) -> f64 {
-        let m = 0.5*(a+b);
-        let (l,r) = (f(0.5*(a+m)),f(0.5*(m+b)));
-        let (left,right) = ((m-a)/6.*(fa+4.*l+fm),(b-m)/6.*(fm+4.*r+fb));
-        if depth == 0 || (left+right-whole).abs() <= 15.*tol { return left+right+(left+right-whole)/15. }
-        adapt(f,a,m,[fa,l,fm],left,tol/2.,depth-1)+adapt(f,m,b,[fm,r,fb],right,tol/2.,depth-1)
-    }
     let pi = std::f64::consts::PI;
-    let n = n.max(2);
-    (0..n).map(|k| {
-        let (a,b) = (pi*k as f64/n as f64,pi*(k+1) as f64/n as f64);
-        let ends = [f(a),f(0.5*(a+b)),f(b)];
-        adapt(&f,a,b,ends,(b-a)/6.*(ends[0]+4.*ends[1]+ends[2]),tol/n as f64,24)
-    }).sum::<f64>()
+    (0..n).map(|k| crate::round_lowering::simpson(&f,pi*k as f64/n as f64,pi*(k+1) as f64/n as f64,tol/n as f64)).sum::<f64>()
 }
 
 /// **A V wheel leaning across the turn, turned whole, is its shadow revolved** (#880 Q1;
