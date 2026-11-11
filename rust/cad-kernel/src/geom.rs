@@ -1652,7 +1652,10 @@ impl SheetCut {
     pub fn held_along(&self,p: V,d: V,tol: f64) -> Option<f64> {
         let d = crate::util::space::normalised(d)?;
         let off = |q: V| { let w = sub(q,p); norm(sub(w,scale(d,dot(w,d)))) };
-        self.held.iter().copied().find(|&at| { let (s0,su,_) = self.blend.d1([0.,at]); off(s0) <= tol && off(add(s0,su)) <= tol })
+        self.held.iter().copied().find(|&at| {
+            let (s0,su,_) = self.blend.d1([0.,at]);
+            off(s0) <= tol && off(add(s0,su)) <= tol
+        })
     }
     /// `C` and `C'` at `v`.
     fn d1(&self,v: f64) -> (V,V) {

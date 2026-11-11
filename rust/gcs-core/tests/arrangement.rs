@@ -413,7 +413,7 @@ fn a_bilinear_sheets_block_in_common_with_a_drum_is_the_drum_under_the_sheet() {
 fn a_meeting_crossing_an_edge_lying_in_the_other_surface_cuts_it_there() {
     use gcs_core::brep::build::{screwed,Profile,ProfileEdge};
     use gcs_core::brep::geom::{tolerance,Curve,Rigid};
-    use gcs_core::brep::topo::EdgeCurve;
+    use gcs_core::brep::topo::{Edge,EdgeCurve};
     use gcs_core::brep::trajectory::{Screw,Trajectory};
     use gcs_core::space::distance;
     use std::f64::consts::TAU;
@@ -439,22 +439,24 @@ fn a_meeting_crossing_an_edge_lying_in_the_other_surface_cuts_it_there() {
     for tol in [tolerance(tool.size()),1e-6] {
         let c = arrangement(&[&end,&patch],tol).unwrap();
         let b = &c.b;
-        let ends = |e: &gcs_core::brep::topo::Edge| e.v.map(|v| b.vertices[v as usize].p);
         let at = |p: [f64;3],q: [f64;3]| distance(p,q) <= 1e-6;
-        let joins = |e: &gcs_core::brep::topo::Edge,p,q| { let [a,z] = ends(e); (at(a,p) && at(z,q)) || (at(a,q) && at(z,p)) };
-        let kind = |e: &gcs_core::brep::topo::Edge| match &e.curve { EdgeCurve::Curve(c) => c.kind(),EdgeCurve::Degenerate => "none" };
-        assert!(b.edges.iter().any(|e| joins(e,foot,side) && kind(e) == "sheet cut"),"at {tol:e}: no cut from the foot to the side edge");
+        let joins = |e: &Edge,p,q| {
+            let [a,z] = e.v.map(|v| b.vertices[v as usize].p);
+            (at(a,p) && at(z,q)) || (at(a,q) && at(z,p))
+        };
+        // a cut of the sheet lying in the plane y = −12 (the plane x = −8 of the face beside it
+        // holds a cut of its own)
+        let cut = |e: &Edge| match &e.curve {
+            EdgeCurve::Curve(c @ Curve::SheetCut(_)) => (c.point(0.5*(e.t[0]+e.t[1]))[1]+12.).abs() <= 1e-6,
+            _ => false,
+        };
+        assert!(b.edges.iter().any(|e| cut(e) && joins(e,foot,side)),"at {tol:e}: no cut from the foot to the side edge");
         // the top edge in two at the foot, and not whole
         let (left,right) = ([-8.,-12.,11.5],[8.,-12.,11.5]);
         assert!(b.edges.iter().any(|e| joins(e,left,foot)) && b.edges.iter().any(|e| joins(e,foot,right)),"at {tol:e}: the top edge not split at the foot");
         assert!(!b.edges.iter().any(|e| joins(e,left,right)),"at {tol:e}: the top edge left whole");
         // the foot a vertex where the cut and the edge cross exactly
         assert!(b.vertices.iter().any(|v| distance(v.p,foot) <= 1e-9),"at {tol:e}: no vertex at the foot");
-        // (the plane x = −8 of the face beside it holds a cut of its own between those two points)
-        let in_face = |e: &gcs_core::brep::topo::Edge| match &e.curve {
-            EdgeCurve::Curve(c @ Curve::SheetCut(_)) => (c.point(0.5*(e.t[0]+e.t[1]))[1]+12.).abs() <= 1e-6,
-            _ => false,
-        };
-        assert!(!b.edges.iter().any(|e| in_face(e) && joins(e,side,left)),"at {tol:e}: a cut laid to the face's corner");
+        assert!(!b.edges.iter().any(|e| cut(e) && joins(e,side,left)),"at {tol:e}: a cut laid to the face's corner");
     }
 }

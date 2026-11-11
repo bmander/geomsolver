@@ -68,13 +68,7 @@ impl Refusal {
 /// of an edge lying in the other solid's surface, against that face's own edges.
 pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
     use crate::util::space::{cross,dot,sub};
-    let within = |c: &Curve,t: f64,span: [f64;2]| -> Option<f64> {
-        let t = match c.period() { Some(p) => super::geom::around(t,span[0],p),None => t };
-        let slack = tol/c.speed().max(1e-300);
-        // a crossing just before the start of a closed curve's stretch is at its start
-        let t = match c.period() { Some(p) if t > span[1]+slack && t-p >= span[0]-slack => t-p,_ => t };
-        (t >= span[0]-slack && t <= span[1]+slack).then_some(t.clamp(span[0],span[1]))
-    };
+    let within = |c: &Curve,t: f64,span: [f64;2]| within_stretch(c,t,span,tol);
     // points of a line through `p` along the unit `d` at distance `r` from `o`, in the plane
     // through `o` square to `z` the line lies in
     let line_circle = |p: V,d: V,o: V,z: V,r: f64| -> Vec<V> {
@@ -168,6 +162,16 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
     }).collect())
 }
 
+/// Curve `c`'s parameter `t` inside its stretch `span` to within `tol` along it, turned into the
+/// stretch where the curve is closed and clamped to it; `None` outside.
+fn within_stretch(c: &Curve,t: f64,span: [f64;2],tol: f64) -> Option<f64> {
+    let t = match c.period() { Some(p) => super::geom::around(t,span[0],p),None => t };
+    let slack = tol/c.speed().max(1e-300);
+    // a crossing just before the start of a closed curve's stretch is at its start
+    let t = match c.period() { Some(p) if t > span[1]+slack && t-p >= span[0]-slack => t-p,_ => t };
+    (t >= span[0]-slack && t <= span[1]+slack).then_some(t.clamp(span[0],span[1]))
+}
+
 /// **Where two curves on sheets lines screw into cross**, in closed form (`ssi`'s meetings of such
 /// sheets): two curves on one sheet, each a rule `u(v)` over the sheet's `v` — a plane's cut its
 /// `−α/β` (`SheetCut`), a helix (`Iso`) its own `u` — cross where their rules agree; two planes'
@@ -191,11 +195,10 @@ fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Op
     if let Curve::Line {p,d} = *other {
         let at = cut.held_along(p,d,tol)?;
         let q = cut.point(at);
-        let t = other.inverse(q);
-        let slack = tol/other.speed().max(1e-300);
-        let inside = at >= cut_t[0]-1e-12*(1.+at.abs()) && at <= cut_t[1]+1e-12*(1.+at.abs())
-            && t >= other_t[0]-slack && t <= other_t[1]+slack;
-        return Some(if inside { vec![(if cut_is_a { at } else { t },q)] } else { Vec::new() })
+        let slack = 1e-12*(1.+at.abs());
+        if !(at >= cut_t[0]-slack && at <= cut_t[1]+slack) { return Some(Vec::new()) }
+        let t = within_stretch(other,other.inverse(q),other_t,tol);
+        return Some(t.map(|t| (if cut_is_a { at } else { t },q)).into_iter().collect())
     }
     // the other's rule — a cut's on the same sheet, or a helix's `u` on this one — and whether the
     // two parameters are one (both the sheet's `v`)
