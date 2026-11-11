@@ -37,6 +37,13 @@ fn gauss(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
     sum*h/2.
 }
 
+/// The two-point Gauss rule over `[a, b]`: exact for a cubic.
+fn gauss2(a: f64,b: f64,mut f: impl FnMut(f64) -> f64) -> f64 {
+    let (m,h) = ((a+b)/2.,(b-a)/2.);
+    let k = h/3f64.sqrt();
+    h*(f(m-k)+f(m+k))
+}
+
 /// `gauss` over `pieces`, then twice as many, keeping the coarser reading where they agree.
 /// Otherwise refine each piece locally: a circle passing close to a ball's pole can sweep half
 /// a turn of `u` in a tiny part of its span, which six doublings of the whole edge still miss.
@@ -403,10 +410,7 @@ impl<'a> Closed<'a> {
                 } else {
                     // a quadratic in `v`: two Gauss points read it exactly
                     let a = ca*ring()-p[2]*sa;
-                    let g = |v: f64| { let q = q(v); a*q+q*q*ca-q*v*ca*sa };
-                    let (m,h) = ((x+base)/2.,(x-base)/2.);
-                    let k = h/3f64.sqrt();
-                    h*(g(m-k)+g(m+k))
+                    gauss2(base,x,|v: f64| { let q = q(v); a*q+q*q*ca-q*v*ca*sa })
                 }
             }
             Surface::Sphere(_,r) => {
@@ -498,8 +502,14 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
         // is a quotient, which no Gauss rule integrates exactly: it takes the stretch-by-stretch
         // rule a swept face does
         let mut prefix = match s { Surface::BSpline(_,n) if !n.is_rational() && !area => Some(Prefix::new(n,(lo[0]+hi[0])/2.)),_ => None };
+        // a sheet carried between two straight edges (a polyhedral tool's edge swept, `Blend`): its
+        // point affine in `u` at every `v` — the carry is rigid, its rate affine in the point — so
+        // the flux's `g` is a quadratic in `u`, which two Gauss nodes integrate exactly, read along
+        // `u` whichever its face spans less (along `v` the screw's turn makes it no polynomial, and
+        // the general rule read forty nodes a stretch, every face of a sweep's arrangement)
+        let ruled = !area && matches!(s,Surface::Blend(_,bl) if matches!((&bl.a,&bl.b),(Curve::Line {..},Curve::Line {..})));
         // the parameter `g` is integrated along (`G` then multiplies the other's derivative)
-        let along = if prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 };
+        let along = if ruled || prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 };
         let base = if prefix.is_some() || !lo[along].is_finite() { 0. } else { (lo[along]+hi[along])/2. };
         let periodic = [pu,pv][along].is_some();
         let closed = if prefix.is_some() { None } else { Closed::new(s,area,along,base) };
@@ -510,7 +520,7 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
             let x = [u,v][along];
             let mut at_x = |w: f64| if along == 0 { g(w,v) } else { g(u,w) };
             let cuts = s.breaks(along,[base,x]);
-            if cuts.is_empty() { return gauss(base,x,pieces(x-base,periodic),&mut at_x) }
+            if cuts.is_empty() { return if ruled { gauss2(base,x,&mut at_x) } else { gauss(base,x,pieces(x-base,periodic),&mut at_x) } }
             let mut at = vec![base];
             if x >= base { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
             at.push(x);

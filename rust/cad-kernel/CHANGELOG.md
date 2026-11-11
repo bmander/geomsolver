@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A polyhedral tool's screwed sweep builds in a third of the time** (`swept::closed`; brep-bench's
+  swept/tetrahedron-screwed, 2.9 s to 1.0 s on four cores, the same solid): a line against the
+  sheet a straight edge is screwed into is read in closed form where it crosses cleanly
+  (`query::line_screwed_line`: one unknown, the ruling's `v`, where the general reading isolated
+  three), a touch or a meeting at an end still by the general reading; such a sheet's flux is
+  integrated along its rulings by two Gauss nodes, exact there (`props`); a cell's interior
+  points read a winding once for every ball clear of its mesh, not once a candidate
+  (`query::interior`, the same points chosen); and a Boolean's edge-against-face and three-face
+  readings run on every core, taken in order (`boolean`, the same vertices).
 - **A root met flatly goes onto a crossing found beside its edge** (`boolean`'s `flat_roots`):
   where an edge of the other operand lying along a face the edge bounds crosses the edge, that
   crossing is one a root met flatly may be, as the edge's own cuts were. A torus's circle at a
