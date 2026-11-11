@@ -434,8 +434,14 @@ point is inside a face, an edge or a corner, so that partitions what `B` gains: 
 `d` out along its normal (a plane face's loops; a cylinder's band between two circles about its
 axis, its radius out of a shaft or into a bore, `band`), each convex edge's (`BodyFaces::convex`; a
 tangent one none) wedge of radius `d` between its faces' normals (along a line a prism; about a
-circle a torus's stretch, turned), and each convex corner's sector of the ball (a prism's corner —
-three faces, one square to the other two — the quarter disc turned about that one).  **A concave
+circle a torus's stretch, turned), and each convex corner's sector of the ball: a prism's corner —
+three faces, one square to the other two — the quarter disc turned about that one; **any other
+convex corner** where planes meet along lines (a tetrahedron's, an octahedron's four), the ball cut
+back to the plane each edge's wedge ends on there — spanned by its two faces' normals, square to
+the edge — so its sector is the ball within the cone the normals span and meets each wedge face to
+face (`ball_sector`; the ball turned about an axis square to the way out of the body, so its poles
+and seam stand outside the cone).  `grown::convex_corners_of_any_faces_grown_are_built_exactly` is
+the gate (brep-bench's offset/tetrahedron-grown and an octahedron, to Steiner's).  **A concave
 edge** (two planes along a line) has no wedge: its faces' prisms overlap in a `d × d` column there,
 so each is cut back to the edge's bisector, the plane through it halfway between them
 (`beside_concave`: a face beside one a convex polygon, its section's concave sides pushed out past
@@ -484,8 +490,8 @@ square to the face they bound, a concave corner on a curved face or of more than
 face beside a concave edge that is no convex polygon or narrower than the reach (a hole's pieces
 reaching another loop), a face about a foot with a concave rim and a hole, an edge or a band
 shorter than the reach between its concave corners or its feet, a face on a cone, a sphere or a
-torus, an edge no line or circle carries, a convex corner no prism's, a bore no wider than the
-reach, a body a term of which reads its faces (a round).  `tests/grown.rs` is the gate (a block, a
+torus, an edge no line or circle carries, a convex corner on a curved face or edge no prism's, a
+bore no wider than the reach, a body a term of which reads its faces (a round).  `tests/grown.rs` is the gate (a block, a
 post, a hex bar and a bored plate to their closed forms to 1e-9; a body in two pieces; an L-block's
 step and a pocketed tray to Steiner's with its concave edges' terms negative, `−d² L` each, a step's
 end `−2d³/3` and a pocket's floor corner `+d³`; a plinth's boss to Steiner's, each foot corner

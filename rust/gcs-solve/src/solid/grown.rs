@@ -5,7 +5,10 @@
 //! edge or a corner, so what it adds is a partition into those points: each face's prism `d` out
 //! along its normal (a cylinder's band, its radius grown or a bore's shrunk by `d`), each convex
 //! edge's wedge of radius `d` between its two faces' normals (a torus's where the edge is a
-//! circle), and each convex corner's sector of the ball where three faces meet.  A concave edge has
+//! circle), and each convex corner's sector of the ball: at a prism's corner (three faces, one
+//! square to the other two) the quarter disc turned about the square one; where any other faces
+//! meet, planes along lines, the ball cut back to the plane each edge's wedge ends on there,
+//! spanned by its two faces' normals (`ball_sector`).  A concave edge has
 //! no wedge: its two faces' prisms overlap there, and each is cut back to the edge's bisector (the
 //! plane through it halfway between them), where they meet face to face.  At a corner where one
 //! concave edge meets a face square to both its faces (a step's end, a pocket's rim) the ball has
@@ -25,8 +28,8 @@
 //! (`gate`), as the other exact constructions are.  A concave edge on a curved face other than a
 //! band's foot, a boss's foot whose edge stands not square to the face beneath it, a face beside a
 //! concave edge that is no convex polygon or is narrower than the reach (a pocket narrower than
-//! twice it), a face no plane or cylinder carries, an edge no line or circle, a convex corner that
-//! is no prism's (three faces, one square to the other two), a bore no wider than the reach, or a
+//! twice it), a face no plane or cylinder carries, an edge no line or circle, a convex corner on a
+//! curved face or edge that is no prism's, a bore no wider than the reach, or a
 //! body whose faces another solid reads leave it the field's, said by name.  The recipe's `grown`
 //! node: the body's own node, and its pieces each a `prism` or a `revolve` — one cut back a
 //! `region`, in common with a block standing on each bisector; a face's pieces about a foot
@@ -240,7 +243,8 @@ pub(crate) fn pieces(body: &BodyFaces, d: f64, name: &str) -> Result<Grown, Stri
     }
     let mut pieces: Vec<Vec<Piece>> = Vec::new();
     // each corner's sector of the ball: where three faces meet, one square to the other two (a
-    // prism's corner), the quarter disc between the square one and another turned about it.  At
+    // prism's corner), the quarter disc between the square one and another turned about it; any
+    // other convex corner of planes, the ball cut back to its wedges' ends (`ball_sector`).  At
     // a concave corner the ball has no sector: where one concave edge meets the square face, the
     // wedges along that face are cut back to its bisector (`trims`, by edge and end: the corner,
     // what is kept, how far along the edge the cut reaches); where three meet, nothing; where a
@@ -315,9 +319,13 @@ pub(crate) fn pieces(body: &BodyFaces, d: f64, name: &str) -> Result<Grown, Stri
             }
             continue;
         }
-        let corner = (normals.len() == 3).then(|| (0..3).find(|&k| {
+        let prism = (normals.len() == 3).then(|| (0..3).find(|&k| {
             (0..3).filter(|&j| j != k).all(|j| dot(normals[k], normals[j]).abs() < 1e-9)
-        })).flatten().ok_or_else(|| refused("a corner that is no prism's: three faces, one square to the other two"))?;
+        })).flatten();
+        let Some(corner) = prism else {
+            sectors.push(ball_sector(&body, v, c, edges, d).map_err(refused)?);
+            continue;
+        };
         let nc = normals[corner];
         let [na, nb] = [normals[(corner + 1) % 3], normals[(corner + 2) % 3]];
         let section = wedge(c, cross(na, nc), na, nc, d);
@@ -505,6 +513,41 @@ fn cut_back(body: &BodyFaces, fi: usize, l: &[crate::brep::topo::Coedge], n: V, 
 
 /// The sector of the disc of radius `d` about `o` from the unit `na` to the unit `nb` (both square
 /// to the unit `along`, the section's normal, less than a half turn apart).
+/// The sector of the ball of radius `d` about convex corner `v` (at `c`, model units) of plane faces
+/// and line edges: the ball's points whose nearest point of the body is the corner, those within
+/// the cone its faces' normals span there — the ball cut back to the plane spanned by the normals
+/// of the two faces along each edge `edges` meets there, the plane square to that edge, through
+/// the corner, that its wedge ends on.  Turned about an axis square to the way out of the body
+/// (against its edges from the corner, on whose side every normal of the cone stands), so its
+/// poles and seam stand outside the cone.
+fn ball_sector(body: &BodyFaces, v: u32, c: V, edges: &[u32], d: f64) -> Result<Piece, &'static str> {
+    let b = body.brep().0;
+    if body.faces_at(v, &[]).iter().any(|&f| body.plane(f).is_none()) || edges.iter().any(|&e| body.segment(e).is_none()) {
+        return Err("a convex corner on a curved face or edge, no prism's");
+    }
+    // the way out of the body: against its edges from the corner (each normal of the cone stands
+    // square to them or leans back from them, so on its side)
+    let inward = edges.iter().fold([0.0; 3], |s, &e| {
+        let ends = body.ends(e);
+        add(s, unit(sub(body.back(b.vertices[ends[usize::from(ends[0] == v)] as usize].p), c)))
+    });
+    let out = unit(scale(inward, -1.0));
+    // each cut kept on the side of the cone's inside, the sum of the normals spanning it
+    let within = body.faces_at(v, &[]).iter().fold([0.0; 3], |s, &f| add(s, body.plane(f).expect("a plane face").0));
+    let cuts = edges.iter().filter_map(|&e| {
+        let &[fa, fb] = body.faces_of(e) else { return None };
+        let [na, nb] = [fa, fb].map(|f| body.plane(f).expect("a plane face").0);
+        let m = cross(na, nb);
+        (norm(m) > 1e-9).then(|| { let m = unit(m); Cut { at: c, keep: if dot(m, within) >= 0.0 { m } else { scale(m, -1.0) } } })
+    }).collect();
+    // the ball: its half disc on the side away from the cone, turned once about an axis square to
+    // `out`
+    let axis = Frame::about(c, out).x;
+    let back = scale(out, -1.0);
+    let section = crate::brep::build::ball_section(&Frame::new(c, cross(back, axis), back), d);
+    Ok(Piece { section, sweep: Sweep::About { origin: c, axis, angle: TAU }, cuts })
+}
+
 fn wedge(o: V, along: V, na: V, nb: V, d: f64) -> Profile {
     let along = scale(along, 1.0 / norm(along));
     let f = Frame::new(o, along, na);
