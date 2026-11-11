@@ -564,10 +564,14 @@ fn closed(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certifie
         // a level circle's sheet in closed form, measured faster than the general reading and held
         // to it (`swept_closed::every_surface_the_closed_class_emits_locates_points_exactly`), and a
         // line along a screw's axis against the sheet a circle screws into, along the helices the
-        // sheet meets that line's cylinder along (`line_along_screw`); any other sheet by the
-        // general reading
+        // sheet meets that line's cylinder along (`line_along_screw`); a straight edge's sheet
+        // where the line crosses it cleanly (`line_screwed_line`); any other sheet, and any other
+        // reading of those, by the general reading
         (&Curve::Line {p,d},Surface::Blend(_,b)) => match b.level_circle().map(|c| line_screwed_circle(p,d,[t0,t1],&c,tol)) {
-            None | Some(Err(Uncertified::NoForm)) => line_along_screw(p,d,[t0,t1],b,tol),
+            None | Some(Err(Uncertified::NoForm)) => match line_along_screw(p,d,[t0,t1],b,tol) {
+                Err(Uncertified::NoForm) => line_screwed_line(p,d,[t0,t1],b,tol),
+                read => read,
+            },
             Some(read) => read,
         },
         (Curve::Circle(f,big),Surface::Blend(_,b)) => circle_round_screwed(f,big.abs(),b,[t0,t1],tol),
@@ -1710,6 +1714,104 @@ fn line_along_screw(p: V,d: V,[t0,t1]: [f64;2],b: &std::sync::Arc<super::geom::B
     Ok(Meets::At(roots))
 }
 
+/// **A line against the sheet a straight edge is carried into** (a polyhedral tool's edge screwed,
+/// `Blend` between two lines), its clean crossings in closed form: the sheet is ruled, `S(u, v) =
+/// Q(v) + u W(v)` — `Q` the carried start of the section's edge at `v` and `W` its carried run, the
+/// carry rigid — so the line `p + t d` meets the ruling at `v` exactly where the three are
+/// coplanar, `F(v) = (Q(v) − p) · (d × W(v)) = 0`, written once over `Num` (`Ruled`) and isolated
+/// by its enclosures (`util::isolate`). At a root `t` and `u` are read off `Q − p = t d − u W`.
+/// `F'(v) = det[d, W, S_v]` there, so a double root is a line tangent to the sheet. Only the
+/// clean reading is answered here — every root simple, the line across its ruling, each meeting
+/// clear inside the sheet's square and the line's stretch or clear outside it — and anything else
+/// is the general reading's (`NoForm`): a touch, and a meeting at an end of the sheet or the line,
+/// are read by its rules alone. The general reading isolated the three unknowns at once, a ray
+/// of a point's location against a screwed sheet the slowest read of a sweep's build.
+fn line_screwed_line(p: V,d: V,[t0,t1]: [f64;2],b: &super::geom::Blend,tol: f64) -> Certified {
+    use crate::util::space::{cross,sub};
+    let (&Curve::Line {p:pa,d:da},&Curve::Line {p:pb,d:db}) = (&b.a,&b.b) else { return Err(Uncertified::NoForm) };
+    if !(t0.is_finite() && t1.is_finite() && t1 > t0) { return Err(Uncertified::NoForm) }
+    // the section's edge at `v` before it is carried, `M(v) + u N(v)`, each affine in `v`
+    let (a0,b0) = (add(pa,scale(da,b.ta[0])),add(pb,scale(db,b.tb[0])));
+    let (al,be) = (scale(da,b.ta[1]-b.ta[0]),scale(db,b.tb[1]-b.tb[0]));
+    let f = Ruled::new(b.carry,[a0,sub(b0,a0)],[al,sub(be,al)],p,d).ok_or(Uncertified::NoForm)?;
+    // the sheet's speed along `v`, the most at its corners and middle: a root's resolution
+    let speed = [[0.,0.],[1.,0.],[0.,1.],[1.,1.],[0.5,0.5]].iter().map(|&uv| norm(b.d1(uv).2)).fold(0.,f64::max);
+    let reach = [[0.,0.],[1.,0.],[0.,1.],[1.,1.],[0.5,0.5]].iter().map(|&uv| norm(b.d1(uv).1)).fold(0.,f64::max);
+    let dd = norm(d);
+    if !(speed > 0. && reach > 0. && dd > 0.) { return Err(Uncertified::NoForm) }
+    // how near an end of the sheet or the line a meeting may stand and still be read here: far
+    // wider than the general reading's tolerance, so that whatever it would read differently
+    // there is its own to read
+    let slack = 1e-6+1e3*tol/speed.min(reach);
+    let g = crate::util::isolate::Written(f);
+    let gv = |v: f64| { use crate::util::isolate::Function; g.at(v).0 };
+    let width = tol*1e-3/speed;
+    let found = crate::util::isolate::roots(&g,[-slack,1.+slack],width,&|v| gv(v).abs() <= tol*dd*reach)
+        .map_err(|e| if matches!(e,GaveUp::Stopped) { Uncertified::Stopped } else { Uncertified::NoForm })?;
+    let mut roots = Vec::new();
+    for r in found {
+        if r.touch { return Err(Uncertified::NoForm) }
+        let v = r.at;
+        let (q,w) = g.0.at(v);
+        let n = cross(d,w);
+        let nn = dot(n,n);
+        // the line along the ruling there: the general reading's
+        if !(nn > 1e-12*dd*dd*dot(w,w)) { return Err(Uncertified::NoForm) }
+        let qp = sub(q,p);
+        let (t,u) = (dot(cross(qp,w),n)/nn,dot(cross(qp,d),n)/nn);
+        let (ts,us) = (slack*(t1-t0)+1e3*tol/dd,slack);
+        let clear_in = |x: f64,lo: f64,hi: f64,s: f64| x > lo+s && x < hi-s;
+        let clear_out = |x: f64,lo: f64,hi: f64,s: f64| x < lo-s || x > hi+s;
+        if clear_out(v,0.,1.,slack) || clear_out(u,0.,1.,us) || clear_out(t,t0,t1,ts) { continue }
+        if !(clear_in(v,0.,1.,slack) && clear_in(u,0.,1.,us) && clear_in(t,t0,t1,ts)) { return Err(Uncertified::NoForm) }
+        roots.push((t,false));
+    }
+    Ok(Meets::At(roots))
+}
+
+/// `(Q(v) − p) · (d × W(v))` (`line_screwed_line`), `Q` the point `M₀ + v M₁` carried to `v` by the
+/// screw (centre `c`, unit axis `k`, turn `θ`, rise `h`) and `W` the direction `N₀ + v N₁` turned
+/// to it. Turned back by `R_v` the screw's turn at `v` (the triple product unchanged), it is
+/// `R_vᵀd · (N × A) + N · R_vᵀ((c − p) × d)`, `A = M − c + h v k`: with `R_vᵀx · y = (k·x)(k·y) +
+/// cos θv (x·y − (k·x)(k·y)) − sin θv ((k × x)·y)`, **`α(v) + β(v) cos θv − γ(v) sin θv`**, each of
+/// the three a quadratic in `v` — one sine and cosine, written once over `Num`, where reading `Q`
+/// and `W` carried read five, and their product enclosed wide.
+struct Ruled { m: [V;2],n: [V;2],carry: super::geom::Carry,trig: [[f64;3];3],theta: f64 }
+
+impl Ruled {
+    fn new(carry: super::geom::Carry,m: [V;2],n: [V;2],p: V,d: V) -> Option<Ruled> {
+        use crate::util::space::{cross,sub};
+        let super::geom::Carry::Screw {center,axis,angle,advance} = carry else { return None };
+        if (norm(axis)-1.).abs() > 1e-12 { return None }
+        let k = axis;
+        // `N × A` a quadratic, `N` affine: their coefficients by power of `v`
+        let (a0,a1) = (sub(m[0],center),add(m[1],scale(k,advance)));
+        let y1 = [cross(n[0],a0),add(cross(n[0],a1),cross(n[1],a0)),cross(n[1],a1)];
+        let y2 = [n[0],n[1],[0.;3]];
+        let (x1,x2) = (d,cross(sub(center,p),d));
+        let trig = std::array::from_fn(|j| {
+            let (kx1,kx2,ky1,ky2) = (dot(k,x1),dot(k,x2),dot(k,y1[j]),dot(k,y2[j]));
+            [kx1*ky1+kx2*ky2,dot(x1,y1[j])-kx1*ky1+dot(x2,y2[j])-kx2*ky2,dot(cross(k,x1),y1[j])+dot(cross(k,x2),y2[j])]
+        });
+        Some(Ruled {m,n,carry,trig,theta:angle})
+    }
+    /// `Q(v)` and `W(v)`, in floats.
+    fn at(&self,v: f64) -> (V,V) {
+        let turned = |x: V| crate::util::space::sub(self.carry.at(x,v),self.carry.at([0.;3],v));
+        (add(self.carry.at(self.m[0],v),scale(turned(self.m[1]),v)),add(turned(self.n[0]),scale(turned(self.n[1]),v)))
+    }
+}
+
+impl crate::util::isolate::Formula for Ruled {
+    fn jet<T: Num>(&self,v: crate::util::interval::Jet<T>) -> crate::util::interval::Jet<T> {
+        use crate::util::interval::Jet;
+        let c = &self.trig;
+        let poly = |i: usize| Jet::of(c[0][i])+v*(Jet::of(c[1][i])+v.times(c[2][i]));
+        let (s,co) = v.times(self.theta).sin_cos();
+        poly(0)+co*poly(1)-s*poly(2)
+    }
+}
+
 /// **A helix against a ball**, its roots isolated (#721 F2c5: the helix a ball's pipe touches a
 /// cylinder along, which starts on the ball at its start pose, touching it there): the iso-line of
 /// a sheet a curve screws into, where the curve's two ends are one, is its point at `u` carried by
@@ -2238,12 +2340,14 @@ pub fn interior(b: &Brep,capacity: usize) -> Result<Vec<(V,f64)>,String> {
         lo:std::array::from_fn(|a| t[0][a].min(t[1][a]).min(t[2][a])-grow),
         hi:std::array::from_fn(|a| t[0][a].max(t[1][a]).max(t[2][a])+grow),
     }));
-    let depth = crate::util::par::map(&candidates,|&p| {
+    // its distance from the mesh: the radius of a ball about it no triangle enters
+    let clear = crate::util::par::map(&candidates,|&p| {
         let d2 = std::cell::Cell::new(f64::INFINITY);
         boxes.query_nearest(|b| b.gap(crate::util::bvh::Bounds {lo:p,hi:p}),|| d2.get().sqrt(),
             |k| d2.set(d2.get().min(triangle_distance2(p,&tris[k]))));
-        d2.get().sqrt()-m.sag
+        d2.get().sqrt()
     });
+    let depth: Vec<f64> = clear.iter().map(|d| d-m.sag).collect();
     // its winding number, which only a point the choice reaches is asked
     let winding = |p: V| {
         let mut w = 0.;
@@ -2257,22 +2361,37 @@ pub fn interior(b: &Brep,capacity: usize) -> Result<Vec<(V,f64)>,String> {
         w/(4.*std::f64::consts::PI)
     };
     // clear of the mesh, the deepest first (the earlier of two as deep): each taken where it is
-    // inside and no nearer a point taken than half the first's depth. Their windings are read a
-    // batch at a time across the cores, ahead of the choice
+    // inside and no nearer a point taken than half the first's depth
     let mut order: Vec<usize> = (0..candidates.len()).filter(|&i| depth[i] > 0.).collect();
     order.sort_by(|&i,&j| depth[j].total_cmp(&depth[i]));
     let open = |chosen: &[(V,f64)],i: usize|
         !chosen.first().is_some_and(|f| chosen.iter().any(|c| distance(c.0,candidates[i]) < f.1/2.));
+    // Whether each candidate is inside, as far as it is known. The winding number of a closed mesh
+    // is constant off it, so one read where it is whole (to a millionth: a mesh open somewhere reads
+    // fractions, and shares none) settles every candidate in the ball about it no triangle enters:
+    // the deepest candidates of a thin cell are mostly outside it, its box's grid far from it, and
+    // were read one by one, two thousand windings of every triangle for four points. The rest are
+    // read a batch at a time across the cores, ahead of the choice; what is chosen is what reading
+    // every one would choose
+    let mut inside: Vec<Option<bool>> = vec![None;candidates.len()];
+    let batch = 4*crate::util::par::threads();
     let mut chosen: Vec<(V,f64)> = Vec::new();
-    for batch in order.chunks(4*crate::util::par::threads()) {
+    for (k,&i) in order.iter().enumerate() {
         if chosen.len() == capacity { break }
-        let asked: Vec<usize> = batch.iter().copied().filter(|&i| open(&chosen,i)).collect();
-        let inside = crate::util::par::map(&asked,|&i| winding(candidates[i]) > 0.5);
-        for (&i,inside) in asked.iter().zip(inside) {
-            if chosen.len() == capacity { break }
-            if !inside || !open(&chosen,i) { continue }
-            chosen.push((candidates[i],depth[i]));
+        if !open(&chosen,i) { continue }
+        if inside[i].is_none() {
+            let asked: Vec<usize> = order[k..].iter().copied().filter(|&j| inside[j].is_none() && open(&chosen,j)).take(batch).collect();
+            let read = crate::util::par::map(&asked,|&j| winding(candidates[j]));
+            for (&j,w) in asked.iter().zip(read) {
+                inside[j] = Some(w > 0.5);
+                if (w-w.round()).abs() > 1e-6 { continue }
+                let r = clear[j]*(1.-1e-9);
+                for (q,known) in candidates.iter().zip(inside.iter_mut()) {
+                    if known.is_none() && distance(*q,candidates[j]) < r { *known = Some(w > 0.5) }
+                }
+            }
         }
+        if inside[i] == Some(true) { chosen.push((candidates[i],depth[i])) }
     }
     Ok(chosen)
 }

@@ -2245,7 +2245,10 @@ unread where its first decides, a loop's nearest edge sought only within the lev
 its ray first). A body built whole is split by its placed sheets a batch at a time, each sheet in
 the first batch whose boxes stand clear of its own (`sector::apart`): sheets that meet none of each
 other split as one. A cell's interior points (`query::interior`) are the deepest first by a
-hierarchy of its mesh's triangles, the winding number asked only of the points the choice reaches.
+hierarchy of its mesh's triangles, the winding number asked only of the points the choice reaches,
+and one read settling every candidate in the ball about it no triangle enters (a closed mesh's
+winding is constant off it): the deepest candidates of a thin cell, its box's grid, lie mostly
+outside it, and two thousand windings of every triangle were read a cell for its four points.
 Under these, the class's Booleans are seeded and traced as any are (brep.md), a cone's step read at
 its radius in the pair's box (`Surface::feature_within`, not at its frame's origin, which may be
 its apex), and a spline's foot found as `brep.md` says. A blank's prism of whole circles about the

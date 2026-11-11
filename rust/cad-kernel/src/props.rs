@@ -498,8 +498,14 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
         // is a quotient, which no Gauss rule integrates exactly: it takes the stretch-by-stretch
         // rule a swept face does
         let mut prefix = match s { Surface::BSpline(_,n) if !n.is_rational() && !area => Some(Prefix::new(n,(lo[0]+hi[0])/2.)),_ => None };
+        // a sheet carried between two straight edges (a polyhedral tool's edge swept, `Blend`): its
+        // point affine in `u` at every `v` — the carry is rigid, its rate affine in the point — so
+        // the flux's `g` is a quadratic in `u`, which two Gauss nodes integrate exactly, read along
+        // `u` whichever its face spans less (along `v` the screw's turn makes it no polynomial, and
+        // the general rule read forty nodes a stretch, every face of a sweep's arrangement)
+        let ruled = !area && matches!(s,Surface::Blend(_,bl) if matches!((&bl.a,&bl.b),(Curve::Line {..},Curve::Line {..})));
         // the parameter `g` is integrated along (`G` then multiplies the other's derivative)
-        let along = if prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 };
+        let along = if ruled || prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 };
         let base = if prefix.is_some() || !lo[along].is_finite() { 0. } else { (lo[along]+hi[along])/2. };
         let periodic = [pu,pv][along].is_some();
         let closed = if prefix.is_some() { None } else { Closed::new(s,area,along,base) };
@@ -510,7 +516,14 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
             let x = [u,v][along];
             let mut at_x = |w: f64| if along == 0 { g(w,v) } else { g(u,w) };
             let cuts = s.breaks(along,[base,x]);
-            if cuts.is_empty() { return gauss(base,x,pieces(x-base,periodic),&mut at_x) }
+            if cuts.is_empty() {
+                if ruled {
+                    let (m,h) = ((base+x)/2.,(x-base)/2.);
+                    let d = h/3f64.sqrt();
+                    return h*(at_x(m-d)+at_x(m+d))
+                }
+                return gauss(base,x,pieces(x-base,periodic),&mut at_x)
+            }
             let mut at = vec![base];
             if x >= base { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
             at.push(x);

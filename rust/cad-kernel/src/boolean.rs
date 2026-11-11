@@ -1260,12 +1260,15 @@ impl<'a> Arrangement<'a> {
             }
             out
         });
+        // every edge against every face of another operand whose box its samples' box meets, in
+        // order: read on every core — each reading the edge's curve and the face's surface alone —
+        // then each taken in that order, as one after another would be
+        let mut asked: Vec<(Side,Side,usize,usize)> = Vec::new();
         for s in self.solids.all() {
           for other in self.solids.all().filter(|&o| o != s) {
             let theirs = self.solids[other];
             for (i,e) in self.solids[s].edges.iter().enumerate() {
                 let EdgeCurve::Curve(c) = &e.curve else { continue };
-                let we = self.working(s,i);
                 // a sampled chord may cut inside its curve's bulge: pad by the sagitta's bound
                 let sag = c.speed()*(e.t[1]-e.t[0])/32.;
                 // an edge whose enclosure misses the box the other's faces fill meets none of them
@@ -1277,64 +1280,77 @@ impl<'a> Arrangement<'a> {
                     let p = c.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/32.);
                     for k in 0..3 { ebox.0[k] = ebox.0[k].min(p[k]); ebox.1[k] = ebox.1[k].max(p[k]); }
                 }
-                for (fi,f) in theirs.faces.iter().enumerate() {
+                for fi in 0..theirs.faces.len() {
                     if !overlap(&ebox,&self.boxes[other][fi],pad+sag) { continue }
                     // (in a trim, an edge is met with a face only where a face it bounds is)
                     if !bounded[s][i].iter().any(|&h| self.met(s,h,other,fi)) { continue }
-                    let started = crate::util::clock::Instant::now();
-                    // an edge measured off its surfaces by more than the tolerance (a fitted contact's
-                    // `tol`, `Brep::measure_tolerances`) is read at its own: it lies in a face it is
-                    // that near
-                    let meets = curve_surface_within(c,e.t,&f.surface,tol.max(e.tol),self.boxes[other][fi],pad);
-                    self.say.edge_against_face(s,i,e,fi,f,started.elapsed().as_secs_f64());
-                    match meets {
-                        // lying in the face's surface, it is split only where it crosses the face's
-                        // own edges, which no surface tells: each crossing a vertex on both (a
-                        // fillet's contact circle laid on a cylinder across the cylinder's seam)
-                        Meets::Along => {
-                            found.along_face[other][fi].push(we);
-                            let edges: std::collections::BTreeSet<u32> = f.loops.iter().flatten().map(|g| g.edge).collect();
-                            for g in edges {
-                                let ge = &theirs.edges[g as usize];
-                                let EdgeCurve::Curve(gc) = &ge.curve else { continue };
-                                // (where neither is a line or a circle — a spline sweep's rail along a
-                                // side — it is left unsplit, as every edge along a face was before; that
-                                // crossing wants a general curve–curve root, not yet written)
-                                for (t,q) in crossings_in(&f.surface,c,e.t,gc,ge.t,tol).map_err(|r| r.to_string())?.unwrap_or_default() {
-                                    self.say.along_crosses(s,i,c,fi,g,q);
-                                    let v = self.pool.at(q);
-                                    self.cuts[we].push((t,v));
-                                    // on the boundary of every face that edge bounds: a meeting of the
-                                    // face beside it may end there (two fillets' faces and the face both
-                                    // roll on, touching one another at one point)
-                                    for &h in &bounded[other][g as usize] {
-                                        if !found.on_face[other][h].contains(&v) { found.on_face[other][h].push(v); }
-                                    }
-                                }
-                            }
-                        }
-                        // a reading not proved refuses the Boolean, with its witness (#814 P3)
-                        Meets::Refused(r) => return Err(format!("an edge met with a face: {r}")),
-                        Meets::At(roots) => for (t,touch) in roots {
-                            // a touch is a double root, placed only to the square root of the
-                            // tolerance: where a face of the edge's own touches the surface along a
-                            // curve, it is the edge's crossing with that curve, placed exactly
-                            let own: Vec<&Surface> = bounded[s][i].iter().map(|&g| &self.solids[s].faces[g].surface).collect();
-                            let t = if touch { touch_root(c,e.t,&own,&f.surface,t,tol).unwrap_or(t) } else { t };
-                            let q = c.point(t);
-                            let place = self.located[other].face_place(fi,q);
-                            self.say.meets(s,i,c,fi,f,q,touch,place);
-                            if place == Place::Out { continue }
-                            let fresh = self.pool.pts.len();
-                            let v = self.pool.at(q);
-                            self.cuts[we].push((t,v));
-                            found.on_face[other][fi].push(v);
-                            if v as usize >= fresh { found.loose.push(Loose {edge:we,vertex:v,t,side:s,index:i,against:other,face:fi}); }
-                        },
-                    }
+                    asked.push((s,other,i,fi));
                 }
             }
           }
+        }
+        let (solids,boxes) = (&self.solids,&self.boxes);
+        let read = crate::util::par::map(&asked,|&(s,other,i,fi)| {
+            let e = &solids[s].edges[i];
+            let EdgeCurve::Curve(c) = &e.curve else { unreachable!("an edge asked has a curve") };
+            let started = crate::util::clock::Instant::now();
+            // an edge measured off its surfaces by more than the tolerance (a fitted contact's
+            // `tol`, `Brep::measure_tolerances`) is read at its own: it lies in a face it is
+            // that near
+            let meets = curve_surface_within(c,e.t,&solids[other].faces[fi].surface,tol.max(e.tol),boxes[other][fi],pad);
+            (meets,started.elapsed().as_secs_f64())
+        });
+        for (&(s,other,i,fi),(meets,took)) in asked.iter().zip(read) {
+            let theirs = self.solids[other];
+            let (e,f) = (&self.solids[s].edges[i],&theirs.faces[fi]);
+            let EdgeCurve::Curve(c) = &e.curve else { continue };
+            let we = self.working(s,i);
+            self.say.edge_against_face(s,i,e,fi,f,took);
+            match meets {
+                // lying in the face's surface, it is split only where it crosses the face's
+                // own edges, which no surface tells: each crossing a vertex on both (a
+                // fillet's contact circle laid on a cylinder across the cylinder's seam)
+                Meets::Along => {
+                    found.along_face[other][fi].push(we);
+                    let edges: std::collections::BTreeSet<u32> = f.loops.iter().flatten().map(|g| g.edge).collect();
+                    for g in edges {
+                        let ge = &theirs.edges[g as usize];
+                        let EdgeCurve::Curve(gc) = &ge.curve else { continue };
+                        // (where neither is a line or a circle — a spline sweep's rail along a
+                        // side — it is left unsplit, as every edge along a face was before; that
+                        // crossing wants a general curve–curve root, not yet written)
+                        for (t,q) in crossings_in(&f.surface,c,e.t,gc,ge.t,tol).map_err(|r| r.to_string())?.unwrap_or_default() {
+                            self.say.along_crosses(s,i,c,fi,g,q);
+                            let v = self.pool.at(q);
+                            self.cuts[we].push((t,v));
+                            // on the boundary of every face that edge bounds: a meeting of the
+                            // face beside it may end there (two fillets' faces and the face both
+                            // roll on, touching one another at one point)
+                            for &h in &bounded[other][g as usize] {
+                                if !found.on_face[other][h].contains(&v) { found.on_face[other][h].push(v); }
+                            }
+                        }
+                    }
+                }
+                // a reading not proved refuses the Boolean, with its witness (#814 P3)
+                Meets::Refused(r) => return Err(format!("an edge met with a face: {r}")),
+                Meets::At(roots) => for (t,touch) in roots {
+                    // a touch is a double root, placed only to the square root of the
+                    // tolerance: where a face of the edge's own touches the surface along a
+                    // curve, it is the edge's crossing with that curve, placed exactly
+                    let own: Vec<&Surface> = bounded[s][i].iter().map(|&g| &self.solids[s].faces[g].surface).collect();
+                    let t = if touch { touch_root(c,e.t,&own,&f.surface,t,tol).unwrap_or(t) } else { t };
+                    let q = c.point(t);
+                    let place = self.located[other].face_place(fi,q);
+                    self.say.meets(s,i,c,fi,f,q,touch,place);
+                    if place == Place::Out { continue }
+                    let fresh = self.pool.pts.len();
+                    let v = self.pool.at(q);
+                    self.cuts[we].push((t,v));
+                    found.on_face[other][fi].push(v);
+                    if v as usize >= fresh { found.loose.push(Loose {edge:we,vertex:v,t,side:s,index:i,against:other,face:fi}); }
+                },
+            }
         }
         Ok(found)
     }
@@ -1521,71 +1537,86 @@ impl<'a> Arrangement<'a> {
         for &(we,two) in &meetings.ssi_edges {
             for k in 0..2 { on.entry((two.s[k],two.f[k])).or_default().push((we,two.s[1-k],two.f[1-k])); }
         }
-        for ((s,fi),list) in on {
-            let surface = &self.solids[s].faces[fi].surface;
+        // each two meetings on a face, of two other operands, whose crossings are sought
+        let mut asked: Vec<((Side,usize),(usize,Side,usize),(usize,Side,usize))> = Vec::new();
+        for (&(s,fi),list) in &on {
             for i in 0..list.len() { for j in i+1..list.len() {
-                let ((ei,oi,gi),(ej,oj,gj)) = (list[i],list[j]);
-                if oi == oj { continue }
-                let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&self.edges[ei].curve,&self.edges[ej].curve) else { continue };
-                let (ti,tj) = (self.edges[ei].t,self.edges[ej].t);
-                if !overlap(&ci.bounds(ti),&cj.bounds(tj),self.pad) { continue }
-                // two meetings lying along one another cross nowhere (#847: a screwed level edge's
-                // sheet touching the cylinder its foot runs on along that foot's helix, which a
-                // second sheet meets the cylinder along too): every pair of their chords is near, and
-                // the search would cut both at each — hundreds of vertices along one helix, each an
-                // edge of the result. Where one ends inside the other, that end is a vertex inside
-                // it, which cuts it (step 2b), and the two are one edge (step 4), each read at the
-                // reach this one is
-                if along_one_another(ci,ti,cj,tj,ON_CURVE*tol) { continue }
-                // each meeting's reach at a point: a point of it within the tolerance of its two
-                // surfaces stands that over the sine of their angle off it (`on_meeting`), so a
-                // meeting traced between surfaces meeting shallowly is known only so well
-                let (si,sj) = (&self.solids[oi].faces[gi].surface,&self.solids[oj].faces[gj].surface);
-                let reach_of = |o: &Surface,p: V| on_meeting(tol,norm(crate::util::space::cross(
-                    crate::util::space::normalised(surface.gradient(p)).unwrap_or([0.;3]),
-                    crate::util::space::normalised(o.gradient(p)).unwrap_or([0.;3]))));
-                // in closed form where `query` has one, else by search (`meeting::crossings`), as far
-                // as the shallower of the two meetings anywhere along them is known, each candidate
-                // then held to the reach of the two at it
-                let widest = super::meeting::reach_along(&[(ci,ti,si),(cj,tj,sj)],&|o,p| reach_of(o,p));
-                let found: Vec<(f64,V)> = crossings_in(surface,ci,ti,cj,tj,tol).map_err(|r| r.to_string())?.unwrap_or_else(||
-                    super::meeting::crossings(ci,ti,cj,tj,widest).into_iter()
-                        .filter(|&(t,u,_)| distance(ci.point(t),cj.point(u)) <= reach_of(si,ci.point(t)).max(reach_of(sj,cj.point(u))))
-                        .map(|(t,_,q)| (t,q)).collect());
-                // each the point the three surfaces share, by Newton on their signed distances: what
-                // each of the three faces' searches finds again, so the pool takes it for one
-                let three = [surface,&self.solids[oi].faces[gi].surface,&self.solids[oj].faces[gj].surface];
-                let key = [(s,fi),(oi,gi),(oj,gj)].map(|k| self.surface_of.get(&k).copied());
-                let key: Option<[usize;3]> = key.iter().all(Option::is_some).then(|| { let mut k = key.map(|x| x.unwrap_or(0)); k.sort(); k });
-                for (t0,q) in found {
-                    let q0 = q;
-                    // (within the reach Newton settles it from, `shared_point`'s; a touch's crossing,
-                    // known only along a stretch, is read again)
-                    let known = key.and_then(|k| shared.get(&k)?.iter().find(|(p,_)| distance(*p,q0) <= 16.*ON_CURVE*tol).copied());
-                    let q = match known {
-                        Some((p,_)) => p,
-                        None => match shared_point(three,q,tol).or_else(|| touch_point(three,q,tol)) {
-                            Some(q) => q,
-                            // two of the three touch there (their gradients parallel), so the two
-                            // curves are tangent and their crossing is known only as the stretch
-                            // along which they stay within reach of one another: a vertex either
-                            // has in it already is that crossing, else their nearest approach is
-                            // (#735 A3)
-                            None => self.crossing_in_touch([ei,ej],t0,q),
-                        },
-                    };
-                    let t = { let mut t = ci.inverse(q); if let Some(period) = ci.period() { t = around(t,ti[0],period); } t };
-                    let near = |c: &Curve,x: f64,o: &Surface| distance(c.point(x),q) <= reach_of(o,q).max(distance(q,q0)+ON_CURVE*tol);
-                    if !(t >= ti[0]-1e-12 && t <= ti[1]+1e-12) || !near(ci,t,si) { continue }
-                    let mut u = cj.inverse(q);
-                    if let Some(period) = cj.period() { u = around(u,tj[0],period); }
-                    if !(u >= tj[0]-1e-12 && u <= tj[1]+1e-12) || !near(cj,u,sj) { continue }
-                    let v = match known { Some((_,v)) => v,None => self.pool.at(q) };
-                    if let (Some(k),None) = (key,known) { shared.entry(k).or_default().push((q,v)) }
-                    if !self.cuts[ei].iter().any(|&(_,w)| w == v) { self.cuts[ei].push((t,v)); }
-                    if !self.cuts[ej].iter().any(|&(_,w)| w == v) { self.cuts[ej].push((u,v)); }
-                }
+                if list[i].1 != list[j].1 { asked.push(((s,fi),list[i],list[j])) }
             } }
+        }
+        // each meeting's reach at a point: a point of it within the tolerance of its two surfaces
+        // stands that over the sine of their angle off it (`on_meeting`), so a meeting traced
+        // between surfaces meeting shallowly is known only so well
+        let reach_of = |surface: &Surface,o: &Surface,p: V| on_meeting(tol,norm(crate::util::space::cross(
+            crate::util::space::normalised(surface.gradient(p)).unwrap_or([0.;3]),
+            crate::util::space::normalised(o.gradient(p)).unwrap_or([0.;3]))));
+        // each pair's crossings sought on every core — the search reads the meetings' curves alone,
+        // which nothing below changes — and taken in the pairs' order, as one after another would be
+        // (a search the slowest of the arrangement's steps, #880: three hundred pairs of helices)
+        let (edges,solids,pad) = (&self.edges,&self.solids,self.pad);
+        let sought = crate::util::par::map(&asked,|&((s,fi),(ei,oi,gi),(ej,oj,gj))| -> Result<Option<Vec<(f64,V)>>,String> {
+            let surface = &solids[s].faces[fi].surface;
+            let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&edges[ei].curve,&edges[ej].curve) else { return Ok(None) };
+            let (ti,tj) = (edges[ei].t,edges[ej].t);
+            if !overlap(&ci.bounds(ti),&cj.bounds(tj),pad) { return Ok(None) }
+            // two meetings lying along one another cross nowhere (#847: a screwed level edge's
+            // sheet touching the cylinder its foot runs on along that foot's helix, which a
+            // second sheet meets the cylinder along too): every pair of their chords is near, and
+            // the search would cut both at each — hundreds of vertices along one helix, each an
+            // edge of the result. Where one ends inside the other, that end is a vertex inside
+            // it, which cuts it (step 2b), and the two are one edge (step 4), each read at the
+            // reach this one is
+            if along_one_another(ci,ti,cj,tj,ON_CURVE*tol) { return Ok(None) }
+            let (si,sj) = (&solids[oi].faces[gi].surface,&solids[oj].faces[gj].surface);
+            // in closed form where `query` has one, else by search (`meeting::crossings`), as far
+            // as the shallower of the two meetings anywhere along them is known, each candidate
+            // then held to the reach of the two at it
+            let widest = super::meeting::reach_along(&[(ci,ti,si),(cj,tj,sj)],&|o,p| reach_of(surface,o,p));
+            Ok(Some(crossings_in(surface,ci,ti,cj,tj,tol).map_err(|r| r.to_string())?.unwrap_or_else(||
+                super::meeting::crossings(ci,ti,cj,tj,widest).into_iter()
+                    .filter(|&(t,u,_)| distance(ci.point(t),cj.point(u)) <= reach_of(surface,si,ci.point(t)).max(reach_of(surface,sj,cj.point(u))))
+                    .map(|(t,_,q)| (t,q)).collect())))
+        });
+        for (&((s,fi),(ei,oi,gi),(ej,oj,gj)),found) in asked.iter().zip(sought) {
+            let Some(found) = found? else { continue };
+            let surface = &self.solids[s].faces[fi].surface;
+            let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&self.edges[ei].curve,&self.edges[ej].curve) else { continue };
+            let (ti,tj) = (self.edges[ei].t,self.edges[ej].t);
+            let (si,sj) = (&self.solids[oi].faces[gi].surface,&self.solids[oj].faces[gj].surface);
+            let reach_of = |o: &Surface,p: V| reach_of(surface,o,p);
+            // each the point the three surfaces share, by Newton on their signed distances: what
+            // each of the three faces' searches finds again, so the pool takes it for one
+            let three = [surface,&self.solids[oi].faces[gi].surface,&self.solids[oj].faces[gj].surface];
+            let key = [(s,fi),(oi,gi),(oj,gj)].map(|k| self.surface_of.get(&k).copied());
+            let key: Option<[usize;3]> = key.iter().all(Option::is_some).then(|| { let mut k = key.map(|x| x.unwrap_or(0)); k.sort(); k });
+            for (t0,q) in found {
+                let q0 = q;
+                // (within the reach Newton settles it from, `shared_point`'s; a touch's crossing,
+                // known only along a stretch, is read again)
+                let known = key.and_then(|k| shared.get(&k)?.iter().find(|(p,_)| distance(*p,q0) <= 16.*ON_CURVE*tol).copied());
+                let q = match known {
+                    Some((p,_)) => p,
+                    None => match shared_point(three,q,tol).or_else(|| touch_point(three,q,tol)) {
+                        Some(q) => q,
+                        // two of the three touch there (their gradients parallel), so the two
+                        // curves are tangent and their crossing is known only as the stretch
+                        // along which they stay within reach of one another: a vertex either
+                        // has in it already is that crossing, else their nearest approach is
+                        // (#735 A3)
+                        None => self.crossing_in_touch([ei,ej],t0,q),
+                    },
+                };
+                let t = { let mut t = ci.inverse(q); if let Some(period) = ci.period() { t = around(t,ti[0],period); } t };
+                let near = |c: &Curve,x: f64,o: &Surface| distance(c.point(x),q) <= reach_of(o,q).max(distance(q,q0)+ON_CURVE*tol);
+                if !(t >= ti[0]-1e-12 && t <= ti[1]+1e-12) || !near(ci,t,si) { continue }
+                let mut u = cj.inverse(q);
+                if let Some(period) = cj.period() { u = around(u,tj[0],period); }
+                if !(u >= tj[0]-1e-12 && u <= tj[1]+1e-12) || !near(cj,u,sj) { continue }
+                let v = match known { Some((_,v)) => v,None => self.pool.at(q) };
+                if let (Some(k),None) = (key,known) { shared.entry(k).or_default().push((q,v)) }
+                if !self.cuts[ei].iter().any(|&(_,w)| w == v) { self.cuts[ei].push((t,v)); }
+                if !self.cuts[ej].iter().any(|&(_,w)| w == v) { self.cuts[ej].push((u,v)); }
+            }
         }
         Ok(())
     }
