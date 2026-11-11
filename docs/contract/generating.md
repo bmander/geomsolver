@@ -879,16 +879,30 @@ placed at the roll's start and carried to its end as one face of a blend between
 image (`Surface::Blend`, `Carry::Line` under a slide, `Carry::Screw` under a turn or a screw), its
 rails the paths of its ends (`Curve::Iso`), a closed piece's one rail its seam; the carry is held to
 the path's own pose at the roll's end. `contacts::candidates` gives each face's pieces carried and
-the tool at the roll's two ends, and with them the meetings known by construction (P4): each sheet
-meets its face at either end pose in that end's rim, given (`boolean::Given`). A face read whole, or
-an edge between faces not smooth there, is refused by name (`Curved`): S2 and a whole face's sweep
-are not read yet. The build's tolerance must be one a fit can hold: a contact fitted within a tenth of
+the tool at the roll's two ends. A sharp edge (S2), or a face read whole, is refused by name
+(`Curved`) before any face is read.
+
+Each piece is cut into stretches, each a candidate of its own (`contacts::stretches`): the trim keeps
+or drops a candidate's piece by membership and meets a candidate only with others, so the leaning
+torus's one closed contact — its outer branch bounding the sweep and its inner one buried — was read at
+a buried point and dropped whole. A closed piece is cut in four at least, no stretch longer than a
+quarter of the tool, each fitted through its ends exactly; neighbouring stretches meet smoothly along
+the rail they share, which is given (P4, `boolean::Given`), not searched for. A rail is one point's
+path and a sheet a union of paths, and two paths of one carry are one or apart, so a rail meets
+another stretch's sheet nowhere or lies in it (`Blend::carried_gap` reads how far apart, in the
+carry's invariants): each cut is moved, within a quarter of its stretch, to the point whose path
+stands clearest of the piece's other points, by a thousandth of the tool where one does — a cut at an
+even length on the torus stood 7e-6 from another stretch's paths, and its rail ran beside that sheet
+its whole length, which no search settles. The end poses are not given their meeting with the sheets:
+a buried stretch re-enters the tool a little way into the roll (on the torus, 9° on), so a sheet's
+rim is not the whole of its meeting with the tool at that end, and a meeting given replaces the
+search for that pair; the arrangement lays the rim as an edge the two touch along and traces the rest.
+
+The build's tolerance must be one a fit can hold: a contact fitted within a tenth of
 `geom::tolerance` (5e-10 of the size) takes thousands of spans, and its rim then stands off its face
 past the tolerance (3.7e-8 against 2.45e-8 on the leaning torus), so the edge reads as crossing it.
-Not yet built whole: on the leaning torus the arrangement reads where each rim crosses its end pose's
-seam circles as the rim's roots on each circle's plane, and the rim runs in the plane of the tube's
-meridian seam over a stretch (185 to 309 crossings), which no certified search settles; reading two
-curves lying in one surface in its parameters, where a seam is an iso-line, is the next step.
+Not yet built whole: the leaning torus's sheets are arranged with each other and the end poses, and a
+sheet's face is then refused, its pieces not closing (#880 Q1b, being read).
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that

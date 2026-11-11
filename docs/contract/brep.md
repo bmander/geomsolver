@@ -549,7 +549,11 @@ the same in one place — a point onto a vertex within `tol` (`Pool`, each verte
 farthest point merged into it stood: `topo::Vertex::tol`, which `check` reads an edge's end
 against), a vertex onto an edge and an edge onto an edge within `ON_CURVE` tolerances, a point onto
 a meeting within `on_meeting`, a flat root onto a crossing within `FLAT`, a sliver into its edge —
-applied once, in that order. The crossing a flat root goes onto is one of its edge's own cuts, or
+applied once, in that order. A non-rational B-spline's heights over a plane are its distances from
+it, so its reading against a plane (`query::spline_plane`) proves a run where a stretch's heights are
+enclosed within half the tolerance (`HeightsWithin`), settled as one meeting: a contact curve running
+in the plane of a torus's seam circle over a stretch read 185 roots a hair apart and was halved past
+any search's boxes (#880 Q1b). The crossing a flat root goes onto is one of its edge's own cuts, or
 one found beside the edge (`Crossings::beside`): where an edge of the other operand lying along a
 face the edge bounds crosses it. A circle of a torus at a sweep's end pose meets the fitted sheet
 that touches the torus along its rim flatly; the fit crosses the circle within the tolerance of the

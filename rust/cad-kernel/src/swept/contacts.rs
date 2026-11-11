@@ -303,6 +303,7 @@ pub fn piece_curve(tool: &Brep,piece: &Piece,twist: &Twist,tol: f64) -> Option<c
         let u1 = crate::topo::unwrap(piece.uv[k],u0,periods);
         let uv = [u0[0]+(u1[0]-u0[0])*f,u0[1]+(u1[1]-u0[1])*f];
         if f == 0. { return pts[k-1] }
+        if f == 1. && k == pts.len()-1 { return pts[k] }
         surface.point(settled_on(surface,twist,uv,h,None,0.))
     };
     let (curve,_) = crate::nurbs::fit_curve(&along,3,16,0.1*tol)?;
@@ -362,16 +363,103 @@ pub fn carried(curve: &crate::geom::Curve,closed: bool,path: &crate::trajectory:
         Coedge {edge:r0,reversed:true,pcurve:line([0.,0.],[0.,1.])},
     ];
     let mid = a.point(0.5);
-    let surface = crate::geom::Surface::Blend(Frame::about(mid,axis),blend);
+    let surface = crate::geom::Surface::Blend(Frame::about(mid,axis),blend.clone());
     let face = Face {surface,reversed:false,loops:vec![],name:"contact".into()};
     if b.loop_area(&face,&l) < 0. { l = crate::topo::reverse_loop(l); }
     b.faces.push(Face {loops:vec![l],..face});
-    Ok(Carried {sheet:b,rims})
+    let rails = [Curve::Iso(blend.clone(),0.),Curve::Iso(blend.clone(),1.)];
+    Ok(Carried {sheet:b,rims,rails})
 }
 
 /// A piece's sheet carried over the roll (`carried`), and its rims: the piece at the roll's start
 /// and at its end, where the sheet meets the tool placed there.
-pub struct Carried { pub sheet: Brep,pub rims: [crate::geom::Curve;2] }
+pub struct Carried { pub sheet: Brep,pub rims: [crate::geom::Curve;2],
+    /// The paths of the curve's ends over the roll (a closed curve's two the same).
+    pub rails: [crate::geom::Curve;2] }
+
+/// **A piece cut into stretches each a candidate of its own** (`candidates`): a sheet is kept or
+/// dropped whole by the trim, which meets a candidate only with others, so a piece whose sheet both
+/// bounds the sweep and lies buried in it — one closed contact through a torus's outer and inner
+/// branches, carried more than a turn — is cut so its stretches meet one another where the buried
+/// part crosses the rest. At least four stretches to a closed piece, none longer than a quarter of
+/// the tool; a stretch shares its ends with its neighbours exactly.
+///
+/// Each cut's rail is the path of one point, and every sheet is a union of such paths: two paths of
+/// one carry are one or apart, so a rail meets another stretch's sheet nowhere or lies in it, and a
+/// rail a hair from another stretch's paths runs beside that sheet its whole length, which no search
+/// settles. So each cut is moved, within a quarter of its stretch, to the nearest point whose path
+/// stands clear, in the carry's invariants (`invariants`), of every point of the piece not beside it
+/// along the piece — by a thousandth of the tool, or as far as any does. (On the leaning torus under
+/// its screw, a cut at an even length stood 7e-6 from another stretch's paths.)
+fn stretches(piece: &Piece,size: f64,carry: &crate::trajectory::Screw) -> Vec<Piece> {
+    let pts = &piece.points;
+    let mut at = vec![0.];
+    for w in pts.windows(2) { let last = *at.last().unwrap(); at.push(last+distance(w[0],w[1])); }
+    let length = *at.last().unwrap();
+    let n = ((length/(0.25*size)).ceil() as usize).max(if piece.closed { 4 } else { 1 }).min(pts.len()-1);
+    if n <= 1 { return vec![piece.clone()] }
+    let inv: Vec<[f64;2]> = pts.iter().map(|&p| invariants(carry,p)).collect();
+    let pitch = (!carry.is_slide() && !carry.is_turn()).then(|| (carry.advance/carry.ratio).abs());
+    let gap = |x: [f64;2],y: [f64;2]| {
+        let mut d = x[1]-y[1];
+        if let Some(p) = pitch { d = (d+0.5*p).rem_euclid(p)-0.5*p }
+        ((x[0]-y[0]).powi(2)+d*d).sqrt()
+    };
+    // how clear point `c`'s path stands of the piece's points not within a twentieth of it along it
+    let along = |x: usize,y: usize| { let d = (at[x]-at[y]).abs(); if piece.closed { d.min(length-d) } else { d } };
+    let clear = |c: usize| (0..pts.len()).step_by(4).filter(|&j| along(j,c) > 0.05*length).map(|j| gap(inv[c],inv[j])).fold(f64::INFINITY,f64::min);
+    let margin = 1e-3*size;
+    let mut cuts: Vec<usize> = (0..=n).map(|k| at.partition_point(|&x| x < length*k as f64/n as f64).min(pts.len()-1)).collect();
+    let (first,last) = (0,cuts.len()-1);
+    for k in 0..cuts.len() {
+        // an open piece's ends are its own
+        if !piece.closed && (k == first || k == last) { continue }
+        if piece.closed && k == last { cuts[k] = cuts[first]; continue }
+        let c0 = cuts[k];
+        let reach = 0.25*length/n as f64;
+        let near: Vec<usize> = (0..pts.len()).filter(|&j| along(j,c0) <= reach && (piece.closed || j > 0 && j+1 < pts.len())).collect();
+        let mut by: Vec<(f64,usize)> = near.iter().map(|&j| (along(j,c0),j)).collect();
+        by.sort_by(|x,y| x.0.total_cmp(&y.0));
+        let mut best = (clear(c0),c0);
+        if best.0 < margin {
+            for &(_,j) in &by {
+                let g = clear(j);
+                if g >= margin { best = (g,j); break }
+                if g > best.0 { best = (g,j) }
+            }
+        }
+        cuts[k] = best.1;
+    }
+    // a closed piece is read from its first cut round to it again
+    let order: Vec<usize> = if piece.closed {
+        let start = cuts[first];
+        (0..pts.len()).map(|i| (start+i)%(pts.len()-1)).chain(std::iter::once(start)).collect()
+    } else { (0..pts.len()).collect() };
+    let place = |c: usize| order.iter().position(|&i| i == c).unwrap_or(0);
+    let mut marks: Vec<usize> = cuts.iter().map(|&c| place(c)).collect();
+    if piece.closed { *marks.last_mut().unwrap() = order.len()-1 }
+    marks.sort();
+    marks.dedup();
+    marks.windows(2).filter(|w| w[1] > w[0]).enumerate().map(|(k,w)| {
+        let idx = &order[w[0]..=w[1]];
+        Piece {face:piece.face,uv:idx.iter().map(|&i| piece.uv[i]).collect(),points:idx.iter().map(|&i| pts[i]).collect(),
+            ends:[if k == 0 && !piece.closed { piece.ends[0] } else { End::Boundary },if w[1] == order.len()-1 && !piece.closed { piece.ends[1] } else { End::Boundary }],closed:false}
+    }).collect()
+}
+
+/// A point's invariants under `carry`: a slide's shadow on the plane square to it, a turn's radius
+/// and height about its axis, a screw's radius and its height along the helix (`z − c φ`, read modulo
+/// a turn's rise by the caller) — what the carry keeps of a point, so two points with the same are on
+/// one path.
+fn invariants(carry: &crate::trajectory::Screw,p: V) -> [f64;2] {
+    let f = crate::geom::Frame::about(carry.origin,carry.axis);
+    let l = f.local(p);
+    if carry.is_slide() { return [l[0],l[1]] }
+    let rho = (l[0]*l[0]+l[1]*l[1]).sqrt();
+    if carry.is_turn() { return [rho,l[2]] }
+    let lead = carry.advance/(std::f64::consts::TAU*carry.ratio);
+    [rho,l[2]-lead*l[1].atan2(l[0])]
+}
 
 /// **The candidates of the closed solid `tool` sweeps under the constant twist `path` over `roll`**,
 /// short of a whole turn (#880 Q1b S4): each piece of each face's contact carried over the roll, and
@@ -406,12 +494,22 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
                 return Err(Unbuilt::Curved {at})
             }
             Contact::Pieces(pieces) => for p in pieces {
-                let curve = piece_curve(tool,&p,&twist,tol).ok_or_else(|| Unbuilt::Failed("a piece of contact not fitted".into()))?;
-                let c = carried(&curve,p.closed,path,roll)?;
-                for (k,rim) in c.rims.iter().enumerate() {
-                    given.push(crate::boolean::Given {surfaces:[tool.faces[fi].surface.moved(&ends[k]),c.sheet.faces[0].surface.clone()],curves:vec![rim.clone()]});
+                let parts = stretches(&p,tool.size(),&screw);
+                let whole = parts.len() == 1;
+                let mut sheets: Vec<Carried> = Vec::new();
+                for part in &parts {
+                    let curve = piece_curve(tool,part,&twist,tol).ok_or_else(|| Unbuilt::Failed("a piece of contact not fitted".into()))?;
+                    sheets.push(carried(&curve,whole && p.closed,path,roll)?);
                 }
-                out.push(c.sheet);
+                // neighbouring stretches meet smoothly along the rail they share, given (a closed
+                // piece's last stretch and its first too)
+                let n = sheets.len();
+                let pairs = if p.closed && n > 1 { n } else { n.saturating_sub(1) };
+                for k in 0..pairs {
+                    let (a,b) = (&sheets[k],&sheets[(k+1)%n]);
+                    given.push(crate::boolean::Given {surfaces:[a.sheet.faces[0].surface.clone(),b.sheet.faces[0].surface.clone()],curves:vec![a.rails[1].clone()]});
+                }
+                out.extend(sheets.into_iter().map(|c| c.sheet));
             },
         }
     }
