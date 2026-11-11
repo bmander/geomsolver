@@ -640,6 +640,16 @@ impl BodyFaces {
         sides
     }
 
+    /// Edges `es` (between `faces`) in runs (`runs`), each with where it ends (`end_sides`): a
+    /// crease a slot cuts across ends on the slot's sides once for each run (#881), and the ends
+    /// of runs read as one run's are within none of them.
+    pub fn end_runs(&self, es: &[u32], faces: &[usize]) -> Vec<(Vec<u32>, Vec<(usize, f64)>)> {
+        self.runs(es).into_iter().map(|run| {
+            let sides = self.end_sides(&run, faces);
+            (run, sides)
+        }).collect()
+    }
+
     /// `faces` and every face going on from one of them tangent across a seam, and from those
     /// on (`F.smooth`, [0.149]): an edge two of the boundary's faces bound, where their outward
     /// normals are one at its middle, is no edge but a seam.  In the faces' order, then as met.

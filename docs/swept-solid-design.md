@@ -200,6 +200,14 @@ it. It stays as the fast path where #699 D says so.
    stretch read at its middle, and turned once (`build::revolve`): exact, and with no Boolean, so
    none of the touches above arise. A leaning block, and a block straddling the axis tipped two
    ways, are each the integral of their slices' spans (`tests/swept_closed.rs`).
+   *Built for a whole turn of any tool, by its shadow* (#880 Q1, `swept::shadow`): the convex road
+   above generalised. The candidates are the tool's contacts, edges and kept faces laid exactly in
+   the half-plane `(ρ, z)` (lines, hyperbolas, circles, turned contacts and rims), arranged there —
+   split where they cross and where one's end stands on another — each piece kept where membership
+   differs a hair to each side, the kept pieces linked into loops and each region revolved: a 2D
+   arrangement in place of the 3D one, so no surface is met in space, and every whole turn the
+   arrangement built builds so. A V wheel leaning across the turn, which the 3D arrangement refused,
+   is its shadow's solid of revolution to 1e-7 of a volume worked apart.
    *Built for a part turn of a leaning tool*, by the arrangement, once three of its touches were
    met. A face at an end pose holds the edge whose hyperboloid is a candidate, so it meets that
    hyperboloid in two rulings; traced, the meeting would not close. A plane meets a quadric of

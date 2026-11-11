@@ -160,7 +160,7 @@ fn the_tumbling_torus_is_built_closed() {
 }
 
 /// The closed polygon through `points` (in a plane), as a profile.
-fn polygon(points: &[[f64;3]]) -> gcs_core::brep::build::Profile {
+pub(crate) fn polygon(points: &[[f64;3]]) -> gcs_core::brep::build::Profile {
     use gcs_core::brep::build::{Profile,ProfileEdge};
     let n = points.len();
     let (u,v) = ([points[1][0]-points[0][0],points[1][1]-points[0][1],points[1][2]-points[0][2]],

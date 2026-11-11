@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.208 — November 2026**
+**Specification, Draft 0.209 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2384,7 +2384,10 @@ labelled argument a measurement takes; faces' surfaces, or no `at:`, are **E040*
 **Where an edge ends** **[0.69]**. `p in S.ends`, `S` a set on two faces (an edge, above), is
 the side of each face the edge ends on that the edge runs on, at each end of the run of edges `S`
 is: so a region along an edge (a round's run) stops where the edge stops, cut off by the faces it
-ends on. A run that closes on itself ends nowhere, and `p in S.ends` holds everywhere.
+ends on. A run that closes on itself ends nowhere, and `p in S.ends` holds everywhere. **[0.209]**
+Where `S`'s edges are in several runs (a crease a slot cuts across), `p` is held to the ends of
+the run nearest it, the run a round beside it is along: the runs either side of a slot end on
+its two sides, and within every run's ends at once is within none.
 `outside` is **E040**: past where an edge ends is no region. `edge` and `seam` are element
 keywords (§19), so a set may not be called so.
 

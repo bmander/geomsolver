@@ -1271,6 +1271,53 @@ the heights of, and a lens stopping in a post at both ends
 (`admission::a_slide_that_ends_in_the_blank_is_the_closed_classs`, the post's disc clipped to the
 lens's sections slid, each to 1e-9).
 
+### A whole turn of any tool, by its shadow (issue #880 Q1)
+
+Under a turn every point moves round a circle about the axis, and over a whole turn the sweep holds
+each such circle whole or not at all: the sweep is the solid of revolution of the tool's **shadow**,
+the set of `(ρ, z)` in a half-plane through the axis whose circle meets the tool. The kernel's
+closed sweep builds a whole turn there first (`brep::swept::shadow::turned`, asked by
+`swept::closed::closed` before its arrangement whenever the roll covers a whole turn), with no
+surface met in space and no blank:
+
+1. **Candidates**, each the exact image in the half-plane of something on the tool: a face's
+   contact under the turn (a plane's, a line, so a hyperbola's arc; a cylinder's or a cone's about
+   an axis along the turn's, in a plane with it, or leaning to it, `turned::Contact`; a ball's great
+   circle through the axis, mirrored where it reaches across), a face the turn keeps in itself (a
+   plane square to the axis, a cylinder, a cone, a ball or a torus about it) its own meridian, a
+   sharp edge's image (a line's hyperbola, a circle's ring meridian `turned::Rim`, a curve lying
+   level its stretch of height between its nearest and farthest points), and the axis. A face's
+   contact is read over the face alone, its ends placed on the edges it crosses.
+2. **Arranged**: each split where another crosses it and where another's end stands on it (a
+   contact running into the sharp edge it ends on is tangent to that edge's image there, given by
+   construction).
+3. **Kept by membership**: a piece bounds the shadow where the sweep's membership a hair to each
+   side differs, the hair under a third of the way to the nearest other candidate, read on the tool
+   meshed finer where the sag leaves it unsettled.
+4. **Linked and revolved**: loops with the shadow on their left, each region and its holes turned
+   once (`build::revolve`) with the candidates' exact curves as its meridians; the result judged by
+   membership before it is returned (`closed::judge`).
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| W1 | Every face is a plane, a cylinder or a cone (about any axis), a ball, or a torus about the turn's axis; every edge a line, a circle, or a curve lying level. | Their contacts and images have closed forms in the half-plane; a torus leaning to the axis, or a free-form face, has a contact read only numerically, T1's. | A point of the face or edge. |
+| W2 | A leaning round face's contact is a curve over the face: two roots apart on every ring, clear of the axis. | Where the roots meet, or the contact reaches the axis, the curve branches or folds, which the candidates do not hold yet. | A point of the contact. |
+| W3 | Every piece's sides settle, and the kept pieces close into loops. | Membership is read on the tool's mesh, refined twice where it is unsettled; a boundary that does not close is not guessed. | The point, or the vertex where it does not close. |
+| W4 | The solid revolved agrees with membership at the judge's points. | Never built wrong (#777). | The point and how it was placed. |
+
+Where W1–W3 refuse, the closed class's arrangement is asked as before; W4's refusal, and a budget
+run out, are the build's. A convex polyhedral tool keeps its closed form (its slices' radial spans,
+`turned_whole`), asked before this road: no mesh and no membership, about fifty times faster. Every
+other whole turn the arrangement built before builds this way, held to the same gates
+(`swept_turned::a_leaning_drum_turned_closes_into_its_sweep`, the frustum, the rounded key and the
+ball on its stem, each to 1e-9 or finer), and so does brep-bench's
+`swept/v-wheel-turned-once-round-rod`, which the arrangement refused: a V wheel leaning 20° across
+the turn, its flanks' and bore's contacts and three sharp circles in the half-plane, 11 faces in a
+tenth of a second, held to the volume of its shadow worked apart from the build (each height's radii
+whose circle meets the wheel's analytic margin, adaptive Simpson) to 1e-6, to membership, to a
+closed STEP file, and the rod it grooves to the same integral within the rod
+(`swept_shadow::a_leaning_v_wheel_turned_whole_is_its_shadow_revolved`).
+
 ### A prism under a motion that keeps a plane, swept closed (issue #880 Q2)
 
 The kernel's closed sweep (`brep::swept::closed::closed`), which reads no blank, takes a prism under

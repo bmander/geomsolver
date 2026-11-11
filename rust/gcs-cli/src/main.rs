@@ -946,7 +946,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         let written = match &o.writes {
             Writes::Assembly(path) => assembly(&sk, &mut e, s, opts, path, opts.solid(&o.own), &colours,
                                                seen.as_ref(), solved),
-            _ => export(&sk, &mut e, opts, o, seen.as_ref(), solved),
+            _ => export(&sk, &mut e, s, opts, o, seen.as_ref(), solved),
         };
         if !written {
             code = 1;
@@ -1076,7 +1076,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
 /// written, each refusal said in the core's words and recorded at the solid's statement; whether
 /// all of it was.  `seen`, where the run draws pictures, is the sketch they read, given what it
 /// built.
-fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option<&Sketch>,
+fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, seen: Option<&Sketch>,
           solved: bool) -> bool {
     let Writes::Export { stl, step } = &o.writes else { return true };
     let (mut stl, mut step, solid) = (stl.clone(), step.clone(), opts.solid(&o.own));
@@ -1098,7 +1098,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
             let mut b = cad::Body::read(sk,i);
             if b.swept() && !native {
                 if let Err(refusal) = b.admit(sk) {
-                    refused(e,i,refusal);
+                    refused(s,sk,e,i,refusal);
                     ok = false;
                     stl = None;
                     step = None;
@@ -1111,7 +1111,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
         #[cfg(feature="occt")]
         if let Ok(i) = pick_solid(sk,solid) {
             if let Err(refusal) = cad::field_mesh::export_refine(sk,i,&path) {
-                refused(e,i,refusal);
+                refused(s,sk,e,i,refusal);
                 ok = false;
             }
         }
@@ -1141,7 +1141,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
                     Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| native_stl),t,seen) {
                         // refused admission, nothing is written (the mesh backend's STL included)
                         if refusal.stage == cad::Stage::Admission { stl = None; }
-                        refused(e,i,refusal);
+                        refused(s,sk,e,i,refusal);
                         ok = false;
                     },
                 }
@@ -1292,13 +1292,20 @@ fn severity(s: Severity) -> &'static str {
 }
 
 /// An export refused: said on stderr in the core's words, recorded at the stage it was met at
-/// for a harness, and reported as a diagnostic at the solid's own statement.
-fn refused(e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core::solid::export::ExportRefusal) {
-    eprintln!("solventc: {refusal}");
+/// for a harness, and reported as a diagnostic at the statement that made the solid it names (a
+/// round's piece at its round, #881: `file:line:col`, as every diagnostic), else at the solid's
+/// own statement.
+fn refused(s: &Source,sk: &Sketch,e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core::solid::export::ExportRefusal) {
     cad::progress::refused(refusal.stage);
-    let site = e.map.site_of(gcs_core::model::EntRef::solid(solid));
-    e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
-        site.map(|s| s.span).unwrap_or_default(),site.map(|s| s.stmt),refusal.message));
+    let named = gcs_core::program::refusal_site(sk,&e.map,&e.program,&refusal.message);
+    let (span,stmt) = named.or_else(|| e.map.site_of(gcs_core::model::EntRef::solid(solid))
+        .map(|s| (s.span,Some(s.stmt)))).unwrap_or_default();
+    let d = gcs_core::program::Diag::new(gcs_core::program::Code::E080,span,stmt,refusal.message);
+    match named {
+        Some(_) => say(s,d.span.lo,severity(d.severity()),d.code.as_str(),&d.message),
+        None => eprintln!("solventc: {}",d.message),
+    }
+    e.diags.push(d);
 }
 
 /// A length as `--tolerance` and `--section` take it: a number, nought or more, and the
@@ -1455,7 +1462,7 @@ fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str
     match cad::brep::export_assembly(sk, &objects, &name, path, t,
         &|i| colours.get(&i).map(|&c| gcs_core::colours::unit(c)), seen) {
         Ok(()) => true,
-        Err((Some(i), refusal)) => { refused(e, i, refusal); false }
+        Err((Some(i), refusal)) => { refused(s, sk, e, i, refusal); false }
         Err((None, refusal)) => {
             cad::progress::refused(refusal.stage);
             fail(e, refusal.to_string())

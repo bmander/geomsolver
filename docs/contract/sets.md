@@ -385,7 +385,13 @@ patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face
 carrying one of the run's on across a tangent seam none (`BodyFaces::continues`); a closed run
-ends nowhere. In a set measured from, `q inside S.ends` is one condition per such face, and `Rest`
+ends nowhere. Where `S`'s edges are in several runs (`BodyFaces::runs`; a crease a slot cuts
+across, #881, [0.209]), a point is held to the ends of the run nearest it (`EndRuns`: the run of
+the edge `nearest_edge` names), the run `lowering`'s piece beside it is built along: within every
+run's ends at once is within none where the runs either side of a slot end on its two sides, and
+within any run's (their union) is too much where a run ending on one post's side goes on past
+the next post. In a set measured from, `q inside S.ends` is one condition per such face (the
+`k`th the nearest run's `k`th face, nothing where it ends on fewer), and `Rest`
 keeps an end of `E` only where `M` carries on past it within them: std's `meeting` is cut so, and
 a run is carried past its edge's end and cut off by the face it ends on (#195). `edge` and `seam` are element keywords: a set may not be called so.
 
