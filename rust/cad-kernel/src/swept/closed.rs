@@ -141,6 +141,9 @@
 //! starts and where it stops, whole, every meeting of the two given (`k2`): the tool a convex solid
 //! of revolution, its contact read round a pencil of half-planes about its centre's velocity.
 //!
+//! **A whole turn of any tool is built first by its shadow** (#880 Q1, `super::shadow`): its
+//! candidates laid in a half-plane through the axis, arranged and kept there by membership, and
+//! revolved, with no surface met in space; the arrangement here is asked only where that is refused.
 //! **A convex polyhedral tool turned whole is built by another road** (`turned_whole`): its solid
 //! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — under a
 //! screw a round face about an axis leaning to it, or a torus's; under a turn a cylinder's or a
@@ -613,6 +616,14 @@ fn metered(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: 
 
 /// `closed` over a box holding the sweep, or `cut_from` over `blank`: the pipeline itself.
 fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    // a whole turn of any tool (#880 Q1): its shadow in a half-plane through the axis, arranged
+    // there and revolved, with no surface met in space (`shadow`) — where it is refused, the
+    // arrangement below is asked
+    if let (Trajectory::Twist(s),None) = (path,blank) {
+        if s.is_turn() && s.ratio != 0. && (s.ratio*(roll[1]-roll[0])).abs() >= std::f64::consts::TAU*(1.-1e-12) {
+            if let Ok(b) = super::shadow::turned(tool,s.origin,s.axis,bar,tol) { return Ok(b) }
+        }
+    }
     // the legs the path is taken in: one constant twist over the roll, or each piece of a path of
     // pieces over its stretch of it (K1: a sweep is its pieces' sweeps united), every one read —
     // or, a motion no constant twist and no such path takes, K2's road: each instant's contact swept
@@ -1450,7 +1461,7 @@ fn corners_of((lo,hi): (V,V)) -> Vec<V> {
 
 /// A cube holding `points` with a fifth of its size to spare each way: the box, its centre and half
 /// its side.
-fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
+pub(super) fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
     let (blo,bhi) = points.into_iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
         (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
     let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));
@@ -2401,7 +2412,7 @@ fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,
 /// edge in the plane `at` maps `(ρ, z)` into: a line where it runs straight (a cylinder's, a cone's,
 /// or its tangents parallel), else one rational quadratic, the conic through its ends, its end
 /// tangents' meeting and its shoulder (the shoulder's weight `u / (1 − u)`).
-fn meridian_arc(at: &dyn Fn(f64,f64) -> V,(throat,height,k): (f64,f64,f64),a: [f64;2],b: [f64;2]) -> Result<ProfileEdge,String> {
+pub(super) fn meridian_arc(at: &dyn Fn(f64,f64) -> V,(throat,height,k): (f64,f64,f64),a: [f64;2],b: [f64;2]) -> Result<ProfileEdge,String> {
     let line = ProfileEdge::Line {a:at(a[0],a[1]),b:at(b[0],b[1])};
     if k == 0. || throat <= 1e-12*(1.+a[0].max(b[0])) { return Ok(line) }
     let slope = |z: f64| k*k*(z-height)/radius((throat,height,k),z);
