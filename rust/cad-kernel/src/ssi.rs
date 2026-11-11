@@ -2195,6 +2195,8 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
         let t = touch(a,b,at)?;
         (distance(at,q) <= 2.*t.radius.max(h0)).then_some(t)
     };
+    // whether a touch has a branch the way `t` a march runs
+    let aligned = |u: &Touch,t: V| u.branches.iter().any(|&d| dot(d,t) > 0.9);
     let mut touches: Vec<Touch> = Vec::new();
     // the seeds, then each touch's half-branches: a start, and the sense its march leaves in (none:
     // both ways from a seed)
@@ -2298,18 +2300,11 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                     // curve then ran through that vertex and, traced the other way round as well,
                     // through it twice: an edge laid along it took one passage and left the span
                     // from the other unlaid, two cells of the arrangement joined across it
-                    if beside(q) {
-                        let across = touch_at(q)
-                            .filter(|u| dot(sub(q,u.at),t) > 0. && u.branches.iter().any(|&d| dot(d,t) > 0.9));
-                        match across {
-                            Some(touched) => end_at_touch(&mut pts,&mut touches,touched,h0,tol),
-                            None => pts.push(q),
-                        }
-                        break
-                    }
+                    let touched = touch_at(q).filter(|u| aligned(u,t));
+                    let crossed = touched.as_ref().is_some_and(|u| dot(sub(q,u.at),t) > 0.);
+                    if beside(q) && !crossed { pts.push(q); break }
                     // into a point where the two touch, along one of its branches: ending there
-                    let Some(touched) = touch_at(q).filter(|t| !t.branches.is_empty()) else { return Err(shallow(q)) };
-                    if !touched.branches.iter().any(|&d| dot(d,t) > 0.9) { return Err(shallow(q)) }
+                    let Some(touched) = touched else { return Err(shallow(q)) };
                     end_at_touch(&mut pts,&mut touches,touched,h0,tol);
                     break
                 };
@@ -2325,8 +2320,7 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                     let sine = |x: V| norm(cross(a.gradient(x),b.gradient(x)));
                     let (sp,sq) = (sine(p),sine(q));
                     let across = add(p,scale(sub(q,p),sp/(sp+sq)));
-                    let crossed = touch_at(across)
-                        .filter(|u| distance(u.at,across) <= h && u.branches.iter().any(|&d| dot(d,t) > 0.9));
+                    let crossed = touch_at(across).filter(|u| distance(u.at,across) <= h && aligned(u,t));
                     if let Some(touched) = crossed { end_at_touch(&mut pts,&mut touches,touched,h0,tol); break }
                     facing = !facing;
                 }

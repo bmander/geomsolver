@@ -14,7 +14,7 @@
 use super::{own_values, public_path, Code, Diag, Elaborated, SourceMap, Stood};
 use crate::flatten::{Apart, FaceRead};
 use crate::model::{EntKind, EntRef, Sketch};
-use crate::solid::faces::{face_paths, Layered};
+use crate::solid::faces::{face_paths, Layered, Layers};
 use crate::syntax::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -52,7 +52,7 @@ pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     }).collect();
     let read: Read = meets.union(&lays).filter_map(|&solid| {
         let e = map.ent_named(solid).filter(|e| e.kind == EntKind::Solid)?;
-        Some((solid, Layered::read(sk, e.i(), &face_paths(sk, e.i()))?))
+        Some((solid, Layered::read(sk, &Layers::of(sk, e.i()), &face_paths(sk, e.i()))?))
     }).collect();
     let mut diags = apart(map, &read);
     diags.extend(along(sk, map, &read));

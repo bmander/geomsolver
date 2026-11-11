@@ -89,24 +89,25 @@ chamfer's two edges rounded, the closed form's volume and the hand's intermediat
 
 **A round over a round** (#879, [0.209]). **A face a round made is listed by the name the body's
 boundary has for it**: a region the table recognises leaves a `round` or a `flat`
-(`lowering::face_name`, the `Stroke`'s name and the kernel's for a rolled one and a corner's), so
+(`lowering::face_name`, `Section::face`: the `Stroke`'s name and the kernel's for a rolled one and
+a corner's), so
 `faces::face_paths` lists `vert.taken.round` — never the name of the set in the word's body
 (`run`), which `solid::exact` names no face by: listed so, a round over a chamfer's face was made
 (`flat` both ways, by chance) and one over a round's paired the top with a face the body has not,
 and made nothing, silently. A region no entry recognises keeps its terms' names. **A name once**,
 however many solids of one use leave a face of it (a round's every edge): a block runs over the
 name, and a reference to it reads the faces as one in pieces (`run`'s piece per edge). **Which
-faces meet, and how each lies, is read in the layer asked in** (`faces::Layered`, `Listed::read`):
+faces meet, and how each lies, is read in the layer asked in** (`faces::Layers`, `faces::Layered`):
 each layer's stratum read once (`ListedFaces::read_above`: a face of a use beneath the layer that
 its stratum has not is no face there, where one of the layer's own cannot be said of), and a
-`when` reads the layer of the use it stands in (`faces::use_key` of its scope's prefix), never
-beneath the layer above each use that made a face it asks of (`Layered::layer`); `FaceRead` and
+`when` reads the layer of the use it stands in (`use_key` of its scope's prefix), never
+beneath the layer above each use that made a face it asks of (`Layers::layer`); `FaceRead` and
 `Apart` carry the layer, so `program::at_solve` asks again where it was asked. Read off the top
 alone, `ab` and `bc` met where the corner's round read them and not once a round stood over its
 face: the corner's `when b meets a` came out false, the corner was unmade, the faces named again
 without it, and the passes went round until `FACE_PASSES` left the second round naming nothing
 (W116). The faces are named again where a round has come to stand in another layer
-(`faces::layer_uses`), and from nothing, with every pass, where they are read again at the pose
+(`faces::Layers::same_uses`), and from nothing, with every pass, where they are read again at the pose
 the drawing solves at (`renamed` begun again). **A rim over rounded corners** is a round of a
 solid of the rounded body (`part := solid(box)`, `part.box.near round(r) part.box`): the corners'
 faces are `part.box`'s, bare or named, so the top is paired with each side and each corner's
@@ -121,7 +122,8 @@ cylinders, four tori and four cones; either cap, either word; the arcs alone; th
 on either cap to one volume). **A round that is not built is said by its body and its label**:
 its solid's name is the use's that made it (`#17.0.….taken`), which no document wrote, so its
 recipe node carries what a failure calls it (`"said"`, `` `box`'s round or chamfer `vert.taken` ``:
-`lowering::body_of`, `step_through`; `recipe::Named::said`).
+the body whose late sets take it, `step_through`; `recipe::Named::called`, what every
+`built_names` holds).
 
 **Against the smooth surface** ([0.149], #422): `F.smooth` (`Member::Smooth`, `FaceRef::smooth`, read
 with `surface`) is the faces named and every face going on from them tangent across a seam

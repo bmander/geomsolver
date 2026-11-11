@@ -213,14 +213,6 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
         let mut node = match &shell { Some(s) => s.node(&w)?,None => walk.node(i,&dependencies,&w)? };
         node.set("id",i.into());
         node.set("name",sk.solids[i].name.clone().into());
-        // a round's or a chamfer's solid is named by the use of the word that made it
-        // (`#17.0.….taken`), which no document wrote: a failure to build it says the body it
-        // rounds and the step its faces are named by there (#879)
-        if let Some(b) = super::lowering::body_of(sk,i) {
-            let body = &sk.solids[b];
-            node.set("said",format!("`{}`'s round or chamfer `{}`",crate::vocab::public_path(body.written_name()),
-                super::step_through(body,&sk.solids[i])).into());
-        }
         nodes.push(node);
         seen.insert(i);
     }
@@ -370,11 +362,21 @@ impl<'a> Walk<'a> {
                     let pieces: Vec<_> = members.into_iter().map(|o| self.pieces_of(o)).collect();
                     let assembly = super::lowering::assemble(pieces.iter().flat_map(|p| p.iter()));
                     let mut node = assembly.node(w)?;
+                    // the body it rounds: the one whose late sets take it, read before this
+                    let late = |sets: &[Vec<u32>;4]| sets[2..].iter().any(|s| s.contains(&(i as u32)));
+                    let body = self.bodies.iter().find(|(_,(sets,_))| late(sets));
+                    // its solid is named by the use of the word that made it (`#17.0.….taken`),
+                    // which no document wrote: a failure to build it says the body it rounds and
+                    // the step its faces are named by there (#879)
+                    if let Some((&b,_)) = body {
+                        let of = &sk.solids[b];
+                        node.set("said",format!("`{}`'s round or chamfer `{}`",
+                            crate::vocab::public_path(of.written_name()),super::step_through(of,solid)).into());
+                    }
                     // a ball rolled along a traced run is rolled against the body as its terms but the
                     // late ones make it, all built before this (they come first in its dependencies)
                     if !assembly.rolled.is_empty() {
-                        let late = |sets: &[Vec<u32>;4]| sets[2..].iter().any(|s| s.contains(&(i as u32)));
-                        let Some((&b,(sets,_))) = self.bodies.iter().find(|(_,(sets,_))| late(sets)) else {
+                        let Some((&b,(sets,_))) = body else {
                             return Err(format!("`{}`: a rolled round is built against the body it rounds",sk.solid_name(i)));
                         };
                         let SolidDef::Body {stock,bound,..} = &sk.solids[b].def else { unreachable!("a body's sets") };

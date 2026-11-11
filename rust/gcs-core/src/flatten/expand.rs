@@ -2140,12 +2140,14 @@ impl<'w, 'a> Asked<'w, 'a> {
         }
     }
 
-    /// The solid a face is listed by and its name from that solid, by what the face stands for
-    /// (`disc.opening.rim`): the faces the elaborator gave the walk.
-    fn face<'s>(&'s self, abs: &'s str) -> Option<(&'s str, &'s str, &'s super::Listed)> {
+    /// The solid a face is listed by, its name from that solid and its path, by what the face
+    /// stands for (`disc.opening.rim`): the faces the elaborator gave the walk.
+    fn face<'s>(&'s self, abs: &'s str)
+        -> Option<(&'s str, &'s str, &'s crate::solid::faces::FacePath, &'s super::Listed)> {
         self.walk.faces.given.iter().find_map(|(solid, listed)| {
             let rest = abs.strip_prefix(solid.as_str())?.strip_prefix('.')?;
-            listed.paths.iter().any(|f| f.text() == rest).then_some((solid.as_str(), rest, listed))
+            let path = listed.paths.iter().find(|f| f.text() == rest)?;
+            Some((solid.as_str(), rest, path, listed))
         })
     }
 
@@ -2173,7 +2175,7 @@ impl super::values::Names for Asked<'_, '_> {
     /// Faces of one solid by its `Meets`, read where the drawing is seeded; faces of two, or of
     /// one whose boundary does not say, as meeting.
     fn meets(&self, a: &str, b: &str) -> Option<bool> {
-        let ((solid, ra, listed), (other, rb, _)) = (self.face(a)?, self.face(b)?);
+        let ((solid, ra, pa, listed), (other, rb, pb, _)) = (self.face(a)?, self.face(b)?);
         let read = |r| self.reads.borrow_mut().push(r);
         let Some(layered) = listed.read.as_ref().filter(|_| !self.every.get() && solid == other)
         else {
@@ -2182,7 +2184,7 @@ impl super::values::Names for Asked<'_, '_> {
         };
         // in the layer the block's use reads the body in (#879): a round's own faces meet
         // where it reads them, whatever a round standing over it has since made of their edge
-        let layer = listed.layer(self.scope.prefix(), &[ra, rb]);
+        let layer = listed.layers.layer(self.scope.prefix(), &[pa, pb]);
         let met = layered.meets(layer).meets(ra, rb);
         let faces = [ra.to_string(), rb.to_string()];
         if !met {
@@ -2196,7 +2198,7 @@ impl super::values::Names for Asked<'_, '_> {
     /// as it stands there (`Directions`, one not given wanted); each answer kept.
     fn along(&self, along: crate::expr::Along, face: &str, line: &str)
         -> Option<Result<bool, String>> {
-        let (solid, rest, listed) = self.face(face)?;
+        let (solid, rest, path, listed) = self.face(face)?;
         let Some(&d) = self.walk.faces.directions.get(line) else {
             self.wanted.borrow_mut().push(line.to_string());
             return Some(Err(format!(
@@ -2210,7 +2212,7 @@ impl super::values::Names for Asked<'_, '_> {
                  field's)", crate::program::public_path(solid)
             )));
         };
-        let layer = listed.layer(self.scope.prefix(), &[rest]);
+        let layer = listed.layers.layer(self.scope.prefix(), &[path]);
         let held = layered.lays(layer).holds(rest, along, d)?;
         if let Ok(held) = held {
             self.reads.borrow_mut().push(super::FaceRead::Along(super::AlongRead {

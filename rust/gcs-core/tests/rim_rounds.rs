@@ -4,11 +4,12 @@
 //! in the layer the round that asks stands in, and the kernel's meeting of two rounds tangent to
 //! one face ending at the point where both touch it.  Each volume is the closed form's to 1e-9.
 use gcs_core::brep::props;
-use gcs_core::program::{Code, Elaborated};
+use gcs_core::program::Code;
 use std::f64::consts::PI;
 
-use crate::common::rounds::{exported, kinds};
-use crate::common::{close, parse, text::solved};
+use crate::common::linked::build as elaborated;
+use crate::common::rounds::{exact, exported, kinds, square_run};
+use crate::common::{close, text::solved};
 
 /// A box 50 × 25 × 10 drawn on the top plane, its sides `ab`, `bc`, `cd`, `da`, its caps `near`
 /// (z = 10) and `far` (z = 0).
@@ -32,21 +33,13 @@ const STRAIGHT: f64 = 2.0 * (40.0 + 15.0);
 /// four arcs alone: its section along the straight edges and turned once about an arc's axis
 /// (Pappus: the section's centroid stands `(10 − 3π) / (3 (4 − π)) r` in from each face).
 fn rounded(r: f64, whole: bool) -> f64 {
-    let section = (1.0 - PI / 4.0) * r * r;
     let inset = (10.0 - 3.0 * PI) / (3.0 * (4.0 - PI)) * r;
-    section * (2.0 * PI * (5.0 - inset) + if whole { STRAIGHT } else { 0.0 })
+    square_run(r) * (2.0 * PI * (5.0 - inset) + if whole { STRAIGHT } else { 0.0 })
 }
 
 /// What a flat `d` along each face takes of a rim of the cornered box: its triangle the same.
 fn chamfered(d: f64) -> f64 {
     0.5 * d * d * (2.0 * PI * (5.0 - d / 3.0) + STRAIGHT)
-}
-
-/// `src` elaborated, every diagnostic kept.
-fn elaborated(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "{errs:?}");
-    gcs_core::program::elaborate(&prog)
 }
 
 /// **The rim follows the corners' rounds** (`rounds/rim.sv`): the top rim rounded 1 and the bottom
@@ -67,10 +60,12 @@ fn a_rim_rounded_over_rounded_corners_is_one_tangent_run() {
 #[test]
 fn a_rim_over_rounded_corners_is_built_on_either_cap() {
     for cap in ["near", "far"] {
-        for (word, taken) in [("round(r: 1mm)", rounded(1.0, true)), ("chamfer(d: 1mm)", chamfered(1.0))] {
-            let e = solved(&format!("{BOX}{}part := solid(box)\npart.box.{cap} {word} part.box\n", upright("")));
+        for (word, taken) in [("round(r: 1mm)", rounded(1.0, true)),
+                              ("chamfer(d: 1mm)", chamfered(1.0))] {
+            let e = solved(&format!("{BOX}{}part := solid(box)\npart.box.{cap} {word} part.box\n",
+                                    upright("")));
             assert!(e.diags.is_empty(), "{cap} {word}: {:?}", e.diags);
-            close(props::volume(&exported(&e, "part")), CORNERED - taken);
+            close(props::volume(&exact(&e, "part")), CORNERED - taken);
         }
     }
 }
@@ -85,9 +80,10 @@ fn a_round_over_a_named_rounds_faces_rounds_their_edges() {
     for rim in ["rim := ", ""] {
         for (cap, word, taken) in [("near", "round(r: 1mm)", rounded(1.0, false)),
                                    ("far", "chamfer(d: 1mm)", 0.5 * 2.0 * PI * (5.0 - 1.0 / 3.0))] {
-            let e = elaborated(&format!("{BOX}{}{rim}box.{cap} {word} box.vert\n", upright("vert := ")));
+            let e = elaborated(&format!("{BOX}{}{rim}box.{cap} {word} box.vert\n",
+                                        upright("vert := ")));
             assert!(e.diags.is_empty(), "{rim}{cap} {word}: {:?}", e.diags);
-            close(props::volume(&exported(&e, "box")), CORNERED - taken);
+            close(props::volume(&exact(&e, "box")), CORNERED - taken);
         }
     }
 }
@@ -102,8 +98,9 @@ fn faces_meet_in_the_layer_of_the_round_that_asks() {
     let e = elaborated(&format!("{BOX}vert := box.ab round(r: 5mm) box.bc\n\
                                  rim := box.near round(r: 1mm) box.vert\n"));
     assert!(e.diags.is_empty(), "{:?}", e.diags);
-    let quarter = (1.0 - PI / 4.0) * 0.5 * PI * (5.0 - (10.0 - 3.0 * PI) / (3.0 * (4.0 - PI)));
-    close(props::volume(&exported(&e, "box")), 12500.0 - (1.0 - PI / 4.0) * 250.0 - quarter);
+    // one corner of the four the arcs alone take round
+    let arc = rounded(1.0, false) / 4.0;
+    close(props::volume(&exact(&e, "box")), 12500.0 - square_run(5.0) * 10.0 - arc);
     // each round's faces under its own name, a name once however many faces bear it
     let listed = gcs_core::solid::faces::face_paths(&e.sketch, crate::common::ent(&e, "box").i());
     let names: Vec<String> = listed.iter().map(|f| f.text()).collect();
@@ -118,8 +115,10 @@ fn faces_meet_in_the_layer_of_the_round_that_asks() {
 fn a_round_over_no_face_is_said() {
     let e = elaborated(&format!("{BOX}vert := box.ab round(r: 5mm) box.bc\n\
                                  rim := box.near round(r: 1mm) box.verts\n"));
-    let said: Vec<&str> = e.diags.iter().filter(|d| d.code == Code::W116).map(|d| d.message.as_str()).collect();
-    assert!(matches!(said[..], [m] if m.contains("`box.verts` names no face of `box`") && m.contains("`vert`")),
+    let said: Vec<&str> = e.diags.iter().filter(|d| d.code == Code::W116)
+        .map(|d| d.message.as_str()).collect();
+    let names = |m: &str| m.contains("`box.verts` names no face of `box`") && m.contains("`vert`");
+    assert!(matches!(said[..], [m] if names(m)),
             "{:?}", e.diags);
 }
 
@@ -135,7 +134,7 @@ fn rounds_that_cross_at_a_corner_are_built_on_either_cap() {
     for word in ["round(r: 1mm)", "chamfer(d: 1mm)"] {
         let volume = |cap: &str| {
             let e = solved(&format!("{BOX}{}box.{cap} {word} box\n", upright("")));
-            props::volume(&exported(&e, "box"))
+            props::volume(&exact(&e, "box"))
         };
         let (near, far) = (volume("near"), volume("far"));
         close(near, far);
@@ -149,9 +148,11 @@ fn rounds_that_cross_at_a_corner_are_built_on_either_cap() {
 /// says what a failure is to call it.
 #[test]
 fn a_rounds_node_says_its_body_and_its_label() {
-    let e = solved(&format!("{BOX}vert := box.ab round(r: 5mm) box.bc\nbox.near round(r: 1mm) box.cd\n"));
-    let recipe = gcs_core::solid::cad::recipe(&e.sketch, crate::common::ent(&e, "box").i()).unwrap();
+    let e = solved(&format!("{BOX}vert := box.ab round(r: 5mm) box.bc\n\
+                             box.near round(r: 1mm) box.cd\n"));
+    let body = crate::common::ent(&e, "box").i();
+    let recipe = gcs_core::solid::cad::recipe(&e.sketch, body).unwrap();
     let said: Vec<String> = gcs_core::brep::recipe::Recipe::read(&recipe).unwrap().nodes.iter()
-        .filter(|n| n.said.is_some()).map(|n| n.said()).collect();
+        .filter(|n| n.said.is_some()).map(|n| n.called()).collect();
     assert_eq!(said, ["`box`'s round or chamfer `vert.taken`", "`box`'s round or chamfer `taken`"]);
 }

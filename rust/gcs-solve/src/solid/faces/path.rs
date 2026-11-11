@@ -87,7 +87,8 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
                 // a round or a chamfer the table builds leaves the face its construction names
                 // (`round`, `flat`), whatever the set that says it is called (#879): a block
                 // lists the faces the body has, and a body is read off its exact boundary
-                if let Some(face) = crate::solid::lowering::face_name(sk, terms).filter(|_| reads) {
+                if let Some(face) = reads.then(|| crate::solid::lowering::face_name(sk, terms))
+                    .flatten() {
                     return vec![face.to_string()];
                 }
                 let mut v: Vec<String> = terms.iter().map(|t| t.name.clone())
@@ -108,7 +109,7 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
         return Vec::new();
     }
     let readers = own_readers(sk, i);
-    let mut out: Vec<FacePath> = Vec::new();
+    let (mut out, mut seen) = (Vec::new(), std::collections::BTreeSet::new());
     for (route, p) in crate::solid::document::operand_primitives(sk, i).into_values() {
         let of = readers.contains(&(p as usize)).then(|| use_key(&sk.solids[p as usize].name).to_string());
         // a round of the body no name was given makes faces no block lists: none, so the faces
@@ -120,7 +121,7 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
             // a name once, however many solids of one use leave a face of it (a round's every
             // edge): a block runs over the name, and a reference to it reads them all (#879)
             let face = FacePath { of: of.clone(), ..FacePath::new(&route, &f) };
-            if !out.contains(&face) {
+            if seen.insert(face.clone()) {
                 out.push(face);
             }
         }
@@ -139,22 +140,12 @@ pub fn same_step(written: &str, mine: &str) -> bool {
 /// The solids that read body `i`'s faces, and those of each layer it stands on (a stock of its
 /// own name, `layers`).
 fn own_readers(sk: &Sketch, i: usize) -> std::collections::BTreeSet<usize> {
-    let mut out = super::readers_of(sk, i);
-    let mut at = i;
-    while let Some(SolidDef::Body { stock, .. }) = sk.solids.get(at).map(|s| &s.def) {
-        let stock = *stock as usize;
-        if stock == at || sk.solids[stock].name != sk.solids[at].name {
-            break;
-        }
-        out.extend(super::readers_of(sk, stock));
-        at = stock;
-    }
-    out
+    super::layer_bodies(sk, i).into_iter().flat_map(|b| super::readers_of(sk, b)).collect()
 }
 
 /// The statement a solid was made by, as a key: its name up to the first segment a statement's
 /// use put there (`#17`, or a named use's `rim#17`), or its whole name where none did.
-pub fn use_key(name: &str) -> &str {
+pub(crate) fn use_key(name: &str) -> &str {
     let mut end = 0;
     for seg in name.split('.') {
         end += seg.len();

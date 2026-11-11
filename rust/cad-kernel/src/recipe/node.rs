@@ -52,8 +52,15 @@ pub struct Named { pub id: i64,pub name: String,pub node: Node,
     pub said: Option<String> }
 
 impl Named {
-    /// How a failure names the node: what its writer said, else its name between backticks.
-    pub fn said(&self) -> String { self.said.clone().unwrap_or_else(|| format!("`{}`",self.name)) }
+    /// How a failure names the node: what its writer said, else its name between backticks
+    /// (nothing for a node of no name) — what a body's `built_names` hold.
+    pub fn called(&self) -> String {
+        match &self.said {
+            Some(said) => said.clone(),
+            None if self.name.is_empty() => String::new(),
+            None => format!("`{}`",self.name),
+        }
+    }
 }
 
 /// A body a `through` prism is applied to: the nodes `sources` its material is made of, and the

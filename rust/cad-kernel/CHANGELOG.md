@@ -18,9 +18,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   refused, the same at its bottom rim built. A closed curve with no period has the vertex both
   its ends are at both of them wherever along it that vertex was read (`boolean`'s `spans`):
   read at its far end, the stretch from the last point on the curve round to it was dropped.
-- `recipe::Named::said` (**new** field, and `Named::said()`): what a failure to build a node
-  calls it, where the recipe's writer says (`"said"`), in place of the node's name between
-  backticks — a node named by nothing its author wrote says what it is of.
+- `recipe::Named::said` (**new** field) and `Named::called()` (**new**): what a failure to build a
+  node calls it, where the recipe's writer says (`"said"`), else its name between backticks — a
+  node named by nothing its author wrote says what it is of. A body's `built_names` hold what
+  `called()` gives, no longer bare names it puts backticks round.
 - **Faster Booleans and evaluation on spline patches**: face pairs whose boxes overlap are
   proved apart where subdivided, outward-rounded surface enclosures separate them, avoiding
   expensive intersection seeding on disjoint sheets; unresolved pairs use the ordinary reader.

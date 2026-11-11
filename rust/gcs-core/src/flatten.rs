@@ -881,23 +881,12 @@ struct SetState<'a> {
 
 /// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
 /// from the solid, and which of them meet (#625, `Meets`) and how each lies (#763, `Lays`), where
-/// its boundary says — in each layer the solid's rounds stand in (`Layered`, #879), with the
-/// layer of each use that reads its faces.
+/// its boundary says — in each layer the solid's rounds stand in (`Layers`, `Layered`, #879).
 #[derive(Clone, Debug)]
 pub struct Listed {
     pub paths: Vec<crate::solid::faces::FacePath>,
-    pub uses: BTreeMap<String, usize>,
+    pub layers: crate::solid::faces::Layers,
     pub read: Option<crate::solid::faces::Layered>,
-}
-
-impl Listed {
-    /// The layer a condition asked under the absolute prefix `at` reads the faces `faces` in
-    /// (each by its name from the solid), where the solid's boundary is read.
-    pub fn layer(&self, at: &str, faces: &[&str]) -> usize {
-        let paths: Vec<&crate::solid::faces::FacePath> = faces.iter()
-            .filter_map(|n| self.paths.iter().find(|f| f.text() == *n)).collect();
-        self.read.as_ref().map_or(0, |r| r.layer(at, &paths))
-    }
 }
 
 /// **What the elaborator names for the walk off the drawing** (#183 F4, #763): each solid a
