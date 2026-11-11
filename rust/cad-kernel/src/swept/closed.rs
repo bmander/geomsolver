@@ -141,8 +141,13 @@
 //! starts and where it stops, whole, every meeting of the two given (`k2`): the tool a convex solid
 //! of revolution, its contact read round a pencil of half-planes about its centre's velocity.
 //!
-//! **A convex polyhedral tool turned whole is built by another road** (`turned_whole`): its solid
-//! of revolution, the radii each slice holds turned once, with no Boolean. Anything else — under a
+//! **A whole turn of any tool is built first by its shadow** (#880 Q1, `super::shadow`): its
+//! candidates laid in a half-plane through the axis, arranged and kept there by membership, and
+//! revolved, with no surface met in space; the arrangement here is asked only where that is refused.
+//! **A convex polyhedral tool turned whole is built before it by its closed form** (`turned_whole`):
+//! its solid of revolution, the radii each slice holds turned once, with no mesh and no Boolean.
+//!
+//! Anything else — under a
 //! screw a round face about an axis leaning to it, or a torus's; under a turn a cylinder's or a
 //! cone's about a leaning axis whose contact is no curve over the face (its two roots on a ring
 //! meeting, or the curve reaching the axis) or whose meridian folds back along the axis, a ball
@@ -611,15 +616,44 @@ fn metered(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: 
     out
 }
 
+/// Whether `screw` turns a whole turn or more over `roll`.
+fn whole_turn(screw: &crate::trajectory::Screw,roll: [f64;2]) -> bool {
+    (screw.ratio*(roll[1]-roll[0])).abs() >= std::f64::consts::TAU*(1.-1e-12)
+}
+
 /// `closed` over a box holding the sweep, or `cut_from` over `blank`: the pipeline itself.
 fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    // a whole turn of any tool (#880 Q1): its shadow in a half-plane through the axis, arranged
+    // there and revolved, with no surface met in space (`shadow`) — where it is refused by what the
+    // tool is or a reading it cannot settle, the arrangement below is asked; a build judged wrong,
+    // or past its budget, is refused as it is
+    if let (Trajectory::Twist(s),None) = (path,blank) {
+        if s.is_turn() && whole_turn(s,roll) {
+            // a convex polyhedral tool by its slices' radial spans, in closed form: no mesh, no
+            // membership, measured far faster than its shadow (#880 P2: a closed form stays where
+            // it is faster)
+            if let Ok(Read {faces,edges,round,rims,levels,..}) = read(tool,path) {
+                let eps = 1e-9*(1.+tool.size());
+                let convex = faces.iter().all(|&(o,n)| tool.vertices.iter().all(|v| dot(sub(v.p,o),n) <= eps));
+                if convex && round.is_empty() && rims.is_empty() && levels.is_empty() {
+                    return turned_whole(&faces,&edges,s.origin,s.axis,eps,tol)
+                }
+            }
+            match super::shadow::turned(tool,s.origin,s.axis,bar,tol) {
+                Ok(b) => return Ok(b),
+                Err(e @ (Unbuilt::Wrong {..} | Unbuilt::Budget {..})) => return Err(e),
+                Err(_) => {}
+            }
+        }
+    }
     build_by(tool,path,roll,bar,tol,blank,None)
 }
 
 /// **`closed`'s candidates, trimmed** (#880 E1): the same candidates and touches `closed` makes,
 /// built by trimming by membership (`trim`) rather than by their arrangement — the two set side by
-/// side on every case `closed` builds. A tool `closed` turns whole by its slices, or takes K2's road,
-/// is refused (`Unbuilt::Motion`): neither is an arrangement of candidates.
+/// side on every case `closed` builds. A whole turn is trimmed from its candidates here, not built by
+/// its shadow or its slices as `closed` builds it; a motion `closed` takes K2's road for is refused
+/// (`Unbuilt::Motion`): that road is no arrangement of candidates.
 pub fn trimmed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,trim: super::trim::Trim)
     -> Result<(Brep,super::trim::Report),Unbuilt> {
     use crate::util::meter;
@@ -706,7 +740,6 @@ fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank:
     let box_corners = corners_of;
     let corners = box_corners(tool.bounds());
     let mut held_points: Vec<V> = Vec::new();
-    let one = legs.len() == 1;
     for &(screw,[a,b],place) in &legs {
         // the tool where the leg takes it up, read under the leg's twist
         let placed_tool = place.map(|q| tool.moved(&crate::geom::Rigid {r:q.r,t:q.p}));
@@ -966,23 +999,16 @@ fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank:
             let (c,axis) = (screw.origin,screw.axis);
             // the turn's frame a turned meridian is read in (#780 C3, L2)
             let g = Frame::about(c,axis);
-            // a convex tool turned whole is the solid of revolution of its radial profile, built in
-            // closed form with no Boolean
-            let whole = (screw.ratio*(b-a)).abs() >= std::f64::consts::TAU*(1.-1e-12);
+            let whole = whole_turn(&screw,[a,b]);
             // the poses each face is taken at: both ends of the roll — but a whole turn's sweep is
             // its tool's solid of revolution, bounded by its contacts, edges and rims turned alone,
             // which its faces at either end only touch (#780 C3: a leaning stem at an end pose
             // touching its contact's surface of revolution along the contact, crossed there by its
             // ball's torus, was a triple touch no arrangement holds by rounding), so none
             let ends: Vec<&crate::trajectory::Pose> = if screw.is_turn() && whole { vec![] } else { vec![&start,&end] };
-            let convex = faces.iter().all(|&(o,n)| tool.vertices.iter().all(|v| dot(sub(v.p,o),n) <= eps));
             // each face's candidate at each end pose (by the pose's place in `ends`), where it holds
             // a touch given by construction (#810)
             let mut at_ends: std::collections::BTreeMap<(usize,usize),usize> = std::collections::BTreeMap::new();
-            if one && screw.is_turn() && whole && convex && round.is_empty() && rims.is_empty() && levels.is_empty() && blank.is_none() {
-                if trim.is_some() { return Err(Unbuilt::Motion) }
-                return turned_whole(&faces,&edges,c,axis,eps,tol)
-            }
             // under a screw the heights a source spans run on by the step it takes over the roll, the
             // rest as under a turn (a cylinder about the axis keeps itself under both)
             let lift = { let rate = screw.advance/std::f64::consts::TAU; [(rate*a).min(rate*b),(rate*a).max(rate*b)] };
@@ -1480,13 +1506,13 @@ fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank:
 }
 
 /// A box's eight corners.
-fn corners_of((lo,hi): (V,V)) -> Vec<V> {
+pub(super) fn corners_of((lo,hi): (V,V)) -> Vec<V> {
     (0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] })).collect()
 }
 
 /// A cube holding `points` with a fifth of its size to spare each way: the box, its centre and half
 /// its side.
-fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
+pub(super) fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
     let (blo,bhi) = points.into_iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
         (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
     let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));
@@ -1731,7 +1757,7 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
 
 /// The span of a cylinder's or a cone's face along its rulings (its surface's `v`), read off its
 /// boundary edges.
-fn rulings_span(tool: &Brep,k: usize) -> (f64,f64) {
+pub(super) fn rulings_span(tool: &Brep,k: usize) -> (f64,f64) {
     let face = &tool.faces[k];
     face.loops.iter().flatten().flat_map(|c| {
         let e = &tool.edges[c.edge as usize];
@@ -1875,7 +1901,7 @@ pub(crate) fn patch(screw: &crate::trajectory::Screw,pose_at: &dyn Fn(f64) -> Re
 /// `o`, as its meridian: the throat radius, the height of the throat along the axis, and the lean
 /// `k`, the radius at height `z` being `√(throat² + k² (z − height)²)` (a double cone where the
 /// throat is none).
-fn meridian(o: V,axis: V,p: V,e: V) -> (f64,f64,f64) {
+pub(super) fn meridian(o: V,axis: V,p: V,e: V) -> (f64,f64,f64) {
     let r = sub(p,o);
     let (r0,ez) = (sub(r,scale(axis,dot(r,axis))),dot(e,axis));
     let ep = sub(e,scale(axis,ez));
@@ -2045,7 +2071,7 @@ const PAST: f64 = 0.05;
 
 /// Where the line through `o` along the unit `a` passes nearest the line through `c` along the
 /// unit `z`, as its distance along `a` from `o`; none where the two run parallel.
-fn foot_on(o: V,a: V,c: V,z: V) -> Option<f64> {
+pub(super) fn foot_on(o: V,a: V,c: V,z: V) -> Option<f64> {
     let (b,w) = (dot(a,z),sub(o,c));
     let den = 1.-b*b;
     (den > 1e-12).then(|| (b*dot(w,z)-dot(w,a))/den)
@@ -2437,7 +2463,7 @@ fn turned_whole(faces: &[(V,V)],edges: &[(V,V,[usize;2])],c: V,axis: V,eps: f64,
 /// edge in the plane `at` maps `(ρ, z)` into: a line where it runs straight (a cylinder's, a cone's,
 /// or its tangents parallel), else one rational quadratic, the conic through its ends, its end
 /// tangents' meeting and its shoulder (the shoulder's weight `u / (1 − u)`).
-fn meridian_arc(at: &dyn Fn(f64,f64) -> V,(throat,height,k): (f64,f64,f64),a: [f64;2],b: [f64;2]) -> Result<ProfileEdge,String> {
+pub(super) fn meridian_arc(at: &dyn Fn(f64,f64) -> V,(throat,height,k): (f64,f64,f64),a: [f64;2],b: [f64;2]) -> Result<ProfileEdge,String> {
     let line = ProfileEdge::Line {a:at(a[0],a[1]),b:at(b[0],b[1])};
     if k == 0. || throat <= 1e-12*(1.+a[0].max(b[0])) { return Ok(line) }
     let slope = |z: f64| k*k*(z-height)/radius((throat,height,k),z);

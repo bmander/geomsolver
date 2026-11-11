@@ -537,6 +537,12 @@ placement carries inside the blank; CLI test readers zero the offset.
   the document holds it (`refused::Placing`): a site in a module at the deepest instance on its
   path the document holds (the round that used `std.rounds.round`), else at the `use`
   (`modules::localize`).  `tests/refused_once.rs` is the gate.
+  An export refused in a solid's words (`` `b.#31.0.#…filled`: its exact construction disagrees
+  with the field ``) is said the same way (#881, `program::refusal_site`): at the document's
+  statement that made the first solid it names, placed by `Placing` — a round's piece at its round
+  — `solventc` printing it `file:line:col: error[E080]` as every diagnostic; at the exported
+  solid's statement where it names none.
+  `round_lowering::a_refused_rounds_piece_is_said_at_its_round` is the gate.
   A continuous sweep is drawn by its material field alone, so one whose field cannot be read is
   refused too (`solid::refusal`, what `refused` asks of every solid), at its statement and in a solved document as in any other (#588: "`space` sweeps
   `pyramid`, whose material the field does not read: …"), and what is built on it follows as

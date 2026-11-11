@@ -964,6 +964,33 @@ cannot settle), never built wrong. Not yet: a drawn example agreeing with the fi
 leaning axis under a turn (a sharp circle leaning to it: #780 L2, below).  The result is the selection's boundary with the candidates that bound nothing healed out of
 its faces (`boolean::selection`): each face as whole as the candidate's it lies on.
 
+**A whole turn of any tool is built by its shadow (#880 Q1, `brep::swept::shadow`).** Over a whole
+turn the sweep holds each circle about the axis whole or not at all, so it is the solid of
+revolution of the tool's shadow in a half-plane through the axis. `swept::closed::closed` asks this
+road first whenever the roll covers a whole turn (no blank: #880 P1), and its arrangement only where
+it is refused. The candidates are exact curves of the half-plane — each face's contact under the turn
+(a plane's line, a hyperbola's arc; a cylinder's or a cone's along, beside or leaning to the axis,
+`turned::Contact`; a ball's great circle through the axis, mirrored where it reaches across), a face
+kept in itself its own meridian, each sharp edge's image (a line's hyperbola, a circle's
+`turned::Rim`, a level curve's stretch of height), and the axis — each face's contact read over the
+face alone, its ends held onto the edges it crosses by Gauss–Newton. They are split where they cross
+and where one's end stands on another (a contact meets the edge it ends on tangentially there, given
+by construction), each piece kept where membership a hair to each side differs (the hair under a
+third of the way to the nearest other candidate; the tool meshed finer where the sag leaves a reading
+unsettled), the kept pieces linked with the shadow on their left, each region revolved with those
+curves as its meridians, and the solid judged by membership before it is returned (`closed::judge`).
+Refused by what it is (`Unbuilt::Curved`) where a face is no plane, cylinder, cone, ball or torus
+about the axis, an edge no line, circle or level curve, or a leaning round face's contact no curve
+over it, or judged wrong or past its budget, which are the build's refusals. A convex polyhedral
+tool keeps its closed form, asked first (its slices' radial spans, no mesh, about fifty times
+faster). Every other whole turn the arrangement built builds so, to the same gates (the drum, the
+frustum, the rounded key and the ball on its stem to 1e-9 or finer), and brep-bench's `swept/v-wheel-turned-once-round-rod`, which the arrangement
+refused (a turned curve meeting a revolution "was not proved"), builds in a tenth of a second: gate
+`swept_shadow::a_leaning_v_wheel_turned_whole_is_its_shadow_revolved` — the wheel's sweep to the
+volume of its shadow worked apart from the build (each height's radii whose circle meets the wheel's
+analytic margin, by adaptive Simpson) to 1e-6, to membership, to a closed STEP file, and the rod cut by
+it to the same integral within the rod's radius.
+
 **A ring slid at a lean to its axis (#805, #780 L1's X2 under a constant twist, `brep::slid`).** A
 constant twist keeps each tool point in contact for the whole roll or never, so what X2 leaves under
 one is a ring's two roots meeting on a face. On a torus slid along `D`, its normal `cos v ρ̂ + sin v z`
