@@ -33,7 +33,12 @@ const BEYOND_READS: usize = 256;
 /// A tool read for membership: its boundary meshed, scaled to the trajectory's units, a box
 /// about each triangle, and how far the mesh may stand off the exact boundary (its measured sag,
 /// and rounding's).
-pub struct Solid { pts: Vec<V>,tris: Vec<[u32;3]>,tree: Bvh<3>,pub sag: f64 }
+pub struct Solid { pts: Vec<V>,tris: Vec<[u32;3]>,tree: Bvh<3>,pub sag: f64,
+    /// Each vertex's angle-weighted normal, where every edge at it bounds two triangles (`None` where
+    /// not, the winding read instead), and each edge's, the sum of its two triangles' unit normals:
+    /// the side of a point whose nearest point of the mesh is on a vertex or an edge read off it
+    /// (Bærentzen & Aanæs 2005), exact for a closed mesh turned consistently outward.
+    vertex_normals: Vec<Option<V>>,edge_normals: Vec<[Option<V>;3]> }
 
 impl Solid {
     /// The B-rep `b` (its units) meshed within `bar` and read in units `1/scale` of its own (a
@@ -49,11 +54,18 @@ impl Solid {
         // the sag measured on the mesh (none where every face is flat), and rounding's at its size
         let size = pts.iter().fold(0_f64,|r,p| r.max(norm(*p)));
         let sag = m.sag/scale+1e-12*(1.+size);
-        Ok(Solid {pts,tris:m.tris,tree,sag})
+        let (vertex_normals,edge_normals) = pseudo_normals(&pts,&m.tris);
+        Ok(Solid {pts,tris:m.tris,tree,sag,vertex_normals,edge_normals})
     }
 
     /// How many triangles the boundary is meshed in.
     pub fn triangles(&self) -> usize { self.tris.len() }
+
+    /// How many of the mesh's vertices have a pseudo-normal: every edge at them bounding two triangles.
+    pub fn manifold_vertices(&self) -> usize { self.vertex_normals.iter().filter(|n| n.is_some()).count() }
+
+    /// How many vertices the boundary is meshed with.
+    pub fn vertices(&self) -> usize { self.pts.len() }
 
     /// The distance from `p` to the meshed boundary.
     pub fn distance(&self,p: V) -> f64 {
@@ -71,19 +83,25 @@ impl Solid {
     /// triangle — on a closed mesh turned outward, exactly the side — and off the winding number
     /// where it lies on a triangle's edge or corner, where the triangles there disagree.
     pub fn signed_near(&self,p: V) -> (f64,bool) {
-        let best = std::cell::Cell::new((f64::INFINITY,usize::MAX,crate::util::space::Region::Vertex));
+        let best = std::cell::Cell::new((f64::INFINITY,usize::MAX,[0.;3],crate::util::space::Region::Face));
         self.tree.query_nearest(|b| b.gap(Bounds {lo:p,hi:p}),|| best.get().0,|i| {
             let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
             let (q,region) = closest_on_triangle(p,a,b,c);
             let d = distance(p,q);
-            if d < best.get().0 { best.set((d,i,region)) }
+            if d < best.get().0 { best.set((d,i,q,region)) }
         });
-        let (d,i,region) = best.get();
+        let (d,i,q,region) = best.get();
         if i == usize::MAX { return (d,false) }
-        if region == crate::util::space::Region::Face {
-            let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
-            let n = cross(sub(b,a),sub(c,a));
-            let side = dot(sub(p,a),n);
+        // on the face, its normal; on a vertex or an edge, its pseudo-normal where the mesh is a
+        // closed manifold there
+        use crate::util::space::Region;
+        let n = match region {
+            Region::Face => { let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]); Some(cross(sub(b,a),sub(c,a))) }
+            Region::Vertex(k) => self.vertex_normals[self.tris[i][k as usize] as usize],
+            Region::Edge(k) => self.edge_normals[i][k as usize],
+        };
+        if let Some(n) = n {
+            let side = dot(sub(p,q),n);
             if side != 0. { return (d,side < 0.) }
         }
         (d,self.winding(p) > 0.5)
@@ -240,4 +258,36 @@ impl Swept<'_> {
         }
         Ok(if near { None } else { Some(false) })
     }
+}
+
+
+/// **A mesh's pseudo-normals** (Bærentzen & Aanæs 2005): each vertex's, its triangles' unit normals
+/// weighted by their angles there, and each triangle's edges' (`ab`, `bc`, `ca`, as
+/// `Region::Edge` numbers them), the two triangles' on the edge summed — `None` at a vertex with an
+/// edge not bounding exactly two triangles, and for such an edge, where the side is read by the
+/// winding instead.
+fn pseudo_normals(pts: &[V],tris: &[[u32;3]]) -> (Vec<Option<V>>,Vec<[Option<V>;3]>) {
+    use crate::util::space::{add,scale,triangle_normal,normalised};
+    let normals: Vec<V> = tris.iter().map(|t| { let [a,b,c] = t.map(|k| pts[k as usize]); triangle_normal(a,b,c).unwrap_or([0.;3]) }).collect();
+    let mut vertex: Vec<V> = vec![[0.;3];pts.len()];
+    let mut edges: std::collections::BTreeMap<(u32,u32),(V,u32)> = std::collections::BTreeMap::new();
+    let key = |x: u32,y: u32| (x.min(y),x.max(y));
+    for (t,&n) in tris.iter().zip(&normals) {
+        let [a,b,c] = t.map(|k| pts[k as usize]);
+        for (k,(p,q,r)) in [(a,b,c),(b,c,a),(c,a,b)].into_iter().enumerate() {
+            let (Some(u),Some(v)) = (normalised(sub(q,p)),normalised(sub(r,p))) else { continue };
+            vertex[t[k] as usize] = add(vertex[t[k] as usize],scale(n,dot(u,v).clamp(-1.,1.).acos()));
+        }
+        for (x,y) in [(t[0],t[1]),(t[1],t[2]),(t[2],t[0])] {
+            let e = edges.entry(key(x,y)).or_insert(([0.;3],0));
+            e.0 = add(e.0,n);
+            e.1 += 1;
+        }
+    }
+    let mut sound = vec![true;pts.len()];
+    for (&(x,y),&(_,count)) in &edges { if count != 2 { sound[x as usize] = false; sound[y as usize] = false; } }
+    let vertex = vertex.into_iter().zip(sound).map(|(n,ok)| (ok && norm(n) > 0.).then_some(n)).collect();
+    let edge = |x: u32,y: u32| edges.get(&key(x,y)).filter(|(n,count)| *count == 2 && norm(*n) > 0.).map(|e| e.0);
+    let per_triangle = tris.iter().map(|t| [edge(t[0],t[1]),edge(t[1],t[2]),edge(t[2],t[0])]).collect();
+    (vertex,per_triangle)
 }

@@ -596,12 +596,95 @@ impl Blend {
         // on the far side of the tube or on the next turn of the coil, no search, and no polish
         // (Gauss–Newton from a far point's foot on an end circle, `v` held, swings `u` round it)
         if let Some(uv) = self.pipe_uv(p) { return uv }
+        // a fitted section carried by its own carry is read off the motion's invariants (#880 Q1b),
+        // before the warm start: on a sheet that comes back near itself, a warm foot settles on the
+        // wrong stretch within the warm start's reach (on the leaning torus's sheet, 1.5e-2 off a
+        // point of its own rim)
+        if let Some(uv) = self.carried_uv(p) { return uv }
         let near = 1e-3*(1.+dot(p,p).sqrt());
         let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
             .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= near);
         let uv = warm.or_else(|| self.from_level(p)).unwrap_or_else(|| self.searched(p));
         crate::util::warm::put(crate::util::warm::Kind::Blend,key,uv);
         uv
+    }
+    /// **`inverse` for a fitted section carried by its own carry, off the motion's invariants** (#880
+    /// Q1b: a piece of a tool's contact carried over a roll, `contacts::carried`): `S(u, v) = carry_v(a(u))`,
+    /// and the carry leaves unchanged a point's shadow on the plane square to a slide, its radius and
+    /// height about a turn's axis, and its radius and its height along the helix (`z − c φ`, `c` the
+    /// rise a radian, modulo a turn's rise) about a screw's. So the point's `u` is where the section
+    /// stands nearest it in those coordinates, sought along the section at eight points a span and
+    /// closed on by golden section, and its `v` the height it is carried to (a turn's, the angle),
+    /// then polished by Newton. A grid spaced along the section seeds a long section's foot on the
+    /// wrong stretch of it (a torus's contact under a screw, one closed curve through both its seams,
+    /// read sixteen points round). `None` for any other patch: a section of another kind, or a blend
+    /// between two curves.
+    fn carried_uv(&self,p: V) -> Option<Uv> {
+        let (Curve::BSpline(spline),Curve::BSpline(image)) = (&self.a,&self.b) else { return None };
+        if self.ta != self.tb { return None }
+        if !Arc::ptr_eq(spline,image) {
+            let same = |t: f64| crate::util::space::distance(self.a.point(t),self.b.point(t)) <= 1e-9*(1.+norm(p));
+            if ![self.ta[0],0.5*(self.ta[0]+self.ta[1]),self.ta[1]].into_iter().all(same) { return None }
+        }
+        // the carry's invariants: a slide's shadow on the plane square to it (its frame's x and y);
+        // a turn's radius and height about its axis; a screw's radius and height along the helix,
+        // the angle about the axis read for the turn or the height's lead
+        let (frame,lead,pitch) = match self.carry {
+            Carry::Line {delta} => { if !(norm(delta) > 0.) { return None } (Frame::about([0.;3],delta),None,None) }
+            Carry::Screw {angle,..} if angle == 0. => return None,
+            Carry::Screw {center,axis,advance,..} if advance == 0. => (Frame::about(center,axis),None,None),
+            Carry::Screw {center,axis,angle,advance} => {
+                let lead = advance/angle;
+                (Frame::about(center,axis),Some(lead),Some((std::f64::consts::TAU*lead).abs()))
+            }
+        };
+        let slide = matches!(self.carry,Carry::Line {..});
+        // a point's invariant coordinates in the carry's frame, its height and its angle about the axis
+        let read = |x: V| -> ([f64;2],f64,f64) {
+            let l = frame.local(x);
+            let angle = if slide { 0. } else { l[1].datan2(l[0]) };
+            let held = if slide { [l[0],l[1]] } else { [(l[0]*l[0]+l[1]*l[1]).sqrt(),lead.map_or(l[2],|c| l[2]-c*angle)] };
+            (held,l[2],angle)
+        };
+        let (held,height,angle) = read(p);
+        let gap = |x: V| -> f64 {
+            let (h,..) = read(x);
+            let mut d = h[1]-held[1];
+            if let Some(pitch) = pitch { d = (d+0.5*pitch).rem_euclid(pitch)-0.5*pitch }
+            ((h[0]-held[0]).powi(2)+d*d).sqrt()
+        };
+        // along the section: eight points a span, sampled once a section (`carried_samples`); every
+        // local least of the samples' gap a seed, the four least closed on (`roots::brent`), each
+        // polished by Newton, and the nearest in space kept (a long section can come back near
+        // itself in the invariants, its other stretch carried to another height)
+        let samples = carried_samples(spline,self.ta);
+        let gaps: Vec<f64> = samples.iter().map(|&(_,x)| gap(x)).collect();
+        let n = gaps.len();
+        let mut seeds: Vec<usize> = (0..n).filter(|&i| (i == 0 || gaps[i] <= gaps[i-1]) && (i+1 == n || gaps[i] <= gaps[i+1])).collect();
+        seeds.sort_by(|&x,&y| gaps[x].total_cmp(&gaps[y]));
+        seeds.truncate(4);
+        let span = self.ta[1]-self.ta[0];
+        let mut best: Option<(f64,Uv)> = None;
+        for k in seeds {
+            let (lo,hi) = (samples[k.saturating_sub(1)].0,samples[(k+1).min(n-1)].0);
+            // (to a hundred-millionth of the section: Newton polishes it)
+            let t = crate::util::roots::brent(&|t| gap(self.a.point(t)),lo,hi,1e-8*span.abs(),80,|_,_| false).at;
+            let (_,h,a) = read(self.a.point(t));
+            let v = match self.carry {
+                Carry::Line {delta} => (height-h)/norm(delta),
+                Carry::Screw {advance,..} if advance != 0. => (height-h)/advance,
+                Carry::Screw {angle: turn,..} => {
+                    // the turn from the section's point to `p`'s, the one in the patch's run nearest it
+                    let tau = std::f64::consts::TAU;
+                    let turns = (turn.abs()/tau).ceil() as i64+1;
+                    (-turns..=turns).map(|m| (angle-a+tau*m as f64)/turn).min_by(|x,y| (x.clamp(0.,1.)-x).abs().total_cmp(&(y.clamp(0.,1.)-y).abs())).unwrap_or(0.)
+                }
+            };
+            let uv = self.newton(p,[(t-self.ta[0])/span,v.clamp(0.,1.)]);
+            let d = crate::util::space::distance(self.d1(uv).0,p);
+            if best.is_none_or(|b| d < b.0) { best = Some((d,uv)) }
+        }
+        best.map(|b| b.1)
     }
     /// **`inverse` for a line square to a screw's axis, screwed** (`build::screwed`'s sheet): the
     /// screw lifts every point of the line alike, so the ruling level with `p` is at the `v` its
@@ -2148,4 +2231,30 @@ impl Curve {
                 "a swept section's edge is not reflected yet".to_string()),
         })
     }
+}
+
+
+/// **A fitted section's points, eight a span over `ta`, read once** (`Blend::carried_uv`): kept by
+/// the spline's address on each thread, as a warm start is (`util::warm`), with the spline kept so no
+/// other takes its place; emptied past `KEPT_SECTIONS`. A section's samples are a function of the
+/// section: kept or read again, the same.
+fn carried_samples(spline: &Arc<super::nurbs::BSpline>,ta: [f64;2]) -> Arc<Vec<(f64,V)>> {
+    const KEPT_SECTIONS: usize = 64;
+    type Kept = std::collections::BTreeMap<(usize,[u64;2]),(Arc<super::nurbs::BSpline>,Arc<Vec<(f64,V)>>)>;
+    thread_local! { static KEPT: std::cell::RefCell<Kept> = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) }; }
+    let key = (Arc::as_ptr(spline) as usize,[ta[0].to_bits(),ta[1].to_bits()]);
+    if let Some(s) = KEPT.with(|k| k.borrow().get(&key).map(|(_,s)| s.clone())) { return s }
+    let curve = Curve::BSpline(spline.clone());
+    let mut ts = vec![ta[0]];
+    for b in curve.breaks(ta).into_iter().chain(std::iter::once(ta[1])) {
+        let a = *ts.last().unwrap();
+        for k in 1..=8 { ts.push(a+(b-a)*k as f64/8.) }
+    }
+    let samples = Arc::new(ts.into_iter().map(|t| (t,curve.point(t))).collect::<Vec<_>>());
+    KEPT.with(|k| {
+        let mut kept = k.borrow_mut();
+        if kept.len() >= KEPT_SECTIONS { kept.clear() }
+        kept.insert(key,(spline.clone(),samples.clone()));
+    });
+    samples
 }
