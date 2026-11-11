@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A finite screw whose roll does not carry its section past the blank builds**
+  (`swept::helical::helical_sheet`): where an end of the section's columns that the roll cut
+  short stands in the blank, or no column is left, the sheet is laid on the characteristic
+  itself carried through the roll's own poses, `M(t)·c(s)`, where it was refused ("the roll does
+  not carry the characteristic past the blank", or points of the sheet's edge in the blank).
+  `constant_twist::Characteristic::at` reads a stretch whose two nodes are one point, a closed
+  face's seam, as that point, where it read a ring between the face's last station and its first.
 - **A hypoid gear's part builds in half the time** — four costs, each measured on geomsolver's
   hypoid drive and pair:
   - `swept::tool::Material::near` (**new**, default `|value| < r`): whether a point is within `r`

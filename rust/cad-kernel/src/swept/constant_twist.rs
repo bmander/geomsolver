@@ -851,6 +851,9 @@ impl Characteristic {
         let (a,b) = (&self.nodes[j-1],&self.nodes[j]);
         if f <= 0. { return Ok((a.position,a.normal)) }
         if f >= 1. { return Ok((b.position,b.normal)) }
+        // a stretch whose ends are one point is that point: a closed face's seam, where the walk
+        // steps from its last station to its first, which no station between stands for
+        if distance(a.position,b.position) <= self.tolerance { return Ok(if f < 0.5 { (a.position,a.normal) } else { (b.position,b.normal) }) }
         let u = b.from+(b.u-b.from)*f;
         // the root nearest the chord between the two nodes: labels may change where a ring's
         // amplitude turns, positions do not jump

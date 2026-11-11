@@ -41,18 +41,21 @@ pub(crate) fn exported_at(e: &Elaborated,name: &str,tolerance: f64) -> f64 {
 }
 
 /// The same, built within `tolerance` (the export's own where none is given): the build.
-pub(crate) fn exported_within(e: &Elaborated,name: &str,tolerance: Option<Tolerance>) -> export::Exact {
+pub(crate) fn exported_within(e: &Elaborated,name: &str,tolerance: Option<Tolerance>) -> export::Exact { built(e,name,tolerance).0 }
+
+/// The same, and what the build said of its stages.
+pub(crate) fn built(e: &Elaborated,name: &str,tolerance: Option<Tolerance>) -> (export::Exact,String) {
     let (sk,body) = (&e.sketch,fixtures::solid(e,name));
-    let (exact,said) = saying(|say| export::exact(sk,body,None,tolerance,say));
-    let exact = exact.unwrap_or_else(|r| panic!("{r}\n{said}"));
-    eprintln!("{said}");
+    let (exact,building) = saying(|say| export::exact(sk,body,None,tolerance,say));
+    let exact = exact.unwrap_or_else(|r| panic!("{r}\n{building}"));
+    eprintln!("{building}");
     exact.solid.check(1e-6).unwrap();
     let ((step,stl),said) = saying(|say| (export::step(&exact,"part",tolerance,say).unwrap(),
         export::stl(sk,body,&exact,tolerance,say).unwrap()));
     assert!(step.starts_with("ISO-10303-21;"));
     gcs_core::mesh::stl_shells(&stl).unwrap();
     assert!(!exact.swept || said.contains(", 0 disagree"),"{said}");
-    exact
+    (exact,building)
 }
 
 /// `volume` against `expected`, within `bar` of it.
@@ -407,6 +410,36 @@ construction groove := solid({{ p | some t in ({from}deg, {to}deg): p in wheel a
 part := solid(ring)
 groove cut part
 ",o0=o[0],o1=o[1],o2=o[2],a0=a[0],a1=a[1],a2=a[2])
+}
+
+/// `turned`'s torus screwed `lead` millimetres a turn about z instead, across the sector.
+pub(crate) fn screwed(lean: Lean,lead: f64,from: f64,to: f64) -> String {
+    let text = turned(lean,from,to);
+    let (words,motion) = ("use std.motion (turns)","swing turns(1) ax");
+    assert!(text.contains(words) && text.contains(motion),"`turned_in`'s motion as it writes it");
+    text.replace(words,"use std.motion (screws)").replace(motion,&format!("swing screws({lead}mm) ax"))
+}
+
+/// **A torus screwed at a short lead over a short roll** (#721 F4): leaning 20° and climbing 3 mm a
+/// turn, its section's delays span 358°, more than the 300° that carry it wholly past the sector, so
+/// its sheet is laid over the roll's own poses. Its characteristic crosses the tube's seam, where
+/// the walk steps from the face's last station to its first: two nodes at one point, and every `s`
+/// between them is that point (`Characteristic::at`), never a point of the rings between those
+/// stations, the tube's width away, which a row laid there by the grid's midpoints once read. The
+/// exact solid's STL agrees with the field.
+#[test]
+fn a_torus_screwed_at_a_short_lead_is_carried_across_its_seam() {
+    let e = fixtures::read(&screwed(Lean::Across(20.),3.,-150.,150.));
+    let Class::ConstantTwist(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the constant-twist class") };
+    let apart = |p: V,q: V| (0..3).map(|k| (p[k]-q[k]).powi(2)).sum::<f64>().sqrt();
+    let seams: Vec<usize> = (1..found.nodes.len()).filter(|&w| apart(found.nodes[w-1].position,found.nodes[w].position) < 1e-9).collect();
+    assert!(!seams.is_empty(),"the characteristic crosses the tube's seam");
+    for w in seams { for f in [0.1,0.25,0.5,0.75,0.9] {
+        let (p,_) = found.at((w-1) as f64+f).unwrap();
+        assert!(apart(p,found.nodes[w].position) < 1e-9,"{f} of the way across the seam at node {w}: {p:?}");
+    } }
+    let (_,said) = built(&e,"part",Some(Tolerance::new(0.01).unwrap()));
+    assert!(said.contains("over the stated roll"),"{said}");
 }
 
 /// The turned wheel's torus as drawn.
