@@ -727,6 +727,7 @@ fn clipped(pts: Vec<[f64; 2]>, f: impl Fn([f64; 2]) -> f64) -> Vec<[f64; 2]> {
 /// Whether a term is read only point by point: a sum of measurements, or a face's (#183).
 fn point_by_point(shape: &RegionShape) -> bool {
     matches!(shape, RegionShape::Measured { .. } | RegionShape::Sheet { .. }
-        | RegionShape::Section { .. } | RegionShape::Swept { .. } | RegionShape::Outside { .. })
+        | RegionShape::Section { .. } | RegionShape::Swept { .. } | RegionShape::Outside { .. }
+        | RegionShape::Join { .. })
         || crate::solid::faces::reads_faces(shape)
 }

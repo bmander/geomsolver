@@ -1109,6 +1109,8 @@ pub(crate) fn written_parts(args: &[OpArg], pairs: bool) -> (Vec<String>, Vec<St
                 }
             }
             OpArg::Dim(t, _) => parts.insert(0, t.clone()),
+            // a binder is the quantifier's, written before the relation (`write_written`)
+            OpArg::Some { .. } => {}
             OpArg::Within { key, lo, hi } => {
                 parts.push(format!("{} in ({}, {})", key.text, lo.0, hi.0))
             }
@@ -1166,6 +1168,17 @@ pub fn bounded(
 }
 
 fn write_written(out: &mut String, w: &Written) {
+    // some points of sets ([0.212]): the quantifier, then the relation it binds them in
+    let binders: Vec<String> = w.args.iter().filter_map(|a| match a {
+        OpArg::Some { var, domain } => Some(format!("{} in {}", var.text, super::ref_text(domain))),
+        _ => None,
+    }).collect();
+    if !binders.is_empty() {
+        let mut body = w.clone();
+        body.args.retain(|a| !matches!(a, OpArg::Some { .. }));
+        out.push_str(&format!("some {}: ", binders.join(", ")));
+        return write_written(out, &body);
+    }
     // the notation of sets (#783), as the parser lowered it (`syntax::notation`)
     if let Some(text) = notation_text(w) {
         out.push_str(&text);

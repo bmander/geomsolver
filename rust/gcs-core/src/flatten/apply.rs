@@ -284,7 +284,7 @@ impl<'a> Walk<'a> {
                         }
                         OpArg::Bound { span, .. } => *span = u.at,
                         OpArg::Within { key, .. } | OpArg::Over { key, .. } => key.span = u.at,
-                        OpArg::Ent(_) | OpArg::Dim(..) => {}
+                        OpArg::Ent(_) | OpArg::Dim(..) | OpArg::Some { .. } => {}
                     }
                 }
             }

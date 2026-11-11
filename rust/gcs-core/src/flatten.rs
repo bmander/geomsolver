@@ -404,6 +404,10 @@ pub struct Expansion {
     pub quiet: BTreeSet<Span>,
     /// Every region solid's probe, by absolute key: the point its set is applied to (§6.21).
     pub probes: Vec<String>,
+    /// **Some points of sets** ([0.212]): each point a `some` binds, by absolute key (a probe,
+    /// among `probes`), and the statement binding it under the use it was applied by — the
+    /// points one quantifier binds share it, so the elaborator reads them together.
+    pub binders: Vec<(String, String)>,
     /// The solids a block runs over the faces of, whose faces were not given (#183 F4): the
     /// elaborator names them once it has built the solids, and expands again.
     pub face_repeats: BTreeSet<String>,
@@ -878,6 +882,8 @@ struct SetState<'a> {
     applying: bool,
     /// Every region solid's probe — see `Expansion::probes`.
     probes: Vec<String>,
+    /// Each point a `some` binds, and its quantifier — see `Expansion::binders`.
+    binders: Vec<(String, String)>,
     /// Each band of a recognised sheet at a probe (#645) — see `Expansion::sheets`.
     sheets: Vec<developable::SheetInfo>,
 }
@@ -1087,6 +1093,7 @@ impl<'a> Walk<'a> {
                 unlowered: &NONE,
                 applying: false,
                 probes: Vec::new(),
+                binders: Vec::new(),
                 sheets: Vec::new(),
             },
             developing: Vec::new(),
@@ -1224,6 +1231,7 @@ impl<'a> Walk<'a> {
             joints: self.joints,
             quiet: self.quiet,
             probes: self.sets.probes,
+            binders: self.sets.binders,
             sheets: self.sets.sheets,
             developed: self.developed,
             panels: self.panels,

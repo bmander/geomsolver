@@ -217,6 +217,15 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                 };
                 Measure::Signed(Signed(std::sync::Arc::new(at)))
             }
+            // the join of sets ([0.212]): the hull of what each is the hull of, every plane of it
+            // a support plane of the region
+            RegionShape::Join { ref of } => {
+                let hull = crate::solid::joined::Hull::of(sk, of).map_err(named)?;
+                if within {
+                    planes.extend(hull.planes.iter().map(|&(n, d)| (n, d + lo)));
+                }
+                Measure::Signed(Signed(std::sync::Arc::new(move |p| hull.value(p))))
+            }
             // outside a set (#737 P3): where its terms do not all hold, the negated field of the
             // set taken together — so within the union of what each of them turned holds, the box
             // about each of those its support

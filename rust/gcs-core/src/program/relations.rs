@@ -1328,6 +1328,26 @@ fn region_or_row(
         }
         return None;
     }
+    // what a quantifier's relation states at the set's point and the points it binds ([0.212]):
+    // read together once every one is stated (`regions::settle_bound`)
+    if let Some(read) = super::regions::bound_by(&cx.sk, &c, &cx.probes) {
+        match read {
+            Ok(_) if grow.is_some() => cx.diags.push(Diag::on(Code::E040, st, "an offset is of a \
+                cone's surface or a plane's, not of what some points of sets put a point in".into())),
+            Ok((g, owner)) => {
+                let b = &mut cx.probes.bound[g];
+                if b.owner.is_some_and(|o| o != owner) {
+                    cx.diags.push(Diag::on(Code::E040, st, "what one `some` binds is read at one \
+                        set's point".into()));
+                } else {
+                    b.owner = Some(owner);
+                    b.stated.push((c, st.clone(), term_name));
+                }
+            }
+            Err(message) => cx.diags.push(Diag::on(Code::E040, st, message)),
+        }
+        return None;
+    }
     if let Some(probe) = probe_of(&cx.sk, &c, &cx.probes) {
         match region_term(&cx.sk, &c, probe, grow, term_name) {
             Ok(t) => cx.probes.terms.get_mut(&probe).expect("a probe's terms").push(t),

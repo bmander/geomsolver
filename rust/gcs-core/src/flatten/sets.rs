@@ -413,6 +413,11 @@ impl<'a> Walk<'a> {
             let mut any = false;
             let mut rest = out.into_iter();
             while let Some((st, path, sc)) = rest.next() {
+                // some points of sets ([0.212]): each binder a point the set's is read with
+                let Some(st) = self.bound_points(st, &sc, &alias) else {
+                    any = true;
+                    continue;
+                };
                 // the notation of sets, read against what its operand is (#783)
                 let Some(st) = self.notation(st, &sc, &alias) else {
                     any = true;
@@ -573,6 +578,51 @@ impl<'a> Walk<'a> {
         if region {
             outside_side(w);
         }
+    }
+
+    /// **Some points of sets** ([0.212]): a relation the parser gave binders (`OpArg::Some`), each
+    /// a point the body declared beside it with its membership of its set — registered as a probe
+    /// (a point a region solid's terms are read at, never a row), with the statement binding it
+    /// under the use that applied it (`Expansion::binders`), and the relation then read as the
+    /// membership it is.  The set's own point must be one a solid reads: a drawn point's `some`
+    /// is refused (`None`), since no row says which point of the set it would be.
+    fn bound_points(&mut self, mut st: Stmt, sc: &Scope, alias: &BTreeMap<String, String>) -> Option<Stmt> {
+        let StmtKind::Relation(r) = &mut st.kind else { return Some(st) };
+        let Some(w) = r.form.written_mut() else { return Some(st) };
+        let binders: Vec<Name> = w.args.iter().filter_map(|a| match a {
+            crate::syntax::OpArg::Some { var, .. } => Some(var.clone()),
+            _ => None,
+        }).collect();
+        if binders.is_empty() {
+            return Some(st);
+        }
+        w.args.retain(|a| !matches!(a, crate::syntax::OpArg::Some { .. }));
+        let at = w.word.span;
+        let read = w.ops.first().and_then(|p| self.look(alias).raw(p, sc))
+            .is_some_and(|(p, rest)| rest.is_empty() && self.sets.probes.contains(&p));
+        if !read {
+            let m = "some points of sets are read where a solid reads its set's point: in the body of \
+                     a set a solid is made of, `solid({ p | some q in A: p in Segment(c, q) })`";
+            self.once(Code::E040, at, m);
+            return None;
+        }
+        // the points one quantifier binds, under the use that applied it
+        let group = format!("{}#{}", sc.prefix(), sc.pred.written.unwrap_or(st.id).0);
+        for var in binders {
+            let r = Ref { root: var.clone(), path: Vec::new(), span: var.span };
+            match self.look(alias).raw(&r, sc) {
+                Some((abs, rest)) if rest.is_empty() => {
+                    self.sets.probes.push(abs.clone());
+                    self.sets.binders.push((abs, group.clone()));
+                }
+                _ => {
+                    let m = format!("`{}`, a point `some` binds, names nothing here", var.text);
+                    self.once(Code::E101, var.span, m);
+                    return None;
+                }
+            }
+        }
+        Some(st)
     }
 
     /// **Outside a set** (#737 P3): `p outside S` where `S`'s body is several statements, an

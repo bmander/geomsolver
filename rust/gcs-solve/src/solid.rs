@@ -38,6 +38,7 @@ pub mod cad;
 pub mod region;
 pub mod bounded;
 pub mod grown;
+pub mod joined;
 pub mod shelled;
 pub mod canal;
 pub mod distributed;

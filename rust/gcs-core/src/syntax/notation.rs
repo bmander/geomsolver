@@ -20,6 +20,7 @@
 //! | `some s: p in F at s` | `p coincident(over s) F`: a face family over a declared parameter |
 //! | `some h: p in F at(along: n) h` | `p inside F`: the prism through a face |
 //! | `not some h: p in F at(along: n) h` | `p outside F`: what is not in it |
+//! | `some q in A, r in B: p in X` | `some q inside A, r inside B: p inside X`: some points of sets |
 //! | `p distance(…) { q \| q not in S }` | `p distance(…, side: inside) S` |
 //! | `n := x at f`, `f` a frame | `n := x in f`: drawn in the jointed frame at its value |
 //!
@@ -678,10 +679,74 @@ impl Lowering<'_> {
         Some(parts.last()?.1)
     }
 
+    /// `some q in A, r in B: p in X` ([0.212]): the points `p` some point of each set puts in `X`
+    /// — each binder's membership lowered as a membership is (`inside`, or `coincident` with a
+    /// face or a boundary), the body lowered as a statement is; the parser reads the quantifier
+    /// (`P::points`).  One quantifier binds every point: a body that is another is refused.
+    fn points(&mut self, i: usize, out: &mut Vec<T>) -> usize {
+        let t = self.t;
+        let end = statement_end(t, i);
+        let shape = "`some` binds points of sets before the membership it reads them in: `some q \
+            in A, r in B: p in Segment(q, r)`";
+        out.push(t[i].clone());
+        let mut k = i + 1;
+        loop {
+            let (Some(_), Some("in")) = (word(t, k), word(t, k + 1)) else {
+                self.fail(t[k.min(t.len() - 1)].1, shape);
+                return end;
+            };
+            let Some(x1) = operand_end(t, k + 2).filter(|&x1| x1 < end) else {
+                self.fail(t[k + 1].1, shape);
+                return end;
+            };
+            let mut x = Vec::new();
+            let reads = self.operand(k + 2, x1, &mut x);
+            let at = t[k + 1].1;
+            let lowered = if matches!(reads, Reads::Boundary | Reads::Face) { "coincident" } else { "inside" };
+            out.push(t[k].clone());
+            self.mark(at, reads);
+            out.push(ident(lowered, at));
+            out.extend(x);
+            out.push(t[x1].clone());
+            if punct(t, x1, ',') {
+                k = x1 + 1;
+            } else if punct(t, x1, ':') {
+                k = x1 + 1;
+                break;
+            } else {
+                self.fail(t[x1].1, shape);
+                return end;
+            }
+        }
+        if word(t, k) == Some("some") {
+            self.fail(t[k].1, "one `some` binds every point its membership reads: `some q in A, \
+                r in B: p in X`");
+            return end;
+        }
+        match self.statement(k, end, out) {
+            Some(next) => {
+                self.range(next, end, out);
+            }
+            None => self.fail(t[k.min(end.saturating_sub(1))].1, "what some points of sets put \
+                the set's point in is a membership: `some q in A: p in Segment(c, q)`"),
+        }
+        end
+    }
+
     /// `some t [in (a, b)]: p in X at(…) t`: the points `X` occupies at some instant — a sweep, a
     /// face family, a face turned, or the prism through a face.
     fn some(&mut self, i: usize, not: bool, out: &mut Vec<T>) -> Option<usize> {
         let t = self.t;
+        // some point of a set ([0.212]): `in` a set, where a running number's is an interval
+        if word(t, i + 2) == Some("in") && !punct(t, i + 3, '(') && !punct(t, i + 3, '[') {
+            if not {
+                self.fail(t[i].1, "`not some` reads the complement of the prism through a face, \
+                    `not some h: p in F at(along: n) h`; what no point of a set reaches is `p not \
+                    in S` of the set `S` the quantifier makes");
+                return Some(statement_end(t, i));
+            }
+            return Some(self.points(i, out));
+        }
         let shape = "`some` reads one instant of a running number: `some t in (a, b): p in X \
             at(under: m) t`, `some s: p in F at s` or `some h: p in F at(along: n) h`";
         let Some(var) = word(t, i + 1) else {

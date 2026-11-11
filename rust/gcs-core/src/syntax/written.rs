@@ -40,6 +40,13 @@ pub enum OpArg {
     /// some roll of the interval, `p coincident(over s) Station(g, s: s).f` what the station's face
     /// does at some `s` of its parameter.
     Over { key: Name, ends: Option<[(String, Span); 2]> },
+    /// **Some point of a set** ([0.212]): `some q in A, r in B: p in Segment(q, r)` in a set's
+    /// body, the points `p` is where some `q` of `A` and some `r` of `B` put it — a projection.
+    /// Each binder is a point the body declares beside the relation (the parser's, held in its
+    /// text), its membership of `domain` stated there too; the relation carries which points it
+    /// binds and where each ranges, so the printer writes the quantifier back and the flattener
+    /// reads each as a point the set's own point is read with, never a point of the drawing.
+    Some { var: Name, domain: Ref },
 }
 
 /// An operator spelling retained through resolution, with operands and arguments

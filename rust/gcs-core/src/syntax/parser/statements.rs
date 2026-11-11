@@ -1335,6 +1335,10 @@ impl<'a> P<'a> {
         if let Some(name) = self.defines() {
             return self.definition(name, next_id, out);
         }
+        // some points of sets ([0.212]), as `syntax::notation` lowered them
+        if self.peek_word("some") && matches!(self.word_at(self.i + 2), Some("inside" | "coincident")) {
+            return self.points(next_id, out);
+        }
         if self.inline_set_ahead() {
             return self.inline_set_use(next_id, out);
         }
@@ -2047,6 +2051,94 @@ impl<'a> P<'a> {
             dotted || self.word_at(j + 1).is_some_and(|w| !crate::syntax::reserved_word(w) && !crate::constraints::is_operator(w))
         });
         self.set_at(j + 1) || call
+    }
+
+    /// **Some points of sets** ([0.212]): `some q inside A, r inside B: p inside X`, as the
+    /// notation lowered `some q in A, r in B: p in X`.  Each binder is a point of the body's own —
+    /// private, a construction — with its membership of its set beside it, each held in the text
+    /// of the relation it binds (`Chained::InPlace`, minted before it), which carries the binders
+    /// (`OpArg::Some`) so the quantifier is printed back and the flattener reads each as a point
+    /// the set's own point is read with.  A set or a call written in place is hoisted as anywhere.
+    fn points(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        self.i += 1; // `some`
+        let mut held: Vec<Stmt> = Vec::new();
+        let mut binders: Vec<(Name, Ref)> = Vec::new();
+        loop {
+            let var = self.ident()?;
+            let word = self.ident()?;
+            let domain = if self.set_ahead() || self.call_at(self.i).is_some() {
+                let in_place = self.hoist_in_place(next_id)?;
+                let by = in_place.by.clone();
+                held.extend(in_place.hosted(crate::syntax::StmtId(0)));
+                by
+            } else {
+                self.refr()?
+            };
+            let span = Span::new(var.span.lo as usize, self.prev_hi());
+            if binders.iter().any(|(v, _)| v.text == var.text) {
+                self.fail_at(var.span, &format!("`{}` is bound twice: each point `some` binds has a \
+                    name of its own", var.text));
+                return None;
+            }
+            // the binder: a point of the body's own, held where the solid reads it
+            let mut point = crate::syntax::Decl::point(DeclName::Written(var.clone()), [0.0; 2], None);
+            point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
+            point.seed_text = vec![None; 3];
+            point.annotations.private = true;
+            point.annotations.roles.construction = true;
+            let id = self.mint_stmt(next_id, var.span)?;
+            held.push(Stmt { id, kind: StmtKind::Decl(point), span: var.span, chained: Chained::No });
+            // and its membership of its set, as the notation lowered it
+            let lowered = self.lowered_word(word.span);
+            let on = crate::syntax::Written {
+                word: word.clone(),
+                fixity: crate::constraints::Fixity::Infix,
+                ops: vec![Ref { root: var.clone(), path: Vec::new(), span: var.span }, domain.clone()],
+                args: Vec::new(),
+                span,
+                rates: Vec::new(),
+                lowered,
+            };
+            let rel = crate::syntax::Relation::of(crate::syntax::RelationForm::Written(on));
+            let id = self.mint_stmt(next_id, span)?;
+            held.push(Stmt { id, kind: StmtKind::Relation(rel), span, chained: Chained::No });
+            binders.push((var, domain));
+            if self.eat_p(',') {
+                continue;
+            }
+            if !self.want_p(':') {
+                return None;
+            }
+            break;
+        }
+        // the relation the points are bound in: a membership of the set's own point
+        let lo = self.here().lo as usize;
+        let mut body = Vec::new();
+        if self.inline_set_ahead() {
+            self.inline_set_use(next_id, &mut body)?;
+        } else {
+            let kind = self.stmt(next_id)?;
+            let span = Span::new(lo, self.prev_hi());
+            let id = self.mint_stmt(next_id, span)?;
+            body.push(Stmt { id, kind, span, chained: Chained::No });
+        }
+        let host = body.last_mut()?;
+        let Some(w) = (match &mut host.kind {
+            StmtKind::Relation(r) => r.form.written_mut(),
+            _ => None,
+        }) else {
+            self.fail_at(host.span, "what some points of sets put the set's point in is a \
+                membership: `some q in A: p in Segment(c, q)`");
+            return None;
+        };
+        w.args.extend(binders.into_iter().map(|(var, domain)| crate::syntax::OpArg::Some { var, domain }));
+        let host_id = host.id;
+        for st in &mut held {
+            st.chained = Chained::InPlace(host_id);
+        }
+        out.extend(held);
+        out.extend(body);
+        Some(())
     }
 
     /// `q coincident { p | … }` or `l tangent std.sets.Cylinder(ax, r: 8mm)`: the set written in

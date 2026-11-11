@@ -227,6 +227,15 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                         face_reads(sk, face, &mut v, poses);
                         continue;
                     }
+                    // a join: where the points it is the hull of stand, as it reads them
+                    if let crate::model::RegionShape::Join { of } = &t.shape {
+                        v.push(14.0);
+                        match crate::solid::joined::Hull::of(sk, of) {
+                            Ok(h) => h.corners.iter().for_each(|c| v.extend(c)),
+                            Err(_) => v.push(UNREAD),
+                        }
+                        continue;
+                    }
                     // outside a set: what the set's own terms read, each with its numbers
                     if let crate::model::RegionShape::Outside { set } = &t.shape {
                         v.push(13.0);

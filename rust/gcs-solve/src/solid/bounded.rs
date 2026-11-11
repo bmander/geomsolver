@@ -1,6 +1,7 @@
 //! **A region in general position, built exactly** (#238): a region solid whose terms share no
-//! axis (`region::in_general`), each a ball, a cylinder, a cone narrower than square or a
-//! half-space, is the common of the primitives its terms bound — each one the region keeps within
+//! axis (`region::in_general`), each a ball, a cylinder, a cone narrower than square, a
+//! half-space or a join of sets read as the hull of finitely many points ([0.212],
+//! `solid::joined`: the kernel's hull of them), is the common of the primitives its terms bound — each one the region keeps within
 //! taken in common, each one it keeps outside taken away — every primitive bounded past the box
 //! the region lies in (`RegionField::support`), so nothing but its terms' own surfaces reaches the
 //! material: Steinmetz's bicylinder, two cylinders crossing.  The recipe's `region` node; held to
@@ -49,6 +50,8 @@ enum Shape {
     /// The half-space `n · (x − o) ≤ 0` (`n` unit) as a block standing on its plane, `reach` from
     /// `o` across it either way and `reach` deep.
     Half { o: V, n: V, reach: f64 },
+    /// The hull of `corners` ([0.212]): a join of sets, read as the hull of finitely many points.
+    Hull { corners: Vec<V> },
 }
 
 impl Bounded {
@@ -63,7 +66,11 @@ impl Bounded {
                 let names = vec![vec![piece.name.clone(); p.loops[0].len()]];
                 Profile { names, ..p }.to_json(w)
             };
-            let mut node = match piece.shape {
+            let mut node = match &piece.shape {
+                Shape::Hull { corners } => object([("kind", "hull".into()),
+                    ("points", Json::Arr(corners.iter().map(|&c| Writer::triple(mm(c))).collect())),
+                    ("face", piece.name.as_str().into())]),
+                _ => match piece.shape.clone() {
                 Shape::Ball { c, r } => {
                     // a half disc turned once about a line through the centre
                     let f = Frame::about(c, [0.0, 0.0, 1.0]);
@@ -86,7 +93,8 @@ impl Bounded {
                         ("origin", w.line_origin(mm(a), d)), ("axis", Writer::triple(d)), ("angle", TAU.into())])
                 }
                 Shape::Half { o, n, reach } => half_space(w, o, scale(n, -1.0), reach, &piece.name)?,
-            };
+                Shape::Hull { .. } => unreachable!("written above"),
+            } };
             node.set("keep", Json::Bool(piece.keep));
             Ok(node)
         }).collect::<Result<Vec<_>, String>>()?;
@@ -128,7 +136,7 @@ fn construction(sk: &Sketch, solid: usize) -> Option<Result<Bounded, String>> {
     let SolidDef::Region { terms, .. } = &sk.solids[solid].def else { return None };
     // only a term of these shapes, at a stated number with no offset
     let made = |shape: &RegionShape| matches!(shape, RegionShape::Ball { .. } | RegionShape::Cylinder { .. }
-        | RegionShape::Cone { .. } | RegionShape::Plane { .. });
+        | RegionShape::Cone { .. } | RegionShape::Plane { .. } | RegionShape::Join { .. });
     if !terms.iter().all(|t| made(&t.shape) && t.grow.is_none()) {
         return None;
     }
@@ -147,9 +155,23 @@ fn construction(sk: &Sketch, solid: usize) -> Option<Result<Bounded, String>> {
         let Some(lo) = t.lo.read(sk) else {
             return Some(Err(format!("`{name}`: a term reads an unknown nothing determines")));
         };
+        let piece = |keep: bool, shape: Shape| Piece { keep, shape, name: t.name.clone() };
+        // a join of sets ([0.212]): the hull itself, kept within or taken away — within it at
+        // nothing, or outside it at nothing; grown or shrunk by a number, the field's
+        if let RegionShape::Join { of } = &t.shape {
+            if lo != 0.0 || t.cmp == Cmp::In {
+                return None;
+            }
+            let corners = match super::joined::Hull::of(sk, of) {
+                Ok(h) => h.corners,
+                Err(e) => return Some(Err(format!("`{name}`: {e}"))),
+            };
+            let shape = Shape::Hull { corners };
+            if t.cmp == Cmp::Le { keeps.push(piece(true, shape)) } else { cuts.push(piece(false, shape)) }
+            continue;
+        }
         let Ok(Some(measure)) = super::region::measure_of(sk, &t.shape) else { return None };
         use crate::solid::field::region::Measure;
-        let piece = |keep: bool, shape: Shape| Piece { keep, shape, name: t.name.clone() };
         // the bounds a term sets, each `(within, number)`: `within` the region keeps what lies
         // within the shape at the number, else what lies outside it
         let sides: Vec<(bool, f64)> = match t.cmp {
