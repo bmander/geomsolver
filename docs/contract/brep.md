@@ -747,7 +747,13 @@ pitch in the helix of the point where the two lines meet carried level, none whe
 parallel there; a level plane in the one ruling at its height; any other plane in its cut
 `S(−α/β, v)` (`Curve::SheetCut`, **a new curve kind**: `α + u β` the ruling's reach to the plane),
 with the rulings it holds as lines, read about the nearest held ruling by differences so the cut
-runs through the point it touches the sheet at as exactly as anywhere. Two curves on one sheet,
+runs through the point it touches the sheet at as exactly as anywhere. **The cut crosses each ruling
+it holds at that ruling's `v`, in closed form** (`SheetCut::held_along`, `query::crossings_in`; #885),
+and the two curves of the meeting are crossed there (`crossings_among`), so an edge lying in the
+sheet along a held ruling — a tool's edge at a sweep's end pose, its own sheet's ruling there — is
+cut where the cut leaves it, by the vertex inside it, and the cut is laid from that point, not to
+the face's corner (`arrangement::a_meeting_crossing_an_edge_lying_in_the_other_surface_cuts_it_there`).
+Two curves on one sheet,
 each a rule `u(v)`, cross where the rules agree, and two planes' cuts of two such sheets on one
 plane where the plane meets the sheets' helix (`query::crossings_in`); a point's foot on such a
 sheet starts from the ruling level with it (`Blend::inverse`), with no search

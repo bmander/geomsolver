@@ -2393,8 +2393,10 @@ fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],
 }
 
 /// The stretch of a closed-form curve to read for crossings within the box `bx` grown by `pad`: a
-/// closed one's period, a line's run inside the box's slabs, a spline's domain; none for a line
-/// missing the box.
+/// closed one's period, a line's run inside the box's slabs, a spline's domain, a plane's cut of a
+/// screwed sheet's (which crosses the rulings the plane holds, #885); none for a line missing the
+/// box, nor yet for the other open kinds a closed form gives (a helix on a sheet, a turned or a
+/// slid contact, a trochoid), whose crossings with a meeting's other curves are not sought.
 fn stretch_in(c: &Curve,(lo,hi): Box3,pad: f64) -> Option<[f64;2]> {
     if let Some(p) = c.period() { return Some([0.,p]) }
     match *c {
@@ -2407,7 +2409,7 @@ fn stretch_in(c: &Curve,(lo,hi): Box3,pad: f64) -> Option<[f64;2]> {
             }
             (t0 < t1).then_some([t0,t1])
         }
-        Curve::BSpline(ref b) => Some(b.domain()),
+        Curve::BSpline(..) | Curve::SheetCut(..) => super::query::curve_domain(c),
         _ => None,
     }
 }
