@@ -100,6 +100,10 @@ struct Profile {
     analysis: BTreeMap<&'static str,u64>,
 }
 
+/// Where a meter stood (`Meter::mark`), to be put back (`Meter::restore`).
+#[derive(Clone,Debug)]
+pub struct Mark { counts: [u64;STAGES],stopped: bool,over: Option<Over>,profile: Profile }
+
 /// A build's counts against its budget.
 #[derive(Debug)]
 pub struct Meter {
@@ -122,6 +126,18 @@ impl Meter {
     }
     /// The steps `stage` has taken.
     pub fn count(&self,stage: Stage) -> u64 { self.counts[stage as usize].load(Ordering::Relaxed) }
+    /// Where the meter stands, to be put back (`restore`).
+    pub fn mark(&self) -> Mark {
+        Mark {counts:std::array::from_fn(|k| self.counts[k].load(Ordering::Relaxed)),stopped:self.stopped(),over:self.over(),
+            profile:self.profile.lock().unwrap_or_else(|e| e.into_inner()).clone()}
+    }
+    /// The meter put back where `mark` read it: the work counted since, and a stop, forgotten.
+    pub fn restore(&self,mark: &Mark) {
+        for (c,&n) in self.counts.iter().zip(&mark.counts) { c.store(n,Ordering::Relaxed) }
+        *self.over.lock().unwrap_or_else(|e| e.into_inner()) = mark.over.clone();
+        *self.profile.lock().unwrap_or_else(|e| e.into_inner()) = mark.profile.clone();
+        self.stopped.store(mark.stopped,Ordering::Relaxed);
+    }
     /// The first stage that went past its limit, and where; none while every stage is within.
     pub fn over(&self) -> Option<Over> { self.over.lock().unwrap_or_else(|e| e.into_inner()).clone() }
     /// Whether a stage went past its limit.

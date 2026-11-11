@@ -1262,7 +1262,8 @@ impl<'a> Arrangement<'a> {
         });
         // every edge against every face of another operand whose box its samples' box meets, in
         // order: read on every core — each reading the edge's curve and the face's surface alone —
-        // then each taken in that order, as one after another would be
+        // then each taken in that order, as one after another would be (a build passing its budget
+        // among them reads them again one after another: `par::map_in_order`)
         let mut asked: Vec<(Side,Side,usize,usize)> = Vec::new();
         for s in self.solids.all() {
           for other in self.solids.all().filter(|&o| o != s) {
@@ -1290,7 +1291,7 @@ impl<'a> Arrangement<'a> {
           }
         }
         let (solids,boxes) = (&self.solids,&self.boxes);
-        let read = crate::util::par::map(&asked,|&(s,other,i,fi)| {
+        let read = crate::util::par::map_in_order(&asked,|&(s,other,i,fi)| {
             let e = &solids[s].edges[i];
             let EdgeCurve::Curve(c) = &e.curve else { unreachable!("an edge asked has a curve") };
             let started = crate::util::clock::Instant::now();
@@ -1552,9 +1553,11 @@ impl<'a> Arrangement<'a> {
             crate::util::space::normalised(o.gradient(p)).unwrap_or([0.;3]))));
         // each pair's crossings sought on every core — the search reads the meetings' curves alone,
         // which nothing below changes — and taken in the pairs' order, as one after another would be
-        // (a search the slowest of the arrangement's steps, #880: three hundred pairs of helices)
+        // (a screwed polyhedron's sweep, hundreds of pairs of helices, spent most of its arrangement
+        // here); a build passing its budget among them reads them again one after another, and is
+        // refused where it always is (`par::map_in_order`)
         let (edges,solids,pad) = (&self.edges,&self.solids,self.pad);
-        let sought = crate::util::par::map(&asked,|&((s,fi),(ei,oi,gi),(ej,oj,gj))| -> Result<Option<Vec<(f64,V)>>,String> {
+        let sought = crate::util::par::map_in_order(&asked,|&((s,fi),(ei,oi,gi),(ej,oj,gj))| -> Result<Option<Vec<(f64,V)>>,String> {
             let surface = &solids[s].faces[fi].surface;
             let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&edges[ei].curve,&edges[ej].curve) else { return Ok(None) };
             let (ti,tj) = (edges[ei].t,edges[ej].t);
