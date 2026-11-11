@@ -190,7 +190,8 @@ fn a_drum_turned_about_its_own_axis_is_in_contact_all_over_its_side() {
 /// roll, carried 456° — a closed curve more than a turn — cut into stretches (`stretches`), each a
 /// sheet inverted at its own points to rounding (from the screw's invariants: radius and height along
 /// the helix), the two end poses after them, and each two neighbouring stretches given to meet along
-/// the rail they share, lying on both sheets.
+/// the rail they share, lying on both sheets (every two given their meeting:
+/// `every_two_sheets_of_one_carry_are_given_the_paths_they_share`).
 #[test]
 fn a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points() {
     use gcs_core::brep::swept::contacts::candidates;
@@ -203,7 +204,7 @@ fn a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points() {
     assert!(sheets >= 4,"the closed contact in four stretches at least: {sheets}");
     assert!(cands[..sheets].iter().all(|c| matches!(c.faces[..],[ref f] if matches!(f.surface,Surface::Blend(..)))),"each stretch one sheet");
     assert!(cands[sheets..].iter().all(|c| matches!(c.faces[0].surface,Surface::Torus(..))),"the end poses last");
-    assert_eq!(given.len(),sheets,"each two neighbours of a closed piece given their rail");
+    assert_eq!(given.len(),sheets*(sheets-1)/2,"every two sheets given their meeting");
     for c in &cands[..sheets] {
         let sheet = &c.faces[0].surface;
         for i in 0..=10 { for j in 0..=10 {
@@ -213,8 +214,14 @@ fn a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points() {
             assert!(distance(sheet.point(back),p) <= 1e-9,"a sheet at {uv:?} read back at {back:?}");
         } }
     }
-    for (k,g) in given.iter().enumerate() {
-        for c in &g.curves {
+    // each neighbour's rail, its given's first curve
+    let rails = given.iter().filter(|g| g.curves.first().is_some_and(|c| {
+        let gcs_core::brep::geom::Curve::Iso(_,u) = c else { return false };
+        *u == 1. || *u == 0.
+    }));
+    assert!(rails.clone().count() >= sheets,"each two neighbours of a closed piece given their rail");
+    for (k,g) in rails.enumerate() {
+        for c in &g.curves[..1] {
             for s in &g.surfaces {
                 let off = (0..=100).map(|i| s.implicit(c.point(i as f64/100.)).abs()).fold(0f64,f64::max);
                 assert!(off <= 1e-7,"rail {k} off a sheet it is given on by {off:e}");
@@ -241,4 +248,56 @@ fn a_contact_carried_back_through_its_start_pose_is_arranged_with_it() {
     let (cands,_) = candidates(&tool,&path,roll,TOL).unwrap();
     let start = &cands[cands.len()-2];
     if let Err(e) = arrangement(&[&cands[8],start],TOL) { panic!("the stretch through the start pose arranged with it: {e}") }
+}
+
+
+/// **Every two sheets of one carry are given the paths they share** (#880 Q1b, `contacts::candidates`'s
+/// `shared_paths`): two sheets a screw sweeps from two curves meet only along whole helices of it,
+/// where the curves cross — or touch — in its invariants, so each pair's meeting is given and not
+/// sought. Of the leaning torus's sixteen stretches, every path given lies in both sheets (in each
+/// sheet's own invariants, `Blend::carried_gap`: a crossing to rounding, a touch within the sections'
+/// fit, a tenth of the tolerance — the two fitted curves pass the contact's double point each within
+/// it, so touch there only so nearly); and the two stretches through its
+/// contact's double point — a saddle of the contact, each turning a corner through it, tangent there
+/// in the invariants as every two branches at one point of the tool are — are given that point's
+/// path once and arrange with it. Sought, the march along one path crossed over to the other between
+/// them, the sheets nearly touching there; and Newton alone, on the kinked double root, read the
+/// touch as five paths a hair apart.
+#[test]
+fn every_two_sheets_of_one_carry_are_given_the_paths_they_share() {
+    use gcs_core::brep::boolean::arrangement_given;
+    use gcs_core::brep::build::{prism,square};
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::swept::contacts::candidates;
+    use gcs_core::brep::trajectory::Trajectory;
+    let tool = leaning_torus();
+    let path = Trajectory::Twist(rod_screw());
+    let roll = [(-108f64).to_radians(),348f64.to_radians()];
+    let (cands,given) = candidates(&tool,&path,roll,TOL).unwrap();
+    let blend = |s: &Surface| match s { Surface::Blend(_,b) => b.clone(),_ => panic!("a sheet") };
+    let mut paths = 0;
+    for g in &given {
+        for c in &g.curves {
+            let Curve::Iso(..) = c else { panic!("a path of the carry") };
+            paths += 1;
+            for s in &g.surfaces {
+                for k in 0..=8 {
+                    let (gap,_) = blend(s).carried_gap(c.point(k as f64/8.)).unwrap();
+                    assert!(gap <= 0.1*TOL,"a given path {gap:e} off a sheet's paths");
+                }
+            }
+        }
+    }
+    assert!(paths > cands.len()-2,"the sheets cross back over one another, beyond their rails: {paths} paths");
+    let surface = |k: usize| cands[k].faces[0].surface.clone();
+    let (five,twelve) = (surface(5),surface(12));
+    let pair: Vec<_> = given.iter().filter(|g| {
+        let p = |s: &Surface| s.point([0.37,0.61]);
+        let (a,b) = (p(&g.surfaces[0]),p(&g.surfaces[1]));
+        (a == five.point([0.37,0.61]) && b == twelve.point([0.37,0.61])) || (b == five.point([0.37,0.61]) && a == twelve.point([0.37,0.61]))
+    }).cloned().collect();
+    assert_eq!(pair.len(),1);
+    assert_eq!(pair[0].curves.len(),2,"stretches 5 and 12 cross along one path and touch along the double point's");
+    let domain = prism(&square([0.,0.,-30.],[0.,0.,1.],40.),0.,90.).unwrap();
+    if let Err(e) = arrangement_given(&domain,&[&cands[5],&cands[12]],&pair,TOL) { panic!("the two stretches arranged with their paths: {e}") }
 }

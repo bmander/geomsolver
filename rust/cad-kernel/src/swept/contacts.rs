@@ -279,35 +279,53 @@ fn settled_on(surface: &Surface,twist: &Twist,mut uv: Uv,h: [f64;2],within: Opti
     uv
 }
 
-/// **A piece as a curve**: a cubic B-spline over `[0, 1]`, by chord length along the piece, fitted
-/// within a tenth of `tol` of the contact itself — each sample placed along the piece and settled onto
-/// `g = 0` under `twist` (a seam crossed between two points unwrapped by the surface's period) — from
-/// sixteen spans, doubled as the fit asks.
+/// **A piece as a curve**: the cubic B-spline through points of the contact, by chord length,
+/// within a tenth of `tol` of the contact itself — from seventeen of the piece's own points spread
+/// along it, its ends among them; every span whose middle stands farther than that off the contact
+/// (the middle's foot on the surface settled onto `g = 0` under `twist`) given a point of the contact
+/// between its two, the parameters' midpoint settled (a seam crossed between them unwrapped by the
+/// surface's period), until none does. Each point is a point of the curve and the spline is smooth
+/// in its chord length, so the fit closes at a cubic's rate: read instead along the piece's polyline
+/// by its own chord length, whose speed jumps at each vertex, it closed at a line's, and doubled its
+/// spans to four thousand, an inverse on the sheet carrying it reading them all (#880 Q1b).
 pub fn piece_curve(tool: &Brep,piece: &Piece,twist: &Twist,tol: f64) -> Option<crate::geom::Curve> {
     let surface = &tool.faces[piece.face].surface;
     let periods = surface.periods();
-    let pts = &piece.points;
-    let mut at = vec![0.];
-    for w in pts.windows(2) { let last = *at.last().unwrap(); at.push(last+distance(w[0],w[1])); }
-    let length = *at.last().unwrap();
-    if !(length > 0.) { return None }
+    let n = piece.points.len();
+    if n < 2 { return None }
     // the parameters' scale, for the settling's differences
     let (lo,hi) = piece.uv.iter().fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(lo,hi),p| ([lo[0].min(p[0]),lo[1].min(p[1])],[hi[0].max(p[0]),hi[1].max(p[1])]));
     let h = [1e-7*(hi[0]-lo[0]).max(1e-3),1e-7*(hi[1]-lo[1]).max(1e-3)];
-    let along = |t: f64| -> V {
-        let s = t.clamp(0.,1.)*length;
-        let k = at.partition_point(|&x| x <= s).clamp(1,pts.len()-1);
-        let (a,b) = (at[k-1],at[k]);
-        let f = if b > a { (s-a)/(b-a) } else { 0. };
-        let u0 = piece.uv[k-1];
-        let u1 = crate::topo::unwrap(piece.uv[k],u0,periods);
-        let uv = [u0[0]+(u1[0]-u0[0])*f,u0[1]+(u1[1]-u0[1])*f];
-        if f == 0. { return pts[k-1] }
-        if f == 1. && k == pts.len()-1 { return pts[k] }
-        surface.point(settled_on(surface,twist,uv,h,None,0.))
-    };
-    let (curve,_) = crate::nurbs::fit_curve(&along,3,16,0.1*tol)?;
-    Some(crate::geom::Curve::BSpline(std::sync::Arc::new(curve)))
+    // the piece's parameters unwrapped along it, so a midpoint between two is between them
+    let mut uv = vec![piece.uv[0]];
+    for k in 1..n { let last = uv[k-1]; uv.push(crate::topo::unwrap(piece.uv[k],last,periods)); }
+    let mut at = vec![0.];
+    for w in piece.points.windows(2) { let last = *at.last().unwrap(); at.push(last+distance(w[0],w[1])); }
+    if !(at[n-1] > 0.) { return None }
+    let mut idx: Vec<usize> = (0..=16).map(|k| at.partition_point(|&x| x < at[n-1]*k as f64/16.).min(n-1)).collect();
+    idx[0] = 0;
+    idx[16] = n-1;
+    idx.dedup();
+    let mut nodes: Vec<(Uv,V)> = idx.iter().map(|&i| (uv[i],piece.points[i])).collect();
+    let off = |q: V| distance(q,surface.point(settled_on(surface,twist,surface.inverse(q),h,None,0.)));
+    const MOST: usize = 4097;
+    loop {
+        let mut t = vec![0.];
+        for w in nodes.windows(2) { let last = *t.last().unwrap(); t.push(last+distance(w[0].1,w[1].1)); }
+        let total = *t.last().unwrap();
+        if !(total > 0.) { return None }
+        let t: Vec<f64> = t.into_iter().map(|x| x/total).collect();
+        let spline = crate::nurbs::interpolate(&nodes.iter().map(|x| x.1).collect::<Vec<_>>(),&t,3)?;
+        let wide: Vec<usize> = (0..nodes.len()-1).filter(|&k| off(spline.point(0.5*(t[k]+t[k+1]))) > 0.1*tol).collect();
+        if wide.is_empty() || nodes.len()+wide.len() > MOST {
+            return Some(crate::geom::Curve::BSpline(std::sync::Arc::new(spline)))
+        }
+        for &k in wide.iter().rev() {
+            let (a,b) = (nodes[k].0,nodes[k+1].0);
+            let m = settled_on(surface,twist,[0.5*(a[0]+b[0]),0.5*(a[1]+b[1])],h,None,0.);
+            nodes.insert(k+1,(m,surface.point(m)));
+        }
+    }
 }
 
 /// The rigid map carrying what stands at the pose of `t0` to where it stands at `t1` under `path`.
@@ -461,6 +479,159 @@ fn invariants(carry: &crate::trajectory::Screw,p: V) -> [f64;2] {
     [rho,l[2]-lead*l[1].atan2(l[0])]
 }
 
+/// **Where two sections of one carry share a path** (#880 Q1b): the sheets two curves sweep under
+/// one carry meet only along whole paths of it, a point's path lying in both where each curve has a
+/// point on it — where the two curves cross in the carry's invariants (`invariants`: a screw's
+/// radius and height along the helix, the height modulo a turn's rise), or touch. Each such meeting's
+/// parameter on `a` and on `b` over `[0, 1]`: sought from every two chords of the curves' images,
+/// sampled at `count` points each (a screw's unwrapped along each and shifted by whole rises), that
+/// cross or come within `reach` of one another, and closed on by damped Gauss–Newton on the
+/// invariants' difference — which closes on a crossing at Newton's rate and on a touch, a double
+/// root where Newton alone wanders along the valley, at least linearly. Kept where the two come
+/// within `tol`, and once: two whose points on both curves stand within `tol` are one (#880 Q1b:
+/// the leaning torus's stretches touch in the invariants, their sheets along a path, and Newton
+/// alone settled on five points of that valley, five edges a hair apart).
+fn shared_paths(carry: &crate::trajectory::Screw,a: &crate::geom::Curve,b: &crate::geom::Curve,count: [usize;2],reach: f64,tol: f64)
+    -> Vec<[f64;2]> {
+    let rise = (!carry.is_slide() && !carry.is_turn()).then(|| (carry.advance/carry.ratio).abs());
+    let read = |c: &crate::geom::Curve,n: usize| -> Vec<[f64;2]> {
+        let mut out: Vec<[f64;2]> = Vec::with_capacity(n+1);
+        for k in 0..=n {
+            let mut x = invariants(carry,c.point(k as f64/n as f64));
+            if let (Some(r),Some(last)) = (rise,out.last()) { x[1] += r*((last[1]-x[1])/r).round(); }
+            out.push(x);
+        }
+        out
+    };
+    let (pa,pb) = (read(a,count[0]),read(b,count[1]));
+    let range = |p: &[[f64;2]]| p.iter().fold([f64::INFINITY,f64::NEG_INFINITY],|r,x| [r[0].min(x[1]),r[1].max(x[1])]);
+    let shifts: Vec<f64> = match rise {
+        None => vec![0.],
+        Some(r) => {
+            let (ra,rb) = (range(&pa),range(&pb));
+            (((ra[0]-rb[1]-reach)/r).floor() as i64..=((ra[1]-rb[0]+reach)/r).ceil() as i64).map(|m| m as f64*r).collect()
+        }
+    };
+    // the two sections' invariants apart, the height's difference taken modulo a rise
+    let apart = |u: f64,s: f64| -> [f64;2] {
+        let (x,y) = (invariants(carry,a.point(u)),invariants(carry,b.point(s)));
+        let mut d = [x[0]-y[0],x[1]-y[1]];
+        if let Some(r) = rise { d[1] -= r*(d[1]/r).round(); }
+        d
+    };
+    let size = |f: [f64;2]| f[0].hypot(f[1]);
+    let close = |mut u: f64,mut s: f64| -> Option<[f64;2]> {
+        let h = 1e-7;
+        let mut f = apart(u,s);
+        let mut damp = 0.;
+        for _ in 0..200 {
+            if size(f) <= 1e-15*(1.+reach) { break }
+            let (u0,u1,s0,s1) = ((u-h).max(0.),(u+h).min(1.),(s-h).max(0.),(s+h).min(1.));
+            let (fu0,fu1,fs0,fs1) = (apart(u0,s),apart(u1,s),apart(u,s0),apart(u,s1));
+            let ju = [(fu1[0]-fu0[0])/(u1-u0),(fu1[1]-fu0[1])/(u1-u0)];
+            let js = [(fs1[0]-fs0[0])/(s1-s0),(fs1[1]-fs0[1])/(s1-s0)];
+            // (JᵀJ + λ diag JᵀJ) δ = Jᵀ f
+            let (auu,aus,ass) = (ju[0]*ju[0]+ju[1]*ju[1],ju[0]*js[0]+ju[1]*js[1],js[0]*js[0]+js[1]*js[1]);
+            let (gu,gs) = (ju[0]*f[0]+ju[1]*f[1],js[0]*f[0]+js[1]*f[1]);
+            let mut moved = false;
+            for _ in 0..30 {
+                let (puu,pss) = (auu*(1.+damp)+1e-300,ass*(1.+damp)+1e-300);
+                let det = puu*pss-aus*aus;
+                if !(det > 0.) { damp = damp.max(1e-12)*10.; continue }
+                let (du,ds) = ((gu*pss-gs*aus)/det,(gs*puu-gu*aus)/det);
+                let (nu,ns) = ((u-du).clamp(0.,1.),(s-ds).clamp(0.,1.));
+                let nf = apart(nu,ns);
+                if size(nf) < size(f) {
+                    let still = (nu-u).abs() <= 1e-15 && (ns-s).abs() <= 1e-15;
+                    (u,s,f) = (nu,ns,nf);
+                    damp *= 0.1;
+                    moved = !still;
+                    break
+                }
+                damp = damp.max(1e-12)*10.;
+            }
+            if !moved { break }
+        }
+        (size(f) <= tol).then_some([u,s])
+    };
+    // the least distance between two chords, and where along each it is
+    let nearest = |a0: [f64;2],a1: [f64;2],b0: [f64;2],b1: [f64;2]| -> (f64,f64,f64) {
+        let (da,db) = ([a1[0]-a0[0],a1[1]-a0[1]],[b1[0]-b0[0],b1[1]-b0[1]]);
+        let w = [b0[0]-a0[0],b0[1]-a0[1]];
+        let den = da[0]*db[1]-da[1]*db[0];
+        if den.abs() > 0. {
+            let (x,y) = ((w[0]*db[1]-w[1]*db[0])/den,(w[0]*da[1]-w[1]*da[0])/den);
+            if (0. ..=1.).contains(&x) && (0. ..=1.).contains(&y) { return (0.,x,y) }
+        }
+        let on = |p: [f64;2],q0: [f64;2],d: [f64;2]| { let dd = d[0]*d[0]+d[1]*d[1]; if dd > 0. { (((p[0]-q0[0])*d[0]+(p[1]-q0[1])*d[1])/dd).clamp(0.,1.) } else { 0. } };
+        let gap = |x: f64,y: f64| ((a0[0]+da[0]*x)-(b0[0]+db[0]*y)).hypot((a0[1]+da[1]*x)-(b0[1]+db[1]*y));
+        [(0.,on(a0,b0,db)),(1.,on(a1,b0,db)),(on(b0,a0,da),0.),(on(b1,a0,da),1.)].into_iter()
+            .map(|(x,y)| (gap(x,y),x,y)).min_by(|p,q| p.0.total_cmp(&q.0)).unwrap()
+    };
+    let mut found: Vec<[f64;2]> = Vec::new();
+    let (na,nb) = (pa.len()-1,pb.len()-1);
+    for &shift in &shifts {
+        for i in 0..na {
+            let (a0,a1) = (pa[i],pa[i+1]);
+            let (alo,ahi) = ([a0[0].min(a1[0])-reach,a0[1].min(a1[1])-reach],[a0[0].max(a1[0])+reach,a0[1].max(a1[1])+reach]);
+            for j in 0..nb {
+                let (b0,b1) = ([pb[j][0],pb[j][1]+shift],[pb[j+1][0],pb[j+1][1]+shift]);
+                if b0[0].max(b1[0]) < alo[0] || b0[0].min(b1[0]) > ahi[0] || b0[1].max(b1[1]) < alo[1] || b0[1].min(b1[1]) > ahi[1] { continue }
+                let (gap,x,y) = nearest(a0,a1,b0,b1);
+                if gap > reach { continue }
+                let Some(us) = close((i as f64+x)/na as f64,(j as f64+y)/nb as f64) else { continue };
+                if !found.iter().any(|f| (f[0]-us[0]).abs() <= 1e-9 && (f[1]-us[1]).abs() <= 1e-9) { found.push(us) }
+            }
+        }
+    }
+    // **a valley is one meeting**: points closed on whose gap stays within `tol` all the way between
+    // them (sampled along the straight between their parameters) are of one touch, or of crossings
+    // nearer than the tolerance; placed where the gap is least, by golden section along `a` of the
+    // least over `b` — the gap at a touch is a double root, and where a section turns a corner there
+    // (two branches of a tool's contact crossing at a double point, the stretches each taking a
+    // corner through it) a kinked one
+    found.sort_by(|x,y| x[0].total_cmp(&y[0]));
+    let joined = |p: [f64;2],q: [f64;2]| (1..8).all(|k| { let f = k as f64/8.; size(apart(p[0]+(q[0]-p[0])*f,p[1]+(q[1]-p[1])*f)) <= tol });
+    let mut valleys: Vec<Vec<[f64;2]>> = Vec::new();
+    for p in found {
+        match valleys.iter_mut().find(|v| v.iter().any(|&q| joined(q,p))) { Some(v) => v.push(p),None => valleys.push(vec![p]) }
+    }
+    let golden = |f: &dyn Fn(f64) -> f64,mut lo: f64,mut hi: f64| -> f64 {
+        for _ in 0..80 {
+            let (m1,m2) = (lo+(hi-lo)*0.381966,lo+(hi-lo)*0.618034);
+            if f(m1) <= f(m2) { hi = m2 } else { lo = m1 }
+        }
+        0.5*(lo+hi)
+    };
+    let place = |v: &[[f64;2]]| -> [f64;2] {
+        if v.len() == 1 { return v[0] }
+        let bound = |k: usize| v.iter().fold([f64::INFINITY,f64::NEG_INFINITY],|r,p| [r[0].min(p[k]),r[1].max(p[k])]);
+        let (ru,rs) = (bound(0),bound(1));
+        let (ws,wu) = (rs[1]-rs[0],ru[1]-ru[0]);
+        let (slo,shi) = ((rs[0]-ws).max(0.),(rs[1]+ws).min(1.));
+        let foot = |u: f64| golden(&|s| size(apart(u,s)),slo,shi);
+        let u = golden(&|u| size(apart(u,foot(u))),(ru[0]-0.25*wu).max(0.),(ru[1]+0.25*wu).min(1.));
+        [u,foot(u)]
+    };
+    // two valleys whose least points join are one (the straight between two points of a valley
+    // can leave it where the foot along `b` turns a corner), placed again over both
+    let mut placed: Vec<(Vec<[f64;2]>,[f64;2])> = valleys.into_iter().map(|v| { let p = place(&v); (v,p) }).collect();
+    'merge: loop {
+        for i in 0..placed.len() { for j in i+1..placed.len() {
+            if joined(placed[i].1,placed[j].1) {
+                let (mut v,_) = placed.swap_remove(j);
+                v.extend(placed[i].0.drain(..));
+                v.push(placed[i].1);
+                let p = place(&v);
+                placed[i] = (v,p);
+                continue 'merge
+            }
+        } }
+        break
+    }
+    placed.into_iter().map(|(_,p)| p).collect()
+}
+
 /// **The candidates of the closed solid `tool` sweeps under the constant twist `path` over `roll`**,
 /// short of a whole turn (#880 Q1b S4): each piece of each face's contact carried over the roll, and
 /// the tool at the roll's two ends. Refused, by name, where a face is in contact all over (`Whole`) or
@@ -485,6 +656,8 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     let located = Located::new(tool,tol);
     let mut out = Vec::new();
     let mut given = Vec::new();
+    // every stretch's sheet, and the sheet following it along its piece
+    let mut carried_all: Vec<(Carried,Option<usize>)> = Vec::new();
     let posed = |t: f64| -> Result<crate::geom::Rigid,Unbuilt> { let q = path.pose(t)?; Ok(crate::geom::Rigid {r:q.r,t:q.p}) };
     let ends = [posed(roll[0])?,posed(roll[1])?];
     for fi in 0..tool.faces.len() {
@@ -501,18 +674,42 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
                     let curve = piece_curve(tool,part,&twist,tol).ok_or_else(|| Unbuilt::Failed("a piece of contact not fitted".into()))?;
                     sheets.push(carried(&curve,whole && p.closed,path,roll)?);
                 }
-                // neighbouring stretches meet smoothly along the rail they share, given (a closed
-                // piece's last stretch and its first too)
-                let n = sheets.len();
-                let pairs = if p.closed && n > 1 { n } else { n.saturating_sub(1) };
-                for k in 0..pairs {
-                    let (a,b) = (&sheets[k],&sheets[(k+1)%n]);
-                    given.push(crate::boolean::Given {surfaces:[a.sheet.faces[0].surface.clone(),b.sheet.faces[0].surface.clone()],curves:vec![a.rails[1].clone()]});
+                // each stretch followed by the next along the piece (a closed piece's last by its first)
+                let (n,first) = (sheets.len(),carried_all.len());
+                for (k,c) in sheets.into_iter().enumerate() {
+                    let next = if k+1 < n { Some(first+k+1) } else if p.closed && n > 1 { Some(first) } else { None };
+                    carried_all.push((c,next));
                 }
-                out.extend(sheets.into_iter().map(|c| c.sheet));
             },
         }
     }
+    // **every two sheets given their whole meeting** (#880 Q1b): the paths of the carry both hold,
+    // where their sections cross in its invariants (`shared_paths`), each the one sheet's `Iso` there;
+    // and two neighbours the rail they share, met smoothly there, their crossing at it the rail
+    // itself. A pair sharing no path is given none, and not searched: two sheets of one carry nearly
+    // touching between two close paths (the leaning torus's stretches crossing back over one another
+    // under its screw) sent a march along the one path across to the other
+    let section = |c: &Carried| -> (crate::geom::Curve,usize) {
+        let n = match &c.rims[0] { crate::geom::Curve::BSpline(s) => 8*s.poles.len(),_ => 256 };
+        (c.rims[0].clone(),n)
+    };
+    let blend = |c: &Carried| match &c.sheet.faces[0].surface { Surface::Blend(_,b) => Some(b.clone()),_ => None };
+    for i in 0..carried_all.len() { for j in i+1..carried_all.len() {
+        let ((ci,ni),(cj,nj)) = (&carried_all[i],&carried_all[j]);
+        let (Some(bi),Some(_)) = (blend(ci),blend(cj)) else { continue };
+        let ((si,ki),(sj,kj)) = (section(ci),section(cj));
+        let mut curves = Vec::new();
+        if *ni == Some(j) { curves.push(ci.rails[1].clone()) }
+        if *nj == Some(i) { curves.push(cj.rails[1].clone()) }
+        let near = |x: f64,y: f64| (x-y).abs() <= 1e-6;
+        for [u,s] in shared_paths(&screw,&si,&sj,[ki,kj],1e-3*tool.size(),tol) {
+            // the rail two neighbours share: given already
+            if (*ni == Some(j) && near(u,1.) && near(s,0.)) || (*nj == Some(i) && near(u,0.) && near(s,1.)) { continue }
+            curves.push(crate::geom::Curve::Iso(bi.clone(),u));
+        }
+        given.push(crate::boolean::Given {surfaces:[ci.sheet.faces[0].surface.clone(),cj.sheet.faces[0].surface.clone()],curves});
+    } }
+    out.extend(carried_all.into_iter().map(|(c,_)| c.sheet));
     for m in &ends { out.push(tool.moved(m)); }
     Ok((out,given))
 }

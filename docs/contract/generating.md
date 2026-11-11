@@ -872,9 +872,14 @@ tolerance; a plane's contact a line across it ending on its boundary; the drum's
 (`swept_contacts`).
 
 **A piece carried over the roll, and a sweep's candidates under a constant twist (#880 Q1b S3, S4).**
-A piece is fitted as a cubic B-spline by chord length along it (`contacts::piece_curve`), each sample
-settled onto `g = 0` (a seam crossed unwrapped by the surface's period), within a tenth of the
-tolerance from sixteen spans, doubled as the fit asks. It is carried exactly (`contacts::carried`):
+A piece is fitted as the cubic B-spline through points of the contact by chord length
+(`contacts::piece_curve`), within a tenth of the tolerance of the contact itself: from seventeen of
+the piece's points spread along it, its ends among them, every span whose middle stands farther off
+`g = 0` than that given a point between its two, the parameters' midpoint settled (a seam crossed
+unwrapped by the surface's period). Every node is a point of the curve, so the fit closes at a
+cubic's rate; read along the piece's polyline by its own chord length, whose speed jumps at each
+vertex, it closed at a line's, doubled its spans to four thousand, and every inverse on the sheet
+read them all (750 µs an inverse on the leaning torus's sheets, 28 µs now). It is carried exactly (`contacts::carried`):
 placed at the roll's start and carried to its end as one face of a blend between the curve and its
 image (`Surface::Blend`, `Carry::Line` under a slide, `Carry::Screw` under a turn or a screw), its
 rails the paths of its ends (`Curve::Iso`), a closed piece's one rail its seam; the carry is held to
@@ -887,7 +892,20 @@ or drops a candidate's piece by membership and meets a candidate only with other
 torus's one closed contact — its outer branch bounding the sweep and its inner one buried — was read at
 a buried point and dropped whole. A closed piece is cut in four at least, no stretch longer than a
 quarter of the tool, each fitted through its ends exactly; neighbouring stretches meet smoothly along
-the rail they share, which is given (P4, `boolean::Given`), not searched for. A rail is one point's
+the rail they share, which is given (P4, `boolean::Given`), not searched for. **Every two sheets are
+given their whole meeting** (`shared_paths`): two sheets of one carry meet only along whole paths,
+where their sections cross or touch in its invariants, so each pair is given those paths (each the
+one sheet's `Iso` there, laid where both faces hold it), and a pair sharing none is given none and
+not searched. Found from the invariant images' chords that cross or come within a thousandth of the
+tool, closed on by damped Gauss–Newton, kept within the tolerance, and each valley of points whose
+gap stays within it taken once, where the gap is least (golden section along one section of the
+least over the other). At a double point of the contact — a saddle of `g`, the closed piece passing
+it twice and each stretch turning a corner through it — the two stretches' sections touch in the
+invariants, as every two curves through one point of the tool do (the invariants' differential has
+the carry's velocity, which lies in the surface there, in its kernel), and their sheets touch along
+that point's path: Newton alone, on that kinked double root, read five paths a hair apart, and
+searched, the march along the one path crossed to the other where the sheets nearly touch between
+(`swept_contacts::every_two_sheets_of_one_carry_are_given_the_paths_they_share`). A rail is one point's
 path and a sheet a union of paths, and two paths of one carry are one or apart, so a rail meets
 another stretch's sheet nowhere or lies in it (`Blend::carried_gap` reads how far apart, in the
 carry's invariants): each cut is moved, within a quarter of its stretch, to the point whose path

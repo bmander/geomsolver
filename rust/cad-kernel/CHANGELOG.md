@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A sweep's contact sheets are fitted at a cubic's rate and given their meetings with one another**
+  (`swept::contacts`): a piece of contact is interpolated through points of the contact, refined
+  where a span strays from it, where it was read along its polyline and doubled to four thousand
+  spans; and every two sheets of one carry are given the paths they share, where their sections
+  cross or touch in the carry's invariants, in place of a search. The leaning torus screwed through
+  its rod: an inverse on a sheet 750 µs to 28 µs, every pair of its candidates arranged, the trim
+  825 s to 26 s.
 - **A meeting arriving at an edge two surfaces touch along ends on it** (`boolean`'s `landing`,
   `ssi::trace_landing`): near the junction the two part as the square of the distance, so a march
   stopped short; the stop was read as a touch of its own, its other branches were traced along the
