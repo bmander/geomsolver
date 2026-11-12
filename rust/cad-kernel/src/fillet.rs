@@ -308,6 +308,35 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     let reach = corner_reach(&frame_at,r,&names())?;
     // (read uncached: the band's probes are no stations the fit asks for)
     holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_of,&surfaces,sides,r,tol,&names(),wedge)?;
+    // **between two planes the round is a cylinder**: the spine is a line and every section the
+    // same, so the piece is the prism on the section at the run's start — the corner, its legs to
+    // the contacts and the ball's arc — carried on past each end and cut off there, a cylinder
+    // face and its strips exact, no canal fitted (as `flat_along` between two planes). A fitted
+    // canal there was a net of thousands of poles that the Boolean after it cut and every measure
+    // integrated. (Not where a face goes on tangent from either: the piece taking on from that
+    // section is fitted.)
+    let planes = surfaces.iter().all(|s| matches!(s,Surface::Plane(_)));
+    let straight = match spine { Curve::Line {d,..} => Some(d),_ => None };
+    if let Some(d) = straight.filter(|_| planes && !ends.is_empty()
+        && !ends.iter().flat_map(|e| &e.trim.cuts).any(|c| matches!(c,Cut::Section {..}))) {
+        let ([c0,c1],e) = ([t0,t0+span].map(|t| spine.point(t)),[toward(0,spine.point(t0)),toward(1,spine.point(t0))]);
+        let corner = across(c0,e,r);
+        let touch = e.map(|d| add(c0,scale(d,r)));
+        // the arc about the prism's own axis, from the contact it turns counter-clockwise from
+        let from = if dot(cross(e[0],e[1]),d) > 0. { e[0] } else { e[1] };
+        let arc = Some([0.,dot(e[0],e[1]).clamp(-1.,1.).dacos()]);
+        use super::build::{prism,Profile,ProfileEdge};
+        let section = Profile {origin:corner,normal:d,loops:vec![vec![ProfileEdge::Line {a:corner,b:touch[0]},
+            ProfileEdge::Arc {frame:Frame::new(c0,d,from),r,span:arc},ProfileEdge::Line {a:touch[1],b:corner}]],
+            names:vec![["a","round","b"].map(String::from).to_vec()]};
+        let trims: Vec<Trim> = ends.into_iter().map(|x| x.trim).collect();
+        let run = prism(&section,0.,span)?;
+        run.check(10.*tol).map_err(|e| format!("the round between {} is no prism: {e}",names()))?;
+        let piece = trimmed(run,&trims)?;
+        let line = |a: V,z: V| BSpline::new(1,vec![0.,0.,1.,1.],vec![a,z]);
+        let contacts = [line(touch[0],add(c1,scale(e[0],r)))?,line(touch[1],add(c1,scale(e[1],r)))?];
+        return Ok(Rolled {piece,chain,spine:line(c0,c1)?,contacts,concave,r,reach,trims})
+    }
     // fitted to the bar asked, or as near it as the densest net comes, no worse than a ten-millionth
     // of the boundary: its contacts are read at what was measured (`Edge::tol`)
     let bar = tol.max(1e-7*b.size());
