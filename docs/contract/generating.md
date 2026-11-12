@@ -152,14 +152,23 @@ points over their fans, `generate::cut_at`, Hermite spans, extruded; `Family::in
 traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cut.rs`.
 
 **A helical rack's flank is its transverse envelope carried up a helix (#826):** an undrafted prism
-of straight edges whose extrusion leans along the rack's slide, under a slide seen from a turn (a
+of lines and arcs whose extrusion leans along the rack's slide, under a slide seen from a turn (a
 helical rack against the blank it cuts), is the same set slid along its extrusion, so its section
 by a plane square to the turn's axis at height `h` is the base section slid `h·shift` along the
 rack's line, and the roll carries a section so slid to its own envelope turned about the axis:
 `E_h(t − lag·(h − b)) = R(rate·(h − b))·E_b(t)`, `rate` = `tan β / r` for a rack on a pitch circle
 `r` (`brep::swept::extruded::Screwed`, read where `planar_sheet` reads no plane the motion keeps;
-anything else — an arc in the profile, a drafted prism, a lean across the slide, any other
-motion — is traced). The sheet (`brep::sweep::extruded::screwed_sheet`) is the base section's
+anything else — another curve in the profile, a drafted prism, a lean across the slide, any other
+motion — is traced). An arc of the profile, a hob's tip round (#904 A6), is sectioned as an
+ellipse, its circle's affine image stretched along the lean, on its principal axes; an ellipse
+cuts in closed form as a circle does (`planar_cut::Cutting::Ellipse`: the root of `F` Newton
+finds from the ellipse's support point toward the instant centre, refused unless its outward
+normal faces that way on the side asked), so the round's trochoidal fillet is carried up the
+helix with the flanks, not traced and fitted (it was 1.7e-2 mm and 4° off its contacts). A
+corner where the section runs on smoothly, a round's end, is convex with an empty fan. Its
+heights are an arc's at its ends and where its height turns within its span.
+`generation::an_ellipse_cuts_as_its_circle_does`, `helical_rack::a_helical_rack_with_rounded_tips_is_screwed`
+and `…_cuts_its_space` (the space against the rounded transverse tooth's arithmetic). The sheet (`brep::sweep::extruded::screwed_sheet`) is the base section's
 envelope read as a prism's is, its Hermite spans joined at knots of multiplicity two within a piece,
 carried by the helix's cubic fitted within an eighth of the bar (`helix_fit`): each section pole
 turned and raised by each helix pole, so the net's height runs with `v` alone. The identity is

@@ -38,6 +38,9 @@ const MOST_SPANS: usize = 8192;
 /// contacts stand at the same stations.
 const SAMPLES: usize = 64;
 const STATIONS: usize = 9;
+/// How far a leaned prism's section may turn at a corner (radians) and still run on smoothly
+/// there, as it does at a round's ends: a corner with no fan, convex either way.
+const SMOOTH: f64 = 1e-6;
 
 /// One piece of the profile's loop as it cuts: an edge, a line or an arc, with the rolls its cut
 /// lies on it (`run`), or the corner after it, a point.
@@ -163,8 +166,8 @@ fn rotated(p: P,centre: P,angle: f64) -> P {
     [centre[0]+cs*q[0]-sn*q[1],centre[1]+sn*q[0]+cs*q[1]]
 }
 
-/// **A leaned prism under a rack's roll, read as a screw's sheet** (#826): a prism of straight
-/// edges extruded along `axis` aslant `frame`'s plane, its lean in the plane along the rack's slide,
+/// **A leaned prism under a rack's roll, read as a screw's sheet** (#826): a prism of lines and
+/// arcs extruded along `axis` aslant `frame`'s plane, its lean in the plane along the rack's slide,
 /// under a slide seen from a turn about `frame`'s `z` (a helical rack against the blank it cuts).
 /// The prism is the same set slid along its own extrusion, so its section by a plane square to
 /// the turn at any height is the base's section slid along the rack's line, and the rack's roll
@@ -173,52 +176,118 @@ fn rotated(p: P,centre: P,angle: f64) -> P {
 /// helix (`Helix`), as a helical gear's flank is its transverse involute carried up its helix.
 /// What is kept is the section at the middle of the heights over which every edge of the prism
 /// stands (`extent`, the band its sheet spans), its loop walked counter-clockwise about `frame`'s
-/// `z`, each corner's convexity, and the helix.
+/// `z`, each corner's convexity, and the helix.  An arc of the profile — a rack's tip round, which
+/// every hob has (#904 A6) — is sectioned as an ellipse, the circle stretched along the lean, and
+/// cuts in closed form as the circle does (`planar_cut::Cutting::Ellipse`): its envelope is the
+/// root's trochoidal fillet, exact, carried up the helix with the flanks'.
 pub struct Screwed { pub section: Vec<Vec<Seg>>,pub convex: Vec<Vec<bool>>,pub extent: [f64;2],pub frame: Frame,
     pub program: Vec<PlanarStep>,helix: Helix }
 
 impl Screwed {
     /// The prism of one loop `walks` (in a plane square to the unit `axis`, its
     /// extrusion over `extent` along it) under `program` (the motion in `frame`'s plane) read as a
-    /// screw's sheet; none where it is not one: a loop with an edge that is no line, more than
-    /// one loop, a motion that is no slide seen from a turn, an extrusion square to the turn's
+    /// screw's sheet; none where it is not one: a loop with an edge neither a line nor an arc,
+    /// more than one loop, a motion that is no slide seen from a turn, an extrusion square to the turn's
     /// axis, along it (a prism the motion keeps the plane of, `sheet`'s) or leaning across the
     /// slide (its sections cut by the rack at another depth, so no turn of one another's envelope).
     pub fn read(walks: &[Vec<Seg>],axis: V,extent: [f64;2],frame: Frame,program: &[PlanarStep]) -> Option<Screwed> {
+        use crate::util::space::{add,cross,distance,scale,sub};
         let [walk] = walks else { return None };
         let &[PlanarStep::Slide {direction,advance},PlanarStep::Turn {centre,ratio},PlanarStep::Relative] = program else { return None };
-        if !(advance.abs() > 0. && ratio.abs() > 0.) || walk.iter().any(|s| !matches!(s.curve,Curve::Line {..})) { return None }
+        if !(advance.abs() > 0. && ratio.abs() > 0.) || walk.iter().any(|s| !matches!(s.curve,Curve::Line {..} | Curve::Circle(..))) {
+            return None
+        }
         let length = direction[0].dhypot(direction[1]);
         if !(length > 0.) { return None }
         let d = [direction[0]/length,direction[1]/length];
         let e = frame.dir_local(axis);
         let lean = e[0].dhypot(e[1]);
         if !(e[2].abs() > 1e-6) || !(lean > 1e-9) || (e[0]*d[1]-e[1]*d[0]).abs() > 1e-9*lean { return None }
-        // each corner's foot on the plane at height `h`: its edge's line, which the prism keeps
-        let corners: Vec<V> = walk.iter().map(|s| frame.local(s.start())).collect();
+        // a point's foot on the plane at height `h` along the extrusion, and a direction's in it
         let at = |c: V,h: f64| { let w = (h-c[2])/e[2]; [c[0]+w*e[0],c[1]+w*e[1]] };
-        // the heights over which every corner's line runs within the prism's extent
-        let reach: Vec<[f64;2]> = corners.iter().map(|c| { let [a,b] = extent.map(|w| c[2]+w*e[2]); [a.min(b),a.max(b)] }).collect();
+        let along = |v: V| [v[0]-v[2]*e[0]/e[2],v[1]-v[2]*e[1]/e[2]];
+        // the heights of each edge's points, the lowest and the highest: a line's at its ends, an
+        // arc's at its ends and where its height turns within its span
+        let heights = |seg: &Seg| -> [f64;2] {
+            let mut z: Vec<f64> = vec![frame.local(seg.start())[2],frame.local(seg.end())[2]];
+            if let Curve::Circle(circle,_) = &seg.curve {
+                let (x,y) = (frame.dir_local(circle.x)[2],frame.dir_local(circle.y)[2]);
+                let [lo,hi] = seg.span();
+                for turn in [0.,PI] {
+                    let w = y.datan2(x)+turn;
+                    // the turning angle's copy within the span, if there is one
+                    let w = lo+(w-lo).rem_euclid(TAU);
+                    if w <= hi { z.push(frame.local(seg.curve.point(w))[2]); }
+                }
+            }
+            [z.iter().copied().fold(f64::INFINITY,f64::min),z.iter().copied().fold(f64::NEG_INFINITY,f64::max)]
+        };
+        // the heights over which every point's line along the extrusion runs within the prism's extent
+        let reach: Vec<[f64;2]> = walk.iter().map(|seg| {
+            let [lo,hi] = heights(seg);
+            let [a,b] = extent.map(|w| w*e[2]);
+            // a point at height z runs over [z + min, z + max]: every point of the edge, over the
+            // highest's start to the lowest's end
+            [hi+a.min(b),lo+a.max(b)]
+        }).collect();
         let band = [reach.iter().map(|r| r[0]).fold(f64::NEG_INFINITY,f64::max),reach.iter().map(|r| r[1]).fold(f64::INFINITY,f64::min)];
         if !(band[0] < band[1]) { return None }
         let base = 0.5*(band[0]+band[1]);
-        let mut points: Vec<P> = corners.iter().map(|&c| at(c,base)).collect();
-        // walked counter-clockwise about the frame's `z` (an extrusion against it walks the other way)
+        // each edge's section at the base: a line's between its ends' feet; an arc's an ellipse, the
+        // affine image of its circle, on its principal axes and read at its circle's own angle less
+        // the turn from the circle's axes to them
+        let lift = |p: P| frame.at([p[0],p[1],base]);
+        let mut section: Vec<Seg> = Vec::with_capacity(walk.len());
+        for (k,seg) in walk.iter().enumerate() {
+            section.push(match &seg.curve {
+                Curve::Circle(circle,r) => {
+                    let (u,v) = (along(frame.dir_local(circle.x)),along(frame.dir_local(circle.y)));
+                    let (u,v) = ([r*u[0],r*u[1]],[r*v[0],r*v[1]]);
+                    let turn = 0.5*(2.*(u[0]*v[0]+u[1]*v[1])).datan2(u[0]*u[0]+u[1]*u[1]-v[0]*v[0]-v[1]*v[1]);
+                    let (sn,cs) = turn.dsin_cos();
+                    let (p,q) = ([cs*u[0]+sn*v[0],cs*u[1]+sn*v[1]],[cs*v[0]-sn*u[0],cs*v[1]-sn*u[1]]);
+                    let (a,b) = (p[0].dhypot(p[1]),q[0].dhypot(q[1]));
+                    if !(a > 0. && b > 0.) { return None }
+                    let (x,y) = (frame.dir([p[0]/a,p[1]/a,0.]),frame.dir([q[0]/b,q[1]/b,0.]));
+                    let o = lift(at(frame.local(circle.o),base));
+                    Seg {curve:Curve::Ellipse(Frame {o,x,y,z:cross(x,y)},a,b),t:seg.t.map(|t| t-turn),source:k}
+                }
+                _ => {
+                    let (p,q) = (lift(at(frame.local(seg.start()),base)),lift(at(frame.local(seg.end()),base)));
+                    let l = distance(p,q);
+                    if !(l > 0.) { return None }
+                    Seg {curve:Curve::Line {p,d:scale(sub(q,p),1./l)},t:[0.,l],source:k}
+                }
+            });
+        }
+        // walked counter-clockwise about the frame's `z` (an extrusion against it walks the other
+        // way): the area its points enclose, an arc's sampled along it
+        let points: Vec<P> = section.iter().flat_map(|seg| (0..8).map(move |j| seg.t[0]+(seg.t[1]-seg.t[0])*j as f64/8.)
+            .map(move |t| { let l = frame.local(seg.curve.point(t)); [l[0],l[1]] })).collect();
         let area: f64 = (0..points.len()).map(|k| { let (p,q) = (points[k],points[(k+1)%points.len()]); p[0]*q[1]-p[1]*q[0] }).sum();
         if !(area.abs() > 0.) { return None }
-        if area < 0. { points.reverse(); }
-        let n = points.len();
-        let section: Vec<Seg> = (0..n).map(|k| {
-            let (a,b) = (points[k],points[(k+1)%n]);
-            let (p,q) = (frame.at([a[0],a[1],base]),frame.at([b[0],b[1],base]));
-            let l = crate::util::space::distance(p,q);
-            Seg {curve:Curve::Line {p,d:crate::util::space::scale(crate::util::space::sub(q,p),1./l)},t:[0.,l],source:k}
-        }).collect();
-        if section.iter().any(|s| !(s.t[1] > 0.)) { return None }
-        // convex where the walk turns left
+        if area < 0. {
+            section.reverse();
+            for seg in &mut section { seg.t.reverse(); }
+            // (a line runs from its own start: walked back, it starts at its end)
+            for seg in &mut section {
+                if let Curve::Line {p,d} = seg.curve {
+                    let l = seg.t[0];
+                    seg.curve = Curve::Line {p:add(p,scale(d,l)),d:scale(d,-1.)};
+                    seg.t = [0.,l];
+                }
+            }
+        }
+        // convex where the walk turns left; where it runs on smoothly, as at a round's ends, too:
+        // the corner's fan is empty, its sides' cuts meeting there
+        let n = section.len();
         let convex: Vec<bool> = (0..n).map(|k| {
-            let (a,b,c) = (points[k],points[(k+1)%n],points[(k+2)%n]);
-            (b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]) > 0.
+            let (a,b) = (&section[k],&section[(k+1)%n]);
+            let tangent = |seg: &Seg,t: f64| { let l = frame.dir_local(seg.curve.tangent(t)); let w = (seg.t[1]-seg.t[0]).signum(); [w*l[0],w*l[1]] };
+            let (p,q) = (tangent(a,a.t[1]),tangent(b,b.t[0]));
+            let (lp,lq) = (p[0].dhypot(p[1]),q[0].dhypot(q[1]));
+            let turn = (p[0]*q[1]-p[1]*q[0]).datan2(p[0]*q[0]+p[1]*q[1]);
+            !(lp > 0. && lq > 0.) || turn > -SMOOTH
         }).collect();
         // the section at a height one millimetre up is slid `shift` across the plane, along the
         // rack's line; the rack reaches it `lag` degrees of the roll sooner, and its envelope is
@@ -326,16 +395,29 @@ fn laid(name: &str,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],frame
             match &seg.curve {
                 Curve::Line {..} => pieces.push(Piece::edge(Cutting::Line {a:start,b:end},program,Kind::Line,roll)
                     .at(Stage::Reach)?),
-                Curve::Circle(circle,r) => {
-                    let c = local(circle.o);
-                    let mid = local(seg.curve.point(0.5*(seg.t[0]+seg.t[1])));
-                    let angle = |p: P| (p[1]-c[1]).datan2(p[0]-c[0]);
-                    let sense = ((start[0]-c[0])*(mid[1]-c[1])-(start[1]-c[1])*(mid[0]-c[0])).signum();
-                    let kind = Kind::Arc {middle:angle(mid),sense,sweep:(seg.t[1]-seg.t[0]).abs()};
-                    // a circle cuts on the side of its instant centre and the other: the arc's is the
+                Curve::Circle(..) | Curve::Ellipse(..) => {
+                    let (tool,kind): (Box<dyn Fn(f64) -> Cutting>,Kind) = match seg.curve {
+                        Curve::Circle(circle,r) => {
+                            let c = local(circle.o);
+                            let mid = local(seg.curve.point(0.5*(seg.t[0]+seg.t[1])));
+                            let angle = |p: P| (p[1]-c[1]).datan2(p[0]-c[0]);
+                            let sense = ((start[0]-c[0])*(mid[1]-c[1])-(start[1]-c[1])*(mid[0]-c[0])).signum();
+                            (Box::new(move |side| Cutting::Circle {centre:c,radius:r,side}),
+                                Kind::Arc {middle:angle(mid),sense,sweep:(seg.t[1]-seg.t[0]).abs()})
+                        }
+                        // a leaned prism's round in its section square to the axis (#904 A6): read
+                        // by its own parameter, so the arc's middle, sense and sweep are its span's
+                        _ => {
+                            let Curve::Ellipse(ellipse,a,b) = seg.curve else { unreachable!() };
+                            let axis = |d: V,k: f64| { let l = frame.dir_local(d); [k*l[0],k*l[1]] };
+                            let (c,u,v) = (local(ellipse.o),axis(ellipse.x,a),axis(ellipse.y,b));
+                            (Box::new(move |side| Cutting::Ellipse {centre:c,u,v,side}),
+                                Kind::Arc {middle:0.5*(seg.t[0]+seg.t[1]),sense:(seg.t[1]-seg.t[0]).signum(),sweep:(seg.t[1]-seg.t[0]).abs()})
+                        }
+                    };
+                    // an arc cuts on the side of its instant centre and the other: the arc's is the
                     // one whose cut lies on it
-                    let mut sides: Vec<Piece> = [1.,-1.].into_iter()
-                        .map(|side| Piece::edge(Cutting::Circle {centre:c,radius:*r,side},program,kind,roll))
+                    let mut sides: Vec<Piece> = [1.,-1.].into_iter().map(|side| Piece::edge(tool(side),program,kind,roll))
                         .collect::<Result<_,_>>().at(Stage::Reach)?;
                     if sides.iter().all(|p| p.run.is_some()) {
                         return Err(refused(Stage::Reach,"an arc of the profile cuts on both sides of the instant centre, which one \
@@ -445,6 +527,7 @@ fn laid(name: &str,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],frame
                     Cutting::Point(p) => Cutting::Point([p[0]+slide[0],p[1]+slide[1]]),
                     Cutting::Line {a,b} => Cutting::Line {a:[a[0]+slide[0],a[1]+slide[1]],b:[b[0]+slide[0],b[1]+slide[1]]},
                     Cutting::Circle {centre,radius,side} => Cutting::Circle {centre:[centre[0]+slide[0],centre[1]+slide[1]],radius,side},
+                    Cutting::Ellipse {centre,u,v,side} => Cutting::Ellipse {centre:[centre[0]+slide[0],centre[1]+slide[1]],u,v,side},
                 };
                 for node in kept.iter().flat_map(|s| [s.a,s.b]) {
                     let own = cut_at(slid,&pieces[*i].program,node.t-lag).ok_or_else(|| refused(Stage::Sheet,format!("the section at \
