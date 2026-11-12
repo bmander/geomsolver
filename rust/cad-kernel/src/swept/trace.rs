@@ -30,6 +30,9 @@ pub const STEP_TIME: f64 = 1.;
 const WHOLE: f64 = 1e-9;
 /// How many times a step along a steep contact curve is halved before the root is taken to end.
 pub const STEEP_DEPTH: u32 = 8;
+/// How many pieces the chord across a bridged fold is read in for whether it passes through the
+/// blank (`Tracer::trace`).
+const BRIDGE_READS: usize = 8;
 /// Target node spacing along the profile and along the band, in millimetres of a cut at unit one
 /// (`Tracer::unit`). A contact curve is traced on a grid of a quarter row.
 pub const ROW_SPACING: f64 = 0.15;
@@ -276,7 +279,15 @@ impl Tracer<'_> {
     /// length and time, traced from an anchor in both directions around the station's closed
     /// section loop. It follows one root with continuous time; where that root merges with the
     /// other (a fold of the tool's time chart, where the envelope carries on smoothly though the
-    /// walk turns back) it turns onto the other root and reverses. How far it runs is decided
+    /// walk turns back) it turns onto the other root and reverses — unless the fold is outside the
+    /// blank and the root comes back further along the walk, within what is left of the curve's
+    /// extent, the chord across the gap outside the blank: there the walk crosses the gap and runs
+    /// on along its own root, its rows across the gap the chord's (`along`, #904 A1/A2). Where the
+    /// fold's locus ends in a cusp among the stations, a station before it folds and the next does
+    /// not; turned onto the other root, the first's rows ran on in another part of the envelope (a
+    /// turn round the configured pinion, at the mill its balance finds) while its neighbour's
+    /// stayed on the root they share, and the sheet tore between them. Outside the blank the rows
+    /// are the margin, and bound nothing. How far it runs is decided
     /// along the curve, never by a window of walk length: for `Extent::Blank` the anchor is a
     /// contact in the blank within the declared roll found in the station's window, and each
     /// end runs until it has been outside the blank for `margin` millimetres; for
@@ -340,12 +351,45 @@ impl Tracer<'_> {
         // Roots at a walk length, memoised on the grid.
         let lookup = |s: f64| { let k = (s/h).round() as i64; if (s/h-k as f64).abs() < 1e-9 { roots(k) } else { roots_at(s) } };
         let steep = |s0: f64,f: Found,s1: f64,depth: u32| steep_from(&lookup,s0,f,s1,depth);
+        // Where a root `f` ends at `s` in a fold outside the blank and resumes further along the walk
+        // (in `dir`, within the extent: what is left of its span, or the margin), the walk length
+        // where it resumes and its contact there; none where it does not, or where the chord across
+        // the gap passes through the blank.
+        let resumed = |s: f64,f: Found,dir: i64,tau: f64| -> Result<Option<(f64,Found)>,TraceError> {
+            if inside(&[f.position])?[0] { return Ok(None) }
+            let reach = match extent { Extent::Blank => margin,Extent::Span {lo,hi,..} => if dir > 0 { hi-tau } else { tau-lo } };
+            let resumes = |x: f64| -> Result<Option<Found>,TraceError> {
+                let here = match lookup(x) {
+                    Ok(r) => r,Err(TraceError::Degenerate(_)) => return Ok(None),Err(e) => return Err(e) };
+                Ok(here.into_iter().filter(|g| g.branch == f.branch && (g.time-f.time).abs() < STEP_TIME)
+                    .min_by(|x,y| (x.time-f.time).abs().total_cmp(&(y.time-f.time).abs())))
+            };
+            let mut k = if dir > 0 { (s/h).floor() as i64+1 } else { (s/h).ceil() as i64-1 };
+            while (k as f64*h-s).abs() <= reach+h {
+                if let Some(mut g) = resumes(k as f64*h)? {
+                    let (mut on,mut off) = (k as f64*h,s);
+                    while (on-off).abs() > h*1e-7 {
+                        let m = 0.5*(on+off);
+                        match resumes(m)? { Some(x) => { on = m; g = x }, None => off = m }
+                    }
+                    let chord: Vec<V> = (1..BRIDGE_READS).map(|i| {
+                        let u = i as f64/BRIDGE_READS as f64;
+                        std::array::from_fn(|j| f.position[j]+(g.position[j]-f.position[j])*u)
+                    }).collect();
+                    if inside(&chord)?.iter().any(|b| *b) { return Ok(None) }
+                    return Ok(Some((on,g)))
+                }
+                k += dir;
+            }
+            Ok(None)
+        };
         let longest = 3.*total;
         // Walk from the anchor in one direction until the extent is reached, turning at folds.
         // The walk steps to the grid of walk lengths (whose roots are memoised), following a
         // steep root in halved steps; where the root ends between two grid points, halving the
         // step finds where, and if the other root meets it there it is a fold: the walk turns
-        // onto the other root and back.
+        // onto the other root and back, or, at a fold outside the blank past which its own root
+        // resumes, crosses to where it does (`resumed`).
         let period = (total/h).round() as i64;
         let walk = |direction: i64| -> Result<Vec<Point>,TraceError> {
             let (mut s,mut f,mut dir) = (a as f64*h,anchor,direction);
@@ -405,6 +449,10 @@ impl Tracer<'_> {
                     }
                     break
                 };
+                if let Some((t,g)) = resumed(s,f,dir,w.tau)? {
+                    w.push(t,g,inside)?;
+                    f = g; s = t; continue;
+                }
                 w.push(s,other,inside)?;
                 f = other; dir = -dir;
             }
@@ -420,8 +468,10 @@ impl Tracer<'_> {
     }
 
     /// Points of a traced contact curve at the given unfolded walk lengths. Between two points
-    /// on one root the point is the exact contact at the walk length interpolated between them;
-    /// across a fold, where the root turns, the nearer point.
+    /// on one root the point is the exact contact at the walk length interpolated between them
+    /// (within `STEP_TIME` of the time interpolated); across a fold, where the root turns, the
+    /// nearer point; across a fold's gap the walk crossed (`trace`), where the root has no
+    /// contact, the point of the chord between them.
     pub fn along(&self,station: &Station,curve: &[Point],at: &[f64]) -> Result<Vec<Found>,TraceError> {
         at.iter().map(|&tau| {
             let k = curve.partition_point(|p| p.tau < tau).clamp(1,curve.len()-1);
@@ -430,8 +480,17 @@ impl Tracer<'_> {
             if a.found.branch == b.found.branch && b.tau > a.tau {
                 let (s,near) = (a.s+(b.s-a.s)*t,a.found.time+(b.found.time-a.found.time)*t);
                 if let Some(f) = self.contacts((station.sample)(s)?,self.wide())?.into_iter()
-                    .filter(|f| f.branch == a.found.branch).min_by(|x,y| (x.time-near).abs().total_cmp(&(y.time-near).abs())) {
+                    .filter(|f| f.branch == a.found.branch && (f.time-near).abs() < STEP_TIME)
+                    .min_by(|x,y| (x.time-near).abs().total_cmp(&(y.time-near).abs())) {
                     return Ok(f);
+                }
+                // across a fold's gap the walk crossed, where the root has no contact: the chord
+                let between = |p: V,q: V| -> V { std::array::from_fn(|j| p[j]+(q[j]-p[j])*t) };
+                let normal = between(a.found.normal,b.found.normal);
+                let length = crate::util::space::norm(normal);
+                if length > 0. {
+                    return Ok(Found {position:between(a.found.position,b.found.position),normal:normal.map(|x| x/length),
+                        time:near,branch:a.found.branch});
                 }
             }
             Ok(if t < 0.5 { a.found } else { b.found })

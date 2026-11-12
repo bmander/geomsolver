@@ -1592,6 +1592,20 @@ past the band's start by `Cutter::turned`, `sweep::traced_turned`). So are the c
 gear cut with a 90.37 mm cutter and both members of the 25-tooth pair built, where that refusal
 was seen too.
 
+**A fold's gap outside the blank is crossed, not turned at (#904 A1/A2):** where a station's root
+meets the other in a fold of the time chart outside the blank and comes back further along the walk
+(within what is left of the curve's extent, the chord across the gap outside the blank), the walk
+crosses the gap and runs on along its own root (`Tracer::trace`), and a row in the gap is the chord's
+point (`Tracer::along`); a fold in the blank, or one past which the root does not come back, is
+turned at as before. Where the fold's locus ends in a cusp among the stations, a station before it
+folds and the one after does not; turned onto the other root, the folding station's rows ran on in
+that root's part of the envelope while its neighbour's stayed on the root they share, and the sheet
+tore between them. At the face mill the configured pair's balance finds (8.8549°, the cutter
+75.6122 mm) the inner flank's fold near its round ends so at the start of the pinion's band, whose
+last station before the cusp holds the blank on both sides of its gap: turned there, its rows ran a
+turn round the pinion, and the fit left its contacts by 0.155 mm and turned 89.7° from them. Its
+cut is now one chart, 69 × 39 (`hypoid_mill_sheet::the_pinions_cut_at_the_found_mill_is_one_chart`).
+
 **Screws, the constant-twist class (#64):** a sweep under a screw (`f screws(a) l`) is admitted by
 rows S1–S4 (`solid::constant_twist`, docs/generating-sweeps.md): the tool's characteristic (each
 ring's `A cos + B sin + C` roots under the screw's twist, fixed on the tool) walked through the blank,

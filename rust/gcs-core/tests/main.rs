@@ -158,6 +158,7 @@ mod hulls;
 mod hypoid_drive;
 mod hypoid_layout;
 mod hypoid_machine;
+mod hypoid_mill_sheet;
 mod instance_numbers;
 mod interfaces;
 mod interior;
