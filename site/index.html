@@ -68,23 +68,25 @@ out from:</p>
 <pre>unit mm
 use std
 
+param s := 10mm
+
 a := point
 b := point hint((10, 0, 0))
 c := point hint((5, 9, 0))
 d := point hint((5, 3, 8))
 
-a distance(10mm) b
-a distance(10mm) c
-a distance(10mm) d
-b distance(10mm) c
-b distance(10mm) d
-c distance(10mm) d
+a distance(s) b
+a distance(s) c
+a distance(s) d
+b distance(s) c
+b distance(s) d
+c distance(s) d
 
 body := solid({ p |
-  p distance(&lt;= 10mm) a
-  p distance(&lt;= 10mm) b
-  p distance(&lt;= 10mm) c
-  p distance(&lt;= 10mm) d
+  p distance(&lt;= s) a
+  p distance(&lt;= s) b
+  p distance(&lt;= s) c
+  p distance(&lt;= s) d
 })</pre>
 
 <pre>$ solventc reuleaux.sv --where body.volume --png reuleaux.png
