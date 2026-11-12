@@ -872,13 +872,13 @@ fn face_or_ends(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, shape: &Shape) -> bo
         Shape::Section { point, face } if w.word.text == "coincident" && w.args.is_empty()
             && probes.binders.contains_key(&point.i()) => {
             use crate::model::{RegionShape, RegionTerm, TermNumber};
-            let at = |shape| RegionTerm::new(shape, crate::vocab::Cmp::Le, TermNumber::stated(0.0));
-            let on = RegionTerm { hi: Some(0.0), ..RegionTerm::new(
-                RegionShape::Plane { along: *face, from: u32::MAX, sign: 1.0 }, crate::vocab::Cmp::In,
-                TermNumber::stated(0.0)) };
-            let terms = cx.probes.terms.get_mut(&point.i()).expect("a probe's terms");
-            terms.push(at(RegionShape::Section { face: face.i() as u32 }));
-            terms.push(on);
+            use crate::vocab::Cmp;
+            let nothing = TermNumber::stated(0.0);
+            let within = RegionTerm::new(RegionShape::Section { face: face.i() as u32 }, Cmp::Le,
+                                         nothing.clone());
+            let plane = RegionShape::Plane { along: *face, from: u32::MAX, sign: 1.0 };
+            let on = RegionTerm { hi: Some(0.0), ..RegionTerm::new(plane, Cmp::In, nothing) };
+            cx.probes.terms.get_mut(&point.i()).expect("a probe's terms").extend([within, on]);
             return true;
         }
         Shape::Section { point, face } => {
@@ -1345,26 +1345,34 @@ fn region_or_row(
     // read together once every one is stated (`regions::settle_bound`)
     if let Some(read) = super::regions::bound_by(&cx.sk, &c, &cx.probes) {
         match read {
-            Ok(_) if grow.is_some() => cx.diags.push(Diag::on(Code::E040, st, "an offset is of a \
-                cone's surface or a plane's, not of what some points of sets put a point in".into())),
-            Ok((g, _)) => cx.probes.bound[g].stated.push((c, st.clone(), term_name)),
+            Ok(_) if grow.is_some() => cx.diags.push(Diag::on(Code::E040, st, "an offset is of \
+                a cone's surface or a plane's, not of what some points of sets put a point in"
+                .into())),
+            Ok(g) => {
+                let b = &mut cx.probes.bound[g];
+                b.at.get_or_insert_with(|| (st.clone(), term_name));
+                b.stated.push(c);
+            }
             Err(message) => cx.diags.push(Diag::on(Code::E040, st, message)),
         }
         return None;
     }
-    // a point `some` binds on a line (a segment's), its distance from it at nothing: the set it
-    // ranges over may be no solid's ([0.212])
-    if let Some(probe) = probe_of(&cx.sk, &c, &cx.probes).filter(|p| cx.probes.binders.contains_key(p)) {
-        if c.bound.is_none() && matches!(c.kind, CKind::PointOnLine3 | CKind::PointOnLine) {
-            let shape = crate::model::RegionShape::Cylinder { line: c.args[1].ent().i() as u32 };
-            let t = crate::model::RegionTerm { shape, cmp: crate::vocab::Cmp::Le,
-                lo: crate::model::TermNumber::stated(0.0), hi: None, grow: None, name: term_name };
-            cx.probes.terms.get_mut(&probe).expect("a probe's terms").push(t);
-            return None;
-        }
-    }
     if let Some(probe) = probe_of(&cx.sk, &c, &cx.probes) {
-        match region_term(&cx.sk, &c, probe, grow, term_name) {
+        // a point `some` binds on a line (a segment's), its distance from it at nothing: the set
+        // it ranges over may be no solid's ([0.212])
+        let on_line = matches!(c.kind, CKind::PointOnLine3 | CKind::PointOnLine)
+            && c.bound.is_none();
+        let term = match on_line && cx.probes.binders.contains_key(&probe) {
+            true => {
+                let line = c.args[1].ent().i() as u32;
+                let shape = crate::model::RegionShape::Cylinder { line };
+                let at = crate::model::TermNumber::stated(0.0);
+                Ok(crate::model::RegionTerm { name: term_name,
+                    ..crate::model::RegionTerm::new(shape, crate::vocab::Cmp::Le, at) })
+            }
+            false => region_term(&cx.sk, &c, probe, grow, term_name),
+        };
+        match term {
             Ok(t) => cx.probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
                 cx.diags.push(Diag::on(Code::E040, st, message))

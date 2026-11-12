@@ -465,24 +465,19 @@ fn memberships(
         terms: expansion.probes.iter().filter_map(|key| cx.res.of.get(key))
             .map(|p| (p.i(), Vec::new()))
             .collect(),
-        idle: BTreeMap::new(),
-        binders: BTreeMap::new(),
-        bound: Vec::new(),
-        refused: Default::default(),
+        ..Default::default()
     };
-    // the points `some` binds ([0.212]), each with its quantifier
+    // the points `some` binds ([0.212]), each with its quantifier and the set's point it reads
     let mut groups: BTreeMap<&str, usize> = BTreeMap::new();
-    let mut owners: BTreeMap<usize, usize> = BTreeMap::new();
-    for (key, group, owner) in &expansion.binders {
+    for (key, (group, owner)) in &expansion.binders {
         let (Some(p), Some(o)) = (cx.res.of.get(key), cx.res.of.get(owner)) else { continue };
         let n = groups.len();
         let g = *groups.entry(group.as_str()).or_insert(n);
+        if g == n {
+            let quantifier = super::regions::Bound { owner: o.i(), stated: Vec::new(), at: None };
+            cx.probes.bound.push(quantifier);
+        }
         cx.probes.binders.insert(p.i(), g);
-        owners.insert(g, o.i());
-    }
-    cx.probes.bound.resize_with(groups.len(), Default::default);
-    for (g, o) in owners {
-        cx.probes.bound[g].owner = Some(o);
     }
     // memberships, once every kind is built and before anything reads one: `point a in top`
     // names a plane built after the point, and `project` infers its planes from these — and then

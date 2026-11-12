@@ -15,7 +15,7 @@
 //! on its boundary, below nothing within, and changing no faster than the point moves — the signed
 //! distance within, a lower bound on it without, as a common of half-spaces is.
 use crate::model::{EntKind, RegionShape, RegionTerm, Sketch, Target};
-use crate::space::{add, cross, dot, norm, scale, sub};
+use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 use crate::vocab::Cmp;
 
 type V = [f64; 3];
@@ -70,57 +70,60 @@ fn corners(sk: &Sketch, t: &Target, out: &mut Vec<V>, depth: usize) -> Result<()
 }
 
 /// The points a set's terms say it is the hull of (the module's list).
-fn set_corners(sk: &Sketch, terms: &[RegionTerm], out: &mut Vec<V>, depth: usize) -> Result<(), String> {
-    let refused = || "a join is read where each set it is of is the hull of finitely many points: a \
-        point, a segment, a convex polygon or another join — a set bounded by a curve, or a \
-        polygon turning both ways, is not one".to_string();
+fn set_corners(sk: &Sketch, terms: &[RegionTerm], out: &mut Vec<V>, depth: usize)
+    -> Result<(), String> {
+    let refused = || "a join is read where each set it is of is the hull of finitely many points: \
+        a point, a segment, a convex polygon, a solid of planes meeting in convex edges or another \
+        join — a set bounded by a curve, or a polygon turning both ways, is not one".to_string();
     let at = |t: &RegionTerm| t.lo.read(sk);
     let at_nothing = |t: &RegionTerm| at(t) == Some(0.0)
         && (t.cmp == Cmp::Le || (t.cmp == Cmp::In && t.hi == Some(0.0)));
-    // a solid of planes meeting in convex edges: the hull of its corners
     if let [t] = terms {
-        if let RegionShape::FaceSide { face } = &t.shape {
-            if !at_nothing(t) || face.surface || face.smooth {
-                return Err(refused());
+        match &t.shape {
+            // a solid of planes meeting in convex edges: the hull of its corners
+            RegionShape::FaceSide { face } => {
+                if !at_nothing(t) || face.surface || face.smooth {
+                    return Err(refused());
+                }
+                let r = crate::solid::faces::reading(sk, face, &mut Vec::new())?;
+                let (b, _, _) = r.body.brep();
+                let whole = r.faces.len() == b.faces.len();
+                let planes = (0..b.faces.len()).all(|f| r.body.plane(f).is_some());
+                let convex = (0..b.edges.len() as u32)
+                    .all(|e| r.body.faces_of(e).len() != 2 || r.body.convex(e) == Some(true));
+                if !(whole && planes && convex) {
+                    return Err("a join of a solid is read where every face of it is a plane and \
+                        every edge convex: the hull of its corners is then the solid".to_string());
+                }
+                out.extend(b.vertices.iter().map(|v| r.body.back(v.p)));
+                return Ok(());
             }
-            let r = crate::solid::faces::reading(sk, face, &mut Vec::new())?;
-            let (b, _, _) = r.body.brep();
-            let whole = r.faces.len() == b.faces.len();
-            let planes = (0..b.faces.len()).all(|f| r.body.plane(f).is_some());
-            let convex = (0..b.edges.len() as u32).all(|e| r.body.faces_of(e).len() != 2 || r.body.convex(e) == Some(true));
-            if !(whole && planes && convex) {
-                return Err("a join of a solid is read where every face of it is a plane and every edge \
-                    convex: the hull of its corners is then the solid".to_string());
+            // another join
+            RegionShape::Join { of } => {
+                if !at_nothing(t) {
+                    return Err(refused());
+                }
+                for u in of {
+                    corners(sk, u, out, depth + 1)?;
+                }
+                return Ok(());
             }
-            out.extend(b.vertices.iter().map(|v| r.body.back(v.p)));
-            return Ok(());
-        }
-    }
-    // another join
-    if let [t] = terms {
-        if let RegionShape::Join { of } = &t.shape {
-            if !at_nothing(t) {
-                return Err(refused());
-            }
-            for u in of {
-                corners(sk, u, out, depth + 1)?;
-            }
-            return Ok(());
-        }
-        // a set of one point: a ball of no radius
-        if let RegionShape::Ball { center } = t.shape {
-            if at_nothing(t) {
+            // a set of one point: a ball of no radius
+            &RegionShape::Ball { center } if at_nothing(t) => {
                 out.push(sk.world_point(center as usize));
                 return Ok(());
             }
+            _ => {}
         }
     }
     // a drawn polygon, its corners turning one way: within its loops, on its plane
     if let [s, o] = terms {
         let on_plane = matches!(o.shape, RegionShape::Plane { .. }) && o.cmp == Cmp::In
-            && at(o) == Some(0.0) && o.hi == Some(0.0);
-        if let (RegionShape::Section { face }, true) = (&s.shape, on_plane && at_nothing(s)) {
-            return polygon(sk, *face as usize, out).ok_or_else(refused);
+            && at_nothing(o);
+        if let RegionShape::Section { face } = s.shape {
+            if on_plane && at_nothing(s) {
+                return polygon(sk, face as usize, out).ok_or_else(refused);
+            }
         }
     }
     // a segment: on a line, its ordinate along it bounded at both ends
@@ -130,18 +133,15 @@ fn set_corners(sk: &Sketch, terms: &[RegionTerm], out: &mut Vec<V>, depth: usize
     }).ok_or_else(refused)?;
     let l = sk.lines.get(line).ok_or_else(refused)?;
     let o = sk.world_point(l.p1 as usize);
-    let along = sub(sk.world_point(l.p2 as usize), o);
-    let length = norm(along);
-    if !(length > 0.0) {
-        return Err(refused());
-    }
-    let d = scale(along, 1.0 / length);
+    let d = normalised(sub(sk.world_point(l.p2 as usize), o)).ok_or_else(refused)?;
     let (mut lo, mut hi) = (f64::NEG_INFINITY, f64::INFINITY);
     for t in terms {
         match t.shape {
             RegionShape::Cylinder { line: l2 } if l2 as usize == line => continue,
-            RegionShape::Plane { along: a, from, sign } if a.kind == EntKind::Line && a.i() == line => {
-                // the ordinate `sign (x − from) · d` at `o + s d` is `sign (s − s0)`
+            RegionShape::Plane { along: a, from, sign }
+                if a.kind == EntKind::Line && a.i() == line => {
+                // the ordinate `sign (x − from) · d` at `o + s d` is `sign (s − s0)`, within
+                // `[lower, upper]`
                 let s0 = dot(sub(sk.world_point(from as usize), o), d);
                 let n = at(t).ok_or_else(refused)?;
                 let (lower, upper) = match t.cmp {
@@ -149,8 +149,8 @@ fn set_corners(sk: &Sketch, terms: &[RegionTerm], out: &mut Vec<V>, depth: usize
                     Cmp::Ge => (n, f64::INFINITY),
                     Cmp::In => (n, t.hi.unwrap_or(n)),
                 };
-                // `sign (s − s0)` within `[lower, upper]`
-                let (a, b) = if sign > 0.0 { (s0 + lower, s0 + upper) } else { (s0 - upper, s0 - lower) };
+                let (a, b) = if sign > 0.0 { (s0 + lower, s0 + upper) }
+                    else { (s0 - upper, s0 - lower) };
                 lo = lo.max(a);
                 hi = hi.min(b);
             }
@@ -169,43 +169,24 @@ fn set_corners(sk: &Sketch, terms: &[RegionTerm], out: &mut Vec<V>, depth: usize
 /// way about its normal: the hull of them is the face.
 fn polygon(sk: &Sketch, face: usize, out: &mut Vec<V>) -> Option<()> {
     let f = sk.faces.get(face)?;
-    if !f.holes.is_empty() {
+    if !f.holes.is_empty() || f.edges.iter().any(|e| e.kind != EntKind::Line) {
         return None;
     }
     // each line's ends, walked round: the corners in order
-    let mut corners: Vec<V> = Vec::new();
-    for e in &f.edges {
-        if e.kind != EntKind::Line {
-            return None;
-        }
-        let l = sk.lines.get(e.i())?;
-        let (a, b) = (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize));
-        // the end the walk did not come in by
-        let next = match corners.last() {
-            Some(&last) if norm(sub(a, last)) <= norm(sub(b, last)) => b,
-            Some(_) => a,
-            None => {
-                corners.push(a);
-                b
-            }
-        };
-        corners.push(next);
-    }
-    if corners.len() > 1 && norm(sub(corners[0], corners[corners.len() - 1])) <= 1e-9 * (1.0 + norm(corners[0])) {
-        corners.pop();
-    }
+    let corners: Vec<V> = crate::solid::profile::walk_loop(sk, &f.edges)?
+        .into_iter().map(|(_, from, _)| sk.world_point(from as usize)).collect();
     let m = corners.len();
     if m < 3 {
         return None;
     }
-    let normal = (0..m).fold([0.0; 3], |s, k| add(s, cross(corners[k], corners[(k + 1) % m])));
-    let size = corners.iter().map(|&c| norm(sub(c, corners[0]))).fold(0.0, f64::max);
-    let turns = (0..m).map(|k| {
-        let (a, b, c) = (corners[(k + m - 1) % m], corners[k], corners[(k + 1) % m]);
-        dot(cross(sub(b, a), sub(c, b)), normal)
-    });
+    let normal = crate::solid::area_vector(&corners);
+    let size = corners.iter().map(|&c| distance(c, corners[0])).fold(0.0, f64::max);
     let slack = 1e-12 * size * size * norm(normal);
-    if turns.into_iter().any(|t| t < -slack) {
+    let turns_back = (0..m).any(|k| {
+        let (a, b, c) = (corners[(k + m - 1) % m], corners[k], corners[(k + 1) % m]);
+        dot(cross(sub(b, a), sub(c, b)), normal) < -slack
+    });
+    if turns_back {
         return None;
     }
     out.extend(corners);

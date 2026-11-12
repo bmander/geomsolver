@@ -1,8 +1,9 @@
 //! **A region in general position, built exactly** (#238): a region solid whose terms share no
 //! axis (`region::in_general`), each a ball, a cylinder, a cone narrower than square, a
 //! half-space or a join of sets read as the hull of finitely many points ([0.212],
-//! `solid::joined`: the kernel's hull of them), is the common of the primitives its terms bound — each one the region keeps within
-//! taken in common, each one it keeps outside taken away — every primitive bounded past the box
+//! `solid::joined`: the kernel's hull of them), is the common of the primitives its terms bound —
+//! each one the region keeps within taken in common, each one it keeps outside taken away — every
+//! primitive bounded past the box
 //! the region lies in (`RegionField::support`), so nothing but its terms' own surfaces reaches the
 //! material: Steinmetz's bicylinder, two cylinders crossing.  The recipe's `region` node; held to
 //! the region read point by point before it stands (`gate`), as the lowering table's pieces are.
@@ -66,11 +67,10 @@ impl Bounded {
                 let names = vec![vec![piece.name.clone(); p.loops[0].len()]];
                 Profile { names, ..p }.to_json(w)
             };
-            let mut node = match &piece.shape {
-                Shape::Hull { corners } => object([("kind", "hull".into()),
+            let mut node = match piece.shape {
+                Shape::Hull { ref corners } => object([("kind", "hull".into()),
                     ("points", Json::Arr(corners.iter().map(|&c| Writer::triple(mm(c))).collect())),
                     ("face", piece.name.as_str().into())]),
-                _ => match piece.shape.clone() {
                 Shape::Ball { c, r } => {
                     // a half disc turned once about a line through the centre
                     let f = Frame::about(c, [0.0, 0.0, 1.0]);
@@ -93,8 +93,7 @@ impl Bounded {
                         ("origin", w.line_origin(mm(a), d)), ("axis", Writer::triple(d)), ("angle", TAU.into())])
                 }
                 Shape::Half { o, n, reach } => half_space(w, o, scale(n, -1.0), reach, &piece.name)?,
-                Shape::Hull { .. } => unreachable!("written above"),
-            } };
+            };
             node.set("keep", Json::Bool(piece.keep));
             Ok(node)
         }).collect::<Result<Vec<_>, String>>()?;
@@ -167,7 +166,10 @@ fn construction(sk: &Sketch, solid: usize) -> Option<Result<Bounded, String>> {
                 Err(e) => return Some(Err(format!("`{name}`: {e}"))),
             };
             let shape = Shape::Hull { corners };
-            if t.cmp == Cmp::Le { keeps.push(piece(true, shape)) } else { cuts.push(piece(false, shape)) }
+            match t.cmp {
+                Cmp::Le => keeps.push(piece(true, shape)),
+                _ => cuts.push(piece(false, shape)),
+            }
             continue;
         }
         let Ok(Some(measure)) = super::region::measure_of(sk, &t.shape) else { return None };

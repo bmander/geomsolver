@@ -238,18 +238,7 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                     let mut boxed = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
                     let mut every = !inner.is_empty();
                     for u in inner {
-                        // turned round, outside a set (one of several statements, as a join's
-                        // set is) is that set: its own terms, bounded together
-                        let turned = match (&u.shape, u.cmp) {
-                            (RegionShape::Outside { set }, Cmp::Le) => match set.as_ref() {
-                                crate::model::Target::Set { terms, .. } => terms.clone(),
-                                _ => { every = false; break }
-                            },
-                            _ => {
-                                let Some(cmp) = u.cmp.turned() else { every = false; break };
-                                vec![RegionTerm { cmp, ..u.clone() }]
-                            }
-                        };
+                        let Some(turned) = u.turned() else { every = false; break };
                         match field_of(sk, name, &turned, false, read)
                             .ok().and_then(|g| g.support()) {
                             Some(b) => for k in 0..3 {

@@ -8,7 +8,8 @@ use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::Statement as Stmt;
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::syntax::{Arg, Ref, Span};
-use std::collections::BTreeMap;
+use crate::vocab::Cmp;
+use std::collections::{BTreeMap, BTreeSet};
 use crate::expr;
 
 
@@ -31,102 +32,122 @@ pub(super) struct Probes {
     pub refused: std::collections::BTreeSet<usize>,
 }
 
-/// One quantifier's relation, as it was stated ([0.212]): the set's point it is read at, and each
+/// One quantifier's relation, as it was stated ([0.212]): the set's point it is read at, each
 /// bound its relation put on that point with the points the quantifier binds — a term of the
-/// set's point once it is read (`settle_bound`), never a row.
-#[derive(Default)]
+/// set's point once it is read (`settle_bound`), never a row — and the statement it was written
+/// in, with its term's name.
 pub(super) struct Bound {
-    pub owner: Option<usize>,
-    pub stated: Vec<(Constraint, crate::ir::Statement, String)>,
+    pub owner: usize,
+    pub stated: Vec<Constraint>,
+    pub at: Option<(crate::ir::Statement, String)>,
 }
 
-/// The quantifier a constraint reads points of, with the set's point it is read at: `None` where
-/// it reads no point a `some` binds, or one alone (a binder's membership of its own set, a term of
-/// that point as any probe's).  Refused where it reads the points of two quantifiers, or several
-/// points besides them.
-pub(super) fn bound_by(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<Result<(usize, usize), String>> {
-    let read: std::collections::BTreeSet<usize> = points_read(sk, c)
-        .filter(|p| probes.terms.contains_key(p)).collect();
-    let groups: std::collections::BTreeSet<usize> = read.iter().filter_map(|p| probes.binders.get(p).copied()).collect();
-    if groups.is_empty() || (read.len() == 1 && groups.len() == 1) {
+/// The quantifier a constraint reads points of: `None` where it reads no point a `some` binds,
+/// or one alone (a binder's membership of its own set, a term of that point as any probe's).
+/// Refused where it reads anything beside one quantifier's set's point and what that binds.
+pub(super) fn bound_by(sk: &Sketch, c: &Constraint, probes: &Probes)
+    -> Option<Result<usize, String>> {
+    if probes.binders.is_empty() || !points_read(sk, c).any(|p| probes.binders.contains_key(&p)) {
         return None;
     }
+    let read: BTreeSet<usize> = points_read(sk, c).filter(|p| probes.terms.contains_key(p))
+        .collect();
+    if read.len() == 1 {
+        return None;
+    }
+    let groups: BTreeSet<usize> = read.iter().filter_map(|p| probes.binders.get(p).copied())
+        .collect();
     // the quantifier whose set's point it reads, and nothing but that and what it binds — where
     // sets nest, the set's point is another quantifier's binder
-    let mine = groups.iter().copied().find_map(|g| {
-        let owner = probes.bound.get(g)?.owner?;
-        (read.contains(&owner) && read.iter().all(|p| *p == owner || probes.binders.get(p) == Some(&g)))
-            .then_some((g, owner))
+    let mine = groups.into_iter().find(|&g| {
+        let owner = probes.bound[g].owner;
+        read.contains(&owner)
+            && read.iter().all(|p| *p == owner || probes.binders.get(p) == Some(&g))
     });
-    Some(mine.ok_or_else(|| "what some points of sets put in a set is where the set's point is: one \
-        quantifier binds every point its relation reads, beside that one".to_string()))
+    Some(mine.ok_or_else(|| "what some points of sets put in a set is where the set's point is: \
+        one quantifier binds every point its relation reads, beside that one".to_string()))
 }
 
 /// **What some points of sets put a set's point in** ([0.212]), read off what the quantifier's
-/// relation states there — by the constraints' kinds, never the set's name — and each made a term
-/// of the set's point: the segment between two points (`p` on the line through them, its ordinate
-/// along it from the first at least nothing and from the second at most nothing), each a point of
-/// the drawing or one bound, is **the join** of what they range over (`RegionShape::Join`); a
-/// distance from one bound point at most a number is the distance from its set (the set grown,
-/// `RegionShape::Measured`).  Anything else is refused by name: a point read only by searching
-/// every point the quantifier binds is not read yet.
+/// relation states there — by the constraints' kinds, never the set's name — and made a term of
+/// the set's point: the segment between two points is **the join** of what they range over
+/// (`joined`), a ball about one bound point the distance from its set (`grown`).  Anything else is
+/// refused by name: a point read only by searching every point the quantifier binds is not read
+/// yet.  A set point refused is said once (`Probes::refused`).
 pub(super) fn settle_bound(sk: &Sketch, probes: &mut Probes, diags: &mut Vec<Diag>) {
-    use crate::model::{RegionShape, RegionTerm, Target};
-    let bound = std::mem::take(&mut probes.bound);
-    for (g, b) in bound.into_iter().enumerate() {
-        let (Some(owner), Some((_, st, name))) = (b.owner, b.stated.first().cloned()) else {
-            continue;
-        };
-        let binders: Vec<usize> = probes.binders.iter().filter(|(_, &h)| h == g).map(|(&p, _)| p).collect();
-        let operand = |p: usize| if binders.contains(&p) { Target::Set { probe: p as u32, terms: Vec::new() } }
-            else { Target::Ent(EntRef::point(p)) };
-        let at_nothing = |c: &Constraint, cmp: crate::vocab::Cmp| c.bound.as_ref().is_some_and(|x| {
-            let held = x.cmp == cmp || (x.cmp == crate::vocab::Cmp::In && x.hi == Some(0.0));
-            held && c.kind.dimension_slot().and_then(|s| settled_number(&c.args[s], sk)) == Some(0.0)
-        });
-        let kinds: Vec<&Constraint> = b.stated.iter().map(|(c, _, _)| c).collect();
-        // the segment between two points: on the line through them, between them
-        let on_line = kinds.iter().find_map(|c| matches!(c.kind, CKind::PointOnLine3 | CKind::PointOnLine
-                | CKind::PointLine3 | CKind::PointLineDistance)
-            .then(|| c.args[1].ent()).filter(|l| l.kind == EntKind::Line
-                && (c.bound.is_none() || at_nothing(c, crate::vocab::Cmp::Le))));
-        let segment = on_line.and_then(|l| {
-            let (a, z) = (sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize);
-            let along = |from: usize, cmp| kinds.iter().any(|c| c.kind == CKind::Ordinate
-                && c.args[0].ent() == EntRef::point(from) && c.args[1].ent() == EntRef::point(owner)
-                && c.args[2].ent() == l && at_nothing(c, cmp));
-            (kinds.len() == 3 && along(a, crate::vocab::Cmp::Ge) && along(z, crate::vocab::Cmp::Le)
-                && a != z && [a, z].iter().any(|p| binders.contains(p))).then_some([a, z])
-        });
-        let term = if let Some([a, z]) = segment {
-            Some(RegionTerm { shape: RegionShape::Join { of: vec![operand(a), operand(z)] },
-                cmp: crate::vocab::Cmp::Le, lo: crate::model::TermNumber::stated(0.0), hi: None,
-                grow: None, name: name.clone() })
-        } else if let ([c], [q]) = (&kinds[..], &binders[..]) {
-            // a ball about a bound point: the distance from its set
-            let ball = matches!(c.kind, CKind::Distance | CKind::Distance3)
-                && [c.args[0].ent(), c.args[1].ent()].contains(&EntRef::point(*q))
-                && c.bound.as_ref().is_some_and(|x| x.cmp == crate::vocab::Cmp::Le && x.hi.is_none());
-            match ball.then(|| region_term(sk, c, owner, None, name.clone())) {
-                Some(Ok(t)) => Some(RegionTerm { shape: RegionShape::Measured { of: vec![(operand(*q), 1.0)] }, ..t }),
-                _ => None,
-            }
-        } else {
-            None
-        };
+    for (g, b) in probes.bound.iter().enumerate() {
+        let Some((st, name)) = &b.at else { continue };
+        let binders: Vec<usize> = probes.binders.iter().filter(|(_, &h)| h == g).map(|(&p, _)| p)
+            .collect();
+        let term = joined(sk, b, &binders, name).or_else(|| grown(sk, b, &binders, name));
         match term {
-            Some(t) => probes.terms.entry(owner).or_default().push(t),
+            Some(t) => probes.terms.entry(b.owner).or_default().push(t),
             None => {
-                probes.refused.insert(owner);
-                diags.push(Diag::on(Code::E040, &st, "what some points of sets put the set's point \
-                    in is read where it is the segment between them, their join (`some q in A, r in \
-                    B: p in Segment(q, r)`), or a ball about one, the set grown (`some q in A: p \
-                    distance(<= d) q`): any other is not read yet".to_string()));
+                probes.refused.insert(b.owner);
+                diags.push(Diag::on(Code::E040, st, "what some points of sets put the set's \
+                    point in is read where it is the segment between them, their join (`some q in \
+                    A, r in B: p in Segment(q, r)`), or a ball about one, the set grown (`some q \
+                    in A: p distance(<= d) q`): any other is not read yet".to_string()));
             }
         }
     }
 }
 
+/// What a quantifier's point names, read as an operand of what it says: a binder its set, any
+/// other point itself.
+fn operand(p: usize, binders: &[usize]) -> crate::model::Target {
+    match binders.contains(&p) {
+        true => crate::model::Target::Set { probe: p as u32, terms: Vec::new() },
+        false => crate::model::Target::Ent(EntRef::point(p)),
+    }
+}
+
+/// **The join** (`settle_bound`): the set's point on the line through two points, its ordinate
+/// along it from the first at least nothing and from the second at most nothing — the segment
+/// between them — each a point of the drawing or one bound, at least one bound.
+fn joined(sk: &Sketch, b: &Bound, binders: &[usize], name: &str)
+    -> Option<crate::model::RegionTerm> {
+    use crate::model::{RegionShape, RegionTerm, TermNumber};
+    let at_nothing = |c: &Constraint, cmp: Cmp| c.bound.as_ref().is_some_and(|x| {
+        let held = x.cmp == cmp || (x.cmp == Cmp::In && x.hi == Some(0.0));
+        held && c.kind.dimension_slot().and_then(|s| settled_number(&c.args[s], sk)) == Some(0.0)
+    });
+    if b.stated.len() != 3 {
+        return None;
+    }
+    let l = b.stated.iter().find_map(|c| {
+        let on = matches!(c.kind, CKind::PointOnLine3 | CKind::PointOnLine | CKind::PointLine3
+            | CKind::PointLineDistance) && (c.bound.is_none() || at_nothing(c, Cmp::Le));
+        on.then(|| c.args[1].ent()).filter(|l| l.kind == EntKind::Line)
+    })?;
+    let (a, z) = (sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize);
+    let along = |from: usize, cmp| b.stated.iter().any(|c| c.kind == CKind::Ordinate
+        && c.args[0].ent() == EntRef::point(from) && c.args[1].ent() == EntRef::point(b.owner)
+        && c.args[2].ent() == l && at_nothing(c, cmp));
+    let segment = along(a, Cmp::Ge) && along(z, Cmp::Le) && a != z
+        && [a, z].iter().any(|p| binders.contains(p));
+    segment.then(|| {
+        let shape = RegionShape::Join { of: vec![operand(a, binders), operand(z, binders)] };
+        let at = TermNumber::stated(0.0);
+        RegionTerm { name: name.to_string(), ..RegionTerm::new(shape, Cmp::Le, at) }
+    })
+}
+
+/// **The set grown** (`settle_bound`): the set's point within a distance of the one point bound,
+/// the distance from its set.
+fn grown(sk: &Sketch, b: &Bound, binders: &[usize], name: &str)
+    -> Option<crate::model::RegionTerm> {
+    let ([c], [q]) = (&b.stated[..], binders) else { return None };
+    let ball = matches!(c.kind, CKind::Distance | CKind::Distance3)
+        && [c.args[0].ent(), c.args[1].ent()].contains(&EntRef::point(*q))
+        && c.bound.as_ref().is_some_and(|x| x.cmp == Cmp::Le && x.hi.is_none());
+    if !ball {
+        return None;
+    }
+    let shape = crate::model::RegionShape::Measured { of: vec![(operand(*q, binders), 1.0)] };
+    region_term(sk, c, b.owner, None, name.to_string()).ok()
+        .map(|t| crate::model::RegionTerm { shape, ..t })
+}
 
 /// The region solid's probe a constraint reads, where it reads one: an operand, or a line's end.
 pub(super) fn probe_of(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<usize> {

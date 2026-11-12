@@ -1340,7 +1340,8 @@ impl<'a> P<'a> {
             return self.definition(name, next_id, out);
         }
         // some points of sets ([0.212]), as `syntax::notation` lowered them
-        if self.peek_word("some") && matches!(self.word_at(self.i + 2), Some("inside" | "coincident")) {
+        if self.peek_word("some")
+            && matches!(self.word_at(self.i + 2), Some("inside" | "coincident")) {
             return self.points(next_id, out);
         }
         if self.inline_set_ahead() {
@@ -2083,27 +2084,31 @@ impl<'a> P<'a> {
             };
             let span = Span::new(var.span.lo as usize, self.prev_hi());
             if binders.iter().any(|(v, _)| v.text == var.text) {
-                self.fail_at(var.span, &format!("`{}` is bound twice: each point `some` binds has a \
-                    name of its own", var.text));
+                self.fail_at(var.span, &format!("`{}` is bound twice: each point `some` binds \
+                    has a name of its own", var.text));
                 return None;
             }
             // the binder: a point of the body's own, held where the solid reads it
-            let mut point = crate::syntax::Decl::point(DeclName::Written(var.clone()), [0.0; 2], None);
+            let name = DeclName::Written(var.clone());
+            let mut point = crate::syntax::Decl::point(name, [0.0; 2], None);
             // each binder seeded apart from the next, so a line between two has a length: where
             // it stands is never read, its terms read at the points they range over
             let k = 1.0 + binders.len() as f64;
-            point.seed = vec![0.7548776662 * k, 0.5698402910 * k * k, 0.4301597090 * k * k * k];
+            let [x, y, z] = crate::syntax::PROBE_SEED;
+            point.seed = vec![x * k, y * k * k, z * k * k * k];
             point.seed_text = vec![None; 3];
             point.annotations.private = true;
             point.annotations.roles.construction = true;
             let id = self.mint_stmt(next_id, var.span)?;
-            held.push(Stmt { id, kind: StmtKind::Decl(point), span: var.span, chained: Chained::No });
+            let kind = StmtKind::Decl(point);
+            held.push(Stmt { id, kind, span: var.span, chained: Chained::No });
             // and its membership of its set, as the notation lowered it
             let lowered = self.lowered_word(word.span);
             let on = crate::syntax::Written {
                 word: word.clone(),
                 fixity: crate::constraints::Fixity::Infix,
-                ops: vec![Ref { root: var.clone(), path: Vec::new(), span: var.span }, domain.clone()],
+                ops: vec![Ref { root: var.clone(), path: Vec::new(), span: var.span },
+                          domain.clone()],
                 args: Vec::new(),
                 span,
                 rates: Vec::new(),
@@ -2127,9 +2132,12 @@ impl<'a> P<'a> {
         if self.inline_set_ahead() {
             self.inline_set_use(next_id, &mut body)?;
         } else {
+            let mark = self.in_place.len();
             let kind = self.stmt(next_id)?;
+            let sets = self.in_place_args(mark, next_id)?;
             let span = Span::new(lo, self.prev_hi());
             let id = self.mint_stmt(next_id, span)?;
+            body.extend(sets.into_iter().flat_map(|s| s.hosted(id)));
             body.push(Stmt { id, kind, span, chained: Chained::No });
         }
         let host = body.last_mut()?;
@@ -2141,7 +2149,8 @@ impl<'a> P<'a> {
                 membership: `some q in A: p in Segment(c, q)`");
             return None;
         };
-        w.args.extend(binders.into_iter().map(|(var, domain)| crate::syntax::OpArg::Some { var, domain }));
+        w.args.extend(binders.into_iter()
+            .map(|(var, domain)| crate::syntax::OpArg::Some { var, domain }));
         let host_id = host.id;
         for st in &mut held {
             st.chained = Chained::InPlace(host_id);
@@ -2213,7 +2222,9 @@ impl<'a> P<'a> {
         let span = Span::new(at, self.prev_hi());
         let id = self.mint_stmt(next_id, span)?;
         let faces = sets.into_iter().flat_map(|s| s.hosted(id))
-            .chain(faces.into_iter().map(|(f, kind, span)| Stmt { id: f, kind, span, chained: Chained::InPlace(id) }))
+            .chain(faces.into_iter().map(|(f, kind, span)| {
+                Stmt { id: f, kind, span, chained: Chained::InPlace(id) }
+            }))
             .collect();
         // a member of what was written in place, `std.sets.Cone(l, half: h).surface` — the
         // boundary of a set written in place (#783), lowered so — read off the hoisted name
@@ -2477,10 +2488,19 @@ impl<'a> P<'a> {
                 self.i += 1;
                 // `repeat h in [(0mm, 0mm), (4mm, 2mm)]` — a list written in place (§12.10)
                 if self.peek() == Some(&Tok::P('[')) {
+                    let mark = self.in_place.len();
                     let Some(list) = self.list_items() else {
                         self.skip_block();
                         return None;
                     };
+                    // what a block walks is named or worked out: no statement holds a set here
+                    if self.in_place.len() > mark {
+                        self.in_place.truncate(mark);
+                        self.fail("a list a block walks holds numbers or names what is \
+                                   drawn; a set written in place is a call's argument");
+                        self.skip_block();
+                        return None;
+                    }
                     (None, Some(crate::syntax::Items { var, list }))
                 } else {
                     (Some(EdgesOf { var, chain: self.refr()?, zip: Vec::new() }), None)
@@ -2674,7 +2694,7 @@ impl<'a> P<'a> {
         let at = self.i;
         let lo = self.here().lo as usize;
         let set = self.set_ahead();
-        let call = !set && matches!(self.peek(), Some(Tok::Ident(_))) && self.call_at(self.i).is_some_and(|dotted| {
+        let call = !set && self.call_at(self.i).is_some_and(|dotted| {
             let w = self.word_at(self.i).unwrap_or_default();
             dotted || !(crate::constraints::is_operator(w) || crate::expr::builtin(w).is_some()
                 || crate::expr::MEASURES.iter().any(|m| m.0 == w)
@@ -2728,9 +2748,9 @@ impl<'a> P<'a> {
             }
             _ => None,
         };
-        // a set written in place ([0.213]): a set literal, or a call no number reads — a component's —
-        // standing whole as the argument, read as the key it is hoisted under where the statement
-        // holding the call is minted (`in_place_args`)
+        // a set written in place ([0.213]): a set literal, or a call no number reads (a
+        // component's) standing whole as the argument, read as the key it is hoisted under where
+        // the statement holding the call is minted (`in_place_args`)
         if let Some(key) = self.in_place_arg() {
             let value = InstVal::Ref(Ref { root: key.clone(), path: Vec::new(), span: key.span });
             return Some(InstArg { label, value, span: Span::new(lo, self.prev_hi()) });

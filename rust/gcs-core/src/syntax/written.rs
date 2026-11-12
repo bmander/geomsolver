@@ -232,6 +232,19 @@ impl Written {
         Some(cmp)
     }
 
+    /// The points it binds, each with the set it ranges over (`OpArg::Some`, [0.212]).
+    pub fn binders(&self) -> impl Iterator<Item = (&Name, &Ref)> {
+        self.args.iter().filter_map(|a| match a {
+            OpArg::Some { var, domain } => Some((var, domain)),
+            _ => None,
+        })
+    }
+
+    /// Whether it binds a point of a set ([0.212]).
+    pub fn binds(&self) -> bool {
+        self.binders().next().is_some()
+    }
+
     /// Its equality held as a bound at its number, `in: (d, d)` (§9.6) — what a set measured
     /// from states of its point, a term and never a row (#192).  `None` where it states a
     /// bound already, or no number.

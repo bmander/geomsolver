@@ -213,6 +213,18 @@ impl FaceRef {
 }
 
 impl RegionTerm {
+    /// **Its complement**, as terms taken together: its bound turned round — or, outside a set at
+    /// nothing (one of several statements, as a join's set is), that set's own terms ([0.212]).
+    /// `None` where it turns round to no bound.
+    pub fn turned(&self) -> Option<std::borrow::Cow<'_, [RegionTerm]>> {
+        if let (RegionShape::Outside { set }, crate::vocab::Cmp::Le) = (&self.shape, self.cmp) {
+            let Target::Set { terms, .. } = set.as_ref() else { return None };
+            return Some(std::borrow::Cow::Borrowed(terms));
+        }
+        let cmp = self.cmp.turned()?;
+        Some(std::borrow::Cow::Owned(vec![RegionTerm { cmp, ..self.clone() }]))
+    }
+
     /// The one-sided bound `cmp` on `shape` at `lo`, of no set and no offset.
     pub fn new(shape: RegionShape, cmp: crate::vocab::Cmp, lo: TermNumber) -> RegionTerm {
         RegionTerm { shape, cmp, lo, hi: None, grow: None, name: String::new() }

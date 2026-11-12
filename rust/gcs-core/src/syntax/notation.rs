@@ -20,7 +20,7 @@
 //! | `some s: p in F at s` | `p coincident(over s) F`: a face family over a declared parameter |
 //! | `some h: p in F at(along: n) h` | `p inside F`: the prism through a face |
 //! | `not some h: p in F at(along: n) h` | `p outside F`: what is not in it |
-//! | `some q in A, r in B: p in X` | `some q inside A, r inside B: p inside X`: some points of sets |
+//! | `some q in A, r in B: p in X` | `some q inside A, r inside B: p inside X` ([0.212]) |
 //! | `p distance(…) { q \| q not in S }` | `p distance(…, side: inside) S` |
 //! | `n := x at f`, `f` a frame | `n := x in f`: drawn in the jointed frame at its value |
 //!
@@ -80,23 +80,7 @@ fn at_end(span: Span) -> Span {
     Span::at(span.hi as usize)
 }
 
-/// The index of the bracket closing the one opening at `i`, any of `(`, `[`, `{`.
-fn close(t: &[T], i: usize) -> Option<usize> {
-    let mut depth = 0usize;
-    for (k, (tok, _)) in t.iter().enumerate().skip(i) {
-        match tok {
-            Tok::P('(' | '[' | '{') => depth += 1,
-            Tok::P(')' | ']' | '}') => {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    return Some(k);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
+use super::words::matching as close;
 
 /// Past a reference at `j`: a name, then `.name` and `[…]` steps.
 fn past_ref(t: &[T], j: usize) -> Option<usize> {
@@ -702,7 +686,10 @@ impl Lowering<'_> {
             let mut x = Vec::new();
             let reads = self.operand(k + 2, x1, &mut x);
             let at = t[k + 1].1;
-            let lowered = if matches!(reads, Reads::Boundary | Reads::Face) { "coincident" } else { "inside" };
+            let lowered = match reads {
+                Reads::Boundary | Reads::Face => "coincident",
+                _ => "inside",
+            };
             out.push(t[k].clone());
             self.mark(at, reads);
             out.push(ident(lowered, at));
@@ -717,14 +704,14 @@ impl Lowering<'_> {
             if next > x1 + 1 {
                 end = statement_end(t, next);
             }
-            if punct(t, x1, ',') {
-                k = next;
-            } else if punct(t, x1, ':') {
-                k = next;
-                break;
-            } else {
+            let more = punct(t, x1, ',');
+            if !more && !punct(t, x1, ':') {
                 self.fail(t[x1].1, shape);
                 return end;
+            }
+            k = next;
+            if !more {
+                break;
             }
         }
         if word(t, k) == Some("some") {

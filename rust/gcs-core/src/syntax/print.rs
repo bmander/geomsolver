@@ -1169,10 +1169,8 @@ pub fn bounded(
 
 fn write_written(out: &mut String, w: &Written) {
     // some points of sets ([0.212]): the quantifier, then the relation it binds them in
-    let binders: Vec<String> = w.args.iter().filter_map(|a| match a {
-        OpArg::Some { var, domain } => Some(format!("{} in {}", var.text, super::ref_text(domain))),
-        _ => None,
-    }).collect();
+    let binders: Vec<String> = w.binders()
+        .map(|(var, domain)| format!("{} in {}", var.text, super::ref_text(domain))).collect();
     if !binders.is_empty() {
         let mut body = w.clone();
         body.args.retain(|a| !matches!(a, OpArg::Some { .. }));

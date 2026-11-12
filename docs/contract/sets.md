@@ -348,7 +348,7 @@ or taken away at nothing (the recipe's `hull` node, its faces named by the term'
 the field as every route is; grown or shrunk by a number it is the field's.
 Within a union said with `or` (the outside of a set of outsides), a join's set — several
 statements, so outside it is a complement — is bounded, turned round, by its own terms
-(`general::field_of`'s `Outside`).  `tests/joins.rs` is the gate: a tetrahedron the join of two opposite edges (its volume, area and
+(`RegionTerm::turned`, a term's complement as terms taken together).  `tests/joins.rs` is the gate: a tetrahedron the join of two opposite edges (its volume, area and
 field, and grown by 1 to brep-bench's offset/tetrahedron-grown), brep-bench's square-to-octagon
 transition a join of joins to its closed forms, a pyramid the join of its apex and a drawn face,
 a capsule a ball about some point of a segment, the join as a component making an octahedron, a

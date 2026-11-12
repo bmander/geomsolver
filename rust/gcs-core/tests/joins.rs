@@ -14,8 +14,6 @@ use crate::common::{ent, refused, text::solved};
 
 fn close(what: &str, a: f64, b: f64) { assert!((a - b).abs() <= 1e-9 * b.abs().max(1.0), "{what}: {a} against {b}"); }
 
-fn area(b: &gcs_core::brep::topo::Brep) -> f64 { crate::brep::total_area(b) }
-
 /// `name`, built exactly: its boundary, by the route that builds it.
 fn exact(e: &Elaborated, name: &str) -> std::rc::Rc<gcs_core::solid::Exact> {
     let s = ent(e, name).i();
@@ -43,7 +41,7 @@ fn a_tetrahedron_is_the_join_of_two_of_its_edges() {
     assert_eq!(x.brep.faces.len(), 4);
     assert!(x.brep.faces.iter().all(|f| matches!(f.surface, Surface::Plane(_))));
     close("volume", volume(&x.brep), 72.0);
-    close("area", area(&x.brep), 72.0 * 3f64.sqrt());
+    close("area", crate::brep::total_area(&x.brep), 72.0 * 3f64.sqrt());
     // its field: its inradius below nothing at its middle, nothing on a face and at a corner
     let f = MaterialField::read(&e.sketch, ent(&e, "tetrahedron").i(), 1e-10).unwrap();
     close("middle", f.side([0.0; 3]), -3f64.sqrt());
@@ -75,7 +73,7 @@ fn a_square_to_octagon_transition_is_a_join_of_joins() {
     let x = exact(&e, "loft");
     assert_eq!(x.brep.faces.len(), 10);
     close("volume", volume(&x.brep), 33760.0);
-    close("area", area(&x.brep), 2256.0 + 624.0 * 26f64.sqrt() + 160.0 * 22f64.sqrt());
+    close("area", crate::brep::total_area(&x.brep), 2256.0 + 624.0 * 26f64.sqrt() + 160.0 * 22f64.sqrt());
 }
 
 /// **A pyramid is the join of its apex and its base**, a face drawn on the top plane: the pyramid
@@ -107,7 +105,6 @@ fn a_ball_about_some_point_of_a_set_is_the_set_grown() {
     close("on the axis", f.side([5.0, 0.0, 0.0]), -2.0);
     close("beside it", f.side([5.0, 3.0, 0.0]), 1.0);
     close("past an end", f.side([13.0, 0.0, 0.0]), 1.0);
-    let _ = PI;
 }
 
 /// **What is not read is refused by name**: a relation that is neither a segment between the
@@ -116,11 +113,10 @@ fn a_ball_about_some_point_of_a_set_is_the_set_grown() {
 #[test]
 fn what_some_points_of_sets_cannot_read_is_refused() {
     let base = "unit mm\nuse std\nuse std.sets\na := point\nb := point\nfix((0, 0, 0)) a\nfix((10, 0, 0)) b\n";
-    refused(&format!("{base}far := solid({{ p | some q in std.sets.Segment(a, b): p distance(>= 2mm) q }})\n"),
-        "E040", "is not read yet", "far := solid({ p | some q in std.sets.Segment(a, b): p distance(>= 2mm) q })");
+    let far = "far := solid({ p | some q in std.sets.Segment(a, b): p distance(>= 2mm) q })";
+    refused(&format!("{base}{far}\n"), "E040", "is not read yet", far);
     // said once: the solid it was refused in is not refused again for want of a term
-    let (prog, _, _) = gcs_core::library::parse_linked(&format!(
-        "{base}far := solid({{ p | some q in std.sets.Segment(a, b): p distance(>= 2mm) q }})\n"));
+    let (prog, _, _) = gcs_core::library::parse_linked(&format!("{base}{far}\n"));
     let e = gcs_core::program::elaborate(&prog);
     assert_eq!(e.errors().count(), 1, "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     refused(&format!("{base}x := point\nsome q in std.sets.Segment(a, b): x in std.sets.Segment(a, q)\n"),
