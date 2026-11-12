@@ -1604,7 +1604,10 @@ tore between them. At the face mill the configured pair's balance finds (8.8549�
 75.6122 mm) the inner flank's fold near its round ends so at the start of the pinion's band, whose
 last station before the cusp holds the blank on both sides of its gap: turned there, its rows ran a
 turn round the pinion, and the fit left its contacts by 0.155 mm and turned 89.7° from them. Its
-cut is now one chart, 69 × 39 (`hypoid_mill_sheet::the_pinions_cut_at_the_found_mill_is_one_chart`).
+cut is now one chart, 69 × 39 (`hypoid_mill_sheet::the_pinions_cut_at_the_found_mill_is_one_chart`),
+and the pinion is built by sectors with 243 faces, 14664.2385 mm³
+(`the_pinion_at_the_found_mill_is_built_by_sectors`); the tip relief its inner flank keeps there, a
+hundredth of a millimetre thick, is sampled as `query::interior` says below.
 
 **Screws, the constant-twist class (#64):** a sweep under a screw (`f screws(a) l`) is admitted by
 rows S1–S4 (`solid::constant_twist`, docs/generating-sweeps.md): the tool's characteristic (each
@@ -2387,7 +2390,10 @@ other split as one. A cell's interior points (`query::interior`) are the deepest
 hierarchy of its mesh's triangles, the winding number asked only of the points the choice reaches,
 and one read settling every candidate in the ball about it no triangle enters (a closed mesh's
 winding is constant off it): the deepest candidates of a thin cell, its box's grid, lie mostly
-outside it, and two thousand windings of every triangle were read a cell for its four points.
+outside it, and two thousand windings of every triangle were read a cell for its four points. A
+cell thinner than its first mesh's sag (5e-4 of its box's diagonal) everywhere has no point that
+mesh vouches for, and is read again on one ten times finer (`query::SAGS`, #904 A1/A2:
+`brep::a_cell_thinner_than_its_first_mesh_is_sampled_on_a_finer_one`).
 Under these, the class's Booleans are seeded and traced as any are (brep.md), a cone's step read at
 its radius in the pair's box (`Surface::feature_within`, not at its frame's origin, which may be
 its apex), and a spline's foot found as `brep.md` says. A blank's prism of whole circles about the

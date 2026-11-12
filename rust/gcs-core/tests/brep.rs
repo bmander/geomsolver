@@ -1409,6 +1409,27 @@ fn interior_samples_are_inside_and_no_deeper_than_they_are() {
     assert!(samples[0].1 > 1.2,"{samples:?}");
 }
 
+/// **A cell thinner than its first mesh's sag is sampled on a finer one** (#904 A1/A2): a tube whose
+/// wall is 4 µm thick, 17 mm across its box, is meshed first to a sag of 2.7 µm, which no point of
+/// the wall clears; read again ten times finer, its samples lie in the wall no deeper than they
+/// are. Before, it had none, as the tip relief a hypoid's flank keeps at its
+/// mill had none (`hypoid_mill_sheet::the_pinion_at_the_found_mill_is_built_by_sectors`).
+#[test]
+fn a_cell_thinner_than_its_first_mesh_is_sampled_on_a_finer_one() {
+    use gcs_core::brep::query::interior;
+    let (c,r,wall,z) = ([0.,0.,0.],5.,0.004,[0.,10.]);
+    let tube = gcs_core::brep::boolean::boolean(&rod(c,r+wall,z),&rod(c,r,[z[0]-1.,z[1]+1.]),gcs_core::brep::boolean::Op::Cut,1e-9)
+        .unwrap();
+    let samples = interior(&tube,4).unwrap();
+    assert!(!samples.is_empty());
+    for (p,d) in &samples {
+        let radius = (p[0]*p[0]+p[1]*p[1]).sqrt();
+        let to_walls = (radius-r).min(r+wall-radius).min(p[2]-z[0]).min(z[1]-p[2]);
+        assert!(to_walls > 0.,"{p:?} outside the wall");
+        assert!(*d > 0. && *d <= to_walls+1e-12,"{p:?} said {d} deep, {to_walls} from the walls");
+    }
+}
+
 #[test]
 fn a_grid_interpolated_passes_through_it_and_makes_a_sheet() {
     use gcs_core::brep::nurbs::{interpolate_net,Parametrization};
@@ -3085,3 +3106,4 @@ fn a_ball_in_a_paraboloid_cup_that_fits_its_bottom() {
         }
     }
 }
+

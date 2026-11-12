@@ -2537,11 +2537,27 @@ impl<'a> Located<'a> {
 /// too thin for the grid: a sliver a split leaves), judged against a mesh of the boundary whose sag
 /// was measured: a point farther from the mesh than that sag is on the side of the boundary the mesh
 /// says it is (its winding number), and is the distance less the sag from the boundary at least.  So
-/// nothing returned is a guess.
+/// nothing returned is a guess.  A cell thinner than its first mesh's sag everywhere has no point
+/// that mesh can vouch for (the tip relief a hypoid's flank keeps where its mill leaves it a hundredth
+/// of a millimetre thick, #904 A1/A2): it is read again on a mesh ten times finer (`SAGS`).
 pub fn interior(b: &Brep,capacity: usize) -> Result<Vec<(V,f64)>,String> {
+    let mut chosen = Vec::new();
+    for sag in SAGS {
+        chosen = interior_at(b,capacity,sag)?;
+        if !chosen.is_empty() { break }
+    }
+    Ok(chosen)
+}
+
+/// The sags `interior` meshes a cell at in turn, as fractions of its box's diagonal: the first
+/// where any sample clears it is the one read.
+const SAGS: [f64;2] = [5e-4,5e-5];
+
+/// `interior` on a mesh of `b` whose sag is `sag` of its box's diagonal.
+fn interior_at(b: &Brep,capacity: usize,sag: f64) -> Result<Vec<(V,f64)>,String> {
     let (lo,hi) = b.bounds();
     let size = distance(lo,hi);
-    let m = super::mesh::mesh(b,size*5e-4,0.2)?;
+    let m = super::mesh::mesh(b,size*sag,0.2)?;
     let tris: Vec<[V;3]> = m.tris.iter().map(|t| t.map(|i| m.pts[i as usize])).collect();
     const N: usize = 12;
     const STEPPED: usize = 400;
