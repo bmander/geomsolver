@@ -187,9 +187,9 @@ const WORDS: &str = "unit mm\nuse std\nuse std.sets\n\
     s0 := point\ns1 := point\ns2 := point\ns3 := point\ntop := point\nbottom := point\n\
     fix((10, 0, 0)) s0\nfix((0, 10, 0)) s1\nfix((-10, 0, 0)) s2\nfix((0, -10, 0)) s3\n\
     fix((0, 0, 10)) top\nfix((0, 0, -10)) bottom\n\
-    s01 := std.sets.Segment(s0, s1)\ns23 := std.sets.Segment(s2, s3)\naxis := std.sets.Segment(top, bottom)\n\
-    sides := Join(s01, s23)\n\
-    octahedron := solid(Join(sides, axis))\n\
+    s01 := std.sets.Segment(s0, s1)\ns23 := std.sets.Segment(s2, s3)\n\
+    octahedron := solid(Join(Join(std.sets.Segment(s0, s1), std.sets.Segment(s2, s3)), std.sets.Segment(top, bottom)))\n\
+    kite := solid(Join(Join(s01, s23), { x | x distance(<= 0mm) top }))\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((4, 4, 12)) b0\nfix((-4, 4, 12)) b1\nfix((-4, -4, 12)) b2\nfix((4, -4, 12)) b3\n\
     roof := { x | some u in std.sets.Segment(b0, b1),\n  v in std.sets.Segment(b2, b3):\n  x in std.sets.Segment(u, v) }\n\
@@ -200,14 +200,16 @@ const WORDS: &str = "unit mm\nuse std\nuse std.sets\n\
     high := { x | some u in std.sets.Segment(u0, u1): x in std.sets.Segment(u, u2) }\n\
     prism := solid(Join(low, high))\n";
 
-/// **The join is a word, and remixes**: written once as a component, it makes an octahedron, a
+/// **The join is a word, and remixes**: written once as a component — its sets given by name or
+/// written in place, a call (one inside another's) or a set literal — it makes an octahedron, a
+/// pyramid on the square (`kite`, its apex a set of one point written in place), a
 /// prismatoid (one operand the word, the other a set across lines; `h (A₁ + A₂ + 4 A_m) / 6`, its
 /// middle section the two squares' Minkowski mean, of area `(200 + 2 · 160 + 64) / 4`) and an
 /// oblique prism — each to its closed form, built exactly.
 #[test]
 fn the_join_is_a_word_that_makes_other_polytopes() {
     let e = solved(WORDS);
-    for (name, faces, v) in [("octahedron", 8, 4000.0 / 3.0), ("prismatoid", 10, 12.0 / 6.0 * (200.0 + 64.0 + 4.0 * 146.0)),
+    for (name, faces, v) in [("octahedron", 8, 4000.0 / 3.0), ("kite", 5, 200.0 * 10.0 / 3.0), ("prismatoid", 10, 12.0 / 6.0 * (200.0 + 64.0 + 4.0 * 146.0)),
                              ("prism", 5, 40.0 * 10.0)] {
         let x = exact(&e, name);
         assert_eq!(x.brep.faces.len(), faces, "{name}");
@@ -262,8 +264,7 @@ fn joins_combine_as_solids_do() {
         a2 := point\nb2 := point\nc2 := point\nd2 := point\n\
         fix((-3, -3, -3)) a2\nfix((-3, 3, 3)) b2\nfix((3, -3, 3)) c2\nfix((3, 3, -3)) d2\n\
         ab := std.sets.Segment(a, b)\ncd := std.sets.Segment(c, d)\n\
-        ab2 := std.sets.Segment(a2, b2)\ncd2 := std.sets.Segment(c2, d2)\n\
-        t1 := Join(ab, cd)\nt2 := Join(ab2, cd2)\n\
+        t1 := Join(ab, cd)\nt2 := Join(std.sets.Segment(a2, b2), std.sets.Segment(c2, d2))\n\
         one := solid(t1)\nother := solid(t2)\nother union one\n\
         star := solid({ p | p in t1 or p in t2 })\n\
         construction tet := solid(Join(ab, cd))\n\

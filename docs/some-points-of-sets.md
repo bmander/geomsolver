@@ -84,9 +84,12 @@ The spin found three faults, each fixed: a quantifier broken across lines did no
 runs on past a line break after a binder's `,` or its `:`); a union of joins said with `or` had no
 bounds (a join's set, turned round inside a union, is now bounded by its own terms); and a named
 instance of a component binding points split its binders off to the instance (a body binding any
-is now the set's whole). It found one limit of the language that predates `some`: a component's
-`set` formal takes a named set, not one written in place (`Join(std.sets.Segment(a, b), …)` is
-E103; `ab := std.sets.Segment(a, b)` then `Join(ab, …)`).
+is now the set's whole). It found one limit of the language that predated `some`, since lifted ([0.213]): a component's
+`set` formal took a named set, not one written in place, so `Join(std.sets.Segment(a, b), …)` was
+E103 and every set a word was given needed a line of its own. A set literal or a call standing
+whole as the argument is now the set an anonymous instance of it is, one inside another's alike:
+`solid(Join(Join(std.sets.Segment(s0, s1), std.sets.Segment(s2, s3)), std.sets.Segment(top,
+bottom)))` is the octahedron.
 
 What it cannot say yet, and says why: a cone or the bench's square-to-round loft (a join of a set
 bounded by a curve), the join of a solid that is not convex, a union said with `or` built exactly

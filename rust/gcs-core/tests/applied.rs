@@ -157,3 +157,27 @@ fn a_tangency_linearises_through_a_word() {
     let got = off_line(at(&sk, &e, "c"), a, sub(b, a));
     assert!((got - 12.0).abs() < 1e-9, "{got}");
 }
+
+/// **A set formal takes a set written in place** ([0.213]): a call of a set component standing
+/// whole as the argument, a set literal, and a call inside another's — each the set an anonymous
+/// instance of it is, as if named on the line before — so a word grows a ball given in any of
+/// these, and a named one, alike.
+#[test]
+fn a_set_formal_takes_a_set_written_in_place() {
+    let src = "unit mm\nuse std\nuse std.sets\n\
+        component Grow(S: set, d: Length) := { p | p distance(<= d) S }\n\
+        c := point\nfix((0, 0, 0)) c\n\
+        named := std.sets.Ball(c, r: 2mm)\n\
+        by_name := solid(Grow(named, d: 1mm))\n\
+        by_call := solid(Grow(std.sets.Ball(c, r: 2mm), d: 1mm))\n\
+        by_literal := solid(Grow({ x | x distance(<= 2mm) c }, d: 1mm))\n\
+        nested := solid(Grow(Grow(std.sets.Ball(c, r: 1mm), d: 1mm), d: 1mm))\n\
+        grown := Grow(std.sets.Ball(c, r: 2mm), d: 1mm)\n\
+        again := solid(grown)\n";
+    let e = crate::common::text::solved(src);
+    for name in ["by_name", "by_call", "by_literal", "nested", "again"] {
+        let f = gcs_core::solid::MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10)
+            .unwrap_or_else(|m| panic!("`{name}`: {m}"));
+        assert!(f.side([2.9, 0.0, 0.0]) < 0.0 && f.side([3.1, 0.0, 0.0]) > 0.0, "`{name}`: a ball of 3");
+    }
+}

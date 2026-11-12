@@ -968,6 +968,8 @@ impl<'a> P<'a> {
             held = Some(made);
             self.i = start;
         }
+        // the sets a call written here holds in place as arguments, hoisted once it is minted
+        let mark = self.in_place.len();
         let kind = match word.as_deref() {
             // what a body occupies under a motion, or a face over a running parameter, at some
             // instant (#737): the set read as the sweep it says, `swept_set`'s
@@ -1138,9 +1140,11 @@ impl<'a> P<'a> {
             _ => self.param(name)?,
         };
         let span = Span::new(lo, self.prev_hi());
+        let sets = self.in_place_args(mark, next_id)?;
         let id = self.mint_stmt(next_id, span)?;
         // a solid's operand is hoisted only for a declaration, which the chain reads above
         debug_assert!(held.is_none(), "a hoisted operand read by no chain");
+        out.extend(sets.into_iter().flat_map(|s| s.hosted(id)));
         out.push(Stmt { id, kind, span, chained: Chained::No });
         Some(())
     }
@@ -1346,8 +1350,11 @@ impl<'a> P<'a> {
             return self.chain(next_id, out, None);
         }
         let lo = self.here().lo as usize;
+        let mark = self.in_place.len();
         let kind = self.stmt(next_id)?;
+        let sets = self.in_place_args(mark, next_id)?;
         let id = self.mint_stmt(next_id, Span::new(lo, self.prev_hi()))?;
+        out.extend(sets.into_iter().flat_map(|s| s.hosted(id)));
         out.push(Stmt { id, kind, span: Span::new(lo, self.prev_hi()), chained: Chained::No });
         Some(())
     }
@@ -2171,6 +2178,7 @@ impl<'a> P<'a> {
         let at = self.here().lo as usize;
         let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::at(at) };
         let mut faces = Vec::new();
+        let mut sets: Vec<InPlace> = Vec::new();
         let (name, kind) = if self.set_ahead() {
             let name = key("s");
             let lit = self.set_lit(next_id)?;
@@ -2179,6 +2187,7 @@ impl<'a> P<'a> {
             let name = key("i");
             let component = self.component_name()?;
             let outer = self.faces.replace(Vec::new());
+            let mark = self.in_place.len();
             let args = self.inst_args();
             let read = std::mem::replace(&mut self.faces, outer).unwrap_or_default();
             let args = args?;
@@ -2187,6 +2196,8 @@ impl<'a> P<'a> {
                 let id = self.mint_stmt(next_id, span)?;
                 faces.push((id, StmtKind::Decl(decl), span));
             }
+            // and each set written in place as an argument, hoisted where it stood
+            sets = self.in_place_args(mark, next_id)?;
             let inst = Instance {
                 annotations: Default::default(),
                 name: name.clone(),
@@ -2201,8 +2212,8 @@ impl<'a> P<'a> {
         };
         let span = Span::new(at, self.prev_hi());
         let id = self.mint_stmt(next_id, span)?;
-        let faces = faces.into_iter()
-            .map(|(f, kind, span)| Stmt { id: f, kind, span, chained: Chained::InPlace(id) })
+        let faces = sets.into_iter().flat_map(|s| s.hosted(id))
+            .chain(faces.into_iter().map(|(f, kind, span)| Stmt { id: f, kind, span, chained: Chained::InPlace(id) }))
             .collect();
         // a member of what was written in place, `std.sets.Cone(l, half: h).surface` — the
         // boundary of a set written in place (#783), lowered so — read off the hoisted name
@@ -2654,6 +2665,58 @@ impl<'a> P<'a> {
         }
     }
 
+    /// **A set written in place as a call's argument**, at the token here: a set literal, or a
+    /// call no number reads (no operator, built-in, measure or element word: a component's) that
+    /// stands whole as the argument.  Its start recorded and the parser moved past it, and the key
+    /// `hoist_in_place` will give it there returned (`#s…` a set, `#i…` a call); `None`, the
+    /// parser where it was, for any other argument.
+    fn in_place_arg(&mut self) -> Option<Name> {
+        let at = self.i;
+        let lo = self.here().lo as usize;
+        let set = self.set_ahead();
+        let call = !set && matches!(self.peek(), Some(Tok::Ident(_))) && self.call_at(self.i).is_some_and(|dotted| {
+            let w = self.word_at(self.i).unwrap_or_default();
+            dotted || !(crate::constraints::is_operator(w) || crate::expr::builtin(w).is_some()
+                || crate::expr::MEASURES.iter().any(|m| m.0 == w)
+                || crate::syntax::words::reserved_word(w) || w == "hint")
+        });
+        if !set && !call {
+            return None;
+        }
+        // past it: the set's braces, or the call's name and parentheses
+        let mut k = at;
+        if call {
+            while matches!(self.t.get(k + 1).map(|t| &t.0), Some(Tok::P('.')))
+                && matches!(self.t.get(k + 2).map(|t| &t.0), Some(Tok::Ident(_))) {
+                k += 2;
+            }
+            k += 1;
+        }
+        let close = words::matching(&self.t, k)?;
+        if !matches!(self.t.get(close + 1).map(|t| &t.0), Some(Tok::P(',' | ')'))) {
+            return None;
+        }
+        self.i = close + 1;
+        self.in_place.push(at);
+        let text = if set { format!("#s{lo}") } else { format!("#i{lo}") };
+        Some(Name { text, span: Span::new(lo, self.prev_hi()) })
+    }
+
+    /// The sets written in place as arguments since `mark` (`in_place_arg`), each hoisted where
+    /// it stood now `next_id` is in hand — a set, or a call with sets of its own in place — and
+    /// returned to be held in the text of the statement holding them.
+    fn in_place_args(&mut self, mark: usize, next_id: &mut u32) -> Option<Vec<InPlace>> {
+        let starts = self.in_place.split_off(mark);
+        let back = self.i;
+        let mut made = Vec::new();
+        for at in starts {
+            self.i = at;
+            made.push(self.hoist_in_place(next_id)?);
+        }
+        self.i = back;
+        Some(made)
+    }
+
     /// One argument of an instantiation: an entity by name, or a number worked out here.
     fn inst_arg(&mut self) -> Option<InstArg> {
         let lo = self.here().lo as usize;
@@ -2665,6 +2728,13 @@ impl<'a> P<'a> {
             }
             _ => None,
         };
+        // a set written in place ([0.213]): a set literal, or a call no number reads — a component's —
+        // standing whole as the argument, read as the key it is hoisted under where the statement
+        // holding the call is minted (`in_place_args`)
+        if let Some(key) = self.in_place_arg() {
+            let value = InstVal::Ref(Ref { root: key.clone(), path: Vec::new(), span: key.span });
+            return Some(InstArg { label, value, span: Span::new(lo, self.prev_hi()) });
+        }
         // a group written in place, `cyl: {bore: 16mm}`, refused in a call by the flattener; and
         // a member that is a list, `holes: [(0mm, 0mm), (4mm, 2mm)]`, a group of its items by place
         let fields = match self.peek() {

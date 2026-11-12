@@ -4,6 +4,13 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.213] Sets written in place as arguments.** A `set` formal takes a set written in place: a
+set literal, or a call of a component standing whole as the argument, one inside another's alike —
+`Join(std.sets.Segment(a, b), std.sets.Segment(c, d))`, `Grow({ x | x distance(<= 2mm) c }, d:
+1mm)` — each the set an anonymous instance of it is, as if named on the line before (§4.1).
+Through 0.212 an argument was a reference and never a call, so each was E103: "`A` wants a set,
+not `std.sets.Segment(a, b)`", and every set a word was given had a name of its own.
+
 **[0.212] Some points of sets.** `some` binds points of sets as well as an instant of a running
 number (§6.21): in a set's body, `some q in A, r in B: p in X` is the points `p` that some point of
 each set puts in `X`. Where `X` is the segment between the bound points (`std.sets.Segment(q, r)`,
