@@ -1046,6 +1046,43 @@ fn a_run_says_its_stages_and_their_times() {
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
+/// **`--json` builds what the text report builds** (#904 A12): unasked, its table is the drawing's
+/// numbers and no solid's measures, so under `--no-check` neither report builds a solid — the JSON
+/// once built every one, past ten minutes on a gearbox the text read in six seconds.  A `--where`
+/// reaching a solid builds it in both, and both say its volume.
+#[test]
+fn the_json_report_builds_no_solid_the_text_report_does_not() {
+    let (path,_) = clearance_document("json");
+    let file = path.to_str().unwrap();
+    let built = |args: &[&str]| {
+        let out = run(&[&[file,"--no-check","--progress"],args].concat());
+        assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let built: Vec<String> = ["sA_","sB_"].into_iter()
+            .filter(|s| stderr.lines().any(|l| l.contains(&format!("built {s} in")))).map(String::from)
+            .collect();
+        (built,String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let (text,_) = built(&[]);
+    assert!(text.is_empty(),"the text report builds {text:?}");
+    let (json,out) = built(&["--json"]);
+    assert_eq!(json,text,"the JSON report builds what the text report does");
+    let positions = |out: &str| gcs_core::json::parse(out).unwrap().get("documents").unwrap()
+        .arr()[0].get("positions").unwrap().clone();
+    let table = positions(&out);
+    assert!(table.get("aA.x").is_some(),"the drawing's numbers are the whole table: {out}");
+    assert!(table.get("sA_.volume").is_none(),"{out}");
+    // asked, in either, and the other solid still not
+    let (json,out) = built(&["--json","--where","sA_"]);
+    assert_eq!(json,["sA_"],"{out}");
+    let volume = positions(&out).get("sA_.volume").map(|v| v.as_f64());
+    assert!(volume.is_some_and(|v| (v-500.).abs() < 1e-6),"{out}");
+    let (text,out) = built(&["--where","sA_"]);
+    assert_eq!(text,["sA_"],"{out}");
+    assert!(out.contains("  sA_.volume = 500\n"),"{out}");
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
 /// `--lint` says the drift lint's warnings in the core's words, and only when asked: advisory, so
 /// a document that solves still exits 0.
 #[test]

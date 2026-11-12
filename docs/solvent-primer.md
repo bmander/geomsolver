@@ -3212,7 +3212,9 @@ A redundancy among pure relations (a fourth `perpendicular` round a rectangle) i
 
 **`--where NAME`** prints the numbers under a name: a point's (`hinge.x`), an instance's
 (`--where t0`), a plane's (`--where std.side`), a solid's measurements (`--where body`), or one
-number (`--where body.volume`). Under `--json` they are a `positions` table. It is quicker than a
+number (`--where body.volume`). Under `--json` they are a `positions` table; with no `--where` it
+holds every number of the drawing but no solid's measurements, which build the solid and are read
+only under a name given. It is quicker than a
 `claim` for testing a position. A value the document names is read the same way, in its unit:
 `--where ratio` prints `ratio = 16`, `--where torque` `torque = 0.0864 N·m`, `--where dims`
 each member of a group; under `--json` they are a `values` table, each with its `value`, `unit`

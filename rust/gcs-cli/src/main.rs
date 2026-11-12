@@ -55,7 +55,8 @@ diagnosed, and the report says where it stands.
                         --set travel=3mm); repeatable, one document, and said in the report
     --where NAME        where a name landed: its own numbers and everything under it, and a
                         value the document names, in its unit (repeatable; the whole table in
-                        --json when none is given)
+                        --json when none is given).  A solid's measures (volume, area, bounds,
+                        faces) and a panel's are read only under a name given: they build it
     --no-diagnose       solve only; skip the diagnosis
     --no-check          judge no claim about solids (clear, fits, inside), so no solid is built
                         for one: the report says how many were left unjudged.  The claims over
@@ -1231,15 +1232,18 @@ fn report_set(sk: &Sketch, map: &gcs_core::program::SourceMap, what: &str, ids: 
 /// The rows of `report::positions` a reader asked for: a name matches its own numbers
 /// (`o` gives `o.x`, `o.y`) and everything written under it (`cyl` gives the whole instance,
 /// `cyl.pivot.x` gives the one number).  Three questions, one rule, since a scalar, an
-/// entity and an instance are all just names with dots in them.  Empty asks for everything.
+/// entity and an instance are all just names with dots in them.  Empty asks for every number the
+/// drawing holds, and for no body's measures (#904 A12).
 fn wanted(
     sk: &Sketch,
     map: &gcs_core::program::SourceMap,
     names: &[String],
 ) -> Vec<(String, f64)> {
-    // a solid is read only where a name asked reaches it, or it reaches a name asked — a swept
-    // one from its exact surface where one builds, as a drawing reads it
-    let asked = |n: &str| names.is_empty() || names.iter().any(|q| under(n, q) || under(q, n));
+    // a body — a solid, a panel, a development — is built and measured only where a name asked
+    // reaches it, or it reaches a name asked: a swept solid from its exact surface where one
+    // builds, as a drawing reads it.  Never for the whole table `--json` gives unasked: the text
+    // report builds nothing unasked, so the JSON costs what it costs, and `--where` asks in both
+    let asked = |n: &str| names.iter().any(|q| under(n, q) || under(q, n));
     gcs_core::brep::export::supply_exact_where(sk, &|i| asked(&sk.solids[i].name));
     let all = report::positions_where(sk, map, &asked);
     if names.is_empty() {
