@@ -20,6 +20,36 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   surface turned from a conic, besides the form over the curve's box. The box is the world's, and
   read into the surface's frame it proved the run only a hair wide: a circle in the plane tangent
   to a torus's tube, at one attitude in a dozen, read past any search's boxes and was refused.
+- **An ellipse cuts in closed form under a planar motion, and a helical rack with rounded tips
+  stays in the closed form** (#904 A6): `swept::planar_cut::Cutting::Ellipse` (**new**,
+  **breaking** for exhaustive matches) cuts as a circle cuts, by Newton from its support point
+  toward the instant centre. `swept::extruded::Screwed::read` sections an arc of the profile as
+  the ellipse it is square to the axis, so a hob's tip round is carried up the helix with the
+  flanks, where it sent the rack's space to the traced, fitted sheet (1.7e-2 mm and 4° off its
+  contacts): the space is the rounded tooth's arithmetic to 6e-4 mm³.
+- **A traced sheet is laid in its cut's own scale** (#904 A3): a cutter of revolutions' cut has a
+  unit, the length its walk runs over at the band's middle station against `trace::REFERENCE_WALK`
+  (**new**), so a pair with every length scaled is the same construction. `trace::Tracer` gains
+  `unit` (**breaking** for code building a `Tracer` literally) and `sheet::settle` takes it
+  (**breaking**: a new argument); `cutter::Loop::scaled` and `Loop::walked` (**new**). Every piece
+  of a section loop is asked at the same 32 places, and the missed run measured by its faces'
+  length, where a tip narrower than the reach's step was missed.
+- **A revolved cutter's band is read where its contacts first reach the blank, and a margin column
+  leaping beside the blank costs the sheet that column** (#904 A4): the band no longer moves with
+  the half-plane a world axis picks, so a gear builds alike in any frame (`cutter::Cutter::turned`,
+  **new**); outside the columns holding the blank, a column leaping a turn round is dropped with
+  those beyond it, where every column's rows were trimmed back before it (`trace::charted` takes
+  the columns `reached` and returns `Charted`, **breaking**).
+- **A fold's gap outside the blank is crossed, not turned at, and a cell thinner than its first
+  mesh's sag is sampled on a finer one** (#904 A1/A2): a station holding contacts in the blank on
+  both sides of its fold's gap walks across it, where it turned onto the other root and ran a turn
+  round the pinion; `query::interior` reads a cell its first mesh vouches no point of again on one
+  ten times finer, so a tip relief a hundredth of a millimetre thick is sampled. The configured
+  hypoid pinion at the mill its balance finds builds. A fold the admission refuses (E3) names the
+  tool face whose generated surface folds.
+- **A face's sampled loops are simple polygons** (`mesh`, #904 A9): two chords between the same two
+  corners, an arc sampled as the very chord a line is, are split as crossing, so a face whose loop
+  is a circle's segment triangulates, where its inside flooded past the loop.
 
 ## [0.10.0] - 2026-11-12
 
