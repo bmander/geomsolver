@@ -14,6 +14,7 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use crate::build::Seg;
+use crate::planar::signed_area;
 use crate::geom::{Curve,Frame};
 use crate::nurbs::Net;
 use super::planar_cut::{Cut,Cutting,PlanarStep,cut_at};
@@ -262,9 +263,9 @@ impl Screwed {
         }
         // walked counter-clockwise about the frame's `z` (an extrusion against it walks the other
         // way): the area its points enclose, an arc's sampled along it
-        let points: Vec<P> = section.iter().flat_map(|seg| (0..8).map(move |j| seg.t[0]+(seg.t[1]-seg.t[0])*j as f64/8.)
-            .map(move |t| { let l = frame.local(seg.curve.point(t)); [l[0],l[1]] })).collect();
-        let area: f64 = (0..points.len()).map(|k| { let (p,q) = (points[k],points[(k+1)%points.len()]); p[0]*q[1]-p[1]*q[0] }).sum();
+        let points: Vec<P> = section.iter().flat_map(|seg| seg.samples(8))
+            .map(|q| { let l = frame.local(q); [l[0],l[1]] }).collect();
+        let area = signed_area(&points);
         if !(area.abs() > 0.) { return None }
         if area < 0. {
             section.reverse();
