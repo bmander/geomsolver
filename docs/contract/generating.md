@@ -940,7 +940,27 @@ short of it, and at the double point laid beside the rim; given, the arrangement
 meeting to the tolerance (`boolean`'s `triple_points`), not to the tolerance over the sine of its
 surfaces' angle, a trace's, which at a double point, where every sheet and the pose are tangent,
 grew until two given curves leaving the point a few degrees apart were cut a centimetre along
-(`swept_contacts::each_sheet_is_given_its_meeting_with_the_tool_at_each_end`).
+(`swept_contacts::each_sheet_is_given_its_meeting_with_the_tool_at_each_end`). The rim is given too:
+the sheet's own edge and the rim given are one curve, merged where the meetings crossing them are
+cut alike, and without it nothing lays the rim on the pose's face, which then stood whole.
+
+**The trim of a screwed torus** (`swept_contacts::a_rod_grooved_by_a_leaning_torus_screwed_along_it_is_its_volume`,
+S4's gate for `torus-screwed-through-rod`): the closed sweep trimmed from those candidates, judged,
+and cut from the rod is the groove's volume computed apart from it (1460.6300031715, by the
+helical heights the torus reaches at each radius) within 3e-5, built to 1e-5. Four things it took.
+**A tool bounded by one ball or one torus is read exactly** (`member::Solid`): its implicit is its
+signed distance, so membership has no sag — a mesh's (a hundredth of the tool) set the hair a
+piece's sides are read at, and two sheets touching along a path stand within a thousandth of each
+other a centimetre off it, which no side read at that hair tells apart. **The hair is the
+tolerance's**, a few of them (`Trim::hair`): above the sections' fit, below the thinnest piece
+beside a touch; the tool's 1e-4 read those wrong. **A piece proved inside or outside the sweep at a
+point of it bounds nothing** (`trim`'s `side`, `Swept::beyond` at `ON_CURVE` tolerances), read
+before its sides. **A fit merges nodes within the tolerance** (`fitted`): a cubic through two
+nodes a hair apart swung 160 off its branch between them, unread by a span too short to check,
+and the flux and the mesh of the face it bounded read it so; and a branch two of whose roots
+stood at one place was refused whole. Each piece of contact is cut at every double point it
+passes (S1's gate: a piece ends on the face's boundary or where `∇g = 0`), where `|∇g|` falls to
+a least and Newton holds one, as well as where it turns sharply.
 
 The build's tolerance must be one a fit can hold: a contact fitted within a tenth of
 `geom::tolerance` (5e-10 of the size) takes thousands of spans, and its rim then stands off its face

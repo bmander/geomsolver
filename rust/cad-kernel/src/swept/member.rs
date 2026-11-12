@@ -38,7 +38,10 @@ pub struct Solid { pts: Vec<V>,tris: Vec<[u32;3]>,tree: Bvh<3>,pub sag: f64,
     /// not, the winding read instead), and each edge's, the sum of its two triangles' unit normals:
     /// the side of a point whose nearest point of the mesh is on a vertex or an edge read off it
     /// (Bærentzen & Aanæs 2005), exact for a closed mesh turned consistently outward.
-    vertex_normals: Vec<Option<V>>,edge_normals: Vec<[Option<V>;3]> }
+    vertex_normals: Vec<Option<V>>,edge_normals: Vec<[Option<V>;3]>,
+    /// a tool bounded by one closed surface whose implicit is its signed distance (a ball, a
+    /// torus): that surface, the sign its face reads outward, and the scale it is read at
+    exact: Option<(crate::geom::Surface,f64,f64)> }
 
 impl Solid {
     /// The B-rep `b` (its units) meshed within `bar` and read in units `1/scale` of its own (a
@@ -55,7 +58,24 @@ impl Solid {
         let size = pts.iter().fold(0_f64,|r,p| r.max(norm(*p)));
         let sag = m.sag/scale+1e-12*(1.+size);
         let (vertex_normals,edge_normals) = pseudo_normals(&pts,&m.tris);
-        Ok(Solid {pts,tris:m.tris,tree,sag,vertex_normals,edge_normals})
+        // **a tool bounded by one ball or one torus is read exactly** (#880 Q1b): its surface's
+        // implicit is its signed distance, Lipschitz as the mesh's is and with no sag — a mesh's sag
+        // (a hundredth of the tool on the leaning torus) set the hair a piece's sides are read at,
+        // and two of a screwed torus's sheets touching along a path stand within a thousandth of
+        // one another a centimetre off it, which no side read at that hair tells apart
+        let exact = match b.faces[..] {
+            [ref f] if matches!(f.surface,crate::geom::Surface::Sphere(..) | crate::geom::Surface::Torus(..)) =>
+                Some((f.surface.clone(),if f.reversed { -1. } else { 1. },scale)),
+            _ => None,
+        };
+        let sag = if exact.is_some() { 1e-12*(1.+size) } else { sag };
+        Ok(Solid {pts,tris:m.tris,tree,sag,vertex_normals,edge_normals,exact})
+    }
+
+    /// The signed distance at `p` read exactly, where the tool is one ball or one torus.
+    fn exact_at(&self,p: V) -> Option<f64> {
+        let (s,sign,scale) = self.exact.as_ref()?;
+        Some(sign*s.implicit(p.map(|x| x*scale))/scale)
     }
 
     /// How many triangles the boundary is meshed in.
@@ -69,6 +89,7 @@ impl Solid {
 
     /// The distance from `p` to the meshed boundary.
     pub fn distance(&self,p: V) -> f64 {
+        if let Some(d) = self.exact_at(p) { return d.abs() }
         let best = std::cell::Cell::new(f64::INFINITY);
         self.tree.query_nearest(|b| b.gap(Bounds {lo:p,hi:p}),|| best.get(),|i| {
             let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
@@ -83,6 +104,7 @@ impl Solid {
     /// triangle — on a closed mesh turned outward, exactly the side — and off the winding number
     /// where it lies on a triangle's edge or corner, where the triangles there disagree.
     pub fn signed_near(&self,p: V) -> (f64,bool) {
+        if let Some(d) = self.exact_at(p) { return (d.abs(),d < 0.) }
         let best = std::cell::Cell::new((f64::INFINITY,usize::MAX,[0.;3],crate::util::space::Region::Face));
         self.tree.query_nearest(|b| b.gap(Bounds {lo:p,hi:p}),|| best.get().0,|i| {
             let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
@@ -109,6 +131,7 @@ impl Solid {
 
     /// The generalised winding number at `p`: near 1 inside, near 0 outside.
     pub fn winding(&self,p: V) -> f64 {
+        if let Some(d) = self.exact_at(p) { return if d < 0. { 1. } else { 0. } }
         let mut w = 0.;
         for t in &self.tris {
             let [a,b,c] = t.map(|k| sub(self.pts[k as usize],p));

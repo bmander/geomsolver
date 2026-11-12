@@ -257,13 +257,15 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
         p.uv = out;
         p.points = p.uv.iter().map(|&uv| surface.point(uv)).collect();
     }
-    // **a piece turning a corner passes a double point** (#880 Q1b): the contact is smooth but where
-    // two branches cross, so a polyline of it, its chords within the tolerance, turns sharply only
-    // there — a double point the grid has not seen as a saddle, standing on a node (the leaning
-    // torus's, on the crossing of its two seams, where the one closed piece ran through it twice and
-    // turned a corner each time, its sheets creased along that point's path). Cut there, the corner
-    // placed on the double point where Newton finds one within a cell, each end `Singular`; a closed
-    // piece opened at its first corner
+    // **a piece is cut at every double point it passes** (#880 Q1b; S1: each piece ends on the face's
+    // boundary or where `∇g = 0`): where the grid has not seen one as a saddle — one standing on a
+    // node (the leaning torus's, on the crossing of its two seams, where the one closed piece ran
+    // through it twice and turned a corner each time, its sheets creased along that point's path),
+    // or one the walk ran straight through along both its branches (the torus's second, whose two
+    // stretches' sheets touch along its path). Read where the piece turns sharply, which the
+    // contact, smooth but where two branches cross, does only there, and where `|∇g|` falls to a least
+    // and Newton holds a double point; cut there, placed on the double point, each end `Singular`;
+    // a closed piece opened at its first
     let size = tool.size();
     let mut split: Vec<Piece> = Vec::new();
     for p in pieces {
@@ -285,12 +287,25 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
             crate::util::space::dot(d1,d2) < 0.866*crate::util::space::norm(d1)*crate::util::space::norm(d2)
         };
         let last = if p.closed { m-1 } else { m };
-        let corners: Vec<usize> = (if p.closed { 0 } else { 1 }..last.saturating_sub(if p.closed { 0 } else { 1 })).filter(|&k| turn(k)).collect();
+        let inner = if p.closed { 0 } else { 1 }..last.saturating_sub(if p.closed { 0 } else { 1 });
+        // the double point near point `k`, where Newton on `∇g = 0` finds one within a cell of it
+        let double = |k: usize| -> Option<Uv> {
+            let c = critical(p.uv[k]);
+            ((c[0]-p.uv[k][0]).abs() <= cell[0] && (c[1]-p.uv[k][1]).abs() <= cell[1] && g(c).is_some_and(|v| v.abs() <= 1e-9*most)).then_some(c)
+        };
+        // and the points a piece passes straight through a double point at: where `|∇g|` falls to a
+        // least a tenth of its middling value along the piece and Newton holds a double point there
+        // (the leaning torus's second, which the piece crossed twice without turning)
+        let steep: Vec<f64> = p.uv.iter().map(|&uv| grad(uv).map_or(f64::NAN,|d| (d[0]*span[0]).hypot(d[1]*span[1]))).collect();
+        let middling = { let mut v: Vec<f64> = steep.iter().copied().filter(|x| x.is_finite()).collect(); v.sort_by(f64::total_cmp); v.get(v.len()/2).copied().unwrap_or(0.) };
+        let wrap = |k: isize| if p.closed { k.rem_euclid(m as isize-1) as usize } else { k.clamp(0,m as isize-1) as usize };
+        let least = |k: usize| steep[k] < 0.1*middling && steep[k] <= steep[wrap(k as isize-1)] && steep[k] <= steep[wrap(k as isize+1)];
+        let mut corners: Vec<usize> = inner.filter(|&k| turn(k) || least(k) && double(k).is_some()).collect();
+        // (one double point once: a corner beside the least of `|∇g|`)
+        corners.dedup_by(|b,a| *b <= *a+2 && double(*a).zip(double(*b)).is_some_and(|(x,y)| distance(surface.point(x),surface.point(y)) <= tol));
         if corners.is_empty() { split.push(p); continue }
         let at = |k: usize| -> (Uv,V) {
-            let c = critical(p.uv[k]);
-            let held = (c[0]-p.uv[k][0]).abs() <= cell[0] && (c[1]-p.uv[k][1]).abs() <= cell[1] && g(c).is_some_and(|v| v.abs() <= 1e-9*most);
-            if held { (c,surface.point(c)) } else { (p.uv[k],p.points[k]) }
+            match double(k) { Some(c) => (c,surface.point(c)),None => (p.uv[k],p.points[k]) }
         };
         // the points in order from the first corner (round a closed piece to it again), and the corners along them
         let (order,cuts): (Vec<usize>,Vec<usize>) = if p.closed {
@@ -381,6 +396,18 @@ pub fn piece_curve(tool: &Brep,piece: &Piece,twist: &Twist,tol: f64) -> Option<c
 /// stands, and the point is the node the span would be split at.
 fn fitted(mut nodes: Vec<(Uv,V)>,between: &(dyn Fn(Uv,Uv) -> (Uv,V)+Sync),tol: f64) -> Option<crate::geom::Curve> {
     const MOST: usize = 4097;
+    // (a node standing on the one before it is no node: the interpolation's parameters must rise —
+    // two of a march's roots at one place, near where a branch turns back across the grid, refused
+    // the whole branch, and its sheet was met by no curve there)
+    // (and nodes within the tolerance of one another are one: a cubic interpolated through two such,
+    // its parameters a hair apart, swung far off between them — 160 off a branch of a stretch's
+    // meeting with the tool, beside the double point it leaves, that no span long enough to be
+    // read showed)
+    let apart = |a: V,b: V| distance(a,b) > tol;
+    let last = *nodes.last()?;
+    nodes.dedup_by(|b,a| !apart(a.1,b.1));
+    if nodes.len() < 2 { return None }
+    if let Some(end) = nodes.last_mut() { *end = last; }
     // each span's point between, kept until the span is split
     let mut mids: Vec<Option<(Uv,V)>> = vec![None;nodes.len()-1];
     loop {
@@ -396,7 +423,6 @@ fn fitted(mut nodes: Vec<(Uv,V)>,between: &(dyn Fn(Uv,Uv) -> (Uv,V)+Sync),tol: f
         // its own rounding — a branch's end on a double point of the contact)
         let wide: Vec<usize> = (0..nodes.len()-1).filter(|&k| {
             let chord = crate::util::space::sub(nodes[k+1].1,nodes[k].1);
-            if !(norm_of(chord) > tol) { return false }
             let d = crate::util::space::sub(spline.point(0.5*(t[k]+t[k+1])),mids[k].unwrap().1);
             let along = crate::util::space::dot(d,chord)/crate::util::space::dot(chord,chord);
             norm_of(crate::util::space::sub(d,scale(chord,along))) > 0.1*tol
@@ -404,11 +430,16 @@ fn fitted(mut nodes: Vec<(Uv,V)>,between: &(dyn Fn(Uv,Uv) -> (Uv,V)+Sync),tol: f
         if wide.is_empty() || nodes.len()+wide.len() > MOST {
             return Some(crate::geom::Curve::BSpline(std::sync::Arc::new(spline)))
         }
+        let mut grew = false;
         for &k in wide.iter().rev() {
             let m = mids[k].unwrap();
+            // (a point between within the tolerance of an end of its span splits nothing)
+            if !apart(m.1,nodes[k].1) || !apart(m.1,nodes[k+1].1) { continue }
             nodes.insert(k+1,m);
             mids.splice(k..=k,[None,None]);
+            grew = true;
         }
+        if !grew { return Some(crate::geom::Curve::BSpline(std::sync::Arc::new(spline))) }
     }
 }
 
@@ -972,7 +1003,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
         let sheet = &c.sheet.faces[0].surface;
         let f = &poses[e].faces[fi];
         let touch = (fi == *face).then_some(e as f64);
-        let mut curves: Vec<crate::geom::Curve> = Vec::new();
+        let mut curves: Vec<crate::geom::Curve> = touch.map(|_| c.rims[e].clone()).into_iter().collect();
         let corners: Vec<Uv> = if touch.is_none() { Vec::new() } else {
             [0.,1.].into_iter().zip(section).filter(|(_,end)| matches!(end,End::Singular)).map(|(u,_)| [u,e as f64]).collect()
         };
