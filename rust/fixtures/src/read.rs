@@ -61,6 +61,20 @@ pub fn read_beside(source: &str,base: &Path,rewrite: &mut dyn FnMut(&str,String)
     elaborate(source,&mut beside(base,rewrite))
 }
 
+/// A document written in `rust/examples` (`use spiral_bevel.hypoid (…)`), its modules read beside
+/// the examples as solventc reads them there, elaborated and not solved.
+pub fn unsolved_in_examples(source: &str) -> program::Elaborated {
+    unsolved(source,&mut beside(&examples_root(),&mut |_,t| t))
+}
+
+/// `unsolved_in_examples`, solved as solventc solves it (the default options), asserting it is.
+pub fn solved_in_examples(source: &str) -> program::Elaborated {
+    let mut e = unsolved_in_examples(source);
+    let result = solve::solve(&mut e.sketch,solve::SolveOpts::default());
+    assert!(result.success,"{result:?}");
+    e
+}
+
 /// The index of the named solid.
 pub fn solid(e: &program::Elaborated,name: &str) -> usize { e.map.ent_named(name).unwrap().i() }
 

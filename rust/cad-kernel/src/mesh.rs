@@ -446,51 +446,92 @@ fn off_at(p: V,a: V,b: V,c: V) -> f64 {
 /// The mesh of the whole boundary within `bar` (a length) and `angular` (radians an edge's chords
 /// may turn), and the greatest sag measured.
 /// Where face `fi`'s loops, as their edges are sampled (`samples`: each edge's parameters first),
-/// cross themselves in the face's parameters: for each pair of chords that cross and are not
-/// neighbours along a loop, each one's edge and the parameter at its middle.
+/// are no simple polygons in the face's parameters: for each pair of chords that meet anywhere but
+/// at the corner they share — that cross, that touch, or that lie along one another from that
+/// corner — each one's edge and the parameter at its middle. Two chords between the same two
+/// corners are such a pair: they bound nothing (a circle's segment thinner than its arc's chord
+/// sags, the arc one chord, the very chord its line is).
 fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)]) -> Vec<(usize,f64)> {
     let f = &b.faces[fi];
-    // every chord: its ends in the face's parameters, its edge and parameters, its loop and place
-    let mut chords: Vec<([Uv;2],usize,[f64;2],usize,usize)> = Vec::new();
+    // every chord: its ends in the face's parameters and their points' ids, its edge and
+    // parameters, its loop and place
+    struct Chord { uv: [Uv;2],id: [u32;2],e: usize,t: [f64;2],l: usize,place: usize }
+    let mut chords: Vec<Chord> = Vec::new();
+    // each end where the triangulation puts its corner: a point's id read at one place (within the
+    // weld) is one corner, at the place first read — so two edges' chords between the same two
+    // corners are the one chord they are there, not two a rounding apart (and so, by a box test,
+    // apart)
+    let weld = 1e-9*(1.+b.size());
+    let gap = |a: Uv,c: Uv| (a[0]-c[0]).dhypot(a[1]-c[1]);
+    let mut corners: std::collections::BTreeMap<u32,Vec<Uv>> = std::collections::BTreeMap::new();
+    let mut corner = |id: u32,uv: Uv| -> Uv {
+        let here = corners.entry(id).or_default();
+        if let Some(&q) = here.iter().find(|&&q| gap(q,uv) <= weld) { return q }
+        here.push(uv);
+        uv
+    };
     let mut sizes = Vec::new();
     for (li,l) in f.loops.iter().enumerate() {
         let first = chords.len();
         for c in l {
             let e = c.edge as usize;
             if matches!(b.edges[e].curve,EdgeCurve::Degenerate) { continue }
-            let ts = &samples[e].0;
+            let (ts,ids) = &samples[e];
             let at = |t: f64| c.pcurve.at(t,&b.edges[e],&f.surface,&b.vertices);
-            let mut pairs: Vec<[f64;2]> = ts.windows(2).map(|w| [w[0],w[1]]).collect();
+            let mut pairs: Vec<usize> = (1..ts.len()).collect();
             if c.reversed { pairs.reverse(); }
-            for [x,y] in pairs {
+            for k in pairs {
                 let place = chords.len()-first;
-                chords.push(([at(x),at(y)],e,[x,y],li,place));
+                let uv = [corner(ids[k-1],at(ts[k-1])),corner(ids[k],at(ts[k]))];
+                chords.push(Chord {uv,id:[ids[k-1],ids[k]],e,t:[ts[k-1],ts[k]],l:li,place});
             }
         }
         sizes.push(chords.len()-first);
     }
     // by their least u, each against those whose u reach overlaps it
-    let lo = |c: &([Uv;2],usize,[f64;2],usize,usize)| c.0[0][0].min(c.0[1][0]);
-    let hi = |c: &([Uv;2],usize,[f64;2],usize,usize)| c.0[0][0].max(c.0[1][0]);
+    let lo = |c: &Chord| c.uv[0][0].min(c.uv[1][0]);
+    let hi = |c: &Chord| c.uv[0][0].max(c.uv[1][0]);
     let mut order: Vec<usize> = (0..chords.len()).collect();
     order.sort_by(|&i,&j| lo(&chords[i]).total_cmp(&lo(&chords[j])));
-    let neighbours = |i: usize,j: usize| {
-        let (a,c) = (&chords[i],&chords[j]);
-        if a.3 != c.3 { return false }
-        let n = sizes[a.3];
-        let d = a.4.abs_diff(c.4);
-        d <= 1 || d == n-1
-    };
+    // whether `c` lies on the segment `a`–`b`, which it is in line with
+    let within = |a: Uv,b: Uv,c: Uv| a[0].min(b[0]) <= c[0] && c[0] <= a[0].max(b[0]) && a[1].min(b[1]) <= c[1] && c[1] <= a[1].max(b[1]);
     let mut out = Vec::new();
     for (k,&i) in order.iter().enumerate() {
         for &j in &order[k+1..] {
             if lo(&chords[j]) > hi(&chords[i]) { break }
-            if neighbours(i,j) { continue }
-            let ([p,q],[r,t]) = (chords[i].0,chords[j].0);
+            let (a,c) = (&chords[i],&chords[j]);
+            // an edge the face uses twice, once each side (a seam; on a plane, a slit the face lies
+            // either side of), is one chord each way at each of its places: no fault
+            if a.e == c.e && a.t == c.t { continue }
+            let ([p,q],[r,t]) = (a.uv,c.uv);
             if (p[1].max(q[1]) < r[1].min(t[1])) || (r[1].max(t[1]) < p[1].min(q[1])) { continue }
-            if orient(p,q,r)*orient(p,q,t) < 0 && orient(r,t,p)*orient(r,t,q) < 0 {
-                for c in [&chords[i],&chords[j]] { out.push((c.1,0.5*(c.2[0]+c.2[1]))); }
-            }
+            let n = sizes[a.l];
+            let d = a.place.abs_diff(c.place);
+            let neighbours = a.l == c.l && (d <= 1 || d == n-1);
+            // the ends of two chords that are one corner: one id at one place (a vertex two loops pass
+            // through, #597; one vertex either side of a seam is two places), and, for neighbours along a
+            // loop with no such end, the ends nearest each other wherever they stand
+            let ends = [(0,0),(0,1),(1,0),(1,1)];
+            let one = |&(x,y): &(usize,usize)| a.id[x] == c.id[y] && a.uv[x] == c.uv[y];
+            let mut shared = ends.iter().filter(|e| one(e));
+            let corner = shared.next().copied().or_else(|| neighbours.then(|| *ends.iter()
+                .min_by(|&&(x,y),&&(u,w)| gap(a.uv[x],c.uv[y]).total_cmp(&gap(a.uv[u],c.uv[w]))).unwrap()));
+            let meet = match (corner,shared.next()) {
+                // two chords between the same two corners
+                (Some(_),Some(_)) => true,
+                // from their one corner, along one another
+                (Some((x,y)),None) => {
+                    let (s,u,w) = (a.uv[x],a.uv[1-x],c.uv[1-y]);
+                    orient(s,u,w) == 0 && (u[0]-s[0])*(w[0]-s[0])+(u[1]-s[1])*(w[1]-s[1]) > 0.
+                }
+                // anywhere: across, or one's end on the other
+                (None,_) => {
+                    let (o1,o2,o3,o4) = (orient(p,q,r),orient(p,q,t),orient(r,t,p),orient(r,t,q));
+                    o1*o2 < 0 && o3*o4 < 0 || o1 == 0 && within(p,q,r) || o2 == 0 && within(p,q,t)
+                        || o3 == 0 && within(r,t,p) || o4 == 0 && within(r,t,q)
+                }
+            };
+            if meet { for c in [a,c] { out.push((c.e,0.5*(c.t[0]+c.t[1]))); } }
         }
     }
     out
@@ -680,6 +721,16 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let mut sag = vec![0_f64;t2.tris.len()];
         // points put in for turning alone, at most twice the triangles the loops made
         let (mut turned,budget) = (0usize,2*t2.tris.len()+64);
+        // whether a facet of normal `n` (a cross product of its sides), its longest side `longest`,
+        // faces against the surface's normal `m` at its middle: what `Mesh::turned` counts. (A facet
+        // thinner than a tenth of the bar is flat within it, and its normal says nothing of the
+        // surface's: a sliver a few nanometres off a boundary side, one with two corners at a pole,
+        // which is dropped, or one whose inner corner a sheet's chart bends past the straight side
+        // its parameters stand beside, 0.35 µm across on the pinion)
+        let against = |n: V,longest: f64,m: V| {
+            let o = dot(n,m);
+            norm(n) > 0.1*bar*longest && if f.reversed { o > 0. } else { o < 0. }
+        };
         // the surface at `uv`: its place, its normal `S_u × S_v` and whether that is sound there (not
         // a pole's)
         let lift = |uv: Uv| -> (V,(V,bool)) {
@@ -724,7 +775,8 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                     // while the triangle is longer than twice the bar (a turn finer than the sag is no
                     // shape), unless it is turned right over
                     let n = cross(sub(b3.1,a.1),sub(c.1,a.1));
-                    let long = [distance(a.1,b3.1),distance(b3.1,c.1),distance(c.1,a.1)].into_iter().fold(0.,f64::max) > 2.*bar;
+                    let longest = [distance(a.1,b3.1),distance(b3.1,c.1),distance(c.1,a.1)].into_iter().fold(0.,f64::max);
+                    let long = longest > 2.*bar;
                     let out = if f.reversed { -1. } else { 1. };
                     let normals = [read3[0].2,read3[1].2,read3[2].2,centre_normal];
                     let cosines: Vec<f64> = normals.iter().filter_map(|&(m,sound)| {
@@ -733,7 +785,12 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                     }).collect();
                     let over = cosines.iter().any(|&c| c < 0.);
                     let turns = over || long && cosines.iter().any(|&c| c.min(1.).dacos() > angular);
-                    if t2.pts.len() >= 400_000 || !(s > bar || turns && turned < budget) { continue }
+                    // a facet the export refuses — facing against the surface at its middle, thicker
+                    // than a tenth of the bar (`against`) — is refined whatever the budget, as a sag
+                    // past the bar is: the budget bounds the refinement for a turn short of that, which
+                    // a face's tight bends can spend before the one facet the export counts is reached
+                    let refused = centre_normal.1 && against(n,longest,centre_normal.0);
+                    if t2.pts.len() >= 400_000 || !(s > bar || refused || turns && turned < budget) { continue }
                     let middle = |q: [[f64;2];3]| [(q[0][0]+q[1][0]+q[2][0])/3.,(q[0][1]+q[1][1]+q[2][1])/3.];
                     let q = t.map(|v| t2.pts[v as usize]);
                     let (at,p) = if s > bar || !sliver(&t2,t) { (ti,middle(q)) } else {
@@ -768,14 +825,8 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let turned_tris: Vec<usize> = (0..t2.tris.len()).filter(|&ti| inside[ti] && {
             let [(ua,pa,_),(ub,pb,_),(uc,pc,_)] = t2.tris[ti].map(|v| read(&mut at_point,&t2,v as usize));
             let (_,su,sv) = f.surface.d1([(ua[0]+ub[0]+uc[0])/3.,(ua[1]+ub[1]+uc[1])/3.]);
-            // (a triangle thinner than a tenth of the bar is flat within it, and its normal says
-            // nothing of the surface's: a sliver a few nanometres off a boundary side, one with two
-            // corners at a pole, which is dropped, or one whose inner corner a sheet's chart bends
-            // past the straight side its parameters stand beside, 0.35 µm across on the pinion)
-            let nf = cross(sub(pb,pa),sub(pc,pa));
             let longest = distance(pa,pb).max(distance(pb,pc)).max(distance(pc,pa));
-            let o = dot(nf,cross(su,sv));
-            norm(nf) > 0.1*bar*longest && if f.reversed { o > 0. } else { o < 0. }
+            against(cross(sub(pb,pa),sub(pc,pa)),longest,cross(su,sv))
         }).collect();
         let turned = turned_tris.len();
         // the chords of the face's edges those triangles stand on, each to be halved

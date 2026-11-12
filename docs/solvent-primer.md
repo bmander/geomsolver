@@ -1291,7 +1291,12 @@ sampled poses of a frame's motion, reading solids placed under it, and reports t
 unknown (`claim over reach in (0.1mm, 0.9mm) { … }`) it solves at each sampled value, and over a
 declared `param t: Angle over (…)` (`claim over t { … }`, or a stretch, `claim over t in (0deg,
 90deg) { … }`) it stands the drawing at each sampled `t`, a solid drawn in a frame whose value
-reads `t` placed there. A refuted sweep says the sample where it fails by most.
+reads `t` placed there. A refuted sweep says the sample where it fails by most. A claim over a
+frame turns only what is placed under that frame: a solid read at an instant of another frame
+stands still (W117). Frames that turn together, a gear train, are claimed over one parameter:
+`param t: Angle over (0deg, 12deg)`, `fix(value == t) sun_turn` and `fix(value == t)
+planet_turn` (each turns its ratio times `t`), `sun_at := sun.body at sun_turn`, `planet_at :=
+planet.body at planet_turn`, then `claim over t { sun_at clear(0.005mm) planet_at }`.
 
 **A claim over values.** A design table's figures are claimed as a drawing's facts are:
 `claim handle_stall_torque >= 2Nm`, `claim 2 * ratio > 30 and teeth != 12` — a comparison of the
@@ -1975,6 +1980,31 @@ A screw's face is square to its axis, or in a plane holding it with the face on 
 drawn through its axis, less tall than the pitch where it runs more than a turn); a slide's face is
 crossed by its direction. Anything else is E080, naming why. The developables' `coincident(t in (0,
 1))` — a contact's place on a curve — is another word, unchanged.
+
+**There are points of sets at which** ([0.212]). `some` binds points of sets as it binds a roll:
+`some q in A, r in B: p in X` in a set's body is the points some point of each set puts `p` in.
+Where `X` is the segment between them (either end may be a point of the drawing) it is the **join**
+of the sets — of convex sets their hull — and a solid of it is built exactly:
+
+```
+use std.sets
+tetrahedron := solid({ p | some q in std.sets.Segment(a, b), r in std.sets.Segment(c, d):
+  p in std.sets.Segment(q, r) })
+pyramid := solid({ p | some q in base: p in std.sets.Segment(apex, q) })   // `base` a face
+square := { x | some u in std.sets.Segment(s0, s1), v in std.sets.Segment(s2, s3):
+  x in std.sets.Segment(u, v) }
+loft := solid({ p | some q in square, r in octagon: p in std.sets.Segment(q, r) })   // joins nest
+```
+
+Where `X` is a ball about one bound point it is that set grown: `{ p | some q in
+std.sets.Segment(a, b): p distance(<= 2mm) q }` is a capsule.  A join is read where each set is the
+hull of finitely many points: a point, a segment, a convex polygon drawn as a face, a solid of
+planes meeting in convex edges (a box joined to a point over it is a house), another join.  The
+join is a word like any: `component Join(A: set, B: set) := { p | some q in A, r in B: p in
+std.sets.Segment(q, r) }` makes an octahedron of a square and its axis, a frustum of two squares.
+Anything else — another relation, an L-shaped face, a set bounded by a curve — is refused saying
+which, and so is a `some` outside the set of a solid (`x in …` of a drawn `x`).  One `some` binds
+every point: `some q in A, r in B:`, never one `some` inside another.
 
 **The labels are retired.** `solid(sec, depth: 30mm)` and every label of the old constructor
 (`from:`, `to:`, `depth:`, `draft:`, `about:`, `sweep:`, `sense:`, `through:`) are E001, saying the
@@ -3162,7 +3192,9 @@ pinion_flank regular(0.3, by: gear_tooth.crown) within pinion_blank.material  //
 
 With no number, or a `>=`, it is a check the solve reports broken (`bound broken`) and does not
 steer by. A number stated outright is an equation, so a cutter's pressure shift left unknown
-solves to where the margin binds. The source must be the tool's face itself, not grown by a
+solves to where the margin binds. The number may be an unknown (`least`, a formal left out):
+two flanks held `regular(least, …)` are held to each other, and the shift solves to where
+neither is nearer its fold. The source must be the tool's face itself, not grown by a
 backlash, and the blank is read as balls, cylinders, cones and half-spaces.
 
 **The B-rep read after the solve is not Solvent.** Trimmed patches, the seams where faces meet,
@@ -3212,7 +3244,9 @@ A redundancy among pure relations (a fourth `perpendicular` round a rectangle) i
 
 **`--where NAME`** prints the numbers under a name: a point's (`hinge.x`), an instance's
 (`--where t0`), a plane's (`--where std.side`), a solid's measurements (`--where body`), or one
-number (`--where body.volume`). Under `--json` they are a `positions` table. It is quicker than a
+number (`--where body.volume`). Under `--json` they are a `positions` table; with no `--where` it
+holds every number of the drawing but no solid's measurements, which build the solid and are read
+only under a name given. It is quicker than a
 `claim` for testing a position. A value the document names is read the same way, in its unit:
 `--where ratio` prints `ratio = 16`, `--where torque` `torque = 0.0864 N·m`, `--where dims`
 each member of a group; under `--json` they are a `values` table, each with its `value`, `unit`

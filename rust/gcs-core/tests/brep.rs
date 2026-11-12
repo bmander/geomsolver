@@ -1409,6 +1409,27 @@ fn interior_samples_are_inside_and_no_deeper_than_they_are() {
     assert!(samples[0].1 > 1.2,"{samples:?}");
 }
 
+/// **A cell thinner than its first mesh's sag is sampled on a finer one** (#904 A1/A2): a tube whose
+/// wall is 4 µm thick, 17 mm across its box, is meshed first to a sag of 2.7 µm, which no point of
+/// the wall clears; read again ten times finer, its samples lie in the wall no deeper than they
+/// are. Before, it had none, as the tip relief a hypoid's flank keeps at its
+/// mill had none (`hypoid_mill_sheet::the_pinion_at_the_found_mill_is_built_by_sectors`).
+#[test]
+fn a_cell_thinner_than_its_first_mesh_is_sampled_on_a_finer_one() {
+    use gcs_core::brep::query::interior;
+    let (c,r,wall,z) = ([0.,0.,0.],5.,0.004,[0.,10.]);
+    let tube = gcs_core::brep::boolean::boolean(&rod(c,r+wall,z),&rod(c,r,[z[0]-1.,z[1]+1.]),gcs_core::brep::boolean::Op::Cut,1e-9)
+        .unwrap();
+    let samples = interior(&tube,4).unwrap();
+    assert!(!samples.is_empty());
+    for (p,d) in &samples {
+        let radius = (p[0]*p[0]+p[1]*p[1]).sqrt();
+        let to_walls = (radius-r).min(r+wall-radius).min(p[2]-z[0]).min(z[1]-p[2]);
+        assert!(to_walls > 0.,"{p:?} outside the wall");
+        assert!(*d > 0. && *d <= to_walls+1e-12,"{p:?} said {d} deep, {to_walls} from the walls");
+    }
+}
+
 #[test]
 fn a_grid_interpolated_passes_through_it_and_makes_a_sheet() {
     use gcs_core::brep::nurbs::{interpolate_net,Parametrization};
@@ -1979,6 +2000,43 @@ fn a_face_thinner_than_its_chords_sag_still_meshes() {
     assert!(m.tris.len() > 4);
 }
 
+/// A face thinner than its edges' chords sag whose sampled loop does not cross but folds onto
+/// itself: a circle's segment 28 µm deep — where a boss's end cap pokes out of a cylinder about
+/// another axis, a frame's housing at its dropout (#904 A9) — its arc one chord at a display's bar,
+/// the very chord its line is. The two sides lie on one another and close no triangulation; the
+/// mesher splits sides that touch, as sides that cross, until its loops bound an area.
+#[test]
+fn a_segment_thinner_than_its_arcs_chord_sags_still_meshes() {
+    let (r,depth): (f64,f64) = (24.,0.028);
+    let half = (1.-depth/r).acos();
+    // the segment's area, its depth of one: the mesh's volume no more, and no less than the
+    // triangle its arc's middle and its line's ends make
+    let area = r*r*(2.*half-(2.*half).sin())/2.;
+    // in a leaning plane off the origin, turned every way about its centre: the line's parameters
+    // and the arc's chord's round apart either way, a hair, where the triangulation's corners make
+    // them one (the bicycle's cap, its segment a quarter turn along)
+    let c = [-421.21656051571483,-40.,53.66083310852717];
+    let n = [-0.9866618416234001,0.,0.16278332311487143];
+    let (x,y) = ([0.,1.,0.],[-0.16278332311487143,0.,-0.9866618416234001]);
+    let along = |a: f64| [0,1,2].map(|i| a.cos()*x[i]+a.sin()*y[i]);
+    for k in 0..24 {
+        let turn = PI/2.+TAU*k as f64/24.;
+        let at = |a: f64| [0,1,2].map(|i| c[i]+r*along(turn+a)[i]);
+        let p = Profile {names:vec![],origin:c,normal:n,loops:vec![vec![
+            arc(c,r,n,along(turn),Some([-half,half])),line(at(half),at(-half)),
+        ]]};
+        let b = prism(&p,0.,1.).unwrap();
+        b.check(1e-9).unwrap();
+        for (bar,angular) in [(0.05,0.2),(0.5,0.8),(1e-3,0.01)] {
+            let m = gcs_core::brep::mesh::mesh(&b,bar,angular)
+                .unwrap_or_else(|e| panic!("turned {turn}, at bar {bar}: {e}"));
+            assert_eq!(m.turned,0,"turned {turn}, at bar {bar}");
+            let v = mesh_volume(&m);
+            assert!(v > 0.7*area && v <= area*(1.+1e-6),"turned {turn}, at bar {bar}: {v} against {area}");
+        }
+    }
+}
+
 #[test]
 fn curves_cross_in_closed_form() {
     use gcs_core::brep::geom::Curve;
@@ -2289,7 +2347,7 @@ fn both_edges_rounded(hi: V,ats: [V;2],r: f64) -> gcs_core::brep::topo::Brep {
 #[test]
 fn a_slabs_top_rounded_from_both_edges_to_half_its_width_is_a_half_cylinder() {
     let both = both_edges_rounded([10.,4.,6.],[[5.,0.,6.],[5.,4.,6.]],2.);
-    assert_eq!(face_kinds(&both),["bspline","bspline","plane","plane","plane","plane","plane"]);
+    assert_eq!(face_kinds(&both),["cylinder","cylinder","plane","plane","plane","plane","plane"]);
     too_large(rounded(&named_box([10.,4.,6.]),&[[5.,0.,6.],[5.,4.,6.]],2.1));
 }
 
@@ -2536,6 +2594,72 @@ fn chamfers_between_planes_are_planes() {
     filled.check(1e-8).unwrap();
     assert!(filled.faces.iter().all(|f| f.surface.kind() == "plane"));
     close(volume(&filled),10.*(51.+49./2.));
+}
+
+/// **A round between two planes is a cylinder** (brep-bench's fillet/box-one-edge): the ball's
+/// centre runs along a line, every section the same, so the piece is the prism on one section cut
+/// off at each end — not a canal fitted along the edge, a net of thousands of poles the Boolean
+/// after it cut. A cube's edge rounded 2 (convex, cut): `1000 − 10(1 − π/4)r²` and
+/// `600 − 20r + 5πr − 2(1 − π/4)r²`; an L's inside edge rounded 2 (concave, filled):
+/// `10(51 + (1 − π/4)r²)` and `502 − 20r + 5πr + 2(1 − π/4)r²`. Its spine and contacts are the
+/// lines the ball's centre and touches run along.
+#[test]
+fn rounds_between_planes_are_cylinders() {
+    let r = 2.;
+    let corner = (1.-PI/4.)*r*r;
+    let cube = block([0.;3],[10.;3]);
+    let round = gcs_core::brep::fillet::roll(&cube,[10.,10.,5.],r,gcs_core::brep::geom::tolerance(cube.size())).unwrap();
+    assert!(!round.concave);
+    for u in [0.,1.] {
+        let s = round.spine.point(u);
+        close(s[0],8.);
+        close(s[1],8.);
+    }
+    close(gcs_core::space::distance(round.contacts[0].point(0.5),round.spine.point(0.5)),r);
+    let rounded_cube = rounded(&cube,&[[10.,10.,5.]],r).unwrap();
+    rounded_cube.check(1e-8).unwrap();
+    assert_eq!(face_kinds(&rounded_cube),["cylinder","plane","plane","plane","plane","plane","plane"]);
+    close(volume(&rounded_cube),1000.-10.*corner);
+    close(total_area(&rounded_cube),600.-20.*r+5.*PI*r-2.*corner);
+    // an L in (x, z) along y, 10 long, its inside edge at x = z = 3
+    let l = Profile {names:vec![],origin:[0.;3],normal:[0.,-1.,0.],
+        loops:vec![poly(&[[0.,0.,0.],[10.,0.,0.],[10.,0.,3.],[3.,0.,3.],[3.,0.,10.],[0.,0.,10.]])]};
+    let filled = rounded(&prism(&l,-10.,0.).unwrap(),&[[3.,5.,3.]],r).unwrap();
+    filled.check(1e-8).unwrap();
+    let kinds = face_kinds(&filled);
+    assert_eq!(kinds[0],"cylinder");
+    assert!(kinds[1..].iter().all(|&k| k == "plane"));
+    close(volume(&filled),10.*(51.+corner));
+    close(total_area(&filled),502.-20.*r+5.*PI*r+2.*corner);
+    // a cube notched at a corner, the notch's three inside edges rounded 3 (brep-bench's
+    // fillet/notched-cube-inside-corner): each run cut at the corner's centre and filled, then the
+    // corner's cell — runs whose spines go either way along their edges — `7216 − 51.75π` and
+    // `2274 + 29.25π`
+    use gcs_core::brep::boolean::{combined,Op};
+    let r = 3.;
+    let centre = [13.;3];
+    let mut notched = combined(&block([0.;3],[20.;3]),&block([10.;3],[20.;3]),Op::Cut,0.).unwrap();
+    // (each face its own name: faces of one name are read as pieces of one face)
+    for (i,f) in notched.faces.iter_mut().enumerate() { f.name = format!("face {i}"); }
+    let tol = gcs_core::brep::geom::tolerance(notched.size());
+    let mut solid = notched.clone();
+    for k in 0..3 {
+        let mut at = [10.;3];
+        at[k] = 15.;
+        let round = gcs_core::brep::fillet::roll(&notched,at,r,tol).unwrap();
+        assert!(round.concave);
+        round.piece.check(1e-8).unwrap();
+        assert!(round.piece.faces.iter().any(|f| f.surface.kind() == "cylinder"));
+        let mut along = [0.;3];
+        along[k] = 1.;
+        let run = gcs_core::brep::build::cut_before(&round.piece,centre,along,2.*r,0.).unwrap();
+        solid = combined(&solid,&run,Op::Union,0.).unwrap();
+    }
+    let cell = gcs_core::brep::fillet::corner([10.;3],centre,r,[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],tol).unwrap();
+    let solid = combined(&solid,&cell,Op::Union,0.).unwrap();
+    solid.check(1e-8).unwrap();
+    close(volume(&solid),7216.-51.75*PI);
+    close(total_area(&solid),2274.+29.25*PI);
 }
 
 /// Two solids ending in one face, material either side of it, are joined there: the face goes,
@@ -3048,3 +3172,4 @@ fn a_ball_in_a_paraboloid_cup_that_fits_its_bottom() {
         }
     }
 }
+

@@ -93,7 +93,7 @@ repeat configuration.flutes as i {
 corner := configuration.fluted_length - configuration.point_length - 0.5mm
 lip_at_corner := configuration.lip + 360deg * corner / configuration.lead
 when configuration.point == 1 {
-  flank := point.PointCone(side, top: corner, cone: configuration.cone,
+  construction flank := point.PointCone(side, top: corner, cone: configuration.cone,
     tilt: configuration.tilt, height: configuration.apex_height, offset: configuration.apex_offset,
     reach: configuration.fluted_length + configuration.diameter)
   repeat configuration.flutes as i {

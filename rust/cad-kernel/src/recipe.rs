@@ -58,6 +58,12 @@ impl Node {
         match self {
             Node::Prism {profile,from,to,draft} => Ok(drafted(&Profile::of(profile)?,*from,*to,draft.unwrap_or(0.))?),
             Node::Revolve {profile,origin,axis,angle} => Ok(revolve(&Profile::of(profile)?,*origin,*axis,*angle)?),
+            // the hull of points, each face called what the set it was read from is
+            Node::Hull {points,face} => {
+                let mut b = crate::build::hull(points)?;
+                for f in &mut b.faces { f.name = face.clone(); }
+                Ok(b)
+            }
             Node::Placed {source,matrix} => {
                 let source = built.get(source).ok_or("recipe: `source` not built before its user")?;
                 Ok(source.moved(&Rigid::from_rows(matrix)))

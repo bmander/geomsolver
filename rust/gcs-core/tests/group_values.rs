@@ -261,3 +261,37 @@ fn a_group_read_as_a_number_is_said_to_be_one() {
     assert!(said(&e).contains("`sizes` is a group, and a group is not a number: read one of its \
                                members, as `sizes.length`"), "{}", said(&e));
 }
+
+/// **A group's member may name a member of the group of an instance its body writes** (#904,
+/// A1): `HypoidPair` handed its caller the margins its balance read as `margins := {pinion_mean:
+/// balance.margins.pinion_mean, …}`, one level into `balance`, so the caller read
+/// `pair.margins.pinion_mean` and never `pair.balance.…` (W204).  The inner group's own aliases
+/// are made as the instance is expanded, after the outer group's, and the outer member is read
+/// through them once they are in.
+#[test]
+fn a_group_member_may_name_a_member_of_an_instances_group() {
+    let e = solved("\
+unit mm
+use std
+use std.place (horizontal)
+component Inner() {
+  in std.front {
+    c := point
+    fix((7mm, 3mm)) c
+  }
+  m := {k: c}
+}
+component Outer() {
+  i := Inner()
+  m := {k: i.m.k}
+}
+o := Outer()
+in std.front {
+  q := point
+  o.m.k distance(10mm) q
+  o.m.k horizontal q
+}
+");
+    let q = at(&e, "q");
+    assert!(((q.0 - 7.0).abs() - 10.0).abs() < 1e-8 && (q.1 - 3.0).abs() < 1e-8, "{q:?}");
+}

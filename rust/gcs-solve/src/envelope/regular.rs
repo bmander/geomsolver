@@ -35,10 +35,13 @@
 //! search is remembered by the problem's constants, a nearby question starting from the last
 //! answer.  What it certifies is what a search does: the least it found, not a bound proved.
 //!
-//! **Layout.**  Columns `[source…, motion…, region…]`: the envelope's (`held::Parts`, lead 0),
-//! then every point, axis and unknown the regions' terms read, each once.  Constants `[margin,
-//! roll₀, roll₁, n, held…, terms, (side, shape, cmp, lo×3, hi, grow×3, a, b, c, sign, 0, 0)…]`
-//! (`HEADER`, `TERM`), a number `c + m·x` with `x` the column `col` (−1 none).
+//! **Layout.**  Columns `[source…, motion…, region…, margin?]`: the envelope's (`held::Parts`,
+//! lead 0), then every point, axis and unknown the regions' terms read, each once, and last the
+//! unknown the margin reads where it reads one (`c + m·x`, `expr::Free`: a flank's least area
+//! factor held to another's, #904).  Constants `[c, roll₀, roll₁, n, m, held…, terms, (side,
+//! shape, cmp, lo×3, hi, grow×3, a, b, c, sign, 0, 0)…]` (`HEADER`, `TERM`), the margin `c` with
+//! no unknown where `m` is nothing, and a term's number `c + m·x` with `x` the column `col` (−1
+//! none).
 
 use super::held::{self, dot, unit, vscale, vsub, Col, Layout};
 use crate::kernels::{Dual, Kernel, Num};
@@ -49,7 +52,7 @@ use crate::vocab::Cmp;
 /* -- the layout ------------------------------------------------------------------------------ */
 
 /// Constants before the envelope's.
-pub const HEADER: usize = 4;
+pub const HEADER: usize = 5;
 /// Constants per region term.
 pub const TERM: usize = 16;
 
@@ -140,7 +143,8 @@ impl Term {
     }
 }
 
-/// A problem read back off its constants (the margin, `k[0]`, is the residual's alone).
+/// A problem read back off its constants (the margin, `k[0]` and `k[4]`, is the residual's
+/// alone).
 #[derive(Clone, Debug)]
 pub struct Problem<'a> {
     pub roll: [f64; 2],
@@ -165,9 +169,10 @@ impl Problem<'_> {
         Some(Problem { roll: [k[1], k[2]], layout, terms })
     }
 
-    /// What the problem's constants are.
-    pub fn write(margin: f64, roll: [f64; 2], held: &[f64], terms: &[Term]) -> Vec<f64> {
-        let mut k = vec![margin, roll[0], roll[1], held.len() as f64];
+    /// What the problem's constants are, the margin `c + m·x` (`m` nothing where it reads no
+    /// unknown, the last column `x` where it does).
+    pub fn write(margin: [f64; 2], roll: [f64; 2], held: &[f64], terms: &[Term]) -> Vec<f64> {
+        let mut k = vec![margin[0], roll[0], roll[1], held.len() as f64, margin[1]];
         k.extend_from_slice(held);
         k.push(terms.len() as f64);
         for t in terms {
@@ -358,6 +363,7 @@ impl Ask<'_> {
 
     /// The area factor, the equation and the conditions with their gradients in the place.
     fn grad(&self, z: [f64; 3]) -> Option<Read<Dual<3>>> {
+        count(|t| t.gradients += 1);
         let cols: Vec<Dual<3>> = self.cols.iter().enumerate().map(|(i, &x)| {
             if i < 3 { Dual::var(z[i], i) } else { Dual::cst(x) }
         }).collect();
@@ -366,12 +372,16 @@ impl Ask<'_> {
         (ok(&r.area) && ok(&r.g) && r.conditions.iter().all(ok)).then_some(r)
     }
 
-    /// The roll on the envelope at `(u, v)` nearest `t`, by Newton on its equation.
+    /// The roll on the envelope at `(u, v)` nearest `t`, by Newton on its equation — read with
+    /// its derivative in the roll as the place's own second-order frame gives it (`held::local`),
+    /// not the whole place differentiated again (`grad`): every place the search tries is put on
+    /// the envelope so, and nothing else of it is asked there.
     fn on(&mut self, u: f64, v: f64, t: f64) -> Option<f64> {
         let mut t = t;
         for _ in 0..30 {
-            let r = self.grad([u, v, t])?;
-            let step = r.g.v / r.g.g[2];
+            self.cols[..3].copy_from_slice(&[u, v, t]);
+            let f = held::local(&self.p.layout, &self.cols, true);
+            let step = f.g / f.dg[2];
             if !step.is_finite() {
                 return None;
             }
@@ -637,6 +647,7 @@ impl Ask<'_> {
 
     /// The worst point, from nothing.
     fn cold(&mut self) -> Option<Worst> {
+        count(|t| t.searches += 1);
         let face = self.face()?;
         let found = self.grid(face);
         let step = [(face[1] - face[0]) / GRID[0] as f64, std::f64::consts::TAU / GRID[1] as f64];
@@ -730,6 +741,39 @@ thread_local! {
 /// Columns asked at, and the worst point found there, if any.
 type Seen = (Vec<f64>, Option<Worst>);
 
+/// What the questions this thread has asked have cost (`tally`), counted and never read by the
+/// search: what a gate holds a solve to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Tally {
+    /// Searches from nothing (`Ask::cold`): a grid over the tool's face and the roll.
+    pub searches: u64,
+    /// Searches from where a nearby question's worst point was (`Ask::warm`).
+    pub warm: u64,
+    /// Questions answered again from the memo, the columns the same.
+    pub remembered: u64,
+    /// Places read with their gradient in the place (`Ask::grad`).
+    pub gradients: u64,
+}
+
+thread_local! {
+    static TALLY: std::cell::Cell<Tally> = const {
+        std::cell::Cell::new(Tally { searches: 0, warm: 0, remembered: 0, gradients: 0 })
+    };
+}
+
+/// What the questions this thread has asked so far have cost.
+pub fn tally() -> Tally {
+    TALLY.with(|t| t.get())
+}
+
+fn count(f: impl FnOnce(&mut Tally)) {
+    TALLY.with(|t| {
+        let mut now = t.get();
+        f(&mut now);
+        t.set(now);
+    });
+}
+
 const SEEN_MAX: usize = 256;
 const KEEP: usize = 4;
 /// How far the columns may have moved, relative to their size, for the last answer to start
@@ -740,7 +784,10 @@ const NEAR: f64 = 1e-2;
 /// within the blank, or the constants describe no problem.
 pub fn worst(k: &[f64], cols: &[f64]) -> Option<Worst> {
     let p = Problem::read(k)?;
-    let key: Vec<u64> = k.iter().map(|v| v.to_bits()).collect();
+    // the margin (`k[0]`, `k[4]`) is the residual's alone: the place searched for is the same
+    // whatever number it is held to, so a reading stepping that number asks the same question
+    let key: Vec<u64> = k.iter().enumerate()
+        .map(|(i, v)| if i == 0 || i == 4 { 0 } else { v.to_bits() }).collect();
     let size = cols.iter().fold(1.0f64, |m, x| m.max(x.abs()));
     let far = |c: &[f64]| c.iter().zip(cols).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max) / size;
     let prev = SEEN.with(|s| {
@@ -751,6 +798,7 @@ pub fn worst(k: &[f64], cols: &[f64]) -> Option<Worst> {
     });
     if let Some((c, w)) = &prev {
         if far(c) == 0.0 {
+            count(|t| t.remembered += 1);
             return w.clone();
         }
     }
@@ -758,7 +806,10 @@ pub fn worst(k: &[f64], cols: &[f64]) -> Option<Worst> {
     cols3.extend_from_slice(cols);
     let mut ask = Ask { p: &p, cols: cols3, size };
     let found = match &prev {
-        Some((c, Some(w))) if far(c) <= NEAR => ask.warm(w).or_else(|| ask.cold()),
+        Some((c, Some(w))) if far(c) <= NEAR => {
+            count(|t| t.warm += 1);
+            ask.warm(w).or_else(|| ask.cold())
+        }
         _ => ask.cold(),
     };
     SEEN.with(|s| {
@@ -775,10 +826,22 @@ pub fn worst(k: &[f64], cols: &[f64]) -> Option<Worst> {
 
 /* -- the kernel ------------------------------------------------------------------------------ */
 
+/// The columns the search reads, and the margin: `c`, or `c + m·x` with `x` the last column, the
+/// unknown the margin reads, which the search does not.
+fn margin<'a>(kc: &[f64], x: &'a [f64]) -> Option<(&'a [f64], f64)> {
+    let m = *kc.get(4)?;
+    if m == 0.0 {
+        return Some((x, kc[0]));
+    }
+    let (last, cols) = x.split_last()?;
+    Some((cols, kc[0] + m * last))
+}
+
 fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     held::block_res(n, v, k, r, 1, |x, kc, out| {
-        let w = worst(kc, x)?;
-        out[0] = w.area - kc[0];
+        let (cols, margin) = margin(kc, x)?;
+        let w = worst(kc, cols)?;
+        out[0] = w.area - margin;
         Some(())
     });
 }
@@ -789,7 +852,8 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     use held::PASS;
     let (n_par, _) = crate::kernels::curve_widths(n, v, k);
     held::block_res(n, v, k, j, n_par, |x, kc, block| {
-        let w = worst(kc, x)?;
+        let (searched, _) = margin(kc, x)?;
+        let w = worst(kc, searched)?;
         let p = Problem::read(kc)?;
         let mut cols = vec![Dual::<PASS>::cst(0.0); 3 + n_par];
         for start in (0..n_par).step_by(PASS) {
@@ -810,6 +874,10 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
             for q in start..(start + PASS).min(n_par) {
                 block[q] = l.g[q - start];
             }
+        }
+        // the margin's unknown, read by no term, moves the residual by its own number alone
+        if kc[4] != 0.0 {
+            block[n_par - 1] -= kc[4];
         }
         Some(())
     });
@@ -896,8 +964,9 @@ impl Parts {
         Ok(Parts { held, roll: env.roll.radians(), terms: b.terms, cols: b.cols })
     }
 
-    /// The constants, the margin stated `margin`.
-    pub fn consts(&self, margin: f64) -> Vec<f64> {
+    /// The constants, the margin stated `c + m·x` (`m` nothing for a number, `x` the unknown the
+    /// row's last column is where it reads one).
+    pub fn consts(&self, margin: [f64; 2]) -> Vec<f64> {
         Problem::write(margin, self.roll, &self.held.consts_at(0), &self.terms)
     }
 

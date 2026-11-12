@@ -937,6 +937,8 @@ pub struct Shared {
     /// each pair's meeting given before any is sought (#810, `Shared::give`), in either order, not
     /// yet asked for: no search is made for it
     given: std::collections::BTreeMap<(usize,usize),Vec<Curve>>,
+    /// the pairs given, kept once asked for
+    was_given: std::collections::BTreeSet<(usize,usize)>,
 }
 
 impl Shared {
@@ -981,7 +983,17 @@ impl Shared {
     /// touches given for one pair are its meeting together.
     pub fn give(&mut self,a: &Surface,b: &Surface,curves: &[Curve],tol: f64) {
         let (i,j) = (self.index(a,tol),self.index(b,tol));
+        self.was_given.insert((i.min(j),i.max(j)));
         self.given.entry((i.min(j),i.max(j))).or_default().extend(curves.iter().cloned())
+    }
+    /// Whether surfaces `i` and `j`'s meeting was given (`give`): its curves lie on both, known as
+    /// a closed form's are and not as a trace's.
+    pub fn given(&self,i: usize,j: usize) -> bool { self.was_given.contains(&(i.min(j),i.max(j))) }
+    /// The curves given for surfaces `i` and `j`'s meeting (`give`), asked for or not.
+    pub fn given_curves(&self,i: usize,j: usize) -> Vec<Curve> {
+        let key = (i.min(j),i.max(j));
+        if let Some(c) = self.given.get(&key) { return c.clone() }
+        match self.meetings.get(&(i,j)) { Some(Ssi::Curves(c)) if self.given(i,j) => c.clone(),_ => Vec::new() }
     }
 }
 

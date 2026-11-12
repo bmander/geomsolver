@@ -2,6 +2,8 @@
 //! functions `solventc` and the browser's worker both call: a body whose swept cut is placed once is
 //! no sector, and is built whole — the blank split by the placed sheet, its cells judged by the
 //! material field — then written, parsed back, meshed and held to the field.
+use crate::common::{built,saying};
+use crate::hypoid_mill_sheet::{the_pinion_by_sectors,the_pinions_sheet};
 use gcs_core::brep::{export,props,sweep::Say};
 use gcs_core::model::Sketch;
 
@@ -229,69 +231,108 @@ fn a_through_cut_crosses_its_stock_whichever_way_the_stocks_circle_starts() {
 /// the sides and turned into every copy — a traced edge of the band ends where it leaves the
 /// band's patch (`Surface::off_patch`), and the band is kept by the turns about the axis, not
 /// taken for a side (`brep::pattern`).  Cut by the mill it was recorded at
-/// (`fixtures::gear::recorded_machine`): the mill the pair finds (#283) has a larger cutter, at
-/// which the cut's sheet is fitted as one face, built and agreeing with its field but not named
-/// by the cutter's faces.
+/// (`fixtures::gear::recorded_machine`): the mill the pair finds (#283) has a larger cutter
+/// (`the_pinion_as_written_is_built_by_sectors`).
 #[test]
 fn the_relieved_pinion_is_built_by_sectors() {
     let e = fixtures::gear::read(&fixtures::gear::recorded_machine(&fixtures::gear::source(),12.5));
-    let body = fixtures::solid(&e,"pair.pinion.body");
-    let lines = std::sync::Mutex::new(Vec::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap();
-    let said = lines.lock().unwrap().join("\n");
-    assert!(said.contains("turned the sector into 24 copies"),"{said}");
+    let (exact,said) = built(&e,"pair.pinion.body");
     // each sector: the blank's pieces, the space's five faces and the relief's five, named by
     // the cutter faces that made them (#212)
-    assert_eq!(exact.solid.faces.len(),243,"{said}");
+    the_pinion_by_sectors(&exact,&said);
     assert_eq!(exact.solid.faces.iter().filter(|f| f.surface.kind() == "revolution").count(),24*2,
         "the two conic bands, a piece in each sector");
-    exact.solid.check(1e-6).unwrap();
 }
 
 /// **The pinion as its document writes it is built** (the page's `?example=spiral_bevel`): at the
-/// mill the pair finds (#283) its cut's sheet is fitted as one face, a cubic net of 240 × 66
-/// poles, which the spline edges of the sector's side are read against, hugging it. From #814 on
-/// the search over the whole net halved past any search's boxes, enclosing the net by de Boor in
-/// intervals and halving its boxes in the unknowns' own scales, and the pinion was refused; read
-/// by its restricted Bézier patches and halved by smear (`enclose::Net::restricted`,
-/// `isolate::solve_by`), it is built, turned into every copy, and checked, in a few seconds.
+/// mill the pair finds (#283) its cut's sheet is laid by walk length and named by the cutter's
+/// faces, each sector the blank's pieces, the space's five faces and the relief's five, as at the
+/// mill it was recorded at; built, turned into every copy, and checked. Until its stations were read
+/// from where its contacts first reach the blank, and a margin column leaping beside the blank cost
+/// the sheet that column rather than its rows (#904 A4), the sheet was fitted there as one face, a
+/// cubic net of 240 × 66 poles laid by length in space, which the spline edges of the sector's side
+/// hugged; from #814 the search over that net halved past any search's boxes until it was read by
+/// its restricted Bézier patches (`enclosures::a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses`
+/// holds that case apart from the pinion). Solved as written, the mill its balance finds and all,
+/// it is the pinion built at that mill stated
+/// (`hypoid_mill_sheet::the_pinion_at_the_found_mill_is_built_by_sectors`, the fast gate).
 #[test]
 fn the_pinion_as_written_is_built_by_sectors() {
     let e = fixtures::gear::read_as_configured();
-    let body = fixtures::solid(&e,"pair.pinion.body");
-    let lines = std::sync::Mutex::new(Vec::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
-    let said = lines.lock().unwrap().join("\n");
-    assert!(said.contains("`pair.pinion.cut.removal`: sheet 240x66, one chart"),"{said}");
-    assert!(said.contains("turned the sector into 24 copies"),"{said}");
-    assert_eq!(exact.solid.faces.len(),147,"{said}");
-    exact.solid.check(1e-6).unwrap();
+    let (exact,said) = built(&e,"pair.pinion.body");
+    the_pinions_sheet(&said);
+    the_pinion_by_sectors(&exact,&said);
+    let volume = props::volume(&exact.solid);
+    assert!((volume-14664.2384).abs() < 1e-3,"{volume} mm³");
 }
 
-/// The pair with a 20-tooth pinion: at the gear's heel a corner of the cutter grazes the blank's
-/// end relief at some stations and is a fan the sheet's rows stop before at others
-/// (`contact_trace::charted`), so the cut's fitted sheet ends a few microns inside the blank, where
-/// it divides nothing. Carried on past it by its own surface (`sweep::sheet`), the sector splits
-/// into its cells, is turned into every copy, and agrees with its field.
+/// **The pinion scaled is built as the pinion is** (#904 A3): every length of the pair 0.625 times
+/// as long — a 1.25 mm module, the offset and the allowances — and cut by the mill its balance finds
+/// there (the configured mill scaled, stated: `hypoid_machine::the_face_mill_scaled_is_found_scaled`),
+/// the pinion is built by sectors with the faces it has at its own size. Its cut is traced in its
+/// own scale (`trace::Tracer::unit`): the crown tooth's faces it walks are 0.625 times as long, and
+/// its sheet is the pinion's, scaled. While the construction's lengths were millimetres the reach,
+/// asking every 0.3 mm, missed the tooth's 0.24 mm tip and walked the wrong way round the tooth,
+/// and a station's contact curve ended inside the blank.
+///
+/// The configured pinion's cut at that mill reaches the blank over 11.3 degrees of stations and
+/// 13.702 mm of its crown tooth's faces (`CONFIGURED_WALK`); the construction's lengths were set at
+/// the 13.7855 mm it walked at the mill the balance of profile radii found (`REFERENCE_WALK`).
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: the 20-tooth pair's gear built and measured")]
+fn the_pinion_scaled_is_built_as_the_pinion_is() {
+    const CONFIGURED_WALK: f64 = 13.702;
+    let s = 0.625;
+    let e = fixtures::gear::read(&fixtures::gear::scaled_as_found(s));
+    let (exact,said) = built(&e,"pair.pinion.body");
+    let walk = CONFIGURED_WALK*s;
+    assert!(said.contains(&format!("`pair.pinion.cut.removal`: contacts reach the blank over 11.3 degrees of stations and 5 \
+        profile faces, {walk:.3} mm of them")),"{said}");
+    the_pinions_sheet(&said);
+    the_pinion_by_sectors(&exact,&said);
+}
+
+/// **Each member of the pair is built alike at every scale** (#904 A3): the pinion at half its size
+/// and at 0.75 and 1.5 times, and the gear at 0.625 and 1.5 times, each cut by its balance's mill
+/// there (`fixtures::gear::scaled_as_found`), are built with the faces each has at its own size.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: five members of scaled pairs built")]
+fn each_member_of_the_pair_is_built_alike_at_every_scale() {
+    for (member,s,faces) in [("pinion",0.5,243),("pinion",0.75,243),("pinion",1.5,243),("gear",0.625,291),("gear",1.5,291)] {
+        let e = fixtures::gear::read(&fixtures::gear::scaled_as_found(s));
+        let body = fixtures::solid(&e,&format!("pair.{member}.body"));
+        let (exact,said) = saying(|say| export::exact(&e.sketch,body,None,None,say));
+        let exact = exact.unwrap_or_else(|r| panic!("the {member} at {s}: {r:?}\n{said}"));
+        assert_eq!(exact.solid.faces.len(),faces,"the {member} at {s}: {said}");
+        exact.solid.check(1e-6).unwrap();
+    }
+}
+
+/// The pair at 0.625 of its size, cut by the mill the balance of profile radii found there (11.2527°,
+/// the cutter 47.2576 mm): at the gear's heel a corner of the cutter grazes the blank's end relief
+/// at some stations and is a fan the sheet's rows stop before at others (`contact_trace::charted`),
+/// so the cut's fitted sheet ends a few microns inside the blank, where it divides nothing. Carried
+/// on past it by its own surface (`sweep::sheet`), the sector splits into its cells, is turned into
+/// every copy, and agrees with its field. (The 20-tooth pair's sheet did, until it was laid in its
+/// own scale, #904 A3, and the 21-tooth pair's, until its stations were read from where its
+/// contacts first reach the blank, #904 A4: theirs now leave the blank there. So does this pair's
+/// at the mill its balance finds since #904, `fixtures::gear::scaled_as_found`, so the mill this
+/// case was found at is stated.)
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: the scaled pair's gear built and measured")]
 fn a_sheet_ending_in_the_blank_is_carried_out_of_it() {
-    let e = fixtures::gear::read(&fixtures::gear::configure(&fixtures::gear::source(),&[("pinion_teeth",20.)]));
+    let s = 0.625;
+    let scaled = fixtures::gear::scaled(&fixtures::gear::source(),s);
+    let e = fixtures::gear::read(&fixtures::gear::machine(&scaled,11.2527));
     let body = fixtures::solid(&e,"pair.gear.body");
-    let lines = std::sync::Mutex::new(Vec::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
-    let said = lines.lock().unwrap().join("\n");
+    let (exact,said) = built(&e,"pair.gear.body");
     assert!(said.contains("`pair.gear.cut.removal`: the fitted sheet's edge is in the blank by up to"),"{said}");
     assert!(said.contains("carried on past it by its own surface"),"{said}");
     assert!(said.contains("classified 1 material and 4 removed cells"),"{said}");
     assert!(said.contains("turned the sector into 48 copies"),"{said}");
     exact.solid.check(1e-6).unwrap();
-    let stl = export::stl(&e.sketch,body,&exact,None,&say).unwrap();
+    let (stl,more) = saying(|say| export::stl(&e.sketch,body,&exact,None,say).unwrap());
     gcs_core::mesh::stl_shells(&stl).unwrap();
-    let said = lines.lock().unwrap().join("\n");
+    let said = format!("{said}\n{more}");
     assert!(said.contains(" 0 disagree"),"{said}");
 }
 

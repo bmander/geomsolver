@@ -1401,6 +1401,20 @@ pub(super) fn walk_seeds(sk: &mut Sketch, deferred: &[Deferred], held: &BTreeSet
     }
 }
 
+/// **The points nothing seeded** (#904 A13): each the source wrote no seed for that still stands
+/// where `scatter` minted it — no hint, no place, no walk, no hold, no copy's turn moved it.  Its
+/// seed is the bearing of its creation order, and says nothing of where the drawing has it: a
+/// side read against it on the seeds is read against noise (`solve::cross_bounds`).
+pub(super) fn unseeded(sk: &Sketch, deferred: &[Deferred]) -> BTreeSet<usize> {
+    deferred.iter()
+        .filter_map(|d| match *d {
+            Deferred::Scattered { point } => Some(point),
+            _ => None,
+        })
+        .filter(|&p| sk.point_xy(p) == scatter(p))
+        .collect()
+}
+
 /// Seeds that read geometry, worked out in statement order — never over a number a `fix` holds,
 /// which was applied first.
 /// `held`: the parameters left where they stand — a point a bound carried across (§9.6), whose

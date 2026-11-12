@@ -2164,6 +2164,16 @@ pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result
 /// `trace`, ending where it comes `beside` a known meeting.
 pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn FnMut(V) -> bool,lo: V,hi: V,tol: f64)
     -> Result<Vec<Curve>,Shallow> {
+    trace_landing(a,b,seeds,beside,&mut |_| None,lo,hi,tol)
+}
+
+/// `trace_beside`, a march that ends beside a known meeting carried on to it where `land` says how:
+/// given the last point it landed, the points of the meeting from there to where it joins the
+/// known one (#880 Q1b: a branch arriving at a touch along an edge, where the two
+/// surfaces part too slowly for a step to land, joins the edge where they pass through each other).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn FnMut(V) -> bool,
+    land: &mut dyn FnMut(V) -> Option<Vec<V>>,lo: V,hi: V,tol: f64) -> Result<Vec<Curve>,Shallow> {
     use super::geom::Traced;
     let tangent = |p: V| -> Option<V> {
         let t = cross(a.gradient(p),b.gradient(p));
@@ -2300,6 +2310,15 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                     // curve then ran through that vertex and, traced the other way round as well,
                     // through it twice: an edge laid along it took one passage and left the span
                     // from the other unlaid, two cells of the arrangement joined across it
+                    // **a branch arriving at a touch along a known edge joins that edge** (#880 Q1b):
+                    // where the two part too slowly for a step to land, carried on from the last point
+                    // of the meeting to where it leaves the touch (`land`), a point of the edge, and no
+                    // touch there read as a point of its own (whose other half-branches, run along the
+                    // touch, were traced as curves beside the edge)
+                    if let Some(more) = if beside(q) { land(p) } else { None } {
+                        for x in more { if distance(x,*pts.last().unwrap()) > tol { pts.push(x) } }
+                        break
+                    }
                     let touched = touch_at(q).filter(|u| aligned(u,t));
                     let crossed = touched.as_ref().is_some_and(|u| dot(sub(q,u.at),t) > 0.);
                     if beside(q) && !crossed { pts.push(q); break }

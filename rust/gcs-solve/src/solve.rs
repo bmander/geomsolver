@@ -608,9 +608,12 @@ impl System {
     fn solve_compiled(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
         // a document holding a point to an envelope or a meshing is solved a block at a time
         // first: each contact is seeded where its sources stand once the blocks before it have
-        // placed them (#304), which a whole-system DogLeg from the seeds never sees
-        let first =
-            opts.blocks == BlockMode::Rescue && opts.document() && blocks::holds_contacts(sk);
+        // placed them (#304), which a whole-system DogLeg from the seeds never sees.  So is one
+        // holding a row a search reads (a flank's least area factor, #904): from the seeds, the
+        // search reads a flank its blank does not yet hold, and the whole-system DogLeg steps
+        // on nothing, each trial a search afresh
+        let first = opts.blocks == BlockMode::Rescue && opts.document()
+            && (blocks::holds_contacts(sk) || blocks::holds_searches(sk));
         let opts = if first {
             SolveOpts { blocks: BlockMode::First, ..opts }
         } else {

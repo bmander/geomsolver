@@ -193,7 +193,9 @@ pub enum Withheld { Centres,Sides }
 
 /// The fit contract's bars without a stated tolerance: how far the fitted sheet may pass from a
 /// withheld contact, and how far its normal may turn from the contact's. Gross: they separate a
-/// fit that follows its contacts from one that does not.
+/// fit that follows its contacts from one that does not. The distance, like `LOCAL_TRUST` and
+/// `NEAR_BLANK`, is a cut's at unit one (`trace::Tracer::unit`): the sheet's own scale, not a
+/// stated tolerance's.
 pub const FIT_DISTANCE: f64 = 0.25;
 const FIT_TURN: f64 = 20.;
 /// How far the sheet's own normal may turn between points a quarter of a cell apart in the blank:
@@ -201,6 +203,8 @@ const FIT_TURN: f64 = 20.;
 const FOLD_TURN: f64 = 90.;
 /// How near its contact a foot found by a local search must be to be taken without a global one.
 const LOCAL_TRUST: f64 = 0.005;
+/// How near the blank (by its field) a withheld contact must lie for a fit to be held to it.
+const NEAR_BLANK: f64 = 0.5;
 /// How many times a sheet's grid is refined toward its tolerance, and the most nodes it may have
 /// each way (a kernel interpolates at most 512): past either it is refused. The native
 /// construction (`gcs-cli`'s `sweep_boundary`) refines its sheets by the same bars.
@@ -484,8 +488,9 @@ enum Judged { Fits(Brep,f64,Parametrization),Misses {over: Vec<bool>,refusal: Re
 /// bars are gross, the sheet fitted by centripetal parameters (this kernel's interpolation, its
 /// knots averaged from the parameters, overshoots the pinion's unevenly spaced rows by chord length:
 /// it folded); held to one, chord-length and centripetal fits are both read and the better kept.
-fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,say: &Say)
+fn judged(name: &str,sheet: &Sheet,scale: f64,unit: f64,near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,say: &Say)
     -> Result<Judged,Refused> {
+    let (bar_distance,near_blank) = (FIT_DISTANCE*unit,NEAR_BLANK*unit);
     let at = |p: V| p.map(|x| (x*1e3).round()/1e3);
     let (nu,nv) = (4*(sheet.rows-1)+1,4*(sheet.columns-1)+1);
     // a crease of the fit, where its normal turns at a sharp edge of the sweep (#684 O), is no fold:
@@ -524,12 +529,12 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
         let face = fit(sheet,kind).at(Stage::Fit)?;
         (say.stage)(&format!("`{name}`: fitted the sheet ({kind:?}); measuring {} withheld contacts against it",sheet.withheld.len()));
         (say.mark)(Stage::Fit);
-        let held: Vec<(V,V)> = sheet.withheld.iter().zip(&sheet.withheld_normals).filter(|(p,_)| near(**p) < 0.5).map(|(p,n)| (*p,*n)).collect();
+        let held: Vec<(V,V)> = sheet.withheld.iter().zip(&sheet.withheld_normals).filter(|(p,_)| near(**p) < near_blank).map(|(p,n)| (*p,*n)).collect();
         let points: Vec<V> = held.iter().map(|(p,_)| *p).collect();
         let grid = surface_grid(&face,nu,nv);
         let guesses = nearest_on(&grid,nu,nv,&points);
         let (mut error,mut turn,mut worst,mut turned) = (0_f64,0_f64,[0.;3],[0.;3]);
-        for ((p,n),found) in held.iter().zip(feet_near(&face,&points,&guesses,LOCAL_TRUST)) {
+        for ((p,n),found) in held.iter().zip(feet_near(&face,&points,&guesses,LOCAL_TRUST*unit)) {
             let Some((m,gap)) = found else { error = f64::INFINITY; worst = *p; continue };
             let angle = dot(m,*n).abs().min(1.).dacos().to_degrees();
             if gap > error { error = gap; worst = *p; }
@@ -537,11 +542,11 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
         }
         (say.stage)(&format!("`{name}`: fitted sheet within {error:.2e} mm of the {} withheld contacts at the blank, normals within {turn:.2} degrees",
             points.len()));
-        if error > FIT_DISTANCE || turn > FIT_TURN {
-            let witness = if error > FIT_DISTANCE { worst } else { turned };
+        if error > bar_distance || turn > FIT_TURN {
+            let witness = if error > bar_distance { worst } else { turned };
             return Err(Refused {stage:Stage::Withheld,witness:Some(witness.map(|x| x/scale)),
                 message:format!("`{name}`: the fitted sheet leaves its contacts: {error:.3} mm (at {:?}) and {turn:.1} degrees (at {:?}), \
-                against {FIT_DISTANCE} mm and {FIT_TURN} degrees",at(worst),at(turned))})
+                against {bar_distance:.3} mm and {FIT_TURN} degrees",at(worst),at(turned))})
         }
         folds(&face,grid)?;
         Ok((face,error,kind))
@@ -553,7 +558,7 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
         (say.mark)(Stage::Withheld);
         return Ok(Judged::Fits(face,error,kind))
     };
-    let held: Vec<usize> = (0..sheet.withheld.len()).filter(|&i| near(sheet.withheld[i]) < 0.5).collect();
+    let held: Vec<usize> = (0..sheet.withheld.len()).filter(|&i| near(sheet.withheld[i]) < near_blank).collect();
     let points: Vec<V> = held.iter().map(|&i| sheet.withheld[i]).collect();
     let bar = tolerance.fit();
     struct Candidate { face: Brep,kind: Parametrization,far: Vec<bool>,turned: Vec<bool>,error: f64,worst: V,turn: (f64,f64,V),distant: usize,bent: usize }
@@ -602,13 +607,14 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
 /// A sheet laid out on a grid fitted and judged: `first` (centres withheld) as it is without a
 /// tolerance, else `lay` on `grid` (sides withheld) refined where it misses until it fits or the
 /// refinements run out. A fit that misses its contacts or folds is the inner refusal (another
-/// layout may fit), anything else the outer. `how` says how the grid was laid, for the refusal.
+/// layout may fit), anything else the outer. `how` says how the grid was laid, for the refusal;
+/// `unit` is the sheet's own scale its gross bars are read at (`trace::Tracer::unit`).
 #[allow(clippy::too_many_arguments)]
-pub fn settle(name: &str,scale: f64,first: Sheet,grid: &Grid,lay: &(dyn Fn(&Grid) -> Result<Sheet,String>+Sync),inside: Inside,
+pub fn settle(name: &str,scale: f64,unit: f64,first: Sheet,grid: &Grid,lay: &(dyn Fn(&Grid) -> Result<Sheet,String>+Sync),inside: Inside,
     near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,how: &str,say: &Say)
     -> Result<Result<(Fitted,Parametrization),Refused>,Refused> {
     if tolerance.is_none() {
-        return match judged(name,&first,scale,near,None,say) {
+        return match judged(name,&first,scale,unit,near,None,say) {
             Ok(Judged::Fits(face,error,kind)) => Ok(Ok((Fitted::whole(face,first,error),kind))),
             Ok(Judged::Misses {refusal,..}) => Ok(Err(refusal)),
             Err(refusal) if refusal.stage == Stage::Withheld => Ok(Err(refusal)),
@@ -622,7 +628,7 @@ pub fn settle(name: &str,scale: f64,first: Sheet,grid: &Grid,lay: &(dyn Fn(&Grid
         if let Some(fault) = sheet.chart_fault(inside).at(Stage::Sheet)? {
             return Err(Refused::at(Stage::Sheet,format!("`{name}`: the refined sheet is not one regular chart: {fault}")))
         }
-        let (over,mut refusal) = match judged(name,&sheet,scale,near,tolerance,say) {
+        let (over,mut refusal) = match judged(name,&sheet,scale,unit,near,tolerance,say) {
             Ok(Judged::Fits(face,error,kind)) => return Ok(Ok((Fitted::whole(face,sheet,error),kind))),
             Ok(Judged::Misses {over,refusal}) => (over,refusal),
             Err(refusal) if refusal.stage == Stage::Withheld => return Ok(Err(refusal)),

@@ -6,7 +6,6 @@ pub mod output;
 pub mod measure;
 #[cfg(feature="occt")]
 mod native;
-#[cfg(feature="occt")]
 pub mod field_mesh;
 pub mod brep;
 
@@ -229,7 +228,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         // Every file of a body built: Ok(Some(reason)) where its sector's union, made and checked beside
         // them, cannot be made or does not check (nothing is kept of them, and the body is built whole
         // instead).
-        let solid_name = sk.solids[body.index].name.clone();
+        let solid_name = sk.solid_name(body.index);
         let files = |built: &native::sweep_boundary::Built| -> Result<Option<String>,ExportRefusal> {
             let solid = built.solid;
             // the finished shape handed over for the core's own B-rep (phase 1 of the Rust kernel plan):

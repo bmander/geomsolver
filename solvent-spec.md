@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.211 — November 2026**
+**Specification, Draft 0.215 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -238,7 +238,7 @@ component Name(p1: Type1, p2: Type2, ...) {
 
 ### 4.1 Parameters
 
-Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Line`, `Plane`, **[0.42]** `Axis`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `group` formal bundles values and geometry references (§8.1); **[0.84]** one typed by an interface (`gear: Gear`) names the members its argument must have and its body may read (§8.1). **[0.79]** A `path` formal takes a line, an arc, a circle, a spline or a curve — **[0.122]** or a curve traced in space (§6.5), never a surface — bound by aliasing as an entity is; the words its body writes of it are settled by the kind of the actual, and an actual that runs along nothing is **E103** at the argument. **[0.71]** A `set` formal takes a set (§6.21): a named one (`S := { p | … }`) or an instance of a set family (`std.sets.Sphere(c, r: 5mm)`), which is the set — written by name, since an argument is a reference, not a call; a set's surface (`boundary(S.side)`) is not one yet. It is given by position, as an entity is, and used in the body by its name wherever a set may stand (`p coincident s`, `p in s`, `distance(p, s)`). A named set given to a `group` formal and a group given to a `set` formal are each **E103** at the argument; a family's instance is both a set and an instance, so it fills either. A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
+Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Line`, `Plane`, **[0.42]** `Axis`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `group` formal bundles values and geometry references (§8.1); **[0.84]** one typed by an interface (`gear: Gear`) names the members its argument must have and its body may read (§8.1). **[0.79]** A `path` formal takes a line, an arc, a circle, a spline or a curve — **[0.122]** or a curve traced in space (§6.5), never a surface — bound by aliasing as an entity is; the words its body writes of it are settled by the kind of the actual, and an actual that runs along nothing is **E103** at the argument. **[0.71]** A `set` formal takes a set (§6.21): a named one (`S := { p | … }`) or an instance of a set family (`std.sets.Sphere(c, r: 5mm)`), which is the set — **[0.213]** written by name or in place: a set literal (`Grow({ x | x distance(<= 2mm) c }, d: 1mm)`) or a call of a component standing whole as the argument (`Join(std.sets.Segment(a, b), std.sets.Segment(c, d))`, one inside another's alike) is the set an anonymous instance of it is, as if named on the line before; a set's surface (`boundary(S.side)`) is not one yet. It is given by position, as an entity is, and used in the body by its name wherever a set may stand (`p coincident s`, `p in s`, `distance(p, s)`). A named set given to a `group` formal and a group given to a `set` formal are each **E103** at the argument; a family's instance is both a set and an instance, so it fills either. A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
 
 **[0.17] Which way is a word, not a sign.** A distance measured **from a line** — a point to a line, a line to a line — is a **magnitude**: its solution set is *both* sides, and which one a solver finds is the seed's business (P3), as it is in every other sketcher. A negative one is an error (**E040**) wherever the number comes from, including a component's argument, since the kernel cannot tell one side from the other and the minus therefore said nothing a drawing could show. A statement that must pin a side writes the word — `p distance(12, side: left) ax`, left being of the line's own `p1 → p2` — and so does a tangency (`side: left | right`, which was `side: -1`). Where a sign is *arithmetic* rather than a convention — the run and the rise, signed from the first point to the second, and the directed angle of §9.4 — it stays a sign, because a component computes it from coordinates it is given; each gains the word that says the same thing in the open (`along: right | left | up | down`, `sense: cw | ccw`), and a document SHOULD prefer it. A component takes a side as a value of the type **`Side`** (`s: Side`, `side: s`), which is a word and not a number: encoded as ±1 it would put the unreadable idiom back one level down, inside every helper.
 
@@ -1954,7 +1954,9 @@ With no number the statement is a bound, `>= 0`: no fold. `regular(>= m, …)` i
 one. Both are verdicts with no root to choose, so a solve breaking one is `BOUND_BROKEN` and
 nothing is steered across it (§9.6). `regular(m, …)`, the number stated outright, is an equation:
 one row that solves a number of the drawing the flank reads (a cutter's pressure angle) at
-which the margin binds. `within` stands between the word and the blank; without it the statement
+which the margin binds. **[0.215]** The number may read an unknown (`regular(least, …)`, `least`
+a formal left out or an input with no value, §6.3): two flanks held to one unknown are held to
+each other, so the settings they read are found where neither is nearer its fold. `within` stands between the word and the blank; without it the statement
 does not parse. A flank of no set, a source that is no face of `tool`, a face grown off the
 source, a solid that is no region, or a term the solve cannot read (a blank's measured term) is
 **E061**, naming why.
@@ -2091,7 +2093,19 @@ through it (`not some …` what is not in it). The distance from a set is the or
 inside it: `p distance(d) S` is outside a region at `d`, and the distance from what is not in it is
 `p distance(d) { q | q not in S }`; a distance from a set with no inside is refused, having a root
 either side, but for a developable sheet's band, which says its side (§6.9). `every t in …: …` is
-reserved. **Retired** (each refused naming its replacement): `inside` and `outside` between a point
+reserved. **[0.212] Some points of sets.** In a set's body, `some q in A, r in B: p in X` is the
+points `p` that some point `q` of the set `A` and some `r` of `B` put in `X` — a projection, each
+bound point ranging over its set as the running number of a sweep ranges over its interval. Read
+where `X` is the segment between them (`std.sets.Segment(q, r)`, either end a point of the drawing
+instead) — **the join** of the sets, of convex sets their hull: `{ p | some q in Segment(a, b), r
+in Segment(c, d): p in Segment(q, r) }` is the tetrahedron on `a`, `b`, `c`, `d`, and `{ p | some
+q in base: p in Segment(apex, q) }` the pyramid on a face — or where it is a ball about one bound
+point (`p distance(<= d) q`), the set grown. A join is read where each set it is of is the hull of
+finitely many points — a point, a segment, a convex polygon drawn as a face, a solid of planes
+meeting in convex edges, or another join — and
+built exactly as their hull; anything else a `some` puts its point in is refused by name, and a
+`some` whose set's point is a drawn one rather than a solid's is refused. One `some` binds every
+point its relation reads, and runs on past a line break after a binder's `,` or its `:`. **Retired** (each refused naming its replacement): `inside` and `outside` between a point
 and a set (`claim a inside b` between solids stays, §9.8), `coincident` against a set, `S.surface`,
 `over` in a relation's parentheses, `side:` on a distance from a set with an inside,
 `std.sets.Offset`, `n := x in f` for a placement (`n := x at f`), and `when not w in A` (`when w
@@ -3010,7 +3024,7 @@ claim over crank.theta in (0deg, 360deg) {
 
 `claim over NAME in (A, B) { … }` judges every claim in its body as the drawing runs along `NAME`, and reports the **worst** pose reached — of a claim refuted, the sample where it fails by most.  It is Structure-class: it says how the claims inside it are judged and asserts nothing itself.
 
-- `NAME` MUST be an **unknown** of the drawing (§3.3, §6.3) — an input with no value, or a formal an instance left unbound — or **[0.40]** a frame with a joint (§6.14), whose roll the claims run along: every solid placed under it (`S at(under: NAME) A`) is read at its angle advanced by the roll, and nothing is solved again.  **[0.135]** `claim over NAME seen_from G in (A, B)` runs the roll of `NAME`'s motion as `G` sees it.  **[0.197]** Or `NAME` is a **declared parameter** (`param t: Angle over (a, b)`, §6.3): the drawing is followed along it to each sampled value, as it is shown at an instant, and the claims read the solids there — among them every solid drawn in a frame whose value reads it (`S in f`, §6.14).  `claim over t { … }`, with no interval, runs over the parameter's own; an interval MUST be an increasing stretch of it (**E103** otherwise), and an omitted interval naming no declared parameter is **E103**.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
+- `NAME` MUST be an **unknown** of the drawing (§3.3, §6.3) — an input with no value, or a formal an instance left unbound — or **[0.40]** a frame with a joint (§6.14), whose roll the claims run along: every solid placed under it (`S at(under: NAME) A`) is read at its angle advanced by the roll, and nothing is solved again.  **[0.214]** A solid placed at an instant of another frame's motion (`S at(under: G) A`, `G` not `NAME`) stands where it is read through the whole sweep, whatever ratios tie the two frames, and a claim naming it is **W117** at the solid (a copy placed so inside a body the claim names is a pattern, drawn still, and is not); frames that turn together — a gear train — are claimed over a declared parameter their values are written over, `fix(value == t) f` for each, each solid drawn at its frame (`S at f`) and the claim over `t`.  **[0.135]** `claim over NAME seen_from G in (A, B)` runs the roll of `NAME`'s motion as `G` sees it.  **[0.197]** Or `NAME` is a **declared parameter** (`param t: Angle over (a, b)`, §6.3): the drawing is followed along it to each sampled value, as it is shown at an instant, and the claims read the solids there — among them every solid drawn in a frame whose value reads it (`S in f`, §6.14).  `claim over t { … }`, with no interval, runs over the parameter's own; an interval MUST be an increasing stretch of it (**E103** otherwise), and an omitted interval naming no declared parameter is **E103**.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
 - `A` and `B` are read in the units the unknown's readers are written in: an interval of an angle is an angle, and one of a length is a length.
 - An implementation MUST state that its answer is by **sampling**, and how many poses it took. A pose that did not solve or produced invalid solid geometry cannot certify the claim; the report identifies those failed parameter values, and a sweep with unresolved poses cannot be reported as holding.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
 
@@ -3681,6 +3695,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | W113 | two planes lying on one another, with a relation reading points drawn in each: one plane in space, read twice (§6.7) **[0.42]** |
 | W114 | a free curve whose length nothing holds and no length makes its energy stationary in (§9.10) **[0.57]** |
 | W116 | a face path a block over a solid's faces runs over (a round's, a chamfer's, §12.8) that names no face of the solid: the block makes nothing **[0.203]** |
+| W117 | a solid a claim over a frame's roll names (§9.8) placed at an instant of another frame's motion: the sweep turns only what is placed under the frame it names, so the solid stands still **[0.214]** |
 
 ### 16.3 DOF ledger
 

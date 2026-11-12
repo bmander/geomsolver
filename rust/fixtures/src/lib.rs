@@ -9,8 +9,8 @@ pub mod gear;
 pub mod drill;
 pub mod wankel;
 
-pub use read::{accurate,elaborate,unsolved,read,module,beside,read_beside,solid,examples,example,
-    example_names};
+pub use read::{accurate,elaborate,unsolved,read,module,beside,read_beside,unsolved_in_examples,
+    solved_in_examples,solid,examples,example,example_names};
 
 /// A generated document's zero ordinates said as what they are: `p level(v) P`, `a horizontal b`.
 /// A generator writes each coordinate as `p distance({v}mm, along: v) P`, and a number written as

@@ -160,6 +160,8 @@ struct Shape {
     /// was renamed from (`geometry_serial`): the same triangles under other names, which a host
     /// draws from one buffer (#674).  `None` for an evaluation's own.
     renamed_from: Option<u64>,
+    /// The solid's key (`SolidE::name`), which a renaming for another instance rewrites by its
+    /// start; said as the document calls it (`Shape::called`).
     name: String,
     policy: ApproximationPolicy,
     unit: f64,
@@ -218,6 +220,11 @@ impl Renaming<'_> {
 }
 
 impl Shape {
+    /// What the document calls the solid (`Sketch::solid_name`).
+    fn called(&self) -> String {
+        crate::vocab::public_path(&self.name)
+    }
+
     /// The same shape under names `re` rewrites, a serial of its own: what a host keeps by
     /// serial reads names too.  What it has worked out already is kept, renamed; what it has not
     /// is left to be worked out from what is (the ray indices, which read no name, among them).
@@ -351,11 +358,15 @@ impl EvaluatedSolid {
         let mut terms = vec![&csg.term];
         while let Some(term) = terms.pop() {
             match term {
+                // (an operand only the exact kernel builds — a round — whose build was refused: said
+                // in its own words, the cause to fix, #904 A8)
                 Term::Empty => {
-                    return Err(format!(
-                        "`{}`: an operand could not be evaluated at this approximation",
-                        sk.solid_name(si)
-                    ))
+                    return Err(match &why {
+                        Some(u) => format!("`{}`: an operand could not be evaluated at this approximation, \
+                            and its exact build was refused: {}", sk.solid_name(si), u.why),
+                        None => format!("`{}`: an operand could not be evaluated at this approximation",
+                            sk.solid_name(si)),
+                    })
                 }
                 Term::Prim(_) => {}
                 Term::Union(a, b) | Term::Diff(a, b) | Term::Inter(a, b) => {
@@ -404,7 +415,7 @@ impl EvaluatedSolid {
         Ok(Self::made(origin, Shape {
             serial: next_serial(),
             renamed_from: None,
-            name: sk.solid_name(si),
+            name: sk.solids[si].name.clone(),
             policy,
             unit,
             epsilon,
@@ -529,7 +540,7 @@ impl EvaluatedSolid {
         Ok(Self::made(origin, Shape {
             serial: next_serial(),
             renamed_from: None,
-            name,
+            name: sk.solids[si].name.clone(),
             policy,
             unit,
             epsilon,
@@ -592,7 +603,7 @@ impl EvaluatedSolid {
         Ok(Self::made(origin, Shape {
             serial: next_serial(),
             renamed_from: None,
-            name,
+            name: sk.solids[si].name.clone(),
             policy,
             unit,
             epsilon,
@@ -691,7 +702,7 @@ impl EvaluatedSolid {
         Ok(Self::made(origin, Shape {
             serial: next_serial(),
             renamed_from: None,
-            name,
+            name: sk.solids[si].name.clone(),
             policy,
             unit,
             epsilon,
@@ -897,7 +908,8 @@ impl EvaluatedSolid {
     pub fn contains(&self, p: LocalPoint) -> bool {
         self.shape.csg.inside_indexed(p.0, self.ray_indices())
     }
-    fn ray_indices(&self) -> &[RayIndex] {
+    /// Its term's prims each indexed for the rays cast through it, in its order: made once.
+    pub(crate) fn ray_indices(&self) -> &[RayIndex] {
         let shape = &self.shape;
         shape.ray_indices.get_or_init(|| shape.csg.prims.iter().map(RayIndex::new).collect())
     }
@@ -1105,16 +1117,16 @@ impl EvaluatedSolid {
     /// The surface as it stands even while it is still being refined (`mesh::preview_stl`): what a
     /// host offers when asked for a file before the refinement has finished.
     pub fn preview_stl(&self) -> Result<Vec<u8>, String> {
-        mesh::preview_stl(&self.oriented_mesh(), self.origin.0, &self.shape.name)
+        mesh::preview_stl(&self.oriented_mesh(), self.origin.0, &self.shape.called())
     }
     pub fn stl(&self) -> Result<Vec<u8>, String> {
         self.finished()?;
-        mesh::placed_stl(&self.oriented_mesh(), self.origin.0, &self.shape.name)
+        mesh::placed_stl(&self.oriented_mesh(), self.origin.0, &self.shape.called())
     }
     /// Refuse a surface still being refined: it may be open, and a file is a finished part.
     pub fn finished(&self) -> Result<(), String> {
         if !self.provisional() { return Ok(()) }
-        Err(format!("`{}`: its surface is still being refined", self.shape.name))
+        Err(format!("`{}`: its surface is still being refined", self.shape.called()))
     }
     pub(crate) fn classifier(&self) -> &Csg {
         &self.shape.csg

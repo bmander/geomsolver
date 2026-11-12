@@ -299,8 +299,8 @@ fn made_of<'a>(sk: &'a Sketch, name: &'a str) -> impl Iterator<Item = usize> + '
 pub fn material_text(sk: &Sketch, name: &str) -> String {
     let Some(m) = sk.materials.get(name) else { return format!("{name}: no material") };
     let beams = sk.beams.iter().filter(|b| b.material.as_deref() == Some(name));
-    let of: Vec<&str> = made_of(sk, name).map(|i| sk.solids[i].name.as_str())
-        .chain(beams.map(|b| b.name.as_str())).collect();
+    let of: Vec<String> = made_of(sk, name).map(|i| sk.solid_name(i))
+        .chain(beams.map(|b| b.name.clone())).collect();
     if of.is_empty() {
         format!("{}, of no solid", m.text())
     } else {
@@ -1818,6 +1818,19 @@ pub fn unbuilt_text(sk: &crate::model::Sketch, i: usize, u: &crate::solid::Unbui
         crate::solid::DrawnFrom::Facets => "its facet term",
     };
     format!("`{}` is drawn from {from}, {u}", sk.solid_name(i))
+}
+
+/// **What writes a solid whose exact export was refused** (#904 A15): where solid `i`'s boundary
+/// is its material field's (`Sketch::is_swept`: a continuous sweep no ball's tube builds, or a
+/// region only the field builds), the faceted output a host offers — `way`, the host's own name
+/// for it — writes that reading, said beside the refusal so it is not the end of the road.  An
+/// exact export never writes the field in its place: its file is the build held to the export's
+/// tolerance, and a mesh of the field is neither, which the faceted file says against itself
+/// (`unbuilt_text`).  `None` for a solid with no field to write.
+pub fn field_read_instead(sk: &crate::model::Sketch, i: usize, way: &str) -> Option<String> {
+    sk.is_swept(i).then(|| format!(
+        "`{}` is read by its material field, and {way} writes that reading instead: drawn from \
+         the field, not built, and not held to the export's tolerance", sk.solid_name(i)))
 }
 
 /// The same immutable claim result supplies terminal and JSON reports.

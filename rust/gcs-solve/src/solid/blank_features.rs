@@ -41,6 +41,102 @@ pub trait BlankTopology {
     fn face_point(&self,face: usize,u: f64,v: f64,tolerance: f64) -> Result<Option<FacePoint>,String>;
 }
 
+/// **A static blank as the core's own kernel builds it** (#904 A15): body `solid`'s recipe with
+/// its sweeps left out (`cad::recipe_static`), built by `brep::recipe::build` as the export's
+/// blank stage builds it, in millimetres. Its edges are those two faces meet along (a seam, used
+/// twice by one face, and a pole bound nothing); its faces are read in their trimmed parameters
+/// by `brep::query::Located`, each face's seams (`Face::seams`) read once and not once a sample.
+/// What a host's native kernel supplies otherwise, read without one.
+pub struct KernelBlank {
+    located: crate::brep::query::Located<'static>,
+    edges: Vec<(u32,[(usize,usize,usize);2])>,
+    seams: Vec<std::collections::BTreeSet<u32>>,
+}
+
+impl KernelBlank {
+    pub fn of(sk: &crate::model::Sketch,solid: usize) -> Result<KernelBlank,String> {
+        KernelBlank::new(crate::brep::recipe::build(&super::cad::recipe_static(sk,solid)?.recipe)?)
+    }
+
+    pub fn new(b: crate::brep::topo::Brep) -> Result<KernelBlank,String> {
+        use crate::brep::topo::EdgeCurve;
+        let mut edges = Vec::new();
+        for (e,uses) in b.uses().into_iter().enumerate() {
+            if matches!(b.edges[e].curve,EdgeCurve::Degenerate) || uses.is_empty() { continue }
+            match uses[..] {
+                [x,y] if x.0 != y.0 => edges.push((e as u32,[x,y])),
+                [_,_] => {}
+                _ => return Err(format!("the blank's edge {e} bounds {} faces, not two",uses.len())),
+            }
+        }
+        let tol = crate::brep::geom::tolerance(b.size());
+        let seams = b.faces.iter().map(|f| f.seams()).collect();
+        Ok(KernelBlank {located:crate::brep::query::Located::owned(b,tol),edges,seams})
+    }
+}
+
+impl BlankTopology for KernelBlank {
+    fn edges(&self) -> Result<usize,String> { Ok(self.edges.len()) }
+
+    fn edge_point(&self,edge: usize,fraction: f64) -> Result<EdgePoint,String> {
+        use crate::brep::topo::EdgeCurve;
+        use crate::space::{cross,dot,normalised};
+        let b = &*self.located.b;
+        let (index,uses) = self.edges[edge];
+        let e = &b.edges[index as usize];
+        let EdgeCurve::Curve(curve) = &e.curve else { return Err("a collapsed edge has no tangent".into()) };
+        let t = e.t[0]+(e.t[1]-e.t[0])*fraction;
+        let position = curve.point(t);
+        let tangent = normalised(curve.tangent(t)).ok_or("the blank's edge has no tangent there")?;
+        // each face's outward normal at the edge, read at its use's parameters
+        let normal = |(fi,li,ci): (usize,usize,usize)| -> Result<P,String> {
+            let f = &b.faces[fi];
+            let uv = f.loops[li][ci].pcurve.at(t,e,&f.surface,&b.vertices);
+            let n = f.surface.normal(uv).map(|n| if f.reversed { n.map(|x| -x) } else { n })
+                .or_else(|| f.outward(position));
+            n.ok_or_else(|| format!("the blank's face `{}` has no normal at its edge",f.name))
+        };
+        let normals = [normal(uses[0])?,normal(uses[1])?];
+        // a face's loops run with its material on their left seen from outside, so its normal
+        // across the edge's direction in the first face's loop points into that face; where that
+        // enters the second face's material the edge is convex (negative)
+        let (fi,li,ci) = uses[0];
+        let along = if b.faces[fi].loops[li][ci].reversed { tangent.map(|x| -x) } else { tangent };
+        let into = cross(normals[0],along);
+        let dihedral = dot(normals[1],into).atan2(dot(normals[0],normals[1]));
+        Ok(EdgePoint {position,normals,dihedral})
+    }
+
+    fn faces(&self) -> Result<usize,String> { Ok(self.located.b.faces.len()) }
+
+    fn face_seams(&self,face: usize) -> Result<[bool;2],String> {
+        let [lo,hi] = self.located.parameter_box(face);
+        let periods = self.located.b.faces[face].surface.periods();
+        Ok(std::array::from_fn(|k| periods[k].is_some_and(|p| ((hi[k]-lo[k])-p).abs() <= 1e-9*p.max(1.))))
+    }
+
+    fn face_point(&self,face: usize,u: f64,v: f64,tolerance: f64) -> Result<Option<FacePoint>,String> {
+        use crate::brep::topo::EdgeCurve;
+        let b = &*self.located.b;
+        let f = &b.faces[face];
+        let [lo,hi] = self.located.parameter_box(face);
+        let uv = [lo[0]+(hi[0]-lo[0])*u,lo[1]+(hi[1]-lo[1])*v];
+        if !uv.iter().all(|x| x.is_finite()) { return Err(format!("the blank's face `{}` has no finite parameters",f.name)) }
+        let position = f.surface.point(uv);
+        // a pole has no normal: no point of the face to read across
+        let Some(n) = f.surface.normal(uv) else { return Ok(None) };
+        let normal = if f.reversed { n.map(|x| -x) } else { n };
+        // on the trim within the tolerance of an edge that bounds the face (a seam bounds nothing)
+        let tol = tolerance.max(self.located.tol);
+        let seams = &self.seams[face];
+        let on_trim = f.loops.iter().flatten().filter(|c| !seams.contains(&c.edge))
+            .filter(|c| !matches!(b.edges[c.edge as usize].curve,EdgeCurve::Degenerate) && self.located.edge_gap(c.edge,position) <= tol)
+            .any(|c| self.located.nearest(c.edge,position).1 <= tol);
+        if !on_trim && !self.located.holds_parameters(face,uv) { return Ok(None) }
+        Ok(Some(FacePoint {position,normal,on_trim}))
+    }
+}
+
 /// The features found, in model units, and what they cost.
 pub struct BlankFeatures {
     pub lines: Vec<Vec<P>>,

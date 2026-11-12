@@ -59,7 +59,11 @@ station `std.stations.OnLine` seeds `n` so (drafted in `docs/lofts/l0/stations/l
 `tests/seeds.rs` is the gate.
 An origin already on one axis is placed in fewer rows than three (`P.origin coincident
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
-another. `views::place`
+another, said where the document holds the later one (`refused::Placing`, #904 A13): a plane a
+module's definition declares at the instance that drew it, and a frame's own datum (`std.front`
+read in an instance's body) at its frame's declaration — the instance's line — named as the
+document reads it (`crank.std.front`), never at a line of `std` about an anonymous plane
+(`spatial_lang.rs`'s `a_part_seated_on_the_front_is_said_at_its_instance`). `views::place`
 settles axes and plane origins before the solve, round by round with seed settlement; they stay
 unknowns.  A round reads of its solve only what moves (`diagnose::movable`): the rest of a
 diagnosis — a conflict searched, the constraints worth removing named — took seconds a round of a

@@ -4,8 +4,8 @@
 // through it at every tooth. Positions follow from lines, angles, incidence and the stated
 // numbers, with no `sin` or `cos`, and every root is chosen by a word (a bound, a sense, an
 // ordinate's sign), not a seed: only a blade's apex is started, on the side its cone opens to
-// (§9.6, #217). The face mill's pressure shift and radius are found, not stated: where the pinion
-// and the gear stand equally far from undercut (`Balanced`, #283). See README.md.
+// (§9.6, #217). The face mill's pressure shift is found, not stated: where the flanks the two
+// blades cut stand equally far from undercut (`Balanced`, #283, #904). See README.md.
 unit mm
 use std
 use std.place (skew)
@@ -30,23 +30,37 @@ param spiral_angle := 25deg
 param backlash := 0.05mm
 param tip_relief := 0.2mm
 param end_relief := 0.2mm
-// The members are `pair.pinion.body` and `pair.gear.body`. The face mill's settings are only
-// seeded (`hint`): the seed says where the search begins, never where it ends.
+// The face mill's radius: a cutter is chosen, not found — the flanks' margins against undercut
+// grow with it, so no balance of them sets it (#904).
+param cutter_radius := 75.6122mm
+// The members are `pair.pinion.body` and `pair.gear.body`. The pressure shift is only seeded
+// (`hint`): the seed says where the search begins, never where it ends.
 pair := HypoidPair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
   spiral_angle: spiral_angle, backlash: backlash, tip_relief: tip_relief, end_relief: end_relief,
-  pressure_shift: hint(10deg), cutter_radius: hint(80mm))
+  pressure_shift: hint(10deg), cutter_radius: cutter_radius, least: hint(0.5))
+// The shift is found where the flanks nearest undercut, one cut by each blade, are equally far
+// from it: each flank's margin is its least area factor (`regular`), and the two that tie are each
+// held to one unknown, `pair.least`. A hypoid's are the pinion's flank the inner blade cuts and the
+// gear's the outer cuts; with too little offset to protect the pinion's other flank, that flank,
+// the pinion's outer, is the one that ties with its inner (`pair.margins.pinion_outer`, cut by
+// `pinion_cut`, in place of the gear's). Every flank is held from its fold, so a tie that leaves another folded is a bound
+// broken, never an undercut member.
+pair.margins.pinion_inner regular(pair.least, by: pair.margins.pinion_cut) within pair.margins.pinion
+pair.margins.gear_outer regular(pair.least, by: pair.margins.gear_outer_cut) within pair.margins.gear
 
 // -- the pair ----------------------------------------------------------------------------------
 // The steps a designer takes, each a component below, on the pitch plane P — the `std.top` of the
 // frame the pair stands in — with `across`, its `std.y` (the gear's axis stands square to it), and
 // `up`, its `std.z`. The formals the call leaves out are unknowns: the normal module `mn`, which
 // the trace sets; the pinion's pitch radius at M, `rp`, and the bevel pinion's pitch angle, `pa`,
-// which the pinion's cone sets. The face mill's `pressure_shift` and `cutter_radius` are found by
-// the balance.
+// which the pinion's cone sets. The face mill's `pressure_shift` and `cutter_radius` are the
+// call's: stated, or left out and found by what the caller states over `margins` — with
+// `least`, the margin the flanks that bind are held to, which the pair itself reads nowhere.
 component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, shaft_angle: Angle,
     offset: Length, spiral_angle: Angle, backlash: Length, tip_relief: Length, end_relief: Length,
-    mn: Length, rp: Length, pa: Angle, pressure_shift: Angle, cutter_radius: Length) {
+    mn: Length, rp: Length, pa: Angle, pressure_shift: Angle, cutter_radius: Length,
+    least: Scalar) {
   // The proportions: the crown's tooth count (the hypotenuse of the gear's triangle, in teeth),
   // the mean cone distance R, and the depths in normal modules.
   crown_teeth := sqrt(pinion_teeth^2 + gear_teeth^2)
@@ -113,13 +127,18 @@ component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, sh
   pinion_member := {ax: pinion_cone.ax, foot: pinion_cone.foot, back: pinion_blank.back,
     material: pinion_blank.material, body: pinion.body}
 
-  // The face mill's two settings, found.
-  balance := Balanced(std.top, gear_cone, trace, mill.ax, mill.inner_flank, mill.outer_flank,
-    crown_roll, pinion_roll, gear_roll, R: R, face: blank_design.width, depth: addendum,
-    cutter_radius: cutter_radius)
-  // ...where the pinion's and the gear's margins against undercut are equal, at M and at the toe
-  balance.margins.pinion_mean equal balance.margins.gear_mean
-  balance.margins.pinion_toe equal balance.margins.gear_toe
+  // The face mill's settings, read: each flank's margin against undercut, the four the two
+  // blades cut on the two members. What chooses the mill is the caller's: its settings stated, or
+  // relations over these margins in their place, as this document's balance is.
+  balance := Balanced(mill.inner_flank, mill.outer_flank, mill.tooth_base, mill.tooth_tip,
+    mill.mate_tip, mill.mate_base, mill.reach, crown_roll, pinion_roll, gear_roll,
+    pinion_cone.pitch_line, pinion_cone.ax, gear_cone.generator, gear_cone.ax, blank_design,
+    pitch: crown_pitch, r: rounding)
+  margins := {pinion_inner: balance.pinion_inner, pinion_outer: balance.pinion_outer,
+    gear_inner: balance.gear_inner, gear_outer: balance.gear_outer,
+    pinion_cut: balance.cuts.pinion, gear_outer_cut: balance.cuts.gear_outer,
+    gear_inner_cut: balance.cuts.gear_inner, pinion: balance.blanks.pinion,
+    gear: balance.blanks.gear}
 
   // The tip relief: a topping beside each crown flank, kinked in the normal section N (square to
   // P on the trace normal, through the cutter's axis) `tip_relief` short of the addendum, and cut
@@ -325,8 +344,8 @@ component Space(a: set, b: set, lo: set, hi: set, cap: set, step: frame, pitch: 
   outer_round := std.rounds.Rounded(outer, tip, r: r)
   near := { p | p in inner; p in cap; p in tip; p in base; p in inner_round }
   far := { p | p in outer; p in tip; p in base; p in outer_round }
-  private construction outer_crown := solid(near)
-  private construction inner_crown := solid(far)
+  construction outer_crown := solid(near)
+  construction inner_crown := solid(far)
   private construction neighbor := inner_crown at(under: step) pitch
   body := solid(outer_crown)
   neighbor common body
@@ -386,61 +405,39 @@ component Blade(about: line, q: point, half: Angle, opens: Scalar) := { p |
 }
 
 // -- the face mill's settings, found -------------------------------------------------------------
-// The pressure shift steepens the inner flank (the pinion's concave side) and flattens the outer
-// (the gear's), trading the pinion's margin against undercut for the gear's; the cutter's radius
-// sets how those margins run along the face. Each member's flank is the envelope its crown flank
-// generates (§6.15.3), and the two settings are where the margins are equal in the normal
-// sections through M and through the toe of the trace, which the pair states of the margins this
-// reads: the two numbers are the pair's, which this is given. The toe's balance holds at more than
-// one radius: the cutter is no smaller than R, and the seeds choose among the rest. The solve
-// tears the two numbers out of their block (solver.md).
-component Balanced(P: plane, gear: Gear, trace: Trace, ax: line, inner: set, outer: set,
-    crown_roll: frame, pinion_roll: frame, gear_roll: frame, R: Length, face: Length,
-    depth: Length, cutter_radius: Length) {
-  gear.M distance(>= R) trace.C
-  pinion_flank := envelope(boundary(inner) over t in (-30deg, 30deg), under: crown_roll,
+// Each member's flanks are the envelopes the crown's two blades generate (§6.15.3), and a flank's
+// margin against undercut is its least area factor where the crown cuts it within its blank
+// (`regular`): 1 rolling without sliding, nothing where it folds. The pressure shift steepens the
+// inner blade and flattens the outer, so it raises the margins of the flanks the inner blade cuts
+// and lowers those the outer cuts. The four flanks are read on the conjugate crowns, ungrown (a
+// backlash's offset face is not its blade's envelope), each held from its fold; what ties two of
+// them is the caller's: each held to one unknown, the margins and the crowns and blanks they are
+// read by handed out as `pair.margins`.
+component Balanced(inner: set, outer: set, tooth_base: set, tooth_tip: set, mate_tip: set,
+    mate_base: set, reach: set, crown_roll: frame, pinion_roll: frame, gear_roll: frame,
+    pinion_rim: line, pinion_ax: line, gear_rim: line, gear_ax: line, design: BlankDesign,
+    pitch: Angle, r: Length) {
+  // the blanks as cut before their end relief, which `regular` cannot read
+  sharp := {width: design.width, addendum: design.addendum, back: design.back, relief: 0mm}
+  construction pinion_blank := Blank(pinion_rim, pinion_ax, sharp)
+  construction gear_blank := Blank(gear_rim, gear_ax, sharp)
+  construction tooth := Tooth(inner, outer, tooth_base, tooth_tip, grow: 0mm, r: r)
+  construction space := Space(outer, inner, mate_tip, mate_base, reach, crown_roll, pitch: pitch,
+    grow: 0mm, r: r)
+  pinion_inner := envelope(boundary(inner) over t in (-30deg, 30deg), under: crown_roll,
                            seen_from: pinion_roll)
-  gear_flank := envelope(boundary(outer) over t in (-30deg, 30deg), under: crown_roll, seen_from: gear_roll)
-  // the normal section through M
-  N := plane(u: trace.normal, v: ax)
-  mean := Margins(N, gear.M, trace.normal, ax, trace.C, pinion_flank, gear_flank, depth: depth)
-  // the toe: on the cutter's circle through M, half the face width nearer O, within a face width
-  // of M
-  toe := point in P
-  trace.C distance(cutter_radius) toe
-  gear.O distance(R - face / 2) toe
-  gear.M distance(<= face) toe
-  construction to_toe := line(trace.C, toe)
-  T := plane(u: to_toe, v: ax)
-  at_toe := Margins(T, toe, to_toe, ax, trace.C, pinion_flank, gear_flank, depth: depth)
-  // what the pair reads of them: each member's margin, at M and at the toe
-  margins := {pinion_mean: mean.pinion_profile, gear_mean: mean.gear_profile,
-    pinion_toe: at_toe.pinion_profile, gear_toe: at_toe.gear_profile}
-}
-
-// The members' margins against undercut in the section `s` through the cutter's axis `ax` and the
-// trace's point `at`. On each member's flank, the point its mate's tip reaches (`depth` from P,
-// where its active profile starts), on its side of the trace (`toward`, from the cutter's centre
-// `c` through `at`) and within two depths of `at`; and the circle osculating the section there,
-// whose radius is how far the profile is from undercut's cusp.
-component Margins(s: plane, at: point, toward: line, ax: line, c: point, pinion: envelope,
-    gear: envelope, depth: Length) {
-  pinion_start := point
-  gear_start := point
-  pinion_start coincident s
-  gear_start coincident s
-  pinion_start coincident pinion
-  gear_start coincident gear
-  c distance(depth, along: ax) pinion_start
-  c distance(-depth, along: ax) gear_start
-  at distance(<= 0mm, along: toward) pinion_start
-  at distance(>= 0mm, along: toward) gear_start
-  at distance(<= 2 * depth) pinion_start
-  at distance(<= 2 * depth) gear_start
-  in s {
-    pinion_profile := circle
-    gear_profile := circle
-  }
-  pinion curvature(at: pinion_start) pinion_profile
-  gear curvature(at: gear_start) gear_profile
+  pinion_outer := envelope(boundary(outer) over t in (-30deg, 30deg), under: crown_roll,
+                           seen_from: pinion_roll)
+  gear_outer := envelope(boundary(outer) over t in (-30deg, 30deg), under: crown_roll,
+                         seen_from: gear_roll)
+  gear_inner := envelope(boundary(inner) over t in (-30deg, 30deg), under: crown_roll,
+                         seen_from: gear_roll)
+  pinion_inner regular(by: tooth.crown) within pinion_blank.material
+  pinion_outer regular(by: tooth.crown) within pinion_blank.material
+  gear_outer regular(by: space.outer_crown) within gear_blank.material
+  gear_inner regular(by: space.inner_crown) within gear_blank.material
+  // what a caller tying two of them reads them by, as this component's own: the crowns that cut
+  // the flanks, and the blanks they are read within
+  cuts := {pinion: tooth.crown, gear_outer: space.outer_crown, gear_inner: space.inner_crown}
+  blanks := {pinion: pinion_blank.material, gear: gear_blank.material}
 }

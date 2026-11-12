@@ -192,6 +192,12 @@ pub struct Sketch {
     /// #578): document state like `turns`, saved and grafted, from which more derived parameters
     /// are worked out.
     pub mirrors: Vec<Mirror>,
+    /// **Numbers a frame carries rigidly** (#904 A5, `program::mated`): each a fixed linear
+    /// combination of a frame's place and its axes' directions, so what a part made stands in
+    /// space where its frame carries it while the frame alone is solved for its mate.  Made on a
+    /// copy of a document for that solve, never on a document; derived as a ring's copies are
+    /// (`Sketch::derived`).
+    pub rigid: Vec<Derivation>,
     pub constraints: Vec<Constraint>,
     /// Recorded root choices (Stage 5), persisted with the document.
     pub branches: BTreeMap<String, i32>,

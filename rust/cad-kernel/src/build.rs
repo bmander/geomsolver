@@ -177,7 +177,7 @@ impl Seg {
     fn reversed(&self) -> Seg { Seg {curve:self.curve.clone(),t:[self.t[1],self.t[0]],source:self.source} }
     /// The edge's parameters, increasing.
     pub fn span(&self) -> [f64;2] { if self.forward() { self.t } else { [self.t[1],self.t[0]] } }
-    fn samples(&self,n: usize) -> impl Iterator<Item = V> + '_ {
+    pub(crate) fn samples(&self,n: usize) -> impl Iterator<Item = V> + '_ {
         (0..n).map(move |j| self.curve.point(self.t[0]+(self.t[1]-self.t[0])*j as f64/n as f64))
     }
 }

@@ -4,6 +4,48 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.215] A flank's margin may read an unknown** (#904). `flank regular(m, by: tool) within
+blank` held a flank's least area factor to a number, and a number reading an unknown was E040
+("a flank's least area factor is held to a number"). It is now an equation like any dimension
+written over an unknown (§6.15.3): `regular(least, …)` on two flanks, `least` a formal left out,
+holds them to each other, so a setting both read — a face mill's pressure shift — is found where
+the two are equally far from their folds. `regular(>= least, …)` is a bound read at the unknown's
+value. Nothing a document wrote before reads differently.
+
+**[0.214] A claim over one frame says what it leaves standing** (#904 A11). A claim over a
+frame's roll turns the solids placed under that frame and no other (§9.8), so a solid placed at an
+instant of another frame's motion stands where it is read through the sweep — a planet's gear
+claimed over its sun's frame stood still while the sun turned half a pitch into it, and the claim
+was refuted where the train runs clear, saying nothing of why. Such a solid, named by the claim,
+is now **W117** at the claim's operand (a copy so placed inside a body the claim names is a
+pattern's, drawn still, and says nothing), naming the frame it was read at and how to run frames together: write each one's
+value over one declared parameter (`param t: Angle over (a, b)`, `fix(value == t) f` for each),
+draw each solid at its frame (`s := x at f`) and claim over `t`, which stands the drawing at every
+sample with each joint turned at its ratio. Nothing is judged differently.
+
+**[0.213] Sets written in place as arguments.** A `set` formal takes a set written in place: a
+set literal, or a call of a component standing whole as the argument, one inside another's alike —
+`Join(std.sets.Segment(a, b), std.sets.Segment(c, d))`, `Grow({ x | x distance(<= 2mm) c }, d:
+1mm)` — each the set an anonymous instance of it is, as if named on the line before (§4.1).
+Through 0.212 an argument was a reference and never a call, so each was E103: "`A` wants a set,
+not `std.sets.Segment(a, b)`", and every set a word was given had a name of its own.
+
+**[0.212] Some points of sets.** `some` binds points of sets as well as an instant of a running
+number (§6.21): in a set's body, `some q in A, r in B: p in X` is the points `p` that some point of
+each set puts in `X`. Where `X` is the segment between the bound points (`std.sets.Segment(q, r)`,
+either end a point of the drawing instead) it is **the join** of their sets — of convex sets their
+hull — read where each is the hull of finitely many points (a point, a segment, a convex polygon
+drawn as a face, a solid of planes meeting in convex edges, another join) and built exactly as the kernel's hull of them: a tetrahedron is
+`{ p | some q in Segment(a, b), r in Segment(c, d): p in Segment(q, r) }`, a pyramid `{ p | some q
+in base: p in Segment(apex, q) }`, and joins nest, so brep-bench's square-to-octagon transition is
+the join of a square and an octagon each written as one. Where `X` is a ball about one bound point
+(`p distance(<= d) q`) it is that point's set grown, `p distance(<= d) A`. Any other relation, a
+polygon turning both ways, a set with a curved boundary, and a `some` whose set's point is a drawn
+one are refused by name. Through 0.211 `some` read only a running number, and `some q in A: …`
+was E001: "`some` reads one instant of a running number: `some t in (a, b): p in X at(under: m)
+t`, `some s: p in F at s` or `some h: p in F at(along: n) h`"; a convex polyhedron was written as
+the half-spaces behind its faces' planes, which still reads.
+
 **[0.211] A list of names** (#882). A list may name what is drawn (§12.10): `repeat e in
 [box.near, box.far] { … }`, or `ends := [box.near, box.far]` walked as `repeat e in ends`, makes a
 copy per name, `e` that copy's name for it, as a walk over a solid's faces or a chain's edges names

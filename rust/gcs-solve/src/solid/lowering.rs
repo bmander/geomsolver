@@ -50,7 +50,7 @@
 use crate::fmath::Det;
 use crate::json::{object, Json};
 use crate::model::{Sketch, SolidDef};
-use crate::space::{add, distance, dot, norm, normalised, scale, sub};
+use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 use piece::toward;
 use recognise::Faces;
 use std::rc::Rc;
@@ -118,6 +118,23 @@ impl Surf {
             Some(Surf::Sphere { centre, radius })
         } else {
             body.torus(fi).map(|(origin, axis, big, tube)| Surf::Torus { origin, axis, big, tube })
+        }
+    }
+
+    /// Whether `other` is the same surface, however its faces place it (two halves of a pin's
+    /// wall each about its own point of the axis): a cylinder's or a cone's axis one line, a
+    /// sphere's centre one point, the same size, to a billionth of the surface's place.
+    fn same(&self, other: &Surf) -> bool {
+        let size = |o: V, r: f64| 1e-9 * (1.0 + norm(o) + r);
+        let on = |p: V, o: V, axis: V| norm(cross(sub(p, o), axis));
+        match (*self, *other) {
+            (Surf::Cylinder { origin: o, axis: a, radius: r }, Surf::Cylinder { origin: p, axis: b, radius: s }) => {
+                let tol = size(o, r);
+                (r - s).abs() <= tol && norm(cross(a, b)) <= 1e-9 && on(p, o, a) <= tol
+            }
+            (Surf::Sphere { centre: c, radius: r }, Surf::Sphere { centre: d, radius: s }) =>
+                (r - s).abs() <= size(c, r) && distance(c, d) <= size(c, r),
+            (x, y) => x == y,
         }
     }
 

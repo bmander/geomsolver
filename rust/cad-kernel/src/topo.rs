@@ -24,6 +24,11 @@ pub struct Vertex { pub p: V,pub tol: f64 }
 #[derive(Clone,Debug)]
 pub enum EdgeCurve { Curve(Curve),Degenerate }
 
+impl EdgeCurve {
+    /// Its curve's kind, or "degenerate", for what the kernel says of it.
+    pub fn kind(&self) -> &'static str { match self { EdgeCurve::Curve(c) => c.kind(),EdgeCurve::Degenerate => "degenerate" } }
+}
+
 /// A stretch of a curve from `t[0]` at `v[0]` to `t[1]` at `v[1]` (`t[0] < t[1]`; a closed edge
 /// has one vertex at both ends).
 #[derive(Clone,Debug)]
@@ -531,6 +536,12 @@ impl Brep {
                     let at = self.vertices[self.ends(c)[1] as usize].tol;
                     let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
                     if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
+                        if crate::debug() {
+                            let kind = |c: &Coedge| self.edges[c.edge as usize].curve.kind();
+                            eprintln!("topo: face {fi} breaks between edge {} ({}, tol {:e}) and edge {} ({}, tol {:e}) at vertex {:?} (tol {at:e}): {:?} and {:?} apart {:e}, corner {corner:e}",
+                                c.edge,kind(c),self.edges[c.edge as usize].tol,next.edge,kind(next),self.edges[next.edge as usize].tol,self.vertices[self.ends(c)[1] as usize].p,
+                                f.surface.point(a),f.surface.point(b),distance(f.surface.point(a),f.surface.point(b)));
+                        }
                         return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name).into())
                     }
                     let e = &self.edges[c.edge as usize];
@@ -540,7 +551,10 @@ impl Brep {
                     for j in (0..=8).filter(|&j| !flat || j%8 == 0) {
                         let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
                         let d = distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
-                        if d > tol.max(e.tol) { return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it",f.name,c.edge).into()) }
+                        if d > tol.max(e.tol) {
+                            let kind = match &e.curve { EdgeCurve::Curve(cv) => cv.kind(),EdgeCurve::Degenerate => "degenerate" };
+                            return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it, at {j}/8 of its {kind}",f.name,c.edge).into())
+                        }
                     }
                 }
                 if settled { continue }

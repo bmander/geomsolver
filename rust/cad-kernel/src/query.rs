@@ -607,11 +607,25 @@ fn kept(surface: &Surface,tol: f64,p: V) -> bool {
 /// evenly round it, written once over `Num` (`Trig`) so its rate is enclosed over a stretch by the
 /// same formula read in intervals, and its roots isolated by it (`util::isolate`, #814), a touch
 /// accepted where the surface's distance is within `tol`. Each kept where the surface's points are.
+///
+/// **A run beside a touch is proved by the polynomial's Taylor model** (`Taylored`, #904 A4), the
+/// form over the curve's box (`Implicit`) where that proves it first. Beside a touch the polynomial
+/// is within its own rounding of nought over a stretch its value's enclosure cannot sign, and the
+/// form read in intervals over the curve's box — a box of the world's axes, read into the surface's
+/// frame — is wider than the band the run lies in until the stretch is a hair wide. A circle lying
+/// in the plane tangent to a torus's tube was halved to that hair across the whole stretch, and at
+/// one attitude of the pair in a dozen read past any search's boxes and was refused: a gear
+/// member's tool that built in its own frame was refused in a frame turned to it. The Taylor model
+/// is the polynomial's own, the same at every attitude, and proves the run as soon as the stretch
+/// lies in the band.
 fn conic_algebraic(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certified {
     let n = degree(surface).ok_or(Uncertified::NoForm)?;
     let at = |t: f64| curve.point(t);
     let (c0,terms) = trig_along(curve,n,&|p| form(surface,p).map_or(f64::NAN,|x| x.0));
-    let g = Banded {f:crate::util::isolate::Written(Trig {c0,terms:&terms}),by:Implicit::new(curve,surface,tol)};
+    let trig = Trig {c0,terms:&terms};
+    let gradient = |x: I3| form(surface,x).map(|(_,g)| g);
+    let by = Either(Implicit::new(curve,surface,tol),Taylored::new(trig,curve,&gradient,tol));
+    let g = Banded {f:crate::util::isolate::Written(trig),by};
     let found = crate::util::isolate::roots(&g,[t0,t1],tol*1e-3/curve.speed().max(1e-300),&|t| surface.implicit(at(t)).abs() <= tol)?;
     Ok(Meets::At(found.into_iter().filter(|r| kept(surface,tol,at(r.at))).map(|r| (r.at,r.touch)).collect()))
 }
@@ -625,6 +639,23 @@ struct Banded<F,B> { f: F,by: B }
 /// **What proves a run** (`Banded`'s `by`): whether a curve is within the tolerance of a surface
 /// over all of `[a, b]`.
 trait Run { fn within(&self,a: f64,b: f64) -> bool; }
+
+/// A run proved by either of two (`conic_algebraic`'s), the first asked first.
+struct Either<A,B>(A,B);
+
+impl<A: Run,B: Run> Run for Either<A,B> {
+    fn within(&self,a: f64,b: f64) -> bool { self.0.within(a,b) || self.1.within(a,b) }
+}
+
+/// **A run proved by heights** (`spline_plane`): a non-rational B-spline's heights over a plane are
+/// its distances from it, so over a stretch whose heights' enclosure (`band`) lies within half the
+/// tolerance the curve is within it of the plane. A rational spline's heights are weighed, and prove
+/// no run.
+struct HeightsWithin<'a> { band: &'a dyn Fn(f64,f64) -> Iv,tol: f64,distance: bool }
+
+impl Run for HeightsWithin<'_> {
+    fn within(&self,a: f64,b: f64) -> bool { self.distance && (self.band)(a,b).mag() <= 0.5*self.tol*(1.-1e-9) }
+}
 
 impl<F: crate::util::isolate::Function,B: Run> crate::util::isolate::Function for Banded<F,B> {
     fn at(&self,t: f64) -> (f64,f64) { self.f.at(t) }
@@ -693,7 +724,8 @@ fn conic_revolution(curve: &Curve,[t0,t1]: [f64;2],f: &super::geom::Frame,c: &Cu
         let form = Revolved::of(f,|s: f64| sp.homogeneous(w[0]+(w[1]-w[0])*s)).ok_or(Uncertified::NoForm)?;
         let (c0,terms) = trig_along(curve,if form.even { 2 } else { 4 },&|p| form.at::<f64>(p).0);
         let trig = Trig {c0,terms:&terms};
-        let g = Banded {f:crate::util::isolate::Written(trig),by:Taylored::new(trig,curve,&form,tol)};
+        let gradient = |x: I3| Some(form.at(x).1);
+        let g = Banded {f:crate::util::isolate::Written(trig),by:Taylored::new(trig,curve,&gradient,tol)};
         for r in crate::util::isolate::roots(&g,[t0,t1],tol*1e-3/curve.speed().max(1e-300),&near)? {
             if on_bounded(surface,at(r.at),2.*tol) { out.push((r.at,r.touch)) }
         }
@@ -771,22 +803,23 @@ impl Revolved {
     }
 }
 
-/// **A run along a revolved conic proved by its polynomial's Taylor model** (`conic_revolution`):
-/// the `Trig` the form is along the curve, over a stretch, enclosed about the stretch's middle —
-/// `TAYLOR` terms read there, each term's rotated a quarter per order, and the remainder bounded by
-/// `Σ k^TAYLOR (|a_k| + |b_k|)` (`rest`), which no derivative of that order exceeds anywhere — held
-/// to the form's gradient over the curve's enclosure there (`banded`). Where the form has a root of
-/// high order (the fourth power of the way from it, a ball's meridian in the paraboloid that fits
-/// its bottom) its terms cancel, and the formula read in intervals encloses each term's spread and
-/// not the sum's: this encloses the sum.
-struct Taylored<'a> { trig: Trig<'a>,rest: f64,curve: &'a Curve,form: &'a Revolved,tol: f64 }
+/// **A run along a conic proved by its polynomial's Taylor model** (`conic_revolution`,
+/// `conic_algebraic`): the `Trig` the form is along the curve, over a stretch, enclosed about the
+/// stretch's middle — `TAYLOR` terms read there, each term's rotated a quarter per order, and the
+/// remainder bounded by `Σ k^TAYLOR (|a_k| + |b_k|)` (`rest`), which no derivative of that order
+/// exceeds anywhere — held to the form's gradient over the curve's enclosure there (`gradient`,
+/// `None` where it has none; `banded`). Where the form has a root of high order (the fourth power of
+/// the way from it, a ball's meridian in the paraboloid that fits its bottom) its terms cancel, and
+/// the formula read in intervals encloses each term's spread and not the sum's: this encloses the
+/// sum.
+struct Taylored<'a> { trig: Trig<'a>,rest: f64,curve: &'a Curve,gradient: &'a dyn Fn(I3) -> Option<I3>,tol: f64 }
 
 impl<'a> Taylored<'a> {
-    fn new(trig: Trig<'a>,curve: &'a Curve,form: &'a Revolved,tol: f64) -> Taylored<'a> {
+    fn new(trig: Trig<'a>,curve: &'a Curve,gradient: &'a dyn Fn(I3) -> Option<I3>,tol: f64) -> Taylored<'a> {
         let rest = trig.terms.iter().enumerate().fold(Iv::point(0.),|acc,(i,&(x,y))| {
             acc+Iv::point(((i+1) as f64).powi(TAYLOR as i32))*(Iv::point(x.abs())+Iv::point(y.abs()))
         }).hi();
-        Taylored {trig,rest,curve,form,tol}
+        Taylored {trig,rest,curve,gradient,tol}
     }
     /// The polynomial's value over `[a, b]`, enclosed by its Taylor model.
     fn value(&self,a: f64,b: f64) -> Iv {
@@ -820,7 +853,7 @@ impl<'a> Taylored<'a> {
 
 impl Run for Taylored<'_> {
     fn within(&self,a: f64,b: f64) -> bool {
-        let (_,g) = self.form.at(self.curve.enclose([[a,b]]).at);
+        let Some(g) = (self.gradient)(self.curve.enclose([[a,b]]).at) else { return false };
         banded(self.value(a,b),g,self.tol)
     }
 }
@@ -829,7 +862,11 @@ impl Run for Taylored<'_> {
 /// a scalar B-spline (`BSpline::heights`), whose value and rate are enclosed over a stretch by de
 /// Boor's algorithm in intervals (`enclose::scalar`), so its roots are isolated span by span
 /// (`util::isolate`; a root at a knot both spans share `settled` reads once), a touch accepted
-/// where the plane's distance is within `tol`.
+/// where the plane's distance is within `tol`. A non-rational curve's heights are its distances
+/// from the plane, so a stretch whose heights are enclosed within half the tolerance is a run along
+/// the plane (`Banded`, `HeightsWithin`), settled as one meeting: a contact curve running in the
+/// plane of the tool's seam circle over a stretch (#880 Q1b, the leaning torus's rim, 185 roots a
+/// hair apart) was halved past any search's boxes.
 fn spline_plane(sp: &super::nurbs::BSpline,[t0,t1]: [f64;2],f: &super::geom::Frame,surface: &Surface,tol: f64) -> Certified {
     let h = sp.heights(f.z,f.o);
     let [lo,hi] = sp.domain();
@@ -841,7 +878,8 @@ fn spline_plane(sp: &super::nurbs::BSpline,[t0,t1]: [f64;2],f: &super::geom::Fra
     let at = |t: f64| h.at(t);
     let value = |t: f64| crate::enclose::scalar(sp.degree,&sp.knots,c,[t,t],false).0;
     let slope = |a: f64,b: f64| crate::enclose::scalar(sp.degree,&sp.knots,c,[a,b],true).1;
-    let g = crate::util::isolate::Parts {at:&at,value:&value,slope:&slope};
+    let band = |a: f64,b: f64| crate::enclose::scalar(sp.degree,&sp.knots,c,[a,b],false).0;
+    let g = Banded {f:crate::util::isolate::Parts {at:&at,value:&value,slope:&slope},by:HeightsWithin {band:&band,tol,distance:sp.weights.is_none()}};
     let reach = sp.hull_length().max(1e-300)/(hi-lo).max(1e-300);
     let mut out = Vec::new();
     for w in cuts.windows(2) {
@@ -2514,11 +2552,27 @@ impl<'a> Located<'a> {
 /// too thin for the grid: a sliver a split leaves), judged against a mesh of the boundary whose sag
 /// was measured: a point farther from the mesh than that sag is on the side of the boundary the mesh
 /// says it is (its winding number), and is the distance less the sag from the boundary at least.  So
-/// nothing returned is a guess.
+/// nothing returned is a guess.  A cell thinner than its first mesh's sag everywhere has no point
+/// that mesh can vouch for (the tip relief a hypoid's flank keeps where its mill leaves it a hundredth
+/// of a millimetre thick, #904 A1/A2): it is read again on a mesh ten times finer (`SAGS`).
 pub fn interior(b: &Brep,capacity: usize) -> Result<Vec<(V,f64)>,String> {
+    let mut chosen = Vec::new();
+    for sag in SAGS {
+        chosen = interior_at(b,capacity,sag)?;
+        if !chosen.is_empty() { break }
+    }
+    Ok(chosen)
+}
+
+/// The sags `interior` meshes a cell at in turn, as fractions of its box's diagonal: the first
+/// where any sample clears it is the one read.
+const SAGS: [f64;2] = [5e-4,5e-5];
+
+/// `interior` on a mesh of `b` whose sag is `sag` of its box's diagonal.
+fn interior_at(b: &Brep,capacity: usize,sag: f64) -> Result<Vec<(V,f64)>,String> {
     let (lo,hi) = b.bounds();
     let size = distance(lo,hi);
-    let m = super::mesh::mesh(b,size*5e-4,0.2)?;
+    let m = super::mesh::mesh(b,size*sag,0.2)?;
     let tris: Vec<[V;3]> = m.tris.iter().map(|t| t.map(|i| m.pts[i as usize])).collect();
     const N: usize = 12;
     const STEPPED: usize = 400;

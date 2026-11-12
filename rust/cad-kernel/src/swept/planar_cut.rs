@@ -1,14 +1,16 @@
-//! **Where a point, line or circle cuts under a motion of its plane** (#721 F2c): the envelope of
+//! **Where a point, line, circle or ellipse cuts under a motion of its plane** (#721 F2c): the envelope of
 //! a tool carried by a planar motion, read at one roll in closed form. The motion is a postfix
 //! program of turns about centres and slides along directions, the roll `t` in degrees
 //! (`PlanarStep`); it carries the tool to `X(s, t) = R(Φ(t))·T(s) + d(t)`, `s` the tool's own
 //! parameter, and the tool cuts where its tangent runs along the velocity of the material point
 //! under it, `F(s, t) = X_s × X_t = 0` — the normal through the instant centre. A point cuts at
 //! itself; a line once, `F` being linear in `s`; a circle twice, on the line from its centre
-//! through the instant centre, `side` saying which (`+1` the nearer). The cut's point `C(t)` and
-//! its derivative along the roll (per degree), `C′ = X_s s′ + X_t` with `s′ = −F_t / F_s` (the
-//! implicit function theorem), are exact for these tools: what an extruded cutter's sheet is
-//! built from (`swept::extruded`).
+//! through the instant centre, `side` saying which (`+1` the nearer); an ellipse — a circle in a
+//! plane leaned to the motion's, as a helical rack's tip round stands in its transverse section
+//! (#904 A6) — likewise twice, its nearer root the point of it facing the instant centre. The
+//! cut's point `C(t)` and its derivative along the roll (per degree), `C′ = X_s s′ + X_t` with
+//! `s′ = −F_t / F_s` (the implicit function theorem), are exact for these tools: what an extruded
+//! cutter's sheet is built from (`swept::extruded`).
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 
@@ -27,11 +29,12 @@ pub enum PlanarStep {
     Relative,
 }
 
-/// What cuts: a point, a line from `a` to `b` (its parameter the fraction along it), or a circle
-/// about `centre` of `radius` (its parameter the angle from the plane's first axis), on the side
-/// `side` says.
+/// What cuts: a point, a line from `a` to `b` (its parameter the fraction along it), a circle
+/// about `centre` of `radius` (its parameter the angle from the plane's first axis), or an ellipse
+/// `centre + u cos s + v sin s` (`u`, `v` any two conjugate semi-diameters, its parameter `s`), on
+/// the side `side` says.
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub enum Cutting { Point(P),Line { a: P,b: P },Circle { centre: P,radius: f64,side: f64 } }
+pub enum Cutting { Point(P),Line { a: P,b: P },Circle { centre: P,radius: f64,side: f64 },Ellipse { centre: P,u: P,v: P,side: f64 } }
 
 /// The tool's cut at one roll: its point, its derivative along the roll (per degree), and the
 /// tool's parameter cutting there.
@@ -110,6 +113,12 @@ pub fn cut_at(tool: Cutting,program: &[PlanarStep],t: f64) -> Option<Cut> {
                 let (sn,cs) = s.dsin_cos();
                 ([centre[0]+radius*cs,centre[1]+radius*sn],[-radius*sn,radius*cs],[-radius*cs,-radius*sn])
             }
+            Cutting::Ellipse {centre,u,v,..} => {
+                let (sn,cs) = s.dsin_cos();
+                let at = |a: f64,b: f64| [a*u[0]+b*v[0],a*u[1]+b*v[1]];
+                let (p,d) = (at(cs,sn),at(-sn,cs));
+                ([centre[0]+p[0],centre[1]+p[1]],d,[-p[0],-p[1]])
+            }
         }
     };
     // X, X_s, X_t (the material point's velocity), and F with its derivatives in `s` and `t`
@@ -126,17 +135,29 @@ pub fn cut_at(tool: Cutting,program: &[PlanarStep],t: f64) -> Option<Cut> {
         let f_t = omega*cross(perp(rt),xt)+cross(rt,vt);
         (x,rt,xt,f,f_s,f_t)
     };
+    // from a centre the motion carries, toward the instant centre (for a slide, square to the
+    // velocity) on the side asked, back in the tool's own placement
+    let aim = |centre: P,side: f64| -> P {
+        let p = turn(centre);
+        let p = [p[0]+dv[0],p[1]+dv[1]];
+        let w = if omega.abs() < 1e-15 { [-d1[1],d1[0]] } else { [dv[0]-d1[1]/omega-p[0],dv[1]+d1[0]/omega-p[1]] };
+        let w = [w[0]*side,w[1]*side];
+        [cs*w[0]+sn*w[1],cs*w[1]-sn*w[0]]
+    };
     let s = match tool {
         Cutting::Point(_) => 0.,
         Cutting::Line {..} => newton(&read,0.)?,
-        Cutting::Circle {centre,side,..} => {
-            let p = turn(centre);
-            let p = [p[0]+dv[0],p[1]+dv[1]];
-            // toward the instant centre; for a slide, square to the velocity
-            let w = if omega.abs() < 1e-15 { [-d1[1],d1[0]] } else { [dv[0]-d1[1]/omega-p[0],dv[1]+d1[0]/omega-p[1]] };
-            let w = [w[0]*side,w[1]*side];
-            // back into the tool's own placement
-            newton(&read,(cs*w[1]-sn*w[0]).datan2(cs*w[0]+sn*w[1]))?
+        Cutting::Circle {centre,side,..} => { let w = aim(centre,side); newton(&read,w[1].datan2(w[0]))? }
+        Cutting::Ellipse {centre,u,v,side} => {
+            // from the point of the ellipse farthest along the aim, its support there: the root
+            // whose outward normal faces the aim, the other side's turned away from it
+            let w = aim(centre,side);
+            let dot = |a: P,b: P| a[0]*b[0]+a[1]*b[1];
+            let s = newton(&read,dot(v,w).datan2(dot(u,w)))?;
+            let tangent = tool_at(s).1;
+            let outward = [tangent[1]*cross(u,v).signum(),-tangent[0]*cross(u,v).signum()];
+            if !(dot(outward,w) > 0.) { return None }
+            s
         }
     };
     let (x,xs,xt,_,f_s,f_t) = read(s);

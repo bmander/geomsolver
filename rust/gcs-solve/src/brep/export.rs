@@ -47,7 +47,7 @@ impl Exact {
 pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
     let built = build(sk,body,admitted,tolerance,say)?;
     if built.solid.faces.is_empty() {
-        return Err(match &built.emptied { Some(why) => empty(&sk.solids[body].name,why),None => emptied(sk,body) })
+        return Err(match &built.emptied { Some(why) => empty(&sk.solid_name(body),why),None => emptied(sk,body) })
     }
     Ok(built)
 }
@@ -59,14 +59,14 @@ fn build(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,toleran
     let mirrored = mirrored_within(sk,body);
     if mirrored && cad::contains_sweep(sk,body) {
         return Err(ExportRefusal::at(Stage::Blank,format!("`{}` reads a mirrored instance's solid, and a sweep is not reflected yet",
-            sk.solids[body].name)))
+            sk.solid_name(body))))
     }
     // a body placed by a rigid motion (`x in f`) is the body it places, built once and moved
     // (#619): its volume the body's, its pattern and the turn its agreement folds by moved with it
     if let Some((inner,pose)) = cad::placed_swept(sk,body).at(Stage::Blank)? {
         let m = super::sweep::sector::placed(pose,cad::millimetres(sk));
         let built = exact(sk,inner,admitted,tolerance,say)?;
-        (say.stage)(&format!("`{}` is `{}` moved",sk.solids[body].name,sk.solids[inner].name));
+        (say.stage)(&format!("`{}` is `{}` moved",sk.solid_name(body),sk.solid_name(inner)));
         return Ok(built.moved(&m))
     }
     // a closed instance's swept body is its binding's representative's build placed (#566): built
@@ -92,7 +92,7 @@ fn build(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,toleran
         for f in &mut placed.solid.faces {
             if let Some(rest) = f.name.strip_prefix(b.from.as_str()) { f.name = format!("{}{rest}",b.to); }
         }
-        (say.stage)(&format!("`{}` is `{}` placed: one build of their binding",sk.solids[body].name,sk.solids[rep].name));
+        (say.stage)(&format!("`{}` is `{}` placed: one build of their binding",sk.solid_name(body),sk.solid_name(rep)));
         return Ok(placed)
     }
     own(sk,body,admitted,mirrored,tolerance,say)
@@ -109,7 +109,7 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     // ball's tube, the copy's body is static material)
     if let Some(lowered) = crate::solid::lowered(sk,body) {
         (say.stage)(&format!("`{}` cuts a sweep read as the sweeps it is: under a driven joint the joint's over the law's \
-            reach, of a union each member's",sk.solids[body].name));
+            reach, of a union each member's",sk.solid_name(body)));
         return Ok(Exact {swept:true,..own(&lowered,body,admitted,mirrored,tolerance,say)?})
     }
     let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
@@ -173,7 +173,7 @@ fn mirrored_within(sk: &Sketch,body: usize) -> bool {
 fn compose(sk: &Sketch,body: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
     let started = crate::clock::Instant::now();
     let (built,emptied) = combine(sk,body,&mut |o| if cad::contains_sweep(sk,o) { Ok(exact(sk,o,None,tolerance,say)?.solid) } else { built_static(sk,o) })?;
-    (say.stage)(&format!("`{}` built from its swept material by this kernel: {:.6} mm³, {} faces ({:?})",sk.solids[body].name,
+    (say.stage)(&format!("`{}` built from its swept material by this kernel: {:.6} mm³, {} faces ({:?})",sk.solid_name(body),
         super::props::volume(&built),built.faces.len(),started.elapsed()));
     (say.mark)(Stage::Fuse);
     Ok(Exact {solid:built,pattern:None,indexed:None,swept:true,emptied})
@@ -196,18 +196,18 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
     let crate::model::SolidDef::Body {stock,on,through,bound} = &solid.def else { unreachable!("a composed solid is a body") };
     let mut built = part(*stock as usize)?;
     if built.faces.is_empty() {
-        return Ok((built,Some(format!("its stock `{}` holds no material",sk.solids[*stock as usize].name))))
+        return Ok((built,Some(format!("its stock `{}` holds no material",sk.solid_name(*stock as usize)))))
     }
     for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"common")] {
         for &o in operands {
             let operand = part(o as usize)?;
-            let name = &sk.solids[o as usize].name;
+            let name = sk.solid_name(o as usize);
             // an end all but flush with a face of the body is on it, as the recipe's body has it (#836)
             built = super::boolean::combined_written(&built,None,&operand,op,0.).map(|(b,_)| b)
-                .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{name}`: {e}",solid.name)))?;
+                .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{name}`: {e}",sk.solid_name(body))))?;
             // the statement that left nothing, named as the document writes it (#617)
             if built.faces.is_empty() {
-                return Ok((built,Some(format!("`{name} {word} {}` leaves no material",solid.name))))
+                return Ok((built,Some(format!("`{name} {word} {}` leaves no material",sk.solid_name(body)))))
             }
         }
     }
@@ -220,7 +220,8 @@ fn no_swept_cut(sk: &Sketch,body: usize) -> Result<(),ExportRefusal> {
     let crate::model::SolidDef::Body {through,..} = &solid.def else { unreachable!("a composed solid is a body") };
     match through.iter().find(|&&c| cad::contains_sweep(sk,c as usize) && !cad::swept_body(sk,c as usize)) {
         Some(&c) => Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts the sweep `{}` from swept material: name the body the sweep is \
-            cut from, and build `{}` from it",solid.name,sk.solids[c as usize].name,solid.name))),
+            cut from, and build `{}` from it",sk.solid_name(body),sk.solid_name(c as usize),
+            sk.solid_name(body)))),
         None => Ok(()),
     }
 }
@@ -239,12 +240,12 @@ fn empty(name: &str,why: &str) -> ExportRefusal {
 fn emptied(sk: &Sketch,body: usize) -> ExportRefusal {
     if matches!(sk.solids[body].def,crate::model::SolidDef::Body {..}) && !cad::contains_sweep(sk,body) {
         match combine(sk,body,&mut |o| built_static(sk,o)) {
-            Ok((_,Some(why))) => return empty(&sk.solids[body].name,&why),
+            Ok((_,Some(why))) => return empty(&sk.solid_name(body),&why),
             Err(e) => return e,
             Ok((_,None)) => {}
         }
     }
-    empty(&sk.solids[body].name,"it leaves no material")
+    empty(&sk.solid_name(body),"it leaves no material")
 }
 
 /// The STEP file of a built solid, parsed back and held to it (every reference, the topology's
@@ -293,7 +294,7 @@ pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Toler
         None => objects[k],
     };
     // what the source calls each solid, as a reader writes it (`p[0].body`, a ring's copy)
-    let named = |i: usize| crate::vocab::public_path(&sk.solids[i].name);
+    let named = |i: usize| sk.solid_name(i);
     let mut products = vec![Product {name:name.to_string(),solid:None,colour:None}];
     let mut uses = Vec::new();
     // the sub-assemblies first, each step of a name after the one it is in
@@ -367,14 +368,14 @@ pub fn stl(sk: &Sketch,body: usize,exact: &Exact,tolerance: Option<Tolerance>,sa
     let m = match &exact.pattern { Some(p) => p.mesh(sag,ANGULAR),None => super::mesh::mesh(&exact.solid,sag,ANGULAR) }.at(Stage::Mesh)?;
     if m.turned > 0 { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh has {} triangles facing against their surfaces",m.turned))) }
     if m.sag > bar { return Err(ExportRefusal::at(Stage::Mesh,format!("the mesh sags {:.3} µm against {:.3} µm",m.sag*1e3,bar*1e3))) }
-    let bytes = crate::mesh::stl_of(&m.triangles(),&sk.solids[body].name);
+    let bytes = crate::mesh::stl_of(&m.triangles(),&sk.solid_name(body));
     let rounding = written_within(&bytes,m.sag,bar)?;
     // a refused shell whose triangles float32 flattened is said by the faces they are of (#821)
     if let Err(e) = crate::mesh::stl_shells(&bytes) {
         let flat = crate::mesh::flat_triangles(&bytes).at(Stage::Stl)?;
         if flat.is_empty() { return Err(ExportRefusal::at(Stage::Stl,e)) }
         let faces = exact.pattern.as_ref().map_or(&exact.solid.faces,|p| &p.sector().faces);
-        return Err(flattened(&m,faces,&flat,&crate::vocab::public_path(&sk.solids[body].name),bar,cad::millimetres(sk)))
+        return Err(flattened(&m,faces,&flat,&sk.solid_name(body),bar,cad::millimetres(sk)))
     }
     (say.stage)(&format!("the STL output: {} triangles, sagging {:.3} µm at most and moved {:.3} µm at most by float32, against \
         {:.3} µm, its shells checked ({:?})",m.tris.len(),m.sag*1e3,rounding*1e3,bar*1e3,started.elapsed()));
@@ -484,7 +485,7 @@ fn said_slivers(sk: &Sketch,body: usize,b: &Brep,at: [f64;3],tolerance: Option<T
     let first = found.first()?;
     let name = |f: usize| face_name(&b.faces,f as u32);
     let names = |of: &[usize]| all_of(&of.iter().map(|&f| name(f)).collect::<Vec<_>>());
-    let solid = crate::vocab::public_path(&sk.solids[body].name);
+    let solid = sk.solid_name(body);
     let faces = found.iter().filter(|s| matches!(s.thin,Thin::Face(_))).count();
     let edges = found.len()-faces;
     let count = |n: usize,one: &str| if n == 1 { crate::model::article(one) } else { format!("{n} {one}s") };
@@ -556,7 +557,7 @@ pub fn field_agreement(sk: &Sketch,body: usize,stl: &[u8],tolerance: Option<Tole
     if report.agrees() { (say.mark)(Stage::Agreement); return Ok(()) }
     Err(ExportRefusal {stage:Stage::Agreement,condition:None,witness:report.disagreements.first().map(|d| d.point),
         message:format!("`{}`: the exported surface disagrees with the material field at {} of {} probes; nothing was written",
-        sk.solids[body].name,report.disagreements.len(),report.probes)})
+        sk.solid_name(body),report.disagreements.len(),report.probes)})
 }
 
 /// **An object's exact surface as the page draws it** (#670): its B-rep (a pattern's patterned, a
@@ -767,7 +768,7 @@ impl Build {
             _ => cad::recipe_static(lowered.as_ref().unwrap_or(sk),body).at(Stage::Blank)?,
         };
         if matches!(state,State::Admit) && recipe.sweeps.is_empty() {
-            return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solids[body].name)))
+            return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solid_name(body))))
         }
         // a static copy builds the solid asked, its placement as the export reads it
         let (body,moved) = if matches!(state,State::Static) { (asked,None) } else { (body,moved) };
@@ -834,8 +835,8 @@ impl Build {
                     None if cad::contains_sweep(sk,o) => Err(ExportRefusal::at(Stage::Fuse,"the swept body is used twice")),
                     None => built_static(sk,o),
                 })?;
-                if let Some(why) = emptied { return Err(empty(&sk.solids[body].name,&why)) }
-                (say.stage)(&format!("`{}` combined from its swept material",sk.solids[body].name));
+                if let Some(why) = emptied { return Err(empty(&sk.solid_name(body),&why)) }
+                (say.stage)(&format!("`{}` combined from its swept material",sk.solid_name(body)));
                 let solid = match &self.moved { Some(m) => solid.moved(m),None => solid };
                 if self.part { State::Built(solid) } else { State::Mesh(super::sweep::Built::Whole(solid)) }
             }
