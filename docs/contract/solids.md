@@ -70,7 +70,7 @@ the two members — each the envelope its blade generates, `pair.balance.pinion_
 end relief, each held from its fold (`regular(by: …) within …`, `>= 0`). It hands them out with
 their crowns and blanks as `pair.margins`, and the caller ties the two that bind by holding both
 to one unknown, the pair's formal `least` (`regular(pair.least, …)`, a margin reading an unknown,
-[0.213]): a hypoid's are the pinion's inner-cut flank and the gear's outer-cut (8.8549°, the least
+[0.215]): a hypoid's are the pinion's inner-cut flank and the gear's outer-cut (8.8549°, the least
 0.6767 at 24/48, 25 mm, the cutter as stated); with no offset it is the pinion's two flanks
 (−1.195°, 0.4231), and the hypoid's tie there leaves the pinion's outer-cut flank folded, a bound
 broken (`hypoid_machine::at_no_offset_the_pinions_two_flanks_tie`). Which two bind is the caller's
@@ -379,7 +379,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   Claims are read **after phase 4** (a free variable is what `expr::evaluate`
   allocates), and the interval **in the unknown's own units**, never converted as an angle.
   **A claim over a frame's roll turns only what is placed under that frame** (#904 A11,
-  [0.212]): a solid it names placed at an instant of another motion stands where it was read
+  [0.214]): a solid it names placed at an instant of another motion stands where it was read
   through the sweep, whatever ratios tie the frames, and elaboration says so at the claim's
   operand (W117, `program/solids/claims.rs`'s `solid_claim`), naming that frame and how to run
   frames together: their values written over one declared parameter, each solid drawn at its
