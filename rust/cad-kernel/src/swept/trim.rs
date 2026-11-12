@@ -220,6 +220,13 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     }
     if let Err(why) = out.check(tol) {
         if debug() {
+            for (fi,f) in out.faces.iter().enumerate().filter(|(_,f)| f.loops.len() > 1) {
+                for (li,l) in f.loops.iter().enumerate() {
+                    let ends: Vec<_> = l.iter().map(|c| { let e = &out.edges[c.edge as usize]; let kind = match &e.curve { crate::topo::EdgeCurve::Curve(cv) => cv.kind(),_ => "degenerate" };
+                        (c.edge,kind,c.pcurve.at(e.t[0],e,&f.surface,&out.vertices),c.pcurve.at(e.t[1],e,&f.surface,&out.vertices),c.reversed) }).collect();
+                    eprintln!("trim: face {fi} ({}) loop {li}: {ends:?}",f.surface.kind());
+                }
+            }
             for (fi,f) in out.faces.iter().enumerate() {
                 for c in f.loops.iter().flatten() {
                     let e = &out.edges[c.edge as usize];
