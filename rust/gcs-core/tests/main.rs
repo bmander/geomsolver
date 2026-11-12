@@ -180,6 +180,7 @@ mod loft;
 mod loft_examples;
 mod make_component;
 mod many_instances;
+mod mated_parts;
 mod mapped;
 mod mirrored;
 mod materials;
