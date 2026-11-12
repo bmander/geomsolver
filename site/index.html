@@ -11,17 +11,18 @@
 
 <p>Math provides language for extremely compact descriptions of solids and phenomena.</p>
 
-<p>A napkin ring:<br>
-B<sub>5</sub> ∖ { ρ ≤ 3 }</p>
+<p><a href="https://brepbench.org/cases/boolean/napkin-ring.html">A napkin ring</a>:</p>
+<p><img src="napkin-ring.png" width="200" height="200" alt="A ball with a round hole bored through its middle"></p>
+<p><math displaystyle="true"><semantics><mrow><msub><mi>B</mi><mn>5</mn></msub><mo>∖</mo><mo stretchy="false" form="prefix">{</mo><mspace width="0.167em"></mspace><mi>ρ</mi><mo>≤</mo><mn>3</mn><mspace width="0.167em"></mspace><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">B_5 \setminus \{\,\rho \le 3\,\}</annotation></semantics></math></p>
 
-<p>A rod threaded by a ball:<br>
-{ ρ ≤ 5, 0 ≤ z ≤ 20 } ∖ ⋃<sub>θ ∈ [0, 2160°]</sub> B<sub>1</sub>(5 cos θ, 5 sin θ, −2 + 4θ/360°)</p>
+<p><a href="https://brepbench.org/cases/swept/ball-thread-groove.html">A rod threaded by a ball</a>:</p>
+<p><img src="ball-thread-groove.png" width="101" height="200" alt="A rod with a round-bottomed helical groove wound six times around it"></p>
+<p><math displaystyle="true"><semantics><mrow><mo stretchy="false" form="prefix">{</mo><mspace width="0.167em"></mspace><mi>ρ</mi><mo>≤</mo><mn>5</mn><mo>,</mo><mspace width="0.222em"></mspace><mn>0</mn><mo>≤</mo><mi>z</mi><mo>≤</mo><mn>20</mn><mspace width="0.167em"></mspace><mo stretchy="false" form="postfix">}</mo><mo>∖</mo><munder><mo>⋃</mo><mrow><mi>θ</mi><mo>∈</mo><mrow><mo stretchy="true" form="prefix">[</mo><mn>0</mn><mo>,</mo><mspace width="0.167em"></mspace><msup><mn>2160</mn><mo>∘</mo></msup><mo stretchy="true" form="postfix">]</mo></mrow></mrow></munder><msub><mi>B</mi><mn>1</mn></msub><mo minsize="1.2" maxsize="1.2" stretchy="false" form="prefix">(</mo><mn>5</mn><mo>cos</mo><mi>θ</mi><mo>,</mo><mspace width="0.222em"></mspace><mn>5</mn><mo>sin</mo><mi>θ</mi><mo>,</mo><mspace width="0.222em"></mspace><mo>−</mo><mn>2</mn><mo>+</mo><mn>4</mn><mspace width="0.167em"></mspace><mfrac displaystyle="false"><mi>θ</mi><msup><mn>360</mn><mo>∘</mo></msup></mfrac><mo minsize="1.2" maxsize="1.2" stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\{\,\rho \le 5,\ 0 \le z \le 20\,\} \setminus \bigcup_{\theta \in [0,\,2160^\circ]} B_1\bigl(5\cos\theta,\ 5\sin\theta,\ -2 + 4\,\tfrac{\theta}{360^\circ}\bigr)</annotation></semantics></math></p>
 
-<p>A worm wheel hobbed by its worm:<br>
-K ∖ ⋃<sub>t ∈ [0, 60π]</sub> R<sub>z</sub>(−t/30) R<sub>W</sub>(t) T<br>
-where K is the blank, T the thread and W the worm's axis.</p>
-
-<p>[pretty formatting, show the corresponding solid or movement]</p>
+<p><a href="https://brepbench.org/cases/swept/tumbling-torus.html">A torus tumbled through space</a>,
+where T is a torus and A and B are two skew lines it turns about:</p>
+<p><img src="tumbling-torus.png" width="192" height="200" alt="The curled, horn-shaped solid a torus fills as it turns about two lines at once"></p>
+<p><math displaystyle="true"><semantics><mrow><munder><mo>⋃</mo><mrow><mi>t</mi><mo>∈</mo><mrow><mo stretchy="true" form="prefix">[</mo><mo>−</mo><msup><mn>75</mn><mo>∘</mo></msup><mo>,</mo><mspace width="0.167em"></mspace><msup><mn>75</mn><mo>∘</mo></msup><mo stretchy="true" form="postfix">]</mo></mrow></mrow></munder><msub><mi>R</mi><mi>B</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mo>−</mo><mi>t</mi><mo stretchy="true" form="postfix">)</mo></mrow><mspace width="0.167em"></mspace><msub><mi>R</mi><mi>A</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mfrac displaystyle="false"><mi>t</mi><mn>4</mn></mfrac><mo stretchy="true" form="postfix">)</mo></mrow><mspace width="0.167em"></mspace><mi>T</mi></mrow><annotation encoding="application/x-tex">\bigcup_{t \in [-75^\circ,\,75^\circ]} R_B(-t)\,R_A(\tfrac t4)\,T</annotation></semantics></math></p>
 
 <p>Why not just use that? Furthermore: math doesn't get bogged down in all the traditions of CAD -
 feature trees, edit timelines, operations. CAD has this bad habit of recapitulating manufacturing
@@ -31,53 +32,106 @@ encode the requirements of manufacturing, but it shouldn't have to.</p>
 <h2>Declarative</h2>
 
 <p>The reason why not, to answer the above question, is that an implicit description is only as
-useful as the solution you can wring from it. "The location of Jimmy Hoffa" is an unambiguous and
-1:1 map to a geographical coordinate but that doesn't do anybody any good [ed: a less strange and
-Boomer example]. Likewise you can say [insert an easier-said-than-done description of a solid] but
-if you want to fit it into an assembly, measure it, render it, or manufacture it, you need to
-actually evaluate it into three dimensional space. Traditionally this was a difficult process
-engaged in as a prerequisite of the design process. But what if solvers were really good? What if
-they could just solve basically any solvable problem, allowing the designer to specify the
-<em>problem</em>, and not the <em>solution</em>. This is a <em>declarative</em> language; as opposed
-to traditional imperative CAD processes (and code-CAD languages and libraries). This is part of a
-long tradition [who?] but the difficult work of engineering the requisite solver is within
-reach.</p>
+useful as the solution you can wring from it. "The shape a hanging chain takes" picks out exactly
+one curve; Galileo thought it was a parabola, and it was another fifty years before anybody found
+out what it was. Likewise you can say</p>
+
+<p><math displaystyle="true"><semantics><mrow><mi>K</mi><mo>∖</mo><munder><mo>⋃</mo><mrow><mi>t</mi><mo>∈</mo><mrow><mo stretchy="true" form="prefix">[</mo><mn>0</mn><mo>,</mo><mspace width="0.167em"></mspace><mn>60</mn><mi>π</mi><mo stretchy="true" form="postfix">]</mo></mrow></mrow></munder><msub><mi>R</mi><mi>z</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mo>−</mo><mfrac displaystyle="false"><mi>t</mi><mn>30</mn></mfrac><mo stretchy="true" form="postfix">)</mo></mrow><mspace width="0.167em"></mspace><msub><mi>R</mi><mi>W</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>t</mi><mo stretchy="true" form="postfix">)</mo></mrow><mspace width="0.167em"></mspace><mi>T</mi></mrow><annotation encoding="application/x-tex">K \setminus \bigcup_{t \in [0,\,60\pi]} R_z(-\tfrac{t}{30})\,R_W(t)\,T</annotation></semantics></math></p>
+
+<p>which is a worm wheel: what's left of a blank K after its worm T has turned through it, thirty
+turns of the worm to one of the wheel. Nothing is missing from that description, and
+<a href="https://brepbench.org/cases/swept/worm-wheel-hobbed-by-its-worm.html">brep-bench</a> still
+lists it as unsettled, because no two kernels have agreed on its volume. If you want to fit it into
+an assembly, measure it, render it, or manufacture it, you need to actually evaluate it into three
+dimensional space. Traditionally this was a difficult process engaged in as a prerequisite of the
+design process. But what if solvers were really good? What if they could just solve basically any
+solvable problem, allowing the designer to specify the <em>problem</em>, and not the
+<em>solution</em>? This is a <em>declarative</em> language; as opposed to traditional imperative
+CAD processes (and code-CAD languages and libraries). This is part of a long tradition: Ivan
+Sutherland's Sketchpad had geometric constraints in 1963, and every parametric CAD program since
+has a constraint solver in it, kept to the 2D sketch. The difficult work of engineering a solver
+that isn't kept there is within reach. Solvent's solver today does sketches, linkages, solids, gears cut
+by their mates, and beams sized by how far they sag; magnetic fields and fluids are still ahead of
+it.</p>
 
 <p>The declarative language in the case of Solvent is geometric, not algebraic. For example in many
 of the set descriptions of brep-bench cases the set description is an algebraic phrase embedding a
 lot of numbers that were themselves solved from an even deeper implicit geometric description.
-Solvent does that. [examples of algebraic implicit definition compared to implicit geometric
-definition]. The result, as above, is a clean break from many of the traditions of CAD. Solvent
-statements are unordered; they are not a recipe for building the solid; they are a description of
-true facts about the solid, and the solver determines if the description is well defined and then
-finds the geometry. As a result there is no timeline or feature tree. The entire assembly is solved
-at once*. [*go into functional principles in the code-cad section].</p>
+<a href="https://brepbench.org/cases/boolean/reuleaux-tetrahedron.html">A Reuleaux tetrahedron</a>
+is what four balls of radius 10 have in common, when each one's center is 10 from the others':</p>
+
+<p><math displaystyle="true"><semantics><mrow><msub><mi>B</mi><mn>10</mn></msub><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mn>0</mn><mo>,</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>∩</mo><msub><mi>B</mi><mn>10</mn></msub><mrow><mo stretchy="true" form="prefix">(</mo><mn>10</mn><mo>,</mo><mn>0</mn><mo>,</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>∩</mo><msub><mi>B</mi><mn>10</mn></msub><mo minsize="1.2" maxsize="1.2" stretchy="false" form="prefix">(</mo><mn>5</mn><mo>,</mo><mspace width="0.167em"></mspace><mn>5</mn><msqrt><mn>3</mn></msqrt><mo>,</mo><mspace width="0.167em"></mspace><mn>0</mn><mo minsize="1.2" maxsize="1.2" stretchy="false" form="postfix">)</mo><mo>∩</mo><msub><mi>B</mi><mn>10</mn></msub><mo minsize="1.2" maxsize="1.2" stretchy="false" form="prefix">(</mo><mn>5</mn><mo>,</mo><mspace width="0.167em"></mspace><mfrac displaystyle="false"><mrow><mn>5</mn><msqrt><mn>3</mn></msqrt></mrow><mn>3</mn></mfrac><mo>,</mo><mspace width="0.167em"></mspace><mn>10</mn><msqrt><mfrac displaystyle="false"><mn>2</mn><mn>3</mn></mfrac></msqrt><mo minsize="1.2" maxsize="1.2" stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">B_{10}(0,0,0) \cap B_{10}(10,0,0) \cap B_{10}\bigl(5,\,5\sqrt3,\,0\bigr) \cap B_{10}\bigl(5,\,\tfrac{5\sqrt3}{3},\,10\sqrt{\tfrac23}\bigr)</annotation></semantics></math></p>
+
+<p>Somebody had to work out 5√3/3 and 10√(2/3). Solvent does that. You write what they were worked
+out from:</p>
+
+<pre>unit mm
+use std
+
+a := point
+b := point hint((10, 0, 0))
+c := point hint((5, 9, 0))
+d := point hint((5, 3, 8))
+
+a distance(10mm) b
+a distance(10mm) c
+a distance(10mm) d
+b distance(10mm) c
+b distance(10mm) d
+c distance(10mm) d
+
+body := solid({ p |
+  p distance(&lt;= 10mm) a
+  p distance(&lt;= 10mm) b
+  p distance(&lt;= 10mm) c
+  p distance(&lt;= 10mm) d
+})</pre>
+
+<pre>$ solventc reuleaux.sv --where body.volume --png reuleaux.png
+reuleaux.sv: solved
+  12 params, 6 equations, structural rank 6; DOF 6
+  body.volume = 422.158</pre>
+
+<p><img src="reuleaux.png" width="200" height="200" alt="The Reuleaux tetrahedron as solventc drew it: three bulging faces meeting at a corner"></p>
+
+<p>The numbers in <code>hint(…)</code> are where the solver starts looking, not facts. The volume
+is the closed form's. The six freedoms the report counts are where the thing sits in space, which
+nobody said. The rule of the house is that a cosine or a literal coordinate in a Solvent document is
+a lint.</p>
+
+<p>The result, as above, is a clean break from many of the traditions of CAD. Solvent statements
+are unordered; they are not a recipe for building the solid; they are a description of true facts
+about the solid, and the solver determines if the description is well defined and then finds the
+geometry. As a result there is no timeline or feature tree. The entire assembly is solved at once,
+with a caveat the next section gets to.</p>
 
 <h2>Code-cad</h2>
 
 <p>Code-cad is CAD adhering to the principles of code. What are those principles? In a word,
-gittable. Each token between spaces should have some meaning parsable by a human mind, with adjacent
-recombination also parsable by a human mind [ed: this is a terrible description]. The result of
-which generally is that you can edit a few lines of code without messing up the entire document.
-This is generally not true of STEP files; it's certainly not true of STL or Solidworks files, which
-are more like baked cakes than documents. [ed: I feel it's getting worse]. This fundamental property
-underlies the scalability of software in general; it's what makes it possible for tens of thousands
-of people to collaborate in the Linux kernel. Tens of thousands of people collaborate on machines,
-sure (the space shuttle surely), but they don't all dig into the same document; they accomplish this
-via rigid abstraction boundaries and global standards. As a result, open source hardware is sort of
-stuck. Most open source hardware projects just have a folder full of STLs, and if you want to edit
-them, you have to reverse engineer the STLs into a new Solidworks document just to move a hole.</p>
+gittable. A small change in what you mean should be a small change in the text, and somebody else
+should be able to read that change and know what you meant. The result of which generally is that
+you can edit a few lines of code without messing up the entire document. This is not true of STEP
+files, even though they are text; it's certainly not true of STL or Solidworks files, which are more
+like baked cakes than documents. This fundamental property underlies the scalability of software in
+general; it's what makes it possible for tens of thousands of people to collaborate in the Linux
+kernel. Tens of thousands of people collaborate on machines, sure (the space shuttle surely), but
+they don't all dig into the same document; they accomplish this via rigid abstraction boundaries and
+global standards. As a result, open source hardware is sort of stuck. Most open source hardware
+projects just have a folder full of STLs, and if you want to edit them, you have to reverse engineer
+the STLs into a new Solidworks document just to move a hole.</p>
 
-<p>This shortcoming of CAD is well known; there are many code-cad projects, and this is one of
-them.</p>
+<p>This shortcoming of CAD is well known; there are many code-cad projects (OpenSCAD, CadQuery,
+build123d), and this is one of them. Unordered statements help here too: two people adding facts to
+the same part are not both editing one sequence.</p>
 
 <p>Code-cad supplies a few constraints not supplied by the above sections - namely, scalability and
 modularity. The aim of Solvent is to be useful for arbitrarily large assemblies, which means that
 you can't literally solve a million parameters to build a car. It accomplishes this via functional
-design principles; ie, each module is a function of its inputs. The modules can be cached as long as
-the inputs don't change, like Jetpack Compose etc, and that's how we do that. [We'll have to tidy
-this up for sure]. Point being, some features of the language do divert from "mathy" and
-"declarative" in service to the requirement that Solvent is also "code-cad".</p>
+design principles; ie, each module is a function of its inputs. The same definition with the same
+arguments gives the same geometry, so it is worked out once and placed as many times as it is used:
+a car with four hundred of the same bolt solves the bolt once. Point being, some features of the
+language do divert from "mathy" and "declarative" in service to the requirement that Solvent is also
+"code-cad".</p>
 
 <h2>For an exciting future</h2>
 
@@ -111,22 +165,43 @@ Run solventc on it until it solves, then write it out: solventc part.sv --png pa
 <p>[examples: radiatorbot, driveshaft bicycle, interferometer head. For each: the prompt, the
 source, a picture]</p>
 
-<h2>The language</h2>
+<p>Or open the <a href="https://bmander.github.io/geomsolver/">sketcher</a> in a browser, with
+nothing to install.</p>
 
-<p>[a gentle sequence]</p>
+<h2>The language</h2>
 
 <h3>Sets</h3>
 
-<p>A set is the points that satisfy a predicate. A ball of radius 5 about a point
-<code>c</code>, and its sphere:</p>
+<p>A set is the points that satisfy a predicate. A ball of radius 5 about a point <code>c</code>,
+and its sphere:</p>
 
-<pre>ball   := { p | p distance(&lt;= 5mm) c }
-sphere := { p | p distance(5mm) c }</pre>
+<pre>{ p | p distance(&lt;= 5mm) c }
+{ p | p distance(5mm) c }</pre>
 
-<p>A set draws nothing; it means what its uses say. <code>q in ball</code> puts a point in it,
-<code>boundary(ball)</code> is its surface, <code>solid(ball)</code> is the body.</p>
+<p><code>distance</code> is the primitive. The ball is a line of the standard library, written in
+Solvent, and so is a cylinder:</p>
 
-<p>[the napkin ring from above, written in Solvent]</p>
+<pre>component Ball(center: point, r: Length) := { p | p distance(&lt;= r) center }
+component Cylinder(about: line, r: Length) := { p | p distance(&lt;= r) about }</pre>
+
+<p>The napkin ring from the top of the page is the points in one and not in the other:</p>
+
+<pre>unit mm
+use std
+use std.sets
+
+c := point
+d := point hint((0, 0, 1))
+through := line(c, d)
+
+ball := std.sets.Ball(c, r: 5mm)
+bore := std.sets.Cylinder(through, r: 3mm)
+ring := solid({ p | p in ball; p not in bore })</pre>
+
+<pre>$ solventc ring.sv --where ring.volume
+ring.sv: solved
+  6 params, 0 equations, structural rank 0; DOF 6; 6 components: DOF 1, 1, 1, 1, 1, 1
+  ring.volume = 268.083</pre>
 
 <h3>Geometric statements</h3>
 
@@ -145,34 +220,97 @@ in std.front {
   fix((0, 0)) a
 }</pre>
 
-<p>The number in <code>hint(…)</code> is where the solve starts. Every other number is something
-that must be true.</p>
+<pre>$ solventc line.sv --where b
+line.sv: solved
+  2 params, 2 equations, structural rank 2; DOF 0; 1 rigid cluster(s) in the distance graph
+  b.x = 40
+  b.y = 0</pre>
 
-<p>The same words work outside a plane. Two shafts drawn in different planes, held at an angle and
-an offset in space:</p>
+<p>The solver says whether the description is well defined. Take out the <code>fix</code> and it
+reports <code>DOF 2</code>: the line can be anywhere. Add <code>a distance(50) b</code> and it names
+the statements that disagree:</p>
 
-<pre>gax angle(90deg) pax
-gax distance(17.5mm) pax</pre>
+<pre>line.sv: did not solve
+  …
+  2 params, 3 equations, structural rank 2; DOF 0; …; CONFLICT — remove one of the listed constraints; …
+  conflict: a distance(40) b
+  conflict: a distance(50) b
+  …</pre>
 
-<p>[going beyond: tangent to a set, things that move, claims]</p>
+<p>The same words work outside a plane. The tetrahedron above was four points with no plane to be
+drawn in, and <code>distance</code> between them.</p>
+
+<p>A statement can be a principle. A rope of a stated length between two points, hanging
+(<a href="https://github.com/bmander/geomsolver/blob/main/rust/examples/catenary.sv">catenary.sv</a>).
+Nothing here knows what a catenary is:</p>
+
+<pre>rope := curve(a, b)
+length(150mm) rope
+rope minimizes integral(p.y over p)</pre>
+
+<p>Or a motion. A frame that screws about a spindle, and everything a ball passes through as it
+rides that frame for two turns
+(<a href="https://github.com/bmander/geomsolver/blob/main/rust/examples/swept_spring.sv">swept_spring.sv</a>).
+This is the ⋃ from the top of the page:</p>
+
+<pre>climb := frame
+climb screws(pitch) spindle
+spring := solid({ p | some t in (0deg, turns * 360deg): p in ball.body at(under: climb) t })</pre>
+
+<p><img src="spring.png" width="200" height="160" alt="A coil spring of two turns with round ends"></p>
+
+<p>Or a requirement. A cantilever whose depth <code>h</code> is left unknown, and whose tip must
+sink 4mm under 1kN
+(<a href="https://github.com/bmander/geomsolver/blob/main/rust/examples/sized_cantilever.sv">sized_cantilever.sv</a>):</p>
+
+<pre>param h: Length hint(40mm)
+
+scenario tip_load {
+  fixed foot
+  load end P along: down
+  deflection(end, along: down) == sag
+  claim safety(arm) &gt;= 3
+}</pre>
+
+<pre>$ solventc sized_cantilever.sv --where h
+sized_cantilever.sv: solved
+  material steel: E 200GPa, nu 0.3, rho 7850kg/m^3, yield 250MPa, of arm
+  scenario `tip_load`: deflection(end, along: down) is 4mm ± 0mm: driven == 4mm, held
+  scenario `tip_load`: safety(arm) is 3.56245 ± 0: claimed &gt;= 3, kept
+  7 params, 7 equations, structural rank 7; DOF 0
+  h = 58.4804</pre>
 
 <h3>Modules</h3>
 
-<p>A component is a function of its inputs.</p>
+<p>A component is a function of its inputs, and a file is a module. In <code>rings.sv</code>:</p>
 
-<pre>component Rung(a: point, b: point, len: Length) {
-  e := line(a, b)
-  horizontal e
-  a distance(len) b
-}
-
-t0 := Rung(l0, r0, len: 50)
-t1 := Rung(l1, r1, len: 50)</pre>
-
-<p>A file is a module, and another file brings it in with <code>use</code>.</p>
-
-<pre>use std
+<pre>unit mm
 use std.sets
-use engine.parts</pre>
 
-<p>[etc.]</p>
+component Ring(c: point, hole: line, R: Length, r: Length) := { p |
+  p in std.sets.Ball(c, r: R)
+  p not in std.sets.Cylinder(hole, r: r)
+}</pre>
+
+<p>And in another file beside it, two rings on one line, 12 apart:</p>
+
+<pre>unit mm
+use std
+use rings
+
+c := point
+d := point hint((0, 0, 1))
+e := point hint((0, 0, 12))
+bore := line(c, d)
+e coincident bore
+c distance(12mm) e
+
+big := solid(rings.Ring(c, bore, R: 5mm, r: 3mm))
+small := solid(rings.Ring(e, bore, R: 3mm, r: 1mm))</pre>
+
+<h3>The rest</h3>
+
+<p>The <a href="https://github.com/bmander/geomsolver/blob/main/docs/solvent-primer.md">primer</a>
+is the whole language as the compiler accepts it. There are three hundred documents in
+<a href="https://github.com/bmander/geomsolver/tree/main/rust/examples">the examples</a>, from a
+triangle's altitudes to a V-twin engine and a spiral bevel pair.</p>
