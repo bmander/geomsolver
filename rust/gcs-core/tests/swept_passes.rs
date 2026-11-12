@@ -79,7 +79,7 @@ fn lap(p: &mut Program,lo: [f64;2],hi: [f64;2],round: f64,z: f64) {
 fn total_area(b: &Brep) -> f64 { b.faces.iter().map(|f| area(b,f)).sum() }
 
 /// The plate (−10, −10, −6)–(30, 30, 0), its volume and area.
-fn plate() -> (Brep,f64,f64) { (block([-10.,-10.,-6.],[30.,30.,0.]),40.*40.*6.,2.*(1600.+4.*40.*6.)) }
+fn plate() -> (Brep,f64,f64) { (block([-10.,-10.,-6.],[30.,30.,0.]),40.*40.*6.,2.*1600.+4.*40.*6.) }
 
 /// **A flat end mill run round a rounded square at two depths cuts one groove**: the shallower
 /// lap's walls lie on the deeper's, and the plunges and the rise lie within it. The square
