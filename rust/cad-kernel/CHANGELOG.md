@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.10.0] - 2026-11-12
+
 - **The contact's road takes a turn and a screw past the axis** (`swept::contacts`, `swept::trim`,
   `boolean`, #880 Q1b S5): brep-bench's seven S5 cases build through the front door, each to a
   volume computed apart from the build and to a STEP file that reads back as the solid — the rod,
@@ -33,6 +35,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   rates nearly agree settled 3.8e-8 along the rim, which broke a loop in its parameters at the
   kernel's tolerance (the torus screwed through a rod, refused there since the turn's sheets came
   in); `u` is now stepped alone while `v` is held.
+- **A round between two planes is a cylinder** (`fillet::roll`, `fillet::flat_along`): a run
+  between two planes that ends with no tangent run-on is the prism on the round's section (the
+  corner, its legs to the contacts and the ball's arc) carried past each end and cut off there,
+  with no Boolean where an end is one plane square to the run, where it was a fitted 65 × 129
+  bicubic canal cut by a Boolean. brep-bench's `fillet/box-one-edge` goes from about 120 ms and
+  835 KB of STEP to a few milliseconds and 15 KB, `fillet/notched-cube-inside-corner` from 1.8 s
+  to about 0.1 s, each to its closed forms. `topo::EdgeCurve::kind` (**new**).
 
 ## [0.9.0] - 2026-11-12
 
