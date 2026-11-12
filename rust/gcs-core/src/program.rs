@@ -27,6 +27,7 @@ mod rounds;
 mod scenarios;
 mod measures;
 mod at_solve;
+mod mated;
 mod beams;
 mod bound;
 mod mirrors;
@@ -251,6 +252,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
     loop {
         match elaborate_in(p, &refused, &crossed, &named, renamed >= FACE_PASSES, &pose) {
             Ok(mut e) => {
+                // a part mated by what it made starts solved alone and placed whole (#904 A5),
+                // before its seeds are read against its bounds or the drawing solved for its faces
+                if e.ok() {
+                    mated::seat(&mut e);
+                }
                 if crossed.is_empty() {
                     crossed = crossed_seeds(&e);
                     if !crossed.is_empty() {

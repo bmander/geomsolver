@@ -339,6 +339,8 @@ impl Sketch {
                 out.push(Derivation { param: c, terms: vec![(r, w)] });
             }
         }
+        // a number a frame carries rigidly while it is placed (#904 A5)
+        out.extend(self.rigid.iter().cloned());
         // an image of a ring's copy, or a turn about an image: a base is never derived, so each
         // derived base is read as what it is derived from (an image is of no image) — where one is
         let mut at = vec![usize::MAX; self.params.len()];
@@ -367,10 +369,10 @@ impl Sketch {
         out
     }
 
-    /// Whether each parameter is derived, by index — empty for a sketch with no ring and no
-    /// image, which every reader takes as "none is".
+    /// Whether each parameter is derived, by index — empty for a sketch with no ring, no image
+    /// and nothing carried rigidly, which every reader takes as "none is".
     pub fn derived_mask(&self) -> Vec<bool> {
-        if self.turns.is_empty() && self.mirrors.is_empty() {
+        if self.turns.is_empty() && self.mirrors.is_empty() && self.rigid.is_empty() {
             return Vec::new();
         }
         let mut m = vec![false; self.params.len()];
@@ -383,7 +385,7 @@ impl Sketch {
     /// Write every derived parameter's value from its bases — after anything writes the
     /// parameter vector (`set_x`), and after a build.
     pub fn settle_turns(&mut self) {
-        if self.turns.is_empty() && self.mirrors.is_empty() {
+        if self.turns.is_empty() && self.mirrors.is_empty() && self.rigid.is_empty() {
             return;
         }
         for d in self.derived() {

@@ -555,7 +555,30 @@ a datum standing at its frame's place read as that frame (`views::frame_of`), so
 before the drawing is solved, its place as well as its turn, and a part seated in a seated part
 (a gearbox's rails at a table's points and headings in its base) once that part stands
 (`a_part_seated_in_another_frame_starts_where_its_seat_puts_it`,
-`parts_seated_in_a_seated_part_start_where_they_stand`). An instance whose `std`
+`parts_seated_in_a_seated_part_start_where_they_stand`). **A part mated by relations on what it
+made starts where its own solve, placed whole, puts it** (#904 A5, `program::mated`): a mate on
+its members (a gear's axis along a shaft, a pinion's square to an axis) gives nothing to seed the
+frame from before the part is solved, and the frame's six numbers are read through every point
+the part draws, so the document is one block of the part's whole layout and its placement — the
+hypoid pair, its face mill balanced on envelopes, did not come out of it in minutes. So once a
+document has elaborated, each outermost drawn instance with a square frame of its own not held,
+whose rows (`boundary::split`'s, with the numbers its call left unknown) read nothing but what it
+made, its frame and constants, and whose made numbers a row of the document reads with anything
+else, is seated as a designer places a part: solved **alone**, with the document's rows over
+nothing but what it made (a balance its caller states of its margins), its frame held where it
+stands; its **frame placed**, the document solved for its frame with everything it made that
+stands in space (a point's lift, a point in space, a plane's place, an axis's direction and foot)
+carried rigidly — `Sketch::rigid`, each a fixed combination of the frame's place and axes (its
+normal minted where none is), derived as a ring's copies are — the rest of it held and its own
+rows set aside; and the **document solved** from there with its own coordinates held (a point's
+in the plane or frame it is drawn in, a radius, a number, a contact's place), so what a rigid
+motion does not carry (an axis's foot, nearest the world's origin; a contact's place on a surface
+charted by the world's axes) is found again. Kept only where every step settles, else the seeds
+stand as they were: the document's own solve then starts at its answer and confirms it. A part
+handed anything the document places besides its frame is no function of its frame alone and is
+left to the document's solve. `tests/mated_parts.rs` is the gate
+(`a_part_mated_by_what_it_made_starts_placed`, `the_hypoid_pair_is_mated_by_its_axes`,
+`the_hypoid_pair_balanced_by_its_caller_is_mated_by_its_axes`). An instance whose `std`
 nothing outside reads makes no frame and stands as before. One whose body reads no datum, nor any
 body it calls (`Walk::reads_datums`), is kept in `Datums::refused`: its `b.std.D` names nothing and
 `Lookup::missing` says **E111**, since it is placed by its arguments. A path past `std` naming no
