@@ -358,11 +358,15 @@ impl EvaluatedSolid {
         let mut terms = vec![&csg.term];
         while let Some(term) = terms.pop() {
             match term {
+                // (an operand only the exact kernel builds — a round — whose build was refused: said
+                // in its own words, the cause to fix, #904 A8)
                 Term::Empty => {
-                    return Err(format!(
-                        "`{}`: an operand could not be evaluated at this approximation",
-                        sk.solid_name(si)
-                    ))
+                    return Err(match &why {
+                        Some(u) => format!("`{}`: an operand could not be evaluated at this approximation, \
+                            and its exact build was refused: {}", sk.solid_name(si), u.why),
+                        None => format!("`{}`: an operand could not be evaluated at this approximation",
+                            sk.solid_name(si)),
+                    })
                 }
                 Term::Prim(_) => {}
                 Term::Union(a, b) | Term::Diff(a, b) | Term::Inter(a, b) => {
