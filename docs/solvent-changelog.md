@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.212] A claim over one frame says what it leaves standing** (#904 A11). A claim over a
+frame's roll turns the solids placed under that frame and no other (§9.8), so a solid placed at an
+instant of another frame's motion stands where it is read through the sweep — a planet's gear
+claimed over its sun's frame stood still while the sun turned half a pitch into it, and the claim
+was refuted where the train runs clear, saying nothing of why. Such a solid is now **W117** at the
+claim's operand, naming the frame it was read at and how to run frames together: write each one's
+value over one declared parameter (`param t: Angle over (a, b)`, `fix(value == t) f` for each),
+draw each solid at its frame (`s := x at f`) and claim over `t`, which stands the drawing at every
+sample with each joint turned at its ratio. Nothing is judged differently.
+
 **[0.211] A list of names** (#882). A list may name what is drawn (§12.10): `repeat e in
 [box.near, box.far] { … }`, or `ends := [box.near, box.far]` walked as `repeat e in ends`, makes a
 copy per name, `e` that copy's name for it, as a walk over a solid's faces or a chain's edges names

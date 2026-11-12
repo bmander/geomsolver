@@ -1291,7 +1291,12 @@ sampled poses of a frame's motion, reading solids placed under it, and reports t
 unknown (`claim over reach in (0.1mm, 0.9mm) { … }`) it solves at each sampled value, and over a
 declared `param t: Angle over (…)` (`claim over t { … }`, or a stretch, `claim over t in (0deg,
 90deg) { … }`) it stands the drawing at each sampled `t`, a solid drawn in a frame whose value
-reads `t` placed there. A refuted sweep says the sample where it fails by most.
+reads `t` placed there. A refuted sweep says the sample where it fails by most. A claim over a
+frame turns only what is placed under that frame: a solid read at an instant of another frame
+stands still (W117). Frames that turn together, a gear train, are claimed over one parameter:
+`param t: Angle over (0deg, 12deg)`, `fix(value == t) sun_turn` and `fix(value == t)
+planet_turn` (each turns its ratio times `t`), `sun_at := sun.body at sun_turn`, `planet_at :=
+planet.body at planet_turn`, then `claim over t { sun_at clear(0.005mm) planet_at }`.
 
 **A claim over values.** A design table's figures are claimed as a drawing's facts are:
 `claim handle_stall_torque >= 2Nm`, `claim 2 * ratio > 30 and teeth != 12` — a comparison of the

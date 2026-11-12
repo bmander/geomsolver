@@ -365,6 +365,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   and `a_claim_over_a_declared_parameter_is_refused_outside_it`.
   Claims are read **after phase 4** (a free variable is what `expr::evaluate`
   allocates), and the interval **in the unknown's own units**, never converted as an angle.
+  **A claim over a frame's roll turns only what is placed under that frame** (#904 A11,
+  [0.212]): a solid it reads — itself, or a solid it is made of short of a placement under the
+  frame — placed at an instant of another motion stands where it was read through the sweep,
+  whatever ratios tie the frames, and elaboration says so at the claim's operand (W117,
+  `program/solids/claims.rs`'s `standing`), naming that frame and how to run frames together:
+  their values written over one declared parameter, each solid drawn at its frame, the claim over
+  the parameter.  `solid_claim.rs`'s `a_claim_over_one_frame_says_what_it_leaves_standing` (a
+  peg against a peg held still, against its closed form) and
+  `a_train_tied_to_one_parameter_is_judged_as_it_rolls` (the same pegs turned at their ratio).
   **A swept claim's names resolve as a lone claim's do** (`flatten/resolve.rs`'s `rewrite`): the
   motion it runs along and the solids its body judges are found through instances
   (`frame.body`) and, inside a component, under the instance's prefix; a free variable is left as
