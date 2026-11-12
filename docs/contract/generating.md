@@ -872,23 +872,158 @@ tolerance; a plane's contact a line across it ending on its boundary; the drum's
 (`swept_contacts`).
 
 **A piece carried over the roll, and a sweep's candidates under a constant twist (#880 Q1b S3, S4).**
-A piece is fitted as a cubic B-spline by chord length along it (`contacts::piece_curve`), each sample
-settled onto `g = 0` (a seam crossed unwrapped by the surface's period), within a tenth of the
-tolerance from sixteen spans, doubled as the fit asks. It is carried exactly (`contacts::carried`):
+A piece is fitted as the cubic B-spline through points of the contact by chord length
+(`contacts::piece_curve`), within a tenth of the tolerance of the contact itself: from seventeen of
+the piece's points spread along it, its ends among them, every span whose middle stands farther off
+`g = 0` than that given a point between its two, the parameters' midpoint settled (a seam crossed
+unwrapped by the surface's period). Every node is a point of the curve, so the fit closes at a
+cubic's rate; read along the piece's polyline by its own chord length, whose speed jumps at each
+vertex, it closed at a line's, doubled its spans to four thousand, and every inverse on the sheet
+read them all (750 µs an inverse on the leaning torus's sheets, 28 µs now). It is carried exactly (`contacts::carried`):
 placed at the roll's start and carried to its end as one face of a blend between the curve and its
 image (`Surface::Blend`, `Carry::Line` under a slide, `Carry::Screw` under a turn or a screw), its
 rails the paths of its ends (`Curve::Iso`), a closed piece's one rail its seam; the carry is held to
 the path's own pose at the roll's end. `contacts::candidates` gives each face's pieces carried and
-the tool at the roll's two ends, and with them the meetings known by construction (P4): each sheet
-meets its face at either end pose in that end's rim, given (`boolean::Given`). A face read whole, or
-an edge between faces not smooth there, is refused by name (`Curved`): S2 and a whole face's sweep
-are not read yet. The build's tolerance must be one a fit can hold: a contact fitted within a tenth of
+the tool at the roll's two ends; a face read whole is refused by name (`Curved`) before any face is
+read. **A sharp edge's fan is a contact of its own** (S2, `contacts::fan_runs`): a point of an edge
+between two faces not smooth there bounds the sweep where its velocity is square to a normal of the
+fan between the faces' — where the two faces' `n · v` differ in sign — so each stretch of the edge
+where they do, its ends roots of one face's `n · v` (bracketed over 512 points of the edge, the face
+whose `n · v` turns there the one solved), a closed edge's stretch through its seam one, is a piece:
+its section the edge itself, fitted through points of it, carried as any other, crossing each of its
+two faces at an end pose simply (order one in `pose_meeting`, where a face's own contact touches it,
+order two). On the V wheel's rim and the drum's (`swept_contacts::a_sharp_edges_fan_is_in_contact_between_its_faces_contacts`,
+S2's gate): every stretch ends where `n · v` of one face is nought within the tolerance, and on a
+grid a hundred times finer the faces' `n · v` differ in sign inside every stretch and agree between.
+
+Each piece is cut into stretches, each a candidate of its own (`contacts::stretches`): the trim keeps
+or drops a candidate's piece by membership and meets a candidate only with others, so the leaning
+torus's one closed contact — its outer branch bounding the sweep and its inner one buried — was read at
+a buried point and dropped whole. A closed piece is cut in four at least, no stretch longer than a
+quarter of the tool, each fitted through its ends exactly; neighbouring stretches meet smoothly along
+the rail they share, which is given (P4, `boolean::Given`), not searched for. **Every two sheets are
+given their whole meeting** (`shared_paths`): two sheets of one carry meet only along whole paths,
+where their sections cross or touch in its invariants, so each pair is given those paths (each the
+one sheet's `Iso` there, laid where both faces hold it), and a pair sharing none is given none and
+not searched. Found from the invariant images' chords that cross or come within a thousandth of the
+tool, closed on by damped Gauss–Newton, kept within the tolerance, and each valley of points whose
+gap stays within it taken once, where the gap is least (golden section along one section of the
+least over the other). At a double point of the contact — a saddle of `g`, the closed piece passing
+it twice and each stretch turning a corner through it — the two stretches' sections touch in the
+invariants, as every two curves through one point of the tool do (the invariants' differential has
+the carry's velocity, which lies in the surface there, in its kernel), and their sheets touch along
+that point's path: Newton alone, on that kinked double root, read five paths a hair apart, and
+searched, the march along the one path crossed to the other where the sheets nearly touch between.
+**A contact is cut at its double points** (`face_contact`): it is smooth but where two branches
+cross, so a piece whose polyline turns by more than 30° there has passed one the grid did not see as
+a saddle — the leaning torus's stands on the crossing of its two seams, a node of the grid, where its
+one closed piece ran through it twice and turned a corner each time, and every sheet over such a
+stretch is creased along that point's path. Cut there, the corner placed on the double point where
+Newton finds `∇g = 0` within a cell, each end `Singular`, a closed piece opened at its first corner:
+four stretches then end on the point's path. Every two of those part so slowly from it that the
+sections' own fit can cross them again beside it (7e-3 along, on the torus, where laid as a path it
+was a slit in the sheet), so a valley holding an exact root at an end of both sections is placed
+there (`swept_contacts::every_two_sheets_of_one_carry_are_given_the_paths_they_share`). A rail is one point's
+path and a sheet a union of paths, and two paths of one carry are one or apart, so a rail meets
+another stretch's sheet nowhere or lies in it (`Blend::carried_gap` reads how far apart, in the
+carry's invariants): each cut is moved, within a quarter of its stretch, to the point whose path
+stands clearest of the piece's other points, by a thousandth of the tool where one does — a cut at an
+even length on the torus stood 7e-6 from another stretch's paths, and its rail ran beside that sheet
+its whole length, which no search settles. **Each sheet is given its whole meeting with the tool at
+each end** (`pose_meeting`): with every face of the posed tool, the zero set of `F(u, v)`, the face's
+signed distance at the sheet's point, read in the sheet's own parameters; and with the face its
+section lies on, at the end its rim is carried to (`v = e`), where the sheet touches the face along
+the rim and `F = (v − e)² h`, the zero set of `h` alone — what of a buried stretch passes back into
+the tool a little way into the roll (on the torus, 9° on), reaching the rim where `h` changes sign
+along it, and at a double point of the contact leaving the rim's corner. The rim itself is the
+sheet's own edge, which the arrangement reads lying on the face, and is not given again (given, it
+was laid a second time beside that edge, the two cut a hair apart). `h` is `F` less its value and
+rate at the rim over `(v − e)²`, and within a hundred-thousandth of the roll of the rim its Taylor
+series there, the one passing smoothly into the other, so the two readings are one function (one
+jumping to the other made a sign change of its own along the rail, and at the kernel's tolerance
+set a branch's points between two curves). **The rim's value and rate are read exactly** — `F` there,
+and its gradient along the carry's own velocity (`Carry::rate`) — and the series' second and third
+terms by differences of that rate: by five-point differences of `F` a thousandth of the roll apart,
+on the leaning torus, whose carry moves a point a tenth of a millimetre in that step past a tube of
+radius 2, the rate took the series' fifth-order truncation, 2.7e-5 for its own 1e-8, and the branch
+beside the rim stood that much times `w` off the tool (4e-8, past the kernel's tolerance, refused
+by the check). A branch is settled on `h` within a thousandth of the roll of the rim and on `F`
+past four, and between on `F` less a share of the rim's value and rate that falls smoothly from all
+of it to none, so its points lie on one curve passing from `h`'s zero set into `F`'s: settled on
+the one or the other across a single edge, they stood between two curves a tenth of the kernel's
+tolerance apart, and the fit chased them until four thousand nodes stood in a span. Each branch is marched over a grid of the
+parameters, its crossings of the cells' edges exact, a branch's end beside a double point's corner
+by no more than `h`'s rounding there puts it set on the corner, and fitted (`fitted`) from seventeen
+of its points, a span split where its middle stands off the curve, measured across its chord from
+the point it would be split at. Sought, a branch reaching the rim was marched to a stop a step
+short of it, and at the double point laid beside the rim; given, the arrangement holds a given
+meeting to the tolerance (`boolean`'s `triple_points`), not to the tolerance over the sine of its
+surfaces' angle, a trace's, which at a double point, where every sheet and the pose are tangent,
+grew until two given curves leaving the point a few degrees apart were cut a centimetre along
+(`swept_contacts::each_sheet_is_given_its_meeting_with_the_tool_at_each_end`). The rim is given too:
+the sheet's own edge and the rim given are one curve, merged where the meetings crossing them are
+cut alike, and without it nothing lays the rim on the pose's face, which then stood whole.
+
+**The trim of a screwed torus** (`swept_contacts::a_rod_grooved_by_a_leaning_torus_screwed_along_it_is_its_volume`,
+S4's gate for `torus-screwed-through-rod`): the closed sweep trimmed from those candidates, judged,
+and cut from the rod is the groove's volume computed apart from it (1460.6300031715, by the
+helical heights the torus reaches at each radius) within ten tolerances, built to 1e-5 and to 1e-6.
+Four things it took.
+**A tool that is where each of its faces' surfaces has it inside is read exactly** (`member::Solid`,
+`exactly`): its faces planes, cylinders, cones, balls or tori, the greatest of their signed
+distances, each turned to read outward as its face does, is 1-Lipschitz, nought on the boundary and
+negative inside, so membership has no sag; taken only where every point of the tool's mesh stands on
+each surface's inner side (a concave tool is not that greatest: the solid a turned ring builds, read
+so, stood 12 inside where it was out) and held to the tool's own point location at 512 points over
+its box. A mesh's sag — a mesh's (a hundredth of the tool) set the hair a
+piece's sides are read at, and two sheets touching along a path stand within a thousandth of each
+other a centimetre off it, which no side read at that hair tells apart. **The hair is the
+tolerance's**, a few of them (`Trim::hair`): above the sections' fit, below the thinnest piece
+beside a touch; the tool's 1e-4 read those wrong. **A piece proved inside or outside the sweep at a
+point of it bounds nothing** (`trim`'s `side`, `Swept::beyond` at `ON_CURVE` tolerances), read
+before its sides. **A fit merges nodes within the tolerance** (`fitted`): a cubic through two
+nodes a hair apart swung 160 off its branch between them, unread by a span too short to check,
+and the flux and the mesh of the face it bounded read it so; and a branch two of whose roots
+stood at one place was refused whole. Each piece of contact is cut at every double point it
+passes (S1's gate: a piece ends on the face's boundary or where `∇g = 0`), where `|∇g|` falls to
+a least and Newton holds one, as well as where it turns sharply. **At a finer tolerance**: a
+branch of a sheet's meeting with a pose is settled on `h` and then onto `F` itself off the rim, a
+move of a few tolerances (`h`'s zero set is where `F` is the rim's own value and rate carried out,
+the section's fit, and a branch settled on it alone stood 2.5e-6 off the tool at 1e-6; Newton on
+`F` alone wandered near a fold, where both its factors are small). The arrangement holds a given
+meeting to the tolerance throughout (`brep.md`): where an edge meets a face whose surface a face it
+bounds is given a meeting with and the search is refused, it is read off the given curves; a
+touch run reaching an edge's own end is that end; two given meetings' crossing is kept where their
+curves cross; and no vertex is taken onto a given meeting's curve from farther than `ON_CURVE`
+tolerances. At a double point's corner, where `h` is nought but for its rounding, its zero line
+clips the corner and leaves a root of rounding on each of the corner's two sides besides the
+branch's own, three in one cell, which no pairing joins: the corner is the root those two stand
+for, joined to the third (`pose_meeting`).
+
+The build's tolerance must be one a fit can hold: a contact fitted within a tenth of
 `geom::tolerance` (5e-10 of the size) takes thousands of spans, and its rim then stands off its face
 past the tolerance (3.7e-8 against 2.45e-8 on the leaning torus), so the edge reads as crossing it.
-Not yet built whole: on the leaning torus the arrangement reads where each rim crosses its end pose's
-seam circles as the rim's roots on each circle's plane, and the rim runs in the plane of the tube's
-meridian seam over a stretch (185 to 309 crossings), which no certified search settles; reading two
-curves lying in one surface in its parameters, where a seam is an iso-line, is the next step.
+**The front door** (`closed::closed`, `cut_from`): under a constant twist, what the closed class
+refuses as `Curved` goes the contact's road (`closed::contacts_road`: the candidates, trimmed at a
+hair of four tolerances or a millionth of the tool, judged, cut from the blank), and where that road
+refuses too the closed class's refusal stands, so a ball with a flat screwed, whose road meets no
+closed arrangement yet, is still refused as `Curved` at its circle. S4's three cases are built
+through it at 1e-5, each written as a STEP file that reads back as the solid
+(`swept_contacts::…_through_the_front_door`): the torus screwed through the rod, to 1460.6300031715;
+the V wheel, its rim's fan a sheet, to 1554.3809694 (the rod cut where the helical invariants
+`(ρ, z − c φ)` lie in the wheel's shadow, the radii by Gauss–Legendre, moving 1e-5 a doubling at
+forty points; built, 1554.3809657); and the drum leaning 25° to a screw through the ring sector,
+both rims' fans sheets, to 50.2500186377 (the strip of helical heights its shadow covers at each
+radius, integrated by Gauss–Legendre between the strip's kinks — where the shadow splits in two and
+where its ends cross the window's — over sixteen pieces of each panel, eight giving 2e-10 less;
+built, 50.2500191). At the
+kernel's own tolerance (`geom::tolerance`, a billionth of the size, what the bench builds them at)
+the three are built alike, to their volumes and their STEP files, in about a minute
+(`swept_contacts::the_three_cases_are_cut_at_the_kernels_own_tolerance`, slow tier): the torus to
+1460.6300031967, 2.5e-8 off. The sharp-rimmed round slid at a lean, #810's negative control,
+builds through its fan to the meridian's own reading within 1e-5 of the volume
+(`swept_slid::a_round_meeting_a_sharp_rim_at_a_lean_builds_through_its_fan`), its admission
+(`closed::reads`) still refusing it as `Curved` at the rim.
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
@@ -1139,7 +1274,7 @@ never returned, at four of the six ways it was slid). A solid of revolution amon
 so its seam stands in the widest gap between the angles where the touches pass (`seam_away`): a
 slide across the tool's own seam meridian laid a touch along the cylinder's, the torus's and the
 top rim's seams at once. Refused by name (`Unbuilt::Curved`, at a point of the rim): a band meeting
-a neighbour in a sharp rim (its fan not entered yet), a contact crossing both seams (two arcs), and a
+a neighbour in a sharp rim (its fan not entered here; the contact's road builds it, #880 Q1b S2), a contact crossing both seams (two arcs), and a
 crossed seam's neighbour no cylinder or cone. Membership reads the stretches of the roll best
 first, the deepest bound first (`member::Swept::member`): taken depth first, a point on the tool's top
 at the middle pose spent its reads halving the stretch before it, where it stood within the mesh's
@@ -1160,10 +1295,10 @@ from a block, the bull-nose leaning 30° pushed 8 straight down until wholly in 
 `solid_sweeps/leaning_bullnose.sv`, its STL agreeing with the field,
 `solid_sweeps_examples::the_bull_nose_plunged_at_a_lean_stops_inside_the_block`): every line down the
 push meets the mill once, so the block loses `−∫ z_low dA` over its shadow, by the divergence theorem
-`V − ∫ z n_z dS` over the faces turned up (`Mill::plunged_away`), to 1e-9. Negative control: a round
-spanning only the eighth of the tube above `v = −π/4`, so the flat end meets it in a sharp rim,
-refused as `Curved` at that rim by the build and the admission
-(`a_round_meeting_a_sharp_rim_at_a_lean_is_refused_by_name`). Profiled (`SOLVENT_SWEEP_PROFILE`):
+`V − ∫ z n_z dS` over the faces turned up (`Mill::plunged_away`), to 1e-9. A round spanning only
+the eighth of the tube above `v = −π/4`, so the flat end meets it in a sharp rim, is refused as
+`Curved` at that rim by the admission, and built by the contact's road through its fan (#880 Q1b
+S2), to the meridian's reading (`a_round_meeting_a_sharp_rim_at_a_lean_builds_through_its_fan`). Profiled (`SOLVENT_SWEEP_PROFILE`):
 before, the bull-nose slid 5 at a lean was refused as `Curved` at its round in 53 µs; now it builds
 in 3.4 s, its meetings 107 in closed form, 10 traced (the side's cylinders at the end poses against
 the sheet, where they touch at the seam points; the end poses' tori against the planes and the top

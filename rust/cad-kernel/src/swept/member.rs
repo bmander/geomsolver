@@ -38,7 +38,11 @@ pub struct Solid { pts: Vec<V>,tris: Vec<[u32;3]>,tree: Bvh<3>,pub sag: f64,
     /// not, the winding read instead), and each edge's, the sum of its two triangles' unit normals:
     /// the side of a point whose nearest point of the mesh is on a vertex or an edge read off it
     /// (Bærentzen & Aanæs 2005), exact for a closed mesh turned consistently outward.
-    vertex_normals: Vec<Option<V>>,edge_normals: Vec<[Option<V>;3]> }
+    vertex_normals: Vec<Option<V>>,edge_normals: Vec<[Option<V>;3]>,
+    /// a tool that is where every one of its faces' surfaces has it inside, each surface's implicit
+    /// its signed distance (a ball, a torus, a drum, a wheel turned from a triangle): the surfaces,
+    /// each with the sign its face reads outward, and the scale they are read at
+    exact: Option<(Vec<(crate::geom::Surface,f64)>,f64)> }
 
 impl Solid {
     /// The B-rep `b` (its units) meshed within `bar` and read in units `1/scale` of its own (a
@@ -55,7 +59,16 @@ impl Solid {
         let size = pts.iter().fold(0_f64,|r,p| r.max(norm(*p)));
         let sag = m.sag/scale+1e-12*(1.+size);
         let (vertex_normals,edge_normals) = pseudo_normals(&pts,&m.tris);
-        Ok(Solid {pts,tris:m.tris,tree,sag,vertex_normals,edge_normals})
+        let exact = exactly(b,&m.pts).map(|faces| (faces,scale));
+        let sag = if exact.is_some() { 1e-12*(1.+size) } else { sag };
+        Ok(Solid {pts,tris:m.tris,tree,sag,vertex_normals,edge_normals,exact})
+    }
+
+    /// The signed distance at `p` read exactly (`exactly`): the greatest of the faces' signed distances.
+    fn exact_at(&self,p: V) -> Option<f64> {
+        let (faces,scale) = self.exact.as_ref()?;
+        let q = p.map(|x| x*scale);
+        Some(greatest(faces,q)/scale)
     }
 
     /// How many triangles the boundary is meshed in.
@@ -69,6 +82,7 @@ impl Solid {
 
     /// The distance from `p` to the meshed boundary.
     pub fn distance(&self,p: V) -> f64 {
+        if let Some(d) = self.exact_at(p) { return d.abs() }
         let best = std::cell::Cell::new(f64::INFINITY);
         self.tree.query_nearest(|b| b.gap(Bounds {lo:p,hi:p}),|| best.get(),|i| {
             let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
@@ -83,6 +97,7 @@ impl Solid {
     /// triangle — on a closed mesh turned outward, exactly the side — and off the winding number
     /// where it lies on a triangle's edge or corner, where the triangles there disagree.
     pub fn signed_near(&self,p: V) -> (f64,bool) {
+        if let Some(d) = self.exact_at(p) { return (d.abs(),d < 0.) }
         let best = std::cell::Cell::new((f64::INFINITY,usize::MAX,[0.;3],crate::util::space::Region::Face));
         self.tree.query_nearest(|b| b.gap(Bounds {lo:p,hi:p}),|| best.get().0,|i| {
             let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
@@ -109,6 +124,7 @@ impl Solid {
 
     /// The generalised winding number at `p`: near 1 inside, near 0 outside.
     pub fn winding(&self,p: V) -> f64 {
+        if let Some(d) = self.exact_at(p) { return if d < 0. { 1. } else { 0. } }
         let mut w = 0.;
         for t in &self.tris {
             let [a,b,c] = t.map(|k| sub(self.pts[k as usize],p));
@@ -125,6 +141,52 @@ impl Solid {
         let d = self.distance(p);
         if self.winding(p) > 0.5 { -d } else { d }
     }
+}
+
+/// **A tool read exactly** (#880 Q1b): where the tool is where every one of its faces' surfaces has it
+/// inside — the surfaces a plane, a cylinder, a cone, a ball or a torus, each implicit its signed
+/// distance — the greatest of those signed distances, each turned to read outward as its face does,
+/// is 1-Lipschitz and nought on the boundary, negative inside and positive out: all membership's
+/// proofs ask of a distance, with no sag. A mesh's sag (a hundredth of the tool on the screwed torus)
+/// set the hair a trimmed piece's sides are read at, and two sheets touching along a path stand
+/// within a thousandth of one another a centimetre off it, which no side read at that hair tells
+/// apart. Taken only where every point of the tool's mesh (`boundary`) stands on the inner side of
+/// every one of those surfaces — so no part of the tool is concave, the swept solid a turned ring
+/// builds read so stood 12 inside where it was out — and held to the tool's own point location at
+/// points over its box; `None` for any other tool, read off its mesh.
+fn exactly(b: &Brep,boundary: &[V]) -> Option<Vec<(crate::geom::Surface,f64)>> {
+    use crate::geom::Surface;
+    let mut faces: Vec<(Surface,f64)> = Vec::new();
+    for f in &b.faces {
+        if !matches!(f.surface,Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..)) { return None }
+        // the sign that reads the face's outward side positive, at a point of the face
+        let p = f.loops.iter().flatten().next().map(|c| { let e = &b.edges[c.edge as usize]; e.point(0.5*(e.t[0]+e.t[1]),&b.vertices) })?;
+        let n = f.outward(p)?;
+        let g = f.surface.gradient(p);
+        let sign = if crate::util::space::dot(n,g) < 0. { -1. } else { 1. };
+        if !faces.iter().any(|(s,k)| *s == f.surface && *k == sign) { faces.push((f.surface.clone(),sign)) }
+    }
+    let size = b.size();
+    let slack = 1e-6*(1.+size);
+    if boundary.iter().any(|&p| greatest(&faces,p) > slack) { return None }
+    // held to the tool's point location over its box grown by a quarter
+    let located = crate::query::Located::new(b,1e-9*(1.+size));
+    let (lo,hi) = b.bounds();
+    let grow = 0.25*crate::util::space::distance(lo,hi);
+    let mut rng = crate::util::rng::Rng::new(0x7001);
+    for _ in 0..512 {
+        let p: V = std::array::from_fn(|k| rng.uniform(lo[k]-grow,hi[k]+grow));
+        let m = greatest(&faces,p);
+        if m.abs() <= slack { continue }
+        let inside = match located.solid_place(p) { crate::query::Place::In => true,crate::query::Place::Out => false,crate::query::Place::On => continue };
+        if inside != (m < 0.) { return None }
+    }
+    Some(faces)
+}
+
+/// The greatest of the faces' signed distances at `p`, each turned to read outward (`exactly`).
+fn greatest(faces: &[(crate::geom::Surface,f64)],p: V) -> f64 {
+    faces.iter().map(|(s,sign)| sign*s.implicit(p)).fold(f64::NEG_INFINITY,f64::max)
 }
 
 /// Why a point's membership is not settled: it stands within the mesh's sag of the swept boundary

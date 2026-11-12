@@ -626,6 +626,16 @@ struct Banded<F,B> { f: F,by: B }
 /// over all of `[a, b]`.
 trait Run { fn within(&self,a: f64,b: f64) -> bool; }
 
+/// **A run proved by heights** (`spline_plane`): a non-rational B-spline's heights over a plane are
+/// its distances from it, so over a stretch whose heights' enclosure (`band`) lies within half the
+/// tolerance the curve is within it of the plane. A rational spline's heights are weighed, and prove
+/// no run.
+struct HeightsWithin<'a> { band: &'a dyn Fn(f64,f64) -> Iv,tol: f64,distance: bool }
+
+impl Run for HeightsWithin<'_> {
+    fn within(&self,a: f64,b: f64) -> bool { self.distance && (self.band)(a,b).mag() <= 0.5*self.tol*(1.-1e-9) }
+}
+
 impl<F: crate::util::isolate::Function,B: Run> crate::util::isolate::Function for Banded<F,B> {
     fn at(&self,t: f64) -> (f64,f64) { self.f.at(t) }
     fn value(&self,t: f64) -> Iv { self.f.value(t) }
@@ -829,7 +839,11 @@ impl Run for Taylored<'_> {
 /// a scalar B-spline (`BSpline::heights`), whose value and rate are enclosed over a stretch by de
 /// Boor's algorithm in intervals (`enclose::scalar`), so its roots are isolated span by span
 /// (`util::isolate`; a root at a knot both spans share `settled` reads once), a touch accepted
-/// where the plane's distance is within `tol`.
+/// where the plane's distance is within `tol`. A non-rational curve's heights are its distances
+/// from the plane, so a stretch whose heights are enclosed within half the tolerance is a run along
+/// the plane (`Banded`, `HeightsWithin`), settled as one meeting: a contact curve running in the
+/// plane of the tool's seam circle over a stretch (#880 Q1b, the leaning torus's rim, 185 roots a
+/// hair apart) was halved past any search's boxes.
 fn spline_plane(sp: &super::nurbs::BSpline,[t0,t1]: [f64;2],f: &super::geom::Frame,surface: &Surface,tol: f64) -> Certified {
     let h = sp.heights(f.z,f.o);
     let [lo,hi] = sp.domain();
@@ -841,7 +855,8 @@ fn spline_plane(sp: &super::nurbs::BSpline,[t0,t1]: [f64;2],f: &super::geom::Fra
     let at = |t: f64| h.at(t);
     let value = |t: f64| crate::enclose::scalar(sp.degree,&sp.knots,c,[t,t],false).0;
     let slope = |a: f64,b: f64| crate::enclose::scalar(sp.degree,&sp.knots,c,[a,b],true).1;
-    let g = crate::util::isolate::Parts {at:&at,value:&value,slope:&slope};
+    let band = |a: f64,b: f64| crate::enclose::scalar(sp.degree,&sp.knots,c,[a,b],false).0;
+    let g = Banded {f:crate::util::isolate::Parts {at:&at,value:&value,slope:&slope},by:HeightsWithin {band:&band,tol,distance:sp.weights.is_none()}};
     let reach = sp.hull_length().max(1e-300)/(hi-lo).max(1e-300);
     let mut out = Vec::new();
     for w in cuts.windows(2) {
