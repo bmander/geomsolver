@@ -11,7 +11,7 @@
 //! `Layout`, `Grid`, `marked`). Positions are native millimetres, `scale` of them a model unit;
 //! the contact math runs in model units.
 use super::generating::{Chart,PointContactError};
-use crate::util::space::{scale as scaled,distance};
+use crate::util::space::{scale as scaled,distance,lerp,normalised};
 use std::{cell::RefCell,collections::BTreeMap,f64::consts::TAU,fmt,sync::{Arc,Mutex}};
 
 type V = [f64;3];
@@ -373,10 +373,8 @@ impl Tracer<'_> {
                         let m = 0.5*(on+off);
                         match resumes(m)? { Some(x) => { on = m; g = x }, None => off = m }
                     }
-                    let chord: Vec<V> = (1..BRIDGE_READS).map(|i| {
-                        let u = i as f64/BRIDGE_READS as f64;
-                        std::array::from_fn(|j| f.position[j]+(g.position[j]-f.position[j])*u)
-                    }).collect();
+                    let chord: Vec<V> = (1..BRIDGE_READS)
+                        .map(|i| lerp(f.position,g.position,i as f64/BRIDGE_READS as f64)).collect();
                     if inside(&chord)?.iter().any(|b| *b) { return Ok(None) }
                     return Ok(Some((on,g)))
                 }
@@ -486,11 +484,8 @@ impl Tracer<'_> {
                     return Ok(f);
                 }
                 // across a fold's gap the walk crossed, where the root has no contact: the chord
-                let between = |p: V,q: V| -> V { std::array::from_fn(|j| p[j]+(q[j]-p[j])*t) };
-                let normal = between(a.found.normal,b.found.normal);
-                let length = crate::util::space::norm(normal);
-                if length > 0. {
-                    return Ok(Found {position:between(a.found.position,b.found.position),normal:normal.map(|x| x/length),
+                if let Some(normal) = normalised(lerp(a.found.normal,b.found.normal,t)) {
+                    return Ok(Found {position:lerp(a.found.position,b.found.position,t),normal,
                         time:near,branch:a.found.branch});
                 }
             }
