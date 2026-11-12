@@ -578,7 +578,9 @@ stand as they were: the document's own solve then starts at its answer and confi
 handed anything the document places besides its frame is no function of its frame alone and is
 left to the document's solve. `tests/mated_parts.rs` is the gate
 (`a_part_mated_by_what_it_made_starts_placed`, `the_hypoid_pair_is_mated_by_its_axes`,
-`the_hypoid_pair_balanced_by_its_caller_is_mated_by_its_axes`). An instance whose `std`
+`the_hypoid_pair_balanced_by_its_caller_is_mated_by_its_axes`; what the frame carries is derived
+in a drawing with no image too, `what_a_frame_carries_rigidly_is_derived_with_no_image`). An
+instance whose `std`
 nothing outside reads makes no frame and stands as before. One whose body reads no datum, nor any
 body it calls (`Walk::reads_datums`), is kept in `Datums::refused`: its `b.std.D` names nothing and
 `Lookup::missing` says **E111**, since it is placed by its arguments. A path past `std` naming no
