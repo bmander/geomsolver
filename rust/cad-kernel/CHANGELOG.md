@@ -17,6 +17,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   builds, and `swept/spheroid-wheel-screwed-through-rod`, each to a volume made apart from the build,
   and the screwed ball with a flat the closed class refuses builds through the road to its volume
   worked apart.
+- **Membership's mesh is held to its sag as measured over every triangle** (`swept::member::Solid`):
+  the mesher measures a triangle's sag at its middle and its inner sides' middles, and a point on a
+  drafted cone stood 1.1e-3 off a mesh measured 9.5e-4, which `Swept::beyond` then proved outside the
+  sweep; the sag is now the greater of the mesher's and each triangle's sides' and middle's distance
+  from its face. Under a screw or a slide a contact piece some of whose stretches bound keeps its
+  buried ones as candidates (`swept::contacts::candidates`). brep-bench's
+  `swept/drafted-slot-screwed-through-rod` builds, to its volume made apart from the build.
 
 - **The contact's road takes a turn and a screw past the axis** (`swept::contacts`, `swept::trim`,
   `boolean`, #880 Q1b S5): brep-bench's seven S5 cases build through the front door, each to a

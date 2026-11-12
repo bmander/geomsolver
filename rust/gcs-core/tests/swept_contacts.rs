@@ -741,18 +741,38 @@ fn coil_spring_case() -> Case {
         roll:[0.,std::f64::consts::TAU],bar:0.002,volume:3541.9379700,known:1e-6}
 }
 
-/// **Free-form faces: a spheroid wheel screwed through a rod and a coil spring pushed aslant through a
-/// plate** (#880 Q1b S6, brep-bench's `swept/spheroid-wheel-screwed-through-rod` and
-/// `swept/coil-spring-pushed-aslant-through-plate`), at the kernel's tolerance, each within its
+/// `drafted-slot-screwed-through-rod`: the slot of half discs of radius 1 about (12, ±1.5, 0) carried
+/// along −x to x = 4 drafted 3° inward (`build::drafted`: two planes and two half cones), screwed
+/// through the rod as the drum's end. Apart from the build as the drum's end: at `x` the half discs'
+/// radius is `r(x) = 1 − (12 − x) tan 3°`, and the slot's half height at `(ρ cos ψ, ρ sin ψ)` is `r` where
+/// `|y| ≤ 1.5` and `√(r² − (|y| − 1.5)²)` beyond; the rod less `20 ∫ ρ W(ρ) dρ`, panels split where the
+/// most of `ψ + H/a` leaves the flat end `x = 4` and the flat sides: 1401.313962654651 at 64 points
+/// (1e-12 from 16).
+fn drafted_slot_case() -> Case {
+    use std::f64::consts::{FRAC_PI_2,PI};
+    let normal = [-1.,0.,0.];
+    let arc = |y: f64,from: f64| gcs_core::brep::build::ProfileEdge::Arc {frame:gcs_core::brep::geom::Frame::new([12.,y,0.],normal,[0.,1.,0.]),r:1.,span:Some([from,from+PI])};
+    let edges = vec![arc(1.5,-FRAC_PI_2),gcs_core::brep::build::ProfileEdge::Line {a:[12.,1.5,-1.],b:[12.,-1.5,-1.]},
+        arc(-1.5,FRAC_PI_2),gcs_core::brep::build::ProfileEdge::Line {a:[12.,-1.5,1.],b:[12.,1.5,1.]}];
+    let slot = gcs_core::brep::build::Profile {origin:[12.,0.,0.],normal,loops:vec![edges],names:Vec::new()};
+    let (path,roll) = rising_six();
+    Case {what:"the drafted slot",blank:Some(screwed_rod()),tool:gcs_core::brep::build::drafted(&slot,0.,8.,3f64.to_radians()).unwrap(),
+        path,roll,bar:0.002,volume:1401.313962654651,known:1e-9}
+}
+
+/// **Free-form faces: a spheroid wheel and a drafted slot screwed through a rod and a coil spring pushed
+/// aslant through a plate** (#880 Q1b S6, brep-bench's `swept/spheroid-wheel-screwed-through-rod`,
+/// `swept/drafted-slot-screwed-through-rod` and `swept/coil-spring-pushed-aslant-through-plate`), at the
+/// kernel's tolerance, each within its
 /// boundary's area times the tolerance of its volume made apart. The spheroid's face is a ball's affine
 /// image, its contact read numerically as any face's; the spring's tube is a blend (its disc screwed
 /// along the helix), its contact under the slide two curves along it passing smoothly into its ball
 /// ends, each piece ending on the face's boundary at `g`'s root along that edge (`face_contact`), so
 /// the tube's and the cap's sheets share their rail exactly.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: a screwed spheroid and a slid coil at the kernel's tolerance")]
-fn a_spheroid_wheel_and_a_coil_spring_are_cut_through_the_front_door() {
-    for case in [spheroid_wheel_case(),coil_spring_case()] {
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about three minutes: a screwed spheroid and drafted slot and a slid coil at the kernel's tolerance")]
+fn a_spheroid_wheel_a_coil_spring_and_a_drafted_slot_are_cut_through_the_front_door() {
+    for case in [spheroid_wheel_case(),coil_spring_case(),drafted_slot_case()] {
         let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
         cut_within(&case,tol,|cut| tol*cut.faces.iter().map(|f| gcs_core::brep::props::area(cut,f)).sum::<f64>());
     }

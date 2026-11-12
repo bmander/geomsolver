@@ -1091,11 +1091,20 @@ by its own seam is unwrapped across it** (`piece_curve`, given the tool's `Locat
 surface gives no period, whose box's two sides are one curve in space — an extrusion of a closed
 spline — is read as one a period the box's width, so a piece joined across that seam is fitted
 through points beside one another (fitted across the bar, the spline bar's inner contact took a cubic
-61 long for its 17). The spheroid wheel screwed through a rod (1559.464104558205: unrolled, the rod
-less `20 ∫ ρ W(ρ) dρ`, `W` the section's width across the screw) and the coil spring slid aslant
-through a plate (3541.9379700: the plate less its thickness times the spring's shadow along the slide,
-by scanlines) are cut at the kernel's tolerance within their boundaries' areas times it
-(`swept_contacts::a_spheroid_wheel_and_a_coil_spring_are_cut_through_the_front_door`, slow tier).
+61 long for its 17). **Membership's mesh is held to the sag measured over every triangle** (`member::Solid::new`): the
+mesher reads a triangle's sag at its middle and its inner sides' alone, and on the drafted slot a point
+of the tool's own cone stood 1.1e-3 off a mesh measured 9.5e-4 — past `Swept::beyond`'s margin, so a
+piece of the end pose's face it bounds was proved outside and dropped; each triangle's sides' and
+middle's distance from its face is measured too, the greater taken. **Under a screw or a slide a
+contact piece some of whose stretches bound keeps its buried ones** as candidates, for the trim to
+drop what of them is inside: a buried stretch beside one that bounds still bounds a little way from
+their shared cut, where the posed tool meets both. The spheroid wheel screwed through a rod
+(1559.464104558205: unrolled, the rod less `20 ∫ ρ W(ρ) dρ`, `W` the section's width across the
+screw), the drafted slot screwed through it (1401.313962654651, the same way, its half height drafted)
+and the coil spring slid aslant through a plate (3541.9379700: the plate less its thickness times the
+spring's shadow along the slide, by scanlines) are cut at the kernel's tolerance within their
+boundaries' areas times it
+(`swept_contacts::a_spheroid_wheel_a_coil_spring_and_a_drafted_slot_are_cut_through_the_front_door`, slow tier).
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
