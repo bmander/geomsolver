@@ -261,7 +261,6 @@ fn the_relieved_pinion_is_built_by_sectors() {
 /// it is the pinion built at that mill stated
 /// (`hypoid_mill_sheet::the_pinion_at_the_found_mill_is_built_by_sectors`, the fast gate).
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: the pair's balance solved and the pinion built")]
 fn the_pinion_as_written_is_built_by_sectors() {
     let e = fixtures::gear::read_as_configured();
     let body = fixtures::solid(&e,"pair.pinion.body");

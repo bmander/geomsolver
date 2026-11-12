@@ -35,7 +35,6 @@ const LEAST: f64 = 0.676717;
 /// balance finds the same pressure shift and the same least margin — an area factor is a ratio of
 /// rates, so a pair scaled whole stands as far from undercut.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the balance solved at three sizes")]
 fn the_face_mill_scaled_is_found_scaled() {
     for s in [0.625,0.75,1.5] {
         let text = fixtures::gear::scaled(&fixtures::gear::source(),s);

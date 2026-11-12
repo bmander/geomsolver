@@ -146,7 +146,7 @@ pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_ang
 /// margins — two flanks held to one unknown margin, as `hypoid.sv` holds them — which the pair
 /// solved alone finds, and mated as above.  Before, the solve ran minutes and did not come out.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: the pair's balance solved where the mate places it")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 35 s: the pair's balance solved where the mate places it")]
 fn the_hypoid_pair_balanced_by_its_caller_is_mated_by_its_axes() {
     let pair = "\
 pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_angle: 90deg,

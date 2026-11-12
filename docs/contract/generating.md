@@ -1558,7 +1558,7 @@ pair with every length scaled (the cutter stated with the rest, the shift its ba
 same) is traced as the pair is, and built with the same faces
 (`brep_export::the_pinion_scaled_is_built_as_the_pinion_is`, at 0.625;
 `each_member_of_the_pair_is_built_alike_at_every_scale`, slow;
-`hypoid_machine::the_face_mill_scaled_is_found_scaled`, slow). What scaling no longer moves, resolution
+`hypoid_machine::the_face_mill_scaled_is_found_scaled`). What scaling no longer moves, resolution
 still does, and the configured pinion's cut holds only near its own unit (open): traced at 0.97 or
 1.02 of it a station beside the blank finds no contact near its neighbour's, and at 0.95 or 1.05
 neither row placement fits within the gross bars — by walk length the fit turns 21° from contacts

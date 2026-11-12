@@ -13,22 +13,6 @@ fn source() -> String {
     std::fs::read_to_string(examples().join("hypoid_drive/drive.sv")).unwrap()
 }
 
-/// The drive with the pair's face mill stated where its balance finds it
-/// (`fixtures::gear::FOUND_MILL`): the pressure shift and the least margin written into the
-/// pair's call, and the two lines that tie the flanks' margins dropped, so what is read is the
-/// drive and not the balance's solve (`hypoid_machine` holds that, and
-/// `every_claim_the_drive_makes_holds` reads the drive as written).
-fn as_found() -> String {
-    let text = source();
-    let seeds = "pressure_shift: hint(10deg), cutter_radius: cutter_radius, least: hint(0.5))";
-    assert!(text.contains(seeds), "the drive leaves the pair's shift to its balance");
-    let stated = format!("pressure_shift: {}deg, cutter_radius: cutter_radius, least: 0.5)",
-                         fixtures::gear::FOUND_MILL[0]);
-    let text = text.replacen(seeds, &stated, 1);
-    assert_eq!(text.lines().filter(|l| l.starts_with("pair.margins.")).count(), 2);
-    text.split_inclusive('\n').filter(|l| !l.starts_with("pair.margins.")).collect()
-}
-
 /// `text` elaborated with its modules read as solventc reads them from the drive's directory:
 /// `spiral_bevel.hypoid` from the examples, `std` from the library — and solved.
 fn read(text: &str) -> Elaborated { fixtures::read_beside(text, &examples(), &mut |_, t| t) }
@@ -41,11 +25,11 @@ fn ends(e: &Elaborated, line: &str) -> [[f64; 3]; 2] {
 
 #[test]
 fn the_drive_solves_on_the_imported_pair() {
-    let e = read(&as_found());
+    let e = read(&source());
     assert!(e.diags.is_empty(), "{:#?}", e.diags);
     let mut sk = e.sketch.clone();
     let d = diagnose(&mut sk, DiagnoseOptions { solid_claims: false, ..Default::default() });
-    assert_eq!(d.dof, 0, "the pair, its face mill stated, and the drive, every root chosen by a word");
+    assert_eq!(d.dof, 0, "the pair, its face mill and the drive, every root chosen by a word");
     // the parts the drive makes of its own are built exactly: plates of half-spaces, the rest
     // revolutions, the spokes and splines placed copies of slabs
     for side in ["gear_side", "pinion_side"] {
@@ -89,7 +73,7 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2
 /// without the pin and handle the fan was sized for, is neither.
 #[test]
 fn each_crank_spins_balanced() {
-    let e = read(&as_found());
+    let e = read(&source());
     let sk = &e.sketch;
     for (side, axis) in [("gear_side", "pair.gear_cone.ax"),
                          ("pinion_side", "pair.pinion_cone.ax")] {

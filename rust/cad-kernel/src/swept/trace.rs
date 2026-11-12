@@ -38,11 +38,12 @@ const BRIDGE_READS: usize = 8;
 pub const ROW_SPACING: f64 = 0.15;
 pub const COLUMN_SPACING: f64 = 0.5;
 /// The length of the faces a cut's walk runs over (`Loop::walked`) at unit one, in millimetres:
-/// the configured hypoid pinion's crown tooth's, the cut the lengths of this construction were set
-/// on, which is traced as it was while they were millimetres. A cut by a cutter of revolutions
-/// has its own walk over this as its unit, so the spacings, the trace's step, how far a curve
-/// runs out of the blank, a fan's walk and the gross fit's bars all scale with the cutter, and a
-/// pair scaled is traced as the pair is (#904 A3).
+/// the configured hypoid pinion's crown tooth's at the mill its balance of profile radii found
+/// (11.2527°, before #904), the cut the lengths of this construction were set on, kept as the unit
+/// every traced length is scaled by; at the mill its balance finds now it walks 13.702 mm. A cut
+/// by a cutter of revolutions has its own walk over this as its unit, so the spacings, the
+/// trace's step, how far a curve runs out of the blank, a fan's walk and the gross fit's bars all
+/// scale with the cutter, and a pair scaled is traced as the pair is (#904 A3).
 pub const REFERENCE_WALK: f64 = 13.7855;
 
 /// Why a station's contacts could not be read or traced.
