@@ -170,19 +170,37 @@ pub struct Band { pub stations: [f64;2],pub radius: f64,pub limit: f64 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Rows { Walk,Length }
 
-/// The rows `[first, last]` a sheet keeps of its resampled columns, given each column's contact
-/// times and whether each contact lies in the blank, row by row: every row holding a contact in
-/// the blank, and outward from those, rows while no column's contact time leaps between
-/// consecutive rows by `STEP_TIME` or more (the same root a turn away, or another root). A sheet
-/// with no contact in the blank keeps every row.
-pub fn charted(times: &[Vec<f64>],within: &[Vec<bool>]) -> [usize;2] {
-    let rows = times.first().map_or(0,Vec::len);
+/// The rows and the columns of a sheet's resampled columns it keeps (`charted`), each `[first, last]`.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct Charted { pub rows: [usize;2],pub columns: [usize;2] }
+
+/// The rows and columns a sheet keeps of its resampled columns, given each column's contact times
+/// and whether each contact lies in the blank, column by column and row by row, and which columns'
+/// stations reached the blank when traced (those and the columns with a contact in the blank hold
+/// it). Outside the columns holding the blank, the columns run while none leaps — its contact time
+/// moving by `STEP_TIME` or more between consecutive rows, the same root a turn away or another root
+/// — anywhere from the blank's first row to the row past its last: the leap a margin column takes
+/// into a far corner's fan falls a row nearer the blank with each column further out, and where it
+/// falls on the rows the sheet must keep to leave the blank, the rows stopped in the blank however
+/// far its margins grew, as the grid's phase happened to put a row there (#904 A4). That column goes
+/// with those beyond it, where one holding none is left at that side. Then every row holding a
+/// contact in the blank is kept, and outward from those, rows while no kept column leaps. A sheet
+/// with no contact in the blank keeps everything.
+pub fn charted(times: &[Vec<f64>],within: &[Vec<bool>],reached: &[bool]) -> Charted {
+    let (columns,rows) = (times.len(),times.first().map_or(0,Vec::len));
+    let every = Charted {rows:[0,rows.saturating_sub(1)],columns:[0,columns.saturating_sub(1)]};
     let held: Vec<usize> = (0..rows).filter(|&r| within.iter().any(|c| c[r])).collect();
-    let (Some(&low),Some(&high)) = (held.first(),held.last()) else { return [0,rows.saturating_sub(1)] };
-    let leaps = |r: usize| times.iter().any(|c| (c[r]-c[r-1]).abs() >= STEP_TIME);
-    let first = (1..=low).rev().find(|&r| leaps(r)).unwrap_or(0);
-    let last = (high+1..rows).find(|&r| leaps(r)).map_or(rows-1,|r| r-1);
-    [first,last]
+    let (Some(&low),Some(&high)) = (held.first(),held.last()) else { return every };
+    let holds = |c: usize| reached[c] || within[c].iter().any(|w| *w);
+    let (Some(near),Some(far)) = ((0..columns).find(|&c| holds(c)),(0..columns).rev().find(|&c| holds(c))) else { return every };
+    let leaps = |c: usize,r: usize| (times[c][r]-times[c][r-1]).abs() >= STEP_TIME;
+    let torn = |&c: &usize| (low.max(1)..=(high+1).min(rows-1)).any(|r| leaps(c,r));
+    let first_column = match (0..near).rev().find(torn) { Some(c) if c+1 < near => c+1,_ => 0 };
+    let last_column = match (far+1..columns).find(torn) { Some(c) if c-1 > far => c-1,_ => columns-1 };
+    let leaping = |r: usize| (first_column..=last_column).any(|c| leaps(c,r));
+    let first = (1..=low).rev().find(|&r| leaping(r)).unwrap_or(0);
+    let last = (high+1..rows).find(|&r| leaping(r)).map_or(rows-1,|r| r-1);
+    Charted {rows:[first,last],columns:[first_column,last_column]}
 }
 
 /// A walk along a contact curve so far: its points, its length in the blank, how far it has run outside
@@ -548,18 +566,22 @@ impl Tracer<'_> {
         // chord-length parameters are averaged over the columns, so one column's margin leaping to
         // another root (a turn away, where a far corner's fan carries it) moves the parameters of
         // every row, the ones in the blank included. Rows are trimmed back to before such a leap;
-        // a row holding a contact in the blank is never trimmed, the chart contract's to judge.
+        // a row holding a contact in the blank is never trimmed, the chart contract's to judge. A
+        // margin column leaping on the rows that hold the blank, or the row past them, goes instead.
         let within = inside(&columns_data.iter().flatten().map(|f| f.position).collect::<Vec<_>>())?;
-        let [first_row,last] = charted(&columns_data.iter().map(|c| c.iter().map(|f| f.time).collect()).collect::<Vec<Vec<f64>>>(),
-            &within.chunks(rows).map(<[bool]>::to_vec).collect::<Vec<_>>());
+        let reaching: Vec<bool> = first.iter().map(Option::is_some).collect();
+        let Charted {rows:[first_row,last],columns:[c0,c1]} = charted(&columns_data.iter().map(|c| c.iter().map(|f| f.time).collect())
+            .collect::<Vec<Vec<f64>>>(),&within.chunks(rows).map(<[bool]>::to_vec).collect::<Vec<_>>(),&reaching);
         let middles: Vec<f64> = (0..rows-1).map(|r| lo_tau+(hi_tau-lo_tau)*(r as f64+0.5)/(rows-1) as f64)
             .skip(first_row).take(last-first_row).collect();
         let (lo_tau,hi_tau) = (if first_row == 0 { lo_tau } else { taus[first_row] },if last+1 == rows { hi_tau } else { taus[last] });
-        let beside = (0..columns).map(|c| (angle_of(c as f64),beside(c))).collect();
-        let stations = stations.into_iter().zip(traces).map(Arc::new).collect();
-        Ok(Columns {tracer:self,station_at,margin,angles:(0..columns).map(|c| angle_of(c as f64)).collect(),
-            column_mids:(0..columns-1).map(|c| angle_of(c as f64+0.5)).collect(),stations,beside,taus,columns_data,first_row,last,middles,
-            span:[lo_tau,hi_tau],reached:first.iter().map(Option::is_some).collect()})
+        let kept = c0..=c1;
+        let beside = kept.clone().map(|c| (angle_of(c as f64),beside(c))).collect();
+        let stations = stations.into_iter().zip(traces).map(Arc::new).skip(c0).take(c1+1-c0).collect();
+        let columns_data = columns_data.into_iter().skip(c0).take(c1+1-c0).collect();
+        Ok(Columns {tracer:self,station_at,margin,angles:kept.clone().map(|c| angle_of(c as f64)).collect(),
+            column_mids:(c0..c1).map(|c| angle_of(c as f64+0.5)).collect(),stations,beside,taus,columns_data,first_row,last,middles,
+            span:[lo_tau,hi_tau],reached:reaching[kept].to_vec()})
     }
 }
 
