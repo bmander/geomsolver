@@ -94,11 +94,17 @@ fn scaled_pair(turned: bool) -> String {
         cutter_radius: 47.2576mm)\n";
     let head = "unit mm\nuse std\nuse spiral_bevel.hypoid (HypoidPair)\n";
     if !turned { return format!("{head}{call}") }
+    let ([u0,u1,u2],[v0,v1,v2],[o0,o1,o2]) = (TURNED_U,TURNED_V,TURNED_ORIGIN);
     format!("{head}place := frame\n\
-        fix(dir == (-0.870151820509, 0.447213595500, -0.206968135870)) place.u\n\
-        fix(dir == (0.231397410491, 0, -0.972859310701)) place.v\n\
-        fix(origin == (0mm, -34.184481591980mm, 0mm)) place\nin place {{\n{call}}}\n")
+        fix(dir == ({u0}, {u1}, {u2})) place.u\n\
+        fix(dir == ({v0}, {v1}, {v2})) place.v\n\
+        fix(origin == ({o0}mm, {o1}mm, {o2}mm)) place\nin place {{\n{call}}}\n")
 }
+
+/// The frame `scaled_pair` turns the pair into: its u, its v and its origin.
+const TURNED_U: V = [-0.870151820509,0.447213595500,-0.206968135870];
+const TURNED_V: V = [0.231397410491,0.,-0.972859310701];
+const TURNED_ORIGIN: V = [0.,-34.184481591980,0.];
 
 /// **Whether a member's tool builds does not depend on where the pair stands** (#904 A4): the
 /// gear's generating crown, its tooth space and the neighbour's tooth unioned
@@ -110,10 +116,8 @@ fn scaled_pair(turned: bool) -> String {
 /// and the gear fell back to its field.
 #[test]
 fn the_gears_tool_builds_in_a_frame_turned_to_the_pair() {
-    let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
     let volume = |turned: bool| -> f64 {
-        let mut e = fixtures::unsolved(&scaled_pair(turned),&mut fixtures::beside(&examples,&mut |_,t| t));
-        assert!(gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default()).success);
+        let e = fixtures::solved_in_examples(&scaled_pair(turned));
         let tool = fixtures::solid(&e,"pair.gear_space.body");
         let built = gcs_core::solid::cad::recipe(&e.sketch,tool).and_then(|j| gcs_core::brep::recipe::build(&j))
             .unwrap_or_else(|e| panic!("turned {turned}: {e}"));
@@ -128,9 +132,7 @@ fn the_gears_tool_builds_in_a_frame_turned_to_the_pair() {
 fn gear_sheets(turned: bool,phases: &[Option<f64>]) -> Vec<Result<gcs_core::brep::sweep::sheet::Fitted,String>> {
     use gcs_core::brep::sweep::{self,Say};
     use gcs_core::solid::admission::{admit_body,Options};
-    let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
-    let mut e = fixtures::unsolved(&scaled_pair(turned),&mut fixtures::beside(&examples,&mut |_,t| t));
-    assert!(gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default()).success);
+    let e = fixtures::solved_in_examples(&scaled_pair(turned));
     let gear = fixtures::solid(&e,"pair.gear.body");
     let admission = admit_body(&e.sketch,gear,&Options::default()).unwrap_or_else(|e| panic!("refused: {e}"));
     let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,gear).unwrap();
@@ -156,9 +158,9 @@ fn the_gears_sheet_is_traced_alike_in_a_frame_turned_to_the_pair() {
     let (own,turned) = (&own.sheet,&turned.sheet);
     assert_eq!((own.rows,own.columns),(turned.rows,turned.columns));
     // the frame `scaled_pair` turns the pair into, carrying a point of the pair's own frame there
-    let (u,v) = ([-0.870151820509,0.447213595500,-0.206968135870],[0.231397410491,0.,-0.972859310701]);
+    let (u,v) = (TURNED_U,TURNED_V);
     let w = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
-    let carried = |p: V| -> V { std::array::from_fn(|k| [0.,-34.184481591980,0.][k]+p[0]*u[k]+p[1]*v[k]+p[2]*w[k]) };
+    let carried = |p: V| -> V { std::array::from_fn(|k| TURNED_ORIGIN[k]+p[0]*u[k]+p[1]*v[k]+p[2]*w[k]) };
     let apart = own.points.iter().zip(&turned.points).map(|(&p,&q)| dist(carried(p),q)).fold(0.,f64::max);
     assert!(apart < 1e-6,"the sheets' points are {apart} mm apart");
 }
@@ -177,10 +179,8 @@ fn the_gears_sheet_is_traced_alike_in_a_frame_turned_to_the_pair() {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 35 s: the gear built twice")]
 fn the_gear_builds_alike_in_a_frame_turned_to_the_pair() {
     use gcs_core::brep::{export,sweep::Say};
-    let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
     let built = |turned: bool| {
-        let mut e = fixtures::unsolved(&scaled_pair(turned),&mut fixtures::beside(&examples,&mut |_,t| t));
-        assert!(gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default()).success);
+        let e = fixtures::solved_in_examples(&scaled_pair(turned));
         let say = Say {stage:&|_| {},mark:&|_| {}};
         export::exact(&e.sketch,fixtures::solid(&e,"pair.gear.body"),None,None,&say)
             .map(|x| (x.solid.faces.len(),gcs_core::brep::props::volume(&x.solid))).map_err(|r| r.message)

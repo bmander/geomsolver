@@ -8,18 +8,6 @@
 use gcs_core::program::Elaborated;
 use gcs_core::solve::{bounds_hold, solve};
 use gcs_core::system::System;
-use std::path::PathBuf;
-
-fn examples() -> PathBuf { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples") }
-
-/// `text` elaborated with its modules read beside the examples, as solventc reads them from
-/// there, and not solved.
-fn unsolved(text: &str) -> Elaborated {
-    let dir = examples();
-    let mut keep = |_: &str, t: String| t;
-    let e = fixtures::unsolved(text, &mut fixtures::beside(&dir, &mut keep));
-    e
-}
 
 /// How far the elaborated drawing's rows are from holding, each over its own units: where the
 /// seeds stand.
@@ -78,7 +66,7 @@ std.origin distance(30mm, along: std.x) k.pax.p1
 /// way the found axis runs is its own root, which its seeds choose.)
 #[test]
 fn a_part_mated_by_what_it_made_starts_placed() {
-    let mut e = unsolved(SKEW);
+    let mut e = fixtures::unsolved_in_examples(SKEW);
     assert!(off(&e) < 1e-9, "the seeds stand {} off", off(&e));
     let (g1, g2) = (at(&e, "k.gax.p1"), at(&e, "k.gax.p2"));
     let (p1, p2) = (at(&e, "k.pax.p1"), at(&e, "k.pax.p2"));
@@ -134,7 +122,7 @@ pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_ang
   offset: 25mm, spiral_angle: 25deg, backlash: 0.05mm, tip_relief: 0.2mm, end_relief: 0.2mm,
   pressure_shift: 8.8549deg, cutter_radius: 75.6122mm)
 ";
-    let mut e = unsolved(&format!("{HEAD}{pair}{MATE}"));
+    let mut e = fixtures::unsolved_in_examples(&format!("{HEAD}{pair}{MATE}"));
     assert!(off(&e) < 1e-6, "the seeds stand {} off", off(&e));
     placed(&e);
     let r = solve(&mut e.sketch, fixtures::accurate());
@@ -155,7 +143,7 @@ pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_ang
 pair.margins.pinion_inner regular(pair.least, by: pair.margins.pinion_cut) within pair.margins.pinion
 pair.margins.gear_outer regular(pair.least, by: pair.margins.gear_outer_cut) within pair.margins.gear
 ";
-    let mut e = unsolved(&format!("{HEAD}{pair}{MATE}"));
+    let mut e = fixtures::unsolved_in_examples(&format!("{HEAD}{pair}{MATE}"));
     assert!(off(&e) < 1e-6, "the seeds stand {} off", off(&e));
     let r = solve(&mut e.sketch, fixtures::accurate());
     assert!(r.settled(), "{r:?}");
