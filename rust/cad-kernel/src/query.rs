@@ -576,6 +576,12 @@ fn closed(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certifie
         },
         (Curve::Circle(f,big),Surface::Blend(_,b)) => circle_round_screwed(f,big.abs(),b,[t0,t1],tol),
         (Curve::Iso(b,u),Surface::Sphere(c,r)) => helix_sphere(b,*u,c.o,r.abs(),[t0,t1],tol),
+        // a circle in a plane square to a torus's axis, where the torus's section is two circles
+        // about the axis (one in its tangent planes): circles meeting in the plane, in closed form,
+        // a tangency one touch — the torus's quartic along the circle has a fourfold root where it
+        // touches the torus's rim in a tangent plane, which no isolation proves
+        (Curve::Circle(f,rc),Surface::Torus(tf,big,r)) if norm(crate::util::space::cross(f.z,tf.z)) <= 1e-12
+            && big.abs() > r.abs() => Ok(circle_level_torus(curve,f,rc.abs(),tf,big.abs(),r.abs(),[t0,t1],tol)),
         // a circle's or an ellipse's on any surface with an algebraic form here, an edge of a
         // drum, a fillet's rim or a section's arc (#780 R2)
         (Curve::Circle(..) | Curve::Ellipse(..),_) if degree(surface).is_some() => conic_algebraic(curve,[t0,t1],surface,tol),
@@ -584,6 +590,55 @@ fn closed(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Certifie
         (Curve::BSpline(sp),Surface::Plane(f)) => spline_plane(sp,[t0,t1],f,surface,tol),
         _ => Err(Uncertified::NoForm),
     }
+}
+
+/// **A circle in a plane square to a torus's axis against the torus** (`closed`): the torus cut by
+/// the circle's plane, at `z` from its middle along its axis, is the circles about its axis of radii
+/// `R ± √(r² − z²)` — one, of radius `R`, in a plane within `tol` of touching it, and none past —
+/// and the circle meets the torus where it meets those, two circles of one plane: a crossing where
+/// they cross, a touch where they touch (their centres' distance their radii's sum or difference
+/// within `tol`), and every meeting a touch in a tangent plane, where the torus lies to one side.
+#[allow(clippy::too_many_arguments)]
+fn circle_level_torus(curve: &Curve,f: &super::geom::Frame,rc: f64,tf: &super::geom::Frame,big: f64,r: f64,[t0,t1]: [f64;2],tol: f64) -> Meets {
+    let z = dot(tf.z,crate::util::space::sub(f.o,tf.o));
+    if z.abs() > r+tol { return Meets::At(Vec::new()) }
+    let rim = z.abs() >= r-tol;
+    let sections: Vec<f64> = if rim { vec![big] } else { let s = (r*r-z*z).sqrt(); vec![big-s,big+s] };
+    // the circle's centre and its distance from the axis, in its plane
+    let foot = add(tf.o,scale(tf.z,z));
+    let off = crate::util::space::sub(f.o,foot);
+    let d = norm(off);
+    let mut out = Vec::new();
+    for q in sections {
+        if d <= tol {
+            // concentric: the whole circle on the section, or none of it (`along` reads the first)
+            continue
+        }
+        let e = scale(off,1./d);
+        let side = crate::util::space::cross(tf.z,e);
+        let (outer,inner) = ((d-(q+rc)).abs(),(d-(q-rc).abs()).abs());
+        let mut points: Vec<(V,bool)> = Vec::new();
+        if outer <= tol || inner <= tol {
+            // tangent circles: one touch, on the line of centres (the section's point toward or away
+            // from the circle's centre)
+            let toward = outer <= tol || q > rc;
+            points.push((add(foot,scale(e,if toward { q } else { -q })),true));
+        } else {
+            let c = (q*q+d*d-rc*rc)/(2.*q*d);
+            if c.abs() < 1. {
+                let s = (1.-c*c).sqrt();
+                for k in [-1.,1.] { points.push((add(foot,add(scale(e,q*c),scale(side,k*q*s))),rim)); }
+            }
+        }
+        let period = curve.period();
+        for (p,touch) in points {
+            let mut t = curve.inverse(p);
+            if let Some(per) = period { t = super::geom::around(t,t0-1e-9,per); }
+            let slack = tol/curve.speed().max(1e-300);
+            if t >= t0-slack && t <= t1+slack { out.push((t.clamp(t0,t1),touch)) }
+        }
+    }
+    Meets::At(out)
 }
 
 /// **A surface's algebraic form's degree**, where it has one here (`form`: a plane's height, `ρ² −

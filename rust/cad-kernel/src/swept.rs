@@ -2,7 +2,8 @@
 //! its faces (`surface`, `tool`), from its own B-rep too (`read`, #721 F1), and what the kernel builds of it along a trajectory — a constant
 //! twist's characteristic walked (`constant_twist`) and its sheet (`helical`), a generating sweep's
 //! contact times (`generating`), its cutter's sections (`cutter`) and their contacts traced
-//! (`trace`), a ball's tube (`canal`), each sheet fitted (`sheet`). The solver reads the tool, the blank and the motion off
+//! (`trace`), a ball's tube (`canal`), each sheet fitted (`sheet`), and a tool of revolution under
+//! a program of slides and turns, move by move in closed form (`passes`). The solver reads the tool, the blank and the motion off
 //! a drawing, lowers them to these and puts what the kernel refuses into words.
 pub mod surface;
 pub mod tool;
@@ -33,3 +34,4 @@ pub mod read;
 pub mod subtraction;
 pub mod pocket;
 pub mod dispatch;
+pub mod passes;

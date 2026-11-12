@@ -628,6 +628,18 @@ fn whole_turn(screw: &crate::trajectory::Screw,roll: [f64;2]) -> bool {
 
 /// `closed` over a box holding the sweep, or `cut_from` over `blank`: the pipeline itself.
 fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    // a tool of revolution under a program of slides and turns it stays upright to (a milling
+    // program): each move's sweep in closed form, taken from the blank one after another, with no
+    // arrangement (`passes`) — where it builds nothing it takes, or is refused short of a solid
+    // judged wrong or a budget spent, the arrangement below is asked
+    match super::passes::built(tool,path,roll,bar,tol,blank) {
+        Ok(Some(b)) => return Ok(b),
+        Ok(None) => {}
+        Err(e @ Unbuilt::Budget {..}) => return Err(e),
+        Err(e) => {
+            if crate::util::meter::profiling() { eprintln!("passes: refused, the arrangement asked: {e:?}") }
+        }
+    }
     // a whole turn of any tool (#880 Q1): its shadow in a half-plane through the axis, arranged
     // there and revolved, with no surface met in space (`shadow`) — where it is refused by what the
     // tool is or a reading it cannot settle, the arrangement below is asked; a build judged wrong,

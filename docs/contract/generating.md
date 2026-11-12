@@ -822,6 +822,36 @@ writes a failed build's domain and candidates whole (`swept::dump`), replayed al
 to the fewest candidates that still fail (`swept_closed::a_failed_builds_arrangement_is_dumped_replayed_and_reduced`;
 the loop is docs/testing.md's).
 
+**A tool of revolution under a program of passes (`swept::passes`; brep-bench's `cnc/`)** is built
+before any arrangement is asked, each move in closed form and none by membership, so a milling
+program of hundreds of moves is a few seconds where the arrangement ran out of budget past six
+minutes on 79. The tool is read off its own B-rep as a solid of revolution: every face a plane
+square to one axis or a cylinder, cone, ball or torus about it, their meridians one chain from the
+axis out and back, rising all the way (each section a disc), its volume by Pappus its B-rep's own
+to 1e-9. A move is taken where it is a slide square to the axis (the section through the axis
+square to the slide carried its length, as each half-plane's meridian's prism), a turn about a line
+along the axis more than the tool's reach from it (each half-plane's meridian turned: a circle about
+the turn's line meets each disc of the tool in one arc about that section), or a slide along the
+axis where the tool never narrows up its meridian (its meridian's side carried up the slide);
+anything else — a screw, a slide aslant the axis, a turn about another line — leaves the whole path
+to the arrangement (`Ok(None)`). Moves that follow on, each beginning where and as the last ended,
+are **glued into one tube** (`boolean::glued`, at the section their pieces share) — closed on
+itself where it ends where and as it began, else capped by the tool's half behind its start and its
+half ahead of its end, revolved half a turn, whose flat faces are that section too — so a move's
+own tangencies (a half's rim touching its section's sweep) never reach a Boolean; a run whose
+pieces' boxes meet one another's, but their neighbours', is parted there, nothing glued meeting
+anything but at the faces it is glued at. The tubes and the moves' own solids are **united as a
+balanced tree** (neighbours in the program first, each level's pairs on their own cores) and the
+union taken from the blank once, those standing clear of it left out; the result checked and
+judged by the sweep's definition (`closed::judge`) before it is returned, as every closed build is.
+Held to Pappus round closed paths of lines and arcs — a flat end mill's groove at two depths, a
+bull-nose mill's with its rounded edges, a whole turn and a slot cut apart — each to 1e-9
+(`swept_passes`), and a tool no revolution, or a slide aslant, left to the arrangement. Where passes
+meet, a circle in a plane square to a torus's axis meets it in closed form (`query`: the torus's
+section there two circles about its axis, one in its tangent planes, met as circles of one plane,
+a tangency one touch), where the quartic along the circle had a fourfold root no isolation proves
+(`swept_passes::a_circle_level_with_a_torus_meets_it_in_closed_form`).
+
 **Trimming by certified membership, face by face (#880 E1, `swept::trim`; docs/swept-solid-design.md
 §12).** A closed swept solid is built from candidates given to it — the tool's faces at the end
 poses, the sheets its contacts and edges sweep — and the meetings known by construction, with no
