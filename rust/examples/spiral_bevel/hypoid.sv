@@ -136,9 +136,9 @@ component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, sh
     pitch: crown_pitch, r: rounding)
   margins := {pinion_inner: balance.pinion_inner, pinion_outer: balance.pinion_outer,
     gear_inner: balance.gear_inner, gear_outer: balance.gear_outer,
-    pinion_cut: balance.tooth.crown, gear_outer_cut: balance.space.outer_crown,
-    gear_inner_cut: balance.space.inner_crown, pinion: balance.pinion_blank.material,
-    gear: balance.gear_blank.material}
+    pinion_cut: balance.cuts.pinion, gear_outer_cut: balance.cuts.gear_outer,
+    gear_inner_cut: balance.cuts.gear_inner, pinion: balance.blanks.pinion,
+    gear: balance.blanks.gear}
 
   // The tip relief: a topping beside each crown flank, kinked in the normal section N (square to
   // P on the trace normal, through the cutter's axis) `tip_relief` short of the addendum, and cut
@@ -436,4 +436,8 @@ component Balanced(inner: set, outer: set, tooth_base: set, tooth_tip: set, mate
   pinion_outer regular(by: tooth.crown) within pinion_blank.material
   gear_outer regular(by: space.outer_crown) within gear_blank.material
   gear_inner regular(by: space.inner_crown) within gear_blank.material
+  // what a caller tying two of them reads them by, as this component's own: the crowns that cut
+  // the flanks, and the blanks they are read within
+  cuts := {pinion: tooth.crown, gear_outer: space.outer_crown, gear_inner: space.inner_crown}
+  blanks := {pinion: pinion_blank.material, gear: gear_blank.material}
 }
