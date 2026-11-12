@@ -28,7 +28,7 @@
 //! the document's own answer, which its solve confirms, and otherwise stand as they were.  A part
 //! that reads anything the document places besides its frame (an entity it is handed) is not a
 //! function of its frame alone, and is left to the document's solve.
-use crate::boundary::{columns, reduced, split, World};
+use crate::boundary::{reduced, split, World};
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::program::Elaborated;
 use crate::solve::{solve, SolveOpts};
@@ -48,77 +48,73 @@ pub(crate) fn seat(e: &mut Elaborated) {
     let prog = &e.program;
     let mut drawn: Vec<_> = e.map.instances.iter()
         .filter(|i| i.drawn && prog.components[i.comp].braced())
-        .filter(|i| e.map.ent_named(&crate::flatten::instance_frame(name(&i.prefix)))
-            .is_some_and(|f| f.kind == EntKind::Frame))
+        .filter_map(|i| e.map.ent_named(&crate::flatten::instance_frame(name(&i.prefix)))
+            .filter(|f| f.kind == EntKind::Frame).map(|f| (i, f.i())))
         .collect();
     if drawn.is_empty() {
         return;
     }
-    let parts = mated(e, &mut drawn);
-    if parts.is_empty() {
-        return;
-    }
-    if let Some(x) = placed(&e.sketch, &parts) {
+    let mut world = None;
+    let parts = mated(e, &mut drawn, &mut world);
+    let Some(world) = world.filter(|_| !parts.is_empty()) else { return };
+    if let Some(x) = placed(&e.sketch, &world, &parts) {
         e.sketch.set_x(&x);
     }
 }
 
-/// The instances of `drawn` mated by what they made, the outermost first: a part inside one
-/// taken is solved with it.
-fn mated(e: &Elaborated, drawn: &mut [&crate::program::Instanced]) -> Vec<Mated> {
+/// The instances of `drawn` (each with its frame) mated by what they made, the outermost first:
+/// a part inside one taken is solved with it.  The document's reading shared by every instance
+/// (`World`) is made in `world` on the first that might be, so a document with none pays nothing.
+fn mated(e: &Elaborated, drawn: &mut [(&crate::program::Instanced, usize)],
+    world: &mut Option<World>) -> Vec<Mated> {
     let sk = &e.sketch;
-    let world = World::of(sk, &e.map);
-    let reads: Vec<(u32, Vec<u32>)> = sk.constraints.iter().filter(|c| c.acts())
-        .map(|c| (c.id, columns(sk, c))).collect();
-    drawn.sort_by_key(|i| i.path.0.len());
+    drawn.sort_by_key(|(i, _)| i.path.0.len());
     let mut taken: Vec<&crate::program::Instanced> = Vec::new();
     let mut parts = Vec::new();
-    for &inst in drawn.iter() {
+    'inst: for &(inst, f) in drawn.iter() {
         if taken.iter().any(|t| t.contains(&inst.path)) {
             continue;
         }
-        let Some(f) = e.map.ent_named(&crate::flatten::instance_frame(name(&inst.prefix)))
-        else { continue };
-        if !sk.frames[f.i()].chart.as_ref().is_some_and(|c| c.square) {
+        if !sk.frames[f].chart.as_ref().is_some_and(|c| c.square) {
             continue;
         }
-        let frame = frame_params(sk, f.i());
+        let frame = frame_params(sk, f);
         if frame.iter().all(|&p| sk.params[p as usize].fixed) {
             continue;
         }
-        let s = split(&e.map, sk, &world, inst);
+        let world: &World = world.get_or_insert_with(|| World::of(sk, &e.map));
+        let s = split(&e.map, sk, world, inst);
         // what it made, with the numbers its call left unknown (`mn`), which its rows find
         let mut own: BTreeSet<u32> = s.own.difference(&frame).copied().collect();
-        own.extend(sk.free_vars.iter().filter(|(k, _)| k.starts_with(&inst.prefix))
-            .map(|(_, &p)| p));
+        own.extend(sk.free_vars.range(inst.prefix.clone()..)
+            .take_while(|(k, _)| k.starts_with(&inst.prefix)).map(|(_, &p)| p));
         let within = |p: &u32| own.contains(p) || frame.contains(p) || Some(*p) == sk.zero;
-        // its rows read what it made, its frame and what it holds of its own, and nothing the
-        // document places: it is a function of its frame alone
         let held = |p: &u32| sk.params[*p as usize].fixed
             && world.owner.get(p).is_none_or(|o| s.made.contains(o));
-        if reads.iter().filter(|(id, _)| s.kept.contains(id))
-            .any(|(_, cols)| !cols.iter().all(|p| within(p) || held(p))) {
-            continue;
-        }
-        // the document's rows over it: those reading nothing else are its own as well (a balance
-        // of its numbers), and the rest place it
         let mut alone = s.kept.clone();
         let mut mates = 0;
-        for (id, cols) in reads.iter().filter(|(id, _)| !s.kept.contains(id)) {
-            if !cols.iter().any(|p| own.contains(p)) {
-                continue;
-            }
-            if cols.iter().all(within) {
-                alone.insert(*id);
-            } else {
-                mates += 1;
+        for (c, cols) in sk.constraints.iter().zip(&world.cols).filter(|(c, _)| c.acts()) {
+            if s.kept.contains(&c.id) {
+                // its rows read what it made, its frame and what it holds of its own, and nothing
+                // the document places: it is a function of its frame alone
+                if !cols.iter().all(|p| within(p) || held(p)) {
+                    continue 'inst;
+                }
+            } else if cols.iter().any(|p| own.contains(p)) {
+                // the document's rows over it: those reading nothing else are its own as well (a
+                // balance of its numbers), and the rest place it
+                if cols.iter().all(within) {
+                    alone.insert(c.id);
+                } else {
+                    mates += 1;
+                }
             }
         }
         if mates == 0 {
             continue;
         }
         taken.push(inst);
-        parts.push(Mated { f: f.i(), frame, own, alone });
+        parts.push(Mated { f, frame, own, alone });
     }
     parts
 }
@@ -126,7 +122,7 @@ fn mated(e: &Elaborated, drawn: &mut [&crate::program::Instanced]) -> Vec<Mated>
 /// The numbers `sk` comes to with each of `parts` solved alone where its frame stands, its frame
 /// placed with what it made carried rigidly, and the whole solved from there with the parts' own
 /// coordinates held — `None` where a step does not settle.
-fn placed(sk: &Sketch, parts: &[Mated]) -> Option<Vec<f64>> {
+fn placed(sk: &Sketch, world: &World, parts: &[Mated]) -> Option<Vec<f64>> {
     let mut x = sk.get_x();
     // 1. each alone, its frame held where it stands
     for part in parts {
@@ -155,9 +151,12 @@ fn placed(sk: &Sketch, parts: &[Mated]) -> Option<Vec<f64>> {
     let lift = |c: &crate::constraints::Constraint| {
         matches!(c.kind, crate::constraints::CKind::Lift | crate::constraints::CKind::ChartLift)
     };
+    // (`carry` leaves the rows as they are: the `k`th is `sk`'s, its columns `world`'s `k`th)
+    let mut cols = world.cols.iter();
     framed.constraints.retain(|c| {
+        let cols = cols.next().expect("a row's columns");
         lift(c) || parts.iter().all(|part| !part.alone.contains(&c.id)
-            || columns(sk, c).iter().all(|p| part.frame.contains(p) || Some(*p) == sk.zero))
+            || cols.iter().all(|p| part.frame.contains(p) || Some(*p) == sk.zero))
     });
     if !solve(&mut framed, SolveOpts::default()).settled() {
         return None;
