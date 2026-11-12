@@ -87,14 +87,15 @@ pub(super) fn line_of(
 /// is on the stated side by more than the solve's tolerance, then half that line's length onto
 /// the stated side, or its height there where that is farther — a point standing on the line, or
 /// one of a sliver whose least height is another's, has no mirror that holds.  Empty where no
-/// point of it moves, or the other two stand on one another and draw no line.
-fn aims(sk: &Sketch, key: &str, free: &std::collections::BTreeSet<u32>) -> Vec<f64> {
+/// point of it moves, or the other two stand on one another and draw no line.  `tol` is the
+/// solve's own, `bound_tol(sk)`.
+fn aims(sk: &Sketch, key: &str, tol: f64, free: &std::collections::BTreeSet<u32>) -> Vec<f64> {
     let (Some(t), Some(&sign)) = (triangle(sk, key), sk.orientations.get(key)) else {
         return Vec::new();
     };
     let Some(q) = carried(sk, t, free) else { return Vec::new() };
     let Some(h) = height_of(sk, t, q) else { return Vec::new() };
-    let (s, tol) = (sign.signum() as f64, bound_tol(sk));
+    let s = sign.signum() as f64;
     let others: Vec<usize> = t.iter().copied().filter(|&p| p != q).collect();
     let far = s * (0.5 * apart(sk, others[0], others[1])).max(h.abs());
     let mut out = Vec::new();
@@ -108,12 +109,18 @@ fn aims(sk: &Sketch, key: &str, free: &std::collections::BTreeSet<u32>) -> Vec<f
 }
 
 /// Where the point of the stated orientation `key` a solve carries aims first (`aims`), where the
-/// drawing breaks it: what the block pass's root search reads (`blocks::Search`).
-pub(super) fn aim(sk: &Sketch, key: &str, free: &std::collections::BTreeSet<u32>) -> Option<f64> {
-    if holds(sk, key, bound_tol(sk))? {
+/// drawing breaks it: what the block pass's root search reads (`blocks::Search`).  `tol` is the
+/// solve's own, `bound_tol(sk)`.
+pub(super) fn aim(
+    sk: &Sketch,
+    key: &str,
+    tol: f64,
+    free: &std::collections::BTreeSet<u32>,
+) -> Option<f64> {
+    if holds(sk, key, tol)? {
         return None;
     }
-    aims(sk, key, free).first().copied()
+    aims(sk, key, tol, free).first().copied()
 }
 
 /// Every stated orientation the drawing breaks, by key, with where the point a solve carries
@@ -122,8 +129,9 @@ pub(super) fn broken_aims(
     sk: &Sketch,
     free: &std::collections::BTreeSet<u32>,
 ) -> Vec<(String, Vec<f64>)> {
+    let tol = bound_tol(sk);
     broken(sk).into_iter().map(|k| {
-        let a = aims(sk, &k, free);
+        let a = aims(sk, &k, tol, free);
         (k, a)
     }).collect()
 }

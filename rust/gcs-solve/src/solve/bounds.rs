@@ -110,13 +110,15 @@ impl Choice {
     }
 
     /// Where its point aims, nearest first, where it does not hold on the drawing as it stands;
-    /// `None` where it holds, or no point of it can be carried.
-    pub(super) fn aim(&self, sk: &Sketch, free: &std::collections::BTreeSet<u32>) -> Option<f64> {
+    /// `None` where it holds, or no point of it can be carried.  `tol` is the solve's own,
+    /// `bound_tol(sk)`.
+    pub(super) fn aim(&self, sk: &Sketch, tol: f64, free: &std::collections::BTreeSet<u32>)
+        -> Option<f64> {
         match self {
-            Choice::Bound(ci) => bound_reading(sk, &sk.constraints[*ci], bound_tol(sk))
+            Choice::Bound(ci) => bound_reading(sk, &sk.constraints[*ci], tol)
                 .filter(|r| !r.holds)
                 .and_then(|r| r.aims.first().copied()),
-            Choice::Orientation(k) => orientations::aim(sk, k, free),
+            Choice::Orientation(k) => orientations::aim(sk, k, tol, free),
         }
     }
 

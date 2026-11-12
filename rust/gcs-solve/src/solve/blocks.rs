@@ -968,7 +968,9 @@ impl Search {
             Choice::Bound(ci) => {
                 bound_reading(&self.sk, &self.sk.constraints[*ci], tol).is_none_or(|r| r.holds)
             }
-            Choice::Orientation(_) => c.holds(&self.sk),
+            Choice::Orientation(k) => {
+                super::orientations::holds(&self.sk, k, tol).unwrap_or(false)
+            }
         })
     }
 
@@ -1022,7 +1024,8 @@ impl Search {
         self.sk.set_x(&x_solved);
         let free = &self.free;
         let breaks = |sk: &Sketch| -> Vec<(Choice, f64)> {
-            decided.iter().filter_map(|c| Some((c.clone(), c.aim(sk, free)?))).collect()
+            let tol = bound_tol(sk);
+            decided.iter().filter_map(|c| Some((c.clone(), c.aim(sk, tol, free)?))).collect()
         };
         let broken = breaks(&self.sk);
         // and across each the start breaks that the solution does not: a block whose own start
