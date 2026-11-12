@@ -43,7 +43,7 @@ the instance and may read nothing else of it.
 | 3 | `Blank` (`pair.gear_blank`, `pair.pinion_blank`) | each member's blank, one region: within its pitch cone grown by the addendum (`std.sets.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth; the end relief its tip's toe and heel corners chamfered in the same region (`std.rounds.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
 | 4 | `FaceMill` (`pair.mill`) | the crown tooth's pitch points a quarter pitch either side of M; the face mill, its axis `ax` through C, the cutter's radius long, the two blades (`Blade`: each a cone about the axis through a pitch point, its half the pressure angle split by the shift), and the levels the crowns' tips and bases stand at; the space cutter's reach |
 | 4 | `Tooth`, `Space` (`pair.tooth`, `pair.gear_space`) | the pinion's generator, the crown tooth, a region between the flank cones and two levels, its tip's edges rounded (`std.rounds.Rounded`), each flank grown a quarter of the backlash; the gear's, its space cutter, the tooth's mate on the same cones |
-| 4 | `Balanced`, `Margins` (`pair.balance`) | the face mill's pressure shift and cutter radius, found: the members' undercut margins equal at M and at the toe (below) |
+| 4 | `Balanced`, `Margins` (`pair.balance`) | the members' undercut margins at M and at the toe, handed out as `pair.margins`; the document finds the face mill's pressure shift and cutter radius by stating them equal (below) |
 | 5 | the motions, `Generated`, `Member` (`pair.pinion`, `pair.gear`) | the rolls (each member at the crown's tooth count over its own) and the generating motions; each member its blank less its crown swept through it (`through: body`: the whole roll during which the crown meets the blank, found after the solve, so no roll limit is stated) and indexed at every tooth |
 | — | `Topping`, `when tip_relief > 0mm` | the tip relief: a topping beside each crown flank (a kink on the flank in N, the cone through it turned by the relief angle), cut the same way |
 
@@ -237,6 +237,13 @@ where the outer blade stands upright. The pinion's margin grows with the shift; 
 least near 15°, grows faster as its blade stands up, so they never meet. Left to the solve, the
 balance runs to its iteration limit there, whatever its seeds. The pair configured at 10:48 states
 its mill, as the suites cut it (`hypoid_machine::at_a_ten_tooth_pinion_no_face_mill_balances_the_undercut`).
+So do 12/24 (12.5 mm between the shafts), 13/27 (12 mm) and 16/32 at a 1.5 mm module (12 mm), where
+over shifts from 8° to 18° and cutters from R to 4 R the pinion's margin stays below the gear's at
+the toe (#904). The layout itself solves at any of them; only the balance has no root. The balance
+is therefore not `HypoidPair`'s but its caller's: the pair hands its margins out (`pair.margins`),
+`hypoid.sv` states them equal below its call, and a drawing standing on the pair at such counts
+gives `pressure_shift` and `cutter_radius` numbers and states nothing over them
+(`hypoid_machine::a_pair_no_mill_balances_is_laid_out_with_its_mill_stated`).
 
 ## Contact analysis: the meshing of two flanks
 

@@ -36,14 +36,19 @@ pair := HypoidPair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
   spiral_angle: spiral_angle, backlash: backlash, tip_relief: tip_relief, end_relief: end_relief,
   pressure_shift: hint(10deg), cutter_radius: hint(80mm))
+// The two settings are found where the pinion's and the gear's margins against undercut are
+// equal, at M and at the toe. Where no mill balances them (a pinion of too few teeth, or too
+// little offset to enlarge it: 10/48, 12/24, 13/27), the call states its mill, and not these.
+pair.margins.pinion_mean equal pair.margins.gear_mean
+pair.margins.pinion_toe equal pair.margins.gear_toe
 
 // -- the pair ----------------------------------------------------------------------------------
 // The steps a designer takes, each a component below, on the pitch plane P — the `std.top` of the
 // frame the pair stands in — with `across`, its `std.y` (the gear's axis stands square to it), and
 // `up`, its `std.z`. The formals the call leaves out are unknowns: the normal module `mn`, which
 // the trace sets; the pinion's pitch radius at M, `rp`, and the bevel pinion's pitch angle, `pa`,
-// which the pinion's cone sets. The face mill's `pressure_shift` and `cutter_radius` are found by
-// the balance.
+// which the pinion's cone sets. The face mill's `pressure_shift` and `cutter_radius` are the
+// call's: stated, or left out and found by what the caller states over `margins`.
 component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, shaft_angle: Angle,
     offset: Length, spiral_angle: Angle, backlash: Length, tip_relief: Length, end_relief: Length,
     mn: Length, rp: Length, pa: Angle, pressure_shift: Angle, cutter_radius: Length) {
@@ -113,13 +118,14 @@ component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, sh
   pinion_member := {ax: pinion_cone.ax, foot: pinion_cone.foot, back: pinion_blank.back,
     material: pinion_blank.material, body: pinion.body}
 
-  // The face mill's two settings, found.
+  // The face mill's two settings, read: each member's margin against undercut, at M and at the
+  // toe. What chooses the mill is the caller's: the two settings stated, or two relations over
+  // these margins in their place, as this document's balance is.
   balance := Balanced(std.top, gear_cone, trace, mill.ax, mill.inner_flank, mill.outer_flank,
     crown_roll, pinion_roll, gear_roll, R: R, face: blank_design.width, depth: addendum,
     cutter_radius: cutter_radius)
-  // ...where the pinion's and the gear's margins against undercut are equal, at M and at the toe
-  balance.margins.pinion_mean equal balance.margins.gear_mean
-  balance.margins.pinion_toe equal balance.margins.gear_toe
+  margins := {pinion_mean: balance.margins.pinion_mean, gear_mean: balance.margins.gear_mean,
+    pinion_toe: balance.margins.pinion_toe, gear_toe: balance.margins.gear_toe}
 
   // The tip relief: a topping beside each crown flank, kinked in the normal section N (square to
   // P on the trace normal, through the cutter's axis) `tip_relief` short of the addendum, and cut

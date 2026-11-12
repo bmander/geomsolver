@@ -31,9 +31,9 @@ pub fn configure(text: &str,params: &[(&str,f64)]) -> String {
 
 /// `text`, the pair, with the face mill's settings stated as the suites recorded the pair at
 /// before `hypoid.sv` found them (#283): the pressure shift `shift` in degrees and the cutter's
-/// radius 0.8 R, R the mean cone distance — and the balance that finds them dropped, with the
-/// equal margins the pair states of it. Every number the suites recorded was taken of a pair so
-/// cut.
+/// radius 0.8 R, R the mean cone distance — and the balance that reads its margins dropped, with
+/// the margins the pair hands its caller and the equal margins the document states of them. Every
+/// number the suites recorded was taken of a pair so cut.
 pub fn recorded_machine(text: &str,shift: f64) -> String {
     let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(80mm))";
     assert!(text.contains(seeds),"the pair leaves its face mill's settings to the solve, seeded");
@@ -48,13 +48,15 @@ pub fn recorded_machine(text: &str,shift: f64) -> String {
         None
     }).expect("the balance's call closes");
     let mut end = end+out[end..].find('\n').map_or(0,|k| k+1);
-    // and what the pair states of the margins it reads, the lines that follow it
-    while let Some(line) = out[end..].split_inclusive('\n').next()
-        .filter(|l| l.trim_start().starts_with("balance.") || l.trim_start().starts_with("// ...")) {
-        end += line.len();
-    }
+    // and the margins it hands the caller, the group that follows it
+    let margins = "  margins := {";
+    assert!(out[end..].starts_with(margins),"the pair hands its caller the balance's margins");
+    end += out[end..].find("}\n").expect("the margins' group closes")+2;
     out.replace_range(at..end,"");
-    out
+    // and the balance the document states over them, the lines that read them
+    let lines: Vec<&str> = out.split_inclusive('\n')
+        .filter(|l| !l.starts_with("pair.margins.")).collect();
+    lines.concat()
 }
 
 /// `configure` over the document's own inputs alone.

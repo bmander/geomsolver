@@ -106,8 +106,8 @@ fn at_a_ten_tooth_pinion_no_face_mill_balances_the_undercut() {
     let r = 2.*(10f64*10.+48.*48.).sqrt()/2.;
     for shift in [8.,14.,19.] {
         let text = ten.replacen(seeds,&format!("pressure_shift: {shift}deg, cutter_radius: {}mm)",1.5*r),1)
-            .replace("  balance.margins.pinion_mean equal balance.margins.gear_mean\n","")
-            .replace("  balance.margins.pinion_toe equal balance.margins.gear_toe\n","");
+            .replace("pair.margins.pinion_mean equal pair.margins.gear_mean\n","")
+            .replace("pair.margins.pinion_toe equal pair.margins.gear_toe\n","");
         let e = fixtures::gear::read(&text);
         for station in ["mean","at_toe"] {
             let (pinion,gear) = (radius(&e,&format!("pair.balance.{station}.pinion_profile")),
@@ -152,4 +152,43 @@ fn at_no_offset_the_balanced_mill_undercuts_the_pinion_by_its_outer_blade() {
     let least = admit(&fixtures::gear::read(&symmetric))
         .unwrap_or_else(|e| panic!("with no shift: {e}")).sweeps()[0].least_area_factor;
     assert!(least > 0.3,"with no shift the pinion's least area factor is {least}");
+}
+
+/// **A pair no face mill balances is re-targeted by stating its mill** (#904, A1). At 12/24 (a
+/// 12.5 mm offset), 13/27 (12 mm) and 16/32 at a 1.5 mm module (12 mm) the balance has no root,
+/// as at a ten-tooth pinion: over pressure shifts from 8° to 18° and cutters from R to 4 R the
+/// pinion's margin stays below the gear's at the toe, and at M too but for the largest cutters
+/// at the gear's least margin, near 12°. The layout itself solves there from the pair's own start.
+/// So the balance is the caller's to state over the margins the pair hands it (`pair.margins`,
+/// as `hypoid.sv` does), and a drawing standing on the pair at such counts states its mill
+/// instead — which, while the balance stood inside `HypoidPair`, was two rows past what its
+/// unknowns take (E109).
+#[test]
+fn a_pair_no_mill_balances_is_laid_out_with_its_mill_stated() {
+    let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    for (teeth,module,offset) in [([12,24],2.,12.5),([13,27],2.,12.),([16,32],1.5,12.)] {
+        let r = module*f64::from(teeth[0]*teeth[0]+teeth[1]*teeth[1]).sqrt()/2.;
+        let text = format!("unit mm\nuse std\nuse spiral_bevel.hypoid (HypoidPair)\n\
+            pair := HypoidPair(pinion_teeth: {}, gear_teeth: {}, mean_module: {module}mm,\n  \
+            shaft_angle: 90deg, offset: {offset}mm, spiral_angle: 25deg, backlash: 0mm,\n  \
+            tip_relief: 0mm, end_relief: 0mm, pressure_shift: 12deg, cutter_radius: {}mm)\n",
+            teeth[0],teeth[1],1.5*r);
+        let e = fixtures::read_beside(&text,&examples,&mut |_,t| t);
+        let label = format!("{}/{} m{module} E{offset}",teeth[0],teeth[1]);
+        // the pair as asked: its mean cone distance, and the shafts the offset apart
+        let (o,m) = (point(&e,"pair.gear_cone.O"),point(&e,"pair.gear_cone.M"));
+        assert!((dist(o,m)-r).abs() < 1e-9*r,"{label}: R {}",dist(o,m));
+        let (g0,g1) = (o,point(&e,"pair.gear_cone.foot"));
+        let (p0,p1) = (point(&e,"pair.pinion_cone.A"),point(&e,"pair.pinion_cone.foot"));
+        let (g,p) = (sub(g1,g0),sub(p1,p0));
+        let n = [g[1]*p[2]-g[2]*p[1],g[2]*p[0]-g[0]*p[2],g[0]*p[1]-g[1]*p[0]];
+        let skew = sub(p0,g0).iter().zip(n).map(|(a,b)| a*b).sum::<f64>().abs()/dist(n,[0.;3]);
+        assert!((skew-offset).abs() < 1e-9*r,"{label}: offset {skew}");
+        // and its margins read, the pinion's the nearer undercut
+        for station in ["mean","at_toe"] {
+            let (pinion,gear) = (radius(&e,&format!("pair.balance.{station}.pinion_profile")),
+                radius(&e,&format!("pair.balance.{station}.gear_profile")));
+            assert!(pinion < gear,"{label}, {station}: the pinion's margin {pinion} mm against the gear's {gear} mm");
+        }
+    }
 }

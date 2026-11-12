@@ -20,7 +20,7 @@ use std.solids (cut, union, common)
 
 // -- the pair, as `hypoid.sv` states it --------------------------------------------------------
 // The tooth counts, the module at M, the shafts, the spiral and the allowances; the face mill's
-// two settings left to the pair's own balance, as there.
+// two settings left to the pair's balance, its margins against undercut equal, as there.
 param pinion_teeth := 24
 param gear_teeth := 48
 param mean_module := 2mm
@@ -34,6 +34,8 @@ pair := HypoidPair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
   spiral_angle: spiral_angle, backlash: backlash, tip_relief: tip_relief, end_relief: end_relief,
   pressure_shift: hint(10deg), cutter_radius: hint(80mm))
+pair.margins.pinion_mean equal pair.margins.gear_mean
+pair.margins.pinion_toe equal pair.margins.gear_toe
 
 // -- the drive ---------------------------------------------------------------------------------
 // One set of numbers serves both shafts. Along each, ordinates are from the foot of M on it, or
