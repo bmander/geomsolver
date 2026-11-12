@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.10.0] - 2026-11-12
+
 - **The contact's road takes a turn and a screw past the axis** (`swept::contacts`, `swept::trim`,
   `boolean`, #880 Q1b S5): brep-bench's seven S5 cases build through the front door, each to a
   volume computed apart from the build and to a STEP file that reads back as the solid — the rod,
