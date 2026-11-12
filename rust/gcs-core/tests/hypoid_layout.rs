@@ -681,8 +681,10 @@ fn the_layout_solves_from_its_words_alone_in_block_order() {
 /// The pair opens: `hypoid.sv` solved as solventc solves it (the default options, an interactive
 /// acceptance of 1e-6) **converges**, not merely under that acceptance — a whole-system DogLeg that
 /// runs out of iterations at a residual of 1e-7 is a success by the interactive measure, and the
-/// app would draw a pose that is not the solution.
+/// app would draw a pose that is not the solution. The face mill's shift is found by the pair's
+/// balance in the same solve (#904).
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 12 s: the pair solved with its balance")]
 fn the_pair_converges_as_solventc_solves_it() {
     use gcs_core::solve::{self,SolveOpts};
     let mut e = fixtures::gear::unsolved(&fixtures::gear::source());

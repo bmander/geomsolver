@@ -257,8 +257,11 @@ fn the_relieved_pinion_is_built_by_sectors() {
 /// cubic net of 240 × 66 poles laid by length in space, which the spline edges of the sector's side
 /// hugged; from #814 the search over that net halved past any search's boxes until it was read by
 /// its restricted Bézier patches (`enclosures::a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses`
-/// holds that case apart from the pinion).
+/// holds that case apart from the pinion). Solved as written, the mill its balance finds and all,
+/// it is the pinion built at that mill stated
+/// (`hypoid_mill_sheet::the_pinion_at_the_found_mill_is_built_by_sectors`, the fast gate).
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: the pair's balance solved and the pinion built")]
 fn the_pinion_as_written_is_built_by_sectors() {
     let e = fixtures::gear::read_as_configured();
     let body = fixtures::solid(&e,"pair.pinion.body");
@@ -266,12 +269,14 @@ fn the_pinion_as_written_is_built_by_sectors() {
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
     let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
     let said = lines.lock().unwrap().join("\n");
-    assert!(said.contains("`pair.pinion.cut.removal`: sheet 69x46, one chart"),"{said}");
+    assert!(said.contains("`pair.pinion.cut.removal`: sheet 69x39, one chart"),"{said}");
     assert!(said.contains("`pair.pinion.cut.removal`: the sheet's faces, by the cutter's: inner, inner_round, tip, outer_round, outer"),
         "{said}");
     assert!(said.contains("turned the sector into 24 copies"),"{said}");
     assert_eq!(exact.solid.faces.len(),243,"{said}");
     exact.solid.check(1e-6).unwrap();
+    let volume = props::volume(&exact.solid);
+    assert!((volume-14664.2384).abs() < 1e-3,"{volume} mm³");
 }
 
 /// **The pinion scaled is built as the pinion is** (#904 A3): every length of the pair 0.625 times
@@ -282,8 +287,13 @@ fn the_pinion_as_written_is_built_by_sectors() {
 /// its sheet is the pinion's, scaled. While the construction's lengths were millimetres the reach,
 /// asking every 0.3 mm, missed the tooth's 0.24 mm tip and walked the wrong way round the tooth,
 /// and a station's contact curve ended inside the blank.
+///
+/// The configured pinion's cut at that mill reaches the blank over 11.3 degrees of stations and
+/// 13.702 mm of its crown tooth's faces (`CONFIGURED_WALK`); the construction's lengths were set at
+/// the 13.7855 mm it walked at the mill the balance of profile radii found (`REFERENCE_WALK`).
 #[test]
 fn the_pinion_scaled_is_built_as_the_pinion_is() {
+    const CONFIGURED_WALK: f64 = 13.702;
     let s = 0.625;
     let e = fixtures::gear::read(&fixtures::gear::scaled_as_found(s));
     let body = fixtures::solid(&e,"pair.pinion.body");
@@ -291,10 +301,10 @@ fn the_pinion_scaled_is_built_as_the_pinion_is() {
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
     let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
     let said = lines.lock().unwrap().join("\n");
-    let walk = gcs_core::brep::swept::trace::REFERENCE_WALK*s;
-    assert!(said.contains(&format!("`pair.pinion.cut.removal`: contacts reach the blank over 7.5 degrees of stations and 5 \
+    let walk = CONFIGURED_WALK*s;
+    assert!(said.contains(&format!("`pair.pinion.cut.removal`: contacts reach the blank over 11.3 degrees of stations and 5 \
         profile faces, {walk:.3} mm of them")),"{said}");
-    assert!(said.contains("`pair.pinion.cut.removal`: sheet 69x46, one chart"),"{said}");
+    assert!(said.contains("`pair.pinion.cut.removal`: sheet 69x39, one chart"),"{said}");
     assert!(said.contains("`pair.pinion.cut.removal`: the sheet's faces, by the cutter's: inner, inner_round, tip, outer_round, outer"),
         "{said}");
     assert!(said.contains("turned the sector into 24 copies"),"{said}");
@@ -321,18 +331,22 @@ fn each_member_of_the_pair_is_built_alike_at_every_scale() {
     }
 }
 
-/// The pair at 0.625 of its size, cut by the mill its balance finds there: at the gear's heel a
-/// corner of the cutter grazes the blank's end relief at some stations and is a fan the sheet's rows
-/// stop before at others (`contact_trace::charted`), so the cut's fitted sheet ends a few microns
-/// inside the blank, where it divides nothing. Carried on past it by its own surface
-/// (`sweep::sheet`), the sector splits into its cells, is turned into every copy, and agrees with
-/// its field. (The 20-tooth pair's sheet did, until it was laid in its own scale, #904 A3, and the
-/// 21-tooth pair's, until its stations were read from where its contacts first reach the blank,
-/// #904 A4: theirs now leave the blank there.)
+/// The pair at 0.625 of its size, cut by the mill the balance of profile radii found there (11.2527°,
+/// the cutter 47.2576 mm): at the gear's heel a corner of the cutter grazes the blank's end relief
+/// at some stations and is a fan the sheet's rows stop before at others (`contact_trace::charted`),
+/// so the cut's fitted sheet ends a few microns inside the blank, where it divides nothing. Carried
+/// on past it by its own surface (`sweep::sheet`), the sector splits into its cells, is turned into
+/// every copy, and agrees with its field. (The 20-tooth pair's sheet did, until it was laid in its
+/// own scale, #904 A3, and the 21-tooth pair's, until its stations were read from where its
+/// contacts first reach the blank, #904 A4: theirs now leave the blank there. So does this pair's
+/// at the mill its balance finds since #904, `fixtures::gear::scaled_as_found`, so the mill this
+/// case was found at is stated.)
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: the scaled pair's gear built and measured")]
 fn a_sheet_ending_in_the_blank_is_carried_out_of_it() {
-    let e = fixtures::gear::read(&fixtures::gear::scaled_as_found(0.625));
+    let s = 0.625;
+    let e = fixtures::gear::read(&fixtures::gear::machine(&fixtures::gear::scaled(&fixtures::gear::source(),s),
+        11.2527,75.6122*s));
     let body = fixtures::solid(&e,"pair.gear.body");
     let lines = std::sync::Mutex::new(Vec::new());
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};

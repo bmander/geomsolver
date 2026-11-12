@@ -263,8 +263,8 @@ fn a_group_read_as_a_number_is_said_to_be_one() {
 }
 
 /// **A group's member may name a member of the group of an instance its body writes** (#904,
-/// A1): `HypoidPair` hands its caller the margins its balance reads as `margins := {pinion_mean:
-/// balance.margins.pinion_mean, …}`, one level into `balance`, so the caller reads
+/// A1): `HypoidPair` handed its caller the margins its balance read as `margins := {pinion_mean:
+/// balance.margins.pinion_mean, …}`, one level into `balance`, so the caller read
 /// `pair.margins.pinion_mean` and never `pair.balance.…` (W204).  The inner group's own aliases
 /// are made as the instance is expanded, after the outer group's, and the outer member is read
 /// through them once they are in.

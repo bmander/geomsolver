@@ -85,9 +85,18 @@ pub fn scaled(text: &str,factor: f64) -> String {
     configure_inputs(text,&lengths)
 }
 
-/// The face mill the pair's balance finds as configured: its pressure shift in degrees and its
-/// cutter's radius in millimetres (`hypoid_machine`'s).
-pub const FOUND_MILL: [f64;2] = [11.2527,75.6122];
+/// The face mill of the pair as configured: the pressure shift in degrees its balance finds, where
+/// the pinion's flank the inner blade cuts ties the gear's the outer blade cuts, and the cutter's
+/// radius in millimetres the document states
+/// (`hypoid_machine::the_shift_ties_the_flanks_nearest_undercut`).
+pub const FOUND_MILL: [f64;2] = [8.8549,75.6122];
+
+/// The pair as configured, cut by the mill its balance finds there (`FOUND_MILL`), stated: what the
+/// document's solve makes of the pair, read without the balance's solve.
+pub fn as_found() -> String { machine(&source(),FOUND_MILL[0],FOUND_MILL[1]) }
+
+/// `as_found`, elaborated and solved.
+pub fn read_as_found() -> program::Elaborated { read(&as_found()) }
 
 /// The pair with every length `factor` times as long (`scaled`), cut by the mill its balance finds
 /// there — the configured one scaled (`FOUND_MILL`) — stated.

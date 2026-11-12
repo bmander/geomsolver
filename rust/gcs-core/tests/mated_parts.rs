@@ -132,7 +132,7 @@ fn the_hypoid_pair_is_mated_by_its_axes() {
     let pair = "\
 pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_angle: 90deg,
   offset: 25mm, spiral_angle: 25deg, backlash: 0.05mm, tip_relief: 0.2mm, end_relief: 0.2mm,
-  pressure_shift: 11.2527deg, cutter_radius: 75.6122mm)
+  pressure_shift: 8.8549deg, cutter_radius: 75.6122mm)
 ";
     let mut e = unsolved(&format!("{HEAD}{pair}{MATE}"));
     assert!(off(&e) < 1e-6, "the seeds stand {} off", off(&e));
@@ -142,21 +142,25 @@ pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_ang
     placed(&e);
 }
 
-/// The issue's case: the face mill found by the balance its caller states of the pair's margins,
-/// which the pair solved alone finds, and mated as above.  Before, the solve ran minutes and
-/// did not come out.
+/// The issue's case: the face mill's shift found by the balance its caller states of the pair's
+/// margins — two flanks held to one unknown margin, as `hypoid.sv` holds them — which the pair
+/// solved alone finds, and mated as above.  Before, the solve ran minutes and did not come out.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: the pair's balance solved where the mate places it")]
 fn the_hypoid_pair_balanced_by_its_caller_is_mated_by_its_axes() {
     let pair = "\
 pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_angle: 90deg,
   offset: 25mm, spiral_angle: 25deg, backlash: 0.05mm, tip_relief: 0.2mm, end_relief: 0.2mm,
-  pressure_shift: hint(10deg), cutter_radius: hint(80mm))
-pair.margins.pinion_mean equal pair.margins.gear_mean
-pair.margins.pinion_toe equal pair.margins.gear_toe
+  pressure_shift: hint(10deg), cutter_radius: 75.6122mm, least: hint(0.5))
+pair.margins.pinion_inner regular(pair.least, by: pair.margins.pinion_cut) within pair.margins.pinion
+pair.margins.gear_outer regular(pair.least, by: pair.margins.gear_outer_cut) within pair.margins.gear
 ";
     let mut e = unsolved(&format!("{HEAD}{pair}{MATE}"));
     assert!(off(&e) < 1e-6, "the seeds stand {} off", off(&e));
     let r = solve(&mut e.sketch, fixtures::accurate());
     assert!(r.settled(), "{r:?}");
     placed(&e);
+    // the shift the pair finds standing alone (`fixtures::gear::FOUND_MILL`)
+    let shift = e.sketch.params[e.sketch.free_vars["pair.pressure_shift"] as usize].value;
+    assert!((shift - fixtures::gear::FOUND_MILL[0]).abs() < 1e-4, "the pressure shift {shift}°");
 }

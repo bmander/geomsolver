@@ -157,11 +157,12 @@ fn a_fields_side_of_a_level_is_what_its_value_says() {
         assert!(sides.iter().all(|&n| n > 100), "{sides:?}");
     }
     // revolved fields, read by their meridian profile's own side: a sphere turned from a half disc
-    // less a prism through it, and the hypoid pinion's blank, its meridian's relief two conics
+    // less a prism through it, and the hypoid pinion's blank, its meridian's relief two conics (the
+    // pair cut by the mill its balance finds, stated)
     let ball = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/pierced_sphere.sv")).unwrap();
     let mut ball = build(&ball);
     assert!(gcs_core::solve::solve(&mut ball.sketch, Default::default()).success);
-    let gears = fixtures::gear::read_as_configured();
+    let gears = fixtures::gear::read_as_found();
     for (e, name) in [(&ball, "part"), (&gears, "pair.pinion_blank.material")] {
         let i = e.map.ent_named(name).unwrap().i();
         let f = gcs_core::solid::SpatialField::read(&e.sketch, i, 1e-10).unwrap();
@@ -188,7 +189,7 @@ fn a_fields_side_of_a_level_is_what_its_value_says() {
 #[test]
 fn a_turned_conics_field_holds_its_values_over_any_box() {
     use gcs_core::interval::Interval as I;
-    let gears = fixtures::gear::read_as_configured();
+    let gears = fixtures::gear::read_as_found();
     let i = gears.map.ent_named("pair.pinion_blank.material").unwrap().i();
     let f = gcs_core::solid::SpatialField::read(&gears.sketch, i, 1e-10).unwrap();
     let support = f.support_bounds().unwrap().unwrap().map(|x| x.bounds());

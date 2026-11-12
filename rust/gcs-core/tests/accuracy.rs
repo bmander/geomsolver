@@ -1,6 +1,7 @@
 //! The accuracy meter (`solid::accuracy`): an offset of the exact surface reads as that offset on
 //! both routes, on the configured pinion's generated flanks (exact envelope contacts from the
-//! cutter's own contact chart, which the meter's projection does not read) and on its blank.
+//! cutter's own contact chart, which the meter's projection does not read) and on its blank — the
+//! pinion cut by the mill its balance finds, stated (`fixtures::gear::as_found`).
 use gcs_core::solid::{accuracy::{Meter,Options},SweepContacts,cad};
 use gcs_core::space::{add,scale};
 
@@ -8,7 +9,7 @@ use gcs_core::space::{add,scale};
 const OFFSETS: [f64;3] = [0.,0.02,-0.02];
 
 fn pinion() -> (gcs_core::program::Elaborated,usize,Meter) {
-    let e = fixtures::gear::read_as_configured();
+    let e = fixtures::gear::read_as_found();
     let body = fixtures::solid(&e,"pair.pinion.body");
     let started = std::time::Instant::now();
     let meter = Meter::read(&e.sketch,body,Options::in_units(1.)).unwrap();

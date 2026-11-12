@@ -130,10 +130,11 @@ fn backlash_stands_each_cutter_a_quarter_of_it_off_the_shared_flanks() {
 /// relief lies behind it by the same. The kink stands the tip relief short of where the flank
 /// generates the member's tip, an addendum from the pitch plane along the cutter's axis, and the
 /// topping's cone turns the relief angle from the flank's in the meridian. For the gear, each side
-/// of the space cutter against its own relief side, before the neighbour's indexing.
+/// of the space cutter against its own relief side, before the neighbour's indexing. Cut by the
+/// mill the pair's balance finds there, stated (`fixtures::gear::as_found`).
 #[test]
 fn the_tip_relief_turns_each_crown_flank_at_its_kink() {
-    let e = fixtures::gear::read_as_configured();
+    let e = fixtures::gear::read_as_found();
     let sk = &e.sketch;
     let entity = |name: &str| e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i();
     let field = |name: &str| MaterialField::read(sk,entity(name),1e-10).unwrap();
@@ -205,8 +206,8 @@ fn a_tip_relief_of_zero_cuts_nothing() {
     assert_eq!(relief_solids(&without),0);
     // As configured: the two relief tools (the pinion's topping, one region solid; the gear's
     // space, two and its neighbour and their body), a sweep of each, and a placement at every
-    // tooth of each member.
-    let with = fixtures::gear::read_as_configured();
+    // tooth of each member — the words' solids, read before the solve.
+    let with = fixtures::gear::unsolved(&fixtures::gear::source());
     assert_eq!(relief_solids(&with),1+4+2+24+48);
 }
 
@@ -215,12 +216,13 @@ fn a_tip_relief_of_zero_cuts_nothing() {
 /// (`std.rounds.Chamfered`), lowered into its meridian as a conic's arc: on it the distances from
 /// the tip cone and from the sphere, each over the end relief, sum to one; its end on the tip cone
 /// is the end relief inside the sphere and its end on the sphere the end relief below the tip cone.
+/// The pair cut by the mill its balance finds, stated (`fixtures::gear::as_found`).
 #[test]
 fn the_end_relief_chamfers_each_tip_corner() {
     use gcs_core::brep::planar::Seg;
     use gcs_core::model::{RegionShape,SolidDef};
     use gcs_core::syntax::Cmp;
-    let e = fixtures::gear::read_as_configured();
+    let e = fixtures::gear::read_as_found();
     let sk = &e.sketch;
     let size = 0.2;
     let mut worst: f64 = 0.;

@@ -1,14 +1,9 @@
 //! The configured hypoid pinion cut by the face mill its balance finds (#904 A1/A2), the mill stated:
 //! its pressure shift and its cutter's radius written into the pair's call as numbers
-//! (`fixtures::gear::machine`), so what the kernel builds there is judged apart from the balance that
-//! finds them (`hypoid_machine`).
+//! (`fixtures::gear::as_found`), so what the kernel builds there is judged apart from the balance
+//! that finds them (`hypoid_machine`).
 use gcs_core::brep::{export,props,sweep::{self,Say}};
 use std::sync::Mutex;
-
-/// The face mill the configured pair's balance finds: its pressure shift (degrees), where the
-/// pinion's flank the inner blade cuts ties the gear's the outer blade cuts, and the cutter's radius
-/// the document states (mm).
-const MILL: [f64;2] = [8.8549,75.6122];
 
 /// **The pinion's cut at the mill its balance finds is one chart** (#904 A1/A2): its sheet is traced,
 /// fitted within the gross bars and named by the cutter's faces. At the start of its band the fold
@@ -22,7 +17,7 @@ const MILL: [f64;2] = [8.8549,75.6122];
 #[test]
 fn the_pinions_cut_at_the_found_mill_is_one_chart() {
     use gcs_core::solid::admission::{admit_body,Options};
-    let e = fixtures::gear::read(&fixtures::gear::machine(&fixtures::gear::source(),MILL[0],MILL[1]));
+    let e = fixtures::gear::read_as_found();
     let pinion = fixtures::solid(&e,"pair.pinion.body");
     let admission = admit_body(&e.sketch,pinion,&Options::default()).unwrap_or_else(|r| panic!("refused: {r}"));
     let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,pinion).unwrap();
@@ -49,7 +44,7 @@ fn the_pinions_cut_at_the_found_mill_is_one_chart() {
 /// (`brep::query::interior`).
 #[test]
 fn the_pinion_at_the_found_mill_is_built_by_sectors() {
-    let e = fixtures::gear::read(&fixtures::gear::machine(&fixtures::gear::source(),MILL[0],MILL[1]));
+    let e = fixtures::gear::read_as_found();
     let pinion = fixtures::solid(&e,"pair.pinion.body");
     let lines = Mutex::new(Vec::new());
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
