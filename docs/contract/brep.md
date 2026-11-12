@@ -315,9 +315,9 @@ a swap made without its callers knowing:
   a line with no end clipped to a bounded surface's own box. A non-rational net is read by its spans' restricted Bézier
   patches and its boxes halved by smear (above): the hypoid pinion's side, a spline edge a few
   spans long hugging its cut's sheet of 240 × 66 poles, read past any search's boxes from #814 until
-  both (`brep_export::the_pinion_as_written_is_built_by_sectors`;
-  `enclosures::a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses`, its roots held to ones
-  found apart from the kernel); a line is read span by span, clipped to each span's box grown by its
+  both (`enclosures::a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses`, its roots held to
+  ones found apart from the kernel; the pinion's sheet is laid on fewer rows since #904 A4,
+  `brep_export::the_pinion_as_written_is_built_by_sectors`); a line is read span by span, clipped to each span's box grown by its
   size (`net_index`); any other curve over the whole net, and only where that reads past any
   search's boxes (`GaveUp::Most`) over the hull of the spans its pieces reach (`query::reached`:
   halved about a span across, a piece reaching no span's box dropped). The whole first: a curve
@@ -970,7 +970,7 @@ fitted (`sweep::sheet`, `nurbs::interpolate_net`; a fitted
 edge still in the blank between its nodes — a cutter's corner grazing it at stations where it is
 elsewhere a fan the rows stop before, `contact_trace::charted` — is carried on past it by its own
 surface, `Net::extended`, only where what that puts in the blank is within the fit's bar, else left
-as it is: an edge in the blank divides nothing; `brep_export.rs`'s 21-tooth gear), blank split
+as it is: an edge in the blank divides nothing; `brep_export.rs`'s gear at 0.625), blank split
 (`boolean::split`), cells judged by the field (`sweep::sector`; else `sector::whole`), sector
 patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/export-worker.ts`
 (`gcs_solid_exact`, and `gcs_solid_exact_note` for the sliver its solid holds, `brep::export::slivers`,

@@ -1565,6 +1565,32 @@ a quarter millimetre outside the blank by its first rows, and by length in space
 curve is short in space crowds its rows and the fit's normal turns 90°. The gear's cut and both
 reliefs hold over 0.85 to 1.2.
 
+**A traced sheet does not depend on where its cut stands (#904 A4):** a cutter of revolutions'
+reach (`Cutter::reach`) reads its `STATIONS` stations a step apart from the half-plane
+`Cutter::of_boundary` counts from, which a world axis picks, and then again from where its
+contacts first reach the blank — the station before the band's first and the first bisected to it,
+to `START` (1e-12 rad) — so the band, the walk and the cut's unit, and the columns laid across the
+band, stand where the cutter and the blank stand, turned together. The sheet's rows are as many as
+keep them `ROW_SPACING` apart, and where its curves end on the trace's grid of walk lengths its
+span is a whole number of spacings: one to rounding (`WHOLE`) is counted so, not one more as a
+placement's rounding falls. Counted from the world's half-plane, a turn of the pair moved the grid
+against the cutter, and the gear at 0.625 was built in its own frame and refused in `drive.sv`'s,
+"the candidate sheet cannot be widened out of the blank"
+(`hypoid_machine::the_gear_builds_alike_in_a_frame_turned_to_the_pair`, slow: the same faces, the
+volume to 1e-9). That refusal was the chart's, at four of eleven phases of the grid within one
+step, in either frame: a margin column's curve leaps a turn round into a far corner's fan a row
+nearer the blank with each column further out, and with the rows trimmed back to before any
+column's leap (`charted`), wherever a column leapt on the row past the blank's last every column's
+rows stopped in the blank, however far the margins grew. Outside the columns holding the blank
+(their stations reached it, or a contact of theirs lies in it) a column leaping anywhere from the
+blank's first row to the row past its last now goes, with those beyond it, where one holding none
+is left at that side; the rows are then trimmed at the kept columns' leaps as before
+(`contact_trace::a_margin_column_leaping_beside_the_blank_is_dropped_rather_than_the_rows`;
+`hypoid_machine::the_gears_sheet_is_traced_at_every_phase_of_its_stations`, slow, the grid turned
+past the band's start by `Cutter::turned`, `sweep::traced_turned`). So are the configured pair's
+gear cut with a 90.37 mm cutter and both members of the 25-tooth pair built, where that refusal
+was seen too.
+
 **Screws, the constant-twist class (#64):** a sweep under a screw (`f screws(a) l`) is admitted by
 rows S1–S4 (`solid::constant_twist`, docs/generating-sweeps.md): the tool's characteristic (each
 ring's `A cos + B sin + C` roots under the screw's twist, fixed on the tool) walked through the blank,

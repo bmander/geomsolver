@@ -281,13 +281,14 @@ fn built(rewrite: &dyn Fn(String) -> String,tolerance: Option<f64>) -> [(f64,f64
 /// to the same 1e-3 — so the check stands where the native build is not made.  The drawn sections
 /// took 120.675849 and 117.134204 mm³ by this kernel while its trace laid its lengths in
 /// millimetres, which the regions took to 1e-7; laid in each cut's own scale (#904 A3: the bevel
-/// pair's crown tooth walks 12.24 mm of faces to the configured pinion's 13.79) the regions take
-/// 120.674907 and 117.132029 mm³, which they are held to, to the same 1e-7.
+/// pair's crown tooth walks 12.24 mm of faces to the configured pinion's 13.79) the regions took
+/// 120.674907 and 117.132029 mm³; their stations read from where the contacts first reach the
+/// blank (#904 A4) they take 120.674805 and 117.132026 mm³, which they are held to, to the same 1e-7.
 #[test]
 fn the_regions_cut_the_recorded_tooth_spaces() {
     let spaces = built(&|text| fixtures::gear::one_space(&fixtures::gear::bevel(&text)),None);
     for ((member,(volume,blank,_)),(recorded,regions)) in ["pinion","gear"].iter().zip(spaces)
-        .zip([(120.708817,120.674907),(117.137321,117.132029)]) {
+        .zip([(120.708817,120.674805),(117.137321,117.132026)]) {
         let space = blank-volume;
         eprintln!("{member}: tooth space {space:.6} mm³, OCCT's {recorded}, the regions' {regions}");
         assert!((space-recorded).abs() < 1e-3*recorded,"{member}: {space} against {recorded}");
@@ -301,7 +302,7 @@ fn the_regions_cut_the_recorded_tooth_spaces() {
 /// volume to 1e-6 — a ten-micron band over either member is a thousand times that.  Recorded
 /// from the drawn sections before they were retired, so cut by the mill they were cut by
 /// (`fixtures::gear::recorded_machine`, a pressure shift of 12.5 degrees): the mill the pair finds
-/// (#283) is another, whose pair is another pair (its pinion 147 faces and 14679.456 mm³).
+/// (#283) is another, whose pair is another pair (`brep_export::the_pinion_as_written_is_built_by_sectors`).
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: both members built whole as fabricated")]
 fn the_fabricated_pair_is_the_drawn_sections_export() {

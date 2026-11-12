@@ -229,9 +229,8 @@ fn a_through_cut_crosses_its_stock_whichever_way_the_stocks_circle_starts() {
 /// the sides and turned into every copy — a traced edge of the band ends where it leaves the
 /// band's patch (`Surface::off_patch`), and the band is kept by the turns about the axis, not
 /// taken for a side (`brep::pattern`).  Cut by the mill it was recorded at
-/// (`fixtures::gear::recorded_machine`): the mill the pair finds (#283) has a larger cutter, at
-/// which the cut's sheet is fitted as one face, built and agreeing with its field but not named
-/// by the cutter's faces.
+/// (`fixtures::gear::recorded_machine`): the mill the pair finds (#283) has a larger cutter
+/// (`the_pinion_as_written_is_built_by_sectors`).
 #[test]
 fn the_relieved_pinion_is_built_by_sectors() {
     let e = fixtures::gear::read(&fixtures::gear::recorded_machine(&fixtures::gear::source(),12.5));
@@ -250,12 +249,15 @@ fn the_relieved_pinion_is_built_by_sectors() {
 }
 
 /// **The pinion as its document writes it is built** (the page's `?example=spiral_bevel`): at the
-/// mill the pair finds (#283) its cut's sheet is fitted as one face, a cubic net of 240 × 66
-/// poles, which the spline edges of the sector's side are read against, hugging it. From #814 on
-/// the search over the whole net halved past any search's boxes, enclosing the net by de Boor in
-/// intervals and halving its boxes in the unknowns' own scales, and the pinion was refused; read
-/// by its restricted Bézier patches and halved by smear (`enclose::Net::restricted`,
-/// `isolate::solve_by`), it is built, turned into every copy, and checked, in a few seconds.
+/// mill the pair finds (#283) its cut's sheet is laid by walk length and named by the cutter's
+/// faces, each sector the blank's pieces, the space's five faces and the relief's five, as at the
+/// mill it was recorded at; built, turned into every copy, and checked. Until its stations were read
+/// from where its contacts first reach the blank, and a margin column leaping beside the blank cost
+/// the sheet that column rather than its rows (#904 A4), the sheet was fitted there as one face, a
+/// cubic net of 240 × 66 poles laid by length in space, which the spline edges of the sector's side
+/// hugged; from #814 the search over that net halved past any search's boxes until it was read by
+/// its restricted Bézier patches (`enclosures::a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses`
+/// holds that case apart from the pinion).
 #[test]
 fn the_pinion_as_written_is_built_by_sectors() {
     let e = fixtures::gear::read_as_configured();
@@ -264,9 +266,11 @@ fn the_pinion_as_written_is_built_by_sectors() {
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
     let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
     let said = lines.lock().unwrap().join("\n");
-    assert!(said.contains("`pair.pinion.cut.removal`: sheet 240x66, one chart"),"{said}");
+    assert!(said.contains("`pair.pinion.cut.removal`: sheet 69x46, one chart"),"{said}");
+    assert!(said.contains("`pair.pinion.cut.removal`: the sheet's faces, by the cutter's: inner, inner_round, tip, outer_round, outer"),
+        "{said}");
     assert!(said.contains("turned the sector into 24 copies"),"{said}");
-    assert_eq!(exact.solid.faces.len(),147,"{said}");
+    assert_eq!(exact.solid.faces.len(),243,"{said}");
     exact.solid.check(1e-6).unwrap();
 }
 
@@ -290,9 +294,11 @@ fn the_pinion_scaled_is_built_as_the_pinion_is() {
     let walk = gcs_core::brep::swept::trace::REFERENCE_WALK*s;
     assert!(said.contains(&format!("`pair.pinion.cut.removal`: contacts reach the blank over 7.5 degrees of stations and 5 \
         profile faces, {walk:.3} mm of them")),"{said}");
-    assert!(said.contains("`pair.pinion.cut.removal`: sheet 240x66, one chart"),"{said}");
+    assert!(said.contains("`pair.pinion.cut.removal`: sheet 69x46, one chart"),"{said}");
+    assert!(said.contains("`pair.pinion.cut.removal`: the sheet's faces, by the cutter's: inner, inner_round, tip, outer_round, outer"),
+        "{said}");
     assert!(said.contains("turned the sector into 24 copies"),"{said}");
-    assert_eq!(exact.solid.faces.len(),147,"{said}");
+    assert_eq!(exact.solid.faces.len(),243,"{said}");
     exact.solid.check(1e-6).unwrap();
 }
 
@@ -302,7 +308,7 @@ fn the_pinion_scaled_is_built_as_the_pinion_is() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: five members of scaled pairs built")]
 fn each_member_of_the_pair_is_built_alike_at_every_scale() {
-    for (member,s,faces) in [("pinion",0.5,147),("pinion",0.75,147),("pinion",1.5,147),("gear",0.625,291),("gear",1.5,291)] {
+    for (member,s,faces) in [("pinion",0.5,243),("pinion",0.75,243),("pinion",1.5,243),("gear",0.625,291),("gear",1.5,291)] {
         let e = fixtures::gear::read(&fixtures::gear::scaled_as_found(s));
         let body = fixtures::solid(&e,&format!("pair.{member}.body"));
         let lines = std::sync::Mutex::new(Vec::new());
@@ -315,16 +321,18 @@ fn each_member_of_the_pair_is_built_alike_at_every_scale() {
     }
 }
 
-/// The pair with a 21-tooth pinion: at the gear's heel a corner of the cutter grazes the blank's
-/// end relief at some stations and is a fan the sheet's rows stop before at others
-/// (`contact_trace::charted`), so the cut's fitted sheet ends a few microns inside the blank, where
-/// it divides nothing. Carried on past it by its own surface (`sweep::sheet`), the sector splits
-/// into its cells, is turned into every copy, and agrees with its field. (The 20-tooth pair's did,
-/// until its sheet was laid in its own scale, #904 A3: its rows now reach the corner.)
+/// The pair at 0.625 of its size, cut by the mill its balance finds there: at the gear's heel a
+/// corner of the cutter grazes the blank's end relief at some stations and is a fan the sheet's rows
+/// stop before at others (`contact_trace::charted`), so the cut's fitted sheet ends a few microns
+/// inside the blank, where it divides nothing. Carried on past it by its own surface
+/// (`sweep::sheet`), the sector splits into its cells, is turned into every copy, and agrees with
+/// its field. (The 20-tooth pair's sheet did, until it was laid in its own scale, #904 A3, and the
+/// 21-tooth pair's, until its stations were read from where its contacts first reach the blank,
+/// #904 A4: theirs now leave the blank there.)
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: the 21-tooth pair's gear built and measured")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: the scaled pair's gear built and measured")]
 fn a_sheet_ending_in_the_blank_is_carried_out_of_it() {
-    let e = fixtures::gear::read(&fixtures::gear::configure(&fixtures::gear::source(),&[("pinion_teeth",21.)]));
+    let e = fixtures::gear::read(&fixtures::gear::scaled_as_found(0.625));
     let body = fixtures::solid(&e,"pair.gear.body");
     let lines = std::sync::Mutex::new(Vec::new());
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};

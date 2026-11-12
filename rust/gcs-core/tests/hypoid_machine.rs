@@ -248,17 +248,16 @@ fn the_gears_tool_builds_in_a_frame_turned_to_the_pair() {
 
 /// **Whether the gear builds exactly does not depend on where its pair stands** (#904 A4): the
 /// gear of `scaled_pair`, built by the kernel in the pair's own frame and in the frame turned to
-/// it, is the same solid. Its tool builds in both now
-/// (`the_gears_tool_builds_in_a_frame_turned_to_the_pair`), but the gear's cut is refused turned:
-/// "the candidate sheet cannot be widened out of the blank". A revolved cutter's stations are
-/// read every 3.75 degrees round its axis from a side chosen by a world axis
-/// (`brep::swept::cutter::Cutter::of_boundary`), so a turn of the pair moves that grid against the
-/// cutter; and the sheet traced over the stations is refused at four of eleven phases of the grid
-/// within one step of it, in either frame: past the blank, at the row after its last contact
-/// there, a column's contact time leaps, the rows are trimmed back to before the leap
-/// (`swept::trace::charted`), the sheet's edge stays in the blank however far its margins widen.
+/// it, is the same solid. Its tool builds in both (`the_gears_tool_builds_in_a_frame_turned_to_the_pair`),
+/// but the gear's cut was refused turned: "the candidate sheet cannot be widened out of the blank".
+/// A revolved cutter's stations were read every 3.75 degrees round its axis from a half-plane a
+/// world axis chose, so a turn of the pair moved that grid against the cutter, and the sheet traced
+/// over it was refused at four of eleven phases of the grid within one step, in either frame
+/// (`the_gears_sheet_is_traced_at_every_phase_of_its_stations`). The grid now starts where the
+/// contacts first reach the blank (`brep::swept::cutter::Cutter::reach`), and the sheet's rows are
+/// counted alike where its span is a whole number of them to rounding (`swept::trace`).
 #[test]
-#[ignore = "fails today: the gear's traced sheet is refused at some phases of the cutter's station grid, which a world axis sets (#904 A4); about 40 s"]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 35 s: the gear built twice")]
 fn the_gear_builds_alike_in_a_frame_turned_to_the_pair() {
     use gcs_core::brep::{export,sweep::Say};
     let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
@@ -275,4 +274,32 @@ fn the_gear_builds_alike_in_a_frame_turned_to_the_pair() {
     };
     assert_eq!(faces,turned_faces);
     assert!((volume-turned_volume).abs() <= 1e-9*volume,"{volume} mm³ in its own frame, {turned_volume} mm³ turned");
+}
+
+/// **The gear's sheet is traced at every phase of its cutter's stations** (#904 A4): the cut of
+/// `scaled_pair`'s gear traced with the grid its cutter's band is read on turned eleven ways across
+/// one step of it (`Cutter::turned`) is built at every one. A margin column's curve leaps into a far
+/// corner's fan a row nearer the blank with each column further out; trimmed back to before that
+/// leap, every column's rows stopped in the blank wherever the grid put a column leaping on the row
+/// past the blank's last, and the sheet could not be widened out of it, at four of the eleven. Such
+/// a column goes instead, with those beyond it (`brep::swept::trace::charted`).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 14 s: eleven sheets traced")]
+fn the_gears_sheet_is_traced_at_every_phase_of_its_stations() {
+    use gcs_core::brep::sweep::{self,Say};
+    use gcs_core::solid::admission::{admit_body,Options};
+    let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let mut e = fixtures::unsolved(&scaled_pair(false),&mut fixtures::beside(&examples,&mut |_,t| t));
+    assert!(gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default()).success);
+    let gear = fixtures::solid(&e,"pair.gear.body");
+    let admission = admit_body(&e.sketch,gear,&Options::default()).unwrap_or_else(|e| panic!("refused: {e}"));
+    let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,gear).unwrap();
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    let prepared = sweep::prepare(&e.sketch,gear,&recipe,&admission,&say).unwrap_or_else(|r| panic!("{}",r.message));
+    let k = (0..prepared.sweeps()).find(|&k| prepared.sweep_name(&e.sketch,k) == "pair.gear.cut.removal").expect("the gear's cut");
+    let refused: Vec<String> = (0..11).filter_map(|i| {
+        let phase = 3.75*i as f64/11.;
+        sweep::traced_turned(&prepared,k,phase.to_radians(),None,&say).err().map(|r| format!("{phase:.3} degrees: {}",r.message))
+    }).collect();
+    assert!(refused.is_empty(),"refused at {} of 11 phases: {refused:#?}",refused.len());
 }

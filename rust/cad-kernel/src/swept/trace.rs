@@ -25,6 +25,9 @@ use super::cutter::{Cutter,Loop};
 /// How far a contact's time may move in one step along a traced contact curve and still be
 /// the same root (radians of the motion's parameter).
 pub const STEP_TIME: f64 = 1.;
+/// How near a whole number of row spacings a sheet's span is taken for one (relative): rounding, as a
+/// rigid motion of the cut moves it, and not the walk (`Tracer::columns`).
+const WHOLE: f64 = 1e-9;
 /// How many times a step along a steep contact curve is halved before the root is taken to end.
 pub const STEEP_DEPTH: u32 = 8;
 /// Target node spacing along the profile and along the band, in millimetres of a cut at unit one
@@ -558,7 +561,10 @@ impl Tracer<'_> {
             return Err(format!("a station's contact curve ends inside the blank: the stations reach walk lengths \
                 {lo_tau:.3} to {hi_tau:.3} where the blank holds contacts from {:.3} to {:.3}",held.0,held.1).into());
         }
-        let rows = (((hi_tau-lo_tau)/(ROW_SPACING*self.unit)).ceil() as usize).clamp(24,240);
+        // as many rows as keep them `ROW_SPACING` apart; the curves' ends lie on the trace's grid of
+        // walk lengths, four steps a spacing, so a span of whole spacings is one to rounding, and is
+        // counted so, not one more where the cut stands so that its rounding falls above (#904 A4)
+        let rows = (((hi_tau-lo_tau)/(ROW_SPACING*self.unit)*(1.-WHOLE)).ceil() as usize).clamp(24,240);
         let taus: Vec<f64> = (0..rows).map(|r| lo_tau+(hi_tau-lo_tau)*r as f64/(rows-1) as f64).collect();
         let columns_data: Vec<Vec<Found>> = crate::util::par::indices(columns,|c| self.along(&stations[c],&traces[c].curve,&taus))
             .into_iter().collect::<Result<_,_>>()?;
