@@ -1095,16 +1095,28 @@ through points beside one another (fitted across the bar, the spline bar's inner
 mesher reads a triangle's sag at its middle and its inner sides' alone, and on the drafted slot a point
 of the tool's own cone stood 1.1e-3 off a mesh measured 9.5e-4 — past `Swept::beyond`'s margin, so a
 piece of the end pose's face it bounds was proved outside and dropped; each triangle's sides' and
-middle's distance from its face is measured too, the greater taken. **Under a screw or a slide a
-contact piece some of whose stretches bound keeps its buried ones** as candidates, for the trim to
-drop what of them is inside: a buried stretch beside one that bounds still bounds a little way from
-their shared cut, where the posed tool meets both. The spheroid wheel screwed through a rod
+middle's distance from its face is measured too, the greater taken. The spheroid wheel screwed through a rod
 (1559.464104558205: unrolled, the rod less `20 ∫ ρ W(ρ) dρ`, `W` the section's width across the
 screw), the drafted slot screwed through it (1401.313962654651, the same way, its half height drafted)
 and the coil spring slid aslant through a plate (3541.9379700: the plate less its thickness times the
-spring's shadow along the slide, by scanlines) are cut at the kernel's tolerance within their
-boundaries' areas times it
-(`swept_contacts::a_spheroid_wheel_a_coil_spring_and_a_drafted_slot_are_cut_through_the_front_door`, slow tier).
+spring's shadow along the slide, by scanlines). **A face's contact is cut where its burial changes**
+(`cut_at_burial`, under a screw or a slide): where the path of its points passes from dipping inside
+the tool to rising off it — read at 64 points along the piece and bisected to a point of it — the
+sheet passes from sweeping only the inside to bounding, and its meeting with the posed tool leaves its
+rim there; cut there as a corner (`Singular`), the meeting's branch ends on the corner. Cut at a length
+instead, the spline bar's far contact left a buried stretch beside a bounding one and a sliver where
+they and the pose met that no membership read settled; a cut within a twentieth of the piece of a
+double point it ends at is not made (a sheet of no width beside the leaning torus's crossing). A
+closed spline's nearest point found at its seam is refined from the seam's other end too and the
+nearer kept (`nurbs::BSpline`): held at the seam,
+an extrusion's point beside it read a foot 0.07 off, and a spurious burial. **A meeting's end at a
+vertex the face's boundary holds takes that node's parameters** (`boolean`'s `FaceCut::internal`),
+where both are that point: at a sheet's corner where its two rates nearly agree the walked inverse
+stood 0.017 along the rim from the corner's own, and the meeting hung there, parting nothing. The
+spline bar screwed through the rod (1335.319593047173, unrolled, the most of `acos(x/ρ) − z/a` over
+the section's lower left boundary) joins the other three, each cut at the kernel's tolerance within
+its boundary's area times it (`swept_contacts::s6s_free_form_faces_are_cut_through_the_front_door`,
+slow tier, S6's gate): all of Q1b's fourteen cases build (docs/swept-solid-design.md §13).
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that

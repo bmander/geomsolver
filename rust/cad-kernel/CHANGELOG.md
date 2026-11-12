@@ -21,9 +21,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the mesher measures a triangle's sag at its middle and its inner sides' middles, and a point on a
   drafted cone stood 1.1e-3 off a mesh measured 9.5e-4, which `Swept::beyond` then proved outside the
   sweep; the sag is now the greater of the mesher's and each triangle's sides' and middle's distance
-  from its face. Under a screw or a slide a contact piece some of whose stretches bound keeps its
-  buried ones as candidates (`swept::contacts::candidates`). brep-bench's
+  from its face. brep-bench's
   `swept/drafted-slot-screwed-through-rod` builds, to its volume made apart from the build.
+- **A contact piece is cut where its burial changes** (`swept::contacts`): under a screw or a slide a
+  face's piece is cut, as a corner, where the path of its points passes from dipping inside the tool
+  to rising off it, which is where the sheet's meeting with the posed tool leaves its rim (none
+  beside a double point it ends at); a smoothly closed B-spline's nearest point found at its seam is
+  refined from the seam's other end too and the nearer kept (`nurbs::BSpline`); and a meeting's walked parameters at a vertex the face's boundary holds take that
+  node's (`boolean`), where at a sheet's nearly singular corner they stood 0.017 off. brep-bench's
+  `swept/spline-bar-screwed-through-rod` builds, to its volume made apart from the build: all of
+  Q1b's fourteen cases now do.
 
 - **The contact's road takes a turn and a screw past the axis** (`swept::contacts`, `swept::trim`,
   `boolean`, #880 Q1b S5): brep-bench's seven S5 cases build through the front door, each to a

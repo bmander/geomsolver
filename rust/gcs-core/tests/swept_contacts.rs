@@ -214,10 +214,13 @@ fn a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points() {
             assert!(distance(sheet.point(back),p) <= 1e-9,"a sheet at {uv:?} read back at {back:?}");
         } }
     }
-    // each neighbour's rail, its given's first curve
+    // each neighbour's rail, its given's first curve: a section's end both sheets hold over the whole
+    // roll (not a path of one section's end crossing another stretch's sheet, held only over the part
+    // of the roll their paths overlap in — the end of a section cut where its burial changes, met by
+    // a stretch across from it)
     let rails = given.iter().filter(|g| g.curves.first().is_some_and(|c| {
         let gcs_core::brep::geom::Curve::Iso(_,u) = c else { return false };
-        *u == 1. || *u == 0.
+        (*u == 1. || *u == 0.) && [0.,1.].iter().all(|&t| g.surfaces.iter().all(|s| s.implicit(c.point(t)).abs() <= 1e-7))
     }));
     assert!(rails.clone().count() >= sheets,"each two neighbours of a closed piece given their rail");
     for (k,g) in rails.enumerate() {
@@ -760,9 +763,29 @@ fn drafted_slot_case() -> Case {
         path,roll,bar:0.002,volume:1401.313962654651,known:1e-9}
 }
 
-/// **Free-form faces: a spheroid wheel and a drafted slot screwed through a rod and a coil spring pushed
-/// aslant through a plate** (#880 Q1b S6, brep-bench's `swept/spheroid-wheel-screwed-through-rod`,
-/// `swept/drafted-slot-screwed-through-rod` and `swept/coil-spring-pushed-aslant-through-plate`), at the
+/// `spline-bar-screwed-through-rod`: the bar whose section in `y = 0` is the closed uniform cubic
+/// B-spline on (3.5, 0), (4.5, −1.5), (8, −1.5), (12, −1), (12, 1), (8, 1.5), (4.5, 1.5) in `(x, z)`,
+/// carried from `y = −8` to 8, screwed through the rod as the drum's end. Apart from the build as the
+/// drum's end: `ψ = acos(x/ρ)` falls with `x` and `−h/a` with `h`, so the most of `ψ − h/a` over the
+/// section at radius `ρ` stands on its lower left boundary, the most of `acos(x(s)/ρ) − z(s)/a` over
+/// the spline's points with `x(s) ≤ ρ`: the rod less `20 ∫ ρ W(ρ) dρ` from the least `x`, 23/6,
+/// 1335.319593047173 from 16 points to 64.
+fn spline_bar_case() -> Case {
+    const CONTROL: [[f64;2];7] = [[3.5,0.],[4.5,-1.5],[8.,-1.5],[12.,-1.],[12.,1.],[8.,1.5],[4.5,1.5]];
+    let poles: Vec<_> = (0..CONTROL.len()+3).map(|k| { let [x,z] = CONTROL[k%CONTROL.len()]; [x,0.,z] }).collect();
+    let knots = (0..poles.len()+4).map(|k| k as f64).collect();
+    let curve = gcs_core::brep::nurbs::BSpline::new(3,knots,poles).unwrap();
+    let section = gcs_core::brep::build::Profile {origin:[0.;3],normal:[0.,1.,0.],
+        loops:vec![vec![gcs_core::brep::build::ProfileEdge::Spline(std::sync::Arc::new(curve))]],names:Vec::new()};
+    let (path,roll) = rising_six();
+    Case {what:"the spline bar",blank:Some(screwed_rod()),tool:prism(&section,-8.,8.).unwrap(),path,roll,bar:0.01,
+        volume:1335.319593047173,known:1e-9}
+}
+
+/// **Free-form faces: a spheroid wheel, a drafted slot and a spline bar screwed through a rod and a coil
+/// spring pushed aslant through a plate** (#880 Q1b S6's gate, brep-bench's
+/// `swept/spheroid-wheel-screwed-through-rod`, `swept/drafted-slot-screwed-through-rod`,
+/// `swept/spline-bar-screwed-through-rod` and `swept/coil-spring-pushed-aslant-through-plate`), at the
 /// kernel's tolerance, each within its
 /// boundary's area times the tolerance of its volume made apart. The spheroid's face is a ball's affine
 /// image, its contact read numerically as any face's; the spring's tube is a blend (its disc screwed
@@ -770,9 +793,9 @@ fn drafted_slot_case() -> Case {
 /// ends, each piece ending on the face's boundary at `g`'s root along that edge (`face_contact`), so
 /// the tube's and the cap's sheets share their rail exactly.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about three minutes: a screwed spheroid and drafted slot and a slid coil at the kernel's tolerance")]
-fn a_spheroid_wheel_a_coil_spring_and_a_drafted_slot_are_cut_through_the_front_door() {
-    for case in [spheroid_wheel_case(),coil_spring_case(),drafted_slot_case()] {
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about four minutes: S6's four cases at the kernel's tolerance")]
+fn s6s_free_form_faces_are_cut_through_the_front_door() {
+    for case in [spheroid_wheel_case(),coil_spring_case(),drafted_slot_case(),spline_bar_case()] {
         let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
         cut_within(&case,tol,|cut| tol*cut.faces.iter().map(|f| gcs_core::brep::props::area(cut,f)).sum::<f64>());
     }

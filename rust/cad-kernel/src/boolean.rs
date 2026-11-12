@@ -2351,9 +2351,29 @@ impl<'s,'a> FaceCut<'s,'a> {
             }
             uv
         };
+        // (an end at a vertex the face's boundary already holds takes the parameters it has there, where
+        // those and the walk's are one point: at a sheet's corner where its two rates nearly agree the
+        // walk's inverse stood 0.017 along the rim from the corner's own, a node apart, and the meeting
+        // leaving the corner — a sheet's meeting with the posed tool, from where its contact's burial
+        // changes — hung there and parted nothing, #880 Q1b S6)
+        let held = |v: u32,uv: Uv| -> Uv {
+            let p = f.surface.point(uv);
+            // (not at a pole of the surface, whose collapsed parameter the walk set as its edge arrives)
+            if !poleless && pole_at(&f.surface,uv,(1e-9*(1.+norm(p))).max(tol)).is_some() { return uv }
+            let nodes: Vec<Uv> = self.halves.iter().flat_map(|h| {
+                let e = &out[h.edge as usize];
+                let (v0,v1) = if h.along { (e.v[0],e.v[1]) } else { (e.v[1],e.v[0]) };
+                [(v0,h.from),(v1,h.to)]
+            }).filter(|&(x,_)| x == v).map(|(_,q)| q).collect();
+            // (only where it stands apart from every node of its vertex, which `pieces_of_face` would
+            // take it for: a node's width off one, it is that node already)
+            if nodes.iter().any(|q| (q[0]-uv[0]).abs() < NODE && (q[1]-uv[1]).abs() < NODE) { return uv }
+            nodes.into_iter().filter(|&q| distance(f.surface.point(q),p) <= 1e3*tol)
+                .min_by(|a,b| (a[0]-uv[0]).hypot(a[1]-uv[1]).total_cmp(&(b[0]-uv[0]).hypot(b[1]-uv[1]))).unwrap_or(uv)
+        };
         let (pcurve,(ua,ub)) = match iso_pcurve(&f.surface,c,w.t) {
             Some((a,b)) => (Pcurve::Line {a,b},(a,b)),
-            None => { let (a,b) = (walk(w.t[0]),walk(w.t[1])); (Pcurve::Inverse {a,b},(a,b)) }
+            None => { let (a,b) = (held(w.v[0],walk(w.t[0])),held(w.v[1],walk(w.t[1]))); (Pcurve::Inverse {a,b},(a,b)) }
         };
         self.halves.push(Half {edge:r,along:true,pcurve:pcurve.clone(),from:ua,to:ub,pole:false});
         self.halves.push(Half {edge:r,along:false,pcurve,from:ub,to:ua,pole:false});

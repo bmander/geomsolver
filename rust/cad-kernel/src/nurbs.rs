@@ -175,7 +175,22 @@ impl BSpline {
                 if d < best.0 || (d == best.0 && t < best.1) { best = (d,t); }
             }
         }
-        self.refined(p,best.1)
+        let t = self.refined(p,best.1);
+        // (a closed spline passing its seam smoothly, its foot held at one end by the search's clamp,
+        // read again from the other end, the nearer kept: a point of a closed spline's extrusion just
+        // short of its seam, seeded at the seam's first end, read a foot 0.07 off, #880 Q1b S6)
+        let z = self.domain()[1];
+        if t == a || t == z {
+            let (da,dz) = (self.ders(a,1),self.ders(z,1));
+            let closed = crate::util::space::distance(da[0],dz[0]) <= 1e-12*(1.+crate::util::space::norm(da[0]))
+                && crate::util::space::distance(da[1],dz[1]) <= 1e-9*crate::util::space::norm(da[1]);
+            if closed {
+                let other = self.refined(p,if t == a { z } else { a });
+                let off = |x: f64| crate::util::space::distance(self.point(x),p);
+                if off(other) < off(t) { return other }
+            }
+        }
+        t
     }
     /// The foot of `p` on the curve found by Newton on (C − p)·C' from `t` alone (a local search:
     /// the nearest where `t` is nearest it).

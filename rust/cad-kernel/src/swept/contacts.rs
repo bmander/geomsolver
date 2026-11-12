@@ -1539,36 +1539,81 @@ fn folded(p: &Piece,surface: &Surface,o: V,z: V,tol: f64) -> Vec<Piece> {
 /// contact all round, moves into the coin where it also stays within the side, on its far half,
 /// which sweeps only the inside). `size` is the tool's.
 fn buried_on(tool: &Brep,size: f64,points: &[V],on: &[usize],screw: &crate::trajectory::Screw) -> bool {
-    let twist = screw.twist();
     let m = points.len();
-    // whether the path of `q` dips inside, `None` where it does not move (on the turn's axis, where a
-    // piece ends at a pole: it abstains)
-    let read = |q: V| -> Option<bool> {
-        let speed = norm_of(twist.velocity(q));
-        if !(speed > 1e-6*size*norm_of(twist.omega).max(1e-300)) { return None }
-        let mut signs = Vec::new();
-        for &fi in on {
-            let face = &tool.faces[fi];
-            let Some(n) = face.outward(q) else { return Some(false) };
-            signs.push(if crate::util::space::dot(n,face.surface.gradient(q)) < 0. { -1. } else { 1. });
-        }
-        let step = 1e-3*size;
-        let d = step/speed;
-        let moved = |t: f64| screw.pose(t).point(q);
-        let f = |x: V| on.iter().zip(&signs).map(|(&fi,&sg)| sg*tool.faces[fi].surface.implicit(x)).fold(f64::NEG_INFINITY,f64::max);
-        // (either side enough: carried forward into the tool, each pose after the first lies inside
-        // the one just before it; backward, each before the last inside the one just after — the
-        // coin's rim, which moves into the coin and out of it backward through its own face)
-        let dips = |x: V| f(x)/(step*step)*size < -1e-3;
-        Some(dips(moved(d)) || dips(moved(-d)))
-    };
     // (read at its inner points: its ends are where it was cut, at a node of the contact where its
     // burial may change)
     const K: usize = 8;
-    let at: Vec<usize> = (1..K).map(|k| (k*(m-1))/K).collect();
-    let reads: Vec<Option<bool>> = at.iter().map(|&i| read(points[i])).collect();
+    let reads: Vec<Option<bool>> = (1..K).map(|k| dips_at(tool,size,points[(k*(m-1))/K],on,screw)).collect();
     let known = reads.iter().flatten().count();
     known >= 3 && reads.iter().flatten().all(|&x| x)
+}
+
+/// Whether the path of `q`, a point of contact on the faces `on`, dips inside the tool to second order
+/// (`buried_on`); `None` where it does not move (on the turn's axis, where a piece ends at a pole:
+/// it abstains).
+fn dips_at(tool: &Brep,size: f64,q: V,on: &[usize],screw: &crate::trajectory::Screw) -> Option<bool> {
+    let twist = screw.twist();
+    let speed = norm_of(twist.velocity(q));
+    if !(speed > 1e-6*size*norm_of(twist.omega).max(1e-300)) { return None }
+    let mut signs = Vec::new();
+    for &fi in on {
+        let face = &tool.faces[fi];
+        let Some(n) = face.outward(q) else { return Some(false) };
+        signs.push(if crate::util::space::dot(n,face.surface.gradient(q)) < 0. { -1. } else { 1. });
+    }
+    let step = 1e-3*size;
+    let d = step/speed;
+    let moved = |t: f64| screw.pose(t).point(q);
+    let f = |x: V| on.iter().zip(&signs).map(|(&fi,&sg)| sg*tool.faces[fi].surface.implicit(x)).fold(f64::NEG_INFINITY,f64::max);
+    // (either side enough: carried forward into the tool, each pose after the first lies inside
+    // the one just before it; backward, each before the last inside the one just after — the
+    // coin's rim, which moves into the coin and out of it backward through its own face)
+    let dips = |x: V| f(x)/(step*step)*size < -1e-3;
+    Some(dips(moved(d)) || dips(moved(-d)))
+}
+
+/// **A piece of contact cut where its burial changes** (#880 Q1b S6): where the path of a point of it
+/// passes from dipping inside the tool to rising off it (`dips_at`), the sheet passes from sweeping
+/// only the inside to bounding, and its meeting with the tool posed at an end leaves its rim there; cut
+/// there, a corner (`Singular`), which `pose_meeting` reads as a branch's end. Cut at a length instead,
+/// a buried stretch beside one that bounds left a sliver where the two and the pose met that no
+/// membership read settled (the spline bar's far contact). Each change read at 64 points along it and
+/// bisected to a point of the piece, none within a thirty-second of its ends nor a twentieth of its
+/// length of a double point it ends at; an open piece only.
+fn cut_at_burial(tool: &Brep,size: f64,p: Piece,screw: &crate::trajectory::Screw) -> Vec<Piece> {
+    let m = p.points.len();
+    if p.closed || m < 4 { return vec![p] }
+    let read = |i: usize| dips_at(tool,size,p.points[i],&[p.face],screw);
+    let mut run = vec![0.];
+    for w in p.points.windows(2) { let last = *run.last().unwrap(); run.push(last+distance(w[0],w[1])); }
+    const K: usize = 64;
+    let at: Vec<usize> = (1..K).map(|k| (k*(m-1))/K).collect();
+    let reads: Vec<(usize,bool)> = at.iter().filter_map(|&i| read(i).map(|r| (i,r))).collect();
+    let mut cuts: Vec<usize> = Vec::new();
+    for w in reads.windows(2) {
+        let ((a,ra),(b,rb)) = (w[0],w[1]);
+        if ra == rb { continue }
+        let (mut lo,mut hi) = (a,b);
+        while hi-lo > 1 {
+            let mid = (lo+hi)/2;
+            match read(mid) { Some(r) if r == ra => lo = mid,Some(_) => hi = mid,None => break }
+        }
+        // (not beside an end, already a cut, nor within a twentieth of the piece of a double point's:
+        // where the leaning torus's buried branch crosses its bounding one the burial changes too, and
+        // a cut a hair from it left a sheet of no width, one a little way off a path two stretches
+        // share that neither holds whole)
+        let along = run[hi]/run[m-1];
+        let singular = |e: usize| matches!(p.ends[e],End::Singular);
+        if hi >= m/32 && hi+m/32 < m && !(singular(0) && along < 0.05) && !(singular(1) && along > 0.95) { cuts.push(hi) }
+    }
+    if cuts.is_empty() { return vec![p] }
+    let mut bounds = vec![0];
+    bounds.extend(cuts);
+    bounds.push(m-1);
+    bounds.dedup();
+    let last = bounds.len()-2;
+    bounds.windows(2).enumerate().map(|(k,w)| Piece {face:p.face,uv:p.uv[w[0]..=w[1]].to_vec(),points:p.points[w[0]..=w[1]].to_vec(),
+        ends:[if k == 0 { p.ends[0] } else { End::Singular },if k == last { p.ends[1] } else { End::Singular }],closed:false}).collect()
 }
 
 /// **The sharp edges of `tool`**, each with its two faces: an edge between two faces whose outward
@@ -1649,25 +1694,16 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
             }
             Contact::Pieces(pieces) => for p in pieces {
                 junctions.extend([p.points[0],*p.points.last().unwrap()]);
-                let parts = if turn { folded(&p,&tool.faces[p.face].surface,axis_o,axis_z,tol) } else { stretches(&p,size,&screw) };
+                let parts = if turn { folded(&p,&tool.faces[p.face].surface,axis_o,axis_z,tol) }
+                    else { cut_at_burial(tool,size,p.clone(),&screw).into_iter().flat_map(|q| stretches(&q,size,&screw)).collect() };
                 let whole = parts.len() == 1;
                 // (each part read for burial alone: a piece crossing the turn's axis buried on one side
                 // of it and bounding on the other, the ball swung across its own centre line)
-                let buried: Vec<bool> = parts.iter().map(|part| buried_on(tool,size,&part.points,&[p.face],&screw)).collect();
-                // **under a screw or a slide a piece some of whose stretches bound keeps them all**
-                // (#880 Q1b S6): a buried stretch beside one that bounds still bounds a little way
-                // from their shared cut, where the tool posed at an end meets the two — the spline
-                // bar's far contact, its middle stretches buried, its outer ones' rails and the start
-                // pose's face left open there — and the trim drops what of it is inside. Under a turn
-                // a part is read alone (the ball swung across its own centre line, buried on one side
-                // of the axis and bounding on the other, its buried arc a pole's tangle)
-                let some = buried.iter().any(|&b| !b);
-                if crate::debug() {
-                    for (part,&b) in parts.iter().zip(&buried) {
-                        eprintln!("contacts: face {fi}'s part from {:?} to {:?}{}",part.points[0],part.points.last().unwrap(),if !b { "" } else if !turn && some { ", buried but kept" } else { ", buried" })
-                    }
-                }
-                let parts: Vec<Piece> = parts.into_iter().zip(buried).filter(|&(_,b)| !b || !turn && some).map(|(part,_)| part).collect();
+                let parts: Vec<Piece> = parts.into_iter().filter(|part| {
+                    let out = buried_on(tool,size,&part.points,&[p.face],&screw);
+                    if crate::debug() { eprintln!("contacts: face {fi}'s part from {:?} to {:?}{}",part.points[0],part.points.last().unwrap(),if out { ", buried" } else { "" }) }
+                    !out
+                }).collect();
                 let whole = whole && parts.len() == 1;
                 let mut sheets: Vec<Carried> = Vec::new();
                 for part in &parts {
