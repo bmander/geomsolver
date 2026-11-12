@@ -148,7 +148,13 @@ impl SolidVerdict {
     }
 }
 
+/// Claim `c` measured on the drawing `sk` at the pose it stands in: a swept operand from its exact
+/// B-rep where this kernel builds one, as the drawing reads it (#615) — a copy re-placed along a
+/// roll, stood at an instant of a parameter or solved at a sample is a pose of the drawing too, and
+/// a placement's build is its source's, moved (#904 A11: a gear train stood at each sample meshed
+/// both gears' fields, minutes a pose, where their builds are made once).
 fn geometry(sk: &Sketch, c: &SolidClaim) -> Result<clear::GeometricEvidence, String> {
+    for i in [c.a as usize, c.b as usize] { crate::brep::export::supply_exact_of(sk, i) }
     clear::evaluate(sk, &c.requirement, c.a as usize, c.b as usize, crate::solid::REPORT_UNIT)
         .into_evidence()
 }
@@ -190,10 +196,7 @@ fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
     let exact = || {
         for i in [c.a as usize, c.b as usize] { crate::brep::export::supply_exact_of(sk, i) }
     };
-    let Some(sw) = &c.over else {
-        exact();
-        return Poses::Current;
-    };
+    let Some(sw) = &c.over else { return Poses::Current };
     let Some(m) = sw.motion() else {
         return if sw.is_declared() { stood(sk, sw.name()) } else { Poses::Solved };
     };

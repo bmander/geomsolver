@@ -340,10 +340,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   its points where the motion stands them (`GeometricEvidence::moved`).  The text says it under a
   claim refuted or undecided, the JSON (`nearest`) always.  `solid_claim.rs`'s
   `a_refuted_claim_names_the_faces_and_where`, `a_refuted_sweep_says_where_at_its_counterexample`.
-  **A swept operand is measured from its exact B-rep** where this kernel builds one and the
-  claim reads the drawing's pose (one pose, or a roll moving an operand rigidly): the judge
-  supplies it (`brep::export::supply_exact_of`) before reading, as a drawing reads an object's,
-  and meshes the field only for a build refused (#615).  A lone claim that cannot be measured
+  **A swept operand is measured from its exact B-rep** where this kernel builds one, at every
+  pose a claim reads (#615; #904 A11 for the last three): one pose, a roll moving an operand
+  rigidly, a copy re-placed along a roll, the drawing stood at an instant of a declared parameter
+  or solved at a sample of a free one.  The judge supplies it (`brep::export::supply_exact_of`,
+  `diagnose::solid_claims::geometry`) before reading, as a drawing reads an object's — a
+  placement's build its source's, built once and moved — and meshes the field only for a build
+  refused: a gear train stood at each sample meshed both gears' fields, minutes a pose.
+  `planar_subtraction.rs`'s
+  `a_claim_over_a_parameter_reads_the_cut_wheels_exact_build_at_every_sample`.  A lone claim that cannot be measured
   says why on its line (`— undecided: <reason>`, the solid named where its field would not
   mesh); "no solved valid poses" is a sweep's, whose poses are solved.  `planar_subtraction.rs`'s
   `a_claim_about_a_cut_wheel_reads_its_exact_build`, `solid_claim.rs`'s
