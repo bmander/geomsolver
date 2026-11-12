@@ -908,7 +908,8 @@ impl EvaluatedSolid {
     pub fn contains(&self, p: LocalPoint) -> bool {
         self.shape.csg.inside_indexed(p.0, self.ray_indices())
     }
-    fn ray_indices(&self) -> &[RayIndex] {
+    /// Its term's prims each indexed for the rays cast through it, in its order: made once.
+    pub(crate) fn ray_indices(&self) -> &[RayIndex] {
         let shape = &self.shape;
         shape.ray_indices.get_or_init(|| shape.csg.prims.iter().map(RayIndex::new).collect())
     }

@@ -29,16 +29,18 @@ pub use evidence::{
 /// features from paying for every pair of its faces.
 pub fn distance(a: &[Piece], b: &[Piece], acsg: &solid::Csg, bcsg: &solid::Csg, eps: f64) -> f64 {
     // Boundaries can be separated even when one solid contains the other.
-    overlap(acsg, bcsg, eps).map_or_else(|| boundary_gap(a, b).0, |(d, _, _)| d)
+    overlap(acsg, &ray_indices(acsg), bcsg, eps).map_or_else(|| boundary_gap(a, b).0, |(d, _, _)| d)
 }
 
 /// Negative common-material thickness: the diameter of the largest ball in A ∩ B.
 /// Unlike a pushed boundary sample, this is a geometric length, also for identical solids
 /// and crossings with no contained vertices. A Lipschitz branch-and-bound search supplies
 /// an explicit error interval when the common region is nonconvex or the work limit is hit.
-/// With it, the centre of the deepest ball found, where one was found inside both.
+/// With it, the centre of the deepest ball found, where one was found inside both.  `arays` are
+/// `acsg`'s prims indexed (`ray_indices`), memoised by the evaluated solid they are read from.
 fn overlap(
     acsg: &solid::Csg,
+    arays: &[solid::RayIndex],
     bcsg: &solid::Csg,
     eps: f64,
 ) -> Option<(f64, f64, Option<[f64; 3]>)> {
@@ -64,12 +66,8 @@ fn overlap(
     // the search asks the depth at thousands of points, each the nearest piece of the common
     // boundary and whether both solids hold it: both indexed, so a point costs the logarithm of a
     // gear's facets and not all of them (#904 A11) — the same nearest piece, the same crossings
-    let tree = crate::bvh::Bvh::new(common.iter().map(|p| {
-        let b = p.bbox_of();
-        crate::bvh::Bounds { lo: b.lo, hi: b.hi }
-    }));
-    let rays = |c: &solid::Csg| c.prims.iter().map(solid::RayIndex::new).collect::<Vec<_>>();
-    let (arays, brays) = (rays(acsg), rays(bcsg));
+    let tree = crate::bvh::Bvh::new(common.iter().map(piece_bounds));
+    let brays = ray_indices(bcsg);
     let signed = |x: [f64; 3]| {
         let d = std::cell::Cell::new(f64::INFINITY);
         let at = crate::bvh::Bounds { lo: x, hi: x };
@@ -77,7 +75,7 @@ fn overlap(
             d.set(d.get().min(point_to_piece(x, &common[k])));
         });
         let d = d.get();
-        if acsg.inside_indexed(x, &arays) && bcsg.inside_indexed(x, &brays) {
+        if acsg.inside_indexed(x, arays) && bcsg.inside_indexed(x, &brays) {
             d
         } else {
             -d
@@ -400,7 +398,7 @@ fn measure_pair(
             let (value, error, deepest) = if apart {
                 (gap, 0.0, None)
             } else {
-                overlap(ca, &cb, eps).unwrap_or((gap, 0.0, None))
+                overlap(ca, a.ray_indices(), &cb, eps).unwrap_or((gap, 0.0, None))
             };
             // where they meet, the faces nearest the deepest of it; else where they come closest
             let nearest = deepest
@@ -442,6 +440,17 @@ fn measure_pair(
     })
 }
 
+/// A piece's bounding box, as the hierarchies over pieces box it.
+fn piece_bounds(p: &Piece) -> crate::bvh::Bounds<3> {
+    let b = p.bbox_of();
+    crate::bvh::Bounds { lo: b.lo, hi: b.hi }
+}
+
+/// A term's prims each indexed for the rays cast through it, in its order.
+fn ray_indices(c: &solid::Csg) -> Vec<solid::RayIndex> {
+    c.prims.iter().map(solid::RayIndex::new).collect()
+}
+
 /// The least the two boundaries come to each other, ignoring which side of which they are on —
 /// what `fits` measures once containment has answered the sign — and the piece of each it is
 /// read between, with the nearest point of each.
@@ -451,14 +460,13 @@ fn measure_pair(
 /// one every pair would give, read in the logarithm of `b` (a rotor's thousand pieces against a
 /// housing's twelve thousand at every pose of a claim's sweep).
 fn boundary_gap(a: &[Piece], b: &[Piece]) -> (f64, Option<(usize, usize, [f64; 3], [f64; 3])>) {
-    let bounds = |q: &Piece| { let x = q.bbox_of(); crate::bvh::Bounds { lo: x.lo, hi: x.hi } };
-    let tree = crate::bvh::Bvh::new(b.iter().map(bounds));
+    let tree = crate::bvh::Bvh::new(b.iter().map(piece_bounds));
     let best = std::cell::Cell::new(f64::INFINITY);
     // the pair it is read between, and how squarely they face each other: of pairs as near, a
     // wall facing a wall is where a reader looks, not the cap whose edge is as near
     let pair = std::cell::Cell::new(None::<(usize, usize, f64, [f64; 3], [f64; 3])>);
     for (i, p) in a.iter().enumerate() {
-        let pb = bounds(p);
+        let pb = piece_bounds(p);
         tree.query_nearest(|q| q.gap(pb), || best.get(), |k| {
             if plane_apart(p, &b[k]) <= best.get() {
                 let (d, x, y) = piece_nearest(p, &b[k]);
