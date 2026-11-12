@@ -1105,11 +1105,11 @@ the tool to rising off it — read at 64 points along the piece and bisected to 
 sheet passes from sweeping only the inside to bounding, and its meeting with the posed tool leaves its
 rim there; cut there as a corner (`Singular`), the meeting's branch ends on the corner. Cut at a length
 instead, the spline bar's far contact left a buried stretch beside a bounding one and a sliver where
-they and the pose met that no membership read settled; a cut within a twentieth of the piece of a
-double point it ends at is not made (a sheet of no width beside the leaning torus's crossing). A
-closed spline's nearest point found at its seam is refined from the seam's other end too and the
-nearer kept (`nurbs::BSpline`): held at the seam,
-an extrusion's point beside it read a foot 0.07 off, and a spurious burial. **A meeting's end at a
+they and the pose met that no membership read settled. Two stretches with a buried one left out
+between them are not neighbours and are given no rail: given the one's end as both's, the leaning
+torus's sheets were given a path 0.48 off one of them. A closed spline's nearest point found at its
+seam is refined from the seam's other end too and the nearer kept (`nurbs::BSpline`): held at the
+seam, an extrusion's point beside it read a foot 0.07 off, and a spurious burial. **A meeting's end at a
 vertex the face's boundary holds takes that node's parameters** (`boolean`'s `FaceCut::internal`),
 where both are that point: at a sheet's corner where its two rates nearly agree the walked inverse
 stood 0.017 along the rim from the corner's own, and the meeting hung there, parting nothing. The

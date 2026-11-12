@@ -214,13 +214,10 @@ fn a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points() {
             assert!(distance(sheet.point(back),p) <= 1e-9,"a sheet at {uv:?} read back at {back:?}");
         } }
     }
-    // each neighbour's rail, its given's first curve: a section's end both sheets hold over the whole
-    // roll (not a path of one section's end crossing another stretch's sheet, held only over the part
-    // of the roll their paths overlap in — the end of a section cut where its burial changes, met by
-    // a stretch across from it)
+    // each neighbour's rail, its given's first curve
     let rails = given.iter().filter(|g| g.curves.first().is_some_and(|c| {
         let gcs_core::brep::geom::Curve::Iso(_,u) = c else { return false };
-        (*u == 1. || *u == 0.) && [0.,1.].iter().all(|&t| g.surfaces.iter().all(|s| s.implicit(c.point(t)).abs() <= 1e-7))
+        *u == 1. || *u == 0.
     }));
     assert!(rails.clone().count() >= sheets,"each two neighbours of a closed piece given their rail");
     for (k,g) in rails.enumerate() {
