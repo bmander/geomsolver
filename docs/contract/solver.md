@@ -521,10 +521,11 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   is torn only at all its numbers, as before.
   A seed of a place (`seed_param`, `meshing_seed`) is a grid search, and its last `SEEDS_KEPT`
   answers are remembered against their whole question (`infer::Recent`): the elaborator's passes
-  and a steered solve ask the same ones again.  The spiral bevel's face mill is the case: its pressure
-  shift and cutter radius are found by balancing undercut margins (`hypoid_machine.rs`); at a
-  ten-tooth pinion that balance has no root, and the solve runs to its iteration limit
-  (`at_a_ten_tooth_pinion_no_face_mill_balances_the_undercut` holds why, the mill stated).
+  and a steered solve ask the same ones again.  The spiral bevel's face mill was the case: its
+  pressure shift and cutter radius were found by balancing the profile radii of its flanks, and at
+  a ten-tooth pinion, where that balance had no root, the solve ran to its iteration limit; since
+  #904 the shift is found by tying two flanks' least area factors, and is found there too
+  (`hypoid_machine::the_pair_retargeted_finds_its_shift`).
 - **A pass through every block is polished in its own frames** (`blocks_then_polish`, #283): the
   constants it read last stand for the whole-system DogLeg that follows, since a point it held on
   a line turned since compiling is off that line by the turn in the compiled ones; they are put

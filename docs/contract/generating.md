@@ -295,7 +295,7 @@ slant from the slide with its part along the axis dropped — is an undercut, an
 the depth allowed, in millimetres, and the rack's shift, the teeth and the flank's end that clear
 it; a fold that is not one keeps E3's own words, which name the tool face whose generated surface
 folds (a crown's flank that undercuts its member: which blade to change, #904 A2;
-`at_no_offset_the_balanced_mill_undercuts_the_pinion_by_its_outer_blade`). `a_helical_racks_undercut_is_said_with_its_numbers`
+`hypoid_machine::at_no_offset_the_pinions_two_flanks_tie`). `a_helical_racks_undercut_is_said_with_its_numbers`
 (14 teeth at 25° refused so, 17 admitted). Building a leaned rack's undercut, as the planar
 subtraction class builds a spur rack's, is left open: its tooth is no prism square to the plane. Built in
 `gcs-cli/src/cad/native/sweep_boundary.rs`: cutters sectioned (`backend/sections.cpp`), contact
@@ -1543,7 +1543,8 @@ between two hit, by their length — at a fixed 0.3 mm the pair at 0.625 missed 
 0.24 mm tip, and a tie of face counts turned the walk the wrong way round the tooth. A cutter of
 revolutions' cut has a unit (`Tracer::unit`): the length of the faces that walk runs over at the
 band's middle station (`Loop::walked`) over `REFERENCE_WALK`, 13.7855 mm, the configured pinion's
-crown tooth's, where the construction's lengths were set (its unit is one). The rows' and columns'
+crown tooth's at the mill its balance of profile radii found, where the construction's lengths
+were set (at the mill its balance finds since #904 it walks 13.702 mm, a unit of 0.994). The rows' and columns'
 spacings and the trace's step, how far a curve first runs out of the blank, a fan's walk
 (`Loop::scaled`, `TURN_SCALE`), and the gross fit's distance, its local trust and how near the
 blank a withheld contact is held, are each that many times their constant. A stated tolerance stays
@@ -1553,11 +1554,11 @@ millimetres along it and a drafted prism's crease fan is laid when the cutter is
 (`CREASE_SCALE`). Moving the bar's cap off unit one moves `prism_caps`' and `bar_end.sv`'s volumes
 by up to 5e-6 either way (from 0.5 to 2 of it), past the 1e-6 and 2e-6 they are held to, so its
 scale waits on the fit's own scatter there. So the hypoid
-pair with every length scaled (its mill the balance finds there, `hint(40 * mean_module)` seeding
-it) is traced as the pair is, and built with the same faces
+pair with every length scaled (the cutter stated with the rest, the shift its balance finds the
+same) is traced as the pair is, and built with the same faces
 (`brep_export::the_pinion_scaled_is_built_as_the_pinion_is`, at 0.625;
 `each_member_of_the_pair_is_built_alike_at_every_scale`, slow;
-`hypoid_machine::the_face_mill_scaled_is_found_scaled`). What scaling no longer moves, resolution
+`hypoid_machine::the_face_mill_scaled_is_found_scaled`, slow). What scaling no longer moves, resolution
 still does, and the configured pinion's cut holds only near its own unit (open): traced at 0.97 or
 1.02 of it a station beside the blank finds no contact near its neighbour's, and at 0.95 or 1.05
 neither row placement fits within the gross bars — by walk length the fit turns 21° from contacts

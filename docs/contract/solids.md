@@ -79,10 +79,14 @@ statement can say yet. The cutter is not found: every margin grows with it from 
 design measured, so a balance of them has no root in it. The 12/24, 13/27, 16/32 (1.5 mm) and
 10/48 pairs balance (`hypoid_machine::the_pair_retargeted_finds_its_shift`). Each blade (`Blade`) is
 `std.sets.ConeThrough` with the side its cone opens to said, so its half reads the unknown shift as
-a number times it plus a number.  At the shift found the configured pinion's exact build is refused
-(the fitted sheet leaves its contacts by 0.155 mm and 89.7°) and its gear builds (291 faces), and
-both 12/24 members are refused so; the zero-offset pinion builds (243 faces);
-`brep_export.rs` holds the sectors at the recorded mill.  `fixtures::gear::configure`
+a number times it plus a number.  At the shift found the configured pinion is built by sectors,
+243 faces, its cut's sheet 69 × 39 (`hypoid_mill_sheet.rs`, the mill stated as
+`fixtures::gear::FOUND_MILL`; `brep_export::the_pinion_as_written_is_built_by_sectors`, solved as
+written, slow), and its gear with 291 faces; at 12/24 the pinion builds (111 faces) and the gear's
+fitted sheet is refused (0.105 mm and 62.9° from its contacts); the zero-offset pinion of the
+pinion's own tie builds (243 faces); `brep_export.rs` holds the sectors at the recorded mill too.
+A test that reads the configured pair for anything but its balance reads it at `FOUND_MILL`
+(`fixtures::gear::as_found`), so it does not wait on the balance's solve.  `fixtures::gear::configure`
 given a `pressure_shift` states it with the recorded cutter, 0.8 R, and drops the balance
 (`recorded_machine`): every recorded number was taken of a pair so cut.
 `tests/hypoid_machine.rs` is the gate. **No axial views** (#215): the
