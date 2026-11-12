@@ -61,22 +61,27 @@ tooth over (its space cutter's `neighbor` is the inner crown a crown pitch round
 `param`s at its head (`shaft_angle`, `offset`, E = 0 is bevel; `fixtures::gear::configure` sets
 them where the parser says their values stand); the pinion's cone solves against the gear's;
 members roll at `N_c / N`, written as tooth counts (`crown_teeth / pinion_teeth`), not `1 / sin`.
-**The face mill is found, not stated** (#283): `pressure_shift` and `cutter_radius` are formals of
-`HypoidPair` the call leaves to the solve, seeded (`hint(10deg)`, `hint(40 * mean_module)`: the seed scales with the pair, #904 A3), and `Balanced`
-finds them as a designer would — the generated flanks' undercut margins (each flank's radius of
-curvature in a section square to the trace, a module inside and outside the pitch, `Margins`)
-equal at the mean point, which sets the shift, and at the toe, which sets the cutter; a cutter no
-smaller than R (`gear.M distance(>= R) trace.C`), the root nearest the seeds (11.2527°, 75.6122
-mm; seeds far off reach another, 260 mm from 14°, 60 mm).  The balance weighs the pinion's
-inner-cut flank against the gear's outer-cut one, the pair that binds once the offset steepens the
-pinion's outer-cut flank; below 7 to 10 mm of offset too little does, and the shift it finds stands
-the outer blade so upright that it undercuts the pinion (at none, 11.68° and an 8.3° blade: E3
-refuses the pinion's cut on the crown's `outer` face, #904 A2;
-`hypoid_machine::at_no_offset_the_balanced_mill_undercuts_the_pinion_by_its_outer_blade`).  A
-balance that weighs the least margin each blade leaves either member is open.  Each blade (`Blade`) is
+**The face mill's shift is found, not stated** (#283, #904): `pressure_shift` is a formal of
+`HypoidPair` the call leaves to the solve, seeded (`hint(10deg)`); the cutter's radius is a stated
+input (`param cutter_radius := 75.6122mm`). `Balanced` reads the four flanks the two blades cut on
+the two members — each the envelope its blade generates, `pair.balance.pinion_inner`,
+`pinion_outer`, `gear_outer`, `gear_inner` — by their least area factors within their blanks
+(`regular`, what E3 judges), on the conjugate crowns ungrown and within the blanks before their
+end relief, each held from its fold (`regular(by: …) within …`, `>= 0`). It hands them out with
+their crowns and blanks as `pair.margins`, and the caller ties the two that bind by holding both
+to one unknown, the pair's formal `least` (`regular(pair.least, …)`, a margin reading an unknown,
+[0.213]): a hypoid's are the pinion's inner-cut flank and the gear's outer-cut (8.8549°, the least
+0.6767 at 24/48, 25 mm, the cutter as stated); with no offset it is the pinion's two flanks
+(−1.195°, 0.4231), and the hypoid's tie there leaves the pinion's outer-cut flank folded, a bound
+broken (`hypoid_machine::at_no_offset_the_pinions_two_flanks_tie`). Which two bind is the caller's
+to say: the maximin of four margins over the shift ties the least of each blade's two, which no
+statement can say yet. The cutter is not found: every margin grows with it from R to 4 R at every
+design measured, so a balance of them has no root in it. The 12/24, 13/27, 16/32 (1.5 mm) and
+10/48 pairs balance (`hypoid_machine::the_pair_retargeted_finds_its_shift`). Each blade (`Blade`) is
 `std.sets.ConeThrough` with the side its cone opens to said, so its half reads the unknown shift as
-a number times it plus a number.  At the found cutter the pinion's swept cut is built and agrees
-with its field, but its sheet is fitted as one face, not named by the cutter's (a follow-up);
+a number times it plus a number.  At the shift found the configured pinion's exact build is refused
+(the fitted sheet leaves its contacts by 0.155 mm and 89.7°) and its gear builds (291 faces), and
+both 12/24 members are refused so; the zero-offset pinion builds (243 faces);
 `brep_export.rs` holds the sectors at the recorded mill.  `fixtures::gear::configure`
 given a `pressure_shift` states it with the recorded cutter, 0.8 R, and drops the balance
 (`recorded_machine`): every recorded number was taken of a pair so cut.

@@ -217,8 +217,8 @@ degree above it the pinion is admitted and the bound holds, a tenth below the ad
 for a fold and the solve reports the bound broken. A margin of 0.3 solves the pressure shift to
 8.7824°, read back and sampled there. `jacobians::regularity_agrees_with_finite_differences` holds
 the Jacobian, the cone's half a column, at the solution and knocked off it. `hypoid.sv`'s
-`Balanced` is unchanged: it balances two members' osculating radii at two sections, a choice of
-settings, not a feasibility bound.
+`Balanced` reads the four flanks its two blades cut by this, and its caller ties two of them
+(solids.md, #904).
 
 **The pair stated as its meshing problem (#345 S4):** `spiral_bevel/meshing_problem.sv` is
 `formate.sv`'s pair with the gear's concave flank eased: the meshing reads the face mill's inner

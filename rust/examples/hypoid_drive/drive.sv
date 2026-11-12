@@ -32,13 +32,12 @@ param backlash := 0.05mm
 param tip_relief := 0.2mm
 param end_relief := 0.2mm
 param cutter_radius := 75.6122mm
-param least: Scalar hint(0.5)
 pair := HypoidPair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
   spiral_angle: spiral_angle, backlash: backlash, tip_relief: tip_relief, end_relief: end_relief,
-  pressure_shift: hint(10deg), cutter_radius: cutter_radius)
-pair.margins.pinion_inner regular(least, by: pair.margins.pinion_cut) within pair.margins.pinion
-pair.margins.gear_outer regular(least, by: pair.margins.gear_outer_cut) within pair.margins.gear
+  pressure_shift: hint(10deg), cutter_radius: cutter_radius, least: hint(0.5))
+pair.margins.pinion_inner regular(pair.least, by: pair.margins.pinion_cut) within pair.margins.pinion
+pair.margins.gear_outer regular(pair.least, by: pair.margins.gear_outer_cut) within pair.margins.gear
 
 // -- the drive ---------------------------------------------------------------------------------
 // One set of numbers serves both shafts. Along each, ordinates are from the foot of M on it, or

@@ -33,23 +33,21 @@ param end_relief := 0.2mm
 // The face mill's radius: a cutter is chosen, not found — the flanks' margins against undercut
 // grow with it, so no balance of them sets it (#904).
 param cutter_radius := 75.6122mm
-// The least margin against undercut, found with the shift (below).
-param least: Scalar hint(0.5)
 // The members are `pair.pinion.body` and `pair.gear.body`. The pressure shift is only seeded
 // (`hint`): the seed says where the search begins, never where it ends.
 pair := HypoidPair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
   spiral_angle: spiral_angle, backlash: backlash, tip_relief: tip_relief, end_relief: end_relief,
-  pressure_shift: hint(10deg), cutter_radius: cutter_radius)
+  pressure_shift: hint(10deg), cutter_radius: cutter_radius, least: hint(0.5))
 // The shift is found where the flanks nearest undercut, one cut by each blade, are equally far
 // from it: each flank's margin is its least area factor (`regular`), and the two that tie are each
-// held to one unknown, `least`. A hypoid's are the pinion's flank the inner blade cuts and the
+// held to one unknown, `pair.least`. A hypoid's are the pinion's flank the inner blade cuts and the
 // gear's the outer cuts; with too little offset to protect the pinion's other flank, that flank,
 // the pinion's outer, is the one that ties with its inner (`pair.margins.pinion_outer`, cut by
 // `pinion_cut`, in place of the gear's). Every flank is held from its fold, so a tie that leaves another folded is a bound
 // broken, never an undercut member.
-pair.margins.pinion_inner regular(least, by: pair.margins.pinion_cut) within pair.margins.pinion
-pair.margins.gear_outer regular(least, by: pair.margins.gear_outer_cut) within pair.margins.gear
+pair.margins.pinion_inner regular(pair.least, by: pair.margins.pinion_cut) within pair.margins.pinion
+pair.margins.gear_outer regular(pair.least, by: pair.margins.gear_outer_cut) within pair.margins.gear
 
 // -- the pair ----------------------------------------------------------------------------------
 // The steps a designer takes, each a component below, on the pitch plane P — the `std.top` of the
@@ -57,10 +55,12 @@ pair.margins.gear_outer regular(least, by: pair.margins.gear_outer_cut) within p
 // `up`, its `std.z`. The formals the call leaves out are unknowns: the normal module `mn`, which
 // the trace sets; the pinion's pitch radius at M, `rp`, and the bevel pinion's pitch angle, `pa`,
 // which the pinion's cone sets. The face mill's `pressure_shift` and `cutter_radius` are the
-// call's: stated, or left out and found by what the caller states over `margins`.
+// call's: stated, or left out and found by what the caller states over `margins` — with
+// `least`, the margin the flanks that bind are held to, which the pair itself reads nowhere.
 component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, shaft_angle: Angle,
     offset: Length, spiral_angle: Angle, backlash: Length, tip_relief: Length, end_relief: Length,
-    mn: Length, rp: Length, pa: Angle, pressure_shift: Angle, cutter_radius: Length) {
+    mn: Length, rp: Length, pa: Angle, pressure_shift: Angle, cutter_radius: Length,
+    least: Scalar) {
   // The proportions: the crown's tooth count (the hypotenuse of the gear's triangle, in teeth),
   // the mean cone distance R, and the depths in normal modules.
   crown_teeth := sqrt(pinion_teeth^2 + gear_teeth^2)

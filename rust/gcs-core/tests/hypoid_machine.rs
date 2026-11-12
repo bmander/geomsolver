@@ -331,3 +331,99 @@ fn the_gears_sheet_is_traced_at_every_phase_of_its_stations() {
         .filter_map(|(phase,sheet)| sheet.err().map(|r| format!("{phase:.3} degrees: {r}"))).collect();
     assert!(refused.is_empty(),"refused at {} of 11 phases: {refused:#?}",refused.len());
 }
+
+/// Each flank's margin against undercut as the pair reads it — its least area factor within its
+/// blank, the `>= 0` each flank is held to — by the flank's name in `pair.balance`.
+fn margins(e: &Elaborated) -> Vec<(String,f64)> {
+    use gcs_core::constraints::{Arg,CKind};
+    let sk = &e.sketch;
+    sk.constraints.iter().filter(|c| c.kind == CKind::RegularWithin && c.free.is_none()).map(|c| {
+        let Arg::Ent(f) = c.args[0] else { panic!("a regularity names its flank") };
+        let name = sk.envelopes[f.i()].name.trim_start_matches("pair.balance.").to_string();
+        (name,c.reading(sk).expect("a regularity reads its least area factor"))
+    }).collect()
+}
+
+/// The pinion's and the gear's sweeps admitted: each cut's least area factor (E3's).
+fn admitted(e: &Elaborated) -> [f64;2] {
+    use gcs_core::solid::admission::{admit_body,Options};
+    ["pinion","gear"].map(|m| {
+        let a = admit_body(&e.sketch,fixtures::solid(e,&format!("pair.{m}.body")),&Options::default())
+            .unwrap_or_else(|r| panic!("the {m} is refused: {r}"));
+        a.sweeps().iter().find(|s| s.name == format!("pair.{m}.cut.removal")).unwrap().least_area_factor
+    })
+}
+
+/// The pair's balance held: the two flanks it ties at `pair.least`, every flank no nearer its
+/// fold, and each member's cut admitted at the least margin, as E3 samples it.
+fn balanced(e: &Elaborated,label: &str,tied: [&str;2]) -> (f64,f64) {
+    let (shift,least) = (unknown(e,"pair.pressure_shift"),unknown(e,"pair.least"));
+    let read = margins(e);
+    eprintln!("{label}: the shift {shift:.6}°, the least margin {least:.6}: {read:?}");
+    assert_eq!(read.len(),4,"{label}: every flank the two blades cut is read");
+    for (name,m) in &read {
+        if tied.contains(&name.as_str()) {
+            assert!((m-least).abs() < 1e-9,"{label}: {name} reads {m} against {least}");
+        } else {
+            assert!(*m > least,"{label}: {name} reads {m}, nearer its fold than the tie, {least}");
+        }
+    }
+    let [pinion,gear] = admitted(e);
+    for (m,a) in [("pinion",pinion),("gear",gear)] {
+        assert!(a > 0. && a >= least-5e-3,"{label}: the {m}'s cut admitted at {a} against {least}");
+    }
+    (shift,least)
+}
+
+/// **The face mill's shift ties the flanks nearest undercut** (#904): with the cutter stated, the
+/// pressure shift is found where the pinion's flank the inner blade cuts and the gear's the outer
+/// cuts have one least area factor, `pair.least`, within their blanks; the pinion's other flank
+/// and the gear's stand further from their folds, and each member's cut is admitted at that
+/// least, as E3 samples it. As found here: 8.8549°, the least 0.6767.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: the balance solved and both cuts admitted")]
+fn the_shift_ties_the_flanks_nearest_undercut() {
+    let e = fixtures::gear::read_as_configured();
+    let (shift,least) = balanced(&e,"24/48",["pinion_inner","gear_outer"]);
+    assert!((shift-8.854877).abs() < 1e-4 && (least-0.676717).abs() < 1e-5,"{shift}° {least}");
+}
+
+/// **The pair re-targeted finds its shift** (#904 A1): at 12/24 (12.5 mm between the shafts),
+/// 13/27 (12 mm) and 16/32 at a 1.5 mm module (12 mm) — the issue's three, which the balance of
+/// profile radii had no root at — and at a ten-tooth pinion, the document as written finds the
+/// shift that ties the same two flanks, the others further from their folds, and both cuts are
+/// admitted.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 90 s: four pairs balanced and admitted")]
+fn the_pair_retargeted_finds_its_shift() {
+    for (teeth,module,offset) in [([12,24],2.,12.5),([13,27],2.,12.),([16,32],1.5,12.),([10,48],2.,25.)] {
+        let text = fixtures::gear::configure(&fixtures::gear::source(),&[("pinion_teeth",teeth[0].into()),
+            ("gear_teeth",teeth[1].into()),("mean_module",module),("offset",offset)]);
+        let label = format!("{}/{} m{module} E{offset}",teeth[0],teeth[1]);
+        let (shift,least) = balanced(&fixtures::gear::read(&text),&label,["pinion_inner","gear_outer"]);
+        assert!(shift > 0. && least > 0.5,"{label}: {shift}° {least}");
+    }
+}
+
+/// **At no offset the hypoid's tie is a bound broken, and the pinion's own tie cuts it** (#904
+/// A2): with no offset to protect it, the pinion's flank the outer blade cuts folds at the shift
+/// that ties the pinion's inner flank to the gear's outer (8.3°), and the solve says the bound is
+/// broken rather than cut an undercut pinion. Tied instead to the pinion's outer flank — the two
+/// flanks of the pinion, the pair that binds with no offset — the shift is −1.195°, every flank
+/// held from its fold, and the pinion's cut is admitted.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 5 min: the balance solved twice at no offset")]
+fn at_no_offset_the_pinions_two_flanks_tie() {
+    let text = fixtures::gear::configure(&fixtures::gear::source(),&[("offset",0.)]);
+    let mut e = fixtures::gear::unsolved(&text);
+    let r = gcs_core::solve::solve(&mut e.sketch,fixtures::accurate());
+    assert!(!r.success && r.status == gcs_core::solve::BOUND_BROKEN,"{r:?}");
+    let folded = margins(&e).into_iter().find(|(name,_)| name == "pinion_outer").unwrap().1;
+    assert!(folded < 0.,"the pinion's outer flank reads {folded}");
+    let tie = "pair.margins.gear_outer regular(pair.least, by: pair.margins.gear_outer_cut) within pair.margins.gear";
+    assert!(text.contains(tie),"the document ties the gear's outer flank");
+    let text = text.replace(tie,"pair.margins.pinion_outer regular(pair.least, by: pair.margins.pinion_cut) within pair.margins.pinion")
+        .replace("pressure_shift: hint(10deg)","pressure_shift: hint(0deg)");
+    let (shift,least) = balanced(&fixtures::gear::read(&text),"24/48 E0",["pinion_inner","pinion_outer"]);
+    assert!((shift+1.195399).abs() < 1e-4 && (least-0.423065).abs() < 1e-5,"{shift}° {least}");
+}
