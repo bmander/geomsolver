@@ -5,8 +5,10 @@
 //! point it draws: the document was one block of the part's layout and its placement, and the
 //! hypoid pair, its face mill balanced on envelopes, ran minutes and did not solve.  Solved alone
 //! where its frame stands, placed by its frame, and carried, it is seeded at its answer.
+use crate::common::at;
 use gcs_core::program::Elaborated;
 use gcs_core::solve::{bounds_hold, solve};
+use gcs_core::space::{dot, sub};
 use gcs_core::system::System;
 
 /// How far the elaborated drawing's rows are from holding, each over its own units: where the
@@ -16,14 +18,6 @@ fn off(e: &Elaborated) -> f64 {
     let z = sys.z0(&e.sketch);
     sys.max_relative_residual(&z)
 }
-
-/// Where the named point stands in space.
-fn at(e: &Elaborated, name: &str) -> [f64; 3] {
-    e.sketch.world_point(e.map.ent_named(name).unwrap_or_else(|| panic!("{name}")).i())
-}
-
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] { [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
 
 /// Two shafts at a right angle 17.5 apart, the second's axis found by the part's own rows
 /// (the primer's 2.13), placed by the first's axis and the second's square to a held direction.
@@ -117,11 +111,12 @@ fn placed(e: &Elaborated) {
 /// Before, the document came out of its one block in some fifteen seconds; now at once.
 #[test]
 fn the_hypoid_pair_is_mated_by_its_axes() {
-    let pair = "\
+    let [shift, cutter] = fixtures::gear::FOUND_MILL;
+    let pair = format!("\
 pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_angle: 90deg,
   offset: 25mm, spiral_angle: 25deg, backlash: 0.05mm, tip_relief: 0.2mm, end_relief: 0.2mm,
-  pressure_shift: 8.8549deg, cutter_radius: 75.6122mm)
-";
+  pressure_shift: {shift}deg, cutter_radius: {cutter}mm)
+");
     let mut e = fixtures::unsolved_in_examples(&format!("{HEAD}{pair}{MATE}"));
     assert!(off(&e) < 1e-6, "the seeds stand {} off", off(&e));
     placed(&e);
@@ -136,13 +131,14 @@ pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_ang
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 35 s: the pair's balance solved where the mate places it")]
 fn the_hypoid_pair_balanced_by_its_caller_is_mated_by_its_axes() {
-    let pair = "\
+    let cutter = fixtures::gear::FOUND_MILL[1];
+    let pair = format!("\
 pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_angle: 90deg,
   offset: 25mm, spiral_angle: 25deg, backlash: 0.05mm, tip_relief: 0.2mm, end_relief: 0.2mm,
-  pressure_shift: hint(10deg), cutter_radius: 75.6122mm, least: hint(0.5))
+  pressure_shift: hint(10deg), cutter_radius: {cutter}mm, least: hint(0.5))
 pair.margins.pinion_inner regular(pair.least, by: pair.margins.pinion_cut) within pair.margins.pinion
 pair.margins.gear_outer regular(pair.least, by: pair.margins.gear_outer_cut) within pair.margins.gear
-";
+");
     let mut e = fixtures::unsolved_in_examples(&format!("{HEAD}{pair}{MATE}"));
     assert!(off(&e) < 1e-6, "the seeds stand {} off", off(&e));
     let r = solve(&mut e.sketch, fixtures::accurate());

@@ -159,7 +159,7 @@ fn the_gears_sheet_is_traced_alike_in_a_frame_turned_to_the_pair() {
     assert_eq!((own.rows,own.columns),(turned.rows,turned.columns));
     // the frame `scaled_pair` turns the pair into, carrying a point of the pair's own frame there
     let (u,v) = (TURNED_U,TURNED_V);
-    let w = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    let w = gcs_core::space::cross(u,v);
     let carried = |p: V| -> V { std::array::from_fn(|k| TURNED_ORIGIN[k]+p[0]*u[k]+p[1]*v[k]+p[2]*w[k]) };
     let apart = own.points.iter().zip(&turned.points).map(|(&p,&q)| dist(carried(p),q)).fold(0.,f64::max);
     assert!(apart < 1e-6,"the sheets' points are {apart} mm apart");
