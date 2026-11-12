@@ -245,3 +245,34 @@ fn the_gears_tool_builds_in_a_frame_turned_to_the_pair() {
     let (own,turned) = (volume(false),volume(true));
     assert!((own-turned).abs() <= 1e-9*own,"{own} mm³ in its own frame, {turned} mm³ turned");
 }
+
+/// **Whether the gear builds exactly does not depend on where its pair stands** (#904 A4): the
+/// gear of `scaled_pair`, built by the kernel in the pair's own frame and in the frame turned to
+/// it, is the same solid. Its tool builds in both now
+/// (`the_gears_tool_builds_in_a_frame_turned_to_the_pair`), but the gear's cut is refused turned:
+/// "the candidate sheet cannot be widened out of the blank". A revolved cutter's stations are
+/// read every 3.75 degrees round its axis from a side chosen by a world axis
+/// (`brep::swept::cutter::Cutter::of_boundary`), so a turn of the pair moves that grid against the
+/// cutter; and the sheet traced over the stations is refused at four of eleven phases of the grid
+/// within one step of it, in either frame: past the blank, at the row after its last contact
+/// there, a column's contact time leaps, the rows are trimmed back to before the leap
+/// (`swept::trace::charted`), the sheet's edge stays in the blank however far its margins widen.
+#[test]
+#[ignore = "fails today: the gear's traced sheet is refused at some phases of the cutter's station grid, which a world axis sets (#904 A4); about 40 s"]
+fn the_gear_builds_alike_in_a_frame_turned_to_the_pair() {
+    use gcs_core::brep::{export,sweep::Say};
+    let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let built = |turned: bool| {
+        let mut e = fixtures::unsolved(&scaled_pair(turned),&mut fixtures::beside(&examples,&mut |_,t| t));
+        assert!(gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default()).success);
+        let say = Say {stage:&|_| {},mark:&|_| {}};
+        export::exact(&e.sketch,fixtures::solid(&e,"pair.gear.body"),None,None,&say)
+            .map(|x| (x.solid.faces.len(),gcs_core::brep::props::volume(&x.solid))).map_err(|r| r.message)
+    };
+    let (own,turned) = (built(false),built(true));
+    let (Ok((faces,volume)),Ok((turned_faces,turned_volume))) = (&own,&turned) else {
+        panic!("in its own frame {own:?}, turned {turned:?}")
+    };
+    assert_eq!(faces,turned_faces);
+    assert!((volume-turned_volume).abs() <= 1e-9*volume,"{volume} mm³ in its own frame, {turned_volume} mm³ turned");
+}
