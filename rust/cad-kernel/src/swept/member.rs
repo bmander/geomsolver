@@ -68,7 +68,7 @@ impl Solid {
     fn exact_at(&self,p: V) -> Option<f64> {
         let (faces,scale) = self.exact.as_ref()?;
         let q = p.map(|x| x*scale);
-        Some(faces.iter().map(|(s,sign)| sign*s.implicit(q)).fold(f64::NEG_INFINITY,f64::max)/scale)
+        Some(greatest(faces,q)/scale)
     }
 
     /// How many triangles the boundary is meshed in.
@@ -156,34 +156,37 @@ impl Solid {
 /// points over its box; `None` for any other tool, read off its mesh.
 fn exactly(b: &Brep,boundary: &[V]) -> Option<Vec<(crate::geom::Surface,f64)>> {
     use crate::geom::Surface;
-    if b.faces.is_empty() { return None }
     let mut faces: Vec<(Surface,f64)> = Vec::new();
     for f in &b.faces {
         if !matches!(f.surface,Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..)) { return None }
         // the sign that reads the face's outward side positive, at a point of the face
-        let p = f.loops.iter().flatten().next().map(|c| b.edges[c.edge as usize].point(0.5*(b.edges[c.edge as usize].t[0]+b.edges[c.edge as usize].t[1]),&b.vertices))?;
+        let p = f.loops.iter().flatten().next().map(|c| { let e = &b.edges[c.edge as usize]; e.point(0.5*(e.t[0]+e.t[1]),&b.vertices) })?;
         let n = f.outward(p)?;
         let g = f.surface.gradient(p);
         let sign = if crate::util::space::dot(n,g) < 0. { -1. } else { 1. };
         if !faces.iter().any(|(s,k)| *s == f.surface && *k == sign) { faces.push((f.surface.clone(),sign)) }
     }
-    let at = |p: V| faces.iter().map(|(s,k)| k*s.implicit(p)).fold(f64::NEG_INFINITY,f64::max);
-    let slack = 1e-6*(1.+b.size());
-    if boundary.iter().any(|&p| at(p) > slack) { return None }
+    let size = b.size();
+    let slack = 1e-6*(1.+size);
+    if boundary.iter().any(|&p| greatest(&faces,p) > slack) { return None }
     // held to the tool's point location over its box grown by a quarter
-    let located = crate::query::Located::new(b,1e-9*(1.+b.size()));
+    let located = crate::query::Located::new(b,1e-9*(1.+size));
     let (lo,hi) = b.bounds();
     let grow = 0.25*crate::util::space::distance(lo,hi);
     let mut rng = crate::util::rng::Rng::new(0x7001);
-    let size = b.size();
     for _ in 0..512 {
-        let p: V = std::array::from_fn(|k| lo[k]-grow+(hi[k]-lo[k]+2.*grow)*rng.uniform(0.,1.));
-        let m = at(p);
-        if m.abs() <= 1e-6*size { continue }
+        let p: V = std::array::from_fn(|k| rng.uniform(lo[k]-grow,hi[k]+grow));
+        let m = greatest(&faces,p);
+        if m.abs() <= slack { continue }
         let inside = match located.solid_place(p) { crate::query::Place::In => true,crate::query::Place::Out => false,crate::query::Place::On => continue };
         if inside != (m < 0.) { return None }
     }
     Some(faces)
+}
+
+/// The greatest of the faces' signed distances at `p`, each turned to read outward (`exactly`).
+fn greatest(faces: &[(crate::geom::Surface,f64)],p: V) -> f64 {
+    faces.iter().map(|(s,sign)| sign*s.implicit(p)).fold(f64::NEG_INFINITY,f64::max)
 }
 
 /// Why a point's membership is not settled: it stands within the mesh's sag of the swept boundary

@@ -469,65 +469,58 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<(f64,
     let a = &blend.a;
     let at = |u: f64,v: f64| blend.carry.at(a.point(u),v);
     let f = |u: f64,v: f64| surface.implicit(at(u,v));
-    // `F`'s value and rate at the rim read exactly — its value, and its gradient along the carry's own
-    // velocity (`Carry::rate`) — and its second and third derivatives by differences of that rate a
-    // hundred-thousandth of the roll apart: within that, `h` its Taylor series' `c₂ + c₃ w`; beyond,
-    // `F` less its value and rate, over `w²`, and between the series passing smoothly into it — each
-    // read where its rounding is least, and the two one function. (By five-point differences of `F`
-    // a thousandth of the roll apart, the rate took the series' fifth-order truncation: on the leaning
-    // torus, where the carry moves a point a tenth of a millimetre in that step past a tube of radius
-    // 2 and `F`'s cubic term is two thousand times its square's, `c₁` read 2.7e-5 for its own 1e-8,
-    // and `h`'s zero set beside the rim stood that much times `w` off the tool — 4e-8 at the kernel's
-    // tolerance, which the check refused.)
+    // **`h`, `F` over its root along the rim**: `F = (v − e) h` where the section crosses the face
+    // simply (an edge's fan on either of its faces), `F = (v − e)² h` on the face it lies on — `F` less
+    // its value and rate at the rim, `c₀` and `c₁`, over `w`'s power, the two read exactly (`F` there,
+    // and its gradient along the carry's own velocity, `Carry::rate`); and within a hundred-thousandth
+    // of the roll of the rim its series, its terms by differences of that rate, passing smoothly into
+    // it, so the two are one function (one jumping to the other made a sign change of its own along the
+    // rail). Five-point differences of `F` a thousandth of the roll apart took the series' truncation
+    // into the rate: on the leaning torus, whose carry moves a point a tenth of a millimetre in that
+    // step past a tube of radius 2, 2.7e-5 for its own 1e-8, and the branch beside the rim stood 4e-8
+    // off the tool. **A branch is settled on `F` less a share of `c₀ + c₁ w`** over `w`'s power: all
+    // of it within a step of the rim, where that is `h`; none past four steps, where its zero set is
+    // `F`'s; and between, a share falling smoothly, one zero set carried from the one into the other.
+    // Settled on `h` within the step and on `F` past it, a branch had its points between two curves
+    // that part at the step's edge by the rim's value and rate over `w²` and `h`'s slope, past a tenth
+    // of the kernel's tolerance; the fit chased them until four thousand nodes stood in a span
+    // (`fitted`: two of the leaning torus's branches, the build twice as long)
     const STEP: f64 = 1e-3;
     const SERIES: f64 = 1e-5;
+    // all of a share within `lo` of the rim, none past `hi`, a smoothstep between
+    let fall = |w: f64,lo: f64,hi: f64| { let x = ((w.abs()-lo)/(hi-lo)).clamp(0.,1.); 1.-x*x*(3.-2.*x) };
     let rate = |u: f64,v: f64| { let q = at(u,v); crate::util::space::dot(surface.gradient(q),blend.carry.rate(q)) };
-    let taylor = |u: f64,e: f64| -> [f64;4] {
-        let (r0,r1,m1) = (rate(u,e),rate(u,e+SERIES),rate(u,e-SERIES));
-        [f(u,e),r0,(r1-m1)/(4.*SERIES),(r1-2.*r0+m1)/(6.*SERIES*SERIES)]
-    };
-    // (a section crossing the face simply, an edge's fan on either of its faces: `F = (v − e) h`, `h` its
-    // value less `c₀` over `v − e`, and `c₁ + c₂ w` within the step)
-    // (the series within half its step, `F`'s own form past it, and between, the one passing smoothly
-    // into the other: they part by the series' truncation there, and a branch crossing where one
-    // jumped to the other had its points between two curves, which the fit chased)
-    let h = |u: f64,v: f64| -> f64 {
-        let Some((e,order)) = touch else { return f(u,v) };
-        let [c0,c1,c2,c3] = taylor(u,e);
+    let rim = |u: f64| touch.map_or([0.;2],|(e,_)| [f(u,e),rate(u,e)]);
+    // at `u` (the section's point there, `p`) and `v`, `F` less `share` of the rim's value and rate `c`
+    // over `w`'s power, the series within its step
+    let over = |u: f64,p: V,v: f64,[c0,c1]: [f64;2],share: f64| -> f64 {
+        let f = surface.implicit(blend.carry.at(p,v));
+        let Some((e,order)) = touch else { return f };
         let w = v-e;
-        let series = if order == 1 { c1+c2*w } else { c2+c3*w };
-        let own = || if order == 1 { (f(u,v)-c0)/w } else { (f(u,v)-c0-c1*w)/(w*w) };
-        if w.abs() <= 0.5*SERIES { return series }
-        if w.abs() >= SERIES { return own() }
-        let x = (w.abs()-0.5*SERIES)/(0.5*SERIES);
-        let mu = 1.-x*x*(3.-2.*x);
+        let own = || (f-share*(c0+if order == 1 { 0. } else { c1*w }))/w.powi(order as i32);
+        let mu = fall(w,0.5*SERIES,SERIES);
+        if mu == 0. { return own() }
+        let (r1,m1) = (rate(u,e+SERIES),rate(u,e-SERIES));
+        let series = if order == 1 { c1+w*(r1-m1)/(4.*SERIES) } else { (r1-m1)/(4.*SERIES)+w*(r1-2.*c1+m1)/(6.*SERIES*SERIES) };
+        if mu == 1. { return series }
         mu*series+(1.-mu)*own()
     };
-    // **what a branch is settled on**: `h` within a step of the rim, `F`'s zero set beyond four, and
-    // between, `F` less a share of the rim's value and rate that falls smoothly from all of it to none
-    // (`λ`, a smoothstep) — one zero set carried from `h`'s into `F`'s. Settled on `h` within the step
-    // and on `F` past it, a branch crossing the step's edge had its points between two curves that
-    // part there by the rim's value and rate over `w²` and `h`'s slope, a hair at 1e-5 and past a
-    // tenth of the kernel's tolerance; the fit chased them, its nodes stepping back and forth across
-    // that hair until four thousand stood in a span (`fitted`: two of the leaning torus's branches,
-    // the build twice as long)
-    let k = |u: f64,v: f64| -> f64 {
-        let Some((e,order)) = touch else { return f(u,v) };
-        let w = v-e;
-        if w.abs() < STEP { return h(u,v) }
-        let x = ((w.abs()-STEP)/(3.*STEP)).min(1.);
-        let share = 1.-x*x*(3.-2.*x);
-        if share == 0. { return f(u,v)/if order == 1 { w } else { w*w } }
-        let [c0,c1,..] = taylor(u,e);
-        if order == 1 { return (f(u,v)-share*c0)/w }
-        (f(u,v)-share*(c0+c1*w))/(w*w)
+    let h = |u: f64,v: f64| over(u,a.point(u),v,rim(u),1.);
+    let k = |u: f64,v: f64| {
+        let share = touch.map_or(0.,|(e,_)| fall(v-e,STEP,4.*STEP));
+        over(u,a.point(u),v,if share > 0. { rim(u) } else { [0.;2] },share)
     };
     // the grid: as many cells each way as its sides' lengths in space ask, 64 at least
     let length = |p: &dyn Fn(f64) -> V| (0..32).map(|k| distance(p(k as f64/32.),p((k+1) as f64/32.))).sum::<f64>();
     let (lu,lv) = (length(&|u| at(u,0.5)),length(&|v| at(0.5,v)));
     let n = [(lu,lv),(lv,lu)].map(|(x,y)| 64usize.max((64.*x/y.max(1e-300)).min(256.) as usize));
     let node = |i: usize,j: usize| -> Uv { [i as f64/n[0] as f64,j as f64/n[1] as f64] };
-    let values: Vec<Vec<f64>> = crate::util::par::indices(n[0]+1,|i| (0..=n[1]).map(|j| { let p = node(i,j); h(p[0],p[1]) }).collect());
+    // (the section's point and the rim's value and rate read once a column)
+    let values: Vec<Vec<f64>> = crate::util::par::indices(n[0]+1,|i| {
+        let u = node(i,0)[0];
+        let (p,c) = (a.point(u),rim(u));
+        (0..=n[1]).map(|j| over(u,p,node(i,j)[1],c,1.)).collect()
+    });
     let mut roots: Vec<Uv> = Vec::new();
     let mut root_on = |p: Uv,q: Uv,fp: f64,fq: f64| -> Option<usize> {
         if (fp < 0.) == (fq < 0.) || !fp.is_finite() || !fq.is_finite() { return None }
@@ -544,8 +537,9 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<(f64,
         let apart = du.hypot(dv);
         if !(apart > 0.) { return true }
         let d = 1e-6;
-        let slope = (h(c[0]+du/apart*d,c[1]+dv/apart*d)-h(c[0],c[1]))/d;
-        apart <= 4.*(h(c[0],c[1])/slope).abs()
+        let hc = h(c[0],c[1]);
+        let slope = (h(c[0]+du/apart*d,c[1]+dv/apart*d)-hc)/d;
+        apart <= 4.*(hc/slope).abs()
     };
     let mut links: Vec<[usize;2]> = Vec::new();
     for i in 0..n[0] { for j in 0..n[1] {
@@ -1017,9 +1011,9 @@ pub fn fan_runs(tool: &Brep,e: usize,[f1,f2]: [usize;2],twist: &Twist) -> Vec<[f
     // where the fan's sign turns, each root of one of the two faces' `n · v` on the edge
     // (the face whose `n · v` turns over the bracket, the bracket's root of it)
     let root = |a: f64,b: f64| {
-        let side = |f: usize| move |t: f64| normal(f,c.point(t));
-        let (g1,g2) = (side(f1),side(f2));
-        let g: &dyn Fn(f64) -> f64 = if (g1(a) < 0.) != (g1(b) < 0.) { &g1 } else { &g2 };
+        let (ga,gb) = (normal(f1,c.point(a)),normal(f1,c.point(b)));
+        let f = if (ga < 0.) != (gb < 0.) { f1 } else { f2 };
+        let g = |t: f64| normal(f,c.point(t));
         crate::util::roots::bracketed_root(|t: f64| Some(g(t)),a,g(a),b,g(b),1e-14*(1.+t1.abs()))
     };
     let mut runs: Vec<[f64;2]> = Vec::new();
@@ -1031,11 +1025,27 @@ pub fn fan_runs(tool: &Brep,e: usize,[f1,f2]: [usize;2],twist: &Twist) -> Vec<[f
     }
     if let Some(a) = start { runs.push([a,t1]) }
     // a closed edge's run through its seam is one
-    if edge.v[0] == edge.v[1] && runs.len() > 1 && runs[0][0] == t0 && runs[runs.len()-1][1] == t1 {
+    if edge.closed() && runs.len() > 1 && runs[0][0] == t0 && runs[runs.len()-1][1] == t1 {
         let last = runs.pop().unwrap();
         runs[0] = [last[0],runs[0][1]+(t1-t0)];
     }
     runs
+}
+
+/// **The sharp edges of `tool`**, each with its two faces: an edge between two faces whose outward
+/// normals part at its middle (S2). Refused at the middle of an edge where a face has no normal.
+pub fn sharp_edges(tool: &Brep) -> Result<Vec<(usize,[usize;2])>,V> {
+    let uses = tool.uses();
+    let mut sharp = Vec::new();
+    for (e,edge) in tool.edges.iter().enumerate() {
+        if matches!(edge.curve,crate::topo::EdgeCurve::Degenerate) { continue }
+        let [(f1,..),(f2,..)] = uses[e][..] else { continue };
+        if f1 == f2 { continue }
+        let mid = edge.point(0.5*(edge.t[0]+edge.t[1]),&tool.vertices);
+        let (Some(n1),Some(n2)) = (tool.faces[f1].outward(mid),tool.faces[f2].outward(mid)) else { return Err(mid) };
+        if crate::util::space::dot(n1,n2) < 1.-1e-9 { sharp.push((e,[f1,f2])) }
+    }
+    Ok(sharp)
 }
 
 /// **The candidates of the closed solid `tool` sweeps under the constant twist `path` over `roll`**,
@@ -1048,17 +1058,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),super::closed::Unbuilt> {
     use super::closed::Unbuilt;
     let screw = path.screw().ok_or(Unbuilt::Motion)?;
-    // the sharp edges, each with its two faces: an edge between two faces not smooth there
-    let uses = tool.uses();
-    let mut sharp: Vec<(usize,usize,usize)> = Vec::new();
-    for (e,edge) in tool.edges.iter().enumerate() {
-        if matches!(edge.curve,crate::topo::EdgeCurve::Degenerate) { continue }
-        let [(f1,..),(f2,..)] = uses[e][..] else { continue };
-        if f1 == f2 { continue }
-        let mid = edge.point(0.5*(edge.t[0]+edge.t[1]),&tool.vertices);
-        let (Some(n1),Some(n2)) = (tool.faces[f1].outward(mid),tool.faces[f2].outward(mid)) else { return Err(Unbuilt::Curved {at:mid}) };
-        if crate::util::space::dot(n1,n2) < 1.-1e-9 { sharp.push((e,f1,f2)) }
-    }
+    let sharp = sharp_edges(tool).map_err(|at| Unbuilt::Curved {at})?;
     let twist = screw.twist();
     let located = Located::new(tool,tol);
     let mut out = Vec::new();
@@ -1096,24 +1096,23 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     // Each such stretch of it, its ends where one face's contact reaches the edge, carried over the
     // roll: its section the edge itself, fitted through points of it, crossing each of its two faces
     // posed at an end of the roll along the rim, simply
-    for &(e,f1,f2) in &sharp {
+    for &(e,[f1,f2]) in &sharp {
         let edge = &tool.edges[e];
         let crate::topo::EdgeCurve::Curve(c) = &edge.curve else { continue };
         let runs = fan_runs(tool,e,[f1,f2],&twist);
         let [t0,t1] = edge.t;
-        let closed = edge.v[0] == edge.v[1];
-        let whole = closed && runs.len() == 1 && runs[0] == [t0,t1];
+        let whole = edge.closed() && runs.len() == 1 && runs[0] == [t0,t1];
+        // (a run through a closed edge's seam reads past `t1` into its start)
+        let at = |t: f64| c.point(if t > t1 { t-(t1-t0) } else { t });
+        let between = |a: Uv,b: Uv| { let t = 0.5*(a[0]+b[0]); ([t,0.],at(t)) };
         for run in runs {
-            let at = |t: f64| c.point(if t > t1 { t-(t1-t0) } else { t });
-            let m = 64;
-            let ts: Vec<f64> = (0..=m).map(|k| run[0]+(run[1]-run[0])*k as f64/m as f64).collect();
+            let ts: Vec<f64> = (0..=64).map(|k| run[0]+(run[1]-run[0])*k as f64/64.).collect();
             let piece = Piece {face:f1,uv:ts.iter().map(|&t| [t,0.]).collect(),points:ts.iter().map(|&t| at(t)).collect(),
                 ends:[End::Boundary,End::Boundary],closed:whole};
             let parts = stretches(&piece,tool.size(),&screw);
             let one = parts.len() == 1;
             let (n,first) = (parts.len(),carried_all.len());
             for (k,part) in parts.iter().enumerate() {
-                let between = |a: Uv,b: Uv| { let t = 0.5*(a[0]+b[0]); ([t,0.],at(t)) };
                 let nodes: Vec<(Uv,V)> = part.uv.iter().zip(&part.points).map(|(&u,&p)| (u,p)).collect();
                 let curve = fitted(nodes,&between,tol).ok_or_else(|| Unbuilt::Failed("an edge's fan not fitted".into()))?;
                 let next = if k+1 < n { Some(first+k+1) } else if whole && n > 1 { Some(first) } else { None };

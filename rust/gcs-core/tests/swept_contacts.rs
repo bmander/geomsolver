@@ -372,19 +372,15 @@ fn a_rod_grooved_by_a_leaning_torus_screwed_along_it_is_its_volume() {
     use gcs_core::brep::boolean::{combined,Op};
     use gcs_core::brep::swept::contacts::candidates;
     use gcs_core::brep::swept::trim::{trimmed,Trim};
-    use gcs_core::brep::trajectory::Trajectory;
-    let tool = leaning_torus();
-    let path = Trajectory::Twist(rod_screw());
-    let roll = [(-108f64).to_radians(),348f64.to_radians()];
+    let Case {blank:rod,tool,path,roll,bar,volume:known,..} = torus_case();
     let size = tool.size();
-    let rod = prism(&disc([0.;3],[0.,0.,1.],5.),0.,20.).unwrap();
     for tol in [TOL,0.1*TOL] {
         let (cands,given) = candidates(&tool,&path,roll,tol).unwrap();
-        let (swept,_) = trimmed(&tool,&path,roll,&cands,&given,0.01,tol,Trim {resolution:size/32.,hair:4.*tol})
+        let (swept,_) = trimmed(&tool,&path,roll,&cands,&given,bar,tol,Trim {resolution:size/32.,hair:4.*tol})
             .unwrap_or_else(|e| panic!("the sweep trimmed to {tol:e}: {e:?}"));
         let grooved = combined(&rod,&swept,Op::Cut,tol).unwrap();
         let volume = gcs_core::brep::props::volume(&grooved);
-        assert!((volume-1460.6300031715).abs() <= 10.*tol,"to {tol:e}, the grooved rod's volume {volume}, apart from the build 1460.6300031715");
+        assert!((volume-known).abs() <= 10.*tol,"to {tol:e}, the grooved rod's volume {volume}, apart from the build {known}");
     }
 }
 
@@ -396,26 +392,20 @@ fn a_rod_grooved_by_a_leaning_torus_screwed_along_it_is_its_volume() {
 /// hundred times finer than the stretches; and each tool has a stretch.
 #[test]
 fn a_sharp_edges_fan_is_in_contact_between_its_faces_contacts() {
-    use gcs_core::brep::swept::contacts::fan_runs;
+    use gcs_core::brep::swept::contacts::{fan_runs,sharp_edges};
     use gcs_core::brep::topo::EdgeCurve;
-    let drum_screw = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:1.};
-    for (what,tool,screw) in [("the V wheel",v_wheel(),rod_screw()),("the drum",drum_case().tool,drum_screw)] {
-        let twist = screw.twist();
-        let uses = tool.uses();
+    for Case {what,tool,path,..} in [v_wheel_case(),drum_case()] {
+        let twist = path.screw().unwrap().twist();
         let mut stretches = 0;
-        for (e,edge) in tool.edges.iter().enumerate() {
+        for (e,[f1,f2]) in sharp_edges(&tool).unwrap() {
+            let edge = &tool.edges[e];
             let EdgeCurve::Curve(curve) = &edge.curve else { continue };
-            let [(f1,..),(f2,..)] = uses[e][..] else { continue };
-            if f1 == f2 { continue }
             let [t0,t1] = edge.t;
-            let mid = curve.point(0.5*(t0+t1));
-            let (n1,n2) = (tool.faces[f1].outward(mid).unwrap(),tool.faces[f2].outward(mid).unwrap());
-            if gcs_core::space::dot(n1,n2) > 1.-1e-9 { continue }
             let at = |t: f64| curve.point(if t > t1 { t-(t1-t0) } else { t });
             let nv = |f: usize,t: f64| { let p = at(t); gcs_core::space::dot(tool.faces[f].outward(p).unwrap(),twist.velocity(p)) };
             let speed = |t: f64| gcs_core::space::norm(twist.velocity(at(t)));
             let runs = fan_runs(&tool,e,[f1,f2],&twist);
-            let closed = edge.v[0] == edge.v[1];
+            let closed = edge.closed();
             for run in &runs {
                 for t in *run {
                     if !closed && (t == t0 || t == t1) { continue }

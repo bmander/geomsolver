@@ -161,12 +161,12 @@
 //! L2: its screwed sheet's meetings with the faces holding it at an end pose, and with a ball's pipe,
 //! not yet in closed form); under a slide a torus's face leaning to its axis that is neither a whole
 //! ring nor a band between smooth seams — a band meeting a neighbour in a sharp rim among them, its
-//! fan not entered here (#810; the contact's road below builds it) — or a band whose contact crosses both its seams, or a whole ring's
-//! whose inner contour folds (by name, `Folded`); a free-form face, a curve no line
-//! or circle, a leaning edge under a
-//! screw; under any other motion a tool no convex solid of revolution, a contact whose pieces change
-//! over the roll, a sheet folding or coming back onto itself (`Folded`, `Returns`) — is refused by
-//! what it is (`Unbuilt`); those are the design's later steps.
+//! fan not entered here (#810) — or a band whose contact crosses both its seams, or a whole ring's
+//! whose inner contour folds (by name, `Folded`); a free-form face, a curve no line or circle, a
+//! leaning edge under a screw; under any other motion a tool no convex solid of revolution, a
+//! contact whose pieces change over the roll, a sheet folding or coming back onto itself
+//! (`Folded`, `Returns`) — is refused by the closed class by what it is (`Unbuilt`), and under a
+//! constant twist a `Curved` refusal is asked of the contact's road below.
 //!
 //! **Under a constant twist, what the closed class refuses as `Curved` goes the contact's road**
 //! (#880 Q1b, `contacts_road`): each face's contact and each sharp edge's fan in stretches, carried
@@ -307,7 +307,8 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
 /// the sweep, and the blank's boundary with the swept cells the result (`boolean::selection`). No
 /// closed solid is built and then subtracted: the blank and the sweep's candidates are one
 /// arrangement, classified once — the closed solid is the same arrangement over a box, its cells
-/// kept where they are members. A sweep missing the blank leaves it whole.
+/// kept where they are members. A sweep missing the blank leaves it whole. (The contact's road,
+/// `contacts_road`, is the exception: its closed solid is trimmed alone and then cut from the blank.)
 pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
     built(tool,path,roll,bar,tol,Some(blank))
 }
@@ -663,15 +664,12 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         // contact carried over the roll and the end poses, trimmed by membership (`contacts`, `trim`)
         // and cut from the blank — or refused as the closed class refused it, where the contact's road
         // refuses it too (a face in contact all over, a meeting it does not close)
-        Err(curved @ Unbuilt::Curved {..}) if path.screw().is_some() => match contacts_road(tool,path,roll,bar,tol,blank) {
-            Ok(b) => Ok(b),
-            // (the road refusing too, the closed class's refusal stands: the first thing it does not
-            // read, and where)
-            Err(why) => {
-                if crate::debug() { eprintln!("swept: the contact's road refused too: {why:?}") }
-                Err(curved)
-            }
-        },
+        // (the road refusing too, the closed class's refusal stands: the first thing it does not
+        // read, and where)
+        Err(curved @ Unbuilt::Curved {..}) if path.screw().is_some() => contacts_road(tool,path,roll,bar,tol,blank).or_else(|why| {
+            if crate::debug() { eprintln!("swept: the contact's road refused too: {why:?}") }
+            Err(curved)
+        }),
         built => built,
     }
 }
