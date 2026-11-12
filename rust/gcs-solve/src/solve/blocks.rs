@@ -105,7 +105,8 @@ impl System {
                 bounded: sk.constraints.iter().any(|c| c.bound.is_some() && c.kind.steers())
                     || !sk.orientations.is_empty(),
                 contacts: holds_contacts(sk),
-                searches: holds_searches(sk),
+                searched: sk.constraints.iter().filter(|c| is_searched(c)).map(|c| c.id)
+                    .collect(),
                 search: None,
                 solved: std::collections::BTreeSet::new(),
                 nfev: 0,
@@ -120,7 +121,9 @@ impl System {
                 // nothing until the rest of its block is placed, so whole it comes to no root, and
                 // every start its root is searched from asks the search afresh, far from any
                 // answer it has (#904)
-                let ok = if (pass.contacts || pass.searches) && self.finds_numbers(sk, b) {
+                let ok = if (pass.contacts || !pass.searched.is_empty())
+                    && self.finds_numbers(sk, &pass.searched, b)
+                {
                     self.torn(sk, &mut pass, z, b, true, opts)
                         || self.pass_block(sk, &mut pass, z, b, opts)
                 } else {
@@ -418,15 +421,19 @@ impl System {
     }
 
     /// Whether block `b` holds both an unknown number the drawing declares and the place of a
-    /// contact on an envelope or a meshing, or a row a search reads (`is_searched`).
-    fn finds_numbers(&self, sk: &Sketch, b: &SolveBlock) -> bool {
+    /// contact on an envelope or a meshing, or a row a search reads: one of the constraints
+    /// `searched` (`Pass::searched`).
+    fn finds_numbers(
+        &self,
+        sk: &Sketch,
+        searched: &std::collections::BTreeSet<u32>,
+        b: &SolveBlock,
+    ) -> bool {
         use crate::constraints::Arg;
         let col = |q: u32| col_among(&self.col_of, &b.cols, q).is_some();
         if !sk.free_vars.values().any(|&q| col(q)) {
             return false;
         }
-        let searched: std::collections::BTreeSet<u32> =
-            sk.constraints.iter().filter(|c| is_searched(c)).map(|c| c.id).collect();
         sk.constraints.iter().any(|c| {
             is_contact(c.kind) && c.args.iter().any(|a| matches!(a, Arg::Param(q) if col(*q)))
         }) || b.instances.iter().any(|&(kb, i)| searched.contains(&self.blocks[kb].cids[i]))
@@ -746,8 +753,9 @@ struct Pass {
     framed: bool,
     bounded: bool,
     contacts: bool,
-    /// Whether the drawing holds a row a search reads (`holds_searches`).
-    searches: bool,
+    /// The ids of the constraints stating a row a search reads (`is_searched`): the drawing
+    /// holds one (`holds_searches`) where it is not empty.
+    searched: std::collections::BTreeSet<u32>,
     search: Option<Search>,
     solved: std::collections::BTreeSet<usize>,
     nfev: i32,
@@ -785,13 +793,12 @@ pub(super) fn holds_searches(sk: &Sketch) -> bool {
 /// within its blank (`envelope::regular`), the worst point over the flank's place — and so reads
 /// nothing where the drawing its search reads is not yet placed (#904).  A bound states no row.
 fn is_searched(c: &crate::constraints::Constraint) -> bool {
-    c.kind == crate::constraints::CKind::RegularWithin && c.states_rows()
+    c.kind.searched() && c.states_rows()
 }
 
 /// Whether a constraint of kind `kind` holds a point to an envelope in space or to a meshing.
 fn is_contact(kind: crate::constraints::CKind) -> bool {
-    use crate::constraints::CKind;
-    matches!(kind, CKind::PointOnEnvelope | CKind::PointOnMeshing)
+    kind.envelope_contact().is_some() || kind.meshing_contact().is_some()
 }
 
 /// The column parameter `q` is solved in, where that is one of `cols` (sorted).
