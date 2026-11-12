@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.9.0] - 2026-11-12
+
 - **A sheet's meeting with the tool beside the rim it touches is read off the rim's exact rate**
   (`swept::contacts`): the rate across the rim was read by five-point differences of the distance
   a thousandth of the roll apart, and on a tool whose carry moves far in that step took the series'
