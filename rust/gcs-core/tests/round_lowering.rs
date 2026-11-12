@@ -596,17 +596,25 @@ fn a_round_a_slot_cuts_ends_on_the_slots_sides() {
     exported(&e, "bracket.body");
 }
 
-/// A refusal deep in an export (#881) is said at the document's statement that made the solid it
-/// names: a round's piece, at its round (`program::refusal_site`), not by its path through
-/// `std.rounds`' words (`b.#26.0.#….filled`).  A pin through the crease ends the run on a
-/// cylinder its section reaches past, which no construction builds yet.
-#[test]
-fn a_refused_rounds_piece_is_said_at_its_round() {
+/// `bracket.sv` with `cut` spliced in before its round, its slots left out.
+fn bracket_cut_by(cut: &str) -> String {
     let src = include_str!("../../examples/rounds/bracket.sv");
     let slots = src.find("  // a slot along the foot").unwrap();
     let round = src.find("  body.foot round").unwrap();
-    let src = format!("{}  pin := Post(x: 6mm, y: 0mm, d: 1mm, z0: -1mm, z1: 7mm)\n  pin.body cut body\n{}",
-        &src[..slots], &src[round..]);
+    format!("{}{cut}{}", &src[..slots], &src[round..])
+}
+
+/// A refusal deep in an export (#881) is said at the document's statement that made the solid it
+/// names: a round's piece, at its round (`program::refusal_site`), not by its path through
+/// `std.rounds`' words (`b.#26.0.#….filled`).  A short slot across the crease, along it, ends
+/// each run on one of its round ends, which its section reaches past — into the slot between
+/// them, where neither run's end is the other's — which no construction builds yet.
+#[test]
+fn a_refused_rounds_piece_is_said_at_its_round() {
+    let src = bracket_cut_by("  slot := Block(x0: 5.5mm, x1: 6.5mm, y0: -1mm, y1: 1mm, z0: -1mm, z1: 7mm)\n  \
+        slot.body cut body\n  \
+        near := Post(x: 6mm, y: -1mm, d: 1mm, z0: -1mm, z1: 7mm)\n  near.body cut body\n  \
+        far := Post(x: 6mm, y: 1mm, d: 1mm, z0: -1mm, z1: 7mm)\n  far.body cut body\n");
     let e = solved(&src);
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     let why = export::exact(&e.sketch, ent(&e, "bracket.body").i(), None, None, &say).err().expect("refused").message;
@@ -616,6 +624,64 @@ fn a_refused_rounds_piece_is_said_at_its_round() {
     assert_eq!(src.lines().nth(line as usize - 1).map(str::trim), Some("body.foot round(r: r) body.plate"));
     // a message naming no solid is placed nowhere
     assert!(gcs_core::program::refusal_site(&e.sketch, &e.map, &e.program, "nothing named").is_none());
+}
+
+/// **A run a curved face cuts across, its section passing it by** (#904 A8): a pin 1 across
+/// through the crease of `bracket.sv` (no slots) cuts the edge in two, and only the section's
+/// lines within half a unit of the plate's face meet the pin.  Each run ends on the pin alone,
+/// so the two are one run over the whole edge, kept outside the pin's surface — what the field
+/// reads, each point within the ends of the run nearest it: the bracket and the round's section
+/// along its 40, less the pin through the body (whole in the foot, half above it) and the chord
+/// `2√(¼ − u²)` it takes of the round at depth `u` from the plate's face over the section's height
+/// `h(u) = 3 − √(6u − u²)` there (`u = ½ sin² φ` makes it smooth for Simpson).
+#[test]
+fn a_run_a_pin_cuts_across_is_one_run_kept_outside_it() {
+    let e = solved(&bracket_cut_by("  pin := Post(x: 6mm, y: 0mm, d: 1mm, z0: -1mm, z1: 7mm)\n  pin.body cut body\n"));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "bracket.body");
+    let r = 3.0;
+    let taken = crate::brep::simpson(0.0, PI / 2.0, 4000, |phi: f64| {
+        let (s, c) = (phi.sin(), phi.cos());
+        let u = 0.5 * s * s;
+        let chord = 2.0 * c * (0.5 * (0.5 + u)).sqrt();
+        let h = r - s * (0.5 * (6.0 - u)).sqrt();
+        chord * h * s * c
+    });
+    let pin = PI * 0.25 * (6.0 + 0.5);
+    close(props::volume(&b), 6.0 * 40.0 * 60.0 + 22.0 * 40.0 * 6.0 + (1.0 - PI / 4.0) * r * r * 40.0 - pin - taken);
+}
+
+/// **A round between cylinders on skew axes** (#904 A8): a boss about a line square to a case's
+/// axis and 15.63 off it, wider than the case reaches past it, so its end stands out of the case
+/// in a sliver, and a bore through the boss breaking out of the case's skin in front of that end.
+/// The round is a ball rolled along the saddle where the two cylinders meet, and a run along each
+/// straight edge where the boss's end meets the case — two, the bore cutting across between them
+/// and only some of the section's lines meeting it, so one run kept outside the bore.  Built, and
+/// held to the field by the gate; each of its parts adds to the body.
+#[test]
+fn a_round_between_cylinders_on_skew_axes_is_built() {
+    let doc = |round: &str| format!("unit mm\nuse std\nuse std.sets\nuse std.solids (cut, union)\n\
+        use std.rounds (round)\n\
+        o := point\nfix((0mm, 0mm, 0mm)) o\nyb := point\nfix((0mm, 10mm, 0mm)) yb\n\
+        construction axis_y := line(o, yb)\n\
+        foot := point\nfix((0mm, 0mm, -15.63mm)) foot\ntip := point\nfix((-10mm, 0mm, -15.63mm)) tip\n\
+        construction pin := line(foot, tip)\n\
+        case_set := {{ q | q in std.sets.Cylinder(axis_y, r: 41mm)\n    \
+            o distance(in: (-40mm, 40mm), along: axis_y) q }}\n\
+        construction case_outer := solid(case_set)\n\
+        boss_set := {{ q | q in std.sets.Cylinder(pin, r: 28mm)\n    \
+            foot distance(in: (6mm, 60mm), along: pin) q }}\n\
+        construction boss := solid(boss_set)\n\
+        bore_set := {{ q | q in std.sets.Cylinder(pin, r: 25.5mm)\n    \
+            foot distance(in: (5mm, 57mm), along: pin) q }}\n\
+        construction bore := solid(bore_set)\n\
+        part := solid(case_outer)\nboss union part\nbore cut part\n{round}\n");
+    let volume = |round: &str| props::volume(&exported(&solved(&doc(round)), "part"));
+    let all = volume("part.boss round(r: 4mm) part.case_outer");
+    let saddle = volume("repeat f in part.boss { repeat g in part.case_outer { when f != part.boss.boss_set {\n  \
+        f round(r: 4mm) g } } }");
+    let bare = volume("");
+    assert!(bare < saddle && saddle < all, "{bare} {saddle} {all}");
 }
 
 /// The same within a curved face: a D-shaped shaft (a round of 10 about its axis with a flat 6
