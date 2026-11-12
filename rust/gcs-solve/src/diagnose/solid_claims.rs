@@ -154,9 +154,16 @@ impl SolidVerdict {
 /// a placement's build is its source's, moved (#904 A11: a gear train stood at each sample meshed
 /// both gears' fields, minutes a pose, where their builds are made once).
 fn geometry(sk: &Sketch, c: &SolidClaim) -> Result<clear::GeometricEvidence, String> {
-    for i in [c.a as usize, c.b as usize] { crate::brep::export::supply_exact_of(sk, i) }
+    supply(sk, c);
     clear::evaluate(sk, &c.requirement, c.a as usize, c.b as usize, crate::solid::REPORT_UNIT)
         .into_evidence()
+}
+
+/// Claim `c`'s operands supplied their exact B-reps where this kernel builds them: a swept operand
+/// is measured from its exact B-rep, as the drawing reads it, and from its field only where the
+/// build is refused, for the field's mesher may fail on a body that builds exactly (#615).
+fn supply(sk: &Sketch, c: &SolidClaim) {
+    for i in [c.a as usize, c.b as usize] { crate::brep::export::supply_exact_of(sk, i) }
 }
 
 /// How the claim in hand is judged, pose by pose: what it read once, before its first pose.
@@ -190,12 +197,6 @@ enum Poses {
 /// What the claim in hand reads once, before its first pose.
 fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
     use crate::model::SolidDef;
-    // a swept operand read at the drawing's pose is measured from its exact B-rep, as the drawing
-    // reads it, and from its field only where the build is refused: the field's mesher may fail
-    // on a body that builds exactly (#615)
-    let exact = || {
-        for i in [c.a as usize, c.b as usize] { crate::brep::export::supply_exact_of(sk, i) }
-    };
     let Some(sw) = &c.over else { return Poses::Current };
     let Some(m) = sw.motion() else {
         return if sw.is_declared() { stood(sk, sw.name()) } else { Poses::Solved };
@@ -223,7 +224,7 @@ fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
     let Some((a_moves, at)) = rigid else { return Poses::Replaced { scratch: sk.clone(), placed } };
     let policy = crate::solid::ApproximationPolicy::from_unit(crate::solid::REPORT_UNIT);
     let read = || -> Result<Poses, String> {
-        exact();
+        supply(sk, c);
         let family = crate::motion::Family::read(sk, m as usize)?;
         let home = family.at(at)?.inverse();
         let (a, b) = (sk.evaluated_solid(a, policy)?, sk.evaluated_solid(b, policy)?);
