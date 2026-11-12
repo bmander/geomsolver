@@ -1993,7 +1993,10 @@ loft := solid({ p | some q in square, r in octagon: p in std.sets.Segment(q, r) 
 
 Where `X` is a ball about one bound point it is that set grown: `{ p | some q in
 std.sets.Segment(a, b): p distance(<= 2mm) q }` is a capsule.  A join is read where each set is the
-hull of finitely many points: a point, a segment, a convex polygon drawn as a face, another join.
+hull of finitely many points: a point, a segment, a convex polygon drawn as a face, a solid of
+planes meeting in convex edges (a box joined to a point over it is a house), another join.  The
+join is a word like any: `component Join(A: set, B: set) := { p | some q in A, r in B: p in
+std.sets.Segment(q, r) }` makes an octahedron of a square and its axis, a frustum of two squares.
 Anything else — another relation, an L-shaped face, a set bounded by a curve — is refused saying
 which, and so is a `some` outside the set of a solid (`x in …` of a drawn `x`).  One `some` binds
 every point: `some q in A, r in B:`, never one `some` inside another.

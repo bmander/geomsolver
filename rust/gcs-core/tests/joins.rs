@@ -177,3 +177,101 @@ fn a_joins_field_is_measured() {
             read.as_secs_f64() * 1e6 / n as f64, started.elapsed(), x.brep.faces.len());
     }
 }
+
+/// What the language says with the join, beyond the cases it was made for: a reusable word, an
+/// octahedron (a square on its corners joined to its axis), a prismatoid (that square joined to a
+/// smaller one turned a quarter from it, 12 above), an oblique prism (two triangles, each a
+/// segment joined to a point), written across lines.
+const WORDS: &str = "unit mm\nuse std\nuse std.sets\n\
+    component Join(A: set, B: set) := { p | some q in A, r in B: p in std.sets.Segment(q, r) }\n\
+    s0 := point\ns1 := point\ns2 := point\ns3 := point\ntop := point\nbottom := point\n\
+    fix((10, 0, 0)) s0\nfix((0, 10, 0)) s1\nfix((-10, 0, 0)) s2\nfix((0, -10, 0)) s3\n\
+    fix((0, 0, 10)) top\nfix((0, 0, -10)) bottom\n\
+    s01 := std.sets.Segment(s0, s1)\ns23 := std.sets.Segment(s2, s3)\naxis := std.sets.Segment(top, bottom)\n\
+    sides := Join(s01, s23)\n\
+    octahedron := solid(Join(sides, axis))\n\
+    b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
+    fix((4, 4, 12)) b0\nfix((-4, 4, 12)) b1\nfix((-4, -4, 12)) b2\nfix((4, -4, 12)) b3\n\
+    roof := { x | some u in std.sets.Segment(b0, b1),\n  v in std.sets.Segment(b2, b3):\n  x in std.sets.Segment(u, v) }\n\
+    prismatoid := solid({ p | some q in Join(s01, s23), r in roof:\n  p in std.sets.Segment(q, r) })\n\
+    t0 := point\nt1 := point\nt2 := point\nu0 := point\nu1 := point\nu2 := point\n\
+    fix((0, 0, 30)) t0\nfix((10, 0, 30)) t1\nfix((0, 8, 30)) t2\nfix((4, 3, 40)) u0\nfix((14, 3, 40)) u1\nfix((4, 11, 40)) u2\n\
+    low := { x | some u in std.sets.Segment(t0, t1): x in std.sets.Segment(u, t2) }\n\
+    high := { x | some u in std.sets.Segment(u0, u1): x in std.sets.Segment(u, u2) }\n\
+    prism := solid(Join(low, high))\n";
+
+/// **The join is a word, and remixes**: written once as a component, it makes an octahedron, a
+/// prismatoid (one operand the word, the other a set across lines; `h (A₁ + A₂ + 4 A_m) / 6`, its
+/// middle section the two squares' Minkowski mean, of area `(200 + 2 · 160 + 64) / 4`) and an
+/// oblique prism — each to its closed form, built exactly.
+#[test]
+fn the_join_is_a_word_that_makes_other_polytopes() {
+    let e = solved(WORDS);
+    for (name, faces, v) in [("octahedron", 8, 4000.0 / 3.0), ("prismatoid", 10, 12.0 / 6.0 * (200.0 + 64.0 + 4.0 * 146.0)),
+                             ("prism", 5, 40.0 * 10.0)] {
+        let x = exact(&e, name);
+        assert_eq!(x.brep.faces.len(), faces, "{name}");
+        close(name, volume(&x.brep), v);
+    }
+}
+
+/// A box 20 × 12 × 6 on the top plane, a peak 8 over its top, and an L.
+const SOLIDS: &str = "unit mm\nuse std\nuse std.sets\nuse std.solids\nin std.top {\n\
+    k0 := point\nk1 := point\nk2 := point\nk3 := point\n\
+    fix((0, 0)) k0\nfix((20, 0)) k1\nfix((20, 12)) k2\nfix((0, 12)) k3\n\
+    (f0 := line(k0, k1)) -> (f1 := line(k1, k2)) -> (f2 := line(k2, k3)) -> (f3 := line(k3, k0)) -> close\n\
+    plate := face(f0, f1, f2, f3)\n\
+    l0 := point\nl1 := point\nl2 := point\nl3 := point\nl4 := point\nl5 := point\n\
+    fix((40, 0)) l0\nfix((60, 0)) l1\nfix((60, 10)) l2\nfix((50, 10)) l3\nfix((50, 20)) l4\nfix((40, 20)) l5\n\
+    (g0 := line(l0, l1)) -> (g1 := line(l1, l2)) -> (g2 := line(l2, l3)) -> (g3 := line(l3, l4)) -> \
+    (g4 := line(l4, l5)) -> (g5 := line(l5, l0)) -> close\n\
+    ell := face(g0, g1, g2, g3, g4, g5)\n}\n\
+    construction box := solid(std.solids.Prism(plate, from: 0mm, to: 6mm))\n\
+    construction step := solid(std.solids.Prism(ell, from: 0mm, to: 6mm))\n\
+    peak := point\nfix((10, 6, 14)) peak\nspire := point\nfix((45, 5, 14)) spire\n\
+    house := solid({ p | some q in box: p in std.sets.Segment(peak, q) })\n\
+    rounded := solid({ p | some q in box: p distance(<= 2mm) q })\n\
+    tower := solid({ p | some q in step: p in std.sets.Segment(spire, q) })\n";
+
+/// **A solid is a set a join reads**: a box joined to a point over it is a house, walls and roof
+/// in one, the hull of the box's corners and the peak; a ball about some point of the box is the
+/// box grown (`Grown`'s set, Steiner's); an L is refused by name, its hull another set.
+#[test]
+fn a_join_of_a_convex_solid_is_its_corners_hull() {
+    let e = solved(SOLIDS);
+    let x = exact(&e, "house");
+    assert_eq!(x.brep.faces.len(), 9);
+    close("house", volume(&x.brep), 20.0 * 12.0 * 6.0 + 20.0 * 12.0 * 8.0 / 3.0);
+    let (a, b, c, r) = (20.0, 12.0, 6.0, 2.0);
+    let steiner = a * b * c + 2.0 * (a * b + b * c + c * a) * r + PI * r * r * (a + b + c) + 4.0 / 3.0 * PI * r.powi(3);
+    close("rounded", volume(&exact(&e, "rounded").brep), steiner);
+    let why = MaterialField::read(&e.sketch, ent(&e, "tower").i(), 1e-10).err().unwrap_or_default();
+    assert!(why.contains("every edge convex"), "{why}");
+}
+
+/// **Joins combine as solids do**: two tetrahedra, one turned through the other, united — the
+/// stella octangula, twice 72 less the octahedron they share — and the same union said with `or`
+/// in one set's body, read by the field within the box of both; and the bench's grown tetrahedron
+/// as its description writes it, a ball about some point of the join.
+#[test]
+fn joins_combine_as_solids_do() {
+    let src = "unit mm\nuse std\nuse std.sets\nuse std.solids (union)\n\
+        component Join(A: set, B: set) := { p | some q in A, r in B: p in std.sets.Segment(q, r) }\n\
+        a := point\nb := point\nc := point\nd := point\n\
+        fix((3, 3, 3)) a\nfix((3, -3, -3)) b\nfix((-3, 3, -3)) c\nfix((-3, -3, 3)) d\n\
+        a2 := point\nb2 := point\nc2 := point\nd2 := point\n\
+        fix((-3, -3, -3)) a2\nfix((-3, 3, 3)) b2\nfix((3, -3, 3)) c2\nfix((3, 3, -3)) d2\n\
+        ab := std.sets.Segment(a, b)\ncd := std.sets.Segment(c, d)\n\
+        ab2 := std.sets.Segment(a2, b2)\ncd2 := std.sets.Segment(c2, d2)\n\
+        t1 := Join(ab, cd)\nt2 := Join(ab2, cd2)\n\
+        one := solid(t1)\nother := solid(t2)\nother union one\n\
+        star := solid({ p | p in t1 or p in t2 })\n\
+        construction tet := solid(Join(ab, cd))\n\
+        grown := solid({ p | some q in tet: p distance(<= 1mm) q })\n";
+    let e = solved(src);
+    let united = e.sketch.exact_solid(ent(&e, "one").i()).unwrap();
+    close("united", volume(&united.brep), 2.0 * 72.0 - 36.0);
+    let f = MaterialField::read(&e.sketch, ent(&e, "star").i(), 1e-10).unwrap();
+    assert!(f.side([2.0, 2.0, 2.0]) < 0.0 && f.side([-2.0, -2.0, -2.0]) < 0.0 && f.side([0.0, 0.0, 4.0]) > 0.0);
+    close("grown", volume(&exact(&e, "grown").brep), 249.53323018738044);
+}

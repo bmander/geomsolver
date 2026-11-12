@@ -6,7 +6,8 @@
 //! quickhull on the exact orientation test (`brep::build::hull`).  An operand is read as those
 //! points where its set says it is one: a point of the drawing; a set holding one point (a ball
 //! of no radius); a segment (on a line, its ordinate along it bounded at both ends); a drawn
-//! polygon whose corners turn one way; or another join.  Anything else — a set with a curved
+//! polygon whose corners turn one way; a solid every face of which is a plane and every edge
+//! convex, its corners; or another join.  Anything else — a set with a curved
 //! boundary, a polygon turning both ways, a set unbounded along its line — is refused by name, for
 //! the hull of its corners would be another set.
 //!
@@ -76,6 +77,25 @@ fn set_corners(sk: &Sketch, terms: &[RegionTerm], out: &mut Vec<V>, depth: usize
     let at = |t: &RegionTerm| t.lo.read(sk);
     let at_nothing = |t: &RegionTerm| at(t) == Some(0.0)
         && (t.cmp == Cmp::Le || (t.cmp == Cmp::In && t.hi == Some(0.0)));
+    // a solid of planes meeting in convex edges: the hull of its corners
+    if let [t] = terms {
+        if let RegionShape::FaceSide { face } = &t.shape {
+            if !at_nothing(t) || face.surface || face.smooth {
+                return Err(refused());
+            }
+            let r = crate::solid::faces::reading(sk, face, &mut Vec::new())?;
+            let (b, _, _) = r.body.brep();
+            let whole = r.faces.len() == b.faces.len();
+            let planes = (0..b.faces.len()).all(|f| r.body.plane(f).is_some());
+            let convex = (0..b.edges.len() as u32).all(|e| r.body.faces_of(e).len() != 2 || r.body.convex(e) == Some(true));
+            if !(whole && planes && convex) {
+                return Err("a join of a solid is read where every face of it is a plane and every edge \
+                    convex: the hull of its corners is then the solid".to_string());
+            }
+            out.extend(b.vertices.iter().map(|v| r.body.back(v.p)));
+            return Ok(());
+        }
+    }
     // another join
     if let [t] = terms {
         if let RegionShape::Join { of } = &t.shape {

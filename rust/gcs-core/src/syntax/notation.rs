@@ -685,7 +685,7 @@ impl Lowering<'_> {
     /// (`P::points`).  One quantifier binds every point: a body that is another is refused.
     fn points(&mut self, i: usize, out: &mut Vec<T>) -> usize {
         let t = self.t;
-        let end = statement_end(t, i);
+        let mut end = statement_end(t, i);
         let shape = "`some` binds points of sets before the membership it reads them in: `some q \
             in A, r in B: p in Segment(q, r)`";
         out.push(t[i].clone());
@@ -708,10 +708,19 @@ impl Lowering<'_> {
             out.push(ident(lowered, at));
             out.extend(x);
             out.push(t[x1].clone());
+            // the quantifier runs on past a line break after a binder's `,` or its `:`, as a
+            // list in parentheses does: the breaks dropped, so the parser reads one statement
+            let mut next = x1 + 1;
+            while matches!(t.get(next).map(|x| &x.0), Some(Tok::Nl)) {
+                next += 1;
+            }
+            if next > x1 + 1 {
+                end = statement_end(t, next);
+            }
             if punct(t, x1, ',') {
-                k = x1 + 1;
+                k = next;
             } else if punct(t, x1, ':') {
-                k = x1 + 1;
+                k = next;
                 break;
             } else {
                 self.fail(t[x1].1, shape);

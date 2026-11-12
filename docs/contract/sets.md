@@ -315,10 +315,13 @@ membership's (`inside`, or `coincident` with a face or a boundary) and the body 
 (`syntax::notation::points`); the parser (`P::points`) declares each binder a private construction
 point of the body with its membership of its set beside it, both held in the text of the relation
 they bind (`Chained::InPlace`), which carries them (`OpArg::Some`) so the printer writes the
-quantifier back.  The flattener registers each binder, in every round before any statement is
+quantifier back; the quantifier runs on past a line break after a binder's `,` or its `:`, as a list
+in parentheses does (the notation drops the breaks).  The flattener registers each binder, in every round before any statement is
 read (`sets::register_binders`: a binder's membership stands before the relation binding it), as
 a probe with its quantifier and the set's point its relation reads (`Expansion::binders`; where
-sets nest, another quantifier's binder), and applies the binders' memberships and the
+sets nest, another quantifier's binder) — a named instance of a component binding any keeps its
+body whole as the set (`instance_part`), since the binders and their memberships, which read
+nothing of the set's point, are each use's — and applies the binders' memberships and the
 relation **held** (`binding`), as a set measured from is (#192); a `some` whose set's point is no
 probe — a drawn point's, outside a solid's set — is E040.  At a binder a point on a line with no
 number is a term at nothing (`PointOnLine3`, a segment's own), since the set a binder ranges over
@@ -335,17 +338,23 @@ distance from its set (`RegionShape::Measured`), the set grown; anything else is
 once: the solid it was refused in is not refused again for want of a term (`Probes::refused`).
 A join is read where each operand is the hull of finitely many points (`solid::joined`: a point of
 the drawing, a set of one point, a segment — on a line, its ordinate along it bounded at both ends
-— a drawn polygon of lines with no hole whose corners turn one way, or another join), the hull of
+— a drawn polygon of lines with no hole whose corners turn one way, a solid every face of which is
+a plane and every edge convex (its corners), or another join), the hull of
 them all by the kernel's quickhull (`brep::build::hull`): its field the most any of the hull's
 planes stands below the point — the signed distance within, a lower bound without, one-Lipschitz
 — each plane a support plane of the region; anything else is refused by name, for the hull of its
 corners would be another set.  The `Bounded` route builds a join exactly as that hull, kept within
 or taken away at nothing (the recipe's `hull` node, its faces named by the term's set), gated by
 the field as every route is; grown or shrunk by a number it is the field's.
-`tests/joins.rs` is the gate: a tetrahedron the join of two opposite edges (its volume, area and
+Within a union said with `or` (the outside of a set of outsides), a join's set — several
+statements, so outside it is a complement — is bounded, turned round, by its own terms
+(`general::field_of`'s `Outside`).  `tests/joins.rs` is the gate: a tetrahedron the join of two opposite edges (its volume, area and
 field, and grown by 1 to brep-bench's offset/tetrahedron-grown), brep-bench's square-to-octagon
 transition a join of joins to its closed forms, a pyramid the join of its apex and a drawn face,
-a capsule a ball about some point of a segment, and each refusal.  The experiment the syntax
+a capsule a ball about some point of a segment, the join as a component making an octahedron, a
+frustum and an oblique prism, a house the join of a box and a point (an L refused), a box rounded
+by a ball about some point of it, two joins united and said with `or`, the bench's grown tetrahedron
+as a ball about some point of the join, and each refusal.  The experiment the syntax
 waited for — the cases before and after, what a join's field costs against its half-spaces', and
 what is left (a relation read by searching every bound point; joins of curved sets, by support
 functions) — is [some-points-of-sets.md](../some-points-of-sets.md).

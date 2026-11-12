@@ -60,6 +60,39 @@ has an exact field and an exact boundary the kernel already builds. The support-
 is the next step for curved operands; until then a join of a set bounded by a curve is refused by
 name.
 
+## Taken for a spin
+
+Is this a description of one solid or a language? After the cases above, the same syntax was
+tried on solids it was not made for, each through `solventc` and each checked against an
+independent closed form or hull (`tests/joins.rs`):
+
+| written | read as | |
+|---|---|---|
+| `component Join(A: set, B: set) := { p \| some q in A, r in B: p in Segment(q, r) }` | a word: `solid(Join(ab, cd))` | 72, the tetrahedron |
+| `Join(sides, axis)`, `sides` a square as a join | an octahedron | 1333.33, 8 faces |
+| a square on its corners joined to a smaller square turned a quarter, 12 above | a prismatoid | 1696, 10 faces |
+| a triangle joined to the same triangle moved aslant (each a segment joined to a point) | an oblique prism | 400 |
+| `some q in box: p in Segment(peak, q)`, `box` a solid | a house: walls and roof in one | 2080, 9 faces |
+| `some q in box: p distance(<= 2mm) q` | the box rounded (`Grown`'s set, so built exactly) | Steiner's, 26 faces |
+| `some q in tet: p distance(<= 1mm) q`, `tet` a join | the bench's `conv{a,b,c,d} ⊕ B₁` as written | 249.53323018738044 |
+| two joins, one `union` the other | the stella octangula | 108, 24 faces |
+| the hull of a cube and four cap points, sets written in place across lines | a twelve-faced gem | 10157.379, checked by a hull computed apart |
+| a pyramid whose apex stands `h` over a base `w` square | follows its dimensions | 1600; `--set h=24mm` 3200; `w=30mm` 3600 |
+| a pyramid cut from its tetrahedron | a Boolean of joins | 54 |
+
+The spin found three faults, each fixed: a quantifier broken across lines did not parse (it now
+runs on past a line break after a binder's `,` or its `:`); a union of joins said with `or` had no
+bounds (a join's set, turned round inside a union, is now bounded by its own terms); and a named
+instance of a component binding points split its binders off to the instance (a body binding any
+is now the set's whole). It found one limit of the language that predates `some`: a component's
+`set` formal takes a named set, not one written in place (`Join(std.sets.Segment(a, b), …)` is
+E103; `ab := std.sets.Segment(a, b)` then `Join(ab, …)`).
+
+What it cannot say yet, and says why: a cone or the bench's square-to-round loft (a join of a set
+bounded by a curve), the join of a solid that is not convex, a union said with `or` built exactly
+(read by the field, as a union of balls is), and a continuous sweep of a join exported (read by
+the field, as any body swept continuously is).
+
 ## What is refused, and left
 
 - A relation that is neither the segment between bound points nor a ball about one: the field

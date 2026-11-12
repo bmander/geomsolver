@@ -9,7 +9,7 @@ number (§6.21): in a set's body, `some q in A, r in B: p in X` is the points `p
 each set puts in `X`. Where `X` is the segment between the bound points (`std.sets.Segment(q, r)`,
 either end a point of the drawing instead) it is **the join** of their sets — of convex sets their
 hull — read where each is the hull of finitely many points (a point, a segment, a convex polygon
-drawn as a face, another join) and built exactly as the kernel's hull of them: a tetrahedron is
+drawn as a face, a solid of planes meeting in convex edges, another join) and built exactly as the kernel's hull of them: a tetrahedron is
 `{ p | some q in Segment(a, b), r in Segment(c, d): p in Segment(q, r) }`, a pyramid `{ p | some q
 in base: p in Segment(apex, q) }`, and joins nest, so brep-bench's square-to-octagon transition is
 the join of a square and an octagon each written as one. Where `X` is a ball about one bound point

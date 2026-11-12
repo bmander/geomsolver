@@ -1524,6 +1524,13 @@ pub(super) fn instance_part(lit: &SetLit) -> (Vec<Stmt>, SetLit) {
     if super::developable::within_point(lit) {
         return (Vec::new(), lit.clone());
     }
+    // some points of sets ([0.212]): the points a `some` binds are each use's, and so are their
+    // memberships, which read nothing of the set's point — a body binding any is the set's whole
+    let binds = |st: &Stmt| matches!(&st.kind, StmtKind::Relation(r)
+        if r.form.written().is_some_and(|w| w.args.iter().any(|a| matches!(a, OpArg::Some { .. }))));
+    if lit.body.iter().any(binds) {
+        return (Vec::new(), lit.clone());
+    }
     let judged: Vec<_> = lit.body.iter().map(reads).collect();
     // the names that read the point, grown until no statement adds one
     let mut reading: BTreeSet<&str> = BTreeSet::from([lit.bound.text.as_str()]);

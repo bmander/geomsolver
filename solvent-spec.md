@@ -2099,10 +2099,11 @@ instead) — **the join** of the sets, of convex sets their hull: `{ p | some q 
 in Segment(c, d): p in Segment(q, r) }` is the tetrahedron on `a`, `b`, `c`, `d`, and `{ p | some
 q in base: p in Segment(apex, q) }` the pyramid on a face — or where it is a ball about one bound
 point (`p distance(<= d) q`), the set grown. A join is read where each set it is of is the hull of
-finitely many points — a point, a segment, a convex polygon drawn as a face, or another join — and
+finitely many points — a point, a segment, a convex polygon drawn as a face, a solid of planes
+meeting in convex edges, or another join — and
 built exactly as their hull; anything else a `some` puts its point in is refused by name, and a
 `some` whose set's point is a drawn one rather than a solid's is refused. One `some` binds every
-point its relation reads. **Retired** (each refused naming its replacement): `inside` and `outside` between a point
+point its relation reads, and runs on past a line break after a binder's `,` or its `:`. **Retired** (each refused naming its replacement): `inside` and `outside` between a point
 and a set (`claim a inside b` between solids stays, §9.8), `coincident` against a set, `S.surface`,
 `over` in a relation's parentheses, `side:` on a distance from a set with an inside,
 `std.sets.Offset`, `n := x in f` for a placement (`n := x at f`), and `when not w in A` (`when w
