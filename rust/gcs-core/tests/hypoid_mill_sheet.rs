@@ -2,8 +2,24 @@
 //! its pressure shift written into the pair's call as a number beside the cutter's radius the
 //! document states (`fixtures::gear::as_found`), so what the kernel builds there is judged apart
 //! from the balance that finds the shift (`hypoid_machine`).
-use gcs_core::brep::{export,props,sweep::{self,Say}};
-use std::sync::Mutex;
+use crate::common::{built,saying};
+use gcs_core::brep::{export,props,sweep};
+
+/// What the pinion's cut says of its sheet at the mill its balance finds, at any scale: laid 69 by
+/// 39, one chart, its faces named by the cutter's.
+pub(crate) fn the_pinions_sheet(said: &str) {
+    assert!(said.contains("`pair.pinion.cut.removal`: sheet 69x39, one chart"),"{said}");
+    assert!(said.contains("`pair.pinion.cut.removal`: the sheet's faces, by the cutter's: inner, inner_round, tip, outer_round, outer"),
+        "{said}");
+}
+
+/// The pinion built by sectors: the sector turned into its 24 copies, each the blank's pieces, the
+/// space's five faces and the relief's five, 243 in all, and the solid sound.
+pub(crate) fn the_pinion_by_sectors(exact: &export::Exact,said: &str) {
+    assert!(said.contains("turned the sector into 24 copies"),"{said}");
+    assert_eq!(exact.solid.faces.len(),243,"{said}");
+    exact.solid.check(1e-6).unwrap();
+}
 
 /// **The pinion's cut at the mill its balance finds is one chart** (#904 A1/A2): its sheet is traced,
 /// fitted within the gross bars and named by the cutter's faces. At the start of its band the fold
@@ -21,16 +37,14 @@ fn the_pinions_cut_at_the_found_mill_is_one_chart() {
     let pinion = fixtures::solid(&e,"pair.pinion.body");
     let admission = admit_body(&e.sketch,pinion,&Options::default()).unwrap_or_else(|r| panic!("refused: {r}"));
     let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,pinion).unwrap();
-    let lines = Mutex::new(Vec::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let prepared = sweep::prepare(&e.sketch,pinion,&recipe,&admission,&say).unwrap_or_else(|r| panic!("{}",r.message));
-    let k = (0..prepared.sweeps()).find(|&k| prepared.sweep_name(&e.sketch,k) == "pair.pinion.cut.removal").expect("the pinion's cut");
-    let fitted = sweep::traced(&prepared,k,None,&say);
-    let said = lines.lock().unwrap().join("\n");
+    let (fitted,said) = saying(|say| {
+        let prepared = sweep::prepare(&e.sketch,pinion,&recipe,&admission,say).unwrap_or_else(|r| panic!("{}",r.message));
+        let k = (0..prepared.sweeps()).find(|&k| prepared.sweep_name(&e.sketch,k) == "pair.pinion.cut.removal")
+            .expect("the pinion's cut");
+        sweep::traced(&prepared,k,None,say)
+    });
     let fitted = fitted.unwrap_or_else(|r| panic!("{}\n{said}",r.message));
-    assert!(said.contains("`pair.pinion.cut.removal`: sheet 69x39, one chart"),"{said}");
-    assert!(said.contains("`pair.pinion.cut.removal`: the sheet's faces, by the cutter's: inner, inner_round, tip, outer_round, outer"),
-        "{said}");
+    the_pinions_sheet(&said);
     assert!(fitted.error < 0.01,"the fit is {} mm from its contacts\n{said}",fitted.error);
 }
 
@@ -45,16 +59,9 @@ fn the_pinions_cut_at_the_found_mill_is_one_chart() {
 #[test]
 fn the_pinion_at_the_found_mill_is_built_by_sectors() {
     let e = fixtures::gear::read_as_found();
-    let pinion = fixtures::solid(&e,"pair.pinion.body");
-    let lines = Mutex::new(Vec::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let exact = export::exact(&e.sketch,pinion,None,None,&say);
-    let said = lines.lock().unwrap().join("\n");
-    let exact = exact.unwrap_or_else(|r| panic!("{}\n{said}",r.message));
+    let (exact,said) = built(&e,"pair.pinion.body");
     assert!(said.contains("classified 1 material and 4 removed cells"),"{said}");
-    assert!(said.contains("turned the sector into 24 copies"),"{said}");
-    assert_eq!(exact.solid.faces.len(),243,"{said}");
-    exact.solid.check(1e-6).unwrap();
+    the_pinion_by_sectors(&exact,&said);
     let volume = props::volume(&exact.solid);
     assert!((volume-14664.2385).abs() < 1e-3,"{volume} mm³");
 }

@@ -18,6 +18,7 @@ pub mod parsed;
 pub mod rounds;
 pub mod text;
 
+use gcs_core::brep::{export, sweep::Say};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::io;
 use gcs_core::model::{EntRef, Sketch};
@@ -172,6 +173,22 @@ pub fn read_solved(src: &str) -> (Elaborated, Sketch) {
 /// The solid the document calls `n`, by index.
 pub fn solid_named(e: &Elaborated, n: &str) -> usize {
     at_path(e, n).i()
+}
+
+/// What `f` returns, and the lines it said through the `Say` it is handed.
+pub fn saying<T>(f: impl FnOnce(&Say) -> T) -> (T, String) {
+    let lines = std::sync::Mutex::new(Vec::<String>::new());
+    let say = Say { stage: &|l: &str| lines.lock().unwrap().push(l.to_string()), mark: &|_| {} };
+    let out = f(&say);
+    (out, lines.into_inner().unwrap().join("\n"))
+}
+
+/// The solid `e` calls `name` built exactly by this kernel at the export's own tolerance, and what
+/// the build said (`saying`); a refusal panics with it.
+pub fn built(e: &Elaborated, name: &str) -> (export::Exact, String) {
+    let body = fixtures::solid(e, name);
+    let (exact, said) = saying(|say| export::exact(&e.sketch, body, None, None, say));
+    (exact.unwrap_or_else(|r| panic!("{r:?}\n{said}")), said)
 }
 
 /// The solids built and evaluated while `work` runs, by index, in the order begun.

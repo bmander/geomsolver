@@ -12,23 +12,15 @@
 //! square, or stood upright and turned, both flanks meet the rim at one point and the sheet is
 //! creased along its path (#684 V), the section the V's own in closed form. Each row the two
 //! motions add or meet refuses by name.
-use gcs_core::brep::{export,props,sweep::Say};
+use crate::common::saying;
+use gcs_core::brep::{export,props};
 use gcs_core::program::Elaborated;
 use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
 use gcs_core::solid::export::Tolerance;
 use gcs_core::space::{cross,unit};
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
-use std::sync::Mutex;
 
 type V = [f64;3];
-
-/// What `f` returns, and the lines it said through the `Say` it is handed.
-fn saying<T>(f: impl FnOnce(&Say) -> T) -> (T,String) {
-    let lines = Mutex::new(Vec::<String>::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let out = f(&say);
-    (out,lines.into_inner().unwrap().join("\n"))
-}
 
 /// The solid `name` built exactly within 0.01 mm by this kernel, its STEP and STL written and the
 /// STL held to the material field with no disagreement (where it cuts a sweep: a ball's tube is

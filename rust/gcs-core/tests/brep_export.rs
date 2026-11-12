@@ -2,6 +2,8 @@
 //! functions `solventc` and the browser's worker both call: a body whose swept cut is placed once is
 //! no sector, and is built whole — the blank split by the placed sheet, its cells judged by the
 //! material field — then written, parsed back, meshed and held to the field.
+use crate::common::{built,saying};
+use crate::hypoid_mill_sheet::{the_pinion_by_sectors,the_pinions_sheet};
 use gcs_core::brep::{export,props,sweep::Say};
 use gcs_core::model::Sketch;
 
@@ -234,18 +236,12 @@ fn a_through_cut_crosses_its_stock_whichever_way_the_stocks_circle_starts() {
 #[test]
 fn the_relieved_pinion_is_built_by_sectors() {
     let e = fixtures::gear::read(&fixtures::gear::recorded_machine(&fixtures::gear::source(),12.5));
-    let body = fixtures::solid(&e,"pair.pinion.body");
-    let lines = std::sync::Mutex::new(Vec::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap();
-    let said = lines.lock().unwrap().join("\n");
-    assert!(said.contains("turned the sector into 24 copies"),"{said}");
+    let (exact,said) = built(&e,"pair.pinion.body");
     // each sector: the blank's pieces, the space's five faces and the relief's five, named by
     // the cutter faces that made them (#212)
-    assert_eq!(exact.solid.faces.len(),243,"{said}");
+    the_pinion_by_sectors(&exact,&said);
     assert_eq!(exact.solid.faces.iter().filter(|f| f.surface.kind() == "revolution").count(),24*2,
         "the two conic bands, a piece in each sector");
-    exact.solid.check(1e-6).unwrap();
 }
 
 /// **The pinion as its document writes it is built** (the page's `?example=spiral_bevel`): at the
@@ -263,17 +259,9 @@ fn the_relieved_pinion_is_built_by_sectors() {
 #[test]
 fn the_pinion_as_written_is_built_by_sectors() {
     let e = fixtures::gear::read_as_configured();
-    let body = fixtures::solid(&e,"pair.pinion.body");
-    let lines = std::sync::Mutex::new(Vec::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
-    let said = lines.lock().unwrap().join("\n");
-    assert!(said.contains("`pair.pinion.cut.removal`: sheet 69x39, one chart"),"{said}");
-    assert!(said.contains("`pair.pinion.cut.removal`: the sheet's faces, by the cutter's: inner, inner_round, tip, outer_round, outer"),
-        "{said}");
-    assert!(said.contains("turned the sector into 24 copies"),"{said}");
-    assert_eq!(exact.solid.faces.len(),243,"{said}");
-    exact.solid.check(1e-6).unwrap();
+    let (exact,said) = built(&e,"pair.pinion.body");
+    the_pinions_sheet(&said);
+    the_pinion_by_sectors(&exact,&said);
     let volume = props::volume(&exact.solid);
     assert!((volume-14664.2384).abs() < 1e-3,"{volume} mm³");
 }
@@ -295,20 +283,12 @@ fn the_pinion_scaled_is_built_as_the_pinion_is() {
     const CONFIGURED_WALK: f64 = 13.702;
     let s = 0.625;
     let e = fixtures::gear::read(&fixtures::gear::scaled_as_found(s));
-    let body = fixtures::solid(&e,"pair.pinion.body");
-    let lines = std::sync::Mutex::new(Vec::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
-    let said = lines.lock().unwrap().join("\n");
+    let (exact,said) = built(&e,"pair.pinion.body");
     let walk = CONFIGURED_WALK*s;
     assert!(said.contains(&format!("`pair.pinion.cut.removal`: contacts reach the blank over 11.3 degrees of stations and 5 \
         profile faces, {walk:.3} mm of them")),"{said}");
-    assert!(said.contains("`pair.pinion.cut.removal`: sheet 69x39, one chart"),"{said}");
-    assert!(said.contains("`pair.pinion.cut.removal`: the sheet's faces, by the cutter's: inner, inner_round, tip, outer_round, outer"),
-        "{said}");
-    assert!(said.contains("turned the sector into 24 copies"),"{said}");
-    assert_eq!(exact.solid.faces.len(),243,"{said}");
-    exact.solid.check(1e-6).unwrap();
+    the_pinions_sheet(&said);
+    the_pinion_by_sectors(&exact,&said);
 }
 
 /// **Each member of the pair is built alike at every scale** (#904 A3): the pinion at half its size
@@ -320,11 +300,8 @@ fn each_member_of_the_pair_is_built_alike_at_every_scale() {
     for (member,s,faces) in [("pinion",0.5,243),("pinion",0.75,243),("pinion",1.5,243),("gear",0.625,291),("gear",1.5,291)] {
         let e = fixtures::gear::read(&fixtures::gear::scaled_as_found(s));
         let body = fixtures::solid(&e,&format!("pair.{member}.body"));
-        let lines = std::sync::Mutex::new(Vec::new());
-        let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-        let exact = export::exact(&e.sketch,body,None,None,&say)
-            .unwrap_or_else(|r| panic!("the {member} at {s}: {r:?}\n{}",lines.lock().unwrap().join("\n")));
-        let said = lines.lock().unwrap().join("\n");
+        let (exact,said) = saying(|say| export::exact(&e.sketch,body,None,None,say));
+        let exact = exact.unwrap_or_else(|r| panic!("the {member} at {s}: {r:?}\n{said}"));
         assert_eq!(exact.solid.faces.len(),faces,"the {member} at {s}: {said}");
         exact.solid.check(1e-6).unwrap();
     }
@@ -347,18 +324,15 @@ fn a_sheet_ending_in_the_blank_is_carried_out_of_it() {
     let scaled = fixtures::gear::scaled(&fixtures::gear::source(),s);
     let e = fixtures::gear::read(&fixtures::gear::machine(&scaled,11.2527));
     let body = fixtures::solid(&e,"pair.gear.body");
-    let lines = std::sync::Mutex::new(Vec::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
-    let said = lines.lock().unwrap().join("\n");
+    let (exact,said) = built(&e,"pair.gear.body");
     assert!(said.contains("`pair.gear.cut.removal`: the fitted sheet's edge is in the blank by up to"),"{said}");
     assert!(said.contains("carried on past it by its own surface"),"{said}");
     assert!(said.contains("classified 1 material and 4 removed cells"),"{said}");
     assert!(said.contains("turned the sector into 48 copies"),"{said}");
     exact.solid.check(1e-6).unwrap();
-    let stl = export::stl(&e.sketch,body,&exact,None,&say).unwrap();
+    let (stl,more) = saying(|say| export::stl(&e.sketch,body,&exact,None,say).unwrap());
     gcs_core::mesh::stl_shells(&stl).unwrap();
-    let said = lines.lock().unwrap().join("\n");
+    let said = format!("{said}\n{more}");
     assert!(said.contains(" 0 disagree"),"{said}");
 }
 
