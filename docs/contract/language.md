@@ -588,7 +588,12 @@ geometry aliases; `dims: group` is a required formal. Groups nest, by name or in
 (`{bar: {at: o}}`, `InstVal::Group`, flattened to dotted members by `members_of`, each nested
 group registered so `Bar(design.bar)` binds); an instance may pass as a layout group. A **`set`
 formal** (`Ty::Set`, #191) takes a set — named, or a family's instance, which is both a set and an
-instance — and a `group` formal no named set; each refusal is E103 at the argument
+instance, or **written in place** ([0.213]): a set literal, or a call no number reads (no operator,
+built-in, measure or element word) standing whole as the argument, read by the key
+`hoist_in_place` gives what stands there (`P::in_place_arg`) and hoisted there once the statement
+holding the call has its `next_id` (`in_place_args`: a definition, a bare call, or a call itself
+written in place, so one inside another's nests), held in its text (`Chained::InPlace`)
+(`applied::a_set_formal_takes_a_set_written_in_place`) — and a `group` formal no named set; each refusal is E103 at the argument
 (`Checks::groups`, checked in `resolve` against `sets` / `group_names`). **A group is a value**
 (#594, [0.184]): `small := sizes`, a definition whose text names a group (`Walk::group_named`:
 the body's, a group formal, one under the scope's prefixes, a bare import, or the file's), is

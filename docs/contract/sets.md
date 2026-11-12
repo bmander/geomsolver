@@ -308,6 +308,59 @@ coincident(over s) sec })` a face of the drawing over a declared parameter.  The
 `coincident(t in (0, 1))` (a contact's place on a curve, [developables.md](developables.md)) is
 another clause, unchanged.  `tests/solids_as_sets.rs` is the gate.
 
+**Some points of sets** ([0.212]; written `some q in A, r in B: p in X` in a set's body): the
+points `p` that some point of each set puts in `X` — a projection, each bound point ranging over
+its set as a sweep's roll ranges over its interval.  The notation lowers each binder's `in` as a
+membership's (`inside`, or `coincident` with a face or a boundary) and the body as a statement
+(`syntax::notation::points`); the parser (`P::points`) declares each binder a private construction
+point of the body with its membership of its set beside it, both held in the text of the relation
+they bind (`Chained::InPlace`), which carries them (`OpArg::Some`) so the printer writes the
+quantifier back; the quantifier runs on past a line break after a binder's `,` or its `:`, as a list
+in parentheses does (the notation drops the breaks).  The flattener registers each binder, in every round before any statement is
+read (`sets::register_binders`: a binder's membership stands before the relation binding it), as
+a probe with its quantifier and the set's point its relation reads (`Expansion::binders`; where
+sets nest, another quantifier's binder) — a named instance of a component binding any keeps its
+body whole as the set (`instance_part`), since the binders and their memberships, which read
+nothing of the set's point, are each use's — and applies the binders' memberships and the
+relation **held** (`binding`), as a set measured from is (#192); a `some` whose set's point is no
+probe — a drawn point's, outside a solid's set — is E040.  At a binder a point on a line with no
+number is a term at nothing (`PointOnLine3`, a segment's own), since the set a binder ranges over
+may be no solid's.  The elaborator routes each constraint reading a binder (`regions::bound_by`):
+one reading a binder alone is that binder's term, as any probe's; one reading a quantifier's set's
+point and nothing else but what it binds is the quantifier's, never a row (so a join nested in
+another's set is read as its own); any other is E040.  Once every relation is stated (`settle_bound`) each
+quantifier's constraints are read by their kinds, never a word's name: a point on the line through
+two points, its ordinate along it from the first at least nothing and from the second at most
+nothing — the segment between them — each a binder or a point of the drawing, is **the join** of
+what they range over (`RegionShape::Join`, its operands `Target::Set` for a binder, filled and
+held as a set measured from is, `fill_sets`); a distance from one binder at most a number is the
+distance from its set (`RegionShape::Measured`), the set grown; anything else is E040 saying so,
+once: the solid it was refused in is not refused again for want of a term (`Probes::refused`).
+A join is read where each operand is the hull of finitely many points (`solid::joined`: a point of
+the drawing, a set of one point, a segment — on a line, its ordinate along it bounded at both ends
+— a drawn polygon of lines with no hole whose corners turn one way, a solid every face of which is
+a plane and every edge convex (its corners), or another join), the hull of
+them all by the kernel's quickhull (`brep::build::hull`): its field the most any of the hull's
+planes stands below the point — the signed distance within, a lower bound without, one-Lipschitz
+— each plane a support plane of the region; anything else is refused by name, for the hull of its
+corners would be another set.  The `Bounded` route builds a join exactly as that hull, kept within
+or taken away at nothing (the recipe's `hull` node, its faces named by the term's set), gated by
+the field as every route is; grown or shrunk by a number it is the field's.
+Within a union said with `or` (the outside of a set of outsides), a join's set — several
+statements, so outside it is a complement — is bounded, turned round, by its own terms
+(`RegionTerm::turned`, a term's complement as terms taken together).  `tests/joins.rs` is the gate: a tetrahedron the join of two opposite edges (its volume, area and
+field, and grown by 1 to brep-bench's offset/tetrahedron-grown), brep-bench's square-to-octagon
+transition a join of joins to its closed forms, a pyramid the join of its apex and a drawn face,
+a capsule a ball about some point of a segment, the join as a component making an octahedron, a
+frustum and an oblique prism, a house the join of a box and a point (an L refused), a box rounded
+by a ball about some point of it, two joins united and said with `or`, the bench's grown tetrahedron
+as a ball about some point of the join, the case library's documents of it (`rust/examples/
+joins.sv`, `tetrahedron_grown.sv`, `house.sv`, `pyramid.sv`) to their closed forms, the pyramid
+re-dimensioned, and each refusal.  The experiment the syntax
+waited for — the cases before and after, what a join's field costs against its half-spaces', and
+what is left (a relation read by searching every bound point; joins of curved sets, by support
+functions) — is [some-points-of-sets.md](../some-points-of-sets.md).
+
 **Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
 reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.boss` every face
 `boss` gave `pad`, `block`, `.surface` its whole surface).

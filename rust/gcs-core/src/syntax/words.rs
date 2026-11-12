@@ -387,3 +387,22 @@ pub fn reserved_word(s: &str) -> bool {
 pub(super) fn trails_decl(w: &str) -> bool {
     TRAILERS.contains(&w) || joint_word(w)
 }
+
+/// The index of the bracket closing the one opening at `i`, any of `(`, `[`, `{`.
+pub(crate) fn matching(t: &[(super::lexer::Tok, super::Span)], i: usize) -> Option<usize> {
+    use super::lexer::Tok;
+    let mut depth = 0usize;
+    for (k, (tok, _)) in t.iter().enumerate().skip(i) {
+        match tok {
+            Tok::P('(' | '[' | '{') => depth += 1,
+            Tok::P(')' | ']' | '}') => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(k);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}

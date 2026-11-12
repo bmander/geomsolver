@@ -97,6 +97,11 @@ struct P<'a> {
     /// The faces written in place as arguments of a call being hoisted (#737), read but not yet
     /// minted: `Some` while such a call's arguments are read.
     faces: Option<Vec<(Decl, Span)>>,
+    /// The sets written in place as a call's arguments (`Join(std.sets.Segment(a, b), cd)`, a set
+    /// literal or another call), by the token each starts at: read as the key `hoist_in_place`
+    /// gives what stands there, and hoisted there once the statement holding the call has
+    /// `next_id` in hand (`statements::in_place_args`).
+    in_place: Vec<usize>,
     /// How each relation word the notation of sets was lowered to was written, by where the word
     /// starts (#783, `syntax::notation`): a relation read from one is `Written::lowered`.
     lowered: std::collections::BTreeMap<u32, crate::syntax::Lowered>,
@@ -160,6 +165,7 @@ pub(crate) fn reference_at(text: &str, at: usize) -> Option<Ref> {
         families: 0,
         hoisted: None,
         faces: None,
+        in_place: Vec::new(),
         lowered: Default::default(),
     };
     let mut r = st.refr()?;
@@ -257,6 +263,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         families: 0,
         hoisted: None,
         faces: None,
+        in_place: Vec::new(),
         lowered: low.words,
     };
     let mut body: Vec<Stmt> = Vec::new();

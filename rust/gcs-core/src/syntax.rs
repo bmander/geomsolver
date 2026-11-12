@@ -904,6 +904,10 @@ impl Named {
     }
 }
 
+/// Where a hidden point a set is read at starts (`flatten::sets::probe`, and the points a `some`
+/// binds): the plastic number's powers, so it stands in no special place of a drawing.
+pub(crate) const PROBE_SEED: [f64; 3] = [0.7548776662, 0.5698402910, 0.4301597090];
+
 /// A resolution key paired with its display and writeback eligibility.
 /// Preserve the variant when prefixing names during expansion.
 #[derive(Clone, Debug)]
